@@ -68,7 +68,7 @@ import {
 } from './constants/testSeeds'
 import { apiFrom, apiMatchRestoreByPin, writingDevice } from './lib/apiClient'
 import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
-import { fetchMatchByPin, fetchMatchToContinue, importMatchFromSupabase, cloudBestOf, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, listPocketBaseBackups, fetchPocketBaseMatch, matchBackupFromDatabaseExport, restoreErrorText } from './utils/backupManager'
+import { fetchMatchByPin, fetchMatchToContinue, importMatchFromSupabase, cloudBestOf, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, listPocketBaseBackups, fetchPocketBaseMatch, matchBackupFromFile, restoreErrorText } from './utils/backupManager'
 import UpdateBanner from './components/UpdateBanner'
 import DesktopUpdateNotice from './components/DesktopUpdateNotice'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from './utils/matchFormat'
@@ -227,11 +227,12 @@ export default function App() {
   const backup = useAutoBackup(matchId)
   // Backup file for a restore: the desktop app opens its own dialog in the
   // backup folder; elsewhere the browser file picker. A whole-database export
-  // (an older set-end download) is previewed and restored as the match it holds.
+  // (an older set-end download) and a Match End file (the ZIP's MatchData
+  // JSON) are previewed and restored as the match they hold.
   const pickBackupFile = useCallback(async () => {
     const native = await pickNativeBackupFile()
     const data = native === undefined ? await selectBackupFile() : native
-    return (data && matchBackupFromDatabaseExport(data)) || data
+    return data && matchBackupFromFile(data)
   }, [])
   // Options > Backup > Restore from a backup file: same preview + restore path
   // as the Restore match dialog.

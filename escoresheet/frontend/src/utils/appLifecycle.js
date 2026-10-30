@@ -32,6 +32,18 @@
  *
  * Every question goes through askConfirm (the in-app dialog), never
  * window.confirm.
+ *
+ * A confirmed quit (desktop) or Exit (Android) first writes the open match's
+ * last backup file (utils/nativeBackup flushNativeBackups, 1.5 s at most):
+ * the app exits at once after it, and a backup still in its quiet window
+ * went with it. The OS ending the desktop app (logout, shutdown, SIGTERM;
+ * the installer's --quit) sends `flush-requested`: nothing is asked, the
+ * activity log and the backup are written and the page says so
+ * (`app_flush_done`); the app exits then, or after 2 s without it
+ * (lifecycle.rs FLUSH_TIMEOUT). Windows' and macOS' own session end cannot
+ * wait for the page, and the app's native quit question does not ask it.
+ * Android writes the backup when the app goes to the background too: it may
+ * end the app there without a word (a swipe from the recent apps).
  */
 
 import i18n from 'i18next'
@@ -42,6 +54,7 @@ import { isLeavingAllowed, resetLeaveGuardForTests } from './leaveGuard.js'
 import { desktopWindowRoleOnce, knownDesktopWindowRole } from '../diagnostics/popupForward.js'
 
 import { emitActivity, flushActivityNow } from './activity/bus'
+import { flushNativeBackups, QUIT_BACKUP_WAIT_MS } from './nativeBackup'
 export { allowLeaving } from './leaveGuard.js'
 
 export const LIFECYCLE_EVENT = 'ov-app-lifecycle'
@@ -362,9 +375,11 @@ export async function requestDesktopQuit(win = desktopWin || window, ask = askCo
     const nothingMore = fromClose && live === 'none' && !nets.wifi && !nets.bluetooth && windows.length === 0 && !pdfBusy
     // ONE question for every app window: the quit closes the scoresheets too
     if (!nothingMore && !(await ask(quitQuestion({ live, ...nets, windows, pdfBusy })))) return false
-    // The activity log's last line, written before the app goes
+    // The activity log's last line and the match's last backup file, written
+    // before the app goes (app_quit exits at once). Both waits are bounded:
+    // a slow disk never holds the quit.
     emitActivity('app.quit', {})
-    await flushActivityNow(800)
+    await Promise.all([flushActivityNow(800), flushNativeBackups(QUIT_BACKUP_WAIT_MS)])
     quitting = true
     await invoke('app_quit')
     return true
@@ -378,6 +393,22 @@ export async function requestDesktopQuit(win = desktopWin || window, ask = askCo
     // scoretable (the quit request showed only the scoretable)
     if (!quitting) Promise.resolve(invoke('app_quit_cancel')).catch((e) => console.warn('[app] app_quit_cancel failed', e))
   }
+}
+
+/**
+ * The OS ends the desktop app (`flush-requested`): nothing is asked. The
+ * activity log's last line and the match's last backup file, as a confirmed
+ * quit writes them, then `app_flush_done`, whatever the writes did: the app
+ * exits on it, or after its own timeout when this page is stuck.
+ */
+async function flushBeforeOsExit(invoke) {
+  try {
+    emitActivity('app.quit', {})
+    await Promise.all([flushActivityNow(800), flushNativeBackups(QUIT_BACKUP_WAIT_MS)])
+  } catch (e) {
+    console.warn('[app] last files before the OS ends the app', e)
+  }
+  Promise.resolve(invoke('app_flush_done')).catch((e) => console.warn('[app] app_flush_done failed', e))
 }
 
 async function showCloseNotice(win, choose, ask) {
@@ -422,6 +453,7 @@ function installDesktop(win, ask, choose) {
     const type = event?.detail?.type
     if (type === 'close-requested') showCloseNotice(win, choose, ask)
     else if (type === 'quit-requested') requestDesktopQuit(win, ask)
+    else if (type === 'flush-requested') flushBeforeOsExit(invoke)
   }
   win.addEventListener(LIFECYCLE_EVENT, onEvent)
   liveListeners.add(report)
@@ -492,12 +524,57 @@ function installAndroid(win, ask) {
     if (open) return true // a second Back while it asks: keep asking
     open = true
     Promise.resolve(ask(exitQuestion({ live })))
-      .then((ok) => (ok ? androidExit(win) : undefined))
+      // the match's last backup file first (bounded, as on the desktop)
+      .then((ok) => (ok ? flushNativeBackups(QUIT_BACKUP_WAIT_MS).then(() => androidExit(win)) : undefined))
       .catch((e) => console.error('[app] exit failed', e))
       .finally(() => { open = false })
     return true
   }
-  return () => { delete win.__ovAndroidBack }
+  const stopBackground = flushOnBackground(win)
+  return () => {
+    delete win.__ovAndroidBack
+    stopBackground()
+  }
+}
+
+/**
+ * The app going to the background writes the match's last backup file now:
+ * Android may end a backgrounded app without a word (a swipe from the recent
+ * apps, low memory), and none of the page runs then. Fire-and-forget: the
+ * WebView keeps running in the background (Capacitor's KeepRunning).
+ * Capacitor fires `pause` on the document (the activity's onPause); also on
+ * the page going hidden, and on the Capacitor App plugin's appStateChange
+ * where the app has it (this one does not: no @capacitor/app).
+ * @returns {() => void} stop
+ */
+function flushOnBackground(win) {
+  let writing = null
+  const away = () => {
+    if (writing) return
+    writing = Promise.resolve(flushNativeBackups(QUIT_BACKUP_WAIT_MS))
+      .catch(() => {})
+      .finally(() => { writing = null })
+  }
+  const doc = win.document
+  const onVisibility = () => { if (doc.visibilityState === 'hidden') away() }
+  doc?.addEventListener?.('pause', away)
+  doc?.addEventListener?.('visibilitychange', onVisibility)
+  let appHandle = null
+  let stopped = false
+  const capApp = win.Capacitor?.Plugins?.App
+  if (typeof capApp?.addListener === 'function') {
+    try {
+      Promise.resolve(capApp.addListener('appStateChange', (s) => { if (s && s.isActive === false) away() }))
+        .then((h) => { if (stopped) h?.remove?.(); else appHandle = h })
+        .catch(() => {})
+    } catch { /* no plugin after all */ }
+  }
+  return () => {
+    stopped = true
+    doc?.removeEventListener?.('pause', away)
+    doc?.removeEventListener?.('visibilitychange', onVisibility)
+    try { appHandle?.remove?.() } catch { /* gone */ }
+  }
 }
 
 // ---------------------------------------------------------------------------

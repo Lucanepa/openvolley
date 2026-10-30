@@ -459,6 +459,70 @@ export function matchBackupFromDatabaseExport(jsonData) {
 }
 
 /**
+ * The match backup inside a file Match End writes: the MatchData_*.json in
+ * the ZIP that Approve downloads, as the app wrote it before 2026-10-29
+ * ({ match: { ...the match row, homeTeam, awayTeam }, homePlayers,
+ * awayPlayers, sets, events, exportedAt }), and the scoresheet JSON the
+ * approval stores in the cloud (scoresheetJsonBlob: the teams beside the
+ * match, uploadedAt). Neither has `version`: the restore refused the one
+ * file a scorer keeps of an approved match.
+ * In exportMatchData's shape (the teams taken out of the match row); null for
+ * any other file.
+ * @param {object} jsonData a parsed backup file
+ */
+export function matchBackupFromMatchEndExport(jsonData) {
+  const isRecord = (v) => !!v && typeof v === 'object' && !Array.isArray(v)
+  if (!isRecord(jsonData) || jsonData.version || !isRecord(jsonData.match)) return null
+  if (!Array.isArray(jsonData.sets) && !Array.isArray(jsonData.events)) return null
+  const { homeTeam, awayTeam, ...match } = jsonData.match
+  const rows = (list) => (Array.isArray(list) ? list.filter(Boolean) : [])
+  return {
+    version: 1,
+    lastUpdated: jsonData.exportedAt || jsonData.uploadedAt || null,
+    match,
+    homeTeam: isRecord(jsonData.homeTeam) ? jsonData.homeTeam : (isRecord(homeTeam) ? homeTeam : null),
+    awayTeam: isRecord(jsonData.awayTeam) ? jsonData.awayTeam : (isRecord(awayTeam) ? awayTeam : null),
+    homePlayers: rows(jsonData.homePlayers),
+    awayPlayers: rows(jsonData.awayPlayers),
+    sets: rows(jsonData.sets),
+    events: rows(jsonData.events)
+  }
+}
+
+/**
+ * A match file in the shape the restores read (exportMatchData's): a backup
+ * file as it is, a whole-database export or a Match End file converted.
+ * Every picked file and both restores go through it.
+ * @param {object} jsonData a parsed backup file
+ */
+export function matchBackupFromFile(jsonData) {
+  return matchBackupFromDatabaseExport(jsonData) || matchBackupFromMatchEndExport(jsonData) || jsonData
+}
+
+/**
+ * The MatchData_*.json of the match-end ZIP (MatchEnd, Approve): the backup
+ * file format (exportMatchData), so Restore match takes it back as it is,
+ * with the time it was written as exportedAt too.
+ * @param {{ match: object, homeTeam?: object, awayTeam?: object, homePlayers?: object[], awayPlayers?: object[], sets?: object[], events?: object[] }} data
+ * @param {Date} [now]
+ */
+export function matchEndExportData({ match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events }, now = new Date()) {
+  const at = now.toISOString()
+  return {
+    version: 1,
+    lastUpdated: at,
+    match,
+    homeTeam: homeTeam || null,
+    awayTeam: awayTeam || null,
+    homePlayers: homePlayers || [],
+    awayPlayers: awayPlayers || [],
+    sets: sets || [],
+    events: events || [],
+    exportedAt: at
+  }
+}
+
+/**
  * What the Restore dialogs say when a backup cannot be loaded or restored:
  * a file that cannot be read and a file that is not a match backup in the
  * user's words, anything else with the error's own text.
@@ -481,8 +545,9 @@ export function restoreErrorText(err, t) {
  * @param {{checkServer?: (externalId: string) => Promise<boolean|null>}} [options]
  */
 export async function restoreMatchFromJson(jsonData, { checkServer = serverClosedState, cloudLiveState = serverLiveState } = {}) {
-  // A whole-database export holds the match it was written for
-  jsonData = matchBackupFromDatabaseExport(jsonData) || jsonData
+  // A whole-database export holds the match it was written for, a Match End
+  // file the match in its own shape
+  jsonData = matchBackupFromFile(jsonData)
   // Validate schema
   if (!jsonData?.version || !jsonData.match) {
     throw Object.assign(new Error('Invalid backup file format'), { code: BACKUP_FORMAT_ERROR })
@@ -745,6 +810,7 @@ export async function restoreMatchFromJson(jsonData, { checkServer = serverClose
  * Refused like restoreMatchFromJson for a match closed on the server.
  */
 export async function restoreMatchInPlace(matchId, jsonData, { checkServer = serverClosedState } = {}) {
+  jsonData = matchBackupFromFile(jsonData)
   if (!jsonData.version || !jsonData.match) {
     throw new Error('Invalid backup file format')
   }
@@ -1992,7 +2058,9 @@ export async function fetchCloudBackup(path) {
 
 /**
  * Get backup settings from localStorage. The apps (native: true) keep their own
- * switch, on by default; browsers default to off.
+ * switch, on by default; browsers default to off. The scoreboard's "Auto-download
+ * data at set end" is on by default everywhere (it was not stored: every new
+ * scoreboard turned it back on).
  */
 const autoBackupKey = (native) => (native ? 'nativeAutoBackupEnabled' : 'autoBackupEnabled')
 
@@ -2000,7 +2068,8 @@ export function getBackupSettings({ native = false } = {}) {
   const stored = localStorage.getItem(autoBackupKey(native))
   return {
     autoBackupEnabled: stored === null ? native : stored === 'true',
-    backupFrequencyMinutes: parseInt(localStorage.getItem('backupFrequencyMinutes') || '5', 10)
+    backupFrequencyMinutes: parseInt(localStorage.getItem('backupFrequencyMinutes') || '5', 10),
+    autoDownloadAtSetEnd: localStorage.getItem('autoDownloadAtSetEnd') !== 'false'
   }
 }
 
@@ -2013,6 +2082,9 @@ export function saveBackupSettings(settings, { native = false } = {}) {
   }
   if (settings.backupFrequencyMinutes !== undefined) {
     localStorage.setItem('backupFrequencyMinutes', String(settings.backupFrequencyMinutes))
+  }
+  if (settings.autoDownloadAtSetEnd !== undefined) {
+    localStorage.setItem('autoDownloadAtSetEnd', String(settings.autoDownloadAtSetEnd))
   }
 }
 

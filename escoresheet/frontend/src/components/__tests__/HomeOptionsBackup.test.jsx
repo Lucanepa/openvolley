@@ -2,7 +2,8 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, within } from '@testing-library/react'
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key) => key })
+  // the key, with the minutes of the periodic download when given
+  useTranslation: () => ({ t: (key, opts) => (opts?.minutes != null ? `${key} ${opts.minutes}` : key) })
 }))
 vi.mock('../../contexts/AlertContext', () => ({
   useAlert: () => ({ showAlert: vi.fn() })
@@ -82,5 +83,19 @@ describe('Options > Backup', () => {
     expect(screen.getByText('options.limitedBrowserSupport')).toBeInTheDocument()
     expect(screen.getByText('options.limitedBrowserSupportDesc')).toBeInTheDocument()
     expect(screen.queryByTestId('native-backup-folder')).toBeNull()
+  })
+
+  // useAutoBackup downloads at the set end and the match end, and every few
+  // minutes when the match changed; the list also named the set start and a
+  // timeout, which never download
+  it('browsers without a folder: the list says when a backup is downloaded', () => {
+    render(<HomeOptionsModal {...baseProps} backup={{ nativeMode: false, hasFileSystemAccess: false, autoBackupEnabled: true, backupFrequency: 5, toggleAutoBackup: vi.fn() }} />)
+    expect(screen.getByText('options.autoDownloadWhen')).toBeInTheDocument()
+    const list = screen.getByTestId('browser-auto-download')
+    expect([...list.children].map(row => row.textContent.replace('✓', '').trim())).toEqual([
+      'options.setEnd',
+      'options.matchEnd',
+      'options.autoDownloadEveryMinutes 5'
+    ])
   })
 })

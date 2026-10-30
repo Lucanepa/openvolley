@@ -868,20 +868,20 @@ export default function HomeOptionsModal({
                     </div>
                   </div>
                   <div className="mb-2 text-xs text-stone-500">
-                    {t('options.eventBasedAutoDownload')}:
+                    {t('options.autoDownloadWhen')}
                   </div>
-                  <div className="grid grid-cols-2 gap-1.5 text-[11px] text-stone-600">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-emerald-600">✓</span> {t('options.setStart')}
-                    </div>
+                  {/* What useAutoBackup downloads here: at the set end and the
+                      match end (BROWSER_DOWNLOAD_EVENTS), and every few minutes
+                      when the match changed. Never at a set start or a timeout. */}
+                  <div className="grid grid-cols-2 gap-1.5 text-[11px] text-stone-600" data-testid="browser-auto-download">
                     <div className="flex items-center gap-1.5">
                       <span className="text-emerald-600">✓</span> {t('options.setEnd')}
                     </div>
                     <div className="flex items-center gap-1.5">
                       <span className="text-emerald-600">✓</span> {t('options.matchEnd')}
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-emerald-600">✓</span> {t('options.timeoutCalled')}
+                    <div className="col-span-2 flex items-center gap-1.5">
+                      <span className="text-emerald-600">✓</span> {t('options.autoDownloadEveryMinutes', { minutes: backup.backupFrequency })}
                     </div>
                   </div>
                   <div className="mt-2 text-[11px] text-stone-400">
