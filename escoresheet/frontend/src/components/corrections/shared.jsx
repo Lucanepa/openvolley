@@ -14,6 +14,7 @@ import { Textarea } from '../../ui/Textarea.jsx'
 import { TEAM_COLOUR_MARK, discRing, HEADER_SURFACE } from '../../utils/teamColours'
 import { formatScore, teamLabel, displaySetNumber, tr } from '../../domain/describe'
 import { errorText } from '../../domain/manualCorrections'
+import { issueText } from '../../domain/recompute'
 
 /** Minimum touch target on a 32/36px kit button: a 44px+ hit area. */
 export const HIT = 'relative after:absolute after:-inset-1.5 after:content-[""]'
@@ -211,9 +212,30 @@ export function PreviewBox({ plan, ctx, children, remark, onRemarkChange }) {
               ))}
             </ul>
           )}
+          <NewIssues issues={plan.newIssues} t={t} />
         </div>
       )}
     </section>
+  )
+}
+
+/**
+ * What a correction leaves inconsistent (domain/recompute): never a reason
+ * to refuse it, a list of the entries to look at next.
+ */
+export function NewIssues({ issues, t, max = 6 }) {
+  if (!issues?.length) return null
+  const shown = issues.slice(0, max)
+  return (
+    <div className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2" data-testid="corrections-new-issues">
+      <p className="text-xs font-semibold text-amber-900">{tr(t, 'corrections.preview.checkAfter', 'Check after this correction')}</p>
+      <ul className="mt-1 space-y-0.5 list-disc pl-4">
+        {shown.map(i => <li key={i.sig} className="text-xs text-amber-900">{issueText(i, t)}</li>)}
+      </ul>
+      {issues.length > shown.length && (
+        <p className="mt-1 text-xs text-amber-800">{tr(t, 'corrections.preview.moreIssues', 'and {{n}} more (listed under "Check these entries")', { n: issues.length - shown.length })}</p>
+      )}
+    </div>
   )
 }
 

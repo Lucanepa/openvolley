@@ -395,7 +395,8 @@
       "invalidNumbers": "Invalid jersey numbers (must be 1-99): {{numbers}}",
       "playersWithoutNumbers": "{{count}} player(s) without jersey numbers",
       "fixIssues": "Please fix the following issues:\n\n• {{issues}}",
-      "completeBeforeCoinToss": "Please complete the following before proceeding to coin toss:\n\n• {{issues}}"
+      "completeBeforeCoinToss": "Please complete the following before proceeding to coin toss:\n\n• {{issues}}",
+      "numbersInRecord": "Ces numéros figurent dans le journal du match et ne peuvent pas être modifiés ou supprimés ici : {{numbers}}. Changez le numéro dans Corrections → Numéros des joueurs : il change alors pour tout le match."
     },
     "modals": {
       "syncing": "Synchronisation",
@@ -558,6 +559,7 @@
       }
     },
     "lastAction": "Dernière action :",
+    "rallyTapIgnored": "Non compté : pris pour un double appui",
     "keybindings": {
       "instruction": "Cliquez sur une touche pour la modifier. Appuyez sur la nouvelle touche à attribuer ou sur Echap pour annuler.",
       "pointLeftTeam": "Équipe point gauche",
@@ -1369,7 +1371,7 @@
     "showNamesOnCourt": "Afficher les noms sur la cour",
     "showNamesOnCourtInfo": "Afficher les noms de famille des joueurs sous les cercles de position du terrain",
     "autoDownloadAtSetEnd": "Téléchargement automatique des données à la fin du set",
-    "autoDownloadAtSetEndInfo": "Télécharger automatiquement les données du jeu lorsqu'une partie se termine pour les sauvegarder. En cas d'urgence, les données locales peuvent être utilisées pour restaurer le jeu.",
+    "autoDownloadAtSetEndInfo": "Lorsqu'une fin de set ne peut pas être envoyée dans le nuage (hors ligne, échec, ou mise de côté parce qu'un autre appareil tient le match), télécharger le match dans un fichier de sauvegarde ; avec une connexion lente, seulement si elle n'est toujours pas envoyée après 30 s. Avec ce fichier, « Restaurer le match » récupère le match.",
     "configureKeys": "Configuration des clés",
     "cloudBackup": "Sauvegarde dans le nuage",
     "restoreFromCloud": "Restauration à partir du nuage",
@@ -1631,8 +1633,15 @@
     "invalidEmail": "Veuillez saisir une adresse e-mail valide.",
     "matchRunning": "Un match est en cours en ce moment",
     "includeDiagnostics": "Joindre les diagnostics",
-    "diagnosticsHint": "Aide à trouver le problème. Seul ce qui est affiché ci-dessous est envoyé.",
+    "diagnosticsHint": "Ce qui a été fait dans l'app ces deux dernières heures, ses erreurs et le match ouvert. Sans mots de passe, PIN ni texte saisi. Aide à trouver le problème.",
     "diagnosticsPreview": "Diagnostics envoyés",
+    "showDiagnostics": "Afficher ce qui est envoyé",
+    "hideDiagnostics": "Masquer ce qui est envoyé",
+    "diagnosticsSize": "{{size}}, {{lines}} lignes",
+    "diagnosticsPreparing": "Préparation des diagnostics…",
+    "diagnosticsFailed": "Les diagnostics complets n'ont pas pu être préparés. Cette version courte est envoyée à la place.",
+    "downloadDiagnostics": "Télécharger les diagnostics",
+    "mailtoAttachDiagnostics": "Téléchargez les diagnostics et joignez le fichier à l'e-mail.",
     "offline": "Vous êtes hors ligne. Envoyez le message par e-mail, ou réessayez une fois en ligne.",
     "sendByEmail": "Envoyer plutôt par e-mail",
     "replyTo": "Les réponses arrivent à {{email}}.",
@@ -2507,13 +2516,13 @@
     },
     "manualAdjustments": {
       "q_editScores": "Comment corriger le score d'un set ?",
-      "a_editScores": "Dans la carte « Résultats des sets », appuyez sur « Corriger le score final ». Seule la fin d'un set peut changer : un point ajouté après le dernier point, ou le dernier point retiré. Les points oubliés au milieu d'un set ne peuvent pas être corrigés.",
+      "a_editScores": "Dans la carte « Résultats des sets », appuyez sur « Corriger le score final » : un point ajouté après le dernier point, ou le dernier point retiré. Dans « Avancé : journal des événements », n’importe quel point peut être donné à l’autre équipe ou supprimé ; le service, les rotations et le score qui suivent sont recalculés.",
       "tip_editScores": "Corrections : le score, les résultats des sets, les temps morts, les remplacements et les sanctions.",
       "q_editTeams": "Comment modifier les informations des équipes ?",
       "a_editTeams": "Ouvrez l'onglet « Équipes » pour changer les noms, les noms courts, les couleurs, les joueurs et les officiels du banc. L'onglet « Info match » contient la salle, la date et les officiels. Appuyez ensuite sur « Enregistrer les modifications ».",
       "tip_editTeams": "Équipes : noms, couleurs, joueurs et officiels du banc.",
       "q_editEvents": "Comment corriger un temps mort, un remplacement ou une sanction ?",
-      "a_editEvents": "Utilisez les cartes « Temps morts », « Remplacements » et « Sanctions ». Chacune a un bouton d'ajout, et chaque ligne a « Modifier » et « Supprimer ». Un aperçu montre ce qui change sur la feuille de match avant que vous confirmiez.",
+      "a_editEvents": "Utilisez les cartes « Temps morts », « Remplacements », « Sanctions », « Libéro » et « Formation », ou « Avancé : journal des événements » pour n’importe quelle entrée : chaque ligne a « Modifier » et « Supprimer ». Un aperçu montre ce qui change sur la feuille de match avant que vous confirmiez. Ce qui suit l’entrée est recalculé, et une entrée qui ne correspond plus est listée sous « Vérifier ces entrées ».",
       "tip_editEvents": "Ajoutez, modifiez ou supprimez ici les temps morts, les remplacements et les sanctions.",
       "q_saveChanges": "Comment sauvegarder mes modifications ?",
       "a_saveChanges": "Les corrections sont enregistrées une par une quand vous les confirmez. Les modifications dans « Équipes » et « Info match » sont enregistrées ensemble avec « Enregistrer les modifications » en haut. « Fermer » demande avant d'abandonner des modifications non enregistrées.",
@@ -2523,11 +2532,11 @@
       "q_missedPoint": "J'ai oublié un point pendant le set ?",
       "a_missedPoint": "Dans Match › Corrections, appuyez sur « Ajouter un point oublié » pour l'équipe. Il est ajouté au score actuel avec sa rotation et son service, comme avec le bouton de point. Si le dernier point est allé à la mauvaise équipe, appuyez sur « Le dernier point a été donné à la mauvaise équipe ».",
       "q_serveSidesLineup": "Comment corriger le service, les côtés ou la formation ?",
-      "a_serveSidesLineup": "Dans les corrections : « Changer qui sert en premier », « Changer de côté » et « Rouvrir le set ». « Corriger la formation » répare une rotation fausse : faites tourner l'équipe d'une position en avant ou en arrière.",
+      "a_serveSidesLineup": "Dans les corrections : « Changer qui sert en premier », « Changer de côté » et « Rouvrir le set », et la carte « Tirage au sort ». « Corriger la formation » change une formation de départ, même après des échanges joués ; « En avant » et « En arrière » font tourner une équipe décalée d’une position. Les rotations qui suivent sont recalculées.",
       "q_signaturesCleared": "Pourquoi les signatures ont-elles été effacées ?",
       "a_signaturesCleared": "Une correction qui change la feuille de match efface les signatures recueillies à la fin du match. Recueillez-les à nouveau. Un match approuvé est en lecture seule : rouvrez-le d'abord.",
       "q_editRoster": "Puis-je changer un effectif pendant le match ?",
-      "a_editRoster": "Oui : Match › Modifier la composition domicile ou Modifier la composition visiteur. Les changements faits après le tirage au sort sont notés dans les corrections et dans les remarques."
+      "a_editRoster": "Oui : Match › Modifier la composition domicile ou Modifier la composition visiteur. Les changements faits après le tirage au sort sont notés dans les corrections et dans les remarques. Un numéro changé là, ou dans Corrections › Numéros des joueurs, change pour tout le match : chaque entrée, avant comme après, affiche le nouveau numéro."
     },
     "moreHelp": "Plus d'aide",
     "contactSupport": "Contacter le support",
@@ -2555,7 +2564,7 @@
     },
     "scoring": {
       "q_doubleTap": "J'ai appuyé deux fois : pourquoi un seul point ?",
-      "a_doubleTap": "Juste après le changement de « Lancer l'échange » ou d'un bouton de point, l'app ignore les appuis sur ces boutons pendant 450 ms. Un double appui ou un doigt qui rebondit ne donne pas de deuxième point et ne lance pas de nouvel échange. Les touches du clavier agissent tout de suite. Les options proposent aussi « Vérifier démarrage accidentel » et « Vérifier point accidentel ».",
+      "a_doubleTap": "Sur « Lancer l'échange » et les boutons de point, un deuxième appui au même endroit moins de 450 ms après le précédent est pris pour un double appui et ignoré (« Non compté » s'affiche) : un double appui ou un doigt qui rebondit ne donne pas de deuxième point et ne lance pas de nouvel échange. Un appui visant l'autre bouton compte dès que celui-ci est visible. Les touches du clavier agissent tout de suite. Les options proposent aussi « Vérifier démarrage accidentel » et « Vérifier point accidentel ».",
       "q_serveRotation": "Où voir qui sert et la rotation ?",
       "a_serveRotation": "Le ballon marque l'équipe au service, et le terrain montre les positions I à VI de chaque équipe. L'app fait tourner une équipe quand elle reprend le service. Une rotation fausse se corrige dans Match › Corrections avec « Corriger la formation ».",
       "q_scoreDisplay": "Que montre l'affichage du score ?",
@@ -4019,7 +4028,8 @@
       "remarks": "Remarques",
       "remark": "Remarque",
       "set": "Set {{n}}",
-      "sanction": "Sanction"
+      "sanction": "Sanction",
+      "liberoShort": "L"
     },
     "describe": {
       "point": "Point pour {{team}}",
@@ -4075,7 +4085,11 @@
       "remarkRemoved": "Remarque supprimée : « {{text}} »",
       "missedPoint": "Ajouté : point oublié pour {{team}}",
       "firstServe": "Premier service changé pour {{team}}",
-      "sides": "Côtés changés au set {{set}}"
+      "sides": "Côtés changés au set {{set}}",
+      "lineupChanged": "Formation de {{team}} au set {{set}} modifiée : {{from}} → {{to}}",
+      "coinToss": "Tirage au sort corrigé : l’équipe A est {{teamA}}, {{serve}} sert en premier",
+      "set5CoinToss": "Tirage au sort du set décisif corrigé : {{serve}} sert en premier",
+      "renumbered": "Joueur/euse #{{from}} de {{team}} renuméroté/e en #{{to}}"
     },
     "error": {
       "noSuchScore": "Le set {{set}} n'a jamais eu ce score.",
@@ -4087,7 +4101,7 @@
       "choosePlayers": "Choisissez le/la joueur/euse qui sort et celui/celle qui entre.",
       "playerNotOnCourt": "À {{score}}, #{{n}} n’était pas sur le terrain.",
       "liberoOnCourt": "À {{score}}, #{{n}} était remplacé/e par le libéro #{{libero}}.",
-      "liberoNotSubstituted": "#{{n}} est libéro : un libéro n'est pas remplacé par un remplacement. Pour corriger un remplacement du libéro, utilisez Annuler.",
+      "liberoNotSubstituted": "#{{n}} est libéro : un libéro n'est pas remplacé par un remplacement. Corrigez le remplacement du libéro dans la carte « Libéro ».",
       "playerInOnCourt": "À {{score}}, #{{n}} était déjà sur le terrain.",
       "laterConflict": "#{{out}} ou #{{in}} participe à un remplacement ou un échange de libéro ultérieur dans ce set. Supprimez-le d’abord.",
       "noLaterOpponentPoint": "{{team}} n'a pas de point ultérieur au set {{set}} à marquer comme point de pénalité. Si le point n'a jamais été saisi, utilisez « Corriger le score final ».",
@@ -4107,7 +4121,18 @@
       "liberoOnCourtRotate": "Un libéro est sur le terrain pour cette équipe : faites la rotation après sa sortie.",
       "removePointNotLast": "Le point de pénalité ne peut être supprimé que s'il est le dernier point du set en cours.",
       "noScoreChange": "Rien à changer.",
-      "endBeforeStart": "Le set {{set}} ne peut pas finir avant d’avoir commencé."
+      "endBeforeStart": "Le set {{set}} ne peut pas finir avant d’avoir commencé.",
+      "useReopen": "Une fin de set se reprend avec « Rouvrir le set ».",
+      "automaticEntry": "Cette ligne est écrite par l’app et recalculée à partir des entrées : corrigez l’entrée à laquelle elle appartient.",
+      "coinTossNotRemovable": "Un match a toujours un tirage au sort : corrigez-le plutôt.",
+      "lineupIncomplete": "Choisissez un joueur pour chacune des six positions.",
+      "lineupDuplicate": "#{{n}} est choisi deux fois.",
+      "chooseNumber": "Choisissez un numéro.",
+      "numberTaken": "#{{n}} est déjà le numéro de {{name}} ({{team}}). Choisissez un autre numéro.",
+      "numberInRecord": "#{{n}} figure déjà dans le journal du match de {{team}}. Choisissez un autre numéro.",
+      "invalidNumber": "Un numéro de maillot est un nombre entier de 1 à 99.",
+      "sameNumber": "C’est déjà le numéro de ce joueur.",
+      "noSuchPlayer": "Ce joueur ne figure pas sur la liste."
     },
     "note": {
       "ladder": "Selon les règles, ce serait un/e {{expected}} ; enregistré selon la décision de l'arbitre.",
@@ -4120,7 +4145,14 @@
       "irBox": "La lettre de l'équipe {{letter}} est barrée (X) dans la case demande irrégulière ; aucun score n'est écrit.",
       "expulsionReplacement": "Saisissez le remplacement avec « + Ajouter un remplacement » (exceptionnel si aucun remplacement régulier n’était possible).",
       "laterRotations": "Les rotations ultérieures de ce set ne sont pas recalculées.",
-      "afterMatch": "Saisi après le match."
+      "afterMatch": "Saisi après le match.",
+      "timeoutLimit": "Les deux temps morts de cette équipe sont déjà enregistrés au set {{set}} : celui-ci est un troisième.",
+      "subLimit": "Six remplacements de cette équipe sont déjà enregistrés au set {{set}} : celui-ci est un septième.",
+      "subRule": "{{reason}}",
+      "winnerWouldChange": "Cela change le vainqueur du set {{set}}.",
+      "invalidFinalScore": "{{score}} n'est pas un score final possible du set {{set}}.",
+      "liberoInLineup": "#{{n}} est libéro : un libéro ne figure pas dans la formation de départ.",
+      "recalculated": "Tout ce qui suit est recalculé : rotations, service, remplacements de libéro et score."
     },
     "title": "Corrections",
     "pageTitle": "Corrections",
@@ -4139,7 +4171,10 @@
       "sanctions": "Sanctions",
       "libero": "Libéro",
       "log": "Journal des corrections (montré à l'arbitre)",
-      "advanced": "Avancé : journal des événements"
+      "advanced": "Avancé : journal des événements",
+      "issues": "Vérifier ces entrées",
+      "coinToss": "Tirage au sort",
+      "numbers": "Numéros des joueurs"
     },
     "add": {
       "timeout": "Ajouter un temps mort",
@@ -4155,7 +4190,8 @@
       "libero": "Aucun remplacement de libéro enregistré.",
       "log": "Aucune correction pour le moment.",
       "players": "Aucun/e joueur/euse à choisir.",
-      "sets": "Aucun set terminé."
+      "sets": "Aucun set terminé.",
+      "lineup": "Aucune formation enregistrée."
     },
     "field": {
       "set": "Set",
@@ -4173,7 +4209,21 @@
       "startTime": "Début",
       "endTime": "Fin",
       "currentFinal": "Actuellement",
-      "addDelayRemark": "Ajouter une remarque sur le début retardé"
+      "addDelayRemark": "Ajouter une remarque sur le début retardé",
+      "order": "Ordre",
+      "positions": "Positions (avant en haut)",
+      "pointTo": "Point pour",
+      "teamA": "Équipe A",
+      "firstServeSet5": "Sert en premier au set décisif",
+      "firstServe": "Sert en premier au set 1",
+      "gameCaptainNow": "Capitaine en jeu actuel : #{{n}}",
+      "gameCaptainNone": "Aucun capitaine en jeu désigné.",
+      "player": "Joueur/euse",
+      "newNumber": "Nouveau numéro",
+      "liberoIn": "Libéro entrant",
+      "playerReplaced": "Joueur/euse remplacé/e (sur le terrain)",
+      "libero": "Libéro",
+      "newLibero": "Nouveau libéro"
     },
     "who": {
       "player": "Joueur/euse sur le terrain",
@@ -4216,7 +4266,22 @@
       "addRemark": "Ajouter une remarque",
       "editRemark": "Modifier la remarque",
       "finalScore": "Set {{set}} : corriger le score final",
-      "setTimes": "Set {{set}} : heure de début et de fin"
+      "setTimes": "Set {{set}} : heure de début et de fin",
+      "editLineupRow": "Modifier la formation corrigée",
+      "editLineup": "Formation de départ",
+      "editPoint": "Modifier le point",
+      "set5CoinToss": "Tirage au sort du set décisif",
+      "coinToss": "Tirage au sort",
+      "gameCaptain": "Capitaine en jeu",
+      "renumber": "Changer le numéro d’un joueur",
+      "editLiberoEntry": "Modifier le remplacement de libéro",
+      "editLiberoExit": "Modifier la sortie du libéro",
+      "editLiberoExchange": "Modifier l’échange de libéros",
+      "editLiberoUnable": "Modifier le libéro déclaré inapte",
+      "editRedesignation": "Modifier la nouvelle désignation du libéro",
+      "editGameCaptain": "Modifier le capitaine en jeu",
+      "editInjury": "Modifier la blessure",
+      "editEntry": "Modifier l’entrée"
     },
     "action": {
       "back": "Retour",
@@ -4248,7 +4313,12 @@
       "correctFinalScore": "Corriger le score final",
       "setTimes": "Heures du set",
       "showAutomatic": "Afficher les entrées automatiques",
-      "reopenForCorrections": "Retour à la fin du match"
+      "reopenForCorrections": "Retour à la fin du match",
+      "newestFirst": "Plus récentes d'abord",
+      "oldestFirst": "Plus anciennes d'abord",
+      "editSet5Toss": "Modifier le set décisif",
+      "gameCaptain": "Changer le capitaine en jeu",
+      "renumber": "Changer un numéro"
     },
     "preview": {
       "title": "Ce qui change sur la feuille de match",
@@ -4261,7 +4331,12 @@
       "paperSub": "{{in}} pour {{out}} à {{score}} dans la colonne de la position {{position}}.",
       "subCount": "Remplacements de {{team}} au set {{set}} : {{n}}/6",
       "paperSanction": "{{code}} dans la colonne {{column}} · équipe {{letter}} · set {{set}} · {{score}}",
-      "finalScore": "Le score final {{before}} devient {{after}}."
+      "finalScore": "Le score final {{before}} devient {{after}}.",
+      "pointTeam": "L’échange après {{score}} va à {{team}} ; le service, les rotations et le score qui suivent sont recalculés.",
+      "renumber": "#{{from}} devient #{{to}} dans la liste et dans chaque entrée du match ({{n}} lignes), avant comme après : formations, remplacements, libéros, sanctions, capitaine en jeu, remarques. La feuille de match et les tablettes affichent #{{to}}.",
+      "renumberRosterOnly": "#{{from}} devient #{{to}} dans la liste ; le journal du match ne mentionne pas encore ce joueur.",
+      "checkAfter": "À vérifier après cette correction",
+      "moreIssues": "et {{n}} de plus (sous « Vérifier ces entrées »)"
     },
     "pointGiven": {
       "yes": "Oui",
@@ -4271,7 +4346,8 @@
       "exceptional": "Exceptionnel",
       "incomplete": "Entrée incomplète",
       "paperCode": "Comme sur la feuille de match",
-      "teamsNotSet": "Équipe A/B non définie : domicile affiché comme A"
+      "teamsNotSet": "Équipe A/B non définie : domicile affiché comme A",
+      "automatic": "Automatique"
     },
     "hint": {
       "timeoutHere": "temps mort déjà ici",
@@ -4282,7 +4358,13 @@
       "finalScore": "Seule la fin du set peut être corrigée : un point ajouté après le dernier point, ou le dernier point supprimé. Les points oubliés au milieu d'un set ne peuvent pas être corrigés (cours de marqueur Swiss Volley).",
       "libero": "Pour corriger un remplacement de libéro pendant le match, utilisez Annuler.",
       "lineup": "Corrigez la formation avant le premier échange du set ; faites tourner une équipe décalée d'une position.",
-      "advanced": "Toutes les entrées du journal du match. Supprimer une entrée supprime tout ce qui lui appartient. Ajoutez ou modifiez dans les cartes ci-dessus."
+      "advanced": "Toutes les entrées du journal du match. Supprimer une entrée supprime tout ce qui lui appartient. Ajoutez ou modifiez dans les cartes ci-dessus.",
+      "issues": "Après une correction, ces entrées ne correspondent plus à ce qui précède. Rien n’a été refusé : corrigez-les, ou laissez-les si l’arbitre l’a décidé ainsi.",
+      "lineupAny": "Corrigez une formation de départ à tout moment, même après des échanges joués : les rotations, le service et les remplacements de libéro qui suivent sont recalculés.",
+      "liberoEdit": "Modifiez ou supprimez un remplacement de libéro : les formations qui suivent sont recalculées.",
+      "numbers": "Un numéro changé ici l’est pour tout le match : chaque entrée, avant comme après, affiche le nouveau numéro, sur la feuille de match et sur les tablettes.",
+      "advancedAll": "Chaque entrée du journal du match. Modifiez ou supprimez n’importe quelle entrée : ce qui en fait partie suit, et tout ce qui vient après est recalculé. Ajoutez des entrées avec les cartes ci-dessus.",
+      "coinToss": "L’équipe A ne change que les lettres sur la feuille ; rien ne bouge sur le terrain. L’équipe qui sert en premier au set 1 sert aussi en premier au set 3 et reçoit en premier aux sets 2 et 4."
     },
     "confirm": {
       "removeTitle": "Supprimer cette entrée ?",
@@ -4301,6 +4383,42 @@
     "banner": {
       "signaturesCleared": "Les signatures ont été effacées car la feuille a changé. Recueillez-les à nouveau à la fin du match.",
       "readOnly": "Le match est approuvé : les corrections sont en lecture seule."
+    },
+    "coinToss": {
+      "summary": "Équipe A : {{teamA}} · Premier service au set 1 : {{serve}}",
+      "set5": "Set décisif : {{serve}} sert en premier"
+    },
+    "lineup": {
+      "gameCaptain": "Capitaine en jeu {{team}} : {{n}}"
+    },
+    "issue": {
+      "noLineup": "Set {{set}} : aucune formation de {{team}} n’est enregistrée avant son premier point.",
+      "lineupIncomplete": "Set {{set}} : la formation de départ de {{team}} n’a personne en position {{position}}.",
+      "lineupDuplicate": "Set {{set}}, {{score}} : #{{n}} figure deux fois dans la formation de {{team}}.",
+      "liberoInLineup": "Set {{set}} : le libéro #{{n}} est dans la formation de départ de {{team}}.",
+      "notOnRoster": "#{{n}} de {{team}} ne figure pas sur la liste (set {{set}}).",
+      "subOutNotOnCourt": "Set {{set}}, {{score}} : remplacement de {{team}}, #{{in}} pour #{{out}} : #{{out}} n’est pas sur le terrain.",
+      "subInOnCourt": "Set {{set}}, {{score}} : remplacement de {{team}}, #{{in}} pour #{{out}} : #{{in}} est déjà sur le terrain.",
+      "subLiberoReplaced": "Set {{set}}, {{score}} : remplacement de {{team}}, #{{in}} pour #{{out}} : #{{out}} est remplacé à ce moment par le libéro #{{libero}}.",
+      "subLimit": "Set {{set}}, {{score}} : {{team}} a {{n}} remplacements réguliers dans ce set (6 autorisés).",
+      "subInTwice": "Set {{set}}, {{score}} : #{{n}} de {{team}} entre une deuxième fois dans ce set.",
+      "subOutTwice": "Set {{set}}, {{score}} : #{{n}} de {{team}} sort une deuxième fois dans ce set.",
+      "subPairing": "Set {{set}}, {{score}} : #{{out}} de {{team}} est entré pour #{{starter}} : seul #{{starter}} peut remplacer #{{out}}.",
+      "liberoEntryNotOnCourt": "Set {{set}}, {{score}} : libéro #{{libero}} pour #{{n}} ({{team}}) : #{{n}} n’est pas sur le terrain.",
+      "liberoAlreadyOnCourt": "Set {{set}}, {{score}} : entrée du libéro #{{libero}} ({{team}}) : le libéro #{{other}} est déjà sur le terrain.",
+      "liberoFrontRow": "Set {{set}}, {{score}} : le libéro #{{libero}} remplace #{{n}} de {{team}} à l’avant (position {{position}}).",
+      "notALibero": "Set {{set}}, {{score}} : #{{n}} de {{team}} remplace comme libéro mais n’est pas libéro sur la liste.",
+      "liberoExitNone": "Set {{set}}, {{score}} : sortie de libéro de {{team}} : aucun libéro n’est sur le terrain.",
+      "liberoExchangeNone": "Set {{set}}, {{score}} : échange de libéros de {{team}} : aucun libéro n’est sur le terrain.",
+      "timeoutLimit": "Set {{set}}, {{score}} : {{team}} a {{n}} temps morts dans ce set (2 autorisés).",
+      "sanctionLadder": "Set {{set}}, {{score}} : {{what}} de {{team}} : selon les règles, c’est un/e {{expected}}.",
+      "sameSanctionTwice": "Set {{set}}, {{score}} : {{what}} de {{team}} : cette personne a déjà cette sanction.",
+      "teamAlreadyWarned": "Set {{set}}, {{score}} : {{what}} de {{team}} : l’équipe a déjà été avertie.",
+      "pointsAfterWin": "Le set {{set}} était déjà gagné à {{score}} ; {{n}} point(s) suivent encore.",
+      "setScoreInvalid": "Le set {{set}} s’est terminé {{score}} : ce n’est pas un score final possible.",
+      "setWinnerChanged": "Le set {{set}} est maintenant gagné par {{team}} ({{score}}).",
+      "matchNotDecided": "Le match est terminé mais aucune équipe n’a gagné {{n}} sets ({{result}}).",
+      "setsAfterMatchWon": "Le set {{set}} est joué alors que le match était déjà gagné ({{result}})."
     }
   },
   "picker": {

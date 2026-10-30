@@ -249,7 +249,10 @@ The app is prepared for f-droid.org, which builds it from source itself:
   a silent no-op).
 - **Swiping the app away** in the recent apps cannot be prevented by any app
   (an Android rule; it also gets no reliable callback). The match is in
-  IndexedDB and the automatic backups, so it continues on the next start. On
+  IndexedDB and the automatic backups, so it continues on the next start:
+  going to the background writes the match's last backup file at once
+  (Capacitor's `pause`, or the page going hidden), so it is on disk before a
+  swipe can end the app. On
   a dedicated scorer tablet use Android's **App pinning** (Settings ›
   Security › App pinning, then pin OpenVolley from the recent apps): Home,
   Recents and swiping away are blocked until it is unpinned. (The

@@ -257,12 +257,13 @@ export function createNativeBackupEngine({
     }
   }
 
-  function start() {
+  // now: the app is going away (flush({ writesOnly })), no idle moment to wait for
+  function start({ now = false } = {}) {
     timer = null
     if (running) return
     batchStart = null
     running = (async () => {
-      await nextIdle() // the scorer's own work first
+      if (!now) await nextIdle() // the scorer's own work first
       await drain()
     })().finally(() => {
       running = null
@@ -300,8 +301,9 @@ export function createNativeBackupEngine({
     /**
      * Resolves once every queued backup is written and the rotation is done
      * (tests). writesOnly: once the queued backups are written, without
-     * waiting for the rotation of older folders (the app quitting,
-     * flushNativeBackups).
+     * waiting for the rotation of older folders (the app quitting or, on
+     * Android, going to the background: flushNativeBackups). Those start at
+     * once, not at the end of their quiet window: the app may be gone by then.
      */
     async flush({ writesOnly = false } = {}) {
       if (!writesOnly) {
@@ -309,7 +311,12 @@ export function createNativeBackupEngine({
         return
       }
       if (!timer && !running && !pending.size) return
-      await new Promise(resolve => writeWaiters.push(resolve))
+      const written = new Promise(resolve => writeWaiters.push(resolve))
+      if (timer) {
+        clearTimeout(timer)
+        start({ now: true })
+      }
+      await written
     },
     getStatus: () => status,
     subscribe(listener) {

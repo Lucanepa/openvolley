@@ -14,11 +14,21 @@
  *   (the backend makes the ticket P1). The dialog ticks it by itself while
  *   this device scores an official match in progress (isScoringMatchHere);
  *   the user can untick it, or tick it for any other match.
- * - diagnostics: only when the user ticks "Include diagnostics", and exactly
- *   what the dialog shows: app version, platform, display mode, screen size,
- *   online state, the open match's game number, and the last 20 console
- *   errors of the logger's buffer (utils/logger.js keeps them in the scorer
- *   app) with PIN-like numbers and URL queries removed.
+ * - diagnosticsReport: only when "Include diagnostics" is ticked (pre-ticked
+ *   for support, unticked for feedback and requests), and exactly what the
+ *   dialog's "Show what is sent" shows: the text report of
+ *   utils/diagnosticsReport.js (summary, the open match, the timeline of the
+ *   last two hours from the activity and interaction logs, the app's errors),
+ *   sent as the multipart part `diagnosticsFile`
+ *   (openvolley-diagnostics-<date>[-g<game>].txt, at most 2 MB, not one of
+ *   the 5 user files). When sending fails, "Download diagnostics" saves the
+ *   same file for the email (downloadDiagnosticsFile).
+ * - diagnostics: the short JSON of collectDiagnostics (app version, platform,
+ *   display mode, screen size, online state, the open match's game number,
+ *   the last 20 console errors with PIN-like numbers and URL queries
+ *   removed): the field of the app versions before the report, still read by
+ *   the backend; the dialog sends it only when the report could not be made,
+ *   and the mailto puts it in the email's text.
  */
 import { appVersion, platformName } from './identity'
 import { getActiveMatch } from './activity/activeMatch'
@@ -191,8 +201,31 @@ export function buildContactForm(v) {
   fd.append('userAgent', (typeof navigator !== 'undefined' && navigator.userAgent) || '')
   fd.append('timestamp', (v.now || new Date()).toISOString())
   if (v.diagnostics) fd.append('diagnostics', JSON.stringify(v.diagnostics))
+  if (v.diagnosticsReport?.text) fd.append('diagnosticsFile', diagnosticsBlob(v.diagnosticsReport), v.diagnosticsReport.fileName)
   for (const file of v.files || []) fd.append('files', file, file.name)
   return fd
+}
+
+/** The report as the file that is sent (UTF-8 text). */
+export function diagnosticsBlob(report) {
+  return new Blob([report.text], { type: 'text/plain;charset=utf-8' })
+}
+
+/**
+ * "Download diagnostics": the report as a file to attach to the email by
+ * hand (the mailto cannot carry it). Returns the file name, or null.
+ */
+export function downloadDiagnosticsFile(report, win = typeof window !== 'undefined' ? window : undefined) {
+  if (!report?.text || !win?.document) return null
+  const url = win.URL.createObjectURL(diagnosticsBlob(report))
+  const a = win.document.createElement('a')
+  a.href = url
+  a.download = report.fileName
+  win.document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => { try { win.URL.revokeObjectURL(url) } catch { /* gone */ } }, 1000)
+  return report.fileName
 }
 
 /**
@@ -214,6 +247,7 @@ export function contactMailto(v, labels = {}) {
     'Comments:',
     v.comments,
     v.diagnostics ? `\nDiagnostics: ${JSON.stringify(v.diagnostics)}` : null,
+    v.diagnosticsReport?.fileName ? `\nDiagnostics file to attach: ${v.diagnosticsReport.fileName} (Download diagnostics in the app)` : null,
     v.files?.length ? `\n${v.files.length} file(s) to attach: ${v.files.map((f) => f.name).join(', ')}` : null
   ].filter((l) => l !== null)
   return `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(lines.join('\n'))}`

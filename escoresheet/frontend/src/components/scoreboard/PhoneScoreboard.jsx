@@ -5,6 +5,7 @@ import { ActionSheet } from '../../ui/Modal.jsx'
 import { COURT_SURFACE, HEADER_SURFACE, normaliseColour, teamBoxStyle, teamTextPaint } from '../../utils/teamColours'
 import { COURT_CELLS, PHONE_COUNTER_HEIGHT_PX, PHONE_COURT_MIN_PX, PHONE_RECENT_MIN_PX, PHONE_SQUARE_MIN_PX, PHONE_SQUARE_RESERVE_PX, POSITIONS, officialRoleShort, recentLinesFor, tintOf } from './phoneLayout'
 import { captainRingStyle } from './captainRing'
+import RallyTapNotice from './RallyTapNotice'
 
 /**
  * The scoring screen on a phone held upright (owner-approved mockup, 390x844).
@@ -350,9 +351,10 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
         type="button"
         data-help-id="scoreboard-start-rally"
         disabled={rally.startDisabled}
-        // No click event in: the screen's handler asks first when a point was
-        // just awarded (accidental rally start check), as the desktop does
-        onClick={() => actions.startRally()}
+        // The click event in for the double-tap guard (useRallyTapGuard); the
+        // screen's handler still asks first when a point was just awarded
+        // (accidental rally start check), as the desktop does
+        onClick={(e) => actions.startRally(e)}
         style={{ ...bigButton, flex: 1, fontSize: 24, fontWeight: 800, borderRadius: 16, background: rally.startDisabled ? 'var(--ov-sunken-strong)' : 'var(--ov-selected)', color: rally.startDisabled ? 'var(--ov-text-faint)' : 'var(--ov-on-dark)' }}
       >
         {rally.isFirstRally ? t('scoreboard.buttons.startSet') : t('scoreboard.buttons.startRally')}
@@ -372,7 +374,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
       type="button"
       data-help-id={`scoreboard-point-${team.side}`}
       aria-label={t('scoreboard.buttons.pointTeam', { team: team.label })}
-      onClick={() => actions.point(team.side)}
+      onClick={(e) => actions.point(team.side, e)}
       className={squareClass}
       style={{ minWidth: 0, borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', ...paint[team.side].fill }}
     >
@@ -443,7 +445,8 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
         {teamActions(right)}
       </section>
 
-      <section aria-label={t('scoreboard.phone.pointButtons')} style={{ flex: 'none', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, padding: '0 12px 8px' }}>
+      <section aria-label={t('scoreboard.phone.pointButtons')} style={{ flex: 'none', position: 'relative', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, padding: '0 12px 8px' }}>
+        <RallyTapNotice id={rally.tapNotice} />
         {inPlay && !centre ? (
           <>{pointButton(left)}{pointButton(right)}</>
         ) : (

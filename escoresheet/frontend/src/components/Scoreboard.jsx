@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAlert } from '../contexts/AlertContext'
 import { useLiveQuery } from 'dexie-react-hooks'
 import Dexie from 'dexie'
 import { db } from '../db/db'
-import { queueMatchUpdate } from '../db/matchRepository'
+import { queueMatchUpdate, toCloudPlayers } from '../db/matchRepository'
 import { withActivityContext, currentActivityContext, maxVoidedSeq, rememberSeedKey } from '../db/eventHistory'
 import Modal from './Modal'
 import RostersPanel from './rosters/RostersPanel'
@@ -58,13 +58,18 @@ import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet
 import { resolveSanction, isDelaySanction, deriveTeamSanctionFlags, deferredPenaltyPoints, penaltyOfPoint } from '../domain/sanctions'
 import { classifyTimeoutRequest } from '../domain/timeouts'
 import { rallyStatusOf, currentSetOf } from '../domain/rally'
-import { useConfirmAction, GHOST_CLICK_MS } from '../hooks/useConfirmAction'
+import { useConfirmAction } from '../hooks/useConfirmAction'
+import { useRallyTapGuard } from '../hooks/useRallyTapGuard'
+import RallyTapNotice, { RALLY_TAP_NOTICE_MS } from './scoreboard/RallyTapNotice'
+import { diag } from '../diagnostics/recorder'
 import { countdownAnchor, secondsLeft } from '../utils/countdownClock'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
 import { playerReplacedByLibero } from '../domain/liberos'
 import { planSubstitutionDeletion, countRegularSubstitutions, classifySubstitutionRequest, MAX_SUBSTITUTIONS_PER_SET } from '../domain/substitutions'
 import { decisionChangeUndoRecord, planDecisionChangeReversal, planPointRemoval, syncJobsForEvents, syncJobsForSets, scoreAfterUndo } from '../domain/corrections'
-import { validateReopenedRoster, referencedPlayerNumbers, renumberPlayerInEvents, isShirtNumber } from '../domain/roster'
+import { validateReopenedRoster, referencedPlayerNumbers, isShirtNumber } from '../domain/roster'
+import { planRenumberPlayers, errorText as correctionErrorText } from '../domain/manualCorrections'
+import { applyCorrectionPlan } from '../services/corrections/applyCorrectionPlan'
 import { appendRemark, removeRemarkLine, eventRemark, remarkClock, setActualStartRemark } from '../domain/remarks'
 import { LINEUP_POSITIONS, lineupEntryErrors, lineupCandidates, lineupCaptainStatus, teamCaptainNumber, gameCaptainOptions, initialGameCaptainChoice, lineupGameCaptainDecision } from '../domain/lineupEntry'
 import { easyLiberoNumbers, easyLiberoErrors, easyRosterChanges, liberoSlotEditable, MAX_LIBEROS, easyPlayerRow, newPlayerMayEnter, newPlayerError, NEW_PLAYER_ERRORS, easyReferencedNumbers, isEasyStray } from '../domain/easyMatch'
@@ -73,7 +78,7 @@ import CorrectionsPanel from './corrections/CorrectionsPanel.jsx'
 import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon, forfeitScope, playersAvailableForNextSet, planForfeitReversal } from '../domain/matchEnd'
 import { signaturesPayload } from '../domain/signatureEdits'
 import { savedSidesOfRegularSets } from '../domain/coinToss'
-import { liveStateNeedsFreshSnapshot } from '../utils/livescoreModel'
+import { liveStateNeedsFreshSnapshot, correctionAfter } from '../utils/livescoreModel'
 import { displaySetNumber, setsWonWithFinishedSet, finishedSetMissingFromSnapshot } from '../utils/matchFormat'
 import { TimeInput24 } from './TimeInput24'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
@@ -913,6 +918,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // reload keeps and no other tab reads), that it held the lock, and the
   // page after the reload steals it. "Score in this tab" steals it too: the
   // other tab goes to "already open" and waits.
+  // A page on its way out never asks again, and a refused request is asked
+  // again in a later task, never from its own rejection: WebKit (the desktop
+  // app on Linux and macOS, Safari) rejects the held lock while it unloads
+  // the page and then refuses every new request at once, so asking again
+  // from the rejection looped in microtasks for good. The page froze before
+  // the reload could show anything, still showing the old screen (29.10.2026:
+  // the desktop app's update reload on the scoring screen, 3.0.5 to 3.0.6).
   const takeOverScoringRef = useRef(null)
   useEffect(() => {
     if (!matchId) return
@@ -922,30 +934,43 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     let current = 0 // the request that counts: a take-over replaces a queued one
     let abort = null
     let busy = null
+    let retry = null
     let release = null
     let unmounted = false
+    let leaving = false // pagehide: the page is unloading or going into the back-forward cache
+    let askedAt = 0
+    let refusals = 0 // refused at once, in a row: asked again later each time
     const request = (steal) => {
       const id = ++current
       clearTimeout(busy)
+      clearTimeout(retry)
       if (abort) abort.abort()
       // (a steal takes no signal: it never waits)
       abort = steal ? null : new AbortController()
       // Queued, not ifAvailable: the screen remounting in this tab (React's
       // development double mount) frees the lock a moment after asking again
       busy = steal ? null : setTimeout(() => setDuplicateTabError(true), 1000)
+      askedAt = Date.now()
       navigator.locks.request(lockName, steal ? { steal: true } : { signal: abort.signal }, () => {
         // granted just after the screen unmounted, or replaced: hand it straight back
         if (unmounted || id !== current) return undefined
         clearTimeout(busy)
+        refusals = 0
         setDuplicateTabError(false)
         return new Promise(resolve => { release = resolve })
       }).catch(() => {
-        // aborted (the screen unmounted, a take-over replaced it), or stolen
-        // by another tab's take-over: "already open", and wait again
+        // aborted (the screen unmounted, a take-over replaced it), stolen by
+        // another tab's take-over, or the page unloading: "already open", and
+        // wait again unless the page is going away
         if (unmounted || id !== current) return
         release = null
+        if (leaving) return
         setDuplicateTabError(true)
-        request(false)
+        refusals = Date.now() - askedAt < 100 ? refusals + 1 : 0
+        const delay = refusals ? Math.min(2000, 50 * 2 ** Math.min(refusals - 1, 6)) : 0
+        retry = setTimeout(() => {
+          if (!unmounted && !leaving && id === current) request(false)
+        }, delay)
       })
     }
     let reloaded = false
@@ -958,13 +983,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     takeOverScoringRef.current = () => request(true)
     const noteReload = () => {
       try { if (release) sessionStorage.setItem(reloadKey, String(Date.now())) } catch { /* ignore */ }
+      leaving = true
+    }
+    // Back from the back-forward cache: the page was hidden, not unloaded;
+    // ask again if the lock went while it was away
+    const onPageShow = (event) => {
+      if (!event.persisted || !leaving) return
+      leaving = false
+      if (!release) request(false)
     }
     window.addEventListener('pagehide', noteReload)
+    window.addEventListener('pageshow', onPageShow)
     return () => {
       unmounted = true
       takeOverScoringRef.current = null
       window.removeEventListener('pagehide', noteReload)
+      window.removeEventListener('pageshow', onPageShow)
       clearTimeout(busy)
+      clearTimeout(retry)
       if (abort) abort.abort()
       if (release) release()
     }
@@ -2319,7 +2355,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           // other way round than the match now ("Swap A/B" made since: its
           // A/B fields and the sides read from the match would not agree)
           const swappedSince = !!snapshot?.teamAKey && snapshot.teamAKey !== (match?.coinTossTeamA || 'home')
-          if (!snapshot || snapshot.currentSetIndex === undefined || swappedSince) {
+          // A correction since that event (Corrections recalculates the
+          // line-ups after the entry it corrects, renumbers players): its
+          // snapshot shows the court before the correction
+          const correctedSince = correctionAfter(match?.manualChanges, lastEvent?.ts)
+          if (!snapshot || snapshot.currentSetIndex === undefined || swappedSince || correctedSince) {
             const result = await captureFullStateSnapshot()
             snapshot = result?.snapshot || null
           }
@@ -3180,27 +3220,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // Start rally and Point A | Point B take turns in the same place (and the
   // phone's rally buttons theirs): the second tap of a double tap, a finger
   // bouncing or a tablet registering one tap twice, landed on the button that
-  // had just replaced the first one. A double tap on Start rally gave the
-  // rally to the team under the finger, a triple tap on Point B gave one
-  // rally two points (stress test 2026-10-25, every tap 40 to 250 ms apart).
-  // For GHOST_CLICK_MS after the buttons change (drawn: a layout effect,
-  // before the next tap can reach them), a tap on them is the end of the tap
-  // that changed them, as after a confirm (useConfirmAction): a rally never
-  // ends that soon after its start, nor starts that soon after its point. Not
-  // when the screen first shows them, and not their keys: a key does not
-  // bounce, and a keyboard scorer pressing Enter at the whistle and A a moment
-  // later lost the point. Monotonic clock: a device clock set back must not
-  // hold them.
-  const rallyButtonsRef = useRef({ status: null, changedAt: -Infinity })
-  useLayoutEffect(() => {
-    const buttons = rallyButtonsRef.current
-    if (buttons.status !== null && buttons.status !== rallyStatus) buttons.changedAt = performance.now()
-    buttons.status = rallyStatus
-  }, [rallyStatus])
-  const rallyButtonsJustShown = useCallback(
-    () => performance.now() - rallyButtonsRef.current.changedAt < GHOST_CLICK_MS,
-    []
-  )
+  // had just replaced the first one (stress test 2026-10-25). A tap on them is
+  // judged by its press and where it landed (useRallyTapGuard): at the place
+  // of the tap before it and within GHOST_CLICK_MS, it is the end of that
+  // tap; a tap aimed at the new button counts once the scorer can have seen
+  // it (a quick scorer's Point right after Start rally was dropped: owner,
+  // 2026-10-29). Not their keys: a key does not bounce, and a keyboard scorer
+  // pressing Enter at the whistle and A a moment later lost the point.
+  const checkRallyTap = useRallyTapGuard(rallyStatus)
 
   // The rally of the set being played, read from the database (inside an
   // action: its transaction). A tap is checked against it, not against the
@@ -4581,9 +4608,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       return
     }
 
-    // Log each change to manualChanges (persisted to IndexedDB + Supabase)
-    for (const change of changes) {
-      logManualChange(change.category, change.field, change.before, change.after, change.description)
+    // Log every change to manualChanges (IndexedDB + cloud) in one write on a
+    // fresh read: logManualChange per change appended each one to the same
+    // render-time list, so only the last change of a save was kept
+    {
+      const now = new Date().toISOString()
+      const entries = changes.map(c => ({ ts: now, category: c.category, field: c.field, before: c.before, after: c.after, description: c.description }))
+      const fresh = await db.matches.get(matchId)
+      const manualChanges = [...(fresh?.manualChanges || []), ...entries]
+      await db.matches.update(matchId, { manualChanges })
+      await queueMatchUpdate(db, fresh?.seed_key, { manual_changes: manualChanges }, { test: fresh?.test === true })
+      deferUi(() => setManualChangesLog(prev => [...prev, ...entries]))
     }
 
     // Build remarks summary and append
@@ -4595,6 +4630,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // Persist player changes to IndexedDB
     const existingPlayerIds = new Set(snapshotPlayers.map(p => p.id))
     const editedPlayerIds = new Set(editedPlayers.filter(p => p.id).map(p => p.id))
+    // A renumbered player's new number is written with the renumbered record
+    // below (applyCorrectionPlan: the roster row and every entry in one
+    // transaction). Written here first, a failure in between left the roster
+    // at the new number and the record at the old one: a player without history
+    const renumberedFrom = new Map((renumbers || [])
+      .map(r => [snapshotPlayers.find(p => String(p.number) === String(r.from))?.id, r.from])
+      .filter(([id]) => id != null))
 
     // Delete removed players
     for (const orig of snapshotPlayers) {
@@ -4608,7 +4650,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if (player.id && existingPlayerIds.has(player.id)) {
         // Update existing
         await db.players.update(player.id, {
-          number: player.number,
+          number: renumberedFrom.has(player.id) ? (snapshotPlayers.find(p => p.id === player.id)?.number ?? player.number) : player.number,
           name: `${player.lastName || ''} ${player.firstName || ''}`.trim(),
           firstName: player.firstName,
           lastName: player.lastName,
@@ -4635,36 +4677,50 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
     }
 
-    // A renumbered player keeps their history: rewrite the numbers in that
-    // team's events, and in the court captain designation on the match
-    const renumberMatchUpdate = {}
-    if (renumbers?.length) {
-      const teamEvents = await db.events.where('matchId').equals(matchId).toArray()
-      await withActivityContext({ reason: 'roster_reopen' }, async () => {
-        for (const { id, payload } of renumberPlayerInEvents(teamEvents, teamKey, renumbers)) {
-          await db.events.update(id, { payload })
-        }
-      })
-      const matchNow = await db.matches.get(matchId)
-      const courtCaptainField = teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
-      const renumbered = renumbers.find(r => String(r.from) === String(matchNow?.[courtCaptainField]))
-      if (renumbered) {
-        renumberMatchUpdate[courtCaptainField] = typeof matchNow[courtCaptainField] === 'number' ? Number(renumbered.to) : renumbered.to
-      }
-    }
-
     // Persist bench officials
     const benchField = teamKey === 'home' ? 'bench_home' : 'bench_away'
     const freshMatch = await db.matches.get(matchId)
     await db.matches.update(matchId, {
       [benchField]: editedBench,
-      ...renumberMatchUpdate,
       remarks: appendRemark(freshMatch?.remarks || '', remarkBlock)
     })
 
+    // A renumbered player keeps their history, for the whole match: one
+    // correction (domain/manualCorrections planRenumberPlayers) rewrites every
+    // reference of that team's record (line-ups, substitutions, liberos,
+    // sanctions, game captains, injuries, remark lines, snapshots), the game
+    // captain on the match, the roster row and the cloud roster, logged
+    // "Player #7 of … renumbered to #17" for the referee
+    if (renumbers?.length) {
+      const allEvents = await db.events.where('matchId').equals(matchId).toArray()
+      const matchNow = await db.matches.get(matchId)
+      const plan = planRenumberPlayers(allEvents, {
+        team: teamKey,
+        renumbers: renumbers.map(r => ({ ...r, playerId: snapshotPlayers.find(p => String(p.number) === String(r.from))?.id ?? null }))
+      }, {
+        t, match: matchNow, homeTeam: data?.homeTeam, awayTeam: data?.awayTeam, matchId, mode: 'live',
+        players: { home: teamKey === 'home' ? snapshotPlayers : (data?.homePlayers || []), away: teamKey === 'away' ? snapshotPlayers : (data?.awayPlayers || []) }
+      })
+      if (plan.error) showAlert(correctionErrorText(plan, t), 'error')
+      else await applyCorrectionPlan(plan, { matchId, db, mode: 'live' })
+    }
+    // The team's roster to the cloud (names, liberos, captain, numbers): the
+    // tablets' cloud fallback and a hand-over read it from there
+    {
+      const teamId = teamKey === 'home' ? data?.match?.homeTeamId : data?.match?.awayTeamId
+      const m = await db.matches.get(matchId)
+      if (teamId != null && m?.seed_key) {
+        const roster = await db.players.where('teamId').equals(teamId).sortBy('number')
+        await queueMatchUpdate(db, m.seed_key, { [teamKey === 'home' ? 'players_home' : 'players_away']: toCloudPlayers(roster) }, { test: m.test === true })
+      }
+    }
+    notifyScoresheetUpdate('roster_reopen')
+    syncToReferee()
+    syncLiveStateToSupabase('manual_roster', null, null)
+
     showAlert(t('scoreboard.reopenRoster.savedSuccess', { count: changes.length }), 'success')
     setReopenRosterTeam(null)
-  }, [matchId, data?.homeTeam, data?.awayTeam, data?.set, data?.match?.homeTeamId, data?.match?.awayTeamId, data?.events, logManualChange, diffRosters, showAlert, t])
+  }, [matchId, data?.homeTeam, data?.awayTeam, data?.set, data?.match?.homeTeamId, data?.match?.awayTeamId, data?.events, data?.homePlayers, data?.awayPlayers, diffRosters, showAlert, t, deferUi, notifyScoresheetUpdate, syncToReferee, syncLiveStateToSupabase])
 
   // Log one event: the event, its state snapshot and its cloud sync job are
   // written in one transaction (runAction). Called inside a scorer action it
@@ -5848,24 +5904,38 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }), [logEvent, isFirstRally, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, data?.match, matchId, getNextSubSeq, syncToReferee, checkAccidentalRallyStart, accidentalRallyStartDuration, runAction, deferUi, readRallyStatus])
 
   // A tap on the rally buttons (Start rally, Point A | Point B), on every
-  // layout: none the moment they changed (rallyButtonsJustShown), that is the
-  // second tap of the one that changed them. Their keys call the handlers
-  // themselves (no bounce to drop), as do the accidental-start and
-  // accidental-point questions' Yes.
-  const tapStartRally = useCallback(() => {
-    if (rallyButtonsJustShown()) {
-      console.warn('[Scoreboard] Start rally tap as the rally buttons changed (a double tap): ignored')
+  // layout, with its click event: none that is the end of the tap before it
+  // (checkRallyTap: a double tap, a bounce), and the scorer sees that it did
+  // nothing ("Not counted", RallyTapNotice) instead of tapping again unsure.
+  // Their keys call the handlers themselves (no bounce to drop), as do the
+  // accidental-start and accidental-point questions' Yes.
+  const [rallyTapNotice, setRallyTapNotice] = useState(0)
+  const rallyTapNoticeTimerRef = useRef(null)
+  useEffect(() => () => clearTimeout(rallyTapNoticeTimerRef.current), [])
+  const ignoreRallyTap = useCallback((what, check) => {
+    console.warn(`[Scoreboard] ${what} tap ignored (${check.verdict}): ${check.sinceChangeMs ?? '-'} ms after the rally buttons changed, ${check.sincePreviousMs ?? '-'} ms and ${check.distancePx ?? '?'} px from the press before`)
+    diag('rally.tap_ignored', { what, ...check })
+    setRallyTapNotice(n => n + 1)
+    clearTimeout(rallyTapNoticeTimerRef.current)
+    rallyTapNoticeTimerRef.current = setTimeout(() => setRallyTapNotice(0), RALLY_TAP_NOTICE_MS)
+  }, [])
+  const tapStartRally = useCallback((event) => {
+    const check = checkRallyTap(event)
+    if (check.verdict) {
+      ignoreRallyTap('Start rally', check)
       return
     }
+    // no event in: only the literal true skips the accidental rally start check
     settleTap(handleStartRally())
-  }, [handleStartRally, rallyButtonsJustShown])
-  const tapPoint = useCallback((side) => {
-    if (rallyButtonsJustShown()) {
-      console.warn('[Scoreboard] Point tap as the rally buttons changed (a double tap): ignored')
+  }, [handleStartRally, checkRallyTap, ignoreRallyTap])
+  const tapPoint = useCallback((side, event) => {
+    const check = checkRallyTap(event)
+    if (check.verdict) {
+      ignoreRallyTap('Point', check)
       return
     }
     settleTap(handlePoint(side, false, { tap: true }))
-  }, [handlePoint, rallyButtonsJustShown])
+  }, [handlePoint, checkRallyTap, ignoreRallyTap])
 
   const handleReplay = useCallback(async () => {
     // During rally: ask first, confirmReplay logs the replay event (no point to undo)
@@ -13257,7 +13327,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         isFirstRally,
         startDisabled: isFirstRally && !lineupsOptional && (!leftTeamLineupSet || !rightTeamLineupSet),
         canReplayRally,
-        isRallyReplayed
+        isRallyReplayed,
+        // "Not counted" (RallyTapNotice): > 0 while shown
+        tapNotice: rallyTapNotice
       },
       centre,
       recent: recentActions(data?.events, data?.set?.index, getShortActionDescription, PHONE_RECENT_MAX_LINES),
@@ -13267,8 +13339,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       actions: {
         undo: showUndoConfirm,
         menu: () => setMenuModal(true),
-        point: (side) => tapPoint(side),
-        startRally: () => tapStartRally(),
+        point: (side, event) => tapPoint(side, event),
+        startRally: (event) => tapStartRally(event),
         timeout: (side) => handleTimeout(side),
         openLineup: (side) => setLineupModal({ team: mapSideToTeamKey(side), mode: 'initial' }),
         playerClick: handlePlayerClick,
@@ -16945,6 +17017,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   // and out of reach, so the box keeps their size: the countdown block is
                   // a few px shorter, and the court moved for the whole time-out
                   <div className="rally-stack">
+                    <RallyTapNotice id={rallyTapNotice} />
                     {timeoutModal?.started && (
                   <div className="rally-stack-layer">
                     <div style={{
@@ -17001,7 +17074,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       <button
                         data-help-id="scoreboard-start-rally"
                         className="secondary start-rally-button"
-                        onClick={() => tapStartRally()}
+                        onClick={(e) => tapStartRally(e)}
                         disabled={isFirstRally && !lineupsOptional && (!leftTeamLineupSet || !rightTeamLineupSet)}
                       >
                         {isFirstRally ? t('scoreboard.buttons.startSet') : t('scoreboard.buttons.startRally')}
@@ -17009,10 +17082,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     ) : (
                       <>
                         <div className="rally-controls-row">
-                          <button data-help-id="scoreboard-point-left" className="rally-point-button" onClick={() => tapPoint('left')}>
+                          <button data-help-id="scoreboard-point-left" className="rally-point-button" onClick={(e) => tapPoint('left', e)}>
                             {t('scoreboard.buttons.pointTeam', { team: teamALabel })}
                           </button>
-                          <button data-help-id="scoreboard-point-right" className="rally-point-button" onClick={() => tapPoint('right')}>
+                          <button data-help-id="scoreboard-point-right" className="rally-point-button" onClick={(e) => tapPoint('right', e)}>
                             {t('scoreboard.buttons.pointTeam', { team: teamBLabel })}
                           </button>
                         </div>
@@ -20770,12 +20843,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       const newRemarks = currentRemarks ? `${currentRemarks}\n${remark}` : remark
                       await db.matches.update(matchId, { remarks: newRemarks })
 
-                      // Log as event so we can track and show red cross
+                      // Log as event so we can track and show red cross. It
+                      // carries its remark line (autoRemark), as every entry
+                      // that writes one: Undo takes the line out with it, a
+                      // correction or a renumbered player rewrites it
                       if (logEventRef.current) {
                         await logEventRef.current('bench_injury', {
                           team,
                           playerNumber,
-                          setIndex
+                          setIndex,
+                          autoRemark: remark
                         })
                       }
 

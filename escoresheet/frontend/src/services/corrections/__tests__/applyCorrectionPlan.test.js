@@ -9,8 +9,13 @@ import { applyCorrectionPlan, CORRECTION_REASON } from '../applyCorrectionPlan'
 import { eventHistorySettled } from '../../../db/eventHistory'
 import { LOCAL_ONLY_EVENT_TYPES } from '../../../domain/eventRevisions'
 import {
-  scoreTimeline, planAddTimeout, planAddSanction, planAdjustFinalScore, planRemoveGroup, planAddSubstitution, courtAt
+  scoreTimeline, planAddTimeout, planAddSanction, planAdjustFinalScore, planRemoveGroup, planAddSubstitution, courtAt,
+  planRenumberPlayer, planCoinToss, planSet5CoinToss, planSetPointTeam
 } from '../../../domain/manualCorrections'
+import { VALID_MATCH_COLUMNS } from '../../../db/matchRepository'
+import { compareBySeq } from '../../../domain/describe'
+import { referencedPlayerNumbers } from '../../../domain/roster'
+import { getStartingLineup } from '../../../../scoresheet_pdf/utils/scoresheetModel'
 import { scoreBeforeEvent } from '../../../domain/describe'
 import { buildMatch, MATCH, HOME_TEAM, AWAY_TEAM, pointsFor } from '../../../domain/__tests__/fixtures/correctionsMatch'
 
@@ -212,5 +217,119 @@ describe('applyCorrectionPlan', () => {
     expect(match.set5CourtSwitched).toBe(false)
     const set5 = (await db.sets.where('matchId').equals(matchId).toArray()).find(s => s.index === 5)
     expect([set5.homePoints, set5.awayPoints]).toEqual([7, 1])
+  })
+
+  it('a renumbered player: roster row, every event, remark line in place, game captain, cloud roster and log in one write', async () => {
+    await db.open()
+    await Promise.all(db.tables.map(t => t.clear()))
+    const remark = 'Team A, Set 1, Result 9:6: player no. 5 is exceptionally substituted by player no. 7 due to injury.'
+    const { events, sets } = buildMatch({
+      sets: [{
+        points: pointsFor(25, 20),
+        finished: true,
+        extras: [
+          { at: 3, type: 'sanction', payload: { team: 'home', type: 'warning', playerType: 'player', playerNumber: 5 } },
+          { at: 15, type: 'substitution', payload: { team: 'home', playerOut: 5, playerIn: 7, isExceptional: true, autoRemark: remark } }
+        ]
+      }]
+    })
+    const homeTeamId = await db.teams.add({ name: 'VC Smash' })
+    const awayTeamId = await db.teams.add({ name: 'Volley Bern' })
+    const matchId = await db.matches.add({
+      ...MATCH, id: undefined, seed_key: SEED, homeTeamId, awayTeamId, homeCourtCaptain: 5,
+      remarks: `First line\n${remark}\nLast line`
+    })
+    for (const s of sets) await db.sets.add({ ...s, id: undefined, matchId })
+    for (const e of events) await db.events.add({ ...e, id: undefined, matchId })
+    for (const n of [1, 2, 3, 4, 5, 6, 7, 8]) await db.players.add({ teamId: homeTeamId, number: n, firstName: 'P', lastName: `Home${n}`, name: `Home${n} P` })
+    for (const n of [11, 12, 13, 14, 15, 16]) await db.players.add({ teamId: awayTeamId, number: n, name: `Away${n}` })
+    const home = await db.players.where('teamId').equals(homeTeamId).toArray()
+    const away = await db.players.where('teamId').equals(awayTeamId).toArray()
+    const all = await db.events.where('matchId').equals(matchId).toArray()
+    const match0 = await db.matches.get(matchId)
+    const five = home.find(p => p.number === 5)
+
+    const plan = planRenumberPlayer(all, { team: 'home', playerId: five.id, to: 17 }, { ...ctx(matchId), match: match0, players: { home, away } })
+    expect(plan.error).toBeUndefined()
+    await applyCorrectionPlan(plan, { matchId, db, mode: 'review' })
+    await settle()
+
+    expect((await db.players.get(five.id)).number).toBe(17)
+    const after = await db.events.where('matchId').equals(matchId).toArray()
+    expect(referencedPlayerNumbers(after, 'home').has('5')).toBe(false)
+    expect(getStartingLineup(after, 1, 'home')).toEqual(['1', '2', '3', '4', '17', '6'])
+    const match = await db.matches.get(matchId)
+    expect(match.homeCourtCaptain).toBe(17)
+    // the line stays where it was, rewritten
+    expect(match.remarks).toBe(`First line\n${remark.replace('no. 5', 'no. 17')}\nLast line`)
+    expect(match.manualChanges.at(-1)).toMatchObject({ action: 'renumberPlayer', text: 'Player #5 of VC Smash renumbered to #17 (entered after the match)' })
+
+    const jobs = await db.sync_queue.toArray()
+    const matchJob = jobs.find(j => j.resource === 'match' && j.action === 'update' && j.payload.players_home)
+    expect(matchJob.payload.players_home.map(p => p.number)).toEqual([1, 2, 3, 4, 6, 7, 8, 17])
+    expect(matchJob.payload.players_away).toBeUndefined()
+    expect(matchJob.payload.manual_changes.at(-1).text).toMatch(/renumbered to #17/)
+    // every rewritten event reaches the server: an upsert and an edit revision
+    const upserts = new Set(jobs.filter(j => j.resource === 'event' && j.action === 'insert').map(j => j.payload.external_id))
+    for (const u of plan.update) expect(upserts.has(`${SEED}:e:${u.id}`)).toBe(true)
+    expect(jobs.some(j => j.resource === 'event' && j.action === 'edit' && j.payload.reason === 'correction')).toBe(true)
+  })
+
+  it('a corrected first serve rebuilds the rotations on the device and queues the coin toss for the cloud', async () => {
+    const { matchId, events } = await seed()
+    const match0 = await db.matches.get(matchId)
+    const plan = planCoinToss(events, { firstServe: 'away' }, { ...ctx(matchId), match: match0 })
+    expect(plan.error).toBeUndefined()
+    expect(plan.update.filter(u => events.find(e => e.id === u.id)?.type === 'lineup').length).toBeGreaterThan(10)
+    await applyCorrectionPlan(plan, { matchId, db, mode: 'review' })
+    const match = await db.matches.get(matchId)
+    expect(match).toMatchObject({ firstServe: 'away', coinTossServeA: false, coinTossServeB: true })
+    const ct = (await db.events.where('matchId').equals(matchId).toArray()).find(e => e.type === 'coin_toss')
+    expect(ct.payload.firstServe).toBe('away')
+    const job = (await db.sync_queue.toArray()).find(j => j.resource === 'match' && j.payload.coin_toss)
+    expect(job.payload.coin_toss).toEqual({ team_a: 'home', team_b: 'away', serve_a: false, confirmed: true, first_serve: 'away' })
+    expect(match.manualChanges.at(-1).text).toBe('Coin toss corrected: Team A is VC Smash, Volley Bern (B) serves first (entered after the match)')
+  })
+
+  it('the match update of a coin toss correction carries cloud columns only (the server refuses an unknown one, and the log with it)', async () => {
+    const { matchId, events } = await seed()
+    const m5 = { ...(await db.matches.get(matchId)), set5FirstServe: 'A', set5LeftTeam: 'A' }
+    await db.matches.update(matchId, { set5FirstServe: 'A', set5LeftTeam: 'A' })
+    const swap = planCoinToss(events, { teamA: 'away' }, { ...ctx(matchId), match: m5 })
+    expect(swap.error).toBeUndefined()
+    await applyCorrectionPlan(swap, { matchId, db, mode: 'review' })
+    const after = await db.events.where('matchId').equals(matchId).toArray()
+    const set5 = planSet5CoinToss(after, { firstServe: 'A' }, { ...ctx(matchId), match: await db.matches.get(matchId) })
+    expect(set5.error).toBeUndefined()
+    await applyCorrectionPlan(set5, { matchId, db, mode: 'review' })
+    const updates = (await db.sync_queue.toArray()).filter(j => j.resource === 'match' && j.action === 'update')
+    expect(updates).toHaveLength(2)
+    for (const j of updates) {
+      for (const key of Object.keys(j.payload)) expect(key === 'id' || VALID_MATCH_COLUMNS.includes(key)).toBe(true)
+      expect(j.payload.manual_changes?.length).toBeGreaterThan(0)
+    }
+    // the set 5 toss itself is on the device
+    expect((await db.matches.get(matchId)).set5FirstServe).toBe('A')
+  })
+
+  it('a correction that changes a finished set re-sends the match result (set_results, winner, final_score)', async () => {
+    const { matchId, events } = await seed()
+    // set 1 was 25:22 for home; its last three home points go to away: 22:25
+    let log = events
+    for (let i = 0; i < 3; i++) {
+      const lastHome = log.filter(e => e.type === 'point' && e.setIndex === 1 && e.payload.team === 'home').sort(compareBySeq).pop()
+      const plan = planSetPointTeam(log, lastHome.id, 'away', { ...ctx(matchId), match: await db.matches.get(matchId) })
+      expect(plan.error).toBeUndefined()
+      await applyCorrectionPlan(plan, { matchId, db, mode: 'review' })
+      log = await db.events.where('matchId').equals(matchId).toArray()
+    }
+    const set1 = (await db.sets.where('matchId').equals(matchId).toArray()).find(s => s.index === 1)
+    expect([set1.homePoints, set1.awayPoints]).toEqual([22, 25])
+    const last = (await db.sync_queue.toArray()).filter(j => j.resource === 'match' && j.action === 'update').pop()
+    expect(last.payload.set_results).toEqual([{ set: 1, home: 22, away: 25 }, { set: 2, home: 25, away: 20 }])
+    expect(last.payload.final_score).toBe('1-1')
+    expect(last.payload.winner).toBeNull()
+    // the set end names its new winner
+    expect(log.find(e => e.type === 'set_end' && e.setIndex === 1).payload.team).toBe('away')
   })
 })
