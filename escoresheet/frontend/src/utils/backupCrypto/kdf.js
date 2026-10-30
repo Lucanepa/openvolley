@@ -25,8 +25,9 @@ export const KDF_PARAMS = Object.freeze({ alg: 'argon2id', memoryKiB: 32768, ite
 export const SALT_BYTES = 16
 
 // What a file may ask for: a damaged or crafted file must not make the app
-// allocate gigabytes or spin for minutes
-const LIMITS = { memoryKiB: [8192, 262144], iterations: [1, 16], parallelism: [1, 4] }
+// allocate gigabytes or spin for minutes. 128 MiB at most (the app's own
+// files ask for 32 MiB): more can fail in a low-memory tablet's WebView.
+const LIMITS = { memoryKiB: [8192, 131072], iterations: [1, 16], parallelism: [1, 4] }
 
 /** The KDF parameters of a slot, checked; throws for anything else. */
 export function checkKdfParams(params) {

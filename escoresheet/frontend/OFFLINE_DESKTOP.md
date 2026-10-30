@@ -551,11 +551,14 @@ ones) is written plain as before, since nothing could open it
 Backup → Restore from a backup file, then pick the file: the app asks for the
 **game PIN or the referee PIN** of the match (the dialog shows the readable
 game number, teams, date and set scores). A wrong PIN says so and asks again;
-Cancel goes back. Then the usual preview. The restored match keeps the PIN
-that was typed (the other PINs come from the local copy it replaces, or are
-new); plain files of older versions restore as before, without a PIN. An app
-from before the encryption says "not an OpenVolley match backup" for an
-encrypted file.
+Cancel goes back, also while a PIN is being tried. Then the usual preview.
+The restored match keeps the PIN that was typed (the other PINs come from the
+local copy it replaces, or are new); plain files of older versions restore as
+before, without a PIN. An app from before the encryption says "not an
+OpenVolley match backup" for an encrypted file. Against a damaged or crafted
+file: the readable header is shown as text and scores only (it is not
+authenticated before the file opens), at most 8 PIN slots are tried and a
+slot asking for more than 128 MiB (or 16 passes) is skipped.
 
 When it writes: after a write of the match, once nothing more was written for
 150 ms (at most 1.5 s later), on an idle moment, so a point (event, its state

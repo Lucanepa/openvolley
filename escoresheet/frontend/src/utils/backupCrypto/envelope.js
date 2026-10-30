@@ -51,7 +51,15 @@ export const PIN_SLOTS = [
   { pin: 'referee', field: 'refereePin' }
 ]
 
+// A file has one slot per PIN (two); a crafted one with hundreds must not
+// make a restore derive for minutes: the first ones are tried, the rest ignored
+export const MAX_PIN_SLOTS = 8
+
 const fail = (code, message) => Object.assign(new Error(message), { code })
+
+function stopIfAborted(signal) {
+  if (signal?.aborted) throw signal.reason ?? Object.assign(new Error('Aborted'), { name: 'AbortError' })
+}
 
 function subtle() {
   const s = globalThis.crypto?.subtle
@@ -186,30 +194,34 @@ async function unwrapWith(slot, pin, derive) {
  * Opens an encrypted backup with a PIN (the game PIN or the referee PIN).
  * Throws BACKUP_WRONG_PIN when no slot takes it, BACKUP_DAMAGED when one does
  * but the content does not decrypt or parse, BACKUP_NEWER for a format this
- * app does not know.
+ * app does not know. Tries the first MAX_PIN_SLOTS PIN slots of the file;
+ * an aborted signal (the scorer cancelled) stops it before the next slot.
  * @param {object} envelope parsed envelope
  * @param {string} pin
+ * @param {{ derive?: typeof derivePinKey, signal?: AbortSignal }} [options]
  * @returns {Promise<{ data: object, unlockedWith: { pin: 'game'|'referee', field: string, value: string } }>}
  */
-export async function openEnvelope(envelope, pin, { derive = derivePinKey } = {}) {
+export async function openEnvelope(envelope, pin, { derive = derivePinKey, signal } = {}) {
   if (!isEncryptedBackup(envelope)) throw fail(BACKUP_DAMAGED, 'Not an encrypted backup')
   if (envelope.formatVersion !== ENVELOPE_VERSION || envelope.cipher?.alg !== AES) {
     throw fail(BACKUP_NEWER, 'This backup was written by a newer version of OpenVolley')
   }
   subtle()
   const typed = String(pin ?? '').trim()
-  const slots = Array.isArray(envelope.slots) ? envelope.slots : []
+  const slots = (Array.isArray(envelope.slots) ? envelope.slots : []).filter(s => s?.kind === 'pin').slice(0, MAX_PIN_SLOTS)
   let dataKey = null
   let opened = null
   if (typed) {
     for (const { pin: kind, field } of PIN_SLOTS) {
-      for (const slot of slots.filter(s => s?.kind === 'pin' && s.pin === kind)) {
+      for (const slot of slots.filter(s => s.pin === kind)) {
+        stopIfAborted(signal)
         dataKey = await unwrapWith(slot, typed, derive)
         if (dataKey) { opened = { pin: kind, field, value: typed }; break }
       }
       if (dataKey) break
     }
   }
+  stopIfAborted(signal)
   if (!dataKey) throw fail(BACKUP_WRONG_PIN, 'Wrong PIN: neither the game PIN nor the referee PIN of this match')
 
   let text
