@@ -176,6 +176,20 @@ export const admin = {
   setRoles(userId, { add = [], remove = [] } = {}) {
     return apiRequest('POST', `/api/admin/accounts/${enc(userId)}/roles`, { add, remove })
   },
+  /**
+   * Deletes the account and its personal data; the match records stay
+   * (backend lib/accounts.js deleteAccount). `email`: the account's address,
+   * typed by the admin as the confirmation. A server without it answers 404
+   * OV_NOT_FOUND (its accounts list has no can_delete). The account's backup
+   * files go first, so it may take longer than a list.
+   */
+  deleteAccount(userId, { email } = {}) {
+    return apiRequest('POST', `/api/admin/accounts/${enc(userId)}/delete`, { email }, { timeoutMs: 60000 })
+  },
+  /** The same for a sign-up without any role (audited as a rejection). */
+  rejectAccount(userId, { email } = {}) {
+    return apiRequest('POST', `/api/admin/accounts/${enc(userId)}/reject`, { email }, { timeoutMs: 60000 })
+  },
   /** db/018: the clubs an account scores for (the whole list). */
   setAccountClubs(userId, clubIds = []) {
     return apiRequest('PUT', `/api/admin/accounts/${enc(userId)}/clubs`, { club_ids: clubIds })
@@ -356,6 +370,11 @@ export function errorKeyOf(error, { context } = {}) {
     case 'OV_INVITE_USED_UP': return 'access.errors.inviteUsedUp'
     case 'OV_TOO_MANY_ATTEMPTS': return 'access.errors.tooManyAttempts'
     case 'OV_SELF_DEMOTE': return 'manage.accounts.selfDemote'
+    // deleting an account (admin.deleteAccount / rejectAccount)
+    case 'OV_SELF_DELETE': return 'manage.accounts.selfDelete'
+    case 'OV_LAST_SUPER_ADMIN': return 'manage.accounts.lastSuperAdmin'
+    case 'OV_NOT_PENDING': return 'manage.accounts.notPending'
+    case 'OV_CONFIRM_MISMATCH': return 'manage.accounts.confirmMismatch'
     // redeem-invite of an account whose address is not confirmed yet
     case 'OV_EMAIL_UNCONFIRMED': return 'access.errors.emailUnconfirmed'
     case 'OV_DUPLICATE': return 'savedTeams.duplicateTeam'
