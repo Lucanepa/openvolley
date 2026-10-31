@@ -75,6 +75,7 @@ export const HELP_SECTIONS = [
   section('scoring', [
     q('scoreboard', 'lineup', 'scoreboard-court-left'),
     q('scoreboard', 'startRally', 'scoreboard-start-rally'),
+    q('scoreboard', 'missingSignature'),
     q('scoreboard', 'awardPoint', 'scoreboard-point-left'),
     q('scoring', 'doubleTap'),
     q('scoring', 'serveRotation'),

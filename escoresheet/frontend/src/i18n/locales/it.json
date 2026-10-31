@@ -2445,10 +2445,10 @@
       "a_sides": "La squadra A è a sinistra, la squadra B a destra. Tocca «Inverti squadre» per scambiarle.",
       "tip_sides": "Le due squadre come iniziano: squadra A a sinistra, squadra B a destra.",
       "q_start": "Come avvio la partita?",
-      "a_start": "Quando lati, servizio e firme sono a posto, tocca «Conferma risultato coin toss». L'app controlla la connessione e apre la schermata del punteggio.",
+      "a_start": "Quando lati e servizio sono a posto, tocca «Conferma risultato coin toss». Le firme mancanti possono seguire nella schermata del punteggio. L'app controlla la connessione e apre la schermata del punteggio.",
       "tip_start": "Tocca qui per confermare il sorteggio e aprire la schermata del punteggio.",
       "q_signatures": "Chi firma prima della partita?",
-      "a_signatures": "L'allenatore e il capitano di ogni squadra. Tocca «Firma A» o «Firma B», poi «Coach» o «Capitano». Firmano sullo schermo, oppure sul proprio telefono con «Firma sul telefono». Una partita semplice non ha bisogno di firme.",
+      "a_signatures": "L'allenatore e il capitano di ogni squadra. Tocca «Firma A» o «Firma B», poi «Coach» o «Capitano». Firmano sullo schermo, oppure sul proprio telefono con «Firma sul telefono». Possono anche firmare più tardi, durante il riscaldamento: la schermata del punteggio mostra per la loro squadra un «Firma mancante» lampeggiante, e la partita inizia solo quando tutti e quattro hanno firmato. Una partita semplice non ha bisogno di firme.",
       "q_birthdates": "Perché l'app mi chiede di confermare delle date di nascita?",
       "a_birthdates": "Una data di nascita al 1° gennaio spesso viene da un'importazione sbagliata. L'app elenca queste persone. Controllale prima di continuare.",
       "q_lineups": "Dove inserisco le formazioni iniziali?",
@@ -2459,6 +2459,8 @@
     "scoreboard": {
       "q_startRally": "Come avvio il primo scambio?",
       "a_startRally": "Inserisci prima le due formazioni. Tocca «Inizia set» per il primo scambio di un set, poi «Inizia scambio» a ogni fischio del servizio.",
+      "q_missingSignature": "Cosa significa «Firma mancante»?",
+      "a_missingSignature": "L'allenatore o il capitano di quella squadra non ha ancora firmato la rosa. Toccalo: si apre la rosa della squadra, la controllano e firmano, sullo schermo o sul proprio telefono. «Inizia set» nel set 1 aspetta finché l'allenatore e il capitano di entrambe le squadre hanno firmato.",
       "tip_startRally": "Tocca qui al fischio del servizio. Prima del primo scambio servono le due formazioni.",
       "q_awardPoint": "Come assegno un punto?",
       "a_awardPoint": "Quando lo scambio finisce, tocca il pulsante del punto della squadra che l'ha vinto. L'app aggiunge il punto, passa il servizio e fa ruotare la squadra che riconquista il servizio.",
@@ -4636,5 +4638,17 @@
     "serverScore": "Ora sul server",
     "compareHint": "Confrontalo con il tabellone di questo dispositivo. Riprendendola, questo punteggio viene caricato qui e l'altro dispositivo si ferma.",
     "confirmTakeBack": "Sì, riprendi la partita qui"
+  },
+  "preMatchSignatures": {
+    "missingButton_one": "Firma mancante",
+    "missingButton_other": "Firme mancanti",
+    "sign": "Firma",
+    "dialogTitle": "{{team}} - rosa e firme",
+    "intro": "L'allenatore e il capitano controllano la rosa, poi firmano. La partita inizia quando l'allenatore e il capitano di entrambe le squadre hanno firmato.",
+    "allSigned": "L'allenatore e il capitano di questa squadra hanno firmato.",
+    "correctRoster": "Correggi la rosa",
+    "blockedTitle": "Firme mancanti",
+    "blockedBody": "La partita inizia quando l'allenatore e il capitano di entrambe le squadre hanno firmato la rosa.",
+    "stillMissing": "Ancora da firmare: {{roles}}"
   }
 }

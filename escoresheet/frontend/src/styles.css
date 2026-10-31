@@ -2024,6 +2024,77 @@ button:disabled {
   }
 }
 
+/* "Missing signature" on the scoring screen (PreMatchSignDialog.jsx): a team's
+   coach or captain has not signed yet; it flashes until the match starts.
+   amber-950 on amber-100..300 stays above 7:1 at both ends of the flash. */
+.missing-signature-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 100%;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 2px solid #d97706;
+  border-radius: 10px;
+  background: #fef3c7;
+  color: #451a03;
+  font-weight: 700;
+  line-height: 1.15;
+  text-align: center;
+  cursor: pointer;
+  animation: missingSignatureFlash 1.2s ease-in-out infinite;
+}
+
+.missing-signature-button:focus-visible {
+  outline: 3px solid #b45309;
+  outline-offset: 2px;
+}
+
+.missing-signature-title,
+.missing-signature-detail {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.missing-signature-title {
+  font-weight: 700;
+}
+
+.missing-signature-detail {
+  font-size: 0.8em;
+  font-weight: 600;
+}
+
+@keyframes missingSignatureFlash {
+
+  0%,
+  100% {
+    background: #fef3c7;
+    border-color: #d97706;
+    box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.55);
+  }
+
+  50% {
+    background: #fcd34d;
+    border-color: #b45309;
+    box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.35);
+  }
+}
+
+/* Reduced motion: no flash, the strong amber stays */
+@media (prefers-reduced-motion: reduce) {
+  .missing-signature-button {
+    animation: none;
+    background: #fcd34d;
+    border-color: #b45309;
+  }
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
