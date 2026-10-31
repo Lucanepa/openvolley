@@ -14,9 +14,10 @@ import { PRE_MATCH_ROLES, missingRolesOf } from '../../domain/preMatchSignatures
 // warm-up, from the flashing "Missing signature" button of their team. The
 // first serve of the match waits for all four (domain/preMatchSignatures).
 
-// As the coin toss's sign buttons: emerald once signed ("done", not "selected")
+// As the coin toss's sign buttons: emerald once signed ("done", not
+// "selected"); a missing signature keeps the plain button, no colour (owner
+// 2026-10-31: so it is clear it is missing)
 const SIGNED_CLASS = 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-50'
-const MISSING_CLASS = 'border-amber-400 bg-amber-50 text-amber-900 hover:bg-amber-100'
 
 const personName = (p) => [p?.firstName ?? p?.first_name, p?.lastName ?? p?.last_name].filter(Boolean).join(' ').trim()
 const captainOf = (players) => (players || []).find(p => p.isCaptain || p.captain) || null
@@ -103,7 +104,7 @@ export default function PreMatchSignDialog({ data, team, teamTitle, matchId, onC
                   variant="secondary"
                   size="xl"
                   data-testid={`pre-match-sign-${role}`}
-                  className={`h-auto min-h-14 flex-col gap-0.5 py-2 ${signed ? SIGNED_CLASS : MISSING_CLASS}`}
+                  className={`h-auto min-h-14 flex-col gap-0.5 py-2 ${signed ? SIGNED_CLASS : ''}`}
                   style={{ flex: '1 1 200px', minWidth: 0 }}
                   onClick={() => setSigning(role)}
                 >
@@ -165,7 +166,7 @@ export function SignaturesMissingModal({ teams, onSign, onClose }) {
               key={team.key}
               variant="secondary"
               size="xl"
-              className={`h-auto min-h-14 justify-between py-2 text-left ${MISSING_CLASS}`}
+              className="h-auto min-h-14 justify-between py-2 text-left"
               onClick={() => onSign(team.key)}
             >
               <span className="flex min-w-0 flex-col">
