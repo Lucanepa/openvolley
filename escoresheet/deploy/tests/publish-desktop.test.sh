@@ -384,7 +384,7 @@ if command -v fdroid >/dev/null && command -v apt-ftparchive >/dev/null && comma
     "$KIT_DIR/publish-pkgs.sh" --no-sync "$T/openbeach-escoresheet_2.0.1_amd64.deb"
   # a package that is neither app (nor an OpenVolley old name)
   make_deb "$T/other-tool_9.0.0_amd64.deb" 9.0.0 other-tool
-  expect_fail "package other-tool is not published here (openvolley-escoresheet openbeach-escoresheet point-hub)" \
+  expect_fail "package other-tool is not published here (openvolley-escoresheet openbeach-escoresheet point-hub svrz-rc)" \
     "$KIT_DIR/publish-pkgs.sh" --no-sync "$T/other-tool_9.0.0_amd64.deb"
   # Point Hub's .deb without its command, or with the command dangling
   mkdir -p "$T/ph-nobin"; make_pointhub_deb "$T/ph-nobin/point-hub_1.1.0_amd64.deb" 1.1.0 none
@@ -659,8 +659,8 @@ sed 's/^DEFAULT_PKG=.*/DEFAULT_PKG=openbeach-escoresheet/' "$KIT_DIR/pkgs/instal
 expect_fail "does not install openvolley-escoresheet by default" check_install_sh "$T/install-default.sh" AB469DA8DC3EC90F8057320D285B18D76C16B82C
 expect_fail "does not pin the APT key" check_install_sh "$KIT_DIR/pkgs/install.sh" 0000000000000000000000000000000000000000
 inst() { sh "$KIT_DIR/pkgs/install.sh" "$@"; }
-expect_fail "unknown package 'openbeach'; this repository has: openvolley-escoresheet openbeach-escoresheet point-hub" inst openbeach
-expect_fail "usage: install.sh [openvolley-escoresheet | openbeach-escoresheet | point-hub]" inst a b
+expect_fail "unknown package 'openbeach'; this repository has: openvolley-escoresheet openbeach-escoresheet point-hub svrz-rc" inst openbeach
+expect_fail "usage: install.sh [openvolley-escoresheet | openbeach-escoresheet | point-hub | svrz-rc]" inst a b
 if [[ "$(id -u)" != 0 ]] && command -v apt-get >/dev/null && [[ "$(dpkg --print-architecture)" == amd64 ]]; then
   expect_fail "curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s openbeach-escoresheet" inst openbeach-escoresheet
   expect_fail "curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s point-hub" inst point-hub
