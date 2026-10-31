@@ -1,6 +1,6 @@
 # Privacy policy
 
-**OpenVolley and OpenBeach** · Version 1.6 · As of 30 October 2026
+**OpenVolley and OpenBeach** · Version 1.7 · As of 31 October 2026
 
 This policy is available in German, English, French and Italian. The English
 version is binding.
@@ -239,6 +239,11 @@ name as it appears on the scoresheet), saved teams and tournaments, entries in
 the change log (section 14), and the activity log and event history of
 matches (section 5). Your account is unlinked from these entries. You can have what remains deleted
 under section 19, as far as the scoresheet does not need it.
+
+**Deletion by an administrator:** an administrator can also delete your
+account, when you ask for it (section 19), or when a sign-up is not
+approved (rejected). The same data is deleted and the same remains as when
+you delete it yourself.
 
 ## 7. Match data and scoresheets
 
@@ -523,6 +528,10 @@ look up earlier answers; earlier on request.
   contact address or switched the sending of scoresheets on or off, and that
   the scoresheet of a match was sent, with the number of recipients. It
   contains no email addresses.
+- **Deleted accounts:** the change log records that an administrator deleted
+  an account or rejected a sign-up, with the account's roles and apps, when
+  it was created, how many official matches it leaves behind and a
+  pseudonymised hash of its email address, never the address or the name.
 - **Signing on a phone:** the server logs only the steps (started, opened,
   signed, closed) with the role and a short identifier, never the link, the
   signature, names or teams.
@@ -560,7 +569,7 @@ copy of these safeguards.
 
 | Data | Kept |
 |---|---|
-| Account and profile | Until you delete the account |
+| Account and profile | Until you delete the account, or an administrator deletes it (on request, or a rejected sign-up) |
 | Session | 30 days from last use, at most 90 days |
 | Links in emails | Valid 60 minutes or 24 hours, deleted 7 days later |
 | Approval PIN | Until you remove it or delete your account |

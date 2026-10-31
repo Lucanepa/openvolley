@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-**OpenVolley und OpenBeach** · Version 1.6 · Stand: 30. Oktober 2026
+**OpenVolley und OpenBeach** · Version 1.7 · Stand: 31. Oktober 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
 Massgebend ist die englische Fassung.
@@ -260,6 +260,12 @@ Einträge im Änderungsprotokoll (Abschnitt 14) sowie das Aktivitätsprotokoll
 und die Ereignisgeschichte von Spielen (Abschnitt 5). Ihr Konto wird von
 diesen Einträgen getrennt. Was bestehen bleibt, können Sie
 nach Abschnitt 19 löschen lassen, soweit es für den Spielbericht nicht nötig ist.
+
+**Löschung durch die Administration:** Auch eine Administratorin oder ein
+Administrator kann Ihr Konto löschen, wenn Sie es verlangen (Abschnitt 19)
+oder wenn ein neues Konto nicht freigeschaltet wird (abgelehnt). Dabei wird
+dasselbe gelöscht und bleibt dasselbe bestehen wie beim Löschen durch Sie
+selbst.
 
 ## 7. Spieldaten und Spielberichte
 
@@ -565,6 +571,11 @@ ich frühere Antworten nachschlagen kann; auf Anfrage früher.
   Spielberichte ein- oder ausgeschaltet hat, und dass der Spielbericht eines
   Spiels versendet wurde, mit der Anzahl Empfänger. E-Mail-Adressen stehen
   darin nicht.
+- **Gelöschte Konten:** Das Änderungsprotokoll hält fest, dass die
+  Administration ein Konto gelöscht oder ein neues Konto abgelehnt hat, mit
+  den Rollen und Apps des Kontos, seinem Erstellungsdatum, der Anzahl
+  offizieller Spiele, die es hinterlässt, und einem pseudonymisierten Hash
+  seiner E-Mail-Adresse, nie die Adresse oder den Namen.
 - **Unterschreiben auf dem Telefon:** Der Server protokolliert nur den Ablauf
   (gestartet, geöffnet, unterschrieben, beendet) mit der Funktion und einer
   kurzen Kennung, nie den Link, die Unterschrift, Namen oder Teams.
@@ -604,7 +615,7 @@ Anfrage erhalten Sie eine Kopie dieser Garantien.
 
 | Daten | Aufbewahrung |
 |---|---|
-| Konto und Profil | Bis Sie das Konto löschen |
+| Konto und Profil | Bis Sie das Konto löschen oder die Administration es löscht (auf Ihren Wunsch oder bei einem abgelehnten neuen Konto) |
 | Sitzung | 30 Tage ab letzter Nutzung, höchstens 90 Tage |
 | Links in E-Mails | 60 Minuten bzw. 24 Stunden gültig, 7 Tage danach gelöscht |
 | Freigabe-PIN | Bis Sie ihn entfernen oder Ihr Konto löschen |
