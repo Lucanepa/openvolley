@@ -2446,10 +2446,10 @@
       "a_sides": "Team A is shown on the left, Team B on the right. Tap “Switch sides” to swap them.",
       "tip_sides": "The two teams as they start: Team A left, Team B right.",
       "q_start": "How do I start the match?",
-      "a_start": "When the sides, the service and the signatures are done, tap “Confirm coin toss result”. The app checks the connection and opens the scoring screen.",
+      "a_start": "When the sides and the service are done, tap “Confirm coin toss result”. Signatures still missing can follow on the scoring screen. The app checks the connection and opens the scoring screen.",
       "tip_start": "Tap here to confirm the coin toss and open the scoring screen.",
       "q_signatures": "Who signs before the match?",
-      "a_signatures": "The coach and the captain of each team. Tap “Sign A” or “Sign B”, then “Coach” or “Captain”. They sign on the screen, or on their own phone with “Sign on phone”. An easy match needs no signatures.",
+      "a_signatures": "The coach and the captain of each team. Tap “Sign A” or “Sign B”, then “Coach” or “Captain”. They sign on the screen, or on their own phone with “Sign on phone”. They can also sign later, during the warm-up: the scoring screen shows a flashing “Missing signature” for their team, and the match starts only once all four have signed. An easy match needs no signatures.",
       "q_birthdates": "Why does the app ask me to confirm birthdates?",
       "a_birthdates": "A date of birth on 1 January often comes from a bad import. The app lists these people. Check them before you go on.",
       "q_lineups": "Where do I enter the starting line-ups?",
@@ -2460,6 +2460,8 @@
     "scoreboard": {
       "q_startRally": "How do I start the first rally?",
       "a_startRally": "Enter both line-ups first. Tap “Start set” for the first rally of a set, then “Start rally” at each service whistle.",
+      "q_missingSignature": "What does “Missing signature” mean?",
+      "a_missingSignature": "The coach or the captain of that team has not signed the roster yet. Tap it: the team's roster opens, they check it and sign, on the screen or on their own phone. “Start set” in set 1 waits until the coach and the captain of both teams have signed.",
       "tip_startRally": "Tap here at the service whistle. Both line-ups are needed before the first rally.",
       "q_awardPoint": "How do I award a point?",
       "a_awardPoint": "When the rally ends, tap the point button of the team that won it. The app adds the point, moves the service and rotates the team that wins the service back.",
@@ -4637,5 +4639,17 @@
     "serverScore": "On the server now",
     "compareHint": "Compare it with the scoreboard on this device. Taking back loads this score here, and the other device stops.",
     "confirmTakeBack": "Yes, take back scoring here"
+  },
+  "preMatchSignatures": {
+    "missingButton_one": "Missing signature",
+    "missingButton_other": "Missing signatures",
+    "sign": "Sign",
+    "dialogTitle": "{{team}} - roster and signatures",
+    "intro": "The coach and the captain check the roster, then sign. The match starts once the coach and the captain of both teams have signed.",
+    "allSigned": "The coach and the captain of this team have signed.",
+    "correctRoster": "Correct the roster",
+    "blockedTitle": "Signatures missing",
+    "blockedBody": "The match starts once the coach and the captain of both teams have signed the roster.",
+    "stillMissing": "Still to sign: {{roles}}"
   }
 }

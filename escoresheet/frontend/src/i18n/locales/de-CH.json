@@ -2440,10 +2440,10 @@
       "a_sides": "Team A staht links, Team B rächts. Tipp uf «Siite wächsle», zum si tuusche.",
       "tip_sides": "Di zwei Teams, wie si aafanged: Team A links, Team B rächts.",
       "q_start": "Wie start ich s Spiil?",
-      "a_start": "Wänn Siite, Ufschlag und Underschrifte stimmed, tipp uf «Usloosig bestätige». D App prüeft d Verbindig und macht de Erfassigsbildschirm uf.",
+      "a_start": "Wänn Siite und Ufschlag stimmed, tipp uf «Usloosig bestätige». Underschrifte, wo no fehled, chönd uf em Erfassigsbildschirm nachecho. D App prüeft d Verbindig und macht de Erfassigsbildschirm uf.",
       "tip_start": "Tipp da, zum d Usloosig bestätige und de Erfassigsbildschirm ufmache.",
       "q_signatures": "Wer underschriibt vor em Spiil?",
-      "a_signatures": "De Trainer und de Captain vo jedem Team. Tipp uf «Underschrift A» oder «Underschrift B», dänn uf «Trainer» oder «Captain». Si underschriibed uf em Bildschirm oder mit «Uf em Handy underschriibe» uf em eigete Handy. Es eifachs Spiil bruucht kei Underschrifte.",
+      "a_signatures": "De Trainer und de Captain vo jedem Team. Tipp uf «Underschrift A» oder «Underschrift B», dänn uf «Trainer» oder «Captain». Si underschriibed uf em Bildschirm oder mit «Uf em Handy underschriibe» uf em eigete Handy. Si chönd au spöter underschriibe, wäred em Iispile: De Erfassigsbildschirm zeigt bi irem Team es blinkends «Underschrift fehlt», und s Spiil fangt erscht aa, wänn alli vier underschribe händ. Es eifachs Spiil bruucht kei Underschrifte.",
       "q_birthdates": "Werum söll ich Geburtsdate bestätige?",
       "a_birthdates": "Es Geburtsdatum am 1. Januar chunnt oft vo emne fehlerhafte Import. D App lischtet die Persone uf. Prüef si, bevor du wiitermachsch.",
       "q_lineups": "Wo trag ich d Startufstellige ii?",
@@ -2454,6 +2454,8 @@
     "scoreboard": {
       "q_startRally": "Wie start ich de erscht Ballwächsel?",
       "a_startRally": "Trag zersch beidi Ufstellige ii. Tipp bim erschte Ballwächsel vo emne Satz uf «Satz starte», nachher bi jedem Ufschlagpfiff uf «Ballwächsel starte».",
+      "q_missingSignature": "Was heisst «Underschrift fehlt»?",
+      "a_missingSignature": "De Trainer oder de Captain vo dem Team händ s Kader no nöd underschribe. Tipp druf: S Kader vom Team gaht uf, si prüefed s und underschriibed, uf em Bildschirm oder uf em eigete Handy. «Satz starte» im 1. Satz wartet, bis de Trainer und de Captain vo beidne Teams underschribe händ.",
       "tip_startRally": "Tipp da bim Ufschlagpfiff. Vor em erschte Ballwächsel bruucht s beidi Ufstellige.",
       "q_awardPoint": "Wie vergib ich en Punkt?",
       "a_awardPoint": "Wänn de Ballwächsel fertig isch, tipp uf de Punkt-Chnopf vom Team, wo ne gwunne hät. D App zellt de Punkt, git de Ufschlag wiiter und laat s Team rotiere, wo de Ufschlag zruggwinnt.",
@@ -4631,5 +4633,17 @@
     "serverScore": "Jetzt uf em Server",
     "compareHint": "Vergliich ihn mit de Aazeig uf däm Grät. Bim Übernäh wird dä Spielstand da glade, und s ander Grät hört uf.",
     "confirmTakeBack": "Ja, da wieder übernäh"
+  },
+  "preMatchSignatures": {
+    "missingButton_one": "Underschrift fehlt",
+    "missingButton_other": "Underschrifte fehled",
+    "sign": "Underschriibe",
+    "dialogTitle": "{{team}} - Kader und Underschrifte",
+    "intro": "De Trainer und de Captain prüefed s Kader und underschriibed. S Spiil fangt aa, wänn de Trainer und de Captain vo beidne Teams underschribe händ.",
+    "allSigned": "De Trainer und de Captain vo dem Team händ underschribe.",
+    "correctRoster": "Kader korrigiere",
+    "blockedTitle": "Underschrifte fehled",
+    "blockedBody": "S Spiil fangt aa, wänn de Trainer und de Captain vo beidne Teams s Kader underschribe händ.",
+    "stillMissing": "No offe: {{roles}}"
   }
 }

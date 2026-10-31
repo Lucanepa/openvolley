@@ -1267,11 +1267,9 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
         return
       }
 
-      // Check signatures for official matches
-      if (!homeCoachSignature || !homeCaptainSignature || !awayCoachSignature || !awayCaptainSignature) {
-        setNoticeModal({ message: t('coinToss.validation.completeSignatures') })
-        return
-      }
+      // The coach and captain signatures no longer hold the coin toss (owner
+      // 2026-10-31): the teams may sign during the warm-up, on the scoring
+      // screen, whose first serve waits for them (domain/preMatchSignatures)
     }
 
     // All validations passed, proceed

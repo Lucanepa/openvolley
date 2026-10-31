@@ -317,8 +317,11 @@ function TeamSanctionsLine({ entries }) {
  * @param {object} props.data       the Scoreboard's live match data
  * @param {{home: object|null, away: object|null}} props.lineups current lineup per team
  * @param {'home'|'away'|null} props.servingTeam team serving now
+ * @param {'home'|'away'} [props.team] only this team, without the match
+ *   officials (the pre-match signing dialog: the coach and the captain check
+ *   their own roster)
  */
-export default function RostersPanel({ data, lineups, servingTeam }) {
+export default function RostersPanel({ data, lineups, servingTeam, team: onlyTeam = null }) {
   const { t } = useTranslation()
   const events = data?.events
   const setIndex = data?.set?.index
@@ -344,16 +347,16 @@ export default function RostersPanel({ data, lineups, servingTeam }) {
     return { home: build('home'), away: build('away') }
   }, [data, events, setIndex, lineups, servingTeam, t])
 
-  const { home, away } = teams
-  const maxPlayers = Math.max(home.players.length, away.players.length)
-  const maxLiberos = Math.max(home.liberos.length, away.liberos.length)
-  const maxBench = Math.max(home.bench.length, away.bench.length)
-  const officials = data?.match?.officials || []
+  const shown = onlyTeam ? [teams[onlyTeam]] : [teams.home, teams.away]
+  const maxPlayers = Math.max(...shown.map(team => team.players.length))
+  const maxLiberos = Math.max(...shown.map(team => team.liberos.length))
+  const maxBench = Math.max(...shown.map(team => team.bench.length))
+  const officials = onlyTeam ? [] : (data?.match?.officials || [])
 
   return (
     <div className="roster-panel">
       <div className="roster-tables">
-        {[home, away].map(team => (
+        {shown.map(team => (
           <div className="roster-table-wrapper" key={`players-${team.key}`} data-team={team.key}>
             <Section title={<>{team.name} {t('scoreboard.players')}</>} action={<TeamSanctionsLine entries={team.sanctions.team} />} />
             <PlayerTable team={team} rows={pad(team.players, maxPlayers)} showPos={showPos} kind="player" />
@@ -363,7 +366,7 @@ export default function RostersPanel({ data, lineups, servingTeam }) {
 
       {maxLiberos > 0 && (
         <div className="roster-tables" style={{ marginTop: 24 }}>
-          {[home, away].map(team => (
+          {shown.map(team => (
             <div className="roster-table-wrapper" key={`liberos-${team.key}`}>
               <Section title={<>{team.name} {t('scoreboard.liberos')}</>} />
               <PlayerTable team={team} rows={pad(team.liberos, maxLiberos)} showPos={showPos} kind="libero" />
@@ -374,7 +377,7 @@ export default function RostersPanel({ data, lineups, servingTeam }) {
 
       <div className="bench-officials-section" style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid var(--border)' }}>
         <div className="roster-tables">
-          {[home, away].map(team => (
+          {shown.map(team => (
             <div className="roster-table-wrapper" key={`bench-${team.key}`}>
               <Section title={<>{team.name} {t('scoreboard.benchOfficials')}</>} />
               <BenchTable team={team} rows={pad(team.bench, maxBench)} emptyAll={maxBench === 0} />

@@ -84,6 +84,9 @@ afterAll(async () => {
 const settle = () => new Promise(r => setTimeout(r, GHOST_CLICK_MS + 150))
 const button = (text) => [...document.querySelectorAll('button')].find(b => b.textContent.trim() === text && !b.disabled)
 
+const INK = 'data:image/png;base64,AAAA'
+const PRE_MATCH_SIGNED = { homeCoachSignature: INK, homeCaptainSignature: INK, awayCoachSignature: INK, awayCaptainSignature: INK }
+
 // A best-of-5 match in set 1, team A the AWAY team; `colours` the teams'
 // own colours, the match itself without any (as a test match)
 async function setUpMatch(colours) {
@@ -95,7 +98,9 @@ async function setUpMatch(colours) {
   const matchId = await db.matches.add({
     homeTeamId: home, awayTeamId: away, status: 'live', test: false, bestOf: 5,
     seed_key: 'match_live_colours_test', externalId: '11111111-2222-4333-8444-555555555556',
-    firstServe: 'away', coinTossTeamA: 'away', coinTossTeamB: 'home', coinTossServeA: true, coinTossServeB: false
+    firstServe: 'away', coinTossTeamA: 'away', coinTossTeamB: 'home', coinTossServeA: true, coinTossServeB: false,
+    // signed: the first serve of an official match waits for the four (domain/preMatchSignatures)
+    ...PRE_MATCH_SIGNED
   })
   const t = new Date(Date.now() - 60 * 60 * 1000).toISOString()
   await db.sets.add({ matchId, index: 1, homePoints: 3, awayPoints: 2, finished: false, startTime: t })
