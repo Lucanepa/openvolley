@@ -103,8 +103,8 @@ user asked for. **(f)** = legitimate interest. **(a)** = consent.
 | **Basis** | (b); DOB: (a) (optional field) or (b) where it fills the official scoresheet |
 | **Stored** | Postgres on the VM (DE); backups (DE, CH); the browser keeps a copy of the profile (`localStorage.cachedProfile`) |
 | **Who sees it** | The account holder; admins (the admin Accounts list searches email and names: `lib/accounts.js:509`). `profiles` and `user_matches` are owner-scoped over `/api/db` (`server.js:376`) |
-| **Retention as built** | Until the account is deleted. **No expiry for dormant or never-confirmed accounts** (F10) |
-| **Delete path** | Self-service "Delete account" (`lib/auth.js:1303` `deleteAccount`). It hard-deletes `auth.users`, `profiles`, `user_matches`, `match_editors`, sessions, tokens, memberships, approval PIN and invite redemptions (FK cascade) and the user's own `backup/` files. It sets `created_by` / `closed_by` / approval user columns to NULL on records that stay (matches, approvals, competitions, tournaments, invites). What stays is listed in 4.6, 4.8 and 4.9 |
+| **Retention as built** | Until the account is deleted, by its owner or an admin. **No expiry for dormant or never-confirmed accounts** (F10; since 31.10.2026 an admin can reject a sign-up by hand, there is still no automatic expiry) |
+| **Delete path** | Self-service "Delete account" (`lib/auth.js:1320` `deleteAccount`), or an admin in the manager's Accounts tab: "Delete account", or "Reject" for a sign-up without any role (`POST /api/admin/accounts/:id/delete` / `/reject` with the typed email, `lib/accounts.js` `deleteAccount`; admins only, never oneself, the last usable super admin never, openvolley#65). Both run the same `eraseAccount` (`lib/auth.js:1343`). It hard-deletes `auth.users`, `profiles`, `user_matches`, `match_editors`, sessions, tokens, memberships, approval PIN and invite redemptions (FK cascade) and the user's own `backup/` files. It sets `created_by` / `closed_by` / approval user columns to NULL on records that stay (matches, approvals, competitions, tournaments, invites). What stays is listed in 4.6, 4.8 and 4.9 |
 
 ### 4.2 Sessions, email links, sign-in protection
 
@@ -177,8 +177,8 @@ the account (4.5a).
 
 | | |
 |---|---|
-| **Data** | `public.audit_log` (`db/007`): time, actor id, action, target user id, match id, details (JSON), app. The details hold, among others: **the email address of an account added as match editor** (`lib/accounts.js:801`), role changes (before/after), invite labels, **beach pair names** of created or deleted entries (`lib/beachTournaments.js:702,744`), tournament titles, game numbers |
-| **Purpose** | Accountability for role changes, approvals, closing/reopening matches |
+| **Data** | `public.audit_log` (`db/007`): time, actor id, action, target user id, match id, details (JSON), app. The details hold, among others: **the email address of an account added as match editor** (`lib/accounts.js:801`), role changes (before/after), invite labels, **beach pair names** of created or deleted entries (`lib/beachTournaments.js:702,744`), tournament titles, game numbers. An admin's `account.delete` / `account.reject` (openvolley#65) stores `{ account_id, email_sha256, roles, apps, created_at, matches_kept }`, one entry per app of the account: an unsalted SHA-256 of the address (so support can check whether a given address was deleted), never the address or the name |
+| **Purpose** | Accountability for role changes, approvals, closing/reopening matches, account deletions by an admin |
 | **Basis** | (f) |
 | **Who sees it** | Admins (`/api/admin/audit`) |
 | **Retention as built** | **Indefinitely. No sweep.** Actor and target ids are set NULL when an account goes, but **email addresses and names in `details` stay** (F5) |
