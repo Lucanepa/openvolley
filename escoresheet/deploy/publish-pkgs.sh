@@ -23,6 +23,15 @@
 # never touch it: its .deb is published like a plain file (point-hub_X_amd64.deb
 # given by hand, or --point-hub VERSION), and APT lists it at once.
 #
+# A fourth goes through APT only: svrz-rc, the SVRZ Referee Coaching app
+# (github.com/Lucanepa/svrz_rc; installers in the releases native-vV of
+# Lucanepa/svrz-referee-coaching, the .deb named "SVRZ.RC_V_amd64.deb"). A
+# .deb install of it has no in-app updater, so APT is how it stays current.
+# Its .deb is given by hand, like Point Hub's, and APT lists it at once:
+#   gh release download native-vV -R Lucanepa/svrz-referee-coaching -p '*.deb'
+#   escoresheet/deploy/publish-pkgs.sh "SVRZ.RC_V_amd64.deb"
+# Its APK goes to its own F-Droid repo (svrz_rc), not this one.
+#
 #   0. --desktop VERSION (a desktop app release; replaces downloading the .deb
 #      by hand): downloads the Windows installer, the AppImage and the .deb of
 #      the GitHub release desktop-vVERSION and checks each is that version
@@ -60,8 +69,8 @@
 #      needs F-Droid metadata in fdroid/metadata/<app id>.yml (fdroid update
 #      would leave it out of the index without; Point Hub's template is
 #      fdroid-metadata/ch.kscw.pointhub.yml, copy it there once).
-#      APT packages: openvolley-escoresheet, openbeach-escoresheet and
-#      point-hub (each with the command /usr/bin/<package>; point-hub's is
+#      APT packages: openvolley-escoresheet, openbeach-escoresheet, point-hub
+#      and svrz-rc (each with the command /usr/bin/<package>; point-hub's is
 #      the symlink to /opt/point-hub/bin/point-hub that point-hub's CI adds
 #      to jpackage's .deb); any other name is refused, except
 #      OpenVolley's old names: a .deb named openvolley-e-scoresheet (Tauri
@@ -72,7 +81,8 @@
 #      files already in the pool are migrated the same way. Repacking is
 #      deterministic: the same input always gives the same bytes. A .deb given
 #      by hand that is newer than desktop/latest.json is refused (use
-#      --desktop VERSION); point-hub has no latest.json and is never refused.
+#      --desktop VERSION); point-hub and svrz-rc have no latest.json and are
+#      never refused.
 #   2. Rebuilds the APT index (Packages, Release, InRelease, Release.gpg) and
 #      exports the public key as apt/openvolley.gpg and apt/openvolley.asc.
 #      The index never lists a desktop version newer than its app's latest.json
@@ -364,7 +374,7 @@ for f in "${FILES[@]}"; do
       ver=$(dpkg-deb -f "$f" Version) || die "$f: not a .deb"
       pkg=$(dpkg-deb -f "$f" Package)
       if legacy_name "$pkg"; then pkg=$OV_APT_NAME; fi
-      # (never true for point-hub: no latest.json holds it back)
+      # (never true for point-hub or svrz-rc: no latest.json holds them back)
       if [[ "$f" != "$DESKTOP_DEB" ]] && apt_held "$ver" "$pkg"; then
         app=openvolley; [[ "$pkg" != openbeach-escoresheet ]] || app=beach
         die "$f: version $ver is not announced by ${APP_DESKTOP_DIR[$app]}/latest.json, so APT would not list it; publish desktop releases with --desktop $ver$([[ $app == beach ]] && echo ' --app beach') [--staging]"
