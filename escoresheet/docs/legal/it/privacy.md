@@ -1,6 +1,6 @@
 # Informativa sulla protezione dei dati
 
-**OpenVolley e OpenBeach** · Versione 1.6 · Aggiornata al 30 ottobre 2026
+**OpenVolley e OpenBeach** · Versione 1.7 · Aggiornata al 31 ottobre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
 la versione inglese.
@@ -258,6 +258,11 @@ squadre e i tornei salvati, le voci del registro delle modifiche
 partite (sezione 5). Il suo account viene separato da queste voci. Può far
 cancellare ciò che resta secondo la sezione 19, nella misura in cui il
 referto non ne ha bisogno.
+
+**Cancellazione da parte di un amministratore:** anche un amministratore può
+cancellare il suo account, quando lei lo chiede (sezione 19) o quando un
+nuovo account non viene abilitato (rifiutato). Vengono cancellati gli stessi
+dati e restano gli stessi come quando lo cancella lei.
 
 ## 7. Dati delle partite e referti
 
@@ -561,6 +566,11 @@ richiesta.
   modificato l'indirizzo di contatto di una società o acceso o spento l'invio
   dei referti, e che il referto di una partita è stato inviato, con il numero
   di destinatari. Non contiene indirizzi e-mail.
+- **Account cancellati:** il registro delle modifiche annota che un
+  amministratore ha cancellato un account o rifiutato un nuovo account, con
+  i ruoli e le app dell'account, la data di creazione, il numero di partite
+  ufficiali che lascia e un hash pseudonimizzato del suo indirizzo e-mail,
+  mai l'indirizzo o il nome.
 - **Firmare sul telefono:** il server registra solo i passaggi (avviata,
   aperta, firmata, chiusa) con la funzione e un breve identificativo, mai il
   link, la firma, nomi o squadre.
@@ -600,7 +610,7 @@ riceve una copia di queste garanzie.
 
 | Dati | Conservazione |
 |---|---|
-| Account e profilo | Finché non cancella l'account |
+| Account e profilo | Finché lei non cancella l'account o un amministratore lo cancella (su richiesta, o un nuovo account rifiutato) |
 | Sessione | 30 giorni dall'ultimo utilizzo, al massimo 90 giorni |
 | Link nelle e-mail | Validi 60 minuti o 24 ore, cancellati 7 giorni dopo |
 | PIN di approvazione | Finché non lo rimuove o non cancella il suo account |
