@@ -77,6 +77,8 @@ import { describeEventText, compareBySeq } from '../domain/describe'
 import CorrectionsPanel from './corrections/CorrectionsPanel.jsx'
 import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon, forfeitScope, playersAvailableForNextSet, planForfeitReversal } from '../domain/matchEnd'
 import { signaturesPayload } from '../domain/signatureEdits'
+import { missingPreMatchSignatures, beforeFirstServe } from '../domain/preMatchSignatures'
+import PreMatchSignDialog, { SignaturesMissingModal, MissingSignatureButton } from './signature/PreMatchSignDialog.jsx'
 import { savedSidesOfRegularSets } from '../domain/coinToss'
 import { liveStateNeedsFreshSnapshot, correctionAfter } from '../utils/livescoreModel'
 import { displaySetNumber, setsWonWithFinishedSet, finishedSetMissingFromSnapshot } from '../utils/matchFormat'
@@ -675,6 +677,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [setTransitionLoading, setSetTransitionLoading] = useState(null) // { step: string } | null - Loading overlay during set transition
   const [set5SetupConfirmed, setSet5SetupConfirmed] = useState(false) // Track if Set 5 coin toss setup is confirmed (inline UI)
   const [postMatchSignature, setPostMatchSignature] = useState(null) // 'home-captain' | 'away-captain' | null
+  // Pre-match signing here (domain/preMatchSignatures): the team whose roster
+  // dialog is open, and the stop of Start set in set 1 while one is missing
+  const [preMatchSignTeam, setPreMatchSignTeam] = useState(null) // 'home' | 'away' | null
+  const [signaturesMissingOpen, setSignaturesMissingOpen] = useState(false)
   const [sanctionConfirm, setSanctionConfirm] = useState(null) // { side: 'left'|'right', type: 'improper_request'|'delay_warning'|'delay_penalty' } | null
   const [sanctionDropdown, setSanctionDropdown] = useState(null) // { team: 'home'|'away', type: 'player'|'bench'|'libero'|'official', playerNumber?: number, position?: string, role?: string, element: HTMLElement, x?: number, y?: number } | null
   const [sanctionConfirmModal, setSanctionConfirmModal] = useState(null) // { team: 'home'|'away', type: 'player'|'bench'|'libero'|'official', playerNumber?: number, position?: string, role?: string, sanctionType: 'warning'|'penalty'|'expulsion'|'disqualification' } | null
@@ -3327,6 +3333,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return !hasPoints
   }, [data?.events, data?.set])
 
+  // The coach and captain signatures still missing before the first serve of
+  // the match, per team: the coin toss no longer waits for them (owner
+  // 2026-10-31), the teams sign during the warm-up. null: none missing, none
+  // needed (test / easy match), or the match has started.
+  const preMatchMissing = useMemo(() => (
+    beforeFirstServe({ setIndex: data?.set?.index, isFirstRally }) ? missingPreMatchSignatures(data?.match) : null
+  ), [data?.set?.index, isFirstRally, data?.match])
+
   // Check if we're between sets (previous set finished, current set hasn't started)
   const isBetweenSets = useMemo(() => {
     if (!data?.sets || !data?.set) return false
@@ -5850,6 +5864,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // If this is the first rally, show set start time confirmation
     if (isFirstRally) {
+      // The match's first serve waits for the coach and captain signatures of
+      // both teams (domain/preMatchSignatures). Read from the row: one signed
+      // a moment ago is there before this screen's data has it.
+      if (data?.set?.index === 1 && missingPreMatchSignatures(await db.matches.get(matchId))) {
+        deferUi(() => setSignaturesMissingOpen(true))
+        return
+      }
+
       // Check if liberos exist and haven't been entered
       const homeLiberos = data?.homePlayers?.filter(p => p.libero && p.libero !== '') || []
       const awayLiberos = data?.awayPlayers?.filter(p => p.libero && p.libero !== '') || []
@@ -13092,6 +13114,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   )
   const teamAShortName = (leftIsHome ? homeShortLabel : awayShortLabel) || leftTeam.name || 'A'
   const teamBShortName = (leftIsHome ? awayShortLabel : homeShortLabel) || rightTeam.name || 'B'
+  // The teams on the court sides now, and how this screen names each: "A · VBC"
+  const leftTeamKeyNow = leftIsHome ? 'home' : 'away'
+  const rightTeamKeyNow = leftIsHome ? 'away' : 'home'
+  const teamTitleOf = (teamKey) => teamKey === leftTeamKeyNow ? `${teamALabel} · ${teamAShortName}` : `${teamBLabel} · ${teamBShortName}`
 
   // Help content function - deprecated, interactive help system replaces this
   const getHelpContent = () => {
@@ -13268,6 +13294,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         subs: getSubstitutionsUsed(side),
         lineupSet: isLeft ? leftTeamLineupSet : rightTeamLineupSet,
         lineupOptional: lineupsOptional,
+        // coach / captain still to sign before the first serve (empty: none)
+        signaturesMissing: preMatchMissing?.[teamKey] || [],
         // The libero's shirt (the desktop court's disc paint): the phone court
         // showed the libero's number in the team colour, like any player
         liberoPaint: discPaintBySide[side]?.libero || null,
@@ -13343,6 +13371,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         startRally: (event) => tapStartRally(event),
         timeout: (side) => handleTimeout(side),
         openLineup: (side) => setLineupModal({ team: mapSideToTeamKey(side), mode: 'initial' }),
+        openSignatures: (side) => setPreMatchSignTeam(mapSideToTeamKey(side)),
         playerClick: handlePlayerClick,
         canSubstituteOut: (teamKey, number) => canPlayerBeSubstituted(teamKey, number),
         substituteCandidates: (teamKey, number) => getAvailableSubstitutes(teamKey, number),
@@ -13926,6 +13955,35 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         </Modal>
       )}
 
+      {/* Pre-match signing: one team's roster, its coach and captain sign
+          (from its "Missing signature" or the stop of Start set) */}
+      {preMatchSignTeam && data?.match && (
+        <PreMatchSignDialog
+          data={data}
+          team={preMatchSignTeam}
+          teamTitle={teamTitleOf(preMatchSignTeam)}
+          matchId={matchId}
+          onClose={() => setPreMatchSignTeam(null)}
+          onCorrectRoster={() => {
+            const team = preMatchSignTeam
+            setPreMatchSignTeam(null)
+            setReopenRosterConfirm(team)
+          }}
+        />
+      )}
+      {signaturesMissingOpen && missingPreMatchSignatures(data?.match) && (
+        <SignaturesMissingModal
+          teams={['home', 'away']
+            .map(key => ({ key, title: teamTitleOf(key), roles: missingPreMatchSignatures(data?.match)?.[key] || [] }))
+            .filter(team => team.roles.length > 0)}
+          onSign={(team) => {
+            setSignaturesMissingOpen(false)
+            setPreMatchSignTeam(team)
+          }}
+          onClose={() => setSignaturesMissingOpen(false)}
+        />
+      )}
+
       {/* Reopen Roster Confirmation Dialog */}
       {reopenRosterConfirm && (
         <Modal
@@ -14084,6 +14142,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 )}
               </div>
             </div>
+            {/* A coach or captain of this team has not signed yet: flashes until
+                they have, the first serve waits for it (domain/preMatchSignatures) */}
+            {preMatchMissing?.[leftTeamKeyNow]?.length > 0 && (
+              <MissingSignatureButton
+                testId="missing-signature-left"
+                roles={preMatchMissing[leftTeamKeyNow]}
+                onClick={() => setPreMatchSignTeam(leftTeamKeyNow)}
+                style={{ marginBottom: '2.5cqw', fontSize: (isCompactMode || isShortHeight) ? '4.4cqw' : 'max(12px, 5.6cqw)' }}
+              />
+            )}
             <div style={{ display: 'flex', gap: '1.25cqw', marginBottom: '2.5cqw' }}>
               <div
                 data-help-id="scoreboard-timeout-left"
@@ -17506,6 +17574,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 )}
               </div>
             </div>
+            {/* A coach or captain of this team has not signed yet: flashes until
+                they have, the first serve waits for it (domain/preMatchSignatures) */}
+            {preMatchMissing?.[rightTeamKeyNow]?.length > 0 && (
+              <MissingSignatureButton
+                testId="missing-signature-right"
+                roles={preMatchMissing[rightTeamKeyNow]}
+                onClick={() => setPreMatchSignTeam(rightTeamKeyNow)}
+                style={{ marginBottom: '2.5cqw', fontSize: (isCompactMode || isShortHeight) ? '4.4cqw' : 'max(12px, 5.6cqw)' }}
+              />
+            )}
             <div style={{ display: 'flex', gap: '1.25cqw', marginBottom: (isCompactMode || isShortHeight) ? '1.25cqw' : '2.5cqw' }}>
               <div
                 data-help-id="scoreboard-timeout-right"

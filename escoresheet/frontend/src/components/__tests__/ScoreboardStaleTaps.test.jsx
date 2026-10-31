@@ -112,6 +112,9 @@ function release() {
   for (const deliver of queue) deliver()
 }
 
+const INK = 'data:image/png;base64,AAAA'
+const PRE_MATCH_SIGNED = { homeCoachSignature: INK, homeCaptainSignature: INK, awayCoachSignature: INK, awayCaptainSignature: INK }
+
 // Set 1 under way at 1:1 (`started`: else not started yet), team A (home)
 // on the left, both line-ups entered
 async function setUpMatch({ started = true } = {}) {
@@ -122,7 +125,9 @@ async function setUpMatch({ started = true } = {}) {
   await db.players.bulkAdd(players)
   const matchId = await db.matches.add({
     homeTeamId: home, awayTeamId: away, status: 'live', test: false, bestOf: 5,
-    firstServe: 'home', coinTossTeamA: 'home', coinTossTeamB: 'away'
+    firstServe: 'home', coinTossTeamA: 'home', coinTossTeamB: 'away',
+    // signed: the first serve of an official match waits for the four (domain/preMatchSignatures)
+    ...PRE_MATCH_SIGNED
   })
   const t = new Date(Date.now() - 30 * 60 * 1000).toISOString()
   await db.sets.add({ matchId, index: 1, homePoints: started ? 1 : 0, awayPoints: started ? 1 : 0, finished: false, startTime: started ? t : null })

@@ -2439,10 +2439,10 @@
       "a_sides": "L'équipe A est à gauche, l'équipe B à droite. Appuyez sur « Changer de côté » pour les inverser.",
       "tip_sides": "Les deux équipes telles qu'elles commencent : équipe A à gauche, équipe B à droite.",
       "q_start": "Comment démarrer le match ?",
-      "a_start": "Quand les côtés, le service et les signatures sont faits, appuyez sur « Confirmer le tirage au sort ». L'app vérifie la connexion et ouvre l'écran de saisie.",
+      "a_start": "Quand les côtés et le service sont faits, appuyez sur « Confirmer le tirage au sort ». Les signatures manquantes peuvent suivre sur l'écran de saisie. L'app vérifie la connexion et ouvre l'écran de saisie.",
       "tip_start": "Appuyez ici pour confirmer le tirage au sort et ouvrir l'écran de saisie.",
       "q_signatures": "Qui signe avant le match ?",
-      "a_signatures": "L'entraîneur et le capitaine de chaque équipe. Appuyez sur « Signature équipe A » ou « Signature équipe B », puis sur « Entraîneur » ou « Capitaine ». Ils signent sur l'écran, ou sur leur propre téléphone avec « Signer sur le téléphone ». Un match simplifié n'a pas besoin de signatures.",
+      "a_signatures": "L'entraîneur et le capitaine de chaque équipe. Appuyez sur « Signature équipe A » ou « Signature équipe B », puis sur « Entraîneur » ou « Capitaine ». Ils signent sur l'écran, ou sur leur propre téléphone avec « Signer sur le téléphone ». Ils peuvent aussi signer plus tard, pendant l'échauffement : l'écran de saisie affiche pour leur équipe un « Signature manquante » qui clignote, et le match ne commence que lorsque les quatre ont signé. Un match simplifié n'a pas besoin de signatures.",
       "q_birthdates": "Pourquoi l'app me demande-t-elle de confirmer des dates de naissance ?",
       "a_birthdates": "Une date de naissance au 1er janvier vient souvent d'un import erroné. L'app liste ces personnes. Vérifiez-les avant de continuer.",
       "q_lineups": "Où saisir les formations de départ ?",
@@ -2453,6 +2453,8 @@
     "scoreboard": {
       "q_startRally": "Comment démarrer le premier échange ?",
       "a_startRally": "Saisissez d'abord les deux formations. Appuyez sur « Démarrer le set » pour le premier échange d'un set, puis sur « Lancer l'échange » à chaque coup de sifflet du service.",
+      "q_missingSignature": "Que signifie « Signature manquante » ?",
+      "a_missingSignature": "L'entraîneur ou le capitaine de cette équipe n'a pas encore signé l'effectif. Appuyez dessus : l'effectif de l'équipe s'ouvre, ils le vérifient et signent, sur l'écran ou sur leur propre téléphone. « Démarrer le set » au set 1 attend que l'entraîneur et le capitaine des deux équipes aient signé.",
       "tip_startRally": "Appuyez ici au coup de sifflet du service. Les deux formations sont nécessaires avant le premier échange.",
       "q_awardPoint": "Comment attribuer un point ?",
       "a_awardPoint": "À la fin de l'échange, appuyez sur le bouton de point de l'équipe qui l'a gagné. L'app ajoute le point, passe le service et fait tourner l'équipe qui reprend le service.",
@@ -4630,5 +4632,17 @@
     "serverScore": "Sur le serveur maintenant",
     "compareHint": "Compare-le avec le tableau de cet appareil. Reprendre le match charge ce score ici, et l'autre appareil s'arrête.",
     "confirmTakeBack": "Oui, reprendre le match ici"
+  },
+  "preMatchSignatures": {
+    "missingButton_one": "Signature manquante",
+    "missingButton_other": "Signatures manquantes",
+    "sign": "Signer",
+    "dialogTitle": "{{team}} - effectif et signatures",
+    "intro": "L'entraîneur et le capitaine vérifient l'effectif, puis signent. Le match commence quand l'entraîneur et le capitaine des deux équipes ont signé.",
+    "allSigned": "L'entraîneur et le capitaine de cette équipe ont signé.",
+    "correctRoster": "Corriger l'effectif",
+    "blockedTitle": "Signatures manquantes",
+    "blockedBody": "Le match commence quand l'entraîneur et le capitaine des deux équipes ont signé l'effectif.",
+    "stillMissing": "Encore à signer : {{roles}}"
   }
 }
