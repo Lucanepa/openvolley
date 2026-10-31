@@ -6,6 +6,7 @@ import { COURT_SURFACE, HEADER_SURFACE, normaliseColour, teamBoxStyle, teamTextP
 import { COURT_CELLS, PHONE_COUNTER_HEIGHT_PX, PHONE_COURT_MIN_PX, PHONE_RECENT_MIN_PX, PHONE_SQUARE_MIN_PX, PHONE_SQUARE_RESERVE_PX, POSITIONS, officialRoleShort, recentLinesFor, tintOf } from './phoneLayout'
 import { captainRingStyle } from './captainRing'
 import RallyTapNotice from './RallyTapNotice'
+import { MissingSignatureButton } from '../signature/PreMatchSignDialog.jsx'
 
 /**
  * The scoring screen on a phone held upright (owner-approved mockup, 390x844).
@@ -49,7 +50,9 @@ import RallyTapNotice from './RallyTapNotice'
  *   substitute or the libero came in for),
  *   liberos: [{ number, libero, unable, onCourt, position }], benchPlayers:
  *   [{ number }], officials: [{ role }], improperRequestDone, delayWarned,
- *   easy, formalWarned, needsRedesignation }
+ *   easy, formalWarned, needsRedesignation, signaturesMissing (the coach /
+ *   captain still to sign before the first serve: a flashing button that
+ *   opens the team's roster, actions.openSignatures) }
  */
 export default function PhoneScoreboard({ setNumber, teams, serving, rally, centre, recent, canUndo, scoreFont = 'inherit', limits = DEFAULT_LIMITS, actions }) {
   const { t } = useTranslation()
@@ -425,6 +428,23 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
           {courtHalf(right)}
         </div>
       </section>
+
+      {/* A coach or captain has not signed yet: under its team's court half,
+          until the match starts */}
+      {(left.signaturesMissing?.length > 0 || right.signaturesMissing?.length > 0) && (
+        <section aria-label={t('roster.signatures')} style={{ flex: 'none', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, padding: '4px 12px 0' }}>
+          {[left, right].map(team => team.signaturesMissing?.length > 0 ? (
+            <MissingSignatureButton
+              key={team.side}
+              testId={`phone-missing-signature-${team.side}`}
+              roles={team.signaturesMissing}
+              detail={teamTitle(team)}
+              onClick={() => actions.openSignatures(team.side)}
+              style={{ fontSize: 13 }}
+            />
+          ) : <div key={team.side} aria-hidden="true" />)}
+        </section>
+      )}
 
       {/* Grows into the height left over (from nothing: what it shows never
           sizes it): the screen is filled, no gap */}

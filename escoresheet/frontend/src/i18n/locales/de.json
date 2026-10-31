@@ -2294,10 +2294,10 @@
       "a_sides": "Team A steht links, Team B rechts. Tippe auf «Teams», um sie zu tauschen.",
       "tip_sides": "Die beiden Teams, wie sie beginnen: Team A links, Team B rechts.",
       "q_start": "Wie starte ich das Spiel?",
-      "a_start": "Wenn Seiten, Aufschlag und Unterschriften stimmen, tippe auf «Seitenwahl bestätigen». Die App prüft die Verbindung und öffnet den Erfassungsbildschirm.",
+      "a_start": "Wenn Seiten und Aufschlag stimmen, tippe auf «Seitenwahl bestätigen». Fehlende Unterschriften können auf dem Erfassungsbildschirm folgen. Die App prüft die Verbindung und öffnet den Erfassungsbildschirm.",
       "tip_start": "Tippe hier, um die Auslosung zu bestätigen und den Erfassungsbildschirm zu öffnen.",
       "q_signatures": "Wer unterschreibt vor dem Spiel?",
-      "a_signatures": "Coach und Captain jedes Teams. Tippe auf «Unterschrift A» oder «Unterschrift B», dann auf «Coach» oder «Captain». Sie unterschreiben auf dem Bildschirm oder mit «Auf dem Handy unterschreiben» auf dem eigenen Handy. Ein einfaches Spiel braucht keine Unterschriften.",
+      "a_signatures": "Coach und Captain jedes Teams. Tippe auf «Unterschrift A» oder «Unterschrift B», dann auf «Coach» oder «Captain». Sie unterschreiben auf dem Bildschirm oder mit «Auf dem Handy unterschreiben» auf dem eigenen Handy. Sie können auch später unterschreiben, während des Einspielens: Der Erfassungsbildschirm zeigt bei ihrem Team ein blinkendes «Unterschrift fehlt», und das Spiel beginnt erst, wenn alle vier unterschrieben haben. Ein einfaches Spiel braucht keine Unterschriften.",
       "q_birthdates": "Warum soll ich Geburtsdaten bestätigen?",
       "a_birthdates": "Ein Geburtsdatum am 1. Januar kommt oft von einem fehlerhaften Import. Die App listet diese Personen auf. Prüfe sie, bevor du weitermachst.",
       "q_lineups": "Wo trage ich die Startaufstellungen ein?",
@@ -2308,6 +2308,8 @@
     "scoreboard": {
       "q_startRally": "Wie starte ich den ersten Ballwechsel?",
       "a_startRally": "Trage zuerst beide Aufstellungen ein. Tippe beim ersten Ballwechsel eines Satzes auf «Satz starten», danach bei jedem Aufschlagpfiff auf «Ballwechsel starten».",
+      "q_missingSignature": "Was bedeutet «Unterschrift fehlt»?",
+      "a_missingSignature": "Coach oder Captain dieses Teams haben den Kader noch nicht unterschrieben. Tippe darauf: Der Kader des Teams öffnet sich, sie prüfen ihn und unterschreiben, auf dem Bildschirm oder auf dem eigenen Handy. «Satz starten» im 1. Satz wartet, bis Coach und Captain beider Teams unterschrieben haben.",
       "tip_startRally": "Tippe hier beim Aufschlagpfiff. Vor dem ersten Ballwechsel braucht es beide Aufstellungen.",
       "q_awardPoint": "Wie vergebe ich einen Punkt?",
       "a_awardPoint": "Wenn der Ballwechsel vorbei ist, tippe auf die Punkt-Schaltfläche des Teams, das ihn gewonnen hat. Die App zählt den Punkt, gibt den Aufschlag weiter und lässt das Team rotieren, das den Aufschlag zurückgewinnt.",
@@ -4619,5 +4621,17 @@
     "serverScore": "Jetzt auf dem Server",
     "compareHint": "Vergleiche ihn mit der Anzeige auf diesem Gerät. Beim Übernehmen wird dieser Spielstand hier geladen, und das andere Gerät hört auf.",
     "confirmTakeBack": "Ja, hier wieder übernehmen"
+  },
+  "preMatchSignatures": {
+    "missingButton_one": "Unterschrift fehlt",
+    "missingButton_other": "Unterschriften fehlen",
+    "sign": "Unterschreiben",
+    "dialogTitle": "{{team}} - Kader und Unterschriften",
+    "intro": "Coach und Captain prüfen den Kader und unterschreiben. Das Spiel beginnt, wenn Coach und Captain beider Teams unterschrieben haben.",
+    "allSigned": "Coach und Captain dieses Teams haben unterschrieben.",
+    "correctRoster": "Kader korrigieren",
+    "blockedTitle": "Unterschriften fehlen",
+    "blockedBody": "Das Spiel beginnt, wenn Coach und Captain beider Teams den Kader unterschrieben haben.",
+    "stillMissing": "Noch offen: {{roles}}"
   }
 }
