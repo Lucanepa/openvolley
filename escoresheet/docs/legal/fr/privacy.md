@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.6 · État au 30 octobre 2026
+**OpenVolley et OpenBeach** · Version 1.7 · État au 31 octobre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version anglaise fait foi.
@@ -279,6 +279,11 @@ journal des modifications (section 14) ainsi que le journal d'activité et
 l'historique des événements des matchs (section 5). Votre compte est
 dissocié de ces entrées. Vous pouvez faire effacer ce qui subsiste selon la
 section 19, dans la mesure où la feuille de match n'en a pas besoin.
+
+**Suppression par un administrateur :** un administrateur peut aussi
+supprimer votre compte, lorsque vous le demandez (section 19) ou lorsqu'un
+nouveau compte n'est pas validé (refusé). Les mêmes données sont effacées et
+les mêmes subsistent que lorsque vous le supprimez vous-même.
 
 ## 7. Données des matchs et feuilles de match
 
@@ -595,6 +600,11 @@ précédentes ; plus tôt sur demande.
   d'un club, modifié l'adresse de contact d'un club ou activé ou désactivé
   l'envoi des feuilles de match, et que la feuille d'un match a été envoyée,
   avec le nombre de destinataires. Il ne contient aucune adresse e-mail.
+- **Comptes supprimés :** le journal des modifications consigne qu'un
+  administrateur a supprimé un compte ou refusé un nouveau compte, avec les
+  rôles et les applications du compte, sa date de création, le nombre de
+  matchs officiels qu'il laisse et un hachage pseudonymisé de son adresse
+  e-mail, jamais l'adresse ni le nom.
 - **Signer sur un téléphone :** le serveur ne journalise que les étapes
   (démarrée, ouverte, signée, terminée) avec la fonction et un identifiant
   court, jamais le lien, la signature, des noms ou des équipes.
@@ -634,7 +644,7 @@ prestataires. Vous pouvez me demander une copie de ces garanties.
 
 | Données | Conservation |
 |---|---|
-| Compte et profil | Jusqu'à ce que vous supprimiez le compte |
+| Compte et profil | Jusqu'à ce que vous supprimiez le compte ou qu'un administrateur le supprime (sur demande, ou un nouveau compte refusé) |
 | Session | 30 jours après la dernière utilisation, 90 jours au plus |
 | Liens dans les e-mails | Valables 60 minutes ou 24 heures, effacés 7 jours plus tard |
 | NIP de validation | Jusqu'à ce que vous le supprimiez ou supprimiez votre compte |
