@@ -1,16 +1,18 @@
 #!/bin/sh
-# OpenVolley eScoresheet / OpenBeach / Point Hub installer for Debian, Ubuntu
-# and derivatives (amd64).
+# OpenVolley eScoresheet / OpenBeach / Point Hub / SVRZ RC installer for
+# Debian, Ubuntu and derivatives (amd64).
 #
 #   curl -fsSL https://get.openvolley.app/install.sh | sudo sh
 #   curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s openbeach-escoresheet
 #   curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s point-hub
+#   curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s svrz-rc
 #
 # Adds the signed OpenVolley APT repository and installs one package:
 # openvolley-escoresheet (the default), openbeach-escoresheet (OpenBeach, the
-# beach volleyball app) or point-hub (Point Hub, the LedBox scoreboard
-# console); from then on `sudo apt upgrade` keeps it current. All three come
-# from the same repository and can be installed side by side. Safe to run
+# beach volleyball app), point-hub (Point Hub, the LedBox scoreboard
+# console) or svrz-rc (SVRZ Referee Coaching); from then on `sudo apt upgrade`
+# keeps it current. All of them come from the same repository and can be
+# installed side by side. Safe to run
 # again: it rewrites the same two files and installs or upgrades the package.
 #
 #   1. Checks: the package name is one of PACKAGES, apt-get and dpkg, amd64, root.
@@ -35,7 +37,7 @@
 
 FPR=AB469DA8DC3EC90F8057320D285B18D76C16B82C
 DEFAULT_PKG=openvolley-escoresheet
-PACKAGES="openvolley-escoresheet openbeach-escoresheet point-hub"
+PACKAGES="openvolley-escoresheet openbeach-escoresheet point-hub svrz-rc"
 PKG=
 APP=
 
@@ -73,6 +75,7 @@ main() {
   case "$PKG" in
     openbeach-escoresheet) APP=OpenBeach ;;
     point-hub) APP="Point Hub" ;;
+    svrz-rc) APP="SVRZ RC" ;;
     *) APP="OpenVolley eScoresheet" ;;
   esac
 

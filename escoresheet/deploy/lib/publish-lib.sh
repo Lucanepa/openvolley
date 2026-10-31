@@ -60,11 +60,15 @@ UPDATER_JS="$KIT_DIR/lib/desktop-updater.mjs"
 FASTLANE_CHANGELOGS="$KIT_DIR/../../fastlane/metadata/android/en-US/changelogs"
 BEACH_CHANGELOGS=${OV_BEACH_CHANGELOGS:-$KIT_DIR/../../openbeach/fastlane/metadata/android/en-US/changelogs}
 
-# The APT packages this repository publishes, one per desktop app.
-APT_NAMES=(openvolley-escoresheet openbeach-escoresheet point-hub)
+# The APT packages this repository publishes, one per desktop app. svrz-rc is
+# the SVRZ Referee Coaching app (github.com/Lucanepa/svrz_rc; its installers
+# are the releases native-vV of Lucanepa/svrz-referee-coaching): its .deb is
+# given by hand, and APT is how a .deb install of it stays current.
+APT_NAMES=(openvolley-escoresheet openbeach-escoresheet point-hub svrz-rc)
 # Every updater app's package, for the APT hold-back: app -> package, app ->
-# manifest dir. Point Hub is not in here on purpose: it has no latest.json, so
-# nothing holds its versions back (apt_held is never true for point-hub).
+# manifest dir. Point Hub and svrz-rc are not in here on purpose: neither has a
+# latest.json here, so nothing holds their versions back (apt_held is never
+# true for point-hub or svrz-rc).
 declare -A APP_DEB_NAME=([openvolley]=openvolley-escoresheet [beach]=openbeach-escoresheet)
 declare -A APP_DESKTOP_DIR=([openvolley]=desktop [beach]=desktop/beach)
 
