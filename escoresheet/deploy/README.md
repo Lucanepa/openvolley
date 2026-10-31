@@ -355,6 +355,24 @@ from `fdroid/repo/`) and run `publish-pkgs.sh` again. There is no kill switch to
 Tests: `tests/publish-point-hub.test.sh` (throwaway keys, `--no-sync`); with the real inputs:
 `OV_TEST_POINTHUB_DEB=<.deb> OV_TEST_POINTHUB_APK=<release APK> OV_TEST_POINTHUB_BAD_APK=<debug APK>`.
 
+### SVRZ RC (APT only)
+
+SVRZ Referee Coaching ([Lucanepa/svrz_rc](https://github.com/Lucanepa/svrz_rc)) puts only its
+`.deb` in this APT repository, so a `.deb` install updates with `sudo apt upgrade`. That app's own
+updater only covers its AppImage. Its installers are the GitHub releases `native-v<version>` of
+**Lucanepa/svrz-referee-coaching** (the `.deb` is named `SVRZ.RC_<v>_amd64.deb`; the package is
+`svrz-rc`, with `/usr/bin/svrz-rc`). Its APK goes to svrz_rc's own F-Droid repo, not this one,
+and the install page has no section for it.
+
+```bash
+gh release download native-v1.4.3 -R Lucanepa/svrz-referee-coaching -p '*.deb' -D /tmp/svrz
+escoresheet/deploy/publish-pkgs.sh /tmp/svrz/SVRZ.RC_1.4.3_amd64.deb
+```
+
+Like Point Hub's, it has no `latest.json` here: the APT hold-back never applies and APT lists a new
+version at once. Linux: `curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s svrz-rc`.
+Test: `tests/publish-svrz-rc.test.sh`.
+
 ### macOS (unsigned), Homebrew tap
 
 The macOS app is ad-hoc signed, not notarized (no paid Apple developer account). macOS blocks
