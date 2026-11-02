@@ -73,7 +73,7 @@ import nodemailer from 'nodemailer'
 import { legalUrl } from './legalLinks.js'
 
 export const MAIL_LANGS = Object.freeze(['en', 'de', 'fr', 'it'])
-export const MAIL_KINDS = Object.freeze(['reset', 'confirm', 'password_changed', 'approval', 'approval_pin_locked', 'scoresheet', 'scoresheet_test'])
+export const MAIL_KINDS = Object.freeze(['reset', 'confirm', 'password_changed', 'passkey_added', 'approval', 'approval_pin_locked', 'scoresheet', 'scoresheet_test'])
 export const DEFAULT_MANAGER_URL = 'https://manager.openvolley.app'
 export const DEFAULT_FROM_NAME = 'OpenVolley'
 export const DEFAULT_MANAGER_URL_BEACH = 'https://manager-beach.openvolley.app'
@@ -97,7 +97,7 @@ export function mailApp(raw) {
 // are OpenVolley's only, for now also for a beach match's approval (their
 // text names OpenVolley's profile; one approval PIN per account, which either
 // app's profile sets).
-const BRANDED_KINDS = new Set(['reset', 'confirm', 'password_changed'])
+const BRANDED_KINDS = new Set(['reset', 'confirm', 'password_changed', 'passkey_added'])
 
 /** The brand of one mail: mailApp(app) for the account mails, 'indoor' for the approval notices. */
 export function mailBrandOf(kind, app) {
@@ -111,7 +111,7 @@ export function mailBrandOf(kind, app) {
 // sign-ups uses up only the latter (whose holders can resend later).
 // "notify" carries the approval notices of lib/approvals.js (an approval made
 // with an official's PIN, a locked PIN): they cannot starve the account mails.
-export const MAIL_BUDGET_OF = Object.freeze({ reset: 'account', password_changed: 'account', confirm: 'confirm', approval: 'notify', approval_pin_locked: 'notify', scoresheet: 'scoresheet', scoresheet_test: 'scoresheet' })
+export const MAIL_BUDGET_OF = Object.freeze({ reset: 'account', password_changed: 'account', passkey_added: 'account', confirm: 'confirm', approval: 'notify', approval_pin_locked: 'notify', scoresheet: 'scoresheet', scoresheet_test: 'scoresheet' })
 // scoresheet: a busy match day (a dozen recipients a game) must not starve
 // the account mails, nor be starved by them
 export const DEFAULT_BUDGETS = Object.freeze({ account: 50, confirm: 50, notify: 100, scoresheet: 300 })
@@ -311,6 +311,35 @@ const T = {
       after: ['Se non è stato lei, reimposti subito la password e avvisi l’admin del suo club.']
     }
   },
+  // A passkey was added (lib/auth.js passkeyRegister). vars: device ("iPhone ·
+  // Safari"). Like the password notice it links nothing: the way out is in
+  // the app, and a genuine mail can be told by that.
+  passkey_added: {
+    en: (v) => ({
+      subject: 'A passkey was added to your OpenVolley account',
+      before: ['Hello,', `a passkey (sign-in with your fingerprint, face or device PIN) was just added to your OpenVolley account, on: ${v.device}.`],
+      button: null,
+      after: ['If that was not you, remove it under Profile → Passkeys, reset your password right away (that removes every passkey) and tell your club admin.']
+    }),
+    de: (v) => ({
+      subject: 'Ihrem OpenVolley-Konto wurde ein Passkey hinzugefügt',
+      before: ['Hallo', `Ihrem OpenVolley-Konto wurde soeben ein Passkey (Anmeldung mit Fingerabdruck, Gesicht oder Geräte-PIN) hinzugefügt, auf: ${v.device}.`],
+      button: null,
+      after: ['Wenn Sie das nicht waren, entfernen Sie ihn unter Profil → Passkeys, setzen Sie Ihr Passwort sofort zurück (das entfernt alle Passkeys) und informieren Sie den Admin Ihres Vereins.']
+    }),
+    fr: (v) => ({
+      subject: 'Une clé d’accès a été ajoutée à votre compte OpenVolley',
+      before: ['Bonjour,', `une clé d’accès (connexion par empreinte digitale, visage ou code de l’appareil) vient d’être ajoutée à votre compte OpenVolley, sur : ${v.device}.`],
+      button: null,
+      after: ['Si ce n’était pas vous, supprimez-la sous Profil → Clés d’accès, réinitialisez immédiatement votre mot de passe (cela supprime toutes les clés d’accès) et prévenez l’admin de votre club.']
+    }),
+    it: (v) => ({
+      subject: 'Al suo account OpenVolley è stata aggiunta una passkey',
+      before: ['Buongiorno,', `al suo account OpenVolley è appena stata aggiunta una passkey (accesso con impronta, volto o PIN del dispositivo), su: ${v.device}.`],
+      button: null,
+      after: ['Se non è stato lei, la rimuova in Profilo → Passkey, reimposti subito la password (così vengono rimosse tutte le passkey) e avvisi l’admin del suo club.']
+    })
+  },
   // Approval notices (lib/approvals.js). vars: slot, game, result, id, time,
   // sender (may be ''). The link opens OpenVolley, where Profile -> Approval
   // PIN lists the official's approvals with an undo.
@@ -448,6 +477,12 @@ const SHARED_PASSWORD_NOTE = {
     de: 'Damit ändern Sie das Passwort Ihres Kontos für OpenVolley und OpenBeach.',
     fr: 'Cela modifie le mot de passe de votre compte pour OpenVolley et OpenBeach.',
     it: 'Così modifica la password del suo account per OpenVolley e OpenBeach.'
+  },
+  passkey_added: {
+    en: 'Your account works for OpenVolley and OpenBeach: the passkey signs in to both apps.',
+    de: 'Ihr Konto gilt für OpenVolley und OpenBeach: Der Passkey meldet Sie in beiden Apps an.',
+    fr: 'Votre compte est valable pour OpenVolley et OpenBeach : la clé d’accès vous connecte aux deux applications.',
+    it: 'Il suo account vale per OpenVolley e OpenBeach: la passkey dà accesso a entrambe le app.'
   },
   password_changed: {
     en: 'Your account works for OpenVolley and OpenBeach: the new password is the one of both apps.',

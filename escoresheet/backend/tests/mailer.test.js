@@ -17,6 +17,9 @@ import { startFakeSmtp, makeTestCert, linkToken, SMTP_USER, SMTP_PASS } from './
 const APPROVAL_KINDS = ['approval', 'approval_pin_locked']
 const SCORESHEET_KINDS = ['scoresheet', 'scoresheet_test']
 const ACCOUNT_KINDS = MAIL_KINDS.filter((k) => !APPROVAL_KINDS.includes(k) && !SCORESHEET_KINDS.includes(k))
+// Notices that link nothing: the way out is in the app, and a genuine mail
+// can be told by that (password changed, passkey added).
+const NOTICE_KINDS = ['password_changed', 'passkey_added']
 const SCORESHEET_VARS = { teams: 'KSC Wiedikon H1 – VBC Other H1', game: '930001', date: '29.10.2026', result: '3:1', corrected: false }
 
 const TOKEN = 'A'.repeat(20) + '_-' + 'b'.repeat(21)
@@ -58,7 +61,7 @@ describe('mailer: links and templates', () => {
         assert.doesNotMatch(m.html, /<img|<script|<link|url\(|@import/i, 'no remote images, scripts or styles')
         assert.doesNotMatch(m.text + m.subject, /ß/, 'Swiss spelling')
         const urls = (m.html.match(/https?:\/\/[^"<\s]+/g) || [])
-        if (kind === 'password_changed' || SCORESHEET_KINDS.includes(kind)) {
+        if (NOTICE_KINDS.includes(kind) || SCORESHEET_KINDS.includes(kind)) {
           assert.equal(urls.length, 0, 'the notice carries no link')
           assert.doesNotMatch(m.text, /https?:/)
         } else {
@@ -397,7 +400,7 @@ describe('mailer: brands (OpenVolley / OpenBeach)', () => {
     }
   })
 
-  it('OpenBeach mails: its name everywhere, its own subjects, the shared-password note on reset and password_changed', () => {
+  it('OpenBeach mails: its name everywhere, its own subjects, the shared-account note on all but confirm', () => {
     const subjects = new Set()
     for (const kind of ACCOUNT_KINDS) {
       for (const lang of MAIL_LANGS) {
@@ -420,7 +423,7 @@ describe('mailer: brands (OpenVolley / OpenBeach)', () => {
           assert.match(shared[0], /OpenVolley .* OpenBeach/)
           assert.ok(m.html.includes(shared[0]), `${kind}/${lang}: note in html`)
         }
-        if (kind !== 'password_changed') assert.ok(m.text.includes(link))
+        if (!NOTICE_KINDS.includes(kind)) assert.ok(m.text.includes(link))
       }
     }
     assert.ok(renderMail('reset', 'en', { link, app: 'beach' }).text.includes('This changes the password of your account for OpenVolley and OpenBeach.'))

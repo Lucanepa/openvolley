@@ -1,8 +1,14 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
-import { Check, X } from 'lucide-react'
+import { Check, Fingerprint, X } from 'lucide-react'
 import { Button, cn, Field, FOCUS_RING, IconButton, Input } from '../../ui'
+import {
+  anyPasskeyHere, deviceCanHoldPasskey, isPasskeyCancel, markPasskeyHere,
+  passkeyHere, passkeyOfferDismissed, passkeysPossible
+} from '../../lib/passkeys'
+import { passkeyErrorText } from './passkeyErrors'
+import { showPasskeyOffer } from './passkeyOffer'
 import CreateAccountLink from './CreateAccountLink'
 import LegalLinks from '../../legal/LegalLinks'
 import { backdropDismiss } from '../../ui/backdropDismiss.js'
@@ -29,7 +35,7 @@ export function resetErrorText(t, error) {
 
 export default function LoginModal({ open, onClose, onSwitchToSignUp, initialForgot = false }) {
   const { t } = useTranslation()
-  const { signIn, resetPassword } = useAuth()
+  const { signIn, signInWithPasskey, resetPassword } = useAuth()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -37,22 +43,55 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp, initialFor
   const [error, setError] = useState('')
   const [showForgotPassword, setShowForgotPassword] = useState(initialForgot)
   const [resetSent, setResetSent] = useState(false)
+  // Passkeys (lib/passkeys.js): web only, decided once per open modal.
+  const [canPasskey] = useState(() => passkeysPossible())
+  const [passkeyBusy, setPasskeyBusy] = useState(false)
 
   if (!open) return null
+  // Somebody set one up in this browser: the passkey button leads.
+  const passkeyFirst = canPasskey && anyPasskeyHere()
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
     setLoading(true)
 
-    const { error: signInError } = await signIn(email, password)
+    const { data, error: signInError } = await signIn(email, password)
 
     if (signInError) {
       setError(signInError.message)
       setLoading(false)
-    } else {
-      setLoading(false)
+      return
+    }
+    const userId = data?.user?.id
+    // Offered once per account and browser, and only where the device can
+    // keep the key itself; everyone else goes straight in, as before.
+    // The offer is shown by PasskeyOfferHost: this dialog may be gone the
+    // moment the account counts as signed in.
+    if (canPasskey && userId && !passkeyHere(userId) && !passkeyOfferDismissed(userId) && await deviceCanHoldPasskey()) {
+      showPasskeyOffer({ userId, password })
+    }
+    setPassword('')
+    setLoading(false)
+    onClose()
+  }
+
+  const handlePasskeySignIn = async () => {
+    if (passkeyBusy) return
+    setError('')
+    setPasskeyBusy(true)
+    try {
+      const { data, error: passkeyError } = await signInWithPasskey()
+      if (passkeyError) {
+        setError(passkeyErrorText(t, passkeyError))
+        return
+      }
+      if (data?.user?.id) markPasskeyHere(data.user.id, true)
       onClose()
+    } catch (err) {
+      if (!isPasskeyCancel(err)) setError(passkeyErrorText(t, err))
+    } finally {
+      setPasskeyBusy(false)
     }
   }
 
@@ -78,6 +117,21 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp, initialFor
 
   // Same auth recipe as SignUpForm: labelled kit Field + lg Input, hero submit.
   const quietLink = cn('inline-flex min-h-11 w-full items-center justify-center rounded-lg text-sm text-stone-500 transition-colors hover:text-stone-800', FOCUS_RING)
+
+  const passkeyButton = (
+    <Button
+      variant="secondary"
+      block
+      type="button"
+      onClick={handlePasskeySignIn}
+      disabled={passkeyBusy || loading}
+      loading={passkeyBusy}
+      data-testid="passkey-sign-in"
+    >
+      {!passkeyBusy && <Fingerprint size={16} className="text-red-600" aria-hidden="true" />}
+      {passkeyBusy ? t('passkeys.waiting') : t('passkeys.signInButton')}
+    </Button>
+  )
 
   return (
     <div className="ov-kit fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm" style={{ zIndex: 2000 }} {...backdropDismiss(onClose)}>
@@ -154,6 +208,14 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp, initialFor
             </form>
           ) : (
             <>
+              {passkeyFirst && (
+                <>
+                  {passkeyButton}
+                  <p className="my-4 flex items-center gap-3 text-xs text-stone-400 before:h-px before:flex-1 before:bg-stone-200 after:h-px after:flex-1 after:bg-stone-200">
+                    {t('passkeys.or')}
+                  </p>
+                </>
+              )}
               <form onSubmit={handleSubmit} className="space-y-3">
                 <Field label={t('auth.email', 'Email')}>
                   <Input
@@ -175,10 +237,11 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp, initialFor
                     required
                   />
                 </Field>
-                <Button variant="hero" block type="submit" disabled={loading} loading={loading}>
+                <Button variant="hero" block type="submit" disabled={loading || passkeyBusy} loading={loading}>
                   {loading ? t('common.signingIn', 'Signing in...') : t('auth.signIn', 'Sign in')}
                 </Button>
               </form>
+              {canPasskey && !passkeyFirst && <div className="mt-3">{passkeyButton}</div>}
 
               <button
                 type="button"

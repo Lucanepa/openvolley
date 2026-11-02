@@ -84,6 +84,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { isIPv4, isIPv6 } from 'node:net'
 import bcryptjs from 'bcryptjs'
 import { authLink, describeMailError, disabledMailer, inboxKey, mailApp, maskEmail, MAIL_BRANDS, pickLang } from './mailer.js'
+import { cleanTransports, createPasskeyCeremonies, passkeyConfig, passkeyDeviceLabel, PasskeyError, PASSKEYS_PER_USER_MAX } from './passkeys.js'
 
 // ---------------------------------------------------------------------------
 // Constants and small helpers
@@ -94,7 +95,10 @@ const DAY = 24 * 60 * 60
 export const AUTH_ACTIONS = Object.freeze([
   'sign-in', 'sign-up', 'sign-out', 'get-user', 'update-user',
   'delete-account', 'profile', 'reset-password', 'reset-password/confirm',
-  'confirm-email', 'resend-confirmation'
+  'confirm-email', 'resend-confirmation',
+  // passkeys (lib/passkeys.js): sign-in with the device's fingerprint or face
+  'passkey/login-options', 'passkey/login', 'passkey/register-options',
+  'passkey/register', 'passkey/list', 'passkey/delete'
 ])
 
 // raw_app_meta_data marker of accounts created unconfirmed with a link.
@@ -106,6 +110,8 @@ const DEFAULTS = Object.freeze({
   // One-time email links (db/010). Absent table: reset answers 503 and
   // sign-up confirms at once, as without a mailer.
   tokensTable: 'auth.app_tokens',
+  // db/022 (optional): passkeys; null disables them
+  passkeysTable: 'auth.passkeys',
   // Best-effort audit entries (db/007) when the table exists.
   auditTable: 'public.audit_log',
   // Per-app memberships (db/012). A sign-up with `app` adds its membership
@@ -222,7 +228,13 @@ const DEFAULTS = Object.freeze({
     tokenIp: { max: 30, windowMs: 15 * 60 * 1000 },
     // resend-confirmation: per account and per client.
     resendUser: { max: 3, windowMs: 60 * 60 * 1000 },
-    resendIp: { max: 10, windowMs: 60 * 60 * 1000 }
+    resendIp: { max: 10, windowMs: 60 * 60 * 1000 },
+    // passkeys: the sign-in options and answers need no session (per address);
+    // setting one up does (per account, so a hall behind one NAT does not
+    // share a budget), and each finished set-up mails the account
+    passkeyIp: { max: 60, windowMs: 5 * 60 * 1000 },
+    passkeyUser: { max: 20, windowMs: 15 * 60 * 1000 },
+    passkeyAddedUser: { max: 5, windowMs: 60 * 60 * 1000 }
   },
   lockout: { maxFailures: 10, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000 }
 })
@@ -567,6 +579,7 @@ export function createAuth(options = {}) {
     profiles: cfg.profilesTable ? qualify(cfg.profilesTable) : null,
     tokens: cfg.tokensTable ? qualify(cfg.tokensTable) : null,
     audit: cfg.auditTable ? qualify(cfg.auditTable) : null,
+    passkeys: cfg.passkeysTable ? qualify(cfg.passkeysTable) : null,
     memberships: cfg.membershipsTable ? qualify(cfg.membershipsTable) : null
   }
 
@@ -582,7 +595,10 @@ export function createAuth(options = {}) {
     resetEmail: resolveLimiter(cfg.limits.resetEmail),
     tokenIp: resolveLimiter(cfg.limits.tokenIp),
     resendUser: resolveLimiter(cfg.limits.resendUser),
-    resendIp: resolveLimiter(cfg.limits.resendIp)
+    resendIp: resolveLimiter(cfg.limits.resendIp),
+    passkeyIp: resolveLimiter(cfg.limits.passkeyIp),
+    passkeyUser: resolveLimiter(cfg.limits.passkeyUser),
+    passkeyAddedUser: resolveLimiter(cfg.limits.passkeyAddedUser)
   }
   const lockout = typeof cfg.lockout.check === 'function' ? cfg.lockout : createLockout(cfg.lockout)
 
@@ -916,6 +932,10 @@ export function createAuth(options = {}) {
       [id, hash]
     )
     const revokedSessions = await revokeUserSessions(id, client)
+    // A new password is the "I lost control of this account" button: the
+    // passkeys go with the sessions, or a key someone else added would
+    // outlive it (lib/passkeys.js).
+    if (await passkeysAvailable(client)) await client.query(`DELETE FROM ${T.passkeys} WHERE user_id = $1`, [id])
     const emailConfirmed = upd.rows[0].confirmed === true
     if (await tokensAvailable(client)) {
       await client.query(
@@ -961,6 +981,11 @@ export function createAuth(options = {}) {
   }
 
   // --- one-time email links (db/010) -----------------------------------------
+  async function passkeysAvailable(client = pool) {
+    if (!cfg.passkeysTable) return false
+    return (await columnsOf(cfg.passkeysTable, client)).size > 0
+  }
+
   async function tokensAvailable(client = pool) {
     if (!cfg.tokensTable) return false
     return (await columnsOf(cfg.tokensTable, client)).size > 0
@@ -1543,6 +1568,205 @@ export function createAuth(options = {}) {
    * Never throws: database failures become 503 "auth_unavailable" (not 401, so
    * clients do not drop their session on a backend hiccup).
    */
+  // --- passkeys (lib/passkeys.js) ---------------------------------------------
+  // Sign-in with the device's fingerprint, face or PIN, for an account that
+  // has a password. Setting one up needs the password (a stolen session must
+  // not be able to add its own key), a new password removes them all
+  // (setPasswordIn), and every set-up is mailed to the account's address.
+  const ceremonies = createPasskeyCeremonies(cfg.passkeyConfig || passkeyConfig())
+  const PASSKEYS_UNAVAILABLE = () => fail(503, 'Passkeys are not available on this server.', 'passkeys_unavailable')
+  const PASSKEY_EXPIRED = () => fail(400, 'That took too long. Please try again.', 'passkey_expired')
+  const PASSKEY_UNKNOWN = () => fail(401, 'This passkey is not, or no longer, known here.', 'passkey_unknown')
+  const PASSKEY_INVALID = (status = 401) => fail(status, 'The passkey could not be verified.', 'passkey_invalid')
+  const PASSKEY_LIMIT = () => fail(400, `This account already has ${PASSKEYS_PER_USER_MAX} passkeys. Remove one first.`, 'passkey_limit')
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+  function passkeyRow(r) {
+    return { id: r.id, userId: r.user_id, credentialId: r.credential_id, publicKey: r.public_key, counter: Number(r.counter) || 0, transports: cleanTransports(r.transports) }
+  }
+
+  function bearerOf(body, ctx) {
+    return typeof body.access_token === 'string' && body.access_token ? body.access_token : bearerFromHeaders(ctx.headers)
+  }
+
+  /**
+   * A session for an account that just proved a passkey, made only while the
+   * key row still stands: FOR SHARE waits for a concurrent new password (which
+   * deletes the keys), a removal of the key or the account's deletion, and
+   * then re-checks. Returns null when the key is gone.
+   */
+  async function createPasskeySession(userId, passkeyId, client = pool) {
+    const token = generateToken()
+    const { rows } = await client.query(
+      `INSERT INTO ${T.sessions} (token_hash, user_id, created_at, expires_at, last_seen_at)
+       SELECT $1, u.id, now(), now() + make_interval(secs => $3), now()
+         FROM ${T.users} u
+         JOIN ${T.passkeys} p ON p.user_id = u.id AND p.id = $4
+        WHERE u.id = $2
+          FOR SHARE OF u, p
+       RETURNING floor(extract(epoch FROM expires_at))::bigint AS expires_at`,
+      [hashToken(token), userId, Math.min(cfg.sessionTtlSec, cfg.absoluteTtlSec), passkeyId]
+    )
+    if (!rows[0]) return null
+    return { token, expiresAt: Number(rows[0].expires_at) }
+  }
+
+  async function passkeyLoginOptions(body, ctx) {
+    const blocked = limit('passkeyIp', ipKey(ctx.ip))
+    if (blocked) return blocked
+    if (!(await passkeysAvailable())) return PASSKEYS_UNAVAILABLE()
+    return ok(await ceremonies.authenticationOptions())
+  }
+
+  async function passkeyLogin(body, ctx) {
+    const blocked = limit('passkeyIp', ipKey(ctx.ip))
+    if (blocked) return blocked
+    if (!(await passkeysAvailable())) return PASSKEYS_UNAVAILABLE()
+    let verified
+    try {
+      verified = await ceremonies.finishAuthentication({
+        challengeId: typeof body.challengeId === 'string' ? body.challengeId : '',
+        response: isPlainObject(body.response) ? body.response : {},
+        lookup: async (credentialId) => {
+          const { rows } = await pool.query(`SELECT * FROM ${T.passkeys} WHERE credential_id = $1`, [credentialId])
+          return rows[0] ? passkeyRow(rows[0]) : null
+        }
+      })
+    } catch (err) {
+      if (!(err instanceof PasskeyError)) throw err
+      if (err.code === 'challenge') return PASSKEY_EXPIRED()
+      if (err.code === 'unknown') return PASSKEY_UNKNOWN()
+      log.warn?.(`[auth] passkey sign-in refused: ${err.code}`)
+      return PASSKEY_INVALID()
+    }
+    const { passkey, newCounter } = verified
+    const cols = await usersColumns()
+    const { rows } = await pool.query(`SELECT to_jsonb(u) AS u FROM ${T.users} u WHERE u.id = $1`, [passkey.userId])
+    const user = rows[0]?.u
+    if (!user || isUserBlocked(user)) return PASSKEY_INVALID()
+    await pool.query(`UPDATE ${T.passkeys} SET counter = $2, last_used_at = now() WHERE id = $1`, [passkey.id, newCounter])
+    const session = await createPasskeySession(user.id, passkey.id)
+    if (!session) return PASSKEY_UNKNOWN() // removed (or a new password set) while we were checking
+    return await finishSignIn(user, cols, session)
+  }
+
+  async function passkeyRegisterOptions(body, ctx) {
+    const blocked = limit('sessionIp', ipKey(ctx.ip))
+    if (blocked) return blocked
+    if (!(await passkeysAvailable())) return PASSKEYS_UNAVAILABLE()
+    const v = await sessionFromBody(body, ctx)
+    if (v.error) return v.error
+    const userId = v.user.id
+    const blockedUser = limit('passkeyUser', userId)
+    if (blockedUser) return blockedUser
+    const password = typeof body.password === 'string' ? body.password : ''
+    if (!password || password.length > 1024) return fail(400, 'Your password is needed to add a passkey.', 'password_required')
+    const check = await verifyPassword(userId, password)
+    if (check.locked) {
+      const mins = Math.max(1, Math.ceil(check.retryAfterSec / 60))
+      return rateLimited(check.retryAfterSec, 'account_locked', `Too many failed attempts. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`)
+    }
+    if (!check.ok) return fail(401, 'Wrong password.', 'invalid_password')
+    const { rows } = await pool.query(`SELECT credential_id, transports FROM ${T.passkeys} WHERE user_id = $1`, [userId])
+    if (rows.length >= PASSKEYS_PER_USER_MAX) return PASSKEY_LIMIT()
+    return ok(await ceremonies.registrationOptions({
+      userId,
+      email: v.user.email,
+      existing: rows.map((r) => ({ credentialId: r.credential_id, transports: cleanTransports(r.transports) }))
+    }))
+  }
+
+  async function passkeyRegister(body, ctx) {
+    const blocked = limit('sessionIp', ipKey(ctx.ip))
+    if (blocked) return blocked
+    if (!(await passkeysAvailable())) return PASSKEYS_UNAVAILABLE()
+    const v = await sessionFromBody(body, ctx)
+    if (v.error) return v.error
+    const userId = v.user.id
+    const blockedUser = limit('passkeyUser', userId)
+    if (blockedUser) return blockedUser
+    let added
+    try {
+      // The challenge was issued only after the password was checked, and to
+      // this account only.
+      added = await ceremonies.finishRegistration({
+        challengeId: typeof body.challengeId === 'string' ? body.challengeId : '',
+        userId,
+        response: isPlainObject(body.response) ? body.response : {}
+      })
+    } catch (err) {
+      if (!(err instanceof PasskeyError)) throw err
+      if (err.code === 'challenge' || err.code === 'mismatch') return PASSKEY_EXPIRED()
+      log.warn?.(`[auth] passkey set-up refused: ${err.code}`)
+      return PASSKEY_INVALID(400)
+    }
+    const blockedAdded = limit('passkeyAddedUser', userId)
+    if (blockedAdded) return blockedAdded
+    const label = passkeyDeviceLabel(ctx.headers?.['user-agent']).slice(0, 80)
+    const token = bearerOf(body, ctx)
+    const outcome = await withTransaction(async (client) => {
+      // The account and THIS session still stand: FOR SHARE waits for a
+      // concurrent new password or deletion (both delete the sessions) and
+      // then finds nothing, so no key is filed after either.
+      const live = await client.query(
+        `SELECT 1 FROM ${T.users} u JOIN ${T.sessions} s ON s.user_id = u.id AND s.token_hash = $2
+          WHERE u.id = $1 FOR SHARE OF u, s`,
+        [userId, hashToken(token)]
+      )
+      if (!live.rows[0]) return { gone: true }
+      const count = await client.query(`SELECT count(*)::int AS n FROM ${T.passkeys} WHERE user_id = $1`, [userId])
+      if (count.rows[0].n >= PASSKEYS_PER_USER_MAX) return { limit: true }
+      const ins = await client.query(
+        `INSERT INTO ${T.passkeys} (user_id, credential_id, public_key, counter, transports, backed_up, label)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (credential_id) DO NOTHING
+         RETURNING id, label, created_at`,
+        [userId, added.credentialId, added.publicKey, added.counter, added.transports, added.backedUp, label]
+      )
+      return ins.rows[0] ? { row: ins.rows[0] } : { duplicate: true }
+    })
+    if (outcome.gone) return INVALID_TOKEN()
+    if (outcome.limit) return PASSKEY_LIMIT()
+    if (outcome.duplicate) return fail(409, 'This passkey is already set up.', 'passkey_duplicate')
+    const app = requestApp(body)
+    await audit('account.passkey_added', userId, { label }, app)
+    const lang = mailLang(body, ctx)
+    background('passkey-added mail', () => mailer.send('passkey_added', { to: v.user.email, lang, app, vars: { device: label } }))
+    return ok({ passkey: publicPasskey({ ...outcome.row, credential_id: added.credentialId, last_used_at: null }) })
+  }
+
+  function publicPasskey(r) {
+    return { id: r.id, label: r.label || '', created_at: r.created_at, last_used_at: r.last_used_at ?? null, credential_id: r.credential_id }
+  }
+
+  async function passkeyList(body, ctx) {
+    const blocked = limit('sessionIp', ipKey(ctx.ip))
+    if (blocked) return blocked
+    if (!(await passkeysAvailable())) return PASSKEYS_UNAVAILABLE()
+    const v = await sessionFromBody(body, ctx)
+    if (v.error) return v.error
+    const { rows } = await pool.query(
+      `SELECT id, label, created_at, last_used_at, credential_id FROM ${T.passkeys} WHERE user_id = $1 ORDER BY created_at`,
+      [v.user.id]
+    )
+    return ok({ passkeys: rows.map(publicPasskey) })
+  }
+
+  async function passkeyDelete(body, ctx) {
+    const blocked = limit('sessionIp', ipKey(ctx.ip))
+    if (blocked) return blocked
+    if (!(await passkeysAvailable())) return PASSKEYS_UNAVAILABLE()
+    const v = await sessionFromBody(body, ctx)
+    if (v.error) return v.error
+    const id = typeof body.id === 'string' ? body.id : ''
+    if (!UUID_RE.test(id)) return fail(400, 'Invalid passkey id', 'validation_failed')
+    // The account filter is the ownership check.
+    const { rows } = await pool.query(`DELETE FROM ${T.passkeys} WHERE id = $1 AND user_id = $2 RETURNING label`, [id, v.user.id])
+    if (!rows[0]) return fail(404, 'No such passkey', 'not_found')
+    await audit('account.passkey_removed', v.user.id, { label: rows[0].label }, requestApp(body))
+    return ok({ removed: true })
+  }
+
   async function handleAuthRequest(action, body, ctx = {}) {
     const b = isPlainObject(body) ? body : {}
     const c = { ip: ctx.ip || 'unknown', headers: ctx.headers || {} }
@@ -1560,6 +1784,12 @@ export function createAuth(options = {}) {
         case 'reset-password/confirm': return await confirmPasswordReset(b, c)
         case 'confirm-email': return await confirmEmailLink(b, c)
         case 'resend-confirmation': return await resendConfirmation(b, c)
+        case 'passkey/login-options': return await passkeyLoginOptions(b, c)
+        case 'passkey/login': return await passkeyLogin(b, c)
+        case 'passkey/register-options': return await passkeyRegisterOptions(b, c)
+        case 'passkey/register': return await passkeyRegister(b, c)
+        case 'passkey/list': return await passkeyList(b, c)
+        case 'passkey/delete': return await passkeyDelete(b, c)
         default:
           return fail(404, 'Invalid request', 'not_found')
       }
@@ -1573,6 +1803,7 @@ export function createAuth(options = {}) {
   function sweep() {
     for (const l of Object.values(limits)) l?.sweep?.()
     lockout.sweep?.()
+    ceremonies.sweep()
   }
 
   return {
