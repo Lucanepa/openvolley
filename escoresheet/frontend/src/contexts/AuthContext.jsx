@@ -7,6 +7,7 @@ import { accessFromRoles, accessChanged, NO_ACCESS, ACCESS_CHANGED_EVENT } from 
 import { fetchMe, redeemInvite as apiRedeemInvite } from '../lib/accountApi'
 import { clearSavedTeams, refreshSavedTeams } from '../db/savedTeams'
 import i18n from 'i18next'
+import PasskeyOfferHost from '../components/auth/PasskeyOfferHost'
 
 const AuthContext = createContext(null)
 
@@ -196,6 +197,21 @@ export function AuthProvider({ children, app = null }) {
       await fetchProfile(data.user.id)
     }
 
+    return { data, error }
+  }, [fetchProfile])
+
+  // Sign in with a passkey (lib/passkeys.js): no address, no password — the
+  // key says whose account it is.
+  const signInWithPasskey = useCallback(async () => {
+    if (!hasBackend()) {
+      return { error: { message: 'Backend not configured' } }
+    }
+    const { runPasskeySignIn } = await import('../lib/passkeys')
+    const { data, error } = await apiAuth.signInWithPasskey(runPasskeySignIn)
+    if (!error && data?.user) {
+      setUser(data.user)
+      await fetchProfile(data.user.id)
+    }
     return { data, error }
   }, [fetchProfile])
 
@@ -490,6 +506,7 @@ export function AuthProvider({ children, app = null }) {
     loading,
     isAuthenticated: !!user,
     signIn,
+    signInWithPasskey,
     signUp,
     signOut,
     updateProfile,
@@ -500,11 +517,13 @@ export function AuthProvider({ children, app = null }) {
     fetchProfile,
     getCachedProfile,
     deleteAccount
-  }), [user, profile, access, redeemInvite, loading, signIn, signUp, signOut, updateProfile, updateEmail, resetPassword, resendConfirmation, refreshUser, fetchProfile, getCachedProfile, deleteAccount])
+  }), [user, profile, access, redeemInvite, loading, signIn, signInWithPasskey, signUp, signOut, updateProfile, updateEmail, resetPassword, resendConfirmation, refreshUser, fetchProfile, getCachedProfile, deleteAccount])
 
   return (
     <AuthContext.Provider value={value}>
       {children}
+      {/* the offer to set up a passkey after a password sign-in (LoginModal) */}
+      <PasskeyOfferHost />
     </AuthContext.Provider>
   )
 }
