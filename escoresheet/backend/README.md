@@ -913,6 +913,12 @@ Replaces Supabase GoTrue behind `/api/auth/*` once the backend runs against its 
 | `reset-password/confirm` `{token, password, lang}` | Sets the password (policy as at sign-up), marks the address confirmed, revokes **all** sessions, spends the link and every other open reset link, mails a "password changed" notice. 200 `{password_updated: true}`; 400 `invalid_link` (unknown, used, superseded or expired); 422 `weak_password` (the link stays valid) |
 | `confirm-email` `{token}` | 200 `{confirmed: true, already_confirmed}` (a spent link of an address confirmed by now is not an error); 400 `invalid_link` |
 | `resend-confirmation` `{access_token, lang}` | A fresh 24-hour link for the signed-in, unconfirmed account (older ones spent). 200 `{sent}` / `{already_confirmed: true}`; 503 `confirm_unavailable` without account emails or when the send fails |
+| `passkey/login-options` `{}` | Sign-in with a passkey, step 1: `{challengeId, options}` (WebAuthn request options, RP `openvolley.app`, no allow-list: the device offers its keys). 60 per 5 min per IP; 503 `passkeys_unavailable` without `auth.passkeys` |
+| `passkey/login` `{challengeId, response}` | Step 2: the device's answer. 200 like `sign-in` (a session for the account the key is filed under); 401 `passkey_unknown` (removed, or a new password set since), 401 `passkey_invalid`, 400 `passkey_expired` (challenge unknown, used or older than 3 min) |
+| `passkey/register-options` `{access_token, password}` | Setting one up needs the session **and the password** (`verifyPassword`, counted in the sign-in lockout), so a stolen session cannot add its own key. `{challengeId, options}`; 400 `password_required`, 401 `invalid_password`, 429 `account_locked`, 400 `passkey_limit` (10 per account) |
+| `passkey/register` `{access_token, challengeId, response, lang, app}` | Files the public key (`auth.passkeys`, db/022), mails the account "a passkey was added" (`passkey_added`, links nothing). 200 `{passkey:{id, label, created_at, last_used_at}}`; 409 `passkey_duplicate`; 5 set-ups per account per hour |
+| `passkey/list` `{access_token}` | The account's keys: `{passkeys:[{id, label, created_at, last_used_at, credential_id}]}` |
+| `passkey/delete` `{access_token, id}` | Removes one of the account's own keys; 404 otherwise |
 
 Sessions last 30 days, slide forward when fewer than 15 days remain, and never live past `created_at + 90 days`. A database failure is a **503** `auth_unavailable`, never a 401, so clients keep their session.
 
@@ -940,6 +946,8 @@ Password-reset links, confirmation links for new accounts and the "your password
 - **Legacy route**: `/api/match/send-info` does **not** use these SMTP settings unless `SMTP_LEGACY_ROUTES=1` (it sends to an address an anonymous request supplies). The support form (`/api/contact`) does, without that switch: its only recipient is `CONTACT_EMAIL`.
 - **Tests**: `tests/mailer.test.js` (templates, settings, real SMTP sessions over implicit TLS and STARTTLS against `tests/helpers/fakeSmtp.js`, an `smtp-server` sink with a throwaway certificate), `tests/emailAuth.pg.test.js` (the flows against Postgres), `tests/emailAuth.e2e.test.js` (server.js end to end, links followed out of the captured mails). Never against a real mailbox.
 - **Operations**: deploy/RUNBOOK-hetzner.md, "Account emails (SMTP)".
+
+**Passkeys** (lib/passkeys.js, db/022, since 2026-11-02): sign-in with the device's fingerprint, face or PIN, as an extra way into an account that has a password. One relying party, `openvolley.app` (`WEBAUTHN_RP_ID`), so a key set up on any OpenVolley or OpenBeach site works on all of them; a page may run a ceremony when it is served over https from that host or a subdomain (`WEBAUTHN_ORIGINS` replaces the rule for a local test). The installed apps (Capacitor `https://localhost`, Tauri, Electron) cannot hold a web passkey and keep the password; the frontend hides every passkey control there. A new password (`setPassword`: the reset link, the owner CLI) deletes the account's keys with its sessions; account deletion cascades. Challenges live in the process (single use, 3 min, at most 5000). Without `auth.passkeys` every passkey action answers 503 and nothing else changes.
 
 **Contact address** in the reset-password message: `contactEmail` option, else `CONTACT_EMAIL`, else the same fallback as server.js.
 

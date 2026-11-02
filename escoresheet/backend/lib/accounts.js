@@ -45,6 +45,8 @@ export const AUDIT_ACTIONS = Object.freeze([
   'account.roles',
   // written by lib/auth.js (email links, db/010)
   'account.password_reset_requested', 'account.password_reset', 'account.email_confirmed',
+  // written by lib/auth.js (passkeys, db/022)
+  'account.passkey_added', 'account.passkey_removed',
   'invite.create', 'invite.revoke', 'invite.redeem',
   'match.claim_game', 'match.claim_pin', 'match.game_taken',
   'match.close',

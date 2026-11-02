@@ -38,6 +38,9 @@
 --                       auth.approval_pins SELECT, INSERT, UPDATE, DELETE
 --                                          (db/011, lib/approvals.js; skipped
 --                                          when absent)
+--                       auth.passkeys      SELECT, INSERT, UPDATE, DELETE
+--                                          (db/022, lib/passkeys.js; skipped
+--                                          when absent)
 --                       auth.app_memberships SELECT, INSERT, DELETE
 --                                          (db/012, lib/accounts.js; skipped
 --                                          when absent)
@@ -235,5 +238,9 @@ SELECT 'GRANT SELECT, INSERT, UPDATE, DELETE ON auth.approval_pins TO ov_app'
 -- like app_tokens; account deletion removes the rows through the FK cascade.
 SELECT 'GRANT SELECT, INSERT, DELETE ON auth.app_memberships TO ov_app'
  WHERE to_regclass('auth.app_memberships') IS NOT NULL \gexec
+-- db/022: passkeys (lib/passkeys.js). Optional like app_tokens: without the
+-- table the passkey actions answer 503; deletion cascades from auth.users.
+SELECT 'GRANT SELECT, INSERT, UPDATE, DELETE ON auth.passkeys TO ov_app'
+ WHERE to_regclass('auth.passkeys') IS NOT NULL \gexec
 
 COMMIT;

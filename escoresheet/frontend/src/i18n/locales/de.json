@@ -3062,6 +3062,8 @@
         "account_password_reset_requested": "Passwort-Reset angefordert",
         "account_password_reset": "Passwort per E-Mail-Link zurückgesetzt",
         "account_email_confirmed": "E-Mail-Adresse bestätigt",
+        "account_passkey_added": "Passkey hinzugefügt",
+        "account_passkey_removed": "Passkey entfernt",
         "account_join": "Dieser App beigetreten",
         "tournament_create": "Turnier erstellt",
         "tournament_update": "Turnier geändert",
@@ -4633,5 +4635,36 @@
     "blockedTitle": "Unterschriften fehlen",
     "blockedBody": "Das Spiel beginnt, wenn Coach und Captain beider Teams den Kader unterschrieben haben.",
     "stillMissing": "Noch offen: {{roles}}"
+  },
+  "passkeys": {
+    "signInButton": "Mit Fingerabdruck oder Gesicht anmelden",
+    "waiting": "Warte auf das Gerät…",
+    "or": "oder mit Ihrem Passwort",
+    "offerTitle": "Nächstes Mal mit Fingerabdruck?",
+    "offerBody": "Richten Sie einen Passkey ein: Beim nächsten Mal genügt Ihr Fingerabdruck, Ihr Gesicht oder die Geräte-PIN – in OpenVolley und OpenBeach.",
+    "privacy": "Ihr Fingerabdruck und Ihr Gesicht verlassen das Gerät nie.",
+    "setUp": "Einrichten",
+    "notNow": "Nicht jetzt",
+    "setUpDone": "Passkey eingerichtet. Beim nächsten Mal genügt Ihr Fingerabdruck oder Ihr Gesicht.",
+    "sectionTitle": "Passkeys",
+    "sectionHint": "Anmelden mit Fingerabdruck, Gesicht oder Geräte-PIN statt mit dem Passwort.",
+    "none": "Noch kein Passkey.",
+    "add": "Passkey auf diesem Gerät hinzufügen",
+    "passwordPrompt": "Ihr Passwort, um einen Passkey hinzuzufügen",
+    "remove": "Passkey entfernen",
+    "removeConfirm": "Passkey «{{label}}» entfernen? Dieses Gerät meldet sich dann wieder mit dem Passwort an.",
+    "removed": "Passkey entfernt.",
+    "addedOn": "Hinzugefügt am {{date}}",
+    "lastUsed": "zuletzt verwendet am {{date}}",
+    "errors": {
+      "unknown": "Dieser Passkey ist hier nicht (mehr) bekannt. Melden Sie sich mit dem Passwort an und richten Sie ihn neu ein.",
+      "invalid": "Der Passkey konnte nicht geprüft werden.",
+      "expired": "Das hat zu lange gedauert. Bitte versuchen Sie es erneut.",
+      "device": "Das Gerät hat nicht bestätigt. Bitte erneut versuchen oder das Passwort verwenden.",
+      "wrongPassword": "Falsches Passwort.",
+      "limit": "Dieses Konto hat bereits 10 Passkeys. Entfernen Sie zuerst einen.",
+      "alreadyHere": "Dieses Gerät hat bereits einen Passkey für Ihr Konto.",
+      "unavailable": "Passkeys sind gerade nicht verfügbar. Bitte verwenden Sie Ihr Passwort."
+    }
   }
 }

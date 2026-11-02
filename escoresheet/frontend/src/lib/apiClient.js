@@ -736,6 +736,47 @@ const SIGN_IN_BUSY_RETRIES = 3
 const isAuthBusy = (result) => result?.status === 503 && result?.error?.code === 'auth_busy'
 
 export const apiAuth = {
+  /**
+   * Sign-in with a passkey (lib/passkeys.js): the server's options, the
+   * device's sheet (`runCeremony`, so this file needs no WebAuthn), the
+   * answer back. The session that comes back is stored like a password
+   * sign-in's. Errors: the server's { code } (passkey_unknown, passkey_invalid,
+   * passkey_expired, …) or the device's own (thrown; see isPasskeyCancel).
+   */
+  async signInWithPasskey(runCeremony) {
+    const start = await authRequest('passkey/login-options', {})
+    if (start.error) return start
+    const response = await runCeremony(start.data.options)
+    const result = await authRequest('passkey/login', { challengeId: start.data.challengeId, response })
+    if (!result.error && result.data?.session) storeToken(result.data.session)
+    return result
+  },
+
+  /** Sets up a passkey for the signed-in account; the password is checked first. */
+  async addPasskey({ password, lang, app }, runCeremony) {
+    const access_token = getStoredToken()?.access_token
+    if (!access_token) return { data: null, error: { message: 'Not authenticated', status: 401 } }
+    const start = await authRequest('passkey/register-options', { access_token, password })
+    if (start.error) return start
+    const response = await runCeremony(start.data.options)
+    return authRequest('passkey/register', {
+      access_token, challengeId: start.data.challengeId, response,
+      ...(lang ? { lang } : {}), ...(app ? { app } : {})
+    })
+  },
+
+  async listPasskeys() {
+    const access_token = getStoredToken()?.access_token
+    if (!access_token) return { data: null, error: { message: 'Not authenticated', status: 401 } }
+    return authRequest('passkey/list', { access_token })
+  },
+
+  async removePasskey(id) {
+    const access_token = getStoredToken()?.access_token
+    if (!access_token) return { data: null, error: { message: 'Not authenticated', status: 401 } }
+    return authRequest('passkey/delete', { access_token, id })
+  },
+
   async signInWithPassword({ email, password }) {
     let result = await authRequest('sign-in', { email, password })
     for (let i = 0; i < SIGN_IN_BUSY_RETRIES && isAuthBusy(result); i++) {
