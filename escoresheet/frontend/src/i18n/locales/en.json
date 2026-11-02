@@ -3084,6 +3084,8 @@
         "account_password_reset_requested": "Password reset requested",
         "account_password_reset": "Password reset by email link",
         "account_email_confirmed": "Email address confirmed",
+        "account_passkey_added": "Passkey added",
+        "account_passkey_removed": "Passkey removed",
         "account_join": "Joined this app",
         "tournament_create": "Tournament created",
         "tournament_update": "Tournament changed",
@@ -4651,5 +4653,36 @@
     "blockedTitle": "Signatures missing",
     "blockedBody": "The match starts once the coach and the captain of both teams have signed the roster.",
     "stillMissing": "Still to sign: {{roles}}"
+  },
+  "passkeys": {
+    "signInButton": "Sign in with fingerprint or face",
+    "waiting": "Waiting for the device…",
+    "or": "or with your password",
+    "offerTitle": "Fingerprint next time?",
+    "offerBody": "Set up a passkey: next time your fingerprint, face or device PIN is enough, on OpenVolley and OpenBeach.",
+    "privacy": "Your fingerprint and face never leave the device.",
+    "setUp": "Set up",
+    "notNow": "Not now",
+    "setUpDone": "Passkey set up. Next time your fingerprint or face is enough.",
+    "sectionTitle": "Passkeys",
+    "sectionHint": "Sign in with your fingerprint, face or device PIN instead of the password.",
+    "none": "No passkey yet.",
+    "add": "Add a passkey on this device",
+    "passwordPrompt": "Your password, to add a passkey",
+    "remove": "Remove passkey",
+    "removeConfirm": "Remove the passkey “{{label}}”? That device then signs in with the password again.",
+    "removed": "Passkey removed.",
+    "addedOn": "Added {{date}}",
+    "lastUsed": "last used {{date}}",
+    "errors": {
+      "unknown": "This passkey isn't known here (any more). Sign in with your password and set it up again.",
+      "invalid": "The passkey could not be verified.",
+      "expired": "That took too long. Please try again.",
+      "device": "The device didn't confirm. Please try again or use your password.",
+      "wrongPassword": "Wrong password.",
+      "limit": "This account already has 10 passkeys. Remove one first.",
+      "alreadyHere": "This device already has a passkey for your account.",
+      "unavailable": "Passkeys aren't available right now. Please use your password."
+    }
   }
 }

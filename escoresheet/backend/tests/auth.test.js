@@ -175,7 +175,9 @@ describe('auth token helpers', () => {
 
   it('lists the supported actions', () => {
     assert.deepEqual([...AUTH_ACTIONS].sort(), [
-      'confirm-email', 'delete-account', 'get-user', 'profile', 'resend-confirmation',
+      'confirm-email', 'delete-account', 'get-user',
+      'passkey/delete', 'passkey/list', 'passkey/login', 'passkey/login-options', 'passkey/register', 'passkey/register-options',
+      'profile', 'resend-confirmation',
       'reset-password', 'reset-password/confirm', 'sign-in', 'sign-out', 'sign-up', 'update-user'
     ])
   })
