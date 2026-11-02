@@ -19,9 +19,11 @@ import BackupTable from './components/BackupTable'
 import RestorePreview from './components/RestorePreview'
 import HomePage from './components/pages/HomePage'
 import EasyMatchModal from './components/EasyMatchModal'
+import SimpleScoreboard from './components/SimpleScoreboard'
 import TodayGamesModal from './components/TodayGamesModal'
 import { useAuth } from './contexts/AuthContext'
 import { EASY_TEAM_SEED_KEYS, easyMatchPrefill } from './domain/easyMatch'
+import { SIMPLE_BOARD_OPEN_KEY } from './domain/simpleScoreboard'
 import HomeOptionsModal from './components/options/HomeOptionsModal'
 import ConnectTabletsModal from './components/connect/ConnectTabletsModal'
 import { useSyncQueue, useUserMatchLink, checkScorerMoved, askScoringDevice, matchEndUpdateNeeded, isClosedHere, hasStoredSessionToken, noteMatchClosedOnServer } from './hooks/useSyncQueue'
@@ -197,6 +199,18 @@ export default function App() {
     return prefill ? { prefill } : null
   })
   const [easyMatchLoading, setEasyMatchLoading] = useState(false)
+  // Home's Scoreboard (domain/simpleScoreboard.js): open over Home, and again
+  // after a reload in this tab (sessionStorage), as a match is
+  const [simpleBoardOpen, setSimpleBoardOpenState] = useState(() => {
+    try { return sessionStorage.getItem(SIMPLE_BOARD_OPEN_KEY) === '1' } catch { return false }
+  })
+  const setSimpleBoardOpen = useCallback((open) => {
+    setSimpleBoardOpenState(open)
+    try {
+      if (open) sessionStorage.setItem(SIMPLE_BOARD_OPEN_KEY, '1')
+      else sessionStorage.removeItem(SIMPLE_BOARD_OPEN_KEY)
+    } catch { /* storage blocked: the board only stays open until a reload */ }
+  }, [])
   const [alertModal, setAlertModal] = useState(null) // { message: string }
   const [confirmModal, setConfirmModal] = useState(null) // { message: string, onConfirm: function, onCancel: function }
   // Official game, signed in: today's home games of the account's clubs; the
@@ -3480,6 +3494,11 @@ export default function App() {
   // screens: an 8" tablet held sideways only gets past the gate without them
   // (nativeSystemBars; a no-op in a browser). The gate waits while they go.
   const systemBarsGoing = useSystemBarsHidden(smallScreenBlocked && !isPhoneScreen())
+  // The Scoreboard covers Home only: a match opened meanwhile (a link) closes it
+  const simpleBoardShown = simpleBoardOpen && !matchId
+  useEffect(() => {
+    if (matchId && simpleBoardOpen) setSimpleBoardOpen(false)
+  }, [matchId, simpleBoardOpen, setSimpleBoardOpen])
   // The size gate, over the screen it blocks (which stays mounted under it)
   const sizeGateShown = !isFullscreen && !systemBarsGoing && smallScreenBlocked && isViewportTooSmall(viewportSize.width, viewportSize.height)
   // and no button under it keeps the focus: Enter or Space would press it
@@ -3573,7 +3592,8 @@ export default function App() {
           moment; in its place, it had come back without them (stress test
           2026-10-25: "Start rally" offered in the middle of a time-out). */}
         <>
-          {/* Global Header */}
+          {/* Global Header (none over the Scoreboard, which has its own bar) */}
+          {!simpleBoardShown && (
           <MainHeader
             connectionStatuses={connectionStatuses}
             connectionDebugInfo={connectionDebugInfo}
@@ -3658,6 +3678,7 @@ export default function App() {
             onToggleHelp={() => { setHelpDialogScreen(null); setHelpPanelOpen(prev => !prev) }}
             helpPanelOpen={helpPanelOpen}
           />
+          )}
           <div className="container" style={{
             minHeight: 0,
             flex: '1 1 auto',
@@ -3775,6 +3796,12 @@ export default function App() {
                     setShowManualAdjustments(true)
                   }}
                 />
+              ) : simpleBoardShown ? (
+                <SimpleScoreboard
+                  onExit={() => setSimpleBoardOpen(false)}
+                  isFullscreen={isFullscreen}
+                  toggleFullscreen={toggleFullscreen}
+                />
               ) : !matchId ? (
                 <>
                   {/* the Android app's update notice (utils/androidUpdate.js): home screen only */}
@@ -3790,6 +3817,7 @@ export default function App() {
                     testMatchLoading={testMatchLoading}
                     createEasyMatch={() => openEasyMatch()}
                     easyMatchLoading={easyMatchLoading}
+                    onOpenScoreboard={() => setSimpleBoardOpen(true)}
                     currentOfficialMatch={homeOfficialMatch}
                     currentTestMatch={homeTestMatch}
                     deviceMatches={homeDeviceMatches}
