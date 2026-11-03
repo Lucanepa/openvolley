@@ -4,7 +4,7 @@ import SupportFeedbackModal from '../SupportFeedbackModal'
 import LoginModal from '../auth/LoginModal'
 import PendingApprovalBanner from '../auth/PendingApprovalBanner'
 import CloudBlockNotice from '../CloudBlockNotice'
-import { Download, LifeBuoy, Loader2, LogIn, Settings } from 'lucide-react'
+import { Download, LifeBuoy, Loader2, LogIn, Presentation, Settings } from 'lucide-react'
 import { Button, Card, cn, dayLabel, FOCUS_RING, Notice, Row, RowList, RowTool, SectionHeader, StatusPill } from '../../ui'
 import { duplicateGameNumbers } from '../../utils/deviceMatches'
 import { formatTakeOver, scoreText } from '../ScorerMovedModal'
@@ -58,7 +58,9 @@ function isInsideDesktopApp() {
  *   - no sign-in at all (offline mode, no cloud: the desktop app offline, a
  *     venue box): Official game typed in, as before, Test and Easy below.
  * The Continue card and the device's open matches always stay: a session
- * that ran out never strands a match being recorded.
+ * that ran out never strands a match being recorded. Scoreboard, below the
+ * new-match buttons in every case, is no match: points and sets on the whole
+ * screen (SimpleScoreboard).
  */
 export default function HomePage({
   signedIn = false,
@@ -68,6 +70,8 @@ export default function HomePage({
   testMatchLoading,
   createEasyMatch,
   easyMatchLoading = false,
+  // Scoreboard: points and sets only, no match (SimpleScoreboard)
+  onOpenScoreboard = null,
   currentOfficialMatch,
   currentTestMatch,
   deviceMatches,
@@ -182,8 +186,9 @@ export default function HomePage({
           )}
 
           {/* New match: Official game first when it can be scored here,
-              Test and Easy below it (signed out: those two only). One block
-              for the help's "Show me" (createMatch), signed in or out */}
+              Test and Easy below it (signed out: those two only), then the
+              Scoreboard, which is no match. One block for the help's "Show
+              me" (createMatch), signed in or out */}
           <div className="space-y-3" data-help-id="home-new-match-button">
             {!testOnly && (
               <Button
@@ -225,6 +230,19 @@ export default function HomePage({
                 </Button>
               )}
             </div>
+            {onOpenScoreboard && (
+              <Button
+                variant="secondary"
+                block
+                icon={Presentation}
+                data-help-id="home-scoreboard-button"
+                onClick={onOpenScoreboard}
+                title={t('home.scoreboardHint', 'Points and sets only · no match')}
+                className="h-12 rounded-xl text-base font-semibold"
+              >
+                {t('home.scoreboard', 'Scoreboard')}
+              </Button>
+            )}
           </div>
           {testOnly && (
             <div className="rounded-xl bg-stone-50 px-3 py-3 text-center" data-testid="home-sign-in-note">
