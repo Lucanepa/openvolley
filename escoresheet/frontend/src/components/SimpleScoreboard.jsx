@@ -143,9 +143,9 @@ export default function SimpleScoreboard({ onExit, isFullscreen = false, toggleF
         )}
       </div>
 
-      {/* Side by side when the screen is wide, one above the other when it
-          is tall (a phone held upright): the digits get twice the size */}
-      <div className="flex min-h-0 flex-1 flex-col gap-2 p-2 landscape:flex-row">
+      {/* Side by side in every orientation, as the teams stand on the court
+          (the owner, 2026-11-03: not one above the other in portrait) */}
+      <div className="flex min-h-0 flex-1 gap-2 p-2">
         {[left, right].map(team => (
           <TeamHalf
             key={team}
@@ -234,7 +234,7 @@ function TeamHalf({ team, name, colour, points, sets, serving, onPoint, onMinus 
         <span className="text-sm font-semibold tabular-nums opacity-85 sm:text-base">
           {t('simpleBoard.setsWon', { n: sets, defaultValue: 'Sets {{n}}' })}
         </span>
-        <span className="font-bold leading-none tabular-nums" style={{ fontSize: 'min(55cqh, 64cqw)' }} data-testid={`simple-board-points-${team}`}>
+        <span className="font-bold leading-none tabular-nums" style={{ fontSize: 'min(55cqh, 68cqw)' }} data-testid={`simple-board-points-${team}`}>
           {points}
         </span>
       </button>
