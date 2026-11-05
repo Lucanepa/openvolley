@@ -1842,6 +1842,10 @@ export function matchTeamNames(match, { homeTeam, awayTeam } = {}) {
 // PIN fields the relay needs from the scorer: the game PIN proves the
 // scoreboard role, the connection PINs let the relay check referee/bench PINs
 // itself (LAN). Nothing else secret goes over the relay.
+// Set by the desktop app before the page loads, only when pointhub-screen starts it
+// on a board (OPENVOLLEY_POINTHUB_BOARD, src-tauri/src/main.rs).
+const onPointHubBoard = () => typeof window !== 'undefined' && window.__OV_POINTHUB_BOARD__ === true
+
 const RELAY_PIN_FIELDS = ['gamePin', 'refereePin', 'homeTeamPin', 'awayTeamPin', 'homeTeamUploadPin', 'awayTeamUploadPin']
 const NEVER_RELAYED = ['game_pin', 'connection_pins', 'connectionPins']
 
@@ -1852,12 +1856,14 @@ const NEVER_RELAYED = ['game_pin', 'connection_pins', 'connectionPins']
  * before Create Match): it is not published then. A Dexie id is no key: every
  * device's first match is id 1, so scorers met in room '1' and a tablet
  * following it got another scorer's match.
- * An easy match has none: it is unofficial and never leaves the device.
+ * An easy match has none: it is unofficial and never leaves the device. Except
+ * on a Point Hub board's own screen, where its own LED panel follows the match
+ * over the local relay (mayPublishMatchData keeps a test-type match off the cloud).
  * @param {object|null} match
  * @returns {string|null}
  */
 export function relayMatchKey(match) {
-  if (match?.easy === true) return null
+  if (match?.easy === true && !onPointHubBoard()) return null
   for (const seed of [match?.seed_key, match?.seedKey]) {
     if (typeof seed === 'string' && seed.trim()) return seed.trim()
   }

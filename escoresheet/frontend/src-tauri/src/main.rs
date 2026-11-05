@@ -71,6 +71,17 @@ fn main() {
         }));
     }
 
+    // Started by pointhub-screen on a Point Hub board: the board's own LED panel follows the match
+    // over the local relay, easy matches too (relayMatchKey in serverDataSync.js). Before the page
+    // loads, because that check is synchronous. No command, so nothing to grant a window.
+    if std::env::var_os("OPENVOLLEY_POINTHUB_BOARD").is_some() {
+        builder = builder.plugin(
+            tauri::plugin::Builder::<tauri::Wry>::new("pointhub-board")
+                .js_init_script("window.__OV_POINTHUB_BOARD__ = true".to_string())
+                .build(),
+        );
+    }
+
     let builder = with_app_commands(builder.plugin(tauri_plugin_dialog::init()));
     // No native menu bar on Linux / Windows: it held only Help > Connect a
     // Tablet and rendered in the GTK system theme (dark on a dark desktop).
