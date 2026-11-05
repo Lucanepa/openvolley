@@ -1,0 +1,4 @@
+OpenVolley 3.0.11
+- Home has a plain Scoreboard: points and sets, no match needed.
+- On a Point Hub board, the LED panel also follows easy matches.
+- Linux: an arm64 desktop build for the Point Hub board.
