@@ -41,6 +41,14 @@ describe('relay key and payload (scorer)', () => {
     expect(relayMatchKey({ id: 1, seed_key: '  ' })).toBeNull()
     // an easy match is unofficial and never leaves the device
     expect(relayMatchKey({ id: 1, seed_key: 'test-match-default-abc', test: true, easy: true })).toBeNull()
+    // ...except on a Point Hub board's own screen, for its own panel
+    window.__OV_POINTHUB_BOARD__ = true
+    try {
+      expect(relayMatchKey({ id: 1, seed_key: 'test-match-default-abc', test: true, easy: true })).toBe('test-match-default-abc')
+      expect(relayMatchKey({ id: 1 })).toBeNull()
+    } finally {
+      delete window.__OV_POINTHUB_BOARD__
+    }
     expect(relayMatchKey(null)).toBeNull()
   })
 
