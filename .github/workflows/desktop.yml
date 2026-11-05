@@ -61,7 +61,7 @@ jobs:
       fail-fast: false
       matrix:
         flavour: ${{ fromJSON(needs.setup.outputs.flavours) }}
-        platform: [windows, linux, macos]
+        platform: [windows, linux, linux-arm64, macos]
         include:
           - platform: windows
             os: windows-latest
@@ -69,6 +69,13 @@ jobs:
           - platform: linux
             os: ubuntu-22.04
             label: linux
+          # The Point Hub board (Pi 5) runs the scoretable on its own screen. A .deb only, kept as a
+          # workflow artifact and NOT attached to the release: publish-pkgs.sh expects exactly one
+          # .deb per release, and APT, the updater and every store stay amd64. A failure here holds
+          # nothing back (see continue-on-error).
+          - platform: linux-arm64
+            os: ubuntu-22.04-arm
+            label: linux-arm64
           # One arm64 runner builds both slices (universal-apple-darwin): the
           # Intel images are going away (macos-13 retired in Dec 2025,
           # macos-15-intel is the last one), and one universal .dmg means no
@@ -80,7 +87,7 @@ jobs:
     # macOS is new: a failed macOS build does not hold back the Windows and
     # Linux release (that release then has no macOS files, and
     # publish-pkgs.sh announces no darwin update for it).
-    continue-on-error: ${{ matrix.platform == 'macos' }}
+    continue-on-error: ${{ matrix.platform == 'macos' || matrix.platform == 'linux-arm64' }}
     timeout-minutes: ${{ matrix.platform == 'macos' && 75 || 40 }}
     steps:
       - uses: actions/checkout@v4
@@ -97,7 +104,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Linux system dependencies
-        if: matrix.os == 'ubuntu-22.04'
+        if: startsWith(matrix.os, 'ubuntu-')
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -178,7 +185,7 @@ jobs:
         with:
           projectPath: escoresheet/frontend
           # no tagName / releaseId: tauri-action only builds, it releases nothing
-          args: ${{ matrix.platform == 'macos' && '--target universal-apple-darwin' || '' }}
+          args: ${{ matrix.platform == 'macos' && '--target universal-apple-darwin' || (matrix.platform == 'linux-arm64' && '--bundles deb' || '') }}
 
       # OpenBeach: the same shell with tauri.beach.conf.json (+ the Linux one)
       # merged on top; its beforeBuildCommand builds ./openbeach. Same reason
@@ -191,7 +198,8 @@ jobs:
           NODE_OPTIONS: '--max-old-space-size=4096'
         run: |
           args=(--ci --config src-tauri/tauri.beach.conf.json)
-          if [ "${{ matrix.platform }}" = linux ]; then args+=(--config src-tauri/tauri.beach.linux.conf.json); fi
+          case "${{ matrix.platform }}" in linux*) args+=(--config src-tauri/tauri.beach.linux.conf.json) ;; esac
+          if [ "${{ matrix.platform }}" = linux-arm64 ]; then args+=(--bundles deb); fi
           # macOS: tauri.macos.conf.json is merged first, OpenBeach's names on top
           if [ "${{ matrix.platform }}" = macos ]; then args+=(--target universal-apple-darwin); fi
           npx tauri build "${args[@]}"
@@ -317,7 +325,7 @@ jobs:
       # Each app's .deb: its own package name, command, desktop entry, update
       # helper and polkit action, and none of the other app's.
       - name: Check the deb's update helper
-        if: matrix.os == 'ubuntu-22.04'
+        if: startsWith(matrix.os, 'ubuntu-')
         working-directory: escoresheet/frontend/src-tauri
         shell: bash
         run: |
