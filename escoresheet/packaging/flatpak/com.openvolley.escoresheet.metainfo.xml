@@ -71,6 +71,16 @@
   </screenshots>
 
   <releases>
+    <release version="3.0.11" date="2026-11-05">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.11</url>
+      <description>
+        <ul>
+          <li>Home has a plain Scoreboard: points and sets, no match needed.</li>
+          <li>On a Point Hub board, the LED panel also follows easy matches.</li>
+          <li>Linux: an arm64 desktop build for the Point Hub board.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.0.10" date="2026-10-31">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.10</url>
       <description>
