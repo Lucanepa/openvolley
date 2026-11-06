@@ -11,6 +11,8 @@ import { phoneSignContext, signatureSource, signatureUpdate, SLOT_OF_ROLE, PRE_M
 import Modal from './Modal'
 import RefereeSelector from './RefereeSelector'
 import LoadOfficialMatchModal from './LoadOfficialMatchModal'
+import BoardGameSheetModal from './BoardGameSheetModal'
+import { onPointHubBoard, sheetToBench, sheetToMatchData, sheetToRoster } from '../utils/pointHubBoard'
 import ballFallback from '../ball_fallback.png'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 
@@ -819,6 +821,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
   // Load Official Match modal state
   const [loadOfficialMatchModal, setLoadOfficialMatchModal] = useState(false)
+  const [boardSheetModal, setBoardSheetModal] = useState(false)
 
   // Upload mode toggle state (local or remote)
   const [homeUploadMode, setHomeUploadMode] = useState('local') // 'local' | 'remote'
@@ -3039,6 +3042,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     afterOfficialLoad(matchData)
   }
 
+  // Point Hub board: the match info and home roster the board has from wiedisync
+  const handleBoardSheet = ({ info, roster }) => {
+    setBoardSheetModal(false)
+    handleOfficialMatchSelect(sheetToMatchData(info))
+    if (info?.homeShort) setHomeShortName(info.homeShort)
+    if (info?.awayShort) setAwayShortName(info.awayShort)
+    if (roster?.ok) {
+      setHomeRoster(sheetToRoster(roster.players))
+      setBenchHome(sheetToBench(roster.officials))
+      showAlert(t('boardSheet.loaded', { count: roster.players.length }), 'success')
+    }
+  }
+
   // A game picked on the home screen (App: today's home games of the
   // account's clubs): once the new match's stored fields are in, the info page
   // opens (its Back snapshot taken first, as for "Load match from schedule")
@@ -3927,6 +3943,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           onClose={() => setLoadOfficialMatchModal(false)}
           onSelectMatch={handleOfficialMatchSelect}
         />
+        {onPointHubBoard() && (
+          <BoardGameSheetModal open={boardSheetModal} onClose={() => setBoardSheetModal(false)} onLoad={handleBoardSheet} />
+        )}
       </MatchSetupInfoView>
     )
   }
@@ -6757,6 +6776,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           <div className="mt-4 flex flex-wrap justify-end gap-2">
             {/* opens the info page with the schedule on top: the snapshot for
                 Back is taken before a game is picked, so Back still discards it */}
+            {onPointHubBoard() && (
+              <Button variant="primary" size="xl" className="whitespace-nowrap max-sm:flex-auto max-sm:h-auto max-sm:min-h-11 max-sm:py-2 max-sm:whitespace-normal max-sm:text-center" data-testid="board-sheet-button" onClick={() => { setCurrentView('info'); setBoardSheetModal(true) }}>
+                {t('boardSheet.button')}
+              </Button>
+            )}
             <Button variant="secondary" size="xl" className="whitespace-nowrap max-sm:flex-auto max-sm:h-auto max-sm:min-h-11 max-sm:py-2 max-sm:whitespace-normal max-sm:text-center" onClick={() => { setCurrentView('info'); setLoadOfficialMatchModal(true) }}>
               {t('loadOfficialMatch.button')}
             </Button>

@@ -1897,6 +1897,17 @@
     "connect": "Connecter",
     "lastUsed": "Dernière utilisation"
   },
+  "boardSheet": {
+    "button": "Charger depuis Wiedisync",
+    "title": "Charger depuis Wiedisync",
+    "load": "Charger",
+    "loading": "Chargement…",
+    "noGames": "Pas de match à domicile KSCW aujourd'hui.",
+    "noBoard": "Le tableau ne répond pas. Redémarrez-le depuis l'écran de démarrage.",
+    "noRoster": "Les infos du match sont là, pas la liste des joueurs :",
+    "infoOnly": "Charger seulement les infos du match",
+    "loaded": "Chargé depuis Wiedisync : {{count}} joueurs. Vérifiez-les, puis ajoutez l'équipe visiteuse."
+  },
   "loadOfficialMatch": {
     "title": "Charger match depuis le calendrier",
     "button": "Charger match depuis le calendrier",

@@ -10,6 +10,7 @@ import { duplicateGameNumbers } from '../../utils/deviceMatches'
 import { formatTakeOver, scoreText } from '../ScorerMovedModal'
 import { isServedFromLocalServer } from '../../utils/backendConfig'
 import { BRAND } from '../../brand'
+import { onPointHubBoard } from '../../utils/pointHubBoard'
 
 const RELEASES_PAGE = 'https://github.com/Lucanepa/openvolley/releases'
 const RELEASES_API = 'https://api.github.com/repos/Lucanepa/openvolley/releases?per_page=20'
@@ -90,7 +91,8 @@ export default function HomePage({
   const [supportFeedbackOpen, setSupportFeedbackOpen] = useState(false)
   const [loginOpen, setLoginOpen] = useState(false)
   // Signed out where an account could sign in: no official game here
-  const testOnly = signInAvailable && !signedIn
+  // (a Point Hub board fills an official game from Wiedisync, with no account)
+  const testOnly = signInAvailable && !signedIn && !onPointHubBoard()
   const desktopOS = useMemo(() => detectDesktopOS(), [])
   const inDesktopApp = useMemo(() => isInsideDesktopApp(), [])
 

@@ -77,7 +77,7 @@ export function mergeOfficialsEdits(existing, edited = {}, { snakeCase = false }
   return result
 }
 
-const isoDobToDisplay = (dob) => {
+export const isoDobToDisplay = (dob) => {
   const m = String(dob || '').match(/^(\d{4})-(\d{2})-(\d{2})/)
   return m ? `${m[3]}.${m[2]}.${m[1]}` : ''
 }

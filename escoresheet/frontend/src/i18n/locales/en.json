@@ -1904,6 +1904,17 @@
     },
     "invalidUrl": "Invalid server URL"
   },
+  "boardSheet": {
+    "button": "Load from Wiedisync",
+    "title": "Load from Wiedisync",
+    "load": "Load",
+    "loading": "Loading…",
+    "noGames": "No KSCW home game today.",
+    "noBoard": "The board did not answer. Restart it from the start screen.",
+    "noRoster": "Match info is here, the roster is not:",
+    "infoOnly": "Load match info only",
+    "loaded": "Loaded from Wiedisync: {{count}} players. Check them, then add the away team."
+  },
   "loadOfficialMatch": {
     "title": "Load match from schedule",
     "button": "Load match from schedule",

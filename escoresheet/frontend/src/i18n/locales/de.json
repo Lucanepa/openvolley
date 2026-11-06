@@ -1752,6 +1752,17 @@
     "connect": "Verbinden",
     "lastUsed": "Zuletzt verwendet"
   },
+  "boardSheet": {
+    "button": "Von Wiedisync laden",
+    "title": "Von Wiedisync laden",
+    "load": "Laden",
+    "loading": "Wird geladen …",
+    "noGames": "Heute kein KSCW-Heimspiel.",
+    "noBoard": "Das Board antwortet nicht. Starte es über den Startbildschirm neu.",
+    "noRoster": "Die Spieldaten sind da, das Kader nicht:",
+    "infoOnly": "Nur Spieldaten laden",
+    "loaded": "Von Wiedisync geladen: {{count}} Spieler. Prüfe sie und erfasse dann das Gastteam."
+  },
   "loadOfficialMatch": {
     "title": "Spiel aus dem Spielplan laden",
     "button": "Spiel aus dem Spielplan laden",

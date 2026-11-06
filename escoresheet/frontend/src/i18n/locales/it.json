@@ -1903,6 +1903,17 @@
     },
     "invalidUrl": "URL del server non valido"
   },
+  "boardSheet": {
+    "button": "Carica da Wiedisync",
+    "title": "Carica da Wiedisync",
+    "load": "Carica",
+    "loading": "Caricamento…",
+    "noGames": "Oggi nessuna partita in casa KSCW.",
+    "noBoard": "Il tabellone non risponde. Riavvialo dalla schermata iniziale.",
+    "noRoster": "Le informazioni della partita ci sono, la lista giocatori no:",
+    "infoOnly": "Carica solo le informazioni della partita",
+    "loaded": "Caricato da Wiedisync: {{count}} giocatori. Controllali, poi aggiungi la squadra ospite."
+  },
   "loadOfficialMatch": {
     "title": "Carica partita dal calendario",
     "button": "Carica partita dal calendario",

@@ -3,6 +3,7 @@
  * Fetches match data from the main scoreboard server instead of using local IndexedDB
  */
 
+import { onPointHubBoard } from './pointHubBoard'
 import { apiFrom } from '../lib/apiClient'
 import { getApiUrl, getBackendUrl, getCloudApiUrl, getRelayWebSocketUrl } from './backendConfig'
 import { formatTimeLocal } from './timeUtils'
@@ -1842,10 +1843,6 @@ export function matchTeamNames(match, { homeTeam, awayTeam } = {}) {
 // PIN fields the relay needs from the scorer: the game PIN proves the
 // scoreboard role, the connection PINs let the relay check referee/bench PINs
 // itself (LAN). Nothing else secret goes over the relay.
-// Set by the desktop app before the page loads, only when pointhub-screen starts it
-// on a board (OPENVOLLEY_POINTHUB_BOARD, src-tauri/src/main.rs).
-const onPointHubBoard = () => typeof window !== 'undefined' && window.__OV_POINTHUB_BOARD__ === true
-
 const RELAY_PIN_FIELDS = ['gamePin', 'refereePin', 'homeTeamPin', 'awayTeamPin', 'homeTeamUploadPin', 'awayTeamUploadPin']
 const NEVER_RELAYED = ['game_pin', 'connection_pins', 'connectionPins']
 

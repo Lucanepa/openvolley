@@ -1898,6 +1898,17 @@
     "connect": "Verbinde",
     "lastUsed": "Zletscht bruucht"
   },
+  "boardSheet": {
+    "button": "Vo Wiedisync lade",
+    "title": "Vo Wiedisync lade",
+    "load": "Lade",
+    "loading": "Am Lade …",
+    "noGames": "Hüt kei KSCW-Heimspiil.",
+    "noBoard": "S Board git kei Antwort. Start s über de Startbildschirm neu.",
+    "noRoster": "D Spiildate sind da, s Kader nöd:",
+    "infoOnly": "Nur Spiildate lade",
+    "loaded": "Vo Wiedisync glade: {{count}} Spiiler. Prüef si und erfass denn s Gastteam."
+  },
   "loadOfficialMatch": {
     "title": "Spiil us em Spiilplan lade",
     "button": "Spiil us em Spiilplan lade",

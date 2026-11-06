@@ -16,7 +16,7 @@ const setup = readFileSync(resolve(__dirname, '../MatchSetup.jsx'), 'utf8')
 describe('Match setup at large text on a phone', () => {
   it('the Match info card buttons wrap their label on a phone', () => {
     const buttons = setup.match(/className="whitespace-nowrap max-sm:flex-auto[^"]*"/g)
-    expect(buttons).toHaveLength(3)
+    expect(buttons).toHaveLength(4)
     for (const b of buttons) expect(b).toContain('max-sm:whitespace-normal')
     for (const b of buttons) expect(b).toContain('max-sm:h-auto')
   })
