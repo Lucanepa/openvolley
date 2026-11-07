@@ -1171,6 +1171,8 @@
     "continueCard": {
       "score": "Satz {{set}} · {{home}}:{{away}} · Sätz {{setsHome}}:{{setsAway}}",
       "notStarted": "Nonig gstartet",
+      "stageSetup": "Spiiliirichtig",
+      "stageCoinToss": "Usloosig",
       "lastSaved": "Zletscht gspeicheret {{time}}"
     },
     "matchState": {

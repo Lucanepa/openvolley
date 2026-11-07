@@ -1170,6 +1170,8 @@
     "continueCard": {
       "score": "Set {{set}} · {{home}}:{{away}} · sets {{setsHome}}:{{setsAway}}",
       "notStarted": "Pas commencé",
+      "stageSetup": "Configuration du match",
+      "stageCoinToss": "Tirage au sort",
       "lastSaved": "Dernier enregistrement {{time}}"
     },
     "matchState": {

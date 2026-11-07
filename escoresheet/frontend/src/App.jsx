@@ -77,12 +77,13 @@ import DesktopUpdateNotice from './components/DesktopUpdateNotice'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from './utils/matchFormat'
 import { getMatchWinner } from './domain/matchEnd'
 import { jobMatchKey, setExtId } from './utils/syncIds'
-import { deviceMatchRows, jobsOfMatch, matchGameNumber, setScore } from './utils/deviceMatches'
+import { deviceMatchRows, jobsOfMatch, matchGameNumber, resumeStage, setScore } from './utils/deviceMatches'
 import { PhoneIcon } from './components/icons'
 import { Maximize } from 'lucide-react'
 import { Button, cn, FormError, Input } from './ui'
 import { getBackendOverride, getCloudApiUrl, getLocalServerStatusUrl, isCloudBlockedOnThisPort, isStaticHost } from './utils/backendConfig'
 import { isViewportTooSmall } from './utils/formLayout'
+import { onPointHubBoard } from './utils/pointHubBoard'
 import { installAppLifecycle, liveOf, setLiveMatch } from './utils/appLifecycle'
 import { installAndroidUpdates, liveMatchKnown } from './utils/androidUpdate'
 import AndroidUpdateNotice from './components/AndroidUpdateNotice'
@@ -3499,8 +3500,11 @@ export default function App() {
   useEffect(() => {
     if (matchId && simpleBoardOpen) setSimpleBoardOpen(false)
   }, [matchId, simpleBoardOpen, setSimpleBoardOpen])
-  // The size gate, over the screen it blocks (which stays mounted under it)
-  const sizeGateShown = !isFullscreen && !systemBarsGoing && smallScreenBlocked && isViewportTooSmall(viewportSize.width, viewportSize.height)
+  // The size gate, over the screen it blocks (which stays mounted under it).
+  // Not on a Point Hub board: its screen is known, and the on-screen keyboard
+  // only makes the window short while a field is in use (the gate's blur below
+  // would close the keyboard again).
+  const sizeGateShown = !onPointHubBoard() && !isFullscreen && !systemBarsGoing && smallScreenBlocked && isViewportTooSmall(viewportSize.width, viewportSize.height)
   // and no button under it keeps the focus: Enter or Space would press it
   useEffect(() => {
     if (sizeGateShown) document.activeElement?.blur?.()
@@ -3552,6 +3556,7 @@ export default function App() {
         home: home?.name || null,
         away: away?.name || null,
         score: setScore(sets),
+        stage: resumeStage(m),
         lastSaved: lastActivityAt(m, newest),
         state: copyState(m, { checkedHere: here.has(m.id) })
       }

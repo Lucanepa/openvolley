@@ -78,6 +78,22 @@ export function jobsOfMatch(jobs, seedKey) {
 }
 
 /**
+ * Where Continue opens a match that has no set yet, as App's continueTestMatch and
+ * continueMatch decide it: 'setup', 'coinToss', or null once it is past both.
+ * @param {object|null} match
+ * @returns {'setup'|'coinToss'|null}
+ */
+export function resumeStage(match) {
+  if (!match || ['live', 'ended', 'approved', 'final'].includes(match.status)) return null
+  if (match.test !== true && match.easy !== true) return 'setup'
+  const signed = match.homeCoachSignature && match.homeCaptainSignature && match.awayCoachSignature && match.awayCaptainSignature
+  // An easy match has no Match Setup
+  if (match.easy !== true && !signed) return 'setup'
+  const tossDone = [match.coinTossTeamA, match.coinTossTeamB, match.coinTossServeA, match.coinTossServeB].every(v => v != null)
+  return tossDone ? null : 'coinToss'
+}
+
+/**
  * Where a match stands, from its sets (local rows or the server's): the
  * latest set and its points, and the sets each team has won. set null: no
  * set yet (not started).
