@@ -31,6 +31,7 @@ import { BRAND } from '../src/brand.js';
 import { deliverPdfToOpener, getOpenerWindow, isOwnDownload, reportPdfProgress, savePdfThroughApp, setPdfBusy, watchPdfWindowClose } from '../src/utils/appWindowGuest';
 import { detectAppPlatform } from '../src/utils/openAppWindow';
 import { assertCanvas, assertJpegDataUrl, assertValidPdf, assertVisibleSheet, downloadBlob, PdfCheckError, SHEET_MM, SHEET_OFFSET_MM, A3_LANDSCAPE_MM, type SaveOutcome } from './utils/pdfOutput';
+import { usePinchZoom } from './usePinchZoom';
 
 interface AppScoresheetProps {
   matchData: {
@@ -62,6 +63,7 @@ const FOOTER_GAP = '1mm';
 const SHEET_W_PX = (410 * 96) / 25.4;
 const SHEET_H_PX = (287 * 96) / 25.4;
 const MIN_ZOOM = 0.2;
+const MAX_ZOOM = 3;
 
 const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = true, matchMissing = false }) => {
   const { t } = useTranslation();
@@ -1203,6 +1205,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   const positionBoxSet5Ref = useRef<HTMLDivElement>(null);
   const buttonsContainerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const sheetBoxRef = useRef<HTMLDivElement>(null);
 
   // Zoom state for tablet/viewport control
   const [zoomLevel, setZoomLevel] = useState(1);
@@ -1220,11 +1223,12 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   const portraitPhone = !isLandscape && viewportWidth < 700;
   const [turnedPref, setTurnedPref] = useState(true);
 
-  const zoomIn = () => setZoomLevel(prev => Math.min(prev + 0.1, 2));
+  const zoomIn = () => setZoomLevel(prev => Math.min(prev + 0.1, MAX_ZOOM));
   // The floor fits the upright sheet on a 360 px phone (about 0.21); at 0.3
   // it stayed wider than the screen and Fit could not fit it
   const zoomOut = () => setZoomLevel(prev => Math.max(prev - 0.1, MIN_ZOOM));
   const resetZoom = () => setZoomLevel(1);
+  usePinchZoom({ scrollRef: scrollContainerRef, boxRef: sheetBoxRef, zoom: zoomLevel, setZoom: setZoomLevel, min: MIN_ZOOM, max: MAX_ZOOM });
 
   const fitToScreen = () => {
     if (!containerRef.current) return;
@@ -1315,10 +1319,10 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   // State for PDF generation
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const turned = portraitPhone && turnedPref && !showLCS && !isGeneratingPdf;
-  // A phone held upright: the sheet sits in a box of its scaled size, so a
-  // sheet wider than the screen scrolls from its left edge (centred, it hung
-  // out on both sides and its left part could not be reached)
-  const boxed = portraitPhone && !showLCS && !isGeneratingPdf;
+  // The sheet sits in a box of its scaled size, so a sheet wider than the
+  // screen scrolls from its left edge (centred, it hung out on both sides and
+  // its left part could not be reached)
+  const boxed = !showLCS && !isGeneratingPdf;
   const turnedRef = useRef(turned);
 
   // Fit again when the view turns (the phone rotated, or "Turn")
@@ -1789,6 +1793,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
             height: 287mm !important;
             margin: 0 auto !important;
           }
+          [data-testid="sheet-turn-box"] {
+            display: contents !important;
+          }
           .scoresheet-scroll-container {
             padding: 0 !important;
             margin: 0 !important;
@@ -1833,9 +1840,10 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
 
         {/* Scoresheet View. Turned (a phone held upright): the box takes the
             turned sheet's size, the sheet is scaled, turned by 90° clockwise
-            about its top left corner and moved back into the box. Otherwise
-            the box is not there (display: contents). */}
+            about its top left corner and moved back into the box. For the Libero
+            sheet or a PDF the box is not there (display: contents). */}
         <div
+          ref={sheetBoxRef}
           data-testid="sheet-turn-box"
           style={boxed
             ? turned
@@ -1852,7 +1860,6 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
               ? `translateX(${SHEET_H_PX * zoomLevel}px) rotate(90deg) scale(${zoomLevel})`
               : `scale(${zoomLevel})`,
             transformOrigin: boxed ? 'top left' : 'top center',
-            transition: 'transform 0.2s ease',
             display: showLCS ? 'none' : undefined,
           }}
         >
