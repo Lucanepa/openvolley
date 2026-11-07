@@ -30,6 +30,7 @@ import { isoOf, setDurationMinutes, setEndMs, setStartMs } from './utils/matchTi
 import { BRAND } from '../src/brand.js';
 import { deliverPdfToOpener, getOpenerWindow, isOwnDownload, reportPdfProgress, savePdfThroughApp, setPdfBusy, watchPdfWindowClose } from '../src/utils/appWindowGuest';
 import { detectAppPlatform } from '../src/utils/openAppWindow';
+import { onPointHubBoard } from '../src/utils/pointHubBoard';
 import { assertCanvas, assertJpegDataUrl, assertValidPdf, assertVisibleSheet, downloadBlob, PdfCheckError, SHEET_MM, SHEET_OFFSET_MM, A3_LANDSCAPE_MM, type SaveOutcome } from './utils/pdfOutput';
 import { usePinchZoom } from './usePinchZoom';
 
@@ -1688,6 +1689,16 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
 
           {/* Divider */}
           <div className="w-px h-6 bg-gray-400"></div>
+
+          {/* A Point Hub board's windows have no frame: this is the way back */}
+          {onPointHubBoard() && (
+            <button
+              onClick={() => window.close()}
+              className="bg-gray-700 hover:bg-gray-900 text-white px-3 py-1 rounded text-sm shadow"
+            >
+              {t('scoresheetPdf.dismiss', 'Close')}
+            </button>
+          )}
 
           {/* Fullscreen button */}
           <button

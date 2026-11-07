@@ -164,6 +164,23 @@ describe('App_Scoresheet on a phone', () => {
     expect(screen.queryByRole('button', { name: /Turn/ })).toBeNull()
     expect((container.querySelector('.scoresheet-container') as HTMLElement).style.transform).not.toContain('rotate')
   })
+
+  it('on a Point Hub board, whose windows have no frame: a Close button; nowhere else', () => {
+    setViewport(1280, 800)
+    const close = vi.spyOn(window, 'close').mockImplementation(() => {})
+    const { unmount } = render(<App matchData={buildMatch()} autoAction="preview" />)
+    expect(screen.queryByRole('button', { name: /^(Close|scoresheetPdf\.dismiss)$/ })).toBeNull()
+    unmount()
+    ;(window as any).__OV_POINTHUB_BOARD__ = true
+    try {
+      render(<App matchData={buildMatch()} autoAction="preview" />)
+      fireEvent.click(screen.getByRole('button', { name: /^(Close|scoresheetPdf\.dismiss)$/ }))
+      expect(close).toHaveBeenCalledTimes(1)
+    } finally {
+      delete (window as any).__OV_POINTHUB_BOARD__
+      close.mockRestore()
+    }
+  })
 })
 
 describe('LiberoControlSheet', () => {
