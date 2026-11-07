@@ -182,10 +182,15 @@ fn main() {
             if diagnostics::env_enabled() {
                 main = main.initialization_script(diagnostics::INIT_SCRIPT);
             }
+            // No minimum on a Point Hub board: its on-screen keyboard leaves
+            // less than this, and a window that stays taller keeps its bottom
+            // part, and the fields there, behind the keyboard.
+            if std::env::var_os("OPENVOLLEY_POINTHUB_BOARD").is_none() {
+                main = main.min_inner_size(1200.0, 700.0);
+            }
             let main = main
             .title(flavour::CURRENT.window_title)
             .inner_size(1400.0, 900.0)
-            .min_inner_size(1200.0, 700.0)
             // Light only (volleyui): a dark OS theme must not darken the
             // native title bar, pickers or scrollbars of the scoretable.
             .theme(Some(tauri::Theme::Light))

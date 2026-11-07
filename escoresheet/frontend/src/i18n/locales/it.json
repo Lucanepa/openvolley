@@ -1171,6 +1171,8 @@
     "continueCard": {
       "score": "Set {{set}} · {{home}}:{{away}} · set {{setsHome}}:{{setsAway}}",
       "notStarted": "Non iniziata",
+      "stageSetup": "Configurazione partita",
+      "stageCoinToss": "Sorteggio",
       "lastSaved": "Ultimo salvataggio {{time}}"
     },
     "matchState": {
