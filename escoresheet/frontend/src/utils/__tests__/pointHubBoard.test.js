@@ -87,6 +87,15 @@ describe('installOnScreenKeyboardHelp', () => {
     expect(document.activeElement).toBe(area)
   })
 
+  it('the keyboard\'s ▼ key (F20) closes it from any field, a text area too', () => {
+    const area = field('textarea')
+    area.focus()
+    const e = new KeyboardEvent('keydown', { key: 'F20', bubbles: true, cancelable: true })
+    area.dispatchEvent(e)
+    expect(document.activeElement).not.toBe(area)
+    expect(e.defaultPrevented).toBe(true)
+  })
+
   it('other keys leave the field alone', async () => {
     const input = field('input', 'text')
     input.focus()

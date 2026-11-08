@@ -13,9 +13,10 @@ export function isTextField(el) {
 /**
  * What the board's on-screen keyboard needs from the page. It opens by shrinking the
  * window, and the desktop webview leaves the field where it was, behind the keyboard:
- * the field is scrolled into view at every resize. And it has no key to close it, only
- * a tap outside the field: Enter in a one-line field closes it too, unless the Enter
- * moved the focus on (a form that went on to its next field).
+ * the field is scrolled into view at every resize. And it has no key of its own to close
+ * it, only a tap outside the field: Enter in a one-line field closes it too, unless the
+ * Enter moved the focus on (a form that went on to its next field), and so does the ▼ key
+ * that pointhub-screen adds to its layouts, which sends F20, from any field.
  * @param {Window} [win]
  * @returns {() => void} removes the listeners
  */
@@ -35,6 +36,13 @@ export function installOnScreenKeyboardHelp(win = window) {
   }
   const onKeyDown = (e) => {
     const field = e.target
+    if (e.key === 'F20') {
+      if (isTextField(field)) {
+        e.preventDefault()
+        field.blur()
+      }
+      return
+    }
     if (e.key !== 'Enter' || e.isComposing || !isTextField(field)) return
     if (field.tagName === 'TEXTAREA' || field.isContentEditable) return
     win.setTimeout(() => {
