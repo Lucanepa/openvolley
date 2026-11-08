@@ -4,7 +4,7 @@ import {
   readableTextOn, readableText, discRing, liberoColour, liberoScore, teamLiberoColour,
   discPaint, teamDiscPaint, markColourOn, liberoPair, matchDiscPaint, teamBoxStyle, TEAM_COLOUR_MARK,
   teamTextPaint, teamTextStyle, toOklab,
-  LIBERO_CLASH_DISTANCE, LIBERO_COURT_CLASH_DISTANCE, HEADER_SURFACE, TEXT_DARK, TEXT_LIGHT, TEXT_BLACK, COURT_SURFACE, LIBERO_PALETTE, MIN_TEXT_CONTRAST, MIN_EDGE_CONTRAST, MIN_LARGE_TEXT_CONTRAST
+  LIBERO_CLASH_DISTANCE, LIBERO_COURT_CLASH_DISTANCE, HEADER_SURFACE, TEXT_DARK, TEXT_LIGHT, COURT_SURFACE, LIBERO_PALETTE, MIN_TEXT_CONTRAST, MIN_EDGE_CONTRAST, MIN_LARGE_TEXT_CONTRAST
 } from '../teamColours'
 
 const PALETTE = LIBERO_PALETTE.map(p => p.hex)
@@ -59,34 +59,38 @@ describe('WCAG luminance and contrast', () => {
 })
 
 describe('readableTextOn', () => {
-  it('picks near-black or white, whichever contrasts more', () => {
+  it('white unless the fill is too light for it, then near-black', () => {
     expect(readableTextOn('#ffffff')).toBe(TEXT_DARK)
     expect(readableTextOn('#facc15')).toBe(TEXT_DARK) // yellow
     expect(readableTextOn('#38bdf8')).toBe(TEXT_DARK) // sky
     expect(readableTextOn('#000080')).toBe(TEXT_LIGHT) // navy
     expect(readableTextOn('#1c1917')).toBe(TEXT_LIGHT)
     expect(readableTextOn('#e2001a')).toBe(TEXT_LIGHT) // Swiss Volley red
+    expect(readableTextOn('#3b82f6')).toBe(TEXT_LIGHT) // the default blue
   })
 
-  it('takes the higher WCAG ratio on mid tones too, with no lean towards white', () => {
-    // white on these is 3.4-4.0:1, too little for the 9-11px chips; dark reads better
-    for (const bg of ['#8a8a8a', '#3b82f6', '#ec4899', '#ef4444', '#16a34a', '#0d9488']) {
+  // 2026-11-08: the owner reads white best on the blue shirt; up to then the
+  // higher WCAG ratio decided and gave these near-black (or pure black)
+  it('mid tones take white, though near-black has the higher ratio there', () => {
+    for (const bg of ['#3b82f6', '#ef4444', '#808080', '#8a8a8a', '#a855f7', '#ec4899', '#16a34a', '#0d9488']) {
       expect(contrastRatio(bg, TEXT_DARK), bg).toBeGreaterThan(contrastRatio(bg, TEXT_LIGHT))
-      expect(readableTextOn(bg), bg).toBe(TEXT_DARK)
+      expect(contrastRatio(bg, TEXT_LIGHT), bg).toBeGreaterThanOrEqual(MIN_LARGE_TEXT_CONTRAST)
+      expect(readableTextOn(bg), bg).toBe(TEXT_LIGHT)
     }
-    // white where it has the higher ratio
+    // and white where it had the higher ratio already
     for (const bg of ['#dc2626', '#e2001a', '#065f46', '#1e3a8a', '#7b1e2b']) expect(readableTextOn(bg), bg).toBe(TEXT_LIGHT)
   })
 
-  it('deepens near-black to pure black on the mid tones where neither reaches 4.5:1', () => {
-    for (const bg of ['#808080', '#a855f7']) {
-      expect(Math.max(contrastRatio(bg, TEXT_DARK), contrastRatio(bg, TEXT_LIGHT)), bg).toBeLessThan(MIN_TEXT_CONTRAST)
-      expect(readableTextOn(bg), bg).toBe(TEXT_BLACK)
-      expect(contrastRatio(bg, TEXT_BLACK), bg).toBeGreaterThanOrEqual(MIN_TEXT_CONTRAST)
+  it('light fills keep near-black: white under 3:1 on them', () => {
+    // white, yellow, orange, the light green preset, sky, light greys
+    for (const bg of ['#ffffff', '#facc15', '#eab308', '#f97316', '#22c55e', '#38bdf8', '#0ea5e9', '#a8a29e', '#c0c0c0', '#999999', '#ffd700']) {
+      expect(contrastRatio(bg, TEXT_LIGHT), bg).toBeLessThan(MIN_LARGE_TEXT_CONTRAST)
+      expect(readableTextOn(bg), bg).toBe(TEXT_DARK)
+      expect(contrastRatio(bg, TEXT_DARK), bg).toBeGreaterThanOrEqual(MIN_TEXT_CONTRAST)
     }
   })
 
-  it('every #rrggbb (step 17) gets at least 4.5:1, the best of near-black and white', () => {
+  it('every #rrggbb (step 17) gets at least 3:1: white when it reaches 3:1, else near-black at 5.7:1 or more', () => {
     const steps = Array.from({ length: 16 }, (_, i) => i * 17)
     let min = Infinity
     for (const r of steps) for (const g of steps) for (const b of steps) {
@@ -94,10 +98,11 @@ describe('readableTextOn', () => {
       const ink = readableTextOn(bg)
       const c = contrastRatio(bg, ink)
       min = Math.min(min, c)
-      expect(c, bg).toBeGreaterThanOrEqual(MIN_TEXT_CONTRAST)
-      if (ink !== TEXT_BLACK) expect(c, bg).toBeCloseTo(Math.max(contrastRatio(bg, TEXT_DARK), contrastRatio(bg, TEXT_LIGHT)), 9)
+      expect(c, bg).toBeGreaterThanOrEqual(MIN_LARGE_TEXT_CONTRAST)
+      expect(ink, bg).toBe(contrastRatio(bg, TEXT_LIGHT) >= MIN_LARGE_TEXT_CONTRAST ? TEXT_LIGHT : TEXT_DARK)
+      if (ink === TEXT_DARK) expect(c, bg).toBeGreaterThan(5.7)
     }
-    expect(min).toBeLessThan(4.6) // the true minimum sits right at 4.5:1
+    expect(min).toBeLessThan(3.1) // the true minimum sits right at 3:1
   })
 
   it('never picks a colour under the 3:1 large-text minimum when the other one passes', () => {
@@ -109,18 +114,21 @@ describe('readableTextOn', () => {
     }
   })
 
-  it('every palette colour and every common shirt gets ≥ 4.5:1, or an outline', () => {
+  it('every palette colour and every common shirt gets ≥ 3:1, so no outline', () => {
     const shirts = [...PALETTE, '#ef4444', '#3b82f6', '#000080', '#808080', '#0ea5e9', '#22c55e', '#f97316', '#7b1e2b', '#ffd700']
     for (const bg of shirts) {
       const t = readableText(bg)
       expect(contrastRatio(bg, t.color), bg).toBeCloseTo(t.contrast, 6)
-      if (t.contrast < MIN_TEXT_CONTRAST) expect(t.textShadow, bg).toMatch(/1px/)
-      else expect(t.textShadow, bg).toBeUndefined()
+      expect(t.contrast, bg).toBeGreaterThanOrEqual(MIN_LARGE_TEXT_CONTRAST)
+      expect(t.textShadow, bg).toBeUndefined()
     }
   })
 
-  it('no colour needs the outline any more: the ink always reaches 4.5:1', () => {
-    for (const bg of ['#808080', '#8a8a8a', '#a855f7', '#3b82f6']) expect(readableText(bg).textShadow, bg).toBeUndefined()
+  it('white numbers on mid-tone shirts stay plain white (no outline)', () => {
+    for (const bg of ['#808080', '#8a8a8a', '#a855f7', '#3b82f6', '#ef4444']) {
+      expect(readableText(bg).color, bg).toBe(TEXT_LIGHT)
+      expect(readableText(bg).textShadow, bg).toBeUndefined()
+    }
   })
 })
 
@@ -459,6 +467,12 @@ describe('discPaint / teamDiscPaint', () => {
     expect(p.ring).toBeTruthy()
   })
 
+  it('the default blue shirt gets plain white numbers', () => {
+    const p = discPaint('#3b82f6')
+    expect(p).toMatchObject({ background: '#3b82f6', color: TEXT_LIGHT, ring: null })
+    expect(p.textShadow).toBeUndefined()
+  })
+
   it('returns null without a usable team colour (callers keep the default look)', () => {
     expect(teamDiscPaint(null)).toBeNull()
     expect(teamDiscPaint('')).toBeNull()
@@ -546,10 +560,10 @@ describe('custom team colours (any hex, not only the twelve presets)', () => {
     expect(colourDistance('#dc2626', '#ef4444')).toBeLessThan(CLOSE_COLOUR_DISTANCE)
   })
 
-  it('readableTextOn picks near-black, black or white for any colour, at least 3:1', () => {
+  it('readableTextOn picks near-black or white for any colour, at least 3:1', () => {
     for (const c of ANY) {
       const ink = readableTextOn(c)
-      expect([TEXT_DARK, TEXT_LIGHT, TEXT_BLACK], c).toContain(ink)
+      expect([TEXT_DARK, TEXT_LIGHT], c).toContain(ink)
       expect(contrastRatio(c, ink), c).toBeGreaterThanOrEqual(MIN_LARGE_TEXT_CONTRAST)
       // never the worse of the two when only one reaches 3:1
       const other = ink === TEXT_LIGHT ? TEXT_DARK : TEXT_LIGHT

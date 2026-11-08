@@ -2288,10 +2288,87 @@ button:disabled {
   flex-grow: 1;
 }
 
+/* Rows 8px apart (was 12), the court takes the rest: Point Hub board at
+   1280 x 800, 2026-11-08 */
 @media (max-width: 1400px) {
   .court-wrapper {
-    gap: calc(12px * var(--scale-factor));
+    gap: calc(8px * var(--scale-factor));
     padding: calc(12px * var(--scale-factor));
+  }
+}
+
+/* One side of the row above the court (Scoreboard renderServeSide): the
+   SERVE indicator, whose number box fills the side from the score row down to
+   the court, and that side's Game captain button, which stays in the outer
+   bottom corner. With the button, the box stands beside it where the side
+   leaves the box at least ~70 px next to the longest label ("Capitano in
+   gioco", ~145 px), else above it, in the score row's height. */
+.serve-side {
+  container: serve-side / inline-size;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  row-gap: inherit;
+}
+
+.serve-side__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  row-gap: inherit;
+  column-gap: 8px;
+  min-height: 0;
+}
+
+.serve-side__indicator {
+  grid-column: 1;
+  grid-row: 1 / 3;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  min-height: 0;
+  pointer-events: none;
+}
+
+.serve-side__grid--chip .serve-side__indicator {
+  grid-row: 1;
+}
+
+.serve-side__chip {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.serve-side__grid[data-side='left'] .serve-side__chip {
+  justify-self: start;
+}
+
+.serve-side__grid[data-side='right'] .serve-side__chip {
+  justify-self: end;
+}
+
+@container serve-side (min-width: 225px) {
+  .serve-side__grid--chip[data-side='left'] {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .serve-side__grid--chip[data-side='left'] .serve-side__indicator {
+    grid-column: 2;
+    grid-row: 1 / 3;
+  }
+
+  .serve-side__grid--chip[data-side='right'] {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .serve-side__grid--chip[data-side='right'] .serve-side__indicator {
+    grid-column: 1;
+    grid-row: 1 / 3;
+  }
+
+  .serve-side__grid--chip[data-side='right'] .serve-side__chip {
+    grid-column: 2;
   }
 }
 
@@ -2516,6 +2593,20 @@ button:disabled {
   color: var(--text);
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.6);
   flex-shrink: 0;
+}
+
+/* The scoring screen's discs (its court sits in .court-slot): 24cqh, about
+   10% over the 22cqh above, with the number kept at 13cqh, so two digits are
+   not cramped (Point Hub board, 2026-11-08). The rows close up from 9cqh to
+   8cqh, so the bottom row's name label (6cqh under its disc) stays on the
+   court. The bench's live view (MatchEntry) keeps the sizes above. */
+.court-slot .court-row {
+  gap: 8cqh;
+}
+
+.court-slot .court-player {
+  width: 24cqh;
+  height: 24cqh;
 }
 
 /* The number's outline on a mid-tone shirt (inline text-shadow, see
