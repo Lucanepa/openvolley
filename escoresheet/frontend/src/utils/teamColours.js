@@ -1,7 +1,7 @@
 // Team colours on the player discs (scoring court, referee tablet, bench
 // tablet): every disc wears its team's shirt colour, the libero the colour
-// that stands out most from both teams, and the shirt number is near-black or
-// white, whichever has the higher contrast on the fill.
+// that stands out most from both teams, and the shirt number is white unless
+// the fill is too light for it (under 3:1), then near-black.
 //
 // Pure functions, no DOM: WCAG 2.x relative luminance + contrast ratio for
 // readability, OKLab distance for "looks like a different shirt".
@@ -13,8 +13,7 @@ export const TEXT_LIGHT = '#ffffff'
 // page, see .court in styles.css and the referee court)
 export const COURT_SURFACE = '#f3ecda'
 
-// Readable body text (WCAG AA). The shirt number is big and bold, so 3:1
-// would pass as large text; we aim for 4.5:1 and outline below it.
+// Readable body text (WCAG AA)
 export const MIN_TEXT_CONTRAST = 4.5
 // Non-text contrast (WCAG 1.4.11): the disc's edge against the court
 export const MIN_EDGE_CONTRAST = 3
@@ -144,37 +143,34 @@ export function colourDistance(a, b) {
 // WCAG large-text minimum: the shirt number is big and bold
 export const MIN_LARGE_TEXT_CONTRAST = 3
 
-// Pure black: the dark ink on the few mid tones (grey #808080, purple
-// #a855f7...) where neither near-black nor white reaches 4.5:1
-export const TEXT_BLACK = '#000000'
-
 /**
  * The text colour on a team colour `bg` (shirt numbers, A/B chips, team
- * bands, score boxes): near-black or white, whichever has the higher WCAG
- * contrast ratio. Most of the text written on a team colour is small (9-11px
- * chips), so the ratio decides, with no lean towards white: grey, light
- * blue, purple and pink take dark text (white on grey is ~3.9:1, dark ~4.4).
- * Between L ≈ 0.18 and 0.22 neither reaches 4.5:1 (near-black stops at ~4.2),
- * so there the dark ink deepens to pure black, which reaches 4.6:1 or more:
- * every colour gets at least 4.5:1.
+ * bands, score boxes): white unless white falls under the 3:1 large-text
+ * minimum on it, then near-black. Mid tones (the light blue preset #3b82f6,
+ * the old home red #ef4444, grey #808080, purple #a855f7, pink #ec4899, green
+ * #16a34a, teal) read better in white (owner, 2026-11-08), though near-black
+ * has the higher WCAG ratio there: white is 3.3-4:1 on them. Light fills
+ * (white, yellow, orange, the light green preset, sky, light grey) take
+ * near-black, which then reaches 5.7:1 or more (white under 3:1 means
+ * L > 0.30). Every colour gets at least 3:1.
  */
 export function readableTextOn(bg) {
-  const dark = contrastRatio(bg, TEXT_DARK)
   const light = contrastRatio(bg, TEXT_LIGHT)
-  if (dark == null) return TEXT_DARK
-  if (Math.max(dark, light) < MIN_TEXT_CONTRAST && contrastRatio(bg, TEXT_BLACK) > Math.max(dark, light)) return TEXT_BLACK
-  return dark >= light ? TEXT_DARK : TEXT_LIGHT
+  if (light == null) return TEXT_DARK
+  return light >= MIN_LARGE_TEXT_CONTRAST ? TEXT_LIGHT : TEXT_DARK
 }
 
 /**
- * Text colour for `bg` (readableTextOn) plus, when it stays under 4.5:1
- * (mid-tone fills), a 1px outline in the other one.
+ * Text colour for `bg` (readableTextOn) plus, should it ever stay under the
+ * 3:1 large-text minimum, a 1px outline in the other one. readableTextOn
+ * always reaches 3:1, so no colour gets the outline today: the numbers it
+ * writes are big and bold, and white on a mid-tone shirt stays plain white.
  * @returns {{ color: string, textShadow?: string, contrast: number }}
  */
 export function readableText(bg) {
   const color = readableTextOn(bg)
   const contrast = contrastRatio(bg, color) ?? 21
-  if (contrast >= MIN_TEXT_CONTRAST) return { color, contrast }
+  if (contrast >= MIN_LARGE_TEXT_CONTRAST) return { color, contrast }
   const o = color === TEXT_LIGHT ? 'rgba(28, 25, 23, 0.85)' : 'rgba(255, 255, 255, 0.85)'
   return { color, contrast, textShadow: `-1px 0 ${o}, 1px 0 ${o}, 0 -1px ${o}, 0 1px ${o}` }
 }
