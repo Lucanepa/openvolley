@@ -2288,9 +2288,11 @@ button:disabled {
   flex-grow: 1;
 }
 
+/* Rows 8px apart (was 12), the court takes the rest: Point Hub board at
+   1280 x 800, 2026-11-08 */
 @media (max-width: 1400px) {
   .court-wrapper {
-    gap: calc(12px * var(--scale-factor));
+    gap: calc(8px * var(--scale-factor));
     padding: calc(12px * var(--scale-factor));
   }
 }
@@ -2516,6 +2518,20 @@ button:disabled {
   color: var(--text);
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.6);
   flex-shrink: 0;
+}
+
+/* The scoring screen's discs (its court sits in .court-slot): 24cqh, about
+   10% over the 22cqh above, with the number kept at 13cqh, so two digits are
+   not cramped (Point Hub board, 2026-11-08). The rows close up from 9cqh to
+   8cqh, so the bottom row's name label (6cqh under its disc) stays on the
+   court. The bench's live view (MatchEntry) keeps the sizes above. */
+.court-slot .court-row {
+  gap: 8cqh;
+}
+
+.court-slot .court-player {
+  width: 24cqh;
+  height: 24cqh;
 }
 
 /* The number's outline on a mid-tone shirt (inline text-shadow, see

@@ -15172,11 +15172,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           </ScoreboardTeamColumn>
 
           <ScoreboardCourtColumn>
-            {/* Layered layout: Score centered absolutely, serve indicators in flex layer */}
+            {/* Layered layout: Score centered absolutely, serve indicators in flex layer.
+                The score and the SERVE box are a quarter smaller than they
+                were (score min(11vw, 11vh), box vmin(8)): the court below
+                takes the height (Point Hub board at 1280 x 800, 2026-11-08). */}
             <div style={{
               position: 'relative',
               width: '100%',
-              minHeight: vmin(12),
+              minHeight: vmin(9),
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center'
@@ -15210,8 +15213,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           alt={t('common.servingTeam')}
                           style={{
                             ...serveBallBaseStyle,
-                            width: vmin(8),
-                            height: vmin(8)
+                            width: vmin(6),
+                            height: vmin(6)
                           }}
                         />
                       )
@@ -15226,7 +15229,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         pointerEvents: 'none'
                       }}>
                         <div style={{
-                          fontSize: vmin(3),
+                          fontSize: vmin(2.25),
                           fontWeight: 700,
                           color: 'var(--accent)',
                           textTransform: 'uppercase',
@@ -15235,17 +15238,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           SERVE
                         </div>
                         <div style={{
-                          fontSize: vmin(6),
+                          fontSize: vmin(4.5),
                           fontWeight: 700,
                           color: 'var(--accent)',
-                          width: vmin(8),
-                          height: vmin(8),
+                          width: vmin(6),
+                          height: vmin(6),
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
                           background: 'rgba(34, 197, 94, 0.1)',
-                          border: isVeryCompact ? '2px solid var(--accent)' : isCompactMode ? '3px solid var(--accent)' : '4px solid var(--accent)',
-                          borderRadius: isVeryCompact ? '6px' : isCompactMode ? '8px' : '14px'
+                          border: isVeryCompact ? '2px solid var(--accent)' : '3px solid var(--accent)',
+                          borderRadius: isVeryCompact ? '6px' : isCompactMode ? '8px' : '10px'
                         }}>
                           {servingPlayer.number}
                         </div>
@@ -15273,8 +15276,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           alt={t('common.servingTeam')}
                           style={{
                             ...serveBallBaseStyle,
-                            width: vmin(8),
-                            height: vmin(8)
+                            width: vmin(6),
+                            height: vmin(6)
                           }}
                         />
                       )
@@ -15289,7 +15292,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         pointerEvents: 'none'
                       }}>
                         <div style={{
-                          fontSize: vmin(3),
+                          fontSize: vmin(2.25),
                           fontWeight: 700,
                           color: 'var(--accent)',
                           textTransform: 'uppercase',
@@ -15298,17 +15301,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           SERVE
                         </div>
                         <div style={{
-                          fontSize: vmin(6),
+                          fontSize: vmin(4.5),
                           fontWeight: 700,
                           color: 'var(--accent)',
-                          width: vmin(8),
-                          height: vmin(8),
+                          width: vmin(6),
+                          height: vmin(6),
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
                           background: 'rgba(34, 197, 94, 0.1)',
-                          border: isVeryCompact ? '2px solid var(--accent)' : isCompactMode ? '3px solid var(--accent)' : '4px solid var(--accent)',
-                          borderRadius: isVeryCompact ? '6px' : isCompactMode ? '8px' : '14px'
+                          border: isVeryCompact ? '2px solid var(--accent)' : '3px solid var(--accent)',
+                          borderRadius: isVeryCompact ? '6px' : isCompactMode ? '8px' : '10px'
                         }}>
                           {servingPlayer.number}
                         </div>
@@ -15333,7 +15336,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <span style={{
                   fontFamily: getScoreFont(),
                   fontVariantNumeric: 'tabular-nums',
-                  fontSize: 'min(11vw, 11vh)',
+                  fontSize: 'min(8vw, 8vh)',
                   fontWeight: 500,
                   lineHeight: 1,
                   minWidth: '1.2em',
@@ -15344,7 +15347,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 {/* Colon */}
                 <span style={{
                   fontFamily: getScoreFont(),
-                  fontSize: 'min(11vw, 11vh)',
+                  fontSize: 'min(8vw, 8vh)',
                   fontWeight: 700,
                   lineHeight: 1,
                   color: '#22c55e',
@@ -15356,7 +15359,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <span style={{
                   fontFamily: getScoreFont(),
                   fontVariantNumeric: 'tabular-nums',
-                  fontSize: 'min(11vw, 11vh)',
+                  fontSize: 'min(8vw, 8vh)',
                   fontWeight: 500,
                   lineHeight: 1,
                   minWidth: '1.2em',
@@ -15732,7 +15735,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   onClick={(e) => toggleExpandedPlayerName(teamKey, player.number, e)}
                                   style={{
                                     position: 'absolute',
-                                    bottom: '-7cqh',
+                                    bottom: '-6cqh',
                                     left: '50%',
                                     transform: 'translateX(-50%)',
                                     background: 'rgba(0, 0, 0, 0.85)',
@@ -15867,12 +15870,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   alt="Volleyball"
                                   style={{
                                     position: 'absolute',
-                                    // 15% smaller than the old 8, set off the circle so it clears the I and C badges
-                                    left: vmin(-9.5),
+                                    // A quarter smaller than the vmin(6.8) before at 1280 x 800 (Point
+                                    // Hub board), set off the circle so it clears the I and C badges.
+                                    // Sized with the court: it stays inside the end line (vmin ran it
+                                    // past the line, where the court cut it off)
+                                    left: '-18cqh',
                                     top: '50%',
                                     transform: 'translateY(-50%)',
-                                    width: vmin(6.8),
-                                    height: vmin(6.8),
+                                    width: '13cqh',
+                                    height: '13cqh',
                                     zIndex: 5
                                   }}
                                 />
@@ -15997,7 +16003,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   onClick={(e) => toggleExpandedPlayerName(leftTeamKey, player.number, e)}
                                   style={{
                                     position: 'absolute',
-                                    bottom: '-7cqh',
+                                    bottom: '-6cqh',
                                     left: '50%',
                                     transform: 'translateX(-50%)',
                                     background: 'rgba(0, 0, 0, 0.85)',
@@ -16341,7 +16347,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   onClick={(e) => toggleExpandedPlayerName(teamKey, player.number, e)}
                                   style={{
                                     position: 'absolute',
-                                    bottom: '-7cqh',
+                                    bottom: '-6cqh',
                                     left: '50%',
                                     transform: 'translateX(-50%)',
                                     background: 'rgba(0, 0, 0, 0.85)',
@@ -16475,12 +16481,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   alt="Volleyball"
                                   style={{
                                     position: 'absolute',
-                                    // 15% smaller than the old 8, set off the circle so it clears the I and C badges
-                                    right: vmin(-9.5),
+                                    // A quarter smaller, sized with the court (as on the left)
+                                    right: '-18cqh',
                                     top: '50%',
                                     transform: 'translateY(-50%)',
-                                    width: vmin(6.8),
-                                    height: vmin(6.8),
+                                    width: '13cqh',
+                                    height: '13cqh',
                                     zIndex: 5
                                   }}
                                 />
@@ -16636,7 +16642,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   onClick={(e) => toggleExpandedPlayerName(rightTeamKey, player.number, e)}
                                   style={{
                                     position: 'absolute',
-                                    bottom: '-7cqh',
+                                    bottom: '-6cqh',
                                     left: '50%',
                                     transform: 'translateX(-50%)',
                                     background: 'rgba(0, 0, 0, 0.85)',
@@ -16810,13 +16816,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               </>
             )}
 
+            {/* The rally buttons with the set tables beside them. At least as
+                tall as the rally buttons, Replay rally / Undo and the last
+                action (167px at 1280 x 800), so the court keeps its size in the
+                set interval. It was 200px, with 21px of it empty: the court
+                takes that now. */}
             <div style={{
               display: 'flex',
               flexDirection: (data?.set?.index === 5 && !set5SetupConfirmed) ? 'column' : 'row',
               alignItems: (data?.set?.index === 5 && !set5SetupConfirmed) ? 'center' : 'stretch',
               gap: isCompactMode ? 'calc(8px * var(--scale-factor))' : 'calc(16px * var(--scale-factor))',
               width: '100%',
-              minHeight: isCompactMode ? 'calc(100px * var(--scale-factor))' : 'calc(200px * var(--scale-factor))'
+              minHeight: isCompactMode ? 'calc(100px * var(--scale-factor))' : 'calc(172px * var(--scale-factor))'
             }}>
               {/* Set Results Table - Left Team (hidden in compact mode and set 5 setup - shown below instead) */}
               {!isCompactMode && !(data?.set?.index === 5 && !set5SetupConfirmed) && (
@@ -16919,7 +16930,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               )}
 
               {/* Rally Controls - Center */}
-              <div className="rally-controls" style={{ flex: (data?.set?.index === 5 && !set5SetupConfirmed) ? '1 1 auto' : '2 1 0', width: (data?.set?.index === 5 && !set5SetupConfirmed) ? '100%' : undefined, display: 'flex', flexDirection: 'column', justifyContent: 'center', marginTop: 'calc(12px * var(--scale-factor))', minWidth: 0 }}>
+              <div className="rally-controls" style={{ flex: (data?.set?.index === 5 && !set5SetupConfirmed) ? '1 1 auto' : '2 1 0', width: (data?.set?.index === 5 && !set5SetupConfirmed) ? '100%' : undefined, display: 'flex', flexDirection: 'column', justifyContent: 'center', marginTop: 'calc(4px * var(--scale-factor))', minWidth: 0 }}>
                 {/* Set 5 setup and the set interval show their own content; a time-out
                     is drawn over the rally buttons (rally-stack) */}
                 {(data?.set?.index === 5 && !set5SetupConfirmed && !timeoutModal?.started) ? (
@@ -17084,12 +17095,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     <RallyTapNotice id={rallyTapNotice} />
                     {timeoutModal?.started && (
                   <div className="rally-stack-layer">
+                    {/* One line: a long team name on two made the countdown taller
+                        than the rally buttons, and the court shrank for the time-out */}
                     <div style={{
                       fontSize: '16px',
                       fontWeight: 600,
                       color: 'var(--muted)',
                       textAlign: 'center',
-                      marginBottom: '4px'
+                      marginBottom: '4px',
+                      maxWidth: '100%',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis'
                     }}>
                       Time-out — {timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))}
                     </div>
