@@ -30,8 +30,8 @@
       "sources": [
         {
           "type": "file",
-          "url": "https://github.com/Lucanepa/openvolley/releases/download/desktop-v3.0.11/openvolley-escoresheet_3.0.11_amd64.deb",
-          "sha256": "63c8f2fad355414159edf09a24205b1f5e0161697dadc248cc395f73a692f742",
+          "url": "https://github.com/Lucanepa/openvolley/releases/download/desktop-v3.0.12/openvolley-escoresheet_3.0.12_amd64.deb",
+          "sha256": "800b34e98dd3e77817a791dc5d8346a139e8fe6afacf38c935e66bd9f1861f2c",
           "dest-filename": "openvolley-escoresheet.deb",
           "only-arches": [
             "x86_64"

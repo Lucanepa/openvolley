@@ -71,6 +71,18 @@
   </screenshots>
 
   <releases>
+    <release version="3.0.12" date="2026-11-08">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.12</url>
+      <description>
+        <ul>
+          <li>Scoring screen: a bigger court and number discs, a smaller score, and the serve number fills its side down to the court.</li>
+          <li>Team colours: white numbers on mid-tone shirts.</li>
+          <li>Continue match says where the match stands: match setup or coin toss.</li>
+          <li>The scoresheet zooms with two fingers.</li>
+          <li>Point Hub board: the on-screen keyboard leaves the field in view and has a key to close it; pages do not zoom.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.0.11" date="2026-11-05">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.11</url>
       <description>
