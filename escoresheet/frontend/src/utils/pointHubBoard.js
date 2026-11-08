@@ -57,3 +57,28 @@ export function installOnScreenKeyboardHelp(win = window) {
     if (frame) win.cancelAnimationFrame(frame)
   }
 }
+
+/**
+ * Two fingers zoom a page in the desktop webview, and on the board's screen there is no neat way
+ * back: the scorer's pages do not zoom there. The scoresheet window is a page of its own and keeps
+ * its pinch (scoresheet_pdf/usePinchZoom), as does anything inside [data-pinch-zoom].
+ * @param {Window} [win]
+ * @returns {() => void} removes the listeners
+ */
+export function blockPagePinch(win = window) {
+  const doc = win.document
+  const root = doc.documentElement
+  const before = root.style.touchAction
+  root.style.touchAction = 'pan-x pan-y'
+  const stop = (e) => {
+    if (e.touches.length < 2 || e.target?.closest?.('[data-pinch-zoom]')) return
+    e.preventDefault()
+  }
+  doc.addEventListener('touchstart', stop, { passive: false })
+  doc.addEventListener('touchmove', stop, { passive: false })
+  return () => {
+    root.style.touchAction = before
+    doc.removeEventListener('touchstart', stop)
+    doc.removeEventListener('touchmove', stop)
+  }
+}
