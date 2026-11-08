@@ -1,0 +1,6 @@
+OpenVolley 3.0.12
+- Scoring screen: a bigger court and number discs, a smaller score, and the serve number fills its side down to the court.
+- Team colours: white numbers on mid-tone shirts.
+- Continue match says where the match stands: match setup or coin toss.
+- The scoresheet zooms with two fingers.
+- Point Hub board: the on-screen keyboard leaves the field in view and has a key to close it; pages do not zoom.
