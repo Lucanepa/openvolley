@@ -5231,6 +5231,97 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     []
   )
 
+  // The row above the court (score, then 1R and the Game captain buttons)
+  // shows the 1R row except during the set 5 setup
+  const showRefereeRow = !(data?.set?.index === 5 && !set5SetupConfirmed)
+  const gameCaptainChip = {
+    left: leftTeamLineupSet && !captainOnCourtStatus[leftIsHome ? 'home' : 'away'].captainOnCourt,
+    right: rightTeamLineupSet && !captainOnCourtStatus[leftIsHome ? 'away' : 'home'].captainOnCourt
+  }
+
+  // One side of the row above the court: the SERVE indicator (its label and
+  // the server's number box) and that side's Game captain button. The box
+  // fills the side from the top of the score row down to the court (owner,
+  // 2026-11-08: it was a small box in the corner), as wide as the side allows,
+  // short of the score digits; the number scales with the box (container
+  // units). The Game captain button keeps its place in the outer bottom
+  // corner: the box stands beside it where the side is wide enough, above it
+  // where not (styles.css .serve-side). The indicator is rendered on both
+  // sides, hidden on the one not serving, so nothing moves when the serve
+  // changes sides.
+  const renderServeSide = (side) => {
+    const serving = side === 'left' ? leftServing : rightServing
+    const servingPlayer = (side === 'left' ? leftTeam : rightTeam).playersOnCourt.find(p => p.position === 'I')
+    const chip = showRefereeRow && gameCaptainChip[side]
+    const teamKey = side === 'left' ? (leftIsHome ? 'home' : 'away') : (leftIsHome ? 'away' : 'home')
+    return (
+      <div className="serve-side" style={{
+        gridColumn: side === 'left' ? 1 : 3,
+        gridRow: showRefereeRow ? '1 / 3' : 1,
+        alignSelf: 'stretch'
+      }}>
+        <div className={`serve-side__grid${chip ? ' serve-side__grid--chip' : ''}`} data-side={side}>
+          {/* kept off the score digits by vmin(2) */}
+          <div className="serve-side__indicator" style={{
+            visibility: serving ? 'visible' : 'hidden',
+            [side === 'left' ? 'paddingRight' : 'paddingLeft']: vmin(2)
+          }}>
+            {!servingPlayer || !servingPlayer.number ? (
+              // Line-up not set: just the ball
+              <img
+                src={ballImage} onError={(e) => e.target.src = ballFallback}
+                alt={t('common.servingTeam')}
+                style={{ ...serveBallBaseStyle, width: vmin(6), height: vmin(6), alignSelf: side === 'left' ? 'flex-start' : 'flex-end' }}
+              />
+            ) : (
+              <>
+                <div style={{
+                  fontSize: vmin(2.25),
+                  fontWeight: 700,
+                  color: 'var(--accent)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '2px',
+                  textAlign: 'center'
+                }}>
+                  SERVE
+                </div>
+                <div style={{
+                  flex: '1 1 0',
+                  minHeight: 0,
+                  containerType: 'size',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: 'rgba(34, 197, 94, 0.1)',
+                  border: '3px solid var(--accent)',
+                  borderRadius: '10px'
+                }}>
+                  <span style={{
+                    fontSize: 'min(94cqh, 55cqw)',
+                    lineHeight: 1,
+                    fontWeight: 700,
+                    color: 'var(--accent)'
+                  }}>
+                    {servingPlayer.number}
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+          {chip && (
+            <button
+              className="serve-side__chip"
+              onClick={() => setCaptainOnCourtModal({ team: teamKey })}
+              style={GAME_CAPTAIN_CHIP}
+            >
+              {t('scoreboard.captainOnCourt.designate', 'Game captain')}
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   const renderScoreDisplay = useCallback(
     (style = {}) => (
       <div data-help-id="scoreboard-score-display" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', ...style }}>
@@ -15172,161 +15263,33 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           </ScoreboardTeamColumn>
 
           <ScoreboardCourtColumn>
-            {/* Layered layout: Score centered absolutely, serve indicators in flex layer.
-                The score and the SERVE box are a quarter smaller than they
-                were (score min(11vw, 11vh), box vmin(8)): the court below
-                takes the height (Point Hub board at 1280 x 800, 2026-11-08). */}
+            {/* The score with the SERVE indicators beside it, then 1R and the
+                Game captain buttons: one grid, so a SERVE box can run down
+                beside 1R to the court (renderServeSide). Three columns,
+                the outer two equal, so the score and the 1R name sit over the
+                net whatever is beside them. The score and the SERVE label are
+                a quarter smaller than they were (score min(11vw, 11vh)): the
+                court below takes the height (Point Hub board at 1280 x 800,
+                2026-11-08). */}
             <div style={{
-              position: 'relative',
-              width: '100%',
-              minHeight: vmin(9),
-              display: 'flex',
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
+              // the 1R row is as tall as a Game captain button whenever one shows,
+              // so a SERVE box above that button keeps the score row's height
+              gridTemplateRows: showRefereeRow
+                ? `minmax(${vmin(9)}px, auto) minmax(${gameCaptainChip.left || gameCaptainChip.right ? GAME_CAPTAIN_CHIP.minHeight : '0px'}, auto)`
+                : `minmax(${vmin(9)}px, auto)`,
+              // the centre column's own gap between its rows
+              rowGap: 'inherit',
               alignItems: 'center',
-              justifyContent: 'center'
+              width: '100%'
             }}>
-              {/* Layer 1: Serve indicators - flex space-between */}
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                width: '100%'
-              }}>
-                {/* Left Serve indicator. Both sides always render it and the
-                    non-serving one is only hidden: the SERVE block is taller than
-                    this row's minHeight, so unmounting it (while a sideout's
-                    rotation is written) let the court grow and shrink back. */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'flex-start',
-                  gap: vmin(2),
-                  minWidth: vmin(10),
-                  visibility: leftServing ? 'visible' : 'hidden'
-                }}>
-                  {(() => {
-                    const servingPlayer = leftTeam.playersOnCourt.find(p => p.position === 'I')
-                    // If lineup not set, show just the ball
-                    if (!servingPlayer || !servingPlayer.number) {
-                      return (
-                        <img
-                          src={ballImage} onError={(e) => e.target.src = ballFallback}
-                          alt={t('common.servingTeam')}
-                          style={{
-                            ...serveBallBaseStyle,
-                            width: vmin(6),
-                            height: vmin(6)
-                          }}
-                        />
-                      )
-                    }
-                    return (
-                      <div style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: isVeryCompact ? '1px' : isCompactMode ? '2px' : '4px',
-                        zIndex: 10,
-                        pointerEvents: 'none'
-                      }}>
-                        <div style={{
-                          fontSize: vmin(2.25),
-                          fontWeight: 700,
-                          color: 'var(--accent)',
-                          textTransform: 'uppercase',
-                          letterSpacing: isVeryCompact ? '0.5px' : isCompactMode ? '1px' : '2px'
-                        }}>
-                          SERVE
-                        </div>
-                        <div style={{
-                          fontSize: vmin(4.5),
-                          fontWeight: 700,
-                          color: 'var(--accent)',
-                          width: vmin(6),
-                          height: vmin(6),
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          background: 'rgba(34, 197, 94, 0.1)',
-                          border: isVeryCompact ? '2px solid var(--accent)' : '3px solid var(--accent)',
-                          borderRadius: isVeryCompact ? '6px' : isCompactMode ? '8px' : '10px'
-                        }}>
-                          {servingPlayer.number}
-                        </div>
-                      </div>
-                    )
-                  })()}
-                </div>
+              {renderServeSide('left')}
 
-                {/* Right Serve indicator */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'flex-end',
-                  gap: vmin(2),
-                  minWidth: vmin(10),
-                  visibility: rightServing ? 'visible' : 'hidden'
-                }}>
-                  {(() => {
-                    const servingPlayer = rightTeam.playersOnCourt.find(p => p.position === 'I')
-                    // If lineup not set, show just the ball
-                    if (!servingPlayer || !servingPlayer.number) {
-                      return (
-                        <img
-                          src={ballImage} onError={(e) => e.target.src = ballFallback}
-                          alt={t('common.servingTeam')}
-                          style={{
-                            ...serveBallBaseStyle,
-                            width: vmin(6),
-                            height: vmin(6)
-                          }}
-                        />
-                      )
-                    }
-                    return (
-                      <div style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: isVeryCompact ? '1px' : isCompactMode ? '2px' : '4px',
-                        zIndex: 10,
-                        pointerEvents: 'none'
-                      }}>
-                        <div style={{
-                          fontSize: vmin(2.25),
-                          fontWeight: 700,
-                          color: 'var(--accent)',
-                          textTransform: 'uppercase',
-                          letterSpacing: isVeryCompact ? '0.5px' : isCompactMode ? '1px' : '2px'
-                        }}>
-                          SERVE
-                        </div>
-                        <div style={{
-                          fontSize: vmin(4.5),
-                          fontWeight: 700,
-                          color: 'var(--accent)',
-                          width: vmin(6),
-                          height: vmin(6),
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          background: 'rgba(34, 197, 94, 0.1)',
-                          border: isVeryCompact ? '2px solid var(--accent)' : '3px solid var(--accent)',
-                          borderRadius: isVeryCompact ? '6px' : isCompactMode ? '8px' : '10px'
-                        }}>
-                          {servingPlayer.number}
-                        </div>
-                      </div>
-                    )
-                  })()}
-                </div>
-              </div>
-
-              {/* Layer 2: Score display - absolutely centered */}
+              {/* Score display */}
               <div style={{
-                position: 'absolute',
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%)',
+                gridColumn: 2,
+                gridRow: 1,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -15367,59 +15330,33 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   display: 'inline-block'
                 }}>{pointsBySide.right}</span>
               </div>
+
+              {renderServeSide('right')}
+
+              {/* 1R in center - only in non-compact mode, and hidden during the
+                  set 5 setup, as the court */}
+              {showRefereeRow && !isCompactMode && (() => {
+                const ref1 = data?.match?.officials?.find(o => o.role === '1st referee' || o.role === '1st Referee')
+                const ref1Name = ref1 ? `${ref1.firstName || ''} ${ref1.lastName || ''}`.trim() : null
+                if (!ref1Name) return null
+                return (
+                  <span style={{
+                    gridColumn: 2,
+                    gridRow: 2,
+                    justifySelf: 'center',
+                    fontSize: isLaptopMode ? '13px' : '16px',
+                    color: 'var(--muted)',
+                    whiteSpace: 'nowrap'
+                  }}>
+                    1R: {ref1Name}
+                  </span>
+                )
+              })()}
             </div>
 
             {/* Hide court area during Set 5 setup until confirmation */}
-            {!(data?.set?.index === 5 && !set5SetupConfirmed) && (
+            {showRefereeRow && (
               <>
-                {/* Game Captain Buttons + 1R row - above court. Three columns, the
-                    outer two equal, so the 1R name sits over the net whatever the
-                    width of the Game captain buttons. */}
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
-                  alignItems: 'center',
-                  width: '100%',
-                  marginBottom: '1px'
-                }}>
-                  {/* Left Game Captain Button */}
-                  {leftTeamLineupSet && !captainOnCourtStatus[leftIsHome ? 'home' : 'away'].captainOnCourt ? (
-                    <button
-                      onClick={() => setCaptainOnCourtModal({ team: leftIsHome ? 'home' : 'away' })}
-                      style={{ ...GAME_CAPTAIN_CHIP, justifySelf: 'start' }}
-                    >
-                      {t('scoreboard.captainOnCourt.designate', 'Game captain')}
-                    </button>
-                  ) : <div style={{ width: '80px' }} />}
-
-                  {/* 1R in center - only show in non-compact mode (an empty middle
-                      cell otherwise, so the right button stays in the right column) */}
-                  {isCompactMode ? <div /> : (() => {
-                    const ref1 = data?.match?.officials?.find(o => o.role === '1st referee' || o.role === '1st Referee')
-                    const ref1Name = ref1 ? `${ref1.firstName || ''} ${ref1.lastName || ''}`.trim() : null
-                    if (!ref1Name) return <div />
-                    return (
-                      <span style={{
-                        fontSize: isLaptopMode ? '13px' : '16px',
-                        color: 'var(--muted)',
-                        whiteSpace: 'nowrap'
-                      }}>
-                        1R: {ref1Name}
-                      </span>
-                    )
-                  })()}
-
-                  {/* Right Game Captain Button */}
-                  {rightTeamLineupSet && !captainOnCourtStatus[leftIsHome ? 'away' : 'home'].captainOnCourt ? (
-                    <button
-                      onClick={() => setCaptainOnCourtModal({ team: leftIsHome ? 'away' : 'home' })}
-                      style={{ ...GAME_CAPTAIN_CHIP, justifySelf: 'end' }}
-                    >
-                      {t('scoreboard.captainOnCourt.designate', 'Game captain')}
-                    </button>
-                  ) : <div style={{ width: '80px' }} />}
-                </div>
-
                 {/* The court takes the height left over by the score row and the rally
                     controls (styles.css .court-slot), so 16:10 / 16:9 tablets keep
                     Undo, Replay rally and Stop timeout on screen. */}
