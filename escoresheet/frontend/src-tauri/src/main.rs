@@ -28,9 +28,11 @@ fn ws_port() -> u16 {
 }
 
 /// OPENVOLLEY_ZOOM (pointhub-screen, on a board's bigger screen run at its own
-/// resolution): the webview enlarges the pages itself. A compositor scale of 1.5
-/// has GTK 3 draw at 2 and the compositor shrink that: soft, and 78 % more
-/// pixels to copy for every frame.
+/// resolution): the webview enlarges the scoretable's pages itself. A compositor
+/// scale of 1.5 has GTK 3 draw at 2 and the compositor shrink that: soft, and
+/// 78 % more pixels to copy for every frame. Not the pop-up windows: the
+/// scoresheet fits at 100 % there, and its FitText shrank the team names to the
+/// minimum under the webview's zoom (and the PDF is captured from that window).
 pub(crate) fn page_zoom() -> Option<f64> {
     parse_zoom(&std::env::var("OPENVOLLEY_ZOOM").ok()?)
 }
