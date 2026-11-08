@@ -14,7 +14,7 @@ import { stripCacheBustParam, applyUpdateAtStart } from './hooks/useServiceWorke
 import { isDesktopScoretable, resolveDesktopWindow } from './utils/appLifecycle'
 import { setAppEntry } from './utils/appEntry'
 import { watchFormStack } from './utils/formLayout'
-import { installOnScreenKeyboardHelp, onPointHubBoard } from './utils/pointHubBoard'
+import { blockPagePinch, installOnScreenKeyboardHelp, onPointHubBoard } from './utils/pointHubBoard'
 import { db } from './db/db'
 import { startActivityLog } from './utils/activity'
 import { installDiagnostics } from './diagnostics'
@@ -51,7 +51,10 @@ startActivityLog({ db })
 // this app and its dialogs portalled to <body> (not for the other apps).
 watchFormStack(document.body)
 
-if (onPointHubBoard()) installOnScreenKeyboardHelp()
+if (onPointHubBoard()) {
+  installOnScreenKeyboardHelp()
+  blockPagePinch()
+}
 
 initTheme()
 createRoot(document.getElementById('root')).render(

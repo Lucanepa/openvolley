@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
-import { installOnScreenKeyboardHelp, isTextField, onPointHubBoard } from '../pointHubBoard'
+import { blockPagePinch, installOnScreenKeyboardHelp, isTextField, onPointHubBoard } from '../pointHubBoard'
 
 const field = (tag, type) => {
   const el = document.createElement(tag)
@@ -104,3 +104,40 @@ describe('installOnScreenKeyboardHelp', () => {
     expect(document.activeElement).toBe(input)
   })
 })
+
+describe('blockPagePinch', () => {
+  const touch = (el, type, n) => {
+    const e = new Event(type, { bubbles: true, cancelable: true })
+    Object.defineProperty(e, 'touches', { value: Array.from({ length: n }, (_, i) => ({ clientX: i * 50, clientY: 10 })) })
+    el.dispatchEvent(e)
+    return e
+  }
+  let remove
+  beforeEach(() => { remove = blockPagePinch(window) })
+  afterEach(() => {
+    remove()
+    document.body.innerHTML = ''
+  })
+
+  it('two fingers do not zoom the page', () => {
+    const el = field('div')
+    expect(touch(el, 'touchstart', 2).defaultPrevented).toBe(true)
+    expect(touch(el, 'touchmove', 2).defaultPrevented).toBe(true)
+    expect(document.documentElement.style.touchAction).toBe('pan-x pan-y')
+  })
+
+  it('one finger still scrolls and taps', () => {
+    const el = field('div')
+    expect(touch(el, 'touchstart', 1).defaultPrevented).toBe(false)
+    expect(touch(el, 'touchmove', 1).defaultPrevented).toBe(false)
+  })
+
+  it('inside [data-pinch-zoom], two fingers are left to it', () => {
+    const box = field('div')
+    box.setAttribute('data-pinch-zoom', '')
+    const inner = document.createElement('span')
+    box.appendChild(inner)
+    expect(touch(inner, 'touchstart', 2).defaultPrevented).toBe(false)
+  })
+})
+
