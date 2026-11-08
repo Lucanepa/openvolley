@@ -127,8 +127,15 @@ export function formatTakeOver(at, lang, now = new Date()) {
   return `${d.toLocaleDateString(lang || undefined, { day: '2-digit', month: '2-digit' })} ${time}`
 }
 
-/** "Set 3 · 14:12 · sets 1:1" (deviceMatches setScore), or "Not started". */
-export function scoreText(t, score) {
-  if (!score || score.set == null) return t('home.continueCard.notStarted')
+/**
+ * "Set 3 · 14:12 · sets 1:1" (deviceMatches setScore). Before the first set, the
+ * stage Continue opens if it is given (deviceMatches resumeStage), or "Not started".
+ */
+export function scoreText(t, score, stage = null) {
+  if (!score || score.set == null) {
+    if (stage === 'setup') return t('home.continueCard.stageSetup')
+    if (stage === 'coinToss') return t('home.continueCard.stageCoinToss')
+    return t('home.continueCard.notStarted')
+  }
   return t('home.continueCard.score', { set: score.set, home: score.home, away: score.away, setsHome: score.setsHome, setsAway: score.setsAway })
 }

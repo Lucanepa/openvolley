@@ -1093,7 +1093,7 @@
     "easyMatch": "Easy match · unofficial"
   },
   "home": {
-    "title": "OpenVolley eScoresheet",
+    "title": "eScoresheet",
     "newMatch": "New match",
     "officialMatch": "Official match",
     "testMatch": "Test match",
@@ -1172,6 +1172,8 @@
     "continueCard": {
       "score": "Set {{set}} · {{home}}:{{away}} · sets {{setsHome}}:{{setsAway}}",
       "notStarted": "Not started",
+      "stageSetup": "Match setup",
+      "stageCoinToss": "Coin toss",
       "lastSaved": "Last saved {{time}}"
     },
     "matchState": {

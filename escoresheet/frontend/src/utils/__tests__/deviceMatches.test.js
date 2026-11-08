@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { deviceMatchRows, duplicateGameNumbers, isOpenOfficialMatch, jobsOfMatch, matchGameNumber, setScore } from '../deviceMatches'
+import { deviceMatchRows, duplicateGameNumbers, isOpenOfficialMatch, jobsOfMatch, matchGameNumber, resumeStage, setScore } from '../deviceMatches'
 
 const confirmed = '2026-10-01T10:00:00.000Z'
 
@@ -102,5 +102,32 @@ describe('setScore: where a match stands (the home screen\'s Continue card, Take
   it('no set yet: not started', () => {
     expect(setScore([])).toEqual({ set: null, home: 0, away: 0, setsHome: 0, setsAway: 0 })
     expect(setScore(null).set).toBeNull()
+  })
+})
+
+describe('resumeStage (where Continue opens a match with no set yet)', () => {
+  const signatures = { homeCoachSignature: 'a', homeCaptainSignature: 'b', awayCoachSignature: 'c', awayCaptainSignature: 'd' }
+  const toss = { coinTossTeamA: 'home', coinTossTeamB: 'away', coinTossServeA: true, coinTossServeB: false }
+
+  it('an official match opens Match Setup until it is live', () => {
+    expect(resumeStage({ status: 'scheduled' })).toBe('setup')
+    expect(resumeStage({ status: 'scheduled', ...signatures })).toBe('setup')
+    expect(resumeStage({ status: 'live' })).toBe(null)
+  })
+
+  it('a test match: Match Setup until signed, then the coin toss', () => {
+    expect(resumeStage({ status: 'scheduled', test: true })).toBe('setup')
+    expect(resumeStage({ status: 'scheduled', test: true, ...signatures })).toBe('coinToss')
+    expect(resumeStage({ status: 'scheduled', test: true, ...signatures, ...toss })).toBe(null)
+  })
+
+  it('an easy match has no Match Setup: the coin toss until it is confirmed', () => {
+    expect(resumeStage({ status: 'scheduled', test: true, easy: true })).toBe('coinToss')
+    expect(resumeStage({ status: 'scheduled', test: true, easy: true, ...toss })).toBe(null)
+  })
+
+  it('past both, or no match', () => {
+    for (const status of ['live', 'ended', 'approved', 'final']) expect(resumeStage({ status, test: true })).toBe(null)
+    expect(resumeStage(null)).toBe(null)
   })
 })

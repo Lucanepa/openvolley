@@ -83,7 +83,7 @@ export default function HomePage({
   onRestoreMatch,
   // what the self-check found (App, SelfCheckNotice)
   selfCheckNotice = null,
-  // the match Continue resumes (App): { home, away, score, lastSaved, state, unsent }
+  // the match Continue resumes (App): { home, away, score, stage, lastSaved, state, unsent }
   continueInfo = null
 }) {
   const { t, i18n } = useTranslation()
@@ -159,7 +159,7 @@ export default function HomePage({
                       <MatchStateChips state={continueInfo.state} unsent={continueInfo.unsent} />
                     </span>
                   </div>
-                  <div className="mt-1 text-xl font-bold tabular-nums text-stone-900">{scoreText(t, continueInfo.score)}</div>
+                  <div className="mt-1 text-xl font-bold tabular-nums text-stone-900">{scoreText(t, continueInfo.score, continueInfo.stage)}</div>
                   {continueInfo.lastSaved != null && (
                     <div className="mt-0.5 text-xs tabular-nums text-stone-500">
                       {t('home.continueCard.lastSaved', { time: formatTakeOver(continueInfo.lastSaved, i18n?.language) || '–' })}
