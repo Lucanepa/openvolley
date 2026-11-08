@@ -27,6 +27,20 @@ fn ws_port() -> u16 {
     std::env::var("OPENVOLLEY_WS_PORT").ok().and_then(|s| s.parse().ok()).unwrap_or(DEFAULT_WS_PORT)
 }
 
+/// OPENVOLLEY_ZOOM (pointhub-screen, on a board's bigger screen run at its own
+/// resolution): the webview enlarges the scoretable's pages itself. A compositor
+/// scale of 1.5 has GTK 3 draw at 2 and the compositor shrink that: soft, and
+/// 78 % more pixels to copy for every frame. Not the pop-up windows: the
+/// scoresheet fits at 100 % there, and its FitText shrank the team names to the
+/// minimum under the webview's zoom (and the PDF is captured from that window).
+pub(crate) fn page_zoom() -> Option<f64> {
+    parse_zoom(&std::env::var("OPENVOLLEY_ZOOM").ok()?)
+}
+
+fn parse_zoom(value: &str) -> Option<f64> {
+    value.trim().parse::<f64>().ok().filter(|z| (0.5..=3.0).contains(z))
+}
+
 fn main() {
     let http = http_port();
     let ws = ws_port();
@@ -182,10 +196,15 @@ fn main() {
             if diagnostics::env_enabled() {
                 main = main.initialization_script(diagnostics::INIT_SCRIPT);
             }
+            // No minimum on a Point Hub board: its on-screen keyboard leaves
+            // less than this, and a window that stays taller keeps its bottom
+            // part, and the fields there, behind the keyboard.
+            if std::env::var_os("OPENVOLLEY_POINTHUB_BOARD").is_none() {
+                main = main.min_inner_size(1200.0, 700.0);
+            }
             let main = main
             .title(flavour::CURRENT.window_title)
             .inner_size(1400.0, 900.0)
-            .min_inner_size(1200.0, 700.0)
             // Light only (volleyui): a dark OS theme must not darken the
             // native title bar, pickers or scrollbars of the scoretable.
             .theme(Some(tauri::Theme::Light))
@@ -203,6 +222,9 @@ fn main() {
                 }
             })
             .build()?;
+            if let Some(zoom) = page_zoom() {
+                let _ = main.set_zoom(zoom);
+            }
             popups::let_scripts_open_windows(&main);
             diagnostics::window_snapshot(&main, "created");
             // The close button / Alt+F4 hides the scoretable (and its
@@ -418,7 +440,17 @@ fn run_server_only(http: u16, ws: u16) {
 
 #[cfg(test)]
 mod tests {
-    use super::light_gtk_theme_name;
+    use super::{light_gtk_theme_name, parse_zoom};
+
+    #[test]
+    fn page_zoom_takes_a_sane_factor_only() {
+        assert_eq!(parse_zoom("1.5"), Some(1.5));
+        assert_eq!(parse_zoom(" 1.25 "), Some(1.25));
+        assert_eq!(parse_zoom(""), None);
+        assert_eq!(parse_zoom("big"), None);
+        assert_eq!(parse_zoom("0.1"), None);
+        assert_eq!(parse_zoom("10"), None);
+    }
 
     #[test]
     fn strips_the_dark_variant_of_a_gtk_theme() {
