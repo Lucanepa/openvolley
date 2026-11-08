@@ -4210,16 +4210,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
   }, [data, leftIsHome, getTeamLineupState, teamAKey, data?.events])
 
+  // Date and time apart, joined by a space: toLocaleString puts a comma
+  // between them ("08/11/2026, 09:51:10")
   const formatTimestamp = useCallback(date => {
-    return date.toLocaleString(undefined, {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false
-    })
+    const day = date.toLocaleDateString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit' })
+    const time = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+    return `${day} ${time}`
   }, [])
 
   // Player discs wear the team's shirt colour, the libero the colour that
