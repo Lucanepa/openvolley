@@ -173,6 +173,19 @@ the account (4.5a).
 | **Retention as built** | `club_managers` rows go with the account and the club (FK cascade); `contact_email` until changed, cleared or the club is deleted. Removing a member deletes only the `account_clubs` row (the account and its roles stay) |
 | **Audit** | `club.managers` (before/after user ids), `club.contact` (only whether an address is set), `club.member_remove`, `invite.create` with `club_id` (4.6) |
 
+### 4.5c Team managers and rosters sent ahead (db/023, OpenVolley)
+
+| | |
+|---|---|
+| **Data** | `public.team_managers`: which account manages which club team (`club_teams`, now with an id), who added it and when. `public.invite_codes.team_id`: the team of a team link. `public.game_rosters`: one team's roster of one game, sent before the match exists: **players (shirt number, first and last name, date of birth, licence number, captain / libero) and team officials (role, name, date of birth, licence number)**, the game's kick-off, who sent it and when. The team's players of the season go to the saved teams (4.9) |
+| **Whose** | Team manager accounts (often the coach); the players and team officials of the team (**often minors**), entered by the team manager, not by themselves |
+| **Purpose** | A team prepares its roster before the game (owner decision 2026-11-08); the scorer's tablet downloads it while online and offers it in Match Setup, offline first (`docs/team-managers-spec.md`) |
+| **Basis** | (b)/(f) keeping the official scoresheet; the same people and fields the scoresheet carries |
+| **Stored** | VM; backups. **On scorer devices**: IndexedDB `game_rosters` (4.11) |
+| **Who sees it** | The team's managers, the managers of its club, admins (`/api/team/:id/...`); indoor accounts with the saved-teams read right (approved scorers, competition managers): the rosters of the coming home games of their clubs, and of a game they name (`GET /api/game-rosters`). Never public, never on `/api/db` |
+| **Retention as built** | `game_rosters`: **deleted 14 days after the game** (`lib/teams.js` sweep, at most hourly, with every write and every scorer read); the match record holds the roster from Match Setup on. `team_managers` rows go with the account, the team and the club (FK cascade). Device copies: cleared at sign-out and account switch, dropped 36 h after kick-off |
+| **Audit** | `team.roster` (team id, game number, side, number of players and officials: never names), `team.squad` (team and saved team id, counts), `team.managers` (removal), `invite.redeem` / `invite.create` with `team_id` (4.6) |
+
 ### 4.6 Audit log
 
 | | |
@@ -247,7 +260,7 @@ the account (4.5a).
 
 | | |
 |---|---|
-| **IndexedDB `escoresheet` (Dexie)** | Matches, teams, players (with DOB), sets, events with state snapshots, sync queue, officials and scorers lists, interaction logs, saved-teams cache. Written first, synced when online and signed in. **No automatic expiry for matches** (deleted by the user or by clearing app data). Sent sync jobs are pruned after 7 days (`hooks/useSyncQueue.js:110`) |
+| **IndexedDB `escoresheet` (Dexie)** | Matches, teams, players (with DOB), sets, events with state snapshots, sync queue, officials and scorers lists, interaction logs, saved-teams cache, the rosters teams sent ahead (`game_rosters`, db/023: names, DOBs, licence numbers; this account's only, cleared at sign-out and account switch, dropped 36 h after kick-off). Written first, synced when online and signed in. **No automatic expiry for matches** (deleted by the user or by clearing app data). Sent sync jobs are pruned after 7 days (`hooks/useSyncQueue.js:110`) |
 | **localStorage** | Session token (`api_auth_token`), cached profile, UI settings (language, display, key bindings), on referee tablets **the referee PIN and match id** (`refereePin`, `refereeMatchId`: F19), the unsent console-log lines (for the same account only; dropped on sign-out and account deletion), log upload cursor |
 | **Local logs** | Console lines in memory and localStorage; interaction logs in IndexedDB (`utils/comprehensiveLogger.js`), downloadable by the user. Uploaded only when signed in (4.12); a summary of the last 2 hours goes with a support request when "Include diagnostics" is ticked (4.13). The referee, bench and livescore apps keep their errors and warnings in memory only, for the same diagnostics |
 | **Desktop app (Tauri)** | Same web data in the app's webview profile. **Automatic match backups** as JSON files in `~/.local/share/OpenVolley/backups` (Linux) or `%APPDATA%\OpenVolley\backups` (Windows), mode 0700/0600 (`src-tauri/src/backup.rs`). They hold names and DOBs, **without PINs** (`utils/nativeBackup/redact.js`). Rotation: 30 days, at most 500 files and 64 MB per match (`utils/nativeBackup/rotation.js`) |
@@ -348,6 +361,7 @@ PocketBase (legacy relay backup), Supabase (left in 2026-10).
 | Interaction (click) log (device only) | 30 days / 50,000 rows |
 | Match records (cloud) | Indefinitely; closed matches read-only |
 | Saved teams, beach tournaments | Until deleted by a manager (kept after the creator's account is deleted) |
+| Rosters sent ahead (`game_rosters`) | 14 days after the game |
 | Referee directory | Until an admin deletes a row |
 | `svrz_games` | Indefinitely (overwritten per game number) |
 | `backup/…/backups/` files | 30 days |

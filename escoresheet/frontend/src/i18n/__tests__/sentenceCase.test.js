@@ -28,6 +28,8 @@ const PROPER = new Set([
   'Swiss', 'Escape', 'Enter', 'Space', 'Esc', 'Bluetooth', 'Windows', 'Linux',
   // the OpenBeach tournament import (T2) reads Excel files
   'Excel',
+  // VolleyManager's roster document (a name, as the clubs call it)
+  'Einsatzliste',
 ])
 
 // Title-Cased words after the first one, ignoring placeholders, words after a

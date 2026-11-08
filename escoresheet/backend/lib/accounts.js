@@ -74,7 +74,10 @@ export const AUDIT_ACTIONS = Object.freeze([
   // db/019: a match moved to another scoring device (lib/scorerDevice.js claim)
   'match.scorer_device',
   // an admin deleted an account, or rejected a sign-up (deleteAccount below)
-  'account.delete', 'account.reject'
+  'account.delete', 'account.reject',
+  // db/023: team managers (a team link redeemed or removed), a team's saved
+  // team and the roster of one of its games (lib/teams.js)
+  'team.managers', 'team.squad', 'team.roster'
 ])
 export const APPS = SPORTS
 // How a membership came about (auth.app_memberships.joined_via)
@@ -201,10 +204,12 @@ function trimmedText (raw, { min = 0, max }) {
  *   account's own delete-account runs it too). Without it both answer 404
  *   and the accounts list says can_delete: false.
  */
-export function createAccounts ({ pool, db, restore, access, approvalsForMatches = null, clubs: clubsOf = () => null, eraseAccount = null, logger = console } = {}) {
+export function createAccounts ({ pool, db, restore, access, approvalsForMatches = null, clubs: clubsOf = () => null, teams: teamsOf = () => null, eraseAccount = null, logger = console } = {}) {
   const log = logger
   /** lib/clubs.js (db/018), wired after this module (it audits through it); null before. */
   const clubs = () => (typeof clubsOf === 'function' ? clubsOf() : null)
+  /** lib/teams.js (db/023), wired after this module too; null before. */
+  const teams = () => (typeof teamsOf === 'function' ? teamsOf() : null)
   /** Active approvals per match id (empty without lib/approvals.js). Throws on a DB error. */
   const approvalsOf = async (ids) => (typeof approvalsForMatches === 'function' ? approvalsForMatches(ids) : new Map())
 
@@ -354,6 +359,9 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
       const clubRule = c ? await c.ruleOn(pool) : false
       // db/020: the clubs the account manages (the manager's "My club" tab)
       const managedClubs = c?.managedClubsOf ? await c.managedClubsOf(pool, userId) : []
+      // db/023: the teams it acts for (the manager's "My teams" tab)
+      const tm = teams()
+      const managedTeams = tm?.managedTeamsOf ? await tm.managedTeamsOf(pool, userId) : []
       return ok({
         id: userId,
         roles: access?.roles ?? [],
@@ -366,14 +374,15 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
         apps,
         clubs: myClubs,
         clubRule,
-        managedClubs
+        managedClubs,
+        managedTeams
       })
     })
   }
 
   // ------------------------------------------------------------------ invites
   const INVITE_SELECT = `
-    SELECT i.id, i.code_hint, i.label, i.club, to_jsonb(i) ->> 'club_id' AS club_id,
+    SELECT i.id, i.code_hint, i.label, i.club, to_jsonb(i) ->> 'club_id' AS club_id, to_jsonb(i) ->> 'team_id' AS team_id,
            i.role, i.sport, i.max_uses, i.uses, i.expires_at, i.revoked_at, i.created_at,
            ${nameSql('p')} AS created_by_name,
            CASE WHEN i.revoked_at IS NOT NULL THEN 'revoked'
@@ -388,6 +397,8 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     label: r.label,
     club: r.club ?? null,
     club_id: r.club_id ?? null,
+    team_id: r.team_id ?? null,
+    team_name: r.team_name ?? null,
     role: r.role,
     sport: r.sport === 'beach' ? 'beach' : 'indoor',
     max_uses: r.max_uses ?? null,
@@ -398,6 +409,20 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     created_by_name: r.created_by_name ?? null,
     state: r.state
   })
+
+  /** The rows with team_name added (db/023 team links); unchanged without db/023. */
+  async function withTeamNames (client, rows) {
+    const ids = [...new Set(rows.map((r) => r.team_id).filter(isUuid))]
+    if (!ids.length) return rows
+    try {
+      const { rows: names } = await (client || pool).query('SELECT id, team_name FROM public.club_teams WHERE id = ANY($1::uuid[])', [ids])
+      const byId = new Map(names.map((n) => [n.id, n.team_name]))
+      return rows.map((r) => (r.team_id ? { ...r, team_name: byId.get(r.team_id) ?? null } : r))
+    } catch (err) {
+      if (err?.code === '42P01' || err?.code === '42703') return rows
+      throw err
+    }
+  }
 
   async function redeemInvite ({ userId, code } = {}) {
     if (!isUuid(userId)) return fail(401, 'invalid_token', 'Not signed in')
@@ -410,10 +435,14 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
       if ((await confirmationOf(client, userId))?.unconfirmed) throw abort(EMAIL_UNCONFIRMED())
       const { rows: [inv] } = await client.query(
         `SELECT id, label, role, sport, max_uses, uses, revoked_at, to_jsonb(invite_codes) ->> 'club_id' AS club_id,
+                to_jsonb(invite_codes) ->> 'team_id' AS team_id,
                 (expires_at IS NOT NULL AND expires_at <= now()) AS expired
            FROM public.invite_codes WHERE code_hash = $1 FOR UPDATE`, [hashInviteCode(normalized)])
       if (!inv || inv.revoked_at) throw abort(fail(404, 'OV_INVITE_INVALID', 'This invite code is not valid'))
       if (inv.expired) throw abort(fail(410, 'OV_INVITE_EXPIRED', 'This invite code has expired'))
+      // db/023: a team link makes the account a manager of that team, and
+      // nothing else (no role, no club membership: it scores nothing)
+      if (inv.role === 'team_manager') return redeemTeamLink(client, userId, inv)
       // The role in the code's sport: a beach code grants beach:<role> (db/012)
       const sport = inv.sport === 'beach' ? 'beach' : 'indoor'
       const role = roleFor(sport, inv.role)
@@ -454,6 +483,29 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     })).finally(() => access?.invalidate(userId))
   }
 
+  /** The team link part of redeemInvite (inside its transaction, the code row locked). */
+  async function redeemTeamLink (client, userId, inv) {
+    const { rows: [team] } = isUuid(inv.team_id)
+      ? await client.query(
+        `SELECT ct.id, ct.team_name AS name, c.id AS club_id, c.name AS club_name
+           FROM public.club_teams ct JOIN public.clubs c ON c.id = ct.club_id WHERE ct.id = $1`, [inv.team_id])
+      : { rows: [] }
+    if (!team) throw abort(fail(404, 'OV_INVITE_INVALID', 'This invite code is not valid'))
+    const { rows: [prof] } = await client.query('SELECT roles FROM public.profiles WHERE user_id = $1 LIMIT 1', [userId])
+    const roles = normalizeRoles(prof?.roles)
+    const teamOut = { id: team.id, name: team.name, club_id: team.club_id, club_name: team.club_name }
+    const { rows: [already] } = await client.query('SELECT 1 FROM public.team_managers WHERE team_id = $1 AND user_id = $2', [team.id, userId])
+    // Idempotent: a team the account already manages does not use the code up
+    if (already) return ok({ roles, role_granted: 'team_manager', already_had: true, team: teamOut })
+    if (inv.max_uses != null && inv.uses >= inv.max_uses) throw abort(fail(409, 'OV_INVITE_USED_UP', 'This invite code has been used up'))
+    await client.query('INSERT INTO public.invite_redemptions (invite_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [inv.id, userId])
+    await client.query('UPDATE public.invite_codes SET uses = uses + 1 WHERE id = $1', [inv.id])
+    await client.query('INSERT INTO public.team_managers (team_id, user_id, added_by) VALUES ($1, $2, NULL) ON CONFLICT DO NOTHING', [team.id, userId])
+    await addMembership(client, userId, 'indoor', 'invite')
+    await audit(client, { actorId: userId, action: 'invite.redeem', targetUserId: userId, details: { invite_id: inv.id, label: inv.label, role: 'team_manager', team_id: team.id, club_id: team.club_id }, app: 'indoor' })
+    return ok({ roles, role_granted: 'team_manager', already_had: false, team: teamOut })
+  }
+
   /** profiles.roles of one account; inserts the profile row when there is none. */
   async function writeRoles (client, userId, roles, hasProfile) {
     if (hasProfile) {
@@ -481,7 +533,15 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
       club = club || null
     }
     const role = body.role == null ? 'scorer' : body.role
-    if (!INVITE_ROLES.includes(role)) return fail(400, 'OV_INVALID_ROLE', 'This role cannot be given by an invite code', 'role: scorer, referee or competition_manager')
+    // db/023: a team link (role team_manager) names its team; no other code does
+    const teamId = body.team_id == null || body.team_id === '' ? null : body.team_id
+    if (role === 'team_manager') {
+      if (!isUuid(teamId)) return invalid('team_id: the team of a team_manager code')
+      if (sport !== 'indoor') return invalid('team_id: indoor codes only')
+    } else if (teamId !== null) {
+      return invalid('team_id: only for a team_manager code')
+    }
+    if (!INVITE_ROLES.includes(role) && role !== 'team_manager') return fail(400, 'OV_INVALID_ROLE', 'This role cannot be given by an invite code', 'role: scorer, referee or competition_manager')
     // db/018: the club whoever redeems the code joins (indoor codes only)
     let clubId = null
     if (body.club_id != null && body.club_id !== '') {
@@ -509,18 +569,28 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
         const { code, normalized } = generateInviteCode()
         try {
           return await withTx(async (client) => {
+            if (teamId) {
+              // the team's club is the code's club (the club manager's list and revoke)
+              const { rows: [t] } = await client.query('SELECT club_id FROM public.club_teams WHERE id = $1', [teamId])
+              if (!t) throw abort(fail(404, 'OV_TEAM_NOT_FOUND', 'This team does not exist'))
+              if (clubId && clubId !== t.club_id) throw abort(invalid('team_id: a team of another club'))
+              clubId = t.club_id
+            }
             if (clubId) {
               const { rows: [c] } = await client.query('SELECT name FROM public.clubs WHERE id = $1', [clubId])
               if (!c) throw abort(fail(404, 'OV_CLUB_NOT_FOUND', 'This club does not exist'))
               if (!club) club = c.name // the label of the club column
             }
+            const cols = ['code_hash', 'code_hint', 'label', 'club', 'role', 'max_uses', 'expires_at', 'created_by', 'sport']
+            const vals = [hashInviteCode(normalized), normalized.slice(-4), label, club, role, maxUses, expiresAt, isUuid(actorId) ? actorId : null, sport]
+            if (clubId) { cols.push('club_id'); vals.push(clubId) }
+            if (teamId) { cols.push('team_id'); vals.push(teamId) }
             const { rows: [row] } = await client.query(
-              `INSERT INTO public.invite_codes (code_hash, code_hint, label, club, role, max_uses, expires_at, created_by, sport${clubId ? ', club_id' : ''})
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9${clubId ? ', $10' : ''}) RETURNING id`,
-              [hashInviteCode(normalized), normalized.slice(-4), label, club, role, maxUses, expiresAt, isUuid(actorId) ? actorId : null, sport, ...(clubId ? [clubId] : [])])
-            await audit(client, { actorId, action: 'invite.create', details: { invite_id: row.id, label, role, ...(clubId ? { club_id: clubId } : {}), ...(sport === 'beach' ? { sport } : {}) }, app: sport })
+              `INSERT INTO public.invite_codes (${cols.join(', ')}) VALUES (${vals.map((_, i) => `$${i + 1}`).join(', ')}) RETURNING id`, vals)
+            await audit(client, { actorId, action: 'invite.create', details: { invite_id: row.id, label, role, ...(clubId ? { club_id: clubId } : {}), ...(teamId ? { team_id: teamId } : {}), ...(sport === 'beach' ? { sport } : {}) }, app: sport })
             const { rows: [inv] } = await client.query(`${INVITE_SELECT} WHERE i.id = $1`, [row.id])
-            return ok({ invite: inviteOut(inv), code }, 201)
+            const [named] = await withTeamNames(client, [inv])
+            return ok({ invite: inviteOut(named), code }, 201)
           })
         } catch (err) {
           if (err?.code === '23505' && attempt < 2) continue // a 60-bit collision: draw again
@@ -545,7 +615,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
         : a
           ? await pool.query(`${INVITE_SELECT} WHERE i.sport = $1 ORDER BY i.created_at DESC, i.id LIMIT 500`, [a])
           : await pool.query(`${INVITE_SELECT} ORDER BY i.created_at DESC, i.id LIMIT 500`)
-      return ok({ invites: rows.map(inviteOut) })
+      return ok({ invites: (await withTeamNames(pool, rows)).map(inviteOut) })
     })
   }
 
@@ -561,7 +631,8 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
         await audit(client, { actorId, action: 'invite.revoke', details: { invite_id: id, label: cur.label }, app: cur.sport === 'beach' ? 'beach' : 'indoor' })
       }
       const { rows: [inv] } = await client.query(`${INVITE_SELECT} WHERE i.id = $1`, [id])
-      return ok({ invite: inviteOut(inv) })
+      const [named] = await withTeamNames(client, [inv])
+      return ok({ invite: inviteOut(named) })
     }))
   }
 

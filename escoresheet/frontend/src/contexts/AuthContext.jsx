@@ -6,6 +6,7 @@ import { discardUnsentLogs } from '../utils/logger'
 import { accessFromRoles, accessChanged, NO_ACCESS, ACCESS_CHANGED_EVENT } from '../lib/access'
 import { fetchMe, redeemInvite as apiRedeemInvite } from '../lib/accountApi'
 import { clearSavedTeams, refreshSavedTeams } from '../db/savedTeams'
+import { clearGameRosters, refreshGameRosters, GAME_ROSTERS_REFRESH_MS } from '../db/gameRosters'
 import i18n from 'i18next'
 import PasskeyOfferHost from '../components/auth/PasskeyOfferHost'
 
@@ -261,6 +262,8 @@ export function AuthProvider({ children, app = null }) {
       // The saved-team cache holds DOBs and licence numbers of this account's
       // teams: never leave it for the next one on a shared tablet
       clearSavedTeams()
+      // the rosters teams sent (db/023) too
+      clearGameRosters()
     }
 
     return { error }
@@ -371,6 +374,7 @@ export function AuthProvider({ children, app = null }) {
       localStorage.removeItem(CLUBS_CACHE_KEY)
       discardUnsentLogs()
       clearSavedTeams()
+      clearGameRosters()
 
       return { error: null }
     } catch (err) {
@@ -398,12 +402,13 @@ export function AuthProvider({ children, app = null }) {
   // bumped to load the clubs again (an invite code that carries a club)
   const [clubsReload, setClubsReload] = useState(0)
   const clubsSource = clubsState?.userId === userId ? clubsState : (userId ? readCachedClubs(userId) : null)
-  const clubsKey = JSON.stringify(clubsSource ? [clubsSource.clubs, clubsSource.clubRule, clubsSource.managedClubs || []] : null)
+  const clubsKey = JSON.stringify(clubsSource ? [clubsSource.clubs, clubsSource.clubRule, clubsSource.managedClubs || [], clubsSource.managedTeams || []] : null)
   const access = useMemo(() => {
     if (!userId) return NO_ACCESS
     const c = JSON.parse(clubsKey)
     // db/020: managedClubs, the clubs the account manages (the manager's My club tab)
-    return { ...accessFromRoles(JSON.parse(rolesKey)), known, clubs: c ? c[0] : [], clubRule: c ? c[1] === true : false, managedClubs: c ? c[2] : [], clubsKnown: !!c }
+    // db/023: managedTeams, the teams it acts for (the manager's My teams tab)
+    return { ...accessFromRoles(JSON.parse(rolesKey)), known, clubs: c ? c[0] : [], clubRule: c ? c[1] === true : false, managedClubs: c ? c[2] : [], managedTeams: c ? (c[3] || []) : [], clubsKnown: !!c }
   }, [userId, rolesKey, known, clubsKey])
 
   // Load the clubs once signed in, and again on focus and when back online
@@ -420,7 +425,8 @@ export function AuthProvider({ children, app = null }) {
           userId,
           clubs: Array.isArray(res.data.clubs) ? res.data.clubs : [],
           clubRule: res.data.clubRule === true,
-          managedClubs: Array.isArray(res.data.managedClubs) ? res.data.managedClubs : []
+          managedClubs: Array.isArray(res.data.managedClubs) ? res.data.managedClubs : [],
+          managedTeams: Array.isArray(res.data.managedTeams) ? res.data.managedTeams : []
         }
         cacheClubs(value)
         setClubsState(value)
@@ -453,8 +459,26 @@ export function AuthProvider({ children, app = null }) {
     const id = user?.id ?? null
     const prev = previousUserId.current
     previousUserId.current = id
-    if (prev !== undefined && prev !== null && prev !== id) clearSavedTeams()
+    if (prev !== undefined && prev !== null && prev !== id) {
+      clearSavedTeams()
+      clearGameRosters()
+    }
   }, [user])
+
+  // db/023, offline first: download the rosters teams sent for the coming
+  // home games while there is a connection (sign-in, every 15 minutes, back
+  // online), so Match Setup offers them in a hall without internet.
+  useEffect(() => {
+    if (!user || !profile || !access.canScore || access.isPending || !hasBackend()) return
+    const refresh = () => { refreshGameRosters({ access, userId: user.id }).catch(() => { /* keep the cache */ }) }
+    refresh()
+    const timer = setInterval(refresh, GAME_ROSTERS_REFRESH_MS)
+    window.addEventListener('online', refresh)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('online', refresh)
+    }
+  }, [user, profile, access])
 
   // Load the saved teams once the profile says this account may read them.
   useEffect(() => {

@@ -53,6 +53,35 @@ export function managerSiteUrl(hostname = currentHost(), win = typeof window !==
 // The manager's page that creates an account (ManagerApp, hash route).
 export const SIGN_UP_HASH = 'signup'
 
+// A team link (db/023): manager.openvolley.app/#team=<invite code>. The code
+// rides in the fragment, so it never reaches a server log.
+export const TEAM_LINK_HASH = 'team'
+const TEAM_CODE_RE = /^[0-9A-Za-z]{4}-?[0-9A-Za-z]{4}-?[0-9A-Za-z]{4}$/
+
+/**
+ * The link a club manager hands to a team manager: the manager site this page
+ * belongs to (a manager preview stays on itself, an app preview links its
+ * manager preview), else manager.openvolley.app.
+ * @param {string} code
+ * @param {string} [hostname]
+ */
+export function teamLinkUrl(code, hostname = currentHost()) {
+  const host = hostOf(hostname)
+  const base = /^(?:[a-z0-9-]+\.)?openvolley-manager\.pages\.dev$/.test(host)
+    ? `https://${host}`
+    : (pagesPeer(host, 'app', 'manager') || MANAGER_SITE_URL)
+  return `${base}/#${TEAM_LINK_HASH}=${encodeURIComponent(String(code || '').trim())}`
+}
+
+/** The invite code of a '#team=<code>' hash (upper-case), or null. */
+export function teamCodeFromHash(hash) {
+  const m = /^#?team=([^&]+)$/.exec(String(hash || ''))
+  if (!m) return null
+  let code
+  try { code = decodeURIComponent(m[1]).trim() } catch { return null }
+  return TEAM_CODE_RE.test(code) ? code.toUpperCase() : null
+}
+
 /**
  * Where the scorer apps send "Don't have an account?": accounts are made on
  * manager.openvolley.app only. Unlike managerSiteUrl this is never null: the

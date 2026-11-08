@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Activity, ArrowLeft, ClipboardList, FileText, House, KeyRound, Medal, ScrollText, Settings, ShieldCheck, Trophy, Users } from 'lucide-react'
+import { Activity, ArrowLeft, ClipboardList, FileText, House, KeyRound, Medal, ScrollText, Settings, ShieldCheck, Shirt, Trophy, Users } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { ConsoleShell, ConsolePanel, consoleHeaderBtn } from '../../ui'
 import AccountsPanel from './AccountsPanel'
 import InvitesPanel from './InvitesPanel'
 import ClubsPanel from './ClubsPanel'
 import MyClubPanel from './MyClubPanel'
+import MyTeamsPanel from './MyTeamsPanel'
 import SettingsPanel from './SettingsPanel'
 import OfficialGamesPanel from './OfficialGamesPanel'
 import ClosedMatchesPanel from './ClosedMatchesPanel'
@@ -28,6 +29,9 @@ const TABS = [
   // db/020: a club manager's own club(s), whatever its roles (OpenVolley; the
   // OpenBeach brand's tab list leaves it out)
   { id: 'myclub', icon: House, clubManager: true },
+  // db/023: the teams the account acts for (team managers, club managers),
+  // whatever its roles (OpenVolley; the OpenBeach brand's tab list leaves it out)
+  { id: 'myteams', icon: Shirt, teamManager: true },
   { id: 'games', icon: Trophy, admin: true },
   { id: 'matches', icon: ShieldCheck, admin: true },
   // every match's stored scoresheet PDF: admins and the sport's competition managers
@@ -45,7 +49,8 @@ const TABS = [
 
 /**
  * The tabs an account sees: admins all of them, competition managers the
- * scoresheets and saved teams, club managers (access.managedClubs) My club.
+ * scoresheets and saved teams, club managers (access.managedClubs) My club,
+ * team managers and club managers (access.managedTeams) My teams.
  * With a brand (src/managerBrand.js) only that brand's tabs, and the saved
  * teams by that app's role (OpenBeach: beach:competition_manager). Without
  * one (or OpenVolley's), exactly as before. A tab with `apps` (tournaments)
@@ -57,7 +62,11 @@ export function manageTabsFor(access, brand = null) {
   return TABS
     .filter(tab => !brand?.tabs || brand.tabs.includes(tab.id))
     .filter(tab => !tab.apps || tab.apps.includes(brand?.app))
-    .filter(tab => (tab.clubManager ? (access.managedClubs?.length > 0) : tab.admin ? own.isAdmin : own.canManageTeams))
+    .filter(tab => (tab.clubManager
+      ? (access.managedClubs?.length > 0)
+      : tab.teamManager
+        ? (access.managedTeams?.length > 0)
+        : tab.admin ? own.isAdmin : own.canManageTeams))
     .map(tab => tab.id)
 }
 
@@ -142,6 +151,7 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
         {visited.has('invites') && <ConsolePanel id="invites" current={current}><InvitesPanel app={scope} /></ConsolePanel>}
         {visited.has('clubs') && <ConsolePanel id="clubs" current={current}><ClubsPanel /></ConsolePanel>}
         {visited.has('myclub') && <ConsolePanel id="myclub" current={current}><MyClubPanel clubs={access.managedClubs} /></ConsolePanel>}
+        {visited.has('myteams') && <ConsolePanel id="myteams" current={current}><MyTeamsPanel teams={access.managedTeams} /></ConsolePanel>}
         {visited.has('settings') && <ConsolePanel id="settings" current={current}><SettingsPanel /></ConsolePanel>}
         {visited.has('games') && <ConsolePanel id="games" current={current}><OfficialGamesPanel /></ConsolePanel>}
         {visited.has('matches') && <ConsolePanel id="matches" current={current}><ClosedMatchesPanel onShowActivity={showActivity} /></ConsolePanel>}
