@@ -3,10 +3,10 @@ import { render, act } from '@testing-library/react';
 import React, { useRef } from 'react';
 import { usePinchZoom } from '../usePinchZoom';
 
-function Sheet({ zoom, setZoom }: { zoom: number; setZoom: (z: number) => void }) {
+function Sheet({ zoom, setZoom, preview }: { zoom: number; setZoom: (z: number) => void; preview?: (z: number, moving: boolean) => boolean }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
-  usePinchZoom({ scrollRef, boxRef, zoom, setZoom, min: 0.2, max: 3 });
+  usePinchZoom({ scrollRef, boxRef, zoom, setZoom, preview, min: 0.2, max: 3 });
   return <div ref={scrollRef} data-testid="scroller"><div ref={boxRef} /></div>;
 }
 
@@ -67,5 +67,23 @@ describe('usePinchZoom', () => {
     touch(el, 'touchmove', [finger(150)]);
     await frame();
     expect(setZoom).not.toHaveBeenCalled();
+  });
+
+  it('with a preview: the fingers move the drawn sheet only, the zoom is set once when they lift', async () => {
+    const setZoom = vi.fn();
+    const preview = vi.fn(() => true);
+    const { getByTestId } = render(<Sheet zoom={0.67} setZoom={setZoom} preview={preview} />);
+    const el = getByTestId('scroller');
+    touch(el, 'touchstart', [finger(100), finger(200)]);
+    touch(el, 'touchmove', [finger(75), finger(225)]);
+    await frame();
+    touch(el, 'touchmove', [finger(50), finger(250)]);
+    await frame();
+    expect(preview).toHaveBeenLastCalledWith(1.34, true);
+    expect(setZoom).not.toHaveBeenCalled();
+    touch(el, 'touchend', [finger(50)]);
+    expect(preview).toHaveBeenLastCalledWith(1.34, false);
+    expect(setZoom).toHaveBeenCalledTimes(1);
+    expect(setZoom).toHaveBeenCalledWith(1.34);
   });
 });

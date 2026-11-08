@@ -16,19 +16,27 @@ interface PinchZoomOptions {
   boxRef: RefObject<HTMLElement | null>;
   zoom: number;
   setZoom: (zoom: number) => void;
+  /**
+   * Shows a zoom while the fingers move, without a render: the sheet's styles written
+   * directly. False when it cannot (the zoom state is set at every frame then).
+   */
+  preview?: (zoom: number, moving: boolean) => boolean;
   min: number;
   max: number;
 }
 
 /**
- * Two fingers zoom the sheet, one a frame, and the place between them stays there. The sheet
- * is the app's own scale, as with its zoom buttons, so it is redrawn sharp at the new size.
+ * Two fingers zoom the sheet, one a frame, and the place between them stays there. While they
+ * move, the drawn sheet is only scaled (preview); when they lift, the zoom is set and the sheet
+ * redrawn sharp at the new size, as with the zoom buttons.
  */
-export function usePinchZoom({ scrollRef, boxRef, zoom, setZoom, min, max }: PinchZoomOptions) {
+export function usePinchZoom({ scrollRef, boxRef, zoom, setZoom, preview, min, max }: PinchZoomOptions) {
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
   const setZoomRef = useRef(setZoom);
   setZoomRef.current = setZoom;
+  const previewRef = useRef(preview);
+  previewRef.current = preview;
 
   useEffect(() => {
     const scroller = scrollRef.current;
@@ -37,11 +45,13 @@ export function usePinchZoom({ scrollRef, boxRef, zoom, setZoom, min, max }: Pin
     let latest: { zoom: number; x: number; y: number } | null = null;
     let frame = 0;
 
+    let previewed = false;
     const commit = () => {
       frame = 0;
       if (!start || !latest) return;
       const { zoom: next, x, y } = latest;
-      flushSync(() => setZoomRef.current(next));
+      if (previewRef.current?.(next, true)) previewed = true;
+      else flushSync(() => setZoomRef.current(next));
       const box = boxRef.current?.getBoundingClientRect();
       if (box?.width) {
         scroller.scrollLeft += box.left + start.rx * box.width - x;
@@ -70,7 +80,19 @@ export function usePinchZoom({ scrollRef, boxRef, zoom, setZoom, min, max }: Pin
       if (!frame) frame = requestAnimationFrame(commit);
     };
     const onEnd = (e: TouchEvent) => {
-      if (e.touches.length < 2) start = null;
+      if (!start || e.touches.length >= 2) return;
+      start = null;
+      if (frame) {
+        cancelAnimationFrame(frame);
+        frame = 0;
+      }
+      if (previewed && latest) {
+        const final = latest.zoom;
+        previewRef.current?.(final, false);
+        setZoomRef.current(final);
+      }
+      previewed = false;
+      latest = null;
     };
 
     scroller.addEventListener('touchstart', onStart, { passive: false });

@@ -27,6 +27,18 @@ fn ws_port() -> u16 {
     std::env::var("OPENVOLLEY_WS_PORT").ok().and_then(|s| s.parse().ok()).unwrap_or(DEFAULT_WS_PORT)
 }
 
+/// OPENVOLLEY_ZOOM (pointhub-screen, on a board's bigger screen run at its own
+/// resolution): the webview enlarges the pages itself. A compositor scale of 1.5
+/// has GTK 3 draw at 2 and the compositor shrink that: soft, and 78 % more
+/// pixels to copy for every frame.
+pub(crate) fn page_zoom() -> Option<f64> {
+    parse_zoom(&std::env::var("OPENVOLLEY_ZOOM").ok()?)
+}
+
+fn parse_zoom(value: &str) -> Option<f64> {
+    value.trim().parse::<f64>().ok().filter(|z| (0.5..=3.0).contains(z))
+}
+
 fn main() {
     let http = http_port();
     let ws = ws_port();
@@ -208,6 +220,9 @@ fn main() {
                 }
             })
             .build()?;
+            if let Some(zoom) = page_zoom() {
+                let _ = main.set_zoom(zoom);
+            }
             popups::let_scripts_open_windows(&main);
             diagnostics::window_snapshot(&main, "created");
             // The close button / Alt+F4 hides the scoretable (and its
@@ -423,7 +438,17 @@ fn run_server_only(http: u16, ws: u16) {
 
 #[cfg(test)]
 mod tests {
-    use super::light_gtk_theme_name;
+    use super::{light_gtk_theme_name, parse_zoom};
+
+    #[test]
+    fn page_zoom_takes_a_sane_factor_only() {
+        assert_eq!(parse_zoom("1.5"), Some(1.5));
+        assert_eq!(parse_zoom(" 1.25 "), Some(1.25));
+        assert_eq!(parse_zoom(""), None);
+        assert_eq!(parse_zoom("big"), None);
+        assert_eq!(parse_zoom("0.1"), None);
+        assert_eq!(parse_zoom("10"), None);
+    }
 
     #[test]
     fn strips_the_dark_variant_of_a_gtk_theme() {
