@@ -2864,7 +2864,8 @@
       "competition_manager": "Responsabile competizione",
       "admin": "Admin",
       "super_admin": "Super admin",
-      "pending": "Approvazione in sospeso"
+      "pending": "Approvazione in sospeso",
+      "team_manager": "Responsabile della squadra"
     },
     "signUpPendingNote": "I nuovi account devono essere approvati prima che le partite ufficiali vengano sincronizzate nel cloud. Chiedi un codice d’invito al tuo club.",
     "officialMatchLocalOnly": "Questa partita resta su questo dispositivo finché il tuo account non è approvato come segnapunti."
@@ -2897,7 +2898,11 @@
     "allSetTitle": "Tutto pronto",
     "allSetBody": "Il tuo account è approvato per refertare. Accedi nell’app del segnapunti con questa email e questa password.",
     "haveManagerCode": "Hai ricevuto un codice d’invito per la gestione? Inseriscilo qui",
-    "switchTo": "Passa a {{name}}"
+    "switchTo": "Passa a {{name}}",
+    "teamLinkNote": "Hai aperto un link di squadra. Accedi o crea un account, e la squadra si apre.",
+    "teamLinkSignIn": "Accedi con il tuo account, o creane prima uno.",
+    "teamLinkDone": "Ora gestisci {{team}}.",
+    "teamLinkAlready": "Gestisci già {{team}}."
   },
   "managerBeach": {
     "signInHeading": "Gestisci OpenBeach",
@@ -2936,7 +2941,8 @@
       "scoresheets": "Referti",
       "clubs": "Società",
       "myclub": "La mia società",
-      "settings": "Impostazioni"
+      "settings": "Impostazioni",
+      "myteams": "Le mie squadre"
     },
     "status": {
       "setup": "Preparazione",
@@ -3116,7 +3122,10 @@
         "club_contact": "E-mail di contatto della società modificata",
         "club_member_remove": "Tolto dalla società",
         "match_final_mail": "Referto finale inviato per e-mail",
-        "settings_final_email": "Invio del referto per e-mail cambiato"
+        "settings_final_email": "Invio del referto per e-mail cambiato",
+        "team_managers": "Responsabile squadra modificato",
+        "team_squad": "Giocatori della squadra salvati",
+        "team_roster": "Elenco della partita inviato"
       }
     },
     "approvals": {
@@ -3288,6 +3297,75 @@
       "finalEmailIsOff": "I referti finali non vengono più inviati",
       "changed": "Modificato il",
       "noMail": "Questo server non può ancora inviare e-mail (nessun server di posta configurato): non parte nulla, anche con l’interruttore acceso."
+    },
+    "myTeams": {
+      "none": "Non gestisci nessuna squadra.",
+      "pick": "Squadra",
+      "intro": "Tieni aggiornati i giocatori della tua squadra e invia l’elenco di ogni partita prima che inizi. Il tablet del segnapunti lo scarica finché ha internet, così in palestra è pronto anche senza Wi-Fi.",
+      "squad": "Giocatori {{season}}",
+      "squadHint": "Tutti quelli che possono giocare in questa stagione, con numeri e date di nascita. I segnapunti possono anche caricare questa squadra nella configurazione della partita.",
+      "games": "Partite",
+      "gamesHint": "Prepara l’elenco di ogni partita: spunta chi gioca. Puoi modificarlo fino all’inizio della partita.",
+      "noGames": "Nessuna partita di questa squadra in calendario da oggi in poi.",
+      "vs": "contro",
+      "at": "da",
+      "home": "Casa",
+      "away": "Trasferta",
+      "notSent": "Non inviato",
+      "started": "Iniziata",
+      "view": "Vedi",
+      "edit": "Modifica elenco",
+      "prepare": "Prepara elenco",
+      "locked": "La partita è iniziata. Il suo elenco non si può più modificare qui; le modifiche passano dal segnapunti.",
+      "notYourGame": "Questa partita non è una partita della tua squadra in calendario.",
+      "sentBy": "Inviato {{when}} da {{name}}",
+      "players": "Giocatori",
+      "officials": "Ufficiali di squadra",
+      "noPlayers": "Ancora nessun giocatore. Aggiungili sopra sotto Giocatori, o importa l’Einsatzliste.",
+      "noOfficials": "Ancora nessun ufficiale di squadra. Aggiungili sopra sotto Giocatori.",
+      "importPdf": "Importa Einsatzliste",
+      "pdfEmpty": "Nessun giocatore trovato in questo PDF.",
+      "pdfFailed": "Questo PDF non si è potuto leggere. È l’Einsatzliste di VolleyManager?",
+      "pdfImported": "Einsatzliste importata: {{added}} aggiunti, {{updated}} aggiornati. Controlla e salva.",
+      "pdfImportedGame": "{{count}} giocatori dell’Einsatzliste spuntati. Controlla e invia.",
+      "captainShort": "C",
+      "liberoShort": "L",
+      "send": "Invia elenco",
+      "saved": "Elenco inviato",
+      "delete": "Elimina elenco",
+      "deleteTitle": "Eliminare l’elenco di questa partita?",
+      "deleteBody": "Il tablet del segnapunti lo toglie appena torna online.",
+      "deleted": "Elenco eliminato",
+      "signHint": "Qui non si firma: l’allenatore e il capitano firmano in palestra, al sorteggio.",
+      "problems": {
+        "tooMany": "Al massimo {{max}} giocatori per partita.",
+        "number": "{{name}} ha bisogno di un numero di maglia.",
+        "numberTwice": "Il numero {{number}} compare due volte.",
+        "captains": "Un solo capitano.",
+        "liberos": "Al massimo {{max}} liberi.",
+        "roleTwice": "Ogni funzione una sola volta ({{role}}).",
+        "tooManyStaff": "Al massimo {{max}} ufficiali di squadra."
+      },
+      "sent_one": "Inviato: {{count}} giocatore, {{when}}",
+      "sent_other": "Inviato: {{count}} giocatori, {{when}}"
+    },
+    "clubTeams": {
+      "title": "Squadre",
+      "hint": "Dai un link all’allenatore o al responsabile di ogni squadra. Con esso tengono aggiornati i giocatori e inviano in anticipo l’elenco di ogni partita.",
+      "none": "Questa società non ha ancora squadre. Un admin le aggiunge nella scheda Società.",
+      "noManager": "Nessun responsabile della squadra",
+      "openLinks_one": "{{count}} link aperto",
+      "openLinks_other": "{{count}} link aperti",
+      "createLink": "Crea link",
+      "linkTitle": "Link per {{team}}",
+      "linkBody": "Manda questo link all’allenatore o al responsabile della squadra. Lo aprono, accedono o creano un account, e la squadra è loro. Il link viene mostrato solo ora.",
+      "copyLink": "Copia link",
+      "share": "Condividi",
+      "shareTitle": "OpenVolley: {{team}}",
+      "shareText": "Gestisci {{team}} in OpenVolley: i giocatori e l’elenco di ogni partita.",
+      "linkLimits": "Vale {{uses}} volte, fino al {{date}}.",
+      "removeTitle": "Togliere {{name}} dalla squadra?",
+      "removeBody": "Non potrà più gestire {{team}}. Il suo account resta."
     }
   },
   "playerPool": {
@@ -4713,5 +4791,19 @@
       "alreadyHere": "Questo dispositivo ha già una passkey per il tuo account.",
       "unavailable": "Le passkey non sono disponibili al momento. Usa la password."
     }
+  },
+  "sentRoster": {
+    "title": "Elenco inviato da {{team}}",
+    "meta": "{{players}} · {{officials}} · {{when}} · {{name}}",
+    "use": "Usalo",
+    "preview": "Mostra",
+    "hidePreview": "Nascondi",
+    "notNow": "Non ora",
+    "hint": "Controllalo con l’allenatore. L’allenatore e il capitano firmano come sempre al sorteggio.",
+    "used": "Elenco della squadra caricato: {{count}} giocatori",
+    "players_one": "{{count}} giocatore",
+    "players_other": "{{count}} giocatori",
+    "officials_one": "{{count}} ufficiale",
+    "officials_other": "{{count}} ufficiali"
   }
 }

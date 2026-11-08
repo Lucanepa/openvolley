@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, Plus, Trash2, X } from 'lucide-react'
+import { ArrowLeft, FileUp, Plus, Trash2, X } from 'lucide-react'
 import { savedTeamsApi, errorKeyOf } from '../../lib/accountApi'
 import { apiFrom } from '../../lib/apiClient'
 import { selectAll } from '../../lib/selectAll'
 import { STAFF_ROLES, validateSavedRoster, MAX_PLAYERS, MAX_STAFF, sportOf } from '../../domain/savedTeams'
 import { shirtNumberDigits } from '../../domain/roster'
+import { mergeImportedRoster, parsedPdfToRoster } from '../../domain/teamRosters'
 import { InlineError } from './common'
 import { Button, DateField, Field, Input, Select, Checkbox, Switch, SectionHeader, EmptyInset, IconButton, confirmDialog, toast, cn } from '../../ui'
 
@@ -154,9 +155,16 @@ const HEAD = 'hidden sm:grid text-[11px] font-bold uppercase tracking-wide text-
  * Edit one saved team: its fields (PATCH), its players and team officials
  * (PUT roster) or delete it. Writes need a connection; the parent refreshes
  * the offline cache after each one.
+ *
+ * A team manager's squad (db/023, MyTeamsPanel): `saveRoster(body)` writes
+ * the roster instead (PUT /api/team/:id/squad), `fixedFields` leaves out the
+ * team's fields and Delete (its name, club and VolleyManager name are the
+ * club's), `pdfImport` adds Import Einsatzliste to the players.
  */
-export default function TeamEditor({ team, competition, online, onBack, onChanged, onDeleted }) {
+export default function TeamEditor({ team, competition, online, onBack, onChanged, onDeleted, saveRoster: saveRosterWith = null, fixedFields = false, pdfImport = false }) {
   const { t } = useTranslation()
+  const pdfInput = useRef(null)
+  const [importing, setImporting] = useState(false)
   const beach = sportOf(competition) === 'beach'
   const [fields, setFields] = useState(() => ({
     name: team.name || '',
@@ -270,7 +278,7 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
       return
     }
     setSavingRoster(true)
-    const res = await savedTeamsApi.putRoster(team.id, body)
+    const res = saveRosterWith ? await saveRosterWith(body) : await savedTeamsApi.putRoster(team.id, body)
     setSavingRoster(false)
     if (res.error) {
       setRosterError(res.error.code === 'OV_INVALID_REQUEST' && res.error.details ? `${t('manage.errors.generic')} (${res.error.details})` : t(errorKeyOf(res.error)))
@@ -285,6 +293,34 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
       setCoach(toCoachDraft(saved.staff))
     }
     onChanged?.()
+  }
+
+  // Import Einsatzliste: the PDF's players and officials merged into the
+  // drafts (same name: its number and date of birth; else added). Saving
+  // stays the user's step.
+  const importPdf = async (file) => {
+    if (!file || importing) return
+    setImporting(true)
+    setRosterError('')
+    try {
+      const { parseRosterPdf } = await import('../../utils/parseRosterPdf')
+      const imported = parsedPdfToRoster(await parseRosterPdf(file))
+      if (!imported.players.length && !imported.staff.length) {
+        setRosterError(t('manage.myTeams.pdfEmpty'))
+        return
+      }
+      const merged = mergeImportedRoster(players, staff, imported, toPlayerDraft, toStaffDraft)
+      setPlayers(merged.players)
+      setStaff(merged.staff)
+      setRowErrors({})
+      toast.success(t('manage.myTeams.pdfImported', { added: merged.added, updated: merged.updated }))
+    } catch (err) {
+      console.warn('[TeamEditor] Einsatzliste import failed:', err?.message)
+      setRosterError(t('manage.myTeams.pdfFailed'))
+    } finally {
+      setImporting(false)
+      if (pdfInput.current) pdfInput.current.value = ''
+    }
   }
 
   const deleteTeam = async () => {
@@ -308,11 +344,14 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-2">
-        <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={onBack}>{competition?.name || t('savedTeams.teams')}</Button>
-      </div>
+      {onBack && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={onBack}>{competition?.name || t('savedTeams.teams')}</Button>
+        </div>
+      )}
 
       {/* Team fields */}
+      {!fixedFields && (
       <section className="rounded-2xl border border-stone-200/70 bg-white p-4 shadow-card sm:p-5">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label={t('savedTeams.teamName')}>
@@ -352,6 +391,7 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
           <Button variant="danger-outline" icon={Trash2} className="ml-auto" onClick={deleteTeam} disabled={!online}>{t('savedTeams.deleteTeam')}</Button>
         </div>
       </section>
+      )}
 
       {beach && (
         <BeachRoster
@@ -370,7 +410,15 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
       {!beach && (
         <section>
           <SectionHeader title={t('savedTeams.players')} count={players.length} action={
-            <Button variant="ghost" size="sm" icon={Plus} disabled={players.length >= MAX_PLAYERS} onClick={() => setPlayers(list => [...list, toPlayerDraft(null)])}>{t('savedTeams.addPlayer')}</Button>
+            <div className="flex flex-wrap items-center gap-1">
+              {pdfImport && (
+                <>
+                  <input ref={pdfInput} type="file" accept=".pdf,application/pdf" className="hidden" data-testid="squad-pdf-input" onChange={e => importPdf(e.target.files?.[0])} />
+                  <Button variant="ghost" size="sm" icon={FileUp} loading={importing} onClick={() => pdfInput.current?.click()} data-testid="squad-pdf-import">{t('manage.myTeams.importPdf')}</Button>
+                </>
+              )}
+              <Button variant="ghost" size="sm" icon={Plus} disabled={players.length >= MAX_PLAYERS} onClick={() => setPlayers(list => [...list, toPlayerDraft(null)])}>{t('savedTeams.addPlayer')}</Button>
+            </div>
           } />
           {players.length === 0 ? (
             <EmptyInset>{t('savedTeams.emptyRoster')}</EmptyInset>

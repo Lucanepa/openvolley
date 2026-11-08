@@ -2843,7 +2843,8 @@
       "competition_manager": "Wettbewerbsverantwortlicher",
       "admin": "Admin",
       "super_admin": "Super-Admin",
-      "pending": "Freigabe ausstehend"
+      "pending": "Freigabe ausstehend",
+      "team_manager": "Teamverantwortliche/r"
     },
     "signUpPendingNote": "Neue Konten brauchen eine Freigabe, bevor offizielle Spiele in die Cloud synchronisiert werden. Frage deinen Verein nach einem Einladungscode.",
     "officialMatchLocalOnly": "Dieses Spiel bleibt auf diesem Gerät, bis dein Konto als Schreiber freigegeben ist."
@@ -2876,7 +2877,11 @@
     "allSetTitle": "Alles bereit",
     "allSetBody": "Dein Konto ist für das Schreiben freigegeben. Melde dich in der Schreiber-App mit dieser E-Mail und diesem Passwort an.",
     "haveManagerCode": "Einen Einladungscode für die Verwaltung erhalten? Hier eingeben",
-    "switchTo": "Zu {{name}} wechseln"
+    "switchTo": "Zu {{name}} wechseln",
+    "teamLinkNote": "Du hast einen Team-Link geöffnet. Melde dich an oder erstelle ein Konto, dann öffnet sich das Team.",
+    "teamLinkSignIn": "Melde dich mit deinem Konto an oder erstelle zuerst eines.",
+    "teamLinkDone": "Du verwaltest jetzt {{team}}.",
+    "teamLinkAlready": "Du verwaltest {{team}} bereits."
   },
   "managerBeach": {
     "signInHeading": "OpenBeach verwalten",
@@ -2915,7 +2920,8 @@
       "scoresheets": "Matchblätter",
       "clubs": "Vereine",
       "myclub": "Mein Verein",
-      "settings": "Einstellungen"
+      "settings": "Einstellungen",
+      "myteams": "Meine Teams"
     },
     "status": {
       "setup": "Vorbereitung",
@@ -3095,7 +3101,10 @@
         "club_contact": "Kontakt-E-Mail des Vereins geändert",
         "club_member_remove": "Aus dem Verein entfernt",
         "match_final_mail": "Fertiges Matchblatt per E-Mail gesendet",
-        "settings_final_email": "Matchblatt-Versand per E-Mail umgeschaltet"
+        "settings_final_email": "Matchblatt-Versand per E-Mail umgeschaltet",
+        "team_managers": "Teamverantwortliche geändert",
+        "team_squad": "Teamkader gespeichert",
+        "team_roster": "Spielkader geschickt"
       }
     },
     "approvals": {
@@ -3267,6 +3276,75 @@
       "finalEmailIsOff": "Fertige Matchblätter werden nicht mehr gesendet",
       "changed": "Geändert",
       "noMail": "Dieser Server kann noch keine E-Mails senden (kein Mailserver eingerichtet): Es geht nichts raus, auch wenn der Schalter an ist."
+    },
+    "myTeams": {
+      "none": "Du verwaltest kein Team.",
+      "pick": "Team",
+      "intro": "Halte die Spielerinnen und Spieler deines Teams aktuell und schicke den Kader jedes Spiels vor dem Spiel. Das Tablet des Schreibers lädt ihn, solange es Internet hat, so ist er in der Halle auch ohne WLAN bereit.",
+      "squad": "Kader {{season}}",
+      "squadHint": "Alle, die diese Saison spielen dürfen, mit Nummern und Geburtsdaten. Schreiber können dieses Team auch in der Spieleinrichtung laden.",
+      "games": "Spiele",
+      "gamesHint": "Stelle den Kader jedes Spiels zusammen: Hake an, wer spielt. Du kannst ihn bis zum Spielbeginn ändern.",
+      "noGames": "Ab heute keine Spiele dieses Teams im Spielplan.",
+      "vs": "gegen",
+      "at": "bei",
+      "home": "Heim",
+      "away": "Auswärts",
+      "notSent": "Nicht geschickt",
+      "started": "Begonnen",
+      "view": "Ansehen",
+      "edit": "Kader bearbeiten",
+      "prepare": "Kader zusammenstellen",
+      "locked": "Das Spiel hat begonnen. Sein Kader lässt sich hier nicht mehr ändern; Änderungen gehen über den Schreiber.",
+      "notYourGame": "Dieses Spiel ist kein Spiel deines Teams im Spielplan.",
+      "sentBy": "Geschickt {{when}} von {{name}}",
+      "players": "Spieler",
+      "officials": "Teamoffizielle",
+      "noPlayers": "Noch keine Spieler. Erfasse sie oben unter Kader oder importiere die Einsatzliste.",
+      "noOfficials": "Noch keine Teamoffiziellen. Erfasse sie oben unter Kader.",
+      "importPdf": "Einsatzliste importieren",
+      "pdfEmpty": "In diesem PDF wurden keine Spieler gefunden.",
+      "pdfFailed": "Dieses PDF liess sich nicht lesen. Ist es die Einsatzliste aus VolleyManager?",
+      "pdfImported": "Einsatzliste importiert: {{added}} neu, {{updated}} aktualisiert. Prüfe sie und speichere.",
+      "pdfImportedGame": "{{count}} Spieler aus der Einsatzliste angehakt. Prüfen und schicken.",
+      "captainShort": "K",
+      "liberoShort": "L",
+      "send": "Kader schicken",
+      "saved": "Kader geschickt",
+      "delete": "Kader löschen",
+      "deleteTitle": "Kader dieses Spiels löschen?",
+      "deleteBody": "Das Tablet des Schreibers entfernt ihn, sobald es wieder online ist.",
+      "deleted": "Kader gelöscht",
+      "signHint": "Hier wird nicht unterschrieben: Trainer und Captain unterschreiben in der Halle, bei der Seitenwahl.",
+      "problems": {
+        "tooMany": "Höchstens {{max}} Spieler pro Spiel.",
+        "number": "{{name}} braucht eine Rückennummer.",
+        "numberTwice": "Die Nummer {{number}} kommt zweimal vor.",
+        "captains": "Nur ein Captain.",
+        "liberos": "Höchstens {{max}} Liberos.",
+        "roleTwice": "Jede Funktion nur einmal ({{role}}).",
+        "tooManyStaff": "Höchstens {{max}} Teamoffizielle."
+      },
+      "sent_one": "Geschickt: {{count}} Spieler, {{when}}",
+      "sent_other": "Geschickt: {{count}} Spieler, {{when}}"
+    },
+    "clubTeams": {
+      "title": "Teams",
+      "hint": "Gib dem Trainer oder der Teamverantwortlichen jedes Teams einen Link. Damit halten sie den Kader aktuell und schicken den Kader jedes Spiels im Voraus.",
+      "none": "Dieser Verein hat noch keine Teams. Ein Admin erfasst sie im Tab Vereine.",
+      "noManager": "Keine Teamverantwortlichen",
+      "openLinks_one": "{{count}} offener Link",
+      "openLinks_other": "{{count}} offene Links",
+      "createLink": "Link erstellen",
+      "linkTitle": "Link für {{team}}",
+      "linkBody": "Schicke diesen Link dem Trainer oder der Teamverantwortlichen. Sie öffnen ihn, melden sich an oder erstellen ein Konto, und das Team gehört ihnen. Der Link wird nur jetzt angezeigt.",
+      "copyLink": "Link kopieren",
+      "share": "Teilen",
+      "shareTitle": "OpenVolley: {{team}}",
+      "shareText": "{{team}} in OpenVolley verwalten: Kader und der Kader jedes Spiels.",
+      "linkLimits": "Gilt {{uses}}-mal, bis {{date}}.",
+      "removeTitle": "{{name}} vom Team entfernen?",
+      "removeBody": "Die Person kann {{team}} nicht mehr verwalten. Ihr Konto bleibt bestehen."
     }
   },
   "playerPool": {
@@ -4696,5 +4774,19 @@
       "alreadyHere": "Dieses Gerät hat bereits einen Passkey für Ihr Konto.",
       "unavailable": "Passkeys sind gerade nicht verfügbar. Bitte verwenden Sie Ihr Passwort."
     }
+  },
+  "sentRoster": {
+    "title": "Kader von {{team}} geschickt",
+    "meta": "{{players}} · {{officials}} · {{when}} · {{name}}",
+    "use": "Übernehmen",
+    "preview": "Anzeigen",
+    "hidePreview": "Ausblenden",
+    "notNow": "Nicht jetzt",
+    "hint": "Prüfe ihn mit dem Trainer. Trainer und Captain unterschreiben wie immer bei der Seitenwahl.",
+    "used": "Kader des Teams übernommen: {{count}} Spieler",
+    "players_one": "{{count}} Spieler",
+    "players_other": "{{count}} Spieler",
+    "officials_one": "{{count}} Offizielle/r",
+    "officials_other": "{{count}} Offizielle"
   }
 }

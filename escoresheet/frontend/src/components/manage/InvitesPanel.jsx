@@ -86,6 +86,8 @@ export default function InvitesPanel({ app, club = null, title }) {
               </>}
               chips={<>
                 {inv.club && <Chip>{inv.club}</Chip>}
+                {/* db/023: a team link names its team */}
+                {inv.team_name && <Chip>{inv.team_name}</Chip>}
                 <Chip tone="indigo">{t(`access.roles.${inv.role}`, inv.role)}</Chip>
               </>}
               tools={inv.state === 'active' || rowError[inv.id] ? <>

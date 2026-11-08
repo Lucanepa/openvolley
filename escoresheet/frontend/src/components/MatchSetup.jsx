@@ -47,6 +47,8 @@ import { rememberedRosters } from '../db/rememberedPlayers'
 import CloudBlockNotice from './CloudBlockNotice'
 import { savedTeamToRoster, findSavedTeamSuggestions } from '../domain/savedTeams'
 import { getSavedTeams, refreshSavedTeams } from '../db/savedTeams'
+import { offeredSentRosters, refreshGameRosters, rowToPendingRoster } from '../db/gameRosters'
+import SentRosterCard from './SentRosterCard'
 import { officialCheck, OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS } from '../lib/accountApi'
 import { openRestore } from '../utils/manageNav'
 import { Users, Save as SaveIcon, Trash2, ListChecks } from 'lucide-react'
@@ -973,6 +975,29 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   }, [matchId], preloaded?.match)
 
   const isMatchOngoing = match?.status === 'live'
+
+  // db/023, offline first: the rosters teams sent ahead for this official
+  // game, read from the device's copy (downloaded while online; AuthContext).
+  // A version used or put aside ("Not now") is not offered again.
+  const sentGameNumber = match && !match.test ? String(match.game_n || match.gameNumber || gameN || '').trim() : ''
+  const sentRows = useLiveQuery(async () => {
+    if (!/^[0-9]{1,12}$/.test(sentGameNumber) || !user?.id) return []
+    try {
+      return (await db.game_rosters.where('gameNumber').equals(sentGameNumber).toArray()).filter((r) => r.userId === user.id)
+    } catch {
+      return []
+    }
+  }, [sentGameNumber, user?.id], [])
+  const sentRosters = useMemo(() => offeredSentRosters(sentRows, match, user?.id),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sentRows, user?.id, match?.test, match?.status, match?.sentRosterUsed, match?.sentRosterDismissed])
+  // With a connection, ask for this game as well (a roster sent minutes ago,
+  // another club's game); nothing waits for it
+  useEffect(() => {
+    if (!sentGameNumber || !access?.canReadTeams || !user?.id) return
+    refreshGameRosters({ access, userId: user.id, games: [sentGameNumber] }).catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sentGameNumber, access?.canReadTeams, user?.id])
 
   // Dismiss warning popover on click outside
   useEffect(() => {
@@ -2898,6 +2923,72 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     else if (!savedTeam) toast.success(t('playerPool.applied', { count: roster.length }))
   }
 
+  // db/023: a sent roster becomes the side's roster and team officials, as an
+  // accepted remote roster does (after the usual question when the side has
+  // players already). From the main view the stored players follow; in the
+  // roster editor only its Save writes them.
+  const applySentRoster = async (side) => {
+    const row = sentRosters[side]
+    if (!row) return
+    const ok = await confirmReplaceRoster({
+      roster: side === 'home' ? homeRoster : awayRoster,
+      bench: side === 'home' ? benchHome : benchAway,
+      teamLabel: row.teamName || (side === 'home' ? home : away) || '',
+      t
+    })
+    if (!ok) return
+    const pending = rowToPendingRoster(row)
+    const roster = [...pending.players].sort((a, b) => (a.number ?? 999) - (b.number ?? 999))
+    const bench = pending.bench.length ? pending.bench : [{ role: 'Coach', firstName: '', lastName: '', dob: '' }]
+    if (side === 'home') {
+      setHomeRoster(roster)
+      setBenchHome(bench)
+    } else {
+      setAwayRoster(roster)
+      setBenchAway(bench)
+    }
+    const teamId = side === 'home' ? match?.homeTeamId : match?.awayTeamId
+    const inRosterEditor = currentView === 'home' || currentView === 'away'
+    if (matchId) {
+      try {
+        if (teamId && !inRosterEditor) {
+          await db.transaction('rw', db.players, async () => {
+            await db.players.where('teamId').equals(teamId).delete()
+            await db.players.bulkAdd(roster.map(p => ({
+              teamId,
+              number: p.number,
+              firstName: p.firstName,
+              lastName: p.lastName,
+              name: `${p.lastName} ${p.firstName}`.trim(),
+              dob: p.dob || null,
+              libero: p.libero || '',
+              isCaptain: !!p.isCaptain,
+              isLfp: !!p.isLfp,
+              role: null,
+              createdAt: new Date().toISOString()
+            })))
+          })
+        }
+        await db.matches.update(matchId, {
+          ...(!inRosterEditor ? { [side === 'home' ? 'bench_home' : 'bench_away']: bench } : {}),
+          sentRosterUsed: { ...(match?.sentRosterUsed || {}), [side]: row.updatedAt || 'sent' }
+        })
+      } catch (err) {
+        console.warn('[MatchSetup] Writing the sent roster failed:', err?.message)
+      }
+    }
+    toast.success(t('sentRoster.used', { count: roster.length }))
+  }
+  const dismissSentRoster = async (side) => {
+    const row = sentRosters[side]
+    if (!row || !matchId) return
+    try {
+      await db.matches.update(matchId, { sentRosterDismissed: { ...(match?.sentRosterDismissed || {}), [side]: row.updatedAt || 'sent' } })
+    } catch (err) {
+      console.warn('[MatchSetup] Putting the sent roster aside failed:', err?.message)
+    }
+  }
+
   const closePlayerPool = () => {
     const pending = playerPool
     setPlayerPool(null)
@@ -3975,6 +4066,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 )}
           </div>
         </div>
+        {/* db/023: the roster the team sent ahead (the device's copy) */}
+        <SentRosterCard row={sentRosters.home} side="home" onUse={() => applySentRoster('home')} onDismiss={() => dismissSentRoster('home')} />
         {/* Upload Methods for Home Team + Player Stats */}
         <div className="flex gap-3 stack:flex-col">
           {/* Left: Upload section */}
@@ -5141,6 +5234,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 )}
           </div>
         </div>
+        {/* db/023: the roster the team sent ahead (the device's copy) */}
+        <SentRosterCard row={sentRosters.away} side="away" onUse={() => applySentRoster('away')} onDismiss={() => dismissSentRoster('away')} />
         {/* Upload Methods for Away Team + Player Stats */}
         <div className="flex gap-3 stack:flex-col">
           {/* Left: Upload section */}
@@ -6828,6 +6923,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <Button variant="secondary" size="xl" className="max-sm:w-full sm:ml-auto" onClick={() => setCurrentView('home')}>{t('matchSetup.editRoster')}</Button>
           </div>
           {coloursTooClose(homeColor, awayColor) && <CloseColourNote />}
+          <SentRosterCard row={sentRosters.home} side="home" onUse={() => applySentRoster('home')} onDismiss={() => dismissSentRoster('home')} />
         </div>
 
         <div className={cn('flex flex-col gap-5 p-4 sm:p-5', SETUP_BLOCK)} style={{ order: 2 }}>
@@ -6885,6 +6981,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <Button variant="secondary" size="xl" className="max-sm:w-full sm:ml-auto" onClick={() => setCurrentView('away')}>{t('matchSetup.editRoster')}</Button>
           </div>
           {coloursTooClose(homeColor, awayColor) && <CloseColourNote />}
+          <SentRosterCard row={sentRosters.away} side="away" onUse={() => applySentRoster('away')} onDismiss={() => dismissSentRoster('away')} />
         </div>
         {typeof window !== 'undefined' && window.electronAPI?.server && (
           <div className={cn('flex flex-col gap-4 p-4 sm:p-5', SETUP_BLOCK)} style={{ order: 3 }}>

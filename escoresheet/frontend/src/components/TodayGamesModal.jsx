@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Loader2, X } from 'lucide-react'
 import Modal from './Modal'
 import { fetchTodayGames } from '../lib/accountApi'
+import { refreshGameRosters } from '../db/gameRosters'
 import { mapSupabaseToMatchFormat, matchDataFromSchedule } from './LoadOfficialMatchModal'
 import { Button, Chip, cn, FOCUS_RING, IconButton, Notice } from '../ui'
 import { timeLabel } from '../ui/format'
@@ -39,6 +40,9 @@ export default function TodayGamesModal({ open, userId, onPick, onManual, onClos
     let gone = false
     const cached = readCachedTodayGames(userId, zurichToday())
     setState({ loading: true, data: cached, failed: false, cached: !!cached })
+    // db/023: the rosters teams sent for these games, kept for Match Setup
+    // (offline first: this only adds to the device's copy, nothing waits)
+    refreshGameRosters({ userId, force: true }).catch(() => {})
     fetchTodayGames({ timeoutMs: 6000 }).then((res) => {
       if (gone) return
       if (res?.error || !res?.data) {

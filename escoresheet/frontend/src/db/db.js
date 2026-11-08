@@ -363,6 +363,15 @@ db.version(20).stores({
   interaction_logs: 'id, ts, gameNumber, matchId, category, sessionId'
 })
 
+// Version 21: the rosters teams sent for upcoming games (db/023,
+// db/gameRosters.js), downloaded ahead so Match Setup offers them offline.
+// key = '<game number>|<side>'. Personal data like the saved teams: only for
+// the account that loaded them (row.userId), cleared on sign-out and account
+// switch. A new table, no upgrade function: nothing to migrate.
+db.version(21).stores({
+  game_rosters: 'key, gameNumber, userId'
+})
+
 // Undo / delete / edit history of events, from Dexie hooks (see db/eventHistory.js)
 installEventHistoryHooks(db)
 
