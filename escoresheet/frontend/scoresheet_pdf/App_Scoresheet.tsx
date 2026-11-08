@@ -1229,7 +1229,20 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   // it stayed wider than the screen and Fit could not fit it
   const zoomOut = () => setZoomLevel(prev => Math.max(prev - 0.1, MIN_ZOOM));
   const resetZoom = () => setZoomLevel(1);
-  usePinchZoom({ scrollRef: scrollContainerRef, boxRef: sheetBoxRef, zoom: zoomLevel, setZoom: setZoomLevel, min: MIN_ZOOM, max: MAX_ZOOM });
+  // While two fingers pinch: the box and the sheet's scale written directly, the drawn sheet
+  // scaled as one layer (will-change); React sets the same styles when the fingers lift
+  const previewZoom = (z: number, moving: boolean) => {
+    const box = sheetBoxRef.current;
+    const sheet = containerRef.current;
+    if (!box || !sheet || !boxedRef.current) return false;
+    const turnedNow = turnedRef.current;
+    box.style.width = `${(turnedNow ? SHEET_H_PX : SHEET_W_PX) * z}px`;
+    box.style.height = `${(turnedNow ? SHEET_W_PX : SHEET_H_PX) * z}px`;
+    sheet.style.transform = turnedNow ? `translateX(${SHEET_H_PX * z}px) rotate(90deg) scale(${z})` : `scale(${z})`;
+    sheet.style.willChange = moving ? 'transform' : '';
+    return true;
+  };
+  usePinchZoom({ scrollRef: scrollContainerRef, boxRef: sheetBoxRef, zoom: zoomLevel, setZoom: setZoomLevel, preview: previewZoom, min: MIN_ZOOM, max: MAX_ZOOM });
 
   const fitToScreen = () => {
     if (!containerRef.current) return;
@@ -1324,6 +1337,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   // screen scrolls from its left edge (centred, it hung out on both sides and
   // its left part could not be reached)
   const boxed = !showLCS && !isGeneratingPdf;
+  const boxedRef = useRef(boxed);
+  boxedRef.current = boxed;
   const turnedRef = useRef(turned);
 
   // Fit again when the view turns (the phone rotated, or "Turn")

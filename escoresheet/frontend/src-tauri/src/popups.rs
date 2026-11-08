@@ -237,6 +237,10 @@ fn build_popup<R: Runtime>(
     #[cfg(not(target_os = "linux"))]
     let builder = builder.on_download(on_download);
     let window = builder.build()?;
+    // as the scoretable (main.rs page_zoom)
+    if let Some(zoom) = crate::page_zoom() {
+        let _ = window.set_zoom(zoom);
+    }
     let_scripts_open_windows(&window);
     close_on_window_close(&window);
     Ok(window)
