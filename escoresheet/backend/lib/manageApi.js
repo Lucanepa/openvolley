@@ -51,9 +51,11 @@
  *                                                    one licence list (players|scorers|coaches) replaced
  *   GET    /api/club/:id/licences                    the same: every person once, its lists and teams
  *   GET    /api/team/:id/club-players                whoever may manage the team (lib/teams.js
- *                                                    mayManage): the club's players list, the team's gender
- *   GET    /api/club-licences                        indoor canReadTeams: the players lists of the
- *                                                    caller's clubs for the scoring tablet (offline first)
+ *                                                    mayManage): the club's players list, every person
+ *                                                    of its lists once (people), the team's gender
+ *   GET    /api/club-licences                        indoor canReadTeams: the players lists and every
+ *                                                    person of the lists of the caller's clubs, for the
+ *                                                    scoring tablet (offline first)
  *   GET/PUT /api/settings                            isAdmin or indoor canManageTeams: the app's
  *                                                    switches ({ send_final_email }, db/021)
  *   DELETE /api/admin/activity?match=|account=&confirm=yes  isAdmin: delete on request (audited)
@@ -248,13 +250,13 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['GET', new RegExp(`^/api/team/${ID}/roster$`), teamManagerOf, (m, c) => team((tm) => tm.getRoster({ teamId: m[1], game: q(c.query, 'game') }))],
     ['PUT', new RegExp(`^/api/team/${ID}/roster$`), teamManagerOf, (m, c) => team((tm) => tm.putRoster({ actorId: c.user.id, teamId: m[1], game: q(c.query, 'game'), body: c.body }))],
     ['DELETE', new RegExp(`^/api/team/${ID}/roster$`), teamManagerOf, (m, c) => team((tm) => tm.deleteRoster({ actorId: c.user.id, teamId: m[1], game: q(c.query, 'game') }))],
-    // db/024: the players of the team's club, for "Add from club"
+    // db/024: the players list and the people of the team's club, for "Add from club"
     ['GET', new RegExp(`^/api/team/${ID}/club-players$`), teamManagerOf, (m) => lic((l) => l.teamClubPlayers({ teamId: m[1] }))],
     // db/023: the rosters a scoring tablet keeps (offline first)
     ['GET', /^\/api\/game-rosters$/, readIndoorTeams, (m, c) => team((tm) => tm.scorerRosters({ userId: c.user.id, games: q(c.query, 'games') }))],
     // accepted in Match Setup: the content is deleted at once
     ['POST', /^\/api\/game-rosters\/used$/, readIndoorTeams, (m, c) => team((tm) => tm.markUsed({ userId: c.user.id, body: c.body }))],
-    // db/024: the players lists of the caller's clubs, kept on the scoring tablet
+    // db/024: the licence lists of the caller's clubs, kept on the scoring tablet
     ['GET', /^\/api\/club-licences$/, readIndoorTeams, (m, c) => lic((l) => l.scorerClubPlayers({ userId: c.user.id }))],
     ['GET', /^\/api\/admin\/invites$/, 'admin', (m, c) => accounts.listInvites({ app: q(c.query, 'app') })],
     ['POST', /^\/api\/admin\/invites$/, 'admin', (m, c) => accounts.createInvite({ actorId: c.user.id, body: c.body, app: q(c.query, 'app') })],

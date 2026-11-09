@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-**OpenVolley und OpenBeach** · Version 1.10 · Stand: 9. November 2026
+**OpenVolley und OpenBeach** · Version 1.11 · Stand: 9. November 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
 Massgebend ist die englische Fassung.
@@ -472,12 +472,14 @@ sowie Trainerinnen und Trainer ihres Vereins aus der Vereinsadministration von
 VolleyManager hochladen. Die Datei wird im Browser gelesen: Gespeichert werden
 nur Lizenznummer, Nachname, Vorname, Geburtsdatum und Geschlecht jeder Person;
 nichts anderes aus der Datei wird an den Server geschickt. Die Listen sind für
-die Vereinsverantwortlichen und die Administration sichtbar. Die Spielerliste
-sehen auch die Teamverantwortlichen des Vereins für ihre Kader, und sie wird
-auf die Geräte der Schreiberinnen und Schreiber des Vereins geladen, damit die
-Spielvorbereitung ohne Internet Spielerinnen und Spieler hinzufügen kann. Das
-Geschlecht dient dazu, dass niemand in ein Team des anderen Geschlechts
-eingetragen wird. Jeder Upload ersetzt diese Liste; mit dem Verein werden die
+die Vereinsverantwortlichen und die Administration sichtbar. Die Listen sehen
+auch die Teamverantwortlichen des Vereins für ihre Kader, und sie werden auf
+die Geräte der Schreiberinnen und Schreiber des Vereins geladen, damit die
+Spielvorbereitung ohne Internet Spielerinnen und Spieler sowie Teamoffizielle
+hinzufügen kann (Trainerin oder Trainer kann jede Person der Listen des Vereins
+sein). Das Geschlecht dient dazu, dass keine Spielerin und kein Spieler in ein
+Team des anderen Geschlechts eingetragen wird; bei Teamoffiziellen wird es
+nicht geprüft. Jeder Upload ersetzt diese Liste; mit dem Verein werden die
 Listen gelöscht. Auf dem Gerät ersetzt jeder Download die Kopie, beim Abmelden
 wird sie gelöscht.
 
@@ -488,8 +490,9 @@ markiert, zeigt die öffentliche Turnierseite Teams, Namen und Länder, nie
 Lizenznummern oder Geburtsdaten.
 
 **Zweck:** Kaderlisten wiederverwenden, den Kader eines Spiels im Voraus vorbereiten, Spielerinnen und Spieler
-des Vereins zu einem Kader hinzufügen und ihr Geschlecht mit dem des Teams vergleichen, Turniere
-organisieren, Spielerinnen und Spieler beim Import anhand der Lizenznummer zuordnen.
+sowie Teamoffizielle des Vereins zu einem Kader hinzufügen und das Geschlecht der Spielerinnen und Spieler
+mit dem des Teams vergleichen, Turniere organisieren, Spielerinnen und Spieler beim Import anhand der
+Lizenznummer zuordnen.
 
 Diese Daten bleiben gespeichert, bis eine Managerin oder ein Manager sie
 löscht, auch wenn das Konto, das sie angelegt hat, gelöscht wird.

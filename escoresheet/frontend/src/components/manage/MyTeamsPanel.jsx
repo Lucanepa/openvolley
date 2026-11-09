@@ -3,9 +3,10 @@ import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { FileUp, PenLine, Trash2, UserPlus } from 'lucide-react'
 import { teamApi } from '../../lib/accountApi'
-import { addClubPlayersToGameDraft, clubPersonToPlayer, gameRosterBody, gameRosterDraft, parsedPdfToRoster, playerFinder, wrongGenderIndexes, GAME_ROSTER_MAX_PLAYERS } from '../../domain/teamRosters'
+import { addClubPlayersToGameDraft, clubPersonToPlayer, gameRosterBody, gameRosterDraft, officialOfRole, officialRolesOf, parsedPdfToRoster, playerFinder, setGameDraftOfficial, wrongGenderIndexes, GAME_ROSTER_MAX_PLAYERS } from '../../domain/teamRosters'
+import { STAFF_ROLES } from '../../domain/savedTeams'
 import { shirtNumberDigits } from '../../domain/roster'
-import TeamEditor, { clubPersonOffer } from './TeamEditor'
+import TeamEditor, { clubPeopleOf, clubPersonOffer } from './TeamEditor'
 import ClubPlayerPickerModal from '../ClubPlayerPickerModal'
 import SignaturePad from '../SignaturePad'
 import KitModal from './KitModal'
@@ -54,10 +55,13 @@ function TeamSections({ team }) {
   const errorText = useErrorText()
   const squad = usePanelData(() => teamApi.squad(team.id), [team.id], { enabled: online })
   const saved = squad.data?.squad || null
-  // db/024: the players list of the club ("Add from club") and the team's
-  // gender; a server or club without it simply offers nothing
+  // db/024: the club's lists ("Add from club": the players list for the
+  // players, everyone of the lists for the officials) and the team's gender;
+  // a server or club without them simply offers nothing
   const club = usePanelData(() => teamApi.clubPlayers(team.id), [team.id], { enabled: online })
-  const clubPlayers = club.data && Array.isArray(club.data.players) ? { players: club.data.players, gender: club.data.gender ?? null } : null
+  const clubPlayers = useMemo(() => (club.data && Array.isArray(club.data.players)
+    ? { players: club.data.players, gender: club.data.gender ?? null, people: clubPeopleOf(club.data) }
+    : null), [club.data])
   // TeamEditor's shape for a team without a saved team yet (the first save makes it)
   const editorTeam = useMemo(() => saved || { id: `new-${team.id}`, name: team.name, players: [], staff: [] }, [saved, team.id, team.name])
   const saveSquad = async (body) => {
@@ -250,6 +254,17 @@ function GameRosterDialog({ team, game, squad, clubPlayers, onClose, onSaved }) 
     change(() => r.draft)
     toast.success(t('clubPlayers.ticked', { count: r.added + r.ticked }))
   }
+  // An official from anyone of the club's lists (either gender), ticked in its
+  // role; the one ticked in that role before is unticked (each role once)
+  const [officialPicker, setOfficialPicker] = useState(false)
+  const staffRoles = STAFF_ROLES.map((r) => ({ value: r, label: t(STAFF_ROLE_KEYS[r], r) }))
+  const pickedStaff = shown?.staff || []
+  const officialFromClub = ([c], role) => {
+    setOfficialPicker(false)
+    if (!shown || !c || !role) return
+    change((d) => setGameDraftOfficial(d, role, c).draft)
+    toast.success(t('clubPlayers.officialSet', { role: t(STAFF_ROLE_KEYS[role], role), name: `${c.first_name || ''} ${c.last_name}`.trim() }))
+  }
   const named = (p) => (p ? `${p.first_name} ${p.last_name}`.trim() : '')
   const wrongGender = (index) => `${t('manage.licences.wrongGender')} (${named(body?.players[index])})`
 
@@ -397,7 +412,13 @@ function GameRosterDialog({ team, game, squad, clubPlayers, onClose, onSaved }) 
                   ))}
                 </ul>
               )}
-              <SectionHeader title={t('manage.myTeams.officials')} count={shown.staff.filter((s) => s.picked).length} />
+              <SectionHeader
+                title={t('manage.myTeams.officials')}
+                count={shown.staff.filter((s) => s.picked).length}
+                action={clubPlayers && (
+                  <Button variant="ghost" size="sm" icon={UserPlus} onClick={() => setOfficialPicker(true)} data-testid="game-official-from-club">{t('clubPlayers.add')}</Button>
+                )}
+              />
               {shown.staff.length === 0 ? (
                 <EmptyInset>{t('manage.myTeams.noOfficials')}</EmptyInset>
               ) : (
@@ -430,13 +451,26 @@ function GameRosterDialog({ team, game, squad, clubPlayers, onClose, onSaved }) 
         open={clubPicker}
         onClose={() => setClubPicker(false)}
         onPick={addFromClub}
-        players={offered.players}
-        gender={offered.gender}
-        hiddenCount={offered.hidden}
+        players={offered}
         zIndex={2050}
         isTaken={(c) => {
           const i = finder.find(clubPersonToPlayer(c))
           return i !== undefined && !!shown?.players[i]?.picked
+        }}
+      />
+      <ClubPlayerPickerModal
+        open={officialPicker}
+        mode="officials"
+        onClose={() => setOfficialPicker(false)}
+        onPick={officialFromClub}
+        players={clubPlayers?.people || []}
+        zIndex={2050}
+        roles={staffRoles}
+        initialRole={STAFF_ROLES.find((r) => !officialOfRole(pickedStaff, r, { pickedOnly: true })) || STAFF_ROLES[0]}
+        rolesOf={(c) => officialRolesOf(pickedStaff, c, { pickedOnly: true })}
+        holderOf={(role) => {
+          const s = officialOfRole(pickedStaff, role, { pickedOnly: true })
+          return s ? `${s.first_name || ''} ${s.last_name || ''}`.trim() : null
         }}
       />
       {/* in a portal: the app's pad overlay renders in place, and inside the
