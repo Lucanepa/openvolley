@@ -1,8 +1,10 @@
 name: Build Desktop App (Tauri)
 
 # Builds the offline scoretable desktop apps (Rust/Tauri) for Windows, Linux
-# and macOS (one universal .dmg + the updater's .app.tar.gz, ad-hoc signed: no
-# Apple developer account, so not notarized; the release says how to open it).
+# and macOS (one universal .dmg + the updater's .app.tar.gz, signed with the
+# Developer ID of team T2Q99T2KH5 and notarized by Apple, tickets stapled so the
+# first start works offline in a sports hall; secrets APPLE_*, see "Set up
+# macOS signing"; a manual run without them builds an ad-hoc signed app).
 # One shell, two apps (src-tauri/src/flavour.rs):
 #   - OpenVolley eScoresheet: push a tag like `desktop-v2.2.0`;
 #   - OpenBeach: push a tag like `beach-desktop-v2.0.0`. It builds the
@@ -171,6 +173,56 @@ jobs:
           npm ci
           if [ -d "node_modules/canvas" ]; then rm -rf node_modules/canvas; fi
 
+      # macOS: the Developer ID certificate in a keychain of its own (codesign
+      # finds it by name: APPLE_SIGNING_IDENTITY beats signingIdentity "-" in
+      # tauri.macos.conf.json), and the App Store Connect API key with which
+      # the Tauri CLI notarizes the .app and staples its ticket. A tag build
+      # never ships an ad-hoc app: without the secrets it fails here (macOS is
+      # continue-on-error, so that release goes out without macOS files).
+      - name: Set up macOS signing
+        if: matrix.platform == 'macos'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$APPLE_CERTIFICATE" ] || [ -z "$APPLE_API_PRIVATE_KEY" ]; then
+            if [ "$GITHUB_REF_TYPE" = tag ]; then echo "::error::no APPLE_* secrets: a release is never ad-hoc signed"; exit 1; fi
+            echo "::warning::no APPLE_* secrets: this build is ad-hoc signed and not notarized"
+            echo "MAC_SIGNED=0" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          kc="$RUNNER_TEMP/signing.keychain-db"
+          kcpw=$(openssl rand -base64 24)
+          security create-keychain -p "$kcpw" "$kc"
+          security set-keychain-settings -lut 21600 "$kc"
+          security unlock-keychain -p "$kcpw" "$kc"
+          p12="$RUNNER_TEMP/developer-id.p12"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$p12"
+          security import "$p12" -k "$kc" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          rm -f "$p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$kcpw" "$kc" >/dev/null
+          # ours first, the runner's keychains after it
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          security find-identity -v -p codesigning "$kc" | grep -F "\"$APPLE_SIGNING_IDENTITY\"" \
+            || { security find-identity -v -p codesigning "$kc"; echo "::error::no identity $APPLE_SIGNING_IDENTITY in the certificate"; exit 1; }
+          key="$RUNNER_TEMP/AuthKey_$APPLE_API_KEY.p8"
+          printf '%s\n' "$APPLE_API_PRIVATE_KEY" > "$key"
+          chmod 600 "$key"
+          {
+            echo "MAC_SIGNED=1"
+            echo "MAC_KEYCHAIN=$kc"
+            echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY"
+            echo "APPLE_API_KEY=$APPLE_API_KEY"
+            echo "APPLE_API_ISSUER=$APPLE_API_ISSUER"
+            echo "APPLE_API_KEY_PATH=$key"
+          } >> "$GITHUB_ENV"
+
       - name: Build Tauri app
         if: matrix.flavour == 'openvolley'
         uses: tauri-apps/tauri-action@v0
@@ -204,12 +256,15 @@ jobs:
           if [ "${{ matrix.platform }}" = macos ]; then args+=(--target universal-apple-darwin); fi
           npx tauri build "${args[@]}"
 
-      # macOS: check the bundle (both slices, ad-hoc signature, the app's own
-      # identifier), give the .dmg a name without spaces, and make the
-      # updater's archive: <Name>.app at the top of a .tar.gz
+      # macOS: check the bundle (both slices, the app's own identifier, its
+      # signature: Developer ID, hardened runtime, the camera entitlement and a
+      # stapled notarization ticket; ad-hoc on a manual run without secrets),
+      # give the .dmg a name without spaces, sign, notarize and staple it too,
+      # and make the updater's archive: <Name>.app at the top of a .tar.gz
       # (tauri-plugin-updater drops the first path component and puts the
-      # rest in place of the running bundle). Not signed here: publish-pkgs.sh
-      # --desktop signs it on lenovoserver like the other installers.
+      # rest in place of the running bundle). The updater signature is not made
+      # here: publish-pkgs.sh --desktop makes it on lenovoserver, over these
+      # finished files.
       - name: Package the macOS app (dmg + updater archive)
         id: mac
         if: matrix.platform == 'macos'
@@ -237,7 +292,21 @@ jobs:
           archs=$(lipo -archs "$exe" | tr ' ' '\n' | sort | xargs)
           [ "$archs" = "arm64 x86_64" ] || { echo "::error::$exe has slices '$archs', expected arm64 x86_64"; exit 1; }
           codesign --verify --deep --strict --verbose=2 "$app"
-          codesign -dv "$app" 2>&1 | grep -q '^Signature=adhoc$' || { codesign -dv "$app"; echo "::error::not ad-hoc signed"; exit 1; }
+          sig=$(codesign -dvvv "$app" 2>&1)
+          if [ "$MAC_SIGNED" = 1 ]; then
+            grep -qxF "Authority=$APPLE_SIGNING_IDENTITY" <<<"$sig" || { echo "$sig"; echo "::error::not signed by $APPLE_SIGNING_IDENTITY"; exit 1; }
+            grep -qE '^CodeDirectory .*flags=0x[0-9a-f]*\(.*runtime' <<<"$sig" || { echo "$sig"; echo "::error::no hardened runtime"; exit 1; }
+            grep -q '^Timestamp=' <<<"$sig" || { echo "$sig"; echo "::error::no secure timestamp"; exit 1; }
+            codesign -d --entitlements - --xml "$app" 2>/dev/null | grep -q 'com.apple.security.device.camera' || { echo "::error::no camera entitlement"; exit 1; }
+            # the Tauri CLI notarized the .app and stapled its ticket: Gatekeeper
+            # passes it without asking Apple (no internet in many halls)
+            xcrun stapler validate "$app"
+            gk=$(spctl --assess --type execute --verbose=4 "$app" 2>&1) || { echo "$gk"; echo "::error::Gatekeeper rejects $app"; exit 1; }
+            echo "$gk"
+            grep -q 'source=Notarized Developer ID' <<<"$gk" || { echo "::error::$app is not notarized"; exit 1; }
+          else
+            grep -qx 'Signature=adhoc' <<<"$sig" || { echo "$sig"; echo "::error::not ad-hoc signed"; exit 1; }
+          fi
 
           # tauri-action leaves its own "<Name>.app.tar.gz" (unsigned, for its
           # release uploads): only ours goes on, so a release has one archive
@@ -249,6 +318,8 @@ jobs:
           x=$(mktemp -d)
           tar -xzf "$tgz" -C "$x"
           codesign --verify --deep --strict "$x/$name.app"
+          # the ticket lives in the bundle (Contents/CodeResources), so the update keeps it
+          if [ "$MAC_SIGNED" = 1 ]; then xcrun stapler validate "$x/$name.app"; fi
           rm -rf "$x"
 
           n=0; src=
@@ -256,11 +327,31 @@ jobs:
           [ "$n" = 1 ] || { ls -la "$b/dmg" || true; echo "::error::expected one .dmg, found $n"; exit 1; }
           dmg="$b/dmg/${name// /.}_${v}_universal.dmg"
           [ "$src" = "$dmg" ] || mv "$src" "$dmg"
+          if [ "$MAC_SIGNED" = 1 ]; then
+            # the disk image too: signed, notarized and stapled, so opening the
+            # download asks nothing either (before its SHA-256 goes into the cask)
+            codesign --force --sign "$APPLE_SIGNING_IDENTITY" --timestamp "$dmg"
+            out=$(xcrun notarytool submit "$dmg" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" \
+              --wait --timeout 45m --output-format json) || true
+            echo "$out"
+            if [ "$(jq -r '.status // empty' <<<"$out" 2>/dev/null)" != Accepted ]; then
+              sid=$(jq -r '.id // empty' <<<"$out" 2>/dev/null || true)
+              [ -z "$sid" ] || xcrun notarytool log "$sid" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" || true
+              echo "::error::Apple did not accept $dmg"; exit 1
+            fi
+            xcrun stapler staple "$dmg"
+            xcrun stapler validate "$dmg"
+            gk=$(spctl --assess --type open --context context:primary-signature --verbose=4 "$dmg" 2>&1) || { echo "$gk"; echo "::error::Gatekeeper rejects $dmg"; exit 1; }
+            echo "$gk"
+            grep -q 'source=Notarized Developer ID' <<<"$gk" || { echo "::error::$dmg is not notarized"; exit 1; }
+          fi
           hdiutil verify "$dmg"
           m=$(mktemp -d)
           hdiutil attach -nobrowse -readonly -mountpoint "$m" "$dmg" >/dev/null
           ok=1
           [ -d "$m/$name.app" ] && [ -L "$m/Applications" ] && codesign --verify --deep --strict "$m/$name.app" || ok=0
+          # the copy in the image carries its own ticket too (dragged to Applications)
+          if [ "$ok" = 1 ] && [ "$MAC_SIGNED" = 1 ]; then xcrun stapler validate "$m/$name.app" || ok=0; fi
           hdiutil detach "$m" >/dev/null || hdiutil detach -force "$m" >/dev/null
           [ "$ok" = 1 ] || { echo "::error::$dmg does not hold $name.app and the Applications link"; exit 1; }
           ls -la "$b/macos" "$b/dmg"
@@ -364,6 +455,13 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
+      - name: Remove the macOS signing keychain
+        if: always() && matrix.platform == 'macos'
+        shell: bash
+        run: |
+          [ -z "${MAC_KEYCHAIN:-}" ] || security delete-keychain "$MAC_KEYCHAIN" || true
+          [ -z "${APPLE_API_KEY_PATH:-}" ] || rm -f "$APPLE_API_KEY_PATH"
+
   # Publish the installers as a public GitHub Release so the app's main page
   # can link them directly (the home page looks up the newest desktop-v* release).
   release:
@@ -428,10 +526,7 @@ jobs:
               or download the `.deb` and `sudo apt install ./openvolley-escoresheet_*_amd64.deb`.
             - **macOS 11 or newer** (Apple silicon and Intel): download `OpenVolley.eScoresheet_…_universal.dmg`,
               open it and drag the app to Applications, or `brew install --cask lucanepa/tap/openvolley`.
-              The app is not notarized by Apple, so macOS blocks its first start: try to open it once,
-              then System Settings › Privacy & Security › **Open Anyway** (macOS 14 and older:
-              right-click the app › Open). Or in Terminal:
-              `xattr -dr com.apple.quarantine "/Applications/OpenVolley eScoresheet.app"`.
+              Signed and notarized by Apple: it opens like any other app, offline too.
               The tablet Wi-Fi is not available on macOS: use the venue's Wi-Fi, a travel router
               or macOS Internet Sharing.
 
@@ -514,10 +609,7 @@ jobs:
               or download the `.deb` and `sudo apt install ./openbeach-escoresheet_*_amd64.deb`.
             - **macOS 11 or newer** (Apple silicon and Intel): download `OpenBeach_…_universal.dmg`,
               open it and drag the app to Applications, or `brew install --cask lucanepa/tap/openbeach`.
-              The app is not notarized by Apple, so macOS blocks its first start: try to open it once,
-              then System Settings › Privacy & Security › **Open Anyway** (macOS 14 and older:
-              right-click the app › Open). Or in Terminal:
-              `xattr -dr com.apple.quarantine /Applications/OpenBeach.app`.
+              Signed and notarized by Apple: it opens like any other app, offline too.
 
             ### Updates
             The app updates itself: it downloads in the background and installs when you quit,

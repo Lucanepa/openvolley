@@ -267,10 +267,16 @@ describe('macOS bundles (unsigned, ad-hoc)', () => {
     expect(existsSync(join(TAURI, 'icons/beach/icon.icns'))).toBe(true)
   })
 
-  it('an .app and a .dmg, ad-hoc signed (no Apple account), macOS 11 and newer', () => {
+  it('an .app and a .dmg, hardened runtime for notarization, macOS 11 and newer', () => {
     for (const c of [ovMac, beachMac]) {
       expect(c.bundle.targets).toEqual(['app', 'dmg'])
-      expect(c.bundle.macOS).toEqual({ signingIdentity: '-', hardenedRuntime: false, minimumSystemVersion: '11.0' })
+      // ad-hoc ("-") unless CI sets APPLE_SIGNING_IDENTITY (desktop.yml: Developer ID + notarization)
+      expect(c.bundle.macOS).toEqual({
+        signingIdentity: '-',
+        hardenedRuntime: true,
+        entitlements: 'Entitlements.plist',
+        minimumSystemVersion: '11.0',
+      })
       // never updater artifacts from CI: publish-pkgs.sh signs on lenovoserver
       expect(c.bundle.createUpdaterArtifacts).toBeUndefined()
     }
@@ -284,5 +290,10 @@ describe('macOS bundles (unsigned, ad-hoc)', () => {
       expect(plist).toContain(`<key>${key}</key>`)
     }
     expect(plist).not.toMatch(/NSAllowsArbitraryLoads/)
+  })
+
+  it('Entitlements.plist: the camera only (the hardened runtime blocks it otherwise)', () => {
+    const plist = read('Entitlements.plist')
+    expect([...plist.matchAll(/<key>([^<]+)<\/key>/g)].map((m) => m[1])).toEqual(['com.apple.security.device.camera'])
   })
 })

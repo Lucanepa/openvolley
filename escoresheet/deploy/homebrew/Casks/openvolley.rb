@@ -32,11 +32,4 @@ cask "openvolley" do
     "~/Library/Saved Application State/com.openvolley.escoresheet.savedState",
     "~/Library/WebKit/com.openvolley.escoresheet",
   ]
-
-  caveats <<~EOS
-    OpenVolley eScoresheet is not notarized by Apple, so macOS blocks its
-    first start. Open it once, then System Settings > Privacy & Security >
-    Open Anyway. Or in Terminal:
-      xattr -dr com.apple.quarantine "/Applications/OpenVolley eScoresheet.app"
-  EOS
 end
