@@ -27,8 +27,25 @@ export const KIT_SCOPE = 'ov-kit contents'
 /** Top bar: white with a stone hairline (svrz header, RESTYLE-SPEC 3.5). */
 export const HEADER_BAR = 'bg-white border-b border-stone-200/70'
 
+/**
+ * Height of the referee / bench / livescore bar: 44 px on a phone (the touch
+ * minimum, see HEADER_HIT), 40 px from sm; taller only when the system font
+ * size is raised (rem). Fixed, it never grows with its content.
+ */
+export const HEADER_BAR_HEIGHT = 'shrink-0 h-[max(44px,2.75rem)] max-h-[max(44px,2.75rem)] sm:h-[max(40px,2.5rem)] sm:max-h-[max(40px,2.5rem)]'
+
 /** Small header button (?, menu, fullscreen, match info). 32 px: the bar is 40 px. */
 export const HEADER_BTN = `inline-flex shrink-0 items-center justify-center gap-1.5 h-8 px-2.5 rounded-lg border border-stone-200 bg-white text-xs font-medium tracking-normal text-stone-600 hover:bg-stone-100 transition-colors cursor-pointer ${FOCUS_RING}`
+
+/**
+ * Hit slop for a HEADER_BTN on the referee / bench / livescore bars: the
+ * 32 x 36 px face stays and an invisible ::before makes the target 44 x 44 px,
+ * the touch minimum (the ::before is placed inside the 1 px border: 7 px
+ * above and below fill the whole 44 px phone bar, HEADER_BAR_HEIGHT; 6 px each
+ * side: 4 px overlap with the neighbour in the gap-2, where the later wins,
+ * so each keeps 44 px).
+ */
+export const HEADER_HIT = "relative before:absolute before:-inset-x-1.5 before:-inset-y-[7px] before:content-['']"
 
 /** The same button while its panel is open / its mode is on (selection = slate-900). */
 export const HEADER_BTN_ON = 'border-slate-900 bg-slate-900 text-white hover:bg-slate-800'

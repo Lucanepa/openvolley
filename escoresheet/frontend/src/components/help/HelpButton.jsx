@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { CircleHelp } from 'lucide-react'
 import { cn } from '../../ui/cn.js'
 import { IconButton } from '../../ui/IconButton.jsx'
-import { HEADER_BTN, HEADER_BTN_ON, KIT_SCOPE } from '../chromeClasses'
+import { HEADER_BTN, HEADER_BTN_ON, HEADER_HIT, KIT_SCOPE } from '../chromeClasses'
 import { openHelp } from './helpEvents'
 
 /**
@@ -23,7 +23,7 @@ export function HeaderHelpButton({ onClick, pressed = false }) {
         aria-pressed={pressed}
         aria-label={label}
         title={label}
-        className={cn(HEADER_BTN, 'w-9 px-0 text-sm font-bold', pressed && HEADER_BTN_ON)}
+        className={cn(HEADER_BTN, HEADER_HIT, 'w-9 px-0 text-sm font-bold', pressed && HEADER_BTN_ON)}
       >
         ?
       </button>

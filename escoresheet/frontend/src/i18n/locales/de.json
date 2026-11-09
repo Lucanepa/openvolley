@@ -2327,7 +2327,11 @@
     "sanctions": "SANKTIONEN",
     "none": "Keine",
     "moreCount": "+{{count}} mehr",
-    "noBenchData": "Keine Bankdaten"
+    "noBenchData": "Keine Bankdaten",
+    "sets": "Sätze",
+    "bench": "Bank",
+    "officials": "Offizielle",
+    "serving": "Aufschlag"
   },
   "officialAutocomplete": {
     "selectFromHistory": "Aus Historie auswählen"

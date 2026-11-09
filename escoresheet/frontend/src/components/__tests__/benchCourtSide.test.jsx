@@ -148,3 +148,51 @@ describe('bench tablet: player sanctions', () => {
     expect(getByText('None')).toBeInTheDocument()
   })
 })
+
+// The portrait bench (bench-ui-phones, 2026-11-09): the score card names
+// both teams (own first) with the serve ball at the serving team, the
+// counters carry one pip per request, the liberos sit in the bench row.
+describe('bench tablet: the score card, counters and rows', () => {
+  beforeEach(() => { cleanup(); bundle = null })
+
+  it('own team first, its serve ball, the set and sets won', async () => {
+    bundle = benchBundle(3, { homeShortName: 'MUSTER', awayShortName: 'BEISPIEL' })
+    const { container } = render(<MatchEntry matchId="m1" team="away" onBack={() => {}} embedded />)
+    await waitFor(() => expect(container.querySelector('[data-bench-points="own"]')).toBeTruthy())
+    const text = (sel) => container.querySelector(sel)?.textContent
+    expect(text('[data-bench-team="own"]')).toBe('BEISPIEL')
+    expect(text('[data-bench-team="opp"]')).toBe('MUSTER')
+    expect(text('[data-bench-points="own"]')).toBe('2')
+    expect(text('[data-bench-points="opp"]')).toBe('3')
+    expect(text('[data-bench-set]')).toBe('3')
+    // sets 1 (home 25:20) and 2 (away 25:20) are done
+    expect(text('[data-bench-sets="own"]')).toBe('1')
+    expect(text('[data-bench-sets="opp"]')).toBe('1')
+    // home served first and scored no point since: the ball is the opponent's
+    expect(container.querySelector('[data-bench-serve="opp"]')).toBeTruthy()
+    expect(container.querySelector('[data-bench-serve="own"]')).toBeNull()
+  })
+
+  it('counters: the count, the limit, a red tone when used up', async () => {
+    bundle = benchBundle(1)
+    bundle.events.push(
+      { type: 'timeout', setIndex: 1, seq: 5, payload: { team: 'home' } },
+      { type: 'timeout', setIndex: 1, seq: 6, payload: { team: 'home' } }
+    )
+    const { container } = render(<MatchEntry matchId="m1" team="home" onBack={() => {}} embedded />)
+    await waitFor(() => expect(container.querySelector('[data-bench-counter="to"]')).toBeTruthy())
+    const to = container.querySelector('[data-bench-counter="to"]')
+    expect(to.textContent).toContain('2/2')
+    expect(to.dataset.tone).toBe('max')
+    expect(container.querySelector('[data-bench-counter="sub"]').dataset.tone).toBeUndefined()
+  })
+
+  it('the libero off the court is in the bench row', async () => {
+    bundle = benchBundle(1)
+    bundle.homePlayers.push({ number: 7, firstName: 'L', lastName: 'Libero', libero: 'libero1' })
+    const { container } = render(<MatchEntry matchId="m1" team="home" onBack={() => {}} embedded />)
+    await waitFor(() => expect(container.querySelector('[data-bench-row="players"]')).toBeTruthy())
+    const row = container.querySelector('[data-bench-row="players"]')
+    expect(row.querySelector('[data-bench-libero]')?.textContent).toContain('#7')
+  })
+})
