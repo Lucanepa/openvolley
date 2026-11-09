@@ -267,9 +267,22 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     const leftTeamKey: 'home' | 'away' = !isSwapped ? teamAKey : teamBKey;
     const rightTeamKey: 'home' | 'away' = !isSwapped ? teamBKey : teamAKey;
 
-    // Service rounds: one pure tracker for every set (utils/serviceRounds.ts)
+    // Service rounds: one pure tracker for every set (utils/serviceRounds.ts).
+    // A point cancelled when the game went back (domain/rectify) is still a
+    // rally: it passed the serve, but it scores nothing
+    const rallyEvents = setEvents
+      .filter(e => e.type === 'point' || e.type === 'cancelled_point')
+      .sort((a, b) => {
+        const aSeq = a.seq || 0;
+        const bSeq = b.seq || 0;
+        if (aSeq !== 0 || bSeq !== 0) return aSeq - bSeq;
+        return new Date(a.ts).getTime() - new Date(b.ts).getTime();
+      });
+    const rallyTeams = rallyEvents.map(e => e.payload?.team);
+    const rallyCounted = rallyEvents.map(e => e.type === 'point');
     const trackedRounds = trackServiceRounds({
-      pointTeams: pointEvents.map(e => e.payload?.team),
+      pointTeams: rallyTeams,
+      counted: rallyCounted,
       firstServer: firstServeTeam,
       finished: !!setInfo?.finished
     });
@@ -277,7 +290,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     const rightServiceRounds: ServiceRound[] = trackedRounds[rightTeamKey];
     // Set 5: index of the point after which a team reached 8 (change of courts)
     const set5ChangeAt = setNumber === 5
-      ? courtChangeIndex(pointEvents.map(e => e.payload?.team))
+      ? courtChangeIndex(rallyTeams, 8, rallyCounted)
       : null;
 
     // Identify points scored due to sanctions
