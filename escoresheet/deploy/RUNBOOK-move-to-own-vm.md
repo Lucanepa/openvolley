@@ -1,5 +1,9 @@
 # Runbook: move OpenVolley to its own VM (Option B)
 
+> **Done again 09.11.2026: lenovoserver -> an Infomaniak VPS Lite (`ov-vps`, user debian + sudo).**
+> Steps 1-11 as below with old = lenovoserver (local sudo), new = ov-vps; the whole tunnel moved,
+> including `get.openvolley.app` (ov-pkgs) and FreeScout. About 90 s of downtime.
+>
 > **Done 16.10.2026: moved to lenovoserver.** The stack moved from hetzner to lenovoserver with
 > this procedure, lenovoserver as `new`. The Hetzner VPS now belongs to another owner and
 > must never host OpenVolley again. The procedure stays as the template for a future move: `old`
