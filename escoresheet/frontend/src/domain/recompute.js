@@ -7,9 +7,11 @@
  * inconsistent instead of refusing the correction.
  *
  * THE ENTRIES (what the scorer recorded, kept as written):
- *   lineup (starting / corrected), point, substitution, libero_entry,
- *   libero_exit (by hand, injury, expulsion ...), libero_exchange, plus the
- *   coin toss on the match row (who serves first in each set).
+ *   lineup (starting / corrected), point, cancelled_point (a rally whose
+ *   point a rectification cancelled: it rotates, it does not score),
+ *   substitution, libero_entry, libero_exit (by hand, injury, expulsion ...),
+ *   libero_exchange, plus the coin toss on the match row (who serves first
+ *   in each set).
  * WHAT FOLLOWS FROM THEM (rewritten here, as the live scoreboard would have
  * written it, when an earlier entry changed):
  *   - the rotation line-up a point writes for the team that wins the serve
@@ -67,8 +69,19 @@ export function isRotationLiberoExit(e) {
   return e?.type === 'libero_exit' && /^rotation_to_front_row/.test(String(e.payload?.reason || ''))
 }
 
+/**
+ * A rally of the set: a point, or a point cancelled by a rectification
+ * (domain/rectify: FIVB 7.3.5.3, 7.7.2, 15.9.2.3). A cancelled point no longer
+ * counts for the score, but the rally was played: the serve changed and the
+ * team that won it rotated, so it keeps its rotation (the opponent's points
+ * remain valid and its players stay where they are).
+ */
+export function isRally(e) {
+  return e?.type === 'point' || e?.type === 'cancelled_point'
+}
+
 /** Entries whose line-up sub-row (N.x) is rebuilt here. */
-const OWNER_TYPES = new Set(['point', 'substitution', 'libero_entry', 'libero_exit', 'libero_exchange'])
+const OWNER_TYPES = new Set(['point', 'cancelled_point', 'substitution', 'libero_entry', 'libero_exit', 'libero_exchange'])
 
 function isOwner(e) {
   if (!OWNER_TYPES.has(e?.type)) return false
@@ -220,7 +233,7 @@ function recomputeSet(rows, setIndex, ctx, out, issue, roster) {
   const score = { home: 0, away: 0 }
   let server = getFirstServeForSet(setIndex, match)
   if (!isTeam(server)) server = 'home'
-  const firstPoint = rows.find(e => e.type === 'point')
+  const firstPoint = rows.find(isRally)
   let wonAt = null
   let afterWin = 0
   const subs = { home: [], away: [] }
@@ -314,7 +327,7 @@ function recomputeSet(rows, setIndex, ctx, out, issue, roster) {
         }
         // a rotation the point once wrote for the other team (its team was
         // changed since): that team did not rotate on this point
-        if (owner && owner.e.type === 'point' && owner.e.payload.team !== team && isSubRow(e) && p.isInitial !== true && p.mode !== 'manual' && !p.fromSubstitution) {
+        if (owner && isRally(owner.e) && owner.e.payload.team !== team && isSubRow(e) && p.isInitial !== true && p.mode !== 'manual' && !p.fromSubstitution) {
           out.remove.push(e.id)
           continue
         }
@@ -351,7 +364,7 @@ function recomputeSet(rows, setIndex, ctx, out, issue, roster) {
         continue
       }
       if (isRotationLiberoExit(e)) {
-        if (owner && owner.e.type === 'point' && owner.e.payload.team === team && !owner.expected.keep) owner.exits.push(e)
+        if (owner && isRally(owner.e) && owner.e.payload.team === team && !owner.expected.keep) owner.exits.push(e)
         else out.remove.push(e.id)
         continue
       }
@@ -421,11 +434,14 @@ function applyOwner(owner, env) {
     return payload
   }
 
-  if (e.type === 'point') {
-    // the running score the point carries
-    if (team === 'home') score.home += 1
-    else score.away += 1
-    if (p.score && (Number(p.score.home) !== score.home || Number(p.score.away) !== score.away)) {
+  if (isRally(e)) {
+    // the running score the point carries (a cancelled point keeps the
+    // score it was won at and adds nothing)
+    if (e.type === 'point') {
+      if (team === 'home') score.home += 1
+      else score.away += 1
+    }
+    if (e.type === 'point' && p.score && (Number(p.score.home) !== score.home || Number(p.score.away) !== score.away)) {
       out.update.push({ id: e.id, changes: { payload: { ...p, score: { ...p.score, home: score.home, away: score.away } } } })
     }
     // an awarded point (forfeit) has no rally: no rotation

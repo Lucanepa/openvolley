@@ -423,6 +423,30 @@ export function describeEvent(event, events, ctx = {}) {
       title = tr(t, 'corrections.describe.replay', 'Rally replayed')
       concerned = null
       break
+    case 'cancelled_point': {
+      // a point the game going back cancelled (domain/rectify): the rally
+      // stays in the log, the score does not count it
+      title = tr(t, 'rectify.describe.cancelledPoint', 'Point cancelled: {{team}}', { team: teamRef(team) })
+      if (short) teamText = ''
+      concerned = null
+      break
+    }
+    case 'rectification': {
+      title = tr(t, 'rectify.describe.title', 'Going back: {{what}}', { what: tr(t, `rectify.kind.${p.kind}`, humanize(p.kind)) })
+      if (p.kind === 'official_error') {
+        detail = tr(t, 'rectify.describe.back', 'score back to {{score}}', { score: formatScore(p.scoreAfter || {}, null, ctx) })
+      } else {
+        const n = (p.cancelledPointIds || []).length
+        detail = [
+          n ? tr(t, 'rectify.describe.cancelled', '{{n}} point(s) of {{team}} cancelled', { n, team: teamLetter(p.team, ctx.match) }) : '',
+          p.penalty ? tr(t, 'rectify.describe.pointTo', 'point to {{team}}', { team: teamLetter(otherTeam(p.team), ctx.match) }) : ''
+        ].filter(Boolean).join(', ')
+      }
+      if (short) teamText = ''
+      scoreValue = p.scoreAfter ? { home: p.scoreAfter.home, away: p.scoreAfter.away } : before
+      concerned = null
+      break
+    }
     case 'decision_change': {
       const to = teamLabel(p.toTeam, ctx)
       title = tr(t, 'corrections.describe.decisionChange', 'Decision changed: point given to {{team}}', { team: teamRef(to) })

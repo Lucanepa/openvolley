@@ -50,7 +50,8 @@ import { actualStartLines, remarkClock } from './remarks'
 import { actualStartRemark, scheduledStartOnDay } from '../utils/setStartTime'
 import { validateManualTimeout, validateManualSubstitution, classifySubstitutionRequest } from './substitutions'
 import { resolveSanction, isDelaySanction, awardsPoint, validateMemberSanction } from './sanctions'
-import { applyPlanToEvents, finalizePlan, isRotationLiberoExit } from './recompute'
+import { applyPlanToEvents, finalizePlan, isRotationLiberoExit, isRally } from './recompute'
+import { planRectificationReversal } from './rectify'
 import { referencedPlayerNumbers, renumberPlayerInEvents, isShirtNumber, renumberRemarkText } from './roster'
 
 export { applyPlanToEvents }
@@ -112,6 +113,7 @@ export const ERROR_DEFAULTS = {
   subEvent: 'This row belongs to another entry; remove that entry instead.',
   liberoOnCourtRotate: 'A libero is on court for this team: rotate after the libero has left the court.',
   removePointNotLast: 'The penalty point can only be removed while it is the last point of the set being played.',
+  cancelledPoint: 'This point was cancelled when the game went back: remove that going back instead.',
   noScoreChange: 'Nothing to change.',
   endBeforeStart: 'Set {{set}} cannot end before it starts.'
 }
@@ -491,8 +493,9 @@ export function entryGroupIds(events, ev) {
 
 /** True when `row` (N.x) was written by `head` (N): its line-up / rotation rows. */
 function isSubRowOf(row, head) {
-  if (row.type === 'lineup') return row.payload?.team === head.payload?.team || head.type === 'point'
-  if (isRotationLiberoExit(row)) return head.type === 'point'
+  // a point cancelled by a rectification keeps its rotation (domain/rectify)
+  if (row.type === 'lineup') return row.payload?.team === head.payload?.team || isRally(head)
+  if (isRotationLiberoExit(row)) return isRally(head)
   return false
 }
 
@@ -1459,6 +1462,10 @@ export function entryActions(ev, events = null) {
   if (isAutomaticEntry(ev, events)) return { ...none, automatic: true, edit: ev.type === 'set_start' ? 'setTimes' : null }
   if (COIN_TOSS_TYPES.includes(ev.type)) return { ...none, edit: ev.type === 'coin_toss' ? 'coinToss' : 'set5CoinToss' }
   if (REOPEN_TYPES.includes(ev.type)) return { ...none, remove: 'reopen', edit: ev.type === 'set_end' ? 'setTimes' : null }
+  // A going back is removed as a whole (its points count again); the points
+  // it cancelled follow it (domain/rectify)
+  if (ev.type === 'rectification') return { remove: 'plan', edit: null, automatic: false }
+  if (ev.type === 'cancelled_point') return none
   let edit = null
   if (ev.type === 'timeout' || ev.type === 'substitution' || ev.type === 'sanction') edit = ev.type
   else if (ev.type === 'point') edit = 'point'
@@ -1487,6 +1494,8 @@ export function planRemoveEntry(events, id, ctx = {}) {
   if (ev.type === 'timeout' || ev.type === 'substitution' || ev.type === 'sanction') return planRemoveAny(events, id, ctx)
   if (REOPEN_TYPES.includes(ev.type)) return fail('useReopen')
   if (COIN_TOSS_TYPES.includes(ev.type)) return fail('coinTossNotRemovable')
+  if (ev.type === 'rectification') return planRectificationReversal(events, id, ctx)
+  if (ev.type === 'cancelled_point') return fail('cancelledPoint')
   if (isAutomaticEntry(ev, events)) return fail('automaticEntry')
   const plan = emptyPlan()
   const setIndex = setOf(ev)
