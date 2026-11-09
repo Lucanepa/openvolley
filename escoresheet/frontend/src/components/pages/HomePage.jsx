@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import SupportFeedbackModal from '../SupportFeedbackModal'
 import LoginModal from '../auth/LoginModal'
@@ -11,24 +11,10 @@ import { formatTakeOver, scoreText } from '../ScorerMovedModal'
 import { isServedFromLocalServer } from '../../utils/backendConfig'
 import { BRAND } from '../../brand'
 
-const RELEASES_PAGE = 'https://github.com/Lucanepa/openvolley/releases'
-const RELEASES_API = 'https://api.github.com/repos/Lucanepa/openvolley/releases?per_page=20'
-
-// "desktop-v2.4.10" -> [2, 4, 10]. GitHub does not list the releases newest
-// first (desktop-v2.4.9 came before desktop-v2.4.10), so the newest is the
-// highest version, compared number by number.
-const desktopVersion = tag => tag.slice('desktop-v'.length).split('.').map(n => parseInt(n, 10) || 0)
-function isHigherVersion(a, b) {
-  for (let i = 0; i < Math.max(a.length, b.length); i++) {
-    if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0)
-  }
-  return false
-}
-export function newestDesktopRelease(releases) {
-  return releases
-    .filter(r => !r.draft && !r.prerelease && r.tag_name?.startsWith('desktop-v'))
-    .reduce((best, r) => (!best || isHigherVersion(desktopVersion(r.tag_name), desktopVersion(best.tag_name)) ? r : best), null)
-}
+// Where every OpenVolley app is installed from (desktop, Android, Linux
+// repositories): one link on Home (owner 2026-11-09: "just link the
+// downloads page")
+const DOWNLOADS_PAGE = 'https://get.openvolley.app/'
 
 function detectDesktopOS() {
   const ua = navigator.userAgent
@@ -94,31 +80,6 @@ export default function HomePage({
   const desktopOS = useMemo(() => detectDesktopOS(), [])
   const inDesktopApp = useMemo(() => isInsideDesktopApp(), [])
 
-  // Direct installer links from the newest desktop-v* GitHub release. On any
-  // failure (offline, rate limit, no release yet) the section falls back to
-  // linking the releases page.
-  const [desktopApp, setDesktopApp] = useState(null)
-  useEffect(() => {
-    if (!desktopOS || inDesktopApp) return
-    let cancelled = false
-    fetch(RELEASES_API)
-      .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then(releases => {
-        if (cancelled || !Array.isArray(releases)) return
-        const rel = newestDesktopRelease(releases)
-        if (!rel) return
-        const asset = ext => rel.assets?.find(a => a.name?.toLowerCase().endsWith(ext))?.browser_download_url
-        setDesktopApp({
-          version: rel.tag_name.replace('desktop-v', ''),
-          exe: asset('.exe'),
-          appimage: asset('.appimage'),
-          deb: asset('.deb'),
-          page: rel.html_url
-        })
-      })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [desktopOS, inDesktopApp])
 
   return (
     // Small vertical pad: the panel and the container around it pad already,
@@ -317,37 +278,21 @@ export default function HomePage({
         </div>
         </div>
 
-        {/* Downloads (desktop app + server) - desktop browsers only, hidden inside the app */}
-        {desktopOS && !inDesktopApp && (() => {
-          const appHref =
-            (desktopOS === 'windows' && desktopApp?.exe) ||
-            (desktopOS === 'linux' && desktopApp?.appimage) ||
-            desktopApp?.page || RELEASES_PAGE
-          const appLabel = t('home.downloadApp', 'Download the desktop app — offline scoretable + tablet server') +
-            (desktopApp?.version ? ` (v${desktopApp.version})` : '')
-          const quietLink = 'text-xs text-stone-600 underline decoration-stone-300 underline-offset-2 hover:text-stone-800 hover:decoration-stone-500 transition-colors'
-          return (
-            <div className="mt-5 flex flex-col items-center gap-2 text-center home-wide:col-start-1 home-wide:row-start-3 home-wide:mt-2">
-              <a
-                href={appHref}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={cn('inline-flex min-h-11 max-w-full items-start gap-2 rounded-lg px-2 py-2.5 text-left text-sm text-stone-600 hover:text-stone-900 transition-colors', FOCUS_RING)}
-              >
-                <Download size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-stone-400" />
-                <span>{appLabel}</span>
-              </a>
-              {desktopOS === 'linux' && desktopApp?.deb && (
-                <a href={desktopApp.deb} target="_blank" rel="noopener noreferrer" className={quietLink}>
-                  {t('home.downloadAppDeb', 'or get the .deb package')}
-                </a>
-              )}
-              <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" className={quietLink}>
-                {t('home.downloadServer', 'Download server — referee without internet')}
-              </a>
-            </div>
-          )
-        })()}
+        {/* The downloads page (desktop browsers only, hidden inside the app) */}
+        {desktopOS && !inDesktopApp && (
+          <div className="mt-5 flex justify-center text-center home-wide:col-start-1 home-wide:row-start-3 home-wide:mt-2">
+            <a
+              href={DOWNLOADS_PAGE}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="home-downloads"
+              className={cn('inline-flex min-h-11 max-w-full items-center gap-2 rounded-lg px-2 py-2.5 text-sm text-stone-600 hover:text-stone-900 transition-colors', FOCUS_RING)}
+            >
+              <Download size={16} aria-hidden="true" className="shrink-0 text-stone-400" />
+              <span>{t('home.downloads', 'Download OpenVolley')}</span>
+            </a>
+          </div>
+        )}
 
         {/* Support & Feedback Modal */}
         <SupportFeedbackModal
