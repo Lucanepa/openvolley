@@ -102,7 +102,7 @@ export function manageFamilyOf (pathname) {
   if (pathname.startsWith('/api/club/')) return 'club'
   if (pathname === '/api/games/today') return 'games'
   if (pathname.startsWith('/api/team/')) return 'team'
-  if (pathname === '/api/game-rosters') return 'gameRosters'
+  if (pathname === '/api/game-rosters' || pathname.startsWith('/api/game-rosters/')) return 'gameRosters'
   if (pathname === '/api/settings') return 'settings'
   return null
 }
@@ -233,6 +233,8 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['DELETE', new RegExp(`^/api/team/${ID}/roster$`), teamManagerOf, (m, c) => team((tm) => tm.deleteRoster({ actorId: c.user.id, teamId: m[1], game: q(c.query, 'game') }))],
     // db/023: the rosters a scoring tablet keeps (offline first)
     ['GET', /^\/api\/game-rosters$/, readIndoorTeams, (m, c) => team((tm) => tm.scorerRosters({ userId: c.user.id, games: q(c.query, 'games') }))],
+    // accepted in Match Setup: the content is deleted at once
+    ['POST', /^\/api\/game-rosters\/used$/, readIndoorTeams, (m, c) => team((tm) => tm.markUsed({ userId: c.user.id, body: c.body }))],
     ['GET', /^\/api\/admin\/invites$/, 'admin', (m, c) => accounts.listInvites({ app: q(c.query, 'app') })],
     ['POST', /^\/api\/admin\/invites$/, 'admin', (m, c) => accounts.createInvite({ actorId: c.user.id, body: c.body, app: q(c.query, 'app') })],
     ['POST', new RegExp(`^/api/admin/invites/${ID}/revoke$`), 'admin', (m, c) => accounts.revokeInvite({ actorId: c.user.id, id: m[1] })],

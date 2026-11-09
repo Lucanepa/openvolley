@@ -18,8 +18,11 @@
 -- 3. invite_codes: role 'team_manager', with team_id (the team whoever
 --    redeems the code manages). A code of a removed team goes with it.
 -- 4. game_rosters: one team's roster of one game (personal data: names,
---    dates of birth, licence numbers), until 14 days after the game
---    (lib/teams.js sweeps them).
+--    dates of birth, licence numbers, optional coach and captain signatures
+--    made ahead). Owner 2026-11-08: no lock (the team may change it at any
+--    time), and deleted as soon as the scorer accepts it: the content goes,
+--    a row without personal data stays (used_at, used_by) so the team sees
+--    it was accepted. lib/teams.js sweeps every row 14 days after the game.
 --
 -- roles.sql: no change (ov_app's default privileges cover new tables); run
 -- apply-roles.sh after this file as with every migration all the same.
@@ -50,10 +53,11 @@ ALTER TABLE public.invite_codes ADD COLUMN IF NOT EXISTS team_id uuid REFERENCES
 DO $$
 DECLARE c record;
 BEGIN
-  -- the role list of 007 (scorer, referee, competition_manager), whatever its name
+  -- the role list of 007 (or of a restored older schema), whatever its name:
+  -- every CHECK on invite_codes that names the role column but this one
   FOR c IN SELECT conname FROM pg_constraint
             WHERE conrelid = 'public.invite_codes'::regclass AND contype = 'c'
-              AND pg_get_constraintdef(oid) LIKE '%competition_manager%'
+              AND pg_get_constraintdef(oid) ~ '\mrole\M'
               AND conname <> 'invite_codes_role_team_check'
   LOOP
     EXECUTE format('ALTER TABLE public.invite_codes DROP CONSTRAINT %I', c.conname);
@@ -74,6 +78,10 @@ CREATE TABLE IF NOT EXISTS public.game_rosters (
   players     jsonb       NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(players) = 'array' AND jsonb_array_length(players) <= 14),
   staff       jsonb       NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(staff) = 'array' AND jsonb_array_length(staff) <= 5),
   kickoff     text,
+  coach_signature   text  CHECK (coach_signature IS NULL OR (left(coach_signature, 22) = 'data:image/png;base64,' AND length(coach_signature) <= 200000)),
+  captain_signature text  CHECK (captain_signature IS NULL OR (left(captain_signature, 22) = 'data:image/png;base64,' AND length(captain_signature) <= 200000)),
+  used_at     timestamptz,
+  used_by     uuid        REFERENCES auth.users(id) ON DELETE SET NULL,
   updated_by  uuid        REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at  timestamptz NOT NULL DEFAULT now(),
   updated_at  timestamptz NOT NULL DEFAULT now(),
@@ -83,6 +91,6 @@ CREATE INDEX IF NOT EXISTS game_rosters_updated_idx ON public.game_rosters (upda
 
 COMMENT ON TABLE public.team_managers IS 'Accounts that manage a club team: its saved team and its game rosters (db/023).';
 COMMENT ON COLUMN public.invite_codes.team_id IS 'The team a team_manager code gives (db/023).';
-COMMENT ON TABLE public.game_rosters IS 'A team''s roster of one game, sent before the match exists; deleted 14 days after the game (db/023).';
+COMMENT ON TABLE public.game_rosters IS 'A team''s roster of one game, sent before the match exists; its content is deleted when the scorer accepts it, the row 14 days after the game (db/023).';
 
 COMMIT;

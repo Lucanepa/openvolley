@@ -3305,18 +3305,15 @@
       "squad": "Giocatori {{season}}",
       "squadHint": "Tutti quelli che possono giocare in questa stagione, con numeri e date di nascita. I segnapunti possono anche caricare questa squadra nella configurazione della partita.",
       "games": "Partite",
-      "gamesHint": "Prepara l’elenco di ogni partita: spunta chi gioca. Puoi modificarlo fino all’inizio della partita.",
+      "gamesHint": "Prepara l’elenco di ogni partita: spunta chi gioca. Puoi modificarlo in qualsiasi momento.",
       "noGames": "Nessuna partita di questa squadra in calendario da oggi in poi.",
       "vs": "contro",
       "at": "da",
       "home": "Casa",
       "away": "Trasferta",
       "notSent": "Non inviato",
-      "started": "Iniziata",
-      "view": "Vedi",
       "edit": "Modifica elenco",
       "prepare": "Prepara elenco",
-      "locked": "La partita è iniziata. Il suo elenco non si può più modificare qui; le modifiche passano dal segnapunti.",
       "notYourGame": "Questa partita non è una partita della tua squadra in calendario.",
       "sentBy": "Inviato {{when}} da {{name}}",
       "players": "Giocatori",
@@ -3336,7 +3333,7 @@
       "deleteTitle": "Eliminare l’elenco di questa partita?",
       "deleteBody": "Il tablet del segnapunti lo toglie appena torna online.",
       "deleted": "Elenco eliminato",
-      "signHint": "Qui non si firma: l’allenatore e il capitano firmano in palestra, al sorteggio.",
+      "signHint": "Facoltativo: l’allenatore e il capitano possono firmare qui se vogliono. Altrimenti firmano in palestra, al sorteggio.",
       "problems": {
         "tooMany": "Al massimo {{max}} giocatori per partita.",
         "number": "{{name}} ha bisogno di un numero di maglia.",
@@ -3347,7 +3344,24 @@
         "tooManyStaff": "Al massimo {{max}} ufficiali di squadra."
       },
       "sent_one": "Inviato: {{count}} giocatore, {{when}}",
-      "sent_other": "Inviato: {{count}} giocatori, {{when}}"
+      "sent_other": "Inviato: {{count}} giocatori, {{when}}",
+      "accepted": "Accettato dal segnapunti {{when}}",
+      "acceptedBody": "Il segnapunti ({{name}}) ha accettato l’elenco {{when}}; poi è stato eliminato qui. Puoi inviarne uno nuovo.",
+      "signedChip": "Firmato",
+      "sig": {
+        "title": "Firme (facoltative)",
+        "coach": "Allenatore",
+        "captain": "Capitano",
+        "sign": "Firma",
+        "again": "Firma di nuovo",
+        "clear": "Togli",
+        "signed": "Firma",
+        "stale": "L’elenco è cambiato dopo la firma. Firma di nuovo, o invialo senza firme.",
+        "noCoach": "Spunta prima un allenatore",
+        "noCaptain": "Indica prima un capitano",
+        "padCoach": "Firma dell’allenatore: {{name}}",
+        "padCaptain": "Firma del capitano: {{name}}"
+      }
     },
     "clubTeams": {
       "title": "Squadre",
@@ -4795,7 +4809,7 @@
   "sentRoster": {
     "title": "Elenco inviato da {{team}}",
     "meta": "{{players}} · {{officials}} · {{when}} · {{name}}",
-    "use": "Usalo",
+    "use": "Accetta",
     "preview": "Mostra",
     "hidePreview": "Nascondi",
     "notNow": "Non ora",
@@ -4804,6 +4818,12 @@
     "players_one": "{{count}} giocatore",
     "players_other": "{{count}} giocatori",
     "officials_one": "{{count}} ufficiale",
-    "officials_other": "{{count}} ufficiali"
+    "officials_other": "{{count}} ufficiali",
+    "hintSigned": "Controllalo con l’allenatore. L’allenatore e il capitano hanno firmato in anticipo; le loro firme vengono riprese.",
+    "signed": {
+      "both": "Firmato in anticipo dall’allenatore e dal capitano",
+      "coach": "Firmato in anticipo dall’allenatore",
+      "captain": "Firmato in anticipo dal capitano"
+    }
   }
 }

@@ -16,6 +16,8 @@ import { seasonOf } from '../lib/officialGame.js'
 
 const dayPlus = (day, n) => { const t = new Date(`${day}T12:00:00Z`); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10) }
 const player = (number, last, extra = {}) => ({ number, first_name: 'P', last_name: last, dob: '2001-02-03', ...extra })
+// a tiny valid PNG data URL (a signature drawn ahead)
+const SIG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
 
 describe('team managers and sent game rosters', { skip: SKIP }, () => {
   let db, srv, sql
@@ -142,14 +144,14 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
     assert.equal(r.status, 200, r.text)
     const games = r.json.data.games
     assert.deepEqual(games.map((g) => [g.game_number, g.side]), [['940006', 'home'], ['940001', 'home'], ['940002', 'away'], ['940005', 'home']])
-    assert.equal(games.find((g) => g.game_number === '940006').locked, true)
-    assert.equal(games.find((g) => g.game_number === '940001').locked, false)
+    assert.equal(games.find((g) => g.game_number === '940006').started, true)
+    assert.equal(games.find((g) => g.game_number === '940001').started, false)
     assert.equal(games[1].roster, null)
     assert.equal((await call(users.coach, 'GET', `/api/team/${d2.id}/games`)).status, 403)
     assert.equal((await call(users.stranger, 'GET', `/api/team/${h1.id}/games`)).status, 403)
   })
 
-  it('a game roster: the game rules, its own games only, until kick-off', async () => {
+  it('a game roster: the game rules, its own games only, no lock after kick-off', async () => {
     const path = (n) => `/api/team/${h1.id}/roster?game=${n}`
     const fifteen = Array.from({ length: 15 }, (_, i) => player(i + 1, `L${i}`))
     assert.equal((await call(users.coach, 'PUT', path('940001'), { players: fifteen, staff: [] })).status, 400)
@@ -163,15 +165,22 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
     assert.equal(notMine.status, 404, notMine.text)
     assert.equal(notMine.json.error.code, 'OV_GAME_NOT_YOURS')
     assert.equal((await call(users.coach, 'PUT', `/api/team/${h1.id}/roster?game=abc`, { players: [], staff: [] })).status, 400)
-    // started
-    const locked = await call(users.coach, 'PUT', path('940006'), { players: [player(1, 'A')], staff: [] })
-    assert.equal(locked.status, 409, locked.text)
-    assert.equal(locked.json.error.code, 'OV_ROSTER_LOCKED')
+    // started: still open (owner 2026-11-08, no lock)
+    const late = await call(users.coach, 'PUT', path('940006'), { players: [player(1, 'A')], staff: [] })
+    assert.equal(late.status, 200, late.text)
+    assert.equal(late.json.data.started, true)
+    // signatures made ahead: PNG data URLs, a coach's needs a Coach, a captain's a captain
+    assert.equal((await call(users.coach, 'PUT', path('940001'), { players: [player(1, 'A', { is_captain: true })], staff: [], coach_signature: SIG })).status, 400)
+    assert.equal((await call(users.coach, 'PUT', path('940001'), { players: [player(1, 'A')], staff: [], captain_signature: SIG })).status, 400)
+    assert.equal((await call(users.coach, 'PUT', path('940001'), { players: [player(1, 'A', { is_captain: true })], staff: [], captain_signature: 'data:image/svg+xml;base64,PHN2Zz4=' })).status, 400)
+    assert.equal((await call(users.coach, 'PUT', path('940001'), { players: [player(1, 'A', { is_captain: true })], staff: [], captain_signature: 'x'.repeat(10) })).status, 400)
 
     const players = [player(4, 'Muster', { is_captain: true }), player(7, 'Libero', { is_libero: true }), ...[1, 2, 3, 5, 6, 8].map((n) => player(n, `Spieler${n}`))]
     const staff = [{ role: 'Assistant Coach 1', first_name: 'A', last_name: 'Assist' }, { role: 'Coach', first_name: 'C', last_name: 'Coach', dob: '1980-01-01' }]
-    const ok1 = await call(users.coach, 'PUT', path('940001'), { players, staff })
+    const ok1 = await call(users.coach, 'PUT', path('940001'), { players, staff, coach_signature: SIG, captain_signature: SIG })
     assert.equal(ok1.status, 200, ok1.text)
+    assert.equal(ok1.json.data.roster.coach_signature, SIG)
+    assert.equal(ok1.json.data.roster.used_at, null)
     assert.equal(ok1.json.data.side, 'home')
     assert.equal(ok1.json.data.roster.players.length, 8)
     assert.deepEqual(ok1.json.data.roster.staff.map((s) => s.role), ['Coach', 'Assistant Coach 1'])
@@ -185,6 +194,7 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
     assert.equal(read.json.data.roster.players[0].last_name, 'Muster')
     const games = (await call(users.coach, 'GET', `/api/team/${h1.id}/games`)).json.data.games
     assert.equal(games.find((g) => g.game_number === '940001').roster.players, 8)
+    assert.deepEqual(games.find((g) => g.game_number === '940001').roster.signed, { coach: true, captain: true })
     // the club manager acts for the team too
     assert.equal((await call(users.clubmgr, 'GET', path('940001'))).status, 200)
   })
@@ -199,8 +209,10 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
     assert.equal(r.status, 200, r.text)
     // home games of KSC today .. +7 days: 940006, 940001, 940004 (not 940002, an away game; not 940005, +12 days)
     assert.deepEqual(r.json.data.games.map((g) => g.game_number).sort(), ['940001', '940004', '940006'])
-    assert.deepEqual(r.json.data.rosters.map((x) => [x.game_number, x.side]), [['940001', 'home']])
-    const sent = r.json.data.rosters[0]
+    assert.deepEqual(r.json.data.rosters.map((x) => [x.game_number, x.side]).sort(), [['940001', 'home'], ['940006', 'home']])
+    const sent = r.json.data.rosters.find((x) => x.game_number === '940001')
+    assert.equal(sent.coach_signature, SIG)
+    assert.equal(sent.captain_signature, SIG)
     assert.equal(sent.team_name, 'KSC Wiedikon H1')
     assert.equal(sent.players.length, 8)
     assert.equal(sent.players[0].dob, '2001-02-03')
@@ -215,6 +227,48 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
     // a team manager without a scoring role reads nothing here
     assert.equal((await call(users.coach, 'GET', '/api/game-rosters')).status, 403)
     assert.equal((await api(srv.base, '/api/game-rosters')).status, 401)
+  })
+
+  it('accepted in Match Setup: the content is deleted at once, the team sees "accepted", a new version is offered again', async () => {
+    const r = await call(users.scorer, 'GET', '/api/game-rosters?games=940006')
+    const sent = r.json.data.rosters[0]
+    // another version than the one on the tablet: left alone
+    const stale = await call(users.scorer, 'POST', '/api/game-rosters/used', { game_number: '940006', side: 'home', season: sent.season, updated_at: '2020-01-01T00:00:00.000Z' })
+    assert.deepEqual(stale.json.data, { used: false, reason: 'changed' })
+    assert.equal((await call(users.coach, 'POST', '/api/game-rosters/used', { game_number: '940006', side: 'home', updated_at: sent.updated_at })).status, 403)
+    const used = await call(users.scorer, 'POST', '/api/game-rosters/used', { game_number: '940006', side: 'home', season: sent.season, updated_at: sent.updated_at })
+    assert.equal(used.status, 200, used.text)
+    assert.deepEqual(used.json.data, { used: true })
+    const { rows: [row] } = await sql.query("SELECT players, staff, coach_signature, captain_signature, used_at, used_by FROM public.game_rosters WHERE game_number = '940006'")
+    assert.deepEqual([row.players, row.staff, row.coach_signature, row.captain_signature], [[], [], null, null])
+    assert.ok(row.used_at)
+    assert.equal(row.used_by, users.scorer.id)
+    // scorers no longer get it (the game is still covered, so tablets drop their copy)
+    const after = await call(users.scorer, 'GET', '/api/game-rosters')
+    assert.ok(!after.json.data.rosters.some((x) => x.game_number === '940006'))
+    assert.ok(after.json.data.games.some((g) => g.game_number === '940006'))
+    // the team sees who accepted it, when
+    const view = (await call(users.coach, 'GET', `/api/team/${h1.id}/roster?game=940006`)).json.data.roster
+    assert.equal(view.players.length, 0)
+    assert.equal(view.used_by_name, 'scorer Test')
+    const g = (await call(users.coach, 'GET', `/api/team/${h1.id}/games`)).json.data.games.find((x) => x.game_number === '940006')
+    assert.ok(g.roster.used_at)
+    // idempotent
+    assert.equal((await call(users.scorer, 'POST', '/api/game-rosters/used', { game_number: '940006', side: 'home', updated_at: sent.updated_at })).json.data.already, true)
+    // a new version is a fresh roster again
+    const again = await call(users.coach, 'PUT', `/api/team/${h1.id}/roster?game=940006`, { players: [player(2, 'B')], staff: [] })
+    assert.equal(again.json.data.roster.used_at, null)
+    assert.ok((await call(users.scorer, 'GET', '/api/game-rosters')).json.data.rosters.some((x) => x.game_number === '940006'))
+    assert.equal((await call(users.scorer, 'POST', '/api/game-rosters/used', { game_number: 'x', side: 'home', updated_at: sent.updated_at })).status, 400)
+  })
+
+  it('/api/me gives an admin every team of every club', async () => {
+    const me = (await call(users.admin, 'GET', '/api/me')).json.data
+    assert.deepEqual(me.managedTeams.map((t) => [t.club_name, t.name, t.via]), [
+      ['KSC Wiedikon', 'KSC Wiedikon D2', 'admin'], ['KSC Wiedikon', 'KSC Wiedikon H1', 'admin'],
+      ['VBC Other', 'VBC Other D1', 'admin'], ['VBC Other', 'VBC Other H1', 'admin']
+    ])
+    assert.equal((await call(users.admin, 'GET', `/api/team/${h1.id}/games`)).status, 200)
   })
 
   it('the squad: none yet, the first save makes the saved team in the league\'s competition, scorers load it', async () => {
@@ -266,7 +320,7 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
     assert.ok(rows.some((x) => x.action === 'team.managers' && x.details.removed === true))
   })
 
-  it('a team manager deletes a sent roster before kick-off', async () => {
+  it('a team manager deletes a sent roster', async () => {
     const r = await call(users.clubmgr, 'DELETE', `/api/team/${h1.id}/roster?game=940002`)
     assert.equal(r.status, 200, r.text)
     const o = await call(users.otherscorer, 'GET', '/api/game-rosters')

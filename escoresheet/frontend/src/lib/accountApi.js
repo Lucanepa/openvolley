@@ -190,8 +190,9 @@ export const teamApi = {
   roster(teamId, game) {
     return apiRequest('GET', `/api/team/${enc(teamId)}/roster?game=${enc(game)}`)
   },
-  putRoster(teamId, game, { players, staff }) {
-    return apiRequest('PUT', `/api/team/${enc(teamId)}/roster?game=${enc(game)}`, { players, staff })
+  /** { players, staff, coach_signature?, captain_signature? } (signed ahead if they want to) */
+  putRoster(teamId, game, { players, staff, coach_signature = null, captain_signature = null }) {
+    return apiRequest('PUT', `/api/team/${enc(teamId)}/roster?game=${enc(game)}`, { players, staff, coach_signature, captain_signature })
   },
   deleteRoster(teamId, game) {
     return apiRequest('DELETE', `/api/team/${enc(teamId)}/roster?game=${enc(game)}`)
@@ -203,6 +204,14 @@ export const teamApi = {
  * games, which the scoring tablet keeps (db/gameRosters.js).
  * -> { fetched_at, games: [{ game_number, season }], rosters: [...] }
  */
+/**
+ * POST /api/game-rosters/used: this version was accepted in Match Setup, the
+ * server deletes its content (owner 2026-11-08). -> { used } or { used: false, reason }
+ */
+export function markGameRosterUsed({ game_number, side, season, updated_at }) {
+  return apiRequest('POST', '/api/game-rosters/used', { game_number, side, season, updated_at })
+}
+
 export function fetchGameRosters({ games, timeoutMs } = {}) {
   const path = games?.length ? `/api/game-rosters?games=${games.map(enc).join(',')}` : '/api/game-rosters'
   return apiRequest('GET', path, undefined, timeoutMs ? { timeoutMs } : undefined)
@@ -437,7 +446,6 @@ export function errorKeyOf(error, { context } = {}) {
     case 'OV_FORBIDDEN': return 'manage.errors.forbidden'
     case 'OV_SCORESHEET_NOT_FOUND': return 'manage.scoresheets.noPdf'
     // db/023: a team's game roster
-    case 'OV_ROSTER_LOCKED': return 'manage.myTeams.locked'
     case 'OV_GAME_NOT_YOURS': return 'manage.myTeams.notYourGame'
     default:
       if (error.status === 401 || error.status === 403) return 'manage.errors.forbidden'

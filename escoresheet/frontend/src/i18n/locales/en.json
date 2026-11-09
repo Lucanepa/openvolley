@@ -3306,18 +3306,15 @@
       "squad": "Players {{season}}",
       "squadHint": "Everyone who may play this season, with numbers and dates of birth. Scorers can also load this team in the match setup.",
       "games": "Games",
-      "gamesHint": "Prepare the roster of each game: tick who plays. You can change it until the game starts.",
+      "gamesHint": "Prepare the roster of each game: tick who plays. You can change it at any time.",
       "noGames": "No games of this team in the schedule from today on.",
       "vs": "vs",
       "at": "at",
       "home": "Home",
       "away": "Away",
       "notSent": "Not sent",
-      "started": "Started",
-      "view": "View",
       "edit": "Edit roster",
       "prepare": "Prepare roster",
-      "locked": "The game has started. Its roster can no longer be changed here; changes go through the scorer.",
       "notYourGame": "This game is not one of your team's games in the schedule.",
       "sentBy": "Sent {{when}} by {{name}}",
       "players": "Players",
@@ -3337,7 +3334,7 @@
       "deleteTitle": "Delete this game's roster?",
       "deleteBody": "The scorer's tablet drops it the next time it is online.",
       "deleted": "Roster deleted",
-      "signHint": "No signatures here: the coach and the captain sign in the hall, at the coin toss.",
+      "signHint": "Optional: the coach and the captain can sign here if they want. Otherwise they sign in the hall, at the coin toss.",
       "problems": {
         "tooMany": "At most {{max}} players per game.",
         "number": "{{name}} needs a shirt number.",
@@ -3348,7 +3345,24 @@
         "tooManyStaff": "At most {{max}} team officials."
       },
       "sent_one": "Sent: {{count}} player, {{when}}",
-      "sent_other": "Sent: {{count}} players, {{when}}"
+      "sent_other": "Sent: {{count}} players, {{when}}",
+      "accepted": "Accepted by the scorer {{when}}",
+      "acceptedBody": "The scorer ({{name}}) accepted the roster {{when}}; it was then deleted here. You can send a new one.",
+      "signedChip": "Signed",
+      "sig": {
+        "title": "Signatures (optional)",
+        "coach": "Coach",
+        "captain": "Captain",
+        "sign": "Sign",
+        "again": "Sign again",
+        "clear": "Remove",
+        "signed": "Signature",
+        "stale": "The roster changed after signing. Sign again, or send it without signatures.",
+        "noCoach": "Tick a coach first",
+        "noCaptain": "Mark a captain first",
+        "padCoach": "Coach signature: {{name}}",
+        "padCaptain": "Captain signature: {{name}}"
+      }
     },
     "clubTeams": {
       "title": "Teams",
@@ -4796,7 +4810,7 @@
   "sentRoster": {
     "title": "Roster sent by {{team}}",
     "meta": "{{players}} · {{officials}} · {{when}} · {{name}}",
-    "use": "Use it",
+    "use": "Accept",
     "preview": "Show",
     "hidePreview": "Hide",
     "notNow": "Not now",
@@ -4805,6 +4819,12 @@
     "players_one": "{{count}} player",
     "players_other": "{{count}} players",
     "officials_one": "{{count}} official",
-    "officials_other": "{{count}} officials"
+    "officials_other": "{{count}} officials",
+    "hintSigned": "Check it with the coach. The coach and the captain signed ahead; their signatures come with it.",
+    "signed": {
+      "both": "Signed ahead by the coach and the captain",
+      "coach": "Signed ahead by the coach",
+      "captain": "Signed ahead by the captain"
+    }
   }
 }

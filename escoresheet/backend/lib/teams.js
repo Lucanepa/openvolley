@@ -10,7 +10,7 @@
  *   putSquad({ actorId, teamId, body })         { players, staff }: creates the saved team when needed
  *   games({ teamId })                           the team's games from today, each with its roster summary
  *   getRoster({ teamId, game })                 the team's roster of game `game`, or null
- *   putRoster({ actorId, teamId, game, body })  { players, staff }, until kick-off
+ *   putRoster({ actorId, teamId, game, body })  { players, staff, coach_signature?, captain_signature? }, any time
  *   deleteRoster({ actorId, teamId, game })
  * Club managers of the club (and admins):
  *   clubTeams({ clubId })                       the club's teams with their managers
@@ -18,15 +18,19 @@
  *   removeManager({ actorId, clubId, teamId, userId })
  * Scorers (indoor canReadTeams, the read right of the saved teams):
  *   scorerRosters({ userId, games })            the sent rosters the scoring tablet keeps
+ *   markUsed({ userId, body })                  accepted in Match Setup: the content is deleted
  * Everyone else (lib/accounts.js, lib/manageApi.js):
- *   managedTeamsOf(client, userId)              [{ id, name, club_id, club_name, via }] (/api/me)
+ *   managedTeamsOf(client, userId, { all })     [{ id, name, club_id, club_name, via }] (/api/me; all: admins)
  *   mayManage({ userId, access, teamId })       may the account act for the team?
  *   teamOfClub(clubId, teamId)                  is the team one of the club's?
  *
  * Personal data (names, dates of birth, licence numbers): served only through
  * these routes, never on the /api/db allowlist, never anonymous; the audit
- * keeps game numbers, sides and counts only. A sent roster is deleted 14 days
- * after its game (sweep()).
+ * keeps game numbers, sides and counts only. Owner 2026-11-08: a sent roster
+ * has no lock (the team may change it at any time) and its content is deleted
+ * as soon as a scorer accepts it (markUsed: the row stays without personal
+ * data, so the team sees it was accepted); every row goes 14 days after its
+ * game (sweep()).
  *
  * Every answer is the { status, body } shape of lib/accounts.js; nothing
  * throws. A database without db/023 answers "no teams" to the reads that
@@ -62,7 +66,10 @@ const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArr
 const key = (s) => String(s ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
 
 export const NOT_YOUR_GAME = () => fail(404, 'OV_GAME_NOT_YOURS', 'This game is not one of the team\'s games in the schedule')
-export const ROSTER_LOCKED = () => fail(409, 'OV_ROSTER_LOCKED', 'The game has started: its roster can no longer be changed here')
+// A signature made ahead: the pad's PNG data URL (db/023 CHECK)
+export const SIGNATURE_MAX_LENGTH = 200000
+const SIGNATURE_PREFIX = 'data:image/png;base64,'
+const SIGNATURE_RE = /^data:image\/png;base64,[A-Za-z0-9+/]+=*$/
 
 /** '2026/27' for season year 2026 (the saved teams' season label). */
 export const seasonLabel = (year) => `${year}/${String((year + 1) % 100).padStart(2, '0')}`
@@ -144,12 +151,28 @@ export function validateGameRoster (body) {
     if (roles.has(v.staff[i].role)) return { error: invalid(`staff[${i}].role: ${v.staff[i].role} is there twice`) }
     roles.add(v.staff[i].role)
   }
+  // Signed ahead if they want to (owner 2026-11-08): the coach's needs a Coach,
+  // the captain's a captain; absent or null = not signed
+  const signatures = {}
+  for (const [k, needs, ok] of [
+    ['coach_signature', 'a Coach in staff', v.staff.some((x) => x.role === 'Coach')],
+    ['captain_signature', 'a captain in players', v.players.some((x) => x.is_captain)]
+  ]) {
+    const raw = body[k]
+    if (raw == null || raw === '') { signatures[k] = null; continue }
+    if (typeof raw !== 'string' || !raw.startsWith(SIGNATURE_PREFIX) || raw.length > SIGNATURE_MAX_LENGTH || !SIGNATURE_RE.test(raw)) {
+      return { error: invalid(`${k}: a PNG data URL of at most ${SIGNATURE_MAX_LENGTH} characters, or null`) }
+    }
+    if (!ok) return { error: invalid(`${k}: needs ${needs}`) }
+    signatures[k] = raw
+  }
   const person = (p) => ({ first_name: p.first_name, last_name: p.last_name, dob: p.dob, license_number: p.license_number })
   return {
     players: v.players.map((p) => ({ number: p.number, ...person(p), is_libero: p.is_libero, is_captain: p.is_captain })),
     staff: v.staff
       .map((s) => ({ role: s.role, ...person(s) }))
-      .sort((a, b) => STAFF_ROLES.indexOf(a.role) - STAFF_ROLES.indexOf(b.role))
+      .sort((a, b) => STAFF_ROLES.indexOf(a.role) - STAFF_ROLES.indexOf(b.role)),
+    ...signatures
   }
 }
 
@@ -229,9 +252,20 @@ export function createTeams ({ pool, audit, savedTeams, clubs, logger = console,
    * the clubs it manages, [{ id, name, club_id, club_name, via: 'team' | 'club' }].
    * [] without db/023.
    */
-  async function managedTeamsOf (client, userId) {
+  async function managedTeamsOf (client, userId, { all = false } = {}) {
     if (!isUuid(userId)) return []
     try {
+      // Admins see every team of every club (owner 2026-11-08), as 'admin'
+      // unless they manage it themselves
+      if (all) {
+        const own = new Map((await managedTeamsOf(client, userId)).map((t) => [t.id, t.via]))
+        const { rows } = await (client || pool).query(
+          `SELECT ct.id, ct.team_name AS name, c.id AS club_id, c.name AS club_name
+             FROM public.club_teams ct JOIN public.clubs c ON c.id = ct.club_id`)
+        return rows
+          .map((r) => ({ id: r.id, name: r.name, club_id: r.club_id, club_name: r.club_name, via: own.get(r.id) || 'admin' }))
+          .sort((a, b) => a.club_name.localeCompare(b.club_name) || a.name.localeCompare(b.name))
+      }
       const { rows } = await (client || pool).query(
         `SELECT DISTINCT ON (ct.id) ct.id, ct.team_name AS name, c.id AS club_id, c.name AS club_name, x.via
            FROM (SELECT tm.team_id, 'team' AS via, 2 AS rank FROM public.team_managers tm WHERE tm.user_id = $1
@@ -311,23 +345,35 @@ export function createTeams ({ pool, audit, savedTeams, clubs, logger = console,
   const sideOf = (game, teamName) => (key(game.team_home) === key(teamName) ? 'home' : 'away')
 
   /** The roster rows of these (game_number, season, side) keys: Map 'n|season|side' -> row. */
-  async function rostersFor (db, keys, { full = false } = {}) {
+  async function rostersFor (db, keys, { full = false, unused = false } = {}) {
     const out = new Map()
     if (!keys.length) return out
     const { rows } = await db.query(
-      `SELECT r.game_number, r.season, r.side, r.team_name, r.kickoff, r.updated_at,
+      `SELECT r.game_number, r.season, r.side, r.team_name, r.kickoff, r.updated_at, r.used_at,
               jsonb_array_length(r.players) AS player_count, jsonb_array_length(r.staff) AS staff_count,
-              ${full ? 'r.players, r.staff,' : ''} ${nameSql('p')} AS updated_by_name
+              r.coach_signature IS NOT NULL AS coach_signed, r.captain_signature IS NOT NULL AS captain_signed,
+              ${full ? 'r.players, r.staff, r.coach_signature, r.captain_signature,' : ''} ${nameSql('p')} AS updated_by_name,
+              ${nameSql('pu')} AS used_by_name
          FROM public.game_rosters r
          JOIN unnest($1::text[], $2::int[], $3::text[]) AS k(game_number, season, side)
            ON k.game_number = r.game_number AND k.season = r.season AND k.side = r.side
-         LEFT JOIN public.profiles p ON p.user_id = r.updated_by`,
+         LEFT JOIN public.profiles p ON p.user_id = r.updated_by
+         LEFT JOIN public.profiles pu ON pu.user_id = r.used_by
+        ${unused ? 'WHERE r.used_at IS NULL' : ''}`,
       [keys.map((k) => k.game_number), keys.map((k) => k.season), keys.map((k) => k.side)])
     for (const r of rows) out.set(`${r.game_number}|${r.season}|${r.side}`, r)
     return out
   }
+  const usedOut = (r) => (r.used_at ? { used_at: iso(r.used_at), used_by_name: r.used_by_name ?? null } : { used_at: null, used_by_name: null })
   const summaryOut = (r) => (r
-    ? { players: r.player_count, staff: r.staff_count, updated_at: iso(r.updated_at), updated_by_name: r.updated_by_name ?? null }
+    ? {
+        players: r.player_count,
+        staff: r.staff_count,
+        signed: { coach: r.coach_signed === true, captain: r.captain_signed === true },
+        updated_at: iso(r.updated_at),
+        updated_by_name: r.updated_by_name ?? null,
+        ...usedOut(r)
+      }
     : null)
 
   /** GET /api/team/:teamId/games: the team's games from today, each with its side and roster summary. */
@@ -352,15 +398,15 @@ export function createTeams ({ pool, audit, savedTeams, clubs, logger = console,
           team_home: g.team_home ?? null,
           team_away: g.team_away ?? null,
           side,
-          locked: kickoffPassed(g.datetime, now),
+          started: kickoffPassed(g.datetime, now),
           roster: summaryOut(rosters.get(`${g.game_number}|${season}|${side}`))
         }))
       })
     })
   }
 
-  /** The team's game `game` (today or later, or earlier for a read): { team, game, side, season } or an answer. */
-  async function gameOf (db, teamId, game, { forWrite = false } = {}) {
+  /** The team's game `game`: { team, game, side, season, started } or an answer. No lock (owner 2026-11-08). */
+  async function gameOf (db, teamId, game) {
     const team = await teamRow(db, teamId)
     if (!team) return { answer: notFound() }
     const n = typeof game === 'string' ? game.trim() : (Number.isInteger(game) ? String(game) : '')
@@ -373,15 +419,22 @@ export function createTeams ({ pool, audit, savedTeams, clubs, logger = console,
     const g = rows[0]
     if (!g) return { answer: NOT_YOUR_GAME() }
     const now = clock()
-    if (forWrite && kickoffPassed(g.datetime, now)) return { answer: ROSTER_LOCKED() }
-    return { team, game: g, side: sideOf(g, team.name), season: seasonOf(g.datetime) ?? seasonOf(now), locked: kickoffPassed(g.datetime, now) }
+    return { team, game: g, side: sideOf(g, team.name), season: seasonOf(g.datetime) ?? seasonOf(now), started: kickoffPassed(g.datetime, now) }
   }
   const gameOut = (g) => ({
     game_number: String(g.game_number), datetime: g.datetime ?? null, league: g.league ?? null, hall: g.hall ?? null,
     city: g.city ?? null, team_home: g.team_home ?? null, team_away: g.team_away ?? null
   })
   const rosterOut = (r) => (r
-    ? { players: r.players ?? [], staff: r.staff ?? [], updated_at: iso(r.updated_at), updated_by_name: r.updated_by_name ?? null }
+    ? {
+        players: r.players ?? [],
+        staff: r.staff ?? [],
+        coach_signature: r.coach_signature ?? null,
+        captain_signature: r.captain_signature ?? null,
+        updated_at: iso(r.updated_at),
+        updated_by_name: r.updated_by_name ?? null,
+        ...usedOut(r)
+      }
     : null)
 
   /** GET /api/team/:teamId/roster?game=<n> */
@@ -391,36 +444,46 @@ export function createTeams ({ pool, audit, savedTeams, clubs, logger = console,
       if (x.answer) return x.answer
       const rosters = await rostersFor(pool, [{ game_number: String(x.game.game_number), season: x.season, side: x.side }], { full: true })
       const r = rosters.get(`${x.game.game_number}|${x.season}|${x.side}`)
-      return ok({ team: x.team, game: gameOut(x.game), side: x.side, locked: x.locked, roster: rosterOut(r) })
+      return ok({ team: x.team, game: gameOut(x.game), side: x.side, started: x.started, roster: rosterOut(r) })
     })
   }
 
-  /** PUT /api/team/:teamId/roster?game=<n> { players, staff }: until kick-off. */
+  /**
+   * PUT /api/team/:teamId/roster?game=<n> { players, staff, coach_signature?,
+   * captain_signature? }: at any time (no lock). A new version is offered to
+   * the scorer again, also after an earlier one was accepted.
+   */
   async function putRoster ({ actorId, teamId, game, body } = {}) {
     const v = validateGameRoster(body)
     if (v.error) return v.error
     const out = await guarded('put-roster', () => withTx(async (client) => {
-      const x = await gameOf(client, teamId, game, { forWrite: true })
+      const x = await gameOf(client, teamId, game)
       if (x.answer) throw abort(x.answer)
       const n = String(x.game.game_number)
       await client.query(
-        `INSERT INTO public.game_rosters (game_number, season, side, team_name, players, staff, kickoff, updated_by)
-         VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8)
+        `INSERT INTO public.game_rosters (game_number, season, side, team_name, players, staff, coach_signature, captain_signature, kickoff, updated_by)
+         VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9, $10)
          ON CONFLICT (game_number, season, side) DO UPDATE SET team_name = EXCLUDED.team_name, players = EXCLUDED.players,
-           staff = EXCLUDED.staff, kickoff = EXCLUDED.kickoff, updated_by = EXCLUDED.updated_by, updated_at = now()`,
-        [n, x.season, x.side, x.team.name, JSON.stringify(v.players), JSON.stringify(v.staff), x.game.datetime ?? null, isUuid(actorId) ? actorId : null])
-      await audit(client, { actorId, action: 'team.roster', details: { team_id: x.team.id, game_number: n, side: x.side, players: v.players.length, staff: v.staff.length } })
+           staff = EXCLUDED.staff, coach_signature = EXCLUDED.coach_signature, captain_signature = EXCLUDED.captain_signature,
+           kickoff = EXCLUDED.kickoff, updated_by = EXCLUDED.updated_by, updated_at = now(), used_at = NULL, used_by = NULL`,
+        [n, x.season, x.side, x.team.name, JSON.stringify(v.players), JSON.stringify(v.staff), v.coach_signature, v.captain_signature,
+          x.game.datetime ?? null, isUuid(actorId) ? actorId : null])
+      await audit(client, {
+        actorId,
+        action: 'team.roster',
+        details: { team_id: x.team.id, game_number: n, side: x.side, players: v.players.length, staff: v.staff.length, signed: { coach: !!v.coach_signature, captain: !!v.captain_signature } }
+      })
       const rosters = await rostersFor(client, [{ game_number: n, season: x.season, side: x.side }], { full: true })
-      return ok({ team: x.team, game: gameOut(x.game), side: x.side, locked: false, roster: rosterOut(rosters.get(`${n}|${x.season}|${x.side}`)) })
+      return ok({ team: x.team, game: gameOut(x.game), side: x.side, started: x.started, roster: rosterOut(rosters.get(`${n}|${x.season}|${x.side}`)) })
     }))
     sweep().catch(() => {})
     return out
   }
 
-  /** DELETE /api/team/:teamId/roster?game=<n>: until kick-off. */
+  /** DELETE /api/team/:teamId/roster?game=<n> */
   async function deleteRoster ({ actorId, teamId, game } = {}) {
     return guarded('delete-roster', () => withTx(async (client) => {
-      const x = await gameOf(client, teamId, game, { forWrite: true })
+      const x = await gameOf(client, teamId, game)
       if (x.answer) throw abort(x.answer)
       const n = String(x.game.game_number)
       const { rowCount } = await client.query(
@@ -592,7 +655,7 @@ export function createTeams ({ pool, audit, savedTeams, clubs, logger = console,
         const season = seasonOf(g.datetime) ?? seasonOf(now)
         for (const side of ['home', 'away']) keys.push({ game_number: String(g.game_number), season, side })
       }
-      const rosters = await rostersFor(pool, keys, { full: true })
+      const rosters = await rostersFor(pool, keys, { full: true, unused: true })
       return ok({
         fetched_at: now.toISOString(),
         games: covered.map((g) => ({ game_number: String(g.game_number), season: seasonOf(g.datetime) ?? seasonOf(now) })),
@@ -604,6 +667,8 @@ export function createTeams ({ pool, audit, savedTeams, clubs, logger = console,
           kickoff: r.kickoff ?? null,
           players: r.players ?? [],
           staff: r.staff ?? [],
+          coach_signature: r.coach_signature ?? null,
+          captain_signature: r.captain_signature ?? null,
           updated_at: iso(r.updated_at),
           updated_by_name: r.updated_by_name ?? null
         }))
@@ -613,9 +678,46 @@ export function createTeams ({ pool, audit, savedTeams, clubs, logger = console,
     return out
   }
 
+  /**
+   * POST /api/game-rosters/used { game_number, side, season?, updated_at }: a
+   * scorer accepted this version in Match Setup (owner 2026-11-08: deleted as
+   * soon as it is used). Its names, dates of birth, licence numbers and
+   * signatures are deleted at once; the row stays without them (used_at,
+   * used_by) for the team's "Accepted". A newer version (the team changed it
+   * since) is left alone: the tablet gets it offered again. Idempotent:
+   * { used: true } or { used: false, reason: 'changed' | 'gone' }.
+   */
+  async function markUsed ({ userId, body } = {}) {
+    if (!isUuid(userId)) return fail(401, 'invalid_token', 'Not signed in')
+    if (!isPlainObject(body)) return invalid('body: must be an object')
+    const n = typeof body.game_number === 'string' ? body.game_number.trim() : (Number.isInteger(body.game_number) ? String(body.game_number) : '')
+    if (!GAME_RE.test(n)) return invalid('game_number: a game number')
+    if (body.side !== 'home' && body.side !== 'away') return invalid('side: home or away')
+    const season = body.season == null ? null : Number(body.season)
+    if (season !== null && !(Number.isInteger(season) && season >= 2000 && season <= 2100)) return invalid('season: a year')
+    const version = typeof body.updated_at === 'string' ? new Date(body.updated_at) : null
+    if (!version || Number.isNaN(version.getTime())) return invalid('updated_at: the version accepted (ISO date-time)')
+    return guarded('mark-used', () => withTx(async (client) => {
+      const { rows } = await client.query(
+        `SELECT season, team_name, used_at, date_trunc('milliseconds', updated_at) = date_trunc('milliseconds', $4::timestamptz) AS same
+           FROM public.game_rosters WHERE game_number = $1 AND side = $2 AND ($3::int IS NULL OR season = $3)
+          ORDER BY season DESC LIMIT 1 FOR UPDATE`, [n, body.side, season, version.toISOString()])
+      const r = rows[0]
+      if (!r) return ok({ used: false, reason: 'gone' })
+      if (!r.same) return ok({ used: false, reason: 'changed' })
+      if (r.used_at) return ok({ used: true, already: true })
+      await client.query(
+        `UPDATE public.game_rosters SET players = '[]', staff = '[]', coach_signature = NULL, captain_signature = NULL,
+                used_at = now(), used_by = $4
+          WHERE game_number = $1 AND side = $2 AND season = $3`, [n, body.side, r.season, userId])
+      await audit(client, { actorId: userId, action: 'team.roster', details: { game_number: n, side: body.side, used: true } })
+      return ok({ used: true })
+    }))
+  }
+
   return {
     managedTeamsOf, mayManage, teamOfClub,
     teamDetail, games, getRoster, putRoster, deleteRoster, squad, putSquad,
-    clubTeams, removeManager, scorerRosters, sweep
+    clubTeams, removeManager, scorerRosters, markUsed, sweep
   }
 }

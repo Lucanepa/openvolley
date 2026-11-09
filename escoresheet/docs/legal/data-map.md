@@ -177,14 +177,14 @@ the account (4.5a).
 
 | | |
 |---|---|
-| **Data** | `public.team_managers`: which account manages which club team (`club_teams`, now with an id), who added it and when. `public.invite_codes.team_id`: the team of a team link. `public.game_rosters`: one team's roster of one game, sent before the match exists: **players (shirt number, first and last name, date of birth, licence number, captain / libero) and team officials (role, name, date of birth, licence number)**, the game's kick-off, who sent it and when. The team's players of the season go to the saved teams (4.9) |
+| **Data** | `public.team_managers`: which account manages which club team (`club_teams`, now with an id), who added it and when. `public.invite_codes.team_id`: the team of a team link. `public.game_rosters`: one team's roster of one game, sent before the match exists: **players (shirt number, first and last name, date of birth, licence number, captain / libero) and team officials (role, name, date of birth, licence number)**, **optional coach and captain signatures made ahead (PNG images)**, the game's kick-off, who sent it and when, and who accepted it in Match Setup and when. The team's players of the season go to the saved teams (4.9) |
 | **Whose** | Team manager accounts (often the coach); the players and team officials of the team (**often minors**), entered by the team manager, not by themselves |
 | **Purpose** | A team prepares its roster before the game (owner decision 2026-11-08); the scorer's tablet downloads it while online and offers it in Match Setup, offline first (`docs/team-managers-spec.md`) |
 | **Basis** | (b)/(f) keeping the official scoresheet; the same people and fields the scoresheet carries |
 | **Stored** | VM; backups. **On scorer devices**: IndexedDB `game_rosters` (4.11) |
-| **Who sees it** | The team's managers, the managers of its club, admins (`/api/team/:id/...`); indoor accounts with the saved-teams read right (approved scorers, competition managers): the rosters of the coming home games of their clubs, and of a game they name (`GET /api/game-rosters`). Never public, never on `/api/db` |
-| **Retention as built** | `game_rosters`: **deleted 14 days after the game** (`lib/teams.js` sweep, at most hourly, with every write and every scorer read); the match record holds the roster from Match Setup on. `team_managers` rows go with the account, the team and the club (FK cascade). Device copies: cleared at sign-out and account switch, dropped 36 h after kick-off |
-| **Audit** | `team.roster` (team id, game number, side, number of players and officials: never names), `team.squad` (team and saved team id, counts), `team.managers` (removal), `invite.redeem` / `invite.create` with `team_id` (4.6) |
+| **Who sees it** | The team's managers, the managers of its club, admins (all teams; `/api/team/:id/...`); indoor accounts with the saved-teams read right (approved scorers, competition managers): the rosters of the coming home games of their clubs, and of a game they name (`GET /api/game-rosters`). Never public, never on `/api/db` |
+| **Retention as built** | `game_rosters`: **the content (players, officials, signatures) is deleted as soon as a scorer accepts it** (`POST /api/game-rosters/used`, sent by the tablet at once or when it is next online); the row without personal data (game, team name, who accepted it, when) and any roster nobody accepts go **14 days after the game** (`lib/teams.js` sweep, at most hourly, with every write and every scorer read). The match record holds the roster from Match Setup on. `team_managers` rows go with the account, the team and the club (FK cascade). Device copies: removed once the server was told of the acceptance, cleared at sign-out and account switch, dropped 36 h after kick-off |
+| **Audit** | `team.roster` (team id, game number, side, number of players and officials, whether signed, `used: true` when accepted: never names or images), `team.squad` (team and saved team id, counts), `team.managers` (removal), `invite.redeem` / `invite.create` with `team_id` (4.6) |
 
 ### 4.6 Audit log
 
@@ -361,7 +361,7 @@ PocketBase (legacy relay backup), Supabase (left in 2026-10).
 | Interaction (click) log (device only) | 30 days / 50,000 rows |
 | Match records (cloud) | Indefinitely; closed matches read-only |
 | Saved teams, beach tournaments | Until deleted by a manager (kept after the creator's account is deleted) |
-| Rosters sent ahead (`game_rosters`) | 14 days after the game |
+| Rosters sent ahead (`game_rosters`) | Content: until accepted by a scorer; row: 14 days after the game |
 | Referee directory | Until an admin deletes a row |
 | `svrz_games` | Indefinitely (overwritten per game number) |
 | `backup/…/backups/` files | 30 days |

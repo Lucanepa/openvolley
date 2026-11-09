@@ -47,7 +47,7 @@ import { rememberedRosters } from '../db/rememberedPlayers'
 import CloudBlockNotice from './CloudBlockNotice'
 import { savedTeamToRoster, findSavedTeamSuggestions } from '../domain/savedTeams'
 import { getSavedTeams, refreshSavedTeams } from '../db/savedTeams'
-import { offeredSentRosters, refreshGameRosters, rowToPendingRoster } from '../db/gameRosters'
+import { markGameRosterAccepted, offeredSentRosters, refreshGameRosters, rowToPendingRoster } from '../db/gameRosters'
 import SentRosterCard from './SentRosterCard'
 import { officialCheck, OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS } from '../lib/accountApi'
 import { openRestore } from '../utils/manageNav'
@@ -2925,8 +2925,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
   // db/023: a sent roster becomes the side's roster and team officials, as an
   // accepted remote roster does (after the usual question when the side has
-  // players already). From the main view the stored players follow; in the
-  // roster editor only its Save writes them.
+  // players already), with the coach's and captain's signatures when they
+  // signed ahead. From the main view the stored players follow; in the
+  // roster editor only its Save writes them. Accepted = used: the server
+  // deletes its copy (owner 2026-11-08), now or once the tablet is online.
   const applySentRoster = async (side) => {
     const row = sentRosters[side]
     if (!row) return
@@ -2943,12 +2945,23 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (side === 'home') {
       setHomeRoster(roster)
       setBenchHome(bench)
+      if (pending.coachSignature) setHomeCoachSignature(pending.coachSignature)
+      if (pending.captainSignature) setHomeCaptainSignature(pending.captainSignature)
     } else {
       setAwayRoster(roster)
       setBenchAway(bench)
+      if (pending.coachSignature) setAwayCoachSignature(pending.coachSignature)
+      if (pending.captainSignature) setAwayCaptainSignature(pending.captainSignature)
     }
     const teamId = side === 'home' ? match?.homeTeamId : match?.awayTeamId
     const inRosterEditor = currentView === 'home' || currentView === 'away'
+    // signed ahead: saved at once, as a pad's signature is (and synced)
+    if (matchId) {
+      for (const [role, image] of [['coach', pending.coachSignature], ['captain', pending.captainSignature]]) {
+        const field = PRE_MATCH_SIGNATURE_FIELD[`${side}-${role}`]
+        if (image && field) await saveMatchSignature(db, matchId, field, image)
+      }
+    }
     if (matchId) {
       try {
         if (teamId && !inRosterEditor) {
@@ -2977,6 +2990,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         console.warn('[MatchSetup] Writing the sent roster failed:', err?.message)
       }
     }
+    markGameRosterAccepted(row)
     toast.success(t('sentRoster.used', { count: roster.length }))
   }
   const dismissSentRoster = async (side) => {

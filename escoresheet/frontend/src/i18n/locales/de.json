@@ -3284,18 +3284,15 @@
       "squad": "Kader {{season}}",
       "squadHint": "Alle, die diese Saison spielen dürfen, mit Nummern und Geburtsdaten. Schreiber können dieses Team auch in der Spieleinrichtung laden.",
       "games": "Spiele",
-      "gamesHint": "Stelle den Kader jedes Spiels zusammen: Hake an, wer spielt. Du kannst ihn bis zum Spielbeginn ändern.",
+      "gamesHint": "Stelle den Kader jedes Spiels zusammen: Hake an, wer spielt. Du kannst ihn jederzeit ändern.",
       "noGames": "Ab heute keine Spiele dieses Teams im Spielplan.",
       "vs": "gegen",
       "at": "bei",
       "home": "Heim",
       "away": "Auswärts",
       "notSent": "Nicht geschickt",
-      "started": "Begonnen",
-      "view": "Ansehen",
       "edit": "Kader bearbeiten",
       "prepare": "Kader zusammenstellen",
-      "locked": "Das Spiel hat begonnen. Sein Kader lässt sich hier nicht mehr ändern; Änderungen gehen über den Schreiber.",
       "notYourGame": "Dieses Spiel ist kein Spiel deines Teams im Spielplan.",
       "sentBy": "Geschickt {{when}} von {{name}}",
       "players": "Spieler",
@@ -3315,7 +3312,7 @@
       "deleteTitle": "Kader dieses Spiels löschen?",
       "deleteBody": "Das Tablet des Schreibers entfernt ihn, sobald es wieder online ist.",
       "deleted": "Kader gelöscht",
-      "signHint": "Hier wird nicht unterschrieben: Trainer und Captain unterschreiben in der Halle, bei der Seitenwahl.",
+      "signHint": "Freiwillig: Trainer und Captain können hier unterschreiben, wenn sie wollen. Sonst unterschreiben sie in der Halle, bei der Seitenwahl.",
       "problems": {
         "tooMany": "Höchstens {{max}} Spieler pro Spiel.",
         "number": "{{name}} braucht eine Rückennummer.",
@@ -3326,7 +3323,24 @@
         "tooManyStaff": "Höchstens {{max}} Teamoffizielle."
       },
       "sent_one": "Geschickt: {{count}} Spieler, {{when}}",
-      "sent_other": "Geschickt: {{count}} Spieler, {{when}}"
+      "sent_other": "Geschickt: {{count}} Spieler, {{when}}",
+      "accepted": "Vom Schreiber akzeptiert {{when}}",
+      "acceptedBody": "Der Schreiber ({{name}}) hat den Kader {{when}} akzeptiert; danach wurde er hier gelöscht. Du kannst einen neuen schicken.",
+      "signedChip": "Unterschrieben",
+      "sig": {
+        "title": "Unterschriften (freiwillig)",
+        "coach": "Trainer",
+        "captain": "Captain",
+        "sign": "Unterschreiben",
+        "again": "Neu unterschreiben",
+        "clear": "Entfernen",
+        "signed": "Unterschrift",
+        "stale": "Der Kader hat sich nach dem Unterschreiben geändert. Unterschreibe neu oder schicke ihn ohne Unterschriften.",
+        "noCoach": "Hake zuerst einen Trainer an",
+        "noCaptain": "Bestimme zuerst einen Captain",
+        "padCoach": "Unterschrift Trainer: {{name}}",
+        "padCaptain": "Unterschrift Captain: {{name}}"
+      }
     },
     "clubTeams": {
       "title": "Teams",
@@ -4778,7 +4792,7 @@
   "sentRoster": {
     "title": "Kader von {{team}} geschickt",
     "meta": "{{players}} · {{officials}} · {{when}} · {{name}}",
-    "use": "Übernehmen",
+    "use": "Akzeptieren",
     "preview": "Anzeigen",
     "hidePreview": "Ausblenden",
     "notNow": "Nicht jetzt",
@@ -4787,6 +4801,12 @@
     "players_one": "{{count}} Spieler",
     "players_other": "{{count}} Spieler",
     "officials_one": "{{count}} Offizielle/r",
-    "officials_other": "{{count}} Offizielle"
+    "officials_other": "{{count}} Offizielle",
+    "hintSigned": "Prüfe ihn mit dem Trainer. Trainer und Captain haben im Voraus unterschrieben; ihre Unterschriften kommen mit.",
+    "signed": {
+      "both": "Von Trainer und Captain im Voraus unterschrieben",
+      "coach": "Vom Trainer im Voraus unterschrieben",
+      "captain": "Vom Captain im Voraus unterschrieben"
+    }
   }
 }

@@ -276,7 +276,7 @@ function manageFamilyOf(pathname) {
   if (pathname.startsWith('/api/club/')) return 'club'
   if (pathname === '/api/games/today') return 'games'
   if (pathname.startsWith('/api/team/')) return 'team'
-  if (pathname === '/api/game-rosters') return 'gameRosters'
+  if (pathname === '/api/game-rosters' || pathname.startsWith('/api/game-rosters/')) return 'gameRosters'
   if (pathname === '/api/settings') return 'settings'
   return null
 }

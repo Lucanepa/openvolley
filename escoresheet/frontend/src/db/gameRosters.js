@@ -4,13 +4,18 @@
  * downloads them whenever it is online (GET /api/game-rosters) and Match Setup
  * only ever reads this table, so a hall without internet still offers them.
  *
- * The rows hold personal data (names, DOBs, licence numbers): they are only
- * for the account that loaded them (row.userId) and are cleared on sign-out
- * and account switch (AuthContext), like the saved teams.
+ * The rows hold personal data (names, DOBs, licence numbers, signatures made
+ * ahead): they are only for the account that loaded them (row.userId) and are
+ * cleared on sign-out and account switch (AuthContext), like the saved teams.
+ *
+ * Accepted in Match Setup (owner 2026-11-08: deleted as soon as it is used):
+ * the row is marked `usedPending` at once, and the server is told
+ * (POST /api/game-rosters/used) now or as soon as the tablet is online again;
+ * then the device copy goes too.
  */
 
 import { db } from './db'
-import { fetchGameRosters } from '../lib/accountApi'
+import { fetchGameRosters, markGameRosterUsed } from '../lib/accountApi'
 import { accessFromRoles } from '../lib/access'
 import { isoToDisplayDob } from '../domain/savedTeams'
 import { currentUserId } from './savedTeams'
@@ -51,6 +56,8 @@ export function rosterToRow(r, userId) {
     kickoff: r.kickoff || null,
     players: Array.isArray(r.players) ? r.players : [],
     staff: Array.isArray(r.staff) ? r.staff : [],
+    coachSignature: r.coach_signature || null,
+    captainSignature: r.captain_signature || null,
     updatedAt: r.updated_at || null,
     updatedByName: r.updated_by_name || null,
     userId
@@ -87,6 +94,8 @@ export function rowToPendingRoster(row) {
   return {
     players,
     bench,
+    coachSignature: row?.coachSignature || null,
+    captainSignature: row?.captainSignature || null,
     source: 'team',
     teamName: row?.teamName || '',
     sentAt: row?.updatedAt || null,
@@ -106,7 +115,7 @@ export function offeredSentRosters(rows, match, userId) {
   const out = { home: null, away: null }
   if (!match || match.test || ROSTER_LOCKED_STATUSES.has(match.status)) return out
   for (const r of rows || []) {
-    if (!r || (r.side !== 'home' && r.side !== 'away') || (userId && r.userId !== userId)) continue
+    if (!r || r.usedPending || (r.side !== 'home' && r.side !== 'away') || (userId && r.userId !== userId)) continue
     const version = r.updatedAt || 'sent'
     if (match.sentRosterUsed?.[r.side] === version || match.sentRosterDismissed?.[r.side] === version) continue
     out[r.side] = r
@@ -127,10 +136,14 @@ export async function storeGameRosters(answer, userId) {
   await db.transaction('rw', db.game_rosters, async () => {
     // rows of another account never stay next to this one's
     await db.game_rosters.filter((r) => r.userId !== userId).delete()
+    // an accepted version waiting to tell the server is never brought back
+    // by a download made before that (a newer version replaces it)
+    const pending = new Map((await db.game_rosters.filter((r) => !!r.usedPending).toArray()).map((r) => [r.key, r.updatedAt]))
     if (covered.size) {
-      await db.game_rosters.where('gameNumber').anyOf([...covered]).filter((r) => !keep.has(r.key)).delete()
+      await db.game_rosters.where('gameNumber').anyOf([...covered]).filter((r) => !keep.has(r.key) && !r.usedPending).delete()
     }
-    if (rows.length) await db.game_rosters.bulkPut(rows)
+    const fresh = rows.filter((r) => !(pending.has(r.key) && pending.get(r.key) === r.updatedAt))
+    if (fresh.length) await db.game_rosters.bulkPut(fresh)
   })
   notify()
   return rows
@@ -172,6 +185,55 @@ export async function getGameRoster(gameNumber, side, { userId } = {}) {
 }
 
 /**
+ * Accepted in Match Setup: mark the row at once (never offered again) and
+ * tell the server now when online (flushUsedGameRosters), else later.
+ */
+export async function markGameRosterAccepted(row) {
+  if (!row?.key) return
+  try {
+    await db.game_rosters.update(row.key, { usedPending: true, usedAt: new Date().toISOString() })
+    notify()
+  } catch (e) {
+    console.warn('[gameRosters] mark accepted failed:', e?.message)
+  }
+  flushUsedGameRosters().catch(() => {})
+}
+
+/**
+ * Tell the server about every accepted roster still waiting; a row goes once
+ * the server answered (deleted, or a newer version is there: that one comes
+ * with the next download). Offline or a failed request: kept for next time.
+ * @returns {Promise<number>} rows sent
+ */
+export async function flushUsedGameRosters({ online } = {}) {
+  if (!(online ?? isOnline())) return 0
+  let sent = 0
+  let rows = []
+  try {
+    rows = await db.game_rosters.filter((r) => !!r.usedPending).toArray()
+  } catch {
+    return 0
+  }
+  for (const r of rows) {
+    try {
+      const res = await markGameRosterUsed({ game_number: r.gameNumber, side: r.side, season: r.season ?? undefined, updated_at: r.updatedAt })
+      if (res?.error) {
+        // a refusal that will not change (bad request, no right): drop it; a
+        // network or server error, or a session to renew (401): try again later
+        if (res.status >= 400 && res.status < 500 && ![401, 408, 429].includes(res.status)) await db.game_rosters.delete(r.key)
+        continue
+      }
+      await db.game_rosters.delete(r.key)
+      sent++
+    } catch (e) {
+      console.warn('[gameRosters] telling the server failed:', e?.message)
+    }
+  }
+  if (sent) notify()
+  return sent
+}
+
+/**
  * Download the sent rosters into the cache: the upcoming home games of the
  * account's clubs, or `games` (game numbers). Never throws; offline or
  * without the scoring role it leaves the cache as it is.
@@ -182,6 +244,9 @@ export async function refreshGameRosters({ access, userId, online, games, force 
   const acc = access || currentAccess()
   if (!uid || !acc.canReadTeams || acc.isPending) return 'skipped'
   if (!(online ?? isOnline())) return 'offline'
+  // accepted rosters first, every time (also when the download itself is
+  // skipped below), so the server deletes them as soon as there is a connection
+  await flushUsedGameRosters({ online: true })
   const list = Array.isArray(games) ? games.map((g) => String(g).trim()).filter((g) => /^[0-9]{1,12}$/.test(g)) : null
   if (!list && !force && Date.now() - lastFetch < MIN_GAP_MS) return 'skipped'
   if (!list) lastFetch = Date.now()
