@@ -8,7 +8,7 @@ Postgres on one Linux VM, reachable only through a Cloudflare Tunnel.
   kit command there needs `sudo` (`sudo docker compose --project-directory /opt/openvolley ...`).
   Operations: [RUNBOOK-hetzner.md](RUNBOOK-hetzner.md), from "Match-day rules" on.
 - **Before (Option A):** co-tenant on the Hetzner VM `lucanepa-prod` (`ssh hetzner`) next to
-  KSCW production. That VPS now belongs to the KSC Wiedikon club's own Hetzner account:
+  another production stack. That VPS now belongs to another owner:
   OpenVolley is the owner's private project and must **never be deployed there again**.
 - **Moving (Option B):** the same files on another host, no DNS change, downtime under
   15 minutes. Used for the move to lenovoserver; see [RUNBOOK-move-to-own-vm.md](RUNBOOK-move-to-own-vm.md).
@@ -109,17 +109,17 @@ refuses to `initdb` when a cluster has existed on the filesystem (`state/initial
 **Never `source` `.env`** into a shell: Compose prefers exported shell variables over `.env`,
 so later `up`/rollback commands in that shell would silently use the old values.
 
-## What touches KSCW (isolation on the shared VM)
+## What touches the other tenant (isolation on the shared VM)
 
 Written for the co-tenancy on `lucanepa-prod` (until 16.10.2026). The limits are the same on
-lenovoserver; the Coolify, Traefik and KSCW items refer to that old host.
+lenovoserver; the Coolify, Traefik and other-tenant items refer to that old host.
 
 Everything the kit does on `lucanepa-prod`, and nothing else:
 
 | Shared resource | What OpenVolley uses | Bound |
 |---|---|---|
 | Disk | `/var/lib/openvolley/{pg,storage}.img` (23 GB, allocated once), `/data/openvolley/backups`, `/data/openvolley/pkgs` (packages, tens of MB per release), `/opt/openvolley/images` + Docker images (~350 MB per backend tag), container logs | Loop images are hard caps: a runaway cannot grow past them. `host-prep.sh` refuses unless 20 GB stay free after allocation. The backups directory is on the root fs and **not** a loop image: `backup-openvolley.sh` estimates every output (db dump, each tar) before writing it and refuses when it would leave under 10 GB free (`OV_MIN_FREE_MB`) or push the directory past 20 GB (`OV_BACKUP_MAX_MB`); a refusal alerts through the Kuma push. Rollback images: `build-image.sh --ship` keeps the newest 5 archives and tags plus the deployed one. Logs `json-file` 5 x 10 MB per service |
-| RAM | 256 + 256 + 128 + 64 MB (`ov-pkgs`) | `mem_limit` = `memswap_limit` (no swap, so KSCW's page cache is not pushed out), `oom_score_adj: 500` (on host OOM the kernel picks OpenVolley first) |
+| RAM | 256 + 256 + 128 + 64 MB (`ov-pkgs`) | `mem_limit` = `memswap_limit` (no swap, so the other tenant's page cache is not pushed out), `oom_score_adj: 500` (on host OOM the kernel picks OpenVolley first) |
 | CPU / pids | 1.0 + 0.5 + 0.5 + 0.25 CPU, 256 / 128 / 64 / 64 pids | `cpus`, `pids_limit`; backups run `nice 10`, idle-ish I/O class |
 | Docker daemon | Containers and networks labelled `com.docker.compose.project=openvolley` | No published ports, no `coolify` network, `traefik.enable=false`, bind mounts only (no named volumes, so `docker volume prune` cannot hit data) |
 | Network | Outbound only: Cloudflare (7844 udp/tcp, 443), Resend/SMTP | `ov-internal` is `internal: true`; Postgres has no route out |
@@ -129,8 +129,8 @@ Everything the kit does on `lucanepa-prod`, and nothing else:
 | Boot order | `x-systemd.before=docker.service` on the two mounts | Ordering only, not a dependency: Docker starts even if the mounts fail |
 
 **Not touched:** Coolify (database, settings, projects, auto-deploy), `coolify-proxy`/Traefik
-(dynamic config, certificates, networks), any KSCW container, volume or network,
-`kscw-postgres`, `/data/backups` and `/data/coolify`, root's crontab, root's GPG keyring
+(dynamic config, certificates, networks), any container, volume or network of the other tenant (including its Postgres),
+ `/data/backups` and `/data/coolify`, root's crontab, root's GPG keyring
 (backups use `--recipient-file` and a private homedir `/var/lib/openvolley-backup/gnupg`),
 the host firewall, Cloudflare settings of other hostnames. Two items are **read, and changed
 only if needed** (RUNBOOK-hetzner.md step 1): `postgres-autopatch.sh` and `backup-postgres.sh`
@@ -530,8 +530,8 @@ the bounding set, so `cap_add: [NET_BIND_SERVICE]`.
 |---|---|---|
 | Proxied A record, Traefik router, Origin CA cert, `ipAllowList` of Cloudflare ranges, monthly range diff | Cloudflare Tunnel container | Owner decision: no public port, nothing to keep in sync, moves with the stack |
 | Coolify project + Compose resource, branch `deploy/openvolley` | Plain compose in `/opt/openvolley`, images by git SHA | Coolify auto-deploy and network attachment cannot interfere; rollback = previous tag |
-| `/data/backups/openvolley`, root crontab | `/data/openvolley/backups`, systemd timers | `/data/backups` and root's crontab belong to KSCW's backup jobs (rotation and R2 sync not read yet); keep OpenVolley out of them |
-| `gpg --import` into root's keyring | `--recipient-file` + private homedir, fingerprint pinned in `backup.conf` | Nothing added to the keyring KSCW's backups use; refuses a private key file |
+| `/data/backups/openvolley`, root crontab | `/data/openvolley/backups`, systemd timers | `/data/backups` and root's crontab belong to the other tenant's backup jobs (rotation and R2 sync not read yet); keep OpenVolley out of them |
+| `gpg --import` into root's keyring | `--recipient-file` + private homedir, fingerprint pinned in `backup.conf` | Nothing added to the keyring the other tenant's backups use; refuses a private key file |
 | `/var/lib/openvolley-{pg,storage}.img`, fstab pass 2 | `/var/lib/openvolley/{pg,storage}.img`, pass 0 | One root-only directory; no boot-time fsck of image files |
 | `STORAGE_DIR`, status at `/status` | `STORAGE_ROOT`, `STATUS_DIR=/var/lib/openvolley-status` | Shared runtime contract |
 | Cold standby: repoint DNS to `cloudflared-lenovo` | Same compose + same `TUNNEL_TOKEN` on lenovoserver | No DNS change; stop the hetzner tunnel first (two live connectors would split traffic) |

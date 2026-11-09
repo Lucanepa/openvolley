@@ -9,8 +9,8 @@
 // The path coordinates are pixels in a fixed 186px box; `size` scales the whole
 // thing with one transform rather than re-deriving geometry.
 //
-// Ball + whistle: the same icon packs as wiedisync — the ball is Phosphor's
-// Volleyball (@phosphor-icons/react, MIT; wiedisync's VolleyballIcon), the
+// Ball + whistle: the ball is Phosphor's
+// Volleyball (@phosphor-icons/react, MIT), the
 // whistle is Lucide's Whistle (lucide-react, ISC). Both are credited under
 // Options -> App version (HomeOptionsModal.jsx). They replace the Game Icons
 // (CC BY 3.0) artwork svrz_rc still uses.

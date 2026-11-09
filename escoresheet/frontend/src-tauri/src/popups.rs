@@ -702,7 +702,7 @@ mod tests {
 
     #[test]
     fn open_and_reveal_pass_the_path_as_one_argument() {
-        let p = Path::new("/home/u/Downloads/20261007_382208_KSCW-H1_vs_Spada-H1 (1).pdf");
+        let p = Path::new("/home/u/Downloads/20261007_382208_MUST-H1_vs_Spada-H1 (1).pdf");
         let open: Vec<_> = open_file_command(p).get_args().map(|a| a.to_string_lossy().into_owned()).collect();
         assert_eq!(open, vec![p.to_string_lossy().into_owned()]);
         let reveal: Vec<_> = reveal_file_command(p).get_args().map(|a| a.to_string_lossy().into_owned()).collect();

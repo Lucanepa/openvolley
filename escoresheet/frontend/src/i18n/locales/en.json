@@ -3241,7 +3241,7 @@
       "name": "Club name",
       "teams": "VolleyManager teams",
       "teamsHint": "The teams whose home games the club's scorers score, as VolleyManager spells them.",
-      "searchTeams": "Search teams, e.g. Wiedikon",
+      "searchTeams": "Search teams, e.g. Musterdorf",
       "picked": "Teams picked: {{count}}",
       "noVmTeams": "No VolleyManager team matches.",
       "inClub": "in {{club}}",

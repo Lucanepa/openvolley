@@ -3240,7 +3240,7 @@
       "name": "Nome della società",
       "teams": "Squadre VolleyManager",
       "teamsHint": "Le squadre di cui i refertisti della società refertano le partite in casa, scritte come in VolleyManager.",
-      "searchTeams": "Cerca squadre, p. es. Wiedikon",
+      "searchTeams": "Cerca squadre, p. es. Musterdorf",
       "picked": "Squadre scelte: {{count}}",
       "noVmTeams": "Nessuna squadra VolleyManager corrisponde.",
       "inClub": "in {{club}}",

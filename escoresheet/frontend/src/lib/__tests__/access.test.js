@@ -50,40 +50,40 @@ describe('accessChanged', () => {
 })
 
 describe('clubs (db/018)', () => {
-  const ksc = { id: 'c1', name: 'KSC Wiedikon', teams: ['KSC Wiedikon H1', 'KSC Wiedikon D2'] }
+  const musterdorf = { id: 'c1', name: 'VBC Musterdorf', teams: ['VBC Musterdorf H1', 'VBC Musterdorf D2'] }
   const scorer = (clubs, clubRule = true) => ({ ...accessFromRoles(['scorer']), clubs, clubRule })
 
   it('clubVerdict: nothing while the rule is off, for admins, or before a home team is known', () => {
     expect(clubVerdict(scorer([], false), 'VBC Other H1')).toBeNull()
     expect(clubVerdict({ ...accessFromRoles(['admin']), clubs: [], clubRule: true }, 'VBC Other H1')).toBeNull()
-    expect(clubVerdict(scorer([ksc]), '')).toBeNull()
+    expect(clubVerdict(scorer([musterdorf]), '')).toBeNull()
   })
 
   it('clubVerdict: no club, a home game of a club (any spelling of spaces and case), another club', () => {
-    expect(clubVerdict(scorer([]), 'KSC Wiedikon H1')).toEqual({ code: 'OV_CLUB_REQUIRED', home_team: 'KSC Wiedikon H1', clubs: [] })
-    expect(clubVerdict(scorer([ksc]), ' ksc  wiedikon d2 ')).toBeNull()
-    expect(clubVerdict(scorer([ksc]), 'VBC Other H1')).toEqual({ code: 'OV_NOT_YOUR_CLUB', home_team: 'VBC Other H1', clubs: ['KSC Wiedikon'] })
+    expect(clubVerdict(scorer([]), 'VBC Musterdorf H1')).toEqual({ code: 'OV_CLUB_REQUIRED', home_team: 'VBC Musterdorf H1', clubs: [] })
+    expect(clubVerdict(scorer([musterdorf]), ' vbc  musterdorf d2 ')).toBeNull()
+    expect(clubVerdict(scorer([musterdorf]), 'VBC Other H1')).toEqual({ code: 'OV_NOT_YOUR_CLUB', home_team: 'VBC Other H1', clubs: ['VBC Musterdorf'] })
   })
 
   it('accessChanged: a club added or removed, or the rule switched, is a change (blocked jobs may go)', () => {
-    const a = scorer([ksc])
-    expect(accessChanged(a, scorer([ksc]))).toBe(false)
+    const a = scorer([musterdorf])
+    expect(accessChanged(a, scorer([musterdorf]))).toBe(false)
     expect(accessChanged(a, scorer([]))).toBe(true)
-    expect(accessChanged(a, scorer([ksc], false))).toBe(true)
+    expect(accessChanged(a, scorer([musterdorf], false))).toBe(true)
     // a team added to the same club is a change too (CodeRabbit on #11)
-    expect(accessChanged(a, scorer([{ ...ksc, teams: [...ksc.teams, 'KSC Wiedikon H2'] }]))).toBe(true)
-    expect(accessChanged(a, scorer([{ ...ksc, teams: [...ksc.teams].reverse() }]))).toBe(false)
+    expect(accessChanged(a, scorer([{ ...musterdorf, teams: [...musterdorf.teams, 'VBC Musterdorf H2'] }]))).toBe(true)
+    expect(accessChanged(a, scorer([{ ...musterdorf, teams: [...musterdorf.teams].reverse() }]))).toBe(false)
     expect(accessChanged(accessFromRoles(['scorer']), accessFromRoles(['scorer']))).toBe(false)
   })
 })
 
 describe('matchClubBlock (match setup, db/018)', () => {
-  const ksc = { id: 'c1', name: 'KSC Wiedikon', teams: ['KSC Wiedikon H1'] }
-  const access = { ...accessFromRoles(['scorer']), clubs: [ksc], clubRule: true }
-  const away = { ok: false, code: 'OV_NOT_YOUR_CLUB', home_team: 'VBC Other H1', clubs: ['KSC Wiedikon'] }
+  const musterdorf = { id: 'c1', name: 'VBC Musterdorf', teams: ['VBC Musterdorf H1'] }
+  const access = { ...accessFromRoles(['scorer']), clubs: [musterdorf], clubRule: true }
+  const away = { ok: false, code: 'OV_NOT_YOUR_CLUB', home_team: 'VBC Other H1', clubs: ['VBC Musterdorf'] }
 
   it('the server\'s answer wins, both ways', () => {
-    expect(matchClubBlock({ access, server: away, homeTeam: 'KSC Wiedikon H1' })).toBe(away)
+    expect(matchClubBlock({ access, server: away, homeTeam: 'VBC Musterdorf H1' })).toBe(away)
     expect(matchClubBlock({ access, server: { ok: true }, homeTeam: 'VBC Other H1', scheduleHome: 'VBC Other H1' })).toBeNull()
     expect(matchClubBlock({ access, server: null, homeTeam: 'VBC Other H1', scheduleHome: 'VBC Other H1' })).toBeNull()
   })

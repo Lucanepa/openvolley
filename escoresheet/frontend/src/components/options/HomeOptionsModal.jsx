@@ -990,7 +990,7 @@ export default function HomeOptionsModal({
             )}
           </Row>
           )}
-          {/* Licence + credits. The icons are the same packs as wiedisync:
+          {/* Licence + credits. The icons come from two open packs:
               Lucide (ISC) for the UI glyphs and the whistle, Phosphor (MIT) for
               the volleyball (see components/icons and ui/AppSpinner.jsx). Both
               licences ask for their notice to travel with the code; naming them

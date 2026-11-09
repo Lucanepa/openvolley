@@ -12,7 +12,7 @@ Sources (read in full for this spec):
 
 - **MB**: the official blank Swiss Volley Matchblatt, A3 landscape, one page (a scanned image
   with an empty AcroForm, so it has no form fields). Local copy: `~/.cache/openvolley/sv-ref/matchblatt.pdf`.
-- **SC**: the Swiss Volley Scorekeeper Course 2025, English, 91 slides (KS Wiedikon, 19.8.2025).
+- **SC**: the Swiss Volley Scorekeeper Course 2025, English, 91 slides (19.8.2025).
   Local copy: `~/.cache/openvolley/sv-ref/course.pdf`. Slide numbers are given as `SC p.N`.
 - **FIVB**: the FIVB Official Volleyball Rules 2025-2028, quoted by SC p.33, 38 and 63. This
   source is used only where SC is silent. Those places are marked "(FIVB)".
@@ -617,7 +617,7 @@ are left unchanged.
      - at most 20 characters for the game number, 30 for the league and for each team;
      - total length at most 120 characters, `.pdf` included (the part before it is cut at 116).
    - Examples: `game382208_2L_2026-10-07.pdf`; without a game number
-     `KSCW-H1_vs_Spada-H1_2L_2026-10-07.pdf`; without a league `game382208_2026-10-07.pdf`.
+     `MUST-H1_vs_Spada-H1_2L_2026-10-07.pdf`; without a league `game382208_2026-10-07.pdf`.
 5. **Saving and reporting**: the save must produce a valid PDF (starts with `%PDF-`, ends with
    `%%EOF`, opens in pdf.js and in the system viewer). The user must be told **exactly** where
    the file went:

@@ -142,7 +142,7 @@ export function makeGame(n, {
       number: n,
       startingDateTime,
       encounter: { teamHome: { name: home }, teamAway: { name: away } },
-      hall: { name: 'Halle Wiedikon', primaryPostalAddress: { city: 'Zürich', combinedAddress: 'Schulstrasse 1, 8003 Zürich', postalCode: '8003' } },
+      hall: { name: 'Halle Musterdorf', primaryPostalAddress: { city: 'Zürich', combinedAddress: 'Schulstrasse 1, 8003 Zürich', postalCode: '8003' } },
       group: {
         displayName: groupDisplay,
         phase: { name: 'Qualifikation', league: { gender, numberOfWinSets: 'three_win_sets', leagueCategory: { name: leagueName, shortName } } }

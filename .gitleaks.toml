@@ -1,6 +1,6 @@
-# gitleaks config for the Lucanepa / KSC-Wiedikon repos.
+# gitleaks config for the Lucanepa repos.
 #
-# Written 2026-08-13 after the stock ruleset scored kscw-website 0 leaks while a
+# Written 2026-08-13 after the stock ruleset scored a website repo 0 leaks while a
 # real DeepL API key sat in its history at aad8f9a: gitleaks ships no DeepL rule
 # and a UUID-shaped key does not trip the generic entropy heuristics.
 #

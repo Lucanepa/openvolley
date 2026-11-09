@@ -160,7 +160,7 @@ mod tests {
 
     #[test]
     fn user_permission_only_for_a_plain_login() {
-        assert_eq!(user_permission(Some("pi-kscw")), Some("user:pi-kscw".into()));
+        assert_eq!(user_permission(Some("pi-board")), Some("user:pi-board".into()));
         assert_eq!(user_permission(Some("a.b_c")), Some("user:a.b_c".into()));
         assert_eq!(user_permission(None), None);
         assert_eq!(user_permission(Some("")), None);

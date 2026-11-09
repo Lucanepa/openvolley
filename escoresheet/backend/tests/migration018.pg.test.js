@@ -58,8 +58,8 @@ describe('db/018 (clubs)', { skip: SKIP_PG }, () => {
       await raw.query('INSERT INTO public.profiles (user_id, roles) VALUES ($1, $2)', [u.id, name === 'admin' ? ['admin'] : ['scorer']])
     }
     await raw.query(`INSERT INTO public.svrz_games (game_number, team_home, team_away) VALUES
-      ('800001', 'KSC Wiedikon H1', 'VBC Other H1'), ('800002', 'VBC Other H1', 'KSC Wiedikon H1'),
-      ('800004', 'KSC Wiedikon H1', 'VBC Other H2'), ('800005', 'KSC Wiedikon H1', 'VBC Other H3')`)
+      ('800001', 'VBC Musterdorf H1', 'VBC Other H1'), ('800002', 'VBC Other H1', 'VBC Musterdorf H1'),
+      ('800004', 'VBC Musterdorf H1', 'VBC Other H2'), ('800005', 'VBC Musterdorf H1', 'VBC Other H3')`)
     // a match scored before 018 by an account that will have no club
     await raw.query("INSERT INTO public.matches (external_id, status, game_n) VALUES ('m018_old', 'live', 800002)")
   })
@@ -85,9 +85,9 @@ describe('db/018 (clubs)', { skip: SKIP_PG }, () => {
 
   it('on: no club, not a home game of the clubs, a game VolleyManager does not know', async () => {
     await raw.query('UPDATE public.club_rule SET enabled = true')
-    const { rows: [c] } = await raw.query("INSERT INTO public.clubs (name) VALUES ('KSC Wiedikon') RETURNING id")
-    await raw.query("INSERT INTO public.club_teams (club_id, team_name) VALUES ($1, 'KSC Wiedikon H1')", [c.id])
-    await expectCode(raw, 'INSERT INTO public.club_teams (club_id, team_name) VALUES ($1, $2)', [c.id, ' ksc wiedikon h1 '], '23505')
+    const { rows: [c] } = await raw.query("INSERT INTO public.clubs (name) VALUES ('VBC Musterdorf') RETURNING id")
+    await raw.query("INSERT INTO public.club_teams (club_id, team_name) VALUES ($1, 'VBC Musterdorf H1')", [c.id])
+    await expectCode(raw, 'INSERT INTO public.club_teams (club_id, team_name) VALUES ($1, $2)', [c.id, ' vbc musterdorf h1 '], '23505')
 
     await assert.rejects(() => insertGame(ids.other, 'm018_a', 800004), (e) => e.code === 'OVL01')
     await raw.query('INSERT INTO public.account_clubs (user_id, club_id) VALUES ($1, $2)', [ids.scorer, c.id])

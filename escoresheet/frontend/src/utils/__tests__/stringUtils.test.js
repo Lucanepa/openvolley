@@ -7,7 +7,7 @@ const LONE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uD
 
 describe('cutText', () => {
   it('keeps a text that fits, cuts a longer one at max UTF-16 units', () => {
-    expect(cutText('Wiedikon', 60)).toBe('Wiedikon')
+    expect(cutText('Musterdorf', 60)).toBe('Musterdorf')
     expect(cutText('abcdef', 4)).toBe('abcd')
     expect(cutText('', 4)).toBe('')
     expect(cutText(null, 4)).toBe('')

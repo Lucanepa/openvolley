@@ -73,7 +73,7 @@ describe.skipIf(!HAS_BACKEND)('every audit action of the backend has a name', ()
 })
 
 describe('the audit log screen', () => {
-  const KSC = '6f1c2a9b-0000-4000-8000-00000000c1ab'
+  const VBCM = '6f1c2a9b-0000-4000-8000-00000000c1ab'
   const at = (min) => `2026-10-30T09:${String(min).padStart(2, '0')}:00Z`
   const actor = { actor_name: 'Ada Admin', actor_email: 'ada@example.ch' }
   let t
@@ -95,16 +95,16 @@ describe('the audit log screen', () => {
 
   it('the four entries of the screenshot: their names and their club, no code', async () => {
     await show([
-      { id: 4, at: at(4), action: 'club.managers', ...actor, details: { club_id: KSC, before: [], after: ['u-1', 'u-2'] }, club_name: 'KSC Wiedikon' },
-      { id: 3, at: at(3), action: 'club.update', ...actor, details: { club_id: KSC, teams: ['KSC Wiedikon H1'] }, club_name: 'KSC Wiedikon' },
-      { id: 2, at: at(2), action: 'club.create', ...actor, details: { club_id: KSC, name: 'KSC Wiedikon', teams: [] }, club_name: 'KSC Wiedikon' },
+      { id: 4, at: at(4), action: 'club.managers', ...actor, details: { club_id: VBCM, before: [], after: ['u-1', 'u-2'] }, club_name: 'VBC Musterdorf' },
+      { id: 3, at: at(3), action: 'club.update', ...actor, details: { club_id: VBCM, teams: ['VBC Musterdorf H1'] }, club_name: 'VBC Musterdorf' },
+      { id: 2, at: at(2), action: 'club.create', ...actor, details: { club_id: VBCM, name: 'VBC Musterdorf', teams: [] }, club_name: 'VBC Musterdorf' },
       { id: 1, at: at(1), action: 'club_rule.set', ...actor, details: { enabled: true }, club_name: null }
     ])
     for (const title of ['Club managers changed', 'Club details changed', 'Club created', 'Club rule switched']) {
       expect(screen.getByText(title)).toBeInTheDocument()
     }
-    expect(screen.getByText('KSC Wiedikon · 2 managers')).toBeInTheDocument()
-    expect(screen.getAllByText('KSC Wiedikon')).toHaveLength(2)
+    expect(screen.getByText('VBC Musterdorf · 2 managers')).toBeInTheDocument()
+    expect(screen.getAllByText('VBC Musterdorf')).toHaveLength(2)
     expect(screen.getByText('The club rule is on')).toBeInTheDocument()
     const text = document.body.textContent
     for (const code of ['club.managers', 'club.update', 'club.create', 'club_rule.set', 'manage.audit']) expect(text).not.toContain(code)
@@ -123,17 +123,17 @@ describe('the audit log screen', () => {
   it('details of the other new entries', () => {
     const line = (action, details, more = {}) => auditDetailsLine({ action, details, ...more }, { t })
     // an entry listed by an older backend: no club_name, nothing breaks
-    expect(line('club.managers', { club_id: KSC, before: ['u-1'], after: [] })).toBe('0 managers')
-    expect(line('club.managers', { club_id: KSC, after: ['u-1'] }, { club_name: 'KSC Wiedikon' })).toBe('KSC Wiedikon · 1 manager')
-    expect(line('club.contact', { club_id: KSC, set: true }, { club_name: 'KSC Wiedikon' })).toBe('KSC Wiedikon')
-    expect(line('club.member_remove', { club_id: KSC }, { club_name: 'KSC Wiedikon' })).toBe('KSC Wiedikon')
+    expect(line('club.managers', { club_id: VBCM, before: ['u-1'], after: [] })).toBe('0 managers')
+    expect(line('club.managers', { club_id: VBCM, after: ['u-1'] }, { club_name: 'VBC Musterdorf' })).toBe('VBC Musterdorf · 1 manager')
+    expect(line('club.contact', { club_id: VBCM, set: true }, { club_name: 'VBC Musterdorf' })).toBe('VBC Musterdorf')
+    expect(line('club.member_remove', { club_id: VBCM }, { club_name: 'VBC Musterdorf' })).toBe('VBC Musterdorf')
     // a deleted club: its name from the entry itself
-    expect(line('club.delete', { club_id: KSC, name: 'VBC Gone', scorers: 3 })).toBe('VBC Gone · Scorers: 3')
+    expect(line('club.delete', { club_id: VBCM, name: 'VBC Gone', scorers: 3 })).toBe('VBC Gone · Scorers: 3')
     // renamed: the club's name once
-    expect(line('club.update', { club_id: KSC, name: 'KSC Wiedikon' }, { club_name: 'KSC Wiedikon' })).toBe('KSC Wiedikon')
-    expect(line('account.clubs', { before: [], after: [KSC, 'x'], names: ['KSC Wiedikon', 'VBC Other'] })).toBe('KSC Wiedikon, VBC Other')
-    expect(line('account.clubs', { before: [KSC], after: [], names: [] })).toBe('No club')
-    expect(line('account.clubs', { invite_id: 'i-1', joined: KSC }, { club_name: 'KSC Wiedikon' })).toBe('+ KSC Wiedikon')
+    expect(line('club.update', { club_id: VBCM, name: 'VBC Musterdorf' }, { club_name: 'VBC Musterdorf' })).toBe('VBC Musterdorf')
+    expect(line('account.clubs', { before: [], after: [VBCM, 'x'], names: ['VBC Musterdorf', 'VBC Other'] })).toBe('VBC Musterdorf, VBC Other')
+    expect(line('account.clubs', { before: [VBCM], after: [], names: [] })).toBe('No club')
+    expect(line('account.clubs', { invite_id: 'i-1', joined: VBCM }, { club_name: 'VBC Musterdorf' })).toBe('+ VBC Musterdorf')
     expect(line('club_rule.set', { enabled: false })).toBe('The club rule is off')
     expect(line('settings.final_email', { send_final_email: true })).toBe('Final scoresheets are now sent by email')
     expect(line('settings.final_email', { send_final_email: false })).toBe('Final scoresheets are no longer sent')
@@ -142,7 +142,7 @@ describe('the audit log screen', () => {
     expect(line('activity.delete', { match: 'match_1', account: null, rows: 12 })).toBe('match_1 · 12 entries')
     expect(line('activity.delete', { match: null, account: 'u-1', rows: 1 })).toBe('1 entry')
     // a club's invite code: its club after the label and role
-    expect(line('invite.create', { invite_id: 'i-1', label: 'H1 scorers', role: 'scorer', club_id: KSC }, { club_name: 'KSC Wiedikon' })).toBe('H1 scorers · scorer · KSC Wiedikon')
+    expect(line('invite.create', { invite_id: 'i-1', label: 'H1 scorers', role: 'scorer', club_id: VBCM }, { club_name: 'VBC Musterdorf' })).toBe('H1 scorers · scorer · VBC Musterdorf')
     // without t: English, no key
     expect(auditDetailsLine({ action: 'match.final_mail', details: { recipients: 2, game_n: 1 } })).toBe('#1 · 2 recipients')
   })

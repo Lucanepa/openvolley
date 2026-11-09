@@ -59,9 +59,9 @@ describe('Home by sign-in', () => {
 
 const TODAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Zurich', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
 const GAME = {
-  game_number: '930001', datetime: `${TODAY}T18:00:00`, team_home: 'KSC Wiedikon H1', team_away: 'VBC Other H1',
-  league: '2L', gender: 'men', hall: 'Halle Wiedikon', city: 'Zürich', match_format: 5, match_type: 'championship',
-  championship_type: 'regional', match_level: 'senior', referee_1_first_name: 'Rita', referee_1_last_name: 'Ref', club: 'KSC Wiedikon', claim: null
+  game_number: '930001', datetime: `${TODAY}T18:00:00`, team_home: 'VBC Musterdorf H1', team_away: 'VBC Other H1',
+  league: '2L', gender: 'men', hall: 'Halle Musterdorf', city: 'Zürich', match_format: 5, match_type: 'championship',
+  championship_type: 'regional', match_level: 'senior', referee_1_first_name: 'Rita', referee_1_last_name: 'Ref', club: 'VBC Musterdorf', claim: null
 }
 const answer = (data) => ({ data, error: null, status: 200 })
 
@@ -72,7 +72,7 @@ describe('TodayGamesModal', () => {
   })
 
   it('lists today\'s home games; a pick hands the schedule picker\'s match data', async () => {
-    api.fetchTodayGames.mockResolvedValue(answer({ day: TODAY, clubs: ['KSC Wiedikon'], games: [GAME, { ...GAME, game_number: '930002', team_home: 'KSC Wiedikon D2', claim: { mine: false, closed: false } }] }))
+    api.fetchTodayGames.mockResolvedValue(answer({ day: TODAY, clubs: ['VBC Musterdorf'], games: [GAME, { ...GAME, game_number: '930002', team_home: 'VBC Musterdorf D2', claim: { mine: false, closed: false } }] }))
     const onPick = vi.fn()
     render(<TodayGamesModal open userId="u1" onPick={onPick} onManual={noop} onClose={noop} />)
     const rows = await screen.findAllByTestId('today-game')
@@ -80,13 +80,13 @@ describe('TodayGamesModal', () => {
     expect(within(rows[1]).getByText('home.todayGames.taken')).toBeInTheDocument()
     fireEvent.click(rows[0])
     expect(onPick).toHaveBeenCalledWith(expect.objectContaining({
-      gameN: '930001', home: 'KSC Wiedikon H1', away: 'VBC Other H1', league: '2L', hall: 'Halle Wiedikon', city: 'Zürich',
+      gameN: '930001', home: 'VBC Musterdorf H1', away: 'VBC Other H1', league: '2L', hall: 'Halle Musterdorf', city: 'Zürich',
       date: TODAY, time: '18:00', bestOf: 5, referee1First: 'Rita'
     }))
   })
 
   it('"Not in the list?" goes to the blank setup', async () => {
-    api.fetchTodayGames.mockResolvedValue(answer({ day: TODAY, clubs: ['KSC Wiedikon'], games: [] }))
+    api.fetchTodayGames.mockResolvedValue(answer({ day: TODAY, clubs: ['VBC Musterdorf'], games: [] }))
     const onManual = vi.fn()
     render(<TodayGamesModal open userId="u1" onPick={noop} onManual={onManual} onClose={noop} />)
     expect(await screen.findByText('home.todayGames.none')).toBeInTheDocument()
@@ -101,7 +101,7 @@ describe('TodayGamesModal', () => {
   })
 
   it('offline: the day\'s last list of this account, else only the manual way', async () => {
-    api.fetchTodayGames.mockResolvedValue(answer({ day: TODAY, clubs: ['KSC Wiedikon'], games: [GAME] }))
+    api.fetchTodayGames.mockResolvedValue(answer({ day: TODAY, clubs: ['VBC Musterdorf'], games: [GAME] }))
     const first = render(<TodayGamesModal open userId="u1" onPick={noop} onManual={noop} onClose={noop} />)
     await screen.findAllByTestId('today-game')
     expect(readCachedTodayGames('u1', TODAY)?.games).toHaveLength(1)

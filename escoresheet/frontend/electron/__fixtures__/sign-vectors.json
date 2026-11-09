@@ -5,7 +5,7 @@
    "name": "full context, unknown key dropped",
    "in": {
     "matchNo": "4711",
-    "home": "VBC Wiedikon",
+    "home": "VBC Musterdorf",
     "away": "Volley 05",
     "teamSide": "home",
     "teamLabel": "A",
@@ -17,7 +17,7 @@
    },
    "out": {
     "matchNo": "4711",
-    "home": "VBC Wiedikon",
+    "home": "VBC Musterdorf",
     "away": "Volley 05",
     "teamSide": "home",
     "teamLabel": "A",
@@ -95,7 +95,7 @@
   {
    "name": "other caps",
    "in": {
-    "home": "VBC Wiedikon",
+    "home": "VBC Musterdorf",
     "away": "Volley 05",
     "matchNo": "1111111111111111111111111",
     "name": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
@@ -103,7 +103,7 @@
    },
    "out": {
     "matchNo": "11111111111111111111",
-    "home": "VBC Wiedikon",
+    "home": "VBC Musterdorf",
     "away": "Volley 05",
     "name": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
     "when": "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww"
@@ -112,28 +112,28 @@
   {
    "name": "enum values outside the list dropped",
    "in": {
-    "home": "VBC Wiedikon",
+    "home": "VBC Musterdorf",
     "away": "Volley 05",
     "teamSide": "left",
     "teamLabel": "C",
     "lang": "es"
    },
    "out": {
-    "home": "VBC Wiedikon",
+    "home": "VBC Musterdorf",
     "away": "Volley 05"
    }
   },
   {
    "name": "empty and null optionals dropped",
    "in": {
-    "home": "VBC Wiedikon",
+    "home": "VBC Musterdorf",
     "away": "Volley 05",
     "name": "  ",
     "matchNo": null,
     "when": "‪"
    },
    "out": {
-    "home": "VBC Wiedikon",
+    "home": "VBC Musterdorf",
     "away": "Volley 05"
    }
   },
@@ -163,7 +163,7 @@
   {
    "name": "name not a string",
    "in": {
-    "home": "VBC Wiedikon",
+    "home": "VBC Musterdorf",
     "away": "Volley 05",
     "name": {
      "x": 1
@@ -174,7 +174,7 @@
   {
    "name": "teamSide not a string",
    "in": {
-    "home": "VBC Wiedikon",
+    "home": "VBC Musterdorf",
     "away": "Volley 05",
     "teamSide": 1
    },

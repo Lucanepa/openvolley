@@ -14,7 +14,7 @@ const DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'pub
 const HTML = readFileSync(join(DIR, 'index.html'), 'utf8')
 const JS = readFileSync(join(DIR, 'sign.js'), 'utf8')
 const TOKEN = 'Tok_' + 'x'.repeat(39)
-const CONTEXT = { home: 'VBC Wiedikon', away: 'Volley 05', matchNo: '4711', when: '12.10.2026 20:15', teamSide: 'home', teamLabel: 'A', name: '#7 Lea Muster' }
+const CONTEXT = { home: 'VBC Musterdorf', away: 'Volley 05', matchNo: '4711', when: '12.10.2026 20:15', teamSide: 'home', teamLabel: 'A', name: '#7 Lea Muster' }
 
 let calls
 let answers
@@ -137,7 +137,7 @@ describe('the phone signing page', () => {
     answers.open.json.context = { ...CONTEXT, name: '<img src=x onerror=alert(1)>' }
     await load()
     expect($('title').textContent).toBe('Sign as captain of Team A')
-    expect($('teams').textContent).toBe('VBC Wiedikon – Volley 05')
+    expect($('teams').textContent).toBe('VBC Musterdorf – Volley 05')
     expect($('meta').textContent).toBe('Match #4711 · 12.10.2026 20:15')
     expect($('name').textContent).toBe('<img src=x onerror=alert(1)>')
     expect(document.querySelector('#name img')).toBeNull()

@@ -413,7 +413,7 @@ light only like paper):
 │  ● OpenVolley   (inline SVG) │
 │                              │
 │  Sign as captain of Team A   │  h1, 20 px semibold
-│  VBC Wiedikon – Volley 05    │  14 px stone-600
+│  VBC Musterdorf – Volley 05    │  14 px stone-600
 │  Match #4711 · 12.10.2026    │
 │  #7 Lea Muster               │  (when known)
 │ ┌──────────────────────────┐ │

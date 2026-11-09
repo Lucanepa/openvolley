@@ -3234,7 +3234,7 @@
       "name": "Nom du club",
       "teams": "Équipes VolleyManager",
       "teamsHint": "Les équipes dont les marqueurs du club tiennent les matchs à domicile, écrites comme dans VolleyManager.",
-      "searchTeams": "Chercher des équipes, p. ex. Wiedikon",
+      "searchTeams": "Chercher des équipes, p. ex. Musterdorf",
       "picked": "Équipes choisies : {{count}}",
       "noVmTeams": "Aucune équipe VolleyManager ne correspond.",
       "inClub": "dans {{club}}",

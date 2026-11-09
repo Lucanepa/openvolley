@@ -26,16 +26,16 @@ import ClubsPanel from '../manage/ClubsPanel'
 import AccountsPanel from '../manage/AccountsPanel'
 import InvitesPanel from '../manage/InvitesPanel'
 
-const KSC = { id: 'c1', name: 'KSC Wiedikon', teams: ['KSC Wiedikon H1'], scorers: 2 }
+const VBCM = { id: 'c1', name: 'VBC Musterdorf', teams: ['VBC Musterdorf H1'], scorers: 2 }
 const OTHER = { id: 'c2', name: 'VBC Other', teams: ['VBC Other H1'], scorers: 0 }
 
 beforeEach(() => {
   vi.clearAllMocks()
   ui.toasts = []
   ui.confirm.mockResolvedValue(true)
-  api.clubs.list.mockResolvedValue({ data: { clubs: [KSC, OTHER], rule: { enabled: false } }, error: null, status: 200 })
+  api.clubs.list.mockResolvedValue({ data: { clubs: [VBCM, OTHER], rule: { enabled: false } }, error: null, status: 200 })
   api.clubs.vmTeams.mockResolvedValue({
-    data: { teams: [{ name: 'KSC Wiedikon D2', club_id: null, club_name: null }, { name: 'KSC Wiedikon H1', club_id: 'c1', club_name: 'KSC Wiedikon' }, { name: 'VBC Other H1', club_id: 'c2', club_name: 'VBC Other' }] },
+    data: { teams: [{ name: 'VBC Musterdorf D2', club_id: null, club_name: null }, { name: 'VBC Musterdorf H1', club_id: 'c1', club_name: 'VBC Musterdorf' }, { name: 'VBC Other H1', club_id: 'c2', club_name: 'VBC Other' }] },
     error: null, status: 200
   })
 })
@@ -44,8 +44,8 @@ describe('ClubsPanel', () => {
   it('lists the clubs with their teams; switching the rule on asks first', async () => {
     api.clubs.setRule.mockResolvedValue({ data: { rule: { enabled: true } }, error: null, status: 200 })
     render(<ClubsPanel />)
-    expect(await screen.findByText('KSC Wiedikon')).toBeInTheDocument()
-    expect(screen.getByText('KSC Wiedikon H1')).toBeInTheDocument()
+    expect(await screen.findByText('VBC Musterdorf')).toBeInTheDocument()
+    expect(screen.getByText('VBC Musterdorf H1')).toBeInTheDocument()
     const sw = screen.getByTestId('club-rule-switch')
     expect(sw).toHaveAttribute('aria-checked', 'false')
     fireEvent.click(sw)
@@ -63,24 +63,24 @@ describe('ClubsPanel', () => {
   it('a new club takes a name and VolleyManager teams; another club\'s team cannot be picked', async () => {
     api.clubs.create.mockResolvedValue({ data: { club: { id: 'c3' } }, error: null, status: 201 })
     render(<ClubsPanel />)
-    await screen.findByText('KSC Wiedikon')
+    await screen.findByText('VBC Musterdorf')
     fireEvent.click(screen.getByTestId('new-club'))
     const dialog = await screen.findByRole('dialog')
-    fireEvent.change(within(dialog).getAllByRole('textbox')[0], { target: { value: 'KSC Wiedikon 2' } })
+    fireEvent.change(within(dialog).getAllByRole('textbox')[0], { target: { value: 'VBC Musterdorf 2' } })
     const options = await within(dialog).findByTestId('club-team-options')
     await waitFor(() => expect(within(options).getAllByRole('checkbox').length).toBe(3))
     const [d2, h1] = within(options).getAllByRole('checkbox')
-    expect(h1).toBeDisabled() // KSC Wiedikon H1 plays for KSC Wiedikon
+    expect(h1).toBeDisabled() // VBC Musterdorf H1 plays for VBC Musterdorf
     fireEvent.click(d2)
     fireEvent.click(within(dialog).getByTestId('save-club'))
-    await waitFor(() => expect(api.clubs.create).toHaveBeenCalledWith({ name: 'KSC Wiedikon 2', teams: ['KSC Wiedikon D2'] }))
+    await waitFor(() => expect(api.clubs.create).toHaveBeenCalledWith({ name: 'VBC Musterdorf 2', teams: ['VBC Musterdorf D2'] }))
   })
 
   it('a team another club has: the server\'s answer is shown', async () => {
     api.clubs.update.mockResolvedValue({ data: null, error: { code: 'OV_TEAM_TAKEN', details: 'VBC Other H1: VBC Other', status: 409 }, status: 409 })
     render(<ClubsPanel />)
-    await screen.findByText('KSC Wiedikon')
-    fireEvent.click(within(screen.getByText('KSC Wiedikon').closest('.flex-wrap')).getByRole('button', { name: 'manage.clubs.edit' }))
+    await screen.findByText('VBC Musterdorf')
+    fireEvent.click(within(screen.getByText('VBC Musterdorf').closest('.flex-wrap')).getByRole('button', { name: 'manage.clubs.edit' }))
     const dialog = await screen.findByRole('dialog')
     fireEvent.click(within(dialog).getByTestId('save-club'))
     expect(await within(dialog).findByText('manage.clubs.teamTaken')).toBeInTheDocument()
@@ -114,15 +114,15 @@ describe('AccountsPanel: clubs', () => {
 describe('InvitesPanel: a code\'s club', () => {
   it('an indoor code can carry a club', async () => {
     api.admin.listInvites.mockResolvedValue({ data: { invites: [] }, error: null, status: 200 })
-    api.admin.createInvite.mockResolvedValue({ data: { code: 'ABCD-EFGH-JKMN', invite: { label: 'KSC 2026', club: 'KSC Wiedikon', role: 'scorer' } }, error: null, status: 201 })
+    api.admin.createInvite.mockResolvedValue({ data: { code: 'ABCD-EFGH-JKMN', invite: { label: 'VBCM 2026', club: 'VBC Musterdorf', role: 'scorer' } }, error: null, status: 201 })
     render(<InvitesPanel app="indoor" />)
     fireEvent.click(await screen.findByRole('button', { name: /manage\.invites\.new/ }))
     const dialog = await screen.findByRole('dialog')
-    fireEvent.change(within(dialog).getAllByRole('textbox')[0], { target: { value: 'KSC 2026' } })
+    fireEvent.change(within(dialog).getAllByRole('textbox')[0], { target: { value: 'VBCM 2026' } })
     const club = await within(dialog).findByTestId('invite-club')
     fireEvent.change(club, { target: { value: 'c1' } })
     fireEvent.click(within(dialog).getByTestId('create-invite'))
     await waitFor(() => expect(api.admin.createInvite).toHaveBeenCalled())
-    expect(api.admin.createInvite.mock.calls[0][0]).toMatchObject({ label: 'KSC 2026', club: null, club_id: 'c1', sport: 'indoor' })
+    expect(api.admin.createInvite.mock.calls[0][0]).toMatchObject({ label: 'VBCM 2026', club: null, club_id: 'c1', sport: 'indoor' })
   })
 })

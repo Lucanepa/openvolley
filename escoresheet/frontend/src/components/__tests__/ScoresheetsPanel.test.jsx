@@ -20,7 +20,7 @@ import ScoresheetsPanel from '../manage/ScoresheetsPanel'
 
 const MATCHES = [
   { id: 'm-1', game_n: 402397, status: 'final', scheduled_at: '2026-10-10T12:30:00Z', home_name: 'Voléro', away_name: 'Smash', league: '1L', scorer_name: 'Ada Scorer', sport: 'indoor', pdf: true, pdf_updated_at: '2026-10-10T16:40:00Z' },
-  { id: 'm-2', game_n: 402398, status: 'live', scheduled_at: '2026-10-11T12:30:00Z', home_name: 'Wiedikon', away_name: 'Züri', sport: 'indoor', pdf: false, pdf_updated_at: null }
+  { id: 'm-2', game_n: 402398, status: 'live', scheduled_at: '2026-10-11T12:30:00Z', home_name: 'Musterdorf', away_name: 'Züri', sport: 'indoor', pdf: false, pdf_updated_at: null }
 ]
 const pdfBlob = new Blob(['%PDF-1.4'], { type: 'application/pdf' })
 // what a browser hands out: a blob: URL of this page's origin
@@ -50,7 +50,7 @@ describe('ScoresheetsPanel', () => {
     expect(screen.getByText('manage.scoresheets.storedAt')).toBeInTheDocument()
     expect(screen.getByText('manage.scoresheets.noPdfYet')).toBeInTheDocument()
     // no PDF: nothing to open
-    const none = rowOf('Wiedikon vs Züri')
+    const none = rowOf('Musterdorf vs Züri')
     expect(within(none).queryByRole('button', { name: 'manage.scoresheets.view' })).toBeNull()
     expect(within(none).queryByRole('button', { name: 'manage.scoresheets.download' })).toBeNull()
     expect(within(rowOf('Voléro vs Smash')).getByRole('button', { name: 'manage.scoresheets.view' })).toBeEnabled()
@@ -131,7 +131,7 @@ describe('ScoresheetsPanel', () => {
     render(<ScoresheetsPanel app="beach" />)
     await screen.findByText('Voléro vs Smash')
     // the open match has none
-    expect(within(rowOf('Wiedikon vs Züri')).queryByRole('button', { name: 'manage.matches.reopen' })).toBeNull()
+    expect(within(rowOf('Musterdorf vs Züri')).queryByRole('button', { name: 'manage.matches.reopen' })).toBeNull()
     fireEvent.click(within(rowOf('Voléro vs Smash')).getByRole('button', { name: 'manage.matches.reopen' }))
     fireEvent.change(await screen.findByRole('textbox'), { target: { value: 'Wrong pair' } })
     fireEvent.click(screen.getByTestId('reason-confirm'))
