@@ -1,9 +1,10 @@
 // @vitest-environment node
 /**
  * Rows 10, 11 and 19 of the interruption-request spec (2026-11-09): the
- * late request that stopped a rally (the in-play Replay dialog), what an
- * improper request was for (the reason on the sanction), and the decision
- * change after a substitution or time-out (taken back with it). The rules
+ * late request that stopped a rally (the in-play Replay dialog), the
+ * improper request with no reason asked or kept (the owner, 2026-11-09:
+ * "no reason, no need, same for delays"), and the decision change after a
+ * substitution or time-out (taken back with it). The rules
  * are tested in domain/__tests__/interruptionRequests.test.js and the flows
  * on the mounted screen in ScoreboardInterruptionFlows.test.jsx;
  * Scoreboard.jsx is too large to mount for every detail, so this pins the
@@ -17,7 +18,6 @@ import de from '../../i18n/locales/de.json'
 import deCH from '../../i18n/locales/de-CH.json'
 import fr from '../../i18n/locales/fr.json'
 import it_ from '../../i18n/locales/it.json'
-import { IMPROPER_REQUEST_REASONS, TEAM_SANCTION_REASONS } from '../../domain/interruptionRequests'
 
 const sb = readFileSync(resolve(__dirname, '../Scoreboard.jsx'), 'utf8')
 const phone = readFileSync(resolve(__dirname, '../scoreboard/PhoneScoreboard.jsx'), 'utf8')
@@ -45,7 +45,7 @@ describe('row 10: a late request stopped the rally (the in-play Replay dialog)',
     expect(body).toContain("lateRequestOutcome(data?.events, lateRequestTeam)")
     // a delay penalty decides the rally: no replay then
     expect(body).toContain("if (!late || late.replay) await logEvent('replay')")
-    expect(body).toContain('await recordTeamSanction({ side: mapTeamKeyToSide(lateRequestTeam), team: lateRequestTeam, type: late.sanction, reason: late.reason })')
+    expect(body).toContain('await recordTeamSanction({ side: mapTeamKeyToSide(lateRequestTeam), team: lateRequestTeam, type: late.sanction })')
     // the replay before the sanction: the replay keeps requests closed (row 7)
     expect(body.indexOf("await logEvent('replay')")).toBeLessThan(body.indexOf('await recordTeamSanction('))
   })
@@ -67,31 +67,31 @@ describe('row 10: a late request stopped the rally (the in-play Replay dialog)',
 })
 
 describe('the team sanction is written in one place', () => {
-  it('recordTeamSanction writes the reason on the sanction, and a penalty point is never asked as an accidental tap', () => {
+  it('recordTeamSanction writes no reason on the sanction, and a penalty point is never asked as an accidental tap', () => {
     const body = handler('recordTeamSanction')
-    expect(body).toContain("const sanctionSeq = await logEvent('sanction', {")
-    expect(body).toContain('...(reason ? { reason } : {})')
+    expect(body).toContain('useCallback(async ({ side, team: teamKey, type }) => {')
+    expect(body).toContain("const sanctionSeq = await logEvent('sanction', {\n      team: teamKey,\n      type: type\n    })")
+    expect(body).not.toMatch(/reason/)
     expect(body).toContain('await handlePoint(otherSide, true, { penaltySeq: sanctionSeq })')
     expect(sb.match(/logEvent\('sanction', \{\n\s+team: teamKey,\n\s+type: type/g)).toHaveLength(1)
   })
 
-  it('confirmSanction records through it, with the dialog\'s or the warning\'s reason', () => {
+  it('confirmSanction records through it, the dialog\'s and the warning\'s sanction alike', () => {
     const body = handler('confirmSanction')
-    expect(body).toContain("const reason = explicit?.resolved ? (explicit.reason || null) : (chosen.type === 'improper_request' ? (chosen.improperReason || 'other') : null)")
-    expect(body).toContain('await recordTeamSanction({ side, team: teamKey, type, reason })')
-    expect(handler('chooseRequestWarning')).toContain('reason: sanctionReasonOfIssue(issue.reason)')
+    expect(body).toContain('await recordTeamSanction({ side, team: teamKey, type })')
+    expect(handler('chooseRequestWarning')).toContain('confirmSanction({ side: mapTeamKeyToSide(team), team, resolved })')
   })
 })
 
-describe('row 11: what an improper request was for', () => {
-  it('the Improper request dialog opens on "other" and offers the reasons (one tap still records)', () => {
+describe('row 11: the improper request asks no reason', () => {
+  it('the Improper request dialog has no reason picker', () => {
     const open = between('const openTeamSanctionConfirm = useCallback(', '\n  }, [')
-    expect(open).toContain("...(requestedType === 'improper_request' ? { improperReason: 'other' } : {})")
+    expect(open).toContain('setSanctionConfirm({ side, team: teamKey, type: requestedType, resolved, reason })')
+    expect(open).not.toContain('improperReason')
     const dialog = between('{sanctionConfirm && (', '</Modal>')
-    expect(dialog).toContain("{requested === 'improper_request' && (")
-    expect(dialog).toContain('<ImproperReasonPicker')
-    expect(dialog).toContain('reasons={IMPROPER_REQUEST_REASONS}')
-    expect(dialog).toContain("value={sanctionConfirm.improperReason || 'other'}")
+    expect(dialog).not.toContain('ImproperReasonPicker')
+    expect(dialog).not.toContain('improperReason')
+    expect(sb).not.toContain('ImproperReasonPicker')
   })
 
   it('the phone\'s Improper request opens the same dialog', () => {
@@ -143,11 +143,8 @@ describe('the texts, in all five languages', () => {
   const KEYS = [
     'scoreboard.lateRequest.heading', 'scoreboard.lateRequest.replay', 'scoreboard.lateRequest.penalty',
     'scoreboard.lateRequest.recordsWarning', 'scoreboard.lateRequest.recordsPenalty', 'scoreboard.lateRequest.rule',
-    'scoreboard.improperReason.title',
-    ...IMPROPER_REQUEST_REASONS.map(r => `scoreboard.improperReason.${r}`),
     'scoreboard.decisionTakeBack.title', 'scoreboard.decisionTakeBack.timeout', 'scoreboard.decisionTakeBack.substitution',
-    'scoreboard.decisionTakeBack.text', 'scoreboard.decisionTakeBack.rule',
-    ...TEAM_SANCTION_REASONS.filter(r => r !== 'other').map(r => `corrections.sanctionReason.${r}`)
+    'scoreboard.decisionTakeBack.text', 'scoreboard.decisionTakeBack.rule'
   ]
   const get = (o, p) => p.split('.').reduce((x, k) => x?.[k], o)
   it.each(Object.entries(LOCALES))('%s has every key', (_, locale) => {
@@ -155,5 +152,8 @@ describe('the texts, in all five languages', () => {
     expect(get(locale, 'scoreboard.lateRequest.replay')).toContain('{{team}}')
     expect(get(locale, 'scoreboard.lateRequest.recordsPenalty')).toContain('{{opponent}}')
     expect(get(locale, 'scoreboard.decisionTakeBack.substitution')).toMatch(/\{\{in\}\}[\s\S]*\{\{out\}\}/)
+    // no reason texts any more (the owner, 2026-11-09)
+    expect(get(locale, 'scoreboard.improperReason')).toBeUndefined()
+    expect(get(locale, 'corrections.sanctionReason')).toBeUndefined()
   })
 })
