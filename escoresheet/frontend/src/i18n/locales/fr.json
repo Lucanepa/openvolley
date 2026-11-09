@@ -2481,7 +2481,11 @@
     "sanctions": "SANCTIONS",
     "none": "Aucune",
     "moreCount": "+{{count}} autre(s)",
-    "noBenchData": "Aucune donnée banc"
+    "noBenchData": "Aucune donnée banc",
+    "sets": "Sets",
+    "bench": "Banc",
+    "officials": "Officiels",
+    "serving": "Au service"
   },
   "officialAutocomplete": {
     "selectFromHistory": "Sélectionner dans l'historique"

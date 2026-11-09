@@ -2482,7 +2482,11 @@
     "sanctions": "SANKTIONE",
     "none": "Kei",
     "moreCount": "+{{count}} meh",
-    "noBenchData": "Kei Bank-Date"
+    "noBenchData": "Kei Bank-Date",
+    "sets": "Sätz",
+    "bench": "Bank",
+    "officials": "Offizielli",
+    "serving": "Ufschlag"
   },
   "officialAutocomplete": {
     "selectFromHistory": "Us Historie uswähle"
