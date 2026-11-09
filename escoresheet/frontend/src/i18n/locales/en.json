@@ -3012,7 +3012,38 @@
       "team_manager": "Team manager"
     },
     "signUpPendingNote": "New accounts need approval before official matches sync to the cloud. Ask your club for an invite code.",
-    "officialMatchLocalOnly": "This match stays on this device until your account is approved as a scorer."
+    "officialMatchLocalOnly": "This match stays on this device until your account is approved as a scorer.",
+    "requests": {
+      "whatDoYouDo": "What do you do?",
+      "whatHint": "Optional. Tick what you do and for which club: an admin or your club approves it, and your account gets exactly that. You can also leave it empty and enter an invite code later.",
+      "kinds": {
+        "scorer": "Scorer",
+        "referee": "Referee",
+        "team_manager": "Team manager / coach",
+        "club_manager": "Club manager"
+      },
+      "scorerHint": "Scores the home games of a club",
+      "refereeHint": "No club needed",
+      "teamManagerHint": "Keeps a team’s players and game rosters",
+      "clubManagerHint": "Looks after a club’s scorers, teams and invite codes",
+      "scorerClub": "Club you score for",
+      "addClub": "Another club",
+      "pickClub": "Pick a club",
+      "removeClub": "Remove {{name}}",
+      "teamClub": "Club of your team",
+      "teams": "Your teams",
+      "noTeams": "This club has no teams in OpenVolley yet. Pick the club as a scorer or ask the club for a team link.",
+      "managedClub": "Club you manage",
+      "clubsUnavailable": "The clubs could not be loaded. You can still create your account as a referee, or ask your club for an invite code.",
+      "noClubsYet": "No clubs are set up in OpenVolley yet.",
+      "needScorerClub": "Pick the club you score for.",
+      "needTeamClub": "Pick the club of your team.",
+      "needTeam": "Tick your team.",
+      "needManagedClub": "Pick the club you manage.",
+      "signUpRefused": "A club or team you picked is no longer there. Pick again, then create your account.",
+      "yourRequest": "Your request",
+      "yourRequestBody": "An admin or your club approves it. This page updates by itself once something is approved."
+    }
   },
   "managerSite": {
     "eyebrow": "Manager",
@@ -3270,7 +3301,9 @@
         "team_managers": "Team manager changed",
         "team_squad": "Team players saved",
         "team_roster": "Game roster sent",
-        "club_licences": "Licence list uploaded"
+        "club_licences": "Licence list uploaded",
+        "account_request_approve": "Sign-up request approved",
+        "account_request_reject": "Sign-up request rejected"
       }
     },
     "approvals": {
@@ -3579,6 +3612,42 @@
       "noMatch": "Nobody matches the filter.",
       "showMore": "Show {{count}} more",
       "wrongGender": "A player is registered with the club for the other gender and cannot play in this team."
+    },
+    "requests": {
+      "title": "Requests",
+      "clubHint": "People who signed up and said they score for this club, manage one of its teams or manage the club. Approve gives them exactly that; their other requests stay for the others.",
+      "teamHint": "People who signed up as a manager or coach of this team. Approve makes them a team manager.",
+      "empty": "No open requests.",
+      "approve": "Approve",
+      "reject": "Reject",
+      "approveAll": "Approve as requested",
+      "review": "Review request",
+      "reviewTitle": "Request of {{name}}",
+      "reviewHint": "Approve a part as asked or with another club or team, leave it for later (the club’s or the team’s managers can still approve it), or reject it.",
+      "decision": {
+        "approve": "Approve",
+        "later": "Later",
+        "reject": "Reject"
+      },
+      "club": "Club",
+      "team": "Team",
+      "pickTeam": "Pick a team",
+      "approved": "Request approved",
+      "rejected": "Request rejected",
+      "saved": "Request saved",
+      "gone": "This request was decided meanwhile. The list is up to date again.",
+      "rejectTitle": "Reject the request of {{name}}?",
+      "rejectBody": "{{part}}. Their account stays; it gets nothing from this request.",
+      "asks": "Asks: {{part}}",
+      "signedUp": "Signed up {{date}}",
+      "managesClub": "Club manager · {{name}}",
+      "managesTeam": "Team manager · {{name}}",
+      "changed": "changed",
+      "via": {
+        "admin": "by an admin",
+        "club": "by the club",
+        "team": "by the team"
+      }
     }
   },
   "playerPool": {
@@ -3698,7 +3767,15 @@
     "addCoach": "Add coach",
     "removeCoach": "Remove coach",
     "clearPlayer": "Clear player {{number}}",
-    "beachTeamHint": "A beach team is a pair: player 1 and player 2, optionally with a coach."
+    "beachTeamHint": "A beach team is a pair: player 1 and player 2, optionally with a coach.",
+    "noClub": "No club",
+    "clubNotListed": "{{name}} (not a club in OpenVolley)",
+    "svrzPlaceholder": "Search the schedule’s teams",
+    "svrzOptions": "Teams in the schedule",
+    "svrzShowAll": "Show every team",
+    "svrzClubOnly": "Only {{club}}",
+    "svrzNoMatch": "No team in the schedule matches. What you type is kept.",
+    "svrzOpen": "Show the teams"
   },
   "cloudBlock": {
     "scorerRequired": "Not synced: your account is waiting for approval. The match is safe on this device.",

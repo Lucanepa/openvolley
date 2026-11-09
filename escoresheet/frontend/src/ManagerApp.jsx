@@ -15,6 +15,7 @@ import { parseAuthLinkHash, takeAuthLinkFromLocation } from './utils/authLinks'
 import { otherManagerBrand, useManagerBrand, useManagerSwitch } from './managerBrand'
 import LegalLinks from './legal/LegalLinks'
 import { accessForApp } from './lib/access'
+import { requestPartLabel, sortRequestParts } from './domain/signUpRequests'
 import { errorKeyOf, fetchMe, joinApp } from './lib/accountApi'
 import { toast } from './ui/uiStore'
 
@@ -268,6 +269,9 @@ function SignUpScreen({ onSignedUp, onBack, teamLink = false }) {
           <SignUpForm
             onSignedUp={onSignedUp}
             onSwitchToLogin={() => setLoginOpen(true)}
+            // db/025: OpenVolley's sign-up says what the account does (clubs
+            // are OpenVolley's: OpenBeach's sign-up asks nothing)
+            askRoles={!text.beach}
             // OpenBeach: an address that already has an account (OpenVolley's
             // or OpenBeach's) signs in with its password and then joins
             existingAccountMessage={text.beach ? t('managerBeach.existingAccount') : undefined}
@@ -369,6 +373,24 @@ function ScorerAppLinks({ primary = false }) {
 }
 
 /**
+ * db/025: what the account asked for at sign-up and is still open, with who
+ * approves it. Nothing when it asked for nothing (or all of it is decided).
+ */
+function OpenRequestsNote({ requests }) {
+  const { t } = useTranslation()
+  if (!requests?.length) return null
+  return (
+    <div role="status" data-testid="manager-open-requests" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+      <p className="font-medium">{t('access.requests.yourRequest')}</p>
+      <ul className="mt-1 list-disc pl-5">
+        {sortRequestParts(requests).map((p) => <li key={p.id}>{requestPartLabel(p, t)}</li>)}
+      </ul>
+      <p className="mt-1.5 text-xs text-amber-800">{t('access.requests.yourRequestBody')}</p>
+    </div>
+  )
+}
+
+/**
  * A new (pending) account: the next step is the club's invite code. A code
  * gives the account its role at once (scorer, referee or competition manager) (AuthContext re-reads the roles and this
  * page turns into "you're all set"); without one an admin approves it, which
@@ -377,6 +399,7 @@ function ScorerAppLinks({ primary = false }) {
 function InviteStepScreen({ justSignedUp, linkSentTo = null }) {
   const { t } = useTranslation()
   const text = useBrandText()
+  const { access } = useAuth()
   return (
     <Gate>
       <div data-testid="manager-invite-step">
@@ -397,6 +420,8 @@ function InviteStepScreen({ justSignedUp, linkSentTo = null }) {
         {/* Any unconfirmed account, not only a new one: no code works before
             the confirmation (the server answers OV_EMAIL_UNCONFIRMED) */}
         <EmailConfirmBanner className="mb-4" />
+        {/* db/025: OpenVolley's own requests (OpenBeach's sign-up asks nothing) */}
+        {!text.beach && <OpenRequestsNote requests={access?.requests} />}
         <div className="text-center">
           <KeyRound className="mx-auto h-8 w-8 text-stone-400" aria-hidden />
           <h1 className="mt-3 text-base font-semibold text-stone-900">{t('managerSite.inviteStepTitle')}</h1>

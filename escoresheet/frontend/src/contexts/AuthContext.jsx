@@ -218,7 +218,8 @@ export function AuthProvider({ children, app = null }) {
   }, [fetchProfile])
 
   // Sign up with email/password
-  const signUp = useCallback(async (email, password, profileData = {}) => {
+  // `requests` (db/025): what the account asks for at sign-up, [{ kind, club_id?, team_id? }]
+  const signUp = useCallback(async (email, password, profileData = {}, { requests } = {}) => {
     if (!hasBackend()) {
       return { error: { message: 'Backend not configured' } }
     }
@@ -229,6 +230,7 @@ export function AuthProvider({ children, app = null }) {
       options: {
         lang: i18n.language,
         ...(app ? { app } : {}),
+        ...(Array.isArray(requests) && requests.length ? { requests } : {}),
         data: {
           first_name: profileData.firstName || null,
           last_name: profileData.lastName || null,
@@ -405,13 +407,14 @@ export function AuthProvider({ children, app = null }) {
   // bumped to load the clubs again (an invite code that carries a club)
   const [clubsReload, setClubsReload] = useState(0)
   const clubsSource = clubsState?.userId === userId ? clubsState : (userId ? readCachedClubs(userId) : null)
-  const clubsKey = JSON.stringify(clubsSource ? [clubsSource.clubs, clubsSource.clubRule, clubsSource.managedClubs || [], clubsSource.managedTeams || []] : null)
+  const clubsKey = JSON.stringify(clubsSource ? [clubsSource.clubs, clubsSource.clubRule, clubsSource.managedClubs || [], clubsSource.managedTeams || [], clubsSource.requests || []] : null)
   const access = useMemo(() => {
     if (!userId) return NO_ACCESS
     const c = JSON.parse(clubsKey)
     // db/020: managedClubs, the clubs the account manages (the manager's My club tab)
     // db/023: managedTeams, the teams it acts for (the manager's My teams tab)
-    return { ...accessFromRoles(JSON.parse(rolesKey)), known, clubs: c ? c[0] : [], clubRule: c ? c[1] === true : false, managedClubs: c ? c[2] : [], managedTeams: c ? (c[3] || []) : [], clubsKnown: !!c }
+    // db/025: requests, what it asked for at sign-up and is still open
+    return { ...accessFromRoles(JSON.parse(rolesKey)), known, clubs: c ? c[0] : [], clubRule: c ? c[1] === true : false, managedClubs: c ? c[2] : [], managedTeams: c ? (c[3] || []) : [], requests: c ? (c[4] || []) : [], clubsKnown: !!c }
   }, [userId, rolesKey, known, clubsKey])
 
   // Load the clubs once signed in, and again on focus and when back online
@@ -429,7 +432,8 @@ export function AuthProvider({ children, app = null }) {
           clubs: Array.isArray(res.data.clubs) ? res.data.clubs : [],
           clubRule: res.data.clubRule === true,
           managedClubs: Array.isArray(res.data.managedClubs) ? res.data.managedClubs : [],
-          managedTeams: Array.isArray(res.data.managedTeams) ? res.data.managedTeams : []
+          managedTeams: Array.isArray(res.data.managedTeams) ? res.data.managedTeams : [],
+          requests: Array.isArray(res.data.requests) ? res.data.requests : []
         }
         cacheClubs(value)
         setClubsState(value)
@@ -502,7 +506,10 @@ export function AuthProvider({ children, app = null }) {
       if (typeof navigator !== 'undefined' && navigator.onLine === false) return
       fetchProfile(user.id)
     }
-    const timer = setInterval(refresh, PENDING_PROFILE_POLL_MS)
+    // db/025: a part of its sign-up request approved without a role (a team or
+    // a club to manage) shows through /api/me, read again with the profile (on
+    // focus and back online it is read anyway)
+    const timer = setInterval(() => { refresh(); setClubsReload((n) => n + 1) }, PENDING_PROFILE_POLL_MS)
     window.addEventListener('focus', refresh)
     window.addEventListener('online', refresh)
     return () => {

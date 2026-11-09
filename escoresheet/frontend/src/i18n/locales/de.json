@@ -2990,7 +2990,38 @@
       "team_manager": "Teamverantwortliche/r"
     },
     "signUpPendingNote": "Neue Konten brauchen eine Freigabe, bevor offizielle Spiele in die Cloud synchronisiert werden. Frage deinen Verein nach einem Einladungscode.",
-    "officialMatchLocalOnly": "Dieses Spiel bleibt auf diesem Gerät, bis dein Konto als Schreiber freigegeben ist."
+    "officialMatchLocalOnly": "Dieses Spiel bleibt auf diesem Gerät, bis dein Konto als Schreiber freigegeben ist.",
+    "requests": {
+      "whatDoYouDo": "Was machst du?",
+      "whatHint": "Freiwillig. Kreuze an, was du machst und für welchen Verein: Ein Admin oder dein Verein gibt es frei, und dein Konto bekommt genau das. Du kannst es auch leer lassen und später einen Einladungscode eingeben.",
+      "kinds": {
+        "scorer": "Schreiber",
+        "referee": "Schiedsrichter",
+        "team_manager": "Teamverantwortliche/r / Trainer",
+        "club_manager": "Vereinsverantwortliche/r"
+      },
+      "scorerHint": "Schreibt die Heimspiele eines Vereins",
+      "refereeHint": "Ohne Verein",
+      "teamManagerHint": "Pflegt die Spieler eines Teams und den Kader jedes Spiels",
+      "clubManagerHint": "Betreut die Schreiber, Teams und Einladungscodes eines Vereins",
+      "scorerClub": "Verein, für den du schreibst",
+      "addClub": "Weiterer Verein",
+      "pickClub": "Verein wählen",
+      "removeClub": "{{name}} entfernen",
+      "teamClub": "Verein deines Teams",
+      "teams": "Deine Teams",
+      "noTeams": "Dieser Verein hat in OpenVolley noch keine Teams. Wähle ihn als Schreiber oder frage den Verein nach einem Teamlink.",
+      "managedClub": "Verein, den du betreust",
+      "clubsUnavailable": "Die Vereine konnten nicht geladen werden. Du kannst dein Konto trotzdem als Schiedsrichter erstellen oder deinen Verein nach einem Einladungscode fragen.",
+      "noClubsYet": "In OpenVolley sind noch keine Vereine erfasst.",
+      "needScorerClub": "Wähle den Verein, für den du schreibst.",
+      "needTeamClub": "Wähle den Verein deines Teams.",
+      "needTeam": "Kreuze dein Team an.",
+      "needManagedClub": "Wähle den Verein, den du betreust.",
+      "signUpRefused": "Ein gewählter Verein oder ein gewähltes Team gibt es nicht mehr. Wähle neu und erstelle dann dein Konto.",
+      "yourRequest": "Deine Anfrage",
+      "yourRequestBody": "Ein Admin oder dein Verein gibt sie frei. Diese Seite aktualisiert sich von selbst, sobald etwas freigegeben ist."
+    }
   },
   "managerSite": {
     "eyebrow": "Verwaltung",
@@ -3248,7 +3279,9 @@
         "team_managers": "Teamverantwortliche geändert",
         "team_squad": "Teamkader gespeichert",
         "team_roster": "Spielkader geschickt",
-        "club_licences": "Lizenzliste hochgeladen"
+        "club_licences": "Lizenzliste hochgeladen",
+        "account_request_approve": "Registrierungsanfrage freigegeben",
+        "account_request_reject": "Registrierungsanfrage abgelehnt"
       }
     },
     "approvals": {
@@ -3557,6 +3590,42 @@
       "noMatch": "Niemand passt zum Filter.",
       "showMore": "{{count}} weitere zeigen",
       "wrongGender": "Ein Spieler ist beim Verein für das andere Geschlecht gemeldet und kann nicht in diesem Team spielen."
+    },
+    "requests": {
+      "title": "Anfragen",
+      "clubHint": "Personen, die sich registriert und angegeben haben, dass sie für diesen Verein schreiben, eines seiner Teams betreuen oder den Verein betreuen. Freigeben gibt ihnen genau das; ihre anderen Anfragen bleiben für die anderen.",
+      "teamHint": "Personen, die sich als Verantwortliche oder Trainer dieses Teams registriert haben. Freigeben macht sie zu Teamverantwortlichen.",
+      "empty": "Keine offenen Anfragen.",
+      "approve": "Freigeben",
+      "reject": "Ablehnen",
+      "approveAll": "Wie angefragt freigeben",
+      "review": "Anfrage prüfen",
+      "reviewTitle": "Anfrage von {{name}}",
+      "reviewHint": "Gib einen Teil wie angefragt oder mit einem anderen Verein oder Team frei, lass ihn für später (die Verantwortlichen des Vereins oder Teams können ihn noch freigeben), oder lehne ihn ab.",
+      "decision": {
+        "approve": "Freigeben",
+        "later": "Später",
+        "reject": "Ablehnen"
+      },
+      "club": "Verein",
+      "team": "Team",
+      "pickTeam": "Team wählen",
+      "approved": "Anfrage freigegeben",
+      "rejected": "Anfrage abgelehnt",
+      "saved": "Anfrage gespeichert",
+      "gone": "Über diese Anfrage wurde inzwischen entschieden. Die Liste ist wieder aktuell.",
+      "rejectTitle": "Anfrage von {{name}} ablehnen?",
+      "rejectBody": "{{part}}. Das Konto bleibt bestehen; es bekommt aus dieser Anfrage nichts.",
+      "asks": "Fragt an: {{part}}",
+      "signedUp": "Registriert am {{date}}",
+      "managesClub": "Vereinsverantwortliche/r · {{name}}",
+      "managesTeam": "Teamverantwortliche/r · {{name}}",
+      "changed": "geändert",
+      "via": {
+        "admin": "durch einen Admin",
+        "club": "durch den Verein",
+        "team": "durch das Team"
+      }
     }
   },
   "playerPool": {
@@ -3676,7 +3745,15 @@
     "addCoach": "Trainer hinzufügen",
     "removeCoach": "Trainer entfernen",
     "clearPlayer": "Spieler/in {{number}} leeren",
-    "beachTeamHint": "Ein Beach-Team ist ein Paar: Spieler/in 1 und 2, optional mit Trainer."
+    "beachTeamHint": "Ein Beach-Team ist ein Paar: Spieler/in 1 und 2, optional mit Trainer.",
+    "noClub": "Kein Verein",
+    "clubNotListed": "{{name}} (kein Verein in OpenVolley)",
+    "svrzPlaceholder": "Teams im Spielplan suchen",
+    "svrzOptions": "Teams im Spielplan",
+    "svrzShowAll": "Alle Teams zeigen",
+    "svrzClubOnly": "Nur {{club}}",
+    "svrzNoMatch": "Kein Team im Spielplan passt. Was du tippst, bleibt so.",
+    "svrzOpen": "Teams zeigen"
   },
   "cloudBlock": {
     "scorerRequired": "Nicht synchronisiert: Dein Konto wartet auf Freigabe. Das Spiel ist auf diesem Gerät sicher.",
