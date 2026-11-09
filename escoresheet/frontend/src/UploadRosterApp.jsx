@@ -1364,8 +1364,8 @@ export default function UploadRosterApp() {
               </p>
               <div className="grid gap-4 sm:grid-cols-2">
                 {[
-                  { key: 'coach', label: t('rosterSetup.coachSignature', 'Coach signature'), value: coachSignature, clear: () => setCoachSignature(null), alt: 'Coach signature' },
-                  { key: 'captain', label: t('rosterSetup.captainSignature', 'Captain signature'), value: captainSignature, clear: () => setCaptainSignature(null), alt: 'Captain signature' }
+                  { key: 'captain', label: t('rosterSetup.captainSignature', 'Captain signature'), value: captainSignature, clear: () => setCaptainSignature(null), alt: 'Captain signature' },
+                  { key: 'coach', label: t('rosterSetup.coachSignature', 'Coach signature'), value: coachSignature, clear: () => setCoachSignature(null), alt: 'Coach signature' }
                 ].map((sig) => (
                   <div key={sig.key} className="min-w-0">
                     <p className="mb-1.5 text-sm font-medium text-stone-700">{sig.label}</p>

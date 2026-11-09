@@ -2721,6 +2721,15 @@
     "teamCaptains": "Captains",
     "remarks": "Bemerkungen",
     "editRemarks": "Bemerkungen bearbeiten",
+    "remarksSignature": {
+      "add": "Unterschrift in den Bemerkungen hinzufügen",
+      "title": "Unterschrift in den Bemerkungen",
+      "intro": "Für eine offizielle Person ohne eigenes Unterschriftsfeld auf dem Matchblatt, zum Beispiel einen Schiedsrichter-Coach. Die Unterschrift wird in den Bemerkungen gedruckt.",
+      "role": "Funktion",
+      "name": "Name",
+      "sign": "Unterschreiben",
+      "defaultRole": "Schiedsrichter-Coach"
+    },
     "officialSignatures": "Unterschriften der Offiziellen",
     "allSignaturesCollected": "Alle Unterschriften gesammelt",
     "closeMatch": "Spiel abschliessen",

@@ -22,19 +22,19 @@ describe('needsPreMatchSignatures', () => {
 
 describe('missingRolesOf', () => {
   it('lists the coach and the captain until each has signed', () => {
-    expect(PRE_MATCH_ROLES).toEqual(['coach', 'captain'])
-    expect(missingRolesOf({}, 'home')).toEqual(['coach', 'captain'])
+    expect(PRE_MATCH_ROLES).toEqual(['captain', 'coach'])
+    expect(missingRolesOf({}, 'home')).toEqual(['captain', 'coach'])
     expect(missingRolesOf({ homeCoachSignature: INK }, 'home')).toEqual(['captain'])
     expect(missingRolesOf({ homeCaptainSignature: INK }, 'home')).toEqual(['coach'])
     expect(missingRolesOf({ homeCoachSignature: INK, homeCaptainSignature: INK }, 'home')).toEqual([])
   })
 
   it('reads only its own team', () => {
-    expect(missingRolesOf({ homeCoachSignature: INK, homeCaptainSignature: INK }, 'away')).toEqual(['coach', 'captain'])
+    expect(missingRolesOf({ homeCoachSignature: INK, homeCaptainSignature: INK }, 'away')).toEqual(['captain', 'coach'])
   })
 
   it('an empty or cleared signature is missing', () => {
-    expect(missingRolesOf({ awayCoachSignature: '', awayCaptainSignature: null }, 'away')).toEqual(['coach', 'captain'])
+    expect(missingRolesOf({ awayCoachSignature: '', awayCaptainSignature: null }, 'away')).toEqual(['captain', 'coach'])
   })
 })
 
@@ -44,7 +44,7 @@ describe('missingPreMatchSignatures', () => {
   })
 
   it('per team what is still to sign', () => {
-    expect(missingPreMatchSignatures({})).toEqual({ home: ['coach', 'captain'], away: ['coach', 'captain'] })
+    expect(missingPreMatchSignatures({})).toEqual({ home: ['captain', 'coach'], away: ['captain', 'coach'] })
     expect(missingPreMatchSignatures({ ...allSigned, awayCaptainSignature: null })).toEqual({ home: [], away: ['captain'] })
   })
 

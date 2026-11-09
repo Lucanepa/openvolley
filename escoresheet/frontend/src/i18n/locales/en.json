@@ -1476,6 +1476,15 @@
     "tapToSign": "Tap to sign",
     "noRemarks": "No remarks",
     "editRemarks": "Edit remarks",
+    "remarksSignature": {
+      "add": "Add a signature to the remarks",
+      "title": "Signature in the remarks",
+      "intro": "For an official who has no signature box on the scoresheet, such as a referee coach. The signature is printed in the remarks.",
+      "role": "Role",
+      "name": "Name",
+      "sign": "Sign",
+      "defaultRole": "Referee coach"
+    },
     "remarksPlaceholder": "Record match remarks...",
     "noSanctions": "No sanctions",
     "result": "Result",

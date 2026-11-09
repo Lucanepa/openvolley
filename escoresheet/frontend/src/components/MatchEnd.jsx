@@ -46,6 +46,10 @@ import {
   resultKey, rememberApprovalEmail, namesDiffer, approvalsCompletingSlots, approvalsStillValid, pinApprovalState
 } from '../domain/accountApproval'
 import { signatureEditLocked, signaturesPayload, signaturesSyncJob } from '../domain/signatureEdits'
+import { MAX_REMARKS_SIGNATURES, REMARKS_NAME_MAX, REMARKS_ROLE_MAX, remarksSignatureCaption, remarksSignaturesOf, withRemarksSignature, withoutRemarksSignature } from '../domain/remarksSignatures'
+import { saveMatchSignature } from '../utils/saveSignature'
+import { Field } from '../ui/Field.jsx'
+import { Input } from '../ui/Input.jsx'
 import AccountApprovalDialog from './AccountApprovalDialog'
 import { askConfirm } from '../utils/askConfirm.js'
 import { getCloudApiUrl } from '../utils/backendConfig'
@@ -376,6 +380,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
   const { showAlert } = useAlert()
   const [openSignature, setOpenSignature] = useState(null)
+  // a signature in the REMARKS box (referee coach, ...): the form, then its pad
+  const [remarksSigForm, setRemarksSigForm] = useState(null) // { role, name } | null
+  const [remarksSigPad, setRemarksSigPad] = useState(false)
   // A saved signature's pad closes in the render that shows it in its box
   // ({ role, field, value }: the pad's slot, the match field and the saved
   // image; only that slot's pad is closed). The pad went a
@@ -779,6 +786,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   const callerMayApprove = !!access?.isAdmin || !!access?.roles?.some(r => r === 'scorer' || r === 'referee')
   // Re-sign and Clear close once the result is approved or the match closed
   const signaturesLocked = signatureEditLocked(match, { isApproved: finalActions })
+  const remarksSignatures = remarksSignaturesOf(match?.remarksSignatures)
   // The PIN-approval line of an official's box: approved, offered, or why not
   const pinStateOf = (role) => pinApprovalState({
     role, approval: approvalFor(match, role), sets, locked: signaturesLocked, isBeach, hasSeedKey: !!match.seed_key,
@@ -1882,6 +1890,36 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         <div style={{ background: '#fff', borderRadius: '6px', overflow: 'hidden', border: '2px solid #333', minHeight: '60px' }}>
           <RemarksBox overflowSanctions={overflowSanctions} remarks={match?.remarks || ''} generated={autoRemarks} />
         </div>
+        {/* Officials who sign a remark (a referee coach, ...): printed in the REMARKS box */}
+        {(remarksSignatures.length > 0 || !signaturesLocked) && (
+          <div className="ov-kit" style={{ marginTop: '12px' }} data-testid="remarks-signatures">
+            {remarksSignatures.length > 0 && (
+              <div className="flex flex-wrap gap-3" style={{ marginBottom: '10px' }}>
+                {remarksSignatures.map((sig, i) => (
+                  <div key={i} className="flex items-center gap-3 rounded-lg border border-stone-200 bg-white px-3 py-2" data-testid="remarks-signature">
+                    <img src={sig.image} alt={remarksSignatureCaption(sig)} className="ov-ink" style={{ height: '40px', maxWidth: '120px', objectFit: 'contain' }} />
+                    <span className="text-sm text-stone-700">{remarksSignatureCaption(sig)}</span>
+                    {!signaturesLocked && (
+                      <Button variant="danger-outline" size="sm" onClick={() => saveMatchSignature(db, matchId, 'remarksSignatures', withoutRemarksSignature(match?.remarksSignatures, i))}>
+                        {t('common.remove', 'Remove')}
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            {!signaturesLocked && remarksSignatures.length < MAX_REMARKS_SIGNATURES && (
+              <Button
+                variant="secondary"
+                size="md"
+                data-testid="remarks-signature-add"
+                onClick={() => setRemarksSigForm({ role: t('matchEnd.remarksSignature.defaultRole', 'Referee coach'), name: '' })}
+              >
+                {t('matchEnd.remarksSignature.add', 'Add a signature to the remarks')}
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Other Signatures - At the bottom */}
@@ -2238,6 +2276,38 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         sets={sets}
         userEmail={authCtx?.user?.email || ''}
         onApproved={handleAccountApproved}
+      />
+
+      {/* A signature in the REMARKS box: who signs, then the pad */}
+      {remarksSigForm && !remarksSigPad && (
+        <Modal title={t('matchEnd.remarksSignature.title', 'Signature in the remarks')} open={true} onClose={() => setRemarksSigForm(null)} width={460}>
+          <div className="ov-kit grid gap-4" style={{ padding: '8px 0 0' }}>
+            <p className="text-sm text-stone-600">{t('matchEnd.remarksSignature.intro', 'For an official who has no signature box on the scoresheet, such as a referee coach. The signature is printed in the remarks.')}</p>
+            <Field label={t('matchEnd.remarksSignature.role', 'Role')}>
+              <Input id="remarks-signature-role" value={remarksSigForm.role} maxLength={REMARKS_ROLE_MAX} onChange={e => setRemarksSigForm(f => ({ ...f, role: e.target.value }))} />
+            </Field>
+            <Field label={t('matchEnd.remarksSignature.name', 'Name')}>
+              <Input id="remarks-signature-name" value={remarksSigForm.name} maxLength={REMARKS_NAME_MAX} onChange={e => setRemarksSigForm(f => ({ ...f, name: e.target.value }))} autoFocus />
+            </Field>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" size="xl" onClick={() => setRemarksSigForm(null)}>{t('common.cancel', 'Cancel')}</Button>
+              <Button variant="positive" size="xl" data-testid="remarks-signature-sign" disabled={!remarksSigForm.role.trim()} onClick={() => setRemarksSigPad(true)}>
+                {t('matchEnd.remarksSignature.sign', 'Sign')}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+      <SignaturePad
+        open={!!remarksSigForm && remarksSigPad}
+        title={remarksSigForm ? remarksSignatureCaption({ role: remarksSigForm.role.trim(), name: remarksSigForm.name.trim() }) : ''}
+        onSave={async (signatureData) => {
+          const next = remarksSigForm && signatureData ? withRemarksSignature(match?.remarksSignatures, { ...remarksSigForm, image: signatureData }) : null
+          if (next && !signaturesLocked) await saveMatchSignature(db, matchId, 'remarksSignatures', next)
+        }}
+        onClose={() => { setRemarksSigPad(false); setRemarksSigForm(null) }}
+        // no "Sign on phone": the phone page and the server know the sheet's own boxes only
+        phone={null}
       />
 
       {/* Remarks Modal */}

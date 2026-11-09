@@ -1475,6 +1475,15 @@
     "tapToSign": "Tocca per firmare",
     "noRemarks": "Nessuna osservazione",
     "editRemarks": "Modifica osservazioni",
+    "remarksSignature": {
+      "add": "Aggiungi una firma alle osservazioni",
+      "title": "Firma nelle osservazioni",
+      "intro": "Per un ufficiale che non ha una casella per la firma sul referto, ad esempio un coach arbitri. La firma viene stampata nelle osservazioni.",
+      "role": "Funzione",
+      "name": "Nome",
+      "sign": "Firma",
+      "defaultRole": "Coach arbitri"
+    },
     "remarksPlaceholder": "Commenti sulla partita record...",
     "noSanctions": "Nessuna sanzione",
     "result": "Risultato",

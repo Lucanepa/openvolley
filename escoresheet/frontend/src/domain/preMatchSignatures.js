@@ -6,8 +6,9 @@
 
 import { PRE_MATCH_SIGNATURE_FIELD } from './phoneSignature'
 
-/** The roles that sign a team's roster before the match, in the order shown. */
-export const PRE_MATCH_ROLES = Object.freeze(['coach', 'captain'])
+/** The roles that sign a team's roster before the match, in the order shown:
+ * the captain first, then the coach, as on the scoresheet (SVRZ feedback 2026-11-09). */
+export const PRE_MATCH_ROLES = Object.freeze(['captain', 'coach'])
 
 /**
  * An official match needs the signatures. A test match fills placeholders at

@@ -1475,6 +1475,15 @@
     "tapToSign": "Tipp zum Underschriibe",
     "noRemarks": "Kei Bemerkige",
     "editRemarks": "Bemerkige bearbeite",
+    "remarksSignature": {
+      "add": "Unterschrift i de Bemerkige dezuefüege",
+      "title": "Unterschrift i de Bemerkige",
+      "intro": "Für e offizielli Person ohni eigets Unterschriftsfeld uf em Matchblatt, zum Bispiil en Schiri-Coach. D Unterschrift wird i de Bemerkige druckt.",
+      "role": "Funktion",
+      "name": "Name",
+      "sign": "Unterschriibe",
+      "defaultRole": "Schiri-Coach"
+    },
     "remarksPlaceholder": "Bemerkige zum Spiil erfasse...",
     "noSanctions": "Kei Sanktione",
     "result": "Resultat",
