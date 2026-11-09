@@ -13,12 +13,18 @@
  *   putList({ clubId, list, people, userId })  replaces one list (<= 2000 people)
  *   clubList({ clubId })                       every person once, their lists and teams
  * Whoever may manage the team (lib/teams.js mayManage):
- *   teamClubPlayers({ teamId })                the players list of the team's club, the team's gender
+ *   teamClubPlayers({ teamId })                the team's club: its players list, every person of
+ *                                              its lists once (people, for the officials), the
+ *                                              team's gender
  * Scorers (indoor canReadTeams, as GET /api/game-rosters):
- *   scorerClubPlayers({ userId })              each club of the caller: its teams, their gender, its players
+ *   scorerClubPlayers({ userId })              each club of the caller: its teams, their gender,
+ *                                              its players list and every person of its lists once
  * Everyone else (lib/teams.js):
  *   wrongGender(db, team, players)             the first player of the club's players list
- *                                              whose gender is not the team's, or null
+ *                                              whose gender is not the team's, or null; players
+ *                                              only, never the team's officials (owner 2026-11-09:
+ *                                              "coaches can literally be any player/member of the
+ *                                              club")
  *   teamGenders(db, names)                     Map team key -> 'm' | 'f' | null (svrz_games)
  *
  * Personal data (names, dates of birth, licence numbers, gender): served only
@@ -141,6 +147,33 @@ const personOut = (r) => ({
 const byName = (a, b) => a.last_name.localeCompare(b.last_name, 'de') || String(a.first_name || '').localeCompare(String(b.first_name || ''), 'de') || a.sv_number.localeCompare(b.sv_number)
 
 /**
+ * Rows of several lists ({ list, sv_number, last_name, first_name, dob,
+ * gender }) -> every person once ({ ...the five fields, lists }), in name
+ * order: the fields of the first list that has them (players, scorers,
+ * coaches), lists in that order. `extra(sv)` adds fields to a person (the
+ * teams of My club).
+ */
+export function mergeLicencePeople (rows, extra = null) {
+  const people = new Map()
+  const order = (r) => LICENCE_LISTS.indexOf(r.list)
+  for (const r of [...(rows || [])].filter((x) => LICENCE_LISTS.includes(x?.list)).sort((a, b) => order(a) - order(b))) {
+    const cur = people.get(r.sv_number)
+    if (!cur) {
+      people.set(r.sv_number, { ...personOut(r), lists: [r.list], ...(extra ? extra(r.sv_number) : {}) })
+      continue
+    }
+    if (!cur.lists.includes(r.list)) cur.lists.push(r.list)
+    cur.first_name ??= r.first_name ?? null
+    cur.dob ??= r.dob ?? null
+    cur.gender ??= r.gender ?? null
+  }
+  return [...people.values()].sort(byName)
+}
+
+/** The players list of `rows` (several lists): the five fields, in name order. */
+const playersOf = (rows) => (rows || []).filter((r) => r.list === 'players').map(personOut).sort(byName)
+
+/**
  * @param {object} o
  * @param {import('pg').Pool} o.pool
  * @param {(client: any, entry: object) => Promise<void>} o.audit  lib/accounts.js audit (throws)
@@ -203,6 +236,9 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
    * players list of `team`'s club with a gender other than the team's:
    * { index, gender } or null. No check while the team's gender is unknown,
    * and none without db/024. `team`: { name, club_id }. Throws on a DB error.
+   * Callers pass the players only: the team's officials (coach, assistant
+   * coaches, physiotherapist, medic) may be anyone of the club, of either
+   * gender (owner 2026-11-09).
    */
   async function wrongGender (db, team, players) {
     if (!team || !isUuid(team.club_id) || !Array.isArray(players) || !players.length) return null
@@ -305,29 +341,23 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
         }
       }
       // one entry per licence number: its fields from the first list that has them
-      const people = new Map()
-      const order = (r) => LICENCE_LISTS.indexOf(r.list)
-      for (const r of [...rows].sort((a, b) => order(a) - order(b))) {
-        const cur = people.get(r.sv_number)
-        if (!cur) {
-          people.set(r.sv_number, { ...personOut(r), lists: [r.list], teams: (teamsOf.get(r.sv_number) || []).sort((a, b) => a.name.localeCompare(b.name)) })
-          continue
-        }
-        cur.lists.push(r.list)
-        cur.first_name ??= r.first_name ?? null
-        cur.dob ??= r.dob ?? null
-        cur.gender ??= r.gender ?? null
-      }
+      const people = mergeLicencePeople(rows, (sv) => ({ teams: (teamsOf.get(sv) || []).sort((a, b) => a.name.localeCompare(b.name)) }))
       const lists = Object.fromEntries(LICENCE_LISTS.map((l) => {
         const s = summary.find((x) => x.list === l)
         return [l, s ? { count: s.count, imported_at: iso(s.imported_at), imported_by_name: s.imported_by_name ?? null } : { count: 0, imported_at: null, imported_by_name: null }]
       }))
-      return ok({ season, lists, people: [...people.values()].sort(byName) })
+      return ok({ season, lists, people })
     })
   }
 
   // ---------------------------------------------------------------- team managers
-  /** GET /api/team/:id/club-players: the players list of the team's club, and the team's gender (null: no check). */
+  /**
+   * GET /api/team/:id/club-players: the team's club for "Add from club" and
+   * the team's gender (null: no check). `players`: the players list (for the
+   * player rows, which the gender rule checks); `people`: every person of the
+   * club's three lists once, with its `lists` (for the team officials, who
+   * may be anyone of the club, of either gender).
+   */
   async function teamClubPlayers ({ teamId } = {}) {
     if (!isUuid(teamId)) return notFound()
     return guarded('team-club-players', async () => {
@@ -337,13 +367,13 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
       if (!t) return notFound()
       const team = { id: t.id, name: t.name, club_id: t.club_id, club_name: t.club_name }
       const gender = (await teamGenders(pool, [team.name])).get(key(team.name)) ?? null
-      let players = []
+      let rows = []
       try {
-        players = (await peopleOf(pool, team.club_id, 'players')).map(personOut).sort(byName)
+        rows = await peopleOf(pool, team.club_id)
       } catch (err) {
         if (!MISSING.has(err?.code)) throw err
       }
-      return ok({ team, gender, players })
+      return ok({ team, gender, players: playersOf(rows), people: mergeLicencePeople(rows) })
     })
   }
 
@@ -351,7 +381,9 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
   /**
    * GET /api/club-licences: what the scoring tablet keeps for Match Setup
    * (offline first): each club of the caller with its team names, each team's
-   * gender and the club's players list.
+   * gender, the club's players list (`players`: the roster rows; the only
+   * field release 3.0.15 reads) and every person of its three lists once
+   * (`people`, with `lists`: the bench officials).
    */
   async function scorerClubPlayers ({ userId } = {}) {
     if (!isUuid(userId)) return fail(401, 'invalid_token', 'Not signed in')
@@ -363,8 +395,8 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
       let rows = []
       try {
         ;({ rows } = await pool.query(
-          `SELECT l.club_id, l.sv_number, l.last_name, l.first_name, l.dob::text AS dob, l.gender
-             FROM public.club_licences l WHERE l.club_id = ANY($1::uuid[]) AND l.list = 'players'`, [mine.map((c) => c.id)]))
+          `SELECT l.club_id, l.list, l.sv_number, l.last_name, l.first_name, l.dob::text AS dob, l.gender
+             FROM public.club_licences l WHERE l.club_id = ANY($1::uuid[])`, [mine.map((c) => c.id)]))
       } catch (err) {
         if (!MISSING.has(err?.code)) throw err
       }
@@ -372,12 +404,14 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
         fetched_at: now.toISOString(),
         clubs: mine.map((c) => {
           const names = c.teams || []
+          const own = rows.filter((r) => r.club_id === c.id)
           return {
             club_id: c.id,
             club_name: c.name,
             team_names: names,
             team_genders: Object.fromEntries(names.map((n) => [n, genders.get(key(n)) ?? null])),
-            players: rows.filter((r) => r.club_id === c.id).map(personOut).sort(byName)
+            players: playersOf(own),
+            people: mergeLicencePeople(own)
           }
         })
       })

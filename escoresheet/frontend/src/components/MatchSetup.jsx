@@ -52,7 +52,7 @@ import SentRosterCard from './SentRosterCard'
 import ClubPlayerPickerModal from './ClubPlayerPickerModal'
 import ClubGenderNotice from './ClubGenderNotice'
 import { clubOfTeam } from '../db/clubPlayers'
-import { addClubPlayersToRoster, clubGenderWarnings, matchGenderOf, offeredClubPlayers, rosterHasPerson } from '../domain/clubPlayers'
+import { addClubPlayersToRoster, benchOfficialOfRole, benchRolesOf, clubGenderWarnings, matchGenderOf, offeredClubPlayers, rosterHasPerson, setBenchOfficial } from '../domain/clubPlayers'
 import { officialCheck, OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS } from '../lib/accountApi'
 import { openRestore } from '../utils/manageNav'
 import { Users, Save as SaveIcon, Trash2, ListChecks, UserPlus } from 'lucide-react'
@@ -1003,11 +1003,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sentGameNumber, access?.canReadTeams, user?.id])
 
-  // db/024, offline first: the players lists of the account's clubs, read
+  // db/024, offline first: the licence lists of the account's clubs, read
   // from the device's copy (downloaded while online; AuthContext). "Add from
-  // club" for a team of those clubs, filtered by the game's gender (the
-  // schedule's; none for a test match). A roster player the list has with the
-  // other gender is a warning, never a block (owner decision D2).
+  // club" for a team of those clubs: players of the players list, filtered by
+  // the game's gender (the schedule's; none for a test match), and bench
+  // officials from anyone of the lists, of either gender. A roster player the
+  // list has with the other gender is a warning, never a block (owner
+  // decision D2); officials are never checked.
   const clubRows = useLiveQuery(async () => {
     if (!user?.id) return []
     try {
@@ -1032,21 +1034,49 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     else setAwayRoster(roster)
     toast.success(t('clubPlayers.added', { count: added }))
   }
+  // A bench official from the club: the role's row takes the person (names
+  // and date of birth), else a row of that role is added; each role once
+  const [officialPicker, setOfficialPicker] = useState(null) // 'home' | 'away' | null
+  const officialFromClub = (side, [c], role) => {
+    setOfficialPicker(null)
+    if (!c || !role) return
+    const setBench = side === 'home' ? setBenchHome : setBenchAway
+    setBench((bench) => setBenchOfficial(bench, role, c).bench)
+    const r = BENCH_ROLES.find((x) => x.value === role)
+    toast.success(t('clubPlayers.officialSet', { role: r ? t(r.fullLabelKey) : role, name: `${c.first_name || ''} ${c.last_name}`.trim() }))
+  }
   const clubPickerFor = (side) => {
     const club = clubTeams[side]
-    const { players, hidden } = offeredClubPlayers(club?.players, clubGender)
+    const { players } = offeredClubPlayers(club?.players, clubGender)
     const roster = side === 'home' ? homeRoster : awayRoster
+    const bench = side === 'home' ? benchHome : benchAway
+    const team = (side === 'home' ? home : away) || club?.clubName || ''
     return (
-      <ClubPlayerPickerModal
-        open={clubPicker === side && !!club}
-        onClose={() => setClubPicker(null)}
-        onPick={(chosen) => addFromClub(side, chosen)}
-        players={players}
-        gender={clubGender}
-        hiddenCount={hidden}
-        title={t('clubPlayers.titleTeam', { team: (side === 'home' ? home : away) || club?.clubName || '' })}
-        isTaken={(c) => rosterHasPerson(roster, c)}
-      />
+      <>
+        <ClubPlayerPickerModal
+          open={clubPicker === side && !!club}
+          onClose={() => setClubPicker(null)}
+          onPick={(chosen) => addFromClub(side, chosen)}
+          players={players}
+          title={t('clubPlayers.titleTeam', { team })}
+          isTaken={(c) => rosterHasPerson(roster, c)}
+        />
+        <ClubPlayerPickerModal
+          open={officialPicker === side && !!club}
+          mode="officials"
+          onClose={() => setOfficialPicker(null)}
+          onPick={(chosen, role) => officialFromClub(side, chosen, role)}
+          players={club?.people || []}
+          title={t('clubPlayers.officialTitleTeam', { team })}
+          roles={BENCH_ROLES.map((r) => ({ value: r.value, label: t(r.fullLabelKey) }))}
+          initialRole={BENCH_ROLES.find((r) => !benchOfficialOfRole(bench, r.value))?.value || 'Coach'}
+          rolesOf={(c) => benchRolesOf(bench, c)}
+          holderOf={(role) => {
+            const b = benchOfficialOfRole(bench, role)
+            return b ? `${b.firstName || ''} ${b.lastName || ''}`.trim() : null
+          }}
+        />
+      </>
     )
   }
 
@@ -4674,7 +4704,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           })()}
         </div>
         <div data-help-id="setup-bench-officials" className="mt-4">
-          <SectionHeader as="h4" title={`${t('matchSetup.benchOfficials')} — ${t('common.home')}`} />
+          <SectionHeader as="h4" title={`${t('matchSetup.benchOfficials')} — ${t('common.home')}`} action={clubTeams.home && (
+            <Button variant="ghost" size="md" className="bg-white" icon={<UserPlus size={16} aria-hidden />} onClick={() => setOfficialPicker('home')} data-testid="bench-from-club-home">
+              {t('clubPlayers.add')}
+            </Button>
+          )} />
         </div>
         <div className={cn('bench-grid', ROSTER_TABLE)}>
           {/* Bench Header Row */}
@@ -5853,7 +5887,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           })()}
         </div>
         <div className="mt-4">
-          <SectionHeader as="h4" title={`${t('matchSetup.benchOfficials')} — ${t('common.away')}`} />
+          <SectionHeader as="h4" title={`${t('matchSetup.benchOfficials')} — ${t('common.away')}`} action={clubTeams.away && (
+            <Button variant="ghost" size="md" className="bg-white" icon={<UserPlus size={16} aria-hidden />} onClick={() => setOfficialPicker('away')} data-testid="bench-from-club-away">
+              {t('clubPlayers.add')}
+            </Button>
+          )} />
         </div>
         <div className={cn('bench-grid', ROSTER_TABLE)}>
           {/* Bench Header Row */}

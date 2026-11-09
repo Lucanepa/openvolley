@@ -1,6 +1,6 @@
 # Informativa sulla protezione dei dati
 
-**OpenVolley e OpenBeach** · Versione 1.10 · Aggiornata al 9 novembre 2026
+**OpenVolley e OpenBeach** · Versione 1.11 · Aggiornata al 9 novembre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
 la versione inglese.
@@ -466,11 +466,13 @@ allenatori della società dall'amministrazione della società di VolleyManager.
 Il file viene letto nel browser: di ogni persona vengono conservati solo
 numero di licenza, cognome, nome, data di nascita e sesso; nient'altro del
 file viene inviato al server. Gli elenchi sono visibili ai responsabili della
-società e agli amministratori. L'elenco delle giocatrici e dei giocatori è
-visibile anche ai responsabili di squadra della società per i loro elenchi, e
-viene scaricato sui dispositivi dei segnapunti della società, affinché la
-preparazione della partita possa aggiungere giocatori senza internet. Il sesso
-serve a non iscrivere nessuno in una squadra dell'altro sesso. Ogni
+società e agli amministratori. Sono visibili anche ai responsabili di squadra
+della società per i loro elenchi, e vengono scaricati sui dispositivi dei
+segnapunti della società, affinché la preparazione della partita possa
+aggiungere giocatori e ufficiali di squadra senza internet (un allenatore può
+essere qualsiasi persona degli elenchi della società). Il sesso serve a non
+iscrivere giocatrici o giocatori in una squadra dell'altro sesso; per gli
+ufficiali di squadra non viene controllato. Ogni
 caricamento sostituisce quell'elenco; gli elenchi vengono cancellati con la
 società. Su un dispositivo del segnapunti ogni download sostituisce la copia,
 che viene cancellata all'uscita dall'account.
@@ -482,8 +484,9 @@ risultati, nomi di arbitri e segnapunti. Se un torneo è contrassegnato come
 numeri di licenza o date di nascita.
 
 **Scopo:** riutilizzare le liste squadra, preparare in anticipo l'elenco di una partita, aggiungere a un
-elenco giocatrici e giocatori della società e confrontarne il sesso con quello della squadra, organizzare
-tornei, abbinare giocatrici e giocatori tramite il numero di licenza durante l'importazione.
+elenco giocatrici, giocatori e ufficiali di squadra della società e confrontare il sesso di giocatrici e
+giocatori con quello della squadra, organizzare tornei, abbinare giocatrici e giocatori tramite il numero
+di licenza durante l'importazione.
 
 Questi dati restano salvati finché un gestore non li cancella, anche se
 l'account che li ha creati viene cancellato.
