@@ -47,6 +47,13 @@
  *   POST   /api/club/:id/invites/:inviteId/revoke    the same: a code of that club only
  *   GET    /api/games/today                          any signed-in account: today's home games of
  *                                                    its clubs (the scorer app's Official game)
+ *   PUT    /api/club/:id/licences/:list { people }   a manager of that club, or isAdmin (db/024):
+ *                                                    one licence list (players|scorers|coaches) replaced
+ *   GET    /api/club/:id/licences                    the same: every person once, its lists and teams
+ *   GET    /api/team/:id/club-players                whoever may manage the team (lib/teams.js
+ *                                                    mayManage): the club's players list, the team's gender
+ *   GET    /api/club-licences                        indoor canReadTeams: the players lists of the
+ *                                                    caller's clubs for the scoring tablet (offline first)
  *   GET/PUT /api/settings                            isAdmin or indoor canManageTeams: the app's
  *                                                    switches ({ send_final_email }, db/021)
  *   DELETE /api/admin/activity?match=|account=&confirm=yes  isAdmin: delete on request (audited)
@@ -71,6 +78,7 @@
 import { fail, invalid, notFound } from './accounts.js'
 import { clubInviteBody } from './clubs.js'
 import { teamInviteBody } from './teams.js'
+import { LICENCE_LISTS } from './licences.js'
 import { SPORTS, accessForSport, sportsWith } from './access.js'
 
 // Before lib/approvals.js is wired (or on a server built without it)
@@ -103,11 +111,12 @@ export function manageFamilyOf (pathname) {
   if (pathname === '/api/games/today') return 'games'
   if (pathname.startsWith('/api/team/')) return 'team'
   if (pathname === '/api/game-rosters' || pathname.startsWith('/api/game-rosters/')) return 'gameRosters'
+  if (pathname === '/api/club-licences') return 'clubLicences'
   if (pathname === '/api/settings') return 'settings'
   return null
 }
 
-export function createManageApi ({ accounts, savedTeams, beach = null, approvals = null, revisions = null, activity = null, scoresheets = null, clubs = null, finalMail = null, teams = null }) {
+export function createManageApi ({ accounts, savedTeams, beach = null, approvals = null, revisions = null, activity = null, scoresheets = null, clubs = null, finalMail = null, teams = null, licences = null }) {
   // approvals?.x, or 503 when the module is not there
   const ap = (name) => (args) => (approvals && typeof approvals[name] === 'function' ? approvals[name](args) : APPROVALS_OFF())
   const q = (query, k) => {
@@ -177,6 +186,11 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
   })
   // GET /api/game-rosters: an indoor scorer (the saved teams' read right)
   const readIndoorTeams = (m, c) => (accessForSport(c.access, 'indoor').canReadTeams ? null : FORBIDDEN())
+  // db/024: a club's licence lists (lib/licences.js); 404 on a server built without it
+  const lic = (fn) => (licences ? fn(licences) : notFound())
+  // the list is part of the path, one route each (an enum, never a uuid)
+  const licenceListRoutes = LICENCE_LISTS.map((list) => ['PUT', new RegExp(`^/api/club/${ID}/licences/${list}$`), clubManagerOf,
+    (m, c) => lic((l) => l.putList({ clubId: m[1], list, people: isPlainObject(c.body) ? c.body.people : undefined, userId: c.user.id }))])
 
   const clubInvite = (m, c) => {
     const r = clubs ? clubInviteBody(c.body) : null
@@ -223,6 +237,9 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['GET', new RegExp(`^/api/club/${ID}/teams$`), clubManagerOf, (m) => team((tm) => tm.clubTeams({ clubId: m[1] }))],
     ['POST', new RegExp(`^/api/club/${ID}/teams/${ID}/invites$`), clubManagerOf, teamInvite],
     ['DELETE', new RegExp(`^/api/club/${ID}/teams/${ID}/managers/${ID}$`), clubManagerOf, (m, c) => team((tm) => tm.removeManager({ actorId: c.user.id, clubId: m[1], teamId: m[2], userId: m[3] }))],
+    // db/024: the club's licence lists from VolleyManager
+    ...licenceListRoutes,
+    ['GET', new RegExp(`^/api/club/${ID}/licences$`), clubManagerOf, (m) => lic((l) => l.clubList({ clubId: m[1] }))],
     // db/023: a team manager's own team (lib/teams.js); the game number is ?game=
     ['GET', new RegExp(`^/api/team/${ID}$`), teamManagerOf, (m) => team((tm) => tm.teamDetail({ teamId: m[1] }))],
     ['GET', new RegExp(`^/api/team/${ID}/squad$`), teamManagerOf, (m) => team((tm) => tm.squad({ teamId: m[1] }))],
@@ -231,10 +248,14 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['GET', new RegExp(`^/api/team/${ID}/roster$`), teamManagerOf, (m, c) => team((tm) => tm.getRoster({ teamId: m[1], game: q(c.query, 'game') }))],
     ['PUT', new RegExp(`^/api/team/${ID}/roster$`), teamManagerOf, (m, c) => team((tm) => tm.putRoster({ actorId: c.user.id, teamId: m[1], game: q(c.query, 'game'), body: c.body }))],
     ['DELETE', new RegExp(`^/api/team/${ID}/roster$`), teamManagerOf, (m, c) => team((tm) => tm.deleteRoster({ actorId: c.user.id, teamId: m[1], game: q(c.query, 'game') }))],
+    // db/024: the players of the team's club, for "Add from club"
+    ['GET', new RegExp(`^/api/team/${ID}/club-players$`), teamManagerOf, (m) => lic((l) => l.teamClubPlayers({ teamId: m[1] }))],
     // db/023: the rosters a scoring tablet keeps (offline first)
     ['GET', /^\/api\/game-rosters$/, readIndoorTeams, (m, c) => team((tm) => tm.scorerRosters({ userId: c.user.id, games: q(c.query, 'games') }))],
     // accepted in Match Setup: the content is deleted at once
     ['POST', /^\/api\/game-rosters\/used$/, readIndoorTeams, (m, c) => team((tm) => tm.markUsed({ userId: c.user.id, body: c.body }))],
+    // db/024: the players lists of the caller's clubs, kept on the scoring tablet
+    ['GET', /^\/api\/club-licences$/, readIndoorTeams, (m, c) => lic((l) => l.scorerClubPlayers({ userId: c.user.id }))],
     ['GET', /^\/api\/admin\/invites$/, 'admin', (m, c) => accounts.listInvites({ app: q(c.query, 'app') })],
     ['POST', /^\/api\/admin\/invites$/, 'admin', (m, c) => accounts.createInvite({ actorId: c.user.id, body: c.body, app: q(c.query, 'app') })],
     ['POST', new RegExp(`^/api/admin/invites/${ID}/revoke$`), 'admin', (m, c) => accounts.revokeInvite({ actorId: c.user.id, id: m[1] })],

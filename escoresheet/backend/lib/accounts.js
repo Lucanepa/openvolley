@@ -77,7 +77,10 @@ export const AUDIT_ACTIONS = Object.freeze([
   'account.delete', 'account.reject',
   // db/023: team managers (a team link redeemed or removed), a team's saved
   // team and the roster of one of its games (lib/teams.js)
-  'team.managers', 'team.squad', 'team.roster'
+  'team.managers', 'team.squad', 'team.roster',
+  // db/024: a club's licence list from VolleyManager replaced (lib/licences.js;
+  // the list and the count, never a name)
+  'club.licences'
 ])
 export const APPS = SPORTS
 // How a membership came about (auth.app_memberships.joined_via)
