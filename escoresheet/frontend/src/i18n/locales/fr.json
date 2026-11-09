@@ -2648,6 +2648,8 @@
       "a_view": "Ils tournent le terrain selon votre place : 1 REF pour le 1er arbitre sur sa chaise, 2 REF pour le 2nd arbitre du côté du marqueur. Le score et les données restent les mêmes.",
       "q_shows": "Que montre la tablette de l'arbitre ?",
       "a_shows": "Le score et les sets, l'équipe au service, les deux formations avec la rotation, les temps morts et les remplacements, les sanctions et la dernière action. Les temps morts et les pauses montrent leur compte à rebours.",
+      "q_recorded": "Qu'est-ce que la fenêtre « Enregistré par le marqueur » ?",
+      "a_recorded": "Quand le marqueur enregistre un temps mort, un remplacement ou une sanction, chaque tablette d'arbitre l'affiche dans une fenêtre, avec l'équipe, le set et le score. Touchez « OK », ou elle se ferme seule après 10 secondes. Ce qui est enregistré pendant qu'elle est ouverte s'y ajoute. Pendant un temps mort, elle montre le compte à rebours, qui rejoint le terrain à la fermeture.",
       "q_offline": "Il est écrit « Hors ligne : pas de connexion à la feuille de match » ?",
       "a_offline": "La connexion au marqueur est coupée, le score peut ne pas être à jour. La tablette se reconnecte d'elle-même quand le réseau revient. Sinon, appuyez sur « Actualiser » dans le menu.",
       "q_screen": "Comment garder l'écran allumé ?",

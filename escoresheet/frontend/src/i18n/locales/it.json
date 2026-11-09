@@ -2654,6 +2654,8 @@
       "a_view": "Girano il campo secondo dove ti trovi: 1 REF per il 1° arbitro sul seggiolone, 2 REF per il 2° arbitro dal lato del segnapunti. Punteggio e dati restano uguali.",
       "q_shows": "Cosa mostra il tablet dell'arbitro?",
       "a_shows": "Il punteggio e i set, la squadra al servizio, le due formazioni con la rotazione, timeout e sostituzioni, le sanzioni e l'ultima azione. Timeout e intervalli mostrano il loro conto alla rovescia.",
+      "q_recorded": "Cos'è la finestra «Registrato dal segnapunti»?",
+      "a_recorded": "Quando il segnapunti registra un tempo di riposo, una sostituzione o una sanzione, ogni tablet dell'arbitro la mostra in una finestra, con la squadra, il set e il punteggio. Tocca «OK», oppure si chiude da sola dopo 10 secondi. Ciò che viene registrato mentre è aperta si aggiunge. Durante un tempo di riposo mostra il conto alla rovescia, che passa sul campo alla chiusura.",
       "q_offline": "C'è scritto «Offline: nessuna connessione al referto»?",
       "a_offline": "La connessione con il segnapunti si è interrotta, quindi il punteggio può non essere aggiornato. Il tablet si ricollega da solo quando torna la rete. Se non succede, tocca «Aggiorna» nel menu.",
       "q_screen": "Come tengo acceso lo schermo?",

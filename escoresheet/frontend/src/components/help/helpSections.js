@@ -151,6 +151,7 @@ export const HELP_SECTIONS = [
     q('referee', 'noGames'),
     q('referee', 'view'),
     q('referee', 'shows'),
+    q('referee', 'recorded'),
     q('referee', 'offline'),
     q('referee', 'screen'),
     q('referee', 'bell')
