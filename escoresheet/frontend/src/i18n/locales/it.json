@@ -1848,7 +1848,21 @@
     "delayWarningShort": "A R",
     "delayPenaltyShort": "P R",
     "switchToStandard": "Passa alla vista standard",
-    "switchToReception": "Passa alla formazione di ricezione"
+    "switchToReception": "Passa alla formazione di ricezione",
+    "scoresheet": {
+      "open": "Referto",
+      "close": "Chiudi",
+      "title": "Referto",
+      "readOnly": "In diretta, sola lettura",
+      "updated": "aggiornato {{time}}",
+      "notSent": "Firme, ufficiali e date di nascita restano sul dispositivo del segnapunti.",
+      "loading": "Caricamento del referto...",
+      "waiting": "In attesa dei dati del segnapunti..."
+    },
+    "sanctions": {
+      "title": "Sanzioni",
+      "formalWarning": "Avvertimento formale"
+    }
   },
   "connection": {
     "changeServer": "Cambia server",

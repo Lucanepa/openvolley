@@ -14,11 +14,15 @@ import { setDurationMinutes } from '../../scoresheet_pdf/utils/matchTimes'
 import TestModeControls from './TestModeControls'
 import { ArrowLeft } from 'lucide-react'
 import { Button } from '../ui/Button.jsx'
+import { CardGlyph, topSanction, cardOfSanctionType } from './referee/SanctionCards.jsx'
 
-// volleyui (RESTYLE-SPEC P3b). This is the bench's live view: the TO/SUB
-// counters, the score, the court, libero/captain tags and the sanction cards
-// are frozen. Only the surfaces around them (white kit cards on the stone
-// page instead of stone-50 slabs) and the Back buttons change.
+// volleyui (RESTYLE-SPEC P3b). This is the bench's live view, laid out for a
+// tablet held upright (owner 2026-11-09, "all tablets in portrait"): the
+// score and set on top, TO / SUB large enough to read from the bench a few
+// metres away beside the team's sanctions (the referee tablet's card glyphs,
+// referee/SanctionCards.jsx), the team's half court as large as the screen
+// allows (a square: 9 x 9 m), the bench players, liberos and officials under
+// it. Landscape gets the same column, the court sized by the height left.
 const SURFACE = {
   background: 'var(--ov-card)',
   border: '1px solid var(--ov-hairline-soft)',
@@ -28,6 +32,29 @@ import { setsToWin } from '../utils/matchFormat'
 import { getSideAForSet } from '../domain/rules'
 import { sanctionTarget, compareBySeq } from '../domain/describe'
 import { TEAM_COLOUR_MARK, matchDiscPaint, teamLiberoColour, markColourOn } from '../utils/teamColours'
+
+// A player's sanction events as { warning, penalty, expulsion, disqualification } flags
+const sanctionFlags = (events = []) => {
+  const flags = {}
+  for (const e of events) {
+    const type = e?.payload?.type || e?.payload?.sanctionType
+    if (type) flags[type] = true
+  }
+  return flags
+}
+
+// A bench chip (a player, a libero, an official): a 36 px touch-size row
+const BENCH_CHIP = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '6px',
+  minHeight: '36px',
+  padding: '4px 10px',
+  background: 'var(--panel-2)',
+  borderRadius: '6px',
+  fontSize: '16px',
+  fontVariantNumeric: 'tabular-nums'
+}
 
 // Newest first in the order the scorer recorded the events (seq), not by
 // their time: the scorer's clock set back mid-set made every event after the
@@ -782,6 +809,81 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
   const position1Player = playersOnCourt.find(p => p.position === 'I')
   const showBall = isServing && position1Player
 
+  // The most severe of a list of sanction events, as a small card glyph (a bench chip)
+  const chipCard = (events) => {
+    const kind = topSanction(sanctionFlags(events))
+    return kind ? <CardGlyph kind={kind} height="16px" /> : null
+  }
+
+  // One player on the half court. Every size is a share of the court's height
+  // (cqh: .court is the size container), so the disc, its number, its marks
+  // and the serve ball grow together with the court.
+  const renderDisc = (player, key) => {
+    const sanctions = player.number ? getPlayerSanctions(player.number) : []
+    const mark = topSanction(sanctionFlags(sanctions))
+    const shouldShowBall = showBall && player.position === 'I'
+    const teamPlayers = teamInfo?.players || []
+    const liberoCount = teamPlayers.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
+    const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
+    return (
+      <div
+        key={key}
+        className="court-player"
+        style={{
+          ...discStyle(player.isLibero),
+          position: 'relative',
+          aspectRatio: '1 / 1',
+          // half the disc (.court-player is 22cqh), as on the referee discs
+          // (discSizing DISC.number)
+          fontSize: '11cqh'
+        }}
+      >
+        {shouldShowBall && (
+          // on the end-line side, a clear gap from the disc (owner 2026-11-09)
+          <img src={ballImage} onError={(e) => e.target.src = ballFallback} alt="Serve" style={{
+            position: 'absolute',
+            left: teamSide === 'left' ? 'calc(-9cqh - 2.6cqh)' : 'auto',
+            right: teamSide === 'left' ? 'auto' : 'calc(-9cqh - 2.6cqh)',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            width: '9cqh',
+            height: '9cqh',
+            zIndex: 5,
+            filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
+          }} />
+        )}
+        {player.substitutedPlayerNumber && (
+          <span style={{
+            position: 'absolute', top: '-1.5cqh', right: '-1.5cqh',
+            minWidth: '5.5cqh', height: '5.5cqh', padding: '0 0.6cqh', boxSizing: 'border-box', background: '#FFF8E7',
+            border: '2px solid rgba(0,0,0,0.2)', borderRadius: '1cqh',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '3.2cqh', fontWeight: 700, color: '#000', zIndex: 6
+          }}>{player.substitutedPlayerNumber}</span>
+        )}
+        <span className="court-player-position">{player.position}</span>
+        {player.isCaptain && (
+          <span className="court-player-captain" style={player.isLibero ? { background: '#fff', color: '#10b981', borderColor: '#10b981' } : {}}>C</span>
+        )}
+        {player.isLibero && !player.isCaptain && (
+          <span style={{
+            position: 'absolute', bottom: '-1.5cqh', left: '-1.5cqh',
+            minWidth: '6.5cqh', height: '5cqh', padding: '0 0.6cqh', boxSizing: 'border-box', background: liberoMarkOn(true),
+            border: '2px solid rgba(255,255,255,0.4)', borderRadius: '1cqh',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '3cqh', fontWeight: 700, color: '#fff', zIndex: 5
+          }}>{liberoLabel}</span>
+        )}
+        {player.number || '—'}
+        {mark && (
+          <div data-disc-sanction={mark} style={{ position: 'absolute', bottom: '-1cqh', right: '-1cqh', zIndex: 10, display: 'flex' }}>
+            <CardGlyph kind={mark} height="6.5cqh" />
+          </div>
+        )}
+      </div>
+    )
+  }
+
   // Show results when match is finished
   if (isMatchFinished) {
     const teamAShortName = data?.match?.coinTossTeamA === 'home'
@@ -857,17 +959,18 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
   }
 
   return (
-    <div style={{
-      minHeight: embedded ? 'auto' : '100vh',
-      height: embedded ? '100%' : 'auto',
+    <div data-bench-live="" style={{
+      // at least the screen (the court slot takes what the rest leaves),
+      // longer when the screen is too short: the bench page scrolls
+      minHeight: embedded ? 0 : '100vh',
       background: embedded ? 'transparent' : 'var(--bg)',
       color: 'var(--text)',
-      padding: embedded ? '8px' : '12px',
+      padding: embedded ? 'clamp(8px, 1.5vw, 12px)' : '12px',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
       display: 'flex',
       flexDirection: 'column',
-      flex: embedded ? 1 : 'none',
-      gap: '8px'
+      flex: embedded ? '1 0 auto' : 'none',
+      gap: 'clamp(8px, 1.5vw, 12px)'
     }}>
       {/* Header with Back button - only show when not embedded */}
       {!embedded && (
@@ -891,176 +994,113 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
         </div>
       )}
 
-      {/* SECTION 1: TO+SUB | Score & Sets | Sanctions */}
-      {/* minmax(0, 1fr) and the clamps below: at 360 px the three panels
-          were wider than the screen and the sanctions ran off the right edge. */}
+      {/* SECTION 1: the score and the set */}
+      <div data-bench-score="" style={{
+        ...SURFACE,
+        borderRadius: '14px',
+        padding: 'clamp(6px, 1.5vw, 12px) 12px',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '2px',
+        flexShrink: 0
+      }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 'clamp(8px, 2vw, 18px)', lineHeight: 1 }}>
+          <span style={{ fontSize: 'clamp(48px, 13vw, 112px)', fontWeight: 800, color: '#22c55e', fontVariantNumeric: 'tabular-nums' }}>{points.team}</span>
+          <span style={{ fontSize: 'clamp(28px, 7vw, 60px)', fontWeight: 600, color: 'var(--muted)' }}>:</span>
+          <span style={{ fontSize: 'clamp(34px, 9vw, 80px)', fontWeight: 600, color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}>{points.opponent}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', fontSize: 'clamp(15px, 2.6vw, 22px)' }}>
+          <span style={{ color: 'var(--muted)' }}>{t('common.setIndex', { index: data?.set?.index || 1 })}</span>
+          <span style={{ fontWeight: 700, color: '#22c55e', fontSize: '1.25em', fontVariantNumeric: 'tabular-nums' }}>{setsWon.team}</span>
+          <span style={{ color: 'var(--muted)' }}>-</span>
+          <span style={{ fontWeight: 600, color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}>{setsWon.opponent}</span>
+        </div>
+      </div>
+
+      {/* SECTION 2: TO | SUB | Sanctions. The counters' digits are read from
+          the bench: large, with the limit beside them (2 time-outs, 6
+          substitutions a set). minmax(0, 1fr): the sanctions take the rest
+          and wrap, never off the screen. */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'auto minmax(0, 1fr) auto',
-        gap: 'clamp(6px, 2vw, 8px)',
-        alignItems: 'stretch'
+        gridTemplateColumns: 'auto auto minmax(0, 1fr)',
+        gap: 'clamp(6px, 1.5vw, 12px)',
+        alignItems: 'stretch',
+        flexShrink: 0
       }}>
-        {/* Left: TO + SUB side by side */}
-        <div style={{
-          display: 'flex',
-          gap: '6px'
-        }}>
-          {/* TO Counter */}
-          <div style={{
-            background: timeoutsUsed >= 2 ? 'rgba(239, 68, 68, 0.2)' : 'var(--panel-2)',
-            borderRadius: '8px',
-            padding: '6px clamp(6px, 2.5vw, 12px)',
+        {[
+          { key: 'to', label: t('matchEntry.to', 'TO'), value: timeoutsUsed, limit: 2, tone: timeoutsUsed >= 2 ? 'max' : null },
+          { key: 'sub', label: t('matchEntry.sub', 'SUB'), value: substitutionsUsed, limit: 6, tone: substitutionsUsed >= 6 ? 'max' : substitutionsUsed >= 5 ? 'near' : null }
+        ].map((c) => (
+          <div key={c.key} data-bench-counter={c.key} style={{
+            ...SURFACE,
+            background: c.tone === 'max' ? 'rgba(239, 68, 68, 0.12)' : c.tone === 'near' ? 'rgba(234, 179, 8, 0.14)' : 'var(--ov-card)',
+            border: c.tone === 'max' ? '2px solid #ef4444' : c.tone === 'near' ? '2px solid #eab308' : '1px solid var(--ov-hairline-soft)',
+            borderRadius: '14px',
+            padding: '6px clamp(8px, 2vw, 16px)',
+            minWidth: 'clamp(76px, 18vw, 150px)',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            justifyContent: 'center',
-            border: timeoutsUsed >= 2 ? '2px solid #ef4444' : '1px solid var(--border)',
-            minWidth: 'clamp(40px, 12vw, 50px)'
+            justifyContent: 'center'
           }}>
-            <div style={{ fontSize: '10px', color: 'var(--muted)', marginBottom: '2px' }}>{t('matchEntry.to', 'TO')}</div>
-            <div style={{
-              fontSize: '28px',
-              fontWeight: 800,
-              color: timeoutsUsed >= 2 ? '#ef4444' : 'var(--text)'
-            }}>
-              {timeoutsUsed}
+            <div style={{ fontSize: 'clamp(13px, 2.2vw, 18px)', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--muted)' }}>{c.label}</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px', lineHeight: 1 }}>
+              <span style={{ fontSize: 'clamp(44px, 10vw, 88px)', fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: c.tone === 'max' ? '#ef4444' : c.tone === 'near' ? '#ca8a04' : 'var(--text)' }}>{c.value}</span>
+              <span style={{ fontSize: 'clamp(14px, 2.4vw, 22px)', fontWeight: 600, color: 'var(--muted)' }}>/{c.limit}</span>
             </div>
           </div>
-          {/* SUB Counter */}
-          <div style={{
-            background: substitutionsUsed >= 6 ? 'rgba(239, 68, 68, 0.2)' : substitutionsUsed >= 5 ? 'rgba(234, 179, 8, 0.2)' : 'var(--panel-2)',
-            borderRadius: '8px',
-            padding: '6px clamp(6px, 2.5vw, 12px)',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            border: substitutionsUsed >= 6 ? '2px solid #ef4444' : substitutionsUsed >= 5 ? '2px solid #eab308' : '1px solid var(--border)',
-            minWidth: 'clamp(40px, 12vw, 50px)'
-          }}>
-            <div style={{ fontSize: '10px', color: 'var(--muted)', marginBottom: '2px' }}>{t('matchEntry.sub', 'SUB')}</div>
-            <div style={{
-              fontSize: '28px',
-              fontWeight: 800,
-              color: substitutionsUsed >= 6 ? '#ef4444' : substitutionsUsed >= 5 ? '#eab308' : 'var(--text)'
-            }}>
-              {substitutionsUsed}
-            </div>
-          </div>
-        </div>
+        ))}
 
-        {/* Center: Score and Set Counter */}
-        <div style={{
+        {/* The team's sanctions: the cards the referee showed, and to whom */}
+        <div data-bench-sanctions="" style={{
           ...SURFACE,
-          borderRadius: '12px',
-          padding: '8px clamp(6px, 2vw, 12px)',
+          borderRadius: '14px',
+          padding: '8px 12px',
           display: 'flex',
           flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '2px',
-          minWidth: 0
+          gap: '6px',
+          minWidth: 0,
+          overflow: 'auto'
         }}>
-          {/* Score */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'baseline',
-            gap: '8px'
-          }}>
-            <span style={{
-              fontSize: 'clamp(36px, 12vw, 48px)',
-              fontWeight: 800,
-              color: '#22c55e'
-            }}>{points.team}</span>
-            <span style={{
-              fontSize: '24px',
-              fontWeight: 600,
-              color: 'var(--muted)'
-            }}>:</span>
-            <span style={{
-              fontSize: '28px',
-              fontWeight: 600,
-              color: 'var(--muted)'
-            }}>{points.opponent}</span>
-          </div>
-          {/* Set Score */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            fontSize: '14px'
-          }}>
-            <span style={{ color: 'var(--muted)' }}>{t('common.setIndex', { index: data?.set?.index || 1 })}</span>
-            <span style={{
-              fontWeight: 700,
-              color: '#22c55e',
-              fontSize: '18px'
-            }}>{setsWon.team}</span>
-            <span style={{ color: 'var(--muted)' }}>-</span>
-            <span style={{
-              fontWeight: 600,
-              color: 'var(--muted)',
-              fontSize: '14px'
-            }}>{setsWon.opponent}</span>
-          </div>
-        </div>
-
-        {/* Right: Sanctions */}
-        <div style={{
-          ...SURFACE,
-          borderRadius: '12px',
-          padding: '6px 10px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '4px',
-          maxHeight: '80px',
-          overflow: 'auto',
-          minWidth: 'clamp(76px, 22vw, 100px)'
-        }}>
-          <div style={{ fontSize: '9px', color: 'var(--muted)', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{t('matchEntry.sanctions', 'SANCTIONS')}</div>
+          <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{t('matchEntry.sanctions', 'SANCTIONS')}</div>
           {allSanctionsForDisplay.length === 0 ? (
-            <div style={{ color: 'var(--muted)', fontSize: '10px' }}>{t('matchEntry.none', 'None')}</div>
+            <div style={{ color: 'var(--muted)', fontSize: '14px' }}>{t('matchEntry.none', 'None')}</div>
           ) : (
-            allSanctionsForDisplay.slice(0, 3).map((s, idx) => (
-              <div key={idx} style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                fontSize: '11px'
-              }}>
-                <div style={{
-                  width: '8px',
-                  height: '12px',
-                  background: s.sanctionType === 'warning' || s.sanctionType === 'disqualification' ? '#eab308' : '#ef4444',
-                  borderRadius: '1px'
-                }}></div>
-                <span style={{ fontWeight: 600 }}>
-                  {s.type === 'player' || s.type === 'bench' || s.type === 'libero' ? `#${s.number}` : s.role}
-                </span>
-              </div>
-            ))
-          )}
-          {allSanctionsForDisplay.length > 3 && (
-            <div style={{ fontSize: '9px', color: 'var(--muted)' }}>{t('matchEntry.moreCount', '+{{count}} more', { count: allSanctionsForDisplay.length - 3 })}</div>
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexWrap: 'wrap', gap: '8px 14px', alignItems: 'center' }}>
+              {allSanctionsForDisplay.map((s, idx) => {
+                const card = cardOfSanctionType(s.sanctionType)
+                const who = s.type === 'player' || s.type === 'bench' || s.type === 'libero'
+                  ? `#${s.number}`
+                  : card?.delay ? 'D' : card?.improperRequest ? t('scoreboard.sanctions.improperRequest', 'Improper request') : s.role
+                return (
+                  <li key={idx} data-bench-sanction={s.sanctionType} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {card?.kind && <CardGlyph kind={card.kind} height="clamp(20px, 3.2vw, 28px)" />}
+                    <span style={{ fontWeight: 700, fontSize: card?.improperRequest ? '13px' : 'clamp(16px, 2.6vw, 22px)', fontVariantNumeric: 'tabular-nums' }}>{who}</span>
+                  </li>
+                )
+              })}
+            </ul>
           )}
         </div>
       </div>
 
-      {/* SECTION 2: Court (full width, centered). It does not shrink to fit
-          the screen's height: on a phone on its side (Chrome, 812x277) the
-          court was squeezed to a 55 px strip with 11 px discs (emulator
-          2026-10-14). It is at most 70% of the screen's height instead, and
-          the page scrolls the rest. */}
-      <div style={{
+      {/* SECTION 3: the team's half court, a square as large as the space
+          left allows (the slot is a size container: min(100cqw, 100cqh)).
+          It never gets smaller than 240 px: on a phone on its side the page
+          scrolls instead (a 55 px strip with 11 px discs, emulator 2026-10-14). */}
+      <div data-bench-court-slot="" style={{
+        flex: '1 1 0',
+        minHeight: '240px',
+        containerType: 'size',
         display: 'flex',
-        justifyContent: 'center',
-        flexShrink: 0
+        alignItems: 'center',
+        justifyContent: 'center'
       }}>
-        {/* Court - centered, max 80% width */}
         <div style={{
-          width: '80%',
-          maxWidth: 'min(400px, 70vh)',
-          aspectRatio: '1 / 1',
+          width: 'min(100cqw, 100cqh)',
+          height: 'min(100cqw, 100cqh)',
           position: 'relative'
         }}>
           {/* One team's half: a single grid column. The scoreboard's .court is a
@@ -1091,172 +1131,11 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
             {/* Single side court */}
             <div className={`court-side court-side-${teamSide}`} style={{ width: '100%' }}>
               <div className={`court-team court-team-${teamSide}`} style={{ width: '100%', height: '100%' }}>
-                {/* Front Row */}
                 <div className="court-row court-row-front">
-                  {frontRow.map((player, idx) => {
-                    const sanctions = player.number ? getPlayerSanctions(player.number) : []
-                    const hasWarning = sanctions.some(s => s.payload?.type === 'warning')
-                    const hasPenalty = sanctions.some(s => s.payload?.type === 'penalty')
-                    const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
-                    const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
-                    const shouldShowBall = showBall && player.position === 'I'
-                    const teamPlayers = teamInfo?.players || []
-                    const liberoCount = teamPlayers.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
-                    const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
-
-                    return (
-                      <div
-                        key={`front-${player.position}-${idx}`}
-                        className="court-player"
-                        style={{
-                          ...discStyle(player.isLibero),
-                          position: 'relative',
-                          aspectRatio: '1 / 1',
-                          // half the disc (.court-player is 22cqh), as on the
-                          // referee discs (discSizing DISC.number): 10vw spilled
-                          // two digits out of a 60 px disc at 360 px wide
-                          fontSize: '11cqh'
-                        }}
-                      >
-                        {shouldShowBall && (
-                          <img src={ballImage} onError={(e) => e.target.src = ballFallback} alt="Serve" style={{
-                            position: 'absolute',
-                            left: teamSide === 'left' ? '-28px' : 'auto',
-                            right: teamSide === 'left' ? 'auto' : '-28px',
-                            top: '50%',
-                            transform: 'translateY(-50%)',
-                            width: '24px',
-                            height: '24px',
-                            zIndex: 5,
-                            filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
-                          }} />
-                        )}
-                        {player.substitutedPlayerNumber && (
-                          <span style={{
-                            position: 'absolute', top: '-6px', right: '-6px',
-                            width: '16px', height: '16px', background: '#FFF8E7',
-                            border: '2px solid rgba(0,0,0,0.2)', borderRadius: '3px',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontSize: '9px', fontWeight: 700, color: '#000', zIndex: 6
-                          }}>{player.substitutedPlayerNumber}</span>
-                        )}
-                        <span className="court-player-position">{player.position}</span>
-                        {player.isCaptain && (
-                          <span className="court-player-captain" style={player.isLibero ? { background: '#fff', color: '#10b981', borderColor: '#10b981' } : {}}>C</span>
-                        )}
-                        {player.isLibero && !player.isCaptain && (
-                          <span style={{
-                            position: 'absolute', bottom: '-6px', left: '-6px',
-                            width: '18px', height: '14px', background: liberoMarkOn(true),
-                            border: '2px solid rgba(255,255,255,0.4)', borderRadius: '3px',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontSize: '8px', fontWeight: 700, color: '#fff', zIndex: 5
-                          }}>{liberoLabel}</span>
-                        )}
-                        {player.number || '—'}
-                        {sanctions.length > 0 && (
-                          <div style={{ position: 'absolute', bottom: '-5px', right: '-5px', zIndex: 10 }}>
-                            {hasExpulsion ? (
-                              <div style={{ position: 'relative', width: '10px', height: '10px' }}>
-                                <div className="sanction-card yellow" style={{ width: '5px', height: '8px', position: 'absolute', left: 0, top: '1px', transform: 'rotate(-8deg)', borderRadius: '1px' }}></div>
-                                <div className="sanction-card red" style={{ width: '5px', height: '8px', position: 'absolute', right: 0, top: '1px', transform: 'rotate(8deg)', borderRadius: '1px' }}></div>
-                              </div>
-                            ) : (
-                              <div style={{ display: 'flex', gap: '1px' }}>
-                                {(hasWarning || hasDisqualification) && <div className="sanction-card yellow" style={{ width: '6px', height: '9px', borderRadius: '1px' }}></div>}
-                                {(hasPenalty || hasDisqualification) && <div className="sanction-card red" style={{ width: '6px', height: '9px', borderRadius: '1px' }}></div>}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
+                  {frontRow.map((player, idx) => renderDisc(player, `front-${player.position}-${idx}`))}
                 </div>
-
-                {/* Back Row */}
                 <div className="court-row court-row-back">
-                  {backRow.map((player, idx) => {
-                    const sanctions = player.number ? getPlayerSanctions(player.number) : []
-                    const hasWarning = sanctions.some(s => s.payload?.type === 'warning')
-                    const hasPenalty = sanctions.some(s => s.payload?.type === 'penalty')
-                    const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
-                    const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
-                    const shouldShowBall = showBall && player.position === 'I'
-                    const teamPlayers = teamInfo?.players || []
-                    const liberoCount = teamPlayers.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
-                    const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
-
-                    return (
-                      <div
-                        key={`back-${player.position}-${idx}`}
-                        className="court-player"
-                        style={{
-                          ...discStyle(player.isLibero),
-                          position: 'relative',
-                          // the front row's disc (.court-player is 22cqh, the
-                          // court's height, so three fit a short court too):
-                          // clamp(44px, 10vw, 72px) made the back row 44 px
-                          // next to a 67 px front row on a phone (emulator
-                          // 2026-10-14)
-                          aspectRatio: '1 / 1',
-                          fontSize: '11cqh'
-                        }}
-                      >
-                        {shouldShowBall && (
-                          <img src={ballImage} onError={(e) => e.target.src = ballFallback} alt="Serve" style={{
-                            position: 'absolute',
-                            left: teamSide === 'left' ? '-28px' : 'auto',
-                            right: teamSide === 'left' ? 'auto' : '-28px',
-                            top: '50%',
-                            transform: 'translateY(-50%)',
-                            width: '24px',
-                            height: '24px',
-                            zIndex: 5,
-                            filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
-                          }} />
-                        )}
-                        {player.substitutedPlayerNumber && (
-                          <span style={{
-                            position: 'absolute', top: '-6px', right: '-6px',
-                            width: '16px', height: '16px', background: '#FFF8E7',
-                            border: '2px solid rgba(0,0,0,0.2)', borderRadius: '3px',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontSize: '9px', fontWeight: 700, color: '#000', zIndex: 6
-                          }}>{player.substitutedPlayerNumber}</span>
-                        )}
-                        <span className="court-player-position">{player.position}</span>
-                        {player.isCaptain && (
-                          <span className="court-player-captain" style={player.isLibero ? { background: '#fff', color: '#10b981', borderColor: '#10b981' } : {}}>C</span>
-                        )}
-                        {player.isLibero && !player.isCaptain && (
-                          <span style={{
-                            position: 'absolute', bottom: '-6px', left: '-6px',
-                            width: '18px', height: '14px', background: liberoMarkOn(true),
-                            border: '2px solid rgba(255,255,255,0.4)', borderRadius: '3px',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontSize: '8px', fontWeight: 700, color: '#fff', zIndex: 5
-                          }}>{liberoLabel}</span>
-                        )}
-                        {player.number || '—'}
-                        {sanctions.length > 0 && (
-                          <div style={{ position: 'absolute', bottom: '-5px', right: '-5px', zIndex: 10 }}>
-                            {hasExpulsion ? (
-                              <div style={{ position: 'relative', width: '10px', height: '10px' }}>
-                                <div className="sanction-card yellow" style={{ width: '5px', height: '8px', position: 'absolute', left: 0, top: '1px', transform: 'rotate(-8deg)', borderRadius: '1px' }}></div>
-                                <div className="sanction-card red" style={{ width: '5px', height: '8px', position: 'absolute', right: 0, top: '1px', transform: 'rotate(8deg)', borderRadius: '1px' }}></div>
-                              </div>
-                            ) : (
-                              <div style={{ display: 'flex', gap: '1px' }}>
-                                {(hasWarning || hasDisqualification) && <div className="sanction-card yellow" style={{ width: '6px', height: '9px', borderRadius: '1px' }}></div>}
-                                {(hasPenalty || hasDisqualification) && <div className="sanction-card red" style={{ width: '6px', height: '9px', borderRadius: '1px' }}></div>}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
+                  {backRow.map((player, idx) => renderDisc(player, `back-${player.position}-${idx}`))}
                 </div>
               </div>
             </div>
@@ -1264,44 +1143,28 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
         </div>
       </div>
 
-      {/* SECTION 3: Bench - Players, Liberos, Officials (N and Codes only) */}
+      {/* SECTION 4: Bench - Players, Liberos, Officials (N and Codes only) */}
       <div style={{
         ...SURFACE,
-        borderRadius: '12px',
-        padding: '8px 12px',
+        borderRadius: '14px',
+        padding: '10px 12px',
         display: 'flex',
         flexWrap: 'wrap',
         gap: '8px',
-        alignItems: 'center'
+        alignItems: 'center',
+        flexShrink: 0
       }}>
         {/* Bench Players */}
         {benchPlayersWithSanctions.map((player, idx) => (
-          <div key={`bp-${idx}`} style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-            padding: '4px 8px',
-            background: 'var(--panel-2)',
-            borderRadius: '4px',
-            fontSize: '13px'
-          }}>
+          <div key={`bp-${idx}`} style={{ ...BENCH_CHIP }}>
             <span style={{ fontWeight: 700 }}>#{player.number}</span>
-            {player.sanctions.length > 0 && (
-              <div style={{ display: 'flex', gap: '1px' }}>
-                {player.sanctions.map((s, sIdx) => (
-                  <div key={sIdx} style={{
-                    width: '6px', height: '9px', borderRadius: '1px',
-                    background: s.payload?.type === 'warning' || s.payload?.type === 'disqualification' ? '#eab308' : '#ef4444'
-                  }}></div>
-                ))}
-              </div>
-            )}
+            {chipCard(player.sanctions)}
           </div>
         ))}
 
         {/* Separator if both players and liberos exist */}
         {benchPlayersWithSanctions.length > 0 && benchLiberos.length > 0 && (
-          <div style={{ width: '1px', height: '20px', background: 'var(--border)' }}></div>
+          <div style={{ width: '1px', height: '24px', background: 'var(--border)' }}></div>
         )}
 
         {/* Liberos */}
@@ -1310,21 +1173,16 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
           const liberoLabel = liberoCount === 1 ? 'L' : (libero.libero === 'libero1' ? 'L1' : 'L2')
           return (
             <div key={`lib-${idx}`} style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '4px 8px',
+              ...BENCH_CHIP,
               background: 'rgba(59, 130, 246, 0.15)',
-              border: '1px solid rgba(59, 130, 246, 0.3)',
-              borderRadius: '4px',
-              fontSize: '13px'
+              border: '1px solid rgba(59, 130, 246, 0.3)'
             }}>
               <span style={{
                 background: '#3b82f6',
                 color: '#fff',
-                padding: '1px 4px',
-                borderRadius: '2px',
-                fontSize: '9px',
+                padding: '1px 5px',
+                borderRadius: '3px',
+                fontSize: '11px',
                 fontWeight: 700
               }}>{liberoLabel}</span>
               <span style={{ fontWeight: 700 }}>#{libero.number}</span>
@@ -1333,19 +1191,20 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
                   background: '#fff',
                   color: '#10b981',
                   border: '1px solid #10b981',
-                  borderRadius: '2px',
-                  padding: '0 3px',
-                  fontSize: '9px',
+                  borderRadius: '3px',
+                  padding: '0 4px',
+                  fontSize: '11px',
                   fontWeight: 700
                 }}>C</span>
               )}
+              {chipCard(libero.sanctions)}
             </div>
           )
         })}
 
         {/* Separator if liberos/players and officials exist */}
         {(benchPlayersWithSanctions.length > 0 || benchLiberos.length > 0) && benchOfficials.length > 0 && (
-          <div style={{ width: '1px', height: '20px', background: 'var(--border)' }}></div>
+          <div style={{ width: '1px', height: '24px', background: 'var(--border)' }}></div>
         )}
 
         {/* Officials - show role codes */}
@@ -1356,39 +1215,16 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
           const target = official.role ? sanctionTarget({ playerType: 'official', role: official.role }, t) : null
           const roleCode = target && !target.incomplete ? target.code : (official.role?.charAt(0)?.toUpperCase() || '?')
           return (
-            <div key={`off-${idx}`} title={target && !target.incomplete ? target.label : official.role || undefined} style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '4px 8px',
-              background: 'var(--panel-2)',
-              borderRadius: '4px',
-              fontSize: '13px'
-            }}>
-              <span style={{
-                background: 'var(--panel-2)',
-                padding: '1px 4px',
-                borderRadius: '2px',
-                fontSize: '10px',
-                fontWeight: 700
-              }}>{roleCode}</span>
-              {official.sanctions && official.sanctions.length > 0 && (
-                <div style={{ display: 'flex', gap: '1px' }}>
-                  {official.sanctions.map((s, sIdx) => (
-                    <div key={sIdx} style={{
-                      width: '6px', height: '9px', borderRadius: '1px',
-                      background: s.payload?.type === 'warning' || s.payload?.type === 'disqualification' ? '#eab308' : '#ef4444'
-                    }}></div>
-                  ))}
-                </div>
-              )}
+            <div key={`off-${idx}`} title={target && !target.incomplete ? target.label : official.role || undefined} style={{ ...BENCH_CHIP }}>
+              <span style={{ fontWeight: 700, fontSize: '13px' }}>{roleCode}</span>
+              {chipCard(official.sanctions)}
             </div>
           )
         })}
 
         {/* Empty state */}
         {benchPlayersWithSanctions.length === 0 && benchLiberos.length === 0 && benchOfficials.length === 0 && (
-          <div style={{ color: 'var(--muted)', fontSize: '12px' }}>
+          <div style={{ color: 'var(--muted)', fontSize: '13px' }}>
             {t('matchEntry.noBenchData', 'No bench data')}
           </div>
         )}

@@ -1847,7 +1847,21 @@
     "delayWarningShort": "A R",
     "delayPenaltyShort": "P R",
     "switchToStandard": "Passer à la vue standard",
-    "switchToReception": "Passer à la formation de réception"
+    "switchToReception": "Passer à la formation de réception",
+    "scoresheet": {
+      "open": "Feuille de match",
+      "close": "Fermer",
+      "title": "Feuille de match",
+      "readOnly": "En direct, lecture seule",
+      "updated": "mise à jour {{time}}",
+      "notSent": "Les signatures, les officiels et les dates de naissance restent sur l'appareil du marqueur.",
+      "loading": "Chargement de la feuille de match...",
+      "waiting": "En attente des données du marqueur..."
+    },
+    "sanctions": {
+      "title": "Sanctions",
+      "formalWarning": "Avertissement formel"
+    }
   },
   "connection": {
     "changeServer": "Changer de serveur",

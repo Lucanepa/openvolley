@@ -1702,7 +1702,21 @@
     "delayWarningShort": "V V",
     "delayPenaltyShort": "V S",
     "switchToStandard": "Zur Standardansicht wechseln",
-    "switchToReception": "Zur Annahmeformation wechseln"
+    "switchToReception": "Zur Annahmeformation wechseln",
+    "scoresheet": {
+      "open": "Matchblatt",
+      "close": "Schliessen",
+      "title": "Matchblatt",
+      "readOnly": "Live, nur zum Lesen",
+      "updated": "aktualisiert {{time}}",
+      "notSent": "Unterschriften, Offizielle und Geburtsdaten bleiben auf dem Gerät des Schreibers.",
+      "loading": "Matchblatt wird geladen...",
+      "waiting": "Warte auf die Daten des Schreibers..."
+    },
+    "sanctions": {
+      "title": "Sanktionen",
+      "formalWarning": "Formelle Warnung"
+    }
   },
   "connection": {
     "changeServer": "Server wechseln",

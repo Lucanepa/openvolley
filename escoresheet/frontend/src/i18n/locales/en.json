@@ -1849,7 +1849,21 @@
     "delayWarningShort": "D W",
     "delayPenaltyShort": "D P",
     "switchToStandard": "Switch to standard view",
-    "switchToReception": "Switch to reception formation"
+    "switchToReception": "Switch to reception formation",
+    "scoresheet": {
+      "open": "Scoresheet",
+      "close": "Close",
+      "title": "Scoresheet",
+      "readOnly": "Live, read only",
+      "updated": "updated {{time}}",
+      "notSent": "Signatures, officials and dates of birth stay on the scorer's device.",
+      "loading": "Loading scoresheet...",
+      "waiting": "Waiting for the scorer's data..."
+    },
+    "sanctions": {
+      "title": "Sanctions",
+      "formalWarning": "Formal warning"
+    }
   },
   "connection": {
     "changeServer": "Change server",
