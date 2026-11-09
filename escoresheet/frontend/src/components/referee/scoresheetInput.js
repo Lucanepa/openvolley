@@ -13,6 +13,8 @@
  * boxes for them empty.
  */
 
+import { lineupHiddenUntilBoth } from '../../domain/lineupPrivacy'
+
 /** Only a 'full' bundle (the referee PIN proved) has rosters and events. */
 export function bundleHasFullAccess(bundle) {
   return !!bundle && typeof bundle === 'object' && bundle.access === 'full' && !!bundle.match && typeof bundle.match === 'object'
@@ -46,10 +48,33 @@ function pointsOf(events, setIndex) {
 }
 
 /**
+ * The events without the line-up of a set that has not started while only
+ * one team's is recorded (domain/lineupPrivacy.js: hidden until the other
+ * team's is in, as on the referee's court).
+ */
+export function withoutLoneLineups(events) {
+  const bySet = new Map()
+  for (const e of events) {
+    const i = Number(e.setIndex ?? 1)
+    const s = bySet.get(i) || { started: false, teams: new Set() }
+    if (e.type === 'point') s.started = true
+    if (e.type === 'lineup' && (e.payload?.team === 'home' || e.payload?.team === 'away')) s.teams.add(e.payload.team)
+    bySet.set(i, s)
+  }
+  return events.filter((e) => {
+    if (e.type !== 'lineup') return true
+    const s = bySet.get(Number(e.setIndex ?? 1))
+    const other = e.payload?.team === 'home' ? 'away' : 'home'
+    return !lineupHiddenUntilBoth({ setStarted: s.started, ownEntered: true, otherEntered: s.teams.has(other) })
+  })
+}
+
+/**
  * The scoresheet input for a 'full' relay bundle, or null (no bundle, a
  * 'summary' bundle, no match).
  *
  * - sets by index, events by seq (the order ScoresheetApp reads them from Dexie);
+ * - the first line-up of a set not started is left out until the other is in;
  * - a set still running takes its score from its point events: the tablet
  *   lays a newer live-state push's score over the bundle's set
  *   (serverDataSync.applyNewerLiveState), up to one sync ahead of the events
@@ -62,7 +87,7 @@ function pointsOf(events, setIndex) {
  */
 export function scoresheetInputFromBundle(bundle) {
   if (!bundleHasFullAccess(bundle)) return null
-  const events = bySeq(bundle.events)
+  const events = withoutLoneLineups(bySeq(bundle.events))
   const sets = list(bundle.sets)
     .slice()
     .sort((a, b) => (Number(a.index) || 0) - (Number(b.index) || 0))

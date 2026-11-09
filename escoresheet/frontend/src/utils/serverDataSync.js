@@ -903,6 +903,52 @@ export function readRelayBundle(message) {
 /**
  * Get WebSocket debug info for on-screen debugging
  */
+// Bench requests (backend/lib/benchRequests.js): the relay's messages for the
+// bench (answers, its requests after a reconnect) and the referee (time-out /
+// substitution requests of the benches). They go to these listeners, not to
+// the match-data subscribers.
+export const BENCH_RELAY_MESSAGES = ['bench-request-ack', 'bench-response', 'bench-request-state', 'bench-request-info']
+const relayMessageListeners = new Map() // matchId -> Set<fn(message)>
+
+/**
+ * Listen to the bench-request messages of a match's relay subscription
+ * (subscribeToMatchData opens it). Errors 'bench-request-refused' come too.
+ * @returns {() => void} remove
+ */
+export function addRelayMessageListener(matchId, fn) {
+  const key = String(matchId)
+  if (!relayMessageListeners.has(key)) relayMessageListeners.set(key, new Set())
+  relayMessageListeners.get(key).add(fn)
+  return () => {
+    const set = relayMessageListeners.get(key)
+    if (!set) return
+    set.delete(fn)
+    if (set.size === 0) relayMessageListeners.delete(key)
+  }
+}
+
+function notifyRelayMessage(matchId, message) {
+  for (const fn of relayMessageListeners.get(String(matchId)) || []) {
+    try { fn(message) } catch (err) { console.error('[ServerDataSync] relay message listener failed:', err) }
+  }
+}
+
+/**
+ * Send a message on the match's relay subscription socket. false when it is
+ * not open (nothing is queued: the caller says "not sent").
+ */
+export function sendRelayMessage(matchId, payload) {
+  const connection = wsConnections.get(String(matchId))
+  const ws = connection?.ws
+  if (!ws || ws.readyState !== WebSocket.OPEN) return false
+  try {
+    ws.send(JSON.stringify(payload))
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function getWsDebugInfo(matchId) {
   const matchIdStr = String(matchId)
   const connection = wsConnections.get(matchIdStr)
@@ -1160,6 +1206,12 @@ export function subscribeToMatchData(matchId, onUpdate) {
           // Handle pong (heartbeat response)
           if (message.type === 'pong') {
             wsDebugInfo.lastPongAt = Date.now()
+            return
+          }
+
+          // Bench requests: to their own listeners (addRelayMessageListener)
+          if (BENCH_RELAY_MESSAGES.includes(message.type) || (message.type === 'error' && message.code === 'bench-request-refused')) {
+            if (message.matchId === undefined || String(message.matchId) === matchIdStr) notifyRelayMessage(matchIdStr, message)
             return
           }
 

@@ -30,6 +30,8 @@ import { backdropDismiss } from '../ui/backdropDismiss.js'
 import PlayerDisc from './referee/PlayerDisc.jsx'
 import ScoreServeRow from './referee/ScoreServeRow.jsx'
 import RecordedNoticePopup from './referee/RecordedNoticePopup.jsx'
+import BenchRequestIndicator from './referee/BenchRequestIndicator.jsx'
+import { lineupHiddenUntilBoth } from '../domain/lineupPrivacy'
 import CountdownFlight from './referee/CountdownFlight.jsx'
 import TimeoutCountdown from './referee/TimeoutCountdown.jsx'
 import RefereeScoresheet from './referee/RefereeScoresheet.jsx'
@@ -37,7 +39,7 @@ import RefereeRosters from './referee/RefereeRosters.jsx'
 import { TeamSanctionList } from './referee/SanctionCards.jsx'
 import { bundleHasFullAccess } from './referee/scoresheetInput.js'
 import { createRecordedNoticeTracker, describeNotice, NOTICE_AUTO_DISMISS_MS } from '../utils/refereeRecordedNotices.js'
-import { matchDiscPaint, teamLiberoColour, teamBoxStyle } from '../utils/teamColours.js'
+import { matchDiscPaint, teamLiberoColour, teamBoxStyle, effectiveTeamColour } from '../utils/teamColours.js'
 import { compareBySeq } from '../domain/describe'
 import { useTheme } from '../utils/theme'
 import { themeMenuItems } from './themeMenuItems'
@@ -2132,6 +2134,11 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     const hasPoints = data.events.some(e => e.type === 'point' && e.setIndex === data.set.index)
     return !hasPoints
   }, [data?.events, data?.set])
+  // The first line-up of a set stays hidden until the other is in
+  // (domain/lineupPrivacy.js): the court's "Line-up set" cover, and its
+  // server's number and setter position are not shown either
+  const leftLineupHidden = lineupHiddenUntilBoth({ setStarted: !isFirstRally, ownEntered: !!leftLineup, otherEntered: !!rightLineup })
+  const rightLineupHidden = lineupHiddenUntilBoth({ setStarted: !isFirstRally, ownEntered: !!rightLineup, otherEntered: !!leftLineup })
 
   // Start between-sets countdown when we detect we're between sets
   useEffect(() => {
@@ -3192,7 +3199,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             leftScore={leftDisplayScore}
             rightScore={rightDisplayScore}
             servingSide={leftServing ? 'left' : rightServing ? 'right' : null}
-            serverNumber={leftServing ? lineupNumber(leftLineup?.I) : rightServing ? lineupNumber(rightLineup?.I) : null}
+            serverNumber={leftServing ? (leftLineupHidden ? null : lineupNumber(leftLineup?.I)) : rightServing ? (rightLineupHidden ? null : lineupNumber(rightLineup?.I)) : null}
             serveLabel={t('scoreboard.labels.serveLabel', 'SERVE')}
             vmin={vmin}
             scoreFont={getScoreFont()}
@@ -3221,7 +3228,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           }}>
             {/* Left team advanced mode button - only show when receiving and 2R view */}
             <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>
-              {refereeView === '2nd' && !leftServing && leftLineup && (
+              {refereeView === '2nd' && !leftServing && leftLineup && !leftLineupHidden && (
                 <button
                   onClick={() => setSetterSelectionModal('left')}
                   // Hit-slop only: the box stays 22px so the court below does not move;
@@ -3255,7 +3262,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             </div>
             {/* Right team advanced mode button - only show when receiving and 2R view */}
             <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>
-              {refereeView === '2nd' && !rightServing && rightLineup && (
+              {refereeView === '2nd' && !rightServing && rightLineup && !rightLineupHidden && (
                 <button
                   onClick={() => setSetterSelectionModal('right')}
                   // Hit-slop only: the box stays 22px so the court below does not move;
@@ -3875,6 +3882,16 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       {scoresheetLayer}
       {/* What the scorer just recorded (time-outs, substitutions, sanctions) */}
       <RecordedNoticePopup notices={recordedNotices} deadline={recordedDeadline} onClose={closeRecordedNotices} timeout={popupTimeout} scoreFont={getScoreFont()} />
+      {/* A bench asked for a time-out or prepared a substitution on its tablet */}
+      {!isMasterMode && (
+        <BenchRequestIndicator
+          matchId={matchId}
+          teams={{
+            home: { name: data?.match?.homeShortName || data?.homeTeam?.shortName || data?.homeTeam?.name, colour: effectiveTeamColour('home', data?.homeTeam, data?.match) },
+            away: { name: data?.match?.awayShortName || data?.awayTeam?.shortName || data?.awayTeam?.name, colour: effectiveTeamColour('away', data?.awayTeam, data?.match) }
+          }}
+        />
+      )}
       {countdownFlight && timeoutModal && (
         <CountdownFlight from={countdownFlight.from} to={countdownFlight.to} countdown={timeoutModal.countdown} fontFamily={getScoreFont()} onDone={endCountdownFlight} />
       )}

@@ -2488,7 +2488,11 @@
     "sanctions": "SANCTIONS",
     "none": "None",
     "moreCount": "+{{count}} more",
-    "noBenchData": "No bench data"
+    "noBenchData": "No bench data",
+    "sets": "Sets",
+    "bench": "Bench",
+    "officials": "Officials",
+    "serving": "Serving"
   },
   "officialAutocomplete": {
     "selectFromHistory": "Select from history"
@@ -5241,5 +5245,119 @@
     "warningMen_other": "{{names}} are registered with the club as women, and this is a men's game. Check it before the coin toss.",
     "warningWomen_one": "{{names}} is registered with the club as a man, and this is a women's game. Check it before the coin toss.",
     "warningWomen_other": "{{names}} are registered with the club as men, and this is a women's game. Check it before the coin toss."
+  },
+  "benchRequests": {
+    "title": "Requests to the scorer",
+    "lineup": "Line-up",
+    "timeout": "Time-out",
+    "substitution": "Substitution",
+    "forSet": "Set {{set}}",
+    "tapToRequest": "Tap to request",
+    "prepare": "Prepare",
+    "cancel": "Cancel request",
+    "gameCaptain": "Game captain",
+    "done": {
+      "lineup": "Recorded by the scorer",
+      "timeout": "Granted",
+      "substitution": "Accepted"
+    },
+    "status": {
+      "sending": "Sending…",
+      "pending": "Sent – waiting for the scorer",
+      "waitingScorer": "Waiting for the scorer (not connected)",
+      "seen": "The scorer has it",
+      "accepted": "Accepted",
+      "declined": "Declined",
+      "declinedBecause": "Declined: {{reason}}",
+      "refused": "Not sent: {{reason}}",
+      "notSent": "Not sent – no connection",
+      "cancelled": "Cancelled",
+      "expired": "No longer open"
+    },
+    "refusal": {
+      "other": "the server refused it",
+      "not-this-bench": "this bench is not connected (any more)",
+      "rate-limited": "too many requests, wait a minute",
+      "no-match": "the scorer is not online",
+      "lineup-locked": "the line-up was accepted already",
+      "bad-lineup": "the line-up is not complete",
+      "bad-captain": "check the game captain",
+      "bad-pairs": "check the pairs",
+      "duplicate-id": "sent already",
+      "nothing-to-cancel": "nothing to cancel"
+    },
+    "unavailable": {
+      "no_coin_toss": "After the coin toss",
+      "match_over": "The match is over",
+      "set_started": "The set has started",
+      "lineup_entered": "Entered by the scorer",
+      "no_lineup": "After the line-up",
+      "set_interval": "Not in the set interval",
+      "replay_pending": "Not while a rally is replayed",
+      "after_delay_warning": "Not after a delay warning",
+      "third_timeout": "Both time-outs used",
+      "substitution_limit": "6 substitutions used",
+      "second_substitution_request": "Second request in this interruption"
+    },
+    "lineupSheet": {
+      "title": "Starting line-up · set {{set}}",
+      "hint": "Tap a position, then a player. Only the scorer sees it until the set starts.",
+      "position": "Position {{pos}}",
+      "send": "Send line-up",
+      "net": "Net",
+      "players": "Players",
+      "asInSet": "As in set {{set}}",
+      "noLiberos": "Liberos ({{numbers}}) are not in the line-up.",
+      "gameCaptainHint": "Captain {{captain}} is not in the line-up: who is game captain on court?"
+    },
+    "subSheet": {
+      "title": "Prepare substitution · set {{set}}",
+      "left_one": "{{count}} substitution left in this set",
+      "left_other": "{{count}} substitutions left in this set",
+      "send": "Send ({{count}})",
+      "off": "Off",
+      "on": "On",
+      "remove": "Remove",
+      "pickOff": "Who goes off?",
+      "pickOn": "Who comes on for {{out}}?",
+      "nobody": "Nobody on the bench may come on.",
+      "gameCaptainHint": "The game captain goes off: who leads the team on court?",
+      "why": {
+        "libero": "Libero",
+        "paired": "In a pair",
+        "no_rally_since_entry": "Came on, no rally yet",
+        "replaced_by_libero": "Libero in for him",
+        "not_on_court": "Not on court",
+        "not_on_bench": "Not on the bench",
+        "sent_off": "Sent off",
+        "wrong_partner": "Wrong partner",
+        "played_out": "Already played",
+        "no_rally_since_out": "No rally yet"
+      }
+    },
+    "scorer": {
+      "count_one": "{{count}} bench request",
+      "count_other": "{{count}} bench requests",
+      "lineupTitle": "Line-up for set {{set}}",
+      "timeoutTitle": "Time-out request",
+      "substitutionTitle": "Substitution request",
+      "gameCaptain": "Game captain: {{number}}",
+      "review": "Review and accept",
+      "grant": "Grant time-out",
+      "substitute": "Substitute",
+      "recorded": "Recorded",
+      "decline": "Decline",
+      "declineTitle": "Decline the request?",
+      "declineMessage": "The bench sees that it was declined, and your reason.",
+      "reason": "Reason (optional)",
+      "afterRally": "After the rally",
+      "notSent": "Answer not sent: no connection to the server",
+      "notOnCourt": "No {{number}} is not on court.",
+      "notOnBench": "No {{number}} cannot come on now."
+    },
+    "referee": {
+      "timeout": "Bench asks for a time-out",
+      "substitution": "Bench prepares a substitution: {{pairs}}"
+    }
   }
 }

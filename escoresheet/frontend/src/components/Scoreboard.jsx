@@ -93,6 +93,10 @@ import { lockLandscape, unlockOrientation } from '../utils/nativeOrientation'
 import { isNativeApp } from '../utils/backendConfig'
 import PhoneScoreboard from './scoreboard/PhoneScoreboard.jsx'
 import { PHONE_RECENT_MAX_LINES, detectDisplayMode, dialogsCentred, isPhoneScreen, phoneHeldSideways, recentActions } from './scoreboard/phoneLayout'
+import BenchRequestCards from './scoreboard/BenchRequestCards.jsx'
+import { useBenchRequestBridge } from './scoreboard/useBenchRequestBridge'
+import { latestLineup as benchLatestLineup, lineupNumber as benchLineupNumber } from '../domain/benchRequests'
+import { coveredLineupTeams, withoutCoveredTeamEvents } from '../domain/lineupPrivacy'
 import { captainRingStyle } from './scoreboard/captainRing'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
 import { WarningIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, RefreshIcon, VolleyballIcon, SwitchIcon, ChartIcon, NotebookIcon, WrenchIcon, ClipboardIcon, SpeechIcon } from './icons'
@@ -4095,6 +4099,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       e.payload?.isInitial
     )
   }, [data?.events, data?.set, leftIsHome])
+  // The first line-up of a set stays covered until the other is in
+  // (domain/lineupPrivacy.js): its court, and its SERVE number, bench list
+  // and Last action too (owner 2026-11-10)
+  const lineupCovered = coveredLineupTeams({ setStarted: !isFirstRally, homeEntered: leftIsHome ? leftTeamLineupSet : rightTeamLineupSet, awayEntered: leftIsHome ? rightTeamLineupSet : leftTeamLineupSet })
+  const sideCovered = (side) => lineupCovered.includes((side === 'left') === leftIsHome ? 'home' : 'away')
 
   // Easy match (domain/easyMatch.js): the line-ups are optional. Without one a
   // team plays the set with no rotation (the serve still follows the points),
@@ -5297,7 +5306,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // changes sides.
   const renderServeSide = (side) => {
     const serving = side === 'left' ? leftServing : rightServing
-    const servingPlayer = (side === 'left' ? leftTeam : rightTeam).playersOnCourt.find(p => p.position === 'I')
+    const servingPlayer = sideCovered(side) ? null : (side === 'left' ? leftTeam : rightTeam).playersOnCourt.find(p => p.position === 'I')
     const chip = showRefereeRow && gameCaptainChip[side]
     const teamKey = side === 'left' ? (leftIsHome ? 'home' : 'away') : (leftIsHome ? 'away' : 'home')
     return (
@@ -9009,6 +9018,33 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     openRequestWarning('substitution', { team: teamKey, position, playerOut, playerIn: candidate.number }, [
       { ...REQUEST_ISSUES.illegal_substitution, reason: 'illegal_substitution', playerIn: candidate.number, illegalReason: candidate.reason }
     ], [])
+  }
+
+  // Bench requests (components/scoreboard/BenchRequestCards): Accept opens the
+  // scorer's own dialog for it, with every check; the request is answered when
+  // the event is recorded (useBenchRequestBridge)
+  const benchBridge = useBenchRequestBridge({ relayKey: data?.match ? relayMatchKey(data.match) : null, events: data?.events, setIndex: data?.set?.index })
+  const benchActions = {
+    onAcceptLineup: (entry) => setLineupModal({ team: entry.team, mode: 'initial', lineup: entry.request.lineup, gameCaptain: entry.request.gameCaptain ?? null }),
+    onGrantTimeout: (entry) => handleTimeout(mapTeamKeyToSide(entry.team)),
+    onAcceptPair: (entry, pair) => {
+      if (!data?.set || rallyStatus !== 'idle') return
+      const lineup = benchLatestLineup(data.events, data.set.index, entry.team) || {}
+      const position = Object.keys(lineup).find(pos => String(benchLineupNumber(lineup[pos])) === String(pair.out))
+      if (!position) {
+        showAlert(t('benchRequests.scorer.notOnCourt', { number: pair.out, defaultValue: 'No {{number}} is not on court.' }), 'error')
+        return
+      }
+      const playerOut = benchLineupNumber(lineup[position])
+      const legal = getAvailableSubstitutes(entry.team, playerOut).find(p => String(p.number) === String(pair.in))
+      if (legal) {
+        setSubstitutionConfirm({ team: entry.team, position, playerOut, playerIn: legal.number })
+        return
+      }
+      const illegal = getIllegalSubstitutes(entry.team, playerOut).find(p => String(p.number) === String(pair.in))
+      if (illegal) openIllegalSubstitution(entry.team, position, playerOut, illegal)
+      else showAlert(t('benchRequests.scorer.notOnBench', { number: pair.in, defaultValue: 'No {{number}} cannot come on now.' }), 'error')
+    }
   }
 
   const getAvailableExceptionalSubstitutes = useCallback((teamKey, playerOutNumber) => {
@@ -13694,7 +13730,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         tapNotice: rallyTapNotice
       },
       centre,
-      recent: recentActions(data?.events, data?.set?.index, getShortActionDescription, PHONE_RECENT_MAX_LINES),
+      recent: recentActions(withoutCoveredTeamEvents(data?.events, lineupCovered, data?.set?.index), data?.set?.index, getShortActionDescription, PHONE_RECENT_MAX_LINES),
       canUndo,
       scoreFont: getScoreFont(),
       limits: { timeouts: 2, subs: MAX_SUBSTITUTIONS_PER_SET },
@@ -13837,6 +13873,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   return (
     <div className={['match-record', isPhoneView && 'phone-layout', centreDialogs && 'centre-dialogs'].filter(Boolean).join(' ')}>
+      <BenchRequestCards
+        queue={benchBridge.queue}
+        teams={{
+          home: { name: data?.match?.homeShortName || data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home'), colour: effectiveTeamColour('home', data?.homeTeam, data?.match) },
+          away: { name: data?.match?.awayShortName || data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away'), colour: effectiveTeamColour('away', data?.awayTeam, data?.match) }
+        }}
+        rallyInPlay={rallyStatus === 'in_play'}
+        donePairs={benchBridge.donePairs}
+        unsent={benchBridge.unsent}
+        respond={benchBridge.respond}
+        top={isPhoneView ? 52 : 112}
+        {...benchActions}
+      />
       {relayRejection && now - relayRejection.at < 45000 && (
         <div role="alert" className="no-print rounded-xl border border-red-200 bg-red-50 text-red-800 font-medium leading-snug shadow-lg" style={{
           position: 'fixed',
@@ -14759,7 +14808,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             {/* Bench Players, Liberos, and Bench Officials */}
             <div style={{ marginTop: '3.75cqw', paddingTop: '3.75cqw', borderTop: '1px solid var(--border)' }}>
               {/* Bench Players */}
-              {leftTeamBench.benchPlayers.length > 0 && (
+              {leftTeamBench.benchPlayers.length > 0 && !sideCovered('left') && (
                 <div data-help-id="scoreboard-bench-left" style={{ marginBottom: isCompactMode ? '2.5cqw' : '5cqw' }}>
                   <h4
                     onClick={() => isCompactMode && setLeftMainBenchExpanded(!leftMainBenchExpanded)}
@@ -17485,7 +17534,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             }
                           }
 
-                          if (!lastEvent) return null
+                          if (!lastEvent || lineupCovered.includes(lastEvent.payload?.team)) return null
 
                           const description = getShortActionDescription(lastEvent)
 
@@ -18063,7 +18112,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             {/* Bench Players, Liberos, and Bench Officials */}
             <div style={{ marginTop: '3.75cqw', paddingTop: '3.75cqw', borderTop: '1px solid var(--border)' }}>
               {/* Bench Players */}
-              {rightTeamBench.benchPlayers.length > 0 && (
+              {rightTeamBench.benchPlayers.length > 0 && !sideCovered('right') && (
                 <div data-help-id="scoreboard-bench-right" style={{ marginBottom: isCompactMode ? '2.5cqw' : '5cqw' }}>
                   <h4
                     onClick={() => isCompactMode && setRightMainBenchExpanded(!rightMainBenchExpanded)}
@@ -20005,6 +20054,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         setIndex={data?.set?.index}
         mode={lineupModal.mode || 'initial'}
         lineup={lineupModal.lineup}
+        presetGameCaptain={lineupModal.gameCaptain}
         teamAKey={teamAKey}
         teamBKey={teamBKey}
         lfpTrackingEnabled={lfpTrackingEnabled}
@@ -24057,7 +24107,7 @@ function EasyNewSubstitute({ players, onCourt, available, onPick }) {
   )
 }
 
-function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initial', lineup: presetLineup = null, teamAKey, teamBKey, lfpTrackingEnabled, lfpMinimumOnCourt, courtCaptain = null, rememberedCourtCaptain = null, easy = false, onClose, onSave, onLineupSaved, onPenaltyPointsOwed, runSave = (body) => body() }) {
+function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initial', lineup: presetLineup = null, presetGameCaptain = null, teamAKey, teamBKey, lfpTrackingEnabled, lfpMinimumOnCourt, courtCaptain = null, rememberedCourtCaptain = null, easy = false, onClose, onSave, onLineupSaved, onPenaltyPointsOwed, runSave = (body) => body() }) {
   const { t } = useTranslation()
   const [lineup, setLineup] = useState(() => {
     if (presetLineup) {
@@ -24131,9 +24181,12 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
   // team captain is on court, the team captain is the game captain (FIVB
   // 5.1.2), and the scoreboard asks for one when the captain leaves the court
   // (checkAndRequestCaptainOnCourt, with "Manage captain on court" on)
-  const [gameCaptainChoice, setGameCaptainChoice] = useState(() => (presetLineup
-    ? initialGameCaptainChoice({ lineup, players, team, currentCourtCaptain: courtCaptain, rememberedCourtCaptain })
-    : ''))
+  // (a bench's line-up request names its game captain: presetGameCaptain)
+  const [gameCaptainChoice, setGameCaptainChoice] = useState(() => (presetGameCaptain != null
+    ? String(presetGameCaptain)
+    : presetLineup
+      ? initialGameCaptainChoice({ lineup, players, team, currentCourtCaptain: courtCaptain, rememberedCourtCaptain })
+      : ''))
   const gameCaptainChoices = useMemo(
     () => gameCaptainOptions({ lineup, players, events, team }),
     [lineup, players, events, team]

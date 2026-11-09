@@ -3,6 +3,7 @@
 
 mod activity;
 mod backup;
+mod bench_requests;
 mod diagnostics;
 mod firewall;
 mod flavour;
