@@ -131,3 +131,32 @@ export function screenFit({ viewportWidth, courtWidth = null, courtHeight = null
   if (disc < L.minDiscPx) return { fits: false, reason: 'court', disc }
   return { fits: true, reason: null, disc }
 }
+
+/**
+ * A phone or a tablet, as opposed to a computer: the referee page is upright
+ * only there (owner, 2026-11-09). A touch screen as the scoring screen detects
+ * it (a touch point), whose main pointer is a finger (coarse), so a laptop
+ * with a touch screen and its touchpad or mouse still counts as a computer
+ * and keeps the landscape layout. Unknown (no matchMedia): a computer, so a
+ * screen is never blocked by a guess.
+ * @param {Window} [win]
+ */
+export function isUprightOnlyDevice(win = (typeof window !== 'undefined' ? window : null)) {
+  if (!win) return false
+  try {
+    const touch = ('ontouchstart' in win) || Number(win.navigator?.maxTouchPoints) > 0
+    if (!touch || typeof win.matchMedia !== 'function') return false
+    return !!win.matchMedia('(pointer: coarse)').matches
+  } catch {
+    return false
+  }
+}
+
+/**
+ * True when the referee page asks for the device to be turned upright: a
+ * phone or tablet (isUprightOnlyDevice) whose viewport is wider than high.
+ * @param {{ uprightOnly: boolean, viewportWidth: number, viewportHeight: number }} s
+ */
+export function mustTurnUpright({ uprightOnly, viewportWidth, viewportHeight }) {
+  return !!uprightOnly && viewportWidth > viewportHeight
+}

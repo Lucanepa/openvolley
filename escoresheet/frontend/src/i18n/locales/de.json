@@ -34,6 +34,7 @@
     "screenTooSmall": "Bildschirm zu klein",
     "screenTooSmallMessage": "Diese App erfordert eine Mindestbildschirmbreite von 357 Pixel. Bitte verwenden Sie ein Gerät mit einem breiteren Bildschirm oder drehen Sie Ihr Gerät ins Querformat.",
     "screenTooShortMessage": "Das Spielfeld passt nicht auf diesen Bildschirm. Bitte drehen Sie Ihr Gerät, beenden Sie die geteilte Ansicht oder verwenden Sie einen grösseren Bildschirm.",
+    "screenTooSmallUpright": "Das Spielfeld passt aufrecht nicht auf diesen Bildschirm. Bitte beenden Sie die geteilte Ansicht oder verwenden Sie einen grösseren Bildschirm.",
     "tryFullscreen": "Versuchen Sie den Vollbildmodus",
     "fullscreenHint": "Der Vollbildmodus kann mehr Platz bieten, indem er die Benutzeroberfläche des Browsers ausblendet.",
     "setIndex": "Satz {{index}}",
@@ -1724,6 +1725,12 @@
       "captain": "Captain",
       "officials": "Teamoffizielle",
       "noOfficials": "Keine Offiziellen erfasst"
+    },
+    "upright": {
+      "title": "Halte das Gerät bitte aufrecht",
+      "body": "Das Schiedsrichter-Dashboard ist für das Hochformat gemacht. Dreh das Tablet oder Handy aufrecht, um weiterzumachen: Spielstand, Auszeiten und Countdowns laufen weiter.",
+      "fullscreen": "Vollbild aktivieren",
+      "fullscreenHint": "Auf Android bleibt der Bildschirm im Vollbild aufrecht, egal wie das Gerät gehalten wird."
     },
     "sanctions": {
       "title": "Sanktionen",

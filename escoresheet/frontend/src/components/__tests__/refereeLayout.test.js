@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   REFEREE_LAYOUT, isWideLayout, columnWidth, sidePanelWidth, courtBoxInSlot, courtDiscRoom, screenFit,
-  portraitCourtBox, PORTRAIT_COURT
+  portraitCourtBox, PORTRAIT_COURT, isUprightOnlyDevice, mustTurnUpright
 } from '../referee/refereeLayout.js'
 import { RECEPTION, layoutReception, formationPointPx, pointToFormation, boxSeparation } from '../referee/receptionLayout.js'
 import { DISC, discMetrics, discFitProblems, discCapPx } from '../referee/discSizing.js'
@@ -233,5 +233,37 @@ describe('referee page upright (portrait)', () => {
     const m = discMetrics({ courtWidth: 804, courtHeight: 618, capPx: 140 })
     expect(m.ballGap).toBeGreaterThanOrEqual(12)
     expect(m.ball).toBeGreaterThan(30)
+  })
+})
+
+describe('referee page: upright only on phones and tablets', () => {
+  const win = ({ touch = true, coarse = true, matchMedia = true } = {}) => ({
+    ...(touch ? { ontouchstart: null } : {}),
+    navigator: { maxTouchPoints: 0 },
+    ...(matchMedia ? { matchMedia: (q) => ({ matches: q === '(pointer: coarse)' && coarse }) } : {})
+  })
+
+  it('a phone or tablet: a touch point and a finger as the main pointer', () => {
+    expect(isUprightOnlyDevice(win())).toBe(true)
+    // touch points without ontouchstart (some Windows tablets)
+    expect(isUprightOnlyDevice({ navigator: { maxTouchPoints: 5 }, matchMedia: () => ({ matches: true }) })).toBe(true)
+  })
+
+  it('a computer: no touch, or a touch screen used with a mouse or touchpad, or unknown', () => {
+    expect(isUprightOnlyDevice(win({ touch: false }))).toBe(false)
+    expect(isUprightOnlyDevice(win({ coarse: false }))).toBe(false)
+    expect(isUprightOnlyDevice(win({ matchMedia: false }))).toBe(false)
+    expect(isUprightOnlyDevice(null)).toBe(false)
+    expect(isUprightOnlyDevice({ navigator: { maxTouchPoints: 1 }, matchMedia: () => { throw new Error('x') } })).toBe(false)
+  })
+
+  it('asks to turn upright only a phone or tablet whose viewport is wider than high', () => {
+    for (const [w, h] of [[1180, 820], [1280, 800], [844, 390], [1024, 768]]) {
+      expect(mustTurnUpright({ uprightOnly: true, viewportWidth: w, viewportHeight: h }), `${w}x${h}`).toBe(true)
+      expect(mustTurnUpright({ uprightOnly: false, viewportWidth: w, viewportHeight: h }), `computer ${w}x${h}`).toBe(false)
+    }
+    for (const [w, h] of [[820, 1180], [800, 1280], [390, 844], [768, 768]]) {
+      expect(mustTurnUpright({ uprightOnly: true, viewportWidth: w, viewportHeight: h }), `${w}x${h}`).toBe(false)
+    }
   })
 })

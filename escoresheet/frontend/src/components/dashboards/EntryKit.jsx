@@ -141,7 +141,9 @@ export function GameRow({ match, lang, gameLabel, home, away, noDate, onOpen, st
 /**
  * Full-screen blocker for screens below the dashboards' minimum size.
  * reason: 'width' (narrower than 357 px) or 'court' (the referee court gets
- * too little room for its player discs, e.g. a phone on its side).
+ * too little room for its player discs, e.g. a phone on its side), or
+ * 'upright' (either, on a phone or tablet on the referee dashboard, which is
+ * upright only: no advice to rotate).
  */
 export function NarrowScreenOverlay({ t, reason = 'width' }) {
   return (
@@ -157,9 +159,13 @@ export function NarrowScreenOverlay({ t, reason = 'width' }) {
           {t('common.screenTooSmall', 'Screen too small')}
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-stone-600">
-          {reason === 'court'
-            ? t('common.screenTooShortMessage', 'The court does not fit on this screen. Please rotate your device, leave split screen or use a larger screen.')
-            : t('common.screenTooSmallMessage', 'This app requires a minimum screen width of 357px. Please use a device with a wider screen or rotate your device to landscape mode.')}
+          {reason === 'upright'
+            // The referee dashboard on a phone or tablet: upright only, so
+            // turning the device is no way out (it gets the turn-upright notice)
+            ? t('common.screenTooSmallUpright', 'The court does not fit on this screen held upright. Please leave split screen or use a larger screen.')
+            : reason === 'court'
+              ? t('common.screenTooShortMessage', 'The court does not fit on this screen. Please rotate your device, leave split screen or use a larger screen.')
+              : t('common.screenTooSmallMessage', 'This app requires a minimum screen width of 357px. Please use a device with a wider screen or rotate your device to landscape mode.')}
         </p>
         <Button
           variant="dark"

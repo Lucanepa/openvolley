@@ -16,7 +16,7 @@ const pluginProxy = new Proxy(so, {
 })
 vi.mock('@capacitor/screen-orientation', () => ({ ScreenOrientation: pluginProxy }))
 
-const { lockLandscape, unlockOrientation } = await import('../nativeOrientation')
+const { lockLandscape, lockPortrait, unlockOrientation } = await import('../nativeOrientation')
 
 describe('nativeOrientation', () => {
   beforeEach(() => {
@@ -29,6 +29,7 @@ describe('nativeOrientation', () => {
 
   it('does nothing in a browser', async () => {
     await lockLandscape()
+    await lockPortrait()
     await unlockOrientation()
     expect(so.lock).not.toHaveBeenCalled()
     expect(so.unlock).not.toHaveBeenCalled()
@@ -52,6 +53,19 @@ describe('nativeOrientation', () => {
       expect(so.unlock).toHaveBeenCalledTimes(1)
       // The plugin's own orientation() is wrong on landscape-natural tablets
       expect(so.orientation).not.toHaveBeenCalled()
+    })
+
+    it('locks portrait (the referee view) on the side the device is on', async () => {
+      const orientation = { type: 'landscape-primary' }
+      Object.defineProperty(window.screen, 'orientation', { value: orientation, configurable: true })
+      await lockPortrait()
+      expect(so.lock).toHaveBeenCalledWith({ orientation: 'portrait' })
+      orientation.type = 'portrait-secondary'
+      await lockPortrait()
+      expect(so.lock).toHaveBeenLastCalledWith({ orientation: 'portrait-secondary' })
+      delete window.screen.orientation
+      await lockPortrait()
+      expect(so.lock).toHaveBeenLastCalledWith({ orientation: 'portrait' })
     })
 
     it('an unlock sent while the lock is in flight runs after it', async () => {

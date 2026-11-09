@@ -34,6 +34,7 @@
     "screenTooSmall": "Écran trop petit",
     "screenTooSmallMessage": "Cette application requiert une largeur d'écran minimale de 357px. Veuillez utiliser un appareil avec un écran plus large ou tourner votre appareil en mode paysage.",
     "screenTooShortMessage": "Le terrain ne tient pas sur cet écran. Veuillez tourner votre appareil, quitter l'écran partagé ou utiliser un écran plus grand.",
+    "screenTooSmallUpright": "Le terrain ne tient pas sur cet écran tenu à la verticale. Veuillez quitter l'écran partagé ou utiliser un écran plus grand.",
     "tryFullscreen": "Essayez le plein écran",
     "fullscreenHint": "Le plein écran permet de gagner de l'espace en masquant l'interface utilisateur du navigateur.",
     "setIndex": "Set {{index}}",
@@ -1869,6 +1870,12 @@
       "captain": "Capitaine",
       "officials": "Officiels d'équipe",
       "noOfficials": "Aucun officiel saisi"
+    },
+    "upright": {
+      "title": "Tenez l'appareil à la verticale",
+      "body": "Le tableau de bord arbitre est conçu pour le format portrait. Remettez la tablette ou le téléphone à la verticale pour continuer : le score, les temps morts et les comptes à rebours continuent.",
+      "fullscreen": "Passer en plein écran",
+      "fullscreenHint": "Sur Android, le plein écran garde l'écran à la verticale, quelle que soit la façon dont l'appareil est tenu."
     },
     "sanctions": {
       "title": "Sanctions",
