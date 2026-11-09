@@ -30,6 +30,7 @@ import { backdropDismiss } from '../ui/backdropDismiss.js'
 import PlayerDisc from './referee/PlayerDisc.jsx'
 import ScoreServeRow from './referee/ScoreServeRow.jsx'
 import RecordedNoticePopup from './referee/RecordedNoticePopup.jsx'
+import BenchRequestIndicator from './referee/BenchRequestIndicator.jsx'
 import CountdownFlight from './referee/CountdownFlight.jsx'
 import TimeoutCountdown from './referee/TimeoutCountdown.jsx'
 import RefereeScoresheet from './referee/RefereeScoresheet.jsx'
@@ -37,7 +38,7 @@ import RefereeRosters from './referee/RefereeRosters.jsx'
 import { TeamSanctionList } from './referee/SanctionCards.jsx'
 import { bundleHasFullAccess } from './referee/scoresheetInput.js'
 import { createRecordedNoticeTracker, describeNotice, NOTICE_AUTO_DISMISS_MS } from '../utils/refereeRecordedNotices.js'
-import { matchDiscPaint, teamLiberoColour, teamBoxStyle } from '../utils/teamColours.js'
+import { matchDiscPaint, teamLiberoColour, teamBoxStyle, effectiveTeamColour } from '../utils/teamColours.js'
 import { compareBySeq } from '../domain/describe'
 import { useTheme } from '../utils/theme'
 import { themeMenuItems } from './themeMenuItems'
@@ -3875,6 +3876,16 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       {scoresheetLayer}
       {/* What the scorer just recorded (time-outs, substitutions, sanctions) */}
       <RecordedNoticePopup notices={recordedNotices} deadline={recordedDeadline} onClose={closeRecordedNotices} timeout={popupTimeout} scoreFont={getScoreFont()} />
+      {/* A bench asked for a time-out or prepared a substitution on its tablet */}
+      {!isMasterMode && (
+        <BenchRequestIndicator
+          matchId={matchId}
+          teams={{
+            home: { name: data?.match?.homeShortName || data?.homeTeam?.shortName || data?.homeTeam?.name, colour: effectiveTeamColour('home', data?.homeTeam, data?.match) },
+            away: { name: data?.match?.awayShortName || data?.awayTeam?.shortName || data?.awayTeam?.name, colour: effectiveTeamColour('away', data?.awayTeam, data?.match) }
+          }}
+        />
+      )}
       {countdownFlight && timeoutModal && (
         <CountdownFlight from={countdownFlight.from} to={countdownFlight.to} countdown={timeoutModal.countdown} fontFamily={getScoreFont()} onDone={endCountdownFlight} />
       )}
