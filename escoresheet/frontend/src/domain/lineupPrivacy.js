@@ -13,3 +13,23 @@
 export function lineupHiddenUntilBoth({ setStarted, ownEntered, otherEntered }) {
   return !setStarted && !!ownEntered && !otherEntered
 }
+
+/**
+ * The teams whose line-up is covered now: [] or ['home'] / ['away'].
+ * @param {{ setStarted: boolean, homeEntered: boolean, awayEntered: boolean }} args
+ */
+export function coveredLineupTeams({ setStarted, homeEntered, awayEntered }) {
+  const out = []
+  if (lineupHiddenUntilBoth({ setStarted, ownEntered: homeEntered, otherEntered: awayEntered })) out.push('home')
+  if (lineupHiddenUntilBoth({ setStarted, ownEntered: awayEntered, otherEntered: homeEntered })) out.push('away')
+  return out
+}
+
+/**
+ * The events without those of a covered team in the set (its line-up, its
+ * game captain): what a recent-actions list or "Last action" line may show.
+ */
+export function withoutCoveredTeamEvents(events, coveredTeams, setIndex) {
+  if (!coveredTeams?.length || !Array.isArray(events)) return events
+  return events.filter((e) => !(coveredTeams.includes(e?.payload?.team) && (e.setIndex ?? 1) === setIndex))
+}
