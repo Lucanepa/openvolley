@@ -84,6 +84,9 @@ describe('My club → Licences', () => {
     ])
     await waitFor(() => expect(ui.toasts.map((x) => x[1])).toContain('manage.licences.saved'))
     expect(screen.queryByTestId('licences-preview')).toBeNull()
+    // the export stays only on this device: the page says to delete it there
+    expect(screen.getByTestId('licences-delete-file')).toBeInTheDocument()
+    expect(tr).toHaveBeenCalledWith('manage.licences.deleteFile', expect.objectContaining({ file: expect.any(String) }))
   })
 
   it('refuses a file that is not a club export, and saves nothing', async () => {

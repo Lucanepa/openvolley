@@ -3554,6 +3554,7 @@
       "deleteBody": "Ses personnes sont supprimées sur le serveur. Les tablettes des marqueurs les retirent dès qu’elles sont de nouveau en ligne.",
       "delete": "Supprimer la liste",
       "deleted": "Liste supprimée",
+      "deleteFile": "Enregistré. OpenVolley n’a ni envoyé ni conservé le fichier Excel. Il se trouve encore sur votre appareil ({{file}}), avec les coordonnées de toutes les personnes : supprimez-le maintenant.",
       "people_one": "{{count}} personne",
       "people_other": "{{count}} personnes",
       "updated": "Mise à jour le {{when}} par {{name}}",
