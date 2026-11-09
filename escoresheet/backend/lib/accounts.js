@@ -80,7 +80,10 @@ export const AUDIT_ACTIONS = Object.freeze([
   'team.managers', 'team.squad', 'team.roster',
   // db/024: a club's licence list from VolleyManager replaced (lib/licences.js;
   // the list and the count, never a name)
-  'club.licences'
+  'club.licences',
+  // db/025: a part of a sign-up request approved or rejected (lib/accountRequests.js;
+  // the kind, the club and team ids, who decided: admin, club or team)
+  'account.request_approve', 'account.request_reject'
 ])
 export const APPS = SPORTS
 // How a membership came about (auth.app_memberships.joined_via)
@@ -207,12 +210,14 @@ function trimmedText (raw, { min = 0, max }) {
  *   account's own delete-account runs it too). Without it both answer 404
  *   and the accounts list says can_delete: false.
  */
-export function createAccounts ({ pool, db, restore, access, approvalsForMatches = null, clubs: clubsOf = () => null, teams: teamsOf = () => null, eraseAccount = null, logger = console } = {}) {
+export function createAccounts ({ pool, db, restore, access, approvalsForMatches = null, clubs: clubsOf = () => null, teams: teamsOf = () => null, requests: requestsOf = () => null, eraseAccount = null, logger = console } = {}) {
   const log = logger
   /** lib/clubs.js (db/018), wired after this module (it audits through it); null before. */
   const clubs = () => (typeof clubsOf === 'function' ? clubsOf() : null)
   /** lib/teams.js (db/023), wired after this module too; null before. */
   const teams = () => (typeof teamsOf === 'function' ? teamsOf() : null)
+  /** lib/accountRequests.js (db/025), wired after this module too; null before. */
+  const requests = () => (typeof requestsOf === 'function' ? requestsOf() : null)
   /** Active approvals per match id (empty without lib/approvals.js). Throws on a DB error. */
   const approvalsOf = async (ids) => (typeof approvalsForMatches === 'function' ? approvalsForMatches(ids) : new Map())
 
@@ -366,6 +371,9 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
       const tm = teams()
       // (admins: every team, owner 2026-11-08)
       const managedTeams = tm?.managedTeamsOf ? await tm.managedTeamsOf(pool, userId, { all: !!access?.isAdmin }) : []
+      // db/025: what the account asked for at sign-up and is still open
+      const rq = requests()
+      const myRequests = rq ? await rq.mine(pool, userId) : []
       return ok({
         id: userId,
         roles: access?.roles ?? [],
@@ -379,7 +387,8 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
         clubs: myClubs,
         clubRule,
         managedClubs,
-        managedTeams
+        managedTeams,
+        requests: myRequests
       })
     })
   }
@@ -642,9 +651,52 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
 
   // ------------------------------------------------------------------ accounts
   /**
+   * Which of the tables behind "manages a club / a team" and "asked for
+   * something at sign-up" this database has (db/020, db/023, db/025): an
+   * older schema simply has no such account.
+   */
+  async function managementTables (client) {
+    const { rows: [r] } = await (client || pool).query(
+      `SELECT to_regclass('public.club_managers') IS NOT NULL AS cm, to_regclass('public.team_managers') IS NOT NULL AS tm,
+              to_regclass('public.account_requests') IS NOT NULL AS ar`)
+    return { clubManagers: r?.cm === true, teamManagers: r?.tm === true, requests: r?.ar === true }
+  }
+  /** SQL: account `uid` manages a club (db/020) or a team (db/023); FALSE without them. */
+  const managesSql = (uid, have) => {
+    const parts = []
+    if (have.clubManagers) parts.push(`EXISTS (SELECT 1 FROM public.club_managers cm WHERE cm.user_id = ${uid})`)
+    if (have.teamManagers) parts.push(`EXISTS (SELECT 1 FROM public.team_managers tm WHERE tm.user_id = ${uid})`)
+    return parts.length ? `(${parts.join(' OR ')})` : 'FALSE'
+  }
+  /** userId -> { clubs: [{ id, name }], teams: [{ id, name, club_id }] } the accounts manage. */
+  async function managedOfMany (client, userIds, have) {
+    const out = new Map()
+    const ids = [...new Set((userIds || []).filter(isUuid))]
+    if (!ids.length) return out
+    const entry = (id) => { if (!out.has(id)) out.set(id, { clubs: [], teams: [] }); return out.get(id) }
+    if (have.clubManagers) {
+      const { rows } = await (client || pool).query(
+        `SELECT cm.user_id, c.id, c.name FROM public.club_managers cm JOIN public.clubs c ON c.id = cm.club_id
+          WHERE cm.user_id = ANY($1::uuid[]) ORDER BY lower(c.name)`, [ids])
+      for (const r of rows) entry(r.user_id).clubs.push({ id: r.id, name: r.name })
+    }
+    if (have.teamManagers) {
+      const { rows } = await (client || pool).query(
+        `SELECT tm.user_id, ct.id, ct.team_name AS name, ct.club_id FROM public.team_managers tm JOIN public.club_teams ct ON ct.id = tm.team_id
+          WHERE tm.user_id = ANY($1::uuid[]) ORDER BY lower(ct.team_name)`, [ids])
+      for (const r of rows) entry(r.user_id).teams.push({ id: r.id, name: r.name, club_id: r.club_id })
+    }
+    return out
+  }
+
+  /**
    * GET /api/admin/accounts?filter=pending|all&q=&limit=[&app=indoor|beach].
    * With ?app=: the members of that app, pending = without a role of it.
    * Without: every account, pending = without an indoor role (as before).
+   * OpenVolley (indoor, and without ?app=): an account that manages a club
+   * (db/020) or a team (db/023) is not pending either (an approver said yes to
+   * a part of it), and the Pending filter also lists every account with an
+   * open sign-up request (db/025), whose parts each row carries (`requests`).
    */
   async function listAccounts ({ filter = 'pending', q = '', limit, app } = {}) {
     if (!['pending', 'all'].includes(filter || 'pending')) return invalid('filter: pending or all')
@@ -654,13 +706,17 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     const a = appParam(app)
     if (a === null) return invalid('app: indoor or beach')
     return guarded('list-accounts', async () => {
+      const indoor = a !== 'beach'
+      const have = indoor ? await managementTables(pool) : { clubManagers: false, teamManagers: false, requests: false }
       const where = []
       const values = []
       const p = (v) => { values.push(v); return '$' + values.length }
       const own = a ? p(appRoles(a)) : null
       if (a) where.push(`(${membershipSql('u.id', a, p(a))} OR ${hasRoleSql('p.roles', own)})`)
       if ((filter || 'pending') === 'pending') {
-        where.push(`NOT ${hasRoleSql('p.roles', own ?? p([...INDOOR_ROLES, ...ADMIN_ROLES]))}`)
+        const noRole = `NOT ${hasRoleSql('p.roles', own ?? p([...INDOOR_ROLES, ...ADMIN_ROLES]))}`
+        const asked = have.requests ? ' OR EXISTS (SELECT 1 FROM public.account_requests ar WHERE ar.user_id = u.id)' : ''
+        where.push(indoor ? `((${noRole} AND NOT ${managesSql('u.id', have)})${asked})` : noRole)
       }
       const term = q.trim()
       if (term) {
@@ -675,11 +731,17 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
           ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
           ORDER BY u.created_at DESC, u.id
           LIMIT ${lim}`, values)
+      const ids = rows.map((r) => r.id)
       const c = clubs()
-      const clubsBy = c ? await c.clubsOfMany(pool, rows.map((r) => r.id)) : new Map()
+      const clubsBy = c ? await c.clubsOfMany(pool, ids) : new Map()
+      const managedBy = indoor ? await managedOfMany(pool, ids, have) : new Map()
+      const rq = requests()
+      const requestsBy = indoor && rq ? await rq.requestsOfMany(pool, ids) : new Map()
       return ok({
         accounts: rows.map((r) => {
           const acc = accessFromRoles(r.roles)
+          const managed = managedBy.get(r.id) || { clubs: [], teams: [] }
+          const manages = managed.clubs.length > 0 || managed.teams.length > 0
           return {
             clubs: clubsBy.get(r.id) || [],
             id: r.id,
@@ -687,10 +749,12 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
             first_name: r.first_name ?? null,
             last_name: r.last_name ?? null,
             roles: acc.roles,
-            pending: a ? acc.apps[a].isPending : acc.isPending,
+            pending: a === 'beach' ? acc.apps.beach.isPending : ((a ? acc.apps[a].isPending : acc.isPending) && !manages),
             created_at: iso(r.created_at),
             last_sign_in_at: iso(r.last_sign_in_at),
-            email_confirmed: r.email_confirmed === true
+            email_confirmed: r.email_confirmed === true,
+            // db/020 / db/023: what the account manages; db/025: its open sign-up request
+            ...(indoor ? { managed_clubs: managed.clubs, managed_teams: managed.teams, requests: requestsBy.get(r.id) || [] } : {})
           }
         }),
         // POST /api/admin/accounts/:id/delete|reject exist on this server (a
@@ -752,6 +816,26 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     return res
   }
 
+  /**
+   * Add indoor roles to an account inside `client`'s transaction: what
+   * setRoles does for `add`, audited account.roles (lib/accountRequests.js,
+   * an approved sign-up request). The caller checked who may and that the
+   * address is confirmed. Returns the roles after. Throws on a database error.
+   */
+  async function addRolesIn (client, { actorId, userId, roles }) {
+    const wanted = [...new Set((roles || []).map((r) => String(r).trim().toLowerCase()))]
+    if (wanted.some((r) => !INDOOR_ROLES.includes(r))) throw new Error('addRolesIn: indoor roles only')
+    const { rows: [prof] } = await client.query('SELECT roles FROM public.profiles WHERE user_id = $1 LIMIT 1 FOR UPDATE', [userId])
+    const before = normalizeRoles(prof?.roles)
+    const added = wanted.filter((r) => !before.includes(r))
+    if (!added.length) return before
+    const after = [...before, ...added]
+    await writeRoles(client, userId, after, !!prof)
+    await addMembership(client, userId, 'indoor', 'admin')
+    await audit(client, { actorId, action: 'account.roles', targetUserId: userId, details: { added, removed: [], before, after }, app: 'indoor' })
+    return after
+  }
+
   // ------------------------------------------------------------------ deleting an account
   const ACCOUNT_NOT_FOUND = () => fail(404, 'OV_ACCOUNT_NOT_FOUND', 'This account does not exist (any more)')
   // SQL: account `u` can still sign in (not banned, not marked deleted)
@@ -762,14 +846,22 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
    * (lib/access.js flags), the target's roles, the super admins left besides
    * the target (accounts that can still sign in). null when allowed.
    */
-  function deleteRefusal ({ actorAccess, targetRoles, otherSuperAdmins, reject }) {
+  function deleteRefusal ({ actorAccess, targetRoles, otherSuperAdmins, reject, targetManages = false }) {
     if (!actorAccess?.isAdmin) return fail(403, 'OV_FORBIDDEN', 'You do not have access to this')
     const target = accessFromRoles(targetRoles)
     if (target.isSuperAdmin && !actorAccess.isSuperAdmin) return fail(403, 'OV_FORBIDDEN', 'Only a super admin can delete a super admin')
     if (target.isSuperAdmin && otherSuperAdmins < 1) return fail(409, 'OV_LAST_SUPER_ADMIN', 'The last super admin cannot be deleted')
-    // Reject = a sign-up nobody approved: an account with a role (of any app) is deleted, not rejected
-    if (reject && target.roles.length) return fail(409, 'OV_NOT_PENDING', 'This account has a role: delete it instead of rejecting it')
+    // Reject = a sign-up nobody approved: an account with a role (of any app),
+    // or one that manages a club or a team (db/020, db/023), is deleted, not rejected
+    if (reject && (target.roles.length || targetManages)) return fail(409, 'OV_NOT_PENDING', 'This account has a role: delete it instead of rejecting it')
     return null
+  }
+  /** Does `userId` manage a club or a team? false on a schema without them. Throws on a DB error. */
+  async function managesAnything (client, userId) {
+    const sql = managesSql('$1', await managementTables(client))
+    if (sql === 'FALSE') return false
+    const { rows: [r] } = await client.query(`SELECT ${sql} AS m`, [userId])
+    return r?.m === true
   }
   /** sha256 of the address, so support can confirm a deletion from an address it is given (never the address). */
   const emailDigest = (email) => createHash('sha256').update('ov-account-email:' + String(email || '').trim().toLowerCase(), 'utf8').digest('hex')
@@ -820,7 +912,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
         `SELECT count(DISTINCT p.user_id)::int AS n
            FROM public.profiles p JOIN auth.users u ON u.id = p.user_id
           WHERE p.user_id <> $1 AND ${hasRoleSql('p.roles', '$2')} AND ${usableSql('u')}`, [userId, superParam])).rows[0].n
-      const early = deleteRefusal({ actorAccess: actor?.access, targetRoles: rolesOf(found, userId), otherSuperAdmins: await countOthers(pool), reject })
+      const early = deleteRefusal({ actorAccess: actor?.access, targetRoles: rolesOf(found, userId), otherSuperAdmins: await countOthers(pool), reject, targetManages: reject && await managesAnything(pool, userId) })
       if (early) return early
 
       // 2. The deletion, with the rules again under the locks: the profile
@@ -835,7 +927,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
           const { rows: [u] } = await client.query('SELECT id, email, created_at FROM auth.users WHERE id = $1 FOR UPDATE', [userId])
           if (!u) throw abort(ACCOUNT_NOT_FOUND())
           const targetRoles = rolesOf(locked, userId)
-          const refusal = deleteRefusal({ actorAccess: accessFromRoles(rolesOf(locked, actorId)), targetRoles, otherSuperAdmins: await countOthers(client), reject })
+          const refusal = deleteRefusal({ actorAccess: accessFromRoles(rolesOf(locked, actorId)), targetRoles, otherSuperAdmins: await countOthers(client), reject, targetManages: reject && await managesAnything(client, userId) })
           if (refusal) throw abort(refusal)
           // The official matches it recorded: they stay (created_by NULL)
           const { rows: [{ n: matchesKept }] } = await client.query(
@@ -1301,6 +1393,8 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
   return {
     audit,
     auditQuietly,
+    addRolesIn,
+    confirmationOf,
     joinApp,
     me,
     membershipsOf,

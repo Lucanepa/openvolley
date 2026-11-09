@@ -4,6 +4,7 @@ import { clubApi } from '../../lib/accountApi'
 import InvitesPanel from './InvitesPanel'
 import ClubTeamsSection from './ClubTeamsSection'
 import ClubLicencesSection from './ClubLicencesSection'
+import RequestsSection from './RequestsSection'
 import { usePanelData, useOnline, OfflineBanner, PanelHead, InlineError, useErrorText } from './common'
 import { Button, Chip, EmptyInset, Field, Input, Notice, Row, RowList, RowTool, Select, SkeletonRows, confirmDialog, dayLabel, toast } from '../../ui'
 
@@ -11,7 +12,9 @@ import { Button, Chip, EmptyInset, Field, Input, Notice, Row, RowList, RowTool, 
  * My club (db/020, lib/clubs.js): what a club manager does for its own
  * club(s): the contact address that gets the final scoresheets, the accounts
  * that score for the club, its teams, its licence lists from VolleyManager
- * (db/024), and the club's invite codes. Taking someone off the
+ * (db/024), the sign-up requests of the club (db/025: approve or reject who
+ * says they score, manage a team or manage the club), and the club's invite
+ * codes. Taking someone off the
  * club removes the club link only: the account and its roles stay. An account
  * that manages several clubs picks one first.
  */
@@ -40,6 +43,8 @@ function ClubSections({ club }) {
   return (
     <>
       <ClubContact clubId={club.id} />
+      {/* db/025: who signed up for this club and waits for a yes */}
+      <RequestsSection club={club} />
       <ClubMembers club={club} />
       {/* db/023: the club's teams and their team links */}
       <ClubTeamsSection club={club} />

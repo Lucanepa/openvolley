@@ -281,6 +281,9 @@ function manageFamilyOf(pathname) {
   if (pathname === '/api/settings') return 'settings'
   return null
 }
+// GET /api/public/clubs (lib/accountRequests.js publicClubs, db/025): the sign-up
+// form's clubs and teams (ids and names only), anonymous, per IP
+const PUBLIC_CLUBS_RATE_LIMIT_MAX = 30
 // GET /api/public/beach/t/:slug (lib/beachTournaments.js publicTournament): anonymous, per IP
 const PUBLIC_BEACH_RATE_LIMIT_MAX = 120
 const PUBLIC_BEACH_RE = /^\/api\/public\/beach\/t\/([a-z0-9-]{1,80})$/
@@ -326,8 +329,9 @@ function getDataLayer() {
     import('./lib/scorerDevice.js'),
     import('./lib/finalMail.js'),
     import('./lib/teams.js'),
-    import('./lib/licences.js')
-  ]).then(([pgq, mr, au, st, ph, ac, acc, svt, mg, og, ml, apv, bt, evr, act, ss, cl, sd, fm, tms, lic]) => {
+    import('./lib/licences.js'),
+    import('./lib/accountRequests.js')
+  ]).then(([pgq, mr, au, st, ph, ac, acc, svt, mg, og, ml, apv, bt, evr, act, ss, cl, sd, fm, tms, lic, arq]) => {
     const poolMax = Number(process.env.PG_POOL_MAX) > 0 ? Math.floor(Number(process.env.PG_POOL_MAX)) : undefined
     const db = pgq.createPgQuery({
       connectionString: DATABASE_URL,
@@ -361,6 +365,8 @@ function getDataLayer() {
       pool: db.pool,
       mailer,
       contactEmail: CONTACT_EMAIL,
+      // db/025: what a new account asks for at sign-up (nothing is granted then)
+      signUpRequests: { parse: arq.parseSignUpRequests, store: (client, userId, rows) => arq.storeSignUpRequests(client, userId, rows) },
       onAccountDeleted: async (userId) => {
         const r = await storage.deleteUserData(userId)
         if (r.objectsRemoved || r.ownerRecordsUpdated || r.ownerRecordsRemoved) {
@@ -383,12 +389,15 @@ function getDataLayer() {
     // An admin's delete / reject of an account runs delete-account's own deletion (files included)
     // Team managers and sent game rosters (db/023, lib/teams.js), the same way
     let teams = null
-    const accounts = acc.createAccounts({ pool: db.pool, db, restore, access, approvalsForMatches: approvals.approvalsForMatches, clubs: () => clubs, teams: () => teams, eraseAccount: auth.eraseAccount })
+    // Sign-up requests and who approves them (db/025, lib/accountRequests.js), the same way
+    let requests = null
+    const accounts = acc.createAccounts({ pool: db.pool, db, restore, access, approvalsForMatches: approvals.approvalsForMatches, clubs: () => clubs, teams: () => teams, requests: () => requests, eraseAccount: auth.eraseAccount })
     clubs = cl.createClubs({ pool: db.pool, audit: accounts.audit, access })
     const savedTeams = svt.createSavedTeams({ pool: db.pool })
     // A club's licence lists (db/024, lib/licences.js): My club, "Add from club", the gender check
     const licences = lic.createLicences({ pool: db.pool, audit: accounts.audit, clubs })
     teams = tms.createTeams({ pool: db.pool, audit: accounts.audit, savedTeams, clubs, licences })
+    requests = arq.createAccountRequests({ pool: db.pool, accounts, access })
     const beach = bt.createBeachTournaments({ pool: db.pool, accounts })
     // Undo / delete / edit history of events (db/015)
     const revisions = evr.createEventRevisions(db)
@@ -398,10 +407,10 @@ function getDataLayer() {
     const scoresheets = ss.createScoresheets({ pool: db.pool, storage, accounts })
     // The final scoresheet by email (db/021): its switch and the minute sweep below
     const finalMail = fm.createFinalMail({ pool: db.pool, mailer, scoresheets, audit: accounts.audit, ...(process.env.FINAL_MAIL_LANG ? { lang: process.env.FINAL_MAIL_LANG } : {}) })
-    const manage = mg.createManageApi({ accounts, savedTeams, beach, approvals, revisions, activity, scoresheets, clubs, finalMail, teams, licences })
+    const manage = mg.createManageApi({ accounts, savedTeams, beach, approvals, revisions, activity, scoresheets, clubs, finalMail, teams, licences, requests })
     // The active scoring device of each match (db/019, the scoring-device handover)
     const scorer = sd.createScorerDevices({ pool: db.pool, db, audit: accounts.audit })
-    dataLayer = { db, restore, auth, storage, pins, access, accounts, savedTeams, beach, approvals, manage, revisions, activity, scoresheets, scorer, finalMail, activityCsvLine: act.csvLine, activityCsvColumns: act.CSV_COLUMNS, publicClaim: og.publicClaim, sendAuthResult: au.sendAuthResult, AUTH_ACTIONS: au.AUTH_ACTIONS, ipKey: au.ipBucketKey }
+    dataLayer = { db, restore, auth, storage, pins, access, accounts, savedTeams, beach, approvals, manage, requests, revisions, activity, scoresheets, scorer, finalMail, activityCsvLine: act.csvLine, activityCsvColumns: act.CSV_COLUMNS, publicClaim: og.publicClaim, sendAuthResult: au.sendAuthResult, AUTH_ACTIONS: au.AUTH_ACTIONS, ipKey: au.ipBucketKey }
     return dataLayer
   })
   return dataLayerPromise
@@ -1268,6 +1277,7 @@ const rateLimitMaps = {
   manage: new Map(),    // /api/admin/*, /api/saved-teams*, per user id
   officialCheck: new Map(), // /api/match/official-check, per user id
   publicBeach: new Map(), // /api/public/beach/t/:slug, per IP
+  publicClubs: new Map(), // /api/public/clubs, per IP
   scoresheetView: new Map(), // /api/scoresheet-view/*, per IP
   activity: new Map()   // POST /api/activity, per user id
 }
@@ -2977,6 +2987,30 @@ Generated by eScoresheet
         res.end(req.method === 'HEAD' ? undefined : r.file.data)
       } catch (err) {
         sendLayerError('scoresheet-view', err)
+      }
+    })()
+    return
+  }
+
+  // The sign-up form's clubs and their teams (db/025): ids and names only, no
+  // personal data, no counts; anonymous, per IP
+  if (url.pathname === '/api/public/clubs' && req.method === 'GET') {
+    if (!DB_MODE) {
+      sendNoDb()
+      return
+    }
+    if (isRateLimited(ipBucketKey(getClientIp(req)), PUBLIC_CLUBS_RATE_LIMIT_MAX, 'publicClubs')) {
+      sendTooMany()
+      return
+    }
+    ;(async () => {
+      try {
+        const layer = await getDataLayer()
+        const r = await layer.requests.publicClubs()
+        const cache = r.status === 200 ? { 'Cache-Control': 'public, max-age=60' } : { 'Cache-Control': 'no-store' }
+        sendJson(res, r.status, r.body, { ...cache, ...(r.status >= 500 ? { 'Retry-After': '5' } : {}) })
+      } catch (err) {
+        sendLayerError('public-clubs', err)
       }
     })()
     return

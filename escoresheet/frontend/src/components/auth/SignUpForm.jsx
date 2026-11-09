@@ -1,9 +1,12 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Check } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { confirmationLinkSent, needsEmailConfirmation } from './signUpResult'
 import DateOfBirthInput from './DateOfBirthInput'
+import SignUpRequestsFields from './SignUpRequestsFields'
+import { fetchPublicClubs } from '../../lib/accountApi'
+import { emptyRequestChoice, requestChoiceProblem, signUpRequestsOf } from '../../domain/signUpRequests'
 import { Button, cn, Field, FOCUS_RING, Input, Select } from '../../ui'
 import { LegalSentence } from '../../legal/LegalLinks'
 
@@ -29,8 +32,12 @@ export const MIN_PASSWORD_LENGTH = 6
  * @param {string} [props.existingAccountMessage] shown instead of the server's
  *   text when the address already has an account (the OpenBeach manager:
  *   "sign in with your existing password to join OpenBeach")
+ * @param {boolean} [props.askRoles] OpenVolley's sign-up (db/025): "What do you
+ *   do?" (scorer, referee, team manager / coach, club manager, with the club
+ *   and teams), sent as the sign-up's `requests`. Optional for the user;
+ *   nothing is granted until an approver says yes.
  */
-export default function SignUpForm({ onSignedUp, onSwitchToLogin, existingAccountMessage }) {
+export default function SignUpForm({ onSignedUp, onSwitchToLogin, existingAccountMessage, askRoles = false }) {
   const { t } = useTranslation()
   const { signUp, signIn } = useAuth()
 
@@ -48,6 +55,24 @@ export default function SignUpForm({ onSignedUp, onSwitchToLogin, existingAccoun
   const [success, setSuccess] = useState(false)
   const [confirmByEmail, setConfirmByEmail] = useState(false)
   const [linkSentTo, setLinkSentTo] = useState(null)
+  // db/025: what the account asks for, and the clubs to pick from
+  const [choice, setChoice] = useState(emptyRequestChoice)
+  const [choiceProblem, setChoiceProblem] = useState(null)
+  const [clubs, setClubs] = useState(null)
+  const [clubsFailed, setClubsFailed] = useState(false)
+  const loadClubs = useCallback(async () => {
+    const res = await fetchPublicClubs()
+    if (res?.error || !Array.isArray(res?.data?.clubs)) {
+      setClubs([])
+      setClubsFailed(true)
+      return
+    }
+    setClubsFailed(false)
+    setClubs(res.data.clubs.map((c) => ({ id: c.id, name: c.name, teams: Array.isArray(c.teams) ? c.teams : [] })))
+  }, [])
+  useEffect(() => {
+    if (askRoles) loadClubs()
+  }, [askRoles, loadClubs])
 
   const dobInvalidText = t('auth.dobInvalid', 'Enter the date of birth as DD.MM.YYYY.')
 
@@ -68,6 +93,13 @@ export default function SignUpForm({ onSignedUp, onSwitchToLogin, existingAccoun
       setError(t('auth.passwordTooShort', 'Password must be at least 6 characters'))
       return
     }
+    const problem = askRoles ? requestChoiceProblem(choice) : null
+    setChoiceProblem(problem)
+    if (problem) {
+      setError(t(problem.key))
+      return
+    }
+    const requests = askRoles ? signUpRequestsOf(choice) : []
 
     setLoading(true)
     const { data: signUpData, error: signUpError } = await signUp(email.trim(), password, {
@@ -75,10 +107,19 @@ export default function SignUpForm({ onSignedUp, onSwitchToLogin, existingAccoun
       lastName: lastName.trim(),
       country,
       dob: dob || null
-    })
+    }, { requests })
 
     if (signUpError) {
-      setError(existingAccountMessage && signUpError.code === 'user_already_exists' ? existingAccountMessage : signUpError.message)
+      // a club or team picked here is gone meanwhile (the server refuses the
+      // whole sign-up): the list again, and the user picks again
+      const requestRefused = requests.length > 0 && signUpError.code === 'validation_failed' && /club|team|request/i.test(String(signUpError.message || ''))
+      if (requestRefused) {
+        setError(t('access.requests.signUpRefused'))
+        setChoice(emptyRequestChoice())
+        loadClubs()
+      } else {
+        setError(existingAccountMessage && signUpError.code === 'user_already_exists' ? existingAccountMessage : signUpError.message)
+      }
       setLoading(false)
       return
     }
@@ -173,6 +214,16 @@ export default function SignUpForm({ onSignedUp, onSwitchToLogin, existingAccoun
         <Field label={t('auth.confirmPassword', 'Confirm password')}>
           <Input size="lg" type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} autoComplete="new-password" required />
         </Field>
+
+        {askRoles && (
+          <SignUpRequestsFields
+            value={choice}
+            onChange={(next) => { setChoice(next); setChoiceProblem(null); setError('') }}
+            clubs={clubs}
+            clubsFailed={clubsFailed}
+            problem={choiceProblem}
+          />
+        )}
 
         {/* Free service: no tick box, but the sentence and the links (owner's decision) */}
         <LegalSentence i18nKey="legal.signUpConsent" data-testid="signup-legal" className="!mt-4 text-xs leading-relaxed text-stone-500" />

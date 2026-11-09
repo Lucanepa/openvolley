@@ -112,8 +112,10 @@ describe('ManagerApp (manager.openvolley.app)', () => {
     expect(sentence).toHaveTextContent('legal.signUpConsent')
     // above the submit button
     expect(sentence.compareDocumentPosition(within(screen.getByTestId('signup-form')).getByRole('button', { name: 'Create account' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    // no tick box: a free service, the sentence is enough
-    expect(within(screen.getByTestId('signup-form')).queryByRole('checkbox')).toBeNull()
+    // no tick box: a free service, the sentence is enough (the only boxes are
+    // "What do you do?", db/025: what the account asks for, not a consent)
+    const requests = within(screen.getByTestId('signup-form')).getByTestId('signup-requests')
+    expect(within(screen.getByTestId('signup-form')).queryAllByRole('checkbox').filter((box) => !requests.contains(box))).toEqual([])
   })
 
   it('signed out: the card\'s own "Create account" button opens the sign-up page, "back" returns', () => {
@@ -180,6 +182,20 @@ describe('ManagerApp (manager.openvolley.app)', () => {
     expect(railButtons().map(b => b.textContent)).toEqual(['manage.tabs.scoresheets', 'manage.tabs.teams', 'manage.tabs.settings'])
     await waitFor(() => expect(api.scoresheetsApi.list).toHaveBeenCalledWith(expect.objectContaining({ app: 'indoor' })))
     expect(api.admin.listAccounts).not.toHaveBeenCalled()
+  })
+
+  it('pending account with a sign-up request (db/025): what it asked for, waiting for a yes', async () => {
+    setAuth({ roles: [] })
+    auth.value.access = { ...auth.value.access, requests: [
+      { id: 'r2', kind: 'referee', club_id: null, club_name: null, team_id: null, team_name: null },
+      { id: 'r1', kind: 'scorer', club_id: 'c1', club_name: 'VBC Musterdorf', team_id: null, team_name: null }
+    ] }
+    render(<ManagerApp />)
+    const note = within(screen.getByTestId('manager-invite-step')).getByTestId('manager-open-requests')
+    expect([...note.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['access.requests.kinds.scorer · VBC Musterdorf', 'access.requests.kinds.referee'])
+    expect(note).toHaveTextContent('access.requests.yourRequestBody')
+    // the invite code still works next to it
+    expect(within(screen.getByTestId('manager-invite-step')).getByLabelText('access.inviteCodeLabel')).toBeInTheDocument()
   })
 
   it('pending account: the next step is the club\'s invite code, with the way without one', async () => {
@@ -474,7 +490,7 @@ describe('ManagerApp #signup (accounts are made here)', () => {
     fireEvent.click(within(page).getByRole('button', { name: 'Create account' }))
     await waitFor(() => expect(auth.value.signUp).toHaveBeenCalledWith('lea@club.ch', 'secret1', {
       firstName: 'Lea', lastName: 'Muster', country: 'CHE', dob: null
-    }))
+    }, { requests: [] }))
   })
 
   it('an account that must be confirmed by email: "check your email" and a sign-in button', async () => {

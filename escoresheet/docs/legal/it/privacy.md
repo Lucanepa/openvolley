@@ -215,6 +215,17 @@ precompilazione dei suoi dati nel referto (nome, paese, data di nascita).
 abilita, oppure lei utilizza un codice d'invito. Il sistema registra chi ha
 utilizzato quale codice e quando.
 
+**Che cosa fa (registrazione a OpenVolley, facoltativa):** alla registrazione
+può indicare che cosa fa (segnapunti, arbitro, responsabile della squadra o
+allenatore, responsabile della società) e per quale società e squadra. Questa
+richiesta è conservata solo finché non è approvata o rifiutata, ed è visibile,
+con il suo nome e il suo indirizzo e-mail, agli amministratori e ai
+responsabili di quella società o squadra. Se è
+approvata, il suo account riceve esattamente quel ruolo, quella società o
+quella squadra (da un amministratore, o dai responsabili della società o della
+squadra per la propria società o squadra); il sistema registra chi ha deciso e
+quando, ma in questa voce non il suo nome né il suo indirizzo.
+
 **Società (OpenVolley):** un amministratore, o un codice d'invito, può
 assegnare il suo account a una o più società. Lei referta allora le partite
 ufficiali in casa di queste società. Il sistema registra a quali società

@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, FileUp, Plus, Trash2, UserPlus, X } from 'lucide-react'
-import { savedTeamsApi, errorKeyOf } from '../../lib/accountApi'
+import { savedTeamsApi, errorKeyOf, fetchPublicClubs } from '../../lib/accountApi'
 import { apiFrom } from '../../lib/apiClient'
 import { selectAll } from '../../lib/selectAll'
 import { STAFF_ROLES, validateSavedRoster, MAX_PLAYERS, MAX_STAFF, sportOf } from '../../domain/savedTeams'
 import { shirtNumberDigits } from '../../domain/roster'
 import { addClubPlayersToSquad, clubPersonToPlayer, clubPlayersForGender, mergeImportedRoster, officialOfRole, officialRolesOf, parsedPdfToRoster, playerFinder, setSquadOfficial, wrongGenderIndexes } from '../../domain/teamRosters'
 import ClubPlayerPickerModal from '../ClubPlayerPickerModal'
+import SearchSelect from './SearchSelect'
 import { InlineError } from './common'
 import { Button, DateField, Field, Input, Select, Checkbox, Switch, SectionHeader, EmptyInset, IconButton, confirmDialog, toast, cn } from '../../ui'
 
@@ -160,6 +161,33 @@ export function draftToRosterBody(players, staff) {
   }
 }
 
+const sameName = (a, b) => String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase()
+
+/**
+ * The Club dropdown's options: "No club", the clubs (by name: the saved team
+ * keeps the name, as it always did), and the team's current club when it is
+ * not one of them (kept, never dropped by opening the form).
+ */
+export function clubFieldOptions(clubs, current, t) {
+  const names = [...new Set((clubs || []).map((c) => c.name).filter(Boolean))].sort((a, b) => a.localeCompare(b))
+  const out = [{ value: '', label: t('savedTeams.noClub') }, ...names.map((n) => ({ value: n, label: n }))]
+  const cur = String(current ?? '').trim()
+  if (cur && !names.some((n) => sameName(n, cur))) out.push({ value: current, label: t('savedTeams.clubNotListed', { name: cur }) })
+  return out
+}
+
+/**
+ * The VolleyManager names the dropdown offers: the chosen club's teams when
+ * it has some in OpenVolley (club_teams) and `all` is off, else every team of
+ * the schedule (`scheduleNames`). { names, narrowed }.
+ */
+export function vmNameOptions({ clubs, clubName, scheduleNames, all = false }) {
+  const club = (clubs || []).find((c) => sameName(c.name, clubName))
+  const teams = (club?.teams || []).map((x) => x.name).filter(Boolean)
+  if (teams.length && !all) return { names: [...teams].sort((a, b) => a.localeCompare(b)), narrowed: true, club: club.name }
+  return { names: scheduleNames || [], narrowed: false, club: club?.name || null }
+}
+
 // Small labels: shown above each input on phones (one input per row), and
 // as the column heads from sm on.
 const CELL_LABEL = 'mb-0.5 block text-[11px] font-medium text-stone-500 sm:sr-only'
@@ -205,8 +233,30 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
   const [rosterError, setRosterError] = useState('')
   const [rowErrors, setRowErrors] = useState({})
   const [svrzNames, setSvrzNames] = useState([])
+  // The Club dropdown and the VolleyManager names (owner: "why are these not
+  // dropdowns"): the clubs with their teams (GET /api/public/clubs) and the
+  // schedule's team names (GET /api/saved-teams/vm-teams). null: not loaded
+  // (offline, an older server): the plain fields as before.
+  const [clubs, setClubs] = useState(null)
+  const [scheduleNames, setScheduleNames] = useState(null)
+  const [allVmNames, setAllVmNames] = useState(false)
+  const withLists = !beach && !fixedFields
+  useEffect(() => {
+    if (!online || !withLists) return undefined
+    let alive = true
+    // never throws into the effect: without a list the plain field stays
+    Promise.resolve().then(() => fetchPublicClubs()).then((res) => {
+      if (alive && !res?.error && Array.isArray(res?.data?.clubs)) setClubs(res.data.clubs)
+    }).catch(() => {})
+    Promise.resolve().then(() => savedTeamsApi.vmTeams()).then((res) => {
+      if (!alive || res?.error || !Array.isArray(res?.data?.teams)) return
+      setScheduleNames([...new Set(res.data.teams.map((x) => x.name).filter(Boolean))].sort((a, b) => a.localeCompare(b)))
+    }).catch(() => {})
+    return () => { alive = false }
+  }, [online, withLists])
 
   // VolleyManager team names of the competition's leagues, for the datalist
+  // (and the dropdown when the server has no list of every name)
   const leagues = beach ? [] : (competition?.vm_leagues || [])
   useEffect(() => {
     if (!online || !leagues.length) return undefined
@@ -226,6 +276,12 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
   }, [online, leagues.join('|')])
 
   const setField = (k) => (e) => { setFields(f => ({ ...f, [k]: e.target.value })); setFieldsError('') }
+  // A VolleyManager name picked from the list names an unnamed team too (still editable)
+  const pickVmName = (name) => {
+    setFields(f => ({ ...f, svrz_team_name: name, name: f.name.trim() ? f.name : name }))
+    setFieldsError('')
+  }
+  const vm = vmNameOptions({ clubs, clubName: fields.club, scheduleNames: scheduleNames || svrzNames, all: allVmNames })
   const fieldKeys = beach ? ['name', 'short_name', 'club', 'color'] : ['name', 'short_name', 'club', 'color', 'svrz_team_name']
   const fieldsDirty = fieldKeys.some(k => (fields[k] || '') !== (team[k] || ''))
 
@@ -423,7 +479,9 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
             <Input value={fields.short_name} onChange={setField('short_name')} maxLength={20} />
           </Field>
           <Field label={t('savedTeams.club')}>
-            <Input value={fields.club} onChange={setField('club')} maxLength={120} />
+            {clubs
+              ? <Select block value={fields.club} onChange={setField('club')} options={clubFieldOptions(clubs, fields.club, t)} data-testid="team-club-select" />
+              : <Input value={fields.club} onChange={setField('club')} maxLength={120} />}
           </Field>
           <Field label={t('savedTeams.color')}>
             <div className="flex gap-2">
@@ -440,10 +498,39 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
           {/* Field takes exactly one control (Children.only): the datalist sits beside it */}
           {!beach && (
             <div className="min-w-0 sm:col-span-2">
-              <Field label={t('savedTeams.svrzTeamName')} hint={t('savedTeams.svrzTeamNameHint')}>
-                <Input value={fields.svrz_team_name} onChange={setField('svrz_team_name')} maxLength={120} list={listId} />
-              </Field>
-              <datalist id={listId}>{svrzNames.map(n => <option key={n} value={n} />)}</datalist>
+              {clubs || scheduleNames ? (
+                <Field label={t('savedTeams.svrzTeamName')} hint={t('savedTeams.svrzTeamNameHint')}>
+                  <SearchSelect
+                    value={fields.svrz_team_name}
+                    onChange={(v) => { setFields(f => ({ ...f, svrz_team_name: v })); setFieldsError('') }}
+                    onPick={pickVmName}
+                    options={vm.names}
+                    maxLength={120}
+                    placeholder={t('savedTeams.svrzPlaceholder')}
+                    listLabel={t('savedTeams.svrzOptions')}
+                    openLabel={t('savedTeams.svrzOpen')}
+                    emptyText={t('savedTeams.svrzNoMatch')}
+                    data-testid="team-vm-name"
+                  />
+                </Field>
+              ) : (
+                <>
+                  <Field label={t('savedTeams.svrzTeamName')} hint={t('savedTeams.svrzTeamNameHint')}>
+                    <Input value={fields.svrz_team_name} onChange={setField('svrz_team_name')} maxLength={120} list={listId} />
+                  </Field>
+                  <datalist id={listId}>{svrzNames.map(n => <option key={n} value={n} />)}</datalist>
+                </>
+              )}
+              {(vm.narrowed || allVmNames) && vm.club && (
+                <button
+                  type="button"
+                  onClick={() => setAllVmNames(a => !a)}
+                  className="mt-1 min-h-8 rounded text-xs font-medium text-red-600 underline decoration-red-300 underline-offset-2 hover:text-red-700"
+                  data-testid="team-vm-scope"
+                >
+                  {allVmNames ? t('savedTeams.svrzClubOnly', { club: vm.club }) : t('savedTeams.svrzShowAll')}
+                </button>
+              )}
             </div>
           )}
         </div>

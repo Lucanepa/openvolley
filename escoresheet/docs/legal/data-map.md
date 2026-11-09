@@ -200,6 +200,19 @@ the account (4.5a).
 | **Retention as built** | **Each upload replaces that list** (one transaction); a club manager can delete a list (an empty upload); all rows go with the club (`ON DELETE CASCADE`); `imported_by` is set NULL when that account is deleted. Device copies: replaced by each download, cleared at sign-out, account deletion and account switch |
 | **Audit** | `club.licences` (club id, list, count: never a name or a licence number) (4.6) |
 
+### 4.5e Sign-up requests (db/025, OpenVolley)
+
+| | |
+|---|---|
+| **Data** | `public.account_requests`: what a new account asked for at sign-up (`frontend/src/components/auth/SignUpRequestsFields.jsx`, "What do you do?", optional): one row per part, **kind** (scorer, referee, team manager / coach, club manager), the **club** (`clubs`) and for a team manager the **team** (`club_teams`), the time. No free text. Nothing is granted at sign-up |
+| **Whose** | The account holder (an OpenVolley sign-up; OpenBeach's asks nothing) |
+| **Purpose** | Owner decision 2026-11-09: an approver only approves ("so that i just approve rather than that also add their roles and clubs"); the approval cascades: admins every part, a club's managers the parts of their club, a team's managers the team manager parts of their team (`lib/accountRequests.js`) |
+| **Basis** | (b) opening the account the user asked for |
+| **Stored** | VM; backups. The account's own open parts are in `GET /api/me` (the manager's invite step shows them) |
+| **Who sees it** | The account holder; admins (the Accounts list, with each part); a club's managers: the parts of their club with the account's **name, email address, sign-up date and whether the address is confirmed** (`GET /api/club/:id/requests`); a team's managers (and its club's managers): the team manager parts of their team, the same fields (`GET /api/team/:id/requests`). Referee parts: admins only. Never public, never on `/api/db`. The public club list of the sign-up form (`GET /api/public/clubs`) holds club and team ids and names only (4.8) |
+| **Retention as built** | **Until the part is approved or rejected** (the row is deleted then); with the account, the club or the team (`ON DELETE CASCADE`; the account's own delete also deletes them explicitly, `lib/auth.js` `ownedTables`). No expiry for a request nobody decides (as F10 for the account) |
+| **Audit** | `account.request_approve` / `account.request_reject` (kind, club and team ids, `changed` when the approver picked another club or team, `via`: admin, club or team; never a name or an address); an approved scorer or referee part also writes `account.roles` (4.6) |
+
 ### 4.6 Audit log
 
 | | |
@@ -247,6 +260,7 @@ the account (4.5a).
 | `/api/db` without a session (`ANON_DB_COLUMNS`) | Matches as above plus the connection flags. Rosters (names, numbers, flags, bench roles; no DOB) **only for the match whose PIN the caller proved**. `referee_database`: first and last name, country, sport (no DOB). `svrz_games`: game data **including referee and line-judge names and the convocation list** (no DOB) |
 | Relay match list / summary | Teams, status, scores; a match's room id only to the referee-enabled ones or to the venue's own IP (`cloudListsMatch`) |
 | Public beach tournament page (`/api/public/beach/t/:slug`) | Only tournaments marked public and not drafts: pair names, **player first and last names and countries**, seeds, ranks, schedule, courts. Never licence numbers |
+| Sign-up form's clubs (`/api/public/clubs`, db/025) | Club ids and names and their teams' ids and VolleyManager names (`clubs`, `club_teams`): no account, no person, no count. Rate-limited per IP, cached 60 s |
 | LED board | Team names and scores |
 
 ### 4.9 Saved teams (competition manager) and beach tournaments
