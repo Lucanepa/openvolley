@@ -11,8 +11,15 @@ describe('detectDisplayMode (the automatic display mode)', () => {
     expect(detectDisplayMode({ width: 844, height: 390, hasTouch: true })).toBe('tablet')
   })
 
-  it.each([[768, 1024], [600, 960], [800, 1280]])('a %ix%i portrait tablet is no phone', (w, h) => {
-    expect(detectDisplayMode({ width: w, height: h, hasTouch: true })).toBe('tablet')
+  // owner 2026-11-09: tablets may be held upright; they get the phone layout
+  // instead of "Please rotate your device"
+  it.each([[768, 1024], [600, 960], [800, 1280], [820, 1180]])('a %ix%i portrait tablet gets the phone layout', (w, h) => {
+    expect(detectDisplayMode({ width: w, height: h, hasTouch: true })).toBe('phone')
+  })
+
+  it.each([[1024, 768], [1180, 820]])('the same tablet turned sideways gets the tablet layout', (w, h) => {
+    expect(detectDisplayMode({ width: w, height: h, hasTouch: true })).not.toBe('phone')
+    expect(phoneLayoutKept('auto', { width: w, height: h }, { width: w, height: h })).toBe(false)
   })
 
   it.each([[1280, 800], [1920, 1080], [1024, 768]])('a %ix%i screen without touch stays desktop', (w, h) => {
@@ -244,5 +251,27 @@ describe('phone layout on a short screen (styles.css)', () => {
     const court = '(100cqw - 24px) / 2, max(var(--phone-court-min), 100cqh - var(--phone-square-reserve) - var(--phone-square-min))'
     expect(supports).toContain(`height: min(${court});`)
     expect(supports).toContain(`height: min((100cqw - 34px) / 2, max(var(--phone-square-min), 100cqh - var(--phone-square-reserve) - min(${court})));`)
+  })
+})
+
+// owner 2026-11-09: an upright tablet shows the phone layout scaled up to fill it
+describe('tabletZoom (the phone view on an upright tablet)', () => {
+  it('no scaling on phones', async () => {
+    const { tabletZoom } = await import('../phoneLayout')
+    expect(tabletZoom(390, 844)).toBe(1)
+    expect(tabletZoom(600, 960)).toBe(1)
+  })
+  it('fills the width of an upright tablet, keeping a phone-like height inside', async () => {
+    const { tabletZoom, PHONE_VIEW_WIDTH, PHONE_VIEW_MIN_HEIGHT } = await import('../phoneLayout')
+    for (const [w, h] of [[820, 1180], [768, 1024], [800, 1280], [1024, 1366]]) {
+      const z = tabletZoom(w, h)
+      expect(z).toBeGreaterThan(1)
+      expect(w / z).toBeGreaterThanOrEqual(PHONE_VIEW_WIDTH - 1)
+      expect(h / z).toBeGreaterThanOrEqual(PHONE_VIEW_MIN_HEIGHT - 1)
+    }
+  })
+  it('never more than 1.6', async () => {
+    const { tabletZoom } = await import('../phoneLayout')
+    expect(tabletZoom(2000, 4000)).toBe(1.6)
   })
 })
