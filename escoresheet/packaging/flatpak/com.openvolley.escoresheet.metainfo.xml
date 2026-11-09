@@ -71,6 +71,19 @@
   </screenshots>
 
   <releases>
+    <release version="3.0.15" date="2026-11-09">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.15</url>
+      <description>
+        <ul>
+          <li>Referee tablet: live read-only scoresheet and rosters; held upright.</li>
+          <li>Scorer: warnings for requests the rules do not allow, a reason for an improper request, decision change after a sub or time-out.</li>
+          <li>Signatures: captain above coach; an official without a box can sign in the remarks.</li>
+          <li>Club licence lists from VolleyManager: "Add from club".</li>
+          <li>Roster import: name particles belong to the last name.</li>
+          <li>Privacy policy 1.10; Home links the downloads page.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.0.14" date="2026-11-09">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.14</url>
       <description>
