@@ -1,8 +1,8 @@
 # Runbook: first deploy on hetzner (Option A, co-tenant on `lucanepa-prod`)
 
 > **Since 16.10.2026 production runs on lenovoserver, not on hetzner.** The Hetzner VPS
-> (`lucanepa-prod`, `ssh hetzner`) was transferred to the KSC Wiedikon club's own Hetzner
-> account. OpenVolley is the owner's private project and must **never be deployed there
+> (`lucanepa-prod`, `ssh hetzner`) was transferred to another owner's
+> Hetzner account. OpenVolley is the owner's private project and must **never be deployed there
 > again**. The stack (compose project `openvolley`: `ov-postgres`, `ov-backend`, `ov-tunnel`,
 > `ov-pkgs`, same tunnel) moved with RUNBOOK-move-to-own-vm.md, lenovoserver as `new`.
 >
@@ -67,9 +67,9 @@ hetzner# docker info --format '{{.ServerVersion}} {{.Driver}}'; docker compose v
 Decide from the output, and write the answers down:
 - **`postgres-autopatch.sh` / `backup-postgres.sh`:** if they select containers by image
   (`postgres:*`) or by a name pattern that matches `ov-postgres`, they would patch or dump
-  OpenVolley's database with KSCW's procedure. Add an explicit exclusion (match the label
+  OpenVolley's database with the other tenant's procedure. Add an explicit exclusion (match the label
   `com.docker.compose.project=openvolley`) **with a dated backup copy of the script**. This is
-  the only KSCW-owned file the deploy may edit. If they use a fixed list of names, change nothing.
+  the only file of the other tenant the deploy may edit. If they use a fixed list of names, change nothing.
 - **sshd:** if `AllowUsers`/`AllowGroups` is set, `ovbackup` must be added for the NAS pull
   (step 12), in a drop-in `/etc/ssh/sshd_config.d/60-ovbackup.conf`, then `sshd -t && systemctl reload ssh`.
 - **rrsync:** Ubuntu's `rsync` package ships `/usr/bin/rrsync`. If it is missing, install it

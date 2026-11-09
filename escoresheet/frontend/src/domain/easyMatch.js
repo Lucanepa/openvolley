@@ -49,7 +49,7 @@ export function shirtNumber(value) {
   return n >= 1 && n <= 99 ? n : null
 }
 
-/** As Match Setup: "VBC Zürich" -> "VBC", "Wiedikon" -> "WIED" */
+/** As Match Setup: "VBC Zürich" -> "VBC", "Musterdorf" -> "MUST" */
 export function defaultShortName(name) {
   if (!name) return ''
   const cleaned = String(name).trim().toUpperCase()
@@ -276,8 +276,8 @@ const COLOUR = /^#[0-9a-f]{6}$/i
 /**
  * Prefill of the easy-match form from the page address, so another program
  * (a scoreboard console) can open OpenVolley on its game:
- *   ?easy=1&home=KSC+Wiedikon&away=VBC+Zürich&bestOf=5&homeColor=%23dc2626
- *   &awayColor=%233b82f6&homeShort=KSCW&awayShort=VBCZ&league=3L&game=406201&hall=KWI
+ *   ?easy=1&home=VBC+Musterdorf&away=VBC+Zürich&bestOf=5&homeColor=%23dc2626
+ *   &awayColor=%233b82f6&homeShort=MUST&awayShort=VBCZ&league=3L&game=406201&hall=MSH
  * Returns null when the address does not ask for an easy match.
  */
 export function easyMatchPrefill(search) {

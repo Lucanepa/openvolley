@@ -258,12 +258,12 @@ describe('writePdfNative (Save PDF in the Android app)', () => {
   })
 
   it('tells the absolute path, and never overwrites an earlier PDF (" (1)", " (2)")', async () => {
-    const existing = new Set(['OpenVolley/scoresheets/20261007_382208_KSCW_vs_Spada.pdf', 'OpenVolley/scoresheets/20261007_382208_KSCW_vs_Spada (1).pdf'])
+    const existing = new Set(['OpenVolley/scoresheets/20261007_382208_MUST_vs_Spada.pdf', 'OpenVolley/scoresheets/20261007_382208_MUST_vs_Spada (1).pdf'])
     const stat = vi.fn(async ({ path }) => { if (!existing.has(path)) throw new Error('File does not exist') ; return { type: 'file' } })
     const writeFile = vi.fn(async ({ path }) => ({ uri: `file:///storage/emulated/0/Documents/${encodeURI(path)}` }))
-    const res = await writePdfNative({ Filesystem: { writeFile, stat }, Directory }, pdf, '20261007_382208_KSCW_vs_Spada.pdf')
-    expect(writeFile).toHaveBeenCalledWith(expect.objectContaining({ path: 'OpenVolley/scoresheets/20261007_382208_KSCW_vs_Spada (2).pdf' }))
-    expect(res.fullPath).toBe('/storage/emulated/0/Documents/OpenVolley/scoresheets/20261007_382208_KSCW_vs_Spada (2).pdf')
+    const res = await writePdfNative({ Filesystem: { writeFile, stat }, Directory }, pdf, '20261007_382208_MUST_vs_Spada.pdf')
+    expect(writeFile).toHaveBeenCalledWith(expect.objectContaining({ path: 'OpenVolley/scoresheets/20261007_382208_MUST_vs_Spada (2).pdf' }))
+    expect(res.fullPath).toBe('/storage/emulated/0/Documents/OpenVolley/scoresheets/20261007_382208_MUST_vs_Spada (2).pdf')
     expect(res.uri).toMatch(/^file:\/\/\/storage/)
   })
 })

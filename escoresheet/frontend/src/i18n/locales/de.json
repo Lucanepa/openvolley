@@ -3219,7 +3219,7 @@
       "name": "Vereinsname",
       "teams": "VolleyManager-Teams",
       "teamsHint": "Die Teams, deren Heimspiele die Schreiber des Vereins führen, so wie VolleyManager sie schreibt.",
-      "searchTeams": "Teams suchen, z. B. Wiedikon",
+      "searchTeams": "Teams suchen, z. B. Musterdorf",
       "picked": "Gewählte Teams: {{count}}",
       "noVmTeams": "Kein VolleyManager-Team passt.",
       "inClub": "bei {{club}}",

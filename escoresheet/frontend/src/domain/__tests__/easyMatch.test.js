@@ -29,7 +29,7 @@ describe('shirtNumber', () => {
 describe('defaultShortName', () => {
   it('works like Match Setup', () => {
     expect(defaultShortName('VBC Zürich')).toBe('VBC')
-    expect(defaultShortName('Wiedikon')).toBe('WIED')
+    expect(defaultShortName('Musterdorf')).toBe('MUST')
     expect(defaultShortName('')).toBe('')
   })
   it('never cuts an emoji in half (a lone surrogate made Save PDF fail)', () => {
@@ -214,10 +214,10 @@ describe('easyMatchPrefill', () => {
     expect(easyMatchPrefill('')).toBe(null)
   })
   it('reads the teams, colours, format and game', () => {
-    const p = easyMatchPrefill('?easy=1&home=KSC+Wiedikon&away=VBC%20Z%C3%BCrich&bestOf=3&homeColor=%23DC2626&awayColor=blue&homeShort=kscw&league=3L&game=406201&hall=KWI')
+    const p = easyMatchPrefill('?easy=1&home=VBC+Musterdorf&away=VBC%20Z%C3%BCrich&bestOf=3&homeColor=%23DC2626&awayColor=blue&homeShort=must&league=3L&game=406201&hall=MSH')
     expect(p).toEqual({
-      homeName: 'KSC Wiedikon', awayName: 'VBC Zürich', homeShort: 'KSCW', awayShort: '',
-      homeColor: '#dc2626', awayColor: null, bestOf: 3, league: '3L', gameNumber: '406201', hall: 'KWI'
+      homeName: 'VBC Musterdorf', awayName: 'VBC Zürich', homeShort: 'MUST', awayShort: '',
+      homeColor: '#dc2626', awayColor: null, bestOf: 3, league: '3L', gameNumber: '406201', hall: 'MSH'
     })
   })
   it('best of 5 unless it says 3', () => {

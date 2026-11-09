@@ -18,7 +18,7 @@ const DAY_MS = 24 * 60 * 60 * 1000
 
 describe('club managers (unit)', () => {
   it('a contact address: trimmed and lower-case; empty clears it; anything else is refused', () => {
-    assert.equal(contactEmail('  Info@KSC-Wiedikon.ch '), 'info@ksc-wiedikon.ch')
+    assert.equal(contactEmail('  Info@VBC-Musterdorf.ch '), 'info@vbc-musterdorf.ch')
     assert.equal(contactEmail(''), null)
     assert.equal(contactEmail(null), null)
     assert.equal(contactEmail('no-at-sign'), undefined)
@@ -76,22 +76,22 @@ describe('club managers end to end', { skip: SKIP }, () => {
   const insertMatch = (user, data) => api(srv.base, '/api/db', { token: user.token, body: { table: 'matches', action: 'insert', params: { data: { external_id: ext(), status: 'live', scheduled_at: '2026-10-17T16:00:00Z', ...data }, returning: 'id,external_id', single: true } } })
   const auditOf = async (action) => (await sql.query('SELECT actor_id, target_user_id, details FROM public.audit_log WHERE action = $1 ORDER BY at', [action])).rows
 
-  let ksc, other
+  let musterdorf, other
   before(async () => {
     db = await provisionDatabase()
     sql = new pg.Client({ connectionString: db.url })
     await sql.connect()
     srv = await bootServer({ DATABASE_URL: db.url, TRUST_PROXY: 'cloudflare', TRUST_PROXY_FROM: '127.0.0.1/32,::1/128' })
     await sql.query(`INSERT INTO public.svrz_games (game_number, team_home, team_away, league, datetime) VALUES
-      ('910001', 'KSC Wiedikon H1', 'VBC Other H1', '2L', '2026-10-17T16:00:00Z'),
-      ('910002', 'VBC Other H1', 'KSC Wiedikon H1', '2L', '2026-10-24T16:00:00Z'),
-      ('910003', 'KSC Wiedikon H1', 'VBC Third H1', '2L', '2026-10-31T16:00:00Z'),
+      ('910001', 'VBC Musterdorf H1', 'VBC Other H1', '2L', '2026-10-17T16:00:00Z'),
+      ('910002', 'VBC Other H1', 'VBC Musterdorf H1', '2L', '2026-10-24T16:00:00Z'),
+      ('910003', 'VBC Musterdorf H1', 'VBC Third H1', '2L', '2026-10-31T16:00:00Z'),
       ('910004', 'VBC Other H1', 'VBC Third H1', '2L', '2026-11-07T16:00:00Z')`)
     await account('admin', ['admin'])
-    await account('boss', null) // becomes KSC's club manager: no role at all
+    await account('boss', null) // becomes VBCM's club manager: no role at all
     await account('scorer', ['scorer'])
     await account('cm', ['competition_manager'])
-    ksc = (await call(users.admin, 'POST', '/api/admin/clubs', { name: 'KSC Wiedikon', teams: ['KSC Wiedikon H1'] })).json.data.club
+    musterdorf = (await call(users.admin, 'POST', '/api/admin/clubs', { name: 'VBC Musterdorf', teams: ['VBC Musterdorf H1'] })).json.data.club
     other = (await call(users.admin, 'POST', '/api/admin/clubs', { name: 'VBC Other', teams: ['VBC Other H1'] })).json.data.club
   })
 
@@ -102,14 +102,14 @@ describe('club managers end to end', { skip: SKIP }, () => {
   })
 
   it('admins name a club\'s managers by address; unknown addresses and non-admins are refused; audited', async () => {
-    expectCode(await call(users.cm, 'PUT', `/api/admin/clubs/${ksc.id}/managers`, { emails: [users.boss.email] }), 403, 'OV_FORBIDDEN')
-    expectCode(await call(users.admin, 'PUT', `/api/admin/clubs/${ksc.id}/managers`, { emails: ['nobody@example.ch'] }), 404, 'OV_ACCOUNT_NOT_FOUND')
-    expectCode(await call(users.admin, 'PUT', `/api/admin/clubs/${ksc.id}/managers`, { emails: 'x' }), 400, 'OV_INVALID_REQUEST')
-    const set = await call(users.admin, 'PUT', `/api/admin/clubs/${ksc.id}/managers`, { emails: [`  ${users.boss.email.toUpperCase()} `] })
+    expectCode(await call(users.cm, 'PUT', `/api/admin/clubs/${musterdorf.id}/managers`, { emails: [users.boss.email] }), 403, 'OV_FORBIDDEN')
+    expectCode(await call(users.admin, 'PUT', `/api/admin/clubs/${musterdorf.id}/managers`, { emails: ['nobody@example.ch'] }), 404, 'OV_ACCOUNT_NOT_FOUND')
+    expectCode(await call(users.admin, 'PUT', `/api/admin/clubs/${musterdorf.id}/managers`, { emails: 'x' }), 400, 'OV_INVALID_REQUEST')
+    const set = await call(users.admin, 'PUT', `/api/admin/clubs/${musterdorf.id}/managers`, { emails: [`  ${users.boss.email.toUpperCase()} `] })
     assert.equal(set.status, 200, set.text)
     assert.deepEqual(set.json.data.club.managers.map((m) => m.user_id), [users.boss.id])
     const list = await call(users.admin, 'GET', '/api/admin/clubs')
-    assert.deepEqual(list.json.data.clubs.find((c) => c.id === ksc.id).managers.map((m) => m.email), [users.boss.email])
+    assert.deepEqual(list.json.data.clubs.find((c) => c.id === musterdorf.id).managers.map((m) => m.email), [users.boss.email])
     assert.deepEqual(list.json.data.clubs.find((c) => c.id === other.id).managers, [])
     const [entry] = await auditOf('club.managers')
     assert.deepEqual(entry.details.after, [users.boss.id])
@@ -117,7 +117,7 @@ describe('club managers end to end', { skip: SKIP }, () => {
 
   it('/api/me names the clubs an account manages; no role is given', async () => {
     const me = await call(users.boss, 'GET', '/api/me')
-    assert.deepEqual(me.json.data.managedClubs, [{ id: ksc.id, name: 'KSC Wiedikon' }])
+    assert.deepEqual(me.json.data.managedClubs, [{ id: musterdorf.id, name: 'VBC Musterdorf' }])
     assert.deepEqual(me.json.data.roles, [])
     assert.equal(me.json.data.isAdmin, false)
     assert.deepEqual((await call(users.scorer, 'GET', '/api/me')).json.data.managedClubs, [])
@@ -125,24 +125,24 @@ describe('club managers end to end', { skip: SKIP }, () => {
   })
 
   it('a manager sees its own club only; admins see any; others none', async () => {
-    const mine = await call(users.boss, 'GET', `/api/club/${ksc.id}`)
+    const mine = await call(users.boss, 'GET', `/api/club/${musterdorf.id}`)
     assert.equal(mine.status, 200, mine.text)
-    assert.equal(mine.json.data.club.name, 'KSC Wiedikon')
+    assert.equal(mine.json.data.club.name, 'VBC Musterdorf')
     expectCode(await call(users.boss, 'GET', `/api/club/${other.id}`), 403, 'OV_FORBIDDEN')
-    expectCode(await call(users.scorer, 'GET', `/api/club/${ksc.id}/members`), 403, 'OV_FORBIDDEN')
-    expectCode(await call(users.cm, 'GET', `/api/club/${ksc.id}/invites`), 403, 'OV_FORBIDDEN')
+    expectCode(await call(users.scorer, 'GET', `/api/club/${musterdorf.id}/members`), 403, 'OV_FORBIDDEN')
+    expectCode(await call(users.cm, 'GET', `/api/club/${musterdorf.id}/invites`), 403, 'OV_FORBIDDEN')
     assert.equal((await call(users.admin, 'GET', `/api/club/${other.id}`)).status, 200)
     expectCode(await call(users.admin, 'GET', '/api/club/00000000-0000-4000-8000-000000000000'), 404, 'OV_NOT_FOUND')
   })
 
   it('the contact address: set by the manager (or an admin), cleared with null, audited without the address', async () => {
-    expectCode(await call(users.boss, 'PATCH', `/api/club/${ksc.id}`, { contact_email: 'not an address' }), 400, 'OV_INVALID_REQUEST')
+    expectCode(await call(users.boss, 'PATCH', `/api/club/${musterdorf.id}`, { contact_email: 'not an address' }), 400, 'OV_INVALID_REQUEST')
     expectCode(await call(users.boss, 'PATCH', `/api/club/${other.id}`, { contact_email: 'x@other.ch' }), 403, 'OV_FORBIDDEN')
-    const set = await call(users.boss, 'PATCH', `/api/club/${ksc.id}`, { contact_email: ' Sekretariat@KSC-Wiedikon.ch ' })
+    const set = await call(users.boss, 'PATCH', `/api/club/${musterdorf.id}`, { contact_email: ' Sekretariat@VBC-Musterdorf.ch ' })
     assert.equal(set.status, 200, set.text)
-    assert.equal(set.json.data.club.contact_email, 'sekretariat@ksc-wiedikon.ch')
+    assert.equal(set.json.data.club.contact_email, 'sekretariat@vbc-musterdorf.ch')
     const [entry] = await auditOf('club.contact')
-    assert.deepEqual(entry.details, { club_id: ksc.id, set: true })
+    assert.deepEqual(entry.details, { club_id: musterdorf.id, set: true })
     const byAdmin = await call(users.admin, 'PATCH', `/api/admin/clubs/${other.id}`, { contact_email: 'info@other.ch' })
     assert.equal(byAdmin.json.data.club.contact_email, 'info@other.ch')
     assert.equal((await call(users.admin, 'PATCH', `/api/admin/clubs/${other.id}`, { contact_email: null })).json.data.club.contact_email, null)
@@ -150,32 +150,32 @@ describe('club managers end to end', { skip: SKIP }, () => {
 
   let code, otherCode
   it('invite codes: the club and the sport fixed, scorer or referee, capped; the club\'s own codes only', async () => {
-    expectCode(await call(users.boss, 'POST', `/api/club/${ksc.id}/invites`, { label: 'x', role: 'competition_manager' }), 400, 'OV_INVALID_REQUEST')
-    expectCode(await call(users.boss, 'POST', `/api/club/${ksc.id}/invites`, { label: 'x', max_uses: 500 }), 400, 'OV_INVALID_REQUEST')
-    expectCode(await call(users.boss, 'POST', `/api/club/${ksc.id}/invites`, { label: '' }), 400, 'OV_INVALID_REQUEST')
+    expectCode(await call(users.boss, 'POST', `/api/club/${musterdorf.id}/invites`, { label: 'x', role: 'competition_manager' }), 400, 'OV_INVALID_REQUEST')
+    expectCode(await call(users.boss, 'POST', `/api/club/${musterdorf.id}/invites`, { label: 'x', max_uses: 500 }), 400, 'OV_INVALID_REQUEST')
+    expectCode(await call(users.boss, 'POST', `/api/club/${musterdorf.id}/invites`, { label: '' }), 400, 'OV_INVALID_REQUEST')
     expectCode(await call(users.boss, 'POST', `/api/club/${other.id}/invites`, { label: 'x' }), 403, 'OV_FORBIDDEN')
     // a club or a sport in the body is ignored: the route's club, indoor
-    const made = await call(users.boss, 'POST', `/api/club/${ksc.id}/invites`, { label: 'H1 scorers', max_uses: 10, club_id: other.id, sport: 'beach' })
+    const made = await call(users.boss, 'POST', `/api/club/${musterdorf.id}/invites`, { label: 'H1 scorers', max_uses: 10, club_id: other.id, sport: 'beach' })
     assert.equal(made.status, 201, made.text)
-    assert.equal(made.json.data.invite.club_id, ksc.id)
+    assert.equal(made.json.data.invite.club_id, musterdorf.id)
     assert.equal(made.json.data.invite.sport, 'indoor')
     assert.equal(made.json.data.invite.role, 'scorer')
     assert.equal(made.json.data.invite.max_uses, 10)
     code = made.json.data.code
     otherCode = (await call(users.admin, 'POST', '/api/admin/invites', { label: 'Other scorers', club_id: other.id })).json.data
 
-    const list = await call(users.boss, 'GET', `/api/club/${ksc.id}/invites`)
+    const list = await call(users.boss, 'GET', `/api/club/${musterdorf.id}/invites`)
     assert.deepEqual(list.json.data.invites.map((i) => i.label), ['H1 scorers'])
-    expectCode(await call(users.boss, 'POST', `/api/club/${ksc.id}/invites/${otherCode.invite.id}/revoke`), 404, 'OV_NOT_FOUND')
+    expectCode(await call(users.boss, 'POST', `/api/club/${musterdorf.id}/invites/${otherCode.invite.id}/revoke`), 404, 'OV_NOT_FOUND')
     const [entry] = (await auditOf('invite.create')).filter((e) => e.details.label === 'H1 scorers')
-    assert.equal(entry.details.club_id, ksc.id)
+    assert.equal(entry.details.club_id, musterdorf.id)
     assert.equal(entry.actor_id, users.boss.id)
   })
 
   it('whoever redeems the code becomes a member; the manager sees the members', async () => {
     const fresh = await account('fresh', null)
     assert.equal((await call(fresh, 'POST', '/api/account/redeem-invite', { code })).status, 200)
-    const members = await call(users.boss, 'GET', `/api/club/${ksc.id}/members`)
+    const members = await call(users.boss, 'GET', `/api/club/${musterdorf.id}/members`)
     assert.equal(members.status, 200, members.text)
     const row = members.json.data.members.find((m) => m.id === fresh.id)
     assert.equal(row.email, fresh.email)
@@ -187,12 +187,12 @@ describe('club managers end to end', { skip: SKIP }, () => {
     const multi = await account('multi', null)
     assert.equal((await call(multi, 'POST', '/api/account/redeem-invite', { code })).status, 200)
     assert.equal((await call(multi, 'POST', '/api/account/redeem-invite', { code: otherCode.code })).status, 200)
-    assert.deepEqual((await call(multi, 'GET', '/api/me')).json.data.clubs.map((c) => c.name), ['KSC Wiedikon', 'VBC Other'])
+    assert.deepEqual((await call(multi, 'GET', '/api/me')).json.data.clubs.map((c) => c.name), ['VBC Musterdorf', 'VBC Other'])
 
     expectCode(await call(users.boss, 'DELETE', `/api/club/${other.id}/members/${multi.id}`), 403, 'OV_FORBIDDEN')
-    const removed = await call(users.boss, 'DELETE', `/api/club/${ksc.id}/members/${multi.id}`)
+    const removed = await call(users.boss, 'DELETE', `/api/club/${musterdorf.id}/members/${multi.id}`)
     assert.equal(removed.status, 200, removed.text)
-    expectCode(await call(users.boss, 'DELETE', `/api/club/${ksc.id}/members/${multi.id}`), 404, 'OV_NOT_FOUND')
+    expectCode(await call(users.boss, 'DELETE', `/api/club/${musterdorf.id}/members/${multi.id}`), 404, 'OV_NOT_FOUND')
 
     const me = (await call(multi, 'GET', '/api/me')).json.data
     assert.deepEqual(me.clubs.map((c) => c.name), ['VBC Other'], 'the other club stays')
@@ -207,8 +207,8 @@ describe('club managers end to end', { skip: SKIP }, () => {
   })
 
   it('removing a manager ends its access at once', async () => {
-    assert.equal((await call(users.admin, 'PUT', `/api/admin/clubs/${ksc.id}/managers`, { emails: [] })).status, 200)
-    expectCode(await call(users.boss, 'GET', `/api/club/${ksc.id}`), 403, 'OV_FORBIDDEN')
+    assert.equal((await call(users.admin, 'PUT', `/api/admin/clubs/${musterdorf.id}/managers`, { emails: [] })).status, 200)
+    expectCode(await call(users.boss, 'GET', `/api/club/${musterdorf.id}`), 403, 'OV_FORBIDDEN')
     assert.deepEqual((await call(users.boss, 'GET', '/api/me')).json.data.managedClubs, [])
   })
 
@@ -222,11 +222,11 @@ describe('club managers end to end', { skip: SKIP }, () => {
     for (const action of ['club.create', 'club.update', 'club.managers', 'club.contact', 'club.member_remove']) {
       const live = of(action).filter((e) => clubOf(e) !== gone.id)
       assert.ok(live.length, action)
-      for (const e of live) assert.equal(e.club_name, clubOf(e) === ksc.id ? 'KSC Wiedikon' : 'VBC Other', action)
+      for (const e of live) assert.equal(e.club_name, clubOf(e) === musterdorf.id ? 'VBC Musterdorf' : 'VBC Other', action)
     }
-    assert.deepEqual(of('club.member_remove').map((e) => e.club_name), ['KSC Wiedikon'])
-    assert.equal(of('invite.create').find((e) => e.details.label === 'H1 scorers').club_name, 'KSC Wiedikon')
-    assert.ok(of('invite.redeem').some((e) => e.club_name === 'KSC Wiedikon'))
+    assert.deepEqual(of('club.member_remove').map((e) => e.club_name), ['VBC Musterdorf'])
+    assert.equal(of('invite.create').find((e) => e.details.label === 'H1 scorers').club_name, 'VBC Musterdorf')
+    assert.ok(of('invite.redeem').some((e) => e.club_name === 'VBC Musterdorf'))
     // gone: no name from the list, its own in the delete entry
     const [deleted] = of('club.delete')
     assert.equal(deleted.club_name, null)

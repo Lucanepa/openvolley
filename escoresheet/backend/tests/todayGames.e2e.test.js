@@ -46,18 +46,18 @@ describe('today\'s home games of the account\'s clubs', { skip: SKIP }, () => {
     await sql.connect()
     srv = await bootServer({ DATABASE_URL: db.url, TRUST_PROXY: 'cloudflare', TRUST_PROXY_FROM: '127.0.0.1/32,::1/128' })
     await sql.query(`INSERT INTO public.svrz_games (game_number, team_home, team_away, league, gender, hall, city, match_format, referee_1_first_name, referee_1_last_name, datetime) VALUES
-      ('930001', 'KSC Wiedikon H1', 'VBC Other H1', '2L', 'men', 'Halle Wiedikon', 'Zürich', 5, 'Rita', 'Ref', '${today}T18:00:00'),
-      ('930002', 'ksc wiedikon d2 ', 'VBC Other D1', '3L', 'women', 'Halle Wiedikon', 'Zürich', 5, null, null, '${today}T16:00:00'),
-      ('930003', 'VBC Other H1', 'KSC Wiedikon H1', '2L', 'men', 'Halle Other', 'Bern', 5, null, null, '${today}T20:00:00'),
-      ('930004', 'KSC Wiedikon H1', 'VBC Third H1', '2L', 'men', 'Halle Wiedikon', 'Zürich', 5, null, null, '${tomorrow}T18:00:00'),
+      ('930001', 'VBC Musterdorf H1', 'VBC Other H1', '2L', 'men', 'Halle Musterdorf', 'Zürich', 5, 'Rita', 'Ref', '${today}T18:00:00'),
+      ('930002', 'vbc musterdorf d2 ', 'VBC Other D1', '3L', 'women', 'Halle Musterdorf', 'Zürich', 5, null, null, '${today}T16:00:00'),
+      ('930003', 'VBC Other H1', 'VBC Musterdorf H1', '2L', 'men', 'Halle Other', 'Bern', 5, null, null, '${today}T20:00:00'),
+      ('930004', 'VBC Musterdorf H1', 'VBC Third H1', '2L', 'men', 'Halle Musterdorf', 'Zürich', 5, null, null, '${tomorrow}T18:00:00'),
       ('930005', 'VBC Other D1', 'VBC Third D1', '3L', 'women', 'Halle Other', 'Bern', 5, null, null, '${today}T14:00:00')`)
     const admin = await account('admin', ['admin'])
-    await account('ksc', ['scorer'])
+    await account('musterdorf', ['scorer'])
     await account('other', ['scorer'])
     await account('noclub', ['scorer'])
-    const ksc = (await call(admin, 'POST', '/api/admin/clubs', { name: 'KSC Wiedikon', teams: ['KSC Wiedikon H1', 'KSC Wiedikon D2'] })).json.data.club
+    const musterdorf = (await call(admin, 'POST', '/api/admin/clubs', { name: 'VBC Musterdorf', teams: ['VBC Musterdorf H1', 'VBC Musterdorf D2'] })).json.data.club
     const other = (await call(admin, 'POST', '/api/admin/clubs', { name: 'VBC Other', teams: ['VBC Other H1', 'VBC Other D1'] })).json.data.club
-    await call(admin, 'PUT', `/api/admin/accounts/${users.ksc.id}/clubs`, { club_ids: [ksc.id] })
+    await call(admin, 'PUT', `/api/admin/accounts/${users.musterdorf.id}/clubs`, { club_ids: [musterdorf.id] })
     await call(admin, 'PUT', `/api/admin/accounts/${users.other.id}/clubs`, { club_ids: [other.id] })
   })
 
@@ -73,25 +73,25 @@ describe('today\'s home games of the account\'s clubs', { skip: SKIP }, () => {
   })
 
   it('today\'s home games of the account\'s clubs only, in time order, with the fields the match is filled from', async () => {
-    const r = await call(users.ksc, 'GET', '/api/games/today')
+    const r = await call(users.musterdorf, 'GET', '/api/games/today')
     assert.equal(r.status, 200, r.text)
     assert.equal(r.json.data.day, today)
-    assert.deepEqual(r.json.data.clubs, ['KSC Wiedikon'])
+    assert.deepEqual(r.json.data.clubs, ['VBC Musterdorf'])
     // not the away game (930003), not tomorrow's (930004), not another club's (930005)
     assert.deepEqual(r.json.data.games.map((g) => g.game_number), ['930002', '930001'])
     const g = r.json.data.games[1]
-    assert.equal(g.team_home, 'KSC Wiedikon H1')
-    assert.equal(g.club, 'KSC Wiedikon')
-    assert.equal(g.hall, 'Halle Wiedikon')
+    assert.equal(g.team_home, 'VBC Musterdorf H1')
+    assert.equal(g.club, 'VBC Musterdorf')
+    assert.equal(g.hall, 'Halle Musterdorf')
     assert.equal(g.match_format, 5)
     assert.equal(g.referee_1_first_name, 'Rita')
     assert.equal(g.claim, null)
-    assert.equal(r.json.data.games[0].club, 'KSC Wiedikon', 'the team name is matched without case and spaces')
+    assert.equal(r.json.data.games[0].club, 'VBC Musterdorf', 'the team name is matched without case and spaces')
   })
 
   it('a game a match claims says whose', async () => {
-    assert.equal((await insertMatch(users.ksc, { game_n: 930001, scheduled_at: `${today}T16:00:00Z` })).status, 200)
-    const mine = (await call(users.ksc, 'GET', '/api/games/today')).json.data.games.find((g) => g.game_number === '930001')
+    assert.equal((await insertMatch(users.musterdorf, { game_n: 930001, scheduled_at: `${today}T16:00:00Z` })).status, 200)
+    const mine = (await call(users.musterdorf, 'GET', '/api/games/today')).json.data.games.find((g) => g.game_number === '930001')
     assert.deepEqual(mine.claim, { mine: true, closed: false })
     const r = await call(users.other, 'GET', '/api/games/today')
     assert.deepEqual(r.json.data.games.map((g) => g.game_number), ['930005', '930003'], 'the other club\'s home games')

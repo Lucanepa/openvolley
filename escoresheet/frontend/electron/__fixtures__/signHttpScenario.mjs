@@ -7,7 +7,7 @@
  * suites can both use it.
  */
 
-const CTX = { home: 'VBC Wiedikon', away: 'Volley 05', matchNo: '4711' }
+const CTX = { home: 'VBC Musterdorf', away: 'Volley 05', matchNo: '4711' }
 const INK = { pad: { w: 4000, h: 2000 }, strokes: [[0, 1000, 300, 1000], [10, 1200, 600, 1300, 900, 1250]] }
 
 async function post(base, endpoint, body, { headers = {}, raw = null, contentType = 'application/json' } = {}) {
@@ -38,7 +38,7 @@ export async function signHttpScenario({ httpBase, startHeaders = {}, matchKey =
   code(await post(httpBase, 'start', { slot: 'nope', context: CTX }, { headers: startHeaders }), 400, 'OV_SIGN_SLOT', 'start with an unknown slot')
 
   // The flow
-  const started = await post(httpBase, 'start', { slot: 'captain-a', matchKey, context: { ...CTX, home: 'VBC ‮Wiedikon' } }, { headers: startHeaders })
+  const started = await post(httpBase, 'start', { slot: 'captain-a', matchKey, context: { ...CTX, home: 'VBC ‮Musterdorf' } }, { headers: startHeaders })
   code(started, 201, null, 'start')
   if (started.status !== 201) return failures
   expect('start answer', /^[A-Za-z0-9_-]{43}$/.test(started.json.token) && /^[A-Za-z0-9_-]{43}$/.test(started.json.watch) && started.json.path === '/sign' && started.json.ttlSeconds === 600, started.text)
@@ -53,7 +53,7 @@ export async function signHttpScenario({ httpBase, startHeaders = {}, matchKey =
   await new Promise((r) => setTimeout(r, 300))
   const opened = await post(httpBase, 'open', { k: token })
   expect('open', opened.status === 200 && opened.json?.state === 'opened' && opened.json?.slot === 'captain-a', opened.text)
-  expect('open: sanitised context', opened.json?.context?.home === 'VBC Wiedikon' && opened.json?.context?.matchNo === '4711', JSON.stringify(opened.json?.context))
+  expect('open: sanitised context', opened.json?.context?.home === 'VBC Musterdorf' && opened.json?.context?.matchNo === '4711', JSON.stringify(opened.json?.context))
   const woke = await held
   expect('held wait wakes on open', woke.status === 200 && woke.json?.state === 'opened' && Date.now() - t0 < 5000, woke.text)
 

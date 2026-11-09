@@ -1,6 +1,6 @@
 # Informativa sulla protezione dei dati
 
-**OpenVolley e OpenBeach** · Versione 1.7 · Aggiornata al 31 ottobre 2026
+**OpenVolley e OpenBeach** · Versione 1.8 · Aggiornata al 9 novembre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
 la versione inglese.
@@ -29,6 +29,10 @@ la versione inglese.
 - Se l'invio è attivato, dopo una partita ufficiale il segnapunti, gli arbitri
   e le società delle due squadre ricevono il referto finale per e-mail
   (sezione 7).
+- Il responsabile di una squadra può inviare in anticipo l'elenco di una
+  partita. Il dispositivo del segnapunti lo conserva per la preparazione della
+  partita; appena il segnapunti lo accetta, il server lo cancella (sezione
+  10).
 - Può chiedere in ogni momento informazioni, rettifica o cancellazione:
   **support@openvolley.app**.
 
@@ -227,6 +231,10 @@ società; l'account stesso e i suoi ruoli restano. Una società può indicare un
 della società); riceve i referti finali delle partite della società
 (sezione 7).
 
+I responsabili di società possono anche dare un link all'allenatore o al
+responsabile di una squadra della società, che poi gestisce quella squadra
+(sezione 10).
+
 **Accesso:** dopo l'accesso il suo browser salva un token di accesso. Sul
 server si trova solo un hash di esso. Una sessione dura 30 giorni dall'ultimo
 utilizzo, al massimo 90 giorni, e termina con l'uscita, il cambio della
@@ -276,7 +284,7 @@ dispositivo o su un telefono), sorteggio, svolgimento della partita con tutti gl
 sostituzioni e sanzioni, risultati e correzioni successive.
 
 **Chi inserisce i dati:** il segnapunti nell'app, i responsabili di squadra
-sulla pagina delle liste squadra (`roster.openvolley.app`), i gestori di
+sulla pagina delle liste squadra (`roster.openvolley.app`) e nel sito di gestione (sezione 10), i gestori di
 competizione tramite le squadre salvate (sezione 10) e le designazioni
 ufficiali di Swiss Volley (sezione 11). Le giocatrici e i giocatori non
 inseriscono essi stessi i propri dati.
@@ -415,7 +423,7 @@ solo se il segnapunti ha effettuato l'accesso.
 punteggio. Riceve solo nomi delle squadre, punteggio e risultati dei set,
 nessun dato di giocatrici o giocatori.
 
-## 10. Siti di gestione: squadre salvate e tornei di beach volley
+## 10. Siti di gestione: squadre salvate, elenchi delle squadre e tornei di beach volley
 
 Su `manager.openvolley.app` e `manager-beach.openvolley.app` i gestori di
 competizione possono preparare squadre e tornei.
@@ -427,13 +435,37 @@ Visibili agli account con il ruolo di gestore o segnapunti dello sport
 corrispondente. Le app di refertazione memorizzano temporaneamente queste
 squadre e le cancellano all'uscita.
 
+**Responsabili di squadra (OpenVolley):** i responsabili di una società
+possono dare un link all'allenatore o al responsabile di una squadra della
+società; chi lo apre ed effettua l'accesso gestisce quella squadra. Il server
+salva quale account gestisce quale squadra, chi l'ha aggiunto e quando. Un
+responsabile di squadra modifica la squadra salvata e può inviare in anticipo
+l'elenco di ogni partita della squadra: giocatrici e giocatori con numero,
+nome e cognome, data di nascita, numero di licenza e libero/capitano, e lo
+staff con funzione, nome, data di nascita e numero di licenza. Se lo
+desiderano, l'allenatore e il capitano possono firmare questo elenco in
+anticipo; le firme vengono salvate con esso come immagini.
+
+**Elenchi inviati in anticipo:** visibili ai responsabili della squadra, ai
+responsabili della sua società e agli amministratori, nonché agli account con
+il ruolo di segnapunti o di gestore di competizione di OpenVolley. I
+dispositivi dei segnapunti scaricano gli elenchi delle prossime partite in
+casa delle loro società, affinché la preparazione della partita funzioni senza
+internet. Quando il segnapunti accetta un elenco nella preparazione della
+partita, esso diventa parte della partita (sezione 7) e il server cancella
+subito giocatrici e giocatori, staff e firme; conserva solo il fatto che
+l'elenco è stato accettato, quando e da quale account. Un elenco che nessuno
+accetta viene cancellato 14 giorni dopo la partita. Su un dispositivo di
+refertazione la copia viene cancellata appena il server sa che è stato
+accettato, all'uscita e al più tardi 36 ore dopo la partita.
+
 **Tornei di beach volley:** titolo, luogo, date, squadre con nomi, cognomi,
 numeri di licenza e paesi delle giocatrici e dei giocatori, calendario,
 risultati, nomi di arbitri e segnapunti. Se un torneo è contrassegnato come
 **pubblico**, la pagina pubblica del torneo mostra squadre, nomi e paesi, mai
 numeri di licenza o date di nascita.
 
-**Scopo:** riutilizzare le liste squadra, organizzare tornei, abbinare
+**Scopo:** riutilizzare le liste squadra, preparare in anticipo l'elenco di una partita, organizzare tornei, abbinare
 giocatrici e giocatori tramite il numero di licenza durante l'importazione.
 
 Questi dati restano salvati finché un gestore non li cancella, anche se
@@ -566,6 +598,10 @@ richiesta.
   modificato l'indirizzo di contatto di una società o acceso o spento l'invio
   dei referti, e che il referto di una partita è stato inviato, con il numero
   di destinatari. Non contiene indirizzi e-mail.
+- **Squadre:** il registro delle modifiche annota anche chi gestisce una
+  squadra e chi ha inviato, cancellato o accettato l'elenco di una partita,
+  con il numero di giocatrici, giocatori e membri dello staff e se era
+  firmato, mai nomi o firme, e quando.
 - **Account cancellati:** il registro delle modifiche annota che un
   amministratore ha cancellato un account o rifiutato un nuovo account, con
   i ruoli e le app dell'account, la data di creazione, il numero di partite
@@ -620,6 +656,8 @@ riceve una copia di queste garanzie.
 | Registro delle modifiche | Per il tempo necessario alla tracciabilità; la cancellazione su richiesta viene esaminata |
 | Indirizzo di contatto di una società | Finché non viene modificato o rimosso, o la società viene cancellata |
 | Responsabili di società | Finché gli amministratori non li rimuovono, la società viene cancellata o lei cancella il suo account |
+| Responsabili di squadra | Finché un responsabile di società o un amministratore non li rimuove, la squadra o la società viene cancellata o lei cancella il suo account |
+| Elenco inviato in anticipo (giocatrici e giocatori, staff, firme) | Finché un segnapunti non lo accetta, al più tardi 14 giorni dopo la partita; la nota dell'accettazione 14 giorni dopo la partita |
 | Indirizzo e-mail di un arbitro per una partita | Con la partita, come parte del referto |
 | Invio del referto finale (momento, numero di destinatari, senza indirizzi) | Con la partita |
 | Referto di una partita di prova per e-mail | Non conservato sul server |

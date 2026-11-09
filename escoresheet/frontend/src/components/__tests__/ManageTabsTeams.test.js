@@ -4,7 +4,7 @@ import { accessFromRoles } from '../../lib/access'
 
 describe('manageTabsFor: My teams (db/023)', () => {
   it('shows My teams to an account that acts for a team, whatever its roles', () => {
-    const teamManager = { ...accessFromRoles([]), managedClubs: [], managedTeams: [{ id: 't1', name: 'KSC Wiedikon H1' }] }
+    const teamManager = { ...accessFromRoles([]), managedClubs: [], managedTeams: [{ id: 't1', name: 'VBC Musterdorf H1' }] }
     expect(manageTabsFor(teamManager)).toEqual(['myteams'])
     const clubManager = { ...accessFromRoles(['scorer']), managedClubs: [{ id: 'c1' }], managedTeams: [{ id: 't1' }] }
     expect(manageTabsFor(clubManager)).toEqual(['myclub', 'myteams'])

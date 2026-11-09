@@ -5,7 +5,7 @@ describe('deriveTeamShortLabel', () => {
   it('drops the club-type words, any case and with dots', () => {
     expect(deriveTeamShortLabel('VBC Einsiedeln D2')).toBe('Einsiedeln D2')
     expect(deriveTeamShortLabel('VC Smash Winterthur')).toBe('Smash Winterthur')
-    expect(deriveTeamShortLabel('KSC Wiedikon H1')).toBe('Wiedikon H1')
+    expect(deriveTeamShortLabel('VBC Musterdorf H1')).toBe('Musterdorf H1')
     expect(deriveTeamShortLabel('Volley Näfels')).toBe('Näfels')
     expect(deriveTeamShortLabel('STV St. Gallen')).toBe('St. Gallen')
     expect(deriveTeamShortLabel('v.b.c. Züri Unterland D4')).toBe('Züri Unterland D4')

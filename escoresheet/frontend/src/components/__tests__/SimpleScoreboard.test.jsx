@@ -96,12 +96,12 @@ describe('SimpleScoreboard', () => {
   it('names the teams and picks the colours in Teams', () => {
     board()
     fireEvent.click(screen.getByRole('button', { name: 'Teams' }))
-    fireEvent.change(document.getElementById('simple-board-home-name'), { target: { value: 'Wiedikon' } })
+    fireEvent.change(document.getElementById('simple-board-home-name'), { target: { value: 'Musterdorf' } })
     fireEvent.change(document.getElementById('simple-board-away-name'), { target: { value: 'Limmattal' } })
     fireEvent.click(screen.getByTestId('simple-board-teams-save'))
-    expect(within(half('home')).getByText('Wiedikon')).toBeInTheDocument()
+    expect(within(half('home')).getByText('Musterdorf')).toBeInTheDocument()
     expect(within(half('away')).getByText('Limmattal')).toBeInTheDocument()
-    expect(loadBoard().teams.home.name).toBe('Wiedikon')
+    expect(loadBoard().teams.home.name).toBe('Musterdorf')
   })
 
   it('an empty name shows Home and Away', () => {

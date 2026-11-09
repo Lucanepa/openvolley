@@ -76,7 +76,7 @@ describe('final mail end to end', { skip: SKIP }, () => {
     const scheduledAt = new Date(Date.now() - 3 * 3600 * 1000).toISOString()
     const ins = await api(srv.base, '/api/db', { token: users.scorer.token, body: { table: 'matches', action: 'insert', params: { data: {
       external_id: `match_${Date.now()}_${randomBytes(3).toString('hex')}`, status: 'live', game_n: gameN, scheduled_at: scheduledAt,
-      home_team: { name: 'KSC Wiedikon H1' }, away_team: { name: 'VBC Other H1' },
+      home_team: { name: 'VBC Musterdorf H1' }, away_team: { name: 'VBC Other H1' },
       officials: [{ role: '1st referee', first_name: 'Rita', last_name: 'Ref', email: refereeEmail }]
     }, returning: 'id', single: true } } })
     assert.equal(ins.status, 200, ins.text)
@@ -117,9 +117,9 @@ describe('final mail end to end', { skip: SKIP }, () => {
     const admin = await account('admin', ['admin'])
     await account('scorer', ['scorer'], 'de') // signed up in German
     await account('cm', ['competition_manager'])
-    const ksc = (await call(admin, 'POST', '/api/admin/clubs', { name: 'KSC Wiedikon', teams: ['KSC Wiedikon H1'] })).json.data.club
+    const musterdorf = (await call(admin, 'POST', '/api/admin/clubs', { name: 'VBC Musterdorf', teams: ['VBC Musterdorf H1'] })).json.data.club
     const other = (await call(admin, 'POST', '/api/admin/clubs', { name: 'VBC Other', teams: ['VBC Other H1'] })).json.data.club
-    await call(admin, 'PATCH', `/api/admin/clubs/${ksc.id}`, { contact_email: 'contact@ksc.example.ch' })
+    await call(admin, 'PATCH', `/api/admin/clubs/${musterdorf.id}`, { contact_email: 'contact@musterdorf.example.ch' })
     await call(admin, 'PATCH', `/api/admin/clubs/${other.id}`, { contact_email: 'contact@other.example.ch' })
   })
 
@@ -142,7 +142,7 @@ describe('final mail end to end', { skip: SKIP }, () => {
     expectCode(await call(users.scorer, 'PUT', '/api/settings', { send_final_email: true }), 403, 'OV_FORBIDDEN')
     expectCode(await call(users.cm, 'PUT', '/api/settings', { send_final_email: 'yes' }), 400, 'OV_INVALID_REQUEST')
     await sleep(2500)
-    assert.equal(mailsTo('contact@ksc.example.ch').length, 0, 'nothing while the switch is off')
+    assert.equal(mailsTo('contact@musterdorf.example.ch').length, 0, 'nothing while the switch is off')
     const on = await call(users.cm, 'PUT', '/api/settings', { send_final_email: true })
     assert.equal(on.status, 200, on.text)
     assert.equal(on.json.data.settings.send_final_email, true)
@@ -157,21 +157,21 @@ describe('final mail end to end', { skip: SKIP }, () => {
   it('a closed official match: the PDF to the scorer, the referee and both clubs, once', async () => {
     matchId = await closedMatch({ gameN: 940002, closedMinAgo: 3, refereeEmail: 'Rita.Ref@example.ch' })
     // the scorer's account in the language of its sign-up, the others in English
-    for (const [to, subject] of [[users.scorer.email, 'Matchblatt'], ['rita.ref@example.ch', 'Scoresheet'], ['contact@ksc.example.ch', 'Scoresheet'], ['contact@other.example.ch', 'Scoresheet']]) {
-      const mail = await smtp.waitForMail((m) => m.envelope.to.includes(to) && /940002|KSC Wiedikon H1/.test(m.text))
-      assert.equal(mail.subject, `${subject}: KSC Wiedikon H1 – VBC Other H1`)
+    for (const [to, subject] of [[users.scorer.email, 'Matchblatt'], ['rita.ref@example.ch', 'Scoresheet'], ['contact@musterdorf.example.ch', 'Scoresheet'], ['contact@other.example.ch', 'Scoresheet']]) {
+      const mail = await smtp.waitForMail((m) => m.envelope.to.includes(to) && /940002|VBC Musterdorf H1/.test(m.text))
+      assert.equal(mail.subject, `${subject}: VBC Musterdorf H1 – VBC Other H1`)
       assert.match(mail.raw, /application\/pdf/)
       assert.match(mail.raw, /filename="?[^"\r\n]*\.pdf/)
       assert.equal(mail.envelope.to.length, 1, 'one mail per address: nobody sees the others')
     }
     await sleep(2500)
-    assert.equal(mailsTo('contact@ksc.example.ch').length, 1, 'once')
+    assert.equal(mailsTo('contact@musterdorf.example.ch').length, 1, 'once')
     const { rows: [row] } = await sql.query('SELECT outcome, recipients, corrected FROM public.match_final_mails WHERE match_id = $1', [matchId])
     assert.deepEqual(row, { outcome: 'sent', recipients: 4, corrected: false })
     const { rows: [entry] } = await sql.query(`SELECT details FROM public.audit_log WHERE action = 'match.final_mail' AND match_id = $1`, [matchId])
     assert.equal(entry.details.recipients, 4)
     assert.ok(!JSON.stringify(entry.details).includes('@'), 'no address in the audit log')
-    assert.equal(mailsTo('contact@ksc.example.ch').filter((m) => /940001/.test(m.text)).length, 0, 'closed before the switch: never')
+    assert.equal(mailsTo('contact@musterdorf.example.ch').filter((m) => /940001/.test(m.text)).length, 0, 'closed before the switch: never')
     assert.equal((await sql.query('SELECT 1 FROM public.match_final_mails WHERE match_id = $1', [early])).rows.length, 0)
   })
 
@@ -179,17 +179,17 @@ describe('final mail end to end', { skip: SKIP }, () => {
     const reopened = await call(users.admin, 'POST', `/api/admin/matches/${matchId}/reopen`, { reason: 'wrong final score' })
     assert.equal(reopened.status, 200, reopened.text)
     await closeAgo(matchId, 3)
-    const mail = await smtp.waitForMail((m) => m.envelope.to.includes('contact@ksc.example.ch') && /^Corrected scoresheet/.test(m.subject))
+    const mail = await smtp.waitForMail((m) => m.envelope.to.includes('contact@musterdorf.example.ch') && /^Corrected scoresheet/.test(m.subject))
     assert.match(mail.text, /corrected final scoresheet/)
     await sleep(3000)
-    assert.equal(mailsTo('contact@ksc.example.ch').filter((m) => /^Corrected/.test(m.subject)).length, 1, 'once, not on every sweep')
+    assert.equal(mailsTo('contact@musterdorf.example.ch').filter((m) => /^Corrected/.test(m.subject)).length, 1, 'once, not on every sweep')
   })
 
   it('switched off: nothing more goes out', async () => {
     assert.equal((await call(users.admin, 'PUT', '/api/settings', { send_final_email: false })).status, 200)
     await closedMatch({ gameN: 940003, closedMinAgo: 3 })
     await sleep(3000)
-    assert.equal(mailsTo('contact@ksc.example.ch').filter((m) => /940003/.test(m.text)).length, 0)
+    assert.equal(mailsTo('contact@musterdorf.example.ch').filter((m) => /940003/.test(m.text)).length, 0)
   })
 
   it('a test match: its PDF to the scorer\'s own address only, never stored, whatever the switch', async () => {

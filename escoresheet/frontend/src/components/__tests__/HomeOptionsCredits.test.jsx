@@ -43,7 +43,7 @@ function renderOptions() {
 }
 
 describe('HomeOptionsModal licence and credits', () => {
-  // The icons are Lucide (ISC) and Phosphor (MIT), the packs wiedisync uses:
+  // The icons are Lucide (ISC) and Phosphor (MIT), two open packs:
   // both are credited in every build, including the Android app. The Game
   // Icons (CC BY 3.0) artwork is gone, so its credit must be gone too.
   it('credits the icon packs with their licences and links the source code', () => {

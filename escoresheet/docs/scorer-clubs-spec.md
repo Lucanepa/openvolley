@@ -25,7 +25,7 @@ Also decided in the design:
 
 - `public.clubs`: a name, unique case-insensitively.
 - `public.club_teams (club_id, team_name)`: the club's VolleyManager team names,
-  as `svrz_games.team_home` spells them (`KSC Wiedikon H1`). A team belongs to
+  as `svrz_games.team_home` spells them (`VBC Musterdorf H1`). A team belongs to
   one club only (unique index on the trimmed, lower-cased name).
 - `public.account_clubs (user_id, club_id, granted_by, granted_at)`: which
   clubs an account scores for. Deleted with the account or the club.

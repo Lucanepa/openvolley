@@ -689,7 +689,7 @@ describe('the teams of a restored match', () => {
   beforeEach(() => {
     fakeDb.matches.map.get(1).homeTeamId = 3
     fakeDb.matches.map.get(1).awayTeamId = 4
-    fakeDb.teams = fakeTable([{ id: 3, name: 'VBC Wiedikon', shortName: 'WIE' }, { id: 4, name: 'Volley 05' }])
+    fakeDb.teams = fakeTable([{ id: 3, name: 'VBC Musterdorf', shortName: 'WIE' }, { id: 4, name: 'Volley 05' }])
     fakeDb.players = fakeTable([
       { id: 1, teamId: 3, number: 10, lastName: 'Baumann' },
       { id: 2, teamId: 3, number: 11, lastName: 'Arnold' },
@@ -699,16 +699,16 @@ describe('the teams of a restored match', () => {
 
   it('another local match with a team of the same name keeps its team row and roster', async () => {
     const today = backup()
-    today.homeTeam = { id: 3, name: 'VBC Wiedikon', shortName: 'VBCW' }
+    today.homeTeam = { id: 3, name: 'VBC Musterdorf', shortName: 'VBCW' }
     today.homePlayers = [{ id: 1, teamId: 3, number: 10, lastName: 'Today10' }, { id: 2, teamId: 3, number: 11, lastName: 'Today11' }]
     const id = await restoreMatchFromJson(today)
     const restored = fakeDb.matches.map.get(id)
     expect(restored.homeTeamId).not.toBe(3)
-    expect(fakeDb.teams.map.get(restored.homeTeamId)).toMatchObject({ name: 'VBC Wiedikon', shortName: 'VBCW' })
+    expect(fakeDb.teams.map.get(restored.homeTeamId)).toMatchObject({ name: 'VBC Musterdorf', shortName: 'VBCW' })
     expect(rosterOf(restored.homeTeamId)).toEqual(['10:Today10', '11:Today11'])
     // last week's match: unchanged
     expect(fakeDb.matches.map.get(1)).toMatchObject({ homeTeamId: 3, awayTeamId: 4 })
-    expect(fakeDb.teams.map.get(3)).toMatchObject({ name: 'VBC Wiedikon', shortName: 'WIE' })
+    expect(fakeDb.teams.map.get(3)).toMatchObject({ name: 'VBC Musterdorf', shortName: 'WIE' })
     expect(rosterOf(3)).toEqual(['10:Baumann', '11:Arnold'])
     expect(rosterOf(4)).toEqual(['7:Gast'])
   })

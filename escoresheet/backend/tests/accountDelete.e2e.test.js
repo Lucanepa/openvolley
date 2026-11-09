@@ -190,7 +190,7 @@ describe('an admin deletes an account', { skip: SKIP }, () => {
     assert.equal((await call(users.admin, 'POST', `/api/admin/matches/${om.json.data.id}/editors`, { email: leaver.email })).status, 200)
     assert.equal((await api(srv.base, '/api/db', { token: leaver.token, body: { table: 'user_matches', action: 'insert', params: { data: { match_external_id: ext, role: 'scorer' } } } })).status, 200)
     // a club it scores for and manages, an invite code it redeemed, OpenBeach joined, an approval PIN
-    const club = (await call(users.admin, 'POST', '/api/admin/clubs', { name: 'KSC Delete', teams: ['KSC Delete H1'] })).json.data.club
+    const club = (await call(users.admin, 'POST', '/api/admin/clubs', { name: 'VBCM Delete', teams: ['VBCM Delete H1'] })).json.data.club
     assert.equal((await call(users.admin, 'PUT', `/api/admin/accounts/${leaver.id}/clubs`, { club_ids: [club.id] })).status, 200)
     assert.equal((await call(users.admin, 'PUT', `/api/admin/clubs/${club.id}/managers`, { emails: [leaver.email] })).status, 200)
     const invite = await call(users.admin, 'POST', '/api/admin/invites', { label: 'del test', role: 'referee', max_uses: 5 })

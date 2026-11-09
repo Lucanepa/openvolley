@@ -1,7 +1,7 @@
 # Runbook: move OpenVolley to its own VM (Option B)
 
 > **Done 16.10.2026: moved to lenovoserver.** The stack moved from hetzner to lenovoserver with
-> this procedure, lenovoserver as `new`. The Hetzner VPS now belongs to the KSC Wiedikon club and
+> this procedure, lenovoserver as `new`. The Hetzner VPS now belongs to another owner and
 > must never host OpenVolley again. The procedure stays as the template for a future move: `old`
 > is then lenovoserver, where `/opt/openvolley` is root-only and there is no root ssh, so run the
 > `old` steps locally with `sudo` instead of `ssh hetzner ...` (e.g.
@@ -137,7 +137,7 @@ new#    rsync -aH --numeric-ids --delete --exclude=.ovdata --exclude=lost+found 
 
 `.ovdata` is excluded because each filesystem keeps its own immutable sentinel.
 
-This is a root key on KSCW's production host, so it is as narrow as sshd allows (`from=` the new
+This is a root key on the old production host, so it is as narrow as sshd allows (`from=` the new
 VM's tailnet IP only, `restrict`, forced `rrsync -ro` limited to the storage directory), carries
 a dated `REMOVE-AFTER-MOVE` marker, and step 13 removes it with a check. (The `ovbackup` user
 cannot be used instead without changing ownership or ACLs of the live storage files.) If the

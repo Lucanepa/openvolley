@@ -83,7 +83,7 @@ describe('phoneSignContext', () => {
     gameNumber: 4711, scheduledAt: '2026-10-12T18:15:00.000Z', coinTossTeamA: 'away',
     officials: [{ role: 'scorer', firstName: 'Sam', lastName: 'Scorer' }, { role: '1st referee', firstName: 'Anna', lastName: 'Muster' }],
   }
-  const base = { match, homeTeam: { name: 'VBC Wiedikon' }, awayTeam: 'Volley 05', homeCaptain: { number: 7, firstName: 'Lea', lastName: 'Muster' }, awayCaptain: { number: 9, firstName: 'Mia', lastName: 'Meier' }, homeCoach: { firstName: 'Cora', lastName: 'Coach' }, lang: 'de-CH' }
+  const base = { match, homeTeam: { name: 'VBC Musterdorf' }, awayTeam: 'Volley 05', homeCaptain: { number: 7, firstName: 'Lea', lastName: 'Muster' }, awayCaptain: { number: 9, firstName: 'Mia', lastName: 'Meier' }, homeCoach: { firstName: 'Cora', lastName: 'Coach' }, lang: 'de-CH' }
 
   it('captains A / B follow the coin toss', () => {
     expect(phoneSignContext({ ...base, slot: 'captain-a' })).toMatchObject({ teamSide: 'away', teamLabel: 'A', name: '#9 Mia Meier' })
@@ -99,7 +99,7 @@ describe('phoneSignContext', () => {
   })
   it('officials: their name, no team', () => {
     const ctx = phoneSignContext({ ...base, slot: 'ref1' })
-    expect(ctx).toEqual({ home: 'VBC Wiedikon', away: 'Volley 05', matchNo: '4711', when: displayWhen(match.scheduledAt), name: 'Anna Muster', lang: 'de-CH' })
+    expect(ctx).toEqual({ home: 'VBC Musterdorf', away: 'Volley 05', matchNo: '4711', when: displayWhen(match.scheduledAt), name: 'Anna Muster', lang: 'de-CH' })
     expect(phoneSignContext({ ...base, slot: 'ref2' }).name).toBeUndefined()
   })
   it('falls back to the given team names and drops an unknown language', () => {
