@@ -49,9 +49,13 @@ import { savedTeamToRoster, findSavedTeamSuggestions } from '../domain/savedTeam
 import { getSavedTeams, refreshSavedTeams } from '../db/savedTeams'
 import { markGameRosterAccepted, offeredSentRosters, refreshGameRosters, rowToPendingRoster } from '../db/gameRosters'
 import SentRosterCard from './SentRosterCard'
+import ClubPlayerPickerModal from './ClubPlayerPickerModal'
+import ClubGenderNotice from './ClubGenderNotice'
+import { clubOfTeam } from '../db/clubPlayers'
+import { addClubPlayersToRoster, clubGenderWarnings, matchGenderOf, offeredClubPlayers, rosterHasPerson } from '../domain/clubPlayers'
 import { officialCheck, OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS } from '../lib/accountApi'
 import { openRestore } from '../utils/manageNav'
-import { Users, Save as SaveIcon, Trash2, ListChecks } from 'lucide-react'
+import { Users, Save as SaveIcon, Trash2, ListChecks, UserPlus } from 'lucide-react'
 import CaptainToggle from './CaptainToggle'
 import StackLabel from './StackLabel'
 import TeamShirt from './TeamShirt'
@@ -998,6 +1002,53 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     refreshGameRosters({ access, userId: user.id, games: [sentGameNumber] }).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sentGameNumber, access?.canReadTeams, user?.id])
+
+  // db/024, offline first: the players lists of the account's clubs, read
+  // from the device's copy (downloaded while online; AuthContext). "Add from
+  // club" for a team of those clubs, filtered by the game's gender (the
+  // schedule's; none for a test match). A roster player the list has with the
+  // other gender is a warning, never a block (owner decision D2).
+  const clubRows = useLiveQuery(async () => {
+    if (!user?.id) return []
+    try {
+      return await db.club_players.where('userId').equals(user.id).toArray()
+    } catch {
+      return []
+    }
+  }, [user?.id], [])
+  const clubTeams = useMemo(() => ({ home: clubOfTeam(clubRows, home, user?.id), away: clubOfTeam(clubRows, away, user?.id) }), [clubRows, home, away, user?.id])
+  const clubGender = matchGenderOf({ test: match?.test === true, type2 })
+  const [clubPicker, setClubPicker] = useState(null) // 'home' | 'away' | null
+  const clubWarnings = useMemo(() => ({
+    home: clubTeams.home ? clubGenderWarnings(homeRoster, clubTeams.home.players, clubGender) : [],
+    away: clubTeams.away ? clubGenderWarnings(awayRoster, clubTeams.away.players, clubGender) : []
+  }), [clubTeams, homeRoster, awayRoster, clubGender])
+  // The chosen club players join the side's roster without a number; one
+  // already in it stays as it is. In the roster editor only its Save keeps them.
+  const addFromClub = (side, chosen) => {
+    setClubPicker(null)
+    const { roster, added } = addClubPlayersToRoster(side === 'home' ? homeRoster : awayRoster, chosen)
+    if (side === 'home') setHomeRoster(roster)
+    else setAwayRoster(roster)
+    toast.success(t('clubPlayers.added', { count: added }))
+  }
+  const clubPickerFor = (side) => {
+    const club = clubTeams[side]
+    const { players, hidden } = offeredClubPlayers(club?.players, clubGender)
+    const roster = side === 'home' ? homeRoster : awayRoster
+    return (
+      <ClubPlayerPickerModal
+        open={clubPicker === side && !!club}
+        onClose={() => setClubPicker(null)}
+        onPick={(chosen) => addFromClub(side, chosen)}
+        players={players}
+        gender={clubGender}
+        hiddenCount={hidden}
+        title={t('clubPlayers.titleTeam', { team: (side === 'home' ? home : away) || club?.clubName || '' })}
+        isTaken={(c) => rosterHasPerson(roster, c)}
+      />
+    )
+  }
 
   // Dismiss warning popover on click outside
   useEffect(() => {
@@ -4073,6 +4124,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <Button variant="secondary" size="xl" icon={<ListChecks size={16} aria-hidden />} onClick={() => openPlayerPool('home')} data-testid="choose-players-home">
                   {t('playerPool.open')}
                 </Button>
+                {clubTeams.home && (
+                  <Button variant="secondary" size="xl" icon={<UserPlus size={16} aria-hidden />} onClick={() => setClubPicker('home')} data-testid="add-from-club-home">
+                    {t('clubPlayers.add')}
+                  </Button>
+                )}
                 {access?.canManageTeams && isNavigatorOnline() && (
                   <Button variant="secondary" size="xl" icon={<SaveIcon size={16} aria-hidden />} onClick={() => setSaveToTeam('home')}>
                     {t('savedTeams.saveToTeam')}
@@ -4082,6 +4138,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         </div>
         {/* db/023: the roster the team sent ahead (the device's copy) */}
         <SentRosterCard row={sentRosters.home} side="home" onUse={() => applySentRoster('home')} onDismiss={() => dismissSentRoster('home')} />
+        {/* db/024: a player the club's list has with the other gender */}
+        <ClubGenderNotice warnings={clubWarnings.home} gender={clubGender} />
         {/* Upload Methods for Home Team + Player Stats */}
         <div className="flex gap-3 stack:flex-col">
           {/* Left: Upload section */}
@@ -5166,6 +5224,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         )}
 
         {playerPoolModal}
+        {clubPickerFor('home')}
         {/* Saved teams: load into this roster, or save it as a saved team */}
         <SavedTeamPickerModal
           open={savedPicker === 'home'}
@@ -5241,6 +5300,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <Button variant="secondary" size="xl" icon={<ListChecks size={16} aria-hidden />} onClick={() => openPlayerPool('away')} data-testid="choose-players-away">
                   {t('playerPool.open')}
                 </Button>
+                {clubTeams.away && (
+                  <Button variant="secondary" size="xl" icon={<UserPlus size={16} aria-hidden />} onClick={() => setClubPicker('away')} data-testid="add-from-club-away">
+                    {t('clubPlayers.add')}
+                  </Button>
+                )}
                 {access?.canManageTeams && isNavigatorOnline() && (
                   <Button variant="secondary" size="xl" icon={<SaveIcon size={16} aria-hidden />} onClick={() => setSaveToTeam('away')}>
                     {t('savedTeams.saveToTeam')}
@@ -5250,6 +5314,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         </div>
         {/* db/023: the roster the team sent ahead (the device's copy) */}
         <SentRosterCard row={sentRosters.away} side="away" onUse={() => applySentRoster('away')} onDismiss={() => dismissSentRoster('away')} />
+        {/* db/024: a player the club's list has with the other gender */}
+        <ClubGenderNotice warnings={clubWarnings.away} gender={clubGender} />
         {/* Upload Methods for Away Team + Player Stats */}
         <div className="flex gap-3 stack:flex-col">
           {/* Left: Upload section */}
@@ -6338,6 +6404,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         )}
 
         {playerPoolModal}
+        {clubPickerFor('away')}
         {/* Saved teams: load into this roster, or save it as a saved team */}
         <SavedTeamPickerModal
           open={savedPicker === 'away'}
@@ -6938,6 +7005,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
           {coloursTooClose(homeColor, awayColor) && <CloseColourNote />}
           <SentRosterCard row={sentRosters.home} side="home" onUse={() => applySentRoster('home')} onDismiss={() => dismissSentRoster('home')} />
+          <ClubGenderNotice warnings={clubWarnings.home} gender={clubGender} />
         </div>
 
         <div className={cn('flex flex-col gap-5 p-4 sm:p-5', SETUP_BLOCK)} style={{ order: 2 }}>
@@ -6996,6 +7064,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
           {coloursTooClose(homeColor, awayColor) && <CloseColourNote />}
           <SentRosterCard row={sentRosters.away} side="away" onUse={() => applySentRoster('away')} onDismiss={() => dismissSentRoster('away')} />
+          <ClubGenderNotice warnings={clubWarnings.away} gender={clubGender} />
         </div>
         {typeof window !== 'undefined' && window.electronAPI?.server && (
           <div className={cn('flex flex-col gap-4 p-4 sm:p-5', SETUP_BLOCK)} style={{ order: 3 }}>

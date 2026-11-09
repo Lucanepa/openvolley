@@ -7,6 +7,7 @@ import { accessFromRoles, accessChanged, NO_ACCESS, ACCESS_CHANGED_EVENT } from 
 import { fetchMe, redeemInvite as apiRedeemInvite } from '../lib/accountApi'
 import { clearSavedTeams, refreshSavedTeams } from '../db/savedTeams'
 import { clearGameRosters, refreshGameRosters, GAME_ROSTERS_REFRESH_MS } from '../db/gameRosters'
+import { clearClubPlayers, refreshClubPlayers } from '../db/clubPlayers'
 import i18n from 'i18next'
 import PasskeyOfferHost from '../components/auth/PasskeyOfferHost'
 
@@ -262,8 +263,9 @@ export function AuthProvider({ children, app = null }) {
       // The saved-team cache holds DOBs and licence numbers of this account's
       // teams: never leave it for the next one on a shared tablet
       clearSavedTeams()
-      // the rosters teams sent (db/023) too
+      // the rosters teams sent (db/023) too, and the clubs' players lists (db/024)
       clearGameRosters()
+      clearClubPlayers()
     }
 
     return { error }
@@ -375,6 +377,7 @@ export function AuthProvider({ children, app = null }) {
       discardUnsentLogs()
       clearSavedTeams()
       clearGameRosters()
+      clearClubPlayers()
 
       return { error: null }
     } catch (err) {
@@ -462,15 +465,20 @@ export function AuthProvider({ children, app = null }) {
     if (prev !== undefined && prev !== null && prev !== id) {
       clearSavedTeams()
       clearGameRosters()
+      clearClubPlayers()
     }
   }, [user])
 
   // db/023, offline first: download the rosters teams sent for the coming
   // home games while there is a connection (sign-in, every 15 minutes, back
-  // online), so Match Setup offers them in a hall without internet.
+  // online), so Match Setup offers them in a hall without internet. db/024:
+  // the players lists of the account's clubs the same way ("Add from club").
   useEffect(() => {
     if (!user || !profile || !access.canScore || access.isPending || !hasBackend()) return
-    const refresh = () => { refreshGameRosters({ access, userId: user.id }).catch(() => { /* keep the cache */ }) }
+    const refresh = () => {
+      refreshGameRosters({ access, userId: user.id }).catch(() => { /* keep the cache */ })
+      refreshClubPlayers({ access, userId: user.id }).catch(() => { /* keep the cache */ })
+    }
     refresh()
     const timer = setInterval(refresh, GAME_ROSTERS_REFRESH_MS)
     window.addEventListener('online', refresh)

@@ -9,7 +9,7 @@ const PAGE = 50
 
 const APPROVAL_ACTIONS = new Set(['match.approve', 'match.approval_revoke', 'match.approval_void'])
 // The entries about one club (db/018, db/020): the club's name leads their line
-const CLUB_ACTIONS = new Set(['club.create', 'club.update', 'club.delete', 'club.managers', 'club.contact', 'club.member_remove'])
+const CLUB_ACTIONS = new Set(['club.create', 'club.update', 'club.delete', 'club.managers', 'club.contact', 'club.member_remove', 'club.licences'])
 
 /** "club_rule.set" -> "Club rule set": an action this build has no label for yet reads as words, never as a code. */
 export function readableAction(action) {
@@ -71,6 +71,11 @@ export function auditDetailsLine(entry, opts = {}) {
     if (name) parts.push(name)
     if (Array.isArray(d.after)) parts.push(tr('manage.clubs.managersCount', `${d.after.length} managers`, { count: d.after.length }))
     if (Number.isFinite(d.scorers)) parts.push(tr('manage.clubs.scorers', `Scorers: ${d.scorers}`, { count: d.scorers }))
+    // db/024: a licence list replaced (its list and count, never a name)
+    if (entry.action === 'club.licences') {
+      if (d.list) parts.push(tr(`manage.licences.lists.${d.list}`, String(d.list)))
+      if (Number.isFinite(d.count)) parts.push(tr('manage.licences.people', `${d.count} people`, { count: d.count }))
+    }
     return parts.join(' · ')
   }
   if (entry?.action === 'account.clubs') {

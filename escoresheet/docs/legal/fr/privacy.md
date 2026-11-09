@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.9 · État au 9 novembre 2026
+**OpenVolley et OpenBeach** · Version 1.10 · État au 9 novembre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version anglaise fait foi.
@@ -486,14 +486,30 @@ personne n'accepte est supprimée 14 jours après le match. Sur un appareil de
 marquage, la copie est supprimée dès que le serveur sait qu'elle a été
 acceptée, à la déconnexion et au plus tard 36 heures après le match.
 
+**Listes de licences des clubs (OpenVolley) :** les responsables d'un club
+peuvent charger les listes des joueuses et joueurs, des marqueurs et des
+entraîneurs du club depuis l'administration du club de VolleyManager. Le
+fichier est lu dans le navigateur : seuls le numéro de licence, le nom, le
+prénom, la date de naissance et le sexe de chaque personne sont conservés ;
+rien d'autre du fichier n'est envoyé au serveur. Les listes sont visibles pour
+les responsables du club et les administrateurs. La liste des joueuses et
+joueurs est aussi visible pour les responsables d'équipe du club pour leurs
+listes, et elle est téléchargée sur les appareils des marqueurs du club afin
+que la préparation du match puisse ajouter des joueurs sans internet. Le sexe
+sert à ce que personne ne soit inscrit dans une équipe de l'autre sexe. Chaque
+chargement remplace cette liste ; les listes sont supprimées avec le club. Sur
+un appareil de marquage, chaque téléchargement remplace la copie, et elle est
+supprimée à la déconnexion.
+
 **Tournois de beach-volley :** titre, lieu, dates, équipes avec prénoms, noms,
 numéros de licence et pays des joueuses et joueurs, programme, résultats,
 noms des arbitres et marqueurs. Si un tournoi est marqué **public**, la page
 publique du tournoi montre les équipes, les noms et les pays, jamais les
 numéros de licence ni les dates de naissance.
 
-**But :** réutiliser les listes d'équipe, préparer à l'avance la liste d'un match, organiser des tournois, rattacher
-les joueuses et joueurs par numéro de licence lors d'une importation.
+**But :** réutiliser les listes d'équipe, préparer à l'avance la liste d'un match, ajouter les joueuses et
+joueurs d'un club à une liste et vérifier leur sexe par rapport à celui de l'équipe, organiser des
+tournois, rattacher les joueuses et joueurs par numéro de licence lors d'une importation.
 
 Ces données sont conservées jusqu'à ce qu'un gestionnaire les supprime, même
 si le compte qui les a créées est supprimé.
@@ -694,6 +710,7 @@ prestataires. Vous pouvez me demander une copie de ces garanties.
 | Responsables de club | Jusqu'à ce que les administrateurs les retirent, que le club soit supprimé ou que vous supprimiez votre compte |
 | Responsables d'équipe | Jusqu'à ce qu'un responsable de club ou un administrateur les retire, que l'équipe ou le club soit supprimé ou que vous supprimiez votre compte |
 | Liste envoyée à l'avance (joueuses et joueurs, encadrement, signatures) | Jusqu'à ce qu'un marqueur l'accepte, au plus tard 14 jours après le match ; la mention de l'acceptation 14 jours après le match |
+| Listes de licences d'un club (numéro de licence, noms, date de naissance, sexe) | Jusqu'au prochain chargement de cette liste, sa suppression par un responsable du club ou la suppression du club ; sur un appareil de marquage jusqu'au prochain téléchargement ou à la déconnexion |
 | Adresse e-mail d'un arbitre pour un match | Avec le match, comme partie de la feuille de match |
 | Envoi de la feuille de match finale (moment, nombre de destinataires, sans adresses) | Avec le match |
 | Feuille d'un match de test par e-mail | Non conservée sur le serveur |
