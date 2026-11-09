@@ -6,7 +6,7 @@ import {
 } from '../lib/vmSync.js'
 import {
   createFakeVolleyManager, makeGame, FAKE_BASE, FAKE_USER, FAKE_PASSWORD, FAKE_CSRF,
-  FAKE_SESSION_1, FAKE_SESSION_2, TRUSTED_PROPERTIES
+  FAKE_SESSION_1, FAKE_SESSION_2, TRUSTED_PROPERTIES, FAKE_DASH_CSRF, FAKE_REFEREE_ROLE
 } from './helpers/fakeVolleyManager.js'
 
 const noSleep = async () => {}
@@ -94,6 +94,8 @@ describe('login flow against a fake VolleyManager', () => {
       'GET /login',
       'POST /sportmanager.security/authentication/authenticate',
       'GET /dashboard',
+      'GET /',
+      'PUT /api/sportmanager.security/api%5cparty/switchRoleAndAttribute',
       'GET /indoorvolleyball.refadmin/refereegame/index'
     ])
     assert.equal(vm.calls[1].cookies.Neos_Flow_Session, FAKE_SESSION_1)
@@ -103,9 +105,49 @@ describe('login flow against a fake VolleyManager', () => {
     assert.equal(form.get('__trustedProperties'), TRUSTED_PROPERTIES, 'hidden field sent decoded, like a browser')
     assert.equal(form.has('rememberMe'), false)
     const out = logger.lines.join('\n')
-    for (const secret of [FAKE_PASSWORD, FAKE_CSRF, FAKE_SESSION_1, FAKE_SESSION_2]) {
+    for (const secret of [FAKE_PASSWORD, FAKE_CSRF, FAKE_DASH_CSRF, FAKE_SESSION_1, FAKE_SESSION_2]) {
       assert.ok(!out.includes(secret), `log must not contain ${secret}`)
     }
+  })
+
+  it('switches the shared account into the referee-delegate role before the referee page', async () => {
+    // another job (wiedisync at 04:30 UTC) left the account in a club role
+    const vm = createFakeVolleyManager({ startRole: 'club' })
+    const { csrfToken } = await vmLogin(creds, { fetch: vm.fetch, baseUrl: vm.baseUrl, http })
+    assert.equal(csrfToken, FAKE_CSRF)
+    assert.equal(vm.role(), 'referee')
+    const sw = vm.calls.find((c) => c.method === 'PUT')
+    const form = new URLSearchParams(sw.body)
+    assert.equal(form.get('attributeValueAsArray[0]'), FAKE_REFEREE_ROLE)
+    assert.equal(form.get('__csrfToken'), FAKE_DASH_CSRF, "the dashboard's token")
+    assert.equal(sw.cookies.Neos_Flow_Session, FAKE_SESSION_2, 'the logged-in session')
+  })
+
+  it('another role attribute (another account) is used as given', async () => {
+    const vm = createFakeVolleyManager({ startRole: 'referee' })
+    await assert.rejects(
+      vmLogin(creds, { fetch: vm.fetch, baseUrl: vm.baseUrl, http, roleAttribute: 'not-the-referee-role' }),
+      /referee page: HTTP 403 \(the account is not in the referee-delegate role\)/
+    )
+    assert.equal(vm.role(), 'other')
+  })
+
+  it('a refused switch ends in a 403 that says what to check', async () => {
+    const vm = createFakeVolleyManager({ startRole: 'club', refuseSwitch: true })
+    const logger = memLogger()
+    await assert.rejects(
+      vmLogin(creds, { fetch: vm.fetch, baseUrl: vm.baseUrl, http, logger }),
+      (err) => err instanceof VmHttpError && err.status === 403 && /role switch did not go through, check VM_ROLE_ATTRIBUTE_GAMES/.test(err.message)
+    )
+    assert.ok(logger.lines.some((l) => /role switch answered HTTP 403/.test(l)))
+    assert.ok(!logger.lines.join('\n').includes(FAKE_DASH_CSRF))
+  })
+
+  it('already in the referee role: the switch changes nothing and the login works', async () => {
+    const vm = createFakeVolleyManager({ startRole: 'referee' })
+    const { csrfToken } = await vmLogin(creds, { fetch: vm.fetch, baseUrl: vm.baseUrl, http })
+    assert.equal(csrfToken, FAKE_CSRF)
+    assert.equal(vm.role(), 'referee')
   })
 
   it('a wrong password fails with a clear message (no secret in it)', async () => {
@@ -210,7 +252,7 @@ describe('fetchAllGames', () => {
     assert.equal(r.items.length, 5)
     assert.equal(r.total, 5)
     assert.equal(r.incomplete, false)
-    const offsets = vm.calls.filter((c) => c.path.startsWith('/api/')).map((c) => new URLSearchParams(c.body).get('searchConfiguration[offset]'))
+    const offsets = vm.calls.filter((c) => c.path.startsWith('/api/indoorvolleyball.refadmin/')).map((c) => new URLSearchParams(c.body).get('searchConfiguration[offset]'))
     assert.deepEqual(offsets, ['0', '2', '4'])
   })
 
