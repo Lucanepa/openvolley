@@ -71,6 +71,16 @@
   </screenshots>
 
   <releases>
+    <release version="3.0.13" date="2026-11-09">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.13</url>
+      <description>
+        <ul>
+          <li>Rosters sent ahead: when a team sent its roster in the manager, Match Setup offers it, also without internet. Accept fills the roster, the team officials and the signatures made ahead.</li>
+          <li>An accepted roster is deleted from the server.</li>
+          <li>Neutral sample names in the test match.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.0.12" date="2026-11-08">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.12</url>
       <description>
