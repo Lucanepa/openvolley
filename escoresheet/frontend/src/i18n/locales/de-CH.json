@@ -2864,7 +2864,7 @@
       "q_windows": "Windows meldet «Der Computer wurde durch Windows geschützt»?",
       "a_windows": "SmartScreen zeigt das bi emne neue Download. Tipp uf «Weitere Informationen», dänn uf «Trotzdem ausführen». S Installationsprogramm fröget eimal nach emne Administrator, damit d Tablets dur d Firewall chömed.",
       "q_macos": "macOS macht d App nöd uf?",
-      "a_macos": "D App isch nöd vo Apple notarisiert, drum blockiert macOS de erscht Start. Mach si eimal uf und schliess d Meldig, dänn Systemeinstellungen › Datenschutz & Sicherheit › Dennoch öffnen. Under macOS 14 und älter: Rächtsklick uf d App › Öffnen. Start si us em Ordner Programme.",
+      "a_macos": "D App isch vo Apple signiert und notarisiert, drum macht macOS si uf wie jedi anderi App. Blockiert macOS si glich, isch es en älteri Kopie: Installier di aktuell Version vo get.openvolley.app, zieh si in Ordner Programme und start si vo dört.",
       "q_android": "Wie installier und aktualisier ich d Android-App?",
       "a_android": "Füeg i F-Droid s OpenVolley-Repository hinzue (lueg get.openvolley.app): F-Droid installiert dänn d Updates. E APK ohni F-Droid aktualisiert sich nöd sälber, aber d App cha dich über neui Versione informiere.",
       "q_desktopUpdates": "Wie aktualisiert sich d Desktop-App?",
