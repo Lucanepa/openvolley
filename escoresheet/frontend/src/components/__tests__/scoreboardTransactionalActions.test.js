@@ -189,7 +189,10 @@ describe('Scoreboard: one transaction and one screen change per scorer action', 
 
   it('Dexie-only helpers that were not awaited are awaited inside the actions', () => {
     expect(handler('confirmSetStartTime')).toContain('await queueEventSync(db, setStartEventId)')
-    expect(handler('handleUndo')).toContain('await queueSetScoreSync(db, { matchId, setIndex: undoneSetIndex })')
+    // Undo's writes are in undoEventTx (the decision change after a
+    // substitution or time-out takes those back through it too, row 19)
+    expect(handler('handleUndo')).toContain('await undoEventTx(lastEvent)')
+    expect(handler('undoEventTx')).toContain('await queueSetScoreSync(db, { matchId, setIndex: undoneSetIndex })')
   })
 
   // A body that catches a failed write and carries on commits the writes made
@@ -197,7 +200,7 @@ describe('Scoreboard: one transaction and one screen change per scorer action', 
   // change without its rotation, a time-out recorded while the scorer is told
   // it was not. Every catch in an action body rethrows.
   it('no action body swallows a failure: every catch rethrows, so the action rolls back as a whole', () => {
-    const bodies = [...ACTIONS.map(([name]) => name), 'restoreStateFromSnapshot']
+    const bodies = [...ACTIONS.map(([name]) => name), 'restoreStateFromSnapshot', 'undoEventTx', 'recordTeamSanction']
     for (const name of bodies) {
       const body = handler(name)
       const catches = [...body.matchAll(/\} catch \((\w+)\) \{/g)]

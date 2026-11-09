@@ -973,6 +973,29 @@
         "rule": "FIVB 15.10.4 · 16.1.3"
       }
     },
+    "lateRequest": {
+      "heading": "Wegen eines verspäteten Antrags unterbrochen?",
+      "replay": "Wiederholung wegen eines verspäteten Antrags von {{team}}: Verzögerungssanktion",
+      "penalty": "Verspäteter Antrag von {{team}}: Verzögerungsstrafe, keine Wiederholung",
+      "recordsWarning": "Erfasst: Verzögerungswarnung. Der Ballwechsel wird wiederholt; bis er abgeschlossen ist, kein Timeout und keine Auswechslung.",
+      "recordsPenalty": "Erfasst: Verzögerungsstrafe – Punkt und Aufschlag für {{opponent}}.",
+      "rule": "FIVB 15.11.1.1 · 16.1 · SSK Q182"
+    },
+    "improperReason": {
+      "title": "Wofür (freiwillig)",
+      "during_rally": "Während des Ballwechsels oder nach dem Pfiff",
+      "wrong_person": "Von der falschen Person beantragt",
+      "second_substitution": "Zweiter Auswechslungsantrag",
+      "limit_exhausted": "Zu viele Timeouts oder Auswechslungen",
+      "other": "Anderes"
+    },
+    "decisionTakeBack": {
+      "title": "Wird zuerst zurückgenommen",
+      "timeout": "Timeout {{team}}",
+      "substitution": "Auswechslung {{team}}: #{{in}} für #{{out}}",
+      "text": "Nach dem Punkt beantragt: die Auswechslung wird rückgängig gemacht und nicht gezählt, das Timeout gestrichen.",
+      "rule": "FIVB Casebook 8.5 · SSK 26-1"
+    },
     "teamSanctionConfirm": {
       "thirdTimeout": "{{team}} hat beide Timeouts dieses Satzes genommen. Ein drittes Gesuch ist eine unzulässige Anfrage.",
       "applyImproperRequest": "Unzulässige Anfrage für {{team}} erfassen?",
@@ -4217,6 +4240,13 @@
       "penalty": "Bestrafung",
       "expulsion": "Hinausstellung",
       "disqualification": "Disqualifikation"
+    },
+    "sanctionReason": {
+      "during_rally": "Während des Ballwechsels oder nach dem Pfiff",
+      "wrong_person": "Von der falschen Person beantragt",
+      "second_substitution": "Zweiter Auswechslungsantrag",
+      "limit_exhausted": "Timeouts oder Auswechslungen aufgebraucht",
+      "illegal_substitution": "Unerlaubte Auswechslung beantragt"
     },
     "target": {
       "player": "Spieler/in #{{n}}",

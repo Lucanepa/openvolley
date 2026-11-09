@@ -56,8 +56,9 @@ import { defaultSetStartTime, actualStartRemark, startsFromSchedule, startSchedu
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
 import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet, getLeftTeamLabelForSet } from '../domain/rules'
 import { resolveSanction, deriveTeamSanctionFlags, deferredPenaltyPoints, penaltyOfPoint, teamSanctionCounts } from '../domain/sanctions'
-import { REQUEST_ISSUES, isReplayPending, substitutionRequestIssues, timeoutRequestIssues, requestBlockReason, entryWithoutCompletedRally, substitutionRequestThisInterruption, substituteInIllegalReason } from '../domain/interruptionRequests'
-import RequestWarningDialog from './scoreboard/RequestWarningDialog.jsx'
+import { REQUEST_ISSUES, isReplayPending, substitutionRequestIssues, timeoutRequestIssues, requestBlockReason, entryWithoutCompletedRally, substitutionRequestThisInterruption, substituteInIllegalReason, lateRequestOutcome, sanctionReasonOfIssue, decisionChangeTakeBack, IMPROPER_REQUEST_REASONS } from '../domain/interruptionRequests'
+import RequestWarningDialog, { RequestOptionRow } from './scoreboard/RequestWarningDialog.jsx'
+import ImproperReasonPicker from './scoreboard/ImproperReasonPicker.jsx'
 import { classifyTimeoutRequest } from '../domain/timeouts'
 import { rallyStatusOf, currentSetOf } from '../domain/rally'
 import { useConfirmAction } from '../hooks/useConfirmAction'
@@ -3352,6 +3353,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return false
   }, [data?.events, data?.set])
 
+  // A decision change on the last point after time-outs or substitutions
+  // that followed it (row 19): they are taken back with it, as one action
+  // (domain/interruptionRequests decisionChangeTakeBack; CB 8.5, SSK News
+  // 26-1). null when the last event is the point (canReplayRally) or
+  // something else came after it (Undo, as before).
+  const decisionTakeBack = useMemo(() => (
+    !canReplayRally && data?.set ? decisionChangeTakeBack(data.events, data.set.index) : null
+  ), [canReplayRally, data?.events, data?.set])
+  const canChangeDecision = canReplayRally || !!decisionTakeBack
+
   const isFirstRally = useMemo(() => {
     if (!data?.events || !data?.set) return true
     // Check if there are any points in the current set
@@ -6088,6 +6099,72 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     settleTap(handlePoint(side, false, { tap: true }))
   }, [handlePoint, checkRallyTap, ignoreRallyTap])
 
+  // Write a team sanction (improper request, delay warning, delay penalty)
+  // inside the running scorer action: the match flags, the sanction event and
+  // a delay penalty's point (and its side-out rotation). One write for the
+  // sanction dialog, the request warning and the late-request replay, so they
+  // record the same rows. `reason` (domain/interruptionRequests
+  // TEAM_SANCTION_REASONS): what it was for, kept on the event (row 11).
+  const recordTeamSanction = useCallback(async ({ side, team: teamKey, type, reason = null }) => {
+    const teamKeyCapitalized = teamKey === 'home' ? 'Home' : 'Away'
+
+    // Update match sanctions for improper request and delay warning
+    // Store by team key (Home/Away) so sanctions follow the team when sides switch
+    if (type === 'improper_request' || type === 'delay_warning') {
+      const currentSanctions = data.match.sanctions || {}
+      await db.matches.update(matchId, {
+        sanctions: {
+          ...currentSanctions,
+          [`${type === 'improper_request' ? 'improperRequest' : 'delayWarning'}${teamKeyCapitalized}`]: true
+        }
+      })
+    }
+
+    // Log the sanction event
+    const sanctionSeq = await logEvent('sanction', {
+      team: teamKey,
+      type: type,
+      ...(reason ? { reason } : {})
+    })
+
+    // Debug log: sanction
+    debugLogger.log('SANCTION', {
+      team: teamKey,
+      type,
+      side,
+      reason
+    }, getStateSnapshot())
+
+    // If delay penalty, award point to the other team (but only if lineups are set)
+    if (type === 'delay_penalty') {
+      // Check if both lineups are set before awarding point
+      const homeLineupSet = data.events?.some(e =>
+        e.type === 'lineup' &&
+        e.payload?.team === 'home' &&
+        e.setIndex === data.set.index &&
+        e.payload?.isInitial
+      )
+      const awayLineupSet = data.events?.some(e =>
+        e.type === 'lineup' &&
+        e.payload?.team === 'away' &&
+        e.setIndex === data.set.index &&
+        e.payload?.isInitial
+      )
+
+      // An easy match plays without line-ups when it likes: the point now
+      if ((homeLineupSet && awayLineupSet) || data.match?.easy === true) {
+        // Both lineups are set - award point immediately (same transaction).
+        // Never asked as an accidental point: no tap gave it (a rally that
+        // had just started, as for a late request, asked "accidental?")
+        const otherSide = side === 'left' ? 'right' : 'left'
+        await handlePoint(otherSide, true, { penaltySeq: sanctionSeq })
+      } else {
+        // Lineups not set - show message
+        deferUi(() => showAlert('Delay penalty recorded. Point will be awarded after both teams set their lineups.', 'info'))
+      }
+    }
+  }, [data?.match, data?.set, data?.events, matchId, logEvent, handlePoint, deferUi, showAlert])
+
   const handleReplay = useCallback(async () => {
     // During rally: ask first, confirmReplay logs the replay event (no point to undo)
     if (rallyStatus === 'in_play') {
@@ -6133,15 +6210,40 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const description = `Point for ${teamName}`
         setReplayRallyConfirm({ event: pointEvent, description, selectedOption: 'swap' }) // Default to swap
       }
+      return
     }
-  }, [rallyStatus, canReplayRally, data?.events, data?.homeTeam?.name, data?.awayTeam?.name])
+    // After the point, time-outs or substitutions were recorded (row 19):
+    // the same dialog, which takes them back first (takeBack, newest first)
+    if (rallyStatus === 'idle' && decisionTakeBack) {
+      const pointEvent = decisionTakeBack.point
+      const teamName = pointEvent.payload?.team === 'home'
+        ? (data?.homeTeam?.name || t('common.home'))
+        : (data?.awayTeam?.name || t('common.away'))
+      setReplayRallyConfirm({ event: pointEvent, description: `Point for ${teamName}`, selectedOption: 'swap', takeBack: decisionTakeBack.requests })
+    }
+  }, [rallyStatus, canReplayRally, decisionTakeBack, data?.events, data?.homeTeam?.name, data?.awayTeam?.name])
 
-  // Confirmed "Replay rally": only while the rally is still in play
-  const confirmReplay = useCallback(() => runAction('replay', async () => {
+  // Confirmed "Replay rally": only while the rally is still in play.
+  // `lateRequestTeam` ('home' | 'away'; a click passes its event: ignored):
+  // the rally was stopped because that team asked for a time-out or a
+  // substitution during the rally or at or after the whistle to serve
+  // (R15.11.1.1). The game was delayed: the next delay sanction of the team
+  // (16.2; Q182, Q224, Q159), with the reason on the sanction. A delay
+  // warning goes with the replay, and the replay keeps every regular request
+  // closed until the replayed rally is completed (row 7, GL R15 §8). A delay
+  // penalty gives the point and the service to the opponent (16.2.3): no
+  // replay then, the penalty point is the completed rally (domain/
+  // interruptionRequests lateRequestOutcome). One action: one Undo takes back
+  // the sanction (and a penalty's point), the next the replay.
+  const confirmReplay = useCallback((lateRequestTeam) => runAction('replay', async () => {
     deferUi(() => setReplayConfirm(false))
     if (rallyStatus !== 'in_play') return
-    await logEvent('replay')
-  }), [logEvent, rallyStatus, runAction, deferUi])
+    const late = lateRequestTeam === 'home' || lateRequestTeam === 'away' ? lateRequestOutcome(data?.events, lateRequestTeam) : null
+    if (!late || late.replay) await logEvent('replay')
+    if (late) {
+      await recordTeamSanction({ side: mapTeamKeyToSide(lateRequestTeam), team: lateRequestTeam, type: late.sanction, reason: late.reason })
+    }
+  }), [logEvent, rallyStatus, runAction, deferUi, data?.events, recordTeamSanction, mapTeamKeyToSide])
 
   const cancelReplay = useCallback(() => {
     setReplayConfirm(false)
@@ -6155,7 +6257,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const openTeamSanctionConfirm = useCallback((side, requestedType, reason = null) => {
     const teamKey = mapSideToTeamKey(side)
     const resolved = resolveSanction(requestedType, teamSanctionCounts(data?.events, teamKey))
-    setSanctionConfirm({ side, team: teamKey, type: requestedType, resolved, reason })
+    // An improper request asks what it was for (row 11, ImproperReasonPicker):
+    // "other" until the scorer picks one, so Yes is still one tap
+    setSanctionConfirm({ side, team: teamKey, type: requestedType, resolved, reason, ...(requestedType === 'improper_request' ? { improperReason: 'other' } : {}) })
   }, [mapSideToTeamKey, data?.events])
 
   // The request warning (domain/interruptionRequests.js): the first issue of
@@ -6208,69 +6312,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // One action: the sanction, a delay penalty's point (and its side-out
   // rotation) and the dialog closing appear together
   // `explicit`: a sanction chosen in the request warning ({ side, team,
-  // resolved }), recorded the same way (a click passes its event: ignored)
+  // resolved, reason }), recorded the same way (a click passes its event: ignored)
   const confirmSanction = useCallback((explicit) => runSanctionConfirm(() => runAction('sanction', async () => {
     const chosen = explicit?.resolved ? explicit : sanctionConfirm
     if (!chosen || !data?.match || !data?.set) return
 
     // Everything comes from the dialog state taken when it opened: the team
-    // and the resolved sanction it showed.
+    // and the resolved sanction it showed, and what it was for (the request
+    // warning's, or the reason picked for an improper request; row 11)
     const { side, team: teamKey, resolved: type } = chosen
-    const teamKeyCapitalized = teamKey === 'home' ? 'Home' : 'Away'
+    const reason = explicit?.resolved ? (explicit.reason || null) : (chosen.type === 'improper_request' ? (chosen.improperReason || 'other') : null)
     deferUi(() => setSanctionConfirm(null))
 
-    // Update match sanctions for improper request and delay warning
-    // Store by team key (Home/Away) so sanctions follow the team when sides switch
-    if (type === 'improper_request' || type === 'delay_warning') {
-      const currentSanctions = data.match.sanctions || {}
-      await db.matches.update(matchId, {
-        sanctions: {
-          ...currentSanctions,
-          [`${type === 'improper_request' ? 'improperRequest' : 'delayWarning'}${teamKeyCapitalized}`]: true
-        }
-      })
-    }
-
-    // Log the sanction event
-    const sanctionSeq = await logEvent('sanction', {
-      team: teamKey,
-      type: type
-    })
-
-    // Debug log: sanction
-    debugLogger.log('SANCTION', {
-      team: teamKey,
-      type,
-      side
-    }, getStateSnapshot())
-
-    // If delay penalty, award point to the other team (but only if lineups are set)
-    if (type === 'delay_penalty') {
-      // Check if both lineups are set before awarding point
-      const homeLineupSet = data.events?.some(e =>
-        e.type === 'lineup' &&
-        e.payload?.team === 'home' &&
-        e.setIndex === data.set.index &&
-        e.payload?.isInitial
-      )
-      const awayLineupSet = data.events?.some(e =>
-        e.type === 'lineup' &&
-        e.payload?.team === 'away' &&
-        e.setIndex === data.set.index &&
-        e.payload?.isInitial
-      )
-
-      // An easy match plays without line-ups when it likes: the point now
-      if ((homeLineupSet && awayLineupSet) || data.match?.easy === true) {
-        // Both lineups are set - award point immediately (same transaction)
-        const otherSide = side === 'left' ? 'right' : 'left'
-        await handlePoint(otherSide, false, { penaltySeq: sanctionSeq })
-      } else {
-        // Lineups not set - show message
-        deferUi(() => showAlert('Delay penalty recorded. Point will be awarded after both teams set their lineups.', 'info'))
-      }
-    }
-  })), [runSanctionConfirm, sanctionConfirm, data?.match, data?.set, data?.events, matchId, logEvent, handlePoint, runAction, deferUi])
+    await recordTeamSanction({ side, team: teamKey, type, reason })
+  })), [runSanctionConfirm, sanctionConfirm, data?.match, data?.set, recordTeamSanction, runAction, deferUi])
 
   // Confirm set start time
   // One action: the start time, set_start + its first rally_start and the
@@ -7469,20 +7524,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
   }, [matchId, setIntervalDuration])
 
-  const runUndoConfirm = useConfirmAction(onConfirmFailed)
-  // One action: every write of the undo, its event history (the voids and
-  // their sync jobs, reason 'undo') and the dialog closing appear together
-  const handleUndo = useCallback(() => runUndoConfirm(() => runAction('undo', async () => {
-    cLogger.logHandler('handleUndo', { hasUndoConfirm: !!undoConfirm, eventType: undoConfirm?.event?.type })
-    if (!undoConfirm || !data?.set) {
-      deferUi(() => setUndoConfirm(null))
-      return
-    }
-
-    const lastEvent = undoConfirm.event
-    // Closed with the undone state (deferUi); a second tap is refused by
-    // useConfirmAction and the 'undo' key, never undoing the event twice
-    deferUi(() => setUndoConfirm(null))
+  // Take back one event of the current set, inside the running scorer action
+  // (its writes join it): what Undo does for the event it names. The decision
+  // change after a substitution or time-out (row 19) takes those back with
+  // it, so the two never differ.
+  const undoEventTx = useCallback(async (lastEvent) => {
     const lastEventSeq = lastEvent.seq || 0
     const baseSeq = Math.floor(lastEventSeq)
     // The undo's live state: the interval again when the set 5 setup's
@@ -7731,7 +7777,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       syncLiveStateToSupabase('undo', null, undoLiveData)
       notifyScoresheetUpdate('undo')
     }
-  }, { reason: 'undo' })), [runUndoConfirm, undoConfirm, data?.set, matchId, restoreStateFromSnapshot, discardEvents, applyForfeitReversal, resyncSetScoreFromEvents, settleCourtSwitchAfterUndo, set5IntervalAfterUndo, showAlert, syncToReferee, sendActionToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate, runAction, deferUi, deferEffect, timeoutModal])
+  }, [data?.set, matchId, restoreStateFromSnapshot, discardEvents, applyForfeitReversal, resyncSetScoreFromEvents, settleCourtSwitchAfterUndo, set5IntervalAfterUndo, showAlert, syncToReferee, sendActionToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate, deferUi, deferEffect, timeoutModal])
+
+  const runUndoConfirm = useConfirmAction(onConfirmFailed)
+  // One action: every write of the undo, its event history (the voids and
+  // their sync jobs, reason 'undo') and the dialog closing appear together
+  const handleUndo = useCallback(() => runUndoConfirm(() => runAction('undo', async () => {
+    cLogger.logHandler('handleUndo', { hasUndoConfirm: !!undoConfirm, eventType: undoConfirm?.event?.type })
+    if (!undoConfirm || !data?.set) {
+      deferUi(() => setUndoConfirm(null))
+      return
+    }
+
+    const lastEvent = undoConfirm.event
+    // Closed with the undone state (deferUi); a second tap is refused by
+    // useConfirmAction and the 'undo' key, never undoing the event twice
+    deferUi(() => setUndoConfirm(null))
+    await undoEventTx(lastEvent)
+  }, { reason: 'undo' })), [runUndoConfirm, undoConfirm, data?.set, undoEventTx, runAction, deferUi])
 
   // OLD UNDO LOGIC REMOVED - The following complex per-event-type logic has been replaced
   // by the snapshot-based undo system above. Keeping this comment for reference.
@@ -7862,6 +7925,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // record what it shows
     const selectedOption = replayRallyConfirm.selectedOption || 'swap'
 
+    // Row 19: the time-outs and substitutions recorded after the point go
+    // first, as Undo takes them back (with their line-up rows; a running
+    // time-out's countdown stops). The substitution is reversed and not
+    // counted (FIVB casebook 8.5), the time-out cancelled (SSK News 26-1).
+    // The swap below then reads the events as they are after it, not the
+    // screen's (a substitution's line-up would be rotated).
+    const takeBack = replayRallyConfirm.takeBack || []
+    if (takeBack.length > 0) deferUi(() => setReplayRallyConfirm(null))
+    for (const request of takeBack) await undoEventTx(request)
+    const events = takeBack.length > 0 ? await db.events.where('matchId').equals(matchId).toArray() : data.events
+
     if (selectedOption === 'swap') {
       // Closed with the swapped score (deferUi): the dialog's live score
       // preview never shows it (it showed e.g. 3:-1)
@@ -7924,7 +7998,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // (sideout rotation lineup, auto libero_exit). The rotation lineup carries a
         // liberoSubstitution whenever the libero is on court, so it must not be
         // filtered on that (domain/rotation, tested).
-        const oldTeamPointSubEvents = pointSubEventsForTeam(data.events, lastEvent, oldTeam)
+        const oldTeamPointSubEvents = pointSubEventsForTeam(events, lastEvent, oldTeam)
         // (drops the auto libero_exit's queued cloud job too)
         await discardEvents(oldTeamPointSubEvents)
         const deletedSubEventIds = new Set(oldTeamPointSubEvents.map(e => e.id))
@@ -7932,7 +8006,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
         // Determine who had serve BEFORE the original point was awarded
         // This is needed to know if the new team should rotate (if they were receiving)
-        const pointEventsBefore = data.events
+        const pointEventsBefore = events
           .filter(e => e.type === 'point' && e.setIndex === data.set.index && (e.seq || 0) < lastEventSeq)
           .sort((a, b) => (b.seq || 0) - (a.seq || 0))
 
@@ -7957,7 +8031,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const newTeamHadServe = serveBeforePoint === newTeam
         if (!newTeamHadServe) {
           // Query the new team's current lineup (latest by seq, as the engine orders)
-          const newTeamLineupEvents = data.events
+          const newTeamLineupEvents = events
             .filter(e => e.type === 'lineup' && e.payload?.team === newTeam && e.setIndex === data.set.index && !deletedSubEventIds.has(e.id))
             .sort((a, b) => (b.seq || 0) - (a.seq || 0))
 
@@ -8112,7 +8186,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       await handleReplayRally()
       return // handleReplayRally closes the modal and syncs
     }
-  }, { reason: 'decision_change' })), [runAction, deferUi, runDecisionChange, replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, afterPointScored, syncToReferee, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate, discardEvents])
+  }, { reason: 'decision_change' })), [runAction, deferUi, runDecisionChange, replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, afterPointScored, syncToReferee, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate, discardEvents, undoEventTx])
 
 
 
@@ -8164,9 +8238,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       else setSubstitutionConfirm({ ...warning.request, ...(issue.playerIn !== undefined && warning.request.playerIn === undefined ? { playerIn: issue.playerIn } : {}) }, { acknowledged })
       return
     }
-    // improper: the improper-request ladder; delay / timeoutStarted / illegal: the delay ladder
+    // improper: the improper-request ladder; delay / timeoutStarted / illegal: the delay ladder.
+    // The sanction keeps what it was for (row 11: a second substitution
+    // request, the limit used up, an illegal substitution requested)
     const resolved = option === 'improper' ? warning.consequences.improper : warning.consequences.delay
-    confirmSanction({ side: mapTeamKeyToSide(team), team, resolved })
+    confirmSanction({ side: mapTeamKeyToSide(team), team, resolved, reason: sanctionReasonOfIssue(issue.reason) })
   }, [requestWarning, handleTimeout, mapTeamKeyToSide, setSubstitutionConfirm, confirmSanction])
 
   // Confirm time-out: snapshot, close (start the countdown), then write.
@@ -13583,6 +13659,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         isFirstRally,
         startDisabled: isFirstRally && !lineupsOptional && (!leftTeamLineupSet || !rightTeamLineupSet),
         canReplayRally,
+        // Decision change: also after time-outs / substitutions that followed
+        // the last point (they are taken back with it, row 19)
+        canChangeDecision,
         isRallyReplayed,
         // Why the regular time-outs / substitutions are closed (replay
         // pending, set interval), one line for both teams
@@ -17290,7 +17369,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           {t('scoreboard.buttons.replay')}
                         </button>
                       )}
-                      {rallyStatus === 'idle' && canReplayRally && (
+                      {/* the last point, or the last point followed only by
+                          time-outs / substitutions (taken back with it, row 19) */}
+                      {rallyStatus === 'idle' && canChangeDecision && (
                         <button
                           onClick={handleReplay}
                           style={{
@@ -17306,7 +17387,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         </button>
                       )}
                       {/* Keep Undo in its half even when the left button is absent */}
-                      {rallyStatus === 'idle' && !canReplayRally && <span aria-hidden="true" />}
+                      {rallyStatus === 'idle' && !canChangeDecision && <span aria-hidden="true" />}
                       <button
                         data-help-id="scoreboard-undo"
                         className="danger"
@@ -22876,6 +22957,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     {t('scoreboard.teamSanctionConfirm.repeatedImproperRequest')}
                   </p>
                 )}
+                {/* What the improper request was for (FIVB 15.11.1), kept on
+                    the sanction; optional ("Other") */}
+                {requested === 'improper_request' && (
+                  <ImproperReasonPicker
+                    reasons={IMPROPER_REQUEST_REASONS}
+                    value={sanctionConfirm.improperReason || 'other'}
+                    onChange={(improperReason) => setSanctionConfirm(prev => (prev ? { ...prev, improperReason } : prev))}
+                  />
+                )}
                 {requested === 'delay_warning' && resolved === 'delay_penalty' && (
                   <p style={{ marginBottom: '12px', fontSize: '14px', color: 'var(--muted)' }}>
                     {t('scoreboard.teamSanctionConfirm.repeatedDelay')}
@@ -23524,6 +23614,42 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 {t('common.cancel')}
               </SbButton>
             </div>
+            {/* The rally was stopped because a team asked for a time-out or a
+                substitution during it, or at or after the whistle to serve:
+                a delay (row 10; confirmReplay). Team A first, each option
+                says what the delay ladder records for that team */}
+            {(() => {
+              const nameOf = key => key === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))
+              const labelOf = key => `${key === teamAKey ? 'A' : 'B'} (${nameOf(key)})`
+              const teamBKey = teamAKey === 'home' ? 'away' : 'home'
+              return (
+                <div className="ov-kit" data-testid="late-request-options" style={{ marginTop: '20px', textAlign: 'left' }}>
+                  <p className="m-0 mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">
+                    {t('scoreboard.lateRequest.heading')}
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    {[teamAKey, teamBKey].map(key => {
+                      const late = lateRequestOutcome(data?.events, key)
+                      const opponent = labelOf(key === 'home' ? 'away' : 'home')
+                      return (
+                        <RequestOptionRow
+                          key={key}
+                          option="lateRequest"
+                          testId={`late-request-${key}`}
+                          label={t(late.replay ? 'scoreboard.lateRequest.replay' : 'scoreboard.lateRequest.penalty', { team: labelOf(key) })}
+                          sub={late.replay ? t('scoreboard.lateRequest.recordsWarning') : t('scoreboard.lateRequest.recordsPenalty', { opponent })}
+                          card={late.sanction}
+                          onClick={() => confirmReplay(key)}
+                        />
+                      )
+                    })}
+                  </div>
+                  <p className="mt-2 mb-0 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">
+                    {t('scoreboard.lateRequest.rule')}
+                  </p>
+                </div>
+              )
+            })()}
           </div>
         </Modal>
       )}
@@ -23592,6 +23718,28 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               <p style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--muted)', textAlign: 'center' }}>
                 Last point was assigned to <strong><span style={{ ...teamBoxStyle(oldTeamColor), padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, marginRight: '4px' }}>{oldTeamLabel}</span>{oldTeamName}</strong>
               </p>
+
+              {/* Row 19: what came after the point is taken back first, in
+                  the order it was recorded (handleDecisionChange) */}
+              {replayRallyConfirm.takeBack?.length > 0 && (
+                <div className="ov-kit" data-testid="decision-take-back" style={{ marginBottom: '16px', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--panel-2)', textAlign: 'left' }}>
+                  <p className="m-0 text-sm font-semibold text-stone-900">{t('scoreboard.decisionTakeBack.title')}</p>
+                  <ul className="m-0 mt-1 list-disc pl-5 text-sm text-stone-800">
+                    {[...replayRallyConfirm.takeBack].reverse().map(e => {
+                      const letter = e.payload?.team === 'home' ? homeLabel : awayLabel
+                      return (
+                        <li key={e.id ?? e.seq}>
+                          {e.type === 'timeout'
+                            ? t('scoreboard.decisionTakeBack.timeout', { team: letter })
+                            : t('scoreboard.decisionTakeBack.substitution', { team: letter, in: e.payload?.playerIn, out: e.payload?.playerOut })}
+                        </li>
+                      )
+                    })}
+                  </ul>
+                  <p className="m-0 mt-1.5 text-xs text-stone-500">{t('scoreboard.decisionTakeBack.text')}</p>
+                  <p className="m-0 mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">{t('scoreboard.decisionTakeBack.rule')}</p>
+                </div>
+              )}
 
               {/* Horizontal radio buttons */}
               <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>

@@ -28,6 +28,7 @@
 
 import { MAX_SUBSTITUTIONS_PER_SET, countRegularSubstitutions } from './substitutions'
 import { TIMEOUTS_PER_SET } from './timeouts'
+import { resolveSanction, teamSanctionCounts } from './sanctions'
 
 const setOf = (e) => e?.setIndex ?? 1
 const seqOf = (e) => e?.seq || 0
@@ -267,4 +268,117 @@ export function substituteInIllegalReason(events, setIndex, team, playerOut, pla
     if (lastCompletedRallySeq(events, setIndex) < seqOf(exit)) return 'no_rally_since_out'
   }
   return null
+}
+
+// ───────────── what the sanction was for (row 11; payload.reason) ─────────────
+
+/**
+ * Why an improper request was recorded (R15.11.1): the four kinds the rule
+ * lists, and "other". Kept on the sanction event as payload.reason, so the
+ * corrections list and the event log say what it was for. The scorer picks
+ * one in the Improper request dialog (optional: "other" when untouched); a
+ * request warning fills it in itself.
+ *  during_rally        15.11.1.1 during the rally, at or after the whistle to serve
+ *  wrong_person        15.11.1.2 by a team member not authorized (15.3.1: the
+ *                      coach, else the assistant coach or the game captain)
+ *  second_substitution 15.11.1.3 a second substitution request in the same interruption
+ *  limit_exhausted     15.11.1.4 after the time-outs or substitutions were used up
+ *  other               anything else
+ */
+export const IMPROPER_REQUEST_REASONS = ['during_rally', 'wrong_person', 'second_substitution', 'limit_exhausted', 'other']
+
+/**
+ * Every reason a team sanction may carry: the improper-request reasons and,
+ * for a delay given from a request warning, the illegal substitution
+ * requested (16.1.3).
+ */
+export const TEAM_SANCTION_REASONS = [...IMPROPER_REQUEST_REASONS, 'illegal_substitution']
+
+const ISSUE_SANCTION_REASON = {
+  second_substitution_request: 'second_substitution',
+  no_rally_since_entry: 'second_substitution',
+  substitution_limit: 'limit_exhausted',
+  third_timeout: 'limit_exhausted',
+  illegal_substitution: 'illegal_substitution'
+}
+
+/**
+ * The reason a sanction chosen in the request warning records (payload.reason),
+ * from the warning it answers; null for an issue that records nothing.
+ * @param {string} issueReason REQUEST_ISSUES key
+ */
+export function sanctionReasonOfIssue(issueReason) {
+  return ISSUE_SANCTION_REASON[issueReason] || null
+}
+
+/** A known team-sanction reason, or null (an unknown or missing one is not shown). */
+export function teamSanctionReason(payload) {
+  const r = payload?.reason
+  return TEAM_SANCTION_REASONS.includes(r) ? r : null
+}
+
+// ───────────── a late request stopped the rally (row 10) ─────────────
+
+/**
+ * A request made during the rally or at or after the whistle to serve
+ * (R15.11.1.1) that made the referees stop the rally: the game was delayed,
+ * so it is a delay sanction, not an improper request (Q182, Q224, Q159; the
+ * first late request that stopped nothing is an improper request recorded
+ * after the rally, CB 4.20, Q191). What the scorer's "Replay rally" records
+ * for it, through the delay ladder (16.2):
+ *  - delay warning: the rally is replayed (a `replay`), and while it waits
+ *    no regular request is allowed (row 7, isReplayPending);
+ *  - delay penalty: no replay; the penalty gives the point and the service
+ *    to the opponent (16.2.3), and that point is the completed rally.
+ * @param {Array} events all match events
+ * @param {'home'|'away'} team the team that made the late request
+ * @returns {{ sanction: 'delay_warning'|'delay_penalty', replay: boolean, reason: 'during_rally' }}
+ */
+export function lateRequestOutcome(events, team) {
+  const sanction = resolveSanction('delay_warning', teamSanctionCounts(events, team))
+  return { sanction, replay: sanction !== 'delay_penalty', reason: 'during_rally' }
+}
+
+// ───────────── decision change after a substitution or time-out (row 19) ─────────────
+
+const baseSeqOf = (e) => Math.floor(seqOf(e))
+
+/**
+ * The requests to take back before a decision change on the set's last point,
+ * when time-outs or substitutions were recorded after it: the referee
+ * reverses his decision after a team asked for a time-out or substitution
+ * because of it. The substitution is reversed and not counted (FIVB casebook
+ * 8.5, Q5, Q169); a time-out taken because of the reversed decision is
+ * cancelled (SSK News 26-1). The scorer then no longer has to Undo them first.
+ *
+ * Offered only when everything recorded after the point is a regular
+ * substitution (with its own line-up rows, N.x) or a time-out. A forced
+ * substitution (an injured or sanctioned player must be replaced whatever
+ * the decision), a libero replacement, a sanction, a started rally or
+ * anything else after the point: null (Undo, as before).
+ *
+ * @param {Array} events all match events
+ * @param {number} setIndex
+ * @returns {null | { point: object, requests: Array }} requests: the time-out and
+ *   substitution events to take back, newest first (the order Undo takes them)
+ */
+export function decisionChangeTakeBack(events, setIndex) {
+  const inSet = setEventsInOrder(events, setIndex)
+  const lastPointSeq = lastCompletedRallySeq(events, setIndex)
+  if (lastPointSeq === -Infinity) return null
+  const point = inSet.find(e => e.type === 'point' && seqOf(e) === lastPointSeq)
+  if (!point) return null
+  const after = inSet.filter(e => baseSeqOf(e) > baseSeqOf(point))
+  if (after.length === 0) return null
+  const heads = after.filter(e => seqOf(e) === baseSeqOf(e))
+  const isRequest = (e) => e.type === 'timeout' || (e.type === 'substitution' && !isForcedSubstitution(e))
+  if (heads.length === 0 || !heads.every(isRequest)) return null
+  // the rows written with a request: a substitution's own line-up (N.x)
+  const headOf = new Map(heads.map(h => [baseSeqOf(h), h]))
+  const ownRow = (e) => {
+    const head = headOf.get(baseSeqOf(e))
+    return !!head && e.type === 'lineup' && head.type === 'substitution' && e.payload?.team === head.payload?.team
+  }
+  if (!after.every(e => headOf.get(baseSeqOf(e)) === e || ownRow(e))) return null
+  return { point, requests: [...heads].sort((a, b) => seqOf(b) - seqOf(a)) }
 }
