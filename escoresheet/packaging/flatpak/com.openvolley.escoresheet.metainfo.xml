@@ -71,6 +71,16 @@
   </screenshots>
 
   <releases>
+    <release version="3.0.14" date="2026-11-09">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.14</url>
+      <description>
+        <ul>
+          <li>Bench tablet: warnings, penalties and disqualifications show again (in the list, on the player and on the bench).</li>
+          <li>Referee tablet: a popup for each time-out, substitution and sanction; the running time-out moves to the court when it is closed.</li>
+          <li>Roster PDF: the licence numbers of the Einsatzliste are kept.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.0.13" date="2026-11-09">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.13</url>
       <description>
