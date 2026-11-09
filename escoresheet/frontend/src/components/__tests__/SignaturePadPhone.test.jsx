@@ -197,9 +197,9 @@ describe('B1 / B2: every SignaturePad is rendered with `open`', () => {
   }
   walk(SRC)
 
-  it('finds the pads of MatchEnd, Scoreboard, CoinToss (both) and MatchSetup (three)', () => {
+  it('finds the pads of MatchEnd (two: the sheet\'s boxes, a signature in the remarks), Scoreboard, CoinToss (both) and MatchSetup (three)', () => {
     const count = (f) => (readFileSync(join(SRC, 'components', f), 'utf8').match(/<SignaturePad\b/g) || []).length
-    expect(count('MatchEnd.jsx')).toBe(1)
+    expect(count('MatchEnd.jsx')).toBe(2)
     expect(count('Scoreboard.jsx')).toBe(1)
     expect(count('CoinToss.jsx')).toBe(2)
     expect(count('MatchSetup.jsx')).toBe(3)

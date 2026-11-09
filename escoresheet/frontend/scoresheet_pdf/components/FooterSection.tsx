@@ -106,6 +106,8 @@ interface RemarksProps {
     generated?: string[];
     /** Told whether the text does not fit the box even at the smallest size. */
     onClipped?: (clipped: boolean) => void;
+    /** Officials who signed a remark (a referee coach, ...): domain/remarksSignatures. */
+    signatures?: Array<{ role: string; name?: string; image: string }>;
 }
 
 /** One overflow sanction as a remark line, in the sanction-row format (field-spec 7.2). */
@@ -142,7 +144,7 @@ export const remarksText = ({ overflowSanctions = [], remarks = '', generated = 
 /** The first line of a REMARKS box too small for its text: the PDF prints all of it on page 2. */
 export const REMARKS_CONTINUED = 'Remarks continue on page 2.';
 
-export const Remarks: React.FC<RemarksProps> = ({ overflowSanctions = [], remarks = '', generated = [], onClipped }) => {
+export const Remarks: React.FC<RemarksProps> = ({ overflowSanctions = [], remarks = '', generated = [], onClipped, signatures = [] }) => {
     // One text (remarksText). It wraps and shrinks to fit the box: never a
     // scrollbar in the PDF. Still too long at the smallest size, it starts with
     // REMARKS_CONTINUED and the PDF prints the whole text on a second page.
@@ -179,13 +181,26 @@ export const Remarks: React.FC<RemarksProps> = ({ overflowSanctions = [], remark
         // a box of its own, apart from SANCTIONS and RESULT (owner 2026-10-13)
         <div className="border border-black bg-white flex flex-col h-full">
             <div className="bg-gray-200 border-b border-black text-center font-bold text-[10px] py-0.5 shrink-0">REMARKS</div>
-            <div ref={boxRef} className="px-1 flex-1 flex flex-col overflow-hidden min-h-0 relative">
-                {ruled && [1, 2, 3].map(k => (
-                    <div key={k} className="absolute left-0 right-0 border-t ss-rule pointer-events-none" style={{ top: `${k * 25}%` }} data-testid="remarks-rule" aria-hidden="true" />
-                ))}
-                <FitText max={MAX_PX} min={4} multiline className={`w-full h-full relative ${banded ? '' : 'leading-tight py-0.5'}`} style={banded ? { lineHeight: `${band}px` } : undefined} data-testid="remarks-text" onClipped={banded ? undefined : reportClipped}>
-                    {text}
-                </FitText>
+            <div className="flex-1 flex min-h-0">
+                <div ref={boxRef} className="px-1 flex-1 min-w-0 flex flex-col overflow-hidden min-h-0 relative">
+                    {ruled && [1, 2, 3].map(k => (
+                        <div key={k} className="absolute left-0 right-0 border-t ss-rule pointer-events-none" style={{ top: `${k * 25}%` }} data-testid="remarks-rule" aria-hidden="true" />
+                    ))}
+                    <FitText max={MAX_PX} min={4} multiline className={`w-full h-full relative ${banded ? '' : 'leading-tight py-0.5'}`} style={banded ? { lineHeight: `${band}px` } : undefined} data-testid="remarks-text" onClipped={banded ? undefined : reportClipped}>
+                        {text}
+                    </FitText>
+                </div>
+                {/* officials who signed a remark (referee coach, ...), beside the text */}
+                {signatures.length > 0 && (
+                    <div className="shrink-0 border-l border-black flex flex-col min-h-0" style={{ width: '32%' }} data-testid="remarks-signatures">
+                        {signatures.map((sig, i) => (
+                            <div key={i} className={`flex-1 min-h-0 flex flex-col items-center justify-end px-0.5 ${i > 0 ? 'border-t border-black' : ''}`} data-testid="remarks-signature">
+                                <img src={sig.image} alt={sig.role} className="min-h-0 max-w-full object-contain flex-1" style={{ maxHeight: '75%' }} />
+                                <div className="text-[6px] leading-none pb-px whitespace-nowrap overflow-hidden text-ellipsis max-w-full">{sig.name ? `${sig.role} · ${sig.name}` : sig.role}</div>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
         </div>
     );
