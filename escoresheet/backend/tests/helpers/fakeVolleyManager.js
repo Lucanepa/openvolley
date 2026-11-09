@@ -12,6 +12,10 @@ export const FAKE_PASSWORD = 'pw-S3cret!&=+'
 export const FAKE_CSRF = 'csrf-0123456789abcdef0123456789abcdef'
 export const FAKE_SESSION_1 = 'sess-anon-aaaaaaaaaaaa'
 export const FAKE_SESSION_2 = 'sess-auth-bbbbbbbbbbbb'
+/** The dashboard's CSRF token (the role switch), not the referee page's. */
+export const FAKE_DASH_CSRF = 'dash-csrf-fedcba9876543210fedcba98'
+/** The account's referee-delegate role attribute (lib/vmSync.js VM_ROLE_FOR_GAMES). */
+export const FAKE_REFEREE_ROLE = 'e693b8cf-3fda-4a8d-b091-b3c7dae850ec'
 
 const USER_FIELD = '__authentication[Neos][Flow][Security][Authentication][Token][UsernamePassword][username]'
 const PASS_FIELD = '__authentication[Neos][Flow][Security][Authentication][Token][UsernamePassword][password]'
@@ -46,6 +50,9 @@ function cookieMap(header) {
  * @param {number}   [o.transient500]    first N requests of any kind answer 503
  * @param {number}   [o.reportTotal]     totalItemsCount to report (default games.length)
  * @param {number}   [o.maxPageSize]     server-side cap on searchConfiguration[limit]
+ * @param {string}   [o.startRole]       the account's active role at login: 'club' (what
+ *                                       another job leaves behind) or 'referee'
+ * @param {boolean}  [o.refuseSwitch]    the role switch answers 403
  */
 export function createFakeVolleyManager({
   games = [],
@@ -53,10 +60,14 @@ export function createFakeVolleyManager({
   failSearchAt = null,
   transient500 = 0,
   reportTotal = null,
-  maxPageSize = null
+  maxPageSize = null,
+  startRole = 'club',
+  refuseSwitch = false
 } = {}) {
   const calls = []
   let transientLeft = transient500
+  // VolleyManager keeps the active role per account, across logins
+  let role = startRole
 
   async function fetch(url, init = {}) {
     const u = new URL(url)
@@ -103,8 +114,21 @@ export function createFakeVolleyManager({
       return authed ? html('<html><title>Dashboard</title></html>') : redirect('/login')
     }
 
+    if (method === 'GET' && u.pathname === '/') {
+      return authed ? html(`<html><body><div id="dashboard" data-csrf-token="${FAKE_DASH_CSRF}"></div></body></html>`) : redirect('/login')
+    }
+
+    if (method === 'PUT' && u.pathname === '/api/sportmanager.security/api%5cparty/switchRoleAndAttribute') {
+      const form = new URLSearchParams(body)
+      if (!authed || form.get('__csrfToken') !== FAKE_DASH_CSRF || refuseSwitch) return html('forbidden', { status: 403 })
+      role = form.get('attributeValueAsArray[0]') === FAKE_REFEREE_ROLE ? 'referee' : 'other'
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+
     if (method === 'GET' && u.pathname === '/indoorvolleyball.refadmin/refereegame/index') {
       if (!authed) return redirect('/login', { status: 302 })
+      // only the referee-delegate role may open it (a club role: 403, as on 2026-11-09)
+      if (role !== 'referee') return html('Zugriff verweigert', { status: 403 })
       return html(`<html><body><div id="app" data-csrf-token="${FAKE_CSRF}"></div></body></html>`)
     }
 
@@ -122,7 +146,7 @@ export function createFakeVolleyManager({
     return html('not found', { status: 404 })
   }
 
-  return { fetch, calls, baseUrl: FAKE_BASE }
+  return { fetch, calls, baseUrl: FAKE_BASE, role: () => role }
 }
 
 /** A VM search item with the fields transformGame reads. */
