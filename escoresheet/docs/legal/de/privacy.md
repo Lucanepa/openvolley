@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-**OpenVolley und OpenBeach** · Version 1.8 · Stand: 9. November 2026
+**OpenVolley und OpenBeach** · Version 1.9 · Stand: 9. November 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
 Massgebend ist die englische Fassung.
@@ -24,8 +24,9 @@ Massgebend ist die englische Fassung.
   tippen, bleibt auf Ihrem Gerät, ausser einer Zusammenfassung ohne den
   eingetippten Text, wenn Sie einer Support-Anfrage die Diagnosedaten
   mitsenden (Abschnitte 5 und 13).
-- Der Server steht in der Schweiz und wird von mir betrieben. Cloudflare (USA)
-  liefert die Websites aus und leitet den Verkehr zum Server weiter.
+- Der Server steht in der Schweiz: Ich miete ihn bei Infomaniak in Genf und
+  betreibe ihn selbst. Cloudflare (USA) liefert die Websites aus und leitet den
+  Verkehr zum Server weiter.
 - Ist der Versand eingeschaltet, erhalten nach einem offiziellen Spiel die
   Schreiberin oder der Schreiber, die Schiedsrichterinnen und Schiedsrichter
   und die Vereine der beiden Teams den fertigen Spielbericht per E-Mail
@@ -564,8 +565,8 @@ Der Server leitet die Anfrage als eine E-Mail an support@openvolley.app
 weiter, mit Ihrer Adresse als Antwortadresse. Er behält davon nichts ausser
 einer Protokollzeile mit Art, Bereich und einer gekürzten Form Ihrer
 E-Mail-Adresse (Abschnitt 14). Das Postfach liegt bei Migadu (Abschnitt 15).
-Mein Helpdesk (support.openvolley.app), den ich selbst auf meinem Server in
-der Schweiz betreibe, liest es, damit ich Ihnen antworten und Ihre Anfrage
+Mein Helpdesk (support.openvolley.app), den ich selbst auf meinem Server bei
+Infomaniak in der Schweiz betreibe, liest es, damit ich Ihnen antworten und Ihre Anfrage
 nachverfolgen kann. Ich verwende Ihre Adresse nur, um Ihnen zu antworten.
 **Für Anfragen zu Ihren Daten schreiben Sie bitte direkt an
 support@openvolley.app.**
@@ -623,6 +624,7 @@ brauche. Sie bearbeiten die Daten in meinem Auftrag.
 
 | Dienstleister | Aufgabe | Land |
 |---|---|---|
+| Infomaniak Network SA | Betrieb des Servers: Datenbank, Dateien, Helpdesk und Download-Seite | Schweiz |
 | Cloudflare, Inc. | Auslieferung der Websites, DNS, sichere Verbindung zum Server | USA (weltweites Netz) |
 | Migadu | E-Mail-Versand (noreply@) und Postfach (support@) | Schweiz / Europa |
 | Resend, Inc. | Versand der Spielinfo per E-Mail (nur diese Funktion, falls aktiviert) | USA |
@@ -637,9 +639,10 @@ Erbringung seines Dienstes verwenden.
 die Versionsliste, F-Droid für den App-Katalog, Swiss Volley für die Daten
 im VolleyManager.
 
-**Datensicherungen** liegen verschlüsselt auf meinem Server und auf meinem
-eigenen Speichergerät, beide in der Schweiz; dafür gebe ich keine Daten an
-Dritte (Abschnitt 18).
+**Datensicherungen** liegen verschlüsselt auf meinem Server bei Infomaniak und
+auf meinem eigenen Speichergerät, beide in der Schweiz. Sie werden
+verschlüsselt, bevor sie den Server verlassen; niemand sonst kann sie lesen
+(Abschnitt 18).
 
 **Übermittlung ins Ausland:** Die Staaten der EU und des EWR bieten nach dem
 Schweizer Bundesrat einen angemessenen Datenschutz. Für die USA stütze ich mich auf das
@@ -702,7 +705,7 @@ für ihr Kind ausüben.
   schreibgeschützt.
 - Begrenzung von Anmeldeversuchen und Sperre nach Fehlversuchen.
 - Datensicherungen: Der Server sichert die Datenbank stündlich und die
-  Dateien täglich, **verschlüsselt**. Die Sicherungen werden täglich auf mein
+  Dateien täglich, **verschlüsselt**. Die Sicherungen werden stündlich auf mein
   eigenes Speichergerät in der Schweiz kopiert und dort in täglichen,
   wöchentlichen und monatlichen Schnappschüssen **bis etwa 6 Monate**
   aufbewahrt. Gelöschte Daten

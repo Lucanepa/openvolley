@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.8 · État au 9 novembre 2026
+**OpenVolley et OpenBeach** · Version 1.9 · État au 9 novembre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version anglaise fait foi.
@@ -26,8 +26,9 @@ version anglaise fait foi.
   vous cliquez ou tapez reste sur votre appareil, sauf un résumé sans le texte
   saisi si vous joignez les diagnostics à une demande de support (sections 5
   et 13).
-- Le serveur se trouve en Suisse et est exploité par moi. Cloudflare
-  (États-Unis) diffuse les sites web et transmet le trafic au serveur.
+- Le serveur se trouve en Suisse : je le loue chez Infomaniak à Genève et
+  l'exploite moi-même. Cloudflare (États-Unis) diffuse les sites web et
+  transmet le trafic au serveur.
 - Lorsque l'envoi est activé, le marqueur, les arbitres et les clubs des deux
   équipes reçoivent par e-mail la feuille de match finale d'un match officiel
   (section 7).
@@ -591,7 +592,7 @@ support@openvolley.app, avec votre adresse comme adresse de réponse. Il n'en
 garde rien, sauf une ligne de journal avec le type, le domaine et une forme
 abrégée de votre adresse e-mail (section 14). La boîte aux lettres est
 hébergée par Migadu (section 15). Mon système de tickets
-(support.openvolley.app), que j'exploite moi-même sur mon serveur en Suisse,
+(support.openvolley.app), que j'exploite moi-même sur mon serveur chez Infomaniak en Suisse,
 la lit, afin que je puisse vous répondre et suivre votre demande. J'utilise
 votre adresse uniquement pour vous répondre. **Pour les demandes concernant
 vos données, écrivez directement à support@openvolley.app.**
@@ -651,6 +652,7 @@ besoin pour l'exploitation. Ils traitent les données sur mandat.
 
 | Prestataire | Tâche | Pays |
 |---|---|---|
+| Infomaniak Network SA | Hébergement du serveur : base de données, fichiers, helpdesk et page de téléchargement | Suisse |
 | Cloudflare, Inc. | Diffusion des sites, DNS, connexion sécurisée au serveur | États-Unis (réseau mondial) |
 | Migadu | Envoi d'e-mails (noreply@) et boîte aux lettres (support@) | Suisse / Europe |
 | Resend, Inc. | Envoi des infos du match par e-mail (seulement cette fonction, si activée) | États-Unis |
@@ -665,9 +667,10 @@ utiliser les données que pour fournir son service.
 les téléchargements et la liste des versions, F-Droid pour le catalogue
 d'applications, Swiss Volley pour les données du VolleyManager.
 
-**Les sauvegardes** sont conservées chiffrées sur mon serveur et sur mon
-propre support de stockage, tous deux en Suisse ; aucun tiers ne reçoit de
-données à cet effet (section 18).
+**Les sauvegardes** sont conservées chiffrées sur mon serveur chez Infomaniak
+et sur mon propre support de stockage, tous deux en Suisse. Elles sont
+chiffrées avant de quitter le serveur ; personne d'autre ne peut les lire
+(section 18).
 
 **Communication à l'étranger :** selon le Conseil fédéral, les États de l'UE
 et de l'EEE offrent une protection adéquate des données. Pour les États-Unis, je me
@@ -730,7 +733,7 @@ section 19 pour leur enfant.
   sont en lecture seule.
 - Limitation des tentatives de connexion et blocage après des échecs.
 - Sauvegardes : le serveur sauvegarde la base de données chaque heure et les
-  fichiers chaque jour, **chiffrés**. Les sauvegardes sont copiées chaque jour
+  fichiers chaque jour, **chiffrés**. Les sauvegardes sont copiées chaque heure
   sur mon propre support de stockage en Suisse et y sont conservées dans des
   instantanés quotidiens, hebdomadaires et mensuels **jusqu'à environ
   6 mois**. Des données effacées

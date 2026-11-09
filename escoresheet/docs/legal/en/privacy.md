@@ -1,6 +1,6 @@
 # Privacy policy
 
-**OpenVolley and OpenBeach** · Version 1.8 · As of 9 November 2026
+**OpenVolley and OpenBeach** · Version 1.9 · As of 9 November 2026
 
 This policy is available in German, English, French and Italian. The English
 version is binding.
@@ -22,8 +22,9 @@ version is binding.
   passwords. When you are signed in it goes to the server. What you click or
   type stays on your device, except for a summary without the text you typed
   when you include diagnostics with a support request (sections 5 and 13).
-- The server is in Switzerland and is run by me. Cloudflare (USA) delivers the
-  websites and forwards the traffic to the server.
+- The server is in Switzerland: I rent it from Infomaniak in Geneva and run it
+  myself. Cloudflare (USA) delivers the websites and forwards the traffic to the
+  server.
 - When sending is switched on, the scorer, the referees and the clubs of both
   teams receive the final scoresheet of an official match by email
   (section 7).
@@ -520,7 +521,7 @@ The server forwards the request as one email to support@openvolley.app, with
 your address as the reply address. It keeps nothing of it except a log line
 with the type, the area and a shortened form of your email address
 (section 14). The mailbox is hosted by Migadu (section 15). My helpdesk
-(support.openvolley.app), which I run myself on my server in Switzerland,
+(support.openvolley.app), which I run myself on my server at Infomaniak in Switzerland,
 reads it so that I can answer you and keep track of your request. I use your
 address only to answer you. **For requests about your data, please write
 directly to support@openvolley.app.**
@@ -573,6 +574,7 @@ They process the data on my behalf.
 
 | Provider | Task | Country |
 |---|---|---|
+| Infomaniak Network SA | Hosting the server: database, files, helpdesk and download page | Switzerland |
 | Cloudflare, Inc. | Delivering the websites, DNS, secure connection to the server | USA (global network) |
 | Migadu | Sending email (noreply@) and mailbox (support@) | Switzerland / Europe |
 | Resend, Inc. | Sending the match info by email (this function only, if enabled) | USA |
@@ -586,8 +588,9 @@ dates of birth. Cloudflare may use the data only to provide its service.
 version list, F-Droid for the app catalogue, Swiss Volley for the data in
 VolleyManager.
 
-**Backups** are kept encrypted on my server and on my own storage device,
-both in Switzerland; no third party receives data for this (section 18).
+**Backups** are kept encrypted on my server at Infomaniak and on my own
+storage device, both in Switzerland. They are encrypted before they leave the
+server, so nobody else can read them (section 18).
 
 **Transfers abroad:** according to the Swiss Federal Council, the EU and EEA
 states provide adequate data protection. For the USA I rely on the Swiss-U.S. Data
@@ -647,7 +650,7 @@ for their child.
 - Access by role; tablets only with a PIN; closed matches are read-only.
 - Limits on sign-in attempts and locking after failed attempts.
 - Backups: the server backs up the database every hour and the files every
-  day, **encrypted**. The backups are copied daily to my own storage device
+  day, **encrypted**. The backups are copied every hour to my own storage device
   in Switzerland and kept there in daily, weekly and monthly snapshots **for
   up to about 6 months**. Deleted data can therefore remain in these encrypted backups for
   up to about 6 months; they are used only to restore the service.
