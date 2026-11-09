@@ -460,7 +460,9 @@ describe('the closing signatures of a match restored by game PIN', () => {
   const SIGNATURES = {
     home_coach: 'data:hc', home_captain: 'data:hk', away_coach: 'data:ac', away_captain: 'data:ak',
     home_captain_post_game: 'data:hp', away_captain_post_game: 'data:ap',
-    asst_scorer: 'data:as', scorer: 'data:sc', ref2: 'data:r2', ref1: 'data:r1'
+    asst_scorer: 'data:as', scorer: 'data:sc', ref2: 'data:r2', ref1: 'data:r1',
+    // a referee coach's signature in the REMARKS (domain/remarksSignatures)
+    remarks: [{ role: 'Referee coach', name: 'Anna Muster', image: 'data:image/png;base64,AAAA', signedAt: '2026-11-09T18:00:00.000Z' }]
   }
   const restore = (match = {}) => importMatchFromSupabase({
     match: { external_id: SEED, game_n: 7, status: 'ended', coin_toss: { team_a: 'away', team_b: 'home', confirmed: true }, signatures: SIGNATURES, ...match },

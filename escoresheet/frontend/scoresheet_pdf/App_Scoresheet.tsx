@@ -4,6 +4,7 @@ import { Header } from './components/Header';
 import { StandardSet } from './components/StandardSet';
 import { COURT_CHANGE_W, SetFive } from './components/SetFive';
 import { Sanctions, Results, Approvals, Roster, Remarks, SANCTION_ROWS, remarksText } from './components/FooterSection';
+import { remarksSignaturesOf } from '../src/domain/remarksSignatures';
 import { LEGEND_WIDTH, LeftInfoBox } from './components/LeftInfoBox';
 import { LiberoControlSheet } from './components/LiberoControlSheet';
 import { Player, SanctionRecord } from './types_scoresheet';
@@ -2140,7 +2141,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                   <div className="flex flex-col gap-1 min-h-0 shrink-0" style={{ width: `calc(150mm - 2 * ${FOOTER_GAP})` }}>
                     {/* Remarks - 30% height */}
                     <div ref={remarksRef} className="flex-[3] min-h-0">
-                      <Remarks overflowSanctions={overflowSanctions} remarks={typeof match?.remarks === 'string' ? match.remarks : ''} generated={autoRemarks} onClipped={setRemarksClipped} />
+                      <Remarks overflowSanctions={overflowSanctions} remarks={typeof match?.remarks === 'string' ? match.remarks : ''} generated={autoRemarks} onClipped={setRemarksClipped} signatures={remarksSignaturesOf(match?.remarksSignatures)} />
                     </div>
                     {/* Approvals - 70% height */}
                     <div ref={approvalsRef} className="flex-[5] min-h-0">

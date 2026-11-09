@@ -57,7 +57,7 @@ describe('ManualAdjustments: a renamed team after the closing signatures', () =>
     const job = (await db.sync_queue.toArray()).find(j => j.resource === 'match' && j.payload?.home_team)
     expect(job.payload.signatures).toEqual({
       home_coach: 'data:coach', home_captain: 'data:cap', away_coach: '', away_captain: '',
-      home_captain_post_game: null, away_captain_post_game: null, asst_scorer: null, scorer: null, ref2: null, ref1: null
+      home_captain_post_game: null, away_captain_post_game: null, asst_scorer: null, scorer: null, ref2: null, ref1: null, remarks: null
     })
   }, 30000)
 })

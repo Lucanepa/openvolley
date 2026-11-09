@@ -441,6 +441,23 @@ describe('round 2 (owner review 2026-10-07)', () => {
 // and cut the rest off, and the overflow sanctions (always last) went first.
 // The sanctions now come before the free text, and a text that still does not
 // fit is warned about and printed whole on a second PDF page.
+describe('a signature in the REMARKS (SVRZ feedback 2026-11-09)', () => {
+  afterEach(() => cleanup())
+  it('prints beside the remark text with its role and name', () => {
+    const sig = { role: 'Referee coach', name: 'Anna Muster', image: 'data:image/png;base64,AAAA', signedAt: '2026-11-09T18:00:00.000Z' }
+    const { getByTestId, getAllByTestId } = render(<App matchData={fixture({ match: { remarks: 'Checked by the referee coach.', remarksSignatures: [sig] } })} autoAction="preview" />)
+    expect(getByTestId('remarks-text').textContent).toContain('Checked by the referee coach.')
+    const boxes = getAllByTestId('remarks-signature')
+    expect(boxes).toHaveLength(1)
+    expect(boxes[0].textContent).toBe('Referee coach · Anna Muster')
+    expect(boxes[0].querySelector('img')?.getAttribute('src')).toBe(sig.image)
+  })
+  it('no signature: no column beside the text', () => {
+    const { queryByTestId } = render(<App matchData={fixture()} autoAction="preview" />)
+    expect(queryByTestId('remarks-signatures')).toBeNull()
+  })
+})
+
 describe('REMARKS that do not fit their box', () => {
   let clicked: HTMLAnchorElement[] = []
   const tenSanctions = () => [
