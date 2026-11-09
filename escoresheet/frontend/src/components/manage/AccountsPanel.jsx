@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { admin, clubsApi } from '../../lib/accountApi'
+import { admin, clubsApi, fetchPublicClubs } from '../../lib/accountApi'
 import { API_GRANTABLE_ROLES, BEACH_ROLES, plainRole } from '../../lib/access'
+import { requestPartLabel, sortRequestParts } from '../../domain/signUpRequests'
 import RoleChips from '../auth/RoleChips'
 import KitModal from './KitModal'
 import { usePanelData, useOnline, OfflineBanner, PanelHead, InlineError, personName, useErrorText } from './common'
-import { SegmentedControl, SearchInput, RowList, Row, RowTool, EmptyInset, SkeletonRows, Button, Checkbox, Chip, Field, Input, Notice, dayLabel, confirmDialog, toast } from '../../ui'
+import { SegmentedControl, SearchInput, RowList, Row, RowTool, EmptyInset, SkeletonRows, Button, Checkbox, Chip, Field, Input, Notice, Select, dayLabel, confirmDialog, toast } from '../../ui'
 
 // The destructive row tools (RowTool has no tone of its own): a red outline
 // like the kit's danger-outline button. On a phone they take a line of their
@@ -28,6 +29,13 @@ const DELETE_TOOL = `${DANGER_TOOL} sm:ml-auto`
  * super admin (`selfIsSuperAdmin`); the server checks all of it again. Only
  * when the server says it can (can_delete in the list): an older backend
  * shows the panel as before.
+ *
+ * Sign-up requests (db/025, OpenVolley): a row whose account asked for
+ * something at sign-up shows each part ("Scorer · VBC Musterdorf") and offers
+ * "Approve as requested" (every part, one click) and "Review request" (untick
+ * a part, leave it for later, reject it, or change its club or team first).
+ * The Pending filter lists these accounts too, also after a club's or a
+ * team's manager approved a part (the account is no longer pending then).
  */
 export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app }) {
   const { t } = useTranslation()
@@ -40,6 +48,7 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app })
   const [busyId, setBusyId] = useState(null)
   const [editing, setEditing] = useState(null)
   const [deleting, setDeleting] = useState(null)
+  const [reviewing, setReviewing] = useState(null)
   // db/018: clubs (OpenVolley only; beach is not checked)
   const withClubs = app !== 'beach'
   const [clubsOf, setClubsOf] = useState(null)
@@ -72,6 +81,27 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app })
       return
     }
     toast.success(t('manage.accounts.saved'))
+    reload()
+    pending.reload()
+  }
+
+  // db/025: every part of the account's sign-up request, as asked
+  const approveAsRequested = async (account) => {
+    setBusyId(account.id)
+    setRowError(e => ({ ...e, [account.id]: '' }))
+    const res = await admin.decideRequests(account.id, { approve: (account.requests || []).map(p => ({ id: p.id })) })
+    setBusyId(null)
+    if (res.error) {
+      if (res.error.code === 'OV_REQUEST_GONE') {
+        toast.info(t('manage.requests.gone'))
+        reload()
+        pending.reload()
+        return
+      }
+      setRowError(e => ({ ...e, [account.id]: roleError(res.error) }))
+      return
+    }
+    toast.success(t('manage.requests.approved'))
     reload()
     pending.reload()
   }
@@ -152,9 +182,19 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app })
               chips={<>
                 <RoleChips roles={a.roles} pending={a.pending} app={app} />
                 {withClubs && (a.clubs || []).map(c => <Chip key={c.id} tone="sky">{c.name}</Chip>)}
+                {/* db/020 / db/023: what the account manages */}
+                {(a.managed_clubs || []).map(c => <Chip key={`mc-${c.id}`} tone="indigo">{t('manage.requests.managesClub', { name: c.name })}</Chip>)}
+                {(a.managed_teams || []).map(x => <Chip key={`mt-${x.id}`} tone="indigo">{t('manage.requests.managesTeam', { name: x.name })}</Chip>)}
+                {/* db/025: what it asked for at sign-up and is still open */}
+                {sortRequestParts(a.requests).map(p => <Chip key={p.id} tone="amber">{t('manage.requests.asks', { part: requestPartLabel(p, t) })}</Chip>)}
               </>}
               tools={<>
-                {a.pending && (
+                {(a.requests || []).length > 0 ? (
+                  <>
+                    <RowTool primary disabled={!online || busyId === a.id} onClick={() => approveAsRequested(a)} data-testid="approve-as-requested">{t('manage.requests.approveAll')}</RowTool>
+                    <RowTool disabled={!online || busyId === a.id} onClick={() => setReviewing(a)} data-testid="review-request">{t('manage.requests.review')}</RowTool>
+                  </>
+                ) : a.pending && (
                   <RowTool primary disabled={!online || busyId === a.id} onClick={() => approve(a)}>{t('manage.accounts.approve')}</RowTool>
                 )}
                 {canDelete && deletion(a, selfId, selfIsSuperAdmin) === 'reject' && (
@@ -186,6 +226,13 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app })
           onSaved={() => { setClubsOf(null); reload() }}
         />
       )}
+      {reviewing && (
+        <RequestReviewModal
+          account={reviewing}
+          roleError={roleError}
+          onClose={(changed) => { setReviewing(null); if (changed) { reload(); pending.reload() } }}
+        />
+      )}
       {deleting && (
         <DeleteAccountModal
           account={deleting}
@@ -205,7 +252,9 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app })
 export function deletion(account, selfId, selfIsSuperAdmin = false) {
   if (!account || account.id === selfId) return null
   const roles = account.roles || []
-  if (roles.length === 0) return 'reject'
+  // a club or team it manages (db/020, db/023): somebody approved it, so it is deleted, not rejected
+  const manages = (account.managed_clubs || []).length > 0 || (account.managed_teams || []).length > 0
+  if (roles.length === 0 && !manages) return 'reject'
   if (roles.includes('super_admin') && !selfIsSuperAdmin) return null
   return 'delete'
 }
@@ -280,6 +329,108 @@ function DeleteAccountModal({ account, deleteError, onClose }) {
         </Field>
       </form>
       <InlineError error={error} className="mt-1.5" />
+    </KitModal>
+  )
+}
+
+/**
+ * db/025: an admin's look at one account's sign-up request. Each part:
+ * Approve (as asked, or with another club / team picked here), Later (it stays
+ * for the club's or the team's managers) or Reject. onClose(true) after a save.
+ */
+function RequestReviewModal({ account, roleError, onClose }) {
+  const { t } = useTranslation()
+  const errorText = useErrorText()
+  const clubs = usePanelData(() => fetchPublicClubs(), [])
+  const parts = useMemo(() => sortRequestParts(account.requests), [account])
+  const [choice, setChoice] = useState(() => Object.fromEntries(parts.map(p => [p.id, { decision: 'approve', club_id: p.club_id || '', team_id: p.team_id || '' }])))
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const list = clubs.data?.clubs || []
+  const set = (id, patch) => { setChoice(c => ({ ...c, [id]: { ...c[id], ...patch } })); setError('') }
+  const approve = parts.filter(p => choice[p.id].decision === 'approve').map(p => {
+    const c = choice[p.id]
+    const item = { id: p.id }
+    if (p.kind === 'team_manager' && c.team_id && c.team_id !== p.team_id) item.team_id = c.team_id
+    if ((p.kind === 'scorer' || p.kind === 'club_manager') && c.club_id && c.club_id !== p.club_id) item.club_id = c.club_id
+    return item
+  })
+  const reject = parts.filter(p => choice[p.id].decision === 'reject').map(p => p.id)
+  const incomplete = parts.some(p => choice[p.id].decision === 'approve' && p.kind === 'team_manager' && !choice[p.id].team_id)
+  const save = async () => {
+    if (busy || incomplete || (!approve.length && !reject.length)) return
+    setBusy(true)
+    const res = await admin.decideRequests(account.id, { approve, reject })
+    setBusy(false)
+    if (res.error) {
+      if (res.error.code === 'OV_REQUEST_GONE') {
+        toast.info(t('manage.requests.gone'))
+        onClose(true)
+        return
+      }
+      setError(roleError ? roleError(res.error) : errorText(res.error))
+      return
+    }
+    toast.success(t('manage.requests.saved'))
+    onClose(true)
+  }
+  const name = personName(account.first_name, account.last_name, account.email)
+  const clubOptions = list.map(c => ({ value: c.id, label: c.name }))
+  return (
+    <KitModal
+      open
+      onClose={() => { if (!busy) onClose(false) }}
+      decision
+      title={t('manage.requests.reviewTitle', { name })}
+      closeLabel={t('common.close', 'Close')}
+      footer={<>
+        <Button variant="secondary" size="lg" onClick={() => onClose(false)} disabled={busy}>{t('common.cancel', 'Cancel')}</Button>
+        <Button variant="positive" size="lg" onClick={save} loading={busy} disabled={busy || incomplete || (!approve.length && !reject.length)} data-testid="save-request-review">{t('manage.accounts.save')}</Button>
+      </>}
+    >
+      <p className="mb-3 text-xs text-stone-600">{t('manage.requests.reviewHint')}</p>
+      {clubs.error && <Notice className="mb-2">{errorText(clubs.error)}</Notice>}
+      <div className="flex flex-col gap-3">
+        {parts.map(p => {
+          const c = choice[p.id]
+          const club = list.find(x => x.id === c.club_id)
+          return (
+            <div key={p.id} className="rounded-xl border border-stone-200/70 bg-stone-50/60 p-3" data-testid={`review-part-${p.id}`}>
+              <p className="mb-2 text-sm font-medium text-stone-800">{requestPartLabel(p, t)}</p>
+              <SegmentedControl
+                ariaLabel={requestPartLabel(p, t)}
+                value={c.decision}
+                onChange={(v) => set(p.id, { decision: v })}
+                options={[
+                  { value: 'approve', label: t('manage.requests.decision.approve') },
+                  { value: 'later', label: t('manage.requests.decision.later') },
+                  { value: 'reject', label: t('manage.requests.decision.reject') }
+                ]}
+              />
+              {c.decision === 'approve' && p.kind !== 'referee' && list.length > 0 && (
+                <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <Field label={t('manage.requests.club')} tone="compact">
+                    <Select block value={c.club_id} options={clubOptions} onChange={e => set(p.id, { club_id: e.target.value, ...(p.kind === 'team_manager' ? { team_id: '' } : {}) })} data-testid={`review-club-${p.id}`} />
+                  </Field>
+                  {p.kind === 'team_manager' && (
+                    <Field label={t('manage.requests.team')} tone="compact">
+                      <Select
+                        block
+                        value={c.team_id}
+                        placeholder={t('manage.requests.pickTeam')}
+                        options={(club?.teams || []).map(x => ({ value: x.id, label: x.name }))}
+                        onChange={e => set(p.id, { team_id: e.target.value })}
+                        data-testid={`review-team-${p.id}`}
+                      />
+                    </Field>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      <InlineError error={error} className="mt-2" />
     </KitModal>
   )
 }

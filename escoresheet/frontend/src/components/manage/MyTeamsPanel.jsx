@@ -7,6 +7,7 @@ import { addClubPlayersToGameDraft, clubPersonToPlayer, gameRosterBody, gameRost
 import { STAFF_ROLES } from '../../domain/savedTeams'
 import { shirtNumberDigits } from '../../domain/roster'
 import TeamEditor, { clubPeopleOf, clubPersonOffer } from './TeamEditor'
+import RequestsSection from './RequestsSection'
 import ClubPlayerPickerModal from '../ClubPlayerPickerModal'
 import SignaturePad from '../SignaturePad'
 import KitModal from './KitModal'
@@ -82,6 +83,9 @@ function TeamSections({ team }) {
         <OfflineBanner online={online} />
         <p className="mb-4 text-sm text-stone-600">{t('manage.myTeams.intro')}</p>
       </section>
+
+      {/* db/025: who signed up as a manager or coach of this team */}
+      <RequestsSection team={team} />
 
       <section>
         <PanelHead title={t('manage.myTeams.squad', { season: squad.data?.season || '' })} level={2} />

@@ -56,6 +56,20 @@
  *   GET    /api/club-licences                        indoor canReadTeams: the players lists and every
  *                                                    person of the lists of the caller's clubs, for the
  *                                                    scoring tablet (offline first)
+ *   POST   /api/admin/accounts/:id/requests          isAdmin: approve / reject parts of the account's
+ *                                                    sign-up request, a part's club or team changed
+ *                                                    first if need be (db/025, lib/accountRequests.js)
+ *   GET    /api/club/:id/requests                    a manager of that club, or isAdmin: the requests
+ *                                                    of that club (scorer, team manager of its teams,
+ *                                                    club manager); referee requests are admins' only
+ *   POST   /api/club/:id/requests/:userId            the same: { approve: [{ id, team_id? }], reject: [id] }
+ *                                                    for parts of that club (a team of the club only)
+ *   GET    /api/team/:id/requests                    whoever may manage the team (lib/teams.js
+ *                                                    mayManage): its team manager requests
+ *   POST   /api/team/:id/requests/:userId            the same: { approve: [{ id }], reject: [id] }
+ *   GET    /api/saved-teams/vm-teams?q=              indoor canManageTeams: the schedule's team names
+ *                                                    (svrz_games home and away) with their club, for
+ *                                                    the saved team editor
  *   GET/PUT /api/settings                            isAdmin or indoor canManageTeams: the app's
  *                                                    switches ({ send_final_email }, db/021)
  *   DELETE /api/admin/activity?match=|account=&confirm=yes  isAdmin: delete on request (audited)
@@ -118,7 +132,7 @@ export function manageFamilyOf (pathname) {
   return null
 }
 
-export function createManageApi ({ accounts, savedTeams, beach = null, approvals = null, revisions = null, activity = null, scoresheets = null, clubs = null, finalMail = null, teams = null, licences = null }) {
+export function createManageApi ({ accounts, savedTeams, beach = null, approvals = null, revisions = null, activity = null, scoresheets = null, clubs = null, finalMail = null, teams = null, licences = null, requests = null }) {
   // approvals?.x, or 503 when the module is not there
   const ap = (name) => (args) => (approvals && typeof approvals[name] === 'function' ? approvals[name](args) : APPROVALS_OFF())
   const q = (query, k) => {
@@ -194,6 +208,11 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
   const licenceListRoutes = LICENCE_LISTS.map((list) => ['PUT', new RegExp(`^/api/club/${ID}/licences/${list}$`), clubManagerOf,
     (m, c) => lic((l) => l.putList({ clubId: m[1], list, people: isPlainObject(c.body) ? c.body.people : undefined, userId: c.user.id }))])
 
+  // db/025: sign-up requests (lib/accountRequests.js); 404 on a server built without it
+  const req = (fn) => (requests ? fn(requests) : notFound())
+  // the saved team editor's VolleyManager names: OpenVolley's competition managers (and admins)
+  const manageIndoorTeams = (m, c) => (accessForSport(c.access, 'indoor').canManageTeams ? null : FORBIDDEN())
+
   const clubInvite = (m, c) => {
     const r = clubs ? clubInviteBody(c.body) : null
     if (!r) return notFound()
@@ -222,6 +241,8 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['GET', /^\/api\/admin\/club-teams$/, 'admin', (m, c) => (clubs ? clubs.vmTeams({ q: q(c.query, 'q') ?? '' }) : notFound())],
     ['PUT', /^\/api\/admin\/club-rule$/, 'admin', (m, c) => (clubs ? clubs.setRule({ actorId: c.user.id, body: c.body }) : notFound())],
     ['PUT', new RegExp(`^/api/admin/clubs/${ID}/managers$`), 'admin', (m, c) => club((cl) => cl.setManagers({ actorId: c.user.id, id: m[1], body: c.body }))],
+    // db/025: an admin decides any part of a sign-up request
+    ['POST', new RegExp(`^/api/admin/accounts/${ID}/requests$`), 'admin', (m, c) => req((r) => r.decide({ actorId: c.user.id, userId: m[1], body: c.body, scope: { admin: true } }))],
     // The app's switches (db/021): OpenVolley's admins and competition managers
     ['GET', /^\/api\/settings$/, 'manageTeams', () => (finalMail ? finalMail.getSettings() : notFound())],
     ['PUT', /^\/api\/settings$/, 'manageTeams', (m, c) => (finalMail ? finalMail.setSettings({ actorId: c.user.id, body: c.body }) : notFound())],
@@ -239,6 +260,9 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['GET', new RegExp(`^/api/club/${ID}/teams$`), clubManagerOf, (m) => team((tm) => tm.clubTeams({ clubId: m[1] }))],
     ['POST', new RegExp(`^/api/club/${ID}/teams/${ID}/invites$`), clubManagerOf, teamInvite],
     ['DELETE', new RegExp(`^/api/club/${ID}/teams/${ID}/managers/${ID}$`), clubManagerOf, (m, c) => team((tm) => tm.removeManager({ actorId: c.user.id, clubId: m[1], teamId: m[2], userId: m[3] }))],
+    // db/025: the sign-up requests of the club (scorer, team manager, club manager)
+    ['GET', new RegExp(`^/api/club/${ID}/requests$`), clubManagerOf, (m) => req((r) => r.listForClub({ clubId: m[1] }))],
+    ['POST', new RegExp(`^/api/club/${ID}/requests/${ID}$`), clubManagerOf, (m, c) => req((r) => r.decide({ actorId: c.user.id, userId: m[2], body: c.body, scope: { clubId: m[1] } }))],
     // db/024: the club's licence lists from VolleyManager
     ...licenceListRoutes,
     ['GET', new RegExp(`^/api/club/${ID}/licences$`), clubManagerOf, (m) => lic((l) => l.clubList({ clubId: m[1] }))],
@@ -252,6 +276,9 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['DELETE', new RegExp(`^/api/team/${ID}/roster$`), teamManagerOf, (m, c) => team((tm) => tm.deleteRoster({ actorId: c.user.id, teamId: m[1], game: q(c.query, 'game') }))],
     // db/024: the players list and the people of the team's club, for "Add from club"
     ['GET', new RegExp(`^/api/team/${ID}/club-players$`), teamManagerOf, (m) => lic((l) => l.teamClubPlayers({ teamId: m[1] }))],
+    // db/025: the team manager requests of the team
+    ['GET', new RegExp(`^/api/team/${ID}/requests$`), teamManagerOf, (m) => req((r) => r.listForTeam({ teamId: m[1] }))],
+    ['POST', new RegExp(`^/api/team/${ID}/requests/${ID}$`), teamManagerOf, (m, c) => req((r) => r.decide({ actorId: c.user.id, userId: m[2], body: c.body, scope: { teamId: m[1] } }))],
     // db/023: the rosters a scoring tablet keeps (offline first)
     ['GET', /^\/api\/game-rosters$/, readIndoorTeams, (m, c) => team((tm) => tm.scorerRosters({ userId: c.user.id, games: q(c.query, 'games') }))],
     // accepted in Match Setup: the content is deleted at once
@@ -284,6 +311,8 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['GET', /^\/api\/approvals$/, 'any', (m, c) => ap('listForMatch')({ callerId: c.user.id, access: c.access, externalId: q(c.query, 'external_id') })],
     ['DELETE', new RegExp(`^/api/approvals/${ID}$`), 'any', (m, c) => ap('revoke')({ callerId: c.user.id, access: c.access, id: m[1] })],
 
+    // the saved team editor's VolleyManager team names (svrz_games), each with its club
+    ['GET', /^\/api\/saved-teams\/vm-teams$/, manageIndoorTeams, (m, c) => club((cl) => cl.vmTeams({ q: q(c.query, 'q') ?? '' }))],
     ['GET', /^\/api\/saved-teams$/, readTeams, (m, c) => savedTeams.getBundle({ sport: q(c.query, 'sport'), sports: sportsWith(c.access, 'canReadTeams') })],
     ['POST', /^\/api\/saved-teams\/competitions$/, manageTeamsOf(newCompetitionSport), (m, c) => savedTeams.createCompetition({ actorId: c.user.id, body: c.body })],
     ['PATCH', new RegExp(`^/api/saved-teams/competitions/${ID}$`), manageTeamsOf((m) => competitionSport(m[1])), (m, c) => savedTeams.updateCompetition({ id: m[1], body: c.body })],

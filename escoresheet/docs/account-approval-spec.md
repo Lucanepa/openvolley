@@ -665,3 +665,77 @@ Claude-Session: https://claude.ai/code/session_01Tf9Me5uXmbq7Y9pLyiVvbq
 1. Back up the database, then run `db/011_account_approvals.sql` and `roles.sql` as ov_owner. The backend version that ships the endpoints can come later. 011 is safe under the running backend.
 2. `OV_PIN_SECRET` must already be set (it is, for match PINs). Rotating it invalidates every approval PIN. Users then set new ones with their password, and the existing approvals stay valid, because the PIN only gates new approvals.
 3. Nothing changes for matches without account approvals. Drawn signatures work as before, offline included.
+
+## 8. Approving an account at sign-up: requests (db/025)
+
+Not the approval of a result above: this is how a **new account** gets its
+roles. Status: built on `feat/signup-requests` (db/025). Not deployed.
+
+Owner, 2026-11-09: "when somebody signs up -> scorer, referee, team/club manager,
+what team(s) and clubs etc? so that i just approve rather than that also add
+their roles and clubs". Decisions:
+
+| # | Decision |
+|---|---|
+| S1 | The admin approves everything, **and it cascades**: "team/club managers can approve their own club". |
+| S2 | Competition manager cannot be asked for at sign-up (an admin gives it, as before). |
+| S3 | The privacy policy says so (privacy 1.11, section 6). |
+
+Made in the build (the owner may overrule them):
+
+- **S4** "Pending" in the admin's Accounts list: an account is no longer pending once any part was approved, also a part without a role (it manages a team or a club). The Pending filter also lists every account with an open part, so the admin sees what is left. An account that manages a club or a team is deleted, not rejected (409 `OV_NOT_PENDING`, as an account with a role). In the scorer app nothing changes: an account without a role stays pending there (team-managers-spec section 1).
+- **S5** An approver may change a part before approving it: admins its club or team, a club's managers a team part to another team of their own club; a team's managers approve as asked. A grant that also answers another open part (an admin moved a scorer part to a club the account had asked for too) deletes that part as well.
+- **S6** An address that is not confirmed yet gets nothing approved (409 `OV_EMAIL_UNCONFIRMED`, as a role grant); rejecting stays possible.
+- **S7** A club or team that is gone between loading the form and sending it refuses the sign-up (422 `validation_failed`); the form loads the clubs again and asks to pick again. Without db/025 the server stores no request and the sign-up works as before.
+- **S8** Invite codes and team links still skip the approval. An account's own request stays open after it redeemed a code (approving it then changes nothing).
+
+### 8.1 What a sign-up may ask for
+
+OpenVolley's manager (`manager.openvolley.app`, `SignUpForm` with `askRoles`;
+the scorer apps link there): "What do you do?", optional, several at once:
+
+| Kind | Asks for | Approve grants |
+|---|---|---|
+| `scorer` | one or more clubs | the indoor `scorer` role (as an admin's role grant, audited `account.roles`) and the club (`account_clubs`, db/018) |
+| `referee` | nothing more | the indoor `referee` role |
+| `team_manager` | a club, then one or more of its teams | a `team_managers` row (db/023) |
+| `club_manager` | a club | a `club_managers` row (db/020) |
+
+At most 20 parts (5 scorer clubs, 1 referee, 10 teams, 3 managed clubs). The
+clubs and teams come from `GET /api/public/clubs` (no account; club and team
+ids and names only, no count, no person; 30 per minute per IP, cached 60 s).
+OpenBeach's sign-up asks nothing. The sign-up body carries
+`requests: [{ kind, club_id?, team_id? }]` (top level, never in the metadata);
+a team manager part takes its team's club. Nothing is granted at sign-up.
+
+### 8.2 Who decides which part
+
+| Approver | Parts | Where |
+|---|---|---|
+| Admin | every part | Accounts: "Approve as requested" (every part, one click), "Review request" (per part Approve / Later / Reject, and another club or team) |
+| A manager of club X (db/020) | scorer for X, team manager of a team of X, club manager of X | My club → Requests (`GET/POST /api/club/:id/requests[/:userId]`) |
+| A manager of team T (db/023), or of its club | team manager of T | My teams → Requests (`GET/POST /api/team/:id/requests[/:userId]`) |
+| Referee parts | admins only | |
+
+Each approver sees and decides its own parts; the rest stays for the others.
+Body of a decision: `{ approve: [{ id, club_id?, team_id? }], reject: [id] }`;
+a part outside the approver's parts, or decided meanwhile, answers 409
+`OV_REQUEST_GONE` and nothing changes. A decided part is deleted. Audit:
+`account.request_approve` / `account.request_reject` with the kind, the club
+and team ids, `changed` and `via` (`admin`, `club`, `team`); never a name.
+
+### 8.3 Data
+
+`public.account_requests (id, user_id, kind, club_id, team_id, created_at)`:
+CHECKs per kind (referee: no club, no team; scorer and club manager: a club,
+no team; team manager: a team and its club, the composite key to
+`club_teams (id, club_id)`), one row per part, `ON DELETE CASCADE` with the
+account, the club and the team. Not on `/api/db`. `GET /api/me` gives the
+account's own open parts (`requests`), shown on the manager's invite step;
+`GET /api/admin/accounts` gives each account its `requests`, `managed_clubs`
+and `managed_teams`.
+
+Deploy: `db/025_account_requests.sql` and `apply-roles.sh` **before** the
+backend image, then the manager. Tests: `backend/tests/accountRequests.e2e.test.js`,
+`backend/tests/migration025.pg.test.js`, `frontend/src/components/__tests__/SignUpRequests.test.jsx`
+and `ManageRequests.test.jsx`.
