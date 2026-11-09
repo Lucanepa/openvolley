@@ -2655,6 +2655,8 @@
       "a_view": "They turn the court to match where you stand: 1 REF for the 1st referee on the stand, 2 REF for the 2nd referee on the scorer's side. The score and the data stay the same.",
       "q_shows": "What does the referee tablet show?",
       "a_shows": "The score and the sets, the serving team, both line-ups with the rotation, the time-outs and substitutions, the sanctions and the last action. Time-outs and intervals show their countdown.",
+      "q_recorded": "What is the “Recorded by the scorer” popup?",
+      "a_recorded": "When the scorer records a time-out, a substitution or a sanction, every referee tablet shows it in a popup, with the team, the set and the score. Tap “OK”, or it closes by itself after 10 seconds. What is recorded while it is open is added to it. During a time-out the countdown shows in the popup and moves to the court when it closes.",
       "q_offline": "It says “Offline: no connection to the scoresheet”?",
       "a_offline": "The connection to the scorer dropped, so the score may be out of date. The tablet reconnects by itself when the network is back. If it does not, tap “Refresh” in the menu.",
       "q_screen": "How do I keep the screen on?",

@@ -2503,6 +2503,8 @@
       "a_view": "Sie drehen das Feld passend zu deinem Standort: 1 REF für den 1. Schiedsrichter auf dem Stuhl, 2 REF für den 2. Schiedsrichter auf der Seite des Schreibers. Spielstand und Daten bleiben gleich.",
       "q_shows": "Was zeigt das Schiedsrichter-Tablet?",
       "a_shows": "Spielstand und Sätze, das aufschlagende Team, beide Aufstellungen mit der Rotation, Timeouts und Wechsel, Sanktionen und die letzte Aktion. Timeouts und Pausen zeigen ihren Countdown.",
+      "q_recorded": "Was ist das Fenster «Vom Schreiber erfasst»?",
+      "a_recorded": "Erfasst der Schreiber ein Timeout, einen Wechsel oder eine Sanktion, zeigt jedes Schiedsrichter-Tablet sie in einem Fenster an, mit Mannschaft, Satz und Spielstand. Auf «OK» tippen, oder es schliesst sich nach 10 Sekunden von selbst. Was erfasst wird, während es offen ist, kommt dazu. Während eines Timeouts zeigt es den Countdown, der beim Schliessen aufs Spielfeld wandert.",
       "q_offline": "Es steht «Offline: keine Verbindung zum Matchblatt»?",
       "a_offline": "Die Verbindung zum Schreiber ist unterbrochen, der Spielstand kann veraltet sein. Das Tablet verbindet sich von selbst wieder, sobald das Netz zurück ist. Falls nicht, tippe im Menü auf «Aktualisieren».",
       "q_screen": "Wie bleibt der Bildschirm an?",
