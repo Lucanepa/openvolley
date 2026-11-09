@@ -1764,6 +1764,10 @@
     "loadGames": "Load games"
   },
   "refereeDashboard": {
+    "recorded": {
+      "title": "Recorded by the scorer",
+      "closesIn": "Closes in {{s}} s"
+    },
     "linkDown": "Offline: no connection to the scoresheet. Score and server may be out of date.",
     "title": "Referee",
     "dashboardTitle": "Referee dashboard",

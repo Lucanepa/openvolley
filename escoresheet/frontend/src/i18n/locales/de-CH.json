@@ -1763,6 +1763,10 @@
     "loadGames": "Spiil lade"
   },
   "refereeDashboard": {
+    "recorded": {
+      "title": "Vom Schriiber erfasst",
+      "closesIn": "Gaht in {{s}} s zue"
+    },
     "linkDown": "Offline: kei Verbindig zum Matchblatt. Spielstand und Ufschlag sind evtl. nöd aktuell.",
     "title": "Schiri",
     "dashboardTitle": "Schiri-Dashboard",
