@@ -51,17 +51,32 @@ export const DISC = {
    * player and reached the court edge on a landscape tablet.
    */
   ballMax: 0.6,
-  ballGap: 0.06,
+  /**
+   * room between the ball and the server's disc, of the diameter. It was
+   * 0.06: with the disc's shadow the ball touched position I (owner
+   * 2026-11-09: "a little more separated").
+   */
+  ballGap: 0.12,
   /** room for the ball beside a back-row disc: 15cqw minus half a disc (see discMetrics) */
   ballRoomCqw: 15,
-  ballSafetyPx: 2
+  ballSafetyPx: 2,
+  /** the cap's vmin upright (discCapPx) */
+  portraitCapVmin: 12
 }
 
 const PCT = (n) => Number((n).toFixed(4))
 
-/** The disc's diameter cap in px: the viewport-based size the referee view used (8 vmin x 1.45, user scale applied; never below DISC.minPx). */
-export function discCapPx(vmin) {
-  return Math.round(vmin(8) * 1.45)
+/**
+ * The disc's diameter cap in px: the viewport-based size the referee view
+ * used (8 vmin x 1.45, user scale applied; never below DISC.minPx). Upright
+ * (`portrait`), vmin is the screen's width and the court has the height to
+ * spare: 12 vmin, so the court's width rule (DISC.widthCqw) decides and the
+ * discs fill the court (about 116 px on an 820 px wide tablet, 70 before).
+ * @param {(v: number) => number} vmin
+ * @param {{ portrait?: boolean }} [opts]
+ */
+export function discCapPx(vmin, { portrait = false } = {}) {
+  return Math.round(vmin(portrait ? DISC.portraitCapVmin : 8) * 1.45)
 }
 
 /**

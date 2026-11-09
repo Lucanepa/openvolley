@@ -19,6 +19,8 @@ import { db } from './db/db'
 import { startActivityLog } from './utils/activity'
 import { installDiagnostics } from './diagnostics'
 import { initTheme } from './utils/theme'
+import { isNativeApp } from './utils/backendConfig'
+import { unlockOrientation } from './utils/nativeOrientation'
 
 // The scoretable: the only page that saves automatic match backups
 setAppEntry('scorer')
@@ -55,6 +57,12 @@ if (onPointHubBoard()) {
   installOnScreenKeyboardHelp()
   blockPagePinch()
 }
+
+// The Android app: the referee view locks the activity upright
+// (components/referee/upright.js) and is left by a page load (back), which
+// keeps that lock: rotate freely again before anything mounts. The
+// scoreboard locks landscape on its own when it opens, after this.
+if (isNativeApp()) unlockOrientation()
 
 initTheme()
 createRoot(document.getElementById('root')).render(

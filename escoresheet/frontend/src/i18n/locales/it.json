@@ -34,6 +34,7 @@
     "screenTooSmall": "Schermo troppo piccolo",
     "screenTooSmallMessage": "Questa applicazione richiede una larghezza minima dello schermo di 357px. Si prega di utilizzare un dispositivo con uno schermo più ampio o di ruotare il dispositivo in modalità orizzontale.",
     "screenTooShortMessage": "Il campo non entra in questo schermo. Ruota il dispositivo, esci dallo schermo diviso o usa uno schermo più grande.",
+    "screenTooSmallUpright": "Il campo non entra in questo schermo in verticale. Esci dallo schermo diviso o usa uno schermo più grande.",
     "tryFullscreen": "Prova a schermo intero",
     "fullscreenHint": "Lo schermo intero può fornire più spazio nascondendo l'interfaccia utente del browser.",
     "setIndex": "Set {{index}}",
@@ -1951,7 +1952,39 @@
     "delayWarningShort": "A R",
     "delayPenaltyShort": "P R",
     "switchToStandard": "Passa alla vista standard",
-    "switchToReception": "Passa alla formazione di ricezione"
+    "switchToReception": "Passa alla formazione di ricezione",
+    "scoresheet": {
+      "open": "Referto",
+      "close": "Chiudi",
+      "title": "Referto",
+      "readOnly": "In diretta, sola lettura",
+      "updated": "aggiornato {{time}}",
+      "notSent": "Firme, ufficiali e date di nascita restano sul dispositivo del segnapunti.",
+      "loading": "Caricamento del referto...",
+      "waiting": "In attesa dei dati del segnapunti..."
+    },
+    "rosters": {
+      "open": "Rose",
+      "title": "Rose",
+      "close": "Chiudi",
+      "otherTeam": "Altra squadra",
+      "show": "Mostra {{team}}",
+      "count": "{{players}} giocatori",
+      "empty": "Nessuna rosa",
+      "captain": "Capitano",
+      "officials": "Ufficiali di squadra",
+      "noOfficials": "Nessun ufficiale inserito"
+    },
+    "upright": {
+      "title": "Tieni il dispositivo in verticale",
+      "body": "La dashboard arbitro è pensata per il formato verticale. Ruota il tablet o il telefono in verticale per continuare: punteggio, time-out e conti alla rovescia vanno avanti.",
+      "fullscreen": "Schermo intero",
+      "fullscreenHint": "Su Android, a schermo intero lo schermo resta verticale comunque si tenga il dispositivo."
+    },
+    "sanctions": {
+      "title": "Sanzioni",
+      "formalWarning": "Avvertimento formale"
+    }
   },
   "connection": {
     "changeServer": "Cambia server",

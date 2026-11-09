@@ -34,6 +34,7 @@
     "screenTooSmall": "Screen too small",
     "screenTooSmallMessage": "This app requires a minimum screen width of 357px. Please use a device with a wider screen or rotate your device to landscape mode.",
     "screenTooShortMessage": "The court does not fit on this screen. Please rotate your device, leave split screen or use a larger screen.",
+    "screenTooSmallUpright": "The court does not fit on this screen held upright. Please leave split screen or use a larger screen.",
     "tryFullscreen": "Try fullscreen",
     "fullscreenHint": "Fullscreen may provide more space by hiding browser UI.",
     "setIndex": "Set {{index}}",
@@ -1952,7 +1953,39 @@
     "delayWarningShort": "D W",
     "delayPenaltyShort": "D P",
     "switchToStandard": "Switch to standard view",
-    "switchToReception": "Switch to reception formation"
+    "switchToReception": "Switch to reception formation",
+    "scoresheet": {
+      "open": "Scoresheet",
+      "close": "Close",
+      "title": "Scoresheet",
+      "readOnly": "Live, read only",
+      "updated": "updated {{time}}",
+      "notSent": "Signatures, officials and dates of birth stay on the scorer's device.",
+      "loading": "Loading scoresheet...",
+      "waiting": "Waiting for the scorer's data..."
+    },
+    "rosters": {
+      "open": "Rosters",
+      "title": "Rosters",
+      "close": "Close",
+      "otherTeam": "Other team",
+      "show": "Show {{team}}",
+      "count": "{{players}} players",
+      "empty": "No roster yet",
+      "captain": "Captain",
+      "officials": "Team officials",
+      "noOfficials": "No officials entered"
+    },
+    "upright": {
+      "title": "Please hold the device upright",
+      "body": "The referee dashboard is made for portrait. Turn the tablet or phone upright to continue: the score, time-outs and countdowns keep going.",
+      "fullscreen": "Enter fullscreen",
+      "fullscreenHint": "On Android, fullscreen keeps the screen upright however the device is held."
+    },
+    "sanctions": {
+      "title": "Sanctions",
+      "formalWarning": "Formal warning"
+    }
   },
   "connection": {
     "changeServer": "Change server",

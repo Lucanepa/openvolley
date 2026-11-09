@@ -108,9 +108,26 @@ describe('bench tablet: player sanctions', () => {
     const { container, getByText } = render(<MatchEntry matchId="m1" team="home" onBack={() => {}} embedded />)
     await waitFor(() => expect(container.querySelectorAll('.court-player').length).toBe(6))
     await waitFor(() => expect(getByText('#14')).toBeInTheDocument())
-    const cards = container.querySelectorAll('.court-player .sanction-card.yellow')
+    // the yellow card glyph (referee/SanctionCards.jsx) on #14's disc
+    const cards = container.querySelectorAll('.court-player [data-card-glyph="warning"]')
     expect(cards.length).toBe(1)
     expect(cards[0].closest('.court-player').textContent).toContain('14')
+  })
+
+  it('the disc shows the most severe card; the list shows each card and to whom', async () => {
+    bundle = benchBundle(1)
+    bundle.events.push(sanction('home', '14', 'warning'), sanction('home', 14, 'penalty'), sanction('home', '88', 'expulsion'))
+    const { container } = render(<MatchEntry matchId="m1" team="home" onBack={() => {}} embedded />)
+    await waitFor(() => expect(container.querySelectorAll('.court-player').length).toBe(6))
+    const discOf = (n) => [...container.querySelectorAll('.court-player')].find(d => d.textContent.includes(String(n)) && d.querySelector('[data-disc-sanction]'))
+    await waitFor(() => expect(discOf(14)).toBeTruthy())
+    expect(discOf(14).querySelector('[data-disc-sanction]').getAttribute('data-disc-sanction')).toBe('penalty')
+    expect(discOf(88).querySelector('[data-disc-sanction]').getAttribute('data-disc-sanction')).toBe('expulsion')
+    const list = [...container.querySelectorAll('[data-bench-sanctions] li')].map(li => [li.getAttribute('data-bench-sanction'), li.textContent])
+    expect(list).toEqual(expect.arrayContaining([['warning', '#14'], ['penalty', '#14'], ['expulsion', '#88']]))
+    // the counters read TO / SUB with the limits
+    expect(container.querySelector('[data-bench-counter="to"]').textContent).toBe('TO0/2')
+    expect(container.querySelector('[data-bench-counter="sub"]').textContent).toBe('SUB0/6')
   })
 
   it('a disqualified bench player is listed with the sanction', async () => {
