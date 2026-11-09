@@ -23,6 +23,20 @@ describe('parsedPdfToRoster', () => {
   })
 })
 
+describe('parsedPdfToRoster: the Einsatzliste\'s SV number is the licence', () => {
+  it('keeps a 5-6 digit SV number as license_number, nothing else', () => {
+    const r = parsedPdfToRoster({ players: [
+      { number: null, licence: '123456', firstName: 'Marco', lastName: 'Muster', dob: '14.03.2004' },
+      { number: null, licence: ' 98765 ', firstName: 'Anna', lastName: 'Beispiel', dob: '07.10.2007' },
+      { number: null, licence: 'abc', firstName: 'Lea', lastName: 'Exemple', dob: '' },
+      { number: 3, firstName: 'Ida', lastName: 'Ohne', dob: '' }
+    ] })
+    expect(r.players.map(p => [p.last_name, p.number, p.license_number])).toEqual([
+      ['Muster', null, '123456'], ['Beispiel', null, '98765'], ['Exemple', null, null], ['Ohne', 3, null]
+    ])
+  })
+})
+
 describe('mergeImportedRoster', () => {
   it('updates players of the same name and adds the new ones; officials by role', () => {
     const imported = {
@@ -36,6 +50,45 @@ describe('mergeImportedRoster', () => {
     expect(r.staff.map(s => s.role)).toEqual(['Coach', 'Assistant Coach 1'])
     expect(r.added).toBe(2)
     expect(r.updated).toBe(2)
+  })
+
+  it('no duplicates: the same licence, accents, swapped names, a player twice in the import', () => {
+    const mine = [
+      { key: 1, number: 28, first_name: 'Oskar', last_name: 'Bizard', dob: '', license_number: '123456', active: true },
+      { key: 2, number: 17, first_name: 'Federico', last_name: 'Felician', dob: '', license_number: '', active: true },
+      { key: 3, number: 6, first_name: 'Fischer', last_name: 'David', dob: '', license_number: '', active: true }
+    ]
+    const r = mergeImportedRoster(mine, [], { players: [
+      { number: null, first_name: 'Oscar', last_name: 'Bizard', dob: '2005-10-29', license_number: '123456' }, // spelled otherwise, same licence
+      { number: null, first_name: 'Federico', last_name: 'Felicián', dob: '1996-01-17', license_number: '234567' }, // accent
+      { number: null, first_name: 'David', last_name: 'Fischer', dob: '2003-09-30', license_number: '345678' }, // first and last swapped by hand
+      { number: null, first_name: 'Neu', last_name: 'Neue', dob: null, license_number: '456789' },
+      { number: null, first_name: 'Neu', last_name: 'Neue', dob: null, license_number: '456789' } // twice in the PDF
+    ] })
+    expect(r.players).toHaveLength(4)
+    expect(r.added).toBe(1)
+    expect(r.players.map(p => [p.key ?? null, p.number, p.license_number])).toEqual([
+      [1, 28, '123456'], [2, 17, '234567'], [3, 6, '345678'], [null, null, '456789']
+    ])
+    expect(r.players[0].first_name).toBe('Oskar') // the squad's spelling stays
+  })
+
+  it('a player without a licence is never matched by an empty one', () => {
+    const r = mergeImportedRoster([{ key: 1, first_name: 'A', last_name: 'Eins', license_number: '' }], [], { players: [
+      { number: 2, first_name: 'B', last_name: 'Zwei', dob: null, license_number: null }
+    ] })
+    expect(r.players).toHaveLength(2)
+    expect(r.players[0].number).toBeUndefined()
+  })
+
+  it('an import fills the licence of a player who has none, and keeps one it does not carry', () => {
+    const r = mergeImportedRoster(squad.players, squad.staff, { players: [
+      { number: null, first_name: 'Bea', last_name: 'Libero', dob: null, license_number: '234567' },
+      { number: null, first_name: 'Anna', last_name: 'Muster', dob: null, license_number: null }
+    ] })
+    expect(r.players.find(p => p.last_name === 'Libero').license_number).toBe('234567')
+    expect(r.players.find(p => p.last_name === 'Muster').license_number).toBe('L4')
+    expect(r.updated).toBe(1)
   })
 })
 

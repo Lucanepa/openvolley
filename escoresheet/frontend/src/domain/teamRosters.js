@@ -16,8 +16,12 @@ export const GAME_ROSTER_MIN_PLAYERS = 6
 export const GAME_ROSTER_MAX_LIBEROS = 2
 export const GAME_ROSTER_MAX_STAFF = 5
 
-const nameKey = (p) => `${normalizeName(p?.last_name)}|${normalizeName(p?.first_name)}`
+// Accents folded: "Felicián" typed by hand and "Felician" from VolleyManager are one person
+const fold = (v) => normalizeName(v).normalize('NFD').replace(/\p{Diacritic}/gu, '')
+const nameKey = (p) => `${fold(p?.last_name)}|${fold(p?.first_name)}`
 const clean = (v) => String(v ?? '').trim()
+const swappedKey = (p) => `${fold(p?.first_name)}|${fold(p?.last_name)}`
+const licenceKey = (p) => clean(p?.license_number).toLowerCase()
 
 /** The parseRosterPdf result → { players, staff } in the API shape. */
 export function parsedPdfToRoster(parsed) {
@@ -28,7 +32,8 @@ export function parsedPdfToRoster(parsed) {
       first_name: clean(p.firstName),
       last_name: clean(p.lastName) || clean(p.firstName),
       dob: displayDobToIso(p.dob) || null,
-      license_number: null,
+      // VolleyManager's Einsatzliste: the SV number in front of each name
+      license_number: /^\d{5,6}$/.test(clean(p.licence)) ? clean(p.licence) : null,
       is_libero: false,
       is_captain: false
     }))
@@ -43,21 +48,30 @@ export function parsedPdfToRoster(parsed) {
 
 /**
  * Merge an imported roster into the saved team's players and staff (drafts
- * keep their own fields, e.g. `key` and `id`): a player of the same name gets
- * the imported number and date of birth where the import has them, a new
- * player is added (active). Staff by role: the import fills a role's person.
- * Returns { players, staff, added, updated }.
+ * keep their own fields, e.g. `key` and `id`): the same player gets the
+ * imported number, date of birth and licence where the import has them, a new
+ * player is added (active). The same player = the same licence, else the same
+ * name (accents and case aside), else the same name with first and last name
+ * swapped; a player twice in the import is one. Staff by role: the import fills
+ * a role's person. Returns { players, staff, added, updated }.
  */
 export function mergeImportedRoster(players, staff, imported, makePlayer = (p) => p, makeStaff = (s) => s) {
   const out = [...(players || [])]
   let added = 0
   let updated = 0
-  const byName = new Map(out.map((p, i) => [nameKey(p), i]))
+  const byName = new Map()
+  const byLicence = new Map()
+  const remember = (p, i) => {
+    if (!byName.has(nameKey(p))) byName.set(nameKey(p), i)
+    if (licenceKey(p) && !byLicence.has(licenceKey(p))) byLicence.set(licenceKey(p), i)
+  }
+  out.forEach(remember)
   for (const p of imported?.players || []) {
-    const i = byName.get(nameKey(p))
+    const lk = licenceKey(p)
+    const i = (lk ? byLicence.get(lk) : undefined) ?? byName.get(nameKey(p)) ?? byName.get(swappedKey(p))
     if (i === undefined) {
       out.push(makePlayer({ ...p, active: true }))
-      byName.set(nameKey(p), out.length - 1)
+      remember(p, out.length - 1)
       added++
       continue
     }
@@ -65,9 +79,11 @@ export function mergeImportedRoster(players, staff, imported, makePlayer = (p) =
     const next = { ...cur }
     if (p.number != null && String(cur.number ?? '') !== String(p.number)) next.number = p.number
     if (p.dob && cur.dob !== p.dob) next.dob = p.dob
+    if (p.license_number && cur.license_number !== p.license_number) next.license_number = p.license_number
     if (cur.active === false) next.active = true
-    if (next.number !== cur.number || next.dob !== cur.dob || next.active !== cur.active) {
+    if (next.number !== cur.number || next.dob !== cur.dob || next.license_number !== cur.license_number || next.active !== cur.active) {
       out[i] = next
+      remember(next, i)
       updated++
     }
   }
