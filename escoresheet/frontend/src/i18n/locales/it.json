@@ -5244,5 +5244,123 @@
     "warningMen_other": "{{names}} sono registrate nella società come donne, e questa è una partita maschile. Controlla prima del sorteggio.",
     "warningWomen_one": "{{names}} è registrato nella società come uomo, e questa è una partita femminile. Controlla prima del sorteggio.",
     "warningWomen_other": "{{names}} sono registrati nella società come uomini, e questa è una partita femminile. Controlla prima del sorteggio."
+  },
+  "benchRequests": {
+    "title": "Richieste al segnapunti",
+    "lineup": "Formazione",
+    "timeout": "Time-out",
+    "substitution": "Sostituzione",
+    "forSet": "Set {{set}}",
+    "tapToRequest": "Tocca per richiedere",
+    "prepare": "Prepara",
+    "cancel": "Ritira la richiesta",
+    "gameCaptain": "Capitano in gioco",
+    "done": {
+      "lineup": "Accettata",
+      "timeout": "Concesso",
+      "substitution": "Accettata"
+    },
+    "status": {
+      "sending": "Invio…",
+      "pending": "Inviata – in attesa del segnapunti",
+      "waitingScorer": "In attesa del segnapunti (non collegato)",
+      "seen": "Il segnapunti l’ha ricevuta",
+      "accepted": "Accettata",
+      "declined": "Rifiutata",
+      "declinedBecause": "Rifiutata: {{reason}}",
+      "refused": "Non inviata: {{reason}}",
+      "notSent": "Non inviata – nessuna connessione",
+      "cancelled": "Ritirata",
+      "expired": "Non più aperta"
+    },
+    "autoReason": {
+      "lineup_already_entered": "il segnapunti ha già la formazione",
+      "entered_differently": "il segnapunti ha inserito un’altra formazione"
+    },
+    "refusal": {
+      "other": "il server l’ha rifiutata",
+      "not-this-bench": "questa panchina non è (più) collegata",
+      "rate-limited": "troppe richieste, attendi un minuto",
+      "no-match": "il segnapunti non è online",
+      "lineup-locked": "la formazione è già stata accettata",
+      "bad-lineup": "la formazione non è completa",
+      "bad-captain": "controlla il capitano in gioco",
+      "bad-pairs": "controlla le sostituzioni",
+      "duplicate-id": "già inviata",
+      "nothing-to-cancel": "niente da ritirare"
+    },
+    "unavailable": {
+      "no_coin_toss": "Dopo il sorteggio",
+      "match_over": "La partita è terminata",
+      "set_started": "Il set è iniziato",
+      "lineup_entered": "Inserita dal segnapunti",
+      "no_lineup": "Dopo la formazione",
+      "set_interval": "Non nell’intervallo tra i set",
+      "replay_pending": "Non mentre uno scambio viene ripetuto",
+      "after_delay_warning": "Non dopo un avvertimento per ritardo",
+      "third_timeout": "Entrambi i time-out usati",
+      "substitution_limit": "6 sostituzioni fatte",
+      "second_substitution_request": "Seconda richiesta in questa interruzione"
+    },
+    "lineupSheet": {
+      "title": "Formazione di partenza · set {{set}}",
+      "hint": "Tocca una posizione, poi una giocatrice o un giocatore. Fino all’inizio del set la vede solo il segnapunti.",
+      "position": "Posizione {{pos}}",
+      "send": "Invia la formazione",
+      "net": "Rete",
+      "players": "Giocatori",
+      "asInSet": "Come nel set {{set}}",
+      "noLiberos": "I liberi ({{numbers}}) non fanno parte della formazione.",
+      "gameCaptainHint": "Il capitano {{captain}} non è nella formazione: chi è capitano in gioco in campo?"
+    },
+    "subSheet": {
+      "title": "Prepara una sostituzione · set {{set}}",
+      "left_one": "Ancora {{count}} sostituzione in questo set",
+      "left_other": "Ancora {{count}} sostituzioni in questo set",
+      "send": "Invia ({{count}})",
+      "off": "Esce",
+      "on": "Entra",
+      "remove": "Rimuovi",
+      "pickOff": "Chi esce?",
+      "pickOn": "Chi entra per {{out}}?",
+      "nobody": "Nessuno in panchina può entrare.",
+      "gameCaptainHint": "Il capitano in gioco esce: chi guida la squadra in campo?",
+      "why": {
+        "libero": "Libero",
+        "paired": "Già scelto",
+        "no_rally_since_entry": "Appena entrato, nessuno scambio",
+        "replaced_by_libero": "Il libero è al suo posto",
+        "not_on_court": "Non in campo",
+        "not_on_bench": "Non in panchina",
+        "sent_off": "Escluso",
+        "wrong_partner": "Compagno sbagliato",
+        "played_out": "Già giocato",
+        "no_rally_since_out": "Nessuno scambio ancora"
+      }
+    },
+    "scorer": {
+      "count_one": "{{count}} richiesta della panchina",
+      "count_other": "{{count}} richieste della panchina",
+      "lineupTitle": "Formazione per il set {{set}}",
+      "timeoutTitle": "Richiesta di time-out",
+      "substitutionTitle": "Richiesta di sostituzione",
+      "gameCaptain": "Capitano in gioco: {{number}}",
+      "review": "Controlla e accetta",
+      "grant": "Concedi il time-out",
+      "substitute": "Sostituisci",
+      "recorded": "Registrata",
+      "decline": "Rifiuta",
+      "declineTitle": "Rifiutare la richiesta?",
+      "declineMessage": "La panchina vede che è stata rifiutata, e il tuo motivo.",
+      "reason": "Motivo (facoltativo)",
+      "afterRally": "Dopo lo scambio",
+      "notSent": "Risposta non inviata: nessuna connessione al server",
+      "notOnCourt": "Il n. {{number}} non è in campo.",
+      "notOnBench": "Il n. {{number}} non può entrare ora."
+    },
+    "referee": {
+      "timeout": "La panchina chiede un time-out",
+      "substitution": "La panchina prepara una sostituzione: {{pairs}}"
+    }
   }
 }
