@@ -80,6 +80,40 @@ describe('RectifyPanel', () => {
     expect(screen.getByText('A 5:3 B → A 2:1 B')).toBeTruthy()
   })
 
+  it('2. "What was it?" only words the remark; an officials\' mistake chooses both and nobody', () => {
+    setup()
+    pickScore('A 1:1 B')
+    click('Next')
+    const kind = screen.getByLabelText('What was it? (for the remark)')
+    expect(kind.value).toBe('other')
+    answer('Whose points since then are cancelled?', 'Team A')
+    fireEvent.change(kind, { target: { value: 'illegal_substitution' } })
+    expect(checked('Whose points since then are cancelled?')).toBe('Team A')
+    click('Confirm')
+    expect(screen.getByLabelText('Remark on the scoresheet').value).toBe('Set 2, points 5:3: illegal substitution by team A (since 1:1, 4 points of team A cancelled, point and service to team B). New score for set 2: 1:4.')
+    // the new score in the remark follows a score set by hand
+    click('One point less for Volley Bern (B)')
+    expect(screen.getByLabelText('Remark on the scoresheet').value).toMatch(/New score for set 2: 1:3\.$/)
+    click('Back')
+    fireEvent.change(screen.getByLabelText('What was it? (for the remark)'), { target: { value: 'officials_mistake' } })
+    expect(checked('Whose points since then are cancelled?')).toBe('Both')
+    expect(checked('Point and service to')).toBe('Nobody')
+  })
+
+  it('3. a remark emptied by the scorer: the app\'s remark is written anyway', async () => {
+    const { hooks } = setup()
+    pickScore('A 1:1 B')
+    click('Next')
+    answer('Whose points since then are cancelled?', 'Team A')
+    click('Confirm')
+    const auto = screen.getByLabelText('Remark on the scoresheet').value
+    fireEvent.change(screen.getByLabelText('Remark on the scoresheet'), { target: { value: '' } })
+    expect(screen.getByText(/Left empty, the app's remark is written/)).toBeTruthy()
+    click('Resume')
+    await vi.waitFor(() => expect(hooks.apply).toHaveBeenCalledTimes(1))
+    expect(hooks.apply.mock.calls[0][0].remarkAdd).toEqual([auto])
+  })
+
   it('3. confirmed, everything editable: score by hand, server, a substitution taken back, the remark; Resume writes one plan', async () => {
     const { hooks, built } = setup()
     pickScore('A 1:1 B')

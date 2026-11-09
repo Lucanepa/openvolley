@@ -4354,6 +4354,7 @@
     "field": {
       "lineup": "Formazione di {{team}}",
       "moment": "Punteggio al momento dell’errore",
+      "kind": "Che cosa era? (per l’osservazione)",
       "cancel": "Di chi sono annullati i punti da allora?",
       "penalty": "Punto e servizio a",
       "score": "Punteggio",
@@ -4381,7 +4382,8 @@
       "both": "Gli ufficiali hanno dato un’informazione sbagliata, oppure un’azione è stata giocata in cinque o sette (Casebook 2.3, 2.4): entrambe, nessuno.",
       "edit": "Modifica tutto ciò che gli arbitri hanno deciso diversamente. Nulla viene registrato prima di «Riprendere».",
       "score": "Prima: {{score}}.",
-      "takeBack": "Una sostituzione ripresa esce dal referto; i suoi giocatori/le sue giocatrici tornano nelle loro posizioni."
+      "takeBack": "Una sostituzione ripresa esce dal referto; i suoi giocatori/le sue giocatrici tornano nelle loro posizioni.",
+      "remarkEmpty": "Se lasciata vuota, viene scritta l’osservazione dell’app: il referto deve dire che cosa è successo."
     },
     "action": {
       "next": "Avanti",
@@ -4428,14 +4430,32 @@
       "timeline": "I tempi di riposo, le sostituzioni e le sanzioni successive restano; sul referto mostrano ora il punteggio rettificato."
     },
     "remark": {
-      "backOfficials": "gioco riportato a {{from}} (errore degli ufficiali, Casebook 2.3)",
-      "cancelled": "{{n}} punto/i della squadra {{team}} annullato/i",
-      "cancelledBoth": "le azioni da allora tolte, le sanzioni restano valide",
-      "penalty": "punto e servizio alla squadra {{team}}",
-      "serve": "servizio alla squadra {{team}}",
+      "line": "Set {{set}}, punti {{before}}: {{what}} ({{details}}). Nuovo punteggio set {{set}}: {{after}}.",
+      "since": "dal {{from}}, {{n}} punti della squadra {{team}} annullati",
+      "sinceOne": "dal {{from}}, 1 punto della squadra {{team}} annullato",
+      "sinceNone": "dal {{from}}, nessun punto annullato",
+      "both": "punti di entrambe le squadre dal {{from}} annullati",
       "subTakenBack": "sostituzione #{{in}} per #{{out}} della squadra {{team}} ripresa",
-      "after": "punteggio ora {{score}}",
-      "since": "fallo dal {{from}}"
+      "penalty": "punto e servizio alla squadra {{team}}",
+      "noPoint": "nessun punto",
+      "serve": "servizio alla squadra {{team}}"
+    },
+    "remarkWhat": {
+      "illegal_substitution": "sostituzione irregolare della squadra {{team}}",
+      "illegal_substitutionNoTeam": "sostituzione irregolare",
+      "wrong_positions": "posizioni non conformi al tagliando della formazione, squadra {{team}}",
+      "wrong_positionsNoTeam": "posizioni non conformi al tagliando della formazione",
+      "wrong_server": "battitore/trice sbagliato/a della squadra {{team}}",
+      "wrong_serverNoTeam": "battitore/trice sbagliato/a",
+      "officials_mistake": "errore degli ufficiali",
+      "other": "gioco riportato indietro"
+    },
+    "kind": {
+      "illegal_substitution": "Sostituzione irregolare",
+      "wrong_positions": "Posizioni sbagliate",
+      "wrong_server": "Battitore/trice sbagliato/a",
+      "officials_mistake": "Errore degli ufficiali",
+      "other": "Altro"
     }
   },
   "corrections": {
