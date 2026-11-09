@@ -233,6 +233,18 @@ de vos propres données sur la feuille de match (nom, pays, date de naissance).
 valide, ou vous utilisez un code d'invitation. Le système enregistre qui a
 utilisé quel code et quand.
 
+**Ce que vous faites (inscription à OpenVolley, facultatif) :** à
+l'inscription, vous pouvez indiquer ce que vous faites (marqueur, arbitre,
+responsable d'équipe ou entraîneur, responsable du club) et pour quel club et
+quelle équipe. Cette demande n'est conservée que jusqu'à ce qu'elle soit
+validée ou refusée, et elle est visible, avec votre nom et votre adresse
+e-mail, par les administrateurs et par les responsables de ce club ou de cette
+équipe. Une fois validée, votre compte
+reçoit exactement ce rôle, ce club ou cette équipe (par un administrateur, ou
+par les responsables du club ou de l'équipe pour leur propre club ou équipe) ;
+le système enregistre qui a décidé et quand, mais pas votre nom ni votre
+adresse dans cette entrée.
+
 **Clubs (OpenVolley) :** un administrateur, ou un code d'invitation, peut
 rattacher votre compte à un ou plusieurs clubs. Vous tenez alors les matchs
 officiels à domicile de ces clubs. Le système enregistre à quels clubs votre
