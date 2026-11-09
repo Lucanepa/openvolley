@@ -1,19 +1,17 @@
 #!/bin/sh
-# OpenVolley eScoresheet / OpenBeach / Point Hub / SVRZ RC installer for
+# OpenVolley eScoresheet / OpenBeach / SVRZ RC installer for
 # Debian, Ubuntu and derivatives (amd64).
 #
 #   curl -fsSL https://get.openvolley.app/install.sh | sudo sh
 #   curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s openbeach-escoresheet
-#   curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s point-hub
 #   curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s svrz-rc
 #
 # Adds the signed OpenVolley APT repository and installs one package:
 # openvolley-escoresheet (the default), openbeach-escoresheet (OpenBeach, the
-# beach volleyball app), point-hub (Point Hub, the LedBox scoreboard
-# console) or svrz-rc (SVRZ Referee Coaching); from then on `sudo apt upgrade`
-# keeps it current. All of them come from the same repository and can be
-# installed side by side. Safe to run
-# again: it rewrites the same two files and installs or upgrades the package.
+# beach volleyball app) or svrz-rc (SVRZ Referee Coaching); from then on
+# `sudo apt upgrade` keeps it current. All of them come from the same
+# repository and can be installed side by side. Safe to run again: it
+# rewrites the same two files and installs or upgrades the package.
 #
 #   1. Checks: the package name is one of PACKAGES, apt-get and dpkg, amd64, root.
 #   2. Installs curl, ca-certificates and gpg first if any is missing.
@@ -37,7 +35,7 @@
 
 FPR=AB469DA8DC3EC90F8057320D285B18D76C16B82C
 DEFAULT_PKG=openvolley-escoresheet
-PACKAGES="openvolley-escoresheet openbeach-escoresheet point-hub svrz-rc"
+PACKAGES="openvolley-escoresheet openbeach-escoresheet svrz-rc"
 PKG=
 APP=
 
@@ -74,7 +72,6 @@ main() {
   esac
   case "$PKG" in
     openbeach-escoresheet) APP=OpenBeach ;;
-    point-hub) APP="Point Hub" ;;
     svrz-rc) APP="SVRZ RC" ;;
     *) APP="OpenVolley eScoresheet" ;;
   esac
@@ -136,21 +133,6 @@ main() {
 
   version=$(dpkg-query -W -f '${Version}' "$PKG" 2>/dev/null) || version=
   [ -n "$version" ] || die "$PKG did not install"
-  if [ "$PKG" = point-hub ]; then
-    # No tablet server in this one: it is the console that talks to the board.
-    cat <<EOF
-
-$APP $version is installed.
-
-  Start it:          from the app menu (point-hub), or run: $PKG
-  Updates:           sudo apt update && sudo apt upgrade
-  Remove:            sudo apt remove $PKG
-
-It looks for the scoreboard on the board's Wi-Fi and on the cable by itself;
-its Settings take another address.
-EOF
-    return 0
-  fi
   cat <<EOF
 
 $APP $version is installed.
