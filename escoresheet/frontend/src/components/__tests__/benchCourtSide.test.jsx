@@ -93,3 +93,41 @@ describe('bench tablet: the officials row', () => {
     expect(chips).toEqual(['C', 'AC1', 'AC2', 'P', 'M'])
   })
 })
+
+// The scorer stores a sanctioned player's number as text ("14"); the bench
+// compared it with the court's number 14 and showed "None" and no card for
+// every warning, penalty and disqualification (full-match test 2026-11-09).
+describe('bench tablet: player sanctions', () => {
+  beforeEach(() => { cleanup(); bundle = null })
+
+  const sanction = (team, playerNumber, type) => ({ type: 'sanction', setIndex: 1, ts: 2, payload: { team, type, playerType: 'player', playerNumber, position: 'III' } })
+
+  it('a warning stored as "14" shows in the list and on the court disc', async () => {
+    bundle = benchBundle(1)
+    bundle.events.push(sanction('home', '14', 'warning'))
+    const { container, getByText } = render(<MatchEntry matchId="m1" team="home" onBack={() => {}} embedded />)
+    await waitFor(() => expect(container.querySelectorAll('.court-player').length).toBe(6))
+    await waitFor(() => expect(getByText('#14')).toBeInTheDocument())
+    const cards = container.querySelectorAll('.court-player .sanction-card.yellow')
+    expect(cards.length).toBe(1)
+    expect(cards[0].closest('.court-player').textContent).toContain('14')
+  })
+
+  it('a disqualified bench player is listed with the sanction', async () => {
+    bundle = benchBundle(1)
+    bundle.homePlayers.push({ number: 7, firstName: 'A', lastName: 'P7' })
+    bundle.events.push(sanction('home', '7', 'disqualification'))
+    const { getAllByText, queryByText } = render(<MatchEntry matchId="m1" team="home" onBack={() => {}} embedded />)
+    // the sanctions box and the bench chip both name #7
+    await waitFor(() => expect(getAllByText('#7').length).toBe(2))
+    expect(queryByText('None')).toBeNull()
+  })
+
+  it('the other team\'s sanction is not shown', async () => {
+    bundle = benchBundle(1)
+    bundle.events.push(sanction('away', '11', 'penalty'))
+    const { container, getByText } = render(<MatchEntry matchId="m1" team="home" onBack={() => {}} embedded />)
+    await waitFor(() => expect(container.querySelectorAll('.court-player').length).toBe(6))
+    expect(getByText('None')).toBeInTheDocument()
+  })
+})

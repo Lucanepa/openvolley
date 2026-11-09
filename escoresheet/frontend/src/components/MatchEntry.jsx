@@ -492,13 +492,16 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     return players
   }, [data?.events, data?.set, team, teamInfo])
 
-  // Get player sanctions
+  // Get player sanctions. The scorer stores the number as text ("7", from
+  // the court disc), the roster and the line-up as a number: compare as text,
+  // or the bench showed no sanction at all (full-match test 2026-11-09)
   const getPlayerSanctions = useCallback((playerNumber) => {
-    if (!data?.events) return []
+    if (!data?.events || playerNumber == null || playerNumber === '') return []
     return data.events.filter(
-      e => e.type === 'sanction' && 
-      e.payload?.team === team && 
-      e.payload?.playerNumber === playerNumber
+      e => e.type === 'sanction' &&
+      e.payload?.team === team &&
+      e.payload?.playerNumber != null &&
+      String(e.payload.playerNumber) === String(playerNumber)
     )
   }, [data?.events, team])
 
