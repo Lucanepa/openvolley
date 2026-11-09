@@ -70,6 +70,7 @@
 
 import { fail, invalid, notFound } from './accounts.js'
 import { clubInviteBody } from './clubs.js'
+import { teamInviteBody } from './teams.js'
 import { SPORTS, accessForSport, sportsWith } from './access.js'
 
 // Before lib/approvals.js is wired (or on a server built without it)
@@ -100,11 +101,13 @@ export function manageFamilyOf (pathname) {
   if (pathname === '/api/scoresheets' || pathname.startsWith('/api/scoresheets/')) return 'scoresheets'
   if (pathname.startsWith('/api/club/')) return 'club'
   if (pathname === '/api/games/today') return 'games'
+  if (pathname.startsWith('/api/team/')) return 'team'
+  if (pathname === '/api/game-rosters' || pathname.startsWith('/api/game-rosters/')) return 'gameRosters'
   if (pathname === '/api/settings') return 'settings'
   return null
 }
 
-export function createManageApi ({ accounts, savedTeams, beach = null, approvals = null, revisions = null, activity = null, scoresheets = null, clubs = null, finalMail = null }) {
+export function createManageApi ({ accounts, savedTeams, beach = null, approvals = null, revisions = null, activity = null, scoresheets = null, clubs = null, finalMail = null, teams = null }) {
   // approvals?.x, or 503 when the module is not there
   const ap = (name) => (args) => (approvals && typeof approvals[name] === 'function' ? approvals[name](args) : APPROVALS_OFF())
   const q = (query, k) => {
@@ -154,6 +157,27 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     return (await clubs.isManager(c.user.id, m[1])) ? null : FORBIDDEN()
   }
   const club = (fn) => (clubs ? fn(clubs) : notFound())
+  // db/023: a team manager of the team in the path (m[1]), a manager of its
+  // club, or an admin. A server built without lib/teams.js answers 404.
+  const teamManagerOf = async (m, c) => {
+    if (!teams) return notFound()
+    return (await teams.mayManage({ userId: c.user.id, access: c.access, teamId: m[1] })) ? null : FORBIDDEN()
+  }
+  const team = (fn) => (teams ? fn(teams) : notFound())
+  // db/023: the team (m[2]) must be one of the club's (m[1])
+  const clubTeam = (fn) => async (m, c) => {
+    if (!teams) return notFound()
+    if (!(await teams.teamOfClub(m[1], m[2]))) return notFound()
+    return fn(m, c)
+  }
+  const teamInvite = clubTeam((m, c) => {
+    const r = teamInviteBody(c.body)
+    if (r.error) return invalid(r.error)
+    return accounts.createInvite({ actorId: c.user.id, body: { ...r.body, label: 'Team link', role: 'team_manager', team_id: m[2], club_id: m[1], sport: 'indoor' }, app: 'indoor' })
+  })
+  // GET /api/game-rosters: an indoor scorer (the saved teams' read right)
+  const readIndoorTeams = (m, c) => (accessForSport(c.access, 'indoor').canReadTeams ? null : FORBIDDEN())
+
   const clubInvite = (m, c) => {
     const r = clubs ? clubInviteBody(c.body) : null
     if (!r) return notFound()
@@ -195,6 +219,22 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['GET', new RegExp(`^/api/club/${ID}/invites$`), clubManagerOf, (m) => club(() => accounts.listInvites({ clubId: m[1] }))],
     ['POST', new RegExp(`^/api/club/${ID}/invites$`), clubManagerOf, clubInvite],
     ['POST', new RegExp(`^/api/club/${ID}/invites/${ID}/revoke$`), clubManagerOf, (m, c) => club(() => accounts.revokeInvite({ actorId: c.user.id, id: m[2], clubId: m[1] }))],
+    // db/023: the club's teams, their team links and team managers
+    ['GET', new RegExp(`^/api/club/${ID}/teams$`), clubManagerOf, (m) => team((tm) => tm.clubTeams({ clubId: m[1] }))],
+    ['POST', new RegExp(`^/api/club/${ID}/teams/${ID}/invites$`), clubManagerOf, teamInvite],
+    ['DELETE', new RegExp(`^/api/club/${ID}/teams/${ID}/managers/${ID}$`), clubManagerOf, (m, c) => team((tm) => tm.removeManager({ actorId: c.user.id, clubId: m[1], teamId: m[2], userId: m[3] }))],
+    // db/023: a team manager's own team (lib/teams.js); the game number is ?game=
+    ['GET', new RegExp(`^/api/team/${ID}$`), teamManagerOf, (m) => team((tm) => tm.teamDetail({ teamId: m[1] }))],
+    ['GET', new RegExp(`^/api/team/${ID}/squad$`), teamManagerOf, (m) => team((tm) => tm.squad({ teamId: m[1] }))],
+    ['PUT', new RegExp(`^/api/team/${ID}/squad$`), teamManagerOf, (m, c) => team((tm) => tm.putSquad({ actorId: c.user.id, teamId: m[1], body: c.body }))],
+    ['GET', new RegExp(`^/api/team/${ID}/games$`), teamManagerOf, (m) => team((tm) => tm.games({ teamId: m[1] }))],
+    ['GET', new RegExp(`^/api/team/${ID}/roster$`), teamManagerOf, (m, c) => team((tm) => tm.getRoster({ teamId: m[1], game: q(c.query, 'game') }))],
+    ['PUT', new RegExp(`^/api/team/${ID}/roster$`), teamManagerOf, (m, c) => team((tm) => tm.putRoster({ actorId: c.user.id, teamId: m[1], game: q(c.query, 'game'), body: c.body }))],
+    ['DELETE', new RegExp(`^/api/team/${ID}/roster$`), teamManagerOf, (m, c) => team((tm) => tm.deleteRoster({ actorId: c.user.id, teamId: m[1], game: q(c.query, 'game') }))],
+    // db/023: the rosters a scoring tablet keeps (offline first)
+    ['GET', /^\/api\/game-rosters$/, readIndoorTeams, (m, c) => team((tm) => tm.scorerRosters({ userId: c.user.id, games: q(c.query, 'games') }))],
+    // accepted in Match Setup: the content is deleted at once
+    ['POST', /^\/api\/game-rosters\/used$/, readIndoorTeams, (m, c) => team((tm) => tm.markUsed({ userId: c.user.id, body: c.body }))],
     ['GET', /^\/api\/admin\/invites$/, 'admin', (m, c) => accounts.listInvites({ app: q(c.query, 'app') })],
     ['POST', /^\/api\/admin\/invites$/, 'admin', (m, c) => accounts.createInvite({ actorId: c.user.id, body: c.body, app: q(c.query, 'app') })],
     ['POST', new RegExp(`^/api/admin/invites/${ID}/revoke$`), 'admin', (m, c) => accounts.revokeInvite({ actorId: c.user.id, id: m[1] })],

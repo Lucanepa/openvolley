@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeftRight, CircleCheck, ExternalLink, KeyRound, LogIn, LogOut, MailCheck, RotateCw, ShieldOff, UserPlus, Users } from 'lucide-react'
 import { useAuth } from './contexts/AuthContext'
@@ -9,12 +9,14 @@ import InviteCodeForm from './components/auth/InviteCodeForm'
 import EmailConfirmBanner from './components/auth/EmailConfirmBanner'
 import { ConfirmEmailPage, ResetPasswordPage } from './components/auth/AuthLinkPages'
 import { AppSpinner, BUTTON_SIZES, BUTTON_VARIANTS, Button, cn, consoleHeaderBtn, FOCUS_RING, GateScreen, Select } from './ui'
-import { scorerAppUrlFor, SIGN_UP_HASH } from './utils/managerSite'
+import { scorerAppUrlFor, SIGN_UP_HASH, teamCodeFromHash } from './utils/managerSite'
+import { clearPendingTeamLink, FINAL_TEAM_LINK_ERRORS, readPendingTeamLink, takeTeamLinkFromLocation } from './utils/teamLink'
 import { parseAuthLinkHash, takeAuthLinkFromLocation } from './utils/authLinks'
 import { otherManagerBrand, useManagerBrand, useManagerSwitch } from './managerBrand'
 import LegalLinks from './legal/LegalLinks'
 import { accessForApp } from './lib/access'
-import { fetchMe, joinApp } from './lib/accountApi'
+import { errorKeyOf, fetchMe, joinApp } from './lib/accountApi'
+import { toast } from './ui/uiStore'
 
 /**
  * manager.openvolley.app: the manage console as a site of its own, for
@@ -68,6 +70,8 @@ export function tabFromHash() {
     const hash = window.location.hash
     // An email link (#reset?token= / #confirm?token=) is no tab
     if (parseAuthLinkHash(hash)) return null
+    // nor a team link (#team=<code>, db/023)
+    if (teamCodeFromHash(hash)) return null
     return hash.replace(/^#/, '') || null
   } catch {
     return null
@@ -203,7 +207,18 @@ function Gate({ width, className, children }) {
   )
 }
 
-function SignInScreen({ initialMode = null, onCreateAccount }) {
+/** A team link waits for an account (db/023): what happens after signing in. */
+function TeamLinkNote() {
+  const { t } = useTranslation()
+  return (
+    <p role="status" data-testid="team-link-note" className="mb-4 flex items-start gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-left text-sm text-sky-800">
+      <Users size={16} aria-hidden className="mt-0.5 shrink-0 text-sky-600" />
+      {t('managerSite.teamLinkNote')}
+    </p>
+  )
+}
+
+function SignInScreen({ initialMode = null, onCreateAccount, teamLink = false }) {
   const { t } = useTranslation()
   const text = useBrandText()
   // initialMode 'signin' | 'forgot': opened from an email-link page
@@ -212,8 +227,9 @@ function SignInScreen({ initialMode = null, onCreateAccount }) {
     <>
       <Gate>
         <div data-testid="manager-sign-in" className="text-center">
+          {teamLink && <TeamLinkNote />}
           <h1 className="text-xl font-bold tracking-tight text-stone-900">{text.signInHeading}</h1>
-          <p className="mt-2 text-sm text-stone-600">{text.signInBody}</p>
+          <p className="mt-2 text-sm text-stone-600">{teamLink ? t('managerSite.teamLinkSignIn') : text.signInBody}</p>
           <Button variant="hero" block icon={LogIn} onClick={() => setOpen(true)} className="mt-6">
             {t('managerSite.signIn')}
           </Button>
@@ -236,7 +252,7 @@ function SignInScreen({ initialMode = null, onCreateAccount }) {
 }
 
 /** #signup: accounts are made here (the scorer apps link to this page). */
-function SignUpScreen({ onSignedUp, onBack }) {
+function SignUpScreen({ onSignedUp, onBack, teamLink = false }) {
   const { t } = useTranslation()
   const text = useBrandText()
   const [loginOpen, setLoginOpen] = useState(false)
@@ -244,6 +260,7 @@ function SignUpScreen({ onSignedUp, onBack }) {
     <>
       <Gate width="md" className="p-6 sm:p-8">
         <div data-testid="manager-sign-up">
+          {teamLink && <TeamLinkNote />}
           <div className="mb-5 text-center">
             <h1 className="text-xl font-bold tracking-tight text-stone-900">{t('managerSite.signUpHeading')}</h1>
             {text.signUpBody && <p className="mt-2 text-sm text-stone-600">{text.signUpBody}</p>}
@@ -581,7 +598,10 @@ function AuthLinkScreen({ link, onDone }) {
 
 export default function ManagerApp({ authLink = null }) {
   const { t, i18n } = useTranslation()
-  const { user, access, loading, signOut, refreshUser } = useAuth()
+  const { user, access, loading, signOut, refreshUser, redeemInvite } = useAuth()
+  // db/023: a team link (#team=<code>) is taken out of the URL before the tab
+  // is read from it, and kept until the signed-in account redeems it
+  const [teamLinkCode, setTeamLinkCode] = useState(() => takeTeamLinkFromLocation() || readPendingTeamLink())
   const brand = useManagerBrand()
   const flip = useManagerSwitch()
   const brandFlip = useBrandFlip()
@@ -660,6 +680,49 @@ export default function ManagerApp({ authLink = null }) {
     try { window.history.replaceState(window.history.state, '', `#${id}`) } catch { /* no history */ }
   }, [])
 
+  // db/023: redeem a kept team link once an account is signed in (and again
+  // on focus and back online: e.g. after the email confirmation). Done, or a
+  // code that can never work: forgotten. My teams opens on success.
+  const teamLinkBusy = useRef(false)
+  const accessKnown = !!access?.known
+  const tryTeamLink = useCallback(async () => {
+    if (!teamLinkCode || !user || !accessKnown || teamLinkBusy.current) return
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return
+    teamLinkBusy.current = true
+    try {
+      const res = await redeemInvite(teamLinkCode)
+      if (!res?.error) {
+        clearPendingTeamLink()
+        setTeamLinkCode(null)
+        const team = res.data?.team?.name || ''
+        toast.success(t(res.data?.already_had ? 'managerSite.teamLinkAlready' : 'managerSite.teamLinkDone', { team }))
+        selectTab('myteams')
+      } else if (FINAL_TEAM_LINK_ERRORS.has(res.error.code)) {
+        clearPendingTeamLink()
+        setTeamLinkCode(null)
+        toast.error(t(errorKeyOf(res.error)))
+      }
+    } finally {
+      teamLinkBusy.current = false
+    }
+  }, [teamLinkCode, user, accessKnown, redeemInvite, selectTab, t])
+  useEffect(() => { tryTeamLink() }, [tryTeamLink])
+  useEffect(() => {
+    // a team link opened in a tab that already shows the site (no reload)
+    const onHash = () => {
+      const code = takeTeamLinkFromLocation()
+      if (code) setTeamLinkCode(code)
+    }
+    window.addEventListener('hashchange', onHash)
+    window.addEventListener('focus', tryTeamLink)
+    window.addEventListener('online', tryTeamLink)
+    return () => {
+      window.removeEventListener('hashchange', onHash)
+      window.removeEventListener('focus', tryTeamLink)
+      window.removeEventListener('online', tryTeamLink)
+    }
+  }, [tryTeamLink])
+
   if (link) return <div className="ov-kit"><AuthLinkScreen link={link} onDone={leaveLink} /></div>
 
   if (loading) {
@@ -673,8 +736,8 @@ export default function ManagerApp({ authLink = null }) {
     return (
       <div className="ov-kit">
         {route === SIGN_UP_HASH
-          ? <SignUpScreen onSignedUp={onSignedUp} onBack={() => goRoute('')} />
-          : <SignInScreen initialMode={signInMode} onCreateAccount={openSignUp} />}
+          ? <SignUpScreen onSignedUp={onSignedUp} onBack={() => goRoute('')} teamLink={!!teamLinkCode} />
+          : <SignInScreen initialMode={signInMode} onCreateAccount={openSignUp} teamLink={!!teamLinkCode} />}
       </div>
     )
   }

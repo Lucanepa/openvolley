@@ -16,6 +16,8 @@ export function redeemedText(t, data) {
     return t('access.redeemedAs.beach_competition_manager')
   }
   if (role === 'scorer' || role === 'referee' || role === 'competition_manager') return t(`access.redeemedAs.${role}`)
+  // db/023: a team link typed as a code
+  if (role === 'team_manager') return t('managerSite.teamLinkDone', { team: data?.team?.name || '' })
   return t('access.redeemed')
 }
 

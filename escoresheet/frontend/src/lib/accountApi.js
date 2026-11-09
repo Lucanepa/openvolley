@@ -149,7 +149,72 @@ export const clubApi = {
   },
   revokeInvite(clubId, inviteId) {
     return apiRequest('POST', `/api/club/${enc(clubId)}/invites/${enc(inviteId)}/revoke`, {})
+  },
+  /** db/023: the club's teams with ids, their team managers and open links. */
+  teams(clubId) {
+    return apiRequest('GET', `/api/club/${enc(clubId)}/teams`)
+  },
+  /** A team link: { max_uses <= 10, expires_at <= 90 days } -> { invite, code } (the code is shown once). */
+  createTeamLink(clubId, teamId, { max_uses, expires_at } = {}) {
+    const body = {}
+    if (max_uses) body.max_uses = max_uses
+    if (expires_at) body.expires_at = expires_at
+    return apiRequest('POST', `/api/club/${enc(clubId)}/teams/${enc(teamId)}/invites`, body)
+  },
+  /** Takes the account off the team only. */
+  removeTeamManager(clubId, teamId, userId) {
+    return apiRequest('DELETE', `/api/club/${enc(clubId)}/teams/${enc(teamId)}/managers/${enc(userId)}`)
   }
+}
+
+/**
+ * db/023 (lib/teams.js): what a team manager does for its team. The game
+ * number is a query parameter.
+ */
+export const teamApi = {
+  get(teamId) {
+    return apiRequest('GET', `/api/team/${enc(teamId)}`)
+  },
+  /** -> { team, season, squad: saved team | null } */
+  squad(teamId) {
+    return apiRequest('GET', `/api/team/${enc(teamId)}/squad`)
+  },
+  /** The saved team's whole roster { players, staff }; the first save creates the saved team. */
+  putSquad(teamId, { players, staff }) {
+    return apiRequest('PUT', `/api/team/${enc(teamId)}/squad`, { players, staff })
+  },
+  /** -> { team, games: [{ game_number, datetime, league, hall, city, team_home, team_away, side, locked, roster }] } */
+  games(teamId) {
+    return apiRequest('GET', `/api/team/${enc(teamId)}/games`)
+  },
+  roster(teamId, game) {
+    return apiRequest('GET', `/api/team/${enc(teamId)}/roster?game=${enc(game)}`)
+  },
+  /** { players, staff, coach_signature?, captain_signature? } (signed ahead if they want to) */
+  putRoster(teamId, game, { players, staff, coach_signature = null, captain_signature = null }) {
+    return apiRequest('PUT', `/api/team/${enc(teamId)}/roster?game=${enc(game)}`, { players, staff, coach_signature, captain_signature })
+  },
+  deleteRoster(teamId, game) {
+    return apiRequest('DELETE', `/api/team/${enc(teamId)}/roster?game=${enc(game)}`)
+  }
+}
+
+/**
+ * GET /api/game-rosters[?games=1,2]: the rosters teams sent for upcoming
+ * games, which the scoring tablet keeps (db/gameRosters.js).
+ * -> { fetched_at, games: [{ game_number, season }], rosters: [...] }
+ */
+/**
+ * POST /api/game-rosters/used: this version was accepted in Match Setup, the
+ * server deletes its content (owner 2026-11-08). -> { used } or { used: false, reason }
+ */
+export function markGameRosterUsed({ game_number, side, season, updated_at }) {
+  return apiRequest('POST', '/api/game-rosters/used', { game_number, side, season, updated_at })
+}
+
+export function fetchGameRosters({ games, timeoutMs } = {}) {
+  const path = games?.length ? `/api/game-rosters?games=${games.map(enc).join(',')}` : '/api/game-rosters'
+  return apiRequest('GET', path, undefined, timeoutMs ? { timeoutMs } : undefined)
 }
 
 export const admin = {
@@ -380,6 +445,8 @@ export function errorKeyOf(error, { context } = {}) {
     case 'OV_DUPLICATE': return 'savedTeams.duplicateTeam'
     case 'OV_FORBIDDEN': return 'manage.errors.forbidden'
     case 'OV_SCORESHEET_NOT_FOUND': return 'manage.scoresheets.noPdf'
+    // db/023: a team's game roster
+    case 'OV_GAME_NOT_YOURS': return 'manage.myTeams.notYourGame'
     default:
       if (error.status === 401 || error.status === 403) return 'manage.errors.forbidden'
       return 'manage.errors.generic'
