@@ -96,7 +96,7 @@ export const subdomains = {
   manager: {
     name: 'OpenVolley Manager',
     shortName: 'Manager',
-    description: 'Accounts, invite codes, official games and saved teams for OpenVolley admins and competition managers',
+    description: "Prepare your team's squad and the roster of each game for the OpenVolley eScoresheet. Clubs, invite codes and official games for competition managers.",
     title: 'OpenVolley Manager',
     mainEntry: 'manager-main',
     themeColor: '#ffffff',
