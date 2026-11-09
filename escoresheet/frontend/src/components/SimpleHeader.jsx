@@ -8,7 +8,7 @@ import { cn } from '../ui/cn.js'
 import { toast } from '../ui/uiStore.js'
 import { SegmentedControl } from '../ui/SegmentedControl.jsx'
 import {
-  HEADER_BAR, HEADER_BTN, HEADER_BTN_ON, HEADER_TITLE, MENU_PANEL, MENU_SECTION, MENU_ROW, MENU_SUBROW,
+  HEADER_BAR, HEADER_BAR_HEIGHT, HEADER_BTN, HEADER_BTN_ON, HEADER_HIT, HEADER_TITLE, MENU_PANEL, MENU_SECTION, MENU_ROW, MENU_SUBROW,
   MENU_ROW_ON, MENU_ROW_DANGER, MENU_NEST, MENU_SEP, MENU_ICON, toastLang
 } from './chromeClasses'
 import HeaderMenuItem from './HeaderMenuItem'
@@ -134,10 +134,12 @@ export default function SimpleHeader({
 
   return (
     <div
-      className={cn('ov-kit', HEADER_BAR, 'flex items-center justify-between gap-2')}
-      // 40 px, taller only when the system font size is raised (2.5rem): at
-      // 150 % the rem-sized buttons were cut at the top of a fixed 40 px bar
-      style={{ height: 'max(40px, 2.5rem)', minHeight: 'max(40px, 2.5rem)', maxHeight: 'max(40px, 2.5rem)', padding: '0 12px' }}
+      // 40 px (44 px on a phone: with HEADER_HIT every button is then a full
+      // 44 px target, top to bottom of the bar), taller only when the system
+      // font size is raised (rem): at 150 % the rem-sized buttons were cut at
+      // the top of a fixed 40 px bar
+      className={cn('ov-kit', HEADER_BAR, HEADER_BAR_HEIGHT, 'flex items-center justify-between gap-2')}
+      style={{ padding: '0 12px' }}
     >
       {/* LEFT: Title/Version or Toggle. The toggle cannot shrink: its column
           keeps the toggle's width, so on a narrow phone the menu button moves
@@ -153,7 +155,9 @@ export default function SimpleHeader({
             options={toggleOptions.map((option, idx) => ({ value: String(idx), label: option.label }))}
             value={activeToggle >= 0 ? String(activeToggle) : ''}
             onChange={(v) => toggleOptions[Number(v)]?.onClick?.()}
-            className="shrink-0 sm:p-0 sm:[&_button]:h-9 sm:[&_button]:px-3"
+            // 28 px segments on a phone (the bar has no room for wider ones):
+            // an invisible ::before makes each a 44 px tall target
+            className="shrink-0 sm:p-0 sm:[&_button]:h-9 sm:[&_button]:px-3 [&_button]:relative [&_button]:before:absolute [&_button]:before:inset-x-0 [&_button]:before:-inset-y-2 [&_button]:before:content-['']"
           />
         ) : title ? (
           <span className={HEADER_TITLE}>
@@ -172,7 +176,7 @@ export default function SimpleHeader({
             setMenuOpen(!menuOpen)
           }}
           aria-expanded={menuOpen}
-          className={cn(HEADER_BTN, 'min-w-11 px-3', menuOpen && HEADER_BTN_ON)}
+          className={cn(HEADER_BTN, HEADER_HIT, 'min-w-11 px-3', menuOpen && HEADER_BTN_ON)}
           aria-label={t('header.menu')}
           title={t('header.menu')}
         >
@@ -320,7 +324,7 @@ export default function SimpleHeader({
             data-testid={a.testId}
             aria-label={a.label}
             title={a.label}
-            className={cn(HEADER_BTN, 'w-9 px-0 sm:w-auto sm:px-2.5 text-stone-800')}
+            className={cn(HEADER_BTN, HEADER_HIT, 'w-9 px-0 sm:w-auto sm:px-2.5 text-stone-800')}
           >
             {a.icon}
             <span className="hidden sm:inline">{a.label}</span>
@@ -332,7 +336,7 @@ export default function SimpleHeader({
             type="button"
             onClick={onFullscreen}
             aria-pressed={isFullscreen}
-            className={cn(HEADER_BTN, 'w-9 px-0', isFullscreen && HEADER_BTN_ON)}
+            className={cn(HEADER_BTN, HEADER_HIT, 'w-9 px-0', isFullscreen && HEADER_BTN_ON)}
             aria-label={isFullscreen ? t('header.exitFullscreen', 'Exit fullscreen') : t('header.fullscreen', 'Fullscreen')}
             title={isFullscreen ? t('header.exitFullscreen', 'Exit fullscreen') : t('header.fullscreen', 'Fullscreen')}
           >

@@ -294,3 +294,31 @@ export function pinGrantsAccess (match, pin) {
   }
   return ok
 }
+
+/**
+ * Which role a PIN proves for a relayed match (bench requests,
+ * lib/benchRequests.js): 'referee' (referee PIN, referee connection on),
+ * 'home' / 'away' (that bench's PIN while its connection is on), else null.
+ * The game PIN is the scorer's own and proves no bench.
+ */
+export function pinRoleOf (match, pin) {
+  const p = pinText(pin)
+  if (!p || !match || typeof match !== 'object') return null
+  const same = (v) => {
+    const s = pinText(v)
+    return !!s && safeEqual(s, p)
+  }
+  if (match.homeTeamConnectionEnabled === true && same(match.homeTeamPin)) return 'home'
+  if (match.awayTeamConnectionEnabled === true && same(match.awayTeamPin)) return 'away'
+  if (match.refereeConnectionEnabled === true && same(match.refereePin)) return 'referee'
+  return null
+}
+
+/** The bench team / referee a match token was issued for (indoor roles), else null. */
+export function tokenRoleOf (payload) {
+  const r = payload?.r
+  if (r === 'bench_home' || r === 'homeTeam') return 'home'
+  if (r === 'bench_away' || r === 'awayTeam') return 'away'
+  if (r === 'referee') return 'referee'
+  return null
+}

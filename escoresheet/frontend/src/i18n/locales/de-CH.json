@@ -2482,7 +2482,11 @@
     "sanctions": "SANKTIONE",
     "none": "Kei",
     "moreCount": "+{{count}} meh",
-    "noBenchData": "Kei Bank-Date"
+    "noBenchData": "Kei Bank-Date",
+    "sets": "Sätz",
+    "bench": "Bank",
+    "officials": "Offizielli",
+    "serving": "Ufschlag"
   },
   "officialAutocomplete": {
     "selectFromHistory": "Us Historie uswähle"
@@ -5235,5 +5239,119 @@
     "warningMen_other": "{{names}} sind beim Verein als Frauen gemeldet, und dies ist ein Herrenspiel. Prüfe es vor der Seitenwahl.",
     "warningWomen_one": "{{names}} ist beim Verein als Mann gemeldet, und dies ist ein Damenspiel. Prüfe es vor der Seitenwahl.",
     "warningWomen_other": "{{names}} sind beim Verein als Männer gemeldet, und dies ist ein Damenspiel. Prüfe es vor der Seitenwahl."
+  },
+  "benchRequests": {
+    "title": "Aafroge an Schriiber",
+    "lineup": "Ufstellig",
+    "timeout": "Time-out",
+    "substitution": "Wächsel",
+    "forSet": "Satz {{set}}",
+    "tapToRequest": "Tippe zum Aafrooge",
+    "prepare": "Vorbereite",
+    "cancel": "Aafrog zruggzieh",
+    "gameCaptain": "Spielkapitän",
+    "done": {
+      "lineup": "Vom Schriiber erfasst",
+      "timeout": "Gwährt",
+      "substitution": "Aagnoh"
+    },
+    "status": {
+      "sending": "Wird gschickt…",
+      "pending": "Gschickt – wartet uf de Schriiber",
+      "waitingScorer": "Wartet uf de Schriiber (nöd verbunde)",
+      "seen": "De Schriiber hätt sie",
+      "accepted": "Aagnoh",
+      "declined": "Abglehnt",
+      "declinedBecause": "Abglehnt: {{reason}}",
+      "refused": "Nöd gschickt: {{reason}}",
+      "notSent": "Nöd gschickt – kei Verbindig",
+      "cancelled": "Zruggzoge",
+      "expired": "Nüme offe"
+    },
+    "refusal": {
+      "other": "de Server hätt sie abgwise",
+      "not-this-bench": "die Bank isch nöd (meh) verbunde",
+      "rate-limited": "z vill Aafroge, wart e Minute",
+      "no-match": "de Schriiber isch nöd online",
+      "lineup-locked": "d Ufstellig isch scho aagnoh",
+      "bad-lineup": "d Ufstellig isch nöd komplett",
+      "bad-captain": "lueg de Spielkapitän aa",
+      "bad-pairs": "lueg d Wächselpaar aa",
+      "duplicate-id": "scho gschickt",
+      "nothing-to-cancel": "nüt zum Zruggzieh"
+    },
+    "unavailable": {
+      "no_coin_toss": "Nach de Platzwahl",
+      "match_over": "S Spiil isch fertig",
+      "set_started": "De Satz hätt aagfange",
+      "lineup_entered": "Vom Schriiber erfasst",
+      "no_lineup": "Nach de Ufstellig",
+      "set_interval": "Nöd i de Satzpause",
+      "replay_pending": "Nöd wänn en Ballwächsel wiederholt wird",
+      "after_delay_warning": "Nöd nach ere Verzögerigsverwarnig",
+      "third_timeout": "Beidi Time-outs bezoge",
+      "substitution_limit": "6 Wächsel gmacht",
+      "second_substitution_request": "Zweiti Aafrog i dere Unterbrächig"
+    },
+    "lineupSheet": {
+      "title": "Ufstellig · Satz {{set}}",
+      "hint": "Tipp e Position aa, dänn e Spielerin oder en Spieler. Bis zum Satzbeginn gseht sie nur de Schriiber.",
+      "position": "Position {{pos}}",
+      "send": "Ufstellig schicke",
+      "net": "Netz",
+      "players": "Spieler",
+      "asInSet": "Wie im Satz {{set}}",
+      "noLiberos": "Liberos ({{numbers}}) ghöred nöd i d Ufstellig.",
+      "gameCaptainHint": "Kapitän {{captain}} isch nöd i de Ufstellig: wer isch Spielkapitän uf em Feld?"
+    },
+    "subSheet": {
+      "title": "Wächsel vorbereite · Satz {{set}}",
+      "left_one": "No {{count}} Wächsel i dem Satz",
+      "left_other": "No {{count}} Wächsel i dem Satz",
+      "send": "Schicke ({{count}})",
+      "off": "Us",
+      "on": "Ii",
+      "remove": "Entferne",
+      "pickOff": "Wer gaht use?",
+      "pickOn": "Wer chunnt für {{out}}?",
+      "nobody": "Niemer uf de Bank dörf ine.",
+      "gameCaptainHint": "De Spielkapitän gaht use: wer füehrt s Team uf em Feld?",
+      "why": {
+        "libero": "Libero",
+        "paired": "Scho gwählt",
+        "no_rally_since_entry": "Grad ine, no kein Ballwächsel",
+        "replaced_by_libero": "Libero für ihn dinne",
+        "not_on_court": "Nöd uf em Feld",
+        "not_on_bench": "Nöd uf de Bank",
+        "sent_off": "Usgschlosse",
+        "wrong_partner": "Falsche Partner",
+        "played_out": "Scho gspielt",
+        "no_rally_since_out": "No kein Ballwächsel"
+      }
+    },
+    "scorer": {
+      "count_one": "{{count}} Aafrog vo de Bank",
+      "count_other": "{{count}} Aafroge vo de Bank",
+      "lineupTitle": "Ufstellig für Satz {{set}}",
+      "timeoutTitle": "Time-out-Aafrog",
+      "substitutionTitle": "Wächselaafrog",
+      "gameCaptain": "Spielkapitän: {{number}}",
+      "review": "Prüefe und aanäh",
+      "grant": "Time-out gwähre",
+      "substitute": "Wächsle",
+      "recorded": "Erfasst",
+      "decline": "Ablehne",
+      "declineTitle": "Aafrog ablehne?",
+      "declineMessage": "D Bank gseht, dass sie abglehnt worde isch, und din Grund.",
+      "reason": "Grund (freiwillig)",
+      "afterRally": "Nach em Ballwächsel",
+      "notSent": "Antwort nöd gschickt: kei Verbindig zum Server",
+      "notOnCourt": "Nr. {{number}} isch nöd uf em Feld.",
+      "notOnBench": "Nr. {{number}} chan jetzt nöd ine."
+    },
+    "referee": {
+      "timeout": "Bank fröget es Time-out aa",
+      "substitution": "Bank bereitet en Wächsel vor: {{pairs}}"
+    }
   }
 }

@@ -2327,7 +2327,11 @@
     "sanctions": "SANKTIONEN",
     "none": "Keine",
     "moreCount": "+{{count}} mehr",
-    "noBenchData": "Keine Bankdaten"
+    "noBenchData": "Keine Bankdaten",
+    "sets": "Sätze",
+    "bench": "Bank",
+    "officials": "Offizielle",
+    "serving": "Aufschlag"
   },
   "officialAutocomplete": {
     "selectFromHistory": "Aus Historie auswählen"
@@ -5223,5 +5227,119 @@
     "warningMen_other": "{{names}} sind beim Verein als Frauen gemeldet, und dies ist ein Herrenspiel. Prüfe es vor der Seitenwahl.",
     "warningWomen_one": "{{names}} ist beim Verein als Mann gemeldet, und dies ist ein Damenspiel. Prüfe es vor der Seitenwahl.",
     "warningWomen_other": "{{names}} sind beim Verein als Männer gemeldet, und dies ist ein Damenspiel. Prüfe es vor der Seitenwahl."
+  },
+  "benchRequests": {
+    "title": "Anfragen an den Schreiber",
+    "lineup": "Aufstellung",
+    "timeout": "Time-out",
+    "substitution": "Wechsel",
+    "forSet": "Satz {{set}}",
+    "tapToRequest": "Tippen zum Anfragen",
+    "prepare": "Vorbereiten",
+    "cancel": "Anfrage zurückziehen",
+    "gameCaptain": "Spielkapitän",
+    "done": {
+      "lineup": "Vom Schreiber erfasst",
+      "timeout": "Gewährt",
+      "substitution": "Angenommen"
+    },
+    "status": {
+      "sending": "Wird gesendet…",
+      "pending": "Gesendet – wartet auf den Schreiber",
+      "waitingScorer": "Wartet auf den Schreiber (nicht verbunden)",
+      "seen": "Der Schreiber hat sie",
+      "accepted": "Angenommen",
+      "declined": "Abgelehnt",
+      "declinedBecause": "Abgelehnt: {{reason}}",
+      "refused": "Nicht gesendet: {{reason}}",
+      "notSent": "Nicht gesendet – keine Verbindung",
+      "cancelled": "Zurückgezogen",
+      "expired": "Nicht mehr offen"
+    },
+    "refusal": {
+      "other": "der Server hat sie abgewiesen",
+      "not-this-bench": "diese Bank ist nicht (mehr) verbunden",
+      "rate-limited": "zu viele Anfragen, bitte eine Minute warten",
+      "no-match": "der Schreiber ist nicht online",
+      "lineup-locked": "die Aufstellung wurde schon angenommen",
+      "bad-lineup": "die Aufstellung ist nicht vollständig",
+      "bad-captain": "Spielkapitän prüfen",
+      "bad-pairs": "Wechselpaare prüfen",
+      "duplicate-id": "schon gesendet",
+      "nothing-to-cancel": "nichts zurückzuziehen"
+    },
+    "unavailable": {
+      "no_coin_toss": "Nach der Platzwahl",
+      "match_over": "Das Spiel ist beendet",
+      "set_started": "Der Satz hat begonnen",
+      "lineup_entered": "Vom Schreiber erfasst",
+      "no_lineup": "Nach der Aufstellung",
+      "set_interval": "Nicht in der Satzpause",
+      "replay_pending": "Nicht während ein Ballwechsel wiederholt wird",
+      "after_delay_warning": "Nicht nach einer Verzögerungsverwarnung",
+      "third_timeout": "Beide Time-outs bezogen",
+      "substitution_limit": "6 Wechsel gemacht",
+      "second_substitution_request": "Zweite Anfrage in dieser Unterbrechung"
+    },
+    "lineupSheet": {
+      "title": "Aufstellung · Satz {{set}}",
+      "hint": "Position antippen, dann eine Spielerin oder einen Spieler. Bis zum Satzbeginn sieht sie nur der Schreiber.",
+      "position": "Position {{pos}}",
+      "send": "Aufstellung senden",
+      "net": "Netz",
+      "players": "Spieler",
+      "asInSet": "Wie in Satz {{set}}",
+      "noLiberos": "Liberos ({{numbers}}) gehören nicht in die Aufstellung.",
+      "gameCaptainHint": "Kapitän {{captain}} ist nicht in der Aufstellung: wer ist Spielkapitän auf dem Feld?"
+    },
+    "subSheet": {
+      "title": "Wechsel vorbereiten · Satz {{set}}",
+      "left_one": "Noch {{count}} Wechsel in diesem Satz",
+      "left_other": "Noch {{count}} Wechsel in diesem Satz",
+      "send": "Senden ({{count}})",
+      "off": "Aus",
+      "on": "Ein",
+      "remove": "Entfernen",
+      "pickOff": "Wer geht raus?",
+      "pickOn": "Wer kommt für {{out}}?",
+      "nobody": "Niemand auf der Bank darf rein.",
+      "gameCaptainHint": "Der Spielkapitän geht raus: wer führt das Team auf dem Feld?",
+      "why": {
+        "libero": "Libero",
+        "paired": "Schon gewählt",
+        "no_rally_since_entry": "Eben rein, noch kein Ballwechsel",
+        "replaced_by_libero": "Libero für ihn drin",
+        "not_on_court": "Nicht auf dem Feld",
+        "not_on_bench": "Nicht auf der Bank",
+        "sent_off": "Ausgeschlossen",
+        "wrong_partner": "Falscher Partner",
+        "played_out": "Schon gespielt",
+        "no_rally_since_out": "Noch kein Ballwechsel"
+      }
+    },
+    "scorer": {
+      "count_one": "{{count}} Anfrage der Bank",
+      "count_other": "{{count}} Anfragen der Bank",
+      "lineupTitle": "Aufstellung für Satz {{set}}",
+      "timeoutTitle": "Time-out-Anfrage",
+      "substitutionTitle": "Wechselanfrage",
+      "gameCaptain": "Spielkapitän: {{number}}",
+      "review": "Prüfen und annehmen",
+      "grant": "Time-out gewähren",
+      "substitute": "Wechseln",
+      "recorded": "Erfasst",
+      "decline": "Ablehnen",
+      "declineTitle": "Anfrage ablehnen?",
+      "declineMessage": "Die Bank sieht, dass sie abgelehnt wurde, und deinen Grund.",
+      "reason": "Grund (freiwillig)",
+      "afterRally": "Nach dem Ballwechsel",
+      "notSent": "Antwort nicht gesendet: keine Verbindung zum Server",
+      "notOnCourt": "Nr. {{number}} ist nicht auf dem Feld.",
+      "notOnBench": "Nr. {{number}} kann jetzt nicht rein."
+    },
+    "referee": {
+      "timeout": "Bank fragt nach einem Time-out",
+      "substitution": "Bank bereitet einen Wechsel vor: {{pairs}}"
+    }
   }
 }

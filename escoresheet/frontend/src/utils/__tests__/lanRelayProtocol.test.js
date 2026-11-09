@@ -22,6 +22,7 @@ import { createLanRelay, createLocalAddressCheck, createMainInstanceGate, MAX_OW
 import { vitePluginApiRoutes } from '../../../vite-plugin-api-routes.js'
 import { readRelayBundle } from '../serverDataSync'
 import { runBeachVenueContract } from '../../../../backend/tests/helpers/beachVenueContract.js'
+import { runBenchRequestContract } from '../../../../backend/tests/helpers/benchRequestContract.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const FRONTEND_DIR = resolve(here, '../../..')
@@ -1425,6 +1426,7 @@ describe('relay runtimes speak the shared protocol', () => {
       await waitForHttp(`http://127.0.0.1:${port}/api/server/status`)
       await relayScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await runBeachVenueContract({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'server-js' })
+      await runBenchRequestContract({ wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'server-js' })
       await hostileFrameScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await hallCrowdScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
       await deflateScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
@@ -1525,6 +1527,7 @@ describe('relay runtimes speak the shared protocol', () => {
     try {
       await relayScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await runBeachVenueContract({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'electron' })
+      await runBenchRequestContract({ wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'electron' })
       await hostileFrameScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await hallCrowdScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
       await deflateScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
@@ -1547,6 +1550,7 @@ describe('relay runtimes speak the shared protocol', () => {
       await waitForHttp(`http://127.0.0.1:${port}/api/health`)
       await relayScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await runBeachVenueContract({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'tauri' })
+      await runBenchRequestContract({ wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'tauri' })
       await hostileFrameScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await hallCrowdScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
       const unknown = await fetch(`http://127.0.0.1:${port}/api/nope`)

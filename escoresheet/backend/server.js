@@ -32,7 +32,9 @@ import { createRealtimeHub, createLiveStateRelay, createHeartbeat, isLiveRequest
 // What anonymous readers (live sockets, /api/db without a session) may see.
 import { projectLiveRow, hasAnonPolicy, anonSelectCheck, publicRelayMatch, publicPeople, relaySummaryBundle, relayMatchListRow, cloudListsMatch, projectAnonDbRows, projectNonOwnerRows } from './lib/publicColumns.js'
 // PIN-proved access to a relayed match (full bundle) and its capability tokens.
-import { createMatchTokens, pinGrantsAccess, matchTokenSecretFromEnv, isTokenRole, connectionPinType, findMatchByConnectionPin } from './lib/matchAccess.js'
+import { createMatchTokens, pinGrantsAccess, matchTokenSecretFromEnv, isTokenRole, connectionPinType, findMatchByConnectionPin, pinRoleOf, tokenRoleOf } from './lib/matchAccess.js'
+// Bench requests (line-up, time-out, substitution) from a bench tablet to the scorer
+import { normalizeBenchRequest, normalizeBenchResponse, createBenchRequestStore, createWindowLimiter, currentSetOfBundle, benchView, refereeInfo } from './lib/benchRequests.js'
 // Pure helpers only (no pg, no I/O at import): safe in the LAN / SEA build.
 import { ipBucketKey, createConcurrencyGate, bearerFromHeaders } from './lib/auth.js'
 import { createAttemptLimiter, createPinFailureBudget } from './lib/matchRestore.js'
@@ -4433,6 +4435,15 @@ function handleSocketMessage(clientInfo, data) {
         })
         clientInfo.device = DEVICE_LABELS.includes(message.device) ? message.device : clientInfo.device
         clientInfo.deviceTeam = VALID_TEAMS.includes(message.team) ? message.team : clientInfo.deviceTeam
+        sendBenchRequestsOnJoin(clientInfo, normalizeMatchId(message.matchId))
+        break
+
+      case 'bench-request':
+        handleBenchRequest(clientInfo, message)
+        break
+
+      case 'bench-response':
+        handleBenchResponse(clientInfo, message)
         break
 
       default:
@@ -4807,6 +4818,7 @@ function handleClientDisconnect(clientInfo) {
   handleLeaveMatch(clientInfo)
   connections.delete(clientInfo.id)
   wsRateLimitMap.delete(clientInfo.id)
+  benchRequestLimiter.forget(clientInfo.id)
   claimFailures.delete(`ws:${clientInfo.id}`)
   claimFailures.delete(`pin-ws:${clientInfo.id}`)
   relaySummary.count('sockets closed')
@@ -5251,7 +5263,12 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     updatedAt: new Date().toISOString(),
     updatedBy: clientInfo.id
   })
+  const newlyOwned = !clientInfo.ownedMatches.has(matchId)
   clientInfo.ownedMatches.add(matchId)
+  // Bench requests of a set that is over are dropped; a scorer that has just
+  // (re)proved the match gets the open ones again
+  benchRequests.prune(matchId, currentSetOfBundle(activeMatches.get(matchId)))
+  if (newlyOwned) replayBenchRequests(clientInfo, matchId)
 
   // Ensure room exists
   if (!rooms.has(matchId)) {
@@ -5339,6 +5356,7 @@ function removeMatch(matchId) {
   rooms.delete(matchId)
   activeMatches.delete(matchId)
   displacedPins.delete(matchId)
+  benchRequests.drop(matchId)
   for (const c of connections.values()) c.ownedMatches.delete(matchId)
   retirePocketBaseMatch(matchId)
 }
@@ -5374,6 +5392,123 @@ function handleDeleteMatch(clientInfo, message) {
 
   removeMatch(matchId)
   console.log(`🗑️  Deleted match ${matchId}`)
+}
+
+// --- Bench requests (lib/benchRequests.js) ------------------------------------
+// A bench tablet sends its team's line-up, a time-out request or a prepared
+// substitution; only the match's scoreboard gets it, only that bench gets the
+// answer, the referee sockets a note of time-out / substitution requests. The
+// same messages and rules as lanRelayCore and the Tauri relay
+// (tests/helpers/benchRequestContract.js).
+const benchRequests = createBenchRequestStore()
+const benchRequestLimiter = createWindowLimiter()
+
+/**
+ * The role this socket proved for the match: 'home' / 'away' (that bench's
+ * PIN or token while its connection is on), 'referee', else null. The game
+ * PIN (the scorer's own devices) is none of them.
+ */
+function relayRoleOf(clientInfo, matchId, entry = activeMatches.get(matchId)) {
+  if (!clientInfo || !matchId || !entry?.match) return null
+  const a = clientInfo.matchAccess.get(matchId)
+  if (!a) return null
+  if (a.token && tokenGrantsRelay(a.token, matchId, entry.match)) return tokenRoleOf(matchTokens.verify(a.token))
+  if (a.pin && hasRelayAccess(clientInfo, matchId, entry)) return pinRoleOf(entry.match, a.pin)
+  return null
+}
+
+function roomMembers(matchId, pred) {
+  const room = rooms.get(matchId)
+  const out = []
+  if (!room) return out
+  for (const id of room.clients) {
+    const c = connections.get(id)
+    if (c && c.ws.readyState === 1 && pred(c)) out.push(c)
+  }
+  return out
+}
+
+const matchOwners = (matchId) => [...connections.values()].filter(c => c.ws.readyState === 1 && c.ownedMatches.has(matchId))
+
+function sendToClient(clientInfo, msg) {
+  try { clientInfo.ws.send(JSON.stringify(msg)) } catch { /* closing */ }
+}
+
+function benchRefused(clientInfo, matchId, reason, id = null) {
+  sendToClient(clientInfo, { type: 'error', code: 'bench-request-refused', reason, message: `Bench request refused: ${reason}`, ...(id ? { id } : {}), ...(matchId ? { matchId } : {}) })
+}
+
+function toReferees(matchId, msg) {
+  const text = JSON.stringify(msg)
+  for (const c of roomMembers(matchId, (m) => relayRoleOf(m, matchId) === 'referee')) sendToRoomMember(c, text)
+}
+
+function handleBenchRequest(clientInfo, message) {
+  const matchId = normalizeMatchId(message.matchId)
+  const id = typeof message.request?.id === 'string' ? message.request.id.slice(0, 64) : null
+  if (benchRequestLimiter.hit(clientInfo.id)) return benchRefused(clientInfo, matchId, 'rate-limited', id)
+  const entry = matchId ? activeMatches.get(matchId) : null
+  if (!entry) return benchRefused(clientInfo, matchId, 'no-match', id)
+  const team = message.team
+  if (team !== 'home' && team !== 'away') return benchRefused(clientInfo, matchId, 'bad-team', id)
+  if (relayRoleOf(clientInfo, matchId, entry) !== team) return benchRefused(clientInfo, matchId, 'not-this-bench', id)
+  const checked = normalizeBenchRequest(message.request)
+  if (!checked.ok) return benchRefused(clientInfo, matchId, checked.reason, id)
+  const request = checked.request
+  benchRequests.prune(matchId, currentSetOfBundle(entry))
+  const kept = benchRequests.add(matchId, team, request)
+  if (!kept.ok) return benchRefused(clientInfo, matchId, kept.reason, request.id)
+  const owners = matchOwners(matchId)
+  const at = kept.entry?.at ?? Date.now()
+  const out = JSON.stringify({ type: 'bench-request', matchId, team, request, status: kept.entry ? kept.entry.status : 'cancelled', at })
+  for (const o of owners) sendToRoomMember(o, out)
+  for (const old of kept.superseded) if (old.request.kind !== 'lineup') toReferees(matchId, refereeInfo(matchId, old, 'superseded'))
+  if (kept.cancelled && kept.cancelled.request.kind !== 'lineup') toReferees(matchId, refereeInfo(matchId, kept.cancelled, 'cancelled'))
+  if (kept.entry && request.kind !== 'lineup') toReferees(matchId, refereeInfo(matchId, kept.entry))
+  sendToClient(clientInfo, {
+    type: 'bench-request-ack',
+    matchId,
+    team,
+    id: request.id,
+    status: kept.entry ? 'pending' : 'cancelled',
+    delivered: owners.length,
+    superseded: kept.superseded.map(e => e.request.id),
+    ...(kept.cancelled ? { cancelId: kept.cancelled.request.id } : {})
+  })
+}
+
+function handleBenchResponse(clientInfo, message) {
+  const matchId = resolveMatchKey(clientInfo, message.matchId)
+  if (!requireMatchOwner(clientInfo, matchId, 'bench-response')) return
+  const team = message.team
+  const checked = normalizeBenchResponse(message)
+  if ((team !== 'home' && team !== 'away') || !checked.ok) return benchRefused(clientInfo, matchId, checked.ok ? 'bad-team' : checked.reason)
+  const { id, status, reason } = checked.response
+  const e = benchRequests.answer(matchId, team, id, status, reason || null)
+  if (!e) return benchRefused(clientInfo, matchId, 'unknown-request', id)
+  const out = JSON.stringify({ type: 'bench-response', matchId, team, id, kind: e.request.kind, setIndex: e.request.setIndex, status, ...(reason ? { reason } : {}) })
+  for (const b of roomMembers(matchId, (m) => relayRoleOf(m, matchId) === team)) sendToRoomMember(b, out)
+  // The other scoreboard sockets of the match (App + Scoreboard share one; a second device may not)
+  for (const o of matchOwners(matchId)) if (o !== clientInfo) sendToRoomMember(o, out)
+  if (e.request.kind !== 'lineup') toReferees(matchId, refereeInfo(matchId, e, status))
+}
+
+/** A bench that (re)subscribes: its team's requests; a referee: the open time-out / substitution requests. */
+function sendBenchRequestsOnJoin(clientInfo, matchId) {
+  if (!matchId) return
+  const role = relayRoleOf(clientInfo, matchId)
+  if (role === 'home' || role === 'away') {
+    sendToClient(clientInfo, { type: 'bench-request-state', matchId, team: role, requests: benchRequests.ofTeam(matchId, role).map(benchView) })
+  } else if (role === 'referee') {
+    for (const e of benchRequests.open(matchId)) if (e.request.kind !== 'lineup') sendToClient(clientInfo, refereeInfo(matchId, e))
+  }
+}
+
+/** The scorer's socket that has just proved the match: every open request again. */
+function replayBenchRequests(clientInfo, matchId) {
+  for (const e of benchRequests.open(matchId)) {
+    sendToClient(clientInfo, { type: 'bench-request', matchId, team: e.team, request: e.request, status: e.status, at: e.at, replay: true })
+  }
 }
 
 // Broadcast message to all clients in a specific room

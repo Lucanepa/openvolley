@@ -288,6 +288,8 @@ pub struct AppState {
     /// match id -> claims the scorers' copies were continued from (sync `device.supersedes`), oldest first
     superseded_claims: Mutex<HashMap<String, Vec<String>>>,
     pending: Mutex<HashMap<String, Pending>>,
+    /// match id -> its open and recently answered bench requests, oldest first
+    bench: Mutex<HashMap<String, Vec<crate::bench_requests::BenchEntry>>>,
     next_id: AtomicU64,
     /// Sign on phone sessions (memory only; the sweeper starts with the first one)
     sign: Arc<crate::sign::SignSessions>,
@@ -310,6 +312,7 @@ pub fn new_state(http_port: u16, ws_port: u16) -> Arc<AppState> {
         moved_claims: Mutex::new(HashMap::new()),
         superseded_claims: Mutex::new(HashMap::new()),
         pending: Mutex::new(HashMap::new()),
+        bench: Mutex::new(HashMap::new()),
         next_id: AtomicU64::new(1),
         sign: crate::sign::SignSessions::lan(),
         http_port,
@@ -1724,6 +1727,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, ip: IpAddr) {
     state.clients.lock().await.remove(&conn_id);
     state.conn_meta.lock().await.remove(&conn_id);
     state.limits.lock().await.remove(&format!("fail:ws:{conn_id}"));
+    state.limits.lock().await.remove(&format!("bench:{conn_id}"));
     {
         let mut owners = state.owners.lock().await;
         if let Some(owned) = owners.remove(&conn_id) {
@@ -2068,6 +2072,7 @@ async fn delete_match(state: &Arc<AppState>, match_id: &str) {
     state.scorers.lock().await.remove(match_id);
     state.moved_claims.lock().await.remove(match_id);
     state.superseded_claims.lock().await.remove(match_id);
+    state.bench.lock().await.remove(match_id);
     for owned in state.owners.lock().await.values_mut() {
         owned.remove(match_id);
     }
@@ -2157,6 +2162,23 @@ async fn handle_ws_message(state: &Arc<AppState>, conn_id: u64, tx: &Tx, text: &
             }
             let stored = store_bundle(state, &match_id, bundle, kind).await;
             notify_match_data(state, &match_id, "match-data-update", &stored, data.get("_timestamp").cloned(), Some(conn_id)).await;
+            // Bench requests of a set that is over go; a connection that has
+            // just (re)proved the match gets the open ones again
+            let replay = {
+                let mut bench = state.bench.lock().await;
+                if let Some(list) = bench.get_mut(&match_id) {
+                    crate::bench_requests::prune(list, crate::bench_requests::current_set_of_bundle(&stored), std::time::Instant::now());
+                }
+                if kind == ClaimKind::Owner {
+                    Vec::new()
+                } else {
+                    bench.get(&match_id).map(|l| l.iter().filter(|e| e.is_open()).cloned().collect()).unwrap_or_default()
+                }
+            };
+            for e in replay {
+                let msg = json!({ "type": "bench-request", "matchId": match_id, "team": e.team, "request": e.request, "status": e.status, "at": e.at_ms, "replay": true });
+                let _ = tx.send(Message::Text(msg.to_string().into()));
+            }
         }
         "subscribe-match" => {
             let Some(match_id) = match_id else {
@@ -2180,8 +2202,42 @@ async fn handle_ws_message(state: &Arc<AppState>, conn_id: u64, tx: &Tx, text: &
                 let full = has_access(state, conn_id, &match_id, Some(&bundle)).await;
                 let msg = bundle_message_access("match-full-data", &match_id, &bundle, None, full);
                 let _ = tx.send(Message::Text(msg.to_string().into()));
+                // A bench: its team's requests; a referee: the open time-out / substitution requests
+                match role_of(state, conn_id, &match_id, &bundle).await {
+                    Some(team @ ("home" | "away")) => {
+                        let requests: Vec<Value> = state
+                            .bench
+                            .lock()
+                            .await
+                            .get(&match_id)
+                            .map(|l| l.iter().filter(|e| e.team == team).map(crate::bench_requests::bench_view).collect())
+                            .unwrap_or_default();
+                        let msg = json!({ "type": "bench-request-state", "matchId": match_id, "team": team, "requests": requests });
+                        let _ = tx.send(Message::Text(msg.to_string().into()));
+                    }
+                    Some("referee") => {
+                        let infos: Vec<Value> = state
+                            .bench
+                            .lock()
+                            .await
+                            .get(&match_id)
+                            .map(|l| {
+                                l.iter()
+                                    .filter(|e| e.is_open() && e.kind() != "lineup")
+                                    .map(|e| crate::bench_requests::referee_info(&match_id, e, &e.status))
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        for info in infos {
+                            let _ = tx.send(Message::Text(info.to_string().into()));
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
+        "bench-request" => on_bench_request(state, conn_id, tx, &data).await,
+        "bench-response" => on_bench_response(state, conn_id, tx, &data).await,
         "unsubscribe-match" => {
             if let Some(match_id) = match_id {
                 let mut subs = state.subs.lock().await;
@@ -2513,6 +2569,156 @@ async fn notify_subscribers(state: &Arc<AppState>, match_id: &str, msg: &Value, 
         if let Some(tx) = clients.get(&id) {
             let _ = tx.send(Message::Text(text.clone().into()));
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Bench requests (bench_requests.rs): line-ups, time-out and substitution
+// requests from a bench to the match's scoreboard, the answer back to that
+// bench, a note of time-out / substitution requests to the referees. The same
+// messages as backend/server.js and lanRelayCore.cjs.
+// ---------------------------------------------------------------------------
+
+/// The role a connection proved for the match: "home" / "away" (that bench's
+/// PIN while its connection is on) or "referee"; None otherwise.
+async fn role_of(state: &Arc<AppState>, conn_id: u64, match_id: &str, bundle: &Value) -> Option<&'static str> {
+    if !has_access(state, conn_id, match_id, Some(bundle)).await {
+        return None;
+    }
+    let pin = state.conn_meta.lock().await.get(&conn_id).and_then(|m| m.access.get(match_id).map(|(p, _)| p.clone()))?;
+    crate::bench_requests::pin_role_of(bundle.get("match"), &pin)
+}
+
+async fn ids_with_role(state: &Arc<AppState>, match_id: &str, role: &str, bundle: &Value) -> Vec<u64> {
+    let mut out = Vec::new();
+    for id in subscriber_ids(state, match_id, None).await {
+        if role_of(state, id, match_id, bundle).await == Some(role) {
+            out.push(id);
+        }
+    }
+    out
+}
+
+async fn owner_ids(state: &Arc<AppState>, match_id: &str) -> Vec<u64> {
+    state.owners.lock().await.iter().filter(|(_, o)| o.contains(match_id)).map(|(id, _)| *id).collect()
+}
+
+async fn send_many(state: &Arc<AppState>, ids: &[u64], msg: &Value) {
+    let text = msg.to_string();
+    let clients = state.clients.lock().await;
+    for id in ids {
+        if let Some(tx) = clients.get(id) {
+            let _ = tx.send(Message::Text(text.clone().into()));
+        }
+    }
+}
+
+fn bench_refused(tx: &Tx, match_id: Option<&str>, reason: &str, id: Option<&str>) {
+    let mut err = json!({ "type": "error", "code": "bench-request-refused", "reason": reason, "message": format!("Bench request refused: {reason}") });
+    if let Some(id) = id {
+        err["id"] = json!(id);
+    }
+    if let Some(m) = match_id {
+        err["matchId"] = json!(m);
+    }
+    let _ = tx.send(Message::Text(err.to_string().into()));
+}
+
+async fn on_bench_request(state: &Arc<AppState>, conn_id: u64, tx: &Tx, data: &Value) {
+    use crate::bench_requests as br;
+    let match_id = norm_id(data.get("matchId"));
+    let mid = match_id.as_deref();
+    let id: Option<String> = data.get("request").and_then(|r| r.get("id")).and_then(|v| v.as_str()).map(|s| s.chars().take(64).collect());
+    let idr = id.as_deref();
+    let over = window_bump(&mut *state.limits.lock().await, &format!("bench:{conn_id}")) > br::BENCH_REQUESTS_PER_MINUTE;
+    if over {
+        return bench_refused(tx, mid, "rate-limited", idr);
+    }
+    let Some(match_id) = match_id.clone() else { return bench_refused(tx, None, "no-match", idr) };
+    let Some(bundle) = state.matches.lock().await.get(&match_id).cloned() else { return bench_refused(tx, mid, "no-match", idr) };
+    let team = data.get("team").and_then(|v| v.as_str()).unwrap_or("");
+    if !matches!(team, "home" | "away") {
+        return bench_refused(tx, mid, "bad-team", idr);
+    }
+    if role_of(state, conn_id, &match_id, &bundle).await != Some(team) {
+        return bench_refused(tx, mid, "not-this-bench", idr);
+    }
+    let request = match br::normalize_request(data.get("request")) {
+        Ok(r) => r,
+        Err(reason) => return bench_refused(tx, mid, reason, idr),
+    };
+    let rid = request.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let kind = request.get("kind").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let added = {
+        let mut bench = state.bench.lock().await;
+        let list = bench.entry(match_id.clone()).or_default();
+        br::prune(list, br::current_set_of_bundle(&bundle), std::time::Instant::now());
+        br::add(list, team, request.clone(), std::time::Instant::now(), now_ms())
+    };
+    let added = match added {
+        Ok(a) => a,
+        Err(reason) => return bench_refused(tx, mid, reason, Some(&rid)),
+    };
+    let owners = owner_ids(state, &match_id).await;
+    let delivered = {
+        let clients = state.clients.lock().await;
+        owners.iter().filter(|id| clients.contains_key(id)).count()
+    };
+    let status = if added.entry.is_some() { "pending" } else { "cancelled" };
+    let at = added.entry.as_ref().map_or_else(now_ms, |e| e.at_ms);
+    send_many(state, &owners, &json!({ "type": "bench-request", "matchId": match_id, "team": team, "request": request, "status": status, "at": at })).await;
+    let referees = ids_with_role(state, &match_id, "referee", &bundle).await;
+    for old in added.superseded.iter().filter(|e| e.kind() != "lineup") {
+        send_many(state, &referees, &br::referee_info(&match_id, old, "superseded")).await;
+    }
+    if let Some(c) = added.cancelled.as_ref().filter(|e| e.kind() != "lineup") {
+        send_many(state, &referees, &br::referee_info(&match_id, c, "cancelled")).await;
+    }
+    if let Some(e) = added.entry.as_ref().filter(|_| kind != "lineup") {
+        send_many(state, &referees, &br::referee_info(&match_id, e, "pending")).await;
+    }
+    let mut ack = json!({
+        "type": "bench-request-ack", "matchId": match_id, "team": team, "id": rid, "status": status,
+        "delivered": delivered, "superseded": added.superseded.iter().map(|e| e.id().to_string()).collect::<Vec<_>>(),
+    });
+    if let Some(c) = &added.cancelled {
+        ack["cancelId"] = json!(c.id());
+    }
+    let _ = tx.send(Message::Text(ack.to_string().into()));
+}
+
+async fn on_bench_response(state: &Arc<AppState>, conn_id: u64, tx: &Tx, data: &Value) {
+    use crate::bench_requests as br;
+    let Some(match_id) = resolve_key(state, conn_id, norm_id(data.get("matchId"))).await else {
+        send_error(tx, "bad-request", "bench-response needs matchId", None);
+        return;
+    };
+    if !is_owner(state, conn_id, &match_id).await {
+        send_error(tx, "not-match-owner", "Only the match's scoreboard may send bench-response", Some(&match_id));
+        return;
+    }
+    let team = data.get("team").and_then(|v| v.as_str()).unwrap_or("");
+    let (id, status, reason) = match br::normalize_response(data) {
+        Ok(r) => r,
+        Err(reason) => return bench_refused(tx, Some(&match_id), reason, None),
+    };
+    if !matches!(team, "home" | "away") {
+        return bench_refused(tx, Some(&match_id), "bad-team", None);
+    }
+    let answered = state.bench.lock().await.get_mut(&match_id).and_then(|l| br::answer(l, team, &id, &status, reason.clone()));
+    let Some(e) = answered else { return bench_refused(tx, Some(&match_id), "unknown-request", Some(&id)) };
+    let mut out = json!({ "type": "bench-response", "matchId": match_id, "team": team, "id": id, "kind": e.kind(), "setIndex": e.set_index(), "status": status });
+    if let Some(r) = &reason {
+        out["reason"] = json!(r);
+    }
+    let Some(bundle) = state.matches.lock().await.get(&match_id).cloned() else { return };
+    let benches = ids_with_role(state, &match_id, team, &bundle).await;
+    send_many(state, &benches, &out).await;
+    let others: Vec<u64> = owner_ids(state, &match_id).await.into_iter().filter(|id| *id != conn_id).collect();
+    send_many(state, &others, &out).await;
+    if e.kind() != "lineup" {
+        let referees = ids_with_role(state, &match_id, "referee", &bundle).await;
+        send_many(state, &referees, &br::referee_info(&match_id, &e, &status)).await;
     }
 }
 
