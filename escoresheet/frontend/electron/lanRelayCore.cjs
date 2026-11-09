@@ -896,6 +896,266 @@ function readSignBody(req, limit) {
 
 const isJsonRequest = (req) => /^application\/json\b/i.test(String((req.headers && req.headers['content-type']) || ''))
 
+// --- Bench requests ----------------------------------------------------------
+// A bench tablet sends its team's line-up, a time-out request or a prepared
+// substitution to the scorer (bench-request); the scorer answers
+// (bench-response). The rules and messages are those of the cloud relay's
+// backend/lib/benchRequests.js (copied here: this file requires nothing) and
+// of src-tauri/src/relay.rs; the wire scenario all of them pass is
+// backend/tests/helpers/benchRequestContract.js. See that lib for the messages.
+
+const BENCH_REQUEST_KINDS = Object.freeze(['lineup', 'timeout', 'substitution', 'cancel'])
+const BENCH_RESPONSE_STATUSES = Object.freeze(['accepted', 'declined', 'seen'])
+const LINEUP_KEYS = Object.freeze(['I', 'II', 'III', 'IV', 'V', 'VI'])
+const BENCH_REQUESTS_PER_MINUTE = 30
+const MAX_BENCH_REASON = 200
+const MAX_BENCH_PAIRS = 6
+const MAX_REQUESTS_PER_TEAM = 12
+const BENCH_REQUEST_TTL_MS = 30 * 60 * 1000
+const ID_RE = /^[A-Za-z0-9_-]{1,64}$/
+
+const isTeam = (t) => t === 'home' || t === 'away'
+const shirt = (v) => {
+  const n = typeof v === 'string' && /^\d{1,2}$/.test(v.trim()) ? Number(v.trim()) : v
+  return Number.isInteger(n) && n >= 1 && n <= 99 ? n : null
+}
+const fail = (reason) => ({ ok: false, reason })
+
+/**
+ * A bench-request's request, checked and copied to the known fields only.
+ * @returns {{ ok: true, request: object } | { ok: false, reason: string }}
+ */
+function normalizeBenchRequest(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return fail('bad-request')
+  if (typeof raw.id !== 'string' || !ID_RE.test(raw.id)) return fail('bad-id')
+  if (!BENCH_REQUEST_KINDS.includes(raw.kind)) return fail('bad-kind')
+  const setIndex = raw.setIndex
+  if (!Number.isInteger(setIndex) || setIndex < 1 || setIndex > 5) return fail('bad-set')
+  const request = { id: raw.id, kind: raw.kind, setIndex }
+  if (raw.kind === 'cancel') {
+    if (typeof raw.cancelId !== 'string' || !ID_RE.test(raw.cancelId)) return fail('bad-cancel')
+    request.cancelId = raw.cancelId
+    return { ok: true, request }
+  }
+  if (raw.kind === 'lineup') {
+    const lu = raw.lineup
+    if (!lu || typeof lu !== 'object' || Array.isArray(lu)) return fail('bad-lineup')
+    const lineup = {}
+    const seen = new Set()
+    for (const k of LINEUP_KEYS) {
+      const n = shirt(lu[k])
+      if (n === null || seen.has(n)) return fail('bad-lineup')
+      seen.add(n)
+      lineup[k] = n
+    }
+    request.lineup = lineup
+    if (raw.gameCaptain !== undefined && raw.gameCaptain !== null) {
+      const gc = shirt(raw.gameCaptain)
+      if (gc === null || !seen.has(gc)) return fail('bad-captain')
+      request.gameCaptain = gc
+    }
+    return { ok: true, request }
+  }
+  if (raw.kind === 'substitution') {
+    if (!Array.isArray(raw.pairs) || raw.pairs.length < 1 || raw.pairs.length > MAX_BENCH_PAIRS) return fail('bad-pairs')
+    const outs = new Set()
+    const ins = new Set()
+    const pairs = []
+    for (const p of raw.pairs) {
+      if (!p || typeof p !== 'object') return fail('bad-pairs')
+      const out = shirt(p.out)
+      const inn = shirt(p.in)
+      if (out === null || inn === null || out === inn || outs.has(out) || ins.has(inn) || outs.has(inn) || ins.has(out)) return fail('bad-pairs')
+      outs.add(out)
+      ins.add(inn)
+      pairs.push({ out, in: inn })
+    }
+    request.pairs = pairs
+    if (raw.gameCaptain !== undefined && raw.gameCaptain !== null) {
+      const gc = shirt(raw.gameCaptain)
+      if (gc === null || outs.has(gc)) return fail('bad-captain')
+      request.gameCaptain = gc
+    }
+    return { ok: true, request }
+  }
+  return { ok: true, request } // timeout: nothing more
+}
+
+/** A bench-response, checked: { ok, response: { id, status, reason? } }. */
+function normalizeBenchResponse(raw) {
+  if (!raw || typeof raw !== 'object') return fail('bad-request')
+  if (typeof raw.id !== 'string' || !ID_RE.test(raw.id)) return fail('bad-id')
+  if (!BENCH_RESPONSE_STATUSES.includes(raw.status)) return fail('bad-status')
+  const response = { id: raw.id, status: raw.status }
+  if (typeof raw.reason === 'string' && raw.reason.trim()) response.reason = raw.reason.trim().slice(0, MAX_BENCH_REASON)
+  return { ok: true, response }
+}
+
+/** The set the match is in from the relayed sets: the lowest unfinished one, else after the last. */
+function currentSetOfBundle(bundle) {
+  const sets = Array.isArray(bundle?.sets) ? bundle.sets : []
+  let open = null
+  let last = 0
+  for (const s of sets) {
+    const i = Number(s?.index)
+    if (!Number.isInteger(i)) continue
+    if (i > last) last = i
+    if (!s.finished && (open === null || i < open)) open = i
+  }
+  return open ?? (last > 0 ? last + 1 : 1)
+}
+
+const OPEN = (e) => e.status === 'pending' || e.status === 'seen'
+
+/** What the bench is told about one of its requests. */
+function benchView(entry) {
+  const r = entry.request
+  return { id: r.id, kind: r.kind, setIndex: r.setIndex, status: entry.status, ...(entry.reason ? { reason: entry.reason } : {}) }
+}
+
+/** What a referee sees of a time-out / substitution request (never a line-up). */
+function refereeInfo(matchId, entry, status = entry.status) {
+  const r = entry.request
+  return { type: 'bench-request-info', matchId, team: entry.team, id: r.id, kind: r.kind, setIndex: r.setIndex, ...(r.pairs ? { pairs: r.pairs } : {}), status }
+}
+
+/**
+ * The open and recently answered requests of every match. Answered ones stay
+ * (for a bench that reconnects) until their set is over or BENCH_REQUEST_TTL_MS.
+ */
+function createBenchRequestStore({ ttlMs = BENCH_REQUEST_TTL_MS, maxPerTeam = MAX_REQUESTS_PER_TEAM } = {}) {
+  const byMatch = new Map() // matchId -> Map<id, { team, request, status, reason?, at }>
+
+  const entries = (matchId) => byMatch.get(matchId) || null
+
+  /**
+   * Keep a request. A new line-up of a team replaces its open line-up of that
+   * set, a new time-out request its open time-out request, a new substitution
+   * request its open one. A line-up already accepted for the set is locked.
+   * cancel: drops the team's open request cancelId.
+   * @returns {{ ok: true, entry, superseded: object[], cancelled: object|null } | { ok: false, reason }}
+   */
+  function add(matchId, team, request, now = Date.now()) {
+    if (!isTeam(team)) return fail('bad-team')
+    let map = byMatch.get(matchId)
+    if (request.kind === 'cancel') {
+      const target = map?.get(request.cancelId)
+      if (!target || target.team !== team || !OPEN(target)) return fail('nothing-to-cancel')
+      map.delete(request.cancelId)
+      return { ok: true, entry: null, superseded: [], cancelled: target }
+    }
+    if (!map) {
+      map = new Map()
+      byMatch.set(matchId, map)
+    }
+    const prev = map.get(request.id)
+    if (prev && (prev.team !== team || !OPEN(prev))) return fail('duplicate-id')
+    if (request.kind === 'lineup') {
+      for (const e of map.values()) {
+        if (e.team === team && e.request.kind === 'lineup' && e.request.setIndex === request.setIndex && e.status === 'accepted') return fail('lineup-locked')
+      }
+    }
+    const superseded = []
+    for (const [id, e] of map) {
+      if (id === request.id || e.team !== team || !OPEN(e) || e.request.kind !== request.kind) continue
+      if (request.kind === 'lineup' && e.request.setIndex !== request.setIndex) continue
+      superseded.push(e)
+      map.delete(id)
+    }
+    const entry = { team, request, status: 'pending', at: now }
+    map.delete(request.id)
+    map.set(request.id, entry)
+    // Room per team: the oldest answered ones go first, then the oldest
+    let own = [...map.entries()].filter(([, e]) => e.team === team)
+    while (own.length > maxPerTeam) {
+      const victim = own.find(([, e]) => !OPEN(e)) || own[0]
+      map.delete(victim[0])
+      own = own.filter((x) => x !== victim)
+    }
+    return { ok: true, entry, superseded, cancelled: null }
+  }
+
+  /** The scorer's answer. null when there is no such open request of the team. */
+  function answer(matchId, team, id, status, reason = null, now = Date.now()) {
+    const e = entries(matchId)?.get(id)
+    if (!e || e.team !== team || !OPEN(e)) return null
+    if (status === 'seen') {
+      e.status = 'seen'
+      return e
+    }
+    e.status = status
+    e.answeredAt = now
+    if (reason) e.reason = reason
+    else delete e.reason
+    return e
+  }
+
+  /** Open requests (for the scorer), oldest first. */
+  function open(matchId) {
+    return [...(entries(matchId)?.values() || [])].filter(OPEN)
+  }
+
+  /** Every kept request of a team (for its bench). */
+  function ofTeam(matchId, team) {
+    return [...(entries(matchId)?.values() || [])].filter((e) => e.team === team)
+  }
+
+  /** Drop what belongs to a set that is over, and what is older than the TTL. */
+  function prune(matchId, currentSet, now = Date.now()) {
+    const map = entries(matchId)
+    if (!map) return
+    for (const [id, e] of map) {
+      if (e.request.setIndex < currentSet || now - e.at > ttlMs) map.delete(id)
+    }
+    if (map.size === 0) byMatch.delete(matchId)
+  }
+
+  function drop(matchId) {
+    byMatch.delete(matchId)
+  }
+
+  return { add, answer, open, ofTeam, prune, drop, size: () => byMatch.size }
+}
+
+/** Fixed-window counter per key (the per-socket bench-request limit). */
+function createWindowLimiter({ max = BENCH_REQUESTS_PER_MINUTE, windowMs = 60 * 1000 } = {}) {
+  const windows = new Map()
+  return {
+    /** Counts one; true when over the limit. */
+    hit(key, now = Date.now()) {
+      let w = windows.get(key)
+      if (!w || now - w.start >= windowMs) {
+        w = { start: now, count: 0 }
+        windows.set(key, w)
+      }
+      w.count++
+      if (windows.size > 10000) {
+        for (const [k, v] of windows) if (now - v.start >= windowMs) windows.delete(k)
+      }
+      return w.count > max
+    },
+    forget(key) { windows.delete(key) }
+  }
+}
+
+/**
+ * Which role a PIN proves for a relayed match: 'home' / 'away' (that bench's
+ * PIN while its connection is on), 'referee', else null. The game PIN (the
+ * scorer's own devices) proves no bench. Same as backend lib/matchAccess.js pinRoleOf.
+ */
+function pinRoleOf(match, pin) {
+  const p = pin === undefined || pin === null ? '' : String(pin).trim()
+  if (!p || !match || typeof match !== 'object') return null
+  const same = (v) => {
+    const s = v === undefined || v === null ? '' : String(v).trim()
+    return !!s && safeEqualText(s, p)
+  }
+  if (match.homeTeamConnectionEnabled === true && same(match.homeTeamPin)) return 'home'
+  if (match.awayTeamConnectionEnabled === true && same(match.awayTeamPin)) return 'away'
+  if (match.refereeConnectionEnabled === true && same(match.refereePin)) return 'referee'
+  return null
+}
+
 /**
  * Create one relay instance (state + WS protocol + HTTP API).
  *
@@ -943,6 +1203,8 @@ function createLanRelay(options = {}) {
   const scorers = new Map() // matchId -> { id, claim }: the device whose claim scores the room
   const movedClaims = new Map() // matchId -> Map<device id, claim> another device's claim took over
   const supersededClaims = new Map() // matchId -> Set<claim> the scorers' copies were continued from
+  const benchRequests = createBenchRequestStore() // open + recently answered bench requests per match
+  const benchLimiter = createWindowLimiter() // bench-request per socket and minute
   let nextClientId = 1
 
   function send(ws, msg) {
@@ -1113,6 +1375,7 @@ function createLanRelay(options = {}) {
       }
     }
     clients.delete(ws)
+    benchLimiter.forget(meta.id)
     for (const matchId of meta.owned) {
       if (ownersOf(matchId).length === 0) orphanedSince.set(matchId, Date.now())
     }
@@ -1344,6 +1607,7 @@ function createLanRelay(options = {}) {
     scorers.delete(matchId)
     movedClaims.delete(matchId)
     supersededClaims.delete(matchId)
+    benchRequests.drop(matchId)
     for (const meta of clients.values()) meta.owned.delete(matchId)
   }
 
@@ -1467,6 +1731,14 @@ function createLanRelay(options = {}) {
     if (device) noteScorer(ws, meta, matchId, device, claimed.kind)
     const stored = storeBundle(matchId, bundle, claimed.kind)
     sendMatchData(matchId, 'match-data-update', stored, msg._timestamp, ws)
+    // Bench requests of a set that is over go; a socket that has just
+    // (re)proved the match gets the open ones again
+    benchRequests.prune(matchId, currentSetOfBundle(stored))
+    if (claimed.kind !== 'owner') {
+      for (const e of benchRequests.open(matchId)) {
+        send(ws, { type: 'bench-request', matchId, team: e.team, request: e.request, status: e.status, at: e.at, replay: true })
+      }
+    }
   }
 
   function onSubscribe(ws, msg) {
@@ -1487,6 +1759,89 @@ function createLanRelay(options = {}) {
     }
     const stored = store.get(matchId)
     if (stored) send(ws, matchDataMessage('match-full-data', matchId, stored, undefined, hasAccess(ws, matchId, stored) ? 'full' : 'summary'))
+    if (stored) {
+      // A bench: its team's requests; a referee: the open time-out / substitution requests
+      const role = roleOf(ws, matchId, stored)
+      if (role === 'home' || role === 'away') {
+        send(ws, { type: 'bench-request-state', matchId, team: role, requests: benchRequests.ofTeam(matchId, role).map(benchView) })
+      } else if (role === 'referee') {
+        for (const e of benchRequests.open(matchId)) if (e.request.kind !== 'lineup') send(ws, refereeInfo(matchId, e))
+      }
+    }
+  }
+
+  // --- Bench requests (see the block above createLanRelay) ------------------
+
+  /** The role a subscriber proved for the match: 'home' / 'away' / 'referee', else null. */
+  function roleOf(ws, matchId, bundle = store.get(matchId)) {
+    const meta = clients.get(ws)
+    const a = meta && meta.access.get(matchId)
+    if (!a || !bundle || !bundle.match || !hasAccess(ws, matchId, bundle)) return null
+    return pinRoleOf(bundle.match, a.pin)
+  }
+
+  function subscribersWithRole(matchId, role) {
+    const out = []
+    const bundle = store.get(matchId)
+    for (const c of subscriptions.get(matchId) || []) if (c.readyState === 1 && roleOf(c, matchId, bundle) === role) out.push(c)
+    return out
+  }
+
+  function toReferees(matchId, msg) {
+    for (const c of subscribersWithRole(matchId, 'referee')) send(c, msg)
+  }
+
+  function benchRefused(ws, matchId, reason, id) {
+    send(ws, { type: 'error', code: 'bench-request-refused', reason, message: `Bench request refused: ${reason}`, ...(id ? { id } : {}), ...(matchId ? { matchId } : {}) })
+  }
+
+  function onBenchRequest(ws, msg) {
+    const meta = clients.get(ws)
+    const matchId = normalizeMatchId(msg.matchId)
+    const id = msg.request && typeof msg.request.id === 'string' ? msg.request.id.slice(0, 64) : null
+    if (!meta || benchLimiter.hit(meta.id)) return benchRefused(ws, matchId, 'rate-limited', id)
+    const stored = matchId ? store.get(matchId) : null
+    if (!stored) return benchRefused(ws, matchId, 'no-match', id)
+    const team = msg.team
+    if (team !== 'home' && team !== 'away') return benchRefused(ws, matchId, 'bad-team', id)
+    if (roleOf(ws, matchId, stored) !== team) return benchRefused(ws, matchId, 'not-this-bench', id)
+    const checked = normalizeBenchRequest(msg.request)
+    if (!checked.ok) return benchRefused(ws, matchId, checked.reason, id)
+    const request = checked.request
+    benchRequests.prune(matchId, currentSetOfBundle(stored))
+    const kept = benchRequests.add(matchId, team, request)
+    if (!kept.ok) return benchRefused(ws, matchId, kept.reason, request.id)
+    const owners = ownersOf(matchId).filter((o) => o.readyState === 1)
+    const at = kept.entry ? kept.entry.at : Date.now()
+    for (const o of owners) send(o, { type: 'bench-request', matchId, team, request, status: kept.entry ? kept.entry.status : 'cancelled', at })
+    for (const old of kept.superseded) if (old.request.kind !== 'lineup') toReferees(matchId, refereeInfo(matchId, old, 'superseded'))
+    if (kept.cancelled && kept.cancelled.request.kind !== 'lineup') toReferees(matchId, refereeInfo(matchId, kept.cancelled, 'cancelled'))
+    if (kept.entry && request.kind !== 'lineup') toReferees(matchId, refereeInfo(matchId, kept.entry))
+    send(ws, {
+      type: 'bench-request-ack',
+      matchId,
+      team,
+      id: request.id,
+      status: kept.entry ? 'pending' : 'cancelled',
+      delivered: owners.length,
+      superseded: kept.superseded.map((e) => e.request.id),
+      ...(kept.cancelled ? { cancelId: kept.cancelled.request.id } : {}),
+    })
+  }
+
+  function onBenchResponse(ws, msg) {
+    const matchId = resolveKey(ws, msg.matchId)
+    if (!requireOwner(ws, matchId, 'bench-response')) return
+    const team = msg.team
+    const checked = normalizeBenchResponse(msg)
+    if ((team !== 'home' && team !== 'away') || !checked.ok) return benchRefused(ws, matchId, checked.ok ? 'bad-team' : checked.reason)
+    const { id, status, reason } = checked.response
+    const e = benchRequests.answer(matchId, team, id, status, reason || null)
+    if (!e) return benchRefused(ws, matchId, 'unknown-request', id)
+    const out = { type: 'bench-response', matchId, team, id, kind: e.request.kind, setIndex: e.request.setIndex, status, ...(reason ? { reason } : {}) }
+    for (const b of subscribersWithRole(matchId, team)) send(b, out)
+    for (const o of ownersOf(matchId)) if (o !== ws) send(o, out)
+    if (e.request.kind !== 'lineup') toReferees(matchId, refereeInfo(matchId, e, status))
   }
 
   /** The PIN a subscriber offers for a match: checked now if the relay holds it. */
@@ -1622,6 +1977,8 @@ function createLanRelay(options = {}) {
       case 'live-state-update': onLiveState(ws, msg); break
       case 'delete-match': onDelete(ws, msg); break
       case 'clear-all-matches': onClearAll(ws, msg); break
+      case 'bench-request': onBenchRequest(ws, msg); break
+      case 'bench-response': onBenchResponse(ws, msg); break
       case 'match-data-response':
       case 'game-number-response':
       case 'match-update-response':
@@ -2002,6 +2359,12 @@ module.exports = {
   matchDataMessage,
   relaySummaryBundle,
   pinGrantsAccess,
+  pinRoleOf,
+  normalizeBenchRequest,
+  normalizeBenchResponse,
+  createBenchRequestStore,
+  currentSetOfBundle,
+  BENCH_REQUESTS_PER_MINUTE,
   SUMMARY_MATCH_FIELDS,
   SUMMARY_TEAM_FIELDS,
   SUMMARY_SET_FIELDS,
