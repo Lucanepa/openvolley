@@ -5238,5 +5238,123 @@
     "warningMen_other": "{{names}} sont inscrites au club comme femmes, et ce match est un match masculin. Vérifiez avant le tirage au sort.",
     "warningWomen_one": "{{names}} est inscrit au club comme homme, et ce match est un match féminin. Vérifiez avant le tirage au sort.",
     "warningWomen_other": "{{names}} sont inscrits au club comme hommes, et ce match est un match féminin. Vérifiez avant le tirage au sort."
+  },
+  "benchRequests": {
+    "title": "Demandes au marqueur",
+    "lineup": "Composition",
+    "timeout": "Temps mort",
+    "substitution": "Remplacement",
+    "forSet": "Set {{set}}",
+    "tapToRequest": "Toucher pour demander",
+    "prepare": "Préparer",
+    "cancel": "Retirer la demande",
+    "gameCaptain": "Capitaine de jeu",
+    "done": {
+      "lineup": "Acceptée",
+      "timeout": "Accordé",
+      "substitution": "Accepté"
+    },
+    "status": {
+      "sending": "Envoi…",
+      "pending": "Envoyée – en attente du marqueur",
+      "waitingScorer": "En attente du marqueur (pas connecté)",
+      "seen": "Le marqueur l’a reçue",
+      "accepted": "Acceptée",
+      "declined": "Refusée",
+      "declinedBecause": "Refusée : {{reason}}",
+      "refused": "Non envoyée : {{reason}}",
+      "notSent": "Non envoyée – pas de connexion",
+      "cancelled": "Retirée",
+      "expired": "Plus ouverte"
+    },
+    "autoReason": {
+      "lineup_already_entered": "le marqueur a déjà la composition",
+      "entered_differently": "le marqueur a saisi une autre composition"
+    },
+    "refusal": {
+      "other": "le serveur l’a refusée",
+      "not-this-bench": "ce banc n’est pas (plus) connecté",
+      "rate-limited": "trop de demandes, attendez une minute",
+      "no-match": "le marqueur n’est pas en ligne",
+      "lineup-locked": "la composition a déjà été acceptée",
+      "bad-lineup": "la composition n’est pas complète",
+      "bad-captain": "vérifiez le capitaine de jeu",
+      "bad-pairs": "vérifiez les remplacements",
+      "duplicate-id": "déjà envoyée",
+      "nothing-to-cancel": "rien à retirer"
+    },
+    "unavailable": {
+      "no_coin_toss": "Après le tirage au sort",
+      "match_over": "Le match est terminé",
+      "set_started": "Le set a commencé",
+      "lineup_entered": "Saisie par le marqueur",
+      "no_lineup": "Après la composition",
+      "set_interval": "Pas pendant la pause entre les sets",
+      "replay_pending": "Pas pendant qu’un échange est rejoué",
+      "after_delay_warning": "Pas après un avertissement pour retard",
+      "third_timeout": "Les deux temps morts sont pris",
+      "substitution_limit": "6 remplacements faits",
+      "second_substitution_request": "Deuxième demande dans cette interruption"
+    },
+    "lineupSheet": {
+      "title": "Composition de départ · set {{set}}",
+      "hint": "Touchez une position, puis un joueur ou une joueuse. Seul le marqueur la voit jusqu’au début du set.",
+      "position": "Position {{pos}}",
+      "send": "Envoyer la composition",
+      "net": "Filet",
+      "players": "Joueurs",
+      "asInSet": "Comme au set {{set}}",
+      "noLiberos": "Les libéros ({{numbers}}) ne font pas partie de la composition.",
+      "gameCaptainHint": "Le capitaine {{captain}} n’est pas dans la composition : qui est capitaine de jeu sur le terrain ?"
+    },
+    "subSheet": {
+      "title": "Préparer un remplacement · set {{set}}",
+      "left_one": "Encore {{count}} remplacement dans ce set",
+      "left_other": "Encore {{count}} remplacements dans ce set",
+      "send": "Envoyer ({{count}})",
+      "off": "Sort",
+      "on": "Entre",
+      "remove": "Retirer",
+      "pickOff": "Qui sort ?",
+      "pickOn": "Qui entre pour {{out}} ?",
+      "nobody": "Personne sur le banc ne peut entrer.",
+      "gameCaptainHint": "Le capitaine de jeu sort : qui mène l’équipe sur le terrain ?",
+      "why": {
+        "libero": "Libéro",
+        "paired": "Déjà choisi",
+        "no_rally_since_entry": "Vient d’entrer, pas encore d’échange",
+        "replaced_by_libero": "Libéro à sa place",
+        "not_on_court": "Pas sur le terrain",
+        "not_on_bench": "Pas sur le banc",
+        "sent_off": "Exclu",
+        "wrong_partner": "Mauvais partenaire",
+        "played_out": "Déjà joué",
+        "no_rally_since_out": "Pas encore d'échange"
+      }
+    },
+    "scorer": {
+      "count_one": "{{count}} demande du banc",
+      "count_other": "{{count}} demandes du banc",
+      "lineupTitle": "Composition du set {{set}}",
+      "timeoutTitle": "Demande de temps mort",
+      "substitutionTitle": "Demande de remplacement",
+      "gameCaptain": "Capitaine de jeu : {{number}}",
+      "review": "Vérifier et accepter",
+      "grant": "Accorder le temps mort",
+      "substitute": "Remplacer",
+      "recorded": "Enregistré",
+      "decline": "Refuser",
+      "declineTitle": "Refuser la demande ?",
+      "declineMessage": "Le banc voit qu’elle a été refusée, et votre motif.",
+      "reason": "Motif (facultatif)",
+      "afterRally": "Après l’échange",
+      "notSent": "Réponse non envoyée : pas de connexion au serveur",
+      "notOnCourt": "Le n° {{number}} n’est pas sur le terrain.",
+      "notOnBench": "Le n° {{number}} ne peut pas entrer maintenant."
+    },
+    "referee": {
+      "timeout": "Le banc demande un temps mort",
+      "substitution": "Le banc prépare un remplacement : {{pairs}}"
+    }
   }
 }

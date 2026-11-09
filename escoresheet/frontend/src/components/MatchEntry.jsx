@@ -37,6 +37,7 @@ import { getSideAForSet } from '../domain/rules'
 import { sanctionTarget, compareBySeq } from '../domain/describe'
 import { TEAM_COLOUR_MARK, matchDiscPaint, teamLiberoColour, markColourOn, teamBoxStyle, effectiveTeamColour } from '../utils/teamColours'
 import { TIMEOUT_LIMIT, SUBSTITUTION_LIMIT, counterTone, counterPips, benchShortName } from './bench/benchLayout.js'
+import BenchRequestPanel from './bench/BenchRequestPanel.jsx'
 
 // A player's sanction events as { warning, penalty, expulsion, disqualification } flags
 const sanctionFlags = (events = []) => {
@@ -147,6 +148,8 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
       set: currentSet,
       allSets,
       events,
+      // the scorer's live state (set interval: no time-out request then)
+      liveState: result.liveState || null,
       homePlayers: (result.homePlayers || []).sort((a, b) => (a.number || 0) - (b.number || 0)),
       awayPlayers: (result.awayPlayers || []).sort((a, b) => (a.number || 0) - (b.number || 0))
     })
@@ -1163,6 +1166,10 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
           )}
         </div>
       </div>
+
+      {/* Requests to the scorer: the line-up before each set, a time-out,
+          a prepared substitution (components/bench/BenchRequestPanel) */}
+      {matchId !== -1 && <BenchRequestPanel matchId={matchId} team={team} data={data} players={teamInfo.players} discStyle={discStyle} />}
 
       {/* SECTION 3: the team's half court, a square as large as the space
           left allows (the slot is a size container: min(100cqw, 100cqh)).
