@@ -351,6 +351,24 @@ describe('set 5, defaults and sanctions on the sheet', () => {
     expect(getByTestId('remarks-text').textContent).toContain('Team B, Set 1, Result 12:16: incomplete team (expulsion). Set awarded to Team A, 25:12.')
   })
 
+  it('the point and service a going back gives the opponent is circled; cancelled points are not marked; the remark is written (owner 2026-11-09)', () => {
+    seq = 0
+    const base = fixture()
+    const remark = 'Set 1, points 6:2: illegal substitution by team A (since 2:1, 4 points of team A cancelled, point and service to team B). New score for set 1: 2:3.'
+    const events = [
+      ev('point', 1, { team: 'home' }), ev('point', 1, { team: 'away' }), ev('point', 1, { team: 'home' }),
+      ...Array.from({ length: 2 }, () => ev('cancelled_point', 1, { team: 'home', cancelledBy: 'rectification' })),
+      ev('point', 1, { team: 'away' }),
+      ...Array.from({ length: 2 }, () => ev('cancelled_point', 1, { team: 'home', cancelledBy: 'rectification' })),
+      ev('point', 1, { team: 'away', rectification: true, penaltyPoint: true }),
+      ev('rectification', 1, { cancel: 'home', penaltyTo: 'away', serve: 'away', autoRemark: remark })
+    ]
+    const { container, getByTestId } = render(<App matchData={{ ...base, events, match: { ...base.match, remarks: remark } }} autoAction="preview" />)
+    const circled = [...container.querySelectorAll('[data-mark="circle"]')].map(e => Number(e.getAttribute('data-point')))
+    expect(circled).toEqual([3])
+    expect(getByTestId('remarks-text').textContent).toContain(remark)
+  })
+
   it('9 sanction rows; the 10th continues in REMARKS; a bench player\'s number not circled (owner 2026-10-13)', () => {
     seq = 0
     const base = fixture()

@@ -51,7 +51,7 @@ describe('rectify: one team\'s points cancelled (R15.9.2, 7.3.5.3, 7.7.2)', () =
   it('illegal substitution found later: the team\'s points since then cancelled, the opponent keeps its points and gains point and service', () => {
     const { events } = subMatch()
     expect(score(events)).toBe('5:3')
-    const p = plan(events, { moment: at(events, 1, 1), cancel: 'home', penaltyTo: 'away' })
+    const p = plan(events, { moment: at(events, 1, 1), cancel: 'home', penaltyTo: 'away', kind: 'illegal_substitution' })
     expect(p.error).toBeUndefined()
     const after = applyPlanToEvents(events, p)
     expect(score(after)).toBe('1:4')
@@ -64,7 +64,10 @@ describe('rectify: one team\'s points cancelled (R15.9.2, 7.3.5.3, 7.7.2)', () =
     // the head is the newest entry and carries the remark
     const head = after.filter(e => e.setIndex === 2 && e.seq === Math.floor(e.seq)).sort(compareBySeq).pop()
     expect(head.type).toBe('rectification')
-    expect(p.remarkAdd[0]).toBe('Team A, Set 2, Result 5:3: fault since 1:1; 4 point(s) of team A cancelled; point and service to team B; score now 1:4.')
+    // the auto remark, owner's template, the team at fault first
+    expect(p.remarkAdd[0]).toBe('Set 2, points 5:3: illegal substitution by team A (since 1:1, 4 points of team A cancelled, point and service to team B). New score for set 2: 1:4.')
+    // the penalty point is circled on the sheet like a sanction's
+    expect(penalty.payload.penaltyPoint).toBe(true)
     expect(head.payload.autoRemark).toBe(p.remarkAdd[0])
     // a cancelled point is still a rally: the rebuild finds nothing to change
     expect(unchangedByRebuild(after)).toBe(true)
@@ -108,7 +111,8 @@ describe('rectify: both, officials\' mistake (CB 2.3, 2.4)', () => {
     expect(p.preview.serve).toBe('home')
     expect(lineupNow(after, 2, 'away').lineup).toEqual(lineupNow(events.filter(e => (e.seq || 0) <= moment.boundarySeq), 2, 'away').lineup)
     expect(p.notes.map(n => n.key)).toContain('rectify.note.timeline')
-    expect(p.remarkAdd[0]).toBe('Set 2, Result 3:3: game taken back to 2:0 (officials\' mistake, Casebook 2.3); the rallies since then taken out, sanctions remain valid; score now 2:0.')
+    expect(p.remarkAdd[0]).toBe('Set 2, points 3:3: officials\' mistake (both teams\' points since 2:0 cancelled, no point). New score for set 2: 2:0.')
+    expect(p.rectification.kind).toBe('officials_mistake')
   })
 
   it('is taken back while it is the newest entry: the rallies come back', () => {
@@ -168,7 +172,7 @@ describe('rectify: everything editable before play resumes', () => {
     expect(p.preview.serve).toBe('home')
     const after = withIds(applyPlanToEvents(events, p))
     expect(servingTeamFromLog(after, 2, LIVE)).toBe('home')
-    expect(p.remarkAdd[0]).toMatch(/point and service to team B; team A to serve; score now 1:4\.$/)
+    expect(p.remarkAdd[0]).toMatch(/point and service to team B, team A to serve\)\. New score for set 2: 1:4\.$/)
     // home keeps serving and wins the next rally: no rotation in the rebuild
     const next = [...after, { id: 9998, matchId: 1, setIndex: 2, type: 'point', seq: Math.floor(Math.max(...after.map(e => e.seq))) + 1, ts: after[0].ts, payload: { team: 'home', score: { home: 2, away: 4 } } }]
     expect(unchangedByRebuild(next)).toBe(true)
@@ -195,7 +199,7 @@ describe('rectify: everything editable before play resumes', () => {
     const afterTb = applyPlanToEvents(events, tb)
     expect(afterTb.some(e => e.type === 'substitution' && e.setIndex === 2)).toBe(false)
     expect(Object.values(lineupNow(afterTb, 2, 'home').lineup)).toContain(4)
-    expect(tb.remarkAdd[0]).toMatch(/substitution #7 for #4 of team A taken back/)
+    expect(tb.remarkAdd[0]).toMatch(/4 points of team A cancelled, substitution #7 for #4 of team A taken back, point and service/)
     expect(tb.preview.substitutions.map(s => s.id)).toEqual([sub.id])
   })
 
@@ -203,7 +207,24 @@ describe('rectify: everything editable before play resumes', () => {
     const { events } = subMatch()
     const p = plan(events, { ...base(events), edits: { remark: 'Team A, Set 2: illegal substitution #7 (rule 15.9.2).' } })
     expect(p.remarkAdd).toEqual(['Team A, Set 2: illegal substitution #7 (rule 15.9.2).'])
-    expect(p.preview.remarkDefault).toMatch(/^Team A, Set 2, Result 5:3: fault since 1:1/)
+    expect(p.preview.remarkDefault).toMatch(/^Set 2, points 5:3: game taken back \(since 1:1/)
+    // left empty: the app's remark is written anyway (one must exist)
+    expect(plan(events, { ...base(events), edits: { remark: '   ' } }).remarkAdd).toEqual([p.preview.remarkDefault])
+  })
+
+  it('the remark words what it was, one point or none, and its new score follows a score set by hand', () => {
+    const { events } = liveMatch('AAHHH')
+    const wrongServer = plan(events, { moment: at(events, 1, 2), cancel: 'home', penaltyTo: 'away', kind: 'wrong_server' })
+    expect(wrongServer.remarkAdd[0]).toBe('Set 2, points 3:2: wrong server of team A (since 1:2, 2 points of team A cancelled, point and service to team B). New score for set 2: 1:3.')
+    const one = plan(events, { moment: at(events, 2, 2), cancel: 'home', penaltyTo: 'away', kind: 'wrong_positions' })
+    expect(one.remarkAdd[0]).toMatch(/^Set 2, points 3:2: positions not as on the line-up sheet, team A \(since 2:2, 1 point of team A cancelled/)
+    const none = plan(events, { moment: at(events, 3, 2), cancel: 'home', penaltyTo: 'away' })
+    expect(none.remarkAdd[0]).toMatch(/\(since 3:2, no point cancelled, point and service to team B\)\. New score for set 2: 3:3\.$/)
+    const byHand = plan(events, { moment: at(events, 1, 2), cancel: 'home', penaltyTo: 'away', kind: 'wrong_server', edits: { score: { home: 1, away: 4 } } })
+    expect(byHand.remarkAdd[0]).toMatch(/New score for set 2: 1:4\.$/)
+    // concerned team first: B at fault, B's points first
+    const b = plan(events, { moment: at(events, 0, 0), cancel: 'away', penaltyTo: 'home', kind: 'illegal_substitution' })
+    expect(b.remarkAdd[0]).toBe('Set 2, points 2:3: illegal substitution by team B (since 0:0, 2 points of team B cancelled, point and service to team A). New score for set 2: 0:4.')
   })
 
   it('all of it is taken back as one: Remove in the corrections, Undo\'s planner', () => {

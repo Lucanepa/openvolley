@@ -53,7 +53,7 @@
  * protest, the forfeits (the scorer's own flows: Stop the match, and the
  * set forfeit of the injury / expulsion dialogs).
  */
-import { compareBySeq, formatScore, plainScore, teamLetter, displaySetNumber, tr, otherTeam, remarkPrefix, describeEvent } from './describe'
+import { compareBySeq, formatScore, plainScore, teamLetter, displaySetNumber, tr, otherTeam, describeEvent } from './describe'
 import { scoreFromPointEvents, getSetResult, servingTeamFromLog } from './rules'
 import { finalizePlan, applyPlanToEvents, POSITIONS } from './recompute'
 import { emptyPlan, scoreTimeline, entryGroupIds, pointGroupIds } from './manualCorrections'
@@ -87,15 +87,38 @@ const NOTE_DEFAULTS = {
   timeline: 'Time-outs, substitutions and sanctions after it stay; on the scoresheet they now show the corrected score.'
 }
 
+// The remark (owner 2026-11-09: "SUPER IMPORTANT TO WRITE AN AUTO REMARK ON
+// THIS (Set XX Points XX:YY illegal YY for TEAM A/B etc. New score for Set XX
+// XX:YY etc"): always written, scores with the concerned team first
 const REMARK_DEFAULTS = {
-  since: 'fault since {{from}}',
-  backOfficials: 'game taken back to {{from}} (officials\' mistake, Casebook 2.3)',
-  cancelled: '{{n}} point(s) of team {{team}} cancelled',
-  cancelledBoth: 'the rallies since then taken out, sanctions remain valid',
-  penalty: 'point and service to team {{team}}',
-  serve: 'team {{team}} to serve',
+  line: 'Set {{set}}, points {{before}}: {{what}} ({{details}}). New score for set {{set}}: {{after}}.',
+  since: 'since {{from}}, {{n}} points of team {{team}} cancelled',
+  sinceOne: 'since {{from}}, 1 point of team {{team}} cancelled',
+  sinceNone: 'since {{from}}, no point cancelled',
+  both: 'both teams\' points since {{from}} cancelled',
   subTakenBack: 'substitution #{{in}} for #{{out}} of team {{team}} taken back',
-  after: 'score now {{score}}'
+  penalty: 'point and service to team {{team}}',
+  noPoint: 'no point',
+  serve: 'team {{team}} to serve'
+}
+
+/** What the fault was: it only words the remark. */
+export const RECTIFY_KINDS = Object.freeze(['illegal_substitution', 'wrong_positions', 'wrong_server', 'officials_mistake', 'other'])
+
+const REMARK_WHAT_DEFAULTS = {
+  illegal_substitution: 'illegal substitution by team {{team}}',
+  illegal_substitutionNoTeam: 'illegal substitution',
+  wrong_positions: 'positions not as on the line-up sheet, team {{team}}',
+  wrong_positionsNoTeam: 'positions not as on the line-up sheet',
+  wrong_server: 'wrong server of team {{team}}',
+  wrong_serverNoTeam: 'wrong server',
+  officials_mistake: 'officials\' mistake',
+  other: 'game taken back'
+}
+
+/** The usual "what was it": officials' mistake when both teams' points go, else other. */
+export function defaultKind(cancel) {
+  return cancel === 'both' ? 'officials_mistake' : 'other'
 }
 
 function fail(key, params = {}) {
@@ -241,7 +264,7 @@ export function planRectification(events, opts = {}, ctx = {}) {
   return buildRectification(events, opts, ctx, rows)
 }
 
-function buildRectification(events, { setIndex, moment = null, cancel = null, penaltyTo = null, edits = {} } = {}, ctx, lineupRows) {
+function buildRectification(events, { setIndex, moment = null, cancel = null, penaltyTo = null, kind = null, edits = {} } = {}, ctx, lineupRows) {
   const t = ctx.t
   const set = displaySetNumber(setIndex, ctx.match)
   if (ctx.liveSetIndex != null && ctx.liveSetIndex !== setIndex) return fail('notLive')
@@ -251,6 +274,7 @@ function buildRectification(events, { setIndex, moment = null, cancel = null, pe
   const floor = latestRectification(events, setIndex)?.seq ?? -Infinity
   if (moment.boundarySeq < floor) return fail('laterRectification')
   if (edits.score && !(validScore(edits.score.home) && validScore(edits.score.away))) return fail('badScore')
+  const what = RECTIFY_KINDS.includes(kind) ? kind : defaultKind(cancel)
 
   const all = [...(events || [])].sort(compareBySeq)
   const inSet = setEvents(all, setIndex)
@@ -331,7 +355,7 @@ function buildRectification(events, { setIndex, moment = null, cancel = null, pe
   if (penalty) {
     seq += 1
     running[penalty] += 1
-    rows.push(newRow(ctx, { type: 'point', setIndex, seq, ts, payload: { team: penalty, score: { ...running }, rectification: true } }))
+    rows.push(newRow(ctx, { type: 'point', setIndex, seq, ts, payload: { team: penalty, score: { ...running }, rectification: true, penaltyPoint: true } }))
     addedPointSeqs.push(seq)
   }
   for (const team of ['home', 'away']) {
@@ -349,6 +373,7 @@ function buildRectification(events, { setIndex, moment = null, cancel = null, pe
     seq,
     ts,
     payload: {
+      kind: what,
       cancel,
       team: isTeam(cancel) ? cancel : null,
       penaltyTo: penalty,
@@ -371,7 +396,7 @@ function buildRectification(events, { setIndex, moment = null, cancel = null, pe
   }
   plan.add = rows
   plan.affectedSets = [setIndex]
-  plan.rectification = { setIndex, cancel, penaltyTo: penalty }
+  plan.rectification = { setIndex, cancel, penaltyTo: penalty, kind: what }
 
   const finalized = finalizePlan(events, plan, ctx)
   // Who serves next: the team the rallies give it to (the penalty point's
@@ -381,20 +406,37 @@ function buildRectification(events, { setIndex, moment = null, cancel = null, pe
   const serve = isTeam(edits.serve) ? edits.serve : derivedServe
   head.payload.serve = serve
 
-  // The remark the rules ask for (CB 2.3), concerned team first
+  // The remark the rules ask for (CB 2.3), the concerned team first: the
+  // team at fault, else Team A. Always written: the scorer's text as typed
+  // ("ofc auto remarks can be changed"), the app's when the field is left
+  // empty. Afterwards it is a remark line like any other (Remarks,
+  // Corrections); nothing writes over it, and Undo of this going back
+  // removes only the line it wrote, if it is still unchanged
   const concerned = isTeam(cancel) ? cancel : (ctx.match?.coinTossTeamA === 'away' ? 'away' : 'home')
-  const parts = [
-    tr(t, cancel === 'both' ? 'rectify.remark.backOfficials' : 'rectify.remark.since', cancel === 'both' ? REMARK_DEFAULTS.backOfficials : REMARK_DEFAULTS.since, { from: plainScore(moment.score || { home: 0, away: 0 }, concerned) }),
+  const L = (k) => teamLetter(k, ctx.match)
+  const from = plainScore(moment.score || { home: 0, away: 0 }, concerned)
+  const faultTeam = isTeam(cancel) ? cancel : (penalty ? otherTeam(penalty) : null)
+  const whatKey = faultTeam || !REMARK_WHAT_DEFAULTS[`${what}NoTeam`] ? what : `${what}NoTeam`
+  const n = cancelled.length
+  const details = [
     cancel === 'both'
-      ? tr(t, 'rectify.remark.cancelledBoth', REMARK_DEFAULTS.cancelledBoth)
-      : (cancelled.length ? tr(t, 'rectify.remark.cancelled', REMARK_DEFAULTS.cancelled, { n: cancelled.length, team: teamLetter(cancel, ctx.match) }) : ''),
-    ...takenBack.map(s => tr(t, 'rectify.remark.subTakenBack', REMARK_DEFAULTS.subTakenBack, { in: s.payload?.playerIn ?? '?', out: s.payload?.playerOut ?? '?', team: teamLetter(s.payload?.team, ctx.match) })),
-    penalty ? tr(t, 'rectify.remark.penalty', REMARK_DEFAULTS.penalty, { team: teamLetter(penalty, ctx.match) }) : '',
-    serve !== derivedServe ? tr(t, 'rectify.remark.serve', REMARK_DEFAULTS.serve, { team: teamLetter(serve, ctx.match) }) : '',
-    tr(t, 'rectify.remark.after', REMARK_DEFAULTS.after, { score: plainScore(scoreAfter, concerned) })
+      ? tr(t, 'rectify.remark.both', REMARK_DEFAULTS.both, { from })
+      : n > 1
+        ? tr(t, 'rectify.remark.since', REMARK_DEFAULTS.since, { from, n, team: L(cancel) })
+        : tr(t, n === 1 ? 'rectify.remark.sinceOne' : 'rectify.remark.sinceNone', n === 1 ? REMARK_DEFAULTS.sinceOne : REMARK_DEFAULTS.sinceNone, { from, team: L(cancel) }),
+    ...takenBack.map(x => tr(t, 'rectify.remark.subTakenBack', REMARK_DEFAULTS.subTakenBack, { in: x.payload?.playerIn ?? '?', out: x.payload?.playerOut ?? '?', team: L(x.payload?.team) })),
+    penalty
+      ? tr(t, 'rectify.remark.penalty', REMARK_DEFAULTS.penalty, { team: L(penalty) })
+      : (cancel === 'both' ? tr(t, 'rectify.remark.noPoint', REMARK_DEFAULTS.noPoint) : ''),
+    serve !== derivedServe ? tr(t, 'rectify.remark.serve', REMARK_DEFAULTS.serve, { team: L(serve) }) : ''
   ].filter(Boolean)
-  const prefix = remarkPrefix({ team: isTeam(cancel) ? teamLetter(cancel, ctx.match) : null, set, score: plainScore(scoreBefore, concerned) }, t)
-  const remarkDefault = `${prefix}${parts.join('; ')}.`
+  const remarkDefault = tr(t, 'rectify.remark.line', REMARK_DEFAULTS.line, {
+    set,
+    before: plainScore(scoreBefore, concerned),
+    what: tr(t, `rectify.remarkWhat.${whatKey}`, REMARK_WHAT_DEFAULTS[whatKey], { team: faultTeam ? L(faultTeam) : '' }),
+    details: details.join(', '),
+    after: plainScore(scoreAfter, concerned)
+  })
   const remark = typeof edits.remark === 'string' && edits.remark.trim() ? edits.remark.trim() : remarkDefault
   head.payload.autoRemark = remark
   finalized.remarkAdd = [remark]

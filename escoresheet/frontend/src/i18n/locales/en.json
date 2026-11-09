@@ -4355,6 +4355,7 @@
     "field": {
       "lineup": "Line-up of {{team}}",
       "moment": "Score where it went wrong",
+      "kind": "What was it? (for the remark)",
       "cancel": "Whose points since then are cancelled?",
       "penalty": "Point and service to",
       "score": "Score",
@@ -4382,7 +4383,8 @@
       "both": "The officials gave wrong information, or a rally was played with five or seven players (Casebook 2.3, 2.4): both, nobody.",
       "edit": "Change anything the referees decided otherwise. Nothing is written before Resume.",
       "score": "Was {{score}}.",
-      "takeBack": "A substitution taken back leaves the record; its players go back where they were."
+      "takeBack": "A substitution taken back leaves the record; its players go back where they were.",
+      "remarkEmpty": "Left empty, the app's remark is written: the scoresheet must say what happened."
     },
     "action": {
       "next": "Next",
@@ -4429,14 +4431,32 @@
       "timeline": "Time-outs, substitutions and sanctions after it stay; on the scoresheet they now show the corrected score."
     },
     "remark": {
-      "backOfficials": "game taken back to {{from}} (officials' mistake, Casebook 2.3)",
-      "cancelled": "{{n}} point(s) of team {{team}} cancelled",
-      "cancelledBoth": "the rallies since then taken out, sanctions remain valid",
-      "penalty": "point and service to team {{team}}",
-      "serve": "team {{team}} to serve",
+      "line": "Set {{set}}, points {{before}}: {{what}} ({{details}}). New score for set {{set}}: {{after}}.",
+      "since": "since {{from}}, {{n}} points of team {{team}} cancelled",
+      "sinceOne": "since {{from}}, 1 point of team {{team}} cancelled",
+      "sinceNone": "since {{from}}, no point cancelled",
+      "both": "both teams' points since {{from}} cancelled",
       "subTakenBack": "substitution #{{in}} for #{{out}} of team {{team}} taken back",
-      "after": "score now {{score}}",
-      "since": "fault since {{from}}"
+      "penalty": "point and service to team {{team}}",
+      "noPoint": "no point",
+      "serve": "team {{team}} to serve"
+    },
+    "remarkWhat": {
+      "illegal_substitution": "illegal substitution by team {{team}}",
+      "illegal_substitutionNoTeam": "illegal substitution",
+      "wrong_positions": "positions not as on the line-up sheet, team {{team}}",
+      "wrong_positionsNoTeam": "positions not as on the line-up sheet",
+      "wrong_server": "wrong server of team {{team}}",
+      "wrong_serverNoTeam": "wrong server",
+      "officials_mistake": "officials' mistake",
+      "other": "game taken back"
+    },
+    "kind": {
+      "illegal_substitution": "Illegal substitution",
+      "wrong_positions": "Wrong positions",
+      "wrong_server": "Wrong server",
+      "officials_mistake": "Officials' mistake",
+      "other": "Other"
     }
   },
   "corrections": {

@@ -368,7 +368,10 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
 
     // Points awarded to the opponent of a team that defaulted or was incomplete
     // (Scoreboard.handleForfait, payload.forfeitAwarded): not won in a rally, so
-    // circled like a penalty point (field-spec 11, OV decision)
+    // circled like a penalty point (field-spec 11, OV decision). The point and
+    // service the game going back gives the opponent (domain/rectify,
+    // payload.penaltyPoint; FIVB 15.9.2.1, 7.7.1.1) is circled the same way
+    // (owner 2026-11-09)
     {
       let h = 0;
       let a = 0;
@@ -377,7 +380,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         if (team === 'home') h++;
         else if (team === 'away') a++;
         else continue;
-        if (e.payload?.forfeitAwarded === true) {
+        if (e.payload?.forfeitAwarded === true || e.payload?.penaltyPoint === true) {
           const list = team === 'home' ? homeCircledPoints : awayCircledPoints;
           const n = team === 'home' ? h : a;
           if (!list.includes(n)) list.push(n);

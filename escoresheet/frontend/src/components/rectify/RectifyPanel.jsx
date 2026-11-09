@@ -6,10 +6,12 @@
 //   1. when: the score of the set where it went wrong;
 //   2. what happens: whose points since then are cancelled (A, B, both) and
 //      who gets point and service (nobody, A, B), with the rules' usual
-//      answers as hints;
+//      answers as hints; "what was it" only words the remark;
 //   3. confirmed, everything can still be edited before play resumes: the
 //      score by hand, who serves, both line-ups (a substitution taken back, a
-//      player put back) and the remark. "Resume" writes it all as one
+//      player put back) and the remark, pre-filled and free to change ("ofc
+//      auto remarks can be changed"; left empty, the app's text is written:
+//      a remark always exists). "Resume" writes it all as one
 //      correction, which Undo and the corrections take back.
 // Nothing is written before "Resume". Opened from the Match menu, on the
 // tablet and on the phone. A team that cannot go on is not handled here: one
@@ -25,12 +27,19 @@ import { SegmentedControl } from '../../ui/SegmentedControl.jsx'
 import { Textarea } from '../../ui/Textarea.jsx'
 import { FormError } from '../../ui/Field.jsx'
 import { tr, formatScore, teamLabel, teamNameWithLetter, compareBySeq } from '../../domain/describe'
-import { rectifyMoments, planRectification, rectifyErrorText, defaultPenaltyTo } from '../../domain/rectify'
+import { rectifyMoments, planRectification, rectifyErrorText, defaultPenaltyTo, defaultKind, RECTIFY_KINDS } from '../../domain/rectify'
 import { POSITIONS } from '../../domain/recompute'
 import { useConfirmAction } from '../../hooks/useConfirmAction'
 import { FieldGroup, NewIssues } from '../corrections/shared.jsx'
 
 const TEAMS = ['home', 'away']
+const KIND_LABELS = {
+  illegal_substitution: 'Illegal substitution',
+  wrong_positions: 'Wrong positions',
+  wrong_server: 'Wrong server',
+  officials_mistake: 'Officials\' mistake',
+  other: 'Other'
+}
 
 function StepTitle({ n, children }) {
   return (
@@ -127,6 +136,7 @@ export default function RectifyPanel({
   const [momentKey, setMomentKey] = useState(null)
   const [cancel, setCancel] = useState(null)
   const [penalty, setPenalty] = useState(null) // 'none' | 'home' | 'away'; null: the usual answer
+  const [kind, setKind] = useState(null) // what it was (the remark's words); null: the usual one
   const [edits, setEdits] = useState({})
   const [busy, setBusy] = useState(false)
   const run = useConfirmAction(() => setBusy(false))
@@ -135,10 +145,11 @@ export default function RectifyPanel({
   const moments = useMemo(() => (setOpen ? rectifyMoments(sorted, { setIndex: liveSetIndex }, ctx) : []), [sorted, liveSetIndex, ctx, setOpen])
   const moment = moments.find(m => m.key === momentKey) || moments[0] || null
   const penaltyTo = penalty == null ? defaultPenaltyTo(cancel) : (penalty === 'none' ? null : penalty)
+  const what = kind || defaultKind(cancel)
   const plan = useMemo(() => {
     if (!moment || !cancel) return null
-    return planRectification(sorted, { setIndex: liveSetIndex, moment, cancel, penaltyTo, edits: step === 3 ? edits : {} }, ctx)
-  }, [sorted, liveSetIndex, moment, cancel, penaltyTo, edits, step, ctx])
+    return planRectification(sorted, { setIndex: liveSetIndex, moment, cancel, penaltyTo, kind: what, edits: step === 3 ? edits : {} }, ctx)
+  }, [sorted, liveSetIndex, moment, cancel, penaltyTo, what, edits, step, ctx])
   const ok = !!plan && !plan.error
   if (ok) lastPreview.current = plan.preview
   const preview = ok ? plan.preview : lastPreview.current
@@ -194,6 +205,18 @@ export default function RectifyPanel({
             {tr(t, 'rectify.since', 'Since {{score}}', { score: moment?.label || '' })}
             <span className="block text-xs text-stone-500">{TEAMS.map(k => teamName(k)).join(' · ')}</span>
           </p>
+          <div>
+            <label htmlFor="rectify-kind" className="mb-1.5 block text-sm font-medium text-stone-700">{tr(t, 'rectify.field.kind', 'What was it? (for the remark)')}</label>
+            <Select id="rectify-kind" size="lg" block value={what}
+              onChange={(e) => {
+                const v = e.target.value
+                setKind(v)
+                // an officials' mistake: both teams, nobody gets the point (CB 2.3)
+                if (v === 'officials_mistake') { setCancel('both'); setPenalty(null) }
+                setEdits({})
+              }}
+              options={RECTIFY_KINDS.map(k => ({ value: k, label: tr(t, `rectify.kind.${k}`, KIND_LABELS[k]) }))} />
+          </div>
           <FieldGroup label={tr(t, 'rectify.field.cancel', 'Whose points since then are cancelled?')}>
             <SegmentedControl
               ariaLabel={tr(t, 'rectify.field.cancel', 'Whose points since then are cancelled?')}
@@ -289,6 +312,9 @@ export default function RectifyPanel({
             <label htmlFor="rectify-remark" className="mb-1.5 block text-sm font-medium text-stone-700">{tr(t, 'rectify.field.remark', 'Remark on the scoresheet')}</label>
             <Textarea id="rectify-remark" size="sm" rows={3} value={typeof edits.remark === 'string' ? edits.remark : preview.remarkDefault}
               onChange={(e) => edit({ remark: e.target.value })} />
+            {typeof edits.remark === 'string' && !edits.remark.trim() && (
+              <p className="m-0 mt-1 text-xs text-amber-800">{tr(t, 'rectify.hint.remarkEmpty', 'Left empty, the app\'s remark is written: the scoresheet must say what happened.')}</p>
+            )}
             {typeof edits.remark === 'string' && (
               <button type="button" className={cn('mt-1 min-h-9 text-xs font-medium text-stone-600 underline', FOCUS_RING)} onClick={() => edit({ remark: undefined })}>
                 {tr(t, 'rectify.remarkReset', 'Use the text the app writes')}

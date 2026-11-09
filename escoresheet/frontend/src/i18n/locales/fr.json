@@ -4348,6 +4348,7 @@
     "field": {
       "lineup": "Formation de {{team}}",
       "moment": "Score au moment de l’erreur",
+      "kind": "Qu’était-ce ? (pour la remarque)",
       "cancel": "Les points de qui depuis sont annulés ?",
       "penalty": "Point et service à",
       "score": "Score",
@@ -4375,7 +4376,8 @@
       "both": "Les officiels ont donné une information erronée, ou un échange a été joué à cinq ou sept (Casebook 2.3, 2.4) : les deux, personne.",
       "edit": "Modifiez tout ce que les arbitres ont décidé autrement. Rien n’est enregistré avant « Reprendre ».",
       "score": "Avant : {{score}}.",
-      "takeBack": "Un remplacement repris quitte la feuille ; ses joueurs/euses reprennent leurs positions."
+      "takeBack": "Un remplacement repris quitte la feuille ; ses joueurs/euses reprennent leurs positions.",
+      "remarkEmpty": "Laissée vide, la remarque de l’application est écrite : la feuille doit dire ce qui s’est passé."
     },
     "action": {
       "next": "Suivant",
@@ -4422,14 +4424,32 @@
       "timeline": "Les temps morts, remplacements et sanctions après restent ; sur la feuille ils montrent maintenant le score rectifié."
     },
     "remark": {
-      "backOfficials": "jeu ramené à {{from}} (erreur des officiels, Casebook 2.3)",
-      "cancelled": "{{n}} point(s) de l’équipe {{team}} annulé(s)",
-      "cancelledBoth": "les échanges depuis retirés, les sanctions restent valables",
-      "penalty": "point et service à l’équipe {{team}}",
-      "serve": "service à l’équipe {{team}}",
+      "line": "Set {{set}}, points {{before}} : {{what}} ({{details}}). Nouveau score set {{set}} : {{after}}.",
+      "since": "depuis {{from}}, {{n}} points de l’équipe {{team}} annulés",
+      "sinceOne": "depuis {{from}}, 1 point de l’équipe {{team}} annulé",
+      "sinceNone": "depuis {{from}}, aucun point annulé",
+      "both": "points des deux équipes depuis {{from}} annulés",
       "subTakenBack": "remplacement #{{in}} pour #{{out}} de l’équipe {{team}} repris",
-      "after": "score désormais {{score}}",
-      "since": "faute depuis {{from}}"
+      "penalty": "point et service à l’équipe {{team}}",
+      "noPoint": "pas de point",
+      "serve": "service à l’équipe {{team}}"
+    },
+    "remarkWhat": {
+      "illegal_substitution": "remplacement irrégulier de l’équipe {{team}}",
+      "illegal_substitutionNoTeam": "remplacement irrégulier",
+      "wrong_positions": "positions non conformes à la fiche de position, équipe {{team}}",
+      "wrong_positionsNoTeam": "positions non conformes à la fiche de position",
+      "wrong_server": "mauvais/e serveur/euse de l’équipe {{team}}",
+      "wrong_serverNoTeam": "mauvais/e serveur/euse",
+      "officials_mistake": "erreur des officiels",
+      "other": "jeu ramené en arrière"
+    },
+    "kind": {
+      "illegal_substitution": "Remplacement irrégulier",
+      "wrong_positions": "Mauvaises positions",
+      "wrong_server": "Mauvais/e serveur/euse",
+      "officials_mistake": "Erreur des officiels",
+      "other": "Autre"
     }
   },
   "corrections": {
