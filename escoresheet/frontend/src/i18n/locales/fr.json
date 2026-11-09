@@ -1762,6 +1762,11 @@
     "loadGames": "Charger les matchs"
   },
   "refereeDashboard": {
+    "recorded": {
+      "title": "Enregistré par le marqueur",
+      "closesIn": "Se ferme dans {{s}} s",
+      "timeoutLeft": "Temps mort : encore {{s}} s"
+    },
     "linkDown": "Hors ligne : pas de connexion à la feuille de match. Le score et le service peuvent ne pas être à jour.",
     "title": "Espace arbitre",
     "dashboardTitle": "Tableau de bord arbitre",
