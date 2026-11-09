@@ -28,6 +28,8 @@ import { lastEventFromLiveState, lastEventFromMatchData, pickNewerLastEvent, ref
 import { backdropDismiss } from '../ui/backdropDismiss.js'
 import PlayerDisc from './referee/PlayerDisc.jsx'
 import ScoreServeRow from './referee/ScoreServeRow.jsx'
+import RecordedNoticePopup from './referee/RecordedNoticePopup.jsx'
+import { createRecordedNoticeTracker, describeNotice, NOTICE_AUTO_DISMISS_MS } from '../utils/refereeRecordedNotices.js'
 import { matchDiscPaint, teamLiberoColour, teamBoxStyle } from '../utils/teamColours.js'
 import { compareBySeq } from '../domain/describe'
 import { useTheme } from '../utils/theme'
@@ -640,6 +642,51 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       }
     }
   }, [matchId, updateMatchDataState, isMasterMode, onExit])
+
+  // "Recorded by the scorer": time-outs, substitutions and sanctions new in
+  // the loaded events open one popup on every referee tablet (OK, or it closes
+  // 10 s after its last entry); more recorded meanwhile join it. An undo
+  // removes its entry. Nothing recorded before this tablet loaded the match.
+  const [recordedNotices, setRecordedNotices] = useState([])
+  const [recordedDeadline, setRecordedDeadline] = useState(null)
+  const recordedTrackerRef = useRef(null)
+  if (recordedTrackerRef.current === null) recordedTrackerRef.current = createRecordedNoticeTracker()
+  const closeRecordedNotices = useCallback(() => {
+    setRecordedNotices([])
+    setRecordedDeadline(null)
+  }, [])
+  useEffect(() => {
+    recordedTrackerRef.current.reset()
+    closeRecordedNotices()
+  }, [matchId, closeRecordedNotices])
+  useEffect(() => {
+    if (!data?.events) return
+    const { added, removed } = recordedTrackerRef.current.update(data.events, {
+      scope: `${matchId}|${dataSourceRef.current === 'live_state' ? 'live_state' : 'relay'}`,
+      setIndex: data.currentSet?.index ?? null
+    })
+    if (removed.length) {
+      const gone = new Set(removed)
+      setRecordedNotices(prev => prev.filter(n => !gone.has(n.key)))
+    }
+    if (!added.length) return
+    const ctx = {
+      t,
+      match: data.match,
+      homeTeam: data.homeTeam,
+      awayTeam: data.awayTeam,
+      score: data.currentSet ? { home: data.currentSet.homePoints || 0, away: data.currentSet.awayPoints || 0 } : null
+    }
+    const notices = added.map(({ key, event }) => describeNotice(key, event, data.events, ctx)).filter(Boolean)
+    if (!notices.length) return
+    const keys = new Set(notices.map(n => n.key))
+    setRecordedNotices(prev => [...prev.filter(n => !keys.has(n.key)), ...notices])
+    setRecordedDeadline(Date.now() + NOTICE_AUTO_DISMISS_MS)
+    try {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(150)
+    } catch (e) { /* ignore */ }
+    // not t: a language change re-describes nothing already shown
+  }, [data, matchId])
 
   // Handle realtime data updates
   const handleRealtimeData = useCallback((result) => {
@@ -4038,6 +4085,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           />
         )
       }
+      {/* What the scorer just recorded (time-outs, substitutions, sanctions) */}
+      <RecordedNoticePopup notices={recordedNotices} deadline={recordedDeadline} onClose={closeRecordedNotices} />
       {/* Scorer Attention Modal */}
       {
         attentionModalOpen && (
