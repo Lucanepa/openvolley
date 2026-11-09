@@ -2495,7 +2495,11 @@
     "sanctions": "SANZIONI",
     "none": "Nessuna",
     "moreCount": "+{{count}} altro/i",
-    "noBenchData": "Nessun dato panchina"
+    "noBenchData": "Nessun dato panchina",
+    "sets": "Set",
+    "bench": "Panchina",
+    "officials": "Ufficiali",
+    "serving": "Al servizio"
   },
   "officialAutocomplete": {
     "selectFromHistory": "Seleziona dalla cronologia"
