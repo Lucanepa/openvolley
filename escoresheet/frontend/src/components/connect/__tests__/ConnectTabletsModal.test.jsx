@@ -30,7 +30,7 @@ vi.mock('../../../utils/serverDataSync', () => ({
 const dbMock = vi.hoisted(() => ({
   matches: { update: vi.fn(async () => 1), get: vi.fn() },
   sync_queue: { add: vi.fn(async () => 1) },
-  teams: { get: vi.fn(async (id) => ({ 11: { name: 'KSC Wiedikon' }, 12: { name: 'Volley Luzern' } })[id]) }
+  teams: { get: vi.fn(async (id) => ({ 11: { name: 'VBC Musterdorf' }, 12: { name: 'Volley Luzern' } })[id]) }
 }))
 vi.mock('../../../db/db', () => ({ db: dbMock }))
 vi.mock('../../auth/LoginModal', () => ({ default: () => <div data-testid="login-modal" /> }))
@@ -239,7 +239,7 @@ describe('ConnectTabletsModal', () => {
   it('bench cards name the team from the teams table when the match has only its id', async () => {
     const { homeName: _h, awayName: _a, ...bare } = MATCH
     renderModal({ match: { ...bare, homeTeamId: 11, awayTeamId: 12 }, fetchImpl: okFetch(), win: {} })
-    await waitFor(() => expect(screen.getByTestId('role-row-bench_home')).toHaveTextContent('KSC Wiedikon'))
+    await waitFor(() => expect(screen.getByTestId('role-row-bench_home')).toHaveTextContent('VBC Musterdorf'))
     expect(screen.getByTestId('role-row-bench_away')).toHaveTextContent('Volley Luzern')
   })
 

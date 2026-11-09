@@ -1,6 +1,6 @@
 // Inline SVG icons for the server's own HTML (the status page at '/').
 //
-// The same icon packs as the app (and wiedisync): Lucide for the UI glyphs,
+// The same icon packs as the app: Lucide for the UI glyphs,
 // Phosphor for the volleyball. The markup is copied verbatim from the packages'
 // SVG files (only the whitespace is collapsed), so the page needs no runtime
 // dependency, no build step and no CDN: it must render on a venue LAN with no

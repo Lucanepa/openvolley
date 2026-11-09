@@ -6,7 +6,7 @@
  * look different on every platform; these inherit `currentColor` and scale
  * with the `size` prop.
  *
- * The icons come from the same packs as wiedisync: lucide-react
+ * The icons come from two open packs: lucide-react
  * (https://lucide.dev, ISC) for UI glyphs, @phosphor-icons/react
  * (https://phosphoricons.com, MIT) for the volleyball. This file only keeps
  * the app's names and defaults (16px, inline next to text, aria-hidden), so
@@ -106,7 +106,7 @@ export const CardIcon = ({ size = 16, style, ...rest }) => (
   />
 )
 
-// phosphor:volleyball, as wiedisync's VolleyballIcon (src/components/VolleyballIcon.tsx):
+// phosphor:volleyball (Phosphor's Volleyball icon):
 // regular weight in currentColor, or the filled gold ball with `filled`.
 export const VolleyballIcon = ({ size = 16, filled = false, style, ...rest }) => (
   <Volleyball

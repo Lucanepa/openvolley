@@ -21,7 +21,7 @@ import { signHttpScenario, signPageCheck } from '../../frontend/electron/__fixtu
 
 const PASSWORD = 'correct-horse-battery'
 const MARKER_NAME = 'Marker Signer Zx9'
-const CTX = { home: 'VBC Wiedikon', away: 'Volley 05' }
+const CTX = { home: 'VBC Musterdorf', away: 'Volley 05' }
 const INK = { pad: { w: 4000, h: 2000 }, strokes: [[0, 1888, 300, 1888]] }
 
 describe('Sign on phone, cloud backend', { skip: SKIP }, () => {
@@ -122,13 +122,13 @@ describe('Sign on phone, cloud backend', { skip: SKIP }, () => {
     const r = await start(users.referee, {
       slot: 'ref1',
       matchKey: 'm-ctx',
-      context: { home: '‮VBC\u0000 Wiedikon⁦', away: 'v'.repeat(70), name: MARKER_NAME, when: '12.10.2026 20:15', lang: 'fr', userId: users.referee.id, gamePin: '123456' }
+      context: { home: '‮VBC\u0000 Musterdorf⁦', away: 'v'.repeat(70), name: MARKER_NAME, when: '12.10.2026 20:15', lang: 'fr', userId: users.referee.id, gamePin: '123456' }
     })
     code(r, 201)
     tokensSeen.push(r.json.token, r.json.watch)
     const open = await phone('open', { k: r.json.token })
     code(open, 200)
-    assert.deepEqual(open.json.context, { home: 'VBC Wiedikon', away: 'v'.repeat(60), name: MARKER_NAME, when: '12.10.2026 20:15', lang: 'fr' })
+    assert.deepEqual(open.json.context, { home: 'VBC Musterdorf', away: 'v'.repeat(60), name: MARKER_NAME, when: '12.10.2026 20:15', lang: 'fr' })
     assert.deepEqual(Object.keys(open.json).sort(), ['context', 'expiresAt', 'ok', 'slot', 'state'])
     assert.ok(!open.text.includes(users.referee.id) && !open.text.includes('123456'))
     code(await phone('submit', { k: r.json.token, ...INK }), 200)
@@ -259,7 +259,7 @@ describe('Sign on phone, cloud backend', { skip: SKIP }, () => {
     assert.ok(/sign\.start ref=[0-9a-f]{8} slot=\S+ via=cloud/.test(out), 'transitions are logged')
     assert.ok(tokensSeen.length > 40)
     for (const secret of tokensSeen) assert.ok(!out.includes(secret), 'a sign secret reached the server output')
-    for (const marker of [MARKER_NAME, '1888', '123456', 'Wiedikon']) assert.ok(!out.includes(marker), `${marker} reached the server output`)
+    for (const marker of [MARKER_NAME, '1888', '123456', 'Musterdorf']) assert.ok(!out.includes(marker), `${marker} reached the server output`)
   })
 
   it('OV_SIGN_DISABLED=1 switches it off', async () => {

@@ -105,7 +105,7 @@ describe('transformGame: other fields', () => {
     assert.equal(r.match_format, 5)
     assert.equal(r.team_home, 'Home 123456')
     assert.equal(r.city, 'Zürich')
-    assert.equal(r.hall, 'Halle Wiedikon')
+    assert.equal(r.hall, 'Halle Musterdorf')
     assert.equal(r.hall_postal_code, '8003')
     assert.equal(r.referee_1, 'Muster Anna')
     assert.equal(r.referee_1_first_name, 'Anna')

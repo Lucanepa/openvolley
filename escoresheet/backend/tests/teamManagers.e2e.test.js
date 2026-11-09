@@ -25,7 +25,7 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
   const users = {}
   const today = zurichDay()
   const season = seasonOf(new Date())
-  let ksc, other, h1, d2
+  let musterdorf, other, h1, d2
 
   async function account (name, roles) {
     const email = `${name}-${randomBytes(3).toString('hex')}@example.ch`
@@ -51,25 +51,25 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
     await sql.connect()
     srv = await bootServer({ DATABASE_URL: db.url, TRUST_PROXY: 'cloudflare', TRUST_PROXY_FROM: '127.0.0.1/32,::1/128' })
     await sql.query(`INSERT INTO public.svrz_games (game_number, team_home, team_away, league, gender, hall, city, match_format, datetime) VALUES
-      ('940001', 'KSC Wiedikon H1', 'VBC Other H1', '2L Herren', 'm', 'Halle Wiedikon', 'Zürich', 5, '${dayPlus(today, 2)}T18:00:00'),
-      ('940002', 'VBC Other H1', 'KSC Wiedikon H1', '2L Herren', 'm', 'Halle Other', 'Bern', 5, '${dayPlus(today, 5)}T20:00:00'),
-      ('940003', 'KSC Wiedikon H1', 'VBC Third H1', '2L Herren', 'm', 'Halle Wiedikon', 'Zürich', 5, '${dayPlus(today, -1)}T18:00:00'),
-      ('940004', 'KSC Wiedikon D2', 'VBC Other D1', '3L Damen', 'f', 'Halle Wiedikon', 'Zürich', 5, '${dayPlus(today, 3)}T16:00:00'),
-      ('940005', 'KSC Wiedikon H1', 'VBC Fourth H1', '2L Herren', 'm', 'Halle Wiedikon', 'Zürich', 5, '${dayPlus(today, 12)}T18:00:00'),
-      ('940006', 'KSC Wiedikon H1', 'VBC Fifth H1', '2L Herren', 'm', 'Halle Wiedikon', 'Zürich', 5, '${today}T00:00:01')`)
+      ('940001', 'VBC Musterdorf H1', 'VBC Other H1', '2L Herren', 'm', 'Halle Musterdorf', 'Zürich', 5, '${dayPlus(today, 2)}T18:00:00'),
+      ('940002', 'VBC Other H1', 'VBC Musterdorf H1', '2L Herren', 'm', 'Halle Other', 'Bern', 5, '${dayPlus(today, 5)}T20:00:00'),
+      ('940003', 'VBC Musterdorf H1', 'VBC Third H1', '2L Herren', 'm', 'Halle Musterdorf', 'Zürich', 5, '${dayPlus(today, -1)}T18:00:00'),
+      ('940004', 'VBC Musterdorf D2', 'VBC Other D1', '3L Damen', 'f', 'Halle Musterdorf', 'Zürich', 5, '${dayPlus(today, 3)}T16:00:00'),
+      ('940005', 'VBC Musterdorf H1', 'VBC Fourth H1', '2L Herren', 'm', 'Halle Musterdorf', 'Zürich', 5, '${dayPlus(today, 12)}T18:00:00'),
+      ('940006', 'VBC Musterdorf H1', 'VBC Fifth H1', '2L Herren', 'm', 'Halle Musterdorf', 'Zürich', 5, '${today}T00:00:01')`)
     // A roster of a game long past: the first write sweeps it (14 days)
     await sql.query(`INSERT INTO public.game_rosters (game_number, season, side, team_name, players, staff, kickoff)
-      VALUES ('939999', $1, 'home', 'KSC Wiedikon H1', '[]', '[]', $2)`, [season, `${dayPlus(today, -30)}T18:00:00`])
+      VALUES ('939999', $1, 'home', 'VBC Musterdorf H1', '[]', '[]', $2)`, [season, `${dayPlus(today, -30)}T18:00:00`])
     const admin = await account('admin', ['admin'])
     await account('clubmgr', null)
     await account('scorer', ['scorer'])
     await account('otherscorer', ['scorer'])
     await account('coach', null)
     await account('stranger', null)
-    ksc = (await call(admin, 'POST', '/api/admin/clubs', { name: 'KSC Wiedikon', teams: ['KSC Wiedikon H1', 'KSC Wiedikon D2'] })).json.data.club
+    musterdorf = (await call(admin, 'POST', '/api/admin/clubs', { name: 'VBC Musterdorf', teams: ['VBC Musterdorf H1', 'VBC Musterdorf D2'] })).json.data.club
     other = (await call(admin, 'POST', '/api/admin/clubs', { name: 'VBC Other', teams: ['VBC Other H1', 'VBC Other D1'] })).json.data.club
-    assert.equal((await call(admin, 'PUT', `/api/admin/clubs/${ksc.id}/managers`, { emails: [users.clubmgr.email] })).status, 200)
-    await call(admin, 'PUT', `/api/admin/accounts/${users.scorer.id}/clubs`, { club_ids: [ksc.id] })
+    assert.equal((await call(admin, 'PUT', `/api/admin/clubs/${musterdorf.id}/managers`, { emails: [users.clubmgr.email] })).status, 200)
+    await call(admin, 'PUT', `/api/admin/accounts/${users.scorer.id}/clubs`, { club_ids: [musterdorf.id] })
     await call(admin, 'PUT', `/api/admin/accounts/${users.otherscorer.id}/clubs`, { club_ids: [other.id] })
   })
 
@@ -80,42 +80,42 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
   })
 
   it('the club manager lists its club\'s teams with ids; nobody else does', async () => {
-    const r = await call(users.clubmgr, 'GET', `/api/club/${ksc.id}/teams`)
+    const r = await call(users.clubmgr, 'GET', `/api/club/${musterdorf.id}/teams`)
     assert.equal(r.status, 200, r.text)
     const names = r.json.data.teams.map((t) => t.name)
-    assert.deepEqual(names, ['KSC Wiedikon D2', 'KSC Wiedikon H1'])
-    h1 = r.json.data.teams.find((t) => t.name === 'KSC Wiedikon H1')
-    d2 = r.json.data.teams.find((t) => t.name === 'KSC Wiedikon D2')
+    assert.deepEqual(names, ['VBC Musterdorf D2', 'VBC Musterdorf H1'])
+    h1 = r.json.data.teams.find((t) => t.name === 'VBC Musterdorf H1')
+    d2 = r.json.data.teams.find((t) => t.name === 'VBC Musterdorf D2')
     assert.deepEqual(h1.managers, [])
-    assert.equal((await call(users.scorer, 'GET', `/api/club/${ksc.id}/teams`)).status, 403)
+    assert.equal((await call(users.scorer, 'GET', `/api/club/${musterdorf.id}/teams`)).status, 403)
     // another club's team through this club's path is unknown
     const otherTeams = (await call(users.admin, 'GET', `/api/club/${other.id}/teams`)).json.data.teams
-    const r2 = await call(users.clubmgr, 'POST', `/api/club/${ksc.id}/teams/${otherTeams[0].id}/invites`, {})
+    const r2 = await call(users.clubmgr, 'POST', `/api/club/${musterdorf.id}/teams/${otherTeams[0].id}/invites`, {})
     assert.equal(r2.status, 404, r2.text)
   })
 
   it('/api/me gives the club manager every team of its club (via club)', async () => {
     const r = await call(users.clubmgr, 'GET', '/api/me')
     assert.equal(r.status, 200, r.text)
-    assert.deepEqual(r.json.data.managedTeams.map((t) => [t.name, t.via]), [['KSC Wiedikon D2', 'club'], ['KSC Wiedikon H1', 'club']])
+    assert.deepEqual(r.json.data.managedTeams.map((t) => [t.name, t.via]), [['VBC Musterdorf D2', 'club'], ['VBC Musterdorf H1', 'club']])
   })
 
   let code
   it('a team link: within limits, shown once, listed with the club\'s codes', async () => {
-    assert.equal((await call(users.clubmgr, 'POST', `/api/club/${ksc.id}/teams/${h1.id}/invites`, { max_uses: 11 })).status, 400)
+    assert.equal((await call(users.clubmgr, 'POST', `/api/club/${musterdorf.id}/teams/${h1.id}/invites`, { max_uses: 11 })).status, 400)
     const far = new Date(Date.now() + 91 * 24 * 3600 * 1000).toISOString()
-    assert.equal((await call(users.clubmgr, 'POST', `/api/club/${ksc.id}/teams/${h1.id}/invites`, { expires_at: far })).status, 400)
-    const r = await call(users.clubmgr, 'POST', `/api/club/${ksc.id}/teams/${h1.id}/invites`, { max_uses: 1 })
+    assert.equal((await call(users.clubmgr, 'POST', `/api/club/${musterdorf.id}/teams/${h1.id}/invites`, { expires_at: far })).status, 400)
+    const r = await call(users.clubmgr, 'POST', `/api/club/${musterdorf.id}/teams/${h1.id}/invites`, { max_uses: 1 })
     assert.equal(r.status, 201, r.text)
     code = r.json.data.code
     assert.match(code, /^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/)
     assert.equal(r.json.data.invite.role, 'team_manager')
     assert.equal(r.json.data.invite.team_id, h1.id)
-    assert.equal(r.json.data.invite.team_name, 'KSC Wiedikon H1')
-    assert.equal(r.json.data.invite.club_id, ksc.id)
-    const list = await call(users.clubmgr, 'GET', `/api/club/${ksc.id}/invites`)
-    assert.ok(list.json.data.invites.some((i) => i.team_id === h1.id && i.team_name === 'KSC Wiedikon H1'))
-    const teams = (await call(users.clubmgr, 'GET', `/api/club/${ksc.id}/teams`)).json.data.teams
+    assert.equal(r.json.data.invite.team_name, 'VBC Musterdorf H1')
+    assert.equal(r.json.data.invite.club_id, musterdorf.id)
+    const list = await call(users.clubmgr, 'GET', `/api/club/${musterdorf.id}/invites`)
+    assert.ok(list.json.data.invites.some((i) => i.team_id === h1.id && i.team_name === 'VBC Musterdorf H1'))
+    const teams = (await call(users.clubmgr, 'GET', `/api/club/${musterdorf.id}/teams`)).json.data.teams
     assert.equal(teams.find((t) => t.id === h1.id).open_links, 1)
   })
 
@@ -132,10 +132,10 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
     const used = await call(users.stranger, 'POST', '/api/account/redeem-invite', { code })
     assert.equal(used.status, 409, used.text)
     const me = (await call(users.coach, 'GET', '/api/me')).json.data
-    assert.deepEqual(me.managedTeams, [{ id: h1.id, name: 'KSC Wiedikon H1', club_id: ksc.id, club_name: 'KSC Wiedikon', via: 'team' }])
+    assert.deepEqual(me.managedTeams, [{ id: h1.id, name: 'VBC Musterdorf H1', club_id: musterdorf.id, club_name: 'VBC Musterdorf', via: 'team' }])
     assert.deepEqual(me.roles, [])
     assert.deepEqual(me.clubs, [])
-    const teams = (await call(users.clubmgr, 'GET', `/api/club/${ksc.id}/teams`)).json.data.teams
+    const teams = (await call(users.clubmgr, 'GET', `/api/club/${musterdorf.id}/teams`)).json.data.teams
     assert.deepEqual(teams.find((t) => t.id === h1.id).managers.map((m) => m.user_id), [users.coach.id])
   })
 
@@ -207,13 +207,13 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
   it('the home club\'s scorer downloads the rosters of its home games (both teams), other scorers ask by game', async () => {
     const r = await call(users.scorer, 'GET', '/api/game-rosters')
     assert.equal(r.status, 200, r.text)
-    // home games of KSC today .. +7 days: 940006, 940001, 940004 (not 940002, an away game; not 940005, +12 days)
+    // home games of VBCM today .. +7 days: 940006, 940001, 940004 (not 940002, an away game; not 940005, +12 days)
     assert.deepEqual(r.json.data.games.map((g) => g.game_number).sort(), ['940001', '940004', '940006'])
     assert.deepEqual(r.json.data.rosters.map((x) => [x.game_number, x.side]).sort(), [['940001', 'home'], ['940006', 'home']])
     const sent = r.json.data.rosters.find((x) => x.game_number === '940001')
     assert.equal(sent.coach_signature, SIG)
     assert.equal(sent.captain_signature, SIG)
-    assert.equal(sent.team_name, 'KSC Wiedikon H1')
+    assert.equal(sent.team_name, 'VBC Musterdorf H1')
     assert.equal(sent.players.length, 8)
     assert.equal(sent.players[0].dob, '2001-02-03')
     assert.equal(sent.season, season)
@@ -265,7 +265,7 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
   it('/api/me gives an admin every team of every club', async () => {
     const me = (await call(users.admin, 'GET', '/api/me')).json.data
     assert.deepEqual(me.managedTeams.map((t) => [t.club_name, t.name, t.via]), [
-      ['KSC Wiedikon', 'KSC Wiedikon D2', 'admin'], ['KSC Wiedikon', 'KSC Wiedikon H1', 'admin'],
+      ['VBC Musterdorf', 'VBC Musterdorf D2', 'admin'], ['VBC Musterdorf', 'VBC Musterdorf H1', 'admin'],
       ['VBC Other', 'VBC Other D1', 'admin'], ['VBC Other', 'VBC Other H1', 'admin']
     ])
     assert.equal((await call(users.admin, 'GET', `/api/team/${h1.id}/games`)).status, 200)
@@ -278,14 +278,14 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
     const body = { players: [player(4, 'Muster', { is_captain: true, license_number: 'L-4' }), player(9, 'Reserve', { active: false })], staff: [{ role: 'Coach', last_name: 'Coach' }] }
     const r1 = await call(users.coach, 'PUT', `/api/team/${h1.id}/squad`, body)
     assert.equal(r1.status, 200, r1.text)
-    assert.equal(r1.json.data.squad.svrz_team_name, 'KSC Wiedikon H1')
-    assert.equal(r1.json.data.squad.club, 'KSC Wiedikon')
+    assert.equal(r1.json.data.squad.svrz_team_name, 'VBC Musterdorf H1')
+    assert.equal(r1.json.data.squad.club, 'VBC Musterdorf')
     assert.equal(r1.json.data.squad.players.length, 2)
     const bundle = (await call(users.scorer, 'GET', '/api/saved-teams')).json.data
     const comp = bundle.competitions.find((c) => c.vm_leagues.includes('2L Herren'))
     assert.ok(comp, 'a competition for the league')
     assert.equal(comp.gender, 'men')
-    assert.ok(bundle.teams.some((t) => t.svrz_team_name === 'KSC Wiedikon H1' && t.competition_id === comp.id))
+    assert.ok(bundle.teams.some((t) => t.svrz_team_name === 'VBC Musterdorf H1' && t.competition_id === comp.id))
     // a second save edits the same saved team
     const r2 = await call(users.coach, 'PUT', `/api/team/${h1.id}/squad`, { ...body, players: body.players.slice(0, 1) })
     assert.equal(r2.status, 200, r2.text)
@@ -299,22 +299,22 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
   })
 
   it('an admin editing the club\'s teams keeps the team\'s id and managers; taking the team off drops them', async () => {
-    const r = await call(users.admin, 'PATCH', `/api/admin/clubs/${ksc.id}`, { teams: ['KSC Wiedikon H1', 'KSC Wiedikon D2', 'KSC Wiedikon H2'] })
+    const r = await call(users.admin, 'PATCH', `/api/admin/clubs/${musterdorf.id}`, { teams: ['VBC Musterdorf H1', 'VBC Musterdorf D2', 'VBC Musterdorf H2'] })
     assert.equal(r.status, 200, r.text)
-    const teams = (await call(users.clubmgr, 'GET', `/api/club/${ksc.id}/teams`)).json.data.teams
-    assert.equal(teams.find((t) => t.name === 'KSC Wiedikon H1').id, h1.id)
-    assert.deepEqual(teams.find((t) => t.name === 'KSC Wiedikon H1').managers.map((m) => m.user_id), [users.coach.id])
-    const r2 = await call(users.admin, 'PATCH', `/api/admin/clubs/${ksc.id}`, { teams: ['KSC Wiedikon H1', 'KSC Wiedikon H2'] })
+    const teams = (await call(users.clubmgr, 'GET', `/api/club/${musterdorf.id}/teams`)).json.data.teams
+    assert.equal(teams.find((t) => t.name === 'VBC Musterdorf H1').id, h1.id)
+    assert.deepEqual(teams.find((t) => t.name === 'VBC Musterdorf H1').managers.map((m) => m.user_id), [users.coach.id])
+    const r2 = await call(users.admin, 'PATCH', `/api/admin/clubs/${musterdorf.id}`, { teams: ['VBC Musterdorf H1', 'VBC Musterdorf H2'] })
     assert.equal(r2.status, 200, r2.text)
     assert.equal((await call(users.clubmgr, 'GET', `/api/team/${d2.id}`)).status, 403)
   })
 
   it('the club manager takes a team manager off; the account keeps nothing of the team', async () => {
-    const r = await call(users.clubmgr, 'DELETE', `/api/club/${ksc.id}/teams/${h1.id}/managers/${users.coach.id}`)
+    const r = await call(users.clubmgr, 'DELETE', `/api/club/${musterdorf.id}/teams/${h1.id}/managers/${users.coach.id}`)
     assert.equal(r.status, 200, r.text)
     assert.deepEqual((await call(users.coach, 'GET', '/api/me')).json.data.managedTeams, [])
     assert.equal((await call(users.coach, 'GET', `/api/team/${h1.id}/games`)).status, 403)
-    assert.equal((await call(users.clubmgr, 'DELETE', `/api/club/${ksc.id}/teams/${h1.id}/managers/${users.coach.id}`)).status, 404)
+    assert.equal((await call(users.clubmgr, 'DELETE', `/api/club/${musterdorf.id}/teams/${h1.id}/managers/${users.coach.id}`)).status, 404)
     const { rows } = await sql.query("SELECT action, details FROM public.audit_log WHERE action LIKE 'team.%' ORDER BY at")
     assert.ok(rows.some((x) => x.action === 'team.roster' && x.details.players === 8 && !JSON.stringify(x.details).includes('Muster')))
     assert.ok(rows.some((x) => x.action === 'team.managers' && x.details.removed === true))

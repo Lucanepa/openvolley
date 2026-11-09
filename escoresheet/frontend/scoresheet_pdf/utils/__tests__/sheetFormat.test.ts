@@ -85,17 +85,17 @@ describe('game number and team names', () => {
   })
   it('placeholders (HOME / AWAY / Team A ...) never stand for a team', () => {
     for (const p of ['HOME', 'Away', 'home', 'Team A', 'TEAM B', 'teamB', '', null]) expect(isPlaceholderTeamName(p)).toBe(true)
-    for (const n of ['KSCW', 'Homeland Volley', 'Team Aarau']) expect(isPlaceholderTeamName(n)).toBe(false)
-    expect(displayShortName('HOME', 'KSC Wiedikon H1')).toBe('KSC Wiedikon H1')
-    expect(displayShortName('', 'KSC Wiedikon H1')).toBe('KSC Wiedikon H1')
-    expect(displayShortName('KSCW', 'KSC Wiedikon H1')).toBe('KSCW')
+    for (const n of ['MUST', 'Homeland Volley', 'Team Aarau']) expect(isPlaceholderTeamName(n)).toBe(false)
+    expect(displayShortName('HOME', 'VBC Musterdorf H1')).toBe('VBC Musterdorf H1')
+    expect(displayShortName('', 'VBC Musterdorf H1')).toBe('VBC Musterdorf H1')
+    expect(displayShortName('MUST', 'VBC Musterdorf H1')).toBe('MUST')
     expect(displayShortName('HOME', '')).toBe('HOME')
     expect(displayShortName(undefined, undefined)).toBe('')
   })
 })
 
 describe('file name (owner 2026-10-13: game<n>_<league>_<YYYY-MM-DD>)', () => {
-  const match = { gameNumber: '382208', league: '2L', homeShortName: 'KSCW-H1', awayShortName: 'Spada H1', scheduledAt: local(2026, 10, 7, 20, 0) }
+  const match = { gameNumber: '382208', league: '2L', homeShortName: 'MUST-H1', awayShortName: 'Spada H1', scheduledAt: local(2026, 10, 7, 20, 0) }
 
   it('game<gameNo>_<league>_<YYYY-MM-DD>.pdf', () => {
     expect(buildScoresheetFilename({ match })).toBe('game382208_2L_2026-10-07.pdf')
@@ -107,8 +107,8 @@ describe('file name (owner 2026-10-13: game<n>_<league>_<YYYY-MM-DD>)', () => {
 
   it('no game number: the real team names in its place, never "match" or the placeholders', () => {
     const quick = { homeShortName: 'HOME', awayShortName: 'AWAY', league: 'Friendly', scheduledAt: local(2026, 10, 7, 20, 0) }
-    const name = buildScoresheetFilename({ match: quick, homeTeam: { name: 'KSC Wiedikon H1' }, awayTeam: { name: 'Volley Spada Academica Zürich' } })
-    expect(name).toBe('KSC-Wiedikon-H1_vs_Volley-Spada-Academica-Zuerich_Friendly_2026-10-07.pdf')
+    const name = buildScoresheetFilename({ match: quick, homeTeam: { name: 'VBC Musterdorf H1' }, awayTeam: { name: 'Volley Spada Academica Zürich' } })
+    expect(name).toBe('VBC-Musterdorf-H1_vs_Volley-Spada-Academica-Zuerich_Friendly_2026-10-07.pdf')
     expect(name).not.toMatch(/match|HOME|AWAY/)
   })
 
@@ -131,8 +131,8 @@ describe('file name (owner 2026-10-13: game<n>_<league>_<YYYY-MM-DD>)', () => {
   })
 
   it('the PDF title names the match, never a federation', () => {
-    const title = buildScoresheetTitle({ match, homeTeam: { name: 'KSC Wiedikon H1' }, awayTeam: { name: 'Volley Spada' } })
-    expect(title).toBe('OpenVolley eScoresheet: KSC Wiedikon H1 vs Volley Spada, 07.10.2026, game 382208')
+    const title = buildScoresheetTitle({ match, homeTeam: { name: 'VBC Musterdorf H1' }, awayTeam: { name: 'Volley Spada' } })
+    expect(title).toBe('OpenVolley eScoresheet: VBC Musterdorf H1 vs Volley Spada, 07.10.2026, game 382208')
     expect(title).not.toMatch(/swiss/i)
   })
 })

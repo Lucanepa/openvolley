@@ -16,7 +16,7 @@ public class ScoresheetFilesPluginTest {
         File base = Files.createTempDirectory("ov-files").toFile();
         File root = new File(base, "Documents/OpenVolley/scoresheets");
         assertEquals(true, root.mkdirs());
-        File pdf = new File(root, "20261007_382208_KSCW-H1_vs_Spada-H1.pdf");
+        File pdf = new File(root, "20261007_382208_MUST-H1_vs_Spada-H1.pdf");
         Files.write(pdf.toPath(), "%PDF-1.3".getBytes());
         File other = new File(base, "Documents/secret.pdf");
         Files.write(other.toPath(), "%PDF-1.3".getBytes());

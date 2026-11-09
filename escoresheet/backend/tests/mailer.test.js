@@ -20,7 +20,7 @@ const ACCOUNT_KINDS = MAIL_KINDS.filter((k) => !APPROVAL_KINDS.includes(k) && !S
 // Notices that link nothing: the way out is in the app, and a genuine mail
 // can be told by that (password changed, passkey added).
 const NOTICE_KINDS = ['password_changed', 'passkey_added']
-const SCORESHEET_VARS = { teams: 'KSC Wiedikon H1 – VBC Other H1', game: '930001', date: '29.10.2026', result: '3:1', corrected: false }
+const SCORESHEET_VARS = { teams: 'VBC Musterdorf H1 – VBC Other H1', game: '930001', date: '29.10.2026', result: '3:1', corrected: false }
 
 const TOKEN = 'A'.repeat(20) + '_-' + 'b'.repeat(21)
 const silent = { log() {}, warn() {}, error() {} }

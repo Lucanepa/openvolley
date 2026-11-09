@@ -103,7 +103,7 @@ describe('diagnostics report: the timeline', () => {
     ])
     const lines = tl({
       interaction: [
-        ...typed(name, 'VBC Wiedikon', T), ui(T + 3 * S, 'keydown', name, { key: 'Backspace' }), ui(T + 3 * S + 5, 'input', name, { value: 'VBC Wiediko', valueLength: 11 }),
+        ...typed(name, 'VBC Musterdorf', T), ui(T + 3 * S, 'keydown', name, { key: 'Backspace' }), ui(T + 3 * S + 5, 'input', name, { value: 'VBC Musterdor', valueLength: 13 }),
         ui(T + 4 * S, 'keydown', name, { key: 'Tab' }),
         ...typed(notes, 'Ball 7', T + 5 * S),
         ui(T + 9 * S, 'keydown', { tagName: 'body' }, { key: 'h' }),
@@ -111,13 +111,13 @@ describe('diagnostics report: the timeline', () => {
       ]
     })
     expect(lines.slice(1)).toEqual([
-      '22:01:03.120  type    typed 13 keys into "Home team" (now 11 characters; the text is not included)',
+      '22:01:03.120  type    typed 15 keys into "Home team" (now 13 characters; the text is not included)',
       '22:01:07.120  key     Tab',
       '22:01:08.120  type    typed 6 keys into textarea[name=remarks] (now 6 characters; the text is not included)',
       '22:01:12.120  key     "h"',
       '22:01:12.121  key     Ctrl+z'
     ])
-    expect(lines.join('\n')).not.toMatch(/Wiedikon|Ball 7/)
+    expect(lines.join('\n')).not.toMatch(/Musterdorf|Ball 7/)
   })
 
   it('a password or PIN field: only that it was typed into', () => {
@@ -319,8 +319,8 @@ describe('diagnostics report: app log and match', () => {
       ev(6, 'substitution', { team: 'away', playerIn: 5, playerOut: 12 }),
       ev(7, 'remark', { text: 'Ball 7 was flat, Anna Muster saw it' })
     ]
-    const lines = matchSection({ row, sets: [{ index: 1, homePoints: 25, awayPoints: 23, finished: true }, { index: 2, homePoints: 0, awayPoints: 1, finished: false }], events, homeTeam: { name: 'VBC Wiedikon' }, awayTeam: { name: 'Volley Zürich' }, unsent: '2 (2 event)' }, clock).join('\n')
-    expect(lines).toMatch(/Teams:\s+VBC Wiedikon \(home, A\) – Volley Zürich \(away, B\)/)
+    const lines = matchSection({ row, sets: [{ index: 1, homePoints: 25, awayPoints: 23, finished: true }, { index: 2, homePoints: 0, awayPoints: 1, finished: false }], events, homeTeam: { name: 'VBC Musterdorf' }, awayTeam: { name: 'Volley Zürich' }, unsent: '2 (2 event)' }, clock).join('\n')
+    expect(lines).toMatch(/Teams:\s+VBC Musterdorf \(home, A\) – Volley Zürich \(away, B\)/)
     expect(lines).toMatch(/Sets \(home:away\):\s+set 1 25:23, set 2 0:1 \(running\)/)
     expect(lines).toMatch(/Serving:\s+away \(won the last point\)/)
     expect(lines).toMatch(/Line-up home:\s+I 1 · II 7 · III 12 · IV 3 · V 9 · VI 14 \(seq 3\)/)

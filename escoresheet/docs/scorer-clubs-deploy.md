@@ -1,7 +1,7 @@
 # Deploying "scorers score the home games of their club" (db/018)
 
 > **Host moved, 16.10.2026:** production now runs on lenovoserver. The Hetzner VPS belongs to
-> the KSC Wiedikon club and must never host OpenVolley again. Run the `hetzner#` steps below on
+> another owner and must never host OpenVolley again. Run the `hetzner#` steps below on
 > lenovoserver with `sudo` (`/opt/openvolley` is root-only there):
 > `cd /opt/openvolley && docker compose ...` becomes
 > `sudo docker compose --project-directory /opt/openvolley ...`, `ssh hetzner <cmd>` becomes
@@ -67,7 +67,7 @@ app release (web apps and managers from main, desktop and Android as usual).
 ## 4. Set up the clubs, then switch the rule on
 
 1. Manager → **Clubs** → **New club**: name it and tick its VolleyManager
-   teams (search, e.g. "Wiedikon"). A team can be in one club only.
+   teams (search, e.g. "Musterdorf"). A team can be in one club only.
 2. Manager → **Accounts** → **Clubs** on each scorer: tick its club(s). New
    scorers can get theirs with an invite code that carries the club
    (**Invites** → New code → Club).

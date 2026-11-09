@@ -82,7 +82,7 @@ describe('diagnostics report: a realistic evening (sample)', () => {
   let activity
   let report
   let matchId
-  const homeTeam = { name: 'VBC Wiedikon' }
+  const homeTeam = { name: 'VBC Musterdorf' }
   const awayTeam = { name: 'Volley Zürich Nord' }
 
   beforeAll(async () => {
@@ -91,7 +91,7 @@ describe('diagnostics report: a realistic evening (sample)', () => {
     resetLoggerForTests()
     resetDiagnosticsInfoForTests()
     localStorage.clear()
-    localStorage.setItem('api_auth_token', JSON.stringify({ access_token: TOKEN, refresh_token: 'rt_' + TOKEN, expires_at: Math.floor(T0 / 1000) + 30 * 86400, user: { id: ACCOUNT, email: 'scorer.wiedikon@example.ch' } }))
+    localStorage.setItem('api_auth_token', JSON.stringify({ access_token: TOKEN, refresh_token: 'rt_' + TOKEN, expires_at: Math.floor(T0 / 1000) + 30 * 86400, user: { id: ACCOUNT, email: 'scorer.musterdorf@example.ch' } }))
     localStorage.setItem('refereePin', PINS.refereePin)
     await db.open()
     await Promise.all(db.tables.map(t => t.clear()))
@@ -106,7 +106,7 @@ describe('diagnostics report: a realistic evening (sample)', () => {
     step(2)
     tap(button('Official match'))
     step(3)
-    typeInto(field('Home team'), 'VBC Wiedikon')
+    typeInto(field('Home team'), 'VBC Musterdorf')
     step(1)
     logUI('keydown', 'global', 'keydown', { key: 'Tab', code: 'Tab' }, field('Home team'))
     typeInto(field('Away team'), 'Volley Zürich Nord')
@@ -243,7 +243,7 @@ describe('diagnostics report: a realistic evening (sample)', () => {
     logUI('change', 'global', 'change', { value: 'support', selectedIndex: 1 }, { tagName: 'select', ariaLabel: 'What can we help you with?', type: 'select-one' })
     logUI('change', 'global', 'change', { value: 'bug', selectedIndex: 1 }, { tagName: 'select', ariaLabel: 'What type of support do you need?', type: 'select-one' })
     typeInto({ tagName: 'textarea', ariaLabel: 'Comments or description', path: 'label > textarea' }, 'Undo crashes after a sub')
-    typeInto(field('Your email (for follow-up)', { type: 'email' }), 'scorer.wiedikon@example.ch')
+    typeInto(field('Your email (for follow-up)', { type: 'email' }), 'scorer.musterdorf@example.ch')
     step(3)
     await settle()
 
@@ -265,14 +265,14 @@ describe('diagnostics report: a realistic evening (sample)', () => {
     for (const h of ['== 1. Summary', '== 2. Match', '== 3. Timeline', '== 4. App log', '== end of report ==']) expect(t).toContain(h)
     expect(report.fileName).toBe('openvolley-diagnostics-20261029-2001-g406970.txt')
     expect(t).toMatch(/Game number:\s+406970/)
-    expect(t).toContain('VBC Wiedikon (home, B) – Volley Zürich Nord (away, A)')
+    expect(t).toContain('VBC Musterdorf (home, B) – Volley Zürich Nord (away, A)')
     expect(t).toMatch(/Time-outs:\s+set 1: home 1, away 0/)
     expect(t).toMatch(/Substitutions:\s+set 1: home 1, away 0/)
     expect(t).toMatch(/Unsent writes:\s+5 \(1 set, 4 event\)/)
     expect(t).toContain('this device holds a scorer claim')
     expect(t).toMatch(/Clock offset:\s+the relay's clock is -412 ms/)
     const tl = t.slice(t.indexOf('== 3. Timeline'), t.indexOf('== 4. App log'))
-    const order = ['APP START', 'tap     "New match"', 'typed 12 keys into "Home team"', 'a password or PIN field', 'tap     "Point B"', 'Point B (home) → 0:1 (set 1)', 'Time-out B (home)', 'Substitution B (home) #5 in for #12', 'refused: event insert 503', 'undone', 'APP IN THE BACKGROUND', 'with nothing recorded', 'APP IN THE FOREGROUND AGAIN', 'the device went offline', '"Contact support"']
+    const order = ['APP START', 'tap     "New match"', 'typed 14 keys into "Home team"', 'a password or PIN field', 'tap     "Point B"', 'Point B (home) → 0:1 (set 1)', 'Time-out B (home)', 'Substitution B (home) #5 in for #12', 'refused: event insert 503', 'undone', 'APP IN THE BACKGROUND', 'with nothing recorded', 'APP IN THE FOREGROUND AGAIN', 'the device went offline', '"Contact support"']
     let pos = -1
     for (const s of order) {
       const i = tl.indexOf(s, pos + 1)
@@ -300,7 +300,7 @@ describe('diagnostics report: a realistic evening (sample)', () => {
     }
     expect(t).not.toContain(TOKEN)
     expect(t).not.toContain('2b6d0c9e-51f4-4a7e-9e1b-7c3d8a5f0e42') // the scorer claim
-    expect(t).not.toContain('scorer.wiedikon@example.ch')
+    expect(t).not.toContain('scorer.musterdorf@example.ch')
     expect(t).not.toContain('@example.ch')
     expect(t).not.toContain('data:image')
     expect(t).not.toContain('iVBORw0KGgo')

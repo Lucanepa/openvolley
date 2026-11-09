@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-**OpenVolley und OpenBeach** · Version 1.7 · Stand: 31. Oktober 2026
+**OpenVolley und OpenBeach** · Version 1.8 · Stand: 9. November 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
 Massgebend ist die englische Fassung.
@@ -30,6 +30,10 @@ Massgebend ist die englische Fassung.
   Schreiberin oder der Schreiber, die Schiedsrichterinnen und Schiedsrichter
   und die Vereine der beiden Teams den fertigen Spielbericht per E-Mail
   (Abschnitt 7).
+- Teamverantwortliche können den Kader eines Spiels im Voraus schicken. Das
+  Gerät der Schreiberin oder des Schreibers hält ihn für die Spielvorbereitung
+  bereit; sobald sie oder er ihn übernimmt, löscht der Server ihn (Abschnitt
+  10).
 - Sie können jederzeit Auskunft, Berichtigung oder Löschung verlangen:
   **support@openvolley.app**.
 
@@ -229,6 +233,10 @@ seine Rollen bleiben bestehen. Ein Verein kann eine **Kontaktadresse** hinterleg
 (die Administration oder die Vereinsverantwortlichen tragen sie ein); sie
 erhält die fertigen Spielberichte seiner Spiele (Abschnitt 7).
 
+Die Vereinsverantwortlichen können zudem der Trainerin, dem Trainer oder den
+Teamverantwortlichen eines Teams ihres Vereins einen Link geben; wer ihn
+nutzt, verwaltet dieses Team (Abschnitt 10).
+
 **Anmeldung:** Nach der Anmeldung speichert Ihr Browser ein Anmelde-Token. Auf
 dem Server liegt nur ein Hash davon. Eine Sitzung gilt 30 Tage ab der letzten
 Nutzung, höchstens 90 Tage, und endet beim Abmelden, beim Ändern des Passworts
@@ -279,7 +287,7 @@ auf dem Gerät oder auf einem Telefon gezeichnet), Platzwahl, Spielverlauf mit a
 Wechseln und Sanktionen, Resultate und nachträgliche Korrekturen.
 
 **Wer die Daten eingibt:** die Schreiberin oder der Schreiber in der App,
-Teamverantwortliche über die Kaderlisten-Seite (`roster.openvolley.app`),
+Teamverantwortliche über die Kaderlisten-Seite (`roster.openvolley.app`) und im Manager (Abschnitt 10),
 Wettbewerbsmanagerinnen und -manager über gespeicherte Teams (Abschnitt 10),
 und die offiziellen Ansetzungen von Swiss Volley (Abschnitt 11).
 Spielerinnen und Spieler geben ihre Daten nicht selbst ein.
@@ -422,7 +430,7 @@ wenn die Schreiberin oder der Schreiber angemeldet ist.
 übernehmen. Sie erhält nur Teamnamen, Spielstand und Satzresultate, keine
 Daten von Spielerinnen und Spielern.
 
-## 10. Manager-Seiten: gespeicherte Teams und Beachturniere
+## 10. Manager-Seiten: gespeicherte Teams, Kader der Teams und Beachturniere
 
 Auf `manager.openvolley.app` und `manager-beach.openvolley.app` können
 Wettbewerbsmanagerinnen und -manager Teams und Turniere vorbereiten.
@@ -433,13 +441,37 @@ Land; Betreuungspersonen mit Funktion, Name, Geburtsdatum und Lizenznummer.
 Sichtbar für Konten mit Manager- oder Schreiberrolle der jeweiligen Sportart.
 Die Scorer-Apps speichern diese Teams zwischen und löschen sie beim Abmelden.
 
+**Teamverantwortliche (OpenVolley):** Die Vereinsverantwortlichen können der
+Trainerin, dem Trainer oder den Teamverantwortlichen eines Teams ihres Vereins
+einen Link geben; wer ihn öffnet und sich anmeldet, verwaltet dieses Team.
+Gespeichert wird, welches Konto welches Team verwaltet, wer es hinzugefügt hat
+und wann. Teamverantwortliche bearbeiten das gespeicherte Team und können den
+Kader jedes Spiels des Teams im Voraus schicken: Spielerinnen und Spieler mit
+Nummer, Vor- und Nachname, Geburtsdatum, Lizenznummer und Libero/Captain sowie
+Betreuungspersonen mit Funktion, Name, Geburtsdatum und Lizenznummer. Wenn sie
+wollen, können Trainerin oder Trainer und Captain diesen Kader im Voraus
+unterschreiben; die Unterschriften werden als Bilder mit ihm gespeichert.
+
+**Im Voraus geschickte Kader:** Sichtbar für die Teamverantwortlichen des
+Teams, die Vereinsverantwortlichen seines Vereins und die Administration sowie
+für Konten mit Schreiber- oder Wettbewerbsmanager-Rolle von OpenVolley. Die
+Geräte der Schreiberinnen und Schreiber laden die Kader der kommenden
+Heimspiele ihrer Vereine herunter, damit die Spielvorbereitung ohne Internet
+funktioniert. Übernimmt die Schreiberin oder der Schreiber einen Kader in der
+Spielvorbereitung, wird er Teil des Spiels (Abschnitt 7), und der Server
+löscht Spielerinnen und Spieler, Betreuungspersonen und Unterschriften sofort;
+er behält nur, dass der Kader übernommen wurde, wann und von welchem Konto.
+Ein Kader, den niemand übernimmt, wird 14 Tage nach dem Spiel gelöscht. Auf
+dem Gerät wird die Kopie gelöscht, sobald der Server von der Übernahme weiss,
+beim Abmelden und spätestens 36 Stunden nach dem Spiel.
+
 **Beachturniere:** Titel, Ort, Daten, Teams mit Vor- und Nachname,
 Lizenznummer und Land der Spielerinnen und Spieler, Spielplan, Resultate,
 Namen der Schiedsrichter und Schreiber. Ist ein Turnier als **öffentlich**
 markiert, zeigt die öffentliche Turnierseite Teams, Namen und Länder, nie
 Lizenznummern oder Geburtsdaten.
 
-**Zweck:** Kaderlisten wiederverwenden, Turniere organisieren, Spielerinnen
+**Zweck:** Kaderlisten wiederverwenden, den Kader eines Spiels im Voraus vorbereiten, Turniere organisieren, Spielerinnen
 und Spieler beim Import anhand der Lizenznummer zuordnen.
 
 Diese Daten bleiben gespeichert, bis eine Managerin oder ein Manager sie
@@ -571,6 +603,10 @@ ich frühere Antworten nachschlagen kann; auf Anfrage früher.
   Spielberichte ein- oder ausgeschaltet hat, und dass der Spielbericht eines
   Spiels versendet wurde, mit der Anzahl Empfänger. E-Mail-Adressen stehen
   darin nicht.
+- **Teams:** Das Änderungsprotokoll hält zudem fest, wer ein Team verwaltet
+  und wer einen Spielkader geschickt, gelöscht oder übernommen hat, mit der
+  Zahl der Spielerinnen, Spieler und Betreuungspersonen und ob unterschrieben
+  wurde, nie Namen oder Unterschriften, und wann.
 - **Gelöschte Konten:** Das Änderungsprotokoll hält fest, dass die
   Administration ein Konto gelöscht oder ein neues Konto abgelehnt hat, mit
   den Rollen und Apps des Kontos, seinem Erstellungsdatum, der Anzahl
@@ -625,6 +661,8 @@ Anfrage erhalten Sie eine Kopie dieser Garantien.
 | Änderungsprotokoll | So lange wie für die Nachvollziehbarkeit nötig; Löschung auf Anfrage geprüft |
 | Kontaktadresse eines Vereins | Bis sie geändert oder entfernt oder der Verein gelöscht wird |
 | Vereinsverantwortliche | Bis die Administration sie entfernt, der Verein gelöscht wird oder Sie Ihr Konto löschen |
+| Teamverantwortliche | Bis Vereinsverantwortliche oder die Administration sie entfernen, das Team oder der Verein gelöscht wird oder Sie Ihr Konto löschen |
+| Im Voraus geschickter Kader (Spielerinnen und Spieler, Betreuungspersonen, Unterschriften) | Bis eine Schreiberin oder ein Schreiber ihn übernimmt, spätestens 14 Tage nach dem Spiel; der Vermerk der Übernahme 14 Tage nach dem Spiel |
 | E-Mail-Adresse einer Schiedsrichterin oder eines Schiedsrichters beim Spiel | Mit dem Spiel, als Teil des Spielberichts |
 | Versand des fertigen Spielberichts (Zeitpunkt, Anzahl Empfänger, ohne Adressen) | Mit dem Spiel |
 | Spielbericht eines Testspiels per E-Mail | Auf dem Server nicht gespeichert |
