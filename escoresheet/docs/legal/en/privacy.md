@@ -200,6 +200,16 @@ your own details on the scoresheet (name, country, date of birth).
 **New accounts** start without a role. An administrator approves them, or you
 redeem an invite code. The system records who redeemed which code and when.
 
+**What you do (OpenVolley sign-up, optional):** at sign-up you can say what
+you do (scorer, referee, team manager or coach, club manager) and for which
+club and team. This request is stored only until it is approved or rejected,
+and is seen, with your name and email address, by the administrators and by
+the managers of that club or team.
+Approving it gives your account exactly that role, club or team (an
+administrator, or the club's or the team's managers for their own club or
+team); the system records who decided and when, but not your name or address
+in that entry.
+
 **Clubs (OpenVolley):** an administrator, or an invite code, can assign your
 account to one or more clubs. You then score the official home games of these
 clubs. The system stores which clubs your account belongs to, who assigned

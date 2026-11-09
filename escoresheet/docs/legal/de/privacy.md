@@ -217,6 +217,19 @@ Ihrer eigenen Angaben im Spielbericht (Name, Land, Geburtsdatum).
 Administrator schaltet sie frei, oder Sie lösen einen Einladungscode ein. Dabei
 wird gespeichert, wer welchen Code wann eingelöst hat.
 
+**Was Sie machen (Registrierung bei OpenVolley, freiwillig):** Bei der
+Registrierung können Sie angeben, was Sie machen (Schreiber, Schiedsrichter,
+Teamverantwortliche/r oder Trainer, Vereinsverantwortliche/r) und für welchen
+Verein und welches Team. Diese Anfrage wird nur gespeichert, bis sie
+freigegeben oder abgelehnt ist, und ist mit Ihrem Namen und Ihrer
+E-Mail-Adresse für die Administratoren und die Verantwortlichen dieses Vereins
+oder Teams sichtbar. Wird sie freigegeben,
+erhält Ihr Konto genau diese Rolle, diesen Verein oder dieses Team (durch eine
+Administratorin oder einen Administrator, oder durch die Verantwortlichen des
+Vereins oder Teams für ihren eigenen Verein oder ihr eigenes Team); gespeichert
+wird, wer wann entschieden hat, in diesem Eintrag aber nicht Ihr Name oder Ihre
+Adresse.
+
 **Vereine (OpenVolley):** Eine Administratorin oder ein Administrator, oder ein
 Einladungscode, kann Ihr Konto einem oder mehreren Vereinen zuordnen. Sie führen
 dann die offiziellen Heimspiele dieser Vereine. Gespeichert wird, zu welchen
