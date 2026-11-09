@@ -5250,7 +5250,7 @@
     "cancel": "Retirer la demande",
     "gameCaptain": "Capitaine de jeu",
     "done": {
-      "lineup": "Acceptée",
+      "lineup": "Enregistrée par le marqueur",
       "timeout": "Accordé",
       "substitution": "Accepté"
     },
@@ -5266,10 +5266,6 @@
       "notSent": "Non envoyée – pas de connexion",
       "cancelled": "Retirée",
       "expired": "Plus ouverte"
-    },
-    "autoReason": {
-      "lineup_already_entered": "le marqueur a déjà la composition",
-      "entered_differently": "le marqueur a saisi une autre composition"
     },
     "refusal": {
       "other": "le serveur l’a refusée",

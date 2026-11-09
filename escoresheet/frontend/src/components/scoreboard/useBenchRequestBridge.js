@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { scorerRelay } from '../../utils/relayPublisher'
-import { scorerQueueReducer, latestLineup, lineupNumber, setHasStarted, COURT_ORDER } from '../../domain/benchRequests'
+import { scorerQueueReducer, latestLineup, setHasStarted } from '../../domain/benchRequests'
 
 // The team has a line-up of the set already, or the set has started
 const lineupClosed = (events, team, idx) => !!latestLineup(events, idx, team) || setHasStarted(events, idx)
@@ -20,10 +20,9 @@ export function outcomeFromEvents(entry, events, sinceSeq) {
     return newer.some((e) => e.type === 'timeout') ? { status: 'accepted' } : null
   }
   if (request.kind === 'lineup') {
-    const lu = newer.filter((e) => e.type === 'lineup' && e.payload?.lineup).pop()
-    if (!lu) return null
-    const asSent = COURT_ORDER.every((p) => same(lineupNumber(lu.payload.lineup[p]), request.lineup?.[p]))
-    return asSent ? { status: 'accepted' } : { status: 'declined', reason: 'entered_differently' }
+    // the team's line-up recorded (as sent, changed or typed by hand): the
+    // request is closed, nothing more goes to the bench (owner 2026-11-09)
+    return newer.some((e) => e.type === 'lineup' && e.payload?.lineup) ? { status: 'accepted' } : null
   }
   if (request.kind === 'substitution') {
     const subs = newer.filter((e) => e.type === 'substitution')
@@ -39,9 +38,10 @@ export function outcomeFromEvents(entry, events, sinceSeq) {
  * for this match (scorerRelay.listen), the answers (bench-response), and the
  * events that answer a request by themselves: a time-out, the line-up or the
  * substitutions the scorer records (through the request card, which opens
- * the scorer's normal dialog with every check, or by hand).
- * A line-up request for a set the team already has a line-up of, or that has
- * started, is declined at once (the scorer changes it, not the bench).
+ * the scorer's normal dialog with every check, or by hand). A line-up
+ * request is closed (accepted: "recorded" on the bench) once the team has a
+ * line-up of the set, as sent, changed by the scorer or typed by hand; the
+ * bench is never told it was entered otherwise (owner 2026-11-09).
  */
 export function useBenchRequestBridge({ relayKey, events, setIndex }) {
   const [queue, dispatch] = useReducer(scorerQueueReducer, [])
@@ -73,8 +73,8 @@ export function useBenchRequestBridge({ relayKey, events, setIndex }) {
         if (!r?.id) return
         if (r.kind !== 'cancel' && !sinceRef.current.has(r.id)) sinceRef.current.set(r.id, maxSeq(eventsRef.current))
         if (r.kind === 'lineup' && lineupClosed(eventsRef.current, m.team, r.setIndex)) {
-          // a line-up the scorer has (or a set that started): not the bench's to change
-          scorerRelay.send({ type: 'bench-response', matchId: relayKey, team: m.team, id: r.id, status: 'declined', reason: 'lineup_already_entered' })
+          // the scorer has the team's line-up (or the set started): closed as recorded
+          scorerRelay.send({ type: 'bench-response', matchId: relayKey, team: m.team, id: r.id, status: 'accepted' })
           return
         }
         dispatch({ type: 'bench-request', message: m })

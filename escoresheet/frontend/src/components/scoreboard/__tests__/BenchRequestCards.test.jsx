@@ -84,7 +84,8 @@ describe('the scorer\'s bridge', () => {
   it('answers a request when the scorer records it, through the card or by hand', () => {
     const lu = entry('home', { id: 'l', kind: 'lineup', setIndex: 1, lineup: LU })
     expect(outcomeFromEvents(lu, [lineupEv(LU, 3)], 2)).toEqual({ status: 'accepted' })
-    expect(outcomeFromEvents(lu, [lineupEv({ ...LU, I: 9 }, 3)], 2)).toEqual({ status: 'declined', reason: 'entered_differently' })
+    // changed by the scorer or typed by hand: closed all the same, never declined (owner 2026-11-09)
+    expect(outcomeFromEvents(lu, [lineupEv({ ...LU, I: 9 }, 3)], 2)).toEqual({ status: 'accepted' })
     expect(outcomeFromEvents(lu, [lineupEv(LU, 2)], 2)).toBe(null) // before the request came
     expect(outcomeFromEvents(lu, [lineupEv(LU, 3, 'away')], 2)).toBe(null)
     const to = entry('away', { id: 't', kind: 'timeout', setIndex: 1 })
@@ -96,7 +97,7 @@ describe('the scorer\'s bridge', () => {
     expect(outcomeFromEvents(sub, [s1, { ...s1, seq: 8, payload: { team: 'home', playerOut: 2, playerIn: 9 } }], 6)).toEqual({ status: 'accepted' })
   })
 
-  it('takes the relay\'s requests of its match, says seen, declines a line-up it has, answers once recorded', async () => {
+  it('takes the relay\'s requests of its match, says seen, closes a line-up it has, answers once recorded', async () => {
     const events = [lineupEv({ ...LU }, 1, 'away')]
     const { result, rerender } = renderHook((props) => useBenchRequestBridge(props), { initialProps: { relayKey: 'seed-1', events, setIndex: 1 } })
     const push = (m) => act(() => { for (const fn of relay.listeners) fn(m) })
@@ -108,7 +109,7 @@ describe('the scorer\'s bridge', () => {
     // the away team already has its line-up for set 1
     push({ type: 'bench-request', matchId: 'seed-1', team: 'away', request: { id: 'lu', kind: 'lineup', setIndex: 1, lineup: LU }, status: 'pending' })
     expect(result.current.queue).toHaveLength(1)
-    expect(relay.sent).toContainEqual({ type: 'bench-response', matchId: 'seed-1', team: 'away', id: 'lu', status: 'declined', reason: 'lineup_already_entered' })
+    expect(relay.sent).toContainEqual({ type: 'bench-response', matchId: 'seed-1', team: 'away', id: 'lu', status: 'accepted' })
     // the scorer records the time-out
     rerender({ relayKey: 'seed-1', events: [...events, { type: 'timeout', seq: 2, setIndex: 1, payload: { team: 'home' } }], setIndex: 1 })
     await waitFor(() => expect(result.current.queue).toHaveLength(0))
