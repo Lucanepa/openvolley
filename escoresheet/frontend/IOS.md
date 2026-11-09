@@ -42,13 +42,13 @@ base64), and `APPLE_API_KEY`, `APPLE_API_ISSUER`, `APPLE_API_PRIVATE_KEY`
 
 ## Native code
 
-The app's own plugins (`ios/App/App`, registered by `MainViewController`),
-the iOS side of the Android ones (MainActivity):
+The app's own plugin (`ios/App/App`, registered by `MainViewController`)
+and what stands in for the other Android ones (MainActivity):
 
 | Page asks for | Android | iOS |
 |---|---|---|
 | `OpenVolleyFiles` open / share a saved PDF | FileProvider intents | Quick Look / share sheet (`ScoresheetFilesPlugin.swift`) |
-| `OpenVolleyBars` hide / show | status + navigation bars | status bar + home indicator (`ScoringBarsPlugin.swift`) |
+| `OpenVolleyBars` hide / show | status + navigation bars | Capacitor's own `SystemBars`: status bar + home indicator (`nativeSystemBars.js` asks for it on iOS) |
 | `OpenVolleyApp` exitApp | Back on the first page | none: no Back button, an iOS app never ends itself |
 | `UpdateSource` | F-Droid updates | none: the App Store updates the app |
 
