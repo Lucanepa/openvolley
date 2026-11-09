@@ -31,7 +31,7 @@ import { MissingSignatureButton } from '../signature/PreMatchSignDialog.jsx'
  * @param {number|string} props.setNumber the set as shown (bo3 decider "3")
  * @param {{ left: object, right: object }} props.teams see TeamVM below
  * @param {'left'|'right'|null} props.serving
- * @param {{ status: 'idle'|'in_play', isFirstRally: boolean, startDisabled: boolean, canReplayRally: boolean, isRallyReplayed: boolean }} props.rally
+ * @param {{ status: 'idle'|'in_play', isFirstRally: boolean, startDisabled: boolean, canReplayRally: boolean, isRallyReplayed: boolean, requestBlockText?: string|null }} props.rally
  * @param {null|{ kind: 'timeout', teamName: string, countdown: number, total: number }
  *   |{ kind: 'interval', countdown: number, total: number }
  *   |{ kind: 'set5', countdown?: number, total?: number, confirmLabel: string }} props.centre
@@ -50,6 +50,8 @@ import { MissingSignatureButton } from '../signature/PreMatchSignDialog.jsx'
  *   substitute or the libero came in for),
  *   liberos: [{ number, libero, unable, onCourt, position }], benchPlayers:
  *   [{ number }], officials: [{ role }], improperRequestDone, delayWarned,
+ *   blocked ({ timeout, substitution }: closed by a replay pending or the
+ *   set interval, domain/interruptionRequests.js),
  *   easy, formalWarned, needsRedesignation, signaturesMissing (the coach /
  *   captain still to sign before the first serve: a flashing button that
  *   opens the team's roster, actions.openSignatures) }
@@ -59,7 +61,11 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
   // The phone's own pickers: { kind: 'sub', side, out?: { position, number } } | { kind: 'sanction' } | { kind: 'libero' }
   const [sheet, setSheet] = useState(null)
   const { left, right } = teams
-  const idle = rally.status === 'idle' && !rally.isRallyReplayed
+  // Between rallies. A replayed rally that is not completed yet closes the
+  // regular time-outs and substitutions (team.blocked, with the reason in
+  // rally.requestBlockText) and, as before, the libero: a forced
+  // substitution (injury, through the court player) stays open
+  const idle = rally.status === 'idle'
   // The last actions fill the height left over: as many whole lines as fit
   // (three at the lowest), never a line cut in half
   const recentRef = useRef(null)
@@ -246,10 +252,10 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
   // As the desktop counters: open between rallies, also while a time-out or
   // the interval runs (a consecutive time-out, a substitution right after a
   // time-out), and also with all used (the count reads red): a further
-  // request is an improper request (FIVB 15.11.1.4, 16.1.3), which the
+  // request is an improper request (FIVB 15.11.1.4), which the
   // scoreboard's handlers record
-  const toDisabled = () => !idle
-  const subDisabled = (team) => !idle || !team.lineupSet
+  const toDisabled = (team) => !idle || !!team.blocked?.timeout
+  const subDisabled = (team) => !idle || !team.lineupSet || !!team.blocked?.substitution
   // Only the count taken, as the desktop counters: red once the last one is
   // taken, amber at the substitution before the last (the 5th of 6)
   const countState = (taken, max, { warnBefore = false } = {}) => {
@@ -290,7 +296,12 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
   const teamActions = (team) => (
     <div key={team.side} style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6 }}>
       {counter(team, { label: t('scoreboard.phone.timeOut'), value: team.timeouts, state: countState(team.timeouts, limits.timeouts), disabled: toDisabled(team), onClick: () => actions.timeout(team.side), testId: `phone-timeout-${team.side}` })}
-      {counter(team, { label: t('scoreboard.labels.sub'), value: team.subs, state: countState(team.subs, limits.subs, { warnBefore: true }), disabled: subDisabled(team), onClick: () => setSheet({ kind: 'sub', side: team.side }), testId: `phone-sub-${team.side}` })}
+      {counter(team, { label: t('scoreboard.labels.sub'), value: team.subs, state: countState(team.subs, limits.subs, { warnBefore: true }), disabled: subDisabled(team), onClick: () => {
+        // The Scoreboard may answer with its request warning instead (the
+        // 7th substitution): then no sheet
+        if (actions.requestSubstitution?.(team.side) === false) return
+        setSheet({ kind: 'sub', side: team.side })
+      }, testId: `phone-sub-${team.side}` })}
     </div>
   )
 
@@ -463,6 +474,12 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
       <section aria-label={t('scoreboard.phone.teamActions')} style={{ flex: 'none', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, padding: '0 12px 8px' }}>
         {teamActions(left)}
         {teamActions(right)}
+        {/* Why the time-outs / substitutions are closed (replay pending, set interval) */}
+        {idle && rally.requestBlockText && (
+          <p data-testid="phone-request-block" style={{ gridColumn: '1 / -1', margin: '-2px 0 0', fontSize: 12, lineHeight: '15px', color: 'var(--ov-text-secondary)', textAlign: 'center' }}>
+            {rally.requestBlockText}
+          </p>
+        )}
       </section>
 
       <section aria-label={t('scoreboard.phone.pointButtons')} style={{ flex: 'none', position: 'relative', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, padding: '0 12px 8px' }}>
@@ -484,7 +501,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
       </section>
 
       <section aria-label={t('scoreboard.phone.moreActions')} style={{ flex: 'none', display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 6, padding: '0 12px 14px' }}>
-        {gridButton('libero', t('scoreboard.phone.libero'), () => setSheet({ kind: 'libero' }), { disabled: !idle })}
+        {gridButton('libero', t('scoreboard.phone.libero'), () => setSheet({ kind: 'libero' }), { disabled: !idle || rally.isRallyReplayed })}
         {gridButton('sanction', t('scoreboard.sanction'), () => setSheet({ kind: 'sanction' }), { disabled: rally.status !== 'idle' })}
         {gridButton('replay', t('scoreboard.phone.replay'), () => actions.replay(), { disabled: !inPlay })}
         {gridButton('decision', t('scoreboard.phone.decision'), () => actions.replay(), { disabled: !(rally.status === 'idle' && rally.canReplayRally), small: true })}
@@ -498,7 +515,12 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
           team={teams[sheet.side]}
           ink={paint[sheet.side].ink}
           out={sheet.out}
-          onPickOut={(out) => setSheet({ ...sheet, out })}
+          onPickOut={(out) => {
+            // The player who just came in: the Scoreboard's request warning
+            // (no completed rally since, FIVB 15.2.3) instead of the next step
+            if (actions.pickSubOut?.(teams[sheet.side].teamKey, out) === false) { setSheet(null); return }
+            setSheet({ ...sheet, out })
+          }}
           onBack={() => setSheet({ kind: 'sub', side: sheet.side })}
           onClose={() => setSheet(null)}
           actions={actions}
@@ -650,6 +672,7 @@ function SubstitutionSheet({ team, ink, out, onPickOut, onBack, onClose, actions
   const { t } = useTranslation()
   const court = POSITIONS.map(position => (team.court || []).find(pl => pl.position === position)).filter(pl => pl && pl.number !== '' && pl.number !== null && pl.number !== undefined)
   const candidates = out ? actions.substituteCandidates(team.teamKey, out.number) : []
+  const illegal = out && actions.illegalCandidates ? actions.illegalCandidates(team.teamKey, out.number) : []
   // Easy match (domain/easyMatch.js): a number that is no player yet can come in
   const easyNew = !!out && !!actions.newSubstituteAllowed?.(team.teamKey, out.number)
   return (
@@ -693,6 +716,27 @@ function SubstitutionSheet({ team, ink, out, onPickOut, onBack, onClose, actions
                   </Chip>
                 ))}
               </div>
+            )}
+            {/* Bench players who may not come in, greyed with why: a tap opens
+                the Scoreboard's "Illegal substitution requested" warning */}
+            {illegal.length > 0 && (
+              <>
+                <p style={sheetNote}>{t('scoreboard.requestWarning.notAllowed')}</p>
+                <div style={chipGrid}>
+                  {illegal.map(c => (
+                    <button
+                      key={c.number}
+                      type="button"
+                      data-testid={`phone-sub-illegal-${c.number}`}
+                      onClick={() => { onClose(); actions.illegalSubstitute(team.teamKey, out, c) }}
+                      style={{ minHeight: 44, minWidth: 0, padding: '2px 4px', borderRadius: 10, border: '1px dashed var(--ov-hairline-strong)', background: 'var(--ov-sunken)', color: 'var(--ov-text-faint)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, overflow: 'hidden' }}
+                    >
+                      <span style={{ fontSize: 15, fontWeight: 700, fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>{c.number}</span>
+                      <span style={{ maxWidth: '100%', fontSize: 10, fontWeight: 600, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t(`scoreboard.requestWarning.illegalShort.${c.reason}`)}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
             )}
             {easyNew && (
               <NewNumberField

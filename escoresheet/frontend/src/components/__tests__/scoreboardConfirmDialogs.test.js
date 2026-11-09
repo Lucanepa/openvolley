@@ -104,9 +104,12 @@ describe('time-out request (owner report: "this set?" and the 1st/2nd flash)', (
     expect(sb).not.toContain('timeoutAlreadyTaken')
   })
 
-  it('a third request opens the improper-request dialog, also from the TO counter', () => {
+  it('a third request opens the request warning (improper request / already started: delay), also from the TO counter', () => {
     const open = between('const handleTimeout = useCallback(', 'const runTimeoutConfirm')
-    expect(open).toContain("openTeamSanctionConfirm(side, 'improper_request', 'third_timeout')")
+    // domain/interruptionRequests timeoutRequestIssues: third_timeout, set
+    // interval, replay pending, after a delay warning
+    expect(open).toContain('timeoutRequestIssues(data.events, data.set.index, teamKey')
+    expect(open).toContain("openRequestWarning('timeout', { team: teamKey }, issues, acknowledged)")
     expect(sb).not.toMatch(/canCallTimeout = getTimeoutsUsed\(/)
   })
 
@@ -114,7 +117,9 @@ describe('time-out request (owner report: "this set?" and the 1st/2nd flash)', (
     const open = between('const openTeamSanctionConfirm = useCallback(', '\n  }, [')
     expect(open).toContain('resolveSanction(requestedType')
     const confirm = handler('const confirmSanction = useCallback(')
-    expect(confirm).toContain('resolved: type } = sanctionConfirm')
+    // the dialog's state, or the request warning's choice (resolved when it opened)
+    expect(confirm).toContain('const chosen = explicit?.resolved ? explicit : sanctionConfirm')
+    expect(confirm).toContain('resolved: type } = chosen')
     expect(confirm).not.toContain('resolveSanction(')
     const dialog = between('{sanctionConfirm && (', '</Modal>')
     expect(dialog).toContain("reason === 'third_timeout'")

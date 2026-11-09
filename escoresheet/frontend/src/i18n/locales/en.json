@@ -908,6 +908,79 @@
       "confirmConsecutive": "Yes, second time-out",
       "notRecorded": "The time-out was not recorded. Try again."
     },
+    "requestBlock": {
+      "replay_pending": "Replay pending: no time-out or substitution until the next rally is completed (only a forced substitution).",
+      "replay_pending_short": "Replay pending: only injury or a sanctioned player",
+      "set_interval": "Set interval: no time-out (it would count in the next set)."
+    },
+    "requestWarning": {
+      "notAllowed": "Not allowed",
+      "illegalShort": {
+        "libero": "Libero",
+        "sent_off": "Sent off",
+        "wrong_partner": "Wrong partner",
+        "played_out": "Already played",
+        "no_rally_since_out": "No rally yet"
+      },
+      "since": "Since then: {{what}}.",
+      "between": {
+        "timeout": "a time-out of team {{team}}",
+        "substitution": "a substitution of team {{team}}",
+        "sanction": "a sanction for team {{team}}",
+        "replay": "a rally that was replayed"
+      },
+      "options": {
+        "improper": "Record as improper request",
+        "delay": "Game was delayed: delay sanction",
+        "timeoutStarted": "Time-out already started: delay sanction",
+        "illegal": "Illegal substitution requested: reject + delay sanction",
+        "continue": "Continue anyway"
+      },
+      "records": {
+        "improper": "Recorded: improper request, no other consequence.",
+        "delayWarning": "Recorded: delay warning.",
+        "delayPenalty": "Recorded: delay penalty – point and service to {{opponent}}.",
+        "repeatedImproper": "(The team already has an improper request: this one is a delay.)",
+        "nothing": "The referee allowed it. Nothing is recorded."
+      },
+      "illegal": {
+        "libero": "a libero never comes in by a substitution",
+        "sent_off": "no longer allowed to play (expelled, disqualified or substituted exceptionally)",
+        "wrong_partner": "only the substitution partner may come back",
+        "played_out": "already came in and went out in this set",
+        "no_rally_since_out": "no rally completed since going out"
+      },
+      "second_substitution_request": {
+        "title": "Second substitution request",
+        "text": "{{team}} already made a substitution request in this interruption. Two separate substitution requests by the same team need a completed rally between them.",
+        "rule": "FIVB 15.2.3 · 15.11.1.3"
+      },
+      "no_rally_since_entry": {
+        "title": "#{{number}} cannot go out yet",
+        "text": "#{{number}} came in for #{{returning}} and no rally has been completed since. Substituting #{{number}} again now is a second substitution request.",
+        "rule": "FIVB 15.2.3 · 15.6.2"
+      },
+      "substitution_limit": {
+        "title": "No substitution left",
+        "text": "{{team}} has used its 6 substitutions in this set. A further request is an improper request.",
+        "rule": "FIVB 15.1 · 15.11.1.4"
+      },
+      "third_timeout": {
+        "title": "Third time-out",
+        "text": "{{team}} has used both time-outs of this set. A third request is an improper request; if the time-out has already started, the game was delayed.",
+        "rule": "FIVB 15.1 · 15.11.1.4 · FIVB casebook 4.29"
+      },
+      "after_delay_warning": {
+        "title": "Request after a delay warning",
+        "text": "{{team}} got a delay warning in this interruption. A further request is rejected, with nothing recorded.",
+        "rule": "FIVB 15.2.4: reject, nothing recorded"
+      },
+      "illegal_substitution": {
+        "title": "Illegal substitution",
+        "text": "#{{number}} cannot come in for #{{out}}: {{why}}. Requesting an illegal substitution is a delay; the request is rejected.",
+        "rule": "FIVB 15.10.4 · 16.1.3"
+      }
+    },
     "teamSanctionConfirm": {
       "thirdTimeout": "{{team}} has used both time-outs of this set. A third request is an improper request.",
       "applyImproperRequest": "Record an improper request for {{team}}?",
