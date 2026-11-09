@@ -1766,7 +1766,8 @@
   "refereeDashboard": {
     "recorded": {
       "title": "Recorded by the scorer",
-      "closesIn": "Closes in {{s}} s"
+      "closesIn": "Closes in {{s}} s",
+      "timeoutLeft": "Time-out: {{s}} s left"
     },
     "linkDown": "Offline: no connection to the scoresheet. Score and server may be out of date.",
     "title": "Referee",

@@ -29,6 +29,8 @@ import { backdropDismiss } from '../ui/backdropDismiss.js'
 import PlayerDisc from './referee/PlayerDisc.jsx'
 import ScoreServeRow from './referee/ScoreServeRow.jsx'
 import RecordedNoticePopup from './referee/RecordedNoticePopup.jsx'
+import CountdownFlight from './referee/CountdownFlight.jsx'
+import TimeoutCountdown from './referee/TimeoutCountdown.jsx'
 import { createRecordedNoticeTracker, describeNotice, NOTICE_AUTO_DISMISS_MS } from '../utils/refereeRecordedNotices.js'
 import { matchDiscPaint, teamLiberoColour, teamBoxStyle } from '../utils/teamColours.js'
 import { compareBySeq } from '../domain/describe'
@@ -651,14 +653,25 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const [recordedDeadline, setRecordedDeadline] = useState(null)
   const recordedTrackerRef = useRef(null)
   if (recordedTrackerRef.current === null) recordedTrackerRef.current = createRecordedNoticeTracker()
+  // A running time-out shows its ring in the popup; closing the popup (OK or
+  // the 10 s) moves the ring to its place on the court (countdownFlight).
+  const mainCountdownRef = useRef(null)
+  const [countdownFlight, setCountdownFlight] = useState(null) // { from, to } DOMRects
   const closeRecordedNotices = useCallback(() => {
+    const from = document.querySelector('[data-recorded-countdown]')?.getBoundingClientRect()
+    const to = mainCountdownRef.current?.getBoundingClientRect()
+    const reduceMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+    if (from && to && from.width > 0 && to.width > 0 && !reduceMotion) setCountdownFlight({ from, to })
     setRecordedNotices([])
     setRecordedDeadline(null)
   }, [])
+  const endCountdownFlight = useCallback(() => setCountdownFlight(null), [])
   useEffect(() => {
     recordedTrackerRef.current.reset()
-    closeRecordedNotices()
-  }, [matchId, closeRecordedNotices])
+    setRecordedNotices([])
+    setRecordedDeadline(null)
+    setCountdownFlight(null)
+  }, [matchId])
   useEffect(() => {
     if (!data?.events) return
     const { added, removed } = recordedTrackerRef.current.update(data.events, {
@@ -2782,6 +2795,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     )
   }
 
+  // The running time-out, shown in the "Recorded" popup when it lists one
+  const popupTimeout = timeoutModal && timeoutModal.countdown > 0 && recordedNotices.some(n => n.kind === 'timeout') ? timeoutModal : null
+
   return (
     <div style={{
       height: '100dvh', // Use dynamic viewport height (respects iOS browser chrome)
@@ -3771,11 +3787,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               {timeoutModal ? (
                 <div style={{ textAlign: 'center' }}>
                   <div style={{ fontSize: '20px', color: 'var(--muted)', fontWeight: 600, marginBottom: '4px' }}>TIMEOUT</div>
-                  <DonutCountdown current={timeoutModal.countdown} total={30} size={130} strokeWidth={6}>
-                    <div style={{ fontSize: 'clamp(24px, 8vw, 40px)', fontFamily: getScoreFont(), fontWeight: 600, color: timeoutModal.countdown <= 10 ? '#ef4444' : 'var(--accent)', lineHeight: 1 }}>
-                      {timeoutModal.countdown}"
-                    </div>
-                  </DonutCountdown>
+                  {/* hidden (its place kept) while the popup shows it and while it moves here */}
+                  <div ref={mainCountdownRef} data-main-countdown="" style={{ visibility: (popupTimeout || countdownFlight) ? 'hidden' : 'visible' }}>
+                    <TimeoutCountdown countdown={timeoutModal.countdown} fontFamily={getScoreFont()} />
+                  </div>
                 </div>
               ) : betweenSetsCountdown && betweenSetsCountdown.countdown > 0 ? (
                 <div style={{ textAlign: 'center' }}>
@@ -4086,7 +4101,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         )
       }
       {/* What the scorer just recorded (time-outs, substitutions, sanctions) */}
-      <RecordedNoticePopup notices={recordedNotices} deadline={recordedDeadline} onClose={closeRecordedNotices} />
+      <RecordedNoticePopup notices={recordedNotices} deadline={recordedDeadline} onClose={closeRecordedNotices} timeout={popupTimeout} scoreFont={getScoreFont()} />
+      {countdownFlight && timeoutModal && (
+        <CountdownFlight from={countdownFlight.from} to={countdownFlight.to} countdown={timeoutModal.countdown} fontFamily={getScoreFont()} onDone={endCountdownFlight} />
+      )}
       {/* Scorer Attention Modal */}
       {
         attentionModalOpen && (

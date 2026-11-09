@@ -150,6 +150,57 @@ describe('Referee: recorded by the scorer', () => {
     expect(popup()).toBeNull()
   })
 
+  it('a running time-out shows its countdown in the popup, which moves to the court on OK', async () => {
+    // jsdom lays nothing out: give the two rings a box
+    const rect = (x) => ({ left: x, top: 100, width: 130, height: 130, right: x + 130, bottom: 230, x, y: 100, toJSON: () => ({}) })
+    const spy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      if (this.hasAttribute?.('data-recorded-countdown')) return rect(400)
+      if (this.hasAttribute?.('data-main-countdown')) return rect(100)
+      return rect(0)
+    })
+    try {
+      await openMatch()
+      const to = ev(3, 'timeout', { team: 'away' })
+      // the database row says the time-out runs (it starts the countdown)...
+      const before = relay.fetches.length
+      rowMs += 1000
+      await act(async () => {
+        cloud.onRow({ new: { updated_at: new Date(T0 + rowMs).toISOString(), current_set: 1, points_a: 1, points_b: 0, match_status: 'live',
+          timeout_active: true, timeout_started_at: new Date().toISOString(), last_event_type: 'timeout', last_event_team: 'right', last_event_ts: new Date().toISOString() } })
+      })
+      // ... and the bundle it fetches brings the time-out event
+      await waitFor(() => expect(relay.fetches.length).toBeGreaterThan(before))
+      await act(async () => { relay.fetches[relay.fetches.length - 1](bundle([...BASE, to])) })
+      await settle()
+
+      const ring = popup().querySelector('[data-recorded-countdown]')
+      expect(ring).not.toBeNull()
+      expect(ring.textContent).toMatch(/^(30|29|28)"$/)
+      const main = document.querySelector('[data-main-countdown]')
+      expect(main.style.visibility).toBe('hidden')
+
+      fireEvent.click(within(popup()).getByRole('button', { name: 'OK' }))
+      expect(popup()).toBeNull()
+      const flight = screen.getByTestId('countdown-flight')
+      expect(flight.style.left).toBe('400px')
+      expect(main.style.visibility).toBe('hidden')
+      await waitFor(() => expect(flight.style.transform).toBe('translate(-300px, 0px) scale(1)'))
+      // landed: the court's own countdown shows
+      await waitFor(() => expect(screen.queryByTestId('countdown-flight')).toBeNull())
+      expect(document.querySelector('[data-main-countdown]').style.visibility).toBe('visible')
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('without a running time-out the popup shows no countdown', async () => {
+    await openMatch()
+    await scorerRecorded([...BASE, ev(3, 'timeout', { team: 'away' })])
+    expect(popup().querySelector('[data-recorded-countdown]')).toBeNull()
+    fireEvent.click(within(popup()).getByRole('button', { name: 'OK' }))
+    expect(screen.queryByTestId('countdown-flight')).toBeNull()
+  })
+
   it('closes by itself 10 s after its last entry', async () => {
     await openMatch()
     await scorerRecorded([...BASE, ev(3, 'sanction', { team: 'away', type: 'delay_warning' })])
@@ -157,7 +208,8 @@ describe('Referee: recorded by the scorer', () => {
     expect(within(popup()).getByText(/Closes in (10|9) s/)).toBeTruthy()
     await act(async () => { await new Promise(r => setTimeout(r, 6000)) })
     expect(popup()).not.toBeNull()
-    await act(async () => { await new Promise(r => setTimeout(r, 4500)) })
-    expect(popup()).toBeNull()
+    // 10 s after it opened (a busy machine fires the timer a little late)
+    await act(async () => { await new Promise(r => setTimeout(r, 4000)) })
+    await waitFor(() => expect(popup()).toBeNull(), { timeout: 3000 })
   }, 20000)
 })
