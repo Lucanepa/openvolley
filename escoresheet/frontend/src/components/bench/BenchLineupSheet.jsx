@@ -130,7 +130,7 @@ export default function BenchLineupSheet({ setIndex, team, players = [], events 
       {lastRequest?.status === 'declined' && (
         <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800" data-lineup-declined="">
           {lastRequest.reason
-            ? t('benchRequests.status.declinedBecause', { reason: t(`benchRequests.autoReason.${lastRequest.reason}`, { defaultValue: lastRequest.reason }) })
+            ? t('benchRequests.status.declinedBecause', { reason: lastRequest.reason })
             : t('benchRequests.status.declined')}
         </p>
       )}

@@ -5239,7 +5239,7 @@
     "cancel": "Anfrage zurückziehen",
     "gameCaptain": "Spielkapitän",
     "done": {
-      "lineup": "Angenommen",
+      "lineup": "Vom Schreiber erfasst",
       "timeout": "Gewährt",
       "substitution": "Angenommen"
     },
@@ -5255,10 +5255,6 @@
       "notSent": "Nicht gesendet – keine Verbindung",
       "cancelled": "Zurückgezogen",
       "expired": "Nicht mehr offen"
-    },
-    "autoReason": {
-      "lineup_already_entered": "der Schreiber hat die Aufstellung schon",
-      "entered_differently": "der Schreiber hat eine andere Aufstellung erfasst"
     },
     "refusal": {
       "other": "der Server hat sie abgewiesen",

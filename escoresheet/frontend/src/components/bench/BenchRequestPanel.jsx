@@ -47,7 +47,7 @@ export default function BenchRequestPanel({ matchId, team, data, players, discSt
       case 'seen': return t('benchRequests.status.seen')
       case 'accepted': return done
       case 'declined': return r.reason
-        ? t('benchRequests.status.declinedBecause', { reason: t(`benchRequests.autoReason.${r.reason}`, { defaultValue: r.reason }) })
+        ? t('benchRequests.status.declinedBecause', { reason: r.reason })
         : t('benchRequests.status.declined')
       case 'refused': return t('benchRequests.status.refused', { reason: t(`benchRequests.refusal.${r.reason}`, { defaultValue: t('benchRequests.refusal.other') }) })
       case 'not_sent': return t('benchRequests.status.notSent')

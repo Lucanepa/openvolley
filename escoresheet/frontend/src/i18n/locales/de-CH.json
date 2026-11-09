@@ -5251,7 +5251,7 @@
     "cancel": "Aafrog zruggzieh",
     "gameCaptain": "Spielkapitän",
     "done": {
-      "lineup": "Aagnoh",
+      "lineup": "Vom Schriiber erfasst",
       "timeout": "Gwährt",
       "substitution": "Aagnoh"
     },
@@ -5267,10 +5267,6 @@
       "notSent": "Nöd gschickt – kei Verbindig",
       "cancelled": "Zruggzoge",
       "expired": "Nüme offe"
-    },
-    "autoReason": {
-      "lineup_already_entered": "de Schriiber hätt d Ufstellig scho",
-      "entered_differently": "de Schriiber hätt en anderi Ufstellig erfasst"
     },
     "refusal": {
       "other": "de Server hätt sie abgwise",

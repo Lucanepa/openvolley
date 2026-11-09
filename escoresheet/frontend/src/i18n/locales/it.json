@@ -5256,7 +5256,7 @@
     "cancel": "Ritira la richiesta",
     "gameCaptain": "Capitano in gioco",
     "done": {
-      "lineup": "Accettata",
+      "lineup": "Registrata dal segnapunti",
       "timeout": "Concesso",
       "substitution": "Accettata"
     },
@@ -5272,10 +5272,6 @@
       "notSent": "Non inviata – nessuna connessione",
       "cancelled": "Ritirata",
       "expired": "Non più aperta"
-    },
-    "autoReason": {
-      "lineup_already_entered": "il segnapunti ha già la formazione",
-      "entered_differently": "il segnapunti ha inserito un’altra formazione"
     },
     "refusal": {
       "other": "il server l’ha rifiutata",

@@ -5257,7 +5257,7 @@
     "cancel": "Cancel request",
     "gameCaptain": "Game captain",
     "done": {
-      "lineup": "Accepted",
+      "lineup": "Recorded by the scorer",
       "timeout": "Granted",
       "substitution": "Accepted"
     },
@@ -5273,10 +5273,6 @@
       "notSent": "Not sent – no connection",
       "cancelled": "Cancelled",
       "expired": "No longer open"
-    },
-    "autoReason": {
-      "lineup_already_entered": "the scorer already has the line-up",
-      "entered_differently": "the scorer entered another line-up"
     },
     "refusal": {
       "other": "the server refused it",
