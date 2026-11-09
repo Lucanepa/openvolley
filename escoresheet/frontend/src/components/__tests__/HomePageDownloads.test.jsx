@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key, fallback) => fallback || key })
@@ -12,72 +12,46 @@ vi.mock('../../utils/backendConfig', () => ({
   isServedFromLocalServer: () => backend.local
 }))
 
-import HomePage, { newestDesktopRelease } from '../pages/HomePage'
+import HomePage from '../pages/HomePage'
 
 const LINUX_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36'
-const RELEASE = {
-  tag_name: 'desktop-v1.48.19',
-  draft: false,
-  prerelease: false,
-  html_url: 'https://github.com/Lucanepa/openvolley/releases/tag/desktop-v1.48.19',
-  assets: [
-    { name: 'Openvolley.eScoresheet_1.48.19_amd64.AppImage', browser_download_url: 'https://example.test/app.AppImage' },
-    { name: 'Openvolley.eScoresheet_1.48.19_amd64.deb', browser_download_url: 'https://example.test/app.deb' }
-  ]
-}
+const PHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
 
-describe('HomePage desktop download section', () => {
+// Owner 2026-11-09: "just link the downloads page" (it had a desktop app
+// link with its version, a .deb link and a "Download server" link)
+describe('HomePage: the downloads link', () => {
   let uaSpy
   beforeEach(() => {
     backend.local = false
     uaSpy = vi.spyOn(window.navigator, 'userAgent', 'get').mockReturnValue(LINUX_UA)
-    global.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([RELEASE]) }))
+    global.fetch = vi.fn(() => Promise.reject(new Error('no network in tests')))
   })
   afterEach(() => {
     uaSpy.mockRestore()
   })
 
-  it('a desktop browser on the public site gets the newest desktop release', async () => {
+  it('a desktop browser on the public site gets one link to the downloads page', () => {
     render(<HomePage />)
-    await waitFor(() => expect(screen.getByText(/Download the desktop app.*\(v1\.48\.19\)/)).toBeInTheDocument())
+    const link = screen.getByTestId('home-downloads')
+    expect(link).toHaveAttribute('href', 'https://get.openvolley.app/')
+    expect(link).toHaveTextContent('Download OpenVolley')
+    expect(screen.queryByText(/Download server|\.deb package|offline scoretable/)).not.toBeInTheDocument()
   })
 
-  // From 2.0 the Linux bundles are named after tauri.linux.conf.json's
-  // productName ("openvolley-escoresheet_<v>_amd64.*"); assets are matched by
-  // extension, so the old and the new names both resolve.
-  it('finds the Linux assets under the openvolley-escoresheet name', async () => {
-    const renamed = {
-      ...RELEASE,
-      tag_name: 'desktop-v2.0.0',
-      assets: [
-        { name: 'Openvolley.eScoresheet_2.0.0_x64-setup.exe', browser_download_url: 'https://example.test/setup.exe' },
-        { name: 'openvolley-escoresheet_2.0.0_amd64.AppImage', browser_download_url: 'https://example.test/new.AppImage' },
-        { name: 'openvolley-escoresheet_2.0.0_amd64.deb', browser_download_url: 'https://example.test/new.deb' }
-      ]
-    }
-    global.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([renamed]) }))
+  it('asks nobody for release lists (no GitHub call on Home)', () => {
     render(<HomePage />)
-    const app = await screen.findByText(/Download the desktop app.*\(v2\.0\.0\)/)
-    expect(app.closest('a')).toHaveAttribute('href', 'https://example.test/new.AppImage')
-    expect(screen.getByText('or get the .deb package').closest('a')).toHaveAttribute('href', 'https://example.test/new.deb')
-  })
-
-  // GitHub listed desktop-v2.4.9 before desktop-v2.4.10 (2026-10-14)
-  it('offers the highest version, not the first release GitHub lists', async () => {
-    const rel = (v, extra = {}) => ({ ...RELEASE, tag_name: `desktop-v${v}`, ...extra })
-    const list = [rel('2.4.9'), rel('2.4.10'), rel('2.5.0', { draft: true }), rel('2.4.11', { prerelease: true }), { ...RELEASE, tag_name: 'android-v2.4.12' }, rel('2.4.8')]
-    expect(newestDesktopRelease(list).tag_name).toBe('desktop-v2.4.10')
-    expect(newestDesktopRelease([])).toBeNull()
-    global.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve(list) }))
-    render(<HomePage />)
-    await screen.findByText(/Download the desktop app.*\(v2\.4\.10\)/)
+    expect(global.fetch).not.toHaveBeenCalled()
   })
 
   it('a page served by the local relay (desktop app window, venue LAN) shows no downloads', () => {
     backend.local = true
     render(<HomePage />)
-    expect(screen.queryByText(/Download the desktop app/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/Download server/)).not.toBeInTheDocument()
-    expect(global.fetch).not.toHaveBeenCalled()
+    expect(screen.queryByTestId('home-downloads')).not.toBeInTheDocument()
+  })
+
+  it('a phone browser shows no downloads link (desktop browsers only, as before)', () => {
+    uaSpy.mockReturnValue(PHONE_UA)
+    render(<HomePage />)
+    expect(screen.queryByTestId('home-downloads')).not.toBeInTheDocument()
   })
 })
