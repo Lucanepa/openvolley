@@ -272,6 +272,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # stapler looks the ticket up in Apple's CloudKit: a lost connection
+          # (error 68 on the runner) is tried again, a missing ticket still fails
+          retry() { local i; for i in 1 2 3 4 5; do "$@" && return 0; [ "$i" = 5 ] || { echo "::warning::try $i of 5 failed: $*"; sleep $((i * 15)); }; done; return 1; }
           if [ "${{ matrix.flavour }}" = beach ]; then
             pkg=openbeach-escoresheet; id=com.openvolley.beach; name=OpenBeach; data=OpenBeach; port=5174
           else
@@ -300,7 +303,7 @@ jobs:
             codesign -d --entitlements - --xml "$app" 2>/dev/null | grep -q 'com.apple.security.device.camera' || { echo "::error::no camera entitlement"; exit 1; }
             # the Tauri CLI notarized the .app and stapled its ticket: Gatekeeper
             # passes it without asking Apple (no internet in many halls)
-            xcrun stapler validate "$app"
+            retry xcrun stapler validate "$app"
             gk=$(spctl --assess --type execute --verbose=4 "$app" 2>&1) || { echo "$gk"; echo "::error::Gatekeeper rejects $app"; exit 1; }
             echo "$gk"
             grep -q 'source=Notarized Developer ID' <<<"$gk" || { echo "::error::$app is not notarized"; exit 1; }
@@ -319,7 +322,7 @@ jobs:
           tar -xzf "$tgz" -C "$x"
           codesign --verify --deep --strict "$x/$name.app"
           # the ticket lives in the bundle (Contents/CodeResources), so the update keeps it
-          if [ "$MAC_SIGNED" = 1 ]; then xcrun stapler validate "$x/$name.app"; fi
+          if [ "$MAC_SIGNED" = 1 ]; then retry xcrun stapler validate "$x/$name.app"; fi
           rm -rf "$x"
 
           n=0; src=
@@ -339,8 +342,8 @@ jobs:
               [ -z "$sid" ] || xcrun notarytool log "$sid" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" || true
               echo "::error::Apple did not accept $dmg"; exit 1
             fi
-            xcrun stapler staple "$dmg"
-            xcrun stapler validate "$dmg"
+            retry xcrun stapler staple "$dmg"
+            retry xcrun stapler validate "$dmg"
             gk=$(spctl --assess --type open --context context:primary-signature --verbose=4 "$dmg" 2>&1) || { echo "$gk"; echo "::error::Gatekeeper rejects $dmg"; exit 1; }
             echo "$gk"
             grep -q 'source=Notarized Developer ID' <<<"$gk" || { echo "::error::$dmg is not notarized"; exit 1; }
@@ -351,7 +354,7 @@ jobs:
           ok=1
           [ -d "$m/$name.app" ] && [ -L "$m/Applications" ] && codesign --verify --deep --strict "$m/$name.app" || ok=0
           # the copy in the image carries its own ticket too (dragged to Applications)
-          if [ "$ok" = 1 ] && [ "$MAC_SIGNED" = 1 ]; then xcrun stapler validate "$m/$name.app" || ok=0; fi
+          if [ "$ok" = 1 ] && [ "$MAC_SIGNED" = 1 ]; then retry xcrun stapler validate "$m/$name.app" || ok=0; fi
           hdiutil detach "$m" >/dev/null || hdiutil detach -force "$m" >/dev/null
           [ "$ok" = 1 ] || { echo "::error::$dmg does not hold $name.app and the Applications link"; exit 1; }
           ls -la "$b/macos" "$b/dmg"
