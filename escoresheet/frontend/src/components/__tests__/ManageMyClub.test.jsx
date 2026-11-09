@@ -9,7 +9,7 @@ vi.mock('react-i18next', () => ({
 }))
 
 const api = vi.hoisted(() => ({
-  club: { get: vi.fn(), setContact: vi.fn(), members: vi.fn(), removeMember: vi.fn(), listInvites: vi.fn(), createInvite: vi.fn(), revokeInvite: vi.fn() },
+  club: { get: vi.fn(), setContact: vi.fn(), members: vi.fn(), removeMember: vi.fn(), listInvites: vi.fn(), createInvite: vi.fn(), revokeInvite: vi.fn(), teams: vi.fn(), createTeamLink: vi.fn(), removeTeamManager: vi.fn() },
   clubs: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), vmTeams: vi.fn(), setRule: vi.fn(), setManagers: vi.fn() },
   admin: { listInvites: vi.fn(), createInvite: vi.fn(), revokeInvite: vi.fn() }
 }))
@@ -38,6 +38,8 @@ beforeEach(() => {
   ui.toasts = []
   ui.confirm.mockResolvedValue(true)
   api.club.get.mockResolvedValue(okRes({ club: { ...KSC, teams: ['KSC Wiedikon H1'], contact_email: 'info@ksc.ch', managers: [], scorers: 1 } }))
+  // db/023: the club's teams and their team links
+  api.club.teams.mockResolvedValue(okRes({ teams: [{ id: 'team-h1', name: 'KSC Wiedikon H1', managers: [], open_links: 0 }] }))
   api.club.members.mockResolvedValue(okRes({ members: [
     { id: 'u1', email: 'ada@example.ch', name: 'Ada Scorer', roles: ['scorer'], manager: false, joined_at: '2026-10-20T10:00:00Z' },
     { id: 'u2', email: 'new@example.ch', name: null, roles: [], manager: false, joined_at: '2026-10-28T10:00:00Z' }

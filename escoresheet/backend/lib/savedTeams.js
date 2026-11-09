@@ -542,5 +542,14 @@ export function createSavedTeams ({ pool, logger = console } = {}) {
     }
   }
 
-  return { getBundle, createCompetition, updateCompetition, deleteCompetition, createTeam, updateTeam, deleteTeam, putRoster, sportOf }
+  /** One saved team with its players and staff (lib/teams.js, a team manager's squad). */
+  async function getTeam ({ id } = {}) {
+    if (!isUuid(id)) return notFound()
+    return guarded('get-team', async () => {
+      const team = await teamById(pool, id)
+      return team ? ok({ team }) : notFound()
+    })
+  }
+
+  return { getBundle, createCompetition, updateCompetition, deleteCompetition, createTeam, updateTeam, deleteTeam, putRoster, getTeam, sportOf }
 }

@@ -2865,7 +2865,8 @@
       "competition_manager": "Competition manager",
       "admin": "Admin",
       "super_admin": "Super admin",
-      "pending": "Pending approval"
+      "pending": "Pending approval",
+      "team_manager": "Team manager"
     },
     "signUpPendingNote": "New accounts need approval before official matches sync to the cloud. Ask your club for an invite code.",
     "officialMatchLocalOnly": "This match stays on this device until your account is approved as a scorer."
@@ -2898,7 +2899,11 @@
     "allSetTitle": "You're all set",
     "allSetBody": "Your account is approved for scoring. Sign in in the scorer app with this email and password.",
     "haveManagerCode": "Got an invite code for the manager? Enter it here",
-    "switchTo": "Switch to {{name}}"
+    "switchTo": "Switch to {{name}}",
+    "teamLinkNote": "You opened a team link. Sign in or create an account, and the team opens.",
+    "teamLinkSignIn": "Sign in with your account, or create one first.",
+    "teamLinkDone": "You now manage {{team}}.",
+    "teamLinkAlready": "You manage {{team}} already."
   },
   "managerBeach": {
     "signInHeading": "Manage OpenBeach",
@@ -2937,7 +2942,8 @@
       "scoresheets": "Scoresheets",
       "clubs": "Clubs",
       "myclub": "My club",
-      "settings": "Settings"
+      "settings": "Settings",
+      "myteams": "My teams"
     },
     "status": {
       "setup": "Set-up",
@@ -3117,7 +3123,10 @@
         "club_contact": "Club contact email changed",
         "club_member_remove": "Removed from club",
         "match_final_mail": "Final scoresheet emailed",
-        "settings_final_email": "Final scoresheet email switched"
+        "settings_final_email": "Final scoresheet email switched",
+        "team_managers": "Team manager changed",
+        "team_squad": "Team players saved",
+        "team_roster": "Game roster sent"
       }
     },
     "approvals": {
@@ -3289,6 +3298,89 @@
       "finalEmailIsOff": "Final scoresheets are no longer sent",
       "changed": "Changed",
       "noMail": "This server cannot send email yet (no mail server set up): nothing goes out, even with the switch on."
+    },
+    "myTeams": {
+      "none": "You manage no team.",
+      "pick": "Team",
+      "intro": "Keep your team's players up to date and send the roster of each game before it starts. The scorer's tablet downloads it while it has internet, so it is ready in the hall even without Wi-Fi.",
+      "squad": "Players {{season}}",
+      "squadHint": "Everyone who may play this season, with numbers and dates of birth. Scorers can also load this team in the match setup.",
+      "games": "Games",
+      "gamesHint": "Prepare the roster of each game: tick who plays. You can change it at any time.",
+      "noGames": "No games of this team in the schedule from today on.",
+      "vs": "vs",
+      "at": "at",
+      "home": "Home",
+      "away": "Away",
+      "notSent": "Not sent",
+      "edit": "Edit roster",
+      "prepare": "Prepare roster",
+      "notYourGame": "This game is not one of your team's games in the schedule.",
+      "sentBy": "Sent {{when}} by {{name}}",
+      "players": "Players",
+      "officials": "Team officials",
+      "noPlayers": "No players yet. Add them under Players above, or import the Einsatzliste.",
+      "noOfficials": "No team officials yet. Add them under Players above.",
+      "importPdf": "Import Einsatzliste",
+      "pdfEmpty": "No players found in this PDF.",
+      "pdfFailed": "This PDF could not be read. Is it the Einsatzliste from VolleyManager?",
+      "pdfImported": "Einsatzliste imported: {{added}} added, {{updated}} updated. Check it and save.",
+      "pdfImportedGame": "{{count}} players from the Einsatzliste ticked. Check and send.",
+      "captainShort": "C",
+      "liberoShort": "L",
+      "send": "Send roster",
+      "saved": "Roster sent",
+      "delete": "Delete roster",
+      "deleteTitle": "Delete this game's roster?",
+      "deleteBody": "The scorer's tablet drops it the next time it is online.",
+      "deleted": "Roster deleted",
+      "signHint": "Optional: the coach and the captain can sign here if they want. Otherwise they sign in the hall, at the coin toss.",
+      "problems": {
+        "tooMany": "At most {{max}} players per game.",
+        "number": "{{name}} needs a shirt number.",
+        "numberTwice": "Number {{number}} is there twice.",
+        "captains": "Only one captain.",
+        "liberos": "At most {{max}} liberos.",
+        "roleTwice": "Each official role once only ({{role}}).",
+        "tooManyStaff": "At most {{max}} team officials."
+      },
+      "sent_one": "Sent: {{count}} player, {{when}}",
+      "sent_other": "Sent: {{count}} players, {{when}}",
+      "accepted": "Accepted by the scorer {{when}}",
+      "acceptedBody": "The scorer ({{name}}) accepted the roster {{when}}; it was then deleted here. You can send a new one.",
+      "signedChip": "Signed",
+      "sig": {
+        "title": "Signatures (optional)",
+        "coach": "Coach",
+        "captain": "Captain",
+        "sign": "Sign",
+        "again": "Sign again",
+        "clear": "Remove",
+        "signed": "Signature",
+        "stale": "The roster changed after signing. Sign again, or send it without signatures.",
+        "noCoach": "Tick a coach first",
+        "noCaptain": "Mark a captain first",
+        "padCoach": "Coach signature: {{name}}",
+        "padCaptain": "Captain signature: {{name}}"
+      }
+    },
+    "clubTeams": {
+      "title": "Teams",
+      "hint": "Give each team's coach or manager a link. With it they keep the team's players up to date and send the roster of each game ahead.",
+      "none": "No teams in this club yet. An admin adds them in the Clubs tab.",
+      "noManager": "No team manager",
+      "openLinks_one": "{{count}} open link",
+      "openLinks_other": "{{count}} open links",
+      "createLink": "Create link",
+      "linkTitle": "Link for {{team}}",
+      "linkBody": "Send this link to the team's coach or manager. They open it, sign in or create an account, and the team is theirs. The link is shown only now.",
+      "copyLink": "Copy link",
+      "share": "Share",
+      "shareTitle": "OpenVolley: {{team}}",
+      "shareText": "Manage {{team}} in OpenVolley: players and the roster of each game.",
+      "linkLimits": "Works {{uses}} times, until {{date}}.",
+      "removeTitle": "Take {{name}} off the team?",
+      "removeBody": "They can no longer manage {{team}}. Their account stays."
     }
   },
   "playerPool": {
@@ -4713,6 +4805,26 @@
       "limit": "This account already has 10 passkeys. Remove one first.",
       "alreadyHere": "This device already has a passkey for your account.",
       "unavailable": "Passkeys aren't available right now. Please use your password."
+    }
+  },
+  "sentRoster": {
+    "title": "Roster sent by {{team}}",
+    "meta": "{{players}} · {{officials}} · {{when}} · {{name}}",
+    "use": "Accept",
+    "preview": "Show",
+    "hidePreview": "Hide",
+    "notNow": "Not now",
+    "hint": "Check it with the coach. The coach and the captain sign at the coin toss as usual.",
+    "used": "Roster of the team loaded: {{count}} players",
+    "players_one": "{{count}} player",
+    "players_other": "{{count}} players",
+    "officials_one": "{{count}} official",
+    "officials_other": "{{count}} officials",
+    "hintSigned": "Check it with the coach. The coach and the captain signed ahead; their signatures come with it.",
+    "signed": {
+      "both": "Signed ahead by the coach and the captain",
+      "coach": "Signed ahead by the coach",
+      "captain": "Signed ahead by the captain"
     }
   }
 }

@@ -2858,7 +2858,8 @@
       "competition_manager": "Responsable de compétition",
       "admin": "Admin",
       "super_admin": "Super admin",
-      "pending": "Validation en attente"
+      "pending": "Validation en attente",
+      "team_manager": "Responsable d’équipe"
     },
     "signUpPendingNote": "Les nouveaux comptes doivent être validés avant que les matchs officiels soient synchronisés dans le cloud. Demande un code d’invitation à ton club.",
     "officialMatchLocalOnly": "Ce match reste sur cet appareil jusqu’à la validation de ton compte comme marqueur."
@@ -2891,7 +2892,11 @@
     "allSetTitle": "Tout est prêt",
     "allSetBody": "Votre compte est validé pour marquer. Connectez-vous dans l’application du marqueur avec cet email et ce mot de passe.",
     "haveManagerCode": "Vous avez reçu un code d’invitation pour la gestion ? Saisissez-le ici",
-    "switchTo": "Passer à {{name}}"
+    "switchTo": "Passer à {{name}}",
+    "teamLinkNote": "Vous avez ouvert un lien d’équipe. Connectez-vous ou créez un compte, et l’équipe s’ouvre.",
+    "teamLinkSignIn": "Connectez-vous avec votre compte, ou créez-en un d’abord.",
+    "teamLinkDone": "Vous gérez maintenant {{team}}.",
+    "teamLinkAlready": "Vous gérez déjà {{team}}."
   },
   "managerBeach": {
     "signInHeading": "Gérer OpenBeach",
@@ -2930,7 +2935,8 @@
       "scoresheets": "Feuilles de match",
       "clubs": "Clubs",
       "myclub": "Mon club",
-      "settings": "Réglages"
+      "settings": "Réglages",
+      "myteams": "Mes équipes"
     },
     "status": {
       "setup": "Préparation",
@@ -3110,7 +3116,10 @@
         "club_contact": "E-mail de contact du club modifié",
         "club_member_remove": "Retiré du club",
         "match_final_mail": "Feuille de match finale envoyée par e-mail",
-        "settings_final_email": "Envoi de la feuille de match par e-mail modifié"
+        "settings_final_email": "Envoi de la feuille de match par e-mail modifié",
+        "team_managers": "Responsable d’équipe modifié",
+        "team_squad": "Joueurs de l’équipe enregistrés",
+        "team_roster": "Liste du match envoyée"
       }
     },
     "approvals": {
@@ -3282,6 +3291,89 @@
       "finalEmailIsOff": "Les feuilles de match finales ne sont plus envoyées",
       "changed": "Modifié le",
       "noMail": "Ce serveur ne peut pas encore envoyer d’e-mails (aucun serveur de messagerie configuré) : rien ne part, même avec l’interrupteur activé."
+    },
+    "myTeams": {
+      "none": "Vous ne gérez aucune équipe.",
+      "pick": "Équipe",
+      "intro": "Tenez à jour les joueurs de votre équipe et envoyez la liste de chaque match avant son début. La tablette du marqueur la télécharge tant qu’elle a internet : elle est prête dans la salle, même sans Wi-Fi.",
+      "squad": "Joueurs {{season}}",
+      "squadHint": "Toutes les personnes qui peuvent jouer cette saison, avec numéros et dates de naissance. Les marqueurs peuvent aussi charger cette équipe dans la configuration du match.",
+      "games": "Matchs",
+      "gamesHint": "Préparez la liste de chaque match : cochez qui joue. Vous pouvez la modifier à tout moment.",
+      "noGames": "Aucun match de cette équipe au calendrier à partir d’aujourd’hui.",
+      "vs": "contre",
+      "at": "chez",
+      "home": "Domicile",
+      "away": "Extérieur",
+      "notSent": "Pas envoyée",
+      "edit": "Modifier la liste",
+      "prepare": "Préparer la liste",
+      "notYourGame": "Ce match n’est pas un match de votre équipe au calendrier.",
+      "sentBy": "Envoyée {{when}} par {{name}}",
+      "players": "Joueurs",
+      "officials": "Officiels d’équipe",
+      "noPlayers": "Pas encore de joueurs. Ajoutez-les sous Joueurs ci-dessus, ou importez l’Einsatzliste.",
+      "noOfficials": "Pas encore d’officiels d’équipe. Ajoutez-les sous Joueurs ci-dessus.",
+      "importPdf": "Importer l’Einsatzliste",
+      "pdfEmpty": "Aucun joueur trouvé dans ce PDF.",
+      "pdfFailed": "Ce PDF n’a pas pu être lu. Est-ce l’Einsatzliste de VolleyManager ?",
+      "pdfImported": "Einsatzliste importée : {{added}} ajoutés, {{updated}} mis à jour. Vérifiez et enregistrez.",
+      "pdfImportedGame": "{{count}} joueurs de l’Einsatzliste cochés. Vérifiez et envoyez.",
+      "captainShort": "C",
+      "liberoShort": "L",
+      "send": "Envoyer la liste",
+      "saved": "Liste envoyée",
+      "delete": "Supprimer la liste",
+      "deleteTitle": "Supprimer la liste de ce match ?",
+      "deleteBody": "La tablette du marqueur la retire dès qu’elle est de nouveau en ligne.",
+      "deleted": "Liste supprimée",
+      "signHint": "Facultatif : l’entraîneur et le capitaine peuvent signer ici s’ils le souhaitent. Sinon, ils signent dans la salle, au tirage au sort.",
+      "problems": {
+        "tooMany": "Au plus {{max}} joueurs par match.",
+        "number": "{{name}} a besoin d’un numéro de maillot.",
+        "numberTwice": "Le numéro {{number}} figure deux fois.",
+        "captains": "Un seul capitaine.",
+        "liberos": "Au plus {{max}} liberos.",
+        "roleTwice": "Chaque fonction une seule fois ({{role}}).",
+        "tooManyStaff": "Au plus {{max}} officiels d’équipe."
+      },
+      "sent_one": "Envoyée : {{count}} joueur, {{when}}",
+      "sent_other": "Envoyée : {{count}} joueurs, {{when}}",
+      "accepted": "Acceptée par le marqueur {{when}}",
+      "acceptedBody": "Le marqueur ({{name}}) a accepté la liste {{when}} ; elle a ensuite été supprimée ici. Vous pouvez en envoyer une nouvelle.",
+      "signedChip": "Signée",
+      "sig": {
+        "title": "Signatures (facultatif)",
+        "coach": "Entraîneur",
+        "captain": "Capitaine",
+        "sign": "Signer",
+        "again": "Signer à nouveau",
+        "clear": "Retirer",
+        "signed": "Signature",
+        "stale": "La liste a changé après la signature. Signez à nouveau, ou envoyez-la sans signatures.",
+        "noCoach": "Cochez d’abord un entraîneur",
+        "noCaptain": "Désignez d’abord un capitaine",
+        "padCoach": "Signature de l’entraîneur : {{name}}",
+        "padCaptain": "Signature du capitaine : {{name}}"
+      }
+    },
+    "clubTeams": {
+      "title": "Équipes",
+      "hint": "Donnez un lien à l’entraîneur ou au responsable de chaque équipe. Avec lui, ils tiennent les joueurs à jour et envoient la liste de chaque match à l’avance.",
+      "none": "Ce club n’a pas encore d’équipes. Un admin les ajoute dans l’onglet Clubs.",
+      "noManager": "Aucun responsable d’équipe",
+      "openLinks_one": "{{count}} lien ouvert",
+      "openLinks_other": "{{count}} liens ouverts",
+      "createLink": "Créer un lien",
+      "linkTitle": "Lien pour {{team}}",
+      "linkBody": "Envoyez ce lien à l’entraîneur ou au responsable de l’équipe. Ils l’ouvrent, se connectent ou créent un compte, et l’équipe est à eux. Le lien n’est affiché que maintenant.",
+      "copyLink": "Copier le lien",
+      "share": "Partager",
+      "shareTitle": "OpenVolley : {{team}}",
+      "shareText": "Gérer {{team}} dans OpenVolley : les joueurs et la liste de chaque match.",
+      "linkLimits": "Valable {{uses}} fois, jusqu’au {{date}}.",
+      "removeTitle": "Retirer {{name}} de l’équipe ?",
+      "removeBody": "Cette personne ne pourra plus gérer {{team}}. Son compte reste."
     }
   },
   "playerPool": {
@@ -4706,6 +4798,26 @@
       "limit": "Ce compte a déjà 10 clés d’accès. Supprimez-en une d’abord.",
       "alreadyHere": "Cet appareil a déjà une clé d’accès pour votre compte.",
       "unavailable": "Les clés d’accès ne sont pas disponibles pour le moment. Veuillez utiliser votre mot de passe."
+    }
+  },
+  "sentRoster": {
+    "title": "Liste envoyée par {{team}}",
+    "meta": "{{players}} · {{officials}} · {{when}} · {{name}}",
+    "use": "Accepter",
+    "preview": "Afficher",
+    "hidePreview": "Masquer",
+    "notNow": "Pas maintenant",
+    "hint": "Vérifiez-la avec l’entraîneur. L’entraîneur et le capitaine signent comme d’habitude au tirage au sort.",
+    "used": "Liste de l’équipe chargée : {{count}} joueurs",
+    "players_one": "{{count}} joueur",
+    "players_other": "{{count}} joueurs",
+    "officials_one": "{{count}} officiel",
+    "officials_other": "{{count}} officiels",
+    "hintSigned": "Vérifiez-la avec l’entraîneur. L’entraîneur et le capitaine ont signé à l’avance ; leurs signatures sont reprises.",
+    "signed": {
+      "both": "Signée à l’avance par l’entraîneur et le capitaine",
+      "coach": "Signée à l’avance par l’entraîneur",
+      "captain": "Signée à l’avance par le capitaine"
     }
   }
 }

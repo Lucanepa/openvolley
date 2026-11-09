@@ -374,11 +374,23 @@ export function createClubs ({ pool, audit, access = null, logger = console } = 
   const teamsTaken = (taken) => fail(409, 'OV_TEAM_TAKEN', 'A team plays for one club only', taken.map((t) => `${t.team}: ${t.club}`).join('; '))
   const nameTaken = () => fail(409, 'OV_CLUB_EXISTS', 'A club with this name exists')
 
+  // A diff, not delete-and-insert: a team that stays keeps its row, so its id
+  // and its team managers (db/023) stay too; a new spelling of the same name
+  // (case, spaces) is written in place.
   async function writeTeams (client, clubId, teams) {
-    await client.query('DELETE FROM public.club_teams WHERE club_id = $1', [clubId])
-    if (teams.length) {
+    const { rows: cur } = await client.query('SELECT team_name FROM public.club_teams WHERE club_id = $1', [clubId])
+    const want = new Map(teams.map((t) => [t.trim().toLowerCase(), t]))
+    const have = new Map(cur.map((r) => [r.team_name.trim().toLowerCase(), r.team_name]))
+    const gone = cur.filter((r) => !want.has(r.team_name.trim().toLowerCase())).map((r) => r.team_name)
+    if (gone.length) await client.query('DELETE FROM public.club_teams WHERE club_id = $1 AND team_name = ANY($2::text[])', [clubId, gone])
+    for (const [k, name] of want) {
+      const old = have.get(k)
+      if (old !== undefined && old !== name) await client.query('UPDATE public.club_teams SET team_name = $3 WHERE club_id = $1 AND team_name = $2', [clubId, old, name])
+    }
+    const added = [...want].filter(([k]) => !have.has(k)).map(([, name]) => name)
+    if (added.length) {
       await client.query(
-        'INSERT INTO public.club_teams (club_id, team_name) SELECT $1, unnest($2::text[])', [clubId, teams])
+        'INSERT INTO public.club_teams (club_id, team_name) SELECT $1, unnest($2::text[])', [clubId, added])
     }
   }
 

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { clubApi } from '../../lib/accountApi'
 import InvitesPanel from './InvitesPanel'
+import ClubTeamsSection from './ClubTeamsSection'
 import { usePanelData, useOnline, OfflineBanner, PanelHead, InlineError, useErrorText } from './common'
 import { Button, Chip, EmptyInset, Field, Input, Notice, Row, RowList, RowTool, Select, SkeletonRows, confirmDialog, dayLabel, toast } from '../../ui'
 
@@ -38,6 +39,8 @@ function ClubSections({ club }) {
     <>
       <ClubContact clubId={club.id} />
       <ClubMembers club={club} />
+      {/* db/023: the club's teams and their team links */}
+      <ClubTeamsSection club={club} />
       <InvitesPanel club={club} title={t('manage.myClub.invites')} />
     </>
   )
