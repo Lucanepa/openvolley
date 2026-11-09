@@ -6,33 +6,8 @@
  */
 import { timeLabel } from '../../ui/format'
 
-/**
- * A phone's short side is under this (CSS px): a phone turned sideways keeps
- * the phone layout (phoneLayoutKept), a tablet turned sideways gets the
- * tablet layout. Every viewport held upright gets the phone layout.
- */
+/** Viewports narrower than this, held upright, get the phone layout (CSS px). */
 export const PHONE_MAX_WIDTH = 600
-
-/** The phone view's own width: wider screens show it scaled up (tabletZoom). */
-export const PHONE_VIEW_WIDTH = 600
-
-/**
- * How much the phone view is scaled up on a wide portrait screen (an upright
- * tablet): to fill the width, as long as the view keeps at least
- * PHONE_VIEW_MIN_HEIGHT px of its own height, at most 1.6. 1 (no scaling)
- * on phones and on screens barely wider than the view.
- * @param {number} width the space for the view (CSS px)
- * @param {number} height
- */
-export function tabletZoom(width, height) {
-  const w = Number(width) || 0
-  const h = Number(height) || 0
-  if (w < PHONE_VIEW_WIDTH * 1.08 || h <= 0) return 1
-  const z = Math.min(w / PHONE_VIEW_WIDTH, h / PHONE_VIEW_MIN_HEIGHT, 1.6)
-  return z > 1.05 ? Math.floor(z * 100) / 100 : 1
-}
-/** The least height the scaled-up phone view keeps (CSS px of the view). */
-export const PHONE_VIEW_MIN_HEIGHT = 760
 
 // The phone view's heights (PhoneScoreboard.jsx, .phone-court and
 // .phone-square in styles.css). The point buttons are squares and the court
@@ -88,23 +63,21 @@ export const PHONE_COURT_MIN_PX = 132
 /**
  * The display mode the screen size asks for (the "auto" choice of the
  * display-mode option):
- * - 'phone': any portrait viewport. A phone held upright, and since
- *   2026-11-09 also a tablet held upright (owner: "all tablets in
- *   portrait"): the phone layout instead of "Please rotate your device";
+ * - 'phone': a portrait viewport narrower than PHONE_MAX_WIDTH;
  * - 'tablet': up to 900px wide with touch (as before);
  * - 'desktop': everything else (a laptop stays desktop even when narrow).
  * @param {{ width: number, height: number, hasTouch?: boolean }} size
  * @returns {'phone'|'tablet'|'desktop'}
  */
 export function detectDisplayMode({ width, height, hasTouch = false }) {
-  if (height > width) return 'phone'
+  if (height > width && width < PHONE_MAX_WIDTH) return 'phone'
   if (width <= 900 && hasTouch) return 'tablet'
   return 'desktop'
 }
 
 /**
  * True when the scoring screen shows the phone layout: the Phone display
- * mode, or the automatic mode on a portrait viewport.
+ * mode, or the automatic mode on a portrait viewport under PHONE_MAX_WIDTH.
  * @param {string|null} displayMode 'auto' | 'desktop' | 'tablet' | 'phone' (null: 'auto')
  * @param {{ width: number, height: number }} size the viewport (CSS px)
  */
