@@ -3555,6 +3555,7 @@
       "deleteBody": "Ihre Personen werden auf dem Server gelöscht. Die Schreiber-Tablets entfernen sie, sobald sie wieder online sind.",
       "delete": "Liste löschen",
       "deleted": "Liste gelöscht",
+      "deleteFile": "Gespeichert. OpenVolley hat die Excel-Datei weder hochgeladen noch aufbewahrt. Sie liegt aber noch auf deinem Gerät ({{file}}), mit den Kontaktdaten aller: Lösche sie jetzt.",
       "people_one": "{{count}} Person",
       "people_other": "{{count}} Personen",
       "updated": "Aktualisiert am {{when}} von {{name}}",

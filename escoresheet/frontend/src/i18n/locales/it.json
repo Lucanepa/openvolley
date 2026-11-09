@@ -3560,6 +3560,7 @@
       "deleteBody": "Le sue persone vengono eliminate sul server. I tablet dei segnapunti le tolgono appena sono di nuovo online.",
       "delete": "Elimina elenco",
       "deleted": "Elenco eliminato",
+      "deleteFile": "Salvato. OpenVolley non ha caricato né conservato il file Excel. Si trova ancora sul tuo dispositivo ({{file}}), con i contatti di tutti: eliminalo ora.",
       "people_one": "{{count}} persona",
       "people_other": "{{count}} persone",
       "updated": "Aggiornato il {{when}} da {{name}}",

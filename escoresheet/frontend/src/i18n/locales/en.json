@@ -3561,6 +3561,7 @@
       "deleteBody": "Its people are deleted on the server. Scoring tablets drop them the next time they are online.",
       "delete": "Delete list",
       "deleted": "List deleted",
+      "deleteFile": "Saved. OpenVolley did not upload or keep the Excel file. It is still on your computer ({{file}}) with everyone's contact details: delete it now.",
       "people_one": "{{count}} person",
       "people_other": "{{count}} people",
       "updated": "Updated {{when}} by {{name}}",
