@@ -44,6 +44,23 @@ export const STALE_RUNNING_MS = 60 * 60 * 1000
  */
 export const ADVISORY_LOCK_KEY = '8031737197922709091'
 
+/**
+ * The VolleyManager role the referee-game search needs. The account is shared
+ * (svrz_rc and wiedisync log into the same one), and VolleyManager keeps the
+ * active role per ACCOUNT, not per session: whichever job or person last picked
+ * a role decides what this login may read. Under a club role the referee page
+ * answers 403 (which is how this sync failed most days from 2026-10-23: wiedisync's
+ * 04:30 UTC job leaves the account in its club role). So the login switches into
+ * this role itself, as svrz_rc's games sync does (svrz_rc server/index.ts,
+ * "VolleyManager roles").
+ *
+ * An *attribute value* id, per account (the `persistenceObjectIdentifier` in
+ * `party.groupedEligibleAttributeValues`, GET /api/sportmanager.security/api%5cparty
+ * ?party[__identity]=<partyId>): VM_ROLE_ATTRIBUTE_GAMES overrides it when the
+ * account changes. This one is Indoorvolleyball.RefAdmin:RefereeDelegate.
+ */
+export const VM_ROLE_FOR_GAMES = 'e693b8cf-3fda-4a8d-b091-b3c7dae850ec'
+
 // Leagues to EXCLUDE (above 1L). Substring match on the league text, exactly as
 // the Edge Function did.
 export const EXCLUDED_LEAGUES = ['nl', 'nationalliga', 'nla', 'nlb']
@@ -504,10 +521,49 @@ export function buildLoginBody(fields, username, password) {
 }
 
 /**
+ * Points the logged-in account at a role (VM_ROLE_FOR_GAMES). Best effort, like
+ * svrz_rc's: when it fails the referee page says so more clearly than anything
+ * here could, and the account may already be in that role. Never logs the token.
+ */
+export async function vmSwitchRole(jar, csrfToken, attributeValueId, { fetch: fetchImpl, baseUrl = VM_BASE, http = {} } = {}) {
+  const logger = http.logger
+  if (!attributeValueId || !csrfToken) {
+    logger?.warn?.(`VM: no role switch (${attributeValueId ? 'no CSRF token on the dashboard' : 'no role attribute'})`)
+    return false
+  }
+  const origin = new URL(baseUrl).origin
+  try {
+    const resp = await fetchWithRetry(fetchImpl, `${origin}/api/sportmanager.security/api%5cparty/switchRoleAndAttribute`, {
+      method: 'PUT',
+      headers: {
+        'User-Agent': USER_AGENT,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: '*/*',
+        Origin: origin,
+        Referer: `${origin}/`,
+        Cookie: jar.header()
+      },
+      body: new URLSearchParams({ 'attributeValueAsArray[0]': attributeValueId, __csrfToken: csrfToken }).toString(),
+      redirect: 'manual'
+    }, { ...http, label: 'role switch', retries: 1 })
+    jar.update(resp)
+    if (!resp.ok) {
+      logger?.warn?.(`VM: role switch answered HTTP ${resp.status}`)
+      return false
+    }
+    logger?.log?.('VM: switched the account to the referee-delegate role')
+    return true
+  } catch (err) {
+    logger?.warn?.(`VM: role switch failed (${err.message})`)
+    return false
+  }
+}
+
+/**
  * Logs in and returns { jar, csrfToken }. Never logs the password, cookie
  * values or the CSRF token.
  */
-export async function vmLogin({ username, password }, { fetch: fetchImpl, baseUrl = VM_BASE, http = {}, logger = null } = {}) {
+export async function vmLogin({ username, password }, { fetch: fetchImpl, baseUrl = VM_BASE, http = {}, logger = null, roleAttribute = VM_ROLE_FOR_GAMES } = {}) {
   if (!username || !password) throw new Error('VolleyManager credentials missing (VM_USERNAME / VM_PASSWORD)')
   const jar = new CookieJar()
   const opts = { fetch: fetchImpl, baseUrl, http: { ...http, logger } }
@@ -526,8 +582,22 @@ export async function vmLogin({ username, password }, { fetch: fetchImpl, baseUr
     body: buildLoginBody(fields, username, password)
   }, { ...opts, label: 'login' })
 
+  // The dashboard opens under every role and carries a CSRF token: with it, the
+  // session asks for the one role that may read the referee games.
+  logger?.log?.('VM: getting the dashboard for the role switch')
+  const { body: dashboardHtml } = await followRedirects(`${baseUrl}/`, jar, {}, { ...opts, label: 'dashboard' })
+  const switched = await vmSwitchRole(jar, extractCsrfToken(dashboardHtml), roleAttribute, opts)
+
   logger?.log?.('VM: getting referee page for the CSRF token')
-  const { body: refHtml } = await followRedirects(`${baseUrl}/indoorvolleyball.refadmin/refereegame/index`, jar, {}, { ...opts, label: 'referee page' })
+  let refHtml
+  try {
+    ;({ body: refHtml } = await followRedirects(`${baseUrl}/indoorvolleyball.refadmin/refereegame/index`, jar, {}, { ...opts, label: 'referee page' }))
+  } catch (err) {
+    if (err instanceof VmHttpError && err.status === 403) {
+      throw new VmHttpError(`referee page: HTTP 403 (the account is not in the referee-delegate role${switched ? '' : '; the role switch did not go through, check VM_ROLE_ATTRIBUTE_GAMES'})`, { status: 403 })
+    }
+    throw err
+  }
   const csrfToken = extractCsrfToken(refHtml)
   if (!csrfToken) {
     const looksLikeLogin = /\/login\b|UsernamePassword/.test(refHtml)
@@ -870,6 +940,7 @@ function wrapLogger(logger, redact) {
  * @param {string} [o.baseUrl]             VolleyManager origin (tests)
  * @param {object} [o.http]                { timeoutMs, retries, backoffMs, sleep }
  * @param {boolean} [o.dryRun]             fetch + transform only, no database
+ * @param {string} [o.roleAttribute]       the account's referee-delegate role (VM_ROLE_FOR_GAMES)
  */
 export async function runVmSync({
   pool,
@@ -878,6 +949,7 @@ export async function runVmSync({
   window,
   logger,
   credentials = {},
+  roleAttribute = VM_ROLE_FOR_GAMES,
   baseUrl = VM_BASE,
   http = {},
   batchSize = BATCH_SIZE,
@@ -936,7 +1008,7 @@ export async function runVmSync({
     }
 
     log.log(`vm-sync: window ${dateLabel} (Europe/Zurich) = ${win.dateFrom} → ${win.dateTo}`)
-    ;({ jar, csrfToken } = await vmLogin(credentials, { fetch: fetchImpl, baseUrl, http, logger: log }))
+    ;({ jar, csrfToken } = await vmLogin(credentials, { fetch: fetchImpl, baseUrl, http, logger: log, roleAttribute }))
 
     const fetched = await fetchAllGames(jar, csrfToken, win.dateFrom, win.dateTo, {
       fetch: fetchImpl, baseUrl, http, logger: log, batchSize, pageDelayMs, sleep: http.sleep

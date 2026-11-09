@@ -132,7 +132,8 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
       dryRun: opts.dryRun,
       ...(baseUrl ? { baseUrl } : {}),
       ...(http ? { http } : {}),
-      credentials: { username: env.VM_USERNAME, password: env.VM_PASSWORD }
+      credentials: { username: env.VM_USERNAME, password: env.VM_PASSWORD },
+      ...(env.VM_ROLE_ATTRIBUTE_GAMES ? { roleAttribute: env.VM_ROLE_ATTRIBUTE_GAMES } : {})
     })
   } finally {
     if (pool && !createPool) await pool.end().catch(() => {})
