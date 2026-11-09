@@ -4410,6 +4410,125 @@
     "opensource": "Open-source notice",
     "signUpConsent": "By creating an account you accept the <terms>terms of use</terms> and the <privacy>privacy policy</privacy>."
   },
+  "rectify": {
+    "moment": {
+      "setStart": "Start of the set ({{score}})"
+    },
+    "log": {
+      "applied": "Game taken back: set {{set}}, {{before}} → {{after}}",
+      "reversed": "Taken back: game taken back in set {{set}}"
+    },
+    "lineup": {
+      "libero": "libero",
+      "position": "{{team}}: player at position {{pos}}"
+    },
+    "field": {
+      "lineup": "Line-up of {{team}}",
+      "moment": "Score where it went wrong",
+      "kind": "What was it? (for the remark)",
+      "cancel": "Whose points since then are cancelled?",
+      "penalty": "Point and service to",
+      "score": "Score",
+      "serve": "Serves next",
+      "takeBack": "Substitutions of this set",
+      "remark": "Remark on the scoresheet"
+    },
+    "score": {
+      "minus": "One point less for {{team}}",
+      "value": "Points of {{team}}",
+      "plus": "One point more for {{team}}"
+    },
+    "blocked": {
+      "noSet": "Only during a set.",
+      "rally": "A rally is in play: finish it first."
+    },
+    "step": {
+      "when": "When did it go wrong?",
+      "what": "What happens",
+      "edit": "Check and edit, then resume"
+    },
+    "hint": {
+      "moment": "The points scored after this score are the ones \"since then\".",
+      "team": "Illegal substitution found later (R15.9.2), positions not as on the line-up sheet (R7.3.5.3), wrong server (R7.7.2): the team at fault's points are cancelled, point and service to the opponent.",
+      "both": "The officials gave wrong information, or a rally was played with five or seven players (Casebook 2.3, 2.4): both, nobody.",
+      "edit": "Change anything the referees decided otherwise. Nothing is written before Resume.",
+      "score": "Was {{score}}.",
+      "takeBack": "A substitution taken back leaves the record; its players go back where they were.",
+      "remarkEmpty": "Left empty, the app's remark is written: the scoresheet must say what happened."
+    },
+    "action": {
+      "next": "Next",
+      "confirm": "Confirm",
+      "resume": "Resume"
+    },
+    "since": "Since {{score}}",
+    "teamOption": "Team {{letter}}",
+    "both": "Both",
+    "nobody": "Nobody",
+    "summary": "{{before}} → {{after}}",
+    "server": "Server: #{{n}} (position I)",
+    "takeBack": "Take back",
+    "remarkReset": "Use the text the app writes",
+    "back": "Back",
+    "forfeit": {
+      "text": "A team cannot go on (default, incomplete)?",
+      "link": "Stop the match"
+    },
+    "describe": {
+      "cancelledPoint": "Point cancelled: {{team}}",
+      "title": "Game taken back",
+      "back": "score back to {{score}}",
+      "cancelled": "{{n}} point(s) of {{team}} cancelled",
+      "pointTo": "point to {{team}}"
+    },
+    "menu": "Go back",
+    "title": "Go back",
+    "error": {
+      "chooseMoment": "Choose the score where it went wrong.",
+      "chooseCancel": "Choose whose points are cancelled.",
+      "notLive": "Only the set being played can be taken back here. For an earlier set, use Corrections and tell the referee.",
+      "setFinished": "Set {{set}} is over. Use Corrections and tell the referee.",
+      "nothingToChange": "Nothing changes: no point is cancelled or given.",
+      "lineupIncomplete": "Choose a player for each of the six positions.",
+      "lineupDuplicate": "#{{n}} is chosen twice.",
+      "badScore": "A score is a whole number from 0.",
+      "notFound": "This entry no longer exists.",
+      "notLast": "Rallies were played after this going back: take them back first.",
+      "laterRectification": "A later going back in this set comes first: take it back first."
+    },
+    "note": {
+      "setWon": "This score ends set {{set}}: confirm the set end next.",
+      "timeline": "Time-outs, substitutions and sanctions after it stay; on the scoresheet they now show the corrected score."
+    },
+    "remark": {
+      "line": "Set {{set}}, points {{before}}: {{what}} ({{details}}). New score for set {{set}}: {{after}}.",
+      "since": "since {{from}}, {{n}} points of team {{team}} cancelled",
+      "sinceOne": "since {{from}}, 1 point of team {{team}} cancelled",
+      "sinceNone": "since {{from}}, no point cancelled",
+      "both": "both teams' points since {{from}} cancelled",
+      "subTakenBack": "substitution #{{in}} for #{{out}} of team {{team}} taken back",
+      "penalty": "point and service to team {{team}}",
+      "noPoint": "no point",
+      "serve": "team {{team}} to serve"
+    },
+    "remarkWhat": {
+      "illegal_substitution": "illegal substitution by team {{team}}",
+      "illegal_substitutionNoTeam": "illegal substitution",
+      "wrong_positions": "positions not as on the line-up sheet, team {{team}}",
+      "wrong_positionsNoTeam": "positions not as on the line-up sheet",
+      "wrong_server": "wrong server of team {{team}}",
+      "wrong_serverNoTeam": "wrong server",
+      "officials_mistake": "officials' mistake",
+      "other": "game taken back"
+    },
+    "kind": {
+      "illegal_substitution": "Illegal substitution",
+      "wrong_positions": "Wrong positions",
+      "wrong_server": "Wrong server",
+      "officials_mistake": "Officials' mistake",
+      "other": "Other"
+    }
+  },
   "corrections": {
     "teamLetter": "Team {{letter}}",
     "teamWithLetter": "{{name}} ({{letter}})",

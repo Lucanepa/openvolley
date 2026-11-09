@@ -46,7 +46,7 @@ import { isWideLayout, screenFit, mustTurnUpright, SIDE_PANEL_CSS, REFEREE_LAYOU
 import { useUprightOnlyDevice } from './referee/upright.js'
 import TurnUprightNotice from './referee/TurnUprightNotice.jsx'
 import { layoutReception, pointToFormation } from './referee/receptionLayout.js'
-import { getSideAForSet } from '../domain/rules'
+import { getSideAForSet, servingTeamFromLog } from '../domain/rules'
 import { liveRowTeamA } from '../domain/coinToss'
 import { BRAND } from '../brand'
 import { monotonicNow, elapsedWhenSent, countdownAnchor, secondsLeft, keepCountdown, elapsedAfterTheFact, liveStatePushedAt } from '../utils/countdownClock'
@@ -1533,15 +1533,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       return currentSetFirstServe
     }
 
-    const pointEvents = data.events
-      .filter(e => e.type === 'point' && e.setIndex === data.currentSet.index)
-      .sort(newestFirst)
-
-    if (pointEvents.length === 0) {
-      return currentSetFirstServe
-    }
-
-    return pointEvents[0].payload?.team || currentSetFirstServe
+    // the last rally's winner, or the team a going back gave the serve to
+    return servingTeamFromLog(data.events, data.currentSet.index, data.match) || currentSetFirstServe
   }, [data?.events, data?.currentSet, data?.match])
 
   // Determine team labels

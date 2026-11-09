@@ -4392,6 +4392,125 @@
     "opensource": "Open-Source-Hinweis",
     "signUpConsent": "Wer ein Konto erstellt, akzeptiert die <terms>Nutzungsbedingungen</terms> und die <privacy>Datenschutzerklärung</privacy>."
   },
+  "rectify": {
+    "moment": {
+      "setStart": "Satzbeginn ({{score}})"
+    },
+    "log": {
+      "applied": "Spiel zurückgesetzt: Satz {{set}}, {{before}} → {{after}}",
+      "reversed": "Zurückgenommen: Spiel in Satz {{set}} zurückgesetzt"
+    },
+    "lineup": {
+      "libero": "Libero",
+      "position": "{{team}}: Spieler/in auf Position {{pos}}"
+    },
+    "field": {
+      "lineup": "Aufstellung von {{team}}",
+      "moment": "Spielstand, bei dem es schiefging",
+      "kind": "Was war es? (für die Bemerkung)",
+      "cancel": "Wessen Punkte seither werden annulliert?",
+      "penalty": "Punkt und Aufschlag für",
+      "score": "Spielstand",
+      "serve": "Nächster Aufschlag",
+      "takeBack": "Spielerwechsel dieses Satzes",
+      "remark": "Bemerkung auf dem Matchblatt"
+    },
+    "score": {
+      "minus": "Ein Punkt weniger für {{team}}",
+      "value": "Punkte von {{team}}",
+      "plus": "Ein Punkt mehr für {{team}}"
+    },
+    "blocked": {
+      "noSet": "Nur während eines Satzes.",
+      "rally": "Ein Ballwechsel läuft: zuerst beenden."
+    },
+    "step": {
+      "when": "Wann ist es schiefgelaufen?",
+      "what": "Was passiert",
+      "edit": "Prüfen und anpassen, dann weiterspielen"
+    },
+    "hint": {
+      "moment": "Die Punkte nach diesem Spielstand sind die Punkte «seither».",
+      "team": "Regelwidriger Spielerwechsel später bemerkt (R15.9.2), Positionen nicht wie auf dem Aufstellungsblatt (R7.3.5.3), falsche/r Aufschläger/in (R7.7.2): die Punkte der fehlbaren Mannschaft werden annulliert, Punkt und Aufschlag für den Gegner.",
+      "both": "Die Offiziellen haben falsch informiert, oder ein Ballwechsel wurde mit fünf oder sieben Spieler/innen gespielt (Casebook 2.3, 2.4): beide, niemand.",
+      "edit": "Alles ändern, was die Schiedsrichter anders entschieden haben. Gespeichert wird erst mit «Weiterspielen».",
+      "score": "Vorher {{score}}.",
+      "takeBack": "Ein zurückgenommener Wechsel verschwindet aus dem Matchblatt; seine Spieler/innen kehren auf ihre Positionen zurück.",
+      "remarkEmpty": "Leer gelassen, wird die Bemerkung der App geschrieben: das Matchblatt muss sagen, was passiert ist."
+    },
+    "action": {
+      "next": "Weiter",
+      "confirm": "Bestätigen",
+      "resume": "Weiterspielen"
+    },
+    "since": "Seit {{score}}",
+    "teamOption": "Team {{letter}}",
+    "both": "Beide",
+    "nobody": "Niemand",
+    "summary": "{{before}} → {{after}}",
+    "server": "Aufschläger/in: #{{n}} (Position I)",
+    "takeBack": "Zurücknehmen",
+    "remarkReset": "Text der App verwenden",
+    "back": "Zurück",
+    "forfeit": {
+      "text": "Eine Mannschaft kann nicht weiterspielen (Forfait, unvollständig)?",
+      "link": "Spiel abbrechen"
+    },
+    "describe": {
+      "cancelledPoint": "Punkt annulliert: {{team}}",
+      "title": "Spiel zurückgesetzt",
+      "back": "Spielstand zurück auf {{score}}",
+      "cancelled": "{{n}} Punkt(e) von {{team}} annulliert",
+      "pointTo": "Punkt für {{team}}"
+    },
+    "menu": "Zurück",
+    "title": "Zurück",
+    "error": {
+      "chooseMoment": "Den Spielstand wählen, bei dem es schiefging.",
+      "chooseCancel": "Wählen, wessen Punkte annulliert werden.",
+      "notLive": "Hier kann nur der laufende Satz zurückgesetzt werden. Für einen früheren Satz die Korrekturen verwenden und den Schiedsrichter informieren.",
+      "setFinished": "Satz {{set}} ist beendet. Die Korrekturen verwenden und den Schiedsrichter informieren.",
+      "nothingToChange": "Nichts ändert sich: kein Punkt wird annulliert oder vergeben.",
+      "lineupIncomplete": "Für jede der sechs Positionen eine/n Spieler/in wählen.",
+      "lineupDuplicate": "#{{n}} ist zweimal gewählt.",
+      "badScore": "Ein Spielstand ist eine ganze Zahl ab 0.",
+      "notFound": "Dieser Eintrag existiert nicht mehr.",
+      "notLast": "Danach wurden Ballwechsel gespielt: diese zuerst zurücknehmen.",
+      "laterRectification": "Ein späteres Zurücksetzen in diesem Satz kommt zuerst: es zuerst zurücknehmen."
+    },
+    "note": {
+      "setWon": "Dieser Spielstand beendet Satz {{set}}: als Nächstes das Satzende bestätigen.",
+      "timeline": "Auszeiten, Wechsel und Sanktionen danach bleiben; auf dem Matchblatt zeigen sie jetzt den berichtigten Spielstand."
+    },
+    "remark": {
+      "line": "Satz {{set}}, Punkte {{before}}: {{what}} ({{details}}). Neuer Spielstand Satz {{set}}: {{after}}.",
+      "since": "seit {{from}}, {{n}} Punkte von Team {{team}} annulliert",
+      "sinceOne": "seit {{from}}, 1 Punkt von Team {{team}} annulliert",
+      "sinceNone": "seit {{from}}, kein Punkt annulliert",
+      "both": "Punkte beider Teams seit {{from}} annulliert",
+      "subTakenBack": "Spielerwechsel #{{in}} für #{{out}} von Team {{team}} zurückgenommen",
+      "penalty": "Punkt und Aufschlag für Team {{team}}",
+      "noPoint": "kein Punkt",
+      "serve": "Aufschlag Team {{team}}"
+    },
+    "remarkWhat": {
+      "illegal_substitution": "regelwidriger Spielerwechsel von Team {{team}}",
+      "illegal_substitutionNoTeam": "regelwidriger Spielerwechsel",
+      "wrong_positions": "Positionen nicht wie auf dem Aufstellungsblatt, Team {{team}}",
+      "wrong_positionsNoTeam": "Positionen nicht wie auf dem Aufstellungsblatt",
+      "wrong_server": "falsche/r Aufschläger/in von Team {{team}}",
+      "wrong_serverNoTeam": "falsche/r Aufschläger/in",
+      "officials_mistake": "Fehler der Offiziellen",
+      "other": "Spiel zurückgesetzt"
+    },
+    "kind": {
+      "illegal_substitution": "Regelwidriger Spielerwechsel",
+      "wrong_positions": "Falsche Positionen",
+      "wrong_server": "Falsche/r Aufschläger/in",
+      "officials_mistake": "Fehler der Offiziellen",
+      "other": "Anderes"
+    }
+  },
   "corrections": {
     "teamLetter": "Team {{letter}}",
     "teamWithLetter": "{{name}} ({{letter}})",

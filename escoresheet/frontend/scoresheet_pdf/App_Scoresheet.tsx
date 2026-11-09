@@ -267,9 +267,26 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     const leftTeamKey: 'home' | 'away' = !isSwapped ? teamAKey : teamBKey;
     const rightTeamKey: 'home' | 'away' = !isSwapped ? teamBKey : teamAKey;
 
-    // Service rounds: one pure tracker for every set (utils/serviceRounds.ts)
+    // Service rounds: one pure tracker for every set (utils/serviceRounds.ts).
+    // When the game went back (domain/rectify): a cancelled point is still a
+    // rally (it passed the serve, it scores nothing), a point set by hand
+    // scores but passes no serve, and the going back gives the serve to the
+    // team it names
+    const rallyEvents = setEvents
+      .filter(e => e.type === 'point' || e.type === 'cancelled_point' || (e.type === 'rectification' && (e.payload?.serve === 'home' || e.payload?.serve === 'away')))
+      .sort((a, b) => {
+        const aSeq = a.seq || 0;
+        const bSeq = b.seq || 0;
+        if (aSeq !== 0 || bSeq !== 0) return aSeq - bSeq;
+        return new Date(a.ts).getTime() - new Date(b.ts).getTime();
+      });
+    const rallyTeams = rallyEvents.map(e => (e.type === 'rectification' ? e.payload?.serve : e.payload?.team));
+    const rallyCounted = rallyEvents.map(e => e.type === 'point');
+    const rallyPasses = rallyEvents.map(e => !(e.type === 'point' && e.payload?.scoreAdjusted === true));
     const trackedRounds = trackServiceRounds({
-      pointTeams: pointEvents.map(e => e.payload?.team),
+      pointTeams: rallyTeams,
+      counted: rallyCounted,
+      passes: rallyPasses,
       firstServer: firstServeTeam,
       finished: !!setInfo?.finished
     });
@@ -277,7 +294,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     const rightServiceRounds: ServiceRound[] = trackedRounds[rightTeamKey];
     // Set 5: index of the point after which a team reached 8 (change of courts)
     const set5ChangeAt = setNumber === 5
-      ? courtChangeIndex(pointEvents.map(e => e.payload?.team))
+      ? courtChangeIndex(rallyTeams, 8, rallyCounted)
       : null;
 
     // Identify points scored due to sanctions
@@ -351,7 +368,10 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
 
     // Points awarded to the opponent of a team that defaulted or was incomplete
     // (Scoreboard.handleForfait, payload.forfeitAwarded): not won in a rally, so
-    // circled like a penalty point (field-spec 11, OV decision)
+    // circled like a penalty point (field-spec 11, OV decision). The point and
+    // service the game going back gives the opponent (domain/rectify,
+    // payload.penaltyPoint; FIVB 15.9.2.1, 7.7.1.1) is circled the same way
+    // (owner 2026-11-09)
     {
       let h = 0;
       let a = 0;
@@ -360,7 +380,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         if (team === 'home') h++;
         else if (team === 'away') a++;
         else continue;
-        if (e.payload?.forfeitAwarded === true) {
+        if (e.payload?.forfeitAwarded === true || e.payload?.penaltyPoint === true) {
           const list = team === 'home' ? homeCircledPoints : awayCircledPoints;
           const n = team === 'home' ? h : a;
           if (!list.includes(n)) list.push(n);
