@@ -60,7 +60,8 @@ export function createRelayPinTracker() {
 
 const WS_CONNECTING = 0
 const WS_OPEN = 1
-const isRelayRequest = (message) => typeof message?.type === 'string' && message.type.endsWith('-request')
+// Relay requests ('*-request') want one answer; a bench-request is a notice for every user
+const isRelayRequest = (message) => typeof message?.type === 'string' && message.type.endsWith('-request') && message.type !== 'bench-request'
 
 /**
  * The scorer's ONE relay connection. App.jsx (the current match, in every
@@ -80,6 +81,7 @@ const isRelayRequest = (message) => typeof message?.type === 'string' && message
  *   online or the tab visible again, and when a ping gets no answer (a
  *   half-open socket on venue Wi-Fi without uplink otherwise stays OPEN).
  * - `pins` is the connection's PIN tracker (createRelayPinTracker).
+ * - listen(fn) -> remove: every message, for a reader that opens nothing.
  */
 export function createScorerRelay({
   createSocket = (url) => new WebSocket(url),
@@ -95,6 +97,9 @@ export function createScorerRelay({
   now = () => Date.now()
 } = {}) {
   const users = []
+  // Listeners that only read (listen()): they keep no socket open and never
+  // move it to another relay (bench requests, components/scoreboard/BenchRequestCards)
+  const listeners = new Set()
   const pins = createRelayPinTracker()
   let url = null
   let ws = null
@@ -220,6 +225,7 @@ export function createScorerRelay({
       }
       const targets = isRelayRequest(message) ? users.slice(-1) : [...users]
       for (const user of targets) safe(() => user.onMessage?.(message, socket))
+      for (const fn of [...listeners]) safe(() => fn(message, socket))
     }
     socket.onclose = () => {
       if (ws !== socket) return
@@ -283,6 +289,11 @@ export function createScorerRelay({
     pins,
     isOpen,
     reconnectNow,
+    /** Every message on the socket while it is attached; -> remove. */
+    listen(fn) {
+      listeners.add(fn)
+      return () => listeners.delete(fn)
+    },
     /** Send on the open socket; false when there is none. */
     send(payload) {
       if (!isOpen()) return false

@@ -93,6 +93,9 @@ import { lockLandscape, unlockOrientation } from '../utils/nativeOrientation'
 import { isNativeApp } from '../utils/backendConfig'
 import PhoneScoreboard from './scoreboard/PhoneScoreboard.jsx'
 import { PHONE_RECENT_MAX_LINES, detectDisplayMode, dialogsCentred, isPhoneScreen, phoneHeldSideways, recentActions } from './scoreboard/phoneLayout'
+import BenchRequestCards from './scoreboard/BenchRequestCards.jsx'
+import { useBenchRequestBridge } from './scoreboard/useBenchRequestBridge'
+import { latestLineup as benchLatestLineup, lineupNumber as benchLineupNumber } from '../domain/benchRequests'
 import { captainRingStyle } from './scoreboard/captainRing'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
 import { WarningIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, RefreshIcon, VolleyballIcon, SwitchIcon, ChartIcon, NotebookIcon, WrenchIcon, ClipboardIcon, SpeechIcon } from './icons'
@@ -9011,6 +9014,33 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     ], [])
   }
 
+  // Bench requests (components/scoreboard/BenchRequestCards): Accept opens the
+  // scorer's own dialog for it, with every check; the request is answered when
+  // the event is recorded (useBenchRequestBridge)
+  const benchBridge = useBenchRequestBridge({ relayKey: data?.match ? relayMatchKey(data.match) : null, events: data?.events, setIndex: data?.set?.index })
+  const benchActions = {
+    onAcceptLineup: (entry) => setLineupModal({ team: entry.team, mode: 'initial', lineup: entry.request.lineup, gameCaptain: entry.request.gameCaptain ?? null }),
+    onGrantTimeout: (entry) => handleTimeout(mapTeamKeyToSide(entry.team)),
+    onAcceptPair: (entry, pair) => {
+      if (!data?.set || rallyStatus !== 'idle') return
+      const lineup = benchLatestLineup(data.events, data.set.index, entry.team) || {}
+      const position = Object.keys(lineup).find(pos => String(benchLineupNumber(lineup[pos])) === String(pair.out))
+      if (!position) {
+        showAlert(t('benchRequests.scorer.notOnCourt', { number: pair.out, defaultValue: 'No {{number}} is not on court.' }), 'error')
+        return
+      }
+      const playerOut = benchLineupNumber(lineup[position])
+      const legal = getAvailableSubstitutes(entry.team, playerOut).find(p => String(p.number) === String(pair.in))
+      if (legal) {
+        setSubstitutionConfirm({ team: entry.team, position, playerOut, playerIn: legal.number })
+        return
+      }
+      const illegal = getIllegalSubstitutes(entry.team, playerOut).find(p => String(p.number) === String(pair.in))
+      if (illegal) openIllegalSubstitution(entry.team, position, playerOut, illegal)
+      else showAlert(t('benchRequests.scorer.notOnBench', { number: pair.in, defaultValue: 'No {{number}} cannot come on now.' }), 'error')
+    }
+  }
+
   const getAvailableExceptionalSubstitutes = useCallback((teamKey, playerOutNumber) => {
     if (!data) return []
 
@@ -13837,6 +13867,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   return (
     <div className={['match-record', isPhoneView && 'phone-layout', centreDialogs && 'centre-dialogs'].filter(Boolean).join(' ')}>
+      <BenchRequestCards
+        queue={benchBridge.queue}
+        teams={{
+          home: { name: data?.match?.homeShortName || data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home'), colour: effectiveTeamColour('home', data?.homeTeam, data?.match) },
+          away: { name: data?.match?.awayShortName || data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away'), colour: effectiveTeamColour('away', data?.awayTeam, data?.match) }
+        }}
+        rallyInPlay={rallyStatus === 'in_play'}
+        donePairs={benchBridge.donePairs}
+        unsent={benchBridge.unsent}
+        respond={benchBridge.respond}
+        top={isPhoneView ? 52 : 112}
+        {...benchActions}
+      />
       {relayRejection && now - relayRejection.at < 45000 && (
         <div role="alert" className="no-print rounded-xl border border-red-200 bg-red-50 text-red-800 font-medium leading-snug shadow-lg" style={{
           position: 'fixed',
@@ -20005,6 +20048,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         setIndex={data?.set?.index}
         mode={lineupModal.mode || 'initial'}
         lineup={lineupModal.lineup}
+        presetGameCaptain={lineupModal.gameCaptain}
         teamAKey={teamAKey}
         teamBKey={teamBKey}
         lfpTrackingEnabled={lfpTrackingEnabled}
@@ -24057,7 +24101,7 @@ function EasyNewSubstitute({ players, onCourt, available, onPick }) {
   )
 }
 
-function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initial', lineup: presetLineup = null, teamAKey, teamBKey, lfpTrackingEnabled, lfpMinimumOnCourt, courtCaptain = null, rememberedCourtCaptain = null, easy = false, onClose, onSave, onLineupSaved, onPenaltyPointsOwed, runSave = (body) => body() }) {
+function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initial', lineup: presetLineup = null, presetGameCaptain = null, teamAKey, teamBKey, lfpTrackingEnabled, lfpMinimumOnCourt, courtCaptain = null, rememberedCourtCaptain = null, easy = false, onClose, onSave, onLineupSaved, onPenaltyPointsOwed, runSave = (body) => body() }) {
   const { t } = useTranslation()
   const [lineup, setLineup] = useState(() => {
     if (presetLineup) {
@@ -24131,9 +24175,12 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
   // team captain is on court, the team captain is the game captain (FIVB
   // 5.1.2), and the scoreboard asks for one when the captain leaves the court
   // (checkAndRequestCaptainOnCourt, with "Manage captain on court" on)
-  const [gameCaptainChoice, setGameCaptainChoice] = useState(() => (presetLineup
-    ? initialGameCaptainChoice({ lineup, players, team, currentCourtCaptain: courtCaptain, rememberedCourtCaptain })
-    : ''))
+  // (a bench's line-up request names its game captain: presetGameCaptain)
+  const [gameCaptainChoice, setGameCaptainChoice] = useState(() => (presetGameCaptain != null
+    ? String(presetGameCaptain)
+    : presetLineup
+      ? initialGameCaptainChoice({ lineup, players, team, currentCourtCaptain: courtCaptain, rememberedCourtCaptain })
+      : ''))
   const gameCaptainChoices = useMemo(
     () => gameCaptainOptions({ lineup, players, events, team }),
     [lineup, players, events, team]
