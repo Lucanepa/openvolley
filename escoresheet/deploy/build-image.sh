@@ -103,11 +103,13 @@ elif [[ -n "$SHIP" ]]; then
   ARCHIVE="/opt/openvolley/images/openvolley-backend-${SHA}.tar.gz"
   echo "[build-image] shipping ${TAG} to ${SHIP}:${ARCHIVE}"
   # shellcheck disable=SC2029  # ARCHIVE is meant to expand locally
+  # root on the host, or a user with sudo (the Infomaniak VPS: debian)
+  ROOT='$( [ "$(id -u)" = 0 ] || echo sudo -n )'
   docker save "$TAG" | gzip -1 | ssh "$SHIP" \
-    "set -e; umask 077; cat > '${ARCHIVE}.part' && mv '${ARCHIVE}.part' '${ARCHIVE}' && gunzip -c '${ARCHIVE}' | docker load"
+    "set -e; R=${ROOT}; \$R sh -c \"umask 077; cat > '${ARCHIVE}.part' && mv '${ARCHIVE}.part' '${ARCHIVE}' && gunzip -c '${ARCHIVE}' | docker load\""
 
   echo "[build-image] pruning ${SHIP}:/opt/openvolley/images to the newest ${OV_KEEP_IMAGES} (plus the deployed tag)"
-  ssh "$SHIP" bash -s -- "$OV_KEEP_IMAGES" /opt/openvolley/images /opt/openvolley/.env <"$KIT_DIR/prune-images.sh"
+  ssh "$SHIP" "R=${ROOT}; \$R bash -s -- '$OV_KEEP_IMAGES' /opt/openvolley/images /opt/openvolley/.env" <"$KIT_DIR/prune-images.sh"
 
   mkdir -p "$OV_OPS_DIR"
   printf '%s\n' "$TAG" >"$OV_OPS_DIR/shipped-${SHIP}.tmp" && mv -f "$OV_OPS_DIR/shipped-${SHIP}.tmp" "$OV_OPS_DIR/shipped-${SHIP}"
