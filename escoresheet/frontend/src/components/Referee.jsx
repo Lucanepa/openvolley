@@ -42,7 +42,9 @@ import { compareBySeq } from '../domain/describe'
 import { useTheme } from '../utils/theme'
 import { themeMenuItems } from './themeMenuItems'
 import { discCapPx, discMetrics } from './referee/discSizing.js'
-import { isWideLayout, screenFit, SIDE_PANEL_CSS, REFEREE_LAYOUT, PORTRAIT_COURT } from './referee/refereeLayout.js'
+import { isWideLayout, screenFit, mustTurnUpright, SIDE_PANEL_CSS, REFEREE_LAYOUT, PORTRAIT_COURT } from './referee/refereeLayout.js'
+import { useUprightOnlyDevice } from './referee/upright.js'
+import TurnUprightNotice from './referee/TurnUprightNotice.jsx'
 import { layoutReception, pointToFormation } from './referee/receptionLayout.js'
 import { getSideAForSet } from '../domain/rules'
 import { liveRowTeamA } from '../domain/coinToss'
@@ -243,6 +245,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   }
   const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 400)
   const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 700)
+  // A phone or tablet (not a computer): the dashboard is upright only there
+  const uprightOnly = useUprightOnlyDevice()
 
   // Container width for adaptive team-name sizing. A callback ref (state), so
   // the observer attaches when the row mounts after the match has loaded; a
@@ -2280,6 +2284,17 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     </div>
   ) : null
 
+  // A phone or tablet held sideways: the dashboard is upright only (owner,
+  // 2026-11-09), the mirror of the scorer's landscape-only scoreboard. The
+  // notice stands in for every dashboard screen; the state above keeps
+  // running, so turning the device back shows the match as it is. Where the
+  // screen is locked upright (RefereeApp: the Android app, an installed web
+  // app, fullscreen) the viewport never gets wider than high. A computer
+  // keeps the landscape layout.
+  if (mustTurnUpright({ uprightOnly, viewportWidth, viewportHeight })) {
+    return <TurnUprightNotice t={t} />
+  }
+
   // Show awaiting coin toss screen when connected but no match data yet
   if (isAwaitingCoinToss && !isMasterMode && realtimeStatus === CONNECTION_STATUS.CONNECTED) {
     return (
@@ -2874,8 +2889,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           {t('refereeDashboard.linkDown', 'Offline: no connection to the scoresheet. Score and server may be out of date.')}
         </div>
       )}
-      {/* Narrow screen blocking overlay */}
-      {!fit.fits && <NarrowScreenOverlay t={t} reason={fit.reason} />}
+      {/* Narrow screen blocking overlay (a phone or tablet is upright only:
+          its message never says to rotate) */}
+      {!fit.fits && <NarrowScreenOverlay t={t} reason={uprightOnly ? 'upright' : fit.reason} />}
 
       {/* Debug overlay - triple-tap to show */}
       {/* The connection console: diagnostics only (?diag=1). On for everyone,

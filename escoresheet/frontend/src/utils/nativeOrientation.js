@@ -4,10 +4,14 @@
  * The app rotates freely (manifest screenOrientation="unspecified"): home,
  * match setup and every form also work in portrait. Only the scoreboard is
  * landscape-only, so it locks the activity while it is mounted
- * (lockLandscape on mount, unlockOrientation on unmount). Android's WebView
- * ignores screen.orientation.lock(), hence the native plugin.
+ * (lockLandscape on mount, unlockOrientation on unmount), and the referee
+ * view is portrait-only (lockPortrait while it is open,
+ * components/referee/upright.js).
+ * Android's WebView ignores screen.orientation.lock(), hence the native
+ * plugin.
  *
- * In a browser both are no-ops: the scoreboard keeps its rotate overlay there.
+ * In a browser these are no-ops: the scoreboard keeps its rotate overlay
+ * there, the referee view its notice to turn the device upright.
  *
  * Calls run one after the other, so an unlock sent while a lock is still in
  * flight (scoreboard mounted and left at once) is never overtaken by it.
@@ -46,12 +50,37 @@ export function landscapeSide() {
   return 'landscape'
 }
 
+/**
+ * The upright side to lock: the one the device is already on when it is held
+ * upside down (portrait-secondary), so it is not flipped by 180°; plain
+ * 'portrait' (Android's fixed SCREEN_ORIENTATION_PORTRAIT) otherwise. Read
+ * from the WebView's screen.orientation, as landscapeSide.
+ * @returns {'portrait'|'portrait-secondary'}
+ */
+export function portraitSide() {
+  try {
+    if (window.screen?.orientation?.type === 'portrait-secondary') return 'portrait-secondary'
+  } catch {
+    // Unknown: plain portrait.
+  }
+  return 'portrait'
+}
+
 /** Lock to landscape (see landscapeSide). @returns {Promise<void>} */
 export function lockLandscape() {
   if (!isNativeApp()) return Promise.resolve()
   return enqueue(async () => {
     const so = (await pluginModule()).ScreenOrientation
     await so.lock({ orientation: landscapeSide() })
+  })
+}
+
+/** Lock upright (see portraitSide). @returns {Promise<void>} */
+export function lockPortrait() {
+  if (!isNativeApp()) return Promise.resolve()
+  return enqueue(async () => {
+    const so = (await pluginModule()).ScreenOrientation
+    await so.lock({ orientation: portraitSide() })
   })
 }
 

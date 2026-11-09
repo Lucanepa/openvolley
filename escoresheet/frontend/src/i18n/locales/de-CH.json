@@ -34,6 +34,7 @@
     "screenTooSmall": "Bildschirm z chlii",
     "screenTooSmallMessage": "Die App bruucht en Bildschirm, wo mindestens 357 Pixel breit isch. Bruuch bitte es Grät mit emne breitere Bildschirm oder dräi dis Grät is Querformat.",
     "screenTooShortMessage": "S Fäld passt nöd uf dä Bildschirm. Bitte dräi dis Grät, beänd di teilti Aasicht oder bruuch en grössere Bildschirm.",
+    "screenTooSmallUpright": "S Fäld passt ufrächt nöd uf dä Bildschirm. Bitte beänd di teilti Aasicht oder bruuch en grössere Bildschirm.",
     "tryFullscreen": "Vollbild probiere",
     "fullscreenHint": "S Vollbild cha meh Platz gäh, will es d Browser-Oberflächi usbländet.",
     "setIndex": "Satz {{index}}",
@@ -1870,6 +1871,12 @@
       "captain": "Captain",
       "officials": "Teamoffizielli",
       "noOfficials": "Kei Offizielli erfasst"
+    },
+    "upright": {
+      "title": "Heb s Grät bitte ufrächt",
+      "body": "S Schiri-Dashboard isch fürs Hochformat gmacht. Dräi s Tablet oder Handy ufrächt, zum wiitermache: Spielstand, Timeouts und Countdowns laufed wiiter.",
+      "fullscreen": "Vollbild aktiviere",
+      "fullscreenHint": "Uf Android bliibt de Bildschirm im Vollbild ufrächt, egal wie mer s Grät hebt."
     },
     "sanctions": {
       "title": "Sanktione",

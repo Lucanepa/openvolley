@@ -5,7 +5,8 @@
          work in portrait). Only the scoreboard is landscape-only: it locks the
          activity to landscape while it is mounted and unlocks when it is left
          (@capacitor/screen-orientation, src/utils/nativeOrientation.js), since
-         Android's WebView ignores screen.orientation.lock(). -->
+         Android's WebView ignores screen.orientation.lock(). The referee view
+         is the other way round: locked to portrait while it is open. -->
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"

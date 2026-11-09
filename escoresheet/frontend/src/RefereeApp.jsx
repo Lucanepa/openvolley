@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { validatePin, listAvailableMatches, validatePinSupabase, listAvailableMatchesSupabase, getMatchData, setRelayDevice, getRelayServerStatus } from './utils/serverDataSync'
 import { refereeJoinableMatches } from './utils/relayMatchList'
 import Referee from './components/Referee'
+import { useUprightLock } from './components/referee/upright.js'
 import Modal from './components/Modal'
 import UpdateBanner from './components/UpdateBanner'
 import DashboardHeader from './components/DashboardHeader'
@@ -96,6 +97,9 @@ export default function RefereeApp() {
   // Label this tablet on the relay (scorer's tablet status) before the
   // dashboard subscribes
   useState(() => setRelayDevice('referee'))
+  // Upright only on phones and tablets: the screen is locked to portrait
+  // where the platform allows it, from the game and PIN page on
+  useUprightLock()
   const [serverReady, setServerReady] = useState(isServedFromLocalServer())
   const [autoConnectMatch, setAutoConnectMatch] = useState(null) // match seed_key from URL params
   const [linkedMatch, setLinkedMatch] = useState(null) // { id: seed key, gameNumber } preselected by a link
