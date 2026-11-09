@@ -85,7 +85,10 @@ export default function SimpleHeader({
   toggleOptions, // Optional: segmented toggle [{ label: '1 REF', active: false, onClick }, { label: '2 REF', active: true, onClick }]
   // The "?" of the page's help panel (ContextualHelpPanel)
   onHelp,
-  helpOpen = false
+  helpOpen = false,
+  // Labelled buttons on the right, before "?": [{ key, label, icon, onClick, testId }].
+  // Icon only on a phone (the label is its aria-label and title), icon and label from sm.
+  actions = []
 }) {
   const { t } = useTranslation()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -309,6 +312,20 @@ export default function SimpleHeader({
 
       {/* RIGHT: ? and Fullscreen Button */}
       <div className="flex flex-1 basis-0 items-center justify-end gap-2">
+        {actions.map((a) => (
+          <button
+            key={a.key || a.label}
+            type="button"
+            onClick={a.onClick}
+            data-testid={a.testId}
+            aria-label={a.label}
+            title={a.label}
+            className={cn(HEADER_BTN, 'w-9 px-0 sm:w-auto sm:px-2.5 text-stone-800')}
+          >
+            {a.icon}
+            <span className="hidden sm:inline">{a.label}</span>
+          </button>
+        ))}
         {onHelp && <HeaderHelpButton onClick={onHelp} pressed={helpOpen} />}
         {onFullscreen && (
           <button

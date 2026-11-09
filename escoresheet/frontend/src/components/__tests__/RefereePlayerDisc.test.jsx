@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { render } from '@testing-library/react'
 import PlayerDisc from '../referee/PlayerDisc.jsx'
+import { glyphWidthShare } from '../referee/SanctionCards.jsx'
 
 const full = {
   number: 88,
@@ -84,19 +85,35 @@ describe('referee PlayerDisc', () => {
     expect(lc.style.width).toBe('')
   })
 
-  it('fits LC (or LR) and all three sanction cards side by side on the smallest disc', () => {
+  it('fits LC (or LR) and the widest sanction mark (disqualification) side by side on the smallest disc', () => {
     // 36 px disc (DISC.minPx), 1 px border: 34 px inside; badges are 11 px (badgeMinPx)
     const badge = 11
     const share = (v) => Number(String(v).match(/\*\s*([\d.]+)\)/)[1]) * badge
-    const { container } = render(<PlayerDisc {...full} liberoLabel="L" captain="LC" sanctions={{ warning: true, penalty: true, expulsion: true }} />)
+    const { container } = render(<PlayerDisc {...full} liberoLabel="L" captain="LC" sanctions={{ warning: true, penalty: true, disqualification: true }} />)
     const lc = container.querySelector('[data-disc-badge="captain"]')
-    const cards = container.querySelector('[data-disc-badge="sanctions"]')
+    const glyph = container.querySelector('[data-disc-badge="sanctions"] [data-card-glyph]')
+    expect(glyph.getAttribute('data-card-glyph')).toBe('disqualification')
     // two bold capitals at 0.6 of the badge are at most 1.4 em wide (Inter bold LC measures 1.32 em); 2 px border each side
     const lcWidth = 1.4 * share(lc.style.fontSize) + 2 * share(lc.style.padding) + 4
-    const leaves = [...cards.querySelectorAll('span[style*="background"]')].map(c => share(c.style.width))
-    const groups = cards.children.length
-    const cardsWidth = leaves.reduce((a, b) => a + b, 0) + 1 + (groups - 1) * share(cards.style.gap) + 2 * share(cards.style.padding)
-    expect(lcWidth + cardsWidth).toBeLessThanOrEqual(34)
+    const cardHeight = share(glyph.style.height)
+    // two cards apart plus the 1 px white rim either side
+    const markWidth = glyphWidthShare('disqualification') * cardHeight + 2
+    expect(lcWidth + markWidth).toBeLessThanOrEqual(34)
+    // the mark stays inside the badge row's height
+    expect(cardHeight).toBeLessThanOrEqual(badge)
+  })
+
+  it('shows the most severe sanction as the cards the referee holds up (rule 21.3)', () => {
+    const mark = (sanctions) => {
+      const { container } = render(<PlayerDisc {...full} sanctions={sanctions} />)
+      const badge = container.querySelector('[data-disc-badge="sanctions"]')
+      return badge ? badge.getAttribute('data-sanction') : null
+    }
+    expect(mark({})).toBeNull()
+    expect(mark({ warning: true })).toBe('warning')
+    expect(mark({ warning: true, penalty: true })).toBe('penalty')
+    expect(mark({ warning: true, penalty: true, expulsion: true })).toBe('expulsion')
+    expect(mark({ penalty: true, disqualification: true })).toBe('disqualification')
   })
 
   it('the referee court draws its players with PlayerDisc', () => {

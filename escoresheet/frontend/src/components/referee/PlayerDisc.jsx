@@ -1,6 +1,7 @@
 import ballFallback from '../../ball_fallback.png'
 import { DISC, discCssVars } from './discSizing.js'
 import { TEAM_COLOUR_MARK, markColourOn } from '../../utils/teamColours.js'
+import { CardGlyph, topSanction } from './SanctionCards.jsx'
 
 // Primary ball image (with a bundled copy as fallback)
 // The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
@@ -26,14 +27,8 @@ const badgeBase = {
   fontVariantNumeric: 'tabular-nums'
 }
 
-// Card widths leave the bottom row room for LC / LR on the left even with
-// all three sanctions on a 36 px disc (the smallest one)
-const card = (color, widthShare = 0.38) => ({
-  width: `calc(var(--disc-badge) * ${widthShare})`,
-  height: 'calc(var(--disc-badge) * 0.72)',
-  background: color,
-  borderRadius: 2
-})
+/** The sanction card's height on a disc, of the badge size (SanctionCards.jsx draws it). */
+export const DISC_CARD_HEIGHT = 0.95
 
 const YELLOW = '#fde047'
 const RED = '#ef4444'
@@ -44,7 +39,9 @@ const SLATE = '#0f172a'
  * One player on the referee court: a disc with the shirt number, the
  * position (top left), the player it replaced (top right: white for a
  * libero replacement, yellow for a substitution), libero and captain marks
- * (bottom left), sanction cards (bottom right), the LFP mark (top centre)
+ * (bottom left), the player's most severe sanction as cards (bottom right:
+ * yellow, red, red + yellow together, red + yellow apart; the full list is in
+ * the sanctions panel), the LFP mark (top centre)
  * and the serve ball beside it. All sizes are shares of the disc diameter
  * (discSizing.js), so the disc, its number and its marks scale together with
  * the court.
@@ -74,8 +71,7 @@ export default function PlayerDisc({
   replacedNumber = null, replacedByLibero = false, liberoLabel = null, liberoRedesignated = false, liberoUnable = false,
   captain = null, sanctions = {}, lfp = null
 }) {
-  const { warning, penalty, expulsion, disqualification } = sanctions
-  const hasSanction = warning || penalty || expulsion || disqualification
+  const sanctionMark = topSanction(sanctions)
   const liberoCaptain = captain === 'LC' || captain === 'LGC'
   // The blue libero mark stays apart from a blue shirt
   const liberoMark = markColourOn(background, LIBERO_BLUE, SLATE)
@@ -220,29 +216,18 @@ export default function PlayerDisc({
         </span>
       )}
 
-      {/* Bottom right: sanction cards (official yellow / red) */}
-      {hasSanction && (
-        <span data-disc-badge="sanctions" style={{
+      {/* Bottom right: the most severe sanction, as the cards the referee showed */}
+      {sanctionMark && (
+        <span data-disc-badge="sanctions" data-sanction={sanctionMark} style={{
           position: 'absolute',
-          boxSizing: 'border-box',
           bottom: 0,
           right: 0,
           display: 'flex',
-          alignItems: 'center',
-          gap: 'calc(var(--disc-badge) * 0.06)',
+          alignItems: 'flex-end',
           height: 'var(--disc-badge)',
-          padding: '0 calc(var(--disc-badge) * 0.06)',
-          background: 'rgba(0, 0, 0, 0.6)',
-          borderRadius: 'calc(var(--disc-badge) * 0.2)'
+          zIndex: 2
         }}>
-          {warning && <span title="Warning" style={card(YELLOW)} />}
-          {(penalty || disqualification) && <span title={disqualification ? 'Disqualification' : 'Penalty'} style={card(RED)} />}
-          {expulsion && (
-            <span title="Expulsion" style={{ display: 'flex', gap: 1 }}>
-              <span style={card(YELLOW, 0.3)} />
-              <span style={card(RED, 0.3)} />
-            </span>
-          )}
+          <CardGlyph kind={sanctionMark} height={`calc(var(--disc-badge) * ${DISC_CARD_HEIGHT})`} />
         </span>
       )}
 

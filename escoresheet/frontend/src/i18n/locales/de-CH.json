@@ -34,6 +34,7 @@
     "screenTooSmall": "Bildschirm z chlii",
     "screenTooSmallMessage": "Die App bruucht en Bildschirm, wo mindestens 357 Pixel breit isch. Bruuch bitte es Grät mit emne breitere Bildschirm oder dräi dis Grät is Querformat.",
     "screenTooShortMessage": "S Fäld passt nöd uf dä Bildschirm. Bitte dräi dis Grät, beänd di teilti Aasicht oder bruuch en grössere Bildschirm.",
+    "screenTooSmallUpright": "S Fäld passt ufrächt nöd uf dä Bildschirm. Bitte beänd di teilti Aasicht oder bruuch en grössere Bildschirm.",
     "tryFullscreen": "Vollbild probiere",
     "fullscreenHint": "S Vollbild cha meh Platz gäh, will es d Browser-Oberflächi usbländet.",
     "setIndex": "Satz {{index}}",
@@ -1951,7 +1952,39 @@
     "delayWarningShort": "V W",
     "delayPenaltyShort": "V S",
     "switchToStandard": "Zur Standardaasicht wächsle",
-    "switchToReception": "Zur Annahmeformation wächsle"
+    "switchToReception": "Zur Annahmeformation wächsle",
+    "scoresheet": {
+      "open": "Matchblatt",
+      "close": "Schliesse",
+      "title": "Matchblatt",
+      "readOnly": "Live, nur zum Aaluege",
+      "updated": "aktualisiert {{time}}",
+      "notSent": "Unterschrifte, Offizielli und Geburtsdate bliibed ufem Grät vom Schriiber.",
+      "loading": "Matchblatt wird glade...",
+      "waiting": "Warte uf d Date vom Schriiber..."
+    },
+    "rosters": {
+      "open": "Kader",
+      "title": "Kader",
+      "close": "Schliesse",
+      "otherTeam": "Anders Team",
+      "show": "{{team}} zeige",
+      "count": "{{players}} Spieler",
+      "empty": "No kei Kader",
+      "captain": "Captain",
+      "officials": "Teamoffizielli",
+      "noOfficials": "Kei Offizielli erfasst"
+    },
+    "upright": {
+      "title": "Heb s Grät bitte ufrächt",
+      "body": "S Schiri-Dashboard isch fürs Hochformat gmacht. Dräi s Tablet oder Handy ufrächt, zum wiitermache: Spielstand, Timeouts und Countdowns laufed wiiter.",
+      "fullscreen": "Vollbild aktiviere",
+      "fullscreenHint": "Uf Android bliibt de Bildschirm im Vollbild ufrächt, egal wie mer s Grät hebt."
+    },
+    "sanctions": {
+      "title": "Sanktione",
+      "formalWarning": "Formelli Warnig"
+    }
   },
   "connection": {
     "changeServer": "Server wächsle",

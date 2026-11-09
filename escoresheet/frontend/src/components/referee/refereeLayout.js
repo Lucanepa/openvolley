@@ -36,6 +36,14 @@ export const REFEREE_LAYOUT = {
   /** court box: share of its slot, and its widest proportion */
   courtFill: 0.98,
   courtMaxAspect: 2.2,
+  /**
+   * upright (portrait): the court takes the slot's width and grows in height
+   * down to this proportion (width : height); what is left goes to the TO /
+   * SUB and sanctions strip under it
+   */
+  portraitMinAspect: 1.3,
+  /** upright: room for the setter / reception buttons above the court, px */
+  portraitButtonRowPx: 32,
   /** a disc below this cannot show its number and marks: the screen is too small */
   minDiscPx: DISC.minPx
 }
@@ -72,6 +80,35 @@ export function courtBoxInSlot(slotWidth, slotHeight) {
   return { width, height }
 }
 
+/**
+ * Upright (portrait): the court box in a slot of this size: the slot's width
+ * (`courtFill`), never wider than `courtMaxAspect` x the slot height, and as
+ * tall as the slot allows but never taller than width / `portraitMinAspect`.
+ * @returns {{ width: number, height: number }}
+ */
+export function portraitCourtBox(slotWidth, slotHeight) {
+  const L = REFEREE_LAYOUT
+  const width = Math.max(0, Math.min(slotWidth * L.courtFill, slotHeight * L.courtFill * L.courtMaxAspect))
+  const height = Math.max(0, Math.min(slotHeight * L.courtFill, width / L.portraitMinAspect))
+  return { width, height }
+}
+
+/**
+ * The same rule as CSS (Referee.jsx): the court's slot is a size container,
+ * the box uses its cqw / cqh. `sectionMaxHeight` caps the court section (the
+ * button row and the slot) at the court's tallest box for the page column's
+ * width, so the strip below gets the rest of the screen.
+ */
+export const PORTRAIT_COURT = (() => {
+  const L = REFEREE_LAYOUT
+  const f = L.courtFill * 100
+  return {
+    width: `min(${f}cqw, calc(${f}cqh * ${L.courtMaxAspect}))`,
+    height: `min(${f}cqh, calc(${f}cqw / ${L.portraitMinAspect}))`,
+    sectionMaxHeight: `calc(min(100vw, ${L.maxWidth}px) / ${L.portraitMinAspect} + ${L.portraitButtonRowPx}px)`
+  }
+})()
+
 /** The largest disc a court box allows (the size rule in discSizing, before the display-scale cap). */
 export function courtDiscRoom(courtWidth, courtHeight) {
   return Math.max(0, Math.min(DISC.heightCqh * courtHeight / 100, DISC.widthCqw * courtWidth / 100))
@@ -93,4 +130,33 @@ export function screenFit({ viewportWidth, courtWidth = null, courtHeight = null
   const disc = courtDiscRoom(courtWidth, courtHeight)
   if (disc < L.minDiscPx) return { fits: false, reason: 'court', disc }
   return { fits: true, reason: null, disc }
+}
+
+/**
+ * A phone or a tablet, as opposed to a computer: the referee page is upright
+ * only there (owner, 2026-11-09). A touch screen as the scoring screen detects
+ * it (a touch point), whose main pointer is a finger (coarse), so a laptop
+ * with a touch screen and its touchpad or mouse still counts as a computer
+ * and keeps the landscape layout. Unknown (no matchMedia): a computer, so a
+ * screen is never blocked by a guess.
+ * @param {Window} [win]
+ */
+export function isUprightOnlyDevice(win = (typeof window !== 'undefined' ? window : null)) {
+  if (!win) return false
+  try {
+    const touch = ('ontouchstart' in win) || Number(win.navigator?.maxTouchPoints) > 0
+    if (!touch || typeof win.matchMedia !== 'function') return false
+    return !!win.matchMedia('(pointer: coarse)').matches
+  } catch {
+    return false
+  }
+}
+
+/**
+ * True when the referee page asks for the device to be turned upright: a
+ * phone or tablet (isUprightOnlyDevice) whose viewport is wider than high.
+ * @param {{ uprightOnly: boolean, viewportWidth: number, viewportHeight: number }} s
+ */
+export function mustTurnUpright({ uprightOnly, viewportWidth, viewportHeight }) {
+  return !!uprightOnly && viewportWidth > viewportHeight
 }
