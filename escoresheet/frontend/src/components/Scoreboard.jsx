@@ -80,6 +80,7 @@ import { describeEventText, compareBySeq } from '../domain/describe'
 import CorrectionsPanel from './corrections/CorrectionsPanel.jsx'
 import RectifyPanel from './rectify/RectifyPanel.jsx'
 import { planRectificationReversal, rectifyErrorText } from '../domain/rectify'
+import { servingTeamFromLog } from '../domain/rules'
 import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon, forfeitScope, playersAvailableForNextSet, planForfeitReversal } from '../domain/matchEnd'
 import { signaturesPayload } from '../domain/signatureEdits'
 import { missingPreMatchSignatures, beforeFirstServe } from '../domain/preMatchSignatures'
@@ -466,7 +467,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [showLogs, setShowLogs] = useState(false)
   const [logSearchQuery, setLogSearchQuery] = useState('')
   const [showManualPanel, setShowManualPanel] = useState(false)
-  // Go back / rectify (components/rectify/RectifyPanel, domain/rectify)
+  // Go back (components/rectify/RectifyPanel, domain/rectify)
   const [showRectify, setShowRectify] = useState(false)
   const [manualPanelExpandedSections, setManualPanelExpandedSections] = useState({
     lineup: false,     // Change Current Lineup
@@ -5019,11 +5020,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         currentSetFirstServe = setIndex % 2 === 1 ? set1FirstServe : (set1FirstServe === 'home' ? 'away' : 'home')
       }
 
-      // Find last point event from fresh data to determine current serve
-      const pointEventsForSync = allEventsForSync
-        .filter(e => e.type === 'point' && e.setIndex === setIndex)
-        .sort((a, b) => (b.seq || 0) - (a.seq || 0))
-      const servingTeam = pointEventsForSync.length > 0 ? (pointEventsForSync[0].payload?.team || currentSetFirstServe) : currentSetFirstServe
+      // The current serve from fresh data: the last rally's winner, or the
+      // team a going back gave it to (domain/rules servingTeamFromLog)
+      const servingTeam = servingTeamFromLog(allEventsForSync, setIndex, match) || currentSetFirstServe
 
       // Get server number from position I of serving team's lineup. Only a
       // whole number: events.serve_player is an integer column, and one
@@ -5248,18 +5247,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       return currentSetFirstServe
     }
 
-    // Find the last point event in the current set to determine serve
-    const pointEvents = data.events
-      .filter(e => e.type === 'point' && e.setIndex === data.set.index)
-      .sort(newestFirst) // Most recent first
-
-    if (pointEvents.length === 0) {
-      return currentSetFirstServe
-    }
-
-    // The team that scored the last point now has serve
-    const lastPoint = pointEvents[0]
-    return lastPoint.payload?.team || currentSetFirstServe
+    // The team that won the last rally now has serve, or the team a going
+    // back gave it to (domain/rules servingTeamFromLog)
+    return servingTeamFromLog(data.events, setIndex, data.match) || currentSetFirstServe
   }, [data?.events, data?.set, data?.match, data?.match?.set5FirstServe])
 
   const leftServeTeamKey = leftIsHome ? 'home' : 'away'
@@ -5546,12 +5536,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         currentSetFirstServe = setIndex % 2 === 1 ? set1FirstServe : (set1FirstServe === 'home' ? 'away' : 'home')
       }
 
-      let serveBeforePoint = currentSetFirstServe
-      if (pointEventsBefore.length > 0) {
-        // The last point event shows who has serve now (before this new point)
-        const lastPoint = pointEventsBefore[0] // Most recent is first after sorting
-        serveBeforePoint = lastPoint.payload?.team || serveBeforePoint
-      }
+      // Who has serve now (before this new point): the last rally's winner,
+      // or the team a going back gave it to (domain/rules servingTeamFromLog)
+      const serveBeforePoint = pointEventsBefore.length > 0 || allEventsBeforePoint.some(e => e.type === 'rectification' && e.setIndex === setIndex)
+        ? servingTeamFromLog(allEventsBeforePoint, setIndex, data?.match) || currentSetFirstServe
+        : currentSetFirstServe
 
       const scoringTeamHadServe = serveBeforePoint === teamKey
 
@@ -10721,12 +10710,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     await handleForfait(teamKey, 'forfeit', { scope: 'match' })
   }, [data?.set, data?.match, handleForfait])
 
-  // Go back / rectify (domain/rectify, components/rectify/RectifyPanel): the
-  // plan is written as one correction in one action, the panel closing with
-  // its data. Its penalty point is a point on the score like any other: the
-  // change of courts at 8 in the deciding set, else the set end, follow
-  // (afterPointScored). A delay penalty for an illegal entry noticed before
-  // the service gets its point through the Point path, tied to its sanction.
+  // Go back (domain/rectify, components/rectify/RectifyPanel): the plan,
+  // edited by the scorer, is written as one correction in one action, the
+  // panel closing with its data. The score it leaves is followed like a
+  // point's: the change of courts at 8 in the deciding set, else the set end
+  // (afterPointScored).
   const applyRectification = useCallback(async (plan) => {
     if (!plan || plan.error || !data?.set) return false
     const r = plan.rectification || {}
@@ -10735,32 +10723,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       await applyCorrectionPlan(plan, { matchId, db, mode: 'live' })
       const set = await db.sets.where({ matchId }).and(s => s.index === (r.setIndex ?? data.set.index)).first()
       if (set && !set.finished) {
-        if (r.penaltyTo) await afterPointScored({ set, homePoints: set.homePoints || 0, awayPoints: set.awayPoints || 0, teamKey: r.penaltyTo })
-        else await askCourtSwitchForSet5Score()
+        await afterPointScored({ set, homePoints: set.homePoints || 0, awayPoints: set.awayPoints || 0, teamKey: r.penaltyTo || null })
       }
       syncToReferee()
       syncLiveStateToSupabase('rectification', null, null)
       notifyScoresheetUpdate('rectification')
     }, { reason: 'correction' })
-    if (plan.followUp?.awardPointTo) {
-      await handlePoint(mapTeamKeyToSide(plan.followUp.awardPointTo), true, { penaltySeq: r.penaltySeq ?? null })
-    }
     return true
-  }, [data?.set, matchId, runAction, deferUi, afterPointScored, askCourtSwitchForSet5Score, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate, handlePoint, mapTeamKeyToSide])
-
-  // The forfeits, from the same place: the set (incomplete for the set, FIVB
-  // 6.4.3, 15.8, 17.1.2; Casebook 4.11) through handleForfait; the match
-  // through the Stop the match confirmation and its remarks step
-  const rectifyForfeitSet = useCallback(async (teamKey, reason) => {
-    setShowRectify(false)
-    await handleForfait(teamKey, reason, { scope: 'set' })
-    return true
-  }, [handleForfait])
-  const rectifyForfeitMatch = useCallback((teamKey) => {
-    setShowRectify(false)
-    setStopMatchConfirm({ type: 'forfeit', team: teamKey })
-    return true
-  }, [])
+  }, [data?.set, matchId, runAction, deferUi, afterPointScored, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate])
 
   // Handle "Impossibility to resume" - end match as-is without a winner
   const handleImpossibilityToResume = useCallback(async () => {
@@ -19245,7 +19215,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   case 'rally_start': return 'Rally'
                   case 'replay': return 'Replay'
                   case 'decision_change': return 'Decision'
-                  case 'rectification': return 'Going back'
+                  case 'rectification': return 'Game taken back'
                   case 'cancelled_point': return 'Point cancelled'
                   case 'coin_toss': return 'Coin toss'
                   case 'lineup': return event.payload?.isInitial ? 'Lineup' : 'Lineup chg'
@@ -19373,7 +19343,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     const toName = getTeamShortName(event.payload?.toTeam)
                     return `Point ${fromName}→${toName}`
                   }
-                  // domain/rectify: the going back and the points it cancelled
+                  // domain/rectify: the game taken back and the points it cancelled
                   case 'rectification':
                   case 'cancelled_point':
                     return getActionDescription(event) || event.type
@@ -19685,10 +19655,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         </Modal>
       )}
 
-      {/* Go back / rectify: the rules' going back in one place (Match menu) */}
+      {/* Go back: the rules' going back in one place (Match menu) */}
       {showRectify && (
         <Modal
-          title={t('rectify.title', 'Go back / rectify')}
+          title={t('rectify.title', 'Go back')}
           open={true}
           onClose={() => setShowRectify(false)}
           width={640}
@@ -19705,8 +19675,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             rallyInPlay={rallyStatus === 'in_play'}
             hooks={{
               apply: applyRectification,
-              forfeitSet: rectifyForfeitSet,
-              forfeitMatch: rectifyForfeitMatch,
+              // a team that cannot go on: the scorer's own forfeit flow
+              openStopMatch: () => { setShowRectify(false); setStopMatchModal('select') },
               close: () => setShowRectify(false)
             }}
           />

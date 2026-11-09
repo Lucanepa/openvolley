@@ -1,4 +1,4 @@
-// Go back / rectify in the scoring screen (Scoreboard is too large to render
+// Go back in the scoring screen (Scoreboard is too large to render
 // in a unit test, so the source is checked for the wiring; the planners are
 // tested in domain/__tests__/rectify.test.js and the panel in
 // components/rectify/__tests__/RectifyPanel.test.jsx).
@@ -16,7 +16,7 @@ const handler = header => {
   return sb.slice(a, a + end)
 }
 
-describe('Scoreboard: go back / rectify', () => {
+describe('Scoreboard: go back', () => {
   it('is a row of the Match menu (tablet toolbar and phone action sheet), in Corrections', () => {
     const opened = []
     const sections = matchMenuSections(k => k, { goBack: () => opened.push('go-back'), manualChanges: () => {} })
@@ -33,26 +33,26 @@ describe('Scoreboard: go back / rectify', () => {
     expect(mount).toContain('liveSetIndex={data?.set?.index ?? null}')
     expect(mount).toContain("rallyInPlay={rallyStatus === 'in_play'}")
     expect(mount).toContain('apply: applyRectification')
-    expect(mount).toContain('forfeitSet: rectifyForfeitSet')
-    expect(mount).toContain('forfeitMatch: rectifyForfeitMatch')
+    // a team that cannot go on: only a link to the scorer's own forfeit
+    expect(mount).toContain("openStopMatch: () => { setShowRectify(false); setStopMatchModal('select') }")
   })
 
-  it('writes the plan as one correction in one action, closing with its data; the penalty point is followed like any point', () => {
+  it('writes the plan as one correction in one action, closing with its data; the score it leaves is followed like a point\'s', () => {
     const body = handler('const applyRectification = useCallback(')
     expect(body).toMatch(/runAction\('rectify', async \(\) => \{/)
     const close = body.indexOf('deferUi(() => setShowRectify(false))')
     expect(close).toBeGreaterThan(-1)
     expect(close).toBeLessThan(body.indexOf('await applyCorrectionPlan(plan'))
     expect(body).toContain("await applyCorrectionPlan(plan, { matchId, db, mode: 'live' })")
-    expect(body).toContain('await afterPointScored({ set, homePoints: set.homePoints || 0, awayPoints: set.awayPoints || 0, teamKey: r.penaltyTo })')
-    expect(body).toContain('await askCourtSwitchForSet5Score()')
-    // a delay penalty's point through the Point path, tied to its sanction
-    expect(body).toContain('await handlePoint(mapTeamKeyToSide(plan.followUp.awardPointTo), true, { penaltySeq: r.penaltySeq ?? null })')
+    expect(body).toContain('await afterPointScored({ set, homePoints: set.homePoints || 0, awayPoints: set.awayPoints || 0, teamKey: r.penaltyTo || null })')
   })
 
-  it('the forfeits go through the existing flows: handleForfait for the set, Stop the match for the match', () => {
-    expect(handler('const rectifyForfeitSet = useCallback(')).toContain("await handleForfait(teamKey, reason, { scope: 'set' })")
-    expect(handler('const rectifyForfeitMatch = useCallback(')).toContain("setStopMatchConfirm({ type: 'forfeit', team: teamKey })")
+  it('one serve rule (domain/rules servingTeamFromLog): the screen, the Point path (who rotates), the state sync and the referee', () => {
+    expect(handler('const getCurrentServe = useCallback(')).toContain('servingTeamFromLog(data.events, setIndex, data.match)')
+    expect(handler('const handlePoint = useCallback(')).toContain('servingTeamFromLog(allEventsBeforePoint, setIndex, data?.match)')
+    expect(sb).toContain('const servingTeam = servingTeamFromLog(allEventsForSync, setIndex, match) || currentSetFirstServe')
+    const referee = readFileSync(resolve(__dirname, '../Referee.jsx'), 'utf8')
+    expect(referee).toContain('servingTeamFromLog(data.events, data.currentSet.index, data.match)')
   })
 
   it('Undo takes a going back back from its own record, as one correction', () => {
