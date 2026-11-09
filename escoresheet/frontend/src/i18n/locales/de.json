@@ -4324,152 +4324,101 @@
   },
   "rectify": {
     "moment": {
-      "event": "{{what}} bei {{score}}",
-      "service": "Aufschlag von #{{n}} bei {{score}}",
-      "serviceNoNumber": "Aufschlag bei {{score}}",
-      "setStart": "Satzbeginn ({{score}})",
-      "unknown": "Zeitpunkt unbekannt"
+      "setStart": "Satzbeginn ({{score}})"
     },
     "log": {
-      "applied": "{{what}}: Satz {{set}}, {{before}} → {{after}}",
-      "reversed": "Zurückgenommen: {{what}} (Satz {{set}})",
-      "beforeService": "Vor dem Aufschlag zurückgenommen: {{what}}; {{sanction}} für {{team}}"
-    },
-    "preview": {
-      "title": "Was sich ändert",
-      "incomplete": "Oben die Mannschaft und den Zeitpunkt wählen.",
-      "cancelled": "Annullierte Punkte",
-      "cancelledList": "{{n}} von {{team}}: {{list}}",
-      "none": "Keine",
-      "removed": "Herausgenommene Ballwechsel",
-      "removedList": "{{n}}: {{list}}",
-      "penalty": "Strafe",
-      "pointTo": "Punkt und Aufschlag für {{team}}",
-      "noPoint": "Kein zusätzlicher Punkt",
-      "score": "Spielstand",
-      "server": "Nächster Aufschlag",
-      "serverWithNumber": "{{team}}, #{{n}}",
-      "lineup": "Aufstellung {{team}}",
-      "lineupChanged": "(berichtigt)",
-      "remark": "Bemerkung auf dem Matchblatt",
-      "takenBack": "Zurückgenommen",
-      "sanction": "Sanktion",
-      "delayPenalty": "Verzögerungsbestrafung: Punkt und Aufschlag für {{team}}",
-      "delayWarning": "Verzögerungsverwarnung",
-      "result": "Resultat",
-      "setTo": "Satz {{set}} an {{team}}; {{other}} behält seine Punkte",
-      "matchTo": "{{team}} erhält die Punkte und Sätze, die es zum Spielgewinn braucht; {{other}} behält seine Punkte und Sätze. Danach endet das Spiel."
+      "applied": "Spiel zurückgesetzt: Satz {{set}}, {{before}} → {{after}}",
+      "reversed": "Zurückgenommen: Spiel in Satz {{set}} zurückgesetzt"
     },
     "lineup": {
       "libero": "Libero",
-      "editor": "Aufstellung ab dem nächsten Ballwechsel",
-      "position": "Spieler/in auf Position {{pos}}",
-      "hintSuggest": "Der regelwidrige Wechsel rückgängig gemacht: wer eingewechselt wurde, geht raus, wer ersetzt wurde, kommt zurück. Ändern, wenn die Schiedsrichter es anders berichtigt haben.",
-      "hintKeep": "Die App führt das Aufstellungsblatt und die Rotationsreihenfolge: die Spieler/innen kehren auf diese Positionen zurück. Nur ändern, wenn der Eintrag selbst falsch war."
+      "position": "{{team}}: Spieler/in auf Position {{pos}}"
     },
     "field": {
-      "teamAtFault": "Fehlbare Mannschaft",
-      "lineup": "Aufstellung von {{team}} ab dem nächsten Ballwechsel",
-      "entry": "Welcher Eintrag?",
-      "teamIncomplete": "Mannschaft, die nicht weiterspielen kann",
-      "reason": "Grund"
+      "lineup": "Aufstellung von {{team}}",
+      "moment": "Spielstand, bei dem es schiefging",
+      "cancel": "Wessen Punkte seither werden annulliert?",
+      "penalty": "Punkt und Aufschlag für",
+      "score": "Spielstand",
+      "serve": "Nächster Aufschlag",
+      "takeBack": "Spielerwechsel dieses Satzes",
+      "remark": "Bemerkung auf dem Matchblatt"
     },
-    "action": {
-      "goBack": "Zu diesem Spielstand zurück",
-      "apply": "Punkte annullieren und den Punkt geben",
-      "takeBack": "Zurücknehmen und Verzögerungssanktion geben",
-      "forfeitSet": "Satz dem Gegner geben",
-      "forfeitMatch": "Weiter zum Forfait des Spiels"
-    },
-    "empty": {
-      "beforeService": "Diese Mannschaft hat seit dem letzten Ballwechsel keinen Spielerwechsel und keinen Libero-Wechsel.",
-      "substitution": "Diese Mannschaft hat in diesem Satz keinen Spielerwechsel.",
-      "libero": "Diese Mannschaft hat in diesem Satz keinen Libero-Wechsel.",
-      "score": "In diesem Satz gibt es nichts zu wählen."
+    "score": {
+      "minus": "Ein Punkt weniger für {{team}}",
+      "value": "Punkte von {{team}}",
+      "plus": "Ein Punkt mehr für {{team}}"
     },
     "blocked": {
       "noSet": "Nur während eines Satzes.",
       "rally": "Ein Ballwechsel läuft: zuerst beenden."
     },
-    "back": "Alle Situationen",
-    "intro": "Wird ein Fehler erst bemerkt, nachdem weitergespielt wurde, setzen die Regeln das Spiel zurück. Wähle, was passiert ist: Du siehst, was sich ändert, bevor etwas gespeichert wird, und Rückgängig macht es wieder rückgängig.",
+    "step": {
+      "when": "Wann ist es schiefgelaufen?",
+      "what": "Was passiert",
+      "edit": "Prüfen und anpassen, dann weiterspielen"
+    },
+    "hint": {
+      "moment": "Die Punkte nach diesem Spielstand sind die Punkte «seither».",
+      "team": "Regelwidriger Spielerwechsel später bemerkt (R15.9.2), Positionen nicht wie auf dem Aufstellungsblatt (R7.3.5.3), falsche/r Aufschläger/in (R7.7.2): die Punkte der fehlbaren Mannschaft werden annulliert, Punkt und Aufschlag für den Gegner.",
+      "both": "Die Offiziellen haben falsch informiert, oder ein Ballwechsel wurde mit fünf oder sieben Spieler/innen gespielt (Casebook 2.3, 2.4): beide, niemand.",
+      "edit": "Alles ändern, was die Schiedsrichter anders entschieden haben. Gespeichert wird erst mit «Weiterspielen».",
+      "score": "Vorher {{score}}.",
+      "takeBack": "Ein zurückgenommener Wechsel verschwindet aus dem Matchblatt; seine Spieler/innen kehren auf ihre Positionen zurück."
+    },
+    "action": {
+      "next": "Weiter",
+      "confirm": "Bestätigen",
+      "resume": "Weiterspielen"
+    },
+    "since": "Seit {{score}}",
+    "teamOption": "Team {{letter}}",
+    "both": "Beide",
+    "nobody": "Niemand",
+    "summary": "{{before}} → {{after}}",
+    "server": "Aufschläger/in: #{{n}} (Position I)",
+    "takeBack": "Zurücknehmen",
+    "remarkReset": "Text der App verwenden",
+    "back": "Zurück",
+    "forfeit": {
+      "text": "Eine Mannschaft kann nicht weiterspielen (Forfait, unvollständig)?",
+      "link": "Spiel abbrechen"
+    },
     "describe": {
       "cancelledPoint": "Punkt annulliert: {{team}}",
-      "title": "Berichtigung: {{what}}",
+      "title": "Spiel zurückgesetzt",
       "back": "Spielstand zurück auf {{score}}",
       "cancelled": "{{n}} Punkt(e) von {{team}} annulliert",
       "pointTo": "Punkt für {{team}}"
     },
-    "menu": "Zurück / berichtigen",
-    "title": "Zurück / berichtigen",
-    "group": {
-      "cancel": "Punkte der fehlbaren Mannschaft annulliert",
-      "back": "Zurück zu einem früheren Spielstand",
-      "service": "Vor dem nächsten Aufschlag bemerkt",
-      "forfeit": "Eine Mannschaft kann nicht weiterspielen"
-    },
-    "kind": {
-      "before_service": "Regelwidriger Spielerwechsel oder Libero-Wechsel, bemerkt vor dem nächsten Aufschlag",
-      "forfeit_set": "Mannschaft unvollständig für diesen Satz",
-      "forfeit_match": "Mannschaft im Forfait oder unvollständig für das Spiel",
-      "illegal_substitution": "Regelwidriger Spielerwechsel, bemerkt nach Wiederaufnahme des Spiels",
-      "illegal_libero": "Regelwidriger Libero-Wechsel, bemerkt nach dem Aufschlag",
-      "lineup_discrepancy": "Spieler/innen nicht auf den Positionen des Aufstellungsblatts",
-      "unregistered_player": "Nicht eingetragene/r Spieler/in auf dem Feld",
-      "rotation_fault": "Falsche/r Aufschläger/in, später bemerkt (Rotationsfehler)",
-      "official_error": "Zurück zu einem früheren Spielstand (Fehler der Offiziellen)"
-    },
-    "help": {
-      "before_service": "Der Eintrag wird zurückgenommen und die Mannschaft erhält eine Verzögerungssanktion: eine Verzögerungsverwarnung, oder eine Verzögerungsbestrafung, wenn sie in diesem Spiel schon eine Verzögerungssanktion hat.",
-      "forfeit_set": "Ein/e Spieler/in muss raus (Verletzung, Hinausstellung, Disqualifikation) und kann weder regulär noch ausserordentlich ersetzt werden, oder der Coach gibt den Satz auf (Casebook 4.11). Der Gegner erhält die Punkte, die er zum Satzgewinn braucht; die unvollständige Mannschaft behält ihre Punkte.",
-      "forfeit_match": "Die Mannschaft verweigert das Spiel, erscheint nicht oder kann keine sechs Spieler/innen stellen. Der Gegner erhält die Punkte und Sätze, die er zum Spielgewinn braucht; das Matchblatt behält die gespielten Punkte. Eine Mannschaft im Forfait verliert 0:3 (0:25 pro Satz): dieses Resultat trägt der Wettbewerb ein. Im nächsten Schritt wird eine Bemerkung verlangt.",
-      "illegal_substitution": "Punkt und Aufschlag für den Gegner. Der Wechsel wird berichtigt (das zählt nicht als Spielerwechsel). Die Punkte der fehlbaren Mannschaft seit dem Wechsel werden annulliert; der Gegner behält seine Punkte.",
-      "illegal_libero": "Wie ein regelwidriger Spielerwechsel: Punkt und Aufschlag für den Gegner, der Wechsel berichtigt, die Punkte der fehlbaren Mannschaft seither annulliert.",
-      "lineup_discrepancy": "Die Mannschaft kehrt auf die Positionen ihres Aufstellungsblatts zurück. Punkt und Aufschlag für den Gegner; die Punkte der fehlbaren Mannschaft seit dem Fehler werden annulliert.",
-      "unregistered_player": "Ein/e eingetragene/r Spieler/in ersetzt ihn oder sie. Punkt und Aufschlag für den Gegner; die Punkte der fehlbaren Mannschaft seit dem Eintritt werden annulliert. Erst nach dem Satz oder dem Spiel bemerkt: Satz oder Spiel sind verloren, dem 1. Schiedsrichter melden.",
-      "rotation_fault": "Punkt und Aufschlag für den Gegner; die Rotationsreihenfolge wird berichtigt. Gleich nach dem Ballwechsel des falschen Aufschlags bemerkt: ein einziger Punkt für den Gegner. Später bemerkt: die Punkte der fehlbaren Mannschaft seit dem falschen Aufschlag werden annulliert; Zeitpunkt unbekannt: nur der Punkt.",
-      "official_error": "Die Offiziellen haben falsch informiert und es wurde weitergespielt, oder ein Ballwechsel wurde mit fünf oder sieben Spieler/innen gespielt: der Spielstand geht für beide Mannschaften auf diesen Moment zurück. Sanktionen bleiben; kein Strafpunkt."
-    },
-    "momentPrompt": {
-      "substitution": "Welcher Spielerwechsel war regelwidrig?",
-      "libero": "Welcher Libero-Wechsel war regelwidrig?",
-      "service": "Bei welchem Aufschlag hat die falsche Person aufgeschlagen?",
-      "score": "Ab welchem Spielstand?"
-    },
+    "menu": "Zurück",
+    "title": "Zurück",
     "error": {
-      "chooseSituation": "Wähle, was passiert ist.",
-      "chooseTeam": "Wähle die fehlbare Mannschaft.",
-      "chooseMoment": "Wähle den Zeitpunkt des Fehlers.",
+      "chooseMoment": "Den Spielstand wählen, bei dem es schiefging.",
+      "chooseCancel": "Wählen, wessen Punkte annulliert werden.",
       "notLive": "Hier kann nur der laufende Satz zurückgesetzt werden. Für einen früheren Satz die Korrekturen verwenden und den Schiedsrichter informieren.",
       "setFinished": "Satz {{set}} ist beendet. Die Korrekturen verwenden und den Schiedsrichter informieren.",
-      "nothingToChange": "Nichts ändert sich: die fehlbare Mannschaft hat seither keinen Punkt erzielt.",
-      "nothingToGoBack": "Seit diesem Spielstand wurde kein Ballwechsel gespielt.",
+      "nothingToChange": "Nichts ändert sich: kein Punkt wird annulliert oder vergeben.",
       "lineupIncomplete": "Für jede der sechs Positionen eine/n Spieler/in wählen.",
       "lineupDuplicate": "#{{n}} ist zweimal gewählt.",
+      "badScore": "Ein Spielstand ist eine ganze Zahl ab 0.",
       "notFound": "Dieser Eintrag existiert nicht mehr.",
       "notLast": "Danach wurden Ballwechsel gespielt: diese zuerst zurücknehmen.",
-      "laterRectification": "Eine spätere Berichtigung in diesem Satz kommt zuerst: sie zuerst zurücknehmen.",
-      "notBeforeService": "Seit diesem Eintrag wurde ein Ballwechsel gespielt: «Regelwidriger Spielerwechsel, bemerkt nach Wiederaufnahme des Spiels» verwenden."
+      "laterRectification": "Ein späteres Zurücksetzen in diesem Satz kommt zuerst: es zuerst zurücknehmen."
     },
     "note": {
-      "singlePoint": "Gleich nach dem Ballwechsel des falschen Aufschlags bemerkt, den {{team}} gewonnen hat: das ist der einzige Punkt (7.7.1.1), es kommt kein Punkt dazu.",
-      "momentUnknown": "Zeitpunkt unbekannt: kein Punkt wird annulliert, nur Punkt und Aufschlag für den Gegner (7.7.2).",
-      "setWon": "Dieser Punkt beendet Satz {{set}}: als Nächstes das Satzende bestätigen.",
-      "timeline": "Auszeiten, Wechsel und Sanktionen danach bleiben; auf dem Matchblatt zeigen sie jetzt den berichtigten Spielstand.",
-      "sanctionsStay": "Sanktionen bleiben gültig, mit ihren Punkten (Casebook 2.3)."
+      "setWon": "Dieser Spielstand beendet Satz {{set}}: als Nächstes das Satzende bestätigen.",
+      "timeline": "Auszeiten, Wechsel und Sanktionen danach bleiben; auf dem Matchblatt zeigen sie jetzt den berichtigten Spielstand."
     },
     "remark": {
-      "team": "Team {{team}}, Satz {{set}}, Resultat {{score}}: {{what}} (Regel {{rule}}) seit {{from}}; {{n}} Punkt(e) von Team {{team}} annulliert, Punkt und Aufschlag für Team {{opp}}; Spielstand neu {{after}}.",
-      "teamNoPenalty": "Team {{team}}, Satz {{set}}, Resultat {{score}}: {{what}} (Regel {{rule}}) seit {{from}}; {{n}} Punkt(e) von Team {{team}} annulliert; Spielstand neu {{after}}.",
-      "unknown": "Team {{team}}, Satz {{set}}, Resultat {{score}}: {{what}} (Regel {{rule}}), Zeitpunkt unbekannt; Punkt und Aufschlag für Team {{opp}}; Spielstand neu {{after}}.",
-      "official": "Satz {{set}}, Resultat {{score}}: Fehler der Offiziellen (Casebook 2.3); Spielstand zurück auf {{after}}, Sanktionen bleiben gültig."
-    },
-    "remarkWhat": {
-      "illegal_substitution": "regelwidriger Spielerwechsel",
-      "illegal_libero": "regelwidriger Libero-Wechsel",
-      "lineup_discrepancy": "Positionen nicht wie auf dem Aufstellungsblatt",
-      "unregistered_player": "nicht eingetragene/r Spieler/in auf dem Feld",
-      "rotation_fault": "Rotationsfehler"
+      "backOfficials": "Spiel zurückgesetzt auf {{from}} (Fehler der Offiziellen, Casebook 2.3)",
+      "cancelled": "{{n}} Punkt(e) von Team {{team}} annulliert",
+      "cancelledBoth": "die Ballwechsel seither herausgenommen, Sanktionen bleiben gültig",
+      "penalty": "Punkt und Aufschlag für Team {{team}}",
+      "serve": "Aufschlag Team {{team}}",
+      "subTakenBack": "Spielerwechsel #{{in}} für #{{out}} von Team {{team}} zurückgenommen",
+      "after": "Spielstand neu {{score}}",
+      "since": "Fehler seit {{from}}"
     }
   },
   "corrections": {

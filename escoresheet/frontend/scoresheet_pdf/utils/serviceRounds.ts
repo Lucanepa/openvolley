@@ -13,9 +13,11 @@
  *    position = slot % 6, round box = floor(slot / 6) + 1.
  *  - Side-out: close the server's round with its TEAM score, open the
  *    receiver's next round (tick).
- *  - A rally whose point a rectification cancelled (counted[i] === false,
- *    domain/rectify, FIVB 7.7.2 / 15.9.2.3) still passes the serve and opens
- *    or closes rounds, but adds no point to the team's score.
+ *  - When the game went back (domain/rectify, FIVB 7.7.2 / 15.9.2.3): a rally
+ *    whose point was cancelled (counted[i] === false) still passes the serve
+ *    and opens or closes rounds, but adds no point; a point set by hand
+ *    (passes[i] === false) adds the point but passes no serve; the serve the
+ *    going back gave is an entry that passes the serve and adds nothing.
  *  - Set end: the winner's final points go in its current round (still ticked)
  *    or, when it won on receive, in the round it just gained (NOT ticked);
  *    both teams' last rounds are circled.
@@ -48,6 +50,8 @@ export interface TrackOptions {
   pointTeams: TeamKey[]
   /** Per rally: false when its point was cancelled (it scores nothing). Default: every rally counts. */
   counted?: boolean[]
+  /** Per rally: false for a point set by hand (it passes no serve). Default: every rally passes it. */
+  passes?: boolean[]
   /** The team serving the first rally. */
   firstServer: TeamKey
   /** The set is over: write and circle the finals. */
@@ -63,9 +67,9 @@ export function roundSlot(k: number, receivedFirst: boolean): { position: number
 }
 
 /** Service rounds of both teams. No rally yet: no round at all (the tick comes with the first rally). */
-export function trackServiceRounds({ pointTeams, firstServer, finished, counted }: TrackOptions): Record<TeamKey, TrackedRound[]> {
+export function trackServiceRounds({ pointTeams, firstServer, finished, counted, passes }: TrackOptions): Record<TeamKey, TrackedRound[]> {
   const rounds: Record<TeamKey, TrackedRound[]> = { home: [], away: [] }
-  const kept = (pointTeams || []).map((t, i) => ({ t, counts: counted?.[i] !== false })).filter(x => x.t === 'home' || x.t === 'away')
+  const kept = (pointTeams || []).map((t, i) => ({ t, counts: counted?.[i] !== false, passes: passes?.[i] !== false })).filter(x => x.t === 'home' || x.t === 'away')
   const points = kept.map(x => x.t as TeamKey)
   if (points.length === 0) return rounds
 
@@ -87,7 +91,7 @@ export function trackServiceRounds({ pointTeams, firstServer, finished, counted 
   points.forEach((scorer, i) => {
     serverBeforeLast = server
     if (kept[i].counts) score[scorer]++
-    if (scorer !== server) {
+    if (kept[i].passes && scorer !== server) {
       const closing = lastOpen(server)
       if (closing) {
         closing.points = score[server]

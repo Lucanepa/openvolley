@@ -268,21 +268,25 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     const rightTeamKey: 'home' | 'away' = !isSwapped ? teamBKey : teamAKey;
 
     // Service rounds: one pure tracker for every set (utils/serviceRounds.ts).
-    // A point cancelled when the game went back (domain/rectify) is still a
-    // rally: it passed the serve, but it scores nothing
+    // When the game went back (domain/rectify): a cancelled point is still a
+    // rally (it passed the serve, it scores nothing), a point set by hand
+    // scores but passes no serve, and the going back gives the serve to the
+    // team it names
     const rallyEvents = setEvents
-      .filter(e => e.type === 'point' || e.type === 'cancelled_point')
+      .filter(e => e.type === 'point' || e.type === 'cancelled_point' || (e.type === 'rectification' && (e.payload?.serve === 'home' || e.payload?.serve === 'away')))
       .sort((a, b) => {
         const aSeq = a.seq || 0;
         const bSeq = b.seq || 0;
         if (aSeq !== 0 || bSeq !== 0) return aSeq - bSeq;
         return new Date(a.ts).getTime() - new Date(b.ts).getTime();
       });
-    const rallyTeams = rallyEvents.map(e => e.payload?.team);
+    const rallyTeams = rallyEvents.map(e => (e.type === 'rectification' ? e.payload?.serve : e.payload?.team));
     const rallyCounted = rallyEvents.map(e => e.type === 'point');
+    const rallyPasses = rallyEvents.map(e => !(e.type === 'point' && e.payload?.scoreAdjusted === true));
     const trackedRounds = trackServiceRounds({
       pointTeams: rallyTeams,
       counted: rallyCounted,
+      passes: rallyPasses,
       firstServer: firstServeTeam,
       finished: !!setInfo?.finished
     });

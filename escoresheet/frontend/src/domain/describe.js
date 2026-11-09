@@ -432,14 +432,15 @@ export function describeEvent(event, events, ctx = {}) {
       break
     }
     case 'rectification': {
-      title = tr(t, 'rectify.describe.title', 'Going back: {{what}}', { what: tr(t, `rectify.kind.${p.kind}`, humanize(p.kind)) })
-      if (p.kind === 'official_error') {
+      // the game taken back (domain/rectify): its points cancelled, its point
+      title = tr(t, 'rectify.describe.title', 'Game taken back')
+      if (p.cancel === 'both') {
         detail = tr(t, 'rectify.describe.back', 'score back to {{score}}', { score: formatScore(p.scoreAfter || {}, null, ctx) })
       } else {
         const n = (p.cancelledPointIds || []).length
         detail = [
           n ? tr(t, 'rectify.describe.cancelled', '{{n}} point(s) of {{team}} cancelled', { n, team: teamLetter(p.team, ctx.match) }) : '',
-          p.penalty ? tr(t, 'rectify.describe.pointTo', 'point to {{team}}', { team: teamLetter(otherTeam(p.team), ctx.match) }) : ''
+          p.penaltyTo ? tr(t, 'rectify.describe.pointTo', 'point to {{team}}', { team: teamLetter(p.penaltyTo, ctx.match) }) : ''
         ].filter(Boolean).join(', ')
       }
       if (short) teamText = ''

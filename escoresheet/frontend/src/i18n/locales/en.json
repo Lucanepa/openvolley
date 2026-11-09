@@ -4342,152 +4342,101 @@
   },
   "rectify": {
     "moment": {
-      "event": "{{what}} at {{score}}",
-      "service": "Service of #{{n}} at {{score}}",
-      "serviceNoNumber": "Service at {{score}}",
-      "setStart": "Start of the set ({{score}})",
-      "unknown": "Moment not known"
+      "setStart": "Start of the set ({{score}})"
     },
     "log": {
-      "applied": "{{what}}: set {{set}}, {{before}} → {{after}}",
-      "reversed": "Taken back: {{what}} (set {{set}})",
-      "beforeService": "Taken back before the service: {{what}}; {{sanction}} for {{team}}"
-    },
-    "preview": {
-      "title": "What changes",
-      "incomplete": "Choose the team and the moment above.",
-      "cancelled": "Points cancelled",
-      "cancelledList": "{{n}} of {{team}}: {{list}}",
-      "none": "None",
-      "removed": "Rallies taken out",
-      "removedList": "{{n}}: {{list}}",
-      "penalty": "Penalty",
-      "pointTo": "Point and service to {{team}}",
-      "noPoint": "No point added",
-      "score": "Score",
-      "server": "Serves next",
-      "serverWithNumber": "{{team}}, #{{n}}",
-      "lineup": "Line-up of {{team}}",
-      "lineupChanged": "(put right)",
-      "remark": "Remark on the scoresheet",
-      "takenBack": "Taken back",
-      "sanction": "Sanction",
-      "delayPenalty": "Delay penalty: point and service to {{team}}",
-      "delayWarning": "Delay warning",
-      "result": "Result",
-      "setTo": "Set {{set}} to {{team}}; {{other}} keeps its points",
-      "matchTo": "{{team}} gets the points and sets it needs to win the match; {{other}} keeps the points and sets it has. The match then ends."
+      "applied": "Game taken back: set {{set}}, {{before}} → {{after}}",
+      "reversed": "Taken back: game taken back in set {{set}}"
     },
     "lineup": {
       "libero": "libero",
-      "editor": "Line-up from the next rally",
-      "position": "Player at position {{pos}}",
-      "hintSuggest": "The illegal substitution undone: the player who came in goes out, the one he replaced comes back. Change it if the referees put it right another way.",
-      "hintKeep": "The app keeps the line-up sheet and the rotational order: the players go back to these positions. Change it only if the record itself was wrong."
+      "position": "{{team}}: player at position {{pos}}"
     },
     "field": {
-      "teamAtFault": "Team at fault",
-      "lineup": "Line-up of {{team}} from the next rally",
-      "entry": "Which entry?",
-      "teamIncomplete": "Team that cannot go on",
-      "reason": "Why"
+      "lineup": "Line-up of {{team}}",
+      "moment": "Score where it went wrong",
+      "cancel": "Whose points since then are cancelled?",
+      "penalty": "Point and service to",
+      "score": "Score",
+      "serve": "Serves next",
+      "takeBack": "Substitutions of this set",
+      "remark": "Remark on the scoresheet"
     },
-    "action": {
-      "goBack": "Go back to this score",
-      "apply": "Cancel the points and give the point",
-      "takeBack": "Take back and give the delay sanction",
-      "forfeitSet": "Give the set to the opponent",
-      "forfeitMatch": "Continue to the forfeit of the match"
-    },
-    "empty": {
-      "beforeService": "This team has no substitution or libero replacement since the last rally.",
-      "substitution": "This team has no substitution in this set.",
-      "libero": "This team has no libero replacement in this set.",
-      "score": "Nothing to choose in this set."
+    "score": {
+      "minus": "One point less for {{team}}",
+      "value": "Points of {{team}}",
+      "plus": "One point more for {{team}}"
     },
     "blocked": {
       "noSet": "Only during a set.",
       "rally": "A rally is in play: finish it first."
     },
-    "back": "All situations",
-    "intro": "When a fault is found after play went on, the rules take the game back. Choose what happened: you see what changes before anything is written, and Undo takes it back.",
+    "step": {
+      "when": "When did it go wrong?",
+      "what": "What happens",
+      "edit": "Check and edit, then resume"
+    },
+    "hint": {
+      "moment": "The points scored after this score are the ones \"since then\".",
+      "team": "Illegal substitution found later (R15.9.2), positions not as on the line-up sheet (R7.3.5.3), wrong server (R7.7.2): the team at fault's points are cancelled, point and service to the opponent.",
+      "both": "The officials gave wrong information, or a rally was played with five or seven players (Casebook 2.3, 2.4): both, nobody.",
+      "edit": "Change anything the referees decided otherwise. Nothing is written before Resume.",
+      "score": "Was {{score}}.",
+      "takeBack": "A substitution taken back leaves the record; its players go back where they were."
+    },
+    "action": {
+      "next": "Next",
+      "confirm": "Confirm",
+      "resume": "Resume"
+    },
+    "since": "Since {{score}}",
+    "teamOption": "Team {{letter}}",
+    "both": "Both",
+    "nobody": "Nobody",
+    "summary": "{{before}} → {{after}}",
+    "server": "Server: #{{n}} (position I)",
+    "takeBack": "Take back",
+    "remarkReset": "Use the text the app writes",
+    "back": "Back",
+    "forfeit": {
+      "text": "A team cannot go on (default, incomplete)?",
+      "link": "Stop the match"
+    },
     "describe": {
       "cancelledPoint": "Point cancelled: {{team}}",
-      "title": "Going back: {{what}}",
+      "title": "Game taken back",
       "back": "score back to {{score}}",
       "cancelled": "{{n}} point(s) of {{team}} cancelled",
       "pointTo": "point to {{team}}"
     },
-    "menu": "Go back / rectify",
-    "title": "Go back / rectify",
-    "group": {
-      "cancel": "Points of the team at fault cancelled",
-      "back": "Back to an earlier score",
-      "service": "Noticed before the next service",
-      "forfeit": "A team cannot go on"
-    },
-    "kind": {
-      "before_service": "Illegal substitution or libero replacement noticed before the next service",
-      "forfeit_set": "Team incomplete for this set",
-      "forfeit_match": "Team in default or incomplete for the match",
-      "illegal_substitution": "Illegal substitution found after play went on",
-      "illegal_libero": "Illegal libero replacement found after the service",
-      "lineup_discrepancy": "Players not in the positions of the line-up sheet",
-      "unregistered_player": "Player not on the roster found on court",
-      "rotation_fault": "Wrong server found later (rotational fault)",
-      "official_error": "Back to an earlier score (officials' mistake)"
-    },
-    "help": {
-      "before_service": "The entry is taken back and the team gets a delay sanction: a delay warning, or a delay penalty if it already had a delay sanction in this match.",
-      "forfeit_set": "A player who must leave (injury, expulsion, disqualification) cannot be replaced legally or exceptionally, or the coach gives up the set (Casebook 4.11). The opponent gets the points it needs to win the set; the incomplete team keeps its points.",
-      "forfeit_match": "The team refuses to play, does not appear, or cannot field six players. The opponent gets the points and the sets it needs to win the match; the sheet keeps the points played. A team in default loses 0:3 (0:25 each set): the competition records that result. A remark is asked for in the next step.",
-      "illegal_substitution": "Point and service to the opponent. The substitution is put right (this does not count as a substitution). The points of the team at fault since the substitution are cancelled; the opponent keeps its points.",
-      "illegal_libero": "The same as an illegal substitution: point and service to the opponent, the replacement put right, the points of the team at fault since then cancelled.",
-      "lineup_discrepancy": "The team goes back to the positions of its line-up sheet. Point and service to the opponent; the points of the team at fault since the moment of the fault are cancelled.",
-      "unregistered_player": "A registered player replaces him or her. Point and service to the opponent; the points of the team at fault since the player entered are cancelled. Found after the set or the match: the set or the match is lost, tell the 1st referee.",
-      "rotation_fault": "Point and service to the opponent; the rotational order is put right. Found right after the rally of the wrong service: one single point to the opponent. Found later: the points of the team at fault since the wrong service are cancelled; moment not known: only the point.",
-      "official_error": "The officials gave wrong information and play went on, or a rally was played with five or seven players: the score goes back to that moment for both teams. Sanctions stay; no penalty point."
-    },
-    "momentPrompt": {
-      "substitution": "Which substitution was illegal?",
-      "libero": "Which libero replacement was illegal?",
-      "service": "At which service did the wrong player serve?",
-      "score": "From which score?"
-    },
+    "menu": "Go back",
+    "title": "Go back",
     "error": {
-      "chooseSituation": "Choose what happened.",
-      "chooseTeam": "Choose the team at fault.",
-      "chooseMoment": "Choose the moment of the fault.",
+      "chooseMoment": "Choose the score where it went wrong.",
+      "chooseCancel": "Choose whose points are cancelled.",
       "notLive": "Only the set being played can be taken back here. For an earlier set, use Corrections and tell the referee.",
       "setFinished": "Set {{set}} is over. Use Corrections and tell the referee.",
-      "nothingToChange": "Nothing changes: the team at fault scored no point since then.",
-      "nothingToGoBack": "No rally was played since that score.",
+      "nothingToChange": "Nothing changes: no point is cancelled or given.",
       "lineupIncomplete": "Choose a player for each of the six positions.",
       "lineupDuplicate": "#{{n}} is chosen twice.",
+      "badScore": "A score is a whole number from 0.",
       "notFound": "This entry no longer exists.",
       "notLast": "Rallies were played after this going back: take them back first.",
-      "laterRectification": "A later going back in this set comes first: take it back first.",
-      "notBeforeService": "A rally was played since this entry: use \"Illegal substitution found after play went on\"."
+      "laterRectification": "A later going back in this set comes first: take it back first."
     },
     "note": {
-      "singlePoint": "Found right after the rally of the wrong service, which {{team}} won: that is the one single point (7.7.1.1), no point is added.",
-      "momentUnknown": "Moment not known: no point is cancelled, only point and service to the opponent (7.7.2).",
-      "setWon": "This point ends set {{set}}: confirm the set end next.",
-      "timeline": "Time-outs, substitutions and sanctions after it stay; on the scoresheet they now show the corrected score.",
-      "sanctionsStay": "Sanctions stay valid, with their points (Casebook 2.3)."
+      "setWon": "This score ends set {{set}}: confirm the set end next.",
+      "timeline": "Time-outs, substitutions and sanctions after it stay; on the scoresheet they now show the corrected score."
     },
     "remark": {
-      "team": "Team {{team}}, Set {{set}}, Result {{score}}: {{what}} (rule {{rule}}) since {{from}}; {{n}} point(s) of team {{team}} cancelled, point and service to team {{opp}}; score now {{after}}.",
-      "teamNoPenalty": "Team {{team}}, Set {{set}}, Result {{score}}: {{what}} (rule {{rule}}) since {{from}}; {{n}} point(s) of team {{team}} cancelled; score now {{after}}.",
-      "unknown": "Team {{team}}, Set {{set}}, Result {{score}}: {{what}} (rule {{rule}}), moment not known; point and service to team {{opp}}; score now {{after}}.",
-      "official": "Set {{set}}, Result {{score}}: officials' mistake (Casebook 2.3); score taken back to {{after}}, sanctions remain valid."
-    },
-    "remarkWhat": {
-      "illegal_substitution": "illegal substitution",
-      "illegal_libero": "illegal libero replacement",
-      "lineup_discrepancy": "positions not as on the line-up sheet",
-      "unregistered_player": "player not on the roster on court",
-      "rotation_fault": "rotational fault"
+      "backOfficials": "game taken back to {{from}} (officials' mistake, Casebook 2.3)",
+      "cancelled": "{{n}} point(s) of team {{team}} cancelled",
+      "cancelledBoth": "the rallies since then taken out, sanctions remain valid",
+      "penalty": "point and service to team {{team}}",
+      "serve": "team {{team}} to serve",
+      "subTakenBack": "substitution #{{in}} for #{{out}} of team {{team}} taken back",
+      "after": "score now {{score}}",
+      "since": "fault since {{from}}"
     }
   },
   "corrections": {

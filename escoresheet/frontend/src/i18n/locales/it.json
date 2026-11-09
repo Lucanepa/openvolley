@@ -4341,152 +4341,101 @@
   },
   "rectify": {
     "moment": {
-      "event": "{{what}} sul {{score}}",
-      "service": "Servizio di #{{n}} sul {{score}}",
-      "serviceNoNumber": "Servizio sul {{score}}",
-      "setStart": "Inizio del set ({{score}})",
-      "unknown": "Momento sconosciuto"
+      "setStart": "Inizio del set ({{score}})"
     },
     "log": {
-      "applied": "{{what}}: set {{set}}, {{before}} → {{after}}",
-      "reversed": "Ripreso: {{what}} (set {{set}})",
-      "beforeService": "Ripreso prima del servizio: {{what}}; {{sanction}} per {{team}}"
-    },
-    "preview": {
-      "title": "Che cosa cambia",
-      "incomplete": "Scegli sopra la squadra e il momento.",
-      "cancelled": "Punti annullati",
-      "cancelledList": "{{n}} di {{team}}: {{list}}",
-      "none": "Nessuno",
-      "removed": "Azioni tolte",
-      "removedList": "{{n}}: {{list}}",
-      "penalty": "Sanzione",
-      "pointTo": "Punto e servizio a {{team}}",
-      "noPoint": "Nessun punto aggiunto",
-      "score": "Punteggio",
-      "server": "Prossimo servizio",
-      "serverWithNumber": "{{team}}, #{{n}}",
-      "lineup": "Formazione {{team}}",
-      "lineupChanged": "(rettificata)",
-      "remark": "Osservazione sul referto",
-      "takenBack": "Ripreso",
-      "sanction": "Sanzione",
-      "delayPenalty": "Penalizzazione per ritardo: punto e servizio a {{team}}",
-      "delayWarning": "Avvertimento per ritardo",
-      "result": "Risultato",
-      "setTo": "Set {{set}} a {{team}}; {{other}} mantiene i suoi punti",
-      "matchTo": "{{team}} riceve i punti e i set necessari per vincere la partita; {{other}} mantiene i suoi punti e set. Poi la partita finisce."
+      "applied": "Gioco riportato indietro: set {{set}}, {{before}} → {{after}}",
+      "reversed": "Ripreso: gioco riportato indietro nel set {{set}}"
     },
     "lineup": {
       "libero": "libero",
-      "editor": "Formazione dalla prossima azione",
-      "position": "Giocatore/trice in posizione {{pos}}",
-      "hintSuggest": "La sostituzione irregolare annullata: chi è entrato/a esce, chi è stato/a sostituito/a rientra. Modificala se gli arbitri l’hanno rettificata in un altro modo.",
-      "hintKeep": "L’app tiene il tagliando della formazione e l’ordine di rotazione: i giocatori/le giocatrici tornano in queste posizioni. Modifica solo se la registrazione stessa era sbagliata."
+      "position": "{{team}}: giocatore/trice in posizione {{pos}}"
     },
     "field": {
-      "teamAtFault": "Squadra in fallo",
-      "lineup": "Formazione di {{team}} dalla prossima azione",
-      "entry": "Quale registrazione?",
-      "teamIncomplete": "Squadra che non può continuare",
-      "reason": "Motivo"
+      "lineup": "Formazione di {{team}}",
+      "moment": "Punteggio al momento dell’errore",
+      "cancel": "Di chi sono annullati i punti da allora?",
+      "penalty": "Punto e servizio a",
+      "score": "Punteggio",
+      "serve": "Prossimo servizio",
+      "takeBack": "Sostituzioni di questo set",
+      "remark": "Osservazione sul referto"
     },
-    "action": {
-      "goBack": "Tornare a questo punteggio",
-      "apply": "Annullare i punti e dare il punto",
-      "takeBack": "Riprendere e dare la sanzione per ritardo",
-      "forfeitSet": "Dare il set all’avversario",
-      "forfeitMatch": "Continuare verso il forfait della partita"
-    },
-    "empty": {
-      "beforeService": "Questa squadra non ha sostituzioni né cambi del libero dall’ultima azione.",
-      "substitution": "Questa squadra non ha sostituzioni in questo set.",
-      "libero": "Questa squadra non ha cambi del libero in questo set.",
-      "score": "Niente da scegliere in questo set."
+    "score": {
+      "minus": "Un punto in meno per {{team}}",
+      "value": "Punti di {{team}}",
+      "plus": "Un punto in più per {{team}}"
     },
     "blocked": {
       "noSet": "Solo durante un set.",
       "rally": "Un’azione è in corso: prima terminala."
     },
-    "back": "Tutte le situazioni",
-    "intro": "Quando un fallo viene scoperto dopo che il gioco è ripreso, le regole riportano indietro la partita. Scegli che cosa è successo: vedi che cosa cambia prima che venga registrato qualcosa, e Annulla lo riprende.",
+    "step": {
+      "when": "Quando è successo l’errore?",
+      "what": "Che cosa succede",
+      "edit": "Controllare e modificare, poi riprendere"
+    },
+    "hint": {
+      "moment": "I punti segnati dopo questo punteggio sono quelli «da allora».",
+      "team": "Sostituzione irregolare scoperta più tardi (R15.9.2), posizioni non conformi al tagliando della formazione (R7.3.5.3), battitore/trice sbagliato/a (R7.7.2): i punti della squadra in fallo sono annullati, punto e servizio all’avversario.",
+      "both": "Gli ufficiali hanno dato un’informazione sbagliata, oppure un’azione è stata giocata in cinque o sette (Casebook 2.3, 2.4): entrambe, nessuno.",
+      "edit": "Modifica tutto ciò che gli arbitri hanno deciso diversamente. Nulla viene registrato prima di «Riprendere».",
+      "score": "Prima: {{score}}.",
+      "takeBack": "Una sostituzione ripresa esce dal referto; i suoi giocatori/le sue giocatrici tornano nelle loro posizioni."
+    },
+    "action": {
+      "next": "Avanti",
+      "confirm": "Confermare",
+      "resume": "Riprendere"
+    },
+    "since": "Da {{score}}",
+    "teamOption": "Squadra {{letter}}",
+    "both": "Entrambe",
+    "nobody": "Nessuno",
+    "summary": "{{before}} → {{after}}",
+    "server": "Battitore/trice: #{{n}} (posizione I)",
+    "takeBack": "Riprendere",
+    "remarkReset": "Usare il testo dell’app",
+    "back": "Indietro",
+    "forfeit": {
+      "text": "Una squadra non può continuare (forfait, incompleta)?",
+      "link": "Interrompere la partita"
+    },
     "describe": {
       "cancelledPoint": "Punto annullato: {{team}}",
-      "title": "Rettifica: {{what}}",
+      "title": "Gioco riportato indietro",
       "back": "punteggio riportato a {{score}}",
       "cancelled": "{{n}} punto/i di {{team}} annullato/i",
       "pointTo": "punto a {{team}}"
     },
-    "menu": "Tornare indietro / rettificare",
-    "title": "Tornare indietro / rettificare",
-    "group": {
-      "cancel": "Punti della squadra in fallo annullati",
-      "back": "Ritorno a un punteggio precedente",
-      "service": "Notato prima del servizio successivo",
-      "forfeit": "Una squadra non può continuare"
-    },
-    "kind": {
-      "before_service": "Sostituzione o cambio del libero irregolare notato prima del servizio successivo",
-      "forfeit_set": "Squadra incompleta per questo set",
-      "forfeit_match": "Squadra in forfait o incompleta per la partita",
-      "illegal_substitution": "Sostituzione irregolare scoperta dopo la ripresa del gioco",
-      "illegal_libero": "Cambio del libero irregolare scoperto dopo il servizio",
-      "lineup_discrepancy": "Giocatori/trici non nelle posizioni del tagliando della formazione",
-      "unregistered_player": "Giocatore/trice non iscritto/a in campo",
-      "rotation_fault": "Battitore/trice sbagliato/a scoperto/a più tardi (fallo di rotazione)",
-      "official_error": "Ritorno a un punteggio precedente (errore degli ufficiali)"
-    },
-    "help": {
-      "before_service": "La registrazione viene ripresa e la squadra riceve una sanzione per ritardo: un avvertimento per ritardo, o una penalizzazione per ritardo se ha già una sanzione per ritardo in questa partita.",
-      "forfeit_set": "Un/a giocatore/trice deve uscire (infortunio, espulsione, squalifica) e non può essere sostituito/a né regolarmente né eccezionalmente, oppure l’allenatore rinuncia al set (Casebook 4.11). L’avversario riceve i punti necessari per vincere il set; la squadra incompleta mantiene i suoi punti.",
-      "forfeit_match": "La squadra rifiuta di giocare, non si presenta o non può schierare sei giocatori/trici. L’avversario riceve i punti e i set necessari per vincere la partita; il referto mantiene i punti giocati. Una squadra in forfait perde 0:3 (0:25 per set): la competizione registra questo risultato. Al passo successivo viene chiesta un’osservazione.",
-      "illegal_substitution": "Punto e servizio all’avversario. La sostituzione viene rettificata (non conta come sostituzione). I punti della squadra in fallo dalla sostituzione vengono annullati; l’avversario mantiene i suoi punti.",
-      "illegal_libero": "Come una sostituzione irregolare: punto e servizio all’avversario, il cambio rettificato, i punti della squadra in fallo da allora annullati.",
-      "lineup_discrepancy": "La squadra torna alle posizioni del suo tagliando della formazione. Punto e servizio all’avversario; i punti della squadra in fallo dal momento del fallo vengono annullati.",
-      "unregistered_player": "Un/a giocatore/trice iscritto/a lo/la sostituisce. Punto e servizio all’avversario; i punti della squadra in fallo dal suo ingresso vengono annullati. Scoperto dopo il set o la partita: il set o la partita è perso, informa il 1° arbitro.",
-      "rotation_fault": "Punto e servizio all’avversario; l’ordine di rotazione viene rettificato. Scoperto subito dopo l’azione del servizio sbagliato: un solo punto all’avversario. Scoperto più tardi: i punti della squadra in fallo dal servizio sbagliato vengono annullati; momento sconosciuto: solo il punto.",
-      "official_error": "Gli ufficiali hanno dato un’informazione sbagliata e il gioco è continuato, oppure un’azione è stata giocata in cinque o sette: il punteggio torna a quel momento per entrambe le squadre. Le sanzioni restano; nessun punto di penalizzazione."
-    },
-    "momentPrompt": {
-      "substitution": "Quale sostituzione era irregolare?",
-      "libero": "Quale cambio del libero era irregolare?",
-      "service": "A quale servizio ha battuto la persona sbagliata?",
-      "score": "Da quale punteggio?"
-    },
+    "menu": "Tornare indietro",
+    "title": "Tornare indietro",
     "error": {
-      "chooseSituation": "Scegli che cosa è successo.",
-      "chooseTeam": "Scegli la squadra in fallo.",
-      "chooseMoment": "Scegli il momento del fallo.",
+      "chooseMoment": "Scegli il punteggio al momento dell’errore.",
+      "chooseCancel": "Scegli di chi sono annullati i punti.",
       "notLive": "Qui si può riportare indietro solo il set in corso. Per un set precedente usa le correzioni e informa l’arbitro.",
       "setFinished": "Il set {{set}} è finito. Usa le correzioni e informa l’arbitro.",
-      "nothingToChange": "Non cambia nulla: la squadra in fallo non ha segnato punti da allora.",
-      "nothingToGoBack": "Nessuna azione è stata giocata da quel punteggio.",
+      "nothingToChange": "Non cambia nulla: nessun punto viene annullato o assegnato.",
       "lineupIncomplete": "Scegli un/a giocatore/trice per ognuna delle sei posizioni.",
       "lineupDuplicate": "#{{n}} è scelto/a due volte.",
+      "badScore": "Un punteggio è un numero intero da 0.",
       "notFound": "Questa registrazione non esiste più.",
       "notLast": "Dopo sono state giocate delle azioni: riprendile prima.",
-      "laterRectification": "Una rettifica più recente in questo set viene prima: riprendila prima.",
-      "notBeforeService": "Da questa registrazione è stata giocata un’azione: usa «Sostituzione irregolare scoperta dopo la ripresa del gioco»."
+      "laterRectification": "Un ritorno indietro più recente in questo set viene prima: riprendilo prima."
     },
     "note": {
-      "singlePoint": "Scoperto subito dopo l’azione del servizio sbagliato, vinta da {{team}}: è l’unico punto (7.7.1.1), non si aggiunge nessun punto.",
-      "momentUnknown": "Momento sconosciuto: nessun punto viene annullato, solo punto e servizio all’avversario (7.7.2).",
-      "setWon": "Questo punto chiude il set {{set}}: poi conferma la fine del set.",
-      "timeline": "I tempi di riposo, le sostituzioni e le sanzioni successive restano; sul referto mostrano ora il punteggio rettificato.",
-      "sanctionsStay": "Le sanzioni restano valide, con i loro punti (Casebook 2.3)."
+      "setWon": "Questo punteggio chiude il set {{set}}: poi conferma la fine del set.",
+      "timeline": "I tempi di riposo, le sostituzioni e le sanzioni successive restano; sul referto mostrano ora il punteggio rettificato."
     },
     "remark": {
-      "team": "Squadra {{team}}, set {{set}}, risultato {{score}}: {{what}} (regola {{rule}}) dal {{from}}; {{n}} punto/i della squadra {{team}} annullato/i, punto e servizio alla squadra {{opp}}; punteggio ora {{after}}.",
-      "teamNoPenalty": "Squadra {{team}}, set {{set}}, risultato {{score}}: {{what}} (regola {{rule}}) dal {{from}}; {{n}} punto/i della squadra {{team}} annullato/i; punteggio ora {{after}}.",
-      "unknown": "Squadra {{team}}, set {{set}}, risultato {{score}}: {{what}} (regola {{rule}}), momento sconosciuto; punto e servizio alla squadra {{opp}}; punteggio ora {{after}}.",
-      "official": "Set {{set}}, risultato {{score}}: errore degli ufficiali (Casebook 2.3); punteggio riportato a {{after}}, le sanzioni restano valide."
-    },
-    "remarkWhat": {
-      "illegal_substitution": "sostituzione irregolare",
-      "illegal_libero": "cambio del libero irregolare",
-      "lineup_discrepancy": "posizioni non conformi al tagliando della formazione",
-      "unregistered_player": "giocatore/trice non iscritto/a in campo",
-      "rotation_fault": "fallo di rotazione"
+      "backOfficials": "gioco riportato a {{from}} (errore degli ufficiali, Casebook 2.3)",
+      "cancelled": "{{n}} punto/i della squadra {{team}} annullato/i",
+      "cancelledBoth": "le azioni da allora tolte, le sanzioni restano valide",
+      "penalty": "punto e servizio alla squadra {{team}}",
+      "serve": "servizio alla squadra {{team}}",
+      "subTakenBack": "sostituzione #{{in}} per #{{out}} della squadra {{team}} ripresa",
+      "after": "punteggio ora {{score}}",
+      "since": "fallo dal {{from}}"
     }
   },
   "corrections": {

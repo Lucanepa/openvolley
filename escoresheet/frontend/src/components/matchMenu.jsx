@@ -9,9 +9,9 @@ import {
  * the destructive "Stop the match" alone at the end:
  *
  *   Match info      rosters, sanctions and results, action log, remarks, match setup
- *   Corrections     go back / rectify (the rules' going back: illegal
- *                   substitution, rotational fault, officials' mistake,
- *                   forfeit of a set ...), manual changes, edit home / away roster
+ *   Corrections     go back (the rules' going back to a score: points
+ *                   cancelled, point and service, then everything editable),
+ *                   manual changes, edit home / away roster
  *   Devices & data  PINs, download game data
  *   Settings        options
  *   End of match    stop the match (red; it opens its own confirmation)
@@ -46,7 +46,7 @@ export function matchMenuSections(t, actions) {
       column: 0,
       title: t('scoreboard.menu.sections.corrections', 'Corrections'),
       items: [
-        ...row('go-back', History, t('rectify.menu', 'Go back / rectify'), actions.goBack),
+        ...row('go-back', History, t('rectify.menu', 'Go back'), actions.goBack),
         ...row('manual', Wrench, t('corrections.title', 'Corrections'), actions.manualChanges),
         ...row('edit-roster-home', UserPen, t('scoreboard.reopenRoster.menuHome', 'Edit home roster'), actions.editRosterHome),
         ...row('edit-roster-away', UserPen, t('scoreboard.reopenRoster.menuAway', 'Edit away roster'), actions.editRosterAway)

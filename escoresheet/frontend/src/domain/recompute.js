@@ -290,7 +290,11 @@ function recomputeSet(rows, setIndex, ctx, out, issue, roster) {
             out.update.push({ id: first.id, changes: { payload } })
           }
         } else {
-          out.add.push(newRow(ctx, { type: 'lineup', setIndex, seq: nextSeq(), ts: e.ts, payload: { team, ...expected.lineup } }))
+          const payload = { team, ...expected.lineup }
+          out.add.push(newRow(ctx, { type: 'lineup', setIndex, seq: nextSeq(), ts: e.ts, payload }))
+          // a line-up entered after it was entered on this one (a new row
+          // has no older stored version to replay against)
+          storedPrev[team] = payload
         }
         for (const x of extra) out.remove.push(x.id)
       } else {
@@ -384,6 +388,13 @@ function recomputeSet(rows, setIndex, ctx, out, issue, roster) {
         if (timeouts[team] > 2) issue('timeoutLimit', { team: label(team), set, n: timeouts[team], score: scoreText(team) }, e, setIndex)
         continue
       }
+      // the game went back (domain/rectify): the team the officials gave the
+      // serve to serves next, whatever the last rally was
+      if (e.type === 'rectification' && isTeam(p.serve)) {
+        flush()
+        server = p.serve
+        continue
+      }
       if (e.type === 'set_end') {
         flush()
         checkSetEnd(e, { score, setIndex, set, ctx, issue, out, label })
@@ -444,8 +455,9 @@ function applyOwner(owner, env) {
     if (e.type === 'point' && p.score && (Number(p.score.home) !== score.home || Number(p.score.away) !== score.away)) {
       out.update.push({ id: e.id, changes: { payload: { ...p, score: { ...p.score, home: score.home, away: score.away } } } })
     }
-    // an awarded point (forfeit) has no rally: no rotation
-    if (p.forfeitAwarded) { owner.expected = { keep: true }; return }
+    // an awarded point (forfeit, or a score set by hand when the game went
+    // back, domain/rectify) has no rally: no rotation, the serve stays
+    if (p.forfeitAwarded || p.scoreAdjusted) { owner.expected = { keep: true }; return }
     const server = env.getServer()
     env.setServer(team)
     if (server === team) { owner.expected = {}; return }
