@@ -48,11 +48,11 @@ say otherwise.
 
 | System | What runs there | Location | Who operates it |
 |---|---|---|---|
-| Backend VM | Node backend (`backend/server.js`), Postgres 17, file storage (`STORAGE_ROOT`), Caddy for `get.openvolley.app` | The operator's own server (lenovoserver), Switzerland, since 16.10.2026; before that Hetzner Cloud `nbg1`, Germany | Operator (no processor) |
+| Backend VM | Node backend (`backend/server.js`), Postgres 17, file storage (`STORAGE_ROOT`), Caddy for `get.openvolley.app` | A VPS Lite rented from Infomaniak Network SA (data centre in Plan-les-Ouates, Geneva), Switzerland, since 09.11.2026; 16.10.–09.11.2026 the operator's own server (lenovoserver, CH); before that Hetzner Cloud `nbg1`, Germany | Operator (no processor) |
 | Cloudflare | DNS; Pages for the static sites (`openvolley.app`, `app.`, `referee.`, `bench.`, `livescore.`, `roster.`, `scoresheet.`, `manager.`, `manager-beach.`, `beach.`, `referee-beach.`, `livescore-beach.`, `scoresheet-beach.`, `readvolley.`); a Cloudflare Tunnel in front of `backend.openvolley.app` and `get.openvolley.app` | Global edge; Cloudflare Inc. (US) | Processor. **TLS ends at Cloudflare** (`deploy/cloudflared/config.yml`: "TLS ends at Cloudflare"), so every API request and answer, rosters and dates of birth included, passes Cloudflare unencrypted at the edge |
 | Mail | SMTP via Migadu for `noreply@` (account mails) and `support@` (inbox) | Migadu (CH company; confirm where the mail servers are) | Processor |
 | Resend (only if configured) | `POST /api/match/send-info` sends through `api.resend.com` when `RESEND_API_KEY` is set (`backend/server.js:675`) | Resend Inc. (US) | Processor **if the key is set**. Check `/opt/openvolley/.env` on the VM |
-| Backups | Encrypted (GPG public key only on the VM) dumps on the VM, pulled nightly to the NAS; restore-tested weekly on lenovoserver (holds the private key) | VM (DE), NAS at home (CH), lenovoserver (owner's machine, CH; confirm) | Operator's own machines, no processor. Transport over Tailscale (WireGuard, end-to-end; Tailscale sees no content) |
+| Backups | Encrypted (GPG public key only on the VM) dumps on the VM, pulled every hour to the NAS by lenovoserver (`ov-backup-pull.sh`, over Tailscale); restore-tested weekly on lenovoserver (holds the private key) | VM (CH, Infomaniak), NAS at home (CH), lenovoserver (owner's machine, CH; confirm) | Operator's own machines, no processor. Transport over Tailscale (WireGuard, end-to-end; Tailscale sees no content) |
 | VolleyManager | Daily sync of the official game schedule and referee assignments into `svrz_games` (`backend/lib/vmSync.js`) and the public iCal feeds (`/api/official-matches`) | volleymanager.volleyball.ch (Swiss Volley) | Source (Swiss Volley is its own controller). The sync **logs in with credentials** (`VM_USERNAME`/`VM_PASSWORD`) and reads the referee-game search. This is login-protected data, **not just public data** (see F6) |
 | GitHub | Source code, desktop release files, desktop updater fallback (`src-tauri/tauri.conf.json` endpoints), release list fetched by the browser on `app.openvolley.app` (`frontend/src/components/pages/HomePage.jsx:13`) | GitHub Inc. (US) | Own controller for its downloads. Visitors' IPs reach GitHub |
 | F-Droid | Self-hosted repo at `get.openvolley.app/fdroid/repo`; f-droid.org catalogue once accepted | VM (DE) / F-Droid (own controller) | |
@@ -298,8 +298,8 @@ the account (4.5a).
 
 | Stage | What | Retention as built |
 |---|---|---|
-| VM (DE) `backup-openvolley.sh` | Hourly `pg_dump` of the whole database; nightly tar of `storage/scoresheets` and of `storage/backup` files changed in the last ~26 h. GPG-encrypted to a public key; the private key is never on the VM | DB dumps 48 h (`OV_DB_KEEP_MIN=2880`), file tars 7 days (`OV_FILES_KEEP_DAYS`) |
-| NAS at home (CH) `nas-pull.sh` | Pulls the encrypted files nightly over Tailscale (read-only key) | DB dumps 30 days, file tars 90 days; **plus btrfs snapshots 7 daily / 4 weekly / 6 monthly** (`nas-pull.sh:10`) |
+| VM (CH, Infomaniak) `backup-openvolley.sh` | Hourly `pg_dump` of the whole database; nightly tar of `storage/scoresheets` and of `storage/backup` files changed in the last ~26 h. GPG-encrypted to a public key; the private key is never on the VM | DB dumps 48 h (`OV_DB_KEEP_MIN=2880`), file tars 7 days (`OV_FILES_KEEP_DAYS`) |
+| NAS at home (CH), via lenovoserver `ov-backup-pull.sh` (since 09.11.2026; before: `nas-pull.sh`) | lenovoserver copies the encrypted files every hour from the VM to the NAS over Tailscale; the VM holds no key to the NAS. FreeScout's nightly dump (GPG to the same key) goes the same way | DB dumps 30 days, file tars 90 days; **plus btrfs snapshots 7 daily / 4 weekly / 6 monthly** (`nas-pull.sh:10`) |
 | lenovoserver (CH) `restore-test.sh` | Weekly: decrypts the newest dump into `/dev/shm`, restores into a throwaway Postgres, checks, tears down | Nothing kept but a row-count floor file |
 
 So **a record deleted from the live database can stay in the encrypted backups
@@ -331,7 +331,8 @@ file tar). The policy must say so (F8).
 
 | Recipient | Role | Country | Transfer basis to cite | Action |
 |---|---|---|---|---|
-| ~~Hetzner Online GmbH~~ | ~~Hosting (VM, disks)~~ | DE | — | No longer used since 16.10.2026 (the server moved to the operator's own machine in Switzerland) |
+| Infomaniak Network SA | Hosting (VPS: database, file storage, helpdesk, download page) | CH | — (Switzerland) | DPA in force since 09.11.2026 (Infomaniak's standard DPA, FADP Art. 9 / GDPR Art. 28; copy kept by the operator). Sub-processor changes are announced by email, 30 days to object |
+| ~~Hetzner Online GmbH~~ | ~~Hosting (VM, disks)~~ | DE | — | No longer used since 16.10.2026 |
 | Cloudflare Inc. | CDN/Pages, DNS, Tunnel, TLS termination | US (global edge) | Swiss-U.S. DPF (Cloudflare is certified; check) and/or SCCs in Cloudflare's DPA | The DPA is part of Cloudflare's self-serve terms; keep a copy |
 | Migadu | Email | CH (check the server location) | — | Check their DPA / terms |
 | Resend Inc. | Email for send-info, **only if `RESEND_API_KEY` is set** | US | DPF/SCCs | Either remove the key and code (preferred; F13) or list it |
@@ -426,7 +427,7 @@ PocketBase (legacy relay backup), Supabase (left in 2026-10).
   pseudonymous IP/device hash.
 - Processors and transfers (section 5), including Cloudflare seeing the
   traffic and Cloudflare/GitHub being US companies.
-- Backups: encrypted, in Switzerland only (server + operator's NAS), retention as in 4.15.
+- Backups: encrypted, in Switzerland only (server at Infomaniak + operator's NAS), retention as in 4.15.
 - Logs: no IP logging by the backend; Cloudflare edge logs; container logs
   rotate by size.
 - Update checks: desktop (automatic, no personal data beyond the request),
@@ -442,14 +443,14 @@ request" and "we answer your message".
 ## 9. Open questions for the owner
 
 1. Is `RESEND_API_KEY` set on the VM? Is `SMTP_LEGACY_ROUTES` set?
-2. ~~Hetzner location and DPA~~: moot since 16.10.2026, the server is the operator's own, in Switzerland.
+2. ~~Hetzner location and DPA~~: moot. Since 09.11.2026 the server is a VPS at Infomaniak (Geneva), DPA in force.
 3. Where does Migadu store mail? Which Migadu plan?
 4. Whose VolleyManager account does the sync use, and do its terms allow
    storing and showing referee data?
 5. Retention for the support@ mailbox and for finished match records
    (e.g. "season + 10 years"?).
 6. Is Cloudflare Web Analytics on anywhere?
-7. Where is lenovoserver (home, CH)?
+7. ~~Where is lenovoserver~~: it no longer runs the service since 09.11.2026 (it keeps the restore test and the NAS copy job).
 8. Controller question in section 1 (clubs vs operator) for the lawyer.
 
 ---

@@ -3,10 +3,20 @@
 Everything needed to run the OpenVolley cloud backend (`escoresheet/backend`) with its own
 Postgres on one Linux VM, reachable only through a Cloudflare Tunnel.
 
-- **Now (since 16.10.2026): lenovoserver**, the owner's home server, which is also the build
-  machine. The kit and `.env` are in `/opt/openvolley` (`root:root` 0750), so every compose and
-  kit command there needs `sudo` (`sudo docker compose --project-directory /opt/openvolley ...`).
-  Operations: [RUNBOOK-hetzner.md](RUNBOOK-hetzner.md), from "Match-day rules" on.
+- **Now (since 09.11.2026): an Infomaniak VPS Lite** (2 vCPU, 4 GB, 60 GB, Debian 13,
+  Plan-les-Ouates, Geneva), in the owner's own Infomaniak organisation "OpenVolley". `ssh ov-vps`
+  from lenovoserver, over Tailscale (public SSH closed); user `debian` with sudo, no root login.
+  It runs the whole stack: backend, Postgres, the tunnel, `get.openvolley.app` (ov-pkgs) and the
+  FreeScout helpdesk (`/opt/freescout`). The kit and `.env` are in `/opt/openvolley` (`root:root`
+  0750): `ssh ov-vps sudo docker compose --project-directory /opt/openvolley ...`. Images are
+  still built on lenovoserver: `build-image.sh --ship ov-vps` (sudo on the host). Releases publish
+  there (`publish-pkgs.sh`, default `OV_PKGS_DEST=ov-vps:/data/openvolley/pkgs/`). lenovoserver
+  copies the VPS's encrypted backups to the NAS every hour (`~/stacks/ov-backup-pull`).
+  Operations: [RUNBOOK-hetzner.md](RUNBOOK-hetzner.md), from "Match-day rules" on (run the
+  commands on `ov-vps`). Moved with [RUNBOOK-move-to-own-vm.md](RUNBOOK-move-to-own-vm.md).
+- **16.10.–09.11.2026: lenovoserver**, the owner's home server, still the build machine. Its
+  stack in `/opt/openvolley` is stopped: a fallback for one week, then removed. Never start its
+  `ov-tunnel` while the VPS runs (Cloudflare would balance between two databases).
 - **Before (Option A):** co-tenant on the Hetzner VM `lucanepa-prod` (`ssh hetzner`) next to
   another production stack. That VPS now belongs to another owner:
   OpenVolley is the owner's private project and must **never be deployed there again**.
@@ -47,7 +57,7 @@ network, and carries `traefik.enable=false`.
 
 ## Files
 
-"VM" below is the production host: lenovoserver since 16.10.2026.
+"VM" below is the production host: the Infomaniak VPS (`ov-vps`) since 09.11.2026, lenovoserver before.
 
 | File | Runs where | What it does |
 |---|---|---|

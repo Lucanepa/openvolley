@@ -93,10 +93,10 @@
 #      install.sh takes the package name (default openvolley-escoresheet;
 #      `sh -s svrz-rc` for SVRZ RC).
 #   5. Refuses if anything key-like ended up in the public tree, then rsyncs
-#      that tree to ${OV_PKGS_DEST} (default /data/openvolley/pkgs/ on this
-#      machine: lenovoserver serves get.openvolley.app since 16.10.2026; that
-#      directory is root's, so the rsync runs with sudo; host:/path also works),
-#      unless --no-sync.
+#      that tree to ${OV_PKGS_DEST} (default ov-vps:/data/openvolley/pkgs/: the
+#      Infomaniak VPS serves get.openvolley.app since 09.11.2026, the folder
+#      belongs to its ssh user; a local path also works, written with sudo when
+#      it is not ours, as on lenovoserver 16.10.-09.11.2026), unless --no-sync.
 #
 # Layout under ${OV_PKGS_HOME} (default ~/.config/openvolley-pkgs, mode 700):
 #   gnupg/            APT signing key (GNUPGHOME). Vaultwarden: "OpenVolley APT signing key"
@@ -123,7 +123,7 @@ set -euo pipefail
 umask 022
 
 PKGS=${OV_PKGS_HOME:-$HOME/.config/openvolley-pkgs}
-DEST=${OV_PKGS_DEST:-/data/openvolley/pkgs/}
+DEST=${OV_PKGS_DEST:-ov-vps:/data/openvolley/pkgs/}
 KIT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 APT_SIGNER_FPR=AB469DA8DC3EC90F8057320D285B18D76C16B82C
 # The Android signing certificate of each app id: APP_CERT_SHA256 below (from

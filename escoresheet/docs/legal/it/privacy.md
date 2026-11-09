@@ -1,6 +1,6 @@
 # Informativa sulla protezione dei dati
 
-**OpenVolley e OpenBeach** · Versione 1.8 · Aggiornata al 9 novembre 2026
+**OpenVolley e OpenBeach** · Versione 1.9 · Aggiornata al 9 novembre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
 la versione inglese.
@@ -24,8 +24,9 @@ la versione inglese.
   clicca o digita resta sul suo dispositivo, salvo un riassunto senza il
   testo digitato se include la diagnostica in una richiesta di supporto
   (sezioni 5 e 13).
-- Il server si trova in Svizzera ed è gestito da me. Cloudflare (USA)
-  distribuisce i siti web e inoltra il traffico al server.
+- Il server si trova in Svizzera: lo noleggio da Infomaniak a Ginevra e lo
+  gestisco io stesso. Cloudflare (USA) distribuisce i siti web e inoltra il
+  traffico al server.
 - Se l'invio è attivato, dopo una partita ufficiale il segnapunti, gli arbitri
   e le società delle due squadre ricevono il referto finale per e-mail
   (sezione 7).
@@ -560,7 +561,7 @@ con il suo indirizzo come indirizzo di risposta. Non ne conserva nulla, salvo
 una riga di registro con tipo, ambito e una forma abbreviata del suo
 indirizzo e-mail (sezione 14). La casella postale è presso Migadu
 (sezione 15). Il mio sistema di ticket (support.openvolley.app), che gestisco
-io stesso sul mio server in Svizzera, la legge, così posso risponderle e
+io stesso sul mio server presso Infomaniak in Svizzera, la legge, così posso risponderle e
 seguire la sua richiesta. Uso il suo indirizzo solo per risponderle. **Per
 richieste sui suoi dati scriva direttamente a support@openvolley.app.**
 
@@ -618,6 +619,7 @@ l'esercizio. Essi trattano i dati per mio conto.
 
 | Fornitore | Compito | Paese |
 |---|---|---|
+| Infomaniak Network SA | Hosting del server: banca dati, file, sistema di ticket e pagina di download | Svizzera |
 | Cloudflare, Inc. | Distribuzione dei siti, DNS, connessione sicura al server | USA (rete mondiale) |
 | Migadu | Invio di e-mail (noreply@) e casella postale (support@) | Svizzera / Europa |
 | Resend, Inc. | Invio delle info della partita per e-mail (solo questa funzione, se attivata) | USA |
@@ -632,9 +634,10 @@ dati solo per fornire il proprio servizio.
 l'elenco delle versioni, F-Droid per il catalogo delle app, Swiss Volley per i
 dati nel VolleyManager.
 
-**Le copie di sicurezza** sono conservate cifrate sul mio server e sul mio
-dispositivo di archiviazione, entrambi in Svizzera; a tal fine nessun terzo
-riceve dati (sezione 18).
+**Le copie di sicurezza** sono conservate cifrate sul mio server presso
+Infomaniak e sul mio dispositivo di archiviazione, entrambi in Svizzera.
+Vengono cifrate prima di lasciare il server; nessun altro può leggerle
+(sezione 18).
 
 **Comunicazione all'estero:** secondo il Consiglio federale, gli Stati
 dell'UE e del SEE offrono una protezione adeguata dei dati. Per gli USA mi baso sullo
@@ -697,7 +700,7 @@ sezione 19 per il proprio figlio.
   lettura.
 - Limitazione dei tentativi di accesso e blocco dopo tentativi falliti.
 - Copie di sicurezza: il server salva la banca dati ogni ora e i file ogni
-  giorno, **in forma cifrata**. Le copie vengono trasferite ogni giorno sul
+  giorno, **in forma cifrata**. Le copie vengono trasferite ogni ora sul
   mio dispositivo di archiviazione in Svizzera e vi sono conservate in
   istantanee giornaliere, settimanali e mensili **fino a circa 6 mesi**. I dati cancellati possono
   quindi restare fino a circa 6 mesi in queste copie cifrate; servono solo per
