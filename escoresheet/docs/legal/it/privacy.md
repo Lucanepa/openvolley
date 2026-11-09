@@ -1,6 +1,6 @@
 # Informativa sulla protezione dei dati
 
-**OpenVolley e OpenBeach** · Versione 1.9 · Aggiornata al 9 novembre 2026
+**OpenVolley e OpenBeach** · Versione 1.10 · Aggiornata al 9 novembre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
 la versione inglese.
@@ -460,14 +460,30 @@ accetta viene cancellato 14 giorni dopo la partita. Su un dispositivo di
 refertazione la copia viene cancellata appena il server sa che è stato
 accettato, all'uscita e al più tardi 36 ore dopo la partita.
 
+**Elenchi delle licenze delle società (OpenVolley):** i responsabili di una
+società possono caricare gli elenchi di giocatrici e giocatori, segnapunti e
+allenatori della società dall'amministrazione della società di VolleyManager.
+Il file viene letto nel browser: di ogni persona vengono conservati solo
+numero di licenza, cognome, nome, data di nascita e sesso; nient'altro del
+file viene inviato al server. Gli elenchi sono visibili ai responsabili della
+società e agli amministratori. L'elenco delle giocatrici e dei giocatori è
+visibile anche ai responsabili di squadra della società per i loro elenchi, e
+viene scaricato sui dispositivi dei segnapunti della società, affinché la
+preparazione della partita possa aggiungere giocatori senza internet. Il sesso
+serve a non iscrivere nessuno in una squadra dell'altro sesso. Ogni
+caricamento sostituisce quell'elenco; gli elenchi vengono cancellati con la
+società. Su un dispositivo del segnapunti ogni download sostituisce la copia,
+che viene cancellata all'uscita dall'account.
+
 **Tornei di beach volley:** titolo, luogo, date, squadre con nomi, cognomi,
 numeri di licenza e paesi delle giocatrici e dei giocatori, calendario,
 risultati, nomi di arbitri e segnapunti. Se un torneo è contrassegnato come
 **pubblico**, la pagina pubblica del torneo mostra squadre, nomi e paesi, mai
 numeri di licenza o date di nascita.
 
-**Scopo:** riutilizzare le liste squadra, preparare in anticipo l'elenco di una partita, organizzare tornei, abbinare
-giocatrici e giocatori tramite il numero di licenza durante l'importazione.
+**Scopo:** riutilizzare le liste squadra, preparare in anticipo l'elenco di una partita, aggiungere a un
+elenco giocatrici e giocatori della società e confrontarne il sesso con quello della squadra, organizzare
+tornei, abbinare giocatrici e giocatori tramite il numero di licenza durante l'importazione.
 
 Questi dati restano salvati finché un gestore non li cancella, anche se
 l'account che li ha creati viene cancellato.
@@ -661,6 +677,7 @@ riceve una copia di queste garanzie.
 | Responsabili di società | Finché gli amministratori non li rimuovono, la società viene cancellata o lei cancella il suo account |
 | Responsabili di squadra | Finché un responsabile di società o un amministratore non li rimuove, la squadra o la società viene cancellata o lei cancella il suo account |
 | Elenco inviato in anticipo (giocatrici e giocatori, staff, firme) | Finché un segnapunti non lo accetta, al più tardi 14 giorni dopo la partita; la nota dell'accettazione 14 giorni dopo la partita |
+| Elenchi delle licenze di una società (numero di licenza, nomi, data di nascita, sesso) | Fino al prossimo caricamento di quell'elenco, alla sua cancellazione da parte di un responsabile della società o alla cancellazione della società; su un dispositivo fino al prossimo download o all'uscita dall'account |
 | Indirizzo e-mail di un arbitro per una partita | Con la partita, come parte del referto |
 | Invio del referto finale (momento, numero di destinatari, senza indirizzi) | Con la partita |
 | Referto di una partita di prova per e-mail | Non conservato sul server |
