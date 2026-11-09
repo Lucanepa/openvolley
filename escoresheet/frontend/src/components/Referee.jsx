@@ -9,6 +9,7 @@ import { setsToWin, isMatchFinished as isMatchFinishedUtil, displaySetNumber } f
 import ConnectionStatus from './ConnectionStatus'
 import Modal from './Modal'
 import WsDebugOverlay from './WsDebugOverlay'
+import { diagnosticsSwitch } from '../diagnostics/switch'
 import { db } from '../db/db'
 import TestModeControls from './TestModeControls'
 import SimpleHeader from './SimpleHeader'
@@ -214,6 +215,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const [scoresheetOpen, setScoresheetOpen] = useState(false)
   // the teams' rosters, one after the other (owner 2026-11-09)
   const [rostersOpen, setRostersOpen] = useState(false)
+  const wsDebugAllowed = useMemo(() => diagnosticsSwitch().on, [])
   const toggleHelp = useCallback(() => setHelpOpen(prev => !prev), [])
   const closeHelp = useCallback(() => setHelpOpen(false), [])
   const lastAttentionTriggerRef = useRef(null)
@@ -2876,7 +2878,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       {!fit.fits && <NarrowScreenOverlay t={t} reason={fit.reason} />}
 
       {/* Debug overlay - triple-tap to show */}
-      {!isMasterMode && <WsDebugOverlay matchId={matchId} />}
+      {/* The connection console: diagnostics only (?diag=1). On for everyone,
+          any three quick taps anywhere opened it in a match (Rosters, switch
+          team, Close) */}
+      {!isMasterMode && wsDebugAllowed && <WsDebugOverlay matchId={matchId} />}
 
 
 
