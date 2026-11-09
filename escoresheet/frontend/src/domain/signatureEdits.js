@@ -13,6 +13,8 @@
  * signature is drawn, as before (MatchEnd handleSaveSignature).
  */
 
+import { remarksSignaturesOf } from './remarksSignatures'
+
 /** The server keys of the post-match signatures, by match-row field. */
 export const POST_MATCH_SIGNATURE_KEYS = Object.freeze({
   homePostGameCaptainSignature: 'home_captain_post_game',
@@ -63,6 +65,9 @@ export function signaturesPayload(match) {
   const out = {}
   for (const [field, key] of Object.entries(PRE_MATCH_SIGNATURE_KEYS)) out[key] = m[field] || ''
   for (const [field, key] of Object.entries(POST_MATCH_SIGNATURE_KEYS)) out[key] = m[field] || null
+  // signatures in the REMARKS box (domain/remarksSignatures)
+  const remarks = remarksSignaturesOf(m.remarksSignatures)
+  out.remarks = remarks.length ? remarks : null
   return out
 }
 
@@ -76,7 +81,11 @@ export function signaturesPayload(match) {
  */
 export function postMatchSignaturesFromServer(signatures) {
   const s = signatures || {}
-  return Object.fromEntries(Object.entries(POST_MATCH_SIGNATURE_KEYS).map(([field, key]) => [field, s[key] || null]))
+  const remarks = remarksSignaturesOf(s.remarks)
+  return {
+    ...Object.fromEntries(Object.entries(POST_MATCH_SIGNATURE_KEYS).map(([field, key]) => [field, s[key] || null])),
+    remarksSignatures: remarks.length ? remarks : null
+  }
 }
 
 /**

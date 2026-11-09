@@ -97,7 +97,7 @@ describe('signaturesPayload / signaturesSyncJob', () => {
     expect(signaturesPayload(match)).toEqual({
       home_coach: 'data:hc', home_captain: 'data:hk', away_coach: 'data:ac', away_captain: '',
       home_captain_post_game: 'data:pa', away_captain_post_game: 'data:pb',
-      asst_scorer: null, scorer: 'data:s', ref2: null, ref1: 'data:r1'
+      asst_scorer: null, scorer: 'data:s', ref2: null, ref1: 'data:r1', remarks: null
     })
   })
 

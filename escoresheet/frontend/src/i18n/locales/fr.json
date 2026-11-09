@@ -1474,6 +1474,15 @@
     "tapToSign": "Appuyer pour signer",
     "noRemarks": "Aucune remarque",
     "editRemarks": "Modifier les remarques",
+    "remarksSignature": {
+      "add": "Ajouter une signature aux remarques",
+      "title": "Signature dans les remarques",
+      "intro": "Pour un officiel qui n'a pas de case de signature sur la feuille de match, par exemple un coach d'arbitres. La signature est imprimée dans les remarques.",
+      "role": "Fonction",
+      "name": "Nom",
+      "sign": "Signer",
+      "defaultRole": "Coach d'arbitres"
+    },
     "remarksPlaceholder": "Enregistrer les remarques sur le match...",
     "noSanctions": "Aucune sanction",
     "result": "Résultat",
