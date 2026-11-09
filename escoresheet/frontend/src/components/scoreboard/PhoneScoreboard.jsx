@@ -507,8 +507,9 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
         {gridButton('sanction', t('scoreboard.sanction'), () => setSheet({ kind: 'sanction' }), { disabled: rally.status !== 'idle' })}
         {gridButton('replay', t('scoreboard.phone.replay'), () => actions.replay(), { disabled: !inPlay })}
         {/* the last point, also when time-outs / substitutions followed it
-            (the Scoreboard takes them back with the decision change, row 19) */}
-        {gridButton('decision', t('scoreboard.phone.decision'), () => actions.replay(), { disabled: !(rally.status === 'idle' && (rally.canChangeDecision ?? rally.canReplayRally)), small: true })}
+            (the Scoreboard takes them back with the decision change, row 19);
+            not while a time-out runs, as the tablet hides it then */}
+        {gridButton('decision', t('scoreboard.phone.decision'), () => actions.replay(), { disabled: !(rally.status === 'idle' && (rally.canChangeDecision ?? rally.canReplayRally)) || centre?.kind === 'timeout', small: true })}
         {gridButton('rosters', t('scoreboard.rosters'), () => actions.rosters(), { muted: true })}
         {gridButton('scoresheet', t('scoreboard.phone.scoresheet'), () => actions.scoresheet(), { muted: true })}
         {gridButton('remarks', t('scoreboard.phone.remarks'), () => actions.remarks(), { muted: true, span: 2 })}

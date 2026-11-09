@@ -990,14 +990,6 @@
       "recordsPenalty": "Recorded: delay penalty – point and service to {{opponent}}.",
       "rule": "FIVB 15.11.1.1 · 16.1 · SSK Q182"
     },
-    "improperReason": {
-      "title": "What for (optional)",
-      "during_rally": "During the rally or after the whistle",
-      "wrong_person": "Requested by the wrong person",
-      "second_substitution": "Second substitution request",
-      "limit_exhausted": "Too many time-outs or substitutions",
-      "other": "Other"
-    },
     "decisionTakeBack": {
       "title": "Taken back first",
       "timeout": "Time-out {{team}}",
@@ -4431,13 +4423,6 @@
       "penalty": "Penalty",
       "expulsion": "Expulsion",
       "disqualification": "Disqualification"
-    },
-    "sanctionReason": {
-      "during_rally": "During the rally or after the whistle",
-      "wrong_person": "Requested by the wrong person",
-      "second_substitution": "Second substitution request",
-      "limit_exhausted": "Time-outs or substitutions used up",
-      "illegal_substitution": "Illegal substitution requested"
     },
     "target": {
       "player": "Player #{{n}}",

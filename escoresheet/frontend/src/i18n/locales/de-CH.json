@@ -989,14 +989,6 @@
       "recordsPenalty": "Erfasst: Verzögerigsstraaf – Punkt und Ufschlag für {{opponent}}.",
       "rule": "FIVB 15.11.1.1 · 16.1 · SSK Q182"
     },
-    "improperReason": {
-      "title": "Für was (freiwillig)",
-      "during_rally": "Im Ballwächsel oder nachem Pfiff",
-      "wrong_person": "Vo de falsche Person beaatreit",
-      "second_substitution": "Zweite Wächselaatrag",
-      "limit_exhausted": "Z vill Timeouts oder Wächsel",
-      "other": "Öppis anders"
-    },
     "decisionTakeBack": {
       "title": "Wird zerscht zruggnoh",
       "timeout": "Timeout {{team}}",
@@ -4425,13 +4417,6 @@
       "penalty": "Straaf",
       "expulsion": "Usschluss",
       "disqualification": "Disqualifikation"
-    },
-    "sanctionReason": {
-      "during_rally": "Im Ballwächsel oder nachem Pfiff",
-      "wrong_person": "Vo de falsche Person beaatreit",
-      "second_substitution": "Zweite Wächselaatrag",
-      "limit_exhausted": "Timeouts oder Wächsel uufbrucht",
-      "illegal_substitution": "Unerlaubte Wächsel beaatreit"
     },
     "target": {
       "player": "Spieler #{{n}}",
