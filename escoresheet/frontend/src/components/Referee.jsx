@@ -18,7 +18,7 @@ import { supabase } from '../lib/supabaseClient'
 import { apiFrom } from '../lib/apiClient'
 import { useSyncQueue } from '../hooks/useSyncQueue'
 import { RefreshIcon, SunIcon, MoonIcon, DatabaseIcon, SatelliteDishIcon, WarningIcon, SettingsIcon, VolleyballIcon, BellIcon } from './icons'
-import { Loader2 } from 'lucide-react'
+import { FileText, Loader2 } from 'lucide-react'
 import { cn } from '../ui/cn.js'
 import { Button, FOCUS_RING } from '../ui/Button.jsx'
 import { Card } from '../ui/Card.jsx'
@@ -31,13 +31,16 @@ import ScoreServeRow from './referee/ScoreServeRow.jsx'
 import RecordedNoticePopup from './referee/RecordedNoticePopup.jsx'
 import CountdownFlight from './referee/CountdownFlight.jsx'
 import TimeoutCountdown from './referee/TimeoutCountdown.jsx'
+import RefereeScoresheet from './referee/RefereeScoresheet.jsx'
+import { TeamSanctionList } from './referee/SanctionCards.jsx'
+import { bundleHasFullAccess } from './referee/scoresheetInput.js'
 import { createRecordedNoticeTracker, describeNotice, NOTICE_AUTO_DISMISS_MS } from '../utils/refereeRecordedNotices.js'
 import { matchDiscPaint, teamLiberoColour, teamBoxStyle } from '../utils/teamColours.js'
 import { compareBySeq } from '../domain/describe'
 import { useTheme } from '../utils/theme'
 import { themeMenuItems } from './themeMenuItems'
 import { discCapPx, discMetrics } from './referee/discSizing.js'
-import { isWideLayout, screenFit, SIDE_PANEL_CSS, REFEREE_LAYOUT } from './referee/refereeLayout.js'
+import { isWideLayout, screenFit, SIDE_PANEL_CSS, REFEREE_LAYOUT, PORTRAIT_COURT } from './referee/refereeLayout.js'
 import { layoutReception, pointToFormation } from './referee/receptionLayout.js'
 import { getSideAForSet } from '../domain/rules'
 import { liveRowTeamA } from '../domain/coinToss'
@@ -206,6 +209,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const [attentionModalOpen, setAttentionModalOpen] = useState(false)
   // The "?" of the referee view: the panel with the referee's help
   const [helpOpen, setHelpOpen] = useState(false)
+  // The live scoresheet (read only), over the dashboard
+  const [scoresheetOpen, setScoresheetOpen] = useState(false)
   const toggleHelp = useCallback(() => setHelpOpen(prev => !prev), [])
   const closeHelp = useCallback(() => setHelpOpen(false), [])
   const lastAttentionTriggerRef = useRef(null)
@@ -419,8 +424,13 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   // an older relay copy's score (createLiveStateTracker).
   const liveTrackerRef = useRef(null)
   if (liveTrackerRef.current === null) liveTrackerRef.current = createLiveStateTracker()
+  // The last relay bundle with 'full' access (the referee PIN proved: rosters
+  // and events) and when it arrived: the live scoresheet draws from it. Kept
+  // while the view falls back to a match_live_state row (no events there).
+  const sheetBundleRef = useRef({ bundle: null, at: null })
   useEffect(() => {
     liveTrackerRef.current.reset()
+    sheetBundleRef.current = { bundle: null, at: null }
     setLastEvent(null)
   }, [matchId])
 
@@ -435,6 +445,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           lastLiveStateTsRef.current = result.liveState.updated_at
         }
       } else {
+        if (bundleHasFullAccess(incoming)) sheetBundleRef.current = { bundle: incoming, at: Date.now() }
         result = liveTrackerRef.current.bundle(incoming)
       }
       const sets = (result.sets || []).sort((a, b) => a.index - b.index)
@@ -449,7 +460,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         sets,
         currentSet,
         events: result.events || [],
-        liveState: result.liveState || null
+        liveState: result.liveState || null,
+        sheetBundle: sheetBundleRef.current.bundle,
+        sheetBundleAt: sheetBundleRef.current.at
       }
 
       // Last action from what was just loaded (reload, reconnect refetch,
@@ -2242,6 +2255,19 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const coinTossConfirmed = data?.match?.firstServe || data?.match?.coinTossTeamA || data?.match?.coin_toss_confirmed
   const isAwaitingCoinToss = !data || data?.match?.status === 'setup' || (!coinTossConfirmed && !isMasterMode && !data?.currentSet)
 
+  // The live scoresheet: only with a 'full' relay bundle (the referee PIN
+  // proved: rosters, events). Never from a summary, never in test mode.
+  // Before the coin toss (rosters) and after the match (the whole sheet) too.
+  const canShowScoresheet = !isMasterMode && bundleHasFullAccess(data?.sheetBundle)
+  const scoresheetLayer = scoresheetOpen && canShowScoresheet
+    ? <RefereeScoresheet bundle={data.sheetBundle} receivedAt={data.sheetBundleAt} onClose={() => setScoresheetOpen(false)} />
+    : null
+  const scoresheetButton = (className) => canShowScoresheet ? (
+    <Button variant="dark" size="xl" block icon={FileText} className={className} onClick={() => setScoresheetOpen(true)} data-testid="referee-open-scoresheet">
+      {t('refereeDashboard.scoresheet.open', 'Scoresheet')}
+    </Button>
+  ) : null
+
   // Show awaiting coin toss screen when connected but no match data yet
   if (isAwaitingCoinToss && !isMasterMode && realtimeStatus === CONNECTION_STATUS.CONNECTED) {
     return (
@@ -2532,8 +2558,12 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
             {/* Loading indicator */}
             <Loader2 size={28} className="mx-auto mt-6 animate-spin text-stone-400" aria-hidden />
+
+            {/* The rosters and the header as the scorer entered them */}
+            {scoresheetButton('mt-6')}
           </Card>
         </div>
+        {scoresheetLayer}
 
         <style>{`
           @keyframes awaiting-spin {
@@ -2664,7 +2694,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       <PlayerDisc
         number={number}
         position={position}
-        capPx={discCapPx(vmin)}
+        capPx={discCapPx(vmin, { portrait: !isWideLayout(viewportWidth, viewportHeight) })}
         side={team === leftTeam ? 'left' : 'right'}
         background={background}
         color={isRecentlySub ? '#000' : paint ? paint.color : isLibero ? '#000' : '#fff'}
@@ -2739,11 +2769,14 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               </div>
             </div>
 
-            <Button variant="secondary" size="xl" block className="mt-6" onClick={onExit}>
+            {/* The finished sheet, before the referee signs it on the scorer's device */}
+            {scoresheetButton('mt-6')}
+            <Button variant="secondary" size="xl" block className={canShowScoresheet ? 'mt-2' : 'mt-6'} onClick={onExit}>
               Exit
             </Button>
           </Card>
         </div>
+        {scoresheetLayer}
       </div>
     )
   }
@@ -2759,7 +2792,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   // apart so that no two discs overlap (receptionLayout.js)
   const receptionPlacement = (side, formation) => {
     if (!courtBox || !courtBox.width || !courtBox.height) return null
-    const disc = discMetrics({ courtWidth: courtBox.width, courtHeight: courtBox.height, capPx: discCapPx(vmin), lfp: lfpTrackingEnabled }).disc
+    const disc = discMetrics({ courtWidth: courtBox.width, courtHeight: courtBox.height, capPx: discCapPx(vmin, { portrait: !wide }), lfp: lfpTrackingEnabled }).disc
     return layoutReception({ formation, side, width: courtBox.width / 2, height: courtBox.height, disc })
   }
 
@@ -2918,6 +2951,13 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
       {/* SECTION 1: Header - 40px */}
       <SimpleHeader
+        actions={canShowScoresheet ? [{
+          key: 'scoresheet',
+          testId: 'referee-open-scoresheet',
+          icon: <FileText size={15} aria-hidden="true" />,
+          label: t('refereeDashboard.scoresheet.open', 'Scoresheet'),
+          onClick: () => setScoresheetOpen(true)
+        }] : []}
         toggleOptions={[
           { label: `1 ${t('refereeDashboard.refAbbr')}`, active: refereeView === '1st', onClick: () => setRefereeView('1st') },
           { label: `2 ${t('refereeDashboard.refAbbr')}`, active: refereeView === '2nd', onClick: () => setRefereeView('2nd') }
@@ -2927,6 +2967,11 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         onHelp={toggleHelp}
         helpOpen={helpOpen}
         menuItems={[
+          // The live scoresheet (also in the bar; here with its name on a phone)
+          ...(canShowScoresheet ? [
+            { icon: <FileText size={13} aria-hidden="true" />, label: t('refereeDashboard.scoresheet.open', 'Scoresheet'), onClick: () => setScoresheetOpen(true) },
+            { divider: true }
+          ] : []),
           // Screen options
           { header: t('refereeDashboard.screenOptions') },
           {
@@ -3117,17 +3162,18 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             rightScore={rightDisplayScore}
             servingSide={leftServing ? 'left' : rightServing ? 'right' : null}
             serverNumber={leftServing ? lineupNumber(leftLineup?.I) : rightServing ? lineupNumber(rightLineup?.I) : null}
-            servingColour={leftServing ? leftColor : rightServing ? rightColor : undefined}
             serveLabel={t('scoreboard.labels.serveLabel', 'SERVE')}
             vmin={vmin}
             scoreFont={getScoreFont()}
           />
         </div>
 
-        {/* SECTION 3: Court Area - 40% (includes advanced mode buttons) */}
+        {/* SECTION 3: Court Area (includes advanced mode buttons). Upright: it
+            grows first (up to the court's own height, PORTRAIT_COURT), the
+            strip below takes the rest; landscape: its grid area. */}
         <div style={{
           gridArea: 'court',
-          flex: '0 0 40%',
+          ...(wide ? {} : { flex: '1000 1 0', maxHeight: PORTRAIT_COURT.sectionMaxHeight }),
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
@@ -3212,22 +3258,31 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             </div>
           </div>
 
-          {/* Court visualization - takes remaining space in 40% */}
+          {/* Court visualization - takes the rest of the section */}
           <div style={{
             flex: 1,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             overflow: 'hidden',
-            minHeight: 0
+            minHeight: 0,
+            // upright: the court box sizes from this slot (container units)
+            ...(wide ? {} : { containerType: 'size' })
           }}>
             <div ref={setCourtBoxEl} style={{
-              // 98 % of the slot, but never wider than courtMaxAspect x its
-              // height (a landscape court stays court-shaped, refereeLayout.js)
-              height: `${REFEREE_LAYOUT.courtFill * 100}%`,
-              width: 'auto',
-              aspectRatio: `${REFEREE_LAYOUT.courtMaxAspect} / 1`,
-              maxWidth: `${REFEREE_LAYOUT.courtFill * 100}%`,
+              ...(wide ? {
+                // 98 % of the slot, but never wider than courtMaxAspect x its
+                // height (a landscape court stays court-shaped, refereeLayout.js)
+                height: `${REFEREE_LAYOUT.courtFill * 100}%`,
+                width: 'auto',
+                aspectRatio: `${REFEREE_LAYOUT.courtMaxAspect} / 1`,
+                maxWidth: `${REFEREE_LAYOUT.courtFill * 100}%`
+              } : {
+                // upright: the slot's width, and as tall as it allows up to
+                // width / portraitMinAspect (portraitCourtBox)
+                width: PORTRAIT_COURT.width,
+                height: PORTRAIT_COURT.height
+              }),
               minWidth: 0,
               flexShrink: 1,
               position: 'relative',
@@ -3563,451 +3618,136 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           </div>
         </div>{/* End SECTION 3: Court Area - 40% */}
 
-        {/* SECTION 4: Combined TO/SUB counters + Sanctions - fills remaining space */}
-        <div style={wide ? { display: 'contents' } : {
-          flex: '1 1 auto',
-          border: '1px solid var(--border)',
-          display: 'grid',
-          gridTemplateColumns: 'auto 1fr auto',
-          alignItems: 'center',
-          padding: '6px 12px',
-          background: 'var(--panel-2)',
-          gap: '12px',
-          minHeight: 0,
-          overflow: 'hidden'
-        }}>
-          {/* Left team counters - TO SUB (vertical stacked) */}
-          <div style={{
-            ...(wide ? { gridArea: 'lcnt', ...sideCell, justifyContent: 'flex-start', padding: '10px 6px 6px' } : {}),
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '10px',
-            fontSize: vmin(4),
-            fontWeight: 700
-          }}>
-            {/* TO counter */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-              <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.6em' }}>TO</span>
+        {/* SECTION 4: TO / SUB counters and sanctions. Upright (portrait, the
+            referee tablet's normal way): one strip under the court, each
+            team's counters and cards on its own side, the countdown (or the
+            logo) between them; it takes what the court leaves. Landscape: the
+            side columns beside the court (grid areas). */}
+        {(() => {
+          const counter = (label, value, tone) => (
+            <div data-counter={label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+              <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.6em' }}>{label}</span>
               <span style={{
-                background: leftStats.timeouts >= 2 ? 'rgba(239, 68, 68, 0.3)' : 'var(--panel)',
+                background: tone === 'max' ? 'rgba(239, 68, 68, 0.3)' : tone === 'near' ? 'rgba(234, 179, 8, 0.3)' : 'var(--panel)',
                 padding: '7px 14px',
                 borderRadius: '6px',
-                border: leftStats.timeouts >= 2 ? '1px solid rgba(239, 68, 68, 0.6)' : '1px solid var(--border)',
+                border: tone === 'max' ? '1px solid rgba(239, 68, 68, 0.6)' : tone === 'near' ? '1px solid rgba(234, 179, 8, 0.6)' : '1px solid var(--border)',
                 minWidth: '42px',
                 aspectRatio: '1',
                 textAlign: 'center',
-                color: leftStats.timeouts >= 2 ? '#ef4444' : 'var(--text)'
-              }}>{leftStats.timeouts}</span>
+                fontVariantNumeric: 'tabular-nums',
+                color: tone === 'max' ? '#ef4444' : tone === 'near' ? '#eab308' : 'var(--text)'
+              }}>{value}</span>
             </div>
-            {/* SUB counter */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-              <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.6em' }}>SUB</span>
-              <span style={{
-                background: leftStats.substitutions >= 6 ? 'rgba(239, 68, 68, 0.3)' : leftStats.substitutions >= 5 ? 'rgba(234, 179, 8, 0.3)' : 'var(--panel)',
-                padding: '7px 14px',
-                aspectRatio: '1',
-                borderRadius: '6px',
-                border: leftStats.substitutions >= 6 ? '1px solid rgba(239, 68, 68, 0.6)' : leftStats.substitutions >= 5 ? '1px solid rgba(234, 179, 8, 0.6)' : '1px solid var(--border)',
-                minWidth: '42px',
-                textAlign: 'center',
-                color: leftStats.substitutions >= 6 ? '#ef4444' : leftStats.substitutions >= 5 ? '#eab308' : 'var(--text)'
-              }}>{leftStats.substitutions}</span>
+          )
+          const counters = (stats, area, row) => (
+            <div data-team-counters={area} style={{
+              ...(wide ? { gridArea: area, ...sideCell, justifyContent: 'flex-start', padding: '10px 6px 6px' } : {}),
+              display: 'flex',
+              flexDirection: row ? 'row' : 'column',
+              alignItems: 'center',
+              justifyContent: row ? 'center' : undefined,
+              gap: row ? 'clamp(8px, 2vw, 16px)' : '10px',
+              fontSize: row ? 'clamp(18px, 3.6vw, 34px)' : vmin(4),
+              fontWeight: 700
+            }}>
+              {counter('TO', stats.timeouts, stats.timeouts >= 2 ? 'max' : null)}
+              {counter('SUB', stats.substitutions, stats.substitutions >= 6 ? 'max' : stats.substitutions >= 5 ? 'near' : null)}
             </div>
-          </div>
-
-          {/* Center: Inner container with sanctions + countdown/icon */}
-          <div style={wide ? { display: 'contents' } : {
-            display: 'grid',
-            gridTemplateColumns: '1fr auto 1fr',
-            alignItems: 'flex-start',
-            height: '100%',
-            gap: '8px',
-            paddingTop: '4px'
-          }}>
-            {/* Left team sanctions */}
-            <div style={{
-              ...(wide ? { gridArea: 'lsan', ...sideCell, overflowY: 'auto', boxSizing: 'border-box', margin: '0 6px 6px' } : {}),
+          )
+          const sanctionsTitle = t('refereeDashboard.sanctions.title', 'Sanctions')
+          const sanctions = (teamSanctions, area) => (
+            <div data-team-sanctions-panel={area} style={{
+              ...(wide ? { gridArea: area, ...sideCell, overflowY: 'auto', boxSizing: 'border-box', margin: '0 6px 6px', padding: '6px' } : { minWidth: 0, overflowY: 'auto', minHeight: 0 }),
               display: 'flex',
               flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'flex-start',
-              gap: '4px',
-              border: (leftTeamSanctions.formalWarning || leftTeamSanctions.improperRequest || leftTeamSanctions.delayWarning || leftTeamSanctions.delayPenalty || leftTeamSanctions.warnings.length > 0 || leftTeamSanctions.penalties.length > 0 || leftTeamSanctions.expulsions.length > 0 || leftTeamSanctions.disqualifications.length > 0) ? '1px solid var(--border)' : 'none',
-              padding: '4px',
-              height: '100%',
-
+              alignItems: wide ? 'center' : 'stretch',
+              gap: '6px'
             }}>
-              {/* Sanctions title if any sanctions exist */}
-              {(leftTeamSanctions.formalWarning || leftTeamSanctions.improperRequest || leftTeamSanctions.delayWarning || leftTeamSanctions.delayPenalty || leftTeamSanctions.warnings.length > 0 || leftTeamSanctions.penalties.length > 0 || leftTeamSanctions.expulsions.length > 0 || leftTeamSanctions.disqualifications.length > 0) && (
-                <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Sanctions</div>
-              )}
-              {(leftTeamSanctions.formalWarning || leftTeamSanctions.improperRequest || leftTeamSanctions.delayWarning || leftTeamSanctions.delayPenalty || leftTeamSanctions.warnings.length > 0 || leftTeamSanctions.penalties.length > 0 || leftTeamSanctions.expulsions.length > 0 || leftTeamSanctions.disqualifications.length > 0) && (
-                <div style={{ border: '1px solid var(--border)', height: '1px', width: '100%', margin: '4px 0' }}></div>
-              )}
-              {/* Team-level sanctions at top (Formal warning, Improper Request only) */}
-              {(leftTeamSanctions.formalWarning || leftTeamSanctions.improperRequest) && (
-                <div style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '4px',
-                  fontSize: '11px',
-                  fontWeight: 600
-                }}>
-                  {leftTeamSanctions.formalWarning && (
-                    <span style={{
-                      background: '#fde047',
-                      color: '#000',
-                      padding: '1px 6px',
-                      borderRadius: '3px'
-                    }}>Formal warning</span>
-                  )}
-                  {leftTeamSanctions.improperRequest && (
-                    <span style={{
-                      background: '#000',
-                      color: '#fff',
-                      padding: '1px 6px',
-                      borderRadius: '3px'
-                    }}>{t('scoreboard.sanctions.improperRequest')}</span>
-                  )}
-                </div>
-              )}
-              {(leftTeamSanctions.formalWarning || leftTeamSanctions.improperRequest || leftTeamSanctions.delayWarning || leftTeamSanctions.delayPenalty || leftTeamSanctions.warnings.length > 0 || leftTeamSanctions.penalties.length > 0 || leftTeamSanctions.expulsions.length > 0 || leftTeamSanctions.disqualifications.length > 0) && (
-                <div style={{ border: '1px solid var(--border)', height: '1px', width: '100%', margin: '4px 0' }}></div>
-              )}
-              {/* Personal sanctions in grid: W|P|E|D columns, DW/DP below */}
-              {(leftTeamSanctions.warnings.length > 0 || leftTeamSanctions.penalties.length > 0 || leftTeamSanctions.expulsions.length > 0 || leftTeamSanctions.disqualifications.length > 0 || leftTeamSanctions.delayWarning || leftTeamSanctions.delayPenalty) && (
-                <div style={{
-                  display: 'grid',
-                  // wide: W | P over E | D, to fit the side panel
-                  gridTemplateColumns: `repeat(${wide ? 2 : 4}, minmax(24px, auto))`,
-                  gap: '3px',
-                  alignItems: 'start',
-                  justifyContent: 'center'
-                }}>
-                  {/* Column 1: Warnings (W) + Delay Warning */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center', minWidth: '24px' }}>
-                    {leftTeamSanctions.warnings.map((w, i) => (
-                      <span key={`w${i}`} style={{
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        background: '#fde047',
-                        width: '50px',
-                        textAlign: 'center',
-                        color: '#000',
-                        padding: '1px 4px',
-                        borderRadius: '3px'
-                      }}>W - {w.id}</span>
-                    ))}
-                    {leftTeamSanctions.delayWarning && (
-                      <span style={{
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        width: '50px',
-                        textAlign: 'center',
-                        background: '#fde047',
-                        color: '#000',
-                        padding: '1px 4px',
-                        borderRadius: '3px'
-                      }}>{t('refereeDashboard.delayWarningShort')}</span>
-                    )}
-                  </div>
-                  {/* Column 2: Penalties (P) + Delay Penalty */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center', minWidth: '24px' }}>
-                    {leftTeamSanctions.penalties.map((p, i) => (
-                      <span key={`p${i}`} style={{
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        background: '#ef4444',
-                        color: '#fff',
-                        width: '50px',
-                        padding: '1px 4px',
-                        textAlign: 'center',
-                        borderRadius: '3px'
-                      }}>P - {p.id}</span>
-                    ))}
-                    {leftTeamSanctions.delayPenalty && (
-                      <span style={{
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        background: '#ef4444',
-                        width: '50px',
-                        color: '#000000ff',
-                        textAlign: 'center',
-                        padding: '1px 4px',
-                        borderRadius: '3px'
-                      }}>{t('refereeDashboard.delayPenaltyShort')}</span>
-                    )}
-                  </div>
-                  {/* Column 3: Expulsions (E) */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center', minWidth: '24px' }}>
-                    {leftTeamSanctions.expulsions.map((e, i) => (
-                      <span key={`e${i}`} style={{
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        background: 'linear-gradient(135deg, #ef4444 50%, #fde047 50%)',
-                        color: '#000000ff',
-                        width: '50px',
-                        padding: '1px 4px',
-                        textAlign: 'center',
-                        borderRadius: '3px'
-                      }}>E - {e.id}</span>
-                    ))}
-                  </div>
-                  {/* Column 4: Disqualifications (D) */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center', minWidth: '24px' }}>
-                    {leftTeamSanctions.disqualifications.map((d, i) => (
-                      <span key={`d${i}`} style={{
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        background: 'linear-gradient(90deg, #ef4444 50%, #fde047 50%)',
-                        color: '#000000ff',
-                        width: '50px',
-                        padding: '1px 4px',
-                        textAlign: 'center',
-                        borderRadius: '3px'
-                      }}>D - {d.id}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
+              <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: wide ? 'center' : 'start' }}>{sanctionsTitle}</div>
+              <TeamSanctionList sanctions={teamSanctions} t={t} flow={wide ? 'column' : 'row'} cardHeight={wide ? '22px' : 'clamp(20px, 3.4vw, 30px)'} />
             </div>
-
-            {/* Center: Countdown when active, otherwise Favicon (wide: under
-                the court, only while a countdown runs) */}
-            <div style={{
-              ...(wide ? { gridArea: 'center', padding: (timeoutModal || betweenSetsCountdown?.countdown > 0) ? '6px 0' : 0 } : {}),
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexDirection: 'column',
-              alignSelf: 'center'
-            }}>
-              {timeoutModal ? (
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: '20px', color: 'var(--muted)', fontWeight: 600, marginBottom: '4px' }}>TIMEOUT</div>
-                  {/* hidden (its place kept) while the popup shows it and while it moves here */}
-                  <div ref={mainCountdownRef} data-main-countdown="" style={{ visibility: (popupTimeout || countdownFlight) ? 'hidden' : 'visible' }}>
-                    <TimeoutCountdown countdown={timeoutModal.countdown} fontFamily={getScoreFont()} />
-                  </div>
-                </div>
-              ) : betweenSetsCountdown && betweenSetsCountdown.countdown > 0 ? (
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 600, marginBottom: '4px' }}>INTERVAL</div>
-                  <DonutCountdown current={betweenSetsCountdown.countdown} total={setIntervalDuration} size={90} strokeWidth={5}>
-                    <div style={{ fontSize: 'clamp(24px, 6vw, 36px)', fontFamily: getScoreFont(), fontWeight: 800, color: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : '#22c55e', lineHeight: 1 }}>
-                      {Math.floor(betweenSetsCountdown.countdown / 60)}:{String(betweenSetsCountdown.countdown % 60).padStart(2, '0')}
-                    </div>
-                  </DonutCountdown>
-                </div>
-              ) : wide ? null : (
-                <img
-                  src={BRAND.lockupStacked}
-                  alt="OpenVolley"
-                  className="ov-ink"
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    maxWidth: vmin(20),
-                    aspectRatio: '1',
-                    objectFit: 'contain',
-                    opacity: 0.7
-                  }}
-                />
-              )}
+          )
+          const countdown = timeoutModal ? (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '20px', color: 'var(--muted)', fontWeight: 600, marginBottom: '4px' }}>TIMEOUT</div>
+              {/* hidden (its place kept) while the popup shows it and while it moves here */}
+              <div ref={mainCountdownRef} data-main-countdown="" style={{ visibility: (popupTimeout || countdownFlight) ? 'hidden' : 'visible' }}>
+                <TimeoutCountdown countdown={timeoutModal.countdown} fontFamily={getScoreFont()} />
+              </div>
             </div>
+          ) : betweenSetsCountdown && betweenSetsCountdown.countdown > 0 ? (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 600, marginBottom: '4px' }}>INTERVAL</div>
+              <DonutCountdown current={betweenSetsCountdown.countdown} total={setIntervalDuration} size={90} strokeWidth={5}>
+                <div style={{ fontSize: 'clamp(24px, 6vw, 36px)', fontFamily: getScoreFont(), fontWeight: 800, color: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : '#22c55e', lineHeight: 1 }}>
+                  {Math.floor(betweenSetsCountdown.countdown / 60)}:{String(betweenSetsCountdown.countdown % 60).padStart(2, '0')}
+                </div>
+              </DonutCountdown>
+            </div>
+          ) : null
 
-            {/* Right team sanctions */}
-            <div style={{
-              ...(wide ? { gridArea: 'rsan', ...sideCell, overflowY: 'auto', boxSizing: 'border-box', margin: '0 6px 6px' } : {}),
+          if (wide) {
+            return (
+              <>
+                {counters(leftStats, 'lcnt', false)}
+                {sanctions(leftTeamSanctions, 'lsan')}
+                {/* Countdown under the court, only while one runs */}
+                <div style={{ gridArea: 'center', padding: countdown ? '6px 0' : 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', alignSelf: 'center' }}>
+                  {countdown}
+                </div>
+                {sanctions(rightTeamSanctions, 'rsan')}
+                {counters(rightStats, 'rcnt', false)}
+              </>
+            )
+          }
+          const teamPanel = (stats, teamSanctions, side) => (
+            <div data-team-panel={side} style={{
               display: 'flex',
               flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'flex-start',
-              gap: '4px',
-              border: (rightTeamSanctions.formalWarning || rightTeamSanctions.improperRequest || rightTeamSanctions.delayWarning || rightTeamSanctions.delayPenalty || rightTeamSanctions.warnings.length > 0 || rightTeamSanctions.penalties.length > 0 || rightTeamSanctions.expulsions.length > 0 || rightTeamSanctions.disqualifications.length > 0) ? '1px solid var(--border)' : 'none',
-              padding: '4px',
-              height: '100%',
+              gap: '10px',
+              minWidth: 0,
+              minHeight: 0,
+              padding: '10px 12px',
+              background: 'var(--panel)',
+              border: '1px solid var(--border)',
+              borderRadius: '10px',
+              overflow: 'hidden'
             }}>
-              {/* Sanctions title if any sanctions exist */}
-              {(rightTeamSanctions.formalWarning || rightTeamSanctions.improperRequest || rightTeamSanctions.delayWarning || rightTeamSanctions.delayPenalty || rightTeamSanctions.warnings.length > 0 || rightTeamSanctions.penalties.length > 0 || rightTeamSanctions.expulsions.length > 0 || rightTeamSanctions.disqualifications.length > 0) && (
-                <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Sanctions</div>
-              )}
-              {(rightTeamSanctions.formalWarning || rightTeamSanctions.improperRequest || rightTeamSanctions.delayWarning || rightTeamSanctions.delayPenalty || rightTeamSanctions.warnings.length > 0 || rightTeamSanctions.penalties.length > 0 || rightTeamSanctions.expulsions.length > 0 || rightTeamSanctions.disqualifications.length > 0) && (
-                <div style={{ border: '1px solid var(--border)', height: '1px', width: '100%', margin: '4px 0' }}></div>
-              )}
-              {/* Team-level sanctions at top (Formal warning, Improper Request only) */}
-              {(rightTeamSanctions.formalWarning || rightTeamSanctions.improperRequest) && (
-                <div style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '4px',
-                  fontSize: '11px',
-                  fontWeight: 600
-                }}>
-                  {rightTeamSanctions.formalWarning && (
-                    <span style={{
-                      background: '#fde047',
-                      color: '#000',
-                      padding: '1px 6px',
-                      borderRadius: '3px'
-                    }}>Formal warning</span>
-                  )}
-                  {rightTeamSanctions.improperRequest && (
-                    <span style={{
-                      background: '#000',
-                      color: '#fff',
-                      padding: '1px 6px',
-                      borderRadius: '3px'
-                    }}>{t('scoreboard.sanctions.improperRequest')}</span>
-                  )}
-                </div>
-              )}
-              {(rightTeamSanctions.formalWarning || rightTeamSanctions.improperRequest || rightTeamSanctions.delayWarning || rightTeamSanctions.delayPenalty || rightTeamSanctions.warnings.length > 0 || rightTeamSanctions.penalties.length > 0 || rightTeamSanctions.expulsions.length > 0 || rightTeamSanctions.disqualifications.length > 0) && (
-                <div style={{ border: '1px solid var(--border)', height: '1px', width: '100%', margin: '4px 0' }}></div>
-              )}
-              {/* Personal sanctions in grid: W|P|E|D columns, DW/DP below */}
-              {(rightTeamSanctions.warnings.length > 0 || rightTeamSanctions.penalties.length > 0 || rightTeamSanctions.expulsions.length > 0 || rightTeamSanctions.disqualifications.length > 0 || rightTeamSanctions.delayWarning || rightTeamSanctions.delayPenalty) && (
-                <div style={{
-                  display: 'grid',
-                  // wide: W | P over E | D, to fit the side panel
-                  gridTemplateColumns: `repeat(${wide ? 2 : 4}, minmax(24px, auto))`,
-                  gap: '3px',
-                  alignItems: 'start',
-                  justifyContent: 'center'
-                }}>
-                  {/* Column 1: Warnings (W) + Delay Warning */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center', minWidth: '24px' }}>
-                    {rightTeamSanctions.warnings.map((w, i) => (
-                      <span key={`w${i}`} style={{
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        background: '#fde047',
-                        color: '#000',
-                        padding: '1px 4px',
-                        borderRadius: '3px',
-                        width: '50px',
-                        textAlign: 'center',
-                      }}>W - {w.id}</span>
-                    ))}
-                    {rightTeamSanctions.delayWarning && (
-                      <span style={{
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        width: '50px',
-                        textAlign: 'center',
-                        background: '#fde047',
-                        color: '#000',
-                        padding: '1px 4px',
-                        borderRadius: '3px'
-                      }}>{t('refereeDashboard.delayWarningShort')}</span>
-                    )}
-                  </div>
-                  {/* Column 2: Penalties (P) + Delay Penalty */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center', minWidth: '24px' }}>
-                    {rightTeamSanctions.penalties.map((p, i) => (
-                      <span key={`p${i}`} style={{
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        background: '#ef4444',
-                        color: '#000000ff',
-                        width: '50px',
-                        textAlign: 'center',
-                        padding: '1px 4px',
-                        borderRadius: '3px'
-                      }}>P - {p.id}</span>
-                    ))}
-                    {rightTeamSanctions.delayPenalty && (
-                      <span style={{
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        background: '#ef4444',
-                        color: '#000000ff',
-                        padding: '1px 4px',
-                        width: '50px',
-                        textAlign: 'center',
-                        borderRadius: '3px'
-                      }}>{t('refereeDashboard.delayPenaltyShort')}</span>
-                    )}
-                  </div>
-                  {/* Column 3: Expulsions (E) */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center', minWidth: '24px' }}>
-                    {rightTeamSanctions.expulsions.map((e, i) => (
-                      <span key={`e${i}`} style={{
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        background: 'linear-gradient(135deg, #ef4444 50%, #fde047 50%)',
-                        color: '#000000ff',
-                        padding: '1px 4px',
-                        width: '50px',
-                        textAlign: 'center',
-                        borderRadius: '3px',
-                      }}>E - {e.id}</span>
-                    ))}
-                  </div>
-                  {/* Column 4: Disqualifications (D) */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center', minWidth: '24px' }}>
-                    {rightTeamSanctions.disqualifications.map((d, i) => (
-                      <span key={`d${i}`} style={{
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        width: '50px',
-                        textAlign: 'center',
-                        background: 'linear-gradient(90deg,#ef4444 50%, #fde047 50%)',
-                        color: '#000000ff',
-                        padding: '1px 4px',
-                        borderRadius: '3px'
-
-                      }}>D - {d.id}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
+              {counters(stats, side, true)}
+              <div style={{ borderTop: '1px solid var(--border)' }} />
+              {sanctions(teamSanctions, side)}
             </div>
-          </div>
-
-          {/* Right team counters - TO SUB (vertical stacked) */}
-          <div style={{
-            ...(wide ? { gridArea: 'rcnt', ...sideCell, justifyContent: 'flex-start', padding: '10px 6px 6px' } : {}),
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '10px',
-            fontSize: vmin(4),
-            fontWeight: 700
-          }}>
-            {/* TO counter */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-              <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.6em' }}>TO</span>
-              <span style={{
-                background: rightStats.timeouts >= 2 ? 'rgba(239, 68, 68, 0.3)' : 'var(--panel)',
-                padding: '7px 14px',
-                borderRadius: '6px',
-                aspectRatio: '1',
-                border: rightStats.timeouts >= 2 ? '1px solid rgba(239, 68, 68, 0.6)' : '1px solid var(--border)',
-                minWidth: '42px',
-                textAlign: 'center',
-                color: rightStats.timeouts >= 2 ? '#ef4444' : 'var(--text)'
-              }}>{rightStats.timeouts}</span>
+          )
+          return (
+            <div data-referee-strip="" style={{
+              flex: '1 0 auto',
+              minHeight: 0,
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
+              alignItems: 'stretch',
+              gap: 'clamp(8px, 2vw, 16px)',
+              padding: 'clamp(6px, 1.5vw, 12px)',
+              background: 'var(--panel-2)',
+              borderTop: '1px solid var(--border)',
+              overflow: 'hidden'
+            }}>
+              {teamPanel(leftStats, leftTeamSanctions, 'left')}
+              {/* Countdown when one runs, otherwise the logo; a fixed width, so the panels never move */}
+              <div style={{ minWidth: 'clamp(64px, 16vw, 140px)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+                {countdown || (
+                  <img
+                    src={BRAND.lockupStacked}
+                    alt="OpenVolley"
+                    className="ov-ink"
+                    style={{ width: '100%', maxWidth: vmin(16), aspectRatio: '1', objectFit: 'contain', opacity: 0.6 }}
+                  />
+                )}
+              </div>
+              {teamPanel(rightStats, rightTeamSanctions, 'right')}
             </div>
-            {/* SUB counter */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-              <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.6em' }}>SUB</span>
-              <span style={{
-                background: rightStats.substitutions >= 6 ? 'rgba(239, 68, 68, 0.3)' : rightStats.substitutions >= 5 ? 'rgba(234, 179, 8, 0.3)' : 'var(--panel)',
-                padding: '7px 14px',
-                borderRadius: '6px',
-                aspectRatio: '1',
-                border: rightStats.substitutions >= 6 ? '1px solid rgba(239, 68, 68, 0.6)' : rightStats.substitutions >= 5 ? '1px solid rgba(234, 179, 8, 0.6)' : '1px solid var(--border)',
-                minWidth: '42px',
-                textAlign: 'center',
-                color: rightStats.substitutions >= 6 ? '#ef4444' : rightStats.substitutions >= 5 ? '#eab308' : 'var(--text)'
-              }}>{rightStats.substitutions}</span>
-            </div>
-          </div>
-        </div>
+          )
+        })()}
 
         {/* SECTION 5: Footer - Last Action - 40px */}
         <div style={{
@@ -4100,6 +3840,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           />
         )
       }
+      {/* The live scoresheet: read only, from the last full relay bundle */}
+      {scoresheetLayer}
       {/* What the scorer just recorded (time-outs, substitutions, sanctions) */}
       <RecordedNoticePopup notices={recordedNotices} deadline={recordedDeadline} onClose={closeRecordedNotices} timeout={popupTimeout} scoreFont={getScoreFont()} />
       {countdownFlight && timeoutModal && (

@@ -701,9 +701,11 @@ interface RosterProps {
   isHome?: boolean;
   /** No left rule of its own: the roster beside it draws that line. */
   noLeftRule?: boolean;
+  /** A view only (the referee's live scoresheet): the empty signature boxes do not open the pad. */
+  readOnly?: boolean;
 }
 
-export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchStaff = [], preGameCaptainSignature, preGameCoachSignature, coinTossConfirmed, isHome = true, noLeftRule = false }) => {
+export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchStaff = [], preGameCaptainSignature, preGameCoachSignature, coinTossConfirmed, isHome = true, noLeftRule = false, readOnly = false }) => {
     const [openSignature, setOpenSignature] = useState<string | null>(null);
     // bench_home / bench_away may be null or an object in older rows
     const staff: any[] = Array.isArray(benchStaff) ? benchStaff : [];
@@ -721,6 +723,7 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
     const coachSignature = preGameCoachSignature || signatures[coachSignatureKey] || '';
 
     const handleSignatureClick = (signatureType: string) => {
+        if (readOnly) return;
         // Don't allow editing pre-game signatures
         if (signatureType === captainSignatureKey && preGameCaptainSignature) {
             return;
@@ -865,12 +868,12 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                         <span className="text-[6px] uppercase text-center font-bold w-12 shrink-0">Captain</span>
                         <div
                             className={`flex-1 relative min-h-[20px] ${
-                                preGameCaptainSignature
+                                preGameCaptainSignature || readOnly
                                     ? 'cursor-default'
                                     : 'cursor-pointer hover:bg-gray-50 print:cursor-default print:hover:bg-white'
                             }`}
-                            onClick={preGameCaptainSignature ? undefined : () => handleSignatureClick(captainSignatureKey)}
-                            title={preGameCaptainSignature ? 'Pre-game signature (read-only)' : 'Click to sign'}
+                            onClick={preGameCaptainSignature || readOnly ? undefined : () => handleSignatureClick(captainSignatureKey)}
+                            title={readOnly ? undefined : preGameCaptainSignature ? 'Pre-game signature (read-only)' : 'Click to sign'}
                         >
                             {captainSignature ? (
                                 <img
@@ -890,12 +893,12 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                         <span className="text-[6px] uppercase text-center font-bold w-12 shrink-0">Coach</span>
                         <div
                             className={`flex-1 relative min-h-[20px] ${
-                                preGameCoachSignature
+                                preGameCoachSignature || readOnly
                                     ? 'cursor-default'
                                     : 'cursor-pointer hover:bg-gray-50 print:cursor-default print:hover:bg-white'
                             }`}
-                            onClick={preGameCoachSignature ? undefined : () => handleSignatureClick(coachSignatureKey)}
-                            title={preGameCoachSignature ? 'Pre-game signature (read-only)' : 'Click to sign'}
+                            onClick={preGameCoachSignature || readOnly ? undefined : () => handleSignatureClick(coachSignatureKey)}
+                            title={readOnly ? undefined : preGameCoachSignature ? 'Pre-game signature (read-only)' : 'Click to sign'}
                         >
                             {coachSignature ? (
                                 <img
@@ -913,7 +916,7 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                  </div>
 
                  {/* Signature Modal - only show if signature is not pre-filled */}
-                 {openSignature && (
+                 {openSignature && !readOnly && (
                      (openSignature === captainSignatureKey && !preGameCaptainSignature) ||
                      (openSignature === coachSignatureKey && !preGameCoachSignature)
                  ) && (

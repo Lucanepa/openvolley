@@ -54,6 +54,18 @@ interface AppScoresheetProps {
   dataReady?: boolean;
   /** ?matchId= named a match that is not on this device: show it, never save an empty sheet. */
   matchMissing?: boolean;
+  /**
+   * A view only (the referee tablet's live scoresheet): no Save PDF, no
+   * fullscreen, no signing on the rosters, no orientation lock.
+   */
+  readOnly?: boolean;
+  /**
+   * Inside another page's full-screen layer instead of a page of its own: it
+   * fills its parent (the sheet scrolls inside it) and Fit leaves this much
+   * room above it (px) for that page's bar.
+   */
+  embedded?: boolean;
+  reservedTop?: number;
 }
 
 // The space between the boxes below set 5 and between the rosters (owner
@@ -66,7 +78,7 @@ const SHEET_H_PX = (287 * 96) / 25.4;
 const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 3;
 
-const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = true, matchMissing = false }) => {
+const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = true, matchMissing = false, readOnly = false, embedded = false, reservedTop = 0 }) => {
   const { t } = useTranslation();
   // Normalised once: a JSON import or an older row may miss lists or hold null
   const match: any = matchData?.match || {};
@@ -1248,7 +1260,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     if (!containerRef.current) return;
     // Get viewport dimensions (minus toolbar height ~50px)
     const viewportWidth = window.innerWidth - 32; // padding
-    const viewportHeight = window.innerHeight - 70; // toolbar + padding
+    const viewportHeight = window.innerHeight - 70 - reservedTop; // toolbar + padding (+ the host page's bar)
     // Scoresheet is 410mm x 287mm, convert to px (1mm ≈ 3.78px at 96 DPI);
     // turned, its width runs down the screen
     const scoresheetWidth = (turnedRef.current ? 287 : 410) * 3.78;
@@ -1282,8 +1294,10 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
-  // Lock orientation to landscape for scoresheet
+  // Lock orientation to landscape for scoresheet (not as a view inside another
+  // page: the referee tablet keeps its own orientation)
   useEffect(() => {
+    if (readOnly) return undefined;
     const lockLandscape = async () => {
       try {
         const orientation = screen.orientation as any;
@@ -1308,6 +1322,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         }
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Track viewport size for portrait/landscape detection
@@ -1608,8 +1623,12 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   }, [autoAction]);
 
 
+  // Embedded: one column that fills the host's layer, the sheet scrolling in
+  // its own box (pinch zoom and Fit work on that box)
+  const Root = embedded ? 'div' : React.Fragment;
+  const rootProps = embedded ? { className: 'flex h-full min-h-0 flex-col bg-gray-100', 'data-testid': 'scoresheet-embedded' } : {};
   return (
-    <>
+    <Root {...rootProps}>
       {/* PDF Generating overlay */}
       {isGeneratingPdf && (
         <div style={{
@@ -1658,7 +1677,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         </div>
       )}
 
-      <div ref={buttonsContainerRef} className="mb-2 flex flex-col justify-center items-center print:hidden w-full sticky top-0 z-50 bg-gray-100 py-2">
+      <div ref={buttonsContainerRef} className={`flex flex-col justify-center items-center print:hidden w-full bg-gray-100 py-2 ${embedded ? 'shrink-0' : 'mb-2 sticky top-0 z-50'}`}>
         <div className="flex flex-wrap items-center justify-center gap-2 px-2">
           {/* Zoom controls */}
           <button
@@ -1706,7 +1725,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
           <div className="w-px h-6 bg-gray-400"></div>
 
           {/* A Point Hub board's windows have no frame: this is the way back */}
-          {onPointHubBoard() && (
+          {!readOnly && onPointHubBoard() && (
             <button
               onClick={() => window.close()}
               className="bg-gray-700 hover:bg-gray-900 text-white px-3 py-1 rounded text-sm shadow"
@@ -1715,24 +1734,24 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
             </button>
           )}
 
-          {/* Fullscreen button */}
-          <button
+          {/* Fullscreen button (a view inside another page: that page's own) */}
+          {!readOnly && <button
             onClick={toggleFullscreen}
             className="bg-blue-500 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm shadow"
             title={isFullscreen ? t('scoresheetPdf.exitFullscreen', 'Exit Fullscreen') : t('scoresheetPdf.fullscreen', 'Fullscreen')}
           >
             {isFullscreen ? '⤓' : '⤢'}
-          </button>
+          </button>}
 
-          {/* Save PDF button (one-click, no dialog) */}
-          <button
+          {/* Save PDF button (one-click, no dialog); not in a view-only sheet */}
+          {!readOnly && <button
             onClick={() => handleSavePdf()}
             disabled={isGeneratingPdf}
             className={`${isGeneratingPdf ? 'bg-purple-400 cursor-wait' : 'bg-purple-500 hover:bg-purple-700'} text-white px-3 py-1 rounded text-sm shadow`}
             title={t('scoresheetPdf.savePdfTooltip', 'Save as PDF (one-click download)')}
           >
             {isGeneratingPdf ? t('scoresheetPdf.generating', 'Generating...') : t('scoresheetPdf.savePdf', 'Save PDF')}
-          </button>
+          </button>}
 
           {/* Libero Control Sheet toggle button - only shown when there is libero activity */}
           {hasLiberoActivity && (
@@ -1837,7 +1856,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
       `}</style>
       <div
         ref={scrollContainerRef}
-        className="scoresheet-scroll-container min-h-screen bg-gray-100 p-2 flex justify-center overflow-auto print:bg-white"
+        className={`scoresheet-scroll-container ${embedded ? 'min-h-0 flex-1' : 'min-h-screen'} bg-gray-100 p-2 flex justify-center overflow-auto print:bg-white`}
         style={{ touchAction: 'pan-x pan-y', justifyContent: boxed ? 'flex-start' : undefined }}
       >
         {/* LCS View */}
@@ -2189,6 +2208,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                     preGameCoachSignature={match?.homeCoachSignature}
                     coinTossConfirmed={coinTossConfirmed}
                     isHome={true}
+                    readOnly={readOnly}
                   />
                 </div>
                 <div ref={rosterBRef} className="flex-1 min-w-0">
@@ -2201,6 +2221,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                     preGameCoachSignature={match?.awayCoachSignature}
                     coinTossConfirmed={coinTossConfirmed}
                     isHome={false}
+                    readOnly={readOnly}
                   />
                 </div>
               </div>
@@ -2211,7 +2232,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         </div>
       </div>
 
-    </>
+    </Root>
   );
 };
 

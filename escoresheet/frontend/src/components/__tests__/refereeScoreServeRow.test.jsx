@@ -13,7 +13,6 @@ const renderRow = (servingSide, extra = {}) => render(
     rightScore={10}
     servingSide={servingSide}
     serverNumber={servingSide ? 7 : null}
-    servingColour="#ef4444"
     serveLabel="SERVE"
     vmin={vmin}
     {...extra}
@@ -105,9 +104,20 @@ describe('referee score row: the SERVE block', () => {
     expect(src).toMatch(/\$\{serveLabelCqi\(label\)\}cqi/)
   })
 
-  it('wears the serving team\'s colour', () => {
-    const block = renderRow('left', { servingColour: '#3b82f6' }).querySelector('[data-serve-block]')
-    expect(block.style.background).toMatch(/59, 130, 246|#3b82f6/i)
+  it('is green like the scorer\'s SERVE indicator, whatever the team colour (owner 2026-11-09)', () => {
+    const c = renderRow('left', { servingColour: '#3b82f6' })
+    const block = c.querySelector('[data-serve-block]')
+    const box = c.querySelector('[data-serve-box]')
+    // the box: a light-green fill with a green border (Scoreboard.jsx renderServeSide)
+    expect(box.style.background).toMatch(/34, 197, 94, 0\.1/)
+    expect(box.style.border).toMatch(/3px solid var\(--accent/)
+    // the label and the number in the same green, never the team colour
+    expect(c.querySelector('[data-serve-label]').style.color).toMatch(/var\(--accent/)
+    expect(c.querySelector('[data-serve-number]').style.color).toMatch(/var\(--accent/)
+    expect(block.outerHTML).not.toMatch(/59, 130, 246|#3b82f6/i)
+    // the referee view no longer hands it a team colour
+    const src = readFileSync(resolve(__dirname, '../Referee.jsx'), 'utf8')
+    expect(src).not.toMatch(/servingColour=/)
   })
 
   it('the referee view feeds it the serving side, the position I player and the translated label', () => {

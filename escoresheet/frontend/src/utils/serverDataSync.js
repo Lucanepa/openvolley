@@ -893,6 +893,10 @@ export function readRelayBundle(message) {
     _scoreboardTimestamp: message._scoreboardTimestamp || message.timestamp
   }
   if (src.liveState !== undefined) payload.liveState = src.liveState
+  // 'full' (a PIN proved on this socket: rosters and events) or 'summary';
+  // the referee's live scoresheet opens on a 'full' bundle only
+  const access = message.access ?? src.access
+  if (access === 'full' || access === 'summary') payload.access = access
   return payload
 }
 

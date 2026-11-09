@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  REFEREE_LAYOUT, isWideLayout, columnWidth, sidePanelWidth, courtBoxInSlot, courtDiscRoom, screenFit
+  REFEREE_LAYOUT, isWideLayout, columnWidth, sidePanelWidth, courtBoxInSlot, courtDiscRoom, screenFit,
+  portraitCourtBox, PORTRAIT_COURT
 } from '../referee/refereeLayout.js'
 import { RECEPTION, layoutReception, formationPointPx, pointToFormation, boxSeparation } from '../referee/receptionLayout.js'
 import { DISC, discMetrics, discFitProblems, discCapPx } from '../referee/discSizing.js'
@@ -183,5 +184,54 @@ describe('reception formation layout', () => {
       expect(p.x).toBeCloseTo(120)
       expect(p.y).toBeCloseTo(300)
     }
+  })
+})
+
+// Owner 2026-11-09: the referee tablet is held upright. The court takes the
+// column's width and grows in height down to 1.3 : 1; the discs grow with it
+// (the cap follows the width); the strip under it gets the rest.
+describe('referee page upright (portrait)', () => {
+  it('the court takes the width and as much height as 1.3 : 1 allows, never wider than 2.2 : 1', () => {
+    // 820 x 1180 tablet: a tall slot, the width decides
+    const tab = portraitCourtBox(820, 900)
+    expect(tab.width).toBeCloseTo(803.6)
+    expect(tab.height).toBeCloseTo(803.6 / 1.3)
+    // a short slot (phone, browser bars): the height decides, the width follows 2.2 : 1
+    const short = portraitCourtBox(390, 150)
+    expect(short.height).toBeCloseTo(147)
+    expect(short.width).toBeCloseTo(147 * 2.2)
+    // the CSS says the same
+    expect(PORTRAIT_COURT.width).toBe('min(98cqw, calc(98cqh * 2.2))')
+    expect(PORTRAIT_COURT.height).toBe('min(98cqh, calc(98cqw / 1.3))')
+    expect(PORTRAIT_COURT.sectionMaxHeight).toBe(`calc(min(100vw, 1400px) / 1.3 + ${REFEREE_LAYOUT.portraitButtonRowPx}px)`)
+  })
+
+  it('discs fill the upright court (about 116-124 px on a portrait tablet, 70-95 before)', () => {
+    for (const [w, h] of [[820, 1180], [768, 1024], [800, 1280]]) {
+      const vmin = (v) => Math.min(w, h) * v / 100
+      const box = portraitCourtBox(w, h * 0.6)
+      const portrait = discMetrics({ courtWidth: box.width, courtHeight: box.height, capPx: discCapPx(vmin, { portrait: true }) })
+      const before = discMetrics({ courtWidth: box.width, courtHeight: box.height, capPx: discCapPx(vmin) })
+      expect(portrait.disc, `${w}x${h}`).toBeGreaterThan(before.disc + 15)
+      expect(portrait.disc).toBeCloseTo(box.width * DISC.widthCqw / 100)
+    }
+  })
+
+  it('discs, numbers, marks and the ball fit every upright court box from a 360 px phone to a 1024 px tablet', () => {
+    for (let w = 360; w <= 1024; w += 24) {
+      for (let slotH = 180; slotH <= 1100; slotH += 40) {
+        const box = portraitCourtBox(w, slotH)
+        const vmin = (v) => w * v / 100
+        const problems = discFitProblems({ courtWidth: box.width, courtHeight: box.height, viewportWidth: w, capPx: discCapPx(vmin, { portrait: true }) })
+        expect(problems, `${w} wide, slot ${slotH}: court ${Math.round(box.width)}x${Math.round(box.height)}`).toEqual([])
+      }
+    }
+  })
+
+  it('the serve ball keeps a clear gap from the server\'s disc (owner 2026-11-09)', () => {
+    expect(DISC.ballGap).toBeGreaterThanOrEqual(0.1)
+    const m = discMetrics({ courtWidth: 804, courtHeight: 618, capPx: 140 })
+    expect(m.ballGap).toBeGreaterThanOrEqual(12)
+    expect(m.ball).toBeGreaterThan(30)
   })
 })
