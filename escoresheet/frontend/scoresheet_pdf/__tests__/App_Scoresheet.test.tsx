@@ -158,6 +158,16 @@ describe('App_Scoresheet on a phone', () => {
     expect(parseFloat(box.style.width)).toBeLessThanOrEqual(360)
   })
 
+  // owner 2026-11-09: on an upright tablet the referee's sheet opened at about 50 %
+  it('an upright tablet: turned too, with Turn to put it upright', () => {
+    setViewport(820, 1180)
+    const { container } = render(<App matchData={buildMatch()} autoAction="preview" />)
+    const sheet = container.querySelector('.scoresheet-container') as HTMLElement
+    expect(sheet.style.transform).toContain('rotate(90deg)')
+    fireEvent.click(screen.getByRole('button', { name: /Turn/ }))
+    expect(sheet.style.transform).not.toContain('rotate')
+  })
+
   it('a wide screen: no Turn button, the sheet is not turned', () => {
     setViewport(1366, 768)
     const { container } = render(<App matchData={buildMatch()} autoAction="preview" />)
