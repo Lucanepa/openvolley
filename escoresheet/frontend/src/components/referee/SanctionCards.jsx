@@ -10,6 +10,13 @@
  * them into a dark pill).
  */
 
+import { TEAM_COLOUR_MARK } from '../../utils/teamColours'
+
+// A card is a real-world colour, like a shirt: the dark theme inverts the
+// page and turns a box with this mark back, so a yellow card stays yellow
+// instead of turning brown (tailwind.css, colour themes)
+const REAL_COLOUR = TEAM_COLOUR_MARK
+
 /** The official card colours (not the brand red). */
 export const CARD_YELLOW = '#facc15'
 export const CARD_RED = '#dc2626'
@@ -71,7 +78,7 @@ export function CardGlyph({ kind, height, title }) {
   if (kind === 'expulsion') {
     // red and yellow together, fanned in one hand
     return (
-      <span data-card-glyph={kind} role="img" aria-label={name} title={name} style={{ position: 'relative', display: 'inline-block', flexShrink: 0, height, width: `calc(${height} * ${glyphWidthShare(kind).toFixed(4)})` }}>
+      <span data-card-glyph={kind} role="img" aria-label={name} title={name} style={{ position: 'relative', display: 'inline-block', flexShrink: 0, height, width: `calc(${height} * ${glyphWidthShare(kind).toFixed(4)})`, ...REAL_COLOUR }}>
         <span style={cardStyle(CARD_YELLOW, height, { position: 'absolute', left: 0, top: 0, transform: 'rotate(-8deg)', transformOrigin: '50% 90%' })} />
         <span style={cardStyle(CARD_RED, height, { position: 'absolute', right: 0, top: 0, transform: 'rotate(8deg)', transformOrigin: '50% 90%' })} />
       </span>
@@ -80,13 +87,13 @@ export function CardGlyph({ kind, height, title }) {
   if (kind === 'disqualification') {
     // red and yellow apart, one in each hand
     return (
-      <span data-card-glyph={kind} role="img" aria-label={name} title={name} style={{ display: 'inline-flex', alignItems: 'center', gap: `calc(${height} * ${(CARD_ASPECT * 0.22).toFixed(4)})`, flexShrink: 0, height }}>
+      <span data-card-glyph={kind} role="img" aria-label={name} title={name} style={{ display: 'inline-flex', alignItems: 'center', gap: `calc(${height} * ${(CARD_ASPECT * 0.22).toFixed(4)})`, flexShrink: 0, height, ...REAL_COLOUR }}>
         <span style={cardStyle(CARD_YELLOW, height)} />
         <span style={cardStyle(CARD_RED, height)} />
       </span>
     )
   }
-  return <span data-card-glyph={kind} role="img" aria-label={name} title={name} style={cardStyle(kind === 'penalty' ? CARD_RED : CARD_YELLOW, height)} />
+  return <span data-card-glyph={kind} role="img" aria-label={name} title={name} style={cardStyle(kind === 'penalty' ? CARD_RED : CARD_YELLOW, height, REAL_COLOUR)} />
 }
 
 /**
@@ -167,7 +174,10 @@ const teamStateChip = {
   fontSize: 11,
   fontWeight: 600,
   lineHeight: 1.3,
-  whiteSpace: 'nowrap'
+  // wraps inside a narrow team panel (a 360 px phone) instead of running out of it
+  maxWidth: '100%',
+  boxSizing: 'border-box',
+  overflowWrap: 'anywhere'
 }
 
 /**

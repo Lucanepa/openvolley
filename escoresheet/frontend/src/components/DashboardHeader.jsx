@@ -7,7 +7,7 @@ import { clearCachesAndReload } from '../hooks/useServiceWorker'
 import { cn } from '../ui/cn.js'
 import { toast } from '../ui/uiStore.js'
 import {
-  HEADER_BAR, HEADER_BTN, HEADER_BTN_ON, HEADER_TITLE, HEADER_META, MENU_PANEL, MENU_SECTION, MENU_ROW,
+  HEADER_BAR, HEADER_BAR_HEIGHT, HEADER_BTN, HEADER_BTN_ON, HEADER_HIT, HEADER_TITLE, HEADER_META, MENU_PANEL, MENU_SECTION, MENU_ROW,
   MENU_SUBROW, MENU_ROW_ON, MENU_ROW_DANGER, MENU_NEST, MENU_SEP, MENU_ICON, toastLang
 } from './chromeClasses'
 import HeaderMenuItem from './HeaderMenuItem'
@@ -258,7 +258,7 @@ export default function DashboardHeader({
           setMenuOpen(!menuOpen)
         }}
         aria-expanded={menuOpen}
-        className={cn(HEADER_BTN, 'min-w-11 px-3', menuOpen && HEADER_BTN_ON)}
+        className={cn(HEADER_BTN, HEADER_HIT, 'min-w-11 px-3', menuOpen && HEADER_BTN_ON)}
         aria-label={t('header.menu')}
         title={t('header.menu')}
       >
@@ -410,8 +410,8 @@ export default function DashboardHeader({
   // the menu as a white anchored dropdown with 48 px rows.
   return (
     <div
-      className={cn('ov-kit', HEADER_BAR, 'flex items-center justify-between')}
-      style={{ height: '40px', minHeight: '40px', maxHeight: '40px', padding: '0 12px' }}
+      className={cn('ov-kit', HEADER_BAR, HEADER_BAR_HEIGHT, 'flex items-center justify-between')}
+      style={{ padding: '0 12px' }}
     >
       {/* LEFT: Title/Version */}
       <div className="flex min-w-0 flex-1 basis-0 items-center gap-2">
@@ -419,7 +419,7 @@ export default function DashboardHeader({
           <button
             type="button"
             onClick={onBack}
-            className={cn(HEADER_BTN, 'gap-1 pl-1.5 pr-2.5')}
+            className={cn(HEADER_BTN, HEADER_HIT, 'gap-1 pl-1.5 pr-2.5')}
           >
             <ChevronLeft size={16} aria-hidden="true" />
             <span>{backLabel || t('common.back', 'Back')}</span>
@@ -452,7 +452,7 @@ export default function DashboardHeader({
             type="button"
             onClick={onToggleFullscreen}
             aria-pressed={isFullscreen}
-            className={cn(HEADER_BTN, 'w-9 px-0', isFullscreen && HEADER_BTN_ON)}
+            className={cn(HEADER_BTN, HEADER_HIT, 'w-9 px-0', isFullscreen && HEADER_BTN_ON)}
             aria-label={isFullscreen ? t('header.exitFullscreen') : t('header.fullscreen')}
             title={isFullscreen ? t('header.exitFullscreen') : t('header.fullscreen')}
           >
