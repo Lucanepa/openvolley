@@ -130,7 +130,9 @@ const DEFAULTS = Object.freeze({
   ownedTables: [
     { table: 'public.profiles', column: 'user_id' },
     { table: 'public.user_matches', column: 'user_id' },
-    { table: 'public.match_editors', column: 'user_id' }
+    { table: 'public.match_editors', column: 'user_id' },
+    // db/025: an open sign-up request (also ON DELETE CASCADE)
+    { table: 'public.account_requests', column: 'user_id' }
   ],
   // Rows that stay when the account goes (club records: the matches it scored,
   // beach competition matches) but forget who it was: the column is set NULL
@@ -163,6 +165,13 @@ const DEFAULTS = Object.freeze({
   // deletes no row, so the user can retry) and once more after the commit
   // (an upload that was in flight). null: no files to remove.
   onAccountDeleted: null,
+  // db/025 (lib/accountRequests.js): what a new account asks for at sign-up
+  // (the body's `requests`: scorer, referee, team or club manager, with the
+  // club and team), stored in the sign-up's transaction; nothing is granted.
+  // { parse(raw, { app }) -> { rows } | { error }, store(client, userId, rows) }
+  // (store throws an error with `signUpRequests` set for a club or team that
+  // is gone: the sign-up answers 422). null: `requests` is ignored.
+  signUpRequests: null,
   // Mirrors handle_new_user() from frontend/src/db/migrations/001_auth_profiles.sql.
   // `roles` is never taken from the client: it always gets defaultRoles.
   // New accounts get no role: they are pending until an admin approves them
@@ -1210,6 +1219,9 @@ export function createAuth(options = {}) {
       return fail(422, 'Invalid date of birth', 'validation_failed')
     }
     if (meta.dob === '') meta.dob = null
+    // db/025: what the account asks for (checked before the password is hashed)
+    const asked = cfg.signUpRequests ? cfg.signUpRequests.parse(body.requests, { app: requestApp(body) }) : { rows: [] }
+    if (asked.error) return fail(422, asked.error, 'validation_failed')
     // The language picked at sign-up: the account's later mails (the final
     // scoresheet, lib/finalMail.js) go out in it, as the confirmation does
     meta.mail_lang = mailLang(body, ctx)
@@ -1287,6 +1299,8 @@ export function createAuth(options = {}) {
             `INSERT INTO ${T.memberships} (user_id, app, joined_via) VALUES ($1, $2, 'signup') ON CONFLICT DO NOTHING`,
             [id, signUpApp])
         }
+        // db/025: its requests, in the same transaction (granted later by an approver)
+        if (asked.rows.length) await cfg.signUpRequests.store(client, id, asked.rows)
         if (byLink) confirmToken = await issueToken(client, id, 'confirm')
         return ins.rows[0].u
       })
@@ -1305,6 +1319,8 @@ export function createAuth(options = {}) {
       }
       return ok({ user: publicUser(user) })
     } catch (err) {
+      // db/025: a club or team asked for is gone (the form was loaded before)
+      if (err?.signUpRequests) return fail(422, err.message, 'validation_failed')
       if (err.code === '23505') {
         return fail(422, 'A user with this email address has already been registered', 'user_already_exists')
       }
