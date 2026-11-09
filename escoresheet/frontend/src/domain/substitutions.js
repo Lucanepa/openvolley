@@ -49,7 +49,7 @@ export function canMakeRegularSubstitution(events, teamKey, setIndex, { maxPerSe
  *    injured / expelled / disqualified player and no regular substitution is
  *    left (FIVB 15.7, 15.8);
  *  - 'regular' while the team has a regular substitution left;
- *  - 'improper_request' otherwise: a request beyond the limit (FIVB 16.1.3).
+ *  - 'improper_request' otherwise: a request beyond the limit (FIVB 15.11.1.4; 16.1.3 is the illegal substitution).
  * @param {{isExceptional?: boolean, isInjury?: boolean, isExpelled?: boolean, isDisqualified?: boolean}} request
  * @returns {'regular'|'exceptional'|'improper_request'}
  */
@@ -170,7 +170,7 @@ export function planSubstitutionDeletion(events, subEvent) {
 
 /**
  * Validate a manually added timeout: max 2 regular timeouts per team per set
- * (FIVB 15.4.1), the same limit the live Scoreboard enforces.
+ * (FIVB 15.1), the same limit the live Scoreboard enforces.
  * @returns {{legal: boolean, reason?: string}}
  */
 export function validateManualTimeout(events, teamKey, setIndex, { maxPerSet = 2 } = {}) {

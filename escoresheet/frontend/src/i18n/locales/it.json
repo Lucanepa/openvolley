@@ -907,6 +907,102 @@
       "confirmConsecutive": "Sì, secondo timeout",
       "notRecorded": "Il timeout non è stato registrato. Riprova."
     },
+    "requestBlock": {
+      "replay_pending": "Scambio da ripetere: nessun timeout né sostituzione fino al termine del prossimo scambio (solo una sostituzione forzata).",
+      "replay_pending_short": "Scambio da ripetere: solo infortunio o giocatore sanzionato",
+      "set_interval": "Intervallo tra i set: nessun timeout (conterebbe nel set successivo)."
+    },
+    "requestWarning": {
+      "notAllowed": "Non consentito",
+      "illegalShort": {
+        "libero": "Libero",
+        "sent_off": "Escluso",
+        "wrong_partner": "Compagno sbagliato",
+        "played_out": "Già giocato",
+        "no_rally_since_out": "Nessuno scambio ancora"
+      },
+      "since": "Da allora: {{what}}.",
+      "between": {
+        "timeout": "un timeout della squadra {{team}}",
+        "substitution": "una sostituzione della squadra {{team}}",
+        "sanction": "una sanzione alla squadra {{team}}",
+        "replay": "uno scambio ripetuto"
+      },
+      "options": {
+        "improper": "Registrare come richiesta impropria",
+        "delay": "Il gioco è stato ritardato: sanzione per ritardo",
+        "timeoutStarted": "Il timeout è già iniziato: sanzione per ritardo",
+        "illegal": "Sostituzione irregolare richiesta: respingere + sanzione per ritardo",
+        "continue": "Continuare comunque"
+      },
+      "records": {
+        "improper": "Registrato: richiesta impropria, senza altre conseguenze.",
+        "delayWarning": "Registrato: avvertimento per ritardo.",
+        "delayPenalty": "Registrato: penalità per ritardo – punto e servizio a {{opponent}}.",
+        "repeatedImproper": "(La squadra ha già una richiesta impropria: questa è un ritardo.)",
+        "nothing": "Gli arbitri l'hanno concesso. Non viene registrato nulla."
+      },
+      "illegal": {
+        "libero": "un libero non entra mai con una sostituzione",
+        "sent_off": "non può più giocare (espulso, squalificato o sostituito eccezionalmente)",
+        "wrong_partner": "può rientrare solo il suo compagno di sostituzione",
+        "played_out": "è già entrato e uscito in questo set",
+        "no_rally_since_out": "nessuno scambio completato dalla sua uscita"
+      },
+      "second_substitution_request": {
+        "title": "Seconda richiesta di sostituzione",
+        "text": "{{team}} ha già fatto una richiesta di sostituzione in questa interruzione. Tra due richieste di sostituzione distinte della stessa squadra ci vuole uno scambio completato.",
+        "rule": "FIVB 15.2.3 · 15.11.1.3"
+      },
+      "no_rally_since_entry": {
+        "title": "#{{number}} non può ancora uscire",
+        "text": "#{{number}} è entrato per #{{returning}} e da allora nessuno scambio è stato completato. Sostituire di nuovo #{{number}} ora è una seconda richiesta di sostituzione.",
+        "rule": "FIVB 15.2.3 · 15.6.2"
+      },
+      "substitution_limit": {
+        "title": "Nessuna sostituzione rimasta",
+        "text": "{{team}} ha usato le sue 6 sostituzioni in questo set. Un'ulteriore richiesta è una richiesta impropria.",
+        "rule": "FIVB 15.1 · 15.11.1.4"
+      },
+      "third_timeout": {
+        "title": "Terzo timeout",
+        "text": "{{team}} ha usato entrambi i timeout di questo set. Una terza richiesta è una richiesta impropria; se il timeout è già iniziato, il gioco è stato ritardato.",
+        "rule": "FIVB 15.1 · 15.11.1.4 · FIVB casebook 4.29"
+      },
+      "after_delay_warning": {
+        "title": "Richiesta dopo un avvertimento per ritardo",
+        "text": "{{team}} ha ricevuto un avvertimento per ritardo in questa interruzione. Un'ulteriore richiesta viene respinta, senza registrare nulla.",
+        "rule": "FIVB 15.2.4: respingere, non registrare nulla"
+      },
+      "illegal_substitution": {
+        "title": "Sostituzione irregolare",
+        "text": "#{{number}} non può entrare per #{{out}}: {{why}}. Richiedere una sostituzione irregolare è un ritardo; la richiesta viene respinta.",
+        "rule": "FIVB 15.10.4 · 16.1.3"
+      }
+    },
+    "lateRequest": {
+      "heading": "Interrotto per una richiesta tardiva?",
+      "replay": "Ripetere per una richiesta tardiva di {{team}}: sanzione per ritardo",
+      "penalty": "Richiesta tardiva di {{team}}: penalità per ritardo, senza ripetere",
+      "recordsWarning": "Registrato: avvertimento per ritardo. Lo scambio viene ripetuto; nessun timeout né sostituzione finché non è concluso.",
+      "recordsPenalty": "Registrato: penalità per ritardo – punto e servizio a {{opponent}}.",
+      "rule": "FIVB 15.11.1.1 · 16.1 · SSK Q182"
+    },
+    "improperReason": {
+      "title": "Per cosa (facoltativo)",
+      "during_rally": "Durante lo scambio o dopo il fischio",
+      "wrong_person": "Richiesta dalla persona sbagliata",
+      "second_substitution": "Seconda richiesta di sostituzione",
+      "limit_exhausted": "Troppi timeout o sostituzioni",
+      "other": "Altro"
+    },
+    "decisionTakeBack": {
+      "title": "Annullato prima",
+      "timeout": "Timeout {{team}}",
+      "substitution": "Sostituzione {{team}}: n. {{in}} per n. {{out}}",
+      "text": "Richiesto dopo il punto: la sostituzione viene annullata e non conta, il timeout viene annullato.",
+      "rule": "FIVB casebook 8.5 · SSK 26-1"
+    },
     "teamSanctionConfirm": {
       "thirdTimeout": "{{team}} ha usato entrambi i timeout di questo set. Una terza richiesta è una richiesta impropria.",
       "applyImproperRequest": "Registrare una richiesta impropria per {{team}}?",
@@ -4170,6 +4266,13 @@
       "penalty": "Penalizzazione",
       "expulsion": "Espulsione",
       "disqualification": "Squalifica"
+    },
+    "sanctionReason": {
+      "during_rally": "Durante lo scambio o dopo il fischio",
+      "wrong_person": "Richiesta dalla persona sbagliata",
+      "second_substitution": "Seconda richiesta di sostituzione",
+      "limit_exhausted": "Timeout o sostituzioni esauriti",
+      "illegal_substitution": "Sostituzione irregolare richiesta"
     },
     "target": {
       "player": "Giocatore/trice #{{n}}",
