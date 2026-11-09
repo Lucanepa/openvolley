@@ -348,7 +348,26 @@ export function parseRosterText(text, gflPlayerNames = new Set()) {
       }
     }
 
+  // The text has no column borders, so "Noel von Wattenwyl" comes out as first name
+  // "Noel von": a name particle belongs to the last name
+  for (const p of result.players) Object.assign(p, moveNameParticles(p.firstName, p.lastName))
+  for (const k of ['coach', 'ac1', 'ac2']) {
+    if (result[k]) Object.assign(result[k], moveNameParticles(result[k].firstName, result[k].lastName))
+  }
   return result
+}
+
+// Lowercase only: as VolleyManager writes them ("von Wattenwyl", "de Weck", "van der Berg")
+const NAME_PARTICLES = new Set(['von', 'vom', 'van', 'zu', 'zur', 'zum', 'de', 'des', 'du', 'di', 'da', 'del',
+  'della', 'dalla', 'dello', 'degli', 'dei', 'dos', 'das', 'le', 'la', 'lo', 'ten', 'ter', 'den', 'der', 'af', 'av', 'y'])
+
+/** Lowercase name particles at the end of a first name move to the front of the last name. */
+export function moveNameParticles(firstName, lastName) {
+  const words = String(firstName ?? '').trim().split(/\s+/).filter(Boolean)
+  const moved = []
+  while (words.length > 1 && NAME_PARTICLES.has(words[words.length - 1])) moved.unshift(words.pop())
+  if (!moved.length) return { firstName, lastName }
+  return { firstName: words.join(' '), lastName: [...moved, String(lastName ?? '').trim()].filter(Boolean).join(' ') }
 }
 
 function normalizeDate(dateStr) {
