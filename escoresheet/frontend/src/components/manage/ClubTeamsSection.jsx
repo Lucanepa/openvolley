@@ -53,15 +53,29 @@ export default function ClubTeamsSection({ club }) {
     toast.success(t('manage.myClub.removed'))
     reload()
   }
-  const copy = async () => {
+  // The invitation the club manager sends: who it is for, what to do, how
+  // long the link works, then the link on its own line (WhatsApp and mail
+  // previews pick it up there). Share puts the link in the text, not in a
+  // separate url: some share targets (WhatsApp on Android) keep only one of the two.
+  // VolleyManager's team names mostly carry the club's ("VBC Musterdorf H1"): the
+  // club only when the team's name does not say it
+  const teamName = created?.team?.name || ''
+  const who = !club.name || teamName.toLowerCase().includes(club.name.toLowerCase()) ? teamName : `${teamName} (${club.name})`
+  const inviteText = created ? t('manage.clubTeams.inviteText', {
+    team: who,
+    count: created.invite?.max_uses ?? 1,
+    date: created.invite?.expires_at ? dayLabel(created.invite.expires_at, { year: true }) : ''
+  }) : ''
+  const message = created ? `${inviteText}\n${created.url}` : ''
+  const copyText = async (text) => {
     try {
-      await navigator.clipboard.writeText(created?.url || '')
+      await navigator.clipboard.writeText(text)
       toast.success(t('manage.invites.copied'))
-    } catch { /* no clipboard: the link stays selectable */ }
+    } catch { /* no clipboard: the text stays selectable */ }
   }
   const share = async () => {
     try {
-      await navigator.share({ title: t('manage.clubTeams.shareTitle', { team: created?.team?.name || '' }), text: t('manage.clubTeams.shareText', { team: created?.team?.name || '' }), url: created?.url })
+      await navigator.share({ title: t('manage.clubTeams.shareTitle', { team: created?.team?.name || '' }), text: message })
     } catch { /* cancelled, or no share sheet: Copy is there */ }
   }
   const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function'
@@ -112,17 +126,15 @@ export default function ClubTeamsSection({ club }) {
       >
         <div className="space-y-3" data-testid="team-link-created">
           <p className="text-sm text-stone-600">{t('manage.clubTeams.linkBody')}</p>
-          <output className="block break-all rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 font-mono text-xs text-stone-800" data-testid="team-link-url">{created?.url}</output>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" icon={Copy} onClick={copy}>{t('manage.clubTeams.copyLink')}</Button>
-            {canShare && <Button variant="secondary" icon={Share2} onClick={share}>{t('manage.clubTeams.share')}</Button>}
+          <div className="rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-800" data-testid="team-link-message">
+            <p>{inviteText}</p>
+            <output className="mt-1 block break-all font-mono text-xs" data-testid="team-link-url">{created?.url}</output>
           </div>
-          <p className="text-xs text-stone-500">
-            {t('manage.clubTeams.linkLimits', {
-              uses: created?.invite?.max_uses ?? '',
-              date: created?.invite?.expires_at ? dayLabel(created.invite.expires_at, { year: true }) : ''
-            })}
-          </p>
+          <div className="flex flex-wrap gap-2">
+            {canShare && <Button icon={Share2} onClick={share} data-testid="team-link-share">{t('manage.clubTeams.share')}</Button>}
+            <Button variant="secondary" icon={Copy} onClick={() => copyText(message)} data-testid="team-link-copy-message">{t('manage.clubTeams.copyMessage')}</Button>
+            <Button variant="secondary" icon={Link2} onClick={() => copyText(created?.url || '')} data-testid="team-link-copy-link">{t('manage.clubTeams.copyLink')}</Button>
+          </div>
         </div>
       </KitModal>
     </section>

@@ -3369,10 +3369,11 @@
       "linkTitle": "Link für {{team}}",
       "linkBody": "Schicke diesen Link dem Trainer oder der Teamverantwortlichen. Sie öffnen ihn, melden sich an oder erstellen ein Konto, und das Team gehört ihnen. Der Link wird nur jetzt angezeigt.",
       "copyLink": "Link kopieren",
+      "copyMessage": "Nachricht kopieren",
       "share": "Teilen",
       "shareTitle": "OpenVolley: {{team}}",
-      "shareText": "{{team}} in OpenVolley verwalten: Kader und der Kader jedes Spiels.",
-      "linkLimits": "Gilt {{uses}}-mal, bis {{date}}.",
+      "inviteText_one": "{{team}} in OpenVolley: Öffne diesen Link und melde dich an oder erstelle ein Konto. Danach hältst du die Spielerinnen und Spieler des Teams aktuell und schickst vor jedem Spiel den Kader. Der Link gilt einmal, bis {{date}}.",
+      "inviteText_other": "{{team}} in OpenVolley: Öffne diesen Link und melde dich an oder erstelle ein Konto. Danach hältst du die Spielerinnen und Spieler des Teams aktuell und schickst vor jedem Spiel den Kader. Der Link gilt für {{count}} Personen, bis {{date}}.",
       "removeTitle": "{{name}} vom Team entfernen?",
       "removeBody": "Die Person kann {{team}} nicht mehr verwalten. Ihr Konto bleibt bestehen."
     }

@@ -1,0 +1,47 @@
+/* The printed club guides (A4). Open a guide in Chrome and print it as PDF:
+   A4, margins none, background graphics on (README.md). */
+@page { size: A4; margin: 0; }
+:root {
+  --ink: #1c1917;
+  --muted: #57534e;
+  --line: #e7e5e4;
+  --fill: #fafaf9;
+  --red: #e2001a;
+  --green: #047857;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #fff; color: var(--ink); }
+body { font: 10.5pt/1.45 "Inter", "Liberation Sans", Arial, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.page { width: 210mm; height: 297mm; padding: 14mm 15mm 12mm; position: relative; overflow: hidden; page-break-after: always; break-after: page; }
+.page:last-child { page-break-after: auto; break-after: auto; }
+header.top { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid var(--ink); padding-bottom: 4mm; margin-bottom: 6mm; }
+header.top img { height: 9mm; }
+header.top .for { font-size: 9pt; color: var(--muted); text-align: right; }
+h1 { font-size: 21pt; line-height: 1.15; margin: 0 0 2mm; letter-spacing: -0.2px; }
+.lead { font-size: 11.5pt; color: var(--muted); margin: 0 0 6mm; max-width: 165mm; }
+.steps { display: flex; flex-direction: column; gap: 7mm; }
+.step { display: grid; grid-template-columns: 9mm 1fr 72mm; gap: 5mm; align-items: start; }
+.step.wide { grid-template-columns: 9mm 1fr; }
+.num { width: 8mm; height: 8mm; border-radius: 50%; background: var(--red); color: #fff; font-weight: 700; font-size: 11pt; display: flex; align-items: center; justify-content: center; margin-top: 0.5mm; }
+.step h2 { font-size: 12.5pt; margin: 0.6mm 0 1.5mm; }
+.step p { margin: 0 0 1.8mm; }
+.step ul { margin: 0 0 1.8mm; padding-left: 4.5mm; }
+.step li { margin: 0 0 1mm; }
+.shot { width: 72mm; border: 1px solid var(--line); border-radius: 3mm; overflow: hidden; background: #fff; box-shadow: 0 0.6mm 2mm rgba(0, 0, 0, 0.08); }
+.shot img { display: block; width: 100%; }
+.shot.full { width: 100%; }
+.btn { display: inline-block; padding: 0 1.6mm; border: 1px solid #d6d3d1; border-radius: 1.4mm; font-weight: 600; font-size: 9.5pt; white-space: nowrap; background: #fff; }
+.btn.red { background: var(--red); border-color: var(--red); color: #fff; }
+.btn.green { background: var(--green); border-color: var(--green); color: #fff; }
+.chip { display: inline-block; padding: 0 1.4mm; border-radius: 1mm; font-size: 9pt; font-weight: 600; white-space: nowrap; }
+.chip.amber { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+.chip.sky { background: #e0f2fe; color: #075985; border: 1px solid #7dd3fc; }
+.chip.green { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
+.box { border: 1px solid var(--line); background: var(--fill); border-radius: 3mm; padding: 4mm 5mm; }
+.box h3 { font-size: 11.5pt; margin: 0 0 2mm; }
+.box p, .box li { margin: 0 0 1.5mm; }
+.box ul { margin: 0; padding-left: 4.5mm; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
+.url { font-family: "DejaVu Sans Mono", monospace; font-size: 9.5pt; }
+footer { position: absolute; left: 15mm; right: 15mm; bottom: 9mm; display: flex; justify-content: space-between; font-size: 8.5pt; color: var(--muted); border-top: 1px solid var(--line); padding-top: 2mm; }
+.nb { white-space: nowrap; }

@@ -17,13 +17,15 @@ import { TONE_TEXT } from './tones.js';
 
 export function SectionHeader({ icon, title, count, tone = 'stone', hint, action, as: Tag = 'h3', className }) {
   return (
-    <div className={cn('flex items-center justify-between gap-2 border-b-[1.5px] border-stone-800 pb-1.5', className)}>
+    // flex-wrap: an action too wide for a phone (My teams: Import Einsatzliste +
+    // Add player) goes to its own line, right-aligned, instead of off the screen
+    <div className={cn('flex flex-wrap items-center justify-between gap-2 border-b-[1.5px] border-stone-800 pb-1.5', className)}>
       <Tag className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-stone-800">
         {icon && <span className={cn('flex items-center', TONE_TEXT[tone])}>{icon}</span>}
         {title}
         {hint}
       </Tag>
-      <span className="flex shrink-0 items-center gap-2">
+      <span className="ml-auto flex shrink-0 items-center gap-2">
         {count !== undefined && count !== null && (
           <span className="text-[11px] font-semibold tabular-nums text-stone-500">{count}</span>
         )}
