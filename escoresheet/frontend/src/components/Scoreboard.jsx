@@ -96,6 +96,7 @@ import { PHONE_RECENT_MAX_LINES, detectDisplayMode, dialogsCentred, isPhoneScree
 import BenchRequestCards from './scoreboard/BenchRequestCards.jsx'
 import { useBenchRequestBridge } from './scoreboard/useBenchRequestBridge'
 import { latestLineup as benchLatestLineup, lineupNumber as benchLineupNumber } from '../domain/benchRequests'
+import { coveredLineupTeams, withoutCoveredTeamEvents } from '../domain/lineupPrivacy'
 import { captainRingStyle } from './scoreboard/captainRing'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
 import { WarningIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, RefreshIcon, VolleyballIcon, SwitchIcon, ChartIcon, NotebookIcon, WrenchIcon, ClipboardIcon, SpeechIcon } from './icons'
@@ -4098,6 +4099,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       e.payload?.isInitial
     )
   }, [data?.events, data?.set, leftIsHome])
+  // The first line-up of a set stays covered until the other is in
+  // (domain/lineupPrivacy.js): its court, and its SERVE number, bench list
+  // and Last action too (owner 2026-11-10)
+  const lineupCovered = coveredLineupTeams({ setStarted: !isFirstRally, homeEntered: leftIsHome ? leftTeamLineupSet : rightTeamLineupSet, awayEntered: leftIsHome ? rightTeamLineupSet : leftTeamLineupSet })
+  const sideCovered = (side) => lineupCovered.includes((side === 'left') === leftIsHome ? 'home' : 'away')
 
   // Easy match (domain/easyMatch.js): the line-ups are optional. Without one a
   // team plays the set with no rotation (the serve still follows the points),
@@ -5300,7 +5306,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // changes sides.
   const renderServeSide = (side) => {
     const serving = side === 'left' ? leftServing : rightServing
-    const servingPlayer = (side === 'left' ? leftTeam : rightTeam).playersOnCourt.find(p => p.position === 'I')
+    const servingPlayer = sideCovered(side) ? null : (side === 'left' ? leftTeam : rightTeam).playersOnCourt.find(p => p.position === 'I')
     const chip = showRefereeRow && gameCaptainChip[side]
     const teamKey = side === 'left' ? (leftIsHome ? 'home' : 'away') : (leftIsHome ? 'away' : 'home')
     return (
@@ -13724,7 +13730,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         tapNotice: rallyTapNotice
       },
       centre,
-      recent: recentActions(data?.events, data?.set?.index, getShortActionDescription, PHONE_RECENT_MAX_LINES),
+      recent: recentActions(withoutCoveredTeamEvents(data?.events, lineupCovered, data?.set?.index), data?.set?.index, getShortActionDescription, PHONE_RECENT_MAX_LINES),
       canUndo,
       scoreFont: getScoreFont(),
       limits: { timeouts: 2, subs: MAX_SUBSTITUTIONS_PER_SET },
@@ -14802,7 +14808,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             {/* Bench Players, Liberos, and Bench Officials */}
             <div style={{ marginTop: '3.75cqw', paddingTop: '3.75cqw', borderTop: '1px solid var(--border)' }}>
               {/* Bench Players */}
-              {leftTeamBench.benchPlayers.length > 0 && (
+              {leftTeamBench.benchPlayers.length > 0 && !sideCovered('left') && (
                 <div data-help-id="scoreboard-bench-left" style={{ marginBottom: isCompactMode ? '2.5cqw' : '5cqw' }}>
                   <h4
                     onClick={() => isCompactMode && setLeftMainBenchExpanded(!leftMainBenchExpanded)}
@@ -17528,7 +17534,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             }
                           }
 
-                          if (!lastEvent) return null
+                          if (!lastEvent || lineupCovered.includes(lastEvent.payload?.team)) return null
 
                           const description = getShortActionDescription(lastEvent)
 
@@ -18106,7 +18112,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             {/* Bench Players, Liberos, and Bench Officials */}
             <div style={{ marginTop: '3.75cqw', paddingTop: '3.75cqw', borderTop: '1px solid var(--border)' }}>
               {/* Bench Players */}
-              {rightTeamBench.benchPlayers.length > 0 && (
+              {rightTeamBench.benchPlayers.length > 0 && !sideCovered('right') && (
                 <div data-help-id="scoreboard-bench-right" style={{ marginBottom: isCompactMode ? '2.5cqw' : '5cqw' }}>
                   <h4
                     onClick={() => isCompactMode && setRightMainBenchExpanded(!rightMainBenchExpanded)}
