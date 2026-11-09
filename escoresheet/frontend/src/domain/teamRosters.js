@@ -294,3 +294,103 @@ export function addClubPlayersToGameDraft(draft, chosen) {
   }
   return { draft: { ...(draft || {}), players, staff: draft?.staff || [] }, added, ticked }
 }
+
+// ---------------------------------------------------------------- team officials from the club (db/024)
+// Owner 2026-11-09: "coaches can literally be any player/member of the club
+// from the list". An official (coach, assistant coaches, physiotherapist,
+// medic) may be anyone of the club's three lists, of either gender: no
+// gender filter and no gender rule for them.
+
+/** A club list person -> a team official of `role` in the API shape. */
+export function clubPersonToOfficial(c, role) {
+  return {
+    role,
+    first_name: clean(c?.first_name),
+    last_name: clean(c?.last_name) || clean(c?.first_name),
+    dob: c?.dob || null,
+    license_number: clean(c?.sv_number) || null
+  }
+}
+
+/**
+ * Is the official row `s` (the API shape) the club person `c`? The same
+ * licence number; else the same name, also with first and last name swapped
+ * (not when both have a licence number and they differ).
+ */
+export function officialIsPerson(s, c) {
+  if (!s || !c) return false
+  const p = clubPersonToOfficial(c, null)
+  const a = licenceKey(s)
+  const b = licenceKey(p)
+  if (a && b) return a === b
+  return nameKey(s) === nameKey(p) || nameKey(s) === swappedKey(p)
+}
+
+/** The roles in `staff` that the club person `c` holds (only the ticked entries with `pickedOnly`, a game roster). */
+export function officialRolesOf(staff, c, { pickedOnly = false } = {}) {
+  return [...new Set((staff || []).filter((s) => s && (!pickedOnly || s.picked) && officialIsPerson(s, c)).map((s) => s.role))]
+}
+
+/** The named person holding `role` in `staff` (the first one; only a ticked one with `pickedOnly`), or null. */
+export function officialOfRole(staff, role, { pickedOnly = false } = {}) {
+  return (staff || []).find((s) => s && s.role === role && (!pickedOnly || s.picked) && (clean(s.first_name) || clean(s.last_name))) || null
+}
+
+// the empty value of a field as the row keeps it ('' in the editor's drafts, null in the API shape)
+const emptyLike = (v) => (typeof v === 'string' ? '' : null)
+
+/**
+ * The squad editor's officials with the club person `c` as `role`: the first
+ * row of that role takes the person (names, date of birth, licence number;
+ * the row keeps its key and id), else a row is added (makeStaff). Each role
+ * once. { staff, replaced }: the person the row had before, when another one.
+ */
+export function setSquadOfficial(staff, role, c, makeStaff = (s) => s) {
+  const out = [...(staff || [])]
+  const person = clubPersonToOfficial(c, role)
+  const i = out.findIndex((s) => s?.role === role)
+  if (i === -1) {
+    out.push(makeStaff(person))
+    return { staff: out, replaced: null }
+  }
+  const cur = out[i]
+  const same = officialIsPerson(cur, c)
+  const named = !!(clean(cur.first_name) || clean(cur.last_name))
+  out[i] = {
+    ...cur,
+    first_name: person.first_name,
+    last_name: person.last_name,
+    dob: person.dob || (same ? cur.dob : emptyLike(cur.dob)),
+    license_number: person.license_number || (same ? cur.license_number : emptyLike(cur.license_number))
+  }
+  return { staff: out, replaced: named && !same ? cur : null }
+}
+
+/**
+ * A game roster draft (gameRosterDraft) with the club person `c` as `role`,
+ * ticked: the entry of that role and person when it is offered, else a new
+ * entry; the other ticked entries of that role are unticked (each role once,
+ * as gameRosterBody wants). { draft, replaced }: the person ticked in that
+ * role before, when another one.
+ */
+export function setGameDraftOfficial(draft, role, c) {
+  const staff = [...(draft?.staff || [])]
+  const person = clubPersonToOfficial(c, role)
+  const before = officialOfRole(staff, role, { pickedOnly: true })
+  let at = staff.findIndex((s) => s?.role === role && officialIsPerson(s, c))
+  if (at === -1) {
+    const keys = new Set(staff.map((s) => s.key))
+    let key = `${role}|${nameKey(person)}`
+    while (keys.has(key)) key = `${key}|${person.license_number || staff.length}`
+    staff.push({ key, ...person, picked: true })
+    at = staff.length - 1
+  } else {
+    const cur = staff[at]
+    staff[at] = { ...cur, picked: true, license_number: cur.license_number || person.license_number, dob: cur.dob || person.dob }
+  }
+  const out = staff.map((s, j) => (j !== at && s.role === role && s.picked ? { ...s, picked: false } : s))
+  return {
+    draft: { ...(draft || {}), players: draft?.players || [], staff: out },
+    replaced: before && !officialIsPerson(before, c) ? before : null
+  }
+}

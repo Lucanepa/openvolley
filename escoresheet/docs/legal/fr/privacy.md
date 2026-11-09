@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.10 · État au 9 novembre 2026
+**OpenVolley et OpenBeach** · Version 1.11 · État au 9 novembre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version anglaise fait foi.
@@ -492,11 +492,13 @@ entraîneurs du club depuis l'administration du club de VolleyManager. Le
 fichier est lu dans le navigateur : seuls le numéro de licence, le nom, le
 prénom, la date de naissance et le sexe de chaque personne sont conservés ;
 rien d'autre du fichier n'est envoyé au serveur. Les listes sont visibles pour
-les responsables du club et les administrateurs. La liste des joueuses et
-joueurs est aussi visible pour les responsables d'équipe du club pour leurs
-listes, et elle est téléchargée sur les appareils des marqueurs du club afin
-que la préparation du match puisse ajouter des joueurs sans internet. Le sexe
-sert à ce que personne ne soit inscrit dans une équipe de l'autre sexe. Chaque
+les responsables du club et les administrateurs. Elles sont aussi visibles
+pour les responsables d'équipe du club pour leurs listes, et elles sont
+téléchargées sur les appareils des marqueurs du club afin que la préparation
+du match puisse ajouter des joueurs et des officiels d'équipe sans internet
+(un entraîneur peut être n'importe quelle personne des listes du club). Le
+sexe sert à ce qu'aucune joueuse ni aucun joueur ne soit inscrit dans une
+équipe de l'autre sexe ; il n'est pas vérifié pour les officiels d'équipe. Chaque
 chargement remplace cette liste ; les listes sont supprimées avec le club. Sur
 un appareil de marquage, chaque téléchargement remplace la copie, et elle est
 supprimée à la déconnexion.
@@ -508,8 +510,9 @@ publique du tournoi montre les équipes, les noms et les pays, jamais les
 numéros de licence ni les dates de naissance.
 
 **But :** réutiliser les listes d'équipe, préparer à l'avance la liste d'un match, ajouter les joueuses et
-joueurs d'un club à une liste et vérifier leur sexe par rapport à celui de l'équipe, organiser des
-tournois, rattacher les joueuses et joueurs par numéro de licence lors d'une importation.
+joueurs et les officiels d'équipe d'un club à une liste et vérifier le sexe des joueuses et joueurs par
+rapport à celui de l'équipe, organiser des tournois, rattacher les joueuses et joueurs par numéro de
+licence lors d'une importation.
 
 Ces données sont conservées jusqu'à ce qu'un gestionnaire les supprime, même
 si le compte qui les a créées est supprimé.

@@ -372,13 +372,15 @@ db.version(21).stores({
   game_rosters: 'key, gameNumber, userId'
 })
 
-// Version 22: the players lists of the scorer's clubs (db/024,
+// Version 22: the licence lists of the scorer's clubs (db/024,
 // db/clubPlayers.js), downloaded ahead so Match Setup's "Add from club" works
 // offline. One row per club (key = club id): its team names, each team's
-// gender and its players (licence number, names, date of birth, gender).
-// Personal data like the saved teams: only for the account that loaded them
-// (row.userId), cleared on sign-out and account switch. A new table, no
-// upgrade function: nothing to migrate.
+// gender, its players list and every person of its lists once (`people`, for
+// the bench officials; licence number, names, date of birth, gender, lists:
+// a field of the row, no index, so no new version for it). Personal data
+// like the saved teams: only for the account that loaded them (row.userId),
+// cleared on sign-out and account switch. A new table, no upgrade function:
+// nothing to migrate.
 db.version(22).stores({
   club_players: 'clubId, userId'
 })

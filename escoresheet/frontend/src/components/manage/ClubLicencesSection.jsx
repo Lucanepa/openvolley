@@ -32,6 +32,8 @@ export default function ClubLicencesSection({ club }) {
   const [list, setList] = useState('players')
   const [reading, setReading] = useState(false)
   const [preview, setPreview] = useState(null) // { list, fileName, people, rows, skipped }
+  // after a save: the export file still lies on this device, with everyone's contact data
+  const [savedFile, setSavedFile] = useState(null)
   const [busy, setBusy] = useState(false)
   const [uploadError, setUploadError] = useState('')
   const [q, setQ] = useState('')
@@ -44,6 +46,7 @@ export default function ClubLicencesSection({ club }) {
     setReading(true)
     setUploadError('')
     setPreview(null)
+    setSavedFile(null)
     try {
       const { readLicenceExport } = await import('../../utils/vmLicenceExport')
       const r = await readLicenceExport(file)
@@ -72,6 +75,7 @@ export default function ClubLicencesSection({ club }) {
       return
     }
     toast.success(t('manage.licences.saved', { count: res.data?.count ?? preview.people.length, list: t(`manage.licences.lists.${preview.list}`) }))
+    setSavedFile(preview.fileName || 'xlsx')
     setPreview(null)
     reload({ quiet: true })
   }
@@ -121,6 +125,11 @@ export default function ClubLicencesSection({ club }) {
         </Button>
       </div>
       <InlineError error={uploadError} className="mb-3" />
+      {savedFile && !preview && (
+        <div className="mb-3" data-testid="licences-delete-file">
+          <Notice tone="warning">{t('manage.licences.deleteFile', { file: savedFile })}</Notice>
+        </div>
+      )}
       {preview && (
         <div className="mb-4 space-y-3 rounded-xl border border-stone-200 bg-stone-50/60 p-3" data-testid="licences-preview">
           <p className="m-0 text-sm font-medium text-stone-900">{t('manage.licences.previewCount', { count: preview.people.length })}</p>

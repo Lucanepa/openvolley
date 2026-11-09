@@ -2,7 +2,8 @@
  * A club's licence lists from VolleyManager (db/024, lib/licences.js,
  * docs/club-licences-spec.md): the club manager's upload (replace semantics,
  * the five fields only), who reads what, the teams of each person, the
- * gender rule on squads and game rosters, the audit and ON DELETE CASCADE.
+ * gender rule on squads and game rosters (the players only: the officials may
+ * be anyone of the club), the audit and ON DELETE CASCADE.
  *
  * Needs PG_TEST_URL (see tests/helpers/pgTestDb.js) or OV_E2E_DOCKER=1.
  */
@@ -22,6 +23,8 @@ const MARCO = { sv_number: '100003', last_name: 'Probe', first_name: 'Marco', do
 const NOAH = { sv_number: '100004', last_name: 'Testmann', first_name: 'Noah', dob: null, gender: 'm' }
 const COACH = { sv_number: '200001', last_name: 'Trainer', first_name: 'Tina', dob: '1980-03-04', gender: 'f' }
 const player = (number, p, extra = {}) => ({ number, first_name: p.first_name, last_name: p.last_name, dob: p.dob, license_number: p.sv_number, ...extra })
+const official = (role, p) => ({ role, first_name: p.first_name, last_name: p.last_name, dob: p.dob, license_number: p.sv_number })
+const FIVE = ['dob', 'first_name', 'gender', 'last_name', 'sv_number']
 
 describe('club licence lists', { skip: SKIP }, () => {
   let db, srv, sql
@@ -147,13 +150,20 @@ describe('club licence lists', { skip: SKIP }, () => {
     assert.deepEqual(own.json.data.lists.players, { count: 0, imported_at: null, imported_by_name: null })
   })
 
-  it('the team manager reads the players list through its team only, with the team\'s gender', async () => {
+  it('the team manager reads the club\'s lists through its team only, with the team\'s gender', async () => {
     const r = await call(users.coach, 'GET', `/api/team/${h1.id}/club-players`)
     assert.equal(r.status, 200, r.text)
     assert.equal(r.json.data.gender, 'm')
     assert.equal(r.json.data.team.club_id, musterdorf.id)
+    // players: the players list (the player rows, as before)
     assert.deepEqual(r.json.data.players.map((p) => p.sv_number), ['100001', '100002', '100003', '100004'])
-    assert.deepEqual(Object.keys(r.json.data.players[0]).sort(), ['dob', 'first_name', 'gender', 'last_name', 'sv_number'])
+    assert.deepEqual(Object.keys(r.json.data.players[0]).sort(), FIVE)
+    // people: everyone of the three lists once, with its lists (the team officials)
+    assert.deepEqual(r.json.data.people.map((p) => [p.sv_number, p.lists]), [
+      ['100001', ['players']], ['100002', ['players']], ['100003', ['players', 'coaches']], ['100004', ['players']], ['200001', ['coaches']]
+    ])
+    assert.deepEqual(Object.keys(r.json.data.people[0]).sort(), [...FIVE, 'lists'].sort())
+    assert.deepEqual(r.json.data.people.find((p) => p.sv_number === '200001'), { ...COACH, lists: ['coaches'] })
     // not the club's other teams
     assert.equal((await call(users.coach, 'GET', `/api/team/${d1.id}/club-players`)).status, 403)
     assert.equal((await call(users.stranger, 'GET', `/api/team/${h1.id}/club-players`)).status, 403)
@@ -162,7 +172,7 @@ describe('club licence lists', { skip: SKIP }, () => {
     assert.equal((await call(users.clubmgr, 'GET', `/api/team/${mixed.id}/club-players`)).json.data.gender, null)
   })
 
-  it('a scorer downloads the players lists of its own clubs only', async () => {
+  it('a scorer downloads the lists of its own clubs only', async () => {
     const r = await call(users.scorer, 'GET', '/api/club-licences')
     assert.equal(r.status, 200, r.text)
     assert.equal(r.json.data.clubs.length, 1)
@@ -170,11 +180,17 @@ describe('club licence lists', { skip: SKIP }, () => {
     assert.equal(c.club_id, musterdorf.id)
     assert.deepEqual(c.team_names, ['VBC Musterdorf D1', 'VBC Musterdorf H1', 'VBC Musterdorf X1'])
     assert.deepEqual(c.team_genders, { 'VBC Musterdorf D1': 'f', 'VBC Musterdorf H1': 'm', 'VBC Musterdorf X1': null })
-    // the players list only, not the coaches
+    // players: the players list only, as release 3.0.15 reads it (five fields)
     assert.deepEqual(c.players.map((p) => p.sv_number), ['100001', '100002', '100003', '100004'])
+    assert.deepEqual(Object.keys(c.players[0]).sort(), FIVE)
+    // people: the whole club once, with its lists, for the bench officials
+    assert.deepEqual(c.people.map((p) => [p.last_name, p.lists]), [
+      ['Beispiel', ['players']], ['Muster', ['players']], ['Probe', ['players', 'coaches']], ['Testmann', ['players']], ['Trainer', ['coaches']]
+    ])
+    assert.deepEqual(c.people.find((p) => p.sv_number === '100003'), { ...MARCO, lists: ['players', 'coaches'] })
     const o = await call(users.otherscorer, 'GET', '/api/club-licences')
     assert.equal(o.status, 200, o.text)
-    assert.deepEqual(o.json.data.clubs.map((x) => [x.club_id, x.players.length]), [[other.id, 0]])
+    assert.deepEqual(o.json.data.clubs.map((x) => [x.club_id, x.players.length, x.people.length]), [[other.id, 0, 0]])
     // a team manager without a scoring role reads nothing here
     assert.equal((await call(users.coach, 'GET', '/api/club-licences')).status, 403)
     assert.equal((await call(users.clubmgr, 'GET', '/api/club-licences')).status, 403)
@@ -200,6 +216,26 @@ describe('club licence lists', { skip: SKIP }, () => {
     assert.equal((await call(users.clubmgr, 'PUT', `/api/team/${mixed.id}/squad`, { players: [player(1, ANNA), player(2, MARCO)], staff: [] })).status, 200)
   })
 
+  it('the team\'s officials may be anyone of the club, of either gender: never refused', async () => {
+    // the men's team: Anna (f, players list) and Tina (f, coaches list) on the bench
+    const roster = await call(users.coach, 'PUT', `/api/team/${h1.id}/roster?game=950001`, {
+      players: [player(1, MARCO), player(3, NOAH)],
+      staff: [official('Coach', ANNA), official('Assistant Coach 1', COACH)]
+    })
+    assert.equal(roster.status, 200, roster.text)
+    const squad = await call(users.coach, 'PUT', `/api/team/${h1.id}/squad`, {
+      players: [player(1, MARCO), player(3, NOAH), player(5, { ...ANNA, sv_number: '999999' }), { number: 6, first_name: 'Ohne', last_name: 'Lizenz' }],
+      staff: [official('Coach', COACH), official('Assistant Coach 1', ANNA)]
+    })
+    assert.equal(squad.status, 200, squad.text)
+    // the women's team: Marco (m, players and coaches lists) as coach
+    assert.equal((await call(users.clubmgr, 'PUT', `/api/team/${d1.id}/squad`, { players: [player(1, ANNA), player(2, LEA)], staff: [official('Coach', MARCO)] })).status, 200)
+    // still refused: the same person as a player of the other gender
+    const wrong = await call(users.clubmgr, 'PUT', `/api/team/${d1.id}/squad`, { players: [player(1, ANNA), player(2, MARCO)], staff: [official('Coach', MARCO)] })
+    assert.equal(wrong.json.error?.code, 'OV_WRONG_GENDER')
+    assert.equal(wrong.json.error.index, 1)
+  })
+
   it('the club\'s list: each person once, with its lists and the teams whose saved team has it', async () => {
     const r = await call(users.clubmgr, 'GET', `/api/club/${musterdorf.id}/licences`)
     assert.equal(r.status, 200, r.text)
@@ -213,9 +249,9 @@ describe('club licence lists', { skip: SKIP }, () => {
     assert.deepEqual(d.people.map((p) => p.last_name), ['Beispiel', 'Muster', 'Probe', 'Testmann', 'Trainer'])
     assert.deepEqual(by['100003'].lists, ['players', 'coaches'])
     assert.deepEqual(by['200001'].lists, ['coaches'])
-    assert.deepEqual(by['100003'].teams.map((t) => t.name), ['VBC Musterdorf H1', 'VBC Musterdorf X1'])
-    assert.deepEqual(by['100001'].teams.map((t) => t.name), ['VBC Musterdorf D1', 'VBC Musterdorf X1'])
-    // an official of the saved team counts too
+    // an official of the saved team counts too: Marco coaches D1, Anna is H1's assistant coach
+    assert.deepEqual(by['100003'].teams.map((t) => t.name), ['VBC Musterdorf D1', 'VBC Musterdorf H1', 'VBC Musterdorf X1'])
+    assert.deepEqual(by['100001'].teams.map((t) => t.name), ['VBC Musterdorf D1', 'VBC Musterdorf H1', 'VBC Musterdorf X1'])
     assert.deepEqual(by['200001'].teams.map((t) => [t.id, t.name]), [[h1.id, 'VBC Musterdorf H1']])
     assert.deepEqual(by['100004'].teams.map((t) => t.name), ['VBC Musterdorf H1'])
     assert.equal(by['100004'].dob, null)

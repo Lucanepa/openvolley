@@ -213,16 +213,20 @@ export const teamApi = {
   deleteRoster(teamId, game) {
     return apiRequest('DELETE', `/api/team/${enc(teamId)}/roster?game=${enc(game)}`)
   },
-  /** db/024: the players list of the team's club -> { team, gender: 'm' | 'f' | null, players } */
+  /**
+   * db/024: the team's club for "Add from club" -> { team, gender: 'm' | 'f' |
+   * null, players (the players list), people (everyone of the club's lists
+   * once, with `lists`; missing from a server before it) }
+   */
   clubPlayers(teamId) {
     return apiRequest('GET', `/api/team/${enc(teamId)}/club-players`)
   }
 }
 
 /**
- * GET /api/club-licences (db/024): the players lists of the scorer's clubs,
+ * GET /api/club-licences (db/024): the licence lists of the scorer's clubs,
  * kept on the tablet for Match Setup (db/clubPlayers.js).
- * -> { fetched_at, clubs: [{ club_id, club_name, team_names, team_genders, players }] }
+ * -> { fetched_at, clubs: [{ club_id, club_name, team_names, team_genders, players, people }] }
  */
 export function fetchClubLicences({ timeoutMs } = {}) {
   return apiRequest('GET', '/api/club-licences', undefined, timeoutMs ? { timeoutMs } : undefined)

@@ -1,6 +1,7 @@
 # Club licence lists: the club's people from VolleyManager
 
-Status: built on `feat/club-licences` (db/024). Not deployed.
+Status: first build in main (PR #94, db/024, release 3.0.15). The 2026-11-09 feedback (no gender
+note in the picker; team officials from anyone of the club) on `feat/licence-export-reminder`.
 
 Owner, 2026-11-09:
 
@@ -14,6 +15,14 @@ Owner, 2026-11-09:
 - OpenVolley is offline first: Match Setup never waits on the network.
 - Decision **D2** (team managers, 2026-11-08) stands: the scorer can adjust anything in the hall,
   so in Match Setup the gender rule is a warning, not a block.
+
+Owner, 2026-11-09 (feedback on the first build):
+
+- The picker's note "Women only: players registered as men are not offered." (and its men's twin)
+  "can go away". The filter itself stays.
+- "coaches can literally be any player/member of the club from the list": a team official
+  (coach, assistant coaches, physiotherapist, medic) is chosen from anyone of the club's three
+  lists, of either gender, and the gender rule never applies to officials.
 
 ## 1. What is kept: five fields
 
@@ -57,8 +66,8 @@ name):
 | Who | What | Where |
 |---|---|---|
 | Club managers of the club (db/020), admins | uploads each list; every person once, with its lists and teams | My club → Licences |
-| Team managers of a team (db/023), the club's managers, admins | the club's **players** list, the team's gender | My teams → "Add from club" |
-| Scorers of the club (indoor saved-teams read right; their `account_clubs`) | the **players** list of each of their clubs, the team names and each team's gender | the scoring tablet's copy, Match Setup |
+| Team managers of a team (db/023), the club's managers, admins | the club's three lists (the **players** list for the players, everyone for the officials), the team's gender | My teams → "Add from club" |
+| Scorers of the club (indoor saved-teams read right; their `account_clubs`) | the three lists of each of their clubs (the **players** list and everyone once), the team names and each team's gender | the scoring tablet's copy, Match Setup |
 
 Never public, never anonymous, never on the `/api/db` allowlist. Another club's manager, a team
 manager outside its own teams and a scorer of another club see nothing of it.
@@ -77,13 +86,26 @@ manager outside its own teams and a scorer of another club see nothing of it.
 
 ### My teams → "Add from club"
 
-In the squad editor and in a game's roster dialog: a picker (search, several at once) over the
-club's players list. When the team's gender is known, only players of that gender (and those the
-list gives no gender) are offered. Chosen players come with licence number, names and date of
-birth, without a shirt number. The merge rules of the Einsatzliste import decide who is already
-there (the same licence, else the same name, also with first and last name swapped): nobody is
-added twice, a player found gets the licence and date of birth. In a game's roster a player found
-is ticked.
+**Players.** In the squad editor and in a game's roster dialog: a picker (search, several at once)
+over the club's players list. When the team's gender is known, only players of that gender (and
+those the list gives no gender) are offered; the picker says nothing about it (no note). Chosen
+players come with licence number, names and date of birth, without a shirt number. The merge rules
+of the Einsatzliste import decide who is already there (the same licence, else the same name, also
+with first and last name swapped): nobody is added twice, a player found gets the licence and date
+of birth. In a game's roster a player found is ticked.
+
+**Team officials.** "Add from club" in the officials part of the squad editor and of a game's
+roster dialog: a picker over **everyone of the club's three lists** (players, scorers, coaches;
+each person once, its lists shown), with **no gender filter**. The picker asks for the role
+(coach, assistant coach 1 and 2, physiotherapist, medic; it starts at the first role nobody holds)
+and one person:
+
+- Squad editor: the first official row of that role takes the person (names, date of birth,
+  licence number); without such a row, a row of that role is added.
+- Game roster: the person is ticked in that role (added when the squad does not have them in it),
+  and whoever was ticked in that role before is unticked: each role once.
+- Someone already in the chosen role is shown as already there and cannot be chosen again; the
+  picker names who holds the role now (the choice takes their place).
 
 ## 3. The gender rule
 
@@ -91,6 +113,9 @@ A **team's gender** comes from its games in the schedule (`svrz_games`, home or 
 team's name): the one gender they have (`men` / `women`, `m` / `f`). Games without a gender say
 nothing; a mixed gender or both genders make it unknown, and an unknown gender checks nothing.
 
+- **Players only.** The rule checks the players of a squad or roster, never its officials: a
+  coach, assistant coach, physiotherapist or medic may be anyone of the club, of either gender
+  (owner 2026-11-09).
 - **Squad and game rosters (manager).** `PUT /api/team/:id/squad` and `PUT
   /api/team/:id/roster` refuse a player whose licence number is in the club's **players** list
   with the other gender than the team's: 400 `OV_WRONG_GENDER` with the player's `index`. The
@@ -100,6 +125,7 @@ nothing; a mixed gender or both genders make it unknown, and an unknown gender c
   club's list with the other gender gets a warning in the roster panel ("Anna Beispiel is
   registered with the club as a woman, and this is a men's game"). Match Setup's roster rows have
   no licence numbers, so a player is matched by name and, when both have one, the date of birth.
+  The bench officials get no warning.
 
 ## 4. API (lib/licences.js, db/024)
 
@@ -110,8 +136,12 @@ All JSON, `{ status, body }` like lib/teams.js. Ids in paths are uuids; the list
 |---|---|---|
 | `PUT /api/club/:id/licences/:list` | the club's managers, admins | `{ people: [{ sv_number, last_name, first_name, dob, gender }] }`, at most 2000; replaces that list in one transaction (an empty list deletes it). `{ list, count, imported_at }` |
 | `GET /api/club/:id/licences` | the club's managers, admins | `{ season, lists: { players, scorers, coaches: { count, imported_at, imported_by_name } }, people: [{ sv_number, last_name, first_name, dob, gender, lists, teams: [{ id, name }] }] }` |
-| `GET /api/team/:id/club-players` | whoever may manage the team | `{ team, gender: 'm' \| 'f' \| null, players }` (the players list) |
-| `GET /api/club-licences` | indoor `canReadTeams` (scorers) | `{ fetched_at, clubs: [{ club_id, club_name, team_names, team_genders, players }] }`: the caller's clubs |
+| `GET /api/team/:id/club-players` | whoever may manage the team | `{ team, gender: 'm' \| 'f' \| null, players, people }`: `players` the players list (five fields), `people` everyone of the three lists once `{ sv_number, last_name, first_name, dob, gender, lists }` |
+| `GET /api/club-licences` | indoor `canReadTeams` (scorers) | `{ fetched_at, clubs: [{ club_id, club_name, team_names, team_genders, players, people }] }`: the caller's clubs, `players` and `people` as above |
+
+`players` keeps the shape of the first build: the apps of release 3.0.15 read only `players` (the
+roster rows), and keep working; `people` is new. An app reading a server without `people` offers
+the players list for the officials too.
 
 Audit: `club.licences` with `{ club_id, list, count }`, never a name or a licence number.
 
@@ -120,12 +150,16 @@ Audit: `club.licences` with `{ club_id, list, count }`, never a name or a licenc
 1. **Download ahead.** Whenever the app is open, signed in with an indoor scorer role and online
    (sign-in, the connection coming back, every 15 minutes), it fetches `GET /api/club-licences`
    with the sent rosters (db/023) and keeps it in IndexedDB (`club_players`, Dexie v22, one row
-   per club), for this account only; cleared on sign-out, account deletion and account switch,
-   like the saved teams.
+   per club: its players list and **everyone of its three lists** with their lists; `people` is a
+   field of the row, no new index and no new Dexie version), for this account only; cleared on
+   sign-out, account deletion and account switch, like the saved teams.
 2. **Match Setup reads the device.** For a team whose name is one of the scorer's club teams, the
-   roster editor offers **Add from club** (filtered by the game's gender, see 3) and the warning.
-   Nothing waits on the network; without a copy (never online, another club's team) the button is
-   not there and every other way to fill a roster stays.
+   roster editor offers **Add from club** for the players (the players list, filtered by the
+   game's gender, see 3) with the warning, and **Add from club** for the bench officials (anyone
+   of the three lists, either gender: the role's row takes the names and the date of birth, else
+   a row of that role is added; each role once). Nothing waits on the network; without a copy
+   (never online, another club's team) the buttons are not there and every other way to fill a
+   roster stays.
 3. A list the club changes after the download reaches the tablet the next time it is online.
 
 ## 6. Data and retention
@@ -144,7 +178,10 @@ Audit: `club.licences` with `{ club_id, list, count }`, never a name or a licenc
 - **L2** (owner) The gender rule: refused in the manager, a warning in Match Setup (**D2**).
 - **L3** Team gender from the schedule; unknown (no games, mixed, both) checks nothing. A player
   the list gives no gender is offered to every team and never refused.
-- **L4** The scorers and coaches lists are shown in My club only; "Add from club" and the tablet
-  copy use the players list.
+- **L4** (owner 2026-11-09, replaces "the scorers and coaches lists in My club only") Player rows
+  are added from the players list (of the team's gender); a team official from anyone of the three
+  lists, of either gender, with no gender rule. Team managers and the club's scorers (tablet copy)
+  therefore get all three lists of their club.
+- **L6** (owner 2026-11-09) The picker shows no note about the gender filter.
 - **L5** The audit entry keeps the club id with the list and the count (which club changed which
   list), never a person.

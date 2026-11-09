@@ -1,6 +1,6 @@
 # Privacy policy
 
-**OpenVolley and OpenBeach** · Version 1.10 · As of 9 November 2026
+**OpenVolley and OpenBeach** · Version 1.11 · As of 9 November 2026
 
 This policy is available in German, English, French and Italian. The English
 version is binding.
@@ -431,11 +431,12 @@ club's lists of players, scorers and coaches from VolleyManager's club
 administration. The file is read in the browser: only the licence number, last
 name, first name, date of birth and gender of each person are kept; nothing
 else of the file is sent to the server. The lists are visible to the club's
-managers and the administrators. The players list is also visible to the
-club's team managers for their rosters, and it is downloaded to the scoring
-devices of the club's scorers so that the match setup can add players without
-internet. The gender is used so that a player is not put in a team of the
-other gender. Each upload replaces that list; the lists are deleted with the
+managers and the administrators. They are also visible to the club's team
+managers for their rosters, and they are downloaded to the scoring devices of
+the club's scorers so that the match setup can add players and team officials
+(a coach can be anyone of the club's lists) without internet. The gender is
+used so that a player is not put in a team of the other gender; it is not
+checked for team officials. Each upload replaces that list; the lists are deleted with the
 club. On a scoring device the copy is replaced by each download and deleted
 when the account signs out.
 
@@ -445,9 +446,9 @@ referees and scorers. If a tournament is marked **public**, the public
 tournament page shows teams, names and countries, never licence numbers or
 dates of birth.
 
-**Purpose:** re-using rosters, preparing a game's roster ahead, adding a club's players to a roster and
-checking their gender against the team's, running tournaments, matching players by licence number when
-importing.
+**Purpose:** re-using rosters, preparing a game's roster ahead, adding a club's players and team officials
+to a roster and checking the players' gender against the team's, running tournaments, matching players by
+licence number when importing.
 
 This data is kept until a manager deletes it, even if the account that
 created it is deleted.

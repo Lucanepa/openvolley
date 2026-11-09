@@ -9,7 +9,8 @@
  *   squad({ teamId })                           the saved team of the current season, or null
  *   putSquad({ actorId, teamId, body })         { players, staff }: creates the saved team when needed
  *                                               (db/024: 400 OV_WRONG_GENDER for a player of the
- *                                               club's players list with the other gender than the team's)
+ *                                               club's players list with the other gender than the team's;
+ *                                               the players only: an official may be anyone of the club)
  *   games({ teamId })                           the team's games from today, each with its roster summary
  *   getRoster({ teamId, game })                 the team's roster of game `game`, or null
  *   putRoster({ actorId, teamId, game, body })  { players, staff, coach_signature?, captain_signature? }, any time
@@ -465,7 +466,8 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
     const out = await guarded('put-roster', () => withTx(async (client) => {
       const x = await gameOf(client, teamId, game)
       if (x.answer) throw abort(x.answer)
-      // db/024: a player can't play in the wrong gender (owner 2026-11-09)
+      // db/024: a player can't play in the wrong gender (owner 2026-11-09);
+      // the officials are not checked: they may be anyone of the club
       const wrong = licences ? await licences.wrongGender(client, x.team, v.players) : null
       if (wrong) throw abort(WRONG_GENDER(wrong.index, wrong.gender))
       const n = String(x.game.game_number)
@@ -560,7 +562,8 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
     return guarded('put-squad', async () => {
       const team = await teamRow(pool, teamId)
       if (!team) return notFound()
-      // db/024: a player can't play in the wrong gender (owner 2026-11-09)
+      // db/024: a player can't play in the wrong gender (owner 2026-11-09);
+      // the officials are not checked: they may be anyone of the club
       const wrong = licences ? await licences.wrongGender(pool, team, v.players) : null
       if (wrong) return WRONG_GENDER(wrong.index, wrong.gender)
       const year = seasonOf(clock())

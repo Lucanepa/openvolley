@@ -1,13 +1,17 @@
 /**
- * Offline copy of the players lists of the scorer's clubs (db/024,
+ * Offline copy of the licence lists of the scorer's clubs (db/024,
  * docs/club-licences-spec.md section 5). Offline first: the scoring tablet
  * downloads them whenever it is online (GET /api/club-licences: sign-in,
  * every 15 minutes, back online; AuthContext) and Match Setup's "Add from
  * club" only ever reads this table, so a hall without internet still offers
- * the club's players.
+ * the club's players (for the roster) and its people (for the bench
+ * officials, who may be anyone of the club's lists).
  *
  * One row per club: { clubId, clubName, teamNames, teamGenders, players:
- * [{ sv_number, last_name, first_name, dob, gender }], fetchedAt, userId }.
+ * [{ sv_number, last_name, first_name, dob, gender }] (the players list),
+ * people: [{ ...the same five fields, lists }] (everyone of the three lists
+ * once), fetchedAt, userId }. A server before `people` (or a row kept by an
+ * older app) has the players list only: people are then the players.
  * Personal data (names, dates of birth, licence numbers, gender): only for
  * the account that loaded them (row.userId) and cleared on sign-out and
  * account switch (AuthContext), like the saved teams and the sent rosters.
@@ -43,7 +47,32 @@ function currentAccess() {
   }
 }
 
-/** One club of GET /api/club-licences -> the cache row (the five fields of each player only). */
+const LISTS = ['players', 'scorers', 'coaches']
+
+/** A person of a list: the five fields only. */
+const personOf = (p) => ({
+  sv_number: String(p.sv_number),
+  last_name: p.last_name || '',
+  first_name: p.first_name || null,
+  dob: p.dob || null,
+  gender: p.gender === 'm' || p.gender === 'f' ? p.gender : null
+})
+
+/**
+ * The people of a club (row or answer): everyone of its lists once, with
+ * `lists`; without them (an older server or row), the players list.
+ */
+export function peopleOfClub(c) {
+  if (Array.isArray(c?.people)) {
+    return c.people.filter((p) => p && p.sv_number != null).map((p) => {
+      const lists = (Array.isArray(p.lists) ? p.lists : []).filter((l) => LISTS.includes(l))
+      return { ...personOf(p), lists: lists.length ? lists : ['players'] }
+    })
+  }
+  return (Array.isArray(c?.players) ? c.players : []).filter((p) => p && p.sv_number != null).map((p) => ({ ...personOf(p), lists: ['players'] }))
+}
+
+/** One club of GET /api/club-licences -> the cache row (the five fields of each person, and its lists). */
 export function clubToRow(c, userId, fetchedAt = null) {
   const names = Array.isArray(c?.team_names) ? c.team_names.filter((n) => typeof n === 'string') : []
   const genders = c?.team_genders && typeof c.team_genders === 'object' ? c.team_genders : {}
@@ -52,13 +81,8 @@ export function clubToRow(c, userId, fetchedAt = null) {
     clubName: c.club_name || '',
     teamNames: names,
     teamGenders: Object.fromEntries(names.map((n) => [n, genders[n] === 'm' || genders[n] === 'f' ? genders[n] : null])),
-    players: (Array.isArray(c?.players) ? c.players : []).map((p) => ({
-      sv_number: String(p.sv_number),
-      last_name: p.last_name || '',
-      first_name: p.first_name || null,
-      dob: p.dob || null,
-      gender: p.gender === 'm' || p.gender === 'f' ? p.gender : null
-    })),
+    players: (Array.isArray(c?.players) ? c.players : []).filter((p) => p && p.sv_number != null).map(personOf),
+    people: peopleOfClub(c),
     fetchedAt,
     userId
   }
@@ -86,8 +110,9 @@ export async function clearClubPlayers() {
 
 /**
  * The cached club of team `teamName` for `rows` (the table's rows of the
- * signed-in account): { clubId, clubName, players, gender (the team's: 'm' |
- * 'f' | null), fetchedAt } or null when the team is none of the clubs'.
+ * signed-in account): { clubId, clubName, players (the players list), people
+ * (everyone of the lists, with `lists`), gender (the team's: 'm' | 'f' |
+ * null), fetchedAt } or null when the team is none of the clubs'.
  */
 export function clubOfTeam(rows, teamName, userId) {
   const k = teamKey(teamName)
@@ -96,13 +121,13 @@ export function clubOfTeam(rows, teamName, userId) {
     if (!r || (userId && r.userId !== userId)) continue
     const name = (r.teamNames || []).find((n) => teamKey(n) === k)
     if (name === undefined) continue
-    return { clubId: r.clubId, clubName: r.clubName, players: r.players || [], gender: r.teamGenders?.[name] ?? null, fetchedAt: r.fetchedAt || null }
+    return { clubId: r.clubId, clubName: r.clubName, players: r.players || [], people: peopleOfClub(r), gender: r.teamGenders?.[name] ?? null, fetchedAt: r.fetchedAt || null }
   }
   return null
 }
 
 /**
- * Download the players lists into the cache. Never throws; offline or
+ * Download the clubs' lists into the cache. Never throws; offline or
  * without the scoring role it leaves the cache as it is.
  * @returns {Promise<'refreshed'|'skipped'|'offline'|'forbidden'|'error'>}
  */
