@@ -4334,6 +4334,156 @@
     "opensource": "Open-Source-Hiwiis",
     "signUpConsent": "Wer es Konto erstellt, akzeptiert d <terms>Nutzigsbedingige</terms> und d <privacy>Datenschutzerklärig</privacy>."
   },
+  "rectify": {
+    "moment": {
+      "event": "{{what}} bi {{score}}",
+      "service": "Ufschlag vo #{{n}} bi {{score}}",
+      "serviceNoNumber": "Ufschlag bi {{score}}",
+      "setStart": "Satzbeginn ({{score}})",
+      "unknown": "Zitpunkt unbekannt"
+    },
+    "log": {
+      "applied": "{{what}}: Satz {{set}}, {{before}} → {{after}}",
+      "reversed": "Zruggno: {{what}} (Satz {{set}})",
+      "beforeService": "Vor em Ufschlag zruggno: {{what}}; {{sanction}} für {{team}}"
+    },
+    "preview": {
+      "title": "Was sich änderet",
+      "incomplete": "Obe s Team und de Zitpunkt wähle.",
+      "cancelled": "Annullierti Pünkt",
+      "cancelledList": "{{n}} vo {{team}}: {{list}}",
+      "none": "Kei",
+      "removed": "Usegnoni Ballwächsel",
+      "removedList": "{{n}}: {{list}}",
+      "penalty": "Straaf",
+      "pointTo": "Punkt und Ufschlag für {{team}}",
+      "noPoint": "Kein zuesätzliche Punkt",
+      "score": "Spielstand",
+      "server": "Nächschte Ufschlag",
+      "serverWithNumber": "{{team}}, #{{n}}",
+      "lineup": "Ufstellig {{team}}",
+      "lineupChanged": "(korrigiert)",
+      "remark": "Bemerkig uf em Matchblatt",
+      "takenBack": "Zruggno",
+      "sanction": "Sanktion",
+      "delayPenalty": "Verzögerigsstraaf: Punkt und Ufschlag für {{team}}",
+      "delayWarning": "Verzögerigswarnig",
+      "result": "Resultat",
+      "setTo": "Satz {{set}} a {{team}}; {{other}} bhaltet sini Pünkt",
+      "matchTo": "{{team}} überchunnt d Pünkt und Sätz, won es zum Spiilgwünn bruucht; {{other}} bhaltet sini Pünkt und Sätz. Dänach isch s Spiil fertig."
+    },
+    "lineup": {
+      "libero": "Libero",
+      "editor": "Ufstellig ab em nächschte Ballwächsel",
+      "position": "Spieler/in uf Position {{pos}}",
+      "hintSuggest": "De regelwidrig Wächsel rückgängig gmacht: wer iigwächslet worde isch, gaht use, wer ersetzt worde isch, chunnt zrugg. Ändere, wänn d Schiris s anders korrigiert händ.",
+      "hintKeep": "D App füehrt s Ufstelligsblatt und d Rotationsreihefolg: d Spieler/inne gönd uf die Positione zrugg. Nur ändere, wänn de Iitrag sälber falsch gsi isch."
+    },
+    "field": {
+      "teamAtFault": "Fählbars Team",
+      "lineup": "Ufstellig vo {{team}} ab em nächschte Ballwächsel",
+      "entry": "Wele Iitrag?",
+      "teamIncomplete": "Team, wo nöd wiiterspiile cha",
+      "reason": "Grund"
+    },
+    "action": {
+      "goBack": "Zu dem Spielstand zrugg",
+      "apply": "Pünkt annulliere und de Punkt gää",
+      "takeBack": "Zrugg neh und Verzögerigssanktion gää",
+      "forfeitSet": "Satz em Gägner gää",
+      "forfeitMatch": "Wiiter zum Forfait vom Spiil"
+    },
+    "empty": {
+      "beforeService": "Das Team hät sit em letschte Ballwächsel kein Wächsel und kein Libero-Wächsel.",
+      "substitution": "Das Team hät i dem Satz kein Wächsel.",
+      "libero": "Das Team hät i dem Satz kein Libero-Wächsel.",
+      "score": "I dem Satz gits nüüt zum Wähle."
+    },
+    "blocked": {
+      "noSet": "Nur während emne Satz.",
+      "rally": "En Ballwächsel lauft: zerscht beände."
+    },
+    "back": "Alli Situatione",
+    "intro": "Wänn en Fähler erscht bemerkt wird, nachdem wiitergspilt worde isch, setzed d Regle s Spiil zrugg. Wähl, was passiert isch: Du gsehsch, was sich änderet, bevor öppis gspeicheret wird, und Rückgängig macht s wieder rückgängig.",
+    "describe": {
+      "cancelledPoint": "Punkt annulliert: {{team}}",
+      "title": "Korrektur: {{what}}",
+      "back": "Spielstand zrugg uf {{score}}",
+      "cancelled": "{{n}} Punkt/Pünkt vo {{team}} annulliert",
+      "pointTo": "Punkt für {{team}}"
+    },
+    "menu": "Zrugg / korrigiere",
+    "title": "Zrugg / korrigiere",
+    "group": {
+      "cancel": "Pünkt vom fählbare Team annulliert",
+      "back": "Zrugg zumne früehere Spielstand",
+      "service": "Vor em nächschte Ufschlag bemerkt",
+      "forfeit": "Es Team cha nöd wiiterspiile"
+    },
+    "kind": {
+      "before_service": "Regelwidrige Wächsel oder Libero-Wächsel, bemerkt vor em nächschte Ufschlag",
+      "forfeit_set": "Team unvollständig für dä Satz",
+      "forfeit_match": "Team im Forfait oder unvollständig fürs Spiil",
+      "illegal_substitution": "Regelwidrige Wächsel, bemerkt nachdem wiitergspilt worde isch",
+      "illegal_libero": "Regelwidrige Libero-Wächsel, bemerkt nach em Ufschlag",
+      "lineup_discrepancy": "Spieler/inne nöd uf de Positione vom Ufstelligsblatt",
+      "unregistered_player": "Nöd iitreite Spieler/in uf em Fäld",
+      "rotation_fault": "Falschi Ufschlägerin / falsche Ufschläger, spöter bemerkt (Rotationsfähler)",
+      "official_error": "Zrugg zumne früehere Spielstand (Fähler vo de Offizielle)"
+    },
+    "help": {
+      "before_service": "De Iitrag wird zruggno und s Team überchunnt e Verzögerigssanktion: e Verzögerigswarnig, oder e Verzögerigsstraaf, wänn s i dem Spiil scho e Verzögerigssanktion hät.",
+      "forfeit_set": "En Spieler / e Spielerin muess use (Verletzig, Usschluss, Disqualifikation) und cha weder regulär no usserordentlich ersetzt werde, oder de Coach git de Satz uf (Casebook 4.11). De Gägner überchunnt d Pünkt, won er zum Satzgwünn bruucht; s unvollständige Team bhaltet sini Pünkt.",
+      "forfeit_match": "S Team verweigeret s Spiil, chunnt nöd oder cha kei sächs Spieler/inne stelle. De Gägner überchunnt d Pünkt und Sätz, won er zum Spiilgwünn bruucht; s Matchblatt bhaltet d gspilte Pünkt. Es Team im Forfait verlüürt 0:3 (0:25 pro Satz): das Resultat trait de Wettbewerb ii. Im nächschte Schritt wird e Bemerkig verlangt.",
+      "illegal_substitution": "Punkt und Ufschlag für de Gägner. De Wächsel wird korrigiert (das zellt nöd als Wächsel). D Pünkt vom fählbare Team sit em Wächsel werded annulliert; de Gägner bhaltet sini Pünkt.",
+      "illegal_libero": "Wie en regelwidrige Wächsel: Punkt und Ufschlag für de Gägner, de Wächsel korrigiert, d Pünkt vom fählbare Team sitdem annulliert.",
+      "lineup_discrepancy": "S Team gaht zrugg uf d Positione vo sim Ufstelligsblatt. Punkt und Ufschlag für de Gägner; d Pünkt vom fählbare Team sit em Fähler werded annulliert.",
+      "unregistered_player": "En iitreite Spieler / e iitreiti Spielerin ersetzt ihn oder sie. Punkt und Ufschlag für de Gägner; d Pünkt vom fählbare Team sit em Iitritt werded annulliert. Erscht nach em Satz oder em Spiil bemerkt: Satz oder Spiil sind verlore, em 1. Schiri mälde.",
+      "rotation_fault": "Punkt und Ufschlag für de Gägner; d Rotationsreihefolg wird korrigiert. Grad nach em Ballwächsel vom falsche Ufschlag bemerkt: en einzige Punkt für de Gägner. Spöter bemerkt: d Pünkt vom fählbare Team sit em falsche Ufschlag werded annulliert; Zitpunkt unbekannt: nur de Punkt.",
+      "official_error": "D Offizielle händ falsch informiert und es isch wiitergspilt worde, oder en Ballwächsel isch mit föif oder sibe Spieler/inne gspilt worde: de Spielstand gaht für beidi Teams uf dä Moment zrugg. Sanktione bliibed; kein Straafpunkt."
+    },
+    "momentPrompt": {
+      "substitution": "Wele Wächsel isch regelwidrig gsi?",
+      "libero": "Wele Libero-Wächsel isch regelwidrig gsi?",
+      "service": "Bi welem Ufschlag hät di falsch Person ufgschlage?",
+      "score": "Ab welem Spielstand?"
+    },
+    "error": {
+      "chooseSituation": "Wähl, was passiert isch.",
+      "chooseTeam": "Wähl s fählbare Team.",
+      "chooseMoment": "Wähl de Zitpunkt vom Fähler.",
+      "notLive": "Da cha nur de laufend Satz zruggsetzt werde. Für en früehere Satz d Korrekture bruuche und de Schiri informiere.",
+      "setFinished": "Satz {{set}} isch fertig. D Korrekture bruuche und de Schiri informiere.",
+      "nothingToChange": "Nüüt änderet sich: s fählbare Team hät sitdem kein Punkt gmacht.",
+      "nothingToGoBack": "Sit dem Spielstand isch kein Ballwächsel gspilt worde.",
+      "lineupIncomplete": "Für jedi vo de sächs Positione en Spieler / e Spielerin wähle.",
+      "lineupDuplicate": "#{{n}} isch zweimal gwählt.",
+      "notFound": "De Iitrag gits nüme.",
+      "notLast": "Dänach sind Ballwächsel gspilt worde: die zerscht zrugg neh.",
+      "laterRectification": "E spöteri Korrektur i dem Satz chunnt zerscht: die zerscht zrugg neh.",
+      "notBeforeService": "Sit dem Iitrag isch en Ballwächsel gspilt worde: «Regelwidrige Wächsel, bemerkt nachdem wiitergspilt worde isch» bruuche."
+    },
+    "note": {
+      "singlePoint": "Grad nach em Ballwächsel vom falsche Ufschlag bemerkt, wo {{team}} gwunne hät: das isch de einzig Punkt (7.7.1.1), es chunnt kein Punkt dezue.",
+      "momentUnknown": "Zitpunkt unbekannt: kein Punkt wird annulliert, nur Punkt und Ufschlag für de Gägner (7.7.2).",
+      "setWon": "De Punkt beändet Satz {{set}}: als Nächschts s Satzänd bestätige.",
+      "timeline": "Timeouts, Wächsel und Sanktione dänach bliibed; uf em Matchblatt zeiged si jetzt de korrigierte Spielstand.",
+      "sanctionsStay": "Sanktione bliibed gültig, mit ihrne Pünkt (Casebook 2.3)."
+    },
+    "remark": {
+      "team": "Team {{team}}, Satz {{set}}, Resultat {{score}}: {{what}} (Regel {{rule}}) seit {{from}}; {{n}} Punkt(e) von Team {{team}} annulliert, Punkt und Aufschlag für Team {{opp}}; Spielstand neu {{after}}.",
+      "teamNoPenalty": "Team {{team}}, Satz {{set}}, Resultat {{score}}: {{what}} (Regel {{rule}}) seit {{from}}; {{n}} Punkt(e) von Team {{team}} annulliert; Spielstand neu {{after}}.",
+      "unknown": "Team {{team}}, Satz {{set}}, Resultat {{score}}: {{what}} (Regel {{rule}}), Zeitpunkt unbekannt; Punkt und Aufschlag für Team {{opp}}; Spielstand neu {{after}}.",
+      "official": "Satz {{set}}, Resultat {{score}}: Fehler der Offiziellen (Casebook 2.3); Spielstand zurück auf {{after}}, Sanktionen bleiben gültig."
+    },
+    "remarkWhat": {
+      "illegal_substitution": "regelwidriger Spielerwechsel",
+      "illegal_libero": "regelwidriger Libero-Wechsel",
+      "lineup_discrepancy": "Positionen nicht wie auf dem Aufstellungsblatt",
+      "unregistered_player": "nicht eingetragene/r Spieler/in auf dem Feld",
+      "rotation_fault": "Rotationsfehler"
+    }
+  },
   "corrections": {
     "teamLetter": "Team {{letter}}",
     "teamWithLetter": "{{name}} ({{letter}})",

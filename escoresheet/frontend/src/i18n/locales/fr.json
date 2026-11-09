@@ -4333,6 +4333,156 @@
     "opensource": "Avis open source",
     "signUpConsent": "La création d’un compte vaut acceptation des <terms>conditions d’utilisation</terms> et de la <privacy>déclaration de protection des données</privacy>."
   },
+  "rectify": {
+    "moment": {
+      "event": "{{what}} à {{score}}",
+      "service": "Service de #{{n}} à {{score}}",
+      "serviceNoNumber": "Service à {{score}}",
+      "setStart": "Début du set ({{score}})",
+      "unknown": "Moment inconnu"
+    },
+    "log": {
+      "applied": "{{what}} : set {{set}}, {{before}} → {{after}}",
+      "reversed": "Repris : {{what}} (set {{set}})",
+      "beforeService": "Repris avant le service : {{what}} ; {{sanction}} pour {{team}}"
+    },
+    "preview": {
+      "title": "Ce qui change",
+      "incomplete": "Choisissez l’équipe et le moment ci-dessus.",
+      "cancelled": "Points annulés",
+      "cancelledList": "{{n}} de {{team}} : {{list}}",
+      "none": "Aucun",
+      "removed": "Échanges retirés",
+      "removedList": "{{n}} : {{list}}",
+      "penalty": "Sanction",
+      "pointTo": "Point et service à {{team}}",
+      "noPoint": "Aucun point ajouté",
+      "score": "Score",
+      "server": "Service suivant",
+      "serverWithNumber": "{{team}}, #{{n}}",
+      "lineup": "Formation {{team}}",
+      "lineupChanged": "(rectifiée)",
+      "remark": "Remarque sur la feuille de match",
+      "takenBack": "Repris",
+      "sanction": "Sanction",
+      "delayPenalty": "Pénalité pour retard : point et service à {{team}}",
+      "delayWarning": "Avertissement pour retard",
+      "result": "Résultat",
+      "setTo": "Set {{set}} à {{team}} ; {{other}} garde ses points",
+      "matchTo": "{{team}} reçoit les points et les sets nécessaires pour gagner le match ; {{other}} garde ses points et ses sets. Le match se termine ensuite."
+    },
+    "lineup": {
+      "libero": "libéro",
+      "editor": "Formation à partir du prochain échange",
+      "position": "Joueur/euse en position {{pos}}",
+      "hintSuggest": "Le remplacement irrégulier annulé : le/la joueur/euse entré/e sort, celui ou celle qu’il/elle a remplacé/e revient. Modifiez-le si les arbitres l’ont rectifié autrement.",
+      "hintKeep": "L’application tient la fiche de position et l’ordre de rotation : les joueurs/euses reviennent à ces positions. Ne modifiez que si l’enregistrement lui-même était faux."
+    },
+    "field": {
+      "teamAtFault": "Équipe fautive",
+      "lineup": "Formation de {{team}} à partir du prochain échange",
+      "entry": "Quelle entrée ?",
+      "teamIncomplete": "Équipe qui ne peut pas continuer",
+      "reason": "Motif"
+    },
+    "action": {
+      "goBack": "Revenir à ce score",
+      "apply": "Annuler les points et donner le point",
+      "takeBack": "Reprendre et donner la sanction pour retard",
+      "forfeitSet": "Donner le set à l’adversaire",
+      "forfeitMatch": "Continuer vers le forfait du match"
+    },
+    "empty": {
+      "beforeService": "Cette équipe n’a ni remplacement ni remplacement de libéro depuis le dernier échange.",
+      "substitution": "Cette équipe n’a pas de remplacement dans ce set.",
+      "libero": "Cette équipe n’a pas de remplacement de libéro dans ce set.",
+      "score": "Rien à choisir dans ce set."
+    },
+    "blocked": {
+      "noSet": "Seulement pendant un set.",
+      "rally": "Un échange est en cours : terminez-le d’abord."
+    },
+    "back": "Toutes les situations",
+    "intro": "Quand une faute est découverte après la reprise du jeu, les règles ramènent le jeu en arrière. Choisissez ce qui s’est passé : vous voyez ce qui change avant tout enregistrement, et Annuler le reprend.",
+    "describe": {
+      "cancelledPoint": "Point annulé : {{team}}",
+      "title": "Rectification : {{what}}",
+      "back": "score ramené à {{score}}",
+      "cancelled": "{{n}} point(s) de {{team}} annulé(s)",
+      "pointTo": "point à {{team}}"
+    },
+    "menu": "Revenir en arrière / rectifier",
+    "title": "Revenir en arrière / rectifier",
+    "group": {
+      "cancel": "Points de l’équipe fautive annulés",
+      "back": "Retour à un score antérieur",
+      "service": "Remarqué avant le service suivant",
+      "forfeit": "Une équipe ne peut pas continuer"
+    },
+    "kind": {
+      "before_service": "Remplacement ou remplacement de libéro irrégulier remarqué avant le service suivant",
+      "forfeit_set": "Équipe incomplète pour ce set",
+      "forfeit_match": "Équipe en forfait ou incomplète pour le match",
+      "illegal_substitution": "Remplacement irrégulier découvert après la reprise du jeu",
+      "illegal_libero": "Remplacement de libéro irrégulier découvert après le service",
+      "lineup_discrepancy": "Joueurs/euses pas aux positions de la fiche de position",
+      "unregistered_player": "Joueur/euse non inscrit/e sur le terrain",
+      "rotation_fault": "Mauvais/e serveur/euse découvert/e plus tard (faute de rotation)",
+      "official_error": "Retour à un score antérieur (erreur des officiels)"
+    },
+    "help": {
+      "before_service": "L’entrée est reprise et l’équipe reçoit une sanction pour retard : un avertissement pour retard, ou une pénalité pour retard si elle a déjà une sanction pour retard dans ce match.",
+      "forfeit_set": "Un/e joueur/euse doit sortir (blessure, expulsion, disqualification) et ne peut être remplacé/e ni régulièrement ni exceptionnellement, ou l’entraîneur abandonne le set (Casebook 4.11). L’adversaire reçoit les points nécessaires pour gagner le set ; l’équipe incomplète garde ses points.",
+      "forfeit_match": "L’équipe refuse de jouer, ne se présente pas ou ne peut aligner six joueurs/euses. L’adversaire reçoit les points et les sets nécessaires pour gagner le match ; la feuille garde les points joués. Une équipe en forfait perd 0:3 (0:25 par set) : la compétition enregistre ce résultat. Une remarque est demandée à l’étape suivante.",
+      "illegal_substitution": "Point et service à l’adversaire. Le remplacement est rectifié (cela ne compte pas comme un remplacement). Les points de l’équipe fautive depuis le remplacement sont annulés ; l’adversaire garde ses points.",
+      "illegal_libero": "Comme un remplacement irrégulier : point et service à l’adversaire, le remplacement rectifié, les points de l’équipe fautive depuis annulés.",
+      "lineup_discrepancy": "L’équipe reprend les positions de sa fiche de position. Point et service à l’adversaire ; les points de l’équipe fautive depuis le moment de la faute sont annulés.",
+      "unregistered_player": "Un/e joueur/euse inscrit/e le/la remplace. Point et service à l’adversaire ; les points de l’équipe fautive depuis son entrée sont annulés. Découvert après le set ou le match : le set ou le match est perdu, informez le 1er arbitre.",
+      "rotation_fault": "Point et service à l’adversaire ; l’ordre de rotation est rectifié. Découvert juste après l’échange du mauvais service : un seul point à l’adversaire. Découvert plus tard : les points de l’équipe fautive depuis le mauvais service sont annulés ; moment inconnu : seulement le point.",
+      "official_error": "Les officiels ont donné une information erronée et le jeu a continué, ou un échange a été joué à cinq ou sept : le score revient à ce moment pour les deux équipes. Les sanctions restent ; pas de point de pénalité."
+    },
+    "momentPrompt": {
+      "substitution": "Quel remplacement était irrégulier ?",
+      "libero": "Quel remplacement de libéro était irrégulier ?",
+      "service": "À quel service la mauvaise personne a-t-elle servi ?",
+      "score": "À partir de quel score ?"
+    },
+    "error": {
+      "chooseSituation": "Choisissez ce qui s’est passé.",
+      "chooseTeam": "Choisissez l’équipe fautive.",
+      "chooseMoment": "Choisissez le moment de la faute.",
+      "notLive": "Seul le set en cours peut être ramené en arrière ici. Pour un set antérieur, utilisez les corrections et informez l’arbitre.",
+      "setFinished": "Le set {{set}} est terminé. Utilisez les corrections et informez l’arbitre.",
+      "nothingToChange": "Rien ne change : l’équipe fautive n’a marqué aucun point depuis.",
+      "nothingToGoBack": "Aucun échange n’a été joué depuis ce score.",
+      "lineupIncomplete": "Choisissez un/e joueur/euse pour chacune des six positions.",
+      "lineupDuplicate": "#{{n}} est choisi/e deux fois.",
+      "notFound": "Cette entrée n’existe plus.",
+      "notLast": "Des échanges ont été joués après : reprenez-les d’abord.",
+      "laterRectification": "Une rectification plus récente dans ce set passe d’abord : reprenez-la d’abord.",
+      "notBeforeService": "Un échange a été joué depuis cette entrée : utilisez « Remplacement irrégulier découvert après la reprise du jeu »."
+    },
+    "note": {
+      "singlePoint": "Découvert juste après l’échange du mauvais service, gagné par {{team}} : c’est le seul point (7.7.1.1), aucun point n’est ajouté.",
+      "momentUnknown": "Moment inconnu : aucun point n’est annulé, seulement point et service à l’adversaire (7.7.2).",
+      "setWon": "Ce point termine le set {{set}} : confirmez ensuite la fin du set.",
+      "timeline": "Les temps morts, remplacements et sanctions après restent ; sur la feuille ils montrent maintenant le score rectifié.",
+      "sanctionsStay": "Les sanctions restent valables, avec leurs points (Casebook 2.3)."
+    },
+    "remark": {
+      "team": "Équipe {{team}}, set {{set}}, résultat {{score}} : {{what}} (règle {{rule}}) depuis {{from}} ; {{n}} point(s) de l’équipe {{team}} annulé(s), point et service à l’équipe {{opp}} ; score désormais {{after}}.",
+      "teamNoPenalty": "Équipe {{team}}, set {{set}}, résultat {{score}} : {{what}} (règle {{rule}}) depuis {{from}} ; {{n}} point(s) de l’équipe {{team}} annulé(s) ; score désormais {{after}}.",
+      "unknown": "Équipe {{team}}, set {{set}}, résultat {{score}} : {{what}} (règle {{rule}}), moment inconnu ; point et service à l’équipe {{opp}} ; score désormais {{after}}.",
+      "official": "Set {{set}}, résultat {{score}} : erreur des officiels (Casebook 2.3) ; score ramené à {{after}}, les sanctions restent valables."
+    },
+    "remarkWhat": {
+      "illegal_substitution": "remplacement irrégulier",
+      "illegal_libero": "remplacement de libéro irrégulier",
+      "lineup_discrepancy": "positions non conformes à la fiche de position",
+      "unregistered_player": "joueur/euse non inscrit/e sur le terrain",
+      "rotation_fault": "faute de rotation"
+    }
+  },
   "corrections": {
     "teamLetter": "Équipe {{letter}}",
     "teamWithLetter": "{{name}} ({{letter}})",

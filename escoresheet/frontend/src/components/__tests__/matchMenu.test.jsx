@@ -31,7 +31,7 @@ const lookup = (dict, key) => key.split('.').reduce((o, k) => (o == null ? o : o
 
 const ACTION_NAMES = [
   'showRosters', 'showSanctions', 'showActionLog', 'openRemarks', 'openMatchSetup',
-  'manualChanges', 'editRosterHome', 'editRosterAway', 'showPins', 'downloadGameData',
+  'manualChanges', 'goBack', 'editRosterHome', 'editRosterAway', 'showPins', 'downloadGameData',
   'options', 'stopMatch'
 ]
 const allActions = () => Object.fromEntries(ACTION_NAMES.map(n => [n, vi.fn()]))
@@ -43,7 +43,7 @@ describe('match menu sections', () => {
     expect(sections.map(s => s.key)).toEqual(['info', 'corrections', 'devices', 'settings', 'end'])
     expect(sections.map(s => s.items.map(i => i.key))).toEqual([
       ['rosters', 'sanctions', 'action-log', 'remarks', 'match-setup'],
-      ['manual', 'edit-roster-home', 'edit-roster-away'],
+      ['go-back', 'manual', 'edit-roster-home', 'edit-roster-away'],
       ['pins', 'export'],
       ['options'],
       ['stop-match']

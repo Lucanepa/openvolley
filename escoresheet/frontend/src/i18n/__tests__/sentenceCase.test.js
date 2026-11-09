@@ -30,6 +30,8 @@ const PROPER = new Set([
   'Excel',
   // VolleyManager's roster document (a name, as the clubs call it)
   'Einsatzliste',
+  // the FIVB Casebook, a document cited by its name (rectify.*)
+  'Casebook',
 ])
 
 // Title-Cased words after the first one, ignoring placeholders, words after a

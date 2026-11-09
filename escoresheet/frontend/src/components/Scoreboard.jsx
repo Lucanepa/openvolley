@@ -78,6 +78,8 @@ import { LINEUP_POSITIONS, lineupEntryErrors, lineupCandidates, lineupCaptainSta
 import { easyLiberoNumbers, easyLiberoErrors, easyRosterChanges, liberoSlotEditable, MAX_LIBEROS, easyPlayerRow, newPlayerMayEnter, newPlayerError, NEW_PLAYER_ERRORS, easyReferencedNumbers, isEasyStray } from '../domain/easyMatch'
 import { describeEventText, compareBySeq } from '../domain/describe'
 import CorrectionsPanel from './corrections/CorrectionsPanel.jsx'
+import RectifyPanel from './rectify/RectifyPanel.jsx'
+import { planRectificationReversal, rectifyErrorText } from '../domain/rectify'
 import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon, forfeitScope, playersAvailableForNextSet, planForfeitReversal } from '../domain/matchEnd'
 import { signaturesPayload } from '../domain/signatureEdits'
 import { missingPreMatchSignatures, beforeFirstServe } from '../domain/preMatchSignatures'
@@ -464,6 +466,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [showLogs, setShowLogs] = useState(false)
   const [logSearchQuery, setLogSearchQuery] = useState('')
   const [showManualPanel, setShowManualPanel] = useState(false)
+  // Go back / rectify (components/rectify/RectifyPanel, domain/rectify)
+  const [showRectify, setShowRectify] = useState(false)
   const [manualPanelExpandedSections, setManualPanelExpandedSections] = useState({
     lineup: false,     // Change Current Lineup
     scores: false,     // Score & Sets
@@ -7561,6 +7565,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         return
       }
 
+      // A going back (domain/rectify) is reversed from its own undo record:
+      // the cancelled points count again, its penalty point, line-up row and
+      // remark go, the rallies it took out come back. One correction.
+      if (lastEvent.type === 'rectification') {
+        const allEventsForRectify = await db.events.where('matchId').equals(matchId).toArray()
+        const plan = planRectificationReversal(allEventsForRectify, lastEvent.id, {
+          t, match: data?.match, homeTeam: data?.homeTeam, awayTeam: data?.awayTeam, matchId,
+          players: { home: data?.homePlayers || [], away: data?.awayPlayers || [] }
+        })
+        if (plan.error) {
+          deferUi(() => showAlert(rectifyErrorText(plan, t), 'warning'))
+          return
+        }
+        await applyCorrectionPlan(plan, { matchId, db, mode: 'live' })
+        await settleCourtSwitchAfterUndo(lastEvent.setIndex ?? data.set.index)
+        return
+      }
+
       // A forfait is reversed as a whole: the points it awarded go too and the
       // set returns to its pre-forfeit score (a snapshot restore would keep
       // the awarded points)
@@ -7777,7 +7799,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       syncLiveStateToSupabase('undo', null, undoLiveData)
       notifyScoresheetUpdate('undo')
     }
-  }, [data?.set, matchId, restoreStateFromSnapshot, discardEvents, applyForfeitReversal, resyncSetScoreFromEvents, settleCourtSwitchAfterUndo, set5IntervalAfterUndo, showAlert, syncToReferee, sendActionToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate, deferUi, deferEffect, timeoutModal])
+  }, [data?.set, data?.match, data?.homeTeam, data?.awayTeam, data?.homePlayers, data?.awayPlayers, t, matchId, restoreStateFromSnapshot, discardEvents, applyForfeitReversal, resyncSetScoreFromEvents, settleCourtSwitchAfterUndo, set5IntervalAfterUndo, showAlert, syncToReferee, sendActionToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate, deferUi, deferEffect, timeoutModal])
 
   const runUndoConfirm = useConfirmAction(onConfirmFailed)
   // One action: every write of the undo, its event history (the voids and
@@ -10699,6 +10721,47 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     await handleForfait(teamKey, 'forfeit', { scope: 'match' })
   }, [data?.set, data?.match, handleForfait])
 
+  // Go back / rectify (domain/rectify, components/rectify/RectifyPanel): the
+  // plan is written as one correction in one action, the panel closing with
+  // its data. Its penalty point is a point on the score like any other: the
+  // change of courts at 8 in the deciding set, else the set end, follow
+  // (afterPointScored). A delay penalty for an illegal entry noticed before
+  // the service gets its point through the Point path, tied to its sanction.
+  const applyRectification = useCallback(async (plan) => {
+    if (!plan || plan.error || !data?.set) return false
+    const r = plan.rectification || {}
+    await runAction('rectify', async () => {
+      deferUi(() => setShowRectify(false))
+      await applyCorrectionPlan(plan, { matchId, db, mode: 'live' })
+      const set = await db.sets.where({ matchId }).and(s => s.index === (r.setIndex ?? data.set.index)).first()
+      if (set && !set.finished) {
+        if (r.penaltyTo) await afterPointScored({ set, homePoints: set.homePoints || 0, awayPoints: set.awayPoints || 0, teamKey: r.penaltyTo })
+        else await askCourtSwitchForSet5Score()
+      }
+      syncToReferee()
+      syncLiveStateToSupabase('rectification', null, null)
+      notifyScoresheetUpdate('rectification')
+    }, { reason: 'correction' })
+    if (plan.followUp?.awardPointTo) {
+      await handlePoint(mapTeamKeyToSide(plan.followUp.awardPointTo), true, { penaltySeq: r.penaltySeq ?? null })
+    }
+    return true
+  }, [data?.set, matchId, runAction, deferUi, afterPointScored, askCourtSwitchForSet5Score, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate, handlePoint, mapTeamKeyToSide])
+
+  // The forfeits, from the same place: the set (incomplete for the set, FIVB
+  // 6.4.3, 15.8, 17.1.2; Casebook 4.11) through handleForfait; the match
+  // through the Stop the match confirmation and its remarks step
+  const rectifyForfeitSet = useCallback(async (teamKey, reason) => {
+    setShowRectify(false)
+    await handleForfait(teamKey, reason, { scope: 'set' })
+    return true
+  }, [handleForfait])
+  const rectifyForfeitMatch = useCallback((teamKey) => {
+    setShowRectify(false)
+    setStopMatchConfirm({ type: 'forfeit', team: teamKey })
+    return true
+  }, [])
+
   // Handle "Impossibility to resume" - end match as-is without a winner
   const handleImpossibilityToResume = useCallback(async () => {
     if (!data?.set || !data?.match) return
@@ -13542,6 +13605,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     openRemarks: () => setShowRemarks(true),
     openMatchSetup: onOpenMatchSetup && data?.match?.easy !== true ? () => onOpenMatchSetup() : undefined,
     manualChanges: () => setShowManualPanel(true),
+    goBack: () => setShowRectify(true),
     editRosterHome: () => setReopenRosterConfirm('home'),
     editRosterAway: () => setReopenRosterConfirm('away'),
     showPins: () => setShowPinsModal(true),
@@ -19181,6 +19245,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   case 'rally_start': return 'Rally'
                   case 'replay': return 'Replay'
                   case 'decision_change': return 'Decision'
+                  case 'rectification': return 'Going back'
+                  case 'cancelled_point': return 'Point cancelled'
                   case 'coin_toss': return 'Coin toss'
                   case 'lineup': return event.payload?.isInitial ? 'Lineup' : 'Lineup chg'
                   case 'libero_entry': return 'Libero in'
@@ -19307,6 +19373,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     const toName = getTeamShortName(event.payload?.toTeam)
                     return `Point ${fromName}→${toName}`
                   }
+                  // domain/rectify: the going back and the points it cancelled
+                  case 'rectification':
+                  case 'cancelled_point':
+                    return getActionDescription(event) || event.type
                   case 'coin_toss':
                     return `First serve: ${event.payload?.firstServe === event.payload?.teamA ? 'A' : 'B'}`
                   case 'lineup':
@@ -19612,6 +19682,34 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               }}
             />
           </div>
+        </Modal>
+      )}
+
+      {/* Go back / rectify: the rules' going back in one place (Match menu) */}
+      {showRectify && (
+        <Modal
+          title={t('rectify.title', 'Go back / rectify')}
+          open={true}
+          onClose={() => setShowRectify(false)}
+          width={640}
+        >
+          <RectifyPanel
+            events={data?.events}
+            match={data?.match}
+            sets={data?.sets}
+            homeTeam={data?.homeTeam}
+            awayTeam={data?.awayTeam}
+            homePlayers={data?.homePlayers}
+            awayPlayers={data?.awayPlayers}
+            liveSetIndex={data?.set?.index ?? null}
+            rallyInPlay={rallyStatus === 'in_play'}
+            hooks={{
+              apply: applyRectification,
+              forfeitSet: rectifyForfeitSet,
+              forfeitMatch: rectifyForfeitMatch,
+              close: () => setShowRectify(false)
+            }}
+          />
         </Modal>
       )}
 
