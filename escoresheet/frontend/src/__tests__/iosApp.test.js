@@ -58,7 +58,6 @@ describe('iOS app', () => {
   it("the app's plugins answer under the names the page registers", () => {
     const plugins = {
       'ScoresheetFilesPlugin.swift': ['OpenVolleyFiles', src('utils/openAppWindow.js'), ['open', 'share']],
-      'ScoringBarsPlugin.swift': ['OpenVolleyBars', src('utils/nativeSystemBars.js'), ['hide', 'show']],
     }
     const main = read('App/MainViewController.swift')
     for (const [file, [jsName, page, methods]] of Object.entries(plugins)) {
@@ -72,10 +71,12 @@ describe('iOS app', () => {
       expect(main).toContain(`registerPluginInstance(${file.replace('.swift', '')}())`)
     }
     expect(read('App/Base.lproj/Main.storyboard')).toContain('customClass="MainViewController" customModule="App"')
+    // the bars: Capacitor's own SystemBars on iOS (it owns the home indicator)
+    expect(src('utils/nativeSystemBars.js')).toContain("getPlatform?.() === 'ios' ? 'SystemBars' : 'OpenVolleyBars'")
   })
 
   it('every Swift file of the app is compiled (Sources build phase)', () => {
-    for (const f of ['AppDelegate.swift', 'SceneDelegate.swift', 'MainViewController.swift', 'ScoresheetFilesPlugin.swift', 'ScoringBarsPlugin.swift']) {
+    for (const f of ['AppDelegate.swift', 'SceneDelegate.swift', 'MainViewController.swift', 'ScoresheetFilesPlugin.swift']) {
       expect(pbxproj, f).toMatch(new RegExp(`/\\* ${f.replace('.', '\\.')} in Sources \\*/,`))
       expect(pbxproj, f).toMatch(new RegExp(`path = ${f.replace('.', '\\.')}; sourceTree`))
     }

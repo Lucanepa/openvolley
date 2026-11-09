@@ -1,5 +1,6 @@
 /**
- * The status and navigation bars in the Android app (Capacitor).
+ * The status and navigation bars in the Android app (Capacitor), and on iOS
+ * the status bar and the home indicator.
  *
  * The screens behind the size gate (the scoring screen and its match end, on
  * a tablet) hide them (App): an 8" tablet held sideways (1280x800 at 213 dpi,
@@ -25,15 +26,18 @@ function enqueue(task) {
   return queue
 }
 
-// The app's native plugin (ScoringBarsPlugin.java). window.Capacitor gets
-// registerPlugin only once @capacitor/core is loaded, and the app loads it
-// lazily. The proxy answers every property, `then` too, so it is handed
+// The app's native plugin (ScoringBarsPlugin.java); on iOS Capacitor's own
+// SystemBars, whose hide() / show() with no options take the status bar and
+// the home indicator (its extension of the web view's controller owns
+// prefersHomeIndicatorAutoHidden, so an app plugin cannot). window.Capacitor
+// gets registerPlugin only once @capacitor/core is loaded, and the app loads
+// it lazily. The proxy answers every property, `then` too, so it is handed
 // around in a box and never resolved from a promise.
 async function pluginBox() {
   if (!plugin) {
     let register = window.Capacitor?.registerPlugin
     if (typeof register !== 'function') register = (await import('@capacitor/core')).registerPlugin
-    if (!plugin) plugin = register('OpenVolleyBars')
+    if (!plugin) plugin = register(window.Capacitor?.getPlatform?.() === 'ios' ? 'SystemBars' : 'OpenVolleyBars')
   }
   return { plugin }
 }
