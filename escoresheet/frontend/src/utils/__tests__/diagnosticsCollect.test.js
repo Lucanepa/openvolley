@@ -42,7 +42,7 @@ describe('diagnostics: the secrets to leave out', () => {
     const row = {
       id: 3, gameNumber: 406970, seed_key: 'match_1_abc', gamePin: '771234', refereePin: 903211, homeTeamUploadPin: '120934',
       connection_pins: { referee: '903211', bench_home: '554433' }, scorerClaim: '2b6d0c9e-51f4-4a7e-9e1b-7c3d8a5f0e42',
-      supersededClaims: ['0f1e2d3c-4b5a-4968-8776-655443322110'], homeCaptainSignature: 'data:image/png;base64,AAAA', homeName: 'VBC Wiedikon', pin: '12'
+      supersededClaims: ['0f1e2d3c-4b5a-4968-8776-655443322110'], homeCaptainSignature: 'data:image/png;base64,AAAA', homeName: 'VBC Musterdorf', pin: '12'
     }
     expect(secretValuesOf(row).sort()).toEqual(['0f1e2d3c-4b5a-4968-8776-655443322110', '120934', '2b6d0c9e-51f4-4a7e-9e1b-7c3d8a5f0e42', '554433', '771234', '903211', '903211'].sort())
   })

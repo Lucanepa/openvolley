@@ -1,6 +1,6 @@
 # Privacy policy
 
-**OpenVolley and OpenBeach** · Version 1.7 · As of 31 October 2026
+**OpenVolley and OpenBeach** · Version 1.8 · As of 9 November 2026
 
 This policy is available in German, English, French and Italian. The English
 version is binding.
@@ -27,6 +27,9 @@ version is binding.
 - When sending is switched on, the scorer, the referees and the clubs of both
   teams receive the final scoresheet of an official match by email
   (section 7).
+- A team's manager can send the roster of a game ahead. The scorer's device
+  keeps it for the match setup; once the scorer accepts it, the server deletes
+  it (section 10).
 - You can ask for access, correction or deletion at any time:
   **support@openvolley.app**.
 
@@ -211,6 +214,9 @@ its roles stay. A club can have a **contact address** (entered by the
 administrators or the club managers); it receives the final scoresheets of
 the club's games (section 7).
 
+The club managers can also give a link to the coach or manager of one of the
+club's teams, who then manages that team (section 10).
+
 **Sign-in:** after you sign in, your browser stores a sign-in token. The
 server holds only a hash of it. A session lasts 30 days from last use, at most
 90 days, and ends when you sign out, change your password or delete the
@@ -257,7 +263,7 @@ match with all events, substitutions and sanctions, results and later
 corrections.
 
 **Who enters the data:** the scorer in the app, team managers on the roster
-page (`roster.openvolley.app`), competition managers through saved teams
+page (`roster.openvolley.app`) and in the manager (section 10), competition managers through saved teams
 (section 10), and the official match assignments from Swiss Volley
 (section 11). Players do not enter their data themselves.
 
@@ -387,7 +393,7 @@ in.
 **LED board (LedBox):** a scoreboard in the hall can show the score. It
 receives only team names, the score and set results, no player data.
 
-## 10. Manager sites: saved teams and beach tournaments
+## 10. Manager sites: saved teams, team rosters and beach tournaments
 
 On `manager.openvolley.app` and `manager-beach.openvolley.app`, competition
 managers can prepare teams and tournaments.
@@ -398,13 +404,34 @@ with role, name, date of birth and licence number. Visible to accounts with
 the manager or scorer role of that sport. The scorer apps cache these teams
 and delete them on sign-out.
 
+**Team managers (OpenVolley):** a club's managers can give a link to the coach
+or manager of one of the club's teams; whoever opens it and signs in manages
+that team. The server stores which account manages which team, who added it
+and when. A team manager edits the team's saved team and can send the roster
+of each of the team's games ahead: players with number, first and last name,
+date of birth, licence number and libero/captain, and team staff with role,
+name, date of birth and licence number. If they want to, the coach and the
+captain can sign that roster ahead; the signatures are stored with it as
+images.
+
+**Rosters sent ahead:** visible to the team's managers, the managers of its
+club and the administrators, and to accounts with the scorer or competition
+manager role of OpenVolley. Scoring devices download the rosters of their
+clubs' coming home games so that the match setup works without internet. When
+the scorer accepts a roster in the match setup, it becomes part of the match
+(section 7) and the server deletes the players, staff and signatures at once;
+it keeps only that the roster was accepted, when and by which account. A
+roster that nobody accepts is deleted 14 days after the game. On a scoring
+device the copy is deleted once the server knows that it was accepted, when
+the account signs out, and at the latest 36 hours after the game.
+
 **Beach tournaments:** title, venue, dates, teams with the players' first and
 last names, licence numbers and countries, schedule, results, names of
 referees and scorers. If a tournament is marked **public**, the public
 tournament page shows teams, names and countries, never licence numbers or
 dates of birth.
 
-**Purpose:** re-using rosters, running tournaments, matching players by
+**Purpose:** re-using rosters, preparing a game's roster ahead, running tournaments, matching players by
 licence number when importing.
 
 This data is kept until a manager deletes it, even if the account that
@@ -528,6 +555,9 @@ look up earlier answers; earlier on request.
   contact address or switched the sending of scoresheets on or off, and that
   the scoresheet of a match was sent, with the number of recipients. It
   contains no email addresses.
+- **Teams:** the change log also records who manages a team and who sent,
+  deleted or accepted a game roster, with the number of players and staff and
+  whether it was signed, never names or signatures, and when.
 - **Deleted accounts:** the change log records that an administrator deleted
   an account or rejected a sign-up, with the account's roles and apps, when
   it was created, how many official matches it leaves behind and a
@@ -579,6 +609,8 @@ copy of these safeguards.
 | Change log | As long as needed for accountability; deletion on request is considered |
 | A club's contact address | Until it is changed or removed, or the club is deleted |
 | Club managers | Until the administrators remove them, the club is deleted or you delete your account |
+| Team managers | Until a club manager or an administrator removes them, the team or the club is deleted, or you delete your account |
+| A roster sent ahead (players, staff, signatures) | Until a scorer accepts it, at the latest 14 days after the game; the note that it was accepted 14 days after the game |
 | A referee's email address for a match | With the match, as part of the scoresheet |
 | Sending of the final scoresheet (time, number of recipients, no addresses) | With the match |
 | Scoresheet of a test match by email | Not stored on the server |

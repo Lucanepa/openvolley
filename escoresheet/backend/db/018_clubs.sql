@@ -7,7 +7,7 @@
 --   d. indoor only (beach matches are not checked).
 --
 -- A club is a name and the VolleyManager team names that play for it
--- (svrz_games.team_home / team_away, e.g. "KSC Wiedikon H1"); a team name
+-- (svrz_games.team_home / team_away, e.g. "VBC Musterdorf H1"); a team name
 -- belongs to one club at most. account_clubs says which clubs an account
 -- scores for. An invite code may carry a club: whoever redeems it joins it.
 --

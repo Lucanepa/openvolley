@@ -43,7 +43,7 @@ afterAll(() => {
 
 describe('Scoreboard: the last action line', () => {
   it('is held to the rally column with a long team name (ellipsis, not overflow)', async () => {
-    const home = await db.teams.add({ name: 'Volleyballclub Kantonsschule Wiedikon-Zürich Damen Erste Mannschaft' })
+    const home = await db.teams.add({ name: 'Volleyballclub Sporthalle Musterdorf-Zürich Damen Erste Mannschaft' })
     const away = await db.teams.add({ name: 'Away' })
     await db.players.bulkAdd([1, 2, 3, 4, 5, 6, 7].flatMap(n => [
       { teamId: home, number: n, firstName: 'H', lastName: `Home${n}` },
@@ -70,7 +70,7 @@ describe('Scoreboard: the last action line', () => {
     await waitFor(() => expect(line()).toBeTruthy())
     // the team is its letter (2026-10-20: a long name pushed the rest out)
     expect(line().textContent).toMatch(/^Last action: Point A · Set 1 · A 1:0 B/)
-    expect(line().textContent).not.toContain('Wiedikon-Zürich')
+    expect(line().textContent).not.toContain('Musterdorf-Zürich')
     expect(line().style.whiteSpace).toBe('nowrap')
     expect(line().style.textOverflow).toBe('ellipsis')
     expect(line().style.maxWidth).toBe('100%')

@@ -15,7 +15,7 @@ import { accessFromRoles } from '../../lib/access'
 
 const scorer = accessFromRoles(['scorer'])
 const roster = (n, side, over = {}) => ({
-  game_number: n, season: 2026, side, team_name: side === 'home' ? 'KSC Wiedikon H1' : 'VBC Other H1', kickoff: '2026-11-10T18:00:00',
+  game_number: n, season: 2026, side, team_name: side === 'home' ? 'VBC Musterdorf H1' : 'VBC Other H1', kickoff: '2026-11-10T18:00:00',
   players: [{ number: 4, first_name: 'Anna', last_name: 'Muster', dob: '2001-02-03', is_captain: true, is_libero: false }, { number: 7, first_name: 'Bea', last_name: 'Libero', dob: '2002-03-04', is_libero: true }],
   staff: [{ role: 'Coach', first_name: 'Chris', last_name: 'Coach', dob: '1980-01-01' }],
   updated_at: '2026-11-08T19:30:00.000Z', updated_by_name: 'Coach Test', ...over
@@ -32,7 +32,7 @@ describe('sent game rosters on the device', () => {
   it('keeps an answer for this account only, and Match Setup reads it without the network', async () => {
     await storeGameRosters({ games: [{ game_number: '940001' }], rosters: [roster('940001', 'home')] }, 'u1')
     const row = await getGameRoster('940001', 'home', { userId: 'u1' })
-    expect(row).toMatchObject({ key: '940001|home', teamName: 'KSC Wiedikon H1', updatedByName: 'Coach Test' })
+    expect(row).toMatchObject({ key: '940001|home', teamName: 'VBC Musterdorf H1', updatedByName: 'Coach Test' })
     expect(await getGameRoster('940001', 'home', { userId: 'u2' })).toBeNull()
     expect(await getGameRoster('940001', 'away', { userId: 'u1' })).toBeNull()
     expect(fetchGameRosters).not.toHaveBeenCalled()

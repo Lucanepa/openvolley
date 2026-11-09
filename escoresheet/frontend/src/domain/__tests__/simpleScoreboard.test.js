@@ -114,8 +114,8 @@ describe('simple scoreboard', () => {
 
   it('names the teams and picks their colours, without an undo step', () => {
     let b = H(initialBoard())
-    b = setTeams(b, { home: { name: '  Wiedikon  ', color: '#FACC15' }, away: { name: 'x'.repeat(80), color: 'not a colour' } })
-    expect(b.teams.home).toEqual({ name: 'Wiedikon', color: '#facc15' })
+    b = setTeams(b, { home: { name: '  Musterdorf  ', color: '#FACC15' }, away: { name: 'x'.repeat(80), color: 'not a colour' } })
+    expect(b.teams.home).toEqual({ name: 'Musterdorf', color: '#facc15' })
     expect(b.teams.away.name).toHaveLength(MAX_NAME)
     expect(b.teams.away.color).toBe(DEFAULT_AWAY_COLOUR) // kept
     expect(b.history).toHaveLength(1)

@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.7 · État au 31 octobre 2026
+**OpenVolley et OpenBeach** · Version 1.8 · État au 9 novembre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version anglaise fait foi.
@@ -31,6 +31,9 @@ version anglaise fait foi.
 - Lorsque l'envoi est activé, le marqueur, les arbitres et les clubs des deux
   équipes reçoivent par e-mail la feuille de match finale d'un match officiel
   (section 7).
+- Le responsable d'une équipe peut envoyer à l'avance la liste d'un match.
+  L'appareil du marqueur la garde pour la préparation du match ; dès que le
+  marqueur l'accepte, le serveur la supprime (section 10).
 - Vous pouvez demander à tout moment l'accès, la rectification ou
   l'effacement : **support@openvolley.app**.
 
@@ -246,6 +249,10 @@ peut indiquer une **adresse de contact** (saisie par les administrateurs ou
 les responsables du club) ; elle reçoit les feuilles de match finales des
 matchs du club (section 7).
 
+Les responsables de club peuvent aussi donner un lien à l'entraîneur ou au
+responsable d'une équipe de leur club, qui gère alors cette équipe (section
+10).
+
 **Connexion :** après la connexion, votre navigateur enregistre un jeton de
 connexion. Le serveur n'en garde qu'un hachage. Une session dure 30 jours
 après la dernière utilisation, 90 jours au plus, et se termine à la
@@ -297,7 +304,7 @@ l'appareil ou sur un téléphone), tirage au sort, déroulement du match avec to
 remplacements et sanctions, résultats et corrections ultérieures.
 
 **Qui saisit les données :** le marqueur dans l'application, les responsables
-d'équipe sur la page des listes d'équipe (`roster.openvolley.app`), les
+d'équipe sur la page des listes d'équipe (`roster.openvolley.app`) et dans le site de gestion (section 10), les
 gestionnaires de compétition au moyen des équipes enregistrées (section 10)
 et les convocations officielles de Swiss Volley (section 11). Les joueuses et
 joueurs ne saisissent pas eux-mêmes leurs données.
@@ -442,7 +449,7 @@ marqueur est connecté.
 le score. Il ne reçoit que les noms des équipes, le score et les résultats
 des sets, aucune donnée de joueuses ou joueurs.
 
-## 10. Sites de gestion : équipes enregistrées et tournois de beach-volley
+## 10. Sites de gestion : équipes enregistrées, listes des équipes et tournois de beach-volley
 
 Sur `manager.openvolley.app` et `manager-beach.openvolley.app`, les
 gestionnaires de compétition peuvent préparer des équipes et des tournois.
@@ -454,13 +461,37 @@ de licence. Visibles pour les comptes ayant le rôle de gestionnaire ou de
 marqueur du sport concerné. Les applications de marquage mettent ces équipes en
 cache et les effacent à la déconnexion.
 
+**Responsables d'équipe (OpenVolley) :** les responsables d'un club peuvent
+donner un lien à l'entraîneur ou au responsable d'une équipe de leur club ; la
+personne qui l'ouvre et se connecte gère cette équipe. Le serveur enregistre
+quel compte gère quelle équipe, qui l'a ajouté et quand. Un responsable
+d'équipe modifie l'équipe enregistrée et peut envoyer à l'avance la liste de
+chaque match de l'équipe : joueuses et joueurs avec numéro, prénom et nom,
+date de naissance, numéro de licence et libéro/capitaine, ainsi que
+l'encadrement avec fonction, nom, date de naissance et numéro de licence.
+S'ils le souhaitent, l'entraîneur et le capitaine peuvent signer cette liste à
+l'avance ; les signatures sont enregistrées avec elle sous forme d'images.
+
+**Listes envoyées à l'avance :** visibles pour les responsables de l'équipe,
+les responsables de son club et les administrateurs, ainsi que pour les
+comptes ayant le rôle de marqueur ou de gestionnaire de compétition
+d'OpenVolley. Les appareils de marquage téléchargent les listes des prochains
+matchs à domicile de leurs clubs, pour que la préparation du match fonctionne
+sans internet. Quand le marqueur accepte une liste dans la préparation du
+match, elle fait partie du match (section 7) et le serveur supprime aussitôt
+les joueuses et joueurs, l'encadrement et les signatures ; il garde seulement
+le fait que la liste a été acceptée, quand et par quel compte. Une liste que
+personne n'accepte est supprimée 14 jours après le match. Sur un appareil de
+marquage, la copie est supprimée dès que le serveur sait qu'elle a été
+acceptée, à la déconnexion et au plus tard 36 heures après le match.
+
 **Tournois de beach-volley :** titre, lieu, dates, équipes avec prénoms, noms,
 numéros de licence et pays des joueuses et joueurs, programme, résultats,
 noms des arbitres et marqueurs. Si un tournoi est marqué **public**, la page
 publique du tournoi montre les équipes, les noms et les pays, jamais les
 numéros de licence ni les dates de naissance.
 
-**But :** réutiliser les listes d'équipe, organiser des tournois, rattacher
+**But :** réutiliser les listes d'équipe, préparer à l'avance la liste d'un match, organiser des tournois, rattacher
 les joueuses et joueurs par numéro de licence lors d'une importation.
 
 Ces données sont conservées jusqu'à ce qu'un gestionnaire les supprime, même
@@ -600,6 +631,10 @@ précédentes ; plus tôt sur demande.
   d'un club, modifié l'adresse de contact d'un club ou activé ou désactivé
   l'envoi des feuilles de match, et que la feuille d'un match a été envoyée,
   avec le nombre de destinataires. Il ne contient aucune adresse e-mail.
+- **Équipes :** le journal des modifications consigne aussi qui gère une
+  équipe et qui a envoyé, supprimé ou accepté la liste d'un match, avec le
+  nombre de joueuses, joueurs et membres de l'encadrement et si elle était
+  signée, jamais de noms ni de signatures, et quand.
 - **Comptes supprimés :** le journal des modifications consigne qu'un
   administrateur a supprimé un compte ou refusé un nouveau compte, avec les
   rôles et les applications du compte, sa date de création, le nombre de
@@ -654,6 +689,8 @@ prestataires. Vous pouvez me demander une copie de ces garanties.
 | Journal des modifications | Aussi longtemps que nécessaire pour la traçabilité ; effacement examiné sur demande |
 | Adresse de contact d'un club | Jusqu'à sa modification ou sa suppression, ou la suppression du club |
 | Responsables de club | Jusqu'à ce que les administrateurs les retirent, que le club soit supprimé ou que vous supprimiez votre compte |
+| Responsables d'équipe | Jusqu'à ce qu'un responsable de club ou un administrateur les retire, que l'équipe ou le club soit supprimé ou que vous supprimiez votre compte |
+| Liste envoyée à l'avance (joueuses et joueurs, encadrement, signatures) | Jusqu'à ce qu'un marqueur l'accepte, au plus tard 14 jours après le match ; la mention de l'acceptation 14 jours après le match |
 | Adresse e-mail d'un arbitre pour un match | Avec le match, comme partie de la feuille de match |
 | Envoi de la feuille de match finale (moment, nombre de destinataires, sans adresses) | Avec le match |
 | Feuille d'un match de test par e-mail | Non conservée sur le serveur |

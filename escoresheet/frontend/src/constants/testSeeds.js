@@ -38,7 +38,7 @@ export const TEST_HOME_TEAM_EXTERNAL_ID = 'test-team-alpha'
 export const TEST_AWAY_TEAM_EXTERNAL_ID = 'test-team-bravo'
 
 export const TEST_MATCH_DEFAULTS = {
-  hall: 'Kantonsschule Wiedikon (Halle A)',
+  hall: 'Sporthalle Musterdorf (Halle A)',
   city: 'Zürich',
   league: '3L B',
   gameNumber: '123456',

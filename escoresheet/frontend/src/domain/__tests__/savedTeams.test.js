@@ -206,8 +206,8 @@ describe('findSavedTeamSuggestions', () => {
 
   it('matches the svrz team name or the name, normalised', () => {
     const c = comp('c1')
-    const teams = [team('t1', 'Wiedikon', c, { svrzTeamName: 'KSC  Wiedikon H1' }), team('t2', 'Uni Bern', c)]
-    expect(findSavedTeamSuggestions(teams, { home: ' ksc wiedikon h1', away: 'UNI BERN' })).toEqual({ home: teams[0], away: teams[1] })
+    const teams = [team('t1', 'Musterdorf', c, { svrzTeamName: 'VBC  Musterdorf H1' }), team('t2', 'Uni Bern', c)]
+    expect(findSavedTeamSuggestions(teams, { home: ' vbc musterdorf h1', away: 'UNI BERN' })).toEqual({ home: teams[0], away: teams[1] })
     expect(findSavedTeamSuggestions(teams, { home: 'Nobody', away: '' })).toEqual({ home: null, away: null })
   })
 

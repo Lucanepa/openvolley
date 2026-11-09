@@ -1,7 +1,7 @@
 # Deploying scorer accounts (db/007) to production
 
 > **Host moved, 16.10.2026:** production now runs on lenovoserver. The Hetzner VPS belongs to
-> the KSC Wiedikon club and must never host OpenVolley again. Run the `hetzner#` steps below on
+> another owner and must never host OpenVolley again. Run the `hetzner#` steps below on
 > lenovoserver with `sudo` (`/opt/openvolley` is root-only there):
 > `cd /opt/openvolley && docker compose ...` becomes
 > `sudo docker compose --project-directory /opt/openvolley ...`, `ssh hetzner <cmd>` becomes

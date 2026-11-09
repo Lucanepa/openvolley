@@ -171,11 +171,11 @@ describe('MatchSetup smoke render', () => {
   it('a game picked on the home screen fills the new match\'s info page', async () => {
     store.tables.matches = new Map([[1, { id: 1, status: 'scheduled', ...PINS }]])
     const used = vi.fn()
-    const game = { gameN: '930001', date: '2026-10-29', time: '18:00', home: 'KSC Wiedikon H1', away: 'VBC Other H1', league: '2L', hall: 'Halle Wiedikon', city: 'Zürich', bestOf: 5 }
+    const game = { gameN: '930001', date: '2026-10-29', time: '18:00', home: 'VBC Musterdorf H1', away: 'VBC Other H1', league: '2L', hall: 'Halle Musterdorf', city: 'Zürich', bestOf: 5 }
     render(<Setup matchId={1} initialOfficialGame={game} onInitialOfficialGameUsed={used} />)
     // the info page opens first (its Back snapshot), then the game fills it
     await waitFor(() => expect(screen.getByLabelText('matchSetup.gameNumber')).toHaveValue(930001))
-    expect(screen.getByLabelText('matchSetup.hall')).toHaveValue('Halle Wiedikon')
+    expect(screen.getByLabelText('matchSetup.hall')).toHaveValue('Halle Musterdorf')
     await waitFor(() => expect(used).toHaveBeenCalledTimes(1))
   })
 
