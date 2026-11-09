@@ -1859,6 +1859,18 @@
       "loading": "Matchblatt wird glade...",
       "waiting": "Warte uf d Date vom Schriiber..."
     },
+    "rosters": {
+      "open": "Kader",
+      "title": "Kader",
+      "close": "Schliesse",
+      "otherTeam": "Anders Team",
+      "show": "{{team}} zeige",
+      "count": "{{players}} Spieler",
+      "empty": "No kei Kader",
+      "captain": "Captain",
+      "officials": "Teamoffizielli",
+      "noOfficials": "Kei Offizielli erfasst"
+    },
     "sanctions": {
       "title": "Sanktione",
       "formalWarning": "Formelli Warnig"

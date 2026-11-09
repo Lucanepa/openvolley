@@ -1858,6 +1858,18 @@
       "loading": "Chargement de la feuille de match...",
       "waiting": "En attente des données du marqueur..."
     },
+    "rosters": {
+      "open": "Effectifs",
+      "title": "Effectifs",
+      "close": "Fermer",
+      "otherTeam": "Autre équipe",
+      "show": "Afficher {{team}}",
+      "count": "{{players}} joueurs",
+      "empty": "Pas encore d'effectif",
+      "captain": "Capitaine",
+      "officials": "Officiels d'équipe",
+      "noOfficials": "Aucun officiel saisi"
+    },
     "sanctions": {
       "title": "Sanctions",
       "formalWarning": "Avertissement formel"

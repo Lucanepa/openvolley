@@ -1713,6 +1713,18 @@
       "loading": "Matchblatt wird geladen...",
       "waiting": "Warte auf die Daten des Schreibers..."
     },
+    "rosters": {
+      "open": "Kader",
+      "title": "Kader",
+      "close": "Schliessen",
+      "otherTeam": "Anderes Team",
+      "show": "{{team}} anzeigen",
+      "count": "{{players}} Spieler",
+      "empty": "Noch kein Kader",
+      "captain": "Captain",
+      "officials": "Teamoffizielle",
+      "noOfficials": "Keine Offiziellen erfasst"
+    },
     "sanctions": {
       "title": "Sanktionen",
       "formalWarning": "Formelle Warnung"
