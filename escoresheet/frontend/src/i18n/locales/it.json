@@ -1763,6 +1763,11 @@
     "loadGames": "Carica partite"
   },
   "refereeDashboard": {
+    "recorded": {
+      "title": "Registrato dal segnapunti",
+      "closesIn": "Si chiude tra {{s}} s",
+      "timeoutLeft": "Tempo di riposo: ancora {{s}} s"
+    },
     "linkDown": "Offline: nessuna connessione al referto. Punteggio e servizio potrebbero non essere aggiornati.",
     "title": "Arbitro",
     "dashboardTitle": "Dashboard arbitro",

@@ -1617,6 +1617,11 @@
     "loadGames": "Spiele laden"
   },
   "refereeDashboard": {
+    "recorded": {
+      "title": "Vom Schreiber erfasst",
+      "closesIn": "Schliesst in {{s}} s",
+      "timeoutLeft": "Auszeit: noch {{s}} s"
+    },
     "linkDown": "Offline: keine Verbindung zum Matchblatt. Spielstand und Aufschlag sind evtl. nicht aktuell.",
     "title": "Schiedsrichter",
     "dashboardTitle": "Schiedsrichter-Dashboard",
