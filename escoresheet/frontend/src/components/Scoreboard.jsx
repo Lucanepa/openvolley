@@ -1134,7 +1134,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const width = window.innerWidth
       const height = window.innerHeight
       const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0)
-      // Phone: any portrait viewport, a tablet held upright too (the phone layout, no banner).
+      // Phone: a portrait viewport under 600px (the phone layout, no banner).
       // Tablet: medium screen (<= 900px) with touch.
       // Desktop: > 900px OR no touch capability
       // This ensures laptops are always desktop even if screen is narrower
@@ -1173,12 +1173,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  // The automatic mode and the Phone mode are not locked to landscape: held
-  // upright, a phone or a tablet gets the phone layout (PhoneScoreboard).
-  // Turned sideways, a phone keeps it under a notice to hold it upright, a
-  // tablet gets the tablet layout (owner 2026-11-09: tablets may be held
-  // upright). Only a forced Tablet or Desktop mode locks to landscape.
-  const keepOrientationFree = displayMode === 'phone' || displayMode === 'auto'
+  // A phone in the automatic mode, or the Phone mode, is not locked: held
+  // upright it gets the phone layout (PhoneScoreboard); turned sideways it
+  // keeps it, under a notice to hold it upright. Tablets and computers are
+  // locked as before.
+  const keepOrientationFree = displayMode === 'phone' || (displayMode === 'auto' && isPhoneScreen())
 
   // Auto-lock orientation to landscape for scoreboard on mount. The Android
   // app rotates freely everywhere else, so it locks natively here and unlocks

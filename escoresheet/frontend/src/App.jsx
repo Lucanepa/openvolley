@@ -94,7 +94,7 @@ import { OPEN_MANAGE_EVENT, OPEN_RESTORE_EVENT, openRestore, restorePrefill } fr
 import { relayMatchKey, relayMatchPayload, liveStateNow } from './utils/serverDataSync'
 import { needsEventCheck, pickCurrentMatch, newOfficialMatchStep } from './utils/currentMatch'
 import { isRelayErrorFor, mayPublishMatchData, relayConnectionStatus, relayEvents, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
-import { isPhoneScreen, phoneLayoutKept } from './components/scoreboard/phoneLayout'
+import { PHONE_MAX_WIDTH, isPhoneScreen, phoneLayoutKept } from './components/scoreboard/phoneLayout'
 import { useSystemBarsHidden } from './utils/nativeSystemBars'
 
 function readStoredDisplayMode() {
@@ -472,14 +472,14 @@ export default function App() {
   }, [])
 
   // Screen size detection for display mode
-  // portrait = phone (a tablet held upright too), <= 1024px = tablet, > 1024px = desktop
+  // portrait under 600px = phone, <= 1024px = tablet, > 1024px = desktop
   useEffect(() => {
     const checkScreenSize = () => {
       const width = window.innerWidth
       const height = window.innerHeight
       let detected = 'desktop'
 
-      if (height > width) {
+      if (height > width && width < PHONE_MAX_WIDTH) {
         detected = 'phone'
       } else if (width <= 1024) {
         detected = 'tablet'

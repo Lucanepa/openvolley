@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Undo2, Menu } from 'lucide-react'
 import { ActionSheet } from '../../ui/Modal.jsx'
 import { COURT_SURFACE, HEADER_SURFACE, normaliseColour, teamBoxStyle, teamTextPaint } from '../../utils/teamColours'
-import { COURT_CELLS, PHONE_COUNTER_HEIGHT_PX, PHONE_COURT_MIN_PX, PHONE_RECENT_MIN_PX, PHONE_SQUARE_MIN_PX, PHONE_SQUARE_RESERVE_PX, POSITIONS, officialRoleShort, recentLinesFor, tabletZoom, tintOf } from './phoneLayout'
+import { COURT_CELLS, PHONE_COUNTER_HEIGHT_PX, PHONE_COURT_MIN_PX, PHONE_RECENT_MIN_PX, PHONE_SQUARE_MIN_PX, PHONE_SQUARE_RESERVE_PX, POSITIONS, officialRoleShort, recentLinesFor, tintOf } from './phoneLayout'
 import { captainRingStyle } from './captainRing'
 import RallyTapNotice from './RallyTapNotice'
 import { MissingSignatureButton } from '../signature/PreMatchSignDialog.jsx'
@@ -64,32 +64,10 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
   // (three at the lowest), never a line cut in half
   const recentRef = useRef(null)
   const [recentLines, setRecentLines] = useState(3)
-  // An upright tablet (owner 2026-11-09: "all tablets in portrait"): the
-  // phone layout, scaled up to fill the screen (tabletZoom), instead of a
-  // narrow column in the middle. The view keeps its phone size inside
-  // (600 px wide), so its own height budget works as on a phone.
-  const shellRef = useRef(null)
-  const [fit, setFit] = useState(null) // { width, height, zoom } | null (no scaling)
-  const zoomRef = useRef(1)
-  useLayoutEffect(() => {
-    const shell = shellRef.current
-    if (!shell || typeof ResizeObserver === 'undefined') return
-    const measure = () => {
-      const r = shell.getBoundingClientRect()
-      const zoom = tabletZoom(r.width, r.height)
-      zoomRef.current = zoom
-      setFit(zoom > 1 ? { width: r.width / zoom, height: r.height / zoom, zoom } : null)
-    }
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(shell)
-    return () => observer.disconnect()
-  }, [])
   useLayoutEffect(() => {
     const box = recentRef.current
     if (!box || typeof ResizeObserver === 'undefined') return
-    // the box's height in the view's own (unscaled) pixels
-    const measure = () => setRecentLines(recentLinesFor(box.getBoundingClientRect().height / (zoomRef.current || 1)))
+    const measure = () => setRecentLines(recentLinesFor(box.getBoundingClientRect().height))
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(box)
@@ -431,12 +409,10 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
   )
 
   return (
-    <div ref={shellRef} data-testid="phone-scoreboard-shell" style={{ display: 'flex', flex: '1 1 auto', minHeight: 0, height: '100%', width: '100%', justifyContent: 'center', overflow: 'hidden' }}>
     <div
       className="ov-kit phone-scoreboard"
       data-testid="phone-scoreboard"
-      data-zoom={fit ? fit.zoom.toFixed(2) : undefined}
-      style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, height: '100%', width: '100%', maxWidth: 600, margin: '0 auto', containerType: 'size', ...(fit ? { zoom: fit.zoom, flex: 'none', width: fit.width, height: fit.height, maxWidth: 'none' } : {}), '--phone-square-reserve': `${PHONE_SQUARE_RESERVE_PX}px`, '--phone-square-min': `${PHONE_SQUARE_MIN_PX}px`, '--phone-court-min': `${PHONE_COURT_MIN_PX}px`, overflowY: 'auto', overflowX: 'hidden', background: 'var(--ov-page-top)', color: 'var(--ov-text)', fontFamily: 'var(--font-sans)' }}
+      style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, height: '100%', width: '100%', maxWidth: 600, margin: '0 auto', containerType: 'size', '--phone-square-reserve': `${PHONE_SQUARE_RESERVE_PX}px`, '--phone-square-min': `${PHONE_SQUARE_MIN_PX}px`, '--phone-court-min': `${PHONE_COURT_MIN_PX}px`, overflowY: 'auto', overflowX: 'hidden', background: 'var(--ov-page-top)', color: 'var(--ov-text)', fontFamily: 'var(--font-sans)' }}
     >
       {header}
 
@@ -547,7 +523,6 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
           </div>
         </ActionSheet>
       )}
-    </div>
     </div>
   )
 }
