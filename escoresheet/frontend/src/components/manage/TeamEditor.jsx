@@ -113,6 +113,19 @@ export function draftToBeachRosterBody(slots, coach) {
   return { players, staff }
 }
 
+/**
+ * The squad in shirt-number order, what Save keeps (the server stores this order
+ * as sort_order, so scorers load it the same way): a player without a number
+ * goes last, players keep their order among equals.
+ */
+export function sortPlayersByNumber(players) {
+  const num = (p) => {
+    const n = String(p?.number ?? '').trim()
+    return n === '' || !Number.isFinite(Number(n)) ? Infinity : Number(n)
+  }
+  return (players || []).map((p, i) => [p, i]).sort((a, b) => (num(a[0]) - num(b[0])) || (a[1] - b[1])).map(([p]) => p)
+}
+
 /** Draft rows → the PUT roster body (sort_order is set by the server). */
 export function draftToRosterBody(players, staff) {
   const clean = (v) => String(v ?? '').trim()
@@ -263,14 +276,17 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
 
   const saveRoster = async () => {
     if (savingRoster) return
-    const body = beach ? draftToBeachRosterBody(slots, coach) : draftToRosterBody(players, staff)
+    const ordered = beach ? players : sortPlayersByNumber(players)
+    const body = beach ? draftToBeachRosterBody(slots, coach) : draftToRosterBody(ordered, staff)
     const problems = validateSavedRoster(body, { sport: beach ? 'beach' : 'indoor' })
     if (problems.length) {
       const map = {}
       for (const pr of problems) {
         if (pr.index === null) continue
         // beach: errors point at the slot (by number) and the coach, not the body index
-        const key = !beach ? `${pr.list}:${pr.index}` : pr.list === 'players' ? `slot:${body.players[pr.index]?.number}` : 'coach'
+        // indoor: the body is in number order, the rows on screen not yet
+        const row = pr.list === 'players' ? players.indexOf(ordered[pr.index]) : pr.index
+        const key = !beach ? `${pr.list}:${row}` : pr.list === 'players' ? `slot:${body.players[pr.index]?.number}` : 'coach'
         map[key] = t(pr.key, pr.params)
       }
       setRowErrors(map)
@@ -286,6 +302,7 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
     }
     toast.success(t('savedTeams.rosterSaved'))
     const saved = res.data?.team
+    if (!saved && !beach) setPlayers(ordered)
     if (saved) {
       setPlayers((saved.players || []).map(toPlayerDraft))
       setStaff((saved.staff || []).map(toStaffDraft))
@@ -296,7 +313,7 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
   }
 
   // Import Einsatzliste: the PDF's players and officials merged into the
-  // drafts (same name: its number and date of birth; else added). Saving
+  // drafts (same name: its number, date of birth and licence; else added). Saving
   // stays the user's step.
   const importPdf = async (file) => {
     if (!file || importing) return
@@ -424,18 +441,22 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
             <EmptyInset>{t('savedTeams.emptyRoster')}</EmptyInset>
           ) : (
             <div>
-              <div className={cn(HEAD, 'grid-cols-[4rem_1fr_1fr_9.5rem_8rem_auto] gap-2 px-1 pb-1')}>
+              <div className={cn(HEAD, 'grid-cols-[7rem_4rem_1fr_1fr_9.5rem_auto] gap-2 px-1 pb-1')}>
+                <span>{t('savedTeams.license')}</span>
                 <span>{t('savedTeams.number')}</span>
                 <span>{t('savedTeams.firstName')}</span>
                 <span>{t('savedTeams.lastName')}</span>
                 <span>{t('savedTeams.dob')}</span>
-                <span>{t('savedTeams.license')}</span>
                 <span />
               </div>
-              <div className="divide-y divide-stone-100">
+              <div className="divide-y divide-stone-200">
                 {players.map((p, i) => (
                   <div key={p.key} className={cn('py-2', !p.active && 'opacity-60')} data-testid="player-row">
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-[4rem_1fr_1fr_9.5rem_8rem_auto] sm:items-center">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-[7rem_4rem_1fr_1fr_9.5rem_auto] sm:items-center">
+                      <label className="block">
+                        <span className={CELL_LABEL}>{t('savedTeams.license')}</span>
+                        <Input value={p.license_number} onChange={e => updatePlayer(p.key, { license_number: e.target.value })} aria-label={t('savedTeams.license')} maxLength={40} className="tabular-nums" />
+                      </label>
                       <label className="block">
                         <span className={CELL_LABEL}>{t('savedTeams.number')}</span>
                         <Input type="number" inputMode="numeric" numeric min={0} max={99} value={p.number} onChange={e => updatePlayer(p.key, { number: shirtNumberDigits(e.target.value) })} aria-label={t('savedTeams.number')} className="tabular-nums" />
@@ -451,10 +472,6 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
                       <label className="block">
                         <span className={CELL_LABEL}>{t('savedTeams.dob')}</span>
                         <DateField value={p.dob} onChange={v => updatePlayer(p.key, { dob: v })} aria-label={t('savedTeams.dob')} />
-                      </label>
-                      <label className="block">
-                        <span className={CELL_LABEL}>{t('savedTeams.license')}</span>
-                        <Input value={p.license_number} onChange={e => updatePlayer(p.key, { license_number: e.target.value })} aria-label={t('savedTeams.license')} maxLength={40} />
                       </label>
                       <div className="flex items-center justify-end">
                         <IconButton icon={X} label={`${t('common.delete', 'Delete')} ${p.last_name || ''}`.trim()} onClick={() => setPlayers(list => list.filter(x => x.key !== p.key))} />

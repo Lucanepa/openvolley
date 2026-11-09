@@ -116,7 +116,7 @@ function buildGflLookup(items) {
   return gflPlayerNames
 }
 
-function parseRosterText(text, gflPlayerNames = new Set()) {
+export function parseRosterText(text, gflPlayerNames = new Set()) {
   const result = {
     players: [],
     coach: null,
@@ -212,9 +212,10 @@ function parseRosterText(text, gflPlayerNames = new Set()) {
 
       // Try Italian/German/French format: SV number (5-6 digits), First Name, Last Name, M/F/H, Date
       // Pattern: 5-6 digit number, name, name, M/F/H, date (DD.MM.YYYY or DD/MM/YYYY, may have spaces)
-      // Example Italian: "312307   Oscar   Bizard   M   29.10.2005"
-      // Example German: "99724 | Jessica | Dudula | F | 07.10 .2007"
-      // Example French: "323547 | Theresa | Hauck | F | 19.08.1999"
+      // The SV number is the player's Swiss Volley licence number: kept as `licence`.
+      // Example Italian: "123456   Marco   Muster   M   14.03.2004"   (made-up rows)
+      // Example German: "98765 | Anna | Beispiel | F | 07.10 .2007"
+      // Example French: "234567 | Léa | Exemple | F | 19.08.1999"
       // Use normalized text for consistent spacing, but also try original text for dates with spaces
       // Note: H = Homme (French for Male), M = Male, F = Female
     const svPlayerPattern = new RegExp(`(\\d{5,6})\\s+(${fullName})\\s+(${fullName})\\s+[MFH]\\s+(\\d{1,2}[./]\\s*\\d{1,2}[./]\\s*\\d{4})`, 'gi')
@@ -230,6 +231,7 @@ function parseRosterText(text, gflPlayerNames = new Set()) {
 
       svFormatPlayers.push({
         number: null,
+        licence: match[1],
         firstName,
         lastName,
         dob,
@@ -251,6 +253,7 @@ function parseRosterText(text, gflPlayerNames = new Set()) {
 
         svFormatPlayers.push({
           number: null,
+          licence: matchOriginal[1],
           firstName,
           lastName,
           dob,
