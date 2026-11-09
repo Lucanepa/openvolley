@@ -120,7 +120,7 @@ describe('Scoreboard: the coach and captain signatures before the first serve', 
     await waitFor(() => expect(button('Start set')).toBeTruthy(), { timeout: 10000 })
     const left = await screen.findByTestId('missing-signature-left')
     expect(left.textContent).toContain('Missing signatures')
-    expect(left.textContent).toContain('Coach · Captain')
+    expect(left.textContent).toContain('Captain · Coach')
     expect(screen.getByTestId('missing-signature-right')).toBeTruthy()
     await settle()
 
@@ -128,7 +128,7 @@ describe('Scoreboard: the coach and captain signatures before the first serve', 
     const modal = await screen.findByTestId('signatures-missing-modal', {}, { timeout: 5000 })
     expect(modal.textContent).toContain('A · HOM')
     expect(modal.textContent).toContain('B · AWY')
-    expect(modal.textContent).toContain('Still to sign: Coach, Captain')
+    expect(modal.textContent).toContain('Still to sign: Captain, Coach')
     await wait(500)
     expect(await ofType('set_start')).toHaveLength(0)
     expect(screen.queryByText('Set start time')).toBeNull()
