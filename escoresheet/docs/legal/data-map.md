@@ -186,6 +186,20 @@ the account (4.5a).
 | **Retention as built** | `game_rosters`: **the content (players, officials, signatures) is deleted as soon as a scorer accepts it** (`POST /api/game-rosters/used`, sent by the tablet at once or when it is next online); the row without personal data (game, team name, who accepted it, when) and any roster nobody accepts go **14 days after the game** (`lib/teams.js` sweep, at most hourly, with every write and every scorer read). The match record holds the roster from Match Setup on. `team_managers` rows go with the account, the team and the club (FK cascade). Device copies: removed once the server was told of the acceptance, cleared at sign-out and account switch, dropped 36 h after kick-off |
 | **Audit** | `team.roster` (team id, game number, side, number of players and officials, whether signed, `used: true` when accepted: never names or images), `team.squad` (team and saved team id, counts), `team.managers` (removal), `invite.redeem` / `invite.create` with `team_id` (4.6) |
 
+### 4.5d Club licence lists from VolleyManager (db/024, OpenVolley)
+
+| | |
+|---|---|
+| **Data** | `public.club_licences`: per club and list (players, scorers, coaches) and person: **licence number (Swiss Volley SV number), last name, first name, date of birth, gender**, when the list was uploaded and by which account. Nothing else of VolleyManager's export: the club administration export (XLSX) also holds email, phone, home address, nationality, categories and clubs, but it is **read in the club manager's browser** (`frontend/src/utils/vmLicenceExport.js`) and only these five fields are sent; the server refuses any other field (`lib/licences.js`) |
+| **Whose** | The club's players, scorers and coaches as VolleyManager lists them (**players often minors**), uploaded by a club manager, not by themselves |
+| **Purpose** | Owner decision 2026-11-09: the club sees its people with their teams; team managers and scorers add the club's players to a roster without typing them; a player cannot be put in a team of the other gender (`docs/club-licences-spec.md`) |
+| **Basis** | (b)/(f) keeping the official scoresheet and checking eligibility; the same people and fields the scoresheet carries, plus the gender the league already implies |
+| **Stored** | VM; backups. **On scorer devices**: IndexedDB `club_players` (4.11), the players list only |
+| **Who sees it** | The club's managers and admins: all three lists (`GET /api/club/:id/licences`); the club's team managers (and its managers, admins): the players list, for their own teams (`GET /api/team/:id/club-players`); indoor accounts with the saved-teams read right of the club (`account_clubs`): the players list of their own clubs (`GET /api/club-licences`). Never public, never anonymous, never on `/api/db` |
+| **Flows** | Club manager's browser → backend (`PUT /api/club/:id/licences/:list`, five fields); backend → team manager's browser (My teams "Add from club"); backend → scoring tablet (downloaded with the sent rosters while online, kept for Match Setup offline). A person added to a roster from the list then follows the roster's flows (4.5c, 4.7) |
+| **Retention as built** | **Each upload replaces that list** (one transaction); a club manager can delete a list (an empty upload); all rows go with the club (`ON DELETE CASCADE`); `imported_by` is set NULL when that account is deleted. Device copies: replaced by each download, cleared at sign-out, account deletion and account switch |
+| **Audit** | `club.licences` (club id, list, count: never a name or a licence number) (4.6) |
+
 ### 4.6 Audit log
 
 | | |
@@ -260,7 +274,7 @@ the account (4.5a).
 
 | | |
 |---|---|
-| **IndexedDB `escoresheet` (Dexie)** | Matches, teams, players (with DOB), sets, events with state snapshots, sync queue, officials and scorers lists, interaction logs, saved-teams cache, the rosters teams sent ahead (`game_rosters`, db/023: names, DOBs, licence numbers; this account's only, cleared at sign-out and account switch, dropped 36 h after kick-off). Written first, synced when online and signed in. **No automatic expiry for matches** (deleted by the user or by clearing app data). Sent sync jobs are pruned after 7 days (`hooks/useSyncQueue.js:110`) |
+| **IndexedDB `escoresheet` (Dexie)** | Matches, teams, players (with DOB), sets, events with state snapshots, sync queue, officials and scorers lists, interaction logs, saved-teams cache, the rosters teams sent ahead (`game_rosters`, db/023: names, DOBs, licence numbers; this account's only, cleared at sign-out and account switch, dropped 36 h after kick-off), the players lists of the account's clubs (`club_players`, db/024: licence number, names, DOB, gender; this account's only, replaced by each download, cleared at sign-out and account switch). Written first, synced when online and signed in. **No automatic expiry for matches** (deleted by the user or by clearing app data). Sent sync jobs are pruned after 7 days (`hooks/useSyncQueue.js:110`) |
 | **localStorage** | Session token (`api_auth_token`), cached profile, UI settings (language, display, key bindings), on referee tablets **the referee PIN and match id** (`refereePin`, `refereeMatchId`: F19), the unsent console-log lines (for the same account only; dropped on sign-out and account deletion), log upload cursor |
 | **Local logs** | Console lines in memory and localStorage; interaction logs in IndexedDB (`utils/comprehensiveLogger.js`), downloadable by the user. Uploaded only when signed in (4.12); a summary of the last 2 hours goes with a support request when "Include diagnostics" is ticked (4.13). The referee, bench and livescore apps keep their errors and warnings in memory only, for the same diagnostics |
 | **Desktop app (Tauri)** | Same web data in the app's webview profile. **Automatic match backups** as JSON files in `~/.local/share/OpenVolley/backups` (Linux) or `%APPDATA%\OpenVolley\backups` (Windows), mode 0700/0600 (`src-tauri/src/backup.rs`). They hold names and DOBs, **without PINs** (`utils/nativeBackup/redact.js`). Rotation: 30 days, at most 500 files and 64 MB per match (`utils/nativeBackup/rotation.js`) |
@@ -363,6 +377,7 @@ PocketBase (legacy relay backup), Supabase (left in 2026-10).
 | Match records (cloud) | Indefinitely; closed matches read-only |
 | Saved teams, beach tournaments | Until deleted by a manager (kept after the creator's account is deleted) |
 | Rosters sent ahead (`game_rosters`) | Content: until accepted by a scorer; row: 14 days after the game |
+| Club licence lists (`club_licences`) | Until the next upload of that list, the list's deletion or the club's deletion |
 | Referee directory | Until an admin deletes a row |
 | `svrz_games` | Indefinitely (overwritten per game number) |
 | `backup/…/backups/` files | 30 days |

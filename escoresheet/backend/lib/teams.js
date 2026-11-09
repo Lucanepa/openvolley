@@ -8,9 +8,12 @@
  *   teamDetail({ teamId })                      the team and its club
  *   squad({ teamId })                           the saved team of the current season, or null
  *   putSquad({ actorId, teamId, body })         { players, staff }: creates the saved team when needed
+ *                                               (db/024: 400 OV_WRONG_GENDER for a player of the
+ *                                               club's players list with the other gender than the team's)
  *   games({ teamId })                           the team's games from today, each with its roster summary
  *   getRoster({ teamId, game })                 the team's roster of game `game`, or null
  *   putRoster({ actorId, teamId, game, body })  { players, staff, coach_signature?, captain_signature? }, any time
+ *                                               (OV_WRONG_GENDER as putSquad)
  *   deleteRoster({ actorId, teamId, game })
  * Club managers of the club (and admins):
  *   clubTeams({ clubId })                       the club's teams with their managers
@@ -41,6 +44,7 @@ import { fail, invalid, isUuid, notFound, ok, unavailable } from './accounts.js'
 import { seasonOf } from './officialGame.js'
 import { STAFF_ROLES, validateRoster } from './savedTeams.js'
 import { zurichDay } from './clubs.js'
+import { WRONG_GENDER } from './licences.js'
 
 // A team link (owner, 2026-11-08): a few uses, never unlimited, gone after 90 days at most
 export const TEAM_INVITE_MAX_USES = 10
@@ -193,8 +197,10 @@ const genderOf = (raw) => {
  * @param {(client: any, entry: object) => Promise<void>} o.audit  lib/accounts.js audit (throws)
  * @param {object} o.savedTeams  lib/savedTeams.js (the squad is a saved team)
  * @param {object} o.clubs  lib/clubs.js (clubsOf: the clubs a scorer scores for)
+ * @param {object} [o.licences]  lib/licences.js (db/024: a player of the club's players list
+ *   with the other gender than the team's is refused, OV_WRONG_GENDER)
  */
-export function createTeams ({ pool, audit, savedTeams, clubs, logger = console, clock = () => new Date() } = {}) {
+export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, logger = console, clock = () => new Date() } = {}) {
   const log = logger
   let lastSweep = 0
 
@@ -459,6 +465,9 @@ export function createTeams ({ pool, audit, savedTeams, clubs, logger = console,
     const out = await guarded('put-roster', () => withTx(async (client) => {
       const x = await gameOf(client, teamId, game)
       if (x.answer) throw abort(x.answer)
+      // db/024: a player can't play in the wrong gender (owner 2026-11-09)
+      const wrong = licences ? await licences.wrongGender(client, x.team, v.players) : null
+      if (wrong) throw abort(WRONG_GENDER(wrong.index, wrong.gender))
       const n = String(x.game.game_number)
       await client.query(
         `INSERT INTO public.game_rosters (game_number, season, side, team_name, players, staff, coach_signature, captain_signature, kickoff, updated_by)
@@ -551,6 +560,9 @@ export function createTeams ({ pool, audit, savedTeams, clubs, logger = console,
     return guarded('put-squad', async () => {
       const team = await teamRow(pool, teamId)
       if (!team) return notFound()
+      // db/024: a player can't play in the wrong gender (owner 2026-11-09)
+      const wrong = licences ? await licences.wrongGender(pool, team, v.players) : null
+      if (wrong) return WRONG_GENDER(wrong.index, wrong.gender)
       const year = seasonOf(clock())
       const label = seasonLabel(year)
       let id = await squadId(pool, team, label)
