@@ -12,9 +12,17 @@ import {
   timeoutRequestIssues,
   requestBlockReason,
   substituteInIllegalReason,
-  REQUEST_ISSUES
+  REQUEST_ISSUES,
+  IMPROPER_REQUEST_REASONS,
+  TEAM_SANCTION_REASONS,
+  sanctionReasonOfIssue,
+  teamSanctionReason,
+  lateRequestOutcome,
+  decisionChangeTakeBack
 } from '../interruptionRequests'
 import { teamSanctionCounts, resolveSanction } from '../sanctions'
+import { describeEvent } from '../describe'
+import { planRemoveSubstitution, applyPlanToEvents } from '../manualCorrections'
 
 let seq = 0
 const ev = (type, payload = {}, setIndex = 1) => ({ type, payload, setIndex, seq: ++seq })
@@ -414,5 +422,180 @@ describe('substituteInIllegalReason (row 12)', () => {
     expect(substituteInIllegalReason(events, 1, 'home', 2, 7)).toBe('played_out')
     // the next set starts afresh
     expect(substituteInIllegalReason(events, 2, 'home', 2, 7)).toBeNull()
+  })
+})
+
+describe('what a team sanction was for (row 11)', () => {
+  it('the improper-request reasons are the four of FIVB 15.11.1 and "other"', () => {
+    expect(IMPROPER_REQUEST_REASONS).toEqual(['during_rally', 'wrong_person', 'second_substitution', 'limit_exhausted', 'other'])
+    // a delay from the request warning may be for an illegal substitution (16.1.3)
+    expect(TEAM_SANCTION_REASONS).toContain('illegal_substitution')
+  })
+
+  it('a sanction chosen in a request warning keeps the warning\'s reason', () => {
+    expect(sanctionReasonOfIssue('second_substitution_request')).toBe('second_substitution')
+    expect(sanctionReasonOfIssue('no_rally_since_entry')).toBe('second_substitution')
+    expect(sanctionReasonOfIssue('substitution_limit')).toBe('limit_exhausted')
+    expect(sanctionReasonOfIssue('third_timeout')).toBe('limit_exhausted')
+    expect(sanctionReasonOfIssue('illegal_substitution')).toBe('illegal_substitution')
+    // the notice and the blocks record nothing
+    for (const r of ['after_delay_warning', 'replay_pending', 'set_interval']) expect(sanctionReasonOfIssue(r)).toBeNull()
+  })
+
+  it('only a known reason is read back', () => {
+    expect(teamSanctionReason({ type: 'improper_request', reason: 'wrong_person' })).toBe('wrong_person')
+    expect(teamSanctionReason({ type: 'improper_request', reason: 'nonsense' })).toBeNull()
+    expect(teamSanctionReason({ type: 'improper_request' })).toBeNull()
+  })
+
+  it('the event log says what the improper request was for; "other" and old rows say nothing more', () => {
+    const at = (payload) => describeEvent({ type: 'sanction', setIndex: 1, seq: 9, payload: { team: 'home', ...payload } }, [], {})
+    expect(at({ type: 'improper_request', reason: 'wrong_person' }).detail).toBe('Requested by the wrong person')
+    expect(at({ type: 'improper_request', reason: 'during_rally' }).text).toContain('During the rally or after the whistle')
+    expect(at({ type: 'improper_request', reason: 'other' }).detail).toBe('')
+    expect(at({ type: 'improper_request' }).detail).toBe('')
+    // a delay penalty keeps its point, after the reason
+    expect(at({ type: 'delay_penalty', reason: 'illegal_substitution' }).detail).toMatch(/^Illegal substitution requested · \+1 point to /)
+    // a person's sanction never shows a team reason
+    expect(at({ type: 'warning', playerNumber: 4, reason: 'wrong_person' }).detail).toBe('')
+  })
+})
+
+describe('a late request stopped the rally (row 10)', () => {
+  it('the first delay: a delay warning and the rally is replayed (Q182)', () => {
+    const events = [point('home'), ev('rally_start')]
+    expect(lateRequestOutcome(events, 'away')).toEqual({ sanction: 'delay_warning', replay: true, reason: 'during_rally' })
+  })
+
+  it('after a delay warning (any set): a delay penalty, no replay: the point decides the rally (16.2.3)', () => {
+    const events = [sanction('away', 'delay_warning'), point('home'), point('home', 2), ev('rally_start', {}, 2)]
+    expect(lateRequestOutcome(events, 'away')).toEqual({ sanction: 'delay_penalty', replay: false, reason: 'during_rally' })
+    // the other team still has its warning to come
+    expect(lateRequestOutcome(events, 'home').sanction).toBe('delay_warning')
+  })
+
+  it('an improper request on record does not make it a penalty (only delays count, 16.2)', () => {
+    const events = [sanction('away', 'improper_request'), point('home'), ev('rally_start')]
+    expect(lateRequestOutcome(events, 'away').sanction).toBe('delay_warning')
+  })
+
+  it('after the replay and the delay warning, requests stay closed for both teams until the rally is completed (row 7)', () => {
+    const events = [point('home'), ev('rally_start'), ev('replay'), sanction('away', 'delay_warning')]
+    for (const team of ['home', 'away']) {
+      expect(requestBlockReason(events, 1, team, 'timeout')).toBe('replay_pending')
+      expect(requestBlockReason(events, 1, team, 'substitution')).toBe('replay_pending')
+    }
+    // an injury substitution is still possible
+    expect(substitutionRequestIssues(events, 1, 'away', { isInjury: true })).toEqual([])
+    events.push(ev('rally_start'), point('away'))
+    expect(requestBlockReason(events, 1, 'away', 'timeout')).toBeNull()
+  })
+
+  it('after a delay penalty (no replay), the penalty point is the completed rally: requests are open', () => {
+    const events = [point('home'), ev('rally_start'), sanction('away', 'delay_penalty'), ev('point', { team: 'home', penaltySeq: seq })]
+    expect(requestBlockReason(events, 1, 'away', 'timeout')).toBeNull()
+    expect(requestBlockReason(events, 1, 'away', 'substitution')).toBeNull()
+  })
+})
+
+describe('decision change after a substitution or time-out (row 19)', () => {
+  it('nothing after the point: nothing to take back (the plain decision change)', () => {
+    const events = [point('home'), sub('lineup', { team: 'home', fromRotation: true })]
+    expect(decisionChangeTakeBack(events, 1)).toBeNull()
+  })
+
+  it('no point in the set: nothing to change', () => {
+    expect(decisionChangeTakeBack([...substWithLineup('home', 1, 7)], 1)).toBeNull()
+  })
+
+  it('a substitution with its line-up row after the point: taken back (CB 8.5)', () => {
+    const p = point('away')
+    const rotation = sub('lineup', { team: 'away', fromRotation: true })
+    const [s1, l1] = substWithLineup('home', 3, 7)
+    const take = decisionChangeTakeBack([p, rotation, s1, l1], 1)
+    expect(take.point).toBe(p)
+    expect(take.requests).toEqual([s1])
+  })
+
+  it('time-outs and substitutions of both teams: all of them, newest first (as Undo takes them)', () => {
+    const p = point('home')
+    const t1 = timeout('away')
+    const [s1, l1] = substWithLineup('away', 2, 8)
+    const t2 = timeout('home')
+    const [s2, l2] = substWithLineup('home', 4, 9)
+    const take = decisionChangeTakeBack([p, t1, s1, l1, t2, s2, l2], 1)
+    expect(take.requests).toEqual([s2, t2, s1, t1])
+  })
+
+  it('a forced substitution after the point: not offered (the player must be replaced whatever the decision)', () => {
+    const events = [point('home'), timeout('away'), ...substWithLineup('away', 2, 8, { isInjury: true })]
+    expect(decisionChangeTakeBack(events, 1)).toBeNull()
+  })
+
+  it('a libero replacement, a sanction, a started rally or a replay after the point: not offered (Undo)', () => {
+    for (const other of [
+      () => ev('libero_entry', { team: 'home', liberoIn: 9, playerOut: 5 }),
+      () => sanction('home', 'improper_request'),
+      () => ev('rally_start'),
+      () => ev('replay')
+    ]) {
+      seq = 0
+      const events = [point('home'), timeout('away'), other()]
+      expect(decisionChangeTakeBack(events, 1)).toBeNull()
+    }
+  })
+
+  it('a line-up row of the other team under a substitution is not its own: not offered', () => {
+    const events = [point('home'), subst('away', 2, 8), sub('lineup', { team: 'home' })]
+    expect(decisionChangeTakeBack(events, 1)).toBeNull()
+  })
+
+  it('only the current set counts', () => {
+    const events = [point('home', 1), timeout('away'), point('home', 2)]
+    expect(decisionChangeTakeBack(events, 2)).toBeNull()
+    expect(decisionChangeTakeBack(events, 1).requests).toHaveLength(1)
+  })
+
+  it('the substitution taken back is not counted: the team\'s next one is its first request again', () => {
+    const p = point('home')
+    const [s1, l1] = substWithLineup('home', 3, 7)
+    const t1 = timeout('home')
+    const events = [p, s1, l1, t1]
+    expect(isSecondSubstitutionRequest(events, 1, 'home')).toBe(true)
+    const take = decisionChangeTakeBack(events, 1)
+    const gone = new Set(take.requests.map(e => e.seq))
+    const after = events.filter(e => !gone.has(Math.floor(e.seq)))
+    expect(after).toEqual([p])
+    expect(substitutionRequestIssues(after, 1, 'home')).toEqual([])
+  })
+})
+
+describe('rectifying an illegal substitution (row 20, R15.9.2)', () => {
+  // The app has no live "rectify" action: the scorer removes the illegal
+  // substitution in the corrections (planRemoveSubstitution). That path never
+  // asks the request rules, and what it leaves is not a substitution (CB 4.13):
+  // neither the limit (row 4) nor the second-request rule (row 1) counts it.
+  it('the removed substitution no longer counts for the limit or as a request', () => {
+    let id = 0
+    const withId = (e) => ({ ...e, id: ++id })
+    const events = [
+      withId(ev('lineup', { team: 'home', isInitial: true, lineup: { I: '1', II: '2', III: '3', IV: '4', V: '5', VI: '6' } })),
+      withId(point('home'))
+    ]
+    const pairs = [[1, 7], [2, 8], [3, 9], [4, 10], [5, 11]]
+    for (const [o, i] of pairs) {
+      events.push(withId(subst('home', o, i)), withId(sub('lineup', { team: 'home', fromSubstitution: true })))
+      events.push(withId(point('away')))
+    }
+    // the 6th: illegal (#12 is not on the roster); with it the limit is reached
+    const illegal = withId(subst('home', 6, 12))
+    events.push(illegal, withId(sub('lineup', { team: 'home', fromSubstitution: true })), withId(timeout('away')))
+    expect(reasons(substitutionRequestIssues(events, 1, 'home'))).toEqual(['substitution_limit'])
+    const plan = planRemoveSubstitution(events, illegal.id, { raw: true })
+    expect(plan.error).toBeUndefined()
+    const rectified = applyPlanToEvents(events, plan)
+    expect(rectified.some(e => e.id === illegal.id)).toBe(false)
+    // not the 7th, and not a second request (the time-out after it is no longer after a substitution)
+    expect(substitutionRequestIssues(rectified, 1, 'home')).toEqual([])
   })
 })

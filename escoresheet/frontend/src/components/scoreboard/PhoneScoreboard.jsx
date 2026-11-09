@@ -31,7 +31,9 @@ import { MissingSignatureButton } from '../signature/PreMatchSignDialog.jsx'
  * @param {number|string} props.setNumber the set as shown (bo3 decider "3")
  * @param {{ left: object, right: object }} props.teams see TeamVM below
  * @param {'left'|'right'|null} props.serving
- * @param {{ status: 'idle'|'in_play', isFirstRally: boolean, startDisabled: boolean, canReplayRally: boolean, isRallyReplayed: boolean, requestBlockText?: string|null }} props.rally
+ * @param {{ status: 'idle'|'in_play', isFirstRally: boolean, startDisabled: boolean, canReplayRally: boolean, canChangeDecision?: boolean, isRallyReplayed: boolean, requestBlockText?: string|null }} props.rally
+ *   (canChangeDecision: the decision change is offered, also after time-outs /
+ *   substitutions that followed the last point; canReplayRally when absent)
  * @param {null|{ kind: 'timeout', teamName: string, countdown: number, total: number }
  *   |{ kind: 'interval', countdown: number, total: number }
  *   |{ kind: 'set5', countdown?: number, total?: number, confirmLabel: string }} props.centre
@@ -504,7 +506,9 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
         {gridButton('libero', t('scoreboard.phone.libero'), () => setSheet({ kind: 'libero' }), { disabled: !idle || rally.isRallyReplayed })}
         {gridButton('sanction', t('scoreboard.sanction'), () => setSheet({ kind: 'sanction' }), { disabled: rally.status !== 'idle' })}
         {gridButton('replay', t('scoreboard.phone.replay'), () => actions.replay(), { disabled: !inPlay })}
-        {gridButton('decision', t('scoreboard.phone.decision'), () => actions.replay(), { disabled: !(rally.status === 'idle' && rally.canReplayRally), small: true })}
+        {/* the last point, also when time-outs / substitutions followed it
+            (the Scoreboard takes them back with the decision change, row 19) */}
+        {gridButton('decision', t('scoreboard.phone.decision'), () => actions.replay(), { disabled: !(rally.status === 'idle' && (rally.canChangeDecision ?? rally.canReplayRally)), small: true })}
         {gridButton('rosters', t('scoreboard.rosters'), () => actions.rosters(), { muted: true })}
         {gridButton('scoresheet', t('scoreboard.phone.scoresheet'), () => actions.scoresheet(), { muted: true })}
         {gridButton('remarks', t('scoreboard.phone.remarks'), () => actions.remarks(), { muted: true, span: 2 })}

@@ -980,6 +980,29 @@
         "rule": "FIVB 15.10.4 · 16.1.3"
       }
     },
+    "lateRequest": {
+      "heading": "Interrotto per una richiesta tardiva?",
+      "replay": "Ripetere per una richiesta tardiva di {{team}}: sanzione per ritardo",
+      "penalty": "Richiesta tardiva di {{team}}: penalità per ritardo, senza ripetere",
+      "recordsWarning": "Registrato: avvertimento per ritardo. Lo scambio viene ripetuto; nessun timeout né sostituzione finché non è concluso.",
+      "recordsPenalty": "Registrato: penalità per ritardo – punto e servizio a {{opponent}}.",
+      "rule": "FIVB 15.11.1.1 · 16.1 · SSK Q182"
+    },
+    "improperReason": {
+      "title": "Per cosa (facoltativo)",
+      "during_rally": "Durante lo scambio o dopo il fischio",
+      "wrong_person": "Richiesta dalla persona sbagliata",
+      "second_substitution": "Seconda richiesta di sostituzione",
+      "limit_exhausted": "Troppi timeout o sostituzioni",
+      "other": "Altro"
+    },
+    "decisionTakeBack": {
+      "title": "Annullato prima",
+      "timeout": "Timeout {{team}}",
+      "substitution": "Sostituzione {{team}}: n. {{in}} per n. {{out}}",
+      "text": "Richiesto dopo il punto: la sostituzione viene annullata e non conta, il timeout viene annullato.",
+      "rule": "FIVB casebook 8.5 · SSK 26-1"
+    },
     "teamSanctionConfirm": {
       "thirdTimeout": "{{team}} ha usato entrambi i timeout di questo set. Una terza richiesta è una richiesta impropria.",
       "applyImproperRequest": "Registrare una richiesta impropria per {{team}}?",
@@ -4234,6 +4257,13 @@
       "penalty": "Penalizzazione",
       "expulsion": "Espulsione",
       "disqualification": "Squalifica"
+    },
+    "sanctionReason": {
+      "during_rally": "Durante lo scambio o dopo il fischio",
+      "wrong_person": "Richiesta dalla persona sbagliata",
+      "second_substitution": "Seconda richiesta di sostituzione",
+      "limit_exhausted": "Timeout o sostituzioni esauriti",
+      "illegal_substitution": "Sostituzione irregolare richiesta"
     },
     "target": {
       "player": "Giocatore/trice #{{n}}",

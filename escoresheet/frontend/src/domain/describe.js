@@ -39,6 +39,23 @@ const SANCTION_DEFAULTS = {
   disqualification: 'Disqualification'
 }
 
+// What a team sanction was for (payload.reason; domain/interruptionRequests
+// TEAM_SANCTION_REASONS): the kinds of improper request of FIVB 15.11.1, and
+// the illegal substitution a delay was given for (16.1.3). "other" says
+// nothing and is not shown.
+const SANCTION_REASON_DEFAULTS = {
+  during_rally: 'During the rally or after the whistle',
+  wrong_person: 'Requested by the wrong person',
+  second_substitution: 'Second substitution request',
+  limit_exhausted: 'Time-outs or substitutions used up',
+  illegal_substitution: 'Illegal substitution requested'
+}
+
+/** The words for a team sanction's reason, or '' (none, unknown or "other"). */
+export function sanctionReasonLabel(reason, t) {
+  return SANCTION_REASON_DEFAULTS[reason] ? tr(t, `corrections.sanctionReason.${reason}`, SANCTION_REASON_DEFAULTS[reason]) : ''
+}
+
 // Bench official roles as stored on the sanction payload (role) -> key + paper code
 const ROLE_TARGETS = [
   { match: ['coach', 'c'], key: 'coach', label: 'Coach', code: 'C' },
@@ -355,6 +372,12 @@ export function describeEvent(event, events, ctx = {}) {
       if ((type === 'penalty' || type === 'delay_penalty') && p.team) {
         const opp = teamLabel(otherTeam(p.team), ctx)
         detail = tr(t, 'corrections.describe.pointTo', '+1 point to {{team}}', { team: teamRef(opp) })
+      }
+      // What the improper request (or the delay) was for, when the scorer
+      // said: "Improper request — Team · … · Requested by the wrong person"
+      if (isTeamSanctionType(type)) {
+        const why = sanctionReasonLabel(p.reason, t)
+        if (why) detail = detail ? `${why} · ${detail}` : why
       }
       break
     }

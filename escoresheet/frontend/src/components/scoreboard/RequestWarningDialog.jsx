@@ -94,27 +94,16 @@ export default function RequestWarningDialog({ issue, team, opponent, consequenc
           )}
           {choices.map(option => {
             const { label, sub, card } = optionText[option]
-            const quiet = option === 'continue'
             return (
-              <button
+              <RequestOptionRow
                 key={option}
-                type="button"
-                data-option={option}
+                option={option}
+                label={label}
+                sub={sub}
+                card={card}
+                quiet={option === 'continue'}
                 onClick={() => onChoose(option)}
-                className={cn(
-                  'box-border flex w-full min-h-12 items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left transition-colors cursor-pointer',
-                  quiet ? 'border-stone-200 bg-stone-50 hover:bg-stone-100' : 'border-stone-300 bg-white hover:bg-stone-50',
-                  FOCUS_RING
-                )}
-              >
-                <span aria-hidden="true" className="inline-flex w-4 shrink-0 justify-center">
-                  {card && <span className={`sanction-card ${card === 'delay_penalty' ? 'red' : 'yellow'}`} style={{ display: 'block', width: 12, height: 16, borderRadius: 2 }} />}
-                </span>
-                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className={cn('text-sm font-semibold', quiet ? 'text-stone-700' : 'text-stone-900')}>{label}</span>
-                  <span className="text-xs text-stone-500">{sub}</span>
-                </span>
-              </button>
+              />
             )
           })}
           {!isNotice && (
@@ -125,5 +114,35 @@ export default function RequestWarningDialog({ issue, team, opponent, consequenc
         </div>
       </div>
     </Modal>
+  )
+}
+
+/**
+ * One option of a request warning (or of the late-request replay): what it
+ * does, what it records, and the card it gives (yellow: delay warning, red:
+ * delay penalty). h-12 at least, the whole row is the button.
+ * @param {{ option:string, label:string, sub:string, card?:string|null, quiet?:boolean, onClick:() => void, testId?:string }} props
+ */
+export function RequestOptionRow({ option, label, sub, card = null, quiet = false, onClick, testId }) {
+  return (
+    <button
+      type="button"
+      data-option={option}
+      data-testid={testId}
+      onClick={onClick}
+      className={cn(
+        'box-border flex w-full min-h-12 items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left transition-colors cursor-pointer',
+        quiet ? 'border-stone-200 bg-stone-50 hover:bg-stone-100' : 'border-stone-300 bg-white hover:bg-stone-50',
+        FOCUS_RING
+      )}
+    >
+      <span aria-hidden="true" className="inline-flex w-4 shrink-0 justify-center">
+        {card && <span className={`sanction-card ${card === 'delay_penalty' ? 'red' : 'yellow'}`} style={{ display: 'block', width: 12, height: 16, borderRadius: 2 }} />}
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className={cn('text-sm font-semibold', quiet ? 'text-stone-700' : 'text-stone-900')}>{label}</span>
+        <span className="text-xs text-stone-500">{sub}</span>
+      </span>
+    </button>
   )
 }
