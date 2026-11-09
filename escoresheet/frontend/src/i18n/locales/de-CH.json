@@ -1765,7 +1765,8 @@
   "refereeDashboard": {
     "recorded": {
       "title": "Vom Schriiber erfasst",
-      "closesIn": "Gaht in {{s}} s zue"
+      "closesIn": "Gaht in {{s}} s zue",
+      "timeoutLeft": "Timeout: no {{s}} s"
     },
     "linkDown": "Offline: kei Verbindig zum Matchblatt. Spielstand und Ufschlag sind evtl. nöd aktuell.",
     "title": "Schiri",

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import Modal from '../Modal'
 import { Button } from '../../ui/Button.jsx'
 import { cn } from '../../ui/cn.js'
+import TimeoutCountdown from './TimeoutCountdown.jsx'
 
 // The badge in front of an entry: T for a time-out, S for a substitution
 // (amber for an exceptional one), and the card itself for a sanction.
@@ -32,8 +33,11 @@ function NoticeBadge({ tone }) {
  * The referee tablets' summary of what the scorer just recorded: time-outs,
  * substitutions and sanctions, oldest first. OK closes it; it closes by
  * itself at `deadline` (10 s after its last entry came in).
+ * `timeout` ({ countdown }) is the running time-out when one of the entries
+ * is a time-out: its ring shows here (data-recorded-countdown), and moves to
+ * the court when the popup closes (CountdownFlight).
  */
-export default function RecordedNoticePopup({ notices, deadline, onClose }) {
+export default function RecordedNoticePopup({ notices, deadline, onClose, timeout = null, scoreFont = 'inherit' }) {
   const { t } = useTranslation()
   const [now, setNow] = useState(() => Date.now())
 
@@ -62,6 +66,13 @@ export default function RecordedNoticePopup({ notices, deadline, onClose }) {
             <span className="rounded-full bg-stone-900 px-2.5 py-0.5 text-sm font-semibold text-white">{notices.length}</span>
           )}
         </div>
+        {timeout && (
+          <div className="mb-3 flex justify-center">
+            <div data-recorded-countdown="" role="timer" aria-label={t('refereeDashboard.recorded.timeoutLeft', 'Time-out: {{s}} s left', { s: timeout.countdown })}>
+              <TimeoutCountdown countdown={timeout.countdown} fontFamily={scoreFont} />
+            </div>
+          </div>
+        )}
         <ul role="list" aria-live="polite" className="m-0 mb-4 flex list-none flex-col gap-2 p-0">
           {notices.map(n => (
             <li key={n.key} className="flex items-center gap-3 rounded-xl border border-stone-200/70 bg-stone-50 px-3 py-2.5">
