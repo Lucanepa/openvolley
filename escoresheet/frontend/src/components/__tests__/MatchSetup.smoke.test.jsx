@@ -6,6 +6,8 @@
  * The roster editor keeps a row in its place while its number is typed.
  * Choose players in the roster editor writes nothing before its Save.
  * A roster of more than 14 players is not ready for the coin toss.
+ * "Add from club" (db/024, the device's copy): a bench official from anyone
+ * of the club's lists, of either gender.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, cleanup, fireEvent, within } from '@testing-library/react'
@@ -17,7 +19,8 @@ vi.mock('react-i18next', () => ({
   })
 }))
 vi.mock('../../contexts/AlertContext', () => ({ useAlert: () => ({ showAlert: vi.fn(), showConfirm: vi.fn() }) }))
-vi.mock('../../contexts/AuthContext', () => ({ useAuth: () => ({ user: null, profile: null, getCachedProfile: () => null }) }))
+const auth = vi.hoisted(() => ({ user: null }))
+vi.mock('../../contexts/AuthContext', () => ({ useAuth: () => ({ user: auth.user, profile: null, getCachedProfile: () => null }) }))
 
 // useLiveQuery: run the query once per deps change (no Dexie observation)
 vi.mock('dexie-react-hooks', async () => {
@@ -59,8 +62,8 @@ vi.mock('../../db/db', () => {
     delete: async (id) => { rowsOf(name).delete(id) },
     toArray: async () => [...rowsOf(name).values()],
     count: async () => rowsOf(name).size,
-    // players: by team (the roster editor reads them); empty otherwise
-    where: (field) => name === 'players'
+    // players: by team (the roster editor reads them), club_players by account; empty otherwise
+    where: (field) => name === 'players' || name === 'club_players'
       ? { equals: (v) => collection([...rowsOf(name).values()].filter((r) => r[field] === v)) }
       : collection([]),
     orderBy: () => collection([]),
@@ -113,6 +116,7 @@ const pinJobs = () => queued().filter((j) => j.resource === 'match' && j.action 
 beforeEach(() => {
   store.tables = {}
   store.nextId = 100
+  auth.user = null
   globalThis.ResizeObserver ||= class { observe() {} unobserve() {} disconnect() {} }
 })
 afterEach(() => {
@@ -448,5 +452,43 @@ describe('MatchSetup smoke render', () => {
       const heading = [...document.querySelectorAll('h1')].find((h) => h.textContent.includes('HOME V'))
       expect(heading.parentElement.querySelector('[aria-label^="scoreboard."]').getAttribute('aria-label')).toBe(badge)
     })
+  })
+  // db/024: the club's people on the device; a bench official may be anyone
+  // of the club's lists (here a coach of the women's list on a men's game)
+  it('Add from club fills a bench official\'s role from anyone of the club\'s lists', async () => {
+    auth.user = { id: 'u1' }
+    store.tables.matches = new Map([[1, {
+      id: 1, status: 'setup', seed_key: 'match_1_club', matchInfoConfirmedAt: '2026-10-06T10:00:00Z',
+      homeTeamId: 11, awayTeamId: 12, game_n: 991409, ...PINS,
+      bench_home: [{ role: 'Coach', firstName: 'Carla', lastName: 'Coach', dob: '' }]
+    }]])
+    store.tables.teams = new Map([[11, { id: 11, name: 'Home V' }], [12, { id: 12, name: 'Away V' }]])
+    store.tables.club_players = new Map([['c1', {
+      clubId: 'c1', clubName: 'VBC Home', teamNames: ['Home V'], teamGenders: { 'Home V': 'm' }, userId: 'u1', fetchedAt: '2026-11-09T10:00:00Z',
+      players: [{ sv_number: '100003', last_name: 'Probe', first_name: 'Marco', dob: '2001-11-02', gender: 'm' }],
+      people: [
+        { sv_number: '100003', last_name: 'Probe', first_name: 'Marco', dob: '2001-11-02', gender: 'm', lists: ['players'] },
+        { sv_number: '200001', last_name: 'Trainer', first_name: 'Tina', dob: '1980-03-04', gender: 'f', lists: ['coaches'] }
+      ]
+    }]])
+    render(<Setup matchId={1} />)
+    fireEvent.click((await screen.findAllByRole('button', { name: 'matchSetup.editRoster' }))[0])
+    fireEvent.click(await screen.findByTestId('bench-from-club-home'))
+    const picker = await screen.findByTestId('club-picker')
+    expect(picker.dataset.mode).toBe('officials')
+    const rows = within(picker).getAllByTestId('club-picker-row')
+    expect(rows.map((r) => r.textContent.includes('Trainer Tina'))).toEqual([false, true])
+    // the first role nobody holds
+    expect(within(picker).getByTestId('club-picker-role').value).toBe('Assistant Coach 1')
+    fireEvent.click(within(rows[1]).getByRole('radio'))
+    fireEvent.click(screen.getByTestId('club-picker-add'))
+    await waitFor(() => expect([...document.querySelectorAll('.bench-grid input.cell-last')].map((i) => i.value)).toEqual(['Coach', 'Trainer']))
+    expect([...document.querySelectorAll('.bench-grid input.cell-first')].map((i) => i.value)).toEqual(['Carla', 'Tina'])
+    // the players' picker: the players list, no gender note
+    fireEvent.click(screen.getByTestId('add-from-club-home'))
+    const players = await screen.findByTestId('club-picker')
+    expect(players.dataset.mode).toBe('players')
+    expect(within(players).getAllByTestId('club-picker-row')).toHaveLength(1)
+    expect(players.textContent).not.toMatch(/clubPlayers\.only/)
   })
 })

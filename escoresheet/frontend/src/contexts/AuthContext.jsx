@@ -263,7 +263,7 @@ export function AuthProvider({ children, app = null }) {
       // The saved-team cache holds DOBs and licence numbers of this account's
       // teams: never leave it for the next one on a shared tablet
       clearSavedTeams()
-      // the rosters teams sent (db/023) too, and the clubs' players lists (db/024)
+      // the rosters teams sent (db/023) too, and the clubs' licence lists (db/024)
       clearGameRosters()
       clearClubPlayers()
     }
@@ -472,7 +472,7 @@ export function AuthProvider({ children, app = null }) {
   // db/023, offline first: download the rosters teams sent for the coming
   // home games while there is a connection (sign-in, every 15 minutes, back
   // online), so Match Setup offers them in a hall without internet. db/024:
-  // the players lists of the account's clubs the same way ("Add from club").
+  // the licence lists of the account's clubs the same way ("Add from club").
   useEffect(() => {
     if (!user || !profile || !access.canScore || access.isPending || !hasBackend()) return
     const refresh = () => {

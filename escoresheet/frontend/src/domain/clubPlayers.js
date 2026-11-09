@@ -1,13 +1,15 @@
 /**
- * The club's players in Match Setup (db/024, docs/club-licences-spec.md
+ * The club's people in Match Setup (db/024, docs/club-licences-spec.md
  * section 5): "Add from club" for a team of the scorer's clubs, from the
- * tablet's copy (db/clubPlayers.js), and the gender warning. Plain data, no
- * React, no network.
+ * tablet's copy (db/clubPlayers.js): players (the players list, the game's
+ * gender) for the roster, anyone of the club's lists for the bench officials;
+ * and the gender warning. Plain data, no React, no network.
  *
  * Match Setup's roster rows are { number, firstName, lastName, dob
- * (DD.MM.YYYY), libero, isCaptain, isLfp } without a licence number, so a
- * club person is matched by name (accents and case aside, also with first and
- * last name swapped) and, when both have one, the date of birth.
+ * (DD.MM.YYYY), libero, isCaptain, isLfp } and its bench rows { role,
+ * firstName, lastName, dob }, without a licence number, so a club person is
+ * matched by name (accents and case aside, also with first and last name
+ * swapped) and, for the warning, when both have one, the date of birth.
  *
  * Owner decision D2: in the hall the scorer can adjust anything, so a player
  * of the other gender is a warning in Match Setup, never a block (the
@@ -96,4 +98,46 @@ export function clubGenderWarnings(roster, clubPlayers, gender) {
     if (g !== gender) out.push({ index, name: `${p.firstName || ''} ${p.lastName || ''}`.trim(), gender: g })
   })
   return out
+}
+
+/**
+ * The roles of Match Setup's `bench` held by the club person `c` (by name,
+ * also with the names swapped). Officials may be anyone of the club, of
+ * either gender (owner 2026-11-09): no gender check for them.
+ */
+export function benchRolesOf(bench, c) {
+  const want = rowKey(c?.last_name, c?.first_name)
+  const swapped = rowKey(c?.first_name, c?.last_name)
+  return [...new Set((bench || []).filter((b) => {
+    if (!b || !(String(b.lastName || '').trim() || String(b.firstName || '').trim())) return false
+    const k = rowKey(b.lastName, b.firstName)
+    return k === want || k === swapped
+  }).map((b) => b.role))]
+}
+
+/** The named bench row of `role`, or null. */
+export function benchOfficialOfRole(bench, role) {
+  return (bench || []).find((b) => b && b.role === role && (String(b.lastName || '').trim() || String(b.firstName || '').trim())) || null
+}
+
+/**
+ * Match Setup's bench with the club person `c` as `role`: the row of that
+ * role takes the names and the date of birth (DD.MM.YYYY), else a row of
+ * that role is added. Each role once, as Match Setup keeps them. { bench,
+ * replaced }: the row's person before ({ firstName, lastName }), when
+ * another one.
+ */
+export function setBenchOfficial(bench, role, c) {
+  const out = [...(bench || [])]
+  const row = { firstName: String(c?.first_name || '').trim(), lastName: String(c?.last_name || '').trim(), dob: isoToDisplayDob(c?.dob) }
+  const i = out.findIndex((b) => b?.role === role)
+  if (i === -1) {
+    out.push({ role, ...row })
+    return { bench: out, replaced: null }
+  }
+  const cur = out[i]
+  const same = benchRolesOf([cur], c).length > 0
+  const named = !!(String(cur.firstName || '').trim() || String(cur.lastName || '').trim())
+  out[i] = { ...cur, ...row, dob: row.dob || (same ? cur.dob || '' : '') }
+  return { bench: out, replaced: named && !same ? cur : null }
 }

@@ -6,7 +6,7 @@ import { apiFrom } from '../../lib/apiClient'
 import { selectAll } from '../../lib/selectAll'
 import { STAFF_ROLES, validateSavedRoster, MAX_PLAYERS, MAX_STAFF, sportOf } from '../../domain/savedTeams'
 import { shirtNumberDigits } from '../../domain/roster'
-import { addClubPlayersToSquad, clubPersonToPlayer, clubPlayersForGender, mergeImportedRoster, parsedPdfToRoster, playerFinder, wrongGenderIndexes } from '../../domain/teamRosters'
+import { addClubPlayersToSquad, clubPersonToPlayer, clubPlayersForGender, mergeImportedRoster, officialOfRole, officialRolesOf, parsedPdfToRoster, playerFinder, setSquadOfficial, wrongGenderIndexes } from '../../domain/teamRosters'
 import ClubPlayerPickerModal from '../ClubPlayerPickerModal'
 import { InlineError } from './common'
 import { Button, DateField, Field, Input, Select, Checkbox, Switch, SectionHeader, EmptyInset, IconButton, confirmDialog, toast, cn } from '../../ui'
@@ -174,15 +174,19 @@ const HEAD = 'hidden sm:grid text-[11px] font-bold uppercase tracking-wide text-
  * the roster instead (PUT /api/team/:id/squad), `fixedFields` leaves out the
  * team's fields and Delete (its name, club and VolleyManager name are the
  * club's), `pdfImport` adds Import Einsatzliste to the players.
- * `clubPlayers` (db/024, GET /api/team/:id/club-players: { players, gender })
- * adds "Add from club", and Save refuses a player of the club's list with the
- * other gender than the team's (the server too: OV_WRONG_GENDER).
+ * `clubPlayers` (db/024, GET /api/team/:id/club-players: { players, gender,
+ * people }) adds "Add from club": players of the club's players list of the
+ * team's gender to the players, anyone of the club's lists (either gender)
+ * to an official's role. Save refuses a player of the players list with the
+ * other gender than the team's (the server too: OV_WRONG_GENDER); officials
+ * are never checked.
  */
 export default function TeamEditor({ team, competition, online, onBack, onChanged, onDeleted, saveRoster: saveRosterWith = null, fixedFields = false, pdfImport = false, clubPlayers = null }) {
   const { t } = useTranslation()
   const pdfInput = useRef(null)
   const [importing, setImporting] = useState(false)
   const [clubPicker, setClubPicker] = useState(false)
+  const [officialPicker, setOfficialPicker] = useState(false)
   const beach = sportOf(competition) === 'beach'
   const [fields, setFields] = useState(() => ({
     name: team.name || '',
@@ -386,6 +390,19 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
     setRowErrors({})
     toast.success(t('clubPlayers.added', { count: merged.added }))
   }
+  // An official from anyone of the club's lists, of either gender: the role's
+  // row takes the person (or a row of that role is added)
+  const people = useMemo(() => clubPeopleOf(clubPlayers), [clubPlayers])
+  const staffRoles = STAFF_ROLES.map((r) => ({ value: r, label: t(STAFF_ROLE_KEYS[r], r) }))
+  const named = (s) => (s ? `${s.first_name || ''} ${s.last_name || ''}`.trim() : '')
+  const officialFromClub = ([c], role) => {
+    setOfficialPicker(false)
+    if (!c || !role) return
+    setStaff((list) => setSquadOfficial(list, role, c, toStaffDraft).staff)
+    setRosterError('')
+    setRowErrors({})
+    toast.success(t('clubPlayers.officialSet', { role: t(STAFF_ROLE_KEYS[role], role), name: `${c.first_name || ''} ${c.last_name}`.trim() }))
+  }
 
   return (
     <div className="space-y-5">
@@ -529,7 +546,12 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
       {!beach && (
         <section>
           <SectionHeader title={t('savedTeams.staff')} count={staff.length} action={
-            <Button variant="ghost" size="sm" icon={Plus} disabled={staff.length >= MAX_STAFF} onClick={() => setStaff(list => [...list, toStaffDraft(null)])}>{t('savedTeams.addStaff')}</Button>
+            <div className="flex flex-wrap items-center gap-1">
+              {clubPlayers && (
+                <Button variant="ghost" size="sm" icon={UserPlus} onClick={() => setOfficialPicker(true)} data-testid="staff-add-from-club">{t('clubPlayers.add')}</Button>
+              )}
+              <Button variant="ghost" size="sm" icon={Plus} disabled={staff.length >= MAX_STAFF} onClick={() => setStaff(list => [...list, toStaffDraft(null)])}>{t('savedTeams.addStaff')}</Button>
+            </div>
           } />
           {staff.length > 0 && (
             <div>
@@ -588,21 +610,36 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
         open={clubPicker}
         onClose={() => setClubPicker(false)}
         onPick={addFromClub}
-        players={offered.players}
-        gender={offered.gender}
-        hiddenCount={offered.hidden}
+        players={offered}
         isTaken={(c) => finder.find(clubPersonToPlayer(c)) !== undefined}
+      />
+      <ClubPlayerPickerModal
+        open={officialPicker}
+        mode="officials"
+        onClose={() => setOfficialPicker(false)}
+        onPick={officialFromClub}
+        players={people}
+        roles={staffRoles}
+        initialRole={STAFF_ROLES.find((r) => !officialOfRole(staff, r)) || STAFF_ROLES[0]}
+        rolesOf={(c) => officialRolesOf(staff, c)}
+        holderOf={(role) => named(officialOfRole(staff, role)) || null}
       />
     </div>
   )
 }
 
-/** The club's players offered to a team: { players, gender, hidden } (the other gender is left out). */
+/** The club's players offered to a team's player rows: the players list, of the team's gender (and those without one). */
 export function clubPersonOffer(clubPlayers) {
-  const all = clubPlayers?.players || []
-  const gender = clubPlayers?.gender ?? null
-  const players = clubPlayersForGender(all, gender)
-  return { players, gender, hidden: all.length - players.length }
+  return clubPlayersForGender(clubPlayers?.players || [], clubPlayers?.gender ?? null)
+}
+
+/**
+ * Everyone of the club's lists once, with `lists`, for the team officials (no
+ * gender filter); a server before `people` gives the players list only.
+ */
+export function clubPeopleOf(clubPlayers) {
+  if (Array.isArray(clubPlayers?.people)) return clubPlayers.people
+  return (clubPlayers?.players || []).map((p) => ({ ...p, lists: ['players'] }))
 }
 
 /**
