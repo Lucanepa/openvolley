@@ -164,6 +164,22 @@ export const clubApi = {
   /** Takes the account off the team only. */
   removeTeamManager(clubId, teamId, userId) {
     return apiRequest('DELETE', `/api/club/${enc(clubId)}/teams/${enc(teamId)}/managers/${enc(userId)}`)
+  },
+  /**
+   * db/024: the club's licence lists -> { season, lists: { players|scorers|coaches:
+   * { count, imported_at, imported_by_name } }, people: [{ sv_number, last_name,
+   * first_name, dob, gender, lists, teams: [{ id, name }] }] }
+   */
+  licences(clubId) {
+    return apiRequest('GET', `/api/club/${enc(clubId)}/licences`)
+  },
+  /**
+   * Replaces one list (players | scorers | coaches) with `people`: the five
+   * fields of utils/vmLicenceExport.js only (the server refuses any other). -> { list, count, imported_at }
+   */
+  putLicences(clubId, list, people) {
+    const only = (people || []).map(({ sv_number, last_name, first_name, dob, gender }) => ({ sv_number, last_name, first_name, dob, gender }))
+    return apiRequest('PUT', `/api/club/${enc(clubId)}/licences/${enc(list)}`, { people: only }, { timeoutMs: 30000 })
   }
 }
 
@@ -196,7 +212,20 @@ export const teamApi = {
   },
   deleteRoster(teamId, game) {
     return apiRequest('DELETE', `/api/team/${enc(teamId)}/roster?game=${enc(game)}`)
+  },
+  /** db/024: the players list of the team's club -> { team, gender: 'm' | 'f' | null, players } */
+  clubPlayers(teamId) {
+    return apiRequest('GET', `/api/team/${enc(teamId)}/club-players`)
   }
+}
+
+/**
+ * GET /api/club-licences (db/024): the players lists of the scorer's clubs,
+ * kept on the tablet for Match Setup (db/clubPlayers.js).
+ * -> { fetched_at, clubs: [{ club_id, club_name, team_names, team_genders, players }] }
+ */
+export function fetchClubLicences({ timeoutMs } = {}) {
+  return apiRequest('GET', '/api/club-licences', undefined, timeoutMs ? { timeoutMs } : undefined)
 }
 
 /**
@@ -447,6 +476,8 @@ export function errorKeyOf(error, { context } = {}) {
     case 'OV_SCORESHEET_NOT_FOUND': return 'manage.scoresheets.noPdf'
     // db/023: a team's game roster
     case 'OV_GAME_NOT_YOURS': return 'manage.myTeams.notYourGame'
+    // db/024: a player of the club's list with the other gender than the team's
+    case 'OV_WRONG_GENDER': return 'manage.licences.wrongGender'
     default:
       if (error.status === 401 || error.status === 403) return 'manage.errors.forbidden'
       return 'manage.errors.generic'

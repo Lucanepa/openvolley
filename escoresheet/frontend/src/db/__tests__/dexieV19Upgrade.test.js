@@ -18,7 +18,7 @@ const V18_STORES = {
   interaction_logs: 'id,ts,gameNumber,category,sessionId'
 }
 
-describe('Dexie v19 + v20 + v21 upgrade', () => {
+describe('Dexie v19 + v20 + v21 + v22 upgrade', () => {
   it('keeps the v18 data and adds the saved-team and logging tables', async () => {
     const old = new Dexie('escoresheet')
     old.version(18).stores(V18_STORES)
@@ -29,7 +29,7 @@ describe('Dexie v19 + v20 + v21 upgrade', () => {
 
     const { db } = await import('../db')
     await db.open()
-    expect(db.verno).toBe(21)
+    expect(db.verno).toBe(22)
     expect((await db.matches.get(matchId)).seed_key).toBe('match_1_a')
     expect(await db.sync_queue.count()).toBe(1)
     await db.saved_teams.put({ id: 't1', competitionId: 'c1', nameKey: 'a', svrzKey: '' })
@@ -44,6 +44,9 @@ describe('Dexie v19 + v20 + v21 upgrade', () => {
     // v21: the rosters teams sent ahead (db/023)
     await db.game_rosters.put({ key: '940001|home', gameNumber: '940001', userId: 'u', players: [], staff: [] })
     expect(await db.game_rosters.where('gameNumber').equals('940001').count()).toBe(1)
+    // v22: the players lists of the scorer's clubs (db/024)
+    await db.club_players.put({ clubId: 'c1', userId: 'u', clubName: 'VBC Musterdorf', teamNames: [], teamGenders: {}, players: [] })
+    expect(await db.club_players.where('userId').equals('u').count()).toBe(1)
     db.close()
   })
 })

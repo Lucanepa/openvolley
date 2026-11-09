@@ -1,0 +1,134 @@
+/**
+ * Offline copy of the players lists of the scorer's clubs (db/024,
+ * docs/club-licences-spec.md section 5). Offline first: the scoring tablet
+ * downloads them whenever it is online (GET /api/club-licences: sign-in,
+ * every 15 minutes, back online; AuthContext) and Match Setup's "Add from
+ * club" only ever reads this table, so a hall without internet still offers
+ * the club's players.
+ *
+ * One row per club: { clubId, clubName, teamNames, teamGenders, players:
+ * [{ sv_number, last_name, first_name, dob, gender }], fetchedAt, userId }.
+ * Personal data (names, dates of birth, licence numbers, gender): only for
+ * the account that loaded them (row.userId) and cleared on sign-out and
+ * account switch (AuthContext), like the saved teams and the sent rosters.
+ */
+
+import { db } from './db'
+import { fetchClubLicences } from '../lib/accountApi'
+import { accessFromRoles } from '../lib/access'
+import { currentUserId } from './savedTeams'
+
+export const CLUB_PLAYERS_CHANGED_EVENT = 'ov-club-players-changed'
+// The background refresh while the app is open (AuthContext)
+export const CLUB_PLAYERS_REFRESH_MS = 15 * 60 * 1000
+const MIN_GAP_MS = 60 * 1000
+let lastFetch = 0
+
+const teamKey = (s) => String(s ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
+
+function notify() {
+  try { window.dispatchEvent(new Event(CLUB_PLAYERS_CHANGED_EVENT)) } catch { /* no window */ }
+}
+
+function isOnline() {
+  return typeof navigator === 'undefined' || navigator.onLine !== false
+}
+
+function currentAccess() {
+  try {
+    const raw = localStorage.getItem('cachedProfile')
+    return accessFromRoles(raw ? JSON.parse(raw)?.roles ?? [] : [])
+  } catch {
+    return accessFromRoles([])
+  }
+}
+
+/** One club of GET /api/club-licences -> the cache row (the five fields of each player only). */
+export function clubToRow(c, userId, fetchedAt = null) {
+  const names = Array.isArray(c?.team_names) ? c.team_names.filter((n) => typeof n === 'string') : []
+  const genders = c?.team_genders && typeof c.team_genders === 'object' ? c.team_genders : {}
+  return {
+    clubId: String(c.club_id),
+    clubName: c.club_name || '',
+    teamNames: names,
+    teamGenders: Object.fromEntries(names.map((n) => [n, genders[n] === 'm' || genders[n] === 'f' ? genders[n] : null])),
+    players: (Array.isArray(c?.players) ? c.players : []).map((p) => ({
+      sv_number: String(p.sv_number),
+      last_name: p.last_name || '',
+      first_name: p.first_name || null,
+      dob: p.dob || null,
+      gender: p.gender === 'm' || p.gender === 'f' ? p.gender : null
+    })),
+    fetchedAt,
+    userId
+  }
+}
+
+/** Store an answer of GET /api/club-licences: this account's clubs replace whatever was kept. */
+export async function storeClubPlayers(answer, userId) {
+  const rows = (answer?.clubs || []).filter((c) => c && c.club_id).map((c) => clubToRow(c, userId, answer?.fetched_at || new Date().toISOString()))
+  await db.transaction('rw', db.club_players, async () => {
+    await db.club_players.clear()
+    if (rows.length) await db.club_players.bulkPut(rows)
+  })
+  notify()
+  return rows
+}
+
+export async function clearClubPlayers() {
+  try {
+    await db.club_players.clear()
+    notify()
+  } catch (e) {
+    console.warn('[clubPlayers] clear failed:', e?.message)
+  }
+}
+
+/**
+ * The cached club of team `teamName` for `rows` (the table's rows of the
+ * signed-in account): { clubId, clubName, players, gender (the team's: 'm' |
+ * 'f' | null), fetchedAt } or null when the team is none of the clubs'.
+ */
+export function clubOfTeam(rows, teamName, userId) {
+  const k = teamKey(teamName)
+  if (!k) return null
+  for (const r of rows || []) {
+    if (!r || (userId && r.userId !== userId)) continue
+    const name = (r.teamNames || []).find((n) => teamKey(n) === k)
+    if (name === undefined) continue
+    return { clubId: r.clubId, clubName: r.clubName, players: r.players || [], gender: r.teamGenders?.[name] ?? null, fetchedAt: r.fetchedAt || null }
+  }
+  return null
+}
+
+/**
+ * Download the players lists into the cache. Never throws; offline or
+ * without the scoring role it leaves the cache as it is.
+ * @returns {Promise<'refreshed'|'skipped'|'offline'|'forbidden'|'error'>}
+ */
+export async function refreshClubPlayers({ access, userId, online, force = false, timeoutMs = 8000 } = {}) {
+  const uid = userId === undefined ? currentUserId() : userId
+  const acc = access || currentAccess()
+  if (!uid || !acc.canReadTeams || acc.isPending) return 'skipped'
+  if (!(online ?? isOnline())) return 'offline'
+  if (!force && Date.now() - lastFetch < MIN_GAP_MS) return 'skipped'
+  lastFetch = Date.now()
+  try {
+    const { data, error, status } = await fetchClubLicences({ timeoutMs })
+    if (error) {
+      if (status === 403 || status === 401) return 'forbidden'
+      // a server without db/024 (404): nothing to keep
+      return error.network || status === 0 ? 'offline' : 'error'
+    }
+    await storeClubPlayers(data, uid)
+    return 'refreshed'
+  } catch (e) {
+    console.warn('[clubPlayers] refresh failed:', e?.message)
+    return 'error'
+  }
+}
+
+/** Tests only: forget the last download time. */
+export function resetClubPlayersThrottle() {
+  lastFetch = 0
+}

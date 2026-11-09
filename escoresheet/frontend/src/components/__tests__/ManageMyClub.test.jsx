@@ -10,7 +10,7 @@ vi.mock('react-i18next', () => ({
 }))
 
 const api = vi.hoisted(() => ({
-  club: { get: vi.fn(), setContact: vi.fn(), members: vi.fn(), removeMember: vi.fn(), listInvites: vi.fn(), createInvite: vi.fn(), revokeInvite: vi.fn(), teams: vi.fn(), createTeamLink: vi.fn(), removeTeamManager: vi.fn() },
+  club: { get: vi.fn(), setContact: vi.fn(), members: vi.fn(), removeMember: vi.fn(), listInvites: vi.fn(), createInvite: vi.fn(), revokeInvite: vi.fn(), teams: vi.fn(), createTeamLink: vi.fn(), removeTeamManager: vi.fn(), licences: vi.fn(), putLicences: vi.fn() },
   clubs: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), vmTeams: vi.fn(), setRule: vi.fn(), setManagers: vi.fn() },
   admin: { listInvites: vi.fn(), createInvite: vi.fn(), revokeInvite: vi.fn() }
 }))
@@ -46,6 +46,8 @@ beforeEach(() => {
     { id: 'u2', email: 'new@example.ch', name: null, roles: [], manager: false, joined_at: '2026-10-28T10:00:00Z' }
   ] }))
   api.club.listInvites.mockResolvedValue(okRes({ invites: [] }))
+  // db/024: the club's licence lists (none yet)
+  api.club.licences.mockResolvedValue(okRes({ season: '2026/27', lists: { players: { count: 0 }, scorers: { count: 0 }, coaches: { count: 0 } }, people: [] }))
 })
 
 describe('the My club tab', () => {

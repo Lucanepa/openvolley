@@ -3111,7 +3111,8 @@
         "settings_final_email": "Matchblatt-Versand per E-Mail umgeschaltet",
         "team_managers": "Teamverantwortliche geändert",
         "team_squad": "Teamkader gespeichert",
-        "team_roster": "Spielkader geschickt"
+        "team_roster": "Spielkader geschickt",
+        "club_licences": "Lizenzliste hochgeladen"
       }
     },
     "approvals": {
@@ -3367,6 +3368,58 @@
       "inviteText_other": "{{team}} in OpenVolley: Öffne diesen Link und melde dich an oder erstelle ein Konto. Danach hältst du die Spielerinnen und Spieler des Teams aktuell und schickst vor jedem Spiel den Kader. Der Link gilt für {{count}} Personen, bis {{date}}.",
       "removeTitle": "{{name}} vom Team entfernen?",
       "removeBody": "Die Person kann {{team}} nicht mehr verwalten. Ihr Konto bleibt bestehen."
+    },
+    "licences": {
+      "title": "Lizenzen",
+      "hint": "Lade die Listen aus der Vereinsadministration von VolleyManager hoch (den Excel-Export). Die Datei wird auf diesem Gerät gelesen: Nur Lizenznummer, Name, Vorname, Geburtsdatum und Geschlecht werden geschickt und gespeichert. Jeder Upload ersetzt diese Liste.",
+      "list": "Liste",
+      "lists": {
+        "players": "Spieler",
+        "scorers": "Schreiber",
+        "coaches": "Trainer"
+      },
+      "choose": "Excel-Datei wählen",
+      "empty": "In dieser Datei wurden keine Personen gefunden.",
+      "tooMany": "Höchstens {{max}} Personen pro Liste.",
+      "tooBig": "Diese Datei ist zu gross für eine Vereinsliste.",
+      "notXlsx": "Diese Datei liess sich nicht lesen. Ist es ein .xlsx-Export aus VolleyManager?",
+      "noColumns": "Dieser Datei fehlt eine Spalte für: {{missing}}. Ist es der Export der Vereinsadministration aus VolleyManager?",
+      "fields": {
+        "sv_number": "Lizenznummer",
+        "last_name": "Name",
+        "first_name": "Vorname"
+      },
+      "previewCount_one": "{{count}} Person gelesen; nur Lizenznummer, Name, Geburtsdatum und Geschlecht werden gespeichert.",
+      "previewCount_other": "{{count}} Personen gelesen; nur Lizenznummer, Name, Geburtsdatum und Geschlecht werden gespeichert.",
+      "previewList": "Gespeichert als Liste: {{list}}",
+      "previewSkipped_one": "{{count}} Zeile ohne Lizenznummer oder Name wird weggelassen.",
+      "previewSkipped_other": "{{count}} Zeilen ohne Lizenznummer oder Name werden weggelassen.",
+      "previewReplaces_one": "Sie ersetzt die {{count}} Person der jetzigen Liste.",
+      "previewReplaces_other": "Sie ersetzt die {{count}} Personen der jetzigen Liste.",
+      "save": "Liste speichern",
+      "saved_one": "{{list}}: {{count}} Person gespeichert",
+      "saved_other": "{{list}}: {{count}} Personen gespeichert",
+      "deleteTitle": "Liste {{list}} löschen?",
+      "deleteBody": "Ihre Personen werden auf dem Server gelöscht. Die Schreiber-Tablets entfernen sie, sobald sie wieder online sind.",
+      "delete": "Liste löschen",
+      "deleted": "Liste gelöscht",
+      "people_one": "{{count}} Person",
+      "people_other": "{{count}} Personen",
+      "updated": "Aktualisiert am {{when}} von {{name}}",
+      "notUploaded": "Noch nicht hochgeladen",
+      "search": "Name oder Lizenz suchen",
+      "allLists": "Alle Listen",
+      "gender": "Geschlecht",
+      "allGenders": "Alle Geschlechter",
+      "women": "Frauen",
+      "men": "Männer",
+      "noGender": "Ohne Geschlecht",
+      "woman": "Frau",
+      "man": "Mann",
+      "shown": "{{count}} von {{total}}",
+      "noMatch": "Niemand passt zum Filter.",
+      "showMore": "{{count}} weitere zeigen",
+      "wrongGender": "Ein Spieler ist beim Verein für das andere Geschlecht gemeldet und kann nicht in diesem Team spielen."
     }
   },
   "playerPool": {
@@ -4816,5 +4869,27 @@
       "coach": "Vom Trainer im Voraus unterschrieben",
       "captain": "Vom Captain im Voraus unterschrieben"
     }
+  },
+  "clubPlayers": {
+    "add": "Aus dem Verein hinzufügen",
+    "title": "Spieler aus dem Verein hinzufügen",
+    "titleTeam": "Spieler des Vereins für {{team}}",
+    "search": "Name oder Lizenz suchen",
+    "none": "Die Lizenzliste des Vereins hat noch keine Spieler. Ein Vereinsverantwortlicher lädt sie unter Mein Verein hoch.",
+    "noMatch": "Kein Spieler passt zur Suche.",
+    "onlyMen": "Nur Herren: Spielerinnen sind nicht aufgeführt.",
+    "onlyWomen": "Nur Damen: Spieler sind nicht aufgeführt.",
+    "licence": "Lizenz {{number}}",
+    "inRoster": "Im Kader",
+    "addCount_one": "{{count}} Spieler hinzufügen",
+    "addCount_other": "{{count}} Spieler hinzufügen",
+    "added_one": "{{count}} Spieler hinzugefügt",
+    "added_other": "{{count}} Spieler hinzugefügt",
+    "ticked_one": "{{count}} Spieler angekreuzt",
+    "ticked_other": "{{count}} Spieler angekreuzt",
+    "warningMen_one": "{{names}} ist beim Verein als Frau gemeldet, und dies ist ein Herrenspiel. Prüfe es vor der Seitenwahl.",
+    "warningMen_other": "{{names}} sind beim Verein als Frauen gemeldet, und dies ist ein Herrenspiel. Prüfe es vor der Seitenwahl.",
+    "warningWomen_one": "{{names}} ist beim Verein als Mann gemeldet, und dies ist ein Damenspiel. Prüfe es vor der Seitenwahl.",
+    "warningWomen_other": "{{names}} sind beim Verein als Männer gemeldet, und dies ist ein Damenspiel. Prüfe es vor der Seitenwahl."
   }
 }

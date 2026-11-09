@@ -55,20 +55,34 @@ export function parsedPdfToRoster(parsed) {
  * swapped; a player twice in the import is one. Staff by role: the import fills
  * a role's person. Returns { players, staff, added, updated }.
  */
-export function mergeImportedRoster(players, staff, imported, makePlayer = (p) => p, makeStaff = (s) => s) {
-  const out = [...(players || [])]
-  let added = 0
-  let updated = 0
+/**
+ * Who is who in a list of players (the API shape): find(p) is the index of
+ * the same player, by licence, else by name (accents and case aside), else by
+ * name with first and last name swapped, or undefined; remember(p, i) adds
+ * one. The merge rules of an import, also used by "Add from club" (db/024).
+ */
+export function playerFinder(list = []) {
   const byName = new Map()
   const byLicence = new Map()
   const remember = (p, i) => {
     if (!byName.has(nameKey(p))) byName.set(nameKey(p), i)
     if (licenceKey(p) && !byLicence.has(licenceKey(p))) byLicence.set(licenceKey(p), i)
   }
-  out.forEach(remember)
-  for (const p of imported?.players || []) {
+  list.forEach(remember)
+  const find = (p) => {
     const lk = licenceKey(p)
-    const i = (lk ? byLicence.get(lk) : undefined) ?? byName.get(nameKey(p)) ?? byName.get(swappedKey(p))
+    return (lk ? byLicence.get(lk) : undefined) ?? byName.get(nameKey(p)) ?? byName.get(swappedKey(p))
+  }
+  return { find, remember }
+}
+
+export function mergeImportedRoster(players, staff, imported, makePlayer = (p) => p, makeStaff = (s) => s) {
+  const out = [...(players || [])]
+  let added = 0
+  let updated = 0
+  const { find, remember } = playerFinder(out)
+  for (const p of imported?.players || []) {
+    const i = find(p)
     if (i === undefined) {
       out.push(makePlayer({ ...p, active: true }))
       remember(p, out.length - 1)
@@ -197,4 +211,86 @@ export function gameRosterBody(draft) {
     },
     problems
   }
+}
+
+// ---------------------------------------------------------------- the club's players (db/024)
+
+/** A club list person { sv_number, last_name, first_name, dob, gender } -> a player in the API shape (no number). */
+export function clubPersonToPlayer(c) {
+  return {
+    number: null,
+    first_name: clean(c?.first_name),
+    last_name: clean(c?.last_name),
+    dob: c?.dob || null,
+    license_number: clean(c?.sv_number) || null,
+    is_libero: false,
+    is_captain: false
+  }
+}
+
+/**
+ * The club's players a team may add: those of the team's gender and those
+ * whose gender the list does not say; all of them while the team's gender is
+ * unknown (null).
+ */
+export function clubPlayersForGender(players, gender) {
+  const list = Array.isArray(players) ? players : []
+  if (gender !== 'm' && gender !== 'f') return list
+  return list.filter((p) => !p?.gender || p.gender === gender)
+}
+
+/**
+ * The indexes of `players` (the API shape, body order) whose licence number
+ * is in the club's players list with the other gender than `gender`; [] while
+ * the team's gender is unknown. The server refuses the same (OV_WRONG_GENDER).
+ */
+export function wrongGenderIndexes(players, clubPlayers, gender) {
+  if (gender !== 'm' && gender !== 'f') return []
+  const byLicence = new Map((clubPlayers || []).filter((c) => c?.gender).map((c) => [clean(c.sv_number), c.gender]))
+  const out = []
+  ;(players || []).forEach((p, i) => {
+    const g = byLicence.get(clean(p?.license_number))
+    if (g && g !== gender) out.push(i)
+  })
+  return out
+}
+
+/**
+ * The squad editor's players and staff with `chosen` (club list people)
+ * added: the merge rules of an import (the same licence, else name: the
+ * existing row gets the licence and date of birth), new ones without a
+ * number. { players, staff, added, updated }.
+ */
+export function addClubPlayersToSquad(players, staff, chosen, makePlayer = (p) => p, makeStaff = (s) => s) {
+  return mergeImportedRoster(players, staff, { players: (chosen || []).map(clubPersonToPlayer), staff: [] }, makePlayer, makeStaff)
+}
+
+/**
+ * A game roster draft (gameRosterDraft) with `chosen` (club list people)
+ * ticked: one already offered (the same licence, else name) is ticked, the
+ * others are added ticked, without a number. { draft, added, ticked }.
+ */
+export function addClubPlayersToGameDraft(draft, chosen) {
+  const players = [...(draft?.players || [])]
+  const { find, remember } = playerFinder(players)
+  const keys = new Set(players.map((p) => p.key))
+  let added = 0
+  let ticked = 0
+  for (const c of chosen || []) {
+    const p = clubPersonToPlayer(c)
+    const i = find(p)
+    if (i !== undefined) {
+      const cur = players[i]
+      players[i] = { ...cur, picked: true, license_number: cur.license_number || p.license_number, dob: cur.dob || p.dob }
+      if (!cur.picked) ticked++
+      continue
+    }
+    let key = nameKey(p)
+    while (keys.has(key)) key = `${key}|${p.license_number || added}`
+    keys.add(key)
+    players.push({ key, number: '', first_name: p.first_name, last_name: p.last_name, dob: p.dob, license_number: p.license_number, is_libero: false, is_captain: false, picked: true })
+    remember(p, players.length - 1)
+    added++
+  }
+  return { draft: { ...(draft || {}), players, staff: draft?.staff || [] }, added, ticked }
 }
