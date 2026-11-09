@@ -1,0 +1,4 @@
+OpenVolley 3.0.14
+- Bench tablet: warnings, penalties and disqualifications show again (in the list, on the player and on the bench).
+- Referee tablet: a popup for each time-out, substitution and sanction; the running time-out moves to the court when it is closed.
+- Roster PDF: the licence numbers of the Einsatzliste are kept.
