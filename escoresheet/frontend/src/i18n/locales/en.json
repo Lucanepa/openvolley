@@ -3375,10 +3375,11 @@
       "linkTitle": "Link for {{team}}",
       "linkBody": "Send this link to the team's coach or manager. They open it, sign in or create an account, and the team is theirs. The link is shown only now.",
       "copyLink": "Copy link",
+      "copyMessage": "Copy message",
       "share": "Share",
       "shareTitle": "OpenVolley: {{team}}",
-      "shareText": "Manage {{team}} in OpenVolley: players and the roster of each game.",
-      "linkLimits": "Works {{uses}} times, until {{date}}.",
+      "inviteText_one": "{{team}} on OpenVolley: open this link and sign in or create an account. Then you keep the team's players up to date and send the roster before each game. The link works once, until {{date}}.",
+      "inviteText_other": "{{team}} on OpenVolley: open this link and sign in or create an account. Then you keep the team's players up to date and send the roster before each game. The link works for {{count}} people, until {{date}}.",
       "removeTitle": "Take {{name}} off the team?",
       "removeBody": "They can no longer manage {{team}}. Their account stays."
     }

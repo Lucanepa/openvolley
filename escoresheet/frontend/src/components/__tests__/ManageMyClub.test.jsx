@@ -4,8 +4,9 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 // db/020: club managers. The My club tab (contact address, members, the
 // club's invite codes) and the admin's managers / contact fields
 
+const tr = vi.hoisted(() => vi.fn((key, opts) => (typeof opts === 'string' ? opts : key)))
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key, opts) => (typeof opts === 'string' ? opts : key), i18n: { language: 'en' } })
+  useTranslation: () => ({ t: tr, i18n: { language: 'en' } })
 }))
 
 const api = vi.hoisted(() => ({
@@ -106,6 +107,38 @@ describe('MyClubPanel', () => {
     await waitFor(() => expect(api.club.createInvite).toHaveBeenCalledWith('c1', expect.objectContaining({ label: 'H1', role: 'referee', max_uses: 12 })))
     expect(api.admin.createInvite).not.toHaveBeenCalled()
     expect(await screen.findByTestId('invite-code')).toHaveTextContent('ABCD-EFGH-JKMN')
+  })
+
+  it('a team link comes as an invitation: team, club, limits, then the link; Share keeps the link in the text', async () => {
+    api.club.createTeamLink.mockResolvedValue(okRes({ code: 'ABCD-EFGH-JKMN', invite: { max_uses: 3, expires_at: '2026-12-09T12:00:00Z' } }, 201))
+    // the test setup's navigator.clipboard (not redefinable); jsdom has no navigator.share
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined)
+    const share = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'share', { value: share, configurable: true })
+    try {
+      render(<MyClubPanel clubs={[VBCM]} />)
+      fireEvent.click(await screen.findByTestId('club-team-link'))
+      await waitFor(() => expect(api.club.createTeamLink).toHaveBeenCalledWith('c1', 'team-h1'))
+      const box = await screen.findByTestId('team-link-message')
+      const url = within(box).getByTestId('team-link-url').textContent
+      expect(url).toMatch(/\/#team=ABCD-EFGH-JKMN$/)
+      const call = tr.mock.calls.find(([key]) => key === 'manage.clubTeams.inviteText')
+      // the team's name already says the club: no "(VBC Musterdorf)" after it
+      expect(call[1]).toEqual(expect.objectContaining({ team: 'VBC Musterdorf H1', count: 3 }))
+      expect(call[1].date).toBeTruthy()
+      const message = `manage.clubTeams.inviteText\n${url}`
+      fireEvent.click(screen.getByTestId('team-link-copy-message'))
+      await waitFor(() => expect(writeText).toHaveBeenLastCalledWith(message))
+      fireEvent.click(screen.getByTestId('team-link-copy-link'))
+      await waitFor(() => expect(writeText).toHaveBeenLastCalledWith(url))
+      fireEvent.click(screen.getByTestId('team-link-share'))
+      await waitFor(() => expect(share).toHaveBeenCalledTimes(1))
+      // the link inside the text, no separate url: WhatsApp on Android keeps only one of the two
+      expect(share.mock.calls[0][0]).toEqual({ title: 'manage.clubTeams.shareTitle', text: message })
+    } finally {
+      delete navigator.share
+      writeText.mockRestore()
+    }
   })
 
   it('an account that manages several clubs picks one', async () => {

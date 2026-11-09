@@ -3374,10 +3374,11 @@
       "linkTitle": "Link per {{team}}",
       "linkBody": "Manda questo link all’allenatore o al responsabile della squadra. Lo aprono, accedono o creano un account, e la squadra è loro. Il link viene mostrato solo ora.",
       "copyLink": "Copia link",
+      "copyMessage": "Copia messaggio",
       "share": "Condividi",
       "shareTitle": "OpenVolley: {{team}}",
-      "shareText": "Gestisci {{team}} in OpenVolley: i giocatori e l’elenco di ogni partita.",
-      "linkLimits": "Vale {{uses}} volte, fino al {{date}}.",
+      "inviteText_one": "{{team}} in OpenVolley: apri questo link, poi accedi o crea un account. In seguito tieni aggiornati i giocatori della squadra e invii l’elenco prima di ogni partita. Il link vale una volta, fino al {{date}}.",
+      "inviteText_other": "{{team}} in OpenVolley: apri questo link, poi accedi o crea un account. In seguito tieni aggiornati i giocatori della squadra e invii l’elenco prima di ogni partita. Il link vale per {{count}} persone, fino al {{date}}.",
       "removeTitle": "Togliere {{name}} dalla squadra?",
       "removeBody": "Non potrà più gestire {{team}}. Il suo account resta."
     }
