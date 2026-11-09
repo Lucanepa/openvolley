@@ -55,7 +55,9 @@ import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../u
 import { defaultSetStartTime, actualStartRemark, startsFromSchedule, startScheduleOf, typedStartNear } from '../utils/setStartTime'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
 import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet, getLeftTeamLabelForSet } from '../domain/rules'
-import { resolveSanction, isDelaySanction, deriveTeamSanctionFlags, deferredPenaltyPoints, penaltyOfPoint } from '../domain/sanctions'
+import { resolveSanction, deriveTeamSanctionFlags, deferredPenaltyPoints, penaltyOfPoint, teamSanctionCounts } from '../domain/sanctions'
+import { REQUEST_ISSUES, isReplayPending, substitutionRequestIssues, timeoutRequestIssues, requestBlockReason, entryWithoutCompletedRally, substitutionRequestThisInterruption, substituteInIllegalReason } from '../domain/interruptionRequests'
+import RequestWarningDialog from './scoreboard/RequestWarningDialog.jsx'
 import { classifyTimeoutRequest } from '../domain/timeouts'
 import { rallyStatusOf, currentSetOf } from '../domain/rally'
 import { useConfirmAction } from '../hooks/useConfirmAction'
@@ -681,6 +683,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // dialog is open, and the stop of Start set in set 1 while one is missing
   const [preMatchSignTeam, setPreMatchSignTeam] = useState(null) // 'home' | 'away' | null
   const [signaturesMissingOpen, setSignaturesMissingOpen] = useState(false)
+  // The request warning (RequestWarningDialog): { kind: 'substitution'|'timeout', request, issues, acknowledged, consequences } | null
+  const [requestWarning, setRequestWarning] = useState(null)
   const [sanctionConfirm, setSanctionConfirm] = useState(null) // { side: 'left'|'right', type: 'improper_request'|'delay_warning'|'delay_penalty' } | null
   const [sanctionDropdown, setSanctionDropdown] = useState(null) // { team: 'home'|'away', type: 'player'|'bench'|'libero'|'official', playerNumber?: number, position?: string, role?: string, element: HTMLElement, x?: number, y?: number } | null
   const [sanctionConfirmModal, setSanctionConfirmModal] = useState(null) // { team: 'home'|'away', type: 'player'|'bench'|'libero'|'official', playerNumber?: number, position?: string, role?: string, sanctionType: 'warning'|'penalty'|'expulsion'|'disqualification' } | null
@@ -690,19 +694,27 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // Every substitution request (court menu, bench menu, drag and drop, injury,
   // expulsion / disqualification) opens its confirm through this setter, so the
   // 6-per-set limit is checked in one place (FIVB 15.6): a regular request
-  // beyond it becomes an improper request (16.1.3); one for an injured /
+  // beyond it becomes an improper request (15.11.1.4); one for an injured /
   // expelled / disqualified player becomes exceptional (15.7, 15.8).
   // substitutionGuardRef is refreshed on every render with the current events.
+  // The same setter asks domain/interruptionRequests first (FIVB 15.2, 15.11,
+  // 16.1): a regular request while a replay is pending is refused; a second
+  // request in the same interruption, the 7th substitution, the player who
+  // just came in going out again or a request after a delay warning opens
+  // the request warning instead. `acknowledged`: the warnings the scorer
+  // already answered with "Continue anyway" (recorded nothing).
   const substitutionGuardRef = useRef(null)
-  const setSubstitutionConfirm = useCallback((next) => {
+  const setSubstitutionConfirm = useCallback((next, { acknowledged = [] } = {}) => {
     const guard = substitutionGuardRef.current
     if (next && guard) {
-      const verdict = classifySubstitutionRequest(guard.events, next.team, guard.setIndex, next)
-      if (verdict === 'improper_request') {
+      const issues = substitutionRequestIssues(guard.events, guard.setIndex, next.team, next)
+        .filter(i => !acknowledged.includes(i.reason))
+      if (issues.length > 0) {
         setSubstitutionConfirmState(null)
-        guard.onImproperRequest(next.team)
+        guard.onIssues(next, issues, acknowledged)
         return
       }
+      const verdict = classifySubstitutionRequest(guard.events, next.team, guard.setIndex, next)
       if (verdict === 'exceptional' && !next.isExceptional) next = { ...next, isExceptional: true }
     }
     setSubstitutionConfirmState(next)
@@ -712,6 +724,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   const [benchSubExpanded, setBenchSubExpanded] = useState(false) // Track if substitution list is expanded in bench player menu
   const [courtSubExpanded, setCourtSubExpanded] = useState(false) // Track if substitution list is expanded in court player menu
+  const [courtIllegalExpanded, setCourtIllegalExpanded] = useState(false) // the "Not allowed" candidates in the court player menu
   const [courtSanctionExpanded, setCourtSanctionExpanded] = useState(false) // Track if sanction list is expanded in court player menu
   const [courtLiberoExpanded, setCourtLiberoExpanded] = useState(false) // Track if libero list is expanded in court player menu
   const [courtLiberoUnableExpanded, setCourtLiberoUnableExpanded] = useState(false) // Track if "Unable to play" submenu is expanded
@@ -3248,8 +3261,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   substitutionGuardRef.current = {
     events: data?.events,
     setIndex: data?.set?.index,
+    onIssues: (request, issues, acknowledged) => {
+      if (rallyStatus === 'idle') openRequestWarning('substitution', request, issues, acknowledged)
+    },
     onImproperRequest: (teamKey) => {
-      if (rallyStatus === 'idle') openTeamSanctionConfirm(mapTeamKeyToSide(teamKey), 'improper_request', 'substitution_limit')
+      if (rallyStatus !== 'idle') return
+      const issues = substitutionRequestIssues(data?.events, data?.set?.index, teamKey).filter(i => i.reason === 'substitution_limit')
+      if (issues.length > 0) openRequestWarning('substitution', { team: teamKey }, issues, [])
     }
   }
 
@@ -3276,6 +3294,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const lastEvent = currentSetEvents[0]
     return lastEvent.type === 'replay'
   }, [data?.events, data?.set])
+
+  // A replayed rally not yet followed by a completed rally (the set's latest
+  // replay is newer than its latest point): no regular time-out or
+  // substitution, only a forced substitution (GL R15 §8, CB 4.3, SSK Q264).
+  // isRallyReplayed above is only "the LAST event is a replay": any later
+  // event (a delay warning, an injury substitution) cleared it.
+  const replayPending = useMemo(() => (
+    !!data?.set && isReplayPending(data?.events, data.set.index)
+  ), [data?.events, data?.set])
 
   // Check if the last event was a point (can replay rally)
   const canReplayRally = useMemo(() => {
@@ -3359,6 +3386,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     return !hasSetStarted
   }, [data?.sets, data?.set, data?.events])
+
+  // Why a team's regular time-out / substitution is closed now (replay
+  // pending; time-outs also in the set interval, where one would count in
+  // the next set: R15, R18.1), or null (domain/interruptionRequests.js)
+  const intervalRunning = isBetweenSets && betweenSetsCountdown !== null
+  const requestBlockFor = (teamKey, kind) => (
+    data?.set ? requestBlockReason(data.events, data.set.index, teamKey, kind, { intervalRunning }) : null
+  )
+  const timeoutBlocked = (side) => !!requestBlockFor(mapSideToTeamKey(side), 'timeout')
+  // The one line under a team's TO / SUB counters while they are closed
+  const requestBlockLine = (side) => {
+    if (rallyStatus !== 'idle') return null
+    const reason = requestBlockFor(mapSideToTeamKey(side), 'timeout')
+    return reason ? t(`scoreboard.requestBlock.${reason}`) : null
+  }
 
   // The break runs while the screen is between sets with its countdown on
   // (ended by "End set interval", the set 5 setup's confirmation or the
@@ -6112,12 +6154,35 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // recorded, and confirmSanction records exactly that.
   const openTeamSanctionConfirm = useCallback((side, requestedType, reason = null) => {
     const teamKey = mapSideToTeamKey(side)
-    const teamSanctions = (data?.events || []).filter(e => e.type === 'sanction' && e.payload?.team === teamKey)
-    const priorDelayCount = teamSanctions.filter(e => isDelaySanction(e.payload?.type)).length
-    const priorImproperCount = teamSanctions.filter(e => e.payload?.type === 'improper_request').length
-    const resolved = resolveSanction(requestedType, { priorDelayCount, priorImproperCount })
+    const resolved = resolveSanction(requestedType, teamSanctionCounts(data?.events, teamKey))
     setSanctionConfirm({ side, team: teamKey, type: requestedType, resolved, reason })
   }, [mapSideToTeamKey, data?.events])
+
+  // The request warning (domain/interruptionRequests.js): the first issue of
+  // a time-out or substitution request. What each option records is resolved
+  // here, once, through the same ladders as the team sanctions (FIVB 15.11,
+  // 16.2), so the dialog shows exactly what its tap records. A blocked
+  // request (replay pending, set interval) has its button disabled with the
+  // reason; reached anyway (a stale screen), it is refused with that reason.
+  const openRequestWarning = useCallback((kind, request, issues, acknowledged = []) => {
+    const first = issues?.[0]
+    if (!first || !request?.team) return
+    if (first.kind === 'block') {
+      showAlert(t(`scoreboard.requestBlock.${first.reason}`), 'warning')
+      return
+    }
+    const counts = teamSanctionCounts(data?.events, request.team)
+    setRequestWarning({
+      kind,
+      request,
+      issues,
+      acknowledged,
+      consequences: {
+        improper: resolveSanction('improper_request', counts),
+        delay: resolveSanction('delay_warning', counts)
+      }
+    })
+  }, [data?.events, showAlert, t])
 
   // Handle Improper Request sanction
   const handleImproperRequest = useCallback((side) => {
@@ -6142,12 +6207,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const runSanctionConfirm = useConfirmAction(onConfirmFailed)
   // One action: the sanction, a delay penalty's point (and its side-out
   // rotation) and the dialog closing appear together
-  const confirmSanction = useCallback(() => runSanctionConfirm(() => runAction('sanction', async () => {
-    if (!sanctionConfirm || !data?.match || !data?.set) return
+  // `explicit`: a sanction chosen in the request warning ({ side, team,
+  // resolved }), recorded the same way (a click passes its event: ignored)
+  const confirmSanction = useCallback((explicit) => runSanctionConfirm(() => runAction('sanction', async () => {
+    const chosen = explicit?.resolved ? explicit : sanctionConfirm
+    if (!chosen || !data?.match || !data?.set) return
 
     // Everything comes from the dialog state taken when it opened: the team
     // and the resolved sanction it showed.
-    const { side, team: teamKey, resolved: type } = sanctionConfirm
+    const { side, team: teamKey, resolved: type } = chosen
     const teamKeyCapitalized = teamKey === 'home' ? 'Home' : 'Away'
     deferUi(() => setSanctionConfirm(null))
 
@@ -8049,21 +8117,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
 
   const handleTimeout = useCallback(
-    side => {
+    (side, { acknowledged = [] } = {}) => {
       cLogger.logHandler('handleTimeout', { side })
       if (!data?.set) return
       const teamKey = mapSideToTeamKey(side)
+      // Set interval, replay pending (blocked), a request after a delay
+      // warning (15.2.4) and the 3rd time-out (15.11.1.4: the improper-request
+      // ladder, or a delay when it already started, CB 4.29) go to the
+      // request warning first (domain/interruptionRequests.js)
+      const issues = timeoutRequestIssues(data.events, data.set.index, teamKey, { intervalRunning: isBetweenSets && betweenSetsCountdown !== null })
+        .filter(i => !acknowledged.includes(i.reason))
+      if (issues.length > 0) {
+        if (rallyStatus === 'idle') openRequestWarning('timeout', { team: teamKey }, issues, acknowledged)
+        return
+      }
       // Taken once, here: the dialog shows this until it closes, whatever the
       // live time-out count does while the time-out is being written.
       const request = classifyTimeoutRequest(data.events, data.set.index, teamKey)
-      if (request.improper) {
-        // Requesting a time-out after both are used is an improper request
-        // (FIVB 15.11.1.4). Route it into the improper-request ladder — the first
-        // is recorded with no consequence, a repeat becomes a delay — instead of
-        // silently discarding it. The scorer can still cancel in the dialog.
-        if (rallyStatus === 'idle') openTeamSanctionConfirm(side, 'improper_request', 'third_timeout')
-        return
-      }
+      if (request.improper) return
       // A request made while a time-out runs keeps that one (running): Cancel
       // puts it back, it is not lost with the request
       setTimeoutModal(prev => ({
@@ -8075,8 +8146,28 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         ...(prev?.started ? { running: prev } : prev?.running ? { running: prev.running } : {})
       }))
     },
-    [mapSideToTeamKey, data?.events, data?.set, rallyStatus, openTeamSanctionConfirm]
+    [mapSideToTeamKey, data?.events, data?.set, rallyStatus, openRequestWarning, isBetweenSets, betweenSetsCountdown]
   )
+
+  // The scorer's answer in the request warning. Cancel and the sanctions
+  // close it; "Continue anyway" records nothing (owner 2026-11-09) and goes
+  // on with the request, past this warning, to the next one or its dialog.
+  const chooseRequestWarning = useCallback((option) => {
+    const warning = requestWarning
+    setRequestWarning(null)
+    if (!warning || option === 'cancel') return
+    const issue = warning.issues[0]
+    const { team } = warning.request
+    if (option === 'continue') {
+      const acknowledged = [...warning.acknowledged, issue.reason]
+      if (warning.kind === 'timeout') handleTimeout(mapTeamKeyToSide(team), { acknowledged })
+      else setSubstitutionConfirm({ ...warning.request, ...(issue.playerIn !== undefined && warning.request.playerIn === undefined ? { playerIn: issue.playerIn } : {}) }, { acknowledged })
+      return
+    }
+    // improper: the improper-request ladder; delay / timeoutStarted / illegal: the delay ladder
+    const resolved = option === 'improper' ? warning.consequences.improper : warning.consequences.delay
+    confirmSanction({ side: mapTeamKeyToSide(team), team, resolved })
+  }, [requestWarning, handleTimeout, mapTeamKeyToSide, setSubstitutionConfirm, confirmSanction])
 
   // Confirm time-out: snapshot, close (start the countdown), then write.
   const runTimeoutConfirm = useConfirmAction(onConfirmFailed)
@@ -8812,6 +8903,36 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       exceptional
     })
   }, [data?.match?.easy, data?.set, data?.events, getSubstitutionHistory])
+
+  // The bench players who may NOT come in for playerOutNumber in a regular
+  // substitution, each with why (domain/interruptionRequests
+  // substituteInIllegalReason): offered greyed, a tap opens the request
+  // warning "Illegal substitution requested" (a delay, FIVB 16.1.3; CB 4.15)
+  const getIllegalSubstitutes = useCallback((teamKey, playerOutNumber) => {
+    if (!data?.set) return []
+    const benchPlayers = teamKey === 'home'
+      ? (leftIsHome ? leftTeamBench.benchPlayers : rightTeamBench.benchPlayers)
+      : (leftIsHome ? rightTeamBench.benchPlayers : leftTeamBench.benchPlayers)
+    const legal = new Set(getAvailableSubstitutes(teamKey, playerOutNumber).map(p => String(p.number)))
+    return (benchPlayers || [])
+      .filter(p => p.number !== undefined && p.number !== null && p.number !== '' && !legal.has(String(p.number)))
+      .map(p => ({
+        number: p.number,
+        reason: substituteInIllegalReason(data.events, data.set.index, teamKey, playerOutNumber, p.number, {
+          isLibero: !!(p.libero && p.libero !== ''),
+          sentOff: !canPlayerReEnter(teamKey, p.number, data.set.index)
+        })
+      }))
+      .filter(p => p.reason)
+      .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
+  }, [data?.set, data?.events, leftIsHome, leftTeamBench, rightTeamBench, getAvailableSubstitutes, canPlayerReEnter])
+
+  // A tap on an illegal candidate: the request warning (reject + delay sanction)
+  const openIllegalSubstitution = (teamKey, position, playerOut, candidate) => {
+    openRequestWarning('substitution', { team: teamKey, position, playerOut, playerIn: candidate.number }, [
+      { ...REQUEST_ISSUES.illegal_substitution, reason: 'illegal_substitution', playerIn: candidate.number, illegalReason: candidate.reason }
+    ], [])
+  }
 
   const getAvailableExceptionalSubstitutes = useCallback((teamKey, playerOutNumber) => {
     if (!data) return []
@@ -10114,7 +10235,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const handlePlayerClick = useCallback((teamKey, position, playerNumber, event) => {
     // Only allow when rally is not in play and lineup is set
     if (rallyStatus !== 'idle') return
-    if (isRallyReplayed) return // Don't allow actions when rally is replayed
+    // A replay pending closes the regular substitution only: the menu opens
+    // for the forced ones (injury; expulsion / disqualification through the
+    // sanctions), which stay possible (GL R15 §8, Q194)
     if (!leftTeamLineupSet && teamKey === (leftIsHome ? 'home' : 'away')) return
     if (!rightTeamLineupSet && teamKey === (leftIsHome ? 'away' : 'home')) return
     if (!playerNumber || playerNumber === '') return // Can't substitute placeholder
@@ -10144,7 +10267,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Check substitution limit (6 per set)
     const teamSubstitutions = substitutionsUsed?.[teamKey] || 0
-    const canSubstitute = !isLibero && !isRallyReplayed && teamSubstitutions < 6 && canPlayerBeSubstituted(teamKey, playerNumber)
+    const canSubstitute = !isLibero && !replayPending && teamSubstitutions < MAX_SUBSTITUTIONS_PER_SET && canPlayerBeSubstituted(teamKey, playerNumber)
+    // Not a legal substitution now, but a tap on "Substitution" still opens
+    // the request warning: the 7th substitution (15.11.1.4) or the player who
+    // came in with no completed rally since (15.2.3). Closed while a replay is
+    // pending (the menu shows why).
+    let substitutionNote = null
+    if (!isLibero && !canSubstitute) {
+      if (replayPending) substitutionNote = 'replay_pending'
+      else if (teamSubstitutions >= MAX_SUBSTITUTIONS_PER_SET) substitutionNote = 'substitution_limit'
+      else if (data?.set && entryWithoutCompletedRally(data.events, data.set.index, teamKey, playerNumber)) substitutionNote = 'no_rally_since_entry'
+    }
 
     // Get the clicked element position (the circle)
     const element = event.currentTarget
@@ -10183,11 +10316,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       y: centerY,
       side: isRightTeam ? 'right' : 'left',
       canSubstitute,
-      canEnterLibero: isBackRow && !isServing && canEnterLibero && hasPointSinceLibero,
+      substitutionNote,
+      // A libero replacement waits for the replayed rally, as before
+      // (isRallyReplayed: the last event is the replay)
+      canEnterLibero: isBackRow && !isServing && canEnterLibero && hasPointSinceLibero && !isRallyReplayed,
+      liberoLocked: isRallyReplayed,
       isLiberoOnCourt,
       liberoOnCourt: isLiberoOnCourt ? liberoOnCourt : null
     })
-  }, [rallyStatus, isRallyReplayed, leftTeamLineupSet, rightTeamLineupSet, leftIsHome, playerActionMenu, substitutionsUsed, canPlayerBeSubstituted, getCurrentServe, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.homePlayers, data?.awayPlayers])
+  }, [rallyStatus, isRallyReplayed, replayPending, leftTeamLineupSet, rightTeamLineupSet, leftIsHome, playerActionMenu, substitutionsUsed, canPlayerBeSubstituted, getCurrentServe, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.homePlayers, data?.awayPlayers, data?.events, data?.set])
 
   // Show substitution confirmation
   const showSubstitutionConfirm = useCallback((substituteNumber, { newPlayer = false } = {}) => {
@@ -10661,7 +10798,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Final authority on the 6-per-set limit (FIVB 15.6), against the events
     // as they are now: a regular request beyond it is an improper request
-    // (16.1.3), an injury / expulsion / disqualification one is exceptional.
+    // (15.11.1.4), an injury / expulsion / disqualification one is exceptional.
     const verdict = classifySubstitutionRequest(data.events, team, data.set.index, substitutionConfirm)
     if (verdict === 'improper_request') {
       deferUi(() => {
@@ -13390,6 +13527,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         liberos,
         benchPlayers: (bench.benchPlayers || []).map(p => ({ number: p.number })),
         officials: (bench.benchOfficials || []).filter(o => o?.role).map(o => ({ role: o.role })),
+        blocked: {
+          timeout: !!requestBlockFor(teamKey, 'timeout'),
+          substitution: !!requestBlockFor(teamKey, 'substitution')
+        },
         improperRequestDone: sanctionFlag('improperRequest'),
         delayWarned: sanctionFlag('delayWarning'),
         // Easy match: a warning or a penalty for the team, no person picked
@@ -13443,6 +13584,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         startDisabled: isFirstRally && !lineupsOptional && (!leftTeamLineupSet || !rightTeamLineupSet),
         canReplayRally,
         isRallyReplayed,
+        // Why the regular time-outs / substitutions are closed (replay
+        // pending, set interval), one line for both teams
+        requestBlockText: requestBlockLine('left') || requestBlockLine('right'),
         // "Not counted" (RallyTapNotice): > 0 while shown
         tapNotice: rallyTapNotice
       },
@@ -13460,8 +13604,29 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         openLineup: (side) => setLineupModal({ team: mapSideToTeamKey(side), mode: 'initial' }),
         openSignatures: (side) => setPreMatchSignTeam(mapSideToTeamKey(side)),
         playerClick: handlePlayerClick,
-        canSubstituteOut: (teamKey, number) => canPlayerBeSubstituted(teamKey, number),
+        // The player who came in with no completed rally since is offered
+        // too: picking him opens the request warning (pickSubOut)
+        canSubstituteOut: (teamKey, number) => canPlayerBeSubstituted(teamKey, number) ||
+          !!(data?.set && entryWithoutCompletedRally(data.events, data.set.index, teamKey, number)),
+        pickSubOut: (teamKey, out) => {
+          if (!data?.set) return true
+          const issues = substitutionRequestIssues(data.events, data.set.index, teamKey, { playerOut: out.number })
+          const entry = issues.find(i => i.reason === 'no_rally_since_entry')
+          if (!entry) return true
+          openRequestWarning('substitution', { team: teamKey, position: out.position, playerOut: out.number, playerIn: entry.playerIn }, issues, [])
+          return false
+        },
+        // SUB at 6: the 7th substitution opens the request warning (no sheet)
+        requestSubstitution: (side) => {
+          const teamKey = mapSideToTeamKey(side)
+          if (!data?.set || countRegularSubstitutions(data.events, teamKey, data.set.index) < MAX_SUBSTITUTIONS_PER_SET) return true
+          openRequestWarning('substitution', { team: teamKey }, substitutionRequestIssues(data.events, data.set.index, teamKey), [])
+          return false
+        },
         substituteCandidates: (teamKey, number) => getAvailableSubstitutes(teamKey, number),
+        // Bench players who may not come in, with why; a tap: the request warning
+        illegalCandidates: (teamKey, number) => (data?.match?.easy === true ? [] : getIllegalSubstitutes(teamKey, number)),
+        illegalSubstitute: (teamKey, out, candidate) => openIllegalSubstitution(teamKey, out.position, out.number, candidate),
         // Easy match: may a number that is no player yet come in, and is the
         // typed number fine (domain/easyMatch.js)
         newSubstituteAllowed: (teamKey, number) => data?.match?.easy === true && canPlayerBeSubstituted(teamKey, number) && newPlayerMayEnter({
@@ -14245,7 +14410,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 onClick={() => {
                   // Clicking calls a time-out; with both used, handleTimeout turns
                   // the request into an improper request (FIVB 15.11.1.4)
-                  const canCallTimeout = rallyStatus !== 'in_play' && !isRallyReplayed
+                  const canCallTimeout = rallyStatus !== 'in_play' && !timeoutBlocked('left')
                   if (canCallTimeout) {
                     handleTimeout('left')
                   }
@@ -14255,7 +14420,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   flex: 1,
                   background: getTimeoutsUsed('left') >= 2
                     ? 'rgba(239, 68, 68, 0.2)'
-                    : (rallyStatus === 'in_play' || isRallyReplayed
+                    : (rallyStatus === 'in_play' || timeoutBlocked('left')
                       ? 'var(--panel-2)'
                       : 'rgba(34, 197, 94, 0.2)'),
                   borderRadius: (isCompactMode || isShortHeight) ? '1.25cqw' : '2.5cqw',
@@ -14263,17 +14428,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   textAlign: 'center',
                   border: getTimeoutsUsed('left') >= 2
                     ? '1px solid rgba(239, 68, 68, 0.4)'
-                    : (rallyStatus === 'in_play' || isRallyReplayed
+                    : (rallyStatus === 'in_play' || timeoutBlocked('left')
                       ? '1px solid var(--border)'
                       : '1px solid rgba(34, 197, 94, 0.4)'),
-                  cursor: rallyStatus === 'in_play' || isRallyReplayed ? 'not-allowed' : 'pointer'
+                  cursor: rallyStatus === 'in_play' || timeoutBlocked('left') ? 'not-allowed' : 'pointer'
                 }}
               >
                 <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '3.75cqw' : 'max(11px, 5.1cqw)', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.to')}</div>
                 <div className="to-sub-value" style={{
                   fontSize: (isCompactMode || isShortHeight) ? '6.6cqw' : '11.25cqw',
                   fontWeight: 700,
-                  color: getTimeoutsUsed('left') >= 2 ? '#ef4444' : (!(rallyStatus === 'in_play' || isRallyReplayed) ? '#22c55e' : 'inherit')
+                  color: getTimeoutsUsed('left') >= 2 ? '#ef4444' : (!(rallyStatus === 'in_play' || timeoutBlocked('left')) ? '#22c55e' : 'inherit')
                 }}>{getTimeoutsUsed('left')}</div>
               </div>
               <div
@@ -14310,6 +14475,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 }}>{getSubstitutionsUsed('left')}</div>
               </div>
             </div>
+            {/* Closed time-out / substitution: the reason in one line (replay
+                pending, set interval; domain/interruptionRequests.js) */}
+            {requestBlockLine('left') && (
+              <div data-testid="request-block-left" style={{ marginTop: '-1.5cqw', marginBottom: '2.5cqw', fontSize: (isCompactMode || isShortHeight) ? '3.3cqw' : 'max(11px, 4.2cqw)', lineHeight: 1.3, color: 'var(--muted)', textAlign: 'center' }}>
+                {requestBlockLine('left')}
+              </div>
+            )}
             {(() => {
               const teamKey = leftIsHome ? 'home' : 'away'
               const teamPlayers = leftIsHome ? data?.homePlayers : data?.awayPlayers
@@ -14582,7 +14754,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         // BUT: If player is currently replaced by libero, they cannot substitute at all
                         const neverPlayed = !wasSubstitutedOut && !hasComeBack && !isSubstitutedByLibero
                         const canComeBackFromSub = wasSubstitutedOut && canComeBack && !hasComeBack && !isSubstitutedByLibero
-                        const canSubBenchPlayer = !showX && !isSubstitutedByLibero && (canComeBackFromSub || neverPlayed)
+                        const canSubBenchPlayer = !showX && !replayPending && !isSubstitutedByLibero && (canComeBackFromSub || neverPlayed)
 
                         // Find the court player this bench player can swap with
                         let courtPlayerToSwapWith = null
@@ -15440,7 +15612,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         {leftTeam.playersOnCourt.slice(0, 3).map((player, idx) => {
                           const teamKey = leftIsHome ? 'home' : 'away'
                           const teamSubstitutions = substitutionsUsed?.[teamKey] || 0
-                          const canSubstitute = rallyStatus === 'idle' && !isRallyReplayed && leftTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
+                          const canSubstitute = rallyStatus === 'idle' && !replayPending && leftTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
                           const replacementNumber = resolveReplacementNumber(player, leftTeamActiveReplacements)
 
                           // Check if this player was recently substituted in
@@ -15718,7 +15890,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           const leftTeamServes = currentServe === leftTeamKey
                           const shouldShowBall = player.position === 'I' && leftTeamServes
                           const teamSubstitutions = substitutionsUsed?.[leftTeamKey] || 0
-                          const canSubstitute = rallyStatus === 'idle' && !isRallyReplayed && leftTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
+                          const canSubstitute = rallyStatus === 'idle' && !replayPending && leftTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
                           const replacementNumber = resolveReplacementNumber(player, leftTeamActiveReplacements)
 
                           // Check if this player was recently substituted in
@@ -16052,7 +16224,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         {rightTeam.playersOnCourt.slice(0, 3).map((player, idx) => {
                           const teamKey = leftIsHome ? 'away' : 'home'
                           const teamSubstitutions = substitutionsUsed?.[teamKey] || 0
-                          const canSubstitute = rallyStatus === 'idle' && !isRallyReplayed && rightTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
+                          const canSubstitute = rallyStatus === 'idle' && !replayPending && rightTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
                           const replacementNumber = resolveReplacementNumber(player, rightTeamActiveReplacements)
 
                           // Get sanctions for this player
@@ -16330,7 +16502,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           const rightTeamServes = currentServe === rightTeamKey
                           const shouldShowBall = player.position === 'I' && rightTeamServes
                           const teamSubstitutions = substitutionsUsed?.[rightTeamKey] || 0
-                          const canSubstitute = rallyStatus === 'idle' && rightTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
+                          const canSubstitute = rallyStatus === 'idle' && !replayPending && rightTeamLineupSet && player.number && player.number !== '' && !player.isPlaceholder && teamSubstitutions < 6
                           const replacementNumber = resolveReplacementNumber(player, rightTeamActiveReplacements)
 
                           // Get sanctions for this player
@@ -17540,7 +17712,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 onClick={() => {
                   // Clicking calls a time-out; with both used, handleTimeout turns
                   // the request into an improper request (FIVB 15.11.1.4)
-                  const canCallTimeout = rallyStatus !== 'in_play' && !isRallyReplayed
+                  const canCallTimeout = rallyStatus !== 'in_play' && !timeoutBlocked('right')
                   if (canCallTimeout) {
                     handleTimeout('right')
                   }
@@ -17550,7 +17722,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   flex: 1,
                   background: getTimeoutsUsed('right') >= 2
                     ? 'rgba(239, 68, 68, 0.2)'
-                    : (rallyStatus === 'in_play' || isRallyReplayed
+                    : (rallyStatus === 'in_play' || timeoutBlocked('right')
                       ? 'var(--panel-2)'
                       : 'rgba(34, 197, 94, 0.2)'),
                   borderRadius: (isCompactMode || isShortHeight) ? '1.25cqw' : '2.5cqw',
@@ -17558,17 +17730,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   textAlign: 'center',
                   border: getTimeoutsUsed('right') >= 2
                     ? '1px solid rgba(239, 68, 68, 0.4)'
-                    : (rallyStatus === 'in_play' || isRallyReplayed
+                    : (rallyStatus === 'in_play' || timeoutBlocked('right')
                       ? '1px solid var(--border)'
                       : '1px solid rgba(34, 197, 94, 0.4)'),
-                  cursor: rallyStatus === 'in_play' || isRallyReplayed ? 'not-allowed' : 'pointer'
+                  cursor: rallyStatus === 'in_play' || timeoutBlocked('right') ? 'not-allowed' : 'pointer'
                 }}
               >
                 <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '3.75cqw' : 'max(11px, 5.1cqw)', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.to')}</div>
                 <div className="to-sub-value" style={{
                   fontSize: (isCompactMode || isShortHeight) ? '6.6cqw' : '11.25cqw',
                   fontWeight: 700,
-                  color: getTimeoutsUsed('right') >= 2 ? '#ef4444' : (!(rallyStatus === 'in_play' || isRallyReplayed) ? '#22c55e' : 'inherit')
+                  color: getTimeoutsUsed('right') >= 2 ? '#ef4444' : (!(rallyStatus === 'in_play' || timeoutBlocked('right')) ? '#22c55e' : 'inherit')
                 }}>{getTimeoutsUsed('right')}</div>
               </div>
               <div
@@ -17605,6 +17777,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 }}>{getSubstitutionsUsed('right')}</div>
               </div>
             </div>
+            {/* Closed time-out / substitution: the reason in one line (replay
+                pending, set interval; domain/interruptionRequests.js) */}
+            {requestBlockLine('right') && (
+              <div data-testid="request-block-right" style={{ marginTop: '-1.5cqw', marginBottom: '2.5cqw', fontSize: (isCompactMode || isShortHeight) ? '3.3cqw' : 'max(11px, 4.2cqw)', lineHeight: 1.3, color: 'var(--muted)', textAlign: 'center' }}>
+                {requestBlockLine('right')}
+              </div>
+            )}
             {(() => {
               const teamKey = leftIsHome ? 'away' : 'home'
               const teamPlayers = leftIsHome ? data?.awayPlayers : data?.homePlayers
@@ -17877,7 +18056,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         // BUT: If player is currently replaced by libero, they cannot substitute at all
                         const neverPlayed = !wasSubstitutedOut && !hasComeBack && !isSubstitutedByLibero
                         const canComeBackFromSub = wasSubstitutedOut && canComeBack && !hasComeBack && !isSubstitutedByLibero
-                        const canSubBenchPlayer = !showX && !isSubstitutedByLibero && (canComeBackFromSub || neverPlayed)
+                        const canSubBenchPlayer = !showX && !replayPending && !isSubstitutedByLibero && (canComeBackFromSub || neverPlayed)
 
                         // Find the court player this bench player can swap with
                         let courtPlayerToSwapWith = null
@@ -19769,6 +19948,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Get available substitutes for this player
         const { team, position, playerNumber } = playerActionMenu
         const availableSubs = playerActionMenu.canSubstitute ? getAvailableSubstitutes(team, playerNumber) : []
+        const illegalSubs = playerActionMenu.canSubstitute && data?.match?.easy !== true ? getIllegalSubstitutes(team, playerNumber) : []
         // Easy match: a number that is no player yet can come in (domain/easyMatch.js)
         const easyNewSub = data?.match?.easy === true && playerActionMenu.canSubstitute && newPlayerMayEnter({
           substitutions: getSubstitutionHistory(team),
@@ -19829,7 +20009,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 zIndex: 999,
                 background: 'transparent'
               }}
-              {...backdropDismiss(() => { setPlayerActionMenu(null); setCourtSubExpanded(false); setCourtLiberoExpanded(false); setCourtSanctionExpanded(false); setCourtLiberoUnableExpanded(false) })}
+              {...backdropDismiss(() => { setPlayerActionMenu(null); setCourtSubExpanded(false); setCourtLiberoExpanded(false); setCourtSanctionExpanded(false); setCourtLiberoUnableExpanded(false); setCourtIllegalExpanded(false) })}
             />
             {/* Action Menu */}
             <div style={menuStyle} className="modal-wrapper-roll-down">
@@ -19885,6 +20065,69 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         available={availableSubs}
                         onPick={(number, newPlayer) => handleSubFromMenu({ number }, { newPlayer })}
                       />
+                    )}
+                  </div>
+                )}
+                {/* Bench players who may not come in for this player, greyed
+                    with why: a tap opens "Illegal substitution requested" */}
+                {playerActionMenu.canSubstitute && illegalSubs.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <SbMenuItem tone="neutral" className="text-stone-500" expanded={courtIllegalExpanded} onClick={() => setCourtIllegalExpanded(!courtIllegalExpanded)} data-testid="menu-illegal-toggle">
+                      {t('scoreboard.requestWarning.notAllowed')}
+                    </SbMenuItem>
+                    {courtIllegalExpanded && (
+                      <div className={SB_MENU_SUB}>
+                        {illegalSubs.map(c => (
+                          <SbMenuItem
+                            key={c.number}
+                            tone="neutral"
+                            data-testid={`menu-illegal-${c.number}`}
+                            className="border-dashed bg-stone-50 text-stone-500 hover:bg-stone-100"
+                            onClick={() => {
+                              setPlayerActionMenu(null)
+                              setCourtSubExpanded(false)
+                              setCourtIllegalExpanded(false)
+                              openIllegalSubstitution(team, position, playerNumber, c)
+                            }}
+                          >
+                            <span className="tabular-nums">{c.number}</span>
+                            <span className="font-medium"> · {t(`scoreboard.requestWarning.illegalShort.${c.reason}`)}</span>
+                          </SbMenuItem>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {/* No legal substitution now: "Substitution" opens the request
+                    warning (7th substitution, no rally since the player came
+                    in), or is shown closed with the reason (replay pending) */}
+                {!playerActionMenu.canSubstitute && playerActionMenu.substitutionNote && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <SbMenuItem
+                      tone="neutral"
+                      data-testid="menu-substitution-warning"
+                      disabled={playerActionMenu.substitutionNote === 'replay_pending'}
+                      onClick={() => {
+                        setPlayerActionMenu(null)
+                        setCourtSubExpanded(false)
+                        setCourtSanctionExpanded(false)
+                        const issues = data?.set ? substitutionRequestIssues(data.events, data.set.index, team, { playerOut: playerNumber }) : []
+                        const returning = issues.find(i => i.reason === 'no_rally_since_entry')?.playerIn
+                        openRequestWarning('substitution', {
+                          team,
+                          position,
+                          playerOut: playerNumber,
+                          ...(returning !== undefined ? { playerIn: returning } : {})
+                        }, issues, [])
+                      }}
+                      icon={<ArrowUpDown size={16} strokeWidth={2.5} />}
+                    >
+                      {t('scoreboard.substitution')}
+                    </SbMenuItem>
+                    {playerActionMenu.substitutionNote === 'replay_pending' && (
+                      <span style={{ maxWidth: '150px', fontSize: '8px', lineHeight: 1.3, color: 'var(--muted)', padding: '0 2px', whiteSpace: 'normal' }}>
+                        {t('scoreboard.requestBlock.replay_pending_short')}
+                      </span>
                     )}
                   </div>
                 )}
@@ -20004,7 +20247,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   const side = (team === 'home' && leftIsHome) || (team === 'away' && !leftIsHome) ? 'left' : 'right'
 
                   // Libero out disabled if no point since libero exchange
-                  const liberoOutDisabled = !hasPointSinceLibero
+                  // (or while the replayed rally waits: liberoLocked)
+                  const liberoOutDisabled = !hasPointSinceLibero || !!playerActionMenu.liberoLocked
 
                   // Exchange libero disabled if only 1 libero or the other libero is unable
                   const liberoOnCourt = playerActionMenu.liberoOnCourt
@@ -20015,7 +20259,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     (p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated')
                   )
                   const otherLiberoUnable = otherLibero && isLiberoUnable(team, otherLibero.number)
-                  const exchangeLiberoDisabled = !hasPointSinceLibero || liberos.length < 2 || liberoOnCourtUnable || otherLiberoUnable
+                  const exchangeLiberoDisabled = !hasPointSinceLibero || !!playerActionMenu.liberoLocked || liberos.length < 2 || liberoOnCourtUnable || otherLiberoUnable
 
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -22547,6 +22791,48 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           onClose={() => setToSubDetailsModal(null)}
         />
       )}
+
+      {requestWarning && (() => {
+        // The request warning (domain/interruptionRequests.js): its first
+        // issue, the team as A/B with its colour, and what each option records
+        const issue = requestWarning.issues[0]
+        const teamKey = requestWarning.request.team
+        const opponentKey = teamKey === 'home' ? 'away' : 'home'
+        const teamOf = (key) => ({
+          label: key === teamAKey ? 'A' : 'B',
+          name: (key === 'home' ? data?.homeTeam?.name : data?.awayTeam?.name) || t(key === 'home' ? 'common.home' : 'common.away'),
+          paint: teamBoxStyle((key === 'home' ? data?.homeTeam?.color : data?.awayTeam?.color) || (key === 'home' ? '#ef4444' : '#3b82f6'))
+        })
+        const details = {}
+        if (issue.reason === 'no_rally_since_entry') {
+          details.number = requestWarning.request.playerOut
+          details.returning = issue.playerIn
+        }
+        if (issue.reason === 'illegal_substitution') {
+          details.number = issue.playerIn
+          details.out = requestWarning.request.playerOut
+          details.why = t(`scoreboard.requestWarning.illegal.${issue.illegalReason}`)
+        }
+        if (issue.reason === 'second_substitution_request' && data?.set) {
+          // What came between the team's first request and this one
+          const closedBy = substitutionRequestThisInterruption(data.events, data.set.index, teamKey)?.closedBy
+          if (closedBy) {
+            const by = closedBy.payload?.team ? teamOf(closedBy.payload.team).label : ''
+            const kind = closedBy.type === 'rally_start' || closedBy.type === 'replay' ? 'replay' : closedBy.type
+            details.between = t(`scoreboard.requestWarning.between.${kind}`, { team: by })
+          }
+        }
+        return (
+          <RequestWarningDialog
+            issue={issue}
+            team={teamOf(teamKey)}
+            opponent={teamOf(opponentKey)}
+            consequences={requestWarning.consequences}
+            details={details}
+            onChoose={chooseRequestWarning}
+          />
+        )
+      })()}
 
       {sanctionConfirm && (
         <Modal

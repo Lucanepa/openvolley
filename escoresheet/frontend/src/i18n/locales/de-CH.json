@@ -907,6 +907,79 @@
       "confirmConsecutive": "Ja, zweits Timeout",
       "notRecorded": "S Timeout isch nöd erfasst worde. Bitte nomal probiere."
     },
+    "requestBlock": {
+      "replay_pending": "De Ballwächsel wird wiederholt: kei Timeout und kei Wächsel bis nachem nächschte Ballwächsel (nur en erzwungne Wächsel).",
+      "replay_pending_short": "Wiederholig: nur Verletzig oder sanktionierte Spieler",
+      "set_interval": "Satzpause: kei Timeout (es würd im nächschte Satz zelle)."
+    },
+    "requestWarning": {
+      "notAllowed": "Nöd erlaubt",
+      "illegalShort": {
+        "libero": "Libero",
+        "sent_off": "Gsperrt",
+        "wrong_partner": "Falsche Partner",
+        "played_out": "Scho gspilt",
+        "no_rally_since_out": "No kei Ballwächsel"
+      },
+      "since": "Sithär: {{what}}.",
+      "between": {
+        "timeout": "es Timeout vo Team {{team}}",
+        "substitution": "en Wächsel vo Team {{team}}",
+        "sanction": "e Sanktion gäge Team {{team}}",
+        "replay": "en wiederholte Ballwächsel"
+      },
+      "options": {
+        "improper": "Als unzulässigi Aafraag erfasse",
+        "delay": "Spiel verzögeret: Verzögerigssanktion",
+        "timeoutStarted": "Timeout lauft scho: Verzögerigssanktion",
+        "illegal": "Unerlaubte Wächsel beaatreit: ablehne + Verzögerigssanktion",
+        "continue": "Trotzdem wiiter"
+      },
+      "records": {
+        "improper": "Erfasst: unzulässigi Aafraag, susch nüt.",
+        "delayWarning": "Erfasst: Verzögerigswarnig.",
+        "delayPenalty": "Erfasst: Verzögerigsstraaf – Punkt und Ufschlag für {{opponent}}.",
+        "repeatedImproper": "(S Team hät scho e unzulässigi Aafraag: die isch e Verzögerig.)",
+        "nothing": "D Schiri händ s erlaubt. Es wird nüt erfasst."
+      },
+      "illegal": {
+        "libero": "en Libero wird nie iigwächslet",
+        "sent_off": "dörf nüme spile (usgschlosse, disqualifiziert oder usserordentlich uusgwächslet)",
+        "wrong_partner": "nur de eigni Wächselpartner dörf zrugg",
+        "played_out": "isch i däm Satz scho ine und use",
+        "no_rally_since_out": "sit em Uuswächsle kei Ballwächsel abgschlosse"
+      },
+      "second_substitution_request": {
+        "title": "Zweite Wächselaatrag",
+        "text": "{{team}} hät i dere Unterbrechig scho en Wächselaatrag gmacht. Zwüsche zwei separate Wächselaaträg vom gliiche Team bruuchts en abgschlossne Ballwächsel.",
+        "rule": "FIVB 15.2.3 · 15.11.1.3"
+      },
+      "no_rally_since_entry": {
+        "title": "#{{number}} cha no nöd use",
+        "text": "#{{number}} isch für #{{returning}} ine cho, und sithär isch kei Ballwächsel abgschlosse. #{{number}} jetzt grad wider uuszwächsle isch en zweite Wächselaatrag.",
+        "rule": "FIVB 15.2.3 · 15.6.2"
+      },
+      "substitution_limit": {
+        "title": "Kei Wächsel meh",
+        "text": "{{team}} hät sini 6 Wächsel i däm Satz bruucht. En wiitere Aatrag isch e unzulässigi Aafraag.",
+        "rule": "FIVB 15.1 · 15.11.1.4"
+      },
+      "third_timeout": {
+        "title": "Dritts Timeout",
+        "text": "{{team}} hät beidi Timeouts vo däm Satz gnoh. Es dritts Gsuech isch e unzulässigi Aafraag; lauft s Timeout scho, isch s Spiel verzögeret worde.",
+        "rule": "FIVB 15.1 · 15.11.1.4 · FIVB casebook 4.29"
+      },
+      "after_delay_warning": {
+        "title": "Aatrag nach ere Verzögerigswarnig",
+        "text": "{{team}} hät i dere Unterbrechig e Verzögerigswarnig übercho. En wiitere Aatrag wird abglehnt, ohni Iitrag.",
+        "rule": "FIVB 15.2.4: ablehne, nüt erfasse"
+      },
+      "illegal_substitution": {
+        "title": "Unerlaubte Wächsel",
+        "text": "#{{number}} cha nöd für #{{out}} ine: {{why}}. En unerlaubte Wächsel z beaatreie isch e Verzögerig; de Aatrag wird abglehnt.",
+        "rule": "FIVB 15.10.4 · 16.1.3"
+      }
+    },
     "teamSanctionConfirm": {
       "thirdTimeout": "{{team}} hät beidi Timeouts vo däm Satz gnoh. Es dritts Gsuech isch e unzulässigi Aafraag.",
       "applyImproperRequest": "Unzulässigi Aafraag für {{team}} erfasse?",

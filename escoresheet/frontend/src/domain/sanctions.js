@@ -55,6 +55,21 @@ export function resolveSanction(requestedType, { priorDelayCount = 0, priorImpro
   return requestedType
 }
 
+/**
+ * A team's sanction history for the ladder: the delay sanctions (warnings +
+ * penalties) and improper requests it already has in the match.
+ * @param {Array} events
+ * @param {'home'|'away'} team
+ * @returns {{priorDelayCount:number, priorImproperCount:number}}
+ */
+export function teamSanctionCounts(events, team) {
+  const own = (events || []).filter(e => e?.type === 'sanction' && e.payload?.team === team)
+  return {
+    priorDelayCount: own.filter(e => isDelaySanction(e.payload?.type)).length,
+    priorImproperCount: own.filter(e => e.payload?.type === 'improper_request').length
+  }
+}
+
 /** True for the two delay-ladder sanction types. */
 export function isDelaySanction(type) {
   return type === 'delay_warning' || type === 'delay_penalty'
