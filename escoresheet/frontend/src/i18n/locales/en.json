@@ -1860,6 +1860,18 @@
       "loading": "Loading scoresheet...",
       "waiting": "Waiting for the scorer's data..."
     },
+    "rosters": {
+      "open": "Rosters",
+      "title": "Rosters",
+      "close": "Close",
+      "otherTeam": "Other team",
+      "show": "Show {{team}}",
+      "count": "{{players}} players",
+      "empty": "No roster yet",
+      "captain": "Captain",
+      "officials": "Team officials",
+      "noOfficials": "No officials entered"
+    },
     "sanctions": {
       "title": "Sanctions",
       "formalWarning": "Formal warning"

@@ -1859,6 +1859,18 @@
       "loading": "Caricamento del referto...",
       "waiting": "In attesa dei dati del segnapunti..."
     },
+    "rosters": {
+      "open": "Rose",
+      "title": "Rose",
+      "close": "Chiudi",
+      "otherTeam": "Altra squadra",
+      "show": "Mostra {{team}}",
+      "count": "{{players}} giocatori",
+      "empty": "Nessuna rosa",
+      "captain": "Capitano",
+      "officials": "Ufficiali di squadra",
+      "noOfficials": "Nessun ufficiale inserito"
+    },
     "sanctions": {
       "title": "Sanzioni",
       "formalWarning": "Avvertimento formale"

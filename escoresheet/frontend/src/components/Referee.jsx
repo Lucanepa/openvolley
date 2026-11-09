@@ -18,7 +18,7 @@ import { supabase } from '../lib/supabaseClient'
 import { apiFrom } from '../lib/apiClient'
 import { useSyncQueue } from '../hooks/useSyncQueue'
 import { RefreshIcon, SunIcon, MoonIcon, DatabaseIcon, SatelliteDishIcon, WarningIcon, SettingsIcon, VolleyballIcon, BellIcon } from './icons'
-import { FileText, Loader2 } from 'lucide-react'
+import { FileText, Loader2, Users } from 'lucide-react'
 import { cn } from '../ui/cn.js'
 import { Button, FOCUS_RING } from '../ui/Button.jsx'
 import { Card } from '../ui/Card.jsx'
@@ -32,6 +32,7 @@ import RecordedNoticePopup from './referee/RecordedNoticePopup.jsx'
 import CountdownFlight from './referee/CountdownFlight.jsx'
 import TimeoutCountdown from './referee/TimeoutCountdown.jsx'
 import RefereeScoresheet from './referee/RefereeScoresheet.jsx'
+import RefereeRosters from './referee/RefereeRosters.jsx'
 import { TeamSanctionList } from './referee/SanctionCards.jsx'
 import { bundleHasFullAccess } from './referee/scoresheetInput.js'
 import { createRecordedNoticeTracker, describeNotice, NOTICE_AUTO_DISMISS_MS } from '../utils/refereeRecordedNotices.js'
@@ -211,6 +212,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const [helpOpen, setHelpOpen] = useState(false)
   // The live scoresheet (read only), over the dashboard
   const [scoresheetOpen, setScoresheetOpen] = useState(false)
+  // the teams' rosters, one after the other (owner 2026-11-09)
+  const [rostersOpen, setRostersOpen] = useState(false)
   const toggleHelp = useCallback(() => setHelpOpen(prev => !prev), [])
   const closeHelp = useCallback(() => setHelpOpen(false), [])
   const lastAttentionTriggerRef = useRef(null)
@@ -2259,13 +2262,20 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   // proved: rosters, events). Never from a summary, never in test mode.
   // Before the coin toss (rosters) and after the match (the whole sheet) too.
   const canShowScoresheet = !isMasterMode && bundleHasFullAccess(data?.sheetBundle)
-  const scoresheetLayer = scoresheetOpen && canShowScoresheet
+  const scoresheetLayer = (scoresheetOpen && canShowScoresheet
     ? <RefereeScoresheet bundle={data.sheetBundle} receivedAt={data.sheetBundleAt} onClose={() => setScoresheetOpen(false)} />
-    : null
+    : null) || (rostersOpen && canShowScoresheet
+    ? <RefereeRosters bundle={data.sheetBundle} onClose={() => setRostersOpen(false)} />
+    : null)
   const scoresheetButton = (className) => canShowScoresheet ? (
-    <Button variant="dark" size="xl" block icon={FileText} className={className} onClick={() => setScoresheetOpen(true)} data-testid="referee-open-scoresheet">
-      {t('refereeDashboard.scoresheet.open', 'Scoresheet')}
-    </Button>
+    <div className={`grid grid-cols-2 gap-2 ${className || ''}`}>
+      <Button variant="dark" size="xl" block icon={FileText} onClick={() => setScoresheetOpen(true)} data-testid="referee-open-scoresheet">
+        {t('refereeDashboard.scoresheet.open', 'Scoresheet')}
+      </Button>
+      <Button variant="secondary" size="xl" block icon={Users} onClick={() => setRostersOpen(true)} data-testid="referee-open-rosters">
+        {t('refereeDashboard.rosters.open', 'Rosters')}
+      </Button>
+    </div>
   ) : null
 
   // Show awaiting coin toss screen when connected but no match data yet
@@ -2957,6 +2967,12 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           icon: <FileText size={15} aria-hidden="true" />,
           label: t('refereeDashboard.scoresheet.open', 'Scoresheet'),
           onClick: () => setScoresheetOpen(true)
+        }, {
+          key: 'rosters',
+          testId: 'referee-open-rosters',
+          icon: <Users size={15} aria-hidden="true" />,
+          label: t('refereeDashboard.rosters.open', 'Rosters'),
+          onClick: () => setRostersOpen(true)
         }] : []}
         toggleOptions={[
           { label: `1 ${t('refereeDashboard.refAbbr')}`, active: refereeView === '1st', onClick: () => setRefereeView('1st') },
@@ -2970,6 +2986,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           // The live scoresheet (also in the bar; here with its name on a phone)
           ...(canShowScoresheet ? [
             { icon: <FileText size={13} aria-hidden="true" />, label: t('refereeDashboard.scoresheet.open', 'Scoresheet'), onClick: () => setScoresheetOpen(true) },
+            { icon: <Users size={13} aria-hidden="true" />, label: t('refereeDashboard.rosters.open', 'Rosters'), onClick: () => setRostersOpen(true) },
             { divider: true }
           ] : []),
           // Screen options
