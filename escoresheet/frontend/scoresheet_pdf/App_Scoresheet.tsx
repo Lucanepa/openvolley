@@ -1233,7 +1233,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   // it fills the screen and reads the right way up once the phone is turned.
   // "Turn" switches back to the upright, much smaller view. Never while a PDF
   // is made: html-to-image would capture the turned sheet.
-  const portraitPhone = !isLandscape && viewportWidth < 700;
+  // Tablets held upright too (owner 2026-11-09: the referee's sheet opened
+  // at about 50 % on an upright tablet): every portrait screen gets "Turn".
+  const portraitPhone = !isLandscape;
   const [turnedPref, setTurnedPref] = useState(true);
 
   const zoomIn = () => setZoomLevel(prev => Math.min(prev + 0.1, MAX_ZOOM));
