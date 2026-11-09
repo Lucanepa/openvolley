@@ -57,8 +57,12 @@ function TeamSections({ team }) {
   const editorTeam = useMemo(() => saved || { id: `new-${team.id}`, name: team.name, players: [], staff: [] }, [saved, team.id, team.name])
   const saveSquad = async (body) => {
     const res = await teamApi.putSquad(team.id, body)
-    if (!res.error) squad.reload({ quiet: true })
-    return res
+    if (res.error) return res
+    squad.reload({ quiet: true })
+    // TeamEditor takes the saved players from data.team; this route's data.team
+    // is the club's team and the saved squad is data.squad (an empty list after
+    // Save until the page was reloaded)
+    return { ...res, data: { ...res.data, team: res.data?.squad } }
   }
   return (
     <>
