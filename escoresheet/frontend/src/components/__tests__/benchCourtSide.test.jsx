@@ -196,3 +196,24 @@ describe('bench tablet: the score card, counters and rows', () => {
     expect(row.querySelector('[data-bench-libero]')?.textContent).toContain('#7')
   })
 })
+
+// FIVB 7.3: the other team's line-up never shows on a bench tablet (its own
+// half court only), before the set or after; its own line-up always does.
+describe('bench tablet: the other team\'s line-up', () => {
+  beforeEach(() => { cleanup(); bundle = null })
+
+  it('is never drawn, only its own six', async () => {
+    bundle = benchBundle(1)
+    bundle.sets = [{ index: 1, homePoints: 0, awayPoints: 0, finished: false }]
+    // only the away line-up recorded: the home bench draws no disc of it
+    bundle.events = [bundle.events[1]]
+    const { container } = render(<MatchEntry matchId="m1" team="home" onBack={() => {}} embedded />)
+    await waitFor(() => expect(container.querySelectorAll('.court-player').length).toBe(6))
+    const discs = [...container.querySelectorAll('.court-player')].map((d) => d.textContent)
+    for (const n of ['2', '11', '55', '66', '98', '13']) expect(discs.some((t) => new RegExp(`(^|\\D)${n}$`).test(t))).toBe(false)
+    cleanup()
+    // the away bench sees its own six
+    const away = render(<MatchEntry matchId="m1" team="away" onBack={() => {}} embedded />)
+    await waitFor(() => expect([...away.container.querySelectorAll('.court-player')].map((d) => d.textContent).join(' ')).toMatch(/55/))
+  })
+})

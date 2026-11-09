@@ -7,6 +7,8 @@ import { COURT_CELLS, PHONE_COUNTER_HEIGHT_PX, PHONE_COURT_MIN_PX, PHONE_RECENT_
 import { captainRingStyle } from './captainRing'
 import RallyTapNotice from './RallyTapNotice'
 import { MissingSignatureButton } from '../signature/PreMatchSignDialog.jsx'
+import LineupSetOverlay from './LineupSetOverlay.jsx'
+import { lineupHiddenUntilBoth } from '../../domain/lineupPrivacy'
 
 /**
  * The scoring screen on a phone held upright (owner-approved mockup, 390x844).
@@ -63,6 +65,13 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
   // The phone's own pickers: { kind: 'sub', side, out?: { position, number } } | { kind: 'sanction' } | { kind: 'libero' }
   const [sheet, setSheet] = useState(null)
   const { left, right } = teams
+  // The first line-up of a set stays hidden until the other is in (as on the tablet court)
+  const [peekLineup, setPeekLineup] = useState(null) // 'left' | 'right' | null
+  const lineupHidden = (team) => peekLineup !== team.side && lineupHiddenUntilBoth({
+    setStarted: !rally.isFirstRally,
+    ownEntered: !!team.lineupSet,
+    otherEntered: !!(team.side === 'left' ? right : left)?.lineupSet
+  })
   // Between rallies. A replayed rally that is not completed yet closes the
   // regular time-outs and substitutions (team.blocked, with the reason in
   // rally.requestBlockText) and, as before, the libero: a forced
@@ -133,7 +142,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
     // serving team, as the court shows it (a libero never serves there: the
     // screen keeps it out of I while its team serves). The word may be cut
     // short on a narrow card, the number never is.
-    const serverNumber = isServing ? (team.court || []).find(pl => pl.position === 'I')?.number : null
+    const serverNumber = isServing && !lineupHidden(team) ? (team.court || []).find(pl => pl.position === 'I')?.number : null
     const server = serverNumber !== null && serverNumber !== undefined && serverNumber !== '' ? String(serverNumber) : null
     const info = (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0, overflow: 'hidden', alignItems: team.side === 'left' ? 'flex-start' : 'flex-end' }}>
@@ -245,6 +254,13 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
             <span>{t('scoreboard.lineup', 'Line-up')}</span>
             <span style={{ fontSize: 12, fontWeight: 600 }}>{team.lineupOptional ? t('scoreboard.phone.lineupOptional', { team: teamTitle(team) }) : teamTitle(team)}</span>
           </button>
+        )}
+        {lineupHidden(team) && (
+          <LineupSetOverlay
+            side={team.side}
+            onPeek={(on) => setPeekLineup(on ? team.side : null)}
+            onChange={idle ? () => actions.openLineup(team.side) : null}
+          />
         )}
       </div>
     )
