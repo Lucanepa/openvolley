@@ -81,3 +81,23 @@ describe('PhoneScoreboard: the centre between rallies', () => {
     expect(screen.getByRole('button', { name: 'Point A' }).classList.contains('phone-square')).toBe(true)
   })
 })
+
+// The tablet hides Decision change while a time-out's countdown runs (the
+// rally buttons are hidden under it); the phone offered it there. It is now
+// disabled, as the phone shows its other unavailable actions.
+describe('PhoneScoreboard: Decision change while a time-out runs', () => {
+  const decidable = { status: 'idle', isFirstRally: false, startDisabled: false, canReplayRally: false, canChangeDecision: true, isRallyReplayed: false }
+  const timeoutCentre = { kind: 'timeout', teamName: 'A team', countdown: 24, countdownText: '24', total: 30 }
+  const decision = () => screen.getByTestId('phone-action-decision')
+
+  it('is disabled while the countdown runs', () => {
+    render(<PhoneScoreboard {...props({ rally: decidable, centre: timeoutCentre })} />)
+    expect(decision().disabled).toBe(true)
+  })
+
+  it('is offered again once the time-out is over', () => {
+    const { rerender } = render(<PhoneScoreboard {...props({ rally: decidable, centre: timeoutCentre })} />)
+    rerender(<PhoneScoreboard {...props({ rally: decidable, centre: null })} />)
+    expect(decision().disabled).toBe(false)
+  })
+})

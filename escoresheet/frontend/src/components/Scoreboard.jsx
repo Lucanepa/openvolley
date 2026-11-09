@@ -56,9 +56,8 @@ import { defaultSetStartTime, actualStartRemark, startsFromSchedule, startSchedu
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
 import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet, getLeftTeamLabelForSet } from '../domain/rules'
 import { resolveSanction, deriveTeamSanctionFlags, deferredPenaltyPoints, penaltyOfPoint, teamSanctionCounts } from '../domain/sanctions'
-import { REQUEST_ISSUES, isReplayPending, substitutionRequestIssues, timeoutRequestIssues, requestBlockReason, entryWithoutCompletedRally, substitutionRequestThisInterruption, substituteInIllegalReason, lateRequestOutcome, sanctionReasonOfIssue, decisionChangeTakeBack, IMPROPER_REQUEST_REASONS } from '../domain/interruptionRequests'
+import { REQUEST_ISSUES, isReplayPending, substitutionRequestIssues, timeoutRequestIssues, requestBlockReason, entryWithoutCompletedRally, substitutionRequestThisInterruption, substituteInIllegalReason, lateRequestOutcome, decisionChangeTakeBack } from '../domain/interruptionRequests'
 import RequestWarningDialog, { RequestOptionRow } from './scoreboard/RequestWarningDialog.jsx'
-import ImproperReasonPicker from './scoreboard/ImproperReasonPicker.jsx'
 import { classifyTimeoutRequest } from '../domain/timeouts'
 import { rallyStatusOf, currentSetOf } from '../domain/rally'
 import { useConfirmAction } from '../hooks/useConfirmAction'
@@ -6103,9 +6102,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // inside the running scorer action: the match flags, the sanction event and
   // a delay penalty's point (and its side-out rotation). One write for the
   // sanction dialog, the request warning and the late-request replay, so they
-  // record the same rows. `reason` (domain/interruptionRequests
-  // TEAM_SANCTION_REASONS): what it was for, kept on the event (row 11).
-  const recordTeamSanction = useCallback(async ({ side, team: teamKey, type, reason = null }) => {
+  // record the same rows.
+  const recordTeamSanction = useCallback(async ({ side, team: teamKey, type }) => {
     const teamKeyCapitalized = teamKey === 'home' ? 'Home' : 'Away'
 
     // Update match sanctions for improper request and delay warning
@@ -6123,16 +6121,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // Log the sanction event
     const sanctionSeq = await logEvent('sanction', {
       team: teamKey,
-      type: type,
-      ...(reason ? { reason } : {})
+      type: type
     })
 
     // Debug log: sanction
     debugLogger.log('SANCTION', {
       team: teamKey,
       type,
-      side,
-      reason
+      side
     }, getStateSnapshot())
 
     // If delay penalty, award point to the other team (but only if lineups are set)
@@ -6228,12 +6224,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // the rally was stopped because that team asked for a time-out or a
   // substitution during the rally or at or after the whistle to serve
   // (R15.11.1.1). The game was delayed: the next delay sanction of the team
-  // (16.2; Q182, Q224, Q159), with the reason on the sanction. A delay
-  // warning goes with the replay, and the replay keeps every regular request
-  // closed until the replayed rally is completed (row 7, GL R15 §8). A delay
-  // penalty gives the point and the service to the opponent (16.2.3): no
-  // replay then, the penalty point is the completed rally (domain/
-  // interruptionRequests lateRequestOutcome). One action: one Undo takes back
+  // (16.2; Q182, Q224, Q159). A delay warning goes with the replay, and the
+  // replay keeps every regular request closed until the replayed rally is
+  // completed (row 7, GL R15 §8). A delay penalty gives the point and the
+  // service to the opponent (16.2.3): no replay then, the penalty point is
+  // the completed rally (domain/interruptionRequests lateRequestOutcome).
+  // No reason is kept on the sanction. One action: one Undo takes back
   // the sanction (and a penalty's point), the next the replay.
   const confirmReplay = useCallback((lateRequestTeam) => runAction('replay', async () => {
     deferUi(() => setReplayConfirm(false))
@@ -6241,7 +6237,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const late = lateRequestTeam === 'home' || lateRequestTeam === 'away' ? lateRequestOutcome(data?.events, lateRequestTeam) : null
     if (!late || late.replay) await logEvent('replay')
     if (late) {
-      await recordTeamSanction({ side: mapTeamKeyToSide(lateRequestTeam), team: lateRequestTeam, type: late.sanction, reason: late.reason })
+      await recordTeamSanction({ side: mapTeamKeyToSide(lateRequestTeam), team: lateRequestTeam, type: late.sanction })
     }
   }), [logEvent, rallyStatus, runAction, deferUi, data?.events, recordTeamSanction, mapTeamKeyToSide])
 
@@ -6257,9 +6253,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const openTeamSanctionConfirm = useCallback((side, requestedType, reason = null) => {
     const teamKey = mapSideToTeamKey(side)
     const resolved = resolveSanction(requestedType, teamSanctionCounts(data?.events, teamKey))
-    // An improper request asks what it was for (row 11, ImproperReasonPicker):
-    // "other" until the scorer picks one, so Yes is still one tap
-    setSanctionConfirm({ side, team: teamKey, type: requestedType, resolved, reason, ...(requestedType === 'improper_request' ? { improperReason: 'other' } : {}) })
+    setSanctionConfirm({ side, team: teamKey, type: requestedType, resolved, reason })
   }, [mapSideToTeamKey, data?.events])
 
   // The request warning (domain/interruptionRequests.js): the first issue of
@@ -6312,19 +6306,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // One action: the sanction, a delay penalty's point (and its side-out
   // rotation) and the dialog closing appear together
   // `explicit`: a sanction chosen in the request warning ({ side, team,
-  // resolved, reason }), recorded the same way (a click passes its event: ignored)
+  // resolved }), recorded the same way (a click passes its event: ignored)
   const confirmSanction = useCallback((explicit) => runSanctionConfirm(() => runAction('sanction', async () => {
     const chosen = explicit?.resolved ? explicit : sanctionConfirm
     if (!chosen || !data?.match || !data?.set) return
 
     // Everything comes from the dialog state taken when it opened: the team
-    // and the resolved sanction it showed, and what it was for (the request
-    // warning's, or the reason picked for an improper request; row 11)
+    // and the resolved sanction it showed.
     const { side, team: teamKey, resolved: type } = chosen
-    const reason = explicit?.resolved ? (explicit.reason || null) : (chosen.type === 'improper_request' ? (chosen.improperReason || 'other') : null)
     deferUi(() => setSanctionConfirm(null))
 
-    await recordTeamSanction({ side, team: teamKey, type, reason })
+    await recordTeamSanction({ side, team: teamKey, type })
   })), [runSanctionConfirm, sanctionConfirm, data?.match, data?.set, recordTeamSanction, runAction, deferUi])
 
   // Confirm set start time
@@ -8238,11 +8230,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       else setSubstitutionConfirm({ ...warning.request, ...(issue.playerIn !== undefined && warning.request.playerIn === undefined ? { playerIn: issue.playerIn } : {}) }, { acknowledged })
       return
     }
-    // improper: the improper-request ladder; delay / timeoutStarted / illegal: the delay ladder.
-    // The sanction keeps what it was for (row 11: a second substitution
-    // request, the limit used up, an illegal substitution requested)
+    // improper: the improper-request ladder; delay / timeoutStarted / illegal: the delay ladder
     const resolved = option === 'improper' ? warning.consequences.improper : warning.consequences.delay
-    confirmSanction({ side: mapTeamKeyToSide(team), team, resolved, reason: sanctionReasonOfIssue(issue.reason) })
+    confirmSanction({ side: mapTeamKeyToSide(team), team, resolved })
   }, [requestWarning, handleTimeout, mapTeamKeyToSide, setSubstitutionConfirm, confirmSanction])
 
   // Confirm time-out: snapshot, close (start the countdown), then write.
@@ -22956,15 +22946,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   <p style={{ marginBottom: '12px', fontSize: '14px', color: 'var(--muted)' }}>
                     {t('scoreboard.teamSanctionConfirm.repeatedImproperRequest')}
                   </p>
-                )}
-                {/* What the improper request was for (FIVB 15.11.1), kept on
-                    the sanction; optional ("Other") */}
-                {requested === 'improper_request' && (
-                  <ImproperReasonPicker
-                    reasons={IMPROPER_REQUEST_REASONS}
-                    value={sanctionConfirm.improperReason || 'other'}
-                    onChange={(improperReason) => setSanctionConfirm(prev => (prev ? { ...prev, improperReason } : prev))}
-                  />
                 )}
                 {requested === 'delay_warning' && resolved === 'delay_penalty' && (
                   <p style={{ marginBottom: '12px', fontSize: '14px', color: 'var(--muted)' }}>

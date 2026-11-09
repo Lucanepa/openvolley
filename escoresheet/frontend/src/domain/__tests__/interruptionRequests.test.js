@@ -13,10 +13,6 @@ import {
   requestBlockReason,
   substituteInIllegalReason,
   REQUEST_ISSUES,
-  IMPROPER_REQUEST_REASONS,
-  TEAM_SANCTION_REASONS,
-  sanctionReasonOfIssue,
-  teamSanctionReason,
   lateRequestOutcome,
   decisionChangeTakeBack
 } from '../interruptionRequests'
@@ -425,51 +421,31 @@ describe('substituteInIllegalReason (row 12)', () => {
   })
 })
 
-describe('what a team sanction was for (row 11)', () => {
-  it('the improper-request reasons are the four of FIVB 15.11.1 and "other"', () => {
-    expect(IMPROPER_REQUEST_REASONS).toEqual(['during_rally', 'wrong_person', 'second_substitution', 'limit_exhausted', 'other'])
-    // a delay from the request warning may be for an illegal substitution (16.1.3)
-    expect(TEAM_SANCTION_REASONS).toContain('illegal_substitution')
-  })
-
-  it('a sanction chosen in a request warning keeps the warning\'s reason', () => {
-    expect(sanctionReasonOfIssue('second_substitution_request')).toBe('second_substitution')
-    expect(sanctionReasonOfIssue('no_rally_since_entry')).toBe('second_substitution')
-    expect(sanctionReasonOfIssue('substitution_limit')).toBe('limit_exhausted')
-    expect(sanctionReasonOfIssue('third_timeout')).toBe('limit_exhausted')
-    expect(sanctionReasonOfIssue('illegal_substitution')).toBe('illegal_substitution')
-    // the notice and the blocks record nothing
-    for (const r of ['after_delay_warning', 'replay_pending', 'set_interval']) expect(sanctionReasonOfIssue(r)).toBeNull()
-  })
-
-  it('only a known reason is read back', () => {
-    expect(teamSanctionReason({ type: 'improper_request', reason: 'wrong_person' })).toBe('wrong_person')
-    expect(teamSanctionReason({ type: 'improper_request', reason: 'nonsense' })).toBeNull()
-    expect(teamSanctionReason({ type: 'improper_request' })).toBeNull()
-  })
-
-  it('the event log says what the improper request was for; "other" and old rows say nothing more', () => {
+describe('a team sanction keeps no reason (row 11; owner 2026-11-09)', () => {
+  // "for improper requests: no reason, no need, same for delays". Events
+  // written while a reason was asked (payload.reason) still read as before:
+  // the field is ignored.
+  it('an old improper request or delay with payload.reason describes as one without', () => {
     const at = (payload) => describeEvent({ type: 'sanction', setIndex: 1, seq: 9, payload: { team: 'home', ...payload } }, [], {})
-    expect(at({ type: 'improper_request', reason: 'wrong_person' }).detail).toBe('Requested by the wrong person')
-    expect(at({ type: 'improper_request', reason: 'during_rally' }).text).toContain('During the rally or after the whistle')
-    expect(at({ type: 'improper_request', reason: 'other' }).detail).toBe('')
-    expect(at({ type: 'improper_request' }).detail).toBe('')
-    // a delay penalty keeps its point, after the reason
-    expect(at({ type: 'delay_penalty', reason: 'illegal_substitution' }).detail).toMatch(/^Illegal substitution requested · \+1 point to /)
-    // a person's sanction never shows a team reason
-    expect(at({ type: 'warning', playerNumber: 4, reason: 'wrong_person' }).detail).toBe('')
+    for (const [type, reason] of [['improper_request', 'wrong_person'], ['improper_request', 'other'], ['delay_warning', 'during_rally'], ['delay_penalty', 'illegal_substitution']]) {
+      expect(at({ type, reason })).toEqual(at({ type }))
+    }
+    expect(at({ type: 'improper_request', reason: 'wrong_person' }).detail).toBe('')
+    expect(at({ type: 'improper_request', reason: 'during_rally' }).text).not.toContain('During the rally')
+    // a delay penalty says its point, nothing before it
+    expect(at({ type: 'delay_penalty', reason: 'illegal_substitution' }).detail).toMatch(/^\+1 point to /)
   })
 })
 
 describe('a late request stopped the rally (row 10)', () => {
   it('the first delay: a delay warning and the rally is replayed (Q182)', () => {
     const events = [point('home'), ev('rally_start')]
-    expect(lateRequestOutcome(events, 'away')).toEqual({ sanction: 'delay_warning', replay: true, reason: 'during_rally' })
+    expect(lateRequestOutcome(events, 'away')).toEqual({ sanction: 'delay_warning', replay: true })
   })
 
   it('after a delay warning (any set): a delay penalty, no replay: the point decides the rally (16.2.3)', () => {
     const events = [sanction('away', 'delay_warning'), point('home'), point('home', 2), ev('rally_start', {}, 2)]
-    expect(lateRequestOutcome(events, 'away')).toEqual({ sanction: 'delay_penalty', replay: false, reason: 'during_rally' })
+    expect(lateRequestOutcome(events, 'away')).toEqual({ sanction: 'delay_penalty', replay: false })
     // the other team still has its warning to come
     expect(lateRequestOutcome(events, 'home').sanction).toBe('delay_warning')
   })

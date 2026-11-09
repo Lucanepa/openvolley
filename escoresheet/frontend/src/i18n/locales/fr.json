@@ -988,14 +988,6 @@
       "recordsPenalty": "Enregistré : pénalité pour retard – point et service pour {{opponent}}.",
       "rule": "FIVB 15.11.1.1 · 16.1 · SSK Q182"
     },
-    "improperReason": {
-      "title": "Pour quoi (facultatif)",
-      "during_rally": "Pendant l’échange ou après le coup de sifflet",
-      "wrong_person": "Demandé par la mauvaise personne",
-      "second_substitution": "Deuxième demande de remplacement",
-      "limit_exhausted": "Trop de temps morts ou de remplacements",
-      "other": "Autre"
-    },
     "decisionTakeBack": {
       "title": "Annulé d’abord",
       "timeout": "Temps mort {{team}}",
@@ -4424,13 +4416,6 @@
       "penalty": "Pénalité",
       "expulsion": "Expulsion",
       "disqualification": "Disqualification"
-    },
-    "sanctionReason": {
-      "during_rally": "Pendant l’échange ou après le coup de sifflet",
-      "wrong_person": "Demandé par la mauvaise personne",
-      "second_substitution": "Deuxième demande de remplacement",
-      "limit_exhausted": "Temps morts ou remplacements épuisés",
-      "illegal_substitution": "Remplacement illégal demandé"
     },
     "target": {
       "player": "Joueur/euse #{{n}}",

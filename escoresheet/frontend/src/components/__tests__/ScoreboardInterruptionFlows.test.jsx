@@ -3,11 +3,13 @@
 // driven with taps at phone width (the phone layout's buttons open the
 // screen's own dialogs, the ones the tablet uses):
 //  - row 10: a late request stopped the rally: "Replay" records the replay
-//    and the team's delay warning (reason during_rally), and requests stay
+//    and the team's delay warning (no reason kept), and requests stay
 //    closed until the replayed rally is completed;
-//  - row 11: the improper request keeps what it was for (payload.reason);
+//  - row 11: the improper request asks no reason and keeps none (the owner,
+//    2026-11-09: "no reason, no need, same for delays");
 //  - row 19: a decision change after a substitution and a time-out takes
-//    them back (not counted) and swaps the point, in one confirmed action.
+//    them back (not counted) and swaps the point, in one confirmed action;
+//    on the phone, as on the tablet, not while the time-out runs.
 // Network is off: no relay socket, no fetch.
 import 'fake-indexeddb/auto'
 import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest'
@@ -137,7 +139,8 @@ describe('Scoreboard: interruption requests on the screen (rows 10, 11, 19)', ()
     const replay = all.filter(e => e.type === 'replay')
     expect(replay).toHaveLength(1)
     const sanction = (await ofType('sanction'))[0]
-    expect(sanction.payload).toMatchObject({ team: 'away', type: 'delay_warning', reason: 'during_rally' })
+    expect(sanction.payload).toMatchObject({ team: 'away', type: 'delay_warning' })
+    expect(sanction.payload).not.toHaveProperty('reason')
     expect(sanction.seq).toBeGreaterThan(replay[0].seq)
     // no point was given
     expect(await ofType('point')).toHaveLength(2)
@@ -173,7 +176,8 @@ describe('Scoreboard: interruption requests on the screen (rows 10, 11, 19)', ()
     await waitFor(async () => expect((await ofType('point')).length).toBe(3))
     expect(await ofType('replay')).toHaveLength(0)
     const penalty = (await ofType('sanction')).at(-1)
-    expect(penalty.payload).toMatchObject({ team: 'away', type: 'delay_penalty', reason: 'during_rally' })
+    expect(penalty.payload).toMatchObject({ team: 'away', type: 'delay_penalty' })
+    expect(penalty.payload).not.toHaveProperty('reason')
     const point = (await ofType('point')).at(-1)
     expect(point.payload).toMatchObject({ team: 'home', penaltySeq: penalty.seq })
     await waitFor(() => expect(view.getByTestId('phone-score-left').textContent).toBe('2'))
@@ -182,7 +186,7 @@ describe('Scoreboard: interruption requests on the screen (rows 10, 11, 19)', ()
     expect(view.queryByTestId('phone-request-block')).toBeNull()
   }, 60000)
 
-  it('row 11: the improper request keeps what it was for; untouched it is "other"', async () => {
+  it('row 11: the improper request asks no reason and keeps none', async () => {
     setViewport(390, 844)
     const matchId = await setUpMatch()
     mount(matchId)
@@ -193,15 +197,16 @@ describe('Scoreboard: interruption requests on the screen (rows 10, 11, 19)', ()
     fireEvent.click(view.getByTestId('phone-action-sanction'))
     await waitFor(() => expect(button('Improper request')).toBeTruthy())
     fireEvent.click(button('Improper request'))
-    const picker = await waitFor(() => screen.getByTestId('improper-reason'))
-    // optional: "Other" is chosen
-    expect(within(picker).getByRole('radio', { name: 'Other' }).getAttribute('aria-checked')).toBe('true')
-    fireEvent.click(within(picker).getByRole('radio', { name: 'Requested by the wrong person' }))
-    await waitFor(() => expect(within(screen.getByTestId('improper-reason')).getByRole('radio', { name: 'Requested by the wrong person' }).getAttribute('aria-checked')).toBe('true'))
+    await waitFor(() => expect(button('Yes')).toBeTruthy())
+    // the question and Yes / No, nothing to pick
+    expect(screen.queryByTestId('improper-reason')).toBeNull()
+    expect(screen.queryAllByRole('radio')).toHaveLength(0)
     await settle()
     fireEvent.click(button('Yes'))
     await waitFor(async () => expect((await ofType('sanction')).length).toBe(1))
-    expect((await ofType('sanction'))[0].payload).toMatchObject({ team: 'home', type: 'improper_request', reason: 'wrong_person' })
+    const sanction = (await ofType('sanction'))[0]
+    expect(sanction.payload).toMatchObject({ team: 'home', type: 'improper_request' })
+    expect(sanction.payload).not.toHaveProperty('reason')
   }, 60000)
 
   it('row 19: a decision change after a substitution and a time-out takes them back and swaps the point', async () => {
@@ -234,6 +239,8 @@ describe('Scoreboard: interruption requests on the screen (rows 10, 11, 19)', ()
     fireEvent.click(button('Confirm time-out'))
     await waitFor(async () => expect((await ofType('timeout')).length).toBe(1))
     await waitFor(() => expect(view.getByRole('button', { name: 'Stop timeout' })).toBeTruthy())
+    // while the time-out runs there is no decision change (the tablet hides it)
+    expect(view.getByTestId('phone-action-decision').disabled).toBe(true)
     await settle()
     fireEvent.click(view.getByRole('button', { name: 'Stop timeout' }))
     await waitFor(() => expect(view.queryByTestId('phone-countdown')).toBeNull())

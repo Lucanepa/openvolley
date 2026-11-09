@@ -982,14 +982,6 @@
       "recordsPenalty": "Erfasst: Verzögerungsstrafe – Punkt und Aufschlag für {{opponent}}.",
       "rule": "FIVB 15.11.1.1 · 16.1 · SSK Q182"
     },
-    "improperReason": {
-      "title": "Wofür (freiwillig)",
-      "during_rally": "Während des Ballwechsels oder nach dem Pfiff",
-      "wrong_person": "Von der falschen Person beantragt",
-      "second_substitution": "Zweiter Auswechslungsantrag",
-      "limit_exhausted": "Zu viele Timeouts oder Auswechslungen",
-      "other": "Anderes"
-    },
     "decisionTakeBack": {
       "title": "Wird zuerst zurückgenommen",
       "timeout": "Timeout {{team}}",
@@ -4413,13 +4405,6 @@
       "penalty": "Bestrafung",
       "expulsion": "Hinausstellung",
       "disqualification": "Disqualifikation"
-    },
-    "sanctionReason": {
-      "during_rally": "Während des Ballwechsels oder nach dem Pfiff",
-      "wrong_person": "Von der falschen Person beantragt",
-      "second_substitution": "Zweiter Auswechslungsantrag",
-      "limit_exhausted": "Timeouts oder Auswechslungen aufgebraucht",
-      "illegal_substitution": "Unerlaubte Auswechslung beantragt"
     },
     "target": {
       "player": "Spieler/in #{{n}}",
