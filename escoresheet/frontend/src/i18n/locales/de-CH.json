@@ -2649,6 +2649,8 @@
       "a_view": "Si drüehed s Fäld passend zu dim Standort: 1 REF für de 1. Schiri uf em Stuehl, 2 REF für de 2. Schiri uf de Siite vom Schriiber. Spielstand und Date bliibed gliich.",
       "q_shows": "Was zeigt s Schiri-Tablet?",
       "a_shows": "Spielstand und Sätz, s ufschlagend Team, beidi Ufstellige mit de Rotation, Timeouts und Wächsel, Sanktione und di letscht Aktion. Timeouts und Pause zeiged ihre Countdown.",
+      "q_recorded": "Was isch s Fänschter «Vom Schriiber erfasst»?",
+      "a_recorded": "Wänn de Schriiber es Timeout, en Wächsel oder e Sanktion erfasst, zeigt jedes Schiri-Tablet das imene Fänschter aa, mit Team, Satz und Spielstand. Tipp uf «OK», oder s gaht nach 10 Sekunde sälber zue. Was erfasst wird, wärend s offe isch, chunnt dezue. Wärend emene Timeout zeigt s de Countdown, und dä wandert bim Zuemache ufs Fäld.",
       "q_offline": "Es staht «Offline: kei Verbindig zum Matchblatt»?",
       "a_offline": "D Verbindig zum Schriiber isch underbroche, de Spielstand cha veraltet sii. S Tablet verbindet sich sälber wieder, sobald s Netz zrugg isch. Wänn nöd, tipp im Menü uf «Aktualisiere».",
       "q_screen": "Wie bliibt de Bildschirm aa?",
