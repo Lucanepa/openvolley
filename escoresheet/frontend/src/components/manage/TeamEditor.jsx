@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, FileUp, Plus, Trash2, X } from 'lucide-react'
+import { ArrowLeft, FileUp, Plus, Trash2, UserPlus, X } from 'lucide-react'
 import { savedTeamsApi, errorKeyOf } from '../../lib/accountApi'
 import { apiFrom } from '../../lib/apiClient'
 import { selectAll } from '../../lib/selectAll'
 import { STAFF_ROLES, validateSavedRoster, MAX_PLAYERS, MAX_STAFF, sportOf } from '../../domain/savedTeams'
 import { shirtNumberDigits } from '../../domain/roster'
-import { mergeImportedRoster, parsedPdfToRoster } from '../../domain/teamRosters'
+import { addClubPlayersToSquad, clubPersonToPlayer, clubPlayersForGender, mergeImportedRoster, parsedPdfToRoster, playerFinder, wrongGenderIndexes } from '../../domain/teamRosters'
+import ClubPlayerPickerModal from '../ClubPlayerPickerModal'
 import { InlineError } from './common'
 import { Button, DateField, Field, Input, Select, Checkbox, Switch, SectionHeader, EmptyInset, IconButton, confirmDialog, toast, cn } from '../../ui'
 
@@ -173,11 +174,15 @@ const HEAD = 'hidden sm:grid text-[11px] font-bold uppercase tracking-wide text-
  * the roster instead (PUT /api/team/:id/squad), `fixedFields` leaves out the
  * team's fields and Delete (its name, club and VolleyManager name are the
  * club's), `pdfImport` adds Import Einsatzliste to the players.
+ * `clubPlayers` (db/024, GET /api/team/:id/club-players: { players, gender })
+ * adds "Add from club", and Save refuses a player of the club's list with the
+ * other gender than the team's (the server too: OV_WRONG_GENDER).
  */
-export default function TeamEditor({ team, competition, online, onBack, onChanged, onDeleted, saveRoster: saveRosterWith = null, fixedFields = false, pdfImport = false }) {
+export default function TeamEditor({ team, competition, online, onBack, onChanged, onDeleted, saveRoster: saveRosterWith = null, fixedFields = false, pdfImport = false, clubPlayers = null }) {
   const { t } = useTranslation()
   const pdfInput = useRef(null)
   const [importing, setImporting] = useState(false)
+  const [clubPicker, setClubPicker] = useState(false)
   const beach = sportOf(competition) === 'beach'
   const [fields, setFields] = useState(() => ({
     name: team.name || '',
@@ -279,6 +284,12 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
     const ordered = beach ? players : sortPlayersByNumber(players)
     const body = beach ? draftToBeachRosterBody(slots, coach) : draftToRosterBody(ordered, staff)
     const problems = validateSavedRoster(body, { sport: beach ? 'beach' : 'indoor' })
+    // db/024: a player can't play in the wrong gender (the server checks the same)
+    if (!beach && clubPlayers) {
+      for (const i of wrongGenderIndexes(body.players, clubPlayers.players, clubPlayers.gender)) {
+        problems.push({ list: 'players', index: i, key: 'manage.licences.wrongGender', params: {} })
+      }
+    }
     if (problems.length) {
       const map = {}
       for (const pr of problems) {
@@ -297,6 +308,10 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
     const res = saveRosterWith ? await saveRosterWith(body) : await savedTeamsApi.putRoster(team.id, body)
     setSavingRoster(false)
     if (res.error) {
+      // the server's gender check names the player by its index in the body
+      if (res.error.code === 'OV_WRONG_GENDER' && Number.isInteger(res.error.index) && !beach) {
+        setRowErrors({ [`players:${players.indexOf(ordered[res.error.index])}`]: t(errorKeyOf(res.error)) })
+      }
       setRosterError(res.error.code === 'OV_INVALID_REQUEST' && res.error.details ? `${t('manage.errors.generic')} (${res.error.details})` : t(errorKeyOf(res.error)))
       return
     }
@@ -358,6 +373,19 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
   }
 
   const listId = useMemo(() => `svrz-names-${team.id}`, [team.id])
+
+  // db/024: "Add from club": the club's players of the team's gender, merged
+  // as an import is (the same licence, else name: nobody twice)
+  const offered = useMemo(() => clubPersonOffer(clubPlayers), [clubPlayers])
+  const finder = useMemo(() => playerFinder(players), [players])
+  const addFromClub = (chosen) => {
+    setClubPicker(false)
+    const merged = addClubPlayersToSquad(players, staff, chosen, toPlayerDraft, toStaffDraft)
+    setPlayers(merged.players)
+    setRosterError('')
+    setRowErrors({})
+    toast.success(t('clubPlayers.added', { count: merged.added }))
+  }
 
   return (
     <div className="space-y-5">
@@ -433,6 +461,9 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
                   <input ref={pdfInput} type="file" accept=".pdf,application/pdf" className="hidden" data-testid="squad-pdf-input" onChange={e => importPdf(e.target.files?.[0])} />
                   <Button variant="ghost" size="sm" icon={FileUp} loading={importing} onClick={() => pdfInput.current?.click()} data-testid="squad-pdf-import">{t('manage.myTeams.importPdf')}</Button>
                 </>
+              )}
+              {clubPlayers && (
+                <Button variant="ghost" size="sm" icon={UserPlus} onClick={() => setClubPicker(true)} data-testid="squad-add-from-club">{t('clubPlayers.add')}</Button>
               )}
               <Button variant="ghost" size="sm" icon={Plus} disabled={players.length >= MAX_PLAYERS} onClick={() => setPlayers(list => [...list, toPlayerDraft(null)])}>{t('savedTeams.addPlayer')}</Button>
             </div>
@@ -553,8 +584,25 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
         <Button variant="positive" onClick={saveRoster} loading={savingRoster} disabled={!online || savingRoster} data-testid="save-roster">{t('savedTeams.saveRoster')}</Button>
         <InlineError error={rosterError} />
       </div>
+      <ClubPlayerPickerModal
+        open={clubPicker}
+        onClose={() => setClubPicker(false)}
+        onPick={addFromClub}
+        players={offered.players}
+        gender={offered.gender}
+        hiddenCount={offered.hidden}
+        isTaken={(c) => finder.find(clubPersonToPlayer(c)) !== undefined}
+      />
     </div>
   )
+}
+
+/** The club's players offered to a team: { players, gender, hidden } (the other gender is left out). */
+export function clubPersonOffer(clubPlayers) {
+  const all = clubPlayers?.players || []
+  const gender = clubPlayers?.gender ?? null
+  const players = clubPlayersForGender(all, gender)
+  return { players, gender, hidden: all.length - players.length }
 }
 
 /**

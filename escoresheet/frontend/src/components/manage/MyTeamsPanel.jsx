@@ -1,11 +1,12 @@
 import { useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { FileUp, PenLine, Trash2 } from 'lucide-react'
+import { FileUp, PenLine, Trash2, UserPlus } from 'lucide-react'
 import { teamApi } from '../../lib/accountApi'
-import { gameRosterBody, gameRosterDraft, parsedPdfToRoster, GAME_ROSTER_MAX_PLAYERS } from '../../domain/teamRosters'
+import { addClubPlayersToGameDraft, clubPersonToPlayer, gameRosterBody, gameRosterDraft, parsedPdfToRoster, playerFinder, wrongGenderIndexes, GAME_ROSTER_MAX_PLAYERS } from '../../domain/teamRosters'
 import { shirtNumberDigits } from '../../domain/roster'
-import TeamEditor from './TeamEditor'
+import TeamEditor, { clubPersonOffer } from './TeamEditor'
+import ClubPlayerPickerModal from '../ClubPlayerPickerModal'
 import SignaturePad from '../SignaturePad'
 import KitModal from './KitModal'
 import { usePanelData, useOnline, OfflineBanner, PanelHead, InlineError, useErrorText } from './common'
@@ -53,6 +54,10 @@ function TeamSections({ team }) {
   const errorText = useErrorText()
   const squad = usePanelData(() => teamApi.squad(team.id), [team.id], { enabled: online })
   const saved = squad.data?.squad || null
+  // db/024: the players list of the club ("Add from club") and the team's
+  // gender; a server or club without it simply offers nothing
+  const club = usePanelData(() => teamApi.clubPlayers(team.id), [team.id], { enabled: online })
+  const clubPlayers = club.data && Array.isArray(club.data.players) ? { players: club.data.players, gender: club.data.gender ?? null } : null
   // TeamEditor's shape for a team without a saved team yet (the first save makes it)
   const editorTeam = useMemo(() => saved || { id: `new-${team.id}`, name: team.name, players: [], staff: [] }, [saved, team.id, team.name])
   const saveSquad = async (body) => {
@@ -81,16 +86,16 @@ function TeamSections({ team }) {
         {squad.loading && !squad.data ? (
           <SkeletonRows rows={3} pill={false} />
         ) : squad.data && (
-          <TeamEditor key={editorTeam.id} team={editorTeam} competition={null} online={online} fixedFields pdfImport saveRoster={saveSquad} />
+          <TeamEditor key={editorTeam.id} team={editorTeam} competition={null} online={online} fixedFields pdfImport saveRoster={saveSquad} clubPlayers={clubPlayers} />
         )}
       </section>
 
-      <TeamGames team={team} squad={saved} />
+      <TeamGames team={team} squad={saved} clubPlayers={clubPlayers} />
     </>
   )
 }
 
-function TeamGames({ team, squad }) {
+function TeamGames({ team, squad, clubPlayers }) {
   const { t } = useTranslation()
   const online = useOnline()
   const errorText = useErrorText()
@@ -147,6 +152,7 @@ function TeamGames({ team, squad }) {
           team={team}
           game={open}
           squad={squad}
+          clubPlayers={clubPlayers}
           onClose={() => setOpen(null)}
           onSaved={() => { setOpen(null); reload({ quiet: true }) }}
         />
@@ -163,7 +169,7 @@ function TeamGames({ team, squad }) {
  * after signing asks for it again. A roster the scorer accepted is gone from
  * the server: a new one can be sent.
  */
-function GameRosterDialog({ team, game, squad, onClose, onSaved }) {
+function GameRosterDialog({ team, game, squad, clubPlayers, onClose, onSaved }) {
   const { t } = useTranslation()
   const online = useOnline()
   const errorText = useErrorText()
@@ -233,10 +239,30 @@ function GameRosterDialog({ team, game, squad, onClose, onSaved }) {
     }
   }
 
+  // db/024: "Add from club": ticked in the draft, added when not offered yet
+  const [clubPicker, setClubPicker] = useState(false)
+  const offered = useMemo(() => clubPersonOffer(clubPlayers), [clubPlayers])
+  const finder = useMemo(() => playerFinder(shown?.players || []), [shown])
+  const addFromClub = (chosen) => {
+    setClubPicker(false)
+    if (!shown) return
+    const r = addClubPlayersToGameDraft(shown, chosen)
+    change(() => r.draft)
+    toast.success(t('clubPlayers.ticked', { count: r.added + r.ticked }))
+  }
+  const named = (p) => (p ? `${p.first_name} ${p.last_name}`.trim() : '')
+  const wrongGender = (index) => `${t('manage.licences.wrongGender')} (${named(body?.players[index])})`
+
   const save = async () => {
     if (busy || !body) return
     if (problems.length) {
       setSaveError(t(problems[0].key, problems[0].params))
+      return
+    }
+    // a player can't play in the wrong gender (the server checks the same)
+    const wrong = clubPlayers ? wrongGenderIndexes(body.players, clubPlayers.players, clubPlayers.gender) : []
+    if (wrong.length) {
+      setSaveError(wrongGender(wrong[0]))
       return
     }
     setBusy(true)
@@ -247,7 +273,9 @@ function GameRosterDialog({ team, game, squad, onClose, onSaved }) {
     })
     setBusy(false)
     if (res.error) {
-      setSaveError(res.error.code === 'OV_INVALID_REQUEST' && res.error.details ? `${t('manage.errors.generic')} (${res.error.details})` : errorText(res.error))
+      setSaveError(res.error.code === 'OV_WRONG_GENDER' && Number.isInteger(res.error.index)
+        ? wrongGender(res.error.index)
+        : res.error.code === 'OV_INVALID_REQUEST' && res.error.details ? `${t('manage.errors.generic')} (${res.error.details})` : errorText(res.error))
       return
     }
     toast.success(t('manage.myTeams.saved'))
@@ -333,6 +361,9 @@ function GameRosterDialog({ team, game, squad, onClose, onSaved }) {
                 action={(
                   <>
                     <input ref={pdfInput} type="file" accept=".pdf,application/pdf" className="hidden" onChange={(e) => importPdf(e.target.files?.[0])} data-testid="game-pdf-input" />
+                    {clubPlayers && (
+                      <Button variant="ghost" size="sm" icon={UserPlus} onClick={() => setClubPicker(true)} data-testid="game-add-from-club">{t('clubPlayers.add')}</Button>
+                    )}
                     <Button variant="ghost" size="sm" icon={FileUp} loading={importing} onClick={() => pdfInput.current?.click()}>{t('manage.myTeams.importPdf')}</Button>
                   </>
                 )}
@@ -395,6 +426,19 @@ function GameRosterDialog({ team, game, squad, onClose, onSaved }) {
           )}
         </div>
       </KitModal>
+      <ClubPlayerPickerModal
+        open={clubPicker}
+        onClose={() => setClubPicker(false)}
+        onPick={addFromClub}
+        players={offered.players}
+        gender={offered.gender}
+        hiddenCount={offered.hidden}
+        zIndex={2050}
+        isTaken={(c) => {
+          const i = finder.find(clubPersonToPlayer(c))
+          return i !== undefined && !!shown?.players[i]?.picked
+        }}
+      />
       {/* in a portal: the app's pad overlay renders in place, and inside the
           console it would sit under the dialog */}
       {signing && createPortal(<SignaturePad

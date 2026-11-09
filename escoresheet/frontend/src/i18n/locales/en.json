@@ -3133,7 +3133,8 @@
         "settings_final_email": "Final scoresheet email switched",
         "team_managers": "Team manager changed",
         "team_squad": "Team players saved",
-        "team_roster": "Game roster sent"
+        "team_roster": "Game roster sent",
+        "club_licences": "Licence list uploaded"
       }
     },
     "approvals": {
@@ -3389,6 +3390,58 @@
       "inviteText_other": "{{team}} on OpenVolley: open this link and sign in or create an account. Then you keep the team's players up to date and send the roster before each game. The link works for {{count}} people, until {{date}}.",
       "removeTitle": "Take {{name}} off the team?",
       "removeBody": "They can no longer manage {{team}}. Their account stays."
+    },
+    "licences": {
+      "title": "Licences",
+      "hint": "Upload the lists of VolleyManager's club administration (the Excel export). The file is read on this device: only licence number, last name, first name, date of birth and gender are sent and kept. Each upload replaces that list.",
+      "list": "List",
+      "lists": {
+        "players": "Players",
+        "scorers": "Scorers",
+        "coaches": "Coaches"
+      },
+      "choose": "Choose Excel file",
+      "empty": "No people found in this file.",
+      "tooMany": "At most {{max}} people per list.",
+      "tooBig": "This file is too big for a club list.",
+      "notXlsx": "This file could not be read. Is it an .xlsx export from VolleyManager?",
+      "noColumns": "This file has no column for: {{missing}}. Is it the club administration export from VolleyManager?",
+      "fields": {
+        "sv_number": "licence number",
+        "last_name": "last name",
+        "first_name": "first name"
+      },
+      "previewCount_one": "{{count}} person read; only licence number, name, date of birth and gender are kept.",
+      "previewCount_other": "{{count}} people read; only licence number, name, date of birth and gender are kept.",
+      "previewList": "Saved as the list: {{list}}",
+      "previewSkipped_one": "{{count}} row without a licence number or last name is left out.",
+      "previewSkipped_other": "{{count}} rows without a licence number or last name are left out.",
+      "previewReplaces_one": "It replaces the {{count}} person of the list now.",
+      "previewReplaces_other": "It replaces the {{count}} people of the list now.",
+      "save": "Save list",
+      "saved_one": "{{list}}: {{count}} person saved",
+      "saved_other": "{{list}}: {{count}} people saved",
+      "deleteTitle": "Delete the list {{list}}?",
+      "deleteBody": "Its people are deleted on the server. Scoring tablets drop them the next time they are online.",
+      "delete": "Delete list",
+      "deleted": "List deleted",
+      "people_one": "{{count}} person",
+      "people_other": "{{count}} people",
+      "updated": "Updated {{when}} by {{name}}",
+      "notUploaded": "Not uploaded yet",
+      "search": "Search by name or licence",
+      "allLists": "All lists",
+      "gender": "Gender",
+      "allGenders": "All genders",
+      "women": "Women",
+      "men": "Men",
+      "noGender": "No gender",
+      "woman": "Woman",
+      "man": "Man",
+      "shown": "{{count}} of {{total}}",
+      "noMatch": "Nobody matches the filter.",
+      "showMore": "Show {{count}} more",
+      "wrongGender": "A player is registered with the club for the other gender and cannot play in this team."
     }
   },
   "playerPool": {
@@ -4834,5 +4887,27 @@
       "coach": "Signed ahead by the coach",
       "captain": "Signed ahead by the captain"
     }
+  },
+  "clubPlayers": {
+    "add": "Add from club",
+    "title": "Add players from the club",
+    "titleTeam": "Players of the club for {{team}}",
+    "search": "Search by name or licence",
+    "none": "No players in the club's licence list yet. A club manager uploads it under My club.",
+    "noMatch": "No player matches the search.",
+    "onlyMen": "Men only: players registered as women are not offered.",
+    "onlyWomen": "Women only: players registered as men are not offered.",
+    "licence": "Licence {{number}}",
+    "inRoster": "In the roster",
+    "addCount_one": "Add {{count}} player",
+    "addCount_other": "Add {{count}} players",
+    "added_one": "{{count}} player added",
+    "added_other": "{{count}} players added",
+    "ticked_one": "{{count}} player ticked",
+    "ticked_other": "{{count}} players ticked",
+    "warningMen_one": "{{names}} is registered with the club as a woman, and this is a men's game. Check it before the coin toss.",
+    "warningMen_other": "{{names}} are registered with the club as women, and this is a men's game. Check it before the coin toss.",
+    "warningWomen_one": "{{names}} is registered with the club as a man, and this is a women's game. Check it before the coin toss.",
+    "warningWomen_other": "{{names}} are registered with the club as men, and this is a women's game. Check it before the coin toss."
   }
 }
