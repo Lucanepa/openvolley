@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-**OpenVolley und OpenBeach** · Version 1.9 · Stand: 9. November 2026
+**OpenVolley und OpenBeach** · Version 1.10 · Stand: 9. November 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
 Massgebend ist die englische Fassung.
@@ -466,14 +466,30 @@ Ein Kader, den niemand übernimmt, wird 14 Tage nach dem Spiel gelöscht. Auf
 dem Gerät wird die Kopie gelöscht, sobald der Server von der Übernahme weiss,
 beim Abmelden und spätestens 36 Stunden nach dem Spiel.
 
+**Lizenzlisten der Vereine (OpenVolley):** Die Vereinsverantwortlichen
+können die Listen der Spielerinnen und Spieler, Schreiberinnen und Schreiber
+sowie Trainerinnen und Trainer ihres Vereins aus der Vereinsadministration von
+VolleyManager hochladen. Die Datei wird im Browser gelesen: Gespeichert werden
+nur Lizenznummer, Nachname, Vorname, Geburtsdatum und Geschlecht jeder Person;
+nichts anderes aus der Datei wird an den Server geschickt. Die Listen sind für
+die Vereinsverantwortlichen und die Administration sichtbar. Die Spielerliste
+sehen auch die Teamverantwortlichen des Vereins für ihre Kader, und sie wird
+auf die Geräte der Schreiberinnen und Schreiber des Vereins geladen, damit die
+Spielvorbereitung ohne Internet Spielerinnen und Spieler hinzufügen kann. Das
+Geschlecht dient dazu, dass niemand in ein Team des anderen Geschlechts
+eingetragen wird. Jeder Upload ersetzt diese Liste; mit dem Verein werden die
+Listen gelöscht. Auf dem Gerät ersetzt jeder Download die Kopie, beim Abmelden
+wird sie gelöscht.
+
 **Beachturniere:** Titel, Ort, Daten, Teams mit Vor- und Nachname,
 Lizenznummer und Land der Spielerinnen und Spieler, Spielplan, Resultate,
 Namen der Schiedsrichter und Schreiber. Ist ein Turnier als **öffentlich**
 markiert, zeigt die öffentliche Turnierseite Teams, Namen und Länder, nie
 Lizenznummern oder Geburtsdaten.
 
-**Zweck:** Kaderlisten wiederverwenden, den Kader eines Spiels im Voraus vorbereiten, Turniere organisieren, Spielerinnen
-und Spieler beim Import anhand der Lizenznummer zuordnen.
+**Zweck:** Kaderlisten wiederverwenden, den Kader eines Spiels im Voraus vorbereiten, Spielerinnen und Spieler
+des Vereins zu einem Kader hinzufügen und ihr Geschlecht mit dem des Teams vergleichen, Turniere
+organisieren, Spielerinnen und Spieler beim Import anhand der Lizenznummer zuordnen.
 
 Diese Daten bleiben gespeichert, bis eine Managerin oder ein Manager sie
 löscht, auch wenn das Konto, das sie angelegt hat, gelöscht wird.
@@ -666,6 +682,7 @@ Anfrage erhalten Sie eine Kopie dieser Garantien.
 | Vereinsverantwortliche | Bis die Administration sie entfernt, der Verein gelöscht wird oder Sie Ihr Konto löschen |
 | Teamverantwortliche | Bis Vereinsverantwortliche oder die Administration sie entfernen, das Team oder der Verein gelöscht wird oder Sie Ihr Konto löschen |
 | Im Voraus geschickter Kader (Spielerinnen und Spieler, Betreuungspersonen, Unterschriften) | Bis eine Schreiberin oder ein Schreiber ihn übernimmt, spätestens 14 Tage nach dem Spiel; der Vermerk der Übernahme 14 Tage nach dem Spiel |
+| Lizenzlisten eines Vereins (Lizenznummer, Namen, Geburtsdatum, Geschlecht) | Bis zum nächsten Upload dieser Liste, ihrer Löschung durch Vereinsverantwortliche oder der Löschung des Vereins; auf einem Gerät bis zum nächsten Download oder Abmelden |
 | E-Mail-Adresse einer Schiedsrichterin oder eines Schiedsrichters beim Spiel | Mit dem Spiel, als Teil des Spielberichts |
 | Versand des fertigen Spielberichts (Zeitpunkt, Anzahl Empfänger, ohne Adressen) | Mit dem Spiel |
 | Spielbericht eines Testspiels per E-Mail | Auf dem Server nicht gespeichert |
