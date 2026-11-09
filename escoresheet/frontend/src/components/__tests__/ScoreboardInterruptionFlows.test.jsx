@@ -8,7 +8,8 @@
 //  - row 11: the improper request asks no reason and keeps none (the owner,
 //    2026-11-09: "no reason, no need, same for delays");
 //  - row 19: a decision change after a substitution and a time-out takes
-//    them back (not counted) and swaps the point, in one confirmed action.
+//    them back (not counted) and swaps the point, in one confirmed action;
+//    on the phone, as on the tablet, not while the time-out runs.
 // Network is off: no relay socket, no fetch.
 import 'fake-indexeddb/auto'
 import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest'
@@ -238,6 +239,8 @@ describe('Scoreboard: interruption requests on the screen (rows 10, 11, 19)', ()
     fireEvent.click(button('Confirm time-out'))
     await waitFor(async () => expect((await ofType('timeout')).length).toBe(1))
     await waitFor(() => expect(view.getByRole('button', { name: 'Stop timeout' })).toBeTruthy())
+    // while the time-out runs there is no decision change (the tablet hides it)
+    expect(view.getByTestId('phone-action-decision').disabled).toBe(true)
     await settle()
     fireEvent.click(view.getByRole('button', { name: 'Stop timeout' }))
     await waitFor(() => expect(view.queryByTestId('phone-countdown')).toBeNull())
