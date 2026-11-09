@@ -4700,38 +4700,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             {t('rosterSetup.signaturesDescription', 'Optional: Coach and captain can sign the roster before the coin toss.')}
           </p>
           <div className="flex flex-wrap gap-4 stack:flex-col">
-            {/* Coach Signature */}
-            <div className="min-w-[150px] flex-1">
-              <div className="mb-1.5 text-xs font-medium text-stone-600">
-                {t('rosterSetup.coachSignature', 'Coach signature')}
-              </div>
-              <div
-                onClick={() => setOpenSignature('home-coach')}
-                className={cn(
-                  'flex h-20 w-full cursor-pointer items-center justify-center overflow-hidden rounded-xl border-2 transition-colors',
-                  homeCoachSignature ? 'border-emerald-400 bg-white' : 'border-dashed border-stone-300 bg-stone-50 hover:bg-stone-100'
-                )}
-              >
-                {homeCoachSignature ? (
-                  <img src={homeCoachSignature} alt={t('matchSetup.coachSignature')} className="ov-ink" style={{ maxWidth: '100%', maxHeight: '100%' }} />
-                ) : (
-                  <span className="text-xs text-stone-500">
-                    {t('rosterSetup.tapToSign', 'Tap to sign')}
-                  </span>
-                )}
-              </div>
-              {homeCoachSignature && (
-                <Button
-                  variant="danger-outline"
-                  size="sm"
-                  className="mt-1.5"
-                  onClick={(e) => { e.stopPropagation(); setHomeCoachSignature(null); }}
-                >
-                  {t('common.clear', 'Clear')}
-                </Button>
-              )}
-            </div>
-
             {/* Captain Signature */}
             <div className="min-w-[150px] flex-1">
               <div className="mb-1.5 text-xs font-medium text-stone-600">
@@ -4758,6 +4726,38 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   size="sm"
                   className="mt-1.5"
                   onClick={(e) => { e.stopPropagation(); setHomeCaptainSignature(null); }}
+                >
+                  {t('common.clear', 'Clear')}
+                </Button>
+              )}
+            </div>
+
+            {/* Coach Signature */}
+            <div className="min-w-[150px] flex-1">
+              <div className="mb-1.5 text-xs font-medium text-stone-600">
+                {t('rosterSetup.coachSignature', 'Coach signature')}
+              </div>
+              <div
+                onClick={() => setOpenSignature('home-coach')}
+                className={cn(
+                  'flex h-20 w-full cursor-pointer items-center justify-center overflow-hidden rounded-xl border-2 transition-colors',
+                  homeCoachSignature ? 'border-emerald-400 bg-white' : 'border-dashed border-stone-300 bg-stone-50 hover:bg-stone-100'
+                )}
+              >
+                {homeCoachSignature ? (
+                  <img src={homeCoachSignature} alt={t('matchSetup.coachSignature')} className="ov-ink" style={{ maxWidth: '100%', maxHeight: '100%' }} />
+                ) : (
+                  <span className="text-xs text-stone-500">
+                    {t('rosterSetup.tapToSign', 'Tap to sign')}
+                  </span>
+                )}
+              </div>
+              {homeCoachSignature && (
+                <Button
+                  variant="danger-outline"
+                  size="sm"
+                  className="mt-1.5"
+                  onClick={(e) => { e.stopPropagation(); setHomeCoachSignature(null); }}
                 >
                   {t('common.clear', 'Clear')}
                 </Button>
@@ -5871,38 +5871,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             {t('rosterSetup.signaturesDescription', 'Optional: Coach and captain can sign the roster before the coin toss.')}
           </p>
           <div className="flex flex-wrap gap-4 stack:flex-col">
-            {/* Coach Signature */}
-            <div className="min-w-[150px] flex-1">
-              <div className="mb-1.5 text-xs font-medium text-stone-600">
-                {t('rosterSetup.coachSignature', 'Coach signature')}
-              </div>
-              <div
-                onClick={() => setOpenSignature('away-coach')}
-                className={cn(
-                  'flex h-20 w-full cursor-pointer items-center justify-center overflow-hidden rounded-xl border-2 transition-colors',
-                  awayCoachSignature ? 'border-emerald-400 bg-white' : 'border-dashed border-stone-300 bg-stone-50 hover:bg-stone-100'
-                )}
-              >
-                {awayCoachSignature ? (
-                  <img src={awayCoachSignature} alt={t('matchSetup.coachSignature')} className="ov-ink" style={{ maxWidth: '100%', maxHeight: '100%' }} />
-                ) : (
-                  <span className="text-xs text-stone-500">
-                    {t('rosterSetup.tapToSign', 'Tap to sign')}
-                  </span>
-                )}
-              </div>
-              {awayCoachSignature && (
-                <Button
-                  variant="danger-outline"
-                  size="sm"
-                  className="mt-1.5"
-                  onClick={(e) => { e.stopPropagation(); setAwayCoachSignature(null); }}
-                >
-                  {t('common.clear', 'Clear')}
-                </Button>
-              )}
-            </div>
-
             {/* Captain Signature */}
             <div className="min-w-[150px] flex-1">
               <div className="mb-1.5 text-xs font-medium text-stone-600">
@@ -5929,6 +5897,38 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   size="sm"
                   className="mt-1.5"
                   onClick={(e) => { e.stopPropagation(); setAwayCaptainSignature(null); }}
+                >
+                  {t('common.clear', 'Clear')}
+                </Button>
+              )}
+            </div>
+
+            {/* Coach Signature */}
+            <div className="min-w-[150px] flex-1">
+              <div className="mb-1.5 text-xs font-medium text-stone-600">
+                {t('rosterSetup.coachSignature', 'Coach signature')}
+              </div>
+              <div
+                onClick={() => setOpenSignature('away-coach')}
+                className={cn(
+                  'flex h-20 w-full cursor-pointer items-center justify-center overflow-hidden rounded-xl border-2 transition-colors',
+                  awayCoachSignature ? 'border-emerald-400 bg-white' : 'border-dashed border-stone-300 bg-stone-50 hover:bg-stone-100'
+                )}
+              >
+                {awayCoachSignature ? (
+                  <img src={awayCoachSignature} alt={t('matchSetup.coachSignature')} className="ov-ink" style={{ maxWidth: '100%', maxHeight: '100%' }} />
+                ) : (
+                  <span className="text-xs text-stone-500">
+                    {t('rosterSetup.tapToSign', 'Tap to sign')}
+                  </span>
+                )}
+              </div>
+              {awayCoachSignature && (
+                <Button
+                  variant="danger-outline"
+                  size="sm"
+                  className="mt-1.5"
+                  onClick={(e) => { e.stopPropagation(); setAwayCoachSignature(null); }}
                 >
                   {t('common.clear', 'Clear')}
                 </Button>

@@ -1531,20 +1531,20 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                   <Button
                     variant="secondary"
                     size="xl"
-                    onClick={() => { setOpenSignature(teamA === 'home' ? 'home-coach' : 'away-coach'); setSignatureMenuA(false) }}
-                    className={teamACoachSig ? SIGNED_CLASS : undefined}
-                    style={{ fontSize: sizes.actionButtonFont, padding: sizes.actionButtonPadding, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight }}
-                  >
-                    {t('coinToss.coach')} {teamACoachSig ? '✓' : ''}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="xl"
                     onClick={() => { setOpenSignature(teamA === 'home' ? 'home-captain' : 'away-captain'); setSignatureMenuA(false) }}
                     className={teamACaptainSig ? SIGNED_CLASS : undefined}
                     style={{ fontSize: sizes.actionButtonFont, padding: sizes.actionButtonPadding, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight }}
                   >
                     {t('coinToss.captain')} {teamACaptainSig ? '✓' : ''}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="xl"
+                    onClick={() => { setOpenSignature(teamA === 'home' ? 'home-coach' : 'away-coach'); setSignatureMenuA(false) }}
+                    className={teamACoachSig ? SIGNED_CLASS : undefined}
+                    style={{ fontSize: sizes.actionButtonFont, padding: sizes.actionButtonPadding, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight }}
+                  >
+                    {t('coinToss.coach')} {teamACoachSig ? '✓' : ''}
                   </Button>
                 </div>
               )}
@@ -1627,20 +1627,20 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                   <Button
                     variant="secondary"
                     size="xl"
-                    onClick={() => { setOpenSignature(teamB === 'home' ? 'home-coach' : 'away-coach'); setSignatureMenuB(false) }}
-                    className={teamBCoachSig ? SIGNED_CLASS : undefined}
-                    style={{ fontSize: sizes.actionButtonFont, padding: sizes.actionButtonPadding, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight }}
-                  >
-                    {t('coinToss.coach')} {teamBCoachSig ? '✓' : ''}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="xl"
                     onClick={() => { setOpenSignature(teamB === 'home' ? 'home-captain' : 'away-captain'); setSignatureMenuB(false) }}
                     className={teamBCaptainSig ? SIGNED_CLASS : undefined}
                     style={{ fontSize: sizes.actionButtonFont, padding: sizes.actionButtonPadding, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight }}
                   >
                     {t('coinToss.captain')} {teamBCaptainSig ? '✓' : ''}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="xl"
+                    onClick={() => { setOpenSignature(teamB === 'home' ? 'home-coach' : 'away-coach'); setSignatureMenuB(false) }}
+                    className={teamBCoachSig ? SIGNED_CLASS : undefined}
+                    style={{ fontSize: sizes.actionButtonFont, padding: sizes.actionButtonPadding, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight }}
+                  >
+                    {t('coinToss.coach')} {teamBCoachSig ? '✓' : ''}
                   </Button>
                 </div>
               )}
@@ -2116,20 +2116,20 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                   <Button
                     variant="secondary"
                     size="xl"
-                    className={coachSig ? SIGNED_CLASS : undefined}
-                    onClick={() => setRosterModalSignature('coach')}
-                    style={{ flex: 1, minWidth: '120px' }}
-                  >
-                    {t('coinToss.coach')} {coachSig ? '✓' : ''}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="xl"
                     className={captainSig ? SIGNED_CLASS : undefined}
                     onClick={() => setRosterModalSignature('captain')}
                     style={{ flex: 1, minWidth: '120px' }}
                   >
                     {t('coinToss.captain')} {captainSig ? '✓' : ''}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="xl"
+                    className={coachSig ? SIGNED_CLASS : undefined}
+                    onClick={() => setRosterModalSignature('coach')}
+                    style={{ flex: 1, minWidth: '120px' }}
+                  >
+                    {t('coinToss.coach')} {coachSig ? '✓' : ''}
                   </Button>
                 </div>
               </div>

@@ -387,8 +387,8 @@ function GameRosterDialog({ team, game, squad, onClose, onSaved }) {
               <p className="text-xs text-stone-500">{t('manage.myTeams.signHint')}</p>
               {staleSigs && <div data-testid="game-sig-stale"><Notice tone="warning">{t('manage.myTeams.sig.stale')}</Notice></div>}
               <ul className="divide-y divide-stone-200/70 overflow-hidden rounded-xl border border-stone-200/70 bg-white">
-                {sigRow('coach', coach, 'manage.myTeams.sig.noCoach')}
                 {sigRow('captain', captain, 'manage.myTeams.sig.noCaptain')}
+                {sigRow('coach', coach, 'manage.myTeams.sig.noCoach')}
               </ul>
               <InlineError error={saveError} />
             </>
