@@ -1,8 +1,8 @@
 // @vitest-environment node
 /**
- * The 6-substitution limit (FIVB 15.6) is decided by the tested domain rule
- * (classifySubstitutionRequest) at the one place every live substitution goes
- * through. Scoreboard.jsx is too large to mount: this pins the wiring.
+ * The 6-substitution limit (FIVB 15.6) and the request rules are decided by
+ * the tested domain rules (substitutionRequestIssues, classifySubstitutionRequest)
+ * at the one place every live substitution goes through. Scoreboard.jsx is too large to mount: this pins the wiring.
  */
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
@@ -20,19 +20,23 @@ function slice(startMarker, length) {
 describe('Scoreboard substitution limit', () => {
   it('every substitution request opens its confirm through the guarded setter', () => {
     expect(scoreboard).toMatch(/const \[substitutionConfirm, setSubstitutionConfirmState\] = useState\(null\)/)
-    const guard = slice('const setSubstitutionConfirm = useCallback(', 700)
+    const guard = slice('const setSubstitutionConfirm = useCallback(', 900)
+    // the request rules first (domain/interruptionRequests.js): replay pending,
+    // second request, 7th substitution, request after a delay warning
+    expect(guard).toMatch(/substitutionRequestIssues\(guard\.events, guard\.setIndex, next\.team, next\)/)
+    expect(guard).toMatch(/guard\.onIssues\(next, issues, acknowledged\)/)
     expect(guard).toMatch(/classifySubstitutionRequest\(guard\.events, next\.team, guard\.setIndex, next\)/)
-    expect(guard).toMatch(/verdict === 'improper_request'/)
-    expect(guard).toMatch(/guard\.onImproperRequest\(next\.team\)/)
     expect(guard).toMatch(/verdict === 'exceptional' && !next\.isExceptional/)
     // the raw state setter is used only by the guard and confirmSubstitution
     expect(scoreboard.match(/setSubstitutionConfirmState\(/g)).toHaveLength(3)
   })
 
-  it('a request beyond the limit becomes the improper-request flow', () => {
-    // through openTeamSanctionConfirm, which resolves the sanction once (improper
-    // request, or the delay sanction it escalates to) and keeps it in the dialog
-    expect(scoreboard).toMatch(/openTeamSanctionConfirm\(mapTeamKeyToSide\(teamKey\), 'improper_request', 'substitution_limit'\)/)
+  it('a request beyond the limit opens the request warning (improper request / delay)', () => {
+    // openRequestWarning resolves both ladders once (improper request, or the
+    // delay sanction it escalates to) and keeps them in the dialog state
+    expect(scoreboard).toMatch(/onIssues: \(request, issues, acknowledged\) => \{\s*if \(rallyStatus === 'idle'\) openRequestWarning\('substitution', request, issues, acknowledged\)/)
+    expect(scoreboard).toMatch(/improper: resolveSanction\('improper_request', counts\)/)
+    expect(scoreboard).toMatch(/delay: resolveSanction\('delay_warning', counts\)/)
   })
 
   it('confirmSubstitution re-checks before writing the event', () => {

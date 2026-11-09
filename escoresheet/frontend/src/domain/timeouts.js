@@ -2,10 +2,10 @@
  * Time-out requests (FIVB 2025-2028 Rules 15.2, 15.4, 15.11). Pure: no React,
  * no Dexie.
  *
- *  - Each team has two time-outs per set (15.2.1). Swiss indoor play has no
+ *  - Each team has two time-outs per set (15.1). Swiss indoor play has no
  *    technical time-outs.
  *  - A team may take both in the same interruption, one after the other, with
- *    no rally in between (15.4.3). That is legal, but worth a second look on
+ *    no rally in between (15.2.1). That is legal, but worth a second look on
  *    the scoretable because a double tap looks the same.
  *  - A request beyond the two is an improper request (15.11.1.4).
  */

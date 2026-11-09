@@ -900,6 +900,102 @@
       "confirmConsecutive": "Ja, zweites Timeout",
       "notRecorded": "Das Timeout wurde nicht erfasst. Bitte erneut versuchen."
     },
+    "requestBlock": {
+      "replay_pending": "Ballwechsel wird wiederholt: kein Timeout und keine Auswechslung bis nach dem nächsten Ballwechsel (nur eine erzwungene Auswechslung).",
+      "replay_pending_short": "Wiederholung: nur Verletzung oder sanktionierter Spieler",
+      "set_interval": "Satzpause: kein Timeout (es würde im nächsten Satz zählen)."
+    },
+    "requestWarning": {
+      "notAllowed": "Nicht erlaubt",
+      "illegalShort": {
+        "libero": "Libero",
+        "sent_off": "Gesperrt",
+        "wrong_partner": "Falscher Partner",
+        "played_out": "Schon gespielt",
+        "no_rally_since_out": "Noch kein Ballwechsel"
+      },
+      "since": "Seither: {{what}}.",
+      "between": {
+        "timeout": "ein Timeout von Team {{team}}",
+        "substitution": "eine Auswechslung von Team {{team}}",
+        "sanction": "eine Sanktion gegen Team {{team}}",
+        "replay": "ein wiederholter Ballwechsel"
+      },
+      "options": {
+        "improper": "Als unzulässige Anfrage erfassen",
+        "delay": "Spiel verzögert: Verzögerungssanktion",
+        "timeoutStarted": "Timeout hat schon begonnen: Verzögerungssanktion",
+        "illegal": "Unerlaubte Auswechslung beantragt: ablehnen + Verzögerungssanktion",
+        "continue": "Trotzdem weiter"
+      },
+      "records": {
+        "improper": "Erfasst: unzulässige Anfrage, ohne weitere Folgen.",
+        "delayWarning": "Erfasst: Verzögerungswarnung.",
+        "delayPenalty": "Erfasst: Verzögerungsstrafe – Punkt und Aufschlag für {{opponent}}.",
+        "repeatedImproper": "(Die Mannschaft hat bereits eine unzulässige Anfrage: diese ist eine Verzögerung.)",
+        "nothing": "Die Schiedsrichter haben es erlaubt. Es wird nichts erfasst."
+      },
+      "illegal": {
+        "libero": "ein Libero wird nie eingewechselt",
+        "sent_off": "nicht mehr spielberechtigt (ausgeschlossen, disqualifiziert oder ausserordentlich ausgewechselt)",
+        "wrong_partner": "nur der eigene Wechselpartner darf zurück",
+        "played_out": "in diesem Satz schon ein- und ausgewechselt",
+        "no_rally_since_out": "seit dem Auswechseln kein Ballwechsel abgeschlossen"
+      },
+      "second_substitution_request": {
+        "title": "Zweites Wechselgesuch",
+        "text": "{{team}} hat in dieser Unterbrechung bereits ein Wechselgesuch gestellt. Zwischen zwei getrennten Wechselgesuchen derselben Mannschaft muss ein Ballwechsel abgeschlossen sein.",
+        "rule": "FIVB 15.2.3 · 15.11.1.3"
+      },
+      "no_rally_since_entry": {
+        "title": "#{{number}} kann noch nicht raus",
+        "text": "#{{number}} ist für #{{returning}} eingewechselt worden, seither wurde kein Ballwechsel abgeschlossen. #{{number}} jetzt wieder auszuwechseln ist ein zweites Wechselgesuch.",
+        "rule": "FIVB 15.2.3 · 15.6.2"
+      },
+      "substitution_limit": {
+        "title": "Keine Auswechslung mehr",
+        "text": "{{team}} hat die 6 Auswechslungen dieses Satzes gebraucht. Ein weiteres Gesuch ist eine unzulässige Anfrage.",
+        "rule": "FIVB 15.1 · 15.11.1.4"
+      },
+      "third_timeout": {
+        "title": "Drittes Timeout",
+        "text": "{{team}} hat beide Timeouts dieses Satzes genommen. Ein drittes Gesuch ist eine unzulässige Anfrage; hat das Timeout schon begonnen, wurde das Spiel verzögert.",
+        "rule": "FIVB 15.1 · 15.11.1.4 · FIVB casebook 4.29"
+      },
+      "after_delay_warning": {
+        "title": "Gesuch nach einer Verzögerungswarnung",
+        "text": "{{team}} hat in dieser Unterbrechung eine Verzögerungswarnung erhalten. Ein weiteres Gesuch wird abgelehnt, ohne Eintrag.",
+        "rule": "FIVB 15.2.4: ablehnen, nichts erfassen"
+      },
+      "illegal_substitution": {
+        "title": "Unerlaubte Auswechslung",
+        "text": "#{{number}} kann nicht für #{{out}} kommen: {{why}}. Eine unerlaubte Auswechslung zu beantragen ist eine Verzögerung; das Gesuch wird abgelehnt.",
+        "rule": "FIVB 15.10.4 · 16.1.3"
+      }
+    },
+    "lateRequest": {
+      "heading": "Wegen eines verspäteten Antrags unterbrochen?",
+      "replay": "Wiederholung wegen eines verspäteten Antrags von {{team}}: Verzögerungssanktion",
+      "penalty": "Verspäteter Antrag von {{team}}: Verzögerungsstrafe, keine Wiederholung",
+      "recordsWarning": "Erfasst: Verzögerungswarnung. Der Ballwechsel wird wiederholt; bis er abgeschlossen ist, kein Timeout und keine Auswechslung.",
+      "recordsPenalty": "Erfasst: Verzögerungsstrafe – Punkt und Aufschlag für {{opponent}}.",
+      "rule": "FIVB 15.11.1.1 · 16.1 · SSK Q182"
+    },
+    "improperReason": {
+      "title": "Wofür (freiwillig)",
+      "during_rally": "Während des Ballwechsels oder nach dem Pfiff",
+      "wrong_person": "Von der falschen Person beantragt",
+      "second_substitution": "Zweiter Auswechslungsantrag",
+      "limit_exhausted": "Zu viele Timeouts oder Auswechslungen",
+      "other": "Anderes"
+    },
+    "decisionTakeBack": {
+      "title": "Wird zuerst zurückgenommen",
+      "timeout": "Timeout {{team}}",
+      "substitution": "Auswechslung {{team}}: #{{in}} für #{{out}}",
+      "text": "Nach dem Punkt beantragt: die Auswechslung wird rückgängig gemacht und nicht gezählt, das Timeout gestrichen.",
+      "rule": "FIVB Casebook 8.5 · SSK 26-1"
+    },
     "teamSanctionConfirm": {
       "thirdTimeout": "{{team}} hat beide Timeouts dieses Satzes genommen. Ein drittes Gesuch ist eine unzulässige Anfrage.",
       "applyImproperRequest": "Unzulässige Anfrage für {{team}} erfassen?",
@@ -4153,6 +4249,13 @@
       "penalty": "Bestrafung",
       "expulsion": "Hinausstellung",
       "disqualification": "Disqualifikation"
+    },
+    "sanctionReason": {
+      "during_rally": "Während des Ballwechsels oder nach dem Pfiff",
+      "wrong_person": "Von der falschen Person beantragt",
+      "second_substitution": "Zweiter Auswechslungsantrag",
+      "limit_exhausted": "Timeouts oder Auswechslungen aufgebraucht",
+      "illegal_substitution": "Unerlaubte Auswechslung beantragt"
     },
     "target": {
       "player": "Spieler/in #{{n}}",

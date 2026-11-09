@@ -906,6 +906,102 @@
       "confirmConsecutive": "Oui, deuxième temps mort",
       "notRecorded": "Le temps mort n'a pas été enregistré. Réessayez."
     },
+    "requestBlock": {
+      "replay_pending": "Échange à rejouer : ni temps mort ni remplacement avant la fin du prochain échange (seul un remplacement forcé).",
+      "replay_pending_short": "Échange à rejouer : seulement blessure ou joueur sanctionné",
+      "set_interval": "Pause entre les sets : pas de temps mort (il compterait dans le set suivant)."
+    },
+    "requestWarning": {
+      "notAllowed": "Non autorisé",
+      "illegalShort": {
+        "libero": "Libéro",
+        "sent_off": "Exclu",
+        "wrong_partner": "Mauvais partenaire",
+        "played_out": "Déjà joué",
+        "no_rally_since_out": "Pas encore d'échange"
+      },
+      "since": "Depuis : {{what}}.",
+      "between": {
+        "timeout": "un temps mort de l'équipe {{team}}",
+        "substitution": "un remplacement de l'équipe {{team}}",
+        "sanction": "une sanction contre l'équipe {{team}}",
+        "replay": "un échange rejoué"
+      },
+      "options": {
+        "improper": "Enregistrer comme demande irrégulière",
+        "delay": "Le jeu a été retardé : sanction pour retard",
+        "timeoutStarted": "Le temps mort a déjà commencé : sanction pour retard",
+        "illegal": "Remplacement illégal demandé : refuser + sanction pour retard",
+        "continue": "Continuer quand même"
+      },
+      "records": {
+        "improper": "Enregistré : demande irrégulière, sans autre conséquence.",
+        "delayWarning": "Enregistré : avertissement pour retard.",
+        "delayPenalty": "Enregistré : pénalité pour retard – point et service pour {{opponent}}.",
+        "repeatedImproper": "(L'équipe a déjà une demande irrégulière : celle-ci est un retard.)",
+        "nothing": "Les arbitres l'ont accepté. Rien n'est enregistré."
+      },
+      "illegal": {
+        "libero": "un libéro n'entre jamais par un remplacement",
+        "sent_off": "n'a plus le droit de jouer (expulsé, disqualifié ou remplacé exceptionnellement)",
+        "wrong_partner": "seul son partenaire de remplacement peut revenir",
+        "played_out": "déjà entré et sorti dans ce set",
+        "no_rally_since_out": "aucun échange terminé depuis sa sortie"
+      },
+      "second_substitution_request": {
+        "title": "Deuxième demande de remplacement",
+        "text": "{{team}} a déjà fait une demande de remplacement pendant cette interruption. Deux demandes de remplacement distinctes d'une même équipe doivent être séparées par un échange terminé.",
+        "rule": "FIVB 15.2.3 · 15.11.1.3"
+      },
+      "no_rally_since_entry": {
+        "title": "#{{number}} ne peut pas encore sortir",
+        "text": "#{{number}} est entré pour #{{returning}} et aucun échange n'a été terminé depuis. Remplacer #{{number}} maintenant est une deuxième demande de remplacement.",
+        "rule": "FIVB 15.2.3 · 15.6.2"
+      },
+      "substitution_limit": {
+        "title": "Plus de remplacement",
+        "text": "{{team}} a utilisé ses 6 remplacements dans ce set. Une nouvelle demande est une demande irrégulière.",
+        "rule": "FIVB 15.1 · 15.11.1.4"
+      },
+      "third_timeout": {
+        "title": "Troisième temps mort",
+        "text": "{{team}} a utilisé ses deux temps morts de ce set. Une troisième demande est une demande irrégulière ; si le temps mort a déjà commencé, le jeu a été retardé.",
+        "rule": "FIVB 15.1 · 15.11.1.4 · FIVB casebook 4.29"
+      },
+      "after_delay_warning": {
+        "title": "Demande après un avertissement pour retard",
+        "text": "{{team}} a reçu un avertissement pour retard pendant cette interruption. Une nouvelle demande est refusée, sans rien enregistrer.",
+        "rule": "FIVB 15.2.4 : refuser, ne rien enregistrer"
+      },
+      "illegal_substitution": {
+        "title": "Remplacement illégal",
+        "text": "#{{number}} ne peut pas entrer pour #{{out}} : {{why}}. Demander un remplacement illégal est un retard ; la demande est refusée.",
+        "rule": "FIVB 15.10.4 · 16.1.3"
+      }
+    },
+    "lateRequest": {
+      "heading": "Interrompu par une demande tardive ?",
+      "replay": "Rejouer à cause d’une demande tardive de {{team}} : sanction pour retard",
+      "penalty": "Demande tardive de {{team}} : pénalité pour retard, sans rejouer",
+      "recordsWarning": "Enregistré : avertissement pour retard. L’échange est rejoué ; ni temps mort ni remplacement avant qu’il soit terminé.",
+      "recordsPenalty": "Enregistré : pénalité pour retard – point et service pour {{opponent}}.",
+      "rule": "FIVB 15.11.1.1 · 16.1 · SSK Q182"
+    },
+    "improperReason": {
+      "title": "Pour quoi (facultatif)",
+      "during_rally": "Pendant l’échange ou après le coup de sifflet",
+      "wrong_person": "Demandé par la mauvaise personne",
+      "second_substitution": "Deuxième demande de remplacement",
+      "limit_exhausted": "Trop de temps morts ou de remplacements",
+      "other": "Autre"
+    },
+    "decisionTakeBack": {
+      "title": "Annulé d’abord",
+      "timeout": "Temps mort {{team}}",
+      "substitution": "Remplacement {{team}} : n° {{in}} pour n° {{out}}",
+      "text": "Demandé après le point : le remplacement est annulé et ne compte pas, le temps mort est annulé.",
+      "rule": "FIVB casebook 8.5 · SSK 26-1"
+    },
     "teamSanctionConfirm": {
       "thirdTimeout": "{{team}} a utilisé ses deux temps morts de ce set. Une troisième demande est une demande irrégulière.",
       "applyImproperRequest": "Enregistrer une demande irrégulière pour {{team}} ?",
@@ -4164,6 +4260,13 @@
       "penalty": "Pénalité",
       "expulsion": "Expulsion",
       "disqualification": "Disqualification"
+    },
+    "sanctionReason": {
+      "during_rally": "Pendant l’échange ou après le coup de sifflet",
+      "wrong_person": "Demandé par la mauvaise personne",
+      "second_substitution": "Deuxième demande de remplacement",
+      "limit_exhausted": "Temps morts ou remplacements épuisés",
+      "illegal_substitution": "Remplacement illégal demandé"
     },
     "target": {
       "player": "Joueur/euse #{{n}}",
