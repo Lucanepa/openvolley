@@ -103,7 +103,7 @@ describe('runVmSync (fake pool, fake VolleyManager)', () => {
     assert.equal(pool.state.released[0].err, null)
     assert.deepEqual(secretsIn(logger.lines.join('\n')), [])
     // the Zurich window reached VM
-    const search = vm.calls.find((c) => c.path.startsWith('/api/'))
+    const search = vm.calls.find((c) => c.path.startsWith('/api/indoorvolleyball.refadmin/'))
     assert.equal(new URLSearchParams(search.body).get('searchConfiguration[propertyFilters][0][dateRange][from]'), '2026-10-03T22:00:00.000Z')
   })
 

@@ -5435,18 +5435,28 @@ if (DB_MODE) {
         })
       }, sweepMs).unref()
     }
-    // VolleyManager -> svrz_games, daily at 06:00 Zurich (replaces the Supabase
+    // VolleyManager -> svrz_games, daily at 22:30 UTC (replaces the Supabase
     // vm-sync Edge Function). Cloud only; needs VM credentials; VM_SYNC=off disables.
+    // The VolleyManager account is shared with svrz_rc and wiedisync and has ONE
+    // active role (lib/vmSync.js VM_ROLE_FOR_GAMES). 22:30 UTC is inside svrz_rc's
+    // referee-role window (22:00-00:59 UTC: its games sync, the same role as this
+    // one), which wiedisync's club-role jobs keep out of, so switching roles here
+    // can never make one of them read under the wrong role. Listed in svrz_rc's
+    // infrastructure.md and wiedisync's INFRA.md ("The shared VolleyManager
+    // account"); move it only together with those tables.
     if (!IS_LOCAL && process.env.VM_USERNAME && process.env.VM_PASSWORD && process.env.VM_SYNC !== 'off') {
       import('./lib/vmSync.js').then(({ runVmSync, scheduleVmSync, windowFromEnv }) => {
         const vmWindow = windowFromEnv() // throws on a bad VM_SYNC_DAYS_* value
         const schedule = scheduleVmSync({
-          hourLocal: 6,
-          tz: 'Europe/Zurich',
+          hourLocal: 22,
+          minuteLocal: 30,
+          tz: 'UTC',
           run: () => runVmSync({
             pool: layer.db.pool,
             window: vmWindow,
-            credentials: { username: process.env.VM_USERNAME, password: process.env.VM_PASSWORD }
+            credentials: { username: process.env.VM_USERNAME, password: process.env.VM_PASSWORD },
+            // the shared account's referee-delegate role (lib/vmSync.js VM_ROLE_FOR_GAMES)
+            ...(process.env.VM_ROLE_ATTRIBUTE_GAMES ? { roleAttribute: process.env.VM_ROLE_ATTRIBUTE_GAMES } : {})
           }).catch((err) => console.error('[VM sync] run failed:', err.message))
         })
         console.log('[VM sync] scheduled, next run ' + (schedule.nextRunAt()?.toISOString() ?? 'n/a'))
