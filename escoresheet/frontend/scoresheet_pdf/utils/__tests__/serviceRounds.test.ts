@@ -44,6 +44,21 @@ describe('trackServiceRounds (sets 1-4)', () => {
   })
 })
 
+describe('trackServiceRounds: points cancelled by a rectification (FIVB 7.7.2, 15.9.2.3)', () => {
+  it('a cancelled rally passes the serve but scores nothing', () => {
+    // h serves 1, a side-out (cancelled), a (cancelled), h side-out, h
+    const counted = [true, false, false, true, true]
+    const r = trackServiceRounds({ pointTeams: seq('haahh'), counted, firstServer: 'home', finished: false })
+    // away served one round (its two points cancelled: closed at 0); home's rounds carry its own points only
+    expect(boxes(r.home)).toEqual(['I/1:/1', 'II/1:/'])
+    expect(boxes(r.away)).toEqual(['II/1:/0'])
+  })
+
+  it('the change of courts counts valid points only', () => {
+    expect(courtChangeIndex(seq('hhhhhhhhh'), 8, [false, true, true, true, true, true, true, true, true])).toBe(8)
+  })
+})
+
 describe('set 5: change of courts (field-spec 6)', () => {
   it('the change is the point after which a team first has 8', () => {
     expect(courtChangeIndex(seq('hhhhhhhh'))).toBe(7)
