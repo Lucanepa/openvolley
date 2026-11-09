@@ -3299,18 +3299,15 @@
       "squad": "Joueurs {{season}}",
       "squadHint": "Toutes les personnes qui peuvent jouer cette saison, avec numéros et dates de naissance. Les marqueurs peuvent aussi charger cette équipe dans la configuration du match.",
       "games": "Matchs",
-      "gamesHint": "Préparez la liste de chaque match : cochez qui joue. Vous pouvez la modifier jusqu’au début du match.",
+      "gamesHint": "Préparez la liste de chaque match : cochez qui joue. Vous pouvez la modifier à tout moment.",
       "noGames": "Aucun match de cette équipe au calendrier à partir d’aujourd’hui.",
       "vs": "contre",
       "at": "chez",
       "home": "Domicile",
       "away": "Extérieur",
       "notSent": "Pas envoyée",
-      "started": "Commencé",
-      "view": "Voir",
       "edit": "Modifier la liste",
       "prepare": "Préparer la liste",
-      "locked": "Le match a commencé. Sa liste ne peut plus être modifiée ici ; les changements passent par le marqueur.",
       "notYourGame": "Ce match n’est pas un match de votre équipe au calendrier.",
       "sentBy": "Envoyée {{when}} par {{name}}",
       "players": "Joueurs",
@@ -3330,7 +3327,7 @@
       "deleteTitle": "Supprimer la liste de ce match ?",
       "deleteBody": "La tablette du marqueur la retire dès qu’elle est de nouveau en ligne.",
       "deleted": "Liste supprimée",
-      "signHint": "Pas de signatures ici : l’entraîneur et le capitaine signent dans la salle, au tirage au sort.",
+      "signHint": "Facultatif : l’entraîneur et le capitaine peuvent signer ici s’ils le souhaitent. Sinon, ils signent dans la salle, au tirage au sort.",
       "problems": {
         "tooMany": "Au plus {{max}} joueurs par match.",
         "number": "{{name}} a besoin d’un numéro de maillot.",
@@ -3341,7 +3338,24 @@
         "tooManyStaff": "Au plus {{max}} officiels d’équipe."
       },
       "sent_one": "Envoyée : {{count}} joueur, {{when}}",
-      "sent_other": "Envoyée : {{count}} joueurs, {{when}}"
+      "sent_other": "Envoyée : {{count}} joueurs, {{when}}",
+      "accepted": "Acceptée par le marqueur {{when}}",
+      "acceptedBody": "Le marqueur ({{name}}) a accepté la liste {{when}} ; elle a ensuite été supprimée ici. Vous pouvez en envoyer une nouvelle.",
+      "signedChip": "Signée",
+      "sig": {
+        "title": "Signatures (facultatif)",
+        "coach": "Entraîneur",
+        "captain": "Capitaine",
+        "sign": "Signer",
+        "again": "Signer à nouveau",
+        "clear": "Retirer",
+        "signed": "Signature",
+        "stale": "La liste a changé après la signature. Signez à nouveau, ou envoyez-la sans signatures.",
+        "noCoach": "Cochez d’abord un entraîneur",
+        "noCaptain": "Désignez d’abord un capitaine",
+        "padCoach": "Signature de l’entraîneur : {{name}}",
+        "padCaptain": "Signature du capitaine : {{name}}"
+      }
     },
     "clubTeams": {
       "title": "Équipes",
@@ -4789,7 +4803,7 @@
   "sentRoster": {
     "title": "Liste envoyée par {{team}}",
     "meta": "{{players}} · {{officials}} · {{when}} · {{name}}",
-    "use": "L’utiliser",
+    "use": "Accepter",
     "preview": "Afficher",
     "hidePreview": "Masquer",
     "notNow": "Pas maintenant",
@@ -4798,6 +4812,12 @@
     "players_one": "{{count}} joueur",
     "players_other": "{{count}} joueurs",
     "officials_one": "{{count}} officiel",
-    "officials_other": "{{count}} officiels"
+    "officials_other": "{{count}} officiels",
+    "hintSigned": "Vérifiez-la avec l’entraîneur. L’entraîneur et le capitaine ont signé à l’avance ; leurs signatures sont reprises.",
+    "signed": {
+      "both": "Signée à l’avance par l’entraîneur et le capitaine",
+      "coach": "Signée à l’avance par l’entraîneur",
+      "captain": "Signée à l’avance par le capitaine"
+    }
   }
 }

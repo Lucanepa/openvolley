@@ -4,12 +4,13 @@ import 'fake-indexeddb/auto'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('../../lib/accountApi', () => ({
-  fetchGameRosters: vi.fn()
+  fetchGameRosters: vi.fn(),
+  markGameRosterUsed: vi.fn()
 }))
 
 import { db } from '../db'
-import { fetchGameRosters } from '../../lib/accountApi'
-import { clearGameRosters, getGameRoster, offeredSentRosters, pruneGameRosters, refreshGameRosters, rowToPendingRoster, storeGameRosters } from '../gameRosters'
+import { fetchGameRosters, markGameRosterUsed } from '../../lib/accountApi'
+import { clearGameRosters, flushUsedGameRosters, getGameRoster, markGameRosterAccepted, offeredSentRosters, pruneGameRosters, refreshGameRosters, rowToPendingRoster, storeGameRosters } from '../gameRosters'
 import { accessFromRoles } from '../../lib/access'
 
 const scorer = accessFromRoles(['scorer'])
@@ -25,6 +26,7 @@ describe('sent game rosters on the device', () => {
     await db.open()
     await db.game_rosters.clear()
     fetchGameRosters.mockReset()
+    markGameRosterUsed.mockReset()
   })
 
   it('keeps an answer for this account only, and Match Setup reads it without the network', async () => {
@@ -83,6 +85,70 @@ describe('sent game rosters on the device', () => {
     expect(offeredSentRosters([home, away], { status: 'scheduled', sentRosterUsed: { home: 'v1' }, sentRosterDismissed: { away: 'v1' } }, 'u1')).toEqual({ home: null, away: null })
     // a newer version is offered again
     expect(offeredSentRosters([{ ...home, updatedAt: 'v2' }], { sentRosterDismissed: { home: 'v1' } }, 'u1').home).not.toBeNull()
+  })
+
+  it('accepted: never offered again, the server is told now or once online, then the copy goes', async () => {
+    const sig = 'data:image/png;base64,AAAA'
+    await storeGameRosters({ games: [{ game_number: '1' }], rosters: [roster('1', 'home', { coach_signature: sig, captain_signature: sig })] }, 'u1')
+    const row = await getGameRoster('1', 'home', { userId: 'u1' })
+    expect(rowToPendingRoster(row)).toMatchObject({ coachSignature: sig, captainSignature: sig })
+    // offline: marked at once, the server not reached
+    const online = Object.getOwnPropertyDescriptor(Navigator.prototype, 'onLine')
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
+    try {
+      await markGameRosterAccepted(row)
+    } finally {
+      delete navigator.onLine
+      if (online) Object.defineProperty(Navigator.prototype, 'onLine', online)
+    }
+    expect(markGameRosterUsed).not.toHaveBeenCalled()
+    const marked = await db.game_rosters.get('1|home')
+    expect(marked.usedPending).toBe(true)
+    expect(offeredSentRosters([marked], { status: 'scheduled' }, 'u1').home).toBeNull()
+    // a download of the same version does not bring it back
+    await storeGameRosters({ games: [{ game_number: '1' }], rosters: [roster('1', 'home')] }, 'u1')
+    expect((await db.game_rosters.get('1|home')).usedPending).toBe(true)
+    // a failed request keeps it for next time
+    markGameRosterUsed.mockResolvedValueOnce({ data: null, error: { network: true }, status: 0 })
+    expect(await flushUsedGameRosters({ online: true })).toBe(0)
+    expect(await db.game_rosters.get('1|home')).toBeTruthy()
+    // back online: told, then the copy goes
+    markGameRosterUsed.mockResolvedValueOnce({ data: { used: true }, error: null, status: 200 })
+    expect(await flushUsedGameRosters({ online: true })).toBe(1)
+    expect(markGameRosterUsed).toHaveBeenLastCalledWith({ game_number: '1', side: 'home', season: 2026, updated_at: '2026-11-08T19:30:00.000Z' })
+    expect(await db.game_rosters.get('1|home')).toBeUndefined()
+  })
+
+  it('a newer version replaces an accepted one waiting to be told', async () => {
+    await storeGameRosters({ games: [], rosters: [roster('1', 'home')] }, 'u1')
+    await db.game_rosters.update('1|home', { usedPending: true })
+    await storeGameRosters({ games: [{ game_number: '1' }], rosters: [roster('1', 'home', { updated_at: '2026-11-09T08:00:00.000Z' })] }, 'u1')
+    const row = await db.game_rosters.get('1|home')
+    expect(row.usedPending).toBeUndefined()
+    expect(row.updatedAt).toBe('2026-11-09T08:00:00.000Z')
+  })
+
+  it('refresh tells the server about accepted rosters before it downloads', async () => {
+    await storeGameRosters({ games: [], rosters: [roster('1', 'home')] }, 'u1')
+    await db.game_rosters.update('1|home', { usedPending: true })
+    markGameRosterUsed.mockResolvedValue({ data: { used: true }, error: null, status: 200 })
+    fetchGameRosters.mockResolvedValue({ data: { games: [{ game_number: '1' }], rosters: [] }, error: null, status: 200 })
+    expect(await refreshGameRosters({ access: scorer, userId: 'u1', online: true, force: true })).toBe('refreshed')
+    expect(markGameRosterUsed.mock.invocationCallOrder[0]).toBeLessThan(fetchGameRosters.mock.invocationCallOrder[0])
+    expect(await db.game_rosters.count()).toBe(0)
+  })
+
+  it('back online, the server is told even when the download waits for its minute', async () => {
+    fetchGameRosters.mockResolvedValue({ data: { games: [], rosters: [] }, error: null, status: 200 })
+    await refreshGameRosters({ access: scorer, userId: 'u1', online: true, force: true })
+    await storeGameRosters({ games: [], rosters: [roster('2', 'home')] }, 'u1')
+    await db.game_rosters.update('2|home', { usedPending: true })
+    markGameRosterUsed.mockResolvedValue({ data: { used: true }, error: null, status: 200 })
+    fetchGameRosters.mockClear()
+    expect(await refreshGameRosters({ access: scorer, userId: 'u1', online: true })).toBe('skipped')
+    expect(fetchGameRosters).not.toHaveBeenCalled()
+    expect(markGameRosterUsed).toHaveBeenCalled()
+    expect(await db.game_rosters.count()).toBe(0)
   })
 
   it('becomes Match Setup\'s pending-roster shape', () => {

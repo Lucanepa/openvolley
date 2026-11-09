@@ -361,7 +361,8 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
       const managedClubs = c?.managedClubsOf ? await c.managedClubsOf(pool, userId) : []
       // db/023: the teams it acts for (the manager's "My teams" tab)
       const tm = teams()
-      const managedTeams = tm?.managedTeamsOf ? await tm.managedTeamsOf(pool, userId) : []
+      // (admins: every team, owner 2026-11-08)
+      const managedTeams = tm?.managedTeamsOf ? await tm.managedTeamsOf(pool, userId, { all: !!access?.isAdmin }) : []
       return ok({
         id: userId,
         roles: access?.roles ?? [],
