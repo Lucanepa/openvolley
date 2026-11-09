@@ -3005,7 +3005,38 @@
       "team_manager": "Responsable d’équipe"
     },
     "signUpPendingNote": "Les nouveaux comptes doivent être validés avant que les matchs officiels soient synchronisés dans le cloud. Demande un code d’invitation à ton club.",
-    "officialMatchLocalOnly": "Ce match reste sur cet appareil jusqu’à la validation de ton compte comme marqueur."
+    "officialMatchLocalOnly": "Ce match reste sur cet appareil jusqu’à la validation de ton compte comme marqueur.",
+    "requests": {
+      "whatDoYouDo": "Que fais-tu ?",
+      "whatHint": "Facultatif. Coche ce que tu fais et pour quel club : un admin ou ton club le valide, et ton compte reçoit exactement cela. Tu peux aussi laisser vide et saisir plus tard un code d’invitation.",
+      "kinds": {
+        "scorer": "Marqueur",
+        "referee": "Arbitre",
+        "team_manager": "Responsable d’équipe / entraîneur",
+        "club_manager": "Responsable du club"
+      },
+      "scorerHint": "Marque les matchs à domicile d’un club",
+      "refereeHint": "Sans club",
+      "teamManagerHint": "Tient à jour les joueurs d’une équipe et la liste de chaque match",
+      "clubManagerHint": "S’occupe des marqueurs, des équipes et des codes d’un club",
+      "scorerClub": "Club pour lequel tu marques",
+      "addClub": "Autre club",
+      "pickClub": "Choisir un club",
+      "removeClub": "Retirer {{name}}",
+      "teamClub": "Club de ton équipe",
+      "teams": "Tes équipes",
+      "noTeams": "Ce club n’a pas encore d’équipes dans OpenVolley. Choisis-le comme marqueur ou demande au club un lien d’équipe.",
+      "managedClub": "Club dont tu es responsable",
+      "clubsUnavailable": "Les clubs n’ont pas pu être chargés. Tu peux quand même créer ton compte comme arbitre, ou demander un code d’invitation à ton club.",
+      "noClubsYet": "Aucun club n’est encore enregistré dans OpenVolley.",
+      "needScorerClub": "Choisis le club pour lequel tu marques.",
+      "needTeamClub": "Choisis le club de ton équipe.",
+      "needTeam": "Coche ton équipe.",
+      "needManagedClub": "Choisis le club dont tu es responsable.",
+      "signUpRefused": "Un club ou une équipe choisi n’existe plus. Choisis à nouveau, puis crée ton compte.",
+      "yourRequest": "Ta demande",
+      "yourRequestBody": "Un admin ou ton club la valide. Cette page se met à jour toute seule dès que quelque chose est validé."
+    }
   },
   "managerSite": {
     "eyebrow": "Gestion",
@@ -3263,7 +3294,9 @@
         "team_managers": "Responsable d’équipe modifié",
         "team_squad": "Joueurs de l’équipe enregistrés",
         "team_roster": "Liste du match envoyée",
-        "club_licences": "Liste des licences chargée"
+        "club_licences": "Liste des licences chargée",
+        "account_request_approve": "Demande d’inscription validée",
+        "account_request_reject": "Demande d’inscription refusée"
       }
     },
     "approvals": {
@@ -3572,6 +3605,42 @@
       "noMatch": "Personne ne correspond au filtre.",
       "showMore": "Afficher {{count}} de plus",
       "wrongGender": "Un joueur est inscrit au club pour l’autre sexe et ne peut pas jouer dans cette équipe."
+    },
+    "requests": {
+      "title": "Demandes",
+      "clubHint": "Les personnes inscrites qui ont indiqué marquer pour ce club, s’occuper d’une de ses équipes ou du club. Valider leur donne exactement cela ; leurs autres demandes restent pour les autres.",
+      "teamHint": "Les personnes inscrites comme responsable ou entraîneur de cette équipe. Valider en fait des responsables d’équipe.",
+      "empty": "Aucune demande ouverte.",
+      "approve": "Valider",
+      "reject": "Refuser",
+      "approveAll": "Valider comme demandé",
+      "review": "Examiner la demande",
+      "reviewTitle": "Demande de {{name}}",
+      "reviewHint": "Validez une partie comme demandé ou avec un autre club ou une autre équipe, laissez-la pour plus tard (les responsables du club ou de l’équipe peuvent encore la valider), ou refusez-la.",
+      "decision": {
+        "approve": "Valider",
+        "later": "Plus tard",
+        "reject": "Refuser"
+      },
+      "club": "Club",
+      "team": "Équipe",
+      "pickTeam": "Choisir une équipe",
+      "approved": "Demande validée",
+      "rejected": "Demande refusée",
+      "saved": "Demande enregistrée",
+      "gone": "Cette demande a été traitée entre-temps. La liste est de nouveau à jour.",
+      "rejectTitle": "Refuser la demande de {{name}} ?",
+      "rejectBody": "{{part}}. Son compte reste ; il ne reçoit rien de cette demande.",
+      "asks": "Demande : {{part}}",
+      "signedUp": "Inscrit le {{date}}",
+      "managesClub": "Responsable du club · {{name}}",
+      "managesTeam": "Responsable d’équipe · {{name}}",
+      "changed": "modifié",
+      "via": {
+        "admin": "par un admin",
+        "club": "par le club",
+        "team": "par l’équipe"
+      }
     }
   },
   "playerPool": {
@@ -3691,7 +3760,15 @@
     "addCoach": "Ajouter l'entraîneur",
     "removeCoach": "Retirer l'entraîneur",
     "clearPlayer": "Vider le joueur {{number}}",
-    "beachTeamHint": "Une équipe de beach est une paire : joueurs 1 et 2, entraîneur en option."
+    "beachTeamHint": "Une équipe de beach est une paire : joueurs 1 et 2, entraîneur en option.",
+    "noClub": "Aucun club",
+    "clubNotListed": "{{name}} (pas un club dans OpenVolley)",
+    "svrzPlaceholder": "Chercher les équipes du calendrier",
+    "svrzOptions": "Équipes du calendrier",
+    "svrzShowAll": "Afficher toutes les équipes",
+    "svrzClubOnly": "Seulement {{club}}",
+    "svrzNoMatch": "Aucune équipe du calendrier ne correspond. Ce que vous tapez est gardé.",
+    "svrzOpen": "Afficher les équipes"
   },
   "cloudBlock": {
     "scorerRequired": "Non synchronisé : ton compte attend une validation. Le match est en sécurité sur cet appareil.",

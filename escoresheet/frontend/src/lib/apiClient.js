@@ -798,7 +798,10 @@ export const apiAuth = {
       ...(options?.lang ? { lang: options.lang } : {}),
       // the app it signs up in ('beach': OpenBeach's mail and membership);
       // left out, the server treats it as before (OpenVolley)
-      ...(options?.app ? { app: options.app } : {})
+      ...(options?.app ? { app: options.app } : {}),
+      // db/025: what the new account asks for (scorer, referee, team or club
+      // manager, with the club and team); granted only when approved
+      ...(Array.isArray(options?.requests) && options.requests.length ? { requests: options.requests } : {})
     })
     return result
   },

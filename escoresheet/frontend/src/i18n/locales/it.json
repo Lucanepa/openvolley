@@ -3011,7 +3011,38 @@
       "team_manager": "Responsabile della squadra"
     },
     "signUpPendingNote": "I nuovi account devono essere approvati prima che le partite ufficiali vengano sincronizzate nel cloud. Chiedi un codice d’invito al tuo club.",
-    "officialMatchLocalOnly": "Questa partita resta su questo dispositivo finché il tuo account non è approvato come segnapunti."
+    "officialMatchLocalOnly": "Questa partita resta su questo dispositivo finché il tuo account non è approvato come segnapunti.",
+    "requests": {
+      "whatDoYouDo": "Che cosa fai?",
+      "whatHint": "Facoltativo. Spunta che cosa fai e per quale società: un admin o la tua società lo approva, e il tuo account riceve esattamente questo. Puoi anche lasciarlo vuoto e inserire più tardi un codice d’invito.",
+      "kinds": {
+        "scorer": "Segnapunti",
+        "referee": "Arbitro",
+        "team_manager": "Responsabile della squadra / allenatore",
+        "club_manager": "Responsabile della società"
+      },
+      "scorerHint": "Referta le partite in casa di una società",
+      "refereeHint": "Senza società",
+      "teamManagerHint": "Tiene aggiornati i giocatori di una squadra e l’elenco di ogni partita",
+      "clubManagerHint": "Si occupa dei segnapunti, delle squadre e dei codici di una società",
+      "scorerClub": "Società per cui referti",
+      "addClub": "Un’altra società",
+      "pickClub": "Scegli una società",
+      "removeClub": "Togli {{name}}",
+      "teamClub": "Società della tua squadra",
+      "teams": "Le tue squadre",
+      "noTeams": "Questa società non ha ancora squadre in OpenVolley. Sceglila come segnapunti o chiedi alla società un link della squadra.",
+      "managedClub": "Società di cui sei responsabile",
+      "clubsUnavailable": "Non è stato possibile caricare le società. Puoi comunque creare il tuo account come arbitro, o chiedere un codice d’invito alla tua società.",
+      "noClubsYet": "In OpenVolley non c’è ancora nessuna società.",
+      "needScorerClub": "Scegli la società per cui referti.",
+      "needTeamClub": "Scegli la società della tua squadra.",
+      "needTeam": "Spunta la tua squadra.",
+      "needManagedClub": "Scegli la società di cui sei responsabile.",
+      "signUpRefused": "Una società o una squadra scelta non c’è più. Scegli di nuovo, poi crea il tuo account.",
+      "yourRequest": "La tua richiesta",
+      "yourRequestBody": "Un admin o la tua società la approva. Questa pagina si aggiorna da sola appena qualcosa è approvato."
+    }
   },
   "managerSite": {
     "eyebrow": "Gestione",
@@ -3269,7 +3300,9 @@
         "team_managers": "Responsabile squadra modificato",
         "team_squad": "Giocatori della squadra salvati",
         "team_roster": "Elenco della partita inviato",
-        "club_licences": "Elenco delle licenze caricato"
+        "club_licences": "Elenco delle licenze caricato",
+        "account_request_approve": "Richiesta di registrazione approvata",
+        "account_request_reject": "Richiesta di registrazione rifiutata"
       }
     },
     "approvals": {
@@ -3578,6 +3611,42 @@
       "noMatch": "Nessuno corrisponde al filtro.",
       "showMore": "Mostra altri {{count}}",
       "wrongGender": "Un giocatore è registrato nella società per l’altro sesso e non può giocare in questa squadra."
+    },
+    "requests": {
+      "title": "Richieste",
+      "clubHint": "Le persone registrate che hanno indicato di refertare per questa società, di occuparsi di una sua squadra o della società. Approva dà loro esattamente questo; le altre loro richieste restano per gli altri.",
+      "teamHint": "Le persone registrate come responsabile o allenatore di questa squadra. Approva le rende responsabili della squadra.",
+      "empty": "Nessuna richiesta aperta.",
+      "approve": "Approva",
+      "reject": "Rifiuta",
+      "approveAll": "Approva come richiesto",
+      "review": "Esamina la richiesta",
+      "reviewTitle": "Richiesta di {{name}}",
+      "reviewHint": "Approva una parte come richiesto o con un’altra società o squadra, lasciala per dopo (i responsabili della società o della squadra possono ancora approvarla), o rifiutala.",
+      "decision": {
+        "approve": "Approva",
+        "later": "Dopo",
+        "reject": "Rifiuta"
+      },
+      "club": "Società",
+      "team": "Squadra",
+      "pickTeam": "Scegli una squadra",
+      "approved": "Richiesta approvata",
+      "rejected": "Richiesta rifiutata",
+      "saved": "Richiesta salvata",
+      "gone": "Questa richiesta è stata decisa nel frattempo. L’elenco è di nuovo aggiornato.",
+      "rejectTitle": "Rifiutare la richiesta di {{name}}?",
+      "rejectBody": "{{part}}. Il suo account resta; da questa richiesta non riceve nulla.",
+      "asks": "Chiede: {{part}}",
+      "signedUp": "Registrato il {{date}}",
+      "managesClub": "Responsabile della società · {{name}}",
+      "managesTeam": "Responsabile della squadra · {{name}}",
+      "changed": "modificato",
+      "via": {
+        "admin": "da un admin",
+        "club": "dalla società",
+        "team": "dalla squadra"
+      }
     }
   },
   "playerPool": {
@@ -3697,7 +3766,15 @@
     "addCoach": "Aggiungi allenatore",
     "removeCoach": "Rimuovi allenatore",
     "clearPlayer": "Svuota giocatore {{number}}",
-    "beachTeamHint": "Una squadra beach è una coppia: giocatori 1 e 2, allenatore facoltativo."
+    "beachTeamHint": "Una squadra beach è una coppia: giocatori 1 e 2, allenatore facoltativo.",
+    "noClub": "Nessuna società",
+    "clubNotListed": "{{name}} (non è una società in OpenVolley)",
+    "svrzPlaceholder": "Cerca le squadre del calendario",
+    "svrzOptions": "Squadre del calendario",
+    "svrzShowAll": "Mostra tutte le squadre",
+    "svrzClubOnly": "Solo {{club}}",
+    "svrzNoMatch": "Nessuna squadra del calendario corrisponde. Quello che scrivi resta.",
+    "svrzOpen": "Mostra le squadre"
   },
   "cloudBlock": {
     "scorerRequired": "Non sincronizzata: il tuo account è in attesa di approvazione. La partita è al sicuro su questo dispositivo.",

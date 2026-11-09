@@ -39,6 +39,15 @@ export function fetchMe() {
   return apiRequest('GET', '/api/me')
 }
 
+/**
+ * GET /api/public/clubs (db/025): every club's id and name with its teams'
+ * ids and names, for the sign-up form's "What do you do?". No account needed,
+ * no personal data. -> { clubs: [{ id, name, teams: [{ id, name }] }] }
+ */
+export function fetchPublicClubs({ timeoutMs } = {}) {
+  return apiRequest('GET', '/api/public/clubs', undefined, timeoutMs ? { timeoutMs } : undefined)
+}
+
 /** POST /api/account/join { app } -> { app, member: true, already_member }: "Join OpenBeach with your existing password". */
 export function joinApp(app) {
   return apiRequest('POST', '/api/account/join', { app })
@@ -166,6 +175,18 @@ export const clubApi = {
     return apiRequest('DELETE', `/api/club/${enc(clubId)}/teams/${enc(teamId)}/managers/${enc(userId)}`)
   },
   /**
+   * db/025: the sign-up requests of the club (scorer, team manager of its
+   * teams, club manager) -> { requests: [{ user: { id, email, name, created_at,
+   * email_confirmed }, parts: [{ id, kind, club_id, club_name, team_id, team_name }] }] }
+   */
+  requests(clubId) {
+    return apiRequest('GET', `/api/club/${enc(clubId)}/requests`)
+  },
+  /** { approve: [{ id, team_id? }], reject: [id] } -> { approved, rejected, requests } */
+  decideRequests(clubId, userId, { approve = [], reject = [] } = {}) {
+    return apiRequest('POST', `/api/club/${enc(clubId)}/requests/${enc(userId)}`, { approve, reject })
+  },
+  /**
    * db/024: the club's licence lists -> { season, lists: { players|scorers|coaches:
    * { count, imported_at, imported_by_name } }, people: [{ sv_number, last_name,
    * first_name, dob, gender, lists, teams: [{ id, name }] }] }
@@ -220,6 +241,14 @@ export const teamApi = {
    */
   clubPlayers(teamId) {
     return apiRequest('GET', `/api/team/${enc(teamId)}/club-players`)
+  },
+  /** db/025: the team manager requests of the team (the shape of clubApi.requests) */
+  requests(teamId) {
+    return apiRequest('GET', `/api/team/${enc(teamId)}/requests`)
+  },
+  /** { approve: [{ id }], reject: [id] } -> { approved, rejected, requests } */
+  decideRequests(teamId, userId, { approve = [], reject = [] } = {}) {
+    return apiRequest('POST', `/api/team/${enc(teamId)}/requests/${enc(userId)}`, { approve, reject })
   }
 }
 
@@ -287,6 +316,14 @@ export const admin = {
   /** The same for a sign-up without any role (audited as a rejection). */
   rejectAccount(userId, { email } = {}) {
     return apiRequest('POST', `/api/admin/accounts/${enc(userId)}/reject`, { email }, { timeoutMs: 60000 })
+  },
+  /**
+   * db/025: approve / reject parts of the account's sign-up request; a part's
+   * club or team may be changed first ({ id, club_id?, team_id? }).
+   * -> { approved, rejected, requests }
+   */
+  decideRequests(userId, { approve = [], reject = [] } = {}) {
+    return apiRequest('POST', `/api/admin/accounts/${enc(userId)}/requests`, { approve, reject })
   },
   /** db/018: the clubs an account scores for (the whole list). */
   setAccountClubs(userId, clubIds = []) {
@@ -448,6 +485,13 @@ export const savedTeamsApi = {
   },
   putRoster(id, { players, staff }) {
     return apiRequest('PUT', `/api/saved-teams/teams/${enc(id)}/roster`, { players, staff })
+  },
+  /**
+   * The schedule's team names (svrz_games home and away), each with its club:
+   * the team editor's VolleyManager name. -> { teams: [{ name, club_id, club_name }] }
+   */
+  vmTeams({ q } = {}) {
+    return apiRequest('GET', `/api/saved-teams/vm-teams${query({ q })}`)
   }
 }
 
@@ -482,6 +526,8 @@ export function errorKeyOf(error, { context } = {}) {
     case 'OV_GAME_NOT_YOURS': return 'manage.myTeams.notYourGame'
     // db/024: a player of the club's list with the other gender than the team's
     case 'OV_WRONG_GENDER': return 'manage.licences.wrongGender'
+    // db/025: a sign-up request decided meanwhile (or not this approver's)
+    case 'OV_REQUEST_GONE': return 'manage.requests.gone'
     default:
       if (error.status === 401 || error.status === 403) return 'manage.errors.forbidden'
       return 'manage.errors.generic'

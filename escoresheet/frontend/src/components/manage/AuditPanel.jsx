@@ -65,6 +65,15 @@ export function auditDetailsLine(entry, opts = {}) {
     return parts.join(' · ')
   }
   const club = entry?.club_name ? String(entry.club_name) : null
+  // db/025: a part of a sign-up request approved or rejected: the kind, the
+  // club (by its name today), whether the approver changed it, who decided
+  if (entry?.action === 'account.request_approve' || entry?.action === 'account.request_reject') {
+    if (d.kind) parts.push(tr(`access.requests.kinds.${d.kind}`, String(d.kind)))
+    if (club) parts.push(club)
+    if (d.changed) parts.push(tr('manage.requests.changed', 'changed'))
+    if (d.via) parts.push(tr(`manage.requests.via.${d.via}`, String(d.via)))
+    return parts.join(' · ')
+  }
   if (CLUB_ACTIONS.has(entry?.action)) {
     // club.delete (and a renamed club.update) carries the name itself
     const name = club || (d.name ? String(d.name) : null)
