@@ -120,6 +120,33 @@ export function getSetResult(homePoints, awayPoints, setIndex, opts = {}) {
  * @param {number} setIndex
  * @returns {{homePoints:number, awayPoints:number}}
  */
+/**
+ * Which team serves now in a set: the team that won the last rally, unless
+ * the game went back since (domain/rectify): then the team the rectification
+ * gave the serve to. A point set by hand when the game went back
+ * (payload.scoreAdjusted) won no rally and passes no serve. One rule for the
+ * scorer's screen, the Point path (who rotates), the referee and the rebuild.
+ * @returns {string} 'home' | 'away' (the set's first server before any rally)
+ */
+export function servingTeamFromLog(events, setIndex, match = {}) {
+  const team = (t) => t === 'home' || t === 'away'
+  const later = (a, b) => {
+    const as = a.seq || 0
+    const bs = b.seq || 0
+    if (as !== bs) return as > bs
+    return Date.parse(a.ts || 0) > Date.parse(b.ts || 0)
+  }
+  let last = null
+  for (const e of events || []) {
+    if ((e?.setIndex ?? 1) !== setIndex) continue
+    const counts = (e.type === 'point' && e.payload?.scoreAdjusted !== true && team(e.payload?.team)) ||
+      (e.type === 'rectification' && team(e.payload?.serve))
+    if (counts && (!last || later(e, last))) last = e
+  }
+  if (!last) return getFirstServeForSet(setIndex, match || {})
+  return last.type === 'rectification' ? last.payload.serve : last.payload.team
+}
+
 export function scoreFromPointEvents(events, setIndex) {
   let homePoints = 0
   let awayPoints = 0

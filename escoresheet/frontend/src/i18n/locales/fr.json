@@ -4403,6 +4403,125 @@
     "opensource": "Avis open source",
     "signUpConsent": "La création d’un compte vaut acceptation des <terms>conditions d’utilisation</terms> et de la <privacy>déclaration de protection des données</privacy>."
   },
+  "rectify": {
+    "moment": {
+      "setStart": "Début du set ({{score}})"
+    },
+    "log": {
+      "applied": "Jeu ramené en arrière : set {{set}}, {{before}} → {{after}}",
+      "reversed": "Repris : jeu ramené en arrière dans le set {{set}}"
+    },
+    "lineup": {
+      "libero": "libéro",
+      "position": "{{team}} : joueur/euse en position {{pos}}"
+    },
+    "field": {
+      "lineup": "Formation de {{team}}",
+      "moment": "Score au moment de l’erreur",
+      "kind": "Qu’était-ce ? (pour la remarque)",
+      "cancel": "Les points de qui depuis sont annulés ?",
+      "penalty": "Point et service à",
+      "score": "Score",
+      "serve": "Service suivant",
+      "takeBack": "Remplacements de ce set",
+      "remark": "Remarque sur la feuille de match"
+    },
+    "score": {
+      "minus": "Un point de moins pour {{team}}",
+      "value": "Points de {{team}}",
+      "plus": "Un point de plus pour {{team}}"
+    },
+    "blocked": {
+      "noSet": "Seulement pendant un set.",
+      "rally": "Un échange est en cours : terminez-le d’abord."
+    },
+    "step": {
+      "when": "Quand l’erreur s’est-elle produite ?",
+      "what": "Ce qui se passe",
+      "edit": "Vérifier et modifier, puis reprendre"
+    },
+    "hint": {
+      "moment": "Les points marqués après ce score sont ceux « depuis ».",
+      "team": "Remplacement irrégulier découvert plus tard (R15.9.2), positions non conformes à la fiche de position (R7.3.5.3), mauvais/e serveur/euse (R7.7.2) : les points de l’équipe fautive sont annulés, point et service à l’adversaire.",
+      "both": "Les officiels ont donné une information erronée, ou un échange a été joué à cinq ou sept (Casebook 2.3, 2.4) : les deux, personne.",
+      "edit": "Modifiez tout ce que les arbitres ont décidé autrement. Rien n’est enregistré avant « Reprendre ».",
+      "score": "Avant : {{score}}.",
+      "takeBack": "Un remplacement repris quitte la feuille ; ses joueurs/euses reprennent leurs positions.",
+      "remarkEmpty": "Laissée vide, la remarque de l’application est écrite : la feuille doit dire ce qui s’est passé."
+    },
+    "action": {
+      "next": "Suivant",
+      "confirm": "Confirmer",
+      "resume": "Reprendre"
+    },
+    "since": "Depuis {{score}}",
+    "teamOption": "Équipe {{letter}}",
+    "both": "Les deux",
+    "nobody": "Personne",
+    "summary": "{{before}} → {{after}}",
+    "server": "Serveur/euse : #{{n}} (position I)",
+    "takeBack": "Reprendre",
+    "remarkReset": "Utiliser le texte de l’application",
+    "back": "Retour",
+    "forfeit": {
+      "text": "Une équipe ne peut pas continuer (forfait, incomplète) ?",
+      "link": "Arrêter le match"
+    },
+    "describe": {
+      "cancelledPoint": "Point annulé : {{team}}",
+      "title": "Jeu ramené en arrière",
+      "back": "score ramené à {{score}}",
+      "cancelled": "{{n}} point(s) de {{team}} annulé(s)",
+      "pointTo": "point à {{team}}"
+    },
+    "menu": "Revenir en arrière",
+    "title": "Revenir en arrière",
+    "error": {
+      "chooseMoment": "Choisissez le score au moment de l’erreur.",
+      "chooseCancel": "Choisissez les points de qui sont annulés.",
+      "notLive": "Seul le set en cours peut être ramené en arrière ici. Pour un set antérieur, utilisez les corrections et informez l’arbitre.",
+      "setFinished": "Le set {{set}} est terminé. Utilisez les corrections et informez l’arbitre.",
+      "nothingToChange": "Rien ne change : aucun point n’est annulé ni donné.",
+      "lineupIncomplete": "Choisissez un/e joueur/euse pour chacune des six positions.",
+      "lineupDuplicate": "#{{n}} est choisi/e deux fois.",
+      "badScore": "Un score est un nombre entier à partir de 0.",
+      "notFound": "Cette entrée n’existe plus.",
+      "notLast": "Des échanges ont été joués après : reprenez-les d’abord.",
+      "laterRectification": "Un retour en arrière plus récent dans ce set passe d’abord : reprenez-le d’abord."
+    },
+    "note": {
+      "setWon": "Ce score termine le set {{set}} : confirmez ensuite la fin du set.",
+      "timeline": "Les temps morts, remplacements et sanctions après restent ; sur la feuille ils montrent maintenant le score rectifié."
+    },
+    "remark": {
+      "line": "Set {{set}}, points {{before}} : {{what}} ({{details}}). Nouveau score set {{set}} : {{after}}.",
+      "since": "depuis {{from}}, {{n}} points de l’équipe {{team}} annulés",
+      "sinceOne": "depuis {{from}}, 1 point de l’équipe {{team}} annulé",
+      "sinceNone": "depuis {{from}}, aucun point annulé",
+      "both": "points des deux équipes depuis {{from}} annulés",
+      "subTakenBack": "remplacement #{{in}} pour #{{out}} de l’équipe {{team}} repris",
+      "penalty": "point et service à l’équipe {{team}}",
+      "noPoint": "pas de point",
+      "serve": "service à l’équipe {{team}}"
+    },
+    "remarkWhat": {
+      "illegal_substitution": "remplacement irrégulier de l’équipe {{team}}",
+      "illegal_substitutionNoTeam": "remplacement irrégulier",
+      "wrong_positions": "positions non conformes à la fiche de position, équipe {{team}}",
+      "wrong_positionsNoTeam": "positions non conformes à la fiche de position",
+      "wrong_server": "mauvais/e serveur/euse de l’équipe {{team}}",
+      "wrong_serverNoTeam": "mauvais/e serveur/euse",
+      "officials_mistake": "erreur des officiels",
+      "other": "jeu ramené en arrière"
+    },
+    "kind": {
+      "illegal_substitution": "Remplacement irrégulier",
+      "wrong_positions": "Mauvaises positions",
+      "wrong_server": "Mauvais/e serveur/euse",
+      "officials_mistake": "Erreur des officiels",
+      "other": "Autre"
+    }
+  },
   "corrections": {
     "teamLetter": "Équipe {{letter}}",
     "teamWithLetter": "{{name}} ({{letter}})",
