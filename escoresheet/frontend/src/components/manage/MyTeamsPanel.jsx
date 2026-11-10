@@ -621,7 +621,8 @@ function GameFacts({ game }) {
   const { t } = useTranslation()
   const place = [game.hall_address, [game.hall_postal_code, game.city].filter(Boolean).join(' ')].filter(Boolean).join(', ')
   const where = [game.hall, place].filter(Boolean).join(', ')
-  const referees = Array.isArray(game.referees) ? game.referees : []
+  // a server before the referees (no `referees`) leaves the line out rather than say "not assigned"
+  const referees = Array.isArray(game.referees) ? game.referees : null
   const items = [
     { label: t('manage.myTeams.facts.when'), value: when(game.datetime) || '–' },
     {
@@ -631,7 +632,7 @@ function GameFacts({ game }) {
         : '–'
     },
     { label: t('manage.myTeams.facts.league'), value: game.league || '–' },
-    { label: t('manage.myTeams.facts.referees'), value: referees.length ? referees.join(', ') : t('manage.myTeams.facts.noReferees') },
+    ...(referees ? [{ label: t('manage.myTeams.facts.referees'), value: referees.length ? referees.join(', ') : t('manage.myTeams.facts.noReferees') }] : []),
     { label: t('manage.myTeams.facts.game'), value: <span className="tabular-nums">#{game.game_number}</span> }
   ]
   return (
