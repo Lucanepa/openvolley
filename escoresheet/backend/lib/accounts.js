@@ -81,6 +81,9 @@ export const AUDIT_ACTIONS = Object.freeze([
   // db/024: a club's licence list from VolleyManager replaced (lib/licences.js;
   // the list and the count, never a name)
   'club.licences',
+  // db/026: people typed in by hand added to a club's lists (lib/licences.js
+  // addPeople; the club, the team, the counts per list, never a name)
+  'club.licences.manual',
   // db/025: a part of a sign-up request approved or rejected (lib/accountRequests.js;
   // the kind, the club and team ids, who decided: admin, club or team)
   'account.request_approve', 'account.request_reject'

@@ -25,6 +25,8 @@ const COACH = { sv_number: '200001', last_name: 'Trainer', first_name: 'Tina', d
 const player = (number, p, extra = {}) => ({ number, first_name: p.first_name, last_name: p.last_name, dob: p.dob, license_number: p.sv_number, ...extra })
 const official = (role, p) => ({ role, first_name: p.first_name, last_name: p.last_name, dob: p.dob, license_number: p.sv_number })
 const FIVE = ['dob', 'first_name', 'gender', 'last_name', 'sv_number']
+// db/026: every person read also has `manual` (added by hand; all of these are uploaded)
+const READ = [...FIVE, 'manual'].sort()
 
 describe('club licence lists', { skip: SKIP }, () => {
   let db, srv, sql
@@ -147,7 +149,7 @@ describe('club licence lists', { skip: SKIP }, () => {
     const own = await call(users.othermgr, 'GET', `/api/club/${other.id}/licences`)
     assert.equal(own.status, 200, own.text)
     assert.deepEqual(own.json.data.people, [])
-    assert.deepEqual(own.json.data.lists.players, { count: 0, imported_at: null, imported_by_name: null })
+    assert.deepEqual(own.json.data.lists.players, { count: 0, manual: 0, imported_at: null, imported_by_name: null })
   })
 
   it('the team manager reads the club\'s lists through its team only, with the team\'s gender', async () => {
@@ -157,13 +159,14 @@ describe('club licence lists', { skip: SKIP }, () => {
     assert.equal(r.json.data.team.club_id, musterdorf.id)
     // players: the players list (the player rows, as before)
     assert.deepEqual(r.json.data.players.map((p) => p.sv_number), ['100001', '100002', '100003', '100004'])
-    assert.deepEqual(Object.keys(r.json.data.players[0]).sort(), FIVE)
+    assert.deepEqual(Object.keys(r.json.data.players[0]).sort(), READ)
+    assert.ok(r.json.data.players.every((p) => p.manual === false))
     // people: everyone of the three lists once, with its lists (the team officials)
     assert.deepEqual(r.json.data.people.map((p) => [p.sv_number, p.lists]), [
       ['100001', ['players']], ['100002', ['players']], ['100003', ['players', 'coaches']], ['100004', ['players']], ['200001', ['coaches']]
     ])
-    assert.deepEqual(Object.keys(r.json.data.people[0]).sort(), [...FIVE, 'lists'].sort())
-    assert.deepEqual(r.json.data.people.find((p) => p.sv_number === '200001'), { ...COACH, lists: ['coaches'] })
+    assert.deepEqual(Object.keys(r.json.data.people[0]).sort(), [...READ, 'lists'].sort())
+    assert.deepEqual(r.json.data.people.find((p) => p.sv_number === '200001'), { ...COACH, manual: false, lists: ['coaches'] })
     // not the club's other teams
     assert.equal((await call(users.coach, 'GET', `/api/team/${d1.id}/club-players`)).status, 403)
     assert.equal((await call(users.stranger, 'GET', `/api/team/${h1.id}/club-players`)).status, 403)
@@ -180,14 +183,14 @@ describe('club licence lists', { skip: SKIP }, () => {
     assert.equal(c.club_id, musterdorf.id)
     assert.deepEqual(c.team_names, ['VBC Musterdorf D1', 'VBC Musterdorf H1', 'VBC Musterdorf X1'])
     assert.deepEqual(c.team_genders, { 'VBC Musterdorf D1': 'f', 'VBC Musterdorf H1': 'm', 'VBC Musterdorf X1': null })
-    // players: the players list only, as release 3.0.15 reads it (five fields)
+    // players: the players list only, as release 3.0.15 reads it (the five fields, and manual)
     assert.deepEqual(c.players.map((p) => p.sv_number), ['100001', '100002', '100003', '100004'])
-    assert.deepEqual(Object.keys(c.players[0]).sort(), FIVE)
+    assert.deepEqual(Object.keys(c.players[0]).sort(), READ)
     // people: the whole club once, with its lists, for the bench officials
     assert.deepEqual(c.people.map((p) => [p.last_name, p.lists]), [
       ['Beispiel', ['players']], ['Muster', ['players']], ['Probe', ['players', 'coaches']], ['Testmann', ['players']], ['Trainer', ['coaches']]
     ])
-    assert.deepEqual(c.people.find((p) => p.sv_number === '100003'), { ...MARCO, lists: ['players', 'coaches'] })
+    assert.deepEqual(c.people.find((p) => p.sv_number === '100003'), { ...MARCO, manual: false, lists: ['players', 'coaches'] })
     const o = await call(users.otherscorer, 'GET', '/api/club-licences')
     assert.equal(o.status, 200, o.text)
     assert.deepEqual(o.json.data.clubs.map((x) => [x.club_id, x.players.length, x.people.length]), [[other.id, 0, 0]])
@@ -255,7 +258,8 @@ describe('club licence lists', { skip: SKIP }, () => {
     assert.deepEqual(by['200001'].teams.map((t) => [t.id, t.name]), [[h1.id, 'VBC Musterdorf H1']])
     assert.deepEqual(by['100004'].teams.map((t) => t.name), ['VBC Musterdorf H1'])
     assert.equal(by['100004'].dob, null)
-    assert.deepEqual(Object.keys(by['100001']).sort(), ['dob', 'first_name', 'gender', 'last_name', 'lists', 'sv_number', 'teams'])
+    assert.deepEqual(Object.keys(by['100001']).sort(), ['dob', 'first_name', 'gender', 'last_name', 'lists', 'manual', 'sv_number', 'teams'])
+    assert.deepEqual([d.lists.players.manual, d.lists.coaches.manual, d.lists.scorers.manual], [0, 0, 0])
   })
 
   it('a new upload replaces that list only; an empty one clears it', async () => {

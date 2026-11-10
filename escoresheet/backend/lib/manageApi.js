@@ -50,9 +50,13 @@
  *   PUT    /api/club/:id/licences/:list { people }   a manager of that club, or isAdmin (db/024):
  *                                                    one licence list (players|scorers|coaches) replaced
  *   GET    /api/club/:id/licences                    the same: every person once, its lists and teams
+ *   POST   /api/club/:id/licences/people { people }  the same: people typed in by hand added to the
+ *                                                    club's lists (db/026), never over an existing row
  *   GET    /api/team/:id/club-players                whoever may manage the team (lib/teams.js
  *                                                    mayManage): the club's players list, every person
  *                                                    of its lists once (people), the team's gender
+ *   POST   /api/team/:id/club-people { people }      the same: as POST /api/club/:id/licences/people,
+ *                                                    to the team's club (db/026)
  *   GET    /api/club-licences                        indoor canReadTeams: the players lists and every
  *                                                    person of the lists of the caller's clubs, for the
  *                                                    scoring tablet (offline first)
@@ -266,6 +270,8 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     // db/024: the club's licence lists from VolleyManager
     ...licenceListRoutes,
     ['GET', new RegExp(`^/api/club/${ID}/licences$`), clubManagerOf, (m) => lic((l) => l.clubList({ clubId: m[1] }))],
+    // db/026: people typed in by hand, added to the club's lists (owner 2026-11-10)
+    ['POST', new RegExp(`^/api/club/${ID}/licences/people$`), clubManagerOf, (m, c) => lic((l) => l.addPeople({ clubId: m[1], body: c.body, userId: c.user.id }))],
     // db/023: a team manager's own team (lib/teams.js); the game number is ?game=
     ['GET', new RegExp(`^/api/team/${ID}$`), teamManagerOf, (m) => team((tm) => tm.teamDetail({ teamId: m[1] }))],
     ['GET', new RegExp(`^/api/team/${ID}/squad$`), teamManagerOf, (m) => team((tm) => tm.squad({ teamId: m[1] }))],
@@ -276,6 +282,8 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['DELETE', new RegExp(`^/api/team/${ID}/roster$`), teamManagerOf, (m, c) => team((tm) => tm.deleteRoster({ actorId: c.user.id, teamId: m[1], game: q(c.query, 'game') }))],
     // db/024: the players list and the people of the team's club, for "Add from club"
     ['GET', new RegExp(`^/api/team/${ID}/club-players$`), teamManagerOf, (m) => lic((l) => l.teamClubPlayers({ teamId: m[1] }))],
+    // db/026: after a squad is saved, the people typed in by hand go to the team's club if the manager wants
+    ['POST', new RegExp(`^/api/team/${ID}/club-people$`), teamManagerOf, (m, c) => lic((l) => l.addPeople({ teamId: m[1], body: c.body, userId: c.user.id }))],
     // db/025: the team manager requests of the team
     ['GET', new RegExp(`^/api/team/${ID}/requests$`), teamManagerOf, (m) => req((r) => r.listForTeam({ teamId: m[1] }))],
     ['POST', new RegExp(`^/api/team/${ID}/requests/${ID}$`), teamManagerOf, (m, c) => req((r) => r.decide({ actorId: c.user.id, userId: m[2], body: c.body, scope: { teamId: m[1] } }))],

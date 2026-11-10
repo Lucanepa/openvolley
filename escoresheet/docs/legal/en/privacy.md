@@ -1,6 +1,6 @@
 # Privacy policy
 
-**OpenVolley and OpenBeach** · Version 1.11 · As of 9 November 2026
+**OpenVolley and OpenBeach** · Version 1.12 · As of 10 November 2026
 
 This policy is available in German, English, French and Italian. The English
 version is binding.
@@ -446,9 +446,12 @@ managers for their rosters, and they are downloaded to the scoring devices of
 the club's scorers so that the match setup can add players and team officials
 (a coach can be anyone of the club's lists) without internet. The gender is
 used so that a player is not put in a team of the other gender; it is not
-checked for team officials. Each upload replaces that list; the lists are deleted with the
-club. On a scoring device the copy is replaced by each download and deleted
-when the account signs out.
+checked for team officials. Each upload replaces the people of the previous
+upload of that list; the lists are deleted with the club. The lists can also
+hold people that a team manager or a club manager added by hand from a team's
+roster (licence number, names, date of birth and gender only); an upload keeps
+them, and they are deleted with their list or the club. On a scoring device
+the copy is replaced by each download and deleted when the account signs out.
 
 **Beach tournaments:** title, venue, dates, teams with the players' first and
 last names, licence numbers and countries, schedule, results, names of
@@ -639,7 +642,7 @@ copy of these safeguards.
 | Club managers | Until the administrators remove them, the club is deleted or you delete your account |
 | Team managers | Until a club manager or an administrator removes them, the team or the club is deleted, or you delete your account |
 | A roster sent ahead (players, staff, signatures) | Until a scorer accepts it, at the latest 14 days after the game; the note that it was accepted 14 days after the game |
-| A club's licence lists (licence number, names, date of birth, gender) | Until the next upload of that list, its deletion by a club manager or the deletion of the club; on a scoring device until the next download or sign-out |
+| A club's licence lists (licence number, names, date of birth, gender) | Until the next upload of that list, its deletion by a club manager or the deletion of the club; people added by hand: until the list or the club is deleted; on a scoring device until the next download or sign-out |
 | A referee's email address for a match | With the match, as part of the scoresheet |
 | Sending of the final scoresheet (time, number of recipients, no addresses) | With the match |
 | Scoresheet of a test match by email | Not stored on the server |
