@@ -2,7 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   CookieJar, vmLogin, fetchAllGames, fetchWithRetry, followRedirects, extractFormFields,
-  extractCsrfToken, createRedactor, VmHttpError
+  extractCsrfToken, createRedactor, VmHttpError, SEARCH_PAGE_SIZE, SEARCH_TIMEOUT_MS
 } from '../lib/vmSync.js'
 import {
   createFakeVolleyManager, makeGame, FAKE_BASE, FAKE_USER, FAKE_PASSWORD, FAKE_CSRF,
@@ -264,6 +264,41 @@ describe('fetchAllGames', () => {
     assert.equal(r.items.length, 4)
     assert.equal(r.incomplete, true)
     assert.match(r.pageError, /HTTP 500/)
+  })
+
+  it('a later page that keeps failing is asked again with half the size, at the same offset', async () => {
+    const games = Array.from({ length: 9 }, (_, i) => makeGame(3000 + i))
+    const vm = createFakeVolleyManager({ games, slowAbove: 2 })
+    const { jar, csrfToken } = await login(vm)
+    const r = await fetchAllGames(jar, csrfToken, 'a', 'b', { fetch: vm.fetch, baseUrl: vm.baseUrl, http, batchSize: 4, minBatchSize: 1, sleep: noSleep })
+    assert.equal(r.incomplete, false)
+    assert.deepEqual(r.items.map((g) => g.game.number), games.map((g) => g.game.number))
+    const asked = vm.calls.filter((c) => c.path.startsWith('/api/indoorvolleyball.refadmin/')).map((c) => {
+      const f = new URLSearchParams(c.body)
+      return `${f.get('searchConfiguration[offset]')}/${f.get('searchConfiguration[limit]')}`
+    })
+    // the page of 4 at offset 4 fails twice (one retry), then pages of 2
+    assert.deepEqual(asked, ['0/4', '4/4', '4/4', '4/2', '6/2', '8/2'])
+  })
+
+  it('stops at the smallest page size, incomplete', async () => {
+    const games = Array.from({ length: 9 }, (_, i) => makeGame(3100 + i))
+    const vm = createFakeVolleyManager({ games, slowAbove: 1 })
+    const { jar, csrfToken } = await login(vm)
+    const r = await fetchAllGames(jar, csrfToken, 'a', 'b', { fetch: vm.fetch, baseUrl: vm.baseUrl, http, batchSize: 4, minBatchSize: 2, sleep: noSleep })
+    assert.equal(r.items.length, 4)
+    assert.equal(r.incomplete, true)
+    assert.match(r.pageError, /HTTP 503/)
+  })
+
+  it('search pages default to SEARCH_PAGE_SIZE with their own timeout', async () => {
+    assert.equal(SEARCH_PAGE_SIZE, 100)
+    assert.equal(SEARCH_TIMEOUT_MS, 45000)
+    const vm = createFakeVolleyManager({ games: [makeGame(1)] })
+    const { jar, csrfToken } = await login(vm)
+    await fetchAllGames(jar, csrfToken, 'a', 'b', { fetch: vm.fetch, baseUrl: vm.baseUrl, http, sleep: noSleep })
+    const search = vm.calls.find((c) => c.path.startsWith('/api/indoorvolleyball.refadmin/'))
+    assert.equal(new URLSearchParams(search.body).get('searchConfiguration[limit]'), '100')
   })
 
   it('keeps paging when VM caps the page size below the requested limit', async () => {

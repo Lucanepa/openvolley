@@ -145,7 +145,7 @@ describe('runVmSync (fake pool, fake VolleyManager)', () => {
     const games = Array.from({ length: 3 }, (_, i) => makeGame(i + 1))
     const vm = createFakeVolleyManager({ games, failSearchAt: 2 })
     const pool = fakePool()
-    const r = await runVmSync({ pool, fetch: vm.fetch, baseUrl: vm.baseUrl, http, now: NOW, credentials: creds, logger: memLogger(), batchSize: 2, pageDelayMs: 0 })
+    const r = await runVmSync({ pool, fetch: vm.fetch, baseUrl: vm.baseUrl, http, now: NOW, credentials: creds, logger: memLogger(), batchSize: 2, pageSize: 2, pageDelayMs: 0 })
     assert.equal(r.status, 'partial')
     assert.match(pool.state.log.get(r.logId).message, /INCOMPLETE: 2\/3/)
   })
