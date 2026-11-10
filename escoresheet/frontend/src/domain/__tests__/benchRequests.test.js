@@ -205,6 +205,12 @@ describe('helpers', () => {
     expect(benchSetIndex([])).toBe(1)
     expect(benchSetIndex([{ index: 1, finished: true }, { index: 2 }])).toBe(2)
     expect(benchSetIndex([{ index: 1, finished: true }])).toBe(2)
+    // between sets: the coming set the scorer's live state names (a best-of-3 decider: 5)
+    expect(benchSetIndex([{ index: 1, finished: true }], { current_set: 2 })).toBe(2)
+    expect(benchSetIndex([{ index: 1, finished: true }, { index: 2, finished: true }], { current_set: 5 })).toBe(5)
+    // a live state from before the set end (older copy) changes nothing
+    expect(benchSetIndex([{ index: 1, finished: true }], { current_set: 1 })).toBe(2)
+    expect(benchSetIndex([{ index: 1, finished: true }, { index: 2 }], { current_set: 3 })).toBe(2)
     expect(setHasStarted([point(2)], 2)).toBe(true)
     expect(setHasStarted([point(1)], 2)).toBe(false)
     const a = lineupEv(LU)

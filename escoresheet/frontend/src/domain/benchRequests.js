@@ -60,10 +60,14 @@ export function latestLineup(events, setIndex, team) {
 export const lineupNumber = (v) => (v && typeof v === 'object' && v.number !== undefined ? v.number : v)
 
 /**
- * The set a bench sends for now: the match's first unfinished set, else the
- * one after the last. `sets` as the relay hands them ({ index, finished }).
+ * The set a bench sends for now, and the set its header shows: the match's
+ * first unfinished set, else (the interval between sets, before the next
+ * set's line-up creates it) the set the scorer's live state names, else the
+ * one after the last. `sets` as the relay hands them ({ index, finished });
+ * `liveState` the bundle's (current_set: the coming set in the interval, a
+ * best-of-3 decider 5). The header showed "SET 1" through the 1-2 interval.
  */
-export function benchSetIndex(sets) {
+export function benchSetIndex(sets, liveState = null) {
   let open = null
   let last = 0
   for (const s of sets || []) {
@@ -72,7 +76,10 @@ export function benchSetIndex(sets) {
     if (i > last) last = i
     if (!s.finished && (open === null || i < open)) open = i
   }
-  return open ?? (last > 0 ? last + 1 : 1)
+  if (open !== null) return open
+  const live = Number(liveState?.current_set)
+  if (Number.isInteger(live) && live > last && live <= 5) return live
+  return last > 0 ? last + 1 : 1
 }
 
 /**
