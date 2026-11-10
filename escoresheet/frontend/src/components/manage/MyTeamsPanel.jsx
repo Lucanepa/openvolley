@@ -1,9 +1,9 @@
 import { useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { FileUp, PenLine, Trash2, UserPlus } from 'lucide-react'
+import { ArrowLeft, FileUp, PenLine, Plus, Trash2, UserPlus } from 'lucide-react'
 import { teamApi } from '../../lib/accountApi'
-import { addClubPlayersToGameDraft, clubPersonOf, clubPersonToPlayer, gameRosterBody, gameRosterDraft, officialOfRole, officialRolesOf, parsedPdfToRoster, playerFinder, setGameDraftOfficial, wrongGenderIndexes, GAME_ROSTER_MAX_PLAYERS } from '../../domain/teamRosters'
+import { addClubPlayersToGameDraft, clubPersonOf, clubPersonToPlayer, gameRosterBody, gameRosterDraft, officialOfRole, officialRolesOf, parsedPdfToRoster, playerFinder, roleForNewOfficial, setGameDraftOfficial, setGameDraftStaffRole, wrongGenderIndexes, GAME_ROSTER_MAX_PLAYERS, GAME_ROSTER_MAX_STAFF } from '../../domain/teamRosters'
 import { STAFF_ROLES } from '../../domain/savedTeams'
 import { shirtNumberDigits } from '../../domain/roster'
 import TeamEditor, { clubPeopleOf, clubPersonOffer } from './TeamEditor'
@@ -11,9 +11,8 @@ import RequestsSection from './RequestsSection'
 import ClubPlayerPickerModal from '../ClubPlayerPickerModal'
 import ClubShield from './ClubShield'
 import SignaturePad from '../SignaturePad'
-import KitModal from './KitModal'
 import { usePanelData, useOnline, OfflineBanner, PanelHead, InlineError, useErrorText } from './common'
-import { Button, Checkbox, Chip, EmptyInset, Field, Input, Notice, Row, RowList, RowTool, Select, SectionHeader, SkeletonRows, confirmDialog, dayLabel, timeLabel, toast, cn } from '../../ui'
+import { Button, Checkbox, Chip, DateField, EmptyInset, Field, Input, Notice, Row, RowList, RowTool, Select, SectionHeader, SkeletonRows, confirmDialog, dayLabel, timeLabel, toast, cn } from '../../ui'
 
 const STAFF_ROLE_KEYS = {
   Coach: 'benchRoles.coach',
@@ -30,15 +29,25 @@ const when = (v) => [dayLabel(v, { year: true }), timeLabel(v)].filter(Boolean).
  * the season (a saved team, which scorers load in Match Setup), and the
  * roster of each of its games, sent ahead so the scoring tablet has it in the
  * hall without internet. An account with several teams picks one first.
+ *
+ * A game's roster is a page of its own (owner 2026-11-10: "new page with url
+ * with the game id"): `route` '<team id>/<game number>' (the console keeps it
+ * in the URL: #myteams/<team id>/<game number>), `onRoute(route, { push })`
+ * opens or leaves it. Without onRoute the panel keeps the route itself.
  */
-export default function MyTeamsPanel({ teams = [] }) {
+export default function MyTeamsPanel({ teams = [], route = '', onRoute = null }) {
   const { t } = useTranslation()
   const [teamId, setTeamId] = useState(teams[0]?.id || '')
-  const team = teams.find((x) => x.id === teamId) || teams[0]
+  const [ownRoute, setOwnRoute] = useState('')
+  const [routeTeam, routeGame] = String((onRoute ? route : ownRoute) || '').split('/')
+  const go = (next, opts) => (onRoute ? onRoute(next, opts) : setOwnRoute(next))
+  const byRoute = routeGame ? teams.find((x) => x.id === routeTeam) : null
+  const team = byRoute || teams.find((x) => x.id === teamId) || teams[0]
   if (!team) return <EmptyInset>{t('manage.myTeams.none')}</EmptyInset>
+  const gameNumber = byRoute && /^\d+$/.test(routeGame) ? routeGame : null
   return (
     <div className="space-y-8" data-testid="manage-my-teams">
-      {teams.length > 1 && (
+      {teams.length > 1 && !gameNumber && (
         <Field label={t('manage.myTeams.pick')}>
           <Select value={team.id} onChange={(e) => setTeamId(e.target.value)} data-testid="my-teams-pick">
             {teams.map((x) => <option key={x.id} value={x.id}>{x.name} · {x.club_name}</option>)}
@@ -46,16 +55,23 @@ export default function MyTeamsPanel({ teams = [] }) {
         </Field>
       )}
       {/* keyed: another team starts its sections afresh */}
-      <TeamSections key={team.id} team={team} />
+      <TeamSections
+        key={team.id}
+        team={team}
+        gameNumber={gameNumber}
+        onOpenGame={(n) => go(`${team.id}/${n}`, { push: true })}
+        onCloseGame={() => go('')}
+      />
     </div>
   )
 }
 
-function TeamSections({ team }) {
+function TeamSections({ team, gameNumber = null, onOpenGame, onCloseGame }) {
   const { t } = useTranslation()
   const online = useOnline()
   const errorText = useErrorText()
   const squad = usePanelData(() => teamApi.squad(team.id), [team.id], { enabled: online })
+  const games = usePanelData(() => teamApi.games(team.id), [team.id], { enabled: online })
   const saved = squad.data?.squad || null
   // db/024: the club's lists ("Add from club": the players list for the
   // players, everyone of the lists for the officials) and the team's gender;
@@ -82,6 +98,31 @@ function TeamSections({ team }) {
     if (!res.error) club.reload({ quiet: true })
     return res
   }
+  // a game's roster: its own page
+  if (gameNumber) {
+    const game = (games.data?.games || []).find((g) => String(g.game_number) === String(gameNumber)) || null
+    if (!game) {
+      return (
+        <section data-testid="game-roster-page">
+          <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={onCloseGame} className="mb-3" data-testid="game-roster-back">{team.name}</Button>
+          {games.error && <Notice className="mb-3">{errorText(games.error)}</Notice>}
+          {games.loading || !games.data ? <SkeletonRows rows={4} pill={false} /> : <EmptyInset>{t('manage.myTeams.gameNotFound', { number: gameNumber })}</EmptyInset>}
+        </section>
+      )
+    }
+    return (
+      <GameRosterPage
+        key={game.game_number}
+        team={team}
+        game={game}
+        squad={saved}
+        squadLoading={squad.loading && !squad.data}
+        clubPlayers={clubPlayers}
+        onBack={onCloseGame}
+        onSaved={() => { games.reload({ quiet: true }); onCloseGame() }}
+      />
+    )
+  }
   return (
     <>
       <section>
@@ -106,18 +147,17 @@ function TeamSections({ team }) {
         )}
       </section>
 
-      <TeamGames team={team} squad={saved} clubPlayers={clubPlayers} />
+      <TeamGames games={games} onOpen={onOpenGame} />
     </>
   )
 }
 
-function TeamGames({ team, squad, clubPlayers }) {
+function TeamGames({ games: list, onOpen }) {
   const { t } = useTranslation()
   const online = useOnline()
   const errorText = useErrorText()
-  const { data, error, loading, reload } = usePanelData(() => teamApi.games(team.id), [team.id], { enabled: online })
+  const { data, error, loading } = list
   const games = data?.games || []
-  const [open, setOpen] = useState(null) // the game whose roster is open
   return (
     <section>
       <PanelHead title={t('manage.myTeams.games')} level={2} />
@@ -154,7 +194,7 @@ function TeamGames({ team, squad, clubPlayers }) {
                   {g.roster && !g.roster.used_at && g.roster.signed?.coach && g.roster.signed?.captain && <Chip>{t('manage.myTeams.signedChip')}</Chip>}
                 </>}
                 tools={
-                  <RowTool disabled={!online} onClick={() => setOpen(g)} data-testid="my-team-game-roster">
+                  <RowTool disabled={!online} onClick={() => onOpen(g.game_number)} data-testid="my-team-game-roster">
                     {g.roster && !g.roster.used_at ? t('manage.myTeams.edit') : t('manage.myTeams.prepare')}
                   </RowTool>
                 }
@@ -163,29 +203,21 @@ function TeamGames({ team, squad, clubPlayers }) {
           })}
         </RowList>
       )}
-      {open && (
-        <GameRosterDialog
-          team={team}
-          game={open}
-          squad={squad}
-          clubPlayers={clubPlayers}
-          onClose={() => setOpen(null)}
-          onSaved={() => { setOpen(null); reload({ quiet: true }) }}
-        />
-      )}
     </section>
   )
 }
 
 /**
- * One game's roster: tick up to 14 players of the saved team (or of an
- * Einsatzliste), numbers, captain, liberos, officials. No lock (owner
- * 2026-11-08): it can be changed at any time. The coach and the captain may
- * sign ahead; a signature belongs to the roster it was made on, so a change
- * after signing asks for it again. A roster the scorer accepted is gone from
- * the server: a new one can be sent.
+ * One game's roster, a page of its own: tick up to 14 players of the saved
+ * team (or of an Einsatzliste), numbers, captain, liberos, officials. No lock
+ * (owner 2026-11-08): it can be changed at any time. The coach and the
+ * captain may sign ahead; a signature belongs to the roster it was made on,
+ * so a change after signing asks for it again. A roster the scorer accepted
+ * is gone from the server: a new one can be sent. Each official's role can
+ * be changed, and officials can be added by hand (owner 2026-11-10: "have
+ * people be put as P/M manually").
  */
-function GameRosterDialog({ team, game, squad, clubPlayers, onClose, onSaved }) {
+function GameRosterPage({ team, game, squad, squadLoading = false, clubPlayers, onBack, onSaved }) {
   const { t } = useTranslation()
   const online = useOnline()
   const errorText = useErrorText()
@@ -207,7 +239,27 @@ function GameRosterDialog({ team, game, squad, clubPlayers, onClose, onSaved }) 
     ...d,
     players: d.players.map((p) => (p.key === key ? { ...p, ...patch } : (patch.is_captain ? { ...p, is_captain: false } : p)))
   }))
-  const setStaff = (key, patch) => change((d) => ({ ...d, staff: d.staff.map((s) => (s.key === key ? { ...s, ...patch } : s)) }))
+  // ticking an official takes the role from whoever had it ticked (each role once)
+  const setStaff = (key, patch) => change((d) => {
+    const me = d.staff.find((s) => s.key === key)
+    return {
+      ...d,
+      staff: d.staff.map((s) => {
+        if (s.key === key) return { ...s, ...patch }
+        if (patch.picked && me && s.picked && s.role === me.role) return { ...s, picked: false }
+        return s
+      })
+    }
+  })
+  const setStaffRole = (key, role) => change((d) => setGameDraftStaffRole(d, key, role).draft)
+  // an official typed by hand (a physiotherapist or medic from outside the club, say)
+  const [newOfficial, setNewOfficial] = useState(null) // { role, first_name, last_name, dob, license_number }
+  const addOfficial = () => {
+    const o = newOfficial
+    if (!o || !String(o.last_name || '').trim() || !shown) return
+    change((d) => setGameDraftOfficial(d, o.role, { first_name: o.first_name, last_name: o.last_name, dob: o.dob || null, sv_number: o.license_number || null }).draft)
+    setNewOfficial(null)
+  }
   const { body, problems } = shown ? gameRosterBody(shown) : { body: null, problems: [] }
   const picked = body?.players.length || 0
   const bodyKey = body ? JSON.stringify(body) : ''
@@ -352,24 +404,18 @@ function GameRosterDialog({ team, game, squad, clubPlayers, onClose, onSaved }) 
   }
   return (
     <>
-      <KitModal
-        open
-        onClose={() => { if (!busy && !signing) onClose() }}
-        size="xl"
-        dismissible={!busy && !signing}
-        title={`${game.side === 'home' ? t('manage.myTeams.vs') : t('manage.myTeams.at')} ${opponent || '–'}`}
-        description={`${when(game.datetime)} · #${game.game_number}`}
-        closeLabel={t('common.close', 'Close')}
-        footer={<>
-          {sent && (
-            <Button variant="danger-outline" size="lg" icon={Trash2} onClick={remove} disabled={busy || !online} className="mr-auto">{t('manage.myTeams.delete')}</Button>
-          )}
-          <Button variant="secondary" size="lg" onClick={onClose} disabled={busy}>{t('common.cancel', 'Cancel')}</Button>
-          <Button variant="positive" size="lg" onClick={save} loading={busy} disabled={busy || !online || !body || picked === 0} data-testid="game-roster-save">
-            {t('manage.myTeams.send')}
-          </Button>
-        </>}
-      >
+      <section data-testid="game-roster-page">
+        <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={onBack} disabled={busy} className="mb-3" data-testid="game-roster-back">{team.name}</Button>
+        <PanelHead title={`${game.side === 'home' ? t('manage.myTeams.vs') : t('manage.myTeams.at')} ${opponent || '–'}`}>
+          <Chip tone={game.side === 'home' ? 'indigo' : 'stone'}>{game.side === 'home' ? t('manage.myTeams.home') : t('manage.myTeams.away')}</Chip>
+        </PanelHead>
+        <p className="-mt-2 mb-4 flex flex-wrap gap-x-3 gap-y-0.5 text-sm text-stone-500">
+          <span>{when(game.datetime)}</span>
+          {game.league && <span>{game.league}</span>}
+          {game.hall && <span>{game.hall}</span>}
+          <span>#{game.game_number}</span>
+        </p>
+        <OfflineBanner online={online} />
         <div className="space-y-4" data-testid="game-roster">
           {error && <Notice>{errorText(error)}</Notice>}
           {accepted && (
@@ -380,7 +426,7 @@ function GameRosterDialog({ team, game, squad, clubPlayers, onClose, onSaved }) 
               {t('manage.myTeams.sentBy', { when: when(sent.updated_at), name: sent.updated_by_name || '–' })}
             </p>
           )}
-          {loading && !data ? <SkeletonRows rows={4} pill={false} /> : shown && (
+          {(loading && !data) || squadLoading ? <SkeletonRows rows={4} pill={false} /> : shown && (
             <>
               <SectionHeader
                 title={t('manage.myTeams.players')}
@@ -428,26 +474,70 @@ function GameRosterDialog({ team, game, squad, clubPlayers, onClose, onSaved }) 
               <SectionHeader
                 title={t('manage.myTeams.officials')}
                 count={shown.staff.filter((s) => s.picked).length}
-                action={clubPlayers && (
-                  <Button variant="ghost" size="sm" icon={UserPlus} onClick={() => setOfficialPicker(true)} data-testid="game-official-from-club">{t('clubPlayers.add')}</Button>
+                action={(
+                  <div className="flex flex-wrap items-center gap-1">
+                    {clubPlayers && (
+                      <Button variant="ghost" size="sm" icon={UserPlus} onClick={() => setOfficialPicker(true)} data-testid="game-official-from-club">{t('clubPlayers.add')}</Button>
+                    )}
+                    <Button variant="ghost" size="sm" icon={Plus} disabled={!!newOfficial || shown.staff.length >= GAME_ROSTER_MAX_STAFF * 3} onClick={() => setNewOfficial({ role: roleForNewOfficial(shown.staff), first_name: '', last_name: '', dob: '', license_number: '' })} data-testid="game-official-add">{t('savedTeams.addStaff')}</Button>
+                  </div>
                 )}
               />
-              {shown.staff.length === 0 ? (
+              {shown.staff.length === 0 && !newOfficial ? (
                 <EmptyInset>{t('manage.myTeams.noOfficials')}</EmptyInset>
-              ) : (
+              ) : shown.staff.length > 0 && (
                 <ul className="divide-y divide-stone-200/70 overflow-hidden rounded-xl border border-stone-200/70 bg-white">
                   {shown.staff.map((s) => (
-                    <li key={s.key} className="flex items-center gap-x-3 px-3 py-2">
+                    <li key={s.key} className={cn('flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2', !s.picked && 'bg-stone-50/60')} data-testid="game-staff-row">
                       {clubPlayers && <ClubShield person={clubPersonOf(s, clubPlayers.people)} className="-my-1 -ml-2 -mr-2" />}
                       <Checkbox
                         checked={s.picked}
                         onChange={(e) => setStaff(s.key, { picked: e.target.checked })}
                         label={<span className="font-medium text-stone-900">{s.last_name} {s.first_name}</span>}
-                        hint={t(STAFF_ROLE_KEYS[s.role] || s.role)}
+                        hint={s.dob ? dayLabel(s.dob, { year: true }) : undefined}
+                        className="min-w-0 flex-1"
                       />
+                      <Select
+                        value={s.role}
+                        onChange={(e) => setStaffRole(s.key, e.target.value)}
+                        aria-label={`${t('savedTeams.role')} ${s.last_name}`}
+                        className="w-full sm:w-48"
+                        data-testid="game-staff-role"
+                      >
+                        {STAFF_ROLES.map((r) => <option key={r} value={r}>{t(STAFF_ROLE_KEYS[r], r)}</option>)}
+                      </Select>
                     </li>
                   ))}
                 </ul>
+              )}
+              {newOfficial && (
+                <div className="space-y-3 rounded-xl border border-stone-200 bg-stone-50 p-3" data-testid="game-official-new">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-[12rem_1fr_1fr]">
+                    <Field label={t('savedTeams.role')}>
+                      <Select value={newOfficial.role} onChange={(e) => setNewOfficial((o) => ({ ...o, role: e.target.value }))} data-testid="game-official-new-role">
+                        {STAFF_ROLES.map((r) => <option key={r} value={r}>{t(STAFF_ROLE_KEYS[r], r)}</option>)}
+                      </Select>
+                    </Field>
+                    <Field label={t('savedTeams.firstName')}>
+                      <Input value={newOfficial.first_name} onChange={(e) => setNewOfficial((o) => ({ ...o, first_name: e.target.value }))} maxLength={80} data-testid="game-official-new-first" />
+                    </Field>
+                    <Field label={t('savedTeams.lastName')}>
+                      <Input value={newOfficial.last_name} onChange={(e) => setNewOfficial((o) => ({ ...o, last_name: e.target.value }))} maxLength={80} required data-testid="game-official-new-last" />
+                    </Field>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-[12rem_10rem]">
+                    <Field label={t('savedTeams.dob')}>
+                      <DateField value={newOfficial.dob} onChange={(v) => setNewOfficial((o) => ({ ...o, dob: v }))} />
+                    </Field>
+                    <Field label={t('savedTeams.license')}>
+                      <Input value={newOfficial.license_number} onChange={(e) => setNewOfficial((o) => ({ ...o, license_number: e.target.value }))} maxLength={40} className="tabular-nums" />
+                    </Field>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button variant="positive" size="sm" disabled={!String(newOfficial.last_name || '').trim()} onClick={addOfficial} data-testid="game-official-new-add">{t('common.add', 'Add')}</Button>
+                    <Button variant="ghost" size="sm" onClick={() => setNewOfficial(null)}>{t('common.cancel', 'Cancel')}</Button>
+                  </div>
+                </div>
               )}
               <SectionHeader title={t('manage.myTeams.sig.title')} />
               <p className="text-xs text-stone-500">{t('manage.myTeams.signHint')}</p>
@@ -456,11 +546,23 @@ function GameRosterDialog({ team, game, squad, clubPlayers, onClose, onSaved }) 
                 {sigRow('captain', captain, 'manage.myTeams.sig.noCaptain')}
                 {sigRow('coach', coach, 'manage.myTeams.sig.noCoach')}
               </ul>
-              <InlineError error={saveError} />
             </>
           )}
         </div>
-      </KitModal>
+        {/* the page's actions, at its foot */}
+        <div className="sticky bottom-0 z-10 -mx-1 mt-6 flex flex-wrap items-center gap-2 border-t border-stone-200 bg-stone-100/95 px-1 py-3 backdrop-blur">
+          {sent && (
+            <Button variant="danger-outline" size="lg" icon={Trash2} onClick={remove} disabled={busy || !online}>{t('manage.myTeams.delete')}</Button>
+          )}
+          <InlineError error={saveError} className="min-w-0 flex-1" />
+          <div className="ml-auto flex flex-wrap gap-2">
+            <Button variant="secondary" size="lg" onClick={onBack} disabled={busy}>{t('common.cancel', 'Cancel')}</Button>
+            <Button variant="positive" size="lg" onClick={save} loading={busy} disabled={busy || !online || !body || picked === 0} data-testid="game-roster-save">
+              {t('manage.myTeams.send')}
+            </Button>
+          </div>
+        </div>
+      </section>
       <ClubPlayerPickerModal
         open={clubPicker}
         onClose={() => setClubPicker(false)}
