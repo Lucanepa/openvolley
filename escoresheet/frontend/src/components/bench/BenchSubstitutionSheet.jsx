@@ -6,6 +6,7 @@ import { Button } from '../../ui/Button.jsx'
 import { cn } from '../../ui/cn.js'
 import { FOCUS_RING } from '../../ui/Button.jsx'
 import { benchSubstitutionChoices } from '../../domain/benchRequests'
+import { displaySetNumber } from '../../utils/matchFormat'
 
 const str = (v) => (v === undefined || v === null ? '' : String(v))
 
@@ -16,7 +17,7 @@ const str = (v) => (v === undefined || v === null ? '' : String(v))
  * (domain/interruptionRequests substituteInIllegalReason). When the court
  * captain goes off, the coach names the new game captain (5.2).
  */
-export default function BenchSubstitutionSheet({ setIndex, team, players = [], events = [], onClose, onSend, reserveBottom = false }) {
+export default function BenchSubstitutionSheet({ setIndex, bestOf = 5, team, players = [], events = [], onClose, onSend, reserveBottom = false }) {
   const { t } = useTranslation()
   const [pairs, setPairs] = useState([])
   const [out, setOut] = useState(null)
@@ -54,7 +55,7 @@ export default function BenchSubstitutionSheet({ setIndex, team, players = [], e
       className="ov-kit"
       onClose={onClose}
       closeLabel={t('common.close', 'Close')}
-      title={t('benchRequests.subSheet.title', { set: setIndex, defaultValue: 'Prepare substitution · set {{set}}' })}
+      title={t('benchRequests.subSheet.title', { set: displaySetNumber(setIndex, bestOf), defaultValue: 'Prepare substitution · set {{set}}' })}
       description={t('benchRequests.subSheet.left', { count: choices.remaining, defaultValue: '{{count}} substitutions left in this set' })}
       footer={(
         // the test match's badge (fixed, bottom right) stays clear of the buttons
