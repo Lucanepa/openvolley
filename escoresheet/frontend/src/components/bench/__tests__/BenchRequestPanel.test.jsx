@@ -131,4 +131,23 @@ describe('BenchRequestPanel', () => {
     fireEvent.click(send)
     expect(relay.sent[0].request).toMatchObject({ kind: 'substitution', pairs: [{ out: 7, in: 8 }, { out: 1, in: 9 }], gameCaptain: 8 })
   })
+
+  it('a best-of-3 decider (index 5) is set 3 on both sheets, its line-up offered "as in set 2"', () => {
+    const lineup2 = { type: 'lineup', setIndex: 2, payload: { team: 'home', lineup: LU } }
+    const data = base([lineup2], {
+      match: { coinTossConfirmed: true, bestOf: 3 },
+      set: { index: 5, homePoints: 0, awayPoints: 0, finished: false },
+      allSets: [{ index: 1, finished: true }, { index: 2, finished: true }, { index: 5, finished: false }]
+    })
+    render(<BenchRequestPanel matchId="seed-1" team="home" data={data} players={players} />)
+    fireEvent.click(document.querySelector('[data-bench-request="lineup"]'))
+    const dialog = screen.getByRole('dialog')
+    expect(dialog.textContent).toContain('benchRequests.lineupSheet.title:{"set":3}')
+    const asIn = within(dialog).getByRole('button', { name: /benchRequests.lineupSheet.asInSet/ })
+    expect(asIn.textContent).toContain('{"set":2}')
+    fireEvent.click(asIn)
+    fireEvent.click(dialog.querySelector('[data-game-captain="4"]'))
+    fireEvent.click(dialog.querySelector('[data-bench-lineup-send]'))
+    expect(relay.sent[0].request).toMatchObject({ kind: 'lineup', setIndex: 5, lineup: LU })
+  })
 })

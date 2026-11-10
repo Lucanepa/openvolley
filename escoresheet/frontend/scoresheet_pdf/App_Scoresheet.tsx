@@ -1028,7 +1028,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
       // (utils/matchTimes, shared with MatchEnd). A set awarded by default has
       // none (field-spec 11).
       const minutes = isSetFinished && !isDefaultSet(setNum) ? setDurationMinutes(setInfo, setEvents) : null;
-      const duration = minutes !== null && minutes > 0 ? `${minutes}'` : '';
+      const duration = minutes !== null ? `${minutes}'` : '';
 
       results.push({
         setNumber: setNum,
