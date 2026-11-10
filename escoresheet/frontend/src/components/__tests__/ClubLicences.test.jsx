@@ -14,7 +14,11 @@ vi.mock('react-i18next', () => ({
 }))
 const api = vi.hoisted(() => ({
   club: { licences: vi.fn(), putLicences: vi.fn() },
-  team: { squad: vi.fn(), clubPlayers: vi.fn(), games: vi.fn(), roster: vi.fn(), putRoster: vi.fn(), putSquad: vi.fn(), deleteRoster: vi.fn() }
+  team: {
+    squad: vi.fn(), clubPlayers: vi.fn(), games: vi.fn(), roster: vi.fn(), putRoster: vi.fn(), putSquad: vi.fn(), deleteRoster: vi.fn(),
+    // My teams' Requests section (db/025): no open sign-up requests here
+    requests: vi.fn(async () => ({ data: { requests: [] }, error: null, status: 200 })), decideRequests: vi.fn()
+  }
 }))
 vi.mock('../../lib/accountApi', async (orig) => ({ ...(await orig()), clubApi: api.club, teamApi: api.team }))
 const ui = vi.hoisted(() => ({ confirm: vi.fn(async () => true), toasts: [] }))
