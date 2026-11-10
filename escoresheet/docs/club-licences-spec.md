@@ -2,6 +2,7 @@
 
 Status: first build in main (PR #94, db/024, release 3.0.15). The 2026-11-09 feedback (no gender
 note in the picker; team officials from anyone of the club) on `feat/licence-export-reminder`.
+People added by hand (section 8, db/026, privacy 1.12) on `fix/manager-list-cards`.
 
 Owner, 2026-11-09:
 
@@ -78,7 +79,8 @@ manager outside its own teams and a scorer of another club see nothing of it.
   people were read, that only licence number, name, date of birth and gender are kept, how many
   rows were left out and whom the upload replaces; **Save list** sends it. At most 2000 people per
   list.
-- Per list: how many people, when it was updated and by whom; **Delete list** (an empty upload).
+- Per list: how many people, when it was updated and by whom; **Delete list** (an empty upload:
+  everyone of the list, those added by hand too, section 8).
 - Everyone of the three lists once: name, licence, date of birth, gender, list chips and team
   chips. A person's teams are the club's teams whose saved team of this season (the squad of My
   teams) has a player or an official with that licence number. Search by name or licence, filter
@@ -130,20 +132,26 @@ nothing; a mixed gender or both genders make it unknown, and an unknown gender c
 ## 4. API (lib/licences.js, db/024)
 
 All JSON, `{ status, body }` like lib/teams.js. Ids in paths are uuids; the list is one of
-`players`, `scorers`, `coaches` (one route each, never a uuid).
+`players`, `scorers`, `coaches` (one route each, never a uuid). Every person a read answers has
+`manual` (section 8): `true` when the person is only in the lists by hand, `false` when an upload
+has them.
 
 | Route | Who | |
 |---|---|---|
-| `PUT /api/club/:id/licences/:list` | the club's managers, admins | `{ people: [{ sv_number, last_name, first_name, dob, gender }] }`, at most 2000; replaces that list in one transaction (an empty list deletes it). `{ list, count, imported_at }` |
-| `GET /api/club/:id/licences` | the club's managers, admins | `{ season, lists: { players, scorers, coaches: { count, imported_at, imported_by_name } }, people: [{ sv_number, last_name, first_name, dob, gender, lists, teams: [{ id, name }] }] }` |
-| `GET /api/team/:id/club-players` | whoever may manage the team | `{ team, gender: 'm' \| 'f' \| null, players, people }`: `players` the players list (five fields), `people` everyone of the three lists once `{ sv_number, last_name, first_name, dob, gender, lists }` |
+| `PUT /api/club/:id/licences/:list` | the club's managers, admins | `{ people: [{ sv_number, last_name, first_name, dob, gender }] }`, at most 2000; replaces the uploaded people of that list in one transaction, keeps those added by hand (section 8); an empty list deletes the whole list. `{ list, count, manual, imported_at }` (`count`: the upload's people, `manual`: those by hand the list keeps) |
+| `GET /api/club/:id/licences` | the club's managers, admins | `{ season, lists: { players, scorers, coaches: { count, manual, imported_at, imported_by_name } }, people: [{ sv_number, last_name, first_name, dob, gender, manual, lists, teams: [{ id, name }] }] }`: `count` everyone of the list, `manual` those by hand; `imported_at` and `imported_by_name` the last upload's (`null` without one) |
+| `POST /api/club/:id/licences/people` | the club's managers, admins | section 8 |
+| `GET /api/team/:id/club-players` | whoever may manage the team | `{ team, gender: 'm' \| 'f' \| null, players, people }`: `players` the players list (five fields and `manual`), `people` everyone of the three lists once `{ sv_number, last_name, first_name, dob, gender, manual, lists }` |
+| `POST /api/team/:id/club-people` | whoever may manage the team | section 8, to the team's club |
 | `GET /api/club-licences` | indoor `canReadTeams` (scorers) | `{ fetched_at, clubs: [{ club_id, club_name, team_names, team_genders, players, people }] }`: the caller's clubs, `players` and `people` as above |
 
-`players` keeps the shape of the first build: the apps of release 3.0.15 read only `players` (the
-roster rows), and keep working; `people` is new. An app reading a server without `people` offers
-the players list for the officials too.
+`players` keeps the shape of the first build (plus `manual`): the apps of release 3.0.15 read only
+`players` (the roster rows), and keep working; `people` is new. An app reading a server without
+`people` offers the players list for the officials too; one without `manual` shows everyone as
+from the club.
 
-Audit: `club.licences` with `{ club_id, list, count }`, never a name or a licence number.
+Audit: `club.licences` with `{ club_id, list, count }`, `club.licences.manual` with `{ club_id,
+team_id, added, lists }` (section 8), never a name or a licence number.
 
 ## 5. The scoring tablet: offline first
 
@@ -165,10 +173,12 @@ Audit: `club.licences` with `{ club_id, list, count }`, never a name or a licenc
 ## 6. Data and retention
 
 - `club_licences(club_id, list, sv_number, last_name, first_name, dob, gender, imported_at,
-  imported_by)`, primary key `(club_id, list, sv_number)`.
-- **Each upload replaces that list.** A person who left the club is gone with the next upload.
-- **Deleted with the club** (`ON DELETE CASCADE`) or with the list (Delete list). `imported_by`
-  is set NULL when that account is deleted.
+  imported_by, source)`, primary key `(club_id, list, sv_number)`; `source` `import` or `manual`
+  (db/026; `imported_at`/`imported_by` of a manual row: when and by whom it was added).
+- **Each upload replaces the uploaded people of that list.** A person who left the club is gone
+  with the next upload. Those added by hand stay until Delete list (section 8).
+- **Deleted with the club** (`ON DELETE CASCADE`) or with the list (Delete list, those added by
+  hand too). `imported_by` is set NULL when that account is deleted.
 - Tablet copies: replaced by each download, cleared on sign-out and account switch.
 - Backups as every table (privacy policy section 18).
 
@@ -185,3 +195,55 @@ Audit: `club.licences` with `{ club_id, list, count }`, never a name or a licenc
 - **L6** (owner 2026-11-09) The picker shows no note about the gender filter.
 - **L5** The audit entry keeps the club id with the list and the count (which club changed which
   list), never a person.
+- **L7** (owner 2026-11-10) People typed in by hand can be kept in the club's lists (section 8): a
+  gray shield until an upload has them, then green. An upload never removes them; Delete list
+  does.
+
+## 8. People added by hand (db/026)
+
+Owner, 2026-11-10: "if I add somebody manually, when saving ask if I want to save him/her in the
+club. Those from the club/recognized/linked -> green shield. Those added manually -> gray shield,
+but can be linked later."
+
+- **When.** Save in My teams' squad editor first asks whether the people typed in by hand (in
+  none of the club's lists, not even by hand) who have a licence number go to the club's lists,
+  all ticked at first: players to the players list (with the team's gender when the schedule
+  knows it), team officials to the coaches list. Those without a licence number are named, not
+  offered. The roster is saved either way, then the ticked ones are added; those left unticked
+  are not asked again for that team on that device (browser storage). Nobody is added without
+  that answer.
+- **What.** The five fields of an upload (section 1) and the list; the row is `source = 'manual'`,
+  `imported_by` the account that added it. A licence number the list already has (uploaded or by
+  hand) is left as it is: nothing of the club's lists is overwritten by hand.
+- **Shields.** Each row of the squad editor and of a game's roster has one. The row is a club
+  person by the same licence number, else by the same name (accents, case and order aside) and
+  date of birth. Green: a person of an uploaded list (`manual: false`); a dot on it when the
+  club has a field the row lacks (tap: filled in). Gray: typed by hand, also a person kept by hand
+  (`manual: true`, every row of the person by hand; in every read: `players` and `people`, My
+  club, where it is tagged "Added by hand", and the tablet's copy). In the squad editor the gray
+  shield links the row to someone of the uploaded lists (the search starts at its last name; the
+  row takes names, date of birth and licence number).
+- **Linked later.** An upload replaces only the uploaded rows of its list. A row by hand whose
+  licence number the upload has becomes an uploaded row with VolleyManager's fields (green from
+  then on, and gone with a later upload that no longer has it); the others stay by hand. Delete
+  list (an empty upload) removes the whole list, those added by hand too.
+- **Gender.** A row by hand with a gender counts for the gender rule (section 3) like an uploaded
+  one; without a gender it never refuses anyone.
+
+| Route | Who | |
+|---|---|---|
+| `POST /api/team/:id/club-people` | whoever may manage the team (its team managers, the club's managers, admins) | to the team's club (404 for an unknown team) |
+| `POST /api/club/:id/licences/people` | the club's managers, admins | to that club (404 for an unknown club) |
+
+Body (both): `{ people: [{ list, sv_number, last_name, first_name, dob, gender }] }`, 1 to 30
+people, `list` one of `players`, `scorers`, `coaches`, the five fields as an upload's (section 1);
+any other field in the body or in a person is refused (400 `OV_INVALID_REQUEST`, nothing stored).
+A licence number twice in one list in one request is one person. Answer 200 `{ club_id, added,
+already }`: the people of the request added, and those the list had already. Audit (only when
+someone was added): `club.licences.manual` with `{ club_id, team_id (null for the club's route),
+added, lists: { <list>: n } }`, never a name or a licence number. Privacy 1.12.
+
+Deploy: `db/026_club_licences_manual.sql` and `apply-roles.sh` before the backend image, then the
+manager. Without 026 the new backend reads every row as uploaded and answers 503 to the two
+routes and to an upload (Delete list still works); a backend of before 026 works on it (its
+upload replaces the rows by hand too).
