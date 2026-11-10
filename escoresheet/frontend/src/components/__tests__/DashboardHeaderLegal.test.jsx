@@ -25,5 +25,7 @@ describe('DashboardHeader menu (referee, bench, livescore)', () => {
       'https://openvolley.app/nutzungsbedingungen',
       'https://openvolley.app/impressum'
     ])
+    // the referee, bench and livescore apps say who makes them here
+    expect(screen.getByTestId('made-by')).toHaveTextContent('brand.madeBy')
   })
 })

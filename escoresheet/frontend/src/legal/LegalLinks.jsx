@@ -30,20 +30,36 @@ export function LegalLink({ doc, className, children }) {
 }
 
 /**
+ * "Made by Swiss referees": who makes OpenVolley (owner 2026-11-10), a quiet
+ * line under the home logo and above the legal links. No club is named: the
+ * apps belong to no club.
+ */
+export function MadeBy({ className, ...rest }) {
+  const { t } = useTranslation()
+  return <p data-testid="made-by" className={className} {...rest}>{t('brand.madeBy')}</p>
+}
+
+/**
+ * "Made by Swiss referees", then on its own line
  * "Privacy policy · Terms of use · Legal notice · Open-source notice".
  * docs: which pages, in that order (default all four).
+ * madeBy: the "Made by Swiss referees" line above the links (default on, so
+ * every app's footer and menu carries it).
  */
-export default function LegalLinks({ docs = LEGAL_DOCS, className, linkClassName, ...rest }) {
+export default function LegalLinks({ docs = LEGAL_DOCS, madeBy = true, className, linkClassName, ...rest }) {
   const { t } = useTranslation()
   return (
-    <nav aria-label={t('legal.nav')} data-testid="legal-links" className={cn('text-xs leading-relaxed text-stone-500', className)} {...rest}>
-      {docs.map((doc, i) => (
-        <Fragment key={doc}>
-          {i > 0 && <span aria-hidden="true"> · </span>}
-          <LegalLink doc={doc} className={linkClassName} />
-        </Fragment>
-      ))}
-    </nav>
+    <div className={cn('text-xs leading-relaxed text-stone-500', className)} {...rest}>
+      {madeBy && <MadeBy />}
+      <nav aria-label={t('legal.nav')} data-testid="legal-links">
+        {docs.map((doc, i) => (
+          <Fragment key={doc}>
+            {i > 0 && <span aria-hidden="true"> · </span>}
+            <LegalLink doc={doc} className={linkClassName} />
+          </Fragment>
+        ))}
+      </nav>
+    </div>
   )
 }
 
