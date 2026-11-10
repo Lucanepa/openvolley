@@ -71,6 +71,20 @@
   </screenshots>
 
   <releases>
+    <release version="3.0.16" date="2026-11-10">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.16</url>
+      <description>
+        <ul>
+          <li>Bench tablet: sends the line-up (game captain), asks for time-outs, prepares substitutions; the scorer accepts or declines, the referee sees them.</li>
+          <li>New bench layout, upright and on phones.</li>
+          <li>A line-up stays covered until both are in.</li>
+          <li>Go back: to a score when a fault is found later, then rectify.</li>
+          <li>Improper requests and delays: no reason asked.</li>
+          <li>Club licences: officials from the whole club.</li>
+          <li>Sign-up requests approved by admins and managers; privacy 1.11.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.0.15" date="2026-11-09">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.15</url>
       <description>
