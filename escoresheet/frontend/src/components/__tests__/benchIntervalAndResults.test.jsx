@@ -90,4 +90,22 @@ describe('bench match end: the result table', () => {
     expect(text).toContain('16 h 07 min')
     expect(text).toContain('0 h 29 min')
   })
+
+  it("a played set under a minute is 0', not blank", async () => {
+    bundle = {
+      ...base({ status: 'ended' }),
+      sets: [
+        { index: 1, homePoints: 25, awayPoints: 2, finished: true, startTime: at(14, 38), endTime: at(14, 59) },
+        { index: 2, homePoints: 25, awayPoints: 1, finished: true, startTime: at(15, 1), endTime: at(15, 1) },
+        { index: 3, homePoints: 25, awayPoints: 0, finished: true, startTime: at(15, 2), endTime: at(15, 7) }
+      ],
+      events: []
+    }
+    const { container, getByText } = render(<MatchEntry matchId="m1" team="away" onBack={() => {}} embedded />)
+    await waitFor(() => expect(getByText('The match has ended')).toBeTruthy())
+    const cells = [...container.querySelectorAll('*')].filter((el) => el.children.length === 0).map((el) => el.textContent.trim())
+    expect(cells).toContain("21'")
+    expect(cells).toContain("0'")
+    expect(cells).toContain("5'")
+  })
 })

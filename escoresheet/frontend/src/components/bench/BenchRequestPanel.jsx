@@ -10,6 +10,7 @@ import {
 import { useBenchRequests } from './useBenchRequests'
 import BenchLineupSheet from './BenchLineupSheet'
 import BenchSubstitutionSheet from './BenchSubstitutionSheet'
+import { displaySetNumber } from '../../utils/matchFormat'
 
 /**
  * The bench's requests to the scorer (like the bench app of a DataProject
@@ -26,6 +27,7 @@ export default function BenchRequestPanel({ matchId, team, data, players, discSt
   const events = useMemo(() => data?.events || [], [data?.events])
   const setIndex = data?.set?.index ?? benchSetIndex(data?.allSets, data?.liveState)
   const intervalRunning = data?.liveState?.set_interval_active === true
+  const bestOf = data?.match?.bestOf ?? 5
   const ctx = { match: data?.match, events, setIndex, team, intervalRunning }
 
   const lineupAvail = benchLineupAvailability(ctx)
@@ -72,7 +74,7 @@ export default function BenchRequestPanel({ matchId, team, data, players, discSt
       label: t('benchRequests.lineup', 'Line-up'),
       enabled: lineupAvail.allowed && !lineupLocked,
       caption: lineupAvail.allowed
-        ? (statusText(lastLineup) || t('benchRequests.forSet', { set: setIndex }))
+        ? (statusText(lastLineup) || t('benchRequests.forSet', { set: displaySetNumber(setIndex, bestOf) }))
         : (lastLineup?.status === 'accepted' && lineupAvail.reason === 'lineup_entered' ? statusText(lastLineup) : reasonText(lineupAvail.reason)),
       request: lineupAvail.allowed ? lastLineup : null,
       onTap: () => setSheet('lineup')
@@ -157,6 +159,7 @@ export default function BenchRequestPanel({ matchId, team, data, players, discSt
       {sheet === 'lineup' && (
         <BenchLineupSheet
           setIndex={setIndex}
+          bestOf={bestOf}
           team={team}
           players={players}
           events={events}
@@ -173,6 +176,7 @@ export default function BenchRequestPanel({ matchId, team, data, players, discSt
       {sheet === 'substitution' && (
         <BenchSubstitutionSheet
           setIndex={setIndex}
+          bestOf={bestOf}
           team={team}
           players={players}
           events={events}

@@ -372,8 +372,9 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
         : null
 
       // end - the set's actual start (its first rally), as on the sheet (never the schedule)
-      const minutes = isSetFinished ? setDurationMinutes(setInfo, setEvents) : null
-      const duration = minutes !== null && minutes > 0 ? `${minutes}'` : ''
+      // (a set awarded by default has none; a played set under a minute is 0')
+      const minutes = isSetFinished && !isDefaultSet(allSets || [], events || [], setNum) ? setDurationMinutes(setInfo, setEvents) : null
+      const duration = minutes !== null ? `${minutes}'` : ''
 
       results.push({
         setNumber: setNum,

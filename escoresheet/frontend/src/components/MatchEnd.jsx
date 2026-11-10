@@ -595,7 +595,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       // (scoresheet_pdf/utils/matchTimes): never the schedule
       // (a set awarded by default has none, as on the PDF)
       const minutes = isSetFinished && !isDefaultSet(sets, events, setNum) ? setDurationMinutes(setInfo, setEvents) : null
-      const duration = minutes !== null && minutes > 0 ? `${minutes}'` : ''
+      const duration = minutes !== null ? `${minutes}'` : ''
 
       results.push({
         setNumber: setNum,
