@@ -160,6 +160,15 @@ describe('the page\'s facts and rows (owner 2026-11-10: "all on one line" and "a
     expect(label.textContent).toContain('clubPlayers.licence')
   })
 
+  it('a server without the referees: no referees line (not "not assigned")', async () => {
+    const { referees, ...old } = GAME
+    api.team.games.mockResolvedValue(okRes({ games: [old] }))
+    render(<Routed initial="t-h1/950001" />)
+    const facts = await screen.findByTestId('game-facts')
+    expect(facts.textContent).not.toContain('manage.myTeams.facts.referees')
+    expect(facts.textContent).toContain('#950001')
+  })
+
   it('no referees yet: says so', async () => {
     api.team.games.mockResolvedValue(okRes({ games: [{ ...GAME, referees: [] }] }))
     render(<Routed initial="t-h1/950001" />)
