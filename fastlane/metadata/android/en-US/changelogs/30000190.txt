@@ -1,0 +1,6 @@
+OpenVolley 3.0.19
+- Mac: signed and notarized by Apple, so the app opens like any other app, also offline.
+- Bench: a best-of-3 deciding set is set 3 on the line-up and substitution sheets; "As in set 2" fills set 2's line-up.
+- Result table: a played set under a minute shows 0'.
+- Manager: every page has its own address; game page head with where and when.
+- "Made by Swiss referees" on Home.
