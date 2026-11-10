@@ -10,6 +10,7 @@ import { duplicateGameNumbers } from '../../utils/deviceMatches'
 import { formatTakeOver, scoreText } from '../ScorerMovedModal'
 import { isServedFromLocalServer } from '../../utils/backendConfig'
 import { BRAND } from '../../brand'
+import { MadeBy } from '../../legal/LegalLinks'
 
 // Where every OpenVolley app is installed from (desktop, Android, Linux
 // repositories): one link on Home (owner 2026-11-09: "just link the
@@ -91,9 +92,11 @@ export default function HomePage({
       <div className="w-full max-w-md home-wide:grid home-wide:max-w-4xl home-wide:grid-cols-[minmax(0,1fr)_minmax(0,28rem)] home-wide:grid-rows-[1fr_auto_auto_1fr] home-wide:gap-x-12">
         <div className="home-wide:col-start-1 home-wide:row-start-2">
           <h1 className="text-center text-2xl sm:text-3xl font-bold tracking-tight text-stone-900">{t('home.title')}</h1>
-          <div className="my-4 flex justify-center home-short:my-2">
+          <div className="mt-4 flex justify-center home-short:mt-2">
             <img src={BRAND.lockupStacked} alt="OpenVolley" className="ov-ink h-24 w-auto sm:h-28 home-short:h-16 sm:home-short:h-16" />
           </div>
+          {/* Who makes it: a quiet line under the lockup (owner 2026-11-10) */}
+          <MadeBy className="mt-2 mb-4 text-center text-sm text-stone-500 home-short:mt-1 home-short:mb-2 home-short:text-xs" />
         </div>
 
         <div className="home-wide:col-start-2 home-wide:row-span-4 home-wide:row-start-1 home-wide:self-center">

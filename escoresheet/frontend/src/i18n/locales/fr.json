@@ -4437,6 +4437,9 @@
       "offline": "Hors ligne : l’approbation avec un PIN revient dès que la connexion revient"
     }
   },
+  "brand": {
+    "madeBy": "Conçu par des arbitres suisses"
+  },
   "legal": {
     "nav": "Informations légales",
     "privacy": "Protection des données",

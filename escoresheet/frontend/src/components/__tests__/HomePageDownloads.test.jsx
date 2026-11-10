@@ -55,3 +55,13 @@ describe('HomePage: the downloads link', () => {
     expect(screen.queryByTestId('home-downloads')).not.toBeInTheDocument()
   })
 })
+
+// Owner 2026-11-10: "Made by Swiss referees" under the logo
+describe('HomePage: who makes it', () => {
+  it('says "Made by Swiss referees" right under the lockup', () => {
+    render(<HomePage />)
+    const line = screen.getByTestId('made-by')
+    expect(line).toHaveTextContent('brand.madeBy')
+    expect(line.previousElementSibling.querySelector('img')).toHaveAttribute('alt', 'OpenVolley')
+  })
+})

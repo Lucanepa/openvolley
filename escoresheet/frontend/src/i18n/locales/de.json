@@ -4426,6 +4426,9 @@
       "offline": "Offline: die Genehmigung mit PIN erscheint wieder, sobald du online bist"
     }
   },
+  "brand": {
+    "madeBy": "Von Schweizer Schiedsrichtern entwickelt"
+  },
   "legal": {
     "nav": "Rechtliches",
     "privacy": "Datenschutzerklärung",

@@ -4444,6 +4444,9 @@
       "offline": "Offline: approval with a PIN is offered again when back online"
     }
   },
+  "brand": {
+    "madeBy": "Made by Swiss referees"
+  },
   "legal": {
     "nav": "Legal",
     "privacy": "Privacy policy",
