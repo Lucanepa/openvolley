@@ -71,6 +71,15 @@
   </screenshots>
 
   <releases>
+    <release version="3.0.17" date="2026-11-10">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.17</url>
+      <description>
+        <ul>
+          <li>Match setup: a green shield on each player and official from the club's lists, a gray one for those typed by hand; tap the gray one to link the row to someone of the club, the green one with a dot to fill in the date of birth.</li>
+          <li>Manager: list cards, tabs that refresh, shields and "save in the club?" on the squad.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.0.16" date="2026-11-10">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.16</url>
       <description>
