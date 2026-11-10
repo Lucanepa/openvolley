@@ -69,6 +69,19 @@ export const EXPORT_LANGUAGES = Object.freeze({
     genders: { f: 'f', w: 'f', m: 'm' }
   }
 })
+// A gender cell in any of the languages, whichever the headers are in: a
+// letter (D/U, W/M, F/H, F/M) or a word ("Donna", "weiblich", "Homme", "male")
+const GENDER_WORDS = Object.freeze({
+  f: ['f', 'w', 'd', 'female', 'woman', 'women', 'weiblich', 'frau', 'damen', 'femme', 'féminin', 'feminin', 'dames', 'femmina', 'femminile', 'donna', 'donne'],
+  m: ['m', 'h', 'u', 'male', 'man', 'men', 'männlich', 'maennlich', 'mann', 'herren', 'homme', 'masculin', 'hommes', 'maschio', 'maschile', 'uomo', 'uomini']
+})
+const GENDER_OF = new Map(Object.entries(GENDER_WORDS).flatMap(([g, words]) => words.map((w) => [w, g])))
+/** A gender cell -> 'f', 'm' or null: the header language's letters first, then any language's. */
+export function genderOf(value, genders = {}) {
+  const v = String(value ?? '').trim().toLowerCase().replace(/[.]/g, '')
+  if (!v) return null
+  return genders[v] || GENDER_OF.get(v) || null
+}
 const FIELDS = ['sv_number', 'last_name', 'first_name', 'dob', 'gender']
 const REQUIRED = ['sv_number', 'last_name', 'first_name']
 
@@ -197,8 +210,7 @@ export function licencePeopleFromRows(rows, { date1904 = false } = {}) {
     }
     const first = nameOf(row[columns.first_name]) || null
     const dob = columns.dob === undefined ? null : cellToIsoDate(row[columns.dob], { date1904 })
-    const g = columns.gender === undefined ? '' : String(row[columns.gender] ?? '').trim().toLowerCase()
-    const gender = genders[g] || null
+    const gender = columns.gender === undefined ? null : genderOf(row[columns.gender], genders)
     // a licence number twice is one person (the server merges the same way)
     const prev = seen.get(sv)
     if (prev) {
