@@ -91,4 +91,20 @@ describe('saved team editor: shirt numbers', () => {
     await waitFor(() => expect(api.savedTeamsApi.putRoster).toHaveBeenCalled())
     expect(api.savedTeamsApi.putRoster.mock.calls[0][1].players[0].number).toBe(15)
   })
+
+  // owner 2026-11-10: "every page there gets their own page": #teams/<competition>/<team>
+  it('a competition and a team are pages of their own (the URL opens them; Back and a deleted one)', async () => {
+    api.savedTeamsApi.fetchBundle.mockImplementation(async () => bundle())
+    const onRoute = vi.fn()
+    const { rerender } = render(<SavedTeamsPanel userId="u1" route="" onRoute={onRoute} />)
+    fireEvent.click(await findButton('Liga'))
+    expect(onRoute).toHaveBeenLastCalledWith('c1', { push: true })
+    rerender(<SavedTeamsPanel userId="u1" route="c1" onRoute={onRoute} />)
+    fireEvent.click(await findButton(state.teamName))
+    expect(onRoute).toHaveBeenLastCalledWith('c1/t1', { push: true })
+    rerender(<SavedTeamsPanel userId="u1" route="c1/t1" onRoute={onRoute} />)
+    await waitFor(() => expect(screen.getAllByTestId('player-row')).toHaveLength(1))
+    rerender(<SavedTeamsPanel userId="u1" route="c1/nope" onRoute={onRoute} />)
+    expect(await screen.findByTestId('page-missing')).toBeInTheDocument()
+  })
 })

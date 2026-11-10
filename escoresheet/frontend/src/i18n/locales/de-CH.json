@@ -3090,6 +3090,7 @@
     "confirmBody": "Bestätig, dass die Adresse zu dim OpenBeach-Konto ghört."
   },
   "manage": {
+    "pageNotFound": "Diese Seite gibt es nicht (mehr).",
     "title": "Verwaltung",
     "backToApp": "Zurück zur App",
     "nav": "Verwaltungsbereiche",
@@ -3124,6 +3125,15 @@
       "offline": "Dafür braucht es eine Verbindung zum Server."
     },
     "accounts": {
+      "page": {
+        "email": "E-Mail",
+        "created": "Erstellt",
+        "lastSignIn": "Letzte Anmeldung",
+        "roles": "Rollen",
+        "clubs": "Vereine",
+        "manages": "Verantwortlich für",
+        "request": "Anfrage bei der Registrierung"
+      },
       "reject": "Ablehnen",
       "rejectTitle": "Registrierung von {{name}} ablehnen?",
       "rejectBody": "Das Konto {{email}} hat noch keine Rolle. Ablehnen löscht es mit seinen Personendaten; die Person kann sich später wieder registrieren.",
@@ -3196,6 +3206,7 @@
       "noClub": "Kein Verein"
     },
     "games": {
+      "openMatch": "Spiel öffnen",
       "from": "Von",
       "to": "Bis",
       "search": "Team oder Spielnummer suchen",
@@ -3216,6 +3227,15 @@
       "empty": "Keine offiziellen Spiele in diesem Zeitraum."
     },
     "matches": {
+      "facts": {
+        "game": "Spiel",
+        "when": "Wann",
+        "league": "Liga",
+        "scorer": "Schreiber",
+        "editors": "Bearbeiter",
+        "closed": "Abgeschlossen",
+        "hall": "Halle"
+      },
       "filterClosed": "Abgeschlossen",
       "filterOpen": "Offen",
       "filterAll": "Alle",
@@ -3470,6 +3490,14 @@
       "noMail": "Dieser Server kann noch keine E-Mails senden (kein Mailserver eingerichtet): Es geht nichts raus, auch wenn der Schalter an ist."
     },
     "myTeams": {
+      "facts": {
+        "when": "Wann",
+        "where": "Wo",
+        "league": "Liga",
+        "referees": "Schiedsrichter",
+        "game": "Spiel",
+        "noReferees": "Noch nicht aufgeboten"
+      },
       "none": "Du verwaltest kein Team.",
       "pick": "Team",
       "intro": "Halte die Spielerinnen und Spieler deines Teams aktuell und schicke den Kader jedes Spiels vor dem Spiel. Das Tablet des Schreibers lädt ihn, solange es Internet hat, so ist er in der Halle auch ohne WLAN bereit.",
@@ -3536,6 +3564,7 @@
       }
     },
     "clubTeams": {
+      "open": "Öffnen",
       "title": "Teams",
       "hint": "Gib dem Trainer oder der Teamverantwortlichen jedes Teams einen Link. Damit halten sie den Kader aktuell und schicken den Kader jedes Spiels im Voraus.",
       "none": "Dieser Verein hat noch keine Teams. Ein Admin erfasst sie im Tab Vereine.",
@@ -3555,6 +3584,8 @@
       "removeBody": "Die Person kann {{team}} nicht mehr verwalten. Ihr Konto bleibt bestehen."
     },
     "licences": {
+      "personNoTeams": "Noch in keinem gespeicherten Kader des Vereins.",
+      "personTeams": "Teams",
       "title": "Lizenzen",
       "hint": "Lade die Listen aus der Vereinsadministration von VolleyManager hoch (den Excel-Export). Die Datei wird auf diesem Gerät gelesen: Nur Lizenznummer, Name, Vorname, Geburtsdatum und Geschlecht werden geschickt und gespeichert. Jeder Upload ersetzt diese Liste.",
       "list": "Liste",

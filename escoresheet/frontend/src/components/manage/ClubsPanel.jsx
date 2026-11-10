@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { ArrowLeft } from 'lucide-react'
 import { clubsApi } from '../../lib/accountApi'
-import KitModal from './KitModal'
-import { usePanelData, useOnline, OfflineBanner, PanelHead, InlineError, useErrorText } from './common'
+import { usePanelData, usePanelRoute, useOnline, OfflineBanner, PageMissing, PanelHead, InlineError, useErrorText } from './common'
 import { Button, Checkbox, Chip, EmptyInset, Field, Input, Notice, Textarea, Row, RowList, RowTool, SearchInput, SkeletonRows, Switch, confirmDialog, toast } from '../../ui'
 
 /**
@@ -14,15 +14,19 @@ import { Button, Checkbox, Chip, EmptyInset, Field, Input, Notice, Textarea, Row
  * db/020: each club may have managers (by address; they run the club's codes
  * and members in their own My club tab) and a contact address (the final
  * scoresheets of its games).
+ *
+ * A club is a page of its own (owner 2026-11-10): #clubs/<club id>, and
+ * #clubs/new for a new one (usePanelRoute).
  */
-export default function ClubsPanel() {
+export default function ClubsPanel({ route = '', onRoute = null }) {
   const { t } = useTranslation()
   const online = useOnline()
   const errorText = useErrorText()
   const { data, error, loading, reload } = usePanelData(() => clubsApi.list(), [], { enabled: online })
   const clubs = data?.clubs || []
   const ruleOn = data?.rule?.enabled === true
-  const [editing, setEditing] = useState(null) // a club, or {} for a new one
+  const [[pageId = null], go] = usePanelRoute(route, onRoute)
+  const setEditing = (c, opts) => go(c ? [c.id || 'new'] : [], opts)
   const [ruleBusy, setRuleBusy] = useState(false)
 
   const setRule = async (enabled) => {
@@ -61,6 +65,21 @@ export default function ClubsPanel() {
     }
     toast.success(t('manage.clubs.deleted'))
     reload()
+  }
+
+  // the club's page
+  if (pageId) {
+    const club = pageId === 'new' ? null : clubs.find((c) => c.id === pageId)
+    if (pageId !== 'new' && !club) return <PageMissing loading={loading || !data} error={error} onBack={() => setEditing(null)} backLabel={t('manage.tabs.clubs')} />
+    return (
+      <ClubPage
+        key={pageId}
+        club={club}
+        online={online}
+        onBack={() => setEditing(null)}
+        onSaved={(saved) => { reload(); if (!club && saved?.id) setEditing(saved, { push: false }) }}
+      />
+    )
   }
 
   return (
@@ -112,19 +131,12 @@ export default function ClubsPanel() {
           ))}
         </RowList>
       )}
-      {editing && (
-        <ClubModal
-          club={editing.id ? editing : null}
-          onClose={() => setEditing(null)}
-          onSaved={() => { setEditing(null); reload() }}
-        />
-      )}
     </section>
   )
 }
 
-/** A club's name and its VolleyManager teams (a team plays for one club). */
-function ClubModal({ club, onClose, onSaved }) {
+/** A club's page: its name, contact, managers and VolleyManager teams (a team plays for one club). */
+function ClubPage({ club, online, onBack, onSaved }) {
   const { t } = useTranslation()
   const errorText = useErrorText()
   const [name, setName] = useState(club?.name || '')
@@ -179,22 +191,14 @@ function ClubModal({ club, onClose, onSaved }) {
       return
     }
     toast.success(t('manage.clubs.saved'))
-    onSaved()
+    onSaved(res.data?.club || club)
   }
   return (
-    <KitModal
-      open
-      onClose={() => { if (!busy) onClose() }}
-      decision
-      layout="sections"
-      title={club ? t('manage.clubs.editTitle', { name: club.name }) : t('manage.clubs.new')}
-      closeLabel={t('common.close', 'Close')}
-      footer={<>
-        <Button variant="secondary" size="lg" onClick={onClose} disabled={busy}>{t('common.cancel', 'Cancel')}</Button>
-        <Button variant="positive" size="lg" onClick={save} loading={busy} disabled={!valid || busy} data-testid="save-club">{t('manage.clubs.save')}</Button>
-      </>}
-    >
-      <div className="space-y-3">
+    <section data-testid="club-page">
+      <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={onBack} disabled={busy} className="mb-3" data-testid="club-page-back">{t('manage.tabs.clubs')}</Button>
+      <PanelHead title={club ? club.name : t('manage.clubs.new')} />
+      <OfflineBanner online={online} />
+      <div className="space-y-3 rounded-2xl border border-stone-200/70 bg-white p-4 shadow-card sm:p-5">
         <Field label={t('manage.clubs.name')}>
           <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={120} required autoFocus />
         </Field>
@@ -231,7 +235,11 @@ function ClubModal({ club, onClose, onSaved }) {
           )}
         </div>
         <InlineError error={error} />
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <Button variant="positive" onClick={save} loading={busy} disabled={!valid || busy || !online} data-testid="save-club">{t('manage.clubs.save')}</Button>
+          <Button variant="secondary" onClick={onBack} disabled={busy}>{t('common.cancel', 'Cancel')}</Button>
+        </div>
       </div>
-    </KitModal>
+    </section>
   )
 }

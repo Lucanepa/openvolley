@@ -341,7 +341,9 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
   /** The schedule rows of the team (home or away) from `fromDay`, kick-off order. */
   async function scheduleOf (db, teamName, { fromDay, toDay = null, limit = 100 }) {
     const { rows } = await db.query(
-      `SELECT g.game_number, g.datetime, g.league, g.gender, g.hall, g.city, g.team_home, g.team_away
+      `SELECT g.game_number, g.datetime, g.league, g.gender, g.hall, g.city, g.team_home, g.team_away,
+              g.hall_address, g.hall_postal_code, g.referee_1, g.referee_2,
+              g.referee_1_first_name, g.referee_1_last_name, g.referee_2_first_name, g.referee_2_last_name
          FROM public.svrz_games g
         WHERE (lower(btrim(g.team_home)) = $1 OR lower(btrim(g.team_away)) = $1)
           AND g.datetime >= $2 AND ($3::text IS NULL OR g.datetime < $3)
@@ -402,6 +404,14 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
           league: g.league ?? null,
           hall: g.hall ?? null,
           city: g.city ?? null,
+          // the game page's where and who (owner 2026-11-10: "at the top where,
+          // when, referees"); the referees' names only, as the public match
+          // assignments show them (no dates of birth)
+          hall_address: g.hall_address ?? null,
+          hall_postal_code: g.hall_postal_code ?? null,
+          referees: [[g.referee_1, g.referee_1_first_name, g.referee_1_last_name], [g.referee_2, g.referee_2_first_name, g.referee_2_last_name]]
+            .map(([name, first, last]) => String(name ?? '').trim() || [first, last].map((x) => String(x ?? '').trim()).filter(Boolean).join(' '))
+            .filter(Boolean),
           team_home: g.team_home ?? null,
           team_away: g.team_away ?? null,
           side,

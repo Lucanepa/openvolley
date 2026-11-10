@@ -65,7 +65,8 @@ describe('ClubsPanel', () => {
     render(<ClubsPanel />)
     await screen.findByText('VBC Musterdorf')
     fireEvent.click(screen.getByTestId('new-club'))
-    const dialog = await screen.findByRole('dialog')
+    // a page of its own now (#clubs/new), not a dialog
+    const dialog = await screen.findByTestId('club-page')
     fireEvent.change(within(dialog).getAllByRole('textbox')[0], { target: { value: 'VBC Musterdorf 2' } })
     const options = await within(dialog).findByTestId('club-team-options')
     await waitFor(() => expect(within(options).getAllByRole('checkbox').length).toBe(3))
@@ -81,9 +82,26 @@ describe('ClubsPanel', () => {
     render(<ClubsPanel />)
     await screen.findByText('VBC Musterdorf')
     fireEvent.click(within(screen.getByText('VBC Musterdorf').closest('.flex-wrap')).getByRole('button', { name: 'manage.clubs.edit' }))
-    const dialog = await screen.findByRole('dialog')
+    const dialog = await screen.findByTestId('club-page')
     fireEvent.click(within(dialog).getByTestId('save-club'))
     expect(await within(dialog).findByText('manage.clubs.teamTaken')).toBeInTheDocument()
+  })
+
+  // owner 2026-11-10: "every page there gets their own page": #clubs/<club id>, #clubs/new
+  it('a club is a page of its own: opened from the URL, back to the list, a new club lands on its page', async () => {
+    api.clubs.create.mockResolvedValue({ data: { club: { id: 'c3', name: 'VBC Neu' } }, error: null, status: 201 })
+    const onRoute = vi.fn()
+    const { rerender } = render(<ClubsPanel route="c1" onRoute={onRoute} />)
+    const page = await screen.findByTestId('club-page')
+    expect(within(page).getByRole('heading', { name: 'VBC Musterdorf' })).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('club-page-back'))
+    expect(onRoute).toHaveBeenLastCalledWith('', { push: true })
+    rerender(<ClubsPanel route="new" onRoute={onRoute} />)
+    fireEvent.change(within(await screen.findByTestId('club-page')).getAllByRole('textbox')[0], { target: { value: 'VBC Neu' } })
+    fireEvent.click(screen.getByTestId('save-club'))
+    await waitFor(() => expect(onRoute).toHaveBeenLastCalledWith('c3', { push: false }))
+    rerender(<ClubsPanel route="gone" onRoute={onRoute} />)
+    expect(await screen.findByTestId('page-missing')).toBeInTheDocument()
   })
 })
 

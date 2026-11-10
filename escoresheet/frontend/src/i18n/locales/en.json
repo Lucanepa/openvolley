@@ -3096,6 +3096,7 @@
     "confirmBody": "Confirm that this address belongs to your OpenBeach account."
   },
   "manage": {
+    "pageNotFound": "This page is not there (any more).",
     "title": "Manage",
     "backToApp": "Back to the app",
     "nav": "Manage sections",
@@ -3130,6 +3131,15 @@
       "offline": "This needs a connection to the server."
     },
     "accounts": {
+      "page": {
+        "email": "Email",
+        "created": "Created",
+        "lastSignIn": "Last sign-in",
+        "roles": "Roles",
+        "clubs": "Clubs",
+        "manages": "Manages",
+        "request": "Sign-up request"
+      },
       "reject": "Reject",
       "rejectTitle": "Reject the sign-up of {{name}}?",
       "rejectBody": "The account {{email}} has no role yet. Rejecting deletes it with its personal data; the person can sign up again later.",
@@ -3202,6 +3212,7 @@
       "noClub": "No club"
     },
     "games": {
+      "openMatch": "Open match",
       "from": "From",
       "to": "To",
       "search": "Search team or game number",
@@ -3222,6 +3233,15 @@
       "empty": "No official games in this period."
     },
     "matches": {
+      "facts": {
+        "game": "Game",
+        "when": "When",
+        "league": "League",
+        "scorer": "Scorer",
+        "editors": "Editors",
+        "closed": "Closed",
+        "hall": "Hall"
+      },
       "filterClosed": "Closed",
       "filterOpen": "Open",
       "filterAll": "All",
@@ -3476,6 +3496,14 @@
       "noMail": "This server cannot send email yet (no mail server set up): nothing goes out, even with the switch on."
     },
     "myTeams": {
+      "facts": {
+        "when": "When",
+        "where": "Where",
+        "league": "League",
+        "referees": "Referees",
+        "game": "Game",
+        "noReferees": "Not assigned yet"
+      },
       "none": "You manage no team.",
       "pick": "Team",
       "intro": "Keep your team's players up to date and send the roster of each game before it starts. The scorer's tablet downloads it while it has internet, so it is ready in the hall even without Wi-Fi.",
@@ -3542,6 +3570,7 @@
       }
     },
     "clubTeams": {
+      "open": "Open",
       "title": "Teams",
       "hint": "Give each team's coach or manager a link. With it they keep the team's players up to date and send the roster of each game ahead.",
       "none": "No teams in this club yet. An admin adds them in the Clubs tab.",
@@ -3561,6 +3590,8 @@
       "removeBody": "They can no longer manage {{team}}. Their account stays."
     },
     "licences": {
+      "personNoTeams": "In no saved squad of the club yet.",
+      "personTeams": "Teams",
       "title": "Licences",
       "hint": "Upload the lists of VolleyManager's club administration (the Excel export). The file is read on this device: only licence number, last name, first name, date of birth and gender are sent and kept. Each upload replaces that list.",
       "list": "List",
