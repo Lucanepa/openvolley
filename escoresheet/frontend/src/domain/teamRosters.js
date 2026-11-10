@@ -394,3 +394,98 @@ export function setGameDraftOfficial(draft, role, c) {
     replaced: before && !officialIsPerson(before, c) ? before : null
   }
 }
+
+// ---------------------------------------------------------------- green and gray shields
+// Owner 2026-11-10: "Those from the club/recognized/linked -> green shield.
+// Those added manually -> gray shield, but can be linked lately in case", and
+// "if I add somebody manually, when saving ask if I want to save him/her in
+// the club".
+
+const SV_RE = /^[0-9]{4,7}$/
+
+/**
+ * The club person a roster row (a player or an official, the API shape or an
+ * editor draft) is, or null: not in the club's lists. The same licence
+ * number; else the same name (accents, case and the order of first and last
+ * name aside) and the same date of birth, when that is one person of the club
+ * (or one uploaded person among others kept by hand). A person kept by hand
+ * (`manual`) has a gray shield too, an uploaded one a green shield.
+ */
+export function clubPersonOf(row, people) {
+  if (!row || !Array.isArray(people) || !people.length) return null
+  const lic = clean(row.license_number)
+  if (SV_RE.test(lic)) {
+    const hit = people.find((c) => clean(c?.sv_number) === lic)
+    if (hit) return hit
+  }
+  const dob = clean(row.dob)
+  if (!dob || !clean(row.last_name)) return null
+  const keys = new Set([nameKey(row), swappedKey(row)])
+  const hits = people.filter((c) => c?.dob === dob && keys.has(nameKey(c)))
+  if (hits.length === 1) return hits[0]
+  // one uploaded and others kept by hand: the uploaded one
+  const uploaded = hits.filter((c) => !c.manual)
+  return uploaded.length === 1 ? uploaded[0] : null
+}
+
+/** What the club person `c` adds to the row `row`: the fields the row leaves empty ({} when none). */
+export function clubFillOf(row, c) {
+  if (!row || !c) return {}
+  const out = {}
+  if (!clean(row.first_name) && clean(c.first_name)) out.first_name = clean(c.first_name)
+  if (!clean(row.dob) && c.dob) out.dob = c.dob
+  if (!clean(row.license_number) && clean(c.sv_number)) out.license_number = clean(c.sv_number)
+  return out
+}
+
+/** The row `row` linked to the club person `c`: its names, date of birth and licence number from the club. */
+export function linkRowToClubPerson(row, c) {
+  return {
+    ...row,
+    first_name: clean(c?.first_name) || clean(row?.first_name),
+    last_name: clean(c?.last_name) || clean(row?.last_name),
+    dob: c?.dob || row?.dob || emptyLike(row?.dob),
+    license_number: clean(c?.sv_number) || row?.license_number || emptyLike(row?.license_number)
+  }
+}
+
+/**
+ * The rows typed by hand that Save offers to keep in the club's lists: no
+ * club person and a last name. The lists are keyed by the licence number, so
+ * only those with one can go there (`offer`); the others are `noLicence`
+ * (their names). Players go to the players list (with the team's gender when
+ * it is known), officials to the coaches list; one entry per list and licence.
+ * { offer: [{ key, list, name, person: { sv_number, last_name, first_name, dob, gender } }], noLicence: [name] }
+ */
+export function handTypedForClub(players, staff, people, gender = null) {
+  const offer = []
+  const noLicence = []
+  const seen = new Set()
+  const add = (row, list) => {
+    if (!row || !clean(row.last_name) || clubPersonOf(row, people)) return
+    const name = `${clean(row.first_name)} ${clean(row.last_name)}`.trim()
+    const lic = clean(row.license_number)
+    if (!SV_RE.test(lic)) {
+      if (!noLicence.includes(name)) noLicence.push(name)
+      return
+    }
+    const key = `${list}:${lic}`
+    if (seen.has(key)) return
+    seen.add(key)
+    offer.push({
+      key,
+      list,
+      name,
+      person: {
+        sv_number: lic,
+        last_name: clean(row.last_name),
+        first_name: clean(row.first_name) || null,
+        dob: clean(row.dob) || null,
+        gender: list === 'players' && (gender === 'm' || gender === 'f') ? gender : null
+      }
+    })
+  }
+  for (const p of players || []) add(p, 'players')
+  for (const s of staff || []) add(s, 'coaches')
+  return { offer, noLicence }
+}

@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.11 · État au 9 novembre 2026
+**OpenVolley et OpenBeach** · Version 1.12 · État au 10 novembre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version anglaise fait foi.
@@ -510,10 +510,15 @@ téléchargées sur les appareils des marqueurs du club afin que la préparation
 du match puisse ajouter des joueurs et des officiels d'équipe sans internet
 (un entraîneur peut être n'importe quelle personne des listes du club). Le
 sexe sert à ce qu'aucune joueuse ni aucun joueur ne soit inscrit dans une
-équipe de l'autre sexe ; il n'est pas vérifié pour les officiels d'équipe. Chaque
-chargement remplace cette liste ; les listes sont supprimées avec le club. Sur
-un appareil de marquage, chaque téléchargement remplace la copie, et elle est
-supprimée à la déconnexion.
+équipe de l'autre sexe ; il n'est pas vérifié pour les officiels d'équipe.
+Chaque chargement remplace les personnes du chargement précédent de cette
+liste ; les listes sont supprimées avec le club. Les listes peuvent aussi
+contenir des personnes qu'un responsable d'équipe ou un responsable du club a
+ajoutées à la main depuis l'effectif d'une équipe (numéro de licence, noms,
+date de naissance et sexe uniquement) ; un chargement les conserve, et elles
+sont supprimées avec leur liste ou le club. Sur un appareil de marquage,
+chaque téléchargement remplace la copie, et elle est supprimée à la
+déconnexion.
 
 **Tournois de beach-volley :** titre, lieu, dates, équipes avec prénoms, noms,
 numéros de licence et pays des joueuses et joueurs, programme, résultats,
@@ -725,7 +730,7 @@ prestataires. Vous pouvez me demander une copie de ces garanties.
 | Responsables de club | Jusqu'à ce que les administrateurs les retirent, que le club soit supprimé ou que vous supprimiez votre compte |
 | Responsables d'équipe | Jusqu'à ce qu'un responsable de club ou un administrateur les retire, que l'équipe ou le club soit supprimé ou que vous supprimiez votre compte |
 | Liste envoyée à l'avance (joueuses et joueurs, encadrement, signatures) | Jusqu'à ce qu'un marqueur l'accepte, au plus tard 14 jours après le match ; la mention de l'acceptation 14 jours après le match |
-| Listes de licences d'un club (numéro de licence, noms, date de naissance, sexe) | Jusqu'au prochain chargement de cette liste, sa suppression par un responsable du club ou la suppression du club ; sur un appareil de marquage jusqu'au prochain téléchargement ou à la déconnexion |
+| Listes de licences d'un club (numéro de licence, noms, date de naissance, sexe) | Jusqu'au prochain chargement de cette liste, sa suppression par un responsable du club ou la suppression du club ; personnes ajoutées à la main : jusqu'à la suppression de la liste ou du club ; sur un appareil de marquage jusqu'au prochain téléchargement ou à la déconnexion |
 | Adresse e-mail d'un arbitre pour un match | Avec le match, comme partie de la feuille de match |
 | Envoi de la feuille de match finale (moment, nombre de destinataires, sans adresses) | Avec le match |
 | Feuille d'un match de test par e-mail | Non conservée sur le serveur |

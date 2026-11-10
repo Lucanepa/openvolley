@@ -3,12 +3,13 @@ import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { FileUp, PenLine, Trash2, UserPlus } from 'lucide-react'
 import { teamApi } from '../../lib/accountApi'
-import { addClubPlayersToGameDraft, clubPersonToPlayer, gameRosterBody, gameRosterDraft, officialOfRole, officialRolesOf, parsedPdfToRoster, playerFinder, setGameDraftOfficial, wrongGenderIndexes, GAME_ROSTER_MAX_PLAYERS } from '../../domain/teamRosters'
+import { addClubPlayersToGameDraft, clubPersonOf, clubPersonToPlayer, gameRosterBody, gameRosterDraft, officialOfRole, officialRolesOf, parsedPdfToRoster, playerFinder, setGameDraftOfficial, wrongGenderIndexes, GAME_ROSTER_MAX_PLAYERS } from '../../domain/teamRosters'
 import { STAFF_ROLES } from '../../domain/savedTeams'
 import { shirtNumberDigits } from '../../domain/roster'
 import TeamEditor, { clubPeopleOf, clubPersonOffer } from './TeamEditor'
 import RequestsSection from './RequestsSection'
 import ClubPlayerPickerModal from '../ClubPlayerPickerModal'
+import ClubShield from './ClubShield'
 import SignaturePad from '../SignaturePad'
 import KitModal from './KitModal'
 import { usePanelData, useOnline, OfflineBanner, PanelHead, InlineError, useErrorText } from './common'
@@ -74,6 +75,13 @@ function TeamSections({ team }) {
     // Save until the page was reloaded)
     return { ...res, data: { ...res.data, team: res.data?.squad } }
   }
+  // db/026: the ones typed by hand that Save's question puts into the club's
+  // lists; the shields turn green with the club's fresh lists
+  const addToClub = async (people) => {
+    const res = await teamApi.addClubPeople(team.id, people)
+    if (!res.error) club.reload({ quiet: true })
+    return res
+  }
   return (
     <>
       <section>
@@ -94,7 +102,7 @@ function TeamSections({ team }) {
         {squad.loading && !squad.data ? (
           <SkeletonRows rows={3} pill={false} />
         ) : squad.data && (
-          <TeamEditor key={editorTeam.id} team={editorTeam} competition={null} online={online} fixedFields pdfImport saveRoster={saveSquad} clubPlayers={clubPlayers} />
+          <TeamEditor key={editorTeam.id} team={editorTeam} competition={null} online={online} fixedFields pdfImport saveRoster={saveSquad} clubPlayers={clubPlayers} onAddToClub={clubPlayers ? addToClub : null} clubName={team.club_name} />
         )}
       </section>
 
@@ -393,6 +401,7 @@ function GameRosterDialog({ team, game, squad, clubPlayers, onClose, onSaved }) 
                 <ul className="divide-y divide-stone-200/70 overflow-hidden rounded-xl border border-stone-200/70 bg-white">
                   {shown.players.map((p) => (
                     <li key={p.key} className={cn('flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2', !p.picked && 'bg-stone-50/60')}>
+                      {clubPlayers && <ClubShield person={clubPersonOf(p, clubPlayers.people)} className="-my-1 -ml-2 -mr-2" />}
                       <Checkbox
                         checked={p.picked}
                         onChange={(e) => setPlayer(p.key, { picked: e.target.checked })}
@@ -428,7 +437,8 @@ function GameRosterDialog({ team, game, squad, clubPlayers, onClose, onSaved }) 
               ) : (
                 <ul className="divide-y divide-stone-200/70 overflow-hidden rounded-xl border border-stone-200/70 bg-white">
                   {shown.staff.map((s) => (
-                    <li key={s.key} className="px-3 py-2">
+                    <li key={s.key} className="flex items-center gap-x-3 px-3 py-2">
+                      {clubPlayers && <ClubShield person={clubPersonOf(s, clubPlayers.people)} className="-my-1 -ml-2 -mr-2" />}
                       <Checkbox
                         checked={s.picked}
                         onChange={(e) => setStaff(s.key, { picked: e.target.checked })}

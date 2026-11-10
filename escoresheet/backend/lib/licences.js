@@ -7,15 +7,28 @@
  * licence number (Swiss Volley "SV" number), last name, first name, date of
  * birth and gender. Nothing else of the export reaches the server, and this
  * module refuses any other field. Three lists per club: players, scorers,
- * coaches; each upload replaces its list.
+ * coaches; each upload replaces the imported rows of its list.
+ *
+ * db/026 (owner 2026-11-10: "if I add somebody manually, when saving ask if I
+ * want to save him/her in the club. Those from the club/recognized/linked ->
+ * green shield. Those added manually -> gray shield, but can be linked
+ * later."): a team or club manager may add people typed in by hand to the
+ * club's lists, the same five fields (source 'manual'). An upload keeps them,
+ * and turns those it contains into imported rows; Delete list (an empty
+ * upload) removes them too. Every person the reads answer has `manual`: true
+ * when all its rows are manual (the gray shield), false when an upload has it.
  *
  * Club managers of the club (and admins), lib/manageApi.js:
- *   putList({ clubId, list, people, userId })  replaces one list (<= 2000 people)
+ *   putList({ clubId, list, people, userId })  replaces the imported rows of one list (<= 2000
+ *                                              people); an empty list deletes the whole list
  *   clubList({ clubId })                       every person once, their lists and teams
+ *   addPeople({ clubId, body, userId })        { people: [{ list, ...five fields }] } (1 to 30) by
+ *                                              hand: new rows only, never over an existing one
  * Whoever may manage the team (lib/teams.js mayManage):
  *   teamClubPlayers({ teamId })                the team's club: its players list, every person of
  *                                              its lists once (people, for the officials), the
  *                                              team's gender
+ *   addPeople({ teamId, body, userId })        the same as the club's, to the team's club
  * Scorers (indoor canReadTeams, as GET /api/game-rosters):
  *   scorerClubPlayers({ userId })              each club of the caller: its teams, their gender,
  *                                              its players list and every person of its lists once
@@ -30,7 +43,8 @@
  * Personal data (names, dates of birth, licence numbers, gender): served only
  * through these routes, never on the /api/db allowlist, never anonymous; the
  * audit keeps the list and the count, never a name. A database without db/024
- * answers "no list" to the reads and never blocks a squad or a roster.
+ * answers "no list" to the reads and never blocks a squad or a roster; one
+ * without db/026 reads every row as imported and answers 503 to the writes.
  *
  * Every answer is the { status, body } shape of lib/accounts.js; nothing throws.
  */
@@ -43,12 +57,17 @@ export const MAX_LICENCE_PEOPLE = 2000
 export const LICENCE_NAME_MAX = 100
 // The only fields a person of a list has (owner 2026-11-09)
 export const LICENCE_FIELDS = Object.freeze(['sv_number', 'last_name', 'first_name', 'dob', 'gender'])
+// db/026: people added by hand from a roster, at most this many per request
+export const MAX_MANUAL_PEOPLE = 30
+const MANUAL_FIELDS = Object.freeze(['list', ...LICENCE_FIELDS])
 const SV_RE = /^[0-9]{4,7}$/
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 // No db/024 (or db/023) yet: a relation or column that does not exist
 const MISSING = new Set(['42P01', '42703'])
 const nameSql = (alias) => `nullif(trim(coalesce(${alias}.first_name, '') || ' ' || coalesce(${alias}.last_name, '')), '')`
 const iso = (v) => (v instanceof Date ? v.toISOString() : (v ?? null))
+// db/026's column; 'import' on a database without it (every row of before is an import)
+const sourceSql = (alias) => `coalesce(to_jsonb(${alias}) ->> 'source', 'import')`
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 const key = (s) => String(s ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
 const tidy = (s) => s.trim().replace(/\s+/g, ' ')
@@ -90,6 +109,45 @@ function validDate (s) {
 }
 
 /**
+ * One person of a list: the five fields, trimmed. { person } or { error } (a
+ * 400 answer). A field outside `fields` is refused.
+ */
+function validPerson (raw, at, fields = LICENCE_FIELDS) {
+  if (!isPlainObject(raw)) return { error: invalid(`${at}: must be an object`) }
+  const extra = Object.keys(raw).find((k) => !fields.includes(k))
+  if (extra) return { error: invalid(`${at}.${extra.slice(0, 40)}: not accepted (only ${fields.join(', ')})`) }
+  const sv = typeof raw.sv_number === 'number' && Number.isInteger(raw.sv_number) ? String(raw.sv_number) : (typeof raw.sv_number === 'string' ? raw.sv_number.trim() : '')
+  if (!SV_RE.test(sv)) return { error: invalid(`${at}.sv_number: 4 to 7 digits`) }
+  if (typeof raw.last_name !== 'string' || !tidy(raw.last_name)) return { error: invalid(`${at}.last_name: required`) }
+  const last = tidy(raw.last_name)
+  if (last.length > LICENCE_NAME_MAX) return { error: invalid(`${at}.last_name: at most ${LICENCE_NAME_MAX} characters`) }
+  let first = null
+  if (raw.first_name != null && raw.first_name !== '') {
+    if (typeof raw.first_name !== 'string') return { error: invalid(`${at}.first_name: text or null`) }
+    first = tidy(raw.first_name) || null
+    if (first && first.length > LICENCE_NAME_MAX) return { error: invalid(`${at}.first_name: at most ${LICENCE_NAME_MAX} characters`) }
+  }
+  let dob = null
+  if (raw.dob != null && raw.dob !== '') {
+    if (!validDate(raw.dob)) return { error: invalid(`${at}.dob: YYYY-MM-DD or null`) }
+    dob = raw.dob
+  }
+  let gender = null
+  if (raw.gender != null && raw.gender !== '') {
+    if (raw.gender !== 'm' && raw.gender !== 'f') return { error: invalid(`${at}.gender: m, f or null`) }
+    gender = raw.gender
+  }
+  return { person: { sv_number: sv, last_name: last, first_name: first, dob, gender } }
+}
+
+/** A person named twice: the first one's fields, completed by the later one's. */
+function completeWith (cur, p) {
+  cur.first_name ??= p.first_name
+  cur.dob ??= p.dob
+  cur.gender ??= p.gender
+}
+
+/**
  * The people of one upload: the five fields, trimmed; a licence number twice
  * is one person (the first one's fields, completed by the later ones).
  * { people } or { error } (a 400 answer). Any other field is refused: nothing
@@ -100,66 +158,73 @@ export function validateLicencePeople (people) {
   if (people.length > MAX_LICENCE_PEOPLE) return { error: invalid(`people: at most ${MAX_LICENCE_PEOPLE}`) }
   const bySv = new Map()
   for (let i = 0; i < people.length; i++) {
-    const raw = people[i]
-    const at = `people[${i}]`
-    if (!isPlainObject(raw)) return { error: invalid(`${at}: must be an object`) }
-    const extra = Object.keys(raw).find((k) => !LICENCE_FIELDS.includes(k))
-    if (extra) return { error: invalid(`${at}.${extra.slice(0, 40)}: not accepted (only ${LICENCE_FIELDS.join(', ')})`) }
-    const sv = typeof raw.sv_number === 'number' && Number.isInteger(raw.sv_number) ? String(raw.sv_number) : (typeof raw.sv_number === 'string' ? raw.sv_number.trim() : '')
-    if (!SV_RE.test(sv)) return { error: invalid(`${at}.sv_number: 4 to 7 digits`) }
-    if (typeof raw.last_name !== 'string' || !tidy(raw.last_name)) return { error: invalid(`${at}.last_name: required`) }
-    const last = tidy(raw.last_name)
-    if (last.length > LICENCE_NAME_MAX) return { error: invalid(`${at}.last_name: at most ${LICENCE_NAME_MAX} characters`) }
-    let first = null
-    if (raw.first_name != null && raw.first_name !== '') {
-      if (typeof raw.first_name !== 'string') return { error: invalid(`${at}.first_name: text or null`) }
-      first = tidy(raw.first_name) || null
-      if (first && first.length > LICENCE_NAME_MAX) return { error: invalid(`${at}.first_name: at most ${LICENCE_NAME_MAX} characters`) }
-    }
-    let dob = null
-    if (raw.dob != null && raw.dob !== '') {
-      if (!validDate(raw.dob)) return { error: invalid(`${at}.dob: YYYY-MM-DD or null`) }
-      dob = raw.dob
-    }
-    let gender = null
-    if (raw.gender != null && raw.gender !== '') {
-      if (raw.gender !== 'm' && raw.gender !== 'f') return { error: invalid(`${at}.gender: m, f or null`) }
-      gender = raw.gender
-    }
-    const cur = bySv.get(sv)
-    if (!cur) bySv.set(sv, { sv_number: sv, last_name: last, first_name: first, dob, gender })
-    else {
-      cur.first_name ??= first
-      cur.dob ??= dob
-      cur.gender ??= gender
-    }
+    const v = validPerson(people[i], `people[${i}]`)
+    if (v.error) return v
+    const cur = bySv.get(v.person.sv_number)
+    if (!cur) bySv.set(v.person.sv_number, v.person)
+    else completeWith(cur, v.person)
   }
   return { people: [...bySv.values()] }
 }
 
-const personOut = (r) => ({
+/**
+ * The body of a hand-added batch (db/026): { people: [{ list, sv_number,
+ * last_name, first_name, dob, gender }] }, 1 to 30 entries, the five fields as
+ * an upload's and the list (players, scorers, coaches). Nothing else in the
+ * body or an entry. A licence number twice in one list is one person (as an
+ * upload). { people } or { error } (a 400 answer).
+ */
+export function validateManualPeople (body) {
+  if (!isPlainObject(body)) return { error: invalid('body: must be an object') }
+  const extra = Object.keys(body).find((k) => k !== 'people')
+  if (extra) return { error: invalid(`${extra.slice(0, 40)}: not accepted (only people)`) }
+  const people = body.people
+  if (!Array.isArray(people) || !people.length) return { error: invalid(`people: an array of 1 to ${MAX_MANUAL_PEOPLE}`) }
+  if (people.length > MAX_MANUAL_PEOPLE) return { error: invalid(`people: at most ${MAX_MANUAL_PEOPLE}`) }
+  const byKey = new Map()
+  for (let i = 0; i < people.length; i++) {
+    const at = `people[${i}]`
+    const v = validPerson(people[i], at, MANUAL_FIELDS)
+    if (v.error) return v
+    const list = people[i].list
+    if (!LICENCE_LISTS.includes(list)) return { error: invalid(`${at}.list: ${LICENCE_LISTS.join(', ')}`) }
+    const k = `${list}:${v.person.sv_number}`
+    const cur = byKey.get(k)
+    if (!cur) byKey.set(k, { list, ...v.person })
+    else completeWith(cur, v.person)
+  }
+  return { people: [...byKey.values()] }
+}
+
+// db/026: `manual` is true when every row of the person was added by hand
+// (the gray shield); one imported row (any list) makes it false
+const importedOf = (rows) => new Set((rows || []).filter((r) => r.source !== 'manual').map((r) => r.sv_number))
+const personOut = (r, imported) => ({
   sv_number: r.sv_number,
   last_name: r.last_name,
   first_name: r.first_name ?? null,
   dob: r.dob ?? null,
-  gender: r.gender ?? null
+  gender: r.gender ?? null,
+  manual: !imported.has(r.sv_number)
 })
 const byName = (a, b) => a.last_name.localeCompare(b.last_name, 'de') || String(a.first_name || '').localeCompare(String(b.first_name || ''), 'de') || a.sv_number.localeCompare(b.sv_number)
 
 /**
  * Rows of several lists ({ list, sv_number, last_name, first_name, dob,
- * gender }) -> every person once ({ ...the five fields, lists }), in name
- * order: the fields of the first list that has them (players, scorers,
- * coaches), lists in that order. `extra(sv)` adds fields to a person (the
- * teams of My club).
+ * gender, source }) -> every person once ({ ...the five fields, manual,
+ * lists }), in name order: the fields of the first list that has them
+ * (players, scorers, coaches), lists in that order; manual when every row of
+ * the person is (db/026). `extra(sv)` adds fields to a person (the teams of
+ * My club).
  */
 export function mergeLicencePeople (rows, extra = null) {
   const people = new Map()
+  const imported = importedOf(rows)
   const order = (r) => LICENCE_LISTS.indexOf(r.list)
   for (const r of [...(rows || [])].filter((x) => LICENCE_LISTS.includes(x?.list)).sort((a, b) => order(a) - order(b))) {
     const cur = people.get(r.sv_number)
     if (!cur) {
-      people.set(r.sv_number, { ...personOut(r), lists: [r.list], ...(extra ? extra(r.sv_number) : {}) })
+      people.set(r.sv_number, { ...personOut(r, imported), lists: [r.list], ...(extra ? extra(r.sv_number) : {}) })
       continue
     }
     if (!cur.lists.includes(r.list)) cur.lists.push(r.list)
@@ -170,8 +235,11 @@ export function mergeLicencePeople (rows, extra = null) {
   return [...people.values()].sort(byName)
 }
 
-/** The players list of `rows` (several lists): the five fields, in name order. */
-const playersOf = (rows) => (rows || []).filter((r) => r.list === 'players').map(personOut).sort(byName)
+/** The players list of `rows` (several lists): the five fields and manual, in name order. */
+const playersOf = (rows) => {
+  const imported = importedOf(rows)
+  return (rows || []).filter((r) => r.list === 'players').map((r) => personOut(r, imported)).sort(byName)
+}
 
 /**
  * @param {object} o
@@ -222,10 +290,10 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
     return out
   }
 
-  /** The club's people of one list (or every list): rows with dob as YYYY-MM-DD. */
+  /** The club's people of one list (or every list): rows with dob as YYYY-MM-DD and their source. */
   async function peopleOf (db, clubId, list = null) {
     const { rows } = await (db || pool).query(
-      `SELECT l.list, l.sv_number, l.last_name, l.first_name, l.dob::text AS dob, l.gender
+      `SELECT l.list, l.sv_number, l.last_name, l.first_name, l.dob::text AS dob, l.gender, ${sourceSql('l')} AS source
          FROM public.club_licences l
         WHERE l.club_id = $1 AND ($2::text IS NULL OR l.list = $2)`, [clubId, list])
     return rows
@@ -262,39 +330,99 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
   }
 
   // ---------------------------------------------------------------- club managers
-  /** PUT /api/club/:id/licences/:list { people }: the whole list, replaced in one transaction. */
+  /**
+   * PUT /api/club/:id/licences/:list { people }: an upload, in one
+   * transaction. It replaces the imported rows of the list; the rows added by
+   * hand stay (db/026), and one whose licence number the upload has becomes
+   * an imported row with the upload's fields. An empty list is Delete list:
+   * every row of the list goes, the hand-added ones too.
+   * { list, count (the people of the upload), manual (the hand-added rows the
+   * list keeps), imported_at }.
+   */
   async function putList ({ clubId, list, people, userId } = {}) {
     if (!isUuid(clubId)) return notFound()
     if (!LICENCE_LISTS.includes(list)) return notFound()
     const v = validateLicencePeople(people)
     if (v.error) return v.error
     return guarded('put-list', () => withTx(async (client) => {
-      // one upload of a club at a time
+      // one upload (or hand-added batch) of a club at a time
       const { rows: [c] } = await client.query('SELECT id FROM public.clubs WHERE id = $1 FOR NO KEY UPDATE', [clubId])
       if (!c) throw abort(notFound())
-      await client.query('DELETE FROM public.club_licences WHERE club_id = $1 AND list = $2', [clubId, list])
       const p = v.people
-      if (p.length) {
+      if (!p.length) {
+        await client.query('DELETE FROM public.club_licences WHERE club_id = $1 AND list = $2', [clubId, list])
+      } else {
+        await client.query("DELETE FROM public.club_licences WHERE club_id = $1 AND list = $2 AND source = 'import'", [clubId, list])
         await client.query(
-          `INSERT INTO public.club_licences (club_id, list, sv_number, last_name, first_name, dob, gender, imported_by)
-           SELECT $1, $2, x.sv, x.ln, x.fn, x.dob, x.g, $3
-             FROM unnest($4::text[], $5::text[], $6::text[], $7::date[], $8::text[]) AS x(sv, ln, fn, dob, g)`,
+          `INSERT INTO public.club_licences (club_id, list, sv_number, last_name, first_name, dob, gender, imported_by, source)
+           SELECT $1, $2, x.sv, x.ln, x.fn, x.dob, x.g, $3, 'import'
+             FROM unnest($4::text[], $5::text[], $6::text[], $7::date[], $8::text[]) AS x(sv, ln, fn, dob, g)
+           ON CONFLICT (club_id, list, sv_number) DO UPDATE
+              SET last_name = EXCLUDED.last_name, first_name = EXCLUDED.first_name, dob = EXCLUDED.dob, gender = EXCLUDED.gender,
+                  source = 'import', imported_at = EXCLUDED.imported_at, imported_by = EXCLUDED.imported_by`,
           [clubId, list, isUuid(userId) ? userId : null, p.map((x) => x.sv_number), p.map((x) => x.last_name),
             p.map((x) => x.first_name), p.map((x) => x.dob), p.map((x) => x.gender)])
       }
+      const { rows: [n] } = await client.query(
+        "SELECT count(*)::int AS manual, now() AS at FROM public.club_licences WHERE club_id = $1 AND list = $2 AND source = 'manual'", [clubId, list])
       // the list and the count only: never a name
       await audit(client, { actorId: userId, action: 'club.licences', details: { club_id: clubId, list, count: p.length } })
-      const { rows: [s] } = await client.query('SELECT now() AS at')
-      return ok({ list, count: p.length, imported_at: iso(s.at) })
+      return ok({ list, count: p.length, manual: n.manual, imported_at: iso(n.at) })
+    }))
+  }
+
+  /**
+   * POST /api/club/:id/licences/people and POST /api/team/:id/club-people
+   * { people: [{ list, sv_number, last_name, first_name, dob, gender }] }
+   * (db/026): people a manager typed in by hand (a squad's rows with a licence
+   * number), added to the club's lists as 'manual' rows. A licence number the
+   * list already has (imported or hand-added) is left as it is: nothing is
+   * overwritten. `teamId`: the team's club (404 for a team without one).
+   * { club_id, added, already } (people of the request added / already there).
+   */
+  async function addPeople ({ clubId = null, teamId = null, body, userId } = {}) {
+    if (clubId != null && !isUuid(clubId)) return notFound()
+    if (teamId != null && !isUuid(teamId)) return notFound()
+    if (!clubId && !teamId) return notFound()
+    const v = validateManualPeople(body)
+    if (v.error) return v.error
+    return guarded('add-people', () => withTx(async (client) => {
+      let club = clubId
+      if (teamId) {
+        const { rows: [t] } = await client.query('SELECT club_id FROM public.club_teams WHERE id = $1', [teamId])
+        if (!t?.club_id || (clubId && t.club_id !== clubId)) throw abort(notFound())
+        club = t.club_id
+      }
+      // one upload (or hand-added batch) of a club at a time
+      const { rows: [c] } = await client.query('SELECT id FROM public.clubs WHERE id = $1 FOR NO KEY UPDATE', [club])
+      if (!c) throw abort(notFound())
+      const p = v.people
+      const { rows: added } = await client.query(
+        `INSERT INTO public.club_licences (club_id, list, sv_number, last_name, first_name, dob, gender, imported_by, source)
+         SELECT $1, x.list, x.sv, x.ln, x.fn, x.dob, x.g, $2, 'manual'
+           FROM unnest($3::text[], $4::text[], $5::text[], $6::text[], $7::date[], $8::text[]) AS x(list, sv, ln, fn, dob, g)
+         ON CONFLICT (club_id, list, sv_number) DO NOTHING
+         RETURNING list`,
+        [club, isUuid(userId) ? userId : null, p.map((x) => x.list), p.map((x) => x.sv_number), p.map((x) => x.last_name),
+          p.map((x) => x.first_name), p.map((x) => x.dob), p.map((x) => x.gender)])
+      if (added.length) {
+        const lists = {}
+        for (const r of added) lists[r.list] = (lists[r.list] || 0) + 1
+        // the club, the team and the counts only: never a name or a licence number
+        await audit(client, { actorId: userId, action: 'club.licences.manual', details: { club_id: club, team_id: teamId, added: added.length, lists } })
+      }
+      return ok({ club_id: club, added: added.length, already: p.length - added.length })
     }))
   }
 
   /**
    * GET /api/club/:id/licences: every person of the club's lists once
-   * ({ sv_number, last_name, first_name, dob, gender, lists, teams }), and per
-   * list { count, imported_at, imported_by_name }. teams: the club's teams
-   * whose saved team of this season (lib/teams.js squad) has a player or an
-   * official with that licence number.
+   * ({ sv_number, last_name, first_name, dob, gender, manual, lists, teams }),
+   * and per list { count, manual, imported_at, imported_by_name }: count every
+   * row, manual the hand-added ones (db/026), imported_at and
+   * imported_by_name the last upload's (null when there was none). teams: the
+   * club's teams whose saved team of this season (lib/teams.js squad) has a
+   * player or an official with that licence number.
    */
   async function clubList ({ clubId } = {}) {
     if (!isUuid(clubId)) return notFound()
@@ -306,11 +434,13 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
       try {
         rows = await peopleOf(pool, clubId)
         ;({ rows: summary } = await pool.query(
-          `SELECT DISTINCT ON (l.list) l.list, count(*) OVER (PARTITION BY l.list)::int AS count, l.imported_at,
-                  ${nameSql('p')} AS imported_by_name
-             FROM public.club_licences l LEFT JOIN public.profiles p ON p.user_id = l.imported_by
-            WHERE l.club_id = $1
-            ORDER BY l.list, l.imported_at DESC`, [clubId]))
+          `WITH r AS (SELECT l.*, ${sourceSql('l')} AS src FROM public.club_licences l WHERE l.club_id = $1),
+                n AS (SELECT list, count(*)::int AS count, (count(*) FILTER (WHERE src = 'manual'))::int AS manual FROM r GROUP BY list),
+                i AS (SELECT DISTINCT ON (r.list) r.list, r.imported_at, ${nameSql('p')} AS imported_by_name
+                        FROM r LEFT JOIN public.profiles p ON p.user_id = r.imported_by
+                       WHERE r.src = 'import'
+                       ORDER BY r.list, r.imported_at DESC)
+           SELECT n.list, n.count, n.manual, i.imported_at, i.imported_by_name FROM n LEFT JOIN i ON i.list = n.list`, [clubId]))
       } catch (err) {
         if (!MISSING.has(err?.code)) throw err
       }
@@ -344,7 +474,9 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
       const people = mergeLicencePeople(rows, (sv) => ({ teams: (teamsOf.get(sv) || []).sort((a, b) => a.name.localeCompare(b.name)) }))
       const lists = Object.fromEntries(LICENCE_LISTS.map((l) => {
         const s = summary.find((x) => x.list === l)
-        return [l, s ? { count: s.count, imported_at: iso(s.imported_at), imported_by_name: s.imported_by_name ?? null } : { count: 0, imported_at: null, imported_by_name: null }]
+        return [l, s
+          ? { count: s.count, manual: s.manual, imported_at: iso(s.imported_at), imported_by_name: s.imported_by_name ?? null }
+          : { count: 0, manual: 0, imported_at: null, imported_by_name: null }]
       }))
       return ok({ season, lists, people })
     })
@@ -356,7 +488,8 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
    * the team's gender (null: no check). `players`: the players list (for the
    * player rows, which the gender rule checks); `people`: every person of the
    * club's three lists once, with its `lists` (for the team officials, who
-   * may be anyone of the club, of either gender).
+   * may be anyone of the club, of either gender). Each person has `manual`
+   * (db/026: added by hand, not in any upload).
    */
   async function teamClubPlayers ({ teamId } = {}) {
     if (!isUuid(teamId)) return notFound()
@@ -395,7 +528,7 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
       let rows = []
       try {
         ;({ rows } = await pool.query(
-          `SELECT l.club_id, l.list, l.sv_number, l.last_name, l.first_name, l.dob::text AS dob, l.gender
+          `SELECT l.club_id, l.list, l.sv_number, l.last_name, l.first_name, l.dob::text AS dob, l.gender, ${sourceSql('l')} AS source
              FROM public.club_licences l WHERE l.club_id = ANY($1::uuid[])`, [mine.map((c) => c.id)]))
       } catch (err) {
         if (!MISSING.has(err?.code)) throw err
@@ -418,5 +551,5 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
     })
   }
 
-  return { putList, clubList, teamClubPlayers, scorerClubPlayers, wrongGender, teamGenders }
+  return { putList, addPeople, clubList, teamClubPlayers, scorerClubPlayers, wrongGender, teamGenders }
 }

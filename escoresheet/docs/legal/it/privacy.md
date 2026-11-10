@@ -1,6 +1,6 @@
 # Informativa sulla protezione dei dati
 
-**OpenVolley e OpenBeach** · Versione 1.11 · Aggiornata al 9 novembre 2026
+**OpenVolley e OpenBeach** · Versione 1.12 · Aggiornata al 10 novembre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
 la versione inglese.
@@ -483,8 +483,12 @@ segnapunti della società, affinché la preparazione della partita possa
 aggiungere giocatori e ufficiali di squadra senza internet (un allenatore può
 essere qualsiasi persona degli elenchi della società). Il sesso serve a non
 iscrivere giocatrici o giocatori in una squadra dell'altro sesso; per gli
-ufficiali di squadra non viene controllato. Ogni
-caricamento sostituisce quell'elenco; gli elenchi vengono cancellati con la
+ufficiali di squadra non viene controllato. Ogni caricamento sostituisce le
+persone del caricamento precedente di quell'elenco; gli elenchi vengono
+cancellati con la società. Gli elenchi possono contenere anche persone che un
+responsabile di squadra o di società ha aggiunto a mano dalla rosa di una
+squadra (solo numero di licenza, nomi, data di nascita e sesso); un
+caricamento le mantiene, e vengono cancellate con il loro elenco o con la
 società. Su un dispositivo del segnapunti ogni download sostituisce la copia,
 che viene cancellata all'uscita dall'account.
 
@@ -691,7 +695,7 @@ riceve una copia di queste garanzie.
 | Responsabili di società | Finché gli amministratori non li rimuovono, la società viene cancellata o lei cancella il suo account |
 | Responsabili di squadra | Finché un responsabile di società o un amministratore non li rimuove, la squadra o la società viene cancellata o lei cancella il suo account |
 | Elenco inviato in anticipo (giocatrici e giocatori, staff, firme) | Finché un segnapunti non lo accetta, al più tardi 14 giorni dopo la partita; la nota dell'accettazione 14 giorni dopo la partita |
-| Elenchi delle licenze di una società (numero di licenza, nomi, data di nascita, sesso) | Fino al prossimo caricamento di quell'elenco, alla sua cancellazione da parte di un responsabile della società o alla cancellazione della società; su un dispositivo fino al prossimo download o all'uscita dall'account |
+| Elenchi delle licenze di una società (numero di licenza, nomi, data di nascita, sesso) | Fino al prossimo caricamento di quell'elenco, alla sua cancellazione da parte di un responsabile della società o alla cancellazione della società; persone aggiunte a mano: fino alla cancellazione dell'elenco o della società; su un dispositivo fino al prossimo download o all'uscita dall'account |
 | Indirizzo e-mail di un arbitro per una partita | Con la partita, come parte del referto |
 | Invio del referto finale (momento, numero di destinatari, senza indirizzi) | Con la partita |
 | Referto di una partita di prova per e-mail | Non conservato sul server |
