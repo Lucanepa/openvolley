@@ -986,7 +986,9 @@
       "title": "Wird zuerst zurückgenommen",
       "timeout": "Timeout {{team}}",
       "substitution": "Auswechslung {{team}}: #{{in}} für #{{out}}",
-      "text": "Nach dem Punkt beantragt: die Auswechslung wird rückgängig gemacht und nicht gezählt, das Timeout gestrichen.",
+      "textSubstitution": "Nach dem Punkt beantragt: die Auswechslung wird rückgängig gemacht und nicht gezählt.",
+      "textTimeout": "Nach dem Punkt beantragt: das Timeout wird gestrichen.",
+      "textBoth": "Nach dem Punkt beantragt: die Auswechslung wird rückgängig gemacht und nicht gezählt, das Timeout gestrichen.",
       "rule": "FIVB Casebook 8.5 · SSK 26-1"
     },
     "teamSanctionConfirm": {

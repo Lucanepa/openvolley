@@ -10,7 +10,9 @@ import ballFallback from '../ball_fallback.png'
 // stay cached (old green ball) after an update
 const ballImage = ballFallback
 import { Results } from '../../scoresheet_pdf/components/FooterSection'
-import { setDurationMinutes } from '../../scoresheet_pdf/utils/matchTimes'
+import { setDurationMinutes, matchTimes, isoOf } from '../../scoresheet_pdf/utils/matchTimes'
+import { isDefaultSet } from '../../scoresheet_pdf/utils/scoresheetModel'
+import { formatClockHoursMinutes, formatHoursMinutes } from '../../scoresheet_pdf/utils/sheetFormat'
 import TestModeControls from './TestModeControls'
 import { ArrowLeft } from 'lucide-react'
 import { Button } from '../ui/Button.jsx'
@@ -32,12 +34,13 @@ const SURFACE = {
   border: '1px solid var(--ov-hairline-soft)',
   boxShadow: 'var(--ov-shadow-card)'
 }
-import { setsToWin } from '../utils/matchFormat'
+import { setsToWin, displaySetNumber } from '../utils/matchFormat'
 import { getSideAForSet } from '../domain/rules'
 import { sanctionTarget, compareBySeq } from '../domain/describe'
 import { TEAM_COLOUR_MARK, matchDiscPaint, teamLiberoColour, markColourOn, teamBoxStyle, effectiveTeamColour } from '../utils/teamColours'
 import { TIMEOUT_LIMIT, SUBSTITUTION_LIMIT, counterTone, counterPips, benchShortName } from './bench/benchLayout.js'
 import BenchRequestPanel from './bench/BenchRequestPanel.jsx'
+import { benchSetIndex } from '../domain/benchRequests'
 
 // A player's sanction events as { warning, penalty, expulsion, disqualification } flags
 const sanctionFlags = (events = []) => {
@@ -399,6 +402,25 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     if (!isMatchFinished) return ''
     return `${setsToWin(matchBestOf)}:${Math.min(setsWon.team, setsWon.opponent)}`
   }, [isMatchFinished, setsWon, matchBestOf])
+
+  // The result table's Start / End / Duration, as the scoresheet prints them:
+  // set 1's actual start (never the schedule), the last set's end, the time
+  // between (scoresheet_pdf matchTimes; a set awarded by default has no start
+  // of its own, the match ends with the last set, one a forfeit created
+  // included). From the relay bundle's sets and events, as the set durations.
+  const matchTimesText = useMemo(() => {
+    if (!isMatchFinished || !data) return { start: '', end: '', duration: '' }
+    const sets = data.allSets || []
+    const events = data.events || []
+    const defaultSet = (s) => isDefaultSet(sets, events, s.index)
+    const startMs = matchTimes(sets, events, { skip: defaultSet }).startMs
+    const endMs = startMs !== null ? matchTimes(sets, events, { skip: s => defaultSet(s) && !s.forfeitCreated }).endMs : null
+    return {
+      start: startMs !== null ? formatClockHoursMinutes(isoOf(startMs)) : '',
+      end: endMs !== null ? formatClockHoursMinutes(isoOf(endMs)) : '',
+      duration: startMs !== null && endMs !== null && endMs >= startMs ? formatHoursMinutes(Math.floor((endMs - startMs) / 60000)) : ''
+    }
+  }, [isMatchFinished, data])
 
   // Get timeouts used in current set
   const timeoutsUsed = useMemo(() => {
@@ -951,12 +973,20 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
           borderRadius: '12px',
           overflow: 'hidden'
         }}>
+          {/* the team names (shown once the coin toss is confirmed: always
+              by the match's end), the times and the best-of-3 rows, as on
+              the scorer's sheet */}
           <Results
             teamAShortName={teamAShortName}
             teamBShortName={teamBShortName}
             setResults={calculateSetResults}
+            matchStart={matchTimesText.start}
+            matchEnd={matchTimesText.end}
+            matchDuration={matchTimesText.duration}
             winner={matchWinner}
             result={matchResult}
+            coinTossConfirmed={true}
+            bestOf={Number(matchBestOf) === 3 ? 3 : 5}
           />
         </div>
 
@@ -1079,7 +1109,9 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
         <div style={{ gridColumn: 2, gridRow: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'clamp(6px, 1vh, 12px)' }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1 }}>
             <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-500">{t('matchEntry.set', 'Set')}</span>
-            <span data-bench-set="" style={{ fontSize: 'clamp(26px, 4vh, 48px)', fontWeight: 800, fontVariantNumeric: 'tabular-nums', marginTop: '2px' }}>{data?.set?.index || 1}</span>
+            {/* the set being played; between sets the coming one, as the scorer,
+                the referee and the Line-up button (benchSetIndex) */}
+            <span data-bench-set="" style={{ fontSize: 'clamp(26px, 4vh, 48px)', fontWeight: 800, fontVariantNumeric: 'tabular-nums', marginTop: '2px' }}>{displaySetNumber(data?.set?.index ?? benchSetIndex(data?.allSets, data?.liveState), matchBestOf)}</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1 }}>
             <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-500">{t('matchEntry.sets', 'Sets')}</span>

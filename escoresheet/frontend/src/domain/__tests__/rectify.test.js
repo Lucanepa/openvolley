@@ -10,6 +10,8 @@ import { applyPlanToEvents, planRemoveEntry, entryActions } from '../manualCorre
 import { recomputeMatch, finalizePlan } from '../recompute'
 import { scoreFromPointEvents, servingTeamFromLog } from '../rules'
 import { describeEvent, compareBySeq } from '../describe'
+import { trackServiceRounds } from '../../../scoresheet_pdf/utils/serviceRounds'
+import { getStartingLineup, rectificationServerColumn, getFirstServeTeamKey } from '../../../scoresheet_pdf/utils/scoresheetModel'
 
 const LIVE = { ...MATCH, status: 'live' }
 const ctxFor = (setIndex = 2) => ({ match: LIVE, homeTeam: HOME_TEAM, awayTeam: AWAY_TEAM, matchId: 1, liveSetIndex: setIndex, now: new Date('2026-10-03T20:00:00Z') })
@@ -177,6 +179,39 @@ describe('rectify: everything editable before play resumes', () => {
     const next = [...after, { id: 9998, matchId: 1, setIndex: 2, type: 'point', seq: Math.floor(Math.max(...after.map(e => e.seq))) + 1, ts: after[0].ts, payload: { team: 'home', score: { home: 2, away: 4 } } }]
     expect(unchangedByRebuild(next)).toBe(true)
     expect(servingTeamFromLog(next, 2, LIVE)).toBe('home')
+  })
+
+  // 3.0.16 test match: "Serves next" switched by hand. The court kept the
+  // team's player at position I serving (nobody rotates); the sheet opened
+  // the team's next column, as if it had rotated
+  it('a serve changed by hand rotates nobody: court and scoresheet name the same server', () => {
+    const { events } = subMatch()
+    const atI = lineupNow(events, 2, 'home').lineup.I
+    const p = plan(events, { ...base(events), edits: { serve: 'home' } })
+    const after = withIds(applyPlanToEvents(events, p))
+    // the court: no home line-up row from the going back, the same player serves
+    const head = after.find(e => e.type === 'rectification')
+    expect(after.some(e => e.type === 'lineup' && e.payload?.team === 'home' && Math.floor(e.seq) >= Math.floor(head.seq))).toBe(false)
+    expect(p.preview.serverNumber).toBe(atI)
+    expect(lineupNow(after, 2, 'home').lineup.I).toBe(atI)
+
+    // the scoresheet: home's open round is the column of that player
+    const inSet = after.filter(e => e.setIndex === 2).sort(compareBySeq)
+    const start = getStartingLineup(inSet, 2, 'home')
+    const rally = inSet.filter(e => e.type === 'point' || e.type === 'cancelled_point' || e.type === 'rectification')
+    const rounds = trackServiceRounds({
+      pointTeams: rally.map(e => (e.type === 'rectification' ? e.payload.serve : e.payload.team)),
+      counted: rally.map(e => e.type === 'point'),
+      passes: rally.map(e => !(e.type === 'point' && e.payload?.scoreAdjusted === true)),
+      served: rally.map(e => (e.type === 'rectification' ? rectificationServerColumn(inSet, e, start) : undefined)),
+      firstServer: getFirstServeTeamKey(2, LIVE, 'home', 'away'),
+      finished: false
+    })
+    const open = rounds.home[rounds.home.length - 1]
+    expect(open.closedAt).toBeNull()
+    expect(start[open.position]).toBe(String(atI))
+    // the round before it (lost at 5:3) is the same column: no rotation
+    expect(rounds.home[rounds.home.length - 2].position).toBe(open.position)
   })
 
   it('both line-ups by hand, and a substitution taken back', () => {

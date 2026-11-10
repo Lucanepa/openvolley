@@ -994,7 +994,9 @@
       "title": "Taken back first",
       "timeout": "Time-out {{team}}",
       "substitution": "Substitution {{team}}: #{{in}} in for #{{out}}",
-      "text": "Requested after the point: the substitution is reversed and not counted, the time-out is cancelled.",
+      "textSubstitution": "Requested after the point: the substitution is reversed and not counted.",
+      "textTimeout": "Requested after the point: the time-out is cancelled.",
+      "textBoth": "Requested after the point: the substitution is reversed and not counted, the time-out is cancelled.",
       "rule": "FIVB casebook 8.5 · SSK 26-1"
     },
     "teamSanctionConfirm": {

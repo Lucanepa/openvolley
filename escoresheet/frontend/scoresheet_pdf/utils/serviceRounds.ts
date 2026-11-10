@@ -17,7 +17,12 @@
  *    whose point was cancelled (counted[i] === false) still passes the serve
  *    and opens or closes rounds, but adds no point; a point set by hand
  *    (passes[i] === false) adds the point but passes no serve; the serve the
- *    going back gave is an entry that passes the serve and adds nothing.
+ *    going back gave (served[i] !== undefined) adds nothing and rotates
+ *    nobody (owner, 3.0.16 test match), as on the court (domain/recompute):
+ *    the team it names serves with the player at its position I, whose
+ *    column is served[i] (serverColumn), else the column of its last round.
+ *    That round goes in the column's next free box, and the team's later
+ *    rounds follow on from it.
  *  - Set end: the winner's final points go in its current round (still ticked)
  *    or, when it won on receive, in the round it just gained (NOT ticked);
  *    both teams' last rounds are circled.
@@ -52,6 +57,13 @@ export interface TrackOptions {
   counted?: boolean[]
   /** Per rally: false for a point set by hand (it passes no serve). Default: every rally passes it. */
   passes?: boolean[]
+  /**
+   * Per entry: set for the serve the going back gave (no rally): the column
+   * (0-5) of the server, the player at position I after it (serverColumn),
+   * or null when not known (the column of the team's last round). Undefined
+   * for a rally.
+   */
+  served?: (number | null | undefined)[]
   /** The team serving the first rally. */
   firstServer: TeamKey
   /** The set is over: write and circle the finals. */
@@ -67,16 +79,44 @@ export function roundSlot(k: number, receivedFirst: boolean): { position: number
 }
 
 /** Service rounds of both teams. No rally yet: no round at all (the tick comes with the first rally). */
-export function trackServiceRounds({ pointTeams, firstServer, finished, counted, passes }: TrackOptions): Record<TeamKey, TrackedRound[]> {
+export function trackServiceRounds({ pointTeams, firstServer, finished, counted, passes, served }: TrackOptions): Record<TeamKey, TrackedRound[]> {
   const rounds: Record<TeamKey, TrackedRound[]> = { home: [], away: [] }
-  const kept = (pointTeams || []).map((t, i) => ({ t, counts: counted?.[i] !== false, passes: passes?.[i] !== false })).filter(x => x.t === 'home' || x.t === 'away')
+  const kept = (pointTeams || [])
+    .map((t, i) => ({ t, counts: counted?.[i] !== false, passes: passes?.[i] !== false, served: served?.[i] }))
+    .filter(x => x.t === 'home' || x.t === 'away')
   const points = kept.map(x => x.t as TeamKey)
   if (points.length === 0) return rounds
 
   const receivedFirst = (t: TeamKey) => t !== firstServer
-  const open = (t: TeamKey, at: number) => {
-    const { position, box } = roundSlot(rounds[t].length, receivedFirst(t))
+  // Each team's slot (roundSlot: its rotations) and the last box used per
+  // column: a serve given by the going back can open a round in a column
+  // already used (no rotation), and the column's next round goes below it.
+  // The receiving team's I/1 is crossed (used).
+  const slot: Record<TeamKey, number> = { home: -1, away: -1 }
+  const lastBox: Record<TeamKey, number[]> = { home: [0, 0, 0, 0, 0, 0], away: [0, 0, 0, 0, 0, 0] }
+  for (const t of ['home', 'away'] as TeamKey[]) {
+    if (receivedFirst(t)) {
+      slot[t] = 0
+      lastBox[t][0] = 1
+    }
+  }
+  const openAt = (t: TeamKey, s: number, at: number) => {
+    const position = ((s % 6) + 6) % 6
+    const box = Math.max(Math.floor(s / 6) + 1, lastBox[t][position] + 1)
+    slot[t] = s
+    lastBox[t][position] = box
     rounds[t].push({ position, box, ticked: true, points: null, circled: false, openedAt: at, closedAt: null })
+  }
+  const open = (t: TeamKey, at: number) => openAt(t, slot[t] + 1, at)
+  // The serve given without a rally: the server's column, nearest to the
+  // team's slot (no rotation: the slot itself; a team that never served:
+  // its first slot)
+  const openGiven = (t: TeamKey, column: number | null | undefined, at: number) => {
+    const base = Math.max(slot[t], 0)
+    if (column == null || !Number.isInteger(column) || column < 0 || column > 5) return openAt(t, base, at)
+    let d = (((column - base) % 6) + 6) % 6
+    if (d > 3) d -= 6
+    openAt(t, Math.max(base + d, 0), at)
   }
   const lastOpen = (t: TeamKey) => {
     const last = rounds[t][rounds[t].length - 1]
@@ -90,14 +130,16 @@ export function trackServiceRounds({ pointTeams, firstServer, finished, counted,
 
   points.forEach((scorer, i) => {
     serverBeforeLast = server
-    if (kept[i].counts) score[scorer]++
-    if (kept[i].passes && scorer !== server) {
+    const given = kept[i].served !== undefined
+    if (kept[i].counts && !given) score[scorer]++
+    if ((kept[i].passes || given) && scorer !== server) {
       const closing = lastOpen(server)
       if (closing) {
         closing.points = score[server]
         closing.closedAt = i
       }
-      open(scorer, i)
+      if (given) openGiven(scorer, kept[i].served, i)
+      else open(scorer, i)
       server = scorer
     }
   })
@@ -124,6 +166,37 @@ export function trackServiceRounds({ pointTeams, firstServer, finished, counted,
     }
   }
   return rounds
+}
+
+/**
+ * The column (0-5) of a team's server: the starting position the player at
+ * position I took the court from (a substitute: the starter he replaced; the
+ * libero: the player he replaced), or null when it cannot be told.
+ * @param startingLineup the set's starting players, positions I-VI
+ * @param lineup the line-up now ({ I: 8, II: 3, ... })
+ * @param substitutions the team's substitutions of the set, in order ({ playerOut, playerIn })
+ * @param liberoSubstitution the libero on court ({ liberoNumber, playerNumber }), if any
+ */
+export function serverColumn(
+  startingLineup: string[],
+  lineup: Record<string, unknown> | null | undefined,
+  substitutions: { playerOut?: unknown; playerIn?: unknown }[] = [],
+  liberoSubstitution?: { liberoNumber?: unknown; playerNumber?: unknown } | null
+): number | null {
+  const key = (v: unknown) => (v === undefined || v === null || v === '' ? '' : String(v).trim())
+  let player = key(lineup?.I)
+  if (!player) return null
+  if (liberoSubstitution && key(liberoSubstitution.liberoNumber) === player && key(liberoSubstitution.playerNumber)) {
+    player = key(liberoSubstitution.playerNumber)
+  }
+  const starters = (startingLineup || []).map(key)
+  // back through the substitutions to the starter (each taken once: no loop)
+  const subs = [...(substitutions || [])]
+  for (let i = subs.length - 1; i >= 0 && !starters.includes(player); i--) {
+    if (key(subs[i]?.playerIn) === player && key(subs[i]?.playerOut)) player = key(subs[i].playerOut)
+  }
+  const column = starters.indexOf(player)
+  return column >= 0 && column < 6 ? column : null
 }
 
 /** Index of the point after which a team first reached `at` points (change of courts), or null. */

@@ -24,7 +24,7 @@ export default function BenchRequestPanel({ matchId, team, data, players, discSt
   const { requests, send, cancel } = useBenchRequests(matchId, team)
   const [sheet, setSheet] = useState(null) // 'lineup' | 'substitution' | null
   const events = useMemo(() => data?.events || [], [data?.events])
-  const setIndex = data?.set?.index ?? benchSetIndex(data?.allSets)
+  const setIndex = data?.set?.index ?? benchSetIndex(data?.allSets, data?.liveState)
   const intervalRunning = data?.liveState?.set_interval_active === true
   const ctx = { match: data?.match, events, setIndex, team, intervalRunning }
 

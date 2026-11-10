@@ -337,3 +337,22 @@ export function decisionChangeTakeBack(events, setIndex) {
   if (!after.every(e => headOf.get(baseSeqOf(e)) === e || ownRow(e))) return null
   return { point, requests: [...heads].sort((a, b) => seqOf(b) - seqOf(a)) }
 }
+
+/**
+ * The explanation under what a decision change takes back first: only the
+ * sentence that applies. It always said "the substitution is reversed and
+ * not counted, the time-out is cancelled", also when only one of them was
+ * taken back (3.0.16 test match).
+ * @param {Array} requests decisionChangeTakeBack(...).requests
+ * @returns {'textSubstitution' | 'textTimeout' | 'textBoth' | null} the
+ *   scoreboard.decisionTakeBack key, null for nothing taken back
+ */
+export function decisionTakeBackTextKey(requests) {
+  const list = Array.isArray(requests) ? requests : []
+  const sub = list.some(e => e?.type === 'substitution')
+  const timeout = list.some(e => e?.type === 'timeout')
+  if (sub && timeout) return 'textBoth'
+  if (sub) return 'textSubstitution'
+  if (timeout) return 'textTimeout'
+  return null
+}

@@ -6,9 +6,11 @@
  * corner, while the space between it and the score stayed empty. Now each
  * side of the score is a slot of the same width (1fr | score | 1fr), both
  * always rendered, so the score never moves when the serve changes side;
- * the block fills the serving side's slot up to `SERVE_BLOCK.widthVmin`,
- * next to the score, and exactly as tall as the score digits, so the row
- * (and the court under it) keeps its height.
+ * the block sits next to the score, as wide as its content (the label, the
+ * server's number with its padding: owner, 3.0.16 "auto width is fine"; it
+ * filled the slot up to 26 vmin before) and exactly as tall as the score
+ * digits, so the row (and the court under it) keeps its height. The number
+ * box is two digits wide whatever the number, so #1 -> #12 moves nothing.
  * It is green like the scorer's SERVE indicator (Scoreboard.jsx
  * renderServeSide, owner 2026-11-09): the green SERVE label over a
  * light-green box with a green border and the server's number in green. It
@@ -26,10 +28,8 @@ export const SCORE_ROW = {
 export const SERVE_BLOCK = {
   /** as tall as the score digits */
   heightVmin: SCORE_ROW.scoreVmin,
-  /** at most this wide; never wider than its slot */
-  widthVmin: 26,
   /**
-   * SERVE label, vmin, and at most the block width over its length: an
+   * SERVE label, vmin, and at most the slot width over its length: an
    * upper-case letter in bold with the letter spacing is up to ~0.76 em, so
    * 0.85 em a letter leaves a margin. A fixed share for the longest label
    * (AUFSCHLAG) made SERVE as small as AUFSCHLAG in a narrow slot.
@@ -37,16 +37,17 @@ export const SERVE_BLOCK = {
   labelVmin: 3.4,
   labelEmPerChar: 0.85,
   /**
-   * server's number, vmin, and at most this share of the block width: two
-   * digits are ~1.11 em, 80cqi leaves them ~11 % of the width. At 55cqi the
-   * number in a narrow portrait slot (150 % display scale) came out smaller
-   * than the old corner box's.
+   * server's number, vmin, and at most this share of the slot width: the box
+   * is two digits (~1.11 em) plus its padding (2 x `numberPadEm`) and its
+   * 3 px border, which 64cqi keeps inside a narrow portrait slot (150 %
+   * display scale: 128 px) at about the old corner box's 7 vmin.
    */
   numberVmin: 8.6,
-  numberCqi: 80
+  numberCqi: 64,
+  numberPadEm: 0.18
 }
 
-/** The label's largest font size as a share (cqi) of the block width. */
+/** The label's largest font size as a share (cqi) of the slot width. */
 export function serveLabelCqi(label) {
   const chars = Math.max(1, String(label ?? '').length)
   return Number((100 / (chars * SERVE_BLOCK.labelEmPerChar)).toFixed(2))
@@ -76,7 +77,11 @@ export default function ScoreServeRow({ leftScore, rightScore, servingSide, serv
         // next to the score: the block sits on the serving team's side of it
         justifyContent: side === 'left' ? 'flex-end' : 'flex-start',
         minWidth: 0,
-        height: vmin(SERVE_BLOCK.heightVmin)
+        height: vmin(SERVE_BLOCK.heightVmin),
+        // the label and number size from the slot's width (cqi), so a narrow
+        // portrait slot or a long label never spills (the block itself is
+        // as wide as its content: no container of its own)
+        containerType: 'inline-size'
       }}
     >
       {servingSide === side && (
@@ -119,11 +124,10 @@ function ServeBlock({ side, label, number, vmin }) {
     <div
       data-serve-block={side}
       style={{
-        // the label and number size from the block's own width (cqi), so a
-        // narrow portrait slot or a long label never spills
-        containerType: 'inline-size',
+        // as wide as the label or the number box, whichever is wider
         boxSizing: 'border-box',
-        width: `min(100%, ${vmin(B.widthVmin)}px)`,
+        width: 'auto',
+        maxWidth: '100%',
         height: vmin(B.heightVmin),
         display: 'flex',
         flexDirection: 'column',
@@ -158,6 +162,9 @@ function ServeBlock({ side, label, number, vmin }) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
+          // the number's size: the padding is in its em
+          fontSize: `min(${vmin(B.numberVmin)}px, ${B.numberCqi}cqi)`,
+          padding: `0 ${B.numberPadEm}em`,
           background: SERVE_GREEN_FILL,
           border: `3px solid ${SERVE_GREEN}`,
           borderRadius: 'clamp(8px, 1.4vw, 14px)',
@@ -167,11 +174,13 @@ function ServeBlock({ side, label, number, vmin }) {
         <span
           data-serve-number=""
           style={{
-            fontSize: `min(${vmin(B.numberVmin)}px, ${B.numberCqi}cqi)`,
             fontWeight: 800,
             lineHeight: 1,
             color: SERVE_GREEN,
-            fontVariantNumeric: 'tabular-nums'
+            fontVariantNumeric: 'tabular-nums',
+            // two digits wide for any number: #1 and #12 the same box
+            minWidth: '2ch',
+            textAlign: 'center'
           }}
         >
           {number ?? ''}

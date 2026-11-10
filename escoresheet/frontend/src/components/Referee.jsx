@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAlert } from '../contexts/AlertContext'
 import i18n from '../i18n'
-import { getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus, forceReconnect, buildLiveStateMatchData, isNewerLiveState, createLiveStateTracker } from '../utils/serverDataSync'
+import { getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus, forceReconnect, buildLiveStateMatchData, isNewerLiveState, createLiveStateTracker, isLiveStateNewerThanBundle } from '../utils/serverDataSync'
 import { useRealtimeConnection, CONNECTION_TYPES, CONNECTION_STATUS } from '../hooks/useRealtimeConnection'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 import { setsToWin, isMatchFinished as isMatchFinishedUtil, displaySetNumber } from '../utils/matchFormat'
@@ -25,7 +25,7 @@ import { Button, FOCUS_RING } from '../ui/Button.jsx'
 import { Card } from '../ui/Card.jsx'
 import { StatusPill } from '../ui/StatusPill.jsx'
 import { NarrowScreenOverlay } from './dashboards/EntryKit.jsx'
-import { lastEventFromLiveState, lastEventFromMatchData, pickNewerLastEvent, refereeEventLabel } from '../utils/refereeLastEvent.js'
+import { nextLastEvent, refereeEventLabel } from '../utils/refereeLastEvent.js'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
 import PlayerDisc from './referee/PlayerDisc.jsx'
 import ScoreServeRow from './referee/ScoreServeRow.jsx'
@@ -450,6 +450,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     let result = incoming
     if (result && result.success) {
       dataSourceRef.current = result.source || null
+      // A full relay bundle not older than the live state it is shown with:
+      // its events are the scorer's log as it is now (nextLastEvent)
+      let eventsAreCurrent = false
       if (result.source === 'live_state') {
         liveStateBaseRef.current = result.match || null
         if (result.liveState?.updated_at && isNewerLiveState(result.liveState, lastLiveStateTsRef.current)) {
@@ -458,6 +461,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       } else {
         if (bundleHasFullAccess(incoming)) sheetBundleRef.current = { bundle: incoming, at: Date.now() }
         result = liveTrackerRef.current.bundle(incoming)
+        eventsAreCurrent = bundleHasFullAccess(incoming) && Array.isArray(incoming.events) &&
+          !isLiveStateNewerThanBundle(result.liveState, incoming)
       }
       const sets = (result.sets || []).sort((a, b) => a.index - b.index)
       const currentSet = sets.find(s => !s.finished) || null
@@ -477,9 +482,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       }
 
       // Last action from what was just loaded (reload, reconnect refetch,
-      // relay bundle), not only from realtime pushes: keep the newest.
-      const loadedLastEvent = lastEventFromMatchData(newData)
-      if (loadedLastEvent) setLastEvent(prev => pickNewerLastEvent(prev, loadedLastEvent))
+      // relay bundle), not only from realtime pushes. A current bundle's log
+      // decides, also after an Undo (an older action, or none: "–")
+      setLastEvent(prev => nextLastEvent(prev, { events: newData.events, liveState: newData.liveState, eventsAreCurrent }))
 
       const now = Date.now()
       const timeSinceLastUpdate = now - lastDataUpdateRef.current
@@ -1180,10 +1185,11 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           }
 
           // Store last event for footer display (only specific event types),
-          // stamped with the scorer's time of the action
-          const pushedLastEvent = lastEventFromLiveState(state, { fallbackTs: Date.now() })
+          // stamped with the scorer's time of the action; an undo's row names
+          // the action now last (nextLastEvent)
+          const pushedAt = Date.now()
           const showPushedLastEvent = () => {
-            if (pushedLastEvent) setLastEvent(prev => pickNewerLastEvent(prev, pushedLastEvent))
+            setLastEvent(prev => nextLastEvent(prev, { liveState: state, fallbackTs: pushedAt }))
           }
 
           // Shown data was built from match_live_state (no relay bundle): apply

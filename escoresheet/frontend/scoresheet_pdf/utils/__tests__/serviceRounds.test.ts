@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { courtChangeIndex, roundSlot, splitSet5Rounds, trackServiceRounds, type TeamKey } from '../serviceRounds'
+import { courtChangeIndex, roundSlot, serverColumn, splitSet5Rounds, trackServiceRounds, type TeamKey } from '../serviceRounds'
 
 // Point sequences written as a string: h = home scores, a = away scores
 const seq = (s: string): TeamKey[] => [...s].map(c => (c === 'h' ? 'home' : 'away'))
@@ -54,15 +54,88 @@ describe('trackServiceRounds: points cancelled by a rectification (FIVB 7.7.2, 1
     expect(boxes(r.away)).toEqual(['II/1:/0'])
   })
 
-  it('a point set by hand scores but passes no serve; the serve the going back gives passes it', () => {
-    // h serves 1, a by hand (no serve), then the going back gives a the serve, h side-out
-    const r = trackServiceRounds({ pointTeams: seq('haah'), counted: [true, true, false, true], passes: [true, false, true, true], firstServer: 'home', finished: false })
+  it('a point set by hand scores but passes no serve; the serve the going back gives passes it, with no rotation', () => {
+    // h serves 1, a by hand (no serve), then the going back gives a the serve, h side-out.
+    // a never rotated: its player at I serves, in column I (I/1 is its crossed box)
+    const r = trackServiceRounds({
+      pointTeams: seq('haah'), counted: [true, true, false, true], passes: [true, false, true, true],
+      served: [undefined, undefined, null, undefined], firstServer: 'home', finished: false
+    })
     expect(boxes(r.home)).toEqual(['I/1:/1', 'II/1:/'])
-    expect(boxes(r.away)).toEqual(['II/1:/1'])
+    expect(boxes(r.away)).toEqual(['I/2:/1'])
+    // its next round (gained in a rally) is the rotation after it: II/1
+    const next = trackServiceRounds({
+      pointTeams: seq('haaha'), counted: [true, true, false, true, true], passes: [true, false, true, true, true],
+      served: [undefined, undefined, null, undefined, undefined], firstServer: 'home', finished: false
+    })
+    expect(boxes(next.away)).toEqual(['I/2:/1', 'II/1:/'])
   })
 
   it('the change of courts counts valid points only', () => {
     expect(courtChangeIndex(seq('hhhhhhhhh'), 8, [false, true, true, true, true, true, true, true, true])).toBe(8)
+  })
+})
+
+// 3.0.16 test match: at 5:3, B serving, Go back to 5:2, illegal substitution
+// by A, point to B, "Serves next" switched to A by hand. The court kept A's
+// #8 at position I serving (owner: a serve changed by hand rotates nobody);
+// the sheet ended A's column II and opened III, as if A had rotated.
+describe('trackServiceRounds: the serve a going back gives rotates nobody', () => {
+  // A (home) serves first: I/1 2, B side-out 2, A side-out (II/1) to 5:2,
+  // B side-out 5:3 (III/1), B's penalty point 5:4, then A given the serve
+  const goBack = seq('hhaahhhaa')
+  const given = [...goBack, 'home' as TeamKey]
+  const counted = [...goBack.map(() => true), false]
+  const served = [...goBack.map(() => undefined), 1]
+
+  it('the server is the player at position I: column II again, in its next box', () => {
+    const r = trackServiceRounds({ pointTeams: given, counted, served, firstServer: 'home', finished: false })
+    expect(boxes(r.home)).toEqual(['I/1:/2', 'II/1:/5', 'II/2:/'])
+    expect(boxes(r.away)).toEqual(['II/1:/2', 'III/1:/4'])
+  })
+
+  it('column not known: the column of the team\'s last round (no rotation)', () => {
+    const r = trackServiceRounds({ pointTeams: given, counted, served: [...goBack.map(() => undefined), null], firstServer: 'home', finished: false })
+    expect(boxes(r.home)).toEqual(['I/1:/2', 'II/1:/5', 'II/2:/'])
+  })
+
+  it('later rounds follow on from it: the next rotation is column III', () => {
+    // A scores (6:4), B side-out (IV/1), A side-out: III/1
+    const r = trackServiceRounds({
+      pointTeams: [...given, ...seq('hah')], counted: [...counted, true, true, true], served: [...served, undefined, undefined, undefined],
+      firstServer: 'home', finished: false
+    })
+    expect(boxes(r.home)).toEqual(['I/1:/2', 'II/1:/5', 'II/2:/6', 'III/1:/'])
+    expect(boxes(r.away)).toEqual(['II/1:/2', 'III/1:/4', 'IV/1:/5'])
+  })
+
+  it('a line-up rotated by hand: the column of the player put at position I', () => {
+    const r = trackServiceRounds({ pointTeams: given, counted, served: [...goBack.map(() => undefined), 2], firstServer: 'home', finished: false })
+    expect(boxes(r.home)).toEqual(['I/1:/2', 'II/1:/5', 'III/1:/'])
+  })
+
+  it('the serve given to the team already serving opens nothing', () => {
+    const r = trackServiceRounds({ pointTeams: [...goBack, 'away'], counted, served: [...goBack.map(() => undefined), null], firstServer: 'home', finished: false })
+    expect(boxes(r.away)).toEqual(['II/1:/2', 'III/1:/'])
+  })
+})
+
+describe('serverColumn', () => {
+  const start = ['8', '3', '5', '10', '11', '1']
+  it('the starting position of the player at position I', () => {
+    expect(serverColumn(start, { I: 8, II: 3, III: 5, IV: 10, V: 11, VI: 1 })).toBe(0)
+    expect(serverColumn(start, { I: 3, II: 5, III: 10, IV: 11, V: 1, VI: 8 })).toBe(1)
+  })
+  it('a substitute: the starter he replaced (also after a second substitution)', () => {
+    expect(serverColumn(start, { I: 14 }, [{ playerOut: 5, playerIn: 14 }])).toBe(2)
+    expect(serverColumn(start, { I: 17 }, [{ playerOut: 5, playerIn: 14 }, { playerOut: 14, playerIn: 17 }])).toBe(2)
+  })
+  it('the libero: the player he replaced', () => {
+    expect(serverColumn(start, { I: 99 }, [], { liberoNumber: 99, playerNumber: 1 })).toBe(5)
+  })
+  it('null when it cannot be told', () => {
+    expect(serverColumn(start, { I: 42 })).toBeNull()
+    expect(serverColumn(start, null)).toBeNull()
   })
 })
 
