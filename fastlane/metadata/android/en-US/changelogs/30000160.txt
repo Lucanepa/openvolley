@@ -1,0 +1,8 @@
+OpenVolley 3.0.16
+- Bench tablet: sends the line-up (game captain), asks for time-outs, prepares substitutions; the scorer accepts or declines, the referee sees them.
+- New bench layout, upright and on phones.
+- A line-up stays covered until both are in.
+- Go back: to a score when a fault is found later, then rectify.
+- Improper requests and delays: no reason asked.
+- Club licences: officials from the whole club.
+- Sign-up requests approved by admins and managers; privacy 1.11.
