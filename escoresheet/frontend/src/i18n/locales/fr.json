@@ -3291,6 +3291,7 @@
         "team_squad": "Joueurs de l’équipe enregistrés",
         "team_roster": "Liste du match envoyée",
         "club_licences": "Liste des licences chargée",
+        "club_licences_manual": "Ajouté à la main aux listes du club",
         "account_request_approve": "Demande d’inscription validée",
         "account_request_reject": "Demande d’inscription refusée"
       }
@@ -3553,6 +3554,9 @@
       "title": "Licences",
       "hint": "Chargez les listes de l’administration du club de VolleyManager (l’export Excel). Le fichier est lu sur cet appareil : seuls le numéro de licence, le nom, le prénom, la date de naissance et le sexe sont envoyés et conservés. Chaque chargement remplace cette liste.",
       "list": "Liste",
+      "manual": "Ajouté à la main",
+      "manualCount_one": "{{count}} ajoutée à la main",
+      "manualCount_other": "{{count}} ajoutées à la main",
       "lists": {
         "players": "Joueurs",
         "scorers": "Marqueurs",
@@ -5237,7 +5241,40 @@
     "warningMen_one": "{{names}} est inscrite au club comme femme, et ce match est un match masculin. Vérifiez avant le tirage au sort.",
     "warningMen_other": "{{names}} sont inscrites au club comme femmes, et ce match est un match masculin. Vérifiez avant le tirage au sort.",
     "warningWomen_one": "{{names}} est inscrit au club comme homme, et ce match est un match féminin. Vérifiez avant le tirage au sort.",
-    "warningWomen_other": "{{names}} sont inscrits au club comme hommes, et ce match est un match féminin. Vérifiez avant le tirage au sort."
+    "warningWomen_other": "{{names}} sont inscrits au club comme hommes, et ce match est un match féminin. Vérifiez avant le tirage au sort.",
+      "linkTitle": "Relier à une personne du club",
+      "link": "Relier",
+      "linked": "Relié au club : {{name}}",
+      "shield": {
+        "club": "Dans les listes du club (licence {{number}})",
+        "fill": "Dans les listes du club : toucher pour remplir {{fields}}",
+        "fields": {
+          "first_name": "le prénom",
+          "dob": "la date de naissance",
+          "license_number": "le numéro de licence"
+        },
+        "hand": "Saisi à la main : pas dans les listes du club",
+        "handLink": "Saisi à la main : toucher pour relier à une personne du club",
+        "manual": "Dans les listes du club, ajouté à la main : vert dès que la liste de VolleyManager a le numéro de licence",
+        "manualLink": "Dans les listes du club, ajouté à la main : toucher pour relier à une personne des listes de VolleyManager"
+      },
+      "offer": {
+        "title": "Enregistrer aussi dans le club ?",
+        "body": "Pas encore dans les listes de {{club}}. Les personnes cochées y sont gardées : chaque équipe du club peut les ajouter. Leur bouclier reste gris jusqu’à ce que la liste de VolleyManager ait leur numéro de licence.",
+        "theClub": "le club",
+        "list": {
+          "players": "Liste des joueurs",
+          "coaches": "Liste des entraîneurs"
+        },
+        "noLicence": "Sans numéro de licence, ces personnes ne peuvent pas aller dans les listes du club : {{names}}",
+        "back": "Retour",
+        "saveAdd_one": "Enregistrer et ajouter {{count}} au club",
+        "saveAdd_other": "Enregistrer et ajouter {{count}} au club",
+        "saveOnly": "Enregistrer seulement l’effectif",
+        "added_one": "{{count}} ajoutée aux listes du club",
+        "added_other": "{{count}} ajoutées aux listes du club",
+        "failed": "L’effectif est enregistré, mais l’ajout aux listes du club a échoué. Enregistrez à nouveau pour réessayer."
+      }
   },
   "benchRequests": {
     "title": "Demandes au marqueur",

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Activity, ArrowLeft, ClipboardList, FileText, House, KeyRound, Medal, ScrollText, Settings, ShieldCheck, Shirt, Trophy, Users } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
-import { ConsoleShell, ConsolePanel, consoleHeaderBtn } from '../../ui'
+import { ConsoleShell, ConsolePanel, RowListCards, consoleHeaderBtn } from '../../ui'
 import AccountsPanel from './AccountsPanel'
 import InvitesPanel from './InvitesPanel'
 import ClubsPanel from './ClubsPanel'
@@ -147,6 +147,8 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
         footer={<LegalLinks className="text-[11px] text-stone-400" />}
       >
         {phoneTop && <div className="mb-3 sm:hidden">{phoneTop}</div>}
+        {/* every list of the console: one card per item (owner 2026-11-10) */}
+        <RowListCards.Provider value>
         {visited.has('accounts') && <ConsolePanel id="accounts" current={current}><AccountsPanel selfId={user.id} selfIsSuperAdmin={!!access?.isSuperAdmin} app={scope} /></ConsolePanel>}
         {visited.has('invites') && <ConsolePanel id="invites" current={current}><InvitesPanel app={scope} /></ConsolePanel>}
         {visited.has('clubs') && <ConsolePanel id="clubs" current={current}><ClubsPanel /></ConsolePanel>}
@@ -160,6 +162,7 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
         {visited.has('activity') && <ConsolePanel id="activity" current={current}><ActivityPanel app={scope} initialMatch={activityMatch} /></ConsolePanel>}
         {visited.has('teams') && <ConsolePanel id="teams" current={current}><SavedTeamsPanel userId={user.id} sport={scope} /></ConsolePanel>}
         {visited.has('tournaments') && <ConsolePanel id="tournaments" current={current}><TournamentsPanel /></ConsolePanel>}
+        </RowListCards.Provider>
       </ConsoleShell>
     </div>
   )

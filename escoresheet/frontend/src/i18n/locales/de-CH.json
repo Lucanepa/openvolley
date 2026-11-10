@@ -3292,6 +3292,7 @@
         "team_squad": "Teamkader gespeichert",
         "team_roster": "Spielkader geschickt",
         "club_licences": "Lizenzliste hochgeladen",
+        "club_licences_manual": "Von Hand in die Listen des Vereins aufgenommen",
         "account_request_approve": "Registrierungsanfrage freigegeben",
         "account_request_reject": "Registrierungsanfrage abgelehnt"
       }
@@ -3554,6 +3555,9 @@
       "title": "Lizenzen",
       "hint": "Lade die Listen aus der Vereinsadministration von VolleyManager hoch (den Excel-Export). Die Datei wird auf diesem Gerät gelesen: Nur Lizenznummer, Name, Vorname, Geburtsdatum und Geschlecht werden geschickt und gespeichert. Jeder Upload ersetzt diese Liste.",
       "list": "Liste",
+      "manual": "Von Hand eingetragen",
+      "manualCount_one": "{{count}} von Hand eingetragen",
+      "manualCount_other": "{{count}} von Hand eingetragen",
       "lists": {
         "players": "Spieler",
         "scorers": "Schreiber",
@@ -5238,7 +5242,40 @@
     "warningMen_one": "{{names}} ist beim Verein als Frau gemeldet, und dies ist ein Herrenspiel. Prüfe es vor der Seitenwahl.",
     "warningMen_other": "{{names}} sind beim Verein als Frauen gemeldet, und dies ist ein Herrenspiel. Prüfe es vor der Seitenwahl.",
     "warningWomen_one": "{{names}} ist beim Verein als Mann gemeldet, und dies ist ein Damenspiel. Prüfe es vor der Seitenwahl.",
-    "warningWomen_other": "{{names}} sind beim Verein als Männer gemeldet, und dies ist ein Damenspiel. Prüfe es vor der Seitenwahl."
+    "warningWomen_other": "{{names}} sind beim Verein als Männer gemeldet, und dies ist ein Damenspiel. Prüfe es vor der Seitenwahl.",
+      "linkTitle": "Mit jemandem aus dem Verein verknüpfen",
+      "link": "Verknüpfen",
+      "linked": "Mit dem Verein verknüpft: {{name}}",
+      "shield": {
+        "club": "In den Listen des Vereins (Lizenz {{number}})",
+        "fill": "In den Listen des Vereins: tippen, um {{fields}} einzutragen",
+        "fields": {
+          "first_name": "den Vornamen",
+          "dob": "das Geburtsdatum",
+          "license_number": "die Lizenznummer"
+        },
+        "hand": "Von Hand eingetragen: nicht in den Listen des Vereins",
+        "handLink": "Von Hand eingetragen: tippen, um mit jemandem aus dem Verein zu verknüpfen",
+        "manual": "In den Listen des Vereins, von Hand eingetragen: grün, sobald die Liste aus VolleyManager die Lizenznummer hat",
+        "manualLink": "In den Listen des Vereins, von Hand eingetragen: tippen, um mit jemandem aus den Listen von VolleyManager zu verknüpfen"
+      },
+      "offer": {
+        "title": "Auch im Verein speichern?",
+        "body": "Noch nicht in den Listen von {{club}}. Die angekreuzten werden dort gespeichert, so kann jedes Team des Vereins sie hinzufügen. Ihr Schild bleibt grau, bis die Liste aus VolleyManager ihre Lizenznummer hat.",
+        "theClub": "dem Verein",
+        "list": {
+          "players": "Spielerliste",
+          "coaches": "Trainerliste"
+        },
+        "noLicence": "Ohne Lizenznummer können diese nicht in die Listen des Vereins: {{names}}",
+        "back": "Zurück",
+        "saveAdd_one": "Speichern und {{count}} zum Verein hinzufügen",
+        "saveAdd_other": "Speichern und {{count}} zum Verein hinzufügen",
+        "saveOnly": "Nur Kader speichern",
+        "added_one": "{{count}} in die Listen des Vereins aufgenommen",
+        "added_other": "{{count}} in die Listen des Vereins aufgenommen",
+        "failed": "Kader gespeichert, aber die Aufnahme in die Listen des Vereins ist fehlgeschlagen. Nochmals speichern, um es erneut zu versuchen."
+      }
   },
   "benchRequests": {
     "title": "Aafroge an Schriiber",

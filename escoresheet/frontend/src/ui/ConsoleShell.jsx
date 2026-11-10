@@ -5,6 +5,7 @@
 //
 // Use for 6+ destinations, or for any back-office screen. Every panel uses
 // the whole window (AdminConsole.tsx:1240) — no max-w on <main>.
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { cn } from './cn.js';
 import { FOCUS_RING } from './Button.jsx';
 
@@ -107,13 +108,33 @@ export function ConsoleBadge({ icon, children }) {
   );
 }
 
+const PanelShown = createContext(0);
+
 /**
  * Keeps every panel mounted and hides the inactive ones, so data fetched on
  * first render is ready when the tab is opened (AdminConsole.tsx:1230-1233,
- * 1274-1327).
+ * 1274-1327). Each time the panel is shown again after being hidden, the
+ * count usePanelShown() reads goes up (a panel refreshes what another tab may
+ * have changed meanwhile).
  */
 export function ConsolePanel({ id, current, children }) {
-  return <div hidden={id !== current}>{children}</div>;
+  const visible = id === current;
+  const [shown, setShown] = useState(0);
+  const was = useRef(visible);
+  useEffect(() => {
+    if (visible && !was.current) setShown((n) => n + 1);
+    was.current = visible;
+  }, [visible]);
+  return (
+    <PanelShown.Provider value={shown}>
+      <div hidden={!visible}>{children}</div>
+    </PanelShown.Provider>
+  );
+}
+
+/** How often the ConsolePanel around was shown again after being hidden (0 outside one). */
+export function usePanelShown() {
+  return useContext(PanelShown);
 }
 
 export default ConsoleShell;
