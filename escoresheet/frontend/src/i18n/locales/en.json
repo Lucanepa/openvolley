@@ -3484,6 +3484,7 @@
       "games": "Games",
       "gamesHint": "Prepare the roster of each game: tick who plays. You can change it at any time.",
       "noGames": "No games of this team in the schedule from today on.",
+      "gameNotFound": "Game #{{number}} is not in this team's schedule from today on.",
       "vs": "vs",
       "at": "at",
       "home": "Home",

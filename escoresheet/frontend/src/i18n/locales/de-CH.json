@@ -3478,6 +3478,7 @@
       "games": "Spiele",
       "gamesHint": "Stelle den Kader jedes Spiels zusammen: Hake an, wer spielt. Du kannst ihn jederzeit ändern.",
       "noGames": "Ab heute keine Spiele dieses Teams im Spielplan.",
+      "gameNotFound": "Spiel #{{number}} ist ab heute nicht im Spielplan dieses Teams.",
       "vs": "gegen",
       "at": "bei",
       "home": "Heim",
