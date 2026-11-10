@@ -6,6 +6,7 @@ import ServerConnectionScreen from '../ServerConnectionScreen'
 import { getBackendOverride, isNativeApp } from '../../utils/backendConfig'
 import { Button, IconButton } from '../../ui'
 import { reloadWithReason } from '../../diagnostics/reload'
+import { openScorerDashboard } from '../../utils/scorerDashboards'
 
 /**
  * Android app only (Capacitor): the bundled app has no server of its own and
@@ -32,7 +33,8 @@ export default function NativeServerSection() {
     try { current = new URL(override).host } catch { current = override }
   }
 
-  const openView = (path) => { reloadWithReason('open-view', { how: 'assign', url: path }) }
+  // The bundled view, with the way back to the scorer (utils/scorerReturn.js)
+  const openView = (role) => { openScorerDashboard(role) }
 
   return (
     <section className="mb-6">
@@ -58,13 +60,13 @@ export default function NativeServerSection() {
             {t('options.nativeOpenView', 'Use this tablet as')}
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" size="lg" onClick={() => openView('/referee/index.html')}>
+            <Button variant="secondary" size="lg" onClick={() => openView('referee')}>
               {t('connection.role.referee', 'Referee dashboard')}
             </Button>
-            <Button variant="secondary" size="lg" onClick={() => openView('/bench/index.html')}>
+            <Button variant="secondary" size="lg" onClick={() => openView('bench')}>
               {t('options.nativeBench', 'Bench')}
             </Button>
-            <Button variant="secondary" size="lg" onClick={() => openView('/livescore/index.html')}>
+            <Button variant="secondary" size="lg" onClick={() => openView('livescore')}>
               {t('connection.role.livescore', 'Livescore')}
             </Button>
           </div>

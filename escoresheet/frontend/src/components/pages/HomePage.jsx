@@ -4,7 +4,7 @@ import SupportFeedbackModal from '../SupportFeedbackModal'
 import LoginModal from '../auth/LoginModal'
 import PendingApprovalBanner from '../auth/PendingApprovalBanner'
 import CloudBlockNotice from '../CloudBlockNotice'
-import { Download, LifeBuoy, Loader2, LogIn, Presentation, Settings } from 'lucide-react'
+import { Download, LifeBuoy, Loader2, LogIn, Presentation, Settings, Trash2 } from 'lucide-react'
 import { Button, Card, cn, dayLabel, FOCUS_RING, Notice, Row, RowList, RowTool, SectionHeader, StatusPill } from '../../ui'
 import { duplicateGameNumbers } from '../../utils/deviceMatches'
 import { formatTakeOver, scoreText } from '../ScorerMovedModal'
@@ -146,6 +146,27 @@ export default function HomePage({
               >
                 {t('home.continueMatch')}
               </Button>
+              {/* Delete: right under Continue, in the same card, since it
+                  acts on that match (owner 2026-11-10). Outlined and lower
+                  than Continue so it never competes with it; its
+                  confirmation (App) is unchanged */}
+              <Button
+                variant="danger-outline"
+                block
+                icon={Trash2}
+                data-help-id="home-delete-button"
+                data-testid="home-delete-match"
+                onClick={() => {
+                  if (currentOfficialMatch) {
+                    showDeleteMatchModal()
+                  } else if (currentTestMatch) {
+                    restartTestMatch()
+                  }
+                }}
+                className="h-11 rounded-xl bg-white text-sm font-medium"
+              >
+                {t('home.deleteMatch')}
+              </Button>
             </div>
           )}
 
@@ -220,25 +241,6 @@ export default function HomePage({
           {/* The server refused this match for good (pending account, game
               already scored by someone else, closed): say why */}
           {currentOfficialMatch?.cloudBlock && <CloudBlockNotice match={currentOfficialMatch} />}
-
-          {/* Delete Match - only when there is a match */}
-          {(currentOfficialMatch || currentTestMatch) && (
-            <Button
-              variant="danger-soft"
-              block
-              data-help-id="home-delete-button"
-              onClick={() => {
-                if (currentOfficialMatch) {
-                  showDeleteMatchModal()
-                } else if (currentTestMatch) {
-                  restartTestMatch()
-                }
-              }}
-              className="h-12 rounded-xl text-base shadow-none"
-            >
-              {t('home.deleteMatch')}
-            </Button>
-          )}
 
           {/* Restore Match: always, signed out too (a scorer whose device
               broke gets the match back with its game PIN or a backup file) */}

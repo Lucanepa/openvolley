@@ -10,6 +10,7 @@ import ErrorBoundary from './components/ErrorBoundary'
 import { UiHost } from './ui/UiHost.jsx'
 import { stripCacheBustParam } from './hooks/useServiceWorker'
 import { setAppEntry } from './utils/appEntry'
+import { captureScorerReturn } from './utils/scorerReturn'
 import { db } from './db/db'
 import { installPopupDiagnostics } from './diagnostics'
 import { initTheme } from './utils/theme'
@@ -17,6 +18,10 @@ import { installErrorTrail } from './utils/diagnosticsInfo'
 
 // Not the scoretable: this page never saves a match backup (utils/appEntry)
 setAppEntry('referee')
+
+// Opened from the scorer's Home menu on this device (?from=scorer): its menus
+// offer "Back to scorer" (utils/scorerReturn.js)
+captureScorerReturn()
 
 // Diagnostics mode, in the desktop app's pop-up window only (opened from the
 // scoretable): its lines go into the scoretable's diagnostics file

@@ -1183,6 +1183,12 @@
     "unofficial": "Unofficial",
     "easyMatch": "Easy match · unofficial"
   },
+  "dashboards": {
+    "referee": "Referee dashboard",
+    "bench": "Bench dashboard",
+    "backToScorer": "Back to scorer",
+    "scorer": "Scorer"
+  },
   "home": {
     "title": "eScoresheet",
     "newMatch": "New match",

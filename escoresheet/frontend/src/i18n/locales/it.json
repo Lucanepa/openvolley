@@ -1182,6 +1182,12 @@
     "unofficial": "Non ufficiale",
     "easyMatch": "Partita semplice · non ufficiale"
   },
+  "dashboards": {
+    "referee": "Dashboard arbitro",
+    "bench": "Dashboard panchina",
+    "backToScorer": "Torna al segnapunti",
+    "scorer": "Segnapunti"
+  },
   "home": {
     "title": "eScoresheet",
     "newMatch": "Nuova partita",
