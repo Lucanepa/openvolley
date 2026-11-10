@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { WifiOff } from 'lucide-react'
 import KitModal from './KitModal'
 import { errorKeyOf } from '../../lib/accountApi'
-import { Banner, Button, Field, Input, Textarea, StatusPill } from '../../ui'
+import { Banner, Button, Field, Input, Textarea, StatusPill, usePanelShown } from '../../ui'
 
 /** navigator.onLine, following the online/offline events. */
 export function useOnline() {
@@ -44,7 +44,8 @@ export function usePanelData(fetcher, deps = [], { enabled = true } = {}) {
     if (!quiet) setState(s => ({ ...s, loading: true }))
     const res = await fetcher()
     if (my !== seq.current) return res
-    if (quiet && res.error) {
+    // a quiet refresh keeps what is shown on a failed read (or no answer)
+    if (quiet && (!res || res.error)) {
       setState(s => ({ ...s, loading: false }))
       return res
     }
@@ -55,6 +56,16 @@ export function usePanelData(fetcher, deps = [], { enabled = true } = {}) {
   useEffect(() => {
     if (enabled) reload()
   }, [reload, enabled])
+  // The console keeps a tab mounted once opened: shown again, it refreshes
+  // quietly (owner 2026-11-10: the officials' licences saved in My teams were
+  // not in Competitions, which still showed its first load)
+  const shown = usePanelShown()
+  const seen = useRef(shown)
+  useEffect(() => {
+    if (shown === seen.current) return
+    seen.current = shown
+    if (enabled) reload({ quiet: true })
+  }, [shown, enabled, reload])
   return { ...state, reload }
 }
 

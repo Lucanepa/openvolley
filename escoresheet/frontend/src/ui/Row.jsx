@@ -10,6 +10,7 @@
 //   (Skeleton rows in the same shape: SkeletonRows / RowListSkeleton in Skeleton.jsx.)
 //
 // Tone lives on the rail and the date text, never on a filled box.
+import { Children, createContext, useContext } from 'react';
 import { MapPin } from 'lucide-react';
 import { cn } from './cn.js';
 import { FOCUS_RING } from './Button.jsx';
@@ -28,11 +29,28 @@ export const ROW_WASH = {
   sky: 'rounded-md bg-sky-50/70 shadow-[0_0_0_1px_rgb(125_211_252)]',
 };
 
+/** Inside it, a RowList (neither `soft` nor `framed`) draws each item as its
+ *  own bordered card instead of hairlines (the manager console; owner
+ *  2026-11-10: "cards for teams, players, clubs etc or at least border of the
+ *  item to avoid confusion"). A list's own `cards` prop wins. */
+export const RowListCards = createContext(false);
+
+const ITEM_CARD = 'rounded-xl border border-stone-200 bg-white px-1 shadow-card sm:px-1.5';
+
 /** List container. `framed` = the bordered box the Games/Coachees tabs use
  *  (App.tsx:8052, 8418); otherwise the bare hairline list under a SectionHead
  *  (App.tsx:7377). `soft` = stone-100 hairlines for lists inside a card
- *  (AdminConsole.tsx:4727, Skeleton.tsx:16, App.tsx:10751). */
-export function RowList({ framed = false, soft = false, className, children, ...rest }) {
+ *  (AdminConsole.tsx:4727, Skeleton.tsx:16, App.tsx:10751). `cards` = each
+ *  item in its own card (default: RowListCards). */
+export function RowList({ framed = false, soft = false, cards, className, children, ...rest }) {
+  const cardsAround = useContext(RowListCards);
+  if ((cards ?? cardsAround) && !soft && !framed) {
+    return (
+      <div className={cn('space-y-2', className)} data-cards="" {...rest}>
+        {Children.map(children, (child) => (child == null || typeof child === 'boolean' ? null : <div className={ITEM_CARD}>{child}</div>))}
+      </div>
+    );
+  }
   const list = (
     <div className={cn('divide-y', soft ? 'divide-stone-100' : 'divide-stone-200', !framed && className)} {...rest}>
       {children}

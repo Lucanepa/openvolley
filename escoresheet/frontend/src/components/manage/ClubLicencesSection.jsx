@@ -166,6 +166,7 @@ export default function ClubLicencesSection({ club }) {
                 meta={s.count > 0
                   ? <>
                       <span>{t('manage.licences.people', { count: s.count })}</span>
+                      {s.manual > 0 && <span>{t('manage.licences.manualCount', { count: s.manual })}</span>}
                       {s.imported_at && <span>{t('manage.licences.updated', { when: dayLabel(s.imported_at, { year: true }), name: s.imported_by_name || '–' })}</span>}
                     </>
                   : <span>{t('manage.licences.notUploaded')}</span>}
@@ -213,6 +214,7 @@ export default function ClubLicencesSection({ club }) {
                   </>}
                   chips={<>
                     {p.lists.map((l) => <Chip key={l} tone={l === 'players' ? 'indigo' : l === 'coaches' ? 'emerald' : 'sky'}>{t(`manage.licences.lists.${l}`)}</Chip>)}
+                    {p.manual && <Chip tone="amber">{t('manage.licences.manual')}</Chip>}
                     {p.teams.map((team) => <Chip key={team.id}>{team.name}</Chip>)}
                   </>}
                 />

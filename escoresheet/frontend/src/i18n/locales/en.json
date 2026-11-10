@@ -3298,6 +3298,7 @@
         "team_squad": "Team players saved",
         "team_roster": "Game roster sent",
         "club_licences": "Licence list uploaded",
+        "club_licences_manual": "Added to the club's lists by hand",
         "account_request_approve": "Sign-up request approved",
         "account_request_reject": "Sign-up request rejected"
       }
@@ -3560,6 +3561,9 @@
       "title": "Licences",
       "hint": "Upload the lists of VolleyManager's club administration (the Excel export). The file is read on this device: only licence number, last name, first name, date of birth and gender are sent and kept. Each upload replaces that list.",
       "list": "List",
+      "manual": "Added by hand",
+      "manualCount_one": "{{count}} added by hand",
+      "manualCount_other": "{{count}} added by hand",
       "lists": {
         "players": "Players",
         "scorers": "Scorers",
@@ -5244,7 +5248,40 @@
     "warningMen_one": "{{names}} is registered with the club as a woman, and this is a men's game. Check it before the coin toss.",
     "warningMen_other": "{{names}} are registered with the club as women, and this is a men's game. Check it before the coin toss.",
     "warningWomen_one": "{{names}} is registered with the club as a man, and this is a women's game. Check it before the coin toss.",
-    "warningWomen_other": "{{names}} are registered with the club as men, and this is a women's game. Check it before the coin toss."
+    "warningWomen_other": "{{names}} are registered with the club as men, and this is a women's game. Check it before the coin toss.",
+      "linkTitle": "Link to someone of the club",
+      "link": "Link",
+      "linked": "Linked to the club: {{name}}",
+      "shield": {
+        "club": "In the club's lists (licence {{number}})",
+        "fill": "In the club's lists: tap to fill in the {{fields}}",
+        "fields": {
+          "first_name": "first name",
+          "dob": "date of birth",
+          "license_number": "licence number"
+        },
+        "hand": "Typed by hand: not in the club's lists",
+        "handLink": "Typed by hand: tap to link to someone of the club",
+        "manual": "In the club's lists, added by hand: green once VolleyManager's list has the licence number",
+        "manualLink": "In the club's lists, added by hand: tap to link to someone of VolleyManager's lists"
+      },
+      "offer": {
+        "title": "Save in the club too?",
+        "body": "Not in {{club}}'s lists yet. The ones ticked are kept there, so every team of the club can add them. Their shield stays gray until VolleyManager's list has their licence number.",
+        "theClub": "the club",
+        "list": {
+          "players": "Players list",
+          "coaches": "Coaches list"
+        },
+        "noLicence": "Without a licence number these can't go into the club's lists: {{names}}",
+        "back": "Back",
+        "saveAdd_one": "Save and add {{count}} to the club",
+        "saveAdd_other": "Save and add {{count}} to the club",
+        "saveOnly": "Save the roster only",
+        "added_one": "{{count}} added to the club's lists",
+        "added_other": "{{count}} added to the club's lists",
+        "failed": "The roster is saved, but adding to the club's lists failed. Save again to retry."
+      }
   },
   "benchRequests": {
     "title": "Requests to the scorer",
