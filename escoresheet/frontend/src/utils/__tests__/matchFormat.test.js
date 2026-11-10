@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { setsToWin, isMatchFinished, getNextSetIndex } from '../matchFormat'
+import { setsToWin, isMatchFinished, getNextSetIndex, previousSetIndex } from '../matchFormat'
 
 describe('setsToWin', () => {
   it('returns 3 for best-of-5 (default)', () => {
@@ -81,5 +81,16 @@ describe('getNextSetIndex', () => {
       expect(getNextSetIndex(2, 2, 0, 3)).toBe(3)
       expect(getNextSetIndex(2, 0, 2, 3)).toBe(3)
     })
+  })
+})
+
+describe('previousSetIndex', () => {
+  it('is the index before, except a best-of-3 decider (slot 5) follows set 2', () => {
+    expect(previousSetIndex(1)).toBe(0)
+    expect(previousSetIndex(3)).toBe(2)
+    expect(previousSetIndex(5)).toBe(4)
+    expect(previousSetIndex(5, 3)).toBe(2)
+    expect(previousSetIndex(5, '3')).toBe(2)
+    expect(previousSetIndex(2, 3)).toBe(1)
   })
 })

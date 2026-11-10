@@ -7,6 +7,7 @@ import { cn } from '../../ui/cn.js'
 import { FOCUS_RING } from '../../ui/Button.jsx'
 import { benchLineupCheck, COURT_ORDER, lineupNumber } from '../../domain/benchRequests'
 import { lineupCandidates } from '../../domain/lineupEntry'
+import { displaySetNumber, previousSetIndex } from '../../utils/matchFormat'
 
 // The court as the coach writes the line-up sheet: front row IV III II at
 // the net, back row V VI I (I serves)
@@ -30,9 +31,10 @@ function startingLineup(events, setIndex, team) {
  * team captain is not among the six, the coach names the game captain (5.2).
  * Portrait first: a sheet from the bottom on phones and upright tablets.
  */
-export default function BenchLineupSheet({ setIndex, team, players = [], events = [], discStyle, lastRequest, onClose, onSend, reserveBottom = false }) {
+export default function BenchLineupSheet({ setIndex, bestOf = 5, team, players = [], events = [], discStyle, lastRequest, onClose, onSend, reserveBottom = false }) {
   const { t } = useTranslation()
-  const previous = useMemo(() => (setIndex > 1 ? startingLineup(events, setIndex - 1, team) : null), [events, setIndex, team])
+  const previousIndex = previousSetIndex(setIndex, bestOf)
+  const previous = useMemo(() => (previousIndex >= 1 ? startingLineup(events, previousIndex, team) : null), [events, previousIndex, team])
   const [lineup, setLineup] = useState(() => {
     const sent = lastRequest?.request?.lineup
     if (sent) return Object.fromEntries(COURT_ORDER.map((p) => [p, str(sent[p])]))
@@ -112,7 +114,7 @@ export default function BenchLineupSheet({ setIndex, team, players = [], events 
       className="ov-kit"
       onClose={onClose}
       closeLabel={t('common.close', 'Close')}
-      title={t('benchRequests.lineupSheet.title', { set: setIndex, defaultValue: 'Starting line-up · set {{set}}' })}
+      title={t('benchRequests.lineupSheet.title', { set: displaySetNumber(setIndex, bestOf), defaultValue: 'Starting line-up · set {{set}}' })}
       description={t('benchRequests.lineupSheet.hint', 'Tap a position, then a player. Only the scorer sees it until the set starts.')}
       footer={(
         // the test match's badge (fixed, bottom right) stays clear of the buttons
@@ -148,7 +150,7 @@ export default function BenchLineupSheet({ setIndex, team, players = [], events 
           <span className="text-[11px] font-bold uppercase tracking-wider text-stone-800">{t('benchRequests.lineupSheet.players', 'Players')}</span>
           {previous && (
             <Button variant="ghost" size="sm" icon={RotateCcw} onClick={() => { setLineup(previous); setSelected(null) }}>
-              {t('benchRequests.lineupSheet.asInSet', { set: setIndex - 1, defaultValue: 'As in set {{set}}' })}
+              {t('benchRequests.lineupSheet.asInSet', { set: displaySetNumber(previousIndex, bestOf), defaultValue: 'As in set {{set}}' })}
             </Button>
           )}
         </div>

@@ -37,6 +37,17 @@ export function getNextSetIndex(currentSetIndex, homeSetsWon, awaySetsWon, bestO
 }
 
 /**
+ * The index of the set played before `setIndex`. A best-of-3 decider sits in
+ * slot 5 (getNextSetIndex), so the set before it is 2, not 4.
+ * @param {number} setIndex - internal index (1-5)
+ * @param {number|string} bestOf - 3 or 5 (defaults to 5)
+ * @returns {number} - 0 before set 1
+ */
+export function previousSetIndex(setIndex, bestOf = 5) {
+  return Number(bestOf) === 3 && Number(setIndex) === 5 ? 2 : Number(setIndex) - 1
+}
+
+/**
  * The set number people see for an internal set index. A best-of-3 decider
  * is stored in the tie-break slot, index 5 (getNextSetIndex), but it is the
  * match's third set and is shown as set 3. Every other index is its number.
