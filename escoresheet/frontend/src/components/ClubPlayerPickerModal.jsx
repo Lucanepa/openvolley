@@ -7,6 +7,7 @@ import { Button, Checkbox, Chip, EmptyInset, Field, SearchInput, Select, cn, day
 
 const fold = (v) => normalizeName(v).normalize('NFD').replace(/\p{Diacritic}/gu, '')
 const LISTS = ['players', 'scorers', 'coaches']
+const matches = (p, needle) => !needle || fold(`${p.last_name} ${p.first_name || ''} ${p.first_name || ''} ${p.last_name} ${p.sv_number}`).includes(needle)
 
 /**
  * "Add from club" (db/024, docs/club-licences-spec.md): people of the club's
@@ -26,8 +27,8 @@ const LISTS = ['players', 'scorers', 'coaches']
  * the role). onPick([person], role).
  *
  * mode 'link' (owner 2026-11-10: someone typed by hand "can be linked lately"):
- * one person of `players` for one row, the search starting at `initialQuery`.
- * onPick([person]).
+ * one person of `players` for one row, the search starting at `initialQuery`
+ * (empty when that finds nobody: a typo). onPick([person]).
  *
  * A person is { sv_number, last_name, first_name, dob, gender, lists? }.
  */
@@ -42,13 +43,14 @@ function PickerBody({ onClose, onPick, players = [], title, isTaken = () => fals
   const link = mode === 'link'
   // officials and link: one person
   const single = officials || link
-  const [q, setQ] = useState(initialQuery)
+  // the row's name as typed; a typo that finds nobody starts with everyone
+  const [q, setQ] = useState(() => (initialQuery && players.some((p) => matches(p, fold(initialQuery))) ? initialQuery : ''))
   const [chosen, setChosen] = useState(() => new Set())
   const [role, setRole] = useState(() => (roles.some((r) => r.value === initialRole) ? initialRole : roles[0]?.value ?? null))
   const roleLabel = (v) => roles.find((r) => r.value === v)?.label || v || ''
   const list = useMemo(() => {
     const needle = fold(q)
-    return players.filter((p) => !needle || fold(`${p.last_name} ${p.first_name || ''} ${p.first_name || ''} ${p.last_name} ${p.sv_number}`).includes(needle))
+    return players.filter((p) => matches(p, needle))
   }, [players, q])
   // players: several at once; officials: one person for the role
   const toggle = (sv, on) => setChosen((cur) => {

@@ -221,8 +221,13 @@ but can be linked later."
   club has a field the row lacks (tap: filled in). Gray: typed by hand, also a person kept by hand
   (`manual: true`, every row of the person by hand; in every read: `players` and `people`, My
   club, where it is tagged "Added by hand", and the tablet's copy). In the squad editor the gray
-  shield links the row to someone of the uploaded lists (the search starts at its last name; the
-  row takes names, date of birth and licence number).
+  shield links the row to someone of the uploaded lists (the search starts at its last name, or
+  with everyone when that finds nobody; the row takes names, date of birth and licence number).
+- **Match Setup.** The same shields from the tablet's copy (offline; it keeps `manual`), beside
+  Delete in the one-line rows (landscape; the stacked rows of a tablet held upright leave them
+  out). Its rows have no licence number: a club person by name and, when both have one, date of
+  birth. The gray shield links the row (names and date of birth), the green one with a dot fills
+  in the first name or date of birth. No "save in the club" there: scorers do not manage teams.
 - **Linked later.** An upload replaces only the uploaded rows of its list. A row by hand whose
   licence number the upload has becomes an uploaded row with VolleyManager's fields (green from
   then on, and gone with a later upload that no longer has it); the others stay by hand. Delete

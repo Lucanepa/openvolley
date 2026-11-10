@@ -52,7 +52,8 @@ import SentRosterCard from './SentRosterCard'
 import ClubPlayerPickerModal from './ClubPlayerPickerModal'
 import ClubGenderNotice from './ClubGenderNotice'
 import { clubOfTeam } from '../db/clubPlayers'
-import { addClubPlayersToRoster, benchOfficialOfRole, benchRolesOf, clubGenderWarnings, matchGenderOf, offeredClubPlayers, rosterHasPerson, setBenchOfficial } from '../domain/clubPlayers'
+import { addClubPlayersToRoster, applyClubFill, benchOfficialOfRole, benchRolesOf, clubFillOfRow, clubGenderWarnings, clubPersonOfRow, linkRowToClub, matchGenderOf, offeredClubPlayers, rosterHasPerson, setBenchOfficial } from '../domain/clubPlayers'
+import ClubShield from './manage/ClubShield'
 import { officialCheck, OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS } from '../lib/accountApi'
 import { openRestore } from '../utils/manageNav'
 import { Users, Save as SaveIcon, Trash2, ListChecks, UserPlus } from 'lucide-react'
@@ -1045,6 +1046,39 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     const r = BENCH_ROLES.find((x) => x.value === role)
     toast.success(t('clubPlayers.officialSet', { role: r ? t(r.fullLabelKey) : role, name: `${c.first_name || ''} ${c.last_name}`.trim() }))
   }
+  // Shields (owner 2026-11-10): green, someone of the club's uploaded lists
+  // (by name, and the date of birth when both have one); gray, typed by hand
+  // or kept in the club by hand. The gray one links the row to someone of the
+  // uploaded lists (names and date of birth from the club), the green one
+  // with a dot fills in what the row lacks. From the tablet's copy, offline.
+  // In the one-line rows (landscape); the stacked rows leave them out.
+  const [linkTarget, setLinkTarget] = useState(null) // { side, kind: 'roster' | 'bench', index, query }
+  const setRowOf = (side, kind) => (kind === 'bench'
+    ? (side === 'home' ? setBenchHome : setBenchAway)
+    : (side === 'home' ? setHomeRoster : setAwayRoster))
+  const patchRow = (side, kind, index, fn) => setRowOf(side, kind)((list) => list.map((x, j) => (j === index ? fn(x) : x)))
+  const linkRow = ([c]) => {
+    const target = linkTarget
+    setLinkTarget(null)
+    if (!c || !target) return
+    patchRow(target.side, target.kind, target.index, (row) => linkRowToClub(row, c))
+    toast.success(t('clubPlayers.linked', { name: `${c.first_name || ''} ${c.last_name}`.trim() }))
+  }
+  const rowShield = (side, kind, row, index) => {
+    const club = clubTeams[side]
+    if (!club) return null
+    const person = clubPersonOfRow(row, club.people)
+    const fill = person && !person.manual ? clubFillOfRow(row, person) : {}
+    return (
+      <ClubShield
+        className="club-shield"
+        person={person}
+        fill={fill}
+        onFill={() => patchRow(side, kind, index, (r) => applyClubFill(r, fill))}
+        onLink={() => setLinkTarget({ side, kind, index, query: row.lastName || '' })}
+      />
+    )
+  }
   const clubPickerFor = (side) => {
     const club = clubTeams[side]
     const { players } = offeredClubPlayers(club?.players, clubGender)
@@ -1075,6 +1109,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             const b = benchOfficialOfRole(bench, role)
             return b ? `${b.firstName || ''} ${b.lastName || ''}`.trim() : null
           }}
+        />
+        <ClubPlayerPickerModal
+          open={linkTarget?.side === side && !!club}
+          mode="link"
+          onClose={() => setLinkTarget(null)}
+          onPick={linkRow}
+          players={(linkTarget?.kind === 'bench' ? club?.people || [] : players).filter((c) => !c.manual)}
+          initialQuery={linkTarget?.query || ''}
         />
       </>
     )
@@ -4693,7 +4735,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     >{p.isLfp ? 'LFP' : '\u2014'}</div>
                   </div>
                 )}
-                <div className="cell-action">
+                <div className="cell-action gap-1">
+                  {rowShield('home', 'roster', p, i)}
                   <Button variant="danger-outline" size="md" title={t('common.delete')} onClick={() => setHomeRoster(list => list.filter((_, idx) => idx !== i))}>
                     <Trash2 size={16} className="hidden stack:block" aria-hidden="true" /><span className="stack:sr-only">{t('common.delete')}</span>
                   </Button>
@@ -4749,7 +4792,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <input aria-label={t('matchSetup.firstName')} className="capitalize cell-first" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
                 <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
                 <DateField size="bare" wrapperClassName={DOB_CELL} aria-label={t('matchSetup.dateOfBirth')} value={m.dob ? formatDateToISO(m.dob) : ''} onChange={v => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v ? formatDateToDDMMYYYY(v) : '' }; return a })} />
-                <div className="cell-action">
+                <div className="cell-action gap-1">
+                  {rowShield('home', 'bench', m, originalIdx)}
                   <Button variant="danger-outline" size="md" title={t('common.delete')} onClick={() => {
                     const updated = benchHome.filter((_, idx) => idx !== originalIdx)
                     setBenchHome(updated)
@@ -5876,7 +5920,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     >{p.isLfp ? 'LFP' : '\u2014'}</div>
                   </div>
                 )}
-                <div className="cell-action">
+                <div className="cell-action gap-1">
+                  {rowShield('away', 'roster', p, i)}
                   <Button variant="danger-outline" size="md" title={t('common.delete')} onClick={() => setAwayRoster(list => list.filter((_, idx) => idx !== i))}>
                     <Trash2 size={16} className="hidden stack:block" aria-hidden="true" /><span className="stack:sr-only">{t('common.delete')}</span>
                   </Button>
@@ -5932,7 +5977,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <input aria-label={t('matchSetup.firstName')} className="capitalize cell-first" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
                 <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
                 <DateField size="bare" wrapperClassName={DOB_CELL} aria-label={t('matchSetup.dateOfBirth')} value={m.dob ? formatDateToISO(m.dob) : ''} onChange={v => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v ? formatDateToDDMMYYYY(v) : '' }; return a })} />
-                <div className="cell-action">
+                <div className="cell-action gap-1">
+                  {rowShield('away', 'bench', m, originalIdx)}
                   <Button variant="danger-outline" size="md" title={t('common.delete')} onClick={() => {
                     const updated = benchAway.filter((_, idx) => idx !== originalIdx)
                     setBenchAway(updated)

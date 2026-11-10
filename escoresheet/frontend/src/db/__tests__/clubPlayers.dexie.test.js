@@ -33,9 +33,9 @@ describe('the clubs\' players on the device', () => {
     resetClubPlayersThrottle()
   })
 
-  it('keeps the five fields of each player, for this account only', async () => {
+  it('keeps the five fields of each player (and whether added by hand), for this account only', async () => {
     const row = clubToRow({ ...answer().clubs[0], players: [{ sv_number: 100001, last_name: 'Beispiel', first_name: 'Anna', dob: '2004-05-06', gender: 'f', email: 'anna@example.ch' }] }, 'u1')
-    expect(row.players).toEqual([{ sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', dob: '2004-05-06', gender: 'f' }])
+    expect(row.players).toEqual([{ sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', dob: '2004-05-06', gender: 'f', manual: false }])
     await storeClubPlayers(answer(), 'u1')
     const rows = await db.club_players.toArray()
     expect(rows).toHaveLength(1)
@@ -67,12 +67,13 @@ describe('the clubs\' players on the device', () => {
   it('keeps everyone of the club\'s lists once with their lists (the bench officials); an older answer: the players', async () => {
     const people = [
       { sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', dob: '2004-05-06', gender: 'f', lists: ['players'] },
-      { sv_number: 200001, last_name: 'Trainer', first_name: 'Tina', dob: '1980-03-04', gender: 'f', lists: ['coaches', 'nonsense'], phone: '000' }
+      { sv_number: 200001, last_name: 'Trainer', first_name: 'Tina', dob: '1980-03-04', gender: 'f', lists: ['coaches', 'nonsense'], phone: '000', manual: true }
     ]
     const row = clubToRow({ ...answer().clubs[0], people }, 'u1')
+    // db/026: `manual` (every row of the person added by hand) is kept for Match Setup's gray shield
     expect(row.people).toEqual([
-      { sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', dob: '2004-05-06', gender: 'f', lists: ['players'] },
-      { sv_number: '200001', last_name: 'Trainer', first_name: 'Tina', dob: '1980-03-04', gender: 'f', lists: ['coaches'] }
+      { sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', dob: '2004-05-06', gender: 'f', manual: false, lists: ['players'] },
+      { sv_number: '200001', last_name: 'Trainer', first_name: 'Tina', dob: '1980-03-04', gender: 'f', manual: true, lists: ['coaches'] }
     ])
     // the players list stays as it was (the roster rows)
     expect(row.players.map((p) => p.sv_number)).toEqual(['100001'])
@@ -80,7 +81,7 @@ describe('the clubs\' players on the device', () => {
     const club = clubOfTeam(await db.club_players.toArray(), 'VBC Musterdorf H1', 'u1')
     expect(club.people.map((p) => p.last_name)).toEqual(['Beispiel', 'Trainer'])
     // a server (or a row kept) before `people`: the players are the people
-    expect(clubToRow(answer().clubs[0], 'u1').people).toEqual([{ sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', dob: '2004-05-06', gender: 'f', lists: ['players'] }])
+    expect(clubToRow(answer().clubs[0], 'u1').people).toEqual([{ sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', dob: '2004-05-06', gender: 'f', manual: false, lists: ['players'] }])
     const older = clubToRow({ ...answer().clubs[0], people }, 'u1')
     delete older.people
     expect(clubOfTeam([older], 'VBC Musterdorf H1', 'u1').people.map((p) => p.lists)).toEqual([['players']])
