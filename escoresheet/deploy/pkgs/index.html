@@ -236,9 +236,7 @@
         <a class="btn btn-primary" href="@MAC_URL@">Download for macOS</a>
         <a class="btn btn-ghost" href="https://github.com/Lucanepa/openvolley/releases/tag/desktop-v@DESKTOP_VERSION@">All downloads</a>
       </div>
-      <h3>The first start</h3>
-      <p>The app is not notarized by Apple (that needs a paid Apple developer account), so macOS blocks it the first time. Open it once and close the message, then <kbd>System Settings</kbd> → <kbd>Privacy &amp; Security</kbd> → <kbd>Open Anyway</kbd>. On macOS 14 and older: right-click the app → <kbd>Open</kbd>. Or in Terminal:</p>
-      <div class="cmd"><pre><code>xattr -dr com.apple.quarantine "/Applications/OpenVolley eScoresheet.app"</code></pre><button class="copy" type="button">Copy</button></div>
+      <p>Signed and notarized by Apple: it opens like any other app, also without internet.</p>
       <p class="meta">Start it from Applications: from there it updates itself. The tablet Wi-Fi of the Windows and Linux app is not available on macOS: connect the tablets through the venue's Wi-Fi, a travel router or macOS Internet Sharing.</p>
     </div>
     <!--/mac-->
@@ -364,7 +362,7 @@ sudo snap connect openvolley-escoresheet:bluez</code></pre><button class="copy" 
       <h3 class="ph">macOS</h3>
       <p class="pv">Version @BEACH_DESKTOP_VERSION@ · Apple silicon and Intel</p>
       <div class="cmd"><pre><code>brew install --cask lucanepa/tap/openbeach</code></pre><button class="copy" type="button">Copy</button></div>
-      <p>Or the disk image: drag <b>OpenBeach</b> to Applications. Not notarized by Apple: the first time, open it once, then <kbd>System Settings</kbd> → <kbd>Privacy &amp; Security</kbd> → <kbd>Open Anyway</kbd> (macOS 14 and older: right-click → <kbd>Open</kbd>), or run <code>xattr -dr com.apple.quarantine /Applications/OpenBeach.app</code>.</p>
+      <p>Or the disk image: drag <b>OpenBeach</b> to Applications. Signed and notarized by Apple: it opens like any other app.</p>
       <div class="actions">
         <a class="btn btn-primary" href="@BEACH_MAC_URL@">Download OpenBeach for macOS</a>
       </div>
