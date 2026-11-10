@@ -154,7 +154,8 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
           style={{ display: 'inline-flex', gap: 3, maxWidth: '100%', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap', visibility: isServing ? 'visible' : 'hidden', boxSizing: 'border-box', padding: '2px 5px', borderRadius: 999, background: 'var(--ov-text)', color: 'var(--ov-card)', fontSize: 10, fontWeight: 800, letterSpacing: '0.02em', lineHeight: 1.3 }}
         >
           <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{t('scoreboard.labels.serveLabel')}</span>
-          {server && <span data-testid="phone-server-number" style={{ flex: 'none', fontVariantNumeric: 'tabular-nums' }}>#{server}</span>}
+          {/* "#" and two digits wide whatever the number: the pill keeps its width from #1 to #12 */}
+          {server && <span data-testid="phone-server-number" style={{ flex: 'none', fontVariantNumeric: 'tabular-nums', minWidth: '3.2ch', textAlign: 'left' }}>#{server}</span>}
         </span>
         <span style={{ ...line, fontSize: 11, fontWeight: 600, color: 'var(--ov-text-muted)' }}>
           {t('scoreboard.phone.setsWon', { count: team.setsWon })}

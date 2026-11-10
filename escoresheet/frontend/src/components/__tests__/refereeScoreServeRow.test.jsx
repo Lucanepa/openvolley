@@ -74,17 +74,35 @@ describe('referee score row: the SERVE block', () => {
     expect(SERVE_BLOCK.labelVmin * 1.1 + SERVE_BLOCK.numberVmin + 2 * 0.8).toBeLessThanOrEqual(SERVE_BLOCK.heightVmin)
     // much larger than the old corner box (3 vmin label, 7-8 vmin number, 6 vmin box)
     expect(SERVE_BLOCK.numberVmin).toBeGreaterThan(8)
-    expect(SERVE_BLOCK.widthVmin).toBeGreaterThanOrEqual(3 * 6)
   })
 
-  it('a narrow slot (portrait tablet, 150 % display scale) keeps the label and number at least as big as the old corner box', () => {
+  // Owner, 3.0.16: "SERVE box does not have to be full width. Auto width is
+  // fine." It filled its slot up to 26 vmin, a wide box beside the score.
+  it('is as wide as its content, the number box two digits wide whatever the number', () => {
+    const c = renderRow('left')
+    const block = c.querySelector('[data-serve-block]')
+    expect(block.style.width).toBe('auto')
+    expect(block.style.maxWidth).toBe('100%')
+    expect(SERVE_BLOCK.widthVmin).toBeUndefined()
+    // the number: two digits wide (#1 and #12 the same box), with its padding
+    const number = c.querySelector('[data-serve-number]')
+    expect(number.style.minWidth).toBe('2ch')
+    expect(number.style.textAlign).toBe('center')
+    expect(c.querySelector('[data-serve-box]').style.padding).toBe(`0px ${SERVE_BLOCK.numberPadEm}em`)
+    // the sizes come from the slot's width (its container), not the block's
+    expect(c.querySelector('[data-serve-slot="left"]').style.containerType).toBe('inline-size')
+    expect(block.style.containerType).toBe('')
+  })
+
+  it('a narrow slot (portrait tablet, 150 % display scale) keeps the number box inside it, about as big as the old corner box', () => {
     // Measured in Chromium at 768 x 1024, scale 1.5 (vmin 11.52): the slot is
     // 128 px wide. The old corner box used a 3 vmin label and a 7-8 vmin number.
     const v = 11.52
     const slot = 128
-    const inner = slot - 2 * Math.min(v, 0.03 * slot)
-    const number = Math.min(SERVE_BLOCK.numberVmin * v, SERVE_BLOCK.numberCqi / 100 * inner)
-    expect(number).toBeGreaterThanOrEqual(8 * v)
+    const number = Math.min(SERVE_BLOCK.numberVmin * v, SERVE_BLOCK.numberCqi / 100 * slot)
+    expect(number).toBeGreaterThanOrEqual(7 * v)
+    // two digits (~1.11 em), the padding both sides and the 3 px border fit
+    expect(number * (1.112 + 2 * SERVE_BLOCK.numberPadEm) + 6).toBeLessThanOrEqual(slot)
     // the label's share depends on its length: SERVE is not sized for AUFSCHLAG
     expect(serveLabelCqi('SERVE')).toBeGreaterThan(serveLabelCqi('AUFSCHLAG') * 1.5)
   })
@@ -96,8 +114,8 @@ describe('referee score row: the SERVE block', () => {
       // a bold upper-case letter with the 0.06 em spacing is at most ~0.76 em wide
       expect(serveLabelCqi(label) * label.length * 0.76, `${lng} ${label}`).toBeLessThanOrEqual(100)
     }
-    // two tabular digits are ~1.11 em
-    expect(SERVE_BLOCK.numberCqi * 1.112).toBeLessThanOrEqual(100)
+    // two tabular digits (~1.11 em) and the box padding: within the slot
+    expect(SERVE_BLOCK.numberCqi * (1.112 + 2 * SERVE_BLOCK.numberPadEm)).toBeLessThanOrEqual(100)
     // (jsdom drops min(... cqi) font sizes: the component's use of
     // serveLabelCqi is checked in the source)
     const src = readFileSync(resolve(__dirname, '../referee/ScoreServeRow.jsx'), 'utf8')
