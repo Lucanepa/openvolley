@@ -16,7 +16,8 @@ const squad = {
 // The Einsatzliste: no shirt numbers; Anna coach, Paolo first assistant
 const parsed = {
   players: [
-    { number: null, licence: '123456', firstName: 'Marco', lastName: 'Muster', dob: '14/03/2004' },
+    // a number the PDF's text seems to give is ignored
+    { number: 99, licence: '123456', firstName: 'Marco', lastName: 'Muster', dob: '14/03/2004' },
     { number: null, licence: '234567', firstName: 'Luca', lastName: 'Beispiel', dob: '02/07/1999' },
     { number: null, licence: '345678', firstName: 'Mia', lastName: 'Neu', dob: '01/02/2005' }
   ],
@@ -32,7 +33,7 @@ describe('an Einsatzliste on a game roster', () => {
     const by = Object.fromEntries(draft.players.map((p) => [p.last_name, p]))
     expect(by.Muster).toMatchObject({ number: 7, is_captain: true, picked: true })
     expect(by.Beispiel).toMatchObject({ number: 12, is_libero: true, picked: true, license_number: '234567', dob: '1999-07-02' })
-    expect(by.Neu).toMatchObject({ number: '', picked: true, license_number: '345678' })
+    expect(by.Neu).toMatchObject({ number: '', is_captain: false, is_libero: false, picked: true, license_number: '345678' })
     expect(by.Exemple).toMatchObject({ number: 3, picked: false })
   })
 

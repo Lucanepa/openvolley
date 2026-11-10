@@ -121,9 +121,7 @@ export function parseRosterText(text, gflPlayerNames = new Set()) {
     players: [],
     coach: null,
     ac1: null,
-    ac2: null,
-    physio: null,
-    medic: null
+    ac2: null
   }
 
   // Removed console.log('[parseRosterText] Raw text (first 1000 chars):', text.substring(0, 1000))
@@ -300,7 +298,7 @@ export function parseRosterText(text, gflPlayerNames = new Set()) {
       // Removed console.log('[parseRosterText] Total players found:', result.players.length)
     
     // VolleyManager's officials, in any language: "<role>: #<SV number> | <first> <last> (<year>)",
-    // e.g. "Allenatore: #52205 | …", "1. Assistant Coach: #72458 | …", "Physiotherapeut: #… | …".
+    // e.g. "Allenatore: #52205 | …", "1. Assistant Coach: #72458 | …".
     // The role is told by its words (officialRoleOf), the SV number is kept as the licence and a
     // year alone is no date of birth (birthYear).
     for (const o of parseLabelledOfficials(normalizedText, fullName)) {
@@ -315,7 +313,8 @@ export function parseRosterText(text, gflPlayerNames = new Set()) {
   return result
 }
 
-export const OFFICIAL_SLOTS = ['coach', 'ac1', 'ac2', 'physio', 'medic']
+// An Einsatzliste names the coach and the two assistants, never a physiotherapist or medic
+export const OFFICIAL_SLOTS = ['coach', 'ac1', 'ac2']
 
 const LABELLED_OFFICIAL = /:\s*#\s*\d{3,7}\s*\|/
 const hasLabelledOfficials = (text) => LABELLED_OFFICIAL.test(text)
@@ -324,15 +323,13 @@ const hasLabelledOfficials = (text) => LABELLED_OFFICIAL.test(text)
 const foldLabel = (v) => String(v ?? '').toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '')
 
 /**
- * The slot of an official's role label in any of VolleyManager's languages
- * (and the ones a club writes by hand): 'coach', 'ac1', 'ac2', 'physio',
- * 'medic', 'ac' (an assistant without its number) or null (not an official
- * of the bench). By its words, not by one language's exact text.
+ * The slot of an official's role label in VolleyManager's languages (German,
+ * French, Italian): 'coach', 'ac1', 'ac2', 'ac' (an assistant without its
+ * number) or null (not the coach or an assistant). By its words, not by one
+ * language's exact text.
  */
 export function officialRoleOf(label) {
   const l = foldLabel(label)
-  if (/physio|fisio|kine|therap/.test(l)) return 'physio'
-  if (/medic|medecin|arzt|doctor|dottor|docteur|sanit|samarit/.test(l)) return 'medic'
   if (/assist|adjoint|aiuto|vice|\bco-?(coach|trainer|entra|allena)/.test(l)) {
     if (/(^|[^\d])2(?!\d)|\b(second|seconda|secondo|zweit|deuxieme|2nd)/.test(l)) return 'ac2'
     if (/(^|[^\d])1(?!\d)|\b(first|primo|prima|erst|premier|1st)/.test(l)) return 'ac1'
