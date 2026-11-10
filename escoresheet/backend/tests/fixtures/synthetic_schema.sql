@@ -179,6 +179,7 @@ CREATE TABLE public.svrz_games (
   match_type text, match_level text, championship_type text, group_display text,
   linesman_1 text, linesman_2 text,
   match_format int,
+  referee_1 text, referee_2 text,
   referee_1_first_name text, referee_1_last_name text,
   referee_2_first_name text, referee_2_last_name text,
   referee_1_dob date, referee_2_dob date,
