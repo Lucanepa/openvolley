@@ -1175,6 +1175,12 @@
     "unofficial": "Inoffiziell",
     "easyMatch": "Einfaches Spiel · inoffiziell"
   },
+  "dashboards": {
+    "referee": "Schiedsrichter-Dashboard",
+    "bench": "Bank-Dashboard",
+    "backToScorer": "Zurück zum Schreiber",
+    "scorer": "Schreiber"
+  },
   "home": {
     "title": "eScoresheet",
     "newMatch": "Neues Spiel",

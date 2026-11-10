@@ -1181,6 +1181,12 @@
     "unofficial": "Non officiel",
     "easyMatch": "Match simplifié · non officiel"
   },
+  "dashboards": {
+    "referee": "Tableau de bord arbitre",
+    "bench": "Tableau de bord banc",
+    "backToScorer": "Retour au marqueur",
+    "scorer": "Marqueur"
+  },
   "home": {
     "title": "e-Feuille",
     "newMatch": "Nouveau match",
