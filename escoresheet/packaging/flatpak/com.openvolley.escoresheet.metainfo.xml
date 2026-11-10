@@ -71,6 +71,18 @@
   </screenshots>
 
   <releases>
+    <release version="3.0.18" date="2026-11-10">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.18</url>
+      <description>
+        <ul>
+          <li>Referee: Last action follows the log after an Undo.</li>
+          <li>Go back: a serve given by hand rotates nobody on the scoresheet either.</li>
+          <li>Bench: the coming set during the interval; team names, start, end and duration in the match-end result.</li>
+          <li>Decision change: names only what it takes back.</li>
+          <li>SERVE box as wide as its content on the referee and scorer screens.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.0.17" date="2026-11-10">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.17</url>
       <description>
