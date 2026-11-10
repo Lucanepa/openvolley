@@ -2870,7 +2870,7 @@
       "q_windows": "Windows says “Windows protected your PC”?",
       "a_windows": "SmartScreen shows this for a new download. Tap “More info”, then “Run anyway”. The installer asks once for an administrator, so the tablets can get through the firewall.",
       "q_macos": "macOS does not open the app?",
-      "a_macos": "The app is not notarized by Apple, so macOS blocks the first start. Open it once and close the message, then go to System Settings › Privacy & Security › Open Anyway. On macOS 14 and older: right-click the app › Open. Start it from Applications.",
+      "a_macos": "The app is signed and notarized by Apple, so macOS opens it like any other app. If macOS still blocks it, it is an older copy: install the current version from get.openvolley.app, drag it to Applications and start it from there.",
       "q_android": "How do I install and update the Android app?",
       "a_android": "Add the OpenVolley repository in F-Droid (see get.openvolley.app): F-Droid then installs the updates. An APK installed without F-Droid does not update itself, but the app can tell you about new versions.",
       "q_desktopUpdates": "How does the desktop app update?",

@@ -32,11 +32,4 @@ cask "openbeach" do
     "~/Library/Saved Application State/com.openvolley.beach.savedState",
     "~/Library/WebKit/com.openvolley.beach",
   ]
-
-  caveats <<~EOS
-    OpenBeach is not notarized by Apple, so macOS blocks its first start.
-    Open it once, then System Settings > Privacy & Security > Open Anyway.
-    Or in Terminal:
-      xattr -dr com.apple.quarantine /Applications/OpenBeach.app
-  EOS
 end

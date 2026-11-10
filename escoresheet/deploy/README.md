@@ -321,15 +321,20 @@ It has no `latest.json` here: the APT hold-back never applies and APT lists a ne
 once (a hand-given `svrz-rc` `.deb` is never refused for being newer than a manifest). Linux: `curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s svrz-rc`.
 Test: `tests/publish-svrz-rc.test.sh`.
 
-### macOS (unsigned), Homebrew tap
+### macOS (signed and notarized), Homebrew tap
 
-The macOS app is ad-hoc signed, not notarized (no paid Apple developer account). macOS blocks
-its first start; the user opens it once, then System Settings › Privacy & Security › Open
-Anyway (macOS 14 and older: right-click › Open), or runs
-`xattr -dr com.apple.quarantine "/Applications/OpenVolley eScoresheet.app"`. The release notes,
-the install page and the cask's caveats say so. Homebrew's own cask repository does not take
-such apps (Homebrew 5.0: casks failing Gatekeeper are disabled there from September 2026, and
-`--no-quarantine` is deprecated), so the casks live in our tap `Lucanepa/homebrew-tap`
+Both macOS apps are signed with the Developer ID of Apple team T2Q99T2KH5 (Luca Canepa) and
+notarized by Apple: `desktop.yml` staples the tickets to the .app, the updater's .app.tar.gz
+and the .dmg, so they open like any other app, also without internet in a hall. Repository
+secrets: `APPLE_CERTIFICATE` (the Developer ID Application .p12, base64) and
+`APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_TEAM_ID`, and the App Store
+Connect API key `APPLE_API_KEY` (key ID), `APPLE_API_ISSUER`, `APPLE_API_PRIVATE_KEY` (.p8).
+A tag build without them fails its macOS job (a release is never ad-hoc signed); a manual run
+without them builds an ad-hoc app. The certificate expires in December 2027 and the developer
+membership on 9 November each year: renew both, then put the new .p12 into
+`APPLE_CERTIFICATE*`. Apps signed before stay valid (secure timestamp). Updating from an
+ad-hoc version (3.0.13 and older) to a signed one asks once more for the local network and
+camera permissions (macOS ties them to the signature). The casks live in our tap `Lucanepa/homebrew-tap`
 (`brew install --cask lucanepa/tap/openvolley`, `lucanepa/tap/openbeach`). They declare
 `auto_updates`: the app updates itself, `brew upgrade` only follows.
 

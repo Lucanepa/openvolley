@@ -16,10 +16,9 @@
 # VERSION [--app beach], so the cask never announces a version the app's own
 # updater (latest.json) does not have yet.
 #
-# The casks are for this tap only: Homebrew's official cask repository takes
-# no app that fails Gatekeeper (Homebrew 5: unsigned / unnotarized casks are
-# disabled there from September 2026), and these apps are ad-hoc signed, not
-# notarized. The cask's caveats say how to open the app the first time.
+# The casks are for this tap only for now. OpenVolley eScoresheet and
+# OpenBeach are signed and notarized (desktop.yml) and open like any other
+# app, so Homebrew's official cask repository could take them too.
 #
 # OV_CASK_DMG=FILE uses FILE instead of downloading (tests).
 set -euo pipefail

@@ -12,13 +12,8 @@ brew install --cask lucanepa/tap/openvolley   # OpenVolley eScoresheet
 brew install --cask lucanepa/tap/openbeach    # OpenBeach
 ```
 
-The apps are not notarized by Apple (no paid developer account), so macOS
-blocks the first start: open the app once, then System Settings > Privacy &
-Security > Open Anyway, or
-
-```bash
-xattr -dr com.apple.quarantine "/Applications/OpenVolley eScoresheet.app"
-```
+OpenVolley eScoresheet and OpenBeach are signed and notarized by Apple: they
+open like any other app, offline too.
 
 The apps update themselves (signed updates, installed when you quit, never
 during a match); `brew upgrade` only follows. More: https://get.openvolley.app

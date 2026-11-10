@@ -106,8 +106,10 @@ Windows installers are produced by CI (`.github/workflows/desktop.yml`, a
 ### macOS
 
 A `macos-15` (arm64) runner builds one universal app (`--target
-universal-apple-darwin`, both slices), ad-hoc signed (`tauri.macos.conf.json`:
-`signingIdentity: "-"`, no Apple developer account, so not notarized), as
+universal-apple-darwin`, both slices), signed with the Developer ID of team
+T2Q99T2KH5 (hardened runtime, `Entitlements.plist`) and notarized by Apple,
+tickets stapled to the app and the .dmg (secrets `APPLE_*`; a manual run
+without them builds an ad-hoc signed app, a tag build fails), as
 `OpenVolley.eScoresheet_<v>_universal.dmg` and the updater's
 `openvolley-escoresheet_<v>_universal.app.tar.gz` (OpenBeach: `OpenBeach_…`,
 `openbeach-escoresheet_…`). The job checks the bundle and smoke-tests it (each
@@ -115,9 +117,9 @@ slice's relay, x86_64 under Rosetta; the app with its window; quit on SIGTERM)
 and uploads a screenshot and `desktop.log`. A failed macOS job does not hold
 back the Windows / Linux release.
 
-On the Mac: the first start is blocked by Gatekeeper (open once, then System
-Settings › Privacy & Security › Open Anyway, or `xattr -dr
-com.apple.quarantine "/Applications/OpenVolley eScoresheet.app"`); Homebrew:
+On the Mac: it opens like any downloaded app, also offline (the ticket is
+stapled). Releases before 3.0.19 were not notarized: their first start needs
+System Settings › Privacy & Security › Open Anyway. Homebrew:
 `brew install --cask lucanepa/tap/openvolley` (`deploy/homebrew`). What differs
 from Windows / Linux:
 

@@ -78,7 +78,7 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 Install page: [get.openvolley.app](https://get.openvolley.app). Downloads are on [GitHub Releases](https://github.com/Lucanepa/openvolley/releases):
 
 - **Windows** -- installer (`…_x64-setup.exe`)
-- **macOS** -- universal disk image (`…_universal.dmg`, Apple silicon and Intel, macOS 11+; not notarized, see the release notes for the first start) or `brew install --cask lucanepa/tap/openvolley`
+- **macOS** -- universal disk image (`…_universal.dmg`, Apple silicon and Intel, macOS 11+; signed and notarized by Apple) or `brew install --cask lucanepa/tap/openvolley`
 - **Linux** -- AppImage, or the signed APT repository (`curl -fsSL https://get.openvolley.app/install.sh | sudo sh`)
 
 ## Contributing
