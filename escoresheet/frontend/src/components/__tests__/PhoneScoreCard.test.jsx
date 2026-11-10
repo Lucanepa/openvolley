@@ -52,6 +52,8 @@ describe('PhoneScoreboard: the score cards on a narrow phone', () => {
     expect(pill.textContent).toBe('SERVE#11')
     expect(pill.getAttribute('aria-label')).toBe('Serve #11')
     expect(screen.getByTestId('phone-server-number').style.flex).toMatch(/^0 0 auto|none/)
+    // "#" and two digits wide whatever the number: the pill keeps its width from #1 to #12
+    expect(screen.getByTestId('phone-server-number').style.minWidth).toBe('3.2ch')
   })
 
   it('the sets won fit beside a two-digit score at 360px, in every locale', async () => {

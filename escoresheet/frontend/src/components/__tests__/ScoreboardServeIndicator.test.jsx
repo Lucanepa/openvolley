@@ -1,6 +1,7 @@
 // Point Hub board, 2026-11-08: the SERVE number box was small in the corner of
 // the score row, with empty space below it beside 1R down to the court. The
-// box now fills its side of the score row and of the 1R row (renderServeSide,
+// box now runs down its side of the score row and of the 1R row, as wide as
+// its content (owner, 3.0.16: it filled the side) (renderServeSide,
 // styles.css .serve-side); a side's Game captain button sits in the same cell,
 // in its outer bottom corner, so the box stands beside or above it and never
 // over it. (jsdom has no layout: this checks the cells and what is in them;
@@ -75,11 +76,23 @@ describe('Scoreboard: the SERVE indicator', () => {
     expect(right.style.gridRow).toBe('1 / 3')
     expect(left.parentElement.textContent).toContain('1R: Claudia Moser')
 
-    // home serves on the left: its server's number, in a box that scales with itself
+    // home serves on the left: its server's number, in a box that scales with
+    // the side (the side's area is the container)
     const leftIndicator = left.querySelector('.serve-side__indicator')
     expect(leftIndicator.style.visibility).toBe('visible')
     expect(leftIndicator.textContent).toBe('SERVE1')
     expect(leftIndicator.querySelector('[style*="container-type"]')).toBeTruthy()
+    // owner, 3.0.16 ("auto width is fine"): the label and the box are as wide
+    // as their content, on the score's side, not the whole side; the number
+    // two digits wide whatever it is (#1 -> #12 moves nothing)
+    const area = leftIndicator.querySelector('[data-serve-area="left"]')
+    expect(area.style.justifyContent).toBe('flex-end')
+    const column = area.querySelector('[data-serve-indicator="left"]')
+    expect(column.style.width).toBe('')
+    expect(column.style.maxWidth).toBe('100%')
+    const box = column.querySelector('[data-serve-number-box="left"]')
+    expect(box.style.padding).toMatch(/^0(px)? 0\.18em$/)
+    expect(box.querySelector('span').style.minWidth).toBe('2ch')
     expect(right.querySelector('.serve-side__indicator').style.visibility).toBe('hidden')
 
     // the away side's Game captain button is in the away cell, next to the
