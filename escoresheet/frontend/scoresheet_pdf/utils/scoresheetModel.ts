@@ -16,6 +16,7 @@
  */
 
 import { getLeftTeamLabelForSet } from '../../src/domain/rules.js';
+import { serverColumn } from './serviceRounds';
 
 export const POSITIONS = ['I', 'II', 'III', 'IV', 'V', 'VI'] as const;
 
@@ -83,6 +84,25 @@ export function getStartingLineupEvent(events: any[], setIndex: number, team: Te
 /** Starting lineup (positions I-VI) of a team in a set, as printed in the "starting players" row. */
 export function getStartingLineup(events: any[], setIndex: number, team: TeamKey): string[] {
   return lineupToArray(getStartingLineupEvent(events, setIndex, team)?.payload?.lineup);
+}
+
+/**
+ * The service-round column of the server a going back (domain/rectify head
+ * 'rectification') gave the serve to: the player at position I of the team's
+ * line-up after it (its own line-up rows N.1 / N.2, else the line-up of that
+ * moment), traced to the starting position he took the court from
+ * (serviceRounds serverColumn). Null when it cannot be told.
+ */
+export function rectificationServerColumn(setEvents: any[], head: any, startingLineup: string[]): number | null {
+  const team = head?.payload?.serve;
+  if (team !== 'home' && team !== 'away') return null;
+  const upTo = Math.floor(head.seq || 0) + 1;
+  const before = (e: any) => (e?.seq || 0) < upTo && (e?.setIndex ?? head.setIndex) === head.setIndex;
+  const rows = (setEvents || []).filter(e => before(e) && e.payload?.team === team).sort(compareEventsBySeq);
+  const lineupRow = rows.filter(e => e.type === 'lineup' && e.payload?.lineup).pop();
+  if (!lineupRow) return null;
+  const subs = rows.filter(e => e.type === 'substitution').map(e => e.payload || {});
+  return serverColumn(startingLineup, lineupRow.payload.lineup, subs, lineupRow.payload.liberoSubstitution);
 }
 
 /**
