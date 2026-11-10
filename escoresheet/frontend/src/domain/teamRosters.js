@@ -23,14 +23,16 @@ const clean = (v) => String(v ?? '').trim()
 const swappedKey = (p) => `${fold(p?.first_name)}|${fold(p?.last_name)}`
 const licenceKey = (p) => clean(p?.license_number).toLowerCase()
 
-const PDF_OFFICIAL_ROLES = [['coach', 'Coach'], ['ac1', 'Assistant Coach 1'], ['ac2', 'Assistant Coach 2'], ['physio', 'Physiotherapist'], ['medic', 'Medic']]
+const PDF_OFFICIAL_ROLES = [['coach', 'Coach'], ['ac1', 'Assistant Coach 1'], ['ac2', 'Assistant Coach 2']]
 
 /** The parseRosterPdf result → { players, staff } in the API shape. */
 export function parsedPdfToRoster(parsed) {
   const players = (parsed?.players || [])
     .filter((p) => clean(p?.lastName) || clean(p?.firstName))
     .map((p) => ({
-      number: Number.isInteger(p.number) && p.number >= 0 && p.number <= 99 ? p.number : null,
+      // an Einsatzliste never has shirt numbers, a captain or liberos (owner
+      // 2026-11-10): whatever the PDF's text seems to say, they stay the team's
+      number: null,
       first_name: clean(p.firstName),
       last_name: clean(p.lastName) || clean(p.firstName),
       dob: displayDobToIso(p.dob) || null,
@@ -181,14 +183,14 @@ export function applyEinsatzlisteToGameDraft(draft, imported) {
     if (i !== undefined && !used.has(i)) {
       used.add(i)
       const cur = before[i]
-      ticked.push({ ...cur, number: clean(cur.number) === '' && p.number != null ? p.number : cur.number, license_number: cur.license_number || p.license_number || null, dob: cur.dob || p.dob || null, picked: true })
+      ticked.push({ ...cur, license_number: cur.license_number || p.license_number || null, dob: cur.dob || p.dob || null, picked: true })
       continue
     }
     if (i !== undefined) continue // twice in the list
     let key = nameKey(p)
     while (keys.has(key)) key = `${key}|${p.license_number || added}`
     keys.add(key)
-    ticked.push({ key, number: p.number ?? '', first_name: p.first_name, last_name: p.last_name, dob: p.dob || null, license_number: p.license_number || null, is_libero: false, is_captain: false, picked: true })
+    ticked.push({ key, number: '', first_name: p.first_name, last_name: p.last_name, dob: p.dob || null, license_number: p.license_number || null, is_libero: false, is_captain: false, picked: true })
     added++
   }
   const rest = before.filter((_, i) => !used.has(i)).map((p) => ({ ...p, picked: false }))
