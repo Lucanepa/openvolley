@@ -71,6 +71,18 @@
   </screenshots>
 
   <releases>
+    <release version="3.0.19" date="2026-11-10">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.19</url>
+      <description>
+        <ul>
+          <li>Mac: signed and notarized by Apple, so the app opens like any other app, also offline.</li>
+          <li>Bench: a best-of-3 deciding set is set 3 on the line-up and substitution sheets; "As in set 2" fills set 2's line-up.</li>
+          <li>Result table: a played set under a minute shows 0'.</li>
+          <li>Manager: every page has its own address; game page head with where and when.</li>
+          <li>"Made by Swiss referees" on Home.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.0.18" date="2026-11-10">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.18</url>
       <description>
