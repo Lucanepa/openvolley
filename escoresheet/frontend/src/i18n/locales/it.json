@@ -993,7 +993,9 @@
       "title": "Annullato prima",
       "timeout": "Timeout {{team}}",
       "substitution": "Sostituzione {{team}}: n. {{in}} per n. {{out}}",
-      "text": "Richiesto dopo il punto: la sostituzione viene annullata e non conta, il timeout viene annullato.",
+      "textSubstitution": "Richiesto dopo il punto: la sostituzione viene annullata e non conta.",
+      "textTimeout": "Richiesto dopo il punto: il timeout viene annullato.",
+      "textBoth": "Richiesto dopo il punto: la sostituzione viene annullata e non conta, il timeout viene annullato.",
       "rule": "FIVB casebook 8.5 · SSK 26-1"
     },
     "teamSanctionConfirm": {

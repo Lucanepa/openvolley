@@ -14,7 +14,8 @@ import {
   substituteInIllegalReason,
   REQUEST_ISSUES,
   lateRequestOutcome,
-  decisionChangeTakeBack
+  decisionChangeTakeBack,
+  decisionTakeBackTextKey
 } from '../interruptionRequests'
 import { teamSanctionCounts, resolveSanction } from '../sanctions'
 import { describeEvent } from '../describe'
@@ -573,5 +574,22 @@ describe('rectifying an illegal substitution (row 20, R15.9.2)', () => {
     expect(rectified.some(e => e.id === illegal.id)).toBe(false)
     // not the 7th, and not a second request (the time-out after it is no longer after a substitution)
     expect(substitutionRequestIssues(rectified, 1, 'home')).toEqual([])
+  })
+})
+
+// What a decision change takes back first is explained with the sentence
+// that applies only (it always named the substitution and the time-out)
+describe('decisionTakeBackTextKey', () => {
+  const sub = { type: 'substitution', payload: { team: 'home' } }
+  const to = { type: 'timeout', payload: { team: 'away' } }
+  it('substitution only, time-out only, both', () => {
+    expect(decisionTakeBackTextKey([sub])).toBe('textSubstitution')
+    expect(decisionTakeBackTextKey([sub, { ...sub }])).toBe('textSubstitution')
+    expect(decisionTakeBackTextKey([to])).toBe('textTimeout')
+    expect(decisionTakeBackTextKey([to, sub])).toBe('textBoth')
+  })
+  it('nothing taken back: no sentence', () => {
+    expect(decisionTakeBackTextKey([])).toBeNull()
+    expect(decisionTakeBackTextKey(undefined)).toBeNull()
   })
 })
