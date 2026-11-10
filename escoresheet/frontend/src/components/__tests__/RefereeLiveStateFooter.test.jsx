@@ -132,3 +132,73 @@ describe('Referee: a database-row point reaches the footer', () => {
     expect(footerPoint()).not.toBeNull()
   })
 })
+
+// Undo (3.0.16 test match): the scorer records a time-out for B, then Undo.
+// The footer kept "Timeout B" (the newer action won): it follows the current
+// log now, from the relay bundle or, without one, from the scorer's undo row.
+describe('Referee: the footer after an Undo', () => {
+  const footerTimeout = () => screen.queryByText('refereeDashboard.events.timeout', { exact: false })
+  const footerNone = () => screen.queryByText('refereeDashboard.events.noAction')
+  const point = { type: 'point', seq: 3, ts: at(-60000), setIndex: 1, payload: { team: 'home' } }
+  const timeout = { type: 'timeout', seq: 4, ts: at(-30000), setIndex: 1, payload: { team: 'away' } }
+  const full = (events, liveState = null) => ({ ...bundle(10, 8, liveState), access: 'full', events })
+
+  beforeEach(() => {
+    relay.fetches = []
+    cloud.onRow = null
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 1000 })
+  })
+
+  it('a bundle without the undone time-out shows the point, a bundle with nothing shows "–"', async () => {
+    render(<Referee matchId="match_seed" onExit={() => {}} isMasterMode={false} />)
+    await waitFor(() => expect(relay.fetches.length).toBeGreaterThan(0))
+    await act(async () => { for (const res of relay.fetches) res(full([point, timeout])) })
+    await settle()
+    await waitFor(() => expect(footerTimeout()).not.toBeNull())
+
+    // Undo: the scorer's undo row comes first, then its bundle
+    const before = relay.fetches.length
+    const row = live(1000, 10, 8, { last_event_type: 'undo', last_event_data: null })
+    await waitFor(() => expect(cloud.onRow).toBeTypeOf('function'))
+    await act(async () => { cloud.onRow({ new: row }) })
+    await waitFor(() => expect(relay.fetches.length).toBeGreaterThan(before))
+    await act(async () => { relay.fetches[relay.fetches.length - 1](full([point], row)) })
+    await settle()
+    expect(footerTimeout()).toBeNull()
+    expect(footerPoint()).not.toBeNull()
+
+    // Everything undone: no action left
+    const before2 = relay.fetches.length
+    const row2 = live(2000, 0, 0, { last_event_type: 'undo', last_event_data: null })
+    await act(async () => { cloud.onRow({ new: row2 }) })
+    await waitFor(() => expect(relay.fetches.length).toBeGreaterThan(before2))
+    await act(async () => { relay.fetches[relay.fetches.length - 1](full([], row2)) })
+    await settle()
+    expect(footerPoint()).toBeNull()
+    expect(footerNone()).not.toBeNull()
+  })
+
+  it('following match_live_state alone: the undo row names the action now last', async () => {
+    const { buildLiveStateMatchData } = await import('../../utils/serverDataSync')
+    const matchRow = { id: 'm1', external_id: 'match_seed', home_team: { name: 'Home' }, away_team: { name: 'Away' }, status: 'live' }
+    const timeoutRow = live(0, 10, 8, { team_a_name: 'Home', last_event_type: 'timeout', last_event_team: 'away', last_event_ts: at(-30000) })
+    render(<Referee matchId="match_seed" onExit={() => {}} isMasterMode={false} />)
+    await waitFor(() => expect(relay.fetches.length).toBeGreaterThan(0))
+    await act(async () => { for (const res of relay.fetches) res(buildLiveStateMatchData(matchRow, timeoutRow, 'match_seed')) })
+    await settle()
+    await waitFor(() => expect(footerTimeout()).not.toBeNull())
+
+    const undoRow = live(1000, 10, 8, {
+      team_a_name: 'Home',
+      last_event_type: 'undo',
+      last_event_ts: at(1000),
+      last_event_data: { lastAction: { type: 'point', team: 'home', data: { team: 'home' }, ts: at(-60000) } }
+    })
+    await waitFor(() => expect(cloud.onRow).toBeTypeOf('function'))
+    await act(async () => { cloud.onRow({ new: undoRow }) })
+    await settle()
+    expect(footerTimeout()).toBeNull()
+    expect(footerPoint()).not.toBeNull()
+  })
+})

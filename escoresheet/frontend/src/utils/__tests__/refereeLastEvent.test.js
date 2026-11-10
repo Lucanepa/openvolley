@@ -3,7 +3,10 @@ import {
   lastEventFromLiveState,
   lastEventFromEvents,
   lastEventFromMatchData,
-  pickNewerLastEvent
+  pickNewerLastEvent,
+  nextLastEvent,
+  liveStateRewrite,
+  liveStateLastAction
 } from '../refereeLastEvent'
 
 const T0 = Date.parse('2026-10-06T10:33:24Z')
@@ -92,6 +95,102 @@ describe('lastEventFromMatchData', () => {
     const liveState = { last_event_type: 'timeout', last_event_team: 'away', last_event_ts: new Date(T1).toISOString() }
     const events = [{ type: 'point', seq: 3, ts: T0, payload: { team: 'home' } }]
     expect(lastEventFromMatchData({ liveState, events }).type).toBe('timeout')
+  })
+})
+
+// Undo (3.0.16 test match): the scorer records a time-out for B, then Undo.
+// The footer kept "Timeout B" for good: whichever action was newer won, so the
+// older action left last by the undo could never replace it. Same after an
+// undone substitution, a decision change that reversed one, an undone Go back.
+describe('nextLastEvent: the footer follows the current log', () => {
+  const T2 = T1 + 30000
+  const point = { type: 'point', seq: 3, ts: new Date(T0).toISOString(), setIndex: 1, payload: { team: 'home' } }
+  const timeout = { type: 'timeout', seq: 4, ts: new Date(T1).toISOString(), setIndex: 1, payload: { team: 'away' } }
+  const shownTimeout = lastEventFromEvents([timeout])
+
+  it('a current bundle without the undone time-out shows the point before it', () => {
+    const e = nextLastEvent(shownTimeout, { events: [point], eventsAreCurrent: true })
+    expect(e).toMatchObject({ type: 'point', team: 'home', timestamp: T0 })
+  })
+
+  it('a current bundle with nothing left to show clears the line ("–")', () => {
+    expect(nextLastEvent(shownTimeout, { events: [{ type: 'lineup', seq: 1, ts: T0 }], eventsAreCurrent: true })).toBeNull()
+    expect(nextLastEvent(shownTimeout, { events: [], eventsAreCurrent: true })).toBeNull()
+  })
+
+  it('a decision change: the point now for the other team', () => {
+    const swapped = { ...point, payload: { team: 'away', swappedFrom: 'home' } }
+    const e = nextLastEvent(shownTimeout, { events: [swapped, { type: 'decision_change', seq: 5, ts: T2, payload: {} }], eventsAreCurrent: true })
+    expect(e).toMatchObject({ type: 'point', team: 'away' })
+  })
+
+  it('a push newer than the bundle still shows first (the push can come before the bundle)', () => {
+    const shownPoint = lastEventFromEvents([point])
+    const row = { last_event_type: 'timeout', last_event_team: 'away', last_event_ts: new Date(T1).toISOString() }
+    expect(nextLastEvent(shownPoint, { liveState: row })).toMatchObject({ type: 'timeout', timestamp: T1 })
+    // ... and an older bundle shown with it (not current) does not take it back
+    expect(nextLastEvent(shownTimeout, { events: [point], liveState: row })).toMatchObject({ type: 'timeout' })
+  })
+
+  it('without a current bundle an older copy never rolls the line back', () => {
+    expect(nextLastEvent(shownTimeout, { events: [point] })).toBe(shownTimeout)
+    expect(nextLastEvent(shownTimeout, {})).toBe(shownTimeout)
+  })
+
+  // The referee following match_live_state alone (no relay bundle): the
+  // scorer's undo row names the action now last
+  it('an undo row after the shown action shows the action it names', () => {
+    const row = {
+      last_event_type: 'undo',
+      last_event_ts: new Date(T2).toISOString(),
+      last_event_data: { lastAction: liveStateLastAction([point]) }
+    }
+    expect(nextLastEvent(shownTimeout, { liveState: row })).toMatchObject({ type: 'point', team: 'home', timestamp: T0 })
+    // the same row again changes nothing
+    const once = nextLastEvent(shownTimeout, { liveState: row })
+    expect(nextLastEvent(once, { liveState: row })).toEqual(once)
+  })
+
+  it('an undo row of everything clears the line', () => {
+    const row = { last_event_type: 'undo', last_event_ts: new Date(T2).toISOString(), last_event_data: { lastAction: null } }
+    expect(nextLastEvent(shownTimeout, { liveState: row })).toBeNull()
+  })
+
+  it('an undo row older than the shown action changes nothing (a late copy)', () => {
+    const later = { type: 'point', team: 'away', data: null, timestamp: T2 + 5000 }
+    const row = { last_event_type: 'undo', last_event_ts: new Date(T2).toISOString(), last_event_data: { lastAction: liveStateLastAction([point]) } }
+    expect(nextLastEvent(later, { liveState: row })).toBe(later)
+  })
+
+  it('an undo row of an older scorer (no lastAction) changes nothing', () => {
+    const row = { last_event_type: 'undo', last_event_ts: new Date(T2).toISOString(), last_event_data: null }
+    expect(nextLastEvent(shownTimeout, { liveState: row })).toBe(shownTimeout)
+  })
+
+  it('an older bundle with the undo row it is shown with: the row decides', () => {
+    const row = { last_event_type: 'undo', last_event_ts: new Date(T2).toISOString(), last_event_data: { lastAction: liveStateLastAction([point]) } }
+    expect(nextLastEvent(shownTimeout, { events: [point, timeout], liveState: row })).toMatchObject({ type: 'point', timestamp: T0 })
+  })
+})
+
+describe('liveStateLastAction / liveStateRewrite', () => {
+  it('names the last displayable action with the footer fields only', () => {
+    const sub = { type: 'substitution', seq: 7, ts: new Date(T1).toISOString(), setIndex: 2, payload: { team: 'home', playerOut: 4, playerIn: 9, position: 'III', note: 'x' } }
+    expect(liveStateLastAction([sub])).toEqual({
+      type: 'substitution', team: 'home', data: { team: 'home', setIndex: 2, playerOut: 4, playerIn: 9 }, ts: new Date(T1).toISOString()
+    })
+    expect(liveStateLastAction([])).toBeNull()
+  })
+
+  it('reads only rows of pushes that rewrote the log and name the action', () => {
+    const lastAction = { type: 'point', team: 'away', data: {}, ts: new Date(T0).toISOString() }
+    for (const type of ['undo', 'decision_change', 'replay', 'rectification', 'manual_correction']) {
+      expect(liveStateRewrite({ last_event_type: type, last_event_ts: T1, last_event_data: { lastAction } }))
+        .toEqual({ at: T1, lastEvent: { type: 'point', team: 'away', data: {}, timestamp: T0 } })
+    }
+    expect(liveStateRewrite({ last_event_type: 'point', last_event_ts: T1, last_event_data: { lastAction } })).toBeNull()
+    expect(liveStateRewrite({ last_event_type: 'undo', last_event_ts: T1, last_event_data: { reason: 'x' } })).toBeNull()
+    expect(liveStateRewrite(null)).toBeNull()
   })
 })
 
