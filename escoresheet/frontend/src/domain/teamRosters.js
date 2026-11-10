@@ -489,3 +489,40 @@ export function handTypedForClub(players, staff, people, gender = null) {
   for (const s of staff || []) add(s, 'coaches')
   return { offer, noLicence }
 }
+
+// ---------------------------------------------------------------- a game roster's officials
+// Owner 2026-11-10: "have the possibility to change role for the staff
+// (coach/ac1/ac2/p/m) and also have people be put as P/M manually (e.g. not
+// necessarily from the club)".
+
+/**
+ * A game roster draft with the official `key` in `role`. A ticked official
+ * takes the role from whoever had it ticked (unticked: each role once, as
+ * gameRosterBody wants). { draft, replaced }: the one unticked, or null.
+ */
+export function setGameDraftStaffRole(draft, key, role) {
+  if (!STAFF_ROLES.includes(role)) return { draft, replaced: null }
+  const staff = draft?.staff || []
+  const me = staff.find((s) => s.key === key)
+  if (!me) return { draft, replaced: null }
+  let replaced = null
+  const out = staff.map((s) => {
+    if (s.key === key) return { ...s, role }
+    if (me.picked && s.picked && s.role === role) {
+      replaced = s
+      return { ...s, picked: false }
+    }
+    return s
+  })
+  return { draft: { ...(draft || {}), players: draft?.players || [], staff: out }, replaced }
+}
+
+/**
+ * The role offered for an official added by hand to a game roster: the
+ * physiotherapist, else the medic, else the first role nobody holds (ticked),
+ * else the physiotherapist.
+ */
+export function roleForNewOfficial(staff) {
+  const held = new Set((staff || []).filter((s) => s?.picked).map((s) => s.role))
+  return ['Physiotherapist', 'Medic', ...STAFF_ROLES].find((r) => !held.has(r)) || 'Physiotherapist'
+}

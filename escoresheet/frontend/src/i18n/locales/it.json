@@ -3483,6 +3483,7 @@
       "games": "Partite",
       "gamesHint": "Prepara l’elenco di ogni partita: spunta chi gioca. Puoi modificarlo in qualsiasi momento.",
       "noGames": "Nessuna partita di questa squadra in calendario da oggi in poi.",
+      "gameNotFound": "La partita #{{number}} non è nel calendario di questa squadra da oggi in poi.",
       "vs": "contro",
       "at": "da",
       "home": "Casa",

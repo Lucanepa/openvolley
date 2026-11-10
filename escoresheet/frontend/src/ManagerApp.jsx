@@ -699,10 +699,27 @@ export default function ManagerApp({ authLink = null }) {
     if (flipUnusable) flip.setApp(flip.home)
   }, [flipUnusable, flip])
 
-  // The open tab lives in the URL hash, so a reload or a bookmark keeps it
-  const selectTab = useCallback((id) => {
+  // The open tab lives in the URL hash, so a reload or a bookmark keeps it.
+  // `push`: a page of its own (a game's roster), so Back returns to the tab
+  const selectTab = useCallback((id, { push = false } = {}) => {
     setTab(id)
-    try { window.history.replaceState(window.history.state, '', `#${id}`) } catch { /* no history */ }
+    try {
+      if (push) window.history.pushState(window.history.state, '', `#${id}`)
+      else window.history.replaceState(window.history.state, '', `#${id}`)
+    } catch { /* no history */ }
+  }, [])
+  // Back and Forward (and an address typed in) open the tab or page of the URL
+  useEffect(() => {
+    const onPop = () => {
+      const next = tabFromHash()
+      if (next) setTab(next)
+    }
+    window.addEventListener('popstate', onPop)
+    window.addEventListener('hashchange', onPop)
+    return () => {
+      window.removeEventListener('popstate', onPop)
+      window.removeEventListener('hashchange', onPop)
+    }
   }, [])
 
   // db/023: redeem a kept team link once an account is signed in (and again
