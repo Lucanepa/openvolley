@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Activity, ArrowLeft, ClipboardList, FileText, House, KeyRound, Medal, ScrollText, Settings, ShieldCheck, Shirt, Trophy, Users } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
@@ -88,15 +88,35 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
   const allowed = useMemo(() => manageTabsFor(access, brand), [access, brand])
   // A tab's own page after a slash (My teams: '<team id>/<game number>', a
   // game's roster; owner 2026-11-10: "new page with url with the game id")
+  // and every tab's pages the same way (usePanelRoute: competitions, teams,
+  // clubs, people, accounts, games, matches, tournaments)
   const [tabId, ...tabRest] = String(tab || '').split('/')
   const current = allowed.includes(tabId) ? tabId : allowed[0]
   const subRoute = current === tabId ? tabRest.join('/') : ''
+  // The page each tab was on: a hidden panel keeps it (and its unsaved
+  // edits), and the tab's button opens it again
+  const lastRoutes = useRef({})
+  if (current) lastRoutes.current[current] = subRoute
+  const routeOf = (id) => (id === current ? subRoute : lastRoutes.current[id] || '')
+  const onRouteOf = (id) => (sub, opts) => onTab?.(sub ? `${id}/${sub}` : id, opts)
+  const selectTab = (id) => {
+    const last = lastRoutes.current[id]
+    onTab?.(last && id !== current ? `${id}/${last}` : id)
+  }
+  // a page of another tab (a team of My club in My teams, say); null when this account has no such tab
+  const navigate = (path, opts = { push: true }) => {
+    const id = String(path || '').split('/')[0]
+    if (!allowed.includes(id)) return false
+    onTab?.(path, opts)
+    return true
+  }
+  const canOpen = (id) => allowed.includes(id)
+  const pageProps = (id) => ({ route: routeOf(id), onRoute: onRouteOf(id), navigate, canOpen })
   // Panels mount on first visit and then stay mounted (ConsolePanel)
   const [visited, setVisited] = useState(() => new Set(current ? [current] : []))
-  // "Activity" on a match (matches tab): the activity tab, filtered to it
-  const [activityMatch, setActivityMatch] = useState('')
+  // "Activity" on a match (matches tab): the activity tab, filtered to it (#activity/<match>)
   const showActivity = allowed.includes('activity')
-    ? (ext) => { setActivityMatch(ext); onTab?.('activity') }
+    ? (ext) => onTab?.(`activity/${encodeURIComponent(ext)}`, { push: true })
     : null
   useEffect(() => {
     if (current && !visited.has(current)) setVisited(v => new Set([...v, current]))
@@ -146,26 +166,26 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
         </>}
         tabs={tabs}
         current={current}
-        onSelect={onTab}
+        onSelect={selectTab}
         navLabel={t('manage.nav')}
         footer={<LegalLinks className="text-[11px] text-stone-400" />}
       >
         {phoneTop && <div className="mb-3 sm:hidden">{phoneTop}</div>}
         {/* every list of the console: one card per item (owner 2026-11-10) */}
         <RowListCards.Provider value>
-        {visited.has('accounts') && <ConsolePanel id="accounts" current={current}><AccountsPanel selfId={user.id} selfIsSuperAdmin={!!access?.isSuperAdmin} app={scope} /></ConsolePanel>}
+        {visited.has('accounts') && <ConsolePanel id="accounts" current={current}><AccountsPanel selfId={user.id} selfIsSuperAdmin={!!access?.isSuperAdmin} app={scope} {...pageProps('accounts')} /></ConsolePanel>}
         {visited.has('invites') && <ConsolePanel id="invites" current={current}><InvitesPanel app={scope} /></ConsolePanel>}
-        {visited.has('clubs') && <ConsolePanel id="clubs" current={current}><ClubsPanel /></ConsolePanel>}
-        {visited.has('myclub') && <ConsolePanel id="myclub" current={current}><MyClubPanel clubs={access.managedClubs} /></ConsolePanel>}
-        {visited.has('myteams') && <ConsolePanel id="myteams" current={current}><MyTeamsPanel teams={access.managedTeams} route={current === 'myteams' ? subRoute : ''} onRoute={(sub, opts) => onTab?.(sub ? `myteams/${sub}` : 'myteams', opts)} /></ConsolePanel>}
+        {visited.has('clubs') && <ConsolePanel id="clubs" current={current}><ClubsPanel {...pageProps('clubs')} /></ConsolePanel>}
+        {visited.has('myclub') && <ConsolePanel id="myclub" current={current}><MyClubPanel clubs={access.managedClubs} {...pageProps('myclub')} /></ConsolePanel>}
+        {visited.has('myteams') && <ConsolePanel id="myteams" current={current}><MyTeamsPanel teams={access.managedTeams} {...pageProps('myteams')} /></ConsolePanel>}
         {visited.has('settings') && <ConsolePanel id="settings" current={current}><SettingsPanel /></ConsolePanel>}
-        {visited.has('games') && <ConsolePanel id="games" current={current}><OfficialGamesPanel /></ConsolePanel>}
-        {visited.has('matches') && <ConsolePanel id="matches" current={current}><ClosedMatchesPanel onShowActivity={showActivity} /></ConsolePanel>}
+        {visited.has('games') && <ConsolePanel id="games" current={current}><OfficialGamesPanel {...pageProps('games')} /></ConsolePanel>}
+        {visited.has('matches') && <ConsolePanel id="matches" current={current}><ClosedMatchesPanel onShowActivity={showActivity} {...pageProps('matches')} /></ConsolePanel>}
         {visited.has('scoresheets') && <ConsolePanel id="scoresheets" current={current}><ScoresheetsPanel app={brand.app} /></ConsolePanel>}
         {visited.has('audit') && <ConsolePanel id="audit" current={current}><AuditPanel app={scope} /></ConsolePanel>}
-        {visited.has('activity') && <ConsolePanel id="activity" current={current}><ActivityPanel app={scope} initialMatch={activityMatch} /></ConsolePanel>}
-        {visited.has('teams') && <ConsolePanel id="teams" current={current}><SavedTeamsPanel userId={user.id} sport={scope} /></ConsolePanel>}
-        {visited.has('tournaments') && <ConsolePanel id="tournaments" current={current}><TournamentsPanel /></ConsolePanel>}
+        {visited.has('activity') && <ConsolePanel id="activity" current={current}><ActivityPanel app={scope} initialMatch={(() => { try { return decodeURIComponent(routeOf('activity')) } catch { return routeOf('activity') } })()} /></ConsolePanel>}
+        {visited.has('teams') && <ConsolePanel id="teams" current={current}><SavedTeamsPanel userId={user.id} sport={scope} {...pageProps('teams')} /></ConsolePanel>}
+        {visited.has('tournaments') && <ConsolePanel id="tournaments" current={current}><TournamentsPanel {...pageProps('tournaments')} /></ConsolePanel>}
         </RowListCards.Provider>
       </ConsoleShell>
     </div>

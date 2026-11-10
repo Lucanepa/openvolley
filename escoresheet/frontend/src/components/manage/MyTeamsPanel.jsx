@@ -11,8 +11,8 @@ import RequestsSection from './RequestsSection'
 import ClubPlayerPickerModal from '../ClubPlayerPickerModal'
 import ClubShield from './ClubShield'
 import SignaturePad from '../SignaturePad'
-import { usePanelData, useOnline, OfflineBanner, PanelHead, InlineError, useErrorText } from './common'
-import { Button, Checkbox, Chip, DateField, EmptyInset, Field, Input, Notice, Row, RowList, RowTool, Select, SectionHeader, SkeletonRows, confirmDialog, dayLabel, timeLabel, toast, cn } from '../../ui'
+import { usePanelData, usePanelRoute, useOnline, OfflineBanner, PageMissing, PanelHead, InlineError, useErrorText } from './common'
+import { Button, Checkbox, Chip, DateField, EmptyInset, Field, Input, KeyValue, Notice, Row, RowList, RowTool, Select, SectionHeader, SkeletonRows, confirmDialog, dayLabel, timeLabel, toast, cn } from '../../ui'
 
 const STAFF_ROLE_KEYS = {
   Coach: 'benchRoles.coach',
@@ -30,26 +30,25 @@ const when = (v) => [dayLabel(v, { year: true }), timeLabel(v)].filter(Boolean).
  * roster of each of its games, sent ahead so the scoring tablet has it in the
  * hall without internet. An account with several teams picks one first.
  *
- * A game's roster is a page of its own (owner 2026-11-10: "new page with url
- * with the game id"): `route` '<team id>/<game number>' (the console keeps it
- * in the URL: #myteams/<team id>/<game number>), `onRoute(route, { push })`
- * opens or leaves it. Without onRoute the panel keeps the route itself.
+ * Pages (owner 2026-11-10: "new page with url with the game id" and "make
+ * sure every page there gets their own page"): the team at #myteams/<team id>
+ * and a game's roster at #myteams/<team id>/<game number> (usePanelRoute;
+ * `route` and `onRoute` from the console). Without a route, the first team.
  */
 export default function MyTeamsPanel({ teams = [], route = '', onRoute = null }) {
   const { t } = useTranslation()
-  const [teamId, setTeamId] = useState(teams[0]?.id || '')
-  const [ownRoute, setOwnRoute] = useState('')
-  const [routeTeam, routeGame] = String((onRoute ? route : ownRoute) || '').split('/')
-  const go = (next, opts) => (onRoute ? onRoute(next, opts) : setOwnRoute(next))
-  const byRoute = routeGame ? teams.find((x) => x.id === routeTeam) : null
-  const team = byRoute || teams.find((x) => x.id === teamId) || teams[0]
+  const [[routeTeam, routeGame], go] = usePanelRoute(route, onRoute)
+  const byRoute = routeTeam ? teams.find((x) => x.id === routeTeam) : null
+  const team = byRoute || teams[0]
   if (!team) return <EmptyInset>{t('manage.myTeams.none')}</EmptyInset>
-  const gameNumber = byRoute && /^\d+$/.test(routeGame) ? routeGame : null
+  // a team of the URL this account does not manage (any more)
+  if (routeTeam && !byRoute) return <PageMissing onBack={() => go([])} backLabel={t('manage.tabs.myteams')} />
+  const gameNumber = byRoute && /^\d+$/.test(routeGame || '') ? routeGame : null
   return (
     <div className="space-y-8" data-testid="manage-my-teams">
       {teams.length > 1 && !gameNumber && (
         <Field label={t('manage.myTeams.pick')}>
-          <Select value={team.id} onChange={(e) => setTeamId(e.target.value)} data-testid="my-teams-pick">
+          <Select value={team.id} onChange={(e) => go([e.target.value])} data-testid="my-teams-pick">
             {teams.map((x) => <option key={x.id} value={x.id}>{x.name} · {x.club_name}</option>)}
           </Select>
         </Field>
@@ -59,8 +58,8 @@ export default function MyTeamsPanel({ teams = [], route = '', onRoute = null })
         key={team.id}
         team={team}
         gameNumber={gameNumber}
-        onOpenGame={(n) => go(`${team.id}/${n}`, { push: true })}
-        onCloseGame={() => go('')}
+        onOpenGame={(n) => go([team.id, n])}
+        onCloseGame={() => go([team.id])}
       />
     </div>
   )
@@ -409,12 +408,8 @@ function GameRosterPage({ team, game, squad, squadLoading = false, clubPlayers, 
         <PanelHead title={`${game.side === 'home' ? t('manage.myTeams.vs') : t('manage.myTeams.at')} ${opponent || '–'}`}>
           <Chip tone={game.side === 'home' ? 'indigo' : 'stone'}>{game.side === 'home' ? t('manage.myTeams.home') : t('manage.myTeams.away')}</Chip>
         </PanelHead>
-        <p className="-mt-2 mb-4 flex flex-wrap gap-x-3 gap-y-0.5 text-sm text-stone-500">
-          <span>{when(game.datetime)}</span>
-          {game.league && <span>{game.league}</span>}
-          {game.hall && <span>{game.hall}</span>}
-          <span>#{game.game_number}</span>
-        </p>
+        {/* when, where, league, referees (owner 2026-11-10: "at the top where, when, referees etc") */}
+        <GameFacts game={game} />
         <OfflineBanner online={online} />
         <div className="space-y-4" data-testid="game-roster">
           {error && <Notice>{errorText(error)}</Notice>}
@@ -451,8 +446,7 @@ function GameRosterPage({ team, game, squad, squadLoading = false, clubPlayers, 
                       <Checkbox
                         checked={p.picked}
                         onChange={(e) => setPlayer(p.key, { picked: e.target.checked })}
-                        label={<span className="font-medium text-stone-900">{p.last_name} {p.first_name}</span>}
-                        hint={p.dob ? dayLabel(p.dob, { year: true }) : undefined}
+                        label={<PersonLine person={p} />}
                         className="min-w-0 flex-1"
                       />
                       <div className="flex items-center gap-2">
@@ -493,8 +487,7 @@ function GameRosterPage({ team, game, squad, squadLoading = false, clubPlayers, 
                       <Checkbox
                         checked={s.picked}
                         onChange={(e) => setStaff(s.key, { picked: e.target.checked })}
-                        label={<span className="font-medium text-stone-900">{s.last_name} {s.first_name}</span>}
-                        hint={s.dob ? dayLabel(s.dob, { year: true }) : undefined}
+                        label={<PersonLine person={s} />}
                         className="min-w-0 flex-1"
                       />
                       <Select
@@ -601,5 +594,49 @@ function GameRosterPage({ team, game, squad, squadLoading = false, clubPlayers, 
           : t('manage.myTeams.sig.padCaptain', { name: captain ? `${captain.first_name} ${captain.last_name}`.trim() : '' })}
       />, document.body)}
     </>
+  )
+}
+
+/**
+ * A person of a game's roster on one line (owner 2026-11-10: "all on one
+ * line (bday, licence etc)"): the name, then the date of birth and the
+ * licence number, quieter; it wraps only on a narrow screen.
+ */
+function PersonLine({ person }) {
+  const { t } = useTranslation()
+  const facts = [
+    person.dob ? dayLabel(person.dob, { year: true }) : null,
+    String(person.license_number || '').trim() ? t('clubPlayers.licence', { number: String(person.license_number).trim() }) : null
+  ].filter(Boolean)
+  return (
+    <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+      <span className="font-medium text-stone-900">{person.last_name} {person.first_name}</span>
+      {facts.length > 0 && <span className="text-xs tabular-nums text-stone-500">{facts.join(' · ')}</span>}
+    </span>
+  )
+}
+
+/** The game's when, where (with a map link), league, game number and referees. */
+function GameFacts({ game }) {
+  const { t } = useTranslation()
+  const place = [game.hall_address, [game.hall_postal_code, game.city].filter(Boolean).join(' ')].filter(Boolean).join(', ')
+  const where = [game.hall, place].filter(Boolean).join(', ')
+  const referees = Array.isArray(game.referees) ? game.referees : []
+  const items = [
+    { label: t('manage.myTeams.facts.when'), value: when(game.datetime) || '–' },
+    {
+      label: t('manage.myTeams.facts.where'),
+      value: where
+        ? <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(where)}`} target="_blank" rel="noopener noreferrer" className="text-red-600 underline decoration-red-300 underline-offset-2 hover:text-red-700">{where}</a>
+        : '–'
+    },
+    { label: t('manage.myTeams.facts.league'), value: game.league || '–' },
+    { label: t('manage.myTeams.facts.referees'), value: referees.length ? referees.join(', ') : t('manage.myTeams.facts.noReferees') },
+    { label: t('manage.myTeams.facts.game'), value: <span className="tabular-nums">#{game.game_number}</span> }
+  ]
+  return (
+    <div className="mb-5 rounded-2xl border border-stone-200/70 bg-white p-4 shadow-card sm:p-5" data-testid="game-facts">
+      <KeyValue items={items} variant="stats" className="gap-y-3 text-sm" />
+    </div>
   )
 }

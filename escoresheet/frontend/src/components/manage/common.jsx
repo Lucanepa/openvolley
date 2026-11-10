@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { WifiOff } from 'lucide-react'
+import { ArrowLeft, WifiOff } from 'lucide-react'
 import KitModal from './KitModal'
 import { errorKeyOf } from '../../lib/accountApi'
-import { Banner, Button, Field, Input, Textarea, StatusPill, usePanelShown } from '../../ui'
+import { Banner, Button, EmptyInset, Field, Input, Notice, SkeletonRows, Textarea, StatusPill, usePanelShown } from '../../ui'
 
 /** navigator.onLine, following the online/offline events. */
 export function useOnline() {
@@ -26,6 +26,45 @@ export function useKitLang() {
   const { i18n } = useTranslation()
   const lang = String(i18n?.language || 'de').slice(0, 2).toUpperCase()
   return ['DE', 'EN', 'FR', 'IT'].includes(lang) ? lang : 'DE'
+}
+
+/**
+ * A panel's own pages (owner 2026-11-10: "make sure every page there gets
+ * their own page (team, club, game, player etc)"). The console keeps them in
+ * the URL after the tab: #<tab>/<route>, e.g. #teams/<competition>/<team>.
+ * Returns [segments (decoded), go(segments | route string, { push })];
+ * opening a page pushes a history entry (the browser's Back returns), a
+ * redirect (a page deleted, say) replaces it. Without onRoute (a panel on its
+ * own, as in tests) the panel keeps the route itself.
+ */
+export function usePanelRoute(route, onRoute) {
+  const [own, setOwn] = useState('')
+  const current = onRoute ? String(route || '') : own
+  const go = useCallback((next, opts = { push: true }) => {
+    const path = Array.isArray(next) ? next.filter((x) => x != null && x !== '').map((x) => encodeURIComponent(String(x))).join('/') : String(next || '')
+    if (onRoute) onRoute(path, opts)
+    else setOwn(path)
+  }, [onRoute])
+  const segments = current.split('/').filter(Boolean).map((x) => {
+    try { return decodeURIComponent(x) } catch { return x }
+  })
+  return [segments, go]
+}
+
+/**
+ * A page of the URL whose thing is not (yet) there: loading, the read's
+ * error, or gone (deleted, another account's, a link from before), with the
+ * way back to the list.
+ */
+export function PageMissing({ loading = false, error = null, onBack, backLabel }) {
+  const { t } = useTranslation()
+  const errorText = useErrorText()
+  return (
+    <section data-testid="page-missing">
+      {onBack && <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={onBack} className="mb-3">{backLabel}</Button>}
+      {error ? <Notice>{errorText(error)}</Notice> : loading ? <SkeletonRows rows={4} pill={false} /> : <EmptyInset>{t('manage.pageNotFound')}</EmptyInset>}
+    </section>
+  )
 }
 
 /**

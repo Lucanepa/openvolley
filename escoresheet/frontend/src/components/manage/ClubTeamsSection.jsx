@@ -13,7 +13,7 @@ import { Button, Chip, EmptyInset, Notice, Row, RowList, RowTool, SkeletonRows, 
  * code for that team, 3 uses, 30 days) to hand to the team's coach or
  * manager; it is shown once. Taking a team manager off removes the team only.
  */
-export default function ClubTeamsSection({ club }) {
+export default function ClubTeamsSection({ club, onOpenTeam = null }) {
   const { t } = useTranslation()
   const online = useOnline()
   const errorText = useErrorText()
@@ -108,6 +108,9 @@ export default function ClubTeamsSection({ club }) {
                 ))
                 : <Chip>{t('manage.clubTeams.noManager')}</Chip>}
               tools={<>
+                {onOpenTeam && (
+                  <RowTool onClick={() => onOpenTeam(team.id)} data-testid="club-team-open">{t('manage.clubTeams.open')}</RowTool>
+                )}
                 <RowTool disabled={!online || busy === team.id} onClick={() => createLink(team)} data-testid="club-team-link">
                   <Link2 size={14} aria-hidden className="mr-1 inline" />{t('manage.clubTeams.createLink')}
                 </RowTool>

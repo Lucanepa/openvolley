@@ -4,6 +4,7 @@
 // is mocked (lib/tournamentApi); its rules are tested in the backend suite.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { useState } from 'react'
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -336,5 +337,68 @@ describe('Tournaments tab', () => {
     expect(click).toHaveBeenCalled()
     expect(created[0].type).toBe('text/csv;charset=utf-8')
     click.mockRestore()
+  })
+})
+
+// Owner 2026-11-10: "make sure every page there gets their own page". A
+// tournament is a page of its own: #tournaments/<tournament id>.
+describe('a tournament is a page (#tournaments/<id>)', () => {
+  /** The panel with its route kept as the console keeps it; returns the go() calls ([path, opts]). */
+  const routed = (initial = '') => {
+    const calls = []
+    function Harness() {
+      const [route, setRoute] = useState(initial)
+      return <TournamentsPanel route={route} onRoute={(path, opts) => { calls.push([path, opts]); setRoute(path) }} />
+    }
+    render(<Harness />)
+    return calls
+  }
+
+  it('opens from its row; its back button returns to the list', async () => {
+    const calls = routed()
+    fireEvent.click(await screen.findByRole('button', { name: 'Züri Open' }))
+    expect(calls).toEqual([['t1', { push: true }]])
+    expect(await screen.findByRole('heading', { name: 'Züri Open' })).toBeInTheDocument()
+    expect(api.get).toHaveBeenCalledWith('t1')
+    fireEvent.click(screen.getByRole('button', { name: 'tournaments.allTournaments' }))
+    expect(calls.at(-1)).toEqual(['', { push: true }])
+    expect(await screen.findByTestId('tournament-new')).toBeInTheDocument()
+  })
+
+  it('opens from the URL', async () => {
+    routed('t1')
+    expect(await screen.findByRole('heading', { name: 'Züri Open' })).toBeInTheDocument()
+    expect(api.get).toHaveBeenCalledWith('t1')
+  })
+
+  it('a tournament that is not there: not found once the list is in, never read; the way back', async () => {
+    const calls = routed('t-gone')
+    expect(await screen.findByText('manage.pageNotFound')).toBeInTheDocument()
+    expect(api.get).not.toHaveBeenCalled()
+    fireEvent.click(within(screen.getByTestId('page-missing')).getByRole('button', { name: 'tournaments.allTournaments' }))
+    expect(calls).toEqual([['', { push: true }]])
+  })
+
+  it('a new tournament opens at once, before the list has it', async () => {
+    api.create.mockResolvedValue(ok({ tournament: { ...TOUR, id: 't2', title: 'Beach Cup' } }))
+    api.get.mockResolvedValue(ok(bundle({ tournament: { ...TOUR, id: 't2', title: 'Beach Cup' } })))
+    const calls = routed()
+    fireEvent.click(await screen.findByTestId('tournament-new'))
+    fireEvent.change(screen.getByTestId('tournament-title'), { target: { value: 'Beach Cup' } })
+    fireEvent.change(screen.getByTestId('tournament-starts'), { target: { value: '2026-08-01' } })
+    fireEvent.click(screen.getByTestId('tournament-create'))
+    await waitFor(() => expect(calls).toEqual([['t2', { push: true }]]))
+    expect(await screen.findByRole('heading', { name: 'Beach Cup' })).toBeInTheDocument()
+    expect(screen.queryByTestId('page-missing')).toBeNull()
+  })
+
+  it('a deleted tournament leaves its page in place of the history entry', async () => {
+    api.remove = vi.fn(async () => ok({ deleted: true }))
+    const calls = routed('t1')
+    await screen.findByRole('heading', { name: 'Züri Open' })
+    fireEvent.click(screen.getByRole('radio', { name: 'tournaments.sections.details' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'tournaments.delete' }))
+    await waitFor(() => expect(api.remove).toHaveBeenCalledWith('t1'))
+    await waitFor(() => expect(calls.at(-1)).toEqual(['', { push: false }]))
   })
 })
