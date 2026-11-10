@@ -6,8 +6,10 @@ import { apiFrom } from '../../lib/apiClient'
 import { selectAll } from '../../lib/selectAll'
 import { STAFF_ROLES, validateSavedRoster, MAX_PLAYERS, MAX_STAFF, sportOf } from '../../domain/savedTeams'
 import { shirtNumberDigits } from '../../domain/roster'
-import { addClubPlayersToSquad, clubPersonToPlayer, clubPlayersForGender, mergeImportedRoster, officialOfRole, officialRolesOf, parsedPdfToRoster, playerFinder, setSquadOfficial, wrongGenderIndexes } from '../../domain/teamRosters'
+import { addClubPlayersToSquad, clubFillOf, clubPersonOf, clubPersonToPlayer, clubPlayersForGender, handTypedForClub, linkRowToClubPerson, mergeImportedRoster, officialOfRole, officialRolesOf, parsedPdfToRoster, playerFinder, setSquadOfficial, wrongGenderIndexes } from '../../domain/teamRosters'
 import ClubPlayerPickerModal from '../ClubPlayerPickerModal'
+import ClubShield from './ClubShield'
+import ClubOfferModal from './ClubOfferModal'
 import SearchSelect from './SearchSelect'
 import { InlineError } from './common'
 import { Button, DateField, Field, Input, Select, Checkbox, Switch, SectionHeader, EmptyInset, IconButton, confirmDialog, toast, cn } from '../../ui'
@@ -188,10 +190,39 @@ export function vmNameOptions({ clubs, clubName, scheduleNames, all = false }) {
   return { names: scheduleNames || [], narrowed: false, club: club?.name || null }
 }
 
+// The people Save offered for the club's lists and the user left unticked:
+// not asked again for this team on this device (a convenience only)
+const declinedKey = (teamId) => `ov_club_offer_declined:${teamId}`
+function readDeclined(teamId) {
+  try {
+    const v = JSON.parse(localStorage.getItem(declinedKey(teamId)) || '[]')
+    return new Set(Array.isArray(v) ? v : [])
+  } catch {
+    return new Set()
+  }
+}
+function addDeclined(teamId, keys) {
+  if (!keys.length) return
+  try {
+    const all = readDeclined(teamId)
+    for (const k of keys) all.add(k)
+    localStorage.setItem(declinedKey(teamId), JSON.stringify([...all].slice(-200)))
+  } catch { /* private mode: asked again next time */ }
+}
+
 // Small labels: shown above each input on phones (one input per row), and
 // as the column heads from sm on.
 const CELL_LABEL = 'mb-0.5 block text-[11px] font-medium text-stone-500 sm:sr-only'
 const HEAD = 'hidden sm:grid text-[11px] font-bold uppercase tracking-wide text-stone-500'
+// one card per player or official (owner 2026-11-10: "at least border of the item to avoid confusion")
+const ROW_CARD = 'rounded-xl border border-stone-200 bg-white p-2 shadow-card'
+// The column heads line up with the card's inputs (its padding and border);
+// the last column holds the remove button, and the shield before it with the club's lists
+const HEAD_PAD = 'px-[9px] pb-1'
+const PLAYER_COLS = { plain: 'grid-cols-[7rem_4rem_1fr_1fr_9.5rem_2.25rem]', club: 'grid-cols-[7rem_4rem_1fr_1fr_9.5rem_4.75rem]' }
+const PLAYER_COLS_SM = { plain: 'sm:grid-cols-[7rem_4rem_1fr_1fr_9.5rem_2.25rem]', club: 'sm:grid-cols-[7rem_4rem_1fr_1fr_9.5rem_4.75rem]' }
+const STAFF_COLS = { plain: 'grid-cols-[11rem_1fr_1fr_9.5rem_8rem_2.25rem]', club: 'grid-cols-[11rem_1fr_1fr_9.5rem_8rem_4.75rem]' }
+const STAFF_COLS_SM = { plain: 'sm:grid-cols-[11rem_1fr_1fr_9.5rem_8rem_2.25rem]', club: 'sm:grid-cols-[11rem_1fr_1fr_9.5rem_8rem_4.75rem]' }
 
 /**
  * Edit one saved team: its fields (PATCH), its players and team officials
@@ -207,14 +238,22 @@ const HEAD = 'hidden sm:grid text-[11px] font-bold uppercase tracking-wide text-
  * team's gender to the players, anyone of the club's lists (either gender)
  * to an official's role. Save refuses a player of the players list with the
  * other gender than the team's (the server too: OV_WRONG_GENDER); officials
- * are never checked.
+ * are never checked. With the club's lists each row has a shield (ClubShield):
+ * green in a list uploaded from VolleyManager, gray typed by hand (also when
+ * kept in the club's lists by hand; it links the row to someone of the club). `onAddToClub(people)` (POST /api/team/:id/club-people): Save
+ * first asks whether the ones typed by hand with a licence number go into
+ * the club's lists too (`clubName` names the club there).
  */
-export default function TeamEditor({ team, competition, online, onBack, onChanged, onDeleted, saveRoster: saveRosterWith = null, fixedFields = false, pdfImport = false, clubPlayers = null }) {
+export default function TeamEditor({ team, competition, online, onBack, onChanged, onDeleted, saveRoster: saveRosterWith = null, fixedFields = false, pdfImport = false, clubPlayers = null, onAddToClub = null, clubName = '' }) {
   const { t } = useTranslation()
   const pdfInput = useRef(null)
   const [importing, setImporting] = useState(false)
   const [clubPicker, setClubPicker] = useState(false)
   const [officialPicker, setOfficialPicker] = useState(false)
+  // the row the gray shield links: { list: 'players' | 'staff', key, query }
+  const [linking, setLinking] = useState(null)
+  // Save's question for the club's lists: { offer, noLicence, body, ordered }
+  const [clubOffer, setClubOffer] = useState(null)
   const beach = sportOf(competition) === 'beach'
   const [fields, setFields] = useState(() => ({
     name: team.name || '',
@@ -233,6 +272,31 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
   const [rosterError, setRosterError] = useState('')
   const [rowErrors, setRowErrors] = useState({})
   const [svrzNames, setSvrzNames] = useState([])
+  // The team as last loaded. A newer copy (saved in another tab, which the
+  // console shows again with a fresh load) starts the drafts afresh while
+  // they hold no unsaved edits; unsaved edits stay (owner 2026-11-10: the
+  // officials' licences saved in My teams were missing in Competitions)
+  const loaded = useRef(team)
+  useEffect(() => {
+    const prev = loaded.current
+    if (team === prev) return
+    loaded.current = team
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
+    if (beach) {
+      if (same(draftToBeachRosterBody(slots, coach), draftToBeachRosterBody(beachSlotsFromPlayers(prev.players), toCoachDraft(prev.staff)))) {
+        setSlots(beachSlotsFromPlayers(team.players))
+        setCoach(toCoachDraft(team.staff))
+      }
+    } else if (same(draftToRosterBody(players, staff), draftToRosterBody((prev.players || []).map(toPlayerDraft), (prev.staff || []).map(toStaffDraft)))) {
+      setPlayers((team.players || []).map(toPlayerDraft))
+      setStaff((team.staff || []).map(toStaffDraft))
+    }
+    const keys = ['name', 'short_name', 'club', 'color', 'svrz_team_name']
+    if (keys.every((k) => (fields[k] || '') === (prev[k] || ''))) {
+      setFields(Object.fromEntries(keys.map((k) => [k, team[k] || ''])))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [team])
   // The Club dropdown and the VolleyManager names (owner: "why are these not
   // dropdowns"): the clubs with their teams (GET /api/public/clubs) and the
   // schedule's team names (GET /api/saved-teams/vm-teams). null: not loaded
@@ -364,10 +428,27 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
       setRosterError(t(problems[0].key, problems[0].params))
       return
     }
+    // typed by hand, with a licence number: Save asks whether they go into
+    // the club's lists too (owner 2026-11-10); those left unticked once are
+    // not asked again for this team on this device
+    if (!beach && clubPlayers && onAddToClub) {
+      const found = handTypedForClub(body.players, body.staff, people, clubPlayers.gender)
+      const declined = readDeclined(team.id)
+      const ask = found.offer.filter((o) => !declined.has(o.key))
+      if (ask.length) {
+        setClubOffer({ offer: ask, noLicence: found.noLicence, body, ordered })
+        return
+      }
+    }
+    await writeRoster(body, ordered)
+  }
+
+  // the roster (and then the ones ticked for the club's lists) to the server
+  const writeRoster = async (body, ordered, toClub = []) => {
     setSavingRoster(true)
     const res = saveRosterWith ? await saveRosterWith(body) : await savedTeamsApi.putRoster(team.id, body)
-    setSavingRoster(false)
     if (res.error) {
+      setSavingRoster(false)
       // the server's gender check names the player by its index in the body
       if (res.error.code === 'OV_WRONG_GENDER' && Number.isInteger(res.error.index) && !beach) {
         setRowErrors({ [`players:${players.indexOf(ordered[res.error.index])}`]: t(errorKeyOf(res.error)) })
@@ -376,6 +457,13 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
       return
     }
     toast.success(t('savedTeams.rosterSaved'))
+    if (toClub.length) {
+      // the roster is saved either way; the club's lists are a second step
+      const added = await onAddToClub(toClub.map((o) => ({ list: o.list, ...o.person })))
+      if (added?.error) toast.error(t('clubPlayers.offer.failed'))
+      else toast.success(t('clubPlayers.offer.added', { count: added?.data?.added ?? toClub.length }))
+    }
+    setSavingRoster(false)
     const saved = res.data?.team
     if (!saved && !beach) setPlayers(ordered)
     if (saved) {
@@ -458,6 +546,27 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
     setRosterError('')
     setRowErrors({})
     toast.success(t('clubPlayers.officialSet', { role: t(STAFF_ROLE_KEYS[role], role), name: `${c.first_name || ''} ${c.last_name}`.trim() }))
+  }
+  // The gray shield: the row typed by hand takes the names, date of birth and
+  // licence number of someone uploaded from VolleyManager (green then)
+  const shieldOf = (row) => (clubPlayers ? clubPersonOf(row, people) : null)
+  const cols = clubPlayers ? 'club' : 'plain'
+  const linkRow = ([c]) => {
+    const target = linking
+    setLinking(null)
+    if (!c || !target) return
+    if (target.list === 'players') setPlayers((list) => list.map((x) => (x.key === target.key ? linkRowToClubPerson(x, c) : x)))
+    else setStaff((list) => list.map((x) => (x.key === target.key ? linkRowToClubPerson(x, c) : x)))
+    setRosterError('')
+    setRowErrors({})
+    toast.success(t('clubPlayers.linked', { name: `${c.first_name || ''} ${c.last_name}`.trim() }))
+  }
+  const answerOffer = async (ticked, unticked) => {
+    const o = clubOffer
+    if (!o) return
+    addDeclined(team.id, unticked)
+    await writeRoster(o.body, o.ordered, o.offer.filter((x) => ticked.includes(x.key)))
+    setClubOffer(null)
   }
 
   return (
@@ -576,7 +685,7 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
             <EmptyInset>{t('savedTeams.emptyRoster')}</EmptyInset>
           ) : (
             <div>
-              <div className={cn(HEAD, 'grid-cols-[7rem_4rem_1fr_1fr_9.5rem_auto] gap-2 px-1 pb-1')}>
+              <div className={cn(HEAD, PLAYER_COLS[cols], 'gap-2', HEAD_PAD)}>
                 <span>{t('savedTeams.license')}</span>
                 <span>{t('savedTeams.number')}</span>
                 <span>{t('savedTeams.firstName')}</span>
@@ -584,10 +693,13 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
                 <span>{t('savedTeams.dob')}</span>
                 <span />
               </div>
-              <div className="divide-y divide-stone-200">
-                {players.map((p, i) => (
-                  <div key={p.key} className={cn('py-2', !p.active && 'opacity-60')} data-testid="player-row">
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-[7rem_4rem_1fr_1fr_9.5rem_auto] sm:items-center">
+              <div className="space-y-2">
+                {players.map((p, i) => {
+                  const club = shieldOf(p)
+                  const fill = club && !club.manual ? clubFillOf(p, club) : {}
+                  return (
+                  <div key={p.key} className={cn(ROW_CARD, !p.active && 'opacity-60')} data-testid="player-row">
+                    <div className={cn('grid grid-cols-1 gap-2 sm:items-center', PLAYER_COLS_SM[cols])}>
                       <label className="block">
                         <span className={CELL_LABEL}>{t('savedTeams.license')}</span>
                         <Input value={p.license_number} onChange={e => updatePlayer(p.key, { license_number: e.target.value })} aria-label={t('savedTeams.license')} maxLength={40} className="tabular-nums" />
@@ -608,7 +720,15 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
                         <span className={CELL_LABEL}>{t('savedTeams.dob')}</span>
                         <DateField value={p.dob} onChange={v => updatePlayer(p.key, { dob: v })} aria-label={t('savedTeams.dob')} />
                       </label>
-                      <div className="flex items-center justify-end">
+                      <div className="flex items-center justify-end gap-1">
+                        {clubPlayers && (
+                          <ClubShield
+                            person={club}
+                            fill={fill}
+                            onFill={() => updatePlayer(p.key, fill)}
+                            onLink={() => setLinking({ list: 'players', key: p.key, query: p.last_name })}
+                          />
+                        )}
                         <IconButton icon={X} label={`${t('common.delete', 'Delete')} ${p.last_name || ''}`.trim()} onClick={() => setPlayers(list => list.filter(x => x.key !== p.key))} />
                       </div>
                     </div>
@@ -622,7 +742,8 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
                       <InlineError error={rowErrors[`players:${i}`]} />
                     </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}
@@ -642,7 +763,7 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
           } />
           {staff.length > 0 && (
             <div>
-              <div className={cn(HEAD, 'grid-cols-[11rem_1fr_1fr_9.5rem_8rem_auto] gap-2 px-1 pb-1')}>
+              <div className={cn(HEAD, STAFF_COLS[cols], 'gap-2', HEAD_PAD)}>
                 <span>{t('savedTeams.role')}</span>
                 <span>{t('savedTeams.firstName')}</span>
                 <span>{t('savedTeams.lastName')}</span>
@@ -650,10 +771,13 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
                 <span>{t('savedTeams.license')}</span>
                 <span />
               </div>
-              <div className="divide-y divide-stone-100">
-                {staff.map((s, i) => (
-                  <div key={s.key} className="py-2" data-testid="staff-row">
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-[11rem_1fr_1fr_9.5rem_8rem_auto] sm:items-center">
+              <div className="space-y-2">
+                {staff.map((s, i) => {
+                  const club = shieldOf(s)
+                  const fill = club && !club.manual ? clubFillOf(s, club) : {}
+                  return (
+                  <div key={s.key} className={ROW_CARD} data-testid="staff-row">
+                    <div className={cn('grid grid-cols-1 gap-2 sm:items-center', STAFF_COLS_SM[cols])}>
                       <label className="block">
                         <span className={CELL_LABEL}>{t('savedTeams.role')}</span>
                         <Select value={s.role} onChange={e => updateStaff(s.key, { role: e.target.value })} aria-label={t('savedTeams.role')}>
@@ -676,13 +800,22 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
                         <span className={CELL_LABEL}>{t('savedTeams.license')}</span>
                         <Input value={s.license_number} onChange={e => updateStaff(s.key, { license_number: e.target.value })} aria-label={t('savedTeams.license')} maxLength={40} />
                       </label>
-                      <div className="flex items-center justify-end">
+                      <div className="flex items-center justify-end gap-1">
+                        {clubPlayers && (
+                          <ClubShield
+                            person={club}
+                            fill={fill}
+                            onFill={() => updateStaff(s.key, fill)}
+                            onLink={() => setLinking({ list: 'staff', key: s.key, query: s.last_name })}
+                          />
+                        )}
                         <IconButton icon={X} label={`${t('common.delete', 'Delete')} ${s.last_name || ''}`.trim()} onClick={() => setStaff(list => list.filter(x => x.key !== s.key))} />
                       </div>
                     </div>
                     <InlineError error={rowErrors[`staff:${i}`]} className="mt-1" />
                   </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}
@@ -710,6 +843,23 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
         initialRole={STAFF_ROLES.find((r) => !officialOfRole(staff, r)) || STAFF_ROLES[0]}
         rolesOf={(c) => officialRolesOf(staff, c)}
         holderOf={(role) => named(officialOfRole(staff, role)) || null}
+      />
+      <ClubPlayerPickerModal
+        open={!!linking}
+        mode="link"
+        onClose={() => setLinking(null)}
+        onPick={linkRow}
+        players={(linking?.list === 'players' ? offered : people).filter((c) => !c.manual)}
+        initialQuery={linking?.query || ''}
+      />
+      <ClubOfferModal
+        open={!!clubOffer}
+        offer={clubOffer?.offer}
+        noLicence={clubOffer?.noLicence}
+        clubName={clubName}
+        busy={savingRoster}
+        onCancel={() => setClubOffer(null)}
+        onSave={answerOffer}
       />
     </div>
   )

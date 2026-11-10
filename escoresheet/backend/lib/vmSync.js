@@ -33,6 +33,15 @@
 export const VM_BASE = 'https://volleymanager.volleyball.ch'
 export const ZURICH_TZ = 'Europe/Zurich'
 export const BATCH_SIZE = 200
+/**
+ * The search pages. On 10.11.2026 the 180-day window (1045 games) stopped at
+ * 200: VolleyManager took more than 20 s for the second page of 200, three
+ * times. Pages of 100 with 45 s each; a page that still fails is asked again
+ * at the same offset with half the size, down to SEARCH_MIN_PAGE_SIZE.
+ */
+export const SEARCH_PAGE_SIZE = 100
+export const SEARCH_MIN_PAGE_SIZE = 25
+export const SEARCH_TIMEOUT_MS = 45000
 export const DEFAULT_WINDOW = Object.freeze({ daysBack: 1, daysAhead: 14 })
 /** Upper bound on a sync window, so a typo cannot ask VM for decades of games. */
 export const MAX_WINDOW_DAYS = 400
@@ -636,6 +645,9 @@ export const SEARCH_PATH = '/api/indoorvolleyball.refadmin/api%5celasticsearchre
 
 async function searchPage(jar, csrfToken, offset, dateFrom, dateTo, { fetch: fetchImpl, baseUrl, http, batchSize }) {
   const label = `search offset ${offset}`
+  // A search page is slow on VolleyManager's side: its own timeout (unless the
+  // caller set one), one retry, then fetchAllGames halves the page
+  const searchHttp = { ...http, timeoutMs: http.searchTimeoutMs ?? http.timeoutMs ?? SEARCH_TIMEOUT_MS, retries: http.searchRetries ?? Math.min(http.retries ?? 1, 1) }
   // Headers as the Edge Function sent them (no Accept). Unlike it, redirects
   // are not followed: a redirect here means the session is not authenticated.
   const resp = await fetchWithRetry(fetchImpl, `${baseUrl}${SEARCH_PATH}`, {
@@ -647,7 +659,7 @@ async function searchPage(jar, csrfToken, offset, dateFrom, dateTo, { fetch: fet
     },
     body: buildSearchBody(csrfToken, offset, batchSize, dateFrom, dateTo),
     redirect: 'manual'
-  }, { ...http, label })
+  }, { ...searchHttp, label })
   jar.update(resp)
   if (resp.status >= 300 && resp.status < 400) {
     throw new VmHttpError(`${label}: redirected (session not authenticated?)`, { status: resp.status })
@@ -663,13 +675,15 @@ async function searchPage(jar, csrfToken, offset, dateFrom, dateTo, { fetch: fet
 }
 
 /**
- * Pages through the search API. A page that still fails after its retries
- * stops the paging: the games fetched so far are returned with
- * `incomplete: true` (upserting them is harmless; the run is marked 'partial').
- * A failing first page throws.
+ * Pages through the search API. A later page that fails after its retry
+ * (a timeout, a network error, 429 or 5xx) is asked again at the same offset
+ * with half the page size, down to `minBatchSize`; one that still fails stops
+ * the paging: the games fetched so far are returned with `incomplete: true`
+ * (upserting them is harmless; the run is marked 'partial'). A failing first
+ * page throws.
  */
 export async function fetchAllGames(jar, csrfToken, dateFrom, dateTo, {
-  fetch: fetchImpl, baseUrl = VM_BASE, http = {}, logger = null, batchSize = BATCH_SIZE, pageDelayMs = 100, sleep = defaultSleep
+  fetch: fetchImpl, baseUrl = VM_BASE, http = {}, logger = null, batchSize = SEARCH_PAGE_SIZE, minBatchSize = SEARCH_MIN_PAGE_SIZE, pageDelayMs = 100, sleep = defaultSleep
 } = {}) {
   const opts = { fetch: fetchImpl, baseUrl, http: { ...http, logger, sleep: http.sleep ?? sleep }, batchSize }
   const first = await searchPage(jar, csrfToken, 0, dateFrom, dateTo, opts)
@@ -678,16 +692,22 @@ export async function fetchAllGames(jar, csrfToken, dateFrom, dateTo, {
   logger?.log?.(`VM: ${total} game(s) in window, ${items.length} in the first page`)
   let incomplete = false
   let pageError = null
-  // Page count from the page size VM actually returned (it may cap `limit`
-  // below what we asked for), plus slack; an empty page also stops the loop.
-  const pageSize = Math.max(1, Math.min(items.length || batchSize, batchSize))
-  const maxPages = Math.ceil(total / pageSize) + 2
-  for (let page = 1; items.length < total && page < maxPages; page++) {
+  // The page size VM actually returned (it may cap `limit` below what we
+  // asked for); an empty page also stops the loop, and so does the guard
+  let size = Math.max(1, Math.min(items.length || batchSize, batchSize))
+  const smallest = Math.max(1, Math.min(minBatchSize, size))
+  const maxRequests = Math.ceil(total / smallest) + 8
+  for (let n = 1; items.length < total && n < maxRequests; n++) {
     if (pageDelayMs > 0) await sleep(pageDelayMs)
     let batch
     try {
-      batch = await searchPage(jar, csrfToken, items.length, dateFrom, dateTo, opts)
+      batch = await searchPage(jar, csrfToken, items.length, dateFrom, dateTo, { ...opts, batchSize: size })
     } catch (err) {
+      if (err?.retryable && size > smallest) {
+        size = Math.max(smallest, Math.floor(size / 2))
+        logger?.warn?.(`VM: ${err.message}; asking again in pages of ${size}`)
+        continue
+      }
       incomplete = true
       pageError = err.message
       logger?.warn?.(`VM: paging stopped at ${items.length}/${total}: ${err.message}`)
@@ -938,7 +958,9 @@ function wrapLogger(logger, redact) {
  * @param {object} [o.logger]              console-like; every line is scrubbed of secrets
  * @param {{username: string, password: string}} o.credentials
  * @param {string} [o.baseUrl]             VolleyManager origin (tests)
- * @param {object} [o.http]                { timeoutMs, retries, backoffMs, sleep }
+ * @param {object} [o.http]                { timeoutMs, retries, backoffMs, sleep, searchTimeoutMs, searchRetries }
+ * @param {number} [o.batchSize]           rows per database upsert
+ * @param {number} [o.pageSize]            games per search page (SEARCH_PAGE_SIZE; halved on a failing page)
  * @param {boolean} [o.dryRun]             fetch + transform only, no database
  * @param {string} [o.roleAttribute]       the account's referee-delegate role (VM_ROLE_FOR_GAMES)
  */
@@ -953,6 +975,7 @@ export async function runVmSync({
   baseUrl = VM_BASE,
   http = {},
   batchSize = BATCH_SIZE,
+  pageSize = SEARCH_PAGE_SIZE,
   pageDelayMs = 100,
   dryRun = false,
   staleRunningMs = STALE_RUNNING_MS
@@ -1011,7 +1034,7 @@ export async function runVmSync({
     ;({ jar, csrfToken } = await vmLogin(credentials, { fetch: fetchImpl, baseUrl, http, logger: log, roleAttribute }))
 
     const fetched = await fetchAllGames(jar, csrfToken, win.dateFrom, win.dateTo, {
-      fetch: fetchImpl, baseUrl, http, logger: log, batchSize, pageDelayMs, sleep: http.sleep
+      fetch: fetchImpl, baseUrl, http, logger: log, batchSize: pageSize, pageDelayMs, sleep: http.sleep
     })
     result.fetched = fetched.items.length
     result.total = fetched.total

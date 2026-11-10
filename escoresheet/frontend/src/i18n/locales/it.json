@@ -3297,6 +3297,7 @@
         "team_squad": "Giocatori della squadra salvati",
         "team_roster": "Elenco della partita inviato",
         "club_licences": "Elenco delle licenze caricato",
+        "club_licences_manual": "Aggiunto a mano alle liste della società",
         "account_request_approve": "Richiesta di registrazione approvata",
         "account_request_reject": "Richiesta di registrazione rifiutata"
       }
@@ -3559,6 +3560,9 @@
       "title": "Licenze",
       "hint": "Carica gli elenchi dell’amministrazione della società di VolleyManager (l’esportazione Excel). Il file viene letto su questo dispositivo: solo numero di licenza, cognome, nome, data di nascita e sesso vengono inviati e conservati. Ogni caricamento sostituisce quell’elenco.",
       "list": "Elenco",
+      "manual": "Aggiunto a mano",
+      "manualCount_one": "{{count}} aggiunta a mano",
+      "manualCount_other": "{{count}} aggiunte a mano",
       "lists": {
         "players": "Giocatori",
         "scorers": "Segnapunti",
@@ -5243,7 +5247,40 @@
     "warningMen_one": "{{names}} è registrata nella società come donna, e questa è una partita maschile. Controlla prima del sorteggio.",
     "warningMen_other": "{{names}} sono registrate nella società come donne, e questa è una partita maschile. Controlla prima del sorteggio.",
     "warningWomen_one": "{{names}} è registrato nella società come uomo, e questa è una partita femminile. Controlla prima del sorteggio.",
-    "warningWomen_other": "{{names}} sono registrati nella società come uomini, e questa è una partita femminile. Controlla prima del sorteggio."
+    "warningWomen_other": "{{names}} sono registrati nella società come uomini, e questa è una partita femminile. Controlla prima del sorteggio.",
+      "linkTitle": "Collega a una persona della società",
+      "link": "Collega",
+      "linked": "Collegato alla società: {{name}}",
+      "shield": {
+        "club": "Nelle liste della società (licenza {{number}})",
+        "fill": "Nelle liste della società: tocca per inserire {{fields}}",
+        "fields": {
+          "first_name": "il nome",
+          "dob": "la data di nascita",
+          "license_number": "il numero di licenza"
+        },
+        "hand": "Inserito a mano: non nelle liste della società",
+        "handLink": "Inserito a mano: tocca per collegarlo a una persona della società",
+        "manual": "Nelle liste della società, aggiunto a mano: verde quando la lista di VolleyManager ha il numero di licenza",
+        "manualLink": "Nelle liste della società, aggiunto a mano: tocca per collegarlo a una persona delle liste di VolleyManager"
+      },
+      "offer": {
+        "title": "Salvare anche nella società?",
+        "body": "Non ancora nelle liste di {{club}}. Le persone spuntate vi vengono salvate: ogni squadra della società può aggiungerle. Il loro scudo resta grigio finché la lista di VolleyManager non ha il loro numero di licenza.",
+        "theClub": "la società",
+        "list": {
+          "players": "Lista giocatori",
+          "coaches": "Lista allenatori"
+        },
+        "noLicence": "Senza numero di licenza queste persone non possono entrare nelle liste della società: {{names}}",
+        "back": "Indietro",
+        "saveAdd_one": "Salva e aggiungi {{count}} alla società",
+        "saveAdd_other": "Salva e aggiungi {{count}} alla società",
+        "saveOnly": "Salva solo la rosa",
+        "added_one": "{{count}} aggiunta alle liste della società",
+        "added_other": "{{count}} aggiunte alle liste della società",
+        "failed": "La rosa è salvata, ma l’aggiunta alle liste della società non è riuscita. Salva di nuovo per riprovare."
+      }
   },
   "benchRequests": {
     "title": "Richieste al segnapunti",

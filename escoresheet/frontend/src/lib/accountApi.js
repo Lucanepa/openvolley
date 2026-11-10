@@ -242,6 +242,14 @@ export const teamApi = {
   clubPlayers(teamId) {
     return apiRequest('GET', `/api/team/${enc(teamId)}/club-players`)
   },
+  /**
+   * db/026: people typed by hand into the squad, kept in the club's lists
+   * (until an upload of that list has them) -> { added, already }.
+   * people: [{ list, sv_number, last_name, first_name, dob, gender }], at most 30
+   */
+  addClubPeople(teamId, people) {
+    return apiRequest('POST', `/api/team/${enc(teamId)}/club-people`, { people })
+  },
   /** db/025: the team manager requests of the team (the shape of clubApi.requests) */
   requests(teamId) {
     return apiRequest('GET', `/api/team/${enc(teamId)}/requests`)
