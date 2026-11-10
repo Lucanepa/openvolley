@@ -993,7 +993,9 @@
       "title": "Wird zerscht zruggnoh",
       "timeout": "Timeout {{team}}",
       "substitution": "Wächsel {{team}}: #{{in}} für #{{out}}",
-      "text": "Nachem Punkt beaatreit: de Wächsel wird rückgängig gmacht und nöd zellt, s Timeout gstriche.",
+      "textSubstitution": "Nachem Punkt beaatreit: de Wächsel wird rückgängig gmacht und nöd zellt.",
+      "textTimeout": "Nachem Punkt beaatreit: s Timeout wird gstriche.",
+      "textBoth": "Nachem Punkt beaatreit: de Wächsel wird rückgängig gmacht und nöd zellt, s Timeout gstriche.",
       "rule": "FIVB Casebook 8.5 · SSK 26-1"
     },
     "teamSanctionConfirm": {

@@ -22,7 +22,8 @@ import {
   isDefaultSet as isDefaultSetOf,
   getSet5LeftTeamLabel,
   getFirstServeTeamKey,
-  consistencyWarnings
+  consistencyWarnings,
+  rectificationServerColumn
 } from './utils/scoresheetModel';
 import { trackServiceRounds, courtChangeIndex, splitSet5Rounds, type ServiceRound } from './utils/serviceRounds';
 import { awardsPoint as sanctionAwardsPoint } from '../src/domain/sanctions.js';
@@ -271,7 +272,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     // When the game went back (domain/rectify): a cancelled point is still a
     // rally (it passed the serve, it scores nothing), a point set by hand
     // scores but passes no serve, and the going back gives the serve to the
-    // team it names
+    // team it names without a rotation, as the court: its player at position
+    // I serves (a "Serves next" changed by hand ended A's column II and
+    // opened III, while the court kept #8 serving)
     const rallyEvents = setEvents
       .filter(e => e.type === 'point' || e.type === 'cancelled_point' || (e.type === 'rectification' && (e.payload?.serve === 'home' || e.payload?.serve === 'away')))
       .sort((a, b) => {
@@ -283,10 +286,14 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     const rallyTeams = rallyEvents.map(e => (e.type === 'rectification' ? e.payload?.serve : e.payload?.team));
     const rallyCounted = rallyEvents.map(e => e.type === 'point');
     const rallyPasses = rallyEvents.map(e => !(e.type === 'point' && e.payload?.scoreAdjusted === true));
+    const rallyServed = rallyEvents.map(e => (e.type === 'rectification'
+      ? rectificationServerColumn(setEvents, e, e.payload?.serve === 'home' ? homeLineupArray : awayLineupArray)
+      : undefined));
     const trackedRounds = trackServiceRounds({
       pointTeams: rallyTeams,
       counted: rallyCounted,
       passes: rallyPasses,
+      served: rallyServed,
       firstServer: firstServeTeam,
       finished: !!setInfo?.finished
     });

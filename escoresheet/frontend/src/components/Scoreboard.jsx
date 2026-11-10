@@ -31,6 +31,7 @@ import LongPressProgressIndicator from './LongPressProgressIndicator'
 import DraggedPlayerOverlay from './DraggedPlayerOverlay'
 import { setPlayerDragImage } from '../utils/dragImage'
 import { teamShortLabels } from '../utils/teamShortLabels'
+import { LOG_REWRITE_EVENTS, liveStateLastAction } from '../utils/refereeLastEvent.js'
 import ballFallback from '../ball_fallback.png'
 
 // Primary ball image (with a bundled copy as fallback)
@@ -56,7 +57,7 @@ import { defaultSetStartTime, actualStartRemark, startsFromSchedule, startSchedu
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
 import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet, getLeftTeamLabelForSet } from '../domain/rules'
 import { resolveSanction, deriveTeamSanctionFlags, deferredPenaltyPoints, penaltyOfPoint, teamSanctionCounts } from '../domain/sanctions'
-import { REQUEST_ISSUES, isReplayPending, substitutionRequestIssues, timeoutRequestIssues, requestBlockReason, entryWithoutCompletedRally, substitutionRequestThisInterruption, substituteInIllegalReason, lateRequestOutcome, decisionChangeTakeBack } from '../domain/interruptionRequests'
+import { REQUEST_ISSUES, isReplayPending, substitutionRequestIssues, timeoutRequestIssues, requestBlockReason, entryWithoutCompletedRally, substitutionRequestThisInterruption, substituteInIllegalReason, lateRequestOutcome, decisionChangeTakeBack, decisionTakeBackTextKey } from '../domain/interruptionRequests'
 import RequestWarningDialog, { RequestOptionRow } from './scoreboard/RequestWarningDialog.jsx'
 import { classifyTimeoutRequest } from '../domain/timeouts'
 import { rallyStatusOf, currentSetOf } from '../domain/rally'
@@ -124,6 +125,8 @@ const BREAK_ENDING_PUSHES = new Set(['set_end', 'end_interval', 'set_start', 'ma
 // The live-state push that sends the state again after a reconnect, a reload
 // or a sign-in: no event of its own (it keeps the last one's last_event_*)
 const RECONNECT_PUSH = 'reconnect'
+// The SERVE number box's side padding, in the number's em (renderServeSide)
+const SERVE_NUMBER_PAD_EM = 0.18
 
 // The scoring tab reloaded takes its Web Lock back (the single-tab guard)
 // when its new page loads within this long of the old one going away
@@ -2568,9 +2571,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // and Point Hub read last_event_type, and 'reconnect' is no event they
       // know; it also overwrote a finished match's 'match_end'). Not known
       // since a reload: left out, the stored row keeps its own.
+      // A push after which another, older action is last or none (an undo,
+      // a decision change, a Go back, ...) names it (lastAction): the
+      // referee's footer showed the undone one for good (liveStateRewrite)
+      let pushedData = eventData || null
+      if (LOG_REWRITE_EVENTS.includes(eventType)) {
+        const loggedEvents = await db.events.where('matchId').equals(matchId).toArray()
+        pushedData = { ...(eventData || {}), lastAction: liveStateLastAction(loggedEvents) }
+      }
       const pushedEvent = eventType === RECONNECT_PUSH
         ? (lastPushedEventRef.current?.matchId === matchId ? lastPushedEventRef.current : null)
-        : { matchId, type: eventType || null, team: eventTeam || null, data: eventData || null, ts: new Date().toISOString() }
+        : { matchId, type: eventType || null, team: eventTeam || null, data: pushedData, ts: new Date().toISOString() }
       if (eventType !== RECONNECT_PUSH) lastPushedEventRef.current = pushedEvent
 
       // Map directly from snapshot to Supabase table
@@ -5296,10 +5307,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // One side of the row above the court: the SERVE indicator (its label and
   // the server's number box) and that side's Game captain button. The box
-  // fills the side from the top of the score row down to the court (owner,
-  // 2026-11-08: it was a small box in the corner), as wide as the side allows,
-  // short of the score digits; the number scales with the box (container
-  // units). The Game captain button keeps its place in the outer bottom
+  // runs from the top of the score row down to the court (owner, 2026-11-08:
+  // it was a small box in the corner), next to the score and as wide as its
+  // content: the number, two digits wide whatever it is (#1 -> #12 moves
+  // nothing), with its padding (owner, 3.0.16: "auto width is fine"; it
+  // filled the side before). The number scales with the side (container
+  // units of the indicator's area). The Game captain button keeps its place in the outer bottom
   // corner: the box stands beside it where the side is wide enough, above it
   // where not (styles.css .serve-side). The indicator is rendered on both
   // sides, hidden on the one not serving, so nothing moves when the serve
@@ -5329,38 +5342,64 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 style={{ ...serveBallBaseStyle, width: vmin(6), height: vmin(6), alignSelf: side === 'left' ? 'flex-start' : 'flex-end' }}
               />
             ) : (
-              <>
-                <div style={{
-                  fontSize: vmin(2.25),
-                  fontWeight: 700,
-                  color: 'var(--accent)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '2px',
-                  textAlign: 'center'
-                }}>
-                  SERVE
-                </div>
-                <div style={{
-                  flex: '1 1 0',
-                  minHeight: 0,
-                  containerType: 'size',
+              // the indicator's whole area is the container (its units size
+              // the number); the label and the box inside it are as wide as
+              // their content, on the score's side
+              <div data-serve-area={side} style={{
+                flex: '1 1 0',
+                minHeight: 0,
+                containerType: 'size',
+                display: 'flex',
+                justifyContent: side === 'left' ? 'flex-end' : 'flex-start'
+              }}>
+                <div data-serve-indicator={side} style={{
                   display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background: 'rgba(34, 197, 94, 0.1)',
-                  border: '3px solid var(--accent)',
-                  borderRadius: '10px'
+                  flexDirection: 'column',
+                  alignItems: 'stretch',
+                  gap: '4px',
+                  height: '100%',
+                  maxWidth: '100%'
                 }}>
-                  <span style={{
-                    fontSize: 'min(94cqh, 55cqw)',
-                    lineHeight: 1,
+                  <div style={{
+                    fontSize: vmin(2.25),
+                    lineHeight: 1.2,
                     fontWeight: 700,
-                    color: 'var(--accent)'
+                    color: 'var(--accent)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '2px',
+                    textAlign: 'center'
                   }}>
-                    {servingPlayer.number}
-                  </span>
+                    SERVE
+                  </div>
+                  <div data-serve-number-box={side} style={{
+                    flex: '1 1 0',
+                    minHeight: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    // the number's size: the area's height less the label,
+                    // the gap and the border; two digits and the padding
+                    // within its width. The padding is in the number's em.
+                    fontSize: `min(calc((100cqh - ${vmin(2.25) * 1.2 + 4 + 6}px) * 0.94), 60cqw)`,
+                    padding: `0 ${SERVE_NUMBER_PAD_EM}em`,
+                    background: 'rgba(34, 197, 94, 0.1)',
+                    border: '3px solid var(--accent)',
+                    borderRadius: '10px'
+                  }}>
+                    <span style={{
+                      lineHeight: 1,
+                      fontWeight: 700,
+                      color: 'var(--accent)',
+                      fontVariantNumeric: 'tabular-nums',
+                      // two digits wide for any number
+                      minWidth: '2ch',
+                      textAlign: 'center'
+                    }}>
+                      {servingPlayer.number}
+                    </span>
+                  </div>
                 </div>
-              </>
+              </div>
             )}
           </div>
           {chip && (
@@ -23835,7 +23874,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       )
                     })}
                   </ul>
-                  <p className="m-0 mt-1.5 text-xs text-stone-500">{t('scoreboard.decisionTakeBack.text')}</p>
+                  {/* only the sentence that applies (substitution, time-out, both) */}
+                  <p className="m-0 mt-1.5 text-xs text-stone-500">{t(`scoreboard.decisionTakeBack.${decisionTakeBackTextKey(replayRallyConfirm.takeBack)}`)}</p>
                   <p className="m-0 mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">{t('scoreboard.decisionTakeBack.rule')}</p>
                 </div>
               )}

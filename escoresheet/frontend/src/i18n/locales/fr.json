@@ -992,7 +992,9 @@
       "title": "Annulé d’abord",
       "timeout": "Temps mort {{team}}",
       "substitution": "Remplacement {{team}} : n° {{in}} pour n° {{out}}",
-      "text": "Demandé après le point : le remplacement est annulé et ne compte pas, le temps mort est annulé.",
+      "textSubstitution": "Demandé après le point : le remplacement est annulé et ne compte pas.",
+      "textTimeout": "Demandé après le point : le temps mort est annulé.",
+      "textBoth": "Demandé après le point : le remplacement est annulé et ne compte pas, le temps mort est annulé.",
       "rule": "FIVB casebook 8.5 · SSK 26-1"
     },
     "teamSanctionConfirm": {
