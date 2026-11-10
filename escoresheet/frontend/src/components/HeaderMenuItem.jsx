@@ -11,7 +11,7 @@ import {
  * One row of the SimpleHeader / DashboardHeader dropdown.
  *
  * item: { icon, label, onClick, active, color, toggle, badge, disabled, keepOpen,
- *         submenu, info, status: { tone, word } }
+ *         submenu, info, status: { tone, word }, testId }
  *
  * A row with nothing to do (`info`, or `disabled` without an onClick: the TEST
  * MODE flag, the Server / WebSocket / Database status) is drawn as a static
@@ -50,6 +50,7 @@ export default function HeaderMenuItem({ item, onClose }) {
         }
       }}
       disabled={item.disabled}
+      data-testid={item.testId}
       aria-pressed={item.active !== undefined ? on : undefined}
       className={cn(
         MENU_ROW,

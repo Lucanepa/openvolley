@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { validatePin, validatePinSupabase, listAvailableMatches, getWebSocketStatus, listAvailableMatchesForBenchSupabase, getMatchData, matchTeamNames, setRelayDevice, getRelayServerStatus } from './utils/serverDataSync'
 import { benchJoinableMatches } from './utils/relayMatchList'
 import MatchEntry from './components/MatchEntry'
+import { useUprightLock } from './components/referee/upright.js'
 import DashboardHeader from './components/DashboardHeader'
 import ContextualHelpPanel from './components/help/ContextualHelpPanel'
 import UpdateBanner from './components/UpdateBanner'
@@ -145,6 +146,10 @@ export function benchGameLabel(t, gameNumber) {
 
 export default function BenchApp() {
   const { t, i18n } = useTranslation()
+  // Bench tablets are upright (owner 2026-11-09): locked to portrait where
+  // the platform allows it, as the referee's (the Android app natively; a
+  // browser only installed or in fullscreen), free again when left
+  useUprightLock()
   const [serverReady, setServerReady] = useState(isServedFromLocalServer())
   const [autoConnectMatch, setAutoConnectMatch] = useState(null)
   const [autoConnectTeam, setAutoConnectTeam] = useState(null)

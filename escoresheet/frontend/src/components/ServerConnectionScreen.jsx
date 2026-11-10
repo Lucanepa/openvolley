@@ -2,10 +2,12 @@ import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getBackendUrl, getBackendOverride, setBackendOverride, clearBackendOverride, learnRelayWsPort } from '../utils/backendConfig'
 import { GlobeIcon, SatelliteDishIcon } from './icons'
-import { Loader2 } from 'lucide-react'
+import { ChevronLeft, Loader2 } from 'lucide-react'
 import { Button, cn, FOCUS_RING, NOTICE } from '../ui'
 import ContextualHelpPanel from './help/ContextualHelpPanel'
 import { HeaderHelpButton } from './help/HelpButton.jsx'
+import { HEADER_BTN, HEADER_HIT } from './chromeClasses'
+import { scorerReturnUrl, returnToScorer } from '../utils/scorerReturn'
 
 const LAST_SERVER_KEY = 'openvolley_last_server'
 
@@ -27,6 +29,9 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
   const [status, setStatus] = useState('idle') // 'idle' | 'checking' | 'connected' | 'failed'
   const [errorMsg, setErrorMsg] = useState(null)
   const [lastServer, setLastServer] = useState(null)
+  // A dashboard opened from the scorer's Home menu on this device: the way
+  // back before there is a header (utils/scorerReturn.js)
+  const [backToScorer] = useState(() => !!scorerReturnUrl())
 
   // Load last used server from localStorage
   useEffect(() => {
@@ -176,6 +181,21 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
 
   return (
     <div className="ov-kit relative min-h-screen bg-gradient-to-br from-stone-100 via-stone-50 to-stone-100 flex items-center justify-center p-4">
+      {backToScorer && (
+        <div className="absolute left-3 top-3">
+          <button
+            type="button"
+            onClick={() => returnToScorer()}
+            data-testid="dashboard-scorer-button"
+            aria-label={t('dashboards.backToScorer', 'Back to scorer')}
+            title={t('dashboards.backToScorer', 'Back to scorer')}
+            className={cn(HEADER_BTN, HEADER_HIT, 'gap-1 bg-white pl-1.5 pr-2.5')}
+          >
+            <ChevronLeft size={16} aria-hidden="true" />
+            <span>{t('dashboards.scorer', 'Scorer')}</span>
+          </button>
+        </div>
+      )}
       {/* The "?" where the app's header has it, before there is a header */}
       {helpScreen && (
         <>

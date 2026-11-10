@@ -7,8 +7,9 @@ import TabletStatusIndicator from './TabletStatusIndicator'
 import ConnectTabletsModal from './connect/ConnectTabletsModal'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 import { BellIcon, SatelliteDishIcon, ClipboardIcon, ZoomInIcon, HomeIcon } from './icons'
-import { ChevronDown, ChevronUp, Maximize, Menu, Minimize, Power, Tablet, Wifi, WifiOff, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, Maximize, Menu, Minimize, Power, Tablet, Users, Whistle, Wifi, WifiOff, X } from 'lucide-react'
 import { isDesktopScoretable, requestDesktopQuit } from '../utils/appLifecycle'
+import { canOfferDashboards, openScorerDashboard } from '../utils/scorerDashboards'
 import { cn } from '../ui/cn.js'
 import { useCollapseTransition } from '../hooks/useCollapseTransition'
 import { SwitchTrack } from '../ui/Switch.jsx'
@@ -178,6 +179,8 @@ export default function MainHeader({
   // the laptop's own Wi-Fi, the cloud or Bluetooth (the desktop app replaces
   // its native Help menu with this row)
   const [lanTabletsOpen, setLanTabletsOpen] = useState(false)
+  // A phone or tablet: Home's menu offers the referee and bench dashboards
+  const [offerDashboards] = useState(() => canOfferDashboards())
   const actionsMenuRef = useRef(null)
   const touchStartY = useRef(0)
   const headerRef = useRef(null)
@@ -629,6 +632,45 @@ export default function MainHeader({
     </>
   )
 
+  // Home only, on a phone or tablet (the Android/iOS app, or a browser on
+  // one): use this device as the referee or a bench dashboard (owner
+  // 2026-11-10). Bundled in the app, so it opens offline there
+  // (utils/scorerDashboards.js); the dashboard has a way back.
+  // (App keeps showMatchSetup on after Home; without a match it is Home)
+  const onHome = !matchId
+  const dashboardRows = onHome && offerDashboards && (
+    <>
+      <div className={MENU_SEP} />
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          setActionsMenuOpen(false)
+          openScorerDashboard('referee')
+        }}
+        className={MENU_ROW}
+        data-testid="header-referee-dashboard"
+      >
+        <span className={MENU_ICON}><Whistle size={15} /></span>
+        <span>{t('dashboards.referee', 'Referee dashboard')}</span>
+      </button>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          setActionsMenuOpen(false)
+          openScorerDashboard('bench')
+        }}
+        className={MENU_ROW}
+        data-testid="header-bench-dashboard"
+      >
+        <span className={MENU_ICON}><Users size={15} /></span>
+        <span>{t('dashboards.bench', 'Bench dashboard')}</span>
+      </button>
+      <div className={MENU_SEP} />
+    </>
+  )
+
   const helpButton = onToggleHelp && (
     <span className={KIT_SCOPE}>
       <button
@@ -983,6 +1025,8 @@ export default function MainHeader({
                       <span>{t('connectTablets.title', 'Connect tablets')}</span>
                     </button>
 
+                    {dashboardRows}
+
                     {/* Version (about) */}
                     <div className={cn(MENU_ROW, 'cursor-default text-stone-500 hover:bg-transparent')} data-testid="header-version">
                       <span className={MENU_ICON}><ClipboardIcon size={14} /></span>
@@ -1162,6 +1206,8 @@ export default function MainHeader({
                       <span className={MENU_ICON}><Tablet size={15} /></span>
                       <span>{t('connectTablets.title', 'Connect tablets')}</span>
                     </button>
+
+                    {dashboardRows}
 
                     {/* Language Selector */}
                     <button

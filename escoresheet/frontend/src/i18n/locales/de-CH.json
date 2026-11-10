@@ -1182,6 +1182,12 @@
     "unofficial": "Inoffiziell",
     "easyMatch": "Eifachs Spiil · inoffiziell"
   },
+  "dashboards": {
+    "referee": "Schiri-Dashboard",
+    "bench": "Bank-Dashboard",
+    "backToScorer": "Zrugg zum Schriiber",
+    "scorer": "Schriiber"
+  },
   "home": {
     "title": "eScoresheet",
     "newMatch": "Neus Spiil",
