@@ -49,13 +49,17 @@ function currentAccess() {
 
 const LISTS = ['players', 'scorers', 'coaches']
 
-/** A person of a list: the five fields only. */
+/**
+ * A person of a list: the five fields only, and whether every row of the
+ * person was added by hand (db/026 `manual`: a gray shield in Match Setup).
+ */
 const personOf = (p) => ({
   sv_number: String(p.sv_number),
   last_name: p.last_name || '',
   first_name: p.first_name || null,
   dob: p.dob || null,
-  gender: p.gender === 'm' || p.gender === 'f' ? p.gender : null
+  gender: p.gender === 'm' || p.gender === 'f' ? p.gender : null,
+  manual: p.manual === true
 })
 
 /**

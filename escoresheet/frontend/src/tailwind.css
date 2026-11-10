@@ -648,6 +648,11 @@
   .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > :is(.cell-captain, .cell-action) {
     justify-content: center;
   }
+  /* The club shield (MatchSetup) sits beside Delete in the one-line rows
+     only: the stacked rows' delete track is one 44 px square */
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > .cell-action > .club-shield {
+    display: none;
+  }
   /* captain, LFP and delete: 44 px squares (the toggles' size is inline) */
   .ov-form-stack .roster-grid-row > .cell-captain > *,
   .ov-form-stack :is(.roster-grid, .bench-grid):not(.roster-add) :is(.roster-grid-row, .bench-grid-row) > .cell-action button {

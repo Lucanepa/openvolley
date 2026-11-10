@@ -18,7 +18,10 @@ import { cn } from '../../ui'
 export default function ClubShield({ person, fill = {}, onLink = null, onFill = null, className }) {
   const { t } = useTranslation()
   const base = 'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md'
-  const button = 'transition-colors hover:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60'
+  // p-0 and a transparent background over the scorer app's global button
+  // rule (Match Setup), which padded the icon down to a dot at 800 px
+  const button = 'bg-transparent p-0 transition-colors hover:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60'
+  const plain = { padding: 0 }
   if (person && !person.manual) {
     const fields = Object.keys(fill)
     const label = fields.length
@@ -26,15 +29,15 @@ export default function ClubShield({ person, fill = {}, onLink = null, onFill = 
       : t('clubPlayers.shield.club', { number: person.sv_number })
     if (fields.length && onFill) {
       return (
-        <button type="button" onClick={onFill} aria-label={label} title={label} className={cn(base, button, 'relative text-emerald-600', className)} data-testid="club-shield" data-shield="fill">
-          <ShieldCheck size={18} aria-hidden />
+        <button type="button" onClick={onFill} aria-label={label} title={label} style={plain} className={cn(base, button, 'relative text-emerald-600', className)} data-testid="club-shield" data-shield="fill">
+          <ShieldCheck size={18} className="shrink-0" aria-hidden />
           <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-white" aria-hidden />
         </button>
       )
     }
     return (
       <span role="img" aria-label={label} title={label} className={cn(base, 'text-emerald-600', className)} data-testid="club-shield" data-shield="club">
-        <ShieldCheck size={18} aria-hidden />
+        <ShieldCheck size={18} className="shrink-0" aria-hidden />
       </span>
     )
   }
@@ -46,14 +49,14 @@ export default function ClubShield({ person, fill = {}, onLink = null, onFill = 
   const state = kept ? 'manual' : 'hand'
   if (onLink) {
     return (
-      <button type="button" onClick={onLink} aria-label={label} title={label} className={cn(base, button, 'text-stone-400 hover:text-stone-600', className)} data-testid="club-shield" data-shield={state}>
-        <Shield size={18} aria-hidden />
+      <button type="button" onClick={onLink} aria-label={label} title={label} style={plain} className={cn(base, button, 'text-stone-400 hover:text-stone-600', className)} data-testid="club-shield" data-shield={state}>
+        <Shield size={18} className="shrink-0" aria-hidden />
       </button>
     )
   }
   return (
     <span role="img" aria-label={label} title={label} className={cn(base, 'text-stone-400', className)} data-testid="club-shield" data-shield={state}>
-      <Shield size={18} aria-hidden />
+      <Shield size={18} className="shrink-0" aria-hidden />
     </span>
   )
 }
