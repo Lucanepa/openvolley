@@ -10,7 +10,7 @@ import { sportOf, beachSeasonOptions } from '../../domain/savedTeams'
 import { TEAM_COLOUR_MARK } from '../../utils/teamColours'
 import KitModal from './KitModal'
 import TeamEditor from './TeamEditor'
-import { usePanelData, useOnline, OfflineBanner, PanelHead, InlineError, useErrorText } from './common'
+import { usePanelData, usePanelRoute, useOnline, OfflineBanner, PageMissing, PanelHead, InlineError, useErrorText } from './common'
 import { Button, Field, Input, Select, Switch, RowList, Row, Chip, EmptyInset, SkeletonRows, Notice, FilterPill, SegmentedControl, confirmDialog, toast } from '../../ui'
 
 const GENDERS = ['men', 'women', 'mixed']
@@ -53,14 +53,17 @@ export function leaguesForGender(rows, gender) {
  * loaded with ?sport=beach (the server wants a beach role for it), no sport
  * switch, and no offline cache (that one is OpenVolley's indoor teams).
  */
-export default function SavedTeamsPanel({ userId, sport: fixedSport }) {
+export default function SavedTeamsPanel({ userId, sport: fixedSport, route = '', onRoute = null }) {
   const { t } = useTranslation()
   const online = useOnline()
   const errorText = useErrorText()
   const [season, setSeason] = useState('')
   const [showArchived, setShowArchived] = useState(false)
-  const [competitionId, setCompetitionId] = useState(null)
-  const [teamId, setTeamId] = useState(null)
+  // Pages (owner 2026-11-10): a competition at #teams/<competition id>, a
+  // team at #teams/<competition id>/<team id> (usePanelRoute)
+  const [[competitionId = null, teamId = null], go] = usePanelRoute(route, onRoute)
+  const setCompetitionId = (id, opts) => go(id ? [id] : [], opts)
+  const setTeamId = (id, opts) => go(id ? [competitionId, id] : [competitionId], opts)
   const [competitionForm, setCompetitionForm] = useState(null) // null | {} (new) | competition (edit)
   const [teamFormOpen, setTeamFormOpen] = useState(false)
   const [actionError, setActionError] = useState('')
@@ -108,8 +111,13 @@ export default function SavedTeamsPanel({ userId, sport: fixedSport }) {
     if (!ok) return
     const res = await savedTeamsApi.deleteCompetition(c.id)
     if (res.error) return setActionError(errorText(res.error))
-    setCompetitionId(null)
+    setCompetitionId(null, { push: false })
     afterWrite()
+  }
+
+  // a page of the URL whose competition or team is not (yet) loaded or gone
+  if (competitionId && (!competition || (teamId && !team))) {
+    return <PageMissing loading={loading || !data} error={error} onBack={() => setCompetitionId(null)} backLabel={t('savedTeams.competitions')} />
   }
 
   // ── Team editor ──
@@ -127,7 +135,7 @@ export default function SavedTeamsPanel({ userId, sport: fixedSport }) {
           online={online}
           onBack={() => setTeamId(null)}
           onChanged={afterWrite}
-          onDeleted={() => { setTeamId(null); afterWrite() }}
+          onDeleted={() => { setTeamId(null, { push: false }); afterWrite() }}
         />
       </section>
     )

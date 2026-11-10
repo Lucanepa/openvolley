@@ -38,7 +38,7 @@ const squad = {
     { role: 'Coach', first_name: 'Peter', last_name: 'Weber', dob: '1986-06-23', license_number: '200002' }
   ]
 }
-const GAME = { game_number: '950001', side: 'home', team_home: 'VBC Musterdorf H1', team_away: 'VBC Other H1', datetime: '2026-11-12T18:00:00', league: '2L Herren', hall: 'MSH', roster: null }
+const GAME = { game_number: '950001', side: 'home', team_home: 'VBC Musterdorf H1', team_away: 'VBC Other H1', datetime: '2026-11-12T18:00:00', league: '2L Herren', hall: 'MSH', hall_address: 'Sportweg 1', hall_postal_code: '8000', city: 'Musterdorf', referees: ['Rita Referee', 'Sam Second'], roster: null }
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -66,7 +66,7 @@ describe('a game\'s roster is a page of its own', () => {
     expect(screen.queryByTestId('my-team-games')).toBeNull()
     expect(screen.queryByRole('dialog')).toBeNull()
     fireEvent.click(screen.getByTestId('game-roster-back'))
-    expect(spy).toHaveBeenLastCalledWith('', undefined)
+    expect(spy).toHaveBeenLastCalledWith('t-h1', { push: true })
     await screen.findByTestId('my-team-games')
   })
 
@@ -141,5 +141,28 @@ describe('setGameDraftStaffRole and roleForNewOfficial', () => {
     expect(roleForNewOfficial([{ role: 'Physiotherapist', picked: true }])).toBe('Medic')
     expect(roleForNewOfficial([{ role: 'Physiotherapist', picked: true }, { role: 'Medic', picked: true }, { role: 'Coach', picked: true }])).toBe('Assistant Coach 1')
     expect(roleForNewOfficial([{ role: 'Physiotherapist', picked: false }])).toBe('Physiotherapist')
+  })
+})
+
+describe('the page\'s facts and rows (owner 2026-11-10: "all on one line" and "at the top where, when, referees")', () => {
+  it('shows when, where (a map link), league, referees and the game number; a person\'s date of birth and licence on the name\'s line', async () => {
+    render(<Routed initial="t-h1/950001" />)
+    const facts = await screen.findByTestId('game-facts')
+    expect(facts.textContent).toContain('Rita Referee, Sam Second')
+    expect(facts.textContent).toContain('2L Herren')
+    expect(facts.textContent).toContain('#950001')
+    const map = within(facts).getByRole('link')
+    expect(map.textContent).toBe('MSH, Sportweg 1, 8000 Musterdorf')
+    expect(map.getAttribute('href')).toContain(encodeURIComponent('MSH, Sportweg 1, 8000 Musterdorf'))
+    await waitFor(() => expect(screen.getAllByTestId('game-staff-row')).toHaveLength(2))
+    // one label: the name, then date of birth and licence
+    const label = within(screen.getAllByTestId('game-staff-row')[0]).getByText('Trainer Tina').parentElement
+    expect(label.textContent).toContain('clubPlayers.licence')
+  })
+
+  it('no referees yet: says so', async () => {
+    api.team.games.mockResolvedValue(okRes({ games: [{ ...GAME, referees: [] }] }))
+    render(<Routed initial="t-h1/950001" />)
+    expect((await screen.findByTestId('game-facts')).textContent).toContain('manage.myTeams.facts.noReferees')
   })
 })

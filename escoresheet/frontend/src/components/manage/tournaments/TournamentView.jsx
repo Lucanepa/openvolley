@@ -212,8 +212,10 @@ function CourtsSection({ bundle, reload }) {
  * One tournament: details and co-managers, courts, draws (entries, seeds,
  * bracket, results), the schedule, the final ranking, and the Excel/CSV
  * import (T2). Read-only for a tournament this account does not edit.
+ * `onDeleted` (default `onBack`): after the tournament was deleted (the
+ * panel replaces the page's history entry then).
  */
-export default function TournamentView({ id, onBack, initialImport = false }) {
+export default function TournamentView({ id, onBack, onDeleted = onBack, initialImport = false }) {
   const { t } = useTranslation()
   const online = useOnline()
   const errorText = useTournamentError()
@@ -278,7 +280,7 @@ export default function TournamentView({ id, onBack, initialImport = false }) {
               options={sections.map(s => ({ value: s, label: t(`tournaments.sections.${s}`) }))}
             />
           </div>
-          {section === 'details' && <DetailsSection bundle={data} reload={reload} onDeleted={onBack} />}
+          {section === 'details' && <DetailsSection bundle={data} reload={reload} onDeleted={onDeleted} />}
           {section === 'courts' && <CourtsSection bundle={data} reload={reload} />}
           {section === 'draws' && <DrawsSection bundle={data} reload={reload} onImport={online ? () => setImporting(true) : null} />}
           {section === 'schedule' && <ScheduleSection bundle={data} reload={reload} />}

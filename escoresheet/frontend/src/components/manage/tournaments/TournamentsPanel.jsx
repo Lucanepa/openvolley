@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Plus } from 'lucide-react'
 import KitModal from '../KitModal'
-import { usePanelData, useOnline, OfflineBanner, PanelHead, InlineError } from '../common'
+import { usePanelData, usePanelRoute, useOnline, OfflineBanner, PageMissing, PanelHead, InlineError } from '../common'
 import { tournamentApi, tournamentErrorKey } from '../../../lib/tournamentApi'
 import { useAuth } from '../../../contexts/AuthContext'
 import { accessForApp } from '../../../lib/access'
@@ -95,20 +95,39 @@ function NewTournamentModal({ open, onClose, onCreated }) {
  * new tournament (typed in, or from an Excel/CSV file), and the tournament
  * itself (TournamentView). Beach competition
  * managers and the global admin; the server enforces it.
+ *
+ * A tournament is a page of its own (owner 2026-11-10: "make sure every page
+ * there gets their own page"): #tournaments/<tournament id> (usePanelRoute).
  */
-export default function TournamentsPanel() {
+export default function TournamentsPanel({ route = '', onRoute = null }) {
   const { t } = useTranslation()
   const online = useOnline()
   const { access } = useAuth()
   const canCreate = accessForApp(access, 'beach').canManageTeams
-  const [openId, setOpenId] = useState(null)
-  const [importNext, setImportNext] = useState(false)
+  const [[openId = null], go] = usePanelRoute(route, onRoute)
+  // The tournament just created: its page opens before the list has it, and
+  // with the import open when it starts from a file
+  const [created, setCreated] = useState(null)
+  // the import opens once: not again when the browser comes back to the page
+  useEffect(() => {
+    if (created?.importNext && openId === created.id) setCreated({ id: created.id, importNext: false })
+  }, [openId, created])
   const [creating, setCreating] = useState(false)
   const { data, error, loading, reload } = usePanelData(() => tournamentApi.list(), [], { enabled: online })
   const list = data?.tournaments || []
 
   if (openId) {
-    return <TournamentView id={openId} initialImport={importNext} onBack={() => { setOpenId(null); setImportNext(false); reload() }} />
+    const known = created?.id === openId || list.some(x => x.id === openId)
+    if (!known) return <PageMissing loading={loading || !data} error={error} onBack={() => go([])} backLabel={t('tournaments.allTournaments')} />
+    return (
+      <TournamentView
+        key={openId}
+        id={openId}
+        initialImport={created?.id === openId && created.importNext}
+        onBack={() => { setCreated(null); go([]); reload() }}
+        onDeleted={() => { setCreated(null); go([], { push: false }); reload() }}
+      />
+    )
   }
 
   return (
@@ -141,7 +160,7 @@ export default function TournamentsPanel() {
                 {!x.can_edit && <Chip>{t('tournaments.readOnly')}</Chip>}
               </>}
               status={<TournamentStatus status={x.status} />}
-              onOpen={() => setOpenId(x.id)}
+              onOpen={() => go([x.id])}
               label={x.title}
             />
           ))}
@@ -150,7 +169,7 @@ export default function TournamentsPanel() {
       <NewTournamentModal
         open={creating}
         onClose={() => setCreating(false)}
-        onCreated={(tour, { importNext: next = false } = {}) => { setCreating(false); reload(); setImportNext(next); setOpenId(tour.id) }}
+        onCreated={(tour, { importNext: next = false } = {}) => { setCreating(false); reload(); setCreated({ id: tour.id, importNext: next }); go([tour.id]) }}
       />
     </section>
   )

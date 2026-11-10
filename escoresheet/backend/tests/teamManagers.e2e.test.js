@@ -57,6 +57,9 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
       ('940004', 'VBC Musterdorf D2', 'VBC Other D1', '3L Damen', 'f', 'Halle Musterdorf', 'Zürich', 5, '${dayPlus(today, 3)}T16:00:00'),
       ('940005', 'VBC Musterdorf H1', 'VBC Fourth H1', '2L Herren', 'm', 'Halle Musterdorf', 'Zürich', 5, '${dayPlus(today, 12)}T18:00:00'),
       ('940006', 'VBC Musterdorf H1', 'VBC Fifth H1', '2L Herren', 'm', 'Halle Musterdorf', 'Zürich', 5, '${today}T00:00:01')`)
+    // the game page's where and who (owner 2026-11-10): address and referees of one game
+    await sql.query(`UPDATE public.svrz_games SET hall_address = 'Sportweg 1', hall_postal_code = '8000',
+      referee_1 = 'Rita Referee', referee_1_dob = '1980-01-02', referee_2 = 'Sam Second' WHERE game_number = '940001'`)
     // A roster of a game long past: the first write sweeps it (14 days)
     await sql.query(`INSERT INTO public.game_rosters (game_number, season, side, team_name, players, staff, kickoff)
       VALUES ('939999', $1, 'home', 'VBC Musterdorf H1', '[]', '[]', $2)`, [season, `${dayPlus(today, -30)}T18:00:00`])
@@ -147,6 +150,11 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
     assert.equal(games.find((g) => g.game_number === '940006').started, true)
     assert.equal(games.find((g) => g.game_number === '940001').started, false)
     assert.equal(games[1].roster, null)
+    // where and who: the hall's address and the referees' names, never their dates of birth
+    const g1 = games.find((g) => g.game_number === '940001')
+    assert.deepEqual([g1.hall, g1.hall_address, g1.hall_postal_code, g1.city, g1.referees], ['Halle Musterdorf', 'Sportweg 1', '8000', 'Zürich', ['Rita Referee', 'Sam Second']])
+    assert.deepEqual(games.find((g) => g.game_number === '940002').referees, [])
+    assert.equal(JSON.stringify(games).includes('1980-01-02'), false)
     assert.equal((await call(users.coach, 'GET', `/api/team/${d2.id}/games`)).status, 403)
     assert.equal((await call(users.stranger, 'GET', `/api/team/${h1.id}/games`)).status, 403)
   })

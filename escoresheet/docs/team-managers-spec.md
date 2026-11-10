@@ -55,6 +55,15 @@ Shown when `/api/me` `managedTeams` is not empty (team managers, club managers).
   of its own with the game in the address (`#myteams/<team id>/<game number>`; Back returns to
   the list; owner 2026-11-10): tick up to 14 players of the saved team, shirt numbers, captain, up
   to 2 liberos, the officials; or Import Einsatzliste for this game. Save sends it.
+- **The game page's head**: when, where (hall, address and postal code with a map link), league,
+  referees and the game number (owner 2026-11-10: "at the top where, when, referees etc"). The
+  referees are names only, as in the public match assignments; `GET /api/team/:id/games` gives
+  `hall_address`, `hall_postal_code` and `referees` (never their dates of birth). Each player and
+  official is one line: name, date of birth, licence number.
+- **Every page has its address** (owner 2026-11-10: "make sure every page there gets their own
+  page"): the team at `#myteams/<team id>`, a game at `#myteams/<team id>/<game number>`; in My
+  club the club at `#myclub/<club id>`, a person of its licence lists at
+  `#myclub/<club id>/person/<licence>`, and a team opens in My teams.
 - **Officials of a game**: each has a role menu (coach, assistant coaches 1 and 2,
   physiotherapist, medic). Each role once: a ticked official who takes a role, or is ticked in
   it, unticks the one who had it. **Add official** adds someone typed in (role, names, date of
