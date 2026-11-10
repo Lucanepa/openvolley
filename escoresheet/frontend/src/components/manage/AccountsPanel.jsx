@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { ArrowLeft } from 'lucide-react'
 import { admin, clubsApi, fetchPublicClubs } from '../../lib/accountApi'
 import { API_GRANTABLE_ROLES, BEACH_ROLES, plainRole } from '../../lib/access'
 import { requestPartLabel, sortRequestParts } from '../../domain/signUpRequests'
 import RoleChips from '../auth/RoleChips'
 import KitModal from './KitModal'
-import { usePanelData, useOnline, OfflineBanner, PanelHead, InlineError, personName, useErrorText } from './common'
-import { SegmentedControl, SearchInput, RowList, Row, RowTool, EmptyInset, SkeletonRows, Button, Checkbox, Chip, Field, Input, Notice, Select, dayLabel, confirmDialog, toast } from '../../ui'
+import { usePanelData, usePanelRoute, useOnline, OfflineBanner, PageMissing, PanelHead, InlineError, personName, useErrorText } from './common'
+import { usePageItem } from './usePageItem'
+import { SegmentedControl, SearchInput, RowList, Row, RowTool, EmptyInset, KeyValue, SkeletonRows, Button, Checkbox, Chip, Field, Input, Notice, Select, dayLabel, confirmDialog, toast } from '../../ui'
 
 // The destructive row tools (RowTool has no tone of its own): a red outline
 // like the kit's danger-outline button. On a phone they take a line of their
@@ -14,6 +16,18 @@ import { SegmentedControl, SearchInput, RowList, Row, RowTool, EmptyInset, Skele
 // sm up Reject sits next to Approve and "Delete account" apart at the row's end.
 const DANGER_TOOL = 'border-red-200 text-red-700 hover:bg-red-50 order-last basis-full sm:order-none sm:basis-auto'
 const DELETE_TOOL = `${DANGER_TOOL} sm:ml-auto`
+
+/**
+ * The read behind an account's page that is in neither list (opened from a
+ * link, the Pending filter or a search showing others, or approved on its
+ * page): there is no read of one account, so every account of the app (the
+ * server's most, 500) and the one with this id.
+ */
+export function findAccount(id, app) {
+  return admin.listAccounts({ filter: 'all', limit: 500, ...(app ? { app } : {}) }).then((res) => (
+    res.error ? res : { data: (res.data?.accounts || []).find(a => a.id === id) || null, error: null }
+  ))
+}
 
 /**
  * Accounts: approve pending accounts, grant and revoke roles (admins).
@@ -36,8 +50,13 @@ const DELETE_TOOL = `${DANGER_TOOL} sm:ml-auto`
  * a part, leave it for later, reject it, or change its club or team first).
  * The Pending filter lists these accounts too, also after a club's or a
  * team's manager approved a part (the account is no longer pending then).
+ *
+ * An account is a page of its own (owner 2026-11-10: "make sure every page
+ * there gets their own page"): #accounts/<account id>, with what its row
+ * says and the same actions; roles, clubs, the request review and deleting
+ * stay dialogs, opened from the page as from the row (usePanelRoute).
  */
-export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app }) {
+export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app, route = '', onRoute = null }) {
   const { t } = useTranslation()
   const online = useOnline()
   const errorText = useErrorText()
@@ -63,6 +82,17 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app })
   const accounts = data?.accounts || []
   const pendingCount = pending.data?.accounts?.length ?? null
   const canDelete = data?.can_delete === true
+
+  const [[pageId = null], go] = usePanelRoute(route, onRoute)
+  const page = usePageItem(pageId, {
+    found: pageId ? (accounts.find(a => a.id === pageId) || (pending.data?.accounts || []).find(a => a.id === pageId) || null) : null,
+    ready: !!data && !loading && !pending.loading,
+    lookup: (id) => findAccount(id, app),
+    enabled: online,
+    deps: [app]
+  })
+  // the account's page is gone with the account: back to the list, in place of the page's history entry
+  const leavePage = (account) => { if (pageId && account?.id === pageId) go([], { push: false }) }
 
   const roleError = (err) => {
     if (err?.code === 'OV_SELF_DEMOTE') return t('manage.accounts.selfDemote')
@@ -130,14 +160,83 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app })
     setBusyId(null)
     if (res.error) {
       setRowError(e => ({ ...e, [account.id]: deleteError(res.error) }))
-      if (res.error.code === 'OV_ACCOUNT_NOT_FOUND') afterDelete()
+      if (res.error.code === 'OV_ACCOUNT_NOT_FOUND') { afterDelete(); leavePage(account) }
       return
     }
     toast.success(t('manage.accounts.rejected'))
     afterDelete()
+    leavePage(account)
   }
 
   const date = (v) => (v ? dayLabel(v, { year: true }) : '')
+  // what the row and the page offer to delete: 'reject', 'delete' or nothing
+  const offer = (a) => (canDelete ? deletion(a, selfId, selfIsSuperAdmin) : null)
+  const actions = {
+    approve,
+    approveAsRequested,
+    review: setReviewing,
+    reject: rejectSignUp,
+    editRoles: setEditing,
+    editClubs: withClubs ? setClubsOf : null,
+    remove: setDeleting
+  }
+
+  const dialogs = <>
+    <RolesModal
+      app={app}
+      account={editing}
+      selfId={selfId}
+      onClose={() => setEditing(null)}
+      onSaved={() => { setEditing(null); reload(); pending.reload() }}
+      roleError={roleError}
+    />
+    {clubsOf && (
+      <ClubsModal
+        account={clubsOf}
+        onClose={() => setClubsOf(null)}
+        onSaved={() => { setClubsOf(null); reload() }}
+      />
+    )}
+    {reviewing && (
+      <RequestReviewModal
+        account={reviewing}
+        roleError={roleError}
+        onClose={(changed) => { setReviewing(null); if (changed) { reload(); pending.reload() } }}
+      />
+    )}
+    {deleting && (
+      <DeleteAccountModal
+        account={deleting}
+        deleteError={deleteError}
+        onClose={(gone) => { const account = deleting; setDeleting(null); if (gone) { afterDelete(); leavePage(account) } }}
+      />
+    )}
+  </>
+
+  // the account's page
+  if (pageId) {
+    return (
+      <>
+        {page.item ? (
+          <AccountPage
+            key={pageId}
+            account={page.item}
+            app={app}
+            withClubs={withClubs}
+            online={online}
+            busy={busyId === page.item.id}
+            error={rowError[page.item.id]}
+            offer={offer(page.item)}
+            actions={actions}
+            onBack={() => go([])}
+          />
+        ) : (
+          <PageMissing loading={page.loading} error={page.error || error} onBack={() => go([])} backLabel={t('manage.tabs.accounts')} />
+        )}
+        {dialogs}
+      </>
+    )
+  }
 
   return (
     <section>
@@ -164,82 +263,121 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app })
         <EmptyInset>{filter === 'pending' ? t('manage.accounts.emptyPending') : t('manage.accounts.empty')}</EmptyInset>
       ) : (
         <RowList>
-          {accounts.map(a => (
-            <Row
-              key={a.id}
-              data-testid={`account-${a.id}`}
-              stripe={false}
-              // flex-wrap: the phone's line for Reject / Delete account (DANGER_TOOL)
-              toolsIndent="flex-wrap sm:flex-nowrap sm:pl-2"
-              actionIndent="pl-1.5"
-              title={personName(a.first_name, a.last_name, a.email)}
-              meta={<>
-                <span className="break-all">{a.email}</span>
-                <span>{t('manage.accounts.created', { date: date(a.created_at) })}</span>
-                <span>{a.last_sign_in_at ? t('manage.accounts.lastSignIn', { date: date(a.last_sign_in_at) }) : t('manage.accounts.neverSignedIn')}</span>
-                {a.email_confirmed === false && <span className="font-medium text-amber-700">{t('manage.accounts.emailUnconfirmed')}</span>}
-              </>}
-              chips={<>
-                <RoleChips roles={a.roles} pending={a.pending} app={app} />
-                {withClubs && (a.clubs || []).map(c => <Chip key={c.id} tone="sky">{c.name}</Chip>)}
-                {/* db/020 / db/023: what the account manages */}
-                {(a.managed_clubs || []).map(c => <Chip key={`mc-${c.id}`} tone="indigo">{t('manage.requests.managesClub', { name: c.name })}</Chip>)}
-                {(a.managed_teams || []).map(x => <Chip key={`mt-${x.id}`} tone="indigo">{t('manage.requests.managesTeam', { name: x.name })}</Chip>)}
-                {/* db/025: what it asked for at sign-up and is still open */}
-                {sortRequestParts(a.requests).map(p => <Chip key={p.id} tone="amber">{t('manage.requests.asks', { part: requestPartLabel(p, t) })}</Chip>)}
-              </>}
-              tools={<>
-                {(a.requests || []).length > 0 ? (
-                  <>
-                    <RowTool primary disabled={!online || busyId === a.id} onClick={() => approveAsRequested(a)} data-testid="approve-as-requested">{t('manage.requests.approveAll')}</RowTool>
-                    <RowTool disabled={!online || busyId === a.id} onClick={() => setReviewing(a)} data-testid="review-request">{t('manage.requests.review')}</RowTool>
-                  </>
-                ) : a.pending && (
-                  <RowTool primary disabled={!online || busyId === a.id} onClick={() => approve(a)}>{t('manage.accounts.approve')}</RowTool>
-                )}
-                {canDelete && deletion(a, selfId, selfIsSuperAdmin) === 'reject' && (
-                  <RowTool className={DANGER_TOOL} disabled={!online || busyId === a.id} onClick={() => rejectSignUp(a)} data-testid="reject-account">{t('manage.accounts.reject')}</RowTool>
-                )}
-                <RowTool disabled={!online} onClick={() => setEditing(a)}>{t('manage.accounts.editRoles')}</RowTool>
-                {withClubs && <RowTool disabled={!online} onClick={() => setClubsOf(a)}>{t('manage.accounts.editClubs')}</RowTool>}
-                {canDelete && deletion(a, selfId, selfIsSuperAdmin) === 'delete' && (
-                  <RowTool className={DELETE_TOOL} disabled={!online || busyId === a.id} onClick={() => setDeleting(a)} data-testid="delete-account">{t('manage.accounts.delete')}</RowTool>
-                )}
-                {rowError[a.id] && <InlineError error={rowError[a.id]} className="ml-1" />}
-              </>}
-            />
-          ))}
+          {accounts.map(a => {
+            const name = personName(a.first_name, a.last_name, a.email)
+            return (
+              <Row
+                key={a.id}
+                data-testid={`account-${a.id}`}
+                stripe={false}
+                // flex-wrap: the phone's line for Reject / Delete account (DANGER_TOOL)
+                toolsIndent="flex-wrap sm:flex-nowrap sm:pl-2"
+                actionIndent="pl-1.5"
+                title={name}
+                label={name}
+                onOpen={() => go([a.id])}
+                meta={<>
+                  <span className="break-all">{a.email}</span>
+                  <span>{t('manage.accounts.created', { date: date(a.created_at) })}</span>
+                  <span>{a.last_sign_in_at ? t('manage.accounts.lastSignIn', { date: date(a.last_sign_in_at) }) : t('manage.accounts.neverSignedIn')}</span>
+                  {a.email_confirmed === false && <span className="font-medium text-amber-700">{t('manage.accounts.emailUnconfirmed')}</span>}
+                </>}
+                chips={<>
+                  <RoleChips roles={a.roles} pending={a.pending} app={app} />
+                  {withClubs && (a.clubs || []).map(c => <Chip key={c.id} tone="sky">{c.name}</Chip>)}
+                  {/* db/020 / db/023: what the account manages */}
+                  {(a.managed_clubs || []).map(c => <Chip key={`mc-${c.id}`} tone="indigo">{t('manage.requests.managesClub', { name: c.name })}</Chip>)}
+                  {(a.managed_teams || []).map(x => <Chip key={`mt-${x.id}`} tone="indigo">{t('manage.requests.managesTeam', { name: x.name })}</Chip>)}
+                  {/* db/025: what it asked for at sign-up and is still open */}
+                  {sortRequestParts(a.requests).map(p => <Chip key={p.id} tone="amber">{t('manage.requests.asks', { part: requestPartLabel(p, t) })}</Chip>)}
+                </>}
+                tools={<>
+                  {(a.requests || []).length > 0 ? (
+                    <>
+                      <RowTool primary disabled={!online || busyId === a.id} onClick={() => approveAsRequested(a)} data-testid="approve-as-requested">{t('manage.requests.approveAll')}</RowTool>
+                      <RowTool disabled={!online || busyId === a.id} onClick={() => setReviewing(a)} data-testid="review-request">{t('manage.requests.review')}</RowTool>
+                    </>
+                  ) : a.pending && (
+                    <RowTool primary disabled={!online || busyId === a.id} onClick={() => approve(a)}>{t('manage.accounts.approve')}</RowTool>
+                  )}
+                  {offer(a) === 'reject' && (
+                    <RowTool className={DANGER_TOOL} disabled={!online || busyId === a.id} onClick={() => rejectSignUp(a)} data-testid="reject-account">{t('manage.accounts.reject')}</RowTool>
+                  )}
+                  <RowTool disabled={!online} onClick={() => setEditing(a)}>{t('manage.accounts.editRoles')}</RowTool>
+                  {withClubs && <RowTool disabled={!online} onClick={() => setClubsOf(a)}>{t('manage.accounts.editClubs')}</RowTool>}
+                  {offer(a) === 'delete' && (
+                    <RowTool className={DELETE_TOOL} disabled={!online || busyId === a.id} onClick={() => setDeleting(a)} data-testid="delete-account">{t('manage.accounts.delete')}</RowTool>
+                  )}
+                  {rowError[a.id] && <InlineError error={rowError[a.id]} className="ml-1" />}
+                </>}
+              />
+            )
+          })}
         </RowList>
       )}
-      <RolesModal
-        app={app}
-        account={editing}
-        selfId={selfId}
-        onClose={() => setEditing(null)}
-        onSaved={() => { setEditing(null); reload(); pending.reload() }}
-        roleError={roleError}
-      />
-      {clubsOf && (
-        <ClubsModal
-          account={clubsOf}
-          onClose={() => setClubsOf(null)}
-          onSaved={() => { setClubsOf(null); reload() }}
+      {dialogs}
+    </section>
+  )
+}
+
+/**
+ * An account's page: its name, address, dates, roles, clubs, what it manages
+ * and its open sign-up request, with the row's actions at the card's foot
+ * (`actions` from the panel; `offer` = deletion()).
+ */
+function AccountPage({ account: a, app, withClubs, online, busy, error, offer, actions, onBack }) {
+  const { t } = useTranslation()
+  const name = personName(a.first_name, a.last_name, a.email)
+  const date = (v) => (v ? dayLabel(v, { year: true }) : '–')
+  const parts = sortRequestParts(a.requests)
+  const managed = [
+    ...(a.managed_clubs || []).map(c => <Chip key={`mc-${c.id}`} tone="indigo">{t('manage.requests.managesClub', { name: c.name })}</Chip>),
+    ...(a.managed_teams || []).map(x => <Chip key={`mt-${x.id}`} tone="indigo">{t('manage.requests.managesTeam', { name: x.name })}</Chip>)
+  ]
+  const chips = (nodes) => <span className="flex flex-wrap gap-1.5">{nodes}</span>
+  const groups = [
+    { label: t('manage.accounts.page.roles'), value: <RoleChips roles={a.roles} pending={a.pending} app={app} /> },
+    ...(withClubs ? [{ label: t('manage.accounts.page.clubs'), value: (a.clubs || []).length ? chips(a.clubs.map(c => <Chip key={c.id} tone="sky">{c.name}</Chip>)) : '–' }] : []),
+    ...(managed.length ? [{ label: t('manage.accounts.page.manages'), value: chips(managed) }] : []),
+    ...(parts.length ? [{ label: t('manage.accounts.page.request'), value: chips(parts.map(p => <Chip key={p.id} tone="amber">{requestPartLabel(p, t)}</Chip>)) }] : [])
+  ]
+  return (
+    <section data-testid="account-page">
+      <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={onBack} disabled={busy} className="mb-3" data-testid="account-page-back">{t('manage.tabs.accounts')}</Button>
+      <PanelHead title={name} />
+      <OfflineBanner online={online} />
+      <div className="rounded-2xl border border-stone-200/70 bg-white p-4 shadow-card sm:p-5" data-testid="account-facts">
+        <KeyValue
+          variant="stats"
+          className="gap-y-3 text-sm"
+          items={[
+            { label: t('manage.accounts.page.email'), value: <span className="break-all">{a.email}</span> },
+            { label: t('manage.accounts.page.created'), value: date(a.created_at) },
+            { label: t('manage.accounts.page.lastSignIn'), value: a.last_sign_in_at ? date(a.last_sign_in_at) : t('manage.accounts.neverSignedIn') }
+          ]}
         />
-      )}
-      {reviewing && (
-        <RequestReviewModal
-          account={reviewing}
-          roleError={roleError}
-          onClose={(changed) => { setReviewing(null); if (changed) { reload(); pending.reload() } }}
-        />
-      )}
-      {deleting && (
-        <DeleteAccountModal
-          account={deleting}
-          deleteError={deleteError}
-          onClose={(gone) => { setDeleting(null); if (gone) afterDelete() }}
-        />
-      )}
+        {a.email_confirmed === false && <p className="mt-2 text-xs font-medium text-amber-700">{t('manage.accounts.emailUnconfirmed')}</p>}
+        <KeyValue variant="stacked" className="mt-4" items={groups} />
+        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-stone-100 pt-4">
+          {parts.length > 0 ? (
+            <>
+              <Button variant="positive" disabled={!online || busy} loading={busy} onClick={() => actions.approveAsRequested(a)} data-testid="approve-as-requested">{t('manage.requests.approveAll')}</Button>
+              <Button variant="secondary" disabled={!online || busy} onClick={() => actions.review(a)} data-testid="review-request">{t('manage.requests.review')}</Button>
+            </>
+          ) : a.pending && (
+            <Button variant="positive" disabled={!online || busy} loading={busy} onClick={() => actions.approve(a)} data-testid="approve-account">{t('manage.accounts.approve')}</Button>
+          )}
+          <Button variant="secondary" disabled={!online} onClick={() => actions.editRoles(a)} data-testid="edit-roles">{t('manage.accounts.editRoles')}</Button>
+          {actions.editClubs && <Button variant="secondary" disabled={!online} onClick={() => actions.editClubs(a)} data-testid="edit-clubs">{t('manage.accounts.editClubs')}</Button>}
+          {offer === 'reject' && (
+            <Button variant="danger-outline" className="sm:ml-auto" disabled={!online || busy} onClick={() => actions.reject(a)} data-testid="reject-account">{t('manage.accounts.reject')}</Button>
+          )}
+          {offer === 'delete' && (
+            <Button variant="danger-outline" className="sm:ml-auto" disabled={!online || busy} onClick={() => actions.remove(a)} data-testid="delete-account">{t('manage.accounts.delete')}</Button>
+          )}
+        </div>
+        <InlineError error={error} className="mt-2" />
+      </div>
     </section>
   )
 }

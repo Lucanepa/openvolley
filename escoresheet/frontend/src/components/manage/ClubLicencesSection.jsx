@@ -21,7 +21,7 @@ const fold = (v) => normalizeName(v).normalize('NFD').replace(/\p{Diacritic}/gu,
  * are sent. Each upload replaces that list. Below, everyone of the lists
  * once, with the club's teams whose players include them.
  */
-export default function ClubLicencesSection({ club }) {
+export default function ClubLicencesSection({ club, onOpenPerson = null }) {
   const { t } = useTranslation()
   const online = useOnline()
   const errorText = useErrorText()
@@ -206,6 +206,9 @@ export default function ClubLicencesSection({ club }) {
                 <Row
                   key={p.sv_number}
                   stripe={false}
+                  onOpen={onOpenPerson ? () => onOpenPerson(p.sv_number) : undefined}
+                  label={`${p.last_name} ${p.first_name || ''}`.trim()}
+                  data-testid="licence-person"
                   title={`${p.last_name} ${p.first_name || ''}`.trim()}
                   meta={<>
                     <span className="tabular-nums">{t('clubPlayers.licence', { number: p.sv_number })}</span>

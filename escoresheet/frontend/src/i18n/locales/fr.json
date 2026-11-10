@@ -3089,6 +3089,7 @@
     "confirmBody": "Confirmez que cette adresse appartient à votre compte OpenBeach."
   },
   "manage": {
+    "pageNotFound": "Cette page n’existe pas (ou plus).",
     "title": "Gestion",
     "backToApp": "Retour à l’app",
     "nav": "Sections de gestion",
@@ -3123,6 +3124,15 @@
       "offline": "Cela nécessite une connexion au serveur."
     },
     "accounts": {
+      "page": {
+        "email": "E-mail",
+        "created": "Créé le",
+        "lastSignIn": "Dernière connexion",
+        "roles": "Rôles",
+        "clubs": "Clubs",
+        "manages": "Responsable de",
+        "request": "Demande à l’inscription"
+      },
       "reject": "Refuser",
       "rejectTitle": "Refuser l’inscription de {{name}} ?",
       "rejectBody": "Le compte {{email}} n’a pas encore de rôle. Le refuser le supprime avec ses données personnelles ; la personne pourra se réinscrire plus tard.",
@@ -3195,6 +3205,7 @@
       "noClub": "Aucun club"
     },
     "games": {
+      "openMatch": "Ouvrir le match",
       "from": "Du",
       "to": "Au",
       "search": "Chercher une équipe ou un numéro de match",
@@ -3215,6 +3226,15 @@
       "empty": "Aucun match officiel sur cette période."
     },
     "matches": {
+      "facts": {
+        "game": "Match",
+        "when": "Quand",
+        "league": "Ligue",
+        "scorer": "Marqueur",
+        "editors": "Éditeurs",
+        "closed": "Clôturé",
+        "hall": "Salle"
+      },
       "filterClosed": "Clôturés",
       "filterOpen": "Ouverts",
       "filterAll": "Tous",
@@ -3469,6 +3489,14 @@
       "noMail": "Ce serveur ne peut pas encore envoyer d’e-mails (aucun serveur de messagerie configuré) : rien ne part, même avec l’interrupteur activé."
     },
     "myTeams": {
+      "facts": {
+        "when": "Quand",
+        "where": "Où",
+        "league": "Ligue",
+        "referees": "Arbitres",
+        "game": "Match",
+        "noReferees": "Pas encore convoqués"
+      },
       "none": "Vous ne gérez aucune équipe.",
       "pick": "Équipe",
       "intro": "Tenez à jour les joueurs de votre équipe et envoyez la liste de chaque match avant son début. La tablette du marqueur la télécharge tant qu’elle a internet : elle est prête dans la salle, même sans Wi-Fi.",
@@ -3535,6 +3563,7 @@
       }
     },
     "clubTeams": {
+      "open": "Ouvrir",
       "title": "Équipes",
       "hint": "Donnez un lien à l’entraîneur ou au responsable de chaque équipe. Avec lui, ils tiennent les joueurs à jour et envoient la liste de chaque match à l’avance.",
       "none": "Ce club n’a pas encore d’équipes. Un admin les ajoute dans l’onglet Clubs.",
@@ -3554,6 +3583,8 @@
       "removeBody": "Cette personne ne pourra plus gérer {{team}}. Son compte reste."
     },
     "licences": {
+      "personNoTeams": "Dans aucun effectif enregistré du club pour l’instant.",
+      "personTeams": "Équipes",
       "title": "Licences",
       "hint": "Chargez les listes de l’administration du club de VolleyManager (l’export Excel). Le fichier est lu sur cet appareil : seuls le numéro de licence, le nom, le prénom, la date de naissance et le sexe sont envoyés et conservés. Chaque chargement remplace cette liste.",
       "list": "Liste",

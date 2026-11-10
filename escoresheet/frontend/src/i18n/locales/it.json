@@ -3095,6 +3095,7 @@
     "confirmBody": "Confermi che questo indirizzo appartiene al suo account OpenBeach."
   },
   "manage": {
+    "pageNotFound": "Questa pagina non esiste (più).",
     "title": "Gestione",
     "backToApp": "Torna all’app",
     "nav": "Sezioni di gestione",
@@ -3129,6 +3130,15 @@
       "offline": "Serve una connessione al server."
     },
     "accounts": {
+      "page": {
+        "email": "E-mail",
+        "created": "Creato il",
+        "lastSignIn": "Ultimo accesso",
+        "roles": "Ruoli",
+        "clubs": "Società",
+        "manages": "Responsabile di",
+        "request": "Richiesta alla registrazione"
+      },
       "reject": "Rifiuta",
       "rejectTitle": "Rifiutare la registrazione di {{name}}?",
       "rejectBody": "L’account {{email}} non ha ancora un ruolo. Rifiutarlo lo elimina con i suoi dati personali; la persona potrà registrarsi di nuovo più tardi.",
@@ -3201,6 +3211,7 @@
       "noClub": "Nessuna società"
     },
     "games": {
+      "openMatch": "Apri la partita",
       "from": "Dal",
       "to": "Al",
       "search": "Cerca squadra o numero partita",
@@ -3221,6 +3232,15 @@
       "empty": "Nessuna partita ufficiale in questo periodo."
     },
     "matches": {
+      "facts": {
+        "game": "Partita",
+        "when": "Quando",
+        "league": "Lega",
+        "scorer": "Segnapunti",
+        "editors": "Editor",
+        "closed": "Chiusa",
+        "hall": "Palestra"
+      },
       "filterClosed": "Chiuse",
       "filterOpen": "Aperte",
       "filterAll": "Tutte",
@@ -3475,6 +3495,14 @@
       "noMail": "Questo server non può ancora inviare e-mail (nessun server di posta configurato): non parte nulla, anche con l’interruttore acceso."
     },
     "myTeams": {
+      "facts": {
+        "when": "Quando",
+        "where": "Dove",
+        "league": "Lega",
+        "referees": "Arbitri",
+        "game": "Partita",
+        "noReferees": "Non ancora convocati"
+      },
       "none": "Non gestisci nessuna squadra.",
       "pick": "Squadra",
       "intro": "Tieni aggiornati i giocatori della tua squadra e invia l’elenco di ogni partita prima che inizi. Il tablet del segnapunti lo scarica finché ha internet, così in palestra è pronto anche senza Wi-Fi.",
@@ -3541,6 +3569,7 @@
       }
     },
     "clubTeams": {
+      "open": "Apri",
       "title": "Squadre",
       "hint": "Dai un link all’allenatore o al responsabile di ogni squadra. Con esso tengono aggiornati i giocatori e inviano in anticipo l’elenco di ogni partita.",
       "none": "Questa società non ha ancora squadre. Un admin le aggiunge nella scheda Società.",
@@ -3560,6 +3589,8 @@
       "removeBody": "Non potrà più gestire {{team}}. Il suo account resta."
     },
     "licences": {
+      "personNoTeams": "Non ancora in nessuna rosa salvata della società.",
+      "personTeams": "Squadre",
       "title": "Licenze",
       "hint": "Carica gli elenchi dell’amministrazione della società di VolleyManager (l’esportazione Excel). Il file viene letto su questo dispositivo: solo numero di licenza, cognome, nome, data di nascita e sesso vengono inviati e conservati. Ogni caricamento sostituisce quell’elenco.",
       "list": "Elenco",

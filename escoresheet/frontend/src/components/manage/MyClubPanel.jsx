@@ -5,7 +5,8 @@ import InvitesPanel from './InvitesPanel'
 import ClubTeamsSection from './ClubTeamsSection'
 import ClubLicencesSection from './ClubLicencesSection'
 import RequestsSection from './RequestsSection'
-import { usePanelData, useOnline, OfflineBanner, PanelHead, InlineError, useErrorText } from './common'
+import ClubPersonPage from './ClubPersonPage'
+import { usePanelData, usePanelRoute, useOnline, OfflineBanner, PanelHead, InlineError, useErrorText } from './common'
 import { Button, Chip, EmptyInset, Field, Input, Notice, Row, RowList, RowTool, Select, SkeletonRows, confirmDialog, dayLabel, toast } from '../../ui'
 
 /**
@@ -17,28 +18,37 @@ import { Button, Chip, EmptyInset, Field, Input, Notice, Row, RowList, RowTool, 
  * codes. Taking someone off the
  * club removes the club link only: the account and its roles stay. An account
  * that manages several clubs picks one first.
+ *
+ * Pages (owner 2026-11-10: "every page there gets their own page (team,
+ * club, game, player etc)"): the club at #myclub/<club id>, a person of its
+ * licence lists at #myclub/<club id>/person/<licence number>; a team opens
+ * in My teams (`navigate`, when this account has that tab).
  */
-export default function MyClubPanel({ clubs = [] }) {
+export default function MyClubPanel({ clubs = [], route = '', onRoute = null, navigate = null, canOpen = () => false }) {
   const { t } = useTranslation()
-  const [clubId, setClubId] = useState(clubs[0]?.id || '')
-  const club = clubs.find((c) => c.id === clubId) || clubs[0]
+  const [[routeClub, kind, key], go] = usePanelRoute(route, onRoute)
+  const club = clubs.find((c) => c.id === routeClub) || clubs[0]
   if (!club) return <EmptyInset>{t('manage.myClub.none')}</EmptyInset>
+  const openTeam = navigate && canOpen('myteams') ? (teamId) => navigate(`myteams/${encodeURIComponent(teamId)}`) : null
+  if (kind === 'person' && key) {
+    return <ClubPersonPage key={`${club.id}/${key}`} club={club} svNumber={key} onBack={() => go([club.id])} onOpenTeam={openTeam} />
+  }
   return (
     <div className="space-y-8" data-testid="manage-my-club">
       {clubs.length > 1 && (
         <Field label={t('manage.myClub.pick')}>
-          <Select value={club.id} onChange={(e) => setClubId(e.target.value)} data-testid="my-club-pick">
+          <Select value={club.id} onChange={(e) => go([e.target.value])} data-testid="my-club-pick">
             {clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </Select>
         </Field>
       )}
       {/* keyed: another club starts its sections afresh */}
-      <ClubSections key={club.id} club={club} />
+      <ClubSections key={club.id} club={club} onOpenPerson={(sv) => go([club.id, 'person', sv])} onOpenTeam={openTeam} />
     </div>
   )
 }
 
-function ClubSections({ club }) {
+function ClubSections({ club, onOpenPerson, onOpenTeam }) {
   const { t } = useTranslation()
   return (
     <>
@@ -47,9 +57,9 @@ function ClubSections({ club }) {
       <RequestsSection club={club} />
       <ClubMembers club={club} />
       {/* db/023: the club's teams and their team links */}
-      <ClubTeamsSection club={club} />
+      <ClubTeamsSection club={club} onOpenTeam={onOpenTeam} />
       {/* db/024: the club's licence lists from VolleyManager */}
-      <ClubLicencesSection club={club} />
+      <ClubLicencesSection club={club} onOpenPerson={onOpenPerson} />
       <InvitesPanel club={club} title={t('manage.myClub.invites')} />
     </>
   )
