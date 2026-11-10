@@ -57,7 +57,7 @@ import { defaultSetStartTime, actualStartRemark, startsFromSchedule, startSchedu
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
 import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet, getLeftTeamLabelForSet } from '../domain/rules'
 import { resolveSanction, deriveTeamSanctionFlags, deferredPenaltyPoints, penaltyOfPoint, teamSanctionCounts } from '../domain/sanctions'
-import { REQUEST_ISSUES, isReplayPending, substitutionRequestIssues, timeoutRequestIssues, requestBlockReason, entryWithoutCompletedRally, substitutionRequestThisInterruption, substituteInIllegalReason, lateRequestOutcome, decisionChangeTakeBack } from '../domain/interruptionRequests'
+import { REQUEST_ISSUES, isReplayPending, substitutionRequestIssues, timeoutRequestIssues, requestBlockReason, entryWithoutCompletedRally, substitutionRequestThisInterruption, substituteInIllegalReason, lateRequestOutcome, decisionChangeTakeBack, decisionTakeBackTextKey } from '../domain/interruptionRequests'
 import RequestWarningDialog, { RequestOptionRow } from './scoreboard/RequestWarningDialog.jsx'
 import { classifyTimeoutRequest } from '../domain/timeouts'
 import { rallyStatusOf, currentSetOf } from '../domain/rally'
@@ -23844,7 +23844,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       )
                     })}
                   </ul>
-                  <p className="m-0 mt-1.5 text-xs text-stone-500">{t('scoreboard.decisionTakeBack.text')}</p>
+                  {/* only the sentence that applies (substitution, time-out, both) */}
+                  <p className="m-0 mt-1.5 text-xs text-stone-500">{t(`scoreboard.decisionTakeBack.${decisionTakeBackTextKey(replayRallyConfirm.takeBack)}`)}</p>
                   <p className="m-0 mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">{t('scoreboard.decisionTakeBack.rule')}</p>
                 </div>
               )}

@@ -118,6 +118,8 @@ describe('row 19: decision change after a substitution or time-out', () => {
     expect(dialog).toContain('data-testid="decision-take-back"')
     expect(dialog).toContain("t('scoreboard.decisionTakeBack.substitution'")
     expect(dialog).toContain("t('scoreboard.decisionTakeBack.timeout'")
+    // only the sentence that applies (it always named both, 3.0.16 test match)
+    expect(dialog).toContain('t(`scoreboard.decisionTakeBack.${decisionTakeBackTextKey(replayRallyConfirm.takeBack)}`)')
   })
 
   it('takes them back through Undo\'s own writes, then changes the decision on the events as they are then', () => {
@@ -144,7 +146,8 @@ describe('the texts, in all five languages', () => {
     'scoreboard.lateRequest.heading', 'scoreboard.lateRequest.replay', 'scoreboard.lateRequest.penalty',
     'scoreboard.lateRequest.recordsWarning', 'scoreboard.lateRequest.recordsPenalty', 'scoreboard.lateRequest.rule',
     'scoreboard.decisionTakeBack.title', 'scoreboard.decisionTakeBack.timeout', 'scoreboard.decisionTakeBack.substitution',
-    'scoreboard.decisionTakeBack.text', 'scoreboard.decisionTakeBack.rule'
+    'scoreboard.decisionTakeBack.textSubstitution', 'scoreboard.decisionTakeBack.textTimeout',
+    'scoreboard.decisionTakeBack.textBoth', 'scoreboard.decisionTakeBack.rule'
   ]
   const get = (o, p) => p.split('.').reduce((x, k) => x?.[k], o)
   it.each(Object.entries(LOCALES))('%s has every key', (_, locale) => {
@@ -152,6 +155,11 @@ describe('the texts, in all five languages', () => {
     expect(get(locale, 'scoreboard.lateRequest.replay')).toContain('{{team}}')
     expect(get(locale, 'scoreboard.lateRequest.recordsPenalty')).toContain('{{opponent}}')
     expect(get(locale, 'scoreboard.decisionTakeBack.substitution')).toMatch(/\{\{in\}\}[\s\S]*\{\{out\}\}/)
+    // the substitution's sentence names no time-out, the time-out's no substitution
+    expect(get(locale, 'scoreboard.decisionTakeBack.textSubstitution')).not.toBe(get(locale, 'scoreboard.decisionTakeBack.textBoth'))
+    expect(get(locale, 'scoreboard.decisionTakeBack.textTimeout')).not.toBe(get(locale, 'scoreboard.decisionTakeBack.textBoth'))
+    expect(get(locale, 'scoreboard.decisionTakeBack.textSubstitution').toLowerCase()).not.toMatch(/time-?out|temps mort/)
+    expect(get(locale, 'scoreboard.decisionTakeBack.text')).toBeUndefined()
     // no reason texts any more (the owner, 2026-11-09)
     expect(get(locale, 'scoreboard.improperReason')).toBeUndefined()
     expect(get(locale, 'corrections.sanctionReason')).toBeUndefined()
