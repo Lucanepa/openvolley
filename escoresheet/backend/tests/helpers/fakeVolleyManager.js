@@ -50,6 +50,9 @@ function cookieMap(header) {
  * @param {number}   [o.transient500]    first N requests of any kind answer 503
  * @param {number}   [o.reportTotal]     totalItemsCount to report (default games.length)
  * @param {number}   [o.maxPageSize]     server-side cap on searchConfiguration[limit]
+ * @param {number}   [o.slowAbove]       a later page (offset > 0) asking for more than this
+ *                                       answers 503, as VolleyManager timing out on a big
+ *                                       second page (10.11.2026)
  * @param {string}   [o.startRole]       the account's active role at login: 'club' (what
  *                                       another job leaves behind) or 'referee'
  * @param {boolean}  [o.refuseSwitch]    the role switch answers 403
@@ -61,6 +64,7 @@ export function createFakeVolleyManager({
   transient500 = 0,
   reportTotal = null,
   maxPageSize = null,
+  slowAbove = null,
   startRole = 'club',
   refuseSwitch = false
 } = {}) {
@@ -139,6 +143,7 @@ export function createFakeVolleyManager({
       const asked = Number(form.get('searchConfiguration[limit]'))
       const limit = maxPageSize ? Math.min(asked, maxPageSize) : asked
       if (failSearchAt != null && offset === failSearchAt) return html('error', { status: 500 })
+      if (slowAbove != null && offset > 0 && asked > slowAbove) return html('timeout', { status: 503 })
       const json = JSON.stringify({ totalItemsCount: reportTotal ?? games.length, items: games.slice(offset, offset + limit) })
       return new Response(json, { status: 200, headers: { 'content-type': 'application/json' } })
     }
