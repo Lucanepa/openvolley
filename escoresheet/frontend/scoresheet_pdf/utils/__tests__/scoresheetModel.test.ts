@@ -8,7 +8,8 @@ import {
   getScoreBeforeEvent,
   getSet5LeftTeamLabel,
   getFirstServeTeamKey,
-  consistencyWarnings
+  consistencyWarnings,
+  rectificationServerColumn
 } from '../scoresheetModel'
 
 const lineup = (team: string, l: Record<string, number>, seq: number, extra: Record<string, unknown> = {}, setIndex = 1) => ({
@@ -300,5 +301,51 @@ describe('consistencyWarnings (field-spec 12.2)', () => {
     expect(consistencyWarnings({ sets, events, teamAKey: 'home', bestOf: 3 })).toEqual([
       'Set 3: the points recorded (1:0, home:away) do not match the set score (2:0).'
     ])
+  })
+})
+
+// The serve a going back gives: the column of the player at position I of the
+// team's line-up after it, never an implied rotation (3.0.16 test match)
+describe('rectificationServerColumn', () => {
+  const start = { I: 8, II: 3, III: 5, IV: 10, V: 11, VI: 1 }
+  const startArr = ['8', '3', '5', '10', '11', '1']
+  const head = (seq: number, serve: string) => ({ type: 'rectification', setIndex: 1, seq, payload: { serve } })
+
+  it('the line-up of that moment: A rotated once, #3 at I serves column II', () => {
+    const events = [
+      lineup('home', start, 1, { isInitial: true }),
+      point('away', 2),
+      point('home', 3),
+      lineup('home', { I: 3, II: 5, III: 10, IV: 11, V: 1, VI: 8 }, 3.1),
+      point('away', 4),
+      head(5, 'home')
+    ]
+    expect(rectificationServerColumn(events, events[5], startArr)).toBe(1)
+  })
+
+  it('a line-up the scorer set in the going back (row N.1) decides', () => {
+    const events = [
+      lineup('home', start, 1, { isInitial: true }),
+      point('home', 2),
+      head(3, 'home'),
+      lineup('home', { I: 5, II: 10, III: 11, IV: 1, V: 8, VI: 3 }, 3.1)
+    ]
+    expect(rectificationServerColumn(events, events[2], startArr)).toBe(2)
+  })
+
+  it('a substitute at I: his starter\'s column; later rows do not count', () => {
+    const events = [
+      lineup('home', start, 1, { isInitial: true }),
+      { type: 'substitution', setIndex: 1, seq: 2, payload: { team: 'home', playerOut: 8, playerIn: 14 } },
+      lineup('home', { ...start, I: 14 }, 2.1),
+      head(3, 'home'),
+      lineup('home', { ...start, I: 3 }, 4.1)
+    ]
+    expect(rectificationServerColumn(events, events[3], startArr)).toBe(0)
+  })
+
+  it('null without a serving team or a line-up', () => {
+    expect(rectificationServerColumn([], head(1, 'home'), startArr)).toBeNull()
+    expect(rectificationServerColumn([lineup('home', start, 1)], head(2, ''), startArr)).toBeNull()
   })
 })
