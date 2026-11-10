@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, FileUp, PenLine, Plus, Trash2, UserPlus } from 'lucide-react'
 import { teamApi } from '../../lib/accountApi'
-import { addClubPlayersToGameDraft, clubPersonOf, clubPersonToPlayer, gameRosterBody, gameRosterDraft, officialOfRole, officialRolesOf, parsedPdfToRoster, playerFinder, roleForNewOfficial, setGameDraftOfficial, setGameDraftStaffRole, wrongGenderIndexes, GAME_ROSTER_MAX_PLAYERS, GAME_ROSTER_MAX_STAFF } from '../../domain/teamRosters'
+import { addClubPlayersToGameDraft, applyEinsatzlisteToGameDraft, clubPersonOf, clubPersonToPlayer, gameRosterBody, gameRosterDraft, officialOfRole, officialRolesOf, parsedPdfToRoster, playerFinder, roleForNewOfficial, setGameDraftOfficial, setGameDraftStaffRole, wrongGenderIndexes, GAME_ROSTER_MAX_PLAYERS, GAME_ROSTER_MAX_STAFF } from '../../domain/teamRosters'
 import { STAFF_ROLES } from '../../domain/savedTeams'
 import { shirtNumberDigits } from '../../domain/roster'
 import TeamEditor, { clubPeopleOf, clubPersonOffer } from './TeamEditor'
@@ -277,8 +277,9 @@ function GameRosterPage({ team, game, squad, squadLoading = false, clubPlayers, 
     setSigning(null)
   }
 
-  // An Einsatzliste for this game: its players are the ticked ones (numbers
-  // from the PDF), the saved team's others stay offered, unticked
+  // An Einsatzliste for this game: its players are the ticked ones (with the
+  // saved team's numbers: the list has none), its officials in its roles, the
+  // saved team's others stay offered, unticked
   const importPdf = async (file) => {
     if (!file || importing || !shown) return
     setImporting(true)
@@ -290,12 +291,7 @@ function GameRosterPage({ team, game, squad, squadLoading = false, clubPlayers, 
         setSaveError(t('manage.myTeams.pdfEmpty'))
         return
       }
-      const fromPdf = gameRosterDraft(null, { players: imported.players, staff: imported.staff })
-      const keys = new Set(fromPdf.players.map((p) => p.key))
-      const rest = shown.players.filter((p) => !keys.has(p.key)).map((p) => ({ ...p, picked: false }))
-      const staffKeys = new Set(fromPdf.staff.map((s) => s.key))
-      const restStaff = shown.staff.filter((s) => !staffKeys.has(s.key)).map((s) => ({ ...s, picked: false }))
-      setDraft({ players: [...fromPdf.players.map((p) => ({ ...p, picked: true })), ...rest], staff: [...fromPdf.staff, ...restStaff] })
+      setDraft(applyEinsatzlisteToGameDraft(shown, imported).draft)
       toast.success(t('manage.myTeams.pdfImportedGame', { count: imported.players.length }))
     } catch (err) {
       console.warn('[MyTeams] Einsatzliste import failed:', err?.message)

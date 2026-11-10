@@ -198,3 +198,13 @@ describe('readLicenceExport', () => {
     expect(r.people).toHaveLength(3)
   })
 })
+
+describe('genderOf: any language, whichever the headers are in', () => {
+  it('letters and words of the four languages', async () => {
+    const { genderOf } = await import('../vmLicenceExport')
+    for (const v of ['D', 'W', 'F', 'Donna', 'weiblich', 'Femme', 'female', 'F.']) expect(genderOf(v)).toBe('f')
+    for (const v of ['U', 'M', 'H', 'Uomo', 'männlich', 'Homme', 'male']) expect(genderOf(v)).toBe('m')
+    expect(genderOf('')).toBeNull()
+    expect(genderOf('x')).toBeNull()
+  })
+})

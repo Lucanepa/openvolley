@@ -23,6 +23,8 @@ const clean = (v) => String(v ?? '').trim()
 const swappedKey = (p) => `${fold(p?.first_name)}|${fold(p?.last_name)}`
 const licenceKey = (p) => clean(p?.license_number).toLowerCase()
 
+const PDF_OFFICIAL_ROLES = [['coach', 'Coach'], ['ac1', 'Assistant Coach 1'], ['ac2', 'Assistant Coach 2'], ['physio', 'Physiotherapist'], ['medic', 'Medic']]
+
 /** The parseRosterPdf result → { players, staff } in the API shape. */
 export function parsedPdfToRoster(parsed) {
   const players = (parsed?.players || [])
@@ -38,10 +40,17 @@ export function parsedPdfToRoster(parsed) {
       is_captain: false
     }))
   const staff = []
-  for (const [k, role] of [['coach', 'Coach'], ['ac1', 'Assistant Coach 1'], ['ac2', 'Assistant Coach 2']]) {
+  for (const [k, role] of PDF_OFFICIAL_ROLES) {
     const s = parsed?.[k]
     if (!s || !(clean(s.lastName) || clean(s.firstName))) continue
-    staff.push({ role, first_name: clean(s.firstName), last_name: clean(s.lastName) || clean(s.firstName), dob: displayDobToIso(s.dob) || null, license_number: null })
+    // the officials' SV number (#52205) is their licence; a year alone is no date of birth
+    staff.push({
+      role,
+      first_name: clean(s.firstName),
+      last_name: clean(s.lastName) || clean(s.firstName),
+      dob: displayDobToIso(s.dob) || null,
+      license_number: /^\d{4,7}$/.test(clean(s.licence)) ? clean(s.licence) : null
+    })
   }
   return { players, staff }
 }
@@ -76,6 +85,18 @@ export function playerFinder(list = []) {
   return { find, remember }
 }
 
+/**
+ * Are two people (the API shape or drafts) one? The same licence number when
+ * both have one; else the same name, also with first and last name swapped.
+ */
+export function samePerson(a, b) {
+  if (!a || !b) return false
+  const la = licenceKey(a)
+  const lb = licenceKey(b)
+  if (la && lb) return la === lb
+  return nameKey(a) === nameKey(b) || nameKey(a) === swappedKey(b)
+}
+
 export function mergeImportedRoster(players, staff, imported, makePlayer = (p) => p, makeStaff = (s) => s) {
   const out = [...(players || [])]
   let added = 0
@@ -101,18 +122,100 @@ export function mergeImportedRoster(players, staff, imported, makePlayer = (p) =
       updated++
     }
   }
-  const outStaff = [...(staff || [])]
-  for (const s of imported?.staff || []) {
-    const i = outStaff.findIndex((x) => x.role === s.role)
+  // The Einsatzliste says who holds each of its roles (owner 2026-11-10: the
+  // officials' roles follow it): the same person moves to the role, else the
+  // role's row takes the person; whoever else held one of its roles, and the
+  // same person in a second role, leaves the officials.
+  const imp = (imported?.staff || []).filter((s) => s && STAFF_ROLES.includes(s.role))
+  const onImport = (row) => imp.some((s) => samePerson(row, s))
+  const work = [...(staff || [])]
+  const keep = new Set()
+  for (const s of imp) {
+    let i = work.findIndex((x, j) => !keep.has(j) && samePerson(x, s))
+    if (i === -1) i = work.findIndex((x, j) => !keep.has(j) && x.role === s.role && !onImport(x))
     if (i === -1) {
-      outStaff.push(makeStaff(s))
+      work.push(makeStaff(s))
+      keep.add(work.length - 1)
       added++
-    } else if (nameKey(outStaff[i]) !== nameKey(s) || (s.dob && outStaff[i].dob !== s.dob)) {
-      outStaff[i] = { ...outStaff[i], first_name: s.first_name, last_name: s.last_name, dob: s.dob || outStaff[i].dob }
-      updated++
+      continue
     }
+    const cur = work[i]
+    const same = samePerson(cur, s)
+    const next = {
+      ...cur,
+      role: s.role,
+      first_name: s.first_name,
+      last_name: s.last_name,
+      dob: s.dob || (same ? cur.dob : emptyLike(cur.dob)),
+      license_number: s.license_number || (same ? cur.license_number : emptyLike(cur.license_number))
+    }
+    if (['role', 'first_name', 'last_name', 'dob', 'license_number'].some((f) => (next[f] ?? '') !== (cur[f] ?? ''))) updated++
+    work[i] = next
+    keep.add(i)
   }
+  const roles = new Set(imp.map((s) => s.role))
+  const outStaff = work.filter((x, j) => keep.has(j) || !(roles.has(x.role) || onImport(x)))
+  if (outStaff.length < work.length) updated += work.length - outStaff.length
   return { players: out, staff: outStaff, added, updated }
+}
+
+/**
+ * A game roster draft (gameRosterDraft) with an Einsatzliste for the game
+ * (parsedPdfToRoster) applied: its players ticked, the others unticked. An
+ * Einsatzliste has no shirt numbers: a player already offered keeps the
+ * draft's number, captain and libero (licence and date of birth filled from
+ * the list); one not offered yet comes without a number. Its officials are
+ * ticked in the roles it gives them (one entry per person: the draft's entry
+ * moves to the role); every other official is unticked.
+ * { draft, added } (added: the players not offered before).
+ */
+export function applyEinsatzlisteToGameDraft(draft, imported) {
+  const before = draft?.players || []
+  const { find } = playerFinder(before)
+  const used = new Set()
+  const keys = new Set(before.map((p) => p.key))
+  const ticked = []
+  let added = 0
+  for (const p of imported?.players || []) {
+    const i = find(p)
+    if (i !== undefined && !used.has(i)) {
+      used.add(i)
+      const cur = before[i]
+      ticked.push({ ...cur, number: clean(cur.number) === '' && p.number != null ? p.number : cur.number, license_number: cur.license_number || p.license_number || null, dob: cur.dob || p.dob || null, picked: true })
+      continue
+    }
+    if (i !== undefined) continue // twice in the list
+    let key = nameKey(p)
+    while (keys.has(key)) key = `${key}|${p.license_number || added}`
+    keys.add(key)
+    ticked.push({ key, number: p.number ?? '', first_name: p.first_name, last_name: p.last_name, dob: p.dob || null, license_number: p.license_number || null, is_libero: false, is_captain: false, picked: true })
+    added++
+  }
+  const rest = before.filter((_, i) => !used.has(i)).map((p) => ({ ...p, picked: false }))
+
+  const staffBefore = draft?.staff || []
+  const staffUsed = new Set()
+  const staffKeys = new Set(staffBefore.map((s) => s.key))
+  const staff = []
+  for (const s of imported?.staff || []) {
+    if (!STAFF_ROLES.includes(s?.role)) continue
+    const i = staffBefore.findIndex((x, j) => !staffUsed.has(j) && samePerson(x, s))
+    if (i !== -1) {
+      staffUsed.add(i)
+      const cur = staffBefore[i]
+      staff.push({ ...cur, role: s.role, license_number: cur.license_number || s.license_number || null, dob: cur.dob || s.dob || null, picked: true })
+      continue
+    }
+    let key = `${s.role}|${nameKey(s)}`
+    while (staffKeys.has(key)) key = `${key}|${s.license_number || staff.length}`
+    staffKeys.add(key)
+    staff.push({ key, role: s.role, first_name: s.first_name, last_name: s.last_name, dob: s.dob || null, license_number: s.license_number || null, picked: true })
+  }
+  // the same person once: another entry of someone the list names goes
+  const restStaff = staffBefore.filter((x, j) => !staffUsed.has(j) && !staff.some((s) => samePerson(x, s))).map((x) => ({ ...x, picked: false }))
+  // with no officials in the list, the draft's ticks stay as they were
+  const outStaff = staff.length ? [...staff, ...restStaff] : staffBefore
+  return { draft: { ...(draft || {}), players: [...ticked, ...rest], staff: outStaff }, added }
 }
 
 /**
