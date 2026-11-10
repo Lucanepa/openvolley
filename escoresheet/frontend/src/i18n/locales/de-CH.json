@@ -4438,6 +4438,9 @@
       "offline": "Offline: d Genehmigung mit PIN chunnt wieder, sobald du online bisch"
     }
   },
+  "brand": {
+    "madeBy": "Vo Schwiizer Schiris entwicklet"
+  },
   "legal": {
     "nav": "Rächtlichs",
     "privacy": "Datenschutzerklärig",

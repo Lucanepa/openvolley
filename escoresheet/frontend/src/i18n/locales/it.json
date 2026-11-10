@@ -4443,6 +4443,9 @@
       "offline": "Offline: l’approvazione con PIN torna disponibile appena sei online"
     }
   },
+  "brand": {
+    "madeBy": "Creato da arbitri svizzeri"
+  },
   "legal": {
     "nav": "Note legali",
     "privacy": "Protezione dei dati",

@@ -21,7 +21,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key) => lookup(key) ?? key, i18n: { language, resolvedLanguage: language } })
 }))
 
-import LegalLinks, { LegalSentence } from '../LegalLinks'
+import LegalLinks, { LegalSentence, MadeBy } from '../LegalLinks'
 
 describe('legal page URLs', () => {
   it('has a page for every document in every language, under openvolley.app', () => {
@@ -78,6 +78,49 @@ describe('legal strings', () => {
       expect(data.legal.signUpConsent, lng).toMatch(/<terms>[^<]+<\/terms>.*<privacy>[^<]+<\/privacy>/)
       expect(JSON.stringify(data.legal), lng).not.toMatch(/ß/)
     }
+  })
+})
+
+describe('"Made by Swiss referees" (owner 2026-11-10)', () => {
+  const LOCALES = { en, de, 'de-CH': deCH, fr, it: it_ }
+
+  it('is translated in every locale, naming no club', () => {
+    expect(en.brand.madeBy).toBe('Made by Swiss referees')
+    expect(de.brand.madeBy).toBe('Von Schweizer Schiedsrichtern entwickelt')
+    expect(fr.brand.madeBy).toBe('Conçu par des arbitres suisses')
+    expect(it_.brand.madeBy).toBe('Creato da arbitri svizzeri')
+    // de-CH in dialect, like the legal links and Home around it
+    expect(deCH.brand.madeBy).toBe('Vo Schwiizer Schiris entwicklet')
+    for (const [lng, data] of Object.entries(LOCALES)) {
+      expect(data.brand.madeBy, lng).not.toMatch(/ß|KSC|Wiedikon|club|Verein|Club|società/i)
+    }
+  })
+
+  it('stands on its own line above the legal links, outside the nav', () => {
+    language = 'en'
+    render(<LegalLinks docs={['privacy', 'terms', 'impressum']} className="mt-8 text-center" data-testid="footer" />)
+    const footer = screen.getByTestId('footer')
+    const line = screen.getByTestId('made-by')
+    expect(line).toHaveTextContent('Made by Swiss referees')
+    expect(line.tagName).toBe('P')
+    expect(footer.firstElementChild).toBe(line)
+    expect(footer).toHaveClass('mt-8', 'text-center')
+    const nav = screen.getByRole('navigation', { name: 'Legal' })
+    expect(nav).not.toContainElement(line)
+    expect(nav.querySelectorAll('a')).toHaveLength(3)
+  })
+
+  it('madeBy={false} leaves only the links (the sign-in dialog)', () => {
+    render(<LegalLinks madeBy={false} />)
+    expect(screen.queryByTestId('made-by')).toBeNull()
+    expect(screen.getByTestId('legal-links').querySelectorAll('a')).toHaveLength(4)
+  })
+
+  it('MadeBy alone is the plain line (Home, under the logo)', () => {
+    render(<MadeBy className="text-sm" />)
+    expect(screen.getByTestId('made-by')).toHaveTextContent('Made by Swiss referees')
+    expect(screen.getByTestId('made-by')).toHaveClass('text-sm')
+    expect(screen.getByTestId('made-by').querySelector('a')).toBeNull()
   })
 })
 

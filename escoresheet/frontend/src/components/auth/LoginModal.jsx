@@ -269,7 +269,10 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp, initialFor
               )}
             </>
           )}
-          <LegalLinks docs={['privacy', 'terms', 'impressum']} className="mt-4 text-center text-[11px] text-stone-400" />
+          {/* The sign-in dialog keeps to signing in: no "Made by Swiss
+              referees" line (Home, Options, the menus and the manager's
+              sign-in card carry it) */}
+          <LegalLinks docs={['privacy', 'terms', 'impressum']} madeBy={false} className="mt-4 text-center text-[11px] text-stone-400" />
         </div>
       </div>
     </div>
