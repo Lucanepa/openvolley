@@ -86,7 +86,11 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
   // (OpenVolley: ?app=indoor, OpenBeach: ?app=beach; saved teams only narrow for beach)
   const scope = brand.scope || undefined
   const allowed = useMemo(() => manageTabsFor(access, brand), [access, brand])
-  const current = allowed.includes(tab) ? tab : allowed[0]
+  // A tab's own page after a slash (My teams: '<team id>/<game number>', a
+  // game's roster; owner 2026-11-10: "new page with url with the game id")
+  const [tabId, ...tabRest] = String(tab || '').split('/')
+  const current = allowed.includes(tabId) ? tabId : allowed[0]
+  const subRoute = current === tabId ? tabRest.join('/') : ''
   // Panels mount on first visit and then stay mounted (ConsolePanel)
   const [visited, setVisited] = useState(() => new Set(current ? [current] : []))
   // "Activity" on a match (matches tab): the activity tab, filtered to it
@@ -153,7 +157,7 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
         {visited.has('invites') && <ConsolePanel id="invites" current={current}><InvitesPanel app={scope} /></ConsolePanel>}
         {visited.has('clubs') && <ConsolePanel id="clubs" current={current}><ClubsPanel /></ConsolePanel>}
         {visited.has('myclub') && <ConsolePanel id="myclub" current={current}><MyClubPanel clubs={access.managedClubs} /></ConsolePanel>}
-        {visited.has('myteams') && <ConsolePanel id="myteams" current={current}><MyTeamsPanel teams={access.managedTeams} /></ConsolePanel>}
+        {visited.has('myteams') && <ConsolePanel id="myteams" current={current}><MyTeamsPanel teams={access.managedTeams} route={current === 'myteams' ? subRoute : ''} onRoute={(sub, opts) => onTab?.(sub ? `myteams/${sub}` : 'myteams', opts)} /></ConsolePanel>}
         {visited.has('settings') && <ConsolePanel id="settings" current={current}><SettingsPanel /></ConsolePanel>}
         {visited.has('games') && <ConsolePanel id="games" current={current}><OfficialGamesPanel /></ConsolePanel>}
         {visited.has('matches') && <ConsolePanel id="matches" current={current}><ClosedMatchesPanel onShowActivity={showActivity} /></ConsolePanel>}

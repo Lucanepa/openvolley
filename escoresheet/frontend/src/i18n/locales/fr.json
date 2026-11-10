@@ -3477,6 +3477,7 @@
       "games": "Matchs",
       "gamesHint": "Préparez la liste de chaque match : cochez qui joue. Vous pouvez la modifier à tout moment.",
       "noGames": "Aucun match de cette équipe au calendrier à partir d’aujourd’hui.",
+      "gameNotFound": "Le match #{{number}} n’est pas dans le calendrier de cette équipe à partir d’aujourd’hui.",
       "vs": "contre",
       "at": "chez",
       "home": "Domicile",

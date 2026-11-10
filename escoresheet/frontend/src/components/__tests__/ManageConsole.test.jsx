@@ -87,6 +87,15 @@ describe('ManageConsole', () => {
     }
   })
 
+  // A tab's own page after a slash (#myteams/<team id>/<game number>): the
+  // tab is the part before it
+  it('opens the tab named before a slash in the route', async () => {
+    asUser(['admin'])
+    render(<ManageConsole tab="invites/some/page" onTab={() => {}} onClose={() => {}} />)
+    await waitFor(() => expect(api.admin.listInvites).toHaveBeenCalledWith({ app: 'indoor' }))
+    expect(api.admin.listAccounts).not.toHaveBeenCalled()
+  })
+
   it('a competition manager lands on the scoresheets whatever tab was asked', async () => {
     asUser(['competition_manager'])
     render(<ManageConsole tab="accounts" onTab={() => {}} onClose={() => {}} />)

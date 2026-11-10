@@ -51,12 +51,18 @@ Shown when `/api/me` `managedTeams` is not empty (team managers, club managers).
   a new competition named after the league (**D1**). Scorers then load it in Match Setup as
   every saved team today.
 - **Games**: the team's games in the schedule (`svrz_games`, home and away, from today). Each shows
-  whether a roster was sent, when and by whom. **Prepare roster** opens the game's roster: tick up
-  to 14 players of the saved team, shirt numbers, captain, up to 2 liberos, the officials; or
-  Import Einsatzliste for this game. Save sends it.
+  whether a roster was sent, when and by whom. **Prepare roster** opens the game's roster, a page
+  of its own with the game in the address (`#myteams/<team id>/<game number>`; Back returns to
+  the list; owner 2026-11-10): tick up to 14 players of the saved team, shirt numbers, captain, up
+  to 2 liberos, the officials; or Import Einsatzliste for this game. Save sends it.
+- **Officials of a game**: each has a role menu (coach, assistant coaches 1 and 2,
+  physiotherapist, medic). Each role once: a ticked official who takes a role, or is ticked in
+  it, unticks the one who had it. **Add official** adds someone typed in (role, names, date of
+  birth and licence optional; the physiotherapist offered first, then the medic), not necessarily
+  of the club's lists (owner 2026-11-10: "have people be put as P/M manually").
 - No lock (**D2**, owner): a game's roster can be changed at any time, also after kick-off. The
   scorer adjusts anything in the hall by hand as today.
-- Signatures (**D3**, owner): optional. The coach and the captain may sign ahead in the dialog
+- Signatures (**D3**, owner): optional. The coach and the captain may sign ahead on that page
   (the same signature pad as the app). A signature belongs to the roster it was made on: a change
   after signing drops it and asks to sign again. Without them, they sign at the coin toss.
 
