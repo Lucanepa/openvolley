@@ -491,4 +491,51 @@ describe('MatchSetup smoke render', () => {
     expect(within(players).getAllByTestId('club-picker-row')).toHaveLength(1)
     expect(players.textContent).not.toMatch(/clubPlayers\.only/)
   })
+
+  // Shields (owner 2026-11-10): green, someone of the club's uploaded lists
+  // (by name and date of birth); gray, typed by hand or kept by hand; the
+  // gray shield links the row to someone uploaded
+  it('shows a shield on each roster and bench row; the gray one links the row', async () => {
+    auth.user = { id: 'u1' }
+    store.tables.matches = new Map([[1, {
+      id: 1, status: 'setup', seed_key: 'match_1_shields', matchInfoConfirmedAt: '2026-10-06T10:00:00Z',
+      homeTeamId: 11, awayTeamId: 12, game_n: 991410, ...PINS,
+      bench_home: [{ role: 'Coach', firstName: 'Tina', lastName: 'Trainr', dob: '' }]
+    }]])
+    store.tables.teams = new Map([[11, { id: 11, name: 'Home V' }], [12, { id: 12, name: 'Away V' }]])
+    store.tables.players = new Map([
+      [401, { id: 401, teamId: 11, number: 1, lastName: 'Probe', firstName: 'Marco', dob: '02.11.2001', libero: '' }],
+      [402, { id: 402, teamId: 11, number: 2, lastName: 'Hand', firstName: 'Hans', dob: '', libero: '' }],
+      [403, { id: 403, teamId: 11, number: 3, lastName: 'Neu', firstName: 'Nina', dob: '', libero: '' }]
+    ])
+    store.tables.club_players = new Map([['c1', {
+      clubId: 'c1', clubName: 'VBC Home', teamNames: ['Home V'], teamGenders: { 'Home V': 'm' }, userId: 'u1', fetchedAt: '2026-11-10T10:00:00Z',
+      players: [
+        { sv_number: '100003', last_name: 'Probe', first_name: 'Marco', dob: '2001-11-02', gender: 'm', manual: false },
+        { sv_number: '400001', last_name: 'Hand', first_name: 'Hans', dob: null, gender: 'm', manual: true }
+      ],
+      people: [
+        { sv_number: '100003', last_name: 'Probe', first_name: 'Marco', dob: '2001-11-02', gender: 'm', manual: false, lists: ['players'] },
+        { sv_number: '400001', last_name: 'Hand', first_name: 'Hans', dob: null, gender: 'm', manual: true, lists: ['players'] },
+        { sv_number: '200001', last_name: 'Trainer', first_name: 'Tina', dob: '1980-03-04', gender: 'f', manual: false, lists: ['coaches'] }
+      ]
+    }]])
+    render(<Setup matchId={1} />)
+    fireEvent.click((await screen.findAllByRole('button', { name: 'matchSetup.editRoster' }))[0])
+    const shields = (sel) => [...document.querySelectorAll(`${sel} [data-testid="club-shield"]`)].map((x) => x.dataset.shield)
+    await waitFor(() => expect(shields('.roster-grid')).toEqual(['club', 'manual', 'hand']))
+    expect(shields('.bench-grid')).toEqual(['hand'])
+    // the coach typed "Trainr": linked to Tina of the coaches list
+    fireEvent.click(document.querySelector('.bench-grid [data-testid="club-shield"]'))
+    const picker = await screen.findByTestId('club-picker')
+    expect(picker.dataset.mode).toBe('link')
+    // "Trainr" finds nobody: the search starts empty, with everyone uploaded
+    expect(within(picker).getByTestId('club-picker-search').value).toBe('')
+    expect(within(picker).getAllByTestId('club-picker-row').map((r) => r.textContent)).toEqual([expect.stringContaining('Probe Marco'), expect.stringContaining('Trainer Tina')])
+    fireEvent.change(within(picker).getByTestId('club-picker-search'), { target: { value: 'Tina' } })
+    fireEvent.click(within(within(picker).getAllByTestId('club-picker-row')[0]).getByRole('radio'))
+    fireEvent.click(screen.getByTestId('club-picker-add'))
+    await waitFor(() => expect([...document.querySelectorAll('.bench-grid input.cell-last')].map((i) => i.value)).toEqual(['Trainer']))
+    expect(shields('.bench-grid')).toEqual(['club'])
+  })
 })

@@ -141,3 +141,52 @@ export function setBenchOfficial(bench, role, c) {
   out[i] = { ...cur, ...row, dob: row.dob || (same ? cur.dob || '' : '') }
   return { bench: out, replaced: named && !same ? cur : null }
 }
+
+// ---------------------------------------------------------------- shields
+// Owner 2026-11-10: "Those from the club/recognized/linked -> green shield.
+// Those added manually -> gray shield, but can be linked lately in case."
+// Match Setup's rows have no licence number: a row is a club person by name
+// (accents, case and the order of first and last name aside) and, when both
+// have one, the date of birth.
+
+/**
+ * The club person of a Match Setup row ({ firstName, lastName, dob
+ * DD.MM.YYYY }) in `people`, or null (typed by hand): one person of that
+ * name (and date of birth), or one uploaded person among others kept by hand.
+ * A person kept by hand (`manual`) has a gray shield too.
+ */
+export function clubPersonOfRow(row, people) {
+  if (!row || !Array.isArray(people) || !people.length) return null
+  if (!String(row.lastName || '').trim()) return null
+  const keys = new Set([rowKey(row.lastName, row.firstName), rowKey(row.firstName, row.lastName)])
+  let hits = people.filter((c) => c && keys.has(rowKey(c.last_name, c.first_name)))
+  const dob = displayDobToIso(row.dob) || null
+  if (dob) hits = hits.filter((c) => !c.dob || c.dob === dob)
+  if (hits.length === 1) return hits[0]
+  const uploaded = hits.filter((c) => !c.manual)
+  return uploaded.length === 1 ? uploaded[0] : null
+}
+
+/** What the club person `c` adds to a Match Setup row: { first_name?, dob? } in the row's formats ({} when nothing). */
+export function clubFillOfRow(row, c) {
+  if (!row || !c) return {}
+  const out = {}
+  if (!String(row.firstName || '').trim() && String(c.first_name || '').trim()) out.first_name = String(c.first_name).trim()
+  if (!String(row.dob || '').trim() && c.dob) out.dob = isoToDisplayDob(c.dob)
+  return out
+}
+
+/** A Match Setup row with clubFillOfRow's fields applied. */
+export function applyClubFill(row, fill) {
+  return { ...row, ...(fill.first_name ? { firstName: fill.first_name } : {}), ...(fill.dob ? { dob: fill.dob } : {}) }
+}
+
+/** A Match Setup row (roster or bench) linked to the club person `c`: its names and date of birth from the club. */
+export function linkRowToClub(row, c) {
+  return {
+    ...row,
+    firstName: String(c?.first_name || '').trim() || row?.firstName || '',
+    lastName: String(c?.last_name || '').trim() || row?.lastName || '',
+    dob: isoToDisplayDob(c?.dob) || row?.dob || ''
+  }
+}
