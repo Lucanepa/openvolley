@@ -31,6 +31,7 @@ import LongPressProgressIndicator from './LongPressProgressIndicator'
 import DraggedPlayerOverlay from './DraggedPlayerOverlay'
 import { setPlayerDragImage } from '../utils/dragImage'
 import { teamShortLabels } from '../utils/teamShortLabels'
+import { LOG_REWRITE_EVENTS, liveStateLastAction } from '../utils/refereeLastEvent.js'
 import ballFallback from '../ball_fallback.png'
 
 // Primary ball image (with a bundled copy as fallback)
@@ -2568,9 +2569,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // and Point Hub read last_event_type, and 'reconnect' is no event they
       // know; it also overwrote a finished match's 'match_end'). Not known
       // since a reload: left out, the stored row keeps its own.
+      // A push after which another, older action is last or none (an undo,
+      // a decision change, a Go back, ...) names it (lastAction): the
+      // referee's footer showed the undone one for good (liveStateRewrite)
+      let pushedData = eventData || null
+      if (LOG_REWRITE_EVENTS.includes(eventType)) {
+        const loggedEvents = await db.events.where('matchId').equals(matchId).toArray()
+        pushedData = { ...(eventData || {}), lastAction: liveStateLastAction(loggedEvents) }
+      }
       const pushedEvent = eventType === RECONNECT_PUSH
         ? (lastPushedEventRef.current?.matchId === matchId ? lastPushedEventRef.current : null)
-        : { matchId, type: eventType || null, team: eventTeam || null, data: eventData || null, ts: new Date().toISOString() }
+        : { matchId, type: eventType || null, team: eventTeam || null, data: pushedData, ts: new Date().toISOString() }
       if (eventType !== RECONNECT_PUSH) lastPushedEventRef.current = pushedEvent
 
       // Map directly from snapshot to Supabase table

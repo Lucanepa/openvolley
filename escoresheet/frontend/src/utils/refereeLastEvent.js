@@ -4,13 +4,30 @@
 // time the push arrived. A referee that missed a push (offline, reconnect)
 // kept the stale line, and after a reload it showed "–" until the next action.
 // These helpers derive the line from any data the referee loads (a relay
-// bundle's events or a live-state row), stamped with the scorer's time, and
-// keep whichever is newest.
+// bundle's events or a live-state row), stamped with the scorer's time.
+//
+// Newest alone was not enough: an Undo (or a decision change, a Go back)
+// leaves an older action last, and the undone time-out, newer, stayed on the
+// footer for good. The line follows the current log instead (nextLastEvent):
+// a full relay bundle's events are the log as it is now, and a push that
+// rewrote the log names the action now last itself (lastAction).
 
 export const DISPLAYABLE_EVENTS = [
   'point', 'timeout', 'substitution', 'libero_entry', 'libero_exit', 'libero_exchange',
   'libero_redesignation', 'set_end', 'sanction', 'court_captain_designation'
 ]
+
+// Scorer pushes after which the last action can be another, older one or none
+// (undone, swapped to the other team, replayed, rebuilt by a Go back or a
+// correction). The scorer's live state of these carries the action now last
+// in last_event_data.lastAction (liveStateLastAction), null when there is none.
+export const LOG_REWRITE_EVENTS = [
+  'undo', 'decision_change', 'replay', 'rectification', 'manual_correction', 'manual_reopen_set'
+]
+
+// The fields the footer line reads (refereeEventLabel): last_event_data is
+// public (the livescore reads the row), so no whole payload goes out with it
+const FOOTER_DATA_FIELDS = ['team', 'setIndex', 'playerOut', 'playerIn', 'type', 'playerNumber', 'role', 'playerType', 'liberoNumber']
 
 const toMs = (ts) => {
   if (ts == null || ts === '') return null
@@ -76,6 +93,62 @@ export function pickNewerLastEvent(current, candidate) {
   if (!candidate) return current || null
   if (!current) return candidate
   return candidate.timestamp >= current.timestamp ? candidate : current
+}
+
+/**
+ * What the scorer writes as last_event_data.lastAction on a LOG_REWRITE_EVENTS
+ * push: the action now last in `events` (its own events after the undo), with
+ * only the fields the footer reads, or null when none is left.
+ */
+export function liveStateLastAction(events) {
+  const last = lastEventFromEvents(events)
+  if (!last) return null
+  const data = {}
+  for (const key of FOOTER_DATA_FIELDS) {
+    if (last.data?.[key] != null) data[key] = last.data[key]
+  }
+  return { type: last.type, team: last.team, data, ts: new Date(last.timestamp).toISOString() }
+}
+
+/**
+ * A live-state row of a push that rewrote the log, with the action it names
+ * as last: { at, lastEvent } (`at`: when the push was made; `lastEvent`: the
+ * footer entry, null when nothing is left). Null for any other row, and for a
+ * scorer that does not name it (older version): then nothing is known.
+ */
+export function liveStateRewrite(state) {
+  if (!state || !LOG_REWRITE_EVENTS.includes(state.last_event_type)) return null
+  const named = state.last_event_data
+  if (!named || typeof named !== 'object' || !Object.prototype.hasOwnProperty.call(named, 'lastAction')) return null
+  const at = toMs(state.last_event_ts) ?? toMs(state.updated_at)
+  if (at == null) return null
+  const action = named.lastAction
+  const timestamp = toMs(action?.ts)
+  const lastEvent = action && DISPLAYABLE_EVENTS.includes(action.type) && timestamp != null
+    ? { type: action.type, team: action.team || null, data: action.data || null, timestamp }
+    : null
+  return { at, lastEvent }
+}
+
+/**
+ * The footer's next entry after the referee loaded or was pushed match data.
+ * - `eventsAreCurrent`: `events` are the scorer's whole log as it is now (a
+ *   full relay bundle not older than the live state it brings): its last
+ *   action is shown, also when it is older than the shown one or there is
+ *   none (everything undone: "–").
+ * - Otherwise the newer of the shown entry, the events' and the row's (a push
+ *   can arrive before the bundle), and a row that rewrote the log after the
+ *   shown action replaces it with the action it names (liveStateRewrite).
+ * @param {object|null} current - the shown entry
+ * @param {{ events?: Array|null, liveState?: object|null, eventsAreCurrent?: boolean, fallbackTs?: number|null }} input
+ */
+export function nextLastEvent(current, { events = null, liveState = null, eventsAreCurrent = false, fallbackTs = null } = {}) {
+  if (eventsAreCurrent) return lastEventFromEvents(events)
+  let next = pickNewerLastEvent(current, lastEventFromEvents(events))
+  next = pickNewerLastEvent(next, lastEventFromLiveState(liveState, { fallbackTs }))
+  const rewrite = liveStateRewrite(liveState)
+  if (rewrite && (!next || rewrite.at >= next.timestamp)) return rewrite.lastEvent
+  return next
 }
 
 /**
