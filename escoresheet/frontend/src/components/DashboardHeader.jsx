@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, ChevronLeft, Maximize, Menu, X } from 'lucide-react'
+import { ChevronDown, ChevronLeft, House, Maximize, Menu, X } from 'lucide-react'
 import i18n from '../i18n'
 import { RefreshIcon, SunIcon, MoonIcon, DatabaseIcon, SatelliteDishIcon, MonitorIcon, ClipboardIcon, TrashIcon } from './icons'
 import { clearCachesAndReload } from '../hooks/useServiceWorker'
@@ -16,6 +16,7 @@ import LegalLinks from '../legal/LegalLinks'
 import { useTheme } from '../utils/theme'
 import { themeMenuItems } from './themeMenuItems'
 import { HeaderHelpButton } from './help/HelpButton.jsx'
+import { scorerReturnUrl, returnToScorer } from '../utils/scorerReturn'
 
 // Flag SVG components for language selector
 const FlagGB = () => (
@@ -114,6 +115,11 @@ export default function DashboardHeader({
   const [versionExpanded, setVersionExpanded] = useState(false)
   const [languageExpanded, setLanguageExpanded] = useState(false)
   const [confirmingClearCache, setConfirmingClearCache] = useState(false)
+  // Opened from the scorer's Home menu on this device: the way back to it
+  // (utils/scorerReturn.js). A row in the menu, and on the pages before a
+  // match (no Back of their own) a button in the bar as well.
+  const [backToScorer] = useState(() => !!scorerReturnUrl())
+  const showScorerButton = backToScorer && !onBack && !backButton
 
   const handleClearCache = async () => {
     try {
@@ -231,6 +237,17 @@ export default function DashboardHeader({
           status: statusInfo(status)
         })
       }
+    })
+  }
+
+  // Back to the scorer's Home (opened from its menu on this device)
+  if (backToScorer) {
+    if (menuItems.length > 0) menuItems.push({ divider: true })
+    menuItems.push({
+      icon: <House size={14} aria-hidden="true" />,
+      label: t('dashboards.backToScorer', 'Back to scorer'),
+      onClick: () => returnToScorer(),
+      testId: 'dashboard-back-to-scorer'
     })
   }
 
@@ -415,6 +432,19 @@ export default function DashboardHeader({
     >
       {/* LEFT: Title/Version */}
       <div className="flex min-w-0 flex-1 basis-0 items-center gap-2">
+        {showScorerButton && (
+          <button
+            type="button"
+            onClick={() => returnToScorer()}
+            data-testid="dashboard-scorer-button"
+            aria-label={t('dashboards.backToScorer', 'Back to scorer')}
+            title={t('dashboards.backToScorer', 'Back to scorer')}
+            className={cn(HEADER_BTN, HEADER_HIT, 'shrink-0 gap-1 pl-1.5 pr-2.5')}
+          >
+            <ChevronLeft size={16} aria-hidden="true" />
+            <span>{t('dashboards.scorer', 'Scorer')}</span>
+          </button>
+        )}
         {backButton && onBack && (
           <button
             type="button"

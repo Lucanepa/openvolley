@@ -19,7 +19,8 @@ import { supabase } from '../lib/supabaseClient'
 import { apiFrom } from '../lib/apiClient'
 import { useSyncQueue } from '../hooks/useSyncQueue'
 import { RefreshIcon, SunIcon, MoonIcon, DatabaseIcon, SatelliteDishIcon, WarningIcon, SettingsIcon, VolleyballIcon, BellIcon } from './icons'
-import { FileText, Loader2, Users } from 'lucide-react'
+import { FileText, House, Loader2, Users } from 'lucide-react'
+import { scorerReturnUrl, returnToScorer } from '../utils/scorerReturn'
 import { cn } from '../ui/cn.js'
 import { Button, FOCUS_RING } from '../ui/Button.jsx'
 import { Card } from '../ui/Card.jsx'
@@ -3077,7 +3078,17 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             label: t('refereeDashboard.exit'),
             onClick: onExit,
             color: '#ef4444'
-          }
+          },
+          // Opened from the scorer's Home menu on this device: back to it
+          // (utils/scorerReturn.js)
+          ...(scorerReturnUrl() ? [
+            {
+              icon: <House size={14} aria-hidden="true" />,
+              label: t('dashboards.backToScorer', 'Back to scorer'),
+              onClick: () => returnToScorer(),
+              testId: 'dashboard-back-to-scorer'
+            }
+          ] : [])
         ]}
       />
       <ContextualHelpPanel open={helpOpen} onClose={closeHelp} screen="referee" />
