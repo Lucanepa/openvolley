@@ -5,7 +5,10 @@
  */
 
 export const ADMIN_ROLES = ['admin', 'super_admin']
-export const KNOWN_ROLES = ['scorer', 'referee', 'competition_manager', 'admin', 'super_admin']
+// db/030: club and team managers, kept in profiles.roles by the database
+// (never granted by hand): shown as roles, and such an account is not pending
+export const MANAGER_ROLES = ['club_manager', 'team_manager']
+export const KNOWN_ROLES = ['scorer', 'referee', 'competition_manager', 'admin', 'super_admin', ...MANAGER_ROLES]
 // Roles an admin can grant or remove through the API (super_admin is SQL-only).
 export const API_GRANTABLE_ROLES = ['scorer', 'referee', 'competition_manager', 'admin']
 
@@ -27,7 +30,7 @@ function sportFlags(roles, isAdmin, sport) {
     canScore,
     canManageTeams,
     canReadTeams: canScore || canManageTeams,
-    isPending: !isAdmin && !own.some(r => roles.includes(r))
+    isPending: !isAdmin && !own.some(r => roles.includes(r)) && !(sport !== 'beach' && MANAGER_ROLES.some(r => roles.includes(r)))
   }
 }
 

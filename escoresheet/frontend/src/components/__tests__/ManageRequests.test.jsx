@@ -127,7 +127,10 @@ describe('Accounts: a sign-up request', () => {
     api.admin.listAccounts.mockResolvedValue(ok({ accounts: [coach], can_delete: true }))
     render(<AccountsPanel selfId="u-self" app="indoor" />)
     const row = await screen.findByTestId('account-u-coach')
-    expect(row).toHaveTextContent('manage.requests.managesTeam|VBC Musterdorf H1')
+    // the role chip says Team manager, the chip next to it which team; no "Pending approval"
+    expect(row).toHaveTextContent('access.roles.team_manager')
+    expect(row).toHaveTextContent('VBC Musterdorf H1')
+    expect(row).not.toHaveTextContent('access.roles.pending')
     expect(within(row).queryByTestId('reject-account')).toBeNull()
     expect(within(row).getByTestId('delete-account')).toBeInTheDocument()
   })

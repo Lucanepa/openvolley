@@ -248,7 +248,8 @@ describe('an admin deletes an account', { skip: SKIP }, () => {
       assert.equal(e.target_user_id, null)
       assert.equal(e.details.account_id, leaver.id)
       assert.equal(e.details.email_sha256, digest(leaver.email))
-      assert.deepEqual(e.details.roles.sort(), ['referee', 'scorer'])
+      // db/030: it managed a club
+      assert.deepEqual(e.details.roles.sort(), ['club_manager', 'referee', 'scorer'])
       assert.deepEqual(e.details.apps, ['indoor', 'beach'])
       assert.equal(e.details.matches_kept, 1)
       const text = JSON.stringify(e.details)
