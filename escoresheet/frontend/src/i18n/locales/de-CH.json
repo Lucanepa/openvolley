@@ -3007,7 +3007,8 @@
       "admin": "Admin",
       "super_admin": "Super-Admin",
       "pending": "Freigabe ausstehend",
-      "team_manager": "Teamverantwortliche/r"
+      "team_manager": "Teamverantwortliche/r",
+      "club_manager": "Vereinsverantwortlichi/r"
     },
     "signUpPendingNote": "Neui Konti bruuched e Freigab, bevor offizielli Spiil i d Cloud synchronisiert werded. Frag din Verein nach emne Iiladigscode.",
     "officialMatchLocalOnly": "Das Spiil bliibt uf däm Grät, bis dis Konto als Schriiber freigäh isch.",
@@ -3075,7 +3076,10 @@
     "teamLinkNote": "Du hast einen Team-Link geöffnet. Melde dich an oder erstelle ein Konto, dann öffnet sich das Team.",
     "teamLinkSignIn": "Melde dich mit deinem Konto an oder erstelle zuerst eines.",
     "teamLinkDone": "Du verwaltest jetzt {{team}}.",
-    "teamLinkAlready": "Du verwaltest {{team}} bereits."
+    "teamLinkAlready": "Du verwaltest {{team}} bereits.",
+    "clubLinkNote": "Si händ en Link als Vereinsverantwortlichi/r uftaa. Mälded Si sich aa oder mached Si es Konto, denn verwalted Si de Verein.",
+    "clubLinkDone": "Si verwalted jetzt {{club}}.",
+    "clubLinkAlready": "Si verwalted {{club}} scho."
   },
   "managerBeach": {
     "signInHeading": "OpenBeach verwalten",
@@ -3502,7 +3506,28 @@
       "managersHint": "E-Mail-Adressen bestehender Konten, eine pro Zeile. Sie erstellen die Einladungscodes des Vereins und verwalten seine Mitglieder.",
       "managersCount_one": "{{count}} Verantwortliche/r",
       "managersCount_other": "{{count}} Verantwortliche",
-      "managerUnknown": "Kein Konto hat diese Adresse: {{emails}}"
+      "managerUnknown": "Kein Konto hat diese Adresse: {{emails}}",
+      "managersPickHint": "Wähled Si si us de Konte vom Verein. Alli andere überchömed per E-Mail en Link als Vereinsverantwortlichi/r. Verantwortlichi mached d Iiladigscodes vom Verein und betreued sini Mitglieder.",
+      "via": {
+        "scorer": "Schreiber",
+        "team_manager": "Teamverantwortlichi/r",
+        "club_manager": "Vereinsverantwortlichi/r"
+      },
+      "removeManager": "{{name}} entferne",
+      "noManagers": "No kei Verantwortlichi.",
+      "addManager": "Verantwortlichi/n us em Verein dezuefüege…",
+      "allPicked": "Alli Konte vom Verein sind Verantwortlichi.",
+      "noCandidates": "No niemer ghört zu dem Verein: lad unde öpper ii.",
+      "saveFirst": "Speichered Si zerscht de Verein, denn wähled oder lade Si sini Verantwortliche ii.",
+      "inviteTitle": "Öpper fehlt i de Lischte? Link als Vereinsverantwortlichi/r schicke",
+      "invitePlaceholder": "E-Mail-Adrässe",
+      "inviteSend": "Link schicke",
+      "inviteHint": "De Link gaht eimal während 14 Täg. Wer en uftuet und sich aamäldet oder es Konto macht, wird Verantwortlichi/r vo dem Verein.",
+      "inviteMailed": "Link an {{email}} gschickt. Si chönd en au sälber witergeh:",
+      "inviteNotMailed": "D E-Mail an {{email}} het nöd chöne gschickt werde. Schicked Si dä Link sälber:",
+      "copyLink": "Kopiere",
+      "linkCopied": "Link kopiert",
+      "notAMember": "Verantwortlichi müend es Konto vom Verein sii. Schicked Si stattdesse en Link."
     },
     "myClub": {
       "none": "Du verwaltest keinen Verein.",

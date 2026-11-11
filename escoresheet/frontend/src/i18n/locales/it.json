@@ -3012,7 +3012,8 @@
       "admin": "Admin",
       "super_admin": "Super admin",
       "pending": "Approvazione in sospeso",
-      "team_manager": "Responsabile della squadra"
+      "team_manager": "Responsabile della squadra",
+      "club_manager": "Responsabile della società"
     },
     "signUpPendingNote": "I nuovi account devono essere approvati prima che le partite ufficiali vengano sincronizzate nel cloud. Chiedi un codice d’invito al tuo club.",
     "officialMatchLocalOnly": "Questa partita resta su questo dispositivo finché il tuo account non è approvato come segnapunti.",
@@ -3080,7 +3081,10 @@
     "teamLinkNote": "Hai aperto un link di squadra. Accedi o crea un account, e la squadra si apre.",
     "teamLinkSignIn": "Accedi con il tuo account, o creane prima uno.",
     "teamLinkDone": "Ora gestisci {{team}}.",
-    "teamLinkAlready": "Gestisci già {{team}}."
+    "teamLinkAlready": "Gestisci già {{team}}.",
+    "clubLinkNote": "Ha aperto un link da responsabile della società. Acceda o crei un account e gestirà la società.",
+    "clubLinkDone": "Ora gestisce {{club}}.",
+    "clubLinkAlready": "Gestisce già {{club}}."
   },
   "managerBeach": {
     "signInHeading": "Gestisci OpenBeach",
@@ -3507,7 +3511,28 @@
       "managersHint": "Indirizzi e-mail di account esistenti, uno per riga. Creano i codici d’invito della società e ne gestiscono i membri.",
       "managersCount_one": "{{count}} responsabile",
       "managersCount_other": "{{count}} responsabili",
-      "managerUnknown": "Nessun account ha questo indirizzo: {{emails}}"
+      "managerUnknown": "Nessun account ha questo indirizzo: {{emails}}",
+      "managersPickHint": "Li scelga tra gli account della società. Gli altri ricevono per e-mail un link da responsabile della società. I responsabili creano i codici d’invito della società e gestiscono i suoi membri.",
+      "via": {
+        "scorer": "segnapunti",
+        "team_manager": "responsabile della squadra",
+        "club_manager": "responsabile della società"
+      },
+      "removeManager": "Rimuovere {{name}}",
+      "noManagers": "Ancora nessun responsabile.",
+      "addManager": "Aggiungere un responsabile della società…",
+      "allPicked": "Tutti gli account della società sono responsabili.",
+      "noCandidates": "Nessuno è ancora collegato a questa società: inviti qualcuno qui sotto.",
+      "saveFirst": "Salvi prima la società, poi scelga o inviti i suoi responsabili.",
+      "inviteTitle": "Manca qualcuno nella lista? Inviare un link da responsabile della società",
+      "invitePlaceholder": "Indirizzo e-mail",
+      "inviteSend": "Inviare il link",
+      "inviteHint": "Il link funziona una volta per 14 giorni. Chi lo apre e accede o crea un account diventa responsabile di questa società.",
+      "inviteMailed": "Link inviato a {{email}}. Può anche inoltrarlo lei stesso:",
+      "inviteNotMailed": "L’e-mail a {{email}} non è stata inviata. Gli invii lei questo link:",
+      "copyLink": "Copiare",
+      "linkCopied": "Link copiato",
+      "notAMember": "Un responsabile deve essere un account della società. Invii invece un link da responsabile."
     },
     "myClub": {
       "none": "Non gestisci nessuna società.",

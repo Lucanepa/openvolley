@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { teamCodeFromHash, teamLinkUrl } from '../managerSite'
-import { readPendingTeamLink, takeTeamLinkFromLocation, PENDING_TEAM_LINK_KEY, PENDING_TEAM_LINK_TTL_MS } from '../teamLink'
+import { linkKindFromHash, teamCodeFromHash, teamLinkUrl } from '../managerSite'
+import { readPendingLinkKind, readPendingTeamLink, takeTeamLinkFromLocation, PENDING_TEAM_LINK_KEY, PENDING_TEAM_LINK_TTL_MS } from '../teamLink'
 
 describe('team links (db/023)', () => {
   beforeEach(() => localStorage.clear())
@@ -29,5 +29,18 @@ describe('team links (db/023)', () => {
     expect(readPendingTeamLink(Date.now() + PENDING_TEAM_LINK_TTL_MS + 1)).toBeNull()
     expect(localStorage.getItem(PENDING_TEAM_LINK_KEY)).toBeNull()
     expect(takeTeamLinkFromLocation(window)).toBeNull()
+  })
+
+  it('a club manager link (db/029, #club=) is read and kept the same way, with its kind', () => {
+    expect(teamCodeFromHash('#club=abcd-efgh-jkmn')).toBe('ABCD-EFGH-JKMN')
+    expect(linkKindFromHash('#club=ABCD-EFGH-JKMN')).toBe('club')
+    expect(linkKindFromHash('#team=ABCD-EFGH-JKMN')).toBe('team')
+    expect(linkKindFromHash('#clubs')).toBeNull()
+    window.history.replaceState(null, '', '/#club=ABCD-EFGH-JKMN')
+    expect(takeTeamLinkFromLocation(window)).toBe('ABCD-EFGH-JKMN')
+    expect(readPendingLinkKind()).toBe('club')
+    window.history.replaceState(null, '', '/#team=ABCD-EFGH-JKMN')
+    takeTeamLinkFromLocation(window)
+    expect(readPendingLinkKind()).toBe('team')
   })
 })

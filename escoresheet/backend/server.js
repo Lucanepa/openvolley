@@ -399,7 +399,8 @@ function getDataLayer() {
     // Sign-up requests and who approves them (db/025, lib/accountRequests.js), the same way
     let requests = null
     const accounts = acc.createAccounts({ pool: db.pool, db, restore, access, approvalsForMatches: approvals.approvalsForMatches, clubs: () => clubs, teams: () => teams, requests: () => requests, eraseAccount: auth.eraseAccount })
-    clubs = cl.createClubs({ pool: db.pool, audit: accounts.audit, access })
+    // db/029: a club manager link for someone not linked to the club, mailed
+    clubs = cl.createClubs({ pool: db.pool, audit: accounts.audit, access, createInvite: accounts.createInvite, mailer })
     const savedTeams = svt.createSavedTeams({ pool: db.pool })
     // A club's licence lists (db/024, lib/licences.js): My club, "Add from club", the gender check
     const licences = lic.createLicences({ pool: db.pool, audit: accounts.audit, clubs })

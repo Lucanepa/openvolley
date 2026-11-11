@@ -10,7 +10,7 @@ import EmailConfirmBanner from './components/auth/EmailConfirmBanner'
 import { ConfirmEmailPage, ResetPasswordPage } from './components/auth/AuthLinkPages'
 import { AppSpinner, BUTTON_SIZES, BUTTON_VARIANTS, Button, cn, consoleHeaderBtn, FOCUS_RING, GateScreen, Select } from './ui'
 import { scorerAppUrlFor, SIGN_UP_HASH, teamCodeFromHash } from './utils/managerSite'
-import { clearPendingTeamLink, FINAL_TEAM_LINK_ERRORS, readPendingTeamLink, takeTeamLinkFromLocation } from './utils/teamLink'
+import { clearPendingTeamLink, FINAL_TEAM_LINK_ERRORS, readPendingLinkKind, readPendingTeamLink, takeTeamLinkFromLocation } from './utils/teamLink'
 import { parseAuthLinkHash, takeAuthLinkFromLocation } from './utils/authLinks'
 import { useManagerBrand } from './managerBrand'
 import LegalLinks from './legal/LegalLinks'
@@ -209,12 +209,12 @@ function Gate({ width, className, children }) {
 }
 
 /** A team link waits for an account (db/023): what happens after signing in. */
-function TeamLinkNote() {
+function TeamLinkNote({ kind = 'team' }) {
   const { t } = useTranslation()
   return (
     <p role="status" data-testid="team-link-note" className="mb-4 flex items-start gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-left text-sm text-sky-800">
       <Users size={16} aria-hidden className="mt-0.5 shrink-0 text-sky-600" />
-      {t('managerSite.teamLinkNote')}
+      {t(kind === 'club' ? 'managerSite.clubLinkNote' : 'managerSite.teamLinkNote')}
     </p>
   )
 }
@@ -228,7 +228,7 @@ function SignInScreen({ initialMode = null, onCreateAccount, teamLink = false })
     <>
       <Gate>
         <div data-testid="manager-sign-in" className="text-center">
-          {teamLink && <TeamLinkNote />}
+          {teamLink && <TeamLinkNote kind={teamLink === 'club' ? 'club' : 'team'} />}
           <h1 className="text-xl font-bold tracking-tight text-stone-900">{text.signInHeading}</h1>
           <p className="mt-2 text-sm text-stone-600">{teamLink ? t('managerSite.teamLinkSignIn') : text.signInBody}</p>
           <Button variant="hero" block icon={LogIn} onClick={() => setOpen(true)} className="mt-6">
@@ -261,7 +261,7 @@ function SignUpScreen({ onSignedUp, onBack, teamLink = false }) {
     <>
       <Gate width="md" className="p-6 sm:p-8">
         <div data-testid="manager-sign-up">
-          {teamLink && <TeamLinkNote />}
+          {teamLink && <TeamLinkNote kind={teamLink === 'club' ? 'club' : 'team'} />}
           <div className="mb-5 text-center">
             <h1 className="text-xl font-bold tracking-tight text-stone-900">{t('managerSite.signUpHeading')}</h1>
             {text.signUpBody && <p className="mt-2 text-sm text-stone-600">{text.signUpBody}</p>}
@@ -691,9 +691,16 @@ export default function ManagerApp({ authLink = null }) {
       if (!res?.error) {
         clearPendingTeamLink()
         setTeamLinkCode(null)
-        const team = res.data?.team?.name || ''
-        toast.success(t(res.data?.already_had ? 'managerSite.teamLinkAlready' : 'managerSite.teamLinkDone', { team }))
-        selectTab('myteams')
+        if (res.data?.role_granted === 'club_manager') {
+          // db/029: a club manager link opens My club
+          const club = res.data?.club?.name || ''
+          toast.success(t(res.data?.already_had ? 'managerSite.clubLinkAlready' : 'managerSite.clubLinkDone', { club }))
+          selectTab('myclub')
+        } else {
+          const team = res.data?.team?.name || ''
+          toast.success(t(res.data?.already_had ? 'managerSite.teamLinkAlready' : 'managerSite.teamLinkDone', { team }))
+          selectTab('myteams')
+        }
       } else if (FINAL_TEAM_LINK_ERRORS.has(res.error.code)) {
         clearPendingTeamLink()
         setTeamLinkCode(null)
@@ -733,8 +740,8 @@ export default function ManagerApp({ authLink = null }) {
     return (
       <div className="ov-kit">
         {route === SIGN_UP_HASH
-          ? <SignUpScreen onSignedUp={onSignedUp} onBack={() => goRoute('')} teamLink={!!teamLinkCode} />
-          : <SignInScreen initialMode={signInMode} onCreateAccount={openSignUp} teamLink={!!teamLinkCode} />}
+          ? <SignUpScreen onSignedUp={onSignedUp} onBack={() => goRoute('')} teamLink={teamLinkCode ? readPendingLinkKind() : false} />
+          : <SignInScreen initialMode={signInMode} onCreateAccount={openSignUp} teamLink={teamLinkCode ? readPendingLinkKind() : false} />}
       </div>
     )
   }

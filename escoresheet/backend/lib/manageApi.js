@@ -41,7 +41,10 @@
  *                                                    never the last super admin (lib/accounts.js)
  *   POST   /api/admin/accounts/:id/reject { email }  isAdmin: the same for a sign-up without any role
  *   PUT    /api/admin/club-rule                      isAdmin: { enabled }
- *   PUT    /api/admin/clubs/:id/managers             isAdmin: { emails } the club's managers (db/020)
+ *   PUT    /api/admin/clubs/:id/managers             isAdmin: { user_ids } the club's managers (db/020), each an
+ *                                                    account linked to the club (lib/clubs.js managerCandidates)
+ *   GET    /api/admin/clubs/:id/manager-candidates   isAdmin: the accounts linked to the club
+ *   POST   /api/admin/clubs/:id/manager-invites      isAdmin: { email } a club manager link mailed (db/029)
  *   GET/PATCH /api/club/:id                          a manager of that club (db/020), or isAdmin:
  *                                                    the club; PATCH { contact_email }
  *   GET    /api/club/:id/members                     the same: the accounts that score for it
@@ -260,6 +263,8 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['GET', /^\/api\/admin\/club-teams$/, 'admin', (m, c) => (clubs ? clubs.vmTeams({ q: q(c.query, 'q') ?? '' }) : notFound())],
     ['PUT', /^\/api\/admin\/club-rule$/, 'admin', (m, c) => (clubs ? clubs.setRule({ actorId: c.user.id, body: c.body }) : notFound())],
     ['PUT', new RegExp(`^/api/admin/clubs/${ID}/managers$`), 'admin', (m, c) => club((cl) => cl.setManagers({ actorId: c.user.id, id: m[1], body: c.body }))],
+    ['GET', new RegExp(`^/api/admin/clubs/${ID}/manager-candidates$`), 'admin', (m) => club((cl) => cl.managerCandidates({ id: m[1] }))],
+    ['POST', new RegExp(`^/api/admin/clubs/${ID}/manager-invites$`), 'admin', (m, c) => club((cl) => cl.inviteManager({ actorId: c.user.id, id: m[1], body: c.body, lang: c.lang }))],
     // db/025: an admin decides any part of a sign-up request
     ['POST', new RegExp(`^/api/admin/accounts/${ID}/requests$`), 'admin', (m, c) => req((r) => r.decide({ actorId: c.user.id, userId: m[1], body: c.body, scope: { admin: true } }))],
     // The app's switches (db/021): OpenVolley's admins and competition managers
