@@ -18,7 +18,8 @@ describe('parsedPdfToRoster', () => {
       ac1: null,
       ac2: { firstName: 'Ida', lastName: 'Zwei', dob: '' }
     })
-    expect(r.players).toEqual([{ number: 12, first_name: 'Lea', last_name: 'Keller', dob: '2003-06-05', license_number: null, is_libero: false, is_captain: false }])
+    // an Einsatzliste never has shirt numbers: none comes through
+    expect(r.players).toEqual([{ number: null, first_name: 'Lea', last_name: 'Keller', dob: '2003-06-05', license_number: null, is_libero: false, is_captain: false }])
     expect(r.staff.map(s => [s.role, s.last_name, s.dob])).toEqual([['Coach', 'Trainer', '1975-01-01'], ['Assistant Coach 2', 'Zwei', null]])
   })
 })
@@ -32,7 +33,7 @@ describe('parsedPdfToRoster: the Einsatzliste\'s SV number is the licence', () =
       { number: 3, firstName: 'Ida', lastName: 'Ohne', dob: '' }
     ] })
     expect(r.players.map(p => [p.last_name, p.number, p.license_number])).toEqual([
-      ['Muster', null, '123456'], ['Beispiel', null, '98765'], ['Exemple', null, null], ['Ohne', 3, null]
+      ['Muster', null, '123456'], ['Beispiel', null, '98765'], ['Exemple', null, null], ['Ohne', null, null]
     ])
   })
 })
