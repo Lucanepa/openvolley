@@ -24,7 +24,7 @@ vi.mock('../../ui', async (orig) => {
 })
 
 import MyTeamsPanel from '../manage/MyTeamsPanel'
-import { roleForNewOfficial, setGameDraftStaffRole } from '../../domain/teamRosters'
+import { roleForNewOfficial, setGameDraftStaffRole, uniqueStaffRoles } from '../../domain/teamRosters'
 
 const okRes = (data, status = 200) => ({ data, error: null, status })
 const TEAM = { id: 't-h1', name: 'VBC Musterdorf H1', club_name: 'VBC Musterdorf' }
@@ -81,15 +81,15 @@ describe('a game\'s roster is a page of its own', () => {
 })
 
 describe('the officials of a game\'s roster', () => {
-  it('changes a role (the one ticked in it before is unticked), adds a physiotherapist by hand, and sends them', async () => {
+  it('each role once: a new roster gives the second coach a free role; changing a role swaps; adds a physiotherapist by hand, and sends them', async () => {
     render(<Routed initial="t-h1/950001" />)
     await screen.findByTestId('game-roster')
     await waitFor(() => expect(screen.getAllByTestId('game-staff-row')).toHaveLength(2))
     const rows = () => screen.getAllByTestId('game-staff-row')
-    // a new roster ticks one person per role: Tina (coach), Peter unticked
+    const roles = () => rows().map((r) => within(r).getByTestId('game-staff-role').value)
+    // the saved team has two coaches: Tina stays coach (ticked), Peter gets the first free role, unticked
     expect(rows().map((r) => within(r).getByRole('checkbox').checked)).toEqual([true, false])
-    // Peter becomes assistant coach 1 and is ticked: both go
-    fireEvent.change(within(rows()[1]).getByTestId('game-staff-role'), { target: { value: 'Assistant Coach 1' } })
+    expect(roles()).toEqual(['Coach', 'Assistant Coach 1'])
     fireEvent.click(within(rows()[1]).getByRole('checkbox'))
     expect(rows().map((r) => within(r).getByRole('checkbox').checked)).toEqual([true, true])
     // a physiotherapist from outside the club
@@ -102,38 +102,38 @@ describe('the officials of a game\'s roster', () => {
     fireEvent.click(within(form).getByTestId('game-official-new-add'))
     await waitFor(() => expect(rows()).toHaveLength(3))
     expect(screen.queryByTestId('game-official-new')).toBeNull()
-    // Peter to coach: Tina is unticked (each role once)
+    // Peter to coach: Tina takes his assistant role (a swap), both stay ticked
     fireEvent.change(within(rows()[1]).getByTestId('game-staff-role'), { target: { value: 'Coach' } })
-    expect(rows().map((r) => within(r).getByRole('checkbox').checked)).toEqual([false, true, true])
+    expect(roles()).toEqual(['Assistant Coach 1', 'Coach', 'Physiotherapist'])
+    expect(rows().map((r) => within(r).getByRole('checkbox').checked)).toEqual([true, true, true])
     fireEvent.click(screen.getByTestId('game-roster-save'))
     await waitFor(() => expect(api.team.putRoster).toHaveBeenCalledTimes(1))
-    expect(api.team.putRoster.mock.calls[0][2].staff).toEqual([
-      { role: 'Coach', first_name: 'Peter', last_name: 'Weber', dob: '1986-06-23', license_number: '200002' },
-      { role: 'Physiotherapist', first_name: 'Pia', last_name: 'Physio', dob: null, license_number: null }
+    expect(api.team.putRoster.mock.calls[0][2].staff.map((x) => [x.role, x.last_name])).toEqual([
+      ['Assistant Coach 1', 'Trainer'], ['Coach', 'Weber'], ['Physiotherapist', 'Physio']
     ])
-  })
-
-  it('ticking an official takes the role from the one ticked in it', async () => {
-    render(<Routed initial="t-h1/950001" />)
-    await waitFor(() => expect(screen.getAllByTestId('game-staff-row')).toHaveLength(2))
-    const rows = screen.getAllByTestId('game-staff-row')
-    fireEvent.click(within(rows[1]).getByRole('checkbox'))
-    expect(screen.getAllByTestId('game-staff-row').map((r) => within(r).getByRole('checkbox').checked)).toEqual([false, true])
   })
 })
 
-describe('setGameDraftStaffRole and roleForNewOfficial', () => {
-  const draft = { players: [], staff: [
+describe('setGameDraftStaffRole, uniqueStaffRoles and roleForNewOfficial', () => {
+  const draft = { players: [], staff: uniqueStaffRoles([
     { key: 'a', role: 'Coach', last_name: 'A', picked: true },
     { key: 'b', role: 'Medic', last_name: 'B', picked: true },
     { key: 'c', role: 'Coach', last_name: 'C', picked: false }
-  ] }
-  it('a ticked official takes the role; an unticked one only changes its own', () => {
+  ]) }
+  it('each role once: a taken role goes to the first free one, the ticked keep theirs', () => {
+    expect(draft.staff.map((s) => [s.key, s.role, s.picked])).toEqual([['a', 'Coach', true], ['b', 'Medic', true], ['c', 'Assistant Coach 1', false]])
+    const six = uniqueStaffRoles(['Coach', 'Coach', 'Coach', 'Coach', 'Coach', 'Coach'].map((role, i) => ({ key: String(i), role, picked: i === 5 })))
+    expect(six.map((s) => [s.role, s.picked])).toEqual([
+      ['Assistant Coach 1', false], ['Assistant Coach 2', false], ['Physiotherapist', false], ['Medic', false], ['', false], ['Coach', true]
+    ])
+  })
+  it('changing a role swaps it with the one who held it', () => {
     const r = setGameDraftStaffRole(draft, 'b', 'Coach')
-    expect(r.draft.staff.map((s) => [s.key, s.role, s.picked])).toEqual([['a', 'Coach', false], ['b', 'Coach', true], ['c', 'Coach', false]])
+    expect(r.draft.staff.map((s) => [s.key, s.role, s.picked])).toEqual([['a', 'Medic', true], ['b', 'Coach', true], ['c', 'Assistant Coach 1', false]])
     expect(r.replaced.key).toBe('a')
-    const u = setGameDraftStaffRole(draft, 'c', 'Medic')
-    expect(u.draft.staff.map((s) => [s.key, s.role, s.picked])).toEqual([['a', 'Coach', true], ['b', 'Medic', true], ['c', 'Medic', false]])
+    const u = setGameDraftStaffRole(draft, 'c', 'Assistant Coach 2')
+    expect(u.draft.staff.map((s) => [s.key, s.role])).toEqual([['a', 'Coach'], ['b', 'Medic'], ['c', 'Assistant Coach 2']])
+    expect(u.replaced).toBe(null)
     expect(setGameDraftStaffRole(draft, 'a', 'Boss').draft).toBe(draft)
   })
   it('offers the physiotherapist, then the medic, then the first free role', () => {
