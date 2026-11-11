@@ -18,7 +18,8 @@
  *     setRule({ actorId, body })          { enabled }
  *     setManagers({ actorId, id, body })  { user_ids: [...] } the club's managers (the whole list, db/020),
  *                                         each one an account linked to the club (managerCandidates)
- *     managerCandidates({ id })           the accounts linked to the club: its scorers (account_clubs),
+ *     managerCandidates({ id })           the accounts linked to the club: its members (account_clubs; via
+ *                                         'scorer' with that role, else 'member'),
  *                                         the managers of its teams (db/023) and its managers (db/020)
  *     inviteManager({ actorId, id, body, lang })  { email }: a club manager link (db/029) mailed to
  *                                         someone not linked to the club yet; { invite, link, mailed }
@@ -341,7 +342,9 @@ export function createClubs ({ pool, audit, access = null, createInvite = null, 
     const { rows } = await client.query(
       `SELECT c.id, c.name, c.created_at, c.updated_at, c.contact_email,
               coalesce((SELECT array_agg(ct.team_name ORDER BY lower(ct.team_name)) FROM public.club_teams ct WHERE ct.club_id = c.id), '{}') AS teams,
-              (SELECT count(*)::int FROM public.account_clubs ac WHERE ac.club_id = c.id) AS scorers,
+              -- db/030: club and team managers are members too; the count is of scorers
+              (SELECT count(*)::int FROM public.account_clubs ac JOIN public.profiles sp ON sp.user_id = ac.user_id
+                WHERE ac.club_id = c.id AND 'scorer' = ANY (sp.roles)) AS scorers,
               coalesce((SELECT json_agg(json_build_object('user_id', u.id, 'email', u.email, 'name', ${nameSql('p')}) ORDER BY lower(u.email))
                           FROM public.club_managers cm JOIN auth.users u ON u.id = cm.user_id
                           LEFT JOIN public.profiles p ON p.user_id = u.id
@@ -561,7 +564,8 @@ export function createClubs ({ pool, audit, access = null, createInvite = null, 
     }
     const { rows } = await client.query(
       `SELECT u.id, u.email, ${nameSql('p')} AS name, array_agg(DISTINCT l.via ORDER BY l.via) AS via
-         FROM (SELECT ac.user_id, 'scorer' AS via FROM public.account_clubs ac WHERE ac.club_id = $1
+         FROM (SELECT ac.user_id, CASE WHEN 'scorer' = ANY (coalesce(sp.roles, '{}')) THEN 'scorer' ELSE 'member' END AS via
+                 FROM public.account_clubs ac LEFT JOIN public.profiles sp ON sp.user_id = ac.user_id WHERE ac.club_id = $1
                UNION ALL SELECT cm.user_id, 'club_manager' FROM public.club_managers cm WHERE cm.club_id = $1
                ${teamPart}) l
          JOIN auth.users u ON u.id = l.user_id
@@ -569,7 +573,11 @@ export function createClubs ({ pool, audit, access = null, createInvite = null, 
         GROUP BY u.id, u.email, p.first_name, p.last_name
         ORDER BY lower(coalesce(${nameSql('p')}, u.email))
         LIMIT 1000`, [id])
-    return rows.map((r) => ({ id: r.id, email: r.email, name: r.name ?? null, via: r.via || [] }))
+    // db/030: managers are members too; "member" only when nothing says more
+    return rows.map((r) => {
+      const via = r.via || []
+      return { id: r.id, email: r.email, name: r.name ?? null, via: via.length > 1 ? via.filter((v) => v !== 'member') : via }
+    })
   }
 
   /** GET /api/admin/clubs/:id/manager-candidates: who may be picked as a manager of the club. */

@@ -122,12 +122,12 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
     assert.equal(teams.find((t) => t.id === h1.id).open_links, 1)
   })
 
-  it('redeeming it makes the account a manager of that team, with no role and no club', async () => {
+  it('redeeming it makes the account a manager of that team: the team manager role (db/030) and the team\'s club', async () => {
     const r = await call(users.coach, 'POST', '/api/account/redeem-invite', { code })
     assert.equal(r.status, 200, r.text)
     assert.equal(r.json.data.role_granted, 'team_manager')
     assert.equal(r.json.data.team.id, h1.id)
-    assert.deepEqual(r.json.data.roles, [])
+    assert.deepEqual(r.json.data.roles, ['team_manager'])
     const again = await call(users.coach, 'POST', '/api/account/redeem-invite', { code })
     assert.equal(again.status, 200, again.text)
     assert.equal(again.json.data.already_had, true)
@@ -136,8 +136,11 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
     assert.equal(used.status, 409, used.text)
     const me = (await call(users.coach, 'GET', '/api/me')).json.data
     assert.deepEqual(me.managedTeams, [{ id: h1.id, name: 'VBC Musterdorf H1', club_id: musterdorf.id, club_name: 'VBC Musterdorf', via: 'team' }])
-    assert.deepEqual(me.roles, [])
-    assert.deepEqual(me.clubs, [])
+    assert.deepEqual(me.roles, ['team_manager'])
+    // db/030: a member of the team's club (it scores nothing without the scorer role)
+    assert.deepEqual(me.clubs.map((c) => c.id), [musterdorf.id])
+    assert.equal(me.canScore, false)
+    assert.equal(me.isPending, false)
     const teams = (await call(users.clubmgr, 'GET', `/api/club/${musterdorf.id}/teams`)).json.data.teams
     assert.deepEqual(teams.find((t) => t.id === h1.id).managers.map((m) => m.user_id), [users.coach.id])
   })

@@ -32,7 +32,12 @@ export const SPORT_ROLES = Object.freeze({
 })
 export const INDOOR_ROLES = Object.freeze(Object.values(SPORT_ROLES.indoor))
 export const BEACH_ROLES = Object.freeze(Object.values(SPORT_ROLES.beach))
-export const KNOWN_ROLES = Object.freeze([...INDOOR_ROLES, ...ADMIN_ROLES, ...BEACH_ROLES])
+// db/030: OpenVolley's club and team managers, kept in profiles.roles by the
+// database from club_managers / team_managers (never granted by hand): they
+// grant nothing here (the club and team checks do), but an account with one
+// is not pending
+export const MANAGER_ROLES = Object.freeze(['club_manager', 'team_manager'])
+export const KNOWN_ROLES = Object.freeze([...INDOOR_ROLES, ...ADMIN_ROLES, ...BEACH_ROLES, ...MANAGER_ROLES])
 // Roles an admin may add or remove through POST /api/admin/accounts/:id/roles
 // (super_admin is SQL only).
 export const API_GRANTABLE_ROLES = Object.freeze([...INDOOR_ROLES, 'admin', ...BEACH_ROLES])
@@ -83,7 +88,7 @@ function sportFlags (roles, isAdmin, sport) {
     canScore,
     canManageTeams,
     canReadTeams: canScore || canManageTeams,
-    isPending: !isAdmin && !own.some((r) => roles.includes(r))
+    isPending: !isAdmin && !own.some((r) => roles.includes(r)) && !(sport === 'indoor' && MANAGER_ROLES.some((r) => roles.includes(r)))
   }
 }
 

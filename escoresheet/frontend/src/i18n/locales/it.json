@@ -3515,6 +3515,7 @@
       "managerUnknown": "Nessun account ha questo indirizzo: {{emails}}",
       "managersPickHint": "Li scelga tra gli account della società. Gli altri ricevono per e-mail un link da responsabile della società. I responsabili creano i codici d’invito della società e gestiscono i suoi membri.",
       "via": {
+        "member": "membro della società",
         "scorer": "segnapunti",
         "team_manager": "responsabile della squadra",
         "club_manager": "responsabile della società"
