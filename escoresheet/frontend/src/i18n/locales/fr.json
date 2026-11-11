@@ -3225,7 +3225,13 @@
       },
       "empty": "Pas encore de codes d’invitation.",
       "clubHint": "Qui utilise le code rejoint ce club.",
-      "noClub": "Aucun club"
+      "noClub": "Aucun club",
+      "pickClub": "Choisir un club",
+      "team": "Équipe",
+      "pickTeam": "Choisir une équipe",
+      "clubFirst": "Choisis d’abord le club",
+      "noTeams": "Ce club n’a pas encore d’équipes (elles viennent du calendrier).",
+      "teamLinkHint": "Un lien d’équipe : qui l’ouvre gère cette équipe."
     },
     "games": {
       "openMatch": "Ouvrir le match",

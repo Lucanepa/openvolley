@@ -3232,7 +3232,13 @@
       },
       "empty": "No invite codes yet.",
       "clubHint": "Whoever redeems the code joins this club.",
-      "noClub": "No club"
+      "noClub": "No club",
+      "pickClub": "Choose a club",
+      "team": "Team",
+      "pickTeam": "Choose a team",
+      "clubFirst": "Choose the club first",
+      "noTeams": "This club has no teams yet (they come from the schedule).",
+      "teamLinkHint": "A team link: whoever opens it manages this team."
     },
     "games": {
       "openMatch": "Open match",
