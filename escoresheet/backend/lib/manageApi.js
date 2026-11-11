@@ -30,6 +30,8 @@
  *   POST   /api/admin/clubs, PATCH/DELETE /api/admin/clubs/:id   isAdmin
  *   GET    /api/admin/club-teams?q=                  isAdmin: VolleyManager team names with their club
  *   PUT    /api/admin/accounts/:id/clubs             isAdmin: the account's clubs (the whole list)
+ *   PATCH  /api/admin/accounts/:id { first_name?, last_name?, email? }  isAdmin: the account's name
+ *                                                    and address (a super admin's only by a super admin)
  *   POST   /api/admin/accounts/:id/delete { email }  isAdmin: deletes the account (its personal data;
  *                                                    the match records stay); a super admin only
  *                                                    by a super admin, never the caller's own,
@@ -233,6 +235,7 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
 
     ['GET', /^\/api\/admin\/accounts$/, 'admin', (m, c) => accounts.listAccounts({ filter: q(c.query, 'filter') || 'pending', q: q(c.query, 'q') ?? '', limit: q(c.query, 'limit'), app: q(c.query, 'app') })],
     ['POST', new RegExp(`^/api/admin/accounts/${ID}/roles$`), 'admin', (m, c) => accounts.setRoles({ actor: { id: c.user.id, access: c.access }, userId: m[1], body: c.body })],
+    ['PATCH', new RegExp(`^/api/admin/accounts/${ID}$`), 'admin', (m, c) => accounts.updateProfile({ actor: { id: c.user.id, access: c.access }, userId: m[1], body: c.body })],
     // Deleting an account (lib/accounts.js deleteAccount): delete, or reject a sign-up without a role
     ['POST', new RegExp(`^/api/admin/accounts/${ID}/delete$`), 'admin', (m, c) => accounts.deleteAccount({ actor: { id: c.user.id, access: c.access }, userId: m[1], body: c.body })],
     ['POST', new RegExp(`^/api/admin/accounts/${ID}/reject$`), 'admin', (m, c) => accounts.deleteAccount({ actor: { id: c.user.id, access: c.access }, userId: m[1], body: c.body, reject: true })],

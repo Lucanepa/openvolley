@@ -204,6 +204,44 @@ describe('accounts on Postgres', { skip: SKIP_PG }, () => {
       assert.equal(entries[1].actor_id, ids.admin)
     })
 
+    it('an admin changes an account\'s name and address (audited); a super admin\'s only by a super admin', async () => {
+      const a = actor('admin', ['admin'])
+      const id = await user('rename', [])
+      const r = await accounts.updateProfile({ actor: a, userId: id, body: { first_name: '  Anna  Maria ', last_name: 'Muster', email: ' Anna.Muster@Example.CH ' } })
+      assert.equal(r.status, 200, JSON.stringify(r.body))
+      assert.deepEqual(r.body.data, { id, first_name: 'Anna Maria', last_name: 'Muster', email: 'anna.muster@example.ch', changed: ['first_name', 'last_name', 'email'] })
+      const row = (await pool.query('SELECT u.email, p.first_name, p.last_name FROM auth.users u JOIN public.profiles p ON p.user_id = u.id WHERE u.id = $1', [id])).rows[0]
+      assert.deepEqual(row, { email: 'anna.muster@example.ch', first_name: 'Anna Maria', last_name: 'Muster' })
+      const entry = (await auditOf('account.profile')).find((x) => x.target_user_id === id)
+      assert.deepEqual(entry.details.before, { first_name: 'Rename', last_name: 'Test', email: 'rename@example.ch' })
+      assert.equal(entry.actor_id, ids.admin)
+
+      // nothing changed: no audit entry
+      const same = await accounts.updateProfile({ actor: a, userId: id, body: { last_name: 'Muster' } })
+      assert.deepEqual(same.body.data.changed, [])
+      assert.equal((await auditOf('account.profile')).filter((x) => x.target_user_id === id).length, 1)
+
+      const taken = await accounts.updateProfile({ actor: a, userId: id, body: { email: 'SCORER@example.ch' } })
+      assert.equal(taken.status, 409)
+      assert.equal(taken.body.error.code, 'OV_EMAIL_TAKEN')
+      assert.equal((await accounts.updateProfile({ actor: a, userId: id, body: { email: 'nope' } })).status, 400)
+      assert.equal((await accounts.updateProfile({ actor: a, userId: id, body: { roles: ['admin'] } })).status, 400)
+      assert.equal((await accounts.updateProfile({ actor: a, userId: id, body: {} })).status, 400)
+      assert.equal((await accounts.updateProfile({ actor: a, userId: id, body: { first_name: 'x'.repeat(81) } })).status, 400)
+      assert.equal((await accounts.updateProfile({ actor: a, userId: randomUUID(), body: { first_name: 'A' } })).status, 404)
+
+      const sup = await accounts.updateProfile({ actor: a, userId: ids.boss, body: { first_name: 'Hacked' } })
+      assert.equal(sup.status, 403)
+      const bySuper = await accounts.updateProfile({ actor: actor('boss', ['super_admin']), userId: ids.boss, body: { first_name: 'Boss' } })
+      assert.equal(bySuper.status, 200)
+
+      // an account without a profile row gets one
+      const np = await accounts.updateProfile({ actor: a, userId: ids.noprofile, body: { first_name: 'No', last_name: 'Profile' } })
+      assert.equal(np.status, 200, JSON.stringify(np.body))
+      assert.equal((await pool.query('SELECT first_name FROM public.profiles WHERE user_id = $1', [ids.noprofile])).rows[0].first_name, 'No')
+      await pool.query('DELETE FROM public.profiles WHERE user_id = $1', [ids.noprofile])
+    })
+
     it('refuses unknown roles, super_admin targets (unless super admin), self-demotion; creates a missing profile', async () => {
       const a = actor('admin', ['admin'])
       const bad = await accounts.setRoles({ actor: a, userId: ids.scorer, body: { add: ['super_admin'] } })

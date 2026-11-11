@@ -43,6 +43,8 @@ export const INVITE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
 export const INVITE_ROLES = Object.freeze(['scorer', 'referee', 'competition_manager'])
 export const AUDIT_ACTIONS = Object.freeze([
   'account.roles',
+  // an admin changed the name or address (updateProfile)
+  'account.profile',
   // written by lib/auth.js (email links, db/010)
   'account.password_reset_requested', 'account.password_reset', 'account.email_confirmed',
   // written by lib/auth.js (passkeys, db/022)
@@ -762,7 +764,9 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
         }),
         // POST /api/admin/accounts/:id/delete|reject exist on this server (a
         // manager built after an older backend shows those buttons only then)
-        can_delete: typeof eraseAccount === 'function'
+        can_delete: typeof eraseAccount === 'function',
+        // PATCH /api/admin/accounts/:id exists on this server (name and address)
+        can_edit: true
       })
     })
   }
@@ -814,6 +818,69 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
         }
       }
       return ok({ id: userId, roles: after })
+    }))
+    access?.invalidate(userId)
+    return res
+  }
+
+  /**
+   * PATCH /api/admin/accounts/:userId { first_name?, last_name?, email? }
+   * (owner 2026-11-11: "let me modify them (e.g. names etc)"): an admin
+   * changes an account's name or address. A super admin's only by a super
+   * admin. The address stays one account's (409 OV_EMAIL_TAKEN) and keeps its
+   * confirmation; the password and passkeys stay. Audited account.profile
+   * with the fields before and after. `actor` = { id, access }.
+   */
+  async function updateProfile ({ actor, userId, body } = {}) {
+    if (!isUuid(userId)) return notFound()
+    if (!isPlainObject(body)) return invalid('body: must be an object')
+    const known = ['first_name', 'last_name', 'email']
+    const extra = Object.keys(body).find((k) => !known.includes(k))
+    if (extra !== undefined) return invalid(`${extra.slice(0, 40)}: only first_name, last_name and email can be changed`)
+    const want = {}
+    for (const k of ['first_name', 'last_name']) {
+      if (body[k] === undefined) continue
+      if (body[k] !== null && typeof body[k] !== 'string') return invalid(`${k}: a text`)
+      const v = String(body[k] ?? '').replace(/\s+/g, ' ').trim()
+      if (v.length > 80) return invalid(`${k}: at most 80 characters`)
+      want[k] = v || null
+    }
+    if (body.email !== undefined) {
+      const e = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
+      if (!e || e.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return invalid('email: an email address')
+      want.email = e
+    }
+    if (!Object.keys(want).length) return invalid('first_name: change at least one field')
+    const res = await guarded('update-profile', () => withTx(async (client) => {
+      const { rows: [u] } = await client.query('SELECT id, email FROM auth.users WHERE id = $1 FOR UPDATE', [userId])
+      if (!u) throw abort(notFound())
+      const { rows: [prof] } = await client.query('SELECT first_name, last_name, roles FROM public.profiles WHERE user_id = $1 LIMIT 1 FOR UPDATE', [userId])
+      if (normalizeRoles(prof?.roles).includes('super_admin') && !actor?.access?.isSuperAdmin) {
+        throw abort(fail(403, 'OV_FORBIDDEN', 'Only a super admin can change the details of a super admin'))
+      }
+      const before = { first_name: prof?.first_name ?? null, last_name: prof?.last_name ?? null, email: u.email ?? null }
+      const after = { ...before, ...want }
+      const changed = known.filter((k) => (after[k] ?? null) !== (before[k] ?? null) && !(k === 'email' && String(before.email || '').toLowerCase() === after.email))
+      if (changed.includes('email')) {
+        const { rows: [other] } = await client.query('SELECT 1 FROM auth.users WHERE lower(email) = $1 AND id <> $2 LIMIT 1', [after.email, userId])
+        if (other) throw abort(fail(409, 'OV_EMAIL_TAKEN', 'Another account already has this email address'))
+        await client.query('UPDATE auth.users SET email = $2 WHERE id = $1', [userId, after.email])
+      }
+      if (changed.includes('first_name') || changed.includes('last_name')) {
+        if (prof) {
+          await client.query('UPDATE public.profiles SET first_name = $2, last_name = $3 WHERE user_id = $1', [userId, after.first_name, after.last_name])
+        } else {
+          // No ON CONFLICT: the production profiles table may lack a unique index on user_id.
+          await client.query(
+            `INSERT INTO public.profiles (user_id, first_name, last_name, roles) SELECT $1, $2, $3, '{}'::text[]
+              WHERE NOT EXISTS (SELECT 1 FROM public.profiles WHERE user_id = $1)`, [userId, after.first_name, after.last_name])
+        }
+      }
+      if (changed.length) {
+        const pick = (o) => Object.fromEntries(changed.map((k) => [k, o[k] ?? null]))
+        await audit(client, { actorId: actor?.id, action: 'account.profile', targetUserId: userId, details: { changed, before: pick(before), after: pick(after) } })
+      }
+      return ok({ id: userId, first_name: after.first_name, last_name: after.last_name, email: changed.includes('email') ? after.email : before.email, changed })
     }))
     access?.invalidate(userId)
     return res
@@ -1407,6 +1474,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     revokeInvite,
     listAccounts,
     setRoles,
+    updateProfile,
     deleteAccount,
     listOfficialGames,
     listMatches,
