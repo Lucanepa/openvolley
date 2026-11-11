@@ -30,8 +30,9 @@ export default function RoleChips({ roles = [], pending = false, manages = null,
   const shown = app === 'beach' ? [...BEACH_ROLES, ...ADMIN_ROLES] : KNOWN_ROLES
   const known = (roles || []).filter(r => shown.includes(r)).map(plainRole)
   const count = (v) => (Array.isArray(v) ? v.length : Number(v) || 0)
-  if (app !== 'beach' && count(manages?.clubs) > 0) known.push('club_manager')
-  if (app !== 'beach' && count(manages?.teams) > 0) known.push('team_manager')
+  // db/030 keeps them in profiles.roles; `manages` covers a backend without it
+  if (app !== 'beach' && count(manages?.clubs) > 0 && !known.includes('club_manager')) known.push('club_manager')
+  if (app !== 'beach' && count(manages?.teams) > 0 && !known.includes('team_manager')) known.push('team_manager')
   return (
     <span className={`flex flex-wrap gap-1 ${className}`}>
       {pending && known.length === 0

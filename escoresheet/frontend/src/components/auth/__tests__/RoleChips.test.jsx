@@ -4,6 +4,7 @@ import { render, screen } from '@testing-library/react'
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k) => k }) }))
 
 import RoleChips from '../RoleChips'
+import { accessFromRoles } from '../../../lib/access'
 
 describe('RoleChips', () => {
   it('a pending account: the amber chip only', () => {
@@ -39,6 +40,23 @@ describe('RoleChips', () => {
   it('OpenBeach has no club or team managers', () => {
     render(<RoleChips roles={[]} pending manages={{ clubs: [{ id: 'c1' }], teams: [] }} app="beach" />)
     expect(screen.getByText('access.roles.pending')).toBeInTheDocument()
+  })
+
+  it('db/030: the manager role in the roles and the managed team give one chip, not two', () => {
+    render(<RoleChips roles={['team_manager']} manages={{ clubs: [], teams: [{ id: 't1' }] }} />)
+    expect(screen.getAllByText('access.roles.team_manager')).toHaveLength(1)
+  })
+})
+
+describe('access: manager roles (db/030)', () => {
+  it('a club or team manager is not pending, and gets no scoring or team rights from it', () => {
+    for (const r of ['club_manager', 'team_manager']) {
+      const a = accessFromRoles([r])
+      expect(a.isPending).toBe(false)
+      expect(a.canScore).toBe(false)
+      expect(a.canManageTeams).toBe(false)
+    }
+    expect(accessFromRoles([]).isPending).toBe(true)
   })
 })
 

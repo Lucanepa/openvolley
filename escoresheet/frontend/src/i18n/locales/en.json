@@ -3516,6 +3516,7 @@
       "managerUnknown": "No account has this address: {{emails}}",
       "managersPickHint": "Pick them from the club's accounts. Anyone else gets a club manager link by email. Managers make the club's invite codes and manage its members.",
       "via": {
+        "member": "club member",
         "scorer": "scorer",
         "team_manager": "team manager",
         "club_manager": "club manager"

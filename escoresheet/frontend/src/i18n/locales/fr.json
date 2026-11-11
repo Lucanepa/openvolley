@@ -3509,6 +3509,7 @@
       "managerUnknown": "Aucun compte n’a cette adresse : {{emails}}",
       "managersPickHint": "Choisissez-les parmi les comptes du club. Les autres reçoivent par e-mail un lien de responsable du club. Les responsables créent les codes d’invitation du club et gèrent ses membres.",
       "via": {
+        "member": "membre du club",
         "scorer": "marqueur",
         "team_manager": "responsable d’équipe",
         "club_manager": "responsable du club"

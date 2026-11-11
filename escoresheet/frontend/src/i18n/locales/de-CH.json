@@ -3510,6 +3510,7 @@
       "managerUnknown": "Kein Konto hat diese Adresse: {{emails}}",
       "managersPickHint": "Wähled Si si us de Konte vom Verein. Alli andere überchömed per E-Mail en Link als Vereinsverantwortlichi/r. Verantwortlichi mached d Iiladigscodes vom Verein und betreued sini Mitglieder.",
       "via": {
+        "member": "Vereinsmitglied",
         "scorer": "Schreiber",
         "team_manager": "Teamverantwortlichi/r",
         "club_manager": "Vereinsverantwortlichi/r"
