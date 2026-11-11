@@ -526,7 +526,9 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     await client.query('INSERT INTO public.team_managers (team_id, user_id, added_by) VALUES ($1, $2, NULL) ON CONFLICT DO NOTHING', [team.id, userId])
     await addMembership(client, userId, 'indoor', 'invite')
     await audit(client, { actorId: userId, action: 'invite.redeem', targetUserId: userId, details: { invite_id: inv.id, label: inv.label, role: 'team_manager', team_id: team.id, club_id: team.club_id }, app: 'indoor' })
-    return ok({ roles, role_granted: 'team_manager', already_had: false, team: teamOut })
+    // db/030: the database added the manager role (and the club): the roles as they are now
+    const { rows: [now] } = await client.query('SELECT roles FROM public.profiles WHERE user_id = $1 LIMIT 1', [userId])
+    return ok({ roles: normalizeRoles(now?.roles ?? roles), role_granted: 'team_manager', already_had: false, team: teamOut })
   }
 
   /** The club manager link part of redeemInvite (db/029, inside its transaction, the code row locked). */
@@ -547,7 +549,9 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     await client.query('INSERT INTO public.club_managers (club_id, user_id, added_by) VALUES ($1, $2, NULL) ON CONFLICT DO NOTHING', [club.id, userId])
     await addMembership(client, userId, 'indoor', 'invite')
     await audit(client, { actorId: userId, action: 'invite.redeem', targetUserId: userId, details: { invite_id: inv.id, label: inv.label, role: 'club_manager', club_id: club.id }, app: 'indoor' })
-    return ok({ roles, role_granted: 'club_manager', already_had: false, club: clubOut })
+    // db/030: the database added the manager role (and the club): the roles as they are now
+    const { rows: [now] } = await client.query('SELECT roles FROM public.profiles WHERE user_id = $1 LIMIT 1', [userId])
+    return ok({ roles: normalizeRoles(now?.roles ?? roles), role_granted: 'club_manager', already_had: false, club: clubOut })
   }
 
   /** profiles.roles of one account; inserts the profile row when there is none. */

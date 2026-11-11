@@ -3132,6 +3132,7 @@
       "offline": "Dafür braucht es eine Verbindung zum Server."
     },
     "accounts": {
+      "managesHint": "Vereins- und Teamverantwortliche werden pro Verein und Team festgelegt: auf der Seite des Vereins (Vereine) und in Mein Verein.",
       "page": {
         "email": "E-Mail",
         "created": "Erstellt",
@@ -3493,6 +3494,7 @@
       "managerUnknown": "Kein Konto hat diese Adresse: {{emails}}",
       "managersPickHint": "Wählen Sie sie aus den Konten des Vereins. Alle anderen erhalten per E-Mail einen Link als Vereinsverantwortliche/r. Verantwortliche erstellen die Einladungscodes des Vereins und betreuen seine Mitglieder.",
       "via": {
+        "member": "Vereinsmitglied",
         "scorer": "Schreiber",
         "team_manager": "Teamverantwortliche/r",
         "club_manager": "Vereinsverantwortliche/r"

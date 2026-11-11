@@ -3147,6 +3147,7 @@
       "offline": "Cela nécessite une connexion au serveur."
     },
     "accounts": {
+      "managesHint": "Les responsables de club et d’équipe se définissent par club et par équipe : sur la page du club (Clubs) et dans Mon club.",
       "page": {
         "email": "E-mail",
         "created": "Créé le",
@@ -3508,6 +3509,7 @@
       "managerUnknown": "Aucun compte n’a cette adresse : {{emails}}",
       "managersPickHint": "Choisissez-les parmi les comptes du club. Les autres reçoivent par e-mail un lien de responsable du club. Les responsables créent les codes d’invitation du club et gèrent ses membres.",
       "via": {
+        "member": "membre du club",
         "scorer": "marqueur",
         "team_manager": "responsable d’équipe",
         "club_manager": "responsable du club"

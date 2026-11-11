@@ -243,7 +243,9 @@ describe('sign-up requests and their approval', { skip: SKIP }, () => {
     assert.deepEqual(r.json.data.requests, [])
     const m = await me(anna)
     assert.deepEqual(m.managedTeams.map((t) => [t.name, t.via]), [['VBC Musterdorf H1', 'team']])
-    assert.deepEqual(m.roles, [])
+    // db/030: the team manager role and the team's club
+    assert.deepEqual(m.roles, ['team_manager'])
+    assert.deepEqual(m.clubs.map((c) => c.name), ['VBC Musterdorf'])
     assert.equal(m.requests.length, 4)
     // approved once: not pending for the admin any more, but its open parts keep it in the list
     const row = (await pendingList()).find((a) => a.id === anna.id)
@@ -265,7 +267,7 @@ describe('sign-up requests and their approval', { skip: SKIP }, () => {
     const r = await call(users.clubmgr, 'POST', `/api/club/${must.id}/requests/${anna.id}`, { approve: [{ id: scorer.id }], reject: [clubMgr.id] })
     assert.equal(r.status, 200, r.text)
     assert.deepEqual([r.json.data.approved, r.json.data.rejected, r.json.data.requests], [1, 1, []])
-    assert.deepEqual(await rolesOf(anna), ['scorer'])
+    assert.deepEqual((await rolesOf(anna)).sort(), ['scorer', 'team_manager'])
     const m = await me(anna)
     assert.equal(m.isPending, false)
     assert.deepEqual(m.clubs.map((c) => c.name), ['VBC Musterdorf'])
@@ -280,7 +282,7 @@ describe('sign-up requests and their approval', { skip: SKIP }, () => {
     const r = await call(users.admin, 'POST', `/api/admin/accounts/${anna.id}/requests`, { approve: left.map((p) => ({ id: p.id })) })
     assert.equal(r.status, 200, r.text)
     assert.equal(r.json.data.approved, 2)
-    assert.deepEqual((await rolesOf(anna)).sort(), ['referee', 'scorer'])
+    assert.deepEqual((await rolesOf(anna)).sort(), ['referee', 'scorer', 'team_manager'])
     const m = await me(anna)
     assert.deepEqual(m.requests, [])
     assert.deepEqual(m.clubs.map((c) => c.name), ['VBC Musterdorf', 'VBC Mustershausen'])
