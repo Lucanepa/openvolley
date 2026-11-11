@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useTranslation } from 'react-i18next'
 import { useAlert } from '../contexts/AlertContext'
 import { useAuth } from '../contexts/AuthContext'
-import { matchClubBlock } from '../lib/access'
+import { clubVerdict, matchClubBlock } from '../lib/access'
 import { db } from '../db/db'
 import SignaturePad from './SignaturePad'
 import { saveMatchSignature } from '../utils/saveSignature'
@@ -3197,8 +3197,25 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       ? t('matchSetup.gameNotInSchedule', { game: gameN })
       : t('matchSetup.notYourClub', { home: v.home_team || home, clubs: (v.clubs || []).join(', ') })
 
+  // Back on the info view (owner 2026-11-11): the schedule game picked there is
+  // undone whole, its suggestions and banners too, and a check still running
+  // for it answers nothing (afterOfficialLoad compares its game)
+  const scheduleLoadRef = useRef(null)
+  const forgetScheduleLoad = () => {
+    scheduleLoadRef.current = null
+    setSavedSuggestion(null)
+    setRememberedSuggestion(null)
+    setOfficialClaim(null)
+    setClubBlock(null)
+    serverClubRef.current = undefined
+    scheduleHomeRef.current = null
+  }
+
   // After a schedule load: saved-team suggestions and the game-taken check
   const afterOfficialLoad = async (matchData) => {
+    const token = {}
+    scheduleLoadRef.current = token
+    const current = () => scheduleLoadRef.current === token
     try {
       if (access?.canReadTeams) {
         const teams = await getSavedTeams({ userId: user?.id ?? null })
@@ -3209,7 +3226,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           gender: matchData.type2,
           scheduledAt: matchData.date ? `${matchData.date}T${matchData.time || '12:00'}:00` : null
         })
-        setSavedSuggestion(found.home || found.away ? found : null)
+        if (current()) setSavedSuggestion(found.home || found.away ? found : null)
       }
     } catch (err) {
       console.warn('[MatchSetup] Saved-team suggestions failed:', err?.message)
@@ -3219,17 +3236,24 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     const [homeEarlier, awayEarlier] = await Promise.all([rememberedRosters(matchData.home, exclude), rememberedRosters(matchData.away, exclude)])
     const count = (list) => buildPlayerPool({ earlier: list.map(r => r.players) }).length
     const remembered = { home: count(homeEarlier), away: count(awayEarlier) }
+    if (!current()) return
     setRememberedSuggestion(remembered.home || remembered.away ? remembered : null)
     serverClubRef.current = undefined
     scheduleHomeRef.current = matchData.home || null
     try {
       const claim = await checkOfficialGame({ gameNumber: matchData.gameN, dateValue: matchData.date, timeValue: matchData.time })
+      if (!current()) return
       setOfficialClaim(claim && !claim.mine ? claim : null)
     } catch { /* the check is a courtesy: the server enforces the rule */ }
-    setClubBlock(currentClubBlock(matchData.home))
+    if (current()) setClubBlock(currentClubBlock(matchData.home))
   }
 
   const handleOfficialMatchSelect = (matchData) => {
+    // db/018: a game of another club is never applied (the list leaves them out; ICAL fallback, stale list)
+    if (!match?.test) {
+      const blocked = clubVerdict(access, matchData?.home)
+      if (blocked) { showAlert(clubBlockText(blocked), 'error'); return }
+    }
     // Populate all the form fields from the selected official match
     setDate(matchData.date)
     setTime(matchData.time)
@@ -3593,7 +3617,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         {/* "Load match from schedule" sits on the setup card, next to "Create match" */}
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
           <div>
-            <Button variant="ghost" size="xl" className="whitespace-nowrap bg-white" onClick={() => { restoreMatchInfo(); restoreOfficials(); setCurrentView('main') }}>← {t('common.back')}</Button>
+            <Button variant="ghost" size="xl" className="whitespace-nowrap bg-white" onClick={() => { restoreMatchInfo(); restoreOfficials(); forgetScheduleLoad(); setCurrentView('main') }}>← {t('common.back')}</Button>
           </div>
           <h1 className="m-0 text-xl sm:text-2xl font-bold tracking-tight text-stone-900">{t('matchSetup.matchInfo')}</h1>
           <div />
@@ -4154,6 +4178,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           open={loadOfficialMatchModal}
           onClose={() => setLoadOfficialMatchModal(false)}
           onSelectMatch={handleOfficialMatchSelect}
+          access={match?.test ? null : access}
         />
       </MatchSetupInfoView>
     )

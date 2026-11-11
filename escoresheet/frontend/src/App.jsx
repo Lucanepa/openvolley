@@ -122,6 +122,22 @@ function generateRefereePin() {
   return pin
 }
 
+// sessionStorage: survives the tab's own reloads, not a new start of the app
+const STARTUP_CHECK_KEY = 'ov.startupCheckAt'
+const STARTUP_CHECK_WINDOW_MS = 120000
+function startupCheckShownRecently(now = Date.now()) {
+  try {
+    const last = Number(sessionStorage.getItem(STARTUP_CHECK_KEY))
+    const recent = last > 0 && now - last >= 0 && now - last < STARTUP_CHECK_WINDOW_MS
+    if (!recent) sessionStorage.setItem(STARTUP_CHECK_KEY, String(now))
+    return recent
+  } catch {
+    return false
+  }
+}
+// read once per page load (not in a render: StrictMode calls initializers twice)
+const STARTUP_CHECK_SHOWN_RECENTLY = typeof window !== 'undefined' && startupCheckShownRecently()
+
 export default function App() {
   const { t } = useTranslation()
   const [matchId, setMatchId] = useState(null)
@@ -307,8 +323,13 @@ export default function App() {
     const saved = localStorage.getItem('offlineMode')
     return saved === 'true'
   })
+  // Once per start (owner 2026-11-11: "it checked internet, ok, checked
+  // again"): the desktop app reloads itself right after the first start of a
+  // new build (applyUpdateAtStart, UpdateBanner), and that reload no longer
+  // shows the connection check a second time (this tab showed it < 2 min ago)
   const [showStartupConnectivity, setShowStartupConnectivity] = useState(() => {
-    return localStorage.getItem('offlineMode') !== 'true'
+    if (localStorage.getItem('offlineMode') === 'true') return false
+    return !STARTUP_CHECK_SHOWN_RECENTLY
   })
   // Display mode: 'desktop' | 'tablet' | 'auto'
   const [displayMode, setDisplayMode] = useState(() => {
