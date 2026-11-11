@@ -9,6 +9,27 @@ import {
 } from '../../lib/passkeys'
 import { passkeyErrorText } from './passkeyErrors'
 import { showPasskeyOffer } from './passkeyOffer'
+import { apiAuth } from '../../lib/apiClient'
+
+/**
+ * Does the account already have a passkey (the server's list)? The browser's
+ * hint (passkeyHere) is gone whenever the site's storage is wiped (a browser
+ * that forgets the site on leaving, owner 2026-11-11) or the key was set up on
+ * another openvolley.app site: then the offer asked again for a key the
+ * account has. Yes: the hint comes back and nothing is offered. A failed
+ * read offers, as before.
+ */
+async function accountHasPasskey(userId) {
+  try {
+    const { data, error } = await apiAuth.listPasskeys()
+    if (error) return false
+    const has = (data?.passkeys || []).length > 0
+    if (has) markPasskeyHere(userId, true)
+    return has
+  } catch {
+    return false
+  }
+}
 import CreateAccountLink from './CreateAccountLink'
 import LegalLinks from '../../legal/LegalLinks'
 import { backdropDismiss } from '../../ui/backdropDismiss.js'
@@ -68,7 +89,7 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp, initialFor
     // keep the key itself; everyone else goes straight in, as before.
     // The offer is shown by PasskeyOfferHost: this dialog may be gone the
     // moment the account counts as signed in.
-    if (canPasskey && userId && !passkeyHere(userId) && !passkeyOfferDismissed(userId) && await deviceCanHoldPasskey()) {
+    if (canPasskey && userId && !passkeyHere(userId) && !passkeyOfferDismissed(userId) && await deviceCanHoldPasskey() && !(await accountHasPasskey(userId))) {
       showPasskeyOffer({ userId, password })
     }
     setPassword('')
