@@ -337,7 +337,7 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app, r
                 chips={<>
                   {a.deactivated && <Chip tone="urgent">{t('manage.accounts.deactivatedChip')}</Chip>}
                   <RoleChips roles={a.roles} pending={a.pending} manages={{ clubs: a.managed_clubs, teams: a.managed_teams }} app={app} />
-                  {withClubs && (a.clubs || []).map(c => <Chip key={c.id} tone="sky">{c.name}</Chip>)}
+                  {withClubs && clubChips(a)}
                   {/* db/020 / db/023: what the account manages (the role chip says "Club / Team manager") */}
                   {(a.managed_clubs || []).map(c => <Chip key={`mc-${c.id}`} tone="indigo" title={t('manage.requests.managesClub', { name: c.name })}>{c.name}</Chip>)}
                   {(a.managed_teams || []).map(x => <Chip key={`mt-${x.id}`} tone="indigo" title={t('manage.requests.managesTeam', { name: x.name })}>{x.name}</Chip>)}
@@ -391,7 +391,7 @@ function AccountPage({ account: a, app, withClubs, online, busy, error, offer, m
   const chips = (nodes) => <span className="flex flex-wrap gap-1.5">{nodes}</span>
   const groups = [
     { label: t('manage.accounts.page.roles'), value: <RoleChips roles={a.roles} pending={a.pending} manages={{ clubs: a.managed_clubs, teams: a.managed_teams }} app={app} /> },
-    ...(withClubs ? [{ label: t('manage.accounts.page.clubs'), value: (a.clubs || []).length ? chips(a.clubs.map(c => <Chip key={c.id} tone="sky">{c.name}</Chip>)) : '–' }] : []),
+    ...(withClubs ? [{ label: t('manage.accounts.page.clubs'), value: (a.clubs || []).length || requestedClubs(a).length ? chips(clubChips(a)) : '–' }] : []),
     ...(managed.length ? [{ label: t('manage.accounts.page.manages'), value: chips(managed) }] : []),
     ...(parts.length ? [{ label: t('manage.accounts.page.request'), value: chips(parts.map(p => <Chip key={p.id} tone="amber">{requestPartLabel(p, t)}</Chip>)) }] : [])
   ]
@@ -829,4 +829,26 @@ function DetailsModal({ account, onClose, onSaved }) {
       <InlineError error={error} className="mt-2" />
     </KitModal>
   )
+}
+
+/**
+ * The clubs of an account's open sign-up request it is not a member of yet
+ * (db/025; owner 2026-11-11: shown with the clubs, "just in amber"): they
+ * become its clubs when the request is approved. [{ id, name }]
+ */
+export function requestedClubs(account) {
+  const mine = new Set((account?.clubs || []).map((c) => c.id))
+  const out = new Map()
+  for (const p of account?.requests || []) {
+    if (p?.club_id && p.club_name && !mine.has(p.club_id)) out.set(p.club_id, p.club_name)
+  }
+  return [...out].map(([id, name]) => ({ id, name }))
+}
+
+/** The account's clubs (sky) and its requested ones (amber). */
+function clubChips(account) {
+  return [
+    ...(account?.clubs || []).map((c) => <Chip key={c.id} tone="sky">{c.name}</Chip>),
+    ...requestedClubs(account).map((c) => <Chip key={`rq-${c.id}`} tone="amber" data-testid="requested-club">{c.name}</Chip>)
+  ]
 }
