@@ -137,8 +137,10 @@ export function parseRosterText(text, gflPlayerNames = new Set()) {
   //   - Capital letter (including accented: Ä, Ö, Ü, etc.)
   //   - MUST have either: lowercase letters OR apostrophe+content (prevents matching single letters like M/F)
   //   - Zero or more: hyphen + capital + lowercase+ (for Jean-Pierre)
-  const upper = 'A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß'
-  const lower = 'a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ'
+  // Latin Extended-A and -B too (U+0100–U+024F): "Krawczyńsk", "Dvořák", "Ștefan"
+  // were dropped whole (both cases: the two blocks mix upper and lower letters)
+  const upper = 'A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß\u0100-\u024F'
+  const lower = 'a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ\u0100-\u024F'
   // Either: lowercase+ (optionally with apostrophe after), OR apostrophe+content (for O'Brien, D'Angelo)
   const nameWord = `[${upper}](?:[${lower}]+(?:'[${upper}]?[${lower}]+)?|'[${upper}]?[${lower}]+)(?:-[${upper}][${lower}]+)*`
   // Full name: one or more name words separated by spaces
