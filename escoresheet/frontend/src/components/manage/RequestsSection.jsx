@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { clubApi, teamApi } from '../../lib/accountApi'
 import { requestPartLabel, sortRequestParts } from '../../domain/signUpRequests'
 import { usePanelData, useOnline, PanelHead, InlineError, useErrorText } from './common'
-import { Chip, EmptyInset, Notice, Row, RowList, RowTool, SkeletonRows, confirmDialog, dayLabel, toast } from '../../ui'
+import { Chip, EmptyInset, Notice, Row, RowList, RowTool, confirmDialog, dayLabel, toast } from '../../ui'
 
 /**
  * Sign-up requests one approver decides (db/025, docs/account-approval-spec.md
@@ -23,11 +23,13 @@ export default function RequestsSection({ club = null, team = null }) {
   const api = club
     ? { list: () => clubApi.requests(club.id), decide: (userId, body) => clubApi.decideRequests(club.id, userId, body) }
     : { list: () => teamApi.requests(team.id), decide: (userId, body) => teamApi.decideRequests(team.id, userId, body) }
-  const { data, error, loading, reload } = usePanelData(api.list, [scopeId], { enabled: online })
+  const { data, error, reload } = usePanelData(api.list, [scopeId], { enabled: online })
   const [busy, setBusy] = useState(null) // part id
   const [rowError, setRowError] = useState({})
-  // An older server without db/025 answers 404: no section at all
+  // An older server without db/025 answers 404: no section at all. So
+  // nothing until the first answer either (not a skeleton that then goes)
   if (error?.status === 404 || error?.code === 'OV_NOT_FOUND') return null
+  if (!data && !error) return null
   const rows = (data?.requests || []).flatMap((r) => sortRequestParts(r.parts).map((part) => ({ user: r.user, part })))
 
   const decide = async ({ user, part }, approve) => {
@@ -64,9 +66,7 @@ export default function RequestsSection({ club = null, team = null }) {
       <PanelHead title={t('manage.requests.title')} level={2} />
       <p className="mb-3 text-sm text-stone-500">{t(club ? 'manage.requests.clubHint' : 'manage.requests.teamHint')}</p>
       {error && <Notice className="mb-3">{errorText(error)}</Notice>}
-      {loading && !data ? (
-        <SkeletonRows rows={2} pill={false} />
-      ) : rows.length === 0 ? (
+      {error && !data ? null : rows.length === 0 ? (
         <EmptyInset>{t('manage.requests.empty')}</EmptyInset>
       ) : (
         <RowList>
@@ -79,7 +79,7 @@ export default function RequestsSection({ club = null, team = null }) {
               actionIndent="pl-1.5"
               title={user.name || user.email}
               meta={<>
-                {user.name && <span className="break-all">{user.email}</span>}
+                {user.name && <span className="min-w-0 max-w-full truncate" title={user.email}>{user.email}</span>}
                 {user.created_at && <span>{t('manage.requests.signedUp', { date: dayLabel(user.created_at, { year: true }) })}</span>}
                 {user.email_confirmed === false && <span className="font-medium text-amber-700">{t('manage.accounts.emailUnconfirmed')}</span>}
               </>}

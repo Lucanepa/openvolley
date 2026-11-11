@@ -64,7 +64,7 @@ export default function InvitesPanel({ app, club = null, title }) {
       </PanelHead>
       <OfflineBanner online={online} />
       {error && <Notice className="mb-3">{errorText(error)}</Notice>}
-      {loading && !data ? (
+      {error && !data ? null : loading && !data ? (
         <SkeletonRows rows={4} pill={false} />
       ) : invites.length === 0 ? (
         <EmptyInset>{t('manage.invites.empty')}</EmptyInset>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, WifiOff } from 'lucide-react'
 import KitModal from './KitModal'
@@ -67,15 +67,26 @@ export function PageMissing({ loading = false, error = null, onBack, backLabel }
   )
 }
 
+// PageLoadGate's registry: the first reads of a page under it
+const PageLoad = createContext(null)
+
 /**
- * Load data for a panel: { data, error, loading, reload }. The previous data
- * stays on screen while reloading (no flash of the empty state).
+ * Load data for a panel: { data, error, loading, stale, reload }. The previous
+ * data stays on screen while reloading (no flash of the empty state).
  * reload({ quiet: true }) is a background refresh: no loading state, and a
  * failed read keeps what is shown.
+ * What is kept belongs to its deps: with new deps (another filter, another
+ * team) the panel is loading and has no data until the new read answers, so
+ * neither the empty state nor the previous selection's list is drawn under
+ * the new one ("No accounts found." before the accounts, owner 2026-11-11).
+ * `stale` is the previous deps' data meanwhile, for a panel that wants it.
  * @param {() => Promise<{data: any, error: object|null}>} fetcher
  */
 export function usePanelData(fetcher, deps = [], { enabled = true } = {}) {
-  const [state, setState] = useState({ data: null, error: null, loading: enabled })
+  // one token per set of deps: the state says whose read it holds
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const key = useMemo(() => ({}), deps)
+  const [state, setState] = useState({ key: null, data: null, error: null, loading: enabled })
   const seq = useRef(0)
   const reload = useCallback(async (opts) => {
     const quiet = opts?.quiet === true
@@ -88,10 +99,12 @@ export function usePanelData(fetcher, deps = [], { enabled = true } = {}) {
       setState(s => ({ ...s, loading: false }))
       return res
     }
-    setState({ data: res.error ? null : res.data, error: res.error || null, loading: false })
+    // a failed read keeps the data of the same deps (the panel shows the error)
+    const error = res?.error || null
+    setState(s => ({ key, data: error ? (s.key === key ? s.data : null) : (res?.data ?? null), error, loading: false }))
     return res
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps)
+  }, [key])
   useEffect(() => {
     if (enabled) reload()
   }, [reload, enabled])
@@ -105,7 +118,51 @@ export function usePanelData(fetcher, deps = [], { enabled = true } = {}) {
     seen.current = shown
     if (enabled) reload({ quiet: true })
   }, [shown, enabled, reload])
-  return { ...state, reload }
+  // under a PageLoadGate: this read holds the page until its first answer
+  const gate = useContext(PageLoad)
+  const first = enabled && (state.key !== key || (state.loading && state.data == null && !state.error))
+  const token = useRef(null)
+  if (!token.current) token.current = {}
+  useEffect(() => {
+    if (!gate || !first) return
+    const me = token.current
+    gate.add(me)
+    return () => gate.done(me)
+  }, [gate, first])
+  if (state.key !== key) return { data: null, error: null, loading: enabled, stale: state.data, reload }
+  return { data: state.data, error: state.error, loading: state.loading, stale: null, reload }
+}
+
+/**
+ * One page that appears whole (owner 2026-11-11: the console "doesn't look
+ * loaded together"): the sections below it mount at once, hidden, and show
+ * together once every usePanelData among them has its first answer (or
+ * failed); `fallback` (a skeleton) meanwhile. Later reloads do not hide the
+ * page again. After `timeoutMs` the page shows anyway (a read that hangs).
+ */
+export function PageLoadGate({ fallback = null, className = '', timeoutMs = 10000, children }) {
+  const pending = useRef(new Set())
+  const [open, setOpen] = useState(false)
+  // after the commit's effects (StrictMode's second mount re-adds what its
+  // cleanup took), so a read registering in the same commit is counted
+  const check = useCallback(() => {
+    queueMicrotask(() => { if (pending.current.size === 0) setOpen(true) })
+  }, [])
+  const registry = useMemo(() => ({
+    add: (id) => { pending.current.add(id) },
+    done: (id) => { pending.current.delete(id); check() }
+  }), [check])
+  useEffect(() => {
+    check()
+    const timer = setTimeout(() => setOpen(true), timeoutMs)
+    return () => clearTimeout(timer)
+  }, [check, timeoutMs])
+  return (
+    <PageLoad.Provider value={open ? null : registry}>
+      {!open && fallback}
+      <div className={[open ? '' : 'hidden', className].filter(Boolean).join(' ')} data-loading={open ? undefined : 'true'}>{children}</div>
+    </PageLoad.Provider>
+  )
 }
 
 export function OfflineBanner({ online }) {

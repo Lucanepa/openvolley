@@ -32,6 +32,9 @@
  *   PUT    /api/admin/accounts/:id/clubs             isAdmin: the account's clubs (the whole list)
  *   PATCH  /api/admin/accounts/:id { first_name?, last_name?, email? }  isAdmin: the account's name
  *                                                    and address (a super admin's only by a super admin)
+ *   POST   /api/admin/accounts/:id/deactivate        isAdmin: the account can no longer sign in (its
+ *                                                     sessions end); nothing is deleted
+ *   POST   /api/admin/accounts/:id/reactivate        isAdmin: it can sign in again
  *   POST   /api/admin/accounts/:id/delete { email }  isAdmin: deletes the account (its personal data;
  *                                                    the match records stay); a super admin only
  *                                                    by a super admin, never the caller's own,
@@ -237,6 +240,8 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['POST', new RegExp(`^/api/admin/accounts/${ID}/roles$`), 'admin', (m, c) => accounts.setRoles({ actor: { id: c.user.id, access: c.access }, userId: m[1], body: c.body })],
     ['PATCH', new RegExp(`^/api/admin/accounts/${ID}$`), 'admin', (m, c) => accounts.updateProfile({ actor: { id: c.user.id, access: c.access }, userId: m[1], body: c.body })],
     // Deleting an account (lib/accounts.js deleteAccount): delete, or reject a sign-up without a role
+    ['POST', new RegExp(`^/api/admin/accounts/${ID}/deactivate$`), 'admin', (m, c) => accounts.setActive({ actor: { id: c.user.id, access: c.access }, userId: m[1], active: false })],
+    ['POST', new RegExp(`^/api/admin/accounts/${ID}/reactivate$`), 'admin', (m, c) => accounts.setActive({ actor: { id: c.user.id, access: c.access }, userId: m[1], active: true })],
     ['POST', new RegExp(`^/api/admin/accounts/${ID}/delete$`), 'admin', (m, c) => accounts.deleteAccount({ actor: { id: c.user.id, access: c.access }, userId: m[1], body: c.body })],
     ['POST', new RegExp(`^/api/admin/accounts/${ID}/reject$`), 'admin', (m, c) => accounts.deleteAccount({ actor: { id: c.user.id, access: c.access }, userId: m[1], body: c.body, reject: true })],
     // db/018: clubs (lib/clubs.js); 404 on a server built without it

@@ -85,7 +85,7 @@ export default function ClubTeamsSection({ club, onOpenTeam = null }) {
       <PanelHead title={t('manage.clubTeams.title')} level={2} />
       <p className="mb-3 text-sm text-stone-500">{t('manage.clubTeams.hint')}</p>
       {error && <Notice className="mb-3">{errorText(error)}</Notice>}
-      {loading && !data ? (
+      {error && !data ? null : loading && !data ? (
         <SkeletonRows rows={2} pill={false} />
       ) : teams.length === 0 ? (
         <EmptyInset>{t('manage.clubTeams.none')}</EmptyInset>

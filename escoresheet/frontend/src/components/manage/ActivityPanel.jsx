@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Download, Search, Trash2 } from 'lucide-react'
 import { admin } from '../../lib/accountApi'
@@ -50,9 +50,12 @@ export default function ActivityPanel({ app, initialMatch = '' }) {
   const [filters, setFilters] = useState(null) // applied: { match, account, kind, level, from, to }
   const [entries, setEntries] = useState([])
   const [next, setNext] = useState(null)
-  const [loading, setLoading] = useState(false)
+  // the first search runs on mount: loading from the start (not "No entries" first)
+  const [loading, setLoading] = useState(online)
   const [error, setError] = useState(null)
   const [open, setOpen] = useState(null)
+  // the latest search or page wins (a slow earlier answer is dropped)
+  const seq = useRef(0)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
@@ -73,9 +76,10 @@ export default function ActivityPanel({ app, initialMatch = '' }) {
     return { filters: out }
   }
 
-  const load = async (applied, before = null) => {
+  const load = async (applied, before = null, my = ++seq.current) => {
     setLoading(true)
     const res = await admin.listActivity({ ...applied, before: before ?? undefined, limit: PAGE })
+    if (my !== seq.current) return
     setLoading(false)
     if (res.error) {
       setError(errorText(res.error))
@@ -89,14 +93,18 @@ export default function ActivityPanel({ app, initialMatch = '' }) {
 
   const search = async (e) => {
     e?.preventDefault?.()
+    const my = ++seq.current
+    setLoading(true)
     const r = await resolveFilters()
+    if (my !== seq.current) return
     if (r.error) {
+      setLoading(false)
       setError(r.error)
       return
     }
     setFilters(r.filters)
     setOpen(null)
-    await load(r.filters)
+    await load(r.filters, null, my)
   }
 
   useEffect(() => {
@@ -171,7 +179,7 @@ export default function ActivityPanel({ app, initialMatch = '' }) {
         </div>
       </form>
       {error && <Notice className="mb-3">{error}</Notice>}
-      {loading && !entries.length ? (
+      {error && !entries.length ? null : loading && !entries.length ? (
         <SkeletonRows rows={6} pill={false} />
       ) : entries.length === 0 ? (
         <EmptyInset>{t('manage.activity.empty')}</EmptyInset>

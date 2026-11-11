@@ -887,8 +887,12 @@ export const apiAuth = {
   // Returns { data: { subscription } } matching Supabase API shape
   onAuthStateChange(callback) {
     // Check session immediately (once a session lost from localStorage is
-    // back from its IndexedDB copy)
+    // back from its IndexedDB copy). Not after an unsubscribe: React's
+    // StrictMode subscribes twice, and the first INITIAL_SESSION read the
+    // profile a second time.
+    let cancelled = false
     sessionRestored().then(() => {
+      if (cancelled) return
       const session = getStoredToken()
       callback('INITIAL_SESSION', session?.access_token ? session : null)
     })
@@ -914,6 +918,7 @@ export const apiAuth = {
       data: {
         subscription: {
           unsubscribe: () => {
+            cancelled = true
             window.removeEventListener('storage', handler)
             window.removeEventListener(TOKEN_CHANGE_EVENT, localHandler)
           }

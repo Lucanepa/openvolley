@@ -65,12 +65,14 @@ import { ResetPasswordPage } from '../components/auth/AuthLinkPages'
 
 const BEACH_APP = 'https://beach.openvolley.app/'
 
-function setAuth({ user = { id: 'u-1', email: 'bea@club.ch', email_confirmed_at: '2026-10-01T08:00:00Z' }, roles = [], known = true } = {}) {
+function setAuth({ user = { id: 'u-1', email: 'bea@club.ch', email_confirmed_at: '2026-10-01T08:00:00Z' }, roles = [], known = true, meLoaded = true } = {}) {
   auth.value = {
     user,
     profile: user ? { user_id: user.id, first_name: 'Bea', last_name: 'Beach', roles } : null,
     access: user ? { ...accessFromRoles(roles), known } : NO_ACCESS,
     loading: false,
+    // this page load's /api/me answered (the console waits for it)
+    meLoaded: meLoaded && !!user,
     signIn: vi.fn(async () => ({ error: null })),
     signUp: vi.fn(async () => ({ data: { user: { id: 'u-new' } }, error: null })),
     signOut: vi.fn(async () => ({ error: null })),
@@ -388,63 +390,18 @@ describe('OpenBeach manager: invite wording and footer', () => {
   })
 })
 
-describe('flip between OpenVolley and OpenBeach (one sign-in)', () => {
+describe('no flip between OpenVolley and OpenBeach (owner 2026-11-11)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     window.history.replaceState(null, '', '/')
-    window.sessionStorage.clear()
   })
-  const renderSwitchable = (app) => render(<ManagerBrandProvider app={app} switchable><ManagerApp /></ManagerBrandProvider>)
 
-  it('an admin flips the beach manager to OpenVolley and back; the tab keeps the choice', async () => {
+  it('an admin of both apps sees only the site\'s own console', () => {
     setAuth({ roles: ['admin'] })
-    renderSwitchable('beach')
+    render(<ManagerBrandProvider app="beach"><ManagerApp /></ManagerBrandProvider>)
     expect(screen.getByAltText('OpenBeach')).toBeInTheDocument()
-    expect(screen.getByTestId('manager-brand-flip')).toHaveAccessibleName('managerSite.switchTo')
-    // a phone's header has no room: the same flip above the panel (CSS picks one)
-    expect(screen.getByTestId('manager-brand-flip-phone')).toHaveTextContent('managerSite.switchTo')
-    fireEvent.click(screen.getByTestId('manager-brand-flip'))
-    expect(await screen.findByAltText('OpenVolley')).toBeInTheDocument()
-    expect(railButtons().map(b => b.textContent)).toContain('manage.tabs.games')
-    expect(window.sessionStorage.getItem('ov-manager-app')).toBe('indoor')
-    expect(document.title).toBe('OpenVolley Manager')
-    await waitFor(() => expect(api.admin.listAccounts).toHaveBeenLastCalledWith(expect.objectContaining({ app: 'indoor' })))
-    fireEvent.click(screen.getByTestId('manager-brand-flip'))
-    expect(await screen.findByAltText('OpenBeach')).toBeInTheDocument()
-    expect(window.sessionStorage.getItem('ov-manager-app')).toBe('beach')
-  })
-
-  it('a competition manager of both apps flips to the indoor scoresheets', async () => {
-    setAuth({ roles: ['competition_manager', 'beach:competition_manager'] })
-    renderSwitchable('beach')
-    await waitFor(() => expect(api.scoresheetsApi.list).toHaveBeenCalledWith(expect.objectContaining({ app: 'beach' })))
-    fireEvent.click(screen.getByTestId('manager-brand-flip-phone'))
-    await waitFor(() => expect(api.scoresheetsApi.list).toHaveBeenLastCalledWith(expect.objectContaining({ app: 'indoor' })))
-    expect(railButtons().map(b => b.textContent)).toEqual(['manage.tabs.scoresheets', 'manage.tabs.teams', 'manage.tabs.settings'])
-  })
-
-  it('no flip without a console in the other app, nor outside a switchable manager', () => {
-    setAuth({ roles: ['beach:competition_manager'] })
-    renderSwitchable('beach')
-    expect(screen.getByTestId('manage-console')).toBeInTheDocument()
     expect(screen.queryByTestId('manager-brand-flip')).toBeNull()
     expect(screen.queryByTestId('manager-brand-flip-phone')).toBeNull()
-  })
-
-  it('a kept flip this account cannot use goes back to the site\'s own app', async () => {
-    window.sessionStorage.setItem('ov-manager-app', 'indoor')
-    setAuth({ roles: ['beach:competition_manager'] })
-    renderSwitchable('beach')
-    expect(await screen.findByAltText('OpenBeach')).toBeInTheDocument()
-    expect(railButtons().map(b => b.textContent)).toEqual(['manage.tabs.scoresheets', 'manage.tabs.teams', 'manage.tabs.tournaments'])
-    expect(window.sessionStorage.getItem('ov-manager-app')).toBe('beach')
-  })
-
-  it('signed out: the site\'s own app again', async () => {
-    window.sessionStorage.setItem('ov-manager-app', 'beach')
-    setAuth({ user: null })
-    renderSwitchable('indoor')
-    await waitFor(() => expect(screen.getByAltText('OpenVolley')).toBeInTheDocument())
-    expect(window.sessionStorage.getItem('ov-manager-app')).toBe('indoor')
+    expect(screen.queryByText('managerSite.switchTo')).toBeNull()
   })
 })

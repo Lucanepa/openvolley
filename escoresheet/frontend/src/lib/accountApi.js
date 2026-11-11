@@ -325,6 +325,17 @@ export const admin = {
   deleteAccount(userId, { email } = {}) {
     return apiRequest('POST', `/api/admin/accounts/${enc(userId)}/delete`, { email }, { timeoutMs: 60000 })
   },
+  /**
+   * Deactivate: the account can no longer sign in and its sessions end;
+   * nothing is deleted. Reactivate undoes it. A server without them answers
+   * 404 OV_NOT_FOUND (its accounts list has no can_deactivate).
+   */
+  deactivateAccount(userId) {
+    return apiRequest('POST', `/api/admin/accounts/${enc(userId)}/deactivate`, {})
+  },
+  reactivateAccount(userId) {
+    return apiRequest('POST', `/api/admin/accounts/${enc(userId)}/reactivate`, {})
+  },
   /** The same for a sign-up without any role (audited as a rejection). */
   rejectAccount(userId, { email } = {}) {
     return apiRequest('POST', `/api/admin/accounts/${enc(userId)}/reject`, { email }, { timeoutMs: 60000 })

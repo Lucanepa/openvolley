@@ -102,7 +102,7 @@ export default function ClubsPanel({ route = '', onRoute = null }) {
         </div>
       </div>
       {error && <Notice className="mb-3">{errorText(error)}</Notice>}
-      {loading && !data ? (
+      {error && !data ? null : loading && !data ? (
         <SkeletonRows rows={4} pill={false} />
       ) : clubs.length === 0 ? (
         <EmptyInset>{t('manage.clubs.empty')}</EmptyInset>

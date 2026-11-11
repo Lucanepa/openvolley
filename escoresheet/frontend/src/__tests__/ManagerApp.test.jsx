@@ -42,7 +42,7 @@ import { accessFromRoles, NO_ACCESS } from '../lib/access'
 
 const CONFIRMED_AT = '2026-10-01T08:00:00Z'
 
-function setAuth({ user: given = { id: 'u-1', email: 'admin@club.ch' }, roles = [], known = true, loading = false, profile } = {}) {
+function setAuth({ user: given = { id: 'u-1', email: 'admin@club.ch' }, roles = [], known = true, loading = false, profile, meLoaded = true } = {}) {
   // Confirmed unless the test says otherwise (email_confirmed_at: null)
   const user = given && !('email_confirmed_at' in given) ? { ...given, email_confirmed_at: CONFIRMED_AT } : given
   auth.value = {
@@ -50,6 +50,8 @@ function setAuth({ user: given = { id: 'u-1', email: 'admin@club.ch' }, roles = 
     profile: profile ?? (user ? { user_id: user.id, first_name: 'Ada', last_name: 'Admin', roles } : null),
     access: user ? { ...accessFromRoles(roles), known } : NO_ACCESS,
     loading,
+    // this page load's /api/me answered (the console waits for it)
+    meLoaded: meLoaded && !!user,
     signIn: vi.fn(async () => ({ error: null })),
     signUp: vi.fn(async () => ({ data: { user: { id: 'u-new', email_confirmed_at: '2026-10-07T08:00:00Z' } }, error: null })),
     signOut: vi.fn(async () => ({ error: null })),
