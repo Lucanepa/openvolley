@@ -235,6 +235,7 @@
     "noRefereeHistory": "No referee history yet. Enter referees manually and they will be saved for future matches."
   },
   "matchSetup": {
+    "loadingScheduleGame": "Loading the game…",
     "scorerDobForCoinToss": "Scorer date of birth: needed for the coin toss",
     "dobRequiredForCoinToss": "Required for the coin toss",
     "title": "Match setup",
@@ -1190,6 +1191,7 @@
     "scorer": "Scorer"
   },
   "home": {
+    "openingMatch": "Opening the match…",
     "title": "eScoresheet",
     "newMatch": "New match",
     "officialMatch": "Official match",

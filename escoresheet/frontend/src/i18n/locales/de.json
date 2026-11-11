@@ -227,6 +227,7 @@
     "noRefereeHistory": "Noch keine Schiedsrichter-Historie. Geben Sie Schiedsrichter manuell ein und sie werden für zukünftige Spiele gespeichert."
   },
   "matchSetup": {
+    "loadingScheduleGame": "Spiel wird geladen…",
     "scorerDobForCoinToss": "Geburtsdatum des Schreibers: für die Auslosung nötig",
     "dobRequiredForCoinToss": "Für die Auslosung erforderlich",
     "title": "Spieleinrichtung",
@@ -1182,6 +1183,7 @@
     "scorer": "Schreiber"
   },
   "home": {
+    "openingMatch": "Spiel wird geöffnet…",
     "title": "eScoresheet",
     "newMatch": "Neues Spiel",
     "officialMatch": "Offizielles Spiel",

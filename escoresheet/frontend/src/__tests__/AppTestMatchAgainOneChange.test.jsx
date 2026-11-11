@@ -3,7 +3,7 @@
 // Delete match' while the test match was prepared, but the header's 'Test
 // match' chip went away for two frames (the older match deleted, its header
 // status not held) and came back with the setup. The header stays as it was
-// now too.
+// now too. Between the two, the branded spinner covers the screen.
 import 'fake-indexeddb/auto'
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { waitFor, fireEvent } from '@testing-library/react'
@@ -34,6 +34,9 @@ describe('App: a new test match over an older one', () => {
       const text = document.body.textContent
       return {
         home: !!button('Restore match'),
+        // the branded spinner over everything from the tap until Match Setup
+        // is ready (owner 2026-11-11: one loading state)
+        cover: !!document.querySelector('[data-testid="opening-match"]'),
         match: !!button('Continue match') || !!button('Delete match'),
         chip: chip(),
         setup: /Players: \d+/.test(text),
@@ -49,6 +52,6 @@ describe('App: a new test match over an older one', () => {
     // the home screen as it was: the older match's buttons and the header chip
     expect(states.filter(s => s.home && !(s.match && s.chip === 'Test match'))).toEqual([])
     // then only the filled setup
-    expect(states.filter(s => !s.home && !(s.setup && s.notSet === 0 && s.chip === 'Test match'))).toEqual([])
+    expect(states.filter(s => !s.home && !s.cover && !(s.setup && s.notSet === 0 && s.chip === 'Test match'))).toEqual([])
   })
 })

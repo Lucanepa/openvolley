@@ -234,6 +234,7 @@
     "noRefereeHistory": "Nessuno storico arbitri. Inserisci gli arbitri manualmente e verranno salvati per le prossime partite."
   },
   "matchSetup": {
+    "loadingScheduleGame": "Caricamento della partita…",
     "scorerDobForCoinToss": "Data di nascita del segnapunti: necessaria per il sorteggio",
     "dobRequiredForCoinToss": "Richiesta per il sorteggio",
     "title": "Configurazione partita",
@@ -1189,6 +1190,7 @@
     "scorer": "Segnapunti"
   },
   "home": {
+    "openingMatch": "Apertura della partita…",
     "title": "eScoresheet",
     "newMatch": "Nuova partita",
     "officialMatch": "Partita ufficiale",

@@ -6,7 +6,7 @@ import ClubTeamsSection from './ClubTeamsSection'
 import ClubLicencesSection from './ClubLicencesSection'
 import RequestsSection from './RequestsSection'
 import ClubPersonPage from './ClubPersonPage'
-import { usePanelData, usePanelRoute, useOnline, OfflineBanner, PageLoadGate, PanelHead, InlineError, useErrorText } from './common'
+import { usePanelData, usePanelRoute, useOnline, OfflineBanner, PageLoadGate, PageSpinner, PanelHead, InlineError, useErrorText } from './common'
 import { Button, Chip, EmptyInset, Field, Input, Notice, Row, RowList, RowTool, Select, SkeletonRows, confirmDialog, dayLabel, toast } from '../../ui'
 
 /**
@@ -44,7 +44,7 @@ export default function MyClubPanel({ clubs = [], route = '', onRoute = null, na
       )}
       {/* keyed: another club starts its sections afresh, and appears whole
           (contact, requests, members, teams, licences, codes) */}
-      <PageLoadGate key={club.id} className="space-y-8" fallback={<SkeletonRows rows={6} pill={false} />}>
+      <PageLoadGate key={club.id} className="space-y-8" fallback={<PageSpinner />}>
         <ClubSections club={club} onOpenPerson={(sv) => go([club.id, 'person', sv])} onOpenTeam={openTeam} />
       </PageLoadGate>
     </div>

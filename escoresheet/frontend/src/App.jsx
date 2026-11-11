@@ -50,6 +50,12 @@ const ballImage = ballFallback
 // tried again at most this often, this many times
 const ENDED_LIVE_STATE_RETRY_MS = 60 * 1000
 const ENDED_LIVE_STATE_TRIES = 10
+// The home screen's "opening the match" spinner at most this long: the
+// server check (SERVER_CHECK_TIMEOUT_MS), the lock and Match Setup's reads
+// (SETUP_READS_WAIT_MS) fit well inside
+const OPENING_MATCH_MAX_MS = 10000
+// The home screen's first paint waits this long at most for its local reads
+const HOME_READS_WAIT_MS = 3000
 
 import {
   TEST_REFEREE_SEED_DATA,
@@ -80,7 +86,7 @@ import { jobMatchKey, setExtId } from './utils/syncIds'
 import { deviceMatchRows, jobsOfMatch, matchGameNumber, resumeStage, setScore } from './utils/deviceMatches'
 import { PhoneIcon } from './components/icons'
 import { Maximize } from 'lucide-react'
-import { Button, cn, FormError, Input } from './ui'
+import { Button, cn, FormError, Input, ScreenLoading } from './ui'
 import { getBackendOverride, getCloudApiUrl, getLocalServerStatusUrl, isCloudBlockedOnThisPort, isStaticHost } from './utils/backendConfig'
 import { isViewportTooSmall } from './utils/formLayout'
 import { onPointHubBoard } from './utils/pointHubBoard'
@@ -209,6 +215,35 @@ export default function App() {
     }
   }, [matchId])
   const [testMatchLoading, setTestMatchLoading] = useState(false)
+  // A match opened from the home screen (owner 2026-11-11: "every time I
+  // click something or start new game etc it seems it loads something,
+  // stops, loads it again"): the branded spinner from the tap until the next
+  // screen has what it shows. Continue waits up to 3 s for the server's
+  // self-check, then the session lock and the setup's reads; the home screen
+  // stood still meanwhile and Match Setup filled in after it came.
+  // 'running' while the opening runs; 'done' after it, until Match Setup says
+  // it is ready (onReady) or the next screen is not Match Setup.
+  const [openingMatch, setOpeningMatch] = useState(null)
+  const openFromHome = useCallback(async (open) => {
+    setOpeningMatch('running')
+    try {
+      return await open()
+    } finally {
+      setOpeningMatch((o) => (o === 'running' ? 'done' : o))
+    }
+  }, [])
+  const setupOpen = showMatchSetup && matchId != null
+  useEffect(() => {
+    // the opening ended on another screen (scoreboard, coin toss, Match End,
+    // a dialog on the home screen): nothing more to wait for
+    if (openingMatch === 'done' && !setupOpen) setOpeningMatch(null)
+  }, [openingMatch, setupOpen])
+  useEffect(() => {
+    // never stuck: offline first, the screen shows what it has
+    if (!openingMatch) return undefined
+    const timer = setTimeout(() => setOpeningMatch(null), OPENING_MATCH_MAX_MS)
+    return () => clearTimeout(timer)
+  }, [openingMatch])
   // Easy match form: { prefill } while open. A page address with ?easy=...
   // (domain/easyMatch.js easyMatchPrefill) opens it on that game.
   const [easyMatchForm, setEasyMatchForm] = useState(() => {
@@ -1096,6 +1131,10 @@ export default function App() {
   // The start-up's decision and self-check (once per page load: StrictMode
   // runs effects twice)
   const startupCheckRef = useRef(null)
+  // The start-up reopen decided (a reload goes back to its match screen):
+  // until then the home screen waits, else it showed for a frame before the
+  // match screen came back (owner 2026-11-11: "loads, stops, loads again")
+  const [startupDecided, setStartupDecided] = useState(false)
   // The match on the screen, for the start-up and the background rule
   const openMatchIdRef = useRef(null)
   useEffect(() => {
@@ -1281,6 +1320,7 @@ export default function App() {
       setShowCoinToss(reopen.view === 'coinToss')
       setShowMatchEnd(reopen.view === 'matchEnd')
     }).catch((error) => console.error('[Start] Could not reopen the match:', error))
+      .finally(() => { if (alive) setStartupDecided(true) })
     return () => { alive = false }
   }, [runSelfCheck])
 
@@ -3103,7 +3143,7 @@ export default function App() {
           setHomeWhilePreparing({ official: shownOfficialMatch, test: shownTestMatch, matchStatus: shownMatchStatus, matchInfoData: shownMatchInfoData })
           try {
             await clearLocalTestData()
-            await createTestMatchData()
+            await openFromHome(createTestMatchData)
           } catch (error) {
             console.error('Failed to prepare test match:', error)
             setAlertModal(t('home.modals.unableToPrepareTestMatch', { error: error.message || error }))
@@ -3584,10 +3624,26 @@ export default function App() {
     } catch {
       return null
     }
-  }, [onHome, continueTargetId, serverHereKey], null)
+  }, [onHome, continueTargetId, serverHereKey])
   const continueInfo = continueRead && continueRead.id === continueTargetId
     ? { ...continueRead, unsent: unsentByKey?.get(continueRead.seedKey)?.changes || 0 }
     : null
+  // The home screen appears whole (owner 2026-11-11: "loads something, stops,
+  // loads it again"): until the start-up reopen is decided and the device's
+  // matches and the Continue card's details are read, the branded spinner; the buttons and the card then
+  // come together instead of "New match" first and Continue a moment later.
+  // Local reads: a moment, at most HOME_READS_WAIT_MS. Again each time the
+  // home screen is entered (the card is read again then).
+  const homeReadsDone = startupDecided && currentOfficialMatch !== undefined && currentTestMatch !== undefined && deviceMatches !== undefined &&
+    (continueTargetId == null || continueRead?.id === continueTargetId)
+  const [homeShown, setHomeShown] = useState(false)
+  useEffect(() => {
+    if (!onHome) { setHomeShown(false); return undefined }
+    if (homeReadsDone) { setHomeShown(true); return undefined }
+    const timer = setTimeout(() => setHomeShown(true), HOME_READS_WAIT_MS)
+    return () => clearTimeout(timer)
+  }, [onHome, homeReadsDone])
+  const homeVisible = homeShown || homeReadsDone
   // The home screen's list, each row with what the server does not have yet
   const homeDeviceMatches = deviceMatches?.filter(r => r.id !== closedMatchId)
     .map(r => ({ ...r, unsent: unsentByKey?.get(r.seedKey)?.changes || 0 }))
@@ -3790,6 +3846,7 @@ export default function App() {
                   lfpTrackingEnabled={lfpTrackingEnabled}
                   initialOfficialGame={pendingOfficialGame}
                   onInitialOfficialGameUsed={() => setPendingOfficialGame(null)}
+                  onReady={() => setOpeningMatch(null)}
                 />
               ) : showManualAdjustments && matchId ? (
                 <ManualAdjustments
@@ -3835,11 +3892,12 @@ export default function App() {
                   <UpdateBanner showClearDataOption={true} />
                   {/* the desktop app's own update (updater.rs): home screen only */}
                   <DesktopUpdateNotice />
+                  {!homeVisible ? <ScreenLoading overlay={false} label={t('common.loading')} testId="home-loading" /> : (
                   <HomePage
                     signedIn={!!signedInUser}
                     signInAvailable={signInAvailable}
                     onOfficialGame={openOfficialGame}
-                    createNewTestMatch={createNewTestMatch}
+                    createNewTestMatch={() => openFromHome(createNewTestMatch)}
                     testMatchLoading={testMatchLoading}
                     createEasyMatch={() => openEasyMatch()}
                     easyMatchLoading={easyMatchLoading}
@@ -3847,8 +3905,8 @@ export default function App() {
                     currentOfficialMatch={homeOfficialMatch}
                     currentTestMatch={homeTestMatch}
                     deviceMatches={homeDeviceMatches}
-                    continueMatch={(id) => continueMatch(id, { checkServer: true })}
-                    continueTestMatch={continueTestMatch}
+                    continueMatch={(id) => openFromHome(() => continueMatch(id, { checkServer: true }))}
+                    continueTestMatch={() => openFromHome(continueTestMatch)}
                     continueInfo={continueInfo}
                     selfCheckNotice={
                       <SelfCheckNotice
@@ -3865,6 +3923,7 @@ export default function App() {
                     onOpenSettings={() => setHomeOptionsModal(true)}
                     onRestoreMatch={() => setRestoreMatchModal(true)}
                   />
+                  )}
                 </>
               ) : closedCopyOpen ? (
                 // Scored here when the server closed it: the scoring screen
@@ -3925,7 +3984,7 @@ export default function App() {
                 onPick={(game) => {
                   setTodayGamesOpen(false)
                   setPendingOfficialGame(game)
-                  createNewOfficialMatch()
+                  openFromHome(createNewOfficialMatch)
                 }}
                 onManual={() => {
                   setTodayGamesOpen(false)
@@ -4499,6 +4558,9 @@ export default function App() {
                 match={currentMatch || null}
               />
             )}
+
+            {/* opening a match from the home screen: one wait, then the screen whole */}
+            {openingMatch && <ScreenLoading label={t('home.openingMatch')} testId="opening-match" />}
 
             <StartupConnectivityModal
               open={showStartupConnectivity && !offlineMode}

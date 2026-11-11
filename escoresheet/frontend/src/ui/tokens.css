@@ -167,6 +167,17 @@
   to { offset-distance: 100%; }
 }
 
+/* A screen's loading spinner (Skeleton.jsx ScreenLoading) comes in after a
+   short wait: a read that answers at once shows no spinner flash, only the
+   page background for a frame. */
+.ov-spinner-late {
+  animation: ov-spinner-late 160ms ease-out 140ms both;
+}
+@keyframes ov-spinner-late {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 /* Asked for less motion: park the orbit satellites (index.css:127-129) and,
    kit: stop every other decorative CSS motion too. A spinner is never the only
    loading signal (every caller also carries a label), so stopping it costs no

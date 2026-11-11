@@ -234,6 +234,7 @@
     "noRefereeHistory": "No kei Schiri-Historie. Gib d Schiris manuell ii, dänn werded si für zuekünftigi Spiil gspeicheret."
   },
   "matchSetup": {
+    "loadingScheduleGame": "Spiel wird geladen…",
     "scorerDobForCoinToss": "Geburtsdatum vom Schriiber: für d Usloosig nötig",
     "dobRequiredForCoinToss": "Für d Usloosig nötig",
     "title": "Spiiliirichtig",
@@ -1189,6 +1190,7 @@
     "scorer": "Schriiber"
   },
   "home": {
+    "openingMatch": "Spiel wird geöffnet…",
     "title": "eScoresheet",
     "newMatch": "Neus Spiil",
     "officialMatch": "Offiziells Spiil",

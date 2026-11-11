@@ -53,6 +53,27 @@ function cacheClubs(value) {
 // (or an invite redeemed on another device) shows without a reload.
 export const PENDING_PROFILE_POLL_MS = 60000
 
+// The same content as before keeps the same object (owner 2026-11-11: "it
+// loads something, stops, loads it again"): every auth event and profile read
+// handed out a new object, and each new one re-ran the effects below (roster,
+// club and saved-team refreshes → local writes → every list filled again).
+function sameJson(a, b) {
+  if (a === b) return true
+  if (!a || !b) return false
+  try { return JSON.stringify(a) === JSON.stringify(b) } catch { return false }
+}
+export function keepSameUser(prev, next) {
+  if (!next) return null
+  return prev && prev.id === next.id && sameJson(prev, next) ? prev : next
+}
+export function keepSameProfile(prev, next) {
+  return prev && next && sameJson(prev, next) ? prev : next
+}
+
+// /api/me again on a window focus at most this often (each focus of the
+// window, e.g. back from a file picker, read it again)
+export const ME_FOCUS_REFRESH_MS = 60000
+
 // Check if backend proxy is available (for auth operations)
 const hasBackend = () => !!getCloudApiUrl('/api/auth/sign-in')
 
@@ -96,7 +117,7 @@ export function AuthProvider({ children, app = null }) {
         return null
       }
 
-      setProfile(data)
+      setProfile(prev => keepSameProfile(prev, data))
       if (import.meta.env.DEV) console.log('[AuthContext] Profile set successfully:', data)
       // Cache profile in localStorage for offline auto-fill
       cacheProfile(data)
@@ -149,7 +170,7 @@ export function AuthProvider({ children, app = null }) {
       async (event, session) => {
         console.log('[AuthContext] onAuthStateChange:', event, session?.user?.id)
         clearTimeout(loadingTimeout)
-        setUser(session?.user ?? null)
+        setUser(prev => keepSameUser(prev, session?.user ?? null))
 
         if (session?.user && (event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED')) {
           await fetchProfile(session.user.id)
@@ -204,7 +225,7 @@ export function AuthProvider({ children, app = null }) {
     })
 
     if (!error && data?.user) {
-      setUser(data.user)
+      setUser(prev => keepSameUser(prev, data.user))
       await fetchProfile(data.user.id)
     }
 
@@ -220,7 +241,7 @@ export function AuthProvider({ children, app = null }) {
     const { runPasskeySignIn } = await import('../lib/passkeys')
     const { data, error } = await apiAuth.signInWithPasskey(runPasskeySignIn)
     if (!error && data?.user) {
-      setUser(data.user)
+      setUser(prev => keepSameUser(prev, data.user))
       await fetchProfile(data.user.id)
     }
     return { data, error }
@@ -307,7 +328,7 @@ export function AuthProvider({ children, app = null }) {
       console.warn('[AuthContext] Profile save not confirmed by the backend')
       return { data: null, error: { message: 'Your profile was not saved. Please reload the app and try again.', code: PROFILE_NOT_SAVED } }
     }
-    setProfile(updatedProfile)
+    setProfile(prev => keepSameProfile(prev, updatedProfile))
     cacheProfile(updatedProfile)
 
     return { data: updatedProfile, error: null }
@@ -332,7 +353,7 @@ export function AuthProvider({ children, app = null }) {
     try {
       const { data } = await apiAuth.getSession()
       const fresh = data?.session && !data.session.unverified ? data.session.user : null
-      if (fresh) setUser(prev => (prev?.id === fresh.id ? fresh : prev))
+      if (fresh) setUser(prev => (prev?.id === fresh.id ? keepSameUser(prev, fresh) : prev))
       return fresh ?? null
     } catch {
       return null
@@ -438,7 +459,9 @@ export function AuthProvider({ children, app = null }) {
     let gone = false
     const settle = () => { if (!gone) setMeDoneFor(userId) }
     const fallback = setTimeout(settle, 5000)
+    let lastLoad = 0
     const load = () => {
+      lastLoad = Date.now()
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
         settle()
         return
@@ -460,13 +483,15 @@ export function AuthProvider({ children, app = null }) {
         setClubsState((prev) => (prev && JSON.stringify(prev) === JSON.stringify(value) ? prev : value))
       }).catch(() => { settle() /* offline-first: keep the cache */ })
     }
+    // a focus reads it again only when the last read is a minute old
+    const onFocus = () => { if (Date.now() - lastLoad >= ME_FOCUS_REFRESH_MS) load() }
     load()
-    window.addEventListener('focus', load)
+    window.addEventListener('focus', onFocus)
     window.addEventListener('online', load)
     return () => {
       gone = true
       clearTimeout(fallback)
-      window.removeEventListener('focus', load)
+      window.removeEventListener('focus', onFocus)
       window.removeEventListener('online', load)
     }
   }, [userId, clubsReload])
@@ -485,7 +510,7 @@ export function AuthProvider({ children, app = null }) {
   // Another account (or none) on this device: drop the saved-team cache.
   const previousUserId = useRef(undefined)
   useEffect(() => {
-    const id = user?.id ?? null
+    const id = userId
     const prev = previousUserId.current
     previousUserId.current = id
     if (prev !== undefined && prev !== null && prev !== id) {
@@ -493,17 +518,21 @@ export function AuthProvider({ children, app = null }) {
       clearGameRosters()
       clearClubPlayers()
     }
-  }, [user])
+  }, [userId])
+
+  // The refreshes below run per account and per access, not per profile
+  // object: a re-read profile with the same roles changes nothing they read
+  const hasProfile = !!profile
 
   // db/023, offline first: download the rosters teams sent for the coming
   // home games while there is a connection (sign-in, every 15 minutes, back
   // online), so Match Setup offers them in a hall without internet. db/024:
   // the licence lists of the account's clubs the same way ("Add from club").
   useEffect(() => {
-    if (!user || !profile || !access.canScore || access.isPending || !hasBackend()) return
+    if (!userId || !hasProfile || !access.canScore || access.isPending || !hasBackend()) return
     const refresh = () => {
-      refreshGameRosters({ access, userId: user.id }).catch(() => { /* keep the cache */ })
-      refreshClubPlayers({ access, userId: user.id }).catch(() => { /* keep the cache */ })
+      refreshGameRosters({ access, userId }).catch(() => { /* keep the cache */ })
+      refreshClubPlayers({ access, userId }).catch(() => { /* keep the cache */ })
     }
     refresh()
     const timer = setInterval(refresh, GAME_ROSTERS_REFRESH_MS)
@@ -512,21 +541,21 @@ export function AuthProvider({ children, app = null }) {
       clearInterval(timer)
       window.removeEventListener('online', refresh)
     }
-  }, [user, profile, access])
+  }, [userId, hasProfile, access])
 
   // Load the saved teams once the profile says this account may read them.
   useEffect(() => {
-    if (!user || !profile || !access.canReadTeams) return
-    refreshSavedTeams({ access, userId: user.id }).catch(() => { /* offline-first: keep the cache */ })
-  }, [user, profile, access])
+    if (!userId || !hasProfile || !access.canReadTeams) return
+    refreshSavedTeams({ access, userId }).catch(() => { /* offline-first: keep the cache */ })
+  }, [userId, hasProfile, access])
 
   // A pending account re-reads its profile: every minute, on focus and when
   // the connection comes back.
   useEffect(() => {
-    if (!user || !access.isPending || !hasBackend()) return
+    if (!userId || !access.isPending || !hasBackend()) return
     const refresh = () => {
       if (typeof navigator !== 'undefined' && navigator.onLine === false) return
-      fetchProfile(user.id)
+      fetchProfile(userId)
     }
     // db/025: a part of its sign-up request approved without a role (a team or
     // a club to manage) shows through /api/me, read again with the profile (on
@@ -539,7 +568,7 @@ export function AuthProvider({ children, app = null }) {
       window.removeEventListener('focus', refresh)
       window.removeEventListener('online', refresh)
     }
-  }, [user, access.isPending, fetchProfile])
+  }, [userId, access.isPending, fetchProfile])
 
   // Redeem a club invite code. On success the new roles apply at once (the
   // profile is then re-read from the server).
