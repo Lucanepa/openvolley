@@ -3210,7 +3210,13 @@
       },
       "empty": "Noch keine Einladungscodes.",
       "clubHint": "Wer den Code einlöst, wird diesem Verein zugeordnet.",
-      "noClub": "Kein Verein"
+      "noClub": "Kein Verein",
+      "pickClub": "Verein wählen",
+      "team": "Team",
+      "pickTeam": "Team wählen",
+      "clubFirst": "Zuerst den Verein wählen",
+      "noTeams": "Dieser Verein hat noch keine Teams (sie kommen aus dem Spielplan).",
+      "teamLinkHint": "Ein Teamlink: wer ihn öffnet, verwaltet dieses Team."
     },
     "games": {
       "openMatch": "Spiel öffnen",
