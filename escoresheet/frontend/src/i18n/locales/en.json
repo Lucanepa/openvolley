@@ -3554,6 +3554,7 @@
       "deleteBody": "The scorer's tablet drops it the next time it is online.",
       "deleted": "Roster deleted",
       "signHint": "Optional: the coach and the captain can sign here if they want. Otherwise they sign in the hall, at the coin toss.",
+      "noRole": "No role",
       "problems": {
         "tooMany": "At most {{max}} players per game.",
         "number": "{{name}} needs a shirt number.",
@@ -3561,7 +3562,9 @@
         "captains": "Only one captain.",
         "liberos": "At most {{max}} liberos.",
         "roleTwice": "Each official role once only ({{role}}).",
-        "tooManyStaff": "At most {{max}} team officials."
+        "tooManyStaff": "At most {{max}} team officials.",
+        "twoLiberos": "More than {{max}} players only with {{liberos}} liberos.",
+        "fewPlayers": "{{count}} players besides the liberos: a game needs at least {{min}}."
       },
       "sent_one": "Sent: {{count}} player, {{when}}",
       "sent_other": "Sent: {{count}} players, {{when}}",

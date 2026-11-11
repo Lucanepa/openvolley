@@ -3553,6 +3553,7 @@
       "deleteBody": "Il tablet del segnapunti lo toglie appena torna online.",
       "deleted": "Elenco eliminato",
       "signHint": "Facoltativo: l’allenatore e il capitano possono firmare qui se vogliono. Altrimenti firmano in palestra, al sorteggio.",
+      "noRole": "Nessun ruolo",
       "problems": {
         "tooMany": "Al massimo {{max}} giocatori per partita.",
         "number": "{{name}} ha bisogno di un numero di maglia.",
@@ -3560,7 +3561,9 @@
         "captains": "Un solo capitano.",
         "liberos": "Al massimo {{max}} liberi.",
         "roleTwice": "Ogni funzione una sola volta ({{role}}).",
-        "tooManyStaff": "Al massimo {{max}} ufficiali di squadra."
+        "tooManyStaff": "Al massimo {{max}} ufficiali di squadra.",
+        "twoLiberos": "Più di {{max}} giocatori solo con {{liberos}} liberi.",
+        "fewPlayers": "{{count}} giocatori senza i liberi: una partita ne richiede almeno {{min}}."
       },
       "sent_one": "Inviato: {{count}} giocatore, {{when}}",
       "sent_other": "Inviato: {{count}} giocatori, {{when}}",

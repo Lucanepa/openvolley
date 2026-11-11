@@ -156,7 +156,8 @@ describe('team officials from the club (manager)', () => {
     // Tina is offered (not ticked): she is ticked, Marco unticked
     const r = setGameDraftOfficial(draft, 'Coach', TINA)
     expect(r.replaced).toMatchObject({ first_name: 'Marco' })
-    expect(r.draft.staff.map((s) => [s.first_name, s.picked, s.license_number])).toEqual([['Marco', false, null], ['Tina', true, '200001']])
+    // each role once: Tina (offered as assistant coach 1) moves to coach, Marco takes the free role
+    expect(r.draft.staff.map((s) => [s.first_name, s.role, s.picked, s.license_number])).toEqual([['Marco', 'Assistant Coach 1', false, null], ['Tina', 'Coach', true, '200001']])
     // Anna is not offered: added, ticked, as assistant coach
     const r2 = setGameDraftOfficial(r.draft, 'Assistant Coach 1', ANNA)
     expect(r2.replaced).toBeNull()
