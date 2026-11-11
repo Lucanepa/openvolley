@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { ArrowLeft, WifiOff } from 'lucide-react'
 import KitModal from './KitModal'
 import { errorKeyOf } from '../../lib/accountApi'
-import { Banner, Button, EmptyInset, Field, Input, Notice, SkeletonRows, Textarea, StatusPill, usePanelShown } from '../../ui'
+import { AppSpinner, Banner, Button, EmptyInset, Field, Input, Notice, SkeletonRows, Textarea, StatusPill, usePanelShown } from '../../ui'
 
 /** navigator.onLine, following the online/offline events. */
 export function useOnline() {
@@ -162,6 +162,20 @@ export function PageLoadGate({ fallback = null, className = '', timeoutMs = 1000
       {!open && fallback}
       <div className={[open ? '' : 'hidden', className].filter(Boolean).join(' ')} data-loading={open ? undefined : 'true'}>{children}</div>
     </PageLoad.Provider>
+  )
+}
+
+/**
+ * A console page's wait (PageLoadGate's fallback): the branded spinner at the
+ * size of the console's sign-in wait (ManagerApp), faded in after a moment so
+ * a quick answer shows no flash (owner 2026-11-11: "no race -> wait to load").
+ */
+export function PageSpinner({ className = 'py-20' }) {
+  const { t } = useTranslation()
+  return (
+    <div className={`flex justify-center ${className}`} data-testid="panel-loading">
+      <AppSpinner size={72} label={t('common.loading')} className="ov-spinner-late" />
+    </div>
   )
 }
 

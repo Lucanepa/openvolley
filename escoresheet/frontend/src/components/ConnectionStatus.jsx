@@ -14,6 +14,23 @@ function isServerWebsocketViable(serverStatus, websocketStatus) {
 
 const REACHABLE = new Set(['connected', 'live', 'synced', 'syncing'])
 
+// "Syncing..." only for jobs that wait this long: every point, every save
+// queues a job the queue sends within a second, and the pill flipped
+// Connected → Syncing... → Connected on each one (owner 2026-11-11: "it loads
+// something, stops, loads it again")
+export const SYNCING_SHOW_AFTER_MS = 1500
+
+/** True once `on` has held for `ms` without a break; false at once when it ends. */
+function useHeldFor(on, ms) {
+  const [held, setHeld] = useState(false)
+  useEffect(() => {
+    if (!on) { setHeld(false); return }
+    const timer = setTimeout(() => setHeld(true), ms)
+    return () => clearTimeout(timer)
+  }, [on, ms])
+  return on && held
+}
+
 /**
  * The statuses shown in the menu while the browser is offline. With a cloud
  * backend nothing remote answers: server, API and cloud sync read Offline,
@@ -59,6 +76,7 @@ export default function ConnectionStatus({
   const pendingCount = stats.pending
   const errorCount = stats.error + stats.failed
   const authRequired = given.authRequired === true || queueStats === 'auth_required'
+  const syncingLong = useHeldFor(pendingCount > 0, SYNCING_SHOW_AFTER_MS)
 
   // The browser's own view of the network (the 'Online' switch is offline mode)
   const [browserOffline, setBrowserOffline] = useState(() => typeof navigator !== 'undefined' && navigator.onLine === false)
@@ -178,6 +196,8 @@ export default function ConnectionStatus({
       return { tone: 'ok', text: t('connectionStatus.connected', 'Connected') }
     } else if (status === 'local_only') {
       return { tone: 'ok', text: t('connectionStatus.localOnly', 'Local only') }
+    } else if (status === 'starting') {
+      return { tone: 'neutral', text: t('connectionStatus.connecting', 'Connecting') }
     } else if (status === 'attention') {
       return { tone: 'error', text: t('connectionStatus.error', 'Error') }
     } else if (status === 'no_match') {
@@ -245,6 +265,9 @@ export default function ConnectionStatus({
     if (!hasViableConnection) {
       // Unreachable cloud and no local server: offline, not an error
       if (supabaseStatus === 'offline') return 'offline'
+      // The first probe has not answered yet: Connecting, neutral (owner
+      // 2026-11-11: the pill said Error, then Ready, at every start)
+      if (supabaseStatus === 'connecting' || supabaseStatus === 'unknown' || supabaseStatus == null) return 'starting'
       return 'attention' // No viable connection path
     }
 
@@ -288,8 +311,9 @@ export default function ConnectionStatus({
   }
 
   const currentSize = sizeClasses[size] || sizeClasses.normal
-  const pillText = overallStatus === 'connected' ? (pendingCount > 0 ? t('connectionStatus.syncingDots', 'Syncing...') : t('connectionStatus.connected', 'Connected')) :
+  const pillText = overallStatus === 'connected' ? (syncingLong ? t('connectionStatus.syncingDots', 'Syncing...') : t('connectionStatus.connected', 'Connected')) :
     overallStatus === 'awaiting_match' ? t('connectionStatus.ready', 'Ready') :
+    overallStatus === 'starting' ? t('connectionStatus.connecting', 'Connecting') :
     overallStatus === 'local_only'
       ? (pendingCount > 0
         ? t('connectionStatus.localOnlyPending', 'Local only ({{count}} waiting)', { count: pendingCount })

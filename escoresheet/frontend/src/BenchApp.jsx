@@ -25,7 +25,7 @@ import { IconButton } from './ui/IconButton.jsx'
 import { FormError } from './ui/Field.jsx'
 import { EmptyState } from './ui/EmptyState.jsx'
 import { RowList } from './ui/Row.jsx'
-import { SkeletonRows } from './ui/Skeleton.jsx'
+import { ListLoading, SkeletonRows } from './ui/Skeleton.jsx'
 import { EntryPage, EntryCard, PinInput, ListLabel, GameRow, NarrowScreenOverlay } from './components/dashboards/EntryKit.jsx'
 
 // Connection modes
@@ -155,7 +155,12 @@ export default function BenchApp() {
   const [autoConnectTeam, setAutoConnectTeam] = useState(null)
   const [restoringSession, setRestoringSession] = useState(false)
   const [availableMatches, setAvailableMatches] = useState([])
-  const [loadingMatches, setLoadingMatches] = useState(false)
+  // true from the start: the list is read on mount, and a first paint of
+  // "No active games" turned into the list a moment later (owner 2026-11-11:
+  // "loads something, stops, loads it again")
+  const [loadingMatches, setLoadingMatches] = useState(true)
+  // the first answer came (later loads show skeleton rows, the first the spinner)
+  const [matchesLoadedOnce, setMatchesLoadedOnce] = useState(false)
   const [selectedMatch, setSelectedMatch] = useState(null) // The selected match object
   const [selectedTeam, setSelectedTeam] = useState(null) // 'home' or 'away'
   const [pinInput, setPinInput] = useState('')
@@ -524,6 +529,7 @@ export default function BenchApp() {
       console.error('[Bench] Error loading matches:', err)
     } finally {
       setLoadingMatches(false)
+      setMatchesLoadedOnce(true)
     }
   }, [connectionMode])
 
@@ -1038,8 +1044,9 @@ export default function BenchApp() {
         >
         {loadingMatches ? (
           <div role="status" className="text-left">
-            <span className="sr-only">{t('benchDashboard.loadingGames')}</span>
-            <SkeletonRows rows={3} pill={false} />
+            {matchesLoadedOnce
+              ? <><span className="sr-only">{t('benchDashboard.loadingGames')}</span><SkeletonRows rows={3} pill={false} /></>
+              : <ListLoading first className="py-8" label={t('benchDashboard.loadingGames')} />}
           </div>
         ) : availableMatches.length === 0 ? (
           <div onClick={handleTestModeClick} className="cursor-default select-none">

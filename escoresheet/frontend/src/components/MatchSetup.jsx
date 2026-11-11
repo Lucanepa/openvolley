@@ -35,7 +35,7 @@ import { coloursTooClose, DEFAULT_AWAY_COLOUR, DEFAULT_HOME_COLOUR, isCustomColo
 import { missingConnectionPins, connectionPinsSyncJob, fetchPendingRoster, clearPendingRosterJob, isKnownDob } from '../utils/remoteRoster'
 import { FileTextIcon, ClipboardIcon } from './icons'
 import { AlertTriangle, Loader2 } from 'lucide-react'
-import { Button, DateField, Field, Input, Select, TimeField, SegmentedControl, SectionHeader, KeyValue, CountBadge, Switch, cn, confirmDialog, toast } from '../ui'
+import { Button, DateField, Field, Input, Select, TimeField, SegmentedControl, SectionHeader, KeyValue, CountBadge, Switch, ScreenLoading, cn, confirmDialog, toast } from '../ui'
 import SavedTeamPickerModal, { confirmReplaceRoster } from './SavedTeamPickerModal'
 import SaveRosterToTeamModal from './SaveRosterToTeamModal'
 import { focusLeaves, sortedByNumber } from '../utils/rosterOrder'
@@ -444,6 +444,17 @@ function readSetup(matchId) {
   })
 }
 
+// Match Setup's first paint waits this long at most for its local reads
+export const SETUP_READS_WAIT_MS = 3000
+
+// A schedule pick waits this long at most for its suggestions and checks
+// before the form shows (offline first: never longer)
+export const SCHEDULE_LOAD_WAIT_MS = 3000
+
+// The card sync pills read the server this often (the queue's own changes
+// update them at once)
+export const MATCH_SETUP_SYNC_POLL_MS = 20000
+
 const setupKey = (matchId) => `matchSetup:${matchId}`
 
 /**
@@ -489,7 +500,7 @@ function formatDobForSync(dob) {
   return null // Unknown format, don't sync
 }
 
-export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, onOpenCoinToss, offlineMode = false, lfpTrackingEnabled = false, initialOfficialGame = null, onInitialOfficialGameUsed }) {
+export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, onOpenCoinToss, offlineMode = false, lfpTrackingEnabled = false, initialOfficialGame = null, onInitialOfficialGameUsed, onReady }) {
   const { t, i18n } = useTranslation()
   const { showAlert } = useAlert()
   const { user, profile, getCachedProfile, access } = useAuth()
@@ -861,10 +872,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
   // Sync status tracking for cards
   // 'idle' = no sync needed, 'syncing' = sync in progress, 'synced' = synced successfully, 'error' = sync failed
-  const [matchInfoSyncStatus, setMatchInfoSyncStatus] = useState('idle')
-  const [officialsSyncStatus, setOfficialsSyncStatus] = useState('idle')
-  const [homeTeamSyncStatus, setHomeTeamSyncStatus] = useState('idle')
-  const [awayTeamSyncStatus, setAwayTeamSyncStatus] = useState('idle')
+  // null = not checked yet: the pills hold their place empty until the first
+  // answer instead of saying "Not synced" and flipping to "Synced" a moment
+  // later (owner 2026-11-11: "it loads something, stops, loads it again")
+  const [matchInfoSyncStatus, setMatchInfoSyncStatus] = useState(null)
+  const [officialsSyncStatus, setOfficialsSyncStatus] = useState(null)
+  const [homeTeamSyncStatus, setHomeTeamSyncStatus] = useState(null)
+  const [awayTeamSyncStatus, setAwayTeamSyncStatus] = useState(null)
   const [isSupabaseAvailable, setIsSupabaseAvailable] = useState(false)
 
   // All 162 municipalities (Gemeinden) of Kanton Zürich
@@ -972,7 +986,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const match = useLiveQuery(async () => {
     if (!matchId) return null
     try {
-      return await db.matches.get(matchId)
+      // null, not undefined, for a match that is not there: undefined is
+      // "not read yet" (the first-paint gate below waits for it)
+      return (await db.matches.get(matchId)) ?? null
     } catch (error) {
       console.error('Unable to load match', error)
       return null
@@ -992,7 +1008,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     } catch {
       return []
     }
-  }, [sentGameNumber, user?.id], [])
+  }, [sentGameNumber, user?.id])
   const sentRosters = useMemo(() => offeredSentRosters(sentRows, match, user?.id),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [sentRows, user?.id, match?.test, match?.status, match?.sentRosterUsed, match?.sentRosterDismissed])
@@ -1018,7 +1034,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     } catch {
       return []
     }
-  }, [user?.id], [])
+  }, [user?.id])
   const clubTeams = useMemo(() => ({ home: clubOfTeam(clubRows, home, user?.id), away: clubOfTeam(clubRows, away, user?.id) }), [clubRows, home, away, user?.id])
   const clubGender = matchGenderOf({ test: match?.test === true, type2 })
   const [clubPicker, setClubPicker] = useState(null) // 'home' | 'away' | null
@@ -1219,6 +1235,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       setHomeTeamSyncStatus(status)
       setAwayTeamSyncStatus(status)
     }
+    // A check that ends without a queue verdict (no cloud, no match yet)
+    // settles a pill still unchecked as 'idle'; a known status stays
+    const settleUnchecked = () => {
+      if (cancelled) return
+      for (const set of [setMatchInfoSyncStatus, setOfficialsSyncStatus, setHomeTeamSyncStatus, setAwayTeamSyncStatus]) {
+        set(prev => prev ?? 'idle')
+      }
+    }
     const unsent = (unsentMatchJobStatuses || '').split(',').filter(Boolean)
     const hasQueued = unsent.includes('queued')
     const hasError = unsent.includes('error') || unsent.includes('failed')
@@ -1237,7 +1261,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         const available = !error
         setIsSupabaseAvailable(available)
 
-        if (!available || !match?.seed_key) return
+        if (!available || !match?.seed_key) {
+          settleUnchecked()
+          return
+        }
 
         // Update sync statuses based on queue
         if (hasError) {
@@ -1255,11 +1282,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       } catch (err) {
         console.debug('[MatchSetup] Error checking sync status:', err.message)
         if (!cancelled) setIsSupabaseAvailable(false)
+        settleUnchecked()
       }
     }
 
     checkSupabaseAndSyncStatus()
-    const interval = setInterval(checkSupabaseAndSyncStatus, 5000)
+    // The queue's own changes re-run this effect at once (the live query
+    // above); the timer only notices the server side, so 20 s is enough
+    const interval = setInterval(checkSupabaseAndSyncStatus, MATCH_SETUP_SYNC_POLL_MS)
     return () => {
       cancelled = true
       clearInterval(interval)
@@ -3201,8 +3231,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // undone whole, its suggestions and banners too, and a check still running
   // for it answers nothing (afterOfficialLoad compares its game)
   const scheduleLoadRef = useRef(null)
+  // A schedule pick shows the spinner until its suggestions and checks are
+  // in, then the filled form with its banners at once (owner 2026-11-11:
+  // "after selecting a game -> loads then loads the content"). At most
+  // SCHEDULE_LOAD_WAIT_MS: a slow check then answers into the shown form.
+  const [scheduleLoading, setScheduleLoading] = useState(false)
   const forgetScheduleLoad = () => {
     scheduleLoadRef.current = null
+    setScheduleLoading(false)
     setSavedSuggestion(null)
     setRememberedSuggestion(null)
     setOfficialClaim(null)
@@ -3288,7 +3324,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     setSavedSuggestion(null)
     setRememberedSuggestion(null)
     setOfficialClaim(null)
-    afterOfficialLoad(matchData)
+    setScheduleLoading(true)
+    const loaded = afterOfficialLoad(matchData).catch((err) => {
+      console.warn('[MatchSetup] Schedule load checks failed:', err?.message)
+    })
+    // the token afterOfficialLoad set: a newer pick or Back owns the spinner then
+    const mine = scheduleLoadRef.current
+    let timer
+    Promise.race([loaded, new Promise((resolve) => { timer = setTimeout(resolve, SCHEDULE_LOAD_WAIT_MS) })]).then(() => {
+      clearTimeout(timer)
+      if (scheduleLoadRef.current === mine) setScheduleLoading(false)
+    })
   }
 
   // A game picked on the home screen (App: today's home games of the
@@ -3595,6 +3641,32 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     }
   }
 
+  // First paint (owner 2026-11-11: "every time I click something or start
+  // new game etc it seems it loads something, stops, loads it again"): the
+  // branded spinner until what the setup shows is read from the device: the
+  // match with its teams and players in the form, the rosters teams sent,
+  // the club lists, and a game picked on the home screen applied (its own
+  // spinner then takes over). All local reads, so a moment; at most
+  // SETUP_READS_WAIT_MS, then the setup shows what it has. Once shown it
+  // never hides again.
+  const setupReadsDone = (!matchId || match === null || storedAppliedFor === matchId) &&
+    sentRows !== undefined && clubRows !== undefined &&
+    !(initialOfficialGame && pickedGamePhase < 2)
+  const [setupShownLatch, setSetupShownLatch] = useState(false)
+  const setupShown = setupShownLatch || setupReadsDone
+  useEffect(() => {
+    if (setupReadsDone) setSetupShownLatch(true)
+  }, [setupReadsDone])
+  useEffect(() => {
+    const timer = setTimeout(() => setSetupShownLatch(true), SETUP_READS_WAIT_MS)
+    return () => clearTimeout(timer)
+  }, [])
+  // App's "opening the match" spinner (over the home screen) hands over here
+  useEffect(() => {
+    if (setupShown) onReady?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setupShown])
+
   // Callback for opening database selector - MUST be before any early returns to satisfy React hooks rules
   const handleOpenDatabase = useCallback((_e, selectorKey) => {
     setShowRefereeSelector(selectorKey)
@@ -3611,9 +3683,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     />
   )
 
+  if (!setupShown) {
+    return <ScreenLoading layer="page" label={t('common.loading')} testId="match-setup-loading" />
+  }
+
   if (currentView === 'info') {
     return (
       <MatchSetupInfoView kitScale={kitScale}>
+        {scheduleLoading && <ScreenLoading layer="page" label={t('matchSetup.loadingScheduleGame')} testId="schedule-load-spinner" />}
         {/* "Load match from schedule" sits on the setup card, next to "Create match" */}
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
           <div>
@@ -6571,6 +6648,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // Hidden if offline mode. A kit status pill: tinted round pill, dot + word.
   const SyncStatusIndicator = ({ status, onRetry }) => {
     if (offlineMode) return null
+    // not checked yet: the pill's room, empty, so nothing moves when it comes
+    if (status == null) return <span aria-hidden="true" className="inline-block h-6 w-0 shrink-0" data-testid="sync-pill-pending" />
 
     const tones = {
       synced: { pill: 'border-emerald-200 bg-emerald-50 text-emerald-800', dot: 'bg-emerald-500' },

@@ -60,6 +60,28 @@ export function ListLoading({ label, first, rows = 6, pill = true, framed = fals
   );
 }
 
+/**
+ * A whole screen waiting for the data that defines it (owner 2026-11-11:
+ * "no race -> wait to load (you can use the openvolley whistle/ball
+ * spinner)"): the branded spinner over the page, opaque, so neither the
+ * screen before nor a half-filled one shows through. `overlay` (default)
+ * covers the viewport (`layer` 'top': over everything, the app's header
+ * too; 'page': under the header); without it, it fills its parent. The spinner itself fades in after
+ * a moment (tokens.css .ov-spinner-late), so a quick read never flashes it.
+ */
+export function ScreenLoading({ label, srLabel, size = 96, overlay = true, layer = 'top', className = '', testId = 'screen-loading' }) {
+  // layer 'page': under the app's header (z 1000), which stays on screen
+  const z = layer === 'page' ? 'z-[900]' : 'z-[1500]'
+  return (
+    <div
+      data-testid={testId}
+      className={`ov-kit flex items-center justify-center bg-[var(--ov-page)] ${overlay ? `fixed inset-0 ${z}` : 'min-h-[50vh] w-full'} ${className}`}
+    >
+      <AppSpinner size={size} label={label} srLabel={srLabel || label} className="ov-spinner-late" />
+    </div>
+  );
+}
+
 /** Same component under the rows port's name (svrz_rc Skeleton.tsx `SkeletonRows`). */
 export const RowListSkeleton = SkeletonRows;
 
