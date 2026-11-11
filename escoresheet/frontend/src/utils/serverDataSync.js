@@ -4,7 +4,7 @@
  */
 
 import { apiFrom } from '../lib/apiClient'
-import { getApiUrl, getBackendUrl, getCloudApiUrl, getRelayWebSocketUrl } from './backendConfig'
+import { getApiUrl, getBackendUrl, getCloudApiUrl, getRelayWebSocketUrl, isLocalRelayUrl } from './backendConfig'
 import { formatTimeLocal } from './timeUtils'
 import { isShownCloudPickerRow, pickerQuerySince, pickerTeamNames } from './pickerMatches'
 import { onPointHubBoard } from './pointHubBoard'
@@ -1909,14 +1909,17 @@ const NEVER_RELAYED = ['game_pin', 'connection_pins', 'connectionPins']
  * before Create Match): it is not published then. A Dexie id is no key: every
  * device's first match is id 1, so scorers met in room '1' and a tablet
  * following it got another scorer's match.
- * An easy match has none: it is unofficial and never leaves the device. Except
- * on a Point Hub board's own screen, where its own LED panel follows the match
- * over the local relay (mayPublishMatchData keeps a test-type match off the cloud).
+ * An easy match has one only on a local relay (isLocalRelayUrl: the desktop app,
+ * a scoreboard or a venue server serving this page, a local server set in the
+ * app): there a scoreboard in the hall follows it, and it never reaches the
+ * cloud (mayPublishMatchData keeps a test-type match off the cloud too). With the
+ * cloud relay it has none: unofficial, it never leaves the device. A Point Hub
+ * board's own screen always counts as local.
  * @param {object|null} match
  * @returns {string|null}
  */
 export function relayMatchKey(match) {
-  if (match?.easy === true && !onPointHubBoard()) return null
+  if (match?.easy === true && !onPointHubBoard() && !isLocalRelayUrl(getRelayWebSocketUrl())) return null
   for (const seed of [match?.seed_key, match?.seedKey]) {
     if (typeof seed === 'string' && seed.trim()) return seed.trim()
   }

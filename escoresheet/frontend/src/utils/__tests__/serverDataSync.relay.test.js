@@ -39,15 +39,23 @@ describe('relay key and payload (scorer)', () => {
     // A blank match before Create Match has none: not published
     expect(relayMatchKey({ id: 1 })).toBeNull()
     expect(relayMatchKey({ id: 1, seed_key: '  ' })).toBeNull()
-    // an easy match is unofficial and never leaves the device
-    expect(relayMatchKey({ id: 1, seed_key: 'test-match-default-abc', test: true, easy: true })).toBeNull()
-    // ...except on a Point Hub board's own screen, for its own panel
-    window.__OV_POINTHUB_BOARD__ = true
+    const easy = { id: 1, seed_key: 'test-match-default-abc', test: true, easy: true }
+    // an easy match goes to a local relay (this page is served from localhost)...
+    expect(relayMatchKey(easy)).toBe('test-match-default-abc')
+    // ...but never to the cloud relay: unofficial, it does not leave the device
+    vi.stubEnv('VITE_BACKEND_URL', 'https://backend.openvolley.app')
     try {
-      expect(relayMatchKey({ id: 1, seed_key: 'test-match-default-abc', test: true, easy: true })).toBe('test-match-default-abc')
-      expect(relayMatchKey({ id: 1 })).toBeNull()
+      expect(relayMatchKey(easy)).toBeNull()
+      // ...except on a Point Hub board's own screen, for its own panel
+      window.__OV_POINTHUB_BOARD__ = true
+      try {
+        expect(relayMatchKey(easy)).toBe('test-match-default-abc')
+        expect(relayMatchKey({ id: 1 })).toBeNull()
+      } finally {
+        delete window.__OV_POINTHUB_BOARD__
+      }
     } finally {
-      delete window.__OV_POINTHUB_BOARD__
+      vi.unstubAllEnvs()
     }
     expect(relayMatchKey(null)).toBeNull()
   })
