@@ -71,6 +71,17 @@
   </screenshots>
 
   <releases>
+    <release version="3.1.0" date="2026-11-11">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.1.0</url>
+      <description>
+        <ul>
+          <li>Manager, Accounts: admins can change an account's first name, last name and email.</li>
+          <li>My teams: an Einsatzliste import keeps the team's shirt numbers, captain and liberos; officials take the list's roles with their licence.</li>
+          <li>Einsatzliste in German, French and Italian; names with letters like ń, ř, ș are read.</li>
+          <li>Home: Delete match under Continue; referee and bench dashboards in the menu.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.0.20" date="2026-11-11">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.20</url>
       <description>
