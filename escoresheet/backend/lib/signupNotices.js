@@ -1,6 +1,6 @@
 /**
  * signupNotices — "a new account signed up", to the people who approve it
- * (db/027 notifications, lib/mailer.js kind 'signup').
+ * (db/028 notifications, lib/mailer.js kind 'signup').
  *
  * Owner, 2026-11-11: "why i don't get emails when there's a new signup";
  * decisions: the admins AND the approvers of the account's requests; on every
@@ -17,12 +17,13 @@
  *   team managers   sign-ups with a team manager part of their team; those
  *                   parts; page myteams/<team id>
  * One notice per person (an admin who also manages the club gets the admin's).
+ * Deactivated accounts (db/027) get none.
  * Never the new account itself. An OpenBeach sign-up asks for nothing: its
  * admins only, in the OpenBeach manager (app 'beach').
  *
  * The mail goes in the recipient's own language (mail_lang of its sign-up),
  * on the mailer's 'notify' budget. A notice row is stored even when the mail
- * is dropped or fails. Without db/027 the mails still go out.
+ * is dropped or fails. Without db/028 the mails still go out.
  *
  * Public API:
  *   createSignupNotices({ pool, mailer, logger })
@@ -34,13 +35,15 @@ import { invalid, isUuid, ok, unavailable } from './accounts.js'
 import { ADMIN_ROLES } from './access.js'
 import { mailApp, maskEmail, describeMailError } from './mailer.js'
 
-// No db/025 / db/027 yet: a relation or column that does not exist
+// No db/025 / db/028 yet: a relation or column that does not exist
 const MISSING = new Set(['42P01', '42703'])
 // Notices kept this long (deleted when the list is read)
 export const KEEP_DAYS = 90
 // The most notices a list answers
 export const LIST_LIMIT = 50
 const MAX_READ_IDS = 100
+// A deactivated account (db/027 banned_until) is told nothing; to_jsonb: works before db/027 too
+const ACTIVE = (u) => `coalesce((to_jsonb(${u}) ->> 'banned_until')::timestamptz <= now(), true)`
 
 const iso = (v) => (v instanceof Date ? v.toISOString() : (v ?? null))
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
@@ -102,7 +105,7 @@ export function createSignupNotices ({ pool, mailer = null, logger = console } =
       const { rows } = await pool.query(
         `SELECT m.user_id, m.${column}, u.email, u.raw_user_meta_data->>'mail_lang' AS lang
            FROM public.${table} m JOIN auth.users u ON u.id = m.user_id
-          WHERE m.${column} = ANY($1::uuid[])
+          WHERE m.${column} = ANY($1::uuid[]) AND ${ACTIVE('u')}
           ORDER BY m.added_at, m.user_id`, [ids])
       return rows
     } catch (err) {
@@ -143,7 +146,7 @@ export function createSignupNotices ({ pool, mailer = null, logger = console } =
       return rowCount
     } catch (err) {
       if (MISSING.has(err?.code)) {
-        log.warn?.('[notices] db/027 is not applied: the sign-up notices were mailed, not stored')
+        log.warn?.('[notices] db/028 is not applied: the sign-up notices were mailed, not stored')
         return null
       }
       throw err
@@ -165,7 +168,7 @@ export function createSignupNotices ({ pool, mailer = null, logger = console } =
       const { rows: admins } = await pool.query(
         `SELECT p.user_id, u.email, u.raw_user_meta_data->>'mail_lang' AS lang
            FROM public.profiles p JOIN auth.users u ON u.id = p.user_id
-          WHERE p.roles && $1::text[]
+          WHERE p.roles && $1::text[] AND ${ACTIVE('u')}
           ORDER BY u.created_at, p.user_id`, [[...ADMIN_ROLES]])
       const clubIds = [...new Set(parts.filter((p) => p.kind !== 'referee').map((p) => p.club_id).filter(Boolean))]
       const teamIds = [...new Set(parts.filter((p) => p.kind === 'team_manager').map((p) => p.team_id).filter(Boolean))]
@@ -240,7 +243,7 @@ export function createSignupNotices ({ pool, mailer = null, logger = console } =
         unread: c?.n ?? 0
       })
     } catch (err) {
-      // no db/027 (or db/025): no notices
+      // no db/028 (or db/025): no notices
       if (MISSING.has(err?.code)) return ok({ notifications: [], unread: 0 })
       log.error?.(`[notices] list failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 200)}`)
       return unavailable()

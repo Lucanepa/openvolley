@@ -1088,7 +1088,7 @@ export function createAuth(options = {}) {
     pending.add(p)
     p.finally(() => pending.delete(p))
   }
-  // db/027: a new account's address is confirmed: its admins and approvers
+  // db/028: a new account's address is confirmed: its admins and approvers
   // are told (lib/signupNotices.js, options.onAccountConfirmed), never awaited
   function accountConfirmed(userId) {
     if (typeof cfg.onAccountConfirmed !== 'function') return

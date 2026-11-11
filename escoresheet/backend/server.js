@@ -365,7 +365,7 @@ function getDataLayer() {
     } else {
       console.log(`[Mail] account emails off (${mailer.reason}): password reset answers 503, sign-up confirms accounts at once`)
     }
-    // db/027: "a new account signed up", to its admins and approvers (mail and the manager's bell)
+    // db/028: "a new account signed up", to its admins and approvers (mail and the manager's bell)
     const notices = sn.createSignupNotices({ pool: db.pool, mailer })
     const auth = au.createAuth({
       pool: db.pool,

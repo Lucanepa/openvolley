@@ -158,7 +158,7 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
         logo={<img src={brand.lockup} alt={brand.name} className="ov-ink h-[22px] w-auto sm:h-7" />}
         eyebrow={t('manage.title')}
         actions={<>
-          {/* db/027: who signed up (admins, and the approvers of its requests) */}
+          {/* db/028: who signed up (admins, and the approvers of its requests) */}
           <NotificationsBell app={brand.app} onOpen={(target) => navigate(target, { push: true })} />
           {headerActions}
           {onClose && (
