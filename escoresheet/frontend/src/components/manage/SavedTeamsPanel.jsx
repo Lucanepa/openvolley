@@ -236,7 +236,7 @@ export default function SavedTeamsPanel({ userId, sport: fixedSport, route = '',
       </div>
       {error && <Notice className="mb-3">{errorText(error)}</Notice>}
       <InlineError error={actionError} className="mb-2" />
-      {loading && !data ? (
+      {error && !data ? null : loading && !data ? (
         <SkeletonRows rows={4} pill={false} />
       ) : visible.length === 0 ? (
         <EmptyInset>{t('savedTeams.emptyCompetitions')}</EmptyInset>

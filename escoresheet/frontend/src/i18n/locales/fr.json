@@ -3186,7 +3186,17 @@
       "lastName": "Nom",
       "email": "E-mail",
       "emailHint": "La personne se connecte désormais avec la nouvelle adresse. Le mot de passe et les clés d’accès restent.",
-      "emailTaken": "Un autre compte a déjà cette adresse e-mail."
+      "emailTaken": "Un autre compte a déjà cette adresse e-mail.",
+      "deactivate": "Désactiver",
+      "reactivate": "Réactiver",
+      "deactivateTitle": "Désactiver {{name}} ?",
+      "deactivateBody": "Le compte ne peut plus se connecter et est déconnecté partout dès maintenant. Rien n’est supprimé : rôles, clubs, équipes et matchs restent. Réactiver annule l’opération.",
+      "deactivated": "Compte désactivé.",
+      "reactivated": "Compte réactivé.",
+      "deactivatedChip": "Désactivé",
+      "deactivatedNote": "Désactivé : ce compte ne peut pas se connecter.",
+      "deactivateLastSuperAdmin": "Le dernier super admin ne peut pas être désactivé.",
+      "selfDeactivate": "Tu ne peux pas désactiver ton propre compte."
     },
     "invites": {
       "new": "Nouveau code d’invitation",
@@ -3279,6 +3289,8 @@
         "account_reject": "Inscription refusée",
         "account_roles": "Rôles modifiés",
         "account_profile": "Nom ou e-mail modifié",
+        "account_deactivate": "Compte désactivé",
+        "account_reactivate": "Compte réactivé",
         "invite_create": "Code d’invitation créé",
         "invite_revoke": "Code d’invitation révoqué",
         "invite_redeem": "Code d’invitation utilisé",

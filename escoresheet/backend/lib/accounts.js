@@ -77,6 +77,9 @@ export const AUDIT_ACTIONS = Object.freeze([
   'match.scorer_device',
   // an admin deleted an account, or rejected a sign-up (deleteAccount below)
   'account.delete', 'account.reject',
+  // an admin deactivated an account (it can no longer sign in, nothing is
+  // deleted) or let it sign in again (setActive below)
+  'account.deactivate', 'account.reactivate',
   // db/023: team managers (a team link redeemed or removed), a team's saved
   // team and the roster of one of its games (lib/teams.js)
   'team.managers', 'team.squad', 'team.roster',
@@ -730,7 +733,8 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
       }
       const { rows } = await pool.query(
         `SELECT u.id, u.email, p.first_name, p.last_name, p.roles, u.created_at, u.last_sign_in_at,
-                (to_jsonb(u) ->> 'email_confirmed_at') IS NOT NULL AS email_confirmed
+                (to_jsonb(u) ->> 'email_confirmed_at') IS NOT NULL AS email_confirmed,
+                coalesce((to_jsonb(u) ->> 'banned_until')::timestamptz > now(), false) AS deactivated
            FROM auth.users u
            LEFT JOIN public.profiles p ON p.user_id = u.id
           ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
@@ -758,6 +762,8 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
             created_at: iso(r.created_at),
             last_sign_in_at: iso(r.last_sign_in_at),
             email_confirmed: r.email_confirmed === true,
+            // deactivated by an admin (setActive): cannot sign in, nothing deleted
+            deactivated: r.deactivated === true,
             // db/020 / db/023: what the account manages; db/025: its open sign-up request
             ...(indoor ? { managed_clubs: managed.clubs, managed_teams: managed.teams, requests: requestsBy.get(r.id) || [] } : {})
           }
@@ -766,7 +772,9 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
         // manager built after an older backend shows those buttons only then)
         can_delete: typeof eraseAccount === 'function',
         // PATCH /api/admin/accounts/:id exists on this server (name and address)
-        can_edit: true
+        can_edit: true,
+        // POST /api/admin/accounts/:id/deactivate|reactivate exist on this server
+        can_deactivate: true
       })
     })
   }
@@ -926,6 +934,62 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     if (reject && (target.roles.length || targetManages)) return fail(409, 'OV_NOT_PENDING', 'This account has a role: delete it instead of rejecting it')
     return null
   }
+  /**
+   * POST /api/admin/accounts/:userId/deactivate and .../reactivate (`active`:
+   * false / true). `actor` = { id, access }. A deactivated account cannot sign
+   * in (password, passkey, approval PIN: lib/auth.js isUserBlocked reads
+   * auth.users.banned_until) and its open sessions end at once; nothing is
+   * deleted (roles, clubs, teams, matches, audit stay) and reactivate undoes
+   * it. Refused as a delete is: the caller's own account (409
+   * OV_SELF_DEACTIVATE), a super admin unless the caller is one (403), the
+   * last super admin that can still sign in (409 OV_LAST_SUPER_ADMIN). The
+   * rules are checked under a lock of the caller's, the target's and every
+   * super admin's profile rows, as deleteAccount. Audit: account.deactivate /
+   * account.reactivate with the account's roles.
+   */
+  async function setActive ({ actor, userId, active } = {}) {
+    if (!isUuid(userId)) return notFound()
+    const actorId = actor?.id
+    if (!isUuid(actorId)) return fail(401, 'invalid_token', 'Not signed in')
+    if (!actor?.access?.isAdmin) return fail(403, 'OV_FORBIDDEN', 'You do not have access to this')
+    if (actorId === userId) return fail(409, 'OV_SELF_DEACTIVATE', 'You cannot deactivate your own account')
+    const superParam = ['super_admin']
+    const rolesOf = (rows, id) => [...new Set(rows.filter((r) => r.user_id === id).flatMap((r) => normalizeRoles(r.roles)))]
+    const res = await guarded(active ? 'reactivate-account' : 'deactivate-account', () => withTx(async (client) => {
+      const { rows: locked } = await client.query(
+        `SELECT user_id, roles FROM public.profiles
+          WHERE user_id = ANY($1::uuid[]) OR ${hasRoleSql('roles', '$2')}
+          ORDER BY user_id FOR UPDATE`, [[actorId, userId], superParam])
+      const { rows: [u] } = await client.query(
+        `SELECT id, coalesce((to_jsonb(u) ->> 'banned_until')::timestamptz > now(), false) AS deactivated
+           FROM auth.users u WHERE id = $1 FOR UPDATE`, [userId])
+      if (!u) throw abort(ACCOUNT_NOT_FOUND())
+      const actorAccess = accessFromRoles(rolesOf(locked, actorId))
+      if (!actorAccess.isAdmin) throw abort(fail(403, 'OV_FORBIDDEN', 'You do not have access to this'))
+      const targetRoles = rolesOf(locked, userId)
+      const target = accessFromRoles(targetRoles)
+      if (target.isSuperAdmin && !actorAccess.isSuperAdmin) throw abort(fail(403, 'OV_FORBIDDEN', 'Only a super admin can deactivate a super admin'))
+      if (!active && target.isSuperAdmin) {
+        const { rows: [{ n }] } = await client.query(
+          `SELECT count(DISTINCT p.user_id)::int AS n
+             FROM public.profiles p JOIN auth.users u ON u.id = p.user_id
+            WHERE p.user_id <> $1 AND ${hasRoleSql('p.roles', '$2')} AND ${usableSql('u')}`, [userId, superParam])
+        if (n < 1) throw abort(fail(409, 'OV_LAST_SUPER_ADMIN', 'The last super admin cannot be deactivated'))
+      }
+      // Already as asked: nothing to write, no audit entry
+      if (u.deactivated === !active) return ok({ id: userId, deactivated: !active, changed: false })
+      // A date, not 'infinity': lib/auth.js reads the column through to_jsonb
+      // and new Date('infinity') is not a date (the account could sign in)
+      await client.query(`UPDATE auth.users SET banned_until = ${active ? 'NULL' : "'9999-12-31T00:00:00Z'::timestamptz"} WHERE id = $1`, [userId])
+      // Signed in somewhere: signed out now, not at the session's end
+      if (!active) await client.query('DELETE FROM auth.app_sessions WHERE user_id = $1', [userId])
+      await audit(client, { actorId, action: active ? 'account.reactivate' : 'account.deactivate', targetUserId: userId, details: { roles: targetRoles } })
+      return ok({ id: userId, deactivated: !active, changed: true })
+    }))
+    access?.invalidate(userId)
+    return res
+  }
+
   /** Does `userId` manage a club or a team? false on a schema without them. Throws on a DB error. */
   async function managesAnything (client, userId) {
     const sql = managesSql('$1', await managementTables(client))
@@ -1475,6 +1539,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     listAccounts,
     setRoles,
     updateProfile,
+    setActive,
     deleteAccount,
     listOfficialGames,
     listMatches,

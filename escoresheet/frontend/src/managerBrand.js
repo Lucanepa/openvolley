@@ -15,12 +15,11 @@
  * OpenBeach manager (the main app's manage console included) is OpenVolley's
  * console, whose lists are scoped to ?app=indoor.
  *
- * Both manager sites can flip to the other brand in place (`switchable`):
- * one sign-in, the other app's tabs and lists. The site's own brand is where
- * a new tab starts; the flip is kept for the tab's session (sessionStorage).
- * The auth calls keep the site's app (the mails' brand and link host).
+ * Each site shows its own brand only: the flip to the other app's console
+ * went on 2026-11-11 (owner: "take out the switch to OpenBeach", they go to
+ * manager-beach.openvolley.app).
  */
-import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, createElement, useContext } from 'react'
 import { BRAND } from './brand'
 import beachMark from '../brand/beach/mark.svg'
 import beachLockup from '../brand/beach/lockup.svg'
@@ -60,57 +59,13 @@ export function managerBrandOf(app) {
 }
 
 const ManagerBrandContext = createContext(MANAGER_BRANDS.indoor)
-const ManagerSwitchContext = createContext(null)
 
-export const MANAGER_APP_KEY = 'ov-manager-app'
-
-function rememberedApp(fallback) {
-  try {
-    const v = window.sessionStorage.getItem(MANAGER_APP_KEY)
-    return v === 'indoor' || v === 'beach' ? v : fallback
-  } catch {
-    return fallback
-  }
-}
-
-/**
- * Sets the brand for everything below (the manager entries). `switchable`:
- * the brand can be flipped to the other app (useManagerSwitch).
- */
-export function ManagerBrandProvider({ app, switchable = false, children }) {
-  const home = managerBrandOf(app).app
-  const [current, setCurrent] = useState(() => (switchable ? rememberedApp(home) : home))
-  const shown = switchable ? current : home
-  const brand = managerBrandOf(shown)
-  const setApp = useCallback((next) => {
-    const v = managerBrandOf(next).app
-    setCurrent(v)
-    try { window.sessionStorage.setItem(MANAGER_APP_KEY, v) } catch { /* private window: this page only */ }
-  }, [])
-  const flip = useMemo(() => (switchable ? { app: shown, home, setApp } : null), [switchable, shown, home, setApp])
-  // The tab's title follows the brand on screen (the icons stay the site's)
-  useEffect(() => {
-    if (!switchable) return
-    try { document.title = `${brand.name} Manager` } catch { /* no document */ }
-  }, [switchable, brand.name])
-  return createElement(ManagerSwitchContext.Provider, { value: flip },
-    createElement(ManagerBrandContext.Provider, { value: brand }, children))
+/** Sets the brand for everything below (the manager entries). */
+export function ManagerBrandProvider({ app, children }) {
+  return createElement(ManagerBrandContext.Provider, { value: managerBrandOf(app) }, children)
 }
 
 /** The brand of the page: OpenVolley's unless an OpenBeach manager entry set it. */
 export function useManagerBrand() {
   return useContext(ManagerBrandContext)
-}
-
-/** The other brand of `app` (OpenVolley <-> OpenBeach). */
-export function otherManagerBrand(app) {
-  return app === 'beach' ? MANAGER_BRANDS.indoor : MANAGER_BRANDS.beach
-}
-
-/**
- * The flip of a switchable provider: { app, home, setApp(app) }, or null
- * (the main app's console, or a provider without `switchable`).
- */
-export function useManagerSwitch() {
-  return useContext(ManagerSwitchContext)
 }

@@ -134,7 +134,7 @@ export default function OfficialGamesPanel({ route = '', onRoute = null, navigat
         <Button type="submit" variant="secondary" className="hidden sm:inline-flex">{t('manage.games.searchButton')}</Button>
       </form>
       {error && <Notice className="mb-3">{errorText(error)}</Notice>}
-      {loading && !data ? (
+      {error && !data ? null : loading && !data ? (
         <SkeletonRows rows={6} />
       ) : games.length === 0 ? (
         <EmptyInset>{t('manage.games.empty')}</EmptyInset>

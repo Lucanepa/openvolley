@@ -11,7 +11,7 @@ import RequestsSection from './RequestsSection'
 import ClubPlayerPickerModal from '../ClubPlayerPickerModal'
 import ClubShield from './ClubShield'
 import SignaturePad from '../SignaturePad'
-import { usePanelData, usePanelRoute, useOnline, OfflineBanner, PageMissing, PanelHead, InlineError, useErrorText } from './common'
+import { usePanelData, usePanelRoute, useOnline, OfflineBanner, PageLoadGate, PageMissing, PanelHead, InlineError, useErrorText } from './common'
 import { Button, Checkbox, Chip, DateField, EmptyInset, Field, Input, KeyValue, Notice, Row, RowList, RowTool, Select, SectionHeader, SkeletonRows, confirmDialog, dayLabel, timeLabel, toast, cn } from '../../ui'
 
 const STAFF_ROLE_KEYS = {
@@ -53,14 +53,16 @@ export default function MyTeamsPanel({ teams = [], route = '', onRoute = null })
           </Select>
         </Field>
       )}
-      {/* keyed: another team starts its sections afresh */}
-      <TeamSections
-        key={team.id}
-        team={team}
-        gameNumber={gameNumber}
-        onOpenGame={(n) => go([team.id, n])}
-        onCloseGame={() => go([team.id])}
-      />
+      {/* keyed: another team starts its sections afresh, and appears whole
+          (squad, games, the club's lists, the requests) */}
+      <PageLoadGate key={team.id} className="space-y-8" fallback={<SkeletonRows rows={6} pill={false} />}>
+        <TeamSections
+          team={team}
+          gameNumber={gameNumber}
+          onOpenGame={(n) => go([team.id, n])}
+          onCloseGame={() => go([team.id])}
+        />
+      </PageLoadGate>
     </div>
   )
 }
@@ -139,7 +141,8 @@ function TeamSections({ team, gameNumber = null, onOpenGame, onCloseGame }) {
         <PanelHead title={t('manage.myTeams.squad', { season: squad.data?.season || '' })} level={2} />
         <p className="mb-3 text-sm text-stone-500">{t('manage.myTeams.squadHint')}</p>
         {squad.error && <Notice className="mb-3">{errorText(squad.error)}</Notice>}
-        {squad.loading && !squad.data ? (
+        {/* TeamEditor takes the club's lists when it opens: not before they are in */}
+        {squad.error && !squad.data ? null : (squad.loading && !squad.data) || (club.loading && !club.data && !club.error) ? (
           <SkeletonRows rows={3} pill={false} />
         ) : squad.data && (
           <TeamEditor key={editorTeam.id} team={editorTeam} competition={null} online={online} fixedFields pdfImport saveRoster={saveSquad} clubPlayers={clubPlayers} onAddToClub={clubPlayers ? addToClub : null} clubName={team.club_name} />
@@ -162,7 +165,7 @@ function TeamGames({ games: list, onOpen }) {
       <PanelHead title={t('manage.myTeams.games')} level={2} />
       <p className="mb-3 text-sm text-stone-500">{t('manage.myTeams.gamesHint')}</p>
       {error && <Notice className="mb-3">{errorText(error)}</Notice>}
-      {loading && !data ? (
+      {error && !data ? null : loading && !data ? (
         <SkeletonRows rows={3} pill={false} />
       ) : games.length === 0 ? (
         <EmptyInset>{t('manage.myTeams.noGames')}</EmptyInset>

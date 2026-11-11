@@ -32,8 +32,9 @@ export function renderManager(app) {
   ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>
       <ErrorBoundary name="manager">
-        {/* switchable: an account that manages both apps flips between them here */}
-        <ManagerBrandProvider app={app} switchable>
+        {/* No flip to the other app's console (owner 2026-11-11): OpenBeach's
+            is its own site, manager-beach.openvolley.app */}
+        <ManagerBrandProvider app={app}>
           <AuthProvider app={authApp}>
             <ManagerApp authLink={authLink} />
           </AuthProvider>

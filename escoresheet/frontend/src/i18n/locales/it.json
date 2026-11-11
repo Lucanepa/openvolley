@@ -3192,7 +3192,17 @@
       "lastName": "Cognome",
       "email": "E-mail",
       "emailHint": "D’ora in poi la persona accede con il nuovo indirizzo. Password e passkey restano.",
-      "emailTaken": "Un altro account ha già questo indirizzo e-mail."
+      "emailTaken": "Un altro account ha già questo indirizzo e-mail.",
+      "deactivate": "Disattiva",
+      "reactivate": "Riattiva",
+      "deactivateTitle": "Disattivare {{name}}?",
+      "deactivateBody": "L’account non può più accedere e viene disconnesso ovunque da subito. Non viene cancellato nulla: ruoli, club, squadre e partite restano. Riattiva annulla l’operazione.",
+      "deactivated": "Account disattivato.",
+      "reactivated": "Account riattivato.",
+      "deactivatedChip": "Disattivato",
+      "deactivatedNote": "Disattivato: questo account non può accedere.",
+      "deactivateLastSuperAdmin": "L’ultimo super admin non può essere disattivato.",
+      "selfDeactivate": "Non puoi disattivare il tuo account."
     },
     "invites": {
       "new": "Nuovo codice d’invito",
@@ -3285,6 +3295,8 @@
         "account_reject": "Registrazione rifiutata",
         "account_roles": "Ruoli modificati",
         "account_profile": "Nome o e-mail modificati",
+        "account_deactivate": "Account disattivato",
+        "account_reactivate": "Account riattivato",
         "invite_create": "Codice d’invito creato",
         "invite_revoke": "Codice d’invito revocato",
         "invite_redeem": "Codice d’invito usato",

@@ -139,7 +139,7 @@ export default function TournamentsPanel({ route = '', onRoute = null }) {
       </PanelHead>
       <OfflineBanner online={online} />
       {error && <Notice tone="error" className="mb-3">{t(tournamentErrorKey(error))}</Notice>}
-      {loading && !data ? <SkeletonRows rows={4} /> : list.length === 0 ? (
+      {error && !data ? null : loading && !data ? <SkeletonRows rows={4} /> : list.length === 0 ? (
         <EmptyInset>{t('tournaments.empty')}</EmptyInset>
       ) : (
         <RowList>
