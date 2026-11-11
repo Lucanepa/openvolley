@@ -3164,7 +3164,14 @@
       "editClubs": "Vereine",
       "clubsTitle": "Vereine von {{name}}",
       "clubsHint": "Das Konto führt die Heimspiele dieser Vereine.",
-      "noClubsYet": "Noch keine Vereine: Lege sie im Reiter Vereine an."
+      "noClubsYet": "Noch keine Vereine: Lege sie im Reiter Vereine an.",
+      "editDetails": "Name und E-Mail",
+      "detailsTitle": "Name und E-Mail: {{name}}",
+      "firstName": "Vorname",
+      "lastName": "Nachname",
+      "email": "E-Mail",
+      "emailHint": "Ab jetzt meldet sich die Person mit der neuen Adresse an. Passwort und Passkeys bleiben.",
+      "emailTaken": "Ein anderes Konto hat diese E-Mail-Adresse schon."
     },
     "invites": {
       "new": "Neuer Einladungscode",
@@ -3256,6 +3263,7 @@
         "account_delete": "Konto gelöscht",
         "account_reject": "Registrierung abgelehnt",
         "account_roles": "Rollen geändert",
+        "account_profile": "Name oder E-Mail geändert",
         "invite_create": "Einladungscode erstellt",
         "invite_revoke": "Einladungscode widerrufen",
         "invite_redeem": "Einladungscode eingelöst",

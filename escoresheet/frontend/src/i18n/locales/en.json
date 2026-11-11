@@ -3186,7 +3186,14 @@
       "editClubs": "Clubs",
       "clubsTitle": "Clubs of {{name}}",
       "clubsHint": "The account scores the home games of these clubs.",
-      "noClubsYet": "No clubs yet: create them in the Clubs tab."
+      "noClubsYet": "No clubs yet: create them in the Clubs tab.",
+      "editDetails": "Name and email",
+      "detailsTitle": "Name and email: {{name}}",
+      "firstName": "First name",
+      "lastName": "Last name",
+      "email": "Email",
+      "emailHint": "They sign in with the new address from now on. Password and passkeys stay.",
+      "emailTaken": "Another account already has this email address."
     },
     "invites": {
       "new": "New invite code",
@@ -3278,6 +3285,7 @@
         "account_delete": "Account deleted",
         "account_reject": "Sign-up rejected",
         "account_roles": "Roles changed",
+        "account_profile": "Name or email changed",
         "invite_create": "Invite code created",
         "invite_revoke": "Invite code revoked",
         "invite_redeem": "Invite code redeemed",

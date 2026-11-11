@@ -30,7 +30,8 @@ export function findAccount(id, app) {
 }
 
 /**
- * Accounts: approve pending accounts, grant and revoke roles (admins).
+ * Accounts: approve pending accounts, grant and revoke roles, change an
+ * account's name and address (admins).
  * `app` 'beach' (the OpenBeach manager): the members of OpenBeach, pending =
  * no beach role, and the beach roles only (shown by their plain names).
  * `app` 'indoor' (OpenVolley's console): the members of OpenVolley, indoor
@@ -66,6 +67,7 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app, r
   const [rowError, setRowError] = useState({})
   const [busyId, setBusyId] = useState(null)
   const [editing, setEditing] = useState(null)
+  const [detailsOf, setDetailsOf] = useState(null)
   const [deleting, setDeleting] = useState(null)
   const [reviewing, setReviewing] = useState(null)
   // db/018: clubs (OpenVolley only; beach is not checked)
@@ -82,6 +84,8 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app, r
   const accounts = data?.accounts || []
   const pendingCount = pending.data?.accounts?.length ?? null
   const canDelete = data?.can_delete === true
+  // PATCH /api/admin/accounts/:id (name and address): only on a server that has it
+  const canEdit = data?.can_edit === true
 
   const [[pageId = null], go] = usePanelRoute(route, onRoute)
   const page = usePageItem(pageId, {
@@ -177,11 +181,20 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app, r
     review: setReviewing,
     reject: rejectSignUp,
     editRoles: setEditing,
+    editDetails: canEdit ? setDetailsOf : null,
     editClubs: withClubs ? setClubsOf : null,
     remove: setDeleting
   }
 
   const dialogs = <>
+    {detailsOf && (
+      <DetailsModal
+        account={detailsOf}
+        selfIsSuperAdmin={selfIsSuperAdmin}
+        onClose={() => setDetailsOf(null)}
+        onSaved={() => { setDetailsOf(null); reload(); pending.reload() }}
+      />
+    )}
     <RolesModal
       app={app}
       account={editing}
@@ -228,6 +241,7 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app, r
             error={rowError[page.item.id]}
             offer={offer(page.item)}
             actions={actions}
+            selfIsSuperAdmin={selfIsSuperAdmin}
             onBack={() => go([])}
           />
         ) : (
@@ -303,6 +317,7 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app, r
                   {offer(a) === 'reject' && (
                     <RowTool className={DANGER_TOOL} disabled={!online || busyId === a.id} onClick={() => rejectSignUp(a)} data-testid="reject-account">{t('manage.accounts.reject')}</RowTool>
                   )}
+                  {canEdit && canEditDetails(a, selfIsSuperAdmin) && <RowTool disabled={!online} onClick={() => setDetailsOf(a)} data-testid="edit-details">{t('manage.accounts.editDetails')}</RowTool>}
                   <RowTool disabled={!online} onClick={() => setEditing(a)}>{t('manage.accounts.editRoles')}</RowTool>
                   {withClubs && <RowTool disabled={!online} onClick={() => setClubsOf(a)}>{t('manage.accounts.editClubs')}</RowTool>}
                   {offer(a) === 'delete' && (
@@ -325,7 +340,7 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app, r
  * and its open sign-up request, with the row's actions at the card's foot
  * (`actions` from the panel; `offer` = deletion()).
  */
-function AccountPage({ account: a, app, withClubs, online, busy, error, offer, actions, onBack }) {
+function AccountPage({ account: a, app, withClubs, online, busy, error, offer, actions, selfIsSuperAdmin = false, onBack }) {
   const { t } = useTranslation()
   const name = personName(a.first_name, a.last_name, a.email)
   const date = (v) => (v ? dayLabel(v, { year: true }) : '–')
@@ -367,6 +382,7 @@ function AccountPage({ account: a, app, withClubs, online, busy, error, offer, a
           ) : a.pending && (
             <Button variant="positive" disabled={!online || busy} loading={busy} onClick={() => actions.approve(a)} data-testid="approve-account">{t('manage.accounts.approve')}</Button>
           )}
+          {actions.editDetails && canEditDetails(a, selfIsSuperAdmin) && <Button variant="secondary" disabled={!online} onClick={() => actions.editDetails(a)} data-testid="edit-details">{t('manage.accounts.editDetails')}</Button>}
           <Button variant="secondary" disabled={!online} onClick={() => actions.editRoles(a)} data-testid="edit-roles">{t('manage.accounts.editRoles')}</Button>
           {actions.editClubs && <Button variant="secondary" disabled={!online} onClick={() => actions.editClubs(a)} data-testid="edit-clubs">{t('manage.accounts.editClubs')}</Button>}
           {offer === 'reject' && (
@@ -684,6 +700,69 @@ function RolesModal({ app, account, onClose, onSaved, roleError }) {
           <Checkbox key={role} label={t(`access.roles.${plainRole(role)}`)} checked={current.has(role)} onChange={() => toggle(role)} />
         ))}
         {initial.has('super_admin') && <Checkbox label={t('access.roles.super_admin')} checked disabled readOnly />}
+      </div>
+      <InlineError error={error} className="mt-2" />
+    </KitModal>
+  )
+}
+
+/** A super admin's details only by a super admin (the server checks the same). */
+export function canEditDetails(account, selfIsSuperAdmin = false) {
+  return !!account && (selfIsSuperAdmin || !(account.roles || []).includes('super_admin'))
+}
+
+/**
+ * An account's name and address (owner 2026-11-11: "let me modify them (e.g.
+ * names etc)"): PATCH /api/admin/accounts/:id with the fields changed. The
+ * password, passkeys and the address's confirmation stay.
+ */
+function DetailsModal({ account, onClose, onSaved }) {
+  const { t } = useTranslation()
+  const errorText = useErrorText()
+  const [form, setForm] = useState(() => ({ first_name: account.first_name || '', last_name: account.last_name || '', email: account.email || '' }))
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const set = (k) => (e) => { setForm((f) => ({ ...f, [k]: e.target.value })); setError('') }
+  const changed = {}
+  for (const k of ['first_name', 'last_name']) if (form[k].trim() !== (account[k] || '')) changed[k] = form[k].trim()
+  if (form.email.trim().toLowerCase() !== String(account.email || '').toLowerCase()) changed.email = form.email.trim()
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())
+  const save = async () => {
+    if (busy || !Object.keys(changed).length || !emailOk) return
+    setBusy(true)
+    const res = await admin.updateAccount(account.id, changed)
+    setBusy(false)
+    if (res.error) {
+      setError(res.error.code === 'OV_EMAIL_TAKEN' ? t('manage.accounts.emailTaken') : errorText(res.error))
+      return
+    }
+    toast.success(t('manage.accounts.saved'))
+    onSaved()
+  }
+  const close = () => { if (!busy) onClose() }
+  const name = personName(account.first_name, account.last_name, account.email)
+  return (
+    <KitModal
+      open
+      onClose={close}
+      decision
+      title={t('manage.accounts.detailsTitle', { name })}
+      closeLabel={t('common.close', 'Close')}
+      footer={<>
+        <Button variant="secondary" size="lg" onClick={close} disabled={busy}>{t('common.cancel', 'Cancel')}</Button>
+        <Button variant="positive" size="lg" onClick={save} loading={busy} disabled={busy || !Object.keys(changed).length || !emailOk} data-testid="save-account-details">{t('manage.accounts.save')}</Button>
+      </>}
+    >
+      <div className="flex flex-col gap-3">
+        <Field label={t('manage.accounts.firstName')}>
+          <Input value={form.first_name} onChange={set('first_name')} maxLength={80} autoComplete="off" data-testid="account-first-name" />
+        </Field>
+        <Field label={t('manage.accounts.lastName')}>
+          <Input value={form.last_name} onChange={set('last_name')} maxLength={80} autoComplete="off" data-testid="account-last-name" />
+        </Field>
+        <Field label={t('manage.accounts.email')} hint={changed.email ? t('manage.accounts.emailHint') : undefined}>
+          <Input type="email" value={form.email} onChange={set('email')} maxLength={254} autoComplete="off" data-testid="account-email" />
+        </Field>
       </div>
       <InlineError error={error} className="mt-2" />
     </KitModal>
