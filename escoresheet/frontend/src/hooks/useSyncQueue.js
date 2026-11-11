@@ -1868,7 +1868,19 @@ export function resetQueueHousekeeping() {
 // Sync status is shared by every mounted instance: whichever instance runs the
 // flush publishes it, so the Scoreboard indicator stays current even when the
 // App instance did the work.
-let currentSyncStatus = 'offline'
+// Before the first probe: 'connecting' when the browser is online and a cloud
+// backend is set (owner 2026-11-11: the startup check flashed the amber "no
+// connection" Offline, then Connecting, then Connected); 'offline' only when
+// the browser says so or there is no backend to reach.
+export function initialSyncStatus() {
+  try {
+    const online = typeof navigator === 'undefined' || navigator.onLine !== false
+    return online && getCloudApiUrl('/api/db') ? 'connecting' : 'offline'
+  } catch {
+    return 'offline'
+  }
+}
+let currentSyncStatus = initialSyncStatus()
 const syncStatusListeners = new Set()
 // Activity log: only changes between these groups are an entry (a pass flips
 // syncing <-> synced all the time)

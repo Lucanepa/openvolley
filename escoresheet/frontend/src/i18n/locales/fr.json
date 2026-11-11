@@ -233,6 +233,7 @@
     "noRefereeHistory": "Pas encore d'historique d'arbitres. Entrez les arbitres manuellement et ils seront sauvegardés pour les prochains matchs."
   },
   "matchSetup": {
+    "loadingScheduleGame": "Chargement du match…",
     "scorerDobForCoinToss": "Date de naissance du marqueur : nécessaire pour le tirage au sort",
     "dobRequiredForCoinToss": "Requise pour le tirage au sort",
     "title": "Configuration du match",
@@ -1188,6 +1189,7 @@
     "scorer": "Marqueur"
   },
   "home": {
+    "openingMatch": "Ouverture du match…",
     "title": "e-Feuille",
     "newMatch": "Nouveau match",
     "officialMatch": "Match officiel",

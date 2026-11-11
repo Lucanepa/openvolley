@@ -23,7 +23,7 @@ import { EmptyState } from './ui/EmptyState.jsx'
 import { Row, RowList, DateRail } from './ui/Row.jsx'
 import { Chip } from './ui/Chip.jsx'
 import { StatusPill } from './ui/StatusPill.jsx'
-import { SkeletonRows } from './ui/Skeleton.jsx'
+import { ListLoading } from './ui/Skeleton.jsx'
 
 function shouldAutoConnectNow() {
   if (typeof window === 'undefined') return false
@@ -550,9 +550,9 @@ export default function LivescoreApp() {
       {/* Content */}
       <div className="ov-kit px-4 py-6">
         {loading ? (
+          // the first read only (later reads keep the list): the branded spinner
           <Card pad="list" className="mx-auto max-w-3xl">
-            <span className="sr-only">{t('common.loading', 'Loading...')}</span>
-            <SkeletonRows rows={3} />
+            <ListLoading first className="py-10" label={t('common.loading', 'Loading...')} />
           </Card>
         ) : error ? (
           <Card className="mx-auto max-w-md text-center">
