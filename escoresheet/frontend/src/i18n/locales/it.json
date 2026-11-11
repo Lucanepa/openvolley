@@ -3185,7 +3185,14 @@
       "editClubs": "Società",
       "clubsTitle": "Società di {{name}}",
       "clubsHint": "L'account referta le partite in casa di queste società.",
-      "noClubsYet": "Ancora nessuna società: creale nella scheda Società."
+      "noClubsYet": "Ancora nessuna società: creale nella scheda Società.",
+      "editDetails": "Nome ed e-mail",
+      "detailsTitle": "Nome ed e-mail: {{name}}",
+      "firstName": "Nome",
+      "lastName": "Cognome",
+      "email": "E-mail",
+      "emailHint": "D’ora in poi la persona accede con il nuovo indirizzo. Password e passkey restano.",
+      "emailTaken": "Un altro account ha già questo indirizzo e-mail."
     },
     "invites": {
       "new": "Nuovo codice d’invito",
@@ -3277,6 +3284,7 @@
         "account_delete": "Account eliminato",
         "account_reject": "Registrazione rifiutata",
         "account_roles": "Ruoli modificati",
+        "account_profile": "Nome o e-mail modificati",
         "invite_create": "Codice d’invito creato",
         "invite_revoke": "Codice d’invito revocato",
         "invite_redeem": "Codice d’invito usato",
