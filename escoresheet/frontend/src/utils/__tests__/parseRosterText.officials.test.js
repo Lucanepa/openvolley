@@ -33,6 +33,13 @@ describe('parseRosterText: the officials of an Einsatzliste, in any language', (
     expect(r.medic).toBeUndefined()
   })
 
+  it('names with Central European letters are read (ń, ř, ș)', () => {
+    const r = parseRosterText('Trainer: #1111 | Anna Rossi (1997) 323239 Ewa Wiśniewskiń M 16.09.1999 RLL 456789 Jiří Dvořák M 01.02.2000 RLL 567890 Ștefan Popescu M 03.04.2001 RLL')
+    expect(r.players.map((p) => [p.firstName, p.lastName, p.licence])).toEqual([
+      ['Ewa', 'Wiśniewskiń', '323239'], ['Jiří', 'Dvořák', '456789'], ['Ștefan', 'Popescu', '567890']
+    ])
+  })
+
   it('role words in any language', () => {
     expect(officialRoleOf('Allenatore')).toBe('coach')
     expect(officialRoleOf('Head coach')).toBe('coach')
