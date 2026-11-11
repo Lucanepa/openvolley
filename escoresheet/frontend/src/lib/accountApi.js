@@ -311,6 +311,10 @@ export const admin = {
   setRoles(userId, { add = [], remove = [] } = {}) {
     return apiRequest('POST', `/api/admin/accounts/${enc(userId)}/roles`, { add, remove })
   },
+  /** An account's name and address ({ first_name?, last_name?, email? }; 409 OV_EMAIL_TAKEN). */
+  updateAccount(userId, fields = {}) {
+    return apiRequest('PATCH', `/api/admin/accounts/${enc(userId)}`, fields)
+  },
   /**
    * Deletes the account and its personal data; the match records stay
    * (backend lib/accounts.js deleteAccount). `email`: the account's address,

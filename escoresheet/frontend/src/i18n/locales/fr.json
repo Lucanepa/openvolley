@@ -3179,7 +3179,14 @@
       "editClubs": "Clubs",
       "clubsTitle": "Clubs de {{name}}",
       "clubsHint": "Le compte tient les matchs à domicile de ces clubs.",
-      "noClubsYet": "Pas encore de clubs : crée-les dans l'onglet Clubs."
+      "noClubsYet": "Pas encore de clubs : crée-les dans l'onglet Clubs.",
+      "editDetails": "Nom et e-mail",
+      "detailsTitle": "Nom et e-mail : {{name}}",
+      "firstName": "Prénom",
+      "lastName": "Nom",
+      "email": "E-mail",
+      "emailHint": "La personne se connecte désormais avec la nouvelle adresse. Le mot de passe et les clés d’accès restent.",
+      "emailTaken": "Un autre compte a déjà cette adresse e-mail."
     },
     "invites": {
       "new": "Nouveau code d’invitation",
@@ -3271,6 +3278,7 @@
         "account_delete": "Compte supprimé",
         "account_reject": "Inscription refusée",
         "account_roles": "Rôles modifiés",
+        "account_profile": "Nom ou e-mail modifié",
         "invite_create": "Code d’invitation créé",
         "invite_revoke": "Code d’invitation révoqué",
         "invite_redeem": "Code d’invitation utilisé",
