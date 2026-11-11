@@ -29,6 +29,12 @@ export function renderManager(app) {
   // sign-up joins OpenBeach); OpenVolley's send what they always sent.
   const authApp = app === 'beach' ? 'beach' : null
 
+  // The sign-in lives in this site's storage (localStorage + its IndexedDB
+  // copy): ask the browser to keep it rather than evict it as "best effort"
+  // (owner 2026-11-11: signed out every time on the phone). A browser told to
+  // forget the site on leaving still does; nothing here can change that.
+  try { void navigator.storage?.persist?.().catch(() => {}) } catch { /* no Storage API */ }
+
   ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>
       <ErrorBoundary name="manager">

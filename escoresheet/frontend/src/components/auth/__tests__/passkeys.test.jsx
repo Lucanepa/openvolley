@@ -30,10 +30,10 @@ vi.mock('../../../lib/passkeys', async (importOriginal) => {
   }
 })
 
-const api = vi.hoisted(() => ({ addPasskey: vi.fn() }))
+const api = vi.hoisted(() => ({ addPasskey: vi.fn(), listPasskeys: vi.fn() }))
 vi.mock('../../../lib/apiClient', async (importOriginal) => {
   const real = await importOriginal()
-  return { ...real, apiAuth: { ...real.apiAuth, addPasskey: api.addPasskey } }
+  return { ...real, apiAuth: { ...real.apiAuth, addPasskey: api.addPasskey, listPasskeys: api.listPasskeys } }
 })
 
 import LoginModal from '../LoginModal'
@@ -55,6 +55,9 @@ describe('sign-in dialog with passkeys', () => {
   beforeEach(() => {
     Object.assign(pk, { possible: true, canHold: true, here: false, dismissed: false })
     api.addPasskey.mockReset()
+    api.listPasskeys.mockReset()
+    api.listPasskeys.mockResolvedValue({ data: { passkeys: [] }, error: null })
+    passkeysLib.markPasskeyHere.mockClear?.()
     clearPasskeyOffer()
     auth.value = {
       signIn: vi.fn().mockResolvedValue({ data: { user: { id: 'u1' } }, error: null }),
@@ -120,6 +123,25 @@ describe('sign-in dialog with passkeys', () => {
     expect(screen.queryByTestId('passkey-offer')).toBeNull()
     expect(passkeysLib.dismissPasskeyOffer).toHaveBeenCalledWith('u1')
     expect(api.addPasskey).not.toHaveBeenCalled()
+  })
+
+  // owner 2026-11-11: the browser forgot the site (its hint gone), the account
+  // has a passkey: no offer, the hint comes back; a failed read still offers
+  it('no offer when the account already has a passkey (the server\'s list)', async () => {
+    api.listPasskeys.mockResolvedValue({ data: { passkeys: [{ id: 'p1' }] }, error: null })
+    const onClose = vi.fn()
+    render(<><LoginModal open onClose={onClose} onSwitchToSignUp={() => {}} /><PasskeyOfferHost /></>)
+    signInWithPassword()
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+    expect(screen.queryByTestId('passkey-offer')).toBeNull()
+    expect(passkeysLib.markPasskeyHere).toHaveBeenCalledWith('u1', true)
+  })
+
+  it('a failed passkey list still offers', async () => {
+    api.listPasskeys.mockResolvedValue({ data: null, error: { status: 503 } })
+    render(<><LoginModal open onClose={() => {}} onSwitchToSignUp={() => {}} /><PasskeyOfferHost /></>)
+    signInWithPassword()
+    expect(await screen.findByTestId('passkey-offer')).toBeInTheDocument()
   })
 
   it('no offer where the device cannot keep a key, or once dismissed', async () => {
