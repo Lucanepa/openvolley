@@ -1,0 +1,6 @@
+OpenVolley 3.0.20
+- My teams: an Einsatzliste import keeps the team's shirt numbers, captain and liberos.
+- My teams: the officials take the roles of the Einsatzliste (coach, assistants), with their licence, so they are found in the club's lists.
+- Einsatzliste in German, French and Italian; names with letters like ń, ř, ș are read.
+- Club lists: the gender column is read in any language.
+- Home: Delete match under Continue; referee and bench dashboards in the menu.
