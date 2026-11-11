@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, FileUp, PenLine, Plus, Trash2, UserPlus } from 'lucide-react'
 import { teamApi } from '../../lib/accountApi'
-import { addClubPlayersToGameDraft, applyEinsatzlisteToGameDraft, clubPersonOf, clubPersonToPlayer, gameRosterBody, gameRosterDraft, officialOfRole, officialRolesOf, parsedPdfToRoster, playerFinder, roleForNewOfficial, setGameDraftOfficial, setGameDraftStaffRole, wrongGenderIndexes, GAME_ROSTER_MAX_PLAYERS, GAME_ROSTER_MAX_STAFF } from '../../domain/teamRosters'
+import { addClubPlayersToGameDraft, applyEinsatzlisteToGameDraft, clubPersonOf, clubPersonToPlayer, gameRosterBody, gameRosterDraft, officialOfRole, officialRolesOf, parsedPdfToRoster, playerFinder, roleForNewOfficial, setGameDraftOfficial, setGameDraftStaffRole, wrongGenderIndexes, GAME_ROSTER_MAX_LIBEROS, GAME_ROSTER_MAX_PLAYERS, GAME_ROSTER_MAX_STAFF } from '../../domain/teamRosters'
 import { STAFF_ROLES } from '../../domain/savedTeams'
 import { shirtNumberDigits } from '../../domain/roster'
 import TeamEditor, { clubPeopleOf, clubPersonOffer } from './TeamEditor'
@@ -262,7 +262,8 @@ function GameRosterPage({ team, game, squad, squadLoading = false, clubPlayers, 
     change((d) => setGameDraftOfficial(d, o.role, { first_name: o.first_name, last_name: o.last_name, dob: o.dob || null, sv_number: o.license_number || null }).draft)
     setNewOfficial(null)
   }
-  const { body, problems } = shown ? gameRosterBody(shown) : { body: null, problems: [] }
+  const { body, problems, warnings } = shown ? gameRosterBody(shown) : { body: null, problems: [], warnings: [] }
+  const liberosPicked = (shown?.players || []).filter((p) => p.picked && p.is_libero).length
   const picked = body?.players.length || 0
   const bodyKey = body ? JSON.stringify(body) : ''
   // the signatures sent with the roster belong to it as it was loaded
@@ -458,11 +459,18 @@ function GameRosterPage({ team, game, squad, squadLoading = false, clubPlayers, 
                           className="w-16 text-center tabular-nums"
                         />
                         <Checkbox checked={p.is_captain} disabled={!p.picked} onChange={(e) => setPlayer(p.key, { is_captain: e.target.checked })} label={t('manage.myTeams.captainShort')} />
-                        <Checkbox checked={p.is_libero} disabled={!p.picked} onChange={(e) => setPlayer(p.key, { is_libero: e.target.checked })} label={t('manage.myTeams.liberoShort')} />
+                        <Checkbox checked={p.is_libero} disabled={!p.picked || (!p.is_libero && liberosPicked >= GAME_ROSTER_MAX_LIBEROS)} onChange={(e) => setPlayer(p.key, { is_libero: e.target.checked })} label={t('manage.myTeams.liberoShort')} />
                       </div>
                     </li>
                   ))}
                 </ul>
+              )}
+              {/* the game's rules, live: problems block sending, warnings do not (owner 2026-11-11) */}
+              {(problems.length > 0 || warnings.length > 0) && (
+                <div className="space-y-2" data-testid="game-roster-rules">
+                  {problems.slice(0, 4).map((p) => <Notice key={p.key + JSON.stringify(p.params)} tone="error">{t(p.key, p.params)}</Notice>)}
+                  {warnings.map((w) => <Notice key={w.key} tone="warning">{t(w.key, w.params)}</Notice>)}
+                </div>
               )}
               <SectionHeader
                 title={t('manage.myTeams.officials')}
@@ -485,6 +493,7 @@ function GameRosterPage({ team, game, squad, squadLoading = false, clubPlayers, 
                       {clubPlayers && <ClubShield person={clubPersonOf(s, clubPlayers.people)} className="-my-1 -ml-2 -mr-2" />}
                       <Checkbox
                         checked={s.picked}
+                        disabled={!s.role}
                         onChange={(e) => setStaff(s.key, { picked: e.target.checked })}
                         label={<PersonLine person={s} />}
                         className="min-w-0 flex-1"
@@ -496,6 +505,7 @@ function GameRosterPage({ team, game, squad, squadLoading = false, clubPlayers, 
                         className="w-full sm:w-48"
                         data-testid="game-staff-role"
                       >
+                        {!s.role && <option value="">{t('manage.myTeams.noRole')}</option>}
                         {STAFF_ROLES.map((r) => <option key={r} value={r}>{t(STAFF_ROLE_KEYS[r], r)}</option>)}
                       </Select>
                     </li>

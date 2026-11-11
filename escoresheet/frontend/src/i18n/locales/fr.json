@@ -3559,6 +3559,7 @@
       "deleteBody": "La tablette du marqueur la retire dès qu’elle est de nouveau en ligne.",
       "deleted": "Liste supprimée",
       "signHint": "Facultatif : l’entraîneur et le capitaine peuvent signer ici s’ils le souhaitent. Sinon, ils signent dans la salle, au tirage au sort.",
+      "noRole": "Aucun rôle",
       "problems": {
         "tooMany": "Au plus {{max}} joueurs par match.",
         "number": "{{name}} a besoin d’un numéro de maillot.",
@@ -3566,7 +3567,9 @@
         "captains": "Un seul capitaine.",
         "liberos": "Au plus {{max}} liberos.",
         "roleTwice": "Chaque fonction une seule fois ({{role}}).",
-        "tooManyStaff": "Au plus {{max}} officiels d’équipe."
+        "tooManyStaff": "Au plus {{max}} officiels d’équipe.",
+        "twoLiberos": "Plus de {{max}} joueurs seulement avec {{liberos}} libéros.",
+        "fewPlayers": "{{count}} joueurs sans les libéros : un match en demande au moins {{min}}."
       },
       "sent_one": "Envoyée : {{count}} joueur, {{when}}",
       "sent_other": "Envoyée : {{count}} joueurs, {{when}}",
