@@ -20,7 +20,7 @@ import { IconButton } from './ui/IconButton.jsx'
 import { Field, FormError } from './ui/Field.jsx'
 import { EmptyState, EmptyInset } from './ui/EmptyState.jsx'
 import { RowList } from './ui/Row.jsx'
-import { SkeletonRows } from './ui/Skeleton.jsx'
+import { ListLoading, SkeletonRows } from './ui/Skeleton.jsx'
 import { EntryPage, EntryCard, PinInput, ListLabel, GameRow } from './components/dashboards/EntryKit.jsx'
 
 // Master PIN for testing without a match
@@ -112,7 +112,11 @@ export default function RefereeApp() {
   const [isLoading, setIsLoading] = useState(false)
   const [availableMatches, setAvailableMatches] = useState([])
   const [selectedGameNumber, setSelectedGameNumber] = useState('')
-  const [loadingMatches, setLoadingMatches] = useState(false)
+  // The games are read on mount: until the first answer the card shows the
+  // spinner, not the PIN form whose game list popped in a moment later
+  // (owner 2026-11-11: "loads something, stops, loads it again")
+  const [loadingMatches, setLoadingMatches] = useState(true)
+  const [matchesLoadedOnce, setMatchesLoadedOnce] = useState(false)
   const [showGameModal, setShowGameModal] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [serverConnected, setServerConnected] = useState(false)
@@ -287,6 +291,7 @@ export default function RefereeApp() {
       setServerConnected(false)
     } finally {
       setLoadingMatches(false)
+      setMatchesLoadedOnce(true)
     }
   }, [])
 
@@ -649,7 +654,9 @@ export default function RefereeApp() {
           title={t('refereeDashboard.dashboardTitle')}
         >
           {/* Show "no active game" when server is connected but no games available */}
-          {serverConnected && availableMatches.length === 0 && !loadingMatches && !linkedMatch ? (
+          {!matchesLoadedOnce && !linkedMatch ? (
+            <ListLoading first className="py-8" label={t('refereeDashboard.loadingGames')} />
+          ) : serverConnected && availableMatches.length === 0 && !loadingMatches && !linkedMatch ? (
             <div onClick={handleTestModeClick} className="cursor-default select-none">
               <EmptyState
                 icon={CalendarX2}

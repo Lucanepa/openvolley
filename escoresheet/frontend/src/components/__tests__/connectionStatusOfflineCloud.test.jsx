@@ -32,9 +32,14 @@ afterEach(() => {
 
 describe('ConnectionStatus when the browser goes offline (cloud backend)', () => {
   it('says Offline at once, with the waiting count, although the last poll said connected', () => {
+    vi.useFakeTimers()
     live.value = { pending: 6, error: 0, failed: 0 }
     render(<ConnectionStatus connectionStatuses={POLLED_ONLINE} />)
+    // "Syncing..." only once the jobs have waited 1.5 s (no flicker per write)
+    expect(screen.getByText('Connected')).toBeInTheDocument()
+    act(() => { vi.advanceTimersByTime(1500) })
     expect(screen.getByText('Syncing...')).toBeInTheDocument()
+    vi.useRealTimers()
 
     goOffline()
     expect(screen.queryByText('Syncing...')).toBeNull()

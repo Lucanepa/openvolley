@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Activity, ArrowLeft, ClipboardList, FileText, House, KeyRound, Medal, ScrollText, Settings, ShieldCheck, Shirt, Trophy, Users } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { ConsoleShell, ConsolePanel, RowListCards, consoleHeaderBtn } from '../../ui'
+import { PageLoadGate, PageSpinner } from './common'
 import AccountsPanel from './AccountsPanel'
 import InvitesPanel from './InvitesPanel'
 import ClubsPanel from './ClubsPanel'
@@ -20,6 +21,14 @@ import NotificationsBell from './NotificationsBell'
 import { accessForApp } from '../../lib/access'
 import { useManagerBrand } from '../../managerBrand'
 import LegalLinks from '../../legal/LegalLinks'
+
+// Each panel appears whole (owner 2026-11-11: "no race -> wait to load"):
+// its first reads (usePanelData) behind the branded spinner (PageSpinner);
+// later reloads keep the panel.
+// A panel with sections of its own (My club, My teams) gates them itself.
+function PanelGate({ children }) {
+  return <PageLoadGate fallback={<PageSpinner />}>{children}</PageLoadGate>
+}
 
 const TABS = [
   { id: 'accounts', icon: Users, admin: true },
@@ -177,19 +186,19 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
         {phoneTop && <div className="mb-3 sm:hidden">{phoneTop}</div>}
         {/* every list of the console: one card per item (owner 2026-11-10) */}
         <RowListCards.Provider value>
-        {visited.has('accounts') && <ConsolePanel id="accounts" current={current}><AccountsPanel selfId={user.id} selfIsSuperAdmin={!!access?.isSuperAdmin} app={scope} {...pageProps('accounts')} /></ConsolePanel>}
-        {visited.has('invites') && <ConsolePanel id="invites" current={current}><InvitesPanel app={scope} /></ConsolePanel>}
-        {visited.has('clubs') && <ConsolePanel id="clubs" current={current}><ClubsPanel {...pageProps('clubs')} /></ConsolePanel>}
-        {visited.has('myclub') && <ConsolePanel id="myclub" current={current}><MyClubPanel clubs={access.managedClubs} {...pageProps('myclub')} /></ConsolePanel>}
-        {visited.has('myteams') && <ConsolePanel id="myteams" current={current}><MyTeamsPanel teams={access.managedTeams} {...pageProps('myteams')} /></ConsolePanel>}
-        {visited.has('settings') && <ConsolePanel id="settings" current={current}><SettingsPanel /></ConsolePanel>}
-        {visited.has('games') && <ConsolePanel id="games" current={current}><OfficialGamesPanel {...pageProps('games')} /></ConsolePanel>}
-        {visited.has('matches') && <ConsolePanel id="matches" current={current}><ClosedMatchesPanel onShowActivity={showActivity} {...pageProps('matches')} /></ConsolePanel>}
-        {visited.has('scoresheets') && <ConsolePanel id="scoresheets" current={current}><ScoresheetsPanel app={brand.app} /></ConsolePanel>}
-        {visited.has('audit') && <ConsolePanel id="audit" current={current}><AuditPanel app={scope} /></ConsolePanel>}
-        {visited.has('activity') && <ConsolePanel id="activity" current={current}><ActivityPanel app={scope} initialMatch={(() => { try { return decodeURIComponent(routeOf('activity')) } catch { return routeOf('activity') } })()} /></ConsolePanel>}
-        {visited.has('teams') && <ConsolePanel id="teams" current={current}><SavedTeamsPanel userId={user.id} sport={scope} {...pageProps('teams')} /></ConsolePanel>}
-        {visited.has('tournaments') && <ConsolePanel id="tournaments" current={current}><TournamentsPanel {...pageProps('tournaments')} /></ConsolePanel>}
+        {visited.has('accounts') && <ConsolePanel id="accounts" current={current}><PanelGate><AccountsPanel selfId={user.id} selfIsSuperAdmin={!!access?.isSuperAdmin} app={scope} {...pageProps('accounts')} /></PanelGate></ConsolePanel>}
+        {visited.has('invites') && <ConsolePanel id="invites" current={current}><PanelGate><InvitesPanel app={scope} /></PanelGate></ConsolePanel>}
+        {visited.has('clubs') && <ConsolePanel id="clubs" current={current}><PanelGate><ClubsPanel {...pageProps('clubs')} /></PanelGate></ConsolePanel>}
+        {visited.has('myclub') && <ConsolePanel id="myclub" current={current}><PanelGate><MyClubPanel clubs={access.managedClubs} {...pageProps('myclub')} /></PanelGate></ConsolePanel>}
+        {visited.has('myteams') && <ConsolePanel id="myteams" current={current}><PanelGate><MyTeamsPanel teams={access.managedTeams} {...pageProps('myteams')} /></PanelGate></ConsolePanel>}
+        {visited.has('settings') && <ConsolePanel id="settings" current={current}><PanelGate><SettingsPanel /></PanelGate></ConsolePanel>}
+        {visited.has('games') && <ConsolePanel id="games" current={current}><PanelGate><OfficialGamesPanel {...pageProps('games')} /></PanelGate></ConsolePanel>}
+        {visited.has('matches') && <ConsolePanel id="matches" current={current}><PanelGate><ClosedMatchesPanel onShowActivity={showActivity} {...pageProps('matches')} /></PanelGate></ConsolePanel>}
+        {visited.has('scoresheets') && <ConsolePanel id="scoresheets" current={current}><PanelGate><ScoresheetsPanel app={brand.app} /></PanelGate></ConsolePanel>}
+        {visited.has('audit') && <ConsolePanel id="audit" current={current}><PanelGate><AuditPanel app={scope} /></PanelGate></ConsolePanel>}
+        {visited.has('activity') && <ConsolePanel id="activity" current={current}><PanelGate><ActivityPanel app={scope} initialMatch={(() => { try { return decodeURIComponent(routeOf('activity')) } catch { return routeOf('activity') } })()} /></PanelGate></ConsolePanel>}
+        {visited.has('teams') && <ConsolePanel id="teams" current={current}><PanelGate><SavedTeamsPanel userId={user.id} sport={scope} {...pageProps('teams')} /></PanelGate></ConsolePanel>}
+        {visited.has('tournaments') && <ConsolePanel id="tournaments" current={current}><PanelGate><TournamentsPanel {...pageProps('tournaments')} /></PanelGate></ConsolePanel>}
         </RowListCards.Provider>
       </ConsoleShell>
     </div>

@@ -11,7 +11,7 @@ import RequestsSection from './RequestsSection'
 import ClubPlayerPickerModal from '../ClubPlayerPickerModal'
 import ClubShield from './ClubShield'
 import SignaturePad from '../SignaturePad'
-import { usePanelData, usePanelRoute, useOnline, OfflineBanner, PageLoadGate, PageMissing, PanelHead, InlineError, useErrorText } from './common'
+import { usePanelData, usePanelRoute, useOnline, OfflineBanner, PageLoadGate, PageMissing, PageSpinner, PanelHead, InlineError, useErrorText } from './common'
 import { Button, Checkbox, Chip, DateField, EmptyInset, Field, Input, KeyValue, Notice, Row, RowList, RowTool, Select, SectionHeader, SkeletonRows, confirmDialog, dayLabel, timeLabel, toast, cn } from '../../ui'
 
 const STAFF_ROLE_KEYS = {
@@ -105,7 +105,7 @@ export default function MyTeamsPanel({ teams = [], route = '', onRoute = null })
       {teams.length > 1 && !gameNumber && <TeamPicker teams={teams} team={team} onPick={(id) => go([id])} />}
       {/* keyed: another team starts its sections afresh, and appears whole
           (squad, games, the club's lists, the requests) */}
-      <PageLoadGate key={team.id} className="space-y-8" fallback={<SkeletonRows rows={6} pill={false} />}>
+      <PageLoadGate key={team.id} className="space-y-8" fallback={<PageSpinner />}>
         <TeamSections
           team={team}
           gameNumber={gameNumber}
@@ -161,17 +161,21 @@ function TeamSections({ team, gameNumber = null, onOpenGame, onCloseGame }) {
         </section>
       )
     }
+    // a game picked in the list: its page whole once its roster is read,
+    // not the heading first and the roster a moment later (owner 2026-11-11:
+    // "after selecting a game -> loads then loads the content")
     return (
-      <GameRosterPage
-        key={game.game_number}
-        team={team}
-        game={game}
-        squad={saved}
-        squadLoading={squad.loading && !squad.data}
-        clubPlayers={clubPlayers}
-        onBack={onCloseGame}
-        onSaved={() => { games.reload({ quiet: true }); onCloseGame() }}
-      />
+      <PageLoadGate key={game.game_number} fallback={<PageSpinner />}>
+        <GameRosterPage
+          team={team}
+          game={game}
+          squad={saved}
+          squadLoading={squad.loading && !squad.data}
+          clubPlayers={clubPlayers}
+          onBack={onCloseGame}
+          onSaved={() => { games.reload({ quiet: true }); onCloseGame() }}
+        />
+      </PageLoadGate>
     )
   }
   return (
