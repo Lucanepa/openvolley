@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Copy, Plus } from 'lucide-react'
+import { teamLinkUrl } from '../../utils/managerSite'
 import { admin, clubApi, clubsApi } from '../../lib/accountApi'
 import KitModal from './KitModal'
 import { usePanelData, useOnline, OfflineBanner, PanelHead, InlineError, useErrorText } from './common'
@@ -8,6 +9,11 @@ import { Button, DateField, Field, Input, Select, RowList, Row, RowTool, Chip, S
 
 const STATE_TONE = { active: 'done', expired: 'neutral', used_up: 'neutral', revoked: 'brand' }
 const INVITE_ROLES = ['scorer', 'referee', 'competition_manager']
+// db/023: an admin's team link for any club's team (owner 2026-11-11: "as admin
+// I can create a link for everything"), within lib/teams.js teamInviteBody's limits
+const TEAM_ROLE = 'team_manager'
+const TEAM_MAX_USES = 10
+const TEAM_MAX_DAYS = 90
 // db/020: a club manager's codes (lib/clubs.js clubInviteBody): scorer or
 // referee, at most 50 uses, gone after 90 days at most
 const CLUB_INVITE_ROLES = ['scorer', 'referee']
@@ -26,6 +32,9 @@ function plusDays(days) {
  * every code, new codes indoor (as before).
  * `club` { id, name } (db/020, the My club tab): that club's codes only, made
  * for it within a club manager's limits (the server checks them again).
+ * An admin's console also makes team links (db/023, role Team manager): the
+ * club and one of its teams, at most 10 uses and 90 days; the link is shown
+ * once, like a code.
  */
 export default function InvitesPanel({ app, club = null, title }) {
   const { t } = useTranslation()
@@ -117,15 +126,21 @@ export default function InvitesPanel({ app, club = null, title }) {
       >
         <ModalStrip>{t('manage.invites.createdOnce')}</ModalStrip>
         <div className="flex flex-col items-stretch gap-2 min-[420px]:flex-row min-[420px]:items-center">
-          <output data-testid="invite-code" className="flex-1 select-all rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-center font-mono text-lg font-bold tracking-[0.3em] text-stone-900">
-            {created?.code}
-          </output>
+          {created?.url ? (
+            <output data-testid="invite-link" className="flex-1 select-all break-all rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm font-medium text-stone-900">
+              {created.url}
+            </output>
+          ) : (
+            <output data-testid="invite-code" className="flex-1 select-all rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-center font-mono text-lg font-bold tracking-[0.3em] text-stone-900">
+              {created?.code}
+            </output>
+          )}
           <Button
             variant="secondary"
             icon={Copy}
             onClick={async () => {
               try {
-                await navigator.clipboard.writeText(created?.code || '')
+                await navigator.clipboard.writeText(created?.url || created?.code || '')
                 toast.success(t('manage.invites.copied'))
               } catch { /* no clipboard: the code stays selectable */ }
             }}
@@ -153,14 +168,24 @@ function CreateInviteModal({ app, club: fixedClub = null, open, onClose, onCreat
   const clubList = usePanelData(() => (withClubs && open ? clubsApi.list() : Promise.resolve({ data: null })), [withClubs, open])
   const clubs = clubList.data?.clubs || []
   const [role, setRole] = useState('scorer')
+  // an admin's team link: OpenVolley's console only, needs a club and one of its teams
+  const withTeams = withClubs && app !== 'beach'
+  const teamLink = withTeams && role === TEAM_ROLE
+  const [teamId, setTeamId] = useState('')
+  const teamList = usePanelData(() => (teamLink && clubId ? clubApi.teams(clubId) : Promise.resolve({ data: null })), [teamLink, clubId])
+  const teams = [...(teamList.data?.teams || [])].sort((a, b) => String(a.name).localeCompare(String(b.name)))
   const [maxUses, setMaxUses] = useState('1')
   const [expires, setExpires] = useState(plusDays(30))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
-  const reset = () => { setLabel(''); setClub(''); setClubId(''); setRole('scorer'); setMaxUses('1'); setExpires(plusDays(30)); setError('') }
-  const maxValid = (maxUses === '' && !fixedClub) || (/^\d+$/.test(maxUses) && Number(maxUses) >= 1 && Number(maxUses) <= maxUsesCap)
-  const valid = label.trim().length >= 1 && maxValid && (!fixedClub || !!expires)
+  const reset = () => { setLabel(''); setClub(''); setClubId(''); setRole('scorer'); setTeamId(''); setMaxUses('1'); setExpires(plusDays(30)); setError('') }
+  const usesCap = teamLink ? TEAM_MAX_USES : maxUsesCap
+  const maxValid = (maxUses === '' && !fixedClub && !teamLink) || (/^\d+$/.test(maxUses) && Number(maxUses) >= 1 && Number(maxUses) <= usesCap)
+  // a team link has no label (it names its team) and always an end, 90 days at most
+  const valid = teamLink
+    ? !!clubId && !!teamId && maxValid && !!expires && expires <= plusDays(TEAM_MAX_DAYS)
+    : label.trim().length >= 1 && maxValid && (!fixedClub || !!expires)
   const submit = async (e) => {
     e?.preventDefault()
     if (!valid || busy) return
@@ -168,6 +193,19 @@ function CreateInviteModal({ app, club: fixedClub = null, open, onClose, onCreat
     setError('')
     // Expiry at the end of the chosen day (Zurich local time of this device)
     const expiresAt = expires ? new Date(`${expires}T23:59:59`).toISOString() : null
+    if (teamLink) {
+      const r = await clubApi.createTeamLink(clubId, teamId, { max_uses: Number(maxUses), expires_at: expiresAt })
+      setBusy(false)
+      if (r.error || !r.data?.code) {
+        setError(errorText(r.error || { status: 500 }))
+        return
+      }
+      const team = teams.find((x) => x.id === teamId)
+      const clubName = clubs.find((c) => c.id === clubId)?.name || ''
+      reset()
+      onCreated({ ...r.data, url: teamLinkUrl(r.data.code), invite: { ...(r.data.invite || {}), label: team?.name || '', club: clubName, role: TEAM_ROLE } })
+      return
+    }
     const res = fixedClub ? await clubApi.createInvite(fixedClub.id, {
       label: label.trim(),
       role,
@@ -206,17 +244,19 @@ function CreateInviteModal({ app, club: fixedClub = null, open, onClose, onCreat
       </>}
     >
       <form onSubmit={submit} className="space-y-3">
-        <Field label={t('manage.invites.label')} hint={t('manage.invites.labelHint')}>
-          <Input value={label} onChange={e => setLabel(e.target.value)} maxLength={120} required autoFocus />
-        </Field>
+        {!teamLink && (
+          <Field label={t('manage.invites.label')} hint={t('manage.invites.labelHint')}>
+            <Input value={label} onChange={e => setLabel(e.target.value)} maxLength={120} required autoFocus />
+          </Field>
+        )}
         {fixedClub ? (
           <Field label={t('manage.invites.club')}>
             <Input value={fixedClub.name} readOnly disabled data-testid="invite-fixed-club" />
           </Field>
         ) : withClubs && clubs.length > 0 ? (
           <Field label={t('manage.invites.club')} hint={t('manage.invites.clubHint')}>
-            <Select value={clubId} onChange={e => setClubId(e.target.value)} data-testid="invite-club">
-              <option value="">{t('manage.invites.noClub')}</option>
+            <Select value={clubId} onChange={e => { setClubId(e.target.value); setTeamId('') }} data-testid="invite-club">
+              <option value="">{teamLink ? t('manage.invites.pickClub') : t('manage.invites.noClub')}</option>
               {clubs.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </Select>
           </Field>
@@ -225,17 +265,27 @@ function CreateInviteModal({ app, club: fixedClub = null, open, onClose, onCreat
             <Input value={club} onChange={e => setClub(e.target.value)} maxLength={120} />
           </Field>
         )}
-        <Field label={t('manage.invites.role')}>
-          <Select value={role} onChange={e => setRole(e.target.value)}>
+        <Field label={t('manage.invites.role')} hint={teamLink ? t('manage.invites.teamLinkHint') : undefined}>
+          <Select value={role} onChange={e => { const r = e.target.value; setRole(r); if (r === TEAM_ROLE) { setMaxUses('3'); if (expires > plusDays(TEAM_MAX_DAYS)) setExpires(plusDays(30)) } }} data-testid="invite-role">
             {roles.map(r => <option key={r} value={r}>{t(`access.roles.${r}`)}</option>)}
+            {withTeams && <option value={TEAM_ROLE}>{t('access.roles.team_manager')}</option>}
           </Select>
         </Field>
-        <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
-          <Field label={t('manage.invites.maxUses')} hint={fixedClub ? t('manage.myClub.maxUsesHint', { max: CLUB_MAX_USES }) : t('manage.invites.maxUsesHint')}>
-            <Input type="number" inputMode="numeric" min={1} max={maxUsesCap} value={maxUses} onChange={e => setMaxUses(e.target.value)} />
+        {teamLink && (
+          <Field label={t('manage.invites.team')}>
+            <Select value={teamId} onChange={e => setTeamId(e.target.value)} disabled={!clubId || (teamList.loading && !teamList.data)} data-testid="invite-team">
+              <option value="">{clubId ? t('manage.invites.pickTeam') : t('manage.invites.clubFirst')}</option>
+              {teams.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
+            </Select>
           </Field>
-          <Field label={t('manage.invites.expires')} hint={fixedClub ? t('manage.myClub.expiresHint', { days: CLUB_MAX_DAYS }) : undefined}>
-            <DateField value={expires} onChange={setExpires} max={fixedClub ? plusDays(CLUB_MAX_DAYS) : undefined} />
+        )}
+        {teamLink && clubId && teamList.data && teams.length === 0 && <Notice tone="warning">{t('manage.invites.noTeams')}</Notice>}
+        <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
+          <Field label={t('manage.invites.maxUses')} hint={fixedClub ? t('manage.myClub.maxUsesHint', { max: CLUB_MAX_USES }) : teamLink ? t('manage.myClub.maxUsesHint', { max: TEAM_MAX_USES }) : t('manage.invites.maxUsesHint')}>
+            <Input type="number" inputMode="numeric" min={1} max={usesCap} value={maxUses} onChange={e => setMaxUses(e.target.value)} data-testid="invite-max-uses" />
+          </Field>
+          <Field label={t('manage.invites.expires')} hint={fixedClub ? t('manage.myClub.expiresHint', { days: CLUB_MAX_DAYS }) : teamLink ? t('manage.myClub.expiresHint', { days: TEAM_MAX_DAYS }) : undefined}>
+            <DateField value={expires} onChange={setExpires} max={fixedClub ? plusDays(CLUB_MAX_DAYS) : teamLink ? plusDays(TEAM_MAX_DAYS) : undefined} />
           </Field>
         </div>
         <InlineError error={error} />
