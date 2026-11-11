@@ -3187,7 +3187,17 @@
       "lastName": "Nachname",
       "email": "E-Mail",
       "emailHint": "Ab jetzt meldet sich die Person mit der neuen Adresse an. Passwort und Passkeys bleiben.",
-      "emailTaken": "Ein anderes Konto hat diese E-Mail-Adresse schon."
+      "emailTaken": "Ein anderes Konto hat diese E-Mail-Adresse schon.",
+      "deactivate": "Deaktivieren",
+      "reactivate": "Reaktivieren",
+      "deactivateTitle": "{{name}} deaktivieren?",
+      "deactivateBody": "Das Konto kann sich nicht mehr anmelden und wird jetzt überall abgemeldet. Nichts wird gelöscht: Rollen, Vereine, Teams und Spiele bleiben. Reaktivieren macht es rückgängig.",
+      "deactivated": "Konto deaktiviert.",
+      "reactivated": "Konto reaktiviert.",
+      "deactivatedChip": "Deaktiviert",
+      "deactivatedNote": "Deaktiviert: Dieses Konto kann sich nicht anmelden.",
+      "deactivateLastSuperAdmin": "Der letzte Super-Admin kann nicht deaktiviert werden.",
+      "selfDeactivate": "Du kannst dein eigenes Konto nicht deaktivieren."
     },
     "invites": {
       "new": "Neuer Einladungscode",
@@ -3280,6 +3290,8 @@
         "account_reject": "Registrierung abgelehnt",
         "account_roles": "Rollen geändert",
         "account_profile": "Name oder E-Mail geändert",
+        "account_deactivate": "Konto deaktiviert",
+        "account_reactivate": "Konto reaktiviert",
         "invite_create": "Einladungscode erstellt",
         "invite_revoke": "Einladungscode widerrufen",
         "invite_redeem": "Einladungscode eingelöst",

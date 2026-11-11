@@ -174,7 +174,7 @@ export default function AuditPanel({ app }) {
       <PanelHead title={t('manage.tabs.audit')} />
       <OfflineBanner online={online} />
       {error && <Notice className="mb-3">{errorText(error)}</Notice>}
-      {loading && !entries.length ? (
+      {error && !entries.length ? null : loading && !entries.length ? (
         <SkeletonRows rows={6} pill={false} />
       ) : entries.length === 0 ? (
         <EmptyInset>{t('manage.audit.empty')}</EmptyInset>

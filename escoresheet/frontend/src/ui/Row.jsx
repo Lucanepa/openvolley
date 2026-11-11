@@ -183,7 +183,7 @@ export function Row({
         <div className={bodyBase}>{body}</div>
       )}
       {tools && (
-        <div className={cn('flex basis-full items-center gap-1.5 px-1.5 pb-2.5 sm:gap-2 sm:pr-2', toolsIndent)}>{tools}</div>
+        <div className={cn('flex basis-full flex-wrap items-center gap-1.5 px-1.5 pb-2.5 sm:flex-nowrap sm:gap-2 sm:pr-2', toolsIndent)}>{tools}</div>
       )}
       {action && (
         <div className={cn('flex basis-full items-center pb-2 pr-1.5 sm:basis-auto sm:pb-0 sm:pl-2 sm:pr-2', actionIndent)}>{action}</div>
@@ -193,13 +193,15 @@ export function Row({
 }
 
 /** Row toolbar button (labelled, equal-width on phones). App.tsx:7021.
- *  `primary` = the dark lead button (App.tsx:7104-7108). */
+ *  `primary` = the dark lead button (App.tsx:7104-7108).
+ *  min-w-fit: never narrower than its label; on a phone a row with more
+ *  buttons than fit wraps to a second line (the toolbar is flex-wrap below sm). */
 export function RowTool({ primary = false, className, children, ...rest }) {
   return (
     <button
       type="button"
       className={cn(
-        'inline-flex h-8 flex-1 basis-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-1.5 text-[11px] font-medium transition-colors sm:flex-none sm:basis-auto sm:px-3 sm:text-xs',
+        'inline-flex h-8 min-w-fit flex-1 basis-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-1.5 text-[11px] font-medium transition-colors sm:flex-none sm:basis-auto sm:px-3 sm:text-xs',
         FOCUS_RING,
         primary ? 'bg-slate-900 text-white hover:bg-slate-800' : 'border border-stone-300 bg-white text-stone-600 hover:bg-stone-50',
         className,

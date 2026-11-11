@@ -82,10 +82,14 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app, r
   )
   const pending = usePanelData(() => admin.listAccounts({ filter: 'pending', ...scope }), [app], { enabled: online })
   const accounts = data?.accounts || []
-  const pendingCount = pending.data?.accounts?.length ?? null
+  // the list itself when it is the pending one: the label and the rows change together
+  const pendingList = filter === 'pending' && !query && data ? data : pending.data
+  const pendingCount = pendingList?.accounts?.length ?? null
   const canDelete = data?.can_delete === true
   // PATCH /api/admin/accounts/:id (name and address): only on a server that has it
   const canEdit = data?.can_edit === true
+  // POST .../deactivate|reactivate: only on a server that has them
+  const canDeactivate = data?.can_deactivate === true
 
   const [[pageId = null], go] = usePanelRoute(route, onRoute)
   const page = usePageItem(pageId, {
@@ -172,6 +176,38 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app, r
     leavePage(account)
   }
 
+  // Deactivate (owner 2026-11-11: "deactivate but not delete"): the account
+  // cannot sign in until it is reactivated; nothing is deleted
+  const setActive = async (account, active) => {
+    if (!active) {
+      const ok = await confirmDialog({
+        title: t('manage.accounts.deactivateTitle', { name: personName(account.first_name, account.last_name, account.email) }),
+        message: t('manage.accounts.deactivateBody'),
+        confirmLabel: t('manage.accounts.deactivate'),
+        cancelLabel: t('common.cancel', 'Cancel'),
+        tone: 'danger'
+      })
+      if (!ok) return
+    }
+    setBusyId(account.id)
+    setRowError(e => ({ ...e, [account.id]: '' }))
+    const res = await (active ? admin.reactivateAccount(account.id) : admin.deactivateAccount(account.id))
+    setBusyId(null)
+    if (res.error) {
+      const code = res.error.code
+      setRowError(e => ({
+        ...e,
+        [account.id]: code === 'OV_LAST_SUPER_ADMIN' ? t('manage.accounts.deactivateLastSuperAdmin')
+          : code === 'OV_SELF_DEACTIVATE' ? t('manage.accounts.selfDeactivate')
+            : deleteError(res.error)
+      }))
+      return
+    }
+    toast.success(t(active ? 'manage.accounts.reactivated' : 'manage.accounts.deactivated'))
+    reload()
+    pending.reload()
+  }
+
   const date = (v) => (v ? dayLabel(v, { year: true }) : '')
   // what the row and the page offer to delete: 'reject', 'delete' or nothing
   const offer = (a) => (canDelete ? deletion(a, selfId, selfIsSuperAdmin) : null)
@@ -183,7 +219,8 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app, r
     editRoles: setEditing,
     editDetails: canEdit ? setDetailsOf : null,
     editClubs: withClubs ? setClubsOf : null,
-    remove: setDeleting
+    remove: setDeleting,
+    setActive: canDeactivate ? setActive : null
   }
 
   const dialogs = <>
@@ -240,6 +277,7 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app, r
             busy={busyId === page.item.id}
             error={rowError[page.item.id]}
             offer={offer(page.item)}
+            mayDeactivate={mayDeactivate(page.item, selfId, selfIsSuperAdmin)}
             actions={actions}
             selfIsSuperAdmin={selfIsSuperAdmin}
             onBack={() => go([])}
@@ -271,7 +309,7 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app, r
         </form>
       </div>
       {error && <Notice className="mb-3">{errorText(error)}</Notice>}
-      {loading && !data ? (
+      {error && !data ? null : loading && !data ? (
         <SkeletonRows rows={5} pill={false} />
       ) : accounts.length === 0 ? (
         <EmptyInset>{filter === 'pending' ? t('manage.accounts.emptyPending') : t('manage.accounts.empty')}</EmptyInset>
@@ -291,12 +329,13 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app, r
                 label={name}
                 onOpen={() => go([a.id])}
                 meta={<>
-                  <span className="break-all">{a.email}</span>
+                  <span className="min-w-0 max-w-full truncate" title={a.email}>{a.email}</span>
                   <span>{t('manage.accounts.created', { date: date(a.created_at) })}</span>
                   <span>{a.last_sign_in_at ? t('manage.accounts.lastSignIn', { date: date(a.last_sign_in_at) }) : t('manage.accounts.neverSignedIn')}</span>
                   {a.email_confirmed === false && <span className="font-medium text-amber-700">{t('manage.accounts.emailUnconfirmed')}</span>}
                 </>}
                 chips={<>
+                  {a.deactivated && <Chip tone="urgent">{t('manage.accounts.deactivatedChip')}</Chip>}
                   <RoleChips roles={a.roles} pending={a.pending} app={app} />
                   {withClubs && (a.clubs || []).map(c => <Chip key={c.id} tone="sky">{c.name}</Chip>)}
                   {/* db/020 / db/023: what the account manages */}
@@ -340,7 +379,7 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app, r
  * and its open sign-up request, with the row's actions at the card's foot
  * (`actions` from the panel; `offer` = deletion()).
  */
-function AccountPage({ account: a, app, withClubs, online, busy, error, offer, actions, selfIsSuperAdmin = false, onBack }) {
+function AccountPage({ account: a, app, withClubs, online, busy, error, offer, mayDeactivate: mayToggle = false, actions, selfIsSuperAdmin = false, onBack }) {
   const { t } = useTranslation()
   const name = personName(a.first_name, a.last_name, a.email)
   const date = (v) => (v ? dayLabel(v, { year: true }) : '–')
@@ -366,12 +405,14 @@ function AccountPage({ account: a, app, withClubs, online, busy, error, offer, a
           variant="stats"
           className="gap-y-3 text-sm"
           items={[
-            { label: t('manage.accounts.page.email'), value: <span className="break-all">{a.email}</span> },
+            // a phone's grid has two columns: the address takes the whole line and breaks only when it is wider
+            { label: t('manage.accounts.page.email'), value: <span className="[overflow-wrap:anywhere]">{a.email}</span>, className: 'col-span-2 sm:col-span-1' },
             { label: t('manage.accounts.page.created'), value: date(a.created_at) },
             { label: t('manage.accounts.page.lastSignIn'), value: a.last_sign_in_at ? date(a.last_sign_in_at) : t('manage.accounts.neverSignedIn') }
           ]}
         />
         {a.email_confirmed === false && <p className="mt-2 text-xs font-medium text-amber-700">{t('manage.accounts.emailUnconfirmed')}</p>}
+        {a.deactivated && <p className="mt-2 text-xs font-medium text-red-700" data-testid="account-deactivated">{t('manage.accounts.deactivatedNote')}</p>}
         <KeyValue variant="stacked" className="mt-4" items={groups} />
         <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-stone-100 pt-4">
           {parts.length > 0 ? (
@@ -385,11 +426,16 @@ function AccountPage({ account: a, app, withClubs, online, busy, error, offer, a
           {actions.editDetails && canEditDetails(a, selfIsSuperAdmin) && <Button variant="secondary" disabled={!online} onClick={() => actions.editDetails(a)} data-testid="edit-details">{t('manage.accounts.editDetails')}</Button>}
           <Button variant="secondary" disabled={!online} onClick={() => actions.editRoles(a)} data-testid="edit-roles">{t('manage.accounts.editRoles')}</Button>
           {actions.editClubs && <Button variant="secondary" disabled={!online} onClick={() => actions.editClubs(a)} data-testid="edit-clubs">{t('manage.accounts.editClubs')}</Button>}
+          {actions.setActive && mayToggle && (a.deactivated ? (
+            <Button variant="secondary" className="sm:ml-auto" disabled={!online || busy} loading={busy} onClick={() => actions.setActive(a, true)} data-testid="reactivate-account">{t('manage.accounts.reactivate')}</Button>
+          ) : (
+            <Button variant="danger-outline" className="sm:ml-auto" disabled={!online || busy} onClick={() => actions.setActive(a, false)} data-testid="deactivate-account">{t('manage.accounts.deactivate')}</Button>
+          ))}
           {offer === 'reject' && (
-            <Button variant="danger-outline" className="sm:ml-auto" disabled={!online || busy} onClick={() => actions.reject(a)} data-testid="reject-account">{t('manage.accounts.reject')}</Button>
+            <Button variant="danger-outline" className={actions.setActive && mayToggle ? '' : 'sm:ml-auto'} disabled={!online || busy} onClick={() => actions.reject(a)} data-testid="reject-account">{t('manage.accounts.reject')}</Button>
           )}
           {offer === 'delete' && (
-            <Button variant="danger-outline" className="sm:ml-auto" disabled={!online || busy} onClick={() => actions.remove(a)} data-testid="delete-account">{t('manage.accounts.delete')}</Button>
+            <Button variant="danger-outline" className={actions.setActive && mayToggle ? '' : 'sm:ml-auto'} disabled={!online || busy} onClick={() => actions.remove(a)} data-testid="delete-account">{t('manage.accounts.delete')}</Button>
           )}
         </div>
         <InlineError error={error} className="mt-2" />
@@ -403,6 +449,12 @@ function AccountPage({ account: a, app, withClubs, online, busy, error, offer, a
  * app), 'delete' (any other account), or null (the admin's own account; a
  * super admin's, unless the admin is one too).
  */
+/** May the caller deactivate / reactivate `account`? Not their own, a super admin's only as one (the server checks again). */
+export function mayDeactivate(account, selfId, selfIsSuperAdmin = false) {
+  if (!account || account.id === selfId) return false
+  return selfIsSuperAdmin || !(account.roles || []).includes('super_admin')
+}
+
 export function deletion(account, selfId, selfIsSuperAdmin = false) {
   if (!account || account.id === selfId) return null
   const roles = account.roles || []
@@ -632,7 +684,7 @@ function ClubsModal({ account, onClose, onSaved }) {
     >
       <p className="mb-2 text-xs text-stone-600">{t('manage.accounts.clubsHint')}</p>
       {list.error && <Notice className="mb-2">{errorText(list.error)}</Notice>}
-      {list.loading && !list.data ? (
+      {list.error && !list.data ? null : list.loading && !list.data ? (
         <SkeletonRows rows={3} pill={false} />
       ) : clubs.length === 0 ? (
         <EmptyInset>{t('manage.accounts.noClubsYet')}</EmptyInset>

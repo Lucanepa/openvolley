@@ -6,7 +6,7 @@ import ClubTeamsSection from './ClubTeamsSection'
 import ClubLicencesSection from './ClubLicencesSection'
 import RequestsSection from './RequestsSection'
 import ClubPersonPage from './ClubPersonPage'
-import { usePanelData, usePanelRoute, useOnline, OfflineBanner, PanelHead, InlineError, useErrorText } from './common'
+import { usePanelData, usePanelRoute, useOnline, OfflineBanner, PageLoadGate, PanelHead, InlineError, useErrorText } from './common'
 import { Button, Chip, EmptyInset, Field, Input, Notice, Row, RowList, RowTool, Select, SkeletonRows, confirmDialog, dayLabel, toast } from '../../ui'
 
 /**
@@ -42,8 +42,11 @@ export default function MyClubPanel({ clubs = [], route = '', onRoute = null, na
           </Select>
         </Field>
       )}
-      {/* keyed: another club starts its sections afresh */}
-      <ClubSections key={club.id} club={club} onOpenPerson={(sv) => go([club.id, 'person', sv])} onOpenTeam={openTeam} />
+      {/* keyed: another club starts its sections afresh, and appears whole
+          (contact, requests, members, teams, licences, codes) */}
+      <PageLoadGate key={club.id} className="space-y-8" fallback={<SkeletonRows rows={6} pill={false} />}>
+        <ClubSections club={club} onOpenPerson={(sv) => go([club.id, 'person', sv])} onOpenTeam={openTeam} />
+      </PageLoadGate>
     </div>
   )
 }
@@ -95,7 +98,7 @@ function ClubContact({ clubId }) {
       <PanelHead title={club?.name || t('manage.tabs.myclub')} />
       <OfflineBanner online={online} />
       {error && <Notice className="mb-3">{errorText(error)}</Notice>}
-      {loading && !data ? <SkeletonRows rows={1} pill={false} /> : club && (
+      {error && !data ? null : loading && !data ? <SkeletonRows rows={1} pill={false} /> : club && (
         <div className="space-y-3">
           {club.teams.length > 0 && (
             <div className="flex flex-wrap gap-1.5">{club.teams.map((n) => <Chip key={n}>{n}</Chip>)}</div>
@@ -147,7 +150,7 @@ function ClubMembers({ club }) {
     <section>
       <PanelHead title={t('manage.myClub.members')} level={2} />
       {error && <Notice className="mb-3">{errorText(error)}</Notice>}
-      {loading && !data ? (
+      {error && !data ? null : loading && !data ? (
         <SkeletonRows rows={3} pill={false} />
       ) : members.length === 0 ? (
         <EmptyInset>{t('manage.myClub.noMembers')}</EmptyInset>
@@ -161,7 +164,7 @@ function ClubMembers({ club }) {
               actionIndent="pl-1.5"
               title={m.name || m.email}
               meta={<>
-                {m.name && <span>{m.email}</span>}
+                {m.name && <span className="min-w-0 max-w-full truncate" title={m.email}>{m.email}</span>}
                 {m.joined_at && <span>{t('manage.myClub.joined')} {dayLabel(m.joined_at, { year: true })}</span>}
               </>}
               chips={<>

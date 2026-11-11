@@ -67,26 +67,13 @@ export function AuthProvider({ children, app = null }) {
   const [profile, setProfile] = useState(null)
   // Only show loading if backend is configured (otherwise show sign-in immediately)
   const [loading, setLoading] = useState(hasBackend())
-  // Prevent duplicate profile fetches
-  const fetchingProfile = useRef(false)
+  // Prevent duplicate profile fetches: a second call while one runs gets
+  // the running one's answer (not null, which read as "no profile")
+  const fetchingProfile = useRef(null)
 
-  // Fetch user profile from profiles table
-  const fetchProfile = useCallback(async (userId) => {
-    console.log('[AuthContext] fetchProfile called with userId:', userId)
-    if (!hasBackend() || !userId) {
-      console.log('[AuthContext] No backend or userId, setting profile to null')
-      setProfile(null)
-      return null
-    }
-
-    // Prevent duplicate concurrent fetches
-    if (fetchingProfile.current) {
-      console.log('[AuthContext] Already fetching profile, skipping duplicate request')
-      return null
-    }
-
+  // One read of the profile row (fetchProfile shares a running one)
+  const readProfile = useCallback(async (userId) => {
     try {
-      fetchingProfile.current = true
       console.log('[AuthContext] Fetching profile...')
 
       // Add timeout to detect hanging queries (15s to allow for cold starts)
@@ -118,10 +105,32 @@ export function AuthProvider({ children, app = null }) {
       console.error('[AuthContext] Profile fetch error:', err.message, err)
       setProfile(null)
       return null
-    } finally {
-      fetchingProfile.current = false
     }
   }, [])
+
+  // Fetch user profile from profiles table
+  const fetchProfile = useCallback(async (userId) => {
+    console.log('[AuthContext] fetchProfile called with userId:', userId)
+    if (!hasBackend() || !userId) {
+      console.log('[AuthContext] No backend or userId, setting profile to null')
+      setProfile(null)
+      return null
+    }
+
+    // Prevent duplicate concurrent fetches
+    if (fetchingProfile.current?.userId === userId) {
+      console.log('[AuthContext] Already fetching profile, sharing the running request')
+      return fetchingProfile.current.promise
+    }
+    const promise = readProfile(userId)
+    const mine = { userId, promise }
+    fetchingProfile.current = mine
+    try {
+      return await promise
+    } finally {
+      if (fetchingProfile.current === mine) fetchingProfile.current = null
+    }
+  }, [readProfile])
 
   // Initialize auth state
   useEffect(() => {
@@ -406,6 +415,11 @@ export function AuthProvider({ children, app = null }) {
   const [clubsState, setClubsState] = useState(null)
   // bumped to load the clubs again (an invite code that carries a club)
   const [clubsReload, setClubsReload] = useState(0)
+  // The account whose first /api/me of this page load answered (or failed,
+  // or took over 5 s): until then the manager console does not decide its
+  // tabs from the cache, so My club / My teams do not pop in later
+  const [meDoneFor, setMeDoneFor] = useState(null)
+  const meLoaded = !!userId && meDoneFor === userId
   const clubsSource = clubsState?.userId === userId ? clubsState : (userId ? readCachedClubs(userId) : null)
   const clubsKey = JSON.stringify(clubsSource ? [clubsSource.clubs, clubsSource.clubRule, clubsSource.managedClubs || [], clubsSource.managedTeams || [], clubsSource.requests || []] : null)
   const access = useMemo(() => {
@@ -422,10 +436,16 @@ export function AuthProvider({ children, app = null }) {
   useEffect(() => {
     if (!userId || !hasBackend()) return
     let gone = false
+    const settle = () => { if (!gone) setMeDoneFor(userId) }
+    const fallback = setTimeout(settle, 5000)
     const load = () => {
-      if (typeof navigator !== 'undefined' && navigator.onLine === false) return
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        settle()
+        return
+      }
       // never throws into the effect (a failing request keeps the cache)
       Promise.resolve().then(() => fetchMe()).then((res) => {
+        settle()
         if (gone || res?.error || !res?.data) return
         const value = {
           userId,
@@ -436,14 +456,16 @@ export function AuthProvider({ children, app = null }) {
           requests: Array.isArray(res.data.requests) ? res.data.requests : []
         }
         cacheClubs(value)
-        setClubsState(value)
-      }).catch(() => { /* offline-first: keep the cache */ })
+        // the same answer again (a focus) changes nothing on screen
+        setClubsState((prev) => (prev && JSON.stringify(prev) === JSON.stringify(value) ? prev : value))
+      }).catch(() => { settle() /* offline-first: keep the cache */ })
     }
     load()
     window.addEventListener('focus', load)
     window.addEventListener('online', load)
     return () => {
       gone = true
+      clearTimeout(fallback)
       window.removeEventListener('focus', load)
       window.removeEventListener('online', load)
     }
@@ -541,6 +563,7 @@ export function AuthProvider({ children, app = null }) {
     user,
     profile,
     access,
+    meLoaded,
     redeemInvite,
     loading,
     isAuthenticated: !!user,
@@ -556,7 +579,7 @@ export function AuthProvider({ children, app = null }) {
     fetchProfile,
     getCachedProfile,
     deleteAccount
-  }), [user, profile, access, redeemInvite, loading, signIn, signInWithPasskey, signUp, signOut, updateProfile, updateEmail, resetPassword, resendConfirmation, refreshUser, fetchProfile, getCachedProfile, deleteAccount])
+  }), [user, profile, access, meLoaded, redeemInvite, loading, signIn, signInWithPasskey, signUp, signOut, updateProfile, updateEmail, resetPassword, resendConfirmation, refreshUser, fetchProfile, getCachedProfile, deleteAccount])
 
   return (
     <AuthContext.Provider value={value}>

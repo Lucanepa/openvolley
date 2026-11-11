@@ -178,7 +178,7 @@ describe('accounts on Postgres', { skip: SKIP_PG }, () => {
       assert.equal(pend.status, 200)
       const fresh = pend.body.data.accounts.find((a) => a.id === id)
       // db/020 / db/023 / db/025: what it manages and its open sign-up request
-      assert.deepEqual(Object.keys(fresh).sort(), ['clubs', 'created_at', 'email', 'email_confirmed', 'first_name', 'id', 'last_name', 'last_sign_in_at', 'managed_clubs', 'managed_teams', 'pending', 'requests', 'roles'])
+      assert.deepEqual(Object.keys(fresh).sort(), ['clubs', 'created_at', 'deactivated', 'email', 'email_confirmed', 'first_name', 'id', 'last_name', 'last_sign_in_at', 'managed_clubs', 'managed_teams', 'pending', 'requests', 'roles'])
       assert.deepEqual([fresh.managed_clubs, fresh.managed_teams, fresh.requests], [[], [], []])
       assert.equal(fresh.pending, true)
       assert.equal(pend.body.data.accounts.some((a) => a.id === ids.admin), false)

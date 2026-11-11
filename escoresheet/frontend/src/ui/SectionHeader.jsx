@@ -25,7 +25,9 @@ export function SectionHeader({ icon, title, count, tone = 'stone', hint, action
         {title}
         {hint}
       </Tag>
-      <span className="ml-auto flex shrink-0 items-center gap-2">
+      {/* max-w-full + flex-wrap: on its own line the buttons wrap too (360 px:
+          Import Einsatzliste + Add from club + Add player do not fit one line) */}
+      <span className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2">
         {count !== undefined && count !== null && (
           <span className="text-[11px] font-semibold tabular-nums text-stone-500">{count}</span>
         )}

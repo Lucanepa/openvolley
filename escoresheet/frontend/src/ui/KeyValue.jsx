@@ -17,7 +17,7 @@ export function KeyValue({ items, variant = 'split', className }) {
     return (
       <dl className={cn('m-0 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3', className)}>
         {items.map((it) => (
-          <div key={String(it.label)}>
+          <div key={String(it.label)} className={cn('min-w-0', it.className)}>
             <dt className="text-stone-400">{it.label}</dt>
             <dd className={cn('m-0 text-stone-700', valueTone(it.tone))}>{it.value}</dd>
           </div>
