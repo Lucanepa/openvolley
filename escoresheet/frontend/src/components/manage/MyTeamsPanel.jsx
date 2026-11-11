@@ -23,6 +23,61 @@ const STAFF_ROLE_KEYS = {
 }
 const when = (v) => [dayLabel(v, { year: true }), timeLabel(v)].filter(Boolean).join(' ')
 
+// a team without a game this season (owner 2026-11-11: "KSCW DU23-2 is not
+// playing this season") is left out of the pickers; an older server sends no `active`
+const playsThisSeason = (x) => x?.active !== false
+const genderKey = (x) => (x?.gender === 'm' || x?.gender === 'f' ? x.gender : 'other')
+const GENDER_ORDER = ['f', 'm', 'other']
+
+/**
+ * The team picker (owner 2026-11-11: "Club, Gender, Team"): a club, then the
+ * gender of its teams (from their games), then the team. A dropdown only where
+ * there is a choice: one club, no club dropdown; one gender, no gender
+ * dropdown. Teams without a game this season are left out, unless open.
+ * Another club or gender opens its first team (of the same gender, when the
+ * club has one).
+ */
+export function TeamPicker({ teams, team, onPick }) {
+  const { t } = useTranslation()
+  const offered = teams.filter((x) => playsThisSeason(x) || x.id === team.id)
+  const clubs = [...new Map(offered.map((x) => [x.club_id, x.club_name])).entries()]
+  const ofClub = offered.filter((x) => x.club_id === team.club_id)
+  const genders = GENDER_ORDER.filter((g) => ofClub.some((x) => genderKey(x) === g))
+  const choices = ofClub.filter((x) => genders.length < 2 || genderKey(x) === genderKey(team))
+  const pickClub = (clubId) => {
+    const list = offered.filter((x) => x.club_id === clubId)
+    const next = list.find((x) => genderKey(x) === genderKey(team)) || list[0]
+    if (next) onPick(next.id)
+  }
+  const pickGender = (g) => {
+    const next = ofClub.find((x) => genderKey(x) === g)
+    if (next) onPick(next.id)
+  }
+  return (
+    <div className="flex flex-wrap gap-3" data-testid="my-teams-pickers">
+      {clubs.length > 1 && (
+        <Field label={t('manage.myTeams.pickClub')} className="min-w-[12rem] flex-1 sm:flex-none">
+          <Select value={team.club_id} onChange={(e) => pickClub(e.target.value)} data-testid="my-teams-club">
+            {clubs.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+          </Select>
+        </Field>
+      )}
+      {genders.length > 1 && (
+        <Field label={t('manage.myTeams.pickGender')} className="min-w-[9rem] flex-1 sm:flex-none">
+          <Select value={genderKey(team)} onChange={(e) => pickGender(e.target.value)} data-testid="my-teams-gender">
+            {genders.map((g) => <option key={g} value={g}>{t(`manage.myTeams.gender.${g}`)}</option>)}
+          </Select>
+        </Field>
+      )}
+      <Field label={t('manage.myTeams.pick')} className="min-w-[12rem] flex-1 sm:flex-none">
+        <Select value={team.id} onChange={(e) => onPick(e.target.value)} data-testid="my-teams-pick">
+          {choices.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+        </Select>
+      </Field>
+    </div>
+  )
+}
+
 /**
  * My teams (db/023, docs/team-managers-spec.md): what a team manager (or a
  * manager of the team's club) does for a team: its players and officials of
@@ -39,20 +94,15 @@ export default function MyTeamsPanel({ teams = [], route = '', onRoute = null })
   const { t } = useTranslation()
   const [[routeTeam, routeGame], go] = usePanelRoute(route, onRoute)
   const byRoute = routeTeam ? teams.find((x) => x.id === routeTeam) : null
-  const team = byRoute || teams[0]
+  // without a route, the first team that plays this season (an older server sends no `active`)
+  const team = byRoute || teams.find(playsThisSeason) || teams[0]
   if (!team) return <EmptyInset>{t('manage.myTeams.none')}</EmptyInset>
   // a team of the URL this account does not manage (any more)
   if (routeTeam && !byRoute) return <PageMissing onBack={() => go([])} backLabel={t('manage.tabs.myteams')} />
   const gameNumber = byRoute && /^\d+$/.test(routeGame || '') ? routeGame : null
   return (
     <div className="space-y-8" data-testid="manage-my-teams">
-      {teams.length > 1 && !gameNumber && (
-        <Field label={t('manage.myTeams.pick')}>
-          <Select value={team.id} onChange={(e) => go([e.target.value])} data-testid="my-teams-pick">
-            {teams.map((x) => <option key={x.id} value={x.id}>{x.name} · {x.club_name}</option>)}
-          </Select>
-        </Field>
-      )}
+      {teams.length > 1 && !gameNumber && <TeamPicker teams={teams} team={team} onPick={(id) => go([id])} />}
       {/* keyed: another team starts its sections afresh, and appears whole
           (squad, games, the club's lists, the requests) */}
       <PageLoadGate key={team.id} className="space-y-8" fallback={<SkeletonRows rows={6} pill={false} />}>
