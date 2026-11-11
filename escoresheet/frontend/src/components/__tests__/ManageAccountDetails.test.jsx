@@ -82,3 +82,20 @@ describe('AccountsPanel: Name and email', () => {
     expect(screen.getByTestId('save-account-details').disabled).toBe(true)
   })
 })
+
+describe('requestedClubs: a sign-up request\'s clubs, shown in amber until approved', () => {
+  it('the clubs of the request the account is not a member of, once each', async () => {
+    const { requestedClubs } = await import('../manage/AccountsPanel')
+    const a = {
+      clubs: [{ id: 'c2', name: 'VBC Two' }],
+      requests: [
+        { id: 'r1', kind: 'scorer', club_id: 'c1', club_name: 'VBC One' },
+        { id: 'r2', kind: 'team_manager', club_id: 'c1', club_name: 'VBC One', team_id: 't1', team_name: 'VBC One H2' },
+        { id: 'r3', kind: 'scorer', club_id: 'c2', club_name: 'VBC Two' },
+        { id: 'r4', kind: 'referee' }
+      ]
+    }
+    expect(requestedClubs(a)).toEqual([{ id: 'c1', name: 'VBC One' }])
+    expect(requestedClubs({})).toEqual([])
+  })
+})
