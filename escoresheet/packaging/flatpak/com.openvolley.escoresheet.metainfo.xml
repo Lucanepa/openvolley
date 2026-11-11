@@ -71,6 +71,18 @@
   </screenshots>
 
   <releases>
+    <release version="3.0.20" date="2026-11-11">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.20</url>
+      <description>
+        <ul>
+          <li>My teams: an Einsatzliste import keeps the team's shirt numbers, captain and liberos.</li>
+          <li>My teams: the officials take the roles of the Einsatzliste (coach, assistants), with their licence, so they are found in the club's lists.</li>
+          <li>Einsatzliste in German, French and Italian; names with letters like ń, ř, ș are read.</li>
+          <li>Club lists: the gender column is read in any language.</li>
+          <li>Home: Delete match under Continue; referee and bench dashboards in the menu.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.0.19" date="2026-11-10">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.19</url>
       <description>
