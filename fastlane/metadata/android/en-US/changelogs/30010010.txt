@@ -1,0 +1,6 @@
+OpenVolley 3.1.1
+- One loading spinner until a screen is ready: no more half-loaded screens.
+- Match Setup: a scorer's schedule lists only their club's home games; Back undoes a pick.
+- Game rosters: each official role once, at most 2 liberos, more than 12 players only with 2 liberos.
+- Sign-in: no fingerprint offer when the account already has a passkey.
+- Manager: team links for admins; Club, Gender, Team pickers in My teams.
