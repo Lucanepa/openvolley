@@ -45,7 +45,7 @@ import { fail, invalid, isUuid, notFound, ok, unavailable } from './accounts.js'
 import { seasonOf } from './officialGame.js'
 import { STAFF_ROLES, validateRoster } from './savedTeams.js'
 import { zurichDay } from './clubs.js'
-import { WRONG_GENDER } from './licences.js'
+import { WRONG_GENDER, teamGenderOf } from './licences.js'
 
 // A team link (owner, 2026-11-08): a few uses, never unlimited, gone after 90 days at most
 export const TEAM_INVITE_MAX_USES = 10
@@ -261,9 +261,33 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
 
   // ---------------------------------------------------------------- who
   /**
+   * `list` with each team's gender from its games (svrz_games: 'm', 'f' or
+   * null) and `active`: it has a game this season (owner 2026-11-11: "KSCW
+   * DU23-2 is not playing this season"). One query.
+   */
+  async function withGenders (client, list) {
+    if (!list.length) return list
+    const keys = [...new Set(list.map((x) => String(x.name || '').trim().toLowerCase()).filter(Boolean))]
+    const from = `${seasonOf(clock()) ?? new Date(clock()).getFullYear()}-07-01`
+    const { rows } = await (client || pool).query(
+      `SELECT k, array_agg(DISTINCT coalesce(btrim(gender), '')) AS genders, bool_or(datetime >= $2) AS active
+         FROM (SELECT lower(btrim(team_home)) AS k, gender, datetime::text AS datetime FROM public.svrz_games WHERE lower(btrim(team_home)) = ANY($1::text[])
+               UNION ALL
+               SELECT lower(btrim(team_away)), gender, datetime::text FROM public.svrz_games WHERE lower(btrim(team_away)) = ANY($1::text[])) x
+        GROUP BY k`, [keys, from])
+    const by = new Map(rows.map((r) => [r.k, r]))
+    return list.map((x) => {
+      const r = by.get(String(x.name || '').trim().toLowerCase())
+      return { ...x, gender: r ? teamGenderOf(r.genders) : null, active: r?.active === true }
+    })
+  }
+
+  /**
    * The teams an account acts for: its own (team_managers) and every team of
-   * the clubs it manages, [{ id, name, club_id, club_name, via: 'team' | 'club' }].
-   * [] without db/023.
+   * the clubs it manages, [{ id, name, club_id, club_name, via: 'team' | 'club',
+   * gender: 'm' | 'f' | null, active }] (the gender of the team's games in the
+   * schedule, lib/licences.js teamGenderOf: the manager's Club / Gender / Team
+   * pickers, owner 2026-11-11). [] without db/023.
    */
   async function managedTeamsOf (client, userId, { all = false } = {}) {
     if (!isUuid(userId)) return []
@@ -275,9 +299,9 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
         const { rows } = await (client || pool).query(
           `SELECT ct.id, ct.team_name AS name, c.id AS club_id, c.name AS club_name
              FROM public.club_teams ct JOIN public.clubs c ON c.id = ct.club_id`)
-        return rows
+        return withGenders(client, rows
           .map((r) => ({ id: r.id, name: r.name, club_id: r.club_id, club_name: r.club_name, via: own.get(r.id) || 'admin' }))
-          .sort((a, b) => a.club_name.localeCompare(b.club_name) || a.name.localeCompare(b.name))
+          .sort((a, b) => a.club_name.localeCompare(b.club_name) || a.name.localeCompare(b.name)))
       }
       const { rows } = await (client || pool).query(
         `SELECT DISTINCT ON (ct.id) ct.id, ct.team_name AS name, c.id AS club_id, c.name AS club_name, x.via
@@ -288,9 +312,9 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
            JOIN public.club_teams ct ON ct.id = x.team_id
            JOIN public.clubs c ON c.id = ct.club_id
           ORDER BY ct.id, x.rank`, [userId])
-      return rows
+      return withGenders(client, rows
         .map((r) => ({ id: r.id, name: r.name, club_id: r.club_id, club_name: r.club_name, via: r.via }))
-        .sort((a, b) => a.club_name.localeCompare(b.club_name) || a.name.localeCompare(b.name))
+        .sort((a, b) => a.club_name.localeCompare(b.club_name) || a.name.localeCompare(b.name)))
     } catch (err) {
       if (MISSING.has(err?.code)) return []
       throw err
