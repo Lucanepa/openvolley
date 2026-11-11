@@ -167,7 +167,7 @@ export default function UserButton({ style = {}, fullWidth = false, inline = fal
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold text-stone-900">{userName}</div>
             <div className="truncate text-xs text-stone-500" title={user.email}>{user.email}</div>
-            {access?.known && <RoleChips roles={access.roles} pending={access.isPending} className="mt-1" />}
+            {access?.known && <RoleChips roles={access.roles} pending={access.isPending} manages={{ clubs: access.managedClubs, teams: access.managedTeams }} className="mt-1" />}
           </div>
         </div>
         <button
@@ -257,7 +257,7 @@ export default function UserButton({ style = {}, fullWidth = false, inline = fal
                 <div className={cn('mt-0.5 truncate text-stone-500', fullWidth ? 'text-sm' : 'text-xs')}>
                   {user.email}
                 </div>
-                {access?.known && <RoleChips roles={access.roles} pending={access.isPending} className="mt-1.5" />}
+                {access?.known && <RoleChips roles={access.roles} pending={access.isPending} manages={{ clubs: access.managedClubs, teams: access.managedTeams }} className="mt-1.5" />}
               </div>
 
               {/* Menu items */}

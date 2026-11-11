@@ -3153,6 +3153,7 @@
       "offline": "Serve una connessione al server."
     },
     "accounts": {
+      "managesHint": "I responsabili di società e di squadra si definiscono per società e per squadra: sulla pagina della società (Società) e in La mia società.",
       "page": {
         "email": "E-mail",
         "created": "Creato il",

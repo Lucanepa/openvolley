@@ -3132,6 +3132,7 @@
       "offline": "Dafür braucht es eine Verbindung zum Server."
     },
     "accounts": {
+      "managesHint": "Vereins- und Teamverantwortliche werden pro Verein und Team festgelegt: auf der Seite des Vereins (Vereine) und in Mein Verein.",
       "page": {
         "email": "E-Mail",
         "created": "Erstellt",
