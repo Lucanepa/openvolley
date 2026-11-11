@@ -104,6 +104,21 @@ export const clubsApi = {
 }
 
 // ── Settings (db/021): the app's switches, admins and competition managers ──
+/**
+ * db/027: the account's own notices in one manager (the header's bell):
+ * list(app) -> { notifications: [{ id, kind, created_at, read, target, user:
+ * { id, email, name }, parts: [{ kind, club, team }], open }], unread };
+ * markRead(app, { ids } | { all: true }) -> { unread }
+ */
+export const notificationsApi = {
+  list(app) {
+    return apiRequest('GET', `/api/notifications${query({ app })}`)
+  },
+  markRead(app, { ids, all } = {}) {
+    return apiRequest('POST', `/api/notifications/read${query({ app })}`, all ? { all: true } : { ids: ids || [] })
+  }
+}
+
 export const settingsApi = {
   /** { settings: { send_final_email, changed_at }, mail: the server can send email } */
   get() {

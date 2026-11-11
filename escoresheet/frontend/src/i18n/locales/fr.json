@@ -3095,6 +3095,19 @@
     "confirmBody": "Confirmez que cette adresse appartient à votre compte OpenBeach."
   },
   "manage": {
+    "notifications": {
+      "title": "Notifications",
+      "buttonUnread": "Notifications, {{count}} non lues",
+      "markAllRead": "Tout marquer comme lu",
+      "empty": "Aucune notification pour l’instant.",
+      "loading": "Chargement…",
+      "signupTitle": "Nouvelle inscription : {{name}}",
+      "noRole": "Ne demande encore aucun rôle",
+      "stillOpen": "En attente d’approbation",
+      "decided": "Décidé",
+      "unread": "Non lu",
+      "deletedAccount": "un compte supprimé"
+    },
     "pageNotFound": "Cette page n’existe pas (ou plus).",
     "title": "Gestion",
     "backToApp": "Retour à l’app",

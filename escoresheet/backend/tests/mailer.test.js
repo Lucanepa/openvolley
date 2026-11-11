@@ -16,7 +16,9 @@ import { startFakeSmtp, makeTestCert, linkToken, SMTP_USER, SMTP_PASS } from './
 // scoresheet mails (db/021, a PDF attached, no link) are OpenVolley's only
 const APPROVAL_KINDS = ['approval', 'approval_pin_locked']
 const SCORESHEET_KINDS = ['scoresheet', 'scoresheet_test']
-const ACCOUNT_KINDS = MAIL_KINDS.filter((k) => !APPROVAL_KINDS.includes(k) && !SCORESHEET_KINDS.includes(k))
+// The sign-up notice (lib/signupNotices.js) goes to the admins and approvers, not the account: tested on its own
+const NOTICE_TO_APPROVERS = ['signup']
+const ACCOUNT_KINDS = MAIL_KINDS.filter((k) => !APPROVAL_KINDS.includes(k) && !SCORESHEET_KINDS.includes(k) && !NOTICE_TO_APPROVERS.includes(k))
 // Notices that link nothing: the way out is in the app, and a genuine mail
 // can be told by that (password changed, passkey added).
 const NOTICE_KINDS = ['password_changed', 'passkey_added']
@@ -427,6 +429,34 @@ describe('mailer: brands (OpenVolley / OpenBeach)', () => {
       }
     }
     assert.ok(renderMail('reset', 'en', { link, app: 'beach' }).text.includes('This changes the password of your account for OpenVolley and OpenBeach.'))
+  })
+
+  it('the sign-up notice: who, what it asks for, one link, in both brands and every language', () => {
+    const vars = { name: 'Nora Neu', email: 'nora@example.ch', admin: true, parts: [{ kind: 'scorer', club: 'VBC Musterdorf' }, { kind: 'team_manager', club: 'VBC Musterdorf', team: 'VBC Musterdorf H1' }, { kind: 'referee' }] }
+    const page = 'https://manager.example.test/#accounts/0b6b1a52-6f1e-4a43-9d6c-1d8c0f7d2a11'
+    for (const lang of MAIL_LANGS) {
+      const m = renderMail('signup', lang, { link: page, vars })
+      assert.match(m.subject, /OpenVolley.*Nora Neu/)
+      assert.ok(m.text.includes('Nora Neu (nora@example.ch)'), lang)
+      assert.ok(m.text.includes('VBC Musterdorf H1 (VBC Musterdorf)'), lang)
+      assert.ok(m.text.includes(page))
+      assert.doesNotMatch(m.text + m.subject, /ß/, 'Swiss spelling')
+      assert.doesNotMatch(m.html, /<img|<script|<link|url\(|@import/i)
+      const b = renderMail('signup', lang, { link: page, app: 'beach', vars: { ...vars, parts: [] } })
+      assert.match(b.subject, /OpenBeach/)
+      assert.doesNotMatch(b.text + b.subject, /OpenVolley/)
+      assert.notEqual(b.text.split('\n\n')[2], m.text.split('\n\n')[2])
+    }
+    assert.equal(mailBrandOf('signup', 'beach'), 'beach')
+    // no name: the address; no part: "asks for no role"; a club manager's own wording
+    const plain = renderMail('signup', 'en', { link: page, vars: { name: '', email: 'x@example.ch', admin: false, parts: [] } })
+    assert.equal(plain.subject, 'New OpenVolley sign-up: x@example.ch')
+    assert.match(plain.text, /asks for no role yet/)
+    assert.match(plain.text, /you approve these requests for your club or team/)
+    // a name cannot break the header or add lines
+    const evil = renderMail('signup', 'en', { link: page, vars: { ...vars, name: 'A\r\nBcc: x@y.z' } })
+    assert.doesNotMatch(evil.subject, /[\r\n]/)
+    assert.throws(() => renderMail('signup', 'en', { vars }), /needs a link/)
   })
 
   it('the approval notices are OpenVolley\'s only: app beach changes nothing', () => {
