@@ -2065,6 +2065,7 @@
     "tomorrow": "Demain",
     "clearFilter": "Effacer filtre",
     "noMatchesForFilter": "Aucun match trouvé pour ce filtre",
+    "noClubGames": "Aucun match à domicile de ton club dans cette ligue.",
     "failedToLoadLeagues": "Échec du chargement des ligues"
   },
   "livescore": {

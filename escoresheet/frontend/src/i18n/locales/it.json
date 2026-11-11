@@ -2071,6 +2071,7 @@
     "tomorrow": "Domani",
     "clearFilter": "Cancella filtro",
     "noMatchesForFilter": "Nessuna partita trovata per questo filtro",
+    "noClubGames": "Nessuna partita in casa della tua società in questa lega.",
     "failedToLoadLeagues": "Caricamento delle leghe fallito"
   },
   "livescore": {
