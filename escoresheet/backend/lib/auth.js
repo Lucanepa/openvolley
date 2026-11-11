@@ -1088,6 +1088,12 @@ export function createAuth(options = {}) {
     pending.add(p)
     p.finally(() => pending.delete(p))
   }
+  // db/028: a new account's address is confirmed: its admins and approvers
+  // are told (lib/signupNotices.js, options.onAccountConfirmed), never awaited
+  function accountConfirmed(userId) {
+    if (typeof cfg.onAccountConfirmed !== 'function') return
+    background('sign-up notice', () => cfg.onAccountConfirmed(userId))
+  }
   async function settle() {
     while (pending.size) await Promise.allSettled([...pending])
   }
@@ -1317,6 +1323,8 @@ export function createAuth(options = {}) {
         // email_confirmation: 'sent' tells the app it may sign in right away.
         return ok({ user: publicUser(user), email_confirmation: 'sent' })
       }
+      // Confirmed at once (no mailer or no db/010): the approvers hear of it now
+      accountConfirmed(user.id)
       return ok({ user: publicUser(user) })
     } catch (err) {
       // db/025: a club or team asked for is gone (the form was loaded before)
@@ -1548,7 +1556,10 @@ export function createAuth(options = {}) {
       return { userId: t.userId, already: false }
     })
     if (!out) return INVALID_LINK()
-    if (!out.already) await audit('account.email_confirmed', out.userId, {})
+    if (!out.already) {
+      await audit('account.email_confirmed', out.userId, {})
+      accountConfirmed(out.userId)
+    }
     return ok({ confirmed: true, already_confirmed: out.already })
   }
 

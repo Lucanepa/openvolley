@@ -79,6 +79,9 @@
  *   GET    /api/saved-teams/vm-teams?q=              indoor canManageTeams: the schedule's team names
  *                                                    (svrz_games home and away) with their club, for
  *                                                    the saved team editor
+ *   GET    /api/notifications?app=indoor|beach       any signed-in account: its own notices of that
+ *                                                    manager, newest first (db/028, lib/signupNotices.js)
+ *   POST   /api/notifications/read { ids } | { all }  the same: marks its own notices read
  *   GET/PUT /api/settings                            isAdmin or indoor canManageTeams: the app's
  *                                                    switches ({ send_final_email }, db/021)
  *   DELETE /api/admin/activity?match=|account=&confirm=yes  isAdmin: delete on request (audited)
@@ -138,10 +141,11 @@ export function manageFamilyOf (pathname) {
   if (pathname === '/api/game-rosters' || pathname.startsWith('/api/game-rosters/')) return 'gameRosters'
   if (pathname === '/api/club-licences') return 'clubLicences'
   if (pathname === '/api/settings') return 'settings'
+  if (pathname === '/api/notifications' || pathname === '/api/notifications/read') return 'notifications'
   return null
 }
 
-export function createManageApi ({ accounts, savedTeams, beach = null, approvals = null, revisions = null, activity = null, scoresheets = null, clubs = null, finalMail = null, teams = null, licences = null, requests = null }) {
+export function createManageApi ({ accounts, savedTeams, beach = null, approvals = null, revisions = null, activity = null, scoresheets = null, clubs = null, finalMail = null, teams = null, licences = null, requests = null, notices = null }) {
   // approvals?.x, or 503 when the module is not there
   const ap = (name) => (args) => (approvals && typeof approvals[name] === 'function' ? approvals[name](args) : APPROVALS_OFF())
   const q = (query, k) => {
@@ -234,6 +238,9 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['GET', /^\/api\/me$/, 'any', (m, c) => accounts.me({ userId: c.user.id, access: c.access })],
     ['POST', /^\/api\/account\/join$/, 'any', (m, c) => accounts.joinApp({ userId: c.user.id, body: c.body })],
     ['POST', /^\/api\/account\/redeem-invite$/, 'any', (m, c) => accounts.redeemInvite({ userId: c.user.id, code: c.body?.code })],
+    // db/028: the manager's notices (lib/signupNotices.js), each account its own
+    ['GET', /^\/api\/notifications$/, 'any', (m, c) => (notices ? notices.list({ userId: c.user.id, app: q(c.query, 'app') }) : notFound())],
+    ['POST', /^\/api\/notifications\/read$/, 'any', (m, c) => (notices ? notices.markRead({ userId: c.user.id, app: q(c.query, 'app'), body: c.body }) : notFound())],
     ['POST', /^\/api\/match\/official-check$/, scoreInBodySport, (m, c) => accounts.officialCheck({ userId: c.user.id, access: c.access, body: c.body })],
 
     ['GET', /^\/api\/admin\/accounts$/, 'admin', (m, c) => accounts.listAccounts({ filter: q(c.query, 'filter') || 'pending', q: q(c.query, 'q') ?? '', limit: q(c.query, 'limit'), app: q(c.query, 'app') })],

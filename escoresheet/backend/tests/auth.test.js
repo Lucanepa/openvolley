@@ -1017,7 +1017,8 @@ describe('auth against Postgres', { skip: PG_TEST_URL ? false : 'PG_TEST_URL not
 
   describe('blocked and unconfirmed users', () => {
     it('refuses banned and soft-deleted users and drops their sessions', async () => {
-      await pool.query('ALTER TABLE auth.users ADD COLUMN deleted_at timestamptz, ADD COLUMN banned_until timestamptz')
+      // banned_until is in the schema since db/027 (account deactivation)
+      await pool.query('ALTER TABLE auth.users ADD COLUMN deleted_at timestamptz, ADD COLUMN IF NOT EXISTS banned_until timestamptz')
       try {
         const banned = await insertUser('banned@example.ch', 'pw123456')
         const deleted = await insertUser('deleted@example.ch', 'pw123456')
@@ -1042,7 +1043,8 @@ describe('auth against Postgres', { skip: PG_TEST_URL ? false : 'PG_TEST_URL not
         await pool.query(`UPDATE auth.users SET banned_until = now() - interval '1 hour' WHERE id = $1`, [banned.id])
         assert.equal((await signIn(auth, 'banned@example.ch', 'pw123456')).status, 200, 'an expired ban no longer applies')
       } finally {
-        await pool.query('ALTER TABLE auth.users DROP COLUMN IF EXISTS deleted_at, DROP COLUMN IF EXISTS banned_until')
+        await pool.query('ALTER TABLE auth.users DROP COLUMN IF EXISTS deleted_at')
+        await pool.query('UPDATE auth.users SET banned_until = NULL')
       }
     })
 
