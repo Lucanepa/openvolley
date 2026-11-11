@@ -71,6 +71,18 @@
   </screenshots>
 
   <releases>
+    <release version="3.1.1" date="2026-11-11">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.1.1</url>
+      <description>
+        <ul>
+          <li>One loading spinner until a screen is ready: no more half-loaded screens.</li>
+          <li>Match Setup: a scorer's schedule lists only their club's home games; Back undoes a pick.</li>
+          <li>Game rosters: each official role once, at most 2 liberos, more than 12 players only with 2 liberos.</li>
+          <li>Sign-in: no fingerprint offer when the account already has a passkey.</li>
+          <li>Manager: team links for admins; Club, Gender, Team pickers in My teams.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.1.0" date="2026-11-11">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.1.0</url>
       <description>
