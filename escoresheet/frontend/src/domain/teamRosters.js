@@ -12,6 +12,8 @@ import { STAFF_ROLES, displayDobToIso, normalizeName } from './savedTeams'
 
 // lib/teams.js (FIVB 4.1.1, VolleyManager's own limit)
 export const GAME_ROSTER_MAX_PLAYERS = 14
+// at most 12 players besides the liberos: 13 or 14 only with two liberos (owner 2026-11-11)
+export const GAME_ROSTER_MAX_REGULAR = 12
 export const GAME_ROSTER_MIN_PLAYERS = 6
 export const GAME_ROSTER_MAX_LIBEROS = 2
 export const GAME_ROSTER_MAX_STAFF = 5
@@ -162,6 +164,31 @@ export function mergeImportedRoster(players, staff, imported, makePlayer = (p) =
 }
 
 /**
+ * Each official role once in a game roster draft (owner 2026-11-11: "can't
+ * be two coaches, two AC1, two AC2"), ticked or not: the ticked entries keep
+ * their roles first, in order; an entry whose role is taken gets the first
+ * free role, else none ('': it cannot be ticked until it gets one).
+ */
+export function uniqueStaffRoles(staff) {
+  const list = staff || []
+  const taken = new Set()
+  const out = list.map((s) => ({ ...s }))
+  const claim = (s) => {
+    if (s.role && STAFF_ROLES.includes(s.role) && !taken.has(s.role)) {
+      taken.add(s.role)
+      return
+    }
+    const free = STAFF_ROLES.find((r) => !taken.has(r))
+    s.role = free || ''
+    if (free) taken.add(free)
+    else s.picked = false
+  }
+  out.filter((s) => s.picked).forEach(claim)
+  out.filter((s) => !s.picked).forEach(claim)
+  return out
+}
+
+/**
  * A game roster draft (gameRosterDraft) with an Einsatzliste for the game
  * (parsedPdfToRoster) applied: its players ticked, the others unticked. An
  * Einsatzliste has no shirt numbers: a player already offered keeps the
@@ -217,7 +244,7 @@ export function applyEinsatzlisteToGameDraft(draft, imported) {
   const restStaff = staffBefore.filter((x, j) => !staffUsed.has(j) && !staff.some((s) => samePerson(x, s))).map((x) => ({ ...x, picked: false }))
   // with no officials in the list, the draft's ticks stay as they were
   const outStaff = staff.length ? [...staff, ...restStaff] : staffBefore
-  return { draft: { ...(draft || {}), players: [...ticked, ...rest], staff: outStaff }, added }
+  return { draft: { ...(draft || {}), players: [...ticked, ...rest], staff: uniqueStaffRoles(outStaff) }, added }
 }
 
 /**
@@ -275,20 +302,28 @@ export function gameRosterDraft(squad, sent) {
       roles.add(s.role)
     }
   }
-  return { players, staff }
+  return { players, staff: uniqueStaffRoles(staff) }
 }
 
 /**
- * The PUT body of a game roster from the picker, and its problems
- * ([{ key, params }], i18n keys under manage.myTeams.problems): at most 14
- * players, every one with a distinct number 0..99, one captain at most, two
- * liberos at most, each official role once. The server checks the same.
+ * The PUT body of a game roster from the picker, its problems and warnings
+ * ([{ key, params }], i18n keys under manage.myTeams.problems): problems
+ * block sending (at most 14 players, more than 12 only with two liberos,
+ * every one with a distinct number 0..99, one captain at most, two liberos
+ * at most, each official role once; the server checks the same), warnings
+ * do not (fewer than 6 players besides the liberos).
  */
 export function gameRosterBody(draft) {
   const players = (draft?.players || []).filter((p) => p.picked)
   const staff = (draft?.staff || []).filter((s) => s.picked)
   const problems = []
+  const liberos = players.filter((p) => p.is_libero).length
   if (players.length > GAME_ROSTER_MAX_PLAYERS) problems.push({ key: 'manage.myTeams.problems.tooMany', params: { max: GAME_ROSTER_MAX_PLAYERS } })
+  else if (players.length > GAME_ROSTER_MAX_REGULAR && liberos < GAME_ROSTER_MAX_LIBEROS) problems.push({ key: 'manage.myTeams.problems.twoLiberos', params: { max: GAME_ROSTER_MAX_REGULAR, liberos: GAME_ROSTER_MAX_LIBEROS } })
+  // fewer than 6 players besides the liberos: allowed (a game can start short), said
+  const warnings = []
+  const regular = players.length - liberos
+  if (players.length > 0 && regular < GAME_ROSTER_MIN_PLAYERS) warnings.push({ key: 'manage.myTeams.problems.fewPlayers', params: { min: GAME_ROSTER_MIN_PLAYERS, count: regular } })
   const numbers = new Set()
   for (const p of players) {
     const n = clean(p.number)
@@ -301,7 +336,7 @@ export function gameRosterBody(draft) {
     numbers.add(Number(n))
   }
   if (players.filter((p) => p.is_captain).length > 1) problems.push({ key: 'manage.myTeams.problems.captains', params: {} })
-  if (players.filter((p) => p.is_libero).length > GAME_ROSTER_MAX_LIBEROS) problems.push({ key: 'manage.myTeams.problems.liberos', params: { max: GAME_ROSTER_MAX_LIBEROS } })
+  if (liberos > GAME_ROSTER_MAX_LIBEROS) problems.push({ key: 'manage.myTeams.problems.liberos', params: { max: GAME_ROSTER_MAX_LIBEROS } })
   const roles = new Set()
   for (const s of staff) {
     if (roles.has(s.role)) problems.push({ key: 'manage.myTeams.problems.roleTwice', params: { role: s.role } })
@@ -314,7 +349,8 @@ export function gameRosterBody(draft) {
       players: players.map((p) => ({ number: /^\d{1,2}$/.test(clean(p.number)) ? Number(clean(p.number)) : null, ...person(p), is_libero: !!p.is_libero, is_captain: !!p.is_captain })),
       staff: staff.map((s) => ({ role: s.role, ...person(s) }))
     },
-    problems
+    problems,
+    warnings
   }
 }
 
@@ -482,7 +518,9 @@ export function setGameDraftOfficial(draft, role, c) {
   const staff = [...(draft?.staff || [])]
   const person = clubPersonToOfficial(c, role)
   const before = officialOfRole(staff, role, { pickedOnly: true })
+  // the person once: an entry of them in another role moves to this one
   let at = staff.findIndex((s) => s?.role === role && officialIsPerson(s, c))
+  if (at === -1) at = staff.findIndex((s) => officialIsPerson(s, c))
   if (at === -1) {
     const keys = new Set(staff.map((s) => s.key))
     let key = `${role}|${nameKey(person)}`
@@ -491,11 +529,15 @@ export function setGameDraftOfficial(draft, role, c) {
     at = staff.length - 1
   } else {
     const cur = staff[at]
-    staff[at] = { ...cur, picked: true, license_number: cur.license_number || person.license_number, dob: cur.dob || person.dob }
+    staff[at] = { ...cur, role, picked: true, license_number: cur.license_number || person.license_number, dob: cur.dob || person.dob }
   }
-  const out = staff.map((s, j) => (j !== at && s.role === role && s.picked ? { ...s, picked: false } : s))
+  // the one who held the role moves to a free one, unticked (each role once)
+  const out = staff.map((s, j) => (j !== at && s.role === role ? { ...s, picked: false } : s))
+  const mine = out[at]
+  const deduped = uniqueStaffRoles([mine, ...out.filter((_, j) => j !== at)])
+  const ordered = out.map((s, j) => (j === at ? deduped[0] : deduped.find((d) => d.key === s.key)))
   return {
-    draft: { ...(draft || {}), players: draft?.players || [], staff: out },
+    draft: { ...(draft || {}), players: draft?.players || [], staff: ordered },
     replaced: before && !officialIsPerson(before, c) ? before : null
   }
 }
@@ -601,25 +643,22 @@ export function handTypedForClub(players, staff, people, gender = null) {
 // necessarily from the club)".
 
 /**
- * A game roster draft with the official `key` in `role`. A ticked official
- * takes the role from whoever had it ticked (unticked: each role once, as
- * gameRosterBody wants). { draft, replaced }: the one unticked, or null.
+ * A game roster draft with the official `key` in `role`. Each role once
+ * (uniqueStaffRoles): the entry that held the role takes the official's old
+ * one, a swap (owner 2026-11-11). { draft, replaced }: that entry, or null.
  */
 export function setGameDraftStaffRole(draft, key, role) {
   if (!STAFF_ROLES.includes(role)) return { draft, replaced: null }
   const staff = draft?.staff || []
   const me = staff.find((s) => s.key === key)
-  if (!me) return { draft, replaced: null }
-  let replaced = null
+  if (!me || me.role === role) return { draft, replaced: null }
+  const other = staff.find((s) => s.key !== key && s.role === role) || null
   const out = staff.map((s) => {
     if (s.key === key) return { ...s, role }
-    if (me.picked && s.picked && s.role === role) {
-      replaced = s
-      return { ...s, picked: false }
-    }
+    if (other && s.key === other.key) return { ...s, role: me.role || '', picked: me.role ? s.picked : false }
     return s
   })
-  return { draft: { ...(draft || {}), players: draft?.players || [], staff: out }, replaced }
+  return { draft: { ...(draft || {}), players: draft?.players || [], staff: uniqueStaffRoles(out) }, replaced: other }
 }
 
 /**

@@ -54,6 +54,8 @@ export const TEAM_INVITE_DEFAULT_USES = 3
 export const TEAM_INVITE_DEFAULT_DAYS = 30
 // FIVB 4.1.1 (and VolleyManager's own limit): 14 players on the scoresheet, two liberos at most
 export const GAME_ROSTER_MAX_PLAYERS = 14
+// at most 12 players besides the liberos: 13 or 14 only with two liberos
+export const GAME_ROSTER_MAX_REGULAR = 12
 export const GAME_ROSTER_MAX_LIBEROS = 2
 export const GAME_ROSTER_MAX_STAFF = 5
 // What a scoring tablet downloads ahead, and how long a sent roster stays
@@ -135,8 +137,8 @@ export function teamInviteBody (body, now = Date.now()) {
 /**
  * A game roster body { players, staff }: the saved-team rules (names, dates
  * of birth, licence numbers, one captain, distinct numbers), and for one game
- * at most 14 players, every one with a shirt number, at most 2 liberos, at
- * most 5 team officials with each role once. { players, staff } (as stored)
+ * at most 14 players (more than 12 only with 2 liberos), every one with a
+ * shirt number, at most 2 liberos, at most 5 team officials with each role once. { players, staff } (as stored)
  * or { error } (a 400 answer).
  */
 export function validateGameRoster (body) {
@@ -150,6 +152,10 @@ export function validateGameRoster (body) {
     if (p.number == null) return { error: invalid(`players[${i}].number: required for a game`) }
     if (!p.active) return { error: invalid(`players[${i}].active: every player of a game roster plays`) }
     if (p.is_libero && ++liberos > GAME_ROSTER_MAX_LIBEROS) return { error: invalid(`players[${i}].is_libero: at most ${GAME_ROSTER_MAX_LIBEROS} liberos`) }
+  }
+  // 13 or 14 players only with two liberos: at most 12 others (owner 2026-11-11)
+  if (v.players.length > GAME_ROSTER_MAX_REGULAR && liberos < GAME_ROSTER_MAX_LIBEROS) {
+    return { error: invalid(`players: more than ${GAME_ROSTER_MAX_REGULAR} only with ${GAME_ROSTER_MAX_LIBEROS} liberos`) }
   }
   const roles = new Set()
   for (let i = 0; i < v.staff.length; i++) {

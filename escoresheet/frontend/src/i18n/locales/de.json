@@ -3544,6 +3544,7 @@
       "deleteBody": "Das Tablet des Schreibers entfernt ihn, sobald es wieder online ist.",
       "deleted": "Kader gelöscht",
       "signHint": "Freiwillig: Trainer und Captain können hier unterschreiben, wenn sie wollen. Sonst unterschreiben sie in der Halle, bei der Seitenwahl.",
+      "noRole": "Keine Rolle",
       "problems": {
         "tooMany": "Höchstens {{max}} Spieler pro Spiel.",
         "number": "{{name}} braucht eine Rückennummer.",
@@ -3551,7 +3552,9 @@
         "captains": "Nur ein Captain.",
         "liberos": "Höchstens {{max}} Liberos.",
         "roleTwice": "Jede Funktion nur einmal ({{role}}).",
-        "tooManyStaff": "Höchstens {{max}} Teamoffizielle."
+        "tooManyStaff": "Höchstens {{max}} Teamoffizielle.",
+        "twoLiberos": "Mehr als {{max}} Spieler nur mit {{liberos}} Liberos.",
+        "fewPlayers": "{{count}} Spieler ohne die Liberos: ein Spiel braucht mindestens {{min}}."
       },
       "sent_one": "Geschickt: {{count}} Spieler, {{when}}",
       "sent_other": "Geschickt: {{count}} Spieler, {{when}}",
