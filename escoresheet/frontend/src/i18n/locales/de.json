@@ -2991,7 +2991,8 @@
       "admin": "Admin",
       "super_admin": "Super-Admin",
       "pending": "Freigabe ausstehend",
-      "team_manager": "Teamverantwortliche/r"
+      "team_manager": "Teamverantwortliche/r",
+      "club_manager": "Vereinsverantwortliche/r"
     },
     "signUpPendingNote": "Neue Konten brauchen eine Freigabe, bevor offizielle Spiele in die Cloud synchronisiert werden. Frage deinen Verein nach einem Einladungscode.",
     "officialMatchLocalOnly": "Dieses Spiel bleibt auf diesem Gerät, bis dein Konto als Schreiber freigegeben ist.",
@@ -3059,7 +3060,10 @@
     "teamLinkNote": "Du hast einen Team-Link geöffnet. Melde dich an oder erstelle ein Konto, dann öffnet sich das Team.",
     "teamLinkSignIn": "Melde dich mit deinem Konto an oder erstelle zuerst eines.",
     "teamLinkDone": "Du verwaltest jetzt {{team}}.",
-    "teamLinkAlready": "Du verwaltest {{team}} bereits."
+    "teamLinkAlready": "Du verwaltest {{team}} bereits.",
+    "clubLinkNote": "Sie haben einen Link als Vereinsverantwortliche/r geöffnet. Melden Sie sich an oder erstellen Sie ein Konto, dann verwalten Sie den Verein.",
+    "clubLinkDone": "Sie verwalten jetzt {{club}}.",
+    "clubLinkAlready": "Sie verwalten {{club}} bereits."
   },
   "managerBeach": {
     "signInHeading": "OpenBeach verwalten",
@@ -3486,7 +3490,28 @@
       "managersHint": "E-Mail-Adressen bestehender Konten, eine pro Zeile. Sie erstellen die Einladungscodes des Vereins und verwalten seine Mitglieder.",
       "managersCount_one": "{{count}} Verantwortliche/r",
       "managersCount_other": "{{count}} Verantwortliche",
-      "managerUnknown": "Kein Konto hat diese Adresse: {{emails}}"
+      "managerUnknown": "Kein Konto hat diese Adresse: {{emails}}",
+      "managersPickHint": "Wählen Sie sie aus den Konten des Vereins. Alle anderen erhalten per E-Mail einen Link als Vereinsverantwortliche/r. Verantwortliche erstellen die Einladungscodes des Vereins und betreuen seine Mitglieder.",
+      "via": {
+        "scorer": "Schreiber",
+        "team_manager": "Teamverantwortliche/r",
+        "club_manager": "Vereinsverantwortliche/r"
+      },
+      "removeManager": "{{name}} entfernen",
+      "noManagers": "Noch keine Verantwortlichen.",
+      "addManager": "Verantwortliche/n aus dem Verein hinzufügen…",
+      "allPicked": "Alle Konten des Vereins sind Verantwortliche.",
+      "noCandidates": "Noch niemand gehört zu diesem Verein: laden Sie unten jemanden ein.",
+      "saveFirst": "Speichern Sie zuerst den Verein, dann wählen oder laden Sie seine Verantwortlichen ein.",
+      "inviteTitle": "Jemand fehlt in der Liste? Link als Vereinsverantwortliche/r senden",
+      "invitePlaceholder": "E-Mail-Adresse",
+      "inviteSend": "Link senden",
+      "inviteHint": "Der Link funktioniert einmal während 14 Tagen. Wer ihn öffnet und sich anmeldet oder ein Konto erstellt, wird Verantwortliche/r dieses Vereins.",
+      "inviteMailed": "Link an {{email}} gesendet. Sie können ihn auch selbst weitergeben:",
+      "inviteNotMailed": "Die E-Mail an {{email}} konnte nicht gesendet werden. Senden Sie diesen Link selbst:",
+      "copyLink": "Kopieren",
+      "linkCopied": "Link kopiert",
+      "notAMember": "Verantwortliche müssen ein Konto des Vereins sein. Senden Sie stattdessen einen Link."
     },
     "myClub": {
       "none": "Du verwaltest keinen Verein.",

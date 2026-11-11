@@ -464,6 +464,8 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
       // db/023: a team link makes the account a manager of that team, and
       // nothing else (no role, no club membership: it scores nothing)
       if (inv.role === 'team_manager') return redeemTeamLink(client, userId, inv)
+      // db/029: a club manager link makes the account a manager of that club, and nothing else
+      if (inv.role === 'club_manager') return redeemClubLink(client, userId, inv)
       // The role in the code's sport: a beach code grants beach:<role> (db/012)
       const sport = inv.sport === 'beach' ? 'beach' : 'indoor'
       const role = roleFor(sport, inv.role)
@@ -527,6 +529,27 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     return ok({ roles, role_granted: 'team_manager', already_had: false, team: teamOut })
   }
 
+  /** The club manager link part of redeemInvite (db/029, inside its transaction, the code row locked). */
+  async function redeemClubLink (client, userId, inv) {
+    const { rows: [club] } = isUuid(inv.club_id)
+      ? await client.query('SELECT id, name FROM public.clubs WHERE id = $1', [inv.club_id])
+      : { rows: [] }
+    if (!club) throw abort(fail(404, 'OV_INVITE_INVALID', 'This invite code is not valid'))
+    const { rows: [prof] } = await client.query('SELECT roles FROM public.profiles WHERE user_id = $1 LIMIT 1', [userId])
+    const roles = normalizeRoles(prof?.roles)
+    const clubOut = { id: club.id, name: club.name }
+    const { rows: [already] } = await client.query('SELECT 1 FROM public.club_managers WHERE club_id = $1 AND user_id = $2', [club.id, userId])
+    // Idempotent: a club the account already manages does not use the code up
+    if (already) return ok({ roles, role_granted: 'club_manager', already_had: true, club: clubOut })
+    if (inv.max_uses != null && inv.uses >= inv.max_uses) throw abort(fail(409, 'OV_INVITE_USED_UP', 'This invite code has been used up'))
+    await client.query('INSERT INTO public.invite_redemptions (invite_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [inv.id, userId])
+    await client.query('UPDATE public.invite_codes SET uses = uses + 1 WHERE id = $1', [inv.id])
+    await client.query('INSERT INTO public.club_managers (club_id, user_id, added_by) VALUES ($1, $2, NULL) ON CONFLICT DO NOTHING', [club.id, userId])
+    await addMembership(client, userId, 'indoor', 'invite')
+    await audit(client, { actorId: userId, action: 'invite.redeem', targetUserId: userId, details: { invite_id: inv.id, label: inv.label, role: 'club_manager', club_id: club.id }, app: 'indoor' })
+    return ok({ roles, role_granted: 'club_manager', already_had: false, club: clubOut })
+  }
+
   /** profiles.roles of one account; inserts the profile row when there is none. */
   async function writeRoles (client, userId, roles, hasProfile) {
     if (hasProfile) {
@@ -562,7 +585,9 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     } else if (teamId !== null) {
       return invalid('team_id: only for a team_manager code')
     }
-    if (!INVITE_ROLES.includes(role) && role !== 'team_manager') return fail(400, 'OV_INVALID_ROLE', 'This role cannot be given by an invite code', 'role: scorer, referee or competition_manager')
+    // db/029: a club manager link names its club (lib/clubs.js inviteManager)
+    if (role === 'club_manager' && (!isUuid(body.club_id) || sport !== 'indoor')) return invalid('club_id: the club of a club_manager code (indoor)')
+    if (!INVITE_ROLES.includes(role) && role !== 'team_manager' && role !== 'club_manager') return fail(400, 'OV_INVALID_ROLE', 'This role cannot be given by an invite code', 'role: scorer, referee or competition_manager')
     // db/018: the club whoever redeems the code joins (indoor codes only)
     let clubId = null
     if (body.club_id != null && body.club_id !== '') {
@@ -632,7 +657,8 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     if (clubId !== undefined && !isUuid(clubId)) return notFound()
     return guarded('list-invites', async () => {
       const { rows } = clubId
-        ? await pool.query(`${INVITE_SELECT} WHERE i.club_id = $1 ORDER BY i.created_at DESC, i.id LIMIT 500`, [clubId])
+        // db/029: an admin's club manager links stay the admins' (their label names the invitee)
+        ? await pool.query(`${INVITE_SELECT} WHERE i.club_id = $1 AND i.role <> 'club_manager' ORDER BY i.created_at DESC, i.id LIMIT 500`, [clubId])
         : a
           ? await pool.query(`${INVITE_SELECT} WHERE i.sport = $1 ORDER BY i.created_at DESC, i.id LIMIT 500`, [a])
           : await pool.query(`${INVITE_SELECT} ORDER BY i.created_at DESC, i.id LIMIT 500`)
@@ -645,8 +671,8 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     if (!isUuid(id)) return notFound()
     return guarded('revoke-invite', () => withTx(async (client) => {
       const { rows: [cur] } = await client.query(
-        `SELECT id, label, sport, revoked_at, to_jsonb(invite_codes) ->> 'club_id' AS club_id FROM public.invite_codes WHERE id = $1 FOR UPDATE`, [id])
-      if (!cur || (clubId !== undefined && cur.club_id !== clubId)) throw abort(notFound())
+        `SELECT id, label, role, sport, revoked_at, to_jsonb(invite_codes) ->> 'club_id' AS club_id FROM public.invite_codes WHERE id = $1 FOR UPDATE`, [id])
+      if (!cur || (clubId !== undefined && (cur.club_id !== clubId || cur.role === 'club_manager'))) throw abort(notFound())
       if (!cur.revoked_at) {
         await client.query('UPDATE public.invite_codes SET revoked_at = now() WHERE id = $1', [id])
         await audit(client, { actorId, action: 'invite.revoke', details: { invite_id: id, label: cur.label }, app: cur.sport === 'beach' ? 'beach' : 'indoor' })

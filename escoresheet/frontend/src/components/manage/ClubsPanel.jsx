@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { ArrowLeft } from 'lucide-react'
 import { clubsApi } from '../../lib/accountApi'
 import { usePanelData, usePanelRoute, useOnline, OfflineBanner, PageMissing, PanelHead, InlineError, useErrorText } from './common'
-import { Button, Checkbox, Chip, EmptyInset, Field, Input, Notice, Textarea, Row, RowList, RowTool, SearchInput, SkeletonRows, Switch, confirmDialog, toast } from '../../ui'
+import { Button, Checkbox, Chip, EmptyInset, Field, Input, Notice, Row, RowList, RowTool, SearchInput, SkeletonRows, Switch, confirmDialog, toast } from '../../ui'
+import ClubManagersField from './ClubManagersField'
 
 /**
  * Clubs (admins, OpenVolley; db/018, lib/clubs.js): a scorer scores the home
@@ -11,9 +12,10 @@ import { Button, Checkbox, Chip, EmptyInset, Field, Input, Notice, Textarea, Row
  * that play for it; accounts get their clubs in Accounts or through an invite
  * code. The rule is off until it is switched on here: then every scorer
  * without a club is blocked from official games, so set the clubs up first.
- * db/020: each club may have managers (by address; they run the club's codes
- * and members in their own My club tab) and a contact address (the final
- * scoresheets of its games).
+ * db/020: each club may have managers (they run the club's codes and members
+ * in their own My club tab), picked from the accounts linked to the club or
+ * invited with a club manager link (db/029, ClubManagersField), and a contact
+ * address (the final scoresheets of its games).
  *
  * A club is a page of its own (owner 2026-11-10): #clubs/<club id>, and
  * #clubs/new for a new one (usePanelRoute).
@@ -141,10 +143,10 @@ function ClubPage({ club, online, onBack, onSaved }) {
   const errorText = useErrorText()
   const [name, setName] = useState(club?.name || '')
   const [teams, setTeams] = useState(() => new Set(club?.teams || []))
-  // db/020: the contact address and the managers, one address per line
+  // db/020: the contact address and the managers (picked, ClubManagersField)
   const [contact, setContact] = useState(club?.contact_email || '')
-  const managersBefore = (club?.managers || []).map((m) => m.email).join('\n')
-  const [managers, setManagers] = useState(managersBefore)
+  const managersBefore = (club?.managers || []).map((m) => m.user_id).sort().join(',')
+  const [managers, setManagers] = useState(() => club?.managers || [])
   const [q, setQ] = useState('')
   const [term, setTerm] = useState('')
   const [busy, setBusy] = useState(false)
@@ -179,14 +181,14 @@ function ClubPage({ club, online, onBack, onSaved }) {
     // a new club: its contact address once it exists
     if (!res.error && !club && contact.trim()) res = await clubsApi.update(res.data.club.id, { contact_email: contact.trim() })
     const clubId = club?.id || res.data?.club?.id
-    const emails = managers.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean)
-    if (!res.error && clubId && emails.join('\n') !== managersBefore) res = await clubsApi.setManagers(clubId, emails)
+    const ids = managers.map((m) => m.user_id)
+    if (!res.error && clubId && [...ids].sort().join(',') !== managersBefore) res = await clubsApi.setManagers(clubId, ids)
     setBusy(false)
     if (res.error) {
       setError(res.error.code === 'OV_TEAM_TAKEN'
         ? t('manage.clubs.teamTaken', { teams: res.error.details || '' })
         : res.error.code === 'OV_CLUB_EXISTS' ? t('manage.clubs.nameTaken')
-          : res.error.code === 'OV_ACCOUNT_NOT_FOUND' ? t('manage.clubs.managerUnknown', { emails: res.error.details || '' })
+          : res.error.code === 'OV_NOT_A_CLUB_MEMBER' ? t('manage.clubs.notAMember')
             : errorText(res.error))
       return
     }
@@ -205,9 +207,7 @@ function ClubPage({ club, online, onBack, onSaved }) {
         <Field label={t('manage.clubs.contact')} hint={t('manage.clubs.contactHint')}>
           <Input type="email" value={contact} onChange={(e) => setContact(e.target.value)} maxLength={254} data-testid="club-contact" />
         </Field>
-        <Field label={t('manage.clubs.managers')} hint={t('manage.clubs.managersHint')}>
-          <Textarea value={managers} onChange={(e) => setManagers(e.target.value)} rows={2} data-testid="club-managers" />
-        </Field>
+        <ClubManagersField club={club} picked={managers} onChange={(next) => { setManagers(next); setError('') }} disabled={busy} />
         <Field label={t('manage.clubs.teams')} hint={t('manage.clubs.teamsHint')}>
           <SearchInput size="md" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('manage.clubs.searchTeams')} aria-label={t('manage.clubs.searchTeams')} maxLength={80} />
         </Field>

@@ -97,9 +97,17 @@ export const clubsApi = {
   setRule(enabled) {
     return apiRequest('PUT', '/api/admin/club-rule', { enabled })
   },
-  /** db/020: the club's managers by address (the whole list). */
-  setManagers(id, emails = []) {
-    return apiRequest('PUT', `/api/admin/clubs/${enc(id)}/managers`, { emails })
+  /** db/020: the club's managers (the whole list), each an account linked to the club. */
+  setManagers(id, userIds = []) {
+    return apiRequest('PUT', `/api/admin/clubs/${enc(id)}/managers`, { user_ids: userIds })
+  },
+  /** The accounts linked to the club: { candidates: [{ id, email, name, via: ['scorer' | 'team_manager' | 'club_manager'] }] } */
+  managerCandidates(id) {
+    return apiRequest('GET', `/api/admin/clubs/${enc(id)}/manager-candidates`)
+  },
+  /** db/029: a club manager link mailed to `email` -> { invite, link, code, mailed } */
+  inviteManager(id, { email, lang } = {}) {
+    return apiRequest('POST', `/api/admin/clubs/${enc(id)}/manager-invites`, { email, ...(lang ? { lang } : {}) })
   }
 }
 

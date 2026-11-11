@@ -17,7 +17,7 @@ import { startFakeSmtp, makeTestCert, linkToken, SMTP_USER, SMTP_PASS } from './
 const APPROVAL_KINDS = ['approval', 'approval_pin_locked']
 const SCORESHEET_KINDS = ['scoresheet', 'scoresheet_test']
 // The sign-up notice (lib/signupNotices.js) goes to the admins and approvers, not the account: tested on its own
-const NOTICE_TO_APPROVERS = ['signup']
+const NOTICE_TO_APPROVERS = ['signup', 'club_manager_invite']
 const ACCOUNT_KINDS = MAIL_KINDS.filter((k) => !APPROVAL_KINDS.includes(k) && !SCORESHEET_KINDS.includes(k) && !NOTICE_TO_APPROVERS.includes(k))
 // Notices that link nothing: the way out is in the app, and a genuine mail
 // can be told by that (password changed, passkey added).
@@ -457,6 +457,20 @@ describe('mailer: brands (OpenVolley / OpenBeach)', () => {
     const evil = renderMail('signup', 'en', { link: page, vars: { ...vars, name: 'A\r\nBcc: x@y.z' } })
     assert.doesNotMatch(evil.subject, /[\r\n]/)
     assert.throws(() => renderMail('signup', 'en', { vars }), /needs a link/)
+  })
+
+  it('the club manager link: the club, who invites, one link, every language', () => {
+    const page = 'https://manager.example.test/#club=ABCD-EFGH-JKLM'
+    for (const lang of MAIL_LANGS) {
+      const m = renderMail('club_manager_invite', lang, { link: page, vars: { club: 'VBC Musterdorf', inviter: 'Ada Admin', days: '14' } })
+      assert.match(m.subject, /VBC Musterdorf/)
+      assert.ok(m.text.includes('Ada Admin'), lang)
+      assert.ok(m.text.includes('14'), lang)
+      assert.ok(m.text.includes(page))
+      assert.doesNotMatch(m.text + m.subject, /ß/, 'Swiss spelling')
+    }
+    assert.match(renderMail('club_manager_invite', 'en', { link: page, vars: { club: 'X', inviter: '', days: '14' } }).text, /An OpenVolley admin invites you/)
+    assert.equal(mailBrandOf('club_manager_invite', 'beach'), 'indoor')
   })
 
   it('the approval notices are OpenVolley\'s only: app beach changes nothing', () => {
