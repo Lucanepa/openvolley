@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Copy, Download } from 'lucide-react'
 import { usePanelData } from '../common'
@@ -32,7 +32,12 @@ export default function RankingSection({ bundle }) {
   const drawName = useDrawName()
   const drawn = bundle.draws.filter(d => ['drawn', 'playing', 'done'].includes(d.status))
   const [drawId, setDrawId] = useState(drawn[0]?.id || '')
-  const { data, error, loading } = usePanelData(() => tournamentApi.ranking(drawId), [drawId, bundle.matches], { enabled: !!drawId })
+  const read = usePanelData(() => tournamentApi.ranking(drawId), [drawId, bundle.matches], { enabled: !!drawId })
+  // a score saved re-reads the ranking: the same draw's stays up meanwhile
+  const last = useRef(null)
+  if (read.data) last.current = { drawId, data: read.data }
+  const data = read.data || (last.current?.drawId === drawId ? last.current.data : null)
+  const { error, loading } = read
 
   const columns = [
     { key: 'rank', label: t('tournaments.rank'), numeric: true },

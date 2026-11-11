@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Activity, ArrowLeft, ClipboardList, FileText, House, KeyRound, Medal, ScrollText, Settings, ShieldCheck, Shirt, Trophy, Users } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
@@ -112,16 +112,16 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
   }
   const canOpen = (id) => allowed.includes(id)
   const pageProps = (id) => ({ route: routeOf(id), onRoute: onRouteOf(id), navigate, canOpen })
-  // Panels mount on first visit and then stay mounted (ConsolePanel)
-  const [visited, setVisited] = useState(() => new Set(current ? [current] : []))
+  // Panels mount on first visit and then stay mounted (ConsolePanel); kept
+  // during render, so the tab opened draws in the same frame (not one empty)
+  const visitedRef = useRef(null)
+  if (!visitedRef.current) visitedRef.current = new Set()
+  if (current) visitedRef.current.add(current)
+  const visited = visitedRef.current
   // "Activity" on a match (matches tab): the activity tab, filtered to it (#activity/<match>)
   const showActivity = allowed.includes('activity')
     ? (ext) => onTab?.(`activity/${encodeURIComponent(ext)}`, { push: true })
     : null
-  useEffect(() => {
-    if (current && !visited.has(current)) setVisited(v => new Set([...v, current]))
-  }, [current, visited])
-
   if (!user || allowed.length === 0) {
     return (
       <div className="ov-kit flex min-h-screen flex-col items-center justify-center gap-4 bg-stone-100 p-6 text-center">

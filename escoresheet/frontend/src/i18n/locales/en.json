@@ -3193,7 +3193,17 @@
       "lastName": "Last name",
       "email": "Email",
       "emailHint": "They sign in with the new address from now on. Password and passkeys stay.",
-      "emailTaken": "Another account already has this email address."
+      "emailTaken": "Another account already has this email address.",
+      "deactivate": "Deactivate",
+      "reactivate": "Reactivate",
+      "deactivateTitle": "Deactivate {{name}}?",
+      "deactivateBody": "The account can no longer sign in and is signed out everywhere now. Nothing is deleted: roles, clubs, teams and matches stay. Reactivate undoes it.",
+      "deactivated": "Account deactivated.",
+      "reactivated": "Account reactivated.",
+      "deactivatedChip": "Deactivated",
+      "deactivatedNote": "Deactivated: this account cannot sign in.",
+      "deactivateLastSuperAdmin": "The last super admin cannot be deactivated.",
+      "selfDeactivate": "You cannot deactivate your own account."
     },
     "invites": {
       "new": "New invite code",
@@ -3286,6 +3296,8 @@
         "account_reject": "Sign-up rejected",
         "account_roles": "Roles changed",
         "account_profile": "Name or email changed",
+        "account_deactivate": "Account deactivated",
+        "account_reactivate": "Account reactivated",
         "invite_create": "Invite code created",
         "invite_revoke": "Invite code revoked",
         "invite_redeem": "Invite code redeemed",

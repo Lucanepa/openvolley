@@ -109,7 +109,7 @@ export default function ClosedMatchesPanel({ onShowActivity = null, route = '', 
         </form>
       </div>
       {error && <Notice className="mb-3">{errorText(error)}</Notice>}
-      {loading && !data ? (
+      {error && !data ? null : loading && !data ? (
         <SkeletonRows rows={5} pill={false} />
       ) : matches.length === 0 ? (
         <EmptyInset>{t('manage.matches.empty')}</EmptyInset>

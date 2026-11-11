@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeftRight, CircleCheck, ExternalLink, KeyRound, LogIn, LogOut, MailCheck, RotateCw, ShieldOff, UserPlus, Users } from 'lucide-react'
+import { CircleCheck, ExternalLink, KeyRound, LogIn, LogOut, MailCheck, RotateCw, ShieldOff, UserPlus, Users } from 'lucide-react'
 import { useAuth } from './contexts/AuthContext'
 import ManageConsole, { manageTabsFor } from './components/manage/ManageConsole'
 import LoginModal from './components/auth/LoginModal'
@@ -12,7 +12,7 @@ import { AppSpinner, BUTTON_SIZES, BUTTON_VARIANTS, Button, cn, consoleHeaderBtn
 import { scorerAppUrlFor, SIGN_UP_HASH, teamCodeFromHash } from './utils/managerSite'
 import { clearPendingTeamLink, FINAL_TEAM_LINK_ERRORS, readPendingTeamLink, takeTeamLinkFromLocation } from './utils/teamLink'
 import { parseAuthLinkHash, takeAuthLinkFromLocation } from './utils/authLinks'
-import { otherManagerBrand, useManagerBrand, useManagerSwitch } from './managerBrand'
+import { useManagerBrand } from './managerBrand'
 import LegalLinks from './legal/LegalLinks'
 import { accessForApp } from './lib/access'
 import { requestPartLabel, sortRequestParts } from './domain/signUpRequests'
@@ -496,50 +496,13 @@ function NoAccessScreen() {
   )
 }
 
-/**
- * OpenVolley <-> OpenBeach in place (src/managerBrand.js), for an account
- * that has a console in the other app too: { other, go }, else null.
- */
-function useBrandFlip() {
-  const { access } = useAuth()
-  const flip = useManagerSwitch()
-  const brand = useManagerBrand()
-  if (!flip) return null
-  const other = otherManagerBrand(brand.app)
-  if (manageTabsFor(access, other).length === 0) return null
-  return { other, go: () => flip.setApp(other.app) }
-}
-
-/**
- * The flip: in the header from sm (a phone's header has no room left);
- * `block`: the phone's full-width button above the panel.
- */
-function BrandFlip({ flip, block = false }) {
-  const { t } = useTranslation()
-  const label = t('managerSite.switchTo', { name: flip.other.name })
-  const mark = <img src={flip.other.mark} alt="" className="h-4 w-4 shrink-0" aria-hidden />
-  if (block) {
-    return (
-      <button type="button" className={cn(consoleHeaderBtn, 'w-full justify-center bg-white')} onClick={flip.go} data-testid="manager-brand-flip-phone">
-        <ArrowLeftRight size={13} className="shrink-0 text-stone-400" aria-hidden />{mark}{label}
-      </button>
-    )
-  }
-  return (
-    <button type="button" className={cn(consoleHeaderBtn, 'hidden sm:inline-flex')} onClick={flip.go} aria-label={label} title={label} data-testid="manager-brand-flip">
-      <ArrowLeftRight size={12} className="shrink-0 text-stone-400" aria-hidden />{mark}{flip.other.name}
-    </button>
-  )
-}
-
-function ConsoleHeaderActions({ flip }) {
+function ConsoleHeaderActions() {
   const text = useBrandText()
   const { user, profile } = useAuth()
   const name = accountName(user, profile)
   return (
     <>
       {name && <span className="hidden min-w-0 max-w-[16rem] truncate text-xs text-stone-500 md:inline" title={name}>{name}</span>}
-      {flip && <BrandFlip flip={flip} />}
       <a href={text.appUrl} className={consoleHeaderBtn} aria-label={text.openAppLong} title={text.openAppLong}>
         <ExternalLink size={14} aria-hidden />
         <span className="hidden sm:inline">{text.openApp}</span>
@@ -623,13 +586,11 @@ function AuthLinkScreen({ link, onDone }) {
 
 export default function ManagerApp({ authLink = null }) {
   const { t, i18n } = useTranslation()
-  const { user, access, loading, signOut, refreshUser, redeemInvite } = useAuth()
+  const { user, profile, access, meLoaded, loading, signOut, refreshUser, redeemInvite } = useAuth()
   // db/023: a team link (#team=<code>) is taken out of the URL before the tab
   // is read from it, and kept until the signed-in account redeems it
   const [teamLinkCode, setTeamLinkCode] = useState(() => takeTeamLinkFromLocation() || readPendingTeamLink())
   const brand = useManagerBrand()
-  const flip = useManagerSwitch()
-  const brandFlip = useBrandFlip()
   // OpenVolley's manager: the access itself; OpenBeach's: the beach flags
   const own = accessForApp(access, brand.app)
   const membership = useAppMembership(brand.app, user?.id ?? null, user && access?.known ? own : null)
@@ -691,14 +652,6 @@ export default function ManagerApp({ authLink = null }) {
     setLinkSentTo(sentTo)
   }, [])
 
-  // A flip to the other app holds while this account has a console there:
-  // signed out, or without that role any more, the site's own app again
-  const flippedAway = !!flip && flip.app !== flip.home
-  const flipUnusable = flippedAway && !loading && (!user || (access?.known && manageTabsFor(access, brand).length === 0))
-  useEffect(() => {
-    if (flipUnusable) flip.setApp(flip.home)
-  }, [flipUnusable, flip])
-
   // The open tab lives in the URL hash, so a reload or a bookmark keeps it.
   // `push`: a page of its own (a game's roster), so Back returns to the tab
   const selectTab = useCallback((id, { push = false } = {}) => {
@@ -726,6 +679,8 @@ export default function ManagerApp({ authLink = null }) {
   // on focus and back online: e.g. after the email confirmation). Done, or a
   // code that can never work: forgotten. My teams opens on success.
   const teamLinkBusy = useRef(false)
+  // the account this page load's profile and /api/me answered for (the gate below)
+  const loadedFor = useRef(null)
   const accessKnown = !!access?.known
   const tryTeamLink = useCallback(async () => {
     if (!teamLinkCode || !user || !accessKnown || teamLinkBusy.current) return
@@ -784,8 +739,15 @@ export default function ManagerApp({ authLink = null }) {
     )
   }
   if (!access.known) return <div className="ov-kit"><AccountLoadingScreen /></div>
-  // flipped to an app this account has no console in: back home (effect above)
-  if (flipUnusable) return <div className="ov-kit"><AccountLoadingScreen /></div>
+  // This page load's own answers first: the profile (roles) and /api/me (the
+  // clubs and teams managed). Decided from the cache, a team or club manager
+  // saw the invite-code screen, My club / My teams popped in, and #myteams
+  // opened Accounts first (owner 2026-11-11, "doesn't look loaded together").
+  // Offline the cache is all there is. Once in, a later failed profile read
+  // (a token refresh) does not take the console away.
+  const offline = typeof navigator !== 'undefined' && navigator.onLine === false
+  if (profile && meLoaded) loadedFor.current = user.id
+  if (!offline && loadedFor.current !== user.id) return <div className="ov-kit"><AccountLoadingScreen /></div>
   if (manageTabsFor(access, brand).length === 0) {
     if (membership.member === null) return <div className="ov-kit"><AccountLoadingScreen /></div>
     if (membership.member === false) return <div className="ov-kit"><JoinAppScreen app={brand.app} onJoined={membership.joined} /></div>
@@ -796,6 +758,5 @@ export default function ManagerApp({ authLink = null }) {
   }
 
   // No onClose: there is no app to go back to; the header links to it instead.
-  // Keyed by the app: a flip starts the other console afresh (its own lists)
-  return <ManageConsole key={brand.app} tab={tab} onTab={selectTab} headerActions={<ConsoleHeaderActions flip={brandFlip} />} phoneTop={brandFlip && <BrandFlip flip={brandFlip} block />} />
+  return <ManageConsole tab={tab} onTab={selectTab} headerActions={<ConsoleHeaderActions />} />
 }
