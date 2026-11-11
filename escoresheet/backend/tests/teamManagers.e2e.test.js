@@ -101,6 +101,9 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
     const r = await call(users.clubmgr, 'GET', '/api/me')
     assert.equal(r.status, 200, r.text)
     assert.deepEqual(r.json.data.managedTeams.map((t) => [t.name, t.via]), [['VBC Musterdorf D2', 'club'], ['VBC Musterdorf H1', 'club']])
+    // the manager's Club / Gender / Team pickers (owner 2026-11-11): the gender of the
+    // team's games, and whether it plays this season
+    assert.deepEqual(r.json.data.managedTeams.map((t) => [t.name, t.gender, t.active]), [['VBC Musterdorf D2', 'f', true], ['VBC Musterdorf H1', 'm', true]])
   })
 
   let code
@@ -135,7 +138,7 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
     const used = await call(users.stranger, 'POST', '/api/account/redeem-invite', { code })
     assert.equal(used.status, 409, used.text)
     const me = (await call(users.coach, 'GET', '/api/me')).json.data
-    assert.deepEqual(me.managedTeams, [{ id: h1.id, name: 'VBC Musterdorf H1', club_id: musterdorf.id, club_name: 'VBC Musterdorf', via: 'team' }])
+    assert.deepEqual(me.managedTeams, [{ id: h1.id, name: 'VBC Musterdorf H1', club_id: musterdorf.id, club_name: 'VBC Musterdorf', via: 'team', gender: 'm', active: true }])
     assert.deepEqual(me.roles, ['team_manager'])
     // db/030: a member of the team's club (it scores nothing without the scorer role)
     assert.deepEqual(me.clubs.map((c) => c.id), [musterdorf.id])
