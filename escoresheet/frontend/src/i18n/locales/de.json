@@ -1911,6 +1911,7 @@
     "tomorrow": "Morgen",
     "clearFilter": "Filter löschen",
     "noMatchesForFilter": "Keine Spiele für diesen Filter gefunden",
+    "noClubGames": "Keine Heimspiele deines Vereins in dieser Liga.",
     "failedToLoadLeagues": "Ligen konnten nicht geladen werden"
   },
   "livescore": {
