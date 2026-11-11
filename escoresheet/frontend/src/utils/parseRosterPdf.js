@@ -137,8 +137,10 @@ export function parseRosterText(text, gflPlayerNames = new Set()) {
   //   - Capital letter (including accented: Ä, Ö, Ü, etc.)
   //   - MUST have either: lowercase letters OR apostrophe+content (prevents matching single letters like M/F)
   //   - Zero or more: hyphen + capital + lowercase+ (for Jean-Pierre)
-  const upper = 'A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß'
-  const lower = 'a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ'
+  // Latin Extended-A and -B too (U+0100–U+024F): "Krawczyńsk", "Dvořák", "Ștefan"
+  // were dropped whole (both cases: the two blocks mix upper and lower letters)
+  const upper = 'A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß\u0100-\u024F'
+  const lower = 'a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ\u0100-\u024F'
   // Either: lowercase+ (optionally with apostrophe after), OR apostrophe+content (for O'Brien, D'Angelo)
   const nameWord = `[${upper}](?:[${lower}]+(?:'[${upper}]?[${lower}]+)?|'[${upper}]?[${lower}]+)(?:-[${upper}][${lower}]+)*`
   // Full name: one or more name words separated by spaces
@@ -177,7 +179,7 @@ export function parseRosterText(text, gflPlayerNames = new Set()) {
 
     // Extract coach
     const coachMatch = patterns.coach.exec(normalizedText)
-    if (coachMatch) {
+    if (coachMatch && !hasLabelledOfficials(normalizedText)) {
       result.coach = {
         firstName: coachMatch[1]?.trim() || '',
         lastName: coachMatch[2]?.trim() || '',
@@ -187,7 +189,7 @@ export function parseRosterText(text, gflPlayerNames = new Set()) {
 
     // Extract AC1
     const ac1Match = patterns.ac1.exec(normalizedText)
-    if (ac1Match) {
+    if (ac1Match && !hasLabelledOfficials(normalizedText)) {
       result.ac1 = {
         firstName: ac1Match[1]?.trim() || '',
         lastName: ac1Match[2]?.trim() || '',
@@ -197,7 +199,7 @@ export function parseRosterText(text, gflPlayerNames = new Set()) {
 
     // Extract AC2
     const ac2Match = patterns.ac2.exec(normalizedText)
-    if (ac2Match) {
+    if (ac2Match && !hasLabelledOfficials(normalizedText)) {
       result.ac2 = {
         firstName: ac2Match[1]?.trim() || '',
         lastName: ac2Match[2]?.trim() || '',
@@ -297,64 +299,68 @@ export function parseRosterText(text, gflPlayerNames = new Set()) {
       
       // Removed console.log('[parseRosterText] Total players found:', result.players.length)
     
-    // Parse Italian/German/French coach format:
-    // Italian: "Allenatore: #52205 | Michelle Howald (1997)"
-    // German: "Coach: #80641 | Malcolm Mobétie (2004)"
-    // French: "Coach: #313261 | Simon Richle (1994)"
-    if (!result.coach) {
-      const coachPattern = new RegExp(`(?:Coach|Allenatore|Trainer|Entraîneur):\\s*#\\d+\\s*\\|\\s*(${fullName})\\s+(${fullName})\\s*\\((\\d{4})\\)`, 'i')
-      const coachMatch = normalizedText.match(coachPattern)
-      if (coachMatch) {
-        result.coach = {
-          firstName: coachMatch[1]?.trim() || '',
-          lastName: coachMatch[2]?.trim() || '',
-          dob: coachMatch[3] ? `01/01/${coachMatch[3]}` : '' // Year only, set to Jan 1
-        }
-        // Removed console.log('[parseRosterText] Found coach:', result.coach)
-      }
+    // VolleyManager's officials, in any language: "<role>: #<SV number> | <first> <last> (<year>)",
+    // e.g. "Allenatore: #52205 | …", "1. Assistant Coach: #72458 | …".
+    // The role is told by its words (officialRoleOf), the SV number is kept as the licence and a
+    // year alone is no date of birth (birthYear).
+    for (const o of parseLabelledOfficials(normalizedText, fullName)) {
+      if (!result[o.slot]) result[o.slot] = o.person
     }
-    
-    // Parse Italian/German/French assistant coach format:
-    // Italian: "1. Assistente allenatore: #90382 | Luca Canepa (1993)"
-    // German: "1. Assistant Coach: #72458 | Sabina Camenzind (2004)"
-    // French: "1er coach assistant: #..."
-    if (!result.ac1) {
-      const ac1Pattern = new RegExp(`(?:1\\.|1er)\\s*(?:Assistente\\s+allenatore|Assistant\\s+Coach|Assistenttrainer|coach\\s+assistant):\\s*#\\d+\\s*\\|\\s*(${fullName})\\s+(${fullName})\\s*\\((\\d{4})\\)`, 'i')
-      const ac1Match = normalizedText.match(ac1Pattern)
-      if (ac1Match) {
-        result.ac1 = {
-          firstName: ac1Match[1]?.trim() || '',
-          lastName: ac1Match[2]?.trim() || '',
-          dob: ac1Match[3] ? `01/01/${ac1Match[3]}` : ''
-        }
-        // Removed console.log('[parseRosterText] Found AC1:', result.ac1)
-      }
-    }
-    
-    // Parse Italian/German/French assistant coach 2
-    // Italian: "2. Assistente allenatore: #..."
-    // German: "2. Assistant Coach: #..."
-    // French: "2e coach assistant: #..."
-    if (!result.ac2) {
-      const ac2Pattern = new RegExp(`(?:2\\.|2e)\\s*(?:Assistente\\s+allenatore|Assistant\\s+Coach|Assistenttrainer|coach\\s+assistant):\\s*#\\d+\\s*\\|\\s*(${fullName})\\s+(${fullName})\\s*\\((\\d{4})\\)`, 'i')
-      const ac2Match = normalizedText.match(ac2Pattern)
-      if (ac2Match) {
-        result.ac2 = {
-          firstName: ac2Match[1]?.trim() || '',
-          lastName: ac2Match[2]?.trim() || '',
-          dob: ac2Match[3] ? `01/01/${ac2Match[3]}` : ''
-        }
-        // Removed console.log('[parseRosterText] Found AC2:', result.ac2)
-      }
-    }
-
   // The text has no column borders, so "Noel von Wattenwyl" comes out as first name
   // "Noel von": a name particle belongs to the last name
   for (const p of result.players) Object.assign(p, moveNameParticles(p.firstName, p.lastName))
-  for (const k of ['coach', 'ac1', 'ac2']) {
+  for (const k of OFFICIAL_SLOTS) {
     if (result[k]) Object.assign(result[k], moveNameParticles(result[k].firstName, result[k].lastName))
   }
   return result
+}
+
+// An Einsatzliste names the coach and the two assistants, never a physiotherapist or medic
+export const OFFICIAL_SLOTS = ['coach', 'ac1', 'ac2']
+
+const LABELLED_OFFICIAL = /:\s*#\s*\d{3,7}\s*\|/
+const hasLabelledOfficials = (text) => LABELLED_OFFICIAL.test(text)
+
+// Lowercase, accents off: "Entraîneur" -> "entraineur"
+const foldLabel = (v) => String(v ?? '').toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '')
+
+/**
+ * The slot of an official's role label in VolleyManager's languages (German,
+ * French, Italian): 'coach', 'ac1', 'ac2', 'ac' (an assistant without its
+ * number) or null (not the coach or an assistant). By its words, not by one
+ * language's exact text.
+ */
+export function officialRoleOf(label) {
+  const l = foldLabel(label)
+  if (/assist|adjoint|aiuto|vice|\bco-?(coach|trainer|entra|allena)/.test(l)) {
+    if (/(^|[^\d])2(?!\d)|\b(second|seconda|secondo|zweit|deuxieme|2nd)/.test(l)) return 'ac2'
+    if (/(^|[^\d])1(?!\d)|\b(first|primo|prima|erst|premier|1st)/.test(l)) return 'ac1'
+    return 'ac'
+  }
+  if (/coach|trainer|allenat|entrain|head/.test(l)) return 'coach'
+  return null
+}
+
+/**
+ * The officials written "<role>: #<SV number> | <first> <last> (<year>)":
+ * [{ slot, person: { firstName, lastName, dob: '', birthYear, licence } }],
+ * each slot once; an assistant without its number takes the first free one.
+ */
+export function parseLabelledOfficials(text, fullName) {
+  const re = new RegExp(`([^:()|#]{1,80}):\\s*#\\s*(\\d{3,7})\\s*\\|\\s*(${fullName})\\s+(${fullName})\\s*\\((\\d{4})\\)`, 'gu')
+  const out = []
+  const taken = new Set()
+  let m
+  while ((m = re.exec(text)) !== null) {
+    // the label is the last words before the colon ("… 14.03.2004 1. Assistant Coach")
+    const label = m[1].split(/\d{1,2}[./]\s*\d{1,2}[./]\s*\d{4}/).pop().trim().split(/\s+/).slice(-4).join(' ')
+    let slot = officialRoleOf(label)
+    if (slot === 'ac' || (slot === 'coach' && taken.has('coach'))) slot = ['ac1', 'ac2'].find((s) => !taken.has(s)) || null
+    if (!slot || taken.has(slot)) continue
+    taken.add(slot)
+    out.push({ slot, person: { firstName: m[3].trim(), lastName: m[4].trim(), dob: '', birthYear: m[5], licence: m[2] } })
+  }
+  return out
 }
 
 // Lowercase only: as VolleyManager writes them ("von Wattenwyl", "de Weck", "van der Berg")
