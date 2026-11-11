@@ -2066,6 +2066,7 @@
     "tomorrow": "Morn",
     "clearFilter": "Filter lösche",
     "noMatchesForFilter": "Kei Spiil für dä Filter gfunde",
+    "noClubGames": "Keine Heimspiele deines Vereins in dieser Liga.",
     "failedToLoadLeagues": "Lige händ nöd chönne glade werde"
   },
   "livescore": {

@@ -9,6 +9,7 @@ import { selectAll } from '../lib/selectAll'
 import { AlertTriangle, Loader2, Search, X } from 'lucide-react'
 import { cn, FOCUS_RING, IconButton, Select } from '../ui'
 import { dayKey, dayLabel, shiftDayKey, timeLabel, todayKey } from '../ui/format'
+import { clubVerdict } from '../lib/access'
 
 // Kit recipes: native select at h-11 (tablet), compact label, filter pills
 // (slate when on), sticky table head.
@@ -202,7 +203,13 @@ export function matchDataFromSchedule(match) {
   }
 }
 
-export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch }) {
+/**
+ * `access` (db/018, owner 2026-11-11: "a logged in scorer can only load
+ * matches they can"): with the club rule on, a scorer sees only the home games
+ * of their clubs' teams, and a game of another club is never applied (the
+ * ICAL fallback, a stale list). Admins and test matches (no `access`) see all.
+ */
+export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch, access = null }) {
   const { t } = useTranslation()
   const { showAlert } = useAlert()
   const { scaleFactor } = useScaledLayout()
@@ -405,7 +412,8 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
 
   // Filter matches by search query and date
   const filteredMatches = useMemo(() => {
-    let result = matches
+    // the club rule: only the home games of the scorer's clubs (null verdict = may load)
+    let result = matches.filter(m => !clubVerdict(access, m.home))
 
     // Apply date filter
     if (dateFilter === 'today') {
@@ -426,9 +434,12 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
     }
 
     return result
-  }, [matches, searchQuery, dateFilter])
+  }, [matches, searchQuery, dateFilter, access])
+
+  const clubLimited = !!(access?.clubRule && !access.isAdmin)
 
   const handleSelectMatch = (match) => {
+    if (clubVerdict(access, match.home)) return
     const matchData = matchDataFromSchedule(match)
 
     onSelectMatch(matchData)
@@ -648,8 +659,10 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
         )}
 
         {!loading && !error && matches.length > 0 && filteredMatches.length === 0 && (
-          <div className="px-4 py-10 text-center text-sm font-medium text-stone-500">
-            {t('loadOfficialMatch.noMatchesForFilter', 'No matches found for this filter')}
+          <div className="px-4 py-10 text-center text-sm font-medium text-stone-500" data-testid="schedule-empty-filter">
+            {clubLimited
+              ? t('loadOfficialMatch.noClubGames', 'No home games of your club in this league.')
+              : t('loadOfficialMatch.noMatchesForFilter', 'No matches found for this filter')}
           </div>
         )}
 
