@@ -3080,6 +3080,19 @@
     "confirmBody": "Bestätigen Sie, dass diese Adresse zu Ihrem OpenBeach-Konto gehört."
   },
   "manage": {
+    "notifications": {
+      "title": "Benachrichtigungen",
+      "buttonUnread": "Benachrichtigungen, {{count}} ungelesen",
+      "markAllRead": "Alle als gelesen markieren",
+      "empty": "Noch keine Benachrichtigungen.",
+      "loading": "Wird geladen…",
+      "signupTitle": "Neue Registrierung: {{name}}",
+      "noRole": "Fragt noch nach keiner Rolle",
+      "stillOpen": "Wartet auf Freigabe",
+      "decided": "Entschieden",
+      "unread": "Ungelesen",
+      "deletedAccount": "ein gelöschtes Konto"
+    },
     "pageNotFound": "Diese Seite gibt es nicht (mehr).",
     "title": "Verwaltung",
     "backToApp": "Zurück zur App",

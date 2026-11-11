@@ -16,6 +16,7 @@ import AuditPanel from './AuditPanel'
 import ActivityPanel from './ActivityPanel'
 import SavedTeamsPanel from './SavedTeamsPanel'
 import TournamentsPanel from './tournaments/TournamentsPanel'
+import NotificationsBell from './NotificationsBell'
 import { accessForApp } from '../../lib/access'
 import { useManagerBrand } from '../../managerBrand'
 import LegalLinks from '../../legal/LegalLinks'
@@ -153,9 +154,12 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
       {...(inApp ? { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('manage.title') } : {})}
     >
       <ConsoleShell
-        logo={<img src={brand.lockup} alt={brand.name} className="ov-ink h-7 w-auto" />}
+        // smaller on phones: the header's buttons (the bell too) fit at 360 px
+        logo={<img src={brand.lockup} alt={brand.name} className="ov-ink h-[22px] w-auto sm:h-7" />}
         eyebrow={t('manage.title')}
         actions={<>
+          {/* db/028: who signed up (admins, and the approvers of its requests) */}
+          <NotificationsBell app={brand.app} onOpen={(target) => navigate(target, { push: true })} />
           {headerActions}
           {onClose && (
             <button type="button" className={consoleHeaderBtn} onClick={onClose} aria-label={t('manage.backToApp')} data-modal-close>

@@ -3096,6 +3096,19 @@
     "confirmBody": "Bestätig, dass die Adresse zu dim OpenBeach-Konto ghört."
   },
   "manage": {
+    "notifications": {
+      "title": "Benachrichtigunge",
+      "buttonUnread": "Benachrichtigunge, {{count}} ungläse",
+      "markAllRead": "Alli als gläse markiere",
+      "empty": "No kei Benachrichtigunge.",
+      "loading": "Wird glade…",
+      "signupTitle": "Neui Registrierig: {{name}}",
+      "noRole": "Fröget no nach kei Rolle",
+      "stillOpen": "Wartet uf Freigab",
+      "decided": "Entschiede",
+      "unread": "Ungläse",
+      "deletedAccount": "es glöschts Konto"
+    },
     "pageNotFound": "Diese Seite gibt es nicht (mehr).",
     "title": "Verwaltung",
     "backToApp": "Zurück zur App",
