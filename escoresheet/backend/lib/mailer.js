@@ -73,7 +73,7 @@ import nodemailer from 'nodemailer'
 import { legalUrl } from './legalLinks.js'
 
 export const MAIL_LANGS = Object.freeze(['en', 'de', 'fr', 'it'])
-export const MAIL_KINDS = Object.freeze(['reset', 'confirm', 'password_changed', 'passkey_added', 'approval', 'approval_pin_locked', 'scoresheet', 'scoresheet_test'])
+export const MAIL_KINDS = Object.freeze(['reset', 'confirm', 'password_changed', 'passkey_added', 'approval', 'approval_pin_locked', 'scoresheet', 'scoresheet_test', 'signup'])
 export const DEFAULT_MANAGER_URL = 'https://manager.openvolley.app'
 export const DEFAULT_FROM_NAME = 'OpenVolley'
 export const DEFAULT_MANAGER_URL_BEACH = 'https://manager-beach.openvolley.app'
@@ -97,7 +97,9 @@ export function mailApp(raw) {
 // are OpenVolley's only, for now also for a beach match's approval (their
 // text names OpenVolley's profile; one approval PIN per account, which either
 // app's profile sets).
-const BRANDED_KINDS = new Set(['reset', 'confirm', 'password_changed', 'passkey_added'])
+// The sign-up notice (lib/signupNotices.js) takes the brand of the app the
+// account signed up in.
+const BRANDED_KINDS = new Set(['reset', 'confirm', 'password_changed', 'passkey_added', 'signup'])
 
 /** The brand of one mail: mailApp(app) for the account mails, 'indoor' for the approval notices. */
 export function mailBrandOf(kind, app) {
@@ -110,8 +112,9 @@ export function mailBrandOf(kind, app) {
 // and password-changed mails, "confirm" the confirmation links: a burst of
 // sign-ups uses up only the latter (whose holders can resend later).
 // "notify" carries the approval notices of lib/approvals.js (an approval made
-// with an official's PIN, a locked PIN): they cannot starve the account mails.
-export const MAIL_BUDGET_OF = Object.freeze({ reset: 'account', password_changed: 'account', passkey_added: 'account', confirm: 'confirm', approval: 'notify', approval_pin_locked: 'notify', scoresheet: 'scoresheet', scoresheet_test: 'scoresheet' })
+// with an official's PIN, a locked PIN) and the sign-up notices to admins and
+// approvers (lib/signupNotices.js): they cannot starve the account mails.
+export const MAIL_BUDGET_OF = Object.freeze({ reset: 'account', password_changed: 'account', passkey_added: 'account', confirm: 'confirm', approval: 'notify', approval_pin_locked: 'notify', scoresheet: 'scoresheet', scoresheet_test: 'scoresheet', signup: 'notify' })
 // scoresheet: a busy match day (a dozen recipients a game) must not starve
 // the account mails, nor be starved by them
 export const DEFAULT_BUDGETS = Object.freeze({ account: 50, confirm: 50, notify: 100, scoresheet: 300 })
@@ -230,7 +233,32 @@ const SLOT_LABELS = Object.freeze({
 })
 
 /** A template value: text on one line (no header or line injection), at most 200 chars. */
-const cleanVar = (v) => (typeof v === 'boolean' ? v : String(v ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200))
+const cleanText = (v) => String(v ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)
+// A list (the sign-up notice's parts): at most 40 items, each a flat object of texts
+const cleanVar = (v) => (typeof v === 'boolean'
+  ? v
+  : Array.isArray(v)
+    ? v.slice(0, 40).map((x) => Object.fromEntries(Object.entries(x && typeof x === 'object' ? x : {}).map(([k, y]) => [k, cleanText(y)])))
+    : cleanText(v))
+
+// The sign-up notice: who signed up, and what it asks for, in the mail's language
+const SIGNUP_KINDS = Object.freeze({
+  en: { scorer: 'Scorer', referee: 'Referee', team_manager: 'Team manager / coach', club_manager: 'Club manager', asks: 'Asks for:', none: 'It asks for no role yet: give it one, or delete the account, under Accounts.' },
+  de: { scorer: 'Schreiber', referee: 'Schiedsrichter', team_manager: 'Teamverantwortliche/r / Trainer', club_manager: 'Vereinsverantwortliche/r', asks: 'Anfrage:', none: 'Das Konto fragt noch nach keiner Rolle: geben Sie ihm unter Konten eine, oder löschen Sie es.' },
+  fr: { scorer: 'Marqueur', referee: 'Arbitre', team_manager: 'Responsable d’équipe / entraîneur', club_manager: 'Responsable du club', asks: 'Demande :', none: 'Le compte ne demande encore aucun rôle : donnez-lui-en un, ou supprimez-le, sous Comptes.' },
+  it: { scorer: 'Segnapunti', referee: 'Arbitro', team_manager: 'Responsabile della squadra / allenatore', club_manager: 'Responsabile della società', asks: 'Richiesta:', none: 'L’account non chiede ancora nessun ruolo: gliene dia uno, o lo elimini, in Account.' }
+})
+const signupWho = (v) => (v.name ? `${v.name} (${v.email})` : v.email)
+function signupParts(v, lang) {
+  const L = SIGNUP_KINDS[lang]
+  const parts = Array.isArray(v.parts) ? v.parts : []
+  if (!parts.length) return [L.none]
+  return [L.asks, ...parts.map((p) => {
+    const kind = L[p.kind] || p.kind
+    const where = p.kind === 'team_manager' ? [p.team, p.club && `(${p.club})`].filter(Boolean).join(' ') : p.club
+    return `• ${where ? `${kind} · ${where}` : kind}`
+  })]
+}
 
 const T = {
   reset: {
@@ -343,6 +371,49 @@ const T = {
   // Approval notices (lib/approvals.js). vars: slot, game, result, id, time,
   // sender (may be ''). The link opens OpenVolley, where Profile -> Approval
   // PIN lists the official's approvals with an undo.
+  // A new account confirmed its address (lib/signupNotices.js), to the admins
+  // and the approvers of its requests. vars: name, email, parts [{ kind, club,
+  // team }] (the parts this recipient decides; admins: all), admin (true for
+  // an admin). The link opens the manager page of the account or the club or
+  // team.
+  signup: {
+    en: (v) => ({
+      subject: `New OpenVolley sign-up: ${v.name || v.email}`,
+      before: ['Hello,', `${signupWho(v)} just created an OpenVolley account and confirmed the email address.`,
+        ...signupParts(v, 'en')],
+      button: 'Open in the manager',
+      after: [v.admin
+        ? 'You get this mail as an admin of OpenVolley. Nothing is granted until someone approves it.'
+        : 'You get this mail because you approve these requests for your club or team. Nothing is granted until someone approves it.']
+    }),
+    de: (v) => ({
+      subject: `Neue OpenVolley-Registrierung: ${v.name || v.email}`,
+      before: ['Hallo', `${signupWho(v)} hat soeben ein OpenVolley-Konto erstellt und die E-Mail-Adresse bestätigt.`,
+        ...signupParts(v, 'de')],
+      button: 'Im Manager öffnen',
+      after: [v.admin
+        ? 'Sie erhalten diese E-Mail als Admin von OpenVolley. Erst eine Freigabe gibt dem Konto Rechte.'
+        : 'Sie erhalten diese E-Mail, weil Sie diese Anfragen für Ihren Verein oder Ihr Team freigeben. Erst eine Freigabe gibt dem Konto Rechte.']
+    }),
+    fr: (v) => ({
+      subject: `Nouvelle inscription OpenVolley : ${v.name || v.email}`,
+      before: ['Bonjour,', `${signupWho(v)} vient de créer un compte OpenVolley et a confirmé son adresse e-mail.`,
+        ...signupParts(v, 'fr')],
+      button: 'Ouvrir dans le manager',
+      after: [v.admin
+        ? 'Vous recevez cet e-mail en tant qu’admin d’OpenVolley. Rien n’est accordé avant une approbation.'
+        : 'Vous recevez cet e-mail parce que vous approuvez ces demandes pour votre club ou votre équipe. Rien n’est accordé avant une approbation.']
+    }),
+    it: (v) => ({
+      subject: `Nuova registrazione OpenVolley: ${v.name || v.email}`,
+      before: ['Buongiorno,', `${signupWho(v)} ha appena creato un account OpenVolley e confermato l’indirizzo e-mail.`,
+        ...signupParts(v, 'it')],
+      button: 'Aprire nel manager',
+      after: [v.admin
+        ? 'Riceve questa e-mail come admin di OpenVolley. Nulla viene concesso prima di un’approvazione.'
+        : 'Riceve questa e-mail perché approva queste richieste per la sua società o squadra. Nulla viene concesso prima di un’approvazione.']
+    })
+  },
   approval: {
     en: (v) => ({
       subject: `Your approval PIN was used: ${v.game}`,
