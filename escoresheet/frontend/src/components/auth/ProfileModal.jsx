@@ -262,7 +262,7 @@ export default function ProfileModal({ open, onClose }) {
             <div className={labelCls}>
               {t('auth.roles', 'Role')}
             </div>
-            {access?.known ? <RoleChips roles={access.roles} pending={access.isPending} /> : <span className="text-xs text-stone-400">–</span>}
+            {access?.known ? <RoleChips roles={access.roles} pending={access.isPending} manages={{ clubs: access.managedClubs, teams: access.managedTeams }} /> : <span className="text-xs text-stone-400">–</span>}
           </div>
           <PendingApprovalBanner className="mb-4" />
           {/* Referees and scorers: the personal PIN to approve results with the account */}

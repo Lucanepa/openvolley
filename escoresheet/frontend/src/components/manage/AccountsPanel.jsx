@@ -336,11 +336,11 @@ export default function AccountsPanel({ selfId, selfIsSuperAdmin = false, app, r
                 </>}
                 chips={<>
                   {a.deactivated && <Chip tone="urgent">{t('manage.accounts.deactivatedChip')}</Chip>}
-                  <RoleChips roles={a.roles} pending={a.pending} app={app} />
+                  <RoleChips roles={a.roles} pending={a.pending} manages={{ clubs: a.managed_clubs, teams: a.managed_teams }} app={app} />
                   {withClubs && (a.clubs || []).map(c => <Chip key={c.id} tone="sky">{c.name}</Chip>)}
-                  {/* db/020 / db/023: what the account manages */}
-                  {(a.managed_clubs || []).map(c => <Chip key={`mc-${c.id}`} tone="indigo">{t('manage.requests.managesClub', { name: c.name })}</Chip>)}
-                  {(a.managed_teams || []).map(x => <Chip key={`mt-${x.id}`} tone="indigo">{t('manage.requests.managesTeam', { name: x.name })}</Chip>)}
+                  {/* db/020 / db/023: what the account manages (the role chip says "Club / Team manager") */}
+                  {(a.managed_clubs || []).map(c => <Chip key={`mc-${c.id}`} tone="indigo" title={t('manage.requests.managesClub', { name: c.name })}>{c.name}</Chip>)}
+                  {(a.managed_teams || []).map(x => <Chip key={`mt-${x.id}`} tone="indigo" title={t('manage.requests.managesTeam', { name: x.name })}>{x.name}</Chip>)}
                   {/* db/025: what it asked for at sign-up and is still open */}
                   {sortRequestParts(a.requests).map(p => <Chip key={p.id} tone="amber">{t('manage.requests.asks', { part: requestPartLabel(p, t) })}</Chip>)}
                 </>}
@@ -390,7 +390,7 @@ function AccountPage({ account: a, app, withClubs, online, busy, error, offer, m
   ]
   const chips = (nodes) => <span className="flex flex-wrap gap-1.5">{nodes}</span>
   const groups = [
-    { label: t('manage.accounts.page.roles'), value: <RoleChips roles={a.roles} pending={a.pending} app={app} /> },
+    { label: t('manage.accounts.page.roles'), value: <RoleChips roles={a.roles} pending={a.pending} manages={{ clubs: a.managed_clubs, teams: a.managed_teams }} app={app} /> },
     ...(withClubs ? [{ label: t('manage.accounts.page.clubs'), value: (a.clubs || []).length ? chips(a.clubs.map(c => <Chip key={c.id} tone="sky">{c.name}</Chip>)) : '–' }] : []),
     ...(managed.length ? [{ label: t('manage.accounts.page.manages'), value: chips(managed) }] : []),
     ...(parts.length ? [{ label: t('manage.accounts.page.request'), value: chips(parts.map(p => <Chip key={p.id} tone="amber">{requestPartLabel(p, t)}</Chip>)) }] : [])
@@ -752,7 +752,17 @@ function RolesModal({ app, account, onClose, onSaved, roleError }) {
           <Checkbox key={role} label={t(`access.roles.${plainRole(role)}`)} checked={current.has(role)} onChange={() => toggle(role)} />
         ))}
         {initial.has('super_admin') && <Checkbox label={t('access.roles.super_admin')} checked disabled readOnly />}
+        {/* db/020 / db/023: managing a club or a team shows as a role, set per club / team */}
+        {app !== 'beach' && (account.managed_clubs || []).map(c => (
+          <Checkbox key={`mc-${c.id}`} label={`${t('access.roles.club_manager')} · ${c.name}`} checked disabled readOnly />
+        ))}
+        {app !== 'beach' && (account.managed_teams || []).map(x => (
+          <Checkbox key={`mt-${x.id}`} label={`${t('access.roles.team_manager')} · ${x.name}`} checked disabled readOnly />
+        ))}
       </div>
+      {app !== 'beach' && ((account.managed_clubs || []).length > 0 || (account.managed_teams || []).length > 0) && (
+        <p className="mt-2 text-xs text-stone-500">{t('manage.accounts.managesHint')}</p>
+      )}
       <InlineError error={error} className="mt-2" />
     </KitModal>
   )

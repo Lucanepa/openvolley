@@ -3148,6 +3148,7 @@
       "offline": "Dafür braucht es eine Verbindung zum Server."
     },
     "accounts": {
+      "managesHint": "Vereins- und Teamverantwortlichi werded pro Verein und Team festgleit: uf de Siite vom Verein (Vereine) und in Mein Verein.",
       "page": {
         "email": "E-Mail",
         "created": "Erstellt",

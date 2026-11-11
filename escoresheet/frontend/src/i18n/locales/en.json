@@ -3154,6 +3154,7 @@
       "offline": "This needs a connection to the server."
     },
     "accounts": {
+      "managesHint": "Club and team managers are set per club and team: on the club's page (Clubs) and in My club.",
       "page": {
         "email": "Email",
         "created": "Created",
