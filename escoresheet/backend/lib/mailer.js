@@ -73,7 +73,7 @@ import nodemailer from 'nodemailer'
 import { legalUrl } from './legalLinks.js'
 
 export const MAIL_LANGS = Object.freeze(['en', 'de', 'fr', 'it'])
-export const MAIL_KINDS = Object.freeze(['reset', 'confirm', 'password_changed', 'passkey_added', 'approval', 'approval_pin_locked', 'scoresheet', 'scoresheet_test', 'signup'])
+export const MAIL_KINDS = Object.freeze(['reset', 'confirm', 'password_changed', 'passkey_added', 'approval', 'approval_pin_locked', 'scoresheet', 'scoresheet_test', 'signup', 'club_manager_invite'])
 export const DEFAULT_MANAGER_URL = 'https://manager.openvolley.app'
 export const DEFAULT_FROM_NAME = 'OpenVolley'
 export const DEFAULT_MANAGER_URL_BEACH = 'https://manager-beach.openvolley.app'
@@ -114,7 +114,7 @@ export function mailBrandOf(kind, app) {
 // "notify" carries the approval notices of lib/approvals.js (an approval made
 // with an official's PIN, a locked PIN) and the sign-up notices to admins and
 // approvers (lib/signupNotices.js): they cannot starve the account mails.
-export const MAIL_BUDGET_OF = Object.freeze({ reset: 'account', password_changed: 'account', passkey_added: 'account', confirm: 'confirm', approval: 'notify', approval_pin_locked: 'notify', scoresheet: 'scoresheet', scoresheet_test: 'scoresheet', signup: 'notify' })
+export const MAIL_BUDGET_OF = Object.freeze({ reset: 'account', password_changed: 'account', passkey_added: 'account', confirm: 'confirm', approval: 'notify', approval_pin_locked: 'notify', scoresheet: 'scoresheet', scoresheet_test: 'scoresheet', signup: 'notify', club_manager_invite: 'notify' })
 // scoresheet: a busy match day (a dozen recipients a game) must not starve
 // the account mails, nor be starved by them
 export const DEFAULT_BUDGETS = Object.freeze({ account: 50, confirm: 50, notify: 100, scoresheet: 300 })
@@ -125,7 +125,8 @@ export const DEFAULT_MAX_PER_INBOX = 5
 // scoresheet_test: a scorer mails its own test scoresheets, never a flood.
 // The final scoresheet is not capped: a club's contact gets every game of a
 // tournament day.
-const INBOX_CAPPED = new Set(['reset', 'confirm', 'scoresheet_test'])
+// club_manager_invite: an admin types the address, so one inbox is capped like a confirmation
+const INBOX_CAPPED = new Set(['reset', 'confirm', 'scoresheet_test', 'club_manager_invite'])
 const ATTACHING = new Set(['scoresheet', 'scoresheet_test'])
 const HOUR_MS = 60 * 60 * 1000
 
@@ -412,6 +413,39 @@ const T = {
       after: [v.admin
         ? 'Riceve questa e-mail come admin di OpenVolley. Nulla viene concesso prima di un’approvazione.'
         : 'Riceve questa e-mail perché approva queste richieste per la sua società o squadra. Nulla viene concesso prima di un’approvazione.']
+    })
+  },
+  // A club manager link (lib/clubs.js inviteManager, db/029), to someone an
+  // admin named who is not linked to the club yet. vars: club, inviter (may
+  // be ''), days. The link opens the manager: sign in or create an account.
+  club_manager_invite: {
+    en: (v) => ({
+      subject: `You are invited to manage ${v.club} on OpenVolley`,
+      before: ['Hello,', `${v.inviter || 'An OpenVolley admin'} invites you to be a club manager of ${v.club} on OpenVolley: you make the club's invite codes, approve its sign-ups and look after its members and teams.`,
+        `Open the link, then sign in or create an account. The link works once and expires in ${v.days} days.`],
+      button: 'Become club manager',
+      after: ['If you did not expect this, ignore this email: nothing changes.']
+    }),
+    de: (v) => ({
+      subject: `Einladung: ${v.club} auf OpenVolley verwalten`,
+      before: ['Hallo', `${v.inviter || 'Ein OpenVolley-Admin'} lädt Sie ein, ${v.club} auf OpenVolley als Vereinsverantwortliche/r zu verwalten: Sie erstellen die Einladungscodes des Vereins, geben seine Registrierungen frei und betreuen seine Mitglieder und Teams.`,
+        `Öffnen Sie den Link und melden Sie sich an oder erstellen Sie ein Konto. Der Link funktioniert einmal und läuft nach ${v.days} Tagen ab.`],
+      button: 'Vereinsverantwortliche/r werden',
+      after: ['Wenn Sie das nicht erwartet haben, ignorieren Sie diese E-Mail: Es ändert sich nichts.']
+    }),
+    fr: (v) => ({
+      subject: `Invitation à gérer ${v.club} sur OpenVolley`,
+      before: ['Bonjour,', `${v.inviter || 'Un admin d’OpenVolley'} vous invite à devenir responsable du club ${v.club} sur OpenVolley : vous créez les codes d’invitation du club, approuvez ses inscriptions et suivez ses membres et ses équipes.`,
+        `Ouvrez le lien, puis connectez-vous ou créez un compte. Le lien fonctionne une seule fois et expire dans ${v.days} jours.`],
+      button: 'Devenir responsable du club',
+      after: ['Si vous ne vous y attendiez pas, ignorez cet e-mail : rien ne change.']
+    }),
+    it: (v) => ({
+      subject: `Invito a gestire ${v.club} su OpenVolley`,
+      before: ['Buongiorno,', `${v.inviter || 'Un admin di OpenVolley'} la invita a diventare responsabile della società ${v.club} su OpenVolley: crea i codici d’invito della società, approva le sue registrazioni e segue i suoi membri e le sue squadre.`,
+        `Apra il link, poi acceda o crei un account. Il link funziona una sola volta e scade tra ${v.days} giorni.`],
+      button: 'Diventare responsabile della società',
+      after: ['Se non se lo aspettava, ignori questa e-mail: non cambia nulla.']
     })
   },
   approval: {

@@ -192,7 +192,7 @@ describe('an admin deletes an account', { skip: SKIP }, () => {
     // a club it scores for and manages, an invite code it redeemed, OpenBeach joined, an approval PIN
     const club = (await call(users.admin, 'POST', '/api/admin/clubs', { name: 'VBCM Delete', teams: ['VBCM Delete H1'] })).json.data.club
     assert.equal((await call(users.admin, 'PUT', `/api/admin/accounts/${leaver.id}/clubs`, { club_ids: [club.id] })).status, 200)
-    assert.equal((await call(users.admin, 'PUT', `/api/admin/clubs/${club.id}/managers`, { emails: [leaver.email] })).status, 200)
+    await sql.query('INSERT INTO public.club_managers (club_id, user_id) VALUES ($1, $2)', [club.id, leaver.id])
     const invite = await call(users.admin, 'POST', '/api/admin/invites', { label: 'del test', role: 'referee', max_uses: 5 })
     assert.equal(invite.status, 201, invite.text)
     assert.equal((await call(leaver, 'POST', '/api/account/redeem-invite', { code: invite.json.data.code })).status, 200)

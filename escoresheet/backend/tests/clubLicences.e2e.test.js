@@ -74,8 +74,8 @@ describe('club licence lists', { skip: SKIP }, () => {
     await account('stranger', null)
     musterdorf = (await call(admin, 'POST', '/api/admin/clubs', { name: 'VBC Musterdorf', teams: ['VBC Musterdorf H1', 'VBC Musterdorf D1', 'VBC Musterdorf X1'] })).json.data.club
     other = (await call(admin, 'POST', '/api/admin/clubs', { name: 'VBC Other', teams: ['VBC Other H1', 'VBC Other D1'] })).json.data.club
-    assert.equal((await call(admin, 'PUT', `/api/admin/clubs/${musterdorf.id}/managers`, { emails: [users.clubmgr.email] })).status, 200)
-    assert.equal((await call(admin, 'PUT', `/api/admin/clubs/${other.id}/managers`, { emails: [users.othermgr.email] })).status, 200)
+    await sql.query('INSERT INTO public.club_managers (club_id, user_id) VALUES ($1, $2)', [musterdorf.id, users.clubmgr.id])
+    await sql.query('INSERT INTO public.club_managers (club_id, user_id) VALUES ($1, $2)', [other.id, users.othermgr.id])
     await call(admin, 'PUT', `/api/admin/accounts/${users.scorer.id}/clubs`, { club_ids: [musterdorf.id] })
     await call(admin, 'PUT', `/api/admin/accounts/${users.otherscorer.id}/clubs`, { club_ids: [other.id] })
     const teams = (await call(users.clubmgr, 'GET', `/api/club/${musterdorf.id}/teams`)).json.data.teams

@@ -3006,7 +3006,8 @@
       "admin": "Admin",
       "super_admin": "Super admin",
       "pending": "Validation en attente",
-      "team_manager": "Responsable d’équipe"
+      "team_manager": "Responsable d’équipe",
+      "club_manager": "Responsable du club"
     },
     "signUpPendingNote": "Les nouveaux comptes doivent être validés avant que les matchs officiels soient synchronisés dans le cloud. Demande un code d’invitation à ton club.",
     "officialMatchLocalOnly": "Ce match reste sur cet appareil jusqu’à la validation de ton compte comme marqueur.",
@@ -3074,7 +3075,10 @@
     "teamLinkNote": "Vous avez ouvert un lien d’équipe. Connectez-vous ou créez un compte, et l’équipe s’ouvre.",
     "teamLinkSignIn": "Connectez-vous avec votre compte, ou créez-en un d’abord.",
     "teamLinkDone": "Vous gérez maintenant {{team}}.",
-    "teamLinkAlready": "Vous gérez déjà {{team}}."
+    "teamLinkAlready": "Vous gérez déjà {{team}}.",
+    "clubLinkNote": "Vous avez ouvert un lien de responsable du club. Connectez-vous ou créez un compte, et vous gérez le club.",
+    "clubLinkDone": "Vous gérez maintenant {{club}}.",
+    "clubLinkAlready": "Vous gérez déjà {{club}}."
   },
   "managerBeach": {
     "signInHeading": "Gérer OpenBeach",
@@ -3501,7 +3505,28 @@
       "managersHint": "Adresses e-mail de comptes existants, une par ligne. Ils créent les codes d’invitation du club et gèrent ses membres.",
       "managersCount_one": "{{count}} responsable",
       "managersCount_other": "{{count}} responsables",
-      "managerUnknown": "Aucun compte n’a cette adresse : {{emails}}"
+      "managerUnknown": "Aucun compte n’a cette adresse : {{emails}}",
+      "managersPickHint": "Choisissez-les parmi les comptes du club. Les autres reçoivent par e-mail un lien de responsable du club. Les responsables créent les codes d’invitation du club et gèrent ses membres.",
+      "via": {
+        "scorer": "marqueur",
+        "team_manager": "responsable d’équipe",
+        "club_manager": "responsable du club"
+      },
+      "removeManager": "Retirer {{name}}",
+      "noManagers": "Aucun responsable pour l’instant.",
+      "addManager": "Ajouter un responsable du club…",
+      "allPicked": "Tous les comptes du club sont responsables.",
+      "noCandidates": "Personne n’est encore lié à ce club : invitez quelqu’un ci-dessous.",
+      "saveFirst": "Enregistrez d’abord le club, puis choisissez ou invitez ses responsables.",
+      "inviteTitle": "Quelqu’un manque dans la liste ? Envoyer un lien de responsable du club",
+      "invitePlaceholder": "Adresse e-mail",
+      "inviteSend": "Envoyer le lien",
+      "inviteHint": "Le lien fonctionne une fois pendant 14 jours. La personne qui l’ouvre et se connecte ou crée un compte devient responsable de ce club.",
+      "inviteMailed": "Lien envoyé à {{email}}. Vous pouvez aussi le transmettre vous-même :",
+      "inviteNotMailed": "L’e-mail à {{email}} n’a pas pu être envoyé. Envoyez-lui ce lien vous-même :",
+      "copyLink": "Copier",
+      "linkCopied": "Lien copié",
+      "notAMember": "Un responsable doit être un compte du club. Envoyez plutôt un lien de responsable."
     },
     "myClub": {
       "none": "Vous ne gérez aucun club.",

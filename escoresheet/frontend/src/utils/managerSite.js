@@ -73,9 +73,12 @@ export function teamLinkUrl(code, hostname = currentHost()) {
   return `${base}/#${TEAM_LINK_HASH}=${encodeURIComponent(String(code || '').trim())}`
 }
 
-/** The invite code of a '#team=<code>' hash (upper-case), or null. */
+/**
+ * The invite code of a '#team=<code>' hash, or of a club manager link's
+ * '#club=<code>' (db/029, mailed by the admins' club page): upper-case, or null.
+ */
 export function teamCodeFromHash(hash) {
-  const m = /^#?team=([^&]+)$/.exec(String(hash || ''))
+  const m = /^#?(?:team|club)=([^&]+)$/.exec(String(hash || ''))
   if (!m) return null
   let code
   try { code = decodeURIComponent(m[1]).trim() } catch { return null }
@@ -132,4 +135,10 @@ export function mainAppUrl(hostname = currentHost(), origin = typeof window !== 
 export function scorerAppUrlFor(brand, hostname = currentHost(), origin = typeof window !== 'undefined' ? window.location.origin : '') {
   if (brand?.app === 'beach') return `${BEACH_APP_URL}/`
   return mainAppUrl(hostname, origin)
+}
+
+/** 'club' for a club manager link's hash (#club=<code>), 'team' for a team link's, else null. */
+export function linkKindFromHash(hash) {
+  if (!teamCodeFromHash(hash)) return null
+  return /^#?club=/.test(String(hash || '')) ? 'club' : 'team'
 }

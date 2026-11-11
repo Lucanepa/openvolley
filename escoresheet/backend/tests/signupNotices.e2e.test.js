@@ -129,8 +129,8 @@ describe('sign-up notices end to end', { skip: SKIP }, () => {
     await sql.query("UPDATE auth.users SET banned_until = '9999-12-31' WHERE id = $1", [users.goneadmin.id])
     must = (await call(admin, 'POST', '/api/admin/clubs', { name: 'VBC Musterdorf', teams: ['VBC Musterdorf H1', 'VBC Musterdorf D2'] })).json.data.club
     const other = (await call(admin, 'POST', '/api/admin/clubs', { name: 'VBC Anderswo', teams: ['VBC Anderswo H1'] })).json.data.club
-    assert.equal((await call(admin, 'PUT', `/api/admin/clubs/${must.id}/managers`, { emails: [users.clubmgr.email] })).status, 200)
-    assert.equal((await call(admin, 'PUT', `/api/admin/clubs/${other.id}/managers`, { emails: [users.othermgr.email] })).status, 200)
+    await sql.query('INSERT INTO public.club_managers (club_id, user_id) VALUES ($1, $2)', [must.id, users.clubmgr.id])
+    await sql.query('INSERT INTO public.club_managers (club_id, user_id) VALUES ($1, $2)', [other.id, users.othermgr.id])
     mustH1 = (await call(admin, 'GET', `/api/club/${must.id}/teams`)).json.data.teams.find((t) => t.name === 'VBC Musterdorf H1')
     await sql.query('INSERT INTO public.team_managers (team_id, user_id) VALUES ($1, $2)', [mustH1.id, users.coach.id])
   })

@@ -85,8 +85,8 @@ describe('sign-up requests and their approval', { skip: SKIP }, () => {
     await account('cm', { roles: ['competition_manager'] })
     must = (await call(admin, 'POST', '/api/admin/clubs', { name: 'VBC Musterdorf', teams: ['VBC Musterdorf H1', 'VBC Musterdorf D2'] })).json.data.club
     msh = (await call(admin, 'POST', '/api/admin/clubs', { name: 'VBC Mustershausen', teams: ['VBC Mustershausen H1'] })).json.data.club
-    assert.equal((await call(admin, 'PUT', `/api/admin/clubs/${must.id}/managers`, { emails: [users.clubmgr.email] })).status, 200)
-    assert.equal((await call(admin, 'PUT', `/api/admin/clubs/${msh.id}/managers`, { emails: [users.mshmgr.email] })).status, 200)
+    await sql.query('INSERT INTO public.club_managers (club_id, user_id) VALUES ($1, $2)', [must.id, users.clubmgr.id])
+    await sql.query('INSERT INTO public.club_managers (club_id, user_id) VALUES ($1, $2)', [msh.id, users.mshmgr.id])
     const teamsOf = async (club) => (await call(admin, 'GET', `/api/club/${club.id}/teams`)).json.data.teams
     const mt = await teamsOf(must)
     mustH1 = mt.find((t) => t.name === 'VBC Musterdorf H1')
