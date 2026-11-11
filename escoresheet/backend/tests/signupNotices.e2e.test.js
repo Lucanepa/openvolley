@@ -1,5 +1,5 @@
 /**
- * "A new account signed up" (db/027, lib/signupNotices.js): once the address
+ * "A new account signed up" (db/028, lib/signupNotices.js): once the address
  * is confirmed, the admins and the approvers of the account's requests get a
  * mail (to a local SMTP sink) and a notice in the manager
  * (GET /api/notifications, POST /api/notifications/read).
@@ -124,6 +124,9 @@ describe('sign-up notices end to end', { skip: SKIP }, () => {
     await account('coach')
     await account('othermgr')
     await account('scorer', { roles: ['scorer'] })
+    // a deactivated admin (db/027) is told nothing
+    await account('goneadmin', { roles: ['admin'] })
+    await sql.query("UPDATE auth.users SET banned_until = '9999-12-31' WHERE id = $1", [users.goneadmin.id])
     must = (await call(admin, 'POST', '/api/admin/clubs', { name: 'VBC Musterdorf', teams: ['VBC Musterdorf H1', 'VBC Musterdorf D2'] })).json.data.club
     const other = (await call(admin, 'POST', '/api/admin/clubs', { name: 'VBC Anderswo', teams: ['VBC Anderswo H1'] })).json.data.club
     assert.equal((await call(admin, 'PUT', `/api/admin/clubs/${must.id}/managers`, { emails: [users.clubmgr.email] })).status, 200)
@@ -180,7 +183,7 @@ describe('sign-up notices end to end', { skip: SKIP }, () => {
     assert.ok(tmMail.text.includes(`/#myteams/${mustH1.id}`))
     // nobody else: not another club's manager, not a scorer, not the newbie
     await sleep(300)
-    for (const u of [users.othermgr, users.scorer]) assert.equal(mailsTo(u.email).filter((m) => /sign-up|Registrierung/i.test(m.subject)).length, 0)
+    for (const u of [users.othermgr, users.scorer, users.goneadmin]) assert.equal(mailsTo(u.email).filter((m) => /sign-up|Registrierung/i.test(m.subject)).length, 0)
     assert.equal(mailsTo(email).length, 1)
 
     // the manager's bell

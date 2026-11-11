@@ -105,7 +105,7 @@ export const clubsApi = {
 
 // ── Settings (db/021): the app's switches, admins and competition managers ──
 /**
- * db/027: the account's own notices in one manager (the header's bell):
+ * db/028: the account's own notices in one manager (the header's bell):
  * list(app) -> { notifications: [{ id, kind, created_at, read, target, user:
  * { id, email, name }, parts: [{ kind, club, team }], open }], unread };
  * markRead(app, { ids } | { all: true }) -> { unread }

@@ -9,13 +9,13 @@ import { useOnline } from './common'
 export const NOTIFICATIONS_POLL_MS = 60 * 1000
 
 /**
- * The console header's bell (db/027, backend lib/signupNotices.js): the
+ * The console header's bell (db/028, backend lib/signupNotices.js): the
  * account's own notices in this manager ("Nora Neu signed up"), newest
  * first, with the unread count on the button. A notice opens its page
  * (`onOpen(target)`: the account, My club or My teams) and is marked read;
  * "Mark all read" clears the count. Read every minute and when the window
  * comes back; nothing while offline. Nothing at all on a server without
- * db/027 (the list answers 404 there: no button).
+ * db/028 (the list answers 404 there: no button).
  */
 export default function NotificationsBell({ app, onOpen }) {
   const { t, i18n } = useTranslation()

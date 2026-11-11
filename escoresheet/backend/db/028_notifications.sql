@@ -1,4 +1,4 @@
--- 027_notifications.sql: the manager's notifications (the bell), first of
+-- 028_notifications.sql: the manager's notifications (the bell), first of
 -- them "a new account signed up" (lib/signupNotices.js).
 --
 -- Owner, 2026-11-11: "why i don't get emails when there's a new signup";
@@ -21,7 +21,7 @@
 -- Not on the /api/db allowlist (server.js ALLOWED_TABLES), never public:
 -- only lib/signupNotices.js reads and writes it.
 --
--- Idempotent. Deploy: 027, apply-roles.sh, the backend image, the manager.
+-- Idempotent. Deploy: 028, apply-roles.sh, the backend image, the manager.
 -- A backend without this file sends the mails and stores no notification.
 BEGIN;
 SET LOCAL lock_timeout = '5s';
@@ -43,6 +43,6 @@ CREATE INDEX IF NOT EXISTS notifications_subject_idx ON public.notifications (su
 -- One notice per recipient and sign-up (a second confirmation adds none)
 CREATE UNIQUE INDEX IF NOT EXISTS notifications_once_uidx ON public.notifications (user_id, kind, subject_user_id);
 
-COMMENT ON TABLE public.notifications IS 'The manager''s notifications (db/027): who signed up, for the admins and the approvers of its requests.';
+COMMENT ON TABLE public.notifications IS 'The manager''s notifications (db/028): who signed up, for the admins and the approvers of its requests.';
 
 COMMIT;
