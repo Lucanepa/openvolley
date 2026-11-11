@@ -1,11 +1,12 @@
 /**
  * A team link opened on the manager site (db/023, docs/team-managers-spec.md
- * section 2): manager.openvolley.app/#team=<code>. The code is taken out of
+ * section 2): manager.openvolley.app/#team=<code>; a club manager link
+ * (db/029) the same way, as #club=<code>. The code is taken out of
  * the URL at once and kept on this device for a week, through sign-up and
  * the email confirmation, until the signed-in account redeems it
  * (ManagerApp usePendingTeamLink).
  */
-import { teamCodeFromHash } from './managerSite'
+import { linkKindFromHash, teamCodeFromHash } from './managerSite'
 
 export const PENDING_TEAM_LINK_KEY = 'ov:pendingTeamLink'
 export const PENDING_TEAM_LINK_TTL_MS = 7 * 24 * 60 * 60 * 1000
@@ -25,8 +26,17 @@ export function readPendingTeamLink(now = Date.now()) {
   }
 }
 
-export function keepPendingTeamLink(code, now = Date.now()) {
-  try { localStorage.setItem(PENDING_TEAM_LINK_KEY, JSON.stringify({ code, at: now })) } catch { /* private mode: the code field still works */ }
+export function keepPendingTeamLink(code, now = Date.now(), kind = 'team') {
+  try { localStorage.setItem(PENDING_TEAM_LINK_KEY, JSON.stringify({ code, at: now, ...(kind === 'club' ? { kind } : {}) })) } catch { /* private mode: the code field still works */ }
+}
+
+/** The kind of the kept link: 'club' (a club manager link, db/029) or 'team'. */
+export function readPendingLinkKind() {
+  try {
+    return JSON.parse(localStorage.getItem(PENDING_TEAM_LINK_KEY) || 'null')?.kind === 'club' ? 'club' : 'team'
+  } catch {
+    return 'team'
+  }
 }
 
 export function clearPendingTeamLink() {
@@ -41,7 +51,7 @@ export function takeTeamLinkFromLocation(win = typeof window !== 'undefined' ? w
   if (!win) return null
   const code = teamCodeFromHash(win.location?.hash)
   if (!code) return null
-  keepPendingTeamLink(code)
+  keepPendingTeamLink(code, Date.now(), linkKindFromHash(win.location?.hash))
   try {
     const { pathname, search } = win.location
     win.history.replaceState(win.history.state, '', `${pathname}${search}`)

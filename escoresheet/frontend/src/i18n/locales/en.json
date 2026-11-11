@@ -3013,7 +3013,8 @@
       "admin": "Admin",
       "super_admin": "Super admin",
       "pending": "Pending approval",
-      "team_manager": "Team manager"
+      "team_manager": "Team manager",
+      "club_manager": "Club manager"
     },
     "signUpPendingNote": "New accounts need approval before official matches sync to the cloud. Ask your club for an invite code.",
     "officialMatchLocalOnly": "This match stays on this device until your account is approved as a scorer.",
@@ -3081,7 +3082,10 @@
     "teamLinkNote": "You opened a team link. Sign in or create an account, and the team opens.",
     "teamLinkSignIn": "Sign in with your account, or create one first.",
     "teamLinkDone": "You now manage {{team}}.",
-    "teamLinkAlready": "You manage {{team}} already."
+    "teamLinkAlready": "You manage {{team}} already.",
+    "clubLinkNote": "You opened a club manager link. Sign in or create an account, and you manage the club.",
+    "clubLinkDone": "You now manage {{club}}.",
+    "clubLinkAlready": "You manage {{club}} already."
   },
   "managerBeach": {
     "signInHeading": "Manage OpenBeach",
@@ -3508,7 +3512,28 @@
       "managersHint": "Email addresses of existing accounts, one per line. They make the club's invite codes and manage its members.",
       "managersCount_one": "{{count}} manager",
       "managersCount_other": "{{count}} managers",
-      "managerUnknown": "No account has this address: {{emails}}"
+      "managerUnknown": "No account has this address: {{emails}}",
+      "managersPickHint": "Pick them from the club's accounts. Anyone else gets a club manager link by email. Managers make the club's invite codes and manage its members.",
+      "via": {
+        "scorer": "scorer",
+        "team_manager": "team manager",
+        "club_manager": "club manager"
+      },
+      "removeManager": "Remove {{name}}",
+      "noManagers": "No managers yet.",
+      "addManager": "Add a manager from the club…",
+      "allPicked": "Every account of the club is a manager.",
+      "noCandidates": "Nobody is linked to this club yet: invite someone below.",
+      "saveFirst": "Save the club first, then pick or invite its managers.",
+      "inviteTitle": "Someone not in the list? Send a club manager link",
+      "invitePlaceholder": "Email address",
+      "inviteSend": "Send link",
+      "inviteHint": "The link works once for 14 days. Whoever opens it and signs in or creates an account becomes a manager of this club.",
+      "inviteMailed": "Link sent to {{email}}. You can also pass it on yourself:",
+      "inviteNotMailed": "The email to {{email}} could not be sent. Send them this link yourself:",
+      "copyLink": "Copy",
+      "linkCopied": "Link copied",
+      "notAMember": "A manager must be one of the club's accounts. Send a club manager link instead."
     },
     "myClub": {
       "none": "You don't manage a club.",

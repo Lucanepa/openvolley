@@ -16,7 +16,12 @@
  *     vmTeams({ q })                      VolleyManager team names, each with its club
  *     setAccountClubs({ actorId, userId, body })  { club_ids: [...] } (the whole list)
  *     setRule({ actorId, body })          { enabled }
- *     setManagers({ actorId, id, body })  { emails: [...] } the club's managers (the whole list, db/020)
+ *     setManagers({ actorId, id, body })  { user_ids: [...] } the club's managers (the whole list, db/020),
+ *                                         each one an account linked to the club (managerCandidates)
+ *     managerCandidates({ id })           the accounts linked to the club: its scorers (account_clubs),
+ *                                         the managers of its teams (db/023) and its managers (db/020)
+ *     inviteManager({ actorId, id, body, lang })  { email }: a club manager link (db/029) mailed to
+ *                                         someone not linked to the club yet; { invite, link, mailed }
  *   club managers of that club, and admins (/api/club/:id/..., db/020)
  *     clubDetail({ id })                  the club with its teams, contact address and scorer count
  *     setContact({ actorId, id, body })   { contact_email } (null clears it)
@@ -39,6 +44,7 @@
 
 import { fail, invalid, isUuid, notFound, ok, unavailable } from './accounts.js'
 import { seasonOf, sportOf } from './officialGame.js'
+import { pickLang } from './mailer.js'
 
 export const CLUB_REQUIRED = () => fail(403, 'OV_CLUB_REQUIRED',
   'Your account has no club yet. An admin adds it before you can score official games.')
@@ -136,7 +142,10 @@ export function teamList (raw) {
  * @param {(client: any, entry: object) => Promise<void>} o.audit  lib/accounts.js audit (throws)
  * @param {{ invalidate?: (userId: string) => void }} [o.access]
  */
-export function createClubs ({ pool, audit, access = null, logger = console } = {}) {
+// A club manager link (db/029): one use, two weeks
+export const MANAGER_LINK_DAYS = 14
+
+export function createClubs ({ pool, audit, access = null, createInvite = null, mailer = null, logger = console } = {}) {
   const log = logger
 
   async function withTx (fn) {
@@ -539,20 +548,59 @@ export function createClubs ({ pool, audit, access = null, logger = console } = 
   }
 
   /** PUT /api/admin/clubs/:id/managers { emails: [...] }: the club's whole list of managers. */
+  /**
+   * The accounts linked to club `id` (as a client query): its scorers, the
+   * managers of its teams and its managers, each once, with how it is linked.
+   */
+  async function candidatesOf (client, id) {
+    let teamPart = ''
+    const { rows: [t] } = await client.query("SELECT to_regclass('public.team_managers') IS NOT NULL AS ok")
+    if (t?.ok) {
+      teamPart = `UNION ALL SELECT tm.user_id, 'team_manager' FROM public.team_managers tm
+                    JOIN public.club_teams ct ON ct.id = tm.team_id WHERE ct.club_id = $1`
+    }
+    const { rows } = await client.query(
+      `SELECT u.id, u.email, ${nameSql('p')} AS name, array_agg(DISTINCT l.via ORDER BY l.via) AS via
+         FROM (SELECT ac.user_id, 'scorer' AS via FROM public.account_clubs ac WHERE ac.club_id = $1
+               UNION ALL SELECT cm.user_id, 'club_manager' FROM public.club_managers cm WHERE cm.club_id = $1
+               ${teamPart}) l
+         JOIN auth.users u ON u.id = l.user_id
+         LEFT JOIN public.profiles p ON p.user_id = u.id
+        GROUP BY u.id, u.email, p.first_name, p.last_name
+        ORDER BY lower(coalesce(${nameSql('p')}, u.email))
+        LIMIT 1000`, [id])
+    return rows.map((r) => ({ id: r.id, email: r.email, name: r.name ?? null, via: r.via || [] }))
+  }
+
+  /** GET /api/admin/clubs/:id/manager-candidates: who may be picked as a manager of the club. */
+  async function managerCandidates ({ id } = {}) {
+    if (!isUuid(id)) return notFound()
+    return guarded('manager-candidates', async () => {
+      const { rows: [c] } = await pool.query('SELECT id FROM public.clubs WHERE id = $1', [id])
+      if (!c) return notFound()
+      return ok({ candidates: await candidatesOf(pool, id) })
+    })
+  }
+
+  /**
+   * PUT /api/admin/clubs/:id/managers { user_ids }: the club's managers, the
+   * whole list. Each one is an account linked to the club (owner 2026-11-11:
+   * "managers can be picked from members of that club ... no random
+   * emails"); anyone else gets a link (inviteManager).
+   */
   async function setManagers ({ actorId, id, body } = {}) {
     if (!isUuid(id)) return notFound()
-    const raw = body && Array.isArray(body.emails) ? body.emails : undefined
-    const emails = raw && raw.every((e) => typeof e === 'string') ? [...new Set(raw.map((e) => e.trim().toLowerCase()).filter(Boolean))] : undefined
-    if (!emails || emails.length > MAX_MANAGERS) return invalid(`emails: at most ${MAX_MANAGERS} addresses`)
+    const raw = body && Array.isArray(body.user_ids) ? body.user_ids : undefined
+    const ids = raw && raw.every(isUuid) ? [...new Set(raw.map((x) => x.toLowerCase()))] : undefined
+    if (!ids || ids.length > MAX_MANAGERS) return invalid(`user_ids: at most ${MAX_MANAGERS} account ids`)
     return guarded('managers', () => withTx(async (client) => {
       const { rows: [cur] } = await client.query('SELECT id FROM public.clubs WHERE id = $1 FOR UPDATE', [id])
       if (!cur) throw abort(notFound())
-      const { rows: found } = emails.length
-        ? await client.query('SELECT id, lower(email) AS email FROM auth.users WHERE lower(email) = ANY($1::text[])', [emails])
-        : { rows: [] }
-      const unknown = emails.filter((e) => !found.some((u) => u.email === e))
-      if (unknown.length) throw abort(fail(404, 'OV_ACCOUNT_NOT_FOUND', 'No account has this address', unknown.join(', ')))
-      const ids = found.map((u) => u.id)
+      const linked = new Set((await candidatesOf(client, id)).map((x) => x.id))
+      const outside = ids.filter((x) => !linked.has(x))
+      if (outside.length) {
+        throw abort(fail(422, 'OV_NOT_A_CLUB_MEMBER', 'Pick a manager from the club\'s accounts, or send a club manager link', outside.join(', ')))
+      }
       const { rows: before } = await client.query('SELECT user_id FROM public.club_managers WHERE club_id = $1', [id])
       await client.query('DELETE FROM public.club_managers WHERE club_id = $1 AND NOT (user_id = ANY($2::uuid[]))', [id, ids])
       if (ids.length) {
@@ -564,8 +612,56 @@ export function createClubs ({ pool, audit, access = null, logger = console } = 
       await audit(client, { actorId, action: 'club.managers', details: { club_id: id, before: before.map((r) => r.user_id), after: ids } })
       const [club] = await readClubs(client, 'WHERE c.id = $1', [id])
       return ok({ club })
-    }))
+    })).finally(() => {
+      // the managed clubs come with /api/me (lib/access.js)
+      for (const x of ids || []) access?.invalidate?.(x)
+    })
   }
+
+  /**
+   * POST /api/admin/clubs/:id/manager-invites { email }: a one-use club
+   * manager link (db/029, two weeks) for someone not linked to the club,
+   * mailed to `email` (lib/mailer.js club_manager_invite) and answered too,
+   * so the admin can pass it on when the mail does not arrive. The address
+   * is the link's label only: whoever opens the link and signs in becomes
+   * the manager. { invite, link, mailed }
+   */
+  async function inviteManager ({ actorId, id, body, lang = null } = {}) {
+    if (!isUuid(id)) return notFound()
+    const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : ''
+    if (!email || email.length > 254 || !EMAIL_RE.test(email)) return invalid('email: an email address')
+    if (!createInvite) return notFound()
+    let club, inviter
+    try {
+      ({ rows: [club] } = await pool.query('SELECT id, name FROM public.clubs WHERE id = $1', [id]))
+      if (!club) return notFound()
+      ;({ rows: [inviter] } = await pool.query(
+        `SELECT ${nameSql('p')} AS name FROM auth.users u LEFT JOIN public.profiles p ON p.user_id = u.id WHERE u.id = $1`, [actorId]))
+    } catch (err) {
+      log.error?.(`[clubs] manager invite failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 200)}`)
+      return unavailable()
+    }
+    const made = await createInvite({
+      actorId,
+      body: { label: `Club manager · ${email}`.slice(0, 120), role: 'club_manager', club_id: id, sport: 'indoor', max_uses: 1, expires_at: new Date(Date.now() + MANAGER_LINK_DAYS * DAY_MS).toISOString() },
+      app: 'indoor'
+    })
+    if (made.status !== 201) return made
+    const { invite, code } = made.body.data
+    const base = String(mailer?.managerUrl || 'https://manager.openvolley.app').replace(/\/+$/, '')
+    const link = `${base}/#club=${encodeURIComponent(code)}`
+    let mailed = false
+    if (mailer?.enabled) {
+      try {
+        const r = await mailer.send('club_manager_invite', { to: email, lang: pickLang(body?.lang, lang), link, vars: { club: club.name, inviter: inviter?.name || '', days: String(MANAGER_LINK_DAYS) } })
+        mailed = r?.sent === true
+      } catch (err) {
+        log.error?.(`[clubs] club manager link mail failed: ${String(err?.code || err?.message || err).slice(0, 120)}`)
+      }
+    }
+    return ok({ invite, link, code, mailed }, 201)
+  }
+
 
   // ---------------------------------------------------------------- club managers
   /** GET /api/club/:id: the club as its manager sees it (no other club's data). */
@@ -634,7 +730,7 @@ export function createClubs ({ pool, audit, access = null, logger = console } = 
   }
 
   return {
-    list, create, update, remove, vmTeams, setAccountClubs, setRule, setManagers,
+    list, create, update, remove, vmTeams, setAccountClubs, setRule, setManagers, managerCandidates, inviteManager,
     clubDetail, setContact, members, removeMember, isManager,
     clubsOf, clubsOfMany, managedClubsOf, namesOf, ruleOn, verdict, todayGames
   }
