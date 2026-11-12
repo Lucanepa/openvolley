@@ -23,7 +23,7 @@ import { getCloudApiUrl } from '../utils/backendConfig'
 import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
 import { toastQueuedSync } from '../utils/syncToast'
-import { hasStoredSessionToken } from '../hooks/useSyncQueue'
+import { hasStoredSessionToken, isAuthError } from '../hooks/useSyncQueue'
 import { apiFrom } from '../lib/apiClient'
 import { generateMatchSeedKey, liveStateNow } from '../utils/serverDataSync'
 import { TEST_TEAM_SEED_DATA, TEST_HOME_BENCH, TEST_AWAY_BENCH } from '../constants/testSeeds'
@@ -1258,8 +1258,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
         const { error } = await apiFrom('matches').select('id').limit(1)
         if (cancelled) return
-        const available = !error
+        // Offline only when the server cannot be reached (owner 2026-11-11: the
+        // cards said "Offline" while the header said Connected): a server that
+        // answers "sign in first" is there, the match just stays on this device
+        const reachedSignedOut = !!error && !error.network && isAuthError(error)
+        const available = !error || reachedSignedOut
         setIsSupabaseAvailable(available)
+        if (reachedSignedOut) {
+          if (match?.seed_key) setAllCardStatuses('savedOnDevice')
+          else settleUnchecked()
+          return
+        }
 
         if (!available || !match?.seed_key) {
           settleUnchecked()
