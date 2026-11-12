@@ -179,12 +179,17 @@ const issue = (reason, extra = {}) => ({ reason, ...REQUEST_ISSUES[reason], ...e
  * A forced substitution (injury, expulsion, disqualification, exceptional)
  * has no issues: it must be made, whatever came before.
  *
+ * With both players of the request (`playerOut` and `playerIn`), the pair
+ * itself is checked too: one the rules forbid (the starter-substitute
+ * pairing, a substitute entering twice, 15.6.2) is an illegal substitution
+ * requested (16.1.3), whichever screen asked for it.
+ *
  * @param {Array} events all match events
  * @param {number} setIndex
  * @param {'home'|'away'} team
- * @param {{isInjury?:boolean,isExpelled?:boolean,isDisqualified?:boolean,isExceptional?:boolean,playerOut?:any}} [request]
+ * @param {{isInjury?:boolean,isExpelled?:boolean,isDisqualified?:boolean,isExceptional?:boolean,playerOut?:any,playerIn?:any}} [request]
  * @param {{maxPerSet?:number}} [opts]
- * @returns {Array<{reason:string, kind:'block'|'notice'|'warn', rule:string, options:string[], playerIn?:any}>}
+ * @returns {Array<{reason:string, kind:'block'|'notice'|'warn', rule:string, options:string[], playerIn?:any, illegalReason?:string}>}
  */
 export function substitutionRequestIssues(events, setIndex, team, request = {}, { maxPerSet = MAX_SUBSTITUTIONS_PER_SET } = {}) {
   if (isForcedSubstitution(request)) return []
@@ -194,6 +199,15 @@ export function substitutionRequestIssues(events, setIndex, team, request = {}, 
   if (countRegularSubstitutions(events, team, setIndex) >= maxPerSet) {
     issues.push(issue('substitution_limit'))
     return issues // a limit warning has no "Continue anyway": nothing after it
+  }
+  const hasPair = request?.playerOut !== undefined && request?.playerOut !== null &&
+    request?.playerIn !== undefined && request?.playerIn !== null
+  const illegal = hasPair ? substituteInIllegalReason(events, setIndex, team, request.playerOut, request.playerIn) : null
+  // 'no_rally_since_out' is the starter back for the player who just came in:
+  // the no_rally_since_entry warning below is about that one
+  if (illegal && illegal !== 'no_rally_since_out') {
+    issues.push(issue('illegal_substitution', { playerIn: request.playerIn, illegalReason: illegal }))
+    return issues // no "Continue anyway" either
   }
   const entry = request?.playerOut !== undefined && request?.playerOut !== null
     ? entryWithoutCompletedRally(events, setIndex, team, request.playerOut)

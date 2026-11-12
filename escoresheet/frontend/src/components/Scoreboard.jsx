@@ -735,6 +735,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [summaryTableZoom, setSummaryTableZoom] = useState(null) // { side: 'left'|'right', teamKey: 'home'|'away' } | null
 
   const [benchSubExpanded, setBenchSubExpanded] = useState(false) // Track if substitution list is expanded in bench player menu
+  const [benchIllegalExpanded, setBenchIllegalExpanded] = useState(false) // the "Not allowed" court players in the bench player menu
   const [courtSubExpanded, setCourtSubExpanded] = useState(false) // Track if substitution list is expanded in court player menu
   const [courtIllegalExpanded, setCourtIllegalExpanded] = useState(false) // the "Not allowed" candidates in the court player menu
   const [courtSanctionExpanded, setCourtSanctionExpanded] = useState(false) // Track if sanction list is expanded in court player menu
@@ -21167,11 +21168,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
         // For "never played" bench players, get available court players to substitute
         // Filter out liberos - cannot substitute for a libero on court
+        // A court player who came in as a substitute may only be replaced by
+        // the starter he came in for (FIVB 15.6.2, the court player's menu's
+        // rule: domain/interruptionRequests substituteInIllegalReason): he is
+        // listed under "Not allowed" with why, a tap opens the request warning
+        // (not in an easy match, nor beyond the 6 substitutions: as there)
         const availableCourtPlayers = []
+        const illegalCourtPlayers = []
         if (neverPlayed && canSubstitute) {
           const currentLineup = getCurrentLineup(team)
           const liberoOnCourt = getLiberoOnCourt(team)
           const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
+          const showIllegal = data?.match?.easy !== true && (substitutionsUsed?.[team] || 0) < MAX_SUBSTITUTIONS_PER_SET
           if (currentLineup) {
             Object.entries(currentLineup).forEach(([pos, num]) => {
               if (num) {
@@ -21184,7 +21192,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 // Also check if current libero is on court at this position
                 const isLiberoOnCourt = liberoOnCourt && String(liberoOnCourt.liberoNumber) === String(num)
                 if (canBeSub && !isLibero && !isLiberoOnCourt) {
-                  availableCourtPlayers.push({ position: pos, number: num })
+                  const reason = data?.set ? substituteInIllegalReason(data.events, data.set.index, team, num, playerNumber) : null
+                  if (!reason) availableCourtPlayers.push({ position: pos, number: num })
+                  else if (showIllegal) illegalCourtPlayers.push({ position: pos, number: num, reason })
                 }
               }
             })
@@ -21205,7 +21215,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 zIndex: 999,
                 background: 'transparent'
               }}
-              {...backdropDismiss(() => { setBenchPlayerActionMenu(null); setBenchSubExpanded(false); setBenchSanctionExpanded(false) })}
+              {...backdropDismiss(() => { setBenchPlayerActionMenu(null); setBenchSubExpanded(false); setBenchIllegalExpanded(false); setBenchSanctionExpanded(false) })}
             />
             {/* Action Menu */}
             <div style={menuStyle} className="modal-wrapper-roll-down">
@@ -21263,6 +21273,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             onClick={() => {
                               setBenchPlayerActionMenu(null)
                               setBenchSubExpanded(false)
+                              setBenchIllegalExpanded(false)
                               // Go directly to substitution confirmation modal
                               setSubstitutionConfirm({
                                 team,
@@ -21273,6 +21284,36 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             }}
                           >
                             {cp.number}
+                          </SbMenuItem>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {/* Court players this bench player may not replace, greyed
+                    with why: a tap opens "Illegal substitution requested" */}
+                {illegalCourtPlayers.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <SbMenuItem tone="neutral" className="text-stone-500" expanded={benchIllegalExpanded} onClick={() => setBenchIllegalExpanded(!benchIllegalExpanded)} data-testid="bench-menu-illegal-toggle">
+                      {t('scoreboard.requestWarning.notAllowed')}
+                    </SbMenuItem>
+                    {benchIllegalExpanded && (
+                      <div className={SB_MENU_SUB}>
+                        {illegalCourtPlayers.map(cp => (
+                          <SbMenuItem
+                            key={cp.position}
+                            tone="neutral"
+                            data-testid={`bench-menu-illegal-${cp.number}`}
+                            className="border-dashed bg-stone-50 text-stone-500 hover:bg-stone-100"
+                            onClick={() => {
+                              setBenchPlayerActionMenu(null)
+                              setBenchSubExpanded(false)
+                              setBenchIllegalExpanded(false)
+                              openIllegalSubstitution(team, cp.position, cp.number, { number: playerNumber, reason: cp.reason })
+                            }}
+                          >
+                            <span className="tabular-nums">{cp.number}</span>
+                            <span className="font-medium"> · {t(`scoreboard.requestWarning.illegalShort.${cp.reason}`)}</span>
                           </SbMenuItem>
                         ))}
                       </div>
@@ -21293,6 +21334,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   const showSanctionConfirmFromBenchMenu = (sanctionType) => {
                     setBenchPlayerActionMenu(null)
                     setBenchSubExpanded(false)
+                    setBenchIllegalExpanded(false)
                     setBenchSanctionExpanded(false)
                     setSanctionConfirmModal({
                       team,

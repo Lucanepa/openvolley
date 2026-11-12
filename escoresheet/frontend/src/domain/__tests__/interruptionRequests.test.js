@@ -422,6 +422,50 @@ describe('substituteInIllegalReason (row 12)', () => {
   })
 })
 
+describe('the pair of a substitution request (FIVB 15.6.2, 16.1.3)', () => {
+  it('a bench player for a substitute who came in for someone else: an illegal substitution, no "Continue anyway"', () => {
+    const events = [subst('home', 5, 9), point('away')]
+    const issues = substitutionRequestIssues(events, 1, 'home', { playerOut: 9, playerIn: 12 })
+    expect(reasons(issues)).toEqual(['illegal_substitution'])
+    expect(issues[0]).toMatchObject({ playerIn: 12, illegalReason: 'wrong_partner', options: ['illegal', 'cancel'] })
+  })
+
+  it('the legal pairs have no issue: the starter back for his substitute, a fresh player for a starter', () => {
+    const events = [subst('home', 5, 9), point('away')]
+    expect(substitutionRequestIssues(events, 1, 'home', { playerOut: 9, playerIn: 5 })).toEqual([])
+    expect(substitutionRequestIssues(events, 1, 'home', { playerOut: 4, playerIn: 12 })).toEqual([])
+    expect(substitutionRequestIssues(events, 1, 'home', { playerOut: '4', playerIn: '12' })).toEqual([])
+  })
+
+  it('a substitute who already came in and went out cannot come in again this set', () => {
+    const events = [subst('home', 5, 9), point('away'), subst('home', 9, 5), point('away')]
+    const issues = substitutionRequestIssues(events, 1, 'home', { playerOut: 4, playerIn: 9 })
+    expect(reasons(issues)).toEqual(['illegal_substitution'])
+    expect(issues[0].illegalReason).toBe('played_out')
+  })
+
+  it('the starter back with no rally since keeps its own warning, and "Continue anyway" past it is not blocked', () => {
+    const events = [point('home'), ...substWithLineup('home', 1, 7)]
+    expect(reasons(substitutionRequestIssues(events, 1, 'home', { playerOut: 7, playerIn: 1 }))).toEqual(['no_rally_since_entry'])
+  })
+
+  it('a forced substitution is never refused for its pair (15.7, 15.8)', () => {
+    const events = [subst('home', 5, 9), point('away')]
+    expect(substitutionRequestIssues(events, 1, 'home', { playerOut: 9, playerIn: 12, isInjury: true })).toEqual([])
+    expect(substitutionRequestIssues(events, 1, 'home', { playerOut: 9, playerIn: 12, isExceptional: true })).toEqual([])
+  })
+
+  it('the 7th substitution stays an improper request whatever the pair', () => {
+    const events = [...[1, 2, 3, 4, 5, 6].map(n => subst('home', n, n + 10)), point('away')]
+    expect(reasons(substitutionRequestIssues(events, 1, 'home', { playerOut: 11, playerIn: 7 }))).toEqual(['substitution_limit'])
+  })
+
+  it('after the team\'s delay warning: the notice first, then the illegal pair', () => {
+    const events = [subst('home', 5, 9), point('away'), sanction('home', 'delay_warning')]
+    expect(reasons(substitutionRequestIssues(events, 1, 'home', { playerOut: 9, playerIn: 12 }))).toEqual(['after_delay_warning', 'illegal_substitution'])
+  })
+})
+
 describe('a team sanction keeps no reason (row 11; owner 2026-11-09)', () => {
   // "for improper requests: no reason, no need, same for delays". Events
   // written while a reason was asked (payload.reason) still read as before:
