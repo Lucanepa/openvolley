@@ -24,6 +24,8 @@ import { postMatchSignaturesFromServer } from '../domain/signatureEdits'
 import { signatureSourcesFromApproval } from '../domain/phoneSignature'
 import { liveClockOffset, liveClockOffsetAfter, liveStateNow } from './serverDataSync'
 import { isEncryptedBackup, BACKUP_DAMAGED } from './backupCrypto/envelope'
+import { recomputeMatch } from '../domain/recompute'
+import { queueEventSync } from './eventSync'
 
 // IndexedDB key for storing file system directory handle
 const BACKUP_DB_NAME = 'escoresheet_backup'
@@ -1649,7 +1651,7 @@ export async function importMatchFromSupabase(cloudData) {
     const connectionPins = match.connection_pins || {}
 
     // Create match with all JSONB data (prefer JSONB, fallback to legacy)
-    const localMatchId = await db.matches.add({
+    const localMatchRow = {
       homeTeamId,
       awayTeamId,
       status: match.status,
@@ -1731,7 +1733,8 @@ export async function importMatchFromSupabase(cloudData) {
       createdAt: match.created_at || new Date().toISOString(),
       // Mark match info as confirmed since we're restoring an existing match
       matchInfoConfirmedAt: match.created_at || new Date().toISOString()
-    })
+    }
+    const localMatchId = await db.matches.add(localMatchRow)
 
     importedMatchId = localMatchId
 
@@ -1875,6 +1878,25 @@ export async function importMatchFromSupabase(cloudData) {
           status: 'queued'
         })
       }
+
+      // The line-up after each substitution, libero replacement and side-out
+      // rotation is a sub-row (N.x) of its entry. Earlier versions kept those
+      // rows on the scoring device: their log has the starting line-ups only,
+      // and the set went on here from the starting six. The rows follow from
+      // the entries (domain/recompute, as a correction rebuilds them): the
+      // missing ones are added where the scoring device had them and sent
+      // like the scoreboard sends them now, so the next device reads them
+      // too (not for a match closed on the server: it refuses them). A log
+      // that has them gets none. Over the cloud rows only: the line-ups
+      // fetchMatchByPin makes up (latest rally, live state) are the current
+      // ones already, not a starting line-up to replay the rallies on.
+      const rebuilt = recomputeMatch(cloudEvents.map(eventRow), { match: localMatchRow, matchId: localMatchId })
+        .add.filter(row => row.type === 'lineup')
+      for (const row of rebuilt) {
+        const id = await db.events.add({ matchId: localMatchId, setIndex: row.setIndex, type: 'lineup', payload: row.payload, ts: row.ts, seq: row.seq })
+        if (!isKnownClosedOnServer(localMatchRow)) await queueEventSync(db, id)
+      }
+      if (rebuilt.length) console.log(`[Import] ${seedKey}: ${rebuilt.length} line-up row(s) rebuilt from the entries (a log without its line-up sub-rows)`)
     })
   })
 
