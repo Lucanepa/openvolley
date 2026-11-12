@@ -71,6 +71,14 @@
   </screenshots>
 
   <releases>
+    <release version="3.1.3" date="2026-11-12">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.1.3</url>
+      <description>
+        <ul>
+          <li>Desktop: copy a match backup to a USB stick (Options, Backup, "Copy to stick now"): any stick is found, the copy is checked after writing and stays encrypted with the game or referee PIN.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.1.2" date="2026-11-12">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.1.2</url>
       <description>
