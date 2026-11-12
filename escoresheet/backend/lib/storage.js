@@ -818,10 +818,11 @@ export function createStorage(options = {}) {
    * upsert defaults to true (as server.js did); upsert:false on an existing
    * object fails with 409 OV_STORAGE_EXISTS without touching it.
    * adopt (trusted server code only, never from a request body): in an
-   * uploader-only bucket the caller may replace an existing object it is not
-   * an owner of; adopt(owners) returns the owners kept beside it, the others
-   * lose the object (lib/scoresheets.js: an account that may write the match
-   * the path is of, over a file another account created there first).
+   * uploader-only bucket the caller may replace an existing object of other
+   * owners (never one without any); adopt(owners) returns the owners kept
+   * beside it, the others lose the object (lib/scoresheets.js: an account
+   * that may write the match the path is of, over a file another account
+   * created there first).
    */
   async function upload({ bucket, path: p, fileBase64, data, contentType, upsert, userId, adopt = null } = {}) {
     assertBucket(bucket)
@@ -868,11 +869,12 @@ export function createStorage(options = {}) {
     }
     // Only an owner may replace an object in an uploader-only bucket (also
     // before the 409, so a stranger cannot even probe for it). Objects stored
-    // before owner records existed have none: nobody replaces them. A trusted
-    // caller's adopt lets this caller replace it all the same (see upload).
+    // before owner records existed (or whose uploaders' accounts are deleted)
+    // have none: nobody replaces them, adopt or not. A trusted caller's adopt
+    // lets this caller replace an object of other owners (see upload).
     const owners = existing && uploaderOnly ? await readOwners(rr, bucket, key) : null
     const adopting = !!owners && !owners.includes(userId)
-    if (adopting && !adopt) throw err.forbidden()
+    if (adopting && (!adopt || !owners.length)) throw err.forbidden()
     if (existing && !doUpsert) throw err.exists()
 
     // Charged only for a write that is otherwise going ahead (no quota spent on 4xx refusals).

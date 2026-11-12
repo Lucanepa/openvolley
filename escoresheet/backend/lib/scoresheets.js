@@ -37,6 +37,9 @@
  *                                            by an account that may write the seed's match
  *   removeFiles({ userId, admin, body })     POST /api/storage/remove in that bucket:
  *                                            a closed match's PDF stays
+ *   recordOldPdfs({ apply })                 operator step after db/033
+ *                                            (scripts/scoresheet-records.mjs): the PDF
+ *                                            of each match closed before it, recorded
  *
  * Where the scorer apps put the files ('scoresheets' bucket; OpenVolley:
  * frontend/src/utils/scoresheetUploader.js, OpenBeach:
@@ -67,7 +70,10 @@
  * any (stored before db/033) is found by the names as before (no scheduled
  * day: the days it was closed, updated and created; more than one file: the
  * newest), but only files whose storage owner created, edits or closed the
- * match.
+ * match and that are not recorded for another match. Such a file of a
+ * closed match stays its own: an upload for another match of the same name
+ * neither replaces nor takes it (409 OV_MATCH_CLOSED), and recordOldPdfs
+ * records it for the match once db/033 is in.
  *
  * A beach name has no secret part (an indoor name has its device's random
  * part), so another beach scorer could create a match's file paths first and
@@ -301,21 +307,40 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
   }
   const sportOut = (isBeach) => (isBeach === true ? 'beach' : 'indoor')
 
-  /** The PDF files of the folders, one listing per folder; null when the storage cannot be read. */
-  function folderReader () {
+  /**
+   * The PDF files of the folders, one listing per folder, each with `match`:
+   * the id of the match it is recorded for (db/033), else null. A listing is
+   * null when the storage cannot be read. `q`: a transaction's client.
+   */
+  function folderReader (q = pool) {
     const seen = new Map()
     return (folder) => {
-      if (!seen.has(folder)) {
-        seen.set(folder, storage.listFilesTrusted({ bucket: SCORESHEETS_BUCKET, path: folder })
-          .then((files) => files.filter((f) => f.name.endsWith('.pdf')).map((f) => ({ ...f, folder })))
-          .catch((err) => {
-            // a folder name the storage refuses (never one built here) or an I/O error
-            log.warn?.(`[scoresheets] list failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 120)}`)
-            return null
-          }))
-      }
+      if (!seen.has(folder)) seen.set(folder, readFolder(folder, q))
       return seen.get(folder)
     }
+  }
+
+  async function readFolder (folder, q) {
+    let files
+    try {
+      files = (await storage.listFilesTrusted({ bucket: SCORESHEETS_BUCKET, path: folder })).filter((f) => f.name.endsWith('.pdf'))
+    } catch (err) {
+      // a folder name the storage refuses (never one built here) or an I/O error
+      log.warn?.(`[scoresheets] list failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 120)}`)
+      return null
+    }
+    const keys = files.map((f) => `${folder}/${f.name}`)
+    let recordedFor = new Map()
+    if (keys.length) {
+      try {
+        const { rows } = await q.query('SELECT path, match_id::text AS match_id FROM public.match_scoresheets WHERE path = ANY($1::text[])', [keys])
+        recordedFor = new Map(rows.map((r) => [r.path, r.match_id]))
+      } catch (err) {
+        // a database without db/033: no file is recorded
+        if (err?.code !== '42P01') throw err
+      }
+    }
+    return files.map((f, i) => ({ ...f, folder, match: recordedFor.get(keys[i]) ?? null }))
   }
 
   /**
@@ -323,15 +348,17 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
    * with unknown: true when there is none and the storage could not be read.
    * `recorded`: the files stored for it (db/033), newest first; a match with
    * none (files stored before db/033) by the names, but only a file whose
-   * storage owner is one of its `writers` (Set of user ids), and (`since`,
-   * ms) only one stored after that time.
+   * storage owner is one of its `writers` (Set of user ids) and that is not
+   * recorded for another match (that one's alone), and (`since`, ms) only
+   * one stored after that time.
    */
   async function locate (m, read, recorded, writers, since = null) {
     if (recorded?.length) return { files: recorded }
     const { folders, rank } = pdfLocator(m)
     const lists = await Promise.all(folders.map(read))
     let unknown = lists.some((l) => l === null)
-    const named = lists.filter(Boolean).flat().filter((e) => rank(e.name) && (since === null || e.mtimeMs > since))
+    const named = lists.filter(Boolean).flat()
+      .filter((e) => rank(e.name) && (e.match === null || e.match === m.id) && (since === null || e.mtimeMs > since))
     const allowed = await Promise.all(named.map(async (e) => {
       try {
         const owners = await storage.getOwners({ bucket: SCORESHEETS_BUCKET, path: `${e.folder}/${e.name}` })
@@ -621,9 +648,10 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
    * other name can be several matches' (game numbers repeat; an external id
    * can be made to clean to a game number): the caller's own ones first
    * (creator or editor), then the path's day, so that matches others add
-   * under the name do not push the caller's out of the candidates. A PDF of
-   * such a name is stored under its own random path, recorded for the match
-   * found here.
+   * under the name do not push the caller's out of the candidates; then one
+   * an admin has not released (release-game: a duplicate, its game entered
+   * again in a newer match), the newer one first. A PDF of such a name is
+   * stored under its own random path, recorded for the match found here.
    */
   async function pathMatch (client, parts, matchOwner) {
     let candidates
@@ -638,7 +666,8 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
       const own = `(coalesce(m.created_by = ${u}::uuid, false) OR EXISTS (SELECT 1 FROM public.match_editors e WHERE e.match_id = m.id AND e.user_id = ${u}::uuid))`
       const { rows } = await client.query(
         `SELECT ${ROW_COLUMNS}, m.closed_by::text AS closed_by FROM public.matches m
-          WHERE ${where} ORDER BY ${own} DESC, ${ofDay} DESC, m.scheduled_at DESC NULLS LAST, m.id LIMIT 20`, values)
+          WHERE ${where} ORDER BY ${own} DESC, ${ofDay} DESC, m.official_game_exempt IS NOT TRUE DESC,
+                m.scheduled_at DESC NULLS LAST, m.created_at DESC NULLS LAST, m.id LIMIT 20`, values)
       candidates = rows.map(matchRow).filter((m) => pdfLocator(m).rank(parts.name))
     }
     if (!candidates.length) throw new Refused(MATCH_NOT_IN_CLOUD())
@@ -662,12 +691,39 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
    * was stored since the reopen. { key, mtimeMs, owners } or null;
    * { unknown: true } when the storage could not be read.
    */
-  async function unrecordedApprovalPdf (m, writers, reopenedAt) {
+  async function unrecordedApprovalPdf (m, writers, reopenedAt, read) {
     const since = reopenedAt ? new Date(reopenedAt).getTime() : null
-    const { files: [f], unknown } = await locate(m, folderReader(), null, writers, since)
+    const { files: [f], unknown } = await locate(m, read, null, writers, since)
     if (!f) return unknown ? { unknown: true } : null
     const key = `${f.folder}/${f.name}`
     return { key, mtimeMs: f.mtimeMs, owners: await storage.getOwners({ bucket: SCORESHEETS_BUCKET, path: key }) }
+  }
+
+  /**
+   * Whether the file on disk at the path `parts` (one without a record) is
+   * the PDF the Scoresheets tab serves by its name (locate) for a closed match
+   * other than `exceptId` that has no PDF recorded (closed before db/033): a
+   * match its name and day fit, whose creator, an editor or the closing
+   * account owns the file. Such a file stays that match's, whatever other
+   * match of the same name an upload is for.
+   */
+  async function oldPdfOfClosedMatch (client, read, parts, exceptId) {
+    // no owner record: no file, or one the tab serves for no match
+    const owners = await storage.getOwners({ bucket: SCORESHEETS_BUCKET, path: parts.key })
+    if (!owners.length) return false
+    const files = await read(parts.folder)
+    if (files === null) throw new Refused(unavailable())
+    if (!files.some((f) => f.name === parts.name)) return false
+    const { values, p } = sqlParams()
+    const o = p(owners)
+    const { rows } = await client.query(
+      `SELECT ${ROW_COLUMNS} FROM public.matches m
+        WHERE ${pathSql(parts, p)} AND m.closed_at IS NOT NULL AND ${ofDaySql(parts, p)} AND m.id <> ${p(exceptId)}::uuid
+          AND NOT EXISTS (SELECT 1 FROM public.match_scoresheets s WHERE s.match_id = m.id)
+          AND (m.created_by::text = ANY(${o}::text[]) OR m.closed_by::text = ANY(${o}::text[])
+               OR EXISTS (SELECT 1 FROM public.match_editors e WHERE e.match_id = m.id AND e.user_id::text = ANY(${o}::text[])))
+        LIMIT 20`, values)
+    return rows.some((r) => pdfLocator(matchRow(r)).rank(parts.name) > 0)
   }
 
   /** The answer to a refusal thrown in a store's transaction, or 503 for anything else. */
@@ -736,6 +792,12 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
         if (s.path_match && s.path_match !== m.id && !(parts.sport === 'beach' && parts.seed !== null)) {
           throw new Refused(fail(409, 'OV_STORAGE_CONFLICT', 'This file is stored for another match'))
         }
+        const read = folderReader(client)
+        // A file stored before db/033 at this path can be the PDF of a closed
+        // match without a record: it stays that one's (oldPdfOfClosedMatch),
+        // as if recorded for it (a beach seed is one match's, see above)
+        if (!s.path_match && matchOwner?.admin !== true && !(parts.sport === 'beach' && parts.seed !== null) &&
+            await oldPdfOfClosedMatch(client, read, parts, m.id)) throw new Refused(MATCH_CLOSED())
         const writers = (await writersOf([m.id], client)).get(m.id) ?? new Set()
         // first_stored_at of a file from before db/033 taken as the approval's: its own time
         let firstStoredAt = null
@@ -752,7 +814,7 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
             held = { sameBytes: s.same_bytes, inGrace: s.in_grace, by: [s.path_stored_by] }
           } else {
             // none recorded: a match closed before db/033 has its PDF on disk all the same
-            const old = await unrecordedApprovalPdf(m, writers, s.reopened_at)
+            const old = await unrecordedApprovalPdf(m, writers, s.reopened_at, read)
             if (old?.unknown) throw new Refused(unavailable())
             if (old) {
               if (old.key !== parts.key) throw new Refused(MATCH_CLOSED())
@@ -867,6 +929,80 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
   }
 
   /**
+   * Operator step after db/033 (scripts/scoresheet-records.mjs, never over
+   * HTTP): each closed match without a recorded PDF (closed before db/033)
+   * gets a record of the file the Scoresheets tab serves for it by its name
+   * (locate), with that file's time as stored_at and first_stored_at. Its
+   * PDF is then held by the record as every later match's: the closed-match
+   * rules of storePdf and removeFiles, no other match's names reach it, and
+   * an account deletion no longer hides it. A file the names serve for
+   * another of these matches too is left to the names (shared). Idempotent:
+   * a match with a record and a recorded path are left alone. `apply` false:
+   * counts only. { matches, recorded, shared, none, unknown }
+   */
+  async function recordOldPdfs ({ apply = false } = {}) {
+    const { rows } = await pool.query(
+      `SELECT ${ROW_COLUMNS} FROM public.matches m
+        WHERE m.closed_at IS NOT NULL AND m.test IS NOT TRUE
+          AND NOT EXISTS (SELECT 1 FROM public.match_scoresheets s WHERE s.match_id = m.id)
+        ORDER BY m.closed_at, m.id`)
+    const matches = rows.map(matchRow)
+    const writers = await writersOf(matches.map((m) => m.id))
+    const read = folderReader()
+    const out = { matches: matches.length, recorded: 0, shared: 0, none: 0, unknown: 0 }
+    const found = []
+    for (const m of matches) {
+      const { files: [f], unknown } = await locate(m, read, null, writers.get(m.id))
+      if (f) found.push({ m, key: `${f.folder}/${f.name}`, mtimeMs: f.mtimeMs })
+      else out[unknown ? 'unknown' : 'none']++
+    }
+    const servedFor = new Map()
+    for (const x of found) servedFor.set(x.key, (servedFor.get(x.key) ?? 0) + 1)
+    for (const x of found) {
+      if (servedFor.get(x.key) > 1) {
+        out.shared++
+        continue
+      }
+      if (!apply) {
+        out.recorded++
+        continue
+      }
+      let data
+      let owners
+      try {
+        data = await storage.readTrusted({ bucket: SCORESHEETS_BUCKET, path: x.key })
+        owners = await storage.getOwners({ bucket: SCORESHEETS_BUCKET, path: x.key })
+      } catch (err) {
+        // removed in the meantime, or unreadable
+        log.warn?.(`[scoresheets] old PDF unreadable: ${err?.code || ''} ${String(err?.message || err).slice(0, 120)}`)
+        out.unknown++
+        continue
+      }
+      const by = owners.find((o) => writers.get(x.m.id)?.has(o)) ?? null
+      const client = await pool.connect()
+      try {
+        await client.query('BEGIN')
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`ov.scoresheet:${x.m.id}`])
+        const r = await client.query(
+          `INSERT INTO public.match_scoresheets (path, match_id, stored_by, sha256, size, stored_at, first_stored_at)
+           SELECT $1, $2::uuid, (SELECT u.id FROM auth.users u WHERE u.id = $3::uuid), $4, $5, t.at, t.at
+             FROM (SELECT to_timestamp($6::double precision / 1000) AS at) t
+            WHERE NOT EXISTS (SELECT 1 FROM public.match_scoresheets s WHERE s.match_id = $2::uuid)
+           ON CONFLICT (path) DO NOTHING`,
+          [x.key, x.m.id, isUuid(by) ? by : null, createHash('sha256').update(data).digest('hex'), data.length, x.mtimeMs])
+        await client.query('COMMIT')
+        out.recorded += r.rowCount
+      } catch (err) {
+        await client.query('ROLLBACK').catch(() => {})
+        throw err
+      } finally {
+        client.release()
+      }
+    }
+    return out
+  }
+
+  /**
    * POST /api/scoresheets/:id/view: the PDF behind a short-lived link for the
    * browser's viewer. The read is checked and audited exactly as GET .../pdf.
    */
@@ -898,5 +1034,5 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
     return { status: 200, file: { ...v.file, disposition: 'inline' } }
   }
 
-  return { list, readPdf, sportOf, createViewLink, readViewLink, latestPdf, storeFile, storePdf, storeBeachJson, removeFiles }
+  return { list, readPdf, sportOf, createViewLink, readViewLink, latestPdf, storeFile, storePdf, storeBeachJson, removeFiles, recordOldPdfs }
 }

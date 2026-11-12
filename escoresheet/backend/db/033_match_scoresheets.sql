@@ -16,7 +16,10 @@
 -- approval's). The manager's Scoresheets tab and the final mail serve only
 -- these files of the match (the newest); a match without a row (files stored
 -- before this file ran) falls back to the file names, and then only to files
--- whose storage owner created, edits or closed the match.
+-- whose storage owner created, edits or closed the match and that have no
+-- row of another match. scripts/scoresheet-records.mjs --apply, once after
+-- this file and the new backend image, writes the row of the file each match
+-- closed before this file ran has by the names (its time kept; idempotent).
 --
 --   path       the object's key in the bucket ({day}/game{n}_k{hex}.pdf,
 --              beach/{day}/game{n}_{seed}.pdf); one match per file
@@ -41,7 +44,8 @@
 -- an earlier draft of this file made without it: NULL there, not the time
 -- this file ran, which would open the 10 minutes again). Deploy: 033,
 -- apply-roles.sh, then the backend image (an image without this table
--- answers PDF uploads with 503).
+-- answers PDF uploads with 503), then scripts/scoresheet-records.mjs in the
+-- backend container (a dry run, then --apply).
 BEGIN;
 
 CREATE TABLE IF NOT EXISTS public.match_scoresheets (

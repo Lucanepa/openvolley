@@ -895,6 +895,13 @@ describe('uploader-only buckets (final scoresheets)', () => {
     const viaCtx = await s.handle('upload', { bucket: 'scoresheets', path: beach, fileBase64: b64('{"ctx":1}'), contentType: 'application/json' }, { userId: 'erin', adopt: () => ['alice'] })
     assert.equal(viaCtx.status, 200)
     assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: beach }), ['erin', 'alice'])
+    // an object without owners (stored before owner records, or its uploader's account deleted) stays as it is
+    const legacy = '2026-10-05/game991405_k0123456789abcdef0123456789abcdef.pdf'
+    await fs.mkdir(path.join(root, 'scoresheets', '2026-10-05'), { recursive: true })
+    await fs.writeFile(path.join(root, 'scoresheets', legacy), '%PDF-1.4 approved')
+    await rejectsWith(up(s, 'alice', '%PDF-1.4 changed', legacy, { adopt: (owners) => owners }), 403, 'OV_STORAGE_FORBIDDEN')
+    assert.equal(await fs.readFile(path.join(root, 'scoresheets', legacy), 'utf8'), '%PDF-1.4 approved')
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: legacy }), [])
   })
 
   it('handle: the HTTP adapter answers 403 to a non-owner and 200 + not-found for a missing object', async () => {
