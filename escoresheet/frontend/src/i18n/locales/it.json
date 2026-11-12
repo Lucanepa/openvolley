@@ -3975,6 +3975,7 @@
     "stay": "Resta"
   },
   "update": {
+    "reloading": "Aggiornamento di OpenVolley…",
     "ready": "L'aggiornamento {{version}} è pronto",
     "readyOnQuit": "Si installa quando chiudi OpenVolley.",
     "restartNow": "Riavvia e aggiorna",
