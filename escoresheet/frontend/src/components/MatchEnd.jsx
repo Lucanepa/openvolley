@@ -19,7 +19,7 @@ import { requeueClosedJobs } from '../utils/matchHandover'
 import KitModal from './manage/KitModal'
 import CloudBlockNotice from './CloudBlockNotice'
 import { Textarea } from '../ui/Textarea.jsx'
-import { scoresheetUploadPath, scoresheetUploadJob, scoresheetJsonBlob, uploadQueuedScoresheet, supersedeUnsentScoresheetUploads } from '../utils/scoresheetUploader'
+import { scoresheetUploadPath, scoresheetUploadJob, scoresheetJsonBlob, uploadQueuedScoresheet, supersedeUnsentScoresheetUploads, supersedeUnsentScoresheetUploadsOf } from '../utils/scoresheetUploader'
 import { matchEndExportData } from '../utils/backupManager'
 import { publishMatchEndLiveState } from '../utils/matchEndLiveState'
 import { isoOf, matchTimes, setDurationMinutes } from '../../scoresheet_pdf/utils/matchTimes'
@@ -1596,6 +1596,13 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         ...(voidApprovals ? { accountApprovals: null } : {})
       })
       setServerClosed(false)
+
+      // The approval's scoresheet files still unsent are the old approval's:
+      // the new approval queues new ones (utils/scoresheetUploader)
+      if (!match?.test && match?.seed_key) {
+        const n = await supersedeUnsentScoresheetUploadsOf(db.sync_queue, match.seed_key)
+        if (n) console.log(`[MatchEnd] Reopened: ${n} scoresheet upload(s) of the earlier approval dropped`)
+      }
 
       // The writes set aside when the server refused them as closed go out
       // again (utils/matchHandover requeueClosedJobs), except a closing one
