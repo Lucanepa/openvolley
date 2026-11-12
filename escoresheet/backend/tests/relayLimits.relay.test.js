@@ -206,6 +206,70 @@ describe('anonymous input on a venue relay (--local)', () => {
     assert.equal(await alive(srv.base), true)
   })
 
+  it('refuses a bundle whose events each use a fresh key order (a hidden-class flood) with too-large', async () => {
+    const scorer = await open()
+    // first a real bundle, so a refusal must leave it in place
+    scorer.send(syncMessage('heap-1', { sets: [{ id: 1, index: 1, homePoints: 5, awayPoints: 2 }] }))
+    await settle(scorer)
+    assert.deepEqual(errorsOf(scorer), [])
+
+    // About 5000 events, each a 16-key object whose keys are in a different
+    // order: small as a frame (well under the frame-value limit) but, stored,
+    // a fresh V8 hidden class per event -- tens of MB the old estimate missed.
+    let seed = 7
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff }
+    const names = Array.from({ length: 16 }, (_, i) => 'field' + i)
+    const events = Array.from({ length: 5000 }, (_, n) => {
+      const ns = names.slice()
+      for (let i = ns.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1));[ns[i], ns[j]] = [ns[j], ns[i]] }
+      const e = {} // exactly 16 keys (fast layout), a fresh order each time
+      for (const k of ns) e[k] = n
+      return e
+    })
+    const frame = JSON.stringify({ type: 'sync-match-data', matchId: 'heap-1', match: { seed_key: 'heap-1', status: 'live', gamePin: '987654', refereePin: PIN }, events })
+    assert.ok(frame.length < 2 * 1024 * 1024, `a small frame (${frame.length} bytes), not caught by the frame-value limit`)
+    scorer.ws.send(frame)
+    await settle(scorer)
+    assert.equal(lastError(scorer)?.code, 'too-large', srv.output.join('').slice(-1500))
+
+    // the server stays up and the room keeps its real bundle
+    assert.equal(await alive(srv.base), true)
+    const kept = await get(srv.base, '/api/match/heap-1', { 'X-OV-Match-Pin': PIN })
+    assert.deepEqual(kept.json.sets.map((s) => s.homePoints), [5], 'the hostile bundle never replaced the real one')
+  })
+
+  it('refuses a status, scheduledAt or team name that is not text or a number, and keeps the list and PIN check answering', async () => {
+    // a real match that the list and the PIN check must keep answering for
+    const good = await open()
+    good.send(syncMessage('field-good', { match: { status: 'live', scheduledAt: '2026-10-06T18:00:00Z' } }))
+    await settle(good)
+    assert.deepEqual(errorsOf(good), [])
+
+    const crafted = {
+      'field-status': { match: { status: POISON } },
+      'field-sched': { match: { scheduledAt: {} } }, // a plain object: new Date() in the list sort threw
+      'field-team': { homeTeam: { name: POISON } }
+    }
+    for (const [room, extra] of Object.entries(crafted)) {
+      const evil = await open()
+      evil.send(syncMessage(room, extra))
+      await settle(evil)
+      assert.equal(lastError(evil)?.code, 'bad-request', room)
+      assert.equal((await get(srv.base, `/api/match/${room}`, { 'X-OV-Match-Pin': '1' })).status, 404, `${room} not stored`)
+    }
+
+    // the list still answers (200, the good match in it) and the correct PIN
+    // still validates for everyone
+    const list = await get(srv.base, '/api/match/list')
+    assert.equal(list.status, 200, srv.output.join('').slice(-1500))
+    assert.ok(list.json.matches.some((m) => m.id === 'field-good'), 'the good match is listed')
+    const pin = await fetch(`${srv.base}/api/match/validate-pin`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin: PIN, type: 'referee' })
+    }).then((r) => r.json())
+    assert.equal(pin.success, true, 'the correct PIN still validates')
+    assert.equal(await alive(srv.base), true)
+  })
+
   it('keeps a long five-set match from an older scorer whole (undo snapshots dropped)', async () => {
     const scorer = await open()
     const bundle = longFiveSetBundle('five-sets')
@@ -242,6 +306,45 @@ describe('anonymous input on a venue relay (--local)', () => {
     assert.deepEqual(live.liveState, { points_a: 2, points_b: 0 })
     await settle(viewer)
     assert.equal(viewer.messages.filter((m) => m.type === 'live-state-update').length, 1, 'the big one never reached the viewer')
+    assert.equal(await alive(srv.base), true)
+  })
+})
+
+describe('a room cannot creep its live state past the budget in sub-slack steps', () => {
+  let srv
+  const sockets = []
+  before(async () => {
+    // total 0.3 MB, 0.15 MB per address: one room's bundle (~20 KB) plus a live
+    // state over ~130 KB (still under the hub's 256 KB cap) is over the share
+    srv = await bootServer({ IS_CLOUD: '1', TRUST_PROXY: 'cloudflare', OV_RELAY_MAX_MB: '0.3' }, ['--local'])
+  })
+  after(async () => {
+    for (const c of sockets) { try { c.ws.terminate() } catch { /* gone */ } }
+    await srv?.stop()
+  })
+  const open = async (ip) => { const c = await openSocket(srv.wsUrl, { headers: { 'cf-connecting-ip': ip } }); sockets.push(c); return c }
+
+  it('the memory check still fires as the live state grows, so it cannot reach the hub cap unaccounted', async () => {
+    const scorer = await open('203.0.113.90')
+    scorer.send(syncMessage('creep', { match: { remarks: 'r'.repeat(20 * 1024) } }))
+    await settle(scorer)
+    assert.deepEqual(errorsOf(scorer), [])
+
+    // grow the live state in 7 KB steps (each under the 8 KB slack): the budget
+    // refuses it well before the 256 KB hub cap, because the accounted size only
+    // advances when the check ran (it does not creep step by step unchecked)
+    let refusedAt = null
+    let lastJson = 0
+    for (let pad = 6000; pad <= 230000 && refusedAt === null; pad += 7000) {
+      const liveState = { points_a: 1, pad: 'x'.repeat(pad) }
+      lastJson = JSON.stringify(liveState).length
+      scorer.send({ type: 'live-state-update', matchId: 'creep', liveState })
+      await settle(scorer)
+      if (lastError(scorer)?.code === 'relay-full') refusedAt = lastJson
+    }
+    assert.ok(refusedAt !== null, 'the growing live state was refused by the memory budget')
+    assert.ok(refusedAt < 256 * 1024, `refused at ${refusedAt} B, below the ${256 * 1024} B hub cap (not a hub-cap refusal)`)
+    assert.equal(lastError(scorer)?.code, 'relay-full', 'a budget refusal, not a too-large hub refusal')
     assert.equal(await alive(srv.base), true)
   })
 })

@@ -67,6 +67,30 @@ describe('relayBundleProblem', () => {
     assert.equal(relayBundleProblem(sync({ match: { matchPin: 'x'.repeat(5000) } }), PIN_FIELDS), null)
   })
 
+  it('refuses a status, scheduledAt or team name that is not text or a number (bad-request)', () => {
+    // these feed the match list, landing page and PIN check: String() / new Date()
+    // of an object there answered 500 (or sorted the whole list to an error)
+    for (const bad of [{ toString: 1 }, {}, ['live'], Number.NaN]) {
+      for (const field of ['status', 'scheduledAt', 'scheduled_at', 'homeTeamName', 'awayTeamName']) {
+        const r = relayBundleProblem(sync({ match: { [field]: bad } }), PIN_FIELDS)
+        assert.deepEqual([r?.code, r?.field], ['bad-request', `match.${field}`], `${field}: ${JSON.stringify(bad)}`)
+      }
+    }
+    // a team name that is an object, however the bundle names the teams
+    for (const team of ['homeTeam', 'awayTeam', 'team1Team', 'team2Team', 'team1', 'team2']) {
+      assert.equal(relayBundleProblem(sync({ [team]: { name: { toString: 1 } } }), PIN_FIELDS)?.code, 'bad-request', team)
+      assert.equal(relayBundleProblem(sync({ [team]: ['Home VC'] }), PIN_FIELDS)?.code, 'bad-request', `${team} array`)
+    }
+    // the legacy teams[] format
+    assert.equal(relayBundleProblem(sync({ homeTeam: undefined, teams: [{ name: {} }, { name: 'A' }] }), PIN_FIELDS)?.code, 'bad-request')
+    // what scorers actually send is kept: text status, ISO or numeric scheduledAt,
+    // a missing one, a string team, a team object with a text name
+    assert.equal(relayBundleProblem(sync({ match: { status: 'live', scheduledAt: '2026-10-06T18:00:00Z' } }), PIN_FIELDS), null)
+    assert.equal(relayBundleProblem(sync({ match: { scheduledAt: 1760000000000, homeTeamName: 'Home VC' } }), PIN_FIELDS), null)
+    assert.equal(relayBundleProblem(sync({ match: { status: undefined, scheduledAt: null } }), PIN_FIELDS), null)
+    assert.equal(relayBundleProblem(sync({ homeTeam: 'Home VC', awayTeam: { name: 'Away VC', shortName: 'AVC' } }), PIN_FIELDS), null)
+  })
+
   it('refuses lists that are no array (bad-request) or longer than any match has (too-large)', () => {
     const cases = [
       ['events', MAX_RELAY_EVENTS], ['sets', MAX_RELAY_SETS], ['players', MAX_RELAY_PLAYERS],
@@ -115,8 +139,34 @@ describe('approxHeapBytes', () => {
     // integer-like keys ("7", "1000") go to an element hash table of their own
     const indexed = approxHeapBytes(Array.from({ length: n }, () => ({ 7: 1, 1000: 2, 50000: 3 })))
     assert.ok(indexed / n > 3 * 88, `integer keys ${indexed / n} per object`)
-    // but a key that is not a plain non-negative integer is a normal name
-    assert.ok(approxHeapBytes({ '-1': 1, '007': 2, x: 3 }) < approxHeapBytes({ 1: 1, 7: 2, 9: 3 }))
+    // but a key that is not a plain non-negative integer is a normal name,
+    // counted like any other name (not in the element table): the lookalikes
+    // "-1"/"007" cost exactly what names of the same length do
+    assert.equal(approxHeapBytes({ '-1': 1, '007': 2, x: 3 }), approxHeapBytes({ aa: 1, bbb: 2, x: 3 }))
+    assert.notEqual(approxHeapBytes({ 1: 1, 7: 2, 9: 3 }), approxHeapBytes({ a: 1, b: 2, c: 3 }))
+  })
+
+  it('counts a fresh key order as its own hidden class, a shared one once', () => {
+    // An anonymous socket can give every event in a bundle a different key
+    // order; V8 then makes a fresh hidden class (a map) for each, several
+    // hundred bytes the shared-name cost does not capture. The estimate must
+    // stay at or above what V8 really keeps (measured on Node 22/24, per object
+    // at the MAX_RELAY_EVENTS cap): about 440 (8 keys), 760 (12), 2170 (16, the
+    // object-rest strip path). Objects built in a FIXED order share one map.
+    const n = 4096
+    const names = (K) => Array.from({ length: K }, (_, i) => 'field' + i)
+    const fixed = (K) => { const ns = names(K); return Array.from({ length: n }, () => { const o = {}; for (const k of ns) o[k] = 1; return o }) }
+    // a different key order for every object (a seeded shuffle, as an anonymous
+    // socket could emit): each is its own hidden class
+    let seed = 1
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff }
+    const varied = (K) => { const base = names(K); return Array.from({ length: n }, () => { const ns = base.slice(); for (let i = ns.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1));[ns[i], ns[j]] = [ns[j], ns[i]] } const o = {}; for (const k of ns) o[k] = 1; return o }) }
+    for (const [K, perObject] of [[8, 440], [12, 760], [16, 2170]]) {
+      const v = approxHeapBytes(varied(K))
+      const f = approxHeapBytes(fixed(K))
+      assert.ok(v > 3 * f, `K=${K}: varied ${(v / n).toFixed(0)}/obj vs fixed ${(f / n).toFixed(0)}/obj`)
+      assert.ok(v / n >= perObject, `K=${K}: estimate ${(v / n).toFixed(0)}/obj must cover the measured ${perObject}/obj`)
+    }
   })
 
   it('counts strings by their characters: one byte each when all are ASCII, else two', () => {

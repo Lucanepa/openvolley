@@ -88,6 +88,21 @@ export const FAST_PROPERTIES = 16
 const DICTIONARY_BYTES = 128
 const DICTIONARY_ENTRY_BYTES = 72
 const INDEX_ENTRY_BYTES = DICTIONARY_ENTRY_BYTES + HEAP_NUMBER_BYTES
+// A compact (fast-properties) object carries its own hidden class, a V8 map
+// chain. Objects built with the same keys in the SAME order share one; a
+// different insertion order is a fresh chain of several hundred bytes, and an
+// anonymous socket can give every event in an array its own order. NEW_KEY_BYTES
+// counts each name once (V8 interns it and the shared map keeps it once); this
+// counts the per-object map on top, once per distinct ordered shape seen -- an
+// upper bound, since V8 shares map prefixes and this does not. Measured on
+// Node 22/24: an array of 17000 fresh-order objects took about 440 (8 keys),
+// 760 (12) and 1070-2170 (16, a plain array or the object-rest strip path)
+// bytes each; the shape surcharge keeps the estimate at or above that.
+const MAP_BASE_BYTES = 64
+const MAP_KEY_BYTES = 160
+// Ordered shapes remembered per value; past that every object counts as a fresh
+// shape (an upper bound: an attacker needs this many distinct shapes to get here)
+const MAX_TRACKED_SHAPES = 4096
 // Names remembered per value; past that every name counts as new (more is no bundle)
 const MAX_TRACKED_KEYS = 4096
 // A short string is counted at two bytes per character without looking at it
@@ -119,6 +134,7 @@ const isIndexKey = (k) => {
 export function approxHeapBytes(value) {
   let bytes = 0
   const keys = new Set()
+  const shapes = new Set()
   const stack = [value]
   while (stack.length > 0) {
     const v = stack.pop()
@@ -135,16 +151,24 @@ export function approxHeapBytes(value) {
         bytes += OBJECT_BYTES
         let named = 0
         let indexed = 0
+        let shape = ''
         for (const k in v) {
           if (isIndexKey(k)) indexed++
-          else named++
+          else { named++; shape += k + '\u0000' }
           if (!keys.has(k)) {
             bytes += NEW_KEY_BYTES + 2 * k.length
             if (keys.size < MAX_TRACKED_KEYS) keys.add(k)
           }
           stack.push(v[k])
         }
-        if (named > FAST_PROPERTIES) bytes += DICTIONARY_BYTES + DICTIONARY_ENTRY_BYTES * named
+        if (named > FAST_PROPERTIES) {
+          // A hash table (dictionary mode), per object and order-independent.
+          bytes += DICTIONARY_BYTES + DICTIONARY_ENTRY_BYTES * named
+        } else if (named > 0 && (shapes.size >= MAX_TRACKED_SHAPES || !shapes.has(shape))) {
+          // Fast mode: a key order not seen before is a fresh hidden class.
+          bytes += MAP_BASE_BYTES + MAP_KEY_BYTES * named
+          if (shapes.size < MAX_TRACKED_SHAPES) shapes.add(shape)
+        }
         if (indexed > 0) bytes += DICTIONARY_BYTES + INDEX_ENTRY_BYTES * indexed
       }
     }
@@ -188,6 +212,27 @@ const isPinValue = (v) =>
 const isPinType = (v) =>
   v === undefined || v === null || typeof v === 'string' ||
   (typeof v === 'number' && Number.isFinite(v))
+// A display field (status, scheduledAt, a team's name) the match list, the
+// venue landing page or the PIN check turn into a string or a Date: text, a
+// finite number or missing. An object or array would make String() / new Date()
+// throw and that answer 500 (or sort the whole list to an error) for everyone.
+const isDisplayValue = (v) =>
+  v === undefined || v === null || typeof v === 'string' ||
+  (typeof v === 'number' && Number.isFinite(v))
+// Match fields read into a string or a Date by those paths (lib/publicColumns.js
+// relayMatchListRow and the /api/match/list sort, lib/landingPage.js, the
+// relay validate-pin loop). scheduled_at / game_n are the snake-case aliases.
+const DISPLAY_MATCH_FIELDS = ['status', 'scheduledAt', 'scheduled_at', 'homeTeamName', 'awayTeamName', 'gameNumber', 'gameN', 'game_n']
+// A team arrives as a string, a number or an object with a name; the landing
+// page and the summary read .name / .shortName. Checked wherever a team can be.
+const TEAM_FIELDS = ['homeTeam', 'awayTeam', 'team1Team', 'team2Team', 'team1', 'team2']
+const TEAM_NAME_FIELDS = ['name', 'shortName', 'short_name']
+const teamNameProblem = (team) => {
+  if (team === undefined || team === null || typeof team === 'string' || typeof team === 'number') return false
+  if (typeof team !== 'object' || Array.isArray(team)) return true
+  for (const k of TEAM_NAME_FIELDS) if (!isDisplayValue(team[k])) return true
+  return false
+}
 const listProblem = (v, max) => {
   if (v === undefined || v === null) return null
   if (!Array.isArray(v)) return 'bad-request'
@@ -202,10 +247,13 @@ const PROBLEM_TEXT = {
  * Why a sync-match-data cannot be kept, before anything reads it: a PIN
  * field (pinFields) that is not text of at most MAX_RELAY_PIN_LENGTH or a
  * number ('bad-request': the PIN checks compare text), a typeOnlyField that is
- * not text or a number (its length does not matter, it is never compared), an
- * events / sets / player list that is not an array ('bad-request') or longer
- * than its limit ('too-large'). Null when it may be kept; its size is checked
- * on what the relay keeps (approxHeapBytes).
+ * not text or a number (its length does not matter, it is never compared), a
+ * display field (status, scheduledAt, a team's name) that is not text, a finite
+ * number or missing ('bad-request': the match list, landing page and PIN check
+ * turn it into a string or a Date, and an object there answers 500 for
+ * everyone), an events / sets / player list that is not an array ('bad-request')
+ * or longer than its limit ('too-large'). Null when it may be kept; its size is
+ * checked on what the relay keeps (approxHeapBytes).
  * @param {object} message
  * @param {readonly string[]} pinFields
  * @param {readonly string[]} [typeOnlyFields]
@@ -220,6 +268,21 @@ export function relayBundleProblem(message, pinFields, typeOnlyFields = []) {
     }
     for (const k of typeOnlyFields) {
       if (!isPinType(match[k])) return fail('bad-request', `match.${k}`)
+    }
+    // Fields the match list, landing page and PIN check turn into a string or
+    // a Date: an object there makes one crafted room answer 500 for everyone.
+    for (const k of DISPLAY_MATCH_FIELDS) {
+      if (!isDisplayValue(match[k])) return fail('bad-request', `match.${k}`)
+    }
+  }
+  // The teams, however the bundle names them (home/away, team1/team2, legacy
+  // teams[]): a non-string name would throw on the landing page.
+  for (const k of TEAM_FIELDS) {
+    if (teamNameProblem(message?.[k])) return fail('bad-request', k)
+  }
+  if (Array.isArray(message?.teams)) {
+    for (let i = 0; i < message.teams.length && i < 2; i++) {
+      if (teamNameProblem(message.teams[i])) return fail('bad-request', `teams[${i}]`)
     }
   }
   const lists = [
