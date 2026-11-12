@@ -129,6 +129,21 @@ describe('native backup engine', () => {
     expect(eventFiles(store)).toHaveLength(2)
   })
 
+  it('lastWrittenOf names the newest file of a match (the USB stick copy)', async () => {
+    const { engine, store, m } = setup()
+    expect(engine.lastWrittenOf(1)).toBeNull()
+    m.point('home')
+    await engine.backupNow(1)
+    const first = engine.lastWrittenOf(1)
+    expect(eventFiles(store)).toContain(first.name)
+    expect(first.at).toBeInstanceOf(Date)
+    await engine.backupNow(1)
+    const second = engine.lastWrittenOf(1)
+    expect(second.dir).toBe(first.dir)
+    expect(second.name).not.toBe(first.name)
+    expect(engine.lastWrittenOf(2)).toBeNull()
+  })
+
   it('backupNow resolves once the file is written, without waiting for the rotation of old folders', async () => {
     const store = memoryStore({ 'game1-old': [eventFileName(T0 - 45 * DAY, 1), eventFileName(T0 - 44 * DAY, 2)] })
     let releaseList

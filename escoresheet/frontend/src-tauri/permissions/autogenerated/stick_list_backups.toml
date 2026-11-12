@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-stick-list-backups"
+description = "Enables the stick_list_backups command without any pre-configured scope."
+commands.allow = ["stick_list_backups"]
+
+[[permission]]
+identifier = "deny-stick-list-backups"
+description = "Denies the stick_list_backups command without any pre-configured scope."
+commands.deny = ["stick_list_backups"]

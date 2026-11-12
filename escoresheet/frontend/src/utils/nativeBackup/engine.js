@@ -112,6 +112,7 @@ export function createNativeBackupEngine({
   const writtenDirs = new Set() // folders this session writes (rotated after each write)
   const plainNoted = new Set() // matches whose files are plain (no PIN), logged once
   const warmed = new Map() // matchId -> warm(): its PIN keys derived ahead of its first file
+  const lastWritten = new Map() // matchId -> { dir, name, at } of its newest file this session
   const listeners = new Set()
   let running = null
   let timer = null
@@ -258,6 +259,7 @@ export function createNativeBackupEngine({
     const result = await store.write(dir, name, text, { latest: true })
     if (result?.warning) log.warn?.('[NativeBackup]', result.warning)
     lastKey.set(matchId, key)
+    lastWritten.set(matchId, { dir, name, at: stamp })
     writtenDirs.add(dir)
     addKnown(dir, [{ name, size: text.length }])
 
@@ -368,6 +370,8 @@ export function createNativeBackupEngine({
     /** Derives the match's PIN keys ahead of its first file (notify does, once per match). Resolves to true when it did. */
     warm,
     getStatus: () => status,
+    /** The newest file this session wrote for the match: { dir, name, at } | null (the USB stick copy). */
+    lastWrittenOf: (matchId) => lastWritten.get(matchId) || null,
     subscribe(listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)

@@ -50,6 +50,12 @@ rand = "0.9"
 sha2 = "0.11"
 unicode-normalization = "0.1"
 
+# statvfs (free space and the read-only flag of a USB stick), fsync and
+# posix_fadvise / F_FULLFSYNC for its confirmed copies (stick.rs). In the tree
+# through tauri, no new crate.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 # GtkSettings: keep the window light on a dark GTK theme (main.rs). Already
 # in the tree through tauri (wry/tao), so this adds no new crate.
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -83,6 +89,16 @@ windows = { version = "0.62", features = [
   "Win32_NetworkManagement_WindowsFirewall",
   "Win32_System_Ole",
   "Win32_System_Variant",
+  # USB sticks (stick.rs): drive letters, volume names, free space, the
+  # write-through rename (Storage_FileSystem; CreateFileW needs Security),
+  # the bus type of a fixed drive (Ioctl, IO) and no "no disk" box while
+  # probing (Diagnostics_Debug)
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Storage_FileSystem",
+  "Win32_System_IO",
+  "Win32_System_Ioctl",
+  "Win32_System_Diagnostics_Debug",
 ] }
 
 # WKWebView's preferences: window.open() from scripts (popups.rs). Already
@@ -95,8 +111,13 @@ objc2-web-kit = { version = "0.3", default-features = false, features = [
   "WKWebViewConfiguration",
   "WKPreferences",
 ] }
+# `diskutil info -plist` of a mounted volume: is it a stick? (stick.rs)
+# In the tree through tauri-utils, no new crate.
+plist = "1"
 
 [dev-dependencies]
+# the diskutil samples of stick.rs's tests run on every OS
+plist = "1"
 # mock runtime for the IPC/ACL test of the backup commands (main.rs)
 tauri = { version = "2", features = ["test"] }
 # Router tests of /api/sign/* (relay.rs): Router::oneshot and body reading,
