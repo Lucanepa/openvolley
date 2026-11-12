@@ -5,12 +5,15 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import {
   approxHeapBytes, frameTooLarge, relayBundleProblem, relayMemoryBudget,
   MAX_RELAY_EVENTS, MAX_RELAY_SETS, MAX_RELAY_PLAYERS, MAX_RELAY_PIN_LENGTH, MAX_FRAME_VALUES,
   RELAY_HEAP_SHARE, NEW_ROOM_SHARE, RELAY_ANON_SHARE, FAST_PROPERTIES
 } from '../lib/relayLimits.js'
 
+const HEAP_SHAPES = fileURLToPath(new URL('./helpers/heapShapes.js', import.meta.url))
 const PIN_FIELDS = ['refereePin', 'homeTeamPin', 'awayTeamPin', 'gamePin', 'game_pin', 'team1Pin', 'team2Pin']
 
 describe('relayBundleProblem', () => {
@@ -167,6 +170,64 @@ describe('approxHeapBytes', () => {
       assert.ok(v > 3 * f, `K=${K}: varied ${(v / n).toFixed(0)}/obj vs fixed ${(f / n).toFixed(0)}/obj`)
       assert.ok(v / n >= perObject, `K=${K}: estimate ${(v / n).toFixed(0)}/obj must cover the measured ${perObject}/obj`)
     }
+    // JSON.parse keeps objects of up to 127 keys in the compact layout, each order
+    // with its own hidden class: past FAST_PROPERTIES the order still costs, on
+    // top of the hash-table charge (measured 1.06-1.33x that charge alone)
+    for (const K of [24, 64, 127]) {
+      const v = approxHeapBytes(varied(K))
+      const f = approxHeapBytes(fixed(K))
+      assert.ok(v > 1.5 * f, `K=${K}: varied ${(v / n).toFixed(0)}/obj vs fixed ${(f / n).toFixed(0)}/obj`)
+    }
+  })
+
+  it('counts two different key lists as two shapes, whatever characters the names hold', () => {
+    // Names that hold the separator character must not make different ordered
+    // key lists look alike: every one is its own hidden class in V8. Each
+    // object here uses names of different run lengths of 'a' joined by U+0000,
+    // in an order of its own, all from the same small pool of names.
+    const name = (r) => Array(r).fill('a').join('\u0000')
+    const lists = []
+    const walk = (left, used, cur) => {
+      if (lists.length >= 2000) return
+      if (left === 0) { lists.push(cur.slice()); return }
+      for (let p = 1; p <= left; p++) {
+        if (used.has(p)) continue
+        used.add(p); cur.push(p)
+        walk(left - p, used, cur)
+        cur.pop(); used.delete(p)
+      }
+    }
+    walk(20, new Set(), [])
+    const build = (list) => { const o = {}; for (const r of list) o[name(r)] = 0; return o }
+    const distinct = approxHeapBytes(lists.map(build))
+    // the same objects, all with the first list: one hidden class shared
+    const shared = approxHeapBytes(lists.map(() => build(lists[0])))
+    assert.ok(lists.length >= 1000, `${lists.length} lists`)
+    assert.ok(distinct > shared + 400 * lists.length, `${(distinct / lists.length).toFixed(0)}/obj vs ${(shared / lists.length).toFixed(0)}/obj shared`)
+    // and two single lists that join to the same text are still two shapes
+    const one = approxHeapBytes([{ 'a\u0000b': 0 }])
+    const both = approxHeapBytes([{ 'a\u0000b': 0 }, { a: 0, b: 0 }])
+    const repeated = approxHeapBytes([{ 'a\u0000b': 0 }, { 'a\u0000b': 0 }])
+    assert.ok(both - one > repeated - one + 300, `${both - one} vs ${repeated - one}`)
+  })
+
+  it('stays at or above the heap V8 really keeps for a parsed bundle (measured, --expose-gc)', () => {
+    // tests/helpers/heapShapes.js parses each case in a fresh process and
+    // compares heapUsed after a full GC with approxHeapBytes. Every budget gate
+    // and the per-room cap read this estimate, so it must not fall below real
+    // heap for any key layout a socket can choose; a scorer's fixed-order events
+    // must still count about what they take.
+    const run = (c) => {
+      const r = spawnSync(process.execPath, ['--expose-gc', HEAP_SHAPES, c], { encoding: 'utf8' })
+      assert.equal(r.status, 0, `${c}: ${r.stderr}`)
+      return JSON.parse(r.stdout)
+    }
+    for (const c of ['varied-8', 'varied-16', 'varied-24', 'varied-64', 'varied-127', 'separator']) {
+      const { objects, real, est } = run(c)
+      assert.ok(real <= est, `${c}: real ${(real / 1048576).toFixed(2)} MB > estimate ${(est / 1048576).toFixed(2)} MB (${objects} objects)`)
+    }
+    const fixed = run('fixed-16')
+    assert.ok(fixed.real <= fixed.est && fixed.est < 2 * fixed.real, `fixed order: real ${fixed.real}, estimate ${fixed.est}`)
   })
 
   it('counts strings by their characters: one byte each when all are ASCII, else two', () => {

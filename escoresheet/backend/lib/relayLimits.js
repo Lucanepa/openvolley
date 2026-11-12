@@ -88,16 +88,21 @@ export const FAST_PROPERTIES = 16
 const DICTIONARY_BYTES = 128
 const DICTIONARY_ENTRY_BYTES = 72
 const INDEX_ENTRY_BYTES = DICTIONARY_ENTRY_BYTES + HEAP_NUMBER_BYTES
-// A compact (fast-properties) object carries its own hidden class, a V8 map
-// chain. Objects built with the same keys in the SAME order share one; a
-// different insertion order is a fresh chain of several hundred bytes, and an
-// anonymous socket can give every event in an array its own order. NEW_KEY_BYTES
-// counts each name once (V8 interns it and the shared map keeps it once); this
-// counts the per-object map on top, once per distinct ordered shape seen -- an
-// upper bound, since V8 shares map prefixes and this does not. Measured on
+// An object carries a hidden class, a V8 map chain. Objects built with the same
+// keys in the SAME order share one; a different insertion order is a fresh
+// chain of several hundred bytes, and an anonymous socket can give every event
+// in an array its own order. NEW_KEY_BYTES counts each name once (V8 interns it
+// and the shared map keeps it once); this counts the per-object map on top,
+// once per distinct ordered shape seen -- an upper bound, since V8 shares map
+// prefixes and this does not. JSON.parse keeps objects of up to 127 keys in the
+// compact layout, each order with its own chain, so the charge applies at any
+// key count (a hash table on top of it past FAST_PROPERTIES). The shape is the
+// key list with each name length-prefixed, so no name (one holding the
+// separator, say) can make two different key lists one shape. Measured on
 // Node 22/24: an array of 17000 fresh-order objects took about 440 (8 keys),
 // 760 (12) and 1070-2170 (16, a plain array or the object-rest strip path)
-// bytes each; the shape surcharge keeps the estimate at or above that.
+// bytes each, and 24-127 keys about 1.06-1.33x the hash-table charge alone;
+// the shape charge keeps the estimate at or above all of these.
 const MAP_BASE_BYTES = 64
 const MAP_KEY_BYTES = 160
 // Ordered shapes remembered per value; past that every object counts as a fresh
@@ -154,20 +159,22 @@ export function approxHeapBytes(value) {
         let shape = ''
         for (const k in v) {
           if (isIndexKey(k)) indexed++
-          else { named++; shape += k + '\u0000' }
+          // Length-prefixed: one signature per ordered key list, whatever the names hold
+          else { named++; shape += k.length + ':' + k }
           if (!keys.has(k)) {
             bytes += NEW_KEY_BYTES + 2 * k.length
             if (keys.size < MAX_TRACKED_KEYS) keys.add(k)
           }
           stack.push(v[k])
         }
+        if (named > 0 && (shapes.size >= MAX_TRACKED_SHAPES || !shapes.has(shape))) {
+          // A key order not seen before is a fresh hidden class, at any key count.
+          bytes += MAP_BASE_BYTES + MAP_KEY_BYTES * named
+          if (shapes.size < MAX_TRACKED_SHAPES) shapes.add(shape)
+        }
         if (named > FAST_PROPERTIES) {
           // A hash table (dictionary mode), per object and order-independent.
           bytes += DICTIONARY_BYTES + DICTIONARY_ENTRY_BYTES * named
-        } else if (named > 0 && (shapes.size >= MAX_TRACKED_SHAPES || !shapes.has(shape))) {
-          // Fast mode: a key order not seen before is a fresh hidden class.
-          bytes += MAP_BASE_BYTES + MAP_KEY_BYTES * named
-          if (shapes.size < MAX_TRACKED_SHAPES) shapes.add(shape)
         }
         if (indexed > 0) bytes += DICTIONARY_BYTES + INDEX_ENTRY_BYTES * indexed
       }

@@ -159,6 +159,33 @@ function section(title, iconName, roles) {
   </section>`
 }
 
+// A team name the page can print: text or a finite number. Anything else (an
+// object a room recovered from storage may still hold from before syncs were
+// validated) would throw in escapeHtml and turn the page into a 500.
+const printableName = (v) =>
+  (typeof v === 'string' && v) || (typeof v === 'number' && Number.isFinite(v) ? String(v) : null)
+
+/**
+ * One room of activeMatches as a row of the page: { id, home, away, updatedAt }.
+ * Synced matches store { homeTeam, awayTeam, ... } (a name or { name }); the
+ * legacy path stored { data: {...} }. Reads both; a name that is not text or a
+ * number falls back to 'Home' / 'Away', an updatedAt that is neither is left out.
+ * @param {string} matchId
+ * @param {object} matchData
+ */
+export function landingMatchRow(matchId, matchData) {
+  const d = matchData?.data || {}
+  const team = (t) => printableName(t && typeof t === 'object' ? t.name : t)
+  const updatedAt = matchData?.updatedAt
+  return {
+    id: matchId,
+    home: team(matchData?.homeTeam) || printableName(d.homeTeamName) || printableName(d.home_team_name) || 'Home',
+    away: team(matchData?.awayTeam) || printableName(d.awayTeamName) || printableName(d.away_team_name) || 'Away',
+    // set by the server or storage, kept only as a time the page can format
+    updatedAt: typeof updatedAt === 'string' || (typeof updatedAt === 'number' && Number.isFinite(updatedAt)) ? updatedAt : undefined
+  }
+}
+
 /**
  * @param {object} p
  * @param {string} p.baseUrl        http://<Host header>
