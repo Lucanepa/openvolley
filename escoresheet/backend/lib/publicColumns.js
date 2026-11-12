@@ -12,7 +12,9 @@
  *            Never rosters, officials, signatures, approvals, connection data,
  *            PINs, event payloads or state snapshots.
  *
- *   ANON_DB  POST /api/db selects without a valid session (server.js). The
+ *   ANON_DB  POST /api/db selects without a valid session (server.js); for
+ *            referee_database / svrz_games also those of a session without a
+ *            role that fills the sheet's officials (REFEREE_DOB_SPORTS). The
  *            public pages read these: the referee/bench fallback when the
  *            relay has no copy of the match (rosters: numbers, names, libero
  *            and captain flags, bench roles), the public scoresheet archive
@@ -163,7 +165,8 @@ export const LIVE_COLUMNS = Object.freeze({
   })
 })
 
-// The referee picker's suggestions; dates of birth only with a session.
+// The referee picker's suggestions; dates of birth only for an admin or an
+// account that can score (server.js REFEREE_DOB_SPORTS).
 const REFEREE_DATABASE_COLUMNS = Object.freeze({
   id: true,
   first_name: true,
@@ -174,7 +177,7 @@ const REFEREE_DATABASE_COLUMNS = Object.freeze({
 })
 
 // The official-match loader (LoadOfficialMatchModal); the referees' dates of
-// birth only with a session.
+// birth only for an admin or an indoor scorer (server.js REFEREE_DOB_SPORTS).
 const SVRZ_GAMES_COLUMNS = Object.freeze(Object.fromEntries([
   'id', 'game_number', 'datetime', 'date', 'time', 'team_home', 'team_away', 'league', 'gender',
   'hall', 'city', 'hall_address', 'hall_postal_code', 'match_type', 'match_level',

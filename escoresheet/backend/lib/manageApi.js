@@ -54,7 +54,8 @@
  *                                                    <= 90 days (lib/clubs.js clubInviteBody)
  *   POST   /api/club/:id/invites/:inviteId/revoke    the same: a code of that club only
  *   GET    /api/games/today                          any signed-in account: today's home games of
- *                                                    its clubs (the scorer app's Official game)
+ *                                                    its clubs (the scorer app's Official game);
+ *                                                    referees' dates of birth for an indoor scorer only
  *   PUT    /api/club/:id/licences/:list { people }   a manager of that club, or isAdmin (db/024):
  *                                                    one licence list (players|scorers|coaches) replaced
  *   GET    /api/club/:id/licences                    the same: every person once, its lists and teams
@@ -271,7 +272,8 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['GET', /^\/api\/settings$/, 'manageTeams', () => (finalMail ? finalMail.getSettings() : notFound())],
     ['PUT', /^\/api\/settings$/, 'manageTeams', (m, c) => (finalMail ? finalMail.setSettings({ actorId: c.user.id, body: c.body }) : notFound())],
     // The scorer app's Official game: today's home games of the account's clubs
-    ['GET', /^\/api\/games\/today$/, 'any', (m, c) => club((cl) => cl.todayGames({ userId: c.user.id }))],
+    // (the referees' dates of birth for an indoor scorer only)
+    ['GET', /^\/api\/games\/today$/, 'any', (m, c) => club((cl) => cl.todayGames({ userId: c.user.id, refereeDob: accessForSport(c.access, 'indoor').canScore === true }))],
     // db/020: a club manager's own club
     ['GET', new RegExp(`^/api/club/${ID}$`), clubManagerOf, (m) => club((cl) => cl.clubDetail({ id: m[1] }))],
     ['PATCH', new RegExp(`^/api/club/${ID}$`), clubManagerOf, (m, c) => club((cl) => cl.setContact({ actorId: c.user.id, id: m[1], body: c.body }))],
