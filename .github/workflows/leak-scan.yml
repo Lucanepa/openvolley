@@ -1,0 +1,50 @@
+name: Leak scan
+
+# Scans the commits each push or pull request adds with .gitleaks.toml
+# (credentials and the match-data-* personal-data rules), and runs the rule
+# tests in .githooks. The pre-commit hook does the same scan, but only in
+# clones where core.hooksPath is set; this catches the others and web
+# uploads. The log lists rule, file and commit only (it is public).
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # >= 8.25 for the [[allowlists]] blocks in .gitleaks.toml
+      GITLEAKS_VERSION: 8.29.0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          cd "$RUNNER_TEMP"
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          curl -fsSLO "$base/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSLO "$base/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          sha256sum --ignore-missing -c "gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          tar -xzf "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" gitleaks
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Rule tests
+        run: |
+          .githooks/test-gitleaks-config.sh
+          .githooks/test-gitignore.sh
+          .githooks/test-ci-leak-scan.sh
+
+      - name: Scan the new commits
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: .githooks/ci-leak-scan.sh "$BASE" "$HEAD_SHA" "$DEFAULT_BRANCH"
