@@ -52,9 +52,14 @@ export function scoresheetUploadJob(match, path, file, contentType) {
   }
 }
 
-/** Store the file of a scoresheetUploadJob ({ data, error } as apiStorage). */
-export function uploadQueuedScoresheet({ path, file, contentType } = {}) {
-  return apiStorage.from('scoresheets').upload(path, file, { contentType, upsert: true })
+/**
+ * Store the file of a scoresheetUploadJob ({ data, error } as apiStorage). The
+ * match goes with it: the backend stores a PDF only for a match this account
+ * may write (backend db/033; 404 OV_MATCH_NOT_FOUND while the match is not in
+ * the cloud yet).
+ */
+export function uploadQueuedScoresheet({ path, file, contentType, match_external_id: matchExternalId } = {}) {
+  return apiStorage.from('scoresheets').upload(path, file, { contentType, upsert: true, matchExternalId: matchExternalId || undefined })
 }
 
 /**

@@ -279,6 +279,15 @@ describe('storage upload encoding', () => {
     expect(decode(sentBody().fileBase64)).toBe('ü 🏐')
   })
 
+  // Backend db/033: a scoresheet PDF is stored for the match the upload names
+  it('upload names the match when given (match_external_id), and sends no such field otherwise', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { path: 'p' }, error: null }))
+    await apiStorage.from('scoresheets').upload('2026-10-25/game1_k.pdf', new Uint8Array([37, 80, 68, 70, 45]), { contentType: 'application/pdf', upsert: true, matchExternalId: 'match_1_a' })
+    expect(sentBody(0)).toMatchObject({ bucket: 'scoresheets', path: '2026-10-25/game1_k.pdf', match_external_id: 'match_1_a', upsert: true })
+    await apiStorage.from('backup').upload('logs/x.txt', 'x', { contentType: 'text/plain' })
+    expect('match_external_id' in sentBody(1)).toBe(false)
+  })
+
   // Stress test 2026-10-25: an upload on a connection that passed no data held
   // "Confirm and approve" (and with it the approval) for minutes
   it('an upload that gets no answer ends as a network error within its bound', async () => {

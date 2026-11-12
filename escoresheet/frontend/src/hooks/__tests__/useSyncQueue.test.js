@@ -672,6 +672,32 @@ describe('scoresheet upload job', () => {
     expect([...fakeDb.sync_queue.map.values()].map(j => j.status)).toEqual(['sent', 'sent'])
   })
 
+  // Backend db/033: a PDF is stored only for a match this account may write,
+  // so the upload names its match; the match may not be in the cloud yet
+  it('sends the match of the file; a match not in the cloud yet is retried, not refused', async () => {
+    const pdfJob = (id) => ({ id, resource: 'scoresheet', action: 'upload', status: 'queued', retry_count: 0, payload: { path: '2026-10-25/game903703_k1.pdf', file: new Blob(['%PDF-1.7']), contentType: 'application/pdf', match_external_id: 'match_100_aaa' } })
+    fakeDb.sync_queue.reset([pdfJob(1)])
+    await runUploadLane()
+    const upload = api.calls.find(c => c.table === '__storage')
+    expect(upload.data.options).toMatchObject({ contentType: 'application/pdf', upsert: true, matchExternalId: 'match_100_aaa' })
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+
+    fakeDb.sync_queue.reset([pdfJob(1)])
+    api.respond = (call) => call.table === '__storage'
+      ? { data: null, error: { message: 'No match of this scoresheet was found', code: 'OV_MATCH_NOT_FOUND', status: 404 }, status: 404 }
+      : defaultRespond(call)
+    await runUploadLane()
+    expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'queued', retry_count: 1 })
+
+    // a closed match's stored PDF: refused as before (parked, retried hourly)
+    fakeDb.sync_queue.reset([pdfJob(1)])
+    api.respond = (call) => call.table === '__storage'
+      ? { data: null, error: { message: 'Closed', code: 'OV_MATCH_CLOSED', status: 409 }, status: 409 }
+      : defaultRespond(call)
+    await runUploadLane()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('failed')
+  })
+
   it('a refused upload holds back only the later uploads of the same file', async () => {
     fakeDb.sync_queue.reset([
       { id: 1, resource: 'scoresheet', action: 'upload', status: 'queued', payload: { path: 'a/game1_k1.pdf', file: new Blob(['x']), contentType: 'application/pdf' } },
