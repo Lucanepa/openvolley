@@ -59,7 +59,7 @@ apps:
       - bluez
       # PDFs and exports saved to ~/Downloads, imports from the home folder
       - home
-      # a USB stick for exports (manual connect)
+      # USB sticks: the match backup copies (stick.rs) and exports (manual connect)
       - removable-media
 
 slots:

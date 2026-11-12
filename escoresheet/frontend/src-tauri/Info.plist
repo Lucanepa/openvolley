@@ -14,5 +14,8 @@
   <!-- WKWebView ends the app when a page asks for the camera without this text -->
   <key>NSCameraUsageDescription</key>
   <string>The camera scans QR codes, for example to connect a device.</string>
+  <!-- macOS asks before the app reads or writes a USB stick: the match backups copied to it (stick.rs) -->
+  <key>NSRemovableVolumesUsageDescription</key>
+  <string>Match backups are copied to a USB stick you plug in.</string>
 </dict>
 </plist>

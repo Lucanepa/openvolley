@@ -107,7 +107,7 @@ refreshes: `sudo snap refresh --hold=72h openvolley-escoresheet`.
 | desktop, wayland, x11, opengl, gsettings | yes (gnome extension) | the window, the tray (StatusNotifier) | - |
 | `network-manager` | **no** | the tablets' Wi-Fi hotspot and Bluetooth network (NetworkManager over D-Bus) | "NetworkManager not available"; use the hall Wi-Fi |
 | `bluez` | **no** | switching the Bluetooth adapter on and discoverable (BlueZ D-Bus) | no Bluetooth network |
-| `removable-media` | **no** | exports to a USB stick (`/media`, `/mnt`) | the stick is not visible in file dialogs |
+| `removable-media` | **no** | the match backups copied to a USB stick (Options, "Copy to stick now"; the app looks for sticks under `/media`, `/run/media` and `/mnt`) and exports to a stick | the app finds no stick (Options says how to connect it); the stick is not visible in file dialogs |
 
 Slot: `single-instance` (`dbus`, session bus, `com.openvolley.escoresheet.SingleInstance`
 / `com.openvolley.beach.SingleInstance`): tauri-plugin-single-instance owns that
@@ -119,7 +119,7 @@ Until the store grants auto-connection, a user connects them once:
 ```bash
 sudo snap connect openvolley-escoresheet:network-manager
 sudo snap connect openvolley-escoresheet:bluez
-sudo snap connect openvolley-escoresheet:removable-media   # optional
+sudo snap connect openvolley-escoresheet:removable-media   # USB stick backups
 ```
 
 `network-manager` and `bluez` have an implicit slot on classic distributions

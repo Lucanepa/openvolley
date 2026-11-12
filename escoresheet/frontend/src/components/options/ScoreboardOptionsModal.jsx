@@ -15,7 +15,9 @@ import BackupTable from '../BackupTable'
 import { useBackupUnlock } from '../../hooks/useBackupUnlock'
 import { clearCachesAndReload } from '../../hooks/useServiceWorker'
 import { ChevronDown, Info, Tablet, X } from 'lucide-react'
-import { cn, IconButton, Select, SegmentedControl, Switch } from '../../ui'
+import { cn, IconButton, Select, SegmentedControl, StatusPill, Switch, toast } from '../../ui'
+import { useStickBackup, copyMatchToSticks, STICK_FULL_BYTES } from '../../utils/stickBackup'
+import { toastLang } from '../chromeClasses'
 import { allowLeaving } from '../../utils/leaveGuard'
 import { backdropDismiss } from '../../ui/backdropDismiss.js'
 import ActivityLogModal from '../ActivityLogModal'
@@ -117,6 +119,124 @@ function DurationInput({ value, onChange, label }) {
       <input type="number" min={0} max={59} value={seconds.toString().padStart(2, '0')} onChange={handleSeconds} className={inputCls} aria-label={`${label} seconds`} />
       <span className="text-sm font-semibold text-stone-500">''</span>
     </div>
+  )
+}
+
+const STICK_ERROR_KEYS = {
+  removed: 'options.stickErrRemoved',
+  readOnly: 'options.stickErrReadOnly',
+  full: 'options.stickErrFull',
+  locked: 'options.stickErrLocked',
+  io: 'options.stickErrIo'
+}
+
+function formatBytes(n, lang) {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let v = n
+  let i = 0
+  while (v >= 1000 && i < units.length - 1) {
+    v /= 1000
+    i += 1
+  }
+  let text
+  try {
+    text = new Intl.NumberFormat(lang || undefined, { maximumFractionDigits: i > 0 && v < 10 ? 1 : 0 }).format(v)
+  } catch {
+    text = String(Math.round(v))
+  }
+  return `${text} ${units[i]}`
+}
+
+// The toast after "Copy to stick now": each stick that failed by its reason
+function stickCopyMessage(out, t) {
+  const ok = out.results.filter(r => r.ok).map(r => r.label)
+  const failed = out.results.filter(r => !r.ok).map(r =>
+    t(STICK_ERROR_KEYS[r.error] || STICK_ERROR_KEYS.io, { stick: r.label || t('options.stickBackup'), error: r.message || '' }))
+  if (!out.results.length) failed.push(t(STICK_ERROR_KEYS[out.code] || STICK_ERROR_KEYS.io, { stick: t('options.stickBackup'), error: out.error || '' }))
+  return [ok.length ? t('options.stickCopied', { sticks: ok.join(', ') }) : null, ...failed].filter(Boolean).join(' ')
+}
+
+/**
+ * USB stick (desktop app): the sticks plugged in, polled while Options is
+ * open, and "Copy to stick now": the open match saved and copied to every
+ * stick, each copy read back and checked (utils/stickBackup). Owner
+ * 2026-10-29: any stick, the folder created when missing, never blocking
+ * scoring.
+ */
+function StickBackupRow({ matchId }) {
+  const { t, i18n } = useTranslation()
+  const { sticks, lastCopy, writing } = useStickBackup({ poll: true })
+  const linux = typeof navigator !== 'undefined' && /Linux/.test(navigator.userAgent) && !/Android/.test(navigator.userAgent)
+  const writable = sticks.filter(s => !s.readOnly && !s.locked)
+
+  const copy = async () => {
+    const out = await copyMatchToSticks(matchId)
+    const opts = { lang: toastLang() }
+    if (out.status === 'unsupported') return
+    if (out.status === 'ok') toast.success(stickCopyMessage(out, t), opts)
+    else if (out.status === 'noStick') toast.error(t('options.stickNoStick'), opts)
+    else if (out.status === 'backupFailed') toast.error(t('options.stickBackupFailed', { error: out.error || '' }), opts)
+    else toast.error(stickCopyMessage(out, t), opts)
+  }
+
+  return (
+    <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
+      <div className="flex items-center gap-1.5">
+        <div className="text-sm font-semibold text-stone-900">{t('options.stickBackup')}</div>
+        <InfoDot title={t('options.stickBackupInfo')} />
+      </div>
+      {sticks.length ? (
+        <ul className="divide-y divide-stone-100 rounded-lg border border-stone-200" data-testid="stick-list">
+          {sticks.map(s => (
+            <li key={s.id} className="flex min-h-10 items-center justify-between gap-2 px-3 py-2">
+              <span className="min-w-0 truncate text-sm text-stone-800">{s.label}</span>
+              <span className="flex shrink-0 items-center gap-1.5">
+                {s.freeBytes != null && !s.locked && (
+                  <span className="text-[11px] tabular-nums text-stone-500">{t('options.stickFree', { size: formatBytes(s.freeBytes, i18n.language) })}</span>
+                )}
+                {s.locked ? (
+                  <StatusPill tone="attention">{t('options.stickLocked')}</StatusPill>
+                ) : s.readOnly ? (
+                  <StatusPill tone="attention">{t('options.stickReadOnly')}</StatusPill>
+                ) : s.freeBytes != null && s.freeBytes < STICK_FULL_BYTES ? (
+                  <StatusPill tone="attention">{t('options.stickFull')}</StatusPill>
+                ) : null}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="text-xs text-stone-500" data-testid="stick-none">
+          <div>{t('options.stickNone')}</div>
+          {linux && (
+            <div className="mt-1.5 space-y-1.5 text-[11px] leading-snug">
+              <div>{t('options.stickHintLinux')}</div>
+              <div>
+                {t('options.stickHintSnap')}{' '}
+                <code className="break-all font-mono text-stone-700">sudo snap connect openvolley-escoresheet:removable-media</code>
+              </div>
+              <div>{t('options.stickHintFlatpak')}</div>
+            </div>
+          )}
+        </div>
+      )}
+      {lastCopy && (
+        <div className="text-[11px] tabular-nums text-stone-500">
+          {t('options.stickLastCopy')}: {lastCopy.at.toLocaleTimeString()}
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={copy}
+        disabled={!matchId || writing || !writable.length}
+        aria-busy={writing || undefined}
+        className={cn(BTN_OUTLINE, 'w-full')}
+        data-testid="stick-copy-now"
+      >
+        {writing ? t('options.stickCopying') : t('options.stickCopyNow')}
+      </button>
+      {!matchId && <p className="text-xs text-stone-500">{t('options.stickStartMatch')}</p>}
+    </Row>
   )
 }
 
@@ -824,6 +944,7 @@ export default function ScoreboardOptionsModal({
                 </button>
               </div>
             </Row>
+            {backupPlatform === 'tauri' && <StickBackupRow matchId={matchId} />}
           </Section>
         )}
 

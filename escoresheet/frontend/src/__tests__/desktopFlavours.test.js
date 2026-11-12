@@ -284,9 +284,9 @@ describe('macOS bundles (unsigned, ad-hoc)', () => {
     expect(base.bundle.targets).toEqual(['nsis', 'appimage', 'deb'])
   })
 
-  it('Info.plist: local network and camera texts, http://localhost allowed', () => {
+  it('Info.plist: local network, camera and USB stick texts, http://localhost allowed', () => {
     const plist = read('Info.plist')
-    for (const key of ['NSLocalNetworkUsageDescription', 'NSCameraUsageDescription', 'NSAllowsLocalNetworking']) {
+    for (const key of ['NSLocalNetworkUsageDescription', 'NSCameraUsageDescription', 'NSRemovableVolumesUsageDescription', 'NSAllowsLocalNetworking']) {
       expect(plist).toContain(`<key>${key}</key>`)
     }
     expect(plist).not.toMatch(/NSAllowsArbitraryLoads/)

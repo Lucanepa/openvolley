@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "stick",
+  "description": "Copies of the match backups on USB sticks: the scoretable window (loaded from the built-in server on http://localhost) may list the sticks present (by an opaque id, never a path), copy one of its own backup files to <stick>/OpenVolley (OpenBeach: <stick>/OpenBeach) and list, read and delete files there only. LAN tablets and the scoresheet windows never get these commands.",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://localhost:*"]
+  },
+  "permissions": [
+    "allow-stick-list",
+    "allow-stick-mirror",
+    "allow-stick-list-backups",
+    "allow-stick-read",
+    "allow-stick-remove"
+  ]
+}

@@ -601,6 +601,63 @@ tested through Tauri's mock runtime with the app's real context
 (`ipc_acl_tests` in `src-tauri/src/main.rs`: `http://localhost:<port>` may
 write and list, a LAN address, another site or `localhost.evil.com` may not).
 
+### Copies on a USB stick
+
+**Options → Backup → USB stick** lists the sticks plugged in (polled every
+4 s while Options is open) with their free space, and **Copy to stick now**
+saves the open match and copies that backup file to every stick present
+(owner 2026-10-29: any stick, the folder created when missing, no
+remembered path; 2026-11-12: write to every stick, OpenBeach its own folder):
+
+```
+<stick>/OpenVolley/README.txt                     what this is, how to restore
+<stick>/OpenVolley/<matchDir>/<devtag>-latest.json        the newest copy
+<stick>/OpenVolley/<matchDir>/<devtag>-manual-<yyyymmddThhmmss>Z.json   "Copy to stick now"
+<stick>/OpenVolley/<matchDir>/<devtag>-set<N>-….json      set end (later phase)
+<stick>/OpenVolley/<matchDir>/<devtag>-final-….json       match end (later phase)
+```
+
+- OpenBeach writes `<stick>/OpenBeach/` (the flavour's data folder,
+  `src-tauri/src/flavour.rs`). `<matchDir>` is the backup folder's name
+  (above); `<devtag>` is 8 hex of SHA-256 of the installation's id
+  (`utils/deviceId`), so several computers share a stick without
+  overwriting each other.
+- The bytes are the app's own backup file: **encrypted** with the game PIN
+  and the referee PIN, a test match plain. Restore: Options → Backup →
+  Restore from a backup file, pick the file on the stick, either PIN.
+- A copy is confirmed (`src-tauri/src/stick.rs`): free space of the file +
+  8 MiB or `full`; a hidden temp file written and flushed (macOS
+  `F_FULLFSYNC`), renamed over the old file (Windows `MoveFileExW`
+  write-through), the folder flushed, then read back past the page cache
+  (Linux `posix_fadvise`, macOS `F_NOCACHE`) and compared by SHA-256 and
+  parsed as JSON. Errors: `removed`, `readOnly`, `full`, `locked`
+  (BitLocker), `io`, one per stick; the toast names each stick that failed.
+  Plain folders and files (FAT has no owner): the PIN encryption protects them.
+- Finding sticks: Linux `/proc/self/mountinfo` + `/sys/dev/block`
+  (removable, on USB or an SD card; never `/`, `/boot`, loop or squashfs
+  mounts, nor the volume holding the app's data), in a sandbox without them
+  the folders mounted under `/run/media/$USER`, `/media/$USER`, `/media`,
+  `/mnt`; Windows removable drive letters and fixed ones on the USB bus
+  (never the system drive or the one with `%APPDATA%`); macOS `/Volumes`,
+  removable per `diskutil info -plist` (3 s at most, cached per volume).
+  `OPENVOLLEY_STICK_ROOTS` (a path list) replaces the detection with those
+  folders, for tests.
+- The page never sees a path: a stick is an opaque id (hash of mount point +
+  volume serial), file names are checked like the backup folder's (no
+  trailing dot, no Windows device names). `capabilities/stick.json` grants
+  `stick_list`, `stick_mirror`, `stick_list_backups`, `stick_read`,
+  `stick_remove` to the main window on `http://localhost` only.
+- Sandboxes: the snap needs `sudo snap connect
+  openvolley-escoresheet:removable-media`; the Flatpak has
+  `--filesystem=/run/media` and `--filesystem=/media`. macOS asks once
+  (`NSRemovableVolumesUsageDescription`).
+
+Later phases: every backup mirrored to the stick automatically, a copy and
+reminder at set end, the match-end check (every match but test and easy
+matches), rotation when a stick runs low (this computer's oldest matches
+first, final copies last, never another computer's files) and restore from
+a stick in the app.
+
 ## Why plain HTTP (and the tablet-camera trade-off)
 
 Tablets connect over plain `http://<LAN-IP>` — simple, zero setup, no

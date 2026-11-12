@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-stick-list"
+description = "Enables the stick_list command without any pre-configured scope."
+commands.allow = ["stick_list"]
+
+[[permission]]
+identifier = "deny-stick-list"
+description = "Denies the stick_list command without any pre-configured scope."
+commands.deny = ["stick_list"]

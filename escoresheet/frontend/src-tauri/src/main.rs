@@ -13,6 +13,7 @@ mod netshare;
 mod popups;
 mod relay;
 mod sign;
+mod stick;
 mod updater;
 
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
@@ -342,7 +343,8 @@ fn apply_light_gtk_settings(settings: &gtk::Settings) {
 }
 
 /// The scoretable window's native commands: automatic match backups
-/// (backup.rs; ACL in capabilities/backup.json), the networks the laptop
+/// (backup.rs; ACL in capabilities/backup.json) and their copies on USB
+/// sticks (stick.rs; capabilities/stick.json), the networks the laptop
 /// creates for the tablets (netshare/; capabilities/netshare.json) and the
 /// check of the installer's firewall rule (firewall.rs; same capability), the
 /// diagnostics mode's files (diagnostics.rs; capabilities/diagnostics.json) and
@@ -358,6 +360,7 @@ fn with_app_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Bu
         .manage(netshare::NetShare::new())
         .manage(lifecycle::Lifecycle::new())
         .manage(updater::Updates::new())
+        .manage(stick::Sticks::new())
         .invoke_handler(tauri::generate_handler![
         backup::backup_info,
         backup::backup_write,
@@ -365,6 +368,11 @@ fn with_app_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Bu
         backup::backup_remove,
         backup::backup_open_dir,
         backup::backup_pick_file,
+        stick::stick_list,
+        stick::stick_mirror,
+        stick::stick_list_backups,
+        stick::stick_read,
+        stick::stick_remove,
         activity::activity_append,
         activity::activity_open_dir,
         diagnostics::diagnostics_append,
@@ -497,6 +505,8 @@ mod ipc_acl_tests {
     /// The tests that point OPENVOLLEY_LOG_DIR (process-wide) at their own
     /// folder run one at a time.
     static LOG_DIR_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    /// Likewise OPENVOLLEY_BACKUP_DIR (the backup and the stick tests).
+    static BACKUP_DIR_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     fn request(cmd: &str, url: &str, body: serde_json::Value) -> InvokeRequest {
         InvokeRequest {
@@ -512,6 +522,7 @@ mod ipc_acl_tests {
 
     #[test]
     fn scoretable_page_may_back_up_other_origins_may_not() {
+        let _env = BACKUP_DIR_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let root = std::env::temp_dir().join(format!("ov-backup-ipc-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::env::set_var("OPENVOLLEY_BACKUP_DIR", &root);
@@ -550,6 +561,99 @@ mod ipc_acl_tests {
             }
         }
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// USB sticks: the scoretable page lists the sticks (OPENVOLLEY_STICK_ROOTS:
+    /// a folder stands in for one) by id and copies one of its backup files
+    /// there; a wrong name or an unknown stick is refused by the command, any
+    /// other origin by the ACL.
+    #[test]
+    fn scoretable_page_may_copy_to_a_stick_other_origins_may_not() {
+        let _env = BACKUP_DIR_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let tmp = std::env::temp_dir();
+        let root = tmp.join(format!("ov-stick-ipc-backups-{}", std::process::id()));
+        let stick = tmp.join(format!("ov-stick-ipc-STICK-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&stick);
+        std::fs::create_dir_all(&stick).unwrap();
+        std::env::set_var("OPENVOLLEY_BACKUP_DIR", &root);
+        std::env::set_var("OPENVOLLEY_STICK_ROOTS", &stick);
+
+        let app = super::with_app_commands(mock_builder())
+            .build(tauri::generate_context!())
+            .expect("mock app");
+        let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::External("http://localhost:5173/".parse().unwrap()))
+            .build()
+            .unwrap();
+        let local = "http://localhost:5173/";
+        let dir = "game7-match_1759740000000_ab12cd";
+        let source = "20261006T100000.000Z-00001.json";
+        let backup = serde_json::json!({ "matchDir": dir, "fileName": source, "contents": "{\"version\":1}", "latest": true });
+        get_ipc_response(&window, request("backup_write", local, backup)).expect("backup_write");
+
+        let sticks = get_ipc_response(&window, request("stick_list", local, serde_json::json!({})))
+            .expect("stick_list")
+            .deserialize::<serde_json::Value>()
+            .unwrap();
+        assert_eq!(sticks.as_array().unwrap().len(), 1, "{sticks}");
+        assert_eq!(sticks[0]["label"], stick.file_name().unwrap().to_string_lossy().as_ref());
+        assert_eq!(sticks[0]["hasFolder"], false);
+        assert!(sticks[0].get("path").is_none(), "the page never gets a path: {sticks}");
+        let id = sticks[0]["id"].as_str().unwrap().to_string();
+
+        let mirror = |ids: serde_json::Value, dest: &str| {
+            serde_json::json!({ "stickIds": ids, "matchDir": dir, "sourceFile": source, "destFile": dest, "verify": true })
+        };
+        let out = get_ipc_response(&window, request("stick_mirror", local, mirror(serde_json::json!([id]), "a1b2c3d4-latest.json")))
+            .expect("stick_mirror")
+            .deserialize::<serde_json::Value>()
+            .unwrap();
+        assert_eq!(out[0]["ok"], true, "{out}");
+        assert_eq!(out[0]["verified"], true, "{out}");
+        let app_dir = stick.join(crate::flavour::CURRENT.data_folder);
+        assert_eq!(std::fs::read_to_string(app_dir.join(dir).join("a1b2c3d4-latest.json")).unwrap(), "{\"version\":1}");
+        assert!(app_dir.join("README.txt").is_file());
+        // no stick named: every stick present
+        let all = get_ipc_response(&window, request("stick_mirror", local, mirror(serde_json::Value::Null, "a1b2c3d4-manual-20261006T100000Z.json")))
+            .expect("stick_mirror to all")
+            .deserialize::<serde_json::Value>()
+            .unwrap();
+        assert_eq!(all.as_array().unwrap().len(), 1, "{all}");
+        let gone = get_ipc_response(&window, request("stick_mirror", local, mirror(serde_json::json!(["0123456789abcdef"]), "a1b2c3d4-latest.json")))
+            .expect("an unknown stick is a result, not a failure")
+            .deserialize::<serde_json::Value>()
+            .unwrap();
+        assert_eq!(gone[0]["error"], "removed", "{gone}");
+        for bad in ["../a1b2c3d4-latest.json", "a1b2c3d4-latest.json.", "x.txt"] {
+            assert!(get_ipc_response(&window, request("stick_mirror", local, mirror(serde_json::json!([id]), bad))).is_err(), "{bad}");
+        }
+        let listed = get_ipc_response(&window, request("stick_list_backups", local, serde_json::json!({ "stickId": id })))
+            .expect("stick_list_backups")
+            .deserialize::<serde_json::Value>()
+            .unwrap();
+        assert_eq!(listed[0]["dir"], dir, "{listed}");
+        let text = get_ipc_response(&window, request("stick_read", local, serde_json::json!({ "stickId": id, "matchDir": dir, "fileName": "a1b2c3d4-latest.json" })))
+            .expect("stick_read")
+            .deserialize::<String>()
+            .unwrap();
+        assert_eq!(text, "{\"version\":1}");
+        let removed = get_ipc_response(&window, request("stick_remove", local, serde_json::json!({ "stickId": id, "matchDir": dir, "fileNames": ["a1b2c3d4-manual-20261006T100000Z.json"] })))
+            .expect("stick_remove")
+            .deserialize::<u32>()
+            .unwrap();
+        assert_eq!(removed, 1);
+
+        let any = serde_json::json!({ "stickId": id, "stickIds": [id], "matchDir": dir, "sourceFile": source, "destFile": "a1b2c3d4-latest.json", "fileName": "a1b2c3d4-latest.json", "fileNames": [], "verify": true });
+        for url in ["http://192.168.1.20:5173/", "http://10.42.0.1:5173/", "https://example.com/", "http://localhost.evil.com:5173/"] {
+            for cmd in ["stick_list", "stick_mirror", "stick_list_backups", "stick_read", "stick_remove"] {
+                let err = get_ipc_response(&window, request(cmd, url, any.clone()))
+                    .expect_err(&format!("{cmd} from {url} must be refused"));
+                assert!(err.to_string().contains("not allowed"), "{cmd} from {url}: refused by the ACL, got {err}");
+            }
+        }
+        std::env::remove_var("OPENVOLLEY_STICK_ROOTS");
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&stick);
     }
 
     /// The activity log files: the scoretable page appends JSON lines to
@@ -648,6 +752,7 @@ mod ipc_acl_tests {
             "latest": true
         });
         for cmd in ["backup_info", "backup_write", "backup_list", "backup_remove", "backup_open_dir", "backup_pick_file",
+                    "stick_list", "stick_mirror", "stick_list_backups", "stick_read", "stick_remove",
                     "activity_append", "activity_open_dir",
                     "diagnostics_append", "diagnostics_native",
                     "hotspot_status", "hotspot_start", "hotspot_stop", "bluetooth_status", "bluetooth_start", "bluetooth_stop",
