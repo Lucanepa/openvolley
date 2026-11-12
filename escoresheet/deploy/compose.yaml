@@ -164,6 +164,10 @@ services:
       # Phase 7 (backend README "Security model"): PINs at rest and match tokens
       OV_PIN_SECRET: ${OV_PIN_SECRET:-}
       OV_MATCH_TOKEN_SECRET: ${OV_MATCH_TOKEN_SECRET:-}
+      # Wrong PINs across all callers before a match's PIN type (30), or the
+      # lookups that name no match (100), are refused for 10 min; empty = default
+      OV_PIN_MATCH_FAILURES: ${OV_PIN_MATCH_FAILURES:-}
+      OV_PIN_SEARCH_FAILURES: ${OV_PIN_SEARCH_FAILURES:-}
       # V8's heap limit, below mem_limit (change them together). Node 22 sizes
       # the heap from the cgroup, so V8 never collected hard before the kernel
       # OOM-killed the container: the national peak load test (2026-10-26)

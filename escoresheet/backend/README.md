@@ -190,6 +190,23 @@ the LAN), 2000 in total; `?purpose=live` sockets: 500 per IP, 3000 in total.
 120 per user; `/api/account/redeem-invite` at most **10 failed attempts per
 account and per IP (/64) in 10 minutes** (a success is refunded; 429
 `OV_TOO_MANY_ATTEMPTS` with `Retry-After: 600`).
+Across callers (every address together, `lib/matchRestore.js`
+`createPinFailureBudget`): **30 wrong PINs per match and PIN type in 10
+minutes** (game, referee, a bench, an upload PIN; every PIN check above
+counts, restore-by-pin and claim included; a relay check of all the match's
+PINs counts against each type it compared) refuse that PIN type of that match
+for 10 minutes, the right PIN too, with one `[PIN] match …` log line per lock.
+The match's other PIN types, other matches, match tokens already issued and
+the scoreboard of the device the database names as the match's scorer
+(re-proving its match on the relay) are not affected; a new PIN written by the
+scorer (`/api/db`, `/api/match/restore`, the relay sync) starts that PIN's
+count again. The lookups that name no match (`validate-connection-pin`
+without `matchExternalId`, the relay's `validate-pin`) have a limit of their
+own: **100 wrong PINs per sport and PIN type in 10 minutes** refuse only those
+lookups for 10 minutes (one `[PIN] … lookups without a match` line); a
+lookup that names its match is never refused by it, and a locked match is
+never found by one. `OV_PIN_MATCH_FAILURES` / `OV_PIN_SEARCH_FAILURES`
+override the two numbers. In memory, per process (a restart forgets them).
 Writes (`/api/db` insert/update/upsert/delete and `/api/match/restore`) need
 the request header `X-OV-Proto: 2` (426 `OV_CLIENT_TOO_OLD` otherwise); CORS
 allows that header.
@@ -1334,7 +1351,7 @@ Error codes in `body.error.code`:
 | `OV_TABLE_NOT_ALLOWED`, `OV_INVALID_*` | 400 | request outside the contract |
 | `PGRST204` | 400 | unknown column |
 | `PGRST116` | 406 | `single`/`maybeSingle` row-count mismatch (writes are rolled back) |
-| `OV_TOO_MANY_ATTEMPTS` | 429 | restore-by-pin: more than 20 failed attempts per caller in 10 min, or 5 per caller and game |
+| `OV_TOO_MANY_ATTEMPTS` | 429 | restore-by-pin: more than 20 failed attempts per caller in 10 min, or 5 per caller and game; or the match's game PIN is locked across callers (30 wrong in 10 min) |
 | `OV_DB_UNAVAILABLE` | 503 | database down or catalog not loaded yet (`retryable: true`) |
 | `40001`, `40P01`, `55P03`, `57P0x`, `53300`, `08xxx` | 503 | serialization failure, deadlock, lock timeout, shutdown, connection trouble (`retryable: true`) |
 | `57014` | 504 | statement timeout (`retryable: true`) |
@@ -1364,7 +1381,9 @@ before the new rows.
   `team1_data` / `team2_data` keys accepted), `upload_team1` / `upload_team2`;
   the answer names the teams `team1Team` / `team2Team` and carries
   `sportType: 'beach'`. A PIN never finds a match of the other sport
-  (`lib/matchAccess.js` `CONNECTION_PIN_TYPES`).
+  (`lib/matchAccess.js` `CONNECTION_PIN_TYPES`). The upload PIN types need
+  `matchExternalId` (400 without it): they are checked against that match
+  only, never looked up among all matches.
 - Successful writes publish their `changes` to `?purpose=live` subscribers.
 - `/api/db` writes on matches/sets/events/match_live_state and
   `/api/match/restore` pass `matchOwner: { userId }` (omitted for admins):

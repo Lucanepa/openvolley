@@ -121,6 +121,146 @@ describe('createPinFailureBudget', () => {
   })
 })
 
+// Wrong PINs per match and PIN type from every address together (an attacker
+// with many address buckets never reaches a per-address limit), and per
+// PIN-only search
+describe('createPinFailureBudget across callers', () => {
+  const quiet = () => {}
+
+  it('wrong PINs from several addresses lock that match and PIN type, the right PIN too; one log line', () => {
+    const lines = []
+    const b = createPinFailureBudget({ matchMax: 3, log: (l) => lines.push(l) })
+    for (const ip of ['ip-1', 'ip-2', 'ip-3']) assert.equal(b.isLimited(ip, 'm:referee:match-1'), false)
+    // a fourth address: refused before anything is compared
+    assert.equal(b.isLimited('ip-4', 'm:referee:match-1'), true)
+    assert.equal(b.isLimited('ip-5', 'm:referee:match-1'), true)
+    assert.equal(b.locked('match-1', 'referee'), true)
+    assert.equal(lines.length, 1)
+    assert.match(lines[0], /^\[PIN\] match match-1: 3 wrong referee PINs/)
+    // the match's other PIN types, and another match, go on
+    assert.equal(b.isLimited('ip-4', 'm:bench_home:match-1'), false)
+    assert.equal(b.isLimited('ip-4', 'm:game:match-1'), false)
+    assert.equal(b.isLimited('ip-4', 'm:referee:match-2'), false)
+    // the address refused across callers was not charged for it
+    const c = createPinFailureBudget({ max: 1, ipMax: 1, matchMax: 1, log: quiet })
+    assert.equal(c.isLimited('ip-1', 'm:referee:match-1'), false)
+    assert.equal(c.isLimited('ip-2', 'm:referee:match-1'), true)
+    assert.equal(c.isLimited('ip-2', 'm:referee:match-2'), false)
+  })
+
+  it('right PINs are refunded and never add up', () => {
+    const b = createPinFailureBudget({ matchMax: 2, log: quiet })
+    for (let i = 0; i < 10; i++) {
+      assert.equal(b.isLimited(`ip-${i}`, 'm:game:match-1'), false)
+      b.refund(`ip-${i}`, 'm:game:match-1')
+    }
+    assert.equal(b.locked('match-1', 'game'), false)
+    assert.equal(b.tracks('match-1'), false, 'a key refunded to nothing is dropped')
+  })
+
+  it('the lock ends after its cool-down', () => {
+    let t = 1000000
+    const b = createPinFailureBudget({ matchMax: 2, windowMs: 60000, lockMs: 120000, now: () => t, log: quiet })
+    assert.equal(b.isLimited('ip-1', 'm:game:match-1'), false)
+    assert.equal(b.isLimited('ip-2', 'm:game:match-1'), false)
+    assert.equal(b.isLimited('ip-3', 'm:game:match-1'), true)
+    t += 119000
+    assert.equal(b.isLimited('ip-4', 'm:game:match-1'), true, 'still in the cool-down')
+    t += 2000
+    assert.equal(b.isLimited('ip-5', 'm:game:match-1'), false)
+  })
+
+  it('a new PIN starts its counter again', () => {
+    const b = createPinFailureBudget({ matchMax: 2, log: quiet })
+    for (const ip of ['ip-1', 'ip-2', 'ip-3']) b.isLimited(ip, 'm:referee:match-1')
+    b.isLimited('ip-1', 'm:bench_home:match-1')
+    assert.equal(b.locked('match-1', 'referee'), true)
+    b.pinChanged('match-1', ['referee'])
+    assert.equal(b.isLimited('ip-4', 'm:referee:match-1'), false)
+    // the PIN types not changed keep their count
+    b.isLimited('ip-2', 'm:bench_home:match-1')
+    assert.equal(b.isLimited('ip-3', 'm:bench_home:match-1'), true)
+  })
+
+  it('PIN-only searches have a limit of their own, apart from the matches', () => {
+    const lines = []
+    const b = createPinFailureBudget({ matchMax: 2, searchMax: 3, log: (l) => lines.push(l) })
+    for (const ip of ['ip-1', 'ip-2', 'ip-3']) assert.equal(b.isLimited(ip, 'any:indoor:referee'), false)
+    assert.equal(b.isLimited('ip-4', 'any:indoor:referee'), true)
+    assert.equal(lines.length, 1)
+    assert.match(lines[0], /without a match/)
+    // another PIN type is another search; no match was locked by them
+    assert.equal(b.isLimited('ip-4', 'any:indoor:bench_home'), false)
+    assert.equal(b.isLimited('ip-4', 'any:beach:referee'), false)
+    assert.equal(b.isLimited('ip-4', 'm:referee:match-1'), false)
+    assert.equal(b.tracks('match-1'), true)
+    // and a locked match leaves the search alone
+    b.isLimited('ip-5', 'm:bench_home:match-1')
+    b.isLimited('ip-6', 'm:bench_home:match-1')
+    assert.equal(b.locked('match-1', 'bench_home'), true)
+    assert.equal(b.isLimited('ip-7', 'any:indoor:bench_home'), false)
+  })
+
+  it('the same wrong PIN again from the same address is no new guess across callers either', () => {
+    const b = createPinFailureBudget({ matchMax: 2, log: quiet })
+    for (let i = 0; i < 3; i++) {
+      assert.equal(b.isLimited('ip-1', 'm:referee:match-1'), false)
+      b.repeated('ip-1', 'm:referee:match-1', '111111')
+    }
+    assert.equal(b.isLimited('ip-2', 'm:referee:match-1'), false)
+    assert.equal(b.isLimited('ip-3', 'm:referee:match-1'), true)
+  })
+
+  // the scoreboard of the device the database names as the match's scorer,
+  // re-proving its own match on the relay (server.js verifyRelayClaim)
+  it('scopeOnly: neither refused nor counted across callers', () => {
+    const b = createPinFailureBudget({ matchMax: 2, log: quiet })
+    for (const ip of ['ip-1', 'ip-2', 'ip-3']) b.isLimited(ip, 'm:game:match-1')
+    assert.equal(b.isLimited('hall', 'm:game:match-1'), true)
+    assert.equal(b.isLimited('hall', 'm:game:match-1', { scopeOnly: true }), false)
+    b.refund('hall', 'm:game:match-1', { scopeOnly: true })
+    assert.equal(b.locked('match-1', 'game'), true)
+    const c = createPinFailureBudget({ matchMax: 1, log: quiet })
+    for (let i = 0; i < 3; i++) assert.equal(c.isLimited(`ip-${i}`, 'm:game:match-1', { scopeOnly: true }), false)
+    assert.equal(c.tracks('match-1'), false)
+  })
+
+  it('a check of several PIN types at once counts each, and leaves out the locked ones', () => {
+    const b = createPinFailureBudget({ matchMax: 2, log: quiet })
+    const kinds = ['referee', 'bench_home', 'game']
+    // two wrong game PINs elsewhere lock the game PIN
+    b.isLimited('ip-1', 'm:game:match-1')
+    b.isLimited('ip-2', 'm:game:match-1')
+    const open = b.openKinds('match-1', kinds)
+    assert.deepEqual(open, ['referee', 'bench_home'])
+    // a wrong PIN compared with the open ones counts against each of them
+    assert.equal(b.isLimited('ip-3', 'm:all:match-1', { kinds: open }), false)
+    assert.equal(b.isLimited('ip-4', 'm:all:match-1', { kinds: open }), false)
+    assert.deepEqual(b.openKinds('match-1', kinds), [])
+    assert.equal(b.isLimited('ip-5', 'm:referee:match-1'), true)
+    // a right one gives back what it took
+    const c = createPinFailureBudget({ matchMax: 1, log: quiet })
+    assert.equal(c.isLimited('ip-1', 'm:all:match-1', { kinds }), false)
+    c.refund('ip-1', 'm:all:match-1', { kinds })
+    assert.deepEqual(c.openKinds('match-1', kinds), kinds)
+  })
+
+  it('a full table refuses new keys and keeps its locks', () => {
+    const b = createPinFailureBudget({ matchMax: 1, lockKeys: 3, log: quiet })
+    b.isLimited('ip-1', 'm:game:match-1')
+    assert.equal(b.isLimited('ip-2', 'm:game:match-1'), true)
+    assert.equal(b.isLimited('ip-3', 'm:game:match-2'), false)
+    assert.equal(b.isLimited('ip-3', 'm:game:match-3'), false)
+    // no room for a fourth key: refused, nothing forgotten
+    assert.equal(b.isLimited('ip-4', 'm:game:match-4'), true)
+    assert.equal(b.locked('match-1', 'game'), true)
+    // a right PIN frees its key, and the next key fits again
+    b.refund('ip-3', 'm:game:match-3')
+    assert.equal(b.isLimited('ip-4', 'm:game:match-4'), false)
+    assert.equal(b.locked('match-1', 'game'), true)
+  })
+})
+
 describe('matchRestore on Postgres', { skip: SKIP_PG }, () => {
   let tdb, db, restore, raw
   let seq = 0
@@ -518,6 +658,30 @@ describe('matchRestore on Postgres', { skip: SKIP_PG }, () => {
       const before = r2.pinLimiter.size
       for (let g = 0; g < 50; g++) await r2.restoreByPin({ gameN: g, pin: '1' }, { limitKey: 'ip-spray' })
       assert.equal(r2.pinLimiter.size, before)
+    })
+
+    it('wrong game PINs from several callers lock that match for restore-by-pin and claim, the right PIN too', async () => {
+      const budget = createPinFailureBudget({ matchMax: 3, log: () => {} })
+      const r3 = createMatchRestore(db, { logger: quietLogger(), pinBudget: budget })
+      const locked = uniq('LOCK')
+      await restore.restoreMatch(backup(locked, { gameN: 8181, pin: '818181' }), W)
+      await restore.restoreMatch(backup(uniq('FREE'), { gameN: 8282, pin: '828282' }), W)
+      for (const [i, pin] of ['100001', '100002', '100003'].entries()) {
+        assert.equal((await r3.restoreByPin({ gameN: 8181, pin }, { limitKey: `ip-lock-${i}` })).status, 404, pin)
+      }
+      const right = await r3.restoreByPin({ gameN: 8181, pin: '818181' }, { limitKey: 'ip-lock-right' })
+      assert.equal(right.status, 429)
+      assert.equal(right.body.error.code, 'OV_TOO_MANY_ATTEMPTS')
+      // claim proves the same game PIN: the same counter
+      assert.equal((await r3.claimMatch({ externalId: locked, pin: '818181' }, { limitKey: 'ip-lock-claim' })).status, 429)
+      // another match is not affected
+      assert.equal((await r3.restoreByPin({ gameN: 8282, pin: '828282' }, { limitKey: 'ip-lock-right' })).status, 200)
+      // a game number no match has, or a match that does not exist: nothing to guess, nothing counted
+      for (let i = 0; i < 4; i++) {
+        assert.equal((await r3.restoreByPin({ gameN: 8383, pin: '100001' }, { limitKey: `ip-none-${i}` })).status, 404)
+        assert.equal((await r3.claimMatch({ externalId: 'NOSUCH', pin: '100001' }, { limitKey: `ip-none-${i}` })).status, 404)
+      }
+      assert.equal(budget.tracks('NOSUCH'), false)
     })
 
     it('successful lookups do not count against the caller', async () => {
