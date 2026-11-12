@@ -913,8 +913,8 @@ export function matchKeyFromSyncedMatch(match) {
  * @param {string} [opts.fkColumn='match_id']  set to the resolved `id`
  * @param {string[]} [opts.carryColumns=['sport_type']]  copied from the lookup result
  * @param {(table: string, column: string) => boolean} [opts.allowColumn]
- * @param {(row: object, synced: object) => boolean} [opts.verifyMatch]  may this synced
- *        relay entry speak for the looked-up row? false -> reason 'pin_mismatch', nothing published
+ * @param {(row: object, synced: object, client: object) => boolean} [opts.verifyMatch]  may this synced
+ *        relay entry speak for the looked-up row (`client`: the sender)? false -> reason 'pin_mismatch', nothing published
  *        Optional catalog check; keys it rejects are dropped from the row.
  * @param {(client: object, message: object, synced: object) => boolean} [opts.isAuthorized]
  *        Default: client is the room's scoreboard and the current owner of the synced match.
@@ -1002,7 +1002,7 @@ export function createLiveStateRelay({
       return { ok: false, reason: 'lookup_failed', error: err }
     }
     if (!match) return { ok: false, reason: 'unknown_match' }
-    if (verifyMatch && !verifyMatch(match, synced)) return { ok: false, reason: 'pin_mismatch' }
+    if (verifyMatch && !verifyMatch(match, synced, client)) return { ok: false, reason: 'pin_mismatch' }
     // The scoreboard computed match_id itself; a mismatch means its view of
     // the match differs from the synced one, so publish nothing. The
     // OpenBeach scorer sends its relay key there (the seed key, the
