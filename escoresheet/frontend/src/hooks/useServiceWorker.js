@@ -3,6 +3,7 @@ import { allowLeaving } from '../utils/leaveGuard'
 import { reloadWithReason } from '../diagnostics/reload'
 import { clearStorageKeepingDeviceId } from '../utils/deviceId'
 import { writeSessionMirror } from '../lib/sessionMirror'
+import i18next from 'i18next'
 
 const CACHE_BUST_PARAM = 'cache_bust'
 
@@ -208,9 +209,30 @@ export function autoApplyAllowed({ storage = sessionStore(), now = Date.now() } 
 export function holdTapsUntilReload(win = typeof window !== 'undefined' ? window : undefined) {
   try {
     if (win?.document?.body) win.document.body.inert = true
+    showUpdatingNotice(win)
   } catch {
     // never block the update
   }
+}
+
+/**
+ * "Updating OpenVolley…" over the page while it reloads into the new build
+ * (owner 2026-11-11: a tap in those seconds did nothing, without a word).
+ * Plain DOM next to <body> (which is inert by then), gone with the reload.
+ */
+export function showUpdatingNotice(win = typeof window !== 'undefined' ? window : undefined) {
+  const doc = win?.document
+  if (!doc?.documentElement || doc.getElementById('ov-updating-notice')) return
+  const el = doc.createElement('div')
+  el.id = 'ov-updating-notice'
+  el.setAttribute('role', 'status')
+  el.setAttribute('aria-live', 'polite')
+  el.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:rgba(250,250,249,.82);font:600 18px/1.4 system-ui,sans-serif;color:#1c1917'
+  const box = doc.createElement('div')
+  box.style.cssText = 'padding:16px 22px;border-radius:14px;background:#fff;box-shadow:0 4px 24px rgba(0,0,0,.12)'
+  box.textContent = i18next.t?.('update.reloading', 'Updating OpenVolley…') || 'Updating OpenVolley…'
+  el.appendChild(box)
+  doc.documentElement.appendChild(el)
 }
 
 /** This tab applies an update on its own now (see autoApplyAllowed). */
