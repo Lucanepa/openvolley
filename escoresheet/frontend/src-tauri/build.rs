@@ -13,6 +13,12 @@ const APP_COMMANDS: &[&str] = &[
     "backup_remove",
     "backup_open_dir",
     "backup_pick_file",
+    // copies of the match backups on USB sticks (stick.rs)
+    "stick_list",
+    "stick_mirror",
+    "stick_list_backups",
+    "stick_read",
+    "stick_remove",
     // the activity log's daily files (activity.rs)
     "activity_append",
     "activity_open_dir",
@@ -56,7 +62,8 @@ fn main() {
     select_flavour();
 
     // An app ACL manifest: these commands are denied unless a capability
-    // grants them (capabilities/backup.json, capabilities/activity.json,
+    // grants them (capabilities/backup.json, capabilities/stick.json,
+    // capabilities/activity.json,
     // capabilities/diagnostics.json, capabilities/netshare.json,
     // capabilities/app.json, capabilities/update.json: only the main window,
     // only from http://localhost; capabilities/downloads.json: the main window

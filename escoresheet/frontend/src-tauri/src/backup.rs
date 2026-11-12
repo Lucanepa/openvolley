@@ -57,7 +57,7 @@ pub fn valid_segment(s: &str) -> bool {
         && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
 }
 
-fn valid_file_name(s: &str) -> bool {
+pub fn valid_file_name(s: &str) -> bool {
     valid_segment(s) && s.ends_with(".json")
 }
 

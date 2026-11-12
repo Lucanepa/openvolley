@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-stick-read"
+description = "Enables the stick_read command without any pre-configured scope."
+commands.allow = ["stick_read"]
+
+[[permission]]
+identifier = "deny-stick-read"
+description = "Denies the stick_read command without any pre-configured scope."
+commands.deny = ["stick_read"]

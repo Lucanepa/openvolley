@@ -13,7 +13,9 @@
     "--talk-name=org.kde.StatusNotifierWatcher",
     "--system-talk-name=org.freedesktop.NetworkManager",
     "--system-talk-name=org.bluez",
-    "--filesystem=xdg-download"
+    "--filesystem=xdg-download",
+    "--filesystem=/run/media",
+    "--filesystem=/media"
   ],
   "cleanup": [
     "/include",

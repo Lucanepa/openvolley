@@ -68,6 +68,7 @@ Flatpak it must not: `flatpak update` does that. Two switches:
 | `--system-talk-name=org.freedesktop.NetworkManager` | the tablet Wi-Fi (hotspot) and the Bluetooth network the app can start (`netshare/linux.rs`) |
 | `--system-talk-name=org.bluez` | Bluetooth adapter state for the Bluetooth network |
 | `--filesystem=xdg-download` | the scoresheet PDF and exports go to Downloads |
+| `--filesystem=/run/media`, `--filesystem=/media` | the match backups copied to a USB stick (Options, "Copy to stick now"; `src-tauri/src/stick.rs`): the app finds the sticks the desktop mounts there and writes only into its own folder on them (`OpenVolley/`, OpenBeach `OpenBeach/`). The FileChooser portal cannot do this: the copy needs no dialog, and later versions copy every backup while a match is scored. Without these the app finds no stick. |
 
 The single-instance D-Bus name (`<app id>.SingleInstance`) is under the app id,
 which Flatpak allows without a permission. File pickers (restore a backup) use
