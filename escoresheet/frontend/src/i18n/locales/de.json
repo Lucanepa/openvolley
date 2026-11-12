@@ -914,7 +914,9 @@
         "sent_off": "Gesperrt",
         "wrong_partner": "Falscher Partner",
         "played_out": "Schon gespielt",
-        "no_rally_since_out": "Noch kein Ballwechsel"
+        "no_rally_since_out": "Noch kein Ballwechsel",
+        "libero_out": "Libero auf dem Feld",
+        "replaced_by_libero": "Libero für ihn drin"
       },
       "since": "Seither: {{what}}.",
       "between": {
@@ -942,7 +944,9 @@
         "sent_off": "nicht mehr spielberechtigt (ausgeschlossen, disqualifiziert oder ausserordentlich ausgewechselt)",
         "wrong_partner": "nur der eigene Wechselpartner darf zurück",
         "played_out": "in diesem Satz schon ein- und ausgewechselt",
-        "no_rally_since_out": "seit dem Auswechseln kein Ballwechsel abgeschlossen"
+        "no_rally_since_out": "seit dem Auswechseln kein Ballwechsel abgeschlossen",
+        "libero_out": "ein Libero wird nie ausgewechselt, er geht nur durch einen Libero-Wechsel raus",
+        "replaced_by_libero": "der Libero ist für ihn auf dem Feld, er kommt nur für den Libero zurück"
       },
       "second_substitution_request": {
         "title": "Zweites Wechselgesuch",

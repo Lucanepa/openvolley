@@ -921,7 +921,9 @@
         "sent_off": "Gsperrt",
         "wrong_partner": "Falsche Partner",
         "played_out": "Scho gspilt",
-        "no_rally_since_out": "No kei Ballwächsel"
+        "no_rally_since_out": "No kei Ballwächsel",
+        "libero_out": "Libero uf em Feld",
+        "replaced_by_libero": "Libero für ihn dinne"
       },
       "since": "Sithär: {{what}}.",
       "between": {
@@ -949,7 +951,9 @@
         "sent_off": "dörf nüme spile (usgschlosse, disqualifiziert oder usserordentlich uusgwächslet)",
         "wrong_partner": "nur de eigni Wächselpartner dörf zrugg",
         "played_out": "isch i däm Satz scho ine und use",
-        "no_rally_since_out": "sit em Uuswächsle kei Ballwächsel abgschlosse"
+        "no_rally_since_out": "sit em Uuswächsle kei Ballwächsel abgschlosse",
+        "libero_out": "en Libero wird nie uusgwächslet, er gaht nur dur en Libero-Wächsel use",
+        "replaced_by_libero": "de Libero isch für ihn uf em Feld, er chunnt nur für de Libero zrugg"
       },
       "second_substitution_request": {
         "title": "Zweite Wächselaatrag",

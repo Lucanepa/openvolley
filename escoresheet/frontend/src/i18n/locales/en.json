@@ -922,7 +922,9 @@
         "sent_off": "Sent off",
         "wrong_partner": "Wrong partner",
         "played_out": "Already played",
-        "no_rally_since_out": "No rally yet"
+        "no_rally_since_out": "No rally yet",
+        "libero_out": "Libero on court",
+        "replaced_by_libero": "Libero in for him"
       },
       "since": "Since then: {{what}}.",
       "between": {
@@ -950,7 +952,9 @@
         "sent_off": "no longer allowed to play (expelled, disqualified or substituted exceptionally)",
         "wrong_partner": "only the substitution partner may come back",
         "played_out": "already came in and went out in this set",
-        "no_rally_since_out": "no rally completed since going out"
+        "no_rally_since_out": "no rally completed since going out",
+        "libero_out": "a libero is never substituted, he goes off only by a libero replacement",
+        "replaced_by_libero": "the libero is on court for him, he comes back only for the libero"
       },
       "second_substitution_request": {
         "title": "Second substitution request",

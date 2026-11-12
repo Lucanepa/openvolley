@@ -57,7 +57,7 @@ import { defaultSetStartTime, actualStartRemark, startsFromSchedule, startSchedu
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
 import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet, getLeftTeamLabelForSet } from '../domain/rules'
 import { resolveSanction, deriveTeamSanctionFlags, deferredPenaltyPoints, penaltyOfPoint, teamSanctionCounts } from '../domain/sanctions'
-import { REQUEST_ISSUES, isReplayPending, substitutionRequestIssues, timeoutRequestIssues, requestBlockReason, entryWithoutCompletedRally, substitutionRequestThisInterruption, substituteInIllegalReason, lateRequestOutcome, decisionChangeTakeBack, decisionTakeBackTextKey } from '../domain/interruptionRequests'
+import { REQUEST_ISSUES, isReplayPending, substitutionRequestIssues, timeoutRequestIssues, requestBlockReason, entryWithoutCompletedRally, substitutionRequestThisInterruption, substitutionIllegalReason, classifyLiveSubstitution, lateRequestOutcome, decisionChangeTakeBack, decisionTakeBackTextKey } from '../domain/interruptionRequests'
 import RequestWarningDialog, { RequestOptionRow } from './scoreboard/RequestWarningDialog.jsx'
 import { classifyTimeoutRequest } from '../domain/timeouts'
 import { rallyStatusOf, currentSetOf } from '../domain/rally'
@@ -68,7 +68,7 @@ import { diag } from '../diagnostics/recorder'
 import { countdownAnchor, secondsLeft } from '../utils/countdownClock'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
 import { playerReplacedByLibero } from '../domain/liberos'
-import { planSubstitutionDeletion, countRegularSubstitutions, classifySubstitutionRequest, MAX_SUBSTITUTIONS_PER_SET } from '../domain/substitutions'
+import { planSubstitutionDeletion, countRegularSubstitutions, MAX_SUBSTITUTIONS_PER_SET } from '../domain/substitutions'
 import { decisionChangeUndoRecord, planDecisionChangeReversal, planPointRemoval, syncJobsForEvents, syncJobsForSets, scoreAfterUndo } from '../domain/corrections'
 import { validateReopenedRoster, referencedPlayerNumbers, isShirtNumber } from '../domain/roster'
 import { planRenumberPlayers, errorText as correctionErrorText } from '../domain/manualCorrections'
@@ -715,18 +715,25 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // just came in going out again or a request after a delay warning opens
   // the request warning instead. `acknowledged`: the warnings the scorer
   // already answered with "Continue anyway" (recorded nothing).
+  // The pair is checked here with the team's roster, for every substitution
+  // (substitutionIllegalReason: a libero, the player the libero replaced, a
+  // player sent off, the starter-substitute pairing, FIVB 15.6-15.8,
+  // 19.3.1.3): a pair the rules forbid opens "Illegal substitution"; an
+  // injured, expelled or disqualified player whom the pairing forbids to
+  // replace regularly is substituted exceptionally (classifyLiveSubstitution).
   const substitutionGuardRef = useRef(null)
   const setSubstitutionConfirm = useCallback((next, { acknowledged = [] } = {}) => {
     const guard = substitutionGuardRef.current
     if (next && guard) {
-      const issues = substitutionRequestIssues(guard.events, guard.setIndex, next.team, next)
+      const roster = { players: guard.players?.[next.team] || [] }
+      const issues = substitutionRequestIssues(guard.events, guard.setIndex, next.team, next, roster)
         .filter(i => !acknowledged.includes(i.reason))
       if (issues.length > 0) {
         setSubstitutionConfirmState(null)
         guard.onIssues(next, issues, acknowledged)
         return
       }
-      const verdict = classifySubstitutionRequest(guard.events, next.team, guard.setIndex, next)
+      const verdict = classifyLiveSubstitution(guard.events, guard.setIndex, next.team, next, roster)
       if (verdict === 'exceptional' && !next.isExceptional) next = { ...next, isExceptional: true }
     }
     setSubstitutionConfirmState(next)
@@ -3282,6 +3289,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   substitutionGuardRef.current = {
     events: data?.events,
     setIndex: data?.set?.index,
+    players: { home: data?.homePlayers || [], away: data?.awayPlayers || [] },
     onIssues: (request, issues, acknowledged) => {
       if (rallyStatus === 'idle') openRequestWarning('substitution', request, issues, acknowledged)
     },
@@ -8845,10 +8853,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // No legal substitute once the 6 regular substitutions are used: injury and
     // expulsion / disqualification then go to the exceptional substitution.
     if (!allowExceptional && data.set && countRegularSubstitutions(data.events, teamKey, data.set.index) >= MAX_SUBSTITUTIONS_PER_SET) return []
+    // Nor for a court player who may not be substituted now (the court menu's
+    // canPlayerBeSubstituted): a starter whose out-and-back cycle is complete
+    // (FIVB 15.6.2), a substitute with no rally since he came in. Injury and
+    // expulsion / disqualification go to the exceptional substitution then.
+    if (!allowExceptional && !canPlayerBeSubstituted(teamKey, playerOutNumber)) return []
 
     const benchPlayers = teamKey === 'home'
       ? (leftIsHome ? leftTeamBench.benchPlayers : rightTeamBench.benchPlayers)
       : (leftIsHome ? rightTeamBench.benchPlayers : leftTeamBench.benchPlayers)
+
+    // Whatever is offered passes the rule of every substitution, the guard's
+    // (domain/interruptionRequests substitutionIllegalReason): no libero in or
+    // out, not the player the libero replaced, nobody sent off, and for a
+    // regular substitution the starter-substitute pairing
+    const teamPlayers = teamKey === 'home' ? data.homePlayers : data.awayPlayers
+    const allowed = (list) => (data.set
+      ? list.filter(p => !substitutionIllegalReason(data.events, data.set.index, teamKey, { playerOut: playerOutNumber, playerIn: p.number, exceptional: allowExceptional }, { players: teamPlayers }))
+      : list)
 
     // Filter out liberos
     let available = benchPlayers.filter(p => !p.libero || p.libero === '')
@@ -8918,21 +8940,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           const originalPlayer = benchPlayers.find(p => String(p.number) === String(originalPlayerOut))
           // ...unless they left expelled, disqualified or exceptionally
           // replaced (FIVB 15.7, 21.3.2, 21.3.3)
-          if (originalPlayer && !originalPlayer.libero && canPlayerReEnter(teamKey, originalPlayer.number, data.set.index)) {
+          if (originalPlayer && !originalPlayer.libero && canPlayerReEnter(teamKey, originalPlayer.number, data.set.index) && allowed([originalPlayer]).length > 0) {
             return [originalPlayer] // Only this player is available
           }
         }
         // If already came back, check if exceptional substitution is allowed
         if (allowExceptional) {
           // For exceptional substitution, return all bench players (except liberos and those who cannot re-enter)
-          return available.filter(p => canPlayerReEnter(teamKey, p.number, data.set.index))
+          return allowed(available.filter(p => canPlayerReEnter(teamKey, p.number, data.set.index)))
         }
         return []
       } else {
         // No point change yet, check if exceptional substitution is allowed
         if (allowExceptional) {
           // For exceptional substitution, return all bench players (except liberos and those who cannot re-enter)
-          return available.filter(p => canPlayerReEnter(teamKey, p.number, data.set.index))
+          return allowed(available.filter(p => canPlayerReEnter(teamKey, p.number, data.set.index)))
         }
         return []
       }
@@ -9012,8 +9034,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       return true
     })
 
-    return available.sort((a, b) => (a.number || 0) - (b.number || 0))
-  }, [data, leftIsHome, leftTeamBench, rightTeamBench, getSubstitutionHistory, data?.events, canPlayerReEnter])
+    return allowed(available).sort((a, b) => (a.number || 0) - (b.number || 0))
+  }, [data, leftIsHome, leftTeamBench, rightTeamBench, getSubstitutionHistory, data?.events, canPlayerReEnter, canPlayerBeSubstituted])
 
   // Get available players for exceptional substitution
   // Excludes: liberos, expelled/disqualified players, and the player being replaced
@@ -9032,26 +9054,25 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // The bench players who may NOT come in for playerOutNumber in a regular
   // substitution, each with why (domain/interruptionRequests
-  // substituteInIllegalReason): offered greyed, a tap opens the request
-  // warning "Illegal substitution requested" (a delay, FIVB 16.1.3; CB 4.15)
+  // substitutionIllegalReason, the guard's rule): offered greyed, a tap opens
+  // the request warning "Illegal substitution requested" (a delay, FIVB
+  // 16.1.3; CB 4.15)
   const getIllegalSubstitutes = useCallback((teamKey, playerOutNumber) => {
     if (!data?.set) return []
     const benchPlayers = teamKey === 'home'
       ? (leftIsHome ? leftTeamBench.benchPlayers : rightTeamBench.benchPlayers)
       : (leftIsHome ? rightTeamBench.benchPlayers : leftTeamBench.benchPlayers)
+    const teamPlayers = teamKey === 'home' ? data.homePlayers : data.awayPlayers
     const legal = new Set(getAvailableSubstitutes(teamKey, playerOutNumber).map(p => String(p.number)))
     return (benchPlayers || [])
       .filter(p => p.number !== undefined && p.number !== null && p.number !== '' && !legal.has(String(p.number)))
       .map(p => ({
         number: p.number,
-        reason: substituteInIllegalReason(data.events, data.set.index, teamKey, playerOutNumber, p.number, {
-          isLibero: !!(p.libero && p.libero !== ''),
-          sentOff: !canPlayerReEnter(teamKey, p.number, data.set.index)
-        })
+        reason: substitutionIllegalReason(data.events, data.set.index, teamKey, { playerOut: playerOutNumber, playerIn: p.number }, { players: teamPlayers })
       }))
       .filter(p => p.reason)
       .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
-  }, [data?.set, data?.events, leftIsHome, leftTeamBench, rightTeamBench, getAvailableSubstitutes, canPlayerReEnter])
+  }, [data?.set, data?.events, data?.homePlayers, data?.awayPlayers, leftIsHome, leftTeamBench, rightTeamBench, getAvailableSubstitutes])
 
   // A tap on an illegal candidate: the request warning (reject + delay sanction)
   const openIllegalSubstitution = (teamKey, position, playerOut, candidate) => {
@@ -9076,6 +9097,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         return
       }
       const playerOut = benchLineupNumber(lineup[position])
+      // Who may go off is the court tap's too: a libero, a starter whose cycle
+      // is complete or a substitute with no rally since has no legal partner,
+      // the pair opens "Illegal substitution" (getIllegalSubstitutes)
       const legal = getAvailableSubstitutes(entry.team, playerOut).find(p => String(p.number) === String(pair.in))
       if (legal) {
         setSubstitutionConfirm({ team: entry.team, position, playerOut, playerIn: legal.number })
@@ -9111,6 +9135,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // Exclude players who cannot re-enter (expelled/disqualified/exceptionally substituted)
       if (!canPlayerReEnter(teamKey, playerNum, data.set.index)) return false
+
+      // The rule of every substitution, an exceptional one too (the guard's,
+      // domain/interruptionRequests substitutionIllegalReason): not the player
+      // the libero on court replaced (FIVB 15.7), nobody sent off
+      if (data.set && substitutionIllegalReason(data.events, data.set.index, teamKey, { playerOut: playerOutNumber, playerIn: p.number, exceptional: true }, { players: teamPlayers })) return false
 
       return true
     })
@@ -9506,9 +9535,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     setDropTargetPosition(null)
   }, [])
 
-  // Handle drag over court player position
+  // Handle drag over court player position. The drop is accepted
+  // (preventDefault) only after the checks: a cancelled dragover lets the
+  // browser drop anything, also a bench player on the court libero
   const handleCourtDragOver = useCallback((e, teamKey, position) => {
-    e.preventDefault()
     if (!draggedPlayer) return
 
     // Prevent court-to-court drag - only bench players can be dropped on court
@@ -9575,6 +9605,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
     }
 
+    e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     setDropTargetPosition({ team: teamKey, position })
   }, [draggedPlayer, getCurrentServe, isLiberoUnable, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set?.index, substitutionsUsed, getAvailableSubstitutes])
@@ -9662,12 +9693,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Regular bench player being dropped on court
       // First check if this is a libero exit scenario (bench player -> court libero who replaced them)
       const liberoOnCourt = getLiberoOnCourt(teamKey)
+      const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
+      const courtPlayerInfo = teamPlayers?.find(p => String(p.number) === String(courtPlayerNumber))
+      const isCourtPlayerLibero = !!(courtPlayerInfo?.libero && courtPlayerInfo.libero !== '')
       if (liberoOnCourt && liberoOnCourt.position === position) {
         // There's a libero at this position
-        // Check if the court player number matches the libero
-        const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-        const courtPlayerInfo = teamPlayers?.find(p => String(p.number) === String(courtPlayerNumber))
-        const isCourtPlayerLibero = courtPlayerInfo?.libero && courtPlayerInfo.libero !== ''
 
         if (isCourtPlayerLibero && String(liberoOnCourt.playerNumber) === String(benchPlayerNumber)) {
           // This is the replaced player being dropped on the libero - libero exit
@@ -9689,6 +9719,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           return
         }
       }
+      // Only the player the libero replaced takes its place: a libero is
+      // never substituted (FIVB 19.3.1.3), as on touch and in Corrections
+      if (isCourtPlayerLibero || (liberoOnCourt && liberoOnCourt.position === position)) return
 
       // Regular substitution - show confirmation
       const teamSubstitutions = substitutionsUsed?.[teamKey] || 0
@@ -10973,8 +11006,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Final authority on the 6-per-set limit (FIVB 15.6), against the events
     // as they are now: a regular request beyond it is an improper request
-    // (15.11.1.4), an injury / expulsion / disqualification one is exceptional.
-    const verdict = classifySubstitutionRequest(data.events, team, data.set.index, substitutionConfirm)
+    // (15.11.1.4), an injury / expulsion / disqualification one is exceptional,
+    // as is one the pairing forbids to make regularly (15.7, 15.8).
+    const verdict = classifyLiveSubstitution(data.events, data.set.index, team, substitutionConfirm, { players: team === 'home' ? data.homePlayers : data.awayPlayers })
     if (verdict === 'improper_request') {
       deferUi(() => {
         setSubstitutionConfirmState(null)
@@ -11878,10 +11912,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (!sanctionSubstitutionModal) return
 
     const { team, expelledPlayer, liberoOnCourt, reason, position } = sanctionSubstitutionModal
-    // Beyond the 6 regular substitutions this one is exceptional (FIVB 15.8)
-    const isExceptional = classifySubstitutionRequest(data?.events, team, data?.set?.index, {
-      isExceptional: sanctionSubstitutionModal.isExceptional, isExpelled: reason === 'expulsion', isDisqualified: reason === 'disqualification'
-    }) === 'exceptional'
+    // Beyond the 6 regular substitutions, or when the pairing forbids it
+    // regularly, this one is exceptional (FIVB 15.8)
+    const isExceptional = classifyLiveSubstitution(data?.events, data?.set?.index, team, {
+      isExceptional: sanctionSubstitutionModal.isExceptional, isExpelled: reason === 'expulsion', isDisqualified: reason === 'disqualification',
+      playerOut: expelledPlayer, playerIn: substituteNumber
+    }, { players: team === 'home' ? data?.homePlayers : data?.awayPlayers }) === 'exceptional'
     // Closed with the written substitution (deferUi, one render)
     deferUi(() => setSanctionSubstitutionModal(null))
 
@@ -21170,7 +21206,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Filter out liberos - cannot substitute for a libero on court
         // A court player who came in as a substitute may only be replaced by
         // the starter he came in for (FIVB 15.6.2, the court player's menu's
-        // rule: domain/interruptionRequests substituteInIllegalReason): he is
+        // rule: domain/interruptionRequests substitutionIllegalReason): he is
         // listed under "Not allowed" with why, a tap opens the request warning
         // (not in an easy match, nor beyond the 6 substitutions: as there)
         const availableCourtPlayers = []
@@ -21192,7 +21228,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 // Also check if current libero is on court at this position
                 const isLiberoOnCourt = liberoOnCourt && String(liberoOnCourt.liberoNumber) === String(num)
                 if (canBeSub && !isLibero && !isLiberoOnCourt) {
-                  const reason = data?.set ? substituteInIllegalReason(data.events, data.set.index, team, num, playerNumber) : null
+                  const reason = data?.set ? substitutionIllegalReason(data.events, data.set.index, team, { playerOut: num, playerIn: playerNumber }, { players: teamPlayers }) : null
                   if (!reason) availableCourtPlayers.push({ position: pos, number: num })
                   else if (showIllegal) illegalCourtPlayers.push({ position: pos, number: num, reason })
                 }
