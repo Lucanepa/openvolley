@@ -13,7 +13,7 @@
  * finished sets change, the approval is stale: it no longer completes the slot
  * and never prints on the PDF.
  */
-import { OFFICIAL_ROLES } from './officials.js'
+import { OFFICIAL_ROLES, hasOfficial } from './officials.js'
 
 /** MatchEnd role -> server slot. */
 export const ROLE_TO_SLOT = Object.freeze({ ref1: 'referee1', ref2: 'referee2', scorer: 'scorer' })
@@ -176,6 +176,22 @@ export function slotComplete(match, role, sets) {
   if (field && match?.[field]) return true
   if (!ROLE_TO_SLOT[role]) return false
   return isApprovalValid(approvalFor(match, role), sets)
+}
+
+/**
+ * The optional signing slots, the assistant scorer and the 2nd referee: shown
+ * and required only when the match has that official. A slot exists for an
+ * official named in match.officials, or when it already holds a drawn
+ * signature (the 2nd referee: or an account approval), so it can be seen and
+ * cleared. An empty or null field is no official: Reopen last set, a
+ * correction and a cloud import write null into every post-match field.
+ * @returns {{ asstScorer: boolean, ref2: boolean }}
+ */
+export function optionalSignatureSlots(match) {
+  return {
+    asstScorer: !!match?.asstScorerSignature || hasOfficial(match?.officials, 'asstScorer'),
+    ref2: !!match?.ref2Signature || !!approvalFor(match, 'ref2') || hasOfficial(match?.officials, 'ref2')
+  }
 }
 
 const pad = (n) => String(n).padStart(2, '0')
