@@ -188,12 +188,17 @@ counts as a failed guess too, and a wrong `subscribe-match` PIN 5 per socket /
 20 per IP and minute. Role sockets: 200 per IP in cloud mode (50 on
 the LAN), 2000 in total; `?purpose=live` sockets: 500 per IP, 3000 in total.
 What the relay keeps of a socket's syncs (`lib/relayLimits.js`, both modes):
-PINs must be text (at most 64 characters) or numbers (else `bad-request`);
-at most 20000 events, 20 sets and 200 players per list, 8 MB per room and
-300,000 JSON values per frame (else `too-large`); a live state at most 256 KB
-as JSON (`too-large`); all rooms together `OV_RELAY_MAX_MB`, one address half
-of it (`relay-full`). A long five-set match with all its signatures takes
-0.5-1.3 MB.
+the PINs it compares must be text (at most 64 characters) or numbers (else
+`bad-request`; `matchPin`, which it never compares, only has to be text or a
+number); at most 20000 events, 20 sets and 200 players per list, 8 MB per room
+and 300,000 JSON values per frame (else `too-large`); a live state at most
+256 KB as JSON (`too-large`); all rooms together `OV_RELAY_MAX_MB`, one address
+half of it (`relay-full`). When the relay fills, a room it does not hold yet is
+refused first (at 80% of the total / of an address's share), so the matches in
+play keep the headroom they grow into; on the cloud the rooms the database does
+not know as official matches (anything an anonymous socket syncs) hold at most
+60% of the total together, so a flood cannot take the memory an official match
+needs. A long five-set match with all its signatures takes 0.5-1.3 MB.
 `/api/admin/*` and `/api/saved-teams*` 300 per user; `/api/match/official-check`
 120 per user; `/api/account/redeem-invite` at most **10 failed attempts per
 account and per IP (/64) in 10 minutes** (a success is refunded; 429

@@ -19,7 +19,8 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { bootServer, openSocket, provisionDatabase, sleep, SKIP } from './helpers/e2eServer.js'
+import pg from 'pg'
+import { bootServer, openSocket, provisionDatabase, subscribe, sleep, SKIP } from './helpers/e2eServer.js'
 
 const POISON = { toString: 1 } // JSON {"toString":1}: String() of it throws
 const PIN = '314159'
@@ -245,11 +246,12 @@ describe('anonymous input on a venue relay (--local)', () => {
   })
 })
 
-describe('relay memory budget on the cloud relay (per address, in total)', () => {
+describe('relay memory budget on the cloud relay (new rooms shed first, matches in play kept)', () => {
   let srv
   const sockets = []
   before(async () => {
-    // a small budget (5 MB, 2.5 MB per address) so the test needs little memory
+    // a small budget (5 MB total, 2.5 MB per address, new rooms shed at 4 MB /
+    // 2 MB) so the test needs little memory
     srv = await bootServer({ IS_CLOUD: '1', TRUST_PROXY: 'cloudflare', OV_RELAY_MAX_MB: '5' }, ['--local'])
   })
   after(async () => {
@@ -270,7 +272,7 @@ describe('relay memory budget on the cloud relay (per address, in total)', () =>
     return c
   }
 
-  it('refuses with relay-full once an address or the relay holds its share', async () => {
+  it('refuses a new room with relay-full at the new-room mark, per address and in total', async () => {
     const A = '203.0.113.10'
     const B = '198.51.100.20'
     const C = '192.0.2.30'
@@ -278,27 +280,29 @@ describe('relay memory budget on the cloud relay (per address, in total)', () =>
     const a2 = await syncFrom(A, 'budget-a2')
     const a3 = await syncFrom(A, 'budget-a3')
     assert.deepEqual([a1, a2].flatMap(errorsOf), [])
-    assert.equal(lastError(a3)?.code, 'relay-full', 'the third from one address')
-    // the room a sync replaces is not counted twice
+    assert.equal(lastError(a3)?.code, 'relay-full', 'a third new room from one address is over its share')
+    // the room a sync replaces is not counted twice (an existing room may grow)
     a1.send(big('budget-a1'))
     await settle(a1)
     assert.deepEqual(errorsOf(a1), [])
 
+    // other addresses fill the rest up to the relay-wide new-room mark (4 MB)
     const b1 = await syncFrom(B, 'budget-b1')
     const b2 = await syncFrom(B, 'budget-b2')
+    assert.deepEqual([b1, b2].flatMap(errorsOf), [])
     const c1 = await syncFrom(C, 'budget-c1')
-    assert.deepEqual([b1, b2, c1].flatMap(errorsOf), [])
-    const c2 = await syncFrom(C, 'budget-c2')
-    assert.equal(lastError(c2)?.code, 'relay-full', 'the relay holds its whole budget')
-    assert.equal((await get(srv.base, '/api/match/budget-c2')).status, 404)
+    assert.equal(lastError(c1)?.code, 'relay-full', 'a new room over the relay-wide new-room mark')
+    assert.equal((await get(srv.base, '/api/match/budget-c1')).status, 404)
 
-    // the rooms of A's closed sockets give their memory back
-    for (const c of [a1, a2, a3]) c.ws.close()
+    // the rooms of A's and B's closed sockets give their memory back
+    for (const c of [a1, a2, a3, b1, b2]) c.ws.close()
     await sleep(300)
-    c2.send(big('budget-c2'))
-    await settle(c2)
-    assert.equal(errorsOf(c2).length, 1, 'accepted now')
-    assert.equal((await get(srv.base, '/api/match/budget-c2', { 'X-OV-Match-Pin': PIN })).json?.access, 'full')
+    const before = errorsOf(c1).length
+    c1.send(big('budget-c1'))
+    await settle(c1)
+    assert.equal(errorsOf(c1).length, before, 'accepted now (no new refusal)')
+    assert.equal((await get(srv.base, '/api/match/budget-c1', { 'X-OV-Match-Pin': PIN })).json?.access, 'full')
+
     // small bundles of a hall behind one address are never in the way
     const hall = []
     for (let i = 0; i < 10; i++) {
@@ -308,6 +312,38 @@ describe('relay memory budget on the cloud relay (per address, in total)', () =>
     }
     for (const c of hall) await settle(c)
     assert.deepEqual(hall.flatMap(errorsOf), [])
+  })
+
+  it('keeps a match already in play syncing and publishing after new rooms fill the relay', async () => {
+    // an in-play match, owned, with a referee watching, before the relay fills
+    const hall = await open('203.0.113.70')
+    const referee = await open('203.0.113.71')
+    hall.send(syncMessage('in-play', { sets: [{ id: 1, index: 1, homePoints: 10, awayPoints: 8 }] }))
+    await settle(hall)
+    assert.deepEqual(errorsOf(hall), [])
+    referee.send({ type: 'subscribe-match', matchId: 'in-play', pin: PIN })
+    await referee.waitFor((m) => m.type === 'match-full-data')
+
+    // other addresses open new rooms until one is refused at the new-room mark
+    let refused = false
+    for (let i = 0; i < 8 && !refused; i++) {
+      const c = await open(`198.51.100.${100 + i}`)
+      c.send(big(`in-play-fill-${i}`))
+      await settle(c)
+      if (lastError(c)?.code === 'relay-full') refused = true
+    }
+    assert.equal(refused, true, 'the relay reached its new-room mark')
+
+    // the in-play match plays on: a bigger bundle (another rally, a set) and a
+    // live state, both into the headroom kept for matches in play
+    hall.send(syncMessage('in-play', { sets: [{ id: 1, index: 1, homePoints: 11, awayPoints: 8 }, { id: 2, index: 2, homePoints: 3, awayPoints: 1 }] }))
+    hall.send({ type: 'live-state-update', matchId: 'in-play', liveState: { points_a: 11, points_b: 8, serving: 'home' } })
+    await settle(hall)
+    assert.deepEqual(errorsOf(hall), [], 'the match in play must not be frozen')
+    const live = await referee.waitFor((m) => m.type === 'live-state-update')
+    assert.deepEqual(live.liveState, { points_a: 11, points_b: 8, serving: 'home' })
+    const kept = await get(srv.base, '/api/match/in-play', { 'X-OV-Match-Pin': PIN })
+    assert.deepEqual(kept.json.sets.map((s) => s.homePoints), [11, 3], 'the newer bundle is held')
   })
 })
 
@@ -352,5 +388,144 @@ describe('anonymous input in DATABASE_URL mode', { skip: SKIP }, () => {
     assert.equal((await get(srv.base, '/api/match/db-poison', { 'X-OV-Match-Pin': '1', ...ip })).status, 404)
     assert.equal((await get(srv.base, '/api/server/connections?matchId=db-poison', { 'X-OV-Match-Pin': '1', ...ip })).status, 200)
     assert.equal(await alive(srv.base), true, srv.output.join('').slice(-2000))
+  })
+})
+
+// A storage root and status dir the backend accepts (a cloud boot needs them)
+function tempStorage() {
+  const storageRoot = mkdtempSync(join(tmpdir(), 'ov-relaylimits-storage-'))
+  writeFileSync(join(storageRoot, '.ovdata'), '')
+  const statusDir = mkdtempSync(join(tmpdir(), 'ov-relaylimits-status-'))
+  writeFileSync(join(statusDir, 'last_backup'), new Date().toISOString().replace(/\.\d{3}Z$/, 'Z') + '\n')
+  return { storageRoot, statusDir }
+}
+const CLOUD_ENV = (db, extra = {}) => ({
+  DATABASE_URL: db.url,
+  TRUST_PROXY: 'cloudflare',
+  TRUST_PROXY_FROM: '127.0.0.1/32,::1/128',
+  STORAGE_BACKUP_MIN_FREE_MB: '1',
+  STORAGE_SCORESHEETS_MIN_FREE_MB: '1',
+  ...extra
+})
+async function seedOfficialMatch(url, { id = null, externalId, gamePin = '987654' }) {
+  const client = new pg.Client({ connectionString: url })
+  await client.connect()
+  try {
+    if (id) {
+      await client.query("INSERT INTO matches (id, external_id, game_n, game_pin, status, sport_type) VALUES ($1,$2,$3,$4,'live','indoor')", [id, externalId, 9000, gamePin])
+    } else {
+      await client.query("INSERT INTO matches (external_id, game_n, game_pin, status, sport_type) VALUES ($1,$2,$3,'live','indoor')", [externalId, 9000, gamePin])
+    }
+  } finally { await client.end() }
+}
+
+describe('official matches keep priority over an anonymous flood (DATABASE_URL)', { skip: SKIP }, () => {
+  let db, srv, storageRoot, statusDir
+  const sockets = []
+  before(async () => {
+    db = await provisionDatabase()
+    await seedOfficialMatch(db.url, { externalId: 'off-1' }) // the database knows it, game PIN 987654
+    ;({ storageRoot, statusDir } = tempStorage())
+    // 6 MB total: anonymous rooms may hold at most 60% of it (about 3.77 MB)
+    srv = await bootServer(CLOUD_ENV(db, { STORAGE_ROOT: storageRoot, STATUS_DIR: statusDir, OV_RELAY_MAX_MB: '6' }))
+  })
+  after(async () => {
+    for (const c of sockets) { try { c.ws.terminate() } catch { /* gone */ } }
+    await srv?.stop()
+    if (db) await db.drop()
+    for (const d of [storageRoot, statusDir]) { try { rmSync(d, { recursive: true, force: true }) } catch { /* best effort */ } }
+  })
+  const open = async (ip) => {
+    const c = await openSocket(srv.wsUrl, { headers: { 'cf-connecting-ip': ip } })
+    sockets.push(c)
+    return c
+  }
+  // ~0.9 MB each, a room the database does not know (its own game PIN)
+  const anonBig = (room) => syncMessage(room, { match: { remarks: 'r'.repeat(900 * 1024), gamePin: `x-${room}` } })
+
+  it('caps the rooms the database does not know, so an official match still syncs and grows', async () => {
+    // fill rooms the database does not know, across two /64s, up to the reserved share
+    const anon = []
+    for (const net of ['2001:db8:a::1', '2001:db8:b::1']) {
+      for (let i = 0; i < 2; i++) {
+        const c = await open(net)
+        c.send(anonBig(`anon-${net}-${i}`))
+        await settle(c)
+        anon.push(c)
+      }
+    }
+    assert.deepEqual(anon.flatMap(errorsOf), [], 'the anonymous rooms up to the cap are kept')
+    // one more anonymous room, from a fresh /64 (per-address and new-room marks
+    // are not reached): only the anonymous share stops it
+    const over = await open('2001:db8:c::1')
+    over.send(anonBig('anon-over'))
+    await settle(over)
+    assert.equal(lastError(over)?.code, 'relay-full', 'an anonymous room over the reserved share is refused')
+
+    // the official match (the database knows it, matching game PIN) still syncs
+    const scorer = await open('203.0.113.200')
+    scorer.send(syncMessage('off-1'))
+    await settle(scorer)
+    assert.deepEqual(errorsOf(scorer), [], 'the official match must not be frozen by the anonymous flood')
+    assert.equal((await get(srv.base, '/api/match/off-1', { 'X-OV-Match-Pin': PIN })).json?.access, 'full')
+    // and it grows into the space reserved for official matches
+    scorer.send(syncMessage('off-1', { match: { remarks: 'r'.repeat(900 * 1024) }, sets: [{ id: 1, index: 1, homePoints: 7, awayPoints: 5 }] }))
+    await settle(scorer)
+    assert.deepEqual(errorsOf(scorer), [], 'an official match in play grows past the anonymous cap')
+    const kept = await get(srv.base, '/api/match/off-1', { 'X-OV-Match-Pin': PIN })
+    assert.deepEqual(kept.json.sets.map((s) => s.homePoints), [7])
+
+    // another anonymous room is still refused
+    const more = await open('2001:db8:d::1')
+    more.send(anonBig('anon-more'))
+    await settle(more)
+    assert.equal(lastError(more)?.code, 'relay-full')
+    assert.equal(await alive(srv.base), true)
+  })
+})
+
+describe('a live state the relay memory cannot keep still reaches the livescore (DATABASE_URL)', { skip: SKIP }, () => {
+  let db, srv, storageRoot, statusDir
+  const MATCH_UUID = '11111111-1111-4111-8111-111111111111'
+  const sockets = []
+  before(async () => {
+    db = await provisionDatabase()
+    await seedOfficialMatch(db.url, { id: MATCH_UUID, externalId: 'off-live' })
+    ;({ storageRoot, statusDir } = tempStorage())
+    // a tiny budget (0.4 MB total, 0.2 MB per address) so one real-sized live
+    // state (about 0.25 MB) is more than an address may keep
+    srv = await bootServer(CLOUD_ENV(db, { STORAGE_ROOT: storageRoot, STATUS_DIR: statusDir, OV_RELAY_MAX_MB: '0.4' }))
+  })
+  after(async () => {
+    for (const c of sockets) { try { c.ws.terminate() } catch { /* gone */ } }
+    await srv?.stop()
+    if (db) await db.drop()
+    for (const d of [storageRoot, statusDir]) { try { rmSync(d, { recursive: true, force: true }) } catch { /* best effort */ } }
+  })
+  const open = async (ip) => {
+    const c = await openSocket(srv.wsUrl, { headers: { 'cf-connecting-ip': ip } })
+    sockets.push(c)
+    return c
+  }
+
+  it('on relay-full the scorer is told, but the realtime hub still publishes the update', async () => {
+    const scorer = await open('203.0.113.210')
+    scorer.send(syncMessage('off-live')) // proves the match (game PIN 987654)
+    await settle(scorer)
+    assert.deepEqual(errorsOf(scorer), [])
+
+    // a livescore client subscribed to this match's live state on the realtime hub
+    const live = await openSocket(`${srv.wsUrl}/?purpose=live`)
+    sockets.push(live)
+    await subscribe(live, 'ls', [{ table: 'match_live_state', event: '*', column: 'match_id', value: MATCH_UUID }])
+
+    // a live state larger than this address may keep: the relay refuses to store
+    // or broadcast it, but the database live-state path must still publish it
+    scorer.send({ type: 'live-state-update', matchId: 'off-live', liveState: { points_a: 12, points_b: 9, match_status: 'live', junk: 'j'.repeat(255000) } })
+    const err = await scorer.waitFor((m) => m.type === 'error', 8000, 'relay-full')
+    assert.equal(err.code, 'relay-full')
+    const change = await live.waitFor((m) => m.type === 'db-change' && m.table === 'match_live_state', 8000, 'live-state db-change')
+    assert.equal(change.new?.points_a, 12, JSON.stringify(change))
+    assert.equal(await alive(srv.base), true)
   })
 })

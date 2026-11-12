@@ -7,7 +7,8 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   approxHeapBytes, frameTooLarge, relayBundleProblem, relayMemoryBudget,
-  MAX_RELAY_EVENTS, MAX_RELAY_SETS, MAX_RELAY_PLAYERS, MAX_RELAY_PIN_LENGTH, MAX_FRAME_VALUES, RELAY_HEAP_SHARE
+  MAX_RELAY_EVENTS, MAX_RELAY_SETS, MAX_RELAY_PLAYERS, MAX_RELAY_PIN_LENGTH, MAX_FRAME_VALUES,
+  RELAY_HEAP_SHARE, NEW_ROOM_SHARE, RELAY_ANON_SHARE, FAST_PROPERTIES
 } from '../lib/relayLimits.js'
 
 const PIN_FIELDS = ['refereePin', 'homeTeamPin', 'awayTeamPin', 'gamePin', 'game_pin', 'team1Pin', 'team2Pin']
@@ -51,6 +52,21 @@ describe('relayBundleProblem', () => {
     }
   })
 
+  it('a type-only field (matchPin) must be text or a number, but may be any length', () => {
+    const TYPE_ONLY = ['matchPin']
+    // the relay never compares matchPin, so a long one must not stop the sync
+    assert.equal(relayBundleProblem(sync({ match: { matchPin: 'p'.repeat(MAX_RELAY_PIN_LENGTH + 100) } }), PIN_FIELDS, TYPE_ONLY), null)
+    assert.equal(relayBundleProblem(sync({ match: { matchPin: 1234 } }), PIN_FIELDS, TYPE_ONLY), null)
+    assert.equal(relayBundleProblem(sync({ match: { matchPin: null } }), PIN_FIELDS, TYPE_ONLY), null)
+    // but a non-text, non-number one is still refused (it must never be String()d)
+    for (const bad of [{ toString: 1 }, ['x'], true]) {
+      const r = relayBundleProblem(sync({ match: { matchPin: bad } }), PIN_FIELDS, TYPE_ONLY)
+      assert.deepEqual([r?.code, r?.field], ['bad-request', 'match.matchPin'], JSON.stringify(bad))
+    }
+    // without the type-only list, matchPin is not checked at all
+    assert.equal(relayBundleProblem(sync({ match: { matchPin: 'x'.repeat(5000) } }), PIN_FIELDS), null)
+  })
+
   it('refuses lists that are no array (bad-request) or longer than any match has (too-large)', () => {
     const cases = [
       ['events', MAX_RELAY_EVENTS], ['sets', MAX_RELAY_SETS], ['players', MAX_RELAY_PLAYERS],
@@ -85,6 +101,22 @@ describe('approxHeapBytes', () => {
     // past the names it remembers, every name counts as new
     const many = Array.from({ length: 10000 }, (_, i) => ({ [`k${i}`]: 1 }))
     assert.ok(approxHeapBytes([many, many]) >= 2 * approxHeapBytes(many) - 4096 * 200)
+  })
+
+  it('counts an object with many keys (or integer-like keys) at its dictionary cost', () => {
+    const n = 2000
+    const obj = (K) => { const o = {}; for (let j = 0; j < K; j++) o[`f${j}`] = j; return o }
+    // V8 keeps an object with many named keys as a hash table (measured ~1.6 KB
+    // per 20-key object built one key at a time, where the fast layout is ~200 B)
+    const small = approxHeapBytes(Array.from({ length: n }, () => obj(FAST_PROPERTIES)))
+    const big = approxHeapBytes(Array.from({ length: n }, () => obj(FAST_PROPERTIES + 8)))
+    assert.ok(big / n > 1200, `${big / n} per 24-key object`)
+    assert.ok(big / n > 5 * (small / n), `dictionary ${big / n} vs fast ${small / n} per object`)
+    // integer-like keys ("7", "1000") go to an element hash table of their own
+    const indexed = approxHeapBytes(Array.from({ length: n }, () => ({ 7: 1, 1000: 2, 50000: 3 })))
+    assert.ok(indexed / n > 3 * 88, `integer keys ${indexed / n} per object`)
+    // but a key that is not a plain non-negative integer is a normal name
+    assert.ok(approxHeapBytes({ '-1': 1, '007': 2, x: 3 }) < approxHeapBytes({ 1: 1, 7: 2, 9: 3 }))
   })
 
   it('counts strings by their characters: one byte each when all are ASCII, else two', () => {
@@ -131,7 +163,17 @@ describe('relayMemoryBudget', () => {
     assert.equal(b.total, Math.floor(heap * RELAY_HEAP_SHARE))
     assert.equal(b.perAddress, Math.floor(b.total / 2))
     assert.ok(b.total > 100 * 1024 * 1024 && b.total < 110 * 1024 * 1024)
-    assert.deepEqual(relayMemoryBudget({ heapLimitBytes: heap, maxMb: '6' }), { total: 6 * 1024 * 1024, perAddress: 3 * 1024 * 1024 })
+    // new rooms are shed below the total (headroom for the matches in play);
+    // the rooms the database does not know as official hold a smaller share
+    assert.equal(b.newRoomTotal, Math.floor(b.total * NEW_ROOM_SHARE))
+    assert.equal(b.newRoomPerAddress, Math.floor(b.perAddress * NEW_ROOM_SHARE))
+    assert.equal(b.anonTotal, Math.floor(b.total * RELAY_ANON_SHARE))
+    assert.ok(b.anonTotal < b.newRoomTotal && b.newRoomTotal < b.total, 'anon < new-room < total')
+    const six = relayMemoryBudget({ heapLimitBytes: heap, maxMb: '6' })
+    assert.equal(six.total, 6 * 1024 * 1024)
+    assert.equal(six.perAddress, 3 * 1024 * 1024)
+    assert.equal(six.newRoomTotal, Math.floor(6 * 1024 * 1024 * NEW_ROOM_SHARE))
+    assert.equal(six.anonTotal, Math.floor(6 * 1024 * 1024 * RELAY_ANON_SHARE))
     assert.deepEqual(relayMemoryBudget({ heapLimitBytes: heap, maxMb: ' ' }), b, 'empty: the default')
     for (const bad of ['0', '-5', 'abc', '1e999']) {
       assert.throws(() => relayMemoryBudget({ heapLimitBytes: heap, maxMb: bad }), /OV_RELAY_MAX_MB/, bad)

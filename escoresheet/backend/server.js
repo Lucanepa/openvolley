@@ -710,9 +710,14 @@ function notifyScorerMoved(externalId, deviceId = null) {
 // protects the match on the scorer's device.
 const MATCH_SECRET_FIELDS = ['refereePin', 'homeTeamPin', 'awayTeamPin', 'homeTeamUploadPin', 'awayTeamUploadPin', 'connection_pins', 'connectionPins', 'game_pin', 'gamePin',
   'team1Pin', 'team2Pin', 'team1TeamPin', 'team2TeamPin', 'team1UploadPin', 'team2UploadPin', 'team1TeamUploadPin', 'team2TeamUploadPin', 'matchPin']
-// The PINs among them, text or a number in a sync (relayBundleProblem); the
-// connection_pins objects are the database's, never compared by the relay
-const MATCH_PIN_FIELDS = MATCH_SECRET_FIELDS.filter((k) => k !== 'connection_pins' && k !== 'connectionPins')
+// The PINs among them that the relay compares or hands to a PIN check: text of
+// at most 64 characters or a number in a sync (relayBundleProblem). The
+// connection_pins objects are the database's, never compared by the relay.
+// matchPin is openbeach's device lock, never compared by the relay and typed
+// with no maximum length, so only its type is checked, not its length
+// (MATCH_PIN_TYPE_ONLY_FIELDS): a long one must not stop a sync silently.
+const MATCH_PIN_TYPE_ONLY_FIELDS = ['matchPin']
+const MATCH_PIN_FIELDS = MATCH_SECRET_FIELDS.filter((k) => k !== 'connection_pins' && k !== 'connectionPins' && !MATCH_PIN_TYPE_ONLY_FIELDS.includes(k))
 function stripMatchSecrets(match) {
   if (!match || typeof match !== 'object') return match
   const clean = { ...match }
@@ -804,13 +809,15 @@ function publicMatch(match) {
 // activeMatches and sent to every tablet twice per rally: at a national peak
 // that alone filled the backend's 256 MiB. Dropped when a sync is stored;
 // scorers since 2026-10-26 leave them out themselves (frontend relayEvents).
+// The copy is made in one step (object rest): one built key by key turns into
+// a hash table past about 20 keys, several times the heap of the parsed event
+// (lib/relayLimits.js approxHeapBytes).
 const RELAY_EVENT_OMIT = ['stateSnapshot', 'stateBefore']
 function relayEvents(events) {
   if (!Array.isArray(events)) return events
   return events.map((e) => {
     if (!e || typeof e !== 'object' || !RELAY_EVENT_OMIT.some((k) => k in e)) return e
-    const out = {}
-    for (const k of Object.keys(e)) if (!RELAY_EVENT_OMIT.includes(k)) out[k] = e[k]
+    const { stateSnapshot, stateBefore, ...out } = e
     return out
   })
 }
@@ -5173,22 +5180,34 @@ const relayAddressOf = (clientInfo) => (isLoopbackIp(clientInfo.ip) ? null : (IS
 
 /**
  * 'relay-full' when `bytes` (approxHeapBytes) for room `matchId` would take
- * the relay past RELAY_MEMORY, in total or for the socket's address; else
- * null. The room's own bundle and live state are left out: they are the ones
- * replaced. At most MAX_ROOMS entries to add up.
+ * the relay past its memory budget; else null. The room's own bundle and live
+ * state are left out: they are the ones replaced, so replacing a stored room's
+ * bundle never adds a room. At most MAX_ROOMS entries to add up.
+ *
+ * A room the relay does not hold yet (`newRoom`) is refused at the lower
+ * new-room marks, so the headroom above is kept for the rooms already in play
+ * (they grow with every rally and must not freeze when the relay fills). A room
+ * the database does not know as an official match (`official` false, cloud
+ * only) may not take the slice reserved for official matches; official matches
+ * and venue rooms use the whole budget.
  */
-function relayMemoryRefusal(clientInfo, matchId, bytes) {
+function relayMemoryRefusal(clientInfo, matchId, bytes, { newRoom = false, official = true } = {}) {
   const address = relayAddressOf(clientInfo)
   let total = bytes
   let fromAddress = bytes
+  let anon = official ? 0 : bytes
   for (const [id, entry] of activeMatches) {
     if (id === matchId) continue
     const held = (entry.bundleBytes || 0) + (entry.liveStateBytes || 0)
     total += held
     if (address !== null && entry.relayAddress === address) fromAddress += held
+    if (!entry.relayOfficial) anon += held
   }
   if (total > RELAY_MEMORY.total) return 'relay-full'
   if (address !== null && fromAddress > RELAY_MEMORY.perAddress) return 'relay-full'
+  if (newRoom && total > RELAY_MEMORY.newRoomTotal) return 'relay-full'
+  if (newRoom && address !== null && fromAddress > RELAY_MEMORY.newRoomPerAddress) return 'relay-full'
+  if (!official && anon > RELAY_MEMORY.anonTotal) return 'relay-full'
   return null
 }
 
@@ -5212,7 +5231,7 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
   // text or a number (String() of {"toString":1} throws, and the PIN check of
   // GET /api/match/:id ended the backend with it), a list that is no array or
   // longer than any match has
-  const problem = relayBundleProblem(message, MATCH_PIN_FIELDS)
+  const problem = relayBundleProblem(message, MATCH_PIN_FIELDS, MATCH_PIN_TYPE_ONLY_FIELDS)
   if (problem) {
     sendRelayRefusal(clientInfo, problem.code, relayKeyOf(normalizeMatchId(message.matchId), message.match), problem.message)
     return
@@ -5260,11 +5279,22 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
   // What the relay would keep (without the undo snapshots) and whether its
   // memory has room for it; the room's last bundle is replaced, not added.
   // Measured once: a cloud claim comes back here after its database check.
+  // A room the relay does not hold yet is new (shed first when the relay is
+  // nearly full); replacing a stored room's bundle keeps a match in play going.
+  // Official (the database proved its game PIN, or the venue relay with no
+  // database, or a first pass whose database check runs next and re-decides)
+  // reserves memory an anonymous room cannot take; a room continued by its
+  // owner keeps the status its last sync earned.
+  const stored = activeMatches.get(matchId)
+  const newRoom = !stored
+  const official = !DB_MODE || opts.dbProved === true ||
+    (!opts.dbChecked && !clientInfo.ownedMatches.has(matchId)) ||
+    (clientInfo.ownedMatches.has(matchId) && stored?.relayOfficial === true)
   const storedEvents = opts.storedEvents ?? relayEvents(events)
   const bundleBytes = opts.bundleBytes ?? approxHeapBytes([match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, storedEvents])
   const memoryRefusal = bundleBytes > MAX_RELAY_BUNDLE_BYTES
     ? 'too-large'
-    : relayMemoryRefusal(clientInfo, matchId, bundleBytes + (activeMatches.get(matchId)?.liveStateBytes || 0))
+    : relayMemoryRefusal(clientInfo, matchId, bundleBytes + (stored?.liveStateBytes || 0), { newRoom, official })
   if (memoryRefusal) {
     sendRelayRefusal(clientInfo, memoryRefusal, matchId)
     return
@@ -5338,6 +5368,11 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
   }
   const carryLiveState = (claimed.kind === 'owner' || claimed.kind === 'proved') &&
     gamePinOf(previous?.match) === gamePinOf(match)
+  // Whether the database knows this as an official match (cloud), for the
+  // memory budget: proved now, or carried by its owner's later syncs (which do
+  // not re-check the database). Venue rooms (no database) are all official.
+  const relayOfficial = !DB_MODE || opts.dbProved === true ||
+    ((claimed.kind === 'owner' || claimed.kind === 'proved' || claimed.kind === 'reclaim') && previous?.relayOfficial === true)
   // The sport of the room: openbeach syncs team1/team2 (or names its sport);
   // a sync without teams keeps the sport the same scorer set before.
   const beachSync = !!(message.team1Team || message.team2Team || message.team1Players || message.team2Players) ||
@@ -5361,10 +5396,12 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     sets,
     events: storedEvents,
     liveState: carryLiveState ? previous?.liveState : undefined,
-    // the relay memory it takes (relayMemoryRefusal) and whose it is
+    // the relay memory it takes (relayMemoryRefusal), whose it is and whether
+    // the database knows it as an official match
     bundleBytes,
     liveStateBytes: carryLiveState ? previous?.liveStateBytes : undefined,
     relayAddress: relayAddressOf(clientInfo),
+    relayOfficial,
     gameNumber: match?.gameN || match?.gameNumber || match?.game_n,
     updatedAt: new Date().toISOString(),
     updatedBy: clientInfo.id
@@ -5431,9 +5468,17 @@ function handleMatchAction(clientInfo, message) {
   console.log(`⚡ Match action broadcasted to room ${matchId}: ${action}`)
 }
 
+// A live state no more than this many bytes bigger than the room's last one is
+// a routine replacement (score, rotation): it adds almost nothing to the heap,
+// so the relay's memory never refuses it and a match in play keeps publishing.
+const LIVE_STATE_GROWTH_SLACK = 8 * 1024
+
 // Handle live-state-update (scoreboard's computed live state). False: refused
-// (too large, or no room in the relay's memory) before it was stored or
-// relayed; the live hub gets it neither.
+// because it is too large (over the live hub's own limit), so the database
+// live-state path is skipped too. True otherwise, including when the relay's
+// memory is full: the relay then does not store or broadcast it, but the
+// database path (livescore, scorer alarm) still publishes it — that path has
+// its own limit and must not depend on the relay's memory.
 function handleLiveStateUpdate(clientInfo, message) {
   const matchId = resolveMatchKey(clientInfo, message.matchId)
   if (!requireMatchOwner(clientInfo, matchId, 'live-state-update')) return true
@@ -5442,17 +5487,23 @@ function handleLiveStateUpdate(clientInfo, message) {
   // A test (rehearsal) match publishes its live state to the venue's relay
   // only (the scorer never sends it here): the cloud drops it.
   if (IS_CLOUD && stored?.match?.test === true) return true
-  // The live hub's size limit (a real one is a few KB), then the relay's
-  // memory (it replaces the room's last live state)
+  // The live hub's size limit (a real one is a few KB)
   if (JSON.stringify(message.liveState).length > MAX_LIVE_STATE_BYTES) {
     sendRelayRefusal(clientInfo, 'too-large', matchId, 'Live state too large for the relay')
     return false
   }
+  // The relay's memory, only when the live state grows materially past the
+  // room's last one (a routine replacement adds almost nothing): the room is
+  // already stored, so this never refuses a match in play for its own updates.
   const liveStateBytes = approxHeapBytes(message.liveState)
-  const memoryRefusal = stored ? relayMemoryRefusal(clientInfo, matchId, (stored.bundleBytes || 0) + liveStateBytes) : null
+  const grew = liveStateBytes > (stored?.liveStateBytes || 0) + LIVE_STATE_GROWTH_SLACK
+  const memoryRefusal = stored && grew
+    ? relayMemoryRefusal(clientInfo, matchId, (stored.bundleBytes || 0) + liveStateBytes, { official: stored.relayOfficial !== false })
+    : null
   if (memoryRefusal) {
+    // Not stored or broadcast here, but the database live-state path still runs
     sendRelayRefusal(clientInfo, memoryRefusal, matchId)
-    return false
+    return true
   }
   if (stored) {
     stored.liveState = message.liveState
