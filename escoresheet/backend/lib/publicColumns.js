@@ -166,7 +166,8 @@ export const LIVE_COLUMNS = Object.freeze({
 })
 
 // The referee picker's suggestions; dates of birth only for an admin or an
-// account that can score (server.js REFEREE_DOB_SPORTS).
+// account that can score (server.js REFEREE_DOB_SPORTS). Any other account
+// also writes only these columns of a referee it adds.
 const REFEREE_DATABASE_COLUMNS = Object.freeze({
   id: true,
   first_name: true,

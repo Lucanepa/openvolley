@@ -6,7 +6,8 @@
  * not, gets the anonymous projection (lib/publicColumns.js ANON_DB_COLUMNS)
  * and cannot filter or order on the hidden columns. Covers /api/db selects
  * (the app screens' own queries), the rows a referee directory write returns,
- * GET /api/games/today and the live sockets.
+ * the referees such an account adds (no date of birth stored), GET
+ * /api/games/today, the live sockets, and a failed role lookup (503).
  *
  * Needs PG_TEST_URL (see tests/helpers/pgTestDb.js) or OV_E2E_DOCKER=1.
  */
@@ -211,6 +212,38 @@ describe('referees\' dates of birth only for the roles that fill the sheet', { s
     assert.ok(noDob(ref), ref.text.slice(0, 300))
   })
 
+  it('a referee added by an account without a role is stored without its date of birth, so the answer never depends on a stored one', async () => {
+    // A unique key over the name and the date of birth (the production
+    // directory has a unique index; its columns are not in the repository)
+    await sql.query('CREATE UNIQUE INDEX test_referee_name_dob ON public.referee_database (first_name, last_name, dob)')
+    try {
+      const add = (user, row, extra = {}) => dbCall(user, 'referee_database', 'insert', {
+        data: { country: 'CHE', sport_type: ['indoor'], created_at: new Date().toISOString(), ...row }, ...extra
+      })
+      // The same referee with a wrong and with the stored date of birth
+      const wrong = await add(users.pending, { first_name: 'Rolf', last_name: 'Zzadult', dob: '1975-08-10' })
+      const right = await add(users.pending, { first_name: 'Rolf', last_name: 'Zzadult', dob: ADULT_DOB })
+      assert.equal(wrong.status, 200, wrong.text)
+      assert.equal(right.status, 200, right.text)
+      assert.deepEqual(right.json, wrong.json, 'the same answer either way')
+      const stored = (await sql.query("SELECT dob::text AS dob FROM public.referee_database WHERE last_name = 'Zzadult' ORDER BY dob NULLS LAST")).rows
+      assert.deepEqual(stored.map((row) => row.dob), [ADULT_DOB, null, null], 'only the earlier row has a date of birth')
+      // With returning: the public columns of the new row
+      const back = await add(users.manager, { first_name: 'Lena', last_name: 'Zzreturned', dob: '1991-04-05' }, { returning: '*' })
+      assert.equal(back.status, 200, back.text)
+      assert.equal(back.json.data[0].last_name, 'Zzreturned')
+      assert.ok(!('dob' in back.json.data[0]), back.text)
+      // A scorer's new referee keeps its date of birth
+      const mine = await add(users.scorer, { first_name: 'Nora', last_name: 'Zzscorer', dob: '1992-06-07' })
+      assert.equal(mine.status, 200, mine.text)
+      const kept = (await sql.query("SELECT dob::text AS dob FROM public.referee_database WHERE last_name = 'Zzscorer'")).rows
+      assert.deepEqual(kept.map((row) => row.dob), ['1992-06-07'])
+    } finally {
+      await sql.query("DELETE FROM public.referee_database WHERE (last_name = 'Zzadult' AND dob IS NULL) OR last_name IN ('Zzreturned', 'Zzscorer')")
+      await sql.query('DROP INDEX IF EXISTS public.test_referee_name_dob')
+    }
+  })
+
   it('live sockets cannot subscribe to the referee tables', async () => {
     const live = await openSocket(`${srv.wsUrl}/?purpose=live`)
     try {
@@ -222,6 +255,33 @@ describe('referees\' dates of birth only for the roles that fill the sheet', { s
       }
     } finally {
       live.ws.close()
+    }
+  })
+
+  it('when the roles cannot be read, a scorer gets 503, never the cut-down row; public columns need no lookup', async () => {
+    // New scorers: nothing of theirs is in the access cache (30 s) yet
+    const reader = await account('lateReader', ['scorer'])
+    const writer = await account('lateWriter', ['scorer'])
+    await sql.query('ALTER TABLE public.profiles RENAME COLUMN roles TO roles_unreadable')
+    try {
+      const pub = await dbCall(reader, 'referee_database', 'select', { columns: 'id, last_name' })
+      assert.equal(pub.status, 200, pub.text)
+      assert.ok(pub.json.data.some((row) => row.last_name === 'Zzminor'))
+      for (const [table, params] of [['referee_database', pickerQuery('indoor')], ['svrz_games', loaderQuery]]) {
+        const r = await dbCall(reader, table, 'select', params)
+        assert.equal(r.status, 503, `${table}: ${r.text}`)
+        assert.equal(r.json.error.code, 'OV_DB_UNAVAILABLE')
+        assert.equal(r.json.data, null)
+      }
+      // A new referee is neither stored without its date of birth nor at all
+      const add = await dbCall(writer, 'referee_database', 'insert', {
+        data: { first_name: 'Ida', last_name: 'Zzlate', country: 'CHE', dob: '1993-08-09', sport_type: ['indoor'] }
+      })
+      assert.equal(add.status, 503, add.text)
+      assert.equal(add.json.error.code, 'OV_DB_UNAVAILABLE')
+      assert.equal((await sql.query("SELECT count(*)::int AS n FROM public.referee_database WHERE last_name = 'Zzlate'")).rows[0].n, 0)
+    } finally {
+      await sql.query('ALTER TABLE public.profiles RENAME COLUMN roles_unreadable TO roles')
     }
   })
 })
