@@ -11,10 +11,11 @@
 -- bucket that the server accepted for a match (lib/scoresheets.js storePdf,
 -- POST /api/storage/upload): only from the match's creator, an editor or an
 -- admin (pgQuery assertMatchWritable), after the close from the closing
--- account (or an admin), once. The manager's Scoresheets tab and the final
--- mail serve only these files of the match (the newest); a match without a
--- row (files stored before this file ran) falls back to the file names, and
--- then only to files whose storage owner created, edits or closed the match.
+-- account (or an admin), once per approval (that same file replaceable for
+-- 10 minutes). The manager's Scoresheets tab and the final mail serve only
+-- these files of the match (the newest); a match without a row (files stored
+-- before this file ran) falls back to the file names, and then only to files
+-- whose storage owner created, edits or closed the match.
 --
 --   path       the object's key in the bucket ({day}/game{n}_k{hex}.pdf,
 --              beach/{day}/game{n}_{seed}.pdf); one match per file
@@ -22,13 +23,23 @@
 --              (the file stays the match's record, like matches.created_by)
 --   sha256     of the stored bytes: a resent job after the close (the same
 --              bytes) is accepted, a changed file is not
+--   first_stored_at  when it was first stored for the match's approval (since
+--              its last reopen); a replacement does not move it. After the
+--              close the closing account replaces that file for 10 minutes
+--              after the close, or after this time when it is later
+--              (lib/scoresheets.js CLOSED_REPLACE_GRACE_MS), never 10 minutes
+--              after the last replacement. NULL (a row of an earlier draft
+--              of this file): the close counts
 --
 -- roles.sql: no change (ov_app's table grants cover new tables); run
 -- apply-roles.sh after this file as with every migration all the same.
 -- Not on the /api/db allowlist: only lib/scoresheets.js reads and writes it.
 --
--- Idempotent, adds a table only. Deploy: 033, apply-roles.sh, then the
--- backend image (an image without this table answers PDF uploads with 503).
+-- Idempotent, adds a table only (and its first_stored_at column to a table
+-- an earlier draft of this file made without it: NULL there, not the time
+-- this file ran, which would open the 10 minutes again). Deploy: 033,
+-- apply-roles.sh, then the backend image (an image without this table
+-- answers PDF uploads with 503).
 BEGIN;
 
 CREATE TABLE IF NOT EXISTS public.match_scoresheets (
@@ -37,8 +48,12 @@ CREATE TABLE IF NOT EXISTS public.match_scoresheets (
   stored_by  uuid        REFERENCES auth.users(id) ON DELETE SET NULL,
   sha256     text        NOT NULL CHECK (sha256 ~ '^[0-9a-f]{64}$'),
   size       integer     NOT NULL CHECK (size >= 0),
-  stored_at  timestamptz NOT NULL DEFAULT now()
+  stored_at  timestamptz NOT NULL DEFAULT now(),
+  first_stored_at timestamptz DEFAULT now()
 );
+
+ALTER TABLE public.match_scoresheets ADD COLUMN IF NOT EXISTS first_stored_at timestamptz;
+ALTER TABLE public.match_scoresheets ALTER COLUMN first_stored_at SET DEFAULT now();
 
 CREATE INDEX IF NOT EXISTS match_scoresheets_match_idx ON public.match_scoresheets (match_id, stored_at DESC);
 

@@ -48,15 +48,20 @@
  * name. A PDF is stored only for a match its uploader may write (pgQuery
  * assertMatchWritable: the creator, an editor, an admin): the match the app
  * names (match_external_id, newer apps), else the one its path names (older
- * apps, OpenBeach). After the close only the closing account (or an admin)
- * stores it, and once: the approval's PDF, which the app queues after the
- * close; the same bytes again (a resent job) are accepted, another file is
- * not (409 OV_MATCH_CLOSED) until an admin reopens the match, and a closed
- * match's PDF is not removed. The tab and the final mail use only the files
- * recorded for the match, the newest first. A match without any (stored
- * before db/033) is found by the names as before (no scheduled day: the days
- * it was closed, updated and created; more than one file: the newest), but
- * only files whose storage owner created, edits or closed the match.
+ * apps, OpenBeach; a beach name is the one match's whose external id is its
+ * seed). After the close only the closing account (or an admin) stores it,
+ * and once per approval: the approval's PDF (the app queues it with the
+ * approval, which closes the match, so it comes before or after the close),
+ * unless one was stored since the last reopen. The same bytes again (a
+ * resent job) are accepted, and that same file may be replaced for
+ * CLOSED_REPLACE_GRACE_MS (a corrected approval's PDF sent right after an
+ * older one still queued); any other file is not (409 OV_MATCH_CLOSED) until
+ * an admin reopens the match, and a closed match's PDF is not removed. The
+ * tab and the final mail use only the files recorded for the match, the
+ * newest first. A match without any (stored before db/033) is found by the
+ * names as before (no scheduled day: the days it was closed, updated and
+ * created; more than one file: the newest), but only files whose storage
+ * owner created, edits or closed the match.
  *
  * This is the only code that reads scoresheets past the uploader-only rule
  * (README "Who can read a scoresheet"); every read is in the audit log.
@@ -122,6 +127,20 @@ export function downloadName ({ game_n: gameN, external_id: externalId, sport, l
 /** The seed part of an OpenBeach file name (scoresheetUploader_beach.js scoresheetStoragePath). */
 const cleanSeed = (v) => String(v).replace(/[^A-Za-z0-9_-]/g, '-')
 
+const BEACH_PDF_RE = /^game([^_]*)(?:_(.+))?\.pdf$/
+
+/**
+ * The parts of an OpenBeach PDF name game{n}[_{seed}].pdf: { game, seed }
+ * (seed null without one), else null. OpenBeach writes the game number (or
+ * 'unknown') as n, never a '_', so the seed is all after the first '_': one
+ * name, one seed (a seed is itself made of '_'-joined parts, and the tail of
+ * one would otherwise fit too).
+ */
+export function beachPdfName (name) {
+  const r = typeof name === 'string' ? BEACH_PDF_RE.exec(name) : null
+  return r ? { game: r[1], seed: r[2] ?? null } : null
+}
+
 function utcDay (v) {
   if (!v) return null
   const d = v instanceof Date ? v : new Date(v)
@@ -142,9 +161,15 @@ export function pdfLocator (m) {
     : [utcDay(m.closed_at), utcDay(m.updated_at), utcDay(m.created_at)]
   const folders = [...new Set(days.filter(Boolean))].map((d) => (beach ? `beach/${d}` : d))
   if (beach) {
-    const seed = m.external_id ? `_${cleanSeed(m.external_id)}.pdf` : null
-    const legacy = m.game_n != null ? `game${m.game_n}.pdf` : null
-    return { folders, rank: (name) => (seed && name.startsWith('game') && name.endsWith(seed) ? 2 : name === legacy ? 1 : 0) }
+    const seed = m.external_id ? cleanSeed(m.external_id) : null
+    const legacy = m.game_n != null ? String(m.game_n) : null
+    const rank = (name) => {
+      const b = beachPdfName(name)
+      if (!b) return 0
+      if (b.seed !== null) return seed !== null && b.seed === seed ? 2 : 0
+      return b.game === legacy ? 1 : 0
+    }
+    return { folders, rank }
   }
   const games = [...new Set([cleanGame(m.game_n), cleanGame(m.external_id)].filter(Boolean))]
   const keyed = games.map((g) => new RegExp(`^game${g}_k[0-9a-f]{32}\\.pdf$`))
@@ -175,7 +200,8 @@ const INDOOR_PDF_RE = /^game([A-Za-z0-9-]+?)(?:_k[0-9a-f]{32})?\.pdf$/
 /**
  * The parts of a match's PDF path, as the apps write it ({day}/game{g}[_k{hex}].pdf,
  * beach/{day}/game{n}[_{seed}].pdf): { key (the path as lib/storage.js keeps it),
- * folder, name, sport, game (indoor: the game part) }; null for any other path.
+ * folder, day (its last segment), name, sport, game (the game part), seed
+ * (beach: the seed, or null) }; null for any other path.
  */
 export function pdfPathParts (p) {
   const segs = typeof p === 'string' ? parseStoragePath(p) : null
@@ -183,13 +209,35 @@ export function pdfPathParts (p) {
   const beach = segs.length === 3 && segs[0] === 'beach'
   const name = segs[segs.length - 1]
   if (!beach && (segs.length !== 2 || segs[0] === 'beach')) return null
-  if (!name.startsWith('game') || !name.endsWith('.pdf')) return null
   const indoor = beach ? null : INDOOR_PDF_RE.exec(name)
-  if (!beach && !indoor) return null
-  return { key: segs.join('/'), folder: segs.slice(0, -1).join('/'), name, sport: beach ? 'beach' : 'indoor', game: indoor ? indoor[1] : null }
+  const b = beach ? beachPdfName(name) : null
+  if (!indoor && !b) return null
+  return {
+    key: segs.join('/'),
+    folder: segs.slice(0, -1).join('/'),
+    day: segs[segs.length - 2],
+    name,
+    sport: beach ? 'beach' : 'indoor',
+    game: indoor ? indoor[1] : b.game,
+    seed: b ? b.seed : null
+  }
 }
 
 const MATCH_CLOSED = () => fail(409, 'OV_MATCH_CLOSED', 'This match is closed: its scoresheet stays as it was stored')
+// An upload that names no match (older apps, OpenBeach) whose path fits no
+// match: the match's insert may still be on its way (it goes in the score's
+// lane). 503, retryable: those apps park a refusal (4xx) for an hour, and
+// the final mail would go out without the PDF in the meantime.
+const MATCH_NOT_IN_CLOUD = () => ({ status: 503, body: { data: null, error: { message: 'No match of this scoresheet is in the cloud yet', code: 'OV_MATCH_NOT_FOUND', retryable: true } } })
+/**
+ * After the close, the closing account may still replace the approval's PDF
+ * (the file stored since the match's last reopen) at the same path for this
+ * long after the close, or after that file's first store when it came later
+ * (a replacement never moves it): an app sends every queued approval file in
+ * turn, and after a reopen and a new approval an older app or OpenBeach may
+ * send the first approval's PDF just before the corrected one.
+ */
+export const CLOSED_REPLACE_GRACE_MS = 10 * 60 * 1000
 
 /** An answer for the caller, thrown out of a transaction (which then rolls back). */
 class Refused extends Error {
@@ -471,40 +519,92 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
   }
 
   // ------------------------------------------------------------------ storing
-  // The matches a PDF's name can belong to (not test matches, the path's
-  // sport), the ones of the path's day first. The SQL narrows by the game
-  // number or the path-safe external id as the apps write them (cleanGame,
-  // cleanSeed); pdfLocator has the last word.
+  // The matches a PDF's name can belong to, in SQL: not test matches, the
+  // path's sport; an indoor name by its game part (the game number or the
+  // path-safe external id, cleanGame), a beach name by its seed (the
+  // path-safe external id, cleanSeed) or, without one, by its game number.
+  // pdfLocator has the last word on a row that is used.
   const BEACH_SEED_SQL = "regexp_replace(m.external_id, '[^A-Za-z0-9_-]', '-', 'g')"
-  async function matchesOfPath (q, parts) {
-    const beach = parts.sport === 'beach'
-    const where = beach
-      ? `m.sport_type IS NOT DISTINCT FROM 'beach'
-         AND ($1 = 'game' || m.game_n::text || '.pdf' OR right($1, length(${BEACH_SEED_SQL}) + 5) = '_' || ${BEACH_SEED_SQL} || '.pdf')`
-      : `m.sport_type IS DISTINCT FROM 'beach'
-         AND (m.game_n::text = $1 OR left(regexp_replace(btrim(m.external_id), '[^A-Za-z0-9-]', '-', 'g'), 64) = $1)`
-    const { rows } = await q.query(
+  function pathSql (parts, p) {
+    let fits
+    if (parts.sport === 'beach') {
+      fits = "m.sport_type IS NOT DISTINCT FROM 'beach' AND " +
+        (parts.seed !== null ? `${BEACH_SEED_SQL} = ${p(parts.seed)}` : `m.game_n::text = ${p(parts.game)}`)
+    } else {
+      const g = p(parts.game)
+      fits = `m.sport_type IS DISTINCT FROM 'beach' AND (m.game_n::text = ${g} OR left(regexp_replace(btrim(m.external_id), '[^A-Za-z0-9-]', '-', 'g'), 64) = ${g})`
+    }
+    return `m.test IS NOT TRUE AND m.external_id IS NOT NULL AND ${fits}`
+  }
+  // SQL: the path's folder is one of the match's (pdfLocator: the scheduled
+  // UTC day, else the days it was closed, updated and created)
+  const utcDaySql = (col) => `to_char(${col} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`
+  function ofDaySql (parts, p) {
+    const day = p(parts.day)
+    return `coalesce(CASE WHEN m.scheduled_at IS NOT NULL THEN ${utcDaySql('m.scheduled_at')} = ${day} ` +
+      `ELSE ${day} IN (${utcDaySql('m.closed_at')}, ${utcDaySql('m.updated_at')}, ${utcDaySql('m.created_at')}) END, false)`
+  }
+  const sqlParams = () => {
+    const values = []
+    return { values, p: (v) => { values.push(v); return '$' + values.length } }
+  }
+  const matchRow = (r) => ({ ...r, sport: sportOut(r.is_beach) })
+
+  /**
+   * The one match a beach name with a seed is of: the one whose external id
+   * is the seed, else (several clean to it) the oldest. null when there is none.
+   */
+  async function seededBeachMatch (client, parts) {
+    const { values, p } = sqlParams()
+    const where = pathSql(parts, p)
+    const { rows: [r] } = await client.query(
       `SELECT ${ROW_COLUMNS}, m.closed_by::text AS closed_by FROM public.matches m
-        WHERE m.test IS NOT TRUE AND m.external_id IS NOT NULL AND ${where}
-        ORDER BY m.scheduled_at DESC NULLS LAST, m.id LIMIT 20`, [beach ? parts.name : parts.game])
-    const ms = rows.map((r) => ({ ...r, sport: sportOut(r.is_beach) })).filter((m) => pdfLocator(m).rank(parts.name))
-    const ofDay = (m) => pdfLocator(m).folders.includes(parts.folder)
-    return [...ms.filter(ofDay), ...ms.filter((m) => !ofDay(m))]
+        WHERE ${where} ORDER BY (m.external_id = ${p(parts.seed)}) DESC, m.created_at, m.id LIMIT 1`, values)
+    return r ? matchRow(r) : null
   }
 
   /** The match `externalId` the app names, if the caller may write it and the path is its PDF's. */
   async function namedMatch (client, externalId, parts, matchOwner) {
     const w = await db.assertMatchWritable(client, externalId, matchOwner)
     const { rows: [r] } = await client.query(`SELECT ${ROW_COLUMNS}, m.closed_by::text AS closed_by FROM public.matches m WHERE m.id = $1`, [w.id])
-    const m = { ...r, sport: sportOut(r.is_beach) }
-    if (m.sport !== parts.sport || !pdfLocator(m).rank(parts.name)) throw new Refused(invalid('path: not the scoresheet PDF of this match'))
+    const m = matchRow(r)
+    const notIts = () => new Refused(invalid('path: not the scoresheet PDF of this match'))
+    if (m.sport !== parts.sport || !pdfLocator(m).rank(parts.name)) throw notIts()
+    // a beach name is one match's (its seed); a match made to fit it too is not that one
+    if (parts.sport === 'beach' && parts.seed !== null) {
+      const owner = await seededBeachMatch(client, parts)
+      if (owner && owner.id !== m.id) throw notIts()
+    }
     return m
   }
 
-  /** The match the path names (older apps, OpenBeach): the first of matchesOfPath the caller may write. */
+  /**
+   * The match the path names (older apps, OpenBeach), for a caller that may
+   * write it. A beach name with a seed is one match's (seededBeachMatch). Any
+   * other name can be several matches' (game numbers repeat; an external id
+   * can be made to clean to a game number): the caller's own ones first
+   * (creator or editor), then the path's day, so that matches others add
+   * under the name do not push the caller's out of the candidates. A PDF of
+   * such a name is stored under its own random path, recorded for the match
+   * found here.
+   */
   async function pathMatch (client, parts, matchOwner) {
-    const candidates = await matchesOfPath(client, parts)
-    if (!candidates.length) throw new Refused(fail(404, 'OV_MATCH_NOT_FOUND', 'No match of this scoresheet was found'))
+    let candidates
+    if (parts.sport === 'beach' && parts.seed !== null) {
+      const m = await seededBeachMatch(client, parts)
+      candidates = m && pdfLocator(m).rank(parts.name) ? [m] : []
+    } else {
+      const { values, p } = sqlParams()
+      const where = pathSql(parts, p)
+      const ofDay = ofDaySql(parts, p)
+      const u = p(isUuid(matchOwner?.userId) ? matchOwner.userId : null)
+      const own = `(coalesce(m.created_by = ${u}::uuid, false) OR EXISTS (SELECT 1 FROM public.match_editors e WHERE e.match_id = m.id AND e.user_id = ${u}::uuid))`
+      const { rows } = await client.query(
+        `SELECT ${ROW_COLUMNS}, m.closed_by::text AS closed_by FROM public.matches m
+          WHERE ${where} ORDER BY ${own} DESC, ${ofDay} DESC, m.scheduled_at DESC NULLS LAST, m.id LIMIT 20`, values)
+      candidates = rows.map(matchRow).filter((m) => pdfLocator(m).rank(parts.name))
+    }
+    if (!candidates.length) throw new Refused(MATCH_NOT_IN_CLOUD())
     let refusal = null
     for (const m of candidates) {
       try {
@@ -524,11 +624,11 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
    * as lib/storage.js handle(). The PDF ('%PDF-', else 415) is stored for the
    * match body.match_external_id names, or the match its path names, when
    * the caller may write that match (403 OV_NOT_MATCH_OWNER / OV_SCORER_REQUIRED;
-   * 404 OV_MATCH_NOT_FOUND when no match has that name, the app retries:
-   * the match may not be in the cloud yet), and recorded for it. A closed
-   * match: see the header (409 OV_MATCH_CLOSED). One store per match at a
-   * time (an advisory lock; the match row is held FOR SHARE, so it cannot
-   * close in between).
+   * OV_MATCH_NOT_FOUND while the match is not in the cloud: 404 for the
+   * match the app names, which the app retries, 503 for a path no match
+   * fits), and recorded for it. A closed match: see the header (409
+   * OV_MATCH_CLOSED). One store per match at a time (an advisory lock; the
+   * match row is held FOR SHARE, so it cannot close in between).
    * @param {{ userId: string, matchOwner: { userId: string, admin?: boolean }, body: object }} o
    */
   async function storePdf ({ userId, matchOwner, body } = {}) {
@@ -550,26 +650,38 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
       return await db.withTransaction(async (client) => {
         const m = named ? await namedMatch(client, named, parts, matchOwner) : await pathMatch(client, parts, matchOwner)
         await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`ov.scoresheet:${m.id}`])
+        // The approval's PDFs: the match's files stored since its last reopen
+        // (audit_log match.reopen; all of them when it was never reopened),
+        // before the close or after it
         const { rows: [s] } = await client.query(
           `SELECT m.closed_at IS NOT NULL AS closed, m.closed_by::text AS closed_by,
-                  (SELECT x.match_id::text FROM public.match_scoresheets x WHERE x.path = $2) AS path_match,
-                  EXISTS (SELECT 1 FROM public.match_scoresheets x WHERE x.match_id = m.id AND x.stored_at >= m.closed_at) AS stored_since_close,
-                  EXISTS (SELECT 1 FROM public.match_scoresheets x
-                           WHERE x.match_id = m.id AND x.path = $2 AND x.sha256 = $3 AND x.stored_at >= m.closed_at) AS same_since_close
-             FROM public.matches m WHERE m.id = $1`, [m.id, parts.key, sha256])
+                  x.match_id::text AS path_match,
+                  coalesce(x.match_id = m.id AND (r.at IS NULL OR x.stored_at > r.at), false) AS path_of_approval,
+                  coalesce(x.sha256 = $3, false) AS same_bytes,
+                  coalesce(greatest(m.closed_at, x.first_stored_at) > now() - make_interval(secs => $4), false) AS in_grace,
+                  EXISTS (SELECT 1 FROM public.match_scoresheets o
+                           WHERE o.match_id = m.id AND (r.at IS NULL OR o.stored_at > r.at) AND o.path <> $2) AS other_of_approval
+             FROM public.matches m
+             LEFT JOIN public.match_scoresheets x ON x.path = $2
+             LEFT JOIN LATERAL (SELECT max(a.at) AS at FROM public.audit_log a
+                                 WHERE a.action = 'match.reopen' AND a.match_id = m.id) r ON true
+            WHERE m.id = $1`, [m.id, parts.key, sha256, CLOSED_REPLACE_GRACE_MS / 1000])
         if (s.path_match && s.path_match !== m.id) throw new Refused(fail(409, 'OV_STORAGE_CONFLICT', 'This file is stored for another match'))
         if (s.closed && matchOwner?.admin !== true) {
-          // the closing account's PDF of the approval, once; a resent job is answered as stored
-          if (s.closed_by !== userId) throw new Refused(MATCH_CLOSED())
-          if (s.same_since_close) return ok({ path: parts.key, id: objectId(SCORESHEETS_BUCKET, parts.key), fullPath: `${SCORESHEETS_BUCKET}/${parts.key}` })
-          if (s.stored_since_close) throw new Refused(MATCH_CLOSED())
+          // the closing account's PDF of the approval, once; a resent job is
+          // answered as stored; that same file replaced only within the grace
+          if (s.closed_by !== userId || s.other_of_approval) throw new Refused(MATCH_CLOSED())
+          if (s.path_of_approval && s.same_bytes) return ok({ path: parts.key, id: objectId(SCORESHEETS_BUCKET, parts.key), fullPath: `${SCORESHEETS_BUCKET}/${parts.key}` })
+          if (s.path_of_approval && !s.in_grace) throw new Refused(MATCH_CLOSED())
         }
         const r = await storage.handle('upload', { ...body, bucket: SCORESHEETS_BUCKET }, { userId })
         if (r.status !== 200) return r
+        // first_stored_at: the first store of the approval, kept by a replacement
         await client.query(
           `INSERT INTO public.match_scoresheets (path, match_id, stored_by, sha256, size) VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (path) DO UPDATE SET stored_by = EXCLUDED.stored_by, sha256 = EXCLUDED.sha256, size = EXCLUDED.size, stored_at = now()`,
-          [r.body.data.path, m.id, isUuid(userId) ? userId : null, sha256, data.length])
+           ON CONFLICT (path) DO UPDATE SET stored_by = EXCLUDED.stored_by, sha256 = EXCLUDED.sha256, size = EXCLUDED.size,
+             stored_at = now(), first_stored_at = CASE WHEN $6::boolean THEN match_scoresheets.first_stored_at ELSE now() END`,
+          [r.body.data.path, m.id, isUuid(userId) ? userId : null, sha256, data.length, s.path_of_approval])
         return r
       })
     } catch (err) {
@@ -597,9 +709,15 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
           `SELECT 1 FROM public.match_scoresheets s JOIN public.matches m ON m.id = s.match_id
             WHERE s.path = ANY($1::text[]) AND m.closed_at IS NOT NULL LIMIT 1`, [pdfs.map((p) => p.key)])
         let closed = rows.length > 0
+        // a file without a record: any closed match its name and folder fit (no cut-off, so
+        // that other matches under the same name cannot hide that one)
         for (const parts of pdfs) {
           if (closed) break
-          closed = (await matchesOfPath(pool, parts)).some((m) => m.closed_at && pdfLocator(m).folders.includes(parts.folder))
+          const { values, p } = sqlParams()
+          const { rows: hit } = await pool.query(
+            `SELECT 1 FROM public.matches m
+              WHERE ${pathSql(parts, p)} AND m.closed_at IS NOT NULL AND ${ofDaySql(parts, p)} LIMIT 1`, values)
+          closed = hit.length > 0
         }
         if (closed) return MATCH_CLOSED()
       } catch (err) {

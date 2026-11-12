@@ -18,6 +18,7 @@ import pg from 'pg'
 import { SKIP, bootServer, api, provisionDatabase, sleep } from './helpers/e2eServer.js'
 import { grantRoles } from './helpers/pgTestDb.js'
 import { startFakeSmtp } from './helpers/fakeSmtp.js'
+import { CLOSED_REPLACE_GRACE_MS } from '../lib/scoresheets.js'
 
 const key = () => `k${randomBytes(16).toString('hex')}`
 const pdfBytes = (label) => Buffer.from(`%PDF-1.4\n% ${label}\n%%EOF\n`)
@@ -59,23 +60,29 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
     const r = await fetch(`${srv.base}/api/scoresheets/${id}/pdf?download=1`, { headers: { Authorization: `Bearer ${user.token}` } })
     return { status: r.status, body: Buffer.from(await r.arrayBuffer()).toString() }
   }
-  async function newMatch (owner, { sport = 'indoor', hoursAgo = 3, home = 'VBC Musterdorf H1', away = 'VBC Other H1' } = {}) {
-    const ext = `match_${Date.now()}_${randomBytes(3).toString('hex')}`
-    const n = gameSeq++
-    const scheduledAt = new Date(Date.now() - hoursAgo * 3600 * 1000).toISOString()
+  /** A match row as an app inserts it (/api/db); game_n only when given. */
+  async function insertMatch (owner, { ext, gameN = null, scheduledAt, sport = 'indoor', home = 'VBC Musterdorf H1', away = 'VBC Other H1' }) {
     const teams = sport === 'beach'
       ? { sport_type: 'beach', team1_data: { name: home }, team2_data: { name: away } }
       : { home_team: { name: home }, away_team: { name: away } }
-    const r = await call(owner, 'POST', '/api/db', { table: 'matches', action: 'insert', params: { data: { external_id: ext, status: 'live', game_n: n, scheduled_at: scheduledAt, ...teams }, returning: 'id', single: true } })
+    const data = { external_id: ext, status: 'live', scheduled_at: scheduledAt, ...teams, ...(gameN != null ? { game_n: gameN } : {}) }
+    const r = await call(owner, 'POST', '/api/db', { table: 'matches', action: 'insert', params: { data, returning: 'id', single: true } })
     assert.equal(r.status, 200, r.text)
+    return r.json.data.id
+  }
+  async function newMatch (owner, { sport = 'indoor', hoursAgo = 3, home, away, ext = `match_${Date.now()}_${randomBytes(3).toString('hex')}` } = {}) {
+    const n = gameSeq++
+    const scheduledAt = new Date(Date.now() - hoursAgo * 3600 * 1000).toISOString()
+    const id = await insertMatch(owner, { ext, gameN: n, scheduledAt, sport, home, away })
     const day = scheduledAt.slice(0, 10)
-    return { ext, n, id: r.json.data.id, day, folder: sport === 'beach' ? `beach/${day}` : day }
+    return { ext, n, id, day, scheduledAt, folder: sport === 'beach' ? `beach/${day}` : day }
   }
-  /** The real close: the scorer's write of the final status (db/007 sets closed_at and closed_by). */
-  async function close (user, id) {
-    const r = await call(user, 'POST', '/api/db', { table: 'matches', action: 'update', params: { data: { status: 'final' }, filters: [{ type: 'eq', column: 'id', value: id }] } })
+  /** The scorer's write of a status; 'approved' and 'final' close the match (db/007 sets closed_at and closed_by). */
+  async function setStatus (user, id, status) {
+    const r = await call(user, 'POST', '/api/db', { table: 'matches', action: 'update', params: { data: { status }, filters: [{ type: 'eq', column: 'id', value: id }] } })
     assert.equal(r.status, 200, r.text)
   }
+  const close = (user, id) => setStatus(user, id, 'final')
   // Closed `minAgo` minutes ago (the final mail waits 2 minutes after the
   // close): backdated with the triggers off, as tests/finalMail.e2e.test.js
   async function closeAgo (id, minAgo, by) {
@@ -87,6 +94,18 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
       await sql.query('SET session_replication_role = origin')
     }
   }
+  /** The close and the match's stored PDFs `secs` seconds earlier (the grace after the close has passed). */
+  async function backdate (id, secs) {
+    await sql.query('SET session_replication_role = replica')
+    try {
+      await sql.query('UPDATE public.matches SET closed_at = closed_at - make_interval(secs => $2) WHERE id = $1', [id, secs])
+    } finally {
+      await sql.query('SET session_replication_role = origin')
+    }
+    await sql.query(`UPDATE public.match_scoresheets SET stored_at = stored_at - make_interval(secs => $2),
+                       first_stored_at = first_stored_at - make_interval(secs => $2) WHERE match_id = $1`, [id, secs])
+  }
+  const PAST_GRACE = CLOSED_REPLACE_GRACE_MS / 1000 + 1
   /** A file put on disk as an older server stored it: no db/033 record, the owner record of its uploader. */
   function plantFile (path, buf, owners, mtimeSec) {
     const full = join(storageRoot, 'scoresheets', ...path.split('/'))
@@ -145,8 +164,8 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
     await sleep(20)
     expectCode(await upload(users.mallory, `${m.day}/game${m.n}_${key()}.pdf`, forged), 403, 'OV_NOT_MATCH_OWNER')
     expectCode(await upload(users.mallory, `${m.day}/game${m.n}_${key()}.pdf`, forged, { matchExternalId: m.ext }), 403, 'OV_NOT_MATCH_OWNER')
-    // a game number no match has
-    expectCode(await upload(users.mallory, `${m.day}/game${m.n + 900}_${key()}.pdf`, forged), 404, 'OV_MATCH_NOT_FOUND')
+    // a game number no match has (yet)
+    expectCode(await upload(users.mallory, `${m.day}/game${m.n + 900}_${key()}.pdf`, forged), 503, 'OV_MATCH_NOT_FOUND')
 
     assert.deepEqual(await readAs(users.cm, m.id), { status: 200, body: real.toString() })
     const { rows } = await sql.query('SELECT stored_by, sha256 FROM public.match_scoresheets WHERE match_id = $1', [m.id])
@@ -202,7 +221,7 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
     expectCode(await upload(users.mallory, `${day}/game${ext.replace(/_/g, '-')}_${key()}.pdf`, pdfBytes('x')), 403, 'OV_NOT_MATCH_OWNER')
   })
 
-  it('after the close: the closing account stores the approval\'s PDF once; then it stays as it is', async () => {
+  it('after the close: the closing account stores the approval\'s PDF once; that file only briefly, then it stays as it is', async () => {
     const m = await newMatch(users.ivan)
     await close(users.ivan, m.id)
     // the sync queue stores the approval's PDF after the close (MatchEnd)
@@ -212,12 +231,28 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
     // the same job again (the answer was lost): accepted, nothing changes
     assert.equal((await upload(users.ivan, p, approval, { matchExternalId: m.ext })).status, 200)
     assert.equal((await upload(users.ivan, p, approval)).status, 200)
+    const firstStore = async () => (await sql.query('SELECT first_stored_at FROM public.match_scoresheets WHERE path = $1', [p])).rows[0].first_stored_at
 
-    expectCode(await upload(users.ivan, p, pdfBytes('changed after the close 0:3'), { matchExternalId: m.ext }), 409, 'OV_MATCH_CLOSED')
+    // another file after the close: refused (the new app's request and an older app's)
     expectCode(await upload(users.ivan, `${m.day}/game${m.n}_${key()}.pdf`, pdfBytes('second file after the close'), { matchExternalId: m.ext }), 409, 'OV_MATCH_CLOSED')
     expectCode(await upload(users.ivan, `${m.day}/game${m.n}_${key()}.pdf`, pdfBytes('second file, older app')), 409, 'OV_MATCH_CLOSED')
     expectCode(await remove(users.ivan, [p]), 409, 'OV_MATCH_CLOSED')
-    assert.equal((await readAs(users.cm, m.id)).body, approval.toString())
+
+    // that same file, right after (the next queued approval file): replaced;
+    // its first store's time stays, so the grace is not drawn out
+    const first = await firstStore()
+    assert.ok(first instanceof Date, 'the first store of the approval is noted')
+    const queuedNext = pdfBytes('approved 3:1, the later queued file')
+    assert.equal((await upload(users.ivan, p, queuedNext)).status, 200)
+    assert.equal((await firstStore()).getTime(), first.getTime())
+    assert.equal((await readAs(users.cm, m.id)).body, queuedNext.toString())
+
+    // after the grace (days later, a dispute): that file stays as it is too
+    await backdate(m.id, PAST_GRACE)
+    expectCode(await upload(users.ivan, p, pdfBytes('changed after the close 0:3'), { matchExternalId: m.ext }), 409, 'OV_MATCH_CLOSED')
+    expectCode(await upload(users.ivan, p, pdfBytes('changed after the close, older app 0:3')), 409, 'OV_MATCH_CLOSED')
+    assert.equal((await upload(users.ivan, p, queuedNext, { matchExternalId: m.ext })).status, 200, 'a resent job is still answered')
+    assert.equal((await readAs(users.cm, m.id)).body, queuedNext.toString())
     const { rows } = await sql.query('SELECT count(*)::int AS n FROM public.match_scoresheets WHERE match_id = $1', [m.id])
     assert.equal(rows[0].n, 1)
 
@@ -228,6 +263,24 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
     const corrected = pdfBytes('corrected 3:2')
     assert.equal((await upload(users.ivan, p, corrected, { matchExternalId: m.ext })).status, 200)
     assert.equal((await readAs(users.cm, m.id)).body, corrected.toString())
+  })
+
+  // The approval's PDF can also arrive just before the approval's write
+  // closes the match (the two go in separate lanes): it is the approval's too
+  it('a PDF stored just before the close is the approval\'s: later it is not changed, and no other file is added', async () => {
+    const m = await newMatch(users.ivan)
+    const p = `${m.day}/game${m.n}_${key()}.pdf`
+    const approval = pdfBytes('approved 3:1, stored before the close')
+    assert.equal((await upload(users.ivan, p, approval, { matchExternalId: m.ext })).status, 200)
+    await setStatus(users.ivan, m.id, 'approved')
+    // days later, a dispute
+    await backdate(m.id, PAST_GRACE)
+    expectCode(await upload(users.ivan, p, pdfBytes('changed after the close 0:3')), 409, 'OV_MATCH_CLOSED')
+    expectCode(await upload(users.ivan, p, pdfBytes('changed after the close 0:3'), { matchExternalId: m.ext }), 409, 'OV_MATCH_CLOSED')
+    expectCode(await upload(users.ivan, `${m.day}/game${m.n}_${key()}.pdf`, pdfBytes('a new file 0:3'), { matchExternalId: m.ext }), 409, 'OV_MATCH_CLOSED')
+    expectCode(await upload(users.ivan, `${m.day}/game${m.n}_${key()}.pdf`, pdfBytes('a new file, older app 0:3')), 409, 'OV_MATCH_CLOSED')
+    expectCode(await remove(users.ivan, [p]), 409, 'OV_MATCH_CLOSED')
+    assert.equal((await readAs(users.cm, m.id)).body, approval.toString())
   })
 
   it('after the close only the closing account (or an admin) stores the PDF', async () => {
@@ -256,5 +309,111 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
     const ok = await upload(users.bea, p, pdfBytes('beach sheet'))
     assert.equal(ok.status, 200, ok.text)
     assert.equal((await readAs(users.bcm, m.id)).body, pdfBytes('beach sheet').toString())
+  })
+
+  // An OpenBeach seed is match_<time>_<random>: its tails are external ids of
+  // their own, and a match made with one must not take the real match's name
+  it('beach: a match made to fit the tail of the real seed, or to clean to it, does not take the name', async () => {
+    const m = await newMatch(users.bea, { sport: 'beach' })
+    const p = `beach/${m.day}/game${m.n}_${m.ext}.pdf`
+    for (const tail of [m.ext.slice(m.ext.lastIndexOf('_') + 1), m.ext.slice(m.ext.indexOf('_') + 1)]) {
+      await insertMatch(users.bob, { ext: tail, scheduledAt: m.scheduledAt, sport: 'beach' })
+      // OpenBeach's request (no match named) and the new app's (bob's own match named)
+      expectCode(await upload(users.bob, p, pdfBytes('another beach scorer')), 403, 'OV_NOT_MATCH_OWNER')
+      expectCode(await upload(users.bob, p, pdfBytes('another beach scorer'), { matchExternalId: tail }), 400, 'OV_INVALID_REQUEST')
+    }
+    const ok = await upload(users.bea, p, pdfBytes('the real beach sheet'))
+    assert.equal(ok.status, 200, ok.text)
+    assert.equal((await readAs(users.bcm, m.id)).body, pdfBytes('the real beach sheet').toString())
+
+    // an external id with '-' (an imported one): another that cleans to the same seed is not its match
+    const dashed = await newMatch(users.bea, { sport: 'beach', ext: `bt-${Date.now()}-x1` })
+    const look = dashed.ext.replace(/-/g, '.')
+    await insertMatch(users.bob, { ext: look, scheduledAt: dashed.scheduledAt, sport: 'beach' })
+    const q = `beach/${dashed.day}/game${dashed.n}_${dashed.ext}.pdf`
+    expectCode(await upload(users.bob, q, pdfBytes('another beach scorer')), 403, 'OV_NOT_MATCH_OWNER')
+    expectCode(await upload(users.bob, q, pdfBytes('another beach scorer'), { matchExternalId: look }), 400, 'OV_INVALID_REQUEST')
+    assert.equal((await upload(users.bea, q, pdfBytes('imported match sheet'))).status, 200)
+    const { rows } = await sql.query('SELECT path FROM public.match_scoresheets s JOIN public.matches x ON x.id = s.match_id WHERE x.created_by = $1', [users.bob.id])
+    assert.deepEqual(rows, [], 'nothing stored for the made-up matches')
+  })
+
+  it('matches another account adds under the game number do not hide the scorer\'s own (older apps)', async () => {
+    const m = await newMatch(users.ivan)
+    // external ids that clean to the game number, scheduled later or the same day
+    const later = new Date(Date.now() + 30 * 86400 * 1000).toISOString()
+    for (let k = 1; k <= 24; k++) await insertMatch(users.mallory, { ext: `${' '.repeat(k)}${m.n}`, scheduledAt: k > 21 ? m.scheduledAt : later })
+    const up = await upload(users.ivan, `${m.day}/game${m.n}_${key()}.pdf`, pdfBytes('the scorer\'s sheet, older app'))
+    assert.equal(up.status, 200, up.text)
+    assert.equal((await readAs(users.cm, m.id)).body, pdfBytes('the scorer\'s sheet, older app').toString())
+    // and mallory's own upload under that name is recorded for a match of hers, never served for this one
+    assert.equal((await upload(users.mallory, `${m.day}/game${m.n}_${key()}.pdf`, pdfBytes('forged 0:3'))).status, 200)
+    assert.equal((await readAs(users.cm, m.id)).body, pdfBytes('the scorer\'s sheet, older app').toString())
+  })
+
+  it('a closed match\'s PDF from before db/033 is not removed, whatever matches are added under its name', async () => {
+    const m = await newMatch(users.ivan)
+    const p = `${m.day}/game${m.n}_${key()}.pdf`
+    plantFile(p, pdfBytes('approved before db/033'), [users.ivan.id], Math.floor(Date.now() / 1000) - 600)
+    await close(users.ivan, m.id)
+    const later = new Date(Date.now() + 30 * 86400 * 1000).toISOString()
+    for (let k = 1; k <= 22; k++) await insertMatch(users.ivan, { ext: `${' '.repeat(k)}${m.n}`, scheduledAt: later })
+    expectCode(await remove(users.ivan, [p]), 409, 'OV_MATCH_CLOSED')
+    assert.deepEqual(await readAs(users.cm, m.id), { status: 200, body: pdfBytes('approved before db/033').toString() })
+  })
+
+  // The app sends every queued job in turn: approved (PDF 1 queued, the
+  // match closed), the upload waits (hall Wi-Fi), an admin reopens, the
+  // scorer corrects and approves again (PDF 2 queued, the same path), and
+  // then both go, PDF 1 first. The new app drops PDF 1 when it queues PDF 2;
+  // older apps and OpenBeach send both.
+  it('after a reopen and a new approval, the corrected PDF sent after the older queued one is the stored one', async () => {
+    const m = await newMatch(users.ivan)
+    const p = `${m.day}/game${m.n}_${key()}.pdf`
+    await setStatus(users.ivan, m.id, 'approved')
+    const reopened = await call(users.admin, 'POST', `/api/admin/matches/${m.id}/reopen`, { reason: 'wrong final score' })
+    assert.equal(reopened.status, 200, reopened.text)
+    await setStatus(users.ivan, m.id, 'approved')
+    const stale = pdfBytes('first approval 3:1 (wrong)')
+    const corrected = pdfBytes('second approval 3:2 (corrected)')
+    assert.equal((await upload(users.ivan, p, stale)).status, 200)
+    assert.equal((await upload(users.ivan, p, corrected)).status, 200)
+    assert.equal((await readAs(users.cm, m.id)).body, corrected.toString())
+    // the new app's request alike
+    const n = await newMatch(users.ivan)
+    const q = `${n.day}/game${n.n}_${key()}.pdf`
+    await setStatus(users.ivan, n.id, 'approved')
+    assert.equal((await upload(users.ivan, q, stale, { matchExternalId: n.ext })).status, 200)
+    assert.equal((await upload(users.ivan, q, corrected, { matchExternalId: n.ext })).status, 200)
+    assert.equal((await readAs(users.cm, n.id)).body, corrected.toString())
+    // the older PDF arrives while the match is reopened, the corrected one right after the new approval
+    const o = await newMatch(users.ivan)
+    const r = `${o.day}/game${o.n}_${key()}.pdf`
+    await setStatus(users.ivan, o.id, 'approved')
+    assert.equal((await call(users.admin, 'POST', `/api/admin/matches/${o.id}/reopen`, { reason: 'wrong final score' })).status, 200)
+    assert.equal((await upload(users.ivan, r, stale)).status, 200)
+    await setStatus(users.ivan, o.id, 'approved')
+    assert.equal((await upload(users.ivan, r, corrected)).status, 200)
+    assert.equal((await readAs(users.cm, o.id)).body, corrected.toString())
+  })
+
+  it('a PDF of a match not in the cloud yet: an app that names no match is asked to retry soon', async () => {
+    const ext = `match_${Date.now()}_${randomBytes(3).toString('hex')}`
+    const n = gameSeq++
+    const scheduledAt = new Date(Date.now() - 3600 * 1000).toISOString()
+    const p = `${scheduledAt.slice(0, 10)}/game${n}_${key()}.pdf`
+    // older apps and OpenBeach park a 4xx for an hour: 503, retryable
+    const early = await upload(users.ivan, p, pdfBytes('before the match row'))
+    expectCode(early, 503, 'OV_MATCH_NOT_FOUND')
+    assert.equal(early.json.error.retryable, true)
+    assert.equal(early.headers.get('retry-after'), '5')
+    const beachEarly = await upload(users.bea, `beach/${scheduledAt.slice(0, 10)}/game${n}_${ext}.pdf`, pdfBytes('beach, before the match row'))
+    expectCode(beachEarly, 503, 'OV_MATCH_NOT_FOUND')
+    // the new app names the match: 404, which it retries itself
+    expectCode(await upload(users.ivan, p, pdfBytes('before the match row'), { matchExternalId: ext }), 404, 'OV_MATCH_NOT_FOUND')
+
+    const id = await insertMatch(users.ivan, { ext, gameN: n, scheduledAt })
+    assert.equal((await upload(users.ivan, p, pdfBytes('after the match row'))).status, 200)
+    assert.equal((await readAs(users.cm, id)).body, pdfBytes('after the match row').toString())
   })
 })

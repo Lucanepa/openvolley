@@ -51,6 +51,13 @@ describe('scoresheets (unit)', () => {
     assert.equal(loc.rank('game7_match_1760000000000_zz.pdf'), 0, 'another tournament\'s game 7')
     assert.equal(loc.rank('game7.pdf'), 1)
     assert.equal(loc.rank('game7_match_1760000000000_ab-c_final.json'), 0)
+    // the seed is all after the first '_': a match whose external id is a
+    // tail of the seed is not the name's (its parts are '_'-joined too)
+    for (const tail of ['ab.c', '1760000000000_ab.c']) {
+      const other = pdfLocator({ sport: 'beach', game_n: null, external_id: tail, scheduled_at: '2026-10-11T09:00:00Z' })
+      assert.equal(other.rank('game7_match_1760000000000_ab-c.pdf'), 0, tail)
+    }
+    assert.equal(pdfLocator({ sport: 'beach', external_id: 'match_1', scheduled_at: '2026-10-11T09:00:00Z' }).rank('gameunknown_match_1.pdf'), 2, 'no game number')
   })
 
   it('no scheduled date: the days it was closed, updated and created', () => {
@@ -72,10 +79,12 @@ describe('scoresheets (unit)', () => {
 
   it('a scoresheet PDF path as the apps write it (db/033: such a file is stored for its match only)', () => {
     const k = key()
-    assert.deepEqual(pdfPathParts(`2026-10-10/game402397_${k}.pdf`), { key: `2026-10-10/game402397_${k}.pdf`, folder: '2026-10-10', name: `game402397_${k}.pdf`, sport: 'indoor', game: '402397' })
+    assert.deepEqual(pdfPathParts(`2026-10-10/game402397_${k}.pdf`), { key: `2026-10-10/game402397_${k}.pdf`, folder: '2026-10-10', day: '2026-10-10', name: `game402397_${k}.pdf`, sport: 'indoor', game: '402397', seed: null })
     assert.equal(pdfPathParts('2026-10-10/gamevm-abc-1.pdf').game, 'vm-abc-1')
-    assert.deepEqual(pdfPathParts('beach/2026-10-11/game7_match_1_ab-c.pdf'), { key: 'beach/2026-10-11/game7_match_1_ab-c.pdf', folder: 'beach/2026-10-11', name: 'game7_match_1_ab-c.pdf', sport: 'beach', game: null })
-    for (const bad of ['game1.pdf', 'a/b/game1.pdf', 'beach/game1.pdf', '2026-10-10/scoresheet.pdf', '2026-10-10/game1.PDF', '2026-10-10/game1_x.pdf', '../game1.pdf', 7]) {
+    assert.deepEqual(pdfPathParts('beach/2026-10-11/game7_match_1_ab-c.pdf'), { key: 'beach/2026-10-11/game7_match_1_ab-c.pdf', folder: 'beach/2026-10-11', day: '2026-10-11', name: 'game7_match_1_ab-c.pdf', sport: 'beach', game: '7', seed: 'match_1_ab-c' })
+    assert.deepEqual([pdfPathParts('beach/2026-10-11/game7.pdf').game, pdfPathParts('beach/2026-10-11/game7.pdf').seed], ['7', null])
+    assert.equal(pdfPathParts('beach/2026-10-11/game_match_1_x.pdf').seed, 'match_1_x', 'no game part: the seed is still all after the first _')
+    for (const bad of ['game1.pdf', 'a/b/game1.pdf', 'beach/game1.pdf', '2026-10-10/scoresheet.pdf', '2026-10-10/game1.PDF', '2026-10-10/game1_x.pdf', '../game1.pdf', 'beach/2026-10-11/match_1.pdf', 7]) {
       assert.equal(pdfPathParts(bad), null, String(bad))
     }
     assert.equal(isScoresheetPdf('2026-10-10/game1.PDF'), true, 'refused by storePdf, never stored past it')
@@ -329,9 +338,9 @@ describe('scoresheets end to end', { skip: SKIP }, () => {
     const beach = await newMatch(users.bea, { sport: 'beach', scheduledAt: '2026-10-12T09:00:00Z' })
     await uploadPdf(users.bea, `beach/2026-10-12/game${beach.n}_${beach.ext}.pdf`, 'beach sheet')
     // another tournament's game with the same number on the same day: not a
-    // match of this server, nothing is stored (db/033)
+    // match of this server, nothing is stored (db/033; 503: it may be on its way)
     const other = await api(srv.base, '/api/storage/upload', { token: users.bea.token, body: { bucket: 'scoresheets', path: `beach/2026-10-12/game${beach.n}_match_1_other.pdf`, fileBase64: pdfBytes('other tournament').toString('base64'), contentType: 'application/pdf' } })
-    expectCode(other, 404, 'OV_MATCH_NOT_FOUND')
+    expectCode(other, 503, 'OV_MATCH_NOT_FOUND')
     const r = await fetch(`${srv.base}/api/scoresheets/${beach.id}/pdf`, { headers: { Authorization: `Bearer ${users.bcm.token}` } })
     assert.equal(r.status, 200)
     assert.equal(Buffer.from(await r.arrayBuffer()).toString(), pdfBytes('beach sheet').toString())
