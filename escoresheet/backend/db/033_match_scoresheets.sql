@@ -10,9 +10,10 @@
 -- public.match_scoresheets: one row per PDF of the 'scoresheets' storage
 -- bucket that the server accepted for a match (lib/scoresheets.js storePdf,
 -- POST /api/storage/upload): only from the match's creator, an editor or an
--- admin (pgQuery assertMatchWritable), after the close from the closing
--- account (or an admin), once per approval (that same file replaceable for
--- 10 minutes). The manager's Scoresheets tab and the final mail serve only
+-- admin (pgQuery assertMatchWritable), after the close once per approval
+-- (that same file replaceable for 10 minutes by its uploader or the closing
+-- account; for a match closed before this file ran, its file on disk is the
+-- approval's). The manager's Scoresheets tab and the final mail serve only
 -- these files of the match (the newest); a match without a row (files stored
 -- before this file ran) falls back to the file names, and then only to files
 -- whose storage owner created, edits or closed the match.
@@ -24,9 +25,10 @@
 --   sha256     of the stored bytes: a resent job after the close (the same
 --              bytes) is accepted, a changed file is not
 --   first_stored_at  when it was first stored for the match's approval (since
---              its last reopen); a replacement does not move it. After the
---              close the closing account replaces that file for 10 minutes
---              after the close, or after this time when it is later
+--              its last reopen; a file from before this file ran that is
+--              recorded later: its own time); a replacement does not move it.
+--              After the close that file is replaced for 10 minutes after
+--              the close, or after this time when it is later
 --              (lib/scoresheets.js CLOSED_REPLACE_GRACE_MS), never 10 minutes
 --              after the last replacement. NULL (a row of an earlier draft
 --              of this file): the close counts

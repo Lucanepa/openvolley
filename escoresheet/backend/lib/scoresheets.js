@@ -28,10 +28,13 @@
  *                                            "<uuid>.pdf"). The token is the capability:
  *                                            32 random bytes, kept in this process only,
  *                                            gone after the TTL or a restart.
- *   storePdf({ userId, matchOwner, body })   POST /api/storage/upload of a PDF in the
- *                                            'scoresheets' bucket (server.js): stored
- *                                            only for a match the caller may write,
- *                                            and recorded for it (db/033)
+ *   storeFile({ userId, matchOwner, body })  POST /api/storage/upload of a file of a
+ *                                            match in the 'scoresheets' bucket
+ *                                            (server.js, isMatchScoresheetFile):
+ *     storePdf                               a PDF: stored only for a match the caller
+ *                                            may write, and recorded for it (db/033)
+ *     storeBeachJson                         an OpenBeach JSON with a seed: written only
+ *                                            by an account that may write the seed's match
  *   removeFiles({ userId, admin, body })     POST /api/storage/remove in that bucket:
  *                                            a closed match's PDF stays
  *
@@ -49,19 +52,31 @@
  * assertMatchWritable: the creator, an editor, an admin): the match the app
  * names (match_external_id, newer apps), else the one its path names (older
  * apps, OpenBeach; a beach name is the one match's whose external id is its
- * seed). After the close only the closing account (or an admin) stores it,
- * and once per approval: the approval's PDF (the app queues it with the
- * approval, which closes the match, so it comes before or after the close),
- * unless one was stored since the last reopen. The same bytes again (a
- * resent job) are accepted, and that same file may be replaced for
- * CLOSED_REPLACE_GRACE_MS (a corrected approval's PDF sent right after an
- * older one still queued); any other file is not (409 OV_MATCH_CLOSED) until
- * an admin reopens the match, and a closed match's PDF is not removed. The
- * tab and the final mail use only the files recorded for the match, the
- * newest first. A match without any (stored before db/033) is found by the
- * names as before (no scheduled day: the days it was closed, updated and
- * created; more than one file: the newest), but only files whose storage
- * owner created, edits or closed the match.
+ * seed). After the close it is stored once per approval: the approval's PDF
+ * (the app queues it with the approval, which closes the match, so it comes
+ * before or after the close; a shared tablet may send it under the next
+ * account signed in there, which takes the match over with the game PIN),
+ * unless one was stored since the last reopen: recorded, or for a match
+ * closed before db/033 the file the tab serves by its name. The same bytes
+ * again (a resent job) are accepted, and that same file may be replaced by
+ * its uploader or the closing account for CLOSED_REPLACE_GRACE_MS (a
+ * corrected approval's PDF sent right after an older one still queued); any
+ * other file is not (409 OV_MATCH_CLOSED) until an admin reopens the match,
+ * and a closed match's PDF is not removed. The tab and the final mail use
+ * only the files recorded for the match, the newest first. A match without
+ * any (stored before db/033) is found by the names as before (no scheduled
+ * day: the days it was closed, updated and created; more than one file: the
+ * newest), but only files whose storage owner created, edits or closed the
+ * match.
+ *
+ * A beach name has no secret part (an indoor name has its device's random
+ * part), so another beach scorer could create a match's file paths first and
+ * have the real upload refused (lib/storage.js: a new name is its first
+ * writer's). An OpenBeach JSON of a seed whose match is in the cloud is
+ * therefore written only by an account that may write that match, and the
+ * match's own names (beach seed, indoor random part) are written by such an
+ * account over a file another account created first: the match's accounts
+ * keep it, the others lose it (storage adopt).
  *
  * This is the only code that reads scoresheets past the uploader-only rule
  * (README "Who can read a scoresheet"); every read is in the audit log.
@@ -223,6 +238,27 @@ export function pdfPathParts (p) {
   }
 }
 
+// OpenBeach's JSON files beside the PDF: game{n}_{seed}.json (its coin toss
+// copy) and game{n}_{seed}_final.json (the approval's); game{n}_final.json is
+// the older name without a seed
+const BEACH_JSON_RE = /^game([^_]*)_(?!final\.json$)(.+?)(?:_final)?\.json$/
+
+/**
+ * The parts of an OpenBeach JSON path with a seed (beach/{day}/game{n}_{seed}[_final].json),
+ * as pdfPathParts; null for any other path. Indoor JSON names carry a random
+ * part (nobody can create one's path first) and are not tied to a match.
+ */
+export function beachJsonPathParts (p) {
+  const segs = typeof p === 'string' ? parseStoragePath(p) : null
+  if (!segs || segs.length !== 3 || segs[0] !== 'beach') return null
+  const r = BEACH_JSON_RE.exec(segs[2])
+  if (!r) return null
+  return { key: segs.join('/'), folder: segs.slice(0, 2).join('/'), day: segs[1], name: segs[2], sport: 'beach', game: r[1], seed: r[2] }
+}
+
+/** A 'scoresheets' upload path that belongs to a match: a PDF, or an OpenBeach JSON with a seed (storeFile). */
+export const isMatchScoresheetFile = (p) => isScoresheetPdf(p) || beachJsonPathParts(p) !== null
+
 const MATCH_CLOSED = () => fail(409, 'OV_MATCH_CLOSED', 'This match is closed: its scoresheet stays as it was stored')
 // An upload that names no match (older apps, OpenBeach) whose path fits no
 // match: the match's insert may still be on its way (it goes in the score's
@@ -230,12 +266,12 @@ const MATCH_CLOSED = () => fail(409, 'OV_MATCH_CLOSED', 'This match is closed: i
 // the final mail would go out without the PDF in the meantime.
 const MATCH_NOT_IN_CLOUD = () => ({ status: 503, body: { data: null, error: { message: 'No match of this scoresheet is in the cloud yet', code: 'OV_MATCH_NOT_FOUND', retryable: true } } })
 /**
- * After the close, the closing account may still replace the approval's PDF
- * (the file stored since the match's last reopen) at the same path for this
- * long after the close, or after that file's first store when it came later
- * (a replacement never moves it): an app sends every queued approval file in
- * turn, and after a reopen and a new approval an older app or OpenBeach may
- * send the first approval's PDF just before the corrected one.
+ * After the close, its uploader or the closing account may still replace the
+ * approval's PDF (the file stored since the match's last reopen) at the same
+ * path for this long after the close, or after that file's first store when
+ * it came later (a replacement never moves it): an app sends every queued
+ * approval file in turn, and after a reopen and a new approval an older app
+ * or OpenBeach may send the first approval's PDF just before the corrected one.
  */
 export const CLOSED_REPLACE_GRACE_MS = 10 * 60 * 1000
 
@@ -287,14 +323,15 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
    * with unknown: true when there is none and the storage could not be read.
    * `recorded`: the files stored for it (db/033), newest first; a match with
    * none (files stored before db/033) by the names, but only a file whose
-   * storage owner is one of its `writers` (Set of user ids).
+   * storage owner is one of its `writers` (Set of user ids), and (`since`,
+   * ms) only one stored after that time.
    */
-  async function locate (m, read, recorded, writers) {
+  async function locate (m, read, recorded, writers, since = null) {
     if (recorded?.length) return { files: recorded }
     const { folders, rank } = pdfLocator(m)
     const lists = await Promise.all(folders.map(read))
     let unknown = lists.some((l) => l === null)
-    const named = lists.filter(Boolean).flat().filter((e) => rank(e.name))
+    const named = lists.filter(Boolean).flat().filter((e) => rank(e.name) && (since === null || e.mtimeMs > since))
     const allowed = await Promise.all(named.map(async (e) => {
       try {
         const owners = await storage.getOwners({ bucket: SCORESHEETS_BUCKET, path: `${e.folder}/${e.name}` })
@@ -333,10 +370,10 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
     }
   }
 
-  /** The accounts that created, edit or closed the matches `ids`: Map(id -> Set of user ids). */
-  async function writersOf (ids) {
+  /** The accounts that created, edit or closed the matches `ids`: Map(id -> Set of user ids). `q`: a transaction's client. */
+  async function writersOf (ids, q = pool) {
     if (!ids.length) return new Map()
-    const { rows } = await pool.query(
+    const { rows } = await q.query(
       `SELECT m.id::text AS id, m.created_by::text AS created_by, m.closed_by::text AS closed_by,
               ARRAY(SELECT e.user_id::text FROM public.match_editors e WHERE e.match_id = m.id) AS editors
          FROM public.matches m WHERE m.id = ANY($1::uuid[])`, [ids])
@@ -619,6 +656,30 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
   }
 
   /**
+   * A closed match with no PDF recorded since its last reopen: the file the
+   * manager's tab serves for it by its name (every match closed before
+   * db/033 has its approval's PDF on disk without a record), if that file
+   * was stored since the reopen. { key, mtimeMs, owners } or null;
+   * { unknown: true } when the storage could not be read.
+   */
+  async function unrecordedApprovalPdf (m, writers, reopenedAt) {
+    const since = reopenedAt ? new Date(reopenedAt).getTime() : null
+    const { files: [f], unknown } = await locate(m, folderReader(), null, writers, since)
+    if (!f) return unknown ? { unknown: true } : null
+    const key = `${f.folder}/${f.name}`
+    return { key, mtimeMs: f.mtimeMs, owners: await storage.getOwners({ bucket: SCORESHEETS_BUCKET, path: key }) }
+  }
+
+  /** The answer to a refusal thrown in a store's transaction, or 503 for anything else. */
+  function storeFailed (err) {
+    if (err instanceof Refused) return err.result
+    // assertMatchWritable's refusals (PgQueryError: status and code)
+    if (typeof err?.status === 'number' && typeof err?.code === 'string') return fail(err.status, err.code, err.message || 'Request refused')
+    log.error?.(`[scoresheets] store failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 200)}`)
+    return unavailable()
+  }
+
+  /**
    * POST /api/storage/upload of a PDF in the 'scoresheets' bucket (server.js,
    * after its check that the caller scores the path's sport): { status, body }
    * as lib/storage.js handle(). The PDF ('%PDF-', else 415) is stored for the
@@ -626,9 +687,12 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
    * the caller may write that match (403 OV_NOT_MATCH_OWNER / OV_SCORER_REQUIRED;
    * OV_MATCH_NOT_FOUND while the match is not in the cloud: 404 for the
    * match the app names, which the app retries, 503 for a path no match
-   * fits), and recorded for it. A closed match: see the header (409
-   * OV_MATCH_CLOSED). One store per match at a time (an advisory lock; the
-   * match row is held FOR SHARE, so it cannot close in between).
+   * fits), and recorded for it. The match's own name (a beach seed, an
+   * indoor random part) is the caller's to write even when another account
+   * created that file first; the match's accounts keep it, the others lose
+   * it. A closed match: see the header (409 OV_MATCH_CLOSED). One store per
+   * match at a time (an advisory lock; the match row is held FOR SHARE, so
+   * it cannot close in between).
    * @param {{ userId: string, matchOwner: { userId: string, admin?: boolean }, body: object }} o
    */
   async function storePdf ({ userId, matchOwner, body } = {}) {
@@ -654,8 +718,8 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
         // (audit_log match.reopen; all of them when it was never reopened),
         // before the close or after it
         const { rows: [s] } = await client.query(
-          `SELECT m.closed_at IS NOT NULL AS closed, m.closed_by::text AS closed_by,
-                  x.match_id::text AS path_match,
+          `SELECT m.closed_at IS NOT NULL AS closed, m.closed_by::text AS closed_by, r.at AS reopened_at,
+                  x.match_id::text AS path_match, x.stored_by::text AS path_stored_by,
                   coalesce(x.match_id = m.id AND (r.at IS NULL OR x.stored_at > r.at), false) AS path_of_approval,
                   coalesce(x.sha256 = $3, false) AS same_bytes,
                   coalesce(greatest(m.closed_at, x.first_stored_at) > now() - make_interval(secs => $4), false) AS in_grace,
@@ -666,33 +730,94 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
              LEFT JOIN LATERAL (SELECT max(a.at) AS at FROM public.audit_log a
                                  WHERE a.action = 'match.reopen' AND a.match_id = m.id) r ON true
             WHERE m.id = $1`, [m.id, parts.key, sha256, CLOSED_REPLACE_GRACE_MS / 1000])
-        if (s.path_match && s.path_match !== m.id) throw new Refused(fail(409, 'OV_STORAGE_CONFLICT', 'This file is stored for another match'))
-        if (s.closed && matchOwner?.admin !== true) {
-          // the closing account's PDF of the approval, once; a resent job is
-          // answered as stored; that same file replaced only within the grace
-          if (s.closed_by !== userId || s.other_of_approval) throw new Refused(MATCH_CLOSED())
-          if (s.path_of_approval && s.same_bytes) return ok({ path: parts.key, id: objectId(SCORESHEETS_BUCKET, parts.key), fullPath: `${SCORESHEETS_BUCKET}/${parts.key}` })
-          if (s.path_of_approval && !s.in_grace) throw new Refused(MATCH_CLOSED())
+        // A beach name is its seed's match's (namedMatch, pathMatch): a file
+        // recorded for a match made to fit the seed before that one was in
+        // the cloud goes to it
+        if (s.path_match && s.path_match !== m.id && !(parts.sport === 'beach' && parts.seed !== null)) {
+          throw new Refused(fail(409, 'OV_STORAGE_CONFLICT', 'This file is stored for another match'))
         }
-        const r = await storage.handle('upload', { ...body, bucket: SCORESHEETS_BUCKET }, { userId })
+        const writers = (await writersOf([m.id], client)).get(m.id) ?? new Set()
+        // first_stored_at of a file from before db/033 taken as the approval's: its own time
+        let firstStoredAt = null
+        if (s.closed && matchOwner?.admin !== true) {
+          // The approval's PDF, once: the first one stored since the last
+          // reopen, from any account that may write the match (the closing
+          // tablet may send it under the next account signed in there). A
+          // resent job is answered as stored; that same file is replaced only
+          // within the grace, by its uploader or the closing account.
+          if (s.path_of_approval && s.same_bytes) return ok({ path: parts.key, id: objectId(SCORESHEETS_BUCKET, parts.key), fullPath: `${SCORESHEETS_BUCKET}/${parts.key}` })
+          if (s.other_of_approval) throw new Refused(MATCH_CLOSED())
+          let held = null
+          if (s.path_of_approval) {
+            held = { sameBytes: s.same_bytes, inGrace: s.in_grace, by: [s.path_stored_by] }
+          } else {
+            // none recorded: a match closed before db/033 has its PDF on disk all the same
+            const old = await unrecordedApprovalPdf(m, writers, s.reopened_at)
+            if (old?.unknown) throw new Refused(unavailable())
+            if (old) {
+              if (old.key !== parts.key) throw new Refused(MATCH_CLOSED())
+              const bytes = await storage.readTrusted({ bucket: SCORESHEETS_BUCKET, path: old.key })
+              const { rows: [g] } = await client.query(
+                `SELECT greatest(closed_at, to_timestamp($2::double precision / 1000)) > now() - make_interval(secs => $3) AS in_grace
+                   FROM public.matches WHERE id = $1`, [m.id, old.mtimeMs, CLOSED_REPLACE_GRACE_MS / 1000])
+              held = { sameBytes: createHash('sha256').update(bytes).digest('hex') === sha256, inGrace: g.in_grace === true, by: old.owners }
+              firstStoredAt = new Date(old.mtimeMs)
+            }
+          }
+          if (held && !held.sameBytes && !(held.inGrace && (userId === s.closed_by || held.by.includes(userId)))) throw new Refused(MATCH_CLOSED())
+        }
+        // The match's own name (rank 2: its beach seed, an indoor random part)
+        // is the caller's to write, also over a file another account created
+        // there first; owners who are none of the match's accounts lose it
+        const own = pdfLocator(m).rank(parts.name) === 2
+        const r = await storage.handle('upload', { ...body, bucket: SCORESHEETS_BUCKET }, { userId, ...(own ? { adopt: (owners) => owners.filter((o) => writers.has(o)) } : {}) })
         if (r.status !== 200) return r
         // first_stored_at: the first store of the approval, kept by a replacement
         await client.query(
-          `INSERT INTO public.match_scoresheets (path, match_id, stored_by, sha256, size) VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (path) DO UPDATE SET stored_by = EXCLUDED.stored_by, sha256 = EXCLUDED.sha256, size = EXCLUDED.size,
-             stored_at = now(), first_stored_at = CASE WHEN $6::boolean THEN match_scoresheets.first_stored_at ELSE now() END`,
-          [r.body.data.path, m.id, isUuid(userId) ? userId : null, sha256, data.length, s.path_of_approval])
+          `INSERT INTO public.match_scoresheets (path, match_id, stored_by, sha256, size, first_stored_at) VALUES ($1, $2, $3, $4, $5, coalesce($7::timestamptz, now()))
+           ON CONFLICT (path) DO UPDATE SET match_id = EXCLUDED.match_id, stored_by = EXCLUDED.stored_by, sha256 = EXCLUDED.sha256, size = EXCLUDED.size,
+             stored_at = now(), first_stored_at = CASE WHEN $6::boolean THEN match_scoresheets.first_stored_at ELSE EXCLUDED.first_stored_at END`,
+          [r.body.data.path, m.id, isUuid(userId) ? userId : null, sha256, data.length, s.path_of_approval, firstStoredAt])
         return r
       })
     } catch (err) {
-      if (err instanceof Refused) return err.result
-      // assertMatchWritable's refusals (PgQueryError: status and code)
-      if (typeof err?.status === 'number' && typeof err?.code === 'string') return fail(err.status, err.code, err.message || 'Request refused')
-      // a file stored but not recorded (its record failed) is not served: the app sends it again
-      log.error?.(`[scoresheets] store failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 200)}`)
-      return unavailable()
+      // (a file stored but not recorded, its record failed, is not served: the app sends it again)
+      return storeFailed(err)
     }
   }
+
+  /**
+   * POST /api/storage/upload of an OpenBeach JSON file with a seed
+   * (beachJsonPathParts; server.js, after its check that the caller scores
+   * beach). A beach name has no secret part, so the path of a match's files
+   * is public: the file of the seed's match is stored only by an account
+   * that may write that match (403 OV_NOT_MATCH_OWNER), which takes the path
+   * over from an account that created it first and is none of the match's.
+   * While no match of the seed is in the cloud (OpenBeach's coin toss copy
+   * can come before the match's insert) it is stored as before: the seed is
+   * not public until then. Not recorded and no rule after the close: only
+   * its uploaders read it.
+   */
+  async function storeBeachJson ({ userId, matchOwner, body } = {}) {
+    const parts = beachJsonPathParts(body?.path)
+    if (!parts) return invalid('path: not a scoresheet file of a match')
+    if (!db?.withTransaction || !db?.assertMatchWritable) return unavailable()
+    const upload = { ...body, bucket: SCORESHEETS_BUCKET }
+    try {
+      return await db.withTransaction(async (client) => {
+        const m = await seededBeachMatch(client, parts)
+        if (!m) return storage.handle('upload', upload, { userId })
+        await db.assertMatchWritable(client, m.external_id, matchOwner)
+        const writers = (await writersOf([m.id], client)).get(m.id) ?? new Set()
+        return storage.handle('upload', upload, { userId, adopt: (owners) => owners.filter((o) => writers.has(o)) })
+      })
+    } catch (err) {
+      return storeFailed(err)
+    }
+  }
+
+  /** POST /api/storage/upload of a file that belongs to a match (isMatchScoresheetFile): storePdf or storeBeachJson. */
+  const storeFile = (o = {}) => (isScoresheetPdf(o.body?.path) ? storePdf(o) : storeBeachJson(o))
 
   /**
    * POST /api/storage/remove in the 'scoresheets' bucket (server.js):
@@ -706,13 +831,16 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
     if (pdfs.length && !admin) {
       try {
         const { rows } = await pool.query(
-          `SELECT 1 FROM public.match_scoresheets s JOIN public.matches m ON m.id = s.match_id
-            WHERE s.path = ANY($1::text[]) AND m.closed_at IS NOT NULL LIMIT 1`, [pdfs.map((p) => p.key)])
-        let closed = rows.length > 0
+          `SELECT s.path, m.closed_at IS NOT NULL AS closed FROM public.match_scoresheets s JOIN public.matches m ON m.id = s.match_id
+            WHERE s.path = ANY($1::text[])`, [pdfs.map((p) => p.key)])
+        let closed = rows.some((r) => r.closed)
         // a file without a record: any closed match its name and folder fit (no cut-off, so
-        // that other matches under the same name cannot hide that one)
+        // that other matches under the same name cannot hide that one); a recorded
+        // file is its match's alone
+        const recorded = new Set(rows.map((r) => r.path))
         for (const parts of pdfs) {
           if (closed) break
+          if (recorded.has(parts.key)) continue
           const { values, p } = sqlParams()
           const { rows: hit } = await pool.query(
             `SELECT 1 FROM public.matches m
@@ -770,5 +898,5 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
     return { status: 200, file: { ...v.file, disposition: 'inline' } }
   }
 
-  return { list, readPdf, sportOf, createViewLink, readViewLink, latestPdf, storePdf, removeFiles }
+  return { list, readPdf, sportOf, createViewLink, readViewLink, latestPdf, storeFile, storePdf, storeBeachJson, removeFiles }
 }

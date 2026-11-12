@@ -870,6 +870,33 @@ describe('uploader-only buckets (final scoresheets)', () => {
     assert.deepEqual((await s.list({ bucket: 'scoresheets', path: '2026-10-05', userId: 'u1' })).map((e) => e.name), [path.basename(sheet)])
   })
 
+  // lib/scoresheets.js: an account that may write the match the path is of
+  // (an OpenBeach name has no secret part, so another scorer could create it first)
+  it('adopt (trusted callers only): the caller replaces an object it did not create, and the owners it keeps stay', async () => {
+    const s = make({ uploaderReadBuckets: ['scoresheets'] })
+    const beach = 'beach/2026-10-05/game7_match_1_abc.pdf'
+    await up(s, 'mallory', '{"squatted":true}', beach)
+    await up(s, 'alice', '{"real":true}', beach, { adopt: (owners) => owners.filter((o) => o === 'carol') })
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: beach }), ['alice'])
+    assert.equal(await down(s, 'alice', beach), '{"real":true}')
+    await rejectsWith(s.download({ bucket: 'scoresheets', path: beach, userId: 'mallory' }), 403, 'OV_STORAGE_FORBIDDEN')
+    await rejectsWith(up(s, 'mallory', '{"again":true}', beach), 403, 'OV_STORAGE_FORBIDDEN')
+    // an owner the caller keeps (another account of the same match) still reads it
+    await up(s, 'carol', '{"by":"carol"}', beach, { adopt: (owners) => owners.filter((o) => o === 'alice') })
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: beach }), ['carol', 'alice'])
+    assert.equal(await down(s, 'alice', beach), '{"by":"carol"}')
+    // an owner's own replace leaves the record as it is; upsert:false still refuses an existing object
+    await up(s, 'alice', '{"v":3}', beach, { adopt: () => [] })
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: beach }), ['carol', 'alice'])
+    await rejectsWith(up(s, 'dave', '{}', beach, { upsert: false, adopt: () => [] }), 409, 'OV_STORAGE_EXISTS')
+    // never from the HTTP body: handle() takes it from the server's context only
+    const viaBody = await s.handle('upload', { bucket: 'scoresheets', path: beach, fileBase64: b64('{}'), contentType: 'application/json', adopt: true }, { userId: 'mallory' })
+    assert.equal(viaBody.status, 403)
+    const viaCtx = await s.handle('upload', { bucket: 'scoresheets', path: beach, fileBase64: b64('{"ctx":1}'), contentType: 'application/json' }, { userId: 'erin', adopt: () => ['alice'] })
+    assert.equal(viaCtx.status, 200)
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: beach }), ['erin', 'alice'])
+  })
+
   it('handle: the HTTP adapter answers 403 to a non-owner and 200 + not-found for a missing object', async () => {
     const s = make({ uploaderReadBuckets: ['scoresheets'] })
     await s.handle('upload', { bucket: 'scoresheets', path: sheet, fileBase64: b64('{}'), contentType: 'application/json' }, { userId: 'alice' })

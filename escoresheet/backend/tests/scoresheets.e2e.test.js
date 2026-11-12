@@ -16,7 +16,7 @@ import { randomBytes } from 'node:crypto'
 import pg from 'pg'
 import { SKIP, bootServer, api, provisionDatabase, sleep } from './helpers/e2eServer.js'
 import { grantRoles } from './helpers/pgTestDb.js'
-import { VIEW_LINK_MAX, VIEW_LINK_TTL_MS, bestPdf, cleanGame, createScoresheets, downloadName, filePart, isScoresheetPdf, pdfLocator, pdfPathParts } from '../lib/scoresheets.js'
+import { VIEW_LINK_MAX, VIEW_LINK_TTL_MS, beachJsonPathParts, bestPdf, cleanGame, createScoresheets, downloadName, filePart, isMatchScoresheetFile, isScoresheetPdf, pdfLocator, pdfPathParts } from '../lib/scoresheets.js'
 import { manageFamilyOf } from '../lib/manageApi.js'
 
 const key = () => `k${randomBytes(16).toString('hex')}`
@@ -89,6 +89,17 @@ describe('scoresheets (unit)', () => {
     }
     assert.equal(isScoresheetPdf('2026-10-10/game1.PDF'), true, 'refused by storePdf, never stored past it')
     assert.equal(isScoresheetPdf(`2026-10-10/game1_${k}_final.json`), false)
+  })
+
+  it('an OpenBeach JSON path with a seed belongs to its match; indoor JSON and the older seedless names do not', () => {
+    assert.deepEqual(beachJsonPathParts('beach/2026-10-11/game7_match_1_ab-c_final.json'), { key: 'beach/2026-10-11/game7_match_1_ab-c_final.json', folder: 'beach/2026-10-11', day: '2026-10-11', name: 'game7_match_1_ab-c_final.json', sport: 'beach', game: '7', seed: 'match_1_ab-c' })
+    assert.equal(beachJsonPathParts('beach/2026-10-11/game7_match_1_ab-c.json').seed, 'match_1_ab-c')
+    for (const other of ['beach/2026-10-11/game7.json', 'beach/2026-10-11/game7_final.json', `2026-10-10/game1_${key()}_final.json`, 'beach/game7_match_1_x.json', 'beach/2026-10-11/game7_match_1_x.pdf', '../game7_x.json', null]) {
+      assert.equal(beachJsonPathParts(other), null, String(other))
+    }
+    assert.equal(isMatchScoresheetFile('beach/2026-10-11/game7_match_1_x_final.json'), true)
+    assert.equal(isMatchScoresheetFile('beach/2026-10-11/game7_match_1_x.pdf'), true)
+    assert.equal(isMatchScoresheetFile(`2026-10-10/game1_${key()}.json`), false)
   })
 
   it('the best file: a file of the match before an older one, then the newest', () => {
