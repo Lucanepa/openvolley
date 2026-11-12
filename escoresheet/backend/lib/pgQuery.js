@@ -842,9 +842,12 @@ export function createPgQuery (options = {}) {
     const list = [...new Set(ids.filter(v => v != null && v !== '').map(String))]
     if (list.length === 0) return
     const c = freshCtx()
-    // Compared as text: a malformed id is left to the ownership check, not a cast error here
+    const pkey = requireColumn(guard.parent, own.key)
+    // Compared as the key's type, like the ownership check and the statement:
+    // every spelling of an id that Postgres reads (upper case, braces, no
+    // hyphens) is that match. A malformed id fails the cast here, as it would there.
     const sql = `SELECT count(*)::int AS bad FROM ${qTable(own.parent)} AS m
-      WHERE m.${quoteIdent(own.key)}::text = ANY(${c.p(list)}::text[]) AND ${nonTestSql(guard, 'm')}`
+      WHERE m.${quoteIdent(own.key)} = ANY(${c.p(list)}::${pkey.typeSql}[]) AND ${nonTestSql(guard, 'm')}`
     const res = await client.query(sql, c.values)
     if (res.rows[0].bad > 0) scorerRequired(`${res.rows[0].bad} match(es) are not test matches`)
   }
@@ -1129,14 +1132,17 @@ export function createPgQuery (options = {}) {
     let returning = needRows ? retCols.map(c => `t.${quoteIdent(c)}`).join(', ') : '1 AS one'
     if (needRows && action === 'upsert') returning += (returning ? ', ' : '') + '(t.xmax = 0) AS "__inserted"'
     if (needRows && !returning) returning = '1 AS one'
-    // An upsert of matches by a test-only account: the rows it wrote, inserted
-    // or updated, are judged by the rule too (RETURNING sees the final row; no
-    // trigger rewrites test or sport_type). testPre judges the payload merged
-    // with the match stored when it ran; if that match is deleted before the
+    // A test-only account: the rows it wrote are judged by the rule too
+    // (RETURNING sees the final row; no trigger rewrites test, sport_type or
+    // match_id). An upsert of matches: testPre judges the payload merged with
+    // the match stored when it ran; if that match is deleted before the
     // statement, the statement inserts the payload with the column defaults
-    // (test false, indoor), a row nothing else judges.
-    const judgeWritten = action === 'upsert' && !!testOnly && testOnly.isParent
-    if (judgeWritten) returning += `, (${nonTestSql(testOnly, 't')}) AS "__nontest"`
+    // (test false, indoor), a row nothing else judges. A child insert, upsert
+    // or update: the match the row points to as stored (the typed match_id),
+    // in the statement's snapshot, so also a match that stopped being a test
+    // match after testPre.
+    const judgeWritten = !!testOnly && (testOnly.isParent ? action === 'upsert' : action !== 'delete')
+    if (judgeWritten) returning += `, (${rowNonTestSql(testOnly, 't')}) AS "__nontest"`
     const nonTestCount = judgeWritten ? ', count(*) FILTER (WHERE w."__nontest")::int AS nontest' : ''
     // The matched rows that break each rule (rowRules), in the statement's snapshot
     const badSql = rowRules.map((r, i) => `, (SELECT count(*) FROM ${qt} AS t${rowRulesWhere} AND ${r.bad})::int AS bad${i}`).join('')
@@ -1156,8 +1162,11 @@ export function createPgQuery (options = {}) {
         const bad = Number(res.rows[0][`bad${i}`])
         if (bad > 0) rule.refuse(bad)
       })
-      // A written match the test-only rule refuses: the write is refused (rolled back)
-      if (judgeWritten && res.rows[0].nontest > 0) scorerRequired(`${res.rows[0].nontest} match row(s) are not test matches`)
+      // A written row the test-only rule refuses: the write is refused (rolled back)
+      if (judgeWritten && res.rows[0].nontest > 0) {
+        const bad = res.rows[0].nontest
+        scorerRequired(testOnly.isParent ? `${bad} match row(s) are not test matches` : `${bad} ${t.name} row(s) of a non-test match`)
+      }
       const rows = res.rows[0].rows || []
       const n = Number(res.rows[0].n)
       // Upsert rows skipped by a guard: the conflicting row belongs to another

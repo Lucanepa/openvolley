@@ -1,8 +1,8 @@
 /**
- * Update / delete (and upsert of matches) under the match guards of
- * lib/pgQuery.js (opts.matchOwner) on a real Postgres, with a row that
- * another device commits (or deletes) between the write's checks and its
- * statement.
+ * Update / delete (and upsert of matches, child writes of a test-only
+ * account) under the match guards of lib/pgQuery.js (opts.matchOwner) on a
+ * real Postgres, with a row that another device commits (or deletes)
+ * between the write's checks and its statement.
  * Postgres runs READ COMMITTED: each statement sees what was committed when
  * it started (and an upsert's ON CONFLICT also a row committed later), so
  * the checks before the statement cannot see that row. The guards are part
@@ -166,6 +166,59 @@ describe('pgQuery update/delete/upsert: a row committed after the checks', { ski
       async () => okay(await q('events', 'insert', { data: eventOf(m, 2) }, as(alice))))
     expectCode(upd, 403, 'OV_SCORER_REQUIRED')
     assert.deepEqual((await eventsOf(m)).map((e) => e.score_a), [null, null])
+  })
+
+  it('a child insert, upsert or move by an account that is not an approved scorer: a match that stops being a test match in between is not written', async () => {
+    const untest = (m) => async () => okay(await q('matches', 'update', { data: { test: false }, filters: [eq('id', m.id)] }, as(alice)))
+    const editorOf = (m, userId) => raw.query("INSERT INTO match_editors (match_id, user_id, granted_via) VALUES ($1, $2, 'claim')", [m.id, userId])
+    const testOf = async (m) => (await raw.query('SELECT test FROM matches WHERE id = $1', [m.id])).rows[0].test
+    const count = async (table, m) => (await raw.query(`SELECT count(*)::int n FROM ${table} WHERE match_id = $1`, [m.id])).rows[0].n
+
+    const m1 = await matchOf(as(alice), { test: true })
+    await editorOf(m1, pending)
+    expectCode(await writeWithCommitBetween('events', 'insert', { data: eventOf(m1, 1) }, asPending(pending), untest(m1)), 403, 'OV_SCORER_REQUIRED')
+    assert.equal(await testOf(m1), false)
+    assert.equal(await count('events', m1), 0)
+
+    const m2 = await matchOf(as(alice), { test: true })
+    await editorOf(m2, pending)
+    okay(await q('events', 'insert', { data: eventOf(m2, 1) }, as(alice)))
+    expectCode(await writeWithCommitBetween('events', 'upsert', { data: { ...eventOf(m2, 1), type: 'timeout' }, onConflict: 'external_id' }, asPending(pending), untest(m2)), 403, 'OV_SCORER_REQUIRED')
+    assert.deepEqual((await eventsOf(m2)).map((e) => e.type), ['point'])
+
+    const m3 = await matchOf(as(alice), { test: true })
+    await editorOf(m3, pending)
+    expectCode(await writeWithCommitBetween('match_live_state', 'upsert', { data: { match_id: m3.id, points_a: 24 }, onConflict: 'match_id' }, asPending(pending), untest(m3)), 403, 'OV_SCORER_REQUIRED')
+    assert.equal(await count('match_live_state', m3), 0)
+
+    // moving an event of its own test match into a match that stops being one
+    const own = await matchOf(asPending(pending), { test: true })
+    okay(await q('events', 'insert', { data: eventOf(own, 1) }, asPending(pending)))
+    const m4 = await matchOf(as(alice), { test: true })
+    await editorOf(m4, pending)
+    expectCode(await writeWithCommitBetween('events', 'update', { data: { match_id: m4.id, external_id: `${m4.external_id}:e:1` }, filters: [eq('external_id', `${own.external_id}:e:1`)] }, asPending(pending), untest(m4)), 403, 'OV_SCORER_REQUIRED')
+    assert.equal(await count('events', own), 1)
+    assert.equal(await count('events', m4), 0)
+
+    // one sport only: an indoor-only editor of a beach test match
+    const m5 = await matchOf(as(alice), { test: true, sport_type: 'beach' })
+    await editorOf(m5, indoor)
+    expectCode(await writeWithCommitBetween('events', 'insert', { data: eventOf(m5, 1) }, asIndoor(indoor), untest(m5)), 403, 'OV_SCORER_REQUIRED')
+    assert.equal(await count('events', m5), 0)
+
+    // controls: another change in between, and an indoor match that stops
+    // being a test match for the indoor scorer; both written, with no
+    // internal flag in the change record
+    const m6 = await matchOf(as(alice), { test: true })
+    await editorOf(m6, pending)
+    const r6 = await writeWithCommitBetween('events', 'insert', { data: eventOf(m6, 1) }, asPending(pending),
+      async () => okay(await q('matches', 'update', { data: { status: 'ended' }, filters: [eq('id', m6.id)] }, as(alice))))
+    okay(r6)
+    assert.deepEqual(Object.keys(r6.changes[0].row).filter((k) => k.startsWith('__')), [])
+    const m7 = await matchOf(as(alice), { test: true, sport_type: 'indoor' })
+    await editorOf(m7, indoor)
+    okay(await writeWithCommitBetween('events', 'insert', { data: eventOf(m7, 1) }, asIndoor(indoor), untest(m7)))
+    assert.equal(await count('events', m7), 1)
   })
 
   it('an update with test:false in a sport the account cannot score in: a match of that sport created in between stays a test match', async () => {
