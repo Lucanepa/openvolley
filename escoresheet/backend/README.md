@@ -155,6 +155,7 @@ Deploy to Render for cloud backup, also run locally when available. The frontend
 | `OV_PIN_SECRET` | Secret (at least 32 characters) for the PINs at rest: `game_pin` and every `connection_pins` value are stored as an HMAC with it (`lib/pinHash.js`). Unset: stored in plaintext as before (the server warns at startup). Also keys the approval PINs: unset turns approval with an account off ("Approval PINs"). **Never change or lose it** while matches stored with it are in use (see "Security model"). | - |
 | `OV_MATCH_TOKEN_SECRET` | Secret (at least 32 characters; a shorter one stops the start) for the match access tokens the PIN checks answer with (`lib/matchAccess.js`). Unset: derived from `OV_PIN_SECRET`; both unset: a random one per process (tokens end with a restart; the apps re-check their stored PIN on reload). | derived / random |
 | `STORAGE_BACKUP_MIN_FREE_MB`, `STORAGE_SCORESHEETS_MIN_FREE_MB`, `STORAGE_MAX_FILE_MB`, `STORAGE_OWNER_SCOPE`, `STORAGE_OWNER_SCOPE_BUCKETS` | See "Self-hosted storage" below | |
+| `OV_RELAY_MAX_MB` | Memory the relay's stored match bundles and live states may take in all (half of it per address); syncs beyond it are refused with `relay-full`. A bad value stops the server. | 35% of V8's heap limit (about 106 MB with `--max-old-space-size=256`) |
 | `RENDER` | Auto-set by Render (legacy) | - |
 | `RESEND_API_KEY` | Resend API key for email (recommended) | - |
 | `RESEND_FROM` | Sender address for Resend | `eScoresheet <escoresheet@openvolley.app>` |
@@ -186,6 +187,13 @@ and failed-guess buckets; a wrong `X-OV-Match-Pin` on `GET /api/match/:id`
 counts as a failed guess too, and a wrong `subscribe-match` PIN 5 per socket /
 20 per IP and minute. Role sockets: 200 per IP in cloud mode (50 on
 the LAN), 2000 in total; `?purpose=live` sockets: 500 per IP, 3000 in total.
+What the relay keeps of a socket's syncs (`lib/relayLimits.js`, both modes):
+PINs must be text (at most 64 characters) or numbers (else `bad-request`);
+at most 20000 events, 20 sets and 200 players per list, 8 MB per room and
+300,000 JSON values per frame (else `too-large`); a live state at most 256 KB
+as JSON (`too-large`); all rooms together `OV_RELAY_MAX_MB`, one address half
+of it (`relay-full`). A long five-set match with all its signatures takes
+0.5-1.3 MB.
 `/api/admin/*` and `/api/saved-teams*` 300 per user; `/api/match/official-check`
 120 per user; `/api/account/redeem-invite` at most **10 failed attempts per
 account and per IP (/64) in 10 minutes** (a success is refunded; 429
