@@ -199,6 +199,35 @@ describe('event revisions end to end', { skip: SKIP }, () => {
     assert.deepEqual(back.payload, { team: 'away' })
   })
 
+  // The scoreboard sends the line-up after a substitution, a libero
+  // replacement or a side-out rotation as a sub-row (N.x) of its entry
+  // (frontend utils/eventSync buildEventInsertJob): a device that continues
+  // the match reads the current line-up from it
+  it('a line-up sub-row (N.x) is kept after its entry by restore-by-pin; its undo voids it', async () => {
+    const m = await newMatch(users.anna)
+    const e8 = await newEvent(users.anna, m, 8)
+    const sub = `${m.ext}:e:9`
+    const lineup = { I: '2', II: '3', III: '4', IV: '5', V: '6', VI: '1' }
+    const up = await dbCall(users.anna, 'events', 'upsert', {
+      data: { external_id: sub, match_id: m.id, set_index: 1, type: 'lineup', payload: { team: 'home', lineup, liberoSubstitution: null }, seq: 8.1, test: false, created_at: '2026-11-12T18:00:01.000Z', sport_type: 'indoor' },
+      onConflict: 'external_id'
+    })
+    assert.equal(up.status, 200, up.text)
+    const e9 = await newEvent(users.anna, m, 10, { seq: 9 })
+
+    const pin = await api(srv.base, '/api/match/restore-by-pin', { proto: null, body: { gameN: m.n, pin: GAME_PIN } })
+    assert.equal(pin.status, 200, pin.text)
+    assert.deepEqual(pin.json.data.events.map((e) => [e.external_id, Number(e.seq)]), [[e8, 8], [sub, 8.1], [e9, 9]])
+    const row = pin.json.data.events.find((e) => e.external_id === sub)
+    assert.equal(row.type, 'lineup')
+    assert.deepEqual(row.payload, { team: 'home', lineup, liberoSubstitution: null })
+
+    // undone with its point on the scoring device: voided, left out
+    assert.equal((await revise(users.anna, m.ext, [rev(sub, { seq: 8.1, type: 'lineup' })])).status, 200)
+    const again = await api(srv.base, '/api/match/restore-by-pin', { proto: null, body: { gameN: m.n, pin: GAME_PIN } })
+    assert.deepEqual(again.json.data.events.map((e) => e.external_id), [e8, e9])
+  })
+
   it('an edit rewrites the server columns and counts the revision', async () => {
     const m = await newMatch(users.anna)
     const e2 = await newEvent(users.anna, m, 2)
