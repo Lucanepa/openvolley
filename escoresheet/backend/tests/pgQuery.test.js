@@ -1,7 +1,7 @@
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import pg from 'pg'
-import { createPgQuery, DEFAULT_CONFIG, parseColumnRef, parseColumnList, mentionsSecret, quoteIdent, sqlstateStatus } from '../lib/pgQuery.js'
+import { createPgQuery, DEFAULT_CONFIG, parseColumnRef, parseColumnList, mentionsSecret, quoteIdent, sqlstateStatus, childMatchKey } from '../lib/pgQuery.js'
 import { SKIP_PG, createTestDatabase, quietLogger } from './helpers/pgTestDb.js'
 
 // ---------------------------------------------------------------------------
@@ -38,6 +38,21 @@ describe('pgQuery helpers', () => {
 
   it('quoteIdent doubles embedded quotes', () => {
     assert.equal(quoteIdent('a"b'), '"a""b"')
+  })
+
+  it('childMatchKey: the one match a set / event id names, never a prefix of it', () => {
+    for (const [ext, key] of [
+      ['match_1_x:s:1', 'match_1_x'], ['match_1_x:e:7', 'match_1_x'], ['match_1_x:e:coin_toss', 'match_1_x'],
+      ['match_1_x:s:5#rekey', 'match_1_x'], ['match_1_x:e:3:e:4', 'match_1_x'],
+      // the backup form of older apps (no ':')
+      ['match_1_x_set_2', 'match_1_x'], ['match_1_x_event_7.5', 'match_1_x'], ['match_1_x_set_2_set_3', 'match_1_x_set_2'],
+      ['test-match-default-0a1b_event_4', 'test-match-default-0a1b'],
+      // nothing else
+      ['match_1_x', null], ['match_1_x_legacy', null], ['match_1_x_set_', null], ['_set_1', null], [':e:1', null],
+      ['match_1_x:', null], ['42', null], ['', null], [null, null], [7, null]
+    ]) {
+      assert.equal(childMatchKey(ext), key, String(ext))
+    }
   })
 })
 
@@ -634,6 +649,46 @@ describe('pgQuery on Postgres', { skip: SKIP_PG }, () => {
       // Legacy backupManager fallback ids (`${externalId}_set_${n}`) are accepted too.
       r = await q('sets', 'insert', { data: { external_id: `${a.external_id}_set_2`, match_id: a.id } }, W)
       assert.equal(r.status, 200)
+    })
+
+    it('a match whose external_id is a prefix of another match\'s ids owns none of them (match, match_1, match_1_x)', async () => {
+      const v = await newMatch({ external_id: 'match_1_x' })
+      const parents = []
+      for (const external_id of ['match', 'match_1', 'match_1_x:e', 'match_1_x:s', 'match_1_x_set', 'match_1_x_event']) {
+        parents.push(await newMatch({ external_id, test: true }))
+      }
+      const rows = (mid) => ({
+        sets: ['match_1_x:s:1', 'match_1_x_set_2'].map(external_id => ({ external_id, match_id: mid, index: 1 })),
+        events: ['match_1_x:e:1', 'match_1_x:e:coin_toss', 'match_1_x_event_7', 'match_1_x_event_7.5'].map(external_id => ({ external_id, match_id: mid, type: 'point' }))
+      })
+      for (const p of parents) {
+        for (const [table, list] of Object.entries(rows(p.id))) {
+          for (const row of list) {
+            for (const action of ['insert', 'upsert']) {
+              const r = await q(table, action, { data: row, onConflict: action === 'upsert' ? 'external_id' : undefined }, W)
+              assert.equal(r.body.error?.code, 'OV_UNSCOPED_EXTERNAL_ID', `${p.external_id}: ${table} ${action} ${row.external_id}`)
+            }
+          }
+        }
+      }
+      // nor by renaming a row of its own into the other match's ids
+      for (const p of parents.slice(0, 2)) {
+        const own = `${p.external_id}:s:9`
+        assert.equal((await q('sets', 'insert', { data: { external_id: own, match_id: p.id } }, W)).status, 200)
+        const r = await q('sets', 'update', { data: { external_id: 'match_1_x:s:5' }, filters: [eq('external_id', own)] }, W)
+        assert.equal(r.body.error?.code, 'OV_UNSCOPED_EXTERNAL_ID', p.external_id)
+      }
+      const held = await raw.query('SELECT external_id FROM sets WHERE match_id = ANY($1) UNION ALL SELECT external_id FROM events WHERE match_id = ANY($1)', [parents.map(p => p.id)])
+      assert.deepEqual(held.rows.map(r => r.external_id).sort(), ['match:s:9', 'match_1:s:9'])
+      // the match itself writes every one of them, and its later upserts are not blocked
+      for (const [table, list] of Object.entries(rows(v.id))) {
+        for (let i = 0; i < 2; i++) {
+          const r = await q(table, 'upsert', { data: list, onConflict: 'external_id', count: 'exact' }, W)
+          assert.equal(r.status, 200, JSON.stringify(r.body))
+          assert.equal(r.body.count, list.length)
+        }
+      }
+      assert.equal((await raw.query('SELECT count(*)::int n FROM events WHERE match_id = $1', [v.id])).rows[0].n, 4)
     })
 
     it('rejects unscoped ids on insert and upsert, and writes nothing from a mixed batch', async () => {
