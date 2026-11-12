@@ -52,6 +52,31 @@ export function scoresheetUploadJob(match, path, file, contentType) {
   }
 }
 
+// A scoresheet upload job not sent yet: waiting, backing off, or refused
+const UNSENT_STATUSES = ['queued', 'error', 'failed']
+
+/**
+ * Before a new approval's files are queued: the older scoresheet uploads of
+ * the same match (or the same file) that were not sent yet are marked
+ * 'superseded', their file dropped. Only the latest approval's files are
+ * worth sending: after a reopen and a new approval both approvals use the
+ * same paths, the queue sends its jobs in turn, and after the close the
+ * backend keeps the approval's first PDF (db/033; replaced only within
+ * minutes), so the older one could stay the match's scoresheet. A job in
+ * flight ('sending') is left alone.
+ * @param {object} queue - db.sync_queue
+ * @param {object[]} jobs - the new scoresheetUploadJob()s
+ * @returns {Promise<number>} the jobs superseded
+ */
+export async function supersedeUnsentScoresheetUploads(queue, jobs) {
+  const paths = new Set(jobs.map(j => j.payload?.path).filter(Boolean))
+  const matches = new Set(jobs.map(j => j.payload?.match_external_id).filter(Boolean))
+  const stale = (await queue.where('resource').equals(SCORESHEET_UPLOAD_RESOURCE).toArray())
+    .filter(j => UNSENT_STATUSES.includes(j.status) && (paths.has(j.payload?.path) || matches.has(j.payload?.match_external_id)))
+  for (const j of stale) await queue.update(j.id, { status: 'superseded', payload: { ...j.payload, file: null } })
+  return stale.length
+}
+
 /**
  * Store the file of a scoresheetUploadJob ({ data, error } as apiStorage). The
  * match goes with it: the backend stores a PDF only for a match this account

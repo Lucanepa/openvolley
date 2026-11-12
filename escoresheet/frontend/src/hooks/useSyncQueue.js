@@ -1493,6 +1493,13 @@ async function processJobInner(job, ctx) {
           ctx.error = summarizeError(error)
           return null
         }
+        if (error.code === 'OV_MATCH_CLOSED') {
+          // The match is closed and keeps the PDF it has: this file is never
+          // taken (after an admin reopen, the new approval queues new files)
+          safeLog.warn('[SyncQueue] Scoresheet upload refused, the match is closed: dropped')
+          ctx.error = summarizeError(error)
+          return DROP_JOB
+        }
         safeLog.warn('[SyncQueue] Scoresheet upload error:', error.code || error.status || error.message)
         return failureResult(error, ctx)
       }

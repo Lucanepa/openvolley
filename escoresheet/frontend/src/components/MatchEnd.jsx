@@ -19,7 +19,7 @@ import { requeueClosedJobs } from '../utils/matchHandover'
 import KitModal from './manage/KitModal'
 import CloudBlockNotice from './CloudBlockNotice'
 import { Textarea } from '../ui/Textarea.jsx'
-import { scoresheetUploadPath, scoresheetUploadJob, scoresheetJsonBlob, uploadQueuedScoresheet } from '../utils/scoresheetUploader'
+import { scoresheetUploadPath, scoresheetUploadJob, scoresheetJsonBlob, uploadQueuedScoresheet, supersedeUnsentScoresheetUploads } from '../utils/scoresheetUploader'
 import { matchEndExportData } from '../utils/backupManager'
 import { publishMatchEndLiveState } from '../utils/matchEndLiveState'
 import { isoOf, matchTimes, setDurationMinutes } from '../../scoresheet_pdf/utils/matchTimes'
@@ -1203,12 +1203,16 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     if (!jobs.length) return
     try {
       await db.transaction('rw', db.sync_queue, async () => {
+        // an earlier approval's files still unsent (a reopen and a new
+        // approval): only this approval's go
+        await supersedeUnsentScoresheetUploads(db.sync_queue, jobs)
         for (const job of jobs) await db.sync_queue.add(job)
       })
     } catch (queueErr) {
       // IndexedDB refused the files (storage full): one try now, in the
       // background, as before the queue took them
       console.warn('[MatchEnd] Could not queue the scoresheet uploads, uploading them once now:', queueErr?.message)
+      await supersedeUnsentScoresheetUploads(db.sync_queue, jobs).catch(() => {})
       for (const job of jobs) {
         uploadQueuedScoresheet(job.payload)
           .then(({ error }) => { if (error) console.warn('Failed to upload scoresheet to cloud:', error) })
