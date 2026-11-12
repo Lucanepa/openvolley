@@ -1,7 +1,8 @@
 /**
  * Update / delete (and upsert of matches) under the match guards of
  * lib/pgQuery.js (opts.matchOwner) on a real Postgres, with a row that
- * another device commits between the write's checks and its statement.
+ * another device commits (or deletes) between the write's checks and its
+ * statement.
  * Postgres runs READ COMMITTED: each statement sees what was committed when
  * it started (and an upsert's ON CONFLICT also a row committed later), so
  * the checks before the statement cannot see that row. The guards are part
@@ -18,13 +19,14 @@ import { SKIP_PG, createTestDatabase, quietLogger } from './helpers/pgTestDb.js'
 
 describe('pgQuery update/delete/upsert: a row committed after the checks', { skip: SKIP_PG }, () => {
   let tdb, db, raw
-  let alice, bob, pending, indoor
+  let alice, bob, pending, indoor, beach
   let seq = 0
   const uniq = (p = 'wr') => `${p}${Date.now().toString(36)}${(seq++).toString(36)}`
   const eq = (column, value) => ({ type: 'eq', column, value })
   const as = (userId) => ({ proto: 2, matchOwner: { userId }, actorId: userId })
   const asPending = (userId) => ({ proto: 2, matchOwner: { userId, testOnly: true }, actorId: userId })
   const asIndoor = (userId) => ({ proto: 2, matchOwner: { userId, testOnly: false, testOnlySports: ['beach'] }, actorId: userId })
+  const asBeach = (userId) => ({ proto: 2, matchOwner: { userId, testOnly: false, testOnlySports: ['indoor'] }, actorId: userId })
   const q = (table, action, params, opts) => db.runQuery({ table, action, params }, opts)
   const okay = (r) => assert.equal(r.status, 200, JSON.stringify(r.body))
   const expectCode = (r, status, code) => {
@@ -85,6 +87,7 @@ describe('pgQuery update/delete/upsert: a row committed after the checks', { ski
     bob = await user()
     pending = await user()
     indoor = await user()
+    beach = await user()
   })
 
   after(async () => {
@@ -219,5 +222,51 @@ describe('pgQuery update/delete/upsert: a row committed after the checks', { ski
       async () => okay(await q('matches', 'insert', { data: { external_id: ext2, status: 'live' } }, as(alice))))
     expectCode(r2, 403, 'OV_SCORER_REQUIRED')
     assert.deepEqual(await rowOf(ext2), [{ status: 'live', test: false, created_by: alice }])
+  })
+
+  it('an upsert in one sport over its own test match deleted in between: the row it would insert instead is judged too', async () => {
+    const rowOf = async (x) => (await raw.query('SELECT sport_type::text AS s, test, status FROM matches WHERE external_id = $1', [x])).rows
+    const deleteOwn = (x, opts) => async () => okay(await q('matches', 'delete', { filters: [eq('external_id', x)] }, opts))
+    // indoor-only: its beach test match, the payload says beach but not test,
+    // so the insert would be a non-test beach match (test defaults to false)
+    const ext = uniq('M')
+    okay(await q('matches', 'insert', { data: { external_id: ext, status: 'live', sport_type: 'beach', test: true } }, asIndoor(indoor)))
+    const r = await writeWithCommitBetween('matches', 'upsert', { data: { external_id: ext, status: 'ended', sport_type: 'beach' }, onConflict: 'external_id' }, asIndoor(indoor),
+      deleteOwn(ext, asIndoor(indoor)))
+    expectCode(r, 403, 'OV_SCORER_REQUIRED')
+    assert.deepEqual(await rowOf(ext), [])
+    // beach-only: its indoor test match, the payload sets neither sport nor
+    // test, so the insert would be a non-test indoor match (the defaults)
+    const ext2 = uniq('M')
+    okay(await q('matches', 'insert', { data: { external_id: ext2, status: 'live', sport_type: 'indoor', test: true } }, asBeach(beach)))
+    const r2 = await writeWithCommitBetween('matches', 'upsert', { data: { external_id: ext2, status: 'ended' }, onConflict: 'external_id' }, asBeach(beach),
+      deleteOwn(ext2, asBeach(beach)))
+    expectCode(r2, 403, 'OV_SCORER_REQUIRED')
+    assert.deepEqual(await rowOf(ext2), [])
+    // the same without a change record (no rows returned)
+    const ext3 = uniq('M')
+    okay(await q('matches', 'insert', { data: { external_id: ext3, status: 'live', sport_type: 'indoor', test: true } }, asBeach(beach)))
+    const r3 = await writeWithCommitBetween('matches', 'upsert', { data: { external_id: ext3, status: 'ended' }, onConflict: 'external_id' }, { ...asBeach(beach), collectChanges: false },
+      deleteOwn(ext3, asBeach(beach)))
+    expectCode(r3, 403, 'OV_SCORER_REQUIRED')
+    assert.deepEqual(await rowOf(ext3), [])
+
+    // controls, deleted in between as well: a test row, and a row in the
+    // sport the account may score in, are inserted; the change record is
+    // the stored row
+    const ext4 = uniq('M')
+    okay(await q('matches', 'insert', { data: { external_id: ext4, status: 'live', sport_type: 'beach', test: true } }, asIndoor(indoor)))
+    const r4 = await writeWithCommitBetween('matches', 'upsert', { data: { external_id: ext4, status: 'ended', sport_type: 'beach', test: true }, onConflict: 'external_id' }, asIndoor(indoor),
+      deleteOwn(ext4, asIndoor(indoor)))
+    okay(r4)
+    assert.deepEqual(await rowOf(ext4), [{ s: 'beach', test: true, status: 'ended' }])
+    assert.equal(r4.changes.length, 1)
+    assert.equal(r4.changes[0].eventType, 'INSERT')
+    assert.deepEqual(Object.keys(r4.changes[0].row).filter((k) => k.startsWith('__')), [])
+    const ext5 = uniq('M')
+    okay(await q('matches', 'insert', { data: { external_id: ext5, status: 'live', sport_type: 'indoor', test: true } }, asIndoor(indoor)))
+    okay(await writeWithCommitBetween('matches', 'upsert', { data: { external_id: ext5, status: 'ended' }, onConflict: 'external_id' }, asIndoor(indoor),
+      deleteOwn(ext5, asIndoor(indoor))))
+    assert.deepEqual(await rowOf(ext5), [{ s: 'indoor', test: false, status: 'ended' }])
   })
 })

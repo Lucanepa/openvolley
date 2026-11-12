@@ -1043,6 +1043,7 @@ export function createPgQuery (options = {}) {
         // Nor a conflicting match the test-only rule refuses: testPre judges
         // the matches committed before it, this also one committed after it
         // (ON CONFLICT meets rows the statement's snapshot does not see).
+        // A match deleted after it leaves an INSERT instead: judgeWritten.
         const testGuard = testOnly && testOnly.isParent
         if (testGuard) guards.push(`NOT (${upsertNonTestSql(testOnly, cols)})`)
         if (guards.length) dml += ` WHERE ${guards.join(' AND ')}`
@@ -1128,11 +1129,20 @@ export function createPgQuery (options = {}) {
     let returning = needRows ? retCols.map(c => `t.${quoteIdent(c)}`).join(', ') : '1 AS one'
     if (needRows && action === 'upsert') returning += (returning ? ', ' : '') + '(t.xmax = 0) AS "__inserted"'
     if (needRows && !returning) returning = '1 AS one'
+    // An upsert of matches by a test-only account: the rows it wrote, inserted
+    // or updated, are judged by the rule too (RETURNING sees the final row; no
+    // trigger rewrites test or sport_type). testPre judges the payload merged
+    // with the match stored when it ran; if that match is deleted before the
+    // statement, the statement inserts the payload with the column defaults
+    // (test false, indoor), a row nothing else judges.
+    const judgeWritten = action === 'upsert' && !!testOnly && testOnly.isParent
+    if (judgeWritten) returning += `, (${nonTestSql(testOnly, 't')}) AS "__nontest"`
+    const nonTestCount = judgeWritten ? ', count(*) FILTER (WHERE w."__nontest")::int AS nontest' : ''
     // The matched rows that break each rule (rowRules), in the statement's snapshot
     const badSql = rowRules.map((r, i) => `, (SELECT count(*) FROM ${qt} AS t${rowRulesWhere} AND ${r.bad})::int AS bad${i}`).join('')
     const sql = needRows
-      ? `WITH w AS (${dml} RETURNING ${returning}) SELECT coalesce(json_agg(w), '[]'::json) AS rows, count(*) AS n${badSql} FROM w`
-      : `WITH w AS (${dml} RETURNING ${returning}) SELECT NULL::json AS rows, count(*) AS n${badSql} FROM w`
+      ? `WITH w AS (${dml} RETURNING ${returning}) SELECT coalesce(json_agg(w), '[]'::json) AS rows, count(*) AS n${nonTestCount}${badSql} FROM w`
+      : `WITH w AS (${dml} RETURNING ${returning}) SELECT NULL::json AS rows, count(*) AS n${nonTestCount}${badSql} FROM w`
 
     const run = async (client) => {
       // The acting account, for db/007's triggers (closed_by of a closing write)
@@ -1146,6 +1156,8 @@ export function createPgQuery (options = {}) {
         const bad = Number(res.rows[0][`bad${i}`])
         if (bad > 0) rule.refuse(bad)
       })
+      // A written match the test-only rule refuses: the write is refused (rolled back)
+      if (judgeWritten && res.rows[0].nontest > 0) scorerRequired(`${res.rows[0].nontest} match row(s) are not test matches`)
       const rows = res.rows[0].rows || []
       const n = Number(res.rows[0].n)
       // Upsert rows skipped by a guard: the conflicting row belongs to another
@@ -1172,7 +1184,7 @@ export function createPgQuery (options = {}) {
       result.changes = out.rows.map(r => {
         const row = {}
         for (const [k, v] of Object.entries(r)) {
-          if (k !== '__inserted' && !secretAll.has(k.toLowerCase())) row[k] = v
+          if (k !== '__inserted' && k !== '__nontest' && !secretAll.has(k.toLowerCase())) row[k] = v
         }
         const eventType = action === 'delete' ? 'DELETE'
           : action === 'update' ? 'UPDATE'
