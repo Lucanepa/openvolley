@@ -885,19 +885,37 @@ export function createPgQuery (options = {}) {
     const c = freshCtx()
     const on = target.map(col => `t.${quoteIdent(col)} = r.${quoteIdent(col)}`).join(' AND ')
     let cond = `(t.ctid IS NOT NULL AND ${nonTestSql(guard, 't')})`
-    if (!guard.allSports) {
-      const tc = cfg.testColumn
-      const sc = cfg.sportColumn
-      const notTest = tc && guard.parent.columns.has(tc) ? `${cols.includes(tc) ? 'r' : 't'}.${quoteIdent(tc)} IS NOT TRUE` : 'true'
-      const sport = sportIsSql(guard, sc && cols.includes(sc) ? 'r' : 't', guard.testSports[0])
-      cond += ` OR (${notTest} AND ${sport})`
-    }
+    if (!guard.allSports) cond += ` OR ${mergedNonTestSql(guard, cols, 'r')}`
     const sql = `SELECT count(*)::int AS bad
       FROM json_populate_recordset(NULL::${qTable(t.name)}, ${c.p(JSON.stringify(rows))}::json) AS r
       LEFT JOIN ${qTable(t.name)} AS t ON ${on}
      WHERE ${cond}`
     const res = await client.query(sql, c.values)
     if (res.rows[0].bad > 0) scorerRequired(`${res.rows[0].bad} match row(s) are not test matches`)
+  }
+
+  /**
+   * SQL, one sport only: the merged row of a matches upsert is a non-test
+   * match of that sport. `payload` (its alias) for the columns the payload
+   * sets (cols), else the stored match t.
+   */
+  function mergedNonTestSql (guard, cols, payload) {
+    const tc = cfg.testColumn
+    const sc = cfg.sportColumn
+    const notTest = tc && guard.parent.columns.has(tc) ? `${cols.includes(tc) ? payload : 't'}.${quoteIdent(tc)} IS NOT TRUE` : 'true'
+    const sport = sportIsSql(guard, sc && cols.includes(sc) ? payload : 't', guard.testSports[0])
+    return `(${notTest} AND ${sport})`
+  }
+
+  /**
+   * SQL for the DO UPDATE of a matches upsert: the conflicting match t, or
+   * the row it would become (EXCLUDED, what the SET writes), breaks the rule
+   * of assertUpsertTargetsTest.
+   */
+  function upsertNonTestSql (guard, cols) {
+    return guard.allSports
+      ? nonTestSql(guard, 't')
+      : `(${nonTestSql(guard, 't')} OR ${mergedNonTestSql(guard, cols, 'EXCLUDED')})`
   }
 
   async function runWrite (cat, t, action, params, opts, ctx) {
@@ -1022,12 +1040,20 @@ export function createPgQuery (options = {}) {
         else if (moveGuard) guards.push(`t.${quoteIdent(guard.fk)} IS NOT DISTINCT FROM EXCLUDED.${quoteIdent(guard.fk)}`)
         // A conflicting row of a match the caller does not own is never changed.
         if (enforce) guards.push(enforce.isParent ? ownedSql('t', ctx, enforce.userId) : childOwnedSql('t', enforce.fk, ctx, enforce.userId))
+        // Nor a conflicting match the test-only rule refuses: testPre judges
+        // the matches committed before it, this also one committed after it
+        // (ON CONFLICT meets rows the statement's snapshot does not see).
+        const testGuard = testOnly && testOnly.isParent
+        if (testGuard) guards.push(`NOT (${upsertNonTestSql(testOnly, cols)})`)
         if (guards.length) dml += ` WHERE ${guards.join(' AND ')}`
         if (childSpec || enforce || moveGuard) {
           ctx.expectRows = rows.length
           // children: the new rows' match is owned (checked first), so a
           // skipped row is one of another match; otherwise it is not owned.
           ctx.expectRowsCode = (childSpec || (moveGuard && !enforce)) ? 'OV_UNSCOPED_WRITE' : 'OV_NOT_MATCH_OWNER'
+          // A match skipped by the test-only rule: testPre once more, which
+          // now sees it, answers first (OV_SCORER_REQUIRED, as before the statement)
+          if (testGuard) ctx.expectRowsRecheck = testPre
         }
       }
       if (childSpec) ctx.preCheck = rows.map(r => ({ ext: r[childSpec.ext], mid: r[childSpec.fk] }))
@@ -1123,8 +1149,10 @@ export function createPgQuery (options = {}) {
       const rows = res.rows[0].rows || []
       const n = Number(res.rows[0].n)
       // Upsert rows skipped by a guard: the conflicting row belongs to another
-      // match, or to a match the caller does not own.
+      // match, or to a match the caller does not own, or is a match the
+      // test-only rule refuses (the recheck answers that one).
       if (ctx.expectRows != null && n < ctx.expectRows) {
+        if (ctx.expectRowsRecheck) await ctx.expectRowsRecheck(client)
         if (ctx.expectRowsCode === 'OV_NOT_MATCH_OWNER') notOwner(`${ctx.expectRows - n} ${t.name} row(s) of a match you do not own`)
         fail('OV_UNSCOPED_WRITE', `${ctx.expectRows - n} ${t.name} row(s) conflict with a row of another match`)
       }
@@ -1266,7 +1294,8 @@ export function createPgQuery (options = {}) {
    * @param {number} [opts.maxRows]        raise/lower the select row cap (server code only)
    * @param {string[]} [opts.mergeOnUpsert] JSON columns an upsert merges into the stored object (server code only)
    * @param {string[]} [opts.changeColumns] narrow the `changes` rows to these columns (server code only)
-   * @param {pg.PoolClient} [opts.client]  run inside the caller's transaction
+   * @param {pg.PoolClient} [opts.client]  run inside the caller's transaction. A non-200 result
+   *        may come after the statement ran (a refused write): the caller must then roll back.
    * @returns {Promise<{status:number, body:{data:any, error:null|{message,code,details?}, count?:number}, changes?:Array}>}
    */
   async function runQuery (request, opts = {}) {
