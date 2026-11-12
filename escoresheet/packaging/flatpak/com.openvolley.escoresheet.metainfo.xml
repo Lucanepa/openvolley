@@ -71,6 +71,15 @@
   </screenshots>
 
   <releases>
+    <release version="3.1.2" date="2026-11-12">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.1.2</url>
+      <description>
+        <ul>
+          <li>Match Setup: the cards say "Offline" only when the server cannot be reached; signed out, a match is "Saved on device".</li>
+          <li>Desktop: "Updating OpenVolley…" while the app reloads into a new version.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.1.1" date="2026-11-11">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.1.1</url>
       <description>
