@@ -15,23 +15,31 @@
 -- This file:
 --   1. ov_events_apply_void(): only a revision of the event's own match makes
 --      it born voided,
---   2. sets and events of a TEST match under another match's id are deleted
+--   2. the external_id of a match that has sets, events or revisions is fixed
+--      (SQLSTATE OVI01, pgQuery: 409 OV_MATCH_ID_LOCKED): their ids name it,
+--      and a rename would leave them naming the old one,
+--   3. sets and events of a TEST match under another match's id are deleted
 --      (held ids, which kept that match's own uploads out); the same rows of
 --      an official match are only counted, an admin decides about them,
---   3. an event whose void was set or lifted by another match's revision gets
+--   4. an event whose void was set or lifted by another match's revision gets
 --      the state its own match's revisions give (the newest void or restore
 --      of that match; none: not voided),
---   4. pending revisions (applied = false) filed under a match that the event
---      id does not name are deleted.
--- Read the NOTICEs: a number above 0 in 2 to 4 means another match's data was
--- tampered with before this fix.
+--   5. pending revisions (applied = false) filed under a match that the event
+--      id does not name are deleted,
+--   6. sets and events whose id only the old rule took as their own match's
+--      are counted (nothing is changed).
+-- Read the NOTICEs: a number above 0 in 3 to 5 means another match's data was
+-- tampered with before this fix; they name the matches concerned (at most 50
+-- each). Above 0 in 6: an older app's delete of one such event deletes it
+-- (no void, no history), and their own match can no longer re-upload them.
 --
 -- Idempotent, one transaction, safe while the running backend serves (the
 -- old backend works with it too). Deploy: this file, then roles.sql, then the
--- backend image.
+-- backend image; then this file once more (rows written by the old backend
+-- in between). 3 deletes rows for good: take a backup first.
 BEGIN;
 SET LOCAL lock_timeout = '5s';
--- 2 to 4 may touch closed matches (db/007's and db/015's guards)
+-- 3 to 5 may touch closed matches (db/007's and db/015's guards)
 SELECT set_config('ov.allow_closed', 'on', true);
 
 -- The match external_id a set / event id names, NULL for none
@@ -46,6 +54,21 @@ AS $$
       CASE WHEN strpos(child, ':') > 1 AND strpos(child, ':') < length(child) THEN left(child, strpos(child, ':') - 1) END
     ELSE substring(child from '^(.+)_(?:set|event)_[^_]+$')
   END
+$$;
+
+-- ' (matches <external_id> game <game_n>, ...)' for a NOTICE: at most 50 of
+-- them, then how many more; '' for none. For this file only.
+CREATE OR REPLACE FUNCTION pg_temp.ov_match_list(exts text[])
+RETURNS text
+LANGUAGE sql STABLE
+AS $$
+  SELECT CASE WHEN count(*) = 0 THEN '' ELSE
+           ' (matches ' || string_agg(label, ', ' ORDER BY rn) FILTER (WHERE rn <= 50) ||
+           CASE WHEN count(*) > 50 THEN ' and ' || (count(*) - 50) || ' more' ELSE '' END || ')'
+         END
+    FROM (SELECT x.ext || coalesce(' game ' || m.game_n, '') AS label, row_number() OVER (ORDER BY x.ext) AS rn
+            FROM (SELECT DISTINCT e AS ext FROM unnest(exts) AS e WHERE e IS NOT NULL) x
+            LEFT JOIN public.matches m ON m.external_id = x.ext) l
 $$;
 
 -- 1. A void that arrived before its event (the insert job was retried after
@@ -74,42 +97,78 @@ BEGIN
 END
 $$;
 
--- 2. Rows under the id of another (existing) match
+-- 2. The external_id of a match with sets, events or revisions is fixed. The
+-- children are checked when they are written; a rename afterwards would leave
+-- them under ids that name the old external_id, and the match that later
+-- takes it would find them held. The apps never rename a match. No bypass,
+-- also not for the admin (delete the children first).
+CREATE OR REPLACE FUNCTION public.ov_matches_external_id_lock()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.sets WHERE match_id = OLD.id)
+     OR EXISTS (SELECT 1 FROM public.events WHERE match_id = OLD.id)
+     OR EXISTS (SELECT 1 FROM public.event_revisions WHERE match_id = OLD.id) THEN
+    RAISE EXCEPTION 'the external_id of a match with sets or events cannot change' USING ERRCODE = 'OVI01';
+  END IF;
+  RETURN NEW;
+END
+$$;
+DROP TRIGGER IF EXISTS matches_external_id_lock ON public.matches;
+CREATE TRIGGER matches_external_id_lock
+  BEFORE UPDATE OF external_id ON public.matches
+  FOR EACH ROW WHEN (OLD.external_id IS DISTINCT FROM NEW.external_id)
+  EXECUTE FUNCTION public.ov_matches_external_id_lock();
+
+-- 3. Rows under the id of another (existing) match
 DO $$
 DECLARE
   n_test bigint := 0;
   n_official bigint;
   k bigint;
+  named text[];
+  named_test text[] := '{}';
+  named_official text[];
 BEGIN
-  DELETE FROM public.events c USING public.matches m
-   WHERE m.id = c.match_id AND m.test IS TRUE
-     AND pg_temp.ov_child_match_key(c.external_id) IS DISTINCT FROM m.external_id
-     AND EXISTS (SELECT 1 FROM public.matches o WHERE o.external_id = pg_temp.ov_child_match_key(c.external_id));
-  GET DIAGNOSTICS k = ROW_COUNT;
+  WITH d AS (
+    DELETE FROM public.events c USING public.matches m
+     WHERE m.id = c.match_id AND m.test IS TRUE
+       AND pg_temp.ov_child_match_key(c.external_id) IS DISTINCT FROM m.external_id
+       AND EXISTS (SELECT 1 FROM public.matches o WHERE o.external_id = pg_temp.ov_child_match_key(c.external_id))
+    RETURNING pg_temp.ov_child_match_key(c.external_id) AS named
+  ) SELECT count(*), coalesce(array_agg(d.named), '{}') INTO k, named FROM d;
   n_test := n_test + k;
-  DELETE FROM public.sets c USING public.matches m
-   WHERE m.id = c.match_id AND m.test IS TRUE
-     AND pg_temp.ov_child_match_key(c.external_id) IS DISTINCT FROM m.external_id
-     AND EXISTS (SELECT 1 FROM public.matches o WHERE o.external_id = pg_temp.ov_child_match_key(c.external_id));
-  GET DIAGNOSTICS k = ROW_COUNT;
+  named_test := named_test || named;
+  WITH d AS (
+    DELETE FROM public.sets c USING public.matches m
+     WHERE m.id = c.match_id AND m.test IS TRUE
+       AND pg_temp.ov_child_match_key(c.external_id) IS DISTINCT FROM m.external_id
+       AND EXISTS (SELECT 1 FROM public.matches o WHERE o.external_id = pg_temp.ov_child_match_key(c.external_id))
+    RETURNING pg_temp.ov_child_match_key(c.external_id) AS named
+  ) SELECT count(*), coalesce(array_agg(d.named), '{}') INTO k, named FROM d;
   n_test := n_test + k;
-  SELECT (SELECT count(*) FROM public.events c JOIN public.matches m ON m.id = c.match_id
-           WHERE m.test IS NOT TRUE
-             AND pg_temp.ov_child_match_key(c.external_id) IS DISTINCT FROM m.external_id
-             AND EXISTS (SELECT 1 FROM public.matches o WHERE o.external_id = pg_temp.ov_child_match_key(c.external_id)))
-       + (SELECT count(*) FROM public.sets c JOIN public.matches m ON m.id = c.match_id
-           WHERE m.test IS NOT TRUE
-             AND pg_temp.ov_child_match_key(c.external_id) IS DISTINCT FROM m.external_id
-             AND EXISTS (SELECT 1 FROM public.matches o WHERE o.external_id = pg_temp.ov_child_match_key(c.external_id)))
-    INTO n_official;
-  RAISE NOTICE '032: % set/event row(s) of test matches under another match''s id deleted', n_test;
-  RAISE NOTICE '032: % set/event row(s) of official matches under another match''s id left as they are (an admin decides)', n_official;
+  named_test := named_test || named;
+  WITH held AS (
+    SELECT c.external_id FROM public.events c JOIN public.matches m ON m.id = c.match_id
+     WHERE m.test IS NOT TRUE AND pg_temp.ov_child_match_key(c.external_id) IS DISTINCT FROM m.external_id
+    UNION ALL
+    SELECT c.external_id FROM public.sets c JOIN public.matches m ON m.id = c.match_id
+     WHERE m.test IS NOT TRUE AND pg_temp.ov_child_match_key(c.external_id) IS DISTINCT FROM m.external_id
+  )
+  SELECT count(*), array_agg(pg_temp.ov_child_match_key(h.external_id)) INTO n_official, named_official
+    FROM held h
+   WHERE EXISTS (SELECT 1 FROM public.matches o WHERE o.external_id = pg_temp.ov_child_match_key(h.external_id));
+  RAISE NOTICE '032: % set/event row(s) of test matches under another match''s id deleted%', n_test, pg_temp.ov_match_list(named_test);
+  RAISE NOTICE '032: % set/event row(s) of official matches under another match''s id left as they are (an admin decides)%', n_official, pg_temp.ov_match_list(named_official);
 END
 $$;
 
--- 3. Voids set or lifted by a revision of another match
+-- 4. Voids set or lifted by a revision of another match
 DO $$
-DECLARE n bigint;
+DECLARE
+  n bigint;
+  affected text[];
 BEGIN
   WITH touched AS (
     SELECT DISTINCT e.id
@@ -144,25 +203,54 @@ BEGIN
      WHERE e.id = t.id
        AND (t.foreign_void OR (t.own_op = 'void' AND e.voided_at IS NULL))
        AND (e.voided_at, e.voided_by, e.void_reason) IS DISTINCT FROM (t.new_at, t.new_by, t.new_reason)
-    RETURNING e.id
+    RETURNING e.match_id
   )
-  SELECT count(*) INTO n FROM fixed;
-  RAISE NOTICE '032: % event void(s) set or lifted by another match''s revision put back to what the event''s own match says', n;
+  SELECT count(*), array_agg(m.external_id) INTO n, affected
+    FROM fixed f LEFT JOIN public.matches m ON m.id = f.match_id;
+  RAISE NOTICE '032: % event void(s) set or lifted by another match''s revision put back to what the event''s own match says%', n, pg_temp.ov_match_list(affected);
 END
 $$;
 
--- 4. Pending revisions under a match that does not own the event id
+-- 5. Pending revisions under a match that does not own the event id
 DO $$
-DECLARE n bigint;
+DECLARE
+  n bigint;
+  named text[];
 BEGIN
-  DELETE FROM public.event_revisions r USING public.matches m
-   WHERE m.id = r.match_id AND r.applied = false
-     AND pg_temp.ov_child_match_key(r.event_external_id) IS DISTINCT FROM m.external_id;
-  GET DIAGNOSTICS n = ROW_COUNT;
-  RAISE NOTICE '032: % pending revision(s) filed under a match that the event id does not name deleted', n;
+  WITH d AS (
+    DELETE FROM public.event_revisions r USING public.matches m
+     WHERE m.id = r.match_id AND r.applied = false
+       AND pg_temp.ov_child_match_key(r.event_external_id) IS DISTINCT FROM m.external_id
+    RETURNING pg_temp.ov_child_match_key(r.event_external_id) AS named
+  ) SELECT count(*), array_agg(d.named) INTO n, named FROM d;
+  RAISE NOTICE '032: % pending revision(s) filed under a match that the event id does not name deleted%', n, pg_temp.ov_match_list(named);
 END
 $$;
 
+-- 6. Rows of their own match whose id only the old rule took (it starts with
+-- the match's external_id plus ':' or '_', but names no match, e.g.
+-- `<match>_legacy`). Those that name another match are counted in 3.
+DO $$
+DECLARE
+  n bigint;
+  own text[];
+BEGIN
+  WITH legacy AS (
+    SELECT c.external_id, m.external_id AS own FROM public.events c JOIN public.matches m ON m.id = c.match_id
+    UNION ALL
+    SELECT c.external_id, m.external_id AS own FROM public.sets c JOIN public.matches m ON m.id = c.match_id
+  )
+  SELECT count(*), array_agg(l.own) INTO n, own
+    FROM legacy l
+   WHERE l.own <> '' AND length(l.external_id) > length(l.own) AND starts_with(l.external_id, l.own)
+     AND substr(l.external_id, length(l.own) + 1, 1) IN (':', '_')
+     AND pg_temp.ov_child_match_key(l.external_id) IS DISTINCT FROM l.own
+     AND NOT EXISTS (SELECT 1 FROM public.matches o WHERE o.external_id = pg_temp.ov_child_match_key(l.external_id));
+  RAISE NOTICE '032: % set/event row(s) with an id that only the old rule took as their own match''s (an older app''s delete of one such event deletes it, without a void)%', n, pg_temp.ov_match_list(own);
+END
+$$;
+
+DROP FUNCTION pg_temp.ov_match_list(text[]);
 DROP FUNCTION pg_temp.ov_child_match_key(text);
 
 COMMIT;

@@ -23,7 +23,9 @@
  * - sets/events: every external_id must name its own match (childMatchKey:
  *   `<match external_id>:...`, never a match whose external_id is only a
  *   prefix of it), and update/delete must be scoped to one match. An upsert
- *   never overwrites or moves a conflicting row of another match.
+ *   never overwrites or moves a conflicting row of another match. db/032
+ *   keeps the external_id of a match with children fixed (SQLSTATE OVI01 ->
+ *   409 OV_MATCH_ID_LOCKED), so their ids keep naming it.
  * - Writes need X-OV-Proto >= 2 (426 otherwise).
  * - opts.matchOwner.testOnly (accounts that are not approved scorers): only
  *   test matches and their children may be written (403 OV_SCORER_REQUIRED).
@@ -113,6 +115,8 @@ export const DEFAULT_CONFIG = Object.freeze({
       OVA01: { status: 409, code: 'OV_APPROVAL_IMMUTABLE', message: 'An approval cannot be changed.' },
       // db/012: matches.sport_type is fixed after insert
       OVS01: { status: 409, code: 'OV_SPORT_LOCKED', message: 'The sport of a match cannot be changed.' },
+      // db/032: matches.external_id is fixed once the match has sets, events or revisions
+      OVI01: { status: 409, code: 'OV_MATCH_ID_LOCKED', message: 'The id of a match with sets or events cannot be changed.' },
       // db/018: a scorer scores the home games of its own club(s) (lib/clubs.js)
       OVL01: { status: 403, code: 'OV_CLUB_REQUIRED', message: 'Your account has no club yet. An admin adds it before you can score official games.' },
       OVL02: { status: 403, code: 'OV_NOT_YOUR_CLUB', message: 'You can score the home games of your club only.' },

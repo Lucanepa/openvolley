@@ -13,8 +13,13 @@
  * parsed back into its parts.
  *
  * The backend refuses (400 OV_UNSCOPED_EXTERNAL_ID) any set/event whose
- * external_id does not start with its match's external_id followed by ':' or
- * '_'. Every call site must therefore build ids with the helpers below.
+ * external_id does not name its own match: the text before the first ':' must
+ * BE the match's external_id (a match whose external_id is only a prefix of it
+ * owns nothing). An id without ':' is taken only in the backup form of older
+ * apps, `${externalId}_set_${n}` / `${externalId}_event_${n}`; any other
+ * `${seedKey}_...` id is refused for good. The rule is childMatchKey in
+ * backend/lib/pgQuery.js. Every call site must therefore build ids with the
+ * helpers below.
  */
 
 export const setExtId = (seedKey, setId) => `${seedKey}:s:${setId}`

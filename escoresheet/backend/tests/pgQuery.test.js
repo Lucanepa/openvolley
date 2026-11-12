@@ -691,6 +691,29 @@ describe('pgQuery on Postgres', { skip: SKIP_PG }, () => {
       assert.equal((await raw.query('SELECT count(*)::int n FROM events WHERE match_id = $1', [v.id])).rows[0].n, 4)
     })
 
+    it('a match with sets or events keeps its external_id (db/032: 409 OV_MATCH_ID_LOCKED, internal writes too)', async () => {
+      const m = await newMatch({ test: true })
+      assert.equal((await q('events', 'insert', { data: { external_id: `${m.external_id}:e:1`, match_id: m.id, type: 'point' } }, W)).status, 200)
+      const to = uniq('M')
+      for (const [action, params, opts] of [
+        ['update', { data: { external_id: to }, filters: [eq('id', m.id)] }, W],
+        ['upsert', { data: { id: m.id, external_id: to, status: 'live', test: true }, onConflict: 'id' }, W],
+        ['update', { data: { external_id: to }, filters: [eq('id', m.id)] }, { ...W, internal: true }]
+      ]) {
+        const r = await q('matches', action, params, opts)
+        assert.equal(r.status, 409, JSON.stringify(r.body))
+        assert.equal(r.body.error.code, 'OV_MATCH_ID_LOCKED')
+      }
+      assert.equal((await raw.query('SELECT external_id FROM matches WHERE id = $1', [m.id])).rows[0].external_id, m.external_id)
+      // the same value is no change; a match without sets or events may move
+      assert.equal((await q('matches', 'update', { data: { external_id: m.external_id, status: 'setup' }, filters: [eq('id', m.id)] }, W)).status, 200)
+      const bare = await newMatch({ test: true })
+      assert.equal((await q('matches', 'update', { data: { external_id: to }, filters: [eq('id', bare.id)] }, W)).status, 200)
+      // a set alone holds it
+      assert.equal((await q('sets', 'insert', { data: { external_id: `${to}:s:1`, match_id: bare.id } }, W)).status, 200)
+      assert.equal((await q('matches', 'update', { data: { external_id: uniq('M') }, filters: [eq('id', bare.id)] }, W)).body.error?.code, 'OV_MATCH_ID_LOCKED')
+    })
+
     it('rejects unscoped ids on insert and upsert, and writes nothing from a mixed batch', async () => {
       const a = await newMatch(); const b = await newMatch()
       const bad = [
