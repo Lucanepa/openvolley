@@ -16,7 +16,7 @@ import { randomBytes } from 'node:crypto'
 import pg from 'pg'
 import { SKIP, bootServer, api, provisionDatabase, sleep } from './helpers/e2eServer.js'
 import { grantRoles } from './helpers/pgTestDb.js'
-import { VIEW_LINK_MAX, VIEW_LINK_TTL_MS, bestPdf, cleanGame, createScoresheets, downloadName, filePart, pdfLocator } from '../lib/scoresheets.js'
+import { VIEW_LINK_MAX, VIEW_LINK_TTL_MS, bestPdf, cleanGame, createScoresheets, downloadName, filePart, isScoresheetPdf, pdfLocator, pdfPathParts } from '../lib/scoresheets.js'
 import { manageFamilyOf } from '../lib/manageApi.js'
 
 const key = () => `k${randomBytes(16).toString('hex')}`
@@ -70,6 +70,18 @@ describe('scoresheets (unit)', () => {
     assert.equal(filePart('../a/b:c.d', 60), 'a-b-c-d')
   })
 
+  it('a scoresheet PDF path as the apps write it (db/033: such a file is stored for its match only)', () => {
+    const k = key()
+    assert.deepEqual(pdfPathParts(`2026-10-10/game402397_${k}.pdf`), { key: `2026-10-10/game402397_${k}.pdf`, folder: '2026-10-10', name: `game402397_${k}.pdf`, sport: 'indoor', game: '402397' })
+    assert.equal(pdfPathParts('2026-10-10/gamevm-abc-1.pdf').game, 'vm-abc-1')
+    assert.deepEqual(pdfPathParts('beach/2026-10-11/game7_match_1_ab-c.pdf'), { key: 'beach/2026-10-11/game7_match_1_ab-c.pdf', folder: 'beach/2026-10-11', name: 'game7_match_1_ab-c.pdf', sport: 'beach', game: null })
+    for (const bad of ['game1.pdf', 'a/b/game1.pdf', 'beach/game1.pdf', '2026-10-10/scoresheet.pdf', '2026-10-10/game1.PDF', '2026-10-10/game1_x.pdf', '../game1.pdf', 7]) {
+      assert.equal(pdfPathParts(bad), null, String(bad))
+    }
+    assert.equal(isScoresheetPdf('2026-10-10/game1.PDF'), true, 'refused by storePdf, never stored past it')
+    assert.equal(isScoresheetPdf(`2026-10-10/game1_${k}_final.json`), false)
+  })
+
   it('the best file: a file of the match before an older one, then the newest', () => {
     const rank = (name) => (name.startsWith('k') ? 2 : name === 'old' ? 1 : 0)
     assert.equal(bestPdf([{ name: 'old', mtimeMs: 9 }, { name: 'k1', mtimeMs: 1 }, { name: 'k2', mtimeMs: 5 }, { name: 'x', mtimeMs: 99 }], rank).name, 'k2')
@@ -79,12 +91,14 @@ describe('scoresheets (unit)', () => {
 })
 
 describe('scoresheet view links (unit)', () => {
-  // a module with a fake clock and one stored PDF; readPdf's database and storage stubbed
+  // a module with a fake clock and one stored PDF (recorded for the match,
+  // db/033); readPdf's database and storage stubbed
   function sheets () {
     let t = 1_000_000
     const audits = []
     const m = { id: '11111111-1111-4111-8111-111111111111', game_n: 402397, external_id: 'x', status: 'final', scheduled_at: new Date('2026-10-10T12:30:00Z'), is_beach: false, test: false, league: '1L D', home_name: 'H', away_name: 'A' }
-    const pool = { query: async () => ({ rows: [m] }) }
+    const stored = { match_id: m.id, path: `2026-10-10/game402397_k${'a'.repeat(32)}.pdf`, stored_at: new Date(1) }
+    const pool = { query: async (text) => ({ rows: [/match_scoresheets/.test(text) ? stored : m] }) }
     const storage = {
       listFilesTrusted: async () => [{ name: `game402397_k${'a'.repeat(32)}.pdf`, mtimeMs: 1 }],
       readTrusted: async () => Buffer.from('%PDF-1.4\n%%EOF\n')
@@ -314,8 +328,10 @@ describe('scoresheets end to end', { skip: SKIP }, () => {
   it('a beach PDF for the beach competition manager; no PDF and no match are 404', async () => {
     const beach = await newMatch(users.bea, { sport: 'beach', scheduledAt: '2026-10-12T09:00:00Z' })
     await uploadPdf(users.bea, `beach/2026-10-12/game${beach.n}_${beach.ext}.pdf`, 'beach sheet')
-    // another tournament's game with the same number on the same day
-    await uploadPdf(users.bea, `beach/2026-10-12/game${beach.n}_match_1_other.pdf`, 'other tournament')
+    // another tournament's game with the same number on the same day: not a
+    // match of this server, nothing is stored (db/033)
+    const other = await api(srv.base, '/api/storage/upload', { token: users.bea.token, body: { bucket: 'scoresheets', path: `beach/2026-10-12/game${beach.n}_match_1_other.pdf`, fileBase64: pdfBytes('other tournament').toString('base64'), contentType: 'application/pdf' } })
+    expectCode(other, 404, 'OV_MATCH_NOT_FOUND')
     const r = await fetch(`${srv.base}/api/scoresheets/${beach.id}/pdf`, { headers: { Authorization: `Bearer ${users.bcm.token}` } })
     assert.equal(r.status, 200)
     assert.equal(Buffer.from(await r.arrayBuffer()).toString(), pdfBytes('beach sheet').toString())

@@ -197,7 +197,8 @@ export function objectId(bucket, key) {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-8${h.slice(13, 16)}-${((parseInt(h[16], 16) & 0x3) | 0x8).toString(16)}${h.slice(17, 20)}-${h.slice(20, 32)}`
 }
 
-function decodeBase64(b64) {
+/** The bytes of an upload's fileBase64, as upload() decodes them (StorageError 400 otherwise). */
+export function decodeBase64(b64) {
   if (typeof b64 !== 'string') throw err.invalidRequest('fileBase64 must be a base64 string')
   const clean = b64.replace(/\s+/g, '')
   if (clean.length % 4 === 1 || !BASE64_RE.test(clean)) throw err.invalidRequest('fileBase64 is not valid base64')
