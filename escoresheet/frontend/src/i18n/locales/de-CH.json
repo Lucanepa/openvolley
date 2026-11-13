@@ -2927,6 +2927,8 @@
       "a_pin": "Schritt 3 zeigt d PIN vom gwählte Tablet. Links und Codes händ si nie drin. Es uusgschalts Tablet wird abglehnt: Schalt s im Schritt 2 ii («… zuelah»). Nach z vill falsche PINs wart es paar Minute.",
       "q_hallServer": "Was isch de Halleserver?",
       "a_hallServer": "D OpenVolley-Desktop-App betriibt en Server für d Tablets im Hallenetz, ganz ohni Internet. E Hallebox oder de abeladbar Server macht s gliich. Mit Internet wird s Spiil zuesätzlich mit de Cloud synchronisiert.",
+      "q_hallNetwork": "Welches WLAN soll der Hallen-Server nutzen?",
+      "a_hallNetwork": "Gib den Tablets von Schreiber, Schiedsrichter und Bänken ein eigenes WLAN mit Passwort (WPA2 oder WPA3), das Zuschauer nicht bekommen. In einem offenen oder geteilten WLAN können andere in der Halle den Spielverkehr mitlesen, auch die PINs und die Teamlisten.",
       "q_internetTablets": "Bruuched d Tablets Internet?",
       "a_internetTablets": "Nur mit «Internet». Dänn muesch aagmäldet sii, und s Spiil muess synchronisiert sii (de Status zeigt Synchronisiert), bevor s d Tablets finded. Im Hallenetz bruucht s kei Internet."
     },

@@ -2926,6 +2926,8 @@
       "a_pin": "L'étape 3 montre le PIN de la tablette choisie. Les liens et les codes ne le contiennent jamais. Une tablette désactivée est refusée : activez-la à l'étape 2 (« Autoriser … »). Après trop de PIN faux, attendez quelques minutes.",
       "q_hallServer": "Qu'est-ce que le serveur de salle ?",
       "a_hallServer": "L'app OpenVolley pour ordinateur fait tourner un serveur pour les tablettes sur le réseau de la salle, sans internet. Un boîtier de salle ou le serveur téléchargeable fait la même chose. Avec internet, le match se synchronise aussi avec le cloud.",
+      "q_hallNetwork": "Quel Wi-Fi le serveur de salle doit-il utiliser ?",
+      "a_hallNetwork": "Donnez aux tablettes du marqueur, de l'arbitre et des bancs leur propre Wi-Fi avec mot de passe (WPA2 ou WPA3), que les spectateurs ne reçoivent pas. Sur un Wi-Fi ouvert ou partagé, d'autres personnes dans la salle peuvent lire le trafic du match, y compris les PIN et les listes d'équipe.",
       "q_internetTablets": "Les tablettes ont-elles besoin d'internet ?",
       "a_internetTablets": "Seulement avec « Internet ». Vous devez alors être connecté, et le match doit être synchronisé (l'état indique Synchronisé) avant que les tablettes le trouvent. Sur le réseau de la salle, internet n'est pas nécessaire."
     },

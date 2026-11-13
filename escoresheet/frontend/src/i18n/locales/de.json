@@ -2741,6 +2741,8 @@
       "a_pin": "Schritt 3 zeigt die PIN des gewählten Tablets. Links und Codes enthalten sie nie. Ein ausgeschaltetes Tablet wird abgelehnt: Schalte es in Schritt 2 ein («… zulassen»). Nach zu vielen falschen PINs warte einige Minuten.",
       "q_hallServer": "Was ist der Hallenserver?",
       "a_hallServer": "Die OpenVolley-Desktop-App betreibt einen Server für die Tablets im Hallennetz, ganz ohne Internet. Eine Hallenbox oder der herunterladbare Server macht dasselbe. Mit Internet wird das Spiel zusätzlich mit der Cloud synchronisiert.",
+      "q_hallNetwork": "Welches WLAN soll der Hallen-Server nutzen?",
+      "a_hallNetwork": "Gib den Tablets von Schreiber, Schiedsrichter und Bänken ein eigenes WLAN mit Passwort (WPA2 oder WPA3), das Zuschauer nicht bekommen. In einem offenen oder geteilten WLAN können andere in der Halle den Spielverkehr mitlesen, auch die PINs und die Teamlisten.",
       "q_internetTablets": "Brauchen die Tablets Internet?",
       "a_internetTablets": "Nur mit «Internet». Dann musst du angemeldet sein, und das Spiel muss synchronisiert sein (der Status zeigt Synchronisiert), bevor die Tablets es finden. Im Hallennetz braucht es kein Internet."
     },

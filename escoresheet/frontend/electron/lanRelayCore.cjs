@@ -22,9 +22,10 @@
  *                     Otherwise { type:'error', code:'not-match-owner' }. Dexie ids restart
  *                     at 1 on every device, so an id nobody has owned for a while may be
  *                     reused by another scorer: after ORPHAN_TAKEOVER_MS when the stored
- *                     match is finished, after STALE_TAKEOVER_MS otherwise — and then the
- *                     displaced game PIN may reclaim the id once. Wrong-PIN claims are
- *                     limited per IP and per socket ('rate-limited', no PIN oracle); only
+ *                     match is finished, after STALE_TAKEOVER_MS otherwise. A room keyed by
+ *                     its seed_key with a game PIN is never taken over without that PIN,
+ *                     also not after a restart (claimStore). Wrong-PIN claims are limited
+ *                     per IP, per socket and per match ('rate-limited', no PIN oracle); only
  *                     a claim carrying a PIN counts. A LAN IP may hold only a few match
  *                     ids at once ('too-many-matches').
  *                     Room key: the match's seed_key (match.seed_key) when it carries one,
@@ -233,6 +234,18 @@ const PIN_FAILURE_LIMIT = 5
 // whole endpoint had before), and every check (reloads, renewals)
 const VALIDATE_PIN_FAILURES = 10
 const VALIDATE_PIN_REQUESTS = 60
+// Wrong PINs for one match from all addresses together (GET /api/match/:id,
+// subscribe-match, scoreboard claims): a device that changes its address
+// inside the hall network gets no fresh budget for that match
+const MATCH_PIN_FAILURE_LIMIT = 30
+const MATCH_PIN_WINDOW_MS = 10 * 60 * 1000
+// Room store bounds: rooms in all, rooms and synced bytes per creating
+// address, and how long a room with no scoreboard and no subscriber is kept
+const MAX_ROOMS = 200
+const MAX_ROOMS_PER_IP = 16
+const MAX_ROOM_BYTES_PER_IP = 64 * 1024 * 1024
+const ROOM_IDLE_EVICT_MS = 30 * 60 * 1000
+const MAX_SUBSCRIPTIONS_PER_SOCKET = 32
 const MAX_ACCESS_KEYS = 16
 // Devices a room remembers as having lost it to another (sync device.claim)
 const MAX_MOVED_DEVICES = 16
@@ -631,6 +644,113 @@ function createLocalAddressCheck(networkInterfaces) {
   }
 }
 
+// --- Origin and Host rule (same rule as backend/lib/cors.js, LAN side) --------
+// A page may reach the relay from the app's own sites, the native shells, the
+// relay's own pages and pages of the venue network. Callers without an Origin
+// (the native apps, the board, node clients) are not browsers and pass.
+
+const RELAY_ALLOWED_ORIGINS = new Set([
+  'https://openvolley.app', 'https://www.openvolley.app',
+  'https://localhost', 'capacitor://localhost', 'tauri://localhost',
+  'http://tauri.localhost', 'https://tauri.localhost',
+])
+const OPENVOLLEY_SITE_RE = /^https:\/\/[a-z0-9-]+\.openvolley\.app$/
+const IPV4_RE = /^\d{1,3}(\.\d{1,3}){3}$/
+
+/** Is this hostname (IPv6 without brackets) this machine or the venue network? */
+function isLanHostName(hostname) {
+  const h = String(hostname || '').toLowerCase().replace(/\.$/, '')
+  if (!h) return false
+  if (h === 'localhost' || h.endsWith('.localhost')) return true
+  if (IPV4_RE.test(h)) {
+    const [a, b] = h.split('.').map(Number)
+    return a === 127 || a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254)
+  }
+  if (h.includes(':')) {
+    if (h === '::1') return true
+    const hex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(h)
+    if (hex) {
+      const hi = parseInt(hex[1], 16)
+      const lo = parseInt(hex[2], 16)
+      return isLanHostName(`${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`)
+    }
+    const first = parseInt(h.split(':')[0] || '0', 16)
+    return (first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80
+  }
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)*\.local$/.test(h)
+}
+
+/**
+ * May a request with this Host reach the relay? Only by a name no outside
+ * party can point at it (a DNS-rebinding page sends its own name): an address,
+ * a LAN name, a single-label hall name, an openvolley.app name, or one of
+ * `extraHosts`. No Host (HTTP/1.0, node clients) passes.
+ */
+function isAllowedRelayHost(host, extraHosts = []) {
+  if (host === undefined || host === null || host === '') return true
+  if (typeof host !== 'string' || host.length > 300) return false
+  let name
+  try { name = new URL(`http://${host}`).hostname.replace(/^\[|\]$/g, '').toLowerCase() } catch { return false }
+  if (IPV4_RE.test(name) || name.includes(':') || isLanHostName(name) || !name.includes('.')) return true
+  return name === 'openvolley.app' || name.endsWith('.openvolley.app') || extraHosts.includes(name)
+}
+
+/** May a page with this Origin use the relay (`host`: the request's Host)? */
+function isTrustedRelayOrigin(origin, host) {
+  if (origin === undefined || origin === null || origin === '') return true
+  if (typeof origin !== 'string' || origin.length > 300) return false
+  if (RELAY_ALLOWED_ORIGINS.has(origin) || OPENVOLLEY_SITE_RE.test(origin)) return true
+  let u
+  try { u = new URL(origin) } catch { return false }
+  if ((u.protocol !== 'http:' && u.protocol !== 'https:') || u.origin !== origin.toLowerCase()) return false
+  if (typeof host === 'string' && host && u.host === host.toLowerCase()) return true
+  return isLanHostName(u.hostname.replace(/^\[|\]$/g, ''))
+}
+
+/**
+ * The WebSocket upgrade or a state-changing HTTP request: null when its Origin
+ * and Host pass the rule above, else why it is refused.
+ * @param {{ headers?: Record<string, string|undefined> }} req
+ * @param {string[]} [extraHosts] more names the relay is reached by (lowercase)
+ */
+function relayRequestRefusal(req, extraHosts = []) {
+  const headers = (req && req.headers) || {}
+  if (!isAllowedRelayHost(headers.host, extraHosts)) return 'host-not-allowed'
+  if (!isTrustedRelayOrigin(headers.origin, headers.host)) return 'origin-not-allowed'
+  return null
+}
+
+// --- Synced values the relay reads (status, ids, PINs, names) ----------------
+
+const MAX_SYNC_TEXT = 200
+const SYNC_SCALAR_FIELDS = ['id', 'status', 'gameNumber', 'game_n', 'scheduledAt', 'homeTeamName', 'awayTeamName']
+
+/** null / undefined, a boolean, a finite number or a string of at most `max` characters. */
+function isBoundedScalar(v, max = MAX_SYNC_TEXT) {
+  if (v === undefined || v === null || typeof v === 'boolean') return true
+  if (typeof v === 'number') return Number.isFinite(v)
+  return typeof v === 'string' && v.length <= max
+}
+
+/**
+ * Does a synced bundle carry only values the relay can read as text: its
+ * match status, ids, PINs and team names? Anything else (an object whose
+ * String() throws, a huge string) would reach every list and PIN check.
+ */
+function hasReadableSyncFields(bundle) {
+  const match = bundle && bundle.match
+  if (!match || typeof match !== 'object') return false
+  for (const k of SYNC_SCALAR_FIELDS) if (!isBoundedScalar(match[k])) return false
+  for (const k of MATCH_SECRET_FIELDS) {
+    if (k !== 'connection_pins' && k !== 'connectionPins' && !isBoundedScalar(match[k], 64)) return false
+  }
+  for (const side of ['homeTeam', 'awayTeam']) {
+    const t = bundle[side]
+    if (t && typeof t === 'object' ? !isBoundedScalar(t.name) : !isBoundedScalar(t)) return false
+  }
+  return true
+}
+
 // "Score another court on this device": the "already running" page links to
 // /?court=other, which answers with this cookie and a redirect to "/". A
 // browser that carries it gets the scoresheet even while the main instance is
@@ -757,6 +877,8 @@ function createFailureCounter({ windowMs = 60 * 1000, max = CLAIM_FAILURE_LIMIT 
       if (e) e.count++
       else entries.set(key, { count: 1, windowStart: Date.now() })
     },
+    /** Takes back one count (a PIN that turned out right). */
+    refund: (key) => { const e = fresh(key); if (e && e.count > 0) e.count-- },
   }
 }
 
@@ -799,6 +921,9 @@ function teamNameOf(team, fallback) {
  */
 function matchListEntry(key, bundle, { includeFinished = false } = {}) {
   const match = (bundle && bundle.match) || {}
+  // A status that is neither text nor a number lists nothing (String() of an
+  // object can throw; onSync refuses such syncs, this guards older rooms)
+  if (match.status != null && typeof match.status !== 'string' && typeof match.status !== 'number') return null
   const status = match.status == null || match.status === '' ? 'scheduled' : String(match.status)
   if (!LISTED_STATUSES.has(status) && !(includeFinished && FINISHED_STATUSES.has(status.toLowerCase()))) return null
   return {
@@ -1181,6 +1306,9 @@ function createLanRelay(options = {}) {
   const maxOwnedPerIp = options.maxOwnedPerIp ?? MAX_OWNED_PER_IP
   const maxSockets = options.maxSockets ?? MAX_SOCKETS
   const maxSocketsPerIp = options.maxSocketsPerIp ?? MAX_SOCKETS_PER_IP
+  // The relay machine's own sockets (scoreboard, board bridge) have a cap of
+  // their own: a page there must not fill the relay either
+  const maxLoopbackSockets = options.maxLoopbackSockets ?? MAX_SOCKETS_PER_IP
   const heartbeatMs = options.heartbeatMs ?? HEARTBEAT_MS
   const ownLimiters = []
   const isRateLimited = options.isRateLimited || (ownLimiters[ownLimiters.length] = createRateLimiter())
@@ -1192,6 +1320,38 @@ function createLanRelay(options = {}) {
   const isNewClaimLimited = (ownLimiters[ownLimiters.length] = createRateLimiter({ max: options.newClaimLimit ?? NEW_CLAIM_LIMIT }))
   const signCore = options.signCore || null
   const isLocalAddr = options.isLocal || isLoopbackAddress
+  // Wrong PINs per match from every address (MATCH_PIN_FAILURE_LIMIT)
+  const matchPinFailures = createFailureCounter({ windowMs: MATCH_PIN_WINDOW_MS, max: options.matchPinFailureLimit ?? MATCH_PIN_FAILURE_LIMIT })
+  const matchPinKey = (matchId) => `m:${matchId}`
+  // Addresses that proved a PIN of a match (room key -> Set of `ip:` keys):
+  // the per-match budget others spent does not hold them, only their own
+  // address budget (a referee or bench that reconnects mid-match)
+  const provenAddrs = new Map()
+  const MAX_PROVEN_PER_MATCH = 64
+  const noteProven = (matchId, addr) => {
+    if (!addr || addr === 'ip:unknown') return
+    let set = provenAddrs.get(matchId)
+    if (!set) {
+      if (provenAddrs.size >= 10000) provenAddrs.clear() // bound memory under a flood
+      provenAddrs.set(matchId, (set = new Set()))
+    }
+    if (set.size < MAX_PROVEN_PER_MATCH) set.add(addr)
+  }
+  const matchBlockedFor = (matchId, addr) =>
+    !(provenAddrs.get(matchId)?.has(addr)) && matchPinFailures.blocked(matchPinKey(matchId))
+  // PINs offered before their match reached the relay, counted once per
+  // address, match and PIN (`addr|matchId|pin` -> time): a tablet that wakes
+  // and resubscribes does not spend its budget on the same offer again
+  const pendingOffers = new Map()
+  // { check(matchId, pin) -> true | false | undefined, remember(matchId, pin), forget(matchId) }:
+  // the game PIN of each room kept beyond a restart of the relay (frontend/server.js
+  // keeps a salted hash on disk). Without it the claims live in memory only.
+  const claimStore = options.claimStore || null
+  const maxRooms = options.maxRooms ?? MAX_ROOMS
+  const maxRoomsPerIp = options.maxRoomsPerIp ?? MAX_ROOMS_PER_IP
+  const maxRoomBytesPerIp = options.maxRoomBytesPerIp ?? MAX_ROOM_BYTES_PER_IP
+  const roomIdleMs = options.roomIdleMs ?? ROOM_IDLE_EVICT_MS
+  const allowedHosts = (options.allowedHosts || []).map((h) => String(h).toLowerCase())
   let signSessions = null // created on the first /api/sign/* request
 
   const store = new Map() // matchId -> bundle (unstripped: the PINs live only here)
@@ -1199,13 +1359,15 @@ function createLanRelay(options = {}) {
   const clients = new Map() // ws -> { id, ip, role, connectedAt, owned:Set, subscribed:Set }
   const pending = new Map() // requestId -> { type, matchId, targets:Set<ws>, resolve, timer }
   const orphanedSince = new Map() // matchId -> when its last owning socket left
-  const displaced = new Map() // matchId -> game PIN an unfinished match had before a stale takeover
+  const rooms = new Map() // matchId -> { ip, bytes, idleSince }: who created the room, its last sync's size
+  const displaced = new Map() // bare Dexie id -> game PIN an unfinished match had before a stale takeover
   const scorers = new Map() // matchId -> { id, claim }: the device whose claim scores the room
   const movedClaims = new Map() // matchId -> Map<device id, claim> another device's claim took over
   const supersededClaims = new Map() // matchId -> Set<claim> the scorers' copies were continued from
   const benchRequests = createBenchRequestStore() // open + recently answered bench requests per match
   const benchLimiter = createWindowLimiter() // bench-request per socket and minute
   let nextClientId = 1
+  let frameBytes = 0 // size of the frame handleMessage is dispatching
 
   function send(ws, msg) {
     if (!ws || ws.readyState !== 1) return false
@@ -1224,7 +1386,18 @@ function createLanRelay(options = {}) {
 
   // --- PIN-proved access ----------------------------------------------------
 
-  const pinFailureKeys = (meta) => (meta.ip ? [`ip:${meta.ip}`, `ws:${meta.id}`] : [`ws:${meta.id}`])
+  // Loopback is keyed by socket only: a page on the relay machine must not
+  // spend the scoreboard's own budget
+  const pinFailureKeys = (meta) => (meta.ip && !isLoopbackAddress(meta.ip) ? [`ip:${meta.ip}`, `ws:${meta.id}`] : [`ws:${meta.id}`])
+
+  /** pinGrantsAccess, compared only with the PINs of the role the caller names (and the game PIN). */
+  function pinGrantsAccessAs(match, pin, role) {
+    if (role !== 'referee' && role !== 'bench') return pinGrantsAccess(match, pin)
+    const only = role === 'referee'
+      ? { ...match, homeTeamConnectionEnabled: false, awayTeamConnectionEnabled: false, team1TeamConnectionEnabled: false, team2TeamConnectionEnabled: false }
+      : { ...match, refereeConnectionEnabled: false }
+    return pinGrantsAccess(only, pin)
+  }
 
   /** May this socket get the bundle and match actions (not just the summary)? */
   function hasAccess(ws, matchId, bundle) {
@@ -1233,13 +1406,27 @@ function createLanRelay(options = {}) {
     if (meta.owned.has(matchId)) return true
     const a = meta.access.get(matchId)
     if (!a || !bundle || !bundle.match) return false
-    if (pinGrantsAccess(bundle.match, a.pin)) {
+    // Offered before the match reached the relay: counted when it was
+    // offered (offerPin), compared once, and not at all once the match is
+    // over its wrong-PIN budget
+    const addr = pinFailureKeys(meta)[0]
+    if (!a.verified && matchBlockedFor(matchId, addr)) {
+      meta.access.delete(matchId)
+      return false
+    }
+    if (pinGrantsAccessAs(bundle.match, a.pin, a.role)) {
+      if (!a.verified) {
+        // The offer was right: it no longer counts as a failure
+        for (const k of a.counted || []) pinFailures.refund(k)
+        pendingOffers.delete(`${addr}|${matchId}|${a.pin}`)
+        noteProven(matchId, addr)
+      }
       a.verified = true
+      a.counted = null
       return true
     }
-    // Offered before the match reached the relay: checked once
     if (!a.verified) {
-      for (const k of pinFailureKeys(meta)) pinFailures.fail(k)
+      matchPinFailures.fail(matchPinKey(matchId))
       meta.access.delete(matchId)
     }
     return false
@@ -1300,10 +1487,10 @@ function createLanRelay(options = {}) {
    */
   function admit(ip) {
     if (clients.size >= maxSockets) return { code: 1013, reason: 'Maximum connections reached' }
-    if (ip && !isLoopbackAddress(ip)) {
+    if (ip) {
       let fromIp = 0
       for (const meta of clients.values()) if (meta.ip === ip) fromIp++
-      if (fromIp >= maxSocketsPerIp) return { code: 1008, reason: 'Too many connections from this address' }
+      if (fromIp >= (isLoopbackAddress(ip) ? maxLoopbackSockets : maxSocketsPerIp)) return { code: 1008, reason: 'Too many connections from this address' }
     }
     return null
   }
@@ -1317,6 +1504,7 @@ function createLanRelay(options = {}) {
 
   /** One heartbeat round: end the sockets that missed the last ping, ping the rest. */
   function heartbeat() {
+    evictIdleRooms()
     for (const [ws, seen] of alive) {
       if (ws.readyState !== 1) {
         if (ws.readyState === 3) alive.delete(ws)
@@ -1419,7 +1607,9 @@ function createLanRelay(options = {}) {
     return Date.now() - since >= graceMs
   }
 
-  const failureKeys = (meta) => (meta.ip ? [`ip:${meta.ip}`, `ws:${meta.id}`] : [`ws:${meta.id}`])
+  const failureKeys = pinFailureKeys
+  /** A room keyed by a seed_key (not a bare Dexie id every device starts at). */
+  const isSeedRoom = (matchId) => !/^\d+$/.test(matchId)
 
   /** Squatting limits for a socket that is about to own an id it did not own. */
   function newClaimDenied(meta, matchId) {
@@ -1434,22 +1624,90 @@ function createLanRelay(options = {}) {
     return null
   }
 
+  /** Is a room left with no scoreboard and no subscriber? */
+  function isIdleRoom(matchId) {
+    return ownersOf(matchId).length === 0 && !(subscriptions.get(matchId)?.size > 0)
+  }
+
+  /**
+   * Drop the rooms that have had no scoreboard and no subscriber for
+   * roomIdleMs. Their game PIN stays in claimStore: a later sync of the same
+   * room still has to prove it.
+   */
+  function evictIdleRooms(now = Date.now()) {
+    for (const matchId of [...store.keys()]) {
+      let room = rooms.get(matchId)
+      if (!room) rooms.set(matchId, (room = { ip: null, bytes: 0, idleSince: null }))
+      if (!isIdleRoom(matchId)) room.idleSince = null
+      else if (room.idleSince === null) room.idleSince = now
+      else if (now - room.idleSince >= roomIdleMs) dropRoom(matchId)
+    }
+  }
+
+  function dropRoom(matchId) {
+    subscriptions.delete(matchId)
+    store.delete(matchId)
+    rooms.delete(matchId)
+    displaced.delete(matchId)
+    orphanedSince.delete(matchId)
+    scorers.delete(matchId)
+    movedClaims.delete(matchId)
+    supersededClaims.delete(matchId)
+    benchRequests.drop(matchId)
+    provenAddrs.delete(matchId)
+  }
+
+  /**
+   * May this sync (of `bytes`) be stored? null if so, else the error code.
+   * A new room needs space in the store (MAX_ROOMS; the room idle the longest
+   * goes first); the creating address may hold MAX_ROOMS_PER_IP rooms and
+   * MAX_ROOM_BYTES_PER_IP synced bytes, counted also after its socket closed.
+   * The relay machine itself is not limited per address.
+   */
+  function roomBudgetDenied(meta, matchId, bytes) {
+    const isNew = !store.has(matchId)
+    if (isNew && store.size >= maxRooms) {
+      evictIdleRooms()
+      let oldest = null
+      for (const [id, r] of rooms) if (r.idleSince !== null && store.has(id) && (oldest === null || r.idleSince < rooms.get(oldest).idleSince)) oldest = id
+      if (store.size >= maxRooms) {
+        if (oldest === null) return 'relay-full'
+        dropRoom(oldest)
+      }
+    }
+    if (!meta || !meta.ip || isLoopbackAddress(meta.ip)) return null
+    let count = 0
+    let total = bytes
+    for (const [id, r] of rooms) {
+      if (r.ip !== meta.ip || id === matchId) continue
+      count++
+      total += r.bytes
+    }
+    if (isNew && count >= maxRoomsPerIp) return 'too-many-matches'
+    if (total > maxRoomBytesPerIp) return 'too-large'
+    return null
+  }
+
   /**
    * Prove the scoreboard role for matchId with the match's own game PIN.
    * Returns { ok:true, kind } or { ok:false, code }. kind is 'owner' (this
    * socket already owned it), 'proved' (same game PIN), 'new', 'open' (test
-   * match without a PIN), 'takeover' or 'reclaim'.
+   * match without a PIN), 'takeover' or 'reclaim' (bare Dexie ids only).
    * - match not on the relay yet: the first scoreboard claims it;
    * - stored match has a game PIN: the incoming match must carry the same one;
    * - stored match has none (test match): any socket may write it, but only a
    *   socket that already owns it may attach a game PIN to it;
-   * - an abandoned match (see isAbandoned) may be taken over; when an
-   *   unfinished match is taken over with another game PIN, its own PIN may
-   *   reclaim it once (a scorer that was asleep is not locked out for good);
+   * - a match with a game PIN is never taken over without it, not after its
+   *   scoreboard left and not after a restart of the relay (claimStore keeps
+   *   the PIN's hash): the scorer can always send it again; an abandoned
+   *   match without one (see isAbandoned) may be taken over;
    * - a socket that has not proved the match and leaves the game PIN out is
-   *   asked for it ('pins-required'): not a guess, not counted.
+   *   asked for it ('pins-required'): not a guess, not counted;
+   * - wrong game PINs count per address and per match (matchPinFailures);
+   *   the device that scores the room (`device`, noteScorer) is not held by
+   *   the per-match budget others spent.
    */
-  function claim(ws, matchId, incomingMatch) {
+  function claim(ws, matchId, incomingMatch, device = null) {
     const meta = clients.get(ws)
     if (!meta) return { ok: false, code: 'bad-request' }
     const wasOwner = meta.owned.has(matchId)
@@ -1458,11 +1716,29 @@ function createLanRelay(options = {}) {
     const grant = (kind) => {
       meta.owned.add(matchId)
       orphanedSince.delete(matchId)
+      noteProven(matchId, keys[0])
       return { ok: true, kind }
     }
     const denyNew = () => (wasOwner ? null : newClaimDenied(meta, matchId))
+    const keys = failureKeys(meta)
+    const scorer = scorers.get(matchId)
+    const isScorer = !!device && !!scorer && scorer.id === device.id && scorer.claim === device.claim
+    const overBudget = () => keys.some((k) => claimFailures.blocked(k)) ||
+      (!isScorer && matchBlockedFor(matchId, keys[0]))
+    const wrongPin = () => {
+      for (const k of keys) claimFailures.fail(k)
+      matchPinFailures.fail(matchPinKey(matchId))
+      return { ok: false, code: 'not-match-owner' }
+    }
 
     if (!existing) {
+      // A room this relay held before (a restart, an evicted room): its game PIN still decides
+      const known = claimStore && isSeedRoom(matchId) ? claimStore.check(matchId, incomingPin) : undefined
+      if (known !== undefined && !wasOwner) {
+        if (!hasGamePinField(incomingMatch)) return { ok: false, code: 'pins-required' }
+        if (overBudget()) return { ok: false, code: 'rate-limited' }
+        return known ? grant('proved') : wrongPin()
+      }
       const denied = denyNew()
       return denied ? { ok: false, code: denied } : grant(wasOwner ? 'owner' : 'new')
     }
@@ -1479,18 +1755,22 @@ function createLanRelay(options = {}) {
     if (storedPin !== null && !hasGamePinField(incomingMatch)) return { ok: false, code: 'pins-required' }
     // From here the socket must prove something. Over the failure limit it is
     // refused before any comparison, so the reply says nothing about the PIN.
-    const keys = failureKeys(meta)
-    if (keys.some((k) => claimFailures.blocked(k))) return { ok: false, code: 'rate-limited' }
+    if (overBudget()) return { ok: false, code: 'rate-limited' }
 
     if (storedPin !== null && incomingPin === storedPin) return grant(wasOwner ? 'owner' : 'proved')
 
+    // A room under a bare Dexie id (older apps without seed_key) another
+    // scorer may reuse: when an unfinished one is taken over with another
+    // game PIN, its own PIN may reclaim it once
     const reclaimPin = displaced.get(matchId)
     if (reclaimPin !== undefined && incomingPin !== null && incomingPin === reclaimPin) {
       displaced.delete(matchId)
       for (const other of clients.values()) if (other !== meta) other.owned.delete(matchId)
       return grant('reclaim')
     }
-    if (isAbandoned(matchId, existing)) {
+    // Only a match without a game PIN (a test match), or one under a bare
+    // Dexie id, is ever taken over
+    if ((storedPin === null || !isSeedRoom(matchId)) && isAbandoned(matchId, existing)) {
       const denied = denyNew()
       if (denied) return { ok: false, code: denied }
       if (storedPin !== null && incomingPin !== storedPin && !isFinishedMatch(existing.match)) displaced.set(matchId, storedPin)
@@ -1498,7 +1778,7 @@ function createLanRelay(options = {}) {
       return grant('takeover')
     }
     // Only a claim with a PIN is a guess (a null PIN proves nothing either way)
-    if (incomingPin !== null) for (const k of keys) claimFailures.fail(k)
+    if (incomingPin !== null) return wrongPin()
     return { ok: false, code: 'not-match-owner' }
   }
 
@@ -1509,6 +1789,8 @@ function createLanRelay(options = {}) {
     'bad-request': 'Unknown connection',
     'pins-required': 'Send this match again with its PINs (the relay lost it, or this connection has not proved it yet)',
     'scorer-moved': 'This match is now scored on another device',
+    'relay-full': 'The relay holds the maximum number of matches',
+    'too-large': 'This device has synced the maximum amount of match data to the relay',
   }
 
   /**
@@ -1603,11 +1885,14 @@ function createLanRelay(options = {}) {
     subscriptions.delete(matchId)
     store.delete(matchId)
     orphanedSince.delete(matchId)
+    rooms.delete(matchId)
     displaced.delete(matchId)
+    if (claimStore) claimStore.forget(matchId)
     scorers.delete(matchId)
     movedClaims.delete(matchId)
     supersededClaims.delete(matchId)
     benchRequests.drop(matchId)
+    provenAddrs.delete(matchId)
     for (const meta of clients.values()) meta.owned.delete(matchId)
   }
 
@@ -1701,6 +1986,10 @@ function createLanRelay(options = {}) {
       sendError(ws, 'bad-request', 'sync-match-data needs matchId and match')
       return
     }
+    if (!hasReadableSyncFields(bundle)) {
+      sendError(ws, 'bad-request', 'sync-match-data: status, ids, PINs and team names must be short text or numbers', matchId)
+      return
+    }
     const meta = clients.get(ws)
     if (meta) {
       if (hasAnyPinField(bundle.match)) {
@@ -1718,7 +2007,13 @@ function createLanRelay(options = {}) {
       sendError(ws, 'scorer-moved', CLAIM_ERRORS['scorer-moved'], matchId)
       return
     }
-    const claimed = claim(ws, matchId, bundle.match)
+    const bytes = frameBytes
+    const full = roomBudgetDenied(meta, matchId, bytes)
+    if (full) {
+      sendError(ws, full, CLAIM_ERRORS[full], matchId)
+      return
+    }
+    const claimed = claim(ws, matchId, bundle.match, device)
     if (!claimed.ok) {
       sendError(ws, claimed.code, CLAIM_ERRORS[claimed.code] || 'Refused', matchId)
       return
@@ -1730,6 +2025,13 @@ function createLanRelay(options = {}) {
     }
     if (device) noteScorer(ws, meta, matchId, device, claimed.kind)
     const stored = storeBundle(matchId, bundle, claimed.kind)
+    const room = rooms.get(matchId)
+    if (room && claimed.kind !== 'new' && claimed.kind !== 'takeover') room.bytes = bytes
+    else rooms.set(matchId, { ip: meta ? meta.ip : null, bytes, idleSince: null })
+    if (claimStore && isSeedRoom(matchId)) {
+      const pin = gamePinOf(stored.match)
+      if (pin !== null) claimStore.remember(matchId, pin)
+    }
     sendMatchData(matchId, 'match-data-update', stored, msg._timestamp, ws)
     // Bench requests of a set that is over go; a socket that has just
     // (re)proved the match gets the open ones again
@@ -1748,6 +2050,10 @@ function createLanRelay(options = {}) {
       return
     }
     const meta = clients.get(ws)
+    if (meta && !meta.subscribed.has(matchId) && meta.subscribed.size >= MAX_SUBSCRIPTIONS_PER_SOCKET) {
+      sendError(ws, 'too-many-subscriptions', 'This connection follows the maximum number of matches', matchId)
+      return
+    }
     if (!subscriptions.has(matchId)) subscriptions.set(matchId, new Set())
     subscriptions.get(matchId).add(ws)
     if (meta) {
@@ -1755,7 +2061,7 @@ function createLanRelay(options = {}) {
       const device = msg.device ?? msg.role
       if (DEVICE_ROLES.includes(device)) meta.role = device
       if (DEVICE_TEAMS.includes(msg.team)) meta.team = msg.team
-      offerPin(ws, meta, matchId, msg.pin)
+      offerPin(ws, meta, matchId, msg.pin, DEVICE_ROLES.includes(device) ? device : null)
     }
     const stored = store.get(matchId)
     if (stored) send(ws, matchDataMessage('match-full-data', matchId, stored, undefined, hasAccess(ws, matchId, stored) ? 'full' : 'summary'))
@@ -1845,22 +2151,41 @@ function createLanRelay(options = {}) {
   }
 
   /** The PIN a subscriber offers for a match: checked now if the relay holds it. */
-  function offerPin(ws, meta, matchId, rawPin) {
-    const pin = rawPin === undefined || rawPin === null ? '' : String(rawPin).trim().slice(0, 32)
+  function offerPin(ws, meta, matchId, rawPin, role = null) {
+    const pin = rawPin === undefined || rawPin === null || typeof rawPin === 'object' ? '' : String(rawPin).trim().slice(0, 32)
     if (!pin) return
-    if (pinFailureKeys(meta).some((k) => pinFailures.blocked(k))) {
+    const keys = pinFailureKeys(meta)
+    if (keys.some((k) => pinFailures.blocked(k)) || matchBlockedFor(matchId, keys[0])) {
       sendError(ws, 'rate-limited', 'Too many wrong PINs. Wait a minute.', matchId)
       return
     }
     const stored = store.get(matchId)
-    if (stored && stored.match && !pinGrantsAccess(stored.match, pin)) {
-      for (const k of pinFailureKeys(meta)) pinFailures.fail(k)
+    if (stored && stored.match && !pinGrantsAccessAs(stored.match, pin, role)) {
+      for (const k of keys) pinFailures.fail(k)
+      matchPinFailures.fail(matchPinKey(matchId))
       sendError(ws, 'pin-invalid', 'Wrong PIN for this match', matchId)
       return
     }
+    // Not on the relay yet: compared at its first sync (hasAccess). The offer
+    // counts against the address's budget now, so offers spread over many
+    // sockets cannot all be compared at once. The same offer again from the
+    // same address is not counted twice; a right one is refunded (hasAccess).
+    const known = !!(stored && stored.match)
+    let counted = null
+    if (known) noteProven(matchId, keys[0])
+    else {
+      const offerKey = `${keys[0]}|${matchId}|${pin}`
+      const at = pendingOffers.get(offerKey)
+      if (at === undefined || Date.now() - at > MATCH_PIN_WINDOW_MS) {
+        if (pendingOffers.size >= 10000) pendingOffers.clear() // bound memory under a flood
+        pendingOffers.set(offerKey, Date.now())
+        for (const k of keys) pinFailures.fail(k)
+        counted = keys
+      }
+    }
     meta.access.delete(matchId)
     if (meta.access.size >= MAX_ACCESS_KEYS) meta.access.delete(meta.access.keys().next().value)
-    meta.access.set(matchId, { pin, verified: !!(stored && stored.match) })
+    meta.access.set(matchId, { pin, role, verified: known, counted })
   }
 
   function onUnsubscribe(ws, msg) {
@@ -1953,6 +2278,7 @@ function createLanRelay(options = {}) {
       return
     }
     if (!clients.has(ws)) addClient(ws)
+    frameBytes = typeof raw === 'string' ? raw.length : (raw && raw.length) || 0
 
     // A frame never ends the relay (and every court's tablets with it): the
     // runtimes call this from the socket's 'message' event, where a throw
@@ -2032,7 +2358,7 @@ function createLanRelay(options = {}) {
     if (!matchId) return { status: 400, body: { success: false, error: 'Match ID required' } }
     const offered = pin === undefined || pin === null ? '' : String(pin).trim()
     const key = `ip:${ip || 'unknown'}`
-    if (offered && pinFailures.blocked(key)) {
+    if (offered && (pinFailures.blocked(key) || matchBlockedFor(matchId, key))) {
       return { status: 429, body: { success: false, error: 'Too many wrong PINs. Wait a minute.' } }
     }
     const bundle = store.get(matchId) || await requestFromScoreboards('match-data-request', { matchId }, matchId)
@@ -2040,7 +2366,11 @@ function createLanRelay(options = {}) {
       return { status: 404, body: { success: false, error: 'Match data not found. Make sure the main scoresheet is running and connected.' } }
     }
     const full = !!offered && pinGrantsAccess(bundle.match, offered)
-    if (offered && !full) pinFailures.fail(key)
+    if (offered && !full) {
+      pinFailures.fail(key)
+      matchPinFailures.fail(matchPinKey(matchId))
+    }
+    if (full) noteProven(matchId, key)
     return { status: 200, body: { success: true, ...(full ? { access: 'full', ...toWireBundle(bundle) } : relaySummaryBundle(bundle)) } }
   }
 
@@ -2087,18 +2417,22 @@ function createLanRelay(options = {}) {
     return { status: 200, body: { success: true, ...(result.data ? toWireBundle(result.data) : {}) } }
   }
 
-  function getConnections(matchIdFilter) {
+  /**
+   * GET /api/server/connections. `local`: the relay machine itself asks;
+   * anyone else gets no addresses and no other room's key.
+   */
+  function getConnections(matchIdFilter, { local = true } = {}) {
     const filter = normalizeMatchId(matchIdFilter)
     const list = []
     for (const [, meta] of clients) {
       if (meta.owned.size > 0) continue // scoreboards are not dashboards
       for (const matchId of meta.subscribed) {
         if (filter && matchId !== filter) continue
-        list.push({ id: meta.id, ip: meta.ip, role: meta.role, team: meta.team, matchId, connectedAt: meta.connectedAt })
+        list.push({ id: meta.id, ...(local ? { ip: meta.ip } : {}), role: meta.role, team: meta.team, matchId, connectedAt: meta.connectedAt })
       }
     }
     const matchSubscriptions = {}
-    for (const [matchId, subs] of subscriptions) matchSubscriptions[matchId] = subs.size
+    for (const [matchId, subs] of subscriptions) if (local || matchId === filter) matchSubscriptions[matchId] = subs.size
     return {
       totalClients: clients.size,
       dashboardClients: list.length,
@@ -2230,7 +2564,18 @@ function createLanRelay(options = {}) {
     const path = parsed.pathname
     const method = req.method
     const ip = (req.socket && req.socket.remoteAddress) || 'unknown'
-    const reply = (p) => Promise.resolve(p)
+    // Host on every relay route, Origin on the ones that change something
+    // (a page elsewhere must not drive the relay through a visitor's browser)
+    if (path.startsWith('/api/')) {
+      const readOnly = method === 'GET' || method === 'HEAD' || method === 'OPTIONS'
+      const refused = relayRequestRefusal(readOnly ? { headers: { host: req.headers && req.headers.host } } : req, allowedHosts)
+      if (refused) {
+        sendJson(res, 403, { success: false, error: refused === 'host-not-allowed' ? 'Host not allowed' : 'Origin not allowed' })
+        return true
+      }
+    }
+    // `p`: a promise, or a function run inside the promise (a throw answers 500)
+    const reply = (p) => Promise.resolve().then(typeof p === 'function' ? p : () => p)
       .then((r) => sendJson(res, r.status, r.body))
       .catch((err) => sendJson(res, err.status || 500, { success: false, error: err.message || 'Internal error' }))
 
@@ -2270,7 +2615,7 @@ function createLanRelay(options = {}) {
       return true
     }
     if (path === '/api/match/list' && method === 'GET') {
-      reply(listMatches({ includeFinished: parsed.searchParams.get('finished') === '1' }))
+      reply(() => listMatches({ includeFinished: parsed.searchParams.get('finished') === '1' }))
       return true
     }
     if (path === '/api/match/by-game-number' && method === 'GET') {
@@ -2282,7 +2627,8 @@ function createLanRelay(options = {}) {
       return true
     }
     if (path === '/api/server/connections' && method === 'GET') {
-      sendJson(res, 200, getConnections(parsed.searchParams.get('matchId')))
+      const local = isLocalAddr(ip)
+      reply(() => ({ status: 200, body: getConnections(parsed.searchParams.get('matchId'), { local }) }))
       return true
     }
     const m = path.match(/^\/api\/match\/([^/]+)$/)
@@ -2305,6 +2651,8 @@ function createLanRelay(options = {}) {
   return {
     // WS side
     admit,
+    /** The upgrade's Origin / Host: null when allowed, else why not (the runtimes answer 403). */
+    upgradeRefusal: (req) => relayRequestRefusal(req, allowedHosts),
     addClient,
     removeClient,
     handleMessage,
@@ -2375,5 +2723,8 @@ module.exports = {
   createMainInstanceGate,
   OTHER_COURT_COOKIE,
   MAX_OWNED_PER_IP,
+  isTrustedRelayOrigin,
+  isAllowedRelayHost,
+  relayRequestRefusal,
   createLanRelay,
 }

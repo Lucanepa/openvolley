@@ -144,6 +144,7 @@ export const HELP_SECTIONS = [
     q('connections', 'noInternet'),
     q('connections', 'pin'),
     q('connections', 'hallServer'),
+    q('connections', 'hallNetwork'),
     q('connections', 'internetTablets')
   ]),
   section('referee', [

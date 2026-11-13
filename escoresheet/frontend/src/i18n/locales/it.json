@@ -2932,6 +2932,8 @@
       "a_pin": "Il passo 3 mostra il PIN del tablet scelto. Link e codici non lo contengono mai. Un tablet spento viene rifiutato: accendilo al passo 2 («Ammetti …»). Dopo troppi PIN sbagliati, aspetta qualche minuto.",
       "q_hallServer": "Cos'è il server della palestra?",
       "a_hallServer": "L'app desktop di OpenVolley fa girare un server per i tablet sulla rete della palestra, senza bisogno di internet. Un box per la palestra o il server scaricabile fanno lo stesso. Con internet, la partita si sincronizza anche con il cloud.",
+      "q_hallNetwork": "Quale Wi-Fi deve usare il server della palestra?",
+      "a_hallNetwork": "Date ai tablet del segnapunti, dell'arbitro e delle panchine un Wi-Fi proprio con password (WPA2 o WPA3) che gli spettatori non ricevono. Su un Wi-Fi aperto o condiviso, altri nella palestra possono leggere il traffico della partita, compresi i PIN e le liste delle squadre.",
       "q_internetTablets": "I tablet hanno bisogno di internet?",
       "a_internetTablets": "Solo con «Internet». In quel caso devi aver effettuato l'accesso, e la partita deve essere sincronizzata (lo stato dice Sincronizzato) prima che i tablet la trovino. Sulla rete della palestra internet non serve."
     },
