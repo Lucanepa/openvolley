@@ -235,8 +235,12 @@ payloads; the rosters of one match with its match token, see below), and a
 filter or order on a non-public column only matches the caller's own rows, so
 hidden values cannot be probed (`pgQuery` `opts.readOwner`). A referee or coach
 whose My Matches lists someone else's match therefore sees that match like the
-public scoresheet archive. Referee rows (`referee_database`) keep their full
-read for accounts.
+public scoresheet archive. Referees' dates of birth need a role that fills the
+sheet's officials (`server.js` `REFEREE_DOB_SPORTS`): full `referee_database`
+rows go to admins and accounts that can score indoor or beach, full
+`svrz_games` rows to admins and indoor scorers. Every other account reads these
+two tables like an anonymous caller (public columns, no dates of birth), and a
+filter or order on a date of birth is refused with 400 `OV_SECRET_FILTER`.
 
 **Rows that existed before `005` have no owner** (`created_by` NULL): nobody
 can tell who scored them, so they are **read-only for everyone except admins**
@@ -256,7 +260,11 @@ account").
 server's vm-sync job) is read-only for every account but admins (403
 `OV_READ_ONLY_TABLE`). In `referee_database` an account may add referees and
 change `sport_type` of one row by id (Match Setup's referee history); any other
-update, an upsert or a delete is for admins. `beach_competition_matches` is not
+update, an upsert or a delete is for admins. For an account that may not read
+the dates of birth, the rows such a write returns (`returning`) are the public
+columns, and a referee it adds is stored with the public columns only (no date
+of birth), so the answer to an insert never depends on a stored date of birth.
+`beach_competition_matches` is not
 on the `/api/db` allowlist (no client uses it).
 
 The **officials' devices** keep working: referee and bench tablets only read
