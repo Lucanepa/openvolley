@@ -191,13 +191,16 @@ async fn after_a_restart_a_room_s_game_pin_still_decides_and_the_relay_host_wins
     let _rx = connect(&state, 2, "192.168.1.80").await;
     assert_eq!(sync_as(&state, 2, "seed-c", seed_bundle("seed-c", "654321")).await, Err("not-match-owner"));
     assert_eq!(sync_as(&state, 2, "seed-c", seed_bundle("seed-c", "123456")).await, Ok(ClaimKind::Proved));
-    // a room a LAN device published first: the desktop app takes it
+    // the desktop app wins back the room it published, now held by the LAN device
+    let _rx = connect(&state, 4, "127.0.0.1").await;
+    assert_eq!(sync_as(&state, 4, "seed-c", seed_bundle("seed-c", "222222")).await, Ok(ClaimKind::Takeover));
+    assert!(!state.owners.lock().await.get(&2).map_or(false, |o| o.contains("seed-c")));
+    // a room a LAN device published first stays with its scorer
     let _rx = connect(&state, 3, "192.168.1.81").await;
     sync_as(&state, 3, "seed-d", seed_bundle("seed-d", "111111")).await.unwrap();
-    let _rx = connect(&state, 4, "127.0.0.1").await;
-    assert_eq!(sync_as(&state, 4, "seed-d", seed_bundle("seed-d", "222222")).await, Ok(ClaimKind::Takeover));
-    assert!(!state.owners.lock().await.get(&3).map_or(false, |o| o.contains("seed-d")));
-    assert_eq!(sync_as(&state, 3, "seed-d", seed_bundle("seed-d", "111111")).await, Err("not-match-owner"));
+    assert_eq!(sync_as(&state, 4, "seed-d", seed_bundle("seed-d", "333333")).await, Err("not-match-owner"));
+    assert!(state.owners.lock().await.get(&3).map_or(false, |o| o.contains("seed-d")));
+    assert_eq!(sync_as(&state, 3, "seed-d", seed_bundle("seed-d", "111111")).await, Ok(ClaimKind::Owner));
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -227,6 +230,20 @@ async fn by_game_number_gives_the_summary_without_a_pin() {
     assert_eq!(body["access"], json!("full"));
     assert_eq!(body["match"]["bench_home"][0]["firstName"], json!("Kim"));
     assert!(body["match"]["bench_home"][0].get("dob").is_none());
+}
+
+#[tokio::test]
+async fn by_game_number_compares_no_pin_once_the_match_budget_is_spent() {
+    let state = new_state(0, 0);
+    let _rx = connect(&state, 1, "127.0.0.1").await;
+    sync_as(&state, 1, "seed-f", seed_bundle("seed-f", "123456")).await.unwrap();
+    for _ in 0..MATCH_PIN_FAILURE_LIMIT {
+        spend_match_budget(&state, "seed-f").await;
+    }
+    let (status, _, body) = call(&state, "GET", "/api/match/by-game-number?gameNumber=4242", "192.168.1.91:1", &[("x-ov-match-pin", "777111")], None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["access"], json!("summary"));
+    assert!(!body.to_string().contains("Kim"));
 }
 
 #[tokio::test]

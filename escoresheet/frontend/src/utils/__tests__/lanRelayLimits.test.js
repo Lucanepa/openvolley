@@ -87,4 +87,16 @@ describe('relay core limits', () => {
     expect(relay.validatePin({ pin: '222222', type: 'referee' }).status).toBe(200)
     relay.close()
   })
+
+  it('compares no game-number PIN once the match budget is spent, from any address', async () => {
+    const relay = createLanRelay({ matchPinFailureLimit: 2 })
+    msg(relay, connect(relay, '127.0.0.1'), sync(match({ gameNumber: '4242' })))
+    for (const ip of ['192.168.1.61', '192.168.1.62']) {
+      expect((await relay.findByGameNumber('4242', { pin: '999999', ip })).body.access).toBe('summary')
+    }
+    const fresh = await relay.findByGameNumber('4242', { pin: '111111', ip: '192.168.1.63' })
+    expect(fresh.body.access).toBe('summary')
+    expect(fresh.body.match.gamePin).toBeUndefined()
+    relay.close()
+  })
 })

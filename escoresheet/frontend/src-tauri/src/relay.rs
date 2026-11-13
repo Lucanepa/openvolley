@@ -1657,8 +1657,10 @@ async fn by_game_number(
             (m, id, bundle)
         }
     };
-    let full = offered.as_deref().map_or(false, |p| any_match_pin_grants(Some(&m), p));
-    if offered.is_some() && !full {
+    // A spent match (or relay) budget: no PIN is compared, whatever the address
+    let spent = offered.is_some() && match_budget_spent(&state, &id).await;
+    let full = !spent && offered.as_deref().map_or(false, |p| any_match_pin_grants(Some(&m), p));
+    if offered.is_some() && !full && !spent {
         window_bump(&mut *state.limits.lock().await, &fail_key);
         spend_match_budget(&state, &id).await;
     }
@@ -2430,7 +2432,9 @@ async fn claim_as(
     let incoming_pin = game_pin_of(incoming);
     let seed = is_seed_room(match_id);
     let known = if seed { state.claims.lock().unwrap_or_else(|e| e.into_inner()).check(match_id, incoming_pin.as_deref()) } else { None };
-    let lan_room = seed && state.rooms.lock().await.get(match_id).map_or(false, |r| !r.ip.is_loopback());
+    // A seed room the relay host published before (kept in the claim file)
+    let host_room = seed && state.claims.lock().unwrap_or_else(|e| e.into_inner()).is_local(match_id);
+    let lan_room = host_room && state.rooms.lock().await.get(match_id).map_or(false, |r| !r.ip.is_loopback());
     let is_scorer = device.is_some() && state.scorers.lock().await.get(match_id) == device;
     let budget_spent = !is_scorer && match_budget_spent(state, match_id).await;
     // Fixed lock order: owners -> orphaned -> conn_meta -> limits -> displaced.
@@ -2502,8 +2506,10 @@ async fn claim_as(
     if stored_pin.is_some() && !has_game_pin_field(incoming) {
         return Err("pins-required");
     }
-    // The relay host wins a seed room a LAN device published (no LAN device
-    // can hold the desktop app's match), never one another local window holds
+    // The relay host wins back a seed room it published before and a LAN
+    // device holds now, never one another local window holds. A room a LAN
+    // device published first stays with it: the host's own copy of the same
+    // scheduled game must not take a live match away from its scorer.
     if loopback && lan_room && incoming_pin.is_some() && incoming_pin != stored_pin {
         let local_owner = owners.iter().any(|(cid, o)| *cid != conn_id && o.contains(match_id) && meta.get(cid).map_or(false, |m| m.ip.is_loopback()));
         if !local_owner {

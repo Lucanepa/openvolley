@@ -2557,8 +2557,13 @@ function createLanRelay(options = {}) {
       return { status: 429, body: { success: false, error: 'Too many wrong PINs. Wait a minute.' } }
     }
     const answer = (match, matchId, bundle) => {
-      const full = !!offered && anyMatchPinGrants(match, offered)
-      if (offered && !full) pinFailures.fail(failKey)
+      // A spent match budget: no PIN is compared, whatever the address
+      const spent = !!offered && matchBlockedFor(matchId, failKey)
+      const full = !!offered && !spent && anyMatchPinGrants(match, offered)
+      if (offered && !full && !spent) {
+        pinFailures.fail(failKey)
+        matchPinFailures.fail(matchPinKey(matchId))
+      }
       if (full) return { status: 200, body: { success: true, access: 'full', match: publicMatch(match), matchId } }
       const summary = relaySummaryBundle({ ...(bundle || {}), match })
       return {
