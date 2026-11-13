@@ -870,6 +870,40 @@ describe('uploader-only buckets (final scoresheets)', () => {
     assert.deepEqual((await s.list({ bucket: 'scoresheets', path: '2026-10-05', userId: 'u1' })).map((e) => e.name), [path.basename(sheet)])
   })
 
+  // lib/scoresheets.js: an account that may write the match the path is of
+  // (an OpenBeach name has no secret part, so another scorer could create it first)
+  it('adopt (trusted callers only): the caller replaces an object it did not create, and the owners it keeps stay', async () => {
+    const s = make({ uploaderReadBuckets: ['scoresheets'] })
+    const beach = 'beach/2026-10-05/game7_match_1_abc.pdf'
+    await up(s, 'mallory', '{"squatted":true}', beach)
+    await up(s, 'alice', '{"real":true}', beach, { adopt: (owners) => owners.filter((o) => o === 'carol') })
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: beach }), ['alice'])
+    assert.equal(await down(s, 'alice', beach), '{"real":true}')
+    await rejectsWith(s.download({ bucket: 'scoresheets', path: beach, userId: 'mallory' }), 403, 'OV_STORAGE_FORBIDDEN')
+    await rejectsWith(up(s, 'mallory', '{"again":true}', beach), 403, 'OV_STORAGE_FORBIDDEN')
+    // an owner the caller keeps (another account of the same match) still reads it
+    await up(s, 'carol', '{"by":"carol"}', beach, { adopt: (owners) => owners.filter((o) => o === 'alice') })
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: beach }), ['carol', 'alice'])
+    assert.equal(await down(s, 'alice', beach), '{"by":"carol"}')
+    // an owner's own replace leaves the record as it is; upsert:false still refuses an existing object
+    await up(s, 'alice', '{"v":3}', beach, { adopt: () => [] })
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: beach }), ['carol', 'alice'])
+    await rejectsWith(up(s, 'dave', '{}', beach, { upsert: false, adopt: () => [] }), 409, 'OV_STORAGE_EXISTS')
+    // never from the HTTP body: handle() takes it from the server's context only
+    const viaBody = await s.handle('upload', { bucket: 'scoresheets', path: beach, fileBase64: b64('{}'), contentType: 'application/json', adopt: true }, { userId: 'mallory' })
+    assert.equal(viaBody.status, 403)
+    const viaCtx = await s.handle('upload', { bucket: 'scoresheets', path: beach, fileBase64: b64('{"ctx":1}'), contentType: 'application/json' }, { userId: 'erin', adopt: () => ['alice'] })
+    assert.equal(viaCtx.status, 200)
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: beach }), ['erin', 'alice'])
+    // an object without owners (stored before owner records, or its uploader's account deleted) stays as it is
+    const legacy = '2026-10-05/game991405_k0123456789abcdef0123456789abcdef.pdf'
+    await fs.mkdir(path.join(root, 'scoresheets', '2026-10-05'), { recursive: true })
+    await fs.writeFile(path.join(root, 'scoresheets', legacy), '%PDF-1.4 approved')
+    await rejectsWith(up(s, 'alice', '%PDF-1.4 changed', legacy, { adopt: (owners) => owners }), 403, 'OV_STORAGE_FORBIDDEN')
+    assert.equal(await fs.readFile(path.join(root, 'scoresheets', legacy), 'utf8'), '%PDF-1.4 approved')
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: legacy }), [])
+  })
+
   it('handle: the HTTP adapter answers 403 to a non-owner and 200 + not-found for a missing object', async () => {
     const s = make({ uploaderReadBuckets: ['scoresheets'] })
     await s.handle('upload', { bucket: 'scoresheets', path: sheet, fileBase64: b64('{}'), contentType: 'application/json' }, { userId: 'alice' })
@@ -1107,6 +1141,28 @@ describe('remove and delete-account clean-up', () => {
     await fs.symlink(path.join(outside, 'secret.json'), path.join(root, 'backup', U1, 'link.json'))
     await rejectsWith(s.remove({ bucket: 'backup', paths: ['link.json'], userId: U1 }), 403)
     assert.equal(await exists(path.join(outside, 'secret.json')), true)
+  })
+
+  it('removeTrusted (operator tool): an object, or a folder with all in it, whoever owns them; the owner records go too', async () => {
+    const s = make(opts)
+    await upSheet(s, U1, '2026-10-06')
+    await upSheet(s, U1, `${pdf}/x.json`)
+    await upSheet(s, U2, `${pdf}/a/b.json`)
+    await upSheet(s, U2, sheet)
+    assert.equal((await ownerRecords()).length, 4)
+    await fs.symlink(path.join(outside, 'secret.json'), path.join(root, 'scoresheets', pdf, 'a', 'link.json'))
+    assert.deepEqual(await s.removeTrusted({ bucket: 'scoresheets', path: '2026-10-06' }), { objectsRemoved: 1, bytesRemoved: 11, foldersRemoved: 0 })
+    // the symlink stays (never followed): its folder with it
+    assert.deepEqual(await s.removeTrusted({ bucket: 'scoresheets', path: pdf }), { objectsRemoved: 2, bytesRemoved: 22, foldersRemoved: 0 })
+    assert.equal(await exists(path.join(outside, 'secret.json')), true)
+    await fs.unlink(path.join(root, 'scoresheets', pdf, 'a', 'link.json'))
+    assert.deepEqual(await s.removeTrusted({ bucket: 'scoresheets', path: pdf }), { objectsRemoved: 0, bytesRemoved: 0, foldersRemoved: 2 })
+    assert.equal(await exists(path.join(root, 'scoresheets', pdf)), false)
+    assert.equal(await exists(path.join(root, 'scoresheets', '2026-10-06')), false)
+    assert.equal((await ownerRecords()).length, 1, 'only the record of the object left')
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: sheet }), [U2])
+    assert.deepEqual(await s.removeTrusted({ bucket: 'scoresheets', path: '2026-10-07' }), { objectsRemoved: 0, bytesRemoved: 0, foldersRemoved: 0 })
+    await rejectsWith(s.removeTrusted({ bucket: 'scoresheets', path: '../x' }), 400)
   })
 
   it('deleteUserData: the account\'s backups and owner entries go; scoresheets stay as unowned records', async () => {

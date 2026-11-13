@@ -52,9 +52,60 @@ export function scoresheetUploadJob(match, path, file, contentType) {
   }
 }
 
-/** Store the file of a scoresheetUploadJob ({ data, error } as apiStorage). */
-export function uploadQueuedScoresheet({ path, file, contentType } = {}) {
-  return apiStorage.from('scoresheets').upload(path, file, { contentType, upsert: true })
+// A scoresheet upload job not sent yet: waiting, backing off, or refused
+const UNSENT_STATUSES = ['queued', 'error', 'failed']
+
+/**
+ * Before a new approval's files are queued: the older scoresheet uploads of
+ * the same match (or the same file) that were not sent yet are marked
+ * 'superseded', their file dropped. Only the latest approval's files are
+ * worth sending: after a reopen and a new approval both approvals use the
+ * same paths, the queue sends its jobs in turn, and after the close the
+ * backend keeps the approval's first PDF (db/033; replaced only within
+ * minutes), so the older one could stay the match's scoresheet. A job in
+ * flight ('sending') is left alone.
+ * @param {object} queue - db.sync_queue
+ * @param {object[]} jobs - the new scoresheetUploadJob()s
+ * @returns {Promise<number>} the jobs superseded
+ */
+export async function supersedeUnsentScoresheetUploads(queue, jobs) {
+  const paths = new Set(jobs.map(j => j.payload?.path).filter(Boolean))
+  const matches = new Set(jobs.map(j => j.payload?.match_external_id).filter(Boolean))
+  return supersedeUnsent(queue, j => paths.has(j.payload?.path) || matches.has(j.payload?.match_external_id))
+}
+
+/**
+ * The match `matchKey` (its seed_key) is reopened: MatchEnd's Reopen match,
+ * or its cloud copy loaded open again. Its scoresheet uploads not sent yet
+ * are the earlier approval's: marked 'superseded', their file dropped, as
+ * above. Sent while the match is open, the old PDF would be stored as the
+ * next approval's (backend db/033), and after the next close the corrected
+ * one is taken only for minutes. A reopened match always gets a new approval
+ * with new files.
+ * @param {object} queue - db.sync_queue
+ * @param {string} matchKey
+ * @returns {Promise<number>} the jobs superseded
+ */
+export async function supersedeUnsentScoresheetUploadsOf(queue, matchKey) {
+  if (!matchKey || !queue) return 0
+  return supersedeUnsent(queue, j => j.payload?.match_external_id === matchKey)
+}
+
+async function supersedeUnsent(queue, picks) {
+  const stale = (await queue.where('resource').equals(SCORESHEET_UPLOAD_RESOURCE).toArray())
+    .filter(j => UNSENT_STATUSES.includes(j.status) && picks(j))
+  for (const j of stale) await queue.update(j.id, { status: 'superseded', payload: { ...j.payload, file: null } })
+  return stale.length
+}
+
+/**
+ * Store the file of a scoresheetUploadJob ({ data, error } as apiStorage). The
+ * match goes with it: the backend stores a PDF only for a match this account
+ * may write (backend db/033; 404 OV_MATCH_NOT_FOUND while the match is not in
+ * the cloud yet).
+ */
+export function uploadQueuedScoresheet({ path, file, contentType, match_external_id: matchExternalId } = {}) {
+  return apiStorage.from('scoresheets').upload(path, file, { contentType, upsert: true, matchExternalId: matchExternalId || undefined })
 }
 
 /**

@@ -19,7 +19,8 @@ import { missingConnectionPins } from './remoteRoster'
 import { generateSecurePin } from './stringUtils'
 import { isScorerEntry } from './appEntry'
 import { queueScorerClaim, retireSupersededMatches, supersededClaimsOf } from './matchHandover'
-import { isKnownClosedOnServer, CLOSING_STATUSES } from './matchReopen'
+import { isKnownClosedOnServer, CLOSING_STATUSES, serverRowClosed } from './matchReopen'
+import { supersedeUnsentScoresheetUploadsOf } from './scoresheetUploader'
 import { postMatchSignaturesFromServer } from '../domain/signatureEdits'
 import { signatureSourcesFromApproval } from '../domain/phoneSignature'
 import { liveClockOffset, liveClockOffsetAfter, liveStateNow } from './serverDataSync'
@@ -1610,6 +1611,10 @@ export async function importMatchFromSupabase(cloudData) {
     // and events go (replaced, not undone: nothing is voided on the server),
     // its unsent jobs are superseded; other local matches are kept.
     await replaceLocalCopies(match.external_id)
+    // An open cloud copy (reopened since this device approved it, or never
+    // closed): this device's approval files of the match still unsent are an
+    // older approval's (utils/scoresheetUploader). A closed one keeps them.
+    if (!serverRowClosed(match)) await supersedeUnsentScoresheetUploadsOf(db.sync_queue, match.external_id)
 
     // Extract team data from JSONB columns
     const homeTeamData = match.home_team || {}
