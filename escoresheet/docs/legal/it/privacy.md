@@ -192,7 +192,15 @@ del dispositivo, Android può salvare anche i dati dell'app (con le liste
 squadra) nel suo account Google; valgono le condizioni di Google.
 
 Su un dispositivo condiviso, esca dall'account dopo la partita. L'uscita
-cancella il token di accesso e le squadre memorizzate temporaneamente.
+cancella dall'app il token di accesso, il suo profilo e le sue società, le
+partite del giorno, le squadre, gli elenchi e le liste delle licenze delle
+società memorizzati temporaneamente, e gli indirizzi e-mail con cui gli
+ufficiali hanno confermato su questo dispositivo; lo stesso avviene quando la
+sessione scade o accede un altro account. Senza connessione, l'uscita chiude
+anche la sessione sul server appena il dispositivo torna online. Gli
+indirizzi degli ufficiali sono conservati al massimo 7 giorni. Non configuri
+una passkey su un dispositivo condiviso (all'accesso spunti "Dispositivo
+condiviso").
 
 ## 6. Account ed e-mail
 

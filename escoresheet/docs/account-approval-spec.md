@@ -489,7 +489,7 @@ export const approvalsApi = {
 - `formatApprovalStamp(approval, { timeZone = 'Europe/Zurich' })` returns `"Approved electronically · <name> · dd.mm.yyyy hh:mm · ID <short_id>"`. The text is English because the PDF sheet is English, and the time is 24 h.
 - `isWeakPin(pin)` and `PIN_RE` mirror the server, for inline validation.
 - `deviceId()` reads or creates `localStorage['ov.deviceId']` (a uuid, try/catch). It returns null when storage is unavailable.
-- `rememberApprovalEmail(officialName, email)` and `recallApprovalEmail(officialName)` keep a per-device map in `localStorage['ov.approvalEmails']`, keyed by the lower-cased "last first" name, at most 50 entries, LRU, try/catch. This is a convenience only. **Never** write emails into `match.officials`: officials sync to `matches.officials`, which referee and bench tokens can read.
+- `rememberApprovalEmail(officialName, email)` and `recallApprovalEmail(officialName)` keep a per-device map in `localStorage['ov.approvalEmails']`, keyed by the lower-cased "last first" name, at most 50 entries, LRU, each kept 7 days (`APPROVAL_EMAILS_MAX_AGE_MS`), all of them removed when a session ends on the device (`forgetApprovalEmails`, AuthContext clearLocalAccountData), try/catch. This is a convenience only. **Never** write emails into `match.officials`: officials sync to `matches.officials`, which referee and bench tokens can read.
 
 `clearedPostMatchSignatures()` in `src/domain/matchEnd.js` also returns `accountApprovals: null`,
 so every reopen path clears them locally. The server voids them through the trigger in 1.5.

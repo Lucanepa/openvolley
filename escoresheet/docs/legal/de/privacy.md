@@ -192,8 +192,15 @@ Google aktiviert haben, kann Android auch die App-Daten (mit Kaderlisten) in
 Ihr Google-Konto sichern; dafür gelten die Bedingungen von Google.
 
 Auf einem gemeinsam genutzten Gerät sollten Sie sich nach dem Spiel abmelden.
-Beim Abmelden löscht die App Ihr Anmelde-Token und die zwischengespeicherten
-Teams.
+Beim Abmelden löscht die App Ihr Anmelde-Token, Ihr Profil und Ihre Vereine,
+die Spiele des Tages, die zwischengespeicherten Teams, Kader und
+Lizenzlisten der Vereine sowie die E-Mail-Adressen, mit denen Offizielle auf
+diesem Gerät bestätigt haben; ebenso, wenn Ihre Sitzung abläuft oder sich ein
+anderes Konto anmeldet. Ohne Verbindung beendet die Abmeldung Ihre Sitzung auf
+dem Server, sobald das Gerät wieder online ist. Die Adressen der Offiziellen
+bleiben höchstens 7 Tage gespeichert. Richten Sie auf einem gemeinsam
+genutzten Gerät keinen Passkey ein (bei der Anmeldung «Geteiltes Gerät»
+ankreuzen).
 
 ## 6. Konto und E-Mails
 

@@ -95,7 +95,8 @@ backend is deployed before the migration).
 **Scorer app:**
 - `AuthContext` loads `clubs` and `clubRule` from `/api/me` once signed in, on
   focus and when the connection comes back. It caches them per account in
-  `localStorage['ov:clubs']` (removed at sign-out and account deletion). Redeeming
+  `localStorage['ov:clubs']` (removed whenever a session ends on the device: sign-out,
+  expiry or refusal, another account, deletion; data-map 4.11). Redeeming
   an invite code loads them again (a code may carry a club).
 - `access.clubs` / `access.clubRule` / `access.clubsKnown`.
 - A change of clubs or of the rule is an access change (`ACCESS_CHANGED_EVENT`),
