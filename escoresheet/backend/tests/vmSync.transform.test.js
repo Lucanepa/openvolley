@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {
   transformGame, prepareRows, isExcludedLeague, resolveWindow, zonedTimeToUtc, zonedYmd,
   parseVmDateTime, formatZurichDateTime, normalizeDob, addDaysYmd, isYmd, nextRunAt, buildSearchBody,
-  windowFromEnv, MAX_WINDOW_DAYS
+  windowFromEnv, MAX_WINDOW_DAYS, RENDER_PROPERTIES, matchFormatOf
 } from '../lib/vmSync.js'
 import { makeGame } from './helpers/fakeVolleyManager.js'
 
@@ -131,6 +131,45 @@ describe('transformGame: other fields', () => {
     assert.equal(t(makeGame(5, { gender: 'm' })).gender, 'men')
   })
 
+  it('asks VolleyManager for the format and the category it stores', () => {
+    for (const prop of ['game.group.phase.league.numberOfWinSets', 'game.group.phase.league.leagueCategory.shortName',
+      'game.group.phase.league.leagueCategory.isJuniorLeagueCategory']) {
+      assert.ok(RENDER_PROPERTIES.includes(prop), prop)
+    }
+    const p = new URLSearchParams(buildSearchBody('tok', 0, 100, '2026-10-01T00:00:00Z', '2026-10-02T00:00:00Z'))
+    assert.ok([...p.values()].includes('game.group.phase.league.numberOfWinSets'))
+  })
+
+  it('best of 3 or 5 only when VolleyManager says so; anything else is no format, never a silent 5', () => {
+    assert.equal(t(makeGame(1, { winSets: 'two_win_sets' })).match_format, 3)
+    assert.equal(t(makeGame(2, { winSets: 'three_win_sets' })).match_format, 5)
+    assert.equal(t(makeGame(3, { winSets: 'TWO_WIN_SETS' })).match_format, 3)
+    for (const v of [null, '', 'four_win_sets', 2, {}]) {
+      assert.equal(t(makeGame(4, { winSets: v })).match_format, null, String(v))
+      assert.equal(matchFormatOf(v), null)
+    }
+    const missing = makeGame(5)
+    delete missing.game.group.phase.league.numberOfWinSets
+    assert.equal(t(missing).match_format, null, 'not sent')
+  })
+
+  it('a youth league by its age class (U13, U21, U23) or by the VolleyManager flag; the category is recorded', () => {
+    for (const [leagueName, shortName] of [['U21 Damen', 'U21'], ['U13 Mixed', 'U13'], ['U12 Kids', 'U12'], ['Juniorinnen U 17', 'J17'], ['3. Liga', 'U23']]) {
+      assert.equal(t(makeGame(1, { leagueName, shortName })).match_level, 'junior', leagueName)
+    }
+    for (const [leagueName, shortName] of [['3. Liga', '3L'], ['Seniorenliga Ü35', 'S35'], ['Plu 12 Cup', 'P12']]) {
+      assert.equal(t(makeGame(1, { leagueName, shortName })).match_level, 'senior', leagueName)
+    }
+    const flagged = t(makeGame(2, { leagueName: 'Nachwuchs B', shortName: 'NWB', junior: true }))
+    assert.equal(flagged.match_level, 'junior')
+    assert.equal(flagged.junior_category, true)
+    assert.equal(flagged.league_category, 'Nachwuchs B')
+    const plain = t(makeGame(3))
+    assert.equal(plain.junior_category, null, 'not sent: not known')
+    assert.equal(plain.league_category, '3. Liga')
+    assert.equal(t(makeGame(4, { junior: false })).junior_category, false)
+  })
+
   it('normalises birthdays for the date column', () => {
     assert.equal(normalizeDob('1990-02-24'), '1990-02-24')
     assert.equal(normalizeDob('1990-02-24T00:00:00+01:00'), '1990-02-24')
@@ -148,9 +187,11 @@ describe('transformGame: other fields', () => {
 })
 
 describe('NL exclusion and row preparation', () => {
-  it('excludes NL leagues (substring, like the Edge Function)', () => {
-    for (const l of ['NLA', 'NLB', 'nl', 'Nationalliga A', 'NLA Damen']) assert.equal(isExcludedLeague(l), true, l)
-    for (const l of ['1L D', '3L B', 'U18', 'ZC', '']) assert.equal(isExcludedLeague(l), false, l)
+  it('excludes NL leagues by whole word, never a league that only contains the letters', () => {
+    for (const l of ['NLA', 'NLB', 'nl', 'NL B', 'Nationalliga A', 'NLA Damen', 'NL-Herren']) assert.equal(isExcludedLeague(l), true, l)
+    for (const l of ['1L D', '3L B', 'U18', 'ZC', '', 'Seniorenliga', 'Juniorenliga A', 'Frauenliga', 'Einladungsturnier', 'Online Cup']) {
+      assert.equal(isExcludedLeague(l), false, l)
+    }
   })
 
   it('drops NL games and games without a number, merges duplicate numbers', () => {
@@ -161,9 +202,10 @@ describe('NL exclusion and row preparation', () => {
       { game: { startingDateTime: '2026-10-10T16:00:00Z' } }, // no number
       makeGame(1, { home: 'Later wins' })
     ]
-    const { rows, transformed, excluded, duplicates } = prepareRows(items, { syncedAt: SYNCED })
+    const { rows, transformed, excluded, excludedLeagues, duplicates } = prepareRows(items, { syncedAt: SYNCED })
     assert.equal(transformed, 4)
     assert.equal(excluded, 2)
+    assert.deepEqual(excludedLeagues, ['NLA', 'NLB B'], 'named in the run log')
     assert.equal(duplicates, 1)
     assert.deepEqual(rows.map((r) => r.game_number), ['1'])
     assert.equal(rows[0].team_home, 'Later wins')

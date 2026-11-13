@@ -16,6 +16,9 @@ export const FAKE_SESSION_2 = 'sess-auth-bbbbbbbbbbbb'
 export const FAKE_DASH_CSRF = 'dash-csrf-fedcba9876543210fedcba98'
 /** The account's referee-delegate role attribute (lib/vmSync.js VM_ROLE_FOR_GAMES). */
 export const FAKE_REFEREE_ROLE = 'e693b8cf-3fda-4a8d-b091-b3c7dae850ec'
+/** A club role attribute (what another job leaves the shared account in), and the association's id. */
+export const FAKE_CLUB_ROLE = 'c1ab0000-0000-4000-8000-00000000c1ab'
+const FAKE_ASSOCIATION = 'a550c000-0000-4000-8000-0000000a550c'
 
 const USER_FIELD = '__authentication[Neos][Flow][Security][Authentication][Token][UsernamePassword][username]'
 const PASS_FIELD = '__authentication[Neos][Flow][Security][Authentication][Token][UsernamePassword][password]'
@@ -56,6 +59,8 @@ function cookieMap(header) {
  * @param {string}   [o.startRole]       the account's active role at login: 'club' (what
  *                                       another job leaves behind) or 'referee'
  * @param {boolean}  [o.refuseSwitch]    the role switch answers 403
+ * @param {boolean}  [o.ignoreSwitch]    the role switch answers 200 and changes nothing
+ * @param {boolean}  [o.hideRole]        the dashboard shows no active role
  */
 export function createFakeVolleyManager({
   games = [],
@@ -66,12 +71,19 @@ export function createFakeVolleyManager({
   maxPageSize = null,
   slowAbove = null,
   startRole = 'club',
-  refuseSwitch = false
+  refuseSwitch = false,
+  ignoreSwitch = false,
+  hideRole = false
 } = {}) {
   const calls = []
   let transientLeft = transient500
   // VolleyManager keeps the active role per account, across logins
   let role = startRole
+  let otherRole = 'not-a-known-role'
+  const activeAttr = () => (role === 'referee' ? FAKE_REFEREE_ROLE : role === 'club' ? FAKE_CLUB_ROLE : otherRole)
+  // as VolleyManager renders it: the association's id comes first, nested (a pattern match finds that one)
+  const activeParty = () => JSON.stringify({ activeAttributeValue: { association: { persistenceObjectIdentifier: FAKE_ASSOCIATION }, persistenceObjectIdentifier: activeAttr() } })
+    .replace(/"/g, '&quot;')
 
   async function fetch(url, init = {}) {
     const u = new URL(url)
@@ -119,13 +131,18 @@ export function createFakeVolleyManager({
     }
 
     if (method === 'GET' && u.pathname === '/') {
-      return authed ? html(`<html><body><div id="dashboard" data-csrf-token="${FAKE_DASH_CSRF}"></div></body></html>`) : redirect('/login')
+      const party = hideRole ? '' : ` :active-party="$convertFromBackendToFrontend(${activeParty()})"`
+      return authed ? html(`<html><body><div id="dashboard" data-csrf-token="${FAKE_DASH_CSRF}"${party}></div></body></html>`) : redirect('/login')
     }
 
     if (method === 'PUT' && u.pathname === '/api/sportmanager.security/api%5cparty/switchRoleAndAttribute') {
       const form = new URLSearchParams(body)
       if (!authed || form.get('__csrfToken') !== FAKE_DASH_CSRF || refuseSwitch) return html('forbidden', { status: 403 })
-      role = form.get('attributeValueAsArray[0]') === FAKE_REFEREE_ROLE ? 'referee' : 'other'
+      if (!ignoreSwitch) {
+        const wanted = form.get('attributeValueAsArray[0]')
+        role = wanted === FAKE_REFEREE_ROLE ? 'referee' : wanted === FAKE_CLUB_ROLE ? 'club' : 'other'
+        if (role === 'other') otherRole = wanted
+      }
       return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
     }
 
@@ -151,10 +168,10 @@ export function createFakeVolleyManager({
     return html('not found', { status: 404 })
   }
 
-  return { fetch, calls, baseUrl: FAKE_BASE, role: () => role }
+  return { fetch, calls, baseUrl: FAKE_BASE, role: () => role, setRole: (r) => { role = r } }
 }
 
-/** A VM search item with the fields transformGame reads. */
+/** A VM search item with the fields transformGame reads (winSets: league.numberOfWinSets; junior: isJuniorLeagueCategory, left out when undefined). */
 export function makeGame(n, {
   startingDateTime = '2026-10-10T16:00:00.000Z',
   leagueName = '3. Liga',
@@ -164,8 +181,11 @@ export function makeGame(n, {
   home = `Home ${n}`,
   away = `Away ${n}`,
   dob1 = '1990-02-24',
+  winSets = 'three_win_sets',
+  junior,
   ...extra
 } = {}) {
+  const leagueCategory = { name: leagueName, shortName, ...(junior === undefined ? {} : { isJuniorLeagueCategory: junior }) }
   return {
     game: {
       number: n,
@@ -174,7 +194,7 @@ export function makeGame(n, {
       hall: { name: 'Halle Musterdorf', primaryPostalAddress: { city: 'Zürich', combinedAddress: 'Schulstrasse 1, 8003 Zürich', postalCode: '8003' } },
       group: {
         displayName: groupDisplay,
-        phase: { name: 'Qualifikation', league: { gender, numberOfWinSets: 'three_win_sets', leagueCategory: { name: leagueName, shortName } } }
+        phase: { name: 'Qualifikation', league: { gender, numberOfWinSets: winSets, leagueCategory } }
       }
     },
     activeRefereeConvocationFirstHeadReferee: {

@@ -8,8 +8,8 @@
  *   docker stop ov-vmsync-pg
  *
  * Each run creates its own database from tests/fixtures/svrz_schema.sql (the
- * production definitions) and drops it at the end. VolleyManager is the
- * in-memory fake: no network.
+ * production definitions) plus db/041, and drops it at the end. VolleyManager
+ * is the in-memory fake: no network.
  *
  * With PG_TEST_TEMPLATE=<database> (a scrubbed rehearsal restore made by
  * scripts/migrate/restore.sh; see tests/helpers/pgTestDb.js) the database is a
@@ -22,7 +22,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { runVmSync, ADVISORY_LOCK_KEY } from '../lib/vmSync.js'
+import { runVmSync, readSyncRecord, syncHealth, ADVISORY_LOCK_KEY } from '../lib/vmSync.js'
 import { createFakeVolleyManager, makeGame, FAKE_USER, FAKE_PASSWORD } from './helpers/fakeVolleyManager.js'
 import { PG_TEST_TEMPLATE, createDatabase } from './helpers/pgTestDb.js'
 
@@ -31,6 +31,7 @@ const SKIP = PG_TEST_URL ? false : 'PG_TEST_URL not set (see the header of this 
 const here = dirname(fileURLToPath(import.meta.url))
 const SCHEMA_SQL = readFileSync(join(here, 'fixtures', 'svrz_schema.sql'), 'utf8')
 const MIGRATION_SQL = readFileSync(join(here, '..', 'db', '003_svrz_games_local_time.sql'), 'utf8')
+const SYNC_041_SQL = readFileSync(join(here, '..', 'db', '041_schedule_sync.sql'), 'utf8')
 
 const http = { sleep: async () => {}, backoffMs: 1, timeoutMs: 5000 }
 const creds = { username: FAKE_USER, password: FAKE_PASSWORD }
@@ -78,6 +79,9 @@ describe('vm-sync on Postgres', { skip: SKIP }, () => {
         await c.query(SCHEMA_SQL)
         await admin.query(`CREATE ROLE "${appRole}" LOGIN PASSWORD 'app' NOSUPERUSER NOCREATEDB NOCREATEROLE BYPASSRLS`)
       }
+      // idempotent, and on a restored database it may have run already
+      await c.query(SYNC_041_SQL)
+      await c.query(SYNC_041_SQL)
       await admin.query(`CREATE ROLE "${noRlsRole}" LOGIN PASSWORD 'app' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`)
       for (const r of PG_TEST_TEMPLATE ? [noRlsRole] : [appRole, noRlsRole]) {
         await c.query(`GRANT USAGE ON SCHEMA public TO "${r}";
@@ -109,7 +113,7 @@ describe('vm-sync on Postgres', { skip: SKIP }, () => {
   })
 
   const q = (text, params) => ownerPool.query(text, params)
-  const reset = () => q('TRUNCATE public.svrz_games, public.svrz_sync_log RESTART IDENTITY')
+  const reset = () => q('TRUNCATE public.svrz_games, public.svrz_sync_log, public.svrz_games_removed RESTART IDENTITY')
   const sync = (vm, extra = {}) => runVmSync({
     pool, fetch: vm.fetch, baseUrl: vm.baseUrl, http, now: NOW, credentials: creds, logger: quiet, pageDelayMs: 0, ...extra
   })
@@ -152,6 +156,71 @@ describe('vm-sync on Postgres', { skip: SKIP }, () => {
     assert.equal(log.length, 3)
     assert.ok(log.every((l) => l.status === 'success' && l.finished_at && l.errors === 0))
     assert.deepEqual([log[2].games_fetched, log[2].games_created, log[2].games_updated, log[2].games_unchanged], [5, 1, 1, 2])
+  })
+
+  it('a game VolleyManager no longer returns leaves the schedule, so no rule finds it, and comes back with VolleyManager', async () => {
+    await reset()
+    // NOW is 2026-10-05T04:00Z: the window is 2026-10-04 .. 2026-10-19 (Zurich)
+    const kept = makeGame(6101, { startingDateTime: '2026-10-07T16:00:00Z' })
+    const cancelled = makeGame(6102, { startingDateTime: '2026-10-06T16:00:00Z', home: 'Team Alpha H1', away: 'Team Beta H1' })
+    const played = makeGame(6103, { startingDateTime: '2026-10-04T16:00:00Z' })
+    let r = await sync(createFakeVolleyManager({ games: [kept, cancelled, played] }))
+    assert.equal(r.status, 'success', r.message)
+
+    // cancelled is gone from VolleyManager; played (before the run) is not returned either
+    r = await sync(createFakeVolleyManager({ games: [kept] }))
+    assert.equal(r.status, 'success', r.message)
+    assert.equal(r.removed, 1)
+    const numbers = async () => (await q('SELECT game_number FROM public.svrz_games ORDER BY 1')).rows.map((x) => x.game_number)
+    assert.deepEqual(await numbers(), ['6101', '6103'], 'a game that kicked off before the run stays')
+    const { rows: [gone] } = await q('SELECT game_number, team_home, datetime, sync_log_id FROM public.svrz_games_removed')
+    assert.deepEqual([gone.game_number, gone.team_home, gone.datetime, String(gone.sync_log_id)], ['6102', 'Team Alpha H1', '2026-10-06T16:00:00Z', String(r.logId)])
+    const { rows: [log] } = await q('SELECT games_removed, message FROM public.svrz_sync_log WHERE id = $1', [r.logId])
+    assert.equal(log.games_removed, 1)
+    assert.match(log.message, /1 no longer in VolleyManager \(6102\)/)
+
+    // a partial run removes nothing
+    r = await sync(createFakeVolleyManager({ games: [makeGame(6104), makeGame(6105)], failSearchAt: 1 }), { pageSize: 1 })
+    assert.equal(r.status, 'partial')
+    assert.deepEqual(await numbers(), ['6101', '6103', '6104'])
+
+    // moved back into the window and returned again: back in the schedule
+    r = await sync(createFakeVolleyManager({ games: [kept, cancelled, makeGame(6104)] }))
+    assert.equal(r.status, 'success', r.message)
+    assert.deepEqual(await numbers(), ['6101', '6102', '6103', '6104'])
+    assert.equal((await q('SELECT count(*)::int AS n FROM public.svrz_games_removed')).rows[0].n, 0)
+  })
+
+  it('the format: 3 or 5 from VolleyManager, NULL (counted) when it says neither; the category is stored', async () => {
+    await reset()
+    const noFormat = makeGame(6202)
+    delete noFormat.game.group.phase.league.numberOfWinSets
+    const r = await sync(createFakeVolleyManager({ games: [
+      makeGame(6201, { winSets: 'two_win_sets', leagueName: 'U21 Damen', shortName: 'U21' }), noFormat, makeGame(6203, { junior: false })
+    ] }))
+    assert.equal(r.status, 'success', r.message)
+    const { rows } = await q('SELECT game_number, match_format, match_level, league_category, junior_category FROM public.svrz_games ORDER BY 1')
+    assert.deepEqual(rows.map((x) => [x.game_number, x.match_format, x.match_level, x.league_category, x.junior_category]), [
+      ['6201', 3, 'junior', 'U21 Damen', null],
+      ['6202', null, 'senior', '3. Liga', null],
+      ['6203', 5, 'senior', '3. Liga', false]
+    ])
+    const { rows: [log] } = await q('SELECT games_without_format FROM public.svrz_sync_log WHERE id = $1', [r.logId])
+    assert.equal(log.games_without_format, 1)
+  })
+
+  it('readSyncRecord + syncHealth: the last run and the last success, for /health', async () => {
+    await reset()
+    assert.equal(syncHealth(await readSyncRecord(pool), { now: Date.now() }).state, 'degraded')
+    await sync(createFakeVolleyManager({ games: [makeGame(6301), makeGame(6302)] }))
+    await sync(createFakeVolleyManager({ password: 'not-this-one' }))
+    const record = await readSyncRecord(pool)
+    assert.equal(record.lastRun.status, 'failed')
+    assert.equal(record.lastSuccess.status, 'success')
+    assert.equal(record.lastSuccess.written, 2)
+    const h = syncHealth(record, { now: Date.now() })
+    assert.deepEqual(h.reasons, ['last_run_failed'])
+    assert.equal(h.lastSuccessGames, 2)
   })
 
   it('a failure after the running row closes it as failed without credentials', async () => {
@@ -205,7 +274,7 @@ describe('vm-sync on Postgres', { skip: SKIP }, () => {
 
     const { rows: [{ held }] } = await q(`SELECT count(*)::int AS held FROM pg_locks WHERE locktype = 'advisory' AND granted AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`)
     assert.equal(held, 0, 'lock released')
-    const rC = await sync(createFakeVolleyManager({ games: [] }))
+    const rC = await sync(createFakeVolleyManager({ games: [makeGame(6001)] }))
     assert.equal(rC.status, 'success')
   })
 

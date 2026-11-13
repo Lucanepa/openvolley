@@ -22,6 +22,15 @@
  *  - every VolleyManager request has a timeout and limited retries with backoff
  *  - the password, cookies and CSRF token are never logged (and are scrubbed
  *    from every log line and error message)
+ *  - the account's active role is read back after the switch; a switch that
+ *    is refused or does not take fails the run
+ *  - match_format is 3 or 5 only when VolleyManager says so (NULL otherwise,
+ *    counted in the log), the category and an age class in it are stored, and
+ *    the NL filter takes whole words
+ *  - a complete run moves the upcoming games VolleyManager no longer returns
+ *    out of svrz_games (db/041); no games or most of them missing is 'partial'
+ *  - scheduleVmSync retries a run that is no success and catches a missed one
+ *    up; readSyncRecord / syncHealth are /health's view of it
  *
  * Nothing here imports `pg`: runVmSync takes a pg Pool (or anything with
  * connect() -> client { query, release, on/removeListener } and, optionally,
@@ -48,6 +57,25 @@ export const MAX_WINDOW_DAYS = 400
 /** A 'running' log row older than this belongs to a dead run. */
 export const STALE_RUNNING_MS = 60 * 60 * 1000
 /**
+ * A complete run moves the upcoming games VolleyManager no longer returns out
+ * of svrz_games (db/041 svrz_games_removed), unless more than this many and
+ * more than half of the window's upcoming games would go at once: that is
+ * VolleyManager answering under another role or with a broken search, not a
+ * wave of cancellations, and the run is 'partial' for a person to look at.
+ */
+export const REMOVAL_GUARD_MIN = 10
+/** The schedule's retries after a run that was no success (each counted from the end of the last try). */
+export const VM_SYNC_RETRY_DELAYS_MS = Object.freeze([15, 30, 60].map((m) => m * 60000))
+/** /health: a last success older than this (a nightly sync missed, plus slack) is stale. */
+export const SYNC_STALE_AFTER_MS = 26 * 3600000
+/**
+ * When retries and catch-up runs may start (UTC, VM_SYNC_WINDOW_UTC): the
+ * shared account's referee-role hours (svrz_rc's 22:00-00:59 UTC games
+ * window, which wiedisync's club-role jobs keep out of). 'any' once
+ * OpenVolley has an account of its own.
+ */
+export const DEFAULT_RUN_WINDOW_UTC = '22:00-01:00'
+/**
  * pg_try_advisory_lock key (bigint): ASCII "ovvmsync". Shared by every process
  * that runs the sync against the same database.
  */
@@ -70,8 +98,10 @@ export const ADVISORY_LOCK_KEY = '8031737197922709091'
  */
 export const VM_ROLE_FOR_GAMES = 'e693b8cf-3fda-4a8d-b091-b3c7dae850ec'
 
-// Leagues to EXCLUDE (above 1L). Substring match on the league text, exactly as
-// the Edge Function did.
+// Leagues to EXCLUDE (above 1L): a whole word of the league text ("NLA",
+// "NL B", "Nationalliga A"). The Edge Function matched a substring, which also
+// dropped every league whose text merely contains "nl" (Seniorenliga,
+// Juniorenliga, Einladungsturnier).
 export const EXCLUDED_LEAGUES = ['nl', 'nationalliga', 'nla', 'nlb']
 
 const USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36'
@@ -81,8 +111,11 @@ const PASSWORD_FIELD = '__authentication[Neos][Flow][Security][Authentication][T
 export const RENDER_PROPERTIES = [
   'game.startingDateTime', 'gameDayOfWeek', 'game.number',
   'game.group.phase.league.leagueCategory.name',
+  'game.group.phase.league.leagueCategory.shortName',
+  'game.group.phase.league.leagueCategory.isJuniorLeagueCategory',
   'game.group.phase.league.leagueCategory.displayNameWithManagingAssociationShortName',
   'game.group.phase.league.gender',
+  'game.group.phase.league.numberOfWinSets',
   'game.group.name', 'game.group.displayName',
   'game.group.phase.name', 'game.group.phase.displayName',
   'game.encounter.teamHome.identifier', 'game.encounter.teamHome.name',
@@ -525,14 +558,36 @@ export function extractCsrfToken(html) {
   return m ? decodeHtmlEntities(m[1]) : null
 }
 
+/**
+ * The account's active role attribute on the dashboard, or '' when the page
+ * shows none: `:active-party="$convertFromBackendToFrontend({...})"`, whose
+ * activeAttributeValue.persistenceObjectIdentifier it is. Parsed, not
+ * pattern-matched: the association's id comes first, nested (svrz_rc reads it
+ * the same way, server/boerse.ts readActiveRole).
+ */
+export function extractActiveRole(html) {
+  const m = String(html).match(/:active-party="([^"]+)"/)
+  if (!m) return ''
+  const raw = decodeHtmlEntities(m[1])
+  const open = raw.indexOf('(')
+  const close = raw.lastIndexOf(')')
+  if (open < 0 || close <= open) return ''
+  try {
+    const id = JSON.parse(raw.slice(open + 1, close))?.activeAttributeValue?.persistenceObjectIdentifier
+    return typeof id === 'string' ? id : ''
+  } catch {
+    return ''
+  }
+}
+
 export function buildLoginBody(fields, username, password) {
   return new URLSearchParams({ ...fields, [USERNAME_FIELD]: username, [PASSWORD_FIELD]: password }).toString()
 }
 
 /**
- * Points the logged-in account at a role (VM_ROLE_FOR_GAMES). Best effort, like
- * svrz_rc's: when it fails the referee page says so more clearly than anything
- * here could, and the account may already be in that role. Never logs the token.
+ * Points the logged-in account at a role (VM_ROLE_FOR_GAMES). True when
+ * VolleyManager accepted the switch (vmLogin then reads the role back). Never
+ * logs the token.
  */
 export async function vmSwitchRole(jar, csrfToken, attributeValueId, { fetch: fetchImpl, baseUrl = VM_BASE, http = {} } = {}) {
   const logger = http.logger
@@ -568,9 +623,22 @@ export async function vmSwitchRole(jar, csrfToken, attributeValueId, { fetch: fe
   }
 }
 
+/** Why a page after the login carries no CSRF token, in words that point at the cause. */
+function loginFailure(html, page) {
+  return /\/login\b|UsernamePassword/.test(html)
+    ? 'VolleyManager login failed (still on the login page; check VM_USERNAME / VM_PASSWORD)'
+    : `VolleyManager login failed (no CSRF token on the ${page})`
+}
+
 /**
  * Logs in and returns { jar, csrfToken }. Never logs the password, cookie
  * values or the CSRF token.
+ *
+ * The shared account's active role is read on the dashboard; when it is not
+ * `roleAttribute`, the account is switched and the role read again. A refused
+ * switch, or a role that did not change, fails the login (and so the run):
+ * another role may read fewer games without an error (svrz_rc saw one answer
+ * 200 with no rows), which a run must never take for the schedule.
  */
 export async function vmLogin({ username, password }, { fetch: fetchImpl, baseUrl = VM_BASE, http = {}, logger = null, roleAttribute = VM_ROLE_FOR_GAMES } = {}) {
   if (!username || !password) throw new Error('VolleyManager credentials missing (VM_USERNAME / VM_PASSWORD)')
@@ -591,11 +659,24 @@ export async function vmLogin({ username, password }, { fetch: fetchImpl, baseUr
     body: buildLoginBody(fields, username, password)
   }, { ...opts, label: 'login' })
 
-  // The dashboard opens under every role and carries a CSRF token: with it, the
-  // session asks for the one role that may read the referee games.
-  logger?.log?.('VM: getting the dashboard for the role switch')
+  // The dashboard opens under every role, shows the active one and carries a
+  // CSRF token: with it, the session asks for the one role that may read the
+  // referee games, and reads the role back.
+  logger?.log?.('VM: getting the dashboard for the active role')
   const { body: dashboardHtml } = await followRedirects(`${baseUrl}/`, jar, {}, { ...opts, label: 'dashboard' })
-  const switched = await vmSwitchRole(jar, extractCsrfToken(dashboardHtml), roleAttribute, opts)
+  if (!extractCsrfToken(dashboardHtml)) throw new Error(loginFailure(dashboardHtml, 'dashboard'))
+  const before = extractActiveRole(dashboardHtml)
+  if (before !== roleAttribute) {
+    logger?.log?.(`VM: the account is on ${before || 'no readable role'}; switching to the referee-delegate role`)
+    if (!(await vmSwitchRole(jar, extractCsrfToken(dashboardHtml), roleAttribute, opts))) {
+      throw new VmHttpError(`role switch to the referee-delegate role was refused (the account is on ${before || 'no readable role'}; check VM_ROLE_ATTRIBUTE_GAMES)`)
+    }
+    const { body: afterHtml } = await followRedirects(`${baseUrl}/`, jar, {}, { ...opts, label: 'dashboard' })
+    const after = extractActiveRole(afterHtml)
+    if (after !== roleAttribute) {
+      throw new VmHttpError(`the account is still on ${after || 'no readable role'} after the role switch, not the referee-delegate role ${roleAttribute}`)
+    }
+  }
 
   logger?.log?.('VM: getting referee page for the CSRF token')
   let refHtml
@@ -603,17 +684,12 @@ export async function vmLogin({ username, password }, { fetch: fetchImpl, baseUr
     ;({ body: refHtml } = await followRedirects(`${baseUrl}/indoorvolleyball.refadmin/refereegame/index`, jar, {}, { ...opts, label: 'referee page' }))
   } catch (err) {
     if (err instanceof VmHttpError && err.status === 403) {
-      throw new VmHttpError(`referee page: HTTP 403 (the account is not in the referee-delegate role${switched ? '' : '; the role switch did not go through, check VM_ROLE_ATTRIBUTE_GAMES'})`, { status: 403 })
+      throw new VmHttpError('referee page: HTTP 403 (the account is not in the referee-delegate role)', { status: 403 })
     }
     throw err
   }
   const csrfToken = extractCsrfToken(refHtml)
-  if (!csrfToken) {
-    const looksLikeLogin = /\/login\b|UsernamePassword/.test(refHtml)
-    throw new Error(looksLikeLogin
-      ? 'VolleyManager login failed (still on the login page; check VM_USERNAME / VM_PASSWORD)'
-      : 'VolleyManager login failed (no CSRF token on the referee page)')
-  }
+  if (!csrfToken) throw new Error(loginFailure(refHtml, 'referee page'))
   logger?.log?.(`VM: logged in (CSRF token ${csrfToken.length} chars, ${jar.size} cookie(s))`)
   return { jar, csrfToken }
 }
@@ -750,7 +826,21 @@ function extractRefereeInfo(item, convocationKey) {
   }
 }
 
-const JUNIOR_KEYWORDS = ['u14', 'u15', 'u16', 'u17', 'u18', 'u19', 'u20', 'u23', 'junior', 'jugend', 'nachwuchs']
+// A youth league: an age class in its category (U13, "U 17", U21, U23) or one
+// of these words. Recorded only (match_level, the sheet's category box): no
+// rule limit reads it (owner decision 6).
+const AGE_CLASS_RE = /\bu ?\d{2}\b/i
+const JUNIOR_WORDS_RE = /junior|jugend|nachwuchs/i
+
+/**
+ * VolleyManager's league.numberOfWinSets -> best of 3 or 5, or null when it
+ * says neither (missing, another value): the app then asks the scorer. The
+ * Edge Function made everything but two_win_sets a best of 5.
+ */
+export function matchFormatOf(numberOfWinSets) {
+  const v = typeof numberOfWinSets === 'string' ? numberOfWinSets.trim().toLowerCase() : ''
+  return v === 'two_win_sets' ? 3 : v === 'three_win_sets' ? 5 : null
+}
 
 /**
  * One VM search item -> one svrz_games row (without id / created_at).
@@ -776,11 +866,13 @@ export function transformGame(item, { syncedAt = new Date(), tz = ZURICH_TZ } = 
   const leagueName = String(leagueCat.name ?? '')
   const nameLower = leagueName.toLowerCase()
   const genderCode = league.gender ?? ''
-  const isJunior = !!leagueCat.isJuniorLeagueCategory
+  const juniorFlag = typeof leagueCat.isJuniorLeagueCategory === 'boolean' ? leagueCat.isJuniorLeagueCategory : null
+  const shortText = String(leagueCat.shortName ?? '')
 
   const isCup = nameLower.includes('cup') || nameLower.includes('pokal')
   const matchGender = genderCode === 'm' ? 'men' : genderCode === 'f' ? 'women' : ''
-  const matchLevel = (isJunior || JUNIOR_KEYWORDS.some((kw) => nameLower.includes(kw))) ? 'junior' : 'senior'
+  const isJunior = juniorFlag === true || AGE_CLASS_RE.test(leagueName) || AGE_CLASS_RE.test(shortText) || JUNIOR_WORDS_RE.test(leagueName)
+  const matchLevel = isJunior ? 'junior' : 'senior'
 
   // League text (e.g. "3L B", "1L D"); group display "Gruppe B" or "#27051 | D"
   const leagueShort = leagueCat.shortName ?? leagueName
@@ -788,7 +880,7 @@ export function transformGame(item, { syncedAt = new Date(), tz = ZURICH_TZ } = 
   const gruppeMatch = String(groupDisplay).match(/Gruppe\s+([A-Z0-9]+)/) || String(groupDisplay).match(/\|\s*([A-Z0-9]+)\s*$/)
   const leagueText = gruppeMatch ? `${leagueShort} ${gruppeMatch[1]}` : leagueShort
 
-  const matchFormat = league.numberOfWinSets === 'two_win_sets' ? 3 : 5
+  const matchFormat = matchFormatOf(league.numberOfWinSets)
 
   const rawDt = typeof g.startingDateTime === 'string' ? g.startingDateTime : ''
   const kickoff = parseVmDateTime(rawDt, tz)
@@ -815,6 +907,8 @@ export function transformGame(item, { syncedAt = new Date(), tz = ZURICH_TZ } = 
     gender: matchGender,
     match_level: matchLevel,
     league: str(leagueText),
+    league_category: str(leagueCat.name),
+    junior_category: juniorFlag,
     match_format: matchFormat,
     team_home: str(home.name),
     team_away: str(away.name),
@@ -840,21 +934,31 @@ export function transformGame(item, { syncedAt = new Date(), tz = ZURICH_TZ } = 
 }
 
 export function isExcludedLeague(league) {
-  const l = String(league ?? '').toLowerCase()
-  return EXCLUDED_LEAGUES.some((ex) => l.includes(ex))
+  const words = String(league ?? '').toLowerCase().split(/[^\p{L}\p{N}]+/u)
+  return words.some((w) => EXCLUDED_LEAGUES.includes(w))
 }
 
 /**
  * Transforms, drops rows without a game number and NL leagues, and de-duplicates
  * by game_number (last one wins: one INSERT .. ON CONFLICT cannot touch the same
- * row twice).
+ * row twice). `numbers`: every game number VolleyManager returned (the NL ones
+ * too: a game it returns is not cancelled); `excludedLeagues`: the league texts
+ * left out, for the run's log line.
  */
 export function prepareRows(items, opts = {}) {
   const all = (items || []).map((it) => transformGame(it, opts)).filter((r) => r.game_number)
   const kept = all.filter((r) => !isExcludedLeague(r.league))
   const byNumber = new Map()
   for (const r of kept) byNumber.set(r.game_number, r)
-  return { rows: [...byNumber.values()], transformed: all.length, excluded: all.length - kept.length, duplicates: kept.length - byNumber.size }
+  const excludedLeagues = [...new Set(all.filter((r) => isExcludedLeague(r.league)).map((r) => r.league))]
+  return {
+    rows: [...byNumber.values()],
+    numbers: new Set(all.map((r) => r.game_number)),
+    transformed: all.length,
+    excluded: all.length - kept.length,
+    excludedLeagues,
+    duplicates: kept.length - byNumber.size
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -865,7 +969,8 @@ export function prepareRows(items, opts = {}) {
 export const GAME_COLUMNS = [
   ['game_number', 'text'], ['date', 'text'], ['time', 'text'], ['datetime', 'text'],
   ['city', 'text'], ['hall', 'text'], ['match_type', 'text'], ['championship_type', 'text'],
-  ['gender', 'text'], ['match_level', 'text'], ['league', 'text'], ['match_format', 'integer'],
+  ['gender', 'text'], ['match_level', 'text'], ['league', 'text'], ['league_category', 'text'], ['junior_category', 'boolean'],
+  ['match_format', 'integer'],
   ['team_home', 'text'], ['team_away', 'text'],
   ['referee_1', 'text'], ['referee_1_first_name', 'text'], ['referee_1_last_name', 'text'], ['referee_1_dob', 'date'],
   ['referee_2', 'text'], ['referee_2_first_name', 'text'], ['referee_2_last_name', 'text'], ['referee_2_dob', 'date'],
@@ -932,6 +1037,40 @@ export async function closeStaleRunningRows(client, { olderThanMs = STALE_RUNNIN
   return rowCount ?? 0
 }
 
+/**
+ * The stored games of the window that kick off between `from` and the
+ * window's end (instants, ms): [{ game_number, datetime }]. The text filter
+ * is a day wider on each side (datetime is VolleyManager's raw ISO text, with
+ * or without an offset); parseVmDateTime decides.
+ */
+async function storedUpcoming(client, win, from) {
+  const { rows } = await client.query(
+    'SELECT game_number, datetime FROM public.svrz_games WHERE datetime >= $1 AND datetime < $2',
+    [addDaysYmd(win.fromDay, -1), addDaysYmd(win.toDay, 2)])
+  const to = Date.parse(win.dateTo)
+  const start = Math.max(from, Date.parse(win.dateFrom))
+  return rows.filter((r) => {
+    const t = parseVmDateTime(r.datetime)?.getTime()
+    return t != null && t >= start && t <= to
+  })
+}
+
+/** Moves the games out of svrz_games into svrz_games_removed (db/041); returns their numbers. */
+async function removeGames(client, numbers, logId) {
+  const { rows } = await client.query(
+    `WITH gone AS (
+       DELETE FROM public.svrz_games g WHERE g.game_number = ANY($1::text[])
+       RETURNING g.game_number, g.datetime, g.league, g.team_home, g.team_away, g.hall, g.synced_at
+     )
+     INSERT INTO public.svrz_games_removed (game_number, datetime, league, team_home, team_away, hall, last_synced_at, removed_at, sync_log_id)
+     SELECT game_number, datetime, league, team_home, team_away, hall, synced_at, now(), $2 FROM gone
+     ON CONFLICT (game_number) DO UPDATE SET
+       datetime = EXCLUDED.datetime, league = EXCLUDED.league, team_home = EXCLUDED.team_home, team_away = EXCLUDED.team_away,
+       hall = EXCLUDED.hall, last_synced_at = EXCLUDED.last_synced_at, removed_at = EXCLUDED.removed_at, sync_log_id = EXCLUDED.sync_log_id
+     RETURNING game_number`, [numbers, logId])
+  return rows.map((r) => r.game_number)
+}
+
 // ---------------------------------------------------------------------------
 // Run
 // ---------------------------------------------------------------------------
@@ -949,6 +1088,15 @@ function wrapLogger(logger, redact) {
  * Runs one sync. Never throws for a sync failure: the result says what happened
  * ({ status: 'success' | 'partial' | 'failed' | 'skipped', ... }). It throws
  * only for programming errors (no pool, bad window).
+ *
+ * A complete run (every page, every batch written) then moves the window's
+ * games that kick off after its start and that VolleyManager no longer
+ * returned out of svrz_games (removeGames; `removed`), so the club rule,
+ * today's games and the loader stop offering a cancelled, renumbered or moved
+ * game. No games at all while the schedule holds upcoming ones, or more than
+ * REMOVAL_GUARD_MIN and half of them missing, is 'partial' and removes nothing.
+ * `withoutFormat`: rows written with match_format NULL (VolleyManager gave no
+ * number of win sets the sync knows).
  *
  * @param {object} o
  * @param {{connect: Function}} [o.pool]   pg Pool (or compatible). Not needed with dryRun.
@@ -993,7 +1141,7 @@ export async function runVmSync({
   const dateLabel = win.fromDay === win.toDay ? win.fromDay : `${win.fromDay} → ${win.toDay}`
   const result = {
     status: 'failed', logId: null, window: win, fetched: 0, total: 0, kept: 0, excluded: 0,
-    created: 0, updated: 0, unchanged: 0, errors: 0, elapsedMs: 0, message: '', dryRun
+    created: 0, updated: 0, unchanged: 0, written: 0, withoutFormat: 0, removed: 0, errors: 0, elapsedMs: 0, message: '', dryRun
   }
   const elapsed = () => ((clock().getTime() - startedAt.getTime()) / 1000).toFixed(1)
 
@@ -1055,10 +1203,14 @@ export async function runVmSync({
     const prepared = prepareRows(fetched.items, { syncedAt: clock() })
     result.kept = prepared.rows.length
     result.excluded = prepared.excluded
+    result.excludedLeagues = prepared.excludedLeagues
+    result.withoutFormat = prepared.rows.filter((r) => r.match_format == null).length
     log.log(`vm-sync: ${prepared.transformed} game(s) transformed, ${prepared.excluded} NL excluded, ${prepared.rows.length} to write` +
       (prepared.duplicates ? ` (${prepared.duplicates} duplicate game number(s) merged)` : ''))
 
     const batchErrors = []
+    // the upcoming games the schedule holds before this run (a moved game keeps its old time here)
+    const upcoming = dryRun ? [] : await storedUpcoming(client, win, startedAt.getTime())
     if (!dryRun) {
       const syncedAt = clock()
       for (let i = 0; i < prepared.rows.length; i += batchSize) {
@@ -1068,6 +1220,8 @@ export async function runVmSync({
           result.created += c.created
           result.updated += c.updated
           result.unchanged += c.unchanged
+          // back in VolleyManager: no longer a removed game
+          await client.query('DELETE FROM public.svrz_games_removed WHERE game_number = ANY($1::text[])', [batch.map((r) => r.game_number)])
         } catch (err) {
           result.errors += batch.length
           const msg = redact(err)
@@ -1076,15 +1230,34 @@ export async function runVmSync({
         }
       }
     }
+    result.written = result.created + result.updated + result.unchanged
+
+    // the cancelled, renumbered or moved games: only after a complete run
+    let suspicious = null
+    if (!dryRun && !fetched.incomplete && result.errors === 0) {
+      const gone = upcoming.filter((r) => !prepared.numbers.has(r.game_number)).map((r) => r.game_number)
+      if (gone.length && !fetched.items.length) {
+        suspicious = `VolleyManager returned no games; the schedule holds ${upcoming.length} upcoming in this window, none removed`
+      } else if (gone.length > Math.max(REMOVAL_GUARD_MIN, Math.floor(upcoming.length / 2))) {
+        suspicious = `${gone.length} of ${upcoming.length} upcoming games not returned, none removed (check the account's role)`
+      } else if (gone.length) {
+        result.removedGames = await removeGames(client, gone, result.logId)
+        result.removed = result.removedGames.length
+      }
+      if (suspicious) log.warn(`vm-sync: ${suspicious}`)
+    }
 
     const parts = [`[${dateLabel}] ${dryRun ? 'Dry run: fetched' : 'Synced'} ${prepared.rows.length} games in ${elapsed()}s`]
     if (!dryRun) parts.push(`(${result.created} created, ${result.updated} updated, ${result.unchanged} unchanged, ${result.errors} errors)`)
-    if (prepared.excluded) parts.push(`${prepared.excluded} NL excluded`)
+    if (result.withoutFormat) parts.push(`${result.withoutFormat} without a format`)
+    if (prepared.excluded) parts.push(`${prepared.excluded} NL excluded (${prepared.excludedLeagues.slice(0, 10).join(', ')})`)
+    if (result.removed) parts.push(`${result.removed} no longer in VolleyManager (${result.removedGames.slice(0, 20).join(', ')})`)
+    if (suspicious) parts.push(`SUSPICIOUS: ${suspicious}`)
     if (fetched.incomplete) parts.push(`INCOMPLETE: ${fetched.items.length}/${fetched.total} fetched (${redact(fetched.pageError)})`)
     if (batchErrors.length) parts.push(`first error: ${batchErrors[0]}`)
     result.message = redact(parts.join(' '))
     if (result.errors > 0 && result.errors >= prepared.rows.length) result.status = 'failed'
-    else if (result.errors > 0 || fetched.incomplete) result.status = 'partial'
+    else if (result.errors > 0 || fetched.incomplete || suspicious) result.status = 'partial'
     else result.status = 'success'
   } catch (err) {
     result.status = 'failed'
@@ -1096,10 +1269,11 @@ export async function runVmSync({
       if (result.logId != null) {
         const closeSql = `UPDATE public.svrz_sync_log
                 SET finished_at = now(), games_fetched = $2, games_created = $3, games_updated = $4,
-                    games_unchanged = $5, errors = $6, status = $7, message = $8
+                    games_unchanged = $5, errors = $6, status = $7, message = $8,
+                    games_without_format = $9, games_removed = $10
               WHERE id = $1`
         const closeParams = [result.logId, result.fetched, result.created, result.updated, result.unchanged,
-          result.errors, result.status, result.message]
+          result.errors, result.status, result.message, result.withoutFormat, result.removed]
         let closed = false
         if (!clientErr) {
           try {
@@ -1159,13 +1333,36 @@ export function nextRunAt(from, { hourLocal = 6, minuteLocal = 0, tz = ZURICH_TZ
   throw new Error('nextRunAt: no slot found') // unreachable for valid input
 }
 
+/** Minutes after midnight of `date` in `tz`. */
+function minutesOfDay(date, tz) {
+  const p = zonedParts(date, tz)
+  return p.hour * 60 + p.minute
+}
+
+/** Whether minute-of-day `m` is inside { from, to } (minutes; `to` before `from` wraps past midnight). */
+export function inRunWindow(m, w) {
+  if (!w) return true
+  return w.from <= w.to ? m >= w.from && m < w.to : m >= w.from || m < w.to
+}
+
+/** A run that needs no retry: a success that wrote games (zero written in season means VolleyManager answered nothing). */
+export const isGoodSync = (r) => r?.status === 'success' && r.written > 0
+
 /**
  * Runs `run()` every day at hourLocal:minuteLocal in `tz` (default 06:00
  * Europe/Zurich, the Edge Function's cron hour, now in local time). Timers are
  * unref'd. Overlap inside this process is skipped here; across processes the
  * advisory lock in runVmSync does it. Errors from run() are logged, never thrown.
  *
- * @returns {{ stop(): void, nextRunAt(): Date|null, runNow(): Promise<any> }}
+ * With `retryDelaysMs`, a run that is no success (`isSuccess(result)`) is
+ * tried again after each delay in turn, the same day: never at or after the
+ * next daily slot, and only inside `allowedWindow` ({ from, to } minutes of
+ * the day in `tz`; null: any time). With `catchUp` (() => readSyncRecord()),
+ * the schedule looks once `startDelayMs` after it starts: a last success older
+ * than `staleAfterMs` (or none) is caught up at once, inside the window and
+ * unless the daily slot or a try of the last 15 minutes makes it needless.
+ *
+ * @returns {{ stop(): void, nextRunAt(): Date|null, runNow(): Promise<any>, status(): object }}
  */
 export function scheduleVmSync({
   hourLocal = 6,
@@ -1175,7 +1372,13 @@ export function scheduleVmSync({
   logger = console,
   now = () => new Date(),
   setTimer = setTimeout,
-  clearTimer = clearTimeout
+  clearTimer = clearTimeout,
+  retryDelaysMs = [],
+  isSuccess = isGoodSync,
+  allowedWindow = null,
+  catchUp = null,
+  staleAfterMs = SYNC_STALE_AFTER_MS,
+  startDelayMs = 2 * 60000
 } = {}) {
   if (typeof run !== 'function') throw new TypeError('scheduleVmSync: run() required')
   if (!Number.isInteger(hourLocal) || hourLocal < 0 || hourLocal > 23) throw new RangeError('hourLocal must be 0-23')
@@ -1186,6 +1389,45 @@ export function scheduleVmSync({
   let next = null
   let stopped = false
   let running = null
+  let retryTimer = null
+  let retryAt = null
+  let retries = 0 // tries since the last daily slot or success
+  let last = null // { at, status, written }
+  const inWindow = (d) => inRunWindow(minutesOfDay(d, tz), allowedWindow)
+
+  const clearRetry = () => {
+    if (retryTimer) clearTimer(retryTimer)
+    retryTimer = null
+    retryAt = null
+  }
+  const afterRun = (result) => {
+    last = { at: now().toISOString(), status: result?.status ?? null, written: result?.written ?? null }
+    if (stopped || isSuccess(result)) {
+      retries = 0
+      clearRetry()
+      return
+    }
+    if (retries >= retryDelaysMs.length) {
+      if (retryDelaysMs.length) logger?.error?.(`[vm-sync] still no success after ${retries} retries; the next try is the daily run ${next?.toISOString() ?? ''}`)
+      retries = 0
+      return
+    }
+    const at = new Date(now().getTime() + retryDelaysMs[retries++])
+    if (!inWindow(at) || (next && at.getTime() >= next.getTime())) {
+      logger?.warn?.(`[vm-sync] no retry at ${at.toISOString()} (outside the run window or past the daily run); the next try is ${next?.toISOString() ?? 'the daily run'}`)
+      retries = 0
+      return
+    }
+    logger?.warn?.(`[vm-sync] ${result?.status ?? 'no result'}: trying again at ${at.toISOString()} (retry ${retries}/${retryDelaysMs.length})`)
+    clearRetry()
+    retryAt = at
+    retryTimer = setTimer(() => {
+      retryTimer = null
+      retryAt = null
+      if (!stopped) runOnce()
+    }, Math.max(0, at.getTime() - now().getTime()))
+    retryTimer?.unref?.()
+  }
 
   const runOnce = () => {
     if (running) {
@@ -1194,7 +1436,11 @@ export function scheduleVmSync({
     }
     running = Promise.resolve()
       .then(() => run())
-      .catch((err) => { logger?.error?.('[vm-sync] run failed:', err?.message || err) })
+      .catch((err) => {
+        logger?.error?.('[vm-sync] run failed:', err?.message || err)
+        return { status: 'failed' }
+      })
+      .then(afterRun)
       .finally(() => { running = null })
     return running
   }
@@ -1213,8 +1459,10 @@ export function scheduleVmSync({
       if (stopped) return
       const slot = next
       if (now().getTime() + 1000 >= slot.getTime()) {
-        runOnce()
+        retries = 0
+        clearRetry()
         arm(slot)
+        runOnce()
       } else {
         arm()
       }
@@ -1225,15 +1473,132 @@ export function scheduleVmSync({
   arm()
   logger?.log?.(`[vm-sync] scheduled daily at ${pad2(hourLocal)}:${pad2(minuteLocal)} ${tz}; next run ${next.toISOString()}`)
 
+  // A run missed while the process was down (a deploy over the slot): once,
+  // a little after the start
+  let startTimer = null
+  if (typeof catchUp === 'function') {
+    startTimer = setTimer(async () => {
+      startTimer = null
+      if (stopped || running) return
+      let record = null
+      try {
+        record = await catchUp()
+      } catch (err) {
+        logger?.warn?.(`[vm-sync] could not read the last sync (${err?.message || err}); the next try is the daily run`)
+        return
+      }
+      const t = now().getTime()
+      const lastOk = Date.parse(record?.lastSuccess?.finishedAt ?? '')
+      if (Number.isFinite(lastOk) && t - lastOk <= staleAfterMs) return
+      const lastTry = Date.parse(record?.lastRun?.startedAt ?? '')
+      if (Number.isFinite(lastTry) && t - lastTry < 15 * 60000) return
+      if (next && next.getTime() - t < 30 * 60000) return
+      const since = Number.isFinite(lastOk) ? `the last success was at ${new Date(lastOk).toISOString()}` : 'no success recorded'
+      if (!inWindow(now())) {
+        logger?.warn?.(`[vm-sync] ${since}; outside the run window, the next try is the daily run ${next?.toISOString() ?? ''}`)
+        return
+      }
+      logger?.warn?.(`[vm-sync] ${since}: catching up now`)
+      if (!stopped) runOnce()
+    }, Math.max(0, startDelayMs))
+    startTimer?.unref?.()
+  }
+
   return {
     stop() {
       stopped = true
       if (timer) clearTimer(timer)
+      if (startTimer) clearTimer(startTimer)
+      clearRetry()
       timer = null
+      startTimer = null
       next = null
     },
     nextRunAt: () => next,
-    runNow: () => runOnce()
+    runNow: () => runOnce(),
+    /** The schedule's own state, for /health (with readSyncRecord's record). */
+    status: () => ({
+      nextRunAt: next?.toISOString() ?? null,
+      nextRetryAt: retryAt?.toISOString() ?? null,
+      running: !!running,
+      lastRun: last
+    })
+  }
+}
+
+/**
+ * VM_SYNC_WINDOW_UTC ('HH:MM-HH:MM', default DEFAULT_RUN_WINDOW_UTC, 'any'):
+ * when retries and catch-up runs may start, as { from, to } minutes of the
+ * UTC day (null: any time). Throws on a bad value, when the schedule is wired up.
+ */
+export function runWindowFromEnv(env = process.env) {
+  const raw = String(env.VM_SYNC_WINDOW_UTC ?? '').trim() || DEFAULT_RUN_WINDOW_UTC
+  if (raw.toLowerCase() === 'any') return null
+  const m = /^([01]\d|2[0-3]):([0-5]\d)-([01]\d|2[0-4]):([0-5]\d)$/.exec(raw)
+  const from = m ? Number(m[1]) * 60 + Number(m[2]) : null
+  const to = m ? (Number(m[3]) * 60 + Number(m[4])) % (24 * 60) : null
+  if (from == null || to == null || from === to || (m[3] === '24' && m[4] !== '00')) {
+    throw new RangeError(`VM_SYNC_WINDOW_UTC must be HH:MM-HH:MM (UTC) or 'any', not ${raw.slice(0, 40)}`)
+  }
+  return { from, to }
+}
+
+// ---------------------------------------------------------------------------
+// The record (svrz_sync_log) and its health
+// ---------------------------------------------------------------------------
+
+const SYNC_LOG_COLUMNS = `status, started_at, finished_at, games_fetched,
+  coalesce(games_created, 0) + coalesce(games_updated, 0) + coalesce(games_unchanged, 0) AS written,
+  games_without_format, games_removed`
+const recordOf = (r) => (r
+  ? {
+      status: r.status,
+      startedAt: r.started_at ? new Date(r.started_at).toISOString() : null,
+      finishedAt: r.finished_at ? new Date(r.finished_at).toISOString() : null,
+      fetched: r.games_fetched ?? null,
+      written: Number(r.written ?? 0),
+      withoutFormat: r.games_without_format ?? null,
+      removed: r.games_removed ?? null
+    }
+  : null)
+
+/**
+ * The newest finished run and the newest success of svrz_sync_log, of any
+ * process (the schedule, scripts/vm-sync.mjs): { lastRun, lastSuccess }, each
+ * { status, startedAt, finishedAt, fetched, written, withoutFormat, removed } or null.
+ */
+export async function readSyncRecord(db) {
+  const { rows: [lastRun] } = await db.query(
+    `SELECT ${SYNC_LOG_COLUMNS} FROM public.svrz_sync_log WHERE status <> 'running' ORDER BY id DESC LIMIT 1`)
+  const { rows: [lastSuccess] } = await db.query(
+    `SELECT ${SYNC_LOG_COLUMNS} FROM public.svrz_sync_log WHERE status = 'success' ORDER BY id DESC LIMIT 1`)
+  return { lastRun: recordOf(lastRun), lastSuccess: recordOf(lastSuccess) }
+}
+
+/**
+ * The schedule sync as /health shows it: { state: 'ok' | 'degraded', reasons,
+ * lastSuccessAt, lastSuccessGames, lastRunAt, lastRunStatus }. Degraded when
+ * no success is recorded, the last one is older than `staleAfterMs`, it wrote
+ * no game (VolleyManager answered nothing: also out of season), or the last
+ * run was no success. No run message (it may name accounts and leagues).
+ */
+export function syncHealth({ lastRun, lastSuccess } = {}, { now = Date.now(), staleAfterMs = SYNC_STALE_AFTER_MS } = {}) {
+  const reasons = []
+  if (!lastSuccess) reasons.push('never_succeeded')
+  else {
+    const at = Date.parse(lastSuccess.finishedAt ?? '')
+    if (!Number.isFinite(at) || now - at > staleAfterMs) reasons.push('stale')
+    if (!(lastSuccess.written > 0)) reasons.push('no_games')
+  }
+  if (lastRun && lastRun.status !== 'success') reasons.push(`last_run_${lastRun.status}`)
+  return {
+    state: reasons.length ? 'degraded' : 'ok',
+    reasons,
+    lastSuccessAt: lastSuccess?.finishedAt ?? null,
+    lastSuccessGames: lastSuccess?.written ?? null,
+    lastSuccessWithoutFormat: lastSuccess?.withoutFormat ?? null,
+    lastRunAt: lastRun?.finishedAt ?? null,
+    lastRunStatus: lastRun?.status ?? null
   }
 }
 
