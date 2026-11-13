@@ -400,6 +400,15 @@ export function apiMatchRestoreByPin(gameN, pin, { claim = false, externalId = n
 }
 
 /**
+ * Whether the server stores, deleted or never saw a match (POST
+ * /api/match/known). Needs a session.
+ * @returns {Promise<{data: {state: 'stored'|'deleted'|'unknown'}|null, error: object|null, status: number}>}
+ */
+export function apiMatchKnown(externalId) {
+  return postJson('/api/match/known', { external_id: externalId }, { fallbackError: 'Match lookup failed' })
+}
+
+/**
  * Take-over: prove the game PIN of a cloud match so the signed-in account may
  * write it (the backend adds it as an editor). Needs a session.
  * 404 OV_NOT_FOUND = wrong PIN / unknown match; 429 OV_TOO_MANY_ATTEMPTS.

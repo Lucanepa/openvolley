@@ -273,9 +273,19 @@ it open), and restart `ov-postgres` during the hold: socket stays open, `/health
 
 ```bash
 hetzner# systemctl start openvolley-backup-files.service && journalctl -u openvolley-backup-files -n 20 --no-pager
-hetzner# ls -la /data/openvolley/backups && cat /var/lib/openvolley-status/last_backup
+hetzner# ls -la /data/openvolley/backups /data/openvolley/backups/wal && cat /var/lib/openvolley-status/last_backup /var/lib/openvolley-status/last_files_backup
 hetzner# systemctl enable --now openvolley-backup.timer openvolley-backup-files.timer && systemctl list-timers 'openvolley-*'
 ```
+
+Two Kuma push monitors, one per part (`backup.conf`): `OV_KUMA_PUSH_URL` for the hourly
+database run (dump + WAL segments; `last_backup`), `OV_KUMA_FILES_PUSH_URL` for the nightly
+files run (base backup, scoresheets with their owner records, snapshots; `last_files_backup`).
+`/health` shows both (`backup`, `filesBackup`); a stale one makes it 503, and the backend's
+30-day `backup/` sweep waits while the files run is stale. A count drop (more than
+`OV_COUNT_DROP_PCT` fewer matches, events or users) fails the database part but still writes
+the dump as `quarantine-db-<UTC>.dump.gpg` and runs the storage tars; after a legitimate
+delete `touch /data/openvolley/backups/counts.reset`. The dump runs in the compose service
+`ov-backup` (`OV_BACKUP_CPUS`, nice 10), not in `ov-postgres`.
 
 Restore test of that first dump (lenovoserver, private key). It boots the image recorded in
 `~/ov-ops/shipped-hetzner` by step 3 and needs `escoresheet/backend/db/roles.sql` (a missing
@@ -647,7 +657,11 @@ lenovo$ sudo docker compose --project-directory /opt/openvolley exec -T ov-postg
 ```
 
 If `/health` reports the floor below `OV_MIN_MATCHES` because the dump is older, lower it in
-`.env` and `sudo docker compose --project-directory /opt/openvolley up -d ov-backend`. Devices re-sync what they still have queued. If
+`.env` and `sudo docker compose --project-directory /opt/openvolley up -d ov-backend`. Apps
+from this release on send a match the server no longer has again from their own queue (an
+update answered `OV_MATCH_UNKNOWN`, or a set or event whose match is missing): only matches
+whose jobs the device still holds (sent jobs are kept 7 days; a closed match's local copy may
+be gone). Older apps do not: prefer the point-in-time restore below, which loses minutes. If
 the restore-test floor (`~/ov-ops/restore-floor` on lenovoserver) is above the restored counts,
 delete that file after the next good backup.
 
@@ -655,6 +669,63 @@ If `ov-postgres` itself refuses to start with "no PG_VERSION, but a cluster exis
 lost: stop it, move `/data/openvolley/pg/data` aside (`install -d -o 70 -g 70 -m 700` a new
 one), remove `/data/openvolley/pg/state/initialized`, start `ov-postgres` (fresh initdb), then
 follow the steps above.
+
+## Restore the database to a point in time
+
+The WAL segments (`backups/wal/*.gpg`, every finished segment, at least every 5 min while
+anything is written) replayed on the newest nightly base backup (`base-<UTC>.tar.gpg`) before
+the target bring the whole cluster back to that minute. It replaces the cluster (every
+database in it), so first try the dump restore above when an hour of loss is acceptable.
+Base backups and WAL are kept 7 days on the server, longer on the NAS (`nas-pull.sh`).
+
+```bash
+# 1. stop writes and the backup timers, then Postgres; keep the current cluster aside
+lenovo$ sudo systemctl stop openvolley-backup.timer openvolley-backup-files.timer
+lenovo$ sudo docker compose --project-directory /opt/openvolley stop ov-tunnel ov-backend ov-postgres
+lenovo$ sudo mv /data/openvolley/pg/data /data/openvolley/pg/data.pre_pitr_<UTC>
+lenovo$ sudo install -d -o 70 -g 70 -m 700 /data/openvolley/pg/data /data/openvolley/pg/restore_wal
+# 2. the newest base backup BEFORE the target time, and every WAL segment, decrypted (private key)
+lenovo$ set -o pipefail; B=base-<UTC>
+lenovo$ sudo cat /data/openvolley/backups/$B.tar.gpg | gpg -d | sudo tar -C /data/openvolley/pg/data -xf -
+lenovo$ for f in /data/openvolley/backups/wal/*.gpg; do sudo cat "$f" | gpg -d | sudo tee "/data/openvolley/pg/restore_wal/$(basename "$f" .gpg)" >/dev/null; done
+lenovo$ sudo chown -R 70:70 /data/openvolley/pg/data /data/openvolley/pg/restore_wal
+# 3. recovery settings: replay to the target (UTC), then promote
+lenovo$ printf "restore_command = 'cp /ovpg/restore_wal/%%f %%p'\nrecovery_target_time = '2026-11-08 15:42:00+00'\nrecovery_target_action = 'promote'\n" | sudo tee -a /data/openvolley/pg/data/postgresql.auto.conf
+lenovo$ sudo -u '#70' touch /data/openvolley/pg/data/recovery.signal
+lenovo$ sudo docker compose --project-directory /opt/openvolley up -d ov-postgres && sudo docker compose --project-directory /opt/openvolley logs -f ov-postgres   # wait for "database system is ready to accept connections"
+# 4. remove the recovery lines again (they stay in postgresql.auto.conf), check, then the backend
+lenovo$ sudo sed -i '/^restore_command\|^recovery_target/d' /data/openvolley/pg/data/postgresql.auto.conf
+lenovo$ sudo docker compose --project-directory /opt/openvolley exec -T ov-postgres psql -U ov_owner -d openvolley -c 'select max(updated_at) from matches'
+lenovo$ sudo docker compose --project-directory /opt/openvolley restart ov-postgres && sudo docker compose --project-directory /opt/openvolley up -d
+# 5. backups back on: the restored cluster starts a new timeline; take a base backup at once
+lenovo$ sudo touch /data/openvolley/backups/counts.reset && sudo systemctl start openvolley-backup-files.service
+lenovo$ sudo systemctl enable --now openvolley-backup.timer openvolley-backup-files.timer
+# 6. once satisfied
+lenovo$ sudo rm -rf /data/openvolley/pg/restore_wal /data/openvolley/pg/data.pre_pitr_<UTC>
+```
+
+Then step 4b of the dump restore (scoresheet records) and, if the storage was lost too, the
+storage restore below.
+
+## Restore the storage (scoresheets, owner records, match backups)
+
+`restore-storage.sh` unpacks the newest `scoresheets-<UTC>.tar.gpg` (the PDFs with their owner
+records `.owners`: without them the backend refuses each scoresheet to its own scorer) and then
+every `snapshots-<UTC>.tar.gpg` oldest first (each holds the `backup/` files of ~26 h). It needs
+the private key, so restore into a scratch directory where the key is and copy the result over:
+
+```bash
+lenovo$ escoresheet/deploy/restore-storage.sh --from <nas copy of the backups> --dry-run /dev/shm/ov-storage   # lists what it would unpack
+lenovo$ install -d -m 700 /dev/shm/ov-storage && escoresheet/deploy/restore-storage.sh --from <nas copy> [--at <UTC>] /dev/shm/ov-storage
+lenovo$ sudo docker compose --project-directory /opt/openvolley stop ov-tunnel ov-backend     # on the server
+lenovo$ rsync -a /dev/shm/ov-storage/ <server>:/data/openvolley/storage/ && rm -rf /dev/shm/ov-storage
+lenovo$ ssh <server> 'sudo chown -R 1000:1000 /data/openvolley/storage/{scoresheets,.owners,backup} && sudo docker compose --project-directory /opt/openvolley up -d'
+lenovo$ ssh <server> 'sudo docker compose --project-directory /opt/openvolley exec ov-backend node scripts/scoresheet-records.mjs --apply'
+```
+
+A tar from before the owner records were backed up restores no `.owners`; the script says so,
+and each scoresheet then needs its owners set again (`scripts/storage-owner.mjs`).
+`deploy/tests/backup.test.sh` runs a backup and this restore end to end with a throwaway key.
 
 ## Uninstall (removes every trace from the VM)
 
