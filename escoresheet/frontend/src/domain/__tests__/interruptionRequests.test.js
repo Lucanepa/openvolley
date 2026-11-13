@@ -12,6 +12,10 @@ import {
   timeoutRequestIssues,
   requestBlockReason,
   substituteInIllegalReason,
+  substitutionIllegalReason,
+  classifyLiveSubstitution,
+  playersReplacedByLiberoOnCourt,
+  isSentOff,
   REQUEST_ISSUES,
   lateRequestOutcome,
   decisionChangeTakeBack,
@@ -419,6 +423,161 @@ describe('substituteInIllegalReason (row 12)', () => {
     expect(substituteInIllegalReason(events, 1, 'home', 2, 7)).toBe('played_out')
     // the next set starts afresh
     expect(substituteInIllegalReason(events, 2, 'home', 2, 7)).toBeNull()
+  })
+})
+
+describe('the pair of a substitution request (FIVB 15.6.2, 16.1.3)', () => {
+  it('a bench player for a substitute who came in for someone else: an illegal substitution, no "Continue anyway"', () => {
+    const events = [subst('home', 5, 9), point('away')]
+    const issues = substitutionRequestIssues(events, 1, 'home', { playerOut: 9, playerIn: 12 })
+    expect(reasons(issues)).toEqual(['illegal_substitution'])
+    expect(issues[0]).toMatchObject({ playerIn: 12, illegalReason: 'wrong_partner', options: ['illegal', 'cancel'] })
+  })
+
+  it('the legal pairs have no issue: the starter back for his substitute, a fresh player for a starter', () => {
+    const events = [subst('home', 5, 9), point('away')]
+    expect(substitutionRequestIssues(events, 1, 'home', { playerOut: 9, playerIn: 5 })).toEqual([])
+    expect(substitutionRequestIssues(events, 1, 'home', { playerOut: 4, playerIn: 12 })).toEqual([])
+    expect(substitutionRequestIssues(events, 1, 'home', { playerOut: '4', playerIn: '12' })).toEqual([])
+  })
+
+  it('a substitute who already came in and went out cannot come in again this set', () => {
+    const events = [subst('home', 5, 9), point('away'), subst('home', 9, 5), point('away')]
+    const issues = substitutionRequestIssues(events, 1, 'home', { playerOut: 4, playerIn: 9 })
+    expect(reasons(issues)).toEqual(['illegal_substitution'])
+    expect(issues[0].illegalReason).toBe('played_out')
+  })
+
+  it('the starter back with no rally since keeps its own warning, and "Continue anyway" past it is not blocked', () => {
+    const events = [point('home'), ...substWithLineup('home', 1, 7)]
+    expect(reasons(substitutionRequestIssues(events, 1, 'home', { playerOut: 7, playerIn: 1 }))).toEqual(['no_rally_since_entry'])
+  })
+
+  it('a forced substitution is not refused for the pairing (15.7, 15.8): it is made exceptionally (classifyLiveSubstitution)', () => {
+    const events = [subst('home', 5, 9), point('away')]
+    expect(substitutionRequestIssues(events, 1, 'home', { playerOut: 9, playerIn: 12, isInjury: true })).toEqual([])
+    expect(substitutionRequestIssues(events, 1, 'home', { playerOut: 9, playerIn: 12, isExceptional: true })).toEqual([])
+  })
+
+  it('the 7th substitution stays an improper request whatever the pair', () => {
+    const events = [...[1, 2, 3, 4, 5, 6].map(n => subst('home', n, n + 10)), point('away')]
+    expect(reasons(substitutionRequestIssues(events, 1, 'home', { playerOut: 11, playerIn: 7 }))).toEqual(['substitution_limit'])
+  })
+
+  it('after the team\'s delay warning: the notice first, then the illegal pair', () => {
+    const events = [subst('home', 5, 9), point('away'), sanction('home', 'delay_warning')]
+    expect(reasons(substitutionRequestIssues(events, 1, 'home', { playerOut: 9, playerIn: 12 }))).toEqual(['after_delay_warning', 'illegal_substitution'])
+  })
+})
+
+// The home roster: #12 the libero
+const ROSTER = [...Array.from({ length: 11 }, (_, i) => ({ number: i + 1 })), { number: 12, libero: 'libero1' }]
+const roster = { players: ROSTER }
+const LINEUP = { I: '1', II: '2', III: '3', IV: '4', V: '5', VI: '6' }
+// L #12 in for #5 at V, as the live engine writes it (with its line-up row)
+const liberoInFor5 = () => [
+  ev('libero_entry', { team: 'home', position: 'V', playerOut: 5, liberoIn: 12, liberoType: 'libero1' }),
+  sub('lineup', { team: 'home', lineup: { ...LINEUP, V: '12' }, liberoSubstitution: { position: 'V', liberoNumber: 12, playerNumber: 5, liberoType: 'libero1' } })
+]
+// #3 out for #9, a rally, #9 out and #3 back, a rally: #3's cycle is complete
+const completedCycleOf3 = () => [subst('home', 3, 9), point('home'), subst('home', 9, 3), point('home')]
+// The 6 regular substitutions of the set used (#7 in for #1 and back)
+const sixSubstitutions = () => [subst('home', 1, 7), subst('home', 2, 8), subst('home', 3, 9), subst('home', 4, 10), subst('home', 5, 11), point('home'), subst('home', 7, 1), point('away')]
+
+describe('the rule of every substitution (substitutionIllegalReason; FIVB 15.6-15.8, 19.3.1.3)', () => {
+  it('a libero never goes off nor comes in by a substitution, an exceptional one neither', () => {
+    const events = [ev('lineup', { team: 'home', lineup: LINEUP, isInitial: true }), point('home'), ...liberoInFor5(), point('home')]
+    expect(substitutionIllegalReason(events, 1, 'home', { playerOut: 12, playerIn: 9 }, roster)).toBe('libero_out')
+    expect(substitutionIllegalReason(events, 1, 'home', { playerOut: 12, playerIn: 9, exceptional: true }, roster)).toBe('libero_out')
+    expect(substitutionIllegalReason([point('home')], 1, 'home', { playerOut: 4, playerIn: 12 }, roster)).toBe('libero')
+    // without the roster: the libero the court's line-up row names
+    expect(substitutionIllegalReason(events, 1, 'home', { playerOut: '12', playerIn: '9' })).toBe('libero_out')
+  })
+
+  it('the player the libero on court replaced does not come in, not even exceptionally; once the libero is out he may', () => {
+    const events = [ev('lineup', { team: 'home', lineup: LINEUP, isInitial: true }), point('home'), ...liberoInFor5(), point('home')]
+    expect(playersReplacedByLiberoOnCourt(events, 1, 'home', roster)).toEqual(['5'])
+    expect(substitutionIllegalReason(events, 1, 'home', { playerOut: 8, playerIn: 5 }, roster)).toBe('replaced_by_libero')
+    expect(substitutionIllegalReason(events, 1, 'home', { playerOut: 8, playerIn: 5, exceptional: true }, roster)).toBe('replaced_by_libero')
+    expect(substitutionIllegalReason(events, 1, 'home', { playerOut: 4, playerIn: 9 }, roster)).toBeNull()
+    const exited = [...events, ev('libero_exit', { team: 'home', position: 'V', liberoOut: 12, playerIn: 5 }), sub('lineup', { team: 'home', lineup: LINEUP, liberoSubstitution: null }), point('home')]
+    expect(playersReplacedByLiberoOnCourt(exited, 1, 'home', roster)).toEqual([])
+    expect(substitutionIllegalReason(exited, 1, 'home', { playerOut: 4, playerIn: 9 }, roster)).toBeNull()
+  })
+
+  it('a player sent off does not come in: disqualified (any set), expelled (this set), substituted exceptionally (the match)', () => {
+    const events = [
+      ev('sanction', { team: 'home', type: 'disqualification', playerNumber: 10, playerType: 'bench' }),
+      ev('sanction', { team: 'home', type: 'expulsion', playerNumber: 11, playerType: 'bench' }),
+      subst('home', 2, 8, { isExceptional: true, isInjury: true }),
+      point('home')
+    ]
+    expect(isSentOff(events, 'home', 10, 2)).toBe(true)
+    expect(isSentOff(events, 'home', 11, 2)).toBe(false)
+    expect(substitutionIllegalReason(events, 1, 'home', { playerOut: 4, playerIn: 10 }, roster)).toBe('sent_off')
+    expect(substitutionIllegalReason(events, 1, 'home', { playerOut: 4, playerIn: 11, exceptional: true }, roster)).toBe('sent_off')
+    expect(substitutionIllegalReason(events, 1, 'home', { playerOut: 4, playerIn: 2 }, roster)).toBe('sent_off')
+    expect(substitutionIllegalReason(events, 1, 'home', { playerOut: 4, playerIn: 7 }, roster)).toBeNull()
+  })
+
+  it('the pairing holds for a regular substitution only: a starter whose cycle is complete has no regular partner, an exceptional one is open', () => {
+    const events = completedCycleOf3()
+    expect(substitutionIllegalReason(events, 1, 'home', { playerOut: 3, playerIn: 9 }, roster)).toBe('played_out')
+    expect(substitutionIllegalReason(events, 1, 'home', { playerOut: 3, playerIn: 10 }, roster)).toBe('wrong_partner')
+    expect(substitutionIllegalReason(events, 1, 'home', { playerOut: 3, playerIn: 9, exceptional: true }, roster)).toBeNull()
+    expect(substitutionIllegalReason(events, 1, 'home', { playerOut: 3, playerIn: 10, exceptional: true }, roster)).toBeNull()
+  })
+})
+
+describe('a substitution request with the team\'s roster (the confirm guard)', () => {
+  it('a libero in or out, the player the libero replaced, a player sent off: "Illegal substitution" (16.1.3), no "Continue anyway"', () => {
+    const events = [ev('lineup', { team: 'home', lineup: LINEUP, isInitial: true }), point('home'), ...liberoInFor5(), point('home'), ev('sanction', { team: 'home', type: 'disqualification', playerNumber: 10, playerType: 'bench' })]
+    for (const [pair, why] of [[{ playerOut: 12, playerIn: 9 }, 'libero_out'], [{ playerOut: 4, playerIn: 12 }, 'libero'], [{ playerOut: 8, playerIn: 5 }, 'replaced_by_libero'], [{ playerOut: 4, playerIn: 10 }, 'sent_off']]) {
+      const issues = substitutionRequestIssues(events, 1, 'home', pair, roster)
+      expect(reasons(issues)).toEqual(['illegal_substitution'])
+      expect(issues[0]).toMatchObject({ playerIn: pair.playerIn, illegalReason: why, options: ['illegal', 'cancel'] })
+    }
+    expect(substitutionRequestIssues(events, 1, 'home', { playerOut: 4, playerIn: 9 }, roster)).toEqual([])
+  })
+
+  it('a forced substitution is checked for who may come in exceptionally (15.7): not the libero\'s replaced player, nobody sent off', () => {
+    const events = [ev('lineup', { team: 'home', lineup: LINEUP, isInitial: true }), point('home'), ...liberoInFor5(), point('home'), ev('sanction', { team: 'home', type: 'disqualification', playerNumber: 10, playerType: 'bench' })]
+    expect(substitutionRequestIssues(events, 1, 'home', { playerOut: 8, playerIn: 5, isExceptional: true }, roster)[0]).toMatchObject({ reason: 'illegal_substitution', illegalReason: 'replaced_by_libero' })
+    expect(substitutionRequestIssues(events, 1, 'home', { playerOut: 8, playerIn: 10, isInjury: true }, roster)[0]).toMatchObject({ reason: 'illegal_substitution', illegalReason: 'sent_off' })
+    expect(substitutionRequestIssues(events, 1, 'home', { playerOut: 4, playerIn: 12, isExpelled: true }, roster)[0]).toMatchObject({ reason: 'illegal_substitution', illegalReason: 'libero' })
+    expect(substitutionRequestIssues(events, 1, 'home', { playerOut: 8, playerIn: 9, isInjury: true }, roster)).toEqual([])
+    // a forced one is not refused for the pairing (it is made exceptionally)
+    expect(substitutionRequestIssues(completedCycleOf3(), 1, 'home', { playerOut: 3, playerIn: 9, isInjury: true }, roster)).toEqual([])
+  })
+
+  it('the order with other warnings: the delay-warning notice first, the 7th substitution wins', () => {
+    const events = [point('home'), sanction('home', 'delay_warning')]
+    expect(reasons(substitutionRequestIssues(events, 1, 'home', { playerOut: 4, playerIn: 12 }, roster))).toEqual(['after_delay_warning', 'illegal_substitution'])
+    const six = sixSubstitutions()
+    expect(reasons(substitutionRequestIssues(six, 1, 'home', { playerOut: 8, playerIn: 12 }, roster))).toEqual(['substitution_limit'])
+  })
+})
+
+describe('classifyLiveSubstitution: how the substitution is recorded (FIVB 15.6, 15.7, 15.8)', () => {
+  it('an injured or expelled starter whose cycle is complete: exceptional, whoever comes in', () => {
+    const events = completedCycleOf3()
+    expect(classifyLiveSubstitution(events, 1, 'home', { playerOut: 3, playerIn: 9, isInjury: true }, roster)).toBe('exceptional')
+    expect(classifyLiveSubstitution(events, 1, 'home', { playerOut: 3, playerIn: 10, isExpelled: true }, roster)).toBe('exceptional')
+    expect(classifyLiveSubstitution(events, 1, 'home', { playerOut: 3, playerIn: 10, isDisqualified: true }, roster)).toBe('exceptional')
+  })
+
+  it('a forced substitution the pairing allows stays one of the 6; a regular one by the count', () => {
+    const events = completedCycleOf3()
+    expect(classifyLiveSubstitution(events, 1, 'home', { playerOut: 4, playerIn: 10, isInjury: true }, roster)).toBe('regular')
+    expect(classifyLiveSubstitution(events, 1, 'home', { playerOut: 4, playerIn: 10 }, roster)).toBe('regular')
+    expect(classifyLiveSubstitution(events, 1, 'home', { playerOut: 4, playerIn: 10, isExceptional: true }, roster)).toBe('exceptional')
+    expect(classifyLiveSubstitution(events, 1, 'home', { isInjury: true }, roster)).toBe('regular')
+  })
+
+  it('beyond the 6: an improper request, a forced one exceptional', () => {
+    const six = sixSubstitutions()
+    expect(classifyLiveSubstitution(six, 1, 'home', { playerOut: 8, playerIn: 2 }, roster)).toBe('improper_request')
+    expect(classifyLiveSubstitution(six, 1, 'home', { playerOut: 8, playerIn: 2, isInjury: true }, roster)).toBe('exceptional')
   })
 })
 
