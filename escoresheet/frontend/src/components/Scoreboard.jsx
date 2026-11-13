@@ -42,7 +42,7 @@ import { debugLogger, createStateSnapshot } from '../utils/debugLogger'
 import { TEAM_COLOUR_MARK, discPaint, effectiveTeamColour, matchDiscPaint, teamLiberoColour, markColourOn, teamBoxStyle, teamTextStyle, HEADER_SURFACE } from '../utils/teamColours'
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { apiFrom, writingDevice } from '../lib/apiClient'
-import { relayMatchKey, relayMatchPayload, liveStateNow } from '../utils/serverDataSync'
+import { relayMatchKey, relayMatchPayload, relayPeoplePayload, relayTeamPayload, liveStateNow } from '../utils/serverDataSync'
 import { isRelayErrorFor, liveStateTargets, mayPublishMatchData, publishLiveState, relayEvents, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
 import { useRelayTablets } from '../hooks/useRealtimeConnection'
 import { exportMatchData, getBackupSettings, saveBackupSettings } from '../utils/backupManager'
@@ -97,7 +97,7 @@ import { PHONE_RECENT_MAX_LINES, detectDisplayMode, dialogsCentred, isPhoneScree
 import BenchRequestCards from './scoreboard/BenchRequestCards.jsx'
 import { useBenchRequestBridge } from './scoreboard/useBenchRequestBridge'
 import { latestLineup as benchLatestLineup, lineupNumber as benchLineupNumber } from '../domain/benchRequests'
-import { coveredLineupTeams, withoutCoveredTeamEvents } from '../domain/lineupPrivacy'
+import { coveredLineupTeams, coveredLineupTeamsOf, withCoveredLiveLineups, withoutCoveredTeamEvents } from '../domain/lineupPrivacy'
 import { captainRingStyle } from './scoreboard/captainRing'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
 import { WarningIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, RefreshIcon, VolleyballIcon, SwitchIcon, ChartIcon, NotebookIcon, WrenchIcon, ClipboardIcon, SpeechIcon } from './icons'
@@ -2001,10 +2001,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           type: 'sync-match-data',
           matchId: relayKeyRef.current,
           match: relayMatch,
-          homeTeam: freshHomeTeam || null,
-          awayTeam: freshAwayTeam || null,
-          homePlayers: freshHomePlayers || [],
-          awayPlayers: freshAwayPlayers || [],
+          // names and colours; rosters without dates of birth (no relay
+          // hands those on)
+          homeTeam: relayTeamPayload(freshHomeTeam),
+          awayTeam: relayTeamPayload(freshAwayTeam),
+          homePlayers: relayPeoplePayload(freshHomePlayers),
+          awayPlayers: relayPeoplePayload(freshAwayPlayers),
           sets: freshSets || [],
           // without the undo snapshots (relayEvents)
           events: relayEvents(freshEvents || []),
@@ -2605,8 +2607,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         : { matchId, type: eventType || null, team: eventTeam || null, data: pushedData, ts: new Date().toISOString() }
       if (eventType !== RECONNECT_PUSH) lastPushedEventRef.current = pushedEvent
 
+      // The first line-up of a set stays covered until the other team's is in
+      // (domain/lineupPrivacy.js, FIVB 7.3): it goes out as null, and its
+      // server's number with it. This row reaches every member of the relay
+      // room, the livescore and the database, none of them with a PIN. Only
+      // a set at 0:0 can have one: its events are read then.
+      const coveredTeams = (snapshot.pointsA || 0) + (snapshot.pointsB || 0) === 0 && (snapshot.lineupA || snapshot.lineupB)
+        ? coveredLineupTeamsOf(await db.events.where('[matchId+setIndex]').equals([matchId, snapshot.currentSetIndex]).toArray(), snapshot.currentSetIndex)
+        : []
+
       // Map directly from snapshot to Supabase table
-      const liveStateData = {
+      const liveStateData = withCoveredLiveLineups({
         match_id: supabaseMatchId,
         current_set: finalSetIndex,
         // Team A/B info (from snapshot)
@@ -2660,7 +2671,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // it orders the rows, it times no countdown)
         updated_at: new Date(liveStateNow(match)).toISOString(),
         sport_type: 'indoor'
-      }
+      }, coveredTeams, snapshot.teamAKey)
 
       if (eventType === 'set_end') intervalStartedAtRef.current = breakStartedAt
 
@@ -4656,7 +4667,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           if (String(oldVal) !== String(newVal)) {
             const desc = `Player #${orig.number} ${f.label}: ${oldVal || '(none)'} → ${newVal || '(none)'} (${teamLabel})`
             changes.push({ category: 'player', field: f.key, before: oldVal, after: newVal, description: desc })
-            remarkLines.push(`- ${desc}`)
+            remarkLines.push(`- ${f.key === 'dob' ? `Player #${orig.number} date of birth changed (${teamLabel})` : desc}`)
           }
         }
       }
@@ -4683,7 +4694,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           if (String(oldVal) !== String(newVal)) {
             const desc = `Bench official ${orig.role || edit.role} ${f}: ${oldVal || '(none)'} → ${newVal || '(none)'} (${teamLabel})`
             changes.push({ category: 'benchOfficial', field: f, before: oldVal, after: newVal, description: desc })
-            remarkLines.push(`- ${desc}`)
+            remarkLines.push(`- ${f === 'dob' ? `Bench official ${orig.role || edit.role} date of birth changed (${teamLabel})` : desc}`)
           }
         }
       }

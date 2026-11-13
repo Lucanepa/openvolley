@@ -1902,6 +1902,58 @@ export function matchTeamNames(match, { homeTeam, awayTeam } = {}) {
 const RELAY_PIN_FIELDS = ['gamePin', 'refereePin', 'homeTeamPin', 'awayTeamPin', 'homeTeamUploadPin', 'awayTeamUploadPin']
 const NEVER_RELAYED = ['game_pin', 'connection_pins', 'connectionPins']
 
+// What no relay hands a tablet stays on the device too (the same lists as
+// backend/lib/publicColumns.js): a person's date of birth, nationality and
+// contact data; the officials (with theirs), every signature image, the
+// approvals, the manual-change log and the rosters waiting for the scorer.
+// The remarks go (the referee's live scoresheet prints them, and the cloud
+// relay gives them to the referee only), without the dates of a
+// date-of-birth correction.
+const RELAY_PERSON_OMIT = ['dob', 'dateOfBirth', 'date_of_birth', 'birthDate', 'birthdate', 'birth_date', 'country', 'nationality', 'email', 'phone', 'address']
+const RELAY_MATCH_OMIT = [
+  'officials', 'signatures', 'approval', 'accountApprovals', 'account_approvals', 'manualChanges', 'manual_changes',
+  'pendingHomeRoster', 'pendingAwayRoster', 'pending_home_roster', 'pending_away_roster',
+  'pendingTeam1Roster', 'pendingTeam2Roster', 'pending_team1_roster', 'pending_team2_roster'
+]
+const RELAY_ROSTER_KEYS = [
+  'players_home', 'players_away', 'bench_home', 'bench_away', 'players_team1', 'players_team2',
+  'benchHome', 'benchAway', 'homePlayers', 'awayPlayers', 'team1Players', 'team2Players'
+]
+// A team row: the names and colours the tablets draw
+const RELAY_TEAM_KEYS = ['name', 'shortName', 'short_name', 'color', 'liberoColor', 'liberoColour', 'libero_color', 'libero_colour']
+const isSignatureKey = (k) => /signature/i.test(k)
+
+function relayPerson(p) {
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return p
+  if (!RELAY_PERSON_OMIT.some((k) => k in p)) return p
+  const out = { ...p }
+  for (const k of RELAY_PERSON_OMIT) delete out[k]
+  return out
+}
+
+/** A roster (players or bench) as sync-match-data carries it: copies without dates of birth or contact data. */
+export function relayPeoplePayload(list) {
+  return Array.isArray(list) ? list.map(relayPerson) : []
+}
+
+/** A team row as sync-match-data carries it: its names and colours, or null. */
+export function relayTeamPayload(team) {
+  if (!team || typeof team !== 'object') return null
+  const out = {}
+  for (const k of RELAY_TEAM_KEYS) if (team[k] !== undefined) out[k] = team[k]
+  return out
+}
+
+// An in-match roster edit wrote a corrected date of birth with both dates
+// ("- Player #7 dob: 03.05.2011 → 04.06.2011 (Team)"): the change stays, the
+// dates go (backend/lib/publicColumns.js redactRemarkDobs).
+const REMARK_DOB_CHANGE = /\bdob: .+? (?:→|->) .+?(?= \([^()\n]*\)$|$)/gm
+
+/** The remarks text as the relay gets it: no dates of a date-of-birth correction. */
+export function relayRemarks(text) {
+  return typeof text === 'string' ? text.replace(REMARK_DOB_CHANGE, 'date of birth changed') : text
+}
+
 /**
  * The relay room key of a scorer's match: its seed_key (what the tablets know
  * from the PIN check and the QR code); a test match's seedKey (the relays key
@@ -1927,9 +1979,11 @@ export function relayMatchKey(match) {
 }
 
 /**
- * The match object a scorer sends in sync-match-data. PINs go only with the
- * first sync on a socket and when one changes (the relay keeps the stored ones
- * meanwhile); pass the signature returned last time for this socket, or null.
+ * The match object a scorer sends in sync-match-data, without the personal
+ * data no relay hands on (RELAY_MATCH_OMIT, signatures, people's dates of
+ * birth). PINs go only with the first sync on a socket and when one changes
+ * (the relay keeps the stored ones meanwhile); pass the signature returned
+ * last time for this socket, or null.
  * `_syncedSeq` / `_syncSession` (the scorer's live-state order, marked before
  * the sync read IndexedDB: `mark` = { seq, session, at }) let the tablets tell
  * whether a live-state push is newer than this copy (applyNewerLiveState);
@@ -1958,6 +2012,11 @@ export function relayMatchPayload(match, lastPinSignature = null, { now = Date.n
     delete out[f]
   }
   for (const f of NEVER_RELAYED) delete out[f]
+  for (const k of Object.keys(out)) {
+    if (RELAY_MATCH_OMIT.includes(k) || isSignatureKey(k)) delete out[k]
+    else if (RELAY_ROSTER_KEYS.includes(k)) out[k] = Array.isArray(out[k]) ? out[k].map(relayPerson) : out[k]
+  }
+  if (typeof out.remarks === 'string') out.remarks = relayRemarks(out.remarks)
   const pinSignature = JSON.stringify(pins)
   return {
     match: pinSignature === lastPinSignature ? out : { ...out, ...pins },

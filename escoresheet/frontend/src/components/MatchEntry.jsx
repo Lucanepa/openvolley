@@ -623,11 +623,9 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
       })
       .map(p => {
         const sanctions = getPlayerSanctions(p.number)
+        // the chips show the shirt number only: no names, no date of birth
         return {
           number: p.number,
-          firstName: p.firstName || '',
-          lastName: p.lastName || p.name || '',
-          dob: p.dob || '',
           sanctions,
           type: 'player'
         }
@@ -673,9 +671,6 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
         const sanctions = getPlayerSanctions(p.number)
         return {
           number: p.number,
-          firstName: p.firstName || '',
-          lastName: p.lastName || p.name || '',
-          dob: p.dob || '',
           libero: p.libero,
           isCaptain: p.isCaptain || p.captain || false,
           sanctions,
@@ -700,11 +695,9 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
       .filter(b => b.firstName || b.lastName || b.role)
       .map(bench => {
         const sanctions = getOfficialSanctions(bench.role || '')
+        // the chips show the role code only
         return {
           role: bench.role || '',
-          firstName: bench.firstName || '',
-          lastName: bench.lastName || '',
-          dob: bench.dob || '',
           sanctions,
           type: 'official'
         }
