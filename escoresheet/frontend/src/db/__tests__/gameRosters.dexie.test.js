@@ -98,9 +98,11 @@ describe('sent game rosters on the device', () => {
 
   it('accepted: never offered again, the server is told now or once online, then the copy goes', async () => {
     const sig = 'data:image/png;base64,AAAA'
-    await storeGameRosters({ games: [{ game_number: '1' }], rosters: [roster('1', 'home', { coach_signature: sig, captain_signature: sig })] }, 'u1')
+    await storeGameRosters({ games: [{ game_number: '1' }], rosters: [roster('1', 'home', { coach_signature: sig, captain_signature: sig, coach_signed_by_name: 'Alex Sender' })] }, 'u1')
     const row = await getGameRoster('1', 'home', { userId: 'u1' })
     expect(rowToPendingRoster(row)).toMatchObject({ coachSignature: sig, captainSignature: sig })
+    // db/035: who sent the signatures made ahead (the Accept card shows it)
+    expect(row.signedByName).toBe('Alex Sender')
     // offline: marked at once, the server not reached
     const online = Object.getOwnPropertyDescriptor(Navigator.prototype, 'onLine')
     Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })

@@ -5538,6 +5538,7 @@
     "officials_one": "{{count}} ufficiale",
     "officials_other": "{{count}} ufficiali",
     "hintSigned": "Controllalo con l’allenatore. L’allenatore e il capitano hanno firmato in anticipo; le loro firme vengono riprese.",
+    "signedBy": "Firme caricate dall’account di {{name}}. In caso di dubbio, falle rifirmare al sorteggio.",
     "signed": {
       "both": "Firmato in anticipo dall’allenatore e dal capitano",
       "coach": "Firmato in anticipo dall’allenatore",

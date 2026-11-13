@@ -5539,6 +5539,7 @@
     "officials_one": "{{count}} official",
     "officials_other": "{{count}} officials",
     "hintSigned": "Check it with the coach. The coach and the captain signed ahead; their signatures come with it.",
+    "signedBy": "Signatures uploaded from the account of {{name}}. If in doubt, have them sign again at the coin toss.",
     "signed": {
       "both": "Signed ahead by the coach and the captain",
       "coach": "Signed ahead by the coach",

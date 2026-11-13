@@ -5533,6 +5533,7 @@
     "officials_one": "{{count}} Offizielle/r",
     "officials_other": "{{count}} Offizielle",
     "hintSigned": "Prüfe ihn mit dem Trainer. Trainer und Captain haben im Voraus unterschrieben; ihre Unterschriften kommen mit.",
+    "signedBy": "Unterschriften hochgeladen vom Konto von {{name}}. Im Zweifel beim Münzwurf neu unterschreiben lassen.",
     "signed": {
       "both": "Von Trainer und Captain im Voraus unterschrieben",
       "coach": "Vom Trainer im Voraus unterschrieben",

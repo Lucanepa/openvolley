@@ -5532,6 +5532,7 @@
     "officials_one": "{{count}} officiel",
     "officials_other": "{{count}} officiels",
     "hintSigned": "Vérifiez-la avec l’entraîneur. L’entraîneur et le capitaine ont signé à l’avance ; leurs signatures sont reprises.",
+    "signedBy": "Signatures envoyées depuis le compte de {{name}}. En cas de doute, faites signer à nouveau au tirage au sort.",
     "signed": {
       "both": "Signée à l’avance par l’entraîneur et le capitaine",
       "coach": "Signée à l’avance par l’entraîneur",
