@@ -921,7 +921,9 @@
         "sent_off": "Escluso",
         "wrong_partner": "Compagno sbagliato",
         "played_out": "Già giocato",
-        "no_rally_since_out": "Nessuno scambio ancora"
+        "no_rally_since_out": "Nessuno scambio ancora",
+        "libero_out": "Libero in campo",
+        "replaced_by_libero": "Il libero è al suo posto"
       },
       "since": "Da allora: {{what}}.",
       "between": {
@@ -949,7 +951,9 @@
         "sent_off": "non può più giocare (espulso, squalificato o sostituito eccezionalmente)",
         "wrong_partner": "può rientrare solo il suo compagno di sostituzione",
         "played_out": "è già entrato e uscito in questo set",
-        "no_rally_since_out": "nessuno scambio completato dalla sua uscita"
+        "no_rally_since_out": "nessuno scambio completato dalla sua uscita",
+        "libero_out": "un libero non viene mai sostituito, esce solo con un cambio del libero",
+        "replaced_by_libero": "il libero è in campo al suo posto, rientra solo per il libero"
       },
       "second_substitution_request": {
         "title": "Seconda richiesta di sostituzione",

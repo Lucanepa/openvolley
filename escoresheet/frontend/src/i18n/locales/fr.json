@@ -920,7 +920,9 @@
         "sent_off": "Exclu",
         "wrong_partner": "Mauvais partenaire",
         "played_out": "Déjà joué",
-        "no_rally_since_out": "Pas encore d'échange"
+        "no_rally_since_out": "Pas encore d'échange",
+        "libero_out": "Libéro en jeu",
+        "replaced_by_libero": "Libéro à sa place"
       },
       "since": "Depuis : {{what}}.",
       "between": {
@@ -948,7 +950,9 @@
         "sent_off": "n'a plus le droit de jouer (expulsé, disqualifié ou remplacé exceptionnellement)",
         "wrong_partner": "seul son partenaire de remplacement peut revenir",
         "played_out": "déjà entré et sorti dans ce set",
-        "no_rally_since_out": "aucun échange terminé depuis sa sortie"
+        "no_rally_since_out": "aucun échange terminé depuis sa sortie",
+        "libero_out": "un libéro n'est jamais remplacé, il ne sort que par un remplacement de libéro",
+        "replaced_by_libero": "le libéro joue à sa place, il ne revient que pour le libéro"
       },
       "second_substitution_request": {
         "title": "Deuxième demande de remplacement",
