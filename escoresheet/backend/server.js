@@ -12,7 +12,7 @@
  */
 
 import { createServer } from 'http'
-import { monitorEventLoopDelay } from 'perf_hooks'
+import { monitorEventLoopDelay, PerformanceObserver, constants as perfConstants } from 'perf_hooks'
 import { gzip } from 'zlib'
 import { WebSocketServer } from 'ws'
 import ical from 'node-ical'
@@ -49,7 +49,7 @@ import { SCORER_TABLES, deviceOf, matchRefsOfWrite, scorerMovedBody } from './li
 // The support form (POST /api/contact): its body, checks and the one mail to CONTACT_EMAIL
 import { BUSY_BODY, contactMailerFromEnv, createContactSlots, handleContact, LIVE_MATCH_SQL, matchMailDateTime, MAX_CONTACT_BODY_BYTES } from './lib/contact.js'
 // What the relay keeps of an anonymous socket's bundles and live states
-import { approxHeapBytes, createFrameBudget, frameTooLarge, relayBundleProblem, relayEvents, relayMemoryBudget, MAX_RELAY_BUNDLE_BYTES, MAX_LIVE_STATE_BYTES, RELAY_ANON_SHARE } from './lib/relayLimits.js'
+import { admissionHeapPressure, approxHeapBytes, createFrameBudget, frameTooLarge, relayBundleProblem, relayEvents, relayMemoryBudget, MAX_RELAY_BUNDLE_BYTES, MAX_LIVE_STATE_BYTES, RELAY_ANON_SHARE } from './lib/relayLimits.js'
 // A team's uploaded roster: the app's rules, the signatures it may fill in, its end at the coin toss
 import { checkUploadedRoster, signaturesAfterUpload, uploadedRosterProblemText, withPendingRostersCleared } from './lib/uploadedRoster.js'
 
@@ -1187,9 +1187,18 @@ const MAX_CONNECTIONS = Number(process.env.OV_MAX_CONNECTIONS) > 0 ? Math.floor(
 // limit or the container's memory limit and dropping every match it holds.
 const ADMIT_HEAP_PCT = Number(process.env.OV_ADMIT_HEAP_PCT) > 0 ? Math.min(100, Number(process.env.OV_ADMIT_HEAP_PCT)) : 85
 let admissionRefused = 0
+// Heap left after the last major GC (the live data); the boot heap until the
+// first one. admissionHeapPressure counts the lower of this and the heap now.
+let heapAfterMajorGc = getHeapStatistics().used_heap_size
+const gcObserver = new PerformanceObserver(list => {
+  if (list.getEntries().some(e => e.detail?.kind === perfConstants.NODE_PERFORMANCE_GC_MAJOR)) {
+    heapAfterMajorGc = getHeapStatistics().used_heap_size
+  }
+})
+gcObserver.observe({ entryTypes: ['gc'] })
 function heapPressure() {
   const h = getHeapStatistics()
-  return h.used_heap_size / h.heap_size_limit
+  return admissionHeapPressure({ usedNow: h.used_heap_size, usedAfterMajorGc: heapAfterMajorGc, limit: h.heap_size_limit })
 }
 // Role sockets (scoreboard/referee/bench/livescore relay) per IP. A cloud relay
 // sits behind venue NATs (plan §4 Phase 3: 200); the LAN relay keeps 50.

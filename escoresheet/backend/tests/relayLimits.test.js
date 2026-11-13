@@ -8,7 +8,7 @@ import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import {
-  approxHeapBytes, createFrameBudget, frameTooLarge, relayBundleProblem, relayMemoryBudget,
+  admissionHeapPressure, approxHeapBytes, createFrameBudget, frameTooLarge, relayBundleProblem, relayMemoryBudget,
   MAX_RELAY_EVENTS, MAX_RELAY_SETS, MAX_RELAY_PLAYERS, MAX_RELAY_PIN_LENGTH, MAX_FRAME_VALUES, MAX_RELAY_BUNDLE_BYTES,
   MAX_RELAY_CARRIED_PIN_BYTES, RELAY_HEAP_SHARE, NEW_ROOM_SHARE, RELAY_ANON_SHARE, FAST_PROPERTIES
 } from '../lib/relayLimits.js'
@@ -451,5 +451,21 @@ describe('relayMemoryBudget', () => {
     for (const bad of ['0', '-5', 'abc', '1e999']) {
       assert.throws(() => relayMemoryBudget({ heapLimitBytes: heap, maxMb: bad }), /OV_RELAY_MAX_MB/, bad)
     }
+  })
+})
+
+describe('admissionHeapPressure', () => {
+  const limit = 1000
+  it('ignores garbage above the mark while the heap after the last major GC is low', () => {
+    assert.equal(admissionHeapPressure({ usedNow: 900, usedAfterMajorGc: 300, limit }), 0.3)
+  })
+  it('counts pressure that stays after a major GC', () => {
+    assert.equal(admissionHeapPressure({ usedNow: 900, usedAfterMajorGc: 880, limit }), 0.88)
+  })
+  it('follows the heap down when it drops below the last GC mark', () => {
+    assert.equal(admissionHeapPressure({ usedNow: 200, usedAfterMajorGc: 880, limit }), 0.2)
+  })
+  it('is 0 without a heap limit', () => {
+    assert.equal(admissionHeapPressure({ usedNow: 900, usedAfterMajorGc: 900, limit: 0 }), 0)
   })
 })
