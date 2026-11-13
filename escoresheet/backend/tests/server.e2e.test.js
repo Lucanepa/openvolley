@@ -574,9 +574,11 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
       const named = await api(srv.base, '/api/db', { proto: null, body: { table: 'matches', action: 'select', params: { columns: 'signatures, officials, players_home', filters: [{ type: 'eq', column: 'external_id', value: ext }] } } })
       assert.equal(named.status, 200)
       assert.equal(leaks(named.text), false)
-      // A forged or expired token reads the public view too
+      // A forged or expired token: 401 like a write, not the public view (a
+      // client could merge that cut-down row and write it back)
       const forged = await api(srv.base, '/api/db', { token: 'y'.repeat(43), proto: null, body: { table: 'matches', action: 'select', params: { columns: '*', filters: [{ type: 'eq', column: 'external_id', value: ext }] } } })
-      assert.equal(forged.status, 200)
+      assert.equal(forged.status, 401, forged.text)
+      assert.equal(forged.json.error.code, 'invalid_token')
       assert.equal(leaks(forged.text), false)
       // Hidden keys cannot be probed through a filter or an order
       for (const params of [

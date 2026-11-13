@@ -45,7 +45,7 @@
  * without db/018 reads as "no clubs, rule off" (deploy order), never a 503.
  */
 
-import { fail, invalid, isUuid, notFound, ok, unavailable } from './accounts.js'
+import { ACCOUNT_UNCONFIRMED, CONFIRMATION_PARAMS, fail, invalid, isUuid, notFound, ok, unavailable, unconfirmedSql } from './accounts.js'
 import { seasonOf, sportOf } from './officialGame.js'
 import { pickLang } from './mailer.js'
 import { connectClient } from './pgClient.js'
@@ -581,13 +581,18 @@ export function createClubs ({ pool, audit, access = null, createInvite = null, 
     const ids = body && Array.isArray(body.club_ids) ? [...new Set(body.club_ids)] : undefined
     if (!ids || ids.length > MAX_CLUBS_PER_ACCOUNT || !ids.every(isUuid)) return invalid(`club_ids: at most ${MAX_CLUBS_PER_ACCOUNT} club ids`)
     return guarded('account-clubs', () => withTx(async (client) => {
-      const { rows: [u] } = await client.query('SELECT id FROM auth.users WHERE id = $1', [userId])
+      const { rows: [u] } = await client.query(
+        `SELECT u.id, ${unconfirmedSql('u', '$2', '$3')} AS unconfirmed FROM auth.users u WHERE u.id = $1 FOR SHARE`,
+        [userId, ...CONFIRMATION_PARAMS])
       if (!u) throw abort(notFound())
       if (ids.length) {
         const { rows } = await client.query('SELECT id FROM public.clubs WHERE id = ANY($1::uuid[])', [ids])
         if (rows.length !== ids.length) throw abort(fail(404, 'OV_CLUB_NOT_FOUND', 'A club in the list does not exist'))
       }
       const before = (await clubsOf(client, userId)).map((c) => c.id)
+      // A new link needs a confirmed address (removing one does not): the
+      // club's accounts are who its managers are picked from (setManagers)
+      if (u.unconfirmed === true && ids.some((x) => !before.includes(x))) throw abort(ACCOUNT_UNCONFIRMED())
       await client.query('DELETE FROM public.account_clubs WHERE user_id = $1 AND NOT (club_id = ANY($2::uuid[]))', [userId, ids])
       if (ids.length) {
         await client.query(

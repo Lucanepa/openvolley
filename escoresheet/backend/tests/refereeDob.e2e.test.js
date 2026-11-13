@@ -135,16 +135,16 @@ describe('referees\' dates of birth only for the roles that fill the sheet', { s
     }
   })
 
-  it('a referee directory write by an account without a role does not return dates of birth', async () => {
+  it('a referee directory write by an account that does not score is refused, and returns no dates of birth', async () => {
     const id = (await sql.query("SELECT id FROM public.referee_database WHERE last_name = 'Zzminor'")).rows[0].id
     // Match setup's saveReferee: add the sport to an existing referee
-    const upd = await dbCall(users.pending, 'referee_database', 'update', {
-      data: { sport_type: ['indoor'] }, filters: [{ type: 'eq', column: 'id', value: id }], returning: '*'
-    })
-    assert.equal(upd.status, 200, upd.text)
-    assert.ok(noDob(upd), upd.text.slice(0, 300))
-    assert.equal(upd.json.data[0].last_name, 'Zzminor')
-    assert.ok(!('dob' in upd.json.data[0]))
+    for (const name of ['pending', 'manager', 'referee']) {
+      const upd = await dbCall(users[name], 'referee_database', 'update', {
+        data: { sport_type: ['indoor'] }, filters: [{ type: 'eq', column: 'id', value: id }], returning: '*'
+      })
+      assert.equal(upd.status, 403, `${name}: ${upd.text}`)
+      assert.ok(noDob(upd), upd.text.slice(0, 300))
+    }
     // A scorer's write returns the whole row
     const mine = await dbCall(users.scorer, 'referee_database', 'update', {
       data: { sport_type: ['indoor'] }, filters: [{ type: 'eq', column: 'id', value: id }], returning: '*'
@@ -212,7 +212,7 @@ describe('referees\' dates of birth only for the roles that fill the sheet', { s
     assert.ok(noDob(ref), ref.text.slice(0, 300))
   })
 
-  it('a referee added by an account without a role is stored without its date of birth, so the answer never depends on a stored one', async () => {
+  it('only a scorer (or an admin) adds a referee, so the answer never depends on a stored date of birth', async () => {
     // A unique key over the name and the date of birth (the production
     // directory has a unique index; its columns are not in the repository)
     await sql.query('CREATE UNIQUE INDEX test_referee_name_dob ON public.referee_database (first_name, last_name, dob)')
@@ -220,26 +220,23 @@ describe('referees\' dates of birth only for the roles that fill the sheet', { s
       const add = (user, row, extra = {}) => dbCall(user, 'referee_database', 'insert', {
         data: { country: 'CHE', sport_type: ['indoor'], created_at: new Date().toISOString(), ...row }, ...extra
       })
-      // The same referee with a wrong and with the stored date of birth
-      const wrong = await add(users.pending, { first_name: 'Rolf', last_name: 'Zzadult', dob: '1975-08-10' })
-      const right = await add(users.pending, { first_name: 'Rolf', last_name: 'Zzadult', dob: ADULT_DOB })
-      assert.equal(wrong.status, 200, wrong.text)
-      assert.equal(right.status, 200, right.text)
-      assert.deepEqual(right.json, wrong.json, 'the same answer either way')
-      const stored = (await sql.query("SELECT dob::text AS dob FROM public.referee_database WHERE last_name = 'Zzadult' ORDER BY dob NULLS LAST")).rows
-      assert.deepEqual(stored.map((row) => row.dob), [ADULT_DOB, null, null], 'only the earlier row has a date of birth')
-      // With returning: the public columns of the new row
-      const back = await add(users.manager, { first_name: 'Lena', last_name: 'Zzreturned', dob: '1991-04-05' }, { returning: '*' })
-      assert.equal(back.status, 200, back.text)
-      assert.equal(back.json.data[0].last_name, 'Zzreturned')
-      assert.ok(!('dob' in back.json.data[0]), back.text)
+      // The same referee with a wrong and with the stored date of birth: the
+      // same refusal either way, nothing stored
+      for (const name of ['pending', 'manager', 'referee']) {
+        const wrong = await add(users[name], { first_name: 'Rolf', last_name: 'Zzadult', dob: '1975-08-10' })
+        const right = await add(users[name], { first_name: 'Rolf', last_name: 'Zzadult', dob: ADULT_DOB }, { returning: '*' })
+        assert.equal(wrong.status, 403, `${name}: ${wrong.text}`)
+        assert.deepEqual(right.json, wrong.json, 'the same answer either way')
+      }
+      const stored = (await sql.query("SELECT dob::text AS dob FROM public.referee_database WHERE last_name = 'Zzadult'")).rows
+      assert.deepEqual(stored.map((row) => row.dob), [ADULT_DOB])
       // A scorer's new referee keeps its date of birth
       const mine = await add(users.scorer, { first_name: 'Nora', last_name: 'Zzscorer', dob: '1992-06-07' })
       assert.equal(mine.status, 200, mine.text)
       const kept = (await sql.query("SELECT dob::text AS dob FROM public.referee_database WHERE last_name = 'Zzscorer'")).rows
       assert.deepEqual(kept.map((row) => row.dob), ['1992-06-07'])
     } finally {
-      await sql.query("DELETE FROM public.referee_database WHERE (last_name = 'Zzadult' AND dob IS NULL) OR last_name IN ('Zzreturned', 'Zzscorer')")
+      await sql.query("DELETE FROM public.referee_database WHERE (last_name = 'Zzadult' AND dob IS NULL) OR last_name = 'Zzscorer'")
       await sql.query('DROP INDEX IF EXISTS public.test_referee_name_dob')
     }
   })

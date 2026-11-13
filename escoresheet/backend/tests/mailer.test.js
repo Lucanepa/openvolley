@@ -24,7 +24,7 @@ const NOTICE_TO_APPROVERS = ['signup', 'club_manager_invite', 'team_manager_prop
 const ACCOUNT_KINDS = MAIL_KINDS.filter((k) => !APPROVAL_KINDS.includes(k) && !SCORESHEET_KINDS.includes(k) && !NOTICE_TO_APPROVERS.includes(k))
 // Notices that link nothing: the way out is in the app, and a genuine mail
 // can be told by that (password changed, passkey added).
-const NOTICE_KINDS = ['password_changed', 'passkey_added']
+const NOTICE_KINDS = ['password_changed', 'passkey_added', 'email_changed']
 const SCORESHEET_VARS = { teams: 'VBC Musterdorf H1 – VBC Other H1', game: '930001', date: '29.10.2026', result: '3:1', corrected: false }
 
 const TOKEN = 'A'.repeat(20) + '_-' + 'b'.repeat(21)

@@ -135,6 +135,20 @@ export function unavailable () {
 }
 
 /** Uppercase, no spaces/dashes, O->0 and I/L->1; null unless it is a well-formed code. */
+/**
+ * SQL: is the auth.users row `u` an account created with a confirmation link
+ * that was never confirmed? ($m1/$m2: EMAIL_CONFIRMATION_MARK key and value.)
+ * to_jsonb, so a users table without these columns reads as confirmed.
+ */
+export const unconfirmedSql = (u, m1, m2) =>
+  `((to_jsonb(${u}) ->> 'email_confirmed_at') IS NULL AND (to_jsonb(${u}) -> 'raw_app_meta_data' ->> ${m1}) = ${m2})`
+export const CONFIRMATION_PARAMS = [EMAIL_CONFIRMATION_MARK.key, EMAIL_CONFIRMATION_MARK.value]
+/** An admin grant (editor, club link) to an account whose address nobody confirmed yet. */
+export const ACCOUNT_UNCONFIRMED = () => fail(409, 'OV_EMAIL_UNCONFIRMED',
+  'This account has not confirmed its email address yet: it can be given access once its owner opened the confirmation link')
+/** sha256 of an address, for the audit log and support (never the address itself). */
+export const emailDigest = (email) => createHash('sha256').update('ov-account-email:' + String(email || '').trim().toLowerCase(), 'utf8').digest('hex')
+
 export function normalizeInviteCode (raw) {
   if (typeof raw !== 'string') return null
   const s = raw.toUpperCase().replace(/[\s-]+/g, '').replace(/O/g, '0').replace(/[IL]/g, '1')
@@ -229,7 +243,7 @@ function trimmedText (raw, { min = 0, max }) {
  *   account's own delete-account runs it too). Without it both answer 404
  *   and the accounts list says can_delete: false.
  */
-export function createAccounts ({ pool, db, restore, access, approvalsForMatches = null, clubs: clubsOf = () => null, teams: teamsOf = () => null, requests: requestsOf = () => null, eraseAccount = null, logger = console } = {}) {
+export function createAccounts ({ pool, db, restore, access, approvalsForMatches = null, clubs: clubsOf = () => null, teams: teamsOf = () => null, requests: requestsOf = () => null, eraseAccount = null, mailer = null, logger = console } = {}) {
   const log = logger
   /** lib/clubs.js (db/018), wired after this module (it audits through it); null before. */
   const clubs = () => (typeof clubsOf === 'function' ? clubsOf() : null)
@@ -987,7 +1001,23 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
       if (changed.includes('email')) {
         const { rows: [other] } = await client.query('SELECT 1 FROM auth.users WHERE lower(email) = $1 AND id <> $2 LIMIT 1', [after.email, userId])
         if (other) throw abort(fail(409, 'OV_EMAIL_TAKEN', 'Another account already has this email address'))
-        await client.query('UPDATE auth.users SET email = $2 WHERE id = $1', [userId, after.email])
+        if (mailer?.enabled) {
+          // Nobody proved the new mailbox yet: unconfirmed until its owner opens
+          // a confirmation link (it may sign in and send one from its profile,
+          // the mark of an account created with a link; lib/auth.js)
+          await client.query(
+            `UPDATE auth.users SET email = $2, email_confirmed_at = NULL,
+                    raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) || jsonb_build_object($3::text, $4::text)
+              WHERE id = $1`, [userId, after.email, ...CONFIRMATION_PARAMS])
+        } else {
+          // No mail possible: like a sign-up then, the address counts as confirmed
+          await client.query('UPDATE auth.users SET email = $2 WHERE id = $1', [userId, after.email])
+        }
+        // Signed in somewhere, links sent to the old address: all ended
+        const { rows: [t] } = await client.query(
+          "SELECT to_regclass('auth.app_sessions') IS NOT NULL AS sessions, to_regclass('auth.app_tokens') IS NOT NULL AS tokens")
+        if (t?.sessions) await client.query('DELETE FROM auth.app_sessions WHERE user_id = $1', [userId])
+        if (t?.tokens) await client.query('UPDATE auth.app_tokens SET used_at = now() WHERE user_id = $1 AND used_at IS NULL', [userId])
       }
       if (changed.includes('first_name') || changed.includes('last_name')) {
         if (prof) {
@@ -1000,12 +1030,21 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
         }
       }
       if (changed.length) {
-        const pick = (o) => Object.fromEntries(changed.map((k) => [k, o[k] ?? null]))
+        // the addresses as digests: the entry outlives the account (deleteAccount)
+        const pick = (o) => Object.fromEntries(changed.map((k) => k === 'email' ? ['email_sha256', o.email ? emailDigest(o.email) : null] : [k, o[k] ?? null]))
         await audit(client, { actorId: actor?.id, action: 'account.profile', targetUserId: userId, details: { changed, before: pick(before), after: pick(after) } })
       }
-      return ok({ id: userId, first_name: after.first_name, last_name: after.last_name, email: changed.includes('email') ? after.email : before.email, changed })
+      return ok({ id: userId, first_name: after.first_name, last_name: after.last_name, email: changed.includes('email') ? after.email : before.email, changed, ...(changed.includes('email') ? { old_email: before.email } : {}) })
     }))
     access?.invalidate(userId)
+    if (res?.body?.data?.old_email) {
+      const to = res.body.data.old_email
+      delete res.body.data.old_email
+      // the old mailbox learns of the move (best effort, after the commit)
+      if (mailer?.enabled && to.includes('@')) {
+        mailer.send('email_changed', { to }).catch((err) => log.warn?.(`[accounts] email-changed mail failed: ${err?.code || err?.message}`))
+      }
+    }
     return res
   }
 
@@ -1075,10 +1114,16 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
         `SELECT user_id, roles FROM public.profiles
           WHERE user_id = ANY($1::uuid[]) OR ${hasRoleSql('roles', '$2')}
           ORDER BY user_id FOR UPDATE`, [[actorId, userId], superParam])
-      const { rows: [u] } = await client.query(
+      // Both accounts' rows, in id order: a deactivation of the caller that
+      // committed while this request waited for the locks is seen here (two
+      // admins deactivating each other at once: the second one is refused)
+      const { rows: users } = await client.query(
         `SELECT id, coalesce((to_jsonb(u) ->> 'banned_until')::timestamptz > now(), false) AS deactivated
-           FROM auth.users u WHERE id = $1 FOR UPDATE`, [userId])
+           FROM auth.users u WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE`, [[actorId, userId]])
+      const u = users.find((r) => r.id === userId)
       if (!u) throw abort(ACCOUNT_NOT_FOUND())
+      const me = users.find((r) => r.id === actorId)
+      if (!me || me.deactivated) throw abort(fail(401, 'invalid_token', 'Not signed in'))
       const actorAccess = accessFromRoles(rolesOf(locked, actorId))
       if (!actorAccess.isAdmin) throw abort(fail(403, 'OV_FORBIDDEN', 'You do not have access to this'))
       const targetRoles = rolesOf(locked, userId)
@@ -1112,8 +1157,6 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     const { rows: [r] } = await client.query(`SELECT ${sql} AS m`, [userId])
     return r?.m === true
   }
-  /** sha256 of the address, so support can confirm a deletion from an address it is given (never the address). */
-  const emailDigest = (email) => createHash('sha256').update('ov-account-email:' + String(email || '').trim().toLowerCase(), 'utf8').digest('hex')
 
   /**
    * POST /api/admin/accounts/:userId/delete { email } and .../reject { email }
@@ -1434,14 +1477,18 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     return guarded('add-editor', async () => {
       const { rows: [m] } = await pool.query('SELECT id FROM public.matches WHERE id = $1', [matchId])
       if (!m) return notFound('match')
-      const { rows: [u] } = await pool.query('SELECT id FROM auth.users WHERE lower(email) = lower($1) LIMIT 1', [email])
+      const { rows: [u] } = await pool.query(
+        `SELECT u.id, ${unconfirmedSql('u', '$2', '$3')} AS unconfirmed FROM auth.users u WHERE lower(u.email) = lower($1) LIMIT 1`,
+        [email, ...CONFIRMATION_PARAMS])
       if (!u) return notFound('account')
+      // Whoever registered the address first is not yet its owner
+      if (u.unconfirmed === true) return ACCOUNT_UNCONFIRMED()
       const role = await restore.addEditor(matchId, u.id, 'admin')
       if (!role) return unavailable()
       // already an editor by the game PIN: from now on by the admin's grant
       // (a closed match's first PDF at any time, lib/scoresheets.js sheetWritersOf)
       await pool.query("UPDATE public.match_editors SET granted_via = 'admin' WHERE match_id = $1 AND user_id = $2 AND granted_via <> 'admin'", [matchId, u.id])
-      await audit(pool, { actorId, action: 'match.editor_add', targetUserId: u.id, matchId, details: { email } })
+      await audit(pool, { actorId, action: 'match.editor_add', targetUserId: u.id, matchId, details: { email_sha256: emailDigest(email) } })
       return ok({ role })
     })
   }

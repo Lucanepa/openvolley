@@ -31,7 +31,10 @@
 --                                          INSERT (sign-up), DELETE
 --                                          (delete-account), UPDATE of
 --                                          encrypted_password, updated_at,
---                                          email_confirmed_at, last_sign_in_at only
+--                                          email_confirmed_at, last_sign_in_at,
+--                                          banned_until (deactivate), email and
+--                                          raw_app_meta_data (the admin's
+--                                          address change) only
 --                       auth.app_sessions  SELECT, INSERT, UPDATE, DELETE
 --                       auth.app_tokens    SELECT, INSERT, UPDATE, DELETE
 --                                          (db/010; skipped when absent)
@@ -191,9 +194,17 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ov_app;
 SELECT format('REVOKE UPDATE ON %s FROM ov_app', t)
   FROM unnest(ARRAY['public.event_revisions', 'public.activity_log']) AS t
  WHERE to_regclass(t) IS NOT NULL \gexec
+-- The admin audit log (db/007) is insert-only for the app: never rewritten,
+-- never deleted (its retention, if any, runs as ov_owner). The account
+-- columns stay updatable for the detach (ON DELETE SET NULL, and any explicit
+-- one like the tables above).
+SELECT format('REVOKE UPDATE, DELETE ON %s FROM ov_app', t)
+  FROM unnest(ARRAY['public.audit_log']) AS t
+ WHERE to_regclass(t) IS NOT NULL \gexec
 SELECT format('GRANT UPDATE (%s) ON %s TO ov_app', c, t)
   FROM (VALUES ('public.event_revisions', 'actor_id'),
-               ('public.activity_log', 'account_id, uploader_id')) AS g(t, c)
+               ('public.activity_log', 'account_id, uploader_id'),
+               ('public.audit_log', 'actor_id, target_user_id')) AS g(t, c)
  WHERE to_regclass(t) IS NOT NULL \gexec
 
 -- No public table is held back: the daily VolleyManager sync (lib/vmSync.js,
@@ -227,7 +238,11 @@ BEGIN
   EXECUTE format('REVOKE ALL (%s) ON auth.users FROM ov_app', cols);
 END $$;
 GRANT SELECT, INSERT, DELETE ON auth.users TO ov_app;
-GRANT UPDATE (encrypted_password, updated_at, email_confirmed_at, last_sign_in_at) ON auth.users TO ov_app;
+-- banned_until: lib/accounts.js setActive (deactivate / reactivate, db/027);
+-- email, raw_app_meta_data: its updateProfile (an admin moves an account to a
+-- new address, left unconfirmed until its owner confirms it).
+GRANT UPDATE (encrypted_password, updated_at, email_confirmed_at, last_sign_in_at,
+              banned_until, email, raw_app_meta_data) ON auth.users TO ov_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON auth.app_sessions TO ov_app;
 -- db/010: one-time email links (reset / confirm). Optional: on a database
 -- without 010 there is no such table (lib/auth.js then answers 503).

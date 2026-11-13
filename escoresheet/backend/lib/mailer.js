@@ -78,7 +78,7 @@ import nodemailer from 'nodemailer'
 import { legalUrl } from './legalLinks.js'
 
 export const MAIL_LANGS = Object.freeze(['en', 'de', 'fr', 'it'])
-export const MAIL_KINDS = Object.freeze(['reset', 'confirm', 'password_changed', 'passkey_added', 'approval', 'approval_pin_locked', 'scoresheet', 'scoresheet_test', 'scoresheet_no_pdf', 'scoresheet_reopened', 'signup', 'club_manager_invite', 'team_manager_proposal'])
+export const MAIL_KINDS = Object.freeze(['reset', 'confirm', 'password_changed', 'passkey_added', 'email_changed', 'approval', 'approval_pin_locked', 'scoresheet', 'scoresheet_test', 'scoresheet_no_pdf', 'scoresheet_reopened', 'signup', 'club_manager_invite', 'team_manager_proposal'])
 export const DEFAULT_MANAGER_URL = 'https://manager.openvolley.app'
 export const DEFAULT_FROM_NAME = 'OpenVolley'
 export const DEFAULT_MANAGER_URL_BEACH = 'https://manager-beach.openvolley.app'
@@ -104,7 +104,7 @@ export function mailApp(raw) {
 // app's profile sets).
 // The sign-up notice (lib/signupNotices.js) takes the brand of the app the
 // account signed up in.
-const BRANDED_KINDS = new Set(['reset', 'confirm', 'password_changed', 'passkey_added', 'signup'])
+const BRANDED_KINDS = new Set(['reset', 'confirm', 'password_changed', 'passkey_added', 'email_changed', 'signup'])
 
 /** The brand of one mail: mailApp(app) for the account mails, 'indoor' for the approval notices. */
 export function mailBrandOf(kind, app) {
@@ -120,7 +120,7 @@ export function mailBrandOf(kind, app) {
 // with an official's PIN, a locked PIN), the sign-up notices to admins and
 // approvers (lib/signupNotices.js), the team-manager proposals and the final mail's notices (a missing
 // PDF, a reopened match): they cannot starve the account mails.
-export const MAIL_BUDGET_OF = Object.freeze({ reset: 'account', password_changed: 'account', passkey_added: 'account', confirm: 'confirm', approval: 'notify', approval_pin_locked: 'notify', scoresheet: 'scoresheet', scoresheet_test: 'scoresheet_test', scoresheet_no_pdf: 'notify', scoresheet_reopened: 'notify', signup: 'notify', club_manager_invite: 'notify', team_manager_proposal: 'notify' })
+export const MAIL_BUDGET_OF = Object.freeze({ reset: 'account', password_changed: 'account', passkey_added: 'account', email_changed: 'account', confirm: 'confirm', approval: 'notify', approval_pin_locked: 'notify', scoresheet: 'scoresheet', scoresheet_test: 'scoresheet_test', scoresheet_no_pdf: 'notify', scoresheet_reopened: 'notify', signup: 'notify', club_manager_invite: 'notify', team_manager_proposal: 'notify' })
 // scoresheet: a busy match day (a dozen recipients a game) must not starve
 // the account mails, nor be starved by them; scoresheet_test: test mails
 // (any scorer, any time) must not use up the final scoresheets' budget
@@ -363,6 +363,34 @@ const T = {
       before: ['Buongiorno,', 'la password del suo account OpenVolley è appena stata modificata con un link di reimpostazione e tutti i dispositivi sono stati disconnessi.'],
       button: null,
       after: ['Se non è stato lei, reimposti subito la password e avvisi l’admin del suo club.']
+    }
+  },
+  // An admin moved the account to another address (lib/accounts.js
+  // updateProfile): sent to the old one. Links nothing, like the notices above.
+  email_changed: {
+    en: {
+      subject: 'The email address of your OpenVolley account was changed',
+      before: ['Hello,', 'an admin just changed the email address of your OpenVolley account. It is no longer this address, and every device was signed out.'],
+      button: null,
+      after: ['If you did not ask for this, tell your club admin right away.']
+    },
+    de: {
+      subject: 'Die E-Mail-Adresse Ihres OpenVolley-Kontos wurde geändert',
+      before: ['Hallo', 'Ein Admin hat soeben die E-Mail-Adresse Ihres OpenVolley-Kontos geändert. Es ist nicht mehr diese Adresse, und alle Geräte wurden abgemeldet.'],
+      button: null,
+      after: ['Wenn Sie das nicht verlangt haben, informieren Sie sofort den Admin Ihres Vereins.']
+    },
+    fr: {
+      subject: 'L’adresse e-mail de votre compte OpenVolley a été modifiée',
+      before: ['Bonjour,', 'un admin vient de modifier l’adresse e-mail de votre compte OpenVolley. Ce n’est plus cette adresse, et tous les appareils ont été déconnectés.'],
+      button: null,
+      after: ['Si vous ne l’avez pas demandé, prévenez immédiatement l’admin de votre club.']
+    },
+    it: {
+      subject: 'L’indirizzo e-mail del suo account OpenVolley è stato modificato',
+      before: ['Buongiorno,', 'un admin ha appena modificato l’indirizzo e-mail del suo account OpenVolley. Non è più questo indirizzo e tutti i dispositivi sono stati disconnessi.'],
+      button: null,
+      after: ['Se non l’ha chiesto lei, avvisi subito l’admin del suo club.']
     }
   },
   // A passkey was added (lib/auth.js passkeyRegister). vars: device ("iPhone ·
@@ -744,6 +772,12 @@ const SHARED_PASSWORD_NOTE = {
     de: 'Ihr Konto gilt für OpenVolley und OpenBeach: Das neue Passwort gilt für beide Apps.',
     fr: 'Votre compte est valable pour OpenVolley et OpenBeach : le nouveau mot de passe vaut pour les deux applications.',
     it: 'Il suo account vale per OpenVolley e OpenBeach: la nuova password vale per entrambe le app.'
+  },
+  email_changed: {
+    en: 'Your account works for OpenVolley and OpenBeach: the change applies to both apps.',
+    de: 'Ihr Konto gilt für OpenVolley und OpenBeach: Die Änderung gilt für beide Apps.',
+    fr: 'Votre compte est valable pour OpenVolley et OpenBeach : la modification vaut pour les deux applications.',
+    it: 'Il suo account vale per OpenVolley e OpenBeach: la modifica vale per entrambe le app.'
   }
 }
 

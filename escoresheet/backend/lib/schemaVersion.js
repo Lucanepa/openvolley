@@ -94,6 +94,7 @@ export const REQUIRED_TRIGGERS = [
   { table: 'public.match_approvals', name: 'match_approvals_immutable', fn: 'public.ov_match_approvals_immutable' }, // 011
   { table: 'public.match_approvals', name: 'match_approvals_closed_guard', fn: 'public.ov_match_children_guard' }, // 011
   { table: 'public.match_approvals', name: 'match_approvals_closed_guard_update', fn: 'public.ov_match_children_guard' }, // 011
+  { table: 'public.match_approvals', name: 'match_approvals_delete_guard', fn: 'public.ov_match_approvals_delete_guard' }, // 038
   { table: 'public.matches', name: 'matches_void_approvals', fn: 'public.ov_matches_void_approvals' }, // 011, 012
   { table: 'public.matches', name: 'matches_sport_lock', fn: 'public.ov_matches_sport_lock' }, // 012
   { table: 'public.beach_tournaments', name: 'beach_tournaments_touch_updated_at', fn: 'public.ov_touch_updated_at' }, // 014
