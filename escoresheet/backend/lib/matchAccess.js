@@ -30,7 +30,10 @@
  */
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 
-const pinText = (v) => (v === undefined || v === null ? '' : String(v).trim())
+// A PIN is text or a number (older scorers stored numbers); anything else is
+// no PIN. A relayed match is any socket's JSON: String() of {"toString":1}
+// throws, and in a request handler that throw ended the backend.
+const pinText = (v) => (typeof v === 'string' ? v.trim() : typeof v === 'number' && Number.isFinite(v) ? String(v) : '')
 
 export const MATCH_TOKEN_TTL_MS = 6 * 60 * 60 * 1000
 export const MIN_TOKEN_SECRET_LENGTH = 32
