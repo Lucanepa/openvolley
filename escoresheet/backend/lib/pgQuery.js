@@ -49,6 +49,7 @@
  */
 
 import pg from 'pg'
+import { connectClient } from './pgClient.js'
 
 // ---------------------------------------------------------------------------
 // Defaults (mirror server.js / frontend matchRepository.js as of 2026-10)
@@ -1279,7 +1280,7 @@ export function createPgQuery (options = {}) {
 
   // ------------------------------------------------------------ public API
   async function withTransaction (fn, { statementTimeoutMs } = {}) {
-    const client = await pool.connect()
+    const client = await connectClient(pool, log)
     try {
       await client.query('BEGIN')
       if (statementTimeoutMs) await client.query(`SET LOCAL statement_timeout = ${Number(statementTimeoutMs) | 0}`)

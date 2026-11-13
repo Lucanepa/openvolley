@@ -43,6 +43,7 @@ import { accessForSport } from './access.js'
 import { DE_MAX_TEAMS, DE_MIN_TEAMS, boardSizeFor, doubleElimination, drawWarnings, entryOfSource } from './beachBracket.js'
 import { daysBetween, minutesOf, scheduleMatches, slotIssues } from './beachSchedule.js'
 import { CONTROL_RE, fold, importHash, normalizeImport, planImport } from './beachImport.js'
+import { connectClient } from './pgClient.js'
 
 export const TOURNAMENT_STATUSES = Object.freeze(['draft', 'published', 'live', 'finished', 'archived'])
 export const DRAW_GENDERS = Object.freeze(['men', 'women', 'mixed'])
@@ -193,7 +194,7 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
   const log = logger
 
   async function withTx (fn) {
-    const client = await pool.connect()
+    const client = await connectClient(pool, log)
     try {
       await client.query('BEGIN')
       const out = await fn(client)

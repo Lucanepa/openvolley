@@ -85,6 +85,7 @@ import { isIPv4, isIPv6 } from 'node:net'
 import bcryptjs from 'bcryptjs'
 import { authLink, describeMailError, disabledMailer, inboxKey, mailApp, maskEmail, MAIL_BRANDS, pickLang } from './mailer.js'
 import { cleanTransports, createPasskeyCeremonies, passkeyConfig, passkeyDeviceLabel, PasskeyError, PASSKEYS_PER_USER_MAX } from './passkeys.js'
+import { connectClient } from './pgClient.js'
 
 // ---------------------------------------------------------------------------
 // Constants and small helpers
@@ -878,7 +879,7 @@ export function createAuth(options = {}) {
   }
 
   async function withTransaction(fn) {
-    const client = await pool.connect()
+    const client = await connectClient(pool, log)
     try {
       await client.query('BEGIN')
       const out = await fn(client)

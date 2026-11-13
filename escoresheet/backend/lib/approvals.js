@@ -59,6 +59,7 @@ import {
   KEY_ID, PIN_RE, RESULT_KEY_PREFIX, deriveKeys, deviceHash, ipHash, isCurrentPinRow, isWeakPin, macPin, resultHash,
   resultKey, shortId, triplesOf, verifyPin
 } from './approvalPin.js'
+import { connectClient } from './pgClient.js'
 
 export const SLOTS = Object.freeze(['referee1', 'referee2', 'scorer'])
 // The plain role of each slot; approvalRoleFor() names it in the match's sport
@@ -197,7 +198,7 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
   const settle = () => Promise.allSettled([...pending]).then(() => undefined)
 
   async function withTx (fn) {
-    const client = await pool.connect()
+    const client = await connectClient(pool, log)
     try {
       await client.query('BEGIN')
       const out = await fn(client)

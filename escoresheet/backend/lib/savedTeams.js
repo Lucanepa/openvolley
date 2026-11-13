@@ -21,6 +21,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { fail, invalid, isUuid, notFound, ok, unavailable } from './accounts.js'
+import { connectClient } from './pgClient.js'
 
 export const STAFF_ROLES = Object.freeze(['Coach', 'Assistant Coach 1', 'Assistant Coach 2', 'Physiotherapist', 'Medic'])
 export const GENDERS = Object.freeze(['men', 'women', 'mixed'])
@@ -308,7 +309,7 @@ export function createSavedTeams ({ pool, logger = console } = {}) {
   const log = logger
 
   async function withTx (fn) {
-    const client = await pool.connect()
+    const client = await connectClient(pool, log)
     try {
       await client.query('BEGIN')
       const out = await fn(client)

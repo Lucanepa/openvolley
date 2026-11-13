@@ -46,6 +46,7 @@ import { seasonOf } from './officialGame.js'
 import { STAFF_ROLES, validateRoster } from './savedTeams.js'
 import { zurichDay } from './clubs.js'
 import { WRONG_GENDER, teamGenderOf } from './licences.js'
+import { connectClient } from './pgClient.js'
 
 // A team link (owner, 2026-11-08): a few uses, never unlimited, gone after 90 days at most
 export const TEAM_INVITE_MAX_USES = 10
@@ -212,7 +213,7 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
   let lastSweep = 0
 
   async function withTx (fn) {
-    const client = await pool.connect()
+    const client = await connectClient(pool, log)
     try {
       await client.query('BEGIN')
       const out = await fn(client)

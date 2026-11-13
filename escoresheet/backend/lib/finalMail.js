@@ -31,6 +31,7 @@
 
 import { fail, invalid, isUuid, ok, unavailable } from './accounts.js'
 import { pickLang } from './mailer.js'
+import { connectClient } from './pgClient.js'
 
 export const DELAY_MS = 2 * 60 * 1000
 export const NO_PDF_AFTER_MS = 2 * 60 * 60 * 1000
@@ -111,7 +112,7 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
   /** PUT /api/settings { send_final_email } */
   async function setSettings ({ actorId, body } = {}) {
     if (!body || typeof body.send_final_email !== 'boolean') return invalid('send_final_email: true or false')
-    const client = await pool.connect()
+    const client = await connectClient(pool, log)
     try {
       await client.query('BEGIN')
       await client.query(

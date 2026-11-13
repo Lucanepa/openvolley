@@ -51,6 +51,7 @@
 
 import { fail, invalid, isUuid, notFound, ok, unavailable } from './accounts.js'
 import { seasonOf } from './officialGame.js'
+import { connectClient } from './pgClient.js'
 
 export const LICENCE_LISTS = Object.freeze(['players', 'scorers', 'coaches'])
 export const MAX_LICENCE_PEOPLE = 2000
@@ -251,7 +252,7 @@ export function createLicences ({ pool, audit, clubs = null, logger = console, c
   const log = logger
 
   async function withTx (fn) {
-    const client = await pool.connect()
+    const client = await connectClient(pool, log)
     try {
       await client.query('BEGIN')
       const out = await fn(client)
