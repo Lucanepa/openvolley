@@ -1675,7 +1675,38 @@
     },
     "errorClosing": "Erreur lors de la clôture du match : ",
     "noWinner": "Pas de vainqueur (match arrêté)",
-    "pdfGenerationFailed": "Match approuvé, mais le PDF n'a pas pu être créé. Vous pouvez le créer depuis le bouton eScoresheet.",
+    "pdfGenerationFailed": "Match approuvé sans PDF. Créez-le avec « Créer le PDF » avant de fermer le match : le serveur en a besoin.",
+    "pdfGenerationFailedTest": "Match approuvé, mais le PDF n'a pas pu être créé. Vous pouvez le créer depuis le bouton eScoresheet.",
+    "pdfMissing": {
+      "notice": "Le PDF officiel de cette approbation n’est pas encore en route vers le serveur. Créez-le avant de fermer le match.",
+      "create": "Créer le PDF",
+      "queued": "Le PDF part vers le serveur à la prochaine synchronisation.",
+      "cancelKeepsMissing": "Annuler laisse le match approuvé sans PDF : créez-le avant de fermer le match.",
+      "closeTitle": "Fermer sans le PDF officiel ?",
+      "closeBody": "Aucun PDF de cette approbation n’est en route vers le serveur : la fédération et l’e-mail final n’en auraient pas. Une fois le match fermé, cet appareil ne peut plus le créer.",
+      "closeAnyway": "Fermer quand même"
+    },
+    "sheetWarnings": {
+      "title": "Vérifiez le match avant de l’approuver :",
+      "confirmTitle": "Approuver malgré ces avertissements ?",
+      "confirm": "Approuver quand même"
+    },
+    "resultIssues": {
+      "title": "Ce résultat ne peut pas être approuvé :",
+      "hint": "Corrigez-le dans Corrections, puis approuvez.",
+      "blocked": "Le résultat contient un set ou une fin de match impossible. Corrigez-le d’abord dans Corrections."
+    },
+    "signedSheetChange": {
+      "title": "Effacer les signatures ?",
+      "confirm": "Modifier et effacer",
+      "remarks": "La feuille a déjà été signée ou approuvée. Modifier les remarques efface toutes les signatures et approbations de la fin du match : recueillez-les à nouveau ensuite.",
+      "remarksSignature": "La feuille a déjà été signée ou approuvée. Retirer cette signature efface toutes les signatures et approbations de la fin du match : recueillez-les à nouveau ensuite.",
+      "correction": "La feuille a déjà été signée ou approuvée. Cette correction efface toutes les signatures et approbations de la fin du match : recueillez-les à nouveau ensuite.",
+      "editor": "La feuille a déjà été signée ou approuvée. Enregistrer ces modifications efface toutes les signatures et approbations de la fin du match : recueillez-les à nouveau ensuite.",
+      "logRemarks": "Remarques modifiées après la signature de la feuille",
+      "logRemarksSignature": "Signature retirée des remarques : {{caption}}",
+      "saveFailed": "La modification n’a pas pu être enregistrée."
+    },
     "reopenMatch": "Rouvrir le match",
     "closedOnServer": "Ce match est clôturé sur le serveur : il ne peut plus être modifié ici. Seul un admin peut le rouvrir (Rouvrir le match).",
     "reopenAdminOnlyTitle": "Seul un admin peut rouvrir ce match",
@@ -1701,7 +1732,7 @@
         "blocked": "La fenêtre de l’eScoresheet n’a pas pu s’ouvrir.",
         "failed": "L’eScoresheet n’a pas pu créer le PDF."
       },
-      "cancelKeepsUnapproved": "Annuler laisse le match non approuvé. Approuver sans PDF l’approuve maintenant : enregistrez le PDF depuis l’eScoresheet plus tard.",
+      "cancelKeepsUnapproved": "Annuler laisse le match non approuvé. Approuver sans PDF l’approuve maintenant : créez ensuite le PDF avec « Créer le PDF » avant de fermer le match.",
       "keepWindowOpen": "Laissez la fenêtre de l’eScoresheet ouverte jusqu’à ce que le PDF soit prêt."
     },
     "testMailSent": "Feuille de match envoyée à {{to}}"
@@ -2737,7 +2768,7 @@
       "q_approve": "Que fait « Confirmer et approuver » ?",
       "a_approve": "Quand toutes les signatures sont là, appuyez sur « Confirmer et approuver ». L'app enregistre les données du match (JSON) et crée la feuille de match en PDF : gardez la fenêtre de la feuille de match ouverte jusqu'à ce qu'il soit prêt. Le match est alors approuvé et clôturé sur le serveur.",
       "q_pdfFailed": "Le PDF n'est pas prêt : que faire ?",
-      "a_pdfFailed": "« Réessayer » recrée le PDF. « Approuver sans PDF » approuve le match tout de suite : enregistrez le PDF plus tard avec « eScoresheet ». « Annuler » laisse le match non approuvé.",
+      "a_pdfFailed": "« Réessayer » recrée le PDF. « Approuver sans PDF » approuve le match tout de suite : créez ensuite le PDF avec « Créer le PDF » avant de fermer le match, pour qu’il parvienne au serveur. « Annuler » laisse le match non approuvé.",
       "q_closeMatch": "Que fait « Fermer le match » ?",
       "a_closeMatch": "Après l'approbation, « Fermer le match » marque le match comme final sur le serveur et le retire de cet appareil. Enregistrez ou imprimez d'abord le PDF si vous en voulez une copie sur cet appareil."
     },
@@ -2979,6 +3010,7 @@
     "gameNumber": "Numéro de match",
     "matchTypeGender": "Type de match (genre)",
     "scheduledDateTime": "Date/heure prévue",
+    "fixedAfterMatch": "Fixé après le match : le PDF officiel est classé sous le numéro et la date du match de la configuration.",
     "matchOfficials": "Officiels du match",
     "firstReferee": "1er arbitre",
     "secondReferee": "2ème arbitre",

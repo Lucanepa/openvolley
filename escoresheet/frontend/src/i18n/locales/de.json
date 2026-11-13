@@ -2583,7 +2583,7 @@
       "q_approve": "Was macht «Bestätigen und genehmigen»?",
       "a_approve": "Wenn alle Unterschriften da sind, tippe auf «Bestätigen und genehmigen». Die App speichert die Spieldaten (JSON) und erstellt das Matchblatt als PDF: Lass das Matchblatt-Fenster offen, bis es fertig ist. Danach ist das Spiel genehmigt und auf dem Server abgeschlossen.",
       "q_pdfFailed": "Es heisst, das PDF sei nicht fertig: Was nun?",
-      "a_pdfFailed": "«Erneut versuchen» erstellt das PDF nochmals. «Ohne PDF genehmigen» genehmigt das Spiel jetzt: Speichere das PDF später über «eScoresheet». «Abbrechen» lässt das Spiel ungenehmigt.",
+      "a_pdfFailed": "«Erneut versuchen» erstellt das PDF nochmals. «Ohne PDF genehmigen» genehmigt das Spiel jetzt: Erstelle danach das PDF mit «PDF erstellen», bevor du das Spiel abschliesst, damit es den Server erreicht. «Abbrechen» lässt das Spiel ungenehmigt.",
       "q_closeMatch": "Was macht «Spiel abschliessen»?",
       "a_closeMatch": "Nach der Genehmigung markiert «Spiel abschliessen» das Spiel auf dem Server als final und entfernt es von diesem Gerät. Speichere oder drucke das PDF vorher, wenn du eine Kopie auf diesem Gerät brauchst."
     },
@@ -2825,6 +2825,7 @@
     "gameNumber": "Spielnummer",
     "matchTypeGender": "Spieltyp (Geschlecht)",
     "scheduledDateTime": "Geplantes Datum/Uhrzeit",
+    "fixedAfterMatch": "Nach dem Spiel fix: Das offizielle PDF wird unter der Spielnummer und dem Datum des Match-Setups abgelegt.",
     "matchOfficials": "Schiedsrichter",
     "firstReferee": "1. Schiedsrichter",
     "secondReferee": "2. Schiedsrichter",
@@ -2876,7 +2877,38 @@
   "matchEnd": {
     "errorClosing": "Fehler beim Abschliessen des Spiels: ",
     "noWinner": "Kein Sieger (Spiel abgebrochen)",
-    "pdfGenerationFailed": "Spiel genehmigt, aber das PDF konnte nicht erstellt werden. Sie können es über die Schaltfläche eScoresheet erstellen.",
+    "pdfGenerationFailed": "Spiel ohne PDF genehmigt. Erstellen Sie es mit «PDF erstellen», bevor Sie das Spiel abschliessen: Der Server braucht es.",
+    "pdfGenerationFailedTest": "Spiel genehmigt, aber das PDF konnte nicht erstellt werden. Sie können es über die Schaltfläche eScoresheet erstellen.",
+    "pdfMissing": {
+      "notice": "Das offizielle PDF dieser Genehmigung ist noch nicht zum Server unterwegs. Erstellen Sie es, bevor Sie das Spiel abschliessen.",
+      "create": "PDF erstellen",
+      "queued": "Das PDF geht mit der nächsten Synchronisierung an den Server.",
+      "cancelKeepsMissing": "Abbrechen lässt das Spiel ohne PDF genehmigt: Erstellen Sie es, bevor Sie das Spiel abschliessen.",
+      "closeTitle": "Ohne offizielles PDF abschliessen?",
+      "closeBody": "Kein PDF dieser Genehmigung ist zum Server unterwegs: Der Verband und das Schlussmail hätten keines. Ist das Spiel abgeschlossen, kann dieses Gerät es nicht mehr erstellen.",
+      "closeAnyway": "Trotzdem abschliessen"
+    },
+    "sheetWarnings": {
+      "title": "Prüfen Sie das Spiel vor der Genehmigung:",
+      "confirmTitle": "Trotz dieser Hinweise genehmigen?",
+      "confirm": "Trotzdem genehmigen"
+    },
+    "resultIssues": {
+      "title": "Dieses Ergebnis kann nicht genehmigt werden:",
+      "hint": "Korrigieren Sie es unter «Korrekturen» und genehmigen Sie dann.",
+      "blocked": "Das Ergebnis enthält einen Satz oder ein Spielende, das nicht möglich ist. Korrigieren Sie es zuerst unter «Korrekturen»."
+    },
+    "signedSheetChange": {
+      "title": "Unterschriften löschen?",
+      "confirm": "Ändern und löschen",
+      "remarks": "Das Matchblatt ist schon unterschrieben oder genehmigt. Eine Änderung der Bemerkungen löscht alle Unterschriften und Genehmigungen des Spielendes: Holen Sie sie danach neu ein.",
+      "remarksSignature": "Das Matchblatt ist schon unterschrieben oder genehmigt. Das Entfernen dieser Unterschrift löscht alle Unterschriften und Genehmigungen des Spielendes: Holen Sie sie danach neu ein.",
+      "correction": "Das Matchblatt ist schon unterschrieben oder genehmigt. Diese Korrektur löscht alle Unterschriften und Genehmigungen des Spielendes: Holen Sie sie danach neu ein.",
+      "editor": "Das Matchblatt ist schon unterschrieben oder genehmigt. Das Speichern dieser Änderungen löscht alle Unterschriften und Genehmigungen des Spielendes: Holen Sie sie danach neu ein.",
+      "logRemarks": "Bemerkungen nach dem Unterschreiben geändert",
+      "logRemarksSignature": "Unterschrift aus den Bemerkungen entfernt: {{caption}}",
+      "saveFailed": "Die Änderung konnte nicht gespeichert werden."
+    },
     "reopenMatch": "Spiel wieder öffnen",
     "closedOnServer": "Dieses Spiel ist auf dem Server abgeschlossen und kann hier nicht mehr geändert werden. Nur ein Admin kann es wieder öffnen («Spiel wieder öffnen»).",
     "reopenAdminOnlyTitle": "Nur ein Admin kann dieses Spiel wieder öffnen",
@@ -2975,7 +3007,7 @@
         "blocked": "Das eScoresheet-Fenster konnte nicht geöffnet werden.",
         "failed": "Das eScoresheet konnte das PDF nicht erstellen."
       },
-      "cancelKeepsUnapproved": "Abbrechen lässt das Spiel ungenehmigt. Ohne PDF genehmigen genehmigt es jetzt: Speichern Sie das PDF später aus dem eScoresheet.",
+      "cancelKeepsUnapproved": "Abbrechen lässt das Spiel ungenehmigt. Ohne PDF genehmigen genehmigt es jetzt: Erstellen Sie danach das PDF mit «PDF erstellen», bevor Sie das Spiel abschliessen.",
       "keepWindowOpen": "Lassen Sie das eScoresheet-Fenster offen, bis das PDF fertig ist."
     },
     "testMailSent": "Matchblatt an {{to}} gesendet"

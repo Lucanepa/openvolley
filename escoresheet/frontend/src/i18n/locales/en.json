@@ -1677,7 +1677,38 @@
     },
     "errorClosing": "Error closing match: ",
     "noWinner": "No winner (match stopped)",
-    "pdfGenerationFailed": "Match approved, but the PDF could not be created. You can create it from the scoresheet button.",
+    "pdfGenerationFailed": "Match approved without the PDF. Create it with “Create the PDF” before you close the match: the server needs it.",
+    "pdfGenerationFailedTest": "Match approved, but the PDF could not be created. You can create it from the scoresheet button.",
+    "pdfMissing": {
+      "notice": "The official PDF of this approval is not on its way to the server yet. Create it before you close the match.",
+      "create": "Create the PDF",
+      "queued": "The PDF goes to the server with the next sync.",
+      "cancelKeepsMissing": "Cancel leaves the match approved without the PDF: create it before you close the match.",
+      "closeTitle": "Close without the official PDF?",
+      "closeBody": "No PDF of this approval is on its way to the server: the league and the final mail would have none. Once the match is closed, this device cannot create it any more.",
+      "closeAnyway": "Close anyway"
+    },
+    "sheetWarnings": {
+      "title": "Check the match before approving it:",
+      "confirmTitle": "Approve despite these warnings?",
+      "confirm": "Approve anyway"
+    },
+    "resultIssues": {
+      "title": "This result cannot be approved:",
+      "hint": "Correct the set score first, then approve.",
+      "blocked": "The result has a set or a match end that is not possible. Correct it in Corrections first."
+    },
+    "signedSheetChange": {
+      "title": "Clear the signatures?",
+      "confirm": "Change and clear",
+      "remarks": "The sheet was already signed or approved. Changing the remarks clears every signature and account approval of the match end: collect them again afterwards.",
+      "remarksSignature": "The sheet was already signed or approved. Removing this signature clears every signature and account approval of the match end: collect them again afterwards.",
+      "correction": "The sheet was already signed or approved. This correction clears every signature and account approval of the match end: collect them again afterwards.",
+      "editor": "The sheet was already signed or approved. Saving these changes clears every signature and account approval of the match end: collect them again afterwards.",
+      "logRemarks": "Remarks changed after the sheet was signed",
+      "logRemarksSignature": "Signature removed from the remarks: {{caption}}",
+      "saveFailed": "The change could not be saved."
+    },
     "reopenMatch": "Reopen match",
     "closedOnServer": "This match is closed on the server: it can no longer be changed here. Only an admin can reopen it (Reopen match).",
     "reopenAdminOnlyTitle": "Only an admin can reopen this match",
@@ -1703,7 +1734,7 @@
         "blocked": "The scoresheet window could not be opened.",
         "failed": "The scoresheet could not create the PDF."
       },
-      "cancelKeepsUnapproved": "Cancel leaves the match not approved. Approve without PDF approves it now: save the PDF from the scoresheet later.",
+      "cancelKeepsUnapproved": "Cancel leaves the match not approved. Approve without PDF approves it now: then create the PDF with “Create the PDF” before you close the match.",
       "keepWindowOpen": "Keep the scoresheet window open until the PDF is ready."
     },
     "testMailSent": "Scoresheet sent to {{to}}"
@@ -2744,7 +2775,7 @@
       "q_approve": "What does “Confirm and approve” do?",
       "a_approve": "When every signature is in, tap “Confirm and approve”. The app saves the match data (JSON) and makes the scoresheet PDF: keep the scoresheet window open until it is ready. The match is then approved and closed on the server.",
       "q_pdfFailed": "It says the PDF is not ready: what now?",
-      "a_pdfFailed": "“Retry” makes the PDF again. “Approve without PDF” approves the match now: save the PDF later with “Scoresheet”. “Cancel” leaves the match not approved.",
+      "a_pdfFailed": "“Retry” makes the PDF again. “Approve without PDF” approves the match now: then create the PDF with “Create the PDF” before you close the match, so that it reaches the server. “Cancel” leaves the match not approved.",
       "q_closeMatch": "What does “Close match” do?",
       "a_closeMatch": "After the approval, “Close match” marks the match final on the server and removes it from this device. Save or print the PDF first if you need a copy on this device."
     },
@@ -2986,6 +3017,7 @@
     "gameNumber": "Game number",
     "matchTypeGender": "Match type (gender)",
     "scheduledDateTime": "Scheduled date/time",
+    "fixedAfterMatch": "Fixed after the match: the official PDF is filed under the game number and date of the match setup.",
     "matchOfficials": "Match officials",
     "firstReferee": "1st referee",
     "secondReferee": "2nd referee",

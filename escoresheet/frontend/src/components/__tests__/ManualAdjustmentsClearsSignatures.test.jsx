@@ -8,6 +8,8 @@ import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
 
 vi.mock('../../contexts/AlertContext', () => ({ useAlert: () => ({ showAlert: vi.fn() }) }))
+// the save asks first now that the sheet was signed (answered yes)
+vi.mock('../../ui/uiStore.js', async (orig) => ({ ...(await orig()), confirmDialog: async () => true }))
 
 import '../../i18n'
 import { db } from '../../db/db'

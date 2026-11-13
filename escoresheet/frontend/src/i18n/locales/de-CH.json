@@ -1676,7 +1676,38 @@
     },
     "errorClosing": "Fähler bim Abschliesse vom Spiil: ",
     "noWinner": "Kei Gwünner (Spiil abbroche)",
-    "pdfGenerationFailed": "Spiil genehmigt, aber s PDF hät nöd chönne erstellt werde. Du chasch s über de Chnopf «eScoresheet» erstelle.",
+    "pdfGenerationFailed": "Spiil ohni PDF genehmigt. Erstell s mit «PDF erstelle», bevor du s Spiil abschliessisch: De Server bruucht s.",
+    "pdfGenerationFailedTest": "Spiil genehmigt, aber s PDF hät nöd chönne erstellt werde. Du chasch s über de Chnopf «eScoresheet» erstelle.",
+    "pdfMissing": {
+      "notice": "S offizielle PDF vo dere Genehmigung isch no nöd zum Server unterwägs. Erstell s, bevor du s Spiil abschliessisch.",
+      "create": "PDF erstelle",
+      "queued": "S PDF gaht mit de nächschte Synchronisierig an Server.",
+      "cancelKeepsMissing": "«Abbräche» laht s Spiil ohni PDF genehmigt: Erstell s, bevor du s Spiil abschliessisch.",
+      "closeTitle": "Ohni offiziells PDF abschliesse?",
+      "closeBody": "Kei PDF vo dere Genehmigung isch zum Server unterwägs: De Verband und s Schlussmail hettid keis. Isch s Spiil abgschlosse, cha das Grät s nüme erstelle.",
+      "closeAnyway": "Trotzdem abschliesse"
+    },
+    "sheetWarnings": {
+      "title": "Prüef s Spiil vor em Genehmige:",
+      "confirmTitle": "Trotz dene Hiiwiis genehmige?",
+      "confirm": "Trotzdem genehmige"
+    },
+    "resultIssues": {
+      "title": "Das Resultat cha nöd genehmigt werde:",
+      "hint": "Korrigier s under «Korrekture» und genehmig s dänn.",
+      "blocked": "S Resultat hät en Satz oder es Spiilend, wo nöd möglich isch. Korrigier s zerscht under «Korrekture»."
+    },
+    "signedSheetChange": {
+      "title": "Underschrifte lösche?",
+      "confirm": "Ändere und lösche",
+      "remarks": "S Matchblatt isch scho underschribe oder genehmigt. Wänn du d Bemerkige änderisch, werded alli Underschrifte und Genehmigunge vom Spiilend glöscht: Hol si nachher neu ii.",
+      "remarksSignature": "S Matchblatt isch scho underschribe oder genehmigt. Wänn du die Underschrift entfernsch, werded alli Underschrifte und Genehmigunge vom Spiilend glöscht: Hol si nachher neu ii.",
+      "correction": "S Matchblatt isch scho underschribe oder genehmigt. Die Korrektur löscht alli Underschrifte und Genehmigunge vom Spiilend: Hol si nachher neu ii.",
+      "editor": "S Matchblatt isch scho underschribe oder genehmigt. Wänn du die Änderige speicherisch, werded alli Underschrifte und Genehmigunge vom Spiilend glöscht: Hol si nachher neu ii.",
+      "logRemarks": "Bemerkige nach em Underschribe gänderet",
+      "logRemarksSignature": "Underschrift us de Bemerkige entfernt: {{caption}}",
+      "saveFailed": "D Änderig hät nöd chönne gspeicheret werde."
+    },
     "reopenMatch": "Spiil wieder ufmache",
     "closedOnServer": "Das Spiil isch uf em Server abgschlosse: Es cha da nüme gänderet werde. Nur en Admin cha s wieder ufmache («Spiil wieder ufmache»).",
     "reopenAdminOnlyTitle": "Nur en Admin cha das Spiil wieder ufmache",
@@ -1702,7 +1733,7 @@
         "blocked": "S eScoresheet-Fänschter hät nöd chönne ufgah.",
         "failed": "S eScoresheet hät s PDF nöd chönne erstelle."
       },
-      "cancelKeepsUnapproved": "«Abbräche» laht s Spiil ungenehmigt. «Ohni PDF genehmige» genehmigt s jetzt: Speicher s PDF spöter us em eScoresheet.",
+      "cancelKeepsUnapproved": "«Abbräche» laht s Spiil ungenehmigt. «Ohni PDF genehmige» genehmigt s jetzt: Erstell nachher s PDF mit «PDF erstelle», bevor du s Spiil abschliessisch.",
       "keepWindowOpen": "Bitte s eScoresheet-Fänschter offe la, bis s PDF fertig isch."
     },
     "testMailSent": "Matchblatt a {{to}} gschickt"
@@ -2738,7 +2769,7 @@
       "q_approve": "Was macht «Bestätige und genehmige»?",
       "a_approve": "Wänn alli Underschrifte da sind, tipp uf «Bestätige und genehmige». D App speicheret d Spiildate (JSON) und macht s Matchblatt als PDF: Lah s Matchblatt-Fänschter offe, bis es fertig isch. Nachher isch s Spiil genehmigt und uf em Server abgschlosse.",
       "q_pdfFailed": "Es heisst, s PDF seig nöd fertig: Was jetzt?",
-      "a_pdfFailed": "«Nomal probiere» macht s PDF nomal. «Ohni PDF genehmige» genehmigt s Spiil jetzt: Speicher s PDF spöter über «eScoresheet». «Abbräche» laat s Spiil nöd genehmigt.",
+      "a_pdfFailed": "«Nomal probiere» macht s PDF nomal. «Ohni PDF genehmige» genehmigt s Spiil jetzt: Erstell nachher s PDF mit «PDF erstelle», bevor du s Spiil abschliessisch, damit s zum Server chunnt. «Abbräche» laat s Spiil nöd genehmigt.",
       "q_closeMatch": "Was macht «Spiil abschliesse»?",
       "a_closeMatch": "Nach de Genehmigung markiert «Spiil abschliesse» s Spiil uf em Server als final und entfernt s vo däm Grät. Speicher oder druck s PDF vorher, wänn du e Kopie uf däm Grät bruuchsch."
     },
@@ -2980,6 +3011,7 @@
     "gameNumber": "Spiilnummere",
     "matchTypeGender": "Spiiltyp (Geschlecht)",
     "scheduledDateTime": "Gplants Datum/Ziit",
+    "fixedAfterMatch": "Nach em Spiil fix: S offizielle PDF wird under de Spiilnummere und em Datum vom Match-Setup abglegt.",
     "matchOfficials": "Spiiloffizielli",
     "firstReferee": "1. Schiri",
     "secondReferee": "2. Schiri",

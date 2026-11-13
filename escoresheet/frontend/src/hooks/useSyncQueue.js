@@ -8,7 +8,8 @@ import { setDiagnosticsInfo } from '../utils/diagnosticsInfo'
 import { uploadActivityBatch, activityFlushJob } from '../utils/activity/upload'
 import { getCloudApiUrl } from '../utils/backendConfig'
 import { filterMatchPayload, JSONB_COLUMNS } from '../db/matchRepository'
-import { parseExtId, resolveJobExternalId, rewriteQueuedSyncJobs, jobMatchKey, USER_MATCH_RESOURCE, SCORESHEET_UPLOAD_RESOURCE, userMatchRoles, userMatchJob } from '../utils/syncIds'
+import { parseExtId, resolveJobExternalId, rewriteQueuedSyncJobs, jobMatchKey, USER_MATCH_RESOURCE, SCORESHEET_UPLOAD_RESOURCE, APPROVAL_RESOURCE, userMatchRoles, userMatchJob } from '../utils/syncIds'
+import { approvalsApi } from '../lib/accountApi'
 import { buildConnectionPins } from '../utils/connectionPins'
 import { isShirtNumber } from '../domain/roster'
 import { uploadQueuedScoresheet } from '../utils/scoresheetUploader'
@@ -84,7 +85,9 @@ import { RESTORE_REFUSED, partsMayHelp } from '../utils/refusedRestore'
 // Resource processing order - matches must be synced before sets/events (FK
 // dependency); the account links ("My Matches") come last
 // 'activity': the activity log upload (utils/activity/upload), needs no match row
-const RESOURCE_ORDER = ['match', 'set', 'event', USER_MATCH_RESOURCE, SCORESHEET_UPLOAD_RESOURCE, 'activity']
+// APPROVAL_RESOURCE: an account approval undone after the sheet changed
+// (domain/accountApproval approvalUndoJobs); the approval waits for it
+const RESOURCE_ORDER = ['match', APPROVAL_RESOURCE, 'set', 'event', USER_MATCH_RESOURCE, SCORESHEET_UPLOAD_RESOURCE, 'activity']
 
 // The queue's two lanes. The scoresheet files (the approval's PDF and final
 // JSON, up to a megabyte or more) go in their own (runUploadLane), beside the
@@ -906,6 +909,10 @@ async function recordRestoreRefused(job, error) {
 // good ('failed') then no longer holds the approval, one that failed again on
 // its way ('error') holds it until it is through. The remarks as approved
 // (db/017) are such an update too: the approval queues them just before itself.
+//
+// Nor the undo of an account approval given before the sheet changed (a
+// correction, a remarks change at the match end): closed first, the match
+// keeps that approval for good (its approvals are frozen on the server).
 const CLOSING_STATUSES = ['approved', 'final']
 export function isClosingJob(job) {
   return job?.resource === 'match' && job.action === 'update' && CLOSING_STATUSES.includes(job.payload?.status)
@@ -916,7 +923,7 @@ export async function closingMustWait(job) {
   try {
     const pending = await db.sync_queue.where('status').anyOf('queued', 'sending', 'error', 'failed').toArray()
     const older = pending.filter(j => j.id < job.id && jobMatchKey(j) === matchKey)
-    if (older.some(j => j.status !== 'failed' && (j.resource === 'set' || j.resource === 'event'))) return true
+    if (older.some(j => j.status !== 'failed' && (j.resource === 'set' || j.resource === 'event' || j.resource === APPROVAL_RESOURCE))) return true
     const updates = older.filter(j => j.resource === 'match' && j.action === 'update' &&
       !(j.status === 'failed' && j.closing_retry_for === job.id))
     if (updates.length === 0) return false
@@ -1617,6 +1624,29 @@ async function processJobInner(job, ctx) {
       return true
     }
 
+    // ==================== ACCOUNT APPROVAL UNDO ====================
+    // The sheet changed after an official approved it with their account
+    // (domain/accountApproval approvalUndoJobs): the approval goes on the
+    // server too, retried like every write until it is through
+    if (job.resource === APPROVAL_RESOURCE && job.action === 'undo') {
+      const id = job.payload?.id
+      if (!id) return DROP_JOB
+      const { error } = await approvalsApi.undo(id)
+      if (error) {
+        // gone already: replaced by a newer approval of the slot, or undone
+        if (error.status === 404) return true
+        if (error.code === 'OV_MATCH_CLOSED') {
+          // the match was closed first: its approvals are frozen there
+          safeLog.warn('[SyncQueue] Approval undo refused, the match is closed: dropped')
+          ctx.error = summarizeError(error)
+          return DROP_JOB
+        }
+        safeLog.warn('[SyncQueue] Approval undo error:', error.code || error.status || error.message)
+        return failureResult(error, ctx)
+      }
+      return true
+    }
+
     // ==================== SCORESHEET FILES ====================
     // The approval's PDF and final JSON (MatchEnd): the job carries the file
     if (job.resource === SCORESHEET_UPLOAD_RESOURCE && job.action === 'upload') {
@@ -1660,6 +1690,7 @@ function entityKey(job) {
   if (job.resource === 'match') return `match:${jobMatchKey(job)}`
   if (job.resource === USER_MATCH_RESOURCE) return `${job.resource}:${jobMatchKey(job)}:${job.payload?.role}`
   if (job.resource === SCORESHEET_UPLOAD_RESOURCE) return `${job.resource}:${job.payload?.path}`
+  if (job.resource === APPROVAL_RESOURCE) return `${job.resource}:${job.payload?.id}`
   return `${job.resource}:${job.payload?.external_id}`
 }
 

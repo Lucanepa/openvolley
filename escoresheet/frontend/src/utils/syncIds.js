@@ -128,7 +128,7 @@ export function jobMatchKey(job) {
     if (typeof p.match_id === 'string' && p.match_id && !UUID.test(p.match_id)) return p.match_id
     return parseExtId(p.external_id)?.seedKey || null
   }
-  if (job?.resource === USER_MATCH_RESOURCE || job?.resource === SCORESHEET_UPLOAD_RESOURCE) return p.match_external_id || null
+  if (job?.resource === USER_MATCH_RESOURCE || job?.resource === SCORESHEET_UPLOAD_RESOURCE || job?.resource === APPROVAL_RESOURCE) return p.match_external_id || null
   return null
 }
 
@@ -137,6 +137,13 @@ export function jobMatchKey(job) {
  * utils/scoresheetUploader scoresheetUploadJob.
  */
 export const SCORESHEET_UPLOAD_RESOURCE = 'scoresheet'
+
+/**
+ * sync_queue resource of an account approval undone on the server (action
+ * 'undo', payload { id, match_external_id }): domain/accountApproval
+ * approvalUndoJobs, when the sheet changes after it was approved.
+ */
+export const APPROVAL_RESOURCE = 'approval'
 
 // ---------------------------------------------------------------------------
 // user_matches ("My Matches"): which account scored / officiated which match

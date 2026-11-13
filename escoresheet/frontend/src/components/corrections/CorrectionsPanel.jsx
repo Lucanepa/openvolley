@@ -28,7 +28,7 @@ import {
 import { matchIssues, issueText } from '../../domain/recompute'
 import { awardsPoint } from '../../domain/sanctions'
 import { scoreFromPointEvents, getFirstServeForSet } from '../../domain/rules'
-import { applyCorrectionPlan } from '../../services/corrections/applyCorrectionPlan'
+import { applyCorrectionPlan, planChangesSheet, signedAfterMatch } from '../../services/corrections/applyCorrectionPlan'
 import { useConfirmAction } from '../../hooks/useConfirmAction'
 import { switchSides, firstServerOf, teamASide } from './liveActions'
 import { SectionCard, EmptyLine, TeamDot, CourtMini, HIT, NewIssues } from './shared.jsx'
@@ -136,6 +136,18 @@ export default function CorrectionsPanel({
     if (!plan || plan.error) return false
     let saved = false
     await runConfirm(async () => {
+      // After the first post-match signature or account approval a change of
+      // the sheet clears them all (applyCorrectionPlan): asked first
+      if (mode === 'review' && planChangesSheet(plan) && signedAfterMatch(await db.matches.get(matchId))) {
+        const ok = await confirmDialog({
+          title: tr(t, 'matchEnd.signedSheetChange.title', 'Clear the signatures?'),
+          message: tr(t, 'matchEnd.signedSheetChange.correction', 'The sheet was already signed or approved. This correction clears every signature and account approval of the match end: collect them again afterwards.'),
+          confirmLabel: tr(t, 'matchEnd.signedSheetChange.confirm', 'Change and clear'),
+          cancelLabel: tr(t, 'corrections.action.cancel', 'Cancel'),
+          tone: 'danger'
+        })
+        if (!ok) return
+      }
       setBusy(true)
       try {
         const res = await applyCorrectionPlan(plan, { matchId, db, mode, hooks })

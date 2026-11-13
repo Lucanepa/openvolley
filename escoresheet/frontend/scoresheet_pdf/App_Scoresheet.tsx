@@ -27,7 +27,7 @@ import {
 } from './utils/scoresheetModel';
 import { trackServiceRounds, courtChangeIndex, splitSet5Rounds, type ServiceRound } from './utils/serviceRounds';
 import { awardsPoint as sanctionAwardsPoint } from '../src/domain/sanctions.js';
-import { generatedRemarks } from './utils/sheetRemarks';
+import { generatedRemarks, correctionRemarks } from './utils/sheetRemarks';
 import { isoOf, setDurationMinutes, setEndMs, setStartMs } from './utils/matchTimes';
 import { BRAND } from '../src/brand.js';
 import { deliverPdfToOpener, getOpenerWindow, isOwnDownload, reportPdfProgress, savePdfThroughApp, setPdfBusy, watchPdfWindowClose } from '../src/utils/appWindowGuest';
@@ -963,8 +963,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     rightSubs: [[], [], [], [], [], []]
   };
 
-  // Remarks the sheet writes itself: a default / an incomplete team (field-spec 8, 11)
-  const autoRemarks = generatedRemarks({ sets, events, teamAKey, bestOf });
+  // Remarks the sheet writes itself: a default / an incomplete team (field-spec 8, 11),
+  // and every change made after the match ("Corrected after the match: ...")
+  const autoRemarks = [...generatedRemarks({ sets, events, teamAKey, bestOf }), ...correctionRemarks(match?.manualChanges)];
   // Consistency checks (field-spec 12.2): listed above the sheet, never printed
   const sheetWarnings = useMemo(
     () => consistencyWarnings({ sets, events, teamAKey, homePlayers, awayPlayers, bestOf }),
