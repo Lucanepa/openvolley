@@ -5266,7 +5266,8 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
 
   // What the relay would keep (without the undo snapshots) and whether its
   // memory has room for it; the room's last bundle is replaced, not added.
-  // Measured once: a cloud claim comes back here after its database check.
+  // A cloud claim comes back here after its database check and checks the
+  // memory again with what the relay holds then.
   // A room the relay does not hold yet is new (shed first when the relay is
   // nearly full); replacing a stored room's bundle keeps a match in play going.
   // Official (the database proved its game PIN, or the venue relay with no
@@ -5280,9 +5281,13 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     (clientInfo.ownedMatches.has(matchId) && stored?.relayOfficial === true)
   // The match counts as the relay may keep it: with the stored PINs a sync leaves
   // out carried over (carryMatchSecrets below; connection_pins may be any object).
+  // The count of a claim's first pass is reused after the database check only
+  // while the stored match is still the one it was counted with: the room's
+  // owner may sync meanwhile, and its PINs are what the claim carries then.
   const storedEvents = opts.storedEvents ?? relayEvents(events)
-  const bundleBytes = opts.bundleBytes ??
-    approxHeapBytes([stored?.match ? carryMatchSecrets(stored.match, match) : match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, storedEvents])
+  const bundleBytes = opts.bundleBytes != null && opts.countedWith === stored?.match
+    ? opts.bundleBytes
+    : approxHeapBytes([stored?.match ? carryMatchSecrets(stored.match, match) : match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, storedEvents])
   const memoryRefusal = bundleBytes > MAX_RELAY_BUNDLE_BYTES
     ? 'too-large'
     : relayMemoryRefusal(clientInfo, matchId, bundleBytes + (stored?.liveStateBytes || 0), { newRoom, official })
@@ -5308,7 +5313,7 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
         clientInfo.ws.send(JSON.stringify({ type: 'error', code: v.code, message: CLAIM_ERRORS[v.code] || 'Refused', matchId }))
         return
       }
-      handleSyncMatchData(clientInfo, message, { dbChecked: true, dbProved: v.dbProved, knownScorer: v.knownScorer, storedEvents, bundleBytes })
+      handleSyncMatchData(clientInfo, message, { dbChecked: true, dbProved: v.dbProved, knownScorer: v.knownScorer, storedEvents, bundleBytes, countedWith: stored?.match })
     })
   }
 

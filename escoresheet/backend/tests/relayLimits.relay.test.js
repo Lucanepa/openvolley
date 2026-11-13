@@ -9,7 +9,8 @@
  *   - a synced PIN that is not text or a number is refused at the sync, so no
  *     PIN header on GET /api/match/:id can make it throw
  *   - bundles: array lengths, a heap bound per room (lib/relayLimits.js, with
- *     the PINs the relay carries over from the stored match) and a relay
+ *     the PINs the relay carries over from the stored match, as it is once a
+ *     cloud claim's database check is done) and a relay
  *     memory budget per address and in total; live states over 256 KB are
  *     refused before they are stored or relayed
  *   - a long five-set match from an older scorer (undo snapshots, signatures)
@@ -610,6 +611,84 @@ describe('official matches keep priority over an anonymous flood (DATABASE_URL)'
     more.send(anonBig('anon-more'))
     await settle(more)
     assert.equal(lastError(more)?.code, 'relay-full')
+    assert.equal(await alive(srv.base), true)
+  })
+})
+
+describe('a claim counts the PINs it carries as the room holds them after the database check (DATABASE_URL)', { skip: SKIP }, () => {
+  let db, srv, storageRoot, statusDir
+  const sockets = []
+  const MB = 1024 * 1024
+  before(async () => {
+    db = await provisionDatabase()
+    ;({ storageRoot, statusDir } = tempStorage())
+    // 20 MB total: rooms the database does not know at most 12 MB together
+    srv = await bootServer(CLOUD_ENV(db, { STORAGE_ROOT: storageRoot, STATUS_DIR: statusDir, OV_RELAY_MAX_MB: '20' }))
+  })
+  after(async () => {
+    for (const c of sockets) { try { c.ws.terminate() } catch { /* gone */ } }
+    await srv?.stop()
+    if (db) await db.drop()
+    for (const d of [storageRoot, statusDir]) { try { rmSync(d, { recursive: true, force: true }) } catch { /* best effort */ } }
+  })
+  const open = async (ip) => {
+    const c = await openSocket(srv.wsUrl, { headers: { 'cf-connecting-ip': ip } })
+    sockets.push(c)
+    return c
+  }
+  // Until a database connection waits for the lock `client` holds on matches
+  async function untilLockWaited(client) {
+    for (let i = 0; i < 200; i++) {
+      const r = await client.query(
+        "SELECT count(*)::int AS n FROM pg_locks WHERE NOT granted AND relation = 'matches'::regclass AND database = (SELECT oid FROM pg_database WHERE datname = current_database())"
+      )
+      if (r.rows[0].n > 0) return
+      await sleep(25)
+    }
+    throw new Error('the database check never waited for the lock on matches')
+  }
+
+  it('the owner\'s sync during the check is counted in the claim that carries its PINs', async () => {
+    const owner = await open('203.0.113.221')
+    owner.send(syncMessage('carry-db'))
+    await settle(owner)
+    assert.deepEqual(errorsOf(owner), [])
+
+    // a second scoreboard claims the room with its game PIN; its database
+    // check waits while the matches table is locked
+    const lock = new pg.Client({ connectionString: db.url })
+    await lock.connect()
+    let claimant
+    try {
+      await lock.query('BEGIN')
+      await lock.query('LOCK TABLE matches IN ACCESS EXCLUSIVE MODE')
+      claimant = await open('203.0.113.222')
+      claimant.send(syncMessage('carry-db'))
+      await untilLockWaited(lock)
+      // meanwhile the owner syncs 6 MB of connection_pins (no database check),
+      // which the claimant's sync leaves out and so carries over
+      owner.send(syncMessage('carry-db', { match: { connection_pins: { referee: 'c'.repeat(6 * MB) } } }))
+      await settle(owner)
+      assert.deepEqual(errorsOf(owner), [])
+      await lock.query('COMMIT')
+    } finally {
+      await lock.end()
+    }
+    await settle(claimant)
+    assert.deepEqual(errorsOf(claimant), [], 'the claimant proved the room')
+
+    // the room still counts the carried 6 MB: another 6.5 MB room the database
+    // does not know is over the 12 MB share (only that share stops it)
+    const other = await open('203.0.113.223')
+    other.send(syncMessage('carry-db-other', { match: { remarks: 'r'.repeat(6.5 * MB), gamePin: 'x-other' } }))
+    await settle(other)
+    assert.equal(lastError(other)?.code, 'relay-full', 'the carried PINs must count after the database check')
+
+    // and the claimant keeps scoring the match
+    claimant.send(syncMessage('carry-db', { sets: [{ id: 1, index: 1, homePoints: 3, awayPoints: 1 }] }))
+    await settle(claimant)
+    assert.deepEqual(errorsOf(claimant), [])
+    assert.deepEqual((await get(srv.base, '/api/match/carry-db', { 'X-OV-Match-Pin': PIN })).json?.sets?.map((s) => s.homePoints), [3])
     assert.equal(await alive(srv.base), true)
   })
 })
