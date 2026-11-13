@@ -73,6 +73,40 @@ describe('playersFromColumns: the cells by their x positions', () => {
   })
 })
 
+describe('playersFromColumns: the headers of the row above the table, not the first such word', () => {
+  // Labels in a team block above the table: "Name" (of the team) and "GFL" (a rule)
+  const teamBlock = at(820, [[40, 'Name'], [100, 'Volley'], [150, 'Musterdorf'], [200, 'GFL'], [230, 'Regeln']])
+  const expected = [
+    ['123456', 'Sofia', 'Garcia Lopez', true], ['234567', 'Anna Maria', 'Muster', false],
+    ['345678', 'Noel', 'von Beispiel', true], ['456789', 'Lea', 'Exemple', false]
+  ]
+
+  it('a "Name" or "GFL" label above the table swaps no names and moves no LFP mark', () => {
+    for (const items of [[...teamBlock, ...einsatzliste], [...einsatzliste, ...teamBlock]]) {
+      expect(playersFromColumns(items).map((p) => [p.licence, p.firstName, p.lastName, p.isLfp])).toEqual(expected)
+    }
+  })
+
+  it('no row above the players holds both name headers: the Einsatzliste order (first name first)', () => {
+    const noHeader = einsatzliste.filter((it) => it.y !== 760)
+    const items = [...at(820, [[40, 'Name'], [100, 'Volley'], [150, 'Musterdorf']]), ...noHeader]
+    expect(playersFromColumns(items).map((p) => [p.firstName, p.lastName])).toEqual(expected.map(([, f, l]) => [f, l]))
+  })
+
+  it('the text patterns take the LFP marks by the table\'s column too', () => {
+    // one item per name: no columns to tell apart, the text answers
+    const items = [
+      ...teamBlock,
+      ...at(760, [[40, 'SV-Nr'], [100, 'Vorname Name'], [330, 'G'], [360, 'Geburtsdatum'], [450, 'LFP']]),
+      ...at(740, [[40, '123456'], [100, 'Sofia Garcia'], [330, 'F'], [360, '14.03.2008'], [452, 'X']]),
+      ...at(720, [[40, '234567'], [100, 'Anna Muster'], [330, 'F'], [360, '02.07.2007']])
+    ]
+    expect(playersFromColumns(items)).toEqual([])
+    const r = parseRosterContent(text(items), items)
+    expect(r.players.map((p) => [p.licence, p.isLfp])).toEqual([['123456', true], ['234567', false]])
+  })
+})
+
 describe('parseRosterText: numbers, header lines, LFP and the officials', () => {
   it('a shirt number is 1 to 99 on its own, and a header line with the match date is no player', () => {
     const r = parseRosterText('Saison 2026 Volley Musterdorf 01.09.2026 Runde 3 Volley Musterdorf 01.09.2026 7 Muster Anna 14.03.2008 123456 Garcia Sofia 02.07.2007')

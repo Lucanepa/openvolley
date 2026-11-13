@@ -123,19 +123,36 @@ function birthDate(day, month, year, now = new Date()) {
   return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`
 }
 
+// The headers a row goes by are those of the closest row above it that has
+// them (the table's header row, repeated on the next page or not), never the
+// first such word of the file: a "Name" or "LFP" label in a team block above
+// the table is no column header.
+
+/** The x of the row's LFP header (GFL, LAS, JFL or LFP), or null. */
+function lfpHeaderX(row) {
+  return row.items.find(it => LFP_HEADER_RE.test(it.str.trim()))?.x ?? null
+}
+
+/** The x of the two name headers when the row holds both (a header row), or null. */
+function nameHeaderXs(row) {
+  const first = row.items.find(it => FIRST_NAME_HEADER.test(it.str.trim()))
+  const last = row.items.find(it => LAST_NAME_HEADER.test(it.str.trim()))
+  return first && last ? { first: first.x, last: last.x } : null
+}
+
 /**
  * The SV numbers (licences) of the rows with an "X" in the LFP column (its
- * header GFL, LAS, JFL or LFP): the mark goes with the licence, whatever the
- * name's words.
+ * header GFL, LAS, JFL or LFP, the closest above the row): the mark goes with
+ * the licence, whatever the name's words.
  */
 function lfpLicences(items) {
   const out = new Set()
-  const rows = textRows(items)
-  const header = (items || []).find(it => LFP_HEADER_RE.test(String(it?.str || '')))
-  if (!header) return out
-  for (const row of rows) {
+  let lfpX = null
+  for (const row of textRows(items)) {
+    lfpX = lfpHeaderX(row) ?? lfpX
+    if (lfpX == null) continue
     const licence = row.items.find(it => LICENCE_RE.test(it.str))
-    if (licence && row.items.some(it => it.str === 'X' && Math.abs(it.x - header.x) < LFP_TOLERANCE)) out.add(licence.str)
+    if (licence && row.items.some(it => it.str === 'X' && Math.abs(it.x - lfpX) < LFP_TOLERANCE)) out.add(licence.str)
   }
   return out
 }
@@ -144,19 +161,21 @@ function lfpLicences(items) {
  * The players of a roster PDF from its columns: the rows that start with an
  * SV number (an Einsatzliste: no shirt number) or a shirt number 1 to 99 and
  * hold a date of birth. The two name cells are told apart by their x position
- * (where the columns start: the header's, else the one the rows share), never
- * by how many words a name has: "Sofia | Garcia Lopez" stays so. A row
- * without a date of birth (a header, a team line, a date of the match) is no
- * player. [] when the items have no such rows, or the names cannot be split.
+ * (where the columns start: the header row's, else the one the rows share),
+ * never by how many words a name has: "Sofia | Garcia Lopez" stays so. The
+ * header row is the closest row above the first player that holds both name
+ * headers; without one the format decides the order. A row without a date of
+ * birth (a header, a team line, a date of the match) is no player. [] when
+ * the items have no such rows, or the names cannot be split.
  */
 export function playersFromColumns(items) {
   const rows = textRows(items)
-  const headerX = (re) => (items || []).find(it => re.test(String(it?.str || '').trim()))?.x
-  const firstHeaderX = headerX(FIRST_NAME_HEADER)
-  const lastHeaderX = headerX(LAST_NAME_HEADER)
-  const lfpX = headerX(LFP_HEADER_RE)
   const parsed = { licence: [], shirt: [] }
+  let nameHeaders = null
+  let lfpX = null
   for (const row of rows) {
+    nameHeaders = nameHeaderXs(row) ?? nameHeaders
+    lfpX = lfpHeaderX(row) ?? lfpX
     const [key, ...rest] = row.items
     const kind = LICENCE_RE.test(key.str) ? 'licence' : SHIRT_RE.test(key.str) && Number(key.str) >= 1 ? 'shirt' : null
     if (!kind) continue
@@ -169,19 +188,19 @@ export function playersFromColumns(items) {
     const dob = date ? birthDate(date[1], date[2], date[3]) : null
     if (!names.length || !dob) continue
     parsed[kind].push({
-      kind, key: key.str, names, gender, dob,
+      kind, key: key.str, names, gender, dob, nameHeaders,
       isLfp: lfpX != null && row.items.some(it => it.str === 'X' && Math.abs(it.x - lfpX) < LFP_TOLERANCE)
     })
   }
   // One format per file: the one with more rows (as the text patterns)
   const list = parsed.licence.length >= parsed.shirt.length ? parsed.licence : parsed.shirt
   if (!list.length) return []
-  const headers = firstHeaderX != null && lastHeaderX != null
-  const boundary = nameColumnStart(list, headers ? Math.max(firstHeaderX, lastHeaderX) : null)
+  const headers = list[0].nameHeaders
+  const boundary = nameColumnStart(list, headers ? Math.max(headers.first, headers.last) : null)
   if (boundary == null) return []
-  // The order of the two cells: the header's, else first name first in an
+  // The order of the two cells: the header row's, else first name first in an
   // Einsatzliste row (with its gender letter) and last name first otherwise
-  const firstNameFirst = headers ? firstHeaderX < lastHeaderX : list[0].gender || list[0].kind === 'licence'
+  const firstNameFirst = headers ? headers.first < headers.last : list[0].gender || list[0].kind === 'licence'
   const out = []
   for (const r of list) {
     const left = r.names.filter(it => it.x < boundary - X_TOLERANCE).map(it => it.str).join(' ').trim()
