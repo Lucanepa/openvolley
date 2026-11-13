@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   getBackendUrl, getBackendOverride, setBackendOverride, clearBackendOverride, learnRelayWsPort,
-  isAllowedBackendUrl, normalizeServerAddress, linkServerState, confirmLinkServer, defaultBackendUrl, isDevBuildWithoutBackend
+  isAllowedBackendUrl, isDefaultBackendUrl, normalizeServerAddress, linkServerState, confirmLinkServer, defaultBackendUrl, isDevBuildWithoutBackend
 } from '../utils/backendConfig'
 import { GlobeIcon, SatelliteDishIcon } from './icons'
 import { ChevronLeft, Loader2 } from 'lucide-react'
@@ -24,8 +24,9 @@ const hostOf = (url) => {
  *
  * A link's ?server= naming another server than this page's (linkServerState
  * 'ask') is asked first, naming its host; once confirmed it is used by this
- * page in this tab only (confirmLinkServer), never stored for the scorer.
- * Only an address the app will use (isAllowedBackendUrl) is ever requested.
+ * page in this tab only (confirmLinkServer), never stored for the scorer,
+ * nor offered as "Last used" later. Only an address the app will use
+ * (isAllowedBackendUrl, or the page's own default) is ever requested.
  *
  * @param {Object} props
  * @param {function} props.onConnected - Called when server is confirmed reachable, with { serverUrl }
@@ -109,8 +110,11 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
     }
 
     // Only an address the app then uses: asked before any request, so the
-    // screen never says Connected for one setBackendOverride would drop
-    if (!isAllowedBackendUrl(serverUrl)) {
+    // screen never says Connected for one setBackendOverride would drop. The
+    // page's own server is one, whatever its address (a venue relay on a
+    // plain host name): the page uses it with no override.
+    const allowed = isAllowedBackendUrl(serverUrl)
+    if (!allowed && !isDefaultBackendUrl(serverUrl)) {
       setStatus('failed')
       setErrorMsg(notAllowedMsg)
       return
@@ -131,7 +135,8 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
         // (5173 / 8080): ask it which, before the views connect.
         await learnRelayWsPort(serverUrl)
         if (fromLink) confirmLinkServer(serverUrl)
-        else setBackendOverride(serverUrl)
+        else if (allowed) setBackendOverride(serverUrl)
+        else clearBackendOverride()
         // Connected only to the server the page then really uses (storage
         // blocked: the default would stay)
         if (normalizeServerAddress(getBackendUrl() || '') !== serverUrl) {
@@ -141,8 +146,13 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
         }
         setStatus('connected')
         setLinkServer(null)
-        const label = serverUrl.includes('openvolley.app') ? 'Cloud' : 'Local'
-        saveLastServer(serverUrl, label)
+        // A link's server is for this tab only: "Last used" (localStorage,
+        // reconnected with setBackendOverride) would hand it to later visits
+        // and to the scorer page
+        if (!fromLink) {
+          const label = serverUrl.includes('openvolley.app') ? 'Cloud' : 'Local'
+          saveLastServer(serverUrl, label)
+        }
         // Brief delay to show connected state
         setTimeout(() => {
           onConnected({ serverUrl })

@@ -27,6 +27,7 @@ import {
   linkServerState,
   confirmLinkServer,
   serverParamNeedsConfirm,
+  isDefaultBackendUrl,
   getCloudApiBaseUrl,
   isDevBuild,
   isDevBuildWithoutBackend
@@ -632,6 +633,57 @@ describe('a role link ?server= (applyServerParam)', () => {
     clearBackendOverride()
     expect(getBackendOverride()).toBeNull()
     expect(getBackendUrl()).toBe('https://backend.openvolley.app')
+  })
+
+  // Review: a page a venue relay serves on an address the allow-list does not
+  // cover (plain host name, IPv6, 100.64/10): a link naming that relay was
+  // 'none', and the connection screen refused it
+  it.each(['http://scorer-laptop:5173', 'http://[fd00::20]:5173', 'http://100.64.3.20:5173'])(
+    'a link naming the page\'s own server on %s is known, and used with no override', (own) => {
+      setLocation(`${own}/referee`)
+      setAppEntry('referee')
+      expect(isAllowedBackendUrl(own)).toBe(false)
+      expect(isDefaultBackendUrl(own)).toBe(true)
+      expect(isDefaultBackendUrl(`${own}/`)).toBe(true)
+      expect(linkServerState(own)).toEqual({ state: 'known', url: own })
+      expect(serverParamNeedsConfirm(own)).toBe(false)
+      expect(applyServerParam(own)).toBe('known')
+      expect(getBackendOverride()).toBeNull()
+      expect(getBackendUrl()).toBe(own)
+      expect(confirmLinkServer(own)).toBe(true)
+      expect(fetchSpy).not.toHaveBeenCalled()
+    }
+  )
+
+  it('a link naming the page\'s own server replaces a typed or linked one for this tab only', () => {
+    const own = 'http://scorer-laptop:5173'
+    setLocation(`${own}/referee`)
+    setAppEntry('referee')
+    setBackendOverride('http://192.168.1.30:8080') // typed earlier on this tablet
+    expect(applyServerParam('http://192.168.1.66:8080')).toBe('ask')
+    expect(confirmLinkServer('http://192.168.1.66:8080')).toBe(true)
+    expect(getBackendUrl()).toBe('http://192.168.1.66:8080')
+    // the scorer's QR code of this relay, opened in the same tab
+    expect(applyServerParam(own)).toBe('known')
+    expect(getBackendOverride()).toBeNull()
+    expect(getBackendUrl()).toBe(own)
+    expect(getRelayWebSocketUrl()).toBe('ws://scorer-laptop:8080')
+    // later visits keep the device's choice
+    expect(localStorage.getItem('openvolley_backend_override')).toBe('http://192.168.1.30:8080')
+    sessionStorage.clear()
+    expect(getBackendUrl()).toBe('http://192.168.1.30:8080')
+  })
+
+  it('another plain host name stays refused, also on such a page', () => {
+    setLocation('http://scorer-laptop:5173/referee')
+    setAppEntry('referee')
+    for (const v of ['http://other-laptop:5173', 'other-laptop:5173', 'scorer-laptop:5173', 'http://scorer-laptop:8080']) {
+      expect(linkServerState(v), v).toEqual({ state: 'none', url: null })
+      expect(isDefaultBackendUrl(v), v).toBe(false)
+      expect(confirmLinkServer(v), v).toBe(false)
+    }
+    expect(getBackendOverride()).toBeNull()
+    expect(getBackendUrl()).toBe('http://scorer-laptop:5173')
   })
 })
 

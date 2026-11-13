@@ -124,12 +124,19 @@ function writeLinkServer(url) {
   } catch { /* sessionStorage unavailable */ }
 }
 
+// A link that named this page's own server on an address isAllowedBackendUrl
+// does not cover (a venue relay on a plain host name, ...): this tab uses the
+// page's default, with no override (linkServerOverride)
+const OWN_SERVER = Symbol('own server')
+
 // This role page's confirmed link server in this tab, if any
 function linkServerOverride() {
   const page = linkServerPage()
   if (!page) return null
   const url = readLinkServers()[page]
-  return typeof url === 'string' && isAllowedBackendUrl(url) ? url : null
+  if (typeof url !== 'string') return null
+  if (isAllowedBackendUrl(url)) return url
+  return isDefaultBackendUrl(url) ? OWN_SERVER : null
 }
 
 /**
@@ -156,11 +163,14 @@ export function setBackendOverride(url) {
 
 /**
  * Get the current backend URL override, if set (and still trusted): on a role
- * page the server its link named (confirmed in this tab), else the stored one
+ * page the server its link named (confirmed in this tab; none when that was
+ * the page's own server on an address the allow-list does not cover), else
+ * the stored one
  * @returns {string|null}
  */
 export function getBackendOverride() {
   const link = linkServerOverride()
+  if (link === OWN_SERVER) return null
   if (link) return link
   try {
     const v = localStorage.getItem(OVERRIDE_KEY) || null
@@ -462,6 +472,17 @@ const sameServer = (a, b) => {
 }
 
 /**
+ * Is this the backend this page uses when nothing was chosen on it
+ * (defaultBackendUrl)? The page reaches it with no override, so it is
+ * accepted even where isAllowedBackendUrl does not cover its address: a page
+ * a venue relay serves on a plain host name, an IPv6 or 100.64/10 address.
+ * @param {string|null|undefined} url
+ */
+export function isDefaultBackendUrl(url) {
+  return sameServer(url, defaultBackendUrl())
+}
+
+/**
  * The server a role link's ?server= names, as a URL (normalizeServerAddress),
  * or null when it names none this app would use (isAllowedBackendUrl).
  * @param {string|null} serverParam
@@ -477,16 +498,20 @@ export function serverParamUrl(serverParam) {
  *   'none'   no server, or one isAllowedBackendUrl refuses: the page's own
  *            choice stands, nothing is fetched from it
  *   'known'  the server this page uses already, or its own default (the
- *            scorer's QR links name the backend it syncs to): used at once
+ *            scorer's QR links name the backend it syncs to; on a page a
+ *            venue relay serves, that relay, whatever its address): used at
+ *            once
  *   'ask'    another server: used only once the connection screen asked,
  *            naming its host, and the user said yes (confirmLinkServer)
  * @param {string|null} serverParam
  * @returns {{ state: 'none'|'known'|'ask', url: string|null }}
  */
 export function linkServerState(serverParam) {
+  if (!serverParam || typeof serverParam !== 'string') return { state: 'none', url: null }
+  const named = normalizeServerAddress(serverParam)
+  if (sameServer(named, getBackendUrl()) || isDefaultBackendUrl(named)) return { state: 'known', url: named }
   const url = serverParamUrl(serverParam)
   if (!url) return { state: 'none', url: null }
-  if (sameServer(url, getBackendUrl()) || sameServer(url, defaultBackendUrl())) return { state: 'known', url }
   return { state: 'ask', url }
 }
 
@@ -502,12 +527,17 @@ export function serverParamNeedsConfirm(serverParam) {
  * sign-in). For a venue relay its WebSocket port is learnt in the background
  * (the 5173 -> 8080 default of getRelayWebSocketUrl covers the desktop app
  * until then). The connection screen calls it once the user confirmed the
- * host.
+ * host. The page's own server on an address isAllowedBackendUrl does not
+ * cover is kept as "the page's default" (no override, OWN_SERVER).
  * @param {string} url
  * @returns {boolean} whether this page now uses it
  */
 export function confirmLinkServer(url) {
-  if (!isAllowedBackendUrl(url)) return false
+  if (!isAllowedBackendUrl(url)) {
+    if (!isDefaultBackendUrl(url)) return false
+    writeLinkServer(url)
+    return sameServer(getBackendUrl(), url)
+  }
   writeLinkServer(url)
   if (getBackendOverride() !== url) return false
   void learnRelayWsPort(url)

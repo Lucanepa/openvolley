@@ -194,6 +194,53 @@ describe('ServerConnectionScreen', () => {
     expect(getBackendOverride()).toBeNull()
   })
 
+  // Review: a confirmed link server was also saved as "Last used"
+  // (localStorage); a tap on it in a later tab went through
+  // setBackendOverride, the setting the scorer page reads
+  it('a confirmed link server is not offered as "Last used" later', async () => {
+    setAppEntry('referee')
+    window.history.replaceState({}, '', `/referee?server=${encodeURIComponent('http://192.168.1.66:8080')}`)
+    global.fetch = vi.fn().mockResolvedValue({ ok: true })
+    const { unmount } = render(<ServerConnectionScreen onConnected={mockOnConnected} />)
+    fireEvent.click(within(await screen.findByTestId('link-server-confirm')).getByRole('button', { name: 'Connect to this server' }))
+    await waitFor(() => expect(mockOnConnected).toHaveBeenCalledWith({ serverUrl: 'http://192.168.1.66:8080' }))
+    expect(localStorage.getItem('openvolley_last_server')).toBeNull()
+    unmount()
+
+    // a new tab on the same page, without the link
+    sessionStorage.clear()
+    window.history.replaceState({}, '', '/referee')
+    render(<ServerConnectionScreen onConnected={mockOnConnected} />)
+    expect(screen.getByText('Online (automatic)')).toBeInTheDocument()
+    expect(screen.queryByText(/Last used/)).toBeNull()
+    expect(screen.queryByText(/192\.168\.1\.66/)).toBeNull()
+    expect(localStorage.getItem('openvolley_backend_override')).toBeNull()
+    setAppEntry('scorer')
+    expect(getBackendOverride()).toBeNull()
+  })
+
+  it('a link server leaves the "Last used" server the user chose before', async () => {
+    localStorage.setItem('openvolley_last_server', JSON.stringify({ url: 'http://192.168.1.30:8080', label: 'Local', timestamp: 1 }))
+    setAppEntry('bench')
+    window.history.replaceState({}, '', `/bench?server=${encodeURIComponent('http://192.168.1.66:8080')}`)
+    global.fetch = vi.fn().mockResolvedValue({ ok: true })
+    render(<ServerConnectionScreen onConnected={mockOnConnected} />)
+    fireEvent.click(within(await screen.findByTestId('link-server-confirm')).getByRole('button', { name: 'Connect to this server' }))
+    await waitFor(() => expect(mockOnConnected).toHaveBeenCalled())
+    expect(JSON.parse(localStorage.getItem('openvolley_last_server')).url).toBe('http://192.168.1.30:8080')
+  })
+
+  it('a server chosen on the screen is still offered as "Last used"', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true })
+    const { unmount } = render(<ServerConnectionScreen onConnected={mockOnConnected} />)
+    fireEvent.change(screen.getByPlaceholderText(/192\.168/), { target: { value: '192.168.1.30:8080' } })
+    fireEvent.click(screen.getByText('Connect'))
+    await waitFor(() => expect(mockOnConnected).toHaveBeenCalled())
+    unmount()
+    render(<ServerConnectionScreen onConnected={mockOnConnected} />)
+    expect(await screen.findByText(/Last used/)).toBeInTheDocument()
+  })
+
   it('?server= declined: the usual choices, nothing stored', async () => {
     setAppEntry('bench')
     window.history.replaceState({}, '', `/bench?server=${encodeURIComponent('https://x.openvolley.app')}`)
