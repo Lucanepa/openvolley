@@ -244,6 +244,29 @@ describe('final mail sweep: one state machine per close (database, fake mailer a
     assert.equal(of(950003).length, 6, 'once')
   })
 
+  it('no PDF and one address that always fails: the others were told the PDF follows, so it still does', async () => {
+    await scheduled(950013, 'Alpha H1', 'Beta H1')
+    const id = await closed({ gameN: 950013, officials: [{ role: '1st referee', email: 'ref@typo.invalid' }] })
+    refuse = (kind, to) => (to === 'ref@typo.invalid' ? 'throw' : null)
+    await fm.sweep()
+    clock += GRACE_MS
+    for (let i = 0; i < 12; i++) {
+      await fm.sweep()
+      clock += minutes(61)
+    }
+    const r = await outcomeOf(id)
+    assert.equal(r.outcome, 'sent_no_pdf')
+    const told = of(950013).map((m) => m.to).sort()
+    assert.equal(told.length, 3, 'the mail without the PDF, once each')
+    assert.ok(of(950013, 'scoresheet_no_pdf').length >= 1, 'the scorer and the admins told')
+    storePdf(id)
+    clock += minutes(11)
+    await fm.sweep()
+    const late = of(950013).filter((m) => m.attachments.length === 1).map((m) => m.to).sort()
+    assert.deepEqual(late, told, 'the PDF to those told it follows')
+    refuse = null
+  })
+
   // A close mailed with the first approval's PDF, its referee and scorer approving by account
   async function mailedClose (gameN) {
     await scheduled(gameN, 'Alpha H1', 'Beta H1')

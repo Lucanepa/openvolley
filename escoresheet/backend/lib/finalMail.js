@@ -43,7 +43,8 @@
  * attempts, next_try_at, delivered). A mail the hourly budget holds back is
  * deferred (DEFER_MS; no try counted, and that budget is not asked again in
  * the same sweep); a failed send is tried again after a growing pause,
- * MAX_TRIES rounds, then the close is recorded as failed (or partial). A
+ * MAX_TRIES rounds, then the close is recorded as failed (or partial; a mail
+ * without the PDF that reached some stays sent_no_pdf, the PDF follows). A
  * retry mails only the addresses its round has not reached. Every sweep
  * looks at every due close (the longest due first, at most MAX_PER_SWEEP),
  * so one still waiting for its PDF holds back none behind it.
@@ -350,6 +351,14 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
     const auditMail = (details) => audit(pool, { actorId: null, action: 'match.final_mail', matchId: m.id, details: { ...details, corrected: m.corrected === true, game_n: m.game_n ?? null } })
     if (!to.every((x) => has('pdf', x) || (!pdf && has('nopdf', x)))) {
       const attempts = m.attempts + (r.failed ? 1 : 0)
+      if (r.failed && attempts >= MAX_TRIES && !pdf && !late && reached) {
+        // Those reached were told the PDF follows: it still does (its own tries)
+        await save(m, { outcome: 'sent_no_pdf', recipients, delivered: [...done], nextTryAt: t + LATE_RECHECK_MS })
+        log.error?.(`[final-mail] match ${m.id}: the mail without the PDF did not reach all ${to.length} recipients after ${attempts} tries`)
+        await auditMail({ outcome: 'partial', recipients: reached, pdf: false })
+        await tellNoPdf(m, vars, ctx)
+        return 'sent_no_pdf'
+      }
       if (r.failed && attempts >= MAX_TRIES) {
         const outcome = late ? 'sent_no_pdf' : reached ? 'partial' : 'failed'
         await save(m, { outcome, recipients, attempts })
