@@ -30,7 +30,7 @@ import { SECRET_COLUMNS, redactSecrets } from './lib/secrets.js'
 // statically. It is only *instantiated* in DATABASE_URL mode.
 import { createRealtimeHub, createLiveStateRelay, createHeartbeat, isLiveRequest, matchKeyFromSyncedMatch, jsonTooDeep } from './lib/realtimeHub.js'
 // What anonymous readers (live sockets, /api/db without a session) may see.
-import { projectLiveRow, hasAnonPolicy, anonSelectCheck, publicRelayMatch, relayBundleView, relayViewOf, relaySummaryBundle, relayMatchListRow, cloudListsMatch, projectAnonDbRows, projectNonOwnerRows, projectRows, ANON_DB_COLUMNS } from './lib/publicColumns.js'
+import { projectLiveRow, hasAnonPolicy, anonSelectCheck, relayBundleView, relayMatchView, relayLiveStateView, coveredLiveLineupTeam, relayViewOf, relaySummaryBundle, relayMatchListRow, cloudListsMatch, projectAnonDbRows, projectNonOwnerRows, projectRows, ANON_DB_COLUMNS } from './lib/publicColumns.js'
 // PIN-proved access to a relayed match (full bundle) and its capability tokens.
 import { createMatchTokens, pinGrantsAccess, pinTypeOf, relayPinsByType, matchTokenSecretFromEnv, isTokenRole, connectionPinType, findMatchByConnectionPin, isConnectionPinMatch, pinRoleOf, tokenRoleOf } from './lib/matchAccess.js'
 // Bench requests (line-up, time-out, substitution) from a bench tablet to the scorer
@@ -823,20 +823,25 @@ function safeEqualStr(a, b) {
   return x.length === y.length && timingSafeEqual(x, y)
 }
 
-// A match object as the relay hands it out: no PINs, no personal data (see
-// publicRelayMatch). Joining a room needs no PIN and its key is public.
-function publicMatch(match) {
-  return publicRelayMatch(stripMatchSecrets(match))
-}
-
 // The PIN-free, personal-data-free bundle every match-full-data /
 // match-data-update and GET /api/match/:id carries after the PIN step, by
 // what the PIN proved (`view`: 'scorer', 'referee', 'home', 'away';
 // lib/publicColumns.js relayBundleView) — the same flat shape the LAN relays
 // send (frontend/electron/lanRelayCore.cjs). Only the scorer, who sent it,
-// has the whole bundle.
+// has the whole bundle. The stored entry goes in as it is: relayBundleView
+// does its costly parts once per stored bundle.
 function wireBundle(entry, view) {
-  return relayBundleView({ ...entry, match: stripMatchSecrets(entry.match) }, view)
+  const bundle = relayBundleView(entry, view)
+  return { ...bundle, match: stripMatchSecrets(bundle.match) }
+}
+
+// The match in validate-pin's answer: the match row of the bundle the PIN
+// opens (relayMatchView), so a bench PIN learns no more of the other team
+// here than from its bundle. `found` is the stored match under its room key.
+function validatePinMatch(found, type, sport) {
+  const entry = activeMatches.get(String(found.id))
+  const match = { ...stripMatchSecrets(relayMatchView(entry?.match ? entry : { match: found }, relayViewOf(type))), id: found.id }
+  return sport === 'beach' ? { ...match, sportType: 'beach' } : match
 }
 
 // match-full-data / match-data-update. A stored liveState is mirrored under
@@ -848,7 +853,7 @@ function matchDataMessage(type, matchId, entry, scoreboardTs, view = null) {
   const now = Date.now()
   const bundle = view ? { access: 'full', ...wireBundle(entry, view) } : relaySummaryBundle(entry)
   const msg = { type, matchId, ...bundle, _timestamp: now, _scoreboardTimestamp: scoreboardTs || now }
-  if (entry.liveState !== undefined) msg.data = { liveState: entry.liveState }
+  if (entry.liveState !== undefined) msg.data = { liveState: bundle.liveState }
   return msg
 }
 
@@ -2120,7 +2125,7 @@ function handleHttpRequest(req, res) {
           res.end(JSON.stringify({
             success: true,
             // A beach answer names its sport (the indoor answer is unchanged)
-            match: sport === 'beach' ? { ...publicMatch(matchFound), sportType: 'beach' } : publicMatch(matchFound),
+            match: validatePinMatch(matchFound, type, sport),
             // Capability for this match's full bundle (relay, GET /api/match/:id)
             token: isTokenRole(type) ? matchTokens.issue({ matchKey: String(matchFound.id), role: type, pin: pinStr }) : null
           }))
@@ -4326,7 +4331,10 @@ function handleSocketMessage(clientInfo, data) {
         // subscribers (livescore, scorer alarm), even when HTTP sync is down;
         // not one the relay refused (too large, relay memory full).
         if (handleLiveStateUpdate(clientInfo, message) && liveStateRelay) {
-          liveStateRelay.handle(clientInfo, { ...message, matchId: resolveMatchKey(clientInfo, message.matchId) }).then((r) => {
+          // the live subscribers prove no PIN: no covered line-up (relayLiveStateView)
+          const liveKey = resolveMatchKey(clientInfo, message.matchId)
+          const liveState = relayLiveStateView(message.liveState, null, activeMatches.get(liveKey)?.match)
+          liveStateRelay.handle(clientInfo, { ...message, matchId: liveKey, liveState }).then((r) => {
             // pin_mismatch: the synced game PIN is not the row's (or the row has
             // none); expected for a forged room, so not logged per update
             if (!r.ok && !['forbidden', 'not_synced', 'no_match_key', 'unknown_match', 'pin_mismatch'].includes(r.reason)) {
@@ -5533,8 +5541,35 @@ function handleLiveStateUpdate(clientInfo, message) {
     // most the slack, which the budget's headroom absorbs.
     if (grew) stored.liveStateBytes = liveStateBytes
   }
-  broadcastToRoom(matchId, { type: 'live-state-update', matchId, liveState: message.liveState }, clientInfo.id)
+  broadcastLiveState(matchId, message.liveState, stored, clientInfo.id)
   return true
+}
+
+// live-state-update to a room: as it came, unless it carries a covered
+// line-up (an older scorer app; lib/publicColumns.js relayLiveStateView):
+// then each socket by its view, the referee and the covered team's bench as
+// it came, every other socket without that line-up.
+function broadcastLiveState(matchId, liveState, entry, excludeClientId) {
+  if (!coveredLiveLineupTeam(liveState, entry?.match)) {
+    broadcastToRoom(matchId, { type: 'live-state-update', matchId, liveState }, excludeClientId)
+    return
+  }
+  const room = rooms.get(normalizeMatchId(matchId))
+  if (!room) return
+  // one serialisation per view ('' is no PIN)
+  const byView = new Map()
+  room.clients.forEach((clientId) => {
+    if (clientId === excludeClientId) return
+    const clientInfo = connections.get(clientId)
+    if (!clientInfo || clientInfo.ws.readyState !== 1) return
+    const view = relayViewOfClient(clientInfo, matchId, entry) || ''
+    let data = byView.get(view)
+    if (data === undefined) {
+      data = JSON.stringify({ type: 'live-state-update', matchId, liveState: relayLiveStateView(liveState, view || null, entry?.match) })
+      byView.set(view, data)
+    }
+    sendToRoomMember(clientInfo, data)
+  })
 }
 
 // Remove a match from the relay: tell its room first, then drop room + state.

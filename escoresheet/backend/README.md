@@ -423,16 +423,18 @@ connection is on, a bench PIN while that bench is on, or the game PIN.
 
 What the bundle holds depends on the PIN (or match token) that opened it
 (`lib/publicColumns.js` `relayBundleView`; this server only, the LAN relays do
-not apply it yet):
+not apply it yet). The match in the `validate-pin` answer is that bundle's
+match row (`relayMatchView`):
 
 - referee PIN and game PIN (the scorer's own devices): both rosters by name and
   the remarks (the referee's live scoresheet prints them), with the dates of a
-  date-of-birth correction taken out (`redactRemarkDobs`);
+  date-of-birth correction taken out (`redactRemarkDobs`, on the remark text
+  of the events too);
 - a bench PIN: its own roster by name, the other team's shirt numbers only (its
   officials by role only), no remarks and no remark text on the events; while
   the other team's first line-up of a set is covered (only that line-up is in
   and no point has been scored, FIVB 7.3), none of that team's events of the
-  set;
+  set and not its game captain on the match row;
 - every PIN: team rows as name, short name and colours; never a date of birth,
   nationality or contact data, the officials, a signature, the account
   approvals, the manual-change log or a pending roster.
@@ -440,8 +442,13 @@ not apply it yet):
 The scorer sends none of those private fields in the first place
 (`frontend/src/utils/serverDataSync.js` `relayMatchPayload`,
 `relayTeamPayload`, `relayPeoplePayload`) and its live state carries a covered
-line-up as null (`frontend/src/domain/lineupPrivacy.js`); the projection here
-covers older scorer apps.
+line-up as null (`frontend/src/domain/lineupPrivacy.js`). For an older scorer
+app the projection here does it: the bundles as above, and its live state
+(`live-state-update`, the summary, the live hub's `match_live_state` change)
+without a covered line-up (the set at 0:0 and only one team's line-up in) for
+every socket but the referee, the game PIN and that team's bench
+(`relayLiveStateView`). The `match_live_state` row an older scorer app writes
+to the database itself still carries it, until that app is updated.
 
 - Relay: `subscribe-match { matchId, pin }` (or `join_match` with a pin), or
   `{ token }` on this server. The `role` / `device` / `team` fields only label
