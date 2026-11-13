@@ -539,6 +539,7 @@ process.on('SIGTERM', () => {
     console.log('WebSocket server closed')
   })
   wsListener.close()
+  relay.close()
   process.exit(0)
 })
 
@@ -551,5 +552,6 @@ process.on('SIGINT', () => {
     console.log('WebSocket server closed')
   })
   wsListener.close()
+  relay.close()
   process.exit(0)
 })
