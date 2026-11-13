@@ -14,6 +14,10 @@
  *   3. brute force still stops: 20 wrong PINs in one scope lock that scope
  *      (the right PIN too, Retry-After 600), 60 across scopes lock the
  *      address; another address is not affected
+ *
+ * The limits across callers (per match and PIN type, per PIN-only lookup)
+ * are raised here, so only the per-address budget is seen:
+ * tests/pinMatchBudget.e2e.test.js covers them.
  */
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -68,7 +72,9 @@ describe('PIN failure budget: a hall behind one address', { skip: SKIP }, () => 
       TRUST_PROXY: 'cloudflare',
       TRUST_PROXY_FROM: '127.0.0.1/32,::1/128',
       STORAGE_BACKUP_MIN_FREE_MB: '1',
-      STORAGE_SCORESHEETS_MIN_FREE_MB: '1'
+      STORAGE_SCORESHEETS_MIN_FREE_MB: '1',
+      OV_PIN_MATCH_FAILURES: '1000',
+      OV_PIN_SEARCH_FAILURES: '1000'
     })
     const email = `pinb-${randomBytes(3).toString('hex')}@example.ch`
     const password = 'correct-horse-battery'
@@ -189,10 +195,12 @@ describe('PIN failure budget: a hall behind one address', { skip: SKIP }, () => 
     assert.equal(right.headers.get('retry-after'), '600')
     // another PIN type is another scope
     assert.equal((await connectionPin(guesser, PINS.bench_away, 'bench_away')).status, 200)
-    // 40 more wrong PINs across the other types: 60, the ceiling of the address
+    // 40 more wrong PINs across the other types: 60, the ceiling of the
+    // address (upload PINs are checked against their match only)
     for (const type of ['bench_home', 'upload_home', 'upload_away']) {
+      const named = type.startsWith('upload_') ? { matchExternalId: ext } : {}
       for (let i = 0; i < (type === 'upload_away' ? 14 : 13); i++) {
-        assert.equal((await connectionPin(guesser, nextWrong(), type)).status, 404, type)
+        assert.equal((await connectionPin(guesser, nextWrong(), type, named)).status, 404, type)
       }
     }
     const locked = await connectionPin(guesser, PINS.bench_away, 'bench_away')
@@ -214,7 +222,8 @@ describe('PIN failure budget: a hall behind one address', { skip: SKIP }, () => 
        SELECT id, $1, 'web' FROM public.matches WHERE external_id = $2
        ON CONFLICT (match_id) DO UPDATE SET device_id = EXCLUDED.device_id`, [SCORER, ext])
     for (const type of ['referee', 'bench_home', 'upload_home']) {
-      for (let i = 0; i < 20; i++) assert.equal((await connectionPin(hall, nextWrong(), type)).status, 404, type)
+      const named = type === 'upload_home' ? { matchExternalId: ext } : {}
+      for (let i = 0; i < 20; i++) assert.equal((await connectionPin(hall, nextWrong(), type, named)).status, 404, type)
     }
     assert.equal((await connectionPin(hall, PINS.bench_away, 'bench_away')).status, 429, 'the address is spent')
     const claim = async (device, gamePin) => {

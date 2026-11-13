@@ -6,7 +6,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createPinHasher, isHashedPin, pinHasherFromEnv } from '../lib/pinHash.js'
-import { createMatchTokens, pinGrantsAccess, matchTokenSecretFromEnv, isTokenRole } from '../lib/matchAccess.js'
+import { createMatchTokens, pinGrantsAccess, pinTypeOf, relayPinsByType, matchTokenSecretFromEnv, isTokenRole } from '../lib/matchAccess.js'
 import { relaySummaryBundle, projectAnonDbRows, projectNonOwnerRows, hasAnonPolicy, anonSelectCheck } from '../lib/publicColumns.js'
 
 const SECRET = 'x'.repeat(40)
@@ -157,6 +157,20 @@ describe('pinGrantsAccess (relay)', () => {
     assert.equal(pinGrantsAccess({}, ''), false)
     assert.equal(pinGrantsAccess({ status: 'live' }, '000000'), false, 'a match without PINs grants nothing')
     assert.equal(pinGrantsAccess(null, '314159'), false)
+  })
+
+  // The PIN failure budget counts per PIN type, and leaves a locked type out
+  it('pinTypeOf: which PIN type the PIN proves, among the types allowed', () => {
+    assert.equal(pinTypeOf(match, '314159'), 'referee')
+    assert.equal(pinTypeOf(match, '271828'), 'bench_home')
+    assert.equal(pinTypeOf(match, '987654'), 'game')
+    assert.equal(pinTypeOf(match, '161803'), null)
+    assert.equal(pinTypeOf(match, '987654', { types: ['referee', 'bench_home'] }), null, 'a type left out is not compared')
+    assert.equal(pinTypeOf(match, '314159', { types: ['referee'] }), 'referee')
+    // a beach match's home / away fields are its team1 / team2 benches
+    assert.equal(pinTypeOf(match, '271828', { sport: 'beach' }), 'bench_team1')
+    assert.deepEqual(relayPinsByType(match).map(([type]) => type), ['referee', 'bench_home', 'game'])
+    assert.deepEqual(relayPinsByType(match, { open: false }).map(([type]) => type), ['referee', 'bench_home', 'bench_away', 'game'])
   })
 })
 

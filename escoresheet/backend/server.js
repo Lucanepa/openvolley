@@ -32,12 +32,12 @@ import { createRealtimeHub, createLiveStateRelay, createHeartbeat, isLiveRequest
 // What anonymous readers (live sockets, /api/db without a session) may see.
 import { projectLiveRow, hasAnonPolicy, anonSelectCheck, publicRelayMatch, publicPeople, relaySummaryBundle, relayMatchListRow, cloudListsMatch, projectAnonDbRows, projectNonOwnerRows, projectRows, ANON_DB_COLUMNS } from './lib/publicColumns.js'
 // PIN-proved access to a relayed match (full bundle) and its capability tokens.
-import { createMatchTokens, pinGrantsAccess, matchTokenSecretFromEnv, isTokenRole, connectionPinType, findMatchByConnectionPin, pinRoleOf, tokenRoleOf } from './lib/matchAccess.js'
+import { createMatchTokens, pinGrantsAccess, pinTypeOf, relayPinsByType, matchTokenSecretFromEnv, isTokenRole, connectionPinType, findMatchByConnectionPin, isConnectionPinMatch, pinRoleOf, tokenRoleOf } from './lib/matchAccess.js'
 // Bench requests (line-up, time-out, substitution) from a bench tablet to the scorer
 import { normalizeBenchRequest, normalizeBenchResponse, createBenchRequestStore, createWindowLimiter, currentSetOfBundle, benchView, refereeInfo } from './lib/benchRequests.js'
 // Pure helpers only (no pg, no I/O at import): safe in the LAN / SEA build.
 import { ipBucketKey, createConcurrencyGate, bearerFromHeaders } from './lib/auth.js'
-import { createAttemptLimiter, createPinFailureBudget } from './lib/matchRestore.js'
+import { createAttemptLimiter, createPinFailureBudget, pinScope, PIN_MATCH_FAILURE_MAX, PIN_SEARCH_FAILURE_MAX } from './lib/matchRestore.js'
 import { accessForSport } from './lib/access.js'
 import { newRequestId, formatDbRejection, createLogLimiter, createConnectionSummary } from './lib/opsLog.js'
 import { renderLandingPage, INDOOR_ROLES, BEACH_ROLES } from './lib/landingPage.js'
@@ -224,16 +224,26 @@ const PIN_IP_RATE_LIMIT_MAX = 60     // validate-connection-pin per IP (/64), co
 // (pinScope: what the check compares against), 60 per IP across scopes. A
 // success is refunded, so a venue NAT pairing many devices is not affected,
 // and one tablet's typos lock only what it was guessing, not the whole hall.
-const PIN_FAILURES = { max: 20, ipMax: 60, windowMs: 10 * 60 * 1000 }
-const pinFailureLimiter = createPinFailureBudget(PIN_FAILURES)
-const pinScope = {
-  // A PIN looked up among every live match (validate-connection-pin without a
-  // match, the relay's validate-pin): that PIN type of the sport
-  search: (sport, type) => `any:${sport}:${String(type).slice(0, 20)}`,
-  // The PINs of one match: 'all' (any of its PINs, pinGrantsAccess), 'game',
-  // or one connection PIN type (validate-connection-pin's types)
-  match: (matchKey, kind = 'all') => `m:${kind}:${String(matchKey).slice(0, 200)}`
+// Across callers, every address together: 30 wrong PINs per match and PIN
+// type (OV_PIN_MATCH_FAILURES; restore-by-pin: per game number) refuse that
+// PIN type of that match for 10 minutes (the right PIN too; one [PIN] log
+// line), and 100 wrong PINs per
+// PIN-only search (OV_PIN_SEARCH_FAILURES) refuse only the lookups that name
+// no match. Guesses spread over many addresses (an IPv6 /48 is 65,536 /64
+// buckets) passed every per-address limit. pinScope (lib/matchRestore.js)
+// names what a check compares against.
+const pinFailureCount = (name, fallback) => {
+  const n = Number(process.env[name])
+  return Number.isInteger(n) && n > 0 ? n : fallback
 }
+const PIN_FAILURES = {
+  max: 20,
+  ipMax: 60,
+  windowMs: 10 * 60 * 1000,
+  matchMax: pinFailureCount('OV_PIN_MATCH_FAILURES', PIN_MATCH_FAILURE_MAX),
+  searchMax: pinFailureCount('OV_PIN_SEARCH_FAILURES', PIN_SEARCH_FAILURE_MAX)
+}
+const pinFailureLimiter = createPinFailureBudget(PIN_FAILURES)
 // The relay's validate-pin types under validate-connection-pin's names: one
 // typed PIN is checked by both (the apps' backend check, then the relay's),
 // in one scope, and the repeat is not counted again (pinFailureLimiter.repeated)
@@ -350,7 +360,8 @@ function getDataLayer() {
     if (!pins.enabled) {
       console.warn('⚠️  [Config] OV_PIN_SECRET is not set: game and connection PINs are stored in plaintext in the database (README "PINs at rest").')
     }
-    const restore = mr.createMatchRestore(db, { pinHasher: pins })
+    // restore-by-pin and claim count in the budget of every other PIN check
+    const restore = mr.createMatchRestore(db, { pinHasher: pins, pinBudget: pinFailureLimiter })
     const storage = st.createStorage({
       ...st.storageOptionsFromEnv({ ...process.env, STORAGE_DIR: STORAGE_ROOT }),
       checkQuota: st.createWriteQuota()
@@ -585,6 +596,67 @@ async function claimByUpsertPin(layer, userId, data, clientIp) {
   } catch (err) {
     console.warn('[match/claim] inline take-over failed:', err?.message)
     return false
+  }
+}
+
+// connection_pins keys under the PIN types pinFailureLimiter counts them by
+// (lib/matchAccess.js CONNECTION_PIN_TYPES: older beach spellings)
+const PIN_TYPE_OF_KEY = { team1_data: 'bench_team1', team2_data: 'bench_team2' }
+
+/**
+ * A matches write that carries PINs (game_pin, connection_pins): each PIN it
+ * changes starts its count across callers again (pinFailureLimiter
+ * pinChanged). The scorer who sets a new PIN for a match under attack lifts
+ * that PIN's lock; old wrong guesses say nothing about the new PIN, and a
+ * write of the same PIN (the sync queue sends them whole) lifts nothing. The
+ * stored PINs of the matches the write names are read before it only while
+ * the budget counts anything, and again by done() after it succeeded.
+ * Returns { done } or null; never throws (a failed read lifts nothing).
+ */
+async function watchPinWrites(layer, action, params) {
+  if (!pinFailureLimiter.tracksAny() || (action !== 'insert' && action !== 'upsert' && action !== 'update')) return null
+  const rows = params?.data == null ? [] : (Array.isArray(params.data) ? params.data : [params.data])
+  if (!rows.some((r) => r && typeof r === 'object' && ('game_pin' in r || 'connection_pins' in r))) return null
+  const refs = matchRefsOfWrite('matches', action, params)
+  const read = async ({ externalIds, ids }) => {
+    const out = new Map()
+    for (const [column, values] of [['external_id', externalIds], ['id', ids]]) {
+      if (!values.length) continue
+      const r = await layer.db.runQuery({
+        table: 'matches',
+        action: 'select',
+        params: { columns: 'external_id, game_pin, connection_pins', filters: [{ type: 'in', column, value: values }] }
+      }, { internal: true })
+      if (r.body.error) throw new Error(r.body.error.code || 'lookup failed')
+      for (const row of r.body.data || []) if (row.external_id) out.set(row.external_id, row)
+    }
+    return out
+  }
+  const pinsOf = (row) => ({ game_pin: row?.game_pin ?? null, ...(row?.connection_pins && typeof row.connection_pins === 'object' ? row.connection_pins : {}) })
+  let before
+  try {
+    before = await read(refs)
+  } catch (err) {
+    console.warn('[DB] stored PINs not read before a match write:', err?.message)
+    return null
+  }
+  if (before.size === 0) return null
+  return {
+    async done() {
+      try {
+        const after = await read({ externalIds: [...before.keys()], ids: [] })
+        for (const [ext, row] of after) {
+          const was = pinsOf(before.get(ext))
+          const now = pinsOf(row)
+          const changed = [...new Set([...Object.keys(was), ...Object.keys(now)])]
+            .filter((k) => JSON.stringify(was[k] ?? null) !== JSON.stringify(now[k] ?? null))
+            .map((k) => (k === 'game_pin' ? 'game' : PIN_TYPE_OF_KEY[k] || k))
+          if (changed.length) pinFailureLimiter.pinChanged(ext, changed)
+        }
+      } catch (err) {
+        console.warn('[DB] stored PINs not read after a match write:', err?.message)
+      }
+    }
   }
 }
 
@@ -1020,7 +1092,7 @@ if (realtimeHub) {
       const r = await layer.db.runQuery({
         table: 'matches',
         action: 'select',
-        params: { columns: 'id, sport_type, game_pin, closed_at', filters: [{ type: 'eq', column: key.column, value: key.value }], limit: 1 }
+        params: { columns: 'id, external_id, sport_type, game_pin, closed_at', filters: [{ type: 'eq', column: key.column, value: key.value }], limit: 1 }
       }, { internal: true })
       if (r.body.error) throw new Error(r.body.error.code || 'lookup failed')
       return r.body.data?.[0] || null
@@ -1030,14 +1102,28 @@ if (realtimeHub) {
     // synced game PIN must be the row's, else nothing is published. A row
     // without a game PIN cannot be bound and gets nothing either (the
     // scorer's HTTP sync still updates it).
+    // A row the room's game PIN was not proved for yet (verifyRelayClaim, or
+    // here before) is one counted comparison (relayPinAttempt, under that
+    // match's game PIN in pinFailureLimiter), refused while that PIN is
+    // locked: a room re-pointed at another match's row (an owner's re-sync is
+    // not checked again) showed a public live subscriber whether its PIN was
+    // that row's, outside every limit. Once proved, the room is bound to the
+    // row (bindRoomRows) and its live states are never counted.
     // A closed match (db/007) is frozen for livescore too: nothing is published.
     // This relay is gated by the game PIN, not by an account: a socket carries
     // no session, so the approved-scorer rule (docs/scorer-accounts-spec.md
     // decision 1) does not apply to it. Nothing it relays is stored.
-    verifyMatch: (row, synced) => {
+    verifyMatch: (row, synced, client) => {
       if (row?.closed_at != null) return false
       const pin = gamePinOf(synced?.match)
-      return !!(pin && dataLayer?.pins && dataLayer.pins.matches('game', pin, row?.game_pin))
+      if (!pin || !dataLayer?.pins || row?.game_pin == null || String(row.game_pin).trim() === '') return false
+      const same = () => dataLayer.pins.matches('game', pin, row.game_pin)
+      if (isBoundRow(synced, pin, row.id)) return same()
+      if (!client) return false
+      const r = relayPinAttempt(client, pinScope.match(dbPinKey(row), 'game'), same, { pin })
+      if (r !== 'ok') return false
+      bindRoomRows(synced, pin, [row.id])
+      return true
     }
   })
 }
@@ -2278,12 +2364,22 @@ const server = createServer((req, res) => {
           return
         }
 
+        // Another type never matches a PIN, and each of its spellings was a
+        // counter of its own in the bounded table of the lookups across
+        // callers (same answer as the LAN relays)
+        if (typeof type !== 'string' || !Object.hasOwn(RELAY_PIN_TYPE[sport], type)) {
+          sendJson(res, 400, { success: false, error: 'Invalid PIN type' })
+          return
+        }
+
         const pinStr = String(pin).trim()
 
         // The brute-force budget of every PIN check (failed guesses per
-        // address bucket), in the scope validate-connection-pin uses for this
-        // PIN type; a success is refunded below.
-        const scope = pinScope.search(sport, Object.hasOwn(RELAY_PIN_TYPE[sport], type) ? RELAY_PIN_TYPE[sport][type] : type)
+        // address bucket, and of every PIN-only lookup across callers), in
+        // the scope validate-connection-pin uses for this PIN type; a success
+        // is refunded below.
+        const pinType = RELAY_PIN_TYPE[sport][type]
+        const scope = pinScope.search(sport, pinType)
         if (pinFailureLimiter.isLimited(ipKey, scope)) {
           sendJson(res, 429, { success: false, error: 'Too many failed attempts. Please wait 10 minutes before trying again.' }, { 'Retry-After': '600' })
           return
@@ -2295,6 +2391,8 @@ const server = createServer((req, res) => {
           const match = matchData.match || matchData
           if (!match) continue
           if ((matchData.sportType || 'indoor') !== sport) continue
+          // A match whose PIN type is locked across callers proves nothing
+          if (pinFailureLimiter.locked(matchId, pinType)) continue
 
           let matchPin = null
           if (type === 'referee') {
@@ -2457,13 +2555,12 @@ const server = createServer((req, res) => {
       let full = tokenGrantsRelay(req.headers['x-ov-match-token'], matchId, matchData.match)
       const offeredPin = req.headers['x-ov-match-pin']
       if (!full && typeof offeredPin === 'string' && offeredPin.trim()) {
-        const ipKey = ipBucketKey(getClientIp(req))
-        if (pinFailureLimiter.isLimited(ipKey, pinScope.match(matchId))) {
+        const checked = relayPinCheck(ipBucketKey(getClientIp(req)), matchId, matchData, offeredPin)
+        if (checked === 'rate-limited') {
           sendJson(res, 429, { success: false, error: 'Too many failed attempts. Please wait 10 minutes before trying again.' }, { 'Retry-After': '600' })
           return
         }
-        full = pinGrantsAccess(matchData.match, offeredPin)
-        if (full) pinFailureLimiter.refund(ipKey, pinScope.match(matchId))
+        full = checked === 'ok'
       }
       const bundle = full ? { access: 'full', ...wireBundle(matchData) } : relaySummaryBundle(matchData)
       // Ensure team objects have the correct format
@@ -2511,13 +2608,12 @@ const server = createServer((req, res) => {
       detail = tokenGrantsRelay(req.headers['x-ov-match-token'], matchId, entry?.match)
       const offeredPin = req.headers['x-ov-match-pin']
       if (!detail && entry && typeof offeredPin === 'string' && offeredPin.trim()) {
-        const ipKey = ipBucketKey(getClientIp(req))
-        if (pinFailureLimiter.isLimited(ipKey, pinScope.match(matchId))) {
+        const checked = relayPinCheck(ipBucketKey(getClientIp(req)), matchId, entry, offeredPin)
+        if (checked === 'rate-limited') {
           sendJson(res, 429, { error: 'Too many failed attempts. Please wait 10 minutes before trying again.' }, { 'Retry-After': '600' })
           return
         }
-        detail = pinGrantsAccess(entry.match, offeredPin)
-        if (detail) pinFailureLimiter.refund(ipKey, pinScope.match(matchId))
+        detail = checked === 'ok'
       }
     }
 
@@ -2887,10 +2983,19 @@ Generated by eScoresheet
           sendJson(res, 400, { success: false, error: 'Invalid request' })
           return
         }
+        // The upload PINs (no enable flag: every match from Create match to
+        // the coin toss) are checked against the named match only, never
+        // looked up among all of them. The Upload Roster app names it since
+        // 2026-10-05.
+        if (!cfg.enabledKey && matchFilter === null) {
+          sendJson(res, 400, { success: false, error: 'Invalid request: matchExternalId is required for this PIN type' })
+          return
+        }
         // The brute-force budget: failed guesses per IP (/64) and scope (this
         // PIN type of every live match, or of the one match asked for: a
         // reloading tablet re-checks its stored PIN for its match, untouched
-        // by other tablets' typos). isLimited counts this attempt up front
+        // by other tablets' typos), and across callers: per match and PIN
+        // type, or per PIN-only lookup. isLimited counts this attempt up front
         // (parallel guesses cannot all slip through); a success or a server
         // error is refunded below.
         const scope = matchFilter !== null ? pinScope.match(matchFilter, type) : pinScope.search(sport, type)
@@ -2904,7 +3009,15 @@ Generated by eScoresheet
         const pinStr = String(pin).trim()
         const layer = await getDataLayer()
         const found = await findMatchByConnectionPin({
-          runQuery: layer.db.runQuery, pins: layer.pins, sport: isBeach ? 'beach' : 'indoor', cfg, pin: pinStr, matchExternalId: matchFilter, maxRows: PIN_SCAN_MAX_ROWS
+          runQuery: layer.db.runQuery,
+          pins: layer.pins,
+          sport: isBeach ? 'beach' : 'indoor',
+          cfg,
+          pin: pinStr,
+          matchExternalId: matchFilter,
+          maxRows: PIN_SCAN_MAX_ROWS,
+          // the PIN-only lookup: a match whose PIN type is locked across callers proves nothing
+          skip: matchFilter === null ? (row) => pinFailureLimiter.locked(row.external_id, type) : null
         })
         if (!found.ok) {
           sendJson(res, 500, { success: false, error: 'Validation failed' })
@@ -2913,8 +3026,12 @@ Generated by eScoresheet
         const matchRow = found.row
         if (!matchRow) {
           // The same wrong PIN again (the relay's check of the same typed PIN,
-          // an app retry) is no new guess
-          pinFailureLimiter.repeated(ipKey, scope, pinStr)
+          // an app retry) is no new guess. A named match with no PIN to
+          // compare (none, closed, another sport) counts nowhere across callers.
+          if (!pinFailureLimiter.repeated(ipKey, scope, pinStr) && matchFilter !== null &&
+              await isConnectionPinMatch({ runQuery: layer.db.runQuery, sport: isBeach ? 'beach' : 'indoor', matchExternalId: matchFilter }) === false) {
+            pinFailureLimiter.matchRefund([[matchFilter, type]])
+          }
           sendJson(res, 404, { success: false, error: 'Invalid PIN code' })
           return
         }
@@ -3578,6 +3695,8 @@ Generated by eScoresheet
           ...(readOwner ? { readOwner } : {}),
           ...(includeVoided ? { includeVoided } : {})
         }
+        // A PIN this write changes starts its count across callers again
+        const pinWrites = table === 'matches' && isWrite ? await watchPinWrites(layer, action, p) : null
         let r = await layer.db.runQuery({ table, action, params: p }, runOpts)
         // Take-over inline: a scorer's match insert/upsert refused only for
         // ownership (a match set up before ownership existed, or created by
@@ -3598,6 +3717,7 @@ Generated by eScoresheet
           publishChanges(r.changes)
           if (table === 'matches') await layer.accounts.auditClaimedGames({ actorId: authUser.id, changes: r.changes })
         }
+        if (r.status === 200 && pinWrites) await pinWrites.done()
         // 4xx/5xx from pgQuery (OV_UNSCOPED_EXTERNAL_ID, OV_CLIENT_TOO_OLD,
         // OV_UNSCOPED_WRITE, constraint errors, ...): code only, no details
         // (they can quote row values).
@@ -3695,9 +3815,11 @@ Generated by eScoresheet
               console.warn('[match/restore] scorer-device check failed (let through):', err?.message)
             }
           }
+          const pinWrites = body?.match && typeof body.match === 'object' ? await watchPinWrites(layer, 'upsert', { data: body.match }) : null
           let r = await layer.restore.restoreMatch(body, { proto: req.headers['x-ov-proto'], matchOwner, actorId: user.id })
           r = await enrichGameTaken(layer, user.id, r, body?.match ? [body.match] : [], matchOwner)
           if (r.status === 200) {
+            if (pinWrites) await pinWrites.done()
             publishChanges(r.changes)
             await layer.accounts.auditClaimedGames({ actorId: user.id, changes: r.changes })
             // A backup restored onto a device is that device's take-over (db/019):
@@ -3896,7 +4018,8 @@ Generated by eScoresheet
         }
         const pinKey = team === 'home' ? 'upload_home' : 'upload_away'
         // This team's upload PIN of this match: the scope validate-connection-pin
-        // uses for it, apart from the referee and bench connects
+        // uses for it, apart from the referee and bench connects (per address,
+        // and per match across callers)
         const scope = pinScope.match(matchExternalId, pinKey)
         if (pinFailureLimiter.isLimited(ipKey, scope)) {
           sendTooMany({ success: false, error: 'Too many failed attempts. Please wait 10 minutes before trying again.' }, '600')
@@ -3919,6 +4042,8 @@ Generated by eScoresheet
           return
         }
         const row = found.body.data?.[0]
+        // No such match: no PIN to guess, nothing counted across callers
+        if (!row) pinFailureLimiter.matchRefund([[matchExternalId, pinKey]])
         if (!row || !layer.pins.matches(pinKey, String(pin).trim(), row.connection_pins?.[pinKey])) {
           sendJson(res, 403, { success: false, error: 'Invalid upload PIN' })
           return
@@ -4614,18 +4739,62 @@ function handleJoinMatch(clientInfo, message) {
 // minute) and in the brute-force budget of the HTTP PIN checks
 // (pinFailureLimiter: 20 wrong PINs per 10 minutes per address bucket, IPv6 by
 // /64, and scope: that match's PINs, or its game PIN for a claim; 60 per
-// address bucket in all). Over either limit nothing is compared (no guessing
-// oracle).
+// address bucket in all; per match and PIN type across all callers). Over
+// either limit nothing is compared (no guessing oracle).
 const RELAY_PIN_FAILURE_LIMIT = 5
 const MAX_ACCESS_KEYS = 16
+
+/**
+ * The PIN types pinGrantsAccess compares for a relayed match, and those of
+ * them not locked across callers (pinFailureLimiter): a locked type is left
+ * out of the comparison, the right PIN of another type still opens the match,
+ * and a wrong PIN counts against each type it was compared with.
+ * @returns {{ any: boolean, open: string[] }} any: the match has a PIN at all
+ */
+function relayPinTypes(matchId, entry) {
+  const types = [...new Set(relayPinsByType(entry?.match, { sport: entry?.sportType }).map(([type]) => type))]
+  return { any: types.length > 0, open: pinFailureLimiter.openKinds(matchId, types) }
+}
+
+/**
+ * A PIN offered for a relayed match on an HTTP read (GET /api/match/:id,
+ * /api/server/connections), counted in pinFailureLimiter: 'ok', 'wrong', or
+ * 'rate-limited' (nothing compared: the address's budget, or every PIN type
+ * of the match locked across callers).
+ */
+function relayPinCheck(ipKey, matchId, entry, pin) {
+  const { any, open } = relayPinTypes(matchId, entry)
+  const scope = pinScope.match(matchId)
+  if ((any && open.length === 0) || pinFailureLimiter.isLimited(ipKey, scope, { kinds: open })) return 'rate-limited'
+  if (pinTypeOf(entry?.match, pin, { sport: entry?.sportType, types: open }) === null) {
+    // A tablet polling with a PIN the scorer has changed since: the same
+    // wrong PIN again is no new guess
+    pinFailureLimiter.repeated(ipKey, scope, String(pin).trim(), { kinds: open })
+    return 'wrong'
+  }
+  pinFailureLimiter.refund(ipKey, scope, { kinds: open })
+  return 'ok'
+}
+
+/** relayPinAttempt of a PIN offered for a relayed match's access (subscribe-match), by its PIN types. */
+function relayAccessAttempt(clientInfo, matchId, entry, pin) {
+  const { any, open } = relayPinTypes(matchId, entry)
+  if (any && open.length === 0) return 'rate-limited'
+  return relayPinAttempt(clientInfo, pinScope.match(matchId), () => pinTypeOf(entry.match, pin, { sport: entry.sportType, types: open }) !== null, { kinds: open, pin })
+}
 
 /**
  * One counted PIN comparison for this socket.
  * @param {string} scope pinScope of what compare() compares against
  * @param {() => boolean} compare
- * @param {{ scopeOnly?: boolean }} [budget] scopeOnly: the address's ceiling
- *   is left out (pinFailureLimiter; the match's own scorer device, see
- *   verifyRelayClaim)
+ * @param {{ scopeOnly?: boolean, kinds?: string[], across?: string[][], pin?: string }} [budget]
+ *   scopeOnly: the address's ceiling and the counts across callers are left
+ *   out (pinFailureLimiter; the match's own scorer device, see
+ *   verifyRelayClaim); kinds: the PIN types compare() compares, for a scope
+ *   of all the match's PINs; across: the [match, PIN type] pairs compare()
+ *   compares, counted across callers in place of the scope's (database rows,
+ *   verifyRelayClaim); pin: the PIN compared (the same wrong PIN again from
+ *   the address is no new guess for the budget, pinFailureLimiter.repeated)
  * @returns {'ok'|'wrong'|'rate-limited'}
  */
 function relayPinAttempt(clientInfo, scope, compare, budget = {}) {
@@ -4637,6 +4806,7 @@ function relayPinAttempt(clientInfo, scope, compare, budget = {}) {
     pinFailureLimiter.refund(clientInfo.ipKey, scope, budget)
     return 'ok'
   }
+  if (budget.pin != null) pinFailureLimiter.repeated(clientInfo.ipKey, scope, String(budget.pin).trim(), budget)
   bumpWindow(claimFailures, wsKey)
   return 'wrong'
 }
@@ -4682,7 +4852,7 @@ function registerRelayAccess(clientInfo, matchId, message) {
     return
   }
   if (entry?.match) {
-    const r = relayPinAttempt(clientInfo, pinScope.match(matchId), () => pinGrantsAccess(entry.match, pin))
+    const r = relayAccessAttempt(clientInfo, matchId, entry, pin)
     if (r === 'rate-limited') {
       clientInfo.ws.send(JSON.stringify({ type: 'error', code: 'rate-limited', message: 'Too many wrong PINs. Wait a few minutes.', matchId }))
       return
@@ -4713,7 +4883,7 @@ function hasRelayAccess(clientInfo, matchId, entry) {
     }
     // A PIN not compared yet (offered before the match reached the relay, or
     // next to a token that no longer grants): one counted comparison
-    const r = relayPinAttempt(clientInfo, pinScope.match(matchId), () => pinGrantsAccess(entry.match, a.pin))
+    const r = relayAccessAttempt(clientInfo, matchId, entry, a.pin)
     if (r === 'ok') {
       a.verified = true
       a.token = null
@@ -4957,7 +5127,9 @@ function newClaimDenied(clientInfo, matchId) {
  * row (cloud, see verifyRelayClaim): the database is the authority, so a relay
  * copy held under another PIN (a squatter) is reclaimed. opts.knownScorer:
  * and by the device the database names as the match's scorer: its claim is
- * counted in the match's scope only, not in the address's ceiling.
+ * counted in the match's scope only, not in the address's ceiling nor across
+ * callers; the same for the room's own scoring device (opts.device,
+ * isRoomScorer).
  */
 function claimMatch(clientInfo, matchId, incomingMatch, opts = {}) {
   const existing = activeMatches.get(matchId)
@@ -4987,7 +5159,7 @@ function claimMatch(clientInfo, matchId, incomingMatch, opts = {}) {
   // counted up front, refunded unless it ends as a wrong PIN.
   const counted = incomingPin !== null
   const scope = pinScope.match(matchId, 'game')
-  const budget = { scopeOnly: opts.knownScorer === true }
+  const budget = { scopeOnly: opts.knownScorer === true || isRoomScorer(existing, opts.device) }
   if (counted && pinFailureLimiter.isLimited(clientInfo.ipKey, scope, budget)) return { ok: false, code: 'rate-limited' }
   const refund = () => { if (counted) pinFailureLimiter.refund(clientInfo.ipKey, scope, budget) }
   const granted = (kind) => { refund(); return grant(kind) }
@@ -5046,7 +5218,12 @@ function claimMatch(clientInfo, matchId, incomingMatch, opts = {}) {
  * scoreboard's re-claim was then refused for 10 minutes (its referee and
  * benches froze). A guesser does not know the scorer's device id (it is never
  * broadcast) and still has the scope's limit.
- * @returns {Promise<{ ok: true, dbProved: boolean, knownScorer: boolean } | { ok: false, code: string }>}
+ * The comparison is counted under the matches whose game PIN it compares (the
+ * rows found, dbPinKey), never under the room key: the caller picks that
+ * (seed_key), and a fresh one each time passed the per-match lock and added
+ * a key of its own to the budget's table. The room is then bound to the rows
+ * (`dbRows`, bindRoomRows).
+ * @returns {Promise<{ ok: true, dbProved: boolean, knownScorer: boolean, dbRows: string[] } | { ok: false, code: string }>}
  */
 async function verifyRelayClaim(clientInfo, matchId, match, device = null) {
   const keys = [{ column: 'external_id', value: matchId }]
@@ -5060,14 +5237,14 @@ async function verifyRelayClaim(clientInfo, matchId, match, device = null) {
       const r = await layer.db.runQuery({
         table: 'matches',
         action: 'select',
-        params: { columns: 'id, game_pin', filters: [{ type: 'eq', column: key.column, value: key.value }], limit: 1 }
+        params: { columns: 'id, external_id, game_pin', filters: [{ type: 'eq', column: key.column, value: key.value }], limit: 1 }
       }, { internal: true })
       if (r.body.error) throw new Error(r.body.error.code || 'lookup failed')
       return r.body.data?.[0] || null
     }))
   } catch (err) {
     console.warn('[relay] database check of a scoreboard claim failed (allowed):', err?.message)
-    return { ok: true, dbProved: false, knownScorer: false }
+    return { ok: true, dbProved: false, knownScorer: false, dbRows: [] }
   }
   // Who scores the match, read before the PIN is compared (the answer waits
   // for the PIN all the same)
@@ -5082,16 +5259,63 @@ async function verifyRelayClaim(clientInfo, matchId, match, device = null) {
     }
   }
   const knownScorer = scorer?.mine === true
-  const stored = rows.filter((r) => r && r.game_pin != null && String(r.game_pin).trim() !== '')
+  // The two keys may name the same row
+  const stored = [...new Map(rows
+    .filter((r) => r && r.id != null && r.game_pin != null && String(r.game_pin).trim() !== '')
+    .map((r) => [String(r.id), r])).values()]
   if (stored.length > 0) {
     const pin = gamePinOf(match)
     if (pin === null) return { ok: false, code: 'pins-required' }
-    const r = relayPinAttempt(clientInfo, pinScope.match(matchId, 'game'), () => stored.every((row) => layer.pins.matches('game', pin, row.game_pin)), { scopeOnly: knownScorer })
+    const across = stored.map((row) => [dbPinKey(row), 'game'])
+    const r = relayPinAttempt(clientInfo, pinScope.match(dbPinKey(stored[0]), 'game'), () => stored.every((row) => layer.pins.matches('game', pin, row.game_pin)), { scopeOnly: knownScorer, across })
     if (r === 'rate-limited') return { ok: false, code: 'rate-limited' }
     if (r === 'wrong') return { ok: false, code: 'not-match-owner' }
   }
   if (scorer?.moved) return { ok: false, code: 'scorer-moved' }
-  return { ok: true, dbProved: stored.length > 0, knownScorer: knownScorer && stored.length > 0 }
+  return { ok: true, dbProved: stored.length > 0, knownScorer: knownScorer && stored.length > 0, dbRows: stored.map((row) => String(row.id)) }
+}
+
+// The key pinFailureLimiter counts a database match under: its external_id,
+// as every other PIN check of it (claim, validate-connection-pin), else its id
+function dbPinKey(row) {
+  return row?.external_id != null && String(row.external_id) !== '' ? String(row.external_id) : String(row?.id)
+}
+
+// A relay room whose game PIN a counted check proved against database rows
+// (verifyRelayClaim, the live-state relay's verifyMatch) is bound to them:
+// entry.dbRows { pin, ids }. Its live states go to those rows without being
+// counted again. Kept with the PIN it was proved with: a room whose game PIN
+// changed since (a take-over, a reclaim) is bound to nothing.
+const MAX_BOUND_ROWS = 8
+function boundRowsAfter(bound, pin, ids) {
+  if (pin === null) return null
+  const all = new Set(bound && bound.pin === pin ? bound.ids : [])
+  for (const id of ids) {
+    all.delete(String(id)) // re-added as the newest
+    all.add(String(id))
+  }
+  while (all.size > MAX_BOUND_ROWS) all.delete(all.values().next().value)
+  return all.size > 0 ? { pin, ids: all } : null
+}
+function bindRoomRows(entry, pin, ids) {
+  if (entry) entry.dbRows = boundRowsAfter(entry.dbRows, pin, ids)
+}
+function isBoundRow(entry, pin, id) {
+  return !!entry?.dbRows && entry.dbRows.pin === pin && entry.dbRows.ids.has(String(id))
+}
+
+/**
+ * Is this sync from the room's own scoring device (a reconnect: Wi-Fi drop,
+ * tablet sleep)? The installation the room's last granted sync named
+ * (entry.scorerDevice; never broadcast). Its claim of the room's game PIN is
+ * counted per address and scope only, not across callers (pinFailureLimiter
+ * scopeOnly): other callers' wrong claims locked the game PIN of a match the
+ * database does not hold (a relay-only match, the venue relay), and its own
+ * scoreboard's reconnect was then refused for 10 minutes, its referee and
+ * benches without data. A sync that names no device (older apps) is not it.
+ */
+function isRoomScorer(entry, device) {
+  return !!device && !!entry?.scorerDevice && entry.scorerDevice === device.id
 }
 
 // Venue relay (--local, no database): the scoring device of a room comes
@@ -5248,7 +5472,7 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
         clientInfo.ws.send(JSON.stringify({ type: 'error', code: v.code, message: CLAIM_ERRORS[v.code] || 'Refused', matchId }))
         return
       }
-      handleSyncMatchData(clientInfo, message, { dbChecked: true, dbProved: v.dbProved, knownScorer: v.knownScorer })
+      handleSyncMatchData(clientInfo, message, { dbChecked: true, dbProved: v.dbProved, knownScorer: v.knownScorer, dbRows: v.dbRows })
     })
   }
 
@@ -5261,7 +5485,7 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     return
   }
 
-  const claimed = claimMatch(clientInfo, matchId, match, { dbProved: opts.dbProved === true, knownScorer: opts.knownScorer === true })
+  const claimed = claimMatch(clientInfo, matchId, match, { dbProved: opts.dbProved === true, knownScorer: opts.knownScorer === true, device })
   if (!claimed.ok) {
     clientInfo.ws.send(JSON.stringify({
       type: 'error',
@@ -5307,11 +5531,24 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     ? 'beach'
     : ((claimed.kind === 'owner' || claimed.kind === 'proved') && previous?.sportType) || 'indoor'
   if (device) clientInfo.scorerDevice = device.id
+  // A PIN the scorer changed (regenerated) starts its count across callers
+  // again: the wrong guesses of the old one say nothing about it
+  if (previous?.match && (claimed.kind === 'owner' || claimed.kind === 'proved' || claimed.kind === 'reclaim')) {
+    const was = new Map(relayPinsByType(previous.match, { sport: previous.sportType, open: false }))
+    const now = new Map(relayPinsByType(match, { sport: sportType, open: false }))
+    const changed = [...new Set([...was.keys(), ...now.keys()])].filter((type) => was.get(type) !== now.get(type))
+    if (changed.length) pinFailureLimiter.pinChanged(matchId, changed)
+  }
   const venueScorer = venueDevice
     ? venueScorerAfter(clientInfo, matchId, previous, venueDevice, claimed.kind)
     : (claimed.kind === 'takeover' || claimed.kind === 'new' ? {} : { scorerClaim: previous?.scorerClaim, movedClaims: previous?.movedClaims, supersededClaims: previous?.supersededClaims })
+  // The room's scoring device (isRoomScorer) and the database rows its game
+  // PIN was proved for (bindRoomRows), until the room is taken over
+  const fresh = claimed.kind === 'takeover' || claimed.kind === 'new'
   activeMatches.set(matchId, {
     ...venueScorer,
+    scorerDevice: device ? device.id : (fresh ? null : previous?.scorerDevice ?? null),
+    dbRows: boundRowsAfter(fresh ? null : previous?.dbRows, gamePinOf(match), opts.dbRows || []),
     matchId,
     sportType,
     match,
