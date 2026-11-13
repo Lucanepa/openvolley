@@ -1190,6 +1190,8 @@
     "scorer": "Schriiber"
   },
   "home": {
+    "tool": {"label": "Werkzeug", "swiss": "Schweiz", "global": "Global", "globalNote": "Jedes Turnier: ohne Login, ohne Spielliste. Teams und Spieler bleiben auf diesem Gerät."},
+    "match": "Spiel",
     "openingMatch": "Spiel wird geöffnet…",
     "title": "eScoresheet",
     "newMatch": "Neus Spiil",
@@ -1224,6 +1226,7 @@
       "easyMatchReplaceTest": "S Testspiil uf däm Grät wird dur s eifache Spiil ersetzt und sini Date glöscht. Wiiterfahre?",
       "unableToPrepareEasyMatch": "S eifache Spiil hät nöd chönne starte: {{error}}",
       "deleteEasyMatchConfirm": "Das löscht s eifache Spiil und alli Date. Wiiterfahre?",
+      "unableToPrepareGlobalMatch": "Das Spiel konnte nicht gestartet werden: {{error}}",
       "easyMatchDeleted": "Eifachs Spiil glöscht."
     },
     "exitFullscreen": "Vollbild beände",

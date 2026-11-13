@@ -1183,6 +1183,8 @@
     "scorer": "Schreiber"
   },
   "home": {
+    "tool": {"label": "Werkzeug", "swiss": "Schweiz", "global": "Global", "globalNote": "Jedes Turnier: ohne Anmeldung, ohne Spielliste. Teams und Spieler bleiben auf diesem Gerät."},
+    "match": "Spiel",
     "openingMatch": "Spiel wird geöffnet…",
     "title": "eScoresheet",
     "newMatch": "Neues Spiel",
@@ -1217,6 +1219,7 @@
       "easyMatchReplaceTest": "Das Testspiel auf diesem Gerät wird durch das einfache Spiel ersetzt und seine Daten gelöscht. Fortfahren?",
       "unableToPrepareEasyMatch": "Das einfache Spiel konnte nicht gestartet werden: {{error}}",
       "deleteEasyMatchConfirm": "Dies löscht das einfache Spiel und alle seine Daten. Fortfahren?",
+      "unableToPrepareGlobalMatch": "Das Spiel konnte nicht gestartet werden: {{error}}",
       "easyMatchDeleted": "Einfaches Spiel gelöscht."
     },
     "exitFullscreen": "Vollbild beenden",

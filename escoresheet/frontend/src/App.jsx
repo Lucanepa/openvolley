@@ -3178,6 +3178,46 @@ export default function App() {
     }
   }
 
+  /**
+   * Global tool's "Match": a full match (rosters, officials, signatures) kept
+   * on this device. It is a test-flagged match, so the sync queue drops every
+   * job of it and nothing reaches the clubs/games/players tables; `global`
+   * marks it as a real scoresheet, not practice. No sign-in, no Einsatzliste.
+   */
+  async function createGlobalMatch() {
+    if (easyMatchLoading || testMatchLoading) return
+    const recording = matchStatus?.status === 'Match recording' && currentOfficialMatch && !isScorerMoved(matchStatus.match)
+    if (recording) {
+      setAlertModal(t('home.modals.officialMatchStillRecording', 'An official match is still recording on this device. Continue it, or delete it with "Delete match", before creating a new official match.'))
+      return
+    }
+    try {
+      const previous = (await db.matches.filter(m => isTestMatchSeedKey(m.seedKey)).first()) || null
+      const seedKey = testMatchSeedKeyFor(previous?.seedKey)
+      const refereePin = previous?.refereePin || generateRefereePin()
+      await clearLocalTestData()
+      await db.match_setup.clear()
+      const timestamp = new Date().toISOString()
+      const newMatchId = await db.matches.add({
+        status: 'scheduled',
+        refereePin,
+        coinTossConfirmed: false,
+        test: true,
+        global: true,
+        seedKey,
+        externalId: TEST_MATCH_EXTERNAL_ID,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      })
+      setMatchId(newMatchId)
+      setShowMatchSetup(true)
+      setShowCoinToss(false)
+    } catch (error) {
+      console.error('Failed to create the global match:', error)
+      setAlertModal(t('home.modals.unableToPrepareGlobalMatch', { error: error.message || error, defaultValue: 'Unable to start the match: {{error}}' }))
+    }
+  }
+
   async function continueTestMatch() {
     if (testMatchLoading) return
 
@@ -3902,6 +3942,7 @@ export default function App() {
                     createNewTestMatch={() => openFromHome(createNewTestMatch)}
                     testMatchLoading={testMatchLoading}
                     createEasyMatch={() => openEasyMatch()}
+                    onGlobalMatch={createGlobalMatch}
                     easyMatchLoading={easyMatchLoading}
                     onOpenScoreboard={() => setSimpleBoardOpen(true)}
                     currentOfficialMatch={homeOfficialMatch}

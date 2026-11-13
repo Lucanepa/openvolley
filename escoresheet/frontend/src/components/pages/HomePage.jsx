@@ -57,6 +57,8 @@ export default function HomePage({
   testMatchLoading,
   createEasyMatch,
   easyMatchLoading = false,
+  // Global tool: a full match kept on this device, no sign-in (App createGlobalMatch)
+  onGlobalMatch = null,
   // Scoreboard: points and sets only, no match (SimpleScoreboard)
   onOpenScoreboard = null,
   currentOfficialMatch,
@@ -78,6 +80,16 @@ export default function HomePage({
   const [loginOpen, setLoginOpen] = useState(false)
   // Signed out where an account could sign in: no official game here
   const testOnly = signInAvailable && !signedIn
+  // Swiss (club games, Einsatzliste, cloud) or Global (any tournament, nothing
+  // but the backup and the scoresheet leaves the device); remembered per device
+  const [toolMode, setToolModeState] = useState(() => {
+    try { return localStorage.getItem('ov-tool-mode') === 'global' ? 'global' : 'swiss' } catch { return 'swiss' }
+  })
+  const setToolMode = (mode) => {
+    setToolModeState(mode)
+    try { localStorage.setItem('ov-tool-mode', mode) } catch { /* private window */ }
+  }
+  const globalMode = toolMode === 'global' && !!onGlobalMatch
   const desktopOS = useMemo(() => detectDesktopOS(), [])
   const inDesktopApp = useMemo(() => isInsideDesktopApp(), [])
 
@@ -174,8 +186,41 @@ export default function HomePage({
               Test and Easy below it (signed out: those two only), then the
               Scoreboard, which is no match. One block for the help's "Show
               me" (createMatch), signed in or out */}
+          {onGlobalMatch && (
+            <div role="group" aria-label={t('home.tool.label', 'Tool')} className="grid grid-cols-2 gap-1 rounded-xl bg-stone-100 p-1" data-testid="home-tool-switch">
+              {['swiss', 'global'].map(mode => (
+                <button
+                  key={mode}
+                  type="button"
+                  aria-pressed={toolMode === mode}
+                  data-testid={`home-tool-${mode}`}
+                  onClick={() => setToolMode(mode)}
+                  className={cn('h-10 rounded-lg text-sm font-semibold transition-colors', toolMode === mode ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500 hover:text-stone-800')}
+                >
+                  {t(`home.tool.${mode}`, mode === 'swiss' ? 'Swiss' : 'Global')}
+                </button>
+              ))}
+            </div>
+          )}
+          {globalMode && (
+            <p className="px-1 text-xs text-stone-500" data-testid="home-global-note">
+              {t('home.tool.globalNote', 'Any tournament: no sign-in, no game list. Teams and players stay on this device.')}
+            </p>
+          )}
           <div className="space-y-3" data-help-id="home-new-match-button">
-            {!testOnly && (
+            {globalMode && (
+              <Button
+                variant="primary"
+                block
+                data-help-id="home-global-match-button"
+                data-testid="home-global-match"
+                onClick={onGlobalMatch}
+                className="h-14 rounded-xl text-base font-semibold"
+              >
+                {t('home.match', 'Match')}
+              </Button>
+            )}
+            {!testOnly && !globalMode && (
               <Button
                 variant="primary"
                 block
@@ -186,9 +231,9 @@ export default function HomePage({
                 {t('home.officialMatch')}
               </Button>
             )}
-            <div className={cn('grid gap-2', createEasyMatch && 'grid-cols-2')}>
+            <div className={cn('grid gap-2', createEasyMatch && !globalMode && 'grid-cols-2')}>
               <Button
-                variant={testOnly ? 'primary' : 'secondary'}
+                variant={testOnly && !globalMode ? 'primary' : 'secondary'}
                 block
                 data-help-id="home-test-button"
                 onClick={createNewTestMatch}
@@ -199,7 +244,7 @@ export default function HomePage({
                 {testMatchLoading && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
                 {testMatchLoading ? t('home.preparing') : t('home.testMatch')}
               </Button>
-              {createEasyMatch && (
+              {createEasyMatch && !globalMode && (
                 <Button
                   variant="secondary"
                   block

@@ -1190,6 +1190,8 @@
     "scorer": "Segnapunti"
   },
   "home": {
+    "tool": {"label": "Strumento", "swiss": "Svizzera", "global": "Globale", "globalNote": "Qualsiasi torneo: senza accesso, senza elenco partite. Squadre e giocatori restano su questo dispositivo."},
+    "match": "Partita",
     "openingMatch": "Apertura della partita…",
     "title": "eScoresheet",
     "newMatch": "Nuova partita",
@@ -1224,6 +1226,7 @@
       "easyMatchReplaceTest": "La partita test di questo dispositivo viene sostituita dalla partita semplice e i suoi dati eliminati. Continuare?",
       "unableToPrepareEasyMatch": "Impossibile avviare la partita semplice: {{error}}",
       "deleteEasyMatchConfirm": "Questo eliminerà la partita semplice e tutti i suoi dati. Continuare?",
+      "unableToPrepareGlobalMatch": "Impossibile avviare la partita: {{error}}",
       "easyMatchDeleted": "Partita semplice eliminata."
     },
     "exitFullscreen": "Esci dallo schermo intero",

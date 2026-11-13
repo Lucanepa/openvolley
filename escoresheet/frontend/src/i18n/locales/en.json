@@ -1191,6 +1191,8 @@
     "scorer": "Scorer"
   },
   "home": {
+    "tool": {"label": "Tool", "swiss": "Swiss", "global": "Global", "globalNote": "Any tournament: no sign-in, no game list. Teams and players stay on this device."},
+    "match": "Match",
     "openingMatch": "Opening the match…",
     "title": "eScoresheet",
     "newMatch": "New match",
@@ -1225,6 +1227,7 @@
       "easyMatchReplaceTest": "The test match on this device is replaced by the easy match and its data deleted. Continue?",
       "unableToPrepareEasyMatch": "Unable to start the easy match: {{error}}",
       "deleteEasyMatchConfirm": "This will delete the easy match and all its data. Continue?",
+      "unableToPrepareGlobalMatch": "Unable to start the match: {{error}}",
       "easyMatchDeleted": "Easy match deleted."
     },
     "exitFullscreen": "Exit fullscreen",
