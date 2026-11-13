@@ -24,6 +24,8 @@ import { postMatchSignaturesFromServer } from '../domain/signatureEdits'
 import { signatureSourcesFromApproval } from '../domain/phoneSignature'
 import { liveClockOffset, liveClockOffsetAfter, liveStateNow } from './serverDataSync'
 import { isEncryptedBackup, BACKUP_DAMAGED } from './backupCrypto/envelope'
+import { backupFileText, CARRIED_PINS, openWithKnownPins } from './backupFile'
+import { redactMatch, SECRETS_REMOVED } from './nativeBackup/redact'
 import { recomputeMatch } from '../domain/recompute'
 import { queueEventSync } from './eventSync'
 import { officialsToArray } from '../domain/officials'
@@ -190,27 +192,11 @@ export async function selectBackupDirectory() {
   return handle
 }
 
-let browserSealer = null
-
-/**
- * The text of a browser backup file (folder or download): the same file the
- * apps write (utils/nativeBackup: no PINs inside, encrypted so the game PIN or
- * the referee PIN opens it; a match with neither, a test match, stays plain).
- * Such a file may end up on a USB stick or in a shared Downloads folder, so
- * the PINs and player data are not left in the clear. Throws when a match with
- * PINs cannot be encrypted: it is never written in the clear.
- */
-export async function backupFileText(matchId, data) {
-  const [{ serializeBackup }, { createBackupSealer }] = await Promise.all([
-    import('./nativeBackup/engine'),
-    import('./backupCrypto/sealer')
-  ])
-  if (!browserSealer) browserSealer = createBackupSealer()
-  const iso = new Date().toISOString()
-  const { build } = serializeBackup(data)
-  const { text } = await browserSealer.seal(matchId, data, build(iso), iso)
-  return text
-}
+// The text of a browser backup file (folder or download), the set-end
+// download and the cloud copy: the app backup file (utils/backupFile: no
+// PINs inside, encrypted for the game PIN, the referee PIN and the league's
+// recovery key; a match with no PIN, a test match, stays plain).
+export { backupFileText }
 
 /**
  * Export a single match with all related data
@@ -333,13 +319,36 @@ function unlockedPin(jsonData) {
   return u && (u.field === 'gamePin' || u.field === 'refereePin') && hasValue(u.value) ? u : null
 }
 
+// The connection PINs an encrypted cloud copy carries beside its match row
+// (utils/backupFile keepConnectionPins), as local match fields
+const CARRIED_PIN_FIELDS = {
+  referee: 'refereePin',
+  bench_home: 'homeTeamPin',
+  bench_away: 'awayTeamPin',
+  upload_home: 'homeTeamUploadPin',
+  upload_away: 'awayTeamUploadPin'
+}
+function carriedPins(jsonData) {
+  const block = jsonData?.[CARRIED_PINS]
+  const out = {}
+  if (!block || typeof block !== 'object') return out
+  for (const [key, field] of Object.entries(CARRIED_PIN_FIELDS)) {
+    if (hasValue(block[key])) out[field] = String(block[key]).trim()
+  }
+  return out
+}
+
 /**
- * The PINs of a match restored from an app backup file, which carries none
- * (utils/nativeBackup/redact): those of the local copy it replaces, then the
- * PIN that opened the file when it was encrypted, else new ones (a new game
- * PIN only for an official match). {} for other backups.
- * The replaced copy's PINs come before the typed one: they are the ones the
- * cloud and the tablets know, and the file may be older than a PIN change.
+ * The PINs of a match restored from an app backup file, whose match row
+ * carries none (utils/nativeBackup/redact): those of the local copy it
+ * replaces, then the connection PINs the file carries (the cloud copy,
+ * inside its encryption), then the PIN that opened the file when it was
+ * encrypted, else new ones (a new game PIN only for an official match). {}
+ * for other backups.
+ * The replaced copy's PINs come first: they are the ones the cloud and the
+ * tablets know, and the file may be older than a PIN change. On a
+ * replacement device (no local copy) the cloud copy's own PINs keep the
+ * referee and bench tablets connected: new ones would replace the server's.
  * @param {object} jsonData the backup
  * @param {object|null} previous the local copy being replaced
  */
@@ -349,6 +358,9 @@ export function pinsForRestore(jsonData, previous) {
   const pins = {}
   for (const f of LOCAL_PIN_FIELDS) {
     if (!hasValue(match[f]) && hasValue(previous?.[f])) pins[f] = previous[f]
+  }
+  for (const [f, value] of Object.entries(carriedPins(jsonData))) {
+    if (!hasValue(match[f]) && !hasValue(pins[f])) pins[f] = value
   }
   // The match's own PIN, not a new one the cloud would then be sent
   const typed = unlockedPin(jsonData)
@@ -365,11 +377,18 @@ export function pinsForRestore(jsonData, previous) {
   return pins
 }
 
-// restoreMatchInPlace: the typed PIN (unlockedPin) where the open match lacks it
+// restoreMatchInPlace: the PINs the file carries and the typed PIN
+// (unlockedPin), each only where the open match lacks it
 function typedPinFor(jsonData, current) {
+  const out = {}
+  if (jsonData?.secretsRemoved) {
+    for (const [f, value] of Object.entries(carriedPins(jsonData))) {
+      if (!hasValue(current?.[f]) && !hasValue(jsonData.match?.[f])) out[f] = value
+    }
+  }
   const typed = unlockedPin(jsonData)
-  if (!typed || hasValue(current?.[typed.field]) || hasValue(jsonData.match?.[typed.field])) return {}
-  return { [typed.field]: String(typed.value).trim() }
+  if (!typed || hasValue(current?.[typed.field]) || hasValue(jsonData.match?.[typed.field]) || hasValue(out[typed.field])) return out
+  return { ...out, [typed.field]: String(typed.value).trim() }
 }
 
 // Full connection_pins for the restore upsert, or nothing when the backup has no
@@ -578,7 +597,9 @@ export function matchBackupFromFile(jsonData) {
 /**
  * The MatchData_*.json of the match-end ZIP (MatchEnd, Approve): the backup
  * file format (exportMatchData), so Restore match takes it back as it is,
- * with the time it was written as exportedAt too.
+ * with the time it was written as exportedAt too. Without the match's PINs
+ * and session ids, like every backup file (nativeBackup/redact): the ZIP is
+ * kept and passed on, the PINs are access secrets.
  * @param {{ match: object, homeTeam?: object, awayTeam?: object, homePlayers?: object[], awayPlayers?: object[], sets?: object[], events?: object[] }} data
  * @param {Date} [now]
  */
@@ -587,7 +608,8 @@ export function matchEndExportData({ match, homeTeam, awayTeam, homePlayers, awa
   return {
     version: 1,
     lastUpdated: at,
-    match,
+    [SECRETS_REMOVED]: true,
+    match: redactMatch(match),
     homeTeam: homeTeam || null,
     awayTeam: awayTeam || null,
     homePlayers: homePlayers || [],
@@ -936,8 +958,9 @@ export async function restoreMatchInPlace(matchId, jsonData, { checkServer = ser
     await db.matches.update(matchId, {
       ...match,
       ...(guarded ? withoutClosedEvidence(match, currentMatch) : {}),
-      // The PIN that opened an encrypted file, where the open match has none
-      // (its own PINs stay: the backup has none, the update keeps them)
+      // The PINs the file carries and the one that opened it, where the open
+      // match has none (its own PINs stay: the backup's match row has none,
+      // the update keeps them)
       ...typedPinFor(jsonData, currentMatch),
       id: matchId,
       // The backup's team ids are local ids of the device that wrote it
@@ -2288,11 +2311,16 @@ export async function listCloudBackups(gamePin, gameN = 1) {
 }
 
 /**
- * Fetch a cloud backup file content
+ * Fetch a cloud backup file content. The cloud copies are encrypted backup
+ * files (utils/backupFile): one is opened with the first of `pins` that opens
+ * it (the game PIN typed to list them, the open match's PINs) and comes back
+ * as the backup inside; else as the envelope, for the PIN dialog
+ * (hooks/useBackupUnlock). Older cloud copies are plain.
  * @param {string} path - Full path to the backup file
+ * @param {{ pins?: Array<string|null|undefined> }} [options]
  * @returns {Object} Parsed JSON backup data
  */
-export async function fetchCloudBackup(path) {
+export async function fetchCloudBackup(path, { pins = [] } = {}) {
   const { data, error } = await apiStorage
     .from('backup')
     .download(path)
@@ -2300,7 +2328,7 @@ export async function fetchCloudBackup(path) {
   if (error) throw error
 
   const text = await data.text()
-  return JSON.parse(text)
+  return openWithKnownPins(parseBackupText(text), pins)
 }
 
 /**

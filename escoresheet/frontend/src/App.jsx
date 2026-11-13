@@ -4241,6 +4241,7 @@ export default function App() {
                         <div className="mt-2 min-h-[7.5rem] overflow-y-auto rounded-lg border border-stone-200" data-testid="restore-backup-list">
                           <BackupTable
                             backups={cloudBackups}
+                            unlockPins={[cloudBackupPin]}
                             onBackupSelect={async (backup) => {
                               setRestoreLoading(true)
                               setRestoreError('')
@@ -4249,12 +4250,16 @@ export default function App() {
                                   setRestorePreviewData({ data: backup.cloudData, source: 'database' })
                                   return
                                 }
-                                const cloudData = await fetchCloudBackup(backup.path)
-                                if (!cloudData) {
+                                // An encrypted cloud copy opens with the game PIN typed above,
+                                // else the PIN dialog asks (cancelled: back to the list)
+                                const fetched = await fetchCloudBackup(backup.path, { pins: [cloudBackupPin] })
+                                if (!fetched) {
                                   setRestoreError(t('options.alerts.failedToLoadBackupData'))
                                   setRestoreLoading(false)
                                   return
                                 }
+                                const cloudData = await unlockBackup(fetched)
+                                if (!cloudData) return
                                 setRestorePreviewData({ data: cloudData, source: backup.source || 'cloud', backupName: backup.name })
                               } catch (err) {
                                 setRestoreError(restoreErrorText(err, t))

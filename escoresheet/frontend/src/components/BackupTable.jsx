@@ -1,8 +1,16 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { loadCloudBackup } from '../utils/logger'
-import { formatBackupDateTime } from '../utils/dateFormatter'
+import { fetchCloudBackup } from '../utils/backupManager'
+import { isEncryptedBackup } from '../utils/backupCrypto/envelope'
+import { formatBackupDateTime, formatZurichDateTime } from '../utils/dateFormatter'
 import { cn } from '../ui'
+
+// "Last action" needs the whole backup file (a match, up to about 1 MB): read
+// for the newest rows only, one after another, and for older ones on a tap.
+// It read every listed file at once, up to 100 over a hall hotspot, before
+// the scorer could pick the one to restore.
+export const LAST_ACTION_NEWEST = 3
+export const LAST_ACTION_MORE = 5
 
 /**
  * Format event type for display
@@ -52,8 +60,23 @@ function extractLastAction(events, t) {
   return lastEvent ? formatEventType(lastEvent.type, t) : null
 }
 
+// Newest first: the UTC stamp in the file name (yyyymmdd, hhmmss, ms), else
+// the storage's created_at
+function backupTime(backup) {
+  if (backup.date && backup.time) {
+    const d = backup.date
+    const t = backup.time.padStart(6, '0')
+    return Date.UTC(+d.slice(0, 4), +d.slice(4, 6) - 1, +d.slice(6, 8), +t.slice(0, 2), +t.slice(2, 4), +t.slice(4, 6), +(backup.ms || 0))
+  }
+  const at = backup.created_at || backup.updated_at
+  const ms = at ? new Date(at).getTime() : NaN
+  return Number.isFinite(ms) ? ms : 0
+}
+
 /**
- * BackupTable - Reusable component for displaying cloud backups
+ * BackupTable - Reusable component for displaying cloud backups.
+ * unlockPins: the PINs an encrypted cloud copy is opened with for its last
+ * action (the game PIN typed to list them, the open match's PINs).
  */
 export default function BackupTable({
   backups = [],
@@ -62,52 +85,75 @@ export default function BackupTable({
   showRestoreButton = false,
   mode = 'button', // 'button' = entire row is clickable, 'row' = row clickable with separate button
   loadingBackupPath = null,
-  restoreButtonText = 'Restore'
+  restoreButtonText = 'Restore',
+  unlockPins = [],
+  loadBackup = null // (path) -> the backup (tests); default: fetchCloudBackup with unlockPins
 }) {
   const { t } = useTranslation()
   const [lastActions, setLastActions] = useState({})
   const [loadingActions, setLoadingActions] = useState({})
+  const [shown, setShown] = useState(LAST_ACTION_NEWEST)
 
-  // Fetch last actions for cloud backups (the cloud match itself has no file)
+  const sorted = useMemo(() => [...backups].sort((a, b) => backupTime(b) - backupTime(a)), [backups])
+  // The cloud copies (the cloud match itself has no file), newest first
+  const files = useMemo(() => sorted.filter(b => b.path), [sorted])
+
+  const pinsKey = (unlockPins || []).filter(Boolean).join('\n')
+  const read = useRef(null)
+  read.current = loadBackup || ((path) => fetchCloudBackup(path, { pins: pinsKey ? pinsKey.split('\n') : [] }))
+  // Paths asked for in this list (a new list or new PINs start again)
+  const asked = useRef(new Set())
   useEffect(() => {
-    if (backups.length === 0) return
+    asked.current = new Set()
+    setLastActions({})
+    setLoadingActions({})
+    setShown(LAST_ACTION_NEWEST)
+  }, [files, pinsKey])
 
-    const cloudBackups = backups.filter(b => b.path)
-    if (cloudBackups.length === 0) return
+  // The text of a read file (a ref: a new `t` is no reason to read again)
+  const lastActionOf = useRef(null)
+  lastActionOf.current = (data) => {
+    if (!data) return t('backupTable.error', 'Error')
+    if (isEncryptedBackup(data)) return t('backupTable.locked', 'Encrypted')
+    return extractLastAction(data.events, t) || t('backupTable.noActions', 'No actions')
+  }
 
-    const fetchLastActions = async () => {
-      const actions = {}
-      const loadingStates = {}
-
-      // Mark cloud backups as loading
-      cloudBackups.forEach(backup => {
-        loadingStates[backup.path] = true
-      })
-      setLoadingActions(loadingStates)
-
-      // Fetch all in parallel
-      await Promise.all(
-        cloudBackups.map(async (backup) => {
-          try {
-            const backupData = await loadCloudBackup(backup.path)
-            if (backupData && backupData.events) {
-              actions[backup.path] = extractLastAction(backupData.events, t)
-            } else {
-              actions[backup.path] = t('backupTable.noActions', 'No actions')
-            }
-          } catch (err) {
-            console.error(`Failed to load backup ${backup.path}:`, err)
-            actions[backup.path] = t('backupTable.error', 'Error')
-          }
+  // The last action of the first `shown` files, one file at a time; again
+  // when the PINs change (a game PIN corrected under the list): the reset
+  // above cleared the rows, and `shown` may already be the newest 3
+  useEffect(() => {
+    let alive = true
+    const queue = files.slice(0, shown).map(b => b.path).filter(path => !asked.current.has(path))
+    if (!queue.length) return undefined
+    for (const path of queue) asked.current.add(path)
+    setLoadingActions(prev => ({ ...prev, ...Object.fromEntries(queue.map(path => [path, true])) }))
+    const done = new Set()
+    ;(async () => {
+      for (const path of queue) {
+        if (!alive) return
+        let action
+        try {
+          action = lastActionOf.current(await read.current(path))
+        } catch (err) {
+          console.error(`Failed to load backup ${path}:`, err)
+          action = lastActionOf.current(null)
+        }
+        if (!alive) return
+        done.add(path)
+        setLastActions(prev => ({ ...prev, [path]: action }))
+        setLoadingActions(prev => {
+          const next = { ...prev }
+          delete next[path]
+          return next
         })
-      )
-
-      setLastActions(actions)
-      setLoadingActions({})
+      }
+    })()
+    return () => {
+      alive = false
+      // not read yet: asked again by the next run
+      for (const path of queue) if (!done.has(path)) asked.current.delete(path)
     }
-
-    fetchLastActions()
-  }, [backups, t])
+  }, [files, shown, pinsKey])
 
   if (backups.length === 0) {
     return null
@@ -138,43 +184,19 @@ export default function BackupTable({
         {showRestoreButton && <span></span>}
       </div>
 
-      {/* Table Rows - sorted by created_at descending (newest first) */}
-      {[...backups].sort((a, b) => {
-        // Sort by date/time descending (newest first)
-        // Backups have date (YYYYMMDD), time (HHmmss), and ms fields
-        const getTimestamp = (backup) => {
-          if (backup.date && backup.time) {
-            // Parse date YYYYMMDD and time HHmmss
-            const dateStr = backup.date
-            const timeStr = backup.time.padStart(6, '0')
-            const ms = backup.ms || 0
-            return new Date(
-              parseInt(dateStr.slice(0, 4)),
-              parseInt(dateStr.slice(4, 6)) - 1,
-              parseInt(dateStr.slice(6, 8)),
-              parseInt(timeStr.slice(0, 2)),
-              parseInt(timeStr.slice(2, 4)),
-              parseInt(timeStr.slice(4, 6)),
-              ms
-            ).getTime()
-          }
-          if (backup.created_at || backup.updated_at) {
-            return new Date(backup.created_at || backup.updated_at).getTime()
-          }
-          return 0
-        }
-        return getTimestamp(b) - getTimestamp(a)
-      }).map((backup, index) => {
+      {/* Table Rows - newest first */}
+      {sorted.map((backup, index) => {
+        // Zürich time, the gym's clock, whatever zone the device is in
         const formattedTime = backup.date && backup.time
           ? formatBackupDateTime(backup.date, backup.time, backup.ms)
-          : (backup.created_at || backup.updated_at ? new Date(backup.created_at || backup.updated_at).toLocaleString() : 'Unknown')
+          : (formatZurichDateTime(backup.created_at || backup.updated_at) || 'Unknown')
 
-        // The cloud match itself shows its status
+        // The cloud match itself shows its status; an older file not read yet, a dash
         const lastAction = backup.source === 'database'
           ? (backup.status || '—')
           : (loadingActions[backup.path]
             ? t('common.loading', 'Loading...')
-            : (lastActions[backup.path] || t('common.unknown', 'Unknown')))
+            : (lastActions[backup.path] || '—'))
 
         const isDisabled = loading || loadingBackupPath === backup.path
 
@@ -240,6 +262,18 @@ export default function BackupTable({
           )
         }
       })}
+
+      {files.length > shown && (
+        <div className="px-2.5 py-2">
+          <button
+            type="button"
+            onClick={() => setShown(n => n + LAST_ACTION_MORE)}
+            className="text-[11px] font-medium text-stone-600 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60"
+          >
+            {t('backupTable.showMoreLastActions', { count: Math.min(LAST_ACTION_MORE, files.length - shown) })}
+          </button>
+        </div>
+      )}
     </div>
   )
 }

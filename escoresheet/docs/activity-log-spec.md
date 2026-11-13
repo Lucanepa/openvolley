@@ -164,7 +164,10 @@ approval is logged by role and method only. The server runs the same code
 
 **Files.** Desktop: `activity_append` and `activity_open_dir`
 (`src-tauri/src/activity.rs`, capability `activity.json`). Android: Capacitor
-Filesystem in `Documents/OpenVolley/logs`. Both write `activity-YYYY-MM-DD.jsonl`
+Filesystem in the app's own folder, `OpenVolley/logs` (internal storage, else
+the app's external folder; older versions wrote to the public
+`Documents/OpenVolley/logs`, moved in at the first start, see
+frontend/ANDROID.md). Both write `activity-YYYY-MM-DD.jsonl`
 every 2 s or 50 lines and on quit, and keep 30 files and 50 MB.
 
 **Retention.**

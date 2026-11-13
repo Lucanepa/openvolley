@@ -297,10 +297,13 @@ screen underneath (match setup, scoreboard, match end) stays mounted, with
 its state. The page in the view talks to the app through
 `src/utils/appWindowGuest.js`: the approval PDF goes to the app,
 `window.close()` closes the view, and **Save PDF** hands the PDF to the app,
-which writes it with `@capacitor/filesystem` to
-`Documents/OpenVolley/scoresheets/` (Files app, USB; fallback: the app's
-external files folder) and says where in the bar. The WebView has no print
-and cannot download a blob, so there is no print dialog. External links and
+which writes it with `@capacitor/filesystem` to the app's own folder
+(`files/OpenVolley/scoresheets/`; fallback: the app's external files folder)
+and offers **Open**, **Share** and **Export to Documents** (a copy in
+`Documents/OpenVolley/exported/`, which the app never moves or deletes) in the bar.
+Saved PDFs follow the backups' 30 days (deleted at the next start after
+that). The WebView has no print and cannot download a blob, so there is no
+print dialog. External links and
 `mailto:` are navigations Capacitor hands to Android's browser / mail app.
 
 The view loads `/scoresheet/index.html?…`, not `/scoresheet/?…`: Capacitor's
@@ -319,7 +322,7 @@ Checked on the emulator (Android 16, debug build, 2560×1600 tablet screen):
 Match setup → Scoresheet and Scoreboard → Preview show the scoresheet; the
 bar's Back and the Android Back button return to the screen underneath,
 unchanged; Save PDF writes the full sheet (~790 KB) to
-`Documents/OpenVolley/scoresheets/` and the bar says so; `location.assign` of
+`Documents/OpenVolley/scoresheets/` (before the app folder, see above) and the bar says so; `location.assign` of
 an https link opens Chrome and of a `mailto:` link opens Gmail, the app page
 staying where it was; an open request from inside the view replaces the page
 in the same view. Not checked on a device: the match-end approval PDF
@@ -356,48 +359,57 @@ port the relay's `/api/server/status` names), not `ws://<laptop>:5173`.
 ## Automatic backups
 
 The app saves the open match after every scoring event (same file format as
-the desktop app, **encrypted** with the match's game PIN and referee PIN, see
-`OFFLINE_DESKTOP.md` › Encrypted backup files) to the public
-**`Documents/OpenVolley/backups/<match>/`** folder
-(`/storage/emulated/0/Documents/...`), via `@capacitor/filesystem`.
+the desktop app, **encrypted** with the match's game PIN and referee PIN and
+the league's recovery key, see `OFFLINE_DESKTOP.md` › Encrypted backup files)
+to the app's own **`files/OpenVolley/backups/<match>/`** folder
+(`Directory.Data`; fallback `Directory.External`), via `@capacitor/filesystem`.
 
-- Why Documents: it is visible in the Files app and over USB (MTP), so the
-  owner can copy the backups off the tablet, and the files **survive an
-  uninstall**. The app-private folders (`Directory.Data`, and
-  `Android/data/<package>` = `Directory.External`) are deleted on uninstall
-  and are hard to reach on Android 11+.
-- Permissions: Android 11+ needs none for files the app creates there.
-  Android 10 and older need storage access (`WRITE_EXTERNAL_STORAGE` and
+- Why the app folder (owner decision 2026-11): the public
+  `Documents/OpenVolley` folder of 3.1.4 and older was readable by anyone
+  holding the tablet (Files app, USB), on Android 10 and older by other apps
+  with storage permission, and the files stayed after an uninstall. The app
+  folder is reached by no other app, file manager or USB cable, and goes
+  with the app on uninstall.
+- Copies go out only on request: **Options → Backup → Export to Documents**
+  copies each match's `latest.json` (as `<match>.json`) and every saved PDF
+  to a new `Documents/OpenVolley/export-<yyyymmdd-hhmm>/` folder; the PDF
+  view's Export to Documents copies one PDF to `Documents/OpenVolley/exported/`.
+  Those copies are the user's: the app never moves or deletes them (the move
+  below never reads these folders).
+- First start of this version: the files older versions left in
+  `Documents/OpenVolley/backups`, `Documents/OpenVolley/scoresheets`,
+  `Documents/OpenVolley/logs` (the activity log's daily files; and the
+  external fallback) are moved into the app folder, once
+  (`nativeBackup/androidFiles.js` moveLegacyFiles; a `latest.json` the app
+  wrote since is kept, a day's log the app already writes to gets the older
+  lines). Once is a marker file in the app folder
+  (`OpenVolley/legacy-files-moved`), so Options "Clear all" does not run it
+  again. Files an earlier install left on Android 11+ belong to that install
+  and stay (logged). On Android 10 and older Documents is only read with the
+  storage permission already granted: the start never asks for it. Android
+  only: on iOS Capacitor maps Documents, Data and External to one folder.
+- The activity log's daily files (`src/utils/activity/fileSink.js`) are in the
+  app folder too (`OpenVolley/logs/`).
+- At every start (a few seconds in) the rotation below runs over every
+  match folder, and saved PDFs older than 30 days are deleted; before, the
+  rotation waited for the session's first backup.
+- Permissions: none for the app folder. Export to Documents and the move need
+  storage access on Android 10 and older (`WRITE_EXTERNAL_STORAGE` and
   `READ_EXTERNAL_STORAGE`, both maxSdk 29: the plugin asks for the pair; plus
-  `requestLegacyExternalStorage`); if it is refused the app falls
-  back to `Android/data/com.openvolley.escoresheet/files/OpenVolley/backups`.
-- After a reinstall on Android 11+, the old files belong to the previous
-  install: the new one cannot overwrite or delete them. New event files and
-  new matches are fine; a match continued across the reinstall keeps its old
-  `latest.json` (its newest event file is the current state and is never
-  rotated away), and rotation skips what it cannot delete. Folders are named
-  by the whole match seed, so a new install's matches never land in an old
-  match's folder.
+  `requestLegacyExternalStorage`).
 - **Personal data**: the files hold player names and birth dates, officials
   and signature images, **encrypted** with the match's game PIN and referee
-  PIN (either opens a file). Without a PIN only the game number, team names,
-  scheduled date, set scores and the file's time can be read; a test match
-  has no PIN and is saved plain. PINs and session ids are never in a file
-  (the restore keeps the typed PIN, the local copy's, or makes new ones).
-  Files of 3.0.8 and older are plain: their event files go after 30 days,
-  but the newest event file and `latest.json` of a folder never do, so the
-  folder of a match scored with an older version stays readable until it
-  is deleted (Options → Backup says so).
-  Documents is readable by anyone who has the tablet (Files app, USB), on
-  Android 10 and older also by other apps with storage permission, and the
-  files **stay after an uninstall**; after a reinstall the app can no longer
-  delete them, so rotation stops for them. A 6-digit PIN only slows down
-  someone who copies the files and tries every PIN (about 80 minutes on a
-  16-core desktop): Options → Backup says this to the user. Delete
-  `Documents/OpenVolley` before a tablet changes hands. *Owner decision
-  pending*: keep Documents (copyable, survives uninstall) or move to
-  `Directory.External` (private to the app, deleted on uninstall, hard to
-  reach on Android 11+).
+  PIN (either opens a file), and with the recovery public key of the build
+  when it has one (the league opens any file with the private half, kept
+  offline: `scripts/backup-recovery.mjs`). Without a key only the game
+  number, team names, scheduled date, set scores and the file's time can be
+  read; a test match has no PIN and is saved plain. PINs and session ids are
+  never in a file (the restore keeps the typed PIN, the local copy's, or
+  makes new ones). Files of 3.0.8 and older are plain: their event files go
+  after 30 days, but the newest event file and `latest.json` of a folder
+  never do. A 6-digit PIN only slows down someone who copies a file and
+  tries every PIN (about 80 minutes on a 16-core desktop); the recovery key
+  does not fall to guessing.
 - Cost: one file per event, each the whole match (a 5-set match ends near
   0.9 MB encrypted). The event file crosses the WebView bridge once;
   `latest.json` is a native `Filesystem.copy`. The engine waits for a 150 ms
@@ -410,8 +422,9 @@ the desktop app, **encrypted** with the match's game PIN and referee PIN, see
   within 64 MB, a match idle for 12 hours keeps its newest 10, files older
   than 30 days go, and the newest file of every folder is always kept (also
   when `latest.json` belongs to an earlier install).
-- **Options → Backup** shows the folder; **Restore from a backup file** opens
-  the system picker (browse to Documents → OpenVolley → backups), then asks
+- **Options → Backup** shows the folder; the restore list (Saved on this
+  device) lists its matches; **Restore from a backup file** opens the system
+  picker (for an exported copy or a file from elsewhere), then asks
   for the **game PIN or the referee PIN** of the match (a wrong PIN says so
   and asks again; Cancel goes back) before the confirmation. Restore match →
   Restore from local file does the same before its preview. A failing

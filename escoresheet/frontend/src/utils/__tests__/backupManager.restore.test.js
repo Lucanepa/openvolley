@@ -48,6 +48,7 @@ vi.mock('../../lib/apiClient', () => ({ apiFrom: vi.fn(), apiStorage: { from: vi
 
 import { restoreMatchFromJson, restoreMatchInPlace, importMatchFromSupabase, serverClosedState, matchBackupFromDatabaseExport, matchBackupFromMatchEndExport, matchBackupFromFile, matchEndExportData, restoreErrorText, BACKUP_FORMAT_ERROR, BACKUP_UNREADABLE_ERROR, BACKUP_LOCKED_ERROR } from '../backupManager'
 import { createBackupSealer } from '../backupCrypto/sealer'
+import { backupFileText, openWithKnownPins } from '../backupFile'
 import { openEnvelope } from '../backupCrypto/envelope'
 import { apiFrom } from '../../lib/apiClient'
 import { isStaleClosedCopy } from '../matchReopen'
@@ -285,6 +286,63 @@ describe('an encrypted app backup file, opened with a PIN', () => {
     await expect(restoreMatchInPlace(2, envelope)).rejects.toMatchObject({ code: BACKUP_LOCKED_ERROR })
     expect([...fakeDb.matches.map.values()]).toEqual(before)
     expect(restoreErrorText({ code: BACKUP_LOCKED_ERROR }, (k) => k)).toBe('settings.backup.unlock.locked')
+  })
+})
+
+// The cloud copy is what a replacement device restores when the scoring
+// device fails mid-match. It carries the referee, bench and upload PINs inside
+// its encryption (backupFile keepConnectionPins): the restore sends the server
+// those, not new ones that would lock the referee and bench tablets out.
+describe('a cloud copy restored on another device', () => {
+  const ORIGINAL = { referee: '654321', bench_home: '222222', bench_away: '333333', upload_home: '444444', upload_away: '555555' }
+  const source = () => backup({
+    seed_key: 'match_300_ccc', gamePin: '123456', refereePin: '654321', homeTeamPin: '222222', awayTeamPin: '333333',
+    homeTeamUploadPin: '444444', awayTeamUploadPin: '555555', sessionId: 'sess-1'
+  })
+  const cloudCopy = async (pin) => openWithKnownPins(JSON.parse(await backupFileText(3, source(), new Date(), { keepConnectionPins: true })), [pin])
+  const restoreJob = () => [...fakeDb.sync_queue.map.values()].find(j => j.action === 'restore')
+
+  it('keeps the connection PINs the tablets hold, opened with the game PIN or the referee PIN', async () => {
+    const file = await cloudCopy('123456')
+    expect(file.connectionPins).toEqual(ORIGINAL)
+    expect(file.match.refereePin).toBeUndefined()
+    const newId = await restoreMatchFromJson(file, { checkServer: async () => false, cloudLiveState: async () => null })
+    expect(fakeDb.matches.map.get(newId)).toMatchObject({
+      gamePin: '123456', refereePin: '654321', homeTeamPin: '222222', awayTeamPin: '333333', homeTeamUploadPin: '444444', awayTeamUploadPin: '555555'
+    })
+    expect(restoreJob().payload.match).toMatchObject({ game_pin: '123456', connection_pins: ORIGINAL })
+    expect('connectionPins' in fakeDb.matches.map.get(newId)).toBe(false)
+
+    fakeDb.sync_queue.map.clear()
+    fakeDb.matches.map.clear()
+    const byReferee = await cloudCopy('654321')
+    await restoreMatchFromJson(byReferee, { checkServer: async () => false, cloudLiveState: async () => null })
+    // the game PIN is not in the file: a new one, kept off the server
+    expect(restoreJob().payload.match.game_pin).toBeUndefined()
+    expect(restoreJob().payload.match.connection_pins).toEqual(ORIGINAL)
+  }, 60000)
+
+  it('the local copy it replaces keeps its own PINs, the file fills the ones it lacks', async () => {
+    fakeDb.matches.map.set(2, { id: 2, seed_key: 'match_300_ccc', status: 'live', gamePin: '900001', refereePin: '900002' })
+    const file = await cloudCopy('123456')
+    const newId = await restoreMatchFromJson(file, { checkServer: async () => false, cloudLiveState: async () => null })
+    expect(fakeDb.matches.map.get(newId)).toMatchObject({ gamePin: '900001', refereePin: '900002', homeTeamPin: '222222', awayTeamUploadPin: '555555' })
+  }, 60000)
+
+  it('restoreMatchInPlace: the open match keeps its PINs, the file fills the ones it lacks', async () => {
+    fakeDb.matches.map.set(2, { id: 2, seed_key: 'match_300_ccc', status: 'live', gamePin: '900001', refereePin: '900002' })
+    await restoreMatchInPlace(2, await cloudCopy('123456'), { checkServer: async () => false })
+    expect(fakeDb.matches.map.get(2)).toMatchObject({ gamePin: '900001', refereePin: '900002', homeTeamPin: '222222', awayTeamPin: '333333' })
+    expect(restoreJob().payload.match.connection_pins).toMatchObject({ referee: '900002', bench_home: '222222' })
+  }, 60000)
+
+  it('a plain file never carries them (a match with no game PIN and no referee PIN)', async () => {
+    const data = source()
+    delete data.match.gamePin
+    delete data.match.refereePin
+    const text = await backupFileText(4, data, new Date(), { keepConnectionPins: true })
+    expect(JSON.parse(text).connectionPins).toBeUndefined()
+    for (const pin of ['222222', '333333', '444444', '555555', 'sess-1']) expect(text).not.toContain(pin)
   })
 })
 
@@ -644,8 +702,12 @@ describe('a Match End file (the MatchData JSON of the approval ZIP)', () => {
   })
 
   it('the file Match End writes now is a backup file: written, read back, it restores as it is', async () => {
-    const data = matchEndExportData(ended(), new Date('2026-10-29T19:00:00.000Z'))
-    expect(data).toMatchObject({ version: 1, lastUpdated: '2026-10-29T19:00:00.000Z', exportedAt: '2026-10-29T19:00:00.000Z', homeTeam: { name: 'Home' } })
+    const source = ended()
+    source.match = { ...source.match, gamePin: '135790', refereePin: '246802', homeTeamUploadPin: '112233', sessionId: 'sess-1' }
+    const data = matchEndExportData(source, new Date('2026-10-29T19:00:00.000Z'))
+    expect(data).toMatchObject({ version: 1, lastUpdated: '2026-10-29T19:00:00.000Z', exportedAt: '2026-10-29T19:00:00.000Z', homeTeam: { name: 'Home' }, secretsRemoved: true })
+    // the ZIP is kept and passed on: no PIN or session id in it
+    expect(JSON.stringify(data)).not.toMatch(/135790|246802|112233|sess-1/)
     const file = JSON.parse(JSON.stringify(data, null, 2)) // the ZIP's text
     expect(matchBackupFromFile(file)).toBe(file) // nothing to convert
     const id = await restoreMatchFromJson(file, { checkServer: async () => false, cloudLiveState: async () => null })
