@@ -884,6 +884,7 @@
     "relayRejected": {
       "notOwner": "Verbindung Schiedsrichter/Bank: ein anderes eScoresheet hält dieses Spiel auf dem Server. Schiedsrichter, Bank und Livescore erhalten die Updates dieses Geräts nicht.",
       "rateLimited": "Verbindung Schiedsrichter/Bank: der Server hat dieses eScoresheet für eine Minute abgelehnt (zu viele Fehlversuche).",
+      "roomLimit": "Verbindung Schiedsrichter/Bank: der Server hat im Moment keinen Platz für dieses Spiel. Schiedsrichter, Bank und Livescore erhalten die Updates dieses Geräts nicht.",
       "scorerMoved": "Verbindung Schiedsrichter/Bank: dieses Spiel wird jetzt auf einem anderen Gerät geführt. Schiedsrichter, Bank und Livescore folgen dem anderen Gerät, nicht mehr diesem.",
       "tooMany": "Verbindung Schiedsrichter/Bank: dieses Gerät führt bereits zu viele Spiele auf dem Server."
     },
@@ -1769,6 +1770,7 @@
     "connecting": "Verbinde...",
     "invalidPin": "Ungültiger PIN. Bitte erneut versuchen.",
     "tooManyAttempts": "Zu viele falsche PINs aus diesem Netzwerk. Bitte einige Minuten warten und erneut versuchen.",
+    "pickGame": "Mehrere Spiele haben diese PIN. Bitte das eigene Spiel in der Liste wählen und die PIN erneut eingeben.",
     "reconnecting": "Keine Verbindung zum Server. Die Bank verbindet sich wieder mit ihrem Spiel, sobald er zurück ist.",
     "waitingForScoresheet": "Der Server ist wieder da. Die Bank verbindet sich wieder mit ihrem Spiel, sobald das Matchblatt wieder verbunden ist.",
     "roster": "Kader",
@@ -1822,7 +1824,8 @@
       "serverUnreachable": "Keine Verbindung zum Server – bitte WLAN prüfen und erneut versuchen.",
       "reconnecting": "Keine Verbindung zum Server. Das Schiedsrichter-Dashboard verbindet sich wieder mit seinem Spiel, sobald er zurück ist.",
       "waitingForScoresheet": "Der Server ist wieder da. Das Schiedsrichter-Dashboard verbindet sich wieder mit seinem Spiel, sobald das Matchblatt wieder verbunden ist.",
-      "tooManyAttempts": "Zu viele falsche PINs aus diesem Netzwerk. Bitte einige Minuten warten und erneut versuchen."
+      "tooManyAttempts": "Zu viele falsche PINs aus diesem Netzwerk. Bitte einige Minuten warten und erneut versuchen.",
+      "pickGame": "Mehrere Spiele haben diese PIN. Bitte das eigene Spiel in der Liste wählen und die PIN erneut eingeben."
     },
     "connection": {
       "title": "Verbindung",

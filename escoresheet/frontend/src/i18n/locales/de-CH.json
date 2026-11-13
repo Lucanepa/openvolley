@@ -891,6 +891,7 @@
     "relayRejected": {
       "notOwner": "Verbindig Schiri/Bank: es anders eScoresheet hebt das Spiil uf em Server. Schiri, Bank und Livescore überchömed d Updates vo däm Grät nöd.",
       "rateLimited": "Verbindig Schiri/Bank: de Server hät das eScoresheet für e Minute abglehnt (z vill Fählversüech).",
+      "roomLimit": "Verbindig Schiri/Bank: de Server hät im Moment kei Platz für das Spiil. Schiri, Bank und Livescore überchömed d Updates vo däm Grät nöd.",
       "scorerMoved": "Verbindig Schiri/Bank: das Spiil wird jetzt uf emne andere Grät gfüehrt. Schiri, Bank und Livescore folged em andere Grät, nüme däm.",
       "tooMany": "Verbindig Schiri/Bank: das Grät füehrt scho z vill Spiil uf em Server."
     },
@@ -1924,6 +1925,7 @@
     "connecting": "Verbinde...",
     "invalidPin": "Ungültigi PIN. Bitte nomal probiere.",
     "tooManyAttempts": "Z vill falschi PINs us däm Netzwerk. Wart es paar Minute und probier s dänn nomal.",
+    "pickGame": "Mehreri Spiil händ die PIN. Wähl dis Spiil i de Liste und gib d PIN nomal ii.",
     "reconnecting": "Kei Verbindig zum Server. D Bank verbindet sich wieder mit ihrem Spiil, sobald er wieder da isch.",
     "waitingForScoresheet": "De Server isch wieder da. D Bank verbindet sich wieder mit ihrem Spiil, sobald s Matchblatt wieder verbunde isch.",
     "roster": "Kader",
@@ -1977,7 +1979,8 @@
       "serverUnreachable": "Kei Verbindig zum Server – prüef s WLAN und probier s nomal.",
       "reconnecting": "Kei Verbindig zum Server. S Schiri-Dashboard verbindet sich wieder mit sim Spiil, sobald er wieder da isch.",
       "waitingForScoresheet": "De Server isch wieder da. S Schiri-Dashboard verbindet sich wieder mit sim Spiil, sobald s Matchblatt wieder verbunde isch.",
-      "tooManyAttempts": "Z vill falschi PINs us däm Netzwerk. Wart es paar Minute und probier s dänn nomal."
+      "tooManyAttempts": "Z vill falschi PINs us däm Netzwerk. Wart es paar Minute und probier s dänn nomal.",
+      "pickGame": "Mehreri Spiil händ die PIN. Wähl dis Spiil i de Liste und gib d PIN nomal ii."
     },
     "connection": {
       "title": "Verbindig",

@@ -890,6 +890,7 @@
     "relayRejected": {
       "notOwner": "Lien arbitre/banc : une autre eScoresheet détient ce match sur le serveur. L'arbitre, le banc et le livescore ne reçoivent pas les mises à jour de cet appareil.",
       "rateLimited": "Lien arbitre/banc : le serveur a refusé cette eScoresheet pendant une minute (trop de tentatives échouées).",
+      "roomLimit": "Lien arbitre/banc : le serveur n'a pas de place pour ce match pour le moment. L'arbitre, le banc et le livescore ne reçoivent pas les mises à jour de cet appareil.",
       "scorerMoved": "Lien arbitre/banc : ce match est maintenant tenu sur un autre appareil. L'arbitre, le banc et le livescore suivent l'autre appareil, plus celui-ci.",
       "tooMany": "Lien arbitre/banc : cet appareil gère déjà trop de matchs sur le serveur."
     },
@@ -1923,6 +1924,7 @@
     "connecting": "Connexion...",
     "invalidPin": "Code incorrect. Veuillez réessayer.",
     "tooManyAttempts": "Trop de PIN erronés depuis ce réseau. Patientez quelques minutes, puis réessayez.",
+    "pickGame": "Plusieurs matchs ont ce PIN. Choisissez votre match dans la liste, puis saisissez à nouveau le PIN.",
     "reconnecting": "Pas de connexion au serveur. Le banc se reconnecte à son match dès qu’il est de retour.",
     "waitingForScoresheet": "Le serveur est de retour. Le banc se reconnecte à son match dès que la feuille de match est reconnectée.",
     "roster": "Effectif",
@@ -1976,7 +1978,8 @@
       "serverUnreachable": "Pas de connexion au serveur – vérifiez le Wi-Fi et réessayez.",
       "reconnecting": "Pas de connexion au serveur. Le tableau de bord arbitre se reconnecte à son match dès qu’il est de retour.",
       "waitingForScoresheet": "Le serveur est de retour. Le tableau de bord arbitre se reconnecte à son match dès que la feuille de match est reconnectée.",
-      "tooManyAttempts": "Trop de PIN erronés depuis ce réseau. Patientez quelques minutes, puis réessayez."
+      "tooManyAttempts": "Trop de PIN erronés depuis ce réseau. Patientez quelques minutes, puis réessayez.",
+      "pickGame": "Plusieurs matchs ont ce PIN. Choisissez votre match dans la liste, puis saisissez à nouveau le PIN."
     },
     "connection": {
       "title": "Connexion",

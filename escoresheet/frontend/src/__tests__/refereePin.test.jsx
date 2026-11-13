@@ -62,4 +62,25 @@ describe('referee PIN check', () => {
     expect(r).toMatchObject({ match: { id: SEED }, source: 'supabase' })
     expect(checkCloud).toHaveBeenCalledWith('372449', 'referee', { matchExternalId: SEED })
   })
+
+  // 2026-11 audit: the relay compared the PIN with every match it holds, so
+  // the tablet opened another hall's match whose referee PIN was the same
+  it('asks the relay for the picked match, and refuses its answer for another match', async () => {
+    const OTHER = 'match_1791215210099_other1'
+    const checkCloud = vi.fn().mockResolvedValue({ success: false, error: 'Invalid PIN code' })
+    const checkLan = vi.fn().mockResolvedValue({ success: true, match: { id: SEED } })
+    expect(await validateRefereePin('372449', { checkCloud, checkLan, matchExternalId: SEED })).toMatchObject({ match: { id: SEED }, source: 'websocket' })
+    expect(checkLan).toHaveBeenCalledWith('372449', 'referee', { matchId: SEED })
+    const otherLan = vi.fn().mockResolvedValue({ success: true, match: { id: OTHER } })
+    expect(await validateRefereePin('372449', { checkCloud, checkLan: otherLan, matchExternalId: SEED })).toEqual({ match: null, reason: 'invalid' })
+    // no match picked: the game number chosen, if any
+    await validateRefereePin('372449', { checkCloud, checkLan, gameNumber: '12' })
+    expect(checkLan).toHaveBeenLastCalledWith('372449', 'referee', { gameNumber: '12' })
+  })
+
+  it('a PIN the relay finds in more than one match asks for the game (409)', async () => {
+    const checkCloud = vi.fn().mockResolvedValue({ success: false, error: 'Invalid PIN code' })
+    const checkLan = vi.fn().mockRejectedValue(Object.assign(new Error('More than one match has this PIN.'), { status: 409 }))
+    expect(await validateRefereePin('372449', { checkCloud, checkLan })).toEqual({ match: null, reason: 'ambiguous' })
+  })
 })

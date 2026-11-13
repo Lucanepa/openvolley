@@ -94,10 +94,16 @@ const isRefusal = (status) => status >= 400 && status < 500 && status !== 429
  * offline, timed out), or the backend failed (5xx), where the relay not
  * knowing the match says nothing either (it is that backend's relay in the
  * cloud). A stored session is kept then: only a refusal is a wrong PIN.
+ * The relay is asked for matchExternalId too (else for `gameNumber`, the game
+ * picked), and its answer for another match is refused: a relay that
+ * compared the PIN with every match it holds opened another hall's match
+ * whose bench PIN was the same. A relay that finds the PIN in more than one
+ * match and was not told which says ambiguous: true.
  */
-export async function validateBenchPin(pin, team, { connectionMode = CONNECTION_MODES.AUTO, preferLan = false, matchExternalId } = {}) {
+export async function validateBenchPin(pin, team, { connectionMode = CONNECTION_MODES.AUTO, preferLan = false, matchExternalId, gameNumber = null } = {}) {
   const pinType = team === 'home' ? 'homeTeam' : 'awayTeam'
   let rateLimited = false
+  let ambiguous = false
   let cloudRefused = false
   let cloudFailed = false
   let lanRefused = false
@@ -113,11 +119,17 @@ export async function validateBenchPin(pin, team, { connectionMode = CONNECTION_
     const flag = team === 'home' ? 'homeTeamConnectionEnabled' : 'awayTeamConnectionEnabled'
     return r.match[flag] === undefined ? { ...r, match: { ...r.match, [flag]: true } } : r
   }
-  const checkLan = () => validatePin(pin, pinType).then((r) => {
+  const named = matchExternalId ? { matchId: String(matchExternalId) } : (gameNumber != null && gameNumber !== '' ? { gameNumber: String(gameNumber) } : {})
+  const checkLan = () => validatePin(pin, pinType, named).then((r) => {
+    if (r?.success && r.match && matchExternalId && String(r.match.id) !== String(matchExternalId)) {
+      lanRefused = true
+      return { success: false }
+    }
     if (!r?.success) lanRefused = true
     return r
   }, (err) => {
     if (err?.status === 429) rateLimited = true
+    if (err?.status === 409) ambiguous = true
     if (isRefusal(err?.status)) lanRefused = true
     return { success: false, error: err.message }
   })
@@ -134,6 +146,7 @@ export async function validateBenchPin(pin, team, { connectionMode = CONNECTION_
   }
   if (ok(result)) return result
   if (rateLimited) return { ...result, success: false, rateLimited: true }
+  if (ambiguous) return { ...result, success: false, ambiguous: true }
   const refused = cloudRefused || (lanRefused && !cloudFailed)
   return refused ? result : { ...result, success: false, noAnswer: true }
 }
@@ -695,7 +708,8 @@ export default function BenchApp() {
       const result = await validateBenchPin(pin, selectedTeam, {
         connectionMode,
         preferLan: (selectedMatch?.listSource || activeConnection) === 'websocket',
-        ...(typeof picked === 'string' && picked ? { matchExternalId: picked } : {})
+        ...(typeof picked === 'string' && picked ? { matchExternalId: picked } : {}),
+        gameNumber: selectedMatch?.gameNumber ?? null
       })
 
       if (result?.success && result.match) {
@@ -725,6 +739,9 @@ export default function BenchApp() {
       } else if (result?.rateLimited) {
         // Refused without comparing: the PIN may well be right
         setError(t('benchDashboard.tooManyAttempts', 'Too many wrong PINs from this network. Wait a few minutes, then try again.'))
+      } else if (result?.ambiguous) {
+        // The relay holds more than one match with this PIN: the PIN stays typed
+        setError(t('benchDashboard.pickGame', 'More than one match has this PIN. Pick your game in the list, then enter the PIN again.'))
       } else {
         setError('Invalid PIN code. Please check and try again.')
         setPinInput('')

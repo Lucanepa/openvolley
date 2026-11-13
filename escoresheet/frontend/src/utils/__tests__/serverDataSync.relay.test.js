@@ -478,6 +478,19 @@ describe('match access after the PIN step', () => {
     await expect(validatePin('314159', 'referee')).rejects.toMatchObject({ status: 429 })
   })
 
+  it('the relay\'s PIN check names the picked match: its key, else its game number', async () => {
+    const bodies = []
+    globalThis.fetch = vi.fn(async (url, init) => { bodies.push(JSON.parse(init.body)); return json({ success: true, match: { id: SEED } }) })
+    await validatePin('314159', 'referee', { matchId: SEED })
+    await validatePin('314159', 'homeTeam', { gameNumber: 12 })
+    await validatePin('314159', 'referee')
+    expect(bodies).toEqual([
+      { pin: '314159', type: 'referee', matchId: SEED },
+      { pin: '314159', type: 'homeTeam', gameNumber: '12' },
+      { pin: '314159', type: 'referee' }
+    ])
+  })
+
   it('a PIN check for one match sends its id', async () => {
     const bodies = []
     globalThis.fetch = vi.fn(async (url, init) => { bodies.push(JSON.parse(init.body)); return json({ success: true, match: { id: SEED } }) })

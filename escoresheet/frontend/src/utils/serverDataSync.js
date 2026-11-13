@@ -123,9 +123,13 @@ export function matchAccessHeaders(matchId) {
 }
 
 /**
- * Validate PIN and get match data from server
+ * Validate PIN and get match data from server.
+ * `matchId` (its seed key) or `gameNumber`: the match the tablet picked; the
+ * relay compares the PIN with that match only (a PIN two matches share is
+ * refused with 409 'game-number-required' when none is named). Relays from
+ * before 2026-11 ignore both and take the first match with the PIN.
  */
-export async function validatePin(pin, type = 'referee') {
+export async function validatePin(pin, type = 'referee', { matchId = null, gameNumber = null } = {}) {
   const serverUrl = getServerUrl()
 
   try {
@@ -136,7 +140,9 @@ export async function validatePin(pin, type = 'referee') {
       },
       body: JSON.stringify({
         pin: String(pin).trim(),
-        type
+        type,
+        ...(matchId != null && matchId !== '' ? { matchId: String(matchId) } : {}),
+        ...(matchId == null && gameNumber != null && gameNumber !== '' ? { gameNumber: String(gameNumber) } : {})
       })
     })
 

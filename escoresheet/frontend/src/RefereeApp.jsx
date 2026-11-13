@@ -32,7 +32,7 @@ const UNREACHABLE_RE = /failed to fetch|networkerror|load failed|timed out|not a
 const isUnreachable = (r) => !!r && (r.unreachable === true || UNREACHABLE_RE.test(String(r.error || '')))
 // A thrown check (the relay's validatePin throws on any refusal): 429 is a
 // refusal without comparing, too many wrong PINs from this address
-const failedCheck = (err) => ({ success: false, error: err?.message, unreachable: err?.name === 'TypeError', rateLimited: err?.status === 429 })
+const failedCheck = (err) => ({ success: false, error: err?.message, unreachable: err?.name === 'TypeError', rateLimited: err?.status === 429, ambiguous: err?.status === 409 })
 
 // Stored credentials no server could check yet are checked again this often;
 // after such an outage a refusal is believed only after the grace (a backend
@@ -60,7 +60,7 @@ export async function revalidateRefereeSession(storedMatchId, storedPin, { check
   try { cloud = await checkCloud(storedPin, 'referee', { matchExternalId: String(storedMatchId) }) } catch (err) { cloud = failedCheck(err) }
   if (same(cloud)) return cloud.match
   let lan
-  try { lan = await checkLan(storedPin, 'referee') } catch (err) { lan = failedCheck(err) }
+  try { lan = await checkLan(storedPin, 'referee', { matchId: String(storedMatchId) }) } catch (err) { lan = failedCheck(err) }
   if (same(lan)) return lan.match
   if (cloud?.rateLimited || lan?.rateLimited) throw Object.assign(new Error('Too many failed attempts'), { rateLimited: true })
   if (isUnreachable(cloud) && isUnreachable(lan)) throw new Error('Server unreachable')
@@ -78,17 +78,26 @@ export async function revalidateRefereeSession(storedMatchId, storedPin, { check
  * list): the backend checks the PIN against it only, in its own brute-force
  * scope. Without it, the wrong PINs of a whole hall (one venue address) for
  * other matches made a new referee with the right PIN wait up to 10 minutes.
- * @returns {Promise<{ match: object|null, source?: 'supabase'|'websocket', reason?: 'invalid'|'unreachable'|'rate-limited' }>}
+ * The relay is asked for that match too (else for `gameNumber`), and an
+ * answer for another match is refused: a relay that compared the PIN with
+ * every match it holds opened another hall's match whose referee PIN was the
+ * same. A relay that finds the PIN in more than one match and was not told
+ * which one asks for the game ('ambiguous').
+ * @returns {Promise<{ match: object|null, source?: 'supabase'|'websocket', reason?: 'invalid'|'unreachable'|'rate-limited'|'ambiguous' }>}
  */
-export async function validateRefereePin(pin, { checkCloud = validatePinSupabase, checkLan = validatePin, matchExternalId = null } = {}) {
+export async function validateRefereePin(pin, { checkCloud = validatePinSupabase, checkLan = validatePin, matchExternalId = null, gameNumber = null } = {}) {
   const ok = (r) => r?.success && r.match
   let cloud
   try { cloud = await (matchExternalId ? checkCloud(pin, 'referee', { matchExternalId: String(matchExternalId) }) : checkCloud(pin, 'referee')) } catch (err) { cloud = failedCheck(err) }
   if (ok(cloud)) return { match: cloud.match, source: 'supabase' }
   let lan
-  try { lan = await checkLan(pin, 'referee') } catch (err) { lan = failedCheck(err) }
+  try {
+    lan = await checkLan(pin, 'referee', matchExternalId ? { matchId: String(matchExternalId) } : (gameNumber != null && gameNumber !== '' ? { gameNumber: String(gameNumber) } : {}))
+  } catch (err) { lan = failedCheck(err) }
+  if (ok(lan) && matchExternalId && String(lan.match.id) !== String(matchExternalId)) lan = { success: false }
   if (ok(lan)) return { match: lan.match, source: 'websocket' }
   if (cloud?.rateLimited || lan?.rateLimited) return { match: null, reason: 'rate-limited' }
+  if (lan?.ambiguous) return { match: null, reason: 'ambiguous' }
   return { match: null, reason: isUnreachable(cloud) && isUnreachable(lan) ? 'unreachable' : 'invalid' }
 }
 
@@ -512,7 +521,10 @@ export default function RefereeApp() {
       // against every match finds the right one.
       const listed = availableMatches.filter(m => String(m.gameNumber) === selectedGameNumber)
       const picked = linkedMatch?.id ?? (listed.length === 1 ? listed[0].id : null)
-      const result = await validateRefereePin(pinInput.trim(), { matchExternalId: typeof picked === 'string' && picked ? picked : null })
+      const result = await validateRefereePin(pinInput.trim(), {
+        matchExternalId: typeof picked === 'string' && picked ? picked : null,
+        gameNumber: linkedMatch?.gameNumber ?? (selectedGameNumber || null)
+      })
 
       if (result.match) {
         console.log(`[RefereeApp] PIN validated via ${result.source}`)
@@ -527,6 +539,9 @@ export default function RefereeApp() {
         // Refused without comparing: the PIN may well be right, and a stored
         // one stays for the next load
         setError(t('refereeDashboard.errors.tooManyAttempts', 'Too many wrong PINs from this network. Wait a few minutes, then try again.'))
+      } else if (result.reason === 'ambiguous') {
+        // The relay holds more than one match with this PIN: the PIN stays typed
+        setError(t('refereeDashboard.errors.pickGame', 'More than one match has this PIN. Pick your game in the list, then enter the PIN again.'))
       } else {
         setError(result.reason === 'unreachable'
           ? t('refereeDashboard.errors.serverUnreachable', 'No connection to the server – check the Wi-Fi and try again.')

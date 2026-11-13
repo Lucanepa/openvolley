@@ -891,6 +891,7 @@
     "relayRejected": {
       "notOwner": "Collegamento arbitro/panchina: un'altra eScoresheet gestisce questa partita sul server. Arbitro, panchina e livescore non ricevono gli aggiornamenti di questo dispositivo.",
       "rateLimited": "Collegamento arbitro/panchina: il server ha rifiutato questa eScoresheet per un minuto (troppi tentativi falliti).",
+      "roomLimit": "Collegamento arbitro/panchina: il server al momento non ha posto per questa partita. Arbitro, panchina e livescore non ricevono gli aggiornamenti di questo dispositivo.",
       "scorerMoved": "Collegamento arbitro/panchina: questa partita è ora gestita su un altro dispositivo. Arbitro, panchina e livescore seguono l'altro dispositivo, non più questo.",
       "tooMany": "Collegamento arbitro/panchina: questo dispositivo gestisce già troppe partite sul server."
     },
@@ -1924,6 +1925,7 @@
     "connecting": "Connessione...",
     "invalidPin": "PIN non valido. Riprova.",
     "tooManyAttempts": "Troppi PIN errati da questa rete. Attendi qualche minuto, poi riprova.",
+    "pickGame": "Più partite hanno questo PIN. Scegli la tua partita nell'elenco, poi inserisci di nuovo il PIN.",
     "reconnecting": "Nessuna connessione al server. La panchina si ricollega alla sua partita appena torna disponibile.",
     "waitingForScoresheet": "Il server è di nuovo disponibile. La panchina si ricollega alla sua partita appena il foglio segnapunti si è ricollegato.",
     "roster": "Rosa",
@@ -1977,7 +1979,8 @@
       "serverUnreachable": "Nessuna connessione al server – controlla il Wi-Fi e riprova.",
       "reconnecting": "Nessuna connessione al server. La dashboard arbitro si ricollega alla sua partita appena torna disponibile.",
       "waitingForScoresheet": "Il server è di nuovo disponibile. La dashboard arbitro si ricollega alla sua partita appena il foglio segnapunti si è ricollegato.",
-      "tooManyAttempts": "Troppi PIN errati da questa rete. Attendi qualche minuto, poi riprova."
+      "tooManyAttempts": "Troppi PIN errati da questa rete. Attendi qualche minuto, poi riprova.",
+      "pickGame": "Più partite hanno questo PIN. Scegli la tua partita nell'elenco, poi inserisci di nuovo il PIN."
     },
     "connection": {
       "title": "Connessione",

@@ -37,8 +37,21 @@ describe('bench session (survives a reload)', () => {
     sync.validatePin.mockResolvedValue({ success: true, match: { id: SEED, homeTeamConnectionEnabled: true } })
     const r = await validateBenchPin('372449', 'home')
     expect(sync.validatePinSupabase).toHaveBeenCalledWith('372449', 'bench_home')
-    expect(sync.validatePin).toHaveBeenCalledWith('372449', 'homeTeam')
+    expect(sync.validatePin).toHaveBeenCalledWith('372449', 'homeTeam', {})
     expect(r.match.id).toBe(SEED)
+  })
+
+  // 2026-11 audit: the relay compared the PIN with every match it holds
+  it('asks the relay for the picked match, refuses its answer for another, and says ambiguous for a shared PIN', async () => {
+    sync.validatePinSupabase.mockResolvedValue({ success: false, error: 'Invalid PIN code', status: 404 })
+    sync.validatePin.mockResolvedValue({ success: true, match: { id: 'match_1791215210099_other1', homeTeamConnectionEnabled: true } })
+    const r = await validateBenchPin('372449', 'home', { matchExternalId: SEED })
+    expect(sync.validatePin).toHaveBeenCalledWith('372449', 'homeTeam', { matchId: SEED })
+    expect(r.success).toBe(false)
+    expect(r.noAnswer).toBeUndefined()
+    sync.validatePin.mockRejectedValue(Object.assign(new Error('More than one match has this PIN.'), { status: 409 }))
+    expect(await validateBenchPin('372449', 'home', { gameNumber: 12 })).toMatchObject({ success: false, ambiguous: true })
+    expect(sync.validatePin).toHaveBeenLastCalledWith('372449', 'homeTeam', { gameNumber: '12' })
   })
 
   it('fills in the enabled flag an older cloud backend does not echo', async () => {
@@ -116,6 +129,13 @@ describe('referee session restore', () => {
     const lan = vi.fn()
     expect(await revalidateRefereeSession(SEED, '314159', { checkCloud: cloud, checkLan: lan })).toEqual({ id: SEED })
     expect(lan).not.toHaveBeenCalled()
+  })
+
+  it('asks the relay for the stored match only', async () => {
+    const cloud = vi.fn().mockResolvedValue({ success: false, error: 'Invalid PIN code' })
+    const lan = vi.fn().mockResolvedValue({ success: true, match: { id: SEED } })
+    expect(await revalidateRefereeSession(SEED, '314159', { checkCloud: cloud, checkLan: lan })).toEqual({ id: SEED })
+    expect(lan).toHaveBeenCalledWith('314159', 'referee', { matchId: SEED })
   })
 
   it('asks the backend about the stored match only', async () => {
