@@ -331,6 +331,11 @@ describe('accounts on Postgres', { skip: SKIP_PG }, () => {
       assert.equal(r.status, 200, JSON.stringify(r.body))
       assert.deepEqual(r.body.data, { role: 'editor' })
       assert.equal((await pool.query('SELECT granted_via FROM match_editors WHERE match_id = $1 AND user_id = $2', [m.id, ids.pending2])).rows[0].granted_via, 'admin')
+      // an editor by the game PIN already: from now on by the admin's grant, added when it was
+      await pool.query("INSERT INTO match_editors (match_id, user_id, granted_via, created_at) VALUES ($1, $2, 'claim', now() - interval '1 day')", [m.id, ids.pending])
+      assert.deepEqual((await accounts.addMatchEditor({ actorId: ids.admin, matchId: m.id, body: { email: 'pending@example.ch' } })).body.data, { role: 'editor' })
+      const { rows: [claimed] } = await pool.query("SELECT granted_via, created_at < now() - interval '23 hours' AS kept FROM match_editors WHERE match_id = $1 AND user_id = $2", [m.id, ids.pending])
+      assert.deepEqual(claimed, { granted_via: 'admin', kept: true })
       assert.equal((await accounts.addMatchEditor({ actorId: ids.admin, matchId: m.id, body: { email: 'scorer@example.ch' } })).body.data.role, 'creator')
       assert.equal((await accounts.addMatchEditor({ actorId: ids.admin, matchId: m.id, body: { email: 'ghost@example.ch' } })).status, 404)
       assert.equal((await accounts.addMatchEditor({ actorId: ids.admin, matchId: randomUUID(), body: { email: 'scorer@example.ch' } })).status, 404)

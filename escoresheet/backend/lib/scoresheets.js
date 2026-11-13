@@ -65,13 +65,15 @@
  * before or after the close), unless one was stored since the last reopen:
  * recorded, or for a match closed before db/033 without a record the file
  * the tab serves by its name (below). It may come from the match's creator,
- * the closing account or an editor it had at the close at any time, and
- * from an account that became an editor after the close only within
- * LATE_EDITOR_WINDOW_MS of the close: a shared tablet sends it under the
- * next account signed in there, which takes the match over with the game
- * PIN. So within that window whoever proves the game PIN can store the
- * first PDF of a closed match that has none yet; later the PIN gives no say
- * over the sheet (409 OV_MATCH_CLOSED). The same bytes
+ * the closing account, an editor it had at the close or one an admin added
+ * (the admin console's "Add editor": a deliberate grant) at any time, and
+ * from an account that became an editor by the game PIN after the close
+ * only within LATE_EDITOR_WINDOW_MS of the close: a shared tablet sends it
+ * under the next account signed in there, which takes the match over with
+ * the game PIN. So within that window whoever proves the game PIN can store
+ * the first PDF of a closed match that has none yet; later the PIN gives no
+ * say over the sheet (409 OV_MATCH_CLOSED), and an admin adds the account
+ * or stores the PDF. The same bytes
  * again (a resent job) are accepted, and that same file may be replaced by
  * its uploader or the closing account for CLOSED_REPLACE_GRACE_MS (a
  * corrected approval's PDF sent right after an older one still queued); any
@@ -88,19 +90,19 @@
  * A match still without a record is found by the names as before (no
  * scheduled day: the days it was closed, updated and created; more than one
  * file: the newest), but only files without a record whose storage owner
- * created the match, closed it, or was its editor before the close (a game
- * PIN proved after the close never makes a file the served sheet); a
- * closed one served so is logged. That also covers a PDF stored since
+ * created the match, closed it, or was its editor before the close or by
+ * an admin's grant (a game PIN proved after the close never makes a file
+ * the served sheet); a closed one served so is logged. That also covers a PDF stored since
  * db/033 whose record is gone (a database restored from an older dump) or
  * was never written (an older backend put back): the step records those too. Such a
  * file of a closed match stays its own: an upload for another match of the
  * same name neither replaces nor takes it, and it is not removed (409
  * OV_MATCH_CLOSED). A closed match without such a file but with a file of
- * its name that an editor added after the close stored after it was added
- * and within LATE_EDITOR_WINDOW_MS of the close (a shared tablet's approval
- * PDF from before db/033) is not served that file, but no other file is
- * stored for it (admins excepted) until an operator records one; that
- * editor's files of any other time hold nothing.
+ * its name that an editor added by the game PIN after the close stored
+ * after it was added and within LATE_EDITOR_WINDOW_MS of the close (a
+ * shared tablet's approval PDF from before db/033) is not served that file,
+ * but no other file is stored for it (admins excepted) until an operator
+ * records one; that editor's files of any other time hold nothing.
  *
  * A beach name has no secret part (an indoor name has its device's random
  * part), so another beach scorer could create a match's file paths first and
@@ -327,13 +329,15 @@ const MATCH_NOT_IN_CLOUD = () => ({ status: 503, body: { data: null, error: { me
  */
 export const CLOSED_REPLACE_GRACE_MS = 10 * 60 * 1000
 /**
- * An account that becomes an editor of a match after its close (the game PIN
- * proved then: a shared tablet's next account, whose queue sends the
- * approval's PDF) stores that first PDF only this long after the close, and
- * a file of such an account without a record counts as the approval's only
- * when it was stored after the account was added and this long after the
- * close at most (owner decision: enough for a shared tablet's queue). Later
- * the game PIN gives no say over the closed match's sheet.
+ * An account that becomes an editor of a match after its close by the game
+ * PIN (a shared tablet's next account, whose queue sends the approval's PDF)
+ * stores that first PDF only this long after the close, and a file of such
+ * an account without a record counts as the approval's only when it was
+ * stored after the account was added and this long after the close at most
+ * (owner decision: enough for a shared tablet's queue). Later the game PIN
+ * gives no say over the closed match's sheet. An editor an admin adds is not
+ * bound by it (sheetWritersOf). A file stored within it is replaced as any
+ * uploader's (CLOSED_REPLACE_GRACE_MS), also past its end.
  */
 export const LATE_EDITOR_WINDOW_MS = 6 * 60 * 60 * 1000
 
@@ -424,8 +428,8 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
    * one, is that match's) whose storage owner is one of its `writers` (Set
    * of user ids: sheetWritersOf); with `since` (ms) only one stored after
    * that time. `late` (lateEditorsOf, never for serving): also a file of an
-   * editor added after the close, stored after it was added and at most
-   * LATE_EDITOR_WINDOW_MS after the close.
+   * editor added by the game PIN after the close, stored after it was added
+   * and at most LATE_EDITOR_WINDOW_MS after the close.
    */
   async function locate (m, read, recorded, writers, { since = null, late = null } = {}) {
     if (recorded?.length) return { files: recorded }
@@ -477,41 +481,45 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
   /**
    * The accounts that created, edit or closed the matches `ids`: Map(id -> Set
    * of user ids). `atClose`: of a closed match only the editors it had when
-   * it closed. `q`: a transaction's client.
+   * it closed and those an admin added (granted_via 'admin'). `q`: a
+   * transaction's client.
    */
   async function writersOf (ids, q = pool, { atClose = false } = {}) {
     if (!ids.length) return new Map()
     const { rows } = await q.query(
       `SELECT m.id::text AS id, m.created_by::text AS created_by, m.closed_by::text AS closed_by,
               ARRAY(SELECT e.user_id::text FROM public.match_editors e WHERE e.match_id = m.id
-                       ${atClose ? 'AND (m.closed_at IS NULL OR e.created_at <= m.closed_at)' : ''}) AS editors
+                       ${atClose ? "AND (m.closed_at IS NULL OR e.created_at <= m.closed_at OR e.granted_via = 'admin')" : ''}) AS editors
          FROM public.matches m WHERE m.id = ANY($1::uuid[])`, [ids])
     return new Map(rows.map((r) => [r.id, new Set([r.created_by, r.closed_by, ...(r.editors || [])].filter(Boolean))]))
   }
 
   /**
-   * Whose files the names give a match without a record (locate): its
-   * creator, the closing account and the editors it had at the close. An
-   * account that proves the game PIN after the close becomes an editor (a
-   * shared tablet's next account sends the approval's PDF so), but its older
-   * files of the match's name are not the closed match's sheet for that.
+   * Whose files the names give a match without a record (locate), and who
+   * may store a closed match's first PDF at any time (storePdf): its
+   * creator, the closing account, the editors it had at the close and those
+   * an admin added (a deliberate grant: the admin console's "Add editor",
+   * accounts.addMatchEditor). An account that proves the game PIN after the
+   * close becomes an editor (a shared tablet's next account sends the
+   * approval's PDF so), but its older files of the match's name are not the
+   * closed match's sheet for that.
    */
   const sheetWritersOf = (ids, q = pool) => writersOf(ids, q, { atClose: true })
 
   /**
-   * The editors the closed matches `ids` got after the close and at most
-   * LATE_EDITOR_WINDOW_MS after it (a shared tablet's next account): Map(id ->
-   * Map(user id -> when it was added, ms)). A file such an editor stored
-   * after it was added, also within the window, can be the approval's PDF
-   * (locate `late`): not served, but no other file takes its place. `q`: a
-   * transaction's client.
+   * The editors the closed matches `ids` got after the close by the game PIN
+   * (not an admin's grant: sheetWritersOf) and at most LATE_EDITOR_WINDOW_MS
+   * after it (a shared tablet's next account): Map(id -> Map(user id -> when
+   * it was added, ms)). A file such an editor stored after it was added,
+   * also within the window, can be the approval's PDF (locate `late`): not
+   * served, but no other file takes its place. `q`: a transaction's client.
    */
   async function lateEditorsOf (ids, q = pool) {
     if (!ids.length) return new Map()
     const { rows } = await q.query(
       `SELECT e.match_id::text AS id, e.user_id::text AS user_id, e.created_at
          FROM public.match_editors e JOIN public.matches m ON m.id = e.match_id
-        WHERE e.match_id = ANY($1::uuid[]) AND e.created_at > m.closed_at
+        WHERE e.match_id = ANY($1::uuid[]) AND e.created_at > m.closed_at AND e.granted_via <> 'admin'
           AND e.created_at <= m.closed_at + make_interval(secs => $2)`, [ids, LATE_EDITOR_WINDOW_MS / 1000])
     const out = new Map()
     for (const r of rows) {
@@ -960,20 +968,22 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
         if (s.closed && matchOwner?.admin !== true) {
           // The approval's PDF, once: the first one stored since the last
           // reopen, from any account that may write the match: its creator,
-          // the closing account, an editor it had at the close, or within
-          // LATE_EDITOR_WINDOW_MS of the close an editor added since (the
-          // closing tablet may send it under the next account signed in
-          // there). A resent job is answered as stored; that same file is
-          // replaced only within the grace, by its uploader or the closing account.
+          // the closing account, an editor it had at the close or one an
+          // admin added, or within LATE_EDITOR_WINDOW_MS of the close an
+          // editor added since by the game PIN (the closing tablet may send
+          // it under the next account signed in there). A resent job is
+          // answered as stored; that same file is replaced only within the
+          // grace, by its uploader or the closing account.
           if (s.path_of_approval && s.same_bytes) return ok({ path: parts.key, id: objectId(SCORESHEETS_BUCKET, parts.key), fullPath: `${SCORESHEETS_BUCKET}/${parts.key}` })
           const sheetWriters = (await sheetWritersOf([m.id], client)).get(m.id) ?? new Set()
-          // (the caller writes the match: when none of these, an editor added after the close)
-          if (!sheetWriters.has(userId) && !s.in_late_window) throw new Refused(MATCH_CLOSED())
           if (s.other_of_approval) throw new Refused(MATCH_CLOSED())
           let held = null
           if (s.path_of_approval) {
             held = { sameBytes: s.same_bytes, inGrace: s.in_grace, by: [s.path_stored_by] }
           } else {
+            // the first store (the caller writes the match: when none of
+            // these, an editor added after the close by the game PIN)
+            if (!sheetWriters.has(userId) && !s.in_late_window) throw new Refused(MATCH_CLOSED())
             // none recorded: a match closed before db/033 has its PDF on disk all the same
             const old = await unrecordedApprovalPdf(m, sheetWriters, s.reopened_at, read)
             if (old?.unknown) throw new Refused(unavailable())
@@ -986,8 +996,8 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
               held = { sameBytes: createHash('sha256').update(bytes).digest('hex') === sha256, inGrace: g.in_grace === true, by: old.owners }
               firstStoredAt = new Date(old.mtimeMs)
             } else {
-              // only a file an editor added after the close stored within
-              // the window (a shared tablet's approval PDF, locate `late`):
+              // only a file an editor added by the game PIN after the close
+              // stored within the window (a shared tablet's approval PDF, locate `late`):
               // not the match's sheet (never served or recorded for it), and
               // no other file takes its place either (an operator records
               // it, README). Its files of any other time hold nothing.
@@ -1103,9 +1113,9 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
    * removeFiles, no other match's names reach it, and an account deletion no
    * longer hides it. A file the names serve for another of these matches too
    * is left to the names (shared; logged when served). A match whose only
-   * file of its name is one an editor added after the close stored within
-   * LATE_EDITOR_WINDOW_MS of it (a shared tablet's, locate `late`) is
-   * counted (lateEditor) and left: such a file is not served
+   * file of its name is one an editor added by the game PIN after the close
+   * stored within LATE_EDITOR_WINDOW_MS of it (a shared tablet's, locate
+   * `late`) is counted (lateEditor) and left: such a file is not served
    * (sheetWritersOf), an operator records it by hand once the scorer is
    * confirmed. Such an editor's file of any other time counts as none.
    * Idempotent: a match with a record and a recorded path are left alone.

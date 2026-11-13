@@ -7,14 +7,14 @@
  * Those matches have their approval's PDF on disk without a
  * public.match_scoresheets row, so the server finds it by its name (the
  * match's day folder, game number, owner record: its creator, closing
- * account or an editor it had at the close). Recorded, it is held as every
- * later match's PDF: the closed-match rules apply by the record, other
+ * account, an editor it had at the close or one an admin added). Recorded,
+ * it is held as every later match's PDF: the closed-match rules apply by the record, other
  * matches of the same name never reach it, and deleting its uploader's
  * account no longer hides it from the Scoresheets tab. A file that the
  * names serve for two closed matches is left as it is (counted as shared;
  * the server logs each such match when it serves it). A match whose only
- * file of its name is from an editor added after the close, stored after it
- * was added and within 6 hours of the close (a shared tablet's,
+ * file of its name is from an editor added after the close by the game PIN,
+ * stored after it was added and within 6 hours of the close (a shared tablet's,
  * LATE_EDITOR_WINDOW_MS), is counted as such and left: record it by hand
  * once the scorer is confirmed (README "Files stored before this change").
  * Such an editor's file of any other time counts as none. Idempotent; dry

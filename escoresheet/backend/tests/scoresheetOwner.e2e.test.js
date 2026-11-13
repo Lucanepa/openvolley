@@ -984,6 +984,84 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
     assert.deepEqual(await readAs(users.cm, z.id), { status: 200, body: sent.toString() })
   })
 
+  // Support: an admin adds the account a tablet's queue sends the PDF under
+  // (the admin console's "Add editor", POST /api/admin/matches/:id/editors).
+  // A deliberate grant, not the game PIN: it counts at any time
+  it('an editor an admin adds to a closed match stores its first PDF also long after the close', async () => {
+    const addEditor = async (x, user) => {
+      const r = await call(users.admin, 'POST', `/api/admin/matches/${x.id}/editors`, { email: user.email })
+      assert.equal(r.status, 200, r.text)
+      assert.equal(r.json.data.role, 'editor')
+      assert.deepEqual((await sql.query('SELECT granted_via FROM public.match_editors WHERE match_id = $1 AND user_id = $2', [x.id, user.id])).rows, [{ granted_via: 'admin' }])
+    }
+    // a day after the close, no PDF on the server: the new app (match named) and an older app (path only)
+    for (const named of [true, false]) {
+      const x = await newMatch(users.ivan, { hoursAgo: 72 })
+      await closeAgo(x.id, 24 * 60, users.ivan.id)
+      await addEditor(x, users.erin)
+      const sent = pdfBytes(`queued on the tablet 3:1, ${named ? 'match named' : 'older app'}`)
+      const up = await upload(users.erin, `${x.day}/game${x.n}_${key()}.pdf`, sent, named ? { matchExternalId: x.ext } : {})
+      assert.equal(up.status, 200, up.text)
+      assert.deepEqual(await readAs(users.cm, x.id), { status: 200, body: sent.toString() })
+      // then once per approval, as for every account
+      expectCode(await upload(users.erin, `${x.day}/game${x.n}_${key()}.pdf`, pdfBytes('another file 0:3'), { matchExternalId: x.ext }), 409, 'OV_MATCH_CLOSED')
+    }
+    // the account had taken the match over with the game PIN days after the
+    // close (refused); the admin's grant then counts for it
+    const y = await newMatch(users.ivan, { hoursAgo: 72 })
+    const pin = String(100000 + (y.n % 899999))
+    await sql.query('UPDATE public.matches SET game_pin = $2 WHERE id = $1', [y.id, pin])
+    await closeAgo(y.id, 2 * 24 * 60, users.ivan.id)
+    assert.equal((await call(users.erin, 'POST', '/api/match/claim', { externalId: y.ext, pin })).status, 200)
+    const fp = `${y.day}/game${y.n}_${key()}.pdf`
+    const sent = pdfBytes('queued on the tablet 3:1, claimed before')
+    expectCode(await upload(users.erin, fp, sent, { matchExternalId: y.ext }), 409, 'OV_MATCH_CLOSED')
+    await addEditor(y, users.erin)
+    assert.equal((await upload(users.erin, fp, sent, { matchExternalId: y.ext })).status, 200)
+    assert.deepEqual(await readAs(users.cm, y.id), { status: 200, body: sent.toString() })
+    // the game PIN alone still gives no say: another account that proves it now
+    assert.equal((await call(users.mallory, 'POST', '/api/match/claim', { externalId: y.ext, pin })).status, 200)
+    expectCode(await upload(users.mallory, fp, pdfBytes('late claimer 0:3'), { matchExternalId: y.ext }), 409, 'OV_MATCH_CLOSED')
+    // a match closed before db/033 whose file of its name is that account's
+    // (stored days after the close): the admin's grant makes it the match's
+    const h = await newMatch(users.ivan, { hoursAgo: 96 })
+    await closeAgo(h.id, 4 * 24 * 60, users.ivan.id)
+    const queued = pdfBytes('sent under the next account before db/033 3:1')
+    plantFile(`${h.day}/game${h.n}_${key()}.pdf`, queued, [users.erin.id], Math.floor(await closedAtSec(h.id)) + 86400)
+    expectCode(await call(users.cm, 'GET', `/api/scoresheets/${h.id}/pdf`), 404, 'OV_SCORESHEET_NOT_FOUND')
+    await addEditor(h, users.erin)
+    assert.deepEqual(await readAs(users.cm, h.id), { status: 200, body: queued.toString() })
+    expectCode(await upload(users.ivan, `${h.day}/game${h.n}_${key()}.pdf`, pdfBytes('a new file days later 0:3'), { matchExternalId: h.ext }), 409, 'OV_MATCH_CLOSED')
+  })
+
+  // The window bounds the first PDF of an account that proved the game PIN
+  // after the close; the file it stored within it is replaced as any
+  // uploader's (CLOSED_REPLACE_GRACE_MS after its first store)
+  it('an account that took a closed match over with the game PIN replaces its PDF within the grace, also just past the window', async () => {
+    const x = await newMatch(users.ivan, { hoursAgo: 72 })
+    const pin = String(100000 + (x.n % 899999))
+    await sql.query('UPDATE public.matches SET game_pin = $2 WHERE id = $1', [x.id, pin])
+    await closeAgo(x.id, LATE_EDITOR_WINDOW_MS / 60000 - 3, users.ivan.id)
+    assert.equal((await call(users.erin, 'POST', '/api/match/claim', { externalId: x.ext, pin })).status, 200)
+    const fp = `${x.day}/game${x.n}_${key()}.pdf`
+    const first = pdfBytes('approved 3:1, sent under the next account')
+    assert.equal((await upload(users.erin, fp, first, { matchExternalId: x.ext })).status, 200)
+    // five minutes on: the window has ended, the grace has not
+    await backdate(x.id, 300)
+    assert.equal((await upload(users.erin, fp, first, { matchExternalId: x.ext })).status, 200, 'a resent job')
+    const corrected = pdfBytes('corrected approval 3:2, sent under the next account')
+    const up = await upload(users.erin, fp, corrected, { matchExternalId: x.ext })
+    assert.equal(up.status, 200, up.text)
+    assert.deepEqual(await readAs(users.cm, x.id), { status: 200, body: corrected.toString() })
+    // nothing else: another file, another account that proves the PIN now, that file after the grace
+    expectCode(await upload(users.erin, `${x.day}/game${x.n}_${key()}.pdf`, pdfBytes('another file 0:3'), { matchExternalId: x.ext }), 409, 'OV_MATCH_CLOSED')
+    assert.equal((await call(users.mallory, 'POST', '/api/match/claim', { externalId: x.ext, pin })).status, 200)
+    expectCode(await upload(users.mallory, fp, pdfBytes('late claimer 0:3'), { matchExternalId: x.ext }), 409, 'OV_MATCH_CLOSED')
+    await backdate(x.id, PAST_GRACE)
+    expectCode(await upload(users.erin, fp, pdfBytes('changed later 0:3'), { matchExternalId: x.ext }), 409, 'OV_MATCH_CLOSED')
+    assert.deepEqual(await readAs(users.cm, x.id), { status: 200, body: corrected.toString() })
+  })
+
   // A file of the match's name without a record (any scorer could store one
   // before db/033) holds a closed match's PDF back only as the approval's
   // PDF of a shared tablet: stored by an account added after the close,
