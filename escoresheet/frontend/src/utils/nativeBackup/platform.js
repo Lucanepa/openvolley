@@ -5,8 +5,11 @@
  *              commands (src-tauri/src/backup.rs), which only ever touch
  *              <data dir>/OpenVolley/backups.
  * - capacitor: the Android (and iOS) app, via @capacitor/filesystem. Android
- *              writes to the public Documents/OpenVolley/backups folder so the
- *              owner can copy the files off the tablet (USB, Files app).
+ *              writes to the app's own folder (Directory.Data:
+ *              files/OpenVolley/backups): no other app, file manager or USB
+ *              cable reaches it, and it goes with the app when it is
+ *              uninstalled. Copies go out on request (Options: Export to
+ *              Documents, androidFiles.js).
  * - web:       a browser, including the LAN tablets served by the desktop
  *              app. No native store: useAutoBackup keeps the browser
  *              behaviour (File System Access folder / downloads).
@@ -26,6 +29,13 @@
 import { LATEST_FILE } from './rotation'
 
 export const BACKUP_SUBDIR = 'OpenVolley/backups'
+
+/**
+ * The app's own folders on Android, in the order they are tried: internal
+ * storage (Directory.Data, files/), else the app's external files folder.
+ * Both go with the app when it is uninstalled.
+ */
+export const appFilesDirectories = (Directory) => [Directory.Data, Directory.External].filter(Boolean)
 
 /** 'tauri' | 'capacitor' | 'web' */
 export function detectBackupPlatform(win = typeof window !== 'undefined' ? window : undefined) {
@@ -91,14 +101,17 @@ const fileUriToPath = (uri) => {
 }
 
 /**
- * Android/iOS store backed by @capacitor/filesystem. Starts on Documents (public,
- * user-visible, survives an uninstall); if that is refused (Android 9 and older
- * without the storage permission) it falls back to the app's external files
- * folder for the rest of the session.
+ * Android/iOS store backed by @capacitor/filesystem, in the app's own folder
+ * (APP_FILES_DIRECTORIES: Directory.Data, else the app's external files
+ * folder). It was the public Documents folder: there every file (rosters with
+ * birth dates, signatures) was open to whoever held the tablet, to a USB
+ * cable, to other apps on Android 10 and older, and stayed after an
+ * uninstall (owner decision 2026-11). The files left there are moved in at
+ * the first start (androidFiles.moveLegacyFiles).
  * @param {{ Filesystem, Directory, Encoding }} fs the plugin module
  */
 export function createCapacitorStore({ Filesystem, Directory, Encoding }, { log = console } = {}) {
-  const candidates = [Directory.Documents, Directory.External, Directory.Data].filter(Boolean)
+  const candidates = appFilesDirectories(Directory)
   let dirIndex = 0
   let ready = null // Promise of the working directory
   let folder = null
@@ -161,8 +174,7 @@ export function createCapacitorStore({ Filesystem, Directory, Encoding }, { log 
         }
         return {}
       } catch (e) {
-        // The event file is saved. On Android 11+ a latest.json left by a
-        // previous install of the app cannot be overwritten: not an error.
+        // The event file is saved; latest.json could not be replaced: not an error.
         return { warning: `cannot update ${dir}/${LATEST_FILE}: ${e?.message || e}` }
       }
     },
@@ -192,7 +204,6 @@ export function createCapacitorStore({ Filesystem, Directory, Encoding }, { log 
         try {
           await Filesystem.deleteFile({ path: `${BACKUP_SUBDIR}/${dir}/${name}`, directory: d })
         } catch (e) {
-          // a file left by a previous install cannot be deleted on Android 11+
           log.warn?.('[NativeBackup] cannot delete', `${dir}/${name}`, e?.message || e)
         }
       }

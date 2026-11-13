@@ -598,8 +598,9 @@ takes about 5 ms in Node (measured with
 its newest files within **64 MB** (and 500 files); a match nobody scored for
 **12 hours** is thinned to its newest **10** files; event files older than
 **30 days** are deleted; the newest event file of a match and `latest.json`
-are always kept. Older folders are rotated after the first backup of a
-session, in small chunks.
+are always kept. Older folders are rotated once per session, in small
+chunks: a few seconds after the app starts, or after the session's first
+backup if that comes first.
 
 Privacy: the files hold player names and birth dates, officials and signature
 images (no PINs), encrypted for every match with a PIN (above). Files of

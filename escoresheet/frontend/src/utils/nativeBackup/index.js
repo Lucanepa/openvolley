@@ -21,18 +21,21 @@ export function getNativeBackupEngine() {
   if (!isNativeBackupPlatform(detectBackupPlatform())) return Promise.resolve(null)
   if (!enginePromise) {
     enginePromise = (async () => {
-      const [store, { exportMatchData }, { db }] = await Promise.all([
+      const [store, { exportMatchData }, { db }, sealer] = await Promise.all([
         createPlatformStore(),
         import('../backupManager'),
-        import('../../db/db')
+        import('../../db/db'),
+        import('../backupFile').then(m => m.sessionSealer())
       ])
       // No new file of a copy another device went on with: its state is older
       // than the match's (2026-10-29, match 406970). The match row alone gives
-      // the PINs whose keys are derived when the match is opened.
+      // the PINs whose keys are derived when the match is opened. The session's
+      // sealer: the cloud copy and the downloads share the match's PIN keys.
       engine = createNativeBackupEngine({
         store,
         exportMatch: exportMatchData,
         readMatch: (matchId) => db.matches.get(matchId),
+        sealer,
         skipMatch: isContinuedElsewhere,
         // Every file also goes to the USB sticks plugged in (desktop; utils/stickBackup)
         onWritten: (matchId, written) => import('../stickBackup').then(m => m.mirrorWrittenToSticks(matchId, written))
@@ -93,6 +96,52 @@ export async function flushNativeBackups(timeoutMs = QUIT_BACKUP_WAIT_MS) {
   } finally {
     clearTimeout(timer)
   }
+}
+
+// After the start's own work (the database, the first screen)
+export const HOUSEKEEPING_DELAY_MS = 5000
+
+/**
+ * At app start (main.jsx), a few seconds in: on Android the files older
+ * versions left in the public Documents folder are moved into the app's own
+ * folder (once per install, androidFiles.moveLegacyFiles) and the saved
+ * scoresheet PDFs older than the backups' 30 days are deleted; on both apps
+ * the rotation of the backup folders runs (it waited for the first backup of
+ * a session, so a tablet that was only switched on kept every old file).
+ * Nothing in a browser. Never throws.
+ */
+export async function startNativeFileHousekeeping({ delayMs = HOUSEKEEPING_DELAY_MS, platform = detectBackupPlatform() } = {}) {
+  if (!isNativeBackupPlatform(platform)) return
+  await new Promise(resolve => setTimeout(resolve, delayMs))
+  try {
+    if (platform === 'capacitor') {
+      const [fs, { moveLegacyFiles, pruneScoresheetPdfs }] = await Promise.all([
+        import('@capacitor/filesystem'),
+        import('./androidFiles')
+      ])
+      await moveLegacyFiles(fs).catch(e => console.warn('[AndroidFiles] moving the old files:', e?.message || e))
+      await pruneScoresheetPdfs(fs).catch(e => console.warn('[AndroidFiles] PDF clean-up:', e?.message || e))
+    }
+    const engine = await getNativeBackupEngine()
+    await engine?.cleanup()
+  } catch (e) {
+    console.warn('[NativeBackup] start-up clean-up:', e?.message || e)
+  }
+}
+
+/**
+ * Options, Export to Documents (Android): each match's newest backup and the
+ * saved PDFs copied to a new Documents/OpenVolley/export-<time> folder.
+ * Resolves to androidFiles.exportToDocuments's result (a file that could
+ * not be copied is counted in `failed`); throws when Documents cannot be
+ * written at all.
+ */
+export async function exportNativeFilesToDocuments() {
+  const [fs, { exportToDocuments }] = await Promise.all([
+    import('@capacitor/filesystem'),
+    import('./androidFiles')
+  ])
+  return exportToDocuments(fs)
 }
 
 /** Opens the backup folder in the file manager (desktop). */

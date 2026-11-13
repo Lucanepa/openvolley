@@ -53,13 +53,27 @@ describe('Options > Backup', () => {
     expect(screen.queryByRole('button', { name: 'options.downloadBackupNow' })).toBeNull()
   })
 
-  it('Android: shows the path and how to copy it, no open-folder button', () => {
-    render(<HomeOptionsModal {...baseProps} backup={nativeBackup({ platform: 'capacitor', canOpenBackupFolder: false, backupFolder: '/storage/emulated/0/Documents/OpenVolley/backups' })} />)
-    expect(screen.getByTestId('native-backup-folder')).toHaveTextContent('/storage/emulated/0/Documents/OpenVolley/backups')
+  it('Android: shows the app folder and that copies go out by Export to Documents, no open-folder button', () => {
+    render(<HomeOptionsModal {...baseProps} backup={nativeBackup({ platform: 'capacitor', canOpenBackupFolder: false, backupFolder: '/data/user/0/com.openvolley.escoresheet/files/OpenVolley/backups' })} />)
+    expect(screen.getByTestId('native-backup-folder')).toHaveTextContent('/data/user/0/com.openvolley.escoresheet/files/OpenVolley/backups')
     expect(screen.getByText('options.nativeBackupCopyHint')).toBeInTheDocument()
-    // personal data, readable by whoever has the tablet, kept after uninstall
-    expect(screen.getByTestId('native-backup-privacy')).toHaveTextContent('options.nativeBackupPrivacyAndroid')
+    // inside the app, removed with it; an exported copy is the user's
+    expect(screen.getByTestId('native-backup-privacy')).toHaveTextContent(/^options\.nativeBackupPrivacyAndroid$/)
     expect(screen.queryByRole('button', { name: 'options.openBackupFolder' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'options.exportToDocuments' })).toBeInTheDocument()
+  })
+
+  it('Android: Export to Documents copies the files out and says where', async () => {
+    const exportToDocuments = vi.fn(async () => ({ folder: 'Documents/OpenVolley/export-20261113-1200', backups: 2, scoresheets: 1, failed: 1 }))
+    render(<HomeOptionsModal {...baseProps} backup={nativeBackup({ platform: 'capacitor', canOpenBackupFolder: false, exportToDocuments })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'options.exportToDocuments' }))
+    expect(await screen.findByTestId('export-to-documents-result')).toHaveTextContent('options.exportedToDocuments options.exportToDocumentsSomeFailed')
+    expect(exportToDocuments).toHaveBeenCalledTimes(1)
+  })
+
+  it('the desktop app has no Export to Documents (its folder is the user\'s own)', () => {
+    render(<HomeOptionsModal {...baseProps} backup={nativeBackup()} />)
+    expect(screen.queryByRole('button', { name: 'options.exportToDocuments' })).toBeNull()
   })
 
   it('apps: switched off, and a failed write shown as a status (not an alert)', () => {

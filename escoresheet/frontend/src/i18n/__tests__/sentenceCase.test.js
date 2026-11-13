@@ -32,6 +32,8 @@ const PROPER = new Set([
   'Einsatzliste',
   // the FIVB Casebook, a document cited by its name (rectify.*)
   'Casebook',
+  // the Android folder Export to Documents writes to, by its name
+  'Documents',
 ])
 
 // Title-Cased words after the first one, ignoring placeholders, words after a

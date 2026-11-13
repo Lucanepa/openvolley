@@ -18,6 +18,8 @@ import LegalLinks from '../../legal/LegalLinks'
 import ActivityLogModal from '../ActivityLogModal'
 import DiagnosticsSection from '../../diagnostics/DiagnosticsSection'
 import ThemeOption from './ThemeOption'
+import { exportNativeFilesToDocuments } from '../../utils/nativeBackup'
+import { configuredRecoveryKey } from '../../utils/backupCrypto/recovery'
 
 // Kit field recipes for the small inline number/select controls (h-9, svrz md).
 const SMALL_FIELD = 'h-9 rounded-lg border border-stone-300 bg-white px-2 text-center text-sm tabular-nums text-stone-800 focus:outline-none focus:ring-2 focus:ring-red-500'
@@ -74,6 +76,44 @@ function Row({ children, style }) {
   )
 }
 
+// Android: the backups and saved PDFs stay in the app's own folder; this
+// copies each match's newest backup and the PDFs to Documents/OpenVolley
+// (a copy the user keeps, for a USB cable or another app)
+function ExportToDocuments({ t, exportFiles = exportNativeFilesToDocuments }) {
+  const [state, setState] = useState(null) // null | 'busy' | { done } | { error }
+  return (
+    <div>
+      <button
+        type="button"
+        disabled={state === 'busy'}
+        aria-busy={state === 'busy' || undefined}
+        onClick={async () => {
+          setState('busy')
+          try {
+            setState({ done: await exportFiles() })
+          } catch (e) {
+            setState({ error: e?.message || String(e) })
+          }
+        }}
+        className={BTN_OUTLINE}
+      >
+        {state === 'busy' ? t('options.exportingToDocuments') : t('options.exportToDocuments')}
+      </button>
+      {state?.done && (
+        <div role="status" className="mt-1.5 text-[11px] leading-snug text-stone-600" data-testid="export-to-documents-result">
+          {t('options.exportedToDocuments', { folder: state.done.folder, backups: state.done.backups, scoresheets: state.done.scoresheets })}
+          {state.done.failed > 0 && ` ${t('options.exportToDocumentsSomeFailed', { count: state.done.failed })}`}
+        </div>
+      )}
+      {state?.error && (
+        <div role="status" className="mt-1.5 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">
+          {t('options.exportToDocumentsFailed', { error: state.error })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Apps (desktop / Android): a backup file at every scoring event, no browser API.
 function NativeBackupRow({ backup, onRestoreFromFile, t }) {
   const [saving, setSaving] = useState(false)
@@ -102,6 +142,7 @@ function NativeBackupRow({ backup, onRestoreFromFile, t }) {
           )}
           <div className="mt-1.5 text-[11px] leading-snug text-stone-500" data-testid="native-backup-privacy">
             {t(backup.platform === 'capacitor' ? 'options.nativeBackupPrivacyAndroid' : 'options.nativeBackupPrivacy')}
+            {configuredRecoveryKey() && ` ${t('options.nativeBackupRecoveryNote')}`}
           </div>
         </div>
       ) : (
@@ -150,6 +191,7 @@ function NativeBackupRow({ backup, onRestoreFromFile, t }) {
           </button>
         )}
       </div>
+      {backup.platform === 'capacitor' && <ExportToDocuments t={t} exportFiles={backup.exportToDocuments} />}
     </Row>
   )
 }

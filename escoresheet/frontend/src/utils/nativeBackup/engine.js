@@ -25,8 +25,9 @@
  *    first notify of a match derives its PIN keys at once (warm, from
  *    readMatch), so its first file, maybe the last before the app quits,
  *    does not wait for them.
- *  - Rotation of older backups runs after the first file of the session is
- *    written, in small chunks on idle.
+ *  - Rotation of older backups runs once per session, in small chunks on
+ *    idle: at app start (cleanup(), nativeBackup startNativeFileHousekeeping)
+ *    or after the first file of the session is written, whichever is first.
  *
  * Errors are logged and reported as status, never thrown or alerted.
  */
@@ -182,7 +183,7 @@ export function createNativeBackupEngine({
     }
   }
 
-  // Once per session, after the first file is written: list every folder,
+  // Once per session, at app start or after the first file is written: list every folder,
   // rotate the ones this session does not write (age, count, size, idle
   // thinning) and learn the files already in the ones it does. Always on
   // idle moments, also while the backups are hurried: it never competes with
@@ -374,6 +375,15 @@ export function createNativeBackupEngine({
     },
     /** Derives the match's PIN keys ahead of its first file (notify does, once per match). Resolves to true when it did. */
     warm,
+    /**
+     * The session's rotation of the backup folders, now (app start), without
+     * waiting for a first file; once per session (the first file starts it
+     * otherwise). Resolves when it is done; never throws.
+     */
+    cleanup() {
+      startCleanup()
+      return cleanup.promise
+    },
     getStatus: () => status,
     /** The newest file this session wrote for the match: { dir, name, at } | null (the USB stick copy). */
     lastWrittenOf: (matchId) => lastWritten.get(matchId) || null,

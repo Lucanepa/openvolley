@@ -30,12 +30,15 @@
  */
 
 import i18n from 'i18next'
+import { appFilesDirectories } from './nativeBackup/platform.js'
+import { exportPdfToDocuments, PDF_SUBDIR } from './nativeBackup/androidFiles.js'
+import { DEFAULT_MAX_AGE_DAYS } from './nativeBackup/rotation.js'
 
 export const APP_VIEW_ATTR = 'data-ov-app-window'
 export const MSG_CLOSE = 'ov-app-window:close'
 export const MSG_SAVE_PDF = 'ov-app-window:save-pdf'
 export const MSG_OPEN = 'ov-app-window:open'
-export const PDF_SUBDIR = 'OpenVolley/scoresheets'
+export { PDF_SUBDIR }
 /** Set on a page's window while it makes / saves a PDF (appWindowGuest.js
  *  setPdfBusy); the desktop app's quit question reads it (pdfBusyInAppWindows). */
 export const PDF_BUSY_FLAG = '__ovPdfBusy'
@@ -340,8 +343,11 @@ export function showInAppView(href, { title, win = window } = {}) {
 // ---------------------------------------------------------------------------
 // "Save PDF" inside the in-app view (Android): the WebView cannot download a
 // blob, so the page sends the PDF here and it is written with
-// @capacitor/filesystem to Documents/OpenVolley/scoresheets (Files app, USB),
-// like the match backups.
+// @capacitor/filesystem to the app's own folder (files/OpenVolley/
+// scoresheets), like the match backups: kept for the backups' 30 days
+// (nativeBackup/androidFiles), and copied out only by Open, Share or Export
+// to Documents. It was the public Documents folder, open to anyone with the
+// tablet and kept after an uninstall (owner decision 2026-11).
 
 const toBase64 = (arrayBuffer) => {
   const bytes = new Uint8Array(arrayBuffer)
@@ -379,10 +385,11 @@ export function absolutePathOf(uri, fallback) {
 }
 
 /**
- * Writes a PDF with @capacitor/filesystem. Documents first (user-visible),
- * then the app's external folder, under a free name. Returns the path shown to
- * the user (`fullPath`: absolute, e.g. /storage/emulated/0/Documents/OpenVolley/
- * scoresheets/x.pdf) and the file's URI (for Open / Share).
+ * Writes a PDF with @capacitor/filesystem to the app's own folder
+ * (nativeBackup/platform appFilesDirectories: internal storage, else the
+ * app's external folder), under a free name. Returns its path (`fullPath`:
+ * absolute) and the file's URI (for Open / Share), and its name (Export to
+ * Documents).
  * @param {{ Filesystem, Directory }} fs the plugin module
  */
 export async function writePdfNative(fs, arrayBuffer, filename) {
@@ -390,12 +397,11 @@ export async function writePdfNative(fs, arrayBuffer, filename) {
   const wanted = safeName(filename)
   const data = toBase64(arrayBuffer)
   let lastError = null
-  for (const [directory, label] of [[Directory.Documents, 'Documents'], [Directory.External, 'Android/data/com.openvolley.escoresheet/files']]) {
-    if (!directory) continue
+  for (const directory of appFilesDirectories(Directory)) {
     try {
       const name = await freePdfName(Filesystem, directory, wanted)
       const res = await Filesystem.writeFile({ path: `${PDF_SUBDIR}/${name}`, data, directory, recursive: true })
-      const path = `${label}/${PDF_SUBDIR}/${name}`
+      const path = `${PDF_SUBDIR}/${name}`
       return { path, fullPath: absolutePathOf(res?.uri, path), uri: res?.uri, name }
     } catch (e) {
       lastError = e
@@ -435,23 +441,38 @@ async function savePdf({ arrayBuffer, filename }, status, actions, win = window)
   if (actions) { actions.replaceChildren(); actions.style.display = 'none' }
   try {
     const fs = await import('@capacitor/filesystem')
-    const { fullPath, uri } = await writePdfNative(fs, arrayBuffer, filename)
-    status.textContent = t('appWindow.pdfSaved', `PDF saved to ${fullPath}`, { path: fullPath })
-    const plugin = actions && uri ? await filesPlugin(win) : null
-    if (plugin) {
+    const { uri, name } = await writePdfNative(fs, arrayBuffer, filename)
+    const days = DEFAULT_MAX_AGE_DAYS
+    const saved = t('appWindow.pdfSavedInApp', `PDF saved in the app for ${days} days: ${name}. Share it or export it to Documents to keep a copy.`, { name, days })
+    status.textContent = saved
+    if (actions) {
+      const plugin = uri ? await filesPlugin(win) : null
       const run = (method) => async () => {
         try {
           await plugin[method]({ uri })
         } catch (e) {
           const error = e?.message || String(e)
-          status.textContent = `${t('appWindow.pdfSaved', `PDF saved to ${fullPath}`, { path: fullPath })} - ${t('appWindow.pdfActionFailed', `It could not be opened: ${error}`, { error })}`
+          status.textContent = `${saved} - ${t('appWindow.pdfActionFailed', `It could not be opened: ${error}`, { error })}`
+        }
+      }
+      // a copy the user keeps: Documents/OpenVolley/scoresheets, never deleted by the app
+      const exportCopy = async () => {
+        try {
+          const path = await exportPdfToDocuments(fs, name)
+          status.textContent = t('appWindow.pdfExported', `PDF copied to ${path}`, { path })
+        } catch (e) {
+          const error = e?.message || String(e)
+          status.textContent = `${saved} - ${t('appWindow.pdfExportFailed', `It could not be copied to Documents: ${error}`, { error })}`
         }
       }
       const doc = actions.ownerDocument
-      actions.append(
-        actionButton(doc, t('appWindow.openPdf', 'Open'), run('open')),
-        actionButton(doc, t('appWindow.sharePdf', 'Share'), run('share'))
-      )
+      if (plugin) {
+        actions.append(
+          actionButton(doc, t('appWindow.openPdf', 'Open'), run('open')),
+          actionButton(doc, t('appWindow.sharePdf', 'Share'), run('share'))
+        )
+      }
+      actions.append(actionButton(doc, t('appWindow.exportPdf', 'Export to Documents'), exportCopy))
       actions.style.display = 'flex'
     }
   } catch (e) {

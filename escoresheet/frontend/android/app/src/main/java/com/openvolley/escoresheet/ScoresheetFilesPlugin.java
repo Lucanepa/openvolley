@@ -19,13 +19,15 @@ import java.io.IOException;
 
 /**
  * "Open" and "Share" for a scoresheet PDF the app saved
- * (src/utils/openAppWindow.js savePdf: Documents/OpenVolley/scoresheets, or
- * the app's own external folder). A local plugin: Android intents through the
- * app's FileProvider (AndroidManifest.xml, res/xml/file_paths.xml), no new
- * dependency, nothing proprietary, so the F-Droid build stays as it is.
+ * (src/utils/openAppWindow.js savePdf: the app's own folder,
+ * files/OpenVolley/scoresheets, or its external folder; the public
+ * Documents/OpenVolley/scoresheets of older versions and of Export to
+ * Documents). A local plugin: Android intents through the app's FileProvider
+ * (AndroidManifest.xml, res/xml/file_paths.xml), no new dependency, nothing
+ * proprietary, so the F-Droid build stays as it is.
  *
- * Only a PDF inside one of those two scoresheet folders is ever handed out:
- * the page names the file, but cannot reach anything else this way.
+ * Only a PDF inside one of those scoresheet folders is ever handed out: the
+ * page names the file, but cannot reach anything else this way.
  */
 @CapacitorPlugin(name = "OpenVolleyFiles")
 public class ScoresheetFilesPlugin extends Plugin {
@@ -49,9 +51,11 @@ public class ScoresheetFilesPlugin extends Plugin {
 
     private File[] roots() {
         Context ctx = getContext();
+        File internal = ctx.getFilesDir();
         File documents = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS);
         File external = ctx.getExternalFilesDir(null);
         return new File[] {
+            internal == null ? null : new File(internal, SUBDIR),
             documents == null ? null : new File(documents, SUBDIR),
             external == null ? null : new File(external, SUBDIR)
         };

@@ -21,6 +21,7 @@ import { installDiagnostics } from './diagnostics'
 import { initTheme } from './utils/theme'
 import { isNativeApp } from './utils/backendConfig'
 import { unlockOrientation } from './utils/nativeOrientation'
+import { startNativeFileHousekeeping } from './utils/nativeBackup'
 
 // The scoretable: the only page that saves automatic match backups
 setAppEntry('scorer')
@@ -47,6 +48,11 @@ initLogger()
 // The match activity log (scoring, corrections, sync, app start/quit, errors):
 // local, synced, and a daily file in the apps (utils/activity)
 startActivityLog({ db })
+
+// The apps: the backups' (and on Android the saved PDFs') clean-up at every
+// start, and on Android the first start's move of the files older versions
+// left in the public Documents folder into the app's own (utils/nativeBackup)
+startNativeFileHousekeeping()
 
 // Portrait data entry: <body> carries ov-form-stack while a tablet is held
 // upright, which switches on the one-field-per-row rules in tailwind.css for
