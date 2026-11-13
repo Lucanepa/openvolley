@@ -860,20 +860,22 @@ export function createPgQuery (options = {}) {
       editors.columns.has(own.editors.matchColumn) && editors.columns.has(own.editors.userColumn) &&
       (isParent || t.columns.has(fk))
     if (!ready || typeof ro.userId !== 'string' || !UUID_RE.test(ro.userId)) return 'false'
-    return isParent ? ownedSql('t', ctx, ro.userId) : childOwnedSql('t', fk, ctx, ro.userId)
+    return isParent ? ownedSql('t', ctx, ro.userId, { read: true }) : childOwnedSql('t', fk, ctx, ro.userId, { read: true })
   }
 
   /**
-   * SQL: the match row `alias` is owned by the user (creator or editor). An
-   * editor added by game PIN (granted_via other than 'admin') counts until the
-   * match closes, unless that editor closed it: the PIN is retired at the close.
+   * SQL: the match row `alias` is owned by the user (creator or editor). For
+   * reads (`read`), an editor added by game PIN (granted_via other than
+   * 'admin') counts until the match closes, unless that editor closed it: the
+   * PIN is retired at the close. Writes keep every editor (a closed match
+   * refuses them anyway, with OV_MATCH_CLOSED, which the apps expect).
    */
-  function ownedSql (alias, ctx, userId) {
+  function ownedSql (alias, ctx, userId, { read = false } = {}) {
     const own = cfg.ownership
     const u = ctx.p(userId)
     const parentCols = catalog?.tables.get(own.parent)?.columns
     const editorCols = catalog?.tables.get(own.editors.table)?.columns
-    const pinEnds = parentCols?.has('closed_at') && parentCols.has('closed_by') && editorCols?.has('granted_via')
+    const pinEnds = read && parentCols?.has('closed_at') && parentCols.has('closed_by') && editorCols?.has('granted_via')
       ? ` AND (oe.granted_via = 'admin' OR ${alias}.closed_at IS NULL OR ${alias}.closed_by = oe.${quoteIdent(own.editors.userColumn)})`
       : ''
     // coalesce: a row without an owner (NULL) is owned by nobody, also under NOT
@@ -882,9 +884,9 @@ export function createPgQuery (options = {}) {
   }
 
   /** SQL: the child row `alias` belongs to a match the user owns. */
-  function childOwnedSql (alias, fk, ctx, userId) {
+  function childOwnedSql (alias, fk, ctx, userId, opts) {
     const own = cfg.ownership
-    return `EXISTS (SELECT 1 FROM ${qTable(own.parent)} AS om WHERE om.${quoteIdent(own.key)} = ${alias}.${quoteIdent(fk)} AND ${ownedSql('om', ctx, userId)})`
+    return `EXISTS (SELECT 1 FROM ${qTable(own.parent)} AS om WHERE om.${quoteIdent(own.key)} = ${alias}.${quoteIdent(fk)} AND ${ownedSql('om', ctx, userId, opts)})`
   }
 
   /** SQL: the row `alias` of the guarded table is (of) a match the user owns. */

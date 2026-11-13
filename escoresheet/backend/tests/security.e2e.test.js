@@ -313,6 +313,13 @@ describe('Phase 7: ownership, PIN-gated data, backups, PINs at rest', { skip: SK
     // match info mail: a session only, and never the request's address or text
     assert.equal((await api(srv.base, '/api/match/send-info', { proto: null, body: { email: 'someone@example.ch', gameN: 1, gamePin: PIN3 } })).status, 401)
     assert.equal((await api(srv.base, '/api/match/send-info', { token: users.alice.token, proto: null, body: { externalId: ext2 } })).status, 503, 'no mailer configured here')
+    // within the close's window a claim still adds an editor (a shared tablet's next account sends the PDF); past it, none
+    await sql.query('SET session_replication_role = replica')
+    try {
+      await sql.query("UPDATE matches SET closed_at = now() - interval '7 hours' WHERE id = $1", [id2])
+    } finally {
+      await sql.query('SET session_replication_role = origin')
+    }
     const late = await claim(users.dave, PIN3)
     assert.equal(late.status, 409, late.text)
     assert.equal(late.json.error.code, 'OV_MATCH_CLOSED')

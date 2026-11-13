@@ -3477,6 +3477,8 @@
         "match_close": "Spiel abgeschlossen",
         "match_reopen": "Spiel wieder geöffnet",
         "match_editor_add": "Bearbeiter durch Admin hinzugefügt",
+        "match_editor_remove": "Bearbeiter entfernt",
+        "match_restore_pin": "Spiel mit Spiel-PIN gelesen",
         "match_release_game": "Spiel freigegeben",
         "match_game_taken_over": "Spiel vom Heimverein übernommen",
         "match_scorer_device": "Gerät des Schreibers gewechselt",

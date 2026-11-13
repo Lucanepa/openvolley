@@ -3498,6 +3498,8 @@
         "match_close": "Partita chiusa",
         "match_reopen": "Partita riaperta",
         "match_editor_add": "Editor aggiunto da un admin",
+        "match_editor_remove": "Editor rimosso",
+        "match_restore_pin": "Partita letta con il PIN della partita",
         "match_release_game": "Partita liberata",
         "match_game_taken_over": "Partita ripresa dalla società di casa",
         "match_scorer_device": "Dispositivo del segnapunti cambiato",

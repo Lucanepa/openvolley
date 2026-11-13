@@ -110,6 +110,9 @@ export const RESTORE_DEFAULTS = Object.freeze({
   // Set when a match closes (db/007): from then on its game PIN is retired.
   closedColumn: 'closed_at',
   closedByColumn: 'closed_by',
+  // ...except for claim, for as long as a shared tablet's next account may
+  // still send the approval's PDF (lib/scoresheets.js LATE_EDITOR_WINDOW_MS)
+  closedClaimWindowMs: 6 * 60 * 60 * 1000,
   // Only the key columns travel in the DELETE changes of a restore.
   deleteChangeColumns: ['id', 'external_id', 'match_id'],
   // restore-by-pin: per caller and game number, and per caller across all game numbers.
@@ -853,8 +856,11 @@ export function createMatchRestore (db, options = {}) {
       pinBudget.matchRefund([[ext, 'game']])
       pinLimiter.reset(gameKey)
       callerLimiter.refund(callerKey)
-      // The game PIN is retired at the close: it makes no editor of a closed match
-      if (hasClosed && row[cfg.closedColumn] != null) {
+      // The game PIN is retired at the close: past the window it makes no
+      // editor of a closed match (one added in it still reads the match as
+      // the public does: lib/pgQuery.js ownedSql)
+      const closedAt = hasClosed && row[cfg.closedColumn] != null ? new Date(row[cfg.closedColumn]).getTime() : null
+      if (closedAt !== null && !(Date.now() - closedAt <= cfg.closedClaimWindowMs)) {
         return errorBody(409, 'OV_MATCH_CLOSED', 'This match is closed: its game PIN no longer gives access')
       }
       const role = await addEditor(row[cfg.matchId], userId, 'claim')
@@ -969,7 +975,8 @@ export function createMatchRestore (db, options = {}) {
       ])
       if (anonymous) {
         const pub = (table, rows) => projectAnonDbRows(table, rows)
-        return { status: 200, body: { data: { match: pub(cfg.matchTable, match), sets: pub(cfg.setsTable, s.body.data), events: pub(cfg.eventsTable, e.body.data), liveState: pub(cfg.liveStateTable, l.body.data), access: 'public' }, error: null } }
+        const pubMatch = { ...pub(cfg.matchTable, match), [cfg.closedColumn]: row[cfg.closedColumn] }
+        return { status: 200, body: { data: { match: pubMatch, sets: pub(cfg.setsTable, s.body.data), events: pub(cfg.eventsTable, e.body.data), liveState: pub(cfg.liveStateTable, l.body.data), access: 'public' }, error: null } }
       }
       return { status: 200, body: { data: { match, sets: s.body.data, events: e.body.data, liveState: l.body.data, ...(floor ? { idFloor: floor } : {}), ...(editor ? { access: editor } : {}), ...(scorer ? { scorer } : {}) }, error: null } }
     } catch (err) {
