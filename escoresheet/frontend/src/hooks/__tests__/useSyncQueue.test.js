@@ -167,8 +167,12 @@ import {
   checkScorerMoved,
   askScoringDevice,
   noteMatchClosedOnServer,
-  runUploadLane
+  runUploadLane,
+  isUpdateRequiredError,
+  isServerBehindError,
+  countServerBehindJobs
 } from '../useSyncQueue'
+import { appUpdateNeeded, resetAppUpdateNeededForTests } from '../../utils/appUpdate'
 import { splitRefusedRestore, RESTORE_REFUSED } from '../../utils/refusedRestore'
 import { queueSetDeletes } from '../../utils/eventSync'
 import { queueAndWait, useSequentialSync } from '../useSequentialSync'
@@ -535,8 +539,8 @@ describe('runQueuePass', () => {
     expect(fakeDb.sync_queue.map.get(1).next_attempt_at).toBeGreaterThan(Date.now())
   })
 
-  it('restore stays queued on 426 (old bundle) and 5xx', async () => {
-    for (const status of [426, 503]) {
+  it('restore stays queued on 426 (old bundle: untouched, an update is needed) and 5xx (retried)', async () => {
+    for (const [status, retries] of [[426, undefined], [503, 1]]) {
       fakeDb.sync_queue.reset([restoreJob()])
       api.respond = (call) => (call.table === '__restore'
         ? { data: null, error: { message: 'x', status } }
@@ -544,7 +548,7 @@ describe('runQueuePass', () => {
       await runQueuePass()
       const job = fakeDb.sync_queue.map.get(1)
       expect(job.status, String(status)).toBe('queued')
-      expect(job.retry_count, String(status)).toBe(1)
+      expect(job.retry_count, String(status)).toBe(retries)
     }
   })
 })
@@ -3003,5 +3007,100 @@ describe('a restore the server refuses', () => {
       expect(fakeDb.sync_queue.map.get(1).status).toBe('failed')
       expect(fakeDb.matches.map.get(1).cloudBlock).toMatchObject({ code: RESTORE_REFUSED, reason: error.code, parts: false })
     }
+  })
+})
+
+// fe-shell-pwa-5 / x-rollout-ops-9: a build too old for the server (426
+// OV_CLIENT_TOO_OLD) was retried as transient without end and never said
+// so; a refusal for a column the server lacks (PGRST204) was parked as one
+// more "Error" without a word on why
+describe('writes refused by version', () => {
+  const tooOld = { data: null, error: { message: 'This app version is too old to write. Please reload the app.', code: 'OV_CLIENT_TOO_OLD', status: 426 } }
+  const unknownColumn = { data: null, error: { message: 'Database operation failed', code: 'PGRST204', status: 400 } }
+  const insertJob = (id, n) => ({ id, resource: 'event', action: 'insert', status: 'queued', retry_count: 0, payload: { external_id: `match_100_aaa:e:${n}`, match_id: 'match_100_aaa', seq: n } })
+
+  beforeEach(() => resetAppUpdateNeededForTests())
+
+  it('classifies 426 as "update needed" and the schema codes as "server behind"', () => {
+    expect(isUpdateRequiredError({ status: 426, code: 'OV_CLIENT_TOO_OLD' })).toBe(true)
+    expect(isUpdateRequiredError({ status: 426 })).toBe(true)
+    for (const e of [{ status: 503 }, { status: 400, code: 'PGRST204' }, { network: true, status: 0 }, null]) expect(isUpdateRequiredError(e)).toBe(false)
+    for (const code of ['PGRST204', '42703', '42P01', 'OV_TABLE_NOT_ALLOWED']) expect(isServerBehindError({ status: 400, code }), code).toBe(true)
+    for (const e of [{ status: 400, code: 'OV_UNSCOPED_EXTERNAL_ID' }, { status: 426, code: 'OV_CLIENT_TOO_OLD' }, null]) expect(isServerBehindError(e)).toBe(false)
+  })
+
+  it('426: the job stays queued untouched, the pass stops, and it is never parked however often it is tried', async () => {
+    fakeDb.sync_queue.reset([insertJob(1, 1), { id: 2, resource: 'match', action: 'update', status: 'queued', retry_count: 0, payload: { id: 'match_100_aaa', status: 'live' } }])
+    api.respond = (call) => (call.action !== 'select' ? tooOld : defaultRespond(call))
+    for (let pass = 0; pass < 12; pass++) {
+      const outcome = await runQueuePass()
+      expect(outcome).toMatchObject({ updateRequired: true, stopped: true })
+    }
+    for (const id of [1, 2]) {
+      expect(fakeDb.sync_queue.map.get(id), String(id)).toMatchObject({ status: 'queued', retry_count: 0 })
+      expect(fakeDb.sync_queue.map.get(id).attempts ?? 0).toBe(0)
+    }
+    // one write per pass: every other one would get the same answer
+    expect(api.calls.filter(c => c.action !== 'select')).toHaveLength(12)
+  })
+
+  it('426 on a restore: queued untouched too', async () => {
+    fakeDb.sync_queue.reset([{ id: 1, resource: 'match', action: 'restore', status: 'queued', retry_count: 0, payload: { match: { external_id: 'match_100_aaa' }, sets: [], events: [] } }])
+    api.respond = (call) => (call.table === '__restore' ? tooOld : defaultRespond(call))
+    const outcome = await runQueuePass()
+    expect(outcome.updateRequired).toBe(true)
+    expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'queued', retry_count: 0 })
+  })
+
+  it('PGRST204: parked as refused and counted as "server behind", apart from the other refusals', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'match', action: 'update', status: 'queued', retry_count: 0, payload: { id: 'match_100_aaa', status: 'live' } },
+      { id: 2, resource: 'set', action: 'update', status: 'failed', retry_count: 0, failed_at: Date.now(), last_error: { status: 400, code: 'OV_UNSCOPED_WRITE' }, payload: {} }
+    ])
+    api.respond = (call) => (call.table === 'matches' && call.action === 'update' ? unknownColumn : defaultRespond(call))
+    const outcome = await runQueuePass()
+    expect(outcome).toMatchObject({ hasFailed: true, serverBehind: true, updateRequired: false })
+    expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'failed', last_error: { code: 'PGRST204' } })
+    expect(await getSyncQueueStats()).toMatchObject({ failed: 2 })
+    expect(await countServerBehindJobs()).toBe(1)
+  })
+
+  describe('in the flush loop', () => {
+    const originalSW = Object.getOwnPropertyDescriptor(navigator, 'serviceWorker')
+    let regUpdate
+    beforeEach(() => {
+      vi.useFakeTimers()
+      vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+      localStorage.setItem('api_auth_token', JSON.stringify({ access_token: 't' }))
+      regUpdate = vi.fn(async () => {})
+      Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: { getRegistration: vi.fn(async () => ({ update: regUpdate })) } })
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+      vi.restoreAllMocks()
+      localStorage.removeItem('api_auth_token')
+      if (originalSW) Object.defineProperty(navigator, 'serviceWorker', originalSW)
+      else delete navigator.serviceWorker
+    })
+
+    it('says update_required, marks the page as needing an update and asks the worker for it; a write that goes through ends it', async () => {
+      fakeDb.sync_queue.reset([insertJob(1, 1)])
+      let serverTakesIt = false
+      api.respond = (call) => (call.action !== 'select' && !serverTakesIt ? tooOld : defaultRespond(call))
+      const { result, unmount } = renderHook(() => useSyncQueue())
+      await act(async () => { await vi.advanceTimersByTimeAsync(30000) })
+      expect(result.current.syncStatus).toBe('update_required')
+      expect(appUpdateNeeded()).toBe('server')
+      expect(regUpdate).toHaveBeenCalled()
+      expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'queued', retry_count: 0 })
+
+      // (the server's minimum lowered again, or a newer build in this page)
+      serverTakesIt = true
+      await act(async () => { await vi.advanceTimersByTimeAsync(6000) })
+      expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+      expect(result.current.syncStatus).toBe('synced')
+      expect(appUpdateNeeded()).toBe(null)
+      unmount()
+    })
   })
 })
