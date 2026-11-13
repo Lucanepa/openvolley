@@ -197,7 +197,8 @@ export function objectId(bucket, key) {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-8${h.slice(13, 16)}-${((parseInt(h[16], 16) & 0x3) | 0x8).toString(16)}${h.slice(17, 20)}-${h.slice(20, 32)}`
 }
 
-function decodeBase64(b64) {
+/** The bytes of an upload's fileBase64, as upload() decodes them (StorageError 400 otherwise). */
+export function decodeBase64(b64) {
   if (typeof b64 !== 'string') throw err.invalidRequest('fileBase64 must be a base64 string')
   const clean = b64.replace(/\s+/g, '')
   if (clean.length % 4 === 1 || !BASE64_RE.test(clean)) throw err.invalidRequest('fileBase64 is not valid base64')
@@ -633,6 +634,30 @@ export function createStorage(options = {}) {
   }
 
   /**
+   * Operator tool (scripts/scoresheet-paths.mjs, never reachable over HTTP):
+   * remove the object at a path, or the folder there with everything in it,
+   * whoever owns them; the owner records go with the objects. Symlinks are
+   * never followed or removed. { objectsRemoved, bytesRemoved, foldersRemoved }.
+   */
+  async function removeTrusted({ bucket, path: p } = {}) {
+    assertBucket(bucket)
+    const segs = parse(p)
+    const rr = await assertWritable()
+    const result = { objectsRemoved: 0, bytesRemoved: 0, foldersRemoved: 0 }
+    const st = await objectStat(bucket, segs)
+    if (st?.isDirectory()) {
+      await removeTree(rr, bucket, segs, result)
+    } else if (st?.isFile()) {
+      const size = await unlinkObject(rr, bucket, segs)
+      if (size !== null) {
+        result.objectsRemoved++
+        result.bytesRemoved += size
+      }
+    }
+    return result
+  }
+
+  /**
    * Unlink one object (a regular file, never a symlink or folder) and, in an
    * uploader-only bucket, its owner record, under the key's owner lock. When
    * `mayRemove(owners)` returns false nothing is touched (403). Returns the
@@ -816,8 +841,14 @@ export function createStorage(options = {}) {
    * Store an object atomically (temp file in {root}/.tmp, fsync, rename/link).
    * upsert defaults to true (as server.js did); upsert:false on an existing
    * object fails with 409 OV_STORAGE_EXISTS without touching it.
+   * adopt (trusted server code only, never from a request body): in an
+   * uploader-only bucket the caller may replace an existing object of other
+   * owners (never one without any); adopt(owners) returns the owners kept
+   * beside it, the others lose the object (lib/scoresheets.js: an account
+   * that may write the match the path is of, over a file another account
+   * created there first).
    */
-  async function upload({ bucket, path: p, fileBase64, data, contentType, upsert, userId } = {}) {
+  async function upload({ bucket, path: p, fileBase64, data, contentType, upsert, userId, adopt = null } = {}) {
     assertBucket(bucket)
     const segs = parse(p)
     const diskSegs = await scope('write', bucket, segs, userId)
@@ -840,14 +871,14 @@ export function createStorage(options = {}) {
     await assertFreeSpace(rr, bucket, buf.length)
 
     const key = diskSegs.join('/')
-    const write = () => writeObject({ rr, bucket, segs, diskSegs, key, buf, ct, doUpsert: upsert !== false, userId, uploaderOnly })
+    const write = () => writeObject({ rr, bucket, segs, diskSegs, key, buf, ct, doUpsert: upsert !== false, userId, uploaderOnly, adopt: typeof adopt === 'function' ? adopt : null })
     await (uploaderOnly ? withOwnerLock(ownerLockId(bucket, key), write) : write())
 
     const clientPath = segs.join('/')
     return { path: clientPath, id: objectId(bucket, key), fullPath: `${bucket}/${clientPath}` }
   }
 
-  async function writeObject({ rr, bucket, segs, diskSegs, key, buf, ct, doUpsert, userId, uploaderOnly }) {
+  async function writeObject({ rr, bucket, segs, diskSegs, key, buf, ct, doUpsert, userId, uploaderOnly, adopt }) {
     let { dir, target } = await resolve(bucket, diskSegs, { create: true })
 
     // Existing entry checks (a symlink or folder at the target is never replaced).
@@ -862,8 +893,12 @@ export function createStorage(options = {}) {
     }
     // Only an owner may replace an object in an uploader-only bucket (also
     // before the 409, so a stranger cannot even probe for it). Objects stored
-    // before owner records existed have none: nobody replaces them.
-    if (existing && uploaderOnly && !(await readOwners(rr, bucket, key)).includes(userId)) throw err.forbidden()
+    // before owner records existed (or whose uploaders' accounts are deleted)
+    // have none: nobody replaces them, adopt or not. A trusted caller's adopt
+    // lets this caller replace an object of other owners (see upload).
+    const owners = existing && uploaderOnly ? await readOwners(rr, bucket, key) : null
+    const adopting = !!owners && !owners.includes(userId)
+    if (adopting && (!adopt || !owners.length)) throw err.forbidden()
     if (existing && !doUpsert) throw err.exists()
 
     // Charged only for a write that is otherwise going ahead (no quota spent on 4xx refusals).
@@ -873,8 +908,11 @@ export function createStorage(options = {}) {
     // left by an object that is gone. Written before the commit and under the
     // key's lock, so the object is never readable under an older record; a
     // failed commit leaves a record for a missing object, which the next
-    // creator replaces and sweep() removes. An existing object keeps its record.
+    // creator replaces and sweep() removes. An existing object keeps its
+    // record, unless it is adopted: then the caller and the owners adopt()
+    // keeps, so the others read none of the new bytes.
     if (uploaderOnly && !existing) await writeOwners(rr, bucket, key, [userId])
+    if (adopting) await writeOwners(rr, bucket, key, [userId, ...adopt(owners).filter((o) => typeof o === 'string' && o !== userId)])
 
     const tmpDir = path.join(rr, TMP_DIR_NAME)
     await ensureDir(tmpDir, true)
@@ -1318,7 +1356,8 @@ export function createStorage(options = {}) {
 
   /**
    * HTTP adapter. action is the last segment of /api/storage/<action>; body is
-   * the parsed JSON request body; ctx.userId is the verified caller.
+   * the parsed JSON request body; ctx.userId is the verified caller, ctx.adopt
+   * a trusted caller's upload() adopt (lib/scoresheets.js; never the body's).
    * Always resolves to { status, body } where body is {data, error}.
    */
   async function handle(action, body, ctx = {}) {
@@ -1335,7 +1374,8 @@ export function createStorage(options = {}) {
           fileBase64: body.fileBase64,
           contentType: body.contentType,
           upsert: body.upsert,
-          userId
+          userId,
+          adopt: typeof ctx.adopt === 'function' ? ctx.adopt : null
         })
         return { status: 200, body: { data, error: null } }
       }
@@ -1399,6 +1439,7 @@ export function createStorage(options = {}) {
     handle,
     bodyTooLarge,
     getOwners,
-    setOwners
+    setOwners,
+    removeTrusted
   }
 }

@@ -1485,8 +1485,21 @@ async function processJobInner(job, ctx) {
     // The approval's PDF and final JSON (MatchEnd): the job carries the file
     if (job.resource === SCORESHEET_UPLOAD_RESOURCE && job.action === 'upload') {
       if (!job.payload?.path || !job.payload?.file) return DROP_JOB
-      const { error } = await uploadQueuedScoresheet(job.payload)
+      const { error, status } = await uploadQueuedScoresheet(job.payload)
       if (error) {
+        if ((error.status ?? status) === 404 && error.code === 'OV_MATCH_NOT_FOUND') {
+          // The backend stores a PDF for its match only, and the match is not
+          // in the cloud yet (its insert is in the score's lane): retry later
+          ctx.error = summarizeError(error)
+          return null
+        }
+        if (error.code === 'OV_MATCH_CLOSED') {
+          // The match is closed and keeps the PDF it has: this file is never
+          // taken (after an admin reopen, the new approval queues new files)
+          safeLog.warn('[SyncQueue] Scoresheet upload refused, the match is closed: dropped')
+          ctx.error = summarizeError(error)
+          return DROP_JOB
+        }
         safeLog.warn('[SyncQueue] Scoresheet upload error:', error.code || error.status || error.message)
         return failureResult(error, ctx)
       }

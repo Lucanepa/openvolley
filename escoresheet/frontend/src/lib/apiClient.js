@@ -513,7 +513,10 @@ export const apiStorage = {
             path,
             fileBase64,
             contentType: options.contentType,
-            upsert: options.upsert
+            upsert: options.upsert,
+            // a scoresheet PDF is stored for this match only (backend db/033);
+            // left out when not given, older servers ignore it
+            match_external_id: options.matchExternalId || undefined
           })
           const response = await fetch(apiUrl, {
             method: 'POST',

@@ -170,6 +170,7 @@ import {
   runUploadLane
 } from '../useSyncQueue'
 import { queueAndWait, useSequentialSync } from '../useSequentialSync'
+import { scoresheetUploadJob, supersedeUnsentScoresheetUploads } from '../../utils/scoresheetUploader'
 
 const MATCH_UUID = '11111111-2222-4333-8444-555555555555'
 const ok = (data = null) => ({ data, error: null })
@@ -670,6 +671,76 @@ describe('scoresheet upload job', () => {
     expect(uploads.map(c => c.data.path)).toEqual(['2026-10-25/game903703_k1_final.json', '2026-10-25/game903703_k1.pdf'])
     expect(uploads[1].data).toMatchObject({ bucket: 'scoresheets', file: pdf, options: { contentType: 'application/pdf', upsert: true } })
     expect([...fakeDb.sync_queue.map.values()].map(j => j.status)).toEqual(['sent', 'sent'])
+  })
+
+  // Backend db/033: a PDF is stored only for a match this account may write,
+  // so the upload names its match; the match may not be in the cloud yet
+  it('sends the match of the file; a match not in the cloud yet is retried, not refused', async () => {
+    const pdfJob = (id) => ({ id, resource: 'scoresheet', action: 'upload', status: 'queued', retry_count: 0, payload: { path: '2026-10-25/game903703_k1.pdf', file: new Blob(['%PDF-1.7']), contentType: 'application/pdf', match_external_id: 'match_100_aaa' } })
+    fakeDb.sync_queue.reset([pdfJob(1)])
+    await runUploadLane()
+    const upload = api.calls.find(c => c.table === '__storage')
+    expect(upload.data.options).toMatchObject({ contentType: 'application/pdf', upsert: true, matchExternalId: 'match_100_aaa' })
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+
+    fakeDb.sync_queue.reset([pdfJob(1)])
+    api.respond = (call) => call.table === '__storage'
+      ? { data: null, error: { message: 'No match of this scoresheet was found', code: 'OV_MATCH_NOT_FOUND', status: 404 }, status: 404 }
+      : defaultRespond(call)
+    await runUploadLane()
+    expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'queued', retry_count: 1 })
+
+    // an older app or OpenBeach: no match named, the server answers 503 while
+    // no match of the path is in the cloud: retried soon as well
+    fakeDb.sync_queue.reset([pdfJob(1)])
+    api.respond = (call) => call.table === '__storage'
+      ? { data: null, error: { message: 'Not in the cloud yet', code: 'OV_MATCH_NOT_FOUND', status: 503, retryable: true }, status: 503 }
+      : defaultRespond(call)
+    await runUploadLane()
+    expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'queued', retry_count: 1 })
+
+    // a closed match keeps the PDF it has: this file is never taken, so it
+    // is not sent again every hour (a new approval queues new files)
+    fakeDb.sync_queue.reset([pdfJob(1), { ...pdfJob(2), payload: { ...pdfJob(2).payload, path: '2026-10-25/game903703_k1_final.json', contentType: 'application/json' } }])
+    api.respond = (call) => call.table === '__storage' && call.data.path.endsWith('.pdf')
+      ? { data: null, error: { message: 'Closed', code: 'OV_MATCH_CLOSED', status: 409 }, status: 409 }
+      : defaultRespond(call)
+    await runUploadLane()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('dropped')
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('sent')
+  })
+
+  // Approved (PDF 1 queued), the upload waits (hall Wi-Fi), an admin reopens,
+  // the scorer corrects and approves again (PDF 2, the same path): after the
+  // close the backend keeps the approval's first PDF (db/033), so PDF 1 must
+  // not go first
+  it('a new approval\'s files supersede the earlier approval\'s unsent ones; only the new ones go', async () => {
+    const pdfPath = '2026-10-25/game903703_k1.pdf'
+    const jsonPath = '2026-10-25/game903703_k1_final.json'
+    const job = (id, status, path, label, ext = 'match_100_aaa') => ({ id, resource: 'scoresheet', action: 'upload', status, attempts: 1, next_attempt_at: Date.now() + 60000, payload: { path, file: new Blob([label]), contentType: path.endsWith('.pdf') ? 'application/pdf' : 'application/json', match_external_id: ext } })
+    fakeDb.sync_queue.reset([
+      job(1, 'error', pdfPath, 'first approval'),
+      job(2, 'failed', jsonPath, 'first approval'),
+      job(3, 'sent', '2026-10-24/game903700_k1.pdf', 'another match, sent', 'match_090_zzz'),
+      job(4, 'queued', '2026-10-25/game903704_k2.pdf', 'another match, queued', 'match_200_bbb'),
+      job(5, 'sending', '2026-10-25/game903703_k1.pdf', 'in flight')
+    ])
+    const fresh = [
+      scoresheetUploadJob({ seed_key: 'match_100_aaa' }, pdfPath, new Blob(['second approval']), 'application/pdf'),
+      scoresheetUploadJob({ seed_key: 'match_100_aaa' }, jsonPath, new Blob(['second approval']), 'application/json')
+    ]
+    expect(await supersedeUnsentScoresheetUploads(fakeDb.sync_queue, fresh)).toBe(2)
+    for (const j of fresh) await fakeDb.sync_queue.add(j)
+    expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'superseded', payload: { path: pdfPath, file: null } })
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('superseded')
+    expect([3, 4, 5].map((id) => fakeDb.sync_queue.map.get(id).status)).toEqual(['sent', 'queued', 'sending'])
+
+    // (the in-flight one done: nothing else holds the new files back)
+    await fakeDb.sync_queue.update(5, { status: 'sent' })
+    await runUploadLane()
+    const sent = api.calls.filter(c => c.table === '__storage')
+    expect(sent.map(c => c.data.path)).toEqual(['2026-10-25/game903704_k2.pdf', pdfPath, jsonPath])
+    expect(await Promise.all(sent.slice(1).map(c => c.data.file.text()))).toEqual(['second approval', 'second approval'])
   })
 
   it('a refused upload holds back only the later uploads of the same file', async () => {

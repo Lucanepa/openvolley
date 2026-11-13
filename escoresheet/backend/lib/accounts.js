@@ -1344,6 +1344,9 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
       if (!u) return notFound('account')
       const role = await restore.addEditor(matchId, u.id, 'admin')
       if (!role) return unavailable()
+      // already an editor by the game PIN: from now on by the admin's grant
+      // (a closed match's first PDF at any time, lib/scoresheets.js sheetWritersOf)
+      await pool.query("UPDATE public.match_editors SET granted_via = 'admin' WHERE match_id = $1 AND user_id = $2 AND granted_via <> 'admin'", [matchId, u.id])
       await audit(pool, { actorId, action: 'match.editor_add', targetUserId: u.id, matchId, details: { email } })
       return ok({ role })
     })
