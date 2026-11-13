@@ -152,6 +152,12 @@ hetzner# cd /opt/openvolley && install -m 600 env.example .env && editor .env
 
 - `OV_BACKEND_IMAGE` = the tag from step 3.
 - `OV_OWNER_PW`, `OV_APP_PW` = `openssl rand -hex 32` each (into Vaultwarden).
+- `OV_PIN_SECRET` = `openssl rand -base64 48` (into Vaultwarden next to `OV_OWNER_PW` and
+  `OV_APP_PW`; required, compose and the backend refuse to start without it). Never change or
+  lose it: the stored PINs are HMACs with it. On a database with plaintext PINs run
+  `docker exec ov-backend node scripts/hash-pins.mjs --apply` once after the first start. A restored
+  dump needs the secret it was written with (the nightly backup keeps an encrypted copy,
+  `secrets-<UTC>.env.gpg`).
 - `TUNNEL_TOKEN` from step 2.
 - `RESEND_*`, `CONTACT_EMAIL` from the old backend's settings. (No `REOPEN_PASSWORD_HASH`:
   it was replaced by the admin reopen of db/007.) `SMTP_*`, `MAIL_FROM`, `MANAGER_URL`: leave

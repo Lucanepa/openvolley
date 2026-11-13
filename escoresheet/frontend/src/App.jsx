@@ -105,6 +105,7 @@ import { isRelayErrorFor, relayConnectionStatus, scorerLiveOrder, scorerRelay, s
 import { relayMatchBundle, relaySyncTrigger } from './utils/relayMatchSync'
 import { PHONE_MAX_WIDTH, isPhoneScreen, phoneLayoutKept } from './components/scoreboard/phoneLayout'
 import { useSystemBarsHidden } from './utils/nativeSystemBars'
+import { generateSecurePin } from './utils/stringUtils'
 
 function readStoredDisplayMode() {
   try {
@@ -120,15 +121,6 @@ function parseDateTime(dateTime) {
   const [hours, minutes] = timePart.split(':').map(Number)
   const date = new Date(Date.UTC(year, month - 1, day, hours, minutes))
   return date.toISOString()
-}
-
-function generateRefereePin() {
-  const chars = '0123456789'
-  let pin = ''
-  for (let i = 0; i < 6; i++) {
-    pin += chars.charAt(Math.floor(Math.random() * chars.length))
-  }
-  return pin
 }
 
 // sessionStorage: survives the tab's own reloads, not a new start of the app
@@ -2335,7 +2327,7 @@ export default function App() {
       league: matchInfo.league || matchData.league || TEST_MATCH_DEFAULTS.league,
       gameNumber: matchData.game_number || TEST_MATCH_DEFAULTS.gameNumber,
       // Connection PINs: prefer JSONB, fallback to legacy
-      refereePin: connectionPins.referee || matchData.referee_pin || generateRefereePin(),
+      refereePin: connectionPins.referee || matchData.referee_pin || generateSecurePin(),
       homeTeamPin: connectionPins.bench_home || matchData.bench_home_pin || null,
       awayTeamPin: connectionPins.bench_away || matchData.bench_away_pin || null,
       homeTeamUploadPin: connectionPins.upload_home || matchData.home_team_upload_pin || null,
@@ -2726,7 +2718,7 @@ export default function App() {
     // Create new blank match
     const newMatchId = await db.matches.add({
       status: 'scheduled',
-      refereePin: generateRefereePin(),
+      refereePin: generateSecurePin(),
       coinTossConfirmed: false,
       createdAt: new Date().toISOString()
     })
@@ -2809,7 +2801,7 @@ export default function App() {
       // Create new blank match
       const newMatchId = await db.matches.add({
         status: 'scheduled',
-        refereePin: generateRefereePin(),
+        refereePin: generateSecurePin(),
         coinTossConfirmed: false,
         createdAt: new Date().toISOString()
       })
@@ -3114,7 +3106,7 @@ export default function App() {
         league: TEST_MATCH_DEFAULTS.league,
         gameNumber: TEST_MATCH_DEFAULTS.gameNumber,
         scheduledAt,
-        refereePin: generateRefereePin(),
+        refereePin: generateSecurePin(),
         bench_home: TEST_HOME_BENCH,
         bench_away: TEST_AWAY_BENCH,
         officials,
@@ -3394,7 +3386,7 @@ export default function App() {
     try {
       const previous = (await db.matches.filter(m => isTestMatchSeedKey(m.seedKey)).first()) || null
       const seedKey = testMatchSeedKeyFor(previous?.seedKey)
-      const refereePin = previous?.refereePin || generateRefereePin()
+      const refereePin = previous?.refereePin || generateSecurePin()
       await clearLocalTestData()
       await db.match_setup.clear()
 

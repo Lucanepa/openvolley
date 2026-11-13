@@ -60,6 +60,8 @@ export async function bootServer(env, args = []) {
   // VolleyManager credentials too: a test server never syncs the real schedule
   for (const k of ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'IS_CLOUD', 'TRUST_PROXY', 'TRUST_PROXY_FROM', 'BACKUP_MAX_AGE_HOURS', 'PG_TEST_URL', 'TEST_DATABASE_URL', 'DATABASE_URL', 'VM_USERNAME', 'VM_PASSWORD']) delete inherited[k]
   const childEnv = { ...inherited, ...env, PORT: String(port) }
+  // the database mode needs a PIN secret (server.js); a test that names none gets one
+  if (childEnv.DATABASE_URL && !childEnv.OV_PIN_SECRET) childEnv.OV_PIN_SECRET = 'e2e-test-pin-secret-'.padEnd(40, 'x')
   const child = spawn(process.execPath, ['server.js', ...args], { cwd: BACKEND_DIR, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] })
   const output = []
   child.stdout.on('data', (d) => output.push(d.toString()))

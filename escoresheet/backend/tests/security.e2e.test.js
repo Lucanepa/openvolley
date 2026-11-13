@@ -310,6 +310,9 @@ describe('Phase 7: ownership, PIN-gated data, backups, PINs at rest', { skip: SK
     assert.equal(read.text.includes('2002-03-04'), false, 'an editor by PIN reads the closed match whole')
     const asCreator = await api(srv.base, '/api/match/restore-by-pin', { token: users.alice.token, proto: null, body: { gameN: 9402, pin: PIN3 } })
     assert.equal(asCreator.json.data.match.players_home[0].dob, '2002-03-04', 'the creator keeps the whole record')
+    // match info mail: a session only, and never the request's address or text
+    assert.equal((await api(srv.base, '/api/match/send-info', { proto: null, body: { email: 'someone@example.ch', gameN: 1, gamePin: PIN3 } })).status, 401)
+    assert.equal((await api(srv.base, '/api/match/send-info', { token: users.alice.token, proto: null, body: { externalId: ext2 } })).status, 503, 'no mailer configured here')
     const late = await claim(users.dave, PIN3)
     assert.equal(late.status, 409, late.text)
     assert.equal(late.json.error.code, 'OV_MATCH_CLOSED')

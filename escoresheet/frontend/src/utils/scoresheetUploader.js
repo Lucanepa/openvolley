@@ -17,10 +17,37 @@ export function scoresheetUploadPath(match, { final = false, ext = 'json' } = {}
   return scoresheetObjectPath(date, game, getScoresheetKey(match), { final, ext })
 }
 
+// Never in the stored file: every PIN (gamePin, refereePin, the bench and
+// upload PINs, connection_pins) and this device's session / cloud state. The
+// server keeps PINs only hashed (privacy policy); the file is kept as sent.
+const SHEET_DROPPED_KEY = /pins?$/i
+const SHEET_DROPPED_KEYS = new Set(['sessionId', 'cloudBlock'])
+// officials' contact data: the sheet shows names and roles only
+const OFFICIAL_CONTACT_KEYS = ['email', 'phone', 'mobile']
+
+/** The match row as the scoresheet file stores it (see above). */
+export function scoresheetMatch(match) {
+  if (!match || typeof match !== 'object') return match
+  const out = {}
+  for (const [k, v] of Object.entries(match)) {
+    if (SHEET_DROPPED_KEY.test(k) || SHEET_DROPPED_KEYS.has(k)) continue
+    out[k] = v
+  }
+  if (Array.isArray(out.officials)) {
+    out.officials = out.officials.map((o) => {
+      if (!o || typeof o !== 'object') return o
+      const copy = { ...o }
+      for (const k of OFFICIAL_CONTACT_KEYS) delete copy[k]
+      return copy
+    })
+  }
+  return out
+}
+
 /** The scoresheet JSON file of a match (what uploadScoresheet stores). */
 export function scoresheetJsonBlob({ match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events }) {
   const scoresheetData = {
-    match,
+    match: scoresheetMatch(match),
     homeTeam,
     awayTeam,
     homePlayers,
