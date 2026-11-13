@@ -266,8 +266,10 @@ export async function getMatchData(matchId) {
         return { success: false, error: matchError?.message || 'Match not found' }
       }
 
-      // Fetch live state if available (for Referee app)
+      // Fetch live state if available (for Referee app). Its line-ups,
+      // substitutions and sanctions come only with the match token.
       const { data: liveState } = await apiFrom('match_live_state')
+        .headers(matchAccessHeaders(matchId))
         .select('*')
         .eq('match_id', match.id)
         .maybeSingle()
@@ -312,12 +314,32 @@ function liveStateOrderOf(liveState) {
 }
 
 /**
+ * The order the relay received a live state or a bundle's match in
+ * (_relayEpoch/_relaySeq, stamped by the cloud relay: server.js
+ * stampRelayOrder), or null (a database row, a venue relay, an older relay).
+ */
+function relayOrderOf(obj) {
+  const seq = Number(obj?._relaySeq)
+  const epoch = obj?._relayEpoch
+  return Number.isFinite(seq) && typeof epoch === 'string' && epoch ? { seq, epoch } : null
+}
+
+/** Both stamped by the same relay run: their relay order, else null. */
+function sameRelayOrders(x, y) {
+  const a = relayOrderOf(x)
+  const b = relayOrderOf(y)
+  return a && b && a.epoch === b.epoch ? [a.seq, b.seq] : null
+}
+
+/**
  * Which live state to keep when `incoming` arrives after `current` (relay
  * push, relay bundle, match_live_state row): `incoming` unless it is older.
  * Two states of one scorer session compare by sequence number (never by the
  * wall clock: an NTP step back would freeze the view on the state from before
- * the step); otherwise by updated_at. Either may be missing; unknown
- * timestamps count as newer.
+ * the step); two sessions (a device switch) by the order the relay received
+ * them in, when it stamped both: the new device's clock may be behind, and in
+ * a hall without internet nothing corrects it. Otherwise by updated_at.
+ * Either may be missing; unknown timestamps count as newer.
  */
 export function newerLiveState(current, incoming) {
   if (!incoming) return current || null
@@ -325,6 +347,8 @@ export function newerLiveState(current, incoming) {
   const a = liveStateOrderOf(current)
   const b = liveStateOrderOf(incoming)
   if (a && b && a.session === b.session) return b.seq < a.seq ? current : incoming
+  const relay = sameRelayOrders(current, incoming)
+  if (relay) return relay[1] < relay[0] ? current : incoming
   return liveStateTime(incoming) < liveStateTime(current) ? current : incoming
 }
 
@@ -386,6 +410,8 @@ export function liveClockOffsetAfter(cloudLiveState, now = Date.now()) {
  * Was `liveState` computed after the relay bundle was read on the scorer?
  * - Same scorer session: its sequence number is higher than the bundle's
  *   match._syncedSeq (the last number issued before the sync read IndexedDB).
+ * - Another session, both stamped by the relay: the relay received it after
+ *   the bundle (_relaySeq).
  * - Otherwise its updated_at is later than match._syncedAt (both on the
  *   scorer's clock; the fallback for a database row or an older scorer).
  * False when the bundle carries neither (an older scorer).
@@ -398,6 +424,8 @@ export function isLiveStateNewerThanBundle(liveState, bundle) {
   if (order && Number.isFinite(syncedSeq) && match?._syncSession === order.session) {
     return order.seq > syncedSeq
   }
+  const relay = sameRelayOrders(liveState, match)
+  if (relay) return relay[0] > relay[1]
   const syncedAt = Number(match?._syncedAt)
   const liveAt = liveStateTime(liveState)
   return Number.isFinite(syncedAt) && !Number.isNaN(liveAt) && liveAt > syncedAt
@@ -418,6 +446,8 @@ export function isBundleNewerThanLiveState(liveState, bundle) {
   if (order && Number.isFinite(syncedSeq) && match?._syncSession === order.session) {
     return syncedSeq > order.seq
   }
+  const relay = sameRelayOrders(liveState, match)
+  if (relay) return relay[1] > relay[0]
   const syncedAt = Number(match?._syncedAt)
   const liveAt = liveStateTime(liveState)
   return Number.isFinite(syncedAt) && !Number.isNaN(liveAt) && syncedAt > liveAt

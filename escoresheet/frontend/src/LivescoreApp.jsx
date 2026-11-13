@@ -11,7 +11,7 @@ import { applyServerParam, getApiUrl, getBackendOverride, isServedFromLocalServe
 import { createRelayLivescoreFeed, fetchRelayLivescoreList, relayLivescoreMode, relayLivescoreWsUrl } from './utils/relayLivescore'
 import { applyLiveChange, visibleGames } from './utils/livescoreChanges'
 import { setDiagnosticsInfo } from './utils/diagnosticsInfo'
-import { listedGames, trackWatched, needsFinalRefetch, FINAL_REFETCH_DELAYS_MS, jitterDelay, applyMatchRowChange, shouldAutoConnect, liveSetNumber, countLiveGames, LIVE_FETCH_WINDOW_MS, liveScoreboard, settleLiveChange } from './utils/livescoreModel'
+import { listedGames, trackWatched, needsFinalRefetch, FINAL_REFETCH_DELAYS_MS, jitterDelay, applyMatchRowChange, shouldAutoConnect, liveSetNumber, countLiveGames, LIVE_FETCH_WINDOW_MS, liveScoreboard, settleLiveChange, mergeRefetchedGames } from './utils/livescoreModel'
 import ballFallback from './ball_fallback.png'
 import { AlertTriangle, Radio, RefreshCw, Server } from 'lucide-react'
 import { cn } from './ui/cn.js'
@@ -154,7 +154,10 @@ export default function LivescoreApp() {
         if (hasLoadedRef.current) setStale(true)
         else setError(fetchError.message)
       } else {
-        setLiveGames(visibleGames(data))
+        // A row read before the scorer's database write keeps the newer relay
+        // frame already shown (mergeRefetchedGames)
+        const fetched = visibleGames(data)
+        setLiveGames((prev) => mergeRefetchedGames(prev, fetched))
         hasLoadedRef.current = true
         setError(null)
         setStale(false)
@@ -228,8 +231,12 @@ export default function LivescoreApp() {
   useEffect(() => {
     if (!serverReady || relayLivescoreNow() || !supabase) return undefined
 
+    // A viewer: the relay keeps its other live slots for the match tablets.
+    // The list takes one score frame a second for every game (summary); the
+    // game on screen every frame.
+    supabase.asViewer?.()
     const channel = supabase
-      .channel('livescore-all-games')
+      .channel('livescore-all-games', { summary: !shownGameId })
       .on(
         'postgres_changes',
         {
@@ -282,7 +289,7 @@ export default function LivescoreApp() {
         channelRef.current = null
       }
     }
-  }, [fetchLiveGames, serverReady, liveFilter])
+  }, [fetchLiveGames, serverReady, liveFilter, shownGameId])
 
   // Only started (or finished) matches are listed: a match appears when it is
   // under way, not at the first lineup confirm. See utils/livescoreModel.js.

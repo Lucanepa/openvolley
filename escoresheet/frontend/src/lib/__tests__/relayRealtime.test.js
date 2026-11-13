@@ -603,3 +603,27 @@ describe('singleton export', () => {
     expect(REALTIME_SUBSCRIBE_STATES.SUBSCRIBED).toBe('SUBSCRIBED')
   })
 })
+
+describe('livescore viewer and summary channels', () => {
+  it('opens a viewer socket with client=viewer and a summary channel with summary: true', () => {
+    const client = makeClient()
+    client.asViewer()
+    const got = []
+    client.channel('list', { summary: true })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'match_live_state', filter: 'sport_type=eq.indoor' }, (p) => got.push(p.new.points_a))
+      .subscribe()
+    vi.advanceTimersByTime(0)
+    const ws = last()
+    expect(ws.url).toBe('wss://backend.openvolley.app/?purpose=live&client=viewer')
+    ws.serverOpen()
+    const [sub] = ws.ofType('subscribe-db')
+    expect(sub.summary).toBe(true)
+    ws.ackAll()
+    ws.serverSend({
+      type: 'db-changes',
+      id: sub.id,
+      changes: [UUID, OTHER].map((match_id, i) => ({ schema: 'public', table: 'match_live_state', eventType: 'UPDATE', new: { match_id, sport_type: 'indoor', points_a: i + 3 }, old: {} }))
+    })
+    expect(got).toEqual([3, 4])
+  })
+})
