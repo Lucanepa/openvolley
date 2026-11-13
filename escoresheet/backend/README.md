@@ -168,9 +168,9 @@ Deploy to Render for cloud backup, also run locally when available. The frontend
 | `MAIL_FROM_BEACH` | Sender of the OpenBeach account emails (requests with `app: 'beach'`); the same mailbox. Set but without an address: the mails are off | `OpenBeach <address of MAIL_FROM>` |
 | `MANAGER_URL_BEACH` | Base of the links in the OpenBeach account emails; https only (set but unusable: the mails are off) | `https://manager-beach.openvolley.app` |
 | `SMTP_LEGACY_ROUTES` | `1`: `/api/match/send-info` may also send through the SMTP account. Off by default: it mails an address an anonymous request supplies. (`/api/contact` uses the SMTP account without it: it mails only `CONTACT_EMAIL`) | - |
-| `POCKETBASE_URL`, `POCKETBASE_ADMIN_EMAIL`, `POCKETBASE_ADMIN_PASSWORD` | Optional relay snapshot backup (unchanged) | - |
 
-`SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` are no longer read.
+`SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` are no longer read, nor are the
+`POCKETBASE_*` variables (the PocketBase relay snapshot backup was removed).
 
 Rate limits in cloud mode (per minute unless noted; sized for a venue NAT):
 `/api/db` 1200 per IP before the body is read, then reads 600 per IP, writes
@@ -428,8 +428,8 @@ connection is on, a bench PIN while that bench is on, or the game PIN.
   per socket and minute, or over the brute-force budget every PIN check of this
   server shares (`validate-connection-pin`, `validate-pin`, `GET /api/match/:id`
   with a PIN, the relay's subscribe PINs and scoreboard game-PIN claims, the
-  PocketBase snapshot, the inline take-over: **20 wrong PINs per 10 minutes per
-  address**, IPv6 by /64; right PINs are refunded), nothing is compared
+  inline take-over: **20 wrong PINs per 10 minutes per address**, IPv6 by /64;
+  right PINs are refunded), nothing is compared
   (`rate-limited`). The LAN relays keep their own per-socket/per-IP limits.
   `match-action` goes only to sockets with access; `live-state-update` to every
   subscriber (it is what Livescore shows anyway), and the summary keeps
@@ -486,9 +486,8 @@ for a known key it is an identifier, not a capability.
   database credentials.
 - **What stays plaintext, and why:** the relay's in-memory copy of the
   scorer's match (it must compare typed PINs, on the LAN with no database at
-  all); the scorer's own IndexedDB (it shows the PINs to hand them out); the
-  optional PocketBase relay snapshot (`match_data`, legacy); and the database
-  values until `OV_PIN_SECRET` is set and `hash-pins.mjs` ran.
+  all); the scorer's own IndexedDB (it shows the PINs to hand them out); and
+  the database values until `OV_PIN_SECRET` is set and `hash-pins.mjs` ran.
 - **Never returned or logged:** PIN columns are redacted from every `/api/db`
   answer, `db-change` and relay message and can never be filtered on; the PIN
   checks answer the match, never a PIN; the server logs no PIN (asserted by the

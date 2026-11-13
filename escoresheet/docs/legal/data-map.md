@@ -371,7 +371,8 @@ file tar). The policy must say so (F8).
 | Uptime Kuma pushes | Status only | Operator's own | No personal data | — |
 
 Not in use (code present but not configured in `deploy/compose.yaml`):
-PocketBase (legacy relay backup), Supabase (left in 2026-10).
+Supabase (left in 2026-10). The PocketBase relay backup (never configured)
+was removed from the code in 2026-11.
 
 ## 6. Retention as built: summary
 
