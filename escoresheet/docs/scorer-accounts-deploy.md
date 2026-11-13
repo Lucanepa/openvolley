@@ -191,7 +191,10 @@ online start (service worker); until then they cannot reopen a closed match.
   DROP TRIGGER IF EXISTS events_closed_guard ON public.events;
   DROP TRIGGER IF EXISTS match_live_state_closed_guard ON public.match_live_state;
   ```
-  Re-running 007 puts them back.
+  To put them back: `deploy.sh --migrate-only --rerun 007 openvolley-backend:<running tag>`
+  (RUNBOOK "Apply a new db migration"). It runs `db/current_definitions.sql`
+  after 007, so the guard functions keep their newer bodies (015, 012); 007
+  run alone with psql would put its first ones back.
 - **Full undo:** restore the dump from step 1 ("Restore the database" in the
   runbook). Accounts, invites and saved teams created after the deploy are
   lost.

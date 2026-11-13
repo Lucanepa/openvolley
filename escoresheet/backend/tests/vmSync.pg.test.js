@@ -203,7 +203,7 @@ describe('vm-sync on Postgres', { skip: SKIP }, () => {
     const { rows: [{ n }] } = await q('SELECT count(*)::int AS n FROM public.svrz_sync_log')
     assert.equal(n, 1, 'the skipped run wrote no log row')
 
-    const { rows: [{ held }] } = await q(`SELECT count(*)::int AS held FROM pg_locks WHERE locktype = 'advisory' AND granted`)
+    const { rows: [{ held }] } = await q(`SELECT count(*)::int AS held FROM pg_locks WHERE locktype = 'advisory' AND granted AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`)
     assert.equal(held, 0, 'lock released')
     const rC = await sync(createFakeVolleyManager({ games: [] }))
     assert.equal(rC.status, 'success')
@@ -311,7 +311,7 @@ describe('vm-sync on Postgres', { skip: SKIP }, () => {
     } finally {
       await noRlsPool.end()
     }
-    const { rows: [{ held }] } = await q(`SELECT count(*)::int AS held FROM pg_locks WHERE locktype = 'advisory' AND granted`)
+    const { rows: [{ held }] } = await q(`SELECT count(*)::int AS held FROM pg_locks WHERE locktype = 'advisory' AND granted AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`)
     assert.equal(held, 0)
   })
 
@@ -329,7 +329,7 @@ describe('vm-sync on Postgres', { skip: SKIP }, () => {
     try {
       await entered
       // The run's connection is idle (checked out, holding the lock): kill it
-      const { rows: [{ pid }] } = await q(`SELECT pid FROM pg_locks WHERE locktype = 'advisory' AND granted`)
+      const { rows: [{ pid }] } = await q(`SELECT pid FROM pg_locks WHERE locktype = 'advisory' AND granted AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`)
       await q('SELECT pg_terminate_backend($1)', [pid])
       for (let i = 0; i < 100 && !lines.some((l) => /database connection lost/.test(l)); i++) {
         await new Promise((r) => setTimeout(r, 20))

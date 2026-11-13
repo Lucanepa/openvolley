@@ -319,18 +319,19 @@ history, `systemctl list-timers 'openvolley-*'` and the newest file in `/data/op
 
 ## Updating
 
-Backend release (Monday to Friday, before 17:00):
+Backend release (Monday to Friday, before 17:00): build and load the image, then `deploy.sh` on
+the production host does the rest ("Apply a new db migration" below):
 
 ```bash
 lenovo$ git pull && escoresheet/deploy/build-image.sh --ship local            # prints NEW tag
-lenovo$ sudo grep ^OV_BACKEND_IMAGE= /opt/openvolley/.env | sudo tee -a /opt/openvolley/DEPLOYED.log   # remember the current tag
-lenovo$ sudo systemctl start openvolley-backup.service                        # fresh dump before the change
-lenovo$ sudo sed -i 's|^OV_BACKEND_IMAGE=.*|OV_BACKEND_IMAGE=openvolley-backend:<NEW>|' /opt/openvolley/.env
-lenovo$ env | grep -E '^(OV_|TUNNEL_TOKEN)=' ; sudo docker compose --project-directory /opt/openvolley config --images | grep backend   # nothing exported; shows <NEW>
-lenovo$ sudo docker compose --project-directory /opt/openvolley up -d ov-backend && sudo docker compose --project-directory /opt/openvolley ps
-lenovo$ sudo docker compose --project-directory /opt/openvolley exec ov-backend node -e 'fetch("http://127.0.0.1:8080/health").then(async r=>console.log(r.status, await r.text()))'
-lenovo$ echo "$(date -u +%FT%TZ) deployed openvolley-backend:<NEW>" | sudo tee -a /opt/openvolley/DEPLOYED.log
+lenovo$ sudo /opt/openvolley/deploy.sh openvolley-backend:<NEW>
 ```
+
+It takes a fresh dump, runs the migrations of the new image, applies its `roles.sql`, checks the
+schema, switches `OV_BACKEND_IMAGE` (previous tag in `DEPLOYED.log`), and checks `/health` and
+the schema again; when the new image fails, it puts the previous tag back. Never edit
+`OV_BACKEND_IMAGE` and run `up -d ov-backend` by hand for a release: that skips the migrations,
+and the new backend then logs `[DB] schema behind this image`.
 
 Kit changes (`compose.yaml`, `cloudflared/config.yml`, `pkgs/Caddyfile`, scripts): copy the kit
 (never `.env`), then `config -q` and `up -d` (recreates only what changed):
@@ -383,18 +384,67 @@ then run the restore test.
 
 ## Apply a new db migration
 
-A new `escoresheet/backend/db/NNN_*.sql` (for example `006_matches_updated_at.sql`) reaches a
-running database only by hand; `restore.sh` runs them on a restore only. Each file is
-idempotent. Run the files the database does not have yet, in number order, as `ov_owner`, then
-`roles.sql`, before or together with the backend that expects them:
+Migrations (`escoresheet/backend/db/NNN_*.sql`) are never run by hand any more. The backend
+image carries them and its runner, `scripts/migrate.mjs`: it applies every file the database
+does not have yet, once, in number order, each in its own transaction together with its row in
+`ov_meta.schema_migrations` (version, file, SHA-256, time), as `ov_owner`, under an advisory
+lock. A recorded file whose content changed is refused (a migration is never edited once it
+ran; the change goes into a new file), and so is an older image's runner on a newer database.
+After the numbered files it applies `db/current_definitions.sql` on every run: the current body
+of every trigger function that more than one file defines, so a file that was run again by
+hand (007, 011, 015, 030) cannot leave its older guard behind.
+
+A backend release is one command, `deploy.sh` (in the kit, next to `compose.yaml`), on the
+production host; the image is loaded first with `build-image.sh --ship`:
 
 ```bash
-lenovo$  sudo docker compose --project-directory /opt/openvolley exec -T ov-postgres psql -U ov_owner -d openvolley -v ON_ERROR_STOP=1 \
-           < escoresheet/backend/db/006_matches_updated_at.sql
-lenovo$  sudo /opt/openvolley/apply-roles.sh < escoresheet/backend/db/roles.sql   # "ok: ov_app logs in and sees N matches"
+ov-vps$ sudo /opt/openvolley/deploy.sh openvolley-backend:<NEW>
 ```
 
-Do the same on the dev database.
+It refuses inside the match-day freeze and while the running backend has live relay rooms
+(`--any-time` overrides), then: a fresh dump (`openvolley-backup.service`; refused when the unit
+did not run, e.g. without `/etc/openvolley/backup.conf`), the migrations of the NEW image (the
+running backend keeps serving), `roles.sql` of the new image through `apply-roles.sh`,
+`scripts/check-schema.mjs` of the new image as `ov_owner`, the freeze and live-room check once
+more, the switch (`up -d --wait ov-backend`, previous tag in `DEPLOYED.log`), `/health` 200 and
+`scripts/check-schema.mjs` in the new container. A failure up to the switch changes no
+container (a failed migration changed nothing; the ones before it stay applied). When the switch
+or the checks after it fail, it puts the previous tag back and starts it (the database keeps the
+migrations: each is written for the older backend too; an older image does not compare the
+trigger functions of a newer database with its own).
+
+- **First run** (no record yet): when the objects of every file from 002 to 033 are there (one
+  catalog check per file), 000 to 033 are recorded without running them. Otherwise it stops,
+  names the files whose objects are missing and asks for the last file the database has, e.g.
+  `deploy.sh --baseline 031 openvolley-backend:<NEW>` (032, 033 and the later files then run;
+  each is idempotent). A `--baseline` above a file whose objects are missing is refused.
+- **A file that asks for a second run after the switch** (032: rows the old backend wrote in
+  between): `deploy.sh --rerun 032 openvolley-backend:<NEW>`, or later
+  `deploy.sh --migrate-only --rerun 032 openvolley-backend:<NEW>`.
+- **State**: `sudo docker compose --project-directory /opt/openvolley exec -T ov-backend node scripts/check-schema.mjs`
+  (each migration of the running image recorded, guard triggers enabled, unique indexes valid,
+  trigger functions current; exit 1 lists what is wrong) and `... node scripts/migrate.mjs --status`.
+  The backend logs the same at start and again when it changes (checked every 5 minutes,
+  `[DB] schema: ...`).
+- **After a restore** (`restore-db.sh` restores without privileges): `roles.sql`, which every
+  restore path applies (`apply-roles.sh`), gives the backend its read access to the record back.
+- **A file run again** (`--rerun NNN`, e.g. 007 to put dropped guard triggers back): it runs in
+  one transaction together with `db/current_definitions.sql`, so its older function bodies never
+  become live; the running backend picks the new state up within 5 minutes (`[DB] schema: ...`).
+- **Writing a migration**: the next free number, named `NNN_lowercase_words.sql` (digits, `a-z`
+  and `_`: any other `NNN...sql` name is refused, not skipped); idempotent; one transaction (its own `BEGIN;`
+  first and `COMMIT;` last are fine, nothing else that controls the transaction, no psql
+  meta-commands); safe while the previous backend serves; added to
+  `tests/helpers/pgTestDb.js` `MIGRATIONS_SQL`. A file that redefines a function or trigger of an
+  earlier file copies the new definition into `db/current_definitions.sql` and raises its
+  "current as of" line (the runner and `tests/migrate.pg.test.js` refuse otherwise). A new guard
+  trigger or unique index goes into `lib/schemaVersion.js` (`REQUIRED_TRIGGERS`,
+  `REQUIRED_INDEXES`).
+
+On the dev database the same runner, with its owner connection (the password from `~/.pgpass`
+or `PGPASSWORD` in the environment, never on a command line):
+`OV_MIGRATE_DATABASE_URL=postgres://<owner>@<host>:5432/<db> node escoresheet/backend/scripts/migrate.mjs`,
+then `roles.sql` there as before.
 
 ## Account emails (SMTP)
 

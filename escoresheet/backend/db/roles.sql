@@ -44,6 +44,9 @@
 --                       auth.app_memberships SELECT, INSERT, DELETE
 --                                          (db/012, lib/accounts.js; skipped
 --                                          when absent)
+--               ov_meta USAGE, and SELECT on schema_migrations (the
+--                       migration record of scripts/migrate.mjs, read by
+--                       lib/schemaVersion.js; skipped when absent)
 
 \set ON_ERROR_STOP on
 BEGIN;
@@ -242,5 +245,19 @@ SELECT 'GRANT SELECT, INSERT, DELETE ON auth.app_memberships TO ov_app'
 -- table the passkey actions answer 503; deletion cascades from auth.users.
 SELECT 'GRANT SELECT, INSERT, UPDATE, DELETE ON auth.passkeys TO ov_app'
  WHERE to_regclass('auth.passkeys') IS NOT NULL \gexec
+
+-- ov_meta: the migration record (scripts/migrate.mjs). The backend reads it
+-- to tell whether the database is behind its image (lib/schemaVersion.js);
+-- only ov_owner writes it. A restore without privileges (restore-db.sh,
+-- restore-test.sh, scripts/migrate/restore.sh) drops these grants; they come
+-- back here. Optional: absent until the runner's first run.
+SELECT format('REVOKE ALL ON SCHEMA %s FROM PUBLIC, ov_app', s)
+  FROM unnest(ARRAY['ov_meta']) AS s WHERE to_regnamespace(s) IS NOT NULL \gexec
+SELECT format('GRANT USAGE ON SCHEMA %s TO ov_app', s)
+  FROM unnest(ARRAY['ov_meta']) AS s WHERE to_regnamespace(s) IS NOT NULL \gexec
+SELECT format('REVOKE ALL ON %s FROM PUBLIC, ov_app', t)
+  FROM unnest(ARRAY['ov_meta.schema_migrations']) AS t WHERE to_regclass(t) IS NOT NULL \gexec
+SELECT format('GRANT SELECT ON %s TO ov_app', t)
+  FROM unnest(ARRAY['ov_meta.schema_migrations']) AS t WHERE to_regclass(t) IS NOT NULL \gexec
 
 COMMIT;

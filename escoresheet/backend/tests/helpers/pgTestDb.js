@@ -39,10 +39,13 @@ const here = dirname(fileURLToPath(import.meta.url))
 // The backend's own migrations that the synthetic schema does not carry
 // (they run on the production database through restore.sh): applied after it,
 // and after a template copy (all of them are idempotent).
-// 007 needs 006's ov_touch_updated_at().
+// 007 needs 006's ov_touch_updated_at(). db/current_definitions.sql comes
+// after all of them, as scripts/migrate.mjs applies it after the numbered
+// files: a file added to the list that redefines one of its functions
+// without updating it shows up in the tests too.
 export const MIGRATIONS_SQL = ['005_match_ownership.sql', '006_matches_updated_at.sql', '007_scorer_accounts.sql', '008_live_state_tto.sql', '009_beach_saved_teams.sql', '010_auth_tokens.sql', '011_account_approvals.sql', '012_app_memberships.sql', '013_beach_official_index.sql', '014_beach_tournaments.sql', '015_event_revisions.sql', '016_activity_log.sql', '017_match_remarks.sql', '018_clubs.sql', '019_match_scorer_device.sql', '020_club_managers.sql', '021_final_mail.sql', '022_passkeys.sql', '023_team_managers.sql', '024_club_licences.sql', '025_account_requests.sql', '026_club_licences_manual.sql', '027_account_deactivate.sql', '028_notifications.sql', '029_club_manager_links.sql', '030_manager_roles.sql', '031_manager_roles_definer.sql', '032_match_id_scoping.sql', '033_match_scoresheets.sql']
   .map((f) => readFileSync(join(here, '..', '..', 'db', f), 'utf8'))
-  .join('\n')
+  .join('\n') + '\n' + readFileSync(join(here, '..', '..', 'db', 'current_definitions.sql'), 'utf8')
 const SYNTHETIC_SQL = readFileSync(join(here, '..', 'fixtures', 'synthetic_schema.sql'), 'utf8')
 export const SCHEMA_SQL = SYNTHETIC_SQL + '\n' + MIGRATIONS_SQL
 // The synthetic schema with 005 only (no 006 trigger, no 007): for the suites

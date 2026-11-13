@@ -5753,6 +5753,12 @@ if (DB_MODE) {
       (cat) => console.log(`[DB] catalog loaded: ${cat.allowed.length} tables`),
       (err) => console.warn('[DB] catalog not loaded yet (retrying on demand):', err.message)
     )
+    // Schema (lib/schemaVersion.js): a db/ migration of this image not applied
+    // yet (scripts/migrate.mjs), or a guard trigger, unique index or trigger
+    // function missing, disabled or old. Logged, checked again every few
+    // minutes (a change is logged); for /health: refreshSchemaStatus().
+    import('./lib/schemaVersion.js').then((sv) => sv.checkSchemaAtStart(layer.db.pool))
+      .catch((err) => console.warn('[DB] schema check not run:', err.message))
     // Activity log retention (db/016): 10 min after start, then daily
     const purgeActivity = () => layer.activity.purge()
       .then((r) => { if (r.unlinked || r.linked) console.log('[Activity] purge', JSON.stringify(r)) })
