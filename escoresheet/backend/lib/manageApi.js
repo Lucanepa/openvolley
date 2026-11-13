@@ -25,7 +25,7 @@
  *                                                    official's role in the match's sport
  *   GET    /api/admin/approvals[?app=indoor|beach]   isAdmin
  *   GET    /api/admin/matches/:id/revisions          isAdmin: undone / edited events (db/015)
- *   GET    /api/admin/activity?match=&account=&...   isAdmin: the activity log (db/016)
+ *   GET    /api/admin/activity?match=&account=&...   isAdmin: the activity log (db/016; a read of a match or an account audited)
  *   GET    /api/admin/clubs                          isAdmin: clubs, their teams, the rule (db/018, lib/clubs.js)
  *   POST   /api/admin/clubs, PATCH/DELETE /api/admin/clubs/:id   isAdmin
  *   GET    /api/admin/club-teams?q=                  isAdmin: VolleyManager team names with their club
@@ -88,7 +88,7 @@
  *   POST   /api/notifications/read { ids } | { all }  the same: marks its own notices read
  *   GET/PUT /api/settings                            isAdmin or indoor canManageTeams: the app's
  *                                                    switches ({ send_final_email }, db/021)
- *   DELETE /api/admin/activity?match=|account=&confirm=yes  isAdmin: delete on request (audited)
+ *   DELETE /api/admin/activity?match=|account=&confirm=yes  isAdmin: delete on request (audited; the list's filters)
  *   GET    /api/scoresheets?app=indoor|beach&state=&q=  canManageTeams of that sport (admins and its
  *                                                    competition managers; no app = indoor)
  *   GET    /api/scoresheets/:id/pdf[?download=1]     canManageTeams of the match's sport: the stored
@@ -325,7 +325,7 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['POST', new RegExp(`^/api/admin/matches/${ID}/editors$`), 'admin', (m, c) => accounts.addMatchEditor({ actorId: c.user.id, matchId: m[1], body: c.body })],
     ['POST', new RegExp(`^/api/admin/matches/${ID}/release-game$`), 'admin', (m, c) => accounts.releaseGame({ actorId: c.user.id, matchId: m[1], body: c.body })],
     // The activity log (db/016, lib/activityLog.js); the export is streamed by server.js
-    ['GET', /^\/api\/admin\/activity$/, 'admin', (m, c) => (activity ? activity.adminList({ query: c.query }) : notFound())],
+    ['GET', /^\/api\/admin\/activity$/, 'admin', (m, c) => (activity ? activity.adminList({ actorId: c.user.id, query: c.query }) : notFound())],
     ['DELETE', /^\/api\/admin\/activity$/, 'admin', (m, c) => (activity ? activity.adminDelete({ actorId: c.user.id, query: c.query }) : notFound())],
     // Undone / edited events of a match (db/015, lib/eventRevisions.js)
     ['GET', new RegExp(`^/api/admin/matches/${ID}/revisions$`), 'admin', (m) => (revisions ? revisions.listForMatch({ matchId: m[1] }) : notFound())],

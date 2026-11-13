@@ -18,7 +18,7 @@ import pg from 'pg'
 import { SKIP, bootServer, api, provisionDatabase, sleep } from './helpers/e2eServer.js'
 import { grantRoles } from './helpers/pgTestDb.js'
 import * as serverSide from '../lib/activitySanitize.js'
-import { checkEntry, csvLine, CSV_COLUMNS, createActivityLog, parseCursor } from '../lib/activityLog.js'
+import { checkEntry, csvLine, CSV_COLUMNS, exportColumns, createActivityLog, parseCursor, DAILY_ROW_CAP } from '../lib/activityLog.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const APP_SANITIZER = join(here, '..', '..', 'frontend', 'src', 'domain', 'activitySummary.js')
@@ -44,7 +44,12 @@ describe('activity log (unit)', () => {
       ['nope.kind', { a: 1 }],
       // free text: PINs and long numbers redacted (leftover d)
       ['app.error', { message: 'pin 123456 failed', frames: ['a.js:1:123456', 'b?code=4444:1:2'], source: 'Passwort 98765432' }],
-      ['match.manual_change', { category: 'match', field: 'hall', before: 'Halle 1234567', after: 'mot de passe 4321' }]
+      ['match.manual_change', { category: 'match', field: 'hall', before: 'Halle 1234567', after: 'mot de passe 4321' }],
+      // a roster correction: the shirt number, never the name
+      ['match.manual_change', { category: 'player', field: 'removed', before: '#7 Muster Anna', after: null }],
+      ['match.manual_change', { category: 'player', field: 'added', before: null, after: '#12 Beispiel Lea' }],
+      ['match.manual_change', { category: 'player', field: 'lastName', before: 'Muster', after: 'Mustermann' }],
+      ['match.manual_change', { category: 'benchOfficial', field: 'removed', before: 'C Muster Hans', after: null }]
     ]
     for (const [kind, data] of samples) assert.deepEqual(serverSide.sanitizeActivityData(kind, data), app.sanitizeActivityData(kind, data), kind)
     assert.deepEqual(serverSide.sanitizeActivityData('app.error', { message: 'pin 123456 failed' }), { message: 'pin [redacted] failed' })
@@ -108,15 +113,48 @@ describe('activity log (unit)', () => {
     assert.match(line, /"\{""field"":""name""/)
   })
 
-  it('purge keeps the retention windows', async () => {
+  it('purge keeps the retention windows, by the time the server received the entry', async () => {
     const calls = []
     const pool = { query: async (sql, values) => { calls.push({ sql, values }); return { rowCount: 2 } } }
     const r = await createActivityLog({ pool }).purge({ now: new Date('2027-01-01T00:00:00Z') })
     assert.deepEqual(r, { unlinked: 2, linked: 2 })
     assert.match(calls[0].sql, /match_external_id IS NULL AND at </)
     assert.deepEqual(calls[0].values, ['2027-01-01T00:00:00.000Z', 90])
+    // a device's clock does not decide how long a row stays (be-mail-contact-5)
+    assert.match(calls[1].sql, /match_external_id IS NOT NULL AND at </)
     assert.match(calls[1].sql, /months =>/)
     assert.deepEqual(calls[1].values, ['2027-01-01T00:00:00.000Z', 24])
+  })
+
+  it('client_ts is at most a day ahead of the server (be-mail-contact-5)', () => {
+    const me = randomUUID()
+    const now = Date.parse('2026-11-13T12:00:00.000Z')
+    assert.equal(checkEntry(entry({ client_ts: '9999-12-30T00:00:00.000Z' }), me, { now }).row.client_ts, '2026-11-14T12:00:00.000Z')
+    assert.equal(checkEntry(entry({ client_ts: '2026-11-13T18:00:00.000Z' }), me, { now }).row.client_ts, '2026-11-13T18:00:00.000Z')
+    assert.equal(checkEntry(entry({ client_ts: '2026-10-07T10:00:00.000Z' }), me, { now }).row.client_ts, '2026-10-07T10:00:00.000Z')
+  })
+
+  it('a roster correction keeps the shirt number, never the player\'s name (fe-diagnostics-privacy-3)', () => {
+    const clean = (data) => serverSide.sanitizeActivityData('match.manual_change', data)
+    assert.deepEqual(clean({ category: 'player', field: 'removed', before: '#7 Muster Anna', after: null }), { category: 'player', field: 'removed', before: '#7', after: null })
+    assert.deepEqual(clean({ category: 'player', field: 'added', before: null, after: '#12 Beispiel Lea' }), { category: 'player', field: 'added', before: null, after: '#12' })
+    assert.deepEqual(clean({ category: 'player', field: 'lastName', before: 'Muster', after: 'Mustermann' }), { category: 'player', field: 'lastName', before: 'changed', after: 'changed' })
+    assert.deepEqual(clean({ category: 'player', field: 'firstName', before: 'Anna', after: '' }), { category: 'player', field: 'firstName', before: 'changed', after: 'changed' })
+    // no shirt number to keep: only that it changed
+    assert.deepEqual(clean({ category: 'player', field: 'removed', before: 'Muster Anna', after: null }), { category: 'player', field: 'removed', before: 'changed', after: null })
+    // the number, libero and captain changes stay as they are
+    assert.deepEqual(clean({ category: 'player', field: 'number', before: 7, after: 9 }), { category: 'player', field: 'number', before: 7, after: 9 })
+    assert.deepEqual(clean({ category: 'player', field: 'dob', before: '1.1.2011', after: '2.1.2011' }), { category: 'player', field: 'dob', before: 'changed', after: 'changed' })
+  })
+
+  it('exports leave the email address out unless asked, and name the uploader (be-mail-contact-5, -8)', () => {
+    assert.ok(CSV_COLUMNS.includes('uploader_id'))
+    assert.equal(exportColumns({ emails: false }).includes('account_email'), false)
+    assert.ok(exportColumns({ emails: false }).includes('uploader_id'))
+    assert.deepEqual(exportColumns({ emails: true }), CSV_COLUMNS)
+    const row = { id: 1, kind: 'app.start', account_email: 'anna@example.ch', uploader_id: 'u-1' }
+    assert.equal(csvLine(row, exportColumns({ emails: false })).includes('anna@example.ch'), false)
+    assert.match(csvLine(row, exportColumns({ emails: false })), /u-1/)
   })
 })
 
@@ -195,11 +233,12 @@ describe('activity log end to end', { skip: SKIP }, () => {
     const app = entry({ kind: 'app.start', set_index: null, event_seq: null, data: { version: '2.4.0', platform: 'web' } })
     const forged = entry({ account_id: users.carl.id })
     const bad = entry({ kind: 'event.nope' })
-    const pre = entry({ match_external_id: 'match_9999_future' }) // not on the server yet: accepted
+    const pre = entry({ match_external_id: 'match_9999_future' }) // not on the server: accepted, without the match
     const r = await upload(users.anna, [a, app, forged, bad, pre])
     assert.equal(r.status, 200, r.text)
     assert.deepEqual(r.json.data.accepted.sort(), [a.uid, app.uid, pre.uid].sort())
     assert.deepEqual(r.json.data.rejected.map((x) => x.code).sort(), ['OV_ACTIVITY_ACCOUNT', 'OV_ACTIVITY_INVALID'])
+    assert.equal((await sql.query('SELECT match_external_id FROM activity_log WHERE uid = $1', [pre.uid])).rows[0].match_external_id, null)
     const { rows: [stored] } = await sql.query('SELECT * FROM activity_log WHERE uid = $1', [a.uid])
     assert.deepEqual(stored.data, { type: 'point', team: 'home' })
     assert.equal(stored.uploader_id, users.anna.id)
@@ -236,7 +275,7 @@ describe('activity log end to end', { skip: SKIP }, () => {
     assert.equal(csv.status, 200)
     assert.match(csv.headers.get('content-type'), /text\/csv/)
     const lines = (await csv.text()).trim().split('\n')
-    assert.equal(lines[0], CSV_COLUMNS.join(','))
+    assert.equal(lines[0], exportColumns({ emails: false }).join(','))
     assert.equal(lines.length, 3)
     const nd = await fetch(`${srv.base}/api/admin/activity/export?account=${users.anna.id}`, { headers: { Authorization: `Bearer ${users.admin.token}` } })
     assert.equal(nd.status, 200)
@@ -305,15 +344,147 @@ describe('activity log end to end', { skip: SKIP }, () => {
     assert.deepEqual(kept, { account_id: null, uploader_id: null })
   })
 
-  it('retention purges old rows', async () => {
+  it('retention purges old rows, by the time the server received them', async () => {
     await sql.query(`INSERT INTO activity_log (uid, client_ts, at, kind, match_external_id) VALUES
       ($1, now() - interval '100 days', now() - interval '100 days', 'app.start', NULL),
-      ($2, now() - interval '25 months', now(), 'event.add', 'match_x_old'),
-      ($3, now() - interval '1 day', now(), 'event.add', 'match_x_new')`, [randomUUID(), randomUUID(), randomUUID()])
+      ($2, now() - interval '25 months', now() - interval '25 months', 'event.add', 'match_x_old'),
+      ($3, now() - interval '1 day', now(), 'event.add', 'match_x_new'),
+      ($4, now() + interval '50 years', now() - interval '25 months', 'event.add', 'match_x_future'),
+      ($5, now() - interval '25 months', now(), 'event.add', 'match_x_clock')`, [randomUUID(), randomUUID(), randomUUID(), randomUUID(), randomUUID()])
     const purge = createActivityLog({ pool: sql }).purge
     const r = await purge()
     assert.ok(r.unlinked >= 1)
-    assert.ok(r.linked >= 1)
-    assert.equal((await sql.query("SELECT count(*)::int n FROM activity_log WHERE match_external_id = 'match_x_new'")).rows[0].n, 1)
+    assert.ok(r.linked >= 2)
+    const left = async (ext) => (await sql.query('SELECT count(*)::int n FROM activity_log WHERE match_external_id = $1', [ext])).rows[0].n
+    assert.equal(await left('match_x_new'), 1)
+    // a far-future device clock no longer keeps a row for ever; a slow clock does not end it early
+    assert.equal(await left('match_x_future'), 0)
+    assert.equal(await left('match_x_old'), 0)
+    assert.equal(await left('match_x_clock'), 1)
+  })
+
+  // be-mail-contact-5: an entry is tied to a match only when the match is on
+  // the server and the caller owns or edits it
+  it('an entry names a match the caller holds; a game number as text or a match not on the server is stored without it', async () => {
+    const m = await newMatch(users.anna)
+    const planted = entry({ match_external_id: String(m.n), kind: 'event.delete', device_id: 'dev-anna', data: { type: 'point', reason: 'after the match' } })
+    const unknown = entry({ match_external_id: `match_${Date.now()}_elsewhere` })
+    const r = await upload(users.carl, [planted, unknown])
+    assert.equal(r.status, 200, r.text)
+    assert.deepEqual(r.json.data.accepted.sort(), [planted.uid, unknown.uid].sort())
+    const { rows } = await sql.query('SELECT match_external_id FROM activity_log WHERE uid = ANY($1::uuid[])', [[planted.uid, unknown.uid]])
+    assert.deepEqual(rows.map((x) => x.match_external_id), [null, null])
+    // one stored by an older server under the bare game number: not the match's either
+    await sql.query("INSERT INTO activity_log (uid, client_ts, kind, match_external_id, uploader_id) VALUES ($1, now(), 'event.delete', $2, $3)", [randomUUID(), String(m.n), users.carl.id])
+    const real = entry({ match_external_id: m.ext })
+    assert.equal((await upload(users.anna, [real])).status, 200)
+    const list = await call(users.admin, 'GET', `/api/admin/activity?match=${m.n}`)
+    assert.equal(list.status, 200, list.text)
+    assert.deepEqual(list.json.data.entries.map((e) => e.uid), [real.uid])
+    // a far-future device clock does not put an entry at the top
+    const far = entry({ match_external_id: m.ext, client_ts: '9999-12-30T00:00:00.000Z' })
+    assert.equal((await upload(users.anna, [far])).status, 200)
+    const { rows: [stored] } = await sql.query('SELECT client_ts FROM activity_log WHERE uid = $1', [far.uid])
+    assert.ok(stored.client_ts.getTime() <= Date.now() + 24 * 3600e3 + 60e3, stored.client_ts.toISOString())
+  })
+
+  it('an account that has not confirmed its address stores no entry', async () => {
+    const eve = await account('eve')
+    await sql.query(`UPDATE auth.users SET email_confirmed_at = NULL,
+                       raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) || '{"ov_email_confirmation":"link"}'::jsonb
+                     WHERE id = $1`, [eve.id])
+    const e = entry({ kind: 'app.start', data: { version: '3.1.0' } })
+    const r = await upload(eve, [e])
+    assert.equal(r.status, 200, r.text)
+    assert.deepEqual(r.json.data, { accepted: [], rejected: [{ uid: e.uid, code: 'OV_EMAIL_UNCONFIRMED' }] })
+    assert.equal((await sql.query('SELECT count(*)::int n FROM activity_log WHERE uid = $1', [e.uid])).rows[0].n, 0)
+  })
+
+  it('an account stores at most the daily cap of rows; the rest is refused', async () => {
+    assert.ok(DAILY_ROW_CAP >= 10000)
+    const frank = await account('frank', { roles: ['scorer'] })
+    const act = createActivityLog({ pool: sql, dailyRowCap: 3, log: { warn () {} } })
+    const user = { id: frank.id, email_confirmed_at: new Date().toISOString() }
+    const batch = Array.from({ length: 5 }, () => entry())
+    const r = await act.ingest({ user, body: { entries: batch } })
+    assert.equal(r.status, 200)
+    assert.equal(r.body.data.accepted.length, 3)
+    assert.deepEqual(r.body.data.rejected.map((x) => x.code), ['OV_ACTIVITY_QUOTA', 'OV_ACTIVITY_QUOTA'])
+    // the same rows again are no new rows; new ones wait for the next day
+    assert.equal((await act.ingest({ user, body: { entries: batch.slice(0, 3) } })).body.data.accepted.length, 3)
+    const more = await act.ingest({ user, body: { entries: [entry()] } })
+    assert.deepEqual(more.body.data.rejected.map((x) => x.code), ['OV_ACTIVITY_QUOTA'])
+    // counted from the table, also by a fresh process
+    const again = createActivityLog({ pool: sql, dailyRowCap: 4, log: { warn () {} } })
+    assert.equal((await again.ingest({ user, body: { entries: [entry(), entry()] } })).body.data.accepted.length, 1)
+  })
+
+  // fe-manage-4: one filter for the list and the delete
+  it('delete removes what the list shows: a game number, and a match of one account', async () => {
+    const m = await newMatch(users.anna)
+    await call(users.admin, 'POST', '/api/admin/matches/' + m.id + '/editors', { email: users.carl.email })
+    const annas = [entry({ match_external_id: m.ext }), entry({ match_external_id: m.ext })]
+    assert.equal((await upload(users.anna, annas)).status, 200)
+    const carls = [entry({ match_external_id: m.ext })]
+    const up = await upload(users.carl, carls)
+    assert.deepEqual(up.json.data.accepted, carls.map((e) => e.uid), up.text)
+    // the match of one account: only that account's rows of it
+    const one = await call(users.admin, 'DELETE', `/api/admin/activity?match=${m.n}&account=${users.carl.id}&confirm=yes`)
+    assert.equal(one.status, 200, one.text)
+    assert.equal(one.json.data.deleted, 1)
+    const left = await call(users.admin, 'GET', `/api/admin/activity?match=${m.n}`)
+    assert.equal(left.json.data.entries.length, 2)
+    // the game number, as the list finds it
+    const del = await call(users.admin, 'DELETE', `/api/admin/activity?match=${m.n}&confirm=yes`)
+    assert.equal(del.status, 200, del.text)
+    assert.equal(del.json.data.deleted, 2)
+    assert.equal((await sql.query('SELECT count(*)::int n FROM activity_log WHERE match_external_id = $1', [m.ext])).rows[0].n, 0)
+    // still never everything at once
+    expectCode(await call(users.admin, 'DELETE', '/api/admin/activity?kind=event.&confirm=yes'), 400, 'OV_INVALID_REQUEST')
+  })
+
+  // be-mail-contact-8: reads of a person or a match, and every export, are on record
+  it('the admin\'s reads of a match or an account and every export are audited; the export has no email unless asked', async () => {
+    const m = await newMatch(users.anna)
+    assert.equal((await upload(users.anna, [entry({ match_external_id: m.ext, account_id: users.anna.id })])).status, 200)
+    const audits = async (action) => (await sql.query('SELECT actor_id, target_user_id, details FROM audit_log WHERE action = $1 ORDER BY id', [action])).rows
+    const before = (await audits('activity.read')).length
+
+    assert.equal((await call(users.admin, 'GET', '/api/admin/activity?limit=5')).status, 200)
+    assert.equal((await audits('activity.read')).length, before, 'an unfiltered list is not a read of anyone')
+    const byMatch = await call(users.admin, 'GET', `/api/admin/activity?match=${m.n}`)
+    assert.equal(byMatch.json.data.entries[0].account_email, users.anna.email)
+    const byAccount = await call(users.admin, 'GET', `/api/admin/activity?account=${users.anna.id}&kind=event.`)
+    assert.equal(byAccount.status, 200, byAccount.text)
+    const reads = (await audits('activity.read')).slice(before)
+    assert.equal(reads.length, 2)
+    assert.equal(reads[0].actor_id, users.admin.id)
+    assert.deepEqual(reads[0].details, { match: String(m.n), rows: 1 })
+    assert.equal(reads[1].target_user_id, users.anna.id)
+    assert.deepEqual(reads[1].details, { account: users.anna.id, kind: 'event.', rows: byAccount.json.data.entries.length })
+    // the admin reading another account's match through the app's route
+    assert.equal((await call(users.admin, 'GET', `/api/activity?match=${m.ext}`)).status, 200)
+    assert.equal((await audits('activity.read')).length, before + 3)
+    // the owner reading its own match is no admin read
+    assert.equal((await call(users.anna, 'GET', `/api/activity?match=${m.ext}`)).status, 200)
+    assert.equal((await audits('activity.read')).length, before + 3)
+
+    const exportsBefore = (await audits('activity.export')).length
+    const csv = await fetch(`${srv.base}/api/admin/activity/export?match=${encodeURIComponent(m.ext)}&format=csv`, { headers: { Authorization: `Bearer ${users.admin.token}` } })
+    assert.equal(csv.status, 200)
+    const text = await csv.text()
+    assert.equal(text.includes(users.anna.email), false)
+    assert.ok(text.split('\n')[0].split(',').includes('uploader_id'))
+    assert.ok(text.includes(users.anna.id))
+    const nd = await fetch(`${srv.base}/api/admin/activity/export?match=${encodeURIComponent(m.ext)}&emails=1`, { headers: { Authorization: `Bearer ${users.admin.token}` } })
+    const rows = (await nd.text()).trim().split('\n').map((l) => JSON.parse(l))
+    assert.equal(rows[0].account_email, users.anna.email)
+    const ex = (await audits('activity.export')).slice(exportsBefore)
+    assert.equal(ex.length, 2)
+    assert.equal(ex[0].actor_id, users.admin.id)
+    assert.deepEqual(ex[0].details, { match: m.ext, format: 'csv', emails: false, rows: 1 })
+    assert.deepEqual(ex[1].details, { match: m.ext, format: 'ndjson', emails: true, rows: 1 })
+    const ndNoMail = await fetch(`${srv.base}/api/admin/activity/export?account=${users.anna.id}`, { headers: { Authorization: `Bearer ${users.admin.token}` } })
+    assert.equal((await ndNoMail.text()).includes(users.anna.email), false)
   })
 })

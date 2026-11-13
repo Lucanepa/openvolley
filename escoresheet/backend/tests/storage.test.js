@@ -1029,6 +1029,33 @@ describe('sweep', () => {
     const s = make()
     assert.deepEqual(await s.sweep(), { deletedFiles: 0, deletedBytes: 0, removedDirs: 0, tmpRemoved: 0, ownerRecordsRemoved: 0 })
   })
+
+  // fe-diagnostics-privacy-1: the uploaded app logs were kept until the account went
+  it("the app logs: every account's logs older than 30 days go, the backups stay to their own sweep", async () => {
+    const now = Date.UTC(2026, 10, 13)
+    const s = make({ now: () => now, ownerScope: 'prefix', ownerScopeBuckets: ['backup'] })
+    const old = new Date(now - 31 * 24 * 3600 * 1000)
+    const recent = new Date(now - 29 * 24 * 3600 * 1000)
+    const u1 = '11111111-2222-4333-8444-555555555555'
+    const u2 = '66666666-2222-4333-8444-555555555555'
+    await s.upload({ bucket: 'backup', path: 'logs/game_1/logs_a.txt', fileBase64: b64('x'), userId: u1 })
+    await s.upload({ bucket: 'backup', path: 'logs/game_1/logs_b.txt', fileBase64: b64('y'), userId: u1 })
+    await s.upload({ bucket: 'backup', path: 'logs/general/logs_c.txt', fileBase64: b64('z'), userId: u2 })
+    await s.upload({ bucket: 'backup', path: 'backups/backup_g1/old.json', fileBase64: b64('{}'), userId: u2 })
+    await fs.mkdir(path.join(root, 'backup/logs/game_2'), { recursive: true })
+    await fs.writeFile(path.join(root, 'backup/logs/game_2/legacy.txt'), 'w')
+    for (const p of [`${u1}/logs/game_1/logs_a.txt`, `${u2}/logs/general/logs_c.txt`, `${u2}/backups/backup_g1/old.json`, 'logs/game_2/legacy.txt']) {
+      await fs.utimes(path.join(root, 'backup', p), old, old)
+    }
+    await fs.utimes(path.join(root, 'backup', `${u1}/logs/game_1/logs_b.txt`), recent, recent)
+    const r = await s.sweepAppLogs()
+    assert.equal(r.deletedFiles, 3)
+    assert.equal(await exists(path.join(root, `backup/${u1}/logs/game_1/logs_a.txt`)), false)
+    assert.equal(await exists(path.join(root, `backup/${u1}/logs/game_1/logs_b.txt`)), true)
+    assert.equal(await exists(path.join(root, `backup/${u2}/logs/general/logs_c.txt`)), false)
+    assert.equal(await exists(path.join(root, 'backup/logs/game_2/legacy.txt')), false)
+    assert.equal(await exists(path.join(root, `backup/${u2}/backups/backup_g1/old.json`)), true)
+  })
 })
 
 describe('handle (HTTP adapter)', () => {

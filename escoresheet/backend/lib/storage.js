@@ -74,6 +74,8 @@ export const DEFAULTS = Object.freeze({
   maxSegmentBytes: 255,
   tmpMaxAgeMs: 60 * 60 * 1000,
   sweepMaxAgeMs: 30 * DAY_MS,
+  // the app's uploaded console logs (backup/<account>/logs/**, utils/logger.js)
+  appLogMaxAgeMs: 30 * DAY_MS,
   sweepDirGraceMs: 5 * 60 * 1000  // sweep never removes a folder touched this recently
 })
 
@@ -1246,6 +1248,17 @@ export function createStorage(options = {}) {
   }
 
   /**
+   * The app's uploaded console logs (backup/logs/** and, with the 'prefix'
+   * owner scope, every account's {userId}/logs/**): files older than
+   * maxAgeMs (30 days) go. Kept no longer than the backups; unlike them they
+   * are no match record, so server.js sweeps them also while the backup
+   * sweep waits for the host backup.
+   */
+  function sweepAppLogs({ maxAgeMs = DEFAULTS.appLogMaxAgeMs } = {}) {
+    return sweep({ bucket: 'backup', prefix: 'logs', maxAgeMs })
+  }
+
+  /**
    * Remove owner records ({root}/.owners/{bucket}/{sha256}.json sidecars) whose
    * object no longer exists (deleted outside the API, a failed commit, an
    * older server without remove()), so a stale record can
@@ -1435,6 +1448,7 @@ export function createStorage(options = {}) {
     remove,
     deleteUserData,
     sweep,
+    sweepAppLogs,
     health,
     handle,
     bodyTooLarge,

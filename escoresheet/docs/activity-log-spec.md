@@ -10,7 +10,7 @@ Privacy texts: `docs/legal/*/privacy.md` (section 5 and the retention table),
 |---|---|---|---|
 | **Event history** | Dexie `event_history`; server `events.voided_*` + `event_revisions` | yes (sync queue) | Every undo, delete, edit and restore of a match event, with the reason. Part of the match record. |
 | **Activity log** | Dexie `activity_log`; server `activity_log`; daily JSONL files in the apps | yes (sync queue) | What happened on the device: scoring, corrections, sets, match status, signatures, approvals, sync results, app start, update, quit and errors. |
-| **Interaction log** | Dexie `interaction_logs` | **never** | Every click and key press, for troubleshooting. Local, exportable. Also holds the scoreboard's debug lines (category `debug`). |
+| **Interaction log** | Dexie `interaction_logs` | **never** | Every click and key press, for troubleshooting. Local, exportable. Also holds the scoreboard's debug lines (category `debug`). Never the text typed into a field (a key there is one placeholder character, a value only its length), nothing of a password or PIN field, no text inside `[data-sensitive]` (lists of people); clicked text without PIN-like digits, dates or email addresses. |
 | **Desktop log** | `<data dir>/OpenVolley/logs/desktop.log` (OpenBeach: `<data dir>/OpenBeach/logs`) | no | The Rust side: start, updates, popups, tablet count. |
 | Console upload (`utils/logger.js`) | storage bucket | when signed in | Unchanged (deferred, see below). |
 
@@ -151,15 +151,28 @@ approval is logged by role and method only. The server runs the same code
 **Server (`db/016`, `lib/activityLog.js`).**
 
 - `POST /api/activity`: at most 500 entries and 512 KB, 30 per minute per
-  user. `account_id` must be null or the caller. An entry for a match on the
-  server needs the caller to be owner or editor; a match not yet on the
-  server is accepted. Idempotent by uid.
+  user, and at most 20,000 rows per account a day (`DAILY_ROW_CAP`; more are
+  refused one by one, `OV_ACTIVITY_QUOTA`). An account that has not
+  confirmed its address stores nothing (each entry refused,
+  `OV_EMAIL_UNCONFIRMED`). `account_id` must be null or the caller. An entry
+  is tied to its match only when the match is on the server and the caller
+  owns or edits it; an entry for another account's match is refused, one for
+  a match the server does not have is stored without the match (the device
+  keeps the link). `client_ts` is cut back to at most a day ahead of the
+  server. Idempotent by uid.
 - `GET /api/activity?match=`: owner or editors, and only rows uploaded by
-  the match's scorers.
-- Admin: `GET /api/admin/activity` (filters), `GET
-  /api/admin/activity/export` (CSV/NDJSON, streamed, ≤ 50,000 rows) and
-  `DELETE /api/admin/activity?match=|account=&confirm=yes` (audited
-  `activity.delete`).
+  the match's scorers. An admin reading another account's match is audited
+  (`activity.read`).
+- Admin: `GET /api/admin/activity` (filters; audited `activity.read` when it
+  names a match or an account), `GET /api/admin/activity/export`
+  (CSV/NDJSON, streamed, ≤ 50,000 rows, audited `activity.export` with the
+  filters and the row count before the first row goes; the accounts' email
+  addresses only with `emails=1`; `uploader_id` in both formats) and
+  `DELETE /api/admin/activity?match=|account=[&kind=&level=&from=&to=&app=]&confirm=yes`
+  (audited `activity.delete`): one filter function for the list, the export
+  and the delete, so the delete removes what the list showed. A game number
+  finds the matches with that number, never an entry that names the bare
+  number.
 - `roles.sql` makes the table append-only for `ov_app`.
 
 **Files.** Desktop: `activity_append` and `activity_open_dir`
@@ -172,7 +185,7 @@ every 2 s or 50 lines and on quit, and keep 30 files and 50 MB.
 | Where | Rule |
 |---|---|
 | Device | Uploaded rows: 180 days and 100,000 rows. Waiting rows are kept below 200,000; beyond that the oldest go and an `activity.overflow` entry is written. |
-| Server (`purgeActivity`, daily) | Match rows 24 months after the event, or deleted with the match. Rows without a match: 90 days. |
+| Server (`purgeActivity`, daily) | Match rows 24 months after they were received (`at`, the server's clock), or deleted with the match. Rows without a match: 90 days. |
 | Account deletion | Rows without a match are deleted. Match rows stay with the account cleared. |
 
 ## 3. Interaction log (local only)
