@@ -65,11 +65,17 @@ describe('account approvals end to end', { skip: SKIP }, () => {
     assert.equal(r.status, status, r.text)
     assert.equal(r.json?.error?.code, code, r.text)
   }
-  async function endedMatch (owner) {
+  // The match setup's officials: the referees' addresses stored with the
+  // match, which a referee approval is bound to
+  const officialsOf = (ref1, ref2) => JSON.stringify([
+    ...(ref1 ? [{ role: '1st referee', firstName: 'First', lastName: 'Referee', email: ref1.email }] : []),
+    ...(ref2 ? [{ role: '2nd referee', firstName: 'Second', lastName: 'Referee', email: ref2.email }] : [])])
+  const nameOfficials = (m, ref1, ref2) => sql.query('UPDATE public.matches SET officials = $2 WHERE id = $1', [m.id, officialsOf(ref1, ref2)])
+  async function endedMatch (owner, { ref1 = users.ref1, ref2 = users.ref2 } = {}) {
     const ext = `e2e_appr_${randomBytes(4).toString('hex')}`
     const { rows: [m] } = await sql.query(
-      "INSERT INTO public.matches (external_id, status, created_by, game_n, sport_type) VALUES ($1, 'ended', $2, $3, 'indoor') RETURNING id",
-      [ext, owner.id, gameSeq++])
+      "INSERT INTO public.matches (external_id, status, created_by, game_n, sport_type, officials) VALUES ($1, 'ended', $2, $3, 'indoor', $4) RETURNING id",
+      [ext, owner.id, gameSeq++, officialsOf(ref1, ref2)])
     for (const [i, h, a] of SETS) await sql.query('INSERT INTO public.sets (match_id, index, home_points, away_points, finished) VALUES ($1, $2, $3, $4, true)', [m.id, i, h, a])
     return { id: m.id, ext }
   }
@@ -115,7 +121,7 @@ describe('account approvals end to end', { skip: SKIP }, () => {
     const st = await call(ref1, 'GET', '/api/account/approval-pin')
     assert.equal(st.status, 200, st.text)
     assert.equal(st.headers.get('cache-control'), 'no-store')
-    assert.deepEqual(st.json.data, { available: true, eligible: true, set: false, set_at: null, locked_until: null, disabled: false })
+    assert.deepEqual(st.json.data, { available: true, eligible: true, set: false, set_at: null, locked_until: null, locked_scope: null, disabled: false })
     expectCode(await call(ref1, 'POST', '/api/account/approval-pin', { password: 'wrong-one', pin: MARKER_PIN }), 403, 'OV_PASSWORD_INVALID')
     const set = await call(ref1, 'POST', '/api/account/approval-pin', { password: MARKER_PASSWORD, pin: MARKER_PIN })
     assert.equal(set.status, 200, set.text)
@@ -166,7 +172,12 @@ describe('account approvals end to end', { skip: SKIP }, () => {
       body: { table: 'profiles', action: 'update', params: { data: { first_name: 'Anna', last_name: 'Muster' }, filters: [{ type: 'eq', column: 'user_id', value: dual.id }] } }
     })
     assert.equal(rename.status, 200, rename.text)
+    // the match names the appointed referee's address: the renamed account is not that official
+    expectCode(await call(dual, 'POST', '/api/approvals', approveBody(m, 'referee1', dual, '583027')), 403, 'OV_APPROVAL_NOT_MATCH_OFFICIAL')
+    // nor when the scorer types its own address for the referee in the setup
+    await nameOfficials(m, dual, users.ref2)
     expectCode(await call(dual, 'POST', '/api/approvals', approveBody(m, 'referee1', dual, '583027')), 403, 'OV_APPROVAL_SCORER_NOT_REFEREE')
+    await nameOfficials(m, users.ref1, users.ref2)
     assert.equal((await sql.query('SELECT count(*)::int AS n FROM public.match_approvals WHERE match_id = $1', [m.id])).rows[0].n, 0)
     // a malformed PIN is a 400, not a counted failure
     expectCode(await call(dual, 'POST', '/api/approvals', approveBody(m, 'referee1', users.ref1, '123')), 400, 'OV_APPROVAL_PIN_FORMAT')
@@ -195,10 +206,12 @@ describe('account approvals end to end', { skip: SKIP }, () => {
     const body = (slot, official, pin) => ({ external_id: beach.ext, slot, email: official.email, pin, result: { sets: BEACH_SETS } })
 
     // an indoor referee cannot approve a beach match (after a correct PIN: the role)
+    await nameOfficials(beach, users.ref1)
     const indoorRef = await call(bea, 'POST', '/api/approvals', body('referee1', users.ref1, MARKER_PIN))
     expectCode(indoorRef, 403, 'OV_APPROVAL_ROLE_REQUIRED')
     assert.deepEqual(indoorRef.json.error.details, { role: 'beach:referee' })
     // the beach referee and the beach scorer approve, bound to team 1 / team 2's points
+    await nameOfficials(beach, bref)
     const ok = await call(bea, 'POST', '/api/approvals', body('referee1', bref, '307519'))
     assert.equal(ok.status, 200, ok.text)
     assert.equal(ok.json.data.approval.result_key, 'ov-result-v1|1:21:19,2:18:21,3:15:12')
@@ -210,7 +223,7 @@ describe('account approvals end to end', { skip: SKIP }, () => {
     assert.deepEqual(audit.map((r) => r.app), ['beach', 'beach'])
 
     // the beach referee cannot approve an indoor match ...
-    const indoor = await endedMatch(users.owner)
+    const indoor = await endedMatch(users.owner, { ref1: bref })
     const beachRefIndoor = await call(users.owner, 'POST', '/api/approvals', approveBody(indoor, 'referee1', bref, '307519'))
     expectCode(beachRefIndoor, 403, 'OV_APPROVAL_ROLE_REQUIRED')
     assert.deepEqual(beachRefIndoor.json.error.details, { role: 'referee' })
@@ -256,7 +269,7 @@ describe('account approvals end to end', { skip: SKIP }, () => {
 
   it('limits: the 11th wrong PIN of a caller is 429; a success is refunded', async () => {
     const caller = await account('limitOwner', { first: 'Lim', last: 'Owner', roles: ['scorer'] })
-    const m = await endedMatch(caller)
+    const m = await endedMatch(caller, { ref2: { email: 'ghost@example.ch' } })
     const m2 = await endedMatch(caller)
     const ghost = (match) => ({ ...approveBody(match, 'referee2', { email: 'ghost@example.ch' }, '111112') })
     for (let i = 0; i < 9; i++) expectCode(await call(caller, 'POST', '/api/approvals', ghost(m)), 403, 'OV_APPROVAL_PIN_INVALID')
@@ -300,7 +313,7 @@ describe('account approvals end to end', { skip: SKIP }, () => {
       const c = (method, path, body) => api(off.base, path, { method, token: owner.token, body, proto: null, headers: { 'cf-connecting-ip': '203.0.113.240' } })
       const st = await c('GET', '/api/account/approval-pin')
       assert.equal(st.status, 200, st.text)
-      assert.deepEqual(st.json.data, { available: false, eligible: false, set: false, set_at: null, locked_until: null, disabled: false })
+      assert.deepEqual(st.json.data, { available: false, eligible: false, set: false, set_at: null, locked_until: null, locked_scope: null, disabled: false })
       expectCode(await c('POST', '/api/account/approval-pin', { password: PASSWORD, pin: '518203' }), 503, 'OV_APPROVAL_UNAVAILABLE')
       expectCode(await c('POST', '/api/account/approval-pin/remove', { password: PASSWORD }), 503, 'OV_APPROVAL_UNAVAILABLE')
       const m = await endedMatch(owner)

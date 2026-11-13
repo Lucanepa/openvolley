@@ -53,8 +53,9 @@ export const AUDIT_ACTIONS = Object.freeze([
   'match.claim_game', 'match.claim_pin', 'match.game_taken',
   'match.close',
   'match.reopen', 'match.editor_add', 'match.release_game',
-  // lib/approvals.js (db/011); match.approval_void is written by the trigger
-  'approval_pin.set', 'approval_pin.remove', 'approval_pin.locked',
+  // lib/approvals.js (db/011); match.approval_void is written by the trigger;
+  // approval_pin.failed: one wrong approval PIN (the caller's count per official)
+  'approval_pin.set', 'approval_pin.remove', 'approval_pin.locked', 'approval_pin.failed',
   'match.approve', 'match.approval_revoke', 'match.approval_void',
   // db/012: an existing account joined another app (POST /api/account/join)
   'account.join',

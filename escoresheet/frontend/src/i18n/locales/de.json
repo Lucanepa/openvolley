@@ -3405,6 +3405,7 @@
         "approval_pin_set": "Genehmigungs-PIN gesetzt",
         "approval_pin_remove": "Genehmigungs-PIN entfernt",
         "approval_pin_locked": "Genehmigungs-PIN gesperrt",
+        "approval_pin_failed": "Falsche Genehmigungs-PIN",
         "match_approve": "Resultat mit Konto genehmigt",
         "match_approval_revoke": "Konto-Genehmigung rückgängig gemacht",
         "match_approval_void": "Konto-Genehmigungen ungültig",
@@ -4494,6 +4495,7 @@
       "notSet": "Nicht gesetzt",
       "setOn": "Gesetzt am {{date}}",
       "lockedUntil": "Gesperrt bis {{time}}",
+      "lockedForCallerUntil": "Für ein Konto pausiert bis {{time}}, nach falschen PINs von diesem Konto. Andere Konten können deine PIN weiter verwenden. Eine neue PIN beendet die Pause.",
       "disabled": "Gesperrt nach zu vielen falschen PINs. Setze eine neue.",
       "ineligible": {
         "email": "Bestätige zuerst deine E-Mail-Adresse",
@@ -4537,6 +4539,10 @@
     "syncing": "Resultat wird gesendet…",
     "nameDiffers": "Kontoname {{account}} weicht vom erfassten Offiziellen ab ({{entered}})",
     "revalidateFailed": "Eine Konto-Genehmigung ist nicht mehr gültig. Prüfe die Unterschriften und genehmige neu.",
+    "unconfirmedTitle": "Genehmigungen nicht bestätigt",
+    "unconfirmedBody": "Dieses Gerät erreicht den Server nicht, darum können die Genehmigungen mit Konto von {{roles}} nicht geprüft werden. Wenn du weitermachst, erscheinen diese Unterschriften auf dem Spielbericht als ausstehend. Um sie zu vervollständigen, unterschreibe von Hand, oder verbinde dich und versuche es nochmals.",
+    "unconfirmedBodySignedOut": "Dieses Gerät ist abgemeldet, darum können die Genehmigungen mit Konto von {{roles}} nicht geprüft werden. Wenn du weitermachst, erscheinen diese Unterschriften auf dem Spielbericht als ausstehend. Um sie zu vervollständigen, unterschreibe von Hand, oder melde dich an und versuche es nochmals.",
+    "unconfirmedApprove": "Ohne sie genehmigen",
     "errors": {
       "pinInvalid": "E-Mail oder PIN nicht akzeptiert. Nach mehreren falschen PINs pausiert die PIN: Der Offizielle sieht das in seinem Profil. Oder von Hand unterschreiben.",
       "pinFormat": "Die PIN muss 4 bis 6 Ziffern haben.",
@@ -4554,6 +4560,8 @@
       "unavailable": "Die Genehmigung mit Konto ist auf diesem Server nicht verfügbar.",
       "emailUnconfirmed": "Der Offizielle hat die E-Mail-Adresse des Kontos noch nicht bestätigt.",
       "scorerNotReferee": "Das Konto, das dieses Spiel schreibt, kann nicht als Schiedsrichter genehmigen.",
+      "notMatchOfficial": "Diese E-Mail ist nicht die, die in der Spieleinrichtung für diesen Schiedsrichter erfasst wurde. Der Schiedsrichter genehmigt mit dem Konto dieser Adresse oder unterschreibt von Hand.",
+      "officialEmailMissing": "Für diesen Schiedsrichter wurde in der Spieleinrichtung keine E-Mail erfasst, darum kann sein Konto nicht geprüft werden. Von Hand unterschreiben.",
       "callerRole": "Für die Genehmigung mit Konto braucht dieses Gerät ein Schreiber- oder Schiedsrichterkonto."
     },
     "mine": {
@@ -5257,7 +5265,8 @@
     "reasonSignIn": "Anmelden, um übers Internet auf einem Handy zu unterschreiben. Oder auf diesem Gerät unterschreiben.",
     "reasonRole": "Dein Konto kann das Unterschreiben auf dem Handy noch nicht starten. Auf diesem Gerät unterschreiben.",
     "reasonNoNetwork": "Kein Netz für Handys: diesen Laptop mit dem Hallen-WLAN verbinden oder sein eigenes WLAN einschalten (Tablets verbinden).",
-    "startFailed": "Kein Link möglich. Nochmals versuchen oder auf diesem Gerät unterschreiben."
+    "startFailed": "Kein Link möglich. Nochmals versuchen oder auf diesem Gerät unterschreiben.",
+    "notOnServer": "Dieses Spiel ist nicht auf dem Server (ein Testspiel nie, ein neues Spiel erst nach dem Synchronisieren), darum geht es übers Internet nicht. Auf diesem Gerät unterschreiben, das Hallennetz verwenden oder gleich nochmals versuchen."
   },
   "sizeGate": {
     "title": "Diese Anwendung braucht ein Tablet oder einen grösseren Bildschirm (mindestens 800×600).",

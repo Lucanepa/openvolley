@@ -75,7 +75,7 @@ export async function signHttpScenario({ httpBase, startHeaders = {}, matchKey =
   code(await post(httpBase, 'open', { k: 'A'.repeat(43) }), 404, 'OV_SIGN_NOT_FOUND', 'unknown token')
 
   // A second session cancelled before the phone opens it
-  const second = await post(httpBase, 'start', { slot: 'ref1', context: CTX }, { headers: startHeaders })
+  const second = await post(httpBase, 'start', { slot: 'ref1', matchKey, context: CTX }, { headers: startHeaders })
   code(second, 201, null, 'second start')
   if (second.status === 201) {
     const pending = post(httpBase, 'wait', { watch: second.json.watch, known: 'pending' })

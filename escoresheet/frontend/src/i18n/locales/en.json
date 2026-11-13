@@ -3427,6 +3427,7 @@
         "approval_pin_set": "Approval PIN set",
         "approval_pin_remove": "Approval PIN removed",
         "approval_pin_locked": "Approval PIN locked",
+        "approval_pin_failed": "Wrong approval PIN",
         "match_approve": "Result approved with account",
         "match_approval_revoke": "Account approval undone",
         "match_approval_void": "Account approvals voided",
@@ -4512,6 +4513,7 @@
       "notSet": "Not set",
       "setOn": "Set on {{date}}",
       "lockedUntil": "Locked until {{time}}",
+      "lockedForCallerUntil": "Paused for one account until {{time}}, after wrong PINs from it. Other accounts can still use your PIN. A new PIN ends the pause.",
       "disabled": "Blocked after too many wrong PINs. Set a new one.",
       "ineligible": {
         "email": "Confirm your email address first",
@@ -4555,6 +4557,10 @@
     "syncing": "Sending the result…",
     "nameDiffers": "Account name {{account}} differs from the official entered ({{entered}})",
     "revalidateFailed": "An account approval is no longer valid. Check the signatures and approve again.",
+    "unconfirmedTitle": "Approvals not confirmed",
+    "unconfirmedBody": "This device cannot reach the server, so the approvals with an account of {{roles}} cannot be checked. If you go on, these signatures are printed as pending on the scoresheet. To complete them, draw the signatures, or connect and try again.",
+    "unconfirmedBodySignedOut": "This device is signed out, so the approvals with an account of {{roles}} cannot be checked. If you go on, these signatures are printed as pending on the scoresheet. To complete them, draw the signatures, or sign in and try again.",
+    "unconfirmedApprove": "Approve without them",
     "errors": {
       "pinInvalid": "Email or PIN not accepted. After several wrong PINs the PIN pauses: the official sees it in their profile. Or sign by hand.",
       "pinFormat": "The PIN must have 4 to 6 digits.",
@@ -4572,6 +4578,8 @@
       "unavailable": "Approval with an account is not available on this server.",
       "emailUnconfirmed": "The official has not confirmed the email address of the account yet.",
       "scorerNotReferee": "The account that scores this match cannot approve as a referee.",
+      "notMatchOfficial": "This email is not the one entered for this referee in the match setup. The referee approves with the account of that address, or signs by hand.",
+      "officialEmailMissing": "No email was entered for this referee in the match setup, so their account cannot be checked. Sign by hand.",
       "callerRole": "Approving with an account needs a scorer or referee account on this device."
     },
     "mine": {
@@ -5275,7 +5283,8 @@
     "reasonSignIn": "Sign in to sign on a phone over the internet. Or sign on this device.",
     "reasonRole": "Your account can’t start phone signing yet. Sign on this device.",
     "reasonNoNetwork": "No network for phones: connect this laptop to the hall Wi-Fi or turn on its own Wi-Fi (Connect tablets).",
-    "startFailed": "Could not make a link. Try again, or sign on this device."
+    "startFailed": "Could not make a link. Try again, or sign on this device.",
+    "notOnServer": "This match is not on the server (a test match never is, a new match only once it has synced), so the internet way cannot start. Sign on this device, use the hall network, or try again in a moment."
   },
   "sizeGate": {
     "title": "To use this application, please use a tablet or larger screen (minimum 800×600).",

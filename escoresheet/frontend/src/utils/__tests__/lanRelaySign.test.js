@@ -106,6 +106,21 @@ describe('Sign on phone on the LAN relay core', () => {
     expect(open.json).toMatchObject({ ok: true, state: 'opened', slot: 'captain-a' })
   })
 
+  it('a device\'s live sessions are capped per address, not per match it names; the relay host keeps a share (rollout audit gap-phone-signing-1)', async () => {
+    const relay = newRelay({ isLocal: (addr) => addr === '127.0.0.1', signOptions: { caps: { total: 30, localReserve: 5 } } })
+    for (const n of [1, 2, 3]) syncMatch(relay, `made-up-${n}`, '111111')
+    const start = (n, addr) => call(relay, '/api/sign/start', { slot: 'captain-a', matchKey: `made-up-${n}`, context: CTX }, { headers: { 'x-ov-match-pin': '111111' }, addr })
+    for (let i = 0; i < 20; i++) expect((await start(1 + (i % 3), '192.168.1.66')).status).toBe(201)
+    for (const n of [1, 2, 3]) expect((await start(n, '192.168.1.66')).json.code).toBe('OV_SIGN_RATE_LIMITED')
+    // a second device takes what is left for other devices, then the relay is busy for them
+    for (let i = 0; i < 5; i++) expect((await start(1, '192.168.1.67')).status).toBe(201)
+    const busy = await start(2, '192.168.1.67')
+    expect(busy.status).toBe(503)
+    expect(busy.json.code).toBe('OV_SIGN_BUSY')
+    // the relay host's own scorer still starts
+    expect((await call(relay, '/api/sign/start', { slot: 'scorer', context: CTX }, { addr: '127.0.0.1' })).status).toBe(201)
+  })
+
   it('wrong game PINs are counted per IP and then refused without comparing', async () => {
     const relay = newRelay({ isLocal: () => false })
     syncMatch(relay, 'seed-1', '987654')

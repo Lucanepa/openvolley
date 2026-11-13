@@ -3420,6 +3420,7 @@
         "approval_pin_set": "PIN d'approbation défini",
         "approval_pin_remove": "PIN d'approbation supprimé",
         "approval_pin_locked": "PIN d'approbation bloqué",
+        "approval_pin_failed": "PIN d'approbation erroné",
         "match_approve": "Résultat approuvé avec un compte",
         "match_approval_revoke": "Approbation par compte annulée",
         "match_approval_void": "Approbations par compte invalidées",
@@ -4505,6 +4506,7 @@
       "notSet": "Non défini",
       "setOn": "Défini le {{date}}",
       "lockedUntil": "Bloqué jusqu'à {{time}}",
+      "lockedForCallerUntil": "En pause pour un compte jusqu'à {{time}}, après des PIN faux venant de ce compte. Les autres comptes peuvent toujours utiliser votre PIN. Un nouveau PIN met fin à la pause.",
       "disabled": "Bloqué après trop de PIN erronés. Définissez-en un nouveau.",
       "ineligible": {
         "email": "Confirmez d'abord votre adresse e-mail",
@@ -4548,6 +4550,10 @@
     "syncing": "Envoi du résultat…",
     "nameDiffers": "Le nom du compte {{account}} diffère de l'officiel saisi ({{entered}})",
     "revalidateFailed": "Une approbation par compte n'est plus valable. Vérifiez les signatures et approuvez à nouveau.",
+    "unconfirmedTitle": "Approbations non confirmées",
+    "unconfirmedBody": "Cet appareil n’atteint pas le serveur, les approbations par compte de {{roles}} ne peuvent donc pas être vérifiées. Si vous continuez, ces signatures sont imprimées comme en attente sur la feuille de match. Pour les compléter, signez à la main, ou connectez-vous et réessayez.",
+    "unconfirmedBodySignedOut": "Cet appareil n’est connecté à aucun compte, les approbations par compte de {{roles}} ne peuvent donc pas être vérifiées. Si vous continuez, ces signatures sont imprimées comme en attente sur la feuille de match. Pour les compléter, signez à la main, ou connectez-vous et réessayez.",
+    "unconfirmedApprove": "Approuver sans elles",
     "errors": {
       "pinInvalid": "E-mail ou PIN non accepté. Après plusieurs PIN faux, le PIN est mis en pause : l’officiel le voit dans son profil. Ou signez à la main.",
       "pinFormat": "Le PIN doit comporter 4 à 6 chiffres.",
@@ -4565,6 +4571,8 @@
       "unavailable": "L'approbation avec un compte n'est pas disponible sur ce serveur.",
       "emailUnconfirmed": "L'officiel n'a pas encore confirmé l'adresse e-mail du compte.",
       "scorerNotReferee": "Le compte qui tient la feuille de ce match ne peut pas approuver en tant qu’arbitre.",
+      "notMatchOfficial": "Cet e-mail n’est pas celui saisi pour cet arbitre dans la configuration du match. L’arbitre approuve avec le compte de cette adresse, ou signe à la main.",
+      "officialEmailMissing": "Aucun e-mail n’a été saisi pour cet arbitre dans la configuration du match, son compte ne peut donc pas être vérifié. Signez à la main.",
       "callerRole": "L’approbation avec un compte demande un compte de marqueur ou d’arbitre sur cet appareil."
     },
     "mine": {
@@ -5268,7 +5276,8 @@
     "reasonSignIn": "Se connecter pour signer sur un téléphone via Internet. Ou signer sur cet appareil.",
     "reasonRole": "Votre compte ne peut pas encore lancer la signature sur téléphone. Signer sur cet appareil.",
     "reasonNoNetwork": "Pas de réseau pour les téléphones : connecter cet ordinateur au Wi-Fi de la salle ou activer son propre Wi-Fi (Connecter des tablettes).",
-    "startFailed": "Impossible de créer un lien. Réessayer, ou signer sur cet appareil."
+    "startFailed": "Impossible de créer un lien. Réessayer, ou signer sur cet appareil.",
+    "notOnServer": "Ce match n’est pas sur le serveur (un match amical jamais, un nouveau match seulement une fois synchronisé) : la signature via Internet ne peut pas démarrer. Signer sur cet appareil, utiliser le réseau de la salle, ou réessayer dans un instant."
   },
   "sizeGate": {
     "title": "Pour utiliser cette application, utilisez une tablette ou un écran plus grand (au moins 800×600).",

@@ -43,7 +43,7 @@ import { waitForScoresheetPdf, PDF_FAIL, PDF_REQUEST_PARAM } from '../utils/scor
 import { getMatchWinner, clearedPostMatchSignatures, planForfeitReversal } from '../domain/matchEnd'
 import {
   ROLE_TO_SLOT, approvalFor, isApprovalValid, slotComplete, approvalLine, approvalsBySlot, approvalSummary,
-  resultKey, rememberApprovalEmail, namesDiffer, approvalsCompletingSlots, approvalsStillValid, pinApprovalState,
+  resultKey, namesDiffer, approvalsCompletingSlots, approvalsStillValid, pinApprovalState,
   optionalSignatureSlots
 } from '../domain/accountApproval'
 import { signatureEditLocked, signaturesPayload, signaturesSyncJob } from '../domain/signatureEdits'
@@ -1118,14 +1118,14 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     await db.matches.update(matchId, { accountApprovals: Object.keys(current).length ? current : null })
   }
 
-  // After a 200 from POST /api/approvals: keep the record on the match row
-  const handleAccountApproved = async (record, { email, entered }) => {
+  // After a 200 from POST /api/approvals: keep the record on the match row.
+  // The official's address is not kept on this shared device: a referee
+  // approves only with the one the match setup stored (spec R11).
+  const handleAccountApproved = async (record, { entered }) => {
     const row = await db.matches.get(matchId)
     const current = { ...(row?.accountApprovals || {}) }
     current[record.slot] = record
     await db.matches.update(matchId, { accountApprovals: current })
-    // A convenience for the next match on this device (never in match.officials)
-    if (record.slot !== 'scorer' && entered) rememberApprovalEmail(entered, email)
     setApprovalRole(null)
     toast.success(t('approval.approved'))
     if (entered && namesDiffer(record.name, entered)) {
@@ -1176,7 +1176,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
   // The approval's PDF and final JSON for the 'scoresheets' bucket, queued
   // as sync jobs that carry the files (see handleApprove)
-  const queueApprovalFiles = async ({ pdfResult, sets: allSets, events: allEvents }) => {
+  const queueApprovalFiles = async ({ pdfResult, sets: allSets, events: allEvents, match: approvedMatch = match }) => {
     const jobs = []
     // Same name scheme as the JSON (random part: only this scorer
     // account can read it, nobody can claim the name first)
@@ -1187,7 +1187,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     const jsonStoragePath = scoresheetUploadPath(match, { final: true })
     if (jsonStoragePath) {
       jobs.push(scoresheetUploadJob(match, jsonStoragePath, scoresheetJsonBlob({
-        match,
+        match: approvedMatch,
         homeTeam,
         awayTeam,
         homePlayers,
@@ -1245,19 +1245,39 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
       // The account approvals that complete a slot (no drawn signature there)
       // are re-checked with the server before the result is approved (one may
-      // have been voided, or the sets changed). A stale record in a slot that
-      // was signed by hand never blocks: the drawn signature is the fallback.
-      // Offline the local copy is trusted: the approvals were made online.
+      // have been voided or undone, or the sets changed). A stale record in a
+      // slot that was signed by hand never blocks: the drawn signature is the
+      // fallback. When the server cannot be asked (offline, an error), the
+      // approvals are not confirmed: only once the scorer agrees, and those
+      // slots then print as pending (no "Approved electronically") and the
+      // approval's summary leaves them out; the server's records come back
+      // with the next refresh.
       const currentSets = await db.sets.where('matchId').equals(matchId).toArray()
       const completing = approvalsCompletingSlots(match, currentSets, { hasRef2 })
-      if (completing.length && online && match.seed_key) {
-        const fresh = await refreshAccountApprovals()
-        if (fresh) {
-          if (!approvalsStillValid(completing, fresh.bySlot, resultKey(currentSets))) {
-            showAlert(t('approval.revalidateFailed'), 'warning')
+      if (completing.length) {
+        const fresh = online && match.seed_key ? await refreshAccountApprovals() : null
+        if (fresh && !approvalsStillValid(completing, fresh.bySlot, resultKey(currentSets))) {
+          showAlert(t('approval.revalidateFailed'), 'warning')
+          setIsSaving(false)
+          return
+        }
+        if (!fresh) {
+          const go = await askConfirm({
+            title: t('approval.unconfirmedTitle'),
+            // signed out: the session is missing, not the connection
+            message: t(online && match.seed_key && !signedIn ? 'approval.unconfirmedBodySignedOut' : 'approval.unconfirmedBody', {
+              roles: completing.map(c => getSignatureLabel(c.role)).join(', ')
+            }),
+            confirmLabel: t('approval.unconfirmedApprove')
+          })
+          if (!go) {
             setIsSaving(false)
             return
           }
+          const row = await db.matches.get(matchId)
+          const kept = { ...(row?.accountApprovals || {}) }
+          for (const c of completing) delete kept[c.slot]
+          await db.matches.update(matchId, { accountApprovals: Object.keys(kept).length ? kept : null })
         }
       }
 
@@ -1267,13 +1287,17 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       // Prepare export data
       const allSets = await db.sets.where('matchId').equals(matchId).sortBy('index')
       const allEvents = await db.events.where('matchId').equals(matchId).sortBy('seq')
+      // The account approvals as checked above (refreshed from the server, or
+      // without those left unconfirmed), not as this render read them: the
+      // ZIP's JSON, the PDF and the uploaded final JSON print what was approved
+      const approvedMatch = { ...match, accountApprovals: (await db.matches.get(matchId))?.accountApprovals ?? null }
 
       // In the backup file format: Restore match takes the ZIP's JSON back.
       // It had the teams inside the match and no version, and the restore
       // refused it (backupManager.matchBackupFromMatchEndExport still reads
       // those files).
       const exportData = matchEndExportData({
-        match,
+        match: approvedMatch,
         homeTeam,
         awayTeam,
         homePlayers,
@@ -1294,7 +1318,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
       // Generate PDF via scoresheet window with postMessage
       const scoresheetData = {
-        match,
+        match: approvedMatch,
         homeTeam,
         awayTeam,
         homePlayers,
@@ -1392,8 +1416,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             },
             // Signed on a phone or on this device (docs/qr-signing-spec.md 5.6)
             signatureSources: approvalSignatureSources(match),
-            // Approved with an account: names and short IDs only (no user ids, no emails)
-            accounts: approvalSummary(match, allSets)
+            // Approved with an account: names and short IDs only (no user ids,
+            // no emails), from the stored row (without approvals left unconfirmed)
+            accounts: approvalSummary((await db.matches.get(matchId)) || match, allSets)
           }
 
           // The remarks as approved, just before the approval (db/017)
@@ -1432,7 +1457,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       // connection that passed no data held "Confirm and approve" (no Cancel
       // at that step), and with it the approval and the ZIP, for minutes
       // (stress test 2026-10-25).
-      if (!match?.test) await queueApprovalFiles({ pdfResult, sets: allSets, events: allEvents })
+      if (!match?.test) await queueApprovalFiles({ pdfResult, sets: allSets, events: allEvents, match: approvedMatch })
       else if (pdfResult) mailTestScoresheet(pdfResult)
 
       // Warn if PDF was not generated (approval still succeeded)

@@ -1439,7 +1439,8 @@ fn sign_response(a: crate::sign::Answer) -> Response {
 
 /// Who may start a session here (spec D3): the relay host itself ("local"), or
 /// a device that proves the game PIN of a match this relay holds
-/// ("pin:<matchKey>"). Wrong PINs count toward the per-IP wrong-PIN limit.
+/// ("pin:<address>": the caps are the caller's address's, not one set per
+/// match it names). Wrong PINs count toward the per-IP wrong-PIN limit.
 async fn sign_owner(state: &Arc<AppState>, addr: &SocketAddr, headers: &HeaderMap, body: &Value) -> Result<String, crate::sign::Answer> {
     use crate::sign::sign_error;
     if is_local(addr) {
@@ -1467,7 +1468,8 @@ async fn sign_owner(state: &Arc<AppState>, addr: &SocketAddr, headers: &HeaderMa
         window_bump(&mut *state.limits.lock().await, &fail_key);
         return Err(sign_error(403, "OV_SIGN_PIN_INVALID"));
     }
-    Ok(format!("pin:{}", key.unwrap_or_default()))
+    // The session caps are the caller's address's, however many matches it names
+    Ok(format!("pin:{}", canonical_ip(addr.ip())))
 }
 
 async fn sign_api(
@@ -3677,6 +3679,30 @@ mod tests {
         // A test match without a game PIN cannot be proven
         sync(&state, 1, "test-1", bundle(2, "", "live")).await.unwrap();
         assert_eq!(start("192.0.2.51:1", Some("000000"), "test-1").await.2["code"], "OV_SIGN_FORBIDDEN");
+    }
+
+    #[tokio::test]
+    async fn sign_live_sessions_are_capped_per_address_not_per_match() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "127.0.0.1").await;
+        for (i, key) in ["made-up-1", "made-up-2", "made-up-3"].iter().enumerate() {
+            sync(&state, 1, key, bundle(10 + i as u64, "111111", "live")).await.unwrap();
+        }
+        let start = |addr: &'static str, key: &'static str| {
+            let state = state.clone();
+            async move { sign_call(&state, "/api/sign/start", sign_start_body(key), addr, &[("x-ov-match-pin", "111111")]).await }
+        };
+        let keys = ["made-up-1", "made-up-2", "made-up-3"];
+        for i in 0..crate::sign::LAN_CAPS.per_owner {
+            let (st, _, body) = start("192.0.2.66:1", keys[i % 3]).await;
+            assert_eq!(st, StatusCode::CREATED, "{body}");
+        }
+        for key in keys {
+            assert_eq!(start("192.0.2.66:2", key).await.2["code"], "OV_SIGN_RATE_LIMITED");
+        }
+        // another device and the relay host are not affected
+        assert_eq!(start("192.0.2.67:1", "made-up-1").await.0, StatusCode::CREATED);
+        assert_eq!(sign_call(&state, "/api/sign/start", sign_start_body("m"), "127.0.0.1:1", &[]).await.0, StatusCode::CREATED);
     }
 
     #[tokio::test]

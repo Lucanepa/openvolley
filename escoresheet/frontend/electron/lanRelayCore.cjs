@@ -2167,7 +2167,8 @@ function createLanRelay(options = {}) {
   /**
    * Who may start a session here (spec D3): the relay host itself ('local'),
    * or a device that proves the game PIN of a match this relay holds
-   * ('pin:<matchKey>'). Wrong PINs count toward the per-IP wrong-PIN limit.
+   * ('pin:<address>': the session caps are the caller's address's, however
+   * many matches it names). Wrong PINs count toward the per-IP wrong-PIN limit.
    */
   function signOwner(req, body, ip) {
     if (isLocalAddr(req.socket && req.socket.remoteAddress)) return { owner: 'local' }
@@ -2184,7 +2185,7 @@ function createLanRelay(options = {}) {
       pinFailures.fail(key)
       return { error: signFail(403, 'OV_SIGN_PIN_INVALID') }
     }
-    return { owner: `pin:${matchKey}` }
+    return { owner: `pin:${stripV4Prefix(ip)}` }
   }
 
   /** POST /api/sign/<endpoint>. */

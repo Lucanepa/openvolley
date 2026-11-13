@@ -31,7 +31,7 @@ describe('lib/signSessions.js', () => {
 
   it('the cloud caps', () => {
     const s = core.createSignSessions({ via: 'cloud', log: () => {} })
-    assert.deepEqual(s.caps, { total: 2000, perOwner: 20, startPerOwner: 30, phonePerIp: 120, waiters: 1000 })
+    assert.deepEqual(s.caps, { total: 2000, perOwner: 20, startPerOwner: 30, phonePerIp: 120, waiters: 1000, localReserve: 0 })
   })
 
   it('a double submit: exactly one wins', () => {

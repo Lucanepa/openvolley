@@ -3426,6 +3426,7 @@
         "approval_pin_set": "PIN di approvazione impostato",
         "approval_pin_remove": "PIN di approvazione rimosso",
         "approval_pin_locked": "PIN di approvazione bloccato",
+        "approval_pin_failed": "PIN di approvazione sbagliato",
         "match_approve": "Risultato approvato con account",
         "match_approval_revoke": "Approvazione con account annullata",
         "match_approval_void": "Approvazioni con account annullate",
@@ -4511,6 +4512,7 @@
       "notSet": "Non impostato",
       "setOn": "Impostato il {{date}}",
       "lockedUntil": "Bloccato fino alle {{time}}",
+      "lockedForCallerUntil": "In pausa per un account fino alle {{time}}, dopo PIN sbagliati da quell'account. Gli altri account possono ancora usare il tuo PIN. Un nuovo PIN termina la pausa.",
       "disabled": "Bloccato dopo troppi PIN errati. Impostane uno nuovo.",
       "ineligible": {
         "email": "Conferma prima il tuo indirizzo e-mail",
@@ -4554,6 +4556,10 @@
     "syncing": "Invio del risultato…",
     "nameDiffers": "Il nome dell'account {{account}} è diverso dall'ufficiale inserito ({{entered}})",
     "revalidateFailed": "Un'approvazione con account non è più valida. Controlla le firme e approva di nuovo.",
+    "unconfirmedTitle": "Approvazioni non confermate",
+    "unconfirmedBody": "Questo dispositivo non raggiunge il server, quindi le approvazioni con account di {{roles}} non possono essere verificate. Se continua, queste firme vengono stampate come in sospeso sul referto. Per completarle firmi a mano, oppure si colleghi e riprovi.",
+    "unconfirmedBodySignedOut": "Su questo dispositivo nessuno ha effettuato l’accesso, quindi le approvazioni con account di {{roles}} non possono essere verificate. Se continua, queste firme vengono stampate come in sospeso sul referto. Per completarle firmi a mano, oppure acceda e riprovi.",
+    "unconfirmedApprove": "Approva senza di esse",
     "errors": {
       "pinInvalid": "E-mail o PIN non accettati. Dopo diversi PIN sbagliati il PIN va in pausa: l’ufficiale lo vede nel suo profilo. Oppure firmi a mano.",
       "pinFormat": "Il PIN deve avere da 4 a 6 cifre.",
@@ -4571,6 +4577,8 @@
       "unavailable": "L'approvazione con account non è disponibile su questo server.",
       "emailUnconfirmed": "L'ufficiale non ha ancora confermato l'indirizzo e-mail dell'account.",
       "scorerNotReferee": "L’account che tiene il referto di questa partita non può approvare come arbitro.",
+      "notMatchOfficial": "Questa e-mail non è quella inserita per questo arbitro nella configurazione partita. L’arbitro approva con l’account di quell’indirizzo, oppure firma a mano.",
+      "officialEmailMissing": "Per questo arbitro non è stata inserita nessuna e-mail nella configurazione partita, quindi il suo account non può essere verificato. Firmi a mano.",
       "callerRole": "L’approvazione con un account richiede un account di segnapunti o di arbitro su questo dispositivo."
     },
     "mine": {
@@ -5274,7 +5282,8 @@
     "reasonSignIn": "Accedi per firmare su un telefono via internet. Oppure firma su questo dispositivo.",
     "reasonRole": "Il tuo account non può ancora avviare la firma sul telefono. Firma su questo dispositivo.",
     "reasonNoNetwork": "Nessuna rete per i telefoni: collega questo portatile al Wi-Fi della palestra o attiva il suo Wi-Fi (Collega tablet).",
-    "startFailed": "Impossibile creare un link. Riprova, oppure firma su questo dispositivo."
+    "startFailed": "Impossibile creare un link. Riprova, oppure firma su questo dispositivo.",
+    "notOnServer": "Questa partita non è sul server (una partita test mai, una nuova solo dopo la sincronizzazione), quindi via internet non si può avviare. Firma su questo dispositivo, usa la rete della palestra o riprova tra un attimo."
   },
   "sizeGate": {
     "title": "Per usare questa applicazione serve un tablet o uno schermo più grande (almeno 800×600).",

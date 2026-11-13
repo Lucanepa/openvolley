@@ -42,7 +42,7 @@ import { accessForSport } from './lib/access.js'
 import { newRequestId, formatDbRejection, createLogLimiter, createConnectionSummary } from './lib/opsLog.js'
 import { renderLandingPage, landingMatchRow, INDOOR_ROLES, BEACH_ROLES } from './lib/landingPage.js'
 import { createOriginPolicy, parsePublicOrigins } from './lib/cors.js'
-import { createSignSessions, signEndpointOf, signBodyLimit, signError, isSignPagePath, SIGN_API_HEADERS, SIGN_PAGE_HEADERS } from './lib/signSessions.js'
+import { createSignSessions, signEndpointOf, signBodyLimit, signError, isSignPagePath, SIGN_API_HEADERS, SIGN_PAGE_HEADERS, SLOTS as SIGN_SLOTS } from './lib/signSessions.js'
 import { signPageFile } from './lib/signPage.js'
 // The scoring-device handover's pure helpers (the pg part runs in DATABASE_URL mode only)
 import { SCORER_TABLES, deviceOf, matchRefsOfWrite, scorerMovedBody } from './lib/scorerDevice.js'
@@ -1409,9 +1409,15 @@ setInterval(() => { relaySummary.flush(); logDbRejection.flush() }, 60_000).unre
 // POST /api/sign/start|open|submit|wait|close and the phone page at /sign.
 // Sessions live in memory only (D4), created on the first request. Cloud
 // (DATABASE_URL): start needs a session of a scorer, referee (indoor or beach)
-// or admin account (D2). LAN / SEA (--local): the relay host itself, or the
-// game PIN of a match this relay holds in X-OV-Match-Pin (D3, wrong PINs
-// counted in pinFailureLimiter). OV_SIGN_DISABLED=1: 503 OV_SIGN_UNAVAILABLE.
+// or admin account (D2), and names a stored match that account may write
+// (its creator, an editor or an admin); the phone page shows that match's
+// teams and game number, not the request's. LAN / SEA (--local): the relay
+// host itself, or the game PIN of a match this relay holds in X-OV-Match-Pin
+// (D3, wrong PINs counted in pinFailureLimiter) from the scoring device that
+// holds it: a scoreboard socket at the caller's address owns the room right
+// now. Such a start's caps (live sessions, starts) are the caller's address
+// bucket's, and the relay host keeps a share of the total for itself
+// (LAN_CAPS.localReserve). OV_SIGN_DISABLED=1: 503 OV_SIGN_UNAVAILABLE.
 const SIGN_DISABLED = process.env.OV_SIGN_DISABLED === '1'
 const SIGN_STARTER_ROLES = ['scorer', 'referee', 'beach:scorer', 'beach:referee']
 let signSessions = null
@@ -1433,30 +1439,50 @@ function mayStartPhoneSign(access) {
 }
 
 /**
- * The app of a cloud signing session, for the phone page's name and mark
- * (open answers app: 'beach'): the sport of the match the scoring device names
- * (matchKey = matches.external_id, OpenBeach's seed_key); a match the server
- * does not have yet: 'beach' for an account with beach roles only. Branding
- * only: it never decides who may start, open or submit.
+ * A cloud start's match (matchKey = matches.external_id, OpenBeach's
+ * seed_key): stored, and written by this account (its creator, an editor of
+ * it, or an admin). { body, app } with the body's context taking the stored
+ * teams and game number (a beach match's team1 / team2), and the app of the
+ * phone page's name and mark (open answers app: 'beach'); { error } otherwise
+ * (403 OV_SIGN_MATCH, 503 when the database does not answer). A test match
+ * never reaches the server, a new one only once its insert synced: the app
+ * takes the hall network then, or says so (PhoneSignPanel startFailureKey).
  */
-async function signAppOf(layer, matchKey, access) {
-  if (typeof matchKey === 'string' && matchKey.trim() && matchKey.length <= 128) {
-    try {
-      const { rows: [m] } = await layer.db.pool.query(
-        'SELECT sport_type::text AS sport FROM public.matches WHERE external_id = $1 LIMIT 1', [matchKey.trim()])
-      if (m) return m.sport === 'beach' ? 'beach' : null
-    } catch (err) {
-      console.warn('[Sign] match sport lookup failed:', err?.message)
-    }
+async function signMatchOf(layer, body, userId, access) {
+  const key = typeof body?.matchKey === 'string' ? body.matchKey.trim() : ''
+  if (!key || key.length > 128) return { error: signError(403, 'OV_SIGN_MATCH') }
+  let m
+  try {
+    ({ rows: [m] } = await layer.db.pool.query(
+      `SELECT m.created_by, m.game_n, m.sport_type::text AS sport,
+              CASE WHEN m.sport_type IS NOT DISTINCT FROM 'beach' THEN m.team1_data->>'name' ELSE m.home_team->>'name' END AS home,
+              CASE WHEN m.sport_type IS NOT DISTINCT FROM 'beach' THEN m.team2_data->>'name' ELSE m.away_team->>'name' END AS away,
+              EXISTS (SELECT 1 FROM public.match_editors e WHERE e.match_id = m.id AND e.user_id = $2) AS editor
+         FROM public.matches m WHERE m.external_id = $1 LIMIT 1`, [key, userId]))
+  } catch (err) {
+    console.warn('[Sign] match lookup failed:', err?.message)
+    return { error: signError(503, 'OV_SIGN_UNAVAILABLE', { 'Retry-After': '5' }) }
   }
-  const roles = Array.isArray(access?.roles) ? access.roles : []
-  const beachOnly = roles.some((r) => String(r).startsWith('beach:')) && !roles.some((r) => r === 'scorer' || r === 'referee')
-  return beachOnly && access?.isAdmin !== true ? 'beach' : null
+  if (!m || !(access?.isAdmin === true || m.created_by === userId || m.editor === true)) return { error: signError(403, 'OV_SIGN_MATCH') }
+  const text = (v) => (typeof v === 'string' && v.trim() ? v : null)
+  const ctx = body.context
+  const context = ctx && typeof ctx === 'object' && !Array.isArray(ctx)
+    ? {
+        ...ctx,
+        home: text(m.home) ?? ctx.home,
+        away: text(m.away) ?? ctx.away,
+        ...(m.game_n != null ? { matchNo: String(m.game_n) } : {})
+      }
+    : ctx
+  return { body: { ...body, context }, app: m.sport === 'beach' ? 'beach' : null }
 }
 
-/** The request comes from this machine itself: loopback or one of its own addresses. */
-function isLocalCaller(req) {
-  const addr = String(req.socket?.remoteAddress || '').replace(/^::ffff:/, '')
+/** --local: a scoreboard socket at this address bucket owns the room of `matchKey` right now. */
+const roomHeldFrom = (matchKey, ipKey) => ownersOf(matchKey).some((c) => c.ipKey === ipKey)
+
+/** Loopback or one of this machine's own addresses. */
+function isOwnAddress(value) {
+  const addr = String(value || '').replace(/^::ffff:/, '')
   if (!addr) return false
   if (addr === '::1' || addr.startsWith('127.')) return true
   try {
@@ -1465,6 +1491,18 @@ function isLocalCaller(req) {
     }
   } catch { /* remote */ }
   return false
+}
+
+/**
+ * The request comes from this machine itself: the socket's peer is one of its
+ * own addresses, and so is the client address behind a trusted proxy
+ * (TRUST_PROXY, getClientIp). The forwarded address can only take that away
+ * (a proxy on the same machine does not make every caller the relay host),
+ * never grant it: with TRUST_PROXY and no TRUST_PROXY_FROM any peer's
+ * cf-connecting-ip is believed.
+ */
+function isLocalCaller(req) {
+  return isOwnAddress(req.socket?.remoteAddress) && isOwnAddress(getClientIp(req))
 }
 
 async function handleSignRequest(req, res, endpoint) {
@@ -1480,6 +1518,7 @@ async function handleSignRequest(req, res, endpoint) {
   let owner = null
   let layer = null
   let access = null
+  let userId = null
   if (endpoint === 'start' && DB_MODE) {
     // The account first, before the body is read
     const token = bearerFromHeaders(req.headers)
@@ -1496,6 +1535,7 @@ async function handleSignRequest(req, res, endpoint) {
     }
     if (!user) return refuse(signError(401, 'OV_AUTH_REQUIRED'))
     if (!mayStartPhoneSign(access)) return refuse(signError(403, 'OV_SIGN_FORBIDDEN'))
+    userId = user.id
     owner = `u:${user.id}`
   }
   let body
@@ -1511,7 +1551,10 @@ async function handleSignRequest(req, res, endpoint) {
       const pin = String(req.headers['x-ov-match-pin'] || '').trim().slice(0, 32)
       if (!pin) return send(signError(403, 'OV_SIGN_FORBIDDEN'))
       const matchKey = typeof body?.matchKey === 'string' ? normalizeMatchId(body.matchKey) : null
-      const stored = matchKey ? gamePinOf(activeMatches.get(matchKey)?.match) : null
+      // Only the scoring device that holds the room (before any PIN is
+      // compared): a device that only knows the game PIN, or a room whose
+      // scoreboard is gone, starts nothing
+      const stored = matchKey && roomHeldFrom(matchKey, ipKey) ? gamePinOf(activeMatches.get(matchKey)?.match) : null
       if (!stored) return send(signError(403, 'OV_SIGN_FORBIDDEN'))
       // The brute-force budget of every PIN check (this match's game PIN):
       // counted now, refunded on success
@@ -1519,13 +1562,22 @@ async function handleSignRequest(req, res, endpoint) {
       if (pinFailureLimiter.isLimited(ipKey, scope)) return send(signError(429, 'OV_SIGN_RATE_LIMITED', { 'Retry-After': '600' }))
       if (!safeEqualStr(stored, pin)) return send(signError(403, 'OV_SIGN_PIN_INVALID'))
       pinFailureLimiter.refund(ipKey, scope)
-      owner = `pin:${matchKey}`
+      // the caps of the caller's address, however many rooms it holds
+      owner = `pin:${ipKey}`
     }
   }
   const sessions = getSignSessions()
   if (endpoint === 'start') {
-    // the app of the phone page (cloud): only after the account check, never from the body
-    const app = DB_MODE && layer && body && typeof body === 'object' ? await signAppOf(layer, body.matchKey, access) : null
+    // cloud: the match the account writes, its stored teams and its app
+    // (the phone page's name and mark); only after the account check, and
+    // after the request's own shape (a bad body or slot is the core's 400)
+    let app = null
+    if (DB_MODE && body && typeof body === 'object' && !Array.isArray(body) && SIGN_SLOTS.includes(body.slot)) {
+      const bound = await signMatchOf(layer, body, userId, access)
+      if (bound.error) return send(bound.error)
+      body = bound.body
+      app = bound.app
+    }
     return send(sessions.start(body, { owner, app }))
   }
   if (endpoint === 'open') return send(sessions.open(body, { ipKey }))
