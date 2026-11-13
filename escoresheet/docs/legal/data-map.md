@@ -371,8 +371,14 @@ file tar). The policy must say so (F8).
 | Uptime Kuma pushes | Status only | Operator's own | No personal data | — |
 
 Not in use (code present but not configured in `deploy/compose.yaml`):
-Supabase (left in 2026-10). The PocketBase relay backup (never configured)
-was removed from the code in 2026-11.
+Supabase (left in 2026-10). No code talks to it any more; in 2026-11 the
+copy of its old vm-sync Edge Function (`backend/legacy/`), the
+`VITE_SUPABASE_*` lines of the release workflow and the Supabase MCP config
+were removed from the repository. Its anon key stays readable in the public
+git history, so **record here when the project was deleted** (Supabase
+dashboard; if it still exists, delete it or at least rotate its JWT secret).
+The PocketBase relay backup (never configured) was removed from the code in
+2026-11.
 
 ## 6. Retention as built: summary
 

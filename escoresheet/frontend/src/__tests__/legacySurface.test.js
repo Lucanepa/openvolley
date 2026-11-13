@@ -1,13 +1,15 @@
 // @vitest-environment node
 // Legacy surfaces removed in 2026-11 stay removed: the Electron shell (a
 // Chromium without updates whose child windows kept the preload), packages
-// no code imports, and the deploy file that started an unpinned static server.
+// no code imports, the deploy file that started an unpinned static server,
+// and the old Supabase Edge Function and build secrets.
 import { describe, it, expect } from 'vitest'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 const frontendDir = resolve(__dirname, '../..')
 const backendDir = resolve(frontendDir, '../backend')
+const workflowsDir = resolve(frontendDir, '../../.github/workflows')
 const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'))
 const depNames = (pkg) => Object.keys({ ...pkg.dependencies, ...pkg.devDependencies, ...pkg.optionalDependencies, ...pkg.peerDependencies })
 
@@ -35,5 +37,13 @@ describe('legacy surfaces stay removed', () => {
     const src = readFileSync(join(frontendDir, 'scripts/build-subdomains.js'), 'utf8')
     expect(src).not.toMatch(/npx serve/)
     expect(src).not.toMatch(/resolve\(outDir, 'package\.json'\)/)
+  })
+
+  it('the old Supabase Edge Function and build secrets are gone', () => {
+    expect(existsSync(join(backendDir, 'legacy'))).toBe(false)
+    if (!existsSync(workflowsDir)) return // a checkout of escoresheet/ alone
+    for (const file of readdirSync(workflowsDir).filter((name) => /\.ya?ml$/.test(name))) {
+      expect(readFileSync(join(workflowsDir, file), 'utf8'), file).not.toMatch(/VITE_SUPABASE_/)
+    }
   })
 })
