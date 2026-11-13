@@ -233,6 +233,7 @@ const PIN_FAILURE_LIMIT = 5
 // POST /api/match/validate-pin per IP and minute: wrong PINs (the limit the
 // whole endpoint had before), and every check (reloads, renewals)
 const VALIDATE_PIN_FAILURES = 10
+const VALIDATE_PIN_FAILURE_WINDOW_MS = 10 * 60 * 1000
 const VALIDATE_PIN_REQUESTS = 60
 // Wrong PINs for one match from all addresses together (GET /api/match/:id,
 // subscribe-match, scoreboard claims): a device that changes its address
@@ -246,6 +247,11 @@ const MAX_ROOMS_PER_IP = 16
 const MAX_ROOM_BYTES_PER_IP = 64 * 1024 * 1024
 const ROOM_IDLE_EVICT_MS = 30 * 60 * 1000
 const MAX_SUBSCRIPTIONS_PER_SOCKET = 32
+// Messages a (non-loopback) socket may send per minute, past which they are
+// refused, and bytes a socket may have waiting to be sent: a client that
+// stops reading is ended, not buffered for. Same values in src-tauri relay.rs.
+const MESSAGES_PER_MINUTE = 600
+const MAX_BUFFERED_BYTES = 16 * 1024 * 1024
 const MAX_ACCESS_KEYS = 16
 // Devices a room remembers as having lost it to another (sync device.claim)
 const MAX_MOVED_DEVICES = 16
@@ -1436,7 +1442,7 @@ function createLanRelay(options = {}) {
   // Wrong subscribe-match PINs per socket / IP and minute (no PIN compared beyond)
   const pinFailures = createFailureCounter({ max: options.pinFailureLimit ?? PIN_FAILURE_LIMIT })
   // Wrong POST /api/match/validate-pin PINs per IP and minute
-  const validatePinFailures = createFailureCounter({ max: VALIDATE_PIN_FAILURES })
+  const validatePinFailures = createFailureCounter({ windowMs: VALIDATE_PIN_FAILURE_WINDOW_MS, max: VALIDATE_PIN_FAILURES })
   const isNewClaimLimited = (ownLimiters[ownLimiters.length] = createRateLimiter({ max: options.newClaimLimit ?? NEW_CLAIM_LIMIT }))
   const signCore = options.signCore || null
   const isLocalAddr = options.isLocal || isLoopbackAddress
@@ -1486,11 +1492,17 @@ function createLanRelay(options = {}) {
   const supersededClaims = new Map() // matchId -> Set<claim> the scorers' copies were continued from
   const benchRequests = createBenchRequestStore() // open + recently answered bench requests per match
   const benchLimiter = createWindowLimiter() // bench-request per socket and minute
+  const messageLimiter = createWindowLimiter({ max: options.messagesPerMinute ?? MESSAGES_PER_MINUTE })
   let nextClientId = 1
   let frameBytes = 0 // size of the frame handleMessage is dispatching
 
   function send(ws, msg) {
     if (!ws || ws.readyState !== 1) return false
+    if (typeof ws.bufferedAmount === 'number' && ws.bufferedAmount > MAX_BUFFERED_BYTES) {
+      // fallen this far behind: end it (the runtime's 'close' handler removes it)
+      try { ws.terminate() } catch { /* already gone */ }
+      return false
+    }
     try {
       ws.send(JSON.stringify(msg))
       return true
@@ -1684,6 +1696,7 @@ function createLanRelay(options = {}) {
     }
     clients.delete(ws)
     benchLimiter.forget(meta.id)
+    messageLimiter.forget(meta.id)
     for (const matchId of meta.owned) {
       if (ownersOf(matchId).length === 0) orphanedSince.set(matchId, Date.now())
     }
@@ -1877,7 +1890,7 @@ function createLanRelay(options = {}) {
     // refused before any comparison, so the reply says nothing about the PIN.
     if (overBudget()) return { ok: false, code: 'rate-limited' }
 
-    if (storedPin !== null && incomingPin === storedPin) return grant(wasOwner ? 'owner' : 'proved')
+    if (storedPin !== null && incomingPin !== null && safeEqualText(storedPin, incomingPin)) return grant(wasOwner ? 'owner' : 'proved')
 
     // A room under a bare Dexie id (older apps without seed_key) another
     // scorer may reuse: when an unfinished one is taken over with another
@@ -1984,6 +1997,15 @@ function createLanRelay(options = {}) {
    * match: its sides, sets won, 'ended' status, ...).
    */
   function storeBundle(matchId, bundle, kind) {
+    // A scorer's undo snapshots are not relayed (backend server.js; the
+    // 3.0.15 scorer drops them itself, older ones send them with every point)
+    if (Array.isArray(bundle.events) && bundle.events.some((e) => e && (e.stateSnapshot !== undefined || e.stateBefore !== undefined))) {
+      bundle = { ...bundle, events: bundle.events.map((e) => {
+        if (!e || typeof e !== 'object') return e
+        const { stateSnapshot, stateBefore, ...rest } = e
+        return rest
+      }) }
+    }
     const prev = store.get(matchId)
     if (prev && (kind === 'owner' || kind === 'proved')) {
       bundle = { ...bundle, match: carryMatchSecrets(prev.match, bundle.match) }
@@ -2400,6 +2422,11 @@ function createLanRelay(options = {}) {
       return
     }
     if (!clients.has(ws)) addClient(ws)
+    const sender = clients.get(ws)
+    if (sender && !isLoopbackAddress(sender.ip) && messageLimiter.hit(sender.id)) {
+      sendError(ws, 'rate-limited', 'Too many messages. Wait a minute.')
+      return
+    }
     frameBytes = typeof raw === 'string' ? raw.length : (raw && raw.length) || 0
 
     // A frame never ends the relay (and every court's tablets with it): the
@@ -2451,13 +2478,13 @@ function createLanRelay(options = {}) {
     const cfg = PIN_TYPES[(body && body.type) || 'referee']
     const sport = (body && body.sport) ?? 'indoor'
     if (sport !== 'indoor' && sport !== 'beach') return { status: 400, body: { success: false, error: 'Invalid request' } }
-    if (pinStr.length !== 6) return { status: 400, body: { success: false, error: 'Invalid PIN format' } }
+    if (!/^\d{6}$/.test(pinStr)) return { status: 400, body: { success: false, error: 'Invalid PIN format' } }
     if (!cfg) return { status: 400, body: { success: false, error: 'Invalid PIN type' } }
     for (const [key, bundle] of store) {
       const match = bundle.match
       if (!match || bundleSport(bundle) !== sport) continue
       const expected = match[cfg.pin]
-      if (expected === undefined || expected === null || String(expected).trim() !== pinStr) continue
+      if (expected === undefined || expected === null || !safeEqualText(String(expected).trim(), pinStr)) continue
       if (match[cfg.enabled] === true && match.status !== 'final') {
         const found = publicMatch({ ...match, id: publicMatchId(key) })
         // A beach answer names its sport (the indoor answer is unchanged)
@@ -2530,8 +2557,13 @@ function createLanRelay(options = {}) {
       return { status: 429, body: { success: false, error: 'Too many wrong PINs. Wait a minute.' } }
     }
     const answer = (match, matchId, bundle) => {
-      const full = !!offered && anyMatchPinGrants(match, offered)
-      if (offered && !full) pinFailures.fail(failKey)
+      // A spent match budget: no PIN is compared, whatever the address
+      const spent = !!offered && matchBlockedFor(matchId, failKey)
+      const full = !!offered && !spent && anyMatchPinGrants(match, offered)
+      if (offered && !full && !spent) {
+        pinFailures.fail(failKey)
+        matchPinFailures.fail(matchPinKey(matchId))
+      }
       if (full) return { status: 200, body: { success: true, access: 'full', match: publicMatch(match), matchId } }
       const summary = relaySummaryBundle({ ...(bundle || {}), match })
       return {
@@ -2589,17 +2621,32 @@ function createLanRelay(options = {}) {
   }
 
   /**
-   * GET /api/server/connections. `local`: the relay machine itself asks;
-   * anyone else gets no addresses and no other room's key.
+   * GET /api/server/connections. `local`: the relay machine itself asks. The
+   * list of tablets only for it or with a PIN of the asked match (`pin`,
+   * X-OV-Match-Pin; wrong ones count like GET /api/match/:id); anyone else
+   * gets counts, and no other room's key.
    */
-  function getConnections(matchIdFilter, { local = true } = {}) {
+  function getConnections(matchIdFilter, { local = true, pin = null, ip = null } = {}) {
     const filter = normalizeMatchId(matchIdFilter)
+    const offered = pin === undefined || pin === null ? '' : String(pin).trim()
+    let listed = local
+    if (!local && offered && filter) {
+      const failKey = `ip:${ip || 'unknown'}`
+      if (!pinFailures.blocked(failKey) && !matchBlockedFor(filter, failKey)) {
+        const bundle = store.get(filter)
+        listed = !!bundle && anyMatchPinGrants(bundle.match, offered)
+        if (!listed) {
+          pinFailures.fail(failKey)
+          matchPinFailures.fail(matchPinKey(filter))
+        }
+      }
+    }
     const list = []
     for (const [, meta] of clients) {
       if (meta.owned.size > 0) continue // scoreboards are not dashboards
       for (const matchId of meta.subscribed) {
         if (filter && matchId !== filter) continue
-        list.push({ id: meta.id, ...(local ? { ip: meta.ip } : {}), role: meta.role, team: meta.team, matchId, connectedAt: meta.connectedAt })
+        list.push({ id: meta.id, ip: meta.ip, role: meta.role, team: meta.team, matchId, connectedAt: meta.connectedAt })
       }
     }
     const matchSubscriptions = {}
@@ -2609,14 +2656,14 @@ function createLanRelay(options = {}) {
       dashboardClients: list.length,
       referees: list.filter((c) => c.role === 'referee').length,
       benches: list.filter((c) => c.role === 'bench').length,
-      clients: list,
+      clients: listed ? list : [],
       matchSubscriptions,
     }
   }
 
-  function sendJson(res, status, body) {
+  function sendJson(res, status, body, headers = {}) {
     if (res.headersSent || res.writableEnded) return
-    res.writeHead(status, { 'Content-Type': 'application/json' })
+    res.writeHead(status, { 'Content-Type': 'application/json', ...headers })
     res.end(JSON.stringify(body))
   }
 
@@ -2771,11 +2818,11 @@ function createLanRelay(options = {}) {
       // typed too many wrong ones. A generous cap on all checks stays.
       const failKey = `vp:${ip || 'unknown'}`
       if (validatePinFailures.blocked(failKey)) {
-        sendJson(res, 429, { success: false, error: 'Too many wrong PINs. Wait a minute.' })
+        sendJson(res, 429, { success: false, error: 'Too many wrong PINs. Wait a minute.' }, { 'Retry-After': String(VALIDATE_PIN_FAILURE_WINDOW_MS / 1000) })
         return true
       }
       if (isRateLimited(failKey, VALIDATE_PIN_REQUESTS)) {
-        sendJson(res, 429, { success: false, error: 'Too many attempts. Please wait a minute before trying again.' })
+        sendJson(res, 429, { success: false, error: 'Too many attempts. Please wait a minute before trying again.' }, { 'Retry-After': '60' })
         return true
       }
       reply(readJsonBody(req).then((body) => {
@@ -2800,7 +2847,8 @@ function createLanRelay(options = {}) {
     }
     if (path === '/api/server/connections' && method === 'GET') {
       const local = isLocalAddr(ip)
-      reply(() => ({ status: 200, body: getConnections(parsed.searchParams.get('matchId'), { local }) }))
+      const pin = req.headers && req.headers['x-ov-match-pin']
+      reply(() => ({ status: 200, body: getConnections(parsed.searchParams.get('matchId'), { local, pin: typeof pin === 'string' ? pin : null, ip }) }))
       return true
     }
     const m = path.match(/^\/api\/match\/([^/]+)$/)

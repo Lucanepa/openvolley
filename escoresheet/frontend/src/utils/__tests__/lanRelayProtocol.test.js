@@ -1151,7 +1151,9 @@ async function hostileFrameScenario({ httpBase, wsUrl }) {
   const accomplice = await openClient(wsUrl)
   scoreboard.send(syncMessage(makeMatch({ seed_key: 'seed-hostile' })))
   referee.send({ type: 'subscribe-match', matchId: 'seed-hostile', pin: PINS.refereePin })
-  await referee.waitFor((m) => m.type === 'match-full-data')
+  // Two sockets: the subscribe can arrive before the sync (the Tauri relay
+  // stores a seed room's claim first), then the match comes as an update
+  await referee.waitFor((m) => (m.type === 'match-full-data' || m.type === 'match-data-update') && m.matchId === 'seed-hostile')
   accomplice.send({ type: 'subscribe-match', matchId: 'x1' })
   accomplice.send({ type: 'ping' })
   await accomplice.waitFor((m) => m.type === 'pong')
