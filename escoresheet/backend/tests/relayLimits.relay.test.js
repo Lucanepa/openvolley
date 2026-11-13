@@ -27,6 +27,9 @@ import pg from 'pg'
 import { bootServer, openSocket, provisionDatabase, subscribe, sleep, SKIP } from './helpers/e2eServer.js'
 import { approxHeapBytes, relayEvents, MAX_RELAY_BUNDLE_BYTES } from '../lib/relayLimits.js'
 
+// The cloud relay stamps the order it received each live state in (server.js stampRelayOrder)
+const unstamped = (o) => { if (!o || typeof o !== 'object') return o; const { _relayEpoch, _relaySeq, ...rest } = o; return rest }
+
 const POISON = { toString: 1 } // JSON {"toString":1}: String() of it throws
 const PIN = '314159'
 const MB = 1024 * 1024
@@ -380,7 +383,7 @@ describe('anonymous input on a venue relay (--local)', () => {
     // a real one goes through
     scorer.send({ type: 'live-state-update', matchId: 'live-big', liveState: { points_a: 2, points_b: 0 } })
     const live = await viewer.waitFor((m) => m.type === 'live-state-update')
-    assert.deepEqual(live.liveState, { points_a: 2, points_b: 0 })
+    assert.deepEqual(unstamped(live.liveState), { points_a: 2, points_b: 0 })
     await settle(viewer)
     assert.equal(viewer.messages.filter((m) => m.type === 'live-state-update').length, 1, 'the big one never reached the viewer')
     assert.equal(await alive(srv.base), true)
@@ -521,7 +524,7 @@ describe('relay memory budget on the cloud relay (new rooms shed first, matches 
     await settle(hall)
     assert.deepEqual(errorsOf(hall), [], 'the match in play must not be frozen')
     const live = await referee.waitFor((m) => m.type === 'live-state-update')
-    assert.deepEqual(live.liveState, { points_a: 11, points_b: 8, serving: 'home' })
+    assert.deepEqual(unstamped(live.liveState), { points_a: 11, points_b: 8, serving: 'home' })
     const kept = await get(srv.base, '/api/match/in-play', { 'X-OV-Match-Pin': PIN })
     assert.deepEqual(kept.json.sets.map((s) => s.homePoints), [11, 3], 'the newer bundle is held')
   })

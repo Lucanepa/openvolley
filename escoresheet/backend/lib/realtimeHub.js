@@ -140,6 +140,19 @@ export function isLiveRequest(req) {
 }
 
 /**
+ * True when a live socket opens as a livescore viewer
+ * (`?purpose=live&client=viewer`): it counts against maxViewers. Older
+ * livescore pages do not say so and count as any other live socket.
+ */
+function isViewerRequest(req) {
+  try {
+    return new URL(req?.url || '/', 'http://relay.invalid').searchParams.get('client') === 'viewer'
+  } catch {
+    return false
+  }
+}
+
+/**
  * Role-socket frames nested deeper are refused (server.js, jsonTooDeep), the
  * depth the venue relays refuse too; real bundles nest about ten.
  */
@@ -325,8 +338,21 @@ function sameColumns(known, row) {
  *           Allowed filter columns, or a predicate (e.g. backed by the pgQuery catalog
  *           minus secret columns).
  * @property {boolean} [allowUnfiltered=false]  Allow subs without a filter.
- * @property {number} [maxPerIp=500]       Live sockets per client IP.
+ * @property {number} [maxPerIp=100]       Live sockets per client address bucket (bucketOf):
+ *           a venue's NAT needs tens, not hundreds.
+ * @property {(ip: string) => string} [bucketOf]  The bucket of an address (server.js:
+ *           ipBucketKey, an IPv6 /64 is one subscriber). Default: the address.
  * @property {number} [maxTotal=3000]      Live sockets in total.
+ * @property {number} [maxViewers]         Of those, sockets that open as a livescore viewer
+ *           (`?purpose=live&client=viewer`). Default 80 % of maxTotal: the rest stays
+ *           for the referee and bench tablets, however many people watch.
+ * @property {number} [summaryIntervalMs=1000]  A `summary: true` channel (the livescore
+ *           list) gets one frame of the newest rows per interval (`db-changes`), in the
+ *           columns of summaryProject.
+ * @property {(table: string, row: object) => object} [summaryProject]  Applied after
+ *           redact for summary channels. Default: project.
+ * @property {number} [reorderWindowMs=60000]  An ordering value older than the newest by
+ *           more than this is a clock that stepped back, not a late copy: it passes.
  * @property {number} [maxChannelsPerSocket=10]
  * @property {number} [maxSubsPerChannel=10]
  * @property {number} [maxRowsPerPublish=5] Per channel and publish; above this only
@@ -338,7 +364,9 @@ function sameColumns(known, row) {
  * @property {number} [maxBufferedBytes=262144] Slow consumers above this are terminated.
  * @property {Object<string, {key: string, column: string}>} [ordering]
  *           Per table: drop INSERT/UPDATE rows whose `column` is older than the newest
- *           already published for the same `key`. Default
+ *           already published for the same `key` (by at most reorderWindowMs). Two rows of
+ *           one scorer session (_session/_seq) or both stamped by this relay
+ *           (_relayEpoch/_relaySeq) compare by those counters, not by the device clock. Default
  *           { match_live_state: { key: 'match_id', column: 'updated_at' } }; {} disables.
  * @property {number} [maxOrderingEntries=10000]  Keys remembered for ordering (oldest evicted).
  * @property {number} [maxDuplicateRows=256]  Newest rows kept for the duplicate check
@@ -365,8 +393,13 @@ export function createRealtimeHub(options = {}) {
     tables = DEFAULT_TABLES,
     filterColumns = DEFAULT_FILTER_COLUMNS,
     allowUnfiltered = false,
-    maxPerIp = 500,
+    maxPerIp = 100,
+    bucketOf = (ip) => ip,
     maxTotal = 3000,
+    maxViewers = Math.floor(maxTotal * 0.8),
+    summaryIntervalMs = 1000,
+    summaryProject = null,
+    reorderWindowMs = 60000,
     maxChannelsPerSocket = 10,
     maxSubsPerChannel = 10,
     maxRowsPerPublish = 5,
@@ -396,6 +429,10 @@ export function createRealtimeHub(options = {}) {
     const redacted = redact(table, row) || row
     return project ? (project(table, redacted) || {}) : redacted
   }
+  const summaryRow = (table, row) => {
+    if (!summaryProject) return publicRow(table, row)
+    return summaryProject(table, redact(table, row) || row) || {}
+  }
 
   const tableSet = new Set(tables)
   const isFilterColumn = typeof filterColumns === 'function'
@@ -405,10 +442,24 @@ export function createRealtimeHub(options = {}) {
   /** @type {Map<import('ws').WebSocket, {ip:string, channels:Map<string,object>, window:number, count:number}>} */
   const sockets = new Map()
   const ipCounts = new Map()
-  /** @type {Map<string, Set<object>>} table -> channels with at least one sub on it */
-  const byTable = new Map()
-  const counters = { published: 0, delivered: 0, rejected: 0, terminatedSlow: 0, staleDropped: 0, duplicateDropped: 0 }
-  /** `${table}\0${key}` -> newest published ordering value (ms) */
+  let viewerCount = 0
+  /**
+   * Channels by the filter of a sub: `${table}\0${column}\0${value}` (and
+   * `${table}\0` for an unfiltered sub) -> channels. A publish looks up the
+   * row's values instead of walking every channel of the table.
+   * @type {Map<string, Set<object>>}
+   */
+  const byFilter = new Map()
+  /** table -> (filter column, null for unfiltered -> number of index entries) */
+  const filterColumnsOf = new Map()
+  /** table -> channels with at least one sub on it (stats) */
+  const tableChannels = new Map()
+  /** The summary channels' groups: the same index key -> { channels, pending } */
+  const summaryGroups = new Map()
+  const summaryColumnsOf = new Map()
+  let summaryTimer = null
+  const counters = { published: 0, delivered: 0, rejected: 0, terminatedSlow: 0, staleDropped: 0, duplicateDropped: 0, summaryFrames: 0 }
+  /** `${table}\0${key}` -> newest published order ({ ts, session, seq, epoch, rseq }) */
   const newest = new Map()
   /**
    * `${table}\0${key}` -> that newest row as subscribers see it (redacted,
@@ -453,20 +504,118 @@ export function createRealtimeHub(options = {}) {
     return true
   }
 
+  const filterKey = (table, column, value) => (column == null ? `${table}\0` : `${table}\0${column}\0${value}`)
+
+  function countColumn(columnsOf, table, column, delta) {
+    let cols = columnsOf.get(table)
+    if (!cols) columnsOf.set(table, (cols = new Map()))
+    const n = (cols.get(column) || 0) + delta
+    if (n > 0) cols.set(column, n)
+    else cols.delete(column)
+    if (cols.size === 0) columnsOf.delete(table)
+  }
+
   function indexChannel(channel) {
+    channel.keys = [...new Set(channel.subs.map((s) => filterKey(s.table, s.column, s.value)))]
     for (const t of channel.tables) {
-      let set = byTable.get(t)
-      if (!set) byTable.set(t, (set = new Set()))
+      let set = tableChannels.get(t)
+      if (!set) tableChannels.set(t, (set = new Set()))
       set.add(channel)
+    }
+    for (const key of channel.keys) {
+      const sub = channel.subs.find((s) => filterKey(s.table, s.column, s.value) === key)
+      if (channel.summary) {
+        let group = summaryGroups.get(key)
+        if (!group) {
+          summaryGroups.set(key, (group = { table: sub.table, channels: new Set(), pending: new Map() }))
+          countColumn(summaryColumnsOf, sub.table, sub.column, 1)
+        }
+        group.channels.add(channel)
+        continue
+      }
+      let set = byFilter.get(key)
+      if (!set) {
+        byFilter.set(key, (set = new Set()))
+        countColumn(filterColumnsOf, sub.table, sub.column, 1)
+      }
+      set.add(channel)
+    }
+    if (channel.summary && !summaryTimer) {
+      summaryTimer = setInterval(flushSummaries, summaryIntervalMs)
+      summaryTimer.unref?.()
     }
   }
 
   function unindexChannel(channel) {
     for (const t of channel.tables) {
-      const set = byTable.get(t)
+      const set = tableChannels.get(t)
       if (!set) continue
       set.delete(channel)
-      if (set.size === 0) byTable.delete(t)
+      if (set.size === 0) tableChannels.delete(t)
+    }
+    for (const key of channel.keys || []) {
+      const table = key.slice(0, key.indexOf('\0'))
+      const rest = key.slice(table.length + 1)
+      const column = rest === '' ? null : rest.slice(0, rest.indexOf('\0'))
+      if (channel.summary) {
+        const group = summaryGroups.get(key)
+        if (!group) continue
+        group.channels.delete(channel)
+        if (group.channels.size === 0) {
+          summaryGroups.delete(key)
+          countColumn(summaryColumnsOf, table, column, -1)
+        }
+        continue
+      }
+      const set = byFilter.get(key)
+      if (!set) continue
+      set.delete(channel)
+      if (set.size === 0) {
+        byFilter.delete(key)
+        countColumn(filterColumnsOf, table, column, -1)
+      }
+    }
+    if (summaryGroups.size === 0 && summaryTimer) {
+      clearInterval(summaryTimer)
+      summaryTimer = null
+    }
+  }
+
+  /** The index keys a row of `table` reaches (columnsOf: filterColumnsOf / summaryColumnsOf). */
+  function keysOfRow(columnsOf, table, row) {
+    const cols = columnsOf.get(table)
+    if (!cols) return []
+    const keys = []
+    for (const column of cols.keys()) {
+      if (column == null) keys.push(filterKey(table, null))
+      else if (row && row[column] != null) keys.push(filterKey(table, column, String(row[column])))
+    }
+    return keys
+  }
+
+  function overBuffer(ws) {
+    if (ws.bufferedAmount <= maxBufferedBytes) return false
+    counters.terminatedSlow++
+    logger?.warn?.('[realtimeHub] terminating slow live socket', sockets.get(ws)?.ip)
+    ws.terminate()
+    return true
+  }
+
+  /**
+   * Send each summary group's pending rows (the newest per key since the last
+   * flush) as one `db-changes` frame per channel; one serialisation per group.
+   */
+  function flushSummaries() {
+    for (const group of summaryGroups.values()) {
+      if (group.pending.size === 0) continue
+      const body = JSON.stringify([...group.pending.values()])
+      group.pending.clear()
+      for (const channel of group.channels) {
+        const ws = channel.ws
+        if (ws.readyState !== 1 || overBuffer(ws)) continue
+        ws.send(`{"type":"db-changes","id":${JSON.stringify(channel.id)},"changes":${body}}`, { compress: false })
+        counters.summaryFrames++
+      }
     }
   }
 
@@ -476,9 +625,10 @@ export function createRealtimeHub(options = {}) {
     for (const ch of state.channels.values()) unindexChannel(ch)
     state.channels.clear()
     sockets.delete(ws)
-    const n = (ipCounts.get(state.ip) || 1) - 1
-    if (n <= 0) ipCounts.delete(state.ip)
-    else ipCounts.set(state.ip, n)
+    if (state.viewer) viewerCount--
+    const n = (ipCounts.get(state.bucket) || 1) - 1
+    if (n <= 0) ipCounts.delete(state.bucket)
+    else ipCounts.set(state.bucket, n)
   }
 
   /** Validate one sub; returns a normalised sub or an error string. */
@@ -531,7 +681,8 @@ export function createRealtimeHub(options = {}) {
     }
     const previous = state.channels.get(id)
     if (previous) unindexChannel(previous)
-    const channel = { id, ws, subs, tables: new Set(subs.map(s => s.table)) }
+    // summary: the livescore list, which shows scores only and needs no frame per state
+    const channel = { id, ws, subs, tables: new Set(subs.map(s => s.table)), summary: msg.summary === true }
     state.channels.set(id, channel)
     indexChannel(channel)
     send(ws, { type: 'subscribe-db-ack', id })
@@ -567,18 +718,21 @@ export function createRealtimeHub(options = {}) {
    */
   function handleConnection(ws, req, info = {}) {
     const ip = info.ip || getClientIp(req)
-    if (sockets.size >= maxTotal) {
+    const bucket = bucketOf(ip)
+    const viewer = isViewerRequest(req)
+    if (sockets.size >= maxTotal || (viewer && viewerCount >= maxViewers)) {
       ws.close(1013, 'Live connection limit reached')
       return false
     }
-    if ((ipCounts.get(ip) || 0) >= maxPerIp) {
+    if ((ipCounts.get(bucket) || 0) >= maxPerIp) {
       ws.close(1008, 'Too many live connections from this IP')
       return false
     }
 
-    const state = { ip, channels: new Map(), window: Date.now(), count: 0 }
+    const state = { ip, bucket, viewer, channels: new Map(), window: Date.now(), count: 0 }
     sockets.set(ws, state)
-    ipCounts.set(ip, (ipCounts.get(ip) || 0) + 1)
+    if (viewer) viewerCount++
+    ipCounts.set(bucket, (ipCounts.get(bucket) || 0) + 1)
     heartbeat.track(ws)
 
     ws.on('message', (data, isBinary) => {
@@ -657,15 +811,17 @@ export function createRealtimeHub(options = {}) {
     // so a fast clock or a far-future updated_at cannot freeze the key's feed
     // (every later, honest row would otherwise look stale until eviction).
     const ts = Math.min(rawTs, clock() + maxFutureSkewMs)
+    const order = orderOf(raw, ts)
     const prev = newest.get(id)
-    if (prev != null && ts < prev) {
+    const cmp = prev == null ? 1 : compareOrder(order, prev)
+    if (cmp < 0) {
       counters.staleDropped++
       return false
     }
     // The other copy of the newest state (relay push vs HTTP write-through):
     // same ordering value and nothing a subscriber would see differs. Remember
     // the union of both copies' columns, so a third copy compares against all.
-    const seen = prev != null && ts === prev ? recentRows.get(id) : undefined
+    const seen = cmp === 0 ? recentRows.get(id) : undefined
     const visible = visibleRow(table, raw)
     if (seen && visible && sameColumns(seen, visible)) {
       counters.duplicateDropped++
@@ -673,7 +829,7 @@ export function createRealtimeHub(options = {}) {
       return false
     }
     newest.delete(id) // re-insert: Map order doubles as LRU order
-    newest.set(id, ts)
+    newest.set(id, mergeOrder(prev, order))
     if (newest.size > maxOrderingEntries) newest.delete(newest.keys().next().value)
     recentRows.delete(id)
     if (visible && maxDuplicateRows > 0) {
@@ -681,6 +837,52 @@ export function createRealtimeHub(options = {}) {
       if (recentRows.size > maxDuplicateRows) recentRows.delete(recentRows.keys().next().value)
     }
     return true
+  }
+
+  /** The order of a row: its clock value and the counters it carries. */
+  function orderOf(raw, ts) {
+    const seq = Number(raw._seq)
+    const rseq = Number(raw._relaySeq)
+    return {
+      ts,
+      session: typeof raw._session === 'string' && raw._session && Number.isFinite(seq) ? raw._session : null,
+      seq,
+      epoch: typeof raw._relayEpoch === 'string' && raw._relayEpoch && Number.isFinite(rseq) ? raw._relayEpoch : null,
+      rseq
+    }
+  }
+
+  /**
+   * -1: `order` is older than `prev` (drop), 0: the same state, 1: newer.
+   * Counters first: the relay's (both stamped by this relay), then one scorer
+   * session's. Otherwise the clock, where a row older by more than
+   * reorderWindowMs counts as newer: a clock that stepped back (NTP, a device
+   * set by hand), whose rows would otherwise all be dropped until it passed
+   * the newest value.
+   */
+  function compareOrder(order, prev) {
+    if (order.epoch && order.epoch === prev.epoch) return Math.sign(order.rseq - prev.rseq)
+    if (order.session && order.session === prev.session) return Math.sign(order.seq - prev.seq)
+    if (order.ts === prev.ts) return 0
+    if (order.ts > prev.ts) return 1
+    return prev.ts - order.ts > reorderWindowMs ? 1 : -1
+  }
+
+  /**
+   * The newest order after `order` passed: its counters (a row without them
+   * keeps the last ones seen), and the later clock value while the clock did
+   * not step back, so a late database copy of an older state stays out.
+   */
+  function mergeOrder(prev, order) {
+    if (!prev) return order
+    const stepped = prev.ts - order.ts > reorderWindowMs
+    return {
+      ts: stepped ? order.ts : Math.max(prev.ts, order.ts),
+      session: order.session || prev.session,
+      seq: order.session ? order.seq : prev.seq,
+      epoch: order.epoch || prev.epoch,
+      rseq: order.epoch ? order.rseq : prev.rseq
+    }
   }
 
   /** A row as a live subscriber would see it (clone, internals out, redact, project). */
@@ -736,8 +938,9 @@ export function createRealtimeHub(options = {}) {
       accepted.push({ i, raw, type })
     }
 
-    const channels = byTable.get(table)
-    if (!channels || channels.size === 0 || accepted.length === 0) return sent
+    if (accepted.length === 0) return sent
+    if (summaryColumnsOf.has(table)) queueSummaries(table, accepted, commitTimestamp)
+    if (!filterColumnsOf.has(table)) return sent
     counters.published++
 
     // Prepare each row once: clone, strip internals, redact.
@@ -762,6 +965,14 @@ export function createRealtimeHub(options = {}) {
     // socket however many of its channels want it.
     /** @type {Map<import('ws').WebSocket, Map<number, {p: object, ids: string[], coalesced: number}>>} */
     const perSocket = new Map()
+    // The channels whose filters the rows reach (byFilter)
+    const channels = new Set()
+    for (const p of prepared) {
+      for (const key of keysOfRow(filterColumnsOf, table, p.row)) {
+        const set = byFilter.get(key)
+        if (set) for (const ch of set) channels.add(ch)
+      }
+    }
     for (const channel of channels) {
       const ws = channel.ws
       if (ws.readyState !== 1) continue
@@ -783,12 +994,7 @@ export function createRealtimeHub(options = {}) {
     }
 
     for (const [ws, entries] of perSocket) {
-      if (ws.bufferedAmount > maxBufferedBytes) {
-        counters.terminatedSlow++
-        logger?.warn?.('[realtimeHub] terminating slow live socket', sockets.get(ws)?.ip)
-        ws.terminate()
-        continue
-      }
+      if (overBuffer(ws)) continue
       const ordered = [...entries.values()].sort((a, b) => a.p.index - b.p.index)
       for (const { p, ids, coalesced } of ordered) {
         if (p.json == null) p.json = JSON.stringify(p.payload)
@@ -802,6 +1008,31 @@ export function createRealtimeHub(options = {}) {
     }
     counters.delivered += sent
     return sent
+  }
+
+  /**
+   * Queue accepted rows for the summary groups their values reach: the newest
+   * row per key (the ordering key, else the id) waits for flushSummaries.
+   */
+  function queueSummaries(table, accepted, commitTimestamp) {
+    const rule = ordering && Object.prototype.hasOwnProperty.call(ordering, table) ? ordering[table] : null
+    for (const { raw, type } of accepted) {
+      const keys = keysOfRow(summaryColumnsOf, table, raw)
+      if (keys.length === 0) continue
+      const clone = cloneRow(raw)
+      if (!clone) continue
+      const row = summaryRow(table, stripInternal(clone))
+      const rowKey = String((rule && raw[rule.key]) ?? raw.id ?? '')
+      const payload = type === 'DELETE'
+        ? { schema: 'public', table, commit_timestamp: commitTimestamp, eventType: type, new: {}, old: row }
+        : { schema: 'public', table, commit_timestamp: commitTimestamp, eventType: type, new: row, old: {} }
+      for (const key of keys) {
+        const group = summaryGroups.get(key)
+        if (!group) continue
+        group.pending.delete(rowKey) // re-insert: the frame keeps publish order
+        group.pending.set(rowKey, payload)
+      }
+    }
   }
 
   /**
@@ -825,9 +1056,11 @@ export function createRealtimeHub(options = {}) {
     for (const s of sockets.values()) channels += s.channels.size
     return {
       sockets: sockets.size,
+      viewers: viewerCount,
       ips: ipCounts.size,
       channels,
-      tables: Object.fromEntries([...byTable].map(([t, set]) => [t, set.size])),
+      summaryGroups: summaryGroups.size,
+      tables: Object.fromEntries([...tableChannels].map(([t, set]) => [t, set.size])),
       orderingKeys: newest.size,
       duplicateRows: recentRows.size,
       ...counters
@@ -837,6 +1070,10 @@ export function createRealtimeHub(options = {}) {
   /** Close every live socket and stop the heartbeat (shutdown, tests). */
   function close(code = 1001, reason = 'Server shutting down') {
     heartbeat.stop()
+    if (summaryTimer) {
+      clearInterval(summaryTimer)
+      summaryTimer = null
+    }
     for (const ws of [...sockets.keys()]) {
       try { ws.close(code, reason) } catch { /* ignore */ }
       dropSocket(ws)

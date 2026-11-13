@@ -13,6 +13,9 @@ import WebSocket from 'ws'
 import { get as httpGet } from 'node:http'
 import { gunzipSync } from 'node:zlib'
 
+// The cloud relay stamps the order it received each live state in (server.js stampRelayOrder)
+const unstamped = (o) => { if (!o || typeof o !== 'object') return o; const { _relayEpoch, _relaySeq, ...rest } = o; return rest }
+
 const BACKEND_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 const PINS = {
@@ -146,7 +149,7 @@ describe('backend WebSocket relay protocol', () => {
 
     scoreboard.send({ type: 'live-state-update', matchId: 7, liveState: { points_a: 5 } })
     const live = await referee.waitFor((m) => m.type === 'live-state-update')
-    assert.deepEqual(live.liveState, { points_a: 5 })
+    assert.deepEqual(unstamped(live.liveState), { points_a: 5 })
 
     // A socket cannot self-grant the scoreboard role
     attacker.send({ type: 'join_match', matchId: '7', role: 'scoreboard' })
@@ -186,12 +189,12 @@ describe('backend WebSocket relay protocol', () => {
     // the LedBox bridge) and reaches a subscriber that joins mid-match
     scoreboard.send(syncMessage(makeMatch(), { events: [{ id: 1 }, { id: 2 }] }))
     const withLive = await referee.waitFor((m) => m.type === 'match-data-update' && m.events.length === 2)
-    assert.deepEqual(withLive.liveState, { points_a: 5 })
-    assert.deepEqual(withLive.data, { liveState: { points_a: 5 } })
+    assert.deepEqual(unstamped(withLive.liveState), { points_a: 5 })
+    assert.deepEqual(unstamped(withLive.data.liveState), { points_a: 5 })
     const bridge = await openClient(wsUrl)
     bridge.send({ type: 'subscribe-match', matchId: '7' })
     const bridgeFull = await bridge.waitFor((m) => m.type === 'match-full-data')
-    assert.deepEqual(bridgeFull.data, { liveState: { points_a: 5 } })
+    assert.deepEqual(unstamped(bridgeFull.data.liveState), { points_a: 5 })
     assert.equal(containsPin(bridge.raw.join('')), false)
 
     // The real scoreboard can delete; the room is told before it goes away
@@ -573,7 +576,7 @@ describe('backend WebSocket relay protocol', () => {
     assert.deepEqual(first.homePlayers, [])
     courtA.send({ type: 'live-state-update', matchId: 'list-court-a', liveState: { points_a: 4, points_b: 2, serving_team: 'right', timeouts_b: 1 } })
     const live = await viewer.waitFor((m) => m.type === 'live-state-update')
-    assert.deepEqual(live.liveState, { points_a: 4, points_b: 2, serving_team: 'right', timeouts_b: 1 })
+    assert.deepEqual(unstamped(live.liveState), { points_a: 4, points_b: 2, serving_team: 'right', timeouts_b: 1 })
     const seen = JSON.stringify(viewer.messages)
     assert.equal(containsPin(seen), false)
     assert.ok(!/dob|lastName|officials|ignature/.test(seen))

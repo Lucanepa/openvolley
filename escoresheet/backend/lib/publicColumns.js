@@ -101,6 +101,22 @@ const MATCH_LIVE_STATE_COLUMNS = Object.freeze({
   gender: true
 })
 
+// What a viewer without a PIN gets of a live state (anonymous /api/db, the
+// relay's PIN-less summary and room broadcast): the score, sets, time-outs,
+// team names and colours. Line-ups, substitutions, sanctions and the last
+// event's data (shirt numbers, a sanction's player or official) need the PIN
+// of the match (a match token on /api/db, a PIN-proved socket on the relay).
+export const LIVE_STATE_PRIVATE_COLUMNS = Object.freeze([
+  'lineup_a', 'lineup_b', 'sanctions_a', 'sanctions_b', 'subs_a', 'subs_b',
+  'last_event_data', 'scorer_attention_trigger'
+])
+// `matches`: the livescore's embed (pgQuery embeds, set_results only)
+const MATCH_LIVE_STATE_PUBLIC_COLUMNS = Object.freeze({
+  ...Object.fromEntries(Object.entries(MATCH_LIVE_STATE_COLUMNS).filter(([c]) => !LIVE_STATE_PRIVATE_COLUMNS.includes(c))),
+  matches: Object.freeze(['set_results'])
+})
+const MATCH_LIVE_STATE_GRANTED_COLUMNS = Object.freeze({ match_live_state: { ...MATCH_LIVE_STATE_COLUMNS, matches: ['set_results'] } })
+
 const SETS_COLUMNS = Object.freeze({
   id: true,
   match_id: true,
@@ -194,6 +210,8 @@ export const ANON_DB_COLUMNS = Object.freeze({
   // Event payloads (players, sanctions, lineups) need a session; no
   // anonymous page reads events.
   events: LIVE_COLUMNS.events,
+  match_live_state: MATCH_LIVE_STATE_PUBLIC_COLUMNS,
+  sets: SETS_COLUMNS,
   matches: Object.freeze({
     ...MATCHES_LIVE_COLUMNS,
     connections: CONNECTION_FLAG_KEYS,
@@ -217,6 +235,9 @@ export const ANON_DB_FILTER_COLUMNS = Object.freeze({
   referee_database: Object.freeze(Object.keys(REFEREE_DATABASE_COLUMNS)),
   svrz_games: Object.freeze(Object.keys(SVRZ_GAMES_COLUMNS)),
   events: Object.freeze(Object.keys(LIVE_COLUMNS.events)),
+  match_live_state: Object.freeze(['id', 'match_id', 'sport_type', 'current_set', 'match_status', 'updated_at',
+    'game_n', 'league', 'gender']),
+  sets: Object.freeze(['id', 'match_id', 'external_id', 'sport_type', 'index', 'finished', 'updated_at', 'test']),
   matches: Object.freeze(['id', 'external_id', 'sport_type', 'game_n', 'status', 'test', 'scheduled_at',
     'created_at', 'updated_at', 'current_set', 'final_score', 'winner'])
 })
@@ -265,12 +286,21 @@ export const MATCH_ROSTER_COLUMNS = Object.freeze(['players_home', 'players_away
 /**
  * The anonymous /api/db answer: ANON_DB_COLUMNS, and for matches the roster
  * columns only on the row whose external_id is `grantedExternalId` (and, with
- * `grantRow`, for which grantRow(projected row) is true as well).
+ * `grantRow`, for which grantRow(projected row) is true as well). A live
+ * state keeps its private columns (LIVE_STATE_PRIVATE_COLUMNS) only on the row
+ * of `grantedMatchUuid` (the match token's matches.id: the referee/bench
+ * fallback of getMatchData).
  * @param {string} table
  * @param {object|object[]|null} rows
- * @param {{ grantedExternalId?: string|null, grantRow?: (row: object) => boolean }} [opts]
+ * @param {{ grantedExternalId?: string|null, grantedMatchUuid?: string|null, grantRow?: (row: object) => boolean }} [opts]
  */
-export function projectAnonDbRows(table, rows, { grantedExternalId = null, grantRow = null } = {}) {
+export function projectAnonDbRows(table, rows, { grantedExternalId = null, grantedMatchUuid = null, grantRow = null } = {}) {
+  if (table === 'match_live_state' && grantedMatchUuid) {
+    const one = (row) => (row != null && typeof row === 'object' && row.match_id === grantedMatchUuid
+      ? projectRow(MATCH_LIVE_STATE_GRANTED_COLUMNS, table, row)
+      : projectRow(ANON_DB_COLUMNS, table, row))
+    return Array.isArray(rows) ? rows.map(one) : one(rows)
+  }
   const projected = projectRows(ANON_DB_COLUMNS, table, rows)
   if (table !== 'matches') return projected
   const strip = (row) => {
@@ -313,6 +343,21 @@ export function projectRows(policy, table, rows) {
 
 /** The realtime hub's projection (LIVE_COLUMNS). */
 export const projectLiveRow = (table, row) => projectRow(LIVE_COLUMNS, table, row)
+
+// The livescore list's columns of a live state (frontend utils/relayLivescore
+// LIVESCORE_LIVE_FIELDS): what a summary channel of the hub sends.
+const LIVE_SUMMARY_COLUMNS = Object.freeze(Object.fromEntries([
+  'id', 'match_id', 'current_set', 'best_of', 'match_status', 'sport_type',
+  'team_a_name', 'team_a_short', 'team_a_color', 'team_b_name', 'team_b_short', 'team_b_color',
+  'sets_won_a', 'sets_won_b', 'points_a', 'points_b', 'side_a', 'serving_team',
+  'timeouts_a', 'timeouts_b', 'timeout_active', 'set_interval_active',
+  'last_event_type', 'last_event_ts', 'updated_at', 'game_n', 'league', 'gender', 'set_results'
+].map((c) => [c, true])))
+
+/** The realtime hub's summary projection (score-only live states, LIVE_COLUMNS otherwise). */
+export const projectLiveSummaryRow = (table, row) => (table === 'match_live_state'
+  ? projectRow({ match_live_state: LIVE_SUMMARY_COLUMNS }, table, row)
+  : projectLiveRow(table, row))
 
 /** True when anonymous /api/db reads of `table` are limited. */
 export const hasAnonPolicy = (table) => has(ANON_DB_COLUMNS, table)
@@ -422,7 +467,7 @@ export const SUMMARY_MATCH_FIELDS = Object.freeze([
   'scheduledAt', 'scheduled_at', 'sport_type', 'sportType', 'test', 'league', 'best_of', 'bestOf',
   'coinTossTeamA', 'coinTossTeamB', 'homeShortName', 'awayShortName', 'homeTeamName', 'awayTeamName',
   'refereeConnectionEnabled', 'homeTeamConnectionEnabled', 'awayTeamConnectionEnabled',
-  '_syncedAt', '_syncedSeq', '_syncSession'
+  '_syncedAt', '_syncedSeq', '_syncSession', '_relaySeq', '_relayEpoch'
 ])
 /** Team keys a summary keeps. */
 export const SUMMARY_TEAM_FIELDS = Object.freeze(['name', 'shortName', 'short_name', 'color'])
@@ -455,7 +500,19 @@ export function relaySummaryBundle(entry) {
     events: []
   }
   // no covered line-up of an older scorer app's live state (relayLiveStateView)
-  if (entry?.liveState !== undefined) out.liveState = relayLiveStateView(entry.liveState, null, entry?.match)
+  if (entry?.liveState !== undefined) out.liveState = publicLiveState(entry.liveState)
+  return out
+}
+
+/**
+ * A live state as a viewer without a PIN gets it: every column but
+ * LIVE_STATE_PRIVATE_COLUMNS (unknown keys such as the scorer's _seq/_session
+ * and the relay's _relaySeq stay). Never mutates `liveState`.
+ */
+export function publicLiveState(liveState) {
+  if (!liveState || typeof liveState !== 'object' || Array.isArray(liveState)) return liveState
+  const out = { ...liveState }
+  for (const c of LIVE_STATE_PRIVATE_COLUMNS) delete out[c]
   return out
 }
 

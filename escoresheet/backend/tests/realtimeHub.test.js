@@ -62,8 +62,8 @@ async function startServer(hubOptions = {}) {
 }
 
 /** A client that queues every parsed message so tests can await them in order. */
-function connect(url, { live = true, ip, wsOptions = {} } = {}) {
-  const ws = new WebSocket(`${url}/${live ? '?purpose=live' : ''}`, {
+function connect(url, { live = true, ip, query = '', wsOptions = {} } = {}) {
+  const ws = new WebSocket(`${url}/${live ? '?purpose=live' + query : ''}`, {
     headers: ip ? { 'x-test-ip': ip } : {},
     ...wsOptions
   })
@@ -859,6 +859,107 @@ describe('createLiveStateRelay', () => {
       // The HTTP write-through of the previous point arrives late: dropped.
       srv.hub.broadcastDbChange('match_live_state', 'UPSERT', [{ ...liveState({ points_a: 6, updated_at: '2026-10-05T12:00:04.000Z' }) }])
       assert.equal(await c.silent(), true)
+      c.close(); await c.closed
+    } finally { await srv.stop() }
+  })
+})
+
+describe('realtimeHub: buckets, viewer share, summaries, counters', () => {
+  it('counts live sockets per address bucket (an IPv6 /64), not per raw address', async () => {
+    const bucketOf = (ip) => (ip.includes(':') ? ip.split(':').slice(0, 4).join(':') + '::/64' : ip)
+    const srv = await startServer({ maxPerIp: 2, bucketOf })
+    try {
+      const a = await liveClient(srv.url, { ip: '2001:db8:1:2::1' })
+      const b = await liveClient(srv.url, { ip: '2001:db8:1:2::2' })
+      const c = connect(srv.url, { ip: '2001:db8:1:2::3' })
+      assert.equal((await c.closed).code, 1008)
+      const d = await liveClient(srv.url, { ip: '2001:db8:9:9::1' })
+      for (const x of [a, b, d]) { x.close(); await x.closed }
+    } finally { await srv.stop() }
+  })
+
+  it('keeps live slots for match devices however many livescore viewers connect', async () => {
+    const srv = await startServer({ maxTotal: 3, maxViewers: 2 })
+    try {
+      const v1 = await liveClient(srv.url, { ip: '10.0.0.1', query: '&client=viewer' })
+      const v2 = await liveClient(srv.url, { ip: '10.0.0.2', query: '&client=viewer' })
+      const v3 = connect(srv.url, { ip: '10.0.0.3', query: '&client=viewer' })
+      assert.equal((await v3.closed).code, 1013)
+      // the referee tablet (no viewer tag) still gets the reserved slot
+      const ref = await liveClient(srv.url, { ip: '10.0.0.4' })
+      assert.equal(srv.hub.stats().viewers, 2)
+      for (const x of [v1, v2, ref]) { x.close(); await x.closed }
+    } finally { await srv.stop() }
+  })
+
+  it('sends a summary channel one score-only frame per interval with the newest row per match', async () => {
+    const summaryProject = (_t, row) => ({ match_id: row.match_id, points_a: row.points_a, updated_at: row.updated_at })
+    const srv = await startServer({ summaryIntervalMs: 50, summaryProject })
+    try {
+      const list = await liveClient(srv.url)
+      list.send({ type: 'subscribe-db', id: 'list', summary: true, subs: [{ table: 'match_live_state', column: 'sport_type', value: 'indoor' }] })
+      assert.equal((await list.next()).type, 'subscribe-db-ack')
+      const t = (s) => `2026-10-05T12:00:${s}.000Z`
+      for (let i = 1; i <= 5; i++) {
+        srv.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ match_id: MATCH_A, sport_type: 'indoor', points_a: i, lineup_a: [{ number: 4 }], updated_at: t(String(i).padStart(2, '0')) }])
+      }
+      srv.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ match_id: MATCH_B, sport_type: 'indoor', points_a: 7, updated_at: t('09') }])
+      srv.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ match_id: MATCH_B, sport_type: 'beach', points_a: 8, updated_at: t('10') }])
+      const frame = await list.next()
+      assert.equal(frame.type, 'db-changes')
+      assert.equal(frame.id, 'list')
+      assert.deepEqual(frame.changes.map((c) => [c.new.match_id, c.new.points_a]), [[MATCH_A, 5], [MATCH_B, 7]])
+      assert.equal(frame.changes[0].new.lineup_a, undefined)
+      assert.equal(await list.silent(120), true)
+      list.close(); await list.closed
+    } finally { await srv.stop() }
+  })
+
+  it('reaches only the channels whose filter value the row carries', async () => {
+    const srv = await startServer()
+    try {
+      const a = await liveClient(srv.url)
+      const b = await liveClient(srv.url)
+      await subscribe(a, 'a', [{ table: 'match_live_state', column: 'match_id', value: MATCH_A }])
+      await subscribe(b, 'b', [{ table: 'match_live_state', column: 'match_id', value: MATCH_B }])
+      assert.equal(srv.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ match_id: MATCH_A, points_a: 1 }]), 1)
+      assert.equal((await a.next()).new.points_a, 1)
+      assert.equal(await b.silent(), true)
+      a.close(); b.close(); await a.closed; await b.closed
+    } finally { await srv.stop() }
+  })
+
+  it('orders one scorer session by _seq, not by a clock that stepped back', async () => {
+    const srv = await startServer()
+    try {
+      const c = await liveClient(srv.url)
+      await subscribe(c, 'l', [{ table: 'match_live_state', column: 'match_id', value: MATCH_A }])
+      const row = (points, s, seq) => ({ match_id: MATCH_A, points_a: points, updated_at: `2026-10-05T12:00:${s}.000Z`, _session: 'S1', _seq: seq })
+      srv.hub.broadcastDbChange('match_live_state', 'UPDATE', [row(3, '30', 3)])
+      assert.equal((await c.next()).new.points_a, 3)
+      // the clock steps back 20 s (inside the reorder window): the counter decides
+      srv.hub.broadcastDbChange('match_live_state', 'UPDATE', [row(4, '10', 4)])
+      assert.equal((await c.next()).new.points_a, 4)
+      // a late copy of seq 3 stays out
+      assert.equal(srv.hub.broadcastDbChange('match_live_state', 'UPDATE', [row(3, '30', 3)]), 0)
+      c.close(); await c.closed
+    } finally { await srv.stop() }
+  })
+
+  it('orders two sessions by the relay counter, and a database row older by more than the window passes', async () => {
+    const srv = await startServer({ reorderWindowMs: 60000 })
+    try {
+      const c = await liveClient(srv.url)
+      await subscribe(c, 'l', [{ table: 'match_live_state', column: 'match_id', value: MATCH_A }])
+      const at = (m, s) => `2026-10-05T12:${m}:${s}.000Z`
+      srv.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ match_id: MATCH_A, points_a: 20, updated_at: at('10', '00'), _session: 'A', _seq: 50, _relayEpoch: 'E', _relaySeq: 7 }])
+      assert.equal((await c.next()).new.points_a, 20)
+      // the new device, 30 s behind: newer by the relay's counter
+      srv.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ match_id: MATCH_A, points_a: 21, updated_at: at('09', '30'), _session: 'B', _seq: 1, _relayEpoch: 'E', _relaySeq: 8 }])
+      assert.equal((await c.next()).new.points_a, 21)
+      // database only (no relay), a device 5 min behind: not frozen
+      srv.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ match_id: MATCH_A, points_a: 22, updated_at: at('05', '00') }])
+      assert.equal((await c.next()).new.points_a, 22)
       c.close(); await c.closed
     } finally { await srv.stop() }
   })
