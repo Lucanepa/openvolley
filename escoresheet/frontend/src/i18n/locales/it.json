@@ -3077,6 +3077,8 @@
       "inviteInvalid": "Questo codice d’invito non è valido.",
       "inviteExpired": "Questo codice d’invito è scaduto.",
       "inviteUsedUp": "Questo codice d’invito è esaurito.",
+      "inviteRemoved": "Questo account è stato tolto da questa società o squadra. Chiedi un nuovo codice ai suoi responsabili.",
+      "inviteOtherAccount": "Questo link è stato inviato a un altro indirizzo. Accedi con l’account di quell’indirizzo.",
       "tooManyAttempts": "Troppi tentativi. Attendi qualche minuto.",
       "offline": "Per usare un codice serve una connessione.",
       "emailUnconfirmed": "Conferma prima il tuo indirizzo e-mail: apri il link della nostra e-mail o richiedine uno nuovo nel profilo."
@@ -3160,7 +3162,17 @@
     "teamLinkAlready": "Gestisci già {{team}}.",
     "clubLinkNote": "Ha aperto un link da responsabile della società. Acceda o crei un account e gestirà la società.",
     "clubLinkDone": "Ora gestisce {{club}}.",
-    "clubLinkAlready": "Gestisce già {{club}}."
+    "clubLinkAlready": "Gestisce già {{club}}.",
+    "linkAskTeam": "Gestire {{team}} con {{email}}?",
+    "linkAskClub": "Gestire {{club}} con {{email}}?",
+    "linkAskTeamUnnamed": "Gestire questa squadra con {{email}}?",
+    "linkAskClubUnnamed": "Gestire questa società con {{email}}?",
+    "linkAskTeamBody": "Hai aperto un link di squadra. Con Sì questo account diventa responsabile della squadra: la rosa e le formazioni che invia per le sue partite.",
+    "linkAskClubBody": "Hai aperto un link da responsabile della società. Con Sì questo account gestisce la società: membri, codici d’invito, liste delle licenze e richieste.",
+    "linkAskYes": "Sì, con questo account",
+    "linkAskOtherAccount": "Usa un altro account",
+    "linkAskForget": "Dimentica questo link",
+    "linkAskLater": "Più tardi"
   },
   "managerBeach": {
     "signInHeading": "Gestisci OpenBeach",
@@ -3188,6 +3200,7 @@
       "empty": "Ancora nessuna notifica.",
       "loading": "Caricamento…",
       "signupTitle": "Nuova registrazione: {{name}}",
+      "proposalTitle": "Da confermare: {{name}}, responsabile della squadra",
       "noRole": "Non chiede ancora nessun ruolo",
       "stillOpen": "In attesa di approvazione",
       "decided": "Deciso",
@@ -3447,7 +3460,8 @@
         "club_licences": "Elenco delle licenze caricato",
         "club_licences_manual": "Aggiunto a mano alle liste della società",
         "account_request_approve": "Richiesta di registrazione approvata",
-        "account_request_reject": "Richiesta di registrazione rifiutata"
+        "account_request_reject": "Richiesta di registrazione rifiutata",
+        "account_request_propose": "Richiesta di registrazione proposta da un responsabile della squadra"
       }
     },
     "approvals": {
@@ -3804,9 +3818,14 @@
       "title": "Richieste",
       "clubHint": "Le persone registrate che hanno indicato di refertare per questa società, di occuparsi di una sua squadra o della società. Approva dà loro esattamente questo; le altre loro richieste restano per gli altri.",
       "teamHint": "Le persone registrate come responsabile o allenatore di questa squadra. Approva le rende responsabili della squadra.",
+      "teamHintPropose": "Le persone registrate come responsabile o allenatore di questa squadra. Proponi le passa ai responsabili della società: diventano responsabili della squadra quando un responsabile della società approva.",
       "empty": "Nessuna richiesta aperta.",
       "approve": "Approva",
       "reject": "Rifiuta",
+      "propose": "Proponi",
+      "proposed": "Proposto: un responsabile della società approva",
+      "waitingForClub": "Proposto, in attesa della società",
+      "proposedBy": "Proposto da {{name}}",
       "approveAll": "Approva come richiesto",
       "review": "Esamina la richiesta",
       "reviewTitle": "Richiesta di {{name}}",

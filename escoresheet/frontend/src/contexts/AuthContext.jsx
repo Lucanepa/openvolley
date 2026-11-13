@@ -9,6 +9,7 @@ import { clearSavedTeams, refreshSavedTeams } from '../db/savedTeams'
 import { clearGameRosters, refreshGameRosters, GAME_ROSTERS_REFRESH_MS } from '../db/gameRosters'
 import { clearClubPlayers, refreshClubPlayers } from '../db/clubPlayers'
 import { forgetApprovalEmails } from '../domain/accountApproval'
+import { clearPendingTeamLink } from '../utils/teamLink'
 import { TODAY_GAMES_CACHE_KEY } from '../lib/todayGamesCache'
 import i18n from 'i18next'
 import PasskeyOfferHost from '../components/auth/PasskeyOfferHost'
@@ -85,9 +86,10 @@ function dropOldApiCache() {
 
 /**
  * Everything this device keeps for the account that was signed in: its
- * profile and clubs, today's games, the officials' approval addresses, the
- * console lines not uploaded yet, the saved-team, sent-roster and licence
- * caches, and the old service worker copies of API answers. Removed whenever
+ * profile and clubs, today's games, a team link not redeemed yet, the
+ * officials' approval addresses, the console lines not uploaded yet, the
+ * saved-team, sent-roster and licence caches, and the old service worker
+ * copies of API answers. Removed whenever
  * a session ends here: Sign out, a session that expired or that the server
  * refused, another account signing in, account deletion. On a shared tablet
  * or club laptop none of it is left for the next person.
@@ -96,6 +98,9 @@ function dropOldApiCache() {
  */
 export function clearLocalAccountData({ keepUserId = null } = {}) {
   removeAccountEntries(keepUserId)
+  // A team or club manager link opened here and not redeemed: never for the
+  // next account (fe-auth-client-7, delta-fe-manage-3)
+  clearPendingTeamLink()
   forgetApprovalEmails()
   // Console lines not uploaded yet belong to this account: never upload
   // them under the next one signing in on this device

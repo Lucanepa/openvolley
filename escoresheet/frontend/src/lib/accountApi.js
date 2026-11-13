@@ -32,6 +32,17 @@ export function redeemInvite(code) {
 }
 
 /**
+ * POST /api/account/invite-preview → what redeeming the code would do for the
+ * signed-in account, nothing kept: { role_granted, already_had, team?, club?,
+ * preview: true } and the redeem's own refusals (the manager asks "Manage
+ * <team> with <account>?" before it redeems a team or club manager link). An
+ * older server answers 404 without an OV_INVITE_* code.
+ */
+export function previewInvite(code) {
+  return apiRequest('POST', '/api/account/invite-preview', { code: String(code || '').trim() }, { fallbackError: 'Invite code not accepted' })
+}
+
+/**
  * GET /api/me -> { roles, ...indoor flags, apps: { indoor: {member, ...}, beach: {member, ...} } }
  * (the OpenBeach manager reads apps.beach.member).
  */
@@ -556,6 +567,9 @@ export function errorKeyOf(error, { context } = {}) {
     case 'OV_INVITE_INVALID': return 'access.errors.inviteInvalid'
     case 'OV_INVITE_EXPIRED': return 'access.errors.inviteExpired'
     case 'OV_INVITE_USED_UP': return 'access.errors.inviteUsedUp'
+    // db/036: taken off the club or team the code was for; a club manager link of another address
+    case 'OV_INVITE_REMOVED': return 'access.errors.inviteRemoved'
+    case 'OV_INVITE_OTHER_ACCOUNT': return 'access.errors.inviteOtherAccount'
     case 'OV_TOO_MANY_ATTEMPTS': return 'access.errors.tooManyAttempts'
     case 'OV_SELF_DEMOTE': return 'manage.accounts.selfDemote'
     // deleting an account (admin.deleteAccount / rejectAccount)

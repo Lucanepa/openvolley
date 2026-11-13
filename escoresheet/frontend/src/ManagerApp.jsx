@@ -8,15 +8,15 @@ import SignUpForm from './components/auth/SignUpForm'
 import InviteCodeForm from './components/auth/InviteCodeForm'
 import EmailConfirmBanner from './components/auth/EmailConfirmBanner'
 import { ConfirmEmailPage, ResetPasswordPage } from './components/auth/AuthLinkPages'
-import { AppSpinner, BUTTON_SIZES, BUTTON_VARIANTS, Button, cn, consoleHeaderBtn, FOCUS_RING, GateScreen, Select } from './ui'
+import { AppSpinner, BUTTON_SIZES, BUTTON_VARIANTS, Button, cn, consoleHeaderBtn, FOCUS_RING, GateScreen, Modal, Select } from './ui'
 import { scorerAppUrlFor, SIGN_UP_HASH, teamCodeFromHash } from './utils/managerSite'
-import { clearPendingTeamLink, FINAL_TEAM_LINK_ERRORS, readPendingLinkKind, readPendingTeamLink, takeTeamLinkFromLocation } from './utils/teamLink'
+import { clearPendingTeamLink, FINAL_TEAM_LINK_ERRORS, keepPendingTeamLink, OTHER_ACCOUNT_TEAM_LINK_ERRORS, readPendingLinkKind, readPendingTeamLink, takeTeamLinkFromLocation } from './utils/teamLink'
 import { parseAuthLinkHash, takeAuthLinkFromLocation } from './utils/authLinks'
 import { useManagerBrand } from './managerBrand'
 import LegalLinks from './legal/LegalLinks'
 import { accessForApp } from './lib/access'
 import { requestPartLabel, sortRequestParts } from './domain/signUpRequests'
-import { errorKeyOf, fetchMe, joinApp } from './lib/accountApi'
+import { errorKeyOf, fetchMe, joinApp, previewInvite } from './lib/accountApi'
 import { toast } from './ui/uiStore'
 
 /**
@@ -208,18 +208,77 @@ function Gate({ width, className, children }) {
   )
 }
 
-/** A team link waits for an account (db/023): what happens after signing in. */
-function TeamLinkNote({ kind = 'team' }) {
+/**
+ * A team link waits for an account (db/023): what happens after signing in.
+ * "Forget this link" drops it from this device (a shared laptop: the next
+ * person is not asked about it).
+ */
+function TeamLinkNote({ kind = 'team', onForget = null }) {
   const { t } = useTranslation()
   return (
-    <p role="status" data-testid="team-link-note" className="mb-4 flex items-start gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-left text-sm text-sky-800">
+    <div role="status" data-testid="team-link-note" className="mb-4 flex items-start gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-left text-sm text-sky-800">
       <Users size={16} aria-hidden className="mt-0.5 shrink-0 text-sky-600" />
-      {t(kind === 'club' ? 'managerSite.clubLinkNote' : 'managerSite.teamLinkNote')}
-    </p>
+      <div className="min-w-0 flex-1">
+        <p>{t(kind === 'club' ? 'managerSite.clubLinkNote' : 'managerSite.teamLinkNote')}</p>
+        {onForget && (
+          <button type="button" onClick={onForget} data-testid="team-link-forget" className={cn('mt-1 min-h-11 rounded text-xs font-medium text-sky-700 underline underline-offset-2 hover:text-sky-900', FOCUS_RING)}>
+            {t('managerSite.linkAskForget')}
+          </button>
+        )}
+      </div>
+    </div>
   )
 }
 
-function SignInScreen({ initialMode = null, onCreateAccount, teamLink = false }) {
+/**
+ * fe-auth-client-7, delta-fe-manage-3: a kept team or club manager link is
+ * redeemed only after this question, "Manage <team> with <address>?", with
+ * the team or club the server's preview named (an older server names none).
+ * Yes redeems it; "Use another account" signs out and keeps the link for the
+ * next sign-in; "Forget this link" drops it; × (Later) keeps it and asks
+ * again with the next sign-in or the link opened again. A club manager link
+ * mailed to another address (OV_INVITE_OTHER_ACCOUNT) offers no Yes.
+ */
+function TeamLinkQuestion({ ask, email, busy = false, onYes, onOtherAccount, onForget, onLater }) {
+  const { t } = useTranslation()
+  const club = ask.kind === 'club'
+  const name = club ? ask.club?.name : ask.team?.name
+  const title = name
+    ? t(club ? 'managerSite.linkAskClub' : 'managerSite.linkAskTeam', { [club ? 'club' : 'team']: name, email })
+    : t(club ? 'managerSite.linkAskClubUnnamed' : 'managerSite.linkAskTeamUnnamed', { email })
+  return (
+    <Modal
+      open
+      decision
+      dismissible={!busy}
+      onClose={busy ? undefined : onLater}
+      size="sm"
+      title={title}
+      closeLabel={t('managerSite.linkAskLater')}
+    >
+      <div data-testid="team-link-question" className="space-y-4">
+        {ask.error
+          ? <p className="text-sm text-amber-800" data-testid="team-link-question-error">{t(errorKeyOf(ask.error))}</p>
+          : <p className="text-sm text-stone-600">{t(club ? 'managerSite.linkAskClubBody' : 'managerSite.linkAskTeamBody')}</p>}
+        <div className="flex flex-col gap-2">
+          {!ask.error && (
+            <Button variant="primary" size="lg" block disabled={busy} onClick={onYes} data-testid="team-link-yes">
+              {t('managerSite.linkAskYes')}
+            </Button>
+          )}
+          <Button variant="secondary" size="lg" block disabled={busy} onClick={onOtherAccount} data-testid="team-link-other-account">
+            {t('managerSite.linkAskOtherAccount')}
+          </Button>
+          <Button variant="ghost" size="lg" block disabled={busy} onClick={onForget} data-testid="team-link-forget-question">
+            {t('managerSite.linkAskForget')}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function SignInScreen({ initialMode = null, onCreateAccount, teamLink = false, onForgetLink = null }) {
   const { t } = useTranslation()
   const text = useBrandText()
   // initialMode 'signin' | 'forgot': opened from an email-link page
@@ -228,7 +287,7 @@ function SignInScreen({ initialMode = null, onCreateAccount, teamLink = false })
     <>
       <Gate>
         <div data-testid="manager-sign-in" className="text-center">
-          {teamLink && <TeamLinkNote kind={teamLink === 'club' ? 'club' : 'team'} />}
+          {teamLink && <TeamLinkNote kind={teamLink === 'club' ? 'club' : 'team'} onForget={onForgetLink} />}
           <h1 className="text-xl font-bold tracking-tight text-stone-900">{text.signInHeading}</h1>
           <p className="mt-2 text-sm text-stone-600">{teamLink ? t('managerSite.teamLinkSignIn') : text.signInBody}</p>
           <Button variant="hero" block icon={LogIn} onClick={() => setOpen(true)} className="mt-6">
@@ -253,7 +312,7 @@ function SignInScreen({ initialMode = null, onCreateAccount, teamLink = false })
 }
 
 /** #signup: accounts are made here (the scorer apps link to this page). */
-function SignUpScreen({ onSignedUp, onBack, teamLink = false }) {
+function SignUpScreen({ onSignedUp, onBack, teamLink = false, onForgetLink = null }) {
   const { t } = useTranslation()
   const text = useBrandText()
   const [loginOpen, setLoginOpen] = useState(false)
@@ -261,7 +320,7 @@ function SignUpScreen({ onSignedUp, onBack, teamLink = false }) {
     <>
       <Gate width="md" className="p-6 sm:p-8">
         <div data-testid="manager-sign-up">
-          {teamLink && <TeamLinkNote kind={teamLink === 'club' ? 'club' : 'team'} />}
+          {teamLink && <TeamLinkNote kind={teamLink === 'club' ? 'club' : 'team'} onForget={onForgetLink} />}
           <div className="mb-5 text-center">
             <h1 className="text-xl font-bold tracking-tight text-stone-900">{t('managerSite.signUpHeading')}</h1>
             {text.signUpBody && <p className="mt-2 text-sm text-stone-600">{text.signUpBody}</p>}
@@ -675,22 +734,58 @@ export default function ManagerApp({ authLink = null }) {
     }
   }, [])
 
-  // db/023: redeem a kept team link once an account is signed in (and again
-  // on focus and back online: e.g. after the email confirmation). Done, or a
-  // code that can never work: forgotten. My teams opens on success.
+  // db/023: a kept team link, once an account is signed in (and again on
+  // focus and back online: e.g. after the email confirmation): first the
+  // question "Manage <team> with <address>?" (fe-auth-client-7), then, on
+  // Yes, the redeem. Done, or a code that can never work: forgotten. My teams
+  // opens on success.
   const teamLinkBusy = useRef(false)
+  // the question on screen: { code, kind, team, club, error }
+  const [linkAsk, setLinkAsk] = useState(null)
+  const [linkAnswering, setLinkAnswering] = useState(false)
   // the account this page load's profile and /api/me answered for (the gate below)
   const loadedFor = useRef(null)
   const accessKnown = !!access?.known
+  const forgetTeamLink = useCallback(() => {
+    clearPendingTeamLink()
+    setTeamLinkCode(null)
+    setLinkAsk(null)
+  }, [])
+  // Later (×): not asked again on this page until the link is opened again or another account signs in
+  const linkLater = useRef(null)
+  // a link opened again (the same code too): asked again
+  const [linkOpened, setLinkOpened] = useState(0)
   const tryTeamLink = useCallback(async () => {
     if (!teamLinkCode || !user || !accessKnown || teamLinkBusy.current) return
+    if (linkAsk?.code === teamLinkCode || linkLater.current === teamLinkCode) return
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return
     teamLinkBusy.current = true
     try {
-      const res = await redeemInvite(teamLinkCode)
+      const kind = readPendingLinkKind()
+      const res = await previewInvite(teamLinkCode)
       if (!res?.error) {
-        clearPendingTeamLink()
-        setTeamLinkCode(null)
+        setLinkAsk({ code: teamLinkCode, kind: res.data?.role_granted === 'club_manager' ? 'club' : kind, team: res.data?.team || null, club: res.data?.club || null, error: null })
+      } else if (FINAL_TEAM_LINK_ERRORS.has(res.error.code)) {
+        forgetTeamLink()
+        toast.error(t(errorKeyOf(res.error)))
+      } else if (OTHER_ACCOUNT_TEAM_LINK_ERRORS.has(res.error.code)) {
+        setLinkAsk({ code: teamLinkCode, kind, team: null, club: null, error: res.error })
+      } else if (res.error.status === 404 && !String(res.error.code || '').startsWith('OV_INVITE')) {
+        // an older server without the preview: the question names no team
+        setLinkAsk({ code: teamLinkCode, kind, team: null, club: null, error: null })
+      }
+      // anything else (offline, address not confirmed yet, a 5xx): kept, asked again later
+    } finally {
+      teamLinkBusy.current = false
+    }
+  }, [teamLinkCode, user, accessKnown, linkAsk, forgetTeamLink, t])
+  const answerTeamLink = useCallback(async () => {
+    if (!linkAsk || linkAnswering) return
+    setLinkAnswering(true)
+    try {
+      const res = await redeemInvite(linkAsk.code)
+      if (!res?.error) {
+        forgetTeamLink()
         if (res.data?.role_granted === 'club_manager') {
           // db/029: a club manager link opens My club
           const club = res.data?.club?.name || ''
@@ -702,20 +797,57 @@ export default function ManagerApp({ authLink = null }) {
           selectTab('myteams')
         }
       } else if (FINAL_TEAM_LINK_ERRORS.has(res.error.code)) {
-        clearPendingTeamLink()
-        setTeamLinkCode(null)
+        forgetTeamLink()
+        toast.error(t(errorKeyOf(res.error)))
+      } else {
+        // kept: asked again when the link is opened again or with the next sign-in
+        linkLater.current = linkAsk.code
+        setLinkAsk(null)
         toast.error(t(errorKeyOf(res.error)))
       }
     } finally {
-      teamLinkBusy.current = false
+      setLinkAnswering(false)
     }
-  }, [teamLinkCode, user, accessKnown, redeemInvite, selectTab, t])
-  useEffect(() => { tryTeamLink() }, [tryTeamLink])
+  }, [linkAsk, linkAnswering, redeemInvite, forgetTeamLink, selectTab, t])
+  const otherAccountForTeamLink = useCallback(async () => {
+    if (!linkAsk) return
+    const { code, kind } = linkAsk
+    setLinkAsk(null)
+    setLinkAnswering(true)
+    try {
+      // signing out forgets the link (clearLocalAccountData): kept again for the next sign-in
+      await signOut()
+    } finally {
+      keepPendingTeamLink(code, Date.now(), kind)
+      setTeamLinkCode(code)
+      setLinkAnswering(false)
+    }
+  }, [linkAsk, signOut])
+  // Another account, or none: the question was for the one before. Signed
+  // out, the kept link is gone with its data (AuthContext); another account
+  // signing in on this device drops it too.
+  const linkUserRef = useRef(user?.id ?? null)
   useEffect(() => {
-    // a team link opened in a tab that already shows the site (no reload)
+    const prev = linkUserRef.current
+    const next = user?.id ?? null
+    linkUserRef.current = next
+    if (prev === next) return
+    setLinkAsk(null)
+    linkLater.current = null
+    if (prev && next) clearPendingTeamLink()
+    setTeamLinkCode(readPendingTeamLink())
+  }, [user?.id])
+  useEffect(() => { tryTeamLink() }, [tryTeamLink, linkOpened])
+  useEffect(() => {
+    // a team link opened in a tab that already shows the site (no reload): asked as well
     const onHash = () => {
       const code = takeTeamLinkFromLocation()
-      if (code) setTeamLinkCode(code)
+      if (code) {
+        setLinkAsk(null)
+        linkLater.current = null
+        setTeamLinkCode(code)
+        setLinkOpened((n) => n + 1)
+      }
     }
     window.addEventListener('hashchange', onHash)
     window.addEventListener('focus', tryTeamLink)
@@ -740,8 +872,8 @@ export default function ManagerApp({ authLink = null }) {
     return (
       <div className="ov-kit">
         {route === SIGN_UP_HASH
-          ? <SignUpScreen onSignedUp={onSignedUp} onBack={() => goRoute('')} teamLink={teamLinkCode ? readPendingLinkKind() : false} />
-          : <SignInScreen initialMode={signInMode} onCreateAccount={openSignUp} teamLink={teamLinkCode ? readPendingLinkKind() : false} />}
+          ? <SignUpScreen onSignedUp={onSignedUp} onBack={() => goRoute('')} teamLink={teamLinkCode ? readPendingLinkKind() : false} onForgetLink={forgetTeamLink} />
+          : <SignInScreen initialMode={signInMode} onCreateAccount={openSignUp} teamLink={teamLinkCode ? readPendingLinkKind() : false} onForgetLink={forgetTeamLink} />}
       </div>
     )
   }
@@ -755,15 +887,23 @@ export default function ManagerApp({ authLink = null }) {
   const offline = typeof navigator !== 'undefined' && navigator.onLine === false
   if (profile && meLoaded) loadedFor.current = user.id
   if (!offline && loadedFor.current !== user.id) return <div className="ov-kit"><AccountLoadingScreen /></div>
+  // a kept team or club manager link: asked over whatever this account sees
+  const question = linkAsk
+    ? <TeamLinkQuestion ask={linkAsk} email={user.email || ''} busy={linkAnswering} onYes={answerTeamLink} onOtherAccount={otherAccountForTeamLink} onForget={forgetTeamLink}
+        onLater={() => { linkLater.current = linkAsk.code; setLinkAsk(null) }} />
+    : null
   if (manageTabsFor(access, brand).length === 0) {
     if (membership.member === null) return <div className="ov-kit"><AccountLoadingScreen /></div>
-    if (membership.member === false) return <div className="ov-kit"><JoinAppScreen app={brand.app} onJoined={membership.joined} /></div>
+    if (membership.member === false) return <div className="ov-kit"><JoinAppScreen app={brand.app} onJoined={membership.joined} />{question}</div>
     let screen = <NoAccessScreen />
     if (own.isPending) screen = <InviteStepScreen justSignedUp={justSignedUp} linkSentTo={linkSentTo} />
     else if (own.canScore) screen = <AllSetScreen />
-    return <div className="ov-kit">{screen}</div>
+    return <div className="ov-kit">{screen}{question}</div>
   }
 
   // No onClose: there is no app to go back to; the header links to it instead.
-  return <ManageConsole tab={tab} onTab={selectTab} headerActions={<ConsoleHeaderActions />} />
+  return <>
+    <ManageConsole tab={tab} onTab={selectTab} headerActions={<ConsoleHeaderActions />} />
+    {question && <div className="ov-kit">{question}</div>}
+  </>
 }

@@ -60,6 +60,22 @@ describe('NotificationsBell', () => {
     await waitFor(() => expect(screen.queryByTestId('notifications-unread')).toBeNull())
   })
 
+  it('a team manager\'s proposal (db/036): its own title, opens My club', async () => {
+    api.list.mockResolvedValue({
+      data: { notifications: [notice({ kind: 'team_manager_proposal', target: 'myclub/c-1', parts: [{ kind: 'team_manager', club: 'VBC Musterdorf', team: 'VBC Musterdorf H1' }] })], unread: 1 },
+      error: null,
+      status: 200
+    })
+    const onOpen = vi.fn()
+    render(<NotificationsBell app="indoor" onOpen={onOpen} />)
+    fireEvent.click(await screen.findByTestId('notifications-bell'))
+    const [item] = within(await screen.findByTestId('notifications-list')).getAllByRole('button')
+    expect(item).toHaveTextContent('manage.notifications.proposalTitle:Nora Neu')
+    expect(item).not.toHaveTextContent('signupTitle')
+    fireEvent.click(item)
+    expect(onOpen).toHaveBeenCalledWith('myclub/c-1')
+  })
+
   it('a read notice opens without another read; Mark all read clears the count', async () => {
     const onOpen = vi.fn()
     render(<NotificationsBell app="beach" onOpen={onOpen} />)

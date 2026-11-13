@@ -184,6 +184,43 @@ describe('AuthProvider on a shared device: a session that ends', () => {
   })
 })
 
+// fe-auth-client-7, delta-fe-manage-3: a team or club manager link opened on
+// the device and not redeemed is never left for whoever signs in next
+describe('AuthProvider on a shared device: a kept team link', () => {
+  const LINK = 'ov:pendingTeamLink'
+  const keepLink = () => localStorage.setItem(LINK, JSON.stringify({ code: 'ABCD-EFGH-JKMN', at: Date.now(), kind: 'club' }))
+
+  it('stays through the start of the page, signed out or in (sign-up, the email confirmation)', async () => {
+    keepLink()
+    h.stored = null
+    render(<AuthProvider><Probe /></AuthProvider>)
+    await act(async () => { await h.onChange('INITIAL_SESSION', null) })
+    expect(localStorage.getItem(LINK)).not.toBeNull()
+    // signing in after it (a new account) keeps it for the question
+    await act(async () => { await h.onChange('SIGNED_IN', sessionA) })
+    expect(localStorage.getItem(LINK)).not.toBeNull()
+  })
+
+  it('goes with Sign out, a session that ends and another account signing in', async () => {
+    const { seeded } = await startSignedInAsA()
+    await answerProfileRead(0, profileA)
+    await act(async () => { await seeded })
+    keepLink()
+    await act(async () => { await ctx.signOut() })
+    expect(localStorage.getItem(LINK)).toBeNull()
+
+    await act(async () => { await h.onChange('SIGNED_IN', sessionA) })
+    keepLink()
+    await act(async () => { h.stored = null; await h.onChange('SIGNED_OUT', null) })
+    expect(localStorage.getItem(LINK)).toBeNull()
+
+    await act(async () => { await h.onChange('SIGNED_IN', sessionA) })
+    keepLink()
+    await act(async () => { await h.onChange('SIGNED_IN', { access_token: 'tok-B', user: { id: 'user-B' } }) })
+    expect(localStorage.getItem(LINK)).toBeNull()
+  })
+})
+
 describe('AuthProvider: a profile read that answers late', () => {
   it('after Sign out it is dropped: nobody\'s profile in state or on disk', async () => {
     const { seeded } = await startSignedInAsA()
