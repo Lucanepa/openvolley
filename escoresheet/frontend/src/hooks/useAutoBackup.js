@@ -18,6 +18,7 @@ import {
   isFileSystemAccessSupported,
   getStoredDirectoryHandle,
   verifyDirectoryPermission,
+  queryDirectoryPermission,
   selectBackupDirectory,
   clearStoredDirectoryHandle,
   writeMatchBackup,
@@ -50,6 +51,9 @@ export default function useAutoBackup(activeMatchId = null) {
   // State
   const [backupDirName, setBackupDirName] = useState(null)
   const [backupDirHandle, setBackupDirHandle] = useState(null)
+  // A folder from an earlier session whose permission the browser asks again
+  // (only after a click): kept, not forgotten; "Reconnect folder" asks.
+  const [pendingDirHandle, setPendingDirHandle] = useState(null)
   const [lastBackup, setLastBackup] = useState(null)
   const [backupError, setBackupError] = useState(null)
   const [isBackingUp, setIsBackingUp] = useState(false)
@@ -123,12 +127,15 @@ export default function useAutoBackup(activeMatchId = null) {
       try {
         const handle = await getStoredDirectoryHandle()
         if (handle) {
-          const hasPermission = await verifyDirectoryPermission(handle)
-          if (hasPermission) {
+          const permission = await queryDirectoryPermission(handle)
+          if (permission === 'granted') {
             setBackupDirHandle(handle)
             setBackupDirName(handle.name)
+          } else if (permission === 'prompt') {
+            // The browser forgot the grant (new session): keep the folder, ask on the next click
+            setPendingDirHandle(handle)
+            setBackupDirName(handle.name)
           } else {
-            // Permission denied, clear stored handle
             await clearStoredDirectoryHandle()
           }
         }
@@ -146,6 +153,7 @@ export default function useAutoBackup(activeMatchId = null) {
       setBackupError(null)
       const handle = await selectBackupDirectory()
       setBackupDirHandle(handle)
+      setPendingDirHandle(null)
       setBackupDirName(handle.name)
       return true
     } catch (error) {
@@ -157,11 +165,25 @@ export default function useAutoBackup(activeMatchId = null) {
     }
   }, [])
 
+  // "Reconnect folder": the click lets the browser ask its permission question
+  const reconnectBackupDir = useCallback(async () => {
+    if (!pendingDirHandle) return false
+    setBackupError(null)
+    if (await verifyDirectoryPermission(pendingDirHandle)) {
+      setBackupDirHandle(pendingDirHandle)
+      setBackupDirName(pendingDirHandle.name)
+      setPendingDirHandle(null)
+      return true
+    }
+    return false
+  }, [pendingDirHandle])
+
   // Handle clearing backup directory
   const handleClearBackupDir = useCallback(async () => {
     try {
       await clearStoredDirectoryHandle()
       setBackupDirHandle(null)
+      setPendingDirHandle(null)
       setBackupDirName(null)
       setBackupError(null)
     } catch (error) {
@@ -201,10 +223,10 @@ export default function useAutoBackup(activeMatchId = null) {
         // Chrome/Edge: Write to file system
         const hasPermission = await verifyDirectoryPermission(backupDirHandle)
         if (!hasPermission) {
-          setBackupError('Permission denied. Please re-select the backup folder.')
+          // Keep the folder: "Reconnect folder" asks the browser again
+          setBackupError('Permission denied. Please reconnect the backup folder.')
+          setPendingDirHandle(backupDirHandle)
           setBackupDirHandle(null)
-          setBackupDirName(null)
-          await clearStoredDirectoryHandle()
           return false
         }
 
@@ -443,6 +465,8 @@ export default function useAutoBackup(activeMatchId = null) {
     backupFrequency,
 
     // Actions
+    needsReconnect: !!pendingDirHandle,
+    reconnectBackupDir,
     selectBackupDir: handleSelectBackupDir,
     clearBackupDir: handleClearBackupDir,
     toggleAutoBackup,

@@ -15,7 +15,8 @@
  *   info()                               -> { folder: string }
  *   write(dir, name, text, { latest })   writes <dir>/<name> (+ <dir>/latest.json)
  *                                        -> { warning? } (latest.json not updated: not an error)
- *   list()                               -> [{ dir, files: [{ name, size }] }]
+ *   list()                               -> [{ dir, files: [{ name, size, modifiedMs? }] }]
+ *   read(dir, name)                      -> the file's text
  *   remove(dir, names)
  *   openFolder()                         -> true when a file manager was opened
  *   pickFile()                           -> parsed JSON | null (cancelled) | undefined (not supported)
@@ -59,11 +60,15 @@ export function createTauriStore(invoke) {
     },
     async list() {
       const dirs = await invoke('backup_list')
-      return (dirs || []).map(d => ({ dir: d.dir, files: (d.files || []).map(f => ({ name: f.name, size: f.size || 0 })) }))
+      return (dirs || []).map(d => ({ dir: d.dir, files: (d.files || []).map(f => ({ name: f.name, size: f.size || 0, modifiedMs: f.modifiedMs || 0 })) }))
     },
     async remove(dir, names) {
       if (!names?.length) return
       await invoke('backup_remove', { matchDir: dir, fileNames: names })
+    },
+    /** One backup file's text (the restore list). */
+    async read(dir, name) {
+      return invoke('backup_read', { matchDir: dir, fileName: name })
     },
     async openFolder() {
       await invoke('backup_open_dir')
@@ -169,12 +174,17 @@ export function createCapacitorStore({ Filesystem, Directory, Encoding }, { log 
         if (entry.type !== 'directory') continue
         try {
           const { files } = await Filesystem.readdir({ path: `${BACKUP_SUBDIR}/${entry.name}`, directory: d })
-          dirs.push({ dir: entry.name, files: (files || []).filter(f => f.type !== 'directory').map(f => ({ name: f.name, size: f.size || 0 })) })
+          dirs.push({ dir: entry.name, files: (files || []).filter(f => f.type !== 'directory').map(f => ({ name: f.name, size: f.size || 0, modifiedMs: f.mtime || 0 })) })
         } catch (e) {
           log.warn?.('[NativeBackup] cannot list', entry.name, e?.message || e)
         }
       }
       return dirs
+    },
+    async read(dir, name) {
+      const d = await directory()
+      const { data } = await Filesystem.readFile({ path: `${BACKUP_SUBDIR}/${dir}/${name}`, directory: d, encoding: Encoding.UTF8 })
+      return typeof data === 'string' ? data : await data.text()
     },
     async remove(dir, names) {
       const d = await directory()
