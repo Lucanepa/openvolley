@@ -120,6 +120,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { appParam, fail, invalid, isUuid, notFound, ok, sheetScorerSql, unavailable } from './accounts.js'
 import { StorageError, decodeBase64, objectId, parseStoragePath } from './storage.js'
+import { connectClient } from './pgClient.js'
 
 export const SCORESHEETS_BUCKET = 'scoresheets'
 const STATES = ['closed', 'open', 'all']
@@ -1167,7 +1168,7 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
         continue
       }
       const by = owners.find((o) => writers.get(x.m.id)?.has(o)) ?? null
-      const client = await pool.connect()
+      const client = await connectClient(pool, log)
       try {
         await client.query('BEGIN')
         await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`ov.scoresheet:${x.m.id}`])

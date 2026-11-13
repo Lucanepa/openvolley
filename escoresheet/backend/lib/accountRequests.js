@@ -43,6 +43,7 @@
  */
 
 import { fail, invalid, isUuid, notFound, ok, unavailable } from './accounts.js'
+import { connectClient } from './pgClient.js'
 
 export const REQUEST_KINDS = Object.freeze(['scorer', 'referee', 'team_manager', 'club_manager'])
 // The most parts one sign-up may ask for, in all and per kind
@@ -207,7 +208,7 @@ export function createAccountRequests ({ pool, accounts, access = null, logger =
   const log = logger
 
   async function withTx (fn) {
-    const client = await pool.connect()
+    const client = await connectClient(pool, log)
     try {
       await client.query('BEGIN')
       const out = await fn(client)

@@ -345,6 +345,18 @@ describe('pgQuery on Postgres', { skip: SKIP_PG }, () => {
       assert.equal(r.body.data.length, 2); assert.equal(r.body.count, 3)
     })
 
+    it('countCap (server code) counts at most that many rows; statementTimeoutMs runs the select under its own timeout', async () => {
+      const ext = uniq('CC')
+      for (let i = 0; i < 3; i++) await newMatch({ external_id: `${ext}-${i}` })
+      const filters = [{ type: 'like', column: 'external_id', value: `${ext}-*` }]
+      let r = await q('matches', 'select', { columns: 'id', count: 'exact', head: true, filters }, { countCap: 2 })
+      assert.equal(r.status, 200); assert.equal(r.body.count, 2)
+      r = await q('matches', 'select', { columns: 'id', count: 'exact', filters }, { countCap: 10 })
+      assert.equal(r.body.count, 3); assert.equal(r.body.data.length, 3)
+      r = await q('matches', 'select', { columns: 'id', filters }, { statementTimeoutMs: 2000 })
+      assert.equal(r.status, 200); assert.equal(r.body.data.length, 3)
+    })
+
     it('order and limit, with a row cap', async () => {
       const ext = uniq('O')
       for (const n of [3, 1, 2]) await newMatch({ external_id: `${ext}-${n}`, game_n: n })

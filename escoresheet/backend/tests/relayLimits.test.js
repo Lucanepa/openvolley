@@ -8,7 +8,7 @@ import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import {
-  approxHeapBytes, frameTooLarge, relayBundleProblem, relayMemoryBudget,
+  approxHeapBytes, createFrameBudget, frameTooLarge, relayBundleProblem, relayMemoryBudget,
   MAX_RELAY_EVENTS, MAX_RELAY_SETS, MAX_RELAY_PLAYERS, MAX_RELAY_PIN_LENGTH, MAX_FRAME_VALUES, MAX_RELAY_BUNDLE_BYTES,
   MAX_RELAY_CARRIED_PIN_BYTES, RELAY_HEAP_SHARE, NEW_ROOM_SHARE, RELAY_ANON_SHARE, FAST_PROPERTIES
 } from '../lib/relayLimits.js'
@@ -340,6 +340,92 @@ describe('frameTooLarge', () => {
     assert.equal(frameTooLarge(Buffer.from(JSON.stringify({ match: { s: 'a'.repeat(9 * 1024 * 1024) } }))), false)
     assert.equal(frameTooLarge(Buffer.from('{"type":"ping"}')), false)
     assert.equal(frameTooLarge(null), false)
+  })
+})
+
+describe('createFrameBudget', () => {
+  const KB = 1024
+  const make = (limits = {}) => {
+    let t = 1000
+    const budget = createFrameBudget({ windowMs: 60000, now: () => t, limits })
+    return { budget, tick: (ms) => { t += ms } }
+  }
+
+  it('a socket without a claim sends small frames freely and a few large ones; then refused, then closed', () => {
+    const { budget } = make()
+    const sock = {}
+    for (let i = 0; i < 100; i++) assert.equal(budget.check(sock, 'a', 60 * KB, false), 'ok')
+    for (let i = 0; i < 4; i++) assert.equal(budget.check(sock, 'a', 200 * KB, false), 'ok', `large frame ${i + 1}`)
+    assert.equal(budget.check(sock, 'a', 200 * KB, false), 'refused')
+    assert.equal(budget.check(sock, 'a', 200 * KB, false), 'refused')
+    assert.equal(budget.check(sock, 'a', 200 * KB, false), 'close')
+  })
+
+  it('a socket that owns a room is not limited by frame size, only by its bytes per window', () => {
+    const { budget, tick } = make({ socketBytes: 10 * 1024 * KB })
+    const sock = {}
+    for (let i = 0; i < 9; i++) assert.equal(budget.check(sock, 'a', 1024 * KB, true), 'ok')
+    assert.equal(budget.check(sock, 'a', 2 * 1024 * KB, true), 'refused')
+    tick(61000)
+    assert.equal(budget.check(sock, 'a', 2 * 1024 * KB, true), 'ok', 'a new window')
+  })
+
+  it("large frames of unproved sockets share their address's bytes; another address and loopback are apart", () => {
+    const { budget } = make({ unprovedAddressBytes: 1024 * KB })
+    for (let i = 0; i < 4; i++) assert.equal(budget.check({}, 'hall', 256 * KB, false), 'ok')
+    assert.equal(budget.check({}, 'hall', 256 * KB, false), 'refused')
+    assert.equal(budget.check({}, 'other', 256 * KB, false), 'ok')
+    assert.equal(budget.check({}, null, 256 * KB, false), 'ok')
+  })
+
+  it('keeps at most maxAddresses address windows', () => {
+    let t = 0
+    const budget = createFrameBudget({ now: () => t, maxAddresses: 3 })
+    for (let i = 0; i < 10; i++) budget.check({}, `a${i}`, 100 * KB, false)
+    assert.equal(budget.addresses, 3)
+    t += 120000
+    budget.sweep()
+    assert.equal(budget.addresses, 0)
+  })
+
+  it("owning a room no database proved ('relay') is no proof: large frames per socket, and the address's budget is shared", () => {
+    const { budget, tick } = make({ relayRoomSocketBytes: 1024 * KB, relayRoomAddressBytes: 2048 * KB, unprovedAddressBytes: 512 * KB })
+    // per socket: more large frames than a claim, up to its bytes
+    const one = {}
+    for (let i = 0; i < 8; i++) assert.equal(budget.check(one, 'hall', 128 * KB, 'relay'), 'ok', `frame ${i + 1}`)
+    assert.equal(budget.check(one, 'hall', 128 * KB, 'relay'), 'refused')
+    // small frames are not counted
+    assert.equal(budget.check(one, 'hall', 60 * KB, 'relay'), 'ok')
+    // every socket of the address shares what is left (1 MB), however many rooms they made up
+    let ok = 0
+    for (let s = 0; s < 6; s++) {
+      const sock = {}
+      for (let i = 0; i < 4; i++) if (budget.check(sock, 'hall', 128 * KB, 'relay') === 'ok') ok++
+    }
+    assert.equal(ok, 8, 'the address had 1 MB left')
+    // claims (no room) count within the same budget
+    assert.equal(budget.check({}, 'hall', 128 * KB, 'none'), 'refused')
+    // another address, a proved room and loopback are apart
+    assert.equal(budget.check({}, 'other', 128 * KB, 'relay'), 'ok')
+    assert.equal(budget.check({}, 'hall', 128 * KB, 'proved'), 'ok')
+    assert.equal(budget.check({}, null, 128 * KB, 'relay'), 'ok')
+    tick(61000)
+    assert.equal(budget.check({}, 'hall', 128 * KB, 'relay'), 'ok', 'a new window')
+  })
+
+  it('claims keep their own smaller share of the address budget', () => {
+    const { budget } = make({ unprovedAddressBytes: 512 * KB, relayRoomAddressBytes: 2048 * KB })
+    for (let i = 0; i < 4; i++) assert.equal(budget.check({}, 'hall', 128 * KB, 'none'), 'ok')
+    assert.equal(budget.check({}, 'hall', 128 * KB, 'none'), 'refused', 'claims: 512 KB')
+    // the relay-room owners still have the rest of the address's 2 MB
+    assert.equal(budget.check({}, 'hall', 128 * KB, 'relay'), 'ok')
+  })
+
+  it('true and false still mean a proved room and no room', () => {
+    const { budget } = make({ unprovedAddressBytes: 256 * KB })
+    for (let i = 0; i < 2; i++) assert.equal(budget.check({}, 'a', 128 * KB, false), 'ok')
+    assert.equal(budget.check({}, 'a', 128 * KB, false), 'refused')
+    assert.equal(budget.check({}, 'a', 128 * KB, true), 'ok')
   })
 })
 

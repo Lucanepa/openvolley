@@ -95,7 +95,7 @@ is missing or unreadable. `backup` is `ok` (younger than `BACKUP_MAX_AGE_HOURS`,
 36 h), `stale`, `unknown` (no readable `last_backup`) or `unchecked`
 (`BACKUP_MAX_AGE_HOURS=0`); `stale` and `unknown` make `/health` 503. While the
 backup is `stale` or `unknown` the daily storage sweep also **keeps every file
-under `backup/backups/`** (it logs `backup/ sweep PAUSED`), so the 30-day
+under `backup/`** (it logs `backup/ sweep PAUSED`), so the 30-day
 rotation never deletes the only copies while the nightly snapshot is failing.
 LAN `/health` keeps the old shape (`status: healthy`, `mode: local`, always 200).
 
@@ -145,7 +145,7 @@ Deploy to Render for cloud backup, also run locally when available. The frontend
 | `DATABASE_URL` | Postgres connection string. Set: self-hosted cloud mode. Unset (or `--local` on the command line): LAN relay mode, no database. | - |
 | `STORAGE_ROOT` | Object storage root (`{root}/{bucket}/{path}`), must contain the `.ovdata` sentinel or every write gets 503. `STORAGE_DIR` is accepted as the older name. | `/data/storage` |
 | `STATUS_DIR` | Read-only directory with `last_backup` (a UTC timestamp, e.g. `date -u +%FT%TZ`) reported by `/health`. | `/var/lib/openvolley-status` |
-| `PUBLIC_ORIGINS` | Extra trusted browser origins, comma separated (CORS with credentials, CSP connect-src), on top of `https://*.openvolley.app` and the built-in list. | - |
+| `PUBLIC_ORIGINS` | Extra trusted browser origins, comma separated (CORS with credentials, writes, WebSocket upgrades, CSP connect-src), on top of the exact list in `lib/cors.js` (see "Origin rule"). A dev or preview site under `openvolley.app` must be listed here. | - |
 | `TRUST_PROXY` | `cloudflare`: the client IP is `cf-connecting-ip` (only valid when the origin is reachable through Cloudflare only). Unset: the socket peer address. Any other value stops the server. **Required behind cloudflared/Traefik**: without it every per-IP limit (socket caps, PIN and restore buckets, `/api/db`, auth) keys on the proxy's address, i.e. one bucket for all clients (the server warns at startup). | - |
 | `TRUST_PROXY_FROM` | Comma list of CIDRs (e.g. the tunnel/Traefik network `172.30.0.0/24`). With it, `cf-connecting-ip` is honored only when the socket peer is inside one of them, so a caller that reaches the origin port directly cannot forge its address. Needs `TRUST_PROXY=cloudflare`; a bad entry stops the server. Without it the origin port must be reachable through the proxy only (no published host port, own Docker network). | - |
 | `BACKUP_MAX_AGE_HOURS` | Max age of `$STATUS_DIR/last_backup` before `/health` says `backup: stale` (503) and the `backup/` sweep pauses. `0` disables both (dev only). | `36` |
@@ -154,7 +154,7 @@ Deploy to Render for cloud backup, also run locally when available. The frontend
 | `CONTACT_EMAIL` | The support mailbox (FreeScout reads it): the only recipient of `/api/contact`; also named in the "password reset unavailable" message | `support@openvolley.app` |
 | `OV_PIN_SECRET` | Secret (at least 32 characters) for the PINs at rest: `game_pin` and every `connection_pins` value are stored as an HMAC with it (`lib/pinHash.js`). Unset: stored in plaintext as before (the server warns at startup). Also keys the approval PINs: unset turns approval with an account off ("Approval PINs"). **Never change or lose it** while matches stored with it are in use (see "Security model"). | - |
 | `OV_MATCH_TOKEN_SECRET` | Secret (at least 32 characters; a shorter one stops the start) for the match access tokens the PIN checks answer with (`lib/matchAccess.js`). Unset: derived from `OV_PIN_SECRET`; both unset: a random one per process (tokens end with a restart; the apps re-check their stored PIN on reload). | derived / random |
-| `STORAGE_BACKUP_MIN_FREE_MB`, `STORAGE_SCORESHEETS_MIN_FREE_MB`, `STORAGE_MAX_FILE_MB`, `STORAGE_OWNER_SCOPE`, `STORAGE_OWNER_SCOPE_BUCKETS` | See "Self-hosted storage" below | |
+| `STORAGE_BACKUP_MIN_FREE_MB`, `STORAGE_SCORESHEETS_MIN_FREE_MB`, `STORAGE_MAX_FILE_MB`, `STORAGE_BACKUP_ACCOUNT_MAX_MB`, `STORAGE_OWNER_SCOPE`, `STORAGE_OWNER_SCOPE_BUCKETS` | See "Self-hosted storage" below | |
 | `OV_RELAY_MAX_MB` | Memory the relay's stored match bundles and live states may take in all (half of it per address); syncs beyond it are refused with `relay-full`. A bad value stops the server. | 35% of V8's heap limit (about 106 MB with `--max-old-space-size=256`) |
 | `RENDER` | Auto-set by Render (legacy) | - |
 | `RESEND_API_KEY` | Resend API key for email (recommended) | - |
@@ -172,21 +172,43 @@ Deploy to Render for cloud backup, also run locally when available. The frontend
 `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` are no longer read, nor are the
 `POCKETBASE_*` variables (the PocketBase relay snapshot backup was removed).
 
-Rate limits in cloud mode (per minute unless noted; sized for a venue NAT):
+Rate limits in cloud mode (per minute unless noted; sized for a venue NAT).
+"Per IP" is per address bucket on the cloud: IPv4 as is, **IPv6 by /64** (one
+subscriber holds a whole /64; a venue relay counts per address, as its socket
+cap does). Each category has its own counters, at most 10,000 keys each (a
+flood of new addresses evicts the oldest windows). `/api/approvals*` 60,
+`/api/account/approval-pin*` 30 and `/api/scoresheet/test-mail` 10 per user.
 `/api/db` 1200 per IP before the body is read, then reads 600 per IP, writes
 600 per user (and 1200 per IP before the token lookup); `/api/storage/*` 600 per
 IP plus the per-user write quota of `lib/storage.js`; `validate-connection-pin`
 60 per IP and 20 per IP + PIN type, plus at most **20 failed guesses per IP in
 10 minutes** (a success is refunded; 429 with `Retry-After: 600`);
 `/api/match/restore` 30 per user, at most 2 bodies parsed at once per process
-(4 queued, then 503 `OV_BUSY`); the PIN and `/api/db` buckets key IPv6 by /64; `/api/match/restore-by-pin` 60 per IP plus the
+(4 queued, then 503 `OV_BUSY`); `/api/match/restore-by-pin` 60 per IP plus the
 attempt limiter (20 failed per caller / 5 per caller and game in 10 min); auth
 buckets live in `lib/auth.js`; `/api/match/claim` shares the restore-by-pin
 buckets; `/api/match/upload-roster` shares the validate-connection-pin per-IP
 and failed-guess buckets; a wrong `X-OV-Match-Pin` on `GET /api/match/:id`
 counts as a failed guess too, and a wrong `subscribe-match` PIN 5 per socket /
-20 per IP and minute. Role sockets: 200 per IP in cloud mode (50 on
+20 per IP and minute. `/api/db` reads without a checked session (no token,
+or a read that needs none) and those of an account without any role (anyone
+may sign up for one): `count` counts at most 1000 rows, the select ends after
+3 s, at most `PG_POOL_MAX` - 2 run at once (40 queued, each at most 5 s, then
+503 `OV_DB_BUSY`; a read whose caller left while queued is not run), so two
+pool connections stay for sign-in and the scorers' writes, and `events` /
+`sets` without an `eq` / `in` filter on `id`, `external_id` or `match_id`
+return at most 100 rows. Role sockets: 200 per IP in cloud mode (50 on
 the LAN), 2000 in total; `?purpose=live` sockets: 500 per IP, 3000 in total.
+Role-socket frames (`lib/relayLimits.js` `createFrameBudget`, before a frame
+is parsed): 120 a minute per socket; a socket that owns no room (no proved
+scoreboard claim) may send 4 frames over 64 KB a minute (its claim), together
+at most 32 MB per IP; on the cloud, a socket whose rooms no database row
+proved (anyone may sync a made-up room id; a signed-out scorer's room is one
+too) sends at most 32 MB of frames over 64 KB a minute, and all such sockets
+of an IP together, claims included, 64 MB; a socket that owns a room whose
+game PIN the database proved, or any room of a venue relay, has no limit of
+its own for large frames; any socket at most 128 MB a minute. A refused
+frame answers `too-large`; the third in a minute closes the socket (1009).
 What the relay keeps of a socket's syncs (`lib/relayLimits.js`, both modes):
 the PINs it compares must be text (at most 64 characters) or numbers (else
 `bad-request`; `matchPin`, which it never compares, only has to be text or a
@@ -252,13 +274,60 @@ Writes (`/api/db` insert/update/upsert/delete and `/api/match/restore`) need
 the request header `X-OV-Proto: 2` (426 `OV_CLIENT_TOO_OLD` otherwise); CORS
 allows that header.
 
-CORS in cloud mode trusts `https://*.openvolley.app` (the sites, the manager
-`https://manager.openvolley.app` included), `PUBLIC_ORIGINS`, and the
-native shells: Capacitor (`https://localhost`, `capacitor://localhost`) and
-Tauri (`tauri://localhost`, `http(s)://tauri.localhost`). The list lives in
-`lib/cors.js` (tests: `tests/cors.test.js`, no database needed). Cloudflare
-Pages previews (`https://dev.openvolley-<app>.pages.dev`) are trusted only
-when listed in `PUBLIC_ORIGINS`.
+### Origin rule
+
+One rule for every OpenVolley server and relay (`lib/cors.js`; tests:
+`tests/cors.test.js`, no database needed). The backend applies it; the LAN
+relays (`frontend/server.js`, `frontend/electron/lanRelayCore.cjs`, the desktop
+app's `src-tauri/src/relay.rs`) are to apply the same rule (the LAN relay and
+Tauri relay work of the rollout fixes) and do not yet. A browser origin is
+trusted when it is
+
+1. in the exact list of `ALLOWED_ORIGINS`: the sites (`openvolley.app`,
+   `www.openvolley.app`, `app`, `referee`, `bench`, `livescore`, `roster`,
+   `scoresheet`, `manager`, `manager-beach`, OpenBeach's `beach`,
+   `beach-referee`, `beach-livescore`, `beach-scoresheet`, `beach-roster` and
+   their `<function>-beach` names, all `https://…openvolley.app`), the native
+   shells (Capacitor `https://localhost`, `capacitor://localhost`; Tauri
+   `tauri://localhost`, `http(s)://tauri.localhost`; the desktop windows on
+   `http://localhost:5173` / `5174`) and local development; or in
+   `PUBLIC_ORIGINS`. **No wildcard**: any other host under `openvolley.app`
+   (the support desk, the download host, a dev build, a forgotten DNS record)
+   is a stranger. Cloudflare Pages previews and dev sites are trusted only
+   when listed in `PUBLIC_ORIGINS`;
+2. the server's own pages: the origin's host is the request's `Host`, by a
+   name no outside party can point at the server: an address, `localhost`, a
+   `.local` or single-label name (`scoretable`), or one of the server's
+   public names (`backend.openvolley.app` and the hosts of `PUBLIC_ORIGINS`).
+   The sign page, a venue server reached by its address or its `.local` or
+   bare name. A DNS-rebinding page (an outside name such as
+   `rebind.example` re-pointed at a venue server's address, which the browser
+   sends as the `Host`) is not the server's own page;
+3. on a venue server (not cloud) only: an `http(s)` page of the hall's
+   network, the host **parsed as an address**: `localhost`, loopback
+   (127/8, `::1`), private (10/8, 172.16/12, 192.168/16, fc00::/7) and
+   link-local (169.254/16, fe80::/10) addresses, and `.local` names. A name
+   such as `10.example.test` or `192.168.example.test` is not an address.
+
+What follows from it: the CORS answer names a trusted origin (with
+credentials) or else `https://openvolley.app` (an untrusted origin is never
+reflected, on the cloud or on a venue server); an API write (POST, PUT, PATCH,
+DELETE under `/api/`) from an untrusted origin is refused with 403
+`OV_ORIGIN_REFUSED`, and one whose body is not `application/json` with 415
+`OV_UNSUPPORTED_MEDIA_TYPE` (the support form `/api/contact` also takes
+`multipart/form-data`; the phone-sign API answers its own 400), both before
+any rate bucket is charged, so a web page cannot spend a hall's PIN, sign-in
+or `/api/db` budgets from its visitors' browsers; a WebSocket upgrade (role and
+`?purpose=live` sockets) from an untrusted origin is refused with 403. A
+request without an `Origin` (the native apps' sockets, scripts, the board
+bridge) is no browser page and is not refused for it. The counts are in the
+internal `/health` body (`transport`). DNS rebinding: rule 2 trusts no
+outside name, so a rebinding page's writes and sockets are refused like any
+other foreign page's (a browser sends the page's `Origin` with both). Its GET
+reads are same-origin for the browser and are answered: what any device on
+the hall network reads without a PIN. A venue server reached by a dotted name
+of the hall's router (`scorer-pc.fritz.box`) is no own page either: open it
+by its address or `.local` name.
 
 ## Security model (Phase 7 security release)
 
@@ -580,8 +649,16 @@ replacement tablet signed in with another account still restores the match
 (and, signed in, becomes its editor). Restore in place from the scoreboard's
 options lists the current account's backups only. Files
 stored before this change (`backup/backups/…`, no user folder) are no longer
-reachable through the API; the 30-day sweep still removes them (and sweeps
-every account's `{user id}/backups`).
+reachable through the API; the 30-day sweep still removes them. The sweep
+covers all of `backup/`: every account's backups, logs and any other file in
+its folder older than 30 days. Writes need an account with a role (scorer,
+referee, manager or admin, either sport; 403 `OV_STORAGE_FORBIDDEN`
+otherwise: a pending account, which scores test matches only, keeps its
+backups on the device and in the desktop / Android backup folder, and its
+log lines are not uploaded), and one account holds at most
+`STORAGE_BACKUP_ACCOUNT_MAX_MB` (507 `OV_STORAGE_ACCOUNT_FULL` above it), so
+no account can fill the volume to the free-space floor every account's
+backups share.
 
 ### Deleting an account
 
@@ -734,11 +811,12 @@ Replaces Supabase Storage behind `POST /api/storage/upload`, `/download`, `/list
 | `STORAGE_BACKUP_MIN_FREE_MB` | `backup/` writes are refused (507) when free space would drop below this, so the space above the scoresheets floor stays for scoresheets. | `2048` |
 | `STORAGE_SCORESHEETS_MIN_FREE_MB` | Smaller floor for `scoresheets/` writes, so the volume never reaches ENOSPC. | `256` |
 | `STORAGE_MAX_FILE_MB` | Per-object size cap (413 above it). server.js must read the body with `storage.maxBodyBytes` (base64 + 64 KiB) for this to hold. | `5` |
+| `STORAGE_BACKUP_ACCOUNT_MAX_MB` | What one account may hold in `backup/` (its `{user id}/` folder, counted on disk; 507 `OV_STORAGE_ACCOUNT_FULL` above it). `0` turns it off. Sized from the backups themselves: the scorer uploads the whole match once a minute, about 50 MB for a three-set match and 100-250 MB for a long five-set one, kept 30 days; set it from the largest `backup/{user id}/` folders measured on the server. An account past 80% of it, and a bucket that grows by more than 2 GB (`backup/`) or 1 GB (`scoresheets/`) in an hour, write a `❌ [Storage] ALERT` line (and `storage.health().alerts`). | `6144` |
 | `STORAGE_OWNER_SCOPE` | `off`, `require` (first path segment must be the caller's user id) or `prefix` (user id prepended transparently), on the buckets of `STORAGE_OWNER_SCOPE_BUCKETS`. Any other value stops the server at startup. | `prefix` |
 | `STORAGE_OWNER_SCOPE_BUCKETS` | Buckets the owner scope applies to: a comma list or `all`. With the default every account sees only its own `backup/` objects (see "Security model"). | `backup` |
 | `STORAGE_UPLOADER_READ_BUCKETS` | Buckets whose objects only the account that created them may read, replace or list (see "Who can read a scoresheet" below); `none` turns it off. Any bucket other than `scoresheets`/`backup` stops the server at startup. | `scoresheets` |
 
-Guarantees: paths are NFC-normalised and validated (no `..`, no absolute paths, no backslashes, no C0/C1 control, bidi, zero-width or line-separator characters, no dot-names, no look-alikes that NFKC-normalise to `.` or `/`, no slash look-alikes such as U+2215; and, so the same data works on the Windows desktop app, no `:` `<` `>` `"` `|` `?` `*`, no trailing dot or space, no device names such as `CON` or `nul.json`); every directory on the way is checked with `lstat`, so symlinks are never followed; writes go to `{STORAGE_DIR}/.tmp` and are renamed into place (`upsert:false` uses `link()` so it is atomic too); only `application/json`, `text/plain` and `application/pdf` are accepted. A per-user write quota hook (`checkQuota`, with a ready-made `createWriteQuota()`) and `sweep()` for the 30-day `backup/backups/` retention are included. The quota is charged only for writes that would otherwise succeed; approved scoresheets (`{YYYY-MM-DD}/game{n}_final.json` in `scoresheets/`) skip the write count but still count against a byte budget. An `ownerScope` function returns `true` (allow as is), a path string (use that path), or anything else (403).
+Guarantees: paths are NFC-normalised and validated (no `..`, no absolute paths, no backslashes, no C0/C1 control, bidi, zero-width or line-separator characters, no dot-names, no look-alikes that NFKC-normalise to `.` or `/`, no slash look-alikes such as U+2215; and, so the same data works on the Windows desktop app, no `:` `<` `>` `"` `|` `?` `*`, no trailing dot or space, no device names such as `CON` or `nul.json`); every directory on the way is checked with `lstat`, so symlinks are never followed; writes go to `{STORAGE_DIR}/.tmp` and are renamed into place (`upsert:false` uses `link()` so it is atomic too); only `application/json`, `text/plain` and `application/pdf` are accepted. A per-user write quota hook (`checkQuota`, with a ready-made `createWriteQuota()`), a total per account and owner-scoped bucket (`maxOwnerBytes`) and `sweep()` for the 30-day `backup/` retention are included. The quota is charged only for writes that would otherwise succeed; approved scoresheets (`{YYYY-MM-DD}/game{n}_final.json` in `scoresheets/`) skip the write count but still count against a byte budget. An `ownerScope` function returns `true` (allow as is), a path string (use that path), or anything else (403).
 
 A download of a missing object answers **200** `{ data: null, error: { code: 'OV_STORAGE_NOT_FOUND' } }` rather than 404: the scorer reads its log file / backups before the first write, and a 404 made every browser log a console error. `apiStorage` returns it as `{ data: null, error }` exactly as before.
 
@@ -1439,8 +1517,13 @@ Deployed on Infomaniak at `https://backend.openvolley.app`.
 ### CORS errors
 
 - Check browser DevTools for the blocked origin
-- Local mode allows all origins
-- Cloud mode allows `*.openvolley.app` and localhost
+- Both modes follow the "Origin rule": the exact sites and native shells of
+  `lib/cors.js`, `PUBLIC_ORIGINS`, the server's own pages, and (venue relay
+  only) pages of the hall's network. A new site (or a dev build) goes into
+  `PUBLIC_ORIGINS` or the list
+- An API write answering 403 `OV_ORIGIN_REFUSED` or 415
+  `OV_UNSUPPORTED_MEDIA_TYPE`: the page's origin is not trusted, or the body
+  is not sent as `application/json`
 
 ### Deployment fails
 

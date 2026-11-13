@@ -49,6 +49,7 @@
  */
 
 import pg from 'pg'
+import { connectClient } from './pgClient.js'
 
 // ---------------------------------------------------------------------------
 // Defaults (mirror server.js / frontend matchRepository.js as of 2026-10)
@@ -625,9 +626,21 @@ export function createPgQuery (options = {}) {
     const dataSql = wantData
       ? `(SELECT coalesce(json_agg(q), '[]'::json) FROM (${inner}) q)`
       : `(SELECT NULL::json FROM (${inner}) q LIMIT 0)`
-    const sql = `SELECT ${dataSql} AS data, ` +
-      `${wantCount ? `(SELECT count(*) FROM ${qTable(t.name)} AS t${where.sql})` : 'NULL::bigint'} AS count`
-    const res = await (opts.client || pool).query(sql, ctx.values)
+    // opts.countCap (server code only): at most that many rows are counted,
+    // so a caller without a session cannot make one request scan a whole
+    // table (count is then the smaller of the true count and the cap)
+    const countCap = Number.isInteger(opts.countCap) && opts.countCap > 0 ? opts.countCap : null
+    const countSql = !wantCount
+      ? 'NULL::bigint'
+      : countCap
+        ? `(SELECT count(*) FROM (SELECT 1 FROM ${qTable(t.name)} AS t${where.sql} LIMIT ${countCap}) AS c)`
+        : `(SELECT count(*) FROM ${qTable(t.name)} AS t${where.sql})`
+    const sql = `SELECT ${dataSql} AS data, ${countSql} AS count`
+    // opts.statementTimeoutMs (server code only): a shorter timeout for this
+    // select, in a transaction of its own (SET LOCAL)
+    const res = opts.statementTimeoutMs && !opts.client
+      ? await withTransaction((client) => client.query(sql, ctx.values), { statementTimeoutMs: opts.statementTimeoutMs })
+      : await (opts.client || pool).query(sql, ctx.values)
     const rows = res.rows[0].data
     const count = wantCount ? Number(res.rows[0].count) : undefined
     let data = wantData ? rows : null
@@ -1279,7 +1292,7 @@ export function createPgQuery (options = {}) {
 
   // ------------------------------------------------------------ public API
   async function withTransaction (fn, { statementTimeoutMs } = {}) {
-    const client = await pool.connect()
+    const client = await connectClient(pool, log)
     try {
       await client.query('BEGIN')
       if (statementTimeoutMs) await client.query(`SET LOCAL statement_timeout = ${Number(statementTimeoutMs) | 0}`)
@@ -1335,6 +1348,8 @@ export function createPgQuery (options = {}) {
    * @param {{userId:string, restrict?:boolean}} [opts.readOwner] selects of matches and its children:
    *        each row gets `__owned` (the user created or edits its match); restrict: only owned rows match
    * @param {number} [opts.maxRows]        raise/lower the select row cap (server code only)
+   * @param {number} [opts.countCap]       selects: count at most this many rows (server code only)
+   * @param {number} [opts.statementTimeoutMs] selects: a statement timeout of their own (server code only)
    * @param {string[]} [opts.mergeOnUpsert] JSON columns an upsert merges into the stored object (server code only)
    * @param {string[]} [opts.changeColumns] narrow the `changes` rows to these columns (server code only)
    * @param {pg.PoolClient} [opts.client]  run inside the caller's transaction. A non-200 result

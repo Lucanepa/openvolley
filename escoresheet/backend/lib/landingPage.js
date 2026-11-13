@@ -189,8 +189,8 @@ export function landingMatchRow(matchId, matchData) {
 /**
  * @param {object} p
  * @param {string} p.baseUrl        http://<Host header>
- * @param {number} p.clientCount    open sockets
- * @param {number} p.matchCount     active matches
+ * @param {number|null} p.clientCount    open sockets; null: not shown (the cloud)
+ * @param {number|null} p.matchCount     active matches; null: not shown (the cloud)
  * @param {Array}  p.indoor         INDOOR_ROLES + { url, svg } (svg: the QR code from `qrcode`)
  * @param {Array}  p.beach          BEACH_ROLES + { url, svg }
  * @param {Array}  p.matches        { home, away, updatedAt }
@@ -215,9 +215,9 @@ export function renderLandingPage({ baseUrl, clientCount, matchCount, indoor, be
     </div>
     <div class="status">
       <span class="pill"><span class="dot green"></span>Server running</span>
-      <span class="pill"><span class="dot sky"></span>${plural(clientCount, 'connected client', 'connected clients')}</span>
-      <span class="pill"><span class="dot sky"></span>${plural(matchCount, 'active match', 'active matches')}</span>
-    </div>
+${clientCount == null ? '' : `      <span class="pill"><span class="dot sky"></span>${plural(clientCount, 'connected client', 'connected clients')}</span>
+`}${matchCount == null ? '' : `      <span class="pill"><span class="dot sky"></span>${plural(matchCount, 'active match', 'active matches')}</span>
+`}    </div>
   </header>
 
   <div class="card how-to">

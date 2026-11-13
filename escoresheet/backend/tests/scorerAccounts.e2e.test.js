@@ -104,7 +104,8 @@ describe('scorer accounts end to end', { skip: SKIP }, () => {
     assert.equal((await dbCall(p, 'matches', 'update', { data: { status: 'final' }, filters: [eq('id', test.json.data.id)] })).status, 200, 'a test match may be finished')
     expectCode(await dbCall(p, 'matches', 'update', { data: { test: false }, filters: [eq('id', test.json.data.id)] }), 403, 'OV_SCORER_REQUIRED')
     expectCode(await upload(p, 'scoresheets', '2026-10-05/game1_final.json', '{}'), 403, 'OV_SCORER_REQUIRED')
-    assert.equal((await upload(p, 'backup', 'backups/backup_g1/b1.json', '{"x":1}')).status, 200)
+    // cloud backups need a role: a self-registered account cannot fill the volume
+    expectCode(await upload(p, 'backup', 'backups/backup_g1/b1.json', '{"x":1}'), 403, 'OV_STORAGE_FORBIDDEN')
     expectCode(await call(p, 'POST', '/api/match/official-check', { game_n: 5 }), 403, 'OV_SCORER_REQUIRED')
     expectCode(await call(p, 'GET', '/api/saved-teams'), 403, 'OV_FORBIDDEN')
 
@@ -116,6 +117,7 @@ describe('scorer accounts end to end', { skip: SKIP }, () => {
     assert.deepEqual(red.json.data, { roles: ['scorer'], role_granted: 'scorer', already_had: false })
     const ok = await dbCall(p, 'matches', 'insert', { data: official })
     assert.equal(ok.status, 200, ok.text)
+    assert.equal((await upload(p, 'backup', 'backups/backup_g1/b1.json', '{"x":1}')).status, 200, 'a scorer stores its backups')
     // single use: another pending account cannot use it
     const q = await account('pending2')
     expectCode(await call(q, 'POST', '/api/account/redeem-invite', { code: inv.json.data.code }), 409, 'OV_INVITE_USED_UP')

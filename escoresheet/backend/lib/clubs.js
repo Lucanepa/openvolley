@@ -46,6 +46,7 @@
 import { fail, invalid, isUuid, notFound, ok, unavailable } from './accounts.js'
 import { seasonOf, sportOf } from './officialGame.js'
 import { pickLang } from './mailer.js'
+import { connectClient } from './pgClient.js'
 
 export const CLUB_REQUIRED = () => fail(403, 'OV_CLUB_REQUIRED',
   'Your account has no club yet. An admin adds it before you can score official games.')
@@ -153,7 +154,7 @@ export function createClubs ({ pool, audit, access = null, createInvite = null, 
   const log = logger
 
   async function withTx (fn) {
-    const client = await pool.connect()
+    const client = await connectClient(pool, log)
     try {
       await client.query('BEGIN')
       const out = await fn(client)

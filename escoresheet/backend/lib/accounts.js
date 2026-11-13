@@ -38,6 +38,7 @@ import { createHash, randomInt } from 'node:crypto'
 import { ADMIN_ROLES, API_GRANTABLE_ROLES, INDOOR_ROLES, SPORTS, SPORT_ROLES, accessForSport, accessFromRoles, normalizeRoles, roleFor, sportOfRole } from './access.js'
 import { findClaim, officialRowsOf, publicClaim, seasonOf, sportOf } from './officialGame.js'
 import { EMAIL_CONFIRMATION_MARK } from './auth.js'
+import { connectClient } from './pgClient.js'
 
 export const INVITE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
 export const INVITE_ROLES = Object.freeze(['scorer', 'referee', 'competition_manager'])
@@ -231,7 +232,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
   const approvalsOf = async (ids) => (typeof approvalsForMatches === 'function' ? approvalsForMatches(ids) : new Map())
 
   async function withTx (fn) {
-    const client = await pool.connect()
+    const client = await connectClient(pool, log)
     try {
       await client.query('BEGIN')
       const out = await fn(client)

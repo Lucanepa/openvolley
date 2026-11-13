@@ -16,6 +16,7 @@
  * Handlers answer { status, body } and never throw.
  */
 import { sanitizeActivityData, isKnownKind, ACTIVITY_KIND_RE, ACTIVITY_LEVELS } from './activitySanitize.js'
+import { connectClient } from './pgClient.js'
 
 export const MAX_ENTRIES = 500
 export const MAX_BODY_BYTES = 512 * 1024
@@ -337,7 +338,7 @@ export function createActivityLog({ pool, accounts = null, log = console }) {
     if (match) { values.push(match); where.push(`match_external_id = $${values.length}`) }
     if (account) { values.push(account); where.push(`(account_id = $${values.length}::uuid OR uploader_id = $${values.length}::uuid)`) }
     try {
-      const client = await pool.connect()
+      const client = await connectClient(pool, log)
       try {
         await client.query('BEGIN')
         const r = await client.query(`DELETE FROM public.activity_log WHERE ${where.join(' AND ')}`, values)
