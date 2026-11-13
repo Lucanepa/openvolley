@@ -435,7 +435,7 @@ describe('sentinel and free-space guards', () => {
     await rejectsWith(s.upload({ bucket: 'backup', path: 'x.json', fileBase64: b64('{}') }), 503)
     await rejectsWith(s.download({ bucket: 'backup', path: 'x.json' }), 503)
     await rejectsWith(s.list({ bucket: 'backup' }), 503)
-    assert.deepEqual(await s.health(), { sentinel: false, storageWritable: false, diskFreeMB: null, lowSpace: null })
+    assert.deepEqual(await s.health(), { sentinel: false, storageWritable: false, diskFreeMB: null, lowSpace: null, alerts: { growthMB: {}, grewFast: [], accountsNearQuota: 0 } })
   })
 
   it('reads keep working without the sentinel', async () => {
@@ -922,7 +922,7 @@ describe('sweep', () => {
   beforeEach(async () => makeRoot())
   afterEach(async () => fs.rm(base, { recursive: true, force: true }))
 
-  it('deletes old backups, keeps new ones and other prefixes, never follows symlinks', async () => {
+  it('deletes old files anywhere in backup/ (backups, logs, stray objects), keeps new ones, never follows symlinks', async () => {
     const now = Date.UTC(2026, 9, 5)
     const s = make({ now: () => now })
     const old = new Date(now - 31 * 24 * 3600 * 1000)
@@ -930,7 +930,9 @@ describe('sweep', () => {
     await s.upload({ bucket: 'backup', path: 'backups/backup_g1/new.json', fileBase64: b64('{}') })
     await s.upload({ bucket: 'backup', path: 'backups/backup_g2/old.json', fileBase64: b64('{}') })
     await s.upload({ bucket: 'backup', path: 'logs/game_1/logs.txt', fileBase64: b64('x') })
-    for (const p of ['backups/backup_g1/old.json', 'backups/backup_g2/old.json', 'logs/game_1/logs.txt']) {
+    await s.upload({ bucket: 'backup', path: 'stray.json', fileBase64: b64('{"a":1}') })
+    await s.upload({ bucket: 'backup', path: 'stray-new.json', fileBase64: b64('{}') })
+    for (const p of ['backups/backup_g1/old.json', 'backups/backup_g2/old.json', 'logs/game_1/logs.txt', 'stray.json']) {
       await fs.utimes(path.join(root, 'backup', p), old, old)
     }
     await fs.utimes(path.join(outside, 'secret.json'), old, old)
@@ -941,12 +943,25 @@ describe('sweep', () => {
     for (const d of ['backups/backup_g1', 'backups/backup_g2']) await fs.utimes(path.join(root, 'backup', d), old, old)
 
     const r = await s.sweep()
-    assert.deepEqual(r, { deletedFiles: 2, deletedBytes: 4, removedDirs: 1, tmpRemoved: 1, ownerRecordsRemoved: 0 })
+    assert.deepEqual(r, { deletedFiles: 4, deletedBytes: 12, removedDirs: 1, tmpRemoved: 1, ownerRecordsRemoved: 0 })
     assert.equal(await exists(path.join(root, 'backup/backups/backup_g1/new.json')), true)
     assert.equal(await exists(path.join(root, 'backup/backups/backup_g2')), false)
-    assert.equal(await exists(path.join(root, 'backup/logs/game_1/logs.txt')), true)
+    assert.equal(await exists(path.join(root, 'backup/logs/game_1/logs.txt')), false)
+    assert.equal(await exists(path.join(root, 'backup/stray.json')), false)
+    assert.equal(await exists(path.join(root, 'backup/stray-new.json')), true)
     assert.equal(await exists(path.join(outside, 'secret.json')), true)
     assert.equal(await exists(path.join(root, 'backup/backups')), true)
+  })
+
+  it('a prefix narrows the sweep to it', async () => {
+    const now = Date.UTC(2026, 9, 5)
+    const s = make({ now: () => now })
+    const old = new Date(now - 31 * 24 * 3600 * 1000)
+    await s.upload({ bucket: 'backup', path: 'backups/backup_g1/old.json', fileBase64: b64('{}') })
+    await s.upload({ bucket: 'backup', path: 'logs/game_1/logs.txt', fileBase64: b64('x') })
+    for (const p of ['backups/backup_g1/old.json', 'logs/game_1/logs.txt']) await fs.utimes(path.join(root, 'backup', p), old, old)
+    assert.equal((await s.sweep({ prefix: 'backups' })).deletedFiles, 1)
+    assert.equal(await exists(path.join(root, 'backup/logs/game_1/logs.txt')), true)
   })
 
   it('maxAgeMs Infinity (server.js while the host backup is stale) deletes no file but still clears temp files', async () => {
@@ -1013,11 +1028,11 @@ describe('sweep', () => {
       await fs.utimes(path.join(root, 'backup', p), old, old)
     }
     const r = await s.sweep()
-    assert.equal(r.deletedFiles, 3)
+    assert.equal(r.deletedFiles, 4)
     assert.equal(await exists(path.join(root, `backup/${u1}/backups/backup_g1/new.json`)), true)
     assert.equal(await exists(path.join(root, `backup/${u1}/backups/backup_g1/old.json`)), false)
     assert.equal(await exists(path.join(root, `backup/${u2}/backups/backup_g2/old.json`)), false)
-    assert.equal(await exists(path.join(root, `backup/${u2}/logs/game_1/logs.txt`)), true)
+    assert.equal(await exists(path.join(root, `backup/${u2}/logs/game_1/logs.txt`)), false)
     assert.equal(await exists(path.join(root, 'backup/backups/legacy/old.json')), false)
     // the owner still lists and downloads (restore); another account sees nothing
     assert.deepEqual((await s.list({ bucket: 'backup', path: 'backups/backup_g1', userId: u1 })).map((e) => e.name), ['new.json'])
@@ -1028,6 +1043,63 @@ describe('sweep', () => {
   it('missing prefix is a no-op', async () => {
     const s = make()
     assert.deepEqual(await s.sweep(), { deletedFiles: 0, deletedBytes: 0, removedDirs: 0, tmpRemoved: 0, ownerRecordsRemoved: 0 })
+  })
+})
+
+describe('per-account totals and growth alerts', () => {
+  beforeEach(async () => makeRoot())
+  afterEach(async () => fs.rm(base, { recursive: true, force: true }))
+  const U1 = '11111111-2222-4333-8444-555555555555'
+  const U2 = '66666666-2222-4333-8444-555555555555'
+  const scoped = (opts = {}) => make({ ownerScope: 'prefix', ownerScopeBuckets: ['backup'], ...opts })
+
+  it('one account holds at most maxOwnerBytes of backup/, counted on disk; others are not affected', async () => {
+    // a file the account stored before (or before a restart) counts too
+    await fs.mkdir(path.join(root, 'backup', U1, 'logs'), { recursive: true })
+    await fs.writeFile(path.join(root, 'backup', U1, 'logs', 'early.txt'), 'xxxx')
+    const s = scoped({ maxOwnerBytes: { backup: 12 } })
+    await s.upload({ bucket: 'backup', path: 'backups/g1/a.json', fileBase64: b64('123456'), userId: U1 })
+    await rejectsWith(s.upload({ bucket: 'backup', path: 'backups/g1/b.json', fileBase64: b64('123'), userId: U1 }), 507, 'OV_STORAGE_ACCOUNT_FULL')
+    // replacing an object counts the difference only
+    await s.upload({ bucket: 'backup', path: 'backups/g1/a.json', fileBase64: b64('12345678'), userId: U1 })
+    await rejectsWith(s.upload({ bucket: 'backup', path: 'backups/g1/a.json', fileBase64: b64('123456789'), userId: U1 }), 507, 'OV_STORAGE_ACCOUNT_FULL')
+    // another account has its own total
+    await s.upload({ bucket: 'backup', path: 'backups/g1/a.json', fileBase64: b64('123456789012'), userId: U2 })
+    // removing frees it
+    await s.remove({ bucket: 'backup', paths: ['backups/g1/a.json'], userId: U1 })
+    await s.upload({ bucket: 'backup', path: 'backups/g1/b.json', fileBase64: b64('12345678'), userId: U1 })
+    // the HTTP answer
+    const r = await s.handle('upload', { bucket: 'backup', path: 'backups/g1/c.json', fileBase64: b64('1234') }, { userId: U1 })
+    assert.equal(r.status, 507)
+    assert.equal(r.body.error.code, 'OV_STORAGE_ACCOUNT_FULL')
+  })
+
+  it('a sweep frees the total; 0 turns it off; unscoped buckets have none', async () => {
+    const now = Date.UTC(2026, 9, 5)
+    const s = scoped({ now: () => now, maxOwnerBytes: { backup: 8 } })
+    await s.upload({ bucket: 'backup', path: 'backups/g1/a.json', fileBase64: b64('12345678'), userId: U1 })
+    await rejectsWith(s.upload({ bucket: 'backup', path: 'backups/g1/b.json', fileBase64: b64('1'), userId: U1 }), 507)
+    const old = new Date(now - 31 * 24 * 3600 * 1000)
+    await fs.utimes(path.join(root, 'backup', U1, 'backups/g1/a.json'), old, old)
+    assert.equal((await s.sweep()).deletedFiles, 1)
+    await s.upload({ bucket: 'backup', path: 'backups/g1/b.json', fileBase64: b64('1'), userId: U1 })
+    const off = scoped({ maxOwnerBytes: { backup: 0 } })
+    await off.upload({ bucket: 'backup', path: 'backups/g2/big.json', fileBase64: b64('x'.repeat(64)), userId: U1 })
+    const unscoped = make({ maxOwnerBytes: { backup: 1 } })
+    await unscoped.upload({ bucket: 'backup', path: 'backups/g3/big.json', fileBase64: b64('x'.repeat(64)) })
+  })
+
+  it('the operator is alerted when a bucket grows fast or an account nears its total', async () => {
+    const errors = []
+    const s = scoped({ logger: { ...silent, error: (...a) => errors.push(a.join(' ')) }, growthAlertBytes: { backup: 10 }, maxOwnerBytes: { backup: 20 } })
+    await s.upload({ bucket: 'backup', path: 'backups/g1/a.json', fileBase64: b64('123456'), userId: U1 })
+    assert.equal(errors.length, 0)
+    await s.upload({ bucket: 'backup', path: 'backups/g1/b.json', fileBase64: b64('1234567890'), userId: U1 })
+    await s.upload({ bucket: 'backup', path: 'backups/g1/c.json', fileBase64: b64('12'), userId: U1 })
+    assert.equal(errors.filter((e) => /ALERT backup\/ grew/.test(e)).length, 1, 'once an hour')
+    assert.equal(errors.filter((e) => /ALERT account/.test(e)).length, 1, 'once per account')
+    const h = await s.health()
+    assert.deepEqual(h.alerts, { growthMB: { backup: 0 }, grewFast: ['backup'], accountsNearQuota: 1 })
   })
 })
 

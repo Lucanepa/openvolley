@@ -74,7 +74,17 @@ export const DEFAULTS = Object.freeze({
   maxSegmentBytes: 255,
   tmpMaxAgeMs: 60 * 60 * 1000,
   sweepMaxAgeMs: 30 * DAY_MS,
-  sweepDirGraceMs: 5 * 60 * 1000  // sweep never removes a folder touched this recently
+  sweepDirGraceMs: 5 * 60 * 1000, // sweep never removes a folder touched this recently
+  // What one account may hold in an owner-scoped bucket ({bucket}/{userId}/),
+  // counted on disk. A scorer's 30 days of match backups and logs are a few
+  // hundred MB (one backup a minute, each the whole match); the free-space
+  // floor is shared by every account, so one account must never reach it.
+  maxOwnerBytes: Object.freeze({ backup: 2 * GiB }),
+  // Bytes written to a bucket in one hour above which the operator is alerted
+  // (an error line in the log, and health().alerts)
+  growthAlertBytes: Object.freeze({ backup: 2 * GiB, scoresheets: 1 * GiB }),
+  // An account's share of its quota above which the operator is alerted
+  ownerAlertShare: 0.8
 })
 
 /** Base64 + JSON envelope overhead allowance for the HTTP body cap. */
@@ -134,7 +144,8 @@ const err = {
   contentType: () => new StorageError(415, 'OV_STORAGE_CONTENT_TYPE', 'Content type not allowed'),
   quota: (msg) => new StorageError(429, 'OV_STORAGE_QUOTA', msg || 'Storage quota exceeded'),
   unavailable: () => new StorageError(503, 'OV_STORAGE_UNAVAILABLE', 'Storage is not available'),
-  lowSpace: () => new StorageError(507, 'OV_STORAGE_LOW_SPACE', 'Not enough free storage space')
+  lowSpace: () => new StorageError(507, 'OV_STORAGE_LOW_SPACE', 'Not enough free storage space'),
+  ownerFull: () => new StorageError(507, 'OV_STORAGE_ACCOUNT_FULL', 'Your cloud storage is full; files older than 30 days are removed every day')
 }
 
 // ==================== Pure helpers (exported for tests and server.js) ====================
@@ -257,6 +268,7 @@ export function createWriteQuota({ windowMs = 60_000, maxWrites = 300, maxBytes 
  *   STORAGE_BACKUP_MIN_FREE_MB       free-space floor for backup/ writes (default 2048)
  *   STORAGE_SCORESHEETS_MIN_FREE_MB  free-space floor for scoresheets/ writes (default 256)
  *   STORAGE_MAX_FILE_MB              per-object size cap (default 5)
+ *   STORAGE_BACKUP_ACCOUNT_MAX_MB    what one account may hold in backup/ (default 2048; 0: no cap)
  *   STORAGE_OWNER_SCOPE              off | require | prefix (default prefix since the Phase 7
  *                                    security release)
  *   STORAGE_OWNER_SCOPE_BUCKETS      buckets the owner scope applies to: a comma list or 'all'
@@ -285,6 +297,9 @@ export function storageOptionsFromEnv(env = process.env) {
   if (Object.keys(floors).length) opts.minFreeBytes = floors
   const maxFile = megabytes('STORAGE_MAX_FILE_MB', { allowZero: false })
   if (maxFile !== undefined) opts.maxFileBytes = maxFile
+  // 0 turns the per-account total off
+  const backupAccount = megabytes('STORAGE_BACKUP_ACCOUNT_MAX_MB', { allowZero: true })
+  if (backupAccount !== undefined) opts.maxOwnerBytes = { backup: backupAccount }
   const rawScope = env.STORAGE_OWNER_SCOPE
   const scope = rawScope === undefined || String(rawScope).trim() === '' ? 'prefix' : String(rawScope).trim().toLowerCase()
   if (scope === 'require' || scope === 'prefix') {
@@ -323,6 +338,9 @@ export function storageOptionsFromEnv(env = process.env) {
  * @param {number}   [options.maxDownloadBytes=64 MiB]
  * @param {string[]} [options.allowedContentTypes] media types accepted on upload
  * @param {Object<string,number>} [options.minFreeBytes={scoresheets: 256 MiB, backup: 2 GiB}] per-bucket free-space floor
+ * @param {Object<string,number>} [options.maxOwnerBytes={backup: 2 GiB}] what one account may hold in a
+ *        'prefix' owner-scoped bucket, counted on disk (0: no cap); 507 OV_STORAGE_ACCOUNT_FULL above it
+ * @param {Object<string,number>} [options.growthAlertBytes] bytes written to a bucket in an hour that alert the operator
  * @param {(ctx:{userId,bucket,path,size,contentType}) => (boolean|{ok:boolean,message?:string}|Promise)} [options.checkQuota]
  *        per-user write quota hook, called once the write is otherwise known to
  *        succeed (after the path, existence and free-space checks);
@@ -353,6 +371,9 @@ export function createStorage(options = {}) {
   const listMaxLimit = options.listMaxLimit ?? DEFAULTS.listMaxLimit
   const maxBodyBytes = maxBodyBytesFor(maxFileBytes)
   const sweepDirGraceMs = options.sweepDirGraceMs ?? DEFAULTS.sweepDirGraceMs
+  const maxOwnerBytes = { ...DEFAULTS.maxOwnerBytes, ...(options.maxOwnerBytes || {}) }
+  const growthAlertBytes = { ...DEFAULTS.growthAlertBytes, ...(options.growthAlertBytes || {}) }
+  const ownerAlertShare = options.ownerAlertShare ?? DEFAULTS.ownerAlertShare
   const checkQuota = options.checkQuota || null
   const ownerScope = options.ownerScope || false
   const ownerScopeBuckets = new Set(options.ownerScopeBuckets || buckets)
@@ -516,6 +537,93 @@ export function createStorage(options = {}) {
     const r = await checkQuota(ctx)
     if (r === false) throw err.quota()
     if (r && typeof r === 'object' && r.ok === false) throw err.quota(r.message)
+  }
+
+  // ---------- per-account totals and growth (owner-scoped buckets) ----------
+
+  // `${bucket}/${owner}` -> bytes on disk under {bucket}/{owner}/, counted
+  // once by walking the folder, then kept up to date by the writes;
+  // forgotten when files go another way (remove, sweep, account deletion).
+  const ownerUsage = new Map()
+  const MAX_TRACKED_OWNERS = 10000
+  // owners alerted for their share of the quota (once until they drop below)
+  const ownersAlerted = new Set()
+  // bucket -> { start, bytes, alerted }: what was written in the current hour
+  const growth = new Map()
+  const HOUR_MS = 60 * 60 * 1000
+
+  /** The quota of `bucket` per account in bytes, or 0 (none: not 'prefix' scoped, or turned off). */
+  function ownerQuotaOf(bucket) {
+    if (ownerScope !== 'prefix' || !ownerScopeBuckets.has(bucket) || uploaderReadBuckets.has(bucket)) return 0
+    const q = Number(maxOwnerBytes[bucket])
+    return Number.isFinite(q) && q > 0 ? q : 0
+  }
+
+  async function treeBytes(dir) {
+    let total = 0
+    let dirents
+    try {
+      dirents = await fsp.readdir(dir, { withFileTypes: true })
+    } catch {
+      return 0
+    }
+    for (const d of dirents) {
+      const full = path.join(dir, d.name)
+      if (d.isDirectory()) total += await treeBytes(full)
+      else if (d.isFile()) {
+        try { total += (await fsp.lstat(full)).size } catch { /* raced */ }
+      }
+    }
+    return total
+  }
+
+  /** Bytes the account holds in the bucket (cached; see ownerUsage). */
+  async function ownerBytes(rr, bucket, owner) {
+    const key = `${bucket}/${owner}`
+    if (ownerUsage.has(key)) return ownerUsage.get(key)
+    const bytes = await treeBytes(path.join(rr, bucket, owner))
+    if (!ownerUsage.has(key)) {
+      if (ownerUsage.size >= MAX_TRACKED_OWNERS) ownerUsage.delete(ownerUsage.keys().next().value)
+      ownerUsage.set(key, bytes)
+    }
+    return ownerUsage.get(key)
+  }
+
+  function addOwnerBytes(bucket, owner, delta) {
+    const key = `${bucket}/${owner}`
+    if (ownerUsage.has(key)) ownerUsage.set(key, Math.max(0, ownerUsage.get(key) + delta))
+  }
+
+  function forgetOwner(owner) {
+    for (const b of buckets) ownerUsage.delete(`${b}/${owner}`)
+  }
+
+  /** Counts a write for the bucket's hourly growth and alerts the operator once an hour above the mark. */
+  function noteGrowth(bucket, bytes) {
+    const t = now()
+    let g = growth.get(bucket)
+    if (!g || t - g.start >= HOUR_MS) {
+      g = { start: t, bytes: 0, alerted: false }
+      growth.set(bucket, g)
+    }
+    g.bytes += bytes
+    const mark = Number(growthAlertBytes[bucket])
+    if (!g.alerted && Number.isFinite(mark) && mark > 0 && g.bytes > mark) {
+      g.alerted = true
+      logger.error?.(`❌ [Storage] ALERT ${bucket}/ grew by ${Math.round(g.bytes / MiB)} MB in under an hour (alert mark ${Math.round(mark / MiB)} MB): check which account writes (largest folders under ${bucket}/)`)
+    }
+  }
+
+  function noteOwnerShare(bucket, owner, used, quota) {
+    const key = `${bucket}/${owner}`
+    if (used < quota * ownerAlertShare) {
+      ownersAlerted.delete(key)
+      return
+    }
+    if (ownersAlerted.has(key)) return
+    if (ownersAlerted.size >= MAX_TRACKED_OWNERS) ownersAlerted.clear()
+    ownersAlerted.add(key)
+    logger.error?.(`❌ [Storage] ALERT account ${owner} holds ${Math.round(used / MiB)} MB of ${bucket}/ (quota ${Math.round(quota / MiB)} MB)`)
   }
 
   // ---------- owner records (uploader-only buckets) ----------
@@ -723,10 +831,14 @@ export function createStorage(options = {}) {
     const parsed = paths.map((p) => parse(p))
     const rr = await assertWritable()
     const removed = []
+    const quota = ownerQuotaOf(bucket)
     for (const segs of parsed) {
       const diskSegs = await scope('write', bucket, segs, userId)
       const size = await unlinkObject(rr, bucket, diskSegs, uploaderOnly ? (owners) => owners.includes(userId) : null)
-      if (size !== null) removed.push({ name: segs.join('/') })
+      if (size !== null) {
+        removed.push({ name: segs.join('/') })
+        if (quota) addOwnerBytes(bucket, diskSegs[0], -size)
+      }
     }
     return removed
   }
@@ -748,6 +860,7 @@ export function createStorage(options = {}) {
   async function deleteUserData(userId) {
     if (typeof userId !== 'string' || !USER_ID_RE.test(userId)) throw err.invalidRequest('invalid user id')
     const rr = await assertWritable()
+    forgetOwner(userId)
     const result = { objectsRemoved: 0, bytesRemoved: 0, foldersRemoved: 0, ownerRecordsUpdated: 0, ownerRecordsRemoved: 0 }
     if (ownerScope === 'prefix' || ownerScope === 'require') {
       for (const bucket of buckets) {
@@ -879,7 +992,7 @@ export function createStorage(options = {}) {
   }
 
   async function writeObject({ rr, bucket, segs, diskSegs, key, buf, ct, doUpsert, userId, uploaderOnly, adopt }) {
-    let { dir, target } = await resolve(bucket, diskSegs, { create: true })
+    const { dir, target } = await resolve(bucket, diskSegs, { create: true })
 
     // Existing entry checks (a symlink or folder at the target is never replaced).
     let existing = false
@@ -901,9 +1014,46 @@ export function createStorage(options = {}) {
     if (adopting && (!adopt || !owners.length)) throw err.forbidden()
     if (existing && !doUpsert) throw err.exists()
 
-    // Charged only for a write that is otherwise going ahead (no quota spent on 4xx refusals).
-    await runQuota({ userId: userId ?? null, bucket, path: segs.join('/'), size: buf.length, contentType: ct })
+    // The account's total in the bucket (ownerQuotaOf): what it holds, with
+    // this write in place of the object it replaces. Reserved before the
+    // write, so writes in parallel cannot pass it together.
+    const quota = ownerQuotaOf(bucket)
+    const owner = quota ? diskSegs[0] : null
+    let reserved = 0
+    if (owner) {
+      let replaced = 0
+      if (existing) {
+        try { replaced = (await fsp.lstat(target)).size } catch { /* gone meanwhile */ }
+      }
+      const used = await ownerBytes(rr, bucket, owner)
+      reserved = buf.length - replaced
+      if (reserved > 0 && used + reserved > quota) {
+        noteOwnerShare(bucket, owner, used, quota)
+        throw err.ownerFull()
+      }
+      addOwnerBytes(bucket, owner, reserved)
+      noteOwnerShare(bucket, owner, used + reserved, quota)
+    }
 
+    // Charged only for a write that is otherwise going ahead (no quota spent on 4xx refusals).
+    try {
+      await runQuota({ userId: userId ?? null, bucket, path: segs.join('/'), size: buf.length, contentType: ct })
+    } catch (e) {
+      if (owner) addOwnerBytes(bucket, owner, -reserved)
+      throw e
+    }
+    try {
+      await writeChecked({ rr, bucket, diskSegs, key, buf, doUpsert, userId, uploaderOnly, existing, adopting, owners, adopt, dir, target })
+    } catch (e) {
+      // Not written: the account's total is counted again on its next write
+      if (owner) ownerUsage.delete(`${bucket}/${owner}`)
+      throw e
+    }
+    noteGrowth(bucket, buf.length)
+  }
+
+  /** The write of writeObject once every check passed: owner record, temp file, commit. */
+  async function writeChecked({ rr, bucket, diskSegs, key, buf, doUpsert, userId, uploaderOnly, existing, adopting, owners, adopt, dir, target }) {
     // A new object: its creator is its only owner, replacing any stale record
     // left by an object that is gone. Written before the commit and under the
     // key's lock, so the object is never readable under an older record; a
@@ -1160,20 +1310,23 @@ export function createStorage(options = {}) {
   }
 
   /**
-   * Delete files older than maxAgeMs below bucket/prefix (default backup/backups,
-   * 30 days), then remove emptied folders. Symlinks are never followed. Also
-   * removes stale temp files. Needs the sentinel. Returns counts. With the
-   * 'prefix' owner scope on the bucket, every account's {userId}/{prefix} is
-   * swept as well (and the unprefixed one, where older files live).
+   * Delete files older than maxAgeMs below bucket/prefix (default: all of
+   * backup/, 30 days: every account's match backups and logs, and whatever
+   * else an account stored there, not only backups/), then remove emptied
+   * folders. Symlinks are never followed. Also removes stale temp files.
+   * Needs the sentinel. Returns counts. With a prefix and the 'prefix' owner
+   * scope on the bucket, every account's {userId}/{prefix} is swept as well
+   * (and the unprefixed one, where older files live).
    */
-  async function sweep({ bucket = 'backup', prefix = 'backups', maxAgeMs = DEFAULTS.sweepMaxAgeMs } = {}) {
+  async function sweep({ bucket = 'backup', prefix = '', maxAgeMs = DEFAULTS.sweepMaxAgeMs } = {}) {
     assertBucket(bucket)
     const rr = await assertWritable()
     const tmpRemoved = await sweepTemp(rr)
     const segs = parse(prefix, true)
     const result = { deletedFiles: 0, deletedBytes: 0, removedDirs: 0, tmpRemoved, ownerRecordsRemoved: 0 }
     const roots = [segs]
-    if (ownerScope === 'prefix' && ownerScopeBuckets.has(bucket)) {
+    // (the whole bucket holds every account's folder already)
+    if (segs.length > 0 && ownerScope === 'prefix' && ownerScopeBuckets.has(bucket)) {
       const b = await resolve(bucket, [], { isDir: true })
       let dirents = []
       try {
@@ -1241,6 +1394,8 @@ export function createStorage(options = {}) {
     }
 
     for (const dir of dirs) await walk(dir)
+    // the accounts' totals are counted again on their next writes
+    if (result.deletedFiles > 0) ownerUsage.clear()
     result.ownerRecordsRemoved = await sweepOwners(rr)
     return result
   }
@@ -1326,11 +1481,21 @@ export function createStorage(options = {}) {
   }
 
   /**
-   * Fields for /health: { sentinel, storageWritable, diskFreeMB, lowSpace }.
-   * Never throws.
+   * Fields for /health: { sentinel, storageWritable, diskFreeMB, lowSpace,
+   * alerts }. alerts: { growthMB: {bucket: MB written this hour}, grewFast:
+   * [buckets past their hourly mark], accountsNearQuota: n }. Never throws.
    */
   async function health() {
-    const out = { sentinel: false, storageWritable: false, diskFreeMB: null, lowSpace: null }
+    const t = now()
+    const growthMB = {}
+    const grewFast = []
+    for (const [b, g] of growth) {
+      if (t - g.start >= HOUR_MS) continue
+      growthMB[b] = Math.round(g.bytes / MiB)
+      if (g.alerted) grewFast.push(b)
+    }
+    const alerts = { growthMB, grewFast, accountsNearQuota: ownersAlerted.size }
+    const out = { sentinel: false, storageWritable: false, diskFreeMB: null, lowSpace: null, alerts }
     let rr
     try {
       rr = await realRoot()
