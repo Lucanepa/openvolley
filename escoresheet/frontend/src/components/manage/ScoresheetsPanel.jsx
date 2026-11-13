@@ -147,9 +147,13 @@ export default function ScoresheetsPanel({ app = 'indoor' }) {
                   {/* the account, else (account deleted, or none) the scorer named on the scoresheet */}
                   {(m.scorer_name || m.sheet_scorer_name) && <span>{t('manage.games.scoredBy', { name: m.scorer_name || m.sheet_scorer_name })}</span>}
                 </>}
-                chips={noPdf
-                  ? <Chip>{t('manage.scoresheets.noPdfYet')}</Chip>
-                  : m.pdf_updated_at && <span className="text-xs text-stone-600">{t('manage.scoresheets.storedAt', { date: dayTimeLabel(m.pdf_updated_at) })}</span>}
+                chips={(() => {
+                  const stored = noPdf
+                    ? <Chip>{t('manage.scoresheets.noPdfYet')}</Chip>
+                    : m.pdf_updated_at && <span className="text-xs text-stone-600">{t('manage.scoresheets.storedAt', { date: dayTimeLabel(m.pdf_updated_at) })}</span>
+                  // an admin released its game (a duplicate): not the game's official match, not mailed as final
+                  return m.released ? <><Chip>{t('manage.games.releaseGame')}</Chip>{stored}</> : stored
+                })()}
                 tools={(!noPdf || (canReopen && m.closed_at)) && <>
                   {!noPdf && <>
                     <RowTool primary className={TOOL_OFF} disabled={!online || !!busy} onClick={() => open(m, false)} aria-busy={busy === `${m.id}:view` || undefined}>
