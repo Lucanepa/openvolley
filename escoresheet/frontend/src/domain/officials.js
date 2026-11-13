@@ -41,6 +41,15 @@ export function officialsToArray(officials) {
 }
 
 /**
+ * Is the official of `key` (ref1, ref2, scorer, asstScorer) on the match?
+ * Reads either format of match.officials and the older role spellings.
+ */
+export function hasOfficial(officials, key) {
+  if (!OFFICIAL_ROLES[key]) return false
+  return officialsToArray(officials).some(o => roleMatches(o, key))
+}
+
+/**
  * Merge role-keyed edits into the officials array.
  * @param {Array|object|null} existing current match.officials
  * @param {{ref1?:object, ref2?:object, scorer?:object, asstScorer?:object}} edited
