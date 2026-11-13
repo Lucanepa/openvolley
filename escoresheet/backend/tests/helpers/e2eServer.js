@@ -80,6 +80,7 @@ export async function bootServer(env, args = []) {
     base,
     wsUrl: `ws://127.0.0.1:${port}`,
     output,
+    pid: child.pid,
     async stop() {
       if (exited !== null) return
       const done = new Promise((r) => child.once('exit', r))

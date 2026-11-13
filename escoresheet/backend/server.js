@@ -49,7 +49,7 @@ import { SCORER_TABLES, deviceOf, matchRefsOfWrite, scorerMovedBody } from './li
 // The support form (POST /api/contact): its body, checks and the one mail to CONTACT_EMAIL
 import { BUSY_BODY, contactMailerFromEnv, createContactSlots, handleContact, MAX_CONTACT_BODY_BYTES } from './lib/contact.js'
 // What the relay keeps of an anonymous socket's bundles and live states
-import { approxHeapBytes, frameTooLarge, relayBundleProblem, relayEvents, relayMemoryBudget, MAX_RELAY_BUNDLE_BYTES, MAX_LIVE_STATE_BYTES } from './lib/relayLimits.js'
+import { approxHeapBytes, frameTooLarge, relayBundleProblem, relayEvents, relayMemoryBudget, MAX_RELAY_BUNDLE_BYTES, MAX_LIVE_STATE_BYTES, RELAY_ANON_SHARE } from './lib/relayLimits.js'
 
 const PORT = process.env.PORT || 8080
 
@@ -1110,15 +1110,24 @@ const MAX_OWNED_PER_IP = 64
 const NEW_CLAIM_LIMIT = 64
 // Rooms the syncs of one address keep (entry.relayAddress), as many as it may
 // own: an address whose sockets close and reconnect cannot fill MAX_ROOMS
-// with rooms a subscriber keeps open after it ('room-limit').
+// with rooms a subscriber keeps open after it ('room-limit'). On the cloud
+// the rooms the database did not prove count as many per /56 (entry.relayNet):
+// one IPv6 customer holds 256 /64s or more. The same share bounds one
+// address's held claims (heldRooms).
 const MAX_ROOMS_PER_ADDRESS = MAX_OWNED_PER_IP
+// Cloud (DATABASE_URL): the rooms the database did not prove (no game PIN of
+// an official match) may take this many of MAX_ROOMS together, as their
+// bundles may take RELAY_ANON_SHARE of the relay memory: the rest is kept for
+// official matches.
+const MAX_ANON_ROOMS = Math.floor(MAX_ROOMS * RELAY_ANON_SHARE)
 // Rooms one socket is in or waits for (subscribe-match): the relay livescore
 // follows up to 32 matches on one socket (frontend utils/relayLivescore.js).
 // A 33rd leaves the oldest. Joining a match the relay does not hold creates
 // no room: the socket waits for its first sync (admitWaiting).
 const MAX_SOCKET_ROOMS = 32
 // Emptied rooms whose claim is held for the take-over grace (heldRooms), at
-// most; the oldest is released first
+// most; over it the oldest claim of the address holding the most is released
+// (makeHeldRoom)
 const MAX_HELD_ROOMS = 2000
 const FINISHED_STATUSES = new Set(['final', 'ended', 'completed', 'finished'])
 // Memory the stored bundles and live states may take (approxHeapBytes,
@@ -1599,10 +1608,14 @@ function isWsRateLimited(clientId) {
 setInterval(() => {
   const now = Date.now()
 
-  // Clean up rooms inactive for >24h: the stored match, its PINs, owners and
-  // bench requests together (dropRoom)
-  for (const [matchId, room] of [...rooms.entries()]) {
-    if (room.clients.size === 0 && now - (room.lastActivity || 0) > ROOM_TTL_MS) {
+  // Clean up rooms no connected socket owns and no scorer synced for >24h,
+  // watchers or not: the stored match, its PINs, owners and bench requests
+  // together (dropRoom). A room empties at once (holdRoom), so the empty
+  // rooms this looked for never existed, and watchers kept any room for good.
+  const owned = new Set()
+  for (const c of connections.values()) for (const id of c.ownedMatches) owned.add(id)
+  for (const [matchId, entry] of [...activeMatches.entries()]) {
+    if (!owned.has(matchId) && now - (Date.parse(entry.updatedAt) || 0) > ROOM_TTL_MS) {
       dropRoom(matchId)
       console.log(`🧹 TTL cleanup: removed stale room ${matchId}`)
     }
@@ -2426,7 +2439,8 @@ function handleHttpRequest(req, res) {
     const body = {
       access: detail ? 'detail' : 'counts',
       totalClients: connections.size,
-      dashboardClients: watchers.length,
+      // sockets, each once (one hall livescore follows every court)
+      dashboardClients: new Set(watchers.map((w) => w.client.id)).size,
       referees: refereesCount,
       benches: benchCount,
       clients
@@ -4588,21 +4602,15 @@ function admitWaiting(matchId) {
 /**
  * The role a socket proved for the match with that role's PIN or match token,
  * for the scorer's tablet status: { role: 'referee' | 'bench', team }, else
- * null. A socket's own label (join_match role, subscribe-match device) proves
- * nothing, nor does the game PIN (the scorer's own devices). Compares nothing
+ * null. The roles the bench requests take (relayRoleOf), comparing nothing
  * new: a PIN not checked yet (offered before the match reached the relay)
- * counts as none.
+ * counts as none. A socket's own label (join_match role, subscribe-match
+ * device) proves nothing, nor does the game PIN (the scorer's own devices).
  */
 function provedRoleOf(clientInfo, matchId, entry = activeMatches.get(matchId)) {
-  const a = entry?.match ? clientInfo.matchAccess.get(matchId) : null
-  if (!a) return null
-  let type = null
-  if (a.token && tokenGrantsRelay(a.token, matchId, entry.match)) type = matchTokens.verify(a.token)?.r
-  else if (a.pin && a.verified) type = pinTypeOf(entry.match, a.pin, { sport: entry.sportType })
-  if (type === 'referee') return { role: 'referee', team: null }
-  if (type === 'bench_home' || type === 'homeTeam' || type === 'bench_team1') return { role: 'bench', team: 'home' }
-  if (type === 'bench_away' || type === 'awayTeam' || type === 'bench_team2') return { role: 'bench', team: 'away' }
-  return null
+  const role = relayRoleOf(clientInfo, matchId, entry, { compare: false })
+  if (role === 'referee') return { role: 'referee', team: null }
+  return role === 'home' || role === 'away' ? { role: 'bench', team: role } : null
 }
 
 // --- PIN-proved relay access (lib/matchAccess.js) ---------------------------
@@ -4878,7 +4886,7 @@ function holdRoom(matchId) {
     releaseRoomClaim(matchId)
     return
   }
-  while (heldRooms.size >= MAX_HELD_ROOMS) releaseRoomClaim(heldRooms.keys().next().value)
+  makeHeldRoom(entry.relayNet ?? null)
   const match = { status: entry.match.status }
   for (const k of MATCH_SECRET_FIELDS) if (entry.match[k] !== undefined) match[k] = entry.match[k]
   heldRooms.set(matchId, {
@@ -4892,18 +4900,71 @@ function holdRoom(matchId) {
     supersededClaims: entry.supersededClaims,
     dbRows: entry.dbRows,
     relayAddress: entry.relayAddress,
+    relayNet: entry.relayNet ?? null,
     relayOfficial: entry.relayOfficial
   })
 }
 
-/** The held claim of an emptied room (holdRoom) while its grace runs, else null (released once it is over). */
+/**
+ * Room in heldRooms for one more claim of `net` (relayNetOf): one address
+ * keeps at most MAX_ROOMS_PER_ADDRESS held claims (over it, its own oldest
+ * goes, a lapsed one first), the relay MAX_HELD_ROOMS (over it, the oldest
+ * of the address holding the most). The oldest of all used to go, so the
+ * rooms other addresses synced and left pushed a scorer's claim out within
+ * its grace, and a sync without its game PIN owned the key.
+ */
+function makeHeldRoom(net) {
+  const byNet = new Map()
+  for (const h of heldRooms.values()) {
+    const list = byNet.get(h.relayNet) ?? []
+    list.push(h)
+    byNet.set(h.relayNet, list)
+  }
+  const oldest = (list) => list.find((h) => h.lapsed) ?? list[0]
+  const own = net !== null ? byNet.get(net) : null
+  if (own && own.length >= MAX_ROOMS_PER_ADDRESS) {
+    releaseHeld(oldest(own))
+  } else if (heldRooms.size >= MAX_HELD_ROOMS) {
+    let most = null
+    for (const list of byNet.values()) if (!most || list.length > most.length) most = list
+    releaseHeld(oldest(most))
+  }
+}
+
+/** Release one held claim: a lapsed one is only forgotten (its claim went with its grace). */
+function releaseHeld(held) {
+  if (held.lapsed) heldRooms.delete(held.matchId)
+  else releaseRoomClaim(held.matchId)
+}
+
+/**
+ * The held claim of an emptied room (holdRoom) while its grace runs, else
+ * null. Once the grace is over the claim goes (releaseRoomClaim): the key is
+ * new to the next sync. Of a match still in play with a game PIN the scorer
+ * was gone too long for, that PIN is kept (a lapsed entry, for ROOM_TTL_MS):
+ * the next claim takes the key, but the scorer may reclaim it once with its
+ * own PIN (handleSyncMatchData moves it to displacedPins), as after a stale
+ * take-over of a room a tablet kept open. The next sync without any PIN used
+ * to own the key for good, the scorer back with the right PIN refused.
+ */
 function heldRoomOf(matchId) {
   const held = heldRooms.get(matchId)
-  if (!held) return null
-  const grace = isFinishedMatch(held.match) ? ORPHAN_TAKEOVER_MS : STALE_TAKEOVER_MS
-  if (Date.now() - held.since < grace) return held
+  if (!held || held.lapsed) return null
+  const finished = isFinishedMatch(held.match)
+  if (Date.now() - held.since < (finished ? ORPHAN_TAKEOVER_MS : STALE_TAKEOVER_MS)) return held
+  const pin = finished ? null : gamePinOf(held.match)
   releaseRoomClaim(matchId)
+  if (pin !== null) heldRooms.set(matchId, { matchId, lapsed: true, pin, since: Date.now(), relayNet: held.relayNet })
   return null
+}
+
+/** The held claims whose grace is over go (heldRoomOf), lapsed ones after ROOM_TTL_MS. */
+function sweepHeldRooms() {
+  const now = Date.now()
+  for (const held of [...heldRooms.values()]) {
+    if (!held.lapsed) heldRoomOf(held.matchId)
+    else if (now - held.since >= ROOM_TTL_MS) heldRooms.delete(held.matchId)
+  }
 }
 
 /**
@@ -5385,12 +5446,69 @@ const CLAIM_ERRORS = {
 // The address a socket's stored match data counts against (relayMemoryRefusal);
 // null for the relay host itself
 const relayAddressOf = (clientInfo) => (isLoopbackIp(clientInfo.ip) ? null : (IS_CLOUD ? clientInfo.ipKey : clientInfo.ip))
-// Rooms whose stored match an address's syncs keep (MAX_ROOMS_PER_ADDRESS); none for the relay host
-function roomsOfAddress(address) {
-  if (address === null) return 0
-  let n = 0
-  for (const entry of activeMatches.values()) if (entry.relayAddress === address) n++
-  return n
+// The wider network of that address (MAX_ROOMS_PER_ADDRESS for the rooms the
+// database did not prove, held claims): the /56 of an IPv6 /64 bucket on the
+// cloud (ipBucketKey "2001:db8:0:1::/64"), else the address itself
+function relayNetOf(clientInfo) {
+  const address = relayAddressOf(clientInfo)
+  const v6 = IS_CLOUD && address !== null ? /^([0-9a-f]{1,4}):([0-9a-f]{1,4}):([0-9a-f]{1,4}):([0-9a-f]{1,4})::\/64$/.exec(address) : null
+  return v6 ? `${v6[1]}:${v6[2]}:${v6[3]}:${(parseInt(v6[4], 16) & 0xff00).toString(16)}::/56` : address
+}
+// A room the database proved (cloud): its scorer synced the game PIN of the
+// match's database row (relayOfficial). None on a venue relay.
+const isDbProvedRoom = (entry) => DB_MODE && entry?.relayOfficial === true
+
+/**
+ * 'room-limit' when a new room of this socket (`dbProved`: the database proved
+ * its game PIN) would take the relay past one of its room caps, else null:
+ * MAX_ROOMS_PER_ADDRESS for the address (the rooms its syncs keep, whoever
+ * keeps them open), as many per /56 for rooms the database did not prove
+ * (cloud), MAX_ANON_ROOMS for all of those (DATABASE_URL), MAX_ROOMS in all.
+ * At a cap the room no connected socket owns whose scorer left first is ended
+ * to make room (endIdleRoom), an address's own rooms first. A room kept open
+ * by watchers alone used to keep its slot for good: idle sockets of a few
+ * /64s filled the relay and no new match got a room.
+ */
+function roomLimitRefusal(clientInfo, dbProved) {
+  const address = relayAddressOf(clientInfo)
+  const net = relayNetOf(clientInfo)
+  const unproved = (e) => !isDbProvedRoom(e)
+  const caps = []
+  if (address !== null) caps.push([MAX_ROOMS_PER_ADDRESS, (e) => e.relayAddress === address])
+  if (IS_CLOUD && !dbProved && net !== null && net !== address) caps.push([MAX_ROOMS_PER_ADDRESS, (e) => e.relayNet === net && unproved(e)])
+  if (DB_MODE && !dbProved) caps.push([MAX_ANON_ROOMS, unproved])
+  caps.push([MAX_ROOMS, () => true])
+  for (const [max, inCap] of caps) {
+    let n = 0
+    for (const entry of activeMatches.values()) if (inCap(entry)) n++
+    if (n >= max && !endIdleRoom(inCap)) return 'room-limit'
+  }
+  return null
+}
+
+/**
+ * End one room among those `inCap` takes that no connected socket owns: the
+ * one whose scorer left first, rooms the database did not prove first. Its
+ * bundle goes and its claim is held for what is left of its take-over grace
+ * (holdRoom), as when its last socket leaves: its watchers wait for the match
+ * again (admitWaiting lets them back in with its next first sync), its scorer
+ * coming back with the game PIN continues it. Nothing reaches such a room
+ * meanwhile anyway: no socket may sync it. Returns whether one was ended.
+ */
+function endIdleRoom(inCap) {
+  const owned = new Set()
+  for (const c of connections.values()) for (const id of c.ownedMatches) owned.add(id)
+  let pick = null
+  for (const [id, entry] of activeMatches) {
+    if (owned.has(id) || !inCap(entry)) continue
+    const rank = [isDbProvedRoom(entry) ? 1 : 0, entry.orphanedAt ?? 0]
+    if (!pick || rank[0] < pick.rank[0] || (rank[0] === pick.rank[0] && rank[1] < pick.rank[1])) pick = { id, rank }
+  }
+  if (!pick) return false
+  holdRoom(pick.id)
+  relaySummary.count('rooms ended for a new one')
+  console.log(`🗑️  Room ${pick.id} ended for a new room (no socket owns it; its claim is held for the take-over grace)`)
+  return true
 }
 
 /**
@@ -5606,11 +5724,20 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     match = carried
   }
 
-  // Enforce room cap before storing anything: in all, and per address (the
-  // rooms its syncs keep, whoever keeps them open)
-  if (!rooms.has(matchId) && (rooms.size >= MAX_ROOMS || roomsOfAddress(relayAddressOf(clientInfo)) >= MAX_ROOMS_PER_ADDRESS)) {
-    sendRelayRefusal(clientInfo, 'room-limit', matchId)
-    return
+  // Whether the database knows this as an official match (cloud), for the
+  // memory budget and the room caps: proved now, or carried by its owner's
+  // later syncs (which do not re-check the database). Venue rooms (no
+  // database) are all official.
+  const relayOfficial = !DB_MODE || opts.dbProved === true ||
+    ((claimed.kind === 'owner' || claimed.kind === 'proved' || claimed.kind === 'reclaim') && previous?.relayOfficial === true)
+
+  // Enforce the room caps before storing anything (roomLimitRefusal)
+  if (!rooms.has(matchId)) {
+    const refusal = roomLimitRefusal(clientInfo, DB_MODE && relayOfficial)
+    if (refusal) {
+      sendRelayRefusal(clientInfo, refusal, matchId)
+      return
+    }
   }
 
   // A scoreboard switching matches leaves its previous room first
@@ -5626,11 +5753,6 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
 
   // Store/update match in activeMatches with all the data (a sync carries no
   // live state: the room's last one is kept as decided above).
-  // Whether the database knows this as an official match (cloud), for the
-  // memory budget: proved now, or carried by its owner's later syncs (which do
-  // not re-check the database). Venue rooms (no database) are all official.
-  const relayOfficial = !DB_MODE || opts.dbProved === true ||
-    ((claimed.kind === 'owner' || claimed.kind === 'proved' || claimed.kind === 'reclaim') && previous?.relayOfficial === true)
   // The sport of the room: openbeach syncs team1/team2 (or names its sport);
   // a sync without teams keeps the sport the same scorer set before.
   const beachSync = !!(message.team1Team || message.team2Team || message.team1Players || message.team2Players) ||
@@ -5672,18 +5794,29 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     bundleBytes,
     liveStateBytes: carryLiveState ? previous?.liveStateBytes : undefined,
     relayAddress: relayAddressOf(clientInfo),
+    relayNet: relayNetOf(clientInfo),
     relayOfficial,
     gameNumber: match?.gameN || match?.gameNumber || match?.game_n,
     updatedAt: new Date().toISOString(),
     updatedBy: clientInfo.id
   })
+  // A key whose held claim lapsed (heldRoomOf: its scorer gone past the grace
+  // of a match in play) is new, but that claim's game PIN may reclaim it once
+  // from this one, as after a stale take-over
+  const lapsed = heldRooms.get(matchId)?.lapsed ? heldRooms.get(matchId) : null
   heldRooms.delete(matchId)
+  if (lapsed && opts.dbProved !== true && (gamePinOf(match) === null || !safeEqualStr(gamePinOf(match), lapsed.pin))) {
+    displacedPins.set(matchId, lapsed.pin)
+  }
   const newlyOwned = !clientInfo.ownedMatches.has(matchId)
   clientInfo.ownedMatches.add(matchId)
   // Bench requests of a set that is over are dropped; a scorer that has just
-  // (re)proved the match gets the open ones again
+  // (re)proved the match gets the open ones again. A take-over or a new claim
+  // proved no PIN the benches asked under: their open requests (line-ups
+  // too) go, they were replayed to whoever took a room a tablet kept open.
+  if (fresh) benchRequests.drop(matchId)
   benchRequests.prune(matchId, currentSetOfBundle(activeMatches.get(matchId)))
-  if (newlyOwned) replayBenchRequests(clientInfo, matchId)
+  if (newlyOwned && !fresh) replayBenchRequests(clientInfo, matchId)
 
   // The room (created by the match's first accepted sync), with this socket in it
   const created = !rooms.has(matchId)
@@ -5832,14 +5965,16 @@ const benchRequestLimiter = createWindowLimiter()
 /**
  * The role this socket proved for the match: 'home' / 'away' (that bench's
  * PIN or token while its connection is on), 'referee', else null. The game
- * PIN (the scorer's own devices) is none of them.
+ * PIN (the scorer's own devices) is none of them. `compare: false` takes a
+ * PIN already proved only (the tablet status, provedRoleOf); else a PIN not
+ * compared yet is compared now, counted (hasRelayAccess).
  */
-function relayRoleOf(clientInfo, matchId, entry = activeMatches.get(matchId)) {
+function relayRoleOf(clientInfo, matchId, entry = activeMatches.get(matchId), { compare = true } = {}) {
   if (!clientInfo || !matchId || !entry?.match) return null
   const a = clientInfo.matchAccess.get(matchId)
   if (!a) return null
   if (a.token && tokenGrantsRelay(a.token, matchId, entry.match)) return tokenRoleOf(matchTokens.verify(a.token))
-  if (a.pin && hasRelayAccess(clientInfo, matchId, entry)) return pinRoleOf(entry.match, a.pin)
+  if (a.pin && (compare ? hasRelayAccess(clientInfo, matchId, entry) : a.verified)) return pinRoleOf(entry.match, a.pin)
   return null
 }
 
@@ -5967,7 +6102,7 @@ setInterval(() => {
       handleClientDisconnect(clientInfo)
     }
   })
-  for (const matchId of [...heldRooms.keys()]) heldRoomOf(matchId)
+  sweepHeldRooms()
 }, 30000) // Every 30 seconds
 
 server.on('error', (err) => {

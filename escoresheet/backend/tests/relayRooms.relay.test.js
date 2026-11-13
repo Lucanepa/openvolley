@@ -16,8 +16,17 @@
  *     two matches share is refused with a request for the game
  *   - /api/server/connections counts a referee or bench only once it proved
  *     its PIN or token (`proved`)
+ *   - after the grace of a match in play its game PIN may reclaim the key
+ *     once; a stale take-over is sent none of the benches' requests
+ *   - a room no connected socket owns is ended for a new one at a room cap;
+ *     rooms the database did not prove count per /56; held claims are
+ *     released per address, not oldest-first across all addresses
  *   - DATABASE_URL: a seed key the relay cannot take, and a claim whose
- *     database check fails, are refused
+ *     database check fails, are refused; rooms the database did not prove
+ *     leave room for official matches
+ *
+ * The take-over grace of a match in play (10 minutes) is passed by moving the
+ * relay's clock ahead (helpers/clockShift.mjs), not waited out.
  */
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -27,6 +36,11 @@ import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import pg from 'pg'
 import { bootServer, openSocket, provisionDatabase, sleep, waitUntil, SKIP } from './helpers/e2eServer.js'
+
+// helpers/clockShift.mjs: every SIGUSR2 moves the relay's Date.now() past
+// the take-over grace of a match in play (STALE_TAKEOVER_MS, 10 minutes)
+const CLOCK_SHIFT = new URL('./helpers/clockShift.mjs', import.meta.url).href
+const GRACE_STEP_MS = 11 * 60 * 1000
 
 const GAME_PIN = '515253'
 const PINS = { gamePin: GAME_PIN, refereePin: '316271', homeTeamPin: '414243', awayTeamPin: '616263' }
@@ -79,6 +93,14 @@ async function settle(c) {
 }
 const errorsOf = (c) => c.messages.filter((m) => m.type === 'error')
 const lastError = (c) => errorsOf(c).at(-1)
+
+/** Sync `rooms` from `scorers` (alternating), each kept open by a livescore of `keepers` (32 each). */
+async function syncKept(scorers, keepers, rooms, pins = { gamePin: '454545' }) {
+  rooms.forEach((room, i) => keepers[Math.floor(i / 32)].send({ type: 'subscribe-match', matchId: room, device: 'livescore' }))
+  for (const k of keepers) await settle(k)
+  rooms.forEach((room, i) => scorers[i % scorers.length].send(syncMessage(room, { pins })))
+  for (const s of scorers) await settle(s)
+}
 
 describe('relay rooms on a venue relay (--local)', () => {
   let srv
@@ -184,6 +206,11 @@ describe('relay rooms on a venue relay (--local)', () => {
     live.send({ type: 'subscribe-match', matchId: courtB, device: 'livescore' })
     await settle(live)
     assert.deepEqual(live.messages.filter((m) => m.type === 'match-full-data').map((m) => m.matchId), [courtA, courtB])
+    // one entry per socket and court, but each socket counts once
+    const conns = (await get(srv.base, '/api/server/connections')).json
+    const ids = conns.clients.map((c) => c.id)
+    assert.ok(ids.length > new Set(ids).size, 'the livescore has an entry per court')
+    assert.equal(conns.dashboardClients, new Set(ids).size, 'each socket counts once')
 
     const updates = (from) => live.messages.slice(from).filter((m) => m.type === 'live-state-update').map((m) => m.matchId)
     let mark = live.messages.length
@@ -269,6 +296,97 @@ describe('relay rooms on a venue relay (--local)', () => {
   })
 })
 
+describe('relay rooms after the take-over grace of a match in play (--local, the relay\'s clock runs ahead)', () => {
+  let srv
+  const sockets = []
+  let ahead = 0
+  before(async () => {
+    srv = await bootServer({
+      NODE_OPTIONS: [process.env.NODE_OPTIONS, `--import=${CLOCK_SHIFT}`].filter(Boolean).join(' '),
+      OV_TEST_CLOCK_STEP_MS: String(GRACE_STEP_MS)
+    }, ['--local'])
+  })
+  after(async () => {
+    for (const c of sockets) { try { c.ws.terminate() } catch { /* gone */ } }
+    await srv?.stop()
+  })
+  const open = async () => {
+    const c = await openSocket(srv.wsUrl)
+    sockets.push(c)
+    return c
+  }
+  /** The relay's clock past the take-over grace of a match in play. */
+  async function passGrace() {
+    ahead += GRACE_STEP_MS
+    process.kill(srv.pid, 'SIGUSR2')
+    await waitUntil(() => srv.output.join('').includes(`[test clock] ahead by ${ahead} ms`), { what: 'the relay clock' })
+  }
+
+  // gap-crash-sweep-1 (review): a room a bench kept open was taken over after
+  // the grace by a socket with any game PIN, and that socket was sent the
+  // benches' open requests, line-ups included
+  it('a stale take-over of a room a bench keeps open is sent none of the benches\' requests', async () => {
+    const seed = `match_1791300000011_${hex()}`
+    const scorer = await open()
+    scorer.send(syncMessage(seed))
+    await settle(scorer)
+    const bench = await open()
+    bench.send({ type: 'subscribe-match', matchId: seed, device: 'bench', team: 'home', pin: PINS.homeTeamPin })
+    await bench.waitFor((m) => m.type === 'match-full-data')
+    bench.send({ type: 'bench-request', matchId: seed, team: 'home', request: { id: `lu-${hex()}`, kind: 'lineup', setIndex: 2, lineup: { I: 4, II: 7, III: 9, IV: 11, V: 12, VI: 15 } } })
+    await scorer.waitFor((m) => m.type === 'bench-request')
+    // the scorer's laptop dies, the bench keeps the room open
+    scorer.ws.terminate()
+    await bench.waitFor((m) => m.type === 'client_left')
+    await passGrace()
+
+    const taker = await open()
+    taker.send(syncMessage(seed, { pins: { gamePin: '000009' }, homeTeam: { id: 1, name: 'Other Home' }, sets: [] }))
+    await settle(taker)
+    assert.deepEqual(errorsOf(taker), [], 'the grace is over: the room is taken over')
+    assert.equal(taker.messages.some((m) => m.type === 'bench-request'), false, 'none of the benches\' requests')
+    for (const c of [bench, taker]) c.ws.close()
+  })
+
+  // be-server-ws-4 (review): after the grace of an emptied room of a match in
+  // play its claim went whole: the next sync without any PIN owned the key,
+  // and the scorer back with the right game PIN was refused
+  it('after the grace of a match in play its game PIN reclaims the key once; a finished match\'s claim goes whole', async () => {
+    const seed = `match_1791300000012_${hex()}`
+    const done = `match_1791300000013_${hex()}`
+    const scorer = await open()
+    scorer.send(syncMessage(done, { match: { status: 'ended' } }))
+    scorer.send(syncMessage(seed))
+    await settle(scorer)
+    scorer.ws.terminate()
+    for (const key of [seed, done]) {
+      await waitUntil(async () => (await get(srv.base, `/api/match/${key}`)).status === 404, { what: 'the emptied room' })
+    }
+    await passGrace()
+
+    const squatter = await open()
+    squatter.send(syncMessage(seed, { pins: {}, homeTeam: { id: 1, name: 'FAKE HOME' } }))
+    squatter.send(syncMessage(done, { pins: {}, homeTeam: { id: 1, name: 'FAKE HOME' } }))
+    await settle(squatter)
+    assert.deepEqual(errorsOf(squatter), [], 'the grace is over: both keys are new')
+
+    const back = await open()
+    back.send(syncMessage(seed))
+    await settle(back)
+    assert.deepEqual(errorsOf(back), [], 'the scorer reclaims its match in play with its game PIN')
+    assert.equal((await get(srv.base, `/api/match/${seed}`)).json.homeTeam.name, 'Home VC')
+    squatter.send(syncMessage(seed, { pins: {}, homeTeam: { id: 1, name: 'FAKE HOME' } }))
+    await settle(squatter)
+    assert.equal(lastError(squatter)?.code, 'pins-required', 'the squatter speaks for it no more')
+
+    back.send(syncMessage(done, { match: { status: 'ended' } }))
+    await settle(back)
+    assert.equal(lastError(back)?.code, 'not-match-owner', 'a finished match\'s claim went whole with its grace')
+    assert.equal((await get(srv.base, `/api/match/${done}`)).json.homeTeam.name, 'FAKE HOME')
+    for (const c of [squatter, back]) c.ws.close()
+  })
+})
+
 describe('relay rooms on a cloud relay behind Cloudflare: the end of a claim, rooms per address', () => {
   let srv
   const sockets = []
@@ -287,7 +405,7 @@ describe('relay rooms on a cloud relay behind Cloudflare: the end of a claim, ro
 
   // gap-relay-ws-pins-1 / gap-crash-sweep-1: ownership and bench requests
   // outlived the room; be-server-ws-5: the rooms one address keeps open
-  it('after the grace the claim goes whole, and one address keeps at most 64 rooms', { timeout: 150_000 }, async () => {
+  it('after the grace the claim goes whole, and one address keeps 64 rooms', { timeout: 150_000 }, async () => {
     // --- a finished match's room empties (grace: 60 s) ---------------------
     const key = `match_1791300000006_${hex()}`
     const owner = await open('203.0.113.21')
@@ -342,16 +460,174 @@ describe('relay rooms on a cloud relay behind Cloudflare: the end of a claim, ro
     assert.deepEqual(errorsOf(owner).slice(-3).map((m) => m.code), ['pins-required', 'not-match-owner', 'not-match-owner'])
     assert.equal((await get(srv.base, `/api/match/${key}`)).json.homeTeam.name, 'Other Home')
 
+    // a 65th room of the address ends one of its own that its scorers left:
+    // it keeps 64 rooms
+    const roomsBefore = (await get(srv.base, '/api/server/status')).json.rooms
     const again = await open(X)
     again.send(syncMessage(`cap-64-${hex()}`, { pins: { gamePin: '454545' } }))
     await settle(again)
-    assert.equal(lastError(again)?.code, 'room-limit', 'a 65th room of one address')
-    keepers[0].send({ type: 'unsubscribe-match', matchId: rooms[0] })
-    await settle(keepers[0])
-    const n = errorsOf(again).length
-    again.send(syncMessage(`cap-65-${hex()}`, { pins: { gamePin: '454545' } }))
-    await settle(again)
-    assert.equal(errorsOf(again).length, n, 'room again once one of its rooms closed')
+    assert.deepEqual(errorsOf(again), [], 'a 65th room of one address')
+    assert.equal((await get(srv.base, '/api/server/status')).json.rooms, roomsBefore, 'one of its own rooms made room')
+    const left = []
+    for (const room of rooms) if ((await get(srv.base, `/api/match/${room}`)).status === 404) left.push(room)
+    assert.equal(left.length, 1)
+  })
+
+  // be-server-ws-5 (review): the per-address cap counted /64s, so the /64s
+  // of one IPv6 customer each kept 64 rooms, and watchers kept them for good
+  it('rooms the database did not prove count per /56, and an address makes room among its own rooms its scorers left', async () => {
+    const sameNet = (i) => `2001:db8:aa00:${i}::1`
+    const scorers = [await open(sameNet(1)), await open(sameNet(1))]
+    const keepers = [await open('192.0.2.61'), await open('192.0.2.61')]
+    const rooms = Array.from({ length: 64 }, (_, i) => `net-${i}-${hex()}`)
+    await syncKept(scorers, keepers, rooms)
+    assert.deepEqual(scorers.flatMap(errorsOf), [])
+
+    const sibling = await open(sameNet(2))
+    const next = `net-64-${hex()}`
+    sibling.send(syncMessage(next, { pins: { gamePin: '454545' } }))
+    await settle(sibling)
+    assert.equal(lastError(sibling)?.code, 'room-limit', 'another /64 of the same /56')
+    const elsewhere = await open('2001:db8:ab00:1::1')
+    elsewhere.send(syncMessage(`net-x-${hex()}`, { pins: { gamePin: '454545' } }))
+    await settle(elsewhere)
+    assert.deepEqual(errorsOf(elsewhere), [], 'another /56')
+
+    // its scorers are gone: a room of its own is ended for the new one
+    const roomsBefore = (await get(srv.base, '/api/server/status')).json.rooms
+    for (const c of scorers) c.ws.close()
+    let seen = errorsOf(sibling).length
+    await waitUntil(async () => {
+      sibling.send(syncMessage(next, { pins: { gamePin: '454545' } }))
+      await settle(sibling)
+      const accepted = errorsOf(sibling).length === seen
+      seen = errorsOf(sibling).length
+      return accepted
+    }, { what: 'a room for the sibling' })
+    assert.equal((await get(srv.base, '/api/server/status')).json.rooms, roomsBefore, 'one of its own rooms made room')
+    const ended = []
+    for (const room of rooms) if ((await get(srv.base, `/api/match/${room}`)).status === 404) ended.push(room)
+    assert.equal(ended.length, 1)
+
+    // the ended room's scorer is back within its grace with its game PIN: it
+    // continues, and the room's watcher gets the match again
+    const keeper = keepers[Math.floor(rooms.indexOf(ended[0]) / 32)]
+    const fulls = () => keeper.messages.filter((m) => m.type === 'match-full-data' && m.matchId === ended[0]).length
+    const before = fulls()
+    const back = await open(sameNet(1))
+    back.send(syncMessage(ended[0], { pins: { gamePin: '454545' } }))
+    await settle(back)
+    assert.deepEqual(errorsOf(back), [])
+    await waitUntil(() => fulls() > before, { what: 'the watcher let back in' })
+    for (const c of [...keepers, sibling, elsewhere, back]) c.ws.close()
+  })
+})
+
+describe('relay rooms and held claims under a flood (cloud relay behind Cloudflare)', () => {
+  let srv
+  const sockets = []
+  before(async () => {
+    srv = await bootServer({ IS_CLOUD: '1', TRUST_PROXY: 'cloudflare' }, ['--local'])
+  })
+  after(async () => {
+    for (const c of sockets) { try { c.ws.terminate() } catch { /* gone */ } }
+    await srv?.stop()
+  })
+  const open = async (ip) => {
+    const c = await openSocket(srv.wsUrl, { headers: { 'cf-connecting-ip': ip } })
+    sockets.push(c)
+    return c
+  }
+  const status = async () => (await get(srv.base, '/api/server/status')).json
+
+  /** 64 rooms from each address of `ips`, left at once: each empties and its claim is held. */
+  async function syncAndLeave(ips) {
+    for (const ip of ips) {
+      const pair = [await open(ip), await open(ip)]
+      for (let i = 0; i < 64; i++) pair[i % 2].send(syncMessage(`flood-${hex()}-${i}`, { pins: { gamePin: '454545' } }))
+      for (const c of pair) await settle(c)
+      assert.deepEqual(pair.flatMap(errorsOf), [], ip)
+      for (const c of pair) c.ws.close()
+    }
+  }
+
+  // be-server-ws-4 / gap-relay-ws-pins-1 (review): held claims were released
+  // oldest first across all addresses, so other addresses' churn pushed a
+  // scorer's claim out within its grace and a sync without its PIN owned it
+  it('the rooms other addresses sync and leave never push a scorer\'s held claim out within its grace', { timeout: 120_000 }, async () => {
+    const key = `match_1791300000021_${hex()}`
+    const victim = await open('198.51.100.5')
+    victim.send(syncMessage(key, { pins: { ...PINS, gamePin: '777777' } }))
+    await settle(victim)
+    victim.ws.terminate()
+    await waitUntil(async () => (await get(srv.base, `/api/match/${key}`)).status === 404, { what: 'the emptied room' })
+    const attacker = await open('203.0.113.10')
+    const squat = () => syncMessage(key, { pins: {}, homeTeam: { id: 1, name: 'FAKE HOME' } })
+    attacker.send(squat())
+    await settle(attacker)
+    assert.equal(lastError(attacker)?.code, 'pins-required')
+
+    // 32 /64s of one /56, then 33 /56s: 4160 rooms left, 2000 held claims at most
+    await syncAndLeave(Array.from({ length: 32 }, (_, b) => `2001:db8:bb00:${b.toString(16)}::1`))
+    attacker.send(squat())
+    await settle(attacker)
+    assert.equal(lastError(attacker)?.code, 'pins-required', 'one /56 keeps its own share')
+    await syncAndLeave(Array.from({ length: 33 }, (_, b) => `2001:db8:${(0xc000 + b).toString(16)}::1`))
+    const n = errorsOf(attacker).length
+    attacker.send(squat())
+    await settle(attacker)
+    assert.equal(errorsOf(attacker).length, n + 1)
+    assert.equal(lastError(attacker)?.code, 'pins-required', 'the addresses holding the most give theirs up first')
+    assert.equal((await get(srv.base, `/api/match/${key}`)).status, 404)
+
+    const back = await open('198.51.100.5')
+    back.send(syncMessage(key, { pins: { ...PINS, gamePin: '777777' } }))
+    await settle(back)
+    assert.deepEqual(errorsOf(back), [], 'the scorer back within its grace continues')
+    assert.equal((await get(srv.base, `/api/match/${key}`)).json.homeTeam.name, 'Home VC')
+    for (const c of [attacker, back]) c.ws.close()
+  })
+
+  // be-server-ws-5 (review): rooms kept open by idle watchers kept their slot
+  // for good: a few addresses filled the 500 rooms and no new match got one
+  it('at MAX_ROOMS the room no connected socket owns whose scorer left first is ended for a new match', { timeout: 120_000 }, async () => {
+    const keeperIp = '192.0.2.90'
+    const ips = Array.from({ length: 8 }, (_, i) => `192.0.2.${71 + i}`)
+    const groups = []
+    // (the earlier test's last room is closing)
+    await waitUntil(async () => (await status()).rooms === 0, { what: 'no room left' })
+    let made = 0
+    for (const ip of ips) {
+      const count = Math.min(64, 500 - made)
+      if (count <= 0) break
+      const rooms = Array.from({ length: count }, (_, i) => `full-${ip.split('.')[3]}-${i}-${hex()}`)
+      const scorers = [await open(ip), await open(ip)]
+      const keepers = []
+      for (let k = 0; k < Math.ceil(count / 32); k++) keepers.push(await open(keeperIp))
+      await syncKept(scorers, keepers, rooms)
+      assert.deepEqual(scorers.flatMap(errorsOf), [], ip)
+      groups.push({ rooms, scorers, keepers })
+      made += count
+    }
+    assert.equal((await status()).rooms, 500)
+
+    // the first address's scorers are gone: an outsider's new match gets a room
+    const first = groups[0]
+    const open0 = (await status()).connections
+    for (const c of first.scorers) c.ws.close()
+    await waitUntil(async () => (await status()).connections <= open0 - 2, { what: 'the scorers gone' })
+    const scorer = await open('198.51.100.77')
+    scorer.send(syncMessage(`match_1791300000022_${hex()}`, { pins: { gamePin: '121212' } }))
+    await settle(scorer)
+    assert.deepEqual(errorsOf(scorer), [], 'a room no socket owns made room')
+    assert.equal((await status()).rooms, 500)
+    const ended = []
+    for (const room of first.rooms) if ((await get(srv.base, `/api/match/${room}`)).status === 404) ended.push(room)
+    assert.equal(ended.length, 1, 'one of the rooms whose scorer left')
+    for (const g of groups.slice(1)) {
+      for (const room of g.rooms.slice(0, 3)) assert.equal((await get(srv.base, `/api/match/${room}`)).status, 200, 'rooms with a connected owner stay')
+    }
+    for (const c of [scorer, ...groups.flatMap((g) => [...g.scorers, ...g.keepers])]) c.ws.close()
   })
 })
 
@@ -437,5 +713,35 @@ describe('relay claims in DATABASE_URL mode', { skip: SKIP }, () => {
     await settle(back)
     assert.deepEqual(errorsOf(back), [])
     assert.equal((await get(srv.base, `/api/match/${ext}`)).json.homeTeam.name, 'Home VC')
+  })
+
+  // be-server-ws-5 (review): any key the database does not know was accepted
+  // as a new room, so a few addresses filled the 500 rooms and an official
+  // match's scorer got 'room-limit'
+  it('rooms the database did not prove leave room for official matches', { timeout: 120_000 }, async () => {
+    const keepers = []
+    const scorers = []
+    for (let a = 0; a < 5; a++) {
+      const ip = `192.0.2.${101 + a}`
+      const pair = [await open(ip), await open(ip)]
+      const kept = [await open('192.0.2.120'), await open('192.0.2.120')]
+      await syncKept(pair, kept, Array.from({ length: 60 }, (_, i) => `anon-${a}-${i}-${hex()}`))
+      scorers.push(...pair)
+      keepers.push(...kept)
+    }
+    // (the earlier test left one room the database does not know)
+    assert.ok(scorers.flatMap(errorsOf).every((e) => e.code === 'room-limit'))
+    const anon = await open('192.0.2.110')
+    anon.send(syncMessage(`anon-x-${hex()}`, { pins: { gamePin: '454545' } }))
+    await settle(anon)
+    assert.equal(lastError(anon)?.code, 'room-limit', 'the share of rooms the database did not prove is full')
+
+    const ext = `match_1791300000023_${hex()}`
+    await sql.query("INSERT INTO matches (external_id, status, sport_type, game_pin) VALUES ($1, 'live', 'indoor', $2)", [ext, '565656'])
+    const official = await open('198.51.100.40')
+    official.send(syncMessage(ext, { pins: { ...PINS, gamePin: '565656' } }))
+    await settle(official)
+    assert.deepEqual(errorsOf(official), [], 'an official match still gets a room')
+    for (const c of [...scorers, ...keepers, anon, official]) c.ws.close()
   })
 })
