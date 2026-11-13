@@ -4,16 +4,22 @@ The desktop app runs the scoretable **fully offline** and doubles as a **LAN
 server** so referee / bench / livescore tablets on the same Wi-Fi can connect —
 no internet, no cloud, no accounts required to score a match.
 
-There are two implementations of the same idea; **Tauri is the recommended one.**
+The desktop app is built with **Tauri (Rust)**:
 
-| | **Tauri (Rust)** — recommended | Electron |
-|---|---|---|
-| Installer size | ~3–10 MB | ~85–120 MB |
-| Runtime | native OS webview (WebView2 / WebKitGTK) | bundled Chromium + Node |
-| LAN relay | Rust `axum` (`src-tauri/src/relay.rs`) | Node in main process (`electron/relayServer.js`) |
-| Frontend | **identical** React `dist/` | identical React `dist/` |
+| | |
+|---|---|
+| Installer size | ~3–10 MB |
+| Runtime | native OS webview (WebView2 / WebKitGTK) |
+| LAN relay | Rust `axum` (`src-tauri/src/relay.rs`) |
+| Frontend | the same React `dist/` as the web app |
 
-## How it works (both)
+The old Electron shell (`electron/main.js`, `relayServer.js`) was removed in
+2026-11: no workflow built it and it had no update channel. The folder
+`electron/` keeps only the shared relay cores (`lanRelayCore.cjs`,
+`signSessionCore.cjs`) and their test fixtures, which `server.js`, the Vite
+dev plugin, the backend and the tests use.
+
+## How it works
 
 ```
    ┌──────────────────────────── Desktop app ────────────────────────────┐
@@ -61,7 +67,7 @@ There are two implementations of the same idea; **Tauri is the recommended one.*
   and can reload freely; a second device hitting the root over the LAN still
   gets the "one scoretable" protection.
 
-## Build — Tauri (recommended)
+## Build — Tauri
 
 Prereqs: Rust (`rustup`), Node, and on Linux the WebView deps
 (`libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf`).
@@ -261,14 +267,6 @@ npx tauri build            # or use the debug binary
 ```
 
 Installed from the APT repository it is `openvolley-escoresheet --server-only`.
-
-## Build — Electron (alternative)
-
-```bash
-cd escoresheet/frontend
-npm run electron:build:win     # → dist-electron/  (NSIS installer + portable .exe)
-npm run electron:build:linux   # → dist-electron/  (AppImage, .deb, .rpm)
-```
 
 ## Connect tablets
 
@@ -672,8 +670,8 @@ trusted local CA certificate on each tablet and serve HTTPS, or use an mDNS
 ## Follow-ups (not in this change)
 
 - **Tablet HTTPS + camera** — only if QR scanning on tablets is needed.
-- **Auto-update** — wire `tauri-plugin-updater` (or `electron-updater`) once a
-  release channel is chosen.
+- **Auto-update** — wire `tauri-plugin-updater` once a release channel is
+  chosen.
 - **Android app joins by QR** — scan the Wi-Fi QR (connect through a
   `WifiNetworkSuggestion`) and the role QR (open the bundled view with
   `server` / `match` / `team`) inside the app. Needs a camera / scanner plugin

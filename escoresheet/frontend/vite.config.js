@@ -33,7 +33,6 @@ const __dirname = dirname(__filename)
 const packageJson = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8'))
 const appVersion = packageJson.version
 
-const isElectron = process.env.ELECTRON === 'true'
 // Android app build (scripts/release-android.sh): the WebView loads the bundled
 // files, so no service worker — an old precache would otherwise keep serving
 // the previous version after an APK update until the user accepted the prompt.
@@ -63,8 +62,7 @@ if (useHttps) {
 export default defineConfig({
   // Set base from env for GitHub Pages project site deployments.
   // If deploying to a custom domain (CNAME), use '/'. Otherwise set to '/<repo-name>/'
-  // For Electron, use './' for relative paths
-  base: isElectron ? './' : (process.env.VITE_BASE_PATH || '/'),
+  base: process.env.VITE_BASE_PATH || '/',
   // Android app: no .env files, only the variables given on the command line
   // (scripts/release-android.sh, the F-Droid recipe). F-Droid builds the APK
   // from source and checks it against the owner-signed one byte for byte, so

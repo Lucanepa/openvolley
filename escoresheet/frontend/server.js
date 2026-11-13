@@ -32,7 +32,7 @@ const ROLE_PATHS = ['referee', 'bench', 'livescore', 'scoreboard', 'scoresheet',
 const HOSTNAME = process.env.HOSTNAME || 'escoresheet.local' // Custom hostname instead of localhost
 
 // The WS protocol and /api/match/* endpoints come from ./lanRelayCore.js (shared
-// with the dev plugin and the Electron relay).
+// with the dev plugin).
 
 // HTTPS configuration - default to true for production
 const useHttps = process.env.HTTPS !== 'false' && (process.env.HTTPS === 'true' || process.env.USE_HTTPS === 'true' || process.env.NODE_ENV === 'production')
@@ -78,7 +78,7 @@ if (useHttps) {
   }
 }
 
-// Single main-scoresheet lock (same rule as the Electron/Tauri relays and the
+// Single main-scoresheet lock (same rule as the Tauri relay and the
 // dev plugin): only this machine itself — loopback or its own LAN IP — may
 // register or release it, so a LAN device cannot lock anyone out of "/".
 const isLocalAddress = createLocalAddressCheck(networkInterfaces)
@@ -160,7 +160,7 @@ const requestHandler = (req, res) => {
   }
   
   // Health check (the coin toss's WebSocket server check, the server
-  // connection screen), as the Electron and Tauri relays answer it
+  // connection screen), as the Tauri relay answers it
   if (urlPath === '/health' || urlPath === '/api/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ status: 'ok', running: true }))

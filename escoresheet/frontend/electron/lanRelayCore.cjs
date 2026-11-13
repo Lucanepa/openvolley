@@ -4,15 +4,15 @@
  * relay-owned /api/match/* endpoints, shared by every Node relay runtime:
  *   - ../server.js                 standalone / Pi LAN server (`npm start`)
  *   - ../vite-plugin-api-routes.js Vite dev-server replica
- *   - ./relayServer.js             in-process Electron relay
  * src-tauri/src/relay.rs is a Rust port of the same protocol, and the cloud /
  * SEA backend (backend/server.js) speaks the same client-facing messages.
  * Change the protocol here and mirror it there.
  *
- * It lives in electron/ as dependency-free CommonJS so the packaged Electron
- * app (which ships only dist/ and electron/) can require() it; the ESM relays
- * import it through ../lanRelayCore.js. Do not require() anything here: the Vite
- * config bundler turns this file into ESM, where a bare require() throws.
+ * It is dependency-free CommonJS in electron/ (the folder of the old Electron
+ * shell, removed in 2026-11; the tests, the Tauri vectors and the backend copy
+ * of the sign core point here). The ESM relays import it through
+ * ../lanRelayCore.js. Do not require() anything here: the Vite config bundler
+ * turns this file into ESM, where a bare require() throws.
  *
  * Client -> relay
  *   sync-match-data   { matchId, match, homeTeam, awayTeam, homePlayers, awayPlayers,
@@ -165,7 +165,7 @@ const MATCH_SECRET_FIELDS = [
 ]
 
 const WS_MAX_PAYLOAD = 10 * 1024 * 1024 // same cap as the cloud relay
-// permessage-deflate for the relays' WebSocketServer (server.js, Electron): a
+// permessage-deflate for the relays' WebSocketServer (server.js, dev plugin): a
 // tablet gets the scorer's whole match on every sync, two per rally, over the
 // hall Wi-Fi or the scorer's own hotspot. A frame above 1 KB goes compressed
 // to a client that offers it (browsers do; a client that does not gets plain
@@ -1161,7 +1161,7 @@ function pinRoleOf(match, pin) {
  *
  * Sign on phone (/api/sign/*, docs/qr-signing-spec.md 4): `signCore` is the
  * module ./signSessionCore.cjs (this file must not require() it; the ESM entry
- * ../lanRelayCore.js and ./relayServer.js pass it). Without it every sign call
+ * ../lanRelayCore.js passes it). Without it every sign call
  * answers 503 OV_SIGN_UNAVAILABLE. The sessions (and their sweeper timer) are
  * created on the first sign request, never at load: a module-level relay (the
  * Vite plugin) must not keep `vite build` alive. close() disposes them.

@@ -13,16 +13,6 @@ cd escoresheet/frontend
 npm run generate-certs
 ```
 
-#### "Electron failed to install"
-
-Clear `node_modules` and reinstall:
-
-```bash
-cd escoresheet/frontend
-rm -rf node_modules
-npm install
-```
-
 #### "canvas" native dependency errors
 
 The `canvas` package is not needed for browser-based PDF generation. If it causes build issues (especially on CI), remove it:
@@ -94,12 +84,6 @@ Or Vite will automatically try the next available port.
 - To prevent data loss, make sure cloud sync is working before clearing browser data
 
 ## Deployment Issues
-
-### Electron build fails on CI
-
-- Make sure `ELECTRON=true` is set as an environment variable
-- The `canvas` native dependency may need to be removed (see "canvas" section above)
-- The CI workflow uses Node.js 22
 
 ### Cloudflare Pages: build fails
 

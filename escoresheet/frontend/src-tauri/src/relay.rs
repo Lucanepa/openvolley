@@ -1,6 +1,6 @@
 //! In-process LAN relay (Rust / axum) for the Tauri desktop app.
 //!
-//! This is the Rust port of `electron/relayServer.js`: an HTTP server that
+//! The Rust counterpart of the Node relay `server.js`: an HTTP server that
 //! serves the embedded frontend + `/api/*` match endpoints, plus a WebSocket
 //! relay so the desktop scoretable can push live match data and referee/bench/
 //! livescore tablets on the LAN can subscribe.
@@ -11,8 +11,8 @@
 //! (OpenBeach: 5174 / 8081, src/flavour.rs, so both apps run on one laptop.)
 //!
 //! The WS message protocol and the `/api/*` shapes are a port of
-//! `electron/lanRelayCore.cjs` (shared by `server.js`, the Electron relay and
-//! the Vite dev plugin) — clients talk to all of them interchangeably, so keep
+//! `electron/lanRelayCore.cjs` (shared by `server.js` and the Vite dev
+//! plugin) — clients talk to all of them interchangeably, so keep
 //! them in sync. In short:
 //!   - match-full-data / match-data-update are FLAT bundles with PIN-free `match`;
 //!   - match ids are always strings;

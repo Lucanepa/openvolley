@@ -47,15 +47,13 @@ If you don't have certificates, generate them first:
 npm run generate-certs
 ```
 
-### Electron Development (Desktop)
-
-Starts Vite and Electron concurrently:
+### Desktop App Development (Tauri)
 
 ```bash
-npm run electron:dev
+npm run tauri dev
 ```
 
-This waits for the dev server on port 5173, then launches the Electron window.
+Needs Rust and, on Linux, the WebView packages; see [OFFLINE_DESKTOP.md](../frontend/OFFLINE_DESKTOP.md).
 
 ## Environment Variables
 
@@ -97,16 +95,12 @@ Create a `.env` file in `escoresheet/frontend/` if you need cloud features. All 
 | `build:livescore` | Build livescore subdomain only |
 | `build:roster` | Build roster subdomain only |
 
-### Desktop (Electron)
+### Desktop (Tauri)
 
 | Script | Description |
 | --- | --- |
-| `electron:dev` | Start Electron dev environment |
-| `electron:build` | Build desktop app (current platform) |
-| `electron:build:win` | Build Windows installer + portable |
-| `electron:build:mac` | Build macOS DMG + ZIP |
-| `electron:build:linux` | Build Linux AppImage + DEB + RPM |
-| `electron:clean` | Clean `dist-electron/` directory |
+| `tauri dev` | Start the desktop app against the dev server |
+| `tauri build` | Build the desktop app for the current platform |
 
 ### Mobile (Capacitor)
 

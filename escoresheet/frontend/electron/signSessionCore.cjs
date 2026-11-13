@@ -3,7 +3,7 @@
  * signSessionCore — "Sign on phone" sessions (docs/qr-signing-spec.md, section 4).
  *
  * ONE implementation of the protocol state machine, shared by every Node relay:
- *   - ./lanRelayCore.cjs createLanRelay (server.js, the Vite dev plugin, Electron)
+ *   - ./lanRelayCore.cjs createLanRelay (server.js, the Vite dev plugin)
  *   - ../../backend/lib/signSessions.js, an ESM copy GENERATED from this file by
  *     ../scripts/make-sign-core.mjs (the backend's Docker context has no frontend/)
  * src-tauri/src/sign.rs is the Rust port. The shared vectors in
