@@ -586,19 +586,26 @@ export const apiStorage = {
 
 // ==================== Auth ====================
 
-async function authRequest(action, body = {}) {
+// `timeoutMs`: aborted after this long (the error then says `timeout`);
+// `keepalive`: the request outlives the page (a tab closed right after it)
+async function authRequest(action, body = {}, { timeoutMs = 0, keepalive = false } = {}) {
   const apiUrl = getCloudApiUrl(`/api/auth/${action}`)
   if (!apiUrl) return { data: null, error: { message: 'Backend not available' } }
 
   try {
+    const signal = timeoutMs ? requestTimeoutSignal(timeoutMs) : undefined
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      ...(signal ? { signal } : {}),
+      ...(keepalive ? { keepalive: true } : {})
     })
     return safeJsonResponse(response, 'Auth request failed')
   } catch (err) {
-    return { data: null, error: networkError(err) }
+    const error = networkError(err)
+    if (err?.name === 'TimeoutError' || err?.name === 'AbortError') error.timeout = true
+    return { data: null, error }
   }
 }
 
@@ -648,6 +655,7 @@ function getStoredToken() {
   } catch { return null }
 }
 
+// Resolves once the IndexedDB copy is written (true) or could not be (false)
 function storeToken(session) {
   sessionSetHere = true
   if (session) {
@@ -655,8 +663,9 @@ function storeToken(session) {
   } else {
     localStorage.removeItem('api_auth_token')
   }
-  writeSessionMirror(session || null)
+  const mirrored = writeSessionMirror(session || null)
   notifyTokenChange(session)
+  return mirrored
 }
 
 // Refresh the stored session in place (sliding expiry, fresh user) without
@@ -688,7 +697,9 @@ export function restoreMirroredSession() {
       if (typeof localStorage === 'undefined' || localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)) return
       const session = await readSessionMirror()
       if (!session?.access_token || sessionSetHere || localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)) return
-      if (session.expires_at && Date.now() / 1000 > session.expires_at) {
+      // expired, or signed out on this device (its copy's delete did not get
+      // through, the revocation still waits): never back
+      if ((session.expires_at && Date.now() / 1000 > session.expires_at) || isPendingSignOut(session.access_token)) {
         await writeSessionMirror(null)
         return
       }
@@ -705,6 +716,86 @@ export function restoreMirroredSession() {
 const SESSION_RESTORE_WAIT_MS = 1500
 function sessionRestored() {
   return Promise.race([restoreMirroredSession(), new Promise(resolve => setTimeout(resolve, SESSION_RESTORE_WAIT_MS))])
+}
+
+// ---- Sign-outs whose revocation has not reached the server yet ----
+// "Sign out" ends the session on the device at once. The server's session
+// would otherwise stay valid for up to 30 days when the request did not get
+// through (offline, a hall network that stalls, a tab closed at once): its
+// token waits here and is sent again at the next start and whenever the
+// backend is reachable again (onAuthStateChange), until the server answered.
+// The app never signs in with these tokens.
+const PENDING_SIGN_OUTS_KEY = 'ov:pendingSignOuts'
+const PENDING_SIGN_OUTS_MAX = 10
+// The server ends every session 90 days after its sign-in at the latest
+// (backend/lib/auth.js absoluteTtlSec): nothing left to revoke after that
+const PENDING_SIGN_OUT_MAX_AGE_MS = 90 * 24 * 3600 * 1000
+// How long a revocation request may take (sign-out waits for it at most this long)
+export const SIGN_OUT_TIMEOUT_MS = 4000
+
+function readPendingSignOuts() {
+  try {
+    const list = JSON.parse(localStorage.getItem(PENDING_SIGN_OUTS_KEY) || '[]')
+    const oldest = Date.now() - PENDING_SIGN_OUT_MAX_AGE_MS
+    return Array.isArray(list) ? list.filter((e) => e && typeof e.token === 'string' && e.token && Number(e.at) > oldest) : []
+  } catch { return [] }
+}
+
+function writePendingSignOuts(list) {
+  try {
+    if (list.length) localStorage.setItem(PENDING_SIGN_OUTS_KEY, JSON.stringify(list.slice(-PENDING_SIGN_OUTS_MAX)))
+    else localStorage.removeItem(PENDING_SIGN_OUTS_KEY)
+  } catch { /* storage full or blocked: this sign-out's own request is the only try */ }
+}
+
+function isPendingSignOut(token) {
+  return !!token && readPendingSignOuts().some((e) => e.token === token)
+}
+
+// Revoked, or refused for good (a 4xx other than a timeout or rate limit):
+// nothing left to send. Offline, 408, 429 and 5xx: sent again later.
+function revocationDone(result) {
+  if (!result.error) return true
+  const status = result.error.status ?? result.status
+  return status >= 400 && status < 500 && status !== 408 && status !== 429
+}
+
+async function revokeSession(token, { keepalive = false } = {}) {
+  const result = await authRequest('sign-out', { access_token: token }, { timeoutMs: SIGN_OUT_TIMEOUT_MS, keepalive })
+  if (revocationDone(result)) {
+    // The entry also keeps restoreMirroredSession from bringing the session
+    // back: it goes only once the IndexedDB copy no longer holds the token
+    const mirrored = await readSessionMirror()
+    if (mirrored?.access_token !== token || await writeSessionMirror(null)) {
+      writePendingSignOuts(readPendingSignOuts().filter((e) => e.token !== token))
+    }
+  }
+  return result
+}
+
+const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false
+
+let pendingSignOutsRun = null
+let pendingSignOutsAgain = false
+/** Sends the waiting revocations, one pass at a time. Never rejects. */
+function sendPendingSignOuts() {
+  if (pendingSignOutsRun) {
+    // (asked again meanwhile, e.g. back online: one more pass after this one)
+    pendingSignOutsAgain = true
+    return pendingSignOutsRun
+  }
+  pendingSignOutsRun = (async () => {
+    do {
+      pendingSignOutsAgain = false
+      if (isOffline()) return
+      for (const { token } of readPendingSignOuts()) {
+        const result = await revokeSession(token)
+        // the backend cannot be reached: the others wait for the next pass too
+        if (result.error?.network) break
+      }
+    } while (pendingSignOutsAgain)
+  })().catch(() => {}).finally(() => { pendingSignOutsRun = null })
+  return pendingSignOutsRun
 }
 
 /**
@@ -810,13 +901,22 @@ export const apiAuth = {
   },
 
   async signOut() {
-    // Revoke the session on the server first (best effort: offline or a server
-    // error must not keep the user signed in on this device).
+    // The device is signed out first, at once: a hall network that stalls
+    // instead of failing kept the scorer signed in while the request waited,
+    // and for the next person when the tab was closed meanwhile. The server's
+    // session is revoked next, waited for at most SIGN_OUT_TIMEOUT_MS; what
+    // does not get through is sent again later (sendPendingSignOuts).
     const token = getStoredToken()?.access_token
+    if (token) writePendingSignOuts([...readPendingSignOuts(), { token, at: Date.now() }])
+    // (the IndexedDB copy is gone before the next start can restore it)
+    await Promise.race([storeToken(null), new Promise(resolve => setTimeout(resolve, SESSION_RESTORE_WAIT_MS))])
     if (token) {
-      try { await authRequest('sign-out', { access_token: token }) } catch { /* ignore */ }
+      // keepalive: the request survives a tab closed right after the tap
+      const result = await revokeSession(token, { keepalive: true })
+      // A browser that will not send a keepalive request to another origin
+      // fails it at once, as if offline: once more as a plain request
+      if (result.error?.network && !result.error.timeout && !isOffline()) await revokeSession(token)
     }
-    storeToken(null)
     return { error: null }
   },
 
@@ -917,6 +1017,14 @@ export const apiAuth = {
     }
     window.addEventListener(TOKEN_CHANGE_EVENT, localHandler)
 
+    // Every page that follows the session also ends the server sessions of
+    // sign-outs that did not get through: now, back online, and when the
+    // backend answers again after an outage
+    const retrySignOuts = () => { sendPendingSignOuts() }
+    retrySignOuts()
+    window.addEventListener('online', retrySignOuts)
+    window.addEventListener(BACKEND_REACHED_EVENT, retrySignOuts)
+
     return {
       data: {
         subscription: {
@@ -924,6 +1032,8 @@ export const apiAuth = {
             cancelled = true
             window.removeEventListener('storage', handler)
             window.removeEventListener(TOKEN_CHANGE_EVENT, localHandler)
+            window.removeEventListener('online', retrySignOuts)
+            window.removeEventListener(BACKEND_REACHED_EVENT, retrySignOuts)
           }
         }
       }
