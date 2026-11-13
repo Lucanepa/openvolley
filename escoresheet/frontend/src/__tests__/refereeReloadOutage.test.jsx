@@ -53,17 +53,17 @@ const published = () => sync.validatePin.mockResolvedValue({ success: true, matc
 describe('referee reloading during an outage', () => {
   beforeEach(() => {
     cleanup()
-    localStorage.clear()
+    localStorage.clear(); sessionStorage.clear()
     for (const fn of Object.values(sync)) fn.mockReset()
     sync.listAvailableMatchesSupabase.mockResolvedValue({ success: false, matches: [] })
     sync.listAvailableMatches.mockResolvedValue({ success: false, matches: [] })
     sync.getRelayServerStatus.mockResolvedValue({ running: false })
-    localStorage.setItem('refereeMatchId', SEED)
-    localStorage.setItem('refereePin', PIN)
+    sessionStorage.setItem('refereeMatchId', SEED)
+    sessionStorage.setItem('refereePin', PIN)
   })
   afterEach(() => {
     cleanup()
-    localStorage.clear()
+    localStorage.clear(); sessionStorage.clear()
   })
 
   it('keeps its credentials and joins once the server and the scorer are back', async () => {
@@ -75,8 +75,8 @@ describe('referee reloading during an outage', () => {
     // the server is back, the scorer not yet: the credentials stay
     unknownMatch()
     await screen.findByText('The server is back. The referee dashboard rejoins its match as soon as the scoresheet has reconnected.', {}, { timeout: 8000 })
-    expect(localStorage.getItem('refereeMatchId')).toBe(SEED)
-    expect(localStorage.getItem('refereePin')).toBe(PIN)
+    expect(sessionStorage.getItem('refereeMatchId')).toBe(SEED)
+    expect(sessionStorage.getItem('refereePin')).toBe(PIN)
 
     // the scorer published the match again: the referee joins on its own
     published()
@@ -87,8 +87,8 @@ describe('referee reloading during an outage', () => {
   it('without an outage, credentials the server refuses are dropped at once, as before', async () => {
     unknownMatch()
     render(<RefereeApp />)
-    await waitFor(() => expect(localStorage.getItem('refereeMatchId')).toBeNull())
-    expect(localStorage.getItem('refereePin')).toBeNull()
+    await waitFor(() => expect(sessionStorage.getItem('refereeMatchId')).toBeNull())
+    expect(sessionStorage.getItem('refereePin')).toBeNull()
     expect(sync.validatePin).toHaveBeenCalledTimes(1)
   })
 })

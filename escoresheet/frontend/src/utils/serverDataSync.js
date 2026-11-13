@@ -195,6 +195,7 @@ export async function getMatchData(matchId) {
   const serverUrl = getServerUrl()
 
   // Try HTTP endpoint first (WebSocket server may have it)
+  let relayNotFound = false
   try {
     const response = await fetch(`${serverUrl}/api/match/${matchId}`, {
       method: 'GET',
@@ -204,6 +205,7 @@ export async function getMatchData(matchId) {
       }
     })
 
+    relayNotFound = response.status === 404
     if (response.ok) {
       const result = await response.json()
       // Without a proved PIN the relay answers with the public summary (no
@@ -269,7 +271,9 @@ export async function getMatchData(matchId) {
 
       if (!match) {
         console.error('[getMatchData] Supabase match fetch error:', matchError)
-        return { success: false, error: matchError?.message || 'Match not found' }
+        // notFound: a reachable relay and the database both say it is gone
+        // (a viewer leaves only on that, never on a network failure)
+        return { success: false, error: matchError?.message || 'Match not found', ...(relayNotFound && !matchError ? { notFound: true } : {}) }
       }
 
       // Fetch live state if available (for Referee app). Its line-ups,
@@ -1320,6 +1324,9 @@ export function subscribeToMatchData(matchId, onUpdate) {
             // Relay refused something (rate limit, not the match's scoreboard, ...)
             wsDebugInfo.lastServerError = { time: Date.now(), code: message.code || null, message: message.message || 'Server error' }
             console.warn('[ServerDataSync] Relay error:', message.code || '', message.message || '')
+            // The PIN this tablet proved is no longer this match's (the scorer
+            // changed it): its view of the match ends (useRealtimeConnection onAccessLost)
+            if (message.code === 'pin-invalid' && String(message.matchId) === matchIdStr) notify({ _accessDenied: message.code, matchId: matchIdStr })
           } else if (message.type === 'match-action' && String(message.matchId) === matchIdStr) {
             // Action received from scoreboard (timeout, substitution, set_end, etc.)
             connection.subscribers.forEach(subscriber => {

@@ -36,7 +36,7 @@ import RefereeApp from '../RefereeApp'
 describe('referee PIN with no game picked', () => {
   beforeEach(() => {
     cleanup()
-    localStorage.clear()
+    localStorage.clear(); sessionStorage.clear()
     for (const fn of Object.values(sync)) fn.mockReset()
     // neither list answers: the PIN form shows without a game
     sync.listAvailableMatchesSupabase.mockResolvedValue({ success: false, matches: [] })
@@ -47,7 +47,7 @@ describe('referee PIN with no game picked', () => {
   })
   afterEach(() => {
     cleanup()
-    localStorage.clear()
+    localStorage.clear(); sessionStorage.clear()
   })
 
   const typePin = async () => {
@@ -63,12 +63,12 @@ describe('referee PIN with no game picked', () => {
     expect(found.textContent).toContain('Home VC')
     expect(found.textContent).toContain('Away VC')
     expect(screen.queryByTestId('dashboard')).toBeNull()
-    expect(localStorage.getItem('refereeMatchId')).toBeNull()
+    expect(sessionStorage.getItem('refereeMatchId')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'Open this game' }))
     expect((await screen.findByTestId('dashboard')).textContent).toBe(SEED)
-    expect(localStorage.getItem('refereeMatchId')).toBe(SEED)
-    expect(localStorage.getItem('refereePin')).toBe('786270')
+    expect(sessionStorage.getItem('refereeMatchId')).toBe(SEED)
+    expect(sessionStorage.getItem('refereePin')).toBe('786270')
   })
 
   it('"Not my game" opens nothing and clears the PIN', async () => {
@@ -79,6 +79,6 @@ describe('referee PIN with no game picked', () => {
     expect(screen.queryByTestId('referee-found-game')).toBeNull()
     expect(screen.queryByTestId('dashboard')).toBeNull()
     expect(screen.getByLabelText('refereeDashboard.connectionPin').value).toBe('')
-    expect(localStorage.getItem('refereeMatchId')).toBeNull()
+    expect(sessionStorage.getItem('refereeMatchId')).toBeNull()
   })
 })

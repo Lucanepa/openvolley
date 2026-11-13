@@ -1855,6 +1855,7 @@
       "connectionLost": "Verbindung verloren. Bitte erneut verbinden.",
       "matchEnded": "Das Spiel ist beendet.",
       "connectionDisabled": "Die Verbindung wurde deaktiviert.",
+      "accessLost": "Der Schreiber hat den PIN geändert oder diese Verbindung ausgeschaltet. Gib den neuen PIN ein.",
       "serverUnreachable": "Keine Verbindung zum Server – bitte WLAN prüfen und erneut versuchen.",
       "reconnecting": "Keine Verbindung zum Server. Das Schiedsrichter-Dashboard verbindet sich wieder mit seinem Spiel, sobald er zurück ist.",
       "waitingForScoresheet": "Der Server ist wieder da. Das Schiedsrichter-Dashboard verbindet sich wieder mit seinem Spiel, sobald das Matchblatt wieder verbunden ist.",
@@ -5729,6 +5730,7 @@
       "afterRally": "Nach dem Ballwechsel",
       "notSent": "Antwort nicht gesendet: keine Verbindung zum Server",
       "notOnCourt": "Nr. {{number}} ist nicht auf dem Feld.",
+      "lineupOtherSet": "Diese Aufstellung ist für Satz {{set}}; gezählt wird Satz {{current}}.",
       "notOnBench": "Nr. {{number}} kann jetzt nicht rein."
     },
     "referee": {

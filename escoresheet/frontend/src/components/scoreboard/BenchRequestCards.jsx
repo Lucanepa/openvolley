@@ -67,7 +67,8 @@ export default function BenchRequestCards({ queue, teams, rallyInPlay, donePairs
             const team = teams?.[entry.team] || {}
             const Icon = KIND_ICON[r.kind] || ClipboardList
             const waitRally = rallyInPlay && r.kind !== 'lineup'
-            const done = donePairs[r.id] || []
+            // own entries only: an id like 'constructor' must not find Object.prototype's
+            const done = (Object.hasOwn(donePairs, r.id) && Array.isArray(donePairs[r.id])) ? donePairs[r.id] : []
             return (
               <div key={r.id} data-bench-card={r.kind} data-team={entry.team} className="rounded-2xl border border-stone-200/70 bg-white p-3 shadow-card-lg">
                 <div className="flex items-center gap-2">
@@ -120,7 +121,7 @@ export default function BenchRequestCards({ queue, teams, rallyInPlay, donePairs
                 )}
 
                 {waitRally && <p className="mt-2 text-xs font-medium text-amber-700">{t('benchRequests.scorer.afterRally', 'After the rally')}</p>}
-                {unsent[r.id] && <p className="mt-2 text-xs font-medium text-red-700">{t('benchRequests.scorer.notSent', 'Answer not sent: no connection to the server')}</p>}
+                {Object.hasOwn(unsent, r.id) && unsent[r.id] === true && <p className="mt-2 text-xs font-medium text-red-700">{t('benchRequests.scorer.notSent', 'Answer not sent: no connection to the server')}</p>}
 
                 <div className="mt-2.5 flex items-center justify-end gap-2">
                   <Button variant="secondary" size="md" data-bench-decline="" onClick={() => decline(entry)}>{t('benchRequests.scorer.decline', 'Decline')}</Button>

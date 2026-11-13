@@ -41,6 +41,31 @@ const failedCheck = (err) => ({ success: false, error: err?.message, unreachable
 const REFEREE_RESTORE_RETRY_MS = 5000
 const REFEREE_RESTORE_GRACE_MS = 2 * 60 * 1000
 
+// The referee's match and PIN for a reload of this tab: in sessionStorage, so
+// a closed browser asks for the PIN again (a tablet left on the table opens
+// nothing). Older versions kept them in localStorage: moved over once.
+const SESSION_KEYS = ['refereeMatchId', 'refereePin']
+function readRefereeSession() {
+  for (const k of SESSION_KEYS) {
+    const legacy = localStorage.getItem(k)
+    if (legacy !== null) {
+      if (sessionStorage.getItem(k) === null) sessionStorage.setItem(k, legacy)
+      localStorage.removeItem(k)
+    }
+  }
+  return { matchId: sessionStorage.getItem('refereeMatchId'), pin: sessionStorage.getItem('refereePin') }
+}
+function saveRefereeSession(matchId, pin) {
+  sessionStorage.setItem('refereeMatchId', String(matchId))
+  sessionStorage.setItem('refereePin', pin)
+}
+function clearRefereeSession() {
+  for (const k of SESSION_KEYS) {
+    sessionStorage.removeItem(k)
+    localStorage.removeItem(k)
+  }
+}
+
 /**
  * Re-check a stored referee PIN (after a reload) the way handlePinSubmit checks
  * a typed one: the backend's database check first, then the LAN relay. The
@@ -439,8 +464,7 @@ export default function RefereeApp() {
     let firstRefusalAt = null
     const check = async () => {
       // (again at each retry: an exit meanwhile ends them)
-      const storedMatchId = localStorage.getItem('refereeMatchId')
-      const storedPin = localStorage.getItem('refereePin')
+      const { matchId: storedMatchId, pin: storedPin } = readRefereeSession()
       if (!storedMatchId || !storedPin) return
       let again = false
       try {
@@ -460,8 +484,7 @@ export default function RefereeApp() {
           setError(t('refereeDashboard.errors.waitingForScoresheet', 'The server is back. The referee dashboard rejoins its match as soon as the scoresheet has reconnected.'))
           again = true
         } else {
-          localStorage.removeItem('refereeMatchId')
-          localStorage.removeItem('refereePin')
+          clearRefereeSession()
           if (sawNoAnswer) setError('')
         }
       } catch (err) {
@@ -505,8 +528,7 @@ export default function RefereeApp() {
       setMatch(null)
       setPinInput('')
       setIsMasterMode(false)
-      localStorage.removeItem('refereeMatchId')
-      localStorage.removeItem('refereePin')
+      clearRefereeSession()
       localStorage.removeItem('refereeMasterMode')
       setError(t('refereeDashboard.errors.connectionDisabled'))
     }
@@ -517,8 +539,7 @@ export default function RefereeApp() {
     setLinkedMatch(null)
     setMatchId(found.id)
     setMatch(found)
-    localStorage.setItem('refereeMatchId', String(found.id))
-    localStorage.setItem('refereePin', pin)
+    saveRefereeSession(found.id, pin)
   }
 
   const handlePinSubmit = async (e) => {
@@ -579,8 +600,7 @@ export default function RefereeApp() {
           ? t('refereeDashboard.errors.serverUnreachable', 'No connection to the server – check the Wi-Fi and try again.')
           : t('refereeDashboard.errors.invalidPin'))
         setPinInput('')
-        localStorage.removeItem('refereeMatchId')
-        localStorage.removeItem('refereePin')
+        clearRefereeSession()
       }
     } catch (err) {
       if (pinInput === MASTER_PIN) {
@@ -600,12 +620,13 @@ export default function RefereeApp() {
     setMatch(null)
     setPinInput('')
     setIsMasterMode(false)
-    localStorage.removeItem('refereeMatchId')
-    localStorage.removeItem('refereePin')
+    clearRefereeSession()
     localStorage.removeItem('refereeMasterMode')
 
     if (reason === 'heartbeat_failure') {
       setError(t('refereeDashboard.errors.connectionLost'))
+    } else if (reason === 'access_lost') {
+      setError(t('refereeDashboard.errors.accessLost', 'The scorer changed the PIN or switched this connection off. Enter the new PIN.'))
     } else {
       setError('')
     }
@@ -617,8 +638,7 @@ export default function RefereeApp() {
   // Monitor match status - clear credentials if match becomes final
   useEffect(() => {
     if (match && match.status === 'final') {
-      localStorage.removeItem('refereeMatchId')
-      localStorage.removeItem('refereePin')
+      clearRefereeSession()
       setMatchId(null)
       setMatch(null)
       setPinInput('')
