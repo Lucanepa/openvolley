@@ -69,6 +69,9 @@ describe('the cloud copy (set end, match end, every minute)', () => {
     expect(opened.secretsRemoved).toBe(true)
     expect(opened.unlockedWith).toEqual({ pin: 'game', field: 'gamePin', value: '123456' })
     for (const f of ['gamePin', 'refereePin', 'homeTeamPin', 'awayTeamUploadPin', 'sessionId']) expect(opened.match[f]).toBeUndefined()
+    // ... but its connection PINs, inside the encryption, for a restore on
+    // another device (never the game PIN or the session id)
+    expect(opened.connectionPins).toEqual({ referee: '654321', bench_home: '333333', upload_away: '444444' })
     expect(isEncryptedBackup(await fetchCloudBackup(path, { pins: ['000000'] }))).toBe(true)
     expect(isEncryptedBackup(await fetchCloudBackup(path))).toBe(true)
   }, 60000)
@@ -79,6 +82,8 @@ describe('the cloud copy (set end, match end, every minute)', () => {
     expect(isEncryptedBackup(file)).toBe(false)
     expect(file.secretsRemoved).toBe(true)
     expect(file.match.homeTeamPin).toBeUndefined()
+    expect(file.connectionPins).toBeUndefined()
+    expect(bucket.files.get(path)).not.toContain('333333')
     expect(await fetchCloudBackup(path, { pins: ['123456'] })).toEqual(file)
   })
 
@@ -95,5 +100,6 @@ describe('the set-end download', () => {
     const opened = await openWithKnownPins(JSON.parse(text), ['', null, '654321'])
     expect(opened.unlockedWith.field).toBe('refereePin')
     expect(opened.homePlayers[0].firstName).toBe('Kid')
+    expect(opened.connectionPins).toBeUndefined()
   }, 60000)
 })

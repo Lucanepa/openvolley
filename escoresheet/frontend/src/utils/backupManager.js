@@ -24,7 +24,7 @@ import { postMatchSignaturesFromServer } from '../domain/signatureEdits'
 import { signatureSourcesFromApproval } from '../domain/phoneSignature'
 import { liveClockOffset, liveClockOffsetAfter, liveStateNow } from './serverDataSync'
 import { isEncryptedBackup, BACKUP_DAMAGED } from './backupCrypto/envelope'
-import { backupFileText, openWithKnownPins } from './backupFile'
+import { backupFileText, CARRIED_PINS, openWithKnownPins } from './backupFile'
 import { redactMatch, SECRETS_REMOVED } from './nativeBackup/redact'
 import { recomputeMatch } from '../domain/recompute'
 import { queueEventSync } from './eventSync'
@@ -318,13 +318,36 @@ function unlockedPin(jsonData) {
   return u && (u.field === 'gamePin' || u.field === 'refereePin') && hasValue(u.value) ? u : null
 }
 
+// The connection PINs an encrypted cloud copy carries beside its match row
+// (utils/backupFile keepConnectionPins), as local match fields
+const CARRIED_PIN_FIELDS = {
+  referee: 'refereePin',
+  bench_home: 'homeTeamPin',
+  bench_away: 'awayTeamPin',
+  upload_home: 'homeTeamUploadPin',
+  upload_away: 'awayTeamUploadPin'
+}
+function carriedPins(jsonData) {
+  const block = jsonData?.[CARRIED_PINS]
+  const out = {}
+  if (!block || typeof block !== 'object') return out
+  for (const [key, field] of Object.entries(CARRIED_PIN_FIELDS)) {
+    if (hasValue(block[key])) out[field] = String(block[key]).trim()
+  }
+  return out
+}
+
 /**
- * The PINs of a match restored from an app backup file, which carries none
- * (utils/nativeBackup/redact): those of the local copy it replaces, then the
- * PIN that opened the file when it was encrypted, else new ones (a new game
- * PIN only for an official match). {} for other backups.
- * The replaced copy's PINs come before the typed one: they are the ones the
- * cloud and the tablets know, and the file may be older than a PIN change.
+ * The PINs of a match restored from an app backup file, whose match row
+ * carries none (utils/nativeBackup/redact): those of the local copy it
+ * replaces, then the connection PINs the file carries (the cloud copy,
+ * inside its encryption), then the PIN that opened the file when it was
+ * encrypted, else new ones (a new game PIN only for an official match). {}
+ * for other backups.
+ * The replaced copy's PINs come first: they are the ones the cloud and the
+ * tablets know, and the file may be older than a PIN change. On a
+ * replacement device (no local copy) the cloud copy's own PINs keep the
+ * referee and bench tablets connected: new ones would replace the server's.
  * @param {object} jsonData the backup
  * @param {object|null} previous the local copy being replaced
  */
@@ -334,6 +357,9 @@ export function pinsForRestore(jsonData, previous) {
   const pins = {}
   for (const f of LOCAL_PIN_FIELDS) {
     if (!hasValue(match[f]) && hasValue(previous?.[f])) pins[f] = previous[f]
+  }
+  for (const [f, value] of Object.entries(carriedPins(jsonData))) {
+    if (!hasValue(match[f]) && !hasValue(pins[f])) pins[f] = value
   }
   // The match's own PIN, not a new one the cloud would then be sent
   const typed = unlockedPin(jsonData)
@@ -350,11 +376,18 @@ export function pinsForRestore(jsonData, previous) {
   return pins
 }
 
-// restoreMatchInPlace: the typed PIN (unlockedPin) where the open match lacks it
+// restoreMatchInPlace: the PINs the file carries and the typed PIN
+// (unlockedPin), each only where the open match lacks it
 function typedPinFor(jsonData, current) {
+  const out = {}
+  if (jsonData?.secretsRemoved) {
+    for (const [f, value] of Object.entries(carriedPins(jsonData))) {
+      if (!hasValue(current?.[f]) && !hasValue(jsonData.match?.[f])) out[f] = value
+    }
+  }
   const typed = unlockedPin(jsonData)
-  if (!typed || hasValue(current?.[typed.field]) || hasValue(jsonData.match?.[typed.field])) return {}
-  return { [typed.field]: String(typed.value).trim() }
+  if (!typed || hasValue(current?.[typed.field]) || hasValue(jsonData.match?.[typed.field]) || hasValue(out[typed.field])) return out
+  return { ...out, [typed.field]: String(typed.value).trim() }
 }
 
 // Full connection_pins for the restore upsert, or nothing when the backup has no
@@ -923,8 +956,9 @@ export async function restoreMatchInPlace(matchId, jsonData, { checkServer = ser
     await db.matches.update(matchId, {
       ...match,
       ...(guarded ? withoutClosedEvidence(match, currentMatch) : {}),
-      // The PIN that opened an encrypted file, where the open match has none
-      // (its own PINs stay: the backup has none, the update keeps them)
+      // The PINs the file carries and the one that opened it, where the open
+      // match has none (its own PINs stay: the backup's match row has none,
+      // the update keeps them)
       ...typedPinFor(jsonData, currentMatch),
       id: matchId,
       // The backup's team ids are local ids of the device that wrote it

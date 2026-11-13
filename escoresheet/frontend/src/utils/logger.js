@@ -544,9 +544,11 @@ export function resetLoggerForTests() {
 
 /**
  * Upload a match backup to the cloud storage (sequential, with state summary).
- * The file is the app backup file (utils/backupFile): no PINs or session ids,
- * encrypted for the game PIN, the referee PIN and the league's recovery key.
- * One that cannot be encrypted is not uploaded.
+ * The file is the app backup file (utils/backupFile): no game PIN or session
+ * ids, encrypted for the game PIN, the referee PIN and the league's recovery
+ * key. It keeps the referee, bench and upload PINs inside the encryption: a
+ * restore on a replacement device sends the server those, so the tablets
+ * stay connected. One that cannot be encrypted is not uploaded.
  */
 export async function uploadBackupToCloud(matchId, backupData) {
   // Cloud storage needs an account: nothing to send while signed out
@@ -577,7 +579,7 @@ export async function uploadBackupToCloud(matchId, backupData) {
 
   try {
     const { backupFileText } = await import('./backupFile')
-    const body = await backupFileText(matchId, backupData, now)
+    const body = await backupFileText(matchId, backupData, now, { keepConnectionPins: true })
     const { data, error } = await apiStorage
       .from('backup')
       // Compact: a match's snapshots pretty-printed were about a third bigger

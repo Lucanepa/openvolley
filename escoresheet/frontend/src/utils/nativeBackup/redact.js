@@ -7,7 +7,9 @@
  * read it: a USB stick, a shared laptop's Downloads, the cloud bucket.
  * Connection PINs and session ids are access secrets, not scoring data: a
  * restore keeps the PINs of the local copy it replaces or makes new ones
- * (backupManager.restoreMatchFromJson).
+ * (backupManager.restoreMatchFromJson). The cloud copy carries the referee,
+ * bench and upload PINs in a block of its own, inside its encryption only
+ * (utils/backupFile keepConnectionPins), for a restore on another device.
  */
 
 import { VOLATILE_MATCH_KEY } from './matchWriteHook'

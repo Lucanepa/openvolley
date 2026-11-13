@@ -7,6 +7,8 @@
  * opens it (backupCrypto); a match with neither PIN (a test match) stays
  * plain. Such a file may end up on a USB stick, in a shared Downloads folder
  * or in the cloud, so the PINs and player data are never left in the clear.
+ * The cloud copy alone also carries the referee, bench and upload PINs, inside
+ * the encryption (keepConnectionPins below).
  *
  * One sealer per app session: each PIN is derived once per match, whichever
  * of these writes first.
@@ -22,23 +24,55 @@ export function sessionSealer() {
   return sealerPromise
 }
 
+/** The file's own block of connection PINs (backupFileText keepConnectionPins). */
+export const CARRIED_PINS = 'connectionPins'
+
+// The referee, bench and upload PINs of a match row (connection_pins
+// spelling), never its game PIN or session ids
+function connectionPinsOf(match, buildConnectionPins) {
+  const cloud = match?.connection_pins || match?.connectionPins || {}
+  const out = {}
+  for (const key of ['referee', 'bench_home', 'bench_away', 'upload_home', 'upload_away']) {
+    const value = cloud[key] == null ? '' : String(cloud[key]).trim()
+    if (value) out[key] = value
+  }
+  return { ...out, ...buildConnectionPins(match) }
+}
+
 /**
  * The text of a backup file of `data` (exportMatchData's shape, WITH the
  * match's PINs: they choose the key, and are left out of the file). Throws
  * when a match with PINs cannot be encrypted: it is never written in the
  * clear.
+ *
+ * keepConnectionPins (the cloud copy): the referee, bench and upload PINs go
+ * into the file as its own block (CARRIED_PINS), inside the encryption only,
+ * never in a plain file; never the game PIN or session ids. The cloud copy
+ * is restored on another device when the scoring device fails: with them the
+ * restore sends the server the PINs the referee and bench tablets hold
+ * (backupManager.pinsForRestore), not new ones that would lock those tablets
+ * out in the middle of the match.
  * @param {string|number} matchId the match (local id): its keys are kept per match
  * @param {object} data
  * @param {Date} [at] the time the file is written (its lastUpdated)
+ * @param {{ keepConnectionPins?: boolean }} [options]
  */
-export async function backupFileText(matchId, data, at = new Date()) {
-  const [{ serializeBackup }, sealer] = await Promise.all([
+export async function backupFileText(matchId, data, at = new Date(), { keepConnectionPins = false } = {}) {
+  const [{ serializeBackup }, { backupPins }, { buildConnectionPins }, sealer] = await Promise.all([
     import('./nativeBackup/engine'),
+    import('./backupCrypto/sealer'),
+    import('./connectionPins'),
     sessionSealer()
   ])
   const iso = at.toISOString()
-  const { build } = serializeBackup(data)
-  const { text } = await sealer.seal(matchId, data, build(iso), iso)
+  // Only where a PIN encrypts the file (backupPins: the sealer's own rule)
+  const carried = keepConnectionPins && backupPins(data?.match).length ? connectionPinsOf(data.match, buildConnectionPins) : {}
+  const withPins = Object.keys(carried).length ? { ...data, [CARRIED_PINS]: carried } : null
+  const { text, encrypted } = await sealer.seal(matchId, data, serializeBackup(withPins || data).build(iso), iso)
+  if (withPins && !encrypted) {
+    // never: the same rule chose both. A plain file never carries the PINs
+    return (await sealer.seal(matchId, data, serializeBackup(data).build(iso), iso)).text
+  }
   return text
 }
 
