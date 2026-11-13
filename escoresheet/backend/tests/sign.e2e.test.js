@@ -1,9 +1,10 @@
 /**
  * Sign on phone on the cloud backend (DATABASE_URL, docs/qr-signing-spec.md
- * 8.1): who may start (D2), the shared HTTP scenario with a scorer's session,
- * context sanitising, the start limit, CORS of the app origins, the phone
- * page, OV_SIGN_DISABLED, and that no secret, stroke, context or PIN ever
- * reaches the server output.
+ * 8.1): who may start (D2) and for which match (one the account writes; the
+ * phone page shows its stored teams), the shared HTTP scenario with a
+ * scorer's session, context sanitising, the start limit, CORS of the app
+ * origins, the phone page, OV_SIGN_DISABLED, and that no secret, stroke,
+ * context or PIN ever reaches the server output.
  *
  * Needs PG_TEST_URL (a throwaway Postgres, see tests/helpers/pgTestDb.js) or
  * OV_E2E_DOCKER=1.
@@ -57,10 +58,19 @@ describe('Sign on phone, cloud backend', { skip: SKIP }, () => {
     assert.equal(inn.status, 200, inn.text)
     const u = { id: inn.json.data.user.id, token: inn.json.data.session.access_token, ip }
     if (roles) await grantRoles(sql, u.id, roles)
+    // a match this account scores, as its app syncs it
+    u.match = await storedMatch(u)
     users[name] = u
     return u
   }
-  const start = (user, body = { slot: 'scorer', matchKey: 'm1', context: CTX }, headers = {}) =>
+  async function storedMatch (owner, { sport = 'indoor', home = CTX.home, away = CTX.away, gameN = null } = {}) {
+    const ext = `sign_${sport}_${randomBytes(4).toString('hex')}`
+    const teams = sport === 'beach' ? 'team1_data, team2_data' : 'home_team, away_team'
+    await sql.query(`INSERT INTO public.matches (external_id, status, created_by, sport_type, game_n, ${teams}) VALUES ($1, 'live', $2, $3, $4, $5, $6)`,
+      [ext, owner.id, sport, gameN, JSON.stringify({ name: home }), JSON.stringify({ name: away })])
+    return ext
+  }
+  const start = (user, body = { slot: 'scorer', matchKey: user?.match, context: CTX }, headers = {}) =>
     api(srv.base, '/api/sign/start', { token: user?.token, body, proto: null, headers: { 'cf-connecting-ip': user?.ip || '203.0.113.250', ...headers } })
   const phone = (endpoint, body, ip = '198.51.100.7') =>
     api(srv.base, `/api/sign/${endpoint}`, { body, proto: null, headers: { 'cf-connecting-ip': ip } })
@@ -110,19 +120,47 @@ describe('Sign on phone, cloud backend', { skip: SKIP }, () => {
     }
   })
 
+  it('start names a stored match the account writes; the phone page shows its stored teams and game number (rollout audit be-routes-authz-A-6)', async () => {
+    const theirs = await storedMatch(users.referee, { home: 'Stored Home', away: 'Stored Away', gameN: 4242 })
+    // another account's match, a match the server does not have, or none
+    for (const matchKey of [theirs, 'not-synced-yet', undefined]) {
+      code(await start(users.scorer, { slot: 'ref1', matchKey, context: { home: 'Made Up', away: 'Names' } }), 403, 'OV_SIGN_MATCH')
+    }
+    // its creator: the request's team names and number give way to the stored ones
+    const r = await start(users.referee, { slot: 'ref1', matchKey: theirs, context: { home: 'Made Up', away: 'Names', matchNo: '1', name: 'Some Referee' } })
+    code(r, 201)
+    tokensSeen.push(r.json.token, r.json.watch)
+    const open = await phone('open', { k: r.json.token })
+    assert.deepEqual(open.json.context, { matchNo: '4242', home: 'Stored Home', away: 'Stored Away', name: 'Some Referee' })
+    await phone('close', { watch: r.json.watch })
+    // an editor of the match and an admin may too
+    await sql.query('INSERT INTO public.match_editors (match_id, user_id) SELECT id, $1 FROM public.matches WHERE external_id = $2', [users.scorer.id, theirs])
+    for (const who of ['scorer', 'admin']) {
+      const e = await start(users[who], { slot: 'ref1', matchKey: theirs, context: CTX })
+      code(e, 201)
+      tokensSeen.push(e.json.token, e.json.watch)
+      await phone('close', { watch: e.json.watch })
+    }
+    // a bad slot is still the protocol's 400, whatever the match
+    code(await start(users.scorer, { slot: 'nope', matchKey: 'not-synced-yet', context: CTX }), 400, 'OV_SIGN_SLOT')
+  })
+
   it('the phone needs no account, and the full flow works over HTTP', async () => {
     const failures = await signHttpScenario({
       httpBase: srv.base,
+      matchKey: await storedMatch(users.scorer, { home: 'VBC Musterdorf', away: 'Volley 05', gameN: 4711 }),
       startHeaders: { Authorization: `Bearer ${users.scorer.token}`, 'cf-connecting-ip': users.scorer.ip }
     })
     assert.deepEqual(failures, [])
   })
 
   it('sanitises the context the phone sees, and hands out nothing else', async () => {
+    // the stored teams are sanitised as a typed context is
+    const ctxMatch = await storedMatch(users.referee, { home: '‮VBC\u0007 Musterdorf⁦', away: 'v'.repeat(70) })
     const r = await start(users.referee, {
       slot: 'ref1',
-      matchKey: 'm-ctx',
-      context: { home: '‮VBC\u0000 Musterdorf⁦', away: 'v'.repeat(70), name: MARKER_NAME, when: '12.10.2026 20:15', lang: 'fr', userId: users.referee.id, gamePin: '123456' }
+      matchKey: ctxMatch,
+      context: { home: 'Typed Home', away: 'Typed Away', name: MARKER_NAME, when: '12.10.2026 20:15', lang: 'fr', userId: users.referee.id, gamePin: '123456' }
     })
     code(r, 201)
     tokensSeen.push(r.json.token, r.json.watch)
@@ -139,14 +177,12 @@ describe('Sign on phone, cloud backend', { skip: SKIP }, () => {
   })
 
   it('OpenBeach: a session of a beach match opens with app beach (the page shows OpenBeach), indoor and unknown ones without', async () => {
-    const insertMatch = async (sport) => {
-      const ext = `sign_${sport}_${randomBytes(4).toString('hex')}`
-      await sql.query('INSERT INTO public.matches (external_id, status, created_by, sport_type) VALUES ($1, $2, $3, $4)', [ext, 'live', users.admin.id, sport])
-      return ext
-    }
-    const beachExt = await insertMatch('beach')
-    const indoorExt = await insertMatch('indoor')
+    const beachExt = await storedMatch(users.beachScorer, { sport: 'beach' })
+    const indoorExt = await storedMatch(users.scorer)
     const both = await account('bothSigner', ['scorer', 'beach:scorer'])
+    // an editor of both (it took them over with the game PIN)
+    await sql.query(`INSERT INTO public.match_editors (match_id, user_id)
+      SELECT id, $1 FROM public.matches WHERE external_id = ANY($2::text[])`, [both.id, [beachExt, indoorExt]])
     const appOf = async (user, body) => {
       const r = await start(user, { slot: 'ref1', context: CTX, ...body })
       code(r, 201)
@@ -166,11 +202,6 @@ describe('Sign on phone, cloud backend', { skip: SKIP }, () => {
     assert.equal(await appOf(users.scorer, { matchKey: indoorExt }), null)
     // the body cannot choose it
     assert.equal(await appOf(users.scorer, { matchKey: indoorExt, app: 'beach' }), null)
-    // a match the server does not have yet: a beach-only account is OpenBeach's
-    assert.equal(await appOf(users.beachScorer, { matchKey: 'not-synced-yet' }), 'beach')
-    assert.equal(await appOf(users.beachScorer, {}), 'beach')
-    assert.equal(await appOf(both, { matchKey: 'not-synced-yet' }), null)
-    assert.equal(await appOf(users.referee, {}), null)
     // the token checks are as before: a wrong token is 404 and names no app
     const bad = await phone('open', { k: 'B'.repeat(43) })
     code(bad, 404, 'OV_SIGN_NOT_FOUND')

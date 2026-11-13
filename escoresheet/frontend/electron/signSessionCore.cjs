@@ -43,8 +43,13 @@ const SUBMIT_BODY_MAX = 64 * 1024
 const BODY_MAX = 4 * 1024
 const SIGN_PATH = '/sign'
 
-const CLOUD_CAPS = Object.freeze({ total: 2000, perOwner: 20, startPerOwner: 30, phonePerIp: 120, waiters: 1000 })
-const LAN_CAPS = Object.freeze({ total: 200, perOwner: 20, startPerOwner: 60, phonePerIp: 600, waiters: 200 })
+// perOwner / startPerOwner: per owner as the relay adapter names it (an
+// account in the cloud; on a LAN relay the relay host 'local', or the caller's
+// address for a game-PIN start). localReserve: the last live sessions of the
+// total that only the relay host ('local') may take, so other devices never
+// fill the relay for its own scorer.
+const CLOUD_CAPS = Object.freeze({ total: 2000, perOwner: 20, startPerOwner: 30, phonePerIp: 120, waiters: 1000, localReserve: 0 })
+const LAN_CAPS = Object.freeze({ total: 200, perOwner: 20, startPerOwner: 60, phonePerIp: 600, waiters: 200, localReserve: 40 })
 
 const SLOTS = Object.freeze([
   'captain-a', 'captain-b', 'asst-scorer', 'scorer', 'ref2', 'ref1',
@@ -84,6 +89,7 @@ const MESSAGES = {
   OV_SIGN_CONTEXT: 'Both team names are needed',
   OV_SIGN_INK_INVALID: 'The signature is empty or invalid',
   OV_SIGN_FORBIDDEN: 'This device may not start phone signing',
+  OV_SIGN_MATCH: 'Phone signing needs a match this account scores, saved on the server',
   OV_SIGN_PIN_INVALID: 'Wrong game PIN',
   OV_SIGN_NOT_FOUND: 'This link is not valid',
   OV_SIGN_USED: 'This link was already used',
@@ -452,8 +458,10 @@ function createSignSessions(options = {}) {
     }
     const ctx = validateContext(body.context)
     if (!ctx.ok) return signError(400, ctx.code)
-    sweepIfFull()
-    if (byToken.size >= caps.total) return signError(503, 'OV_SIGN_BUSY', { 'Retry-After': '30' })
+    // The relay host may fill the whole total, every other owner all but its reserve
+    const room = owner === 'local' ? caps.total : caps.total - (caps.localReserve || 0)
+    if (byToken.size >= room) sweep()
+    if (byToken.size >= room) return signError(503, 'OV_SIGN_BUSY', { 'Retry-After': '30' })
     if (ownerCount(owner) >= caps.perOwner) return rateLimited(60)
 
     const token = base64url(randomBytes(32))
@@ -486,10 +494,6 @@ function createSignSessions(options = {}) {
       status: 201,
       body: { ok: true, token, watch, expiresAt: s.expiresAt, ttlSeconds: SIGN_TTL_MS / 1000, path: SIGN_PATH },
     }
-  }
-
-  function sweepIfFull() {
-    if (byToken.size >= caps.total) sweep()
   }
 
   /** The phone's rate limit and token lookup: { session } or an error result. */

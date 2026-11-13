@@ -54,8 +54,8 @@ internet, which svrz_rc never needed.
 Decisions this spec makes. Each is flagged so the owner can overrule it:
 
 - **D1 Strokes instead of PNG or SVG upload.** The brief asked for "PNG/SVG sanitised". Not accepting any image at all is stricter: no PNG chunk walker in Rust, no SVG sanitiser, no polyglot files, and the result is pixel-identical in style to a local signature. The cost: a phone signature can't carry pressure or colour, and neither can the local pad.
-- **D2 Cloud start needs a signed-in account** with a scorer or referee role (indoor or beach), or admin. This is the same caller rule as account approval (R2). Phones never need an account. An anonymous web scorer on `app.openvolley.app` has no relay of its own, so it sees "Sign in to sign on a phone" there. svrz_rc has the same rule: starting needs the coach session.
-- **D3 LAN start** needs the request to come from the relay host itself (the existing `isLocal` check behind register-main), **or** the match's **game PIN** in `X-OV-Match-Pin` for a match that relay holds. A wrong PIN counts toward the existing per-IP wrong-PIN limiter. A scorer on a Pi or `server.js` relay is a different machine and proves the game PIN. The Tauri and Electron app is the host itself.
+- **D2 Cloud start needs a signed-in account** with a scorer or referee role (indoor or beach), or admin. This is the same caller rule as account approval (R2). The start names (`matchKey`) a match stored on the server that this account may write: its creator, an editor or an admin (otherwise 403 `OV_SIGN_MATCH`), and the phone page shows that match's stored team names and game number, not the ones in the request (rollout audit 2026-11). Phones never need an account. An anonymous web scorer on `app.openvolley.app` has no relay of its own, so it sees "Sign in to sign on a phone" there. svrz_rc has the same rule: starting needs the coach session.
+- **D3 LAN start** needs the request to come from the relay host itself (the existing `isLocal` check behind register-main), **or** the match's **game PIN** in `X-OV-Match-Pin` for a match that relay holds. A wrong PIN counts toward the existing per-IP wrong-PIN limiter. A scorer on a Pi or `server.js` relay is a different machine and proves the game PIN. The Tauri and Electron app is the host itself. Since the rollout audit (2026-11): a game-PIN start's caps (live sessions, starts) are the caller's address's (owner `pin:<address>`), however many matches it names, and the relay host keeps the last 40 of the 200 live sessions for itself (`localReserve`). On `backend/server.js --local` the start must also come from the scoring device that holds the room (a scoreboard socket at the caller's address owns it right now), and behind a trusted proxy (`TRUST_PROXY`) the forwarded client address decides who is the relay host.
 - **D4 Sessions live in memory** on every relay. Nothing goes to Postgres. A backend restart during the 10 minutes ends the session, and the dialog says "Link expired, make a new one". This keeps signatures out of the database and the backups, and the code is the same shape on all three relays. The cloud backend is one process today. If it ever runs several instances, sessions move to a table that holds only hashes (section 9).
 - **D5 Preview before use.** When the strokes arrive, the dialog shows the rendered signature with "Use signature" and "Discard". It does not fill the slot silently as svrz_rc does. A link copied into a chat could otherwise put a stranger's signature on the result. It costs the same single tap as "Save" on the local pad.
 - **D6 Cloud first when both transports work.** A phone with mobile data reaches the cloud without joining any Wi-Fi. When the laptop has a LAN relay and is also online, the dialog offers a two-way switch, "Internet" or "Hall network". The choice is remembered per device.
@@ -180,7 +180,8 @@ are gone.
 | Cap | Cloud | LAN |
 |---|---|---|
 | live sessions in total | 2000 | 200 |
-| live sessions per owner | 20 | 20 |
+| of those, only for the relay host (`localReserve`) | 0 | 40 |
+| live sessions per owner (cloud: the account; LAN: the relay host, or the caller's address for a game-PIN start) | 20 | 20 |
 | `start` per owner | 30 / 5 min | 60 / 5 min |
 | `open` + `submit` per IP bucket (IPv6 /64, the existing `ipBucketKey`) | 120 / 5 min | 600 / 5 min |
 | `wait` concurrent in total | 1000 | 200 |
@@ -446,7 +447,7 @@ light only like paper):
 | Malicious image (polyglot, decompression bomb, SVG script) | No image accepted (D1). Bounded integers only, rasterised by the scoring device. |
 | Context injection on the phone page | Typed, capped, control and bidi characters stripped, `textContent` only, strict CSP without inline script. |
 | Abuse of the cloud as a free relay | Start needs an account with a scorer, referee or admin role (D2), with per-user and global caps. |
-| Abuse on the LAN | Start is local or needs the game PIN (D3), wrong PINs are counted by the existing limiter, and a LAN IP has a cap of 20 live sessions. |
+| Abuse on the LAN | Start is local or needs the game PIN (D3), wrong PINs are counted by the existing limiter, a LAN address has a cap of 20 live sessions and 60 starts per 5 minutes whatever matches it names, and the relay host keeps 40 of the 200 live sessions for itself. On `--local` only the scoring device that holds the room starts with its PIN. |
 | Memory exhaustion | Caps in 4.1, body caps read with a hard stop, a sweeper, and tombstones that keep hashes only. |
 | Tablets seeing signatures | `signatureSources` and every image field match `/signature/i` and are stripped by all relays (unchanged). |
 
@@ -454,7 +455,8 @@ light only like paper):
 
 - **First to submit wins.** Anyone who sees the QR code before the signer can open the link and send a scribble first. The signer's phone then says "already used", and the scorer sees the result before tapping "Use signature" (D5). Binding the link to the first phone that opens it would close this, at the cost of a protocol change on all three relays. It is worth doing if a hall ever reports it.
 - **Plain HTTP on the hall network.** On an open hall Wi-Fi, someone listening can read the token and the strokes, as with every other LAN relay call. The internet way is HTTPS.
-- **A `--local` backend behind a reverse proxy on the same machine** sees every caller as itself, so anyone on the Wi-Fi may start a session there. This only gives them a session of their own and no match data.
+- **A `--local` backend behind a reverse proxy on the same machine** sees every caller as itself unless `TRUST_PROXY` is set (then the forwarded client address decides), so without it anyone on the Wi-Fi may start a session there. This only gives them a session of their own and no match data.
+- **A device on the hall network with a match of its own.** A LAN relay without a database cannot tell a made-up match from a real first claim, so such a device can still open a signing page with its own text from its own room, within its address's 20 live sessions. It cannot fill the relay for the other devices or for the host.
 - **Personal data in the relay's memory.** The signer's name and the teams stay in memory for at most 15 minutes, are never logged, and are shown only to whoever holds the token.
 
 ---
