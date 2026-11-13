@@ -9,7 +9,7 @@ import { vitePluginApiRoutes } from './vite-plugin-api-routes.js'
 import { BUILD_TARGET } from './build-target.js'
 import { themeBoot } from './theme-boot.js'
 import { buildChannelPlugin } from './build-channel.js'
-import { PRECACHE_GLOB_PATTERNS, PRECACHE_GLOB_IGNORES, PRECACHE_MAX_FILE_BYTES, NAVIGATE_FALLBACK_DENYLIST, IGNORE_URL_PARAMETERS, offlineNavigationRoute, API_NETWORK_ONLY_ROUTE, PWA_INCLUDE_ASSETS, PWA_ICONS } from './pwa-workbox.js'
+import { PRECACHE_GLOB_PATTERNS, PRECACHE_GLOB_IGNORES, PRECACHE_MAX_FILE_BYTES, NAVIGATE_FALLBACK_DENYLIST, IGNORE_URL_PARAMETERS, offlineNavigationRoute, API_NETWORK_ONLY_ROUTE, STATIC_ASSETS_ROUTE, PWA_INCLUDE_ASSETS, PWA_ICONS } from './pwa-workbox.js'
 
 // Valid HTML pages for the app (folder-based structure for clean URLs)
 const validPages = [
@@ -237,18 +237,8 @@ export default defineConfig({
           offlineNavigationRoute,
           // API routes - network only: the answers are the signed-in account's
           API_NETWORK_ONLY_ROUTE,
-          {
-            // Static assets - cache first
-            urlPattern: /\.(?:js|mjs|css|png|jpg|jpeg|svg|gif|webp|woff|woff2)$/,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'static-assets',
-              expiration: {
-                maxEntries: 100,
-                maxAgeSeconds: 60 * 60 * 24 * 30 // 30 days
-              }
-            }
-          },
+          // Static assets - cache first, never an HTML answer (pwa-workbox.js)
+          STATIC_ASSETS_ROUTE,
           {
             // HTML pages - network first
             urlPattern: /\.html$/,
