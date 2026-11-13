@@ -751,3 +751,23 @@ export async function handleContact({ body, contentType, mailer, logger = consol
   logger.log(`[Contact] ${what} mailed to the support mailbox`)
   return answer(200, { success: true })
 }
+
+/**
+ * The match time of a send-info mail as the scorer typed it: in OV_TIMEZONE
+ * (an IANA zone, default Europe/Zurich), not UTC. An unknown zone falls back
+ * to UTC and says so.
+ */
+export function matchMailDateTime(scheduledAt, timeZone = process.env.OV_TIMEZONE || 'Europe/Zurich') {
+  const at = scheduledAt ? new Date(scheduledAt) : null
+  if (!at || Number.isNaN(at.getTime())) return { date: 'TBD', time: 'TBD' }
+  let zone = timeZone
+  let fmt
+  try {
+    fmt = new Intl.DateTimeFormat('en-GB', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+  } catch {
+    zone = 'UTC'
+    fmt = new Intl.DateTimeFormat('en-GB', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+  }
+  const part = Object.fromEntries(fmt.formatToParts(at).map((x) => [x.type, x.value]))
+  return { date: `${part.day}.${part.month}.${part.year}`, time: `${part.hour}:${part.minute}${zone === timeZone ? '' : ' UTC'}` }
+}

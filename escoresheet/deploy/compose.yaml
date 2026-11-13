@@ -144,6 +144,7 @@ services:
       OV_MIN_MATCHES: ${OV_MIN_MATCHES:-0}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       RESEND_FROM: ${RESEND_FROM:-}
+      OV_TIMEZONE: ${OV_TIMEZONE:-Europe/Zurich}
       # Account emails (password reset, email confirmation; backend README
       # "Account emails"). All optional: without SMTP_HOST/SMTP_PASS reset
       # answers 503 and sign-up confirms accounts at once.
