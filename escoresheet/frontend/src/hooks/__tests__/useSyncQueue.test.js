@@ -1094,6 +1094,68 @@ describe('failure classes', () => {
   })
 })
 
+describe('console lines carry no personal data (fe-diagnostics-privacy-1)', () => {
+  const PERSONAL = ['Muster', 'Anna', '12.03.2011', '2011-03-12', 'ref.one@example.ch', 'data:image/png', 'NEWCOACHSIG', 'Beispiel']
+
+  it('redactForLog keeps the rosters, officials, signatures, approval and corrections as their size', () => {
+    const out = redactForLog({
+      id: 'm',
+      status: 'live',
+      players_home: [{ number: 7, first_name: 'Anna', last_name: 'Muster', dob: '12.03.2011' }],
+      bench_away: [{ role: 'C', first_name: 'Lea', last_name: 'Beispiel', dob: '1980-01-01' }],
+      officials: [{ role: '1st referee', firstName: 'Ref', lastName: 'One', email: 'ref.one@example.ch' }],
+      signatures: { home_coach: 'data:image/png;base64,NEWCOACHSIG', away_coach: '' },
+      approval: { referee1: { name: 'Ref One' } },
+      manual_changes: [{ category: 'player', before: '#7 Muster Anna' }],
+      playersAway: [{ lastName: 'Muster' }],
+      benchHome: null
+    })
+    expect(out).toEqual({
+      id: 'm',
+      status: 'live',
+      players_home: '[1 item]',
+      bench_away: '[1 item]',
+      officials: '[1 item]',
+      signatures: '[2 fields]',
+      approval: '[1 field]',
+      manual_changes: '[1 item]',
+      playersAway: '[1 item]',
+      benchHome: null
+    })
+  })
+
+  it('a match insert and update log their keys and size, never a value (rosters, officials, signatures)', async () => {
+    const lines = []
+    const capture = (...args) => { lines.push(JSON.stringify(args.map(a => (a instanceof Error ? { message: a.message } : a)))) }
+    const spies = ['log', 'warn', 'error'].map(m => vi.spyOn(console, m).mockImplementation(capture))
+    const roster = [{ number: 7, first_name: 'Anna', last_name: 'Muster', dob: '12.03.2011' }]
+    try {
+      fakeDb.sync_queue.reset([
+        { id: 1, resource: 'match', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa', status: 'live', players_home: roster, officials: [{ role: '1st referee', email: 'ref.one@example.ch', lastName: 'Beispiel' }] } },
+        { id: 2, resource: 'match', action: 'update', status: 'queued', payload: { id: 'match_100_aaa', players_home: roster, signatures: { home_coach: 'data:image/png;base64,NEWCOACHSIG' } } },
+        { id: 3, resource: 'match', action: 'update', status: 'queued', payload: { id: 'match_100_aaa', bench_home: [{ role: 'C', last_name: 'Muster', dob: '2011-03-12' }] } }
+      ])
+      let updates = 0
+      api.respond = (call) => {
+        if (call.table === 'matches' && call.action === 'select') return ok({ id: MATCH_UUID })
+        if (call.table === 'matches' && call.action === 'upsert') return ok()
+        // the second update fails: its error line too
+        if (call.table === 'matches' && call.action === 'update') return ++updates === 1 ? ok() : { data: null, error: { status: 400, code: 'OV_INVALID_DATA', message: 'bad' } }
+        return defaultRespond(call)
+      }
+      await runQueuePass()
+    } finally {
+      spies.forEach(s => s.mockRestore())
+    }
+    expect(lines.some(l => l.includes('Match insert payload'))).toBe(true)
+    expect(lines.some(l => l.includes('Match update payload'))).toBe(true)
+    expect(lines.some(l => l.includes('Match update error'))).toBe(true)
+    // the keys and the size are there
+    expect(lines.find(l => l.includes('Match insert payload'))).toContain('players_home')
+    for (const value of PERSONAL) expect(lines.filter(l => l.includes(value)), value).toEqual([])
+  })
+})
+
 describe('pruneSyncQueue', () => {
   it('removes old sent/superseded/dropped rows, but none newer than a pending job', async () => {
     const now = Date.now()

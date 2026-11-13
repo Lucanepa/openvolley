@@ -1,9 +1,18 @@
 /**
  * Event Capture - Global DOM event listeners for comprehensive logging
  * Captures all user interactions at the document level
+ *
+ * Never kept: what is typed into a text field (a key typed there is kept as
+ * one placeholder character, an input or change only the length of the
+ * value), anything typed into a password or PIN field (not even its
+ * length), and the text of an element inside [data-sensitive] (lists of
+ * people). Clicked text keeps no PIN-like digits, date or email address
+ * (utils/screenText). The log goes into "Download logs", the match-end ZIP
+ * and the support diagnostics.
  */
 
 import { logUI, throttle, debounce, redactScreenText } from './comprehensiveLogger'
+import { isTypingField, TYPED_KEY } from './screenText'
 
 export { redactScreenText }
 import { reportAppError } from './activity/appError'
@@ -78,6 +87,11 @@ export function isSensitiveTarget(el) {
   const labels = [el.name, el.id, el.getAttribute?.('aria-label'), el.getAttribute?.('placeholder')]
   if (labels.some(isSensitiveField)) return true
   return !!el.closest?.('[data-sensitive]')
+}
+
+/** A field the user types text into (input, textarea, contenteditable). */
+function isTextEntry(el) {
+  return !!el && isTypingField(el.tagName, el.type, el.isContentEditable === true)
 }
 
 /**
@@ -280,35 +294,47 @@ function buildEventPayload(eventType, event, target) {
       }
 
     case 'keydown':
-    case 'keyup':
+    case 'keyup': {
       // A key typed into a password/PIN field is the secret itself
       if (isSensitiveTarget(target)) {
         return { ...base, key: '[REDACTED]', code: '[REDACTED]', repeat: event.repeat }
       }
+      // A character typed into a text field is the text: that a key was
+      // typed, not which (the code names the key too). Named keys (Enter,
+      // Backspace, arrows), shortcuts with Ctrl / Alt / Meta and keys
+      // outside any field stay as they are.
+      const typed = isTextEntry(target) && typeof event.key === 'string' && event.key.length === 1 &&
+        !event.ctrlKey && !event.metaKey && !event.altKey
       return {
         ...base,
-        key: event.key,
-        code: event.code,
+        key: typed ? TYPED_KEY : event.key,
+        code: typed ? null : event.code,
         shiftKey: event.shiftKey,
         ctrlKey: event.ctrlKey,
         altKey: event.altKey,
         metaKey: event.metaKey,
         repeat: event.repeat
       }
+    }
 
     case 'input':
+      // The length of a PIN is part of the secret; of other typed text only the length
+      if (isSensitiveTarget(target)) return { ...base, inputType: event.inputType, value: '[REDACTED]', valueLength: null }
+      if (isTextEntry(target)) return { ...base, inputType: event.inputType, valueLength: target?.value?.length || 0 }
       return {
         ...base,
         inputType: event.inputType,
-        value: isSensitiveTarget(target) ? '[REDACTED]' : sanitizeValue(target?.value, target?.name),
-        // The length of a PIN is part of the secret
-        valueLength: isSensitiveTarget(target) ? null : (target?.value?.length || 0)
+        value: sanitizeValue(target?.value, target?.name),
+        valueLength: target?.value?.length || 0
       }
 
     case 'change':
+      if (isSensitiveTarget(target)) return { ...base, value: '[REDACTED]', checked: target?.type === 'checkbox' ? target.checked : undefined, selectedIndex: target?.selectedIndex }
+      // typed text: its length; a select's option, a checkbox's state as they are
+      if (isTextEntry(target)) return { ...base, valueLength: target?.value?.length || 0 }
       return {
         ...base,
-        value: isSensitiveTarget(target) ? '[REDACTED]' : sanitizeValue(target?.value, target?.name),
+        value: sanitizeValue(target?.value, target?.name),
         checked: target?.type === 'checkbox' ? target.checked : undefined,
         selectedIndex: target?.selectedIndex
       }

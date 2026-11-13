@@ -367,7 +367,8 @@ export function interactionItem(e) {
         }
         if (t?.tagName === 'textarea' || (t?.tagName === 'input' && TEXT_INPUT_TYPES.has(String(t.type || '')))) {
           const hidden = p.value === '[REDACTED]'
-          const n = typeof p.value === 'string' && !hidden ? p.value.length : null
+          // eventCapture keeps the length of typed text, not the text (older entries: the value)
+          const n = hidden ? null : Number.isFinite(p.valueLength) ? p.valueLength : typeof p.value === 'string' ? p.value.length : null
           return { ...base, typing: { field: fieldKey(t), label: fieldLabel(t), keys: 0, hidden, length: n, change: true }, kind: 'type', text: '' }
         }
         if (t?.type === 'file') return { ...base, kind: 'change', text: `picked a file in ${fieldLabel(t)}`, where: where(e.component) }

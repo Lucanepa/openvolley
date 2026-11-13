@@ -4,7 +4,7 @@ import 'fake-indexeddb/auto'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { db } from '../../db/db'
 import {
-  log, setGameContext, getLogsForMatch, pruneInteractionLogs, migrateDebugLogs, LEGACY_DEBUG_KEY,
+  log, setGameContext, getGameContext, getLogsForMatch, pruneInteractionLogs, migrateDebugLogs, LEGACY_DEBUG_KEY,
   exportLogsAsNDJSON, trimDebugData
 } from '../comprehensiveLogger'
 import { debugLogger } from '../debugLogger'
@@ -52,6 +52,47 @@ describe('interaction log', () => {
     const e = log('ui', 'click', 'Test', 'x')
     expect(e).toMatchObject({ gameNumber: 21, matchId: 99 })
     setGameContext(null, null)
+  })
+
+  // fe-ui-rest-3: back on Home (setActiveMatch(null)) the next screens were
+  // still tagged with the match last open, and went into its export
+  it('no match open: new entries carry no match', () => {
+    setGameContext(21, 99)
+    setGameContext(null, null)
+    expect(getGameContext()).toEqual({ gameNumber: null, matchId: null })
+    expect(log('ui', 'click', 'Test', 'x')).toMatchObject({ gameNumber: null, matchId: null })
+    // a game number alone keeps the match id it belongs to
+    setGameContext(21, 99)
+    setGameContext(22)
+    expect(getGameContext()).toEqual({ gameNumber: 22, matchId: 99 })
+    setGameContext(null, null)
+  })
+
+  // fe-ui-rest-3, fe-diagnostics-privacy-2: entries stored before the capture
+  // kept the typed text are exported without it
+  it('an entry typed into a text field before this version is exported without the key or the value', async () => {
+    const t0 = Date.parse('2026-10-07T10:00:00Z')
+    const field = { tagName: 'input', type: 'text', id: ':r1:', name: null, ariaLabel: null, textContent: null }
+    await db.interaction_logs.bulkAdd([
+      row('k1', t0 + 1000, { matchId: 7, type: 'keydown', payload: { key: '4', code: 'Digit4', shiftKey: false }, target: field }),
+      row('k2', t0 + 1001, { matchId: 7, type: 'keydown', payload: { key: 'Enter', code: 'Enter' }, target: field }),
+      row('i1', t0 + 1002, { matchId: 7, type: 'input', payload: { inputType: 'insertText', value: '482913', valueLength: 6 }, target: field }),
+      row('c1', t0 + 1003, { matchId: 7, type: 'change', payload: { value: 'anna@example.ch' }, target: { ...field, type: 'email' } }),
+      row('s1', t0 + 1004, { matchId: 7, type: 'change', payload: { value: 'warn', selectedIndex: 1 }, target: { tagName: 'select' } }),
+      row('x1', t0 + 1005, { matchId: 7, type: 'keydown', payload: { key: 'a', code: 'KeyA' }, target: { tagName: 'body' } })
+    ])
+    const ndjson = await exportLogsAsNDJSON({ matchId: 7 })
+    expect(ndjson).not.toContain('482913')
+    expect(ndjson).not.toContain('anna@example.ch')
+    expect(ndjson).not.toContain('Digit4')
+    const byId = Object.fromEntries(ndjson.split('\n').map(l => JSON.parse(l)).map(e => [e.id, e.payload]))
+    expect(byId.k1).toMatchObject({ key: '•', code: null })
+    expect(byId.k2).toMatchObject({ key: 'Enter', code: 'Enter' })
+    expect(byId.i1).toEqual({ inputType: 'insertText', valueLength: 6 })
+    expect(byId.c1).toEqual({ valueLength: 15 })
+    // a select's option and a shortcut outside any field stay
+    expect(byId.s1).toMatchObject({ value: 'warn' })
+    expect(byId.x1).toMatchObject({ key: 'a', code: 'KeyA' })
   })
 
   it('prunes rows older than 30 days, then the oldest beyond the cap', async () => {

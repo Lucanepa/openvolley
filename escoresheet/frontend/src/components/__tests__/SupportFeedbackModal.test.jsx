@@ -172,11 +172,15 @@ describe('SupportFeedbackModal', () => {
   const diagBox = () => screen.getByLabelText(/supportFeedback\.includeDiagnostics/)
   const showButton = () => screen.findByRole('button', { name: /supportFeedback\.(show|hide)Diagnostics/ })
 
-  it('"Include diagnostics" is ticked for a bug report; "Show what is sent" shows exactly the file that goes', async () => {
+  // gap-fe-unread-dialogs-2: the report holds tap labels and the open match;
+  // nothing of it goes unless the user ticks the box
+  it('"Include diagnostics" is unticked for a bug report until ticked; "Show what is sent" shows exactly the file that goes', async () => {
     setActiveMatch({ id: 3, gameNumber: 4711 })
     render(<SupportFeedbackModal open onClose={() => {}} area="scoring" />)
     fillBug()
-    expect(diagBox().checked).toBe(true)
+    expect(diagBox().checked).toBe(false)
+    expect(diag.make).not.toHaveBeenCalled()
+    fireEvent.click(diagBox())
     const toggle = await showButton()
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     expect(screen.getByText('supportFeedback.diagnosticsSize')).toBeInTheDocument()
@@ -197,11 +201,12 @@ describe('SupportFeedbackModal', () => {
     expect(diag.make).toHaveBeenCalledWith({ gameNumber: undefined, language: 'de-CH' })
   })
 
-  it('ticked for a question too', async () => {
+  it('unticked for a question too; ticked by hand, it goes', async () => {
     render(<SupportFeedbackModal open onClose={() => {}} area="connections" />)
     selectByLabel('supportFeedback.contactTypeLabel', 'support')
     selectByLabel('supportFeedback.supportTypeLabel', 'help')
-    expect(diagBox().checked).toBe(true)
+    expect(diagBox().checked).toBe(false)
+    fireEvent.click(diagBox())
     await showButton()
     fireEvent.change(screen.getByLabelText('supportFeedback.commentsLabel'), { target: { value: 'How do I connect the bench?' } })
     fireEvent.change(screen.getByLabelText('supportFeedback.emailLabel'), { target: { value: 'tester@example.ch' } })
@@ -239,9 +244,10 @@ describe('SupportFeedbackModal', () => {
     expect(sentForm().get('diagnosticsFile').name).toBe(REPORT.fileName)
   })
 
-  it('unticked by the user: not sent, and a change of type keeps the choice; ticked again, a new report', async () => {
+  it('unticked again by the user: not sent, and a change of type keeps the choice', async () => {
     render(<SupportFeedbackModal open onClose={() => {}} area="scoring" />)
     fillBug()
+    fireEvent.click(diagBox())
     await showButton()
     fireEvent.click(diagBox())
     expect(diagBox().checked).toBe(false)
@@ -258,6 +264,7 @@ describe('SupportFeedbackModal', () => {
   it('ticked again after unticking: a new snapshot', async () => {
     render(<SupportFeedbackModal open onClose={() => {}} area="scoring" />)
     fillBug()
+    fireEvent.click(diagBox())
     await showButton()
     fireEvent.click(diagBox())
     fireEvent.click(diagBox())
@@ -270,6 +277,7 @@ describe('SupportFeedbackModal', () => {
     diag.make = vi.fn(() => new Promise((resolve) => { finish = resolve }))
     render(<SupportFeedbackModal open onClose={() => {}} area="scoring" />)
     fillBug()
+    fireEvent.click(diagBox())
     expect(screen.getByRole('status').textContent).toBe('supportFeedback.diagnosticsPreparing')
     submit()
     await act(async () => { await Promise.resolve() })
@@ -285,6 +293,7 @@ describe('SupportFeedbackModal', () => {
     setActiveMatch({ id: 3, gameNumber: 4711 })
     render(<SupportFeedbackModal open onClose={() => {}} area="scoring" />)
     fillBug()
+    fireEvent.click(diagBox())
     const preview = await screen.findByLabelText('supportFeedback.diagnosticsPreview')
     expect(screen.getByText('supportFeedback.diagnosticsFailed')).toBeInTheDocument()
     const shown = JSON.parse(preview.textContent)
@@ -305,6 +314,7 @@ describe('SupportFeedbackModal', () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function () { clicked.push([this.download, this.href]) })
     render(<SupportFeedbackModal open onClose={() => {}} area="scoring" />)
     fillBug()
+    fireEvent.click(diagBox())
     await showButton()
     submit()
     expect((await screen.findByRole('alert')).textContent).toBe('supportFeedback.sendError')
@@ -327,8 +337,7 @@ describe('SupportFeedbackModal', () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     render(<SupportFeedbackModal open onClose={() => {}} area="scoring" />)
     fillBug()
-    await showButton()
-    fireEvent.click(diagBox())
+    expect(diagBox().checked).toBe(false)
     submit()
     await screen.findByRole('alert')
     expect(screen.getByRole('button', { name: /supportFeedback\.sendByEmail/ })).toBeInTheDocument()
@@ -399,6 +408,7 @@ describe('SupportFeedbackModal', () => {
     api.url = null
     render(<SupportFeedbackModal open onClose={() => {}} area="install-updates" />)
     fillBug()
+    fireEvent.click(diagBox())
     submit()
     await screen.findByText('supportFeedback.mailtoTitle')
     expect(fetchMock).not.toHaveBeenCalled()

@@ -311,10 +311,35 @@ function summarizeError(error) {
   return out
 }
 
+const snakeKey = (key) => String(key).replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase()
+
 // A PIN field: 'pin' as a word of the key (game_pin, gamePin, connection_pins,
 // homeTeamUploadPin, PIN), not any key that contains the letters (mapping).
-const isSecretLogKey = (key) =>
-  /(^|_)pins?(_|$)/.test(String(key).replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase())
+const isSecretLogKey = (key) => /(^|_)pins?(_|$)/.test(snakeKey(key))
+
+// Personal data of a match row: the rosters (names, dates of birth), the
+// officials (names, email addresses), the signature images, the approval and
+// the roster corrections (names). A console line says how much, never what:
+// the lines are uploaded as app logs and go into the support diagnostics.
+const isPersonLogKey = (key) => /^(players|bench)(_|$)|^(officials|signatures|approval|manual_changes)$/.test(snakeKey(key))
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+function sizeForLog(value) {
+  if (Array.isArray(value)) return `[${plural(value.length, 'item')}]`
+  if (value && typeof value === 'object') return `[${plural(Object.keys(value).length, 'field')}]`
+  if (typeof value === 'string') return `[${plural(value.length, 'character')}]`
+  return value
+}
+
+/**
+ * A payload for the console: its keys and its size in characters, never a
+ * value (a match's rosters, officials and signatures are personal data).
+ */
+export function payloadForLog(payload) {
+  if (!payload || typeof payload !== 'object') return payload
+  let chars = null
+  try { chars = JSON.stringify(payload).length } catch { /* not serializable */ }
+  return { keys: Object.keys(payload), chars }
+}
 
 // PIN values inside text: `Key (game_pin)=(123456)` from a unique violation,
 // `"refereePin":"123456"` in a serialized body.
@@ -327,7 +352,9 @@ const LOG_REDACT_DEPTH = 6
  * A value for the console (and so for uploaded logs): PIN fields left out at
  * any depth (game_pin, connection_pins, refereePin, ...), PIN values in error
  * texts masked, the scoresheet remarks (db/017) as their length only, like
- * the activity log. Anything else is passed through unchanged.
+ * the activity log, and the rosters, bench, officials, signatures, approval
+ * and roster corrections as their size only. Anything else is passed through
+ * unchanged.
  */
 export function redactForLog(value, depth = 0) {
   if (typeof value === 'string') return redactText(value)
@@ -342,7 +369,8 @@ export function redactForLog(value, depth = 0) {
   const out = {}
   for (const [k, v] of Object.entries(value)) {
     if (isSecretLogKey(k)) continue
-    out[k] = k === 'remarks' && typeof v === 'string' ? `[${v.length} characters]` : redactForLog(v, depth + 1)
+    if (k === 'remarks' && typeof v === 'string') out[k] = `[${v.length} characters]`
+    else out[k] = isPersonLogKey(k) ? sizeForLog(v) : redactForLog(v, depth + 1)
   }
   return out
 }
@@ -1188,11 +1216,11 @@ async function processJobInner(job, ctx) {
       // Filter to valid columns only - handles old backup formats with invalid fields
       const matchPayload = filterMatchPayload(await withFullConnectionPins(job.payload?.external_id, job.payload))
 
-      safeLog.log('[SyncQueue] Match insert payload:', redactForLog(matchPayload))
+      safeLog.log('[SyncQueue] Match insert payload:', matchPayload.external_id, payloadForLog(matchPayload))
       const { error } = await apiFrom('matches')
         .upsert(matchPayload, { onConflict: 'external_id' })
       if (error) {
-        safeLog.error('[SyncQueue] Match insert error:', error, redactForLog(matchPayload))
+        safeLog.error('[SyncQueue] Match insert error:', error, matchPayload.external_id, payloadForLog(matchPayload))
         return failureResult(error, ctx)
       }
       safeLog.log('[SyncQueue] Match insert successful')
@@ -1239,12 +1267,12 @@ async function processJobInner(job, ctx) {
         }
       }
 
-      safeLog.log('[SyncQueue] Match update payload:', redactForLog({ id, ...finalUpdateData }))
+      safeLog.log('[SyncQueue] Match update payload:', id, payloadForLog(finalUpdateData))
       const { error } = await apiFrom('matches')
         .update(finalUpdateData)
         .eq('external_id', id)
       if (error) {
-        safeLog.error('[SyncQueue] Match update error:', error, redactForLog(job.payload))
+        safeLog.error('[SyncQueue] Match update error:', error, id, payloadForLog(rawUpdateData))
         return failureResult(error, ctx)
       }
       safeLog.log('[SyncQueue] Match update successful')
