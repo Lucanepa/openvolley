@@ -27,7 +27,7 @@
  * STATUS LIFECYCLE: live -> ended (scoreboard, match over) -> approved (MatchEnd
  * signatures) -> final (closed). Any of the last three means the match is over.
  */
-import { setsToWin, getNextSetIndex, isMatchFinished } from '../utils/matchFormat'
+import { setsToWin, getNextSetIndex, isMatchFinished, displaySetNumber } from '../utils/matchFormat'
 import { isDecidingSet, scoreFromPointEvents } from './rules'
 
 /** Match statuses that mean "no more rallies will be played". */
@@ -110,6 +110,58 @@ export function getMatchWinner(sets, bestOf = 5, { forfeitTeam = null } = {}) {
   if (home >= needed && home > away) return 'home'
   if (away >= needed && away > home) return 'away'
   return null
+}
+
+/** A possible final score of a set: 25 (15 in the deciding set) with a 2-point lead, or more by exactly 2. */
+export function isFinalSetScore(winnerPoints, loserPoints, setIndex) {
+  const toWin = isDecidingSet(setIndex) ? 15 : 25
+  return (winnerPoints === toWin && loserPoints <= toWin - 2) || (winnerPoints > toWin && winnerPoints - loserPoints === 2)
+}
+
+/**
+ * What keeps a result from being approved (Match End's "Confirm and
+ * approve"), judged on the set rows: they are the result the sheet prints
+ * (RESULT, the winner) and the cloud gets (set_results, winner,
+ * final_score). A correction can leave a finished set at a score no set ends
+ * with (a point given to the other team: 24:19, still finished, counted as
+ * won by the leader); and a match over whose valid sets give no team the sets
+ * it needs. Issues in domain/recompute's form ({ key, params }, issueText):
+ * 'setScoreInvalid' { set, score } and 'matchNotDecided' { n, result }, the
+ * scores and the result team A first, as on the sheet. A set the forfeit
+ * wrote or created and a forfeited or stopped match follow their own rules
+ * (planForfeit, impossibility to resume): no issue.
+ * @param {{ sets?: Array, events?: Array, match?: object }} args
+ * @returns {Array<{ key: string, params: object }>}
+ */
+export function resultIssues({ sets = [], events = [], match = {} } = {}) {
+  const bestOf = Number(match?.bestOf) === 3 ? 3 : 5
+  const teamA = match?.coinTossTeamA === 'away' ? 'away' : 'home'
+  const teamB = otherTeam(teamA)
+  const forfeitSets = new Set((events || [])
+    .filter(e => e?.type === 'set_end' && e.payload?.reason === 'forfait')
+    .map(e => e.setIndex))
+  const finished = (sets || []).filter(s => s?.finished).sort((a, b) => a.index - b.index)
+  const issues = []
+  const won = { home: 0, away: 0 }
+  for (const s of finished) {
+    const pts = { home: s.homePoints || 0, away: s.awayPoints || 0 }
+    const leader = pts.home > pts.away ? 'home' : pts.away > pts.home ? 'away' : null
+    if (s.forfeitCreated || forfeitSets.has(s.index)) {
+      if (leader) won[leader]++
+      continue
+    }
+    if (!leader || !isFinalSetScore(pts[leader], pts[otherTeam(leader)], s.index)) {
+      issues.push({ key: 'setScoreInvalid', params: { set: displaySetNumber(s.index, bestOf), score: `${pts[teamA]}:${pts[teamB]}` } })
+      continue
+    }
+    won[leader]++
+  }
+  const need = setsToWin(bestOf)
+  if (isMatchOverStatus(match?.status) && !match?.forfeitTeam && !match?.stoppedReason && finished.length > 0 &&
+      won.home < need && won.away < need) {
+    issues.push({ key: 'matchNotDecided', params: { n: need, result: `${won[teamA]}:${won[teamB]}` } })
+  }
+  return issues
 }
 
 /**

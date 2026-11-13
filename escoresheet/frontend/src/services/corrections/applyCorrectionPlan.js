@@ -24,8 +24,10 @@
  *     the match is over: the final mail reads them)
  *  7. queued insert jobs of removed events are dropped (only inserts:
  *     domain/corrections syncJobsForEvents)
- *  8. at the match end, a change of the sheet clears the post-match
- *     signatures (they certified the old sheet), here and on the server
+ *  8. at the match end, a change of the sheet after the first post-match
+ *     signature or account approval clears them all (they certified the old
+ *     sheet), here and on the server: the whole `signatures` object, and one
+ *     undo job per account approval (signedAfterMatch, approvalUndoJobs)
  *
  * The event history (db/eventHistory) is the one record of what the
  * correction removed or changed: its db.events hooks write an event_history
@@ -43,6 +45,7 @@ import { appendRemark, removeRemarkLine } from '../../domain/remarks'
 import { syncJobsForEvents } from '../../domain/corrections'
 import { clearedPostMatchSignatures, POST_MATCH_SIGNATURE_FIELDS, getMatchWinner, countSetsWon, isMatchOverStatus } from '../../domain/matchEnd'
 import { signaturesPayload } from '../../domain/signatureEdits'
+import { approvalUndoJobs } from '../../domain/accountApproval'
 import { buildEventInsertJob } from '../../utils/eventSync'
 import { toCloudPlayers, filterMatchPayload } from '../../db/matchRepository'
 import { setExtId } from '../../utils/syncIds'
@@ -62,8 +65,29 @@ export function planChangesSheet(plan) {
   ) > 0
 }
 
-/** The correction-log entry stored in match.manualChanges. */
-export function logEntryFor(plan, now = new Date()) {
+/**
+ * Has the sheet been certified since the match ended: a post-match signature
+ * drawn (the captains, the scorers, the referees) or an account approval
+ * (scorer, referees: offered at every signing step, so it can come before
+ * anything is drawn). From then on any change of the sheet clears them all.
+ */
+export function signedAfterMatch(match) {
+  if (!match) return false
+  return POST_MATCH_SIGNATURE_FIELDS.some(f => !!match[f]) ||
+    Object.values(match.accountApprovals || {}).some(r => !!r?.id)
+}
+
+// A remark written at the match end is how the remarks are filled in, not a
+// correction of the match, until somebody signed (signaturesCleared)
+const REMARK_ACTIONS = new Set(['addRemark', 'editRemark', 'removeRemark'])
+
+/**
+ * The correction-log entry stored in match.manualChanges. `afterMatch`: made
+ * at the match end; the scoresheet and Match End print such an entry as
+ * "Corrected after the match" in REMARKS (scoresheet_pdf/utils/sheetRemarks
+ * correctionRemarks).
+ */
+export function logEntryFor(plan, now = new Date(), { afterMatch = false } = {}) {
   if (!plan?.log) return null
   const { action, setIndex = null, team = null, before = null, after = null, text } = plan.log
   return {
@@ -76,8 +100,43 @@ export function logEntryFor(plan, now = new Date()) {
     after,
     text,
     description: text,
-    by: 'scorer'
+    by: 'scorer',
+    ...(afterMatch ? { afterMatch: true } : {})
   }
+}
+
+/**
+ * A change of the sheet made outside a correction plan after the sheet was
+ * signed (MatchEnd: the remarks edited, a remarks signature removed). One
+ * transaction writes the change, the cleared post-match signatures and
+ * account approvals and its log entry (afterMatch, printed in REMARKS), and
+ * queues for the server the cleared `signatures` (the whole object) with the
+ * log, and one undo per account approval (approvalUndoJobs). The remarks
+ * themselves go by db/remarksSync's hook, in the same transaction.
+ * @param {object} db the app's Dexie database
+ * @param {any} matchId
+ * @param {object} patch the match-row fields of the change
+ * @param {{ action: string, text: string, before?: any, after?: any }} log
+ */
+export async function writeSignedSheetChange(db, matchId, patch, log, now = new Date()) {
+  await db.transaction('rw', db.matches, db.sync_queue, async () => {
+    const match = await db.matches.get(matchId)
+    if (!match) throw new Error('Match not found')
+    const entry = logEntryFor({ log: { before: null, after: null, ...log } }, now, { afterMatch: true })
+    const write = { ...patch, ...clearedPostMatchSignatures(), manualChanges: [...(match.manualChanges || []), entry] }
+    await db.matches.update(matchId, write)
+    if (match.seed_key && !match.test) {
+      await db.sync_queue.add({
+        resource: 'match',
+        action: 'update',
+        payload: { id: match.seed_key, signatures: signaturesPayload({ ...match, ...write }), manual_changes: write.manualChanges },
+        ts: now.toISOString(),
+        status: 'queued'
+      })
+      for (const job of approvalUndoJobs(match, now)) await db.sync_queue.add(job)
+    }
+  })
+  try { window.dispatchEvent(new Event('sync-queue-write')) } catch { /* no window */ }
 }
 
 /** The new remarks text after the plan's removals and additions. */
@@ -177,12 +236,15 @@ async function writePlan(plan, { matchId, db, mode = 'live', hooks = {}, now = n
     if (JSON.stringify(sanctions) !== JSON.stringify(match.sanctions || {})) patch.sanctions = sanctions
     const remarks = remarksAfter(match.remarks, plan)
     if (remarks !== (match.remarks || '')) patch.remarks = remarks
-    const entry = logEntryFor(plan, now)
-    if (entry) patch.manualChanges = [...(match.manualChanges || []), entry]
-    if (mode === 'review' && planChangesSheet(plan) && POST_MATCH_SIGNATURE_FIELDS.some(f => match[f])) {
+    // Signed or approved with an account (an approval binds the set scores
+    // only: a removed sanction kept it valid when nothing was drawn)
+    if (mode === 'review' && planChangesSheet(plan) && signedAfterMatch(match)) {
       Object.assign(patch, clearedPostMatchSignatures())
       result.signaturesCleared = true
     }
+    const afterMatch = mode === 'review' && !!plan.log && (!REMARK_ACTIONS.has(plan.log.action) || result.signaturesCleared)
+    const entry = logEntryFor(plan, now, { afterMatch })
+    if (entry) patch.manualChanges = [...(match.manualChanges || []), entry]
     if (Object.keys(patch).length) await db.matches.update(matchId, patch)
 
     // 5b. the roster (a renumbered player, a libero mark)
@@ -246,6 +308,11 @@ async function writePlan(plan, { matchId, db, mode = 'live', hooks = {}, now = n
       if (result.signaturesCleared) matchPayload.signatures = signaturesPayload({ ...match, ...patch })
       if (Object.keys(matchPayload).length > 1) {
         await db.sync_queue.add({ resource: 'match', action: 'update', payload: matchPayload, ts, status: 'queued' })
+      }
+      // ... and the account approvals, through the queue (an undo made only
+      // while online left the server's rows, which came back on the next refresh)
+      if (result.signaturesCleared) {
+        for (const job of approvalUndoJobs(match, now)) await db.sync_queue.add(job)
       }
     }
   })

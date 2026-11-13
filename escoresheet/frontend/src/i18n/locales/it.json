@@ -1694,7 +1694,38 @@
     },
     "errorClosing": "Errore durante la chiusura della partita: ",
     "noWinner": "Nessun vincitore (partita interrotta)",
-    "pdfGenerationFailed": "Partita approvata, ma non è stato possibile creare il PDF. Puoi crearlo dal pulsante eScoresheet.",
+    "pdfGenerationFailed": "Partita approvata senza PDF. Crealo con «Crea il PDF» prima di chiudere la partita: il server ne ha bisogno.",
+    "pdfGenerationFailedTest": "Partita approvata, ma non è stato possibile creare il PDF. Puoi crearlo dal pulsante eScoresheet.",
+    "pdfMissing": {
+      "notice": "Il PDF ufficiale di questa approvazione non è ancora in viaggio verso il server. Crealo prima di chiudere la partita.",
+      "create": "Crea il PDF",
+      "queued": "Il PDF va al server con la prossima sincronizzazione.",
+      "cancelKeepsMissing": "Annulla lascia la partita approvata senza PDF: crealo prima di chiudere la partita.",
+      "closeTitle": "Chiudere senza il PDF ufficiale?",
+      "closeBody": "Nessun PDF di questa approvazione è in viaggio verso il server: la federazione e l’e-mail finale non ne avrebbero. Una volta chiusa la partita, questo dispositivo non può più crearlo.",
+      "closeAnyway": "Chiudi comunque"
+    },
+    "sheetWarnings": {
+      "title": "Controlla la partita prima di approvarla:",
+      "confirmTitle": "Approvare nonostante questi avvisi?",
+      "confirm": "Approva comunque"
+    },
+    "resultIssues": {
+      "title": "Questo risultato non può essere approvato:",
+      "hint": "Correggilo in Correzioni, poi approva.",
+      "blocked": "Il risultato contiene un set o una fine partita impossibile. Correggilo prima in Correzioni."
+    },
+    "signedSheetChange": {
+      "title": "Cancellare le firme?",
+      "confirm": "Modifica e cancella",
+      "remarks": "Il referto è già stato firmato o approvato. Modificare le osservazioni cancella tutte le firme e le approvazioni di fine partita: raccoglile di nuovo dopo.",
+      "remarksSignature": "Il referto è già stato firmato o approvato. Rimuovere questa firma cancella tutte le firme e le approvazioni di fine partita: raccoglile di nuovo dopo.",
+      "correction": "Il referto è già stato firmato o approvato. Questa correzione cancella tutte le firme e le approvazioni di fine partita: raccoglile di nuovo dopo.",
+      "editor": "Il referto è già stato firmato o approvato. Salvare queste modifiche cancella tutte le firme e le approvazioni di fine partita: raccoglile di nuovo dopo.",
+      "logRemarks": "Osservazioni modificate dopo la firma del referto",
+      "logRemarksSignature": "Firma rimossa dalle osservazioni: {{caption}}",
+      "saveFailed": "Non è stato possibile salvare la modifica."
+    },
     "reopenMatch": "Riapri partita",
     "closedOnServer": "Questa partita è chiusa sul server: qui non può più essere modificata. Solo un admin può riaprirla (Riapri partita).",
     "reopenAdminOnlyTitle": "Solo un admin può riaprire questa partita",
@@ -1720,7 +1751,7 @@
         "blocked": "Non è stato possibile aprire la finestra dell’eScoresheet.",
         "failed": "L’eScoresheet non ha potuto creare il PDF."
       },
-      "cancelKeepsUnapproved": "Annulla lascia la partita non approvata. Approva senza PDF la approva ora: salva il PDF dall’eScoresheet più tardi.",
+      "cancelKeepsUnapproved": "Annulla lascia la partita non approvata. Approva senza PDF la approva ora: poi crea il PDF con «Crea il PDF» prima di chiudere la partita.",
       "keepWindowOpen": "Tieni aperta la finestra dell’eScoresheet finché il PDF è pronto."
     },
     "testMailSent": "Referto inviato a {{to}}"
@@ -2773,7 +2804,7 @@
       "q_approve": "Cosa fa «Conferma e approva»?",
       "a_approve": "Quando ci sono tutte le firme, tocca «Conferma e approva». L'app salva i dati della partita (JSON) e crea il referto in PDF: tieni aperta la finestra del referto finché è pronto. Poi la partita è approvata e chiusa sul server.",
       "q_pdfFailed": "Dice che il PDF non è pronto: e adesso?",
-      "a_pdfFailed": "«Riprova» crea di nuovo il PDF. «Approva senza PDF» approva subito la partita: salva il PDF più tardi con «eScoresheet». «Annulla» lascia la partita non approvata.",
+      "a_pdfFailed": "«Riprova» crea di nuovo il PDF. «Approva senza PDF» approva subito la partita: poi crea il PDF con «Crea il PDF» prima di chiudere la partita, così arriva al server. «Annulla» lascia la partita non approvata.",
       "q_closeMatch": "Cosa fa «Chiudi partita»?",
       "a_closeMatch": "Dopo l'approvazione, «Chiudi partita» segna la partita come definitiva sul server e la rimuove da questo dispositivo. Salva o stampa prima il PDF se ti serve una copia su questo dispositivo."
     },
@@ -3015,6 +3046,7 @@
     "gameNumber": "Numero partita",
     "matchTypeGender": "Tipo partita (genere)",
     "scheduledDateTime": "Data/ora programmata",
+    "fixedAfterMatch": "Fisso dopo la partita: il PDF ufficiale è archiviato con il numero e la data della partita dell’impostazione.",
     "matchOfficials": "Ufficiali di gara",
     "firstReferee": "1° arbitro",
     "secondReferee": "2° arbitro",

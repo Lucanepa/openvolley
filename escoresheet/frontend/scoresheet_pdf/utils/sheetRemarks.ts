@@ -115,3 +115,28 @@ export function generatedRemarks({ sets, events, teamAKey, bestOf }: {
   }
   return lines
 }
+
+/** The prefix of a remark the sheet writes for a change made after the match. */
+export const CORRECTED_AFTER_MATCH = 'Corrected after the match'
+
+/**
+ * The changes made after the match (match.manualChanges entries marked
+ * `afterMatch`: a correction at the match end, the Teams / Match info editor,
+ * a remarks change after the signatures), one remark each, oldest first:
+ * Match End lists them in REMARKS before anyone signs, and the scoresheet
+ * prints them. The sentence is the log's own (`text`, else `description`).
+ * Entries made during the match, and those of older versions without the
+ * mark, are left out; the whole log stays with the match on the server
+ * (manual_changes) and in the Corrections panel.
+ */
+export function correctionRemarks(manualChanges: unknown): string[] {
+  if (!Array.isArray(manualChanges)) return []
+  const lines: string[] = []
+  for (const c of manualChanges) {
+    if (!c || typeof c !== 'object' || (c as any).afterMatch !== true) continue
+    const raw = (c as any).text ?? (c as any).description
+    const text = typeof raw === 'string' ? raw.replace(/\s+/g, ' ').trim() : ''
+    if (text) lines.push(`${CORRECTED_AFTER_MATCH}: ${text}`)
+  }
+  return lines
+}

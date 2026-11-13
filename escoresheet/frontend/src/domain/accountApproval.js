@@ -14,6 +14,7 @@
  * and never prints on the PDF.
  */
 import { OFFICIAL_ROLES, hasOfficial } from './officials.js'
+import { APPROVAL_RESOURCE } from '../utils/syncIds.js'
 
 /** MatchEnd role -> server slot. */
 export const ROLE_TO_SLOT = Object.freeze({ ref1: 'referee1', ref2: 'referee2', scorer: 'scorer' })
@@ -419,6 +420,40 @@ export function syncJobTouchesMatch(job, seedKey) {
 /** The jobs of this match that the server has not received yet. */
 export function pendingSyncJobsFor(jobs, seedKey) {
   return (Array.isArray(jobs) ? jobs : []).filter(j => PENDING_SYNC_STATUSES.includes(j?.status) && syncJobTouchesMatch(j, seedKey))
+}
+
+/**
+ * The sync jobs that undo the match's account approvals on the server (DELETE
+ * /api/approvals/:id, useSyncQueue): the sheet changed after they were given
+ * (a correction, a remarks change at the match end). Queued, so an undo made
+ * offline still reaches the server; the server's rows otherwise came back
+ * with the next refresh and completed their slots again (the result key
+ * covers the set scores only). None for a test match, a match without a
+ * seed_key or one the server has closed (its approvals are frozen there).
+ */
+export function approvalUndoJobs(match, now = new Date()) {
+  if (!match?.seed_key || match.test === true || match.closed_at) return []
+  return Object.values(match.accountApprovals || {})
+    .filter(r => r?.id)
+    .map(r => ({
+      resource: APPROVAL_RESOURCE,
+      action: 'undo',
+      payload: { id: r.id, match_external_id: match.seed_key },
+      ts: now.toISOString(),
+      status: 'queued'
+    }))
+}
+
+/**
+ * The ids of the approvals whose undo has not gone through yet (queued, on
+ * its way, waiting out a backoff or refused): a refresh from the server must
+ * not bring them back.
+ */
+export function approvalIdsBeingUndone(jobs) {
+  return new Set((Array.isArray(jobs) ? jobs : [])
+    .filter(j => j?.resource === APPROVAL_RESOURCE && j.action === 'undo' && ['queued', 'sending', 'error', 'failed'].includes(j.status))
+    .map(j => j.payload?.id)
+    .filter(Boolean))
 }
 
 /**

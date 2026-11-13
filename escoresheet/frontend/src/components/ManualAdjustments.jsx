@@ -7,11 +7,12 @@ import { randomUuid } from '../utils/deviceId'
 import { useAlert } from '../contexts/AlertContext'
 import { swapTeamDesignation as swapTeamDesignationPatch } from '../domain/coinToss'
 import { mergeOfficialsEdits } from '../domain/officials'
-import { approvedSheetChanged } from '../domain/accountApproval'
-import { clearedPostMatchSignatures } from '../domain/matchEnd'
+import { approvalUndoJobs } from '../domain/accountApproval'
+import { clearedPostMatchSignatures, isMatchOverStatus } from '../domain/matchEnd'
 import { signaturesPayload } from '../domain/signatureEdits'
-import { matchInfoFromLocal, queueMatchUpdate } from '../db/matchRepository'
-import { approvalsApi } from '../lib/accountApi'
+import { matchInfoFromLocal, queueMatchUpdate, toCloudPlayers } from '../db/matchRepository'
+import { buildSetEndMatchPayload } from '../utils/eventSync'
+import { signedAfterMatch } from '../services/corrections/applyCorrectionPlan'
 import { Button } from '../ui/Button.jsx'
 import { confirmDialog } from '../ui/uiStore.js'
 import { DateField, DateTimeField } from '../ui/DateField.jsx'
@@ -220,17 +221,38 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
     return change
   }, [])
 
+  // A field edited in place (match info, a team, an official): one entry per
+  // field, from the value before the first edit to the last one; typed back
+  // to where it was, the entry goes (one entry per keystroke filled the log)
+  const recordFieldChange = useCallback((category, field, before, after, label) => {
+    setChanges(prev => {
+      const i = prev.findIndex(c => c.category === category && c.field === field && c.inPlace)
+      const from = i >= 0 ? prev[i].before : before
+      const rest = i >= 0 ? prev.filter((_, j) => j !== i) : prev
+      if ((from ?? '') === (after ?? '')) return rest
+      return [...rest, {
+        ts: new Date().toISOString(),
+        category,
+        field,
+        before: from,
+        after,
+        description: `${label}: ${from || '(empty)'} → ${after || '(empty)'}`,
+        inPlace: true
+      }]
+    })
+  }, [])
+
   // ==================== MATCH INFO FUNCTIONS ====================
   const updateMatchInfo = useCallback((field, value) => {
     setEditedMatch(prev => {
       if (!prev) return prev
       const oldValue = prev[field]
       if (oldValue !== value) {
-        recordChange('match', field, oldValue, value, `Match ${field}: ${oldValue || '(empty)'} → ${value || '(empty)'}`)
+        recordFieldChange('match', field, oldValue, value, t(`manualAdjustmentsEditor.${field}`, `Match ${field}`))
       }
       return { ...prev, [field]: value }
     })
-  }, [recordChange])
+  }, [recordFieldChange, t])
 
   // ==================== TEAM FUNCTIONS ====================
   const updateTeam = useCallback((field, value, isHome) => {
@@ -240,11 +262,11 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
       if (!prev) return prev
       const oldValue = prev[field]
       if (oldValue !== value) {
-        recordChange('team', field, oldValue, value, `${teamLabel} team ${field}: ${oldValue || '(empty)'} → ${value || '(empty)'}`)
+        recordFieldChange('team', `${teamLabel.toLowerCase()}.${field}`, oldValue, value, `${teamLabel} team ${field}`)
       }
       return { ...prev, [field]: value }
     })
-  }, [recordChange])
+  }, [recordFieldChange])
 
   // Swap only the A/B designation (which team is A on the scoresheet): a
   // coin toss correction, nothing moves (owner's decision, 2026-10-09).
@@ -352,11 +374,11 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
     setEditedOfficials(prev => {
       const oldValue = prev[role]?.[field]
       if (oldValue !== value) {
-        recordChange('official', `${role}.${field}`, oldValue, value, `${role} ${field}: ${oldValue || '(empty)'} → ${value || '(empty)'}`)
+        recordFieldChange('official', `${role}.${field}`, oldValue, value, `${role} ${field}`)
       }
       return { ...prev, [role]: { ...prev[role], [field]: value } }
     })
-  }, [recordChange])
+  }, [recordFieldChange])
 
   // ==================== SAVE FUNCTION ====================
   // Every event deleted or edited by the save is recorded as a manual
@@ -367,21 +389,30 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
       return
     }
 
+    // After the first post-match signature or account approval every change
+    // of the sheet asks first, then clears them all (they certified the old
+    // sheet), as a correction does (services/corrections/applyCorrectionPlan)
+    const signedMatch = await db.matches.get(matchId)
+    const sheetChanged = signedAfterMatch(signedMatch)
+    if (sheetChanged) {
+      const ok = await confirmDialog({
+        title: t('matchEnd.signedSheetChange.title'),
+        message: t('matchEnd.signedSheetChange.editor'),
+        confirmLabel: t('matchEnd.signedSheetChange.confirm'),
+        cancelLabel: t('corrections.action.cancel', 'Cancel'),
+        tone: 'danger'
+      })
+      if (!ok) return
+    }
+
     setSaving(true)
     // the Swap A/B fields written (for the cloud coin toss)
     let designationSaved = null
     try {
-      // What the officials approved: the team names (set scores are only
-      // changed through Corrections, which handles signatures itself).
-      // Taken before the writes below re-run the live query.
-      const originalSets = data?.sets || []
-      const sheetChanged = approvedSheetChanged({
-        originalSets,
-        editedSets: originalSets,
-        originalTeams: [data?.homeTeam, data?.awayTeam],
-        editedTeams: [editedHomeTeam, editedAwayTeam]
-      })
-      const priorApprovals = Object.values(data?.match?.accountApprovals || {}).filter(r => r?.id)
+      // made at the match end: printed in REMARKS as "Corrected after the
+      // match" (scoresheet_pdf/utils/sheetRemarks correctionRemarks)
+      const afterMatch = isMatchOverStatus(signedMatch?.status)
+      const logged = changes.map(({ inPlace, ...c }) => (afterMatch ? { ...c, afterMatch: true } : c))
 
       // Update teams in IndexedDB (including bench officials)
       if (editedHomeTeam?.id) {
@@ -416,8 +447,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           city: editedMatch.city,
           league: editedMatch.league,
           championshipType: editedMatch.championshipType,
-          gameN: editedMatch.gameN,
-          scheduledAt: editedMatch.scheduledAt,
+          // the game number and the date are fixed after the match: the
+          // official PDF is filed under the date the server has
+          ...(afterMatch ? {} : { gameN: editedMatch.gameN, scheduledAt: editedMatch.scheduledAt }),
           match_type_1: editedMatch.match_type_1,
           match_type_2: editedMatch.match_type_2,
           match_type_3: editedMatch.match_type_3,
@@ -430,7 +462,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           officials: mergeOfficialsEdits(data?.match?.officials, editedOfficials),
           bench_home: editedHomeBench,
           bench_away: editedAwayBench,
-          manualChanges: [...existingChanges, ...changes]
+          manualChanges: [...existingChanges, ...logged]
         })
       }
 
@@ -465,15 +497,11 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
         await db.players.delete(playerId)
       }
 
-      // The result or the teams changed: the post-match signatures and the
-      // account approvals certified the old sheet. They go, as with "Reopen
-      // last set"; online, the server approvals are undone as well (they would
-      // read as stale anyway once the corrected sets arrive).
+      // Signed or approved: the post-match signatures and the account
+      // approvals go, here and (queued, also offline) on the server
       if (sheetChanged) {
         await db.matches.update(matchId, clearedPostMatchSignatures())
-        if (priorApprovals.length && !data?.match?.closed_at && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
-          await Promise.allSettled(priorApprovals.map(r => approvalsApi.undo(r.id)))
-        }
+        for (const job of approvalUndoJobs(signedMatch)) await db.sync_queue.add(job)
       }
 
       // Sync to Supabase if available
@@ -504,30 +532,25 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
     if (!editedMatch?.seed_key) return
 
     try {
-      // Build set results for Supabase
-      const setResults = (data?.sets || []).map(s => ({
-        index: s.index,
-        home_points: s.homePoints,
-        away_points: s.awayPoints,
-        finished: s.finished
-      }))
+      // The finished sets, as every other writer sends them ([{ set, home,
+      // away }], eventSync): the livescore and the official match read them
+      const { set_results: setResults } = buildSetEndMatchPayload({
+        seedKey: editedMatch.seed_key,
+        finishedSets: (await db.sets.where('matchId').equals(matchId).toArray()).filter(s => s.finished)
+      })
 
-      // Build players arrays for Supabase
-      const playersHome = editedHomePlayers.map(p => ({
-        number: p.number,
-        first_name: p.firstName || p.name?.split(' ')[0] || '',
-        last_name: p.lastName || p.name?.split(' ').slice(1).join(' ') || '',
-        libero: p.libero || false,
-        is_captain: p.isCaptain || false
-      }))
-
-      const playersAway = editedAwayPlayers.map(p => ({
-        number: p.number,
-        first_name: p.firstName || p.name?.split(' ')[0] || '',
-        last_name: p.lastName || p.name?.split(' ').slice(1).join(' ') || '',
-        libero: p.libero || false,
-        is_captain: p.isCaptain || false
-      }))
+      // The roster as stored now, in the shape every writer uses (with the
+      // dates of birth and the LFP marks: the server replaces the arrays)
+      const rosterOf = async (teamId) => {
+        if (!teamId) return []
+        const players = (await db.players.where('teamId').equals(teamId).toArray())
+          .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
+          .map(p => (p.firstName || p.lastName || !p.name ? p
+            : { ...p, firstName: p.name.split(' ')[0], lastName: p.name.split(' ').slice(1).join(' ') }))
+        return toCloudPlayers(players)
+      }
+      const playersHome = await rosterOf(editedHomeTeam?.id ?? data?.homeTeam?.id)
+      const playersAway = await rosterOf(editedAwayTeam?.id ?? data?.awayTeam?.id)
 
       // Build teams for Supabase
       const homeTeamData = editedHomeTeam ? {
@@ -594,6 +617,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
   ]
   // An approved / final match is read-only here: reopen it at the match end first
   const closed = ['approved', 'final'].includes(data.match?.status)
+  // The game number and the date are fixed after the match: the official
+  // PDF is filed under the date the server has, which this editor does not send
+  const matchOver = isMatchOverStatus(data.match?.status)
 
   // Teams and Match info are saved together with "Save changes"; leaving
   // with unsaved edits asks first (corrections are saved one by one)
@@ -624,11 +650,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
       setEditedHomePlayers(follow)
       setEditedAwayPlayers(follow)
     }
-    if (!result?.signaturesCleared) return
-    const prior = Object.values(data?.match?.accountApprovals || {}).filter(r => r?.id)
-    if (prior.length && !data?.match?.closed_at && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
-      await Promise.allSettled(prior.map(r => approvalsApi.undo(r.id)))
-    }
+    // the account approvals' undo is queued by the correction itself
+    // (applyCorrectionPlan approvalUndoJobs), offline too
   }
   const notifyScoresheet = () => {
     try {
@@ -957,8 +980,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   <label style={labelStyle}>{t('manualAdjustmentsEditor.gameNumber', 'Game number')}</label>
                   <input
                     type="text"
-                    value={editedMatch.gameN || editedMatch.gameNumber || ''}
+                    value={editedMatch.gameN || editedMatch.gameNumber || editedMatch.game_n || ''}
                     onChange={(e) => updateMatchInfo('gameN', e.target.value)}
+                    disabled={matchOver}
                     aria-label={t('manualAdjustmentsEditor.gameNumber', 'Game number')}
                     style={{ ...inputStyle, width: '100%' }}
                   />
@@ -1019,6 +1043,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                     size="bare"
                     value={formatDateTimeLocal(editedMatch.scheduledAt)}
                     onChange={(v) => updateMatchInfo('scheduledAt', v ? parseLocalToISO(v) : null)}
+                    disabled={matchOver}
                     aria-label={t('manualAdjustmentsEditor.scheduledDateTime', 'Scheduled date/time')}
                     style={{ ...inputStyle, width: '100%' }}
                   />
