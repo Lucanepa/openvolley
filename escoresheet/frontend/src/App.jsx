@@ -98,7 +98,7 @@ import ManageConsole from './components/manage/ManageConsole'
 import ManagerSiteLink from './components/ManagerSiteLink'
 import { OPEN_MANAGE_EVENT, OPEN_RESTORE_EVENT, openRestore, restorePrefill } from './utils/manageNav'
 import { relayMatchKey, relayMatchPayload, liveStateNow } from './utils/serverDataSync'
-import { needsEventCheck, pickCurrentMatch, newOfficialMatchStep } from './utils/currentMatch'
+import { needsEventCheck, pickCurrentMatch, newOfficialMatchStep, OFFICIAL_MATCH_KEPT_STEPS } from './utils/currentMatch'
 import { isRelayErrorFor, mayPublishMatchData, relayConnectionStatus, relayEvents, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
 import { PHONE_MAX_WIDTH, isPhoneScreen, phoneLayoutKept } from './components/scoreboard/phoneLayout'
 import { useSystemBarsHidden } from './utils/nativeSystemBars'
@@ -2675,21 +2675,44 @@ export default function App() {
     setDeletePinError('')
   }
 
+  // utils/currentMatch newOfficialMatchStep for `match`, with its writes the
+  // server does not have yet (deviceSelfCheck unsentOfMatch) among `jobs`
+  function officialMatchStep(match, jobs) {
+    const unsent = match && match.test !== true ? unsentOfMatch(jobs, match.seed_key) : { changes: 0, events: 0 }
+    const step = newOfficialMatchStep(match, matchStatus?.status, {
+      closedCopy: isStaleClosedCopy(match) || isKnownClosedOnServer(match),
+      movedCopy: isScorerMoved(match),
+      unsent: unsent.changes
+    })
+    return { step, unsent }
+  }
+
+  // Why the official match stays, what to do first, and how many of its
+  // changes have not reached the server (Delete match names them too)
+  function officialMatchKeptMessage(step, unsent) {
+    const why = step === 'ended'
+      ? t('home.modals.officialMatchNotClosed', 'The official match on this device has ended and is not closed. Continue it and close it with "Close match" on its match end, or delete it with "Delete match", before creating a new official match.')
+      : step === 'unsent'
+        ? t('home.modals.officialMatchUnsent', 'The official match on this device has changes the server does not have yet. Go online so they can be sent, or delete it with "Delete match", before creating a new official match.')
+        : t('home.modals.officialMatchStillRecording', 'An official match is still recording on this device. Continue it, or delete it with "Delete match", before creating a new official match.')
+    return unsent?.changes > 0 ? `${why} ${t('home.modals.officialMatchUnsentCount', { count: unsent.changes })}` : why
+  }
+
   async function createNewOfficialMatch() {
     // utils/currentMatch newOfficialMatchStep. An official match being
-    // recorded is not replaced; a test or easy match is, after the question
-    // (this button did nothing at all while one was being recorded). A copy
-    // closed on the server or scored on another device never blocks it and
-    // is never deleted on the way: it stays, read-only, on the home screen's
-    // list (the owner, 2026-10-27). Unconfirmed matches (user started but
-    // didn't click "Create Match") are silently deleted.
-    const step = newOfficialMatchStep(currentMatch, matchStatus?.status, {
-      closedCopy: isStaleClosedCopy(currentMatch) || isKnownClosedOnServer(currentMatch),
-      movedCopy: isScorerMoved(currentMatch)
-    })
-    if (step === 'recording') {
+    // recorded, one that ended or was approved here and is not closed, and
+    // one with writes the server does not have yet are not replaced: the
+    // scorer is told to close or delete it first (Delete match asks for the
+    // game PIN and names what it loses). A test or easy match is replaced,
+    // after the question (this button did nothing at all while one was being
+    // recorded). A copy closed on the server or scored on another device
+    // never blocks it and is never deleted on the way: it stays, read-only,
+    // on the home screen's list (the owner, 2026-10-27). Unconfirmed matches
+    // (user started but didn't click "Create Match") are silently deleted.
+    const { step, unsent } = officialMatchStep(currentMatch, currentMatch ? await db.sync_queue.toArray() : [])
+    if (OFFICIAL_MATCH_KEPT_STEPS.includes(step)) {
       setPendingOfficialGame(null)
-      setAlertModal(t('home.modals.officialMatchStillRecording', 'An official match is still recording on this device. Continue it, or delete it with "Delete match", before creating a new official match.'))
+      setAlertModal(officialMatchKeptMessage(step, unsent))
       return
     }
     if (step === 'replace') {
@@ -2729,7 +2752,17 @@ export default function App() {
 
     // Delete current match first
     if (currentMatch) {
-      await db.transaction('rw', db.matches, db.sets, db.events, db.event_history, db.players, db.teams, db.sync_queue, db.match_setup, async () => {
+      const kept = await db.transaction('rw', db.matches, db.sets, db.events, db.event_history, db.players, db.teams, db.sync_queue, db.match_setup, async () => {
+        // Asked again at Yes, in the deletion's own transaction: since the
+        // question the match may have started, ended or queued a write the
+        // server does not have. Then it stays with its jobs, and the scorer
+        // is told why (createNewOfficialMatch); a copy since found closed on
+        // the server or scored on another device stays too.
+        const jobs = await db.sync_queue.toArray()
+        const { step, unsent } = officialMatchStep(await db.matches.get(currentMatch.id), jobs)
+        if (OFFICIAL_MATCH_KEPT_STEPS.includes(step)) return { step, unsent }
+        if (step !== 'replace' && step !== 'discard') return null
+
         console.log('[New Match] Deleting existing match:', currentMatch.id)
 
         // Delete sets
@@ -2738,24 +2771,31 @@ export default function App() {
         // Delete events - use direct delete for reliability
         await wipeMatchEvents(db, currentMatch.id, { dropHistory: true })
 
+        // A team row another local match still uses stays with its players
+        // (as Delete match keeps it: confirmDeleteMatch sharedTeam)
+        const sharedTeam = async (teamId) => (await db.matches.filter(m => m.id !== currentMatch.id && (m.homeTeamId === teamId || m.awayTeamId === teamId)).count()) > 0
+        const keepHomeTeam = currentMatch.homeTeamId ? await sharedTeam(currentMatch.homeTeamId) : false
+        const keepAwayTeam = currentMatch.awayTeamId ? await sharedTeam(currentMatch.awayTeamId) : false
+
         // Delete players
-        if (currentMatch.homeTeamId) {
+        if (currentMatch.homeTeamId && !keepHomeTeam) {
           await db.players.where('teamId').equals(currentMatch.homeTeamId).delete()
         }
-        if (currentMatch.awayTeamId) {
+        if (currentMatch.awayTeamId && !keepAwayTeam) {
           await db.players.where('teamId').equals(currentMatch.awayTeamId).delete()
         }
 
         // Delete teams
-        if (currentMatch.homeTeamId) {
+        if (currentMatch.homeTeamId && !keepHomeTeam) {
           await db.teams.delete(currentMatch.homeTeamId)
         }
-        if (currentMatch.awayTeamId) {
+        if (currentMatch.awayTeamId && !keepAwayTeam) {
           await db.teams.delete(currentMatch.awayTeamId)
         }
 
-        // This match's unsent jobs; the other matches on the device keep theirs
-        const matchJobs = jobsOfMatch(await db.sync_queue.toArray(), currentMatch.seed_key)
+        // This match's jobs, none of them left to send (an unsent one keeps
+        // the match, above); the other matches on the device keep theirs
+        const matchJobs = jobsOfMatch(jobs, currentMatch.seed_key)
         if (matchJobs.length > 0) await db.sync_queue.bulkDelete(matchJobs.map(j => j.id))
 
         // Delete match setup draft
@@ -2764,7 +2804,14 @@ export default function App() {
         // Delete match
         await db.matches.delete(currentMatch.id)
         console.log('[New Match] Existing match deleted')
+        return null
       })
+      if (kept) {
+        setNewMatchModal(null)
+        setPendingOfficialGame(null)
+        setAlertModal(officialMatchKeptMessage(kept.step, kept.unsent))
+        return
+      }
     }
 
     setNewMatchModal(null)
