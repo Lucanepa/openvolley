@@ -10,6 +10,7 @@
  * flow: a failure to queue is logged and the local write stands.
  */
 import { eventExtId, setExtId } from './syncIds'
+import { syncJobsForSets } from '../domain/corrections'
 
 // Set update fields that only carry the running score: a newer score of the
 // same set makes an older, still queued one pointless.
@@ -38,6 +39,73 @@ export function buildEventInsertJob(event, match) {
     },
     ts: Date.now(),
     status: 'queued'
+  }
+}
+
+/**
+ * sync_queue row updating the cloud row of one set: by its namespaced id and
+ * with its match key, like every other set job. A bare local id carried no
+ * match key until a pass rewrote it: per-match order, the approval's wait
+ * (closingMustWait) and the queue clean-ups did not see the job, and it was
+ * dropped when the local set was gone by then (Close match).
+ * @param {{ seed_key: string }} match the local match
+ * @param {number} setId local Dexie id of the set
+ * @param {object} fields the cloud columns to write (home_points, finished, ...)
+ */
+export function setUpdateJob(match, setId, fields, ts = new Date().toISOString()) {
+  return {
+    resource: 'set',
+    action: 'update',
+    payload: { ...fields, external_id: setExtId(match.seed_key, setId), match_id: match.seed_key },
+    ts,
+    status: 'queued'
+  }
+}
+
+/** sync_queue row deleting the cloud row of a set deleted on the device. */
+export function setDeleteJob(seedKey, setId, ts = new Date().toISOString()) {
+  return {
+    resource: 'set',
+    action: 'delete',
+    payload: { external_id: setExtId(seedKey, setId), match_id: seedKey },
+    ts,
+    status: 'queued'
+  }
+}
+
+/**
+ * Sets deleted on the device (a set end undone, Reopen set, a forfeit
+ * reversed): their jobs not delivered go, and their cloud rows are deleted.
+ * A finished set left in the cloud counted in the result the account
+ * approval checks (409 OV_RESULT_NOT_SYNCED at every try) and came back on
+ * the next import. Call it after the local delete. Official matches only.
+ * Never throws.
+ *
+ * The jobs that go: the queued ones, and the parked ones ('error' waiting
+ * out a backoff, 'failed' refused). A refused insert kept would hold the
+ * delete behind it for good (the queue keeps one set's jobs in order), and
+ * the delete the approval (closingMustWait). The delete by the namespaced id
+ * removes whatever of them reached the cloud. It is queued whatever is left:
+ * a queued job may be on its way in the running pass right now (it stays
+ * 'queued' until answered), and the delete then goes after it.
+ * @param {object} db the app's Dexie database
+ * @param {{ seed_key?: string, test?: boolean }} match the local match
+ * @param {Iterable<number>} setIds local ids of the deleted sets
+ * @returns {Promise<number>} delete jobs queued
+ */
+export async function queueSetDeletes(db, match, setIds) {
+  const ids = [...(setIds || [])].filter(id => id != null)
+  if (ids.length === 0 || !match?.seed_key || match.test) return 0
+  try {
+    const unsent = await db.sync_queue.where('status').anyOf('queued', 'error', 'failed').toArray()
+    const stale = syncJobsForSets(unsent, ids, match.seed_key)
+    if (stale.length > 0) await db.sync_queue.bulkDelete(stale.map(j => j.id))
+    const ts = new Date().toISOString()
+    for (const id of ids) await db.sync_queue.add(setDeleteJob(match.seed_key, id, ts))
+    return ids.length
+  } catch (err) {
+    console.warn('[eventSync] could not queue the deleted sets', match.seed_key, err?.message)
+    return 0
   }
 }
 

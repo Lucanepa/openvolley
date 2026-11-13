@@ -3990,7 +3990,12 @@
     },
     "removeLocalOnly": "Viene eliminata solo la copia di questo dispositivo. La versione ufficiale resta sul server.",
     "removeMovedLocalOnly": "Viene eliminata solo la copia di questo dispositivo. La partita resta sul server e sul dispositivo che la referta.",
-    "restoreRefused": "Questa partita è chiusa sul server: questo backup non può più essere ripristinato. Carica la versione ufficiale con il numero e il PIN della partita."
+    "restoreRefused": "Questa partita è chiusa sul server: questo backup non può più essere ripristinato. Carica la versione ufficiale con il numero e il PIN della partita.",
+    "restoreNotSent": "Non sincronizzata: il server ha rifiutato la copia della partita {{game}} inviata da questo dispositivo ({{reason}}), quindi nulla di più recente di questa partita gli arriva. Continua a registrare: la partita è al sicuro su questo dispositivo. Contatta il supporto.",
+    "restoreNotSentNoGame": "Non sincronizzata: il server ha rifiutato la copia di questa partita inviata da questo dispositivo ({{reason}}), quindi nulla di più recente gli arriva. Continua a registrare: la partita è al sicuro su questo dispositivo. Contatta il supporto.",
+    "restoreNotSentParts": "Il supporto potrebbe chiederti di inviarla in più parti.",
+    "sendInParts": "Invia in più parti",
+    "sendingInParts": "Invio in più parti"
   },
   "androidUpdate": {
     "available": "OpenVolley {{version}} è disponibile",

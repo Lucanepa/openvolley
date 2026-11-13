@@ -187,7 +187,7 @@ describe('event history hooks', () => {
     await withActivityContext({ reason: 'undo' }, () => db.events.bulkDelete([id]))
     await settle()
     const queued = await db.sync_queue.where('status').equals('queued').toArray()
-    const stale = syncJobsForEvents(queued, [id])
+    const stale = syncJobsForEvents(queued, [id], SEED)
     await db.sync_queue.bulkDelete(stale.map(j => j.id))
     const left = await db.sync_queue.toArray()
     expect(left.map(j => j.action)).toEqual(['void'])

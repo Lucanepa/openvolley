@@ -127,39 +127,54 @@ export function localIdOfExtId(externalId, kind) {
 }
 
 /**
- * Queued (not yet sent) INSERT jobs of the given events — to be dropped when
- * the events are deleted locally, so the cloud never receives a phantom row.
- * Event ids are local Dexie ids; the jobs carry them namespaced
- * (`${seedKey}:e:${id}`) or, when queued before that, bare.
+ * Does the job's external_id name one of `ids` (local Dexie ids of `kind`)
+ * of the match `seedKey`? Matched by the whole id, never by the local number
+ * alone: local ids are unique on a device only until a restore by game PIN
+ * keeps the cloud's, and the unsent jobs of another match (closed here, its
+ * rows gone) can carry the same numbers. A bare id (queued before ids were
+ * namespaced) only when the job names that match.
+ */
+function namesLocalRowOf(job, kind, ids, seedKey) {
+  if (!seedKey) return false
+  const externalId = job.payload?.external_id
+  const parsed = parseExtId(externalId)
+  if (parsed) return parsed.kind === kind && parsed.seedKey === seedKey && ids.has(String(parsed.localId))
+  const bare = localIdOfExtId(externalId, kind)
+  return bare != null && job.payload?.match_id === seedKey && ids.has(bare)
+}
+
+/**
+ * Queued (not yet sent) INSERT jobs of the given events of the match
+ * `seedKey` — to be dropped when the events are deleted locally, so the
+ * cloud never receives a phantom row. Event ids are local Dexie ids; the
+ * jobs carry them namespaced (`${seedKey}:e:${id}`) or, when queued before
+ * that, bare with the match key in match_id.
  * Only inserts: the void / edit / restore jobs the deletion itself queued
  * (db/eventHistory) carry the event's history to the server and must stay.
  * @param {Array} queuedJobs sync_queue rows with status 'queued'
  * @param {Iterable} eventIds
+ * @param {string} seedKey the match's seed_key (none: nothing is picked)
  * @returns {Array} the jobs to delete
  */
-export function syncJobsForEvents(queuedJobs, eventIds) {
+export function syncJobsForEvents(queuedJobs, eventIds, seedKey) {
   const ids = new Set([...(eventIds || [])].map(String))
-  return (queuedJobs || []).filter(j => {
-    if (!j || j.resource !== 'event' || j.action !== 'insert') return false
-    const localId = localIdOfExtId(j.payload?.external_id, 'event')
-    return localId != null && ids.has(localId)
-  })
+  return (queuedJobs || []).filter(j =>
+    !!j && j.resource === 'event' && j.action === 'insert' && namesLocalRowOf(j, 'event', ids, seedKey))
 }
 
 /**
- * Queued (not yet sent) sync jobs of the given local sets (insert or update) —
- * to be dropped when the sets are deleted locally.
+ * Queued (not yet sent) sync jobs of the given local sets of the match
+ * `seedKey` (insert or update) — to be dropped when the sets are deleted
+ * locally.
  * @param {Array} queuedJobs sync_queue rows with status 'queued'
  * @param {Iterable} setIds
+ * @param {string} seedKey the match's seed_key (none: nothing is picked)
  * @returns {Array} the jobs to delete
  */
-export function syncJobsForSets(queuedJobs, setIds) {
+export function syncJobsForSets(queuedJobs, setIds, seedKey) {
   const ids = new Set([...(setIds || [])].map(String))
-  return (queuedJobs || []).filter(j => {
-    if (!j || j.resource !== 'set') return false
-    const localId = localIdOfExtId(j.payload?.external_id, 'set')
-    return localId != null && ids.has(localId)
-  })
+  return (queuedJobs || []).filter(j =>
+    !!j && j.resource === 'set' && j.action !== 'delete' && namesLocalRowOf(j, 'set', ids, seedKey))
 }
 
 /**

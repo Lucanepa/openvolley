@@ -54,7 +54,8 @@ import { Input } from '../ui/Input.jsx'
 import AccountApprovalDialog from './AccountApprovalDialog'
 import { askConfirm } from '../utils/askConfirm.js'
 import { getCloudApiUrl } from '../utils/backendConfig'
-import { syncJobsForEvents, syncJobsForSets } from '../domain/corrections'
+import { syncJobsForEvents } from '../domain/corrections'
+import { queueSetDeletes, setUpdateJob } from '../utils/eventSync'
 import { FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, ChartIcon } from './icons'
 import { X, Check, AlertTriangle, ShieldCheck, PenLine, Eraser, Info, Smartphone } from 'lucide-react'
 import { approvalSignatureSources, phoneSignContext, signatureUpdate, signedOnPhone, SLOT_OF_ROLE } from '../domain/phoneSignature'
@@ -1672,23 +1673,16 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         for (const r of forfeitPlan.restoreSets) {
           await db.sets.update(r.id, { homePoints: r.homePoints, awayPoints: r.awayPoints, finished: false, endTime: null })
         }
-        // Never send the removed rows to the cloud
+        // Never send the removed rows to the cloud; the created sets already
+        // there are deleted (a finished one counted in the approved result)
         const deletedSetIds = new Set(forfeitPlan.deleteSetIds.map(String))
         const queued = await db.sync_queue.where('status').equals('queued').toArray()
-        const staleJobs = [
-          ...syncJobsForEvents(queued, deleteIds),
-          ...syncJobsForSets(queued, forfeitPlan.deleteSetIds)
-        ]
+        const staleJobs = syncJobsForEvents(queued, deleteIds, match?.seed_key)
         if (staleJobs.length > 0) await db.sync_queue.bulkDelete(staleJobs.map(j => j.id))
+        await queueSetDeletes(db, match, forfeitPlan.deleteSetIds)
         if (!match?.test && match?.seed_key) {
           for (const r of forfeitPlan.restoreSets) {
-            await db.sync_queue.add({
-              resource: 'set',
-              action: 'update',
-              payload: { external_id: String(r.id), home_points: r.homePoints, away_points: r.awayPoints, finished: false, end_time: null },
-              ts: new Date().toISOString(),
-              status: 'queued'
-            })
+            await db.sync_queue.add(setUpdateJob(match, r.id, { home_points: r.homePoints, away_points: r.awayPoints, finished: false, end_time: null }))
           }
         }
         // The set to reopen is the forfeit set, or else the last remaining set
@@ -1737,17 +1731,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
       // Queue sync to Supabase for the set update
       if (match?.seed_key) {
-        await db.sync_queue.add({
-          resource: 'set',
-          action: 'update',
-          payload: {
-            external_id: String(lastSet.id),
-            finished: false,
-            end_time: null
-          },
-          ts: new Date().toISOString(),
-          status: 'queued'
-        })
+        await db.sync_queue.add(setUpdateJob(match, lastSet.id, { finished: false, end_time: null }))
 
         // Queue sync for match status update
         await db.sync_queue.add({

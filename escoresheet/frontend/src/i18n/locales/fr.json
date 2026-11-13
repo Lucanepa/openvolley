@@ -3984,7 +3984,12 @@
     },
     "removeLocalOnly": "Seule la copie de cet appareil est supprimée. La version officielle reste sur le serveur.",
     "removeMovedLocalOnly": "Seule la copie de cet appareil est supprimée. Le match reste sur le serveur et sur l'appareil qui le tient.",
-    "restoreRefused": "Ce match est clôturé sur le serveur : cette sauvegarde ne peut plus être restaurée. Charge la version officielle avec le numéro et le PIN du match."
+    "restoreRefused": "Ce match est clôturé sur le serveur : cette sauvegarde ne peut plus être restaurée. Charge la version officielle avec le numéro et le PIN du match.",
+    "restoreNotSent": "Non synchronisé : le serveur a refusé la copie du match {{game}} envoyée par cet appareil ({{reason}}), donc rien de plus récent de ce match ne lui parvient. Continue à saisir : le match est en sécurité sur cet appareil. Contacte le support.",
+    "restoreNotSentNoGame": "Non synchronisé : le serveur a refusé la copie de ce match envoyée par cet appareil ({{reason}}), donc rien de plus récent ne lui parvient. Continue à saisir : le match est en sécurité sur cet appareil. Contacte le support.",
+    "restoreNotSentParts": "Le support te demandera peut-être de l'envoyer en plusieurs parties.",
+    "sendInParts": "Envoyer en plusieurs parties",
+    "sendingInParts": "Envoi en plusieurs parties"
   },
   "androidUpdate": {
     "available": "OpenVolley {{version}} est disponible",

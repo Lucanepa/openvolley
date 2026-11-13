@@ -207,6 +207,7 @@ describe('pgQuery and matchRestore: scorer access, closing, official games', { s
       }
       closed(await q('sets', 'insert', { data: setOf(m, 2) }, asScorer(scorer)))
       closed(await q('sets', 'update', { data: { home_points: 1 }, filters: [eq('match_id', m.id)] }, asScorer(scorer)))
+      closed(await q('sets', 'delete', { filters: [eq('external_id', setOf(m, 1).external_id)] }, asScorer(scorer)))
       closed(await q('events', 'upsert', { data: eventOf(m, 1), onConflict: 'external_id' }, asScorer(scorer)))
       closed(await q('matches', 'update', { data: { status: 'ended' }, filters: [eq('id', m.id)] }, asScorer(scorer)))
       closed(await q('matches', 'update', { data: { home_team: { name: 'X' } }, filters: [eq('id', m.id)] }, asAdmin(admin)))

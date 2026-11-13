@@ -50,7 +50,7 @@ import { setExtId, eventExtId } from '../utils/syncIds'
 import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
 import { queueSetStartTimeSync } from '../utils/setStartTimeSync'
 import { ACCESS_CHANGED_EVENT } from '../lib/access'
-import { queueEventSync, queueSetScoreSync, queueSetReopenSync, buildSetEndMatchPayload, setLiveStateDirty, isLiveStateDirty, isLiveStateErrorWorthAlert, isLiveStateRefusal, isLiveStateRefused, markLiveStateRefused, clearLiveStateRefused } from '../utils/eventSync'
+import { queueEventSync, queueSetScoreSync, queueSetReopenSync, queueSetDeletes, setUpdateJob, buildSetEndMatchPayload, setLiveStateDirty, isLiveStateDirty, isLiveStateErrorWorthAlert, isLiveStateRefusal, isLiveStateRefused, markLiveStateRefused, clearLiveStateRefused } from '../utils/eventSync'
 import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from '../utils/logger'
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
 import { defaultSetStartTime, actualStartRemark, startsFromSchedule, startScheduleOf, typedStartNear } from '../utils/setStartTime'
@@ -69,7 +69,7 @@ import { countdownAnchor, secondsLeft } from '../utils/countdownClock'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
 import { playerReplacedByLibero } from '../domain/liberos'
 import { planSubstitutionDeletion, countRegularSubstitutions, MAX_SUBSTITUTIONS_PER_SET } from '../domain/substitutions'
-import { decisionChangeUndoRecord, planDecisionChangeReversal, planPointRemoval, syncJobsForEvents, syncJobsForSets, scoreAfterUndo } from '../domain/corrections'
+import { decisionChangeUndoRecord, planDecisionChangeReversal, planPointRemoval, syncJobsForEvents, scoreAfterUndo } from '../domain/corrections'
 import { validateReopenedRoster, referencedPlayerNumbers, isShirtNumber } from '../domain/roster'
 import { planRenumberPlayers, errorText as correctionErrorText } from '../domain/manualCorrections'
 import { applyCorrectionPlan } from '../services/corrections/applyCorrectionPlan'
@@ -7493,8 +7493,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const rows = (eventsToRemove || []).filter(e => e && e.id != null)
     if (rows.length === 0) return
     await withActivityContext({ reason: currentActivityContext()?.reason || reason }, () => db.events.bulkDelete(rows.map(e => e.id)))
+    // (by the whole external id: another match's unsent jobs can carry the same local ids)
+    const seedKey = rows[0].matchId != null ? (await db.matches.get(rows[0].matchId))?.seed_key : null
     const queued = await db.sync_queue.where('status').equals('queued').toArray()
-    const jobs = syncJobsForEvents(queued, rows.map(e => e.id))
+    const jobs = syncJobsForEvents(queued, rows.map(e => e.id), seedKey)
     if (jobs.length > 0) await db.sync_queue.bulkDelete(jobs.map(j => j.id))
     await reverseEventSideEffects(rows)
   }, [reverseEventSideEffects])
@@ -7517,20 +7519,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       confirmedSetEndRef.current.delete(r.index)
     }
 
-    // Cloud: never send a created set that no longer exists; correct the reopened one
+    // Cloud: the sets it created go there too (a finished one counted in the
+    // result the approval checks); the reopened one is corrected
     const match = await db.matches.get(matchId)
-    const queued = await db.sync_queue.where('status').equals('queued').toArray()
-    const staleSetJobs = syncJobsForSets(queued, plan.deleteSetIds)
-    if (staleSetJobs.length > 0) await db.sync_queue.bulkDelete(staleSetJobs.map(j => j.id))
+    await queueSetDeletes(db, match, plan.deleteSetIds)
     if (match && !match.test && match.seed_key) {
       for (const r of plan.restoreSets) {
-        await db.sync_queue.add({
-          resource: 'set',
-          action: 'update',
-          payload: { external_id: setExtId(match.seed_key, r.id), home_points: r.homePoints, away_points: r.awayPoints, finished: false, end_time: null },
-          ts: new Date().toISOString(),
-          status: 'queued'
-        })
+        await db.sync_queue.add(setUpdateJob(match, r.id, { home_points: r.homePoints, away_points: r.awayPoints, finished: false, end_time: null }))
       }
     }
     if (match?.forfeitTeam || match?.forfeitReason) {
@@ -7763,13 +7758,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           const nextSetEvents = await db.events.where('matchId').equals(matchId).and(e => e.setIndex === nextSet.index).toArray()
           await db.events.bulkDelete(nextSetEvents.map(e => e.id))
           await db.sets.delete(nextSet.id)
-          // Their cloud jobs not sent yet (set insert, set_start, lineups) go too
+          // Their cloud jobs not sent yet (set_start, lineups) go too; the
+          // set itself is deleted in the cloud, behind its insert
           const queued = await db.sync_queue.where('status').equals('queued').toArray()
-          const staleJobs = [
-            ...syncJobsForEvents(queued, nextSetEvents.map(e => e.id)),
-            ...syncJobsForSets(queued, [nextSet.id])
-          ]
+          const staleJobs = syncJobsForEvents(queued, nextSetEvents.map(e => e.id), data?.match?.seed_key)
           if (staleJobs.length > 0) await db.sync_queue.bulkDelete(staleJobs.map(j => j.id))
+          await queueSetDeletes(db, data?.match, [nextSet.id])
         }
         // The set 5 setup the set end proposed goes with it: when the set
         // before set 5 ends again (the teams may have changed courts since),
@@ -10747,15 +10741,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
 
         if (!isTest && matchRecord?.seed_key) {
-          await db.sync_queue.add({
-            resource: 'set',
-            action: planned.id != null ? 'update' : 'insert',
-            payload: planned.id != null
-              ? { external_id: String(setId), home_points: homePoints, away_points: awayPoints, finished: true, end_time: nowIso }
-              : { external_id: String(setId), match_id: matchRecord.seed_key, index, home_points: homePoints, away_points: awayPoints, finished: true, test: false, start_time: nowIso, end_time: nowIso },
-            ts: new Date().toISOString(),
-            status: 'queued'
-          })
+          await db.sync_queue.add(planned.id != null
+            ? setUpdateJob(matchRecord, setId, { home_points: homePoints, away_points: awayPoints, finished: true, end_time: nowIso })
+            : {
+                resource: 'set',
+                action: 'insert',
+                payload: { external_id: setExtId(matchRecord.seed_key, setId), match_id: matchRecord.seed_key, index, home_points: homePoints, away_points: awayPoints, finished: true, test: false, start_time: nowIso, end_time: nowIso },
+                ts: new Date().toISOString(),
+                status: 'queued'
+              })
         }
 
         await logEvent('set_end', {
@@ -22527,6 +22521,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   for (const s of setsToDelete) {
                     await db.sets.delete(s.id)
                   }
+                  // ... in the cloud too: a later set finished there kept the
+                  // old result next to the replayed one
+                  await queueSetDeletes(db, matchRecord, setsToDelete.map(s => s.id))
                   // Set 5 is gone: its setup too (the next set end before it
                   // proposes the sides that set ends on, not these)
                   if (reopenIndex < 5 && setsToDelete.some(s => s.index === 5)) {
@@ -22548,13 +22545,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     })
                   }
                   if (matchRecord && !matchRecord.test && matchRecord.seed_key) {
-                    await db.sync_queue.add({
-                      resource: 'set',
-                      action: 'update',
-                      payload: { external_id: String(reopenSetId), finished: false, end_time: null },
-                      ts: new Date().toISOString(),
-                      status: 'queued'
-                    })
+                    await db.sync_queue.add(setUpdateJob(matchRecord, reopenSetId, { finished: false, end_time: null }))
                     if (isMatchOverStatus(matchRecord.status)) {
                       await db.sync_queue.add({
                         resource: 'match',
