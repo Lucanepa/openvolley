@@ -56,9 +56,8 @@ browser popup; desktop: `window.open`, turned into an app window labelled
   `/scoresheet_pdf/index_scoresheet.tsx`. Its `<title>` is `Openvolley Scoresheet`
   (misspelt; on desktop the window title follows the document title,
   `popups.rs:181-183`).
-- `scoresheet_pdf/index_scoresheet.html` is NOT a build input (dev leftover with an
-  `aistudiocdn.com` import map and `/index.css`); only `src/__tests__/brandAssets.test.js:27`
-  reads it.
+- The old dev page `scoresheet_pdf/index_scoresheet.html` (not a build input; it loaded
+  React through an `aistudiocdn.com` import map) was removed in 2026-11.
 - Styles: `scoresheet_pdf/scoresheet.css` (full Tailwind with preflight, compiled).
 
 ### 1.3 Data source priority (`index_scoresheet.tsx:878-971`)
