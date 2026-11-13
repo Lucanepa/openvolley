@@ -47,7 +47,7 @@ describe('admin account actions with the production grants', { skip: SKIP }, () 
     assert.equal(up.status, 200, up.text)
     if (confirm) {
       const mail = await smtp.waitForMail((m) => m.envelope.to.includes(email))
-      const r = await auth('confirm-email', { token: linkToken(mail).token })
+      const r = await auth('confirm-email', { token: linkToken(mail).token, password: PASSWORD })
       assert.equal(r.status, 200, r.text)
     }
     const u = { email, token: await signIn(email) }
