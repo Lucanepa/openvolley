@@ -40,7 +40,7 @@ import SavedTeamPickerModal, { confirmReplaceRoster } from './SavedTeamPickerMod
 import SaveRosterToTeamModal from './SaveRosterToTeamModal'
 import { focusLeaves, sortedByNumber } from '../utils/rosterOrder'
 import { isShirtNumber, shirtNumberDigits, recordNumbersMissingFrom } from '../domain/roster'
-import { checkUploadedRoster, takesUploadedRoster, uploadedSignaturesToTake } from '../domain/uploadedRoster'
+import { checkUploadedRoster, takesUploadedRoster, uploadedSignaturesKept, uploadedSignaturesToTake } from '../domain/uploadedRoster'
 import PlayerPoolModal from './PlayerPoolModal'
 import { buildPlayerPool, poolToRoster, ROSTER_MAX } from '../domain/playerPool'
 import { officialsFromSchedule } from '../domain/officials'
@@ -3440,6 +3440,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // running match name its players by number), after the usual question when
   // the team has players already; Reject always.
   const pendingRosterOf = (team) => (team === 'home' ? match?.pendingHomeRoster : match?.pendingAwayRoster)
+  // The coach's and captain's signatures the match has (an upload fills only empty ones)
+  const storedSignaturesOf = (team) => (team === 'home'
+    ? { coach: match?.homeCoachSignature, captain: match?.homeCaptainSignature }
+    : { coach: match?.awayCoachSignature, captain: match?.awayCaptainSignature })
   const acceptingPendingRef = useRef(false)
   const acceptPendingRoster = async (team) => {
     const raw = pendingRosterOf(team)
@@ -3470,10 +3474,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     })
     if (!ok) return
     const { players, bench } = checked.roster
-    // Into empty slots only: a signature the match has stays
-    const signatures = uploadedSignaturesToTake(checked.roster, isHome
-      ? { coach: match.homeCoachSignature, captain: match.homeCaptainSignature }
-      : { coach: match.awayCoachSignature, captain: match.awayCaptainSignature })
+    // Into empty slots only: a signature the match has stays (the card says so)
+    const signatures = uploadedSignaturesToTake(checked.roster, storedSignaturesOf(team))
     const teamId = isHome ? match.homeTeamId : match.awayTeamId
     const pendingField = isHome ? 'pendingHomeRoster' : 'pendingAwayRoster'
     try {
@@ -3548,13 +3550,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     </div>
   ) : null
   // The card of a team's uploaded roster (Edit roster -> Remote): counts of
-  // the checked roster, Accept only for a roster the rules take before the
-  // coin toss, Reject always
+  // the checked roster, the uploaded signatures Accept leaves out (the match
+  // has them), Accept only for a roster the rules take before the coin toss,
+  // Reject always
   const renderPendingRosterCard = (team) => {
     const raw = pendingRosterOf(team)
     if (!raw) return null
     const checked = checkUploadedRoster(raw)
     const started = !takesUploadedRoster(match)
+    const kept = checked.ok && !started ? uploadedSignaturesKept(checked.roster, storedSignaturesOf(team)) : {}
     return (
       <div className="mt-3 rounded-xl border border-sky-200 bg-white p-3" data-testid={`pending-roster-${team}`}>
         <h4 className="mt-0 mb-2 text-sm font-semibold text-stone-800">{t('matchSetup.rosterUploaded')}</h4>
@@ -3572,6 +3576,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         )}
         {checked.ok && started && (
           <p className="mb-3 text-xs text-amber-800">{t('matchSetup.uploadedRosterStarted')}</p>
+        )}
+        {kept.coach && (
+          <p className="mb-3 text-xs text-amber-800" data-testid={`pending-roster-${team}-coach-signature-kept`}>{t('matchSetup.uploadedCoachSignatureKept')}</p>
+        )}
+        {kept.captain && (
+          <p className="mb-3 text-xs text-amber-800" data-testid={`pending-roster-${team}-captain-signature-kept`}>{t('matchSetup.uploadedCaptainSignatureKept')}</p>
         )}
         {checked.ok && (
           <div className="mb-2 flex gap-2">

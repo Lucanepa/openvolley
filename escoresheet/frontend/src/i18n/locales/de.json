@@ -280,6 +280,8 @@
     "uploadedRosterInvalid": "Dieser Kader verletzt die Kaderregeln (eine Nummer doppelt, zwei Captains, ein Libero-Platz doppelt oder ein beschädigter Eintrag) und kann nicht akzeptiert werden. Lehne ihn ab und bitte das Team, ihn neu zu senden.",
     "uploadedRosterSaveFailed": "Der Kader konnte nicht gespeichert werden. Bitte versuche es noch einmal.",
     "uploadedRosterOpen": "Öffnen",
+    "uploadedCoachSignatureKept": "Das Blatt hat schon eine Trainer-Unterschrift: Akzeptieren behält sie und übernimmt die hochgeladene nicht. Unterschreibt jetzt jemand anderes als Trainer, lösche sie nach dem Akzeptieren und lass neu unterschreiben.",
+    "uploadedCaptainSignatureKept": "Das Blatt hat schon eine Kapitän-Unterschrift: Akzeptieren behält sie und übernimmt die hochgeladene nicht. Ist es ein anderer Kapitän, lösche sie nach dem Akzeptieren und lass den neuen Kapitän unterschreiben.",
     "uploadPin": "Upload-PIN",
     "roleLibero": "Libero",
     "uploadPdf": "PDF hochladen",

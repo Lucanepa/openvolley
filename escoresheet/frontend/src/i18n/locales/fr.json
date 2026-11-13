@@ -287,6 +287,8 @@
     "uploadedRosterInvalid": "Cet effectif ne respecte pas les règles (un numéro en double, deux capitaines, un poste de libéro en double ou une entrée endommagée) et ne peut pas être accepté. Refuse-le et demande à l'équipe de le renvoyer.",
     "uploadedRosterSaveFailed": "L'effectif n'a pas pu être enregistré. Réessaie.",
     "uploadedRosterOpen": "Ouvrir",
+    "uploadedCoachSignatureKept": "La feuille a déjà la signature de l'entraîneur : Accepter la garde et ne reprend pas celle téléchargée. Si quelqu'un d'autre signe comme entraîneur, efface-la après avoir accepté et fais-le signer.",
+    "uploadedCaptainSignatureKept": "La feuille a déjà la signature du capitaine : Accepter la garde et ne reprend pas celle téléchargée. Si le capitaine a changé, efface-la après avoir accepté et fais signer le nouveau capitaine.",
     "uploadPin": "Code PIN",
     "uploadPdf": "Importer PDF",
     "searchForRoster": "Chercher l'effectif",

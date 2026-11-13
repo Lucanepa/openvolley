@@ -288,6 +288,8 @@
     "uploadedRosterInvalid": "This roster breaks the roster rules (a number twice, two captains, a libero slot twice or a damaged entry) and cannot be accepted. Reject it and ask the team to send it again.",
     "uploadedRosterSaveFailed": "The roster could not be saved. Please try again.",
     "uploadedRosterOpen": "Open",
+    "uploadedCoachSignatureKept": "The sheet already has the coach's signature: Accept keeps it and does not take the uploaded one. If someone else signs as coach now, clear it after Accept and let them sign.",
+    "uploadedCaptainSignatureKept": "The sheet already has the captain's signature: Accept keeps it and does not take the uploaded one. If the captain changed, clear it after Accept and let the new captain sign.",
     "uploadPin": "Upload PIN",
     "uploadPdf": "Upload PDF",
     "searchForRoster": "Search for roster",

@@ -3,7 +3,8 @@
  * Setup: checked again before Preview and Accept (domain/uploadedRoster),
  * Accept only before the coin toss and after the usual question when the
  * team has players already, the players replaced in one transaction, an
- * uploaded signature only into an empty slot; Reject always. Made-up names.
+ * uploaded signature only into an empty slot (the card names the ones it
+ * leaves out); Reject always. Made-up names.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react'
@@ -117,6 +118,7 @@ vi.mock('../../utils/logger', () => ({ uploadBackupToCloud: vi.fn(), uploadLogsT
 vi.mock('../../utils/parseRosterPdf', () => ({ parseRosterPdf: vi.fn() })) // pdf.js worker import
 
 import MatchSetup from '../MatchSetup'
+import { uploadedSignaturesKept } from '../../domain/uploadedRoster'
 import { ScaleProvider } from '../../contexts/ScaleContext'
 
 const Setup = (props) => <ScaleProvider><MatchSetup onStart={() => {}} onReturn={() => {}} {...props} /></ScaleProvider>
@@ -182,6 +184,30 @@ describe('Match Setup: an uploaded roster', () => {
     expect(m.homeCoachSignature).toBe(PNG('hall-coach')) // the match's own stays
     expect(m.homeCaptainSignature).toBe(PNG('upload-captain')) // the empty one is filled
     expect(clearJobs()).toHaveLength(1)
+  })
+
+  it('the card says which uploaded signatures Accept leaves out (the match has them)', async () => {
+    seed()
+    const card = await openCard()
+    // the coach signed on the sheet already: the uploaded coach's signature is left out
+    expect(card.textContent).toContain('matchSetup.uploadedCoachSignatureKept')
+    expect(card.textContent).not.toContain('matchSetup.uploadedCaptainSignatureKept')
+    cleanup()
+    seed({ homeCaptainSignature: PNG('hall-captain') })
+    const both = await openCard()
+    expect(both.textContent).toContain('matchSetup.uploadedCoachSignatureKept')
+    expect(both.textContent).toContain('matchSetup.uploadedCaptainSignatureKept')
+    cleanup()
+    seed({ homeCoachSignature: null })
+    const none = await openCard()
+    expect(none.textContent).not.toContain('SignatureKept')
+  })
+
+  it('uploadedSignaturesKept: only an uploaded signature whose slot is signed', () => {
+    const roster = { coachSignature: PNG('c'), captainSignature: null }
+    expect(uploadedSignaturesKept(roster, { coach: PNG('hall'), captain: PNG('hall') })).toEqual({ coach: true, captain: false })
+    expect(uploadedSignaturesKept(roster, { coach: '', captain: null })).toEqual({ coach: false, captain: false })
+    expect(uploadedSignaturesKept(null, { coach: PNG('hall') })).toEqual({ coach: false, captain: false })
   })
 
   it('Accept answered "no" changes nothing', async () => {

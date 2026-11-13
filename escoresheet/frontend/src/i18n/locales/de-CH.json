@@ -288,6 +288,8 @@
     "uploadedRosterInvalid": "Dä Kader verletzt d Kaderregle (e Nummere doppelt, zwei Captains, en Libero-Platz doppelt oder en kaputte Iitrag) und cha nöd akzeptiert werde. Lehn en ab und bitt s Team, en nomal z schicke.",
     "uploadedRosterSaveFailed": "Dä Kader hät nöd chöne gspeicheret werde. Bitte probier s nomal.",
     "uploadedRosterOpen": "Öffne",
+    "uploadedCoachSignatureKept": "S Blatt hät scho e Trainer-Underschrift: Akzeptiere bhaltet si und nimmt di ufegladeni nöd. Underschriibt jetzt öpper anders als Trainer, lösch si nach em Akzeptiere und lass neu underschriibe.",
+    "uploadedCaptainSignatureKept": "S Blatt hät scho e Captain-Underschrift: Akzeptiere bhaltet si und nimmt di ufegladeni nöd. Isch es en andere Captain, lösch si nach em Akzeptiere und lass de neu Captain underschriibe.",
     "uploadPin": "Upload-PIN",
     "uploadPdf": "PDF ufelade",
     "searchForRoster": "Kader sueche",

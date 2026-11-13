@@ -167,3 +167,15 @@ export function uploadedSignaturesToTake(roster, stored = {}) {
     captain: roster?.captainSignature && !has(stored.captain) ? roster.captainSignature : null
   }
 }
+
+/**
+ * The uploaded signatures Accept leaves out because the match has that
+ * signature already (uploadedSignaturesToTake): the roster's card says so
+ * before Accept, as a re-upload with another captain or coach would else
+ * keep the earlier person's signature without a word.
+ * @returns {{ coach: boolean, captain: boolean }}
+ */
+export function uploadedSignaturesKept(roster, stored = {}) {
+  const take = uploadedSignaturesToTake(roster, stored)
+  return { coach: !!roster?.coachSignature && !take.coach, captain: !!roster?.captainSignature && !take.captain }
+}
