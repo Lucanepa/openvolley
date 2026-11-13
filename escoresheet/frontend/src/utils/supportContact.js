@@ -14,8 +14,8 @@
  *   (the backend makes the ticket P1). The dialog ticks it by itself while
  *   this device scores an official match in progress (isScoringMatchHere);
  *   the user can untick it, or tick it for any other match.
- * - diagnosticsReport: only when "Include diagnostics" is ticked (pre-ticked
- *   for support, unticked for feedback and requests), and exactly what the
+ * - diagnosticsReport: only when the user ticks "Include diagnostics" (it
+ *   starts unticked for every kind of message), and exactly what the
  *   dialog's "Show what is sent" shows: the text report of
  *   utils/diagnosticsReport.js (summary, the open match, the timeline of the
  *   last two hours from the activity and interaction logs, the app's errors),

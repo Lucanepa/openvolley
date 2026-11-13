@@ -8,6 +8,8 @@ import { RowList, Row, DateRail, EmptyInset, SkeletonRows, Notice, Button, dayLa
 const PAGE = 50
 
 const APPROVAL_ACTIONS = new Set(['match.approve', 'match.approval_revoke', 'match.approval_void'])
+// The activity log (db/016): rows deleted on request, an admin's read of a match or an account, an export
+const ACTIVITY_ACTIONS = new Set(['activity.delete', 'activity.read', 'activity.export'])
 // The entries about one club (db/018, db/020): the club's name leads their line
 const CLUB_ACTIONS = new Set(['club.create', 'club.update', 'club.delete', 'club.managers', 'club.contact', 'club.member_remove', 'club.licences', 'club.licences.manual'])
 
@@ -113,10 +115,12 @@ export function auditDetailsLine(entry, opts = {}) {
     if (d.corrected) parts.push(tr('manage.audit.corrected', 'corrected'))
     return parts.join(' · ')
   }
-  if (entry?.action === 'activity.delete') {
-    // the match id or the account (the entry's target) whose rows went
+  if (ACTIVITY_ACTIONS.has(entry?.action)) {
+    // the match id or the account (the entry's target) whose rows went, were
+    // read or exported; an export's format
     if (d.match) parts.push(String(d.match))
     if (Number.isFinite(d.rows)) parts.push(tr('manage.audit.rows', `${d.rows} entries`, { count: d.rows }))
+    if (entry.action === 'activity.export' && d.format) parts.push(String(d.format).toUpperCase())
     return parts.join(' · ')
   }
   if (Array.isArray(d.added) && d.added.length) parts.push(`+ ${d.added.map(role).join(', ')}`)

@@ -63,6 +63,17 @@ const DATA_URL = /^data:[^,]{0,100},/i
 const JWT = /^[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}$/
 // A manual change of one of these fields says "changed", never the values
 const SENSITIVE_FIELD = /dob|birth|pin|password|email|phone|licen[cs]e|signature/i
+// A roster correction (category 'player') keeps no player's name: a player
+// taken off or added is its shirt number ("#7"), a first or last name only
+// "changed"
+const PLAYER_ENTRY_FIELD = /^(removed|added)$/
+const PLAYER_NAME_FIELD = /name/i
+const SHIRT = /^\s*#?\s*(\d{1,3})(?!\d)/
+const shirtOnly = (v) => {
+  if (v == null) return v
+  const m = SHIRT.exec(String(v))
+  return m ? `#${m[1]}` : 'changed'
+}
 
 // Free text (an error message, a stack frame, a manual change's before /
 // after) keeps no PIN or long number: runs of 6 or more digits, and 4 to 8
@@ -149,6 +160,15 @@ export function sanitizeActivityData(kind, data) {
   if (kind === 'match.manual_change' && typeof out.field === 'string' && SENSITIVE_FIELD.test(out.field)) {
     if ('before' in out) out.before = 'changed'
     if ('after' in out) out.after = 'changed'
+  }
+  if (kind === 'match.manual_change' && out.category === 'player' && typeof out.field === 'string') {
+    if (PLAYER_ENTRY_FIELD.test(out.field)) {
+      if ('before' in out) out.before = shirtOnly(out.before)
+      if ('after' in out) out.after = shirtOnly(out.after)
+    } else if (PLAYER_NAME_FIELD.test(out.field)) {
+      if ('before' in out) out.before = 'changed'
+      if ('after' in out) out.after = 'changed'
+    }
   }
   let json = JSON.stringify(out)
   if (byteLength(json) <= ACTIVITY_DATA_MAX_BYTES) return out

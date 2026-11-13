@@ -67,6 +67,9 @@ export const AUDIT_ACTIONS = Object.freeze([
   'tournament.import',
   // db/016: activity log rows deleted on request (lib/activityLog.js)
   'activity.delete',
+  // an admin's read of a match's or an account's activity, and every export
+  // (lib/activityLog.js; the filters and the row count, never a row)
+  'activity.read', 'activity.export',
   // a stored scoresheet PDF opened past the uploader-only rule (lib/scoresheets.js)
   'scoresheet.read',
   // db/018: clubs and the clubs an account scores for (lib/clubs.js)

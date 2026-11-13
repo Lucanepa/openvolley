@@ -89,6 +89,43 @@ describe('console capture without debug logging', () => {
     expect(saved.some(e => 'stack' in e)).toBe(false)
   })
 
+  // fe-diagnostics-privacy-1: the buffer is uploaded as app logs and goes into
+  // the support diagnostics; a line that names an address or carries a
+  // signature image keeps neither, and no line is unbounded
+  it('a kept line holds no email address or data URL, and is cut at a fixed length', async () => {
+    const out = sink()
+    captureConsole('log', ['[Email] Button clicked, email:', 'ref.one@example.ch'], out)
+    captureConsole('warn', ['[X] update failed', { signatures: { home_coach: 'data:image/png;base64,iVBORw0KGgoNEWCOACHSIG==' } }], out)
+    captureConsole('error', ['[X] huge', 'y'.repeat(50000)], out)
+    const [mail, sig, huge] = getLogs()
+    expect(mail.message).toBe('[Email] Button clicked, email: [email]')
+    expect(sig.message).not.toContain('NEWCOACHSIG')
+    expect(sig.message).toContain('[data URL]')
+    expect(huge.message.length).toBeLessThan(5000)
+    expect(huge.message).toMatch(/characters cut\]$/)
+    // the console itself still shows what was logged
+    expect(out.warn.mock.calls[0][1].signatures.home_coach).toContain('NEWCOACHSIG')
+    signIn()
+    await uploadLogsToCloud('m1', 12)
+    expect(storage.uploads[0].body).not.toContain('ref.one@example.ch')
+    expect(storage.uploads[0].body).not.toContain('NEWCOACHSIG')
+  })
+
+  it('lines saved by an older version come back without a match payload, an address or a data URL', () => {
+    signIn()
+    localStorage.setItem(LOG_PENDING_KEY, JSON.stringify({ uid: 'u1', entries: [
+      { seq: 1, timestamp: 't', level: 'log', message: '[SyncQueue] Match update payload: {"id":"m","players_home":[{"last_name":"Muster","dob":"12.03.2011"}]}' },
+      { seq: 2, timestamp: 't', level: 'error', message: '[SyncQueue] Match insert error: {"status":400} {"external_id":"m","officials":[{"email":"ref.one@example.ch"}]}' },
+      { seq: 3, timestamp: 't', level: 'log', message: '[SyncQueue] Match update payload: m {"keys":["players_home"],"chars":80}' },
+      { seq: 4, timestamp: 't', level: 'log', message: '[Email] Button clicked, email: ref.one@example.ch' }
+    ] }))
+    expect(restorePendingLogs()).toBe(2)
+    const text = JSON.stringify(getLogs())
+    expect(text).not.toContain('Muster')
+    expect(text).not.toContain('ref.one@example.ch')
+    expect(getLogs().map(e => e.message)).toEqual(['[SyncQueue] Match update payload: m {"keys":["players_home"],"chars":80}', '[Email] Button clicked, email: [email]'])
+  })
+
   it('does not echo console.log, keeps it as a breadcrumb, drops per-rally traces and console.debug', () => {
     const out = sink()
     captureConsole('log', ['[SyncQueue] Processing 1 queued items'], out)

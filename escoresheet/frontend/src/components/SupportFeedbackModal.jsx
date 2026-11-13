@@ -178,10 +178,6 @@ function FileAttachment({ label, files, onFilesChange, onReject, t, scaleFactor 
 // The answer codes of POST /api/contact the user can fix in the form
 const FIXABLE = new Set(['invalid_email', 'too_many_files', 'files_too_large', 'file_type'])
 
-// "Include diagnostics" starts ticked for these contact types (a bug report
-// and a question); feedback and requests start unticked
-const DIAGNOSTICS_BY_DEFAULT = new Set(['support'])
-
 function sizeText(bytes) {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
@@ -223,10 +219,10 @@ export default function SupportFeedbackModal({ open, onClose, area: areaProp, cu
   const scoringHere = isScoringMatchHere(liveMatch)
   const [matchRunning, setMatchRunning] = useState(scoringHere)
   const [matchRunningSetByUser, setMatchRunningSetByUser] = useState(false)
-  // "Include diagnostics": ticked by itself for support, unticked for
-  // feedback and requests, until the user ticks or unticks it
+  // "Include diagnostics": unticked until the user ticks it, for every kind
+  // of message (the report holds what was done on the device: tap labels,
+  // the open match's teams; only what the user chose to send goes)
   const [includeDiagnostics, setIncludeDiagnostics] = useState(false)
-  const [diagnosticsSetByUser, setDiagnosticsSetByUser] = useState(false)
   // What "Show what is sent" shows is what is sent: one report, made when the
   // box is ticked (and shown); unticked and ticked again, a new one
   const [report, setReport] = useState(null)
@@ -251,10 +247,6 @@ export default function SupportFeedbackModal({ open, onClose, area: areaProp, cu
     if (open && !matchRunningSetByUser) setMatchRunning(scoringHere)
   }, [open, scoringHere, matchRunningSetByUser])
 
-  useEffect(() => {
-    if (!diagnosticsSetByUser) setIncludeDiagnostics(DIAGNOSTICS_BY_DEFAULT.has(contactType))
-  }, [contactType, diagnosticsSetByUser])
-
   // The form has reached the message (and the diagnostics box)
   const showComments = !!contactType && (
     contactType !== 'support' ||
@@ -278,7 +270,6 @@ export default function SupportFeedbackModal({ open, onClose, area: areaProp, cu
     setMatchRunning(scoringHere)
     setMatchRunningSetByUser(false)
     setIncludeDiagnostics(false)
-    setDiagnosticsSetByUser(false)
     forgetReport()
     setSent(null)
     setError(null)
@@ -331,7 +322,6 @@ export default function SupportFeedbackModal({ open, onClose, area: areaProp, cu
   }
 
   const toggleDiagnostics = (on) => {
-    setDiagnosticsSetByUser(true)
     setIncludeDiagnostics(on)
     if (!on) forgetReport()
   }
@@ -609,8 +599,8 @@ export default function SupportFeedbackModal({ open, onClose, area: areaProp, cu
           />
         )}
 
-        {/* Diagnostics: ticked for support, unticked for feedback and
-            requests; "Show what is sent" shows exactly the file that goes */}
+        {/* Diagnostics: unticked until the user ticks them; "Show what is
+            sent" shows exactly the file that goes */}
         {showComments && (
           <div className="mb-4">
             <Checkbox
