@@ -350,7 +350,9 @@ describe('scoresheets end to end', { skip: SKIP }, () => {
       assert.equal(b.status, 404, bad)
       assert.notEqual(b.headers.get('content-type'), 'application/pdf', bad)
     }
-    assert.equal((await fetch(`${srv.base}${path}`, { method: 'POST' })).status, 405)
+    assert.equal((await fetch(`${srv.base}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })).status, 405)
+    // without a JSON body type no API write reaches its route
+    assert.equal((await fetch(`${srv.base}${path}`, { method: 'POST' })).status, 415)
 
     // only who may open the PDF may make a link; no session, no link
     expectCode(await post(users.bcm, m.id), 403, 'OV_FORBIDDEN')

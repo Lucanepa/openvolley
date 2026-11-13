@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { ALLOWED_ORIGINS, createOriginPolicy, parsePublicOrigins } from '../lib/cors.js'
+import { ALLOWED_ORIGINS, createOriginPolicy, isLanHost, parsePublicOrigins } from '../lib/cors.js'
 
 const req = (origin) => ({ headers: origin === undefined ? {} : { origin } })
 
@@ -26,12 +26,34 @@ describe('CORS origin policy (lib/cors.js)', () => {
     }
   })
 
-  it('cloud: the sites, the native shells, *.openvolley.app and PUBLIC_ORIGINS are trusted', () => {
+  it('cloud: the sites, the native shells and PUBLIC_ORIGINS are trusted', () => {
     for (const o of [
-      'https://app.openvolley.app', 'https://localhost', 'capacitor://localhost', 'tauri://localhost',
-      'http://tauri.localhost', 'http://localhost:5173', 'https://dev-app.openvolley.app',
+      'https://app.openvolley.app', 'https://www.openvolley.app', 'https://beach.openvolley.app',
+      'https://beach-referee.openvolley.app', 'https://referee-beach.openvolley.app',
+      'https://localhost', 'capacitor://localhost', 'tauri://localhost',
+      'http://tauri.localhost', 'http://localhost:5173',
       'https://dev.openvolley-app.pages.dev'
     ]) assert.equal(cloud.isTrustedOrigin(o), true, o)
+  })
+
+  it('cloud: no wildcard: other hosts under openvolley.app are strangers', () => {
+    for (const o of ['https://dev-app.openvolley.app', 'https://support.openvolley.app', 'https://get.openvolley.app',
+      'https://old.openvolley.app', 'https://backend.openvolley.app']) {
+      assert.equal(cloud.isTrustedOrigin(o), false, o)
+      assert.deepEqual(cloud.getCorsOrigin(req(o)), { origin: 'https://openvolley.app', credentials: false }, o)
+    }
+    // a dev build is trusted only when PUBLIC_ORIGINS names it
+    const withDev = createOriginPolicy({ isCloud: true, publicOrigins: ['https://dev-app.openvolley.app'] })
+    assert.equal(withDev.isTrustedOrigin('https://dev-app.openvolley.app'), true)
+  })
+
+  it("the server's own pages: an origin whose host is the request's Host", () => {
+    assert.equal(cloud.isTrustedOrigin('https://backend.openvolley.app', { host: 'backend.openvolley.app' }), true)
+    assert.equal(cloud.isTrustedOrigin('https://backend.openvolley.app', { host: 'other.example' }), false)
+    assert.equal(lan.isTrustedOrigin('http://scoretable:8080', { host: 'scoretable:8080' }), true)
+    assert.equal(lan.isTrustedOrigin('http://scoretable:8080', { host: 'scoretable:8081' }), false)
+    assert.deepEqual(cloud.getCorsOrigin({ headers: { origin: 'https://backend.openvolley.app', host: 'backend.openvolley.app' } }),
+      { origin: 'https://backend.openvolley.app', credentials: true })
   })
 
   it('cloud: both desktop apps\' windows are trusted on their own ports only', () => {
@@ -60,11 +82,40 @@ describe('CORS origin policy (lib/cors.js)', () => {
     }
   })
 
-  it('LAN server: private-range pages are trusted, others reflected without credentials', () => {
+  it('LAN server: pages of the venue network are trusted, no other origin is reflected', () => {
     assert.deepEqual(lan.getCorsOrigin(req('http://192.168.1.20:5173')), { origin: 'http://192.168.1.20:5173', credentials: true })
     assert.deepEqual(lan.getCorsOrigin(req('https://manager.openvolley.app')), { origin: 'https://manager.openvolley.app', credentials: true })
-    assert.deepEqual(lan.getCorsOrigin(req('https://evil.test')), { origin: 'https://evil.test', credentials: false })
-    assert.deepEqual(lan.getCorsOrigin(req(undefined)), { origin: '*', credentials: false })
+    assert.deepEqual(lan.getCorsOrigin(req('https://evil.test')), { origin: 'https://openvolley.app', credentials: false })
+    assert.deepEqual(lan.getCorsOrigin(req(undefined)), { origin: 'https://openvolley.app', credentials: false })
+  })
+
+  it('LAN server: private ranges are tested on the parsed address, not as a prefix', () => {
+    for (const o of [
+      'http://10.0.0.7', 'http://10.255.1.2:8080', 'http://172.16.0.1:5173', 'http://172.31.255.254',
+      'http://192.168.1.20:5173', 'https://192.168.0.5', 'http://169.254.10.1', 'http://127.0.0.1:9000',
+      'http://localhost:8080', 'http://[::1]:5173', 'http://[fd12:3456::1]:5173', 'http://[fe80::1]',
+      'http://[::ffff:c0a8:114]:5173', 'http://scoretable.local:5173', 'http://ov.hall.local'
+    ]) assert.equal(lan.isTrustedOrigin(o), true, o)
+    for (const o of [
+      // look-alike names and public addresses
+      'http://10.evil.example', 'http://192.168.evil.example', 'http://127.0.0.1.evil.example',
+      'http://10.0.0.7.nip.io', 'http://172.32.0.1', 'http://172.15.0.1', 'http://8.8.8.8', 'http://1.2.3.4:5173',
+      'http://[2001:db8::1]', 'http://[::ffff:808:808]', 'http://local', 'http://evil.local.example',
+      // not an origin, or not http(s)
+      'ftp://192.168.1.20', 'http://192.168.1.20/path', 'http://user@192.168.1.20', 'file://', 'null', 'http://192.168.1.20:80'
+    ]) {
+      assert.equal(lan.isTrustedOrigin(o), false, o)
+      assert.deepEqual(lan.getCorsOrigin(req(o)), { origin: 'https://openvolley.app', credentials: false }, o)
+    }
+  })
+
+  it('isLanHost: addresses and .local names only', () => {
+    for (const h of ['localhost', '127.0.0.1', '10.1.2.3', '172.20.0.1', '192.168.0.1', '169.254.0.1', '::1', 'fd00::1', 'fe80::1', 'board.local']) {
+      assert.equal(isLanHost(h), true, h)
+    }
+    for (const h of ['', '10.example.test', '192.168.1.1.example', '100.64.0.1', '8.8.8.8', '2001:db8::1', 'example.com', 'local']) {
+      assert.equal(isLanHost(h), false, h)
+    }
   })
 
   it('parsePublicOrigins trims, drops trailing slashes and blanks', () => {

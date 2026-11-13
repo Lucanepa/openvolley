@@ -226,6 +226,92 @@ export function frameTooLarge(data) {
   return false
 }
 
+/**
+ * Frames of a role socket that owns no room yet (it has proved no scoreboard
+ * claim) above this size: only the claim itself carries that much, the first
+ * sync-match-data of a scorer's bundle. Everything else a socket sends before
+ * a claim (subscribe-match, ping, bench requests and answers) is a few KB.
+ */
+export const MAX_UNPROVED_FRAME_BYTES = 64 * 1024
+/** Such large frames per socket and window: a claim, its retry with the PINs, a sync waiting behind a cloud claim's check. */
+export const MAX_UNPROVED_LARGE_FRAMES = 4
+/** Bytes of such large frames per address (IPv6 /64 on the cloud) and window: a hall's scorers claiming at once. */
+export const MAX_UNPROVED_ADDRESS_BYTES = 32 * 1024 * 1024
+/** Bytes per socket and window, any socket: several times an older scorer's 3 MB bundle synced on every rally. */
+export const MAX_SOCKET_WINDOW_BYTES = 128 * 1024 * 1024
+/** Frames refused per socket and window after which the socket is closed. */
+export const MAX_REFUSED_FRAMES = 3
+
+/**
+ * The byte budget of the role sockets' frames (server.js), checked on the
+ * frame's length before it is parsed. Parsing and walking a frame cost the
+ * one CPU about 35 ms per MB, and a socket could send 120 frames of up to
+ * 10 MB (compressed, a few KB on the wire) a minute without any claim. Now a
+ * socket that owns no room sends a few large frames per window
+ * (MAX_UNPROVED_LARGE_FRAMES, MAX_UNPROVED_ADDRESS_BYTES per address), every
+ * socket at most MAX_SOCKET_WINDOW_BYTES, and one refused MAX_REFUSED_FRAMES
+ * times is closed.
+ *
+ *   const frames = createFrameBudget()
+ *   frames.check(clientInfo.frames, address, data.length, owned) -> 'ok' | 'refused' | 'close'
+ *
+ * @param {{ windowMs?: number, now?: () => number, maxAddresses?: number, limits?: object }} [opts]
+ */
+export function createFrameBudget({ windowMs = 60 * 1000, now = Date.now, maxAddresses = 50000, limits = {} } = {}) {
+  const lim = {
+    unprovedFrameBytes: MAX_UNPROVED_FRAME_BYTES,
+    unprovedLargeFrames: MAX_UNPROVED_LARGE_FRAMES,
+    unprovedAddressBytes: MAX_UNPROVED_ADDRESS_BYTES,
+    socketBytes: MAX_SOCKET_WINDOW_BYTES,
+    refusedFrames: MAX_REFUSED_FRAMES,
+    ...limits
+  }
+  // address -> { windowStart, bytes }: the large frames of unproved sockets
+  const addresses = new Map()
+  const fresh = (e, t) => !!e && t - e.windowStart <= windowMs
+  return {
+    /**
+     * @param {object} socket the socket's own state (an object kept per socket, filled here)
+     * @param {string|null} address its address bucket; null: not limited per address (loopback)
+     * @param {number} bytes the frame's length
+     * @param {boolean} proved the socket owns a room (a proved scoreboard claim)
+     * @returns {'ok'|'refused'|'close'}
+     */
+    check(socket, address, bytes, proved) {
+      const t = now()
+      if (!fresh(socket, t)) Object.assign(socket, { windowStart: t, bytes: 0, large: 0, refused: 0 })
+      let ok = socket.bytes + bytes <= lim.socketBytes
+      if (ok && !proved && bytes > lim.unprovedFrameBytes) {
+        ok = socket.large < lim.unprovedLargeFrames
+        if (ok && address != null) {
+          let a = addresses.get(address)
+          if (!fresh(a, t)) {
+            addresses.delete(address)
+            while (addresses.size >= maxAddresses) addresses.delete(addresses.keys().next().value)
+            a = { windowStart: t, bytes: 0 }
+            addresses.set(address, a)
+          }
+          ok = a.bytes + bytes <= lim.unprovedAddressBytes
+          if (ok) a.bytes += bytes
+        }
+        if (ok) socket.large++
+      }
+      if (!ok) {
+        socket.refused++
+        return socket.refused >= lim.refusedFrames ? 'close' : 'refused'
+      }
+      socket.bytes += bytes
+      return 'ok'
+    },
+    /** Forget the address windows that are over. */
+    sweep() {
+      const t = now()
+      for (const [k, e] of addresses) if (!fresh(e, t)) addresses.delete(k)
+    },
+    get addresses() { return addresses.size }
+  }
+}
+
 // The scorer's undo snapshots on its events: stateSnapshot on every point,
 // stateBefore on rally starts, rotations and substitutions. Its own undo and
 // corrections use them; no relay subscriber reads them (referee, bench,

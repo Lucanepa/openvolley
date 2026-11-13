@@ -49,7 +49,7 @@ import { SCORER_TABLES, deviceOf, matchRefsOfWrite, scorerMovedBody } from './li
 // The support form (POST /api/contact): its body, checks and the one mail to CONTACT_EMAIL
 import { BUSY_BODY, contactMailerFromEnv, createContactSlots, handleContact, MAX_CONTACT_BODY_BYTES } from './lib/contact.js'
 // What the relay keeps of an anonymous socket's bundles and live states
-import { approxHeapBytes, frameTooLarge, relayBundleProblem, relayEvents, relayMemoryBudget, MAX_RELAY_BUNDLE_BYTES, MAX_LIVE_STATE_BYTES } from './lib/relayLimits.js'
+import { approxHeapBytes, createFrameBudget, frameTooLarge, relayBundleProblem, relayEvents, relayMemoryBudget, MAX_RELAY_BUNDLE_BYTES, MAX_LIVE_STATE_BYTES } from './lib/relayLimits.js'
 
 const PORT = process.env.PORT || 8080
 
@@ -150,6 +150,24 @@ const ICAL_RATE_LIMIT_MAX = 10
 const DB_READ_RATE_LIMIT_MAX = 600   // /api/db reads per IP and minute
 const DB_WRITE_RATE_LIMIT_MAX = 600  // /api/db writes per user id and minute
 const DB_WRITE_IP_RATE_LIMIT_MAX = 1200 // /api/db writes per IP, checked before the token lookup
+// /api/db reads answered without a checked session (no token, or a read that
+// needs none, so it was not looked up). They share the database pool with
+// sign-in and every scorer's writes (5 connections by default), and ten such
+// reads with count:true or an unindexed order held all of it for the 10 s
+// statement timeout. Each counts at most ANON_DB_COUNT_CAP rows, ends after
+// ANON_DB_STATEMENT_TIMEOUT_MS, at most ANON_DB_CONCURRENCY run at once (two
+// connections stay free), and one of the big child tables (events, sets)
+// without a filter on one match or row returns at most ANON_DB_SCAN_ROWS
+// rows. The apps' anonymous reads fit in these: the livescore and picker
+// lists, the archive (500 rows), the referee and schedule directories (pages
+// of 1000), one match by its id.
+const ANON_DB_COUNT_CAP = 1000
+const ANON_DB_STATEMENT_TIMEOUT_MS = 3000
+const ANON_DB_SCAN_ROWS = 100
+const ANON_DB_SCAN_TABLES = new Set(['events', 'sets'])
+const ANON_DB_KEY_COLUMNS = new Set(['id', 'external_id', 'match_id'])
+const ANON_DB_CONCURRENCY = Math.max(1, (Number(process.env.PG_POOL_MAX) > 0 ? Math.floor(Number(process.env.PG_POOL_MAX)) : 5) - 2)
+const anonDbGate = createConcurrencyGate({ maxConcurrent: ANON_DB_CONCURRENCY, maxQueue: 200 })
 const STORAGE_IP_RATE_LIMIT_MAX = 600 // /api/storage/* per IP (per-user write quota lives in lib/storage.js)
 const PIN_RATE_LIMIT_MAX = 20        // validate-connection-pin per IP (/64) + PIN type
 const PIN_IP_RATE_LIMIT_MAX = 60     // validate-connection-pin per IP (/64), coarse total
@@ -725,7 +743,7 @@ function notifyScorerMoved(externalId, deviceId = null) {
       try { clientInfo.ws.send(data); sent++ } catch { /* closing */ }
     }
   })
-  if (sent) console.log(`🔁 Scorer moved: told ${sent} scoreboard(s) in room ${key}`)
+  if (sent) console.log(`🔁 Scorer moved: told ${sent} scoreboard(s) in room ${logValue(key)}`)
 }
 
 // Secret fields on an in-memory match object that must never reach a client.
@@ -1174,13 +1192,15 @@ function isInternalCaller(req) {
 const RATE_LIMIT_WINDOW_MS = 60 * 1000
 const RATE_LIMIT_MAX_REQUESTS = 10
 const CONTACT_RATE_LIMIT_MAX = 3
-// One Map per category so counters don't interfere across endpoint types
+const TEST_MAIL_RATE_LIMIT_MAX = 10      // /api/scoresheet/test-mail per user and minute
+// One Map per category so counters don't interfere across endpoint types.
+// "per IP" is per address bucket (addressKey): on the cloud an IPv6 /64.
 const rateLimitMaps = {
-  default: new Map(),   // validate-pin, etc.
-  relay: new Map(),     // relay reads: /api/match/list|:id, /api/server/connections
-  contact: new Map(),   // /api/contact
-  email: new Map(),     // /api/match/send-info
-  ical: new Map(),      // /api/official-matches
+  default: new Map(),   // validate-pin, per IP (/64)
+  relay: new Map(),     // relay reads: /api/match/list|:id, /api/server/connections, per IP
+  contact: new Map(),   // /api/contact, per IP
+  email: new Map(),     // /api/match/send-info, per IP
+  ical: new Map(),      // /api/official-matches, per IP
   db: new Map(),        // /api/db reads, per IP
   dbWrite: new Map(),   // /api/db writes, per user id
   dbWriteIp: new Map(), // /api/db writes, per IP (before the token lookup)
@@ -1192,19 +1212,46 @@ const rateLimitMaps = {
   restorePin: new Map(), // /api/match/restore-by-pin, per IP
   manage: new Map(),    // /api/admin/*, /api/saved-teams*, per user id
   officialCheck: new Map(), // /api/match/official-check, per user id
+  approvalPin: new Map(), // /api/account/approval-pin*, per user id
+  approvals: new Map(), // /api/approvals*, per user id
+  testMail: new Map(),  // /api/scoresheet/test-mail, per user id
   publicBeach: new Map(), // /api/public/beach/t/:slug, per IP
   publicClubs: new Map(), // /api/public/clubs, per IP
   scoresheetView: new Map(), // /api/scoresheet-view/*, per IP
   activity: new Map()   // POST /api/activity, per user id
 }
+// Keys per category: a flood of new keys (every address of a routed IPv6
+// prefix, a botnet) evicts the oldest windows (Map insertion order), never the
+// whole map, and never grows the heap without bound (the backend runs with
+// 256 MB; a key with its window takes about 170 bytes).
+const RATE_LIMIT_MAX_KEYS = 10000
 
-function isRateLimited(ip, maxRequests = RATE_LIMIT_MAX_REQUESTS, category = 'default') {
-  const map = rateLimitMaps[category] || rateLimitMaps.default
+/**
+ * The rate-limit key of a request's address. On the cloud the address bucket
+ * of lib/auth.js ipBucketKey: IPv4 as is, IPv6 by /64, since one subscriber
+ * holds a whole /64 and a per-address key would be no limit at all. A venue
+ * relay counts per address, like its socket cap: every tablet of a hall LAN
+ * shares one IPv6 /64.
+ */
+function addressKey(req) {
+  const ip = getClientIp(req)
+  return IS_CLOUD ? ipBucketKey(ip) : ip
+}
+
+function isRateLimited(key, maxRequests = RATE_LIMIT_MAX_REQUESTS, category = 'default') {
+  // A category without a map of its own gets one: categories never share a
+  // counter (approvals, the approval PIN and the test mail once all counted in
+  // 'default', in one counter per user)
+  if (!Object.hasOwn(rateLimitMaps, category)) rateLimitMaps[category] = new Map()
+  const map = rateLimitMaps[category]
   const now = Date.now()
-  const entry = map.get(ip)
+  const entry = map.get(key)
 
   if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
-    map.set(ip, { count: 1, windowStart: now })
+    // A new window goes to the end of the insertion order
+    if (entry) map.delete(key)
+    else while (map.size >= RATE_LIMIT_MAX_KEYS) map.delete(map.keys().next().value)
+    map.set(key, { count: 1, windowStart: now })
     return false
   }
 
@@ -1224,6 +1271,22 @@ setInterval(() => {
   // lib/auth.js in-memory counters (sign-in/sign-up/session buckets, lockouts)
   try { dataLayer?.auth.sweep() } catch { /* ignore */ }
 }, 5 * 60 * 1000)
+
+/**
+ * The pgQuery options of an /api/db read without a checked session (see
+ * ANON_DB_COUNT_CAP): a bounded count, a short statement timeout, and on
+ * events / sets without an eq or in filter on id, external_id or match_id
+ * the small row cap.
+ */
+function anonReadOptions(table, params) {
+  const keyed = Array.isArray(params?.filters) && params.filters.some((f) =>
+    f && typeof f === 'object' && (f.type === 'eq' || f.type === 'in') && ANON_DB_KEY_COLUMNS.has(f.column))
+  return {
+    countCap: ANON_DB_COUNT_CAP,
+    statementTimeoutMs: ANON_DB_STATEMENT_TIMEOUT_MS,
+    ...(ANON_DB_SCAN_TABLES.has(table) && !keyed ? { maxRows: ANON_DB_SCAN_ROWS } : {})
+  }
+}
 
 /**
  * The external_id of an /api/db filter list that is exactly ONE eq on
@@ -1541,15 +1604,31 @@ async function handleSignRequest(req, res, endpoint) {
 }
 
 // --- Log sanitizer (prevent log injection via newlines/control chars) ---
-function sanitizeLog(str) {
-  if (typeof str !== 'string') return String(str)
-  return str.replace(/[\r\n\t]/g, ' ').substring(0, 200)
+// Control characters (C0, DEL, C1, the Unicode line and paragraph
+// separators) become a space, so a value can neither start a line that looks
+// like the server's own nor drive the operator's terminal, and the text is cut
+// at maxLength characters: one client frame wrote 9 MB to the log, and the
+// container keeps 5 x 10 MB of it.
+const LOG_CONTROL_RE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g
+function sanitizeLog(str, maxLength = 200) {
+  const s = typeof str === 'string' ? str : String(str)
+  return (s.length > maxLength ? `${s.slice(0, maxLength)}…` : s).replace(LOG_CONTROL_RE, ' ')
+}
+
+/** A value a client sent (a room id, a message type, an action), as a log line prints it: 64 characters at most. */
+function logValue(v) {
+  if (typeof v === 'string') return sanitizeLog(v, 64)
+  if (v !== null && typeof v === 'object') return Array.isArray(v) ? '[array]' : '[object]'
+  return String(v)
 }
 
 // --- WebSocket per-client rate limiting ---
 const WS_RATE_LIMIT_MAX = 120 // messages per window
 const WS_RATE_LIMIT_WINDOW_MS = 60 * 1000
 const wsRateLimitMap = new Map()
+// ... and bytes: the frame budget of lib/relayLimits.js (large frames of a
+// socket without a proved claim, bytes per socket and address)
+const frameBudget = createFrameBudget({ windowMs: WS_RATE_LIMIT_WINDOW_MS })
 
 function isWsRateLimited(clientId) {
   const now = Date.now()
@@ -1573,7 +1652,7 @@ setInterval(() => {
     if (room.clients.size === 0 && now - (room.lastActivity || 0) > ROOM_TTL_MS) {
       rooms.delete(matchId)
       activeMatches.delete(matchId)
-      console.log(`🧹 TTL cleanup: removed stale room ${matchId}`)
+      console.log(`🧹 TTL cleanup: removed stale room ${logValue(matchId)}`)
     }
   }
 
@@ -1583,6 +1662,7 @@ setInterval(() => {
       wsRateLimitMap.delete(id)
     }
   }
+  frameBudget.sweep()
 }, 15 * 60 * 1000) // Every 15 minutes
 
 const MAX_BODY_SIZE = 1024 * 1024 // 1MB
@@ -1761,8 +1841,46 @@ async function fetchAndParseIcal(feedUrl, federation, leagueCode, leagueConfig) 
   }
 }
 
-// CORS: the trusted origins (lib/cors.js; manager.openvolley.app included)
-const { getCorsOrigin } = createOriginPolicy({ isCloud: IS_CLOUD, publicOrigins: PUBLIC_ORIGINS })
+// The origin rule (lib/cors.js): the CORS answers, the writes and the
+// WebSocket upgrade below
+const { getCorsOrigin, isTrustedOrigin } = createOriginPolicy({ isCloud: IS_CLOUD, publicOrigins: PUBLIC_ORIGINS })
+
+// What the transport refused, for /health (relayStats): writes from a page of
+// a foreign origin or with a body that is not JSON, WebSocket upgrades from a
+// foreign origin, and role-socket frames over their size or byte budget
+const transportRefusals = { origin: 0, mediaType: 0, upgradeOrigin: 0, frames: 0, socketsClosed: 0 }
+
+// --- Writes: Origin and body type ---------------------------------------------
+// Any web page can make its visitor's browser send a cross-site POST of a
+// "simple" body type (text/plain, form-encoded, multipart) without a CORS
+// preflight. The page cannot read the answer, but every such request spent the
+// visitor's address budgets (a hall's PIN checks, sign-ins, /api/db), which all
+// tablets behind the hall's address share. So a write to the API is refused
+// before any route or rate bucket sees it:
+// - from a page of an origin the origin rule does not trust (403). A request
+//   without an Origin (a native app, a script, the board bridge) is no page;
+// - with a body type other than JSON (415): a browser then asks first
+//   (preflight), and the CORS answer refuses a foreign page. The support form
+//   (/api/contact) also takes multipart/form-data; the phone-sign API checks
+//   its own body type (handleSignRequest).
+const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+const JSON_TYPE_RE = /^\s*application\/json\s*(;|$)/i
+const MULTIPART_TYPE_RE = /^\s*multipart\/form-data\s*;/i
+
+/** The refusal of an API write by its Origin or body type, or null. */
+function apiWriteRefusal(req, pathname) {
+  if (!WRITE_METHODS.has(req.method) || !pathname.startsWith('/api/')) return null
+  const origin = req.headers.origin
+  if (origin !== undefined && !isTrustedOrigin(origin, { host: req.headers.host })) {
+    transportRefusals.origin++
+    return { status: 403, code: 'OV_ORIGIN_REFUSED', message: 'This site may not call the OpenVolley server' }
+  }
+  if (signEndpointOf(pathname)) return null
+  const type = String(req.headers['content-type'] || '')
+  if (JSON_TYPE_RE.test(type) || (pathname === '/api/contact' && MULTIPART_TYPE_RE.test(type))) return null
+  transportRefusals.mediaType++
+  return { status: 415, code: 'OV_UNSUPPORTED_MEDIA_TYPE', message: 'The request body must be application/json' }
+}
 
 // connect-src for pages this server serves itself (same-origin bundle).
 // No *.supabase.co any more: realtime runs over this server's own socket.
@@ -1815,7 +1933,9 @@ function backupState(lastBackupAgeMin) {
 function relayStats() {
   return {
     connections: { role: connections.size, live: realtimeHub ? realtimeHub.stats().sockets : 0 },
-    activeRooms: rooms.size
+    activeRooms: rooms.size,
+    // what the transport refused since the start (transportRefusals)
+    transport: { ...transportRefusals }
   }
 }
 
@@ -1943,6 +2063,14 @@ function handleHttpRequest(req, res) {
   } catch {
     res.writeHead(400)
     res.end('Bad Request')
+    return
+  }
+
+  // Before any route and any rate bucket (see apiWriteRefusal)
+  const writeRefusal = apiWriteRefusal(req, url.pathname)
+  if (writeRefusal) {
+    req.resume()
+    sendJson(res, writeRefusal.status, { success: false, data: null, error: { message: writeRefusal.message, code: writeRefusal.code } })
     return
   }
 
@@ -2121,7 +2249,7 @@ function handleHttpRequest(req, res) {
 
         if (matchFound) {
           pinFailureLimiter.refund(ipKey, scope)
-          console.log(`[API] PIN validated for ${type}: match ${matchFound.id}`)
+          console.log(`[API] PIN validated for ${type}: match ${logValue(matchFound.id)}`)
           res.writeHead(200, { 'Content-Type': 'application/json' })
           // Strip all PINs from the response — knowing one PIN must not disclose the others.
           res.end(JSON.stringify({
@@ -2162,7 +2290,7 @@ function handleHttpRequest(req, res) {
   // ?finished=1 lists finished matches too: the livescore served by a venue
   // relay (frontend utils/relayLivescore), which then subscribes without a PIN.
   if (url.pathname === '/api/match/list') {
-    if (isRateLimited(getClientIp(req), DB_RATE_LIMIT_MAX, 'relay')) {
+    if (isRateLimited(addressKey(req), DB_RATE_LIMIT_MAX, 'relay')) {
       res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
       res.end(JSON.stringify({ success: false, error: 'Rate limited', matches: [] }))
       return
@@ -2237,7 +2365,7 @@ function handleHttpRequest(req, res) {
       url.pathname !== '/api/match/by-game-number' &&
       url.pathname !== '/api/match/official-check' &&
       req.method === 'GET') {
-    if (isRateLimited(getClientIp(req), DB_RATE_LIMIT_MAX, 'relay')) {
+    if (isRateLimited(addressKey(req), DB_RATE_LIMIT_MAX, 'relay')) {
       res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
       res.end(JSON.stringify({ success: false, error: 'Rate limited' }))
       return
@@ -2255,7 +2383,7 @@ function handleHttpRequest(req, res) {
     const matchData = activeMatches.get(matchId)
 
     if (matchData) {
-      console.log(`[API] /api/match/${matchId} - Found match`)
+      console.log(`[API] /api/match/${logValue(matchId)} - Found match`)
       // The bundle (rosters, events) only after the PIN step: a match token
       // from the PIN check, or one of the match's PINs. Else the summary.
       let full = tokenGrantsRelay(req.headers['x-ov-match-token'], matchId, matchData.match)
@@ -2281,7 +2409,7 @@ function handleHttpRequest(req, res) {
         awayTeam
       }))
     } else {
-      console.log(`[API] /api/match/${sanitizeLog(matchId)} - Match not found (${activeMatches.size} active)`)
+      console.log(`[API] /api/match/${logValue(matchId)} - Match not found (${activeMatches.size} active)`)
       res.writeHead(404, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({
         success: false,
@@ -2299,7 +2427,7 @@ function handleHttpRequest(req, res) {
   // connect times) of one match needs that match's PIN or match token
   // (X-OV-Match-Pin / X-OV-Match-Token, as GET /api/match/:id).
   if (url.pathname === '/api/server/connections') {
-    if (isRateLimited(getClientIp(req), DB_RATE_LIMIT_MAX, 'relay')) {
+    if (isRateLimited(addressKey(req), DB_RATE_LIMIT_MAX, 'relay')) {
       res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
       res.end(JSON.stringify({ error: 'Rate limited' }))
       return
@@ -2379,8 +2507,7 @@ function handleHttpRequest(req, res) {
   // Support form (lib/contact.js): multipart with up to 5 attachments, one
   // mail to CONTACT_EMAIL with Reply-To the user (FreeScout's customer)
   if (url.pathname === '/api/contact' && req.method === 'POST') {
-    const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, CONTACT_RATE_LIMIT_MAX, 'contact')) {
+    if (isRateLimited(addressKey(req), CONTACT_RATE_LIMIT_MAX, 'contact')) {
       res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
       res.end(JSON.stringify({ success: false, error: 'Too many requests. Please wait before submitting again.' }))
       return
@@ -2422,8 +2549,7 @@ function handleHttpRequest(req, res) {
 
   // Send match info email
   if (url.pathname === '/api/match/send-info' && req.method === 'POST') {
-    const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, EMAIL_RATE_LIMIT_MAX, 'email')) {
+    if (isRateLimited(addressKey(req), EMAIL_RATE_LIMIT_MAX, 'email')) {
       res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
       res.end(JSON.stringify({ error: 'Too many requests' }))
       return
@@ -2539,8 +2665,7 @@ Generated by eScoresheet
 
   // Get official matches from iCal feeds
   if (url.pathname === '/api/official-matches' && req.method === 'GET') {
-    const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, ICAL_RATE_LIMIT_MAX, 'ical')) {
+    if (isRateLimited(addressKey(req), ICAL_RATE_LIMIT_MAX, 'ical')) {
       res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
       res.end(JSON.stringify({ error: 'Too many requests' }))
       return
@@ -2597,8 +2722,7 @@ Generated by eScoresheet
 
   // Get available leagues for official matches (flat list)
   if (url.pathname === '/api/official-matches/leagues' && req.method === 'GET') {
-    const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, ICAL_RATE_LIMIT_MAX, 'ical')) {
+    if (isRateLimited(addressKey(req), ICAL_RATE_LIMIT_MAX, 'ical')) {
       res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
       res.end(JSON.stringify({ error: 'Too many requests' }))
       return
@@ -3162,8 +3286,8 @@ Generated by eScoresheet
         const isWrite = action !== 'select'
         const ownerScoped = OWNER_SCOPED_TABLES.has(table)
         if (isWrite
-          ? isRateLimited(clientIp, DB_WRITE_IP_RATE_LIMIT_MAX, 'dbWriteIp')
-          : isRateLimited(clientIp, DB_READ_RATE_LIMIT_MAX, 'db')) {
+          ? isRateLimited(addressKey(req), DB_WRITE_IP_RATE_LIMIT_MAX, 'dbWriteIp')
+          : isRateLimited(addressKey(req), DB_READ_RATE_LIMIT_MAX, 'db')) {
           logRejected(429, 'OV_RATE_LIMITED')
           sendTooMany()
           return
@@ -3213,6 +3337,8 @@ Generated by eScoresheet
         // nothing.
         let anonView = false
         let readOwner = null
+        // The account of a read whose token was checked (below), if any
+        let sessionReader = null
         // events: who may ask for voided rows too (params.include_voided, lib/pgQuery.js)
         let includeVoided = null
         // May `userId` see referees' dates of birth in `table`? null: the
@@ -3248,6 +3374,7 @@ Generated by eScoresheet
                 return
               }
             }
+            sessionReader = reader
             // The referee tables: a session alone is not enough
             let fullReader = reader
             if (reader && Object.hasOwn(REFEREE_DOB_SPORTS, table)) {
@@ -3394,6 +3521,8 @@ Generated by eScoresheet
           }
         }
 
+        // A read without a checked session: anonReadOptions, and a slot of anonDbGate
+        const anonymousRead = !isWrite && !authUser && !sessionReader
         const runOpts = {
           proto: req.headers['x-ov-proto'],
           scope: ownerScoped ? { column: 'user_id', value: authUser.id } : undefined,
@@ -3401,11 +3530,24 @@ Generated by eScoresheet
           // the acting account for db/007's triggers (closed_by)
           ...(isWrite ? { actorId: authUser.id } : {}),
           ...(readOwner ? { readOwner } : {}),
-          ...(includeVoided ? { includeVoided } : {})
+          ...(includeVoided ? { includeVoided } : {}),
+          ...(anonymousRead ? anonReadOptions(table, p) : {})
         }
         // A PIN this write changes starts its count across callers again
         const pinWrites = table === 'matches' && isWrite ? await watchPinWrites(layer, action, p) : null
-        let r = await layer.db.runQuery({ table, action, params: p }, runOpts)
+        let r
+        if (anonymousRead) {
+          try {
+            r = await anonDbGate.run(() => layer.db.runQuery({ table, action, params: p }, runOpts))
+          } catch (err) {
+            if (err?.code !== 'AUTH_BUSY') throw err
+            logRejected(503, 'OV_DB_BUSY')
+            sendJson(res, 503, { data: null, error: { message: 'Server busy, please retry', code: 'OV_DB_BUSY', retryable: true } }, { 'Retry-After': '2' })
+            return
+          }
+        } else {
+          r = await layer.db.runQuery({ table, action, params: p }, runOpts)
+        }
         // Take-over inline: a scorer's match insert/upsert refused only for
         // ownership (a match set up before ownership existed, or created by
         // another account) that carries the match's own game PIN proves it,
@@ -3659,7 +3801,7 @@ Generated by eScoresheet
 
   if (url.pathname === '/api/match/claim' && req.method === 'POST') {
     const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, RESTORE_PIN_IP_RATE_LIMIT_MAX, 'restorePin')) {
+    if (isRateLimited(addressKey(req), RESTORE_PIN_IP_RATE_LIMIT_MAX, 'restorePin')) {
       sendTooMany()
       return
     }
@@ -3799,7 +3941,7 @@ Generated by eScoresheet
   // no claim: looking a match up never takes it over.
   if (url.pathname === '/api/match/restore-by-pin' && req.method === 'POST') {
     const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, RESTORE_PIN_IP_RATE_LIMIT_MAX, 'restorePin')) {
+    if (isRateLimited(addressKey(req), RESTORE_PIN_IP_RATE_LIMIT_MAX, 'restorePin')) {
       sendTooMany()
       return
     }
@@ -3861,7 +4003,7 @@ Generated by eScoresheet
         const layer = await getDataLayer()
         const user = await layer.auth.requireUser(req, res)
         if (!user) return
-        if (isRateLimited(user.id, 10, 'testMail')) {
+        if (isRateLimited(user.id, TEST_MAIL_RATE_LIMIT_MAX, 'testMail')) {
           req.resume()
           sendJson(res, 429, TOO_MANY, { 'Retry-After': '60' })
           return
@@ -3883,8 +4025,7 @@ Generated by eScoresheet
   }
 
   if (url.pathname.startsWith('/api/storage/') && req.method === 'POST') {
-    const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, STORAGE_IP_RATE_LIMIT_MAX, 'storage')) {
+    if (isRateLimited(addressKey(req), STORAGE_IP_RATE_LIMIT_MAX, 'storage')) {
       sendTooMany()
       return
     }
@@ -3905,8 +4046,27 @@ Generated by eScoresheet
           sendBodyError(res, err, { tooLargeBody: layer.storage.bodyTooLarge().body })
           return
         }
-        // Scoresheets of official matches: approved scorers only (backups stay
-        // open), of the sport of the path (beach/... needs beach scoring rights)
+        // Match backups and app logs (bucket backup, {userId}/...): accounts
+        // with a role only (scorer, referee, manager or admin, either sport).
+        // Any self-registered account could otherwise fill the volume to the
+        // free-space floor every account's backups share; each account also
+        // has a total of its own (lib/storage.js maxOwnerBytes).
+        if (action === 'upload' && body && body.bucket === 'backup') {
+          let hasRole
+          try {
+            hasRole = (await layer.access.get(user.id)).roles.length > 0
+          } catch (err) {
+            console.warn('[Storage] access check failed:', err?.message)
+            sendJson(res, 503, DB_UNAVAILABLE_BODY, { 'Retry-After': '5' })
+            return
+          }
+          if (!hasRole) {
+            sendJson(res, 403, { data: null, error: { message: 'Cloud backups need an account with a role', code: 'OV_STORAGE_FORBIDDEN' } })
+            return
+          }
+        }
+        // Scoresheets of official matches: approved scorers only, of the sport
+        // of the path (beach/... needs beach scoring rights)
         if (action === 'upload' && body && body.bucket === 'scoresheets') {
           let canScore
           try {
@@ -4016,9 +4176,11 @@ Generated by eScoresheet
           generateQRCodes(BEACH_ROLES)
         ])
 
-        // Active matches info
+        // Active matches info: a venue relay's own page, for the hall. The
+        // cloud's root is public to the whole internet: no team names of the
+        // matches being scored, no counts (the internal /health has those).
         const matchList = []
-        for (const [matchId, matchData] of activeMatches.entries()) {
+        if (!IS_CLOUD) for (const [matchId, matchData] of activeMatches.entries()) {
           // Per entry: one crafted room must never turn the landing page into
           // 500 for everyone. A sync stores only validated team names; a room
           // recovered from storage is not validated, so landingMatchRow keeps
@@ -4032,8 +4194,8 @@ Generated by eScoresheet
 
         const html = renderLandingPage({
           baseUrl,
-          clientCount: connections.size,
-          matchCount: activeMatches.size,
+          clientCount: IS_CLOUD ? null : connections.size,
+          matchCount: IS_CLOUD ? null : activeMatches.size,
           indoor: indoorQR,
           beach: beachQR,
           matches: matchList
@@ -4135,6 +4297,19 @@ wss.on('error', (err) => {
 
 server.on('upgrade', (req, socket, head) => {
   socket.on('error', () => { /* client went away mid-handshake */ })
+  // Browsers apply no same-origin rule to WebSockets: without this any web
+  // page opened on a device made it a relay client (joined rooms, tried PINs
+  // from its visitors' addresses, held a hall's connection slots). A page of
+  // an origin the origin rule (lib/cors.js) does not trust is refused, role
+  // and live sockets alike; a socket without an Origin (the native apps' and
+  // the board bridge's) is no page and connects as before.
+  const origin = req.headers.origin
+  if (origin !== undefined && !isTrustedOrigin(origin, { host: req.headers.host })) {
+    transportRefusals.upgradeOrigin++
+    socket.once('finish', () => socket.destroy())
+    socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n')
+    return
+  }
   if (realtimeHub && isLiveRequest(req)) {
     relaySummary.count('live upgrades')
     realtimeHub.handleUpgrade(req, socket, head, { ip: getClientIp(req) })
@@ -4201,6 +4376,8 @@ wss.on('connection', (ws, req) => {
     // The installation a scoreboard names in sync-match-data (db/019, the
     // scoring device): its claims are checked against match_scorer_devices
     scorerDevice: null,
+    // This socket's window of the frame budget (frameBudget)
+    frames: {},
     connectedAt: new Date().toISOString()
   }
 
@@ -4224,6 +4401,20 @@ wss.on('connection', (ws, req) => {
     if (isWsRateLimited(clientId)) {
       ws.send(JSON.stringify({ type: 'error', message: 'Rate limit exceeded' }))
       ws.close(1008, 'Rate limit exceeded')
+      return
+    }
+    // The frame's bytes, before anything parses it: a socket that owns no
+    // room sends only a few large frames (its claim), see createFrameBudget
+    const frame = frameBudget.check(clientInfo.frames, relayAddressOf(clientInfo), data.length, clientInfo.ownedMatches.size > 0)
+    if (frame !== 'ok') {
+      transportRefusals.frames++
+      relaySummary.count('refused (frame budget)')
+      if (frame === 'close') {
+        transportRefusals.socketsClosed++
+        ws.close(1009, 'Message too big')
+        return
+      }
+      ws.send(JSON.stringify({ type: 'error', code: 'too-large', message: 'Message too large for the relay' }))
       return
     }
     // While a sync-match-data waits for its database check (cloud claims, see
@@ -4378,10 +4569,11 @@ function handleSocketMessage(clientInfo, data) {
         break
 
       default:
-        console.log(`❓ Unknown message type: ${message.type}`)
+        console.log(`❓ Unknown message type: ${logValue(message.type)}`)
     }
   } catch (err) {
-    console.error('❌ Error parsing message:', err)
+    // A parse error quotes the frame: its message only, printable
+    console.error('❌ Error parsing message:', err instanceof SyntaxError ? sanitizeLog(err.message) : err)
     ws.send(JSON.stringify({
       type: 'error',
       message: 'Invalid message format'
@@ -4446,7 +4638,7 @@ function handleJoinMatch(clientInfo, message) {
   room.clients.add(clientInfo.id)
   room.lastActivity = Date.now()
 
-  console.log(`🎯 ${clientInfo.id} (${validatedRole}) joined match ${matchId} (Room size: ${room.clients.size})`)
+  console.log(`🎯 ${clientInfo.id} (${validatedRole}) joined match ${logValue(matchId)} (Room size: ${room.clients.size})`)
 
   // Notify client
   clientInfo.ws.send(JSON.stringify({
@@ -4679,7 +4871,7 @@ function broadcastMatchData(matchId, type, entry, scoreboardTs, excludeClientId 
       if (sendToRoomMember(clientInfo, summary)) sent++
     }
   })
-  if (LOG_EACH_CONNECTION) console.log(`📡 Match data to ${sent} clients in room ${matchId}`)
+  if (LOG_EACH_CONNECTION) console.log(`📡 Match data to ${sent} clients in room ${logValue(matchId)}`)
 }
 
 // 'scoreboard' is never accepted from a join message
@@ -4695,7 +4887,7 @@ function handleLeaveMatch(clientInfo) {
   if (room) {
     room.clients.delete(clientInfo.id)
 
-    console.log(`👋 ${clientInfo.id} left match ${clientInfo.matchId} (Room size: ${room.clients.size})`)
+    console.log(`👋 ${clientInfo.id} left match ${logValue(clientInfo.matchId)} (Room size: ${room.clients.size})`)
 
     // Notify other clients
     broadcastToRoom(clientInfo.matchId, {
@@ -4709,7 +4901,7 @@ function handleLeaveMatch(clientInfo) {
     if (room.clients.size === 0) {
       rooms.delete(clientInfo.matchId)
       activeMatches.delete(clientInfo.matchId)
-      console.log(`🗑️  Empty room deleted: ${clientInfo.matchId}`)
+      console.log(`🗑️  Empty room deleted: ${logValue(clientInfo.matchId)}`)
     }
   }
 
@@ -4754,7 +4946,7 @@ function handleMatchUpdate(clientInfo, message) {
     timestamp: new Date().toISOString()
   }, clientInfo.id, true) // Exclude sender to avoid echo
 
-  console.log(`📤 Match update broadcasted to room ${matchId}`)
+  console.log(`📤 Match update broadcasted to room ${logValue(matchId)}`)
 }
 
 // Handle action (timeout, substitution, etc.) — legacy format
@@ -4780,7 +4972,7 @@ function handleAction(clientInfo, message) {
     from: clientInfo.id
   }, clientInfo.id, true) // Exclude sender; access only
 
-  console.log(`⚡ Action broadcasted to room ${matchId}: ${action.type}`)
+  console.log(`⚡ Action broadcasted to room ${logValue(matchId)}: ${logValue(action.type)}`)
 }
 
 // Handle client disconnect
@@ -5449,7 +5641,7 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
   // the bundle only after the PIN step (the summary otherwise).
   broadcastMatchData(matchId, 'match-data-update', activeMatches.get(matchId), message._timestamp, clientInfo.id, { timestamp: new Date().toISOString() })
 
-  console.log(`📤 Match data synced for ${matchId} (Game #${match?.gameN || 'unknown'})`)
+  console.log(`📤 Match data synced for ${logValue(matchId)} (Game #${logValue(match?.gameN || 'unknown')})`)
 }
 
 // Handle match-action from frontend
@@ -5476,7 +5668,7 @@ function handleMatchAction(clientInfo, message) {
     from: clientInfo.id
   }, clientInfo.id, true) // access only: actions carry players and sanctions
 
-  console.log(`⚡ Match action broadcasted to room ${matchId}: ${action}`)
+  console.log(`⚡ Match action broadcasted to room ${logValue(matchId)}: ${logValue(action)}`)
 }
 
 // A live state no more than this many bytes bigger than the room's last one is
@@ -5570,7 +5762,7 @@ function handleClearMatches(clientInfo, message) {
     removeMatch(matchId)
     cleared++
   }
-  console.log(`🗑️  Cleared ${cleared} match(es) owned by ${clientInfo.id}${keepMatchId ? ` (kept ${keepMatchId})` : ''}`)
+  console.log(`🗑️  Cleared ${cleared} match(es) owned by ${clientInfo.id}${keepMatchId ? ` (kept ${logValue(keepMatchId)})` : ''}`)
 }
 
 // Handle delete-match
@@ -5580,7 +5772,7 @@ function handleDeleteMatch(clientInfo, message) {
   if (!requireMatchOwner(clientInfo, matchId, 'delete-match')) return
 
   removeMatch(matchId)
-  console.log(`🗑️  Deleted match ${matchId}`)
+  console.log(`🗑️  Deleted match ${logValue(matchId)}`)
 }
 
 // --- Bench requests (lib/benchRequests.js) ------------------------------------
@@ -5719,7 +5911,7 @@ function broadcastToRoom(matchId, message, excludeClientId = null, accessOnly = 
     }
   })
 
-  console.log(`📡 Broadcasted to ${sent} clients in room ${matchId}`)
+  console.log(`📡 Broadcasted to ${sent} clients in room ${logValue(matchId)}`)
 }
 
 // Periodic cleanup of stale connections
