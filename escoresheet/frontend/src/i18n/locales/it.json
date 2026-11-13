@@ -2068,6 +2068,13 @@
     "retry": "Riprova",
     "cameraError": "Impossibile accedere alla fotocamera",
     "noBackendConfigured": "Nessun server backend configurato",
+    "noTestBackend": "Nessun backend di test configurato",
+    "notAllowed": "Questo indirizzo non può essere usato. Inserisci l'indirizzo IP del server nella rete della palestra (ad esempio 192.168.1.42:5173), un nome che termina con .local oppure un indirizzo https:// su openvolley.app.",
+    "notKept": "Questo browser non ha potuto conservare l'indirizzo del server. Consenti a questo sito di salvare dati, poi riprova.",
+    "linkServerTitle": "Questo link si collega a un altro server",
+    "linkServerHint": "Continua solo se il segnapunti ti ha dato questo link. Questa pagina usa poi quel server finché la scheda resta aperta.",
+    "linkServerConnect": "Connetti a questo server",
+    "linkServerDecline": "Scelgo io il server",
     "scanWithPhone": "Scansiona con il telefono o il tablet per connetterti direttamente",
     "showQR": "Mostra QR",
     "role": {

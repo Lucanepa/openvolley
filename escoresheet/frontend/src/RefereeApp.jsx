@@ -142,14 +142,15 @@ export default function RefereeApp() {
     const matchParam = params.get('match')
     const serverParam = params.get('server')
 
-    if (serverParam) {
-      applyServerParam(serverParam)
-    }
+    // A link naming another server than this page's: the connection screen
+    // asks first, naming it (also on a page a venue relay serves)
+    const askServer = serverParam ? applyServerParam(serverParam) === 'ask' : false
+    if (askServer) setServerReady(false)
 
     if (matchParam) {
       setAutoConnectMatch(matchParam)
       // Skip server connection screen if we have URL params
-      setServerReady(true)
+      if (!askServer) setServerReady(true)
     }
   }, [])
 

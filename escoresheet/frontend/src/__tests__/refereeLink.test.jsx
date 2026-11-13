@@ -31,12 +31,17 @@ vi.mock('../components/ServerConnectionScreen', () => ({ default: ({ onConnected
 vi.mock('../db/db', () => ({ db: { matches: { count: vi.fn().mockResolvedValue(0) } } }))
 
 import RefereeApp from '../RefereeApp'
+import { setAppEntry } from '../utils/appEntry'
 
 describe('referee match link', () => {
   let realLocation
 
   beforeEach(() => {
     localStorage.clear()
+    sessionStorage.clear()
+    setAppEntry('referee')
+    // The referee site's build: the scorer's links name its backend
+    vi.stubEnv('VITE_BACKEND_URL', 'https://backend.openvolley.app')
     for (const fn of Object.values(sync)) fn.mockReset()
     // The relay copy carries the scorer's Dexie id
     sync.getMatchData.mockResolvedValue({ success: true, match: { id: 1, gameNumber: 991202, status: 'live' } })
@@ -56,6 +61,29 @@ describe('referee match link', () => {
   afterEach(() => {
     Object.defineProperty(window, 'location', { value: realLocation, writable: true, configurable: true })
     localStorage.clear()
+    sessionStorage.clear()
+    setAppEntry(null)
+    vi.unstubAllEnvs()
+  })
+
+  // fe-connect-devices-1: a link naming another server than the page's is
+  // never used without the connection screen's question
+  it('a link naming another server shows the server question first', async () => {
+    Object.defineProperty(window, 'location', {
+      value: { ...realLocation, search: `?server=${encodeURIComponent('http://192.168.1.66:8080')}&match=${SEED}` },
+      writable: true,
+      configurable: true
+    })
+    render(<RefereeApp />)
+    const question = await screen.findByRole('button', { name: 'server screen' })
+    expect(screen.queryByLabelText('refereeDashboard.connectionPin')).toBeNull()
+    expect(sync.getMatchData).not.toHaveBeenCalled()
+    expect(localStorage.getItem('openvolley_backend_override')).toBeNull()
+
+    // answered there: the link's match is preselected as usual
+    fireEvent.click(question)
+    expect(await screen.findByLabelText('refereeDashboard.connectionPin')).toBeInTheDocument()
+    await waitFor(() => expect(sync.getMatchData).toHaveBeenCalledWith(SEED))
   })
 
   it('asks for the PIN, then follows the match by the key the PIN check returns', async () => {

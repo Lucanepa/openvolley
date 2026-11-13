@@ -21,11 +21,22 @@ import {
   learnRelayWsPort,
   applyServerParam,
   relayWsPortFor,
-  rememberRelayWsPort
+  rememberRelayWsPort,
+  isAllowedBackendUrl,
+  normalizeServerAddress,
+  linkServerState,
+  confirmLinkServer,
+  serverParamNeedsConfirm,
+  getCloudApiBaseUrl,
+  isDevBuild,
+  isDevBuildWithoutBackend
 } from '../backendConfig'
+import { setAppEntry } from '../appEntry'
 
 beforeEach(() => {
   localStorage.clear()
+  sessionStorage.clear()
+  setAppEntry(null)
 })
 
 describe('Backend Override', () => {
@@ -38,16 +49,20 @@ describe('Backend Override', () => {
     expect(getBackendOverride()).toBe('http://192.168.1.100:8080')
   })
 
+  // An allowed URL: one the guard drops (http://example.com) left nothing to clear
   it('setBackendOverride with null clears the override', () => {
-    setBackendOverride('http://example.com')
+    setBackendOverride('http://192.168.1.100:8080')
+    expect(getBackendOverride()).toBe('http://192.168.1.100:8080')
     setBackendOverride(null)
     expect(getBackendOverride()).toBeNull()
   })
 
   it('clearBackendOverride removes the stored URL', () => {
-    setBackendOverride('http://example.com')
+    setBackendOverride('https://backend.openvolley.app')
+    expect(getBackendOverride()).toBe('https://backend.openvolley.app')
     clearBackendOverride()
     expect(getBackendOverride()).toBeNull()
+    expect(localStorage.getItem('openvolley_backend_override')).toBeNull()
   })
 
   it('override is stored in localStorage with correct key', () => {
@@ -228,16 +243,20 @@ describe('native app (Capacitor WebView on https://localhost)', () => {
     expect(getRelayWebSocketUrl()).toBe('ws://192.168.1.20:9000')
   })
 
-  it('applies a role link ?server= and learns a venue relay port in the background', async () => {
+  it('applies a role link ?server= once confirmed and learns a venue relay port in the background', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, json: async () => ({ wsPort: 8085 }) })
-    applyServerParam('http://192.168.1.20:5175')
+    setAppEntry('referee')
+    expect(applyServerParam('http://192.168.1.20:5175')).toBe('ask') // another server than the app's: asked first
+    expect(getBackendOverride()).toBeNull()
+    expect(fetchSpy).not.toHaveBeenCalled()
+    confirmLinkServer('http://192.168.1.20:5175')
     expect(getBackendOverride()).toBe('http://192.168.1.20:5175')
     await vi.waitFor(() => expect(relayWsPortFor('http://192.168.1.20:5175')).toBe('8085'))
     expect(getRelayWebSocketUrl()).toBe('ws://192.168.1.20:8085')
     fetchSpy.mockClear()
-    applyServerParam('backend.openvolley.app') // bare host: https, never asked
+    expect(applyServerParam('backend.openvolley.app')).toBe('known') // the app's own default: bare host is https, never asked
     expect(getBackendOverride()).toBe('https://backend.openvolley.app')
-    applyServerParam('http://evil.example.com:5173') // refused override: nothing fetched
+    expect(applyServerParam('http://evil.example.com:5173')).toBe('none') // refused: nothing fetched, nothing changed
     expect(getBackendOverride()).toBe('https://backend.openvolley.app')
     expect(fetchSpy).not.toHaveBeenCalled()
     fetchSpy.mockRestore()
@@ -435,5 +454,239 @@ describe('cloud API split from the relay', () => {
     for (const u of ['https://backend.openvolley.app', 'https://cloud.example.org', 'http://172.32.0.1', null, '', 'not a url']) {
       expect(isLanBackendUrl(u), String(u)).toBe(false)
     }
+  })
+})
+
+// isAllowedBackendUrl is the only check between a ?server= link or a typed
+// address and the session token and password: a loosened rule (a suffix test
+// without the dot, public addresses, plain http to the cloud) must fail here.
+describe('isAllowedBackendUrl', () => {
+  afterEach(() => vi.unstubAllEnvs())
+
+  it('takes a venue relay on this machine or the hall network over http or https', () => {
+    for (const u of [
+      'http://localhost:8080', 'http://127.0.0.1:5173', 'http://[::1]:8080', 'http://192.168.1.20:5173',
+      'http://10.0.0.183:8080', 'http://172.16.0.1', 'http://172.31.255.254:8080', 'http://openvolley.local',
+      'https://192.168.1.20:5173', 'https://openvolley.local:8443'
+    ]) {
+      expect(isAllowedBackendUrl(u), u).toBe(true)
+    }
+  })
+
+  it('takes an openvolley.app host over https only', () => {
+    for (const u of ['https://backend.openvolley.app', 'https://openvolley.app', 'https://dev-backend.openvolley.app', 'https://BACKEND.openvolley.app/']) {
+      expect(isAllowedBackendUrl(u), u).toBe(true)
+    }
+    // plain http to the cloud would carry the password and the session token in clear
+    for (const u of ['http://backend.openvolley.app', 'http://openvolley.app', 'http://dev-backend.openvolley.app:80']) {
+      expect(isAllowedBackendUrl(u), u).toBe(false)
+    }
+  })
+
+  it('refuses foreign hosts, look-alikes, public addresses and other schemes', () => {
+    for (const u of [
+      'https://example.com', 'http://example.com', 'https://openvolley.app.evil.example', 'https://backend.openvolley.app.evil.example',
+      'https://xopenvolley.app', 'https://backend-openvolley.app', 'https://evil.example/backend.openvolley.app',
+      'https://evil.example?x=.openvolley.app', 'https://backend.openvolley.app.', 'http://203.0.113.5', 'https://8.8.8.8',
+      'http://172.32.0.1', 'http://172.15.0.1', 'http://192.169.1.1', 'http://11.0.0.1', 'http://100.101.102.103:8080',
+      'http://scorer-laptop:8080', 'http://evil.localhost.example', 'ws://192.168.1.20:8080', 'ftp://192.168.1.20',
+      'javascript:alert(1)', 'data:text/html,x', 'not a url', '', null, undefined, 42
+    ]) {
+      expect(isAllowedBackendUrl(u), String(u)).toBe(false)
+    }
+  })
+
+  it('a dev build never takes the production backend (owner decision 5)', () => {
+    vi.stubEnv('VITE_OV_DEV_BUILD', 'true')
+    expect(isDevBuild()).toBe(true)
+    expect(isAllowedBackendUrl('https://backend.openvolley.app')).toBe(false)
+    expect(isAllowedBackendUrl('https://dev-backend.openvolley.app')).toBe(true)
+    expect(isAllowedBackendUrl('http://192.168.1.20:5173')).toBe(true)
+    setBackendOverride('https://backend.openvolley.app')
+    expect(getBackendOverride()).toBeNull()
+  })
+})
+
+describe('normalizeServerAddress (connection screen and links)', () => {
+  it('gives a bare address http:// on the hall network and https:// elsewhere', () => {
+    expect(normalizeServerAddress('192.168.1.42:5173')).toBe('http://192.168.1.42:5173')
+    expect(normalizeServerAddress('  10.0.0.2:8080/ ')).toBe('http://10.0.0.2:8080')
+    expect(normalizeServerAddress('openvolley.local')).toBe('http://openvolley.local')
+    expect(normalizeServerAddress('localhost:8080')).toBe('http://localhost:8080')
+    expect(normalizeServerAddress('backend.openvolley.app')).toBe('https://backend.openvolley.app')
+    expect(normalizeServerAddress('scorer-laptop:8080')).toBe('https://scorer-laptop:8080')
+    expect(normalizeServerAddress('https://backend.openvolley.app/')).toBe('https://backend.openvolley.app')
+    expect(normalizeServerAddress('HTTP://192.168.1.42:5173')).toBe('HTTP://192.168.1.42:5173')
+    expect(normalizeServerAddress('')).toBe('')
+  })
+})
+
+// fe-connect-devices-1: a role page's ?server= used to be stored for this and
+// later visits without a question, in the override the scorer page on the
+// same origin reads first for its relay (PINs, rosters) and, on a page
+// served from the LAN, for sign-in and the cloud API too.
+describe('a role link ?server= (applyServerParam)', () => {
+  const setLocation = (url) => {
+    const u = new URL(url)
+    Object.defineProperty(window, 'location', {
+      value: { hostname: u.hostname, protocol: u.protocol, port: u.port, origin: u.origin, host: u.host, pathname: u.pathname, search: u.search },
+      writable: true,
+      configurable: true
+    })
+  }
+  let fetchSpy
+  beforeEach(() => {
+    vi.stubEnv('DEV', false)
+    vi.stubEnv('VITE_BACKEND_URL', '')
+    vi.stubEnv('VITE_CLOUD_API_URL', '')
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false, json: async () => ({}) })
+  })
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    fetchSpy.mockRestore()
+  })
+
+  it('a refused host: nothing stored, nothing fetched, nothing to ask', () => {
+    setLocation('https://referee.openvolley.app/?server=x')
+    setAppEntry('referee')
+    for (const v of ['evil.example.com', 'http://203.0.113.5', 'https://openvolley.app.evil.example', 'http://backend.openvolley.app', 'javascript:alert(1)']) {
+      expect(applyServerParam(v), v).toBe('none')
+      expect(serverParamNeedsConfirm(v), v).toBe(false)
+      expect(getBackendOverride(), v).toBeNull()
+    }
+    expect(localStorage.getItem('openvolley_backend_override')).toBeNull()
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('another server is used only once confirmed, by this role page in this tab, never by the scorer page', () => {
+    setLocation('http://192.168.1.20:5173/referee?server=http%3A%2F%2F192.168.1.66%3A8080')
+    setAppEntry('referee')
+    expect(linkServerState('http://192.168.1.66:8080')).toEqual({ state: 'ask', url: 'http://192.168.1.66:8080' })
+    expect(applyServerParam('http://192.168.1.66:8080')).toBe('ask')
+    expect(getBackendOverride()).toBeNull()
+    expect(getRelayWebSocketUrl()).toBe('ws://192.168.1.20:8080')
+
+    // the connection screen asked, naming the host, and the user said yes
+    expect(confirmLinkServer('http://192.168.1.66:8080')).toBe(true)
+    expect(getBackendOverride()).toBe('http://192.168.1.66:8080')
+    expect(getRelayWebSocketUrl()).toBe('ws://192.168.1.66:8080')
+    // kept for this tab only, not for later visits
+    expect(localStorage.getItem('openvolley_backend_override')).toBeNull()
+    // a reload of the same link asks nothing
+    expect(applyServerParam('http://192.168.1.66:8080')).toBe('known')
+
+    // the bench page in the same tab has its own choice
+    setAppEntry('bench')
+    expect(getBackendOverride()).toBeNull()
+
+    // the scorer page on the same origin (the same tab, later): its relay,
+    // sign-in and cloud API stay on the page's own server
+    setLocation('http://192.168.1.20:5173/')
+    setAppEntry('scorer')
+    expect(getBackendOverride()).toBeNull()
+    expect(getRelayWebSocketUrl()).toBe('ws://192.168.1.20:8080')
+    expect(getCloudApiBaseUrl()).toBe('http://192.168.1.20:5173')
+    expect(confirmLinkServer('http://192.168.1.66:8080')).toBe(false)
+    expect(getBackendOverride()).toBeNull()
+  })
+
+  it('a cloud scorer page never follows a link server either', () => {
+    vi.stubEnv('VITE_BACKEND_URL', 'https://backend.openvolley.app')
+    setLocation('https://app.openvolley.app/referee?server=x.openvolley.app')
+    setAppEntry('referee')
+    expect(applyServerParam('x.openvolley.app')).toBe('ask')
+    confirmLinkServer('https://x.openvolley.app')
+    expect(getCloudApiBaseUrl()).toBe('https://x.openvolley.app')
+    setLocation('https://app.openvolley.app/')
+    setAppEntry('scorer')
+    expect(getCloudApiBaseUrl()).toBe('https://backend.openvolley.app')
+    expect(getRelayWebSocketUrl()).toBe('wss://backend.openvolley.app')
+  })
+
+  it('the app\'s own server needs no question (the scorer\'s QR links name it)', () => {
+    vi.stubEnv('VITE_BACKEND_URL', 'https://backend.openvolley.app')
+    setLocation('https://referee.openvolley.app/?server=https%3A%2F%2Fbackend.openvolley.app')
+    setAppEntry('referee')
+    expect(applyServerParam('https://backend.openvolley.app')).toBe('known')
+    expect(applyServerParam('https://backend.openvolley.app/')).toBe('known')
+    expect(serverParamNeedsConfirm('backend.openvolley.app')).toBe(false)
+    // a page served by a venue relay: a link to that relay itself
+    vi.stubEnv('VITE_BACKEND_URL', '')
+    setLocation('http://192.168.1.20:5173/bench?server=http%3A%2F%2F192.168.1.20%3A5173')
+    setAppEntry('bench')
+    expect(applyServerParam('http://192.168.1.20:5173')).toBe('known')
+  })
+
+  it('a link to the default replaces a typed server for this tab; a typed server replaces the link\'s', () => {
+    vi.stubEnv('VITE_BACKEND_URL', 'https://backend.openvolley.app')
+    setLocation('https://referee.openvolley.app/')
+    setAppEntry('referee')
+    setBackendOverride('http://192.168.1.30:8080') // typed earlier on this tablet
+    expect(applyServerParam('https://backend.openvolley.app')).toBe('known')
+    expect(getBackendOverride()).toBe('https://backend.openvolley.app')
+    // the connection screen: a server typed now wins over the link's
+    setBackendOverride('http://192.168.1.31:8080')
+    expect(getBackendOverride()).toBe('http://192.168.1.31:8080')
+    // "Online (automatic)" clears both
+    confirmLinkServer('https://backend.openvolley.app')
+    clearBackendOverride()
+    expect(getBackendOverride()).toBeNull()
+    expect(getBackendUrl()).toBe('https://backend.openvolley.app')
+  })
+})
+
+// Owner decision 5: dev-branch builds (Pages previews, dev-*.openvolley.app)
+// must not use the production backend. The build puts the test backend in
+// VITE_BACKEND_URL (build-channel.js); without one there is none at all.
+describe('dev builds never fall back to the production backend', () => {
+  const setLocation = (url) => {
+    const u = new URL(url)
+    Object.defineProperty(window, 'location', {
+      value: { hostname: u.hostname, protocol: u.protocol, port: u.port, origin: u.origin, host: u.host },
+      writable: true,
+      configurable: true
+    })
+  }
+  beforeEach(() => {
+    vi.stubEnv('DEV', false)
+    vi.stubEnv('VITE_OV_DEV_BUILD', 'true')
+    vi.stubEnv('VITE_BACKEND_URL', '')
+    vi.stubEnv('VITE_CLOUD_API_URL', '')
+  })
+  afterEach(() => {
+    delete window.Capacitor
+    vi.unstubAllEnvs()
+  })
+
+  it('without a test backend: no backend, no relay, no cloud API', () => {
+    setLocation('https://dev-app.openvolley.app/')
+    expect(isDevBuildWithoutBackend()).toBe(true)
+    expect(getBackendUrl()).toBeNull()
+    expect(getRelayWebSocketUrl()).toBeNull()
+    expect(getCloudApiBaseUrl()).toBeNull()
+    expect(getCloudApiUrl('/api/auth/sign-in')).toBeNull()
+    setLocation('https://dev.openvolley-referee.pages.dev/')
+    expect(getBackendUrl()).toBeNull()
+    // a venue relay chosen on the page still works; the cloud stays absent
+    setBackendOverride('http://192.168.1.20:8080')
+    expect(getRelayWebSocketUrl()).toBe('ws://192.168.1.20:8080')
+    expect(getCloudApiBaseUrl()).toBeNull()
+  })
+
+  it('with a test backend: that one for everything', () => {
+    vi.stubEnv('VITE_BACKEND_URL', 'https://dev-backend.openvolley.app')
+    setLocation('https://dev-app.openvolley.app/')
+    expect(isDevBuildWithoutBackend()).toBe(false)
+    expect(getBackendUrl()).toBe('https://dev-backend.openvolley.app')
+    expect(getRelayWebSocketUrl()).toBe('wss://dev-backend.openvolley.app')
+    expect(getCloudApiBaseUrl()).toBe('https://dev-backend.openvolley.app')
+  })
+
+  it('a production build is unchanged', () => {
+    vi.stubEnv('VITE_OV_DEV_BUILD', '')
+    setLocation('https://app.openvolley.app/')
+    expect(isDevBuild()).toBe(false)
+    expect(getBackendUrl()).toBe('https://backend.openvolley.app')
+    expect(getCloudApiBaseUrl()).toBe('https://backend.openvolley.app')
   })
 })

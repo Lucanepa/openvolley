@@ -212,9 +212,10 @@ export default function BenchApp() {
     const serverParam = params.get('server')
     const teamParam = params.get('team')
 
-    if (serverParam) {
-      applyServerParam(serverParam)
-    }
+    // A link naming another server than this page's: the connection screen
+    // asks first, naming it (also on a page a venue relay serves); the link
+    // or the stored session goes on once it is answered
+    const askServer = serverParam ? applyServerParam(serverParam) === 'ask' : false
 
     // A bench that joined through a link (QR code) still has ?match=&team= in
     // its address after a reload: nothing removes them, and the app's own
@@ -235,6 +236,7 @@ export default function BenchApp() {
       setRestoringSession(true)
       setServerReady(true)
     }
+    if (askServer) setServerReady(false)
   }, [])
 
   // Restore the stored bench session: same PIN check as a fresh connect.
@@ -246,7 +248,8 @@ export default function BenchApp() {
   // After such an outage a refusal waits BENCH_RESTORE_GRACE_MS for the scorer
   // to publish the match again (keepRefusedBenchSession).
   useEffect(() => {
-    if (!restoringSession) return
+    // (after a link's server question, against the server chosen there)
+    if (!restoringSession || !serverReady) return
     if (!readBenchSession()) {
       setRestoringSession(false)
       return
@@ -321,7 +324,7 @@ export default function BenchApp() {
       cancelled = true
       if (retry) clearTimeout(retry)
     }
-  }, [restoringSession, connectionMode])
+  }, [restoringSession, serverReady, connectionMode])
 
   // Auto-connect to match from URL params
   useEffect(() => {
