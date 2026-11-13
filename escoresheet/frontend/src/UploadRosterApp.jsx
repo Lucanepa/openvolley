@@ -474,8 +474,9 @@ export default function UploadRosterApp() {
         return
       }
 
-      // Get full match data to check sets and events
-      const matchData = await getMatchData(foundMatch.id)
+      // Get full match data to check sets and events. A relay finds the match
+      // under its room key (relayMatchId), not under the scorer's Dexie id.
+      const matchData = await getMatchData(foundMatch.relayMatchId ?? foundMatch.id)
       if (!matchData.success) {
         setMatchStatusCheck('invalid')
         setMatch(null)
@@ -523,7 +524,7 @@ export default function UploadRosterApp() {
       // Match is valid for roster upload
       setMatchStatusCheck('valid')
       setMatch(foundMatch)
-      setMatchId(foundMatch.id)
+      setMatchId(foundMatch.relayMatchId ?? foundMatch.id)
       
       // Set teams from match data
       if (matchData.homeTeam) setHomeTeam(matchData.homeTeam)
@@ -640,7 +641,7 @@ export default function UploadRosterApp() {
       }
 
       setMatch(foundMatch)
-      setMatchId(foundMatch.id)
+      setMatchId(foundMatch.relayMatchId ?? foundMatch.id)
 
       // Supabase mode: validate the upload PIN server-side (never sent to client).
       if (activeConnection === 'supabase') {
@@ -668,12 +669,12 @@ export default function UploadRosterApp() {
         : (foundMatch.awayTeamUploadPin || foundMatch.away_team_upload_pin)
       const pinIsRequired = correctPin != null && correctPin !== ''
 
+      // A relay never hands out the PIN: it checks the one sent with the roster
+      if (!uploadPin.trim()) {
+        setValidationError('Please enter an upload PIN')
+        return false
+      }
       if (pinIsRequired) {
-        if (!uploadPin.trim()) {
-          setValidationError('Please enter an upload PIN')
-          return false
-        }
-
         if (uploadPin.trim() !== correctPin) {
           setValidationError('Invalid upload PIN')
           return false
@@ -905,9 +906,11 @@ export default function UploadRosterApp() {
       if (rosterGoesToRelay(activeConnection)) {
         try {
           const serverPendingField = team === 'home' ? 'pendingHomeRoster' : 'pendingAwayRoster'
+          // The relay checks this team's upload PIN and hands the roster
+          // only to the scoresheet of this match
           await updateMatchData(matchId, {
             [serverPendingField]: rosterData
-          })
+          }, { pin: uploadPin.trim() })
           saved = true
           console.log('[Roster] Relay update succeeded')
         } catch (serverError) {
@@ -967,15 +970,15 @@ export default function UploadRosterApp() {
     ? (match?.homeTeamUploadPin || match?.home_team_upload_pin)
     : (match?.awayTeamUploadPin || match?.away_team_upload_pin)
   // Supabase mode: PIN is validated server-side (never sent to client), so a
-  // synced match always requires a server-confirmed PIN (fail-closed).
-  const isPinRequired = activeConnection === 'supabase'
-    ? true
-    : (teamUploadPin != null && teamUploadPin !== '')
-  // When PIN is required, validate with PIN. When no PIN required, require manual validation click.
+  // synced match always requires a server-confirmed PIN (fail-closed). A relay
+  // never sends the PIN either: it checks the one sent with the roster.
+  const isPinRequired = true
   const isValid = match && matchId && (
     activeConnection === 'supabase'
       ? serverPinValidated
-      : (isPinRequired ? (uploadPin && teamUploadPin === uploadPin) : manuallyValidated)
+      : (teamUploadPin != null && teamUploadPin !== ''
+          ? (uploadPin && teamUploadPin === uploadPin)
+          : uploadPin.length === 6)
   )
 
   // Handle connection mode change

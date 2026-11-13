@@ -283,22 +283,96 @@ function stripMatchSecrets(match) {
 // Personal data the relay never hands out. Subscribing needs no PIN (tablets
 // check theirs over HTTP, then subscribe like any viewer) and the room key is
 // the match's public external_id, so every match object and bundle that
-// leaves the relay is public. The match is the scorer's free-form Dexie row,
-// hence denylists. Same lists in backend/lib/publicColumns.js and
-// src-tauri/src/relay.rs.
+// leaves the relay is public. The match and team objects are the scorer's
+// free-form Dexie rows, so they leave through allowlists: a key the scorer
+// adds later stays on the relay until it is listed. These lists are a copy of
+// ../shared/relayPrivateFields.json (this file must not require() it), which
+// src-tauri/src/relay.rs includes and backend/lib/publicColumns.js follows;
+// lanRelayData.test.js checks that the three agree.
+// Keys of a person (player, bench member, official) never relayed.
 const PERSON_PRIVATE_FIELDS = [
-  'dob', 'dateOfBirth', 'date_of_birth', 'birthDate', 'birthdate', 'birth_date',
-  'country', 'nationality', 'email', 'phone', 'address',
+  'dob', 'dateOfBirth', 'date_of_birth', 'birthDate', 'birthdate', 'birth_date', 'country',
+  'nationality', 'email', 'phone', 'address',
 ]
-// Plus every key containing "signature" (any case).
+
+// Match keys never relayed (besides any key containing "signature").
 const MATCH_PRIVATE_FIELDS = [
-  'officials', 'signatures', 'approval', 'manualChanges', 'manual_changes',
-  'pendingHomeRoster', 'pendingAwayRoster', 'pending_home_roster', 'pending_away_roster',
+  'officials', 'signatures', 'approval', 'accountApprovals', 'account_approvals', 'manualChanges',
+  'manual_changes', 'pendingHomeRoster', 'pendingAwayRoster', 'pending_home_roster',
+  'pending_away_roster', 'pendingTeam1Roster', 'pendingTeam2Roster', 'pending_team1_roster',
+  'pending_team2_roster',
 ]
+
 // Match keys holding people: kept, each entry without PERSON_PRIVATE_FIELDS.
 const MATCH_ROSTER_FIELDS = [
-  'players_home', 'players_away', 'bench_home', 'bench_away',
-  'players_team1', 'players_team2', 'benchHome', 'benchAway', 'homePlayers', 'awayPlayers',
+  'players_home', 'players_away', 'bench_home', 'bench_away', 'players_team1', 'players_team2',
+  'benchHome', 'benchAway', 'homePlayers', 'awayPlayers', 'team1Players', 'team2Players',
+]
+
+// Match keys holding one person: kept without PERSON_PRIVATE_FIELDS.
+const MATCH_PERSON_FIELDS = [
+  'linesman1', 'linesman2', 'referee', 'scorer',
+]
+
+// Match keys holding a team object: kept as publicTeam.
+const MATCH_TEAM_FIELDS = [
+  'away_team', 'home_team', 'team1_data', 'team1_team', 'team2_data', 'team2_team',
+]
+
+// The match keys a bundle carries (what the tablets, livescore and openbeach read).
+const PUBLIC_MATCH_FIELDS = [
+  '_relayEpoch', '_relaySeq', '_syncSession', '_syncedAt', '_syncedSeq', 'approved', 'approved_at',
+  'away', 'awayCaptain', 'awayColor', 'awayCourtCaptain', 'awayName', 'awayPlayers',
+  'awayRememberedCourtCaptain', 'awayShortName', 'awayTeamConnectionEnabled', 'awayTeamId',
+  'awayTeamName', 'away_name', 'away_short_name', 'away_team', 'away_team_connection_enabled',
+  'away_team_name', 'beach', 'benchAway', 'benchHome', 'bench_away', 'bench_home', 'bestOf',
+  'best_of', 'championshipType', 'championshipTypeOther', 'championship_type', 'city', 'closedAt',
+  'closed_at', 'cloudBlock', 'code', 'coinToss', 'coinTossChoice', 'coinTossConfirmed',
+  'coinTossServeA', 'coinTossServeB', 'coinTossTeamA', 'coinTossTeamB', 'coinTossWinner',
+  'coin_toss', 'coin_toss_confirmed', 'coin_toss_serve_a', 'coin_toss_team_a', 'coin_toss_team_b',
+  'competitionMatchId', 'competition_name', 'connectionPinsQueuedAt', 'connections', 'court',
+  'court_id', 'createdAt', 'created_at', 'dtstart', 'easy', 'entry1_id', 'entry2_id', 'eventName',
+  'exceptionalSubstitutionAway', 'exceptionalSubstitutionHome', 'externalId', 'external_id',
+  'final_mail', 'final_score', 'firstServe', 'first_serve', 'forfait', 'forfaitTeam', 'forfaitType',
+  'forfeit', 'forfeitReason', 'forfeitTeam', 'gameN', 'gameNumber', 'game_n', 'gender',
+  'groupDisplay', 'hall', 'hasCoach', 'home', 'homeCaptain', 'homeColor', 'homeCourtCaptain',
+  'homeName', 'homePlayers', 'homeRememberedCourtCaptain', 'homeShortName',
+  'homeTeamConnectionEnabled', 'homeTeamId', 'homeTeamName', 'home_name', 'home_short_name',
+  'home_team', 'home_team_connection_enabled', 'home_team_name', 'id', 'importedAt',
+  'intervalChoices', 'intervalStartedAt', 'lastAwayTeamHeartbeat', 'lastHomeTeamHeartbeat',
+  'lastReferee1Heartbeat', 'lastReferee2Heartbeat', 'lastTeam1Heartbeat', 'lastTeam2Heartbeat',
+  'league', 'leftTeam', 'license_number', 'linesman1', 'linesman2', 'listSource',
+  'liveClockOffsetMs', 'matchGender', 'matchInfo', 'matchInfoConfirmedAt', 'matchNumber',
+  'matchPhase', 'matchRound', 'match_external_id', 'match_info', 'match_type_1',
+  'match_type_1_other', 'match_type_2', 'match_type_3', 'match_type_3_other', 'phase',
+  'players_away', 'players_home', 'players_team1', 'players_team2', 'referee', 'referee1First',
+  'referee1Last', 'referee2First', 'referee2Last', 'refereeConnectionEnabled',
+  'referee_connection_enabled', 'remarks', 'restoredAt', 'roster', 'round', 'sanctions',
+  'scheduledAt', 'scheduled_at', 'scorer', 'scorerClaim', 'scoresheetPdfMissing', 'seedKey',
+  'seed_key', 'sentRosterDismissed', 'sentRosterUsed', 'sessionId', 'set2FirstServe',
+  'set3CoinTossWinner', 'set3CourtSwitched', 'set3FirstServe', 'set3LeftTeam', 'set5CourtSwitched',
+  'set5FirstServe', 'set5LeftTeam', 'setLeftTeamOverrides', 'set_results', 'site', 'source1',
+  'source2', 'sportType', 'sport_type', 'status', 'stoppedReason', 'supersededClaims',
+  'team1BenchSide', 'team1Captain', 'team1Coach', 'team1CoachName', 'team1Color', 'team1Country',
+  'team1CourtCaptain', 'team1FirstServe', 'team1FirstServePlayer', 'team1Id', 'team1Name',
+  'team1Players', 'team1ShortName', 'team1TeamConnectionEnabled', 'team1TeamId', 'team1_data',
+  'team1_short_name', 'team1_team', 'team1_team_name', 'team2BenchSide', 'team2Captain',
+  'team2Coach', 'team2CoachName', 'team2Color', 'team2Country', 'team2CourtCaptain',
+  'team2FirstServe', 'team2FirstServePlayer', 'team2Id', 'team2Name', 'team2Players',
+  'team2ShortName', 'team2TeamConnectionEnabled', 'team2TeamId', 'team2_data', 'team2_short_name',
+  'team2_team', 'team2_team_name', 'test', 'type1', 'type2', 'type3', 'type3Other', 'updatedAt',
+  'updated_at', 'userRole', 'venue', 'winner', 'winner_entry_id',
+]
+
+// The team-row keys a bundle carries.
+const PUBLIC_TEAM_FIELDS = [
+  'benchOfficials', 'benchStaff', 'bench_staff', 'coach', 'color', 'created_at', 'external_id',
+  'id', 'name', 'seedKey', 'seed_key', 'shortName', 'short_name',
+]
+
+// Team-row keys holding people (bench officials, the coach).
+const TEAM_PEOPLE_FIELDS = [
+  'benchOfficials', 'benchStaff', 'bench_staff', 'coach',
 ]
 
 function publicPerson(p) {
@@ -318,18 +392,36 @@ function publicPeople(list) {
   return Array.isArray(list) ? list.map(publicPerson) : list
 }
 
+/** A team row as a bundle carries it: PUBLIC_TEAM_FIELDS, its people without personal keys. */
+function publicTeam(team) {
+  if (team == null || typeof team !== 'object' || Array.isArray(team)) return team ?? null
+  const out = {}
+  for (const k of PUBLIC_TEAM_FIELDS) {
+    if (!Object.prototype.hasOwnProperty.call(team, k)) continue
+    const v = team[k]
+    out[k] = !TEAM_PEOPLE_FIELDS.includes(k) ? v : Array.isArray(v) ? publicPeople(v) : publicPerson(v)
+  }
+  return out
+}
+
 /**
- * A match object as the relay may hand it out: PIN-free (stripMatchSecrets),
- * without MATCH_PRIVATE_FIELDS or signature keys, rosters without personal keys.
+ * A match object as the relay may hand it out: PUBLIC_MATCH_FIELDS only
+ * (never a PIN, MATCH_PRIVATE_FIELDS or a signature key), rosters, people and
+ * team objects without personal keys.
  * @param {any} match
  */
 function publicMatch(match) {
   const clean = stripMatchSecrets(match)
   if (!clean || typeof clean !== 'object' || Array.isArray(clean)) return clean
   const out = {}
-  for (const [k, v] of Object.entries(clean)) {
+  for (const k of PUBLIC_MATCH_FIELDS) {
+    if (!Object.prototype.hasOwnProperty.call(clean, k)) continue
     if (MATCH_PRIVATE_FIELDS.includes(k) || /signature/i.test(k)) continue
-    out[k] = MATCH_ROSTER_FIELDS.includes(k) ? publicPeople(v) : v
+    const v = clean[k]
+    if (MATCH_ROSTER_FIELDS.includes(k)) out[k] = publicPeople(v)
+    else if (MATCH_PERSON_FIELDS.includes(k)) out[k] = Array.isArray(v) ? publicPeople(v) : publicPerson(v)
+    else if (MATCH_TEAM_FIELDS.includes(k)) out[k] = typeof v === 'string' ? v : publicTeam(v)
+    else out[k] = v
   }
   return out
 }
@@ -414,6 +506,31 @@ function pinGrantsAccess(match, pin) {
     if (s && safeEqualText(s, p)) ok = true
   }
   return ok
+}
+
+// PATCH /api/match/:id: the one key a roster upload may set, with the team
+// whose upload PIN it needs (openbeach: team 1 / team 2; older builds
+// team1TeamUploadPin).
+const ROSTER_UPLOAD_FIELDS = {
+  pendingHomeRoster: ['homeTeamUploadPin'],
+  pendingAwayRoster: ['awayTeamUploadPin'],
+  pendingTeam1Roster: ['team1UploadPin', 'team1TeamUploadPin'],
+  pendingTeam2Roster: ['team2UploadPin', 'team2TeamUploadPin'],
+}
+
+/** True when `pin` is the upload PIN of the team whose roster `field` holds. */
+function uploadPinGrants(match, field, pin) {
+  const p = pin === undefined || pin === null ? '' : String(pin).trim()
+  const fields = Object.prototype.hasOwnProperty.call(ROSTER_UPLOAD_FIELDS, field) ? ROSTER_UPLOAD_FIELDS[field] : null
+  if (!p || !fields || !match || typeof match !== 'object') return false
+  const expected = firstPin(match, fields)
+  const s = expected === undefined || expected === null ? '' : String(expected).trim()
+  return !!s && safeEqualText(s, p)
+}
+
+/** True when `pin` is any PIN of the match: a tablet's (pinGrantsAccess) or a team's upload PIN. */
+function anyMatchPinGrants(match, pin) {
+  return pinGrantsAccess(match, pin) || Object.keys(ROSTER_UPLOAD_FIELDS).some((f) => uploadPinGrants(match, f, pin))
 }
 
 /**
@@ -573,8 +690,8 @@ function bundleSport(bundle) {
 function toWireBundle(bundle) {
   const out = {
     match: publicMatch(bundle.match),
-    homeTeam: bundle.homeTeam ?? null,
-    awayTeam: bundle.awayTeam ?? null,
+    homeTeam: publicTeam(bundle.homeTeam),
+    awayTeam: publicTeam(bundle.awayTeam),
     homePlayers: publicPeople(bundle.homePlayers || []),
     awayPlayers: publicPeople(bundle.awayPlayers || []),
     sets: bundle.sets || [],
@@ -1622,8 +1739,8 @@ function createLanRelay(options = {}) {
   }
 
   /** Ask the connected (proven) scoreboards; resolves null on timeout / no answer. */
-  function requestFromScoreboards(type, payload, matchId = null) {
-    const targets = new Set(scoreboardSockets())
+  function requestFromScoreboards(type, payload, matchId = null, sockets = null) {
+    const targets = new Set(sockets || scoreboardSockets())
     if (targets.size === 0) return Promise.resolve(null)
     const requestId = `${type}-${Date.now()}-${Math.random().toString(36).slice(2)}`
     return new Promise((resolve) => {
@@ -1670,16 +1787,18 @@ function createLanRelay(options = {}) {
         declineRequest(msg.requestId, ws)
         return
       }
+      // Only with the match's bundle as it is now (the claim check of a sync):
+      // a bare success proves nothing was stored
       const bundle = bundleFromMessage({ matchData: msg.data })
       const id = normalizeMatchId(msg.matchId) ?? p.matchId
       const claimed = bundle && id === p.matchId && relayKeyOf(id, bundle.match) === id ? claim(ws, id, bundle.match) : null
-      if (claimed && claimed.ok) {
-        const stored = storeBundle(id, bundle, claimed.kind)
-        sendMatchData(id, 'match-data-update', stored, undefined, ws)
-        settle(msg.requestId, { data: stored })
-      } else {
-        settle(msg.requestId, { data: null })
+      if (!claimed || !claimed.ok) {
+        declineRequest(msg.requestId, ws)
+        return
       }
+      const stored = storeBundle(id, bundle, claimed.kind)
+      sendMatchData(id, 'match-data-update', stored, undefined, ws)
+      settle(msg.requestId, { data: stored })
     }
   }
 
@@ -2063,28 +2182,77 @@ function createLanRelay(options = {}) {
     return { status: 200, body: { success: true, matches } }
   }
 
-  async function findByGameNumber(gameNumber) {
+  /**
+   * GET /api/match/by-game-number: the match's public summary (SUMMARY_MATCH_FIELDS,
+   * the team names) and its room key; the public match only with a PIN of that
+   * match (`pin`, X-OV-Match-Pin: a tablet's or a team's upload PIN). Wrong PINs
+   * count like GET /api/match/:id.
+   */
+  async function findByGameNumber(gameNumber, { pin = null, ip = null } = {}) {
     const gn = gameNumber === undefined || gameNumber === null ? '' : String(gameNumber).trim()
     if (!gn) return { status: 400, body: { success: false, error: 'Game number required' } }
+    const offered = pin === undefined || pin === null ? '' : String(pin).trim()
+    const failKey = `ip:${ip || 'unknown'}`
+    if (offered && pinFailures.blocked(failKey)) {
+      return { status: 429, body: { success: false, error: 'Too many wrong PINs. Wait a minute.' } }
+    }
+    const answer = (match, matchId, bundle) => {
+      const full = !!offered && anyMatchPinGrants(match, offered)
+      if (offered && !full) pinFailures.fail(failKey)
+      if (full) return { status: 200, body: { success: true, access: 'full', match: publicMatch(match), matchId } }
+      const summary = relaySummaryBundle({ ...(bundle || {}), match })
+      return {
+        status: 200,
+        body: { success: true, access: 'summary', match: summary.match, homeTeam: summary.homeTeam, awayTeam: summary.awayTeam, matchId },
+      }
+    }
     for (const [key, bundle] of store) {
       const match = bundle.match
       if (match && (String(match.gameNumber || '') === gn || String(match.game_n || '') === gn || key === gn)) {
-        return { status: 200, body: { success: true, match: publicMatch(match), matchId: key } }
+        return answer(match, key, bundle)
       }
     }
     const found = await requestFromScoreboards('game-number-request', { gameNumber: gn })
     if (!found) return { status: 404, body: { success: false, error: 'Match not found with this game number' } }
-    return { status: 200, body: { success: true, match: publicMatch(found.match), matchId: found.matchId } }
+    return answer(found.match, found.matchId, store.get(found.matchId))
   }
 
-  async function updateMatch(rawId, updates) {
+  /**
+   * PATCH /api/match/:id { pendingHomeRoster | pendingAwayRoster | pendingTeam1Roster
+   * | pendingTeam2Roster }: a team's roster upload, with that team's upload PIN
+   * of this match (`pin`, X-OV-Match-Pin). Handed only to the scoreboard that
+   * owns the match; done when it answers with the match's bundle.
+   */
+  async function updateMatch(rawId, updates, { pin = null, ip = null } = {}) {
     const matchId = normalizeMatchId(rawId)
     if (!matchId) return { status: 400, body: { success: false, error: 'Match ID required' } }
-    const result = await requestFromScoreboards('match-update-request', { matchId, updates }, matchId)
+    const keys = updates && typeof updates === 'object' && !Array.isArray(updates) ? Object.keys(updates) : []
+    const field = keys.length === 1 && Object.prototype.hasOwnProperty.call(ROSTER_UPLOAD_FIELDS, keys[0]) ? keys[0] : null
+    const roster = field ? updates[field] : null
+    if (!field || !roster || typeof roster !== 'object' || Array.isArray(roster)) {
+      return { status: 400, body: { success: false, error: 'Only a team roster can be uploaded here' } }
+    }
+    const offered = pin === undefined || pin === null ? '' : String(pin).trim()
+    if (!offered) return { status: 401, body: { success: false, error: 'Upload PIN required' } }
+    const failKey = `ip:${ip || 'unknown'}`
+    if (pinFailures.blocked(failKey)) {
+      return { status: 429, body: { success: false, error: 'Too many wrong PINs. Wait a minute.' } }
+    }
+    const bundle = store.get(matchId)
+    const owners = ownersOf(matchId).filter((o) => o.readyState === 1)
+    if (!bundle || owners.length === 0) {
+      return { status: 404, body: { success: false, error: 'Match not found. Make sure the main scoresheet is running and connected.' } }
+    }
+    if (!uploadPinGrants(bundle.match, field, offered)) {
+      pinFailures.fail(failKey)
+      return { status: 403, body: { success: false, error: 'Invalid upload PIN' } }
+    }
+    if (isFinishedMatch(bundle.match)) return { status: 409, body: { success: false, error: 'This match has already ended' } }
+    const result = await requestFromScoreboards('match-update-request', { matchId, updates: { [field]: roster } }, matchId, owners)
     if (!result) {
       return { status: 500, body: { success: false, error: 'Update request timeout. Make sure the main scoresheet is running.' } }
     }
-    return { status: 200, body: { success: true, ...(result.data ? toWireBundle(result.data) : {}) } }
+    return { status: 200, body: { success: true } }
   }
 
   function getConnections(matchIdFilter) {
@@ -2278,7 +2446,8 @@ function createLanRelay(options = {}) {
         sendJson(res, 429, { success: false, error: 'Too many requests' })
         return true
       }
-      reply(findByGameNumber(parsed.searchParams.get('gameNumber')))
+      const pin = req.headers && req.headers['x-ov-match-pin']
+      reply(findByGameNumber(parsed.searchParams.get('gameNumber'), { pin: typeof pin === 'string' ? pin : null, ip }))
       return true
     }
     if (path === '/api/server/connections' && method === 'GET') {
@@ -2295,7 +2464,8 @@ function createLanRelay(options = {}) {
         return true
       }
       if (method === 'PATCH') {
-        reply(readJsonBody(req).then((updates) => updateMatch(id, updates)))
+        const pin = req.headers && req.headers['x-ov-match-pin']
+        reply(readJsonBody(req).then((updates) => updateMatch(id, updates, { pin: typeof pin === 'string' ? pin : null, ip })))
         return true
       }
     }
@@ -2349,6 +2519,12 @@ module.exports = {
   stripMatchDataSecrets,
   PERSON_PRIVATE_FIELDS,
   MATCH_PRIVATE_FIELDS,
+  MATCH_PERSON_FIELDS,
+  MATCH_TEAM_FIELDS,
+  PUBLIC_MATCH_FIELDS,
+  PUBLIC_TEAM_FIELDS,
+  TEAM_PEOPLE_FIELDS,
+  publicTeam,
   MATCH_ROSTER_FIELDS,
   publicMatch,
   publicPeople,
