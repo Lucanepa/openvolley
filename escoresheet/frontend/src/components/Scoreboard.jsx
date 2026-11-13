@@ -142,6 +142,19 @@ const settleTap = (promise) => {
   })
 }
 
+// A sub-event (N.x) the scoreboard writes itself, not through logEvent: the
+// line-up after a substitution, a libero replacement, a sanction exit or a
+// side-out rotation (and the decision change's libero exit). Written and
+// queued for the cloud in the caller's action transaction (utils/eventSync).
+// They used to stay on this device: the server had the starting line-ups
+// only, and a device that continued the match (game number + PIN, Take back
+// scoring) showed the set's starting six and served with the wrong player.
+async function addSyncedSubEvent(row) {
+  const id = await db.events.add(row)
+  await queueEventSync(db, id)
+  return id
+}
+
 // ── volleyui chrome for the scoreboard (RESTYLE-SPEC P5) ──────────────────────
 // Only the chrome around the court takes these: the toolbar, the side-column
 // surfaces, menus, dialogs and the lineup panel. The court, score digits, serve
@@ -5887,7 +5900,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             // Use decimal ID based on the point's action ID (e.g., if point is 1, rotation is 1.1)
             const rotationSeq = await getNextSubSeq(pointSeq)
             const rotationStateBefore = getStateSnapshot()
-            const rotationEventId = await db.events.add({
+            await addSyncedSubEvent({
               matchId,
               setIndex: data.set.index,
               type: 'lineup',
@@ -5909,8 +5922,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               rotationSeq
             }, getStateSnapshot())
 
-            // Don't add to sync_queue for rotation lineups
-            // But sync to referee so they see the updated lineup after rotation
+            // Queued for the cloud with the point (addSyncedSubEvent); also
+            // sync to referee so they see the updated lineup after rotation
             syncToReferee()
             // Also sync to Supabase so live state has the rotated lineup
             syncLiveStateToSupabase('rotation', teamKey, { lineup: cleanedRotatedLineup })
@@ -8146,7 +8159,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     // Log libero exit event (sub-event of the point, as handlePoint does)
                     const liberoPlayer = teamPlayers?.find(p => String(p.number) === String(liberoNumber))
                     const liberoExitSeq = await getNextSubSeq(lastEventSeq)
-                    const liberoExitId = await db.events.add({
+                    const liberoExitId = await addSyncedSubEvent({
                       matchId,
                       setIndex: data.set.index,
                       type: 'libero_exit',
@@ -8168,7 +8181,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 // Log the rotation lineup event for the new team as a sub-event of the
                 // point (N.x): the serve indicator, undo and replay find it there
                 const rotationSeq = await getNextSubSeq(lastEventSeq)
-                const rotationId = await db.events.add({
+                const rotationId = await addSyncedSubEvent({
                   matchId,
                   setIndex: data.set.index,
                   type: 'lineup',
@@ -11076,7 +11089,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       lineupPayload.liberoSubstitution = existingLiberoSub
     }
     const lineupSubEventSeq = subSeq + 0.1
-    await db.events.add({
+    await addSyncedSubEvent({
       matchId,
       setIndex: data.set.index,
       type: 'lineup',
@@ -11594,7 +11607,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
             // Update lineup as a SUB-EVENT (decimal sequence) so undo deletes both together
             const lineupSubEventSeq = libExitSeq + 0.1
-            await db.events.add({
+            await addSyncedSubEvent({
               matchId,
               setIndex: data.set.index,
               type: 'lineup',
@@ -12012,7 +12025,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const maxSeq = allEvents.length > 0 ? Math.max(...allEvents.map(e => e.seq || 0)) : 0
     const subEventSeq = Math.floor(maxSeq) + 0.1 // Sub-event of the libero_entry
 
-    await db.events.add({
+    await addSyncedSubEvent({
       matchId,
       setIndex: data.set.index,
       type: 'lineup',
@@ -12114,7 +12127,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const maxSeqForLibero = allEventsForSeq.length > 0 ? Math.max(...allEventsForSeq.map(e => e.seq || 0)) : 0
     const subEventSeqLibero = Math.floor(maxSeqForLibero) + 0.1
 
-    await db.events.add({
+    await addSyncedSubEvent({
       matchId,
       setIndex: data.set.index,
       type: 'lineup',
@@ -12246,7 +12259,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const maxSeq = allEvents.length > 0 ? Math.max(...allEvents.map(e => e.seq || 0)) : 0
       const subEventSeq = Math.floor(maxSeq) + 0.1 // Sub-event of the libero_exit
 
-      await db.events.add({
+      await addSyncedSubEvent({
         matchId,
         setIndex: data.set.index,
         type: 'lineup',
@@ -12379,7 +12392,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const maxSeqEntry = allEventsEntry.length > 0 ? Math.max(...allEventsEntry.map(e => e.seq || 0)) : 0
     const subEventSeqEntry = Math.floor(maxSeqEntry) + 0.1
 
-    await db.events.add({
+    await addSyncedSubEvent({
       matchId,
       setIndex: data.set.index,
       type: 'lineup',
@@ -12502,7 +12515,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const maxSeq = allEvents.length > 0 ? Math.max(...allEvents.map(e => e.seq || 0)) : 0
     const subEventSeq = Math.floor(maxSeq) + 0.1 // Sub-event of the libero_entry
 
-    await db.events.add({
+    await addSyncedSubEvent({
       matchId,
       setIndex: data.set.index,
       type: 'lineup',
@@ -12681,7 +12694,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const maxSeq = allEvents.length > 0 ? Math.max(...allEvents.map(e => e.seq || 0)) : 0
     const subEventSeq = Math.floor(maxSeq) + 0.1 // Sub-event of the libero_exit
 
-    await db.events.add({
+    await addSyncedSubEvent({
       matchId,
       setIndex: data.set.index,
       type: 'lineup',
@@ -12832,7 +12845,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
               // Update lineup as a SUB-EVENT (decimal sequence) so undo deletes both together
               const lineupSubEventSeq = libExitSeq + 0.1
-              await db.events.add({
+              await addSyncedSubEvent({
                 matchId,
                 setIndex: data.set.index,
                 type: 'lineup',
@@ -13021,7 +13034,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const maxSeq = allEvents.length > 0 ? Math.max(...allEvents.map(e => e.seq || 0)) : 0
     const subEventSeq = Math.floor(maxSeq) + 0.1 // Sub-event of the libero_exchange
 
-    await db.events.add({
+    await addSyncedSubEvent({
       matchId,
       setIndex: data.set.index,
       type: 'lineup',
@@ -20431,7 +20444,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     const maxSeq = allEvents.length > 0 ? Math.max(...allEvents.map(e => e.seq || 0)) : 0
                     const subEventSeq = Math.floor(maxSeq) + 0.1 // Sub-event of the libero_entry
 
-                    await db.events.add({
+                    await addSyncedSubEvent({
                       matchId,
                       setIndex: data.set.index,
                       type: 'lineup',
