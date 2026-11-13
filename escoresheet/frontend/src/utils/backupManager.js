@@ -187,6 +187,28 @@ export async function selectBackupDirectory() {
   return handle
 }
 
+let browserSealer = null
+
+/**
+ * The text of a browser backup file (folder or download): the same file the
+ * apps write (utils/nativeBackup: no PINs inside, encrypted so the game PIN or
+ * the referee PIN opens it; a match with neither, a test match, stays plain).
+ * Such a file may end up on a USB stick or in a shared Downloads folder, so
+ * the PINs and player data are not left in the clear. Throws when a match with
+ * PINs cannot be encrypted: it is never written in the clear.
+ */
+export async function backupFileText(matchId, data) {
+  const [{ serializeBackup }, { createBackupSealer }] = await Promise.all([
+    import('./nativeBackup/engine'),
+    import('./backupCrypto/sealer')
+  ])
+  if (!browserSealer) browserSealer = createBackupSealer()
+  const iso = new Date().toISOString()
+  const { build } = serializeBackup(data)
+  const { text } = await browserSealer.seal(matchId, data, build(iso), iso)
+  return text
+}
+
 /**
  * Export a single match with all related data
  */
@@ -259,7 +281,7 @@ export async function writeMatchBackup(matchId, directoryHandle) {
   try {
     const fileHandle = await directoryHandle.getFileHandle(filename, { create: true })
     const writable = await fileHandle.createWritable()
-    await writable.write(JSON.stringify(data, null, 2))
+    await writable.write(await backupFileText(matchId, data))
     await writable.close()
     return { success: true, filename }
   } catch (error) {
@@ -280,7 +302,7 @@ export async function downloadMatchBackup(matchId) {
   const data = await exportMatchData(matchId)
   const filename = generateBackupFilename(data)
 
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+  const blob = new Blob([await backupFileText(matchId, data)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
 
   const a = document.createElement('a')
@@ -332,6 +354,10 @@ export function pinsForRestore(jsonData, previous) {
   Object.assign(pins, missingConnectionPins(merged))
   if (!match.test && !hasValue(merged.gamePin) && !hasValue(match.game_pin)) {
     pins.gamePin = generateSecurePin(Object.values(pins).map(String))
+    // Made up here, not the match's own (a file opened with the referee PIN
+    // does not hold the game PIN): the restore keeps it off the server, which
+    // has the real one. Not enumerable: spreading the PINs does not copy it.
+    Object.defineProperty(pins, 'gamePinGenerated', { value: true, enumerable: false })
   }
   return pins
 }
@@ -623,6 +649,8 @@ export async function restoreMatchFromJson(jsonData, { checkServer = serverClose
   const liveClockOffsetMs = liveClockOffsetAfter(await cloudLive)
 
   let restoredMatchId = null
+  // A game PIN the restore made up: never sent to the server (pinsForRestore)
+  let generatedGamePin = false
 
   // Start transaction - REPLACE this match only
   await db.transaction('rw', db.matches, db.teams, db.players, db.sets, db.events, db.sync_queue, async () => {
@@ -631,7 +659,9 @@ export async function restoreMatchFromJson(jsonData, { checkServer = serverClose
     // them still uses), referees and scorers are kept.
     const previous = externalId ? await db.matches.filter(m => localMatchKey(m) === externalId).toArray() : []
     // An app backup file has no PINs: keep the replaced copy's, or make new ones
-    match = { ...match, ...pinsForRestore(jsonData, previous[0] || null) }
+    const restoredPins = pinsForRestore(jsonData, previous[0] || null)
+    generatedGamePin = restoredPins.gamePinGenerated === true
+    match = { ...match, ...restoredPins }
     if (externalId) {
       const replacedIds = new Set(previous.map(old => old.id))
       for (const old of previous) {
@@ -755,7 +785,7 @@ export async function restoreMatchFromJson(jsonData, { checkServer = serverClose
       // Build match payload for Supabase (convert local field names to Supabase column names)
       const matchPayload = {
         external_id: externalId,
-        game_pin: match.gamePin || match.game_pin,
+        game_pin: generatedGamePin ? undefined : (match.gamePin || match.game_pin),
         game_n: match.gameN || match.game_n,
         status: match.status || 'live',
         ...restorePins(match),
