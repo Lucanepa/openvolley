@@ -20,9 +20,12 @@
  * - Output is built with json_agg, which is how PostgREST serialises rows.
  * - `update` on the configured JSON columns of `matches` merges objects on the
  *   server, atomically: col = col || $value.
- * - sets/events: every external_id must start with its match's external_id
- *   followed by a separator, and update/delete must be scoped to one match.
- *   An upsert never overwrites or moves a conflicting row of another match.
+ * - sets/events: every external_id must name its own match (childMatchKey:
+ *   `<match external_id>:...`, never a match whose external_id is only a
+ *   prefix of it), and update/delete must be scoped to one match. An upsert
+ *   never overwrites or moves a conflicting row of another match. db/032
+ *   keeps the external_id of a match with children fixed (SQLSTATE OVI01 ->
+ *   409 OV_MATCH_ID_LOCKED), so their ids keep naming it.
  * - Writes need X-OV-Proto >= 2 (426 otherwise).
  * - opts.matchOwner.testOnly (accounts that are not approved scorers): only
  *   test matches and their children may be written (403 OV_SCORER_REQUIRED).
@@ -67,15 +70,12 @@ export const DEFAULT_CONFIG = Object.freeze({
   mergeJsonColumns: {
     matches: ['connections', 'connection_pins', 'team_a', 'team_b', 'officials', 'coin_toss', 'set_results', 'sanctions']
   },
-  // Child tables whose external_id must be prefixed with the parent's external_id.
+  // Child tables whose external_id must name the parent's external_id (childMatchKey).
   scopedChildren: {
     sets: { fk: 'match_id', ext: 'external_id' },
     events: { fk: 'match_id', ext: 'external_id' }
   },
   scopeParent: { table: 'matches', key: 'id', ext: 'external_id' },
-  // Characters allowed right after the match external_id in a child id
-  // (`${seed}:s:${n}` from syncIds.js, `${externalId}_set_${n}` from backupManager).
-  scopeSeparators: [':', '_'],
   // The only embedded selects that are understood. Matched after removing whitespace.
   embeds: {
     match_live_state: [{
@@ -115,6 +115,8 @@ export const DEFAULT_CONFIG = Object.freeze({
       OVA01: { status: 409, code: 'OV_APPROVAL_IMMUTABLE', message: 'An approval cannot be changed.' },
       // db/012: matches.sport_type is fixed after insert
       OVS01: { status: 409, code: 'OV_SPORT_LOCKED', message: 'The sport of a match cannot be changed.' },
+      // db/032: matches.external_id is fixed once the match has sets, events or revisions
+      OVI01: { status: 409, code: 'OV_MATCH_ID_LOCKED', message: 'The id of a match with sets or events cannot be changed.' },
       // db/018: a scorer scores the home games of its own club(s) (lib/clubs.js)
       OVL01: { status: 403, code: 'OV_CLUB_REQUIRED', message: 'Your account has no club yet. An admin adds it before you can score official games.' },
       OVL02: { status: 403, code: 'OV_NOT_YOUR_CLUB', message: 'You can score the home games of your club only.' },
@@ -148,6 +150,27 @@ const SCORER_REQUIRED_MESSAGE = 'Your account is not approved for official match
 const DB_ERROR_INVALIDATES_CATALOG = new Set(['42P01', '42703'])
 const SPORTS = ['indoor', 'beach']
 const sportOfValue = (v) => (v === 'beach' ? 'beach' : 'indoor')
+// The backup form of older apps' set / event ids (no ':' in them)
+const LEGACY_CHILD_ID_RE = /^(.+)_(?:set|event)_[^_]+$/s
+
+/**
+ * The match external_id a set / event id names, or null. The text before its
+ * first ':' (`${seed}:s:${n}` / `${seed}:e:${n}` from syncIds.js; a seed key
+ * never holds ':'), and for an id without ':' the backup form of older apps,
+ * `${externalId}_set_${n}` / `${externalId}_event_${n}` (OpenBeach's
+ * backupManager still sends it). Every id names one match at most: a match
+ * whose external_id is merely a prefix of another's ids ('match',
+ * 'match_<ms>', '<id>:e') owns none of them, and a match whose external_id
+ * holds ':' owns no set or event.
+ * db/032_match_id_scoping.sql has the same rule in SQL.
+ */
+export function childMatchKey (ext) {
+  if (typeof ext !== 'string' || ext === '') return null
+  const i = ext.indexOf(':')
+  if (i >= 0) return i > 0 && i < ext.length - 1 ? ext.slice(0, i) : null
+  const m = LEGACY_CHILD_ID_RE.exec(ext)
+  return m ? m[1] : null
+}
 
 /**
  * The sports in which opts.matchOwner may write test matches only:
@@ -634,7 +657,7 @@ export function createPgQuery (options = {}) {
     return { rows: out, cols }
   }
 
-  /** Reject child ids that do not start with their match's external_id (+ separator). */
+  /** Reject child ids that do not name their own match (childMatchKey). */
   async function assertChildrenScoped (client, cat, table, pairs) {
     const spec = cfg.scopedChildren[table]
     if (!spec || pairs.length === 0) return
@@ -646,15 +669,14 @@ export function createPgQuery (options = {}) {
         fail('OV_UNSCOPED_EXTERNAL_ID', `${table} rows need ${spec.ext} and ${spec.fk}`)
       }
     }
+    // The match the id names must BE the row's match (equal, not a prefix)
     const sql = `SELECT count(*)::int AS bad
-      FROM unnest($1::text[], $2::text[]) AS r(ext, mid)
+      FROM unnest($1::text[], $2::text[]) AS r(key, mid)
       LEFT JOIN ${qTable(parent.name)} AS m ON m.${quoteIdent(pkey.name)} = r.mid::${pkey.typeSql}
      WHERE m.${quoteIdent(pkey.name)} IS NULL
-        OR m.${quoteIdent(pext.name)} IS NULL OR m.${quoteIdent(pext.name)} = ''
-        OR length(r.ext) <= length(m.${quoteIdent(pext.name)})
-        OR NOT starts_with(r.ext, m.${quoteIdent(pext.name)})
-        OR NOT (substr(r.ext, length(m.${quoteIdent(pext.name)}) + 1, 1) = ANY($3::text[]))`
-    const res = await client.query(sql, [pairs.map(p => p.ext), pairs.map(p => String(p.mid)), cfg.scopeSeparators])
+        OR r.key IS NULL
+        OR m.${quoteIdent(pext.name)} IS DISTINCT FROM r.key`
+    const res = await client.query(sql, [pairs.map(p => childMatchKey(p.ext)), pairs.map(p => String(p.mid))])
     if (res.rows[0].bad > 0) fail('OV_UNSCOPED_EXTERNAL_ID', `${res.rows[0].bad} ${table} row(s) not scoped to their match`)
   }
 

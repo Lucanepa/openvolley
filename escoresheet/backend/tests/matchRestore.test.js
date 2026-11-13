@@ -585,7 +585,7 @@ describe('matchRestore on Postgres', { skip: SKIP_PG }, () => {
     it('idFloor: the highest set / event ids the match used, voided events and revisions included', async () => {
       const ext3 = uniq('FLOOR')
       const b = backup(ext3, { gameN: 6160, pin: '616161', sets: 2, events: 3 })
-      b.events.push({ external_id: `${ext3}_legacy`, set_index: 1, type: 'point', seq: 9, payload: {}, sport_type: 'indoor' })
+      b.events.push({ external_id: `${ext3}_event_9`, set_index: 1, type: 'point', seq: 9, payload: {}, sport_type: 'indoor' })
       const r = await restore.restoreMatch(b, W)
       const matchId = r.body.data.id
       const floorOf = async (key) => (await restore.restoreByPin({ gameN: 6160, pin: '616161' }, { limitKey: key })).body.data.idFloor

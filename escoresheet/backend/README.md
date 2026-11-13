@@ -1326,8 +1326,9 @@ Error codes in `body.error.code`:
 |---|---|---|
 | `OV_CLIENT_TOO_OLD` | 426 | write without `X-OV-Proto: 2` |
 | `OV_SECRET_FILTER` | 400 | filter, order or onConflict on a secret column (also through an alias, cast or JSON path) |
-| `OV_UNSCOPED_EXTERNAL_ID` | 400 | set/event `external_id` does not start with its match's `external_id` plus `:` or `_` |
+| `OV_UNSCOPED_EXTERNAL_ID` | 400 | set/event `external_id` does not name its own match: `<match external_id>:…` (the text before the first `:`), or without `:` the older apps' backup form `<match>_set_<n>` / `<match>_event_<n>`. A match whose `external_id` is only a prefix of the id owns nothing (`lib/pgQuery.js` `childMatchKey`, db/032) |
 | `OV_UNSCOPED_WRITE` | 400 | set/event update/delete without `eq` on `match_id` or on a non-numeric `external_id`; set/event upsert whose conflicting row belongs to another match (nothing is written) |
+| `OV_MATCH_ID_LOCKED` | 409 | update/upsert that changes the `external_id` of a match that has sets, events or event revisions (db/032 trigger, SQLSTATE `OVI01`; also for an admin) |
 | `OV_UNFILTERED_WRITE` | 400 | update/delete without a filter |
 | `OV_NOT_MATCH_OWNER` | 403 | write to a match (or its sets/events/live state) the caller neither created nor edits; nothing written |
 | `OV_OWNERSHIP_UNAVAILABLE` | 503 | `db/005_match_ownership.sql` has not run (`retryable: true`) |

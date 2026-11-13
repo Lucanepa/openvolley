@@ -45,6 +45,21 @@ describe('event revisions (unit)', () => {
     assert.notEqual(deleteRevUid('m_1:e:2'), deleteRevUid('m_1:e:3'))
     assert.equal(parseRevisionsBody({ match_external_id: 'match_1_a', revisions: [{ ...rev, rev_uid: deleteRevUid('x') }] }).error, undefined)
   })
+
+  it('an event id names one match only, never one whose external_id is a prefix of it (match, match_1, match_1_x)', () => {
+    for (const m of ['match', 'match_1', 'match_1_', 'match_1_x:e', 'match_1_x:e:']) {
+      assert.equal(isScopedToMatch('match_1_x:e:3', m), false, m)
+    }
+    assert.equal(isScopedToMatch('match_1_x:e:3', 'match_1_x'), true)
+    // the backup form of older apps (`<match>_event_<n>`): its own match only
+    assert.equal(isScopedToMatch('match_1_x_event_7', 'match_1_x'), true)
+    for (const m of ['match', 'match_1', 'match_1_x_event']) assert.equal(isScopedToMatch('match_1_x_event_7', m), false, m)
+    const v = { rev_uid: randomUUID(), op: 'void', event_external_id: 'match_1_x:e:3', reason: 'undo', client_ts: '2026-10-07T10:00:00.000Z' }
+    for (const m of ['match', 'match_1', 'match_1_x:e']) {
+      assert.equal(parseRevisionsBody({ match_external_id: m, revisions: [v] }).error?.body.error.code, 'OV_INVALID_REQUEST', m)
+    }
+    assert.equal(parseRevisionsBody({ match_external_id: 'match_1_x', revisions: [v] }).error, undefined)
+  })
 })
 
 describe('event revisions end to end', { skip: SKIP }, () => {
@@ -272,6 +287,129 @@ describe('event revisions end to end', { skip: SKIP }, () => {
     assert.equal((await revise(null, m.ext, [rev(e1)])).status, 401)
     // an admin may
     assert.equal((await revise(users.admin, m.ext, [rev(e1)])).status, 200)
+  })
+
+  it('a match whose external_id is a prefix of another match\'s ids owns none of them (an account without a role)', async () => {
+    const v = await newMatch(users.anna)
+    await newEvent(users.anna, v, 1)
+    assert.equal((await dbCall(users.anna, 'sets', 'upsert', { data: { external_id: `${v.ext}:s:1`, match_id: v.id, index: 1 }, onConflict: 'external_id' })).status, 200)
+    // signed up, no role: it may write test matches of its own only
+    const olga = await account('olga')
+    const prefixes = ['match', v.ext.split('_').slice(0, 2).join('_'), `${v.ext}:e`, `${v.ext}:s`]
+    for (const ext of prefixes) {
+      const own = await dbCall(olga, 'matches', 'insert', { data: { external_id: ext, test: true, status: 'setup' }, returning: 'id', single: true })
+      assert.equal(own.status, 200, own.text)
+      const mid = own.json.data.id
+      // voids and restores of the scorer's events, those not on the server yet too
+      expectCode(await revise(olga, ext, [rev(`${v.ext}:e:2`)]), 400, 'OV_INVALID_REQUEST')
+      expectCode(await revise(olga, ext, [rev(`${v.ext}:e:3`, { op: 'restore' })]), 400, 'OV_INVALID_REQUEST')
+      // the scorer's next set and event ids, under its own match
+      expectCode(await dbCall(olga, 'events', 'upsert', { data: { external_id: `${v.ext}:e:4`, match_id: mid, set_index: 1, type: 'point', seq: 4 }, onConflict: 'external_id' }), 400, 'OV_UNSCOPED_EXTERNAL_ID')
+      expectCode(await dbCall(olga, 'events', 'insert', { data: { external_id: `${v.ext}_event_5`, match_id: mid, set_index: 1, type: 'point', seq: 5 } }), 400, 'OV_UNSCOPED_EXTERNAL_ID')
+      expectCode(await dbCall(olga, 'sets', 'insert', { data: { external_id: `${v.ext}:s:2`, match_id: mid, index: 2 } }), 400, 'OV_UNSCOPED_EXTERNAL_ID')
+      expectCode(await dbCall(olga, 'sets', 'insert', { data: { external_id: `${v.ext}_set_2`, match_id: mid, index: 2 } }), 400, 'OV_UNSCOPED_EXTERNAL_ID')
+      // nor through a restore of its own match
+      const r = await api(srv.base, '/api/match/restore', {
+        token: olga.token,
+        body: { match: { external_id: ext, test: true, status: 'setup' }, sets: [{ external_id: `${v.ext}:s:3`, index: 3 }], events: [{ external_id: `${v.ext}:e:6`, set_index: 1, type: 'point', seq: 6 }] }
+      })
+      expectCode(r, 400, 'OV_UNSCOPED_EXTERNAL_ID')
+    }
+    assert.equal((await sql.query('SELECT count(*)::int n FROM event_revisions r JOIN matches m ON m.id = r.match_id WHERE m.created_by = $1', [olga.id])).rows[0].n, 0)
+    assert.equal((await sql.query('SELECT count(*)::int n FROM events e JOIN matches m ON m.id = e.match_id WHERE m.created_by = $1', [olga.id])).rows[0].n, 0)
+
+    // the scorer's uploads and restore go through, nothing voided
+    for (const n of [2, 3, 4, 5, 6]) await newEvent(users.anna, v, n)
+    for (const n of [2, 3]) {
+      const s = await dbCall(users.anna, 'sets', 'upsert', { data: { external_id: `${v.ext}:s:${n}`, match_id: v.id, index: n }, onConflict: 'external_id' })
+      assert.equal(s.status, 200, s.text)
+    }
+    const { rows } = await sql.query('SELECT external_id, voided_at FROM events WHERE match_id = $1 ORDER BY seq', [v.id])
+    assert.deepEqual(rows.map(r => [r.external_id, r.voided_at]), [1, 2, 3, 4, 5, 6].map(n => [`${v.ext}:e:${n}`, null]))
+    const restored = await api(srv.base, '/api/match/restore', {
+      token: users.anna.token,
+      body: {
+        match: { external_id: v.ext, game_n: v.n, status: 'live', scheduled_at: '2026-10-10T16:00:00Z' },
+        sets: [1, 2, 3].map(n => ({ external_id: `${v.ext}:s:${n}`, index: n })),
+        events: [1, 2, 3, 4, 5, 6].map(n => ({ external_id: `${v.ext}:e:${n}`, set_index: 1, type: 'point', seq: n }))
+      }
+    })
+    assert.equal(restored.status, 200, restored.text)
+    const pin = await api(srv.base, '/api/match/restore-by-pin', { proto: null, body: { gameN: v.n, pin: GAME_PIN } })
+    assert.deepEqual(pin.json.data.events.map((e) => e.external_id), [1, 2, 3, 4, 5, 6].map(n => `${v.ext}:e:${n}`))
+    assert.equal(pin.json.data.sets.length, 3)
+  })
+
+  it('a match with sets or events keeps its external_id, so their ids never name another match (db/032)', async () => {
+    // an account without a role scores a test match under a seed it learned
+    // before that match reached the server
+    const olga = users.olga || await account('olga')
+    const future = `match_${Date.now()}_${randomBytes(3).toString('hex')}`
+    const own = await dbCall(olga, 'matches', 'insert', { data: { external_id: future, test: true, status: 'setup' }, returning: 'id', single: true })
+    assert.equal(own.status, 200, own.text)
+    const mid = own.json.data.id
+    for (const n of [1, 2, 3]) {
+      assert.equal((await dbCall(olga, 'events', 'insert', { data: { external_id: `${future}:e:${n}`, match_id: mid, set_index: 1, type: 'point', seq: n } })).status, 200)
+    }
+    assert.equal((await dbCall(olga, 'sets', 'insert', { data: { external_id: `${future}:s:1`, match_id: mid, index: 1 } })).status, 200)
+    // its match cannot move away from the ids (update, upsert on id), an admin's write neither
+    const away = `z_${randomBytes(3).toString('hex')}`
+    expectCode(await dbCall(olga, 'matches', 'update', { data: { external_id: away }, filters: [eq('id', mid)] }), 409, 'OV_MATCH_ID_LOCKED')
+    expectCode(await dbCall(olga, 'matches', 'upsert', { data: { id: mid, external_id: away, test: true, status: 'setup' }, onConflict: 'id' }), 409, 'OV_MATCH_ID_LOCKED')
+    expectCode(await dbCall(users.admin, 'matches', 'update', { data: { external_id: away }, filters: [eq('id', mid)] }), 409, 'OV_MATCH_ID_LOCKED')
+    const { rows: [kept] } = await sql.query('SELECT external_id FROM matches WHERE id = $1', [mid])
+    assert.equal(kept.external_id, future)
+    // a revision alone holds it too
+    const solo = `match_${Date.now()}_${randomBytes(3).toString('hex')}`
+    const s = await dbCall(olga, 'matches', 'insert', { data: { external_id: solo, test: true, status: 'setup' }, returning: 'id', single: true })
+    assert.equal(s.status, 200, s.text)
+    assert.deepEqual((await revise(olga, solo, [rev(`${solo}:e:9`)])).json?.data, { applied: 0, pending: 1 })
+    expectCode(await dbCall(olga, 'matches', 'update', { data: { external_id: away }, filters: [eq('id', s.json.data.id)] }), 409, 'OV_MATCH_ID_LOCKED')
+
+    // the apps' match writes that carry the same external_id are not a change
+    const v = await newMatch(users.anna)
+    await newEvent(users.anna, v, 1)
+    assert.equal((await dbCall(users.anna, 'matches', 'update', { data: { external_id: v.ext, status: 'live' }, filters: [eq('external_id', v.ext)] })).status, 200)
+    assert.equal((await dbCall(users.anna, 'matches', 'upsert', { data: { external_id: v.ext, game_n: v.n, status: 'live' }, onConflict: 'external_id' })).status, 200)
+
+    // without its children the test match may take another id, and then the
+    // scorer's match under that seed writes all of its sets and events
+    assert.equal((await dbCall(olga, 'events', 'delete', { filters: [eq('match_id', mid)] })).status, 200)
+    assert.equal((await dbCall(olga, 'sets', 'delete', { filters: [eq('match_id', mid)] })).status, 200)
+    assert.equal((await dbCall(olga, 'matches', 'update', { data: { external_id: away }, filters: [eq('id', mid)] })).status, 200)
+    const n = gameSeq++
+    const real = await dbCall(users.anna, 'matches', 'insert', { data: { external_id: future, game_n: n, status: 'live', game_pin: GAME_PIN, scheduled_at: '2026-10-10T16:00:00Z' }, returning: 'id', single: true })
+    assert.equal(real.status, 200, real.text)
+    const m = { ext: future, n, id: real.json.data.id }
+    for (const k of [1, 2, 3]) await newEvent(users.anna, m, k)
+    assert.equal((await dbCall(users.anna, 'sets', 'upsert', { data: { external_id: `${future}:s:1`, match_id: m.id, index: 1 }, onConflict: 'external_id' })).status, 200)
+    const restored = await api(srv.base, '/api/match/restore', {
+      token: users.anna.token,
+      body: { match: { external_id: future, game_n: n, status: 'live' }, events: [1, 2].map(k => ({ external_id: `${future}:e:${k}`, set_index: 1, type: 'point', seq: k })) }
+    })
+    assert.equal(restored.status, 200, restored.text)
+  })
+
+  it('a pending void of another match never makes an event born voided (db/032)', async () => {
+    const v = await newMatch(users.anna)
+    const other = await newMatch(users.carl)
+    // as one stored before db/032: filed under another match for this match's event id
+    await sql.query(`INSERT INTO event_revisions (rev_uid, match_id, event_external_id, op, reason, applied, actor_id, client_ts)
+                     VALUES ($1, $2, $3, 'void', 'undo', false, $4, now())`, [randomUUID(), other.id, `${v.ext}:e:7`, users.carl.id])
+    const e7 = await newEvent(users.anna, v, 7)
+    assert.equal((await eventRow(e7)).voided_at, null)
+    // the match's own pending void still does
+    assert.deepEqual((await revise(users.anna, v.ext, [rev(`${v.ext}:e:8`, { seq: 8 })])).json.data, { applied: 0, pending: 1 })
+    const e8 = await newEvent(users.anna, v, 8)
+    assert.equal((await eventRow(e8)).voided_by, users.anna.id)
+    // and a restore (delete + insert of the match's events) applies its own revisions only
+    const restored = await api(srv.base, '/api/match/restore', {
+      token: users.anna.token,
+      body: { match: { external_id: v.ext, game_n: v.n, status: 'live' }, events: [7, 8].map(n => ({ external_id: `${v.ext}:e:${n}`, set_index: 1, type: 'point', seq: n })) }
+    })
+    assert.equal(restored.status, 200, restored.text)
+    assert.equal((await eventRow(e7)).voided_at, null)
+    assert.ok((await eventRow(e8)).voided_at)
   })
 
   it('a closed match is frozen (409); restore-by-pin leaves voided events out; account deletion keeps the history', async () => {

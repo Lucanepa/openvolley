@@ -12,7 +12,8 @@
  *      restore: the void is lifted (and the columns rewritten when given),
  *      each counting events.rev up.
  * A revision of an event that is not on the server is kept with applied=false;
- * db/015's insert trigger makes the event born voided when it arrives later.
+ * db/015's insert trigger makes the event born voided when it arrives later
+ * in this match (db/032: a revision of another match never counts).
  *
  * Body: { match_external_id, revisions: [{ rev_uid, op, event_external_id,
  *         reason, seq, set_index, type, client_ts, device_id, app_version, after? }] }
@@ -25,6 +26,7 @@
  */
 
 import { createHash } from 'node:crypto'
+import { childMatchKey } from './pgQuery.js'
 
 export const MAX_REVISIONS = 200
 export const MAX_BODY_BYTES = 256 * 1024
@@ -34,7 +36,6 @@ export const REVISION_REASONS = Object.freeze([
   'undo', 'delete', 'decision_change', 'manual_adjustment',
   'forfeit_reversal', 'reopen_set', 'roster_reopen', 'correction', 'other'
 ])
-const SCOPE_SEPARATORS = [':', '_']
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const EDIT_KEYS = ['type', 'set_index', 'seq', 'payload', 'score_a', 'score_b']
 
@@ -48,11 +49,13 @@ const optText = (v, max) => (v == null ? null : typeof v === 'string' && v.lengt
 const optInt = (v) => (v == null ? null : Number.isInteger(Number(v)) && Math.abs(Number(v)) < 1e6 ? Number(v) : undefined)
 const optNum = (v) => (v == null ? null : Number.isFinite(Number(v)) && Math.abs(Number(v)) < 1e9 ? Number(v) : undefined)
 
-/** Is the event id scoped to its match (`<match external_id><':' | '_'>...`)? */
+/**
+ * Is the event id one of the match's own (`<match external_id>:...`, lib/pgQuery.js
+ * childMatchKey)? Never for a match whose external_id is only a prefix of it.
+ */
 export function isScopedToMatch(eventExt, matchExt) {
-  if (typeof eventExt !== 'string' || typeof matchExt !== 'string' || !matchExt) return false
-  if (eventExt.length <= matchExt.length || !eventExt.startsWith(matchExt)) return false
-  return SCOPE_SEPARATORS.includes(eventExt[matchExt.length])
+  if (typeof matchExt !== 'string' || !matchExt) return false
+  return childMatchKey(eventExt) === matchExt
 }
 
 /** The columns an edit / restore writes, or undefined when `after` is malformed. */
