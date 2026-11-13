@@ -15,7 +15,7 @@ vi.mock('../../../utils/relayPublisher', () => ({
 }))
 
 import BenchRequestCards from '../BenchRequestCards'
-import { useBenchRequestBridge, outcomeFromEvents } from '../useBenchRequestBridge'
+import { useBenchRequestBridge, outcomeFromEvents, lineupAcceptBlock } from '../useBenchRequestBridge'
 import { benchInfoReducer } from '../../referee/BenchRequestIndicator'
 
 const LU = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6 }
@@ -61,6 +61,12 @@ describe('BenchRequestCards', () => {
     expect(respond).toHaveBeenCalledTimes(1) // cancelled: nothing sent
   })
 
+  it('a request id that every object has (constructor, __proto__) renders like any other', () => {
+    const queue = ['constructor', '__proto__', 'toString'].map((id) => entry('home', { id, kind: 'substitution', setIndex: 1, pairs: [{ out: 1, in: 8 }] }))
+    render(<BenchRequestCards queue={queue} teams={teams} rallyInPlay={false} respond={vi.fn()} onAcceptLineup={vi.fn()} onGrantTimeout={vi.fn()} onAcceptPair={vi.fn()} />)
+    expect(document.querySelectorAll('[data-bench-card]')).toHaveLength(3)
+  })
+
   it('a time-out or substitution waits while a rally is in play; a line-up does not', () => {
     const queue = [entry('home', { id: 'l', kind: 'lineup', setIndex: 1, lineup: LU }), entry('away', { id: 't', kind: 'timeout', setIndex: 1 })]
     render(<BenchRequestCards queue={queue} teams={teams} rallyInPlay respond={vi.fn()} onAcceptLineup={vi.fn()} onGrantTimeout={vi.fn()} onAcceptPair={vi.fn()} />)
@@ -91,10 +97,21 @@ describe('the scorer\'s bridge', () => {
     const to = entry('away', { id: 't', kind: 'timeout', setIndex: 1 })
     expect(outcomeFromEvents(to, [{ type: 'timeout', seq: 5, setIndex: 1, payload: { team: 'away' } }], 4)).toEqual({ status: 'accepted' })
     expect(outcomeFromEvents(to, [{ type: 'timeout', seq: 5, setIndex: 1, payload: { team: 'home' } }], 4)).toBe(null)
+    // replayed after the scorer recorded the time-out by hand: matched by the relay's time of the request
+    const late = { team: 'away', request: { id: 't2', kind: 'timeout', setIndex: 1 }, status: 'pending', at: Date.parse('2026-11-01T10:00:00Z') }
+    expect(outcomeFromEvents(late, [{ type: 'timeout', seq: 5, setIndex: 1, ts: '2026-11-01T10:00:20Z', payload: { team: 'away' } }], 5)).toEqual({ status: 'accepted' })
+    expect(outcomeFromEvents(late, [{ type: 'timeout', seq: 5, setIndex: 1, ts: '2026-11-01T09:58:00Z', payload: { team: 'away' } }], 5)).toBe(null)
     const sub = entry('home', { id: 's', kind: 'substitution', setIndex: 1, pairs: [{ out: 1, in: 8 }, { out: 2, in: 9 }] })
     const s1 = { type: 'substitution', seq: 7, setIndex: 1, payload: { team: 'home', playerOut: '1', playerIn: 8 } }
     expect(outcomeFromEvents(sub, [s1], 6)).toEqual({ donePairs: [0] })
     expect(outcomeFromEvents(sub, [s1, { ...s1, seq: 8, payload: { team: 'home', playerOut: 2, playerIn: 9 } }], 6)).toEqual({ status: 'accepted' })
+  })
+
+  it('takes a bench line-up only for the set being scored and a team without one', () => {
+    const lu = entry('away', { id: 'l3', kind: 'lineup', setIndex: 3, lineup: LU })
+    expect(lineupAcceptBlock(lu, [], 2)).toBe('other-set') // set 2 reopened by an undo
+    expect(lineupAcceptBlock(lu, [], 3)).toBe(null)
+    expect(lineupAcceptBlock(lu, [{ ...lineupEv(LU, 4, 'away'), setIndex: 3 }], 3)).toBe('has-lineup')
   })
 
   it('takes the relay\'s requests of its match, says seen, closes a line-up it has, answers once recorded', async () => {

@@ -5713,6 +5713,7 @@
       "afterRally": "Dopo lo scambio",
       "notSent": "Risposta non inviata: nessuna connessione al server",
       "notOnCourt": "Il n. {{number}} non è in campo.",
+      "lineupOtherSet": "Questa formazione è per il set {{set}}; si sta segnando il set {{current}}.",
       "notOnBench": "Il n. {{number}} non può entrare ora."
     },
     "referee": {

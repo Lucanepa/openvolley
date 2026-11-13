@@ -5696,6 +5696,7 @@
       "afterRally": "Nach dem Ballwechsel",
       "notSent": "Antwort nicht gesendet: keine Verbindung zum Server",
       "notOnCourt": "Nr. {{number}} ist nicht auf dem Feld.",
+      "lineupOtherSet": "Diese Aufstellung ist für Satz {{set}}; gezählt wird Satz {{current}}.",
       "notOnBench": "Nr. {{number}} kann jetzt nicht rein."
     },
     "referee": {

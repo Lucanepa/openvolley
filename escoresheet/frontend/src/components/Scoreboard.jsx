@@ -95,7 +95,7 @@ import { isNativeApp } from '../utils/backendConfig'
 import PhoneScoreboard from './scoreboard/PhoneScoreboard.jsx'
 import { PHONE_RECENT_MAX_LINES, detectDisplayMode, dialogsCentred, isPhoneScreen, phoneHeldSideways, recentActions } from './scoreboard/phoneLayout'
 import BenchRequestCards from './scoreboard/BenchRequestCards.jsx'
-import { useBenchRequestBridge } from './scoreboard/useBenchRequestBridge'
+import { useBenchRequestBridge, lineupAcceptBlock } from './scoreboard/useBenchRequestBridge'
 import { latestLineup as benchLatestLineup, lineupNumber as benchLineupNumber } from '../domain/benchRequests'
 import { coveredLineupTeams, coveredLineupTeamsOf, withCoveredLiveLineups, withoutCoveredTeamEvents } from '../domain/lineupPrivacy'
 import { captainRingStyle } from './scoreboard/captainRing'
@@ -9207,7 +9207,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // the event is recorded (useBenchRequestBridge)
   const benchBridge = useBenchRequestBridge({ relayKey: data?.match ? relayMatchKey(data.match) : null, events: data?.events, setIndex: data?.set?.index })
   const benchActions = {
-    onAcceptLineup: (entry) => setLineupModal({ team: entry.team, mode: 'initial', lineup: entry.request.lineup, gameCaptain: entry.request.gameCaptain ?? null }),
+    onAcceptLineup: (entry) => {
+      // only the set being scored, and only while the team has no line-up in it
+      const block = lineupAcceptBlock(entry, data?.events, data?.set?.index)
+      if (block === 'has-lineup') {
+        benchBridge.respond(entry.team, entry.request.id, 'accepted')
+        return
+      }
+      if (block) {
+        showAlert(t('benchRequests.scorer.lineupOtherSet', { set: entry.request.setIndex, current: data?.set?.index, defaultValue: 'This line-up is for set {{set}}; set {{current}} is being scored.' }), 'info')
+        return
+      }
+      setLineupModal({ team: entry.team, mode: 'initial', lineup: entry.request.lineup, gameCaptain: entry.request.gameCaptain ?? null })
+    },
     onGrantTimeout: (entry) => handleTimeout(mapTeamKeyToSide(entry.team)),
     onAcceptPair: (entry, pair) => {
       if (!data?.set || rallyStatus !== 'idle') return

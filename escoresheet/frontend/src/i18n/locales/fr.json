@@ -5707,6 +5707,7 @@
       "afterRally": "Après l’échange",
       "notSent": "Réponse non envoyée : pas de connexion au serveur",
       "notOnCourt": "Le n° {{number}} n’est pas sur le terrain.",
+      "lineupOtherSet": "Cette formation est pour le set {{set}} ; le set {{current}} est en cours.",
       "notOnBench": "Le n° {{number}} ne peut pas entrer maintenant."
     },
     "referee": {

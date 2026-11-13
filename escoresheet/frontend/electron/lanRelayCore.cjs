@@ -913,6 +913,9 @@ const MAX_BENCH_PAIRS = 6
 const MAX_REQUESTS_PER_TEAM = 12
 const BENCH_REQUEST_TTL_MS = 30 * 60 * 1000
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/
+// The app's ids are br-<hex>; a name every plain object has (constructor,
+// __proto__, toString...) is refused, a scoreboard keys its cards by the id
+const isId = (v) => typeof v === 'string' && ID_RE.test(v) && !(v in Object.prototype)
 
 const isTeam = (t) => t === 'home' || t === 'away'
 const shirt = (v) => {
@@ -927,13 +930,13 @@ const fail = (reason) => ({ ok: false, reason })
  */
 function normalizeBenchRequest(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return fail('bad-request')
-  if (typeof raw.id !== 'string' || !ID_RE.test(raw.id)) return fail('bad-id')
+  if (!isId(raw.id)) return fail('bad-id')
   if (!BENCH_REQUEST_KINDS.includes(raw.kind)) return fail('bad-kind')
   const setIndex = raw.setIndex
   if (!Number.isInteger(setIndex) || setIndex < 1 || setIndex > 5) return fail('bad-set')
   const request = { id: raw.id, kind: raw.kind, setIndex }
   if (raw.kind === 'cancel') {
-    if (typeof raw.cancelId !== 'string' || !ID_RE.test(raw.cancelId)) return fail('bad-cancel')
+    if (!isId(raw.cancelId)) return fail('bad-cancel')
     request.cancelId = raw.cancelId
     return { ok: true, request }
   }
@@ -984,7 +987,7 @@ function normalizeBenchRequest(raw) {
 /** A bench-response, checked: { ok, response: { id, status, reason? } }. */
 function normalizeBenchResponse(raw) {
   if (!raw || typeof raw !== 'object') return fail('bad-request')
-  if (typeof raw.id !== 'string' || !ID_RE.test(raw.id)) return fail('bad-id')
+  if (!isId(raw.id)) return fail('bad-id')
   if (!BENCH_RESPONSE_STATUSES.includes(raw.status)) return fail('bad-status')
   const response = { id: raw.id, status: raw.status }
   if (typeof raw.reason === 'string' && raw.reason.trim()) response.reason = raw.reason.trim().slice(0, MAX_BENCH_REASON)

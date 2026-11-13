@@ -5714,6 +5714,7 @@
       "afterRally": "After the rally",
       "notSent": "Answer not sent: no connection to the server",
       "notOnCourt": "No {{number}} is not on court.",
+      "lineupOtherSet": "This line-up is for set {{set}}; set {{current}} is being scored.",
       "notOnBench": "No {{number}} cannot come on now."
     },
     "referee": {

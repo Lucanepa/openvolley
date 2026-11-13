@@ -5708,6 +5708,7 @@
       "afterRally": "Nach em Ballwächsel",
       "notSent": "Antwort nöd gschickt: kei Verbindig zum Server",
       "notOnCourt": "Nr. {{number}} isch nöd uf em Feld.",
+      "lineupOtherSet": "Die Uufstellig isch für Satz {{set}}; zellt wird Satz {{current}}.",
       "notOnBench": "Nr. {{number}} chan jetzt nöd ine."
     },
     "referee": {

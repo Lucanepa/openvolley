@@ -1765,6 +1765,11 @@ function logValue(v) {
 const WS_RATE_LIMIT_MAX = 120 // messages per window
 const WS_RATE_LIMIT_WINDOW_MS = 60 * 1000
 const wsRateLimitMap = new Map()
+// A scorer answers every bench request it receives (bench-response 'seen'
+// and the outcome) on its one socket: those answers count on their own
+// budget, so bench traffic cannot push the scorer over WS_RATE_LIMIT_MAX
+const WS_BENCH_RESPONSE_MAX = 600 // bench-response messages per window
+const WS_BENCH_RESPONSE_MAX_BYTES = 1024
 // ... and bytes: the frame budget of lib/relayLimits.js (large frames of a
 // socket without a proved claim, bytes per socket and address)
 const frameBudget = createFrameBudget({ windowMs: WS_RATE_LIMIT_WINDOW_MS })
@@ -1787,17 +1792,30 @@ function frameProofOf(clientInfo) {
   return 'relay'
 }
 
-function isWsRateLimited(clientId) {
+function isWsRateLimited(clientId, key = clientId, max = WS_RATE_LIMIT_MAX) {
   const now = Date.now()
-  const entry = wsRateLimitMap.get(clientId)
+  const entry = wsRateLimitMap.get(key)
 
   if (!entry || now - entry.windowStart > WS_RATE_LIMIT_WINDOW_MS) {
-    wsRateLimitMap.set(clientId, { count: 1, windowStart: now })
+    wsRateLimitMap.set(key, { count: 1, windowStart: now })
     return false
   }
 
   entry.count++
-  return entry.count > WS_RATE_LIMIT_MAX
+  return entry.count > max
+}
+
+const benchBudgetKey = (clientId) => `${clientId}:bench-response`
+
+// A small frame whose type is bench-response (parsed again later; only small
+// frames are looked at, so the check costs nothing on a match sync)
+function isBenchResponseFrame(data) {
+  if (!data || data.length > WS_BENCH_RESPONSE_MAX_BYTES) return false
+  try {
+    return JSON.parse(data.toString())?.type === 'bench-response'
+  } catch {
+    return false
+  }
 }
 
 // --- TTL cleanup for stale rooms, matches, and WS rate limit entries ---
@@ -4676,8 +4694,14 @@ wss.on('connection', (ws, req) => {
   }))
 
   ws.on('message', (data) => {
-    // Per-client WebSocket rate limiting
-    if (isWsRateLimited(clientId)) {
+    // Per-client WebSocket rate limiting; bench answers on their own budget,
+    // dropped (not closed) when over it
+    if (isBenchResponseFrame(data)) {
+      if (isWsRateLimited(clientId, benchBudgetKey(clientId), WS_BENCH_RESPONSE_MAX)) {
+        relaySummary.count('refused (bench-response budget)')
+        return
+      }
+    } else if (isWsRateLimited(clientId)) {
       ws.send(JSON.stringify({ type: 'error', message: 'Rate limit exceeded' }))
       ws.close(1008, 'Rate limit exceeded')
       return
@@ -5472,6 +5496,7 @@ function handleClientDisconnect(clientInfo) {
   handleLeaveMatch(clientInfo)
   connections.delete(clientInfo.id)
   wsRateLimitMap.delete(clientInfo.id)
+  wsRateLimitMap.delete(benchBudgetKey(clientInfo.id))
   benchRequestLimiter.forget(clientInfo.id)
   claimFailures.delete(`ws:${clientInfo.id}`)
   claimFailures.delete(`pin-ws:${clientInfo.id}`)
