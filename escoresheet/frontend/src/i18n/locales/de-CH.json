@@ -3943,8 +3943,9 @@
     "removeLocalOnly": "Nur d Kopie uf däm Grät wird glöscht. Di offiziell Version bliibt uf em Server.",
     "removeMovedLocalOnly": "Nur d Kopie uf däm Grät wird glöscht. S Spiil bliibt uf em Server und uf em Grät, wo s füehrt.",
     "restoreRefused": "Das Spiil isch uf em Server abgschlosse, drum laat sich das Backup nöd widerherstelle. Lad di offiziell Version mit de Spiilnummere und de Spiil-PIN.",
-    "restoreNotSent": "Nöd synchronisiert: De Server hät s Backup, wo für s Spiil {{game}} widerhergstellt worde isch, abglehnt ({{reason}}), drum chunnt nüt Nöiers vo däm Spiil bi ihm aa. Schriib wiiter: S Spiil isch uf däm Grät sicher. Mäld dich bim Support, er bittet dich vilicht, s in Teil z schicke.",
-    "restoreNotSentNoGame": "Nöd synchronisiert: De Server hät s Backup, wo für das Spiil widerhergstellt worde isch, abglehnt ({{reason}}), drum chunnt nüt Nöiers devo bi ihm aa. Schriib wiiter: S Spiil isch uf däm Grät sicher. Mäld dich bim Support, er bittet dich vilicht, s in Teil z schicke.",
+    "restoreNotSent": "Nöd synchronisiert: De Server hät d Kopii vom Spiil {{game}}, wo das Grät gschickt hät, abglehnt ({{reason}}), drum chunnt nüt Nöiers vo däm Spiil bi ihm aa. Schriib wiiter: S Spiil isch uf däm Grät sicher. Mäld dich bim Support.",
+    "restoreNotSentNoGame": "Nöd synchronisiert: De Server hät d Kopii vo däm Spiil, wo das Grät gschickt hät, abglehnt ({{reason}}), drum chunnt nüt Nöiers devo bi ihm aa. Schriib wiiter: S Spiil isch uf däm Grät sicher. Mäld dich bim Support.",
+    "restoreNotSentParts": "De Support bittet dich vilicht, s in Teil z schicke.",
     "sendInParts": "In Teil schicke",
     "sendingInParts": "Wird in Teil gschickt"
   },

@@ -2891,7 +2891,7 @@ describe('a restore the server refuses', () => {
     expect(fakeDb.matches.map.get(1).cloudBlock).toMatchObject({ code: RESTORE_REFUSED })
   })
 
-  it('support sends it in parts: nothing deleted on the server, the closing status last, the later jobs behind', async () => {
+  it('support sends it in parts: the first part replaces the match\'s rows, the later ones add theirs, the closing status last, the later jobs behind', async () => {
     fakeDb.sync_queue.reset([
       { id: 1, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: 'match_200_bbb:e:1', match_id: 'match_200_bbb', type: 'point' } },
       { ...restoreJob(2, events(5)), status: 'failed', attempts: 3, last_error: { code: 'OV_BODY_TOO_LARGE' } },
@@ -2907,7 +2907,12 @@ describe('a restore the server refuses', () => {
     expect(parts.map(j => j.payload.events.map(e => e.seq))).toEqual([[1, 2], [3, 4], [5]])
     expect(parts.map(j => j.payload.sets.length)).toEqual([1, 0, 0])
     expect(parts.map(j => j.payload.match.status)).toEqual(['ended', 'ended', 'approved'])
-    expect(parts.every(j => j.payload.rekey && j.ts === '2026-11-10T19:00:00.000Z')).toBe(true)
+    // a backup restore replaces the whole match: so does its first part (no
+    // rekey: the rows the backup does not have go, the live state with it),
+    // the later parts only add theirs (rekey without entries)
+    expect(parts.map(j => j.payload.rekey ?? null)).toEqual([null, { sets: {}, events: {} }, { sets: {}, events: {} }])
+    expect(parts.map(j => j.payload.liveState)).toEqual([{ current_set: 1 }, null, null])
+    expect(parts.every(j => j.ts === '2026-11-10T19:00:00.000Z')).toBe(true)
     const later = rows.find(j => j.resource === 'event' && j.payload.match_id === SEED)
     expect(later.id).toBeGreaterThan(Math.max(...parts.map(j => j.id)))
 
@@ -2915,9 +2920,88 @@ describe('a restore the server refuses', () => {
     await runQueuePass()
     await runQueuePass()
     expect(api.calls.filter(c => c.table === '__restore').map(c => c.data.events.length)).toEqual([2, 2, 1])
+    expect(api.calls.filter(c => c.table === '__restore').map(c => 'rekey' in c.data)).toEqual([false, true, true])
     expect([...fakeDb.sync_queue.map.values()].every(j => j.status === 'sent')).toBe(true)
     expect(fakeDb.matches.map.get(1).cloudBlock).toBeNull()
     // nothing to split once it is through
     expect(await splitRefusedRestore(SEED)).toBe(0)
+  })
+
+  // A hand-over (importMatchFromSupabase) moves the cloud rows to this
+  // device's ids: parts without the map left the old rows next to the new
+  // ones, every set and event twice, and the approval refused for the result
+  it('a hand-over\'s parts each carry the re-key entries of their own rows', async () => {
+    const rekey = {
+      sets: { [`${SEED}:s:50`]: `${SEED}:s:1` },
+      events: { [`${SEED}:e:60`]: `${SEED}:e:1`, [`${SEED}:e:61`]: `${SEED}:e:2`, [`${SEED}:e:62`]: `${SEED}:e:3` }
+    }
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'match', action: 'restore', status: 'failed', ts: '2026-11-10T19:00:00.000Z', last_error: { code: 'OV_BODY_TOO_LARGE' },
+        payload: { match: { external_id: SEED, status: 'live' }, sets: [{ external_id: `${SEED}:s:50`, index: 1 }],
+          events: [60, 61, 62].map(n => ({ external_id: `${SEED}:e:${n}`, seq: n })), liveState: { current_set: 1 }, rekey } }
+    ])
+    expect(await splitRefusedRestore(SEED, { eventsPerPart: 2 })).toBe(2)
+    const parts = [...fakeDb.sync_queue.map.values()].filter(j => j.action === 'restore')
+    expect(parts.map(j => j.payload.rekey)).toEqual([
+      { sets: { [`${SEED}:s:50`]: `${SEED}:s:1` }, events: { [`${SEED}:e:60`]: `${SEED}:e:1`, [`${SEED}:e:61`]: `${SEED}:e:2` } },
+      { sets: {}, events: { [`${SEED}:e:62`]: `${SEED}:e:3` } }
+    ])
+    api.respond = (call) => (call.table === '__restore' ? ok({ id: MATCH_UUID }) : defaultRespond(call))
+    await runQueuePass()
+    await runQueuePass()
+    expect(api.calls.filter(c => c.table === '__restore').map(c => Object.keys(c.data.rekey.events))).toEqual([[`${SEED}:e:60`, `${SEED}:e:61`], [`${SEED}:e:62`]])
+  })
+
+  it('a re-key onto ids it also moves is not split (the server renames those within one restore)', async () => {
+    const rekey = { sets: {}, events: { [`${SEED}:e:3`]: `${SEED}:e:1`, [`${SEED}:e:4`]: `${SEED}:e:2`, [`${SEED}:e:5`]: `${SEED}:e:3` } }
+    const refused = { id: 1, resource: 'match', action: 'restore', status: 'failed', ts: '2026-11-10T19:00:00.000Z',
+      payload: { match: { external_id: SEED, status: 'live' }, sets: [], events: [3, 4, 5].map(n => ({ external_id: `${SEED}:e:${n}`, seq: n })), liveState: null, rekey } }
+    fakeDb.sync_queue.reset([refused])
+    expect(await splitRefusedRestore(SEED, { eventsPerPart: 1 })).toBe(0)
+    expect([...fakeDb.sync_queue.map.values()]).toEqual([refused])
+  })
+
+  it('a part refused again is noted again, and is split further', async () => {
+    fakeDb.sync_queue.reset([{ ...restoreJob(1, events(4)), status: 'failed', last_error: { code: 'OV_BODY_TOO_LARGE' } }])
+    fakeDb.matches.update(1, { cloudBlock: { code: RESTORE_REFUSED, reason: 'OV_BODY_TOO_LARGE', parts: true, at: 1 } })
+    expect(await splitRefusedRestore(SEED)).toBe(2)
+    // the first part (the replace) is still too large
+    api.respond = (call) => (call.table === '__restore' ? tooLarge : defaultRespond(call))
+    await runQueuePass()
+    const block = fakeDb.matches.map.get(1).cloudBlock
+    expect(block).toMatchObject({ code: RESTORE_REFUSED, reason: 'OV_BODY_TOO_LARGE', parts: true })
+    expect(block.at).toBeGreaterThan(1)
+
+    // half of it each, the replace still first, the second part behind them
+    expect(await splitRefusedRestore(SEED)).toBe(2)
+    const parts = [...fakeDb.sync_queue.map.values()].filter(j => j.action === 'restore')
+    expect(parts.map(j => j.payload.events.map(e => e.seq))).toEqual([[1], [2], [3, 4]])
+    expect(parts.map(j => j.payload.rekey ?? null)).toEqual([null, { sets: {}, events: {} }, { sets: {}, events: {} }])
+    expect(parts.map(j => j.payload.sets.length)).toEqual([1, 0, 0])
+    expect(parts.map(j => j.payload.match.status)).toEqual(['ended', 'ended', 'approved'])
+  })
+
+  it('offers parts only where the refusal is about the size', async () => {
+    // a body over the limit: parts
+    fakeDb.sync_queue.reset([restoreJob(1, events(3))])
+    api.respond = (call) => (call.table === '__restore' ? tooLarge : defaultRespond(call))
+    await runQueuePass()
+    expect(fakeDb.matches.map.get(1).cloudBlock).toMatchObject({ code: RESTORE_REFUSED, parts: true })
+
+    // another owner's match (no game PIN here to take it over), a row the
+    // server cannot take: every part would be refused the same
+    for (const error of [
+      { message: 'not yours', code: 'OV_NOT_MATCH_OWNER', status: 403 },
+      { message: 'Invalid request', code: 'OV_INVALID_REQUEST', status: 400 }
+    ]) {
+      resetCloudBlockCache()
+      resetQueueHousekeeping()
+      fakeDb.matches.reset([{ id: 1, seed_key: SEED, gameN: 4711, status: 'ended' }])
+      fakeDb.sync_queue.reset([restoreJob(1, events(3))])
+      api.respond = (call) => (call.table === '__restore' ? { data: null, error } : defaultRespond(call))
+      await runQueuePass()
+      expect(fakeDb.sync_queue.map.get(1).status).toBe('failed')
+      expect(fakeDb.matches.map.get(1).cloudBlock).toMatchObject({ code: RESTORE_REFUSED, reason: error.code, parts: false })
+    }
   })
 })

@@ -50,7 +50,7 @@ describe('the notice of a match the server closed', () => {
 // every later write of the match, and nothing said why
 describe('the notice of a refused restore', () => {
   const t = (k) => k
-  const block = { code: 'OV_RESTORE_REFUSED', reason: 'OV_BODY_TOO_LARGE' }
+  const block = { code: 'OV_RESTORE_REFUSED', reason: 'OV_BODY_TOO_LARGE', parts: true, at: 1 }
 
   it('names the game and the server\'s reason', () => {
     expect(cloudBlockMessage(block, { gameN: 4711, cloudBlock: block }, t)).toEqual({ key: 'cloudBlock.restoreNotSent', params: { game: 4711, reason: 'OV_BODY_TOO_LARGE' }, join: false, parts: true })
@@ -63,8 +63,38 @@ describe('the notice of a refused restore', () => {
     expect(text).toContain('game 4711')
     expect(text).toContain('OV_BODY_TOO_LARGE')
     expect(text).toContain('Contact support')
+    expect(text).toContain(en.cloudBlock.restoreNotSentParts)
     fireEvent.click(screen.getByRole('button', { name: en.cloudBlock.sendInParts }))
     expect(queue.split).toHaveBeenCalledWith('match_100_aaa')
     expect(await screen.findByRole('button', { name: en.cloudBlock.sendingInParts })).toBeDisabled()
+  })
+
+  // A refusal parts cannot help (another owner's match, a row the server
+  // cannot take): the parts would only be refused again
+  it('offers no parts where the refusal is not about the size', () => {
+    const other = { code: 'OV_RESTORE_REFUSED', reason: 'OV_NOT_MATCH_OWNER', parts: false, at: 1 }
+    expect(cloudBlockMessage(other, { gameN: 4711, cloudBlock: other }, t).parts).toBe(false)
+    render(<CloudBlockNotice match={{ seed_key: 'match_100_aaa', gameN: 4711, status: 'live', cloudBlock: other }} />)
+    const text = screen.getByTestId('cloud-block-notice').textContent
+    expect(text).toContain('OV_NOT_MATCH_OWNER')
+    expect(text).not.toContain(en.cloudBlock.restoreNotSentParts)
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('a part refused again brings the button back, to split it further', async () => {
+    queue.split.mockClear()
+    const match = { seed_key: 'match_100_aaa', gameN: 4711, status: 'live', cloudBlock: block }
+    const { rerender } = render(<CloudBlockNotice match={match} />)
+    fireEvent.click(screen.getByRole('button', { name: en.cloudBlock.sendInParts }))
+    expect(await screen.findByRole('button', { name: en.cloudBlock.sendingInParts })).toBeDisabled()
+    // the same block (a later render of the same match): still sending
+    rerender(<CloudBlockNotice match={{ ...match }} />)
+    expect(screen.getByRole('button', { name: en.cloudBlock.sendingInParts })).toBeDisabled()
+    // a part was refused again: a new block
+    rerender(<CloudBlockNotice match={{ ...match, cloudBlock: { ...block, at: 2 } }} />)
+    const button = screen.getByRole('button', { name: en.cloudBlock.sendInParts })
+    expect(button).toBeEnabled()
+    fireEvent.click(button)
+    expect(queue.split).toHaveBeenCalledTimes(2)
   })
 })

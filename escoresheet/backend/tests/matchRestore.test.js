@@ -510,6 +510,50 @@ describe('matchRestore on Postgres', { skip: SKIP_PG }, () => {
       assert.equal(await count('events', id), 5)
     })
 
+    // fe-sync-7: support sends a refused restore in parts (frontend
+    // utils/refusedRestore splitRefusedRestore): each part must leave the
+    // cloud as the whole one would have
+    it('a backup restore in parts: the first replaces the match\'s rows, the later ones add theirs', async () => {
+      const ext = uniq('PARTS')
+      const made = await restore.restoreMatch(backup(ext, { sets: 3, events: 8 }), W)
+      const id = made.body.data.id
+      // sent after the backup was saved: the whole restore deletes it
+      await raw.query(`INSERT INTO events (match_id, external_id, set_index, type, seq, payload, sport_type)
+                       VALUES ($1, $2, 1, 'point', 20, '{}', 'indoor')`, [id, `${ext}:e:20`])
+      const b = backup(ext, { sets: 2, events: 5 })
+      const first = await restore.restoreMatch({ ...b, events: b.events.slice(0, 2) }, W)
+      assert.equal(first.status, 200, JSON.stringify(first.body))
+      const second = await restore.restoreMatch({ ...b, sets: [], events: b.events.slice(2), liveState: null, rekey: { sets: {}, events: {} } }, W)
+      assert.equal(second.status, 200, JSON.stringify(second.body))
+      const keys = (await raw.query('SELECT external_id FROM events WHERE match_id = $1 ORDER BY seq', [id])).rows.map((x) => x.external_id)
+      assert.deepEqual(keys, [1, 2, 3, 4, 5].map((n) => `${ext}:e:${n}`))
+      assert.equal(await count('sets', id), 2)
+      assert.equal((await raw.query('SELECT points_a FROM match_live_state WHERE match_id = $1', [id])).rows[0].points_a, 3)
+    })
+
+    it('a hand-over in parts, each with the re-key entries of its rows: every row renamed in place, none twice', async () => {
+      const ext = uniq('PARTSRK')
+      const made = await restore.restoreMatch(backup(ext, { sets: 2, events: 5 }), W)
+      const id = made.body.data.id
+      const idOf = Object.fromEntries((await raw.query('SELECT id, external_id FROM events WHERE match_id = $1', [id])).rows.map((r) => [r.external_id, r.id]))
+      const b = backup(ext, { sets: 2, events: 5 })
+      const to = (key) => key.replace(/:(s|e):(\d+)$/, (_, k, n) => `:${k}:${Number(n) + (k === 's' ? 100 : 200)}`)
+      const entries = (rows) => Object.fromEntries(rows.map((r) => [to(r.external_id), r.external_id]))
+      const moved = (rows) => rows.map((r) => ({ ...r, external_id: to(r.external_id) }))
+      const parts = [
+        { ...b, sets: moved(b.sets), events: moved(b.events.slice(0, 3)), rekey: { sets: entries(b.sets), events: entries(b.events.slice(0, 3)) } },
+        { ...b, sets: [], events: moved(b.events.slice(3)), liveState: null, rekey: { sets: {}, events: entries(b.events.slice(3)) } }
+      ]
+      for (const part of parts) {
+        const r = await restore.restoreMatch(part, W)
+        assert.equal(r.status, 200, JSON.stringify(r.body))
+      }
+      const after = (await raw.query('SELECT id, external_id FROM events WHERE match_id = $1 ORDER BY seq', [id])).rows
+      assert.deepEqual(after.map((x) => x.external_id), [201, 202, 203, 204, 205].map((n) => `${ext}:e:${n}`))
+      for (let n = 1; n <= 5; n++) assert.equal(after[n - 1].id, idOf[`${ext}:e:${n}`], `e:${n}`)
+      assert.deepEqual((await raw.query('SELECT external_id FROM sets WHERE match_id = $1 ORDER BY index', [id])).rows.map((x) => x.external_id), [`${ext}:s:101`, `${ext}:s:102`])
+    })
+
     it('restores a match without sets, events or live state', async () => {
       const ext = uniq()
       const r = await restore.restoreMatch({ match: { external_id: ext } }, W)

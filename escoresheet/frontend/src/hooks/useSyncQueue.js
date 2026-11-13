@@ -14,7 +14,7 @@ import { isShirtNumber } from '../domain/roster'
 import { uploadQueuedScoresheet } from '../utils/scoresheetUploader'
 import { ACCESS_CHANGED_EVENT } from '../lib/access'
 import { SCORER_CLAIM_ACTION, SCORER_MOVED, MATCH_CLOSED, SERVER_CLOSED_BY, isScorerMoved, noteScorerMoved, markScorerMoved, hasUnsentClaim, closeMovedMatches, retireIfSuperseded, retireStaleGameCopies, setAsideClosedJobs, setAsideClosedCopies } from '../utils/matchHandover'
-import { RESTORE_REFUSED } from '../utils/refusedRestore'
+import { RESTORE_REFUSED, partsMayHelp } from '../utils/refusedRestore'
 
 /**
  * ============================================================================
@@ -868,8 +868,9 @@ async function clearCloudBlock(job) {
  * large a body, too many rows, a row the server cannot take): parked as
  * refused, it holds every later job of its match (pendingEntityBlocks), so
  * the match never reaches the cloud without help. The local match says so
- * (CloudBlockNotice names the game and what to do); support sends it in
- * parts (utils/refusedRestore). A block of another kind stays as it is.
+ * (CloudBlockNotice names the game and what to do); where the refusal is
+ * about its size (`parts`), support sends it in parts (utils/refusedRestore).
+ * A block of another kind stays as it is.
  */
 async function recordRestoreRefused(job, error) {
   const seedKey = jobMatchKey(job)
@@ -878,7 +879,7 @@ async function recordRestoreRefused(job, error) {
     const local = await findLocalMatchBySeed(seedKey)
     if (!local || local.test === true || (local.cloudBlock && local.cloudBlock.code !== RESTORE_REFUSED)) return
     const reason = typeof error?.code === 'string' ? error.code.slice(0, 40) : null
-    await db.matches.update(local.id, { cloudBlock: { code: RESTORE_REFUSED, reason, claim: null, at: Date.now() } })
+    await db.matches.update(local.id, { cloudBlock: { code: RESTORE_REFUSED, reason, parts: partsMayHelp(error, job.payload), claim: null, at: Date.now() } })
     ;(await getBlockedSeeds()).add(seedKey)
     safeLog.warn('[SyncQueue] Restore refused by the server; the match\'s later writes wait for it:', seedKey, reason)
     if (typeof window !== 'undefined') {

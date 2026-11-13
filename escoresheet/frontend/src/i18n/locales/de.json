@@ -3927,8 +3927,9 @@
     "removeLocalOnly": "Nur die Kopie auf diesem Gerät wird gelöscht. Die offizielle Version bleibt auf dem Server.",
     "removeMovedLocalOnly": "Nur die Kopie auf diesem Gerät wird gelöscht. Das Spiel bleibt auf dem Server und auf dem Gerät, das es führt.",
     "restoreRefused": "Dieses Spiel ist auf dem Server abgeschlossen, darum lässt sich dieses Backup nicht wiederherstellen. Lade die offizielle Version mit Spielnummer und Spiel-PIN.",
-    "restoreNotSent": "Nicht synchronisiert: Der Server hat das für Spiel {{game}} wiederhergestellte Backup abgelehnt ({{reason}}), darum erreicht ihn nichts Neueres von diesem Spiel. Erfasse weiter: Das Spiel ist auf diesem Gerät sicher. Melde dich beim Support, er bittet dich vielleicht, es in Teilen zu senden.",
-    "restoreNotSentNoGame": "Nicht synchronisiert: Der Server hat das für dieses Spiel wiederhergestellte Backup abgelehnt ({{reason}}), darum erreicht ihn nichts Neueres davon. Erfasse weiter: Das Spiel ist auf diesem Gerät sicher. Melde dich beim Support, er bittet dich vielleicht, es in Teilen zu senden.",
+    "restoreNotSent": "Nicht synchronisiert: Der Server hat die Kopie von Spiel {{game}} abgelehnt, die dieses Gerät gesendet hat ({{reason}}), darum erreicht ihn nichts Neueres von diesem Spiel. Erfasse weiter: Das Spiel ist auf diesem Gerät sicher. Melde dich beim Support.",
+    "restoreNotSentNoGame": "Nicht synchronisiert: Der Server hat die Kopie dieses Spiels abgelehnt, die dieses Gerät gesendet hat ({{reason}}), darum erreicht ihn nichts Neueres davon. Erfasse weiter: Das Spiel ist auf diesem Gerät sicher. Melde dich beim Support.",
+    "restoreNotSentParts": "Der Support bittet dich vielleicht, es in Teilen zu senden.",
     "sendInParts": "In Teilen senden",
     "sendingInParts": "Wird in Teilen gesendet"
   },

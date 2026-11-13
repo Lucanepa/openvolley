@@ -3949,8 +3949,9 @@
     "removeLocalOnly": "Only the copy on this device is deleted. The official version stays on the server.",
     "removeMovedLocalOnly": "Only the copy on this device is deleted. The match stays on the server and on the device that scores it.",
     "restoreRefused": "This match is closed on the server, so this backup cannot be restored. Load the official version with the game number and game PIN.",
-    "restoreNotSent": "Not synced: the server refused the backup restored for game {{game}} ({{reason}}), so nothing newer of this match reaches it. Keep scoring: the match is safe on this device. Contact support, who may ask you to send it in parts.",
-    "restoreNotSentNoGame": "Not synced: the server refused the backup restored for this match ({{reason}}), so nothing newer of it reaches the server. Keep scoring: the match is safe on this device. Contact support, who may ask you to send it in parts.",
+    "restoreNotSent": "Not synced: the server refused this device's copy of game {{game}} ({{reason}}), so nothing newer of this match reaches it. Keep scoring: the match is safe on this device. Contact support.",
+    "restoreNotSentNoGame": "Not synced: the server refused this device's copy of this match ({{reason}}), so nothing newer of it reaches the server. Keep scoring: the match is safe on this device. Contact support.",
+    "restoreNotSentParts": "Support may ask you to send it in parts.",
     "sendInParts": "Send in parts",
     "sendingInParts": "Sending in parts"
   },
