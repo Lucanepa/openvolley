@@ -26,7 +26,7 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import { BUILD_TARGET } from '../build-target.js'
 import { themeBoot } from '../theme-boot.js'
-import { PRECACHE_GLOB_PATTERNS, PRECACHE_GLOB_IGNORES, PRECACHE_MAX_FILE_BYTES, NAVIGATE_FALLBACK_DENYLIST, IGNORE_URL_PARAMETERS, offlineNavigationRoute, PWA_INCLUDE_ASSETS, PWA_ICONS } from '../pwa-workbox.js'
+import { PRECACHE_GLOB_PATTERNS, PRECACHE_GLOB_IGNORES, PRECACHE_MAX_FILE_BYTES, NAVIGATE_FALLBACK_DENYLIST, IGNORE_URL_PARAMETERS, offlineNavigationRoute, API_NETWORK_ONLY_ROUTE, PWA_INCLUDE_ASSETS, PWA_ICONS } from '../pwa-workbox.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const frontendDir = resolve(__dirname, '..')
@@ -362,15 +362,8 @@ async function buildSubdomain(subdomain, basePath = '/') {
             navigateFallback: null,
             runtimeCaching: [
               offlineNavigationRoute,
-              {
-                urlPattern: /^https?:\/\/.*\/api\/.*/i,
-                handler: 'NetworkFirst',
-                options: {
-                  cacheName: 'api-cache',
-                  expiration: { maxEntries: 50, maxAgeSeconds: 86400 },
-                  networkTimeoutSeconds: 10
-                }
-              },
+              // the API from the network only, never cached (pwa-workbox.js)
+              API_NETWORK_ONLY_ROUTE,
               {
                 urlPattern: /\.(?:js|mjs|css|png|jpg|jpeg|svg|gif|webp|woff|woff2)$/,
                 handler: 'CacheFirst',

@@ -51,6 +51,24 @@ export const PWA_ICONS = [
 export const IGNORE_URL_PARAMETERS = [/.*/]
 
 /**
+ * The backend's API (/api/ on any origin) goes to the network only and is
+ * never kept by the service worker. Its answers belong to the account signed
+ * in, and a cache keyed by URL (the token is no part of the key) handed one
+ * account's answers to the next on a shared device whenever the network
+ * failed or took over 10 s, as a normal 200; on referee tablets an old match
+ * bundle replaced newer data. The app keeps its own offline copies, per
+ * account (Dexie, localStorage), and handles a failed request itself.
+ * Listed right after offlineNavigationRoute, before the asset rules: the
+ * first matching route wins, so none of those can keep an /api/ answer.
+ * A RegExp matching from the start of the URL, so Workbox applies it to the
+ * cloud backend's own origin as well.
+ */
+export const API_NETWORK_ONLY_ROUTE = {
+  urlPattern: /^https?:\/\/.*\/api\/.*/i,
+  handler: 'NetworkOnly'
+}
+
+/**
  * Navigation route for page URLs the precache route cannot map by itself,
  * mainly the extension-less entries (/referee, /bench?match=..): Workbox's
  * cleanURLs would look for /referee.html, which does not exist. Serves the
