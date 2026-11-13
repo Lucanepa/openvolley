@@ -45,7 +45,7 @@ import { apiFrom, writingDevice } from '../lib/apiClient'
 import { relayMatchKey, relayMatchPayload, liveStateNow } from '../utils/serverDataSync'
 import { isRelayErrorFor, liveStateTargets, mayPublishMatchData, publishLiveState, relayEvents, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
 import { useRelayTablets } from '../hooks/useRealtimeConnection'
-import { exportMatchData, getBackupSettings, saveBackupSettings } from '../utils/backupManager'
+import { downloadMatchBackup, exportMatchData, getBackupSettings, saveBackupSettings } from '../utils/backupManager'
 import { setExtId, eventExtId } from '../utils/syncIds'
 import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
 import { queueSetStartTimeSync } from '../utils/setStartTimeSync'
@@ -13576,29 +13576,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }
 
   // Export every table of the local database as one JSON file (Match menu)
+  // Match menu, Download game data: this match only, as the backup file
+  // Restore match reads (downloadMatchBackup, utils/backupFile: no PINs or
+  // session ids inside, the rest encrypted). It was every table of the
+  // device in plain JSON: every match's game, referee, bench and upload
+  // PINs, the signatures and dates of birth, in a Downloads folder that may
+  // be a shared laptop's.
   const downloadGameData = async () => {
     try {
-      const exportData = {
-        exportDate: new Date().toISOString(),
-        matchId: matchId,
-        matches: await db.matches.toArray(),
-        teams: await db.teams.toArray(),
-        players: await db.players.toArray(),
-        sets: await db.sets.toArray(),
-        events: await db.events.toArray(),
-        referees: await db.referees.toArray(),
-        scorers: await db.scorers.toArray()
-      }
-      const jsonString = JSON.stringify(exportData, null, 2)
-      const blob = new Blob([jsonString], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `database_export_${matchId}_${new Date().toISOString().split('T')[0]}.json`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      URL.revokeObjectURL(url)
+      await downloadMatchBackup(matchId)
       return true
     } catch (error) {
       console.error('Error exporting database:', error)
