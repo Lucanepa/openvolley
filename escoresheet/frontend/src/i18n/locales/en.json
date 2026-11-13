@@ -191,6 +191,9 @@
     "duplicatePlayers": "{{team}} team has duplicate players: {{names}}",
     "invalidBirthdate": "Some players or officials have invalid birthdate (01.01.1900). Please correct these dates.",
     "invalidJerseyNumbers": "{{team}} team has invalid jersey numbers (must be 1-99): {{numbers}}",
+    "tooManyLiberos": "{{team}} team has more than 2 liberos: {{count}}",
+    "liberoSlotTwice": "{{team}} team has two players as {{slot}}",
+    "tooManyCaptains": "{{team}} team has more than one captain: {{count}}",
     "playersWithoutNumbers": "{{team}} team has {{count}} player(s) without jersey numbers",
     "tooManyPlayers": "{{team}} team has more than {{max}} players: {{count}}",
     "completeSignatures": "Please complete all signatures before confirming the coin toss.",
@@ -281,6 +284,12 @@
     "benchOfficialsCount": "Bench officials",
     "acceptRoster": "Accept",
     "rejectRoster": "Reject",
+    "uploadedRosterStarted": "The match has started: an uploaded roster can only be rejected now.",
+    "uploadedRosterInvalid": "This roster breaks the roster rules (a number twice, two captains, a libero slot twice or a damaged entry) and cannot be accepted. Reject it and ask the team to send it again.",
+    "uploadedRosterSaveFailed": "The roster could not be saved. Please try again.",
+    "uploadedRosterOpen": "Open",
+    "uploadedCoachSignatureKept": "The sheet already has the coach's signature: Accept keeps it and does not take the uploaded one. If someone else signs as coach now, clear it after Accept and let them sign.",
+    "uploadedCaptainSignatureKept": "The sheet already has the captain's signature: Accept keeps it and does not take the uploaded one. If the captain changed, clear it after Accept and let the new captain sign.",
     "uploadPin": "Upload PIN",
     "uploadPdf": "Upload PDF",
     "searchForRoster": "Search for roster",
@@ -1907,7 +1916,16 @@
     "confirmMessage": "This will send the roster to the scoresheet for approval.",
     "uploading": "Uploading",
     "uploadingMessage": "Sending roster to scoresheet...",
-    "rosterSentToScoresheet": "The roster has been sent to the scoresheet. The scorer will review and accept or reject the roster."
+    "rosterSentToScoresheet": "The roster has been sent to the scoresheet. The scorer will review and accept or reject the roster.",
+    "problems": {
+      "numberTwice": "Number {{number}} is given to two players.",
+      "badNumber": "Shirt numbers are 1 to 99.",
+      "roleTwice": "{{role}} is there twice: each team official role once.",
+      "tooMany": "At most {{max}} players.",
+      "badText": "A name has more than {{max}} characters.",
+      "badDate": "A date of birth is not a date.",
+      "other": "The roster cannot be sent ({{problem}})."
+    }
   },
   "benchDashboard": {
     "title": "Team dashboard",

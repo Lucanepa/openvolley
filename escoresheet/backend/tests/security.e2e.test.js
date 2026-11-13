@@ -308,7 +308,7 @@ describe('Phase 7: ownership, PIN-gated data, backups, PINs at rest', { skip: SK
     const ok = await api(srv.base, '/api/match/upload-roster', { proto: null, body })
     assert.equal(ok.status, 200, ok.text)
     const { rows: [row] } = await sql.query('SELECT connections, signatures, status FROM matches WHERE id = $1', [matchUuid])
-    assert.deepEqual(row.connections.pending_home_roster.players, [{ number: 12, lastName: 'Neu' }])
+    assert.deepEqual(row.connections.pending_home_roster.players, [{ number: 12, firstName: '', lastName: 'Neu', dob: '', libero: '', isCaptain: false, isLfp: false }])
     assert.equal(row.connections.referee_enabled, true, 'the other connection keys stay')
     assert.equal(row.signatures.home_coach, 'data:image/png;base64,COACH')
     await sql.query("UPDATE matches SET status = 'live' WHERE id = $1", [matchUuid])

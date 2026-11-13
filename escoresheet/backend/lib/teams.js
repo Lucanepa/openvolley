@@ -76,7 +76,7 @@ export const NOT_YOUR_GAME = () => fail(404, 'OV_GAME_NOT_YOURS', 'This game is 
 // A signature made ahead: the pad's PNG data URL (db/023 CHECK)
 export const SIGNATURE_MAX_LENGTH = 200000
 const SIGNATURE_PREFIX = 'data:image/png;base64,'
-const SIGNATURE_RE = /^data:image\/png;base64,[A-Za-z0-9+/]+=*$/
+export const SIGNATURE_RE = /^data:image\/png;base64,[A-Za-z0-9+/]+=*$/
 
 /** '2026/27' for season year 2026 (the saved teams' season label). */
 export const seasonLabel = (year) => `${year}/${String((year + 1) % 100).padStart(2, '0')}`

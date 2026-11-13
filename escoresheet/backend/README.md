@@ -330,9 +330,9 @@ The **officials' devices** keep working: referee and bench tablets only read
 writes `matches` with a session but goes through
 `POST /api/match/upload-roster {matchExternalId, team, pin, roster, coachSignature?, captainSignature?}`,
 authorised by that team's upload PIN of that match, which writes only
-`connections.pending_{home|away}_roster` and the team's coach/captain signatures,
-and only while the match is in `setup` (409 after the coin toss). A second
-scorer takes over with the game PIN as above.
+`connections.pending_{home|away}_roster` and the team's coach/captain signatures
+where the match has none yet, and only while the match is in `setup` (409 after
+the coin toss). A second scorer takes over with the game PIN as above.
 
 ### Approved scorers, official games and closed matches (`db/007`)
 
@@ -926,7 +926,32 @@ relays).
 ### `POST /api/match/upload-roster` (cloud, upload PIN)
 
 `{ matchExternalId, team: "home"|"away", pin, roster, coachSignature?, captainSignature? }` ->
-200 `{ success: true }`; 403 wrong PIN or match; 409 match no longer in setup.
+200 `{ success: true }`; 400 `Invalid roster (<field>: <problem>, …)`; 403 wrong PIN or match;
+409 match no longer in setup.
+
+The roster passes the scorer app's own rules first (`lib/uploadedRoster.js`, a
+copy of `frontend/src/domain/uploadedRoster.js`; `tests/uploadedRoster.test.js`
+compares the two): `players` and `bench` are lists of plain objects (at most 30
+players, one official per bench role), names are text of at most 80 characters,
+dates of birth are dates, shirt numbers 1 to 99 or empty and never twice (7 and
+"7" are one number), one captain at most, each libero slot once, and the coach's
+and captain's signatures are the signature pad's PNG data URLs (`lib/teams.js`
+`SIGNATURE_RE`). It is stored in that shape (other keys dropped). The status is
+read again with the row locked in the write: a coin toss between the PIN check
+and the write answers 409, and two teams uploading at the same moment both
+keep their signatures. An upload fills only signature keys the match does not
+have (empty or absent): it never replaces the scorer's or an earlier upload's.
+A match update through `/api/db` whose `status` leaves `setup` for `live` (the
+coin toss) or `ended` also sets both `connections.pending_*_roster` to null, so
+a device that restores the running match finds no roster to accept. A closing
+write (`approved`, `final`) is passed on as sent: `db/007` lets a closed match
+take nothing but approved -> final or a no-op rewrite.
+
+Upload Roster apps older than these rules (installed or cached) can build
+rosters the rules refuse (two captains, a libero slot twice, two officials left
+on the role Coach, a number above 99 from the old PDF reader) and show the 400
+as "the scoresheet could not be reached": the coach updates the app or hands
+the roster to the scorer.
 
 The upload PINs reach the server with the match: Match Setup's Create match
 sends the full `connection_pins` (referee, benches, both upload PINs) with the

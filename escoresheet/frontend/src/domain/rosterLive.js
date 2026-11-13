@@ -64,11 +64,17 @@ export function scoreAtEvent(events, event) {
 /**
  * Every sanction of one team in the match, split by who received it, in the
  * order they were given. Each entry: { id, type, setIndex, own, opp } where
- * own:opp is the set score with the sanctioned team first.
- * @returns {{ players: Record<string, Array>, officials: Record<string, Array>, team: Array }}
+ * own:opp is the set score with the sanctioned team first. Players by number
+ * and officials by role in Maps: a role or number named like an object member
+ * ('constructor', from an uploaded roster) is a key like any other.
+ * @returns {{ players: Map<string, Array>, officials: Map<string, Array>, team: Array }}
  */
 export function teamSanctionSummary(events, teamKey) {
-  const out = { players: {}, officials: {}, team: [] }
+  const out = { players: new Map(), officials: new Map(), team: [] }
+  const push = (map, key, entry) => {
+    if (!map.has(key)) map.set(key, [])
+    map.get(key).push(entry)
+  }
   const list = (events || [])
     .filter(e => e.type === 'sanction' && e.payload?.team === teamKey)
     .sort((a, b) => ((a.setIndex || 1) - (b.setIndex || 1)) || compareEvents(a, b))
@@ -88,9 +94,9 @@ export function teamSanctionSummary(events, teamKey) {
     if (TEAM_SANCTIONS.includes(type) || !PERSONAL_SANCTIONS.includes(type)) {
       out.team.push(entry)
     } else if (num !== '') {
-      ;(out.players[num] ||= []).push(entry)
+      push(out.players, num, entry)
     } else if (role) {
-      ;(out.officials[role] ||= []).push(entry)
+      push(out.officials, String(role), entry)
     } else {
       out.team.push(entry)
     }

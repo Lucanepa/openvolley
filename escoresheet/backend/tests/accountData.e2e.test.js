@@ -102,7 +102,8 @@ describe('account deletion, storage remove, tablet list', { skip: SKIP }, () => 
     // The scorer finds it: its own match row, connections.pending_home_roster
     const found = await dbCall(alice, 'matches', 'select', { columns: 'connections', filters: [{ type: 'eq', column: 'external_id', value: ext }], maybeSingle: true })
     assert.equal(found.status, 200, found.text)
-    assert.deepEqual(found.json.data.connections.pending_home_roster.players, [{ number: 3 }])
+    // as the app's rules store it (lib/uploadedRoster.js)
+    assert.deepEqual(found.json.data.connections.pending_home_roster.players, [{ number: 3, firstName: '', lastName: '', dob: '', libero: '', isCaptain: false, isLfp: false }])
   })
 
   it('/api/storage/remove deletes the caller\'s own scoresheet and its owner sidecar', async () => {

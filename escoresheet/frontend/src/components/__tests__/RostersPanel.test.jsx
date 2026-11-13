@@ -122,6 +122,32 @@ describe('RostersPanel on a phone', () => {
   })
 })
 
+// A bench role or shirt number named like an Object.prototype member
+// ('constructor', 'hasOwnProperty') found a function where the sanctions
+// list was looked up, and the Rosters dialog and the pre-match signing
+// dialog crashed (var-proto-keys-3: an uploaded roster can carry them)
+describe('RostersPanel: roles and numbers named like object members', () => {
+  for (const role of ['constructor', 'hasOwnProperty', '__proto__']) {
+    it(`renders a bench official with role "${role}", both teams and one team`, () => {
+      const data = baseData()
+      data.match.bench_home = [{ role, lastName: 'Boss', firstName: 'B' }]
+      const { container, unmount } = render(<RostersPanel data={data} lineups={{ home: null, away: null }} servingTeam={null} />)
+      expect(container.querySelector('[data-team="home"]')).not.toBeNull()
+      unmount()
+      expect(() => render(<RostersPanel data={data} lineups={{ home: null, away: null }} servingTeam={null} team="home" />)).not.toThrow()
+    })
+  }
+
+  it('renders a player numbered "constructor", and a sanction of a player still shows', () => {
+    const data = baseData()
+    data.homePlayers = [...data.homePlayers, { id: 'hx', number: 'constructor', lastName: 'Odd', firstName: 'X' }]
+    data.events = [{ id: 'e1', type: 'sanction', setIndex: 1, seq: 1, payload: { team: 'home', type: 'warning', playerNumber: 2 } }]
+    const { container } = render(<RostersPanel data={data} lineups={{ home: null, away: null }} servingTeam={null} />)
+    expect(row(container, 'home', 'constructor')).not.toBeNull()
+    expect(row(container, 'home', 2).querySelector('[data-sanction="warning"]')).not.toBeNull()
+  })
+})
+
 describe('rosterLive locale keys', () => {
   const flat = (o, p = '') => Object.entries(o).flatMap(([k, v]) => (v && typeof v === 'object' ? flat(v, `${p}${k}.`) : [`${p}${k}`]))
   const keys = flat(en.rosterLive)

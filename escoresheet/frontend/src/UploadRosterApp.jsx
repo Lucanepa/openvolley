@@ -7,6 +7,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
 import { parseRosterPdf } from './utils/parseRosterPdf'
 import { shirtNumberDigits } from './domain/roster'
+import { BENCH_ROLES, checkUploadedRoster, UPLOADED_NAME_MAX, UPLOADED_ROSTER_MAX_PLAYERS } from './domain/uploadedRoster'
 import Modal from './components/Modal'
 import SimpleHeader from './components/SimpleHeader'
 import UpdateBanner from './components/UpdateBanner'
@@ -718,7 +719,8 @@ export default function UploadRosterApp() {
         lastName: p.lastName || '',
         dob: p.dob || '',
         libero: '',
-        isCaptain: false
+        isCaptain: false,
+        isLfp: !!p.isLfp
       }))
 
       // Prepare bench officials
@@ -761,11 +763,16 @@ export default function UploadRosterApp() {
     }
   }
 
-  // Handle player edit
+  // Handle player edit. One captain and one player per libero slot, as in the
+  // scorer's editor: choosing them for one player takes them from the others
   const handlePlayerChange = (index, field, value) => {
     if (!parsedData) return
-    const updatedPlayers = [...parsedData.players]
-    updatedPlayers[index] = { ...updatedPlayers[index], [field]: value }
+    const updatedPlayers = parsedData.players.map((p, i) => {
+      if (i === index) return { ...p, [field]: value }
+      if (field === 'isCaptain' && value && p.isCaptain) return { ...p, isCaptain: false }
+      if (field === 'libero' && value && p.libero === value) return { ...p, libero: '' }
+      return p
+    })
     setParsedData({ ...parsedData, players: updatedPlayers })
   }
 
@@ -798,11 +805,11 @@ export default function UploadRosterApp() {
     setParsedData({ ...parsedData, players: updatedPlayers })
   }
 
-  // Add bench official
+  // Add bench official: the first role the bench has not (each role once on the sheet)
   const handleAddBench = () => {
     if (!parsedData) return
     const newBench = {
-      role: 'Coach',
+      role: BENCH_ROLES.find(role => !parsedData.bench.some(b => b.role === role)) || 'Coach',
       firstName: '',
       lastName: '',
       dob: ''
@@ -817,15 +824,48 @@ export default function UploadRosterApp() {
     setParsedData({ ...parsedData, bench: updatedBench })
   }
 
+  // The roster as the scorer's Accept takes it (domain/uploadedRoster), or null
+  // with the first problem shown: nothing is sent that would be refused
+  const checkedRoster = () => {
+    const checked = checkUploadedRoster({
+      players: parsedData.players,
+      bench: parsedData.bench,
+      coachSignature: coachSignature || null,
+      captainSignature: captainSignature || null
+    })
+    if (checked.ok) return checked.roster
+    const [problem] = checked.problems
+    const index = Number(/\[(\d+)\]/.exec(problem.path)?.[1])
+    const entry = problem.path.startsWith('bench') ? parsedData.bench?.[index] : parsedData.players?.[index]
+    const params = {
+      numberTwice: { number: entry?.number },
+      roleTwice: { role: entry?.role },
+      tooMany: { max: UPLOADED_ROSTER_MAX_PLAYERS },
+      badText: { max: UPLOADED_NAME_MAX }
+    }[problem.code]
+    const known = ['numberTwice', 'badNumber', 'roleTwice', 'tooMany', 'badText', 'badDate'].includes(problem.code)
+    setSaveError(known
+      ? t(`uploadRoster.problems.${problem.code}`, params || {})
+      : t('uploadRoster.problems.other', { problem: `${problem.path}: ${problem.code}` }))
+    return null
+  }
+
   // Handle confirm
   const handleConfirm = () => {
     if (!parsedData || !matchId) return
+    setSaveError('')
+    if (!checkedRoster()) return
     setShowConfirmModal(true)
   }
 
   // Handle final confirmation - store in match and clear form
   const handleFinalConfirm = async () => {
     if (!parsedData || !matchId || uploading) return
+    const checked = checkedRoster()
+    if (!checked) {
+      setShowConfirmModal(false)
+      return
+    }
 
     setUploading(true)
     setSaveError('')
@@ -835,10 +875,10 @@ export default function UploadRosterApp() {
     try {
       // Store pending roster in match
       const rosterData = {
-        players: parsedData.players,
-        bench: parsedData.bench,
-        coachSignature: coachSignature || null,
-        captainSignature: captainSignature || null,
+        players: checked.players,
+        bench: checked.bench,
+        coachSignature: checked.coachSignature,
+        captainSignature: checked.captainSignature,
         timestamp: new Date().toISOString()
       }
 
@@ -878,7 +918,7 @@ export default function UploadRosterApp() {
       setShowConfirmModal(false)
       if (!saved) {
         // Nothing stored the roster: say so instead of showing success
-        setSaveError(cloudError?.status === 403 || cloudError?.status === 409
+        setSaveError(cloudError?.status === 400 || cloudError?.status === 403 || cloudError?.status === 409
           ? `Roster was NOT saved: the cloud rejected the upload (${cloudError.error}). Please give the roster to the scorer.`
           : 'Roster was NOT saved: the scoresheet could not be reached. Please try again or give the roster to the scorer.')
         return
@@ -1259,10 +1299,14 @@ export default function UploadRosterApp() {
                           block
                         >
                           <option value=""></option>
-                          <option value="libero1">{t('rosterSetup.libero', 'Libero')} 1</option>
-                          <option value="libero2">{t('rosterSetup.libero', 'Libero')} 2</option>
+                          {['libero1', 'libero2'].filter(slot => player.libero === slot || !parsedData.players.some(p => p.libero === slot)).map(slot => (
+                            <option key={slot} value={slot}>{t('rosterSetup.libero', 'Libero')} {slot.slice(-1)}</option>
+                          ))}
                         </Select>
-                        <div
+                        <button
+                          type="button"
+                          aria-pressed={!!player.isCaptain}
+                          aria-label={t('rosterSetup.captain', 'Captain')}
                           onClick={() => handlePlayerChange(index, 'isCaptain', !player.isCaptain)}
                           style={{
                             width: '24px',
@@ -1278,9 +1322,10 @@ export default function UploadRosterApp() {
                             fontWeight: 700,
                             color: player.isCaptain ? '#22c55e' : 'var(--muted)',
                             userSelect: 'none',
-                            margin: '0 auto'
+                            margin: '0 auto',
+                            padding: 0
                           }}
-                        >C</div>
+                        >C</button>
                         <Button variant="danger-outline" size="sm" block onClick={() => handleDeletePlayer(index)}>
                           {t('common.delete')}
                         </Button>

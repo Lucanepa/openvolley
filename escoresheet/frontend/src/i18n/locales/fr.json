@@ -190,6 +190,9 @@
     "duplicatePlayers": "L'équipe {{team}} a des joueurs en double: {{names}}",
     "invalidBirthdate": "Date de naissance invalide pour certains membres. Veuillez corriger.",
     "invalidJerseyNumbers": "Numéros invalides pour {{team}} (doivent être entre 1 et 99): {{numbers}}",
+    "tooManyLiberos": "L'équipe {{team}} a plus de 2 libéros : {{count}}",
+    "liberoSlotTwice": "L'équipe {{team}} a deux joueurs en {{slot}}",
+    "tooManyCaptains": "L'équipe {{team}} a plus d'un capitaine : {{count}}",
     "playersWithoutNumbers": "L'équipe {{team}} a {{count}} joueur(s) sans numéro",
     "tooManyPlayers": "L’équipe {{team}} a plus de {{max}} joueurs : {{count}}",
     "completeSignatures": "Signatures obligatoires avant de confirmer le tirage au sort.",
@@ -280,6 +283,12 @@
     "benchOfficialsCount": "Officiels au banc",
     "acceptRoster": "Accepter",
     "rejectRoster": "Refuser",
+    "uploadedRosterStarted": "Le match a commencé : un effectif téléchargé ne peut plus qu'être refusé.",
+    "uploadedRosterInvalid": "Cet effectif ne respecte pas les règles (un numéro en double, deux capitaines, un poste de libéro en double ou une entrée endommagée) et ne peut pas être accepté. Refuse-le et demande à l'équipe de le renvoyer.",
+    "uploadedRosterSaveFailed": "L'effectif n'a pas pu être enregistré. Réessaie.",
+    "uploadedRosterOpen": "Ouvrir",
+    "uploadedCoachSignatureKept": "La feuille a déjà la signature de l'entraîneur : Accepter la garde et ne reprend pas celle téléchargée. Si quelqu'un d'autre signe comme entraîneur, efface-la après avoir accepté et fais-le signer.",
+    "uploadedCaptainSignatureKept": "La feuille a déjà la signature du capitaine : Accepter la garde et ne reprend pas celle téléchargée. Si le capitaine a changé, efface-la après avoir accepté et fais signer le nouveau capitaine.",
     "uploadPin": "Code PIN",
     "uploadPdf": "Importer PDF",
     "searchForRoster": "Chercher l'effectif",
@@ -1905,7 +1914,16 @@
     "confirmMessage": "L'effectif sera envoyé à la eScoresheet pour validation.",
     "uploading": "Envoi...",
     "uploadingMessage": "Transmission en cours...",
-    "rosterSentToScoresheet": "Effectif transmis. Le marqueur doit maintenant le valider."
+    "rosterSentToScoresheet": "Effectif transmis. Le marqueur doit maintenant le valider.",
+    "problems": {
+      "numberTwice": "Le numéro {{number}} est donné à deux joueurs.",
+      "badNumber": "Les numéros vont de 1 à 99.",
+      "roleTwice": "{{role}} figure deux fois : chaque rôle d'officiel une seule fois.",
+      "tooMany": "{{max}} joueurs au maximum.",
+      "badText": "Un nom a plus de {{max}} caractères.",
+      "badDate": "Une date de naissance n'est pas une date.",
+      "other": "L'effectif ne peut pas être envoyé ({{problem}})."
+    }
   },
   "benchDashboard": {
     "title": "Espace équipe",

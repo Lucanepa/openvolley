@@ -40,6 +40,7 @@ import SavedTeamPickerModal, { confirmReplaceRoster } from './SavedTeamPickerMod
 import SaveRosterToTeamModal from './SaveRosterToTeamModal'
 import { focusLeaves, sortedByNumber } from '../utils/rosterOrder'
 import { isShirtNumber, shirtNumberDigits, recordNumbersMissingFrom } from '../domain/roster'
+import { checkUploadedRoster, takesUploadedRoster, uploadedSignaturesKept, uploadedSignaturesToTake } from '../domain/uploadedRoster'
 import PlayerPoolModal from './PlayerPoolModal'
 import { buildPlayerPool, poolToRoster, ROSTER_MAX } from '../domain/playerPool'
 import { officialsFromSchedule } from '../domain/officials'
@@ -3433,6 +3434,176 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     }
   }
 
+  // A team's uploaded roster (domain/uploadedRoster): checked again here, as
+  // it came from the server, a relay or a restore, before the preview shows
+  // it or Accept stores it. Accept only before the coin toss (the events of a
+  // running match name its players by number), after the usual question when
+  // the team has players already; Reject always.
+  const pendingRosterOf = (team) => (team === 'home' ? match?.pendingHomeRoster : match?.pendingAwayRoster)
+  // The coach's and captain's signatures the match has (an upload fills only empty ones)
+  const storedSignaturesOf = (team) => (team === 'home'
+    ? { coach: match?.homeCoachSignature, captain: match?.homeCaptainSignature }
+    : { coach: match?.awayCoachSignature, captain: match?.awayCaptainSignature })
+  const acceptingPendingRef = useRef(false)
+  const acceptPendingRoster = async (team) => {
+    const raw = pendingRosterOf(team)
+    if (!matchId || !raw || acceptingPendingRef.current) return
+    acceptingPendingRef.current = true
+    try {
+      await acceptCheckedPendingRoster(team, raw)
+    } finally {
+      acceptingPendingRef.current = false
+    }
+  }
+  const acceptCheckedPendingRoster = async (team, raw) => {
+    const isHome = team === 'home'
+    if (!takesUploadedRoster(match)) {
+      setNoticeModal({ message: t('matchSetup.uploadedRosterStarted') })
+      return
+    }
+    const checked = checkUploadedRoster(raw)
+    if (!checked.ok) {
+      setNoticeModal({ message: t('matchSetup.uploadedRosterInvalid') })
+      return
+    }
+    const ok = await confirmReplaceRoster({
+      roster: isHome ? homeRoster : awayRoster,
+      bench: isHome ? benchHome : benchAway,
+      teamLabel: (isHome ? home : away) || '',
+      t
+    })
+    if (!ok) return
+    const { players, bench } = checked.roster
+    // Into empty slots only: a signature the match has stays (the card says so)
+    const signatures = uploadedSignaturesToTake(checked.roster, storedSignaturesOf(team))
+    const teamId = isHome ? match.homeTeamId : match.awayTeamId
+    const pendingField = isHome ? 'pendingHomeRoster' : 'pendingAwayRoster'
+    try {
+      if (teamId) {
+        // One transaction: a failure leaves the roster as it was
+        const matchUpdate = { [isHome ? 'bench_home' : 'bench_away']: bench, [pendingField]: null }
+        if (signatures.coach) matchUpdate[isHome ? 'homeCoachSignature' : 'awayCoachSignature'] = signatures.coach
+        if (signatures.captain) matchUpdate[isHome ? 'homeCaptainSignature' : 'awayCaptainSignature'] = signatures.captain
+        await db.transaction('rw', db.players, db.matches, async () => {
+          await db.players.where('teamId').equals(teamId).delete()
+          if (players.length) {
+            await db.players.bulkAdd(players.map(p => ({
+              teamId,
+              number: p.number,
+              name: `${p.lastName} ${p.firstName}`.trim(),
+              lastName: p.lastName,
+              firstName: p.firstName,
+              dob: p.dob || null,
+              libero: p.libero,
+              isCaptain: p.isCaptain,
+              isLfp: p.isLfp,
+              role: null,
+              createdAt: new Date().toISOString()
+            })))
+          }
+          await db.matches.update(matchId, matchUpdate)
+        })
+        console.log(`[MatchSetup] Accepted ${team} roster with signatures:`, { hasCoach: !!signatures.coach, hasCaptain: !!signatures.captain })
+      } else {
+        // No team yet: just clear pending
+        await db.matches.update(matchId, { [pendingField]: null })
+      }
+    } catch (err) {
+      console.warn('[MatchSetup] Accepting the uploaded roster failed:', err?.message)
+      setNoticeModal({ message: t('matchSetup.uploadedRosterSaveFailed') })
+      return
+    }
+    if (isHome) {
+      setHomeRoster(players)
+      setBenchHome(bench)
+      if (signatures.coach) setHomeCoachSignature(signatures.coach)
+      if (signatures.captain) setHomeCaptainSignature(signatures.captain)
+    } else {
+      setAwayRoster(players)
+      setBenchAway(bench)
+      if (signatures.coach) setAwayCoachSignature(signatures.coach)
+      if (signatures.captain) setAwayCaptainSignature(signatures.captain)
+    }
+    await clearServerPendingRoster(team)
+  }
+  const rejectPendingRoster = async (team) => {
+    if (!matchId) return
+    await db.matches.update(matchId, { [team === 'home' ? 'pendingHomeRoster' : 'pendingAwayRoster']: null })
+    await clearServerPendingRoster(team)
+  }
+  // On the main view: a team's roster waits (why the app opened Match Setup),
+  // with the way to its card
+  const renderPendingRosterNotice = (team) => pendingRosterOf(team) ? (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-sky-200 bg-sky-50/60 px-3 py-2 text-sm text-stone-800" data-testid={`pending-roster-notice-${team}`}>
+      <span>{t('matchSetup.rosterUploaded')}</span>
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={() => {
+          if (team === 'home') setHomeUploadMode('remote')
+          else setAwayUploadMode('remote')
+          setCurrentView(team)
+        }}
+      >
+        {t('matchSetup.uploadedRosterOpen')}
+      </Button>
+    </div>
+  ) : null
+  // The card of a team's uploaded roster (Edit roster -> Remote): counts of
+  // the checked roster, the uploaded signatures Accept leaves out (the match
+  // has them), Accept only for a roster the rules take before the coin toss,
+  // Reject always
+  const renderPendingRosterCard = (team) => {
+    const raw = pendingRosterOf(team)
+    if (!raw) return null
+    const checked = checkUploadedRoster(raw)
+    const started = !takesUploadedRoster(match)
+    const kept = checked.ok && !started ? uploadedSignaturesKept(checked.roster, storedSignaturesOf(team)) : {}
+    return (
+      <div className="mt-3 rounded-xl border border-sky-200 bg-white p-3" data-testid={`pending-roster-${team}`}>
+        <h4 className="mt-0 mb-2 text-sm font-semibold text-stone-800">{t('matchSetup.rosterUploaded')}</h4>
+        {checked.ok ? (
+          <div className="mb-3 flex flex-col gap-1 text-xs text-stone-600">
+            <div>
+              {t('matchSetup.playersCount')}: {checked.roster.players.length}
+            </div>
+            <div>
+              {t('matchSetup.benchOfficialsCount')}: {checked.roster.bench.length}
+            </div>
+          </div>
+        ) : (
+          <p role="alert" className="mb-3 text-xs text-red-700">{t('matchSetup.uploadedRosterInvalid')}</p>
+        )}
+        {checked.ok && started && (
+          <p className="mb-3 text-xs text-amber-800">{t('matchSetup.uploadedRosterStarted')}</p>
+        )}
+        {kept.coach && (
+          <p className="mb-3 text-xs text-amber-800" data-testid={`pending-roster-${team}-coach-signature-kept`}>{t('matchSetup.uploadedCoachSignatureKept')}</p>
+        )}
+        {kept.captain && (
+          <p className="mb-3 text-xs text-amber-800" data-testid={`pending-roster-${team}-captain-signature-kept`}>{t('matchSetup.uploadedCaptainSignatureKept')}</p>
+        )}
+        {checked.ok && (
+          <div className="mb-2 flex gap-2">
+            <Button variant="secondary" size="xl" className="flex-1" onClick={() => setRosterPreview(team)}>
+              {t('matchSetup.previewRoster')}
+            </Button>
+          </div>
+        )}
+        <div className="flex gap-2">
+          {checked.ok && !started && (
+            <Button variant="positive" size="xl" className="flex-1" onClick={() => acceptPendingRoster(team)}>
+              {t('matchSetup.acceptRoster')}
+            </Button>
+          )}
+          <Button variant="secondary" size="xl" className="flex-1" onClick={() => rejectPendingRoster(team)}>
+            {t('matchSetup.rejectRoster')}
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
   // Search for the roster a coach uploaded (remote roster upload)
   const handleSearchHomeRoster = async () => {
     if (!match) {
@@ -4427,106 +4598,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         </Button>
                     )}
                   </div>
-                  {match?.pendingHomeRoster && (
-                    <div className="mt-3 rounded-xl border border-sky-200 bg-white p-3">
-                      <h4 className="mt-0 mb-2 text-sm font-semibold text-stone-800">{t('matchSetup.rosterUploaded')}</h4>
-                      <div className="mb-3 flex flex-col gap-1 text-xs text-stone-600">
-                        <div>
-                          {t('matchSetup.playersCount')}: {match.pendingHomeRoster.players?.length || 0}
-                        </div>
-                        <div>
-                          {t('matchSetup.benchOfficialsCount')}: {match.pendingHomeRoster.bench?.length || 0}
-                        </div>
-                      </div>
-                      <div className="mb-2 flex gap-2">
-                        <Button variant="secondary" size="xl" className="flex-1" onClick={() => setRosterPreview('home')}>
-                          {t('matchSetup.previewRoster')}
-                        </Button>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="positive"
-                          size="xl"
-                          className="flex-1"
-                          onClick={async () => {
-                            if (!matchId || !match?.pendingHomeRoster) return
-                            const pending = match.pendingHomeRoster
-                            const importedPlayers = pending.players || []
-                            const importedBench = pending.bench || []
-
-                            // Extract signatures from pending roster
-                            const importedCoachSig = pending.coachSignature || null
-                            const importedCaptainSig = pending.captainSignature || null
-
-                            // Update state
-                            setHomeRoster(importedPlayers)
-                            setBenchHome(importedBench)
-
-                            // Also update signature states if signatures were provided
-                            if (importedCoachSig) setHomeCoachSignature(importedCoachSig)
-                            if (importedCaptainSig) setHomeCaptainSignature(importedCaptainSig)
-
-                            // Save to database immediately
-                            if (match.homeTeamId) {
-                              // Delete existing players
-                              const existingPlayers = await db.players.where('teamId').equals(match.homeTeamId).toArray()
-                              for (const ep of existingPlayers) {
-                                await db.players.delete(ep.id)
-                              }
-
-                              // Add imported players
-                              if (importedPlayers.length) {
-                                await db.players.bulkAdd(
-                                  importedPlayers.map(p => ({
-                                    teamId: match.homeTeamId,
-                                    number: p.number,
-                                    name: `${p.lastName || ''} ${p.firstName || ''}`.trim(),
-                                    lastName: p.lastName || '',
-                                    firstName: p.firstName || '',
-                                    dob: p.dob || null,
-                                    libero: p.libero || '',
-                                    isCaptain: !!p.isCaptain,
-                                    isLfp: !!p.isLfp,
-                                    role: null,
-                                    createdAt: new Date().toISOString()
-                                  }))
-                                )
-                              }
-
-                              // Update match with bench officials and signatures
-                              const matchUpdate = {
-                                bench_home: importedBench,
-                                pendingHomeRoster: null
-                              }
-                              if (importedCoachSig) matchUpdate.homeCoachSignature = importedCoachSig
-                              if (importedCaptainSig) matchUpdate.homeCaptainSignature = importedCaptainSig
-
-                              await db.matches.update(matchId, matchUpdate)
-                              console.log('[MatchSetup] Accepted home roster with signatures:', { hasCoach: !!importedCoachSig, hasCaptain: !!importedCaptainSig })
-                            } else {
-                              // If no teamId yet, just clear pending
-                              await db.matches.update(matchId, { pendingHomeRoster: null })
-                            }
-                            await clearServerPendingRoster('home')
-                          }}
-                          >
-                            {t('matchSetup.acceptRoster')}
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            size="xl"
-                            className="flex-1"
-                            onClick={async () => {
-                              if (!matchId) return
-                              await db.matches.update(matchId, { pendingHomeRoster: null })
-                              await clearServerPendingRoster('home')
-                            }}
-                          >
-                            {t('matchSetup.rejectRoster')}
-                          </Button>
-                      </div>
-                    </div>
-                  )}
+                  {renderPendingRosterCard('home')}
                 </div>
               )}
             </div>
@@ -5313,8 +5385,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           >
             <div className="max-h-[70vh] overflow-y-auto p-4">
               {(() => {
-                const roster = rosterPreview === 'home' ? match?.pendingHomeRoster : match?.pendingAwayRoster
-                if (!roster) return <p>{t('matchSetup.noRosterFound')}</p>
+                const raw = rosterPreview === 'home' ? match?.pendingHomeRoster : match?.pendingAwayRoster
+                if (!raw) return <p>{t('matchSetup.noRosterFound')}</p>
+                // Only what the rules take (domain/uploadedRoster): texts and numbers, PNG signatures
+                const checked = checkUploadedRoster(raw)
+                if (!checked.ok) return <p role="alert">{t('matchSetup.uploadedRosterInvalid')}</p>
+                const roster = checked.roster
                 return (
                   <>
                     <SectionHeader title={t('matchSetup.playersCount')} count={roster.players?.length || 0} className="mb-2" />
@@ -5325,24 +5401,26 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                             <th className="px-2 py-2 text-left">#</th>
                             <th className="px-2 py-2 text-left">{t('rosterSetup.lastName')}</th>
                             <th className="px-2 py-2 text-left">{t('rosterSetup.firstName')}</th>
+                            <th className="px-2 py-2 text-left">{t('rosterSetup.dob')}</th>
                             <th className="px-2 py-2 text-center">L</th>
                             <th className="px-2 py-2 text-center">C</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {(roster.players || []).map((p, i) => (
+                          {roster.players.map((p, i) => (
                             <tr key={i} className="border-b border-stone-100 last:border-0">
-                              <td className="px-2 py-1.5 font-semibold tabular-nums text-stone-900">{p.number}</td>
-                              <td className="px-2 py-1.5 text-stone-800">{p.lastName || ''}</td>
-                              <td className="px-2 py-1.5 text-stone-800">{p.firstName || ''}</td>
-                              <td className="px-2 py-1.5 text-center text-stone-800">{p.libero ? 'L' : ''}</td>
+                              <td className="px-2 py-1.5 font-semibold tabular-nums text-stone-900">{p.number ?? ''}</td>
+                              <td className="px-2 py-1.5 text-stone-800">{p.lastName}</td>
+                              <td className="px-2 py-1.5 text-stone-800">{p.firstName}</td>
+                              <td className="px-2 py-1.5 tabular-nums text-stone-800">{p.dob}</td>
+                              <td className="px-2 py-1.5 text-center text-stone-800">{p.libero === 'libero1' ? 'L1' : p.libero === 'libero2' ? 'L2' : ''}</td>
                               <td className="px-2 py-1.5 text-center text-stone-800">{p.isCaptain ? 'C' : ''}</td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
-                    {roster.bench && roster.bench.length > 0 && (
+                    {roster.bench.length > 0 && (
                       <>
                         <SectionHeader title={t('matchSetup.benchOfficialsCount')} count={roster.bench.length} className="mt-4 mb-2" />
                         <div>
@@ -5357,13 +5435,28 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                             <tbody>
                               {roster.bench.map((b, i) => (
                                 <tr key={i} className="border-b border-stone-100 last:border-0">
-                                  <td className="px-2 py-1.5 text-stone-800">{b.role || ''}</td>
-                                  <td className="px-2 py-1.5 text-stone-800">{b.lastName || ''}</td>
-                                  <td className="px-2 py-1.5 text-stone-800">{b.firstName || ''}</td>
+                                  <td className="px-2 py-1.5 text-stone-800">{b.role}</td>
+                                  <td className="px-2 py-1.5 text-stone-800">{b.lastName}</td>
+                                  <td className="px-2 py-1.5 text-stone-800">{b.firstName}</td>
                                 </tr>
                               ))}
                             </tbody>
                           </table>
+                        </div>
+                      </>
+                    )}
+                    {(roster.coachSignature || roster.captainSignature) && (
+                      <>
+                        <SectionHeader title={t('rosterSetup.signatures', 'Signatures')} className="mt-4 mb-2" />
+                        <div className="flex flex-wrap gap-4">
+                          {[['coach', roster.coachSignature, t('rosterSetup.coachSignature', 'Coach signature')], ['captain', roster.captainSignature, t('rosterSetup.captainSignature', 'Captain signature')]]
+                            .filter(([, image]) => image)
+                            .map(([key, image, label]) => (
+                              <figure key={key} className="m-0">
+                                <img src={image} alt={label} className="ov-ink h-16 max-w-[220px] rounded border border-stone-200 bg-white" />
+                                <figcaption className="mt-1 text-xs text-stone-500">{label}</figcaption>
+                              </figure>
+                            ))}
                         </div>
                       </>
                     )}
@@ -5608,106 +5701,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         </Button>
                     )}
                   </div>
-                  {match?.pendingAwayRoster && (
-                    <div className="mt-3 rounded-xl border border-sky-200 bg-white p-3">
-                      <h4 className="mt-0 mb-2 text-sm font-semibold text-stone-800">{t('matchSetup.rosterUploaded')}</h4>
-                      <div className="mb-3 flex flex-col gap-1 text-xs text-stone-600">
-                        <div>
-                          {t('matchSetup.playersCount')}: {match.pendingAwayRoster.players?.length || 0}
-                        </div>
-                        <div>
-                          {t('matchSetup.benchOfficialsCount')}: {match.pendingAwayRoster.bench?.length || 0}
-                        </div>
-                      </div>
-                      <div className="mb-2 flex gap-2">
-                        <Button variant="secondary" size="xl" className="flex-1" onClick={() => setRosterPreview('away')}>
-                          {t('matchSetup.previewRoster')}
-                        </Button>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="positive"
-                          size="xl"
-                          className="flex-1"
-                          onClick={async () => {
-                            if (!matchId || !match?.pendingAwayRoster) return
-                            const pending = match.pendingAwayRoster
-                            const importedPlayers = pending.players || []
-                            const importedBench = pending.bench || []
-
-                            // Extract signatures from pending roster
-                            const importedCoachSig = pending.coachSignature || null
-                            const importedCaptainSig = pending.captainSignature || null
-
-                            // Update state
-                            setAwayRoster(importedPlayers)
-                            setBenchAway(importedBench)
-
-                            // Also update signature states if signatures were provided
-                            if (importedCoachSig) setAwayCoachSignature(importedCoachSig)
-                            if (importedCaptainSig) setAwayCaptainSignature(importedCaptainSig)
-
-                            // Save to database immediately
-                            if (match.awayTeamId) {
-                              // Delete existing players
-                              const existingPlayers = await db.players.where('teamId').equals(match.awayTeamId).toArray()
-                              for (const ep of existingPlayers) {
-                                await db.players.delete(ep.id)
-                              }
-
-                              // Add imported players
-                              if (importedPlayers.length) {
-                                await db.players.bulkAdd(
-                                  importedPlayers.map(p => ({
-                                    teamId: match.awayTeamId,
-                                    number: p.number,
-                                    name: `${p.lastName || ''} ${p.firstName || ''}`.trim(),
-                                    lastName: p.lastName || '',
-                                    firstName: p.firstName || '',
-                                    dob: p.dob || null,
-                                    libero: p.libero || '',
-                                    isCaptain: !!p.isCaptain,
-                                    isLfp: !!p.isLfp,
-                                    role: null,
-                                    createdAt: new Date().toISOString()
-                                  }))
-                                )
-                              }
-
-                              // Update match with bench officials and signatures
-                              const matchUpdate = {
-                                bench_away: importedBench,
-                                pendingAwayRoster: null
-                              }
-                              if (importedCoachSig) matchUpdate.awayCoachSignature = importedCoachSig
-                              if (importedCaptainSig) matchUpdate.awayCaptainSignature = importedCaptainSig
-
-                              await db.matches.update(matchId, matchUpdate)
-                              console.log('[MatchSetup] Accepted away roster with signatures:', { hasCoach: !!importedCoachSig, hasCaptain: !!importedCaptainSig })
-                            } else {
-                              // If no teamId yet, just clear pending
-                              await db.matches.update(matchId, { pendingAwayRoster: null })
-                            }
-                            await clearServerPendingRoster('away')
-                          }}
-                          >
-                            {t('matchSetup.acceptRoster')}
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            size="xl"
-                            className="flex-1"
-                            onClick={async () => {
-                              if (!matchId) return
-                              await db.matches.update(matchId, { pendingAwayRoster: null })
-                              await clearServerPendingRoster('away')
-                            }}
-                          >
-                            {t('matchSetup.rejectRoster')}
-                          </Button>
-                      </div>
-                    </div>
-                  )}
+                  {renderPendingRosterCard('away')}
                 </div>
               )}
             </div>
@@ -6499,8 +6493,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           >
             <div className="max-h-[70vh] overflow-y-auto p-4">
               {(() => {
-                const roster = rosterPreview === 'home' ? match?.pendingHomeRoster : match?.pendingAwayRoster
-                if (!roster) return <p>{t('matchSetup.noRosterFound')}</p>
+                const raw = rosterPreview === 'home' ? match?.pendingHomeRoster : match?.pendingAwayRoster
+                if (!raw) return <p>{t('matchSetup.noRosterFound')}</p>
+                // Only what the rules take (domain/uploadedRoster): texts and numbers, PNG signatures
+                const checked = checkUploadedRoster(raw)
+                if (!checked.ok) return <p role="alert">{t('matchSetup.uploadedRosterInvalid')}</p>
+                const roster = checked.roster
                 return (
                   <>
                     <SectionHeader title={t('matchSetup.playersCount')} count={roster.players?.length || 0} className="mb-2" />
@@ -6511,24 +6509,26 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                             <th className="px-2 py-2 text-left">#</th>
                             <th className="px-2 py-2 text-left">{t('rosterSetup.lastName')}</th>
                             <th className="px-2 py-2 text-left">{t('rosterSetup.firstName')}</th>
+                            <th className="px-2 py-2 text-left">{t('rosterSetup.dob')}</th>
                             <th className="px-2 py-2 text-center">L</th>
                             <th className="px-2 py-2 text-center">C</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {(roster.players || []).map((p, i) => (
+                          {roster.players.map((p, i) => (
                             <tr key={i} className="border-b border-stone-100 last:border-0">
-                              <td className="px-2 py-1.5 font-semibold tabular-nums text-stone-900">{p.number}</td>
-                              <td className="px-2 py-1.5 text-stone-800">{p.lastName || ''}</td>
-                              <td className="px-2 py-1.5 text-stone-800">{p.firstName || ''}</td>
-                              <td className="px-2 py-1.5 text-center text-stone-800">{p.libero ? 'L' : ''}</td>
+                              <td className="px-2 py-1.5 font-semibold tabular-nums text-stone-900">{p.number ?? ''}</td>
+                              <td className="px-2 py-1.5 text-stone-800">{p.lastName}</td>
+                              <td className="px-2 py-1.5 text-stone-800">{p.firstName}</td>
+                              <td className="px-2 py-1.5 tabular-nums text-stone-800">{p.dob}</td>
+                              <td className="px-2 py-1.5 text-center text-stone-800">{p.libero === 'libero1' ? 'L1' : p.libero === 'libero2' ? 'L2' : ''}</td>
                               <td className="px-2 py-1.5 text-center text-stone-800">{p.isCaptain ? 'C' : ''}</td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
-                    {roster.bench && roster.bench.length > 0 && (
+                    {roster.bench.length > 0 && (
                       <>
                         <SectionHeader title={t('matchSetup.benchOfficialsCount')} count={roster.bench.length} className="mt-4 mb-2" />
                         <div>
@@ -6543,13 +6543,28 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                             <tbody>
                               {roster.bench.map((b, i) => (
                                 <tr key={i} className="border-b border-stone-100 last:border-0">
-                                  <td className="px-2 py-1.5 text-stone-800">{b.role || ''}</td>
-                                  <td className="px-2 py-1.5 text-stone-800">{b.lastName || ''}</td>
-                                  <td className="px-2 py-1.5 text-stone-800">{b.firstName || ''}</td>
+                                  <td className="px-2 py-1.5 text-stone-800">{b.role}</td>
+                                  <td className="px-2 py-1.5 text-stone-800">{b.lastName}</td>
+                                  <td className="px-2 py-1.5 text-stone-800">{b.firstName}</td>
                                 </tr>
                               ))}
                             </tbody>
                           </table>
+                        </div>
+                      </>
+                    )}
+                    {(roster.coachSignature || roster.captainSignature) && (
+                      <>
+                        <SectionHeader title={t('rosterSetup.signatures', 'Signatures')} className="mt-4 mb-2" />
+                        <div className="flex flex-wrap gap-4">
+                          {[['coach', roster.coachSignature, t('rosterSetup.coachSignature', 'Coach signature')], ['captain', roster.captainSignature, t('rosterSetup.captainSignature', 'Captain signature')]]
+                            .filter(([, image]) => image)
+                            .map(([key, image, label]) => (
+                              <figure key={key} className="m-0">
+                                <img src={image} alt={label} className="ov-ink h-16 max-w-[220px] rounded border border-stone-200 bg-white" />
+                                <figcaption className="mt-1 text-xs text-stone-500">{label}</figcaption>
+                              </figure>
+                            ))}
                         </div>
                       </>
                     )}
@@ -7205,6 +7220,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
           {coloursTooClose(homeColor, awayColor) && <CloseColourNote />}
           <SentRosterCard row={sentRosters.home} side="home" onUse={() => applySentRoster('home')} onDismiss={() => dismissSentRoster('home')} />
+          {renderPendingRosterNotice('home')}
           <ClubGenderNotice warnings={clubWarnings.home} gender={clubGender} />
         </div>
 
@@ -7264,6 +7280,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
           {coloursTooClose(homeColor, awayColor) && <CloseColourNote />}
           <SentRosterCard row={sentRosters.away} side="away" onUse={() => applySentRoster('away')} onDismiss={() => dismissSentRoster('away')} />
+          {renderPendingRosterNotice('away')}
           <ClubGenderNotice warnings={clubWarnings.away} gender={clubGender} />
         </div>
         {typeof window !== 'undefined' && window.electronAPI?.server && (
