@@ -39,6 +39,21 @@ export function toCloudPlayers(players) {
   }))
 }
 
+/**
+ * Bench officials in the cloud's snake_case shape (bench_home / bench_away),
+ * as the coin toss sends them (CoinToss). importMatchFromSupabase reads both
+ * shapes back into the app's.
+ * @param {Array} bench local bench officials ({ role, firstName, lastName, dob })
+ */
+export function toCloudBench(bench) {
+  return (Array.isArray(bench) ? bench : []).map(b => ({
+    role: b.role,
+    first_name: b.firstName ?? b.first_name ?? '',
+    last_name: b.lastName ?? b.last_name ?? '',
+    dob: b.dob || null
+  }))
+}
+
 // db/017's CHECK on matches.remarks (characters, not bytes)
 export const REMARKS_MAX = 8000
 

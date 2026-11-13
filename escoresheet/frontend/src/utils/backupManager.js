@@ -26,6 +26,7 @@ import { liveClockOffset, liveClockOffsetAfter, liveStateNow } from './serverDat
 import { isEncryptedBackup, BACKUP_DAMAGED } from './backupCrypto/envelope'
 import { recomputeMatch } from '../domain/recompute'
 import { queueEventSync } from './eventSync'
+import { officialsToArray } from '../domain/officials'
 
 // IndexedDB key for storing file system directory handle
 const BACKUP_DB_NAME = 'escoresheet_backup'
@@ -1643,6 +1644,82 @@ export function cloudBestOf(match) {
   return b === 3 ? 3 : 5
 }
 
+// An ISO date of birth (as Create match sends the officials') in the app's
+// DD.MM.YYYY; anything else as it is
+const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
+const appDob = (dob) => {
+  const m = typeof dob === 'string' ? dob.match(ISO_DATE) : null
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : dob
+}
+
+// A person of the cloud's lists in the app's shape: firstName / lastName
+// (the cloud has first_name / last_name from some writers, the app's names
+// from others). Rows without a name of either kind (the line judges' `name`)
+// stay as they are.
+function personFromCloud(row, { isoDob = false } = {}) {
+  if (!row || typeof row !== 'object') return row
+  const { first_name: first, last_name: last, ...rest } = row
+  if (first === undefined && last === undefined && !('firstName' in row) && !('lastName' in row)) return row
+  const out = { ...rest, firstName: row.firstName ?? first ?? '', lastName: row.lastName ?? last ?? '' }
+  if (isoDob && 'dob' in out) out.dob = appDob(out.dob)
+  return out
+}
+
+/**
+ * The match officials of a cloud row in the app's shape (firstName,
+ * lastName, DD.MM.YYYY): Create match sends first_name / last_name and an
+ * ISO date. Copied as they were, Match setup read them as empty (1st and 2nd
+ * referee "Not set") and its auto-save wiped them, e-mails included, from a
+ * match continued on another device.
+ * @param {unknown} officials the cloud's officials column (older rows: a role-keyed object)
+ * @returns {Array}
+ */
+export function officialsFromCloud(officials) {
+  return officialsToArray(officials).map(o => personFromCloud(o, { isoDob: true }))
+}
+
+/**
+ * Bench officials of a cloud row in the app's shape (firstName, lastName):
+ * the coin toss and an edited roster send first_name / last_name. The
+ * scoreboard's bench list, its sanction menu and the sheet read the app's
+ * names: a continued match showed its bench officials without names.
+ * @param {unknown} bench bench_home / bench_away
+ * @returns {Array}
+ */
+export function benchFromCloud(bench) {
+  return Array.isArray(bench) ? bench.map(b => personFromCloud(b)) : []
+}
+
+const LIBERO_MARKS = new Set(['libero1', 'libero2', 'redesignated'])
+
+/**
+ * A cloud roster (players_home / players_away) with the team's libero
+ * re-designations of the log applied, oldest first: the unable libero
+ * 'unable', the new one 'redesignated', as the scoring device marked them.
+ * Older apps never sent the roster after a re-designation, so the continuing
+ * device had no usable libero and offered the re-designation again. A roster
+ * sent after it (its unable libero is no libero any more) is left as it is,
+ * also when it was edited since.
+ * @param {Array} players cloud roster rows ({ number, libero, ... })
+ * @param {Array} events the match's cloud event rows
+ * @param {'home'|'away'} team
+ * @returns {Array} a copy, rows changed where a re-designation applies
+ */
+export function rosterWithRedesignations(players, events, team) {
+  const rows = (players || []).map(p => ({ ...p }))
+  const redesignations = (events || [])
+    .filter(e => e?.type === 'libero_redesignation' && e.payload?.team === team)
+    .sort((a, b) => (Number(a.seq) || 0) - (Number(b.seq) || 0))
+  for (const e of redesignations) {
+    const unable = rows.find(p => String(p.number) === String(e.payload.unableLiberoNumber))
+    if (!unable || !LIBERO_MARKS.has(unable.libero)) continue
+    unable.libero = 'unable'
+    const next = rows.find(p => String(p.number) === String(e.payload.newLiberoNumber))
+    if (next) next.libero = 'redesignated'
+  }
+  return rows
+}
+
 export async function importMatchFromSupabase(cloudData) {
   const { match, sets, events } = cloudData
   const courtSides = cloudData.courtSides || {}
@@ -1665,8 +1742,9 @@ export async function importMatchFromSupabase(cloudData) {
     // Extract team data from JSONB columns
     const homeTeamData = match.home_team || {}
     const awayTeamData = match.away_team || {}
-    const playersHome = match.players_home || []
-    const playersAway = match.players_away || []
+    // (the libero marks of the log's re-designations included)
+    const playersHome = rosterWithRedesignations(match.players_home, events, 'home')
+    const playersAway = rosterWithRedesignations(match.players_away, events, 'away')
 
     // Create local teams (always create new teams for imported matches to avoid duplicates)
     let homeTeamId = null
@@ -1698,6 +1776,14 @@ export async function importMatchFromSupabase(cloudData) {
     const approval = match.approval || {}
     const connections = match.connections || {}
     const connectionPins = match.connection_pins || {}
+    // Team A's serve; the cloud keeps no B flag (B serves when A does not):
+    // without it the sheet of a continued match had no S/R for Team B
+    const coinTossServeA = coinToss.serve_a !== undefined ? coinToss.serve_a : match.coin_toss_serve_a
+    // A roster uploaded for the match waits for the scorer's Accept in Match
+    // setup only. The server may still hold it once the match has started
+    // (nothing cleared it): copied then, it sent the continued match back
+    // to Match setup at every return
+    const inSetup = match.status == null || match.status === 'setup'
 
     // Create match with all JSONB data (prefer JSONB, fallback to legacy)
     const localMatchRow = {
@@ -1724,9 +1810,9 @@ export async function importMatchFromSupabase(cloudData) {
       homeShortName: homeTeamData.short_name || null,
       awayShortName: awayTeamData.short_name || null,
       // JSONB data stored locally
-      officials: match.officials || [],
-      bench_home: match.bench_home || [],
-      bench_away: match.bench_away || [],
+      officials: officialsFromCloud(match.officials),
+      bench_home: benchFromCloud(match.bench_home),
+      bench_away: benchFromCloud(match.bench_away),
       // Signatures: prefer JSONB, fallback to legacy
       homeCoachSignature: signatures.home_coach || match.home_coach_signature,
       homeCaptainSignature: signatures.home_captain || match.home_captain_signature,
@@ -1743,7 +1829,8 @@ export async function importMatchFromSupabase(cloudData) {
       coinTossConfirmed: coinToss.confirmed !== undefined ? coinToss.confirmed : match.coin_toss_confirmed,
       coinTossTeamA: coinToss.team_a || match.coin_toss_team_a,
       coinTossTeamB: coinToss.team_b || match.coin_toss_team_b,
-      coinTossServeA: coinToss.serve_a !== undefined ? coinToss.serve_a : match.coin_toss_serve_a,
+      coinTossServeA,
+      coinTossServeB: typeof coinTossServeA === 'boolean' ? !coinTossServeA : undefined,
       firstServe: coinToss.first_serve || match.first_serve,
       // Court sides (domain/rules getSideAForSet): without them the court
       // showed the set number's sides whatever the court was
@@ -1773,9 +1860,9 @@ export async function importMatchFromSupabase(cloudData) {
       refereePin: connectionPins.referee || match.referee_pin,
       homeTeamUploadPin: connectionPins.upload_home || match.home_team_upload_pin,
       awayTeamUploadPin: connectionPins.upload_away || match.away_team_upload_pin,
-      // Pending rosters: prefer JSONB, fallback to legacy
-      pendingHomeRoster: connections.pending_home_roster || match.pending_home_roster,
-      pendingAwayRoster: connections.pending_away_roster || match.pending_away_roster,
+      // Pending rosters: prefer JSONB, fallback to legacy (Match setup only)
+      pendingHomeRoster: inSetup ? (connections.pending_home_roster || match.pending_home_roster) : null,
+      pendingAwayRoster: inSetup ? (connections.pending_away_roster || match.pending_away_roster) : null,
       // Import metadata
       importedFrom: 'supabase',
       importedAt: new Date().toISOString(),
