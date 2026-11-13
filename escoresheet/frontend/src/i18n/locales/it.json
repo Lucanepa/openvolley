@@ -4432,7 +4432,8 @@
       "slotConflict": "Questo orario non si adatta al programma.",
       "resultChanged": "Qualcun altro ha cambiato questo risultato nel frattempo. Ricontrollalo.",
       "teamsChanged": "Le squadre di questa partita sono cambiate nel frattempo: un risultato precedente è stato corretto. Ricontrollala.",
-      "drawExists": "Il torneo ha già un tabellone di questa categoria e di questo genere."
+      "drawExists": "Il torneo ha già un tabellone di questa categoria e di questo genere.",
+      "tournamentFull": "Un torneo ha al massimo 40 tabelloni."
     },
     "import": {
       "open": "Importa Excel/CSV",
@@ -4556,6 +4557,7 @@
         "draw_drawn": "Il tabellone {{draw}} è sorteggiato: cambiano solo nomi, giocatori e wildcard. Prima reimposta il tabellone.",
         "unknown_draw": "Non c’è un tabellone {{draw}}.",
         "draw_size": "{{draw}} ha {{teams}} squadre; una doppia eliminazione ne richiede da {{min}} a {{max}}.",
+        "too_many_draws": "Un torneo ha al massimo {{max}} tabelloni: questo file ne aggiunge {{adding}}, c’è posto per {{room}}.",
         "duplicate_game": "La partita {{game}} c’è anche nella riga {{first_row}}.",
         "unknown_game": "Non c’è una partita {{game}}.",
         "game_other_draw": "La partita {{game}} è {{match_code}} di {{draw}}.",

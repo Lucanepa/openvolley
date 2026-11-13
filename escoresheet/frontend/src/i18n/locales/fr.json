@@ -4426,7 +4426,8 @@
       "slotConflict": "Ce créneau ne convient pas au programme.",
       "resultChanged": "Quelqu’un d’autre a modifié ce résultat entre-temps. Regarde-le à nouveau.",
       "teamsChanged": "Les équipes de ce match ont changé entre-temps : un résultat précédent a été corrigé. Regarde-le à nouveau.",
-      "drawExists": "Le tournoi a déjà un tableau de cette catégorie et de ce genre."
+      "drawExists": "Le tournoi a déjà un tableau de cette catégorie et de ce genre.",
+      "tournamentFull": "Un tournoi a au plus 40 tableaux."
     },
     "import": {
       "open": "Importer Excel/CSV",
@@ -4550,6 +4551,7 @@
         "draw_drawn": "Le tableau {{draw}} est tiré : seuls les noms, les joueurs et les wildcards changent. Réinitialise d’abord le tableau.",
         "unknown_draw": "Il n’y a pas de tableau {{draw}}.",
         "draw_size": "{{draw}} a {{teams}} équipes ; une double élimination en demande {{min}} à {{max}}.",
+        "too_many_draws": "Un tournoi a au plus {{max}} tableaux : ce fichier en ajoute {{adding}}, il reste de la place pour {{room}}.",
         "duplicate_game": "Le match {{game}} figure aussi à la ligne {{first_row}}.",
         "unknown_game": "Il n’y a pas de match {{game}}.",
         "game_other_draw": "Le match {{game}} est {{match_code}} de {{draw}}.",

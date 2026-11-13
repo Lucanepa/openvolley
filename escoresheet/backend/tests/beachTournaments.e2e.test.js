@@ -129,10 +129,11 @@ describe('beach tournaments end to end', { skip: SKIP }, () => {
     const b = okData(await get(users.admin, `/api/beach/tournaments/${ids.t}`))
     assert.equal(b.tournament.can_edit, true)
     assert.deepEqual(b.courts.map((c) => c.number), [1, 2])
-    // co-managers: beach competition managers only (else the same 404)
-    expectCode(await call(users.mia, 'POST', `/api/beach/tournaments/${ids.t}/managers`, { email: users.ivan.email }), 404)
-    expectCode(await call(users.mia, 'POST', `/api/beach/tournaments/${ids.t}/managers`, { email: 'nobody@nowhere.example' }), 404)
-    okData(await call(users.mia, 'POST', `/api/beach/tournaments/${ids.t}/managers`, { email: users.max.email.toUpperCase() }))
+    // co-managers: beach competition managers only; one answer for every address (it tells nothing about accounts)
+    const asked = [users.ivan.email, users.admin.email, 'nobody@nowhere.example', users.max.email.toUpperCase()]
+    for (const email of asked) {
+      assert.deepEqual(okData(await call(users.mia, 'POST', `/api/beach/tournaments/${ids.t}/managers`, { email })), { requested: true })
+    }
     okData(await call(users.max, 'PATCH', `/api/beach/tournaments/${ids.t}`, { venue: 'Strandbad Mythenquai', city: 'Zürich' }))
     const managers = (await bundle()).managers
     assert.deepEqual(managers.map((m) => [m.email, m.creator]), [[users.mia.email, true], [users.max.email, false]])

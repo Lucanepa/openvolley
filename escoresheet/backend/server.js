@@ -1912,6 +1912,8 @@ async function fetchAndParseIcal(feedUrl, federation, leagueCode, leagueConfig) 
         type2: leagueConfig.gender,
         type3: isU23 ? 'U23' : 'senior',
         championshipType: isNational ? 'national' : 'regional',
+        // the feed has no number of win sets: unknown, Match setup asks (never a silent best of 5)
+        bestOf: null,
         result: parsedDesc.result || '-'
       })
     }
@@ -1988,7 +1990,7 @@ const CLOUD_CONNECT_SRC = [
 // /health/live: process is up (Docker healthcheck). Never touches the database.
 // /health:      monitors. DATABASE_URL mode: db ping, catalog, storage sentinel,
 //               free space (floor), last backup age, socket pools, account-email
-//               counters (mail). 503 when the
+//               counters (mail), the VolleyManager sync (vmSync, informational). 503 when the
 //               db, catalog, floor, sentinel or backup is not ok. Cached for 2 s.
 //               Full body for internal callers only (isInternalCaller).
 const HEALTH_CACHE_MS = 2000
@@ -2031,6 +2033,30 @@ function relayStats() {
   }
 }
 
+// The VolleyManager schedule sync, once started (the start block at the end)
+let vmSync = null // { lib, schedule }
+/**
+ * The schedule sync for /health (lib/vmSync.js syncHealth): 'ok' or
+ * 'degraded' with the reasons, the last success and its games, the next run
+ * and retry; 'off' with the reason when this backend does not run it.
+ * Informational: scoring does not need it, so it never makes the backend
+ * unhealthy; the monitoring alerts on state 'degraded'.
+ */
+async function vmSyncStatus(layer) {
+  if (!vmSync) {
+    const reason = IS_LOCAL ? 'local' : process.env.VM_SYNC === 'off' ? 'disabled'
+      : (!process.env.VM_USERNAME || !process.env.VM_PASSWORD) ? 'not_configured' : 'not_started'
+    return { state: 'off', reason }
+  }
+  const { nextRunAt, nextRetryAt, running } = vmSync.schedule.status()
+  try {
+    const record = await withTimeout(vmSync.lib.readSyncRecord(layer.db.pool), HEALTH_DB_TIMEOUT_MS, 'sync record')
+    return { ...vmSync.lib.syncHealth(record), nextRunAt, nextRetryAt, running }
+  } catch {
+    return { state: 'unknown', nextRunAt, nextRetryAt, running }
+  }
+}
+
 async function computeCloudHealth() {
   const body = { status: 'ok', mode: 'cloud', uptime: process.uptime(), db: 'down', catalog: { ok: false, tables: 0 } }
   let layer = null
@@ -2066,6 +2092,8 @@ async function computeCloudHealth() {
     try { body.mail = layer.auth.mailer.stats() } catch { body.mail = { enabled: null } }
   }
   if (realtimeHub) body.realtime = realtimeHub.stats()
+  // the official schedule's sync: informational, not part of `healthy`
+  body.vmSync = layer && body.db === 'ok' ? await vmSyncStatus(layer) : { state: vmSync ? 'unknown' : 'off' }
   const healthy = body.db === 'ok' && body.catalog.ok && body.sentinel === 'ok' && body.floor === 'ok' &&
     (body.backup === 'ok' || body.backup === 'unchecked')
   if (!healthy) body.status = 'degraded'
@@ -6200,25 +6228,38 @@ if (DB_MODE) {
     // can never make one of them read under the wrong role. Listed in svrz_rc's
     // infrastructure.md and wiedisync's INFRA.md ("The shared VolleyManager
     // account"); move it only together with those tables.
+    // A run that is no success (failed, partial, no game written) is tried
+    // again after 15, 30 and 60 minutes, and a backend that starts with the
+    // last success more than 26 h old catches up: both only inside that
+    // referee-role window (VM_SYNC_WINDOW_UTC, default 22:00-01:00; 'any' once
+    // OpenVolley has a VolleyManager account of its own). /health shows the
+    // last success and the next try (vmSyncStatus).
     if (!IS_LOCAL && process.env.VM_USERNAME && process.env.VM_PASSWORD && process.env.VM_SYNC !== 'off') {
-      import('./lib/vmSync.js').then(({ runVmSync, scheduleVmSync, windowFromEnv }) => {
-        const vmWindow = windowFromEnv() // throws on a bad VM_SYNC_DAYS_* value
-        const schedule = scheduleVmSync({
+      import('./lib/vmSync.js').then((vm) => {
+        const vmWindow = vm.windowFromEnv() // throws on a bad VM_SYNC_DAYS_* value
+        const allowedWindow = vm.runWindowFromEnv() // throws on a bad VM_SYNC_WINDOW_UTC
+        const schedule = vm.scheduleVmSync({
           hourLocal: 22,
           minuteLocal: 30,
           tz: 'UTC',
-          run: () => runVmSync({
+          run: () => vm.runVmSync({
             pool: layer.db.pool,
             window: vmWindow,
             credentials: { username: process.env.VM_USERNAME, password: process.env.VM_PASSWORD },
             // the shared account's referee-delegate role (lib/vmSync.js VM_ROLE_FOR_GAMES)
             ...(process.env.VM_ROLE_ATTRIBUTE_GAMES ? { roleAttribute: process.env.VM_ROLE_ATTRIBUTE_GAMES } : {})
-          }).catch((err) => console.error('[VM sync] run failed:', err.message))
+          }),
+          retryDelaysMs: vm.VM_SYNC_RETRY_DELAYS_MS,
+          allowedWindow,
+          catchUp: () => vm.readSyncRecord(layer.db.pool)
         })
+        vmSync = { lib: vm, schedule }
         console.log('[VM sync] scheduled, next run ' + (schedule.nextRunAt()?.toISOString() ?? 'n/a'))
       }).catch((err) => {
         console.error('❌ [VM sync] not started:', err.message)
       })
+    } else if (!IS_LOCAL) {
+      console.warn(`[VM sync] off (${process.env.VM_SYNC === 'off' ? 'VM_SYNC=off' : 'VM_USERNAME / VM_PASSWORD not set'}): the official schedule is not refreshed`)
     }
   }, (err) => {
     console.error('❌ [DB] could not initialise the data layer:', err.message)

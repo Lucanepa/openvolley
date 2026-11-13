@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
-import { runVmSync, scheduleVmSync, ADVISORY_LOCK_KEY } from '../lib/vmSync.js'
+import { runVmSync, scheduleVmSync, syncHealth, runWindowFromEnv, ADVISORY_LOCK_KEY, VM_SYNC_RETRY_DELAYS_MS, SYNC_STALE_AFTER_MS } from '../lib/vmSync.js'
 import { main as cliMain, parseArgs, EXIT } from '../scripts/vm-sync.mjs'
 import {
   createFakeVolleyManager, makeGame, FAKE_USER, FAKE_PASSWORD, FAKE_CSRF, FAKE_SESSION_1, FAKE_SESSION_2
@@ -19,14 +19,15 @@ function memLogger() {
 
 /**
  * pg Pool stand-in: one shared advisory-lock table, a log table and a
- * recorder. `failUpsert` makes the upsert statement throw.
+ * recorder. `failUpsert` makes the upsert statement throw; `stored` are the
+ * svrz_games rows ({ game_number, datetime }) the window holds before the run.
  */
-function fakePool({ failUpsert = null, failLogInsert = false, failClose = false } = {}) {
-  const state = { lockHeldBy: null, log: new Map(), nextId: 1, queries: [], released: [], staleClosed: 0, clients: [] }
+function fakePool({ failUpsert = null, failLogInsert = false, failClose = false, stored = [] } = {}) {
+  const state = { lockHeldBy: null, log: new Map(), nextId: 1, queries: [], released: [], staleClosed: 0, clients: [], stored, removed: [] }
   let clientSeq = 0
   const closeRow = (params) => {
-    const [id, fetched, created, updated, unchanged, errors, status, message] = params
-    Object.assign(state.log.get(id), { fetched, created, updated, unchanged, errors, status, message, finished: true })
+    const [id, fetched, created, updated, unchanged, errors, status, message, withoutFormat, removed] = params
+    Object.assign(state.log.get(id), { fetched, created, updated, unchanged, errors, status, message, withoutFormat, removed, finished: true })
     return { rowCount: 1 }
   }
   return {
@@ -62,10 +63,16 @@ function fakePool({ failUpsert = null, failLogInsert = false, failClose = false 
             state.log.set(row.id, row)
             return { rows: [{ id: row.id }] }
           }
-          if (/INSERT INTO public\.svrz_games/.test(text)) {
+          if (/INSERT INTO public\.svrz_games \(/.test(text)) {
             if (failUpsert) throw new Error(failUpsert)
             const n = JSON.parse(params[0]).length
             return { rows: [{ created: n, updated: 0, unchanged: 0 }] }
+          }
+          if (/SELECT game_number, datetime FROM public\.svrz_games/.test(text)) return { rows: state.stored }
+          if (/DELETE FROM public\.svrz_games_removed/.test(text)) return { rowCount: 0 }
+          if (/DELETE FROM public\.svrz_games g/.test(text)) {
+            state.removed.push(...params[0])
+            return { rows: params[0].map((n) => ({ game_number: n })), rowCount: params[0].length }
           }
           if (/UPDATE public\.svrz_sync_log\s+SET finished_at/.test(text)) {
             if (failClose) throw new Error('close failed')
@@ -248,6 +255,77 @@ describe('runVmSync (fake pool, fake VolleyManager)', () => {
     assert.match(r.message, /Dry run/)
   })
 
+  it('counts the games written without a format and names the leagues left out', async () => {
+    const vm = createFakeVolleyManager({ games: [
+      makeGame(1, { winSets: 'two_win_sets' }), makeGame(2, { winSets: null }), makeGame(3, { shortName: 'NLA', groupDisplay: '' })
+    ] })
+    const pool = fakePool()
+    const r = await runVmSync({ pool, fetch: vm.fetch, baseUrl: vm.baseUrl, http, now: NOW, credentials: creds, logger: memLogger(), pageDelayMs: 0 })
+    assert.equal(r.status, 'success')
+    assert.equal(r.withoutFormat, 1)
+    assert.equal(r.written, 2)
+    const row = pool.state.log.get(r.logId)
+    assert.equal(row.withoutFormat, 1)
+    assert.match(row.message, /1 without a format/)
+    assert.match(row.message, /1 NL excluded \(NLA\)/)
+  })
+
+  // NOW is 2026-10-05T04:00Z; the window 2026-10-04 .. 2026-10-19 (Zurich)
+  const upcoming = (n, at = '2026-10-10T16:00:00Z') => ({ game_number: String(n), datetime: at })
+
+  it('a complete run moves the upcoming games VolleyManager no longer returns out of the schedule', async () => {
+    const vm = createFakeVolleyManager({ games: [makeGame(1), makeGame(2, { shortName: 'NLA' })] })
+    const pool = fakePool({ stored: [
+      upcoming(1), upcoming(2), upcoming(7),
+      upcoming(8, '2026-10-04T18:00:00Z'), // kicked off before the run: left alone
+      upcoming(9, '2026-10-25T18:00:00Z'), // after the window: left alone
+      upcoming(10, 'garbage')
+    ] })
+    const r = await runVmSync({ pool, fetch: vm.fetch, baseUrl: vm.baseUrl, http, now: NOW, credentials: creds, logger: memLogger(), pageDelayMs: 0 })
+    assert.equal(r.status, 'success', r.message)
+    assert.deepEqual(pool.state.removed, ['7'])
+    assert.equal(r.removed, 1)
+    assert.equal(pool.state.log.get(r.logId).removed, 1)
+    assert.match(r.message, /1 no longer in VolleyManager \(7\)/)
+  })
+
+  it('a partial run removes nothing', async () => {
+    const games = Array.from({ length: 3 }, (_, i) => makeGame(i + 1))
+    const vm = createFakeVolleyManager({ games, failSearchAt: 2 })
+    const pool = fakePool({ stored: [upcoming(1), upcoming(2), upcoming(3), upcoming(7)] })
+    const r = await runVmSync({ pool, fetch: vm.fetch, baseUrl: vm.baseUrl, http, now: NOW, credentials: creds, logger: memLogger(), pageDelayMs: 0, pageSize: 2 })
+    assert.equal(r.status, 'partial')
+    assert.deepEqual(pool.state.removed, [])
+  })
+
+  it('no games at all while the schedule holds upcoming ones is no success, and removes nothing', async () => {
+    const vm = createFakeVolleyManager({ games: [] })
+    const pool = fakePool({ stored: [upcoming(7)] })
+    const r = await runVmSync({ pool, fetch: vm.fetch, baseUrl: vm.baseUrl, http, now: NOW, credentials: creds, logger: memLogger(), pageDelayMs: 0 })
+    assert.equal(r.status, 'partial')
+    assert.match(r.message, /VolleyManager returned no games; the schedule holds 1 upcoming/)
+    assert.deepEqual(pool.state.removed, [])
+  })
+
+  it('most upcoming games missing at once is no success either: nothing removed, checked by a person', async () => {
+    const stored = Array.from({ length: 30 }, (_, i) => upcoming(100 + i))
+    const vm = createFakeVolleyManager({ games: Array.from({ length: 5 }, (_, i) => makeGame(100 + i)) })
+    const pool = fakePool({ stored })
+    const r = await runVmSync({ pool, fetch: vm.fetch, baseUrl: vm.baseUrl, http, now: NOW, credentials: creds, logger: memLogger(), pageDelayMs: 0 })
+    assert.equal(r.status, 'partial')
+    assert.match(r.message, /25 of 30 upcoming games not returned/)
+    assert.deepEqual(pool.state.removed, [])
+  })
+
+  it('a role switch that does not take fails the run before any game is read', async () => {
+    const vm = createFakeVolleyManager({ games: [makeGame(1)], ignoreSwitch: true })
+    const pool = fakePool({ stored: [upcoming(1)] })
+    const r = await runVmSync({ pool, fetch: vm.fetch, baseUrl: vm.baseUrl, http, now: NOW, credentials: creds, logger: memLogger(), pageDelayMs: 0 })
+    assert.equal(r.status, 'failed')
+    assert.match(pool.state.log.get(r.logId).message, /not the referee-delegate role/)
+    assert.ok(!vm.calls.some((c) => c.method === 'POST' && c.path.includes('searchForManagingAssociation')))
+  })
+
   it('programming errors throw', async () => {
     await assert.rejects(runVmSync({ credentials: creds }), /pool/)
     await assert.rejects(runVmSync({ pool: fakePool(), credentials: creds, window: { date: 'x' } }), /YYYY-MM-DD/)
@@ -309,10 +387,94 @@ describe('scheduleVmSync', () => {
     s.stop()
   })
 
+  const failed = { status: 'failed' }
+  const good = { status: 'success', written: 12 }
+
+  it('a failed run is tried again the same day with growing delays, then waits for the next slot', async () => {
+    const clock = fakeTimers(new Date('2026-10-24T22:00:00Z'))
+    const runs = []
+    const s = scheduleVmSync({ hourLocal: 22, minuteLocal: 30, tz: 'UTC', run: async () => { runs.push(clock.now().toISOString()); return failed }, logger: memLogger(), retryDelaysMs: VM_SYNC_RETRY_DELAYS_MS, ...clock })
+    for (let i = 0; i < 4; i++) await clock.advanceToNext()
+    assert.deepEqual(runs, ['2026-10-24T22:30:00.000Z', '2026-10-24T22:45:00.000Z', '2026-10-24T23:15:00.000Z', '2026-10-25T00:15:00.000Z'])
+    assert.equal(s.status().nextRetryAt, null, 'no fourth retry')
+    await clock.advanceToNext() // the 6 h re-check hops, then the next slot
+    while (runs.length < 5) await clock.advanceToNext()
+    assert.equal(runs[4], '2026-10-25T22:30:00.000Z')
+    s.stop()
+  })
+
+  it('a success ends the retries; zero games written is no success', async () => {
+    const clock = fakeTimers(new Date('2026-10-24T22:00:00Z'))
+    const answers = [failed, { status: 'success', written: 0 }, good]
+    const runs = []
+    const s = scheduleVmSync({ hourLocal: 22, minuteLocal: 30, tz: 'UTC', run: async () => { runs.push(clock.now().toISOString()); return answers.shift() }, logger: memLogger(), retryDelaysMs: VM_SYNC_RETRY_DELAYS_MS, ...clock })
+    for (let i = 0; i < 3; i++) await clock.advanceToNext()
+    assert.equal(runs.length, 3)
+    assert.equal(s.status().nextRetryAt, null)
+    assert.equal(s.status().lastRun.status, 'success')
+    s.stop()
+  })
+
+  it('retries and catch-ups only start inside the allowed window (the shared account\'s referee-role hours)', async () => {
+    const clock = fakeTimers(new Date('2026-10-24T22:00:00Z'))
+    const runs = []
+    const allowedWindow = runWindowFromEnv({}) // 22:00-01:00 UTC
+    const s = scheduleVmSync({ hourLocal: 22, minuteLocal: 30, tz: 'UTC', run: async () => { runs.push(clock.now().toISOString()); return failed }, logger: memLogger(), retryDelaysMs: [15 * 60000, 3 * 3600000], allowedWindow, ...clock })
+    await clock.advanceToNext()
+    await clock.advanceToNext()
+    assert.deepEqual(runs, ['2026-10-24T22:30:00.000Z', '2026-10-24T22:45:00.000Z'])
+    assert.equal(s.status().nextRetryAt, null, 'a retry at 01:45 UTC would be outside the window')
+    s.stop()
+    assert.deepEqual(runWindowFromEnv({ VM_SYNC_WINDOW_UTC: 'any' }), null)
+    assert.deepEqual(runWindowFromEnv({ VM_SYNC_WINDOW_UTC: '20:30-23:00' }), { from: 20 * 60 + 30, to: 23 * 60 })
+    assert.throws(() => runWindowFromEnv({ VM_SYNC_WINDOW_UTC: '25:00-01:00' }), /VM_SYNC_WINDOW_UTC/)
+  })
+
+  it('at start, a stale or missing last success is caught up inside the window; a fresh one waits for the slot', async () => {
+    const record = (agoMs) => async () => ({ lastSuccess: agoMs == null ? null : { finishedAt: new Date(Date.parse('2026-10-24T23:00:00Z') - agoMs).toISOString() }, lastRun: null })
+    for (const [ago, start, expectRun] of [
+      [null, '2026-10-24T23:00:00Z', true],
+      [SYNC_STALE_AFTER_MS + 60000, '2026-10-24T23:00:00Z', true],
+      [3600000, '2026-10-24T23:00:00Z', false],
+      [null, '2026-10-24T12:00:00Z', false] // outside the window: the 22:30 slot does it
+    ]) {
+      const clock = fakeTimers(new Date(start))
+      const runs = []
+      const s = scheduleVmSync({
+        hourLocal: 22, minuteLocal: 30, tz: 'UTC', run: async () => { runs.push(clock.now().toISOString()); return good },
+        logger: memLogger(), allowedWindow: runWindowFromEnv({}), catchUp: record(ago), startDelayMs: 60000, ...clock
+      })
+      await clock.advanceToNext() // the start check
+      await new Promise((r) => setImmediate(r))
+      assert.equal(runs.length > 0, expectRun, `${ago} at ${start}`)
+      s.stop()
+    }
+  })
+
   it('validates its options', () => {
     assert.throws(() => scheduleVmSync({}), /run/)
     assert.throws(() => scheduleVmSync({ run: () => {}, hourLocal: 24 }), /0-23/)
     assert.throws(() => scheduleVmSync({ run: () => {}, tz: 'Mars/Olympus' }), RangeError)
+  })
+})
+
+describe('syncHealth: what /health shows of the schedule sync', () => {
+  const at = Date.parse('2026-10-25T08:00:00Z')
+  const run = (status, ago, written = 120) => ({ status, startedAt: new Date(at - ago - 60000).toISOString(), finishedAt: new Date(at - ago).toISOString(), written })
+  it('ok after a recent success with games', () => {
+    const h = syncHealth({ lastRun: run('success', 9 * 3600000), lastSuccess: run('success', 9 * 3600000) }, { now: at })
+    assert.equal(h.state, 'ok')
+    assert.deepEqual(h.reasons, [])
+    assert.equal(h.lastSuccessGames, 120)
+  })
+  it('degraded: never, stale, no games, or a failed last run', () => {
+    assert.deepEqual(syncHealth({ lastRun: null, lastSuccess: null }, { now: at }).reasons, ['never_succeeded'])
+    assert.deepEqual(syncHealth({ lastRun: run('success', 30 * 3600000), lastSuccess: run('success', 30 * 3600000) }, { now: at }).reasons, ['stale'])
+    assert.deepEqual(syncHealth({ lastRun: run('success', 3600000, 0), lastSuccess: run('success', 3600000, 0) }, { now: at }).reasons, ['no_games'])
+    const h = syncHealth({ lastRun: run('failed', 3600000), lastSuccess: run('success', 25 * 3600000) }, { now: at })
+    assert.equal(h.state, 'degraded')
+    assert.deepEqual(h.reasons, ['last_run_failed'])
+    assert.equal(h.lastRunStatus, 'failed')
   })
 })
 

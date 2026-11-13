@@ -4427,7 +4427,8 @@
       "slotConflict": "Dieser Platz passt nicht in den Spielplan.",
       "resultChanged": "Jemand anderes hat dieses Resultat inzwischen geändert. Schau es dir nochmals an.",
       "teamsChanged": "Die Teams dieses Spiels haben inzwischen gewechselt: Ein Resultat davor wurde korrigiert. Schau es dir nochmals an.",
-      "drawExists": "Das Turnier hat schon ein Tableau dieser Kategorie und dieses Geschlechts."
+      "drawExists": "Das Turnier hat schon ein Tableau dieser Kategorie und dieses Geschlechts.",
+      "tournamentFull": "Ein Turnier hat höchstens 40 Tableaus."
     },
     "import": {
       "open": "Excel/CSV importieren",
@@ -4551,6 +4552,7 @@
         "draw_drawn": "Das Tableau {{draw}} ist ausgelost: Nur Namen, Spieler und Wildcards ändern sich. Setz das Tableau zuerst zurück.",
         "unknown_draw": "Es gibt kein Tableau {{draw}}.",
         "draw_size": "{{draw}} hat {{teams}} Teams; eine Double Elimination braucht {{min}} bis {{max}}.",
+        "too_many_draws": "Ein Turnier hat höchstens {{max}} Tableaus: Diese Datei fügt {{adding}} hinzu, Platz ist für {{room}}.",
         "duplicate_game": "Spiel {{game}} steht auch in Zeile {{first_row}}.",
         "unknown_game": "Es gibt kein Spiel {{game}}.",
         "game_other_draw": "Spiel {{game}} ist {{match_code}} von {{draw}}.",

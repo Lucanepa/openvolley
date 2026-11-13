@@ -286,6 +286,8 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
     assert.ok(h.json.lastBackupAgeMin >= 4 && h.json.lastBackupAgeMin <= 10, String(h.json.lastBackupAgeMin))
     assert.deepEqual(Object.keys(h.json.connections).sort(), ['live', 'role'])
     assert.equal(h.json.backup, 'ok')
+    // no VolleyManager account here: the schedule sync is off, and says why (informational, still 200)
+    assert.deepEqual(h.json.vmSync, { state: 'off', reason: 'not_configured' })
     const liveness = await api(srv.base, '/health/live', { method: 'GET', proto: null })
     assert.equal(liveness.status, 200)
     assert.equal(liveness.json.status, 'ok')

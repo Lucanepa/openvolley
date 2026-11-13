@@ -44,6 +44,7 @@ import { DE_MAX_TEAMS, DE_MIN_TEAMS, boardSizeFor, doubleElimination, drawWarnin
 import { daysBetween, minutesOf, scheduleMatches, slotIssues } from './beachSchedule.js'
 import { CONTROL_RE, fold, importHash, normalizeImport, planImport } from './beachImport.js'
 import { connectClient } from './pgClient.js'
+import { createAttemptLimiter } from './matchRestore.js'
 
 export const TOURNAMENT_STATUSES = Object.freeze(['draft', 'published', 'live', 'finished', 'archived'])
 export const DRAW_GENDERS = Object.freeze(['men', 'women', 'mixed'])
@@ -55,6 +56,15 @@ const OPEN_STATUSES = ['scheduled', 'ready']
 const LOCKED_STATUSES = ['called', 'in_progress', 'finished', 'walkover']
 const PUBLIC_STATUSES = ['published', 'live', 'finished', 'archived']
 const LISTED_FOR_READERS = ['published', 'live', 'finished']
+// The draws of one tournament, by hand and by an import: with at most 32
+// pairs a draw (62 matches), the planner and the import see at most 2480
+// matches. Nothing capped them, and one schedule run of a tournament built
+// far beyond any real one held the shared backend for seconds.
+export const MAX_DRAWS = 40
+// Per account and minute: schedule runs and imports (dry runs too), and
+// co-manager additions
+export const HEAVY_CALLS_PER_MINUTE = 30
+export const MANAGER_ADDS_PER_MINUTE = 10
 
 const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -74,6 +84,8 @@ const LOCKED = (details) => fail(409, 'OV_BRACKET_LOCKED', 'A match that depends
 const STARTED = () => fail(409, 'OV_DRAW_STARTED', 'Matches of this draw have already begun')
 // the bracket was drawn again (or reset) while the request waited for the draw: its matches have new ids
 const REPLACED = () => notFound('This match was replaced (the bracket was drawn again); reload')
+const FULL = () => fail(409, 'OV_TOURNAMENT_FULL', `A tournament has at most ${MAX_DRAWS} draws`, { max_draws: MAX_DRAWS })
+const TOO_MANY = () => fail(429, 'OV_TOO_MANY_ATTEMPTS', 'Too many requests. Please wait a minute.')
 
 function validDay (s) {
   if (typeof s !== 'string' || !DATE_RE.test(s)) return false
@@ -192,6 +204,8 @@ export function rankingCsv (rows) {
  */
 export function createBeachTournaments ({ pool, accounts, logger = console, now = () => Date.now() } = {}) {
   const log = logger
+  const heavyCalls = createAttemptLimiter({ max: HEAVY_CALLS_PER_MINUTE, windowMs: 60000, maxKeys: 10000 })
+  const managerAdds = createAttemptLimiter({ max: MANAGER_ADDS_PER_MINUTE, windowMs: 60000, maxKeys: 10000 })
 
   async function withTx (fn) {
     const client = await connectClient(pool, log)
@@ -265,6 +279,15 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     const tid = await tournamentIdOf(client, kind, id)
     if (!tid) throw abort(notFound())
     return requireTournament(client, tid, user, access, opts)
+  }
+  /**
+   * Every draw of the tournament, locked (the tournament row locked first).
+   * A result, a withdrawal and a Start lock their draw, not the tournament:
+   * a check of the matches over the whole tournament holds these locks, so
+   * it sees such a write committed, never one in flight.
+   */
+  async function lockDraws (client, tournamentId) {
+    await client.query('SELECT id FROM public.beach_draws WHERE tournament_id = $1 ORDER BY created_at, id FOR UPDATE', [tournamentId])
   }
 
   // ------------------------------------------------------------------ shapes
@@ -485,6 +508,7 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
   async function deleteTournament ({ user, access, id }) {
     return guarded('delete', () => withTx(async (client) => {
       const t = await requireTournament(client, id, user, access, { edit: true, forUpdate: true })
+      await lockDraws(client, t.id)
       const { rows } = await client.query(
         'SELECT 1 FROM public.beach_tmatches WHERE tournament_id = $1 AND (match_id IS NOT NULL OR status = ANY($2::text[])) LIMIT 1',
         [t.id, LOCKED_STATUSES])
@@ -495,26 +519,32 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     }))
   }
 
+  /**
+   * POST managers { email }: the beach competition manager with this address
+   * becomes a co-manager. The answer is the same for every address, with no
+   * account id: it tells the caller nothing about other accounts (a 404 and
+   * an id told which addresses belonged to admins and beach managers). The
+   * managers list shows the co-managers. The global admin edits every
+   * tournament anyway and is no co-manager.
+   */
   async function addManager ({ user, access, id, body }) {
     const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : ''
     if (!EMAIL_RE.test(email) || email.length > 254) return invalid('email: an email address')
+    if (managerAdds.isLimited(user.id)) return TOO_MANY()
     return guarded('add-manager', () => withTx(async (client) => {
       const t = await requireTournament(client, id, user, access, { edit: true, forUpdate: true })
-      // Only a beach competition manager (or the global admin) can be a co-manager;
-      // anything else is the same 404, so the answer says nothing about other accounts.
       const { rows: [u] } = await client.query(
         `SELECT u.id FROM auth.users u JOIN public.profiles p ON p.user_id = u.id
           WHERE lower(u.email) = $1
             AND EXISTS (SELECT 1 FROM unnest(coalesce(p.roles, '{}'::text[])) r(role)
-                         WHERE lower(trim(r.role)) IN ('beach:competition_manager', 'admin', 'super_admin'))`, [email])
-      if (!u) throw abort(notFound('no OpenBeach competition manager with this email'))
-      if (u.id !== t.created_by) {
+                         WHERE lower(trim(r.role)) = 'beach:competition_manager')`, [email])
+      if (u && u.id !== t.created_by) {
         await client.query(
           'INSERT INTO public.beach_tournament_managers (tournament_id, user_id, added_by) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
           [t.id, u.id, user.id])
       }
-      await audit(client, user.id, 'tournament.managers', { tournament_id: t.id, added: u.id })
-      return ok({ id: u.id })
+      await audit(client, user.id, 'tournament.managers', { tournament_id: t.id, added: u?.id ?? null })
+      return ok({ requested: true })
     }))
   }
 
@@ -552,6 +582,7 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     if (new Set(courts.map((c) => c.number)).size !== courts.length) return invalid('courts: one number per court')
     return guarded('courts', () => withTx(async (client) => {
       const t = await requireTournament(client, id, user, access, { edit: true, forUpdate: true })
+      await lockDraws(client, t.id)
       const numbers = courts.map((c) => c.number)
       const { rows: used } = await client.query(
         `SELECT DISTINCT c.number FROM public.beach_courts c JOIN public.beach_tmatches m ON m.court_id = c.id
@@ -609,6 +640,8 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     return guarded('create-draw', () => withTx(async (client) => {
       const t = await requireTournament(client, id, user, access, { edit: true, forUpdate: true })
       if (await drawTaken(client, t.id, out.category, out.gender ?? null)) throw abort(DRAW_EXISTS())
+      const { rows: [{ draws }] } = await client.query('SELECT count(*)::int AS draws FROM public.beach_draws WHERE tournament_id = $1', [t.id])
+      if (draws >= MAX_DRAWS) throw abort(FULL())
       const cols = Object.keys(out)
       const { rows: [d] } = await client.query(
         `INSERT INTO public.beach_draws (tournament_id, ${cols.join(', ')}) VALUES ($1, ${cols.map((_, i) => `$${i + 2}`).join(', ')}) RETURNING *`,
@@ -669,7 +702,7 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
   }
 
   // ------------------------------------------------------------------ entries
-  /** The snapshot of a saved beach pair: { team, player1, player2 } or null. */
+  /** The snapshot of a saved beach pair: { team, player1, player2 } (a player null when the pair has none) or null. */
   async function savedPair (client, teamId) {
     const { rows: [team] } = await client.query(
       `SELECT ct.id, ct.name FROM public.competition_teams ct JOIN public.competitions c ON c.id = ct.competition_id
@@ -678,9 +711,11 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     const { rows: players } = await client.query(
       `SELECT first_name, last_name, license_number, country FROM public.competition_players
         WHERE team_id = $1 ORDER BY number NULLS LAST, sort_order, last_name LIMIT 2`, [teamId])
-    const snap = (p) => (p ? { first: p.first_name || '', last: p.last_name, licence: p.license_number ?? null, country: p.country ?? null } : {})
+    const snap = (p) => (p ? { first: p.first_name || '', last: p.last_name, licence: p.license_number ?? null, country: p.country ?? null } : null)
     return { team, player1: snap(players[0]), player2: snap(players[1]) }
   }
+  /** Whether two player snapshots name the same player (the stored jsonb, or {} for none). */
+  const samePlayer = (a, b) => ['first', 'last', 'licence', 'country'].every((k) => (a?.[k] || null) === (b?.[k] || null))
 
   function entryFields (body, { partial }) {
     if (!isPlainObject(body)) return { error: invalid('body: must be an object') }
@@ -713,9 +748,11 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
         if (!pair) throw abort(invalid('team_id: not a saved beach pair'))
         const dup = await client.query("SELECT 1 FROM public.beach_entries WHERE draw_id = $1 AND team_id = $2 AND status = 'registered'", [id, out.team_id])
         if (dup.rows.length) throw abort(fail(409, 'OV_ENTRY_EXISTS', 'This pair is already entered'))
-        row.player1 = out.player1 ?? pair.player1
-        row.player2 = out.player2 ?? pair.player2
+        row.player1 = out.player1 ?? pair.player1 ?? {}
+        row.player2 = out.player2 ?? pair.player2 ?? {}
         row.name = out.name ?? pair.team.name
+        // what was copied from the saved pair: a player typed here differs from it and is kept at the draw
+        row.pair_snapshot = { player1: pair.player1 ?? {}, player2: pair.player2 ?? {} }
       }
       row.name = row.name ?? pairName(row.player1, row.player2)
       if (row.seed != null) {
@@ -723,7 +760,7 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
         if (taken.rows.length) throw abort(invalid('seed: already taken'))
       }
       const cols = Object.keys(row)
-      const vals = cols.map((k) => (k === 'player1' || k === 'player2' ? JSON.stringify(row[k]) : row[k]))
+      const vals = cols.map((k) => (['player1', 'player2', 'pair_snapshot'].includes(k) ? JSON.stringify(row[k]) : row[k]))
       const { rows: [e] } = await client.query(
         `INSERT INTO public.beach_entries (draw_id, ${cols.join(', ')}) VALUES ($1, ${cols.map((_, i) => `$${i + 2}`).join(', ')}) RETURNING *`,
         [id, ...vals])
@@ -802,8 +839,9 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
    * the draw's registered entries in seed order (unseeded ones after, by entry
    * time). dryRun answers the bracket and the warnings and writes nothing.
    * Writing replaces the draw's matches (only before any of them began),
-   * freezes the seeds and refreshes the pairs' player snapshots from the
-   * saved pairs. Game numbers continue after the tournament's other draws.
+   * freezes the seeds and refreshes the players copied from a saved pair that
+   * nobody changed on the entry (writeBracket). Game numbers continue after
+   * the tournament's other draws.
    */
   async function generate ({ user, access, id, body }) {
     const dryRun = body?.dryRun === true
@@ -854,23 +892,37 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
    * and the draw locked; generate and the import): replaces the draw's
    * matches with `matches` (doubleElimination's, with their game numbers),
    * seeds `entries` (the registered pairs) 1..n in their order, refreshes
-   * their player snapshots from the saved pairs, stores `chosen` (the board
-   * the manager chose, or null) and recomputes the draw.
+   * from the saved pair each player the entry still holds as it was copied
+   * (db/041 pair_snapshot: a correction made on the entry, a player typed
+   * over the saved pair's or an import's stays; a saved pair without the
+   * player changes nothing), stores `chosen` (the board the manager chose,
+   * or null) and recomputes the draw.
    */
   async function writeBracket (client, { t, d, entries, matches, chosen }) {
     await client.query('DELETE FROM public.beach_tmatches WHERE draw_id = $1', [d.id])
     // only registered pairs keep a seed (a withdrawn one must not hold 1..n)
     await client.query("UPDATE public.beach_entries SET seed = NULL WHERE draw_id = $1 AND status <> 'registered' AND seed IS NOT NULL", [d.id])
     for (const [i, e] of entries.entries()) {
-      let snap = {}
-      if (e.team_id) {
+      const fresh = {}
+      let copied = null
+      if (e.team_id && isPlainObject(e.pair_snapshot)) {
         const pair = await savedPair(client, e.team_id)
-        if (pair) snap = { player1: pair.player1, player2: pair.player2 }
+        if (pair) {
+          copied = { ...e.pair_snapshot }
+          for (const k of ['player1', 'player2']) {
+            if (pair[k] && samePlayer(e[k], e.pair_snapshot[k])) {
+              fresh[k] = pair[k]
+              copied[k] = pair[k]
+            }
+          }
+        }
       }
       await client.query(
         `UPDATE public.beach_entries SET seed = $2, final_rank = NULL,
-                player1 = coalesce($3::jsonb, player1), player2 = coalesce($4::jsonb, player2) WHERE id = $1`,
-        [e.id, i + 1, snap.player1 ? JSON.stringify(snap.player1) : null, snap.player2 ? JSON.stringify(snap.player2) : null])
+                player1 = coalesce($3::jsonb, player1), player2 = coalesce($4::jsonb, player2),
+                pair_snapshot = coalesce($5::jsonb, pair_snapshot) WHERE id = $1`,
+        [e.id, i + 1, fresh.player1 ? JSON.stringify(fresh.player1) : null, fresh.player2 ? JSON.stringify(fresh.player2) : null,
+          copied ? JSON.stringify(copied) : null])
     }
     for (const m of matches) {
       await client.query(
@@ -895,6 +947,7 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
    * OV_IMPORT_INVALID { preview }). Editors only.
    */
   async function importTournament ({ user, access, id, body, query }) {
+    if (heavyCalls.isLimited(user.id)) return TOO_MANY()
     const dryRun = ['1', 'true'].includes(String(query?.get?.('dryRun') ?? '').toLowerCase())
     const input = normalizeImport(body)
     if (input.error) return invalid(input.error)
@@ -944,7 +997,7 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
           ORDER BY ct.id`, [licences])
       savedPairs = rows
     }
-    return { tournament: { id: t.id, ...tournamentClock(t) }, draws, entries, courts, matches, savedPairs }
+    return { tournament: { id: t.id, ...tournamentClock(t) }, draws, entries, courts, matches, savedPairs, maxDraws: MAX_DRAWS }
   }
 
   /** Applies a plan of planImport() (inside the caller's transaction, the tournament locked). */
@@ -978,8 +1031,10 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
         await client.query("UPDATE public.beach_entries SET status = 'withdrawn', seed = NULL WHERE id = $1", [e.entry_id])
       } else if (e.op === 'changed') {
         const keys = e.changes.map((c) => c.field)
+        // linked to another saved pair by the file: its players are the file's, never refreshed from a pair
+        const unlinked = keys.includes('team_id') ? ', pair_snapshot = NULL' : ''
         await client.query(
-          `UPDATE public.beach_entries SET ${keys.map((k, i) => `${k} = $${i + 2}`).join(', ')} WHERE id = $1`,
+          `UPDATE public.beach_entries SET ${keys.map((k, i) => `${k} = $${i + 2}`).join(', ')}${unlinked} WHERE id = $1`,
           [e.entry_id, ...e.changes.map((c) => json(c.field, c.to))])
       }
     }
@@ -1368,11 +1423,14 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
    * match has begun.
    */
   async function schedule ({ user, access, id, body }) {
+    if (heavyCalls.isLimited(user.id)) return TOO_MANY()
     const b = isPlainObject(body) ? body : {}
     for (const k of ['day_start', 'day_end']) if (b[k] != null && minutesOf(b[k]) == null) return invalid(`${k}: HH:MM`)
     const dryRun = b.dryRun === true
+    // a dry run writes nothing and locks nothing (the run that applies plans again under the locks)
+    const lock = dryRun ? '' : ' FOR UPDATE'
     return guarded('schedule', () => withTx(async (client) => {
-      const t = await requireTournament(client, id, user, access, { edit: true, forUpdate: true })
+      const t = await requireTournament(client, id, user, access, { edit: true, forUpdate: !dryRun })
       const dayStart = b.day_start ? String(b.day_start).slice(0, 5) : hhmm(t.day_start)
       const dayEnd = b.day_end ? String(b.day_end).slice(0, 5) : hhmm(t.day_end)
       if (minutesOf(dayEnd) <= minutesOf(dayStart)) throw abort(invalid('day_end: after day_start'))
@@ -1381,7 +1439,7 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
       const { rows: draws } = await client.query(
         "SELECT id, slot_minutes, rest_minutes FROM public.beach_draws WHERE tournament_id = $1 AND status IN ('drawn', 'playing', 'done') ORDER BY created_at, id", [t.id])
       const { rows: list } = await client.query(
-        'SELECT * FROM public.beach_tmatches WHERE tournament_id = $1 ORDER BY game_n FOR UPDATE', [t.id])
+        `SELECT * FROM public.beach_tmatches WHERE tournament_id = $1 ORDER BY game_n${lock}`, [t.id])
       const matches = list.map((m) => ({
         id: m.id,
         draw_id: m.draw_id,

@@ -4433,7 +4433,8 @@
       "slotConflict": "This slot does not fit the schedule.",
       "resultChanged": "Someone else changed this result meanwhile. Have another look.",
       "teamsChanged": "The pairs of this match changed meanwhile: a result before it was corrected. Have another look.",
-      "drawExists": "The tournament already has a draw of this category and gender."
+      "drawExists": "The tournament already has a draw of this category and gender.",
+      "tournamentFull": "A tournament has at most 40 draws."
     },
     "import": {
       "open": "Import Excel/CSV",
@@ -4557,6 +4558,7 @@
         "draw_drawn": "The bracket of {{draw}} is drawn: only names, players and wildcards change. Reset the bracket first.",
         "unknown_draw": "There is no draw {{draw}}.",
         "draw_size": "{{draw}} has {{teams}} pairs; a double elimination needs {{min}} to {{max}}.",
+        "too_many_draws": "A tournament has at most {{max}} draws: this file adds {{adding}}, there is room for {{room}}.",
         "duplicate_game": "Game {{game}} is also in row {{first_row}}.",
         "unknown_game": "There is no game {{game}}.",
         "game_other_draw": "Game {{game}} is {{match_code}} of {{draw}}.",
