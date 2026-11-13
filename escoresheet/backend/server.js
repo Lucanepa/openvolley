@@ -4694,9 +4694,10 @@ wss.on('connection', (ws, req) => {
   }))
 
   ws.on('message', (data) => {
-    // Per-client WebSocket rate limiting; bench answers on their own budget,
-    // dropped (not closed) when over it
-    if (isBenchResponseFrame(data)) {
+    // Per-client WebSocket rate limiting; a scoreboard's bench answers (a
+    // socket that owns a match) on their own budget, dropped (not closed)
+    // when over it; any other socket keeps the normal limit
+    if (clientInfo.ownedMatches.size > 0 && isBenchResponseFrame(data)) {
       if (isWsRateLimited(clientId, benchBudgetKey(clientId), WS_BENCH_RESPONSE_MAX)) {
         relaySummary.count('refused (bench-response budget)')
         return

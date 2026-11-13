@@ -345,7 +345,7 @@ export function scorerQueueReducer(state, action) {
       if (request.kind === 'cancel') return state.filter((e) => !(e.team === team && e.request.id === request.cancelId))
       const same = (e) => e.team === team && (e.request.id === request.id ||
         (e.request.kind === request.kind && (request.kind !== 'lineup' || e.request.setIndex === request.setIndex)))
-      return [...state.filter((e) => !same(e)), { team, request, status: action.message.status || 'pending', at: action.message.at ?? Date.now() }]
+      return [...state.filter((e) => !same(e)), { team, request, status: action.message.status || 'pending', at: action.message.at ?? Date.now(), replay: action.message.replay === true }]
     }
     case 'answered':
       return state.filter((e) => !(e.team === action.team && e.request.id === action.id))

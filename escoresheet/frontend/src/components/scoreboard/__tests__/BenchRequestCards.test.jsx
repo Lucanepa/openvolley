@@ -98,9 +98,14 @@ describe('the scorer\'s bridge', () => {
     expect(outcomeFromEvents(to, [{ type: 'timeout', seq: 5, setIndex: 1, payload: { team: 'away' } }], 4)).toEqual({ status: 'accepted' })
     expect(outcomeFromEvents(to, [{ type: 'timeout', seq: 5, setIndex: 1, payload: { team: 'home' } }], 4)).toBe(null)
     // replayed after the scorer recorded the time-out by hand: matched by the relay's time of the request
-    const late = { team: 'away', request: { id: 't2', kind: 'timeout', setIndex: 1 }, status: 'pending', at: Date.parse('2026-11-01T10:00:00Z') }
+    const late = { team: 'away', request: { id: 't2', kind: 'timeout', setIndex: 1 }, status: 'pending', at: Date.parse('2026-11-01T10:00:00Z'), replay: true }
     expect(outcomeFromEvents(late, [{ type: 'timeout', seq: 5, setIndex: 1, ts: '2026-11-01T10:00:20Z', payload: { team: 'away' } }], 5)).toEqual({ status: 'accepted' })
     expect(outcomeFromEvents(late, [{ type: 'timeout', seq: 5, setIndex: 1, ts: '2026-11-01T09:58:00Z', payload: { team: 'away' } }], 5)).toBe(null)
+    // a live request: the scorer's clock runs 3 minutes ahead of the relay, the
+    // team's earlier time-out (ts 10:03 on the scorer) must not close it
+    const live = { ...late, at: Date.parse('2026-11-01T10:02:00Z'), replay: false }
+    expect(outcomeFromEvents(live, [{ type: 'timeout', seq: 5, setIndex: 1, ts: '2026-11-01T10:03:00Z', payload: { team: 'away' } }], 5)).toBe(null)
+    expect(outcomeFromEvents({ ...live, replay: true }, [{ type: 'timeout', seq: 5, setIndex: 1, ts: '2026-11-01T10:03:00Z', payload: { team: 'away' } }], 5)).toEqual({ status: 'accepted' })
     const sub = entry('home', { id: 's', kind: 'substitution', setIndex: 1, pairs: [{ out: 1, in: 8 }, { out: 2, in: 9 }] })
     const s1 = { type: 'substitution', seq: 7, setIndex: 1, payload: { team: 'home', playerOut: '1', playerIn: 8 } }
     expect(outcomeFromEvents(sub, [s1], 6)).toEqual({ donePairs: [0] })

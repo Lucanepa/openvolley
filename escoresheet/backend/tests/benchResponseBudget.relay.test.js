@@ -114,3 +114,16 @@ test('bench requests do not get the scorer socket closed by its seen answers', a
     await srv.stop()
   }
 })
+
+test('a socket that owns no match keeps the normal limit for bench-response frames', async () => {
+  const srv = await bootServer({}, ['--local'])
+  try {
+    const other = await openClient(srv.wsUrl)
+    for (let i = 0; i < 200; i++) other.send({ type: 'bench-response', matchId: 'x', team: 'home', id: `br-${i}`, status: 'seen' })
+    const deadline = Date.now() + 3000
+    while (!other.closed && Date.now() < deadline) await sleep(50)
+    assert.equal(other.closed?.code, 1008, 'closed over the normal limit')
+  } finally {
+    await srv.stop()
+  }
+})

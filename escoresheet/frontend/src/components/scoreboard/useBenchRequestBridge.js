@@ -11,9 +11,13 @@ const tsMs = (ts) => (typeof ts === 'number' ? ts : Date.parse(ts))
 /**
  * What the recorded events say about an open bench request since it arrived
  * (`sinceSeq`): the scorer recorded it (through the request card or by hand,
- * as always), or not yet. A time-out also counts when it was recorded after
- * the relay took the request (`entry.at`): a request the relay replays after
- * the scorer recorded the time-out by hand is closed, not offered again. Pure.
+ * as always), or not yet. For a request the relay replays (`entry.replay`,
+ * after the scorer reconnected or reloaded) a time-out also counts when it
+ * was recorded after the relay took the request (`entry.at`): one recorded
+ * by hand meanwhile closes it, not offered again. Only for replays: `at` is
+ * the relay's clock and `ts` the scorer's, so a live request keeps the seq
+ * check alone (a scorer clock ahead must not close it with an earlier
+ * time-out). Pure.
  * @returns {{ status: 'accepted'|'declined', reason?: string } | { donePairs: number[] } | null}
  */
 export function outcomeFromEvents(entry, events, sinceSeq) {
@@ -22,7 +26,7 @@ export function outcomeFromEvents(entry, events, sinceSeq) {
   if (request.kind === 'timeout') {
     if (newer.some((e) => e.type === 'timeout')) return { status: 'accepted' }
     const at = Number(entry.at)
-    if (!(at > 0)) return null
+    if (!entry.replay || !(at > 0)) return null
     const since = (events || []).some((e) => e?.type === 'timeout' && e.payload?.team === team && (e.setIndex ?? 1) === request.setIndex && tsMs(e.ts) >= at)
     return since ? { status: 'accepted' } : null
   }
