@@ -68,11 +68,11 @@ export default function BackupTable({
   const [lastActions, setLastActions] = useState({})
   const [loadingActions, setLoadingActions] = useState({})
 
-  // Fetch last actions for cloud backups (PocketBase entries don't need fetching)
+  // Fetch last actions for cloud backups (the cloud match itself has no file)
   useEffect(() => {
     if (backups.length === 0) return
 
-    const cloudBackups = backups.filter(b => b.source !== 'pocketbase' && b.path)
+    const cloudBackups = backups.filter(b => b.path)
     if (cloudBackups.length === 0) return
 
     const fetchLastActions = async () => {
@@ -113,22 +113,15 @@ export default function BackupTable({
     return null
   }
 
-  const hasMixedSources = backups.some(b => b.source === 'pocketbase') && backups.some(b => b.source !== 'pocketbase')
-  const hasAnyPb = backups.some(b => b.source === 'pocketbase')
-  const showDot = hasMixedSources || hasAnyPb
-  // [source dot] Game N · Set · Score · Last action · Created at [restore],
+  // Game N · Set · Score · Last action · Created at [restore],
   // sized by the table's own width (@container), not the screen's. Under 28rem
   // (a phone's dialog) the Game N column goes, it is the number just searched
   // for, and the date may wrap: the fixed columns alone were wider than the
   // dialog and pushed "Created at" off the right edge (2026-10-13). Whole class
   // names, so Tailwind finds them.
-  const gridCols = showDot
-    ? (showRestoreButton
-      ? 'grid-cols-[16px_32px_56px_minmax(0,1fr)_auto_auto] @md:grid-cols-[32px_60px_35px_70px_90px_1fr_70px]'
-      : 'grid-cols-[16px_32px_56px_minmax(0,1fr)_auto] @md:grid-cols-[32px_60px_35px_70px_90px_1fr]')
-    : (showRestoreButton
-      ? 'grid-cols-[32px_56px_minmax(0,1fr)_auto_auto] @md:grid-cols-[60px_35px_70px_90px_1fr_70px]'
-      : 'grid-cols-[32px_56px_minmax(0,1fr)_auto] @md:grid-cols-[60px_35px_70px_90px_1fr]')
+  const gridCols = showRestoreButton
+    ? 'grid-cols-[32px_56px_minmax(0,1fr)_auto_auto] @md:grid-cols-[60px_35px_70px_90px_1fr_70px]'
+    : 'grid-cols-[32px_56px_minmax(0,1fr)_auto] @md:grid-cols-[60px_35px_70px_90px_1fr]'
   const gameCell = 'hidden text-center @md:block'
 
   return (
@@ -137,7 +130,6 @@ export default function BackupTable({
       <div
         className={cn('sticky top-0 z-10 grid items-center gap-x-1 border-b border-stone-200 bg-stone-50 px-2.5 py-2 text-[11px] font-bold uppercase tracking-wide text-stone-500', gridCols)}
       >
-        {showDot && <span className="text-center"></span>}
         <span className={gameCell}>{t('backupTable.gameN', 'Game N')}</span>
         <span className="text-center">{t('backupTable.set', 'Set')}</span>
         <span className="text-center">{t('backupTable.score', 'Score')}</span>
@@ -177,9 +169,8 @@ export default function BackupTable({
           ? formatBackupDateTime(backup.date, backup.time, backup.ms)
           : (backup.created_at || backup.updated_at ? new Date(backup.created_at || backup.updated_at).toLocaleString() : 'Unknown')
 
-        const isPb = backup.source === 'pocketbase'
-        // PocketBase snapshots and the cloud match itself show their status
-        const lastAction = isPb || backup.source === 'database'
+        // The cloud match itself shows its status
+        const lastAction = backup.source === 'database'
           ? (backup.status || '—')
           : (loadingActions[backup.path]
             ? t('common.loading', 'Loading...')
@@ -192,26 +183,17 @@ export default function BackupTable({
           gridCols,
           isDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-stone-50'
         )
-        const sourceDot = (
-          <span className="text-center">
-            <span
-              className={cn('inline-block h-2 w-2 rounded-full', isPb ? 'bg-green-500' : 'bg-violet-500')}
-              title={isPb ? 'PocketBase' : 'Cloud'}
-            />
-          </span>
-        )
 
         if (mode === 'button') {
           // App.jsx mode - entire row is a button
           return (
             <button
-              key={backup.match_id || backup.name}
+              key={backup.name}
               onClick={() => !isDisabled && onBackupSelect(backup)}
               disabled={isDisabled}
               type="button"
               className={cn(rowCls, 'rounded-none bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red-400/60')}
             >
-              {showDot && sourceDot}
               <span className={cn(gameCell, 'font-semibold')}>{backup.gameN || 'N/A'}</span>
               <span className="text-center">{backup.setIndex || 'N/A'}</span>
               <span className="text-center font-semibold text-stone-900">
@@ -232,11 +214,10 @@ export default function BackupTable({
           // ScoreboardOptionsModal mode - row clickable with separate restore button
           return (
             <div
-              key={backup.match_id || backup.name}
+              key={backup.name}
               onClick={() => !isDisabled && onBackupSelect(backup)}
               className={rowCls}
             >
-              {showDot && sourceDot}
               <span className={cn(gameCell, 'font-semibold')}>{backup.gameN || 'N/A'}</span>
               <span className="text-center">{backup.setIndex || 'N/A'}</span>
               <span className="text-center font-semibold text-stone-900">
