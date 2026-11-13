@@ -262,7 +262,7 @@ describe('club licence lists', { skip: SKIP }, () => {
     assert.deepEqual(by['200001'].teams.map((t) => [t.id, t.name]), [[h1.id, 'VBC Musterdorf H1']])
     assert.deepEqual(by['100004'].teams.map((t) => t.name), ['VBC Musterdorf H1'])
     assert.equal(by['100004'].dob, null)
-    assert.deepEqual(Object.keys(by['100001']).sort(), ['dob', 'first_name', 'gender', 'hand_rows', 'id', 'last_name', 'lists', 'manual', 'sv_number', 'teams'])
+    assert.deepEqual(Object.keys(by['100001']).sort(), ['dob', 'first_name', 'gender', 'hand_rows', 'id', 'last_name', 'lists', 'manual', 'row_ids', 'sv_number', 'teams'])
     assert.match(by['100001'].id, /^[0-9a-f-]{36}$/)
     assert.deepEqual(by['100001'].hand_rows, [])
     assert.deepEqual([d.lists.players.manual, d.lists.coaches.manual, d.lists.scorers.manual], [0, 0, 0])

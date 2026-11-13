@@ -94,6 +94,12 @@ export const AUDIT_ACTIONS = Object.freeze([
   // saved team deleted, or a saved team's roster replaced (lib/savedTeams.js;
   // the ids, the name and the counts, never a person)
   'club.licences.manual_delete',
+  // db/037: dates of birth a scorer looked up for a roster (lib/licences.js
+  // scorerDob; the club and the count, never a name; the day's cap reads it)
+  'club.licences.dob',
+  // db/037: the official games whose saved teams a scorer without a club was
+  // given (lib/savedTeams.js ownTeams; the game numbers, never a person)
+  'saved_teams.scope',
   'saved_teams.competition_delete', 'saved_teams.team_delete', 'saved_teams.roster',
   // db/025: a part of a sign-up request approved or rejected (lib/accountRequests.js;
   // the kind, the club and team ids, who decided: admin, club or team)

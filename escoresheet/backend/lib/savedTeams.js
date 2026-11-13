@@ -40,6 +40,12 @@ export const MAX_STAFF = 10
 export const SPORTS = Object.freeze(['indoor', 'beach'])
 export const BEACH_MAX_PLAYERS = 2
 export const BEACH_MAX_STAFF = 1
+// A scorer's own matches give it the saved teams of their official games only
+// near the game (from a day before the game until it is OWN_GAME_DAYS_AHEAD
+// days away), and of at most MAX_OWN_GAMES official games a week (audited):
+// changing a match's game number does not walk through the league's teams
+export const OWN_GAME_DAYS_AHEAD = 7
+export const MAX_OWN_GAMES = 6
 
 const SEASON_RE = /^(\d{4})\/(\d{2})$/
 const BEACH_SEASON_RE = /^\d{4}$/
@@ -378,26 +384,47 @@ export function createSavedTeams ({ pool, audit = null, logger = console, clock 
    * decision 1), with their rosters: the teams of its clubs (account_clubs),
    * the teams they meet at home in the schedule (svrz_games from the season's
    * start) and the teams of the official games of the matches it created or
-   * edits this season; of competitions of the current season that are not
+   * edits this season, while the game is near and for at most MAX_OWN_GAMES
+   * games a week (each newly given game is audited as saved_teams.scope); of competitions of the current season that are not
    * archived. A saved team is one of these by its VolleyManager name, else by
    * its name when it has none (as lib/teams.js squadId).
    */
   async function ownTeams (userId) {
     if (!isUuid(userId)) return []
-    const year = seasonOf(clock())
+    const now = clock()
+    const year = seasonOf(now)
     const label = `${year}/${String((year + 1) % 100).padStart(2, '0')}`
+    const day = (d) => new Date(now.getTime() + d * 86400000).toISOString().slice(0, 10)
+    // the official games of its matches that are near (svrz_games.datetime is ISO text)
+    const { rows: near } = await pool.query(
+      `SELECT DISTINCT g.game_number::text AS n FROM public.svrz_games g
+        WHERE g.datetime >= $2 AND g.datetime >= $3 AND g.datetime < $4
+          AND g.game_number::text IN (
+            SELECT m.game_n::text FROM public.matches m
+             WHERE m.game_n IS NOT NULL AND m.test IS NOT TRUE AND m.created_at >= $5::timestamptz
+               AND (m.created_by = $1 OR EXISTS (SELECT 1 FROM public.match_editors e WHERE e.match_id = m.id AND e.user_id = $1)))`,
+      [userId, `${year}-07-01`, day(-1), day(OWN_GAME_DAYS_AHEAD + 1), `${year}-07-01T00:00:00Z`])
+    let ownGames = near.map((r) => r.n)
+    if (ownGames.length && audit) {
+      // the games given in the last week, and new ones up to MAX_OWN_GAMES
+      const { rows: given } = await pool.query(
+        `SELECT DISTINCT jsonb_array_elements_text(details -> 'games') AS n FROM public.audit_log
+          WHERE actor_id = $1 AND action = 'saved_teams.scope' AND at > now() - interval '7 days'`, [userId])
+      const had = new Set(given.map((r) => r.n))
+      const fresh = ownGames.filter((n) => !had.has(n)).slice(0, Math.max(0, MAX_OWN_GAMES - had.size))
+      if (fresh.length) await auditOf(pool, { actorId: userId, action: 'saved_teams.scope', details: { games: fresh } })
+      ownGames = ownGames.filter((n) => had.has(n) || fresh.includes(n))
+    } else {
+      ownGames = ownGames.slice(0, MAX_OWN_GAMES)
+    }
     const { rows } = await pool.query(
       `WITH mine AS (
          SELECT DISTINCT lower(btrim(ct.team_name)) AS k
            FROM public.account_clubs ac JOIN public.club_teams ct ON ct.club_id = ac.club_id
           WHERE ac.user_id = $1),
-       own_games AS (
-         SELECT DISTINCT m.game_n::text AS n FROM public.matches m
-          WHERE m.game_n IS NOT NULL AND m.test IS NOT TRUE AND m.created_at >= $3::timestamptz
-            AND (m.created_by = $1 OR EXISTS (SELECT 1 FROM public.match_editors e WHERE e.match_id = m.id AND e.user_id = $1))),
        games AS (
          SELECT g.team_home, g.team_away FROM public.svrz_games g
-          WHERE g.datetime >= $2 AND (lower(btrim(g.team_home)) IN (SELECT k FROM mine) OR g.game_number IN (SELECT n FROM own_games))),
+          WHERE g.datetime >= $2 AND (lower(btrim(g.team_home)) IN (SELECT k FROM mine) OR g.game_number::text = ANY($3::text[]))),
        names AS (
          SELECT k FROM mine
          UNION SELECT lower(btrim(team_home)) FROM games WHERE team_home IS NOT NULL
@@ -408,7 +435,7 @@ export function createSavedTeams ({ pool, audit = null, logger = console, clock 
           AND (lower(btrim(t.svrz_team_name)) IN (SELECT k FROM names)
                OR (coalesce(btrim(t.svrz_team_name), '') = '' AND lower(btrim(t.name)) IN (SELECT k FROM names)))
         ORDER BY lower(t.name), t.id`,
-      [userId, `${year}-07-01`, `${year}-07-01T00:00:00Z`, label])
+      [userId, `${year}-07-01`, ownGames, label])
     return rows
   }
 

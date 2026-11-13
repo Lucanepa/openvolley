@@ -24,7 +24,9 @@ export default function ClubPersonPage({ club, personId, onBack, onOpenTeam = nu
   const { data, error, loading, reload } = usePanelData(() => clubApi.licences(club.id), [club.id], { enabled: online })
   const [busy, setBusy] = useState(false)
   const [removeError, setRemoveError] = useState('')
-  const person = (data?.people || []).find((p) => p.id && String(p.id) === String(personId)) || null
+  // the page's id, else any of the person's rows (a link of before an upload or a removed row)
+  const person = (data?.people || []).find((p) => p.id && String(p.id) === String(personId))
+    || (data?.people || []).find((p) => Array.isArray(p.row_ids) && p.row_ids.some((id) => String(id) === String(personId))) || null
   if (!person) return <PageMissing loading={loading || !data} error={error} onBack={onBack} backLabel={club.name} />
   const name = `${person.last_name} ${person.first_name || ''}`.trim()
   const gender = person.gender === 'f' ? t('manage.licences.woman') : person.gender === 'm' ? t('manage.licences.man') : null

@@ -12,7 +12,7 @@
  *                                               club's players list with the other gender than the team's;
  *                                               the players only: an official may be anyone of the club);
  *                                               one transaction under a lock on the team; the club's
- *                                               dates of birth fill the empty ones (lib/licences.js fillDob)
+ *                                               dates of birth fill the empty ones (lib/licences.js fillTeamDob)
  *   games({ teamId })                           the team's games from today, each with its roster summary
  *   getRoster({ teamId, game })                 the team's roster of game `game`, or null
  *   putRoster({ actorId, teamId, game, body })  { players, staff, coach_signature?, captain_signature? }, any time
@@ -515,8 +515,8 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
       // the dates of birth of the club's people the roster leaves empty (owner
       // decision 2: a team manager sees them once the person is in a roster)
       if (licences) {
-        v.players = await licences.fillDob(client, x.team.club_id, v.players)
-        v.staff = await licences.fillDob(client, x.team.club_id, v.staff)
+        v.players = await licences.fillTeamDob(client, x.team, v.players)
+        v.staff = await licences.fillTeamDob(client, x.team, v.staff)
       }
       const n = String(x.game.game_number)
       await client.query(
@@ -640,11 +640,29 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
         id = made.body.data.team.id
       }
       const filled = licences
-        ? { ...body, players: await licences.fillDob(client, team.club_id, body.players), staff: await licences.fillDob(client, team.club_id, body.staff) }
+        ? { ...body, players: await licences.fillTeamDob(client, team, body.players), staff: await licences.fillTeamDob(client, team, body.staff) }
         : body
+      const { rows: before } = await client.query(
+        `SELECT btrim(license_number) AS lic FROM public.competition_players WHERE team_id = $1
+         UNION SELECT btrim(license_number) FROM public.competition_staff WHERE team_id = $1`, [id])
       const put = await savedTeams.putRoster({ id, body: filled, client })
       if (put.status !== 200) throw abort(put)
-      await audit(client, { actorId, action: 'team.squad', details: { team_id: team.id, saved_team_id: id, players: v.players.length, staff: v.staff.length } })
+      // who came and went, by licence number (never a name): a squad change
+      // that reveals a date of birth can be traced to its account
+      const was = new Set(before.map((r) => r.lic).filter(Boolean))
+      const now = new Set([...v.players, ...v.staff].map((p) => String(p?.license_number ?? '').trim()).filter(Boolean))
+      await audit(client, {
+        actorId,
+        action: 'team.squad',
+        details: {
+          team_id: team.id,
+          saved_team_id: id,
+          players: v.players.length,
+          staff: v.staff.length,
+          added: [...now].filter((l) => !was.has(l)).slice(0, 60),
+          removed: [...was].filter((l) => !now.has(l)).slice(0, 60)
+        }
+      })
       return ok({ team, season: label, squad: put.body.data.team })
     }))
   }
