@@ -538,7 +538,12 @@ describe('relay rooms and held claims under a flood (cloud relay behind Cloudfla
     sockets.push(c)
     return c
   }
-  const status = async () => (await get(srv.base, '/api/server/status')).json
+  // The cloud's /api/server/status leaves the counts out; /health (not in
+  // database mode, from loopback) still has them
+  const status = async () => {
+    const h = (await get(srv.base, '/health')).json
+    return { connections: h.connections, rooms: h.activeRooms }
+  }
 
   /** 64 rooms from each address of `ips`, left at once: each empties and its claim is held. */
   async function syncAndLeave(ips) {
