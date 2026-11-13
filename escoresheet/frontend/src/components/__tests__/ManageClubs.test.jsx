@@ -116,6 +116,33 @@ describe('ClubsPanel', () => {
     expect(await within(dialog).findByText('manage.clubs.teamTaken')).toBeInTheDocument()
   })
 
+  it('an edit sends the contact address only when the admin changed it', async () => {
+    api.clubs.list.mockResolvedValue({ data: { clubs: [{ ...VBCM, contact_email: 'old@example.test' }, OTHER], rule: { enabled: true } }, error: null, status: 200 })
+    api.clubs.update.mockResolvedValue({ data: { club: VBCM }, error: null, status: 200 })
+    render(<ClubsPanel route="c1" onRoute={vi.fn()} />)
+    const page = await screen.findByTestId('club-page')
+    fireEvent.click(within(page).getByTestId('save-club'))
+    await waitFor(() => expect(api.clubs.update).toHaveBeenCalledTimes(1))
+    expect(api.clubs.update.mock.calls[0][1]).not.toHaveProperty('contact_email')
+  })
+
+  it('a new club whose contact step fails goes on as an edit of it, not a second create', async () => {
+    api.clubs.create.mockResolvedValue({ data: { club: { id: 'c3' } }, error: null, status: 201 })
+    api.clubs.update.mockResolvedValueOnce({ data: null, error: { code: 'OV_INVALID_REQUEST', status: 400 }, status: 400 })
+      .mockResolvedValue({ data: { club: { id: 'c3', name: 'VBC Neu' } }, error: null, status: 200 })
+    render(<ClubsPanel route="new" onRoute={vi.fn()} />)
+    const page = await screen.findByTestId('club-page')
+    const [nameBox, contactBox] = within(page).getAllByRole('textbox')
+    fireEvent.change(nameBox, { target: { value: 'VBC Neu' } })
+    fireEvent.change(contactBox, { target: { value: 'club@example.test' } })
+    fireEvent.click(within(page).getByTestId('save-club'))
+    await waitFor(() => expect(api.clubs.update).toHaveBeenCalledTimes(1))
+    fireEvent.click(within(page).getByTestId('save-club'))
+    await waitFor(() => expect(api.clubs.update).toHaveBeenCalledTimes(2))
+    expect(api.clubs.create).toHaveBeenCalledTimes(1)
+    expect(api.clubs.update.mock.calls[1]).toEqual(['c3', { name: 'VBC Neu', teams: [], contact_email: 'club@example.test' }])
+  })
+
   // owner 2026-11-10: "every page there gets their own page": #clubs/<club id>, #clubs/new
   it('a club is a page of its own: opened from the URL, back to the list, a new club lands on its page', async () => {
     api.clubs.create.mockResolvedValue({ data: { club: { id: 'c3', name: 'VBC Neu' } }, error: null, status: 201 })
