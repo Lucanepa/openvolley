@@ -1115,8 +1115,14 @@ export function createPgQuery (options = {}) {
         postCheck = cols.includes(childSpec.ext) || cols.includes(childSpec.fk)
       }
       if (cols.length === 0) {
-        // Nothing to set: behave like an update that touched no column.
-        return { status: 200, body: { data: wantReturning ? (params.single ? singleOf([], true) : []) : null, error: null, count: params.count ? 0 : undefined } }
+        // Nothing to set: nothing is written, but the rows the filters match
+        // are checked like those of any update (an empty update of another
+        // account's match is refused, not answered 200), and none is changed.
+        const checkOnly = opts.client || pool
+        if (testPre) await testPre(checkOnly)
+        if (ownPre) await ownPre(checkOnly)
+        const out = { status: 200, body: { data: wantReturning ? (params.single ? singleOf([], true) : []) : null, error: null, count: params.count ? 0 : undefined } }
+        return collectChanges ? { ...out, changes: [] } : out
       }
       const merge = new Set(cfg.mergeJsonColumns[t.name] || [])
       const sets = cols.map(c => {

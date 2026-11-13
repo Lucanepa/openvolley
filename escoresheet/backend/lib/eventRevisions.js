@@ -173,16 +173,22 @@ export function deleteRevUid(eventExt) {
  */
 export function createEventRevisions(db, { log = console } = {}) {
   /**
-   * @param {{ body: object, user: {id:string}, matchOwner: object }} args
+   * @param {{ body: object, user: {id:string}, matchOwner: object,
+   *   scorerCheck?: (client, matchExt: string) => Promise<null|{status:number, body:object}> }} args
+   *   scorerCheck: the scoring device's check (db/019, server.js scorerCheckOf),
+   *   run first in the transaction; an answer refuses the revisions
    * @returns {Promise<{status:number, body:object, changes?:Array}>}
    */
-  async function apply({ body, user, matchOwner }) {
+  async function apply({ body, user, matchOwner, scorerCheck = null }) {
     const parsed = parseRevisionsBody(body)
     if (parsed.error) return parsed.error
     const { matchExt, revisions } = parsed
     try {
       const out = await db.withTransaction(async (client) => {
         await client.query("SELECT set_config('ov.user_id', $1, true)", [user.id])
+        // Before the match is locked: a take-over locks the scorer row first too
+        const refused = scorerCheck ? await scorerCheck(client, matchExt) : null
+        if (refused) return { refused }
         const match = await db.assertMatchWritable(client, matchExt, matchOwner)
         let applied = 0
         let pending = 0
@@ -237,6 +243,7 @@ export function createEventRevisions(db, { log = console } = {}) {
         }
         return { applied, pending, changes }
       })
+      if (out.refused) return out.refused
       return { status: 200, body: { data: { applied: out.applied, pending: out.pending }, error: null }, changes: out.changes }
     } catch (err) {
       const r = db.toErrorResult(err, { action: 'event-revisions', table: 'events' })
@@ -271,10 +278,11 @@ export function createEventRevisions(db, { log = console } = {}) {
    * event is voided like a revision with the reason 'correction', never
    * deleted. Same owner / editor rule as the revision route. No event with
    * that id: nothing to do, like a delete that matched nothing.
-   * @param {{ eventExt: string, user: {id:string}, matchOwner: object, clientTs?: string }} args
+   * @param {{ eventExt: string, user: {id:string}, matchOwner: object, clientTs?: string,
+   *   scorerCheck?: Function }} args  scorerCheck: as for apply()
    * @returns {Promise<null|{status:number, body:object, changes?:Array}>} null: not handled
    */
-  async function voidByExternalId({ eventExt, user, matchOwner, clientTs = new Date().toISOString() }) {
+  async function voidByExternalId({ eventExt, user, matchOwner, clientTs = new Date().toISOString(), scorerCheck = null }) {
     if (typeof eventExt !== 'string' || !eventExt || eventExt.length > 200) return invalid('external_id')
     let matchExt
     try {
@@ -295,7 +303,8 @@ export function createEventRevisions(db, { log = console } = {}) {
         revisions: [{ rev_uid: deleteRevUid(eventExt), op: 'void', event_external_id: eventExt, reason: 'correction', client_ts: clientTs }]
       },
       user,
-      matchOwner
+      matchOwner,
+      scorerCheck
     })
     return r.status === 200 ? { status: 200, body: { data: null, error: null }, changes: r.changes } : r
   }
