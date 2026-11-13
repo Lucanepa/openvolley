@@ -5,11 +5,11 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import {
   approxHeapBytes, frameTooLarge, relayBundleProblem, relayMemoryBudget,
-  MAX_RELAY_EVENTS, MAX_RELAY_SETS, MAX_RELAY_PLAYERS, MAX_RELAY_PIN_LENGTH, MAX_FRAME_VALUES,
+  MAX_RELAY_EVENTS, MAX_RELAY_SETS, MAX_RELAY_PLAYERS, MAX_RELAY_PIN_LENGTH, MAX_FRAME_VALUES, MAX_RELAY_BUNDLE_BYTES,
   RELAY_HEAP_SHARE, NEW_ROOM_SHARE, RELAY_ANON_SHARE, FAST_PROPERTIES
 } from '../lib/relayLimits.js'
 
@@ -130,6 +130,19 @@ describe('approxHeapBytes', () => {
     assert.ok(approxHeapBytes([many, many]) >= 2 * approxHeapBytes(many) - 4096 * 200)
   })
 
+  it('counts every number at its boxed size, a small integer too', () => {
+    // V8 keeps a small integer unboxed only while its field holds integers:
+    // once one object with the same keys had a decimal there, every object of
+    // that key order holds a 16-byte box for it (measured: 16 keys, a decimal
+    // first, then small integers took 2.2x the old estimate)
+    assert.equal(approxHeapBytes({ a: 1, b: 2 }), approxHeapBytes({ a: 1.5, b: 2.5 }))
+    assert.equal(approxHeapBytes([1, 2, 3]), approxHeapBytes([1.5, 2.5, -0]))
+    const n = 10000
+    const events = Array.from({ length: n }, (_, i) => ({ seq: i === 0 ? 0.5 : i, setIndex: 1, id: i }))
+    // per event: its slot, the object, and three boxed numbers in their slots
+    assert.ok(approxHeapBytes(events) / n >= 8 + 56 + 3 * (8 + 16), `${approxHeapBytes(events) / n} per event`)
+  })
+
   it('counts an object with many keys (or integer-like keys) at its dictionary cost', () => {
     const n = 2000
     const obj = (K) => { const o = {}; for (let j = 0; j < K; j++) o[`f${j}`] = j; return o }
@@ -137,8 +150,8 @@ describe('approxHeapBytes', () => {
     // per 20-key object built one key at a time, where the fast layout is ~200 B)
     const small = approxHeapBytes(Array.from({ length: n }, () => obj(FAST_PROPERTIES)))
     const big = approxHeapBytes(Array.from({ length: n }, () => obj(FAST_PROPERTIES + 8)))
-    assert.ok(big / n > 1200, `${big / n} per 24-key object`)
-    assert.ok(big / n > 5 * (small / n), `dictionary ${big / n} vs fast ${small / n} per object`)
+    assert.ok(big / n > 1600, `${big / n} per 24-key object`)
+    assert.ok(big / n > 4 * (small / n), `dictionary ${big / n} vs fast ${small / n} per object`)
     // integer-like keys ("7", "1000") go to an element hash table of their own
     const indexed = approxHeapBytes(Array.from({ length: n }, () => ({ 7: 1, 1000: 2, 50000: 3 })))
     assert.ok(indexed / n > 3 * 88, `integer keys ${indexed / n} per object`)
@@ -149,13 +162,15 @@ describe('approxHeapBytes', () => {
     assert.notEqual(approxHeapBytes({ 1: 1, 7: 2, 9: 3 }), approxHeapBytes({ a: 1, b: 2, c: 3 }))
   })
 
-  it('counts a fresh key order as its own hidden class, a shared one once', () => {
+  it('counts a fresh key order as its own hidden class, a shared one a bounded number of times', () => {
     // An anonymous socket can give every event in a bundle a different key
     // order; V8 then makes a fresh hidden class (a map) for each, several
     // hundred bytes the shared-name cost does not capture. The estimate must
     // stay at or above what V8 really keeps (measured on Node 22/24, per object
     // at the MAX_RELAY_EVENTS cap): about 440 (8 keys), 760 (12), 2170 (16, the
-    // object-rest strip path). Objects built in a FIXED order share one map.
+    // object-rest strip path). Objects built in a FIXED order share one map,
+    // which V8 may rebuild a few times (a field that widens): only the first
+    // objects of an order count a chain each.
     const n = 4096
     const names = (K) => Array.from({ length: K }, (_, i) => 'field' + i)
     const fixed = (K) => { const ns = names(K); return Array.from({ length: n }, () => { const o = {}; for (const k of ns) o[k] = 1; return o }) }
@@ -169,6 +184,10 @@ describe('approxHeapBytes', () => {
       const f = approxHeapBytes(fixed(K))
       assert.ok(v > 3 * f, `K=${K}: varied ${(v / n).toFixed(0)}/obj vs fixed ${(f / n).toFixed(0)}/obj`)
       assert.ok(v / n >= perObject, `K=${K}: estimate ${(v / n).toFixed(0)}/obj must cover the measured ${perObject}/obj`)
+      // the chains of one order stop counting after a bounded number of objects
+      const one = fixed(K)[0]
+      const more = (m) => approxHeapBytes(Array.from({ length: m }, () => one))
+      assert.equal(more(n + 100) - more(n), more(200) - more(100), `K=${K}: no chain past the first objects`)
     }
     // JSON.parse keeps objects of up to 127 keys in the compact layout, each order
     // with its own hidden class: past FAST_PROPERTIES the order still costs, on
@@ -204,30 +223,54 @@ describe('approxHeapBytes', () => {
     const shared = approxHeapBytes(lists.map(() => build(lists[0])))
     assert.ok(lists.length >= 1000, `${lists.length} lists`)
     assert.ok(distinct > shared + 400 * lists.length, `${(distinct / lists.length).toFixed(0)}/obj vs ${(shared / lists.length).toFixed(0)}/obj shared`)
-    // and two single lists that join to the same text are still two shapes
-    const one = approxHeapBytes([{ 'a\u0000b': 0 }])
-    const both = approxHeapBytes([{ 'a\u0000b': 0 }, { a: 0, b: 0 }])
-    const repeated = approxHeapBytes([{ 'a\u0000b': 0 }, { 'a\u0000b': 0 }])
-    assert.ok(both - one > repeated - one + 300, `${both - one} vs ${repeated - one}`)
+    // and two lists that join to the same text are still two shapes: once one
+    // order has counted all its chains, the other still counts one of its own
+    const x = { 'a\u0000b': 0, c: 0 }
+    const y = { a: 0, 'b\u0000c': 0 }
+    const base = Array.from({ length: 100 }, () => x)
+    const withY = approxHeapBytes([...base, y]) - approxHeapBytes(base)
+    const withX = approxHeapBytes([...base, x]) - approxHeapBytes(base)
+    assert.ok(withY > withX + 300, `${withY} vs ${withX}`)
   })
 
-  it('stays at or above the heap V8 really keeps for a parsed bundle (measured, --expose-gc)', () => {
-    // tests/helpers/heapShapes.js parses each case in a fresh process and
-    // compares heapUsed after a full GC with approxHeapBytes. Every budget gate
-    // and the per-room cap read this estimate, so it must not fall below real
-    // heap for any key layout a socket can choose; a scorer's fixed-order events
-    // must still count about what they take.
-    const run = (c) => {
-      const r = spawnSync(process.execPath, ['--expose-gc', HEAP_SHAPES, c], { encoding: 'utf8' })
-      assert.equal(r.status, 0, `${c}: ${r.stderr}`)
-      return JSON.parse(r.stdout)
+  it('stays at or above the heap a stored bundle really keeps (measured along the relay path, --expose-gc)', async () => {
+    // tests/helpers/heapShapes.js takes each case in a fresh process along the
+    // relay's own path (parse, depth and bundle checks, relayEvents, the
+    // estimate) and compares the heap that stays after a full GC with
+    // approxHeapBytes. Every budget gate and the per-room cap read this
+    // estimate, so it must stay at or above real heap for any layout a socket
+    // can choose: fresh key orders, a decimal planted first in a fixed order
+    // (every later small integer boxed), fields that widen one by one (V8
+    // rebuilds the hidden classes and keeps the old ones), copies made by
+    // relayEvents, many small objects, long arrays, short and long strings.
+    const cases = [
+      'varied-8', 'varied-16', 'varied-64', 'varied-127', 'fixed-16', 'fixed-200',
+      'dblfirst-4', 'dblfirst-8', 'dblfirst-16', 'reprmix-16', 'reprfull-16', 'prefixdep-16',
+      'strip-16', 'stripdbl-16', 'inmatch-dblfirst-16', 'inmatch-reprmix-16', 'inmatch-prefixdep-16',
+      'separator', 'tiny', 'arrays', 'numbers', 'mixed', 'shortstr', 'longstr', 'indexkeys', 'scorer'
+    ]
+    const run = (c) => new Promise((resolve) => {
+      execFile(process.execPath, ['--expose-gc', HEAP_SHAPES, c], { encoding: 'utf8', maxBuffer: 1 << 20 }, (err, stdout, stderr) => resolve({ c, err, stdout, stderr }))
+    })
+    const results = []
+    // four processes at a time (each measures its own heap only)
+    for (let i = 0; i < cases.length; i += 4) {
+      for (const { c, err, stdout, stderr } of await Promise.all(cases.slice(i, i + 4).map(run))) {
+        assert.equal(err, null, `${c}: ${stderr}`)
+        results.push([c, JSON.parse(stdout)])
+      }
     }
-    for (const c of ['varied-8', 'varied-16', 'varied-24', 'varied-64', 'varied-127', 'separator']) {
-      const { objects, real, est } = run(c)
-      assert.ok(real <= est, `${c}: real ${(real / 1048576).toFixed(2)} MB > estimate ${(est / 1048576).toFixed(2)} MB (${objects} objects)`)
-    }
-    const fixed = run('fixed-16')
-    assert.ok(fixed.real <= fixed.est && fixed.est < 2 * fixed.real, `fixed order: real ${fixed.real}, estimate ${fixed.est}`)
+    const MB = (b) => (b / 1048576).toFixed(2)
+    const under = results.filter(([, r]) => r.real > r.est).map(([c, r]) => `${c}: real ${MB(r.real)} MB > estimate ${MB(r.est)} MB (${r.events} events)`)
+    assert.deepEqual(under, [])
+    // the layouts that kept far more than the estimate before (it counted 3.2 and
+    // 8.0 MB for these) are within it now, and the bound still lets a real match through
+    const of = Object.fromEntries(results)
+    assert.ok(of['dblfirst-16'].real > 6 * 1048576, `decimal first: ${MB(of['dblfirst-16'].real)} MB real`)
+    assert.ok(of['inmatch-reprmix-16'].real > 15 * 1048576, `rebuilt hidden classes: ${MB(of['inmatch-reprmix-16'].real)} MB real`)
+    const scorer = of.scorer
+    assert.equal(scorer.tooLarge, false)
+    assert.ok(scorer.est < 2 * scorer.real, `a scorer's bundle: estimate ${MB(scorer.est)} MB for ${MB(scorer.real)} MB real`)
   })
 
   it('counts strings by their characters: one byte each when all are ASCII, else two', () => {
@@ -240,15 +283,22 @@ describe('approxHeapBytes', () => {
     assert.equal(approxHeapBytes(undefined), 8)
   })
 
-  it('a long five-set bundle with 14 signatures costs about its JSON size', () => {
+  it('a long five-set bundle with 14 signatures counts at most twice its JSON size and fits many times', () => {
     const signature = 'data:image/png;base64,' + Buffer.alloc(30000, 3).toString('base64')
-    const events = Array.from({ length: 600 }, (_, i) => ({ id: i + 1, matchId: 1, seq: i + 1, setIndex: 1 + (i % 5), type: 'point', payload: { team: i % 2 ? 'home' : 'away' }, ts: '2026-10-06T18:00:00.000Z' }))
-    const match = { seed_key: 'm', status: 'live' }
+    const events = Array.from({ length: 1200 }, (_, i) => ({ id: i + 1, matchId: 1, seq: i % 50 ? i + 1 : i + 0.1, setIndex: 1 + (i % 5), type: 'point', payload: { team: i % 2 ? 'home' : 'away', homePoints: i % 25, awayPoints: (i * 7) % 25 }, ts: '2026-10-06T18:00:00.000Z' }))
+    const match = { seed_key: 'm', status: 'live', id: 1, homeTeamId: 1, awayTeamId: 2 }
     for (let i = 0; i < 14; i++) match[`signature${i}`] = signature
-    const bundle = [match, { name: 'Home VC' }, { name: 'Away VC' }, [], [], [], events]
+    const players = (teamId) => Array.from({ length: 14 }, (_, i) => ({ id: teamId * 100 + i, teamId, number: i + 1, firstName: 'First', lastName: `Last${i}`, dob: '2000-01-01', libero: i === 12, isCaptain: i === 0 }))
+    const sets = [1, 2, 3, 4, 5].map((index) => ({ id: index, matchId: 1, index, homePoints: 25, awayPoints: 20, finished: true }))
+    const bundle = [match, { id: 1, name: 'Home VC' }, { id: 2, name: 'Away VC' }, players(1), players(2), sets, events]
     const json = JSON.stringify(bundle).length
     const bytes = approxHeapBytes(bundle)
     assert.ok(bytes > json && bytes < 2 * json, `${bytes} for ${json} bytes of JSON`)
+    // far under the per-room cap, and the default budget (--max-old-space-size=256)
+    // holds well over the 39 matches of a regional league's peak
+    assert.ok(bytes < MAX_RELAY_BUNDLE_BYTES / 4)
+    const budget = relayMemoryBudget({ heapLimitBytes: 304 * 1024 * 1024 })
+    assert.ok(budget.newRoomTotal / bytes > 60, `${Math.floor(budget.newRoomTotal / bytes)} such matches before new rooms are shed`)
   })
 })
 

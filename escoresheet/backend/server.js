@@ -49,7 +49,7 @@ import { SCORER_TABLES, deviceOf, matchRefsOfWrite, scorerMovedBody } from './li
 // The support form (POST /api/contact): its body, checks and the one mail to CONTACT_EMAIL
 import { BUSY_BODY, contactMailerFromEnv, createContactSlots, handleContact, MAX_CONTACT_BODY_BYTES } from './lib/contact.js'
 // What the relay keeps of an anonymous socket's bundles and live states
-import { approxHeapBytes, frameTooLarge, relayBundleProblem, relayMemoryBudget, MAX_RELAY_BUNDLE_BYTES, MAX_LIVE_STATE_BYTES } from './lib/relayLimits.js'
+import { approxHeapBytes, frameTooLarge, relayBundleProblem, relayEvents, relayMemoryBudget, MAX_RELAY_BUNDLE_BYTES, MAX_LIVE_STATE_BYTES } from './lib/relayLimits.js'
 
 const PORT = process.env.PORT || 8080
 
@@ -799,27 +799,6 @@ function safeEqualStr(a, b) {
 // publicRelayMatch). Joining a room needs no PIN and its key is public.
 function publicMatch(match) {
   return publicRelayMatch(stripMatchSecrets(match))
-}
-
-// The scorer's undo snapshots on its events: stateSnapshot on every point,
-// stateBefore on rally starts, rotations and substitutions. Its own undo and
-// corrections use them; no relay subscriber reads them (referee, bench,
-// livescore, the LedBox bridge). They were about 90% of a bundle (2.5 KB per
-// point, 2.4 MB at the end of a 5-set match), kept parsed per match in
-// activeMatches and sent to every tablet twice per rally: at a national peak
-// that alone filled the backend's 256 MiB. Dropped when a sync is stored;
-// scorers since 2026-10-26 leave them out themselves (frontend relayEvents).
-// The copy is made in one step (object rest): one built key by key turns into
-// a hash table past about 20 keys, several times the heap of the parsed event
-// (lib/relayLimits.js approxHeapBytes).
-const RELAY_EVENT_OMIT = ['stateSnapshot', 'stateBefore']
-function relayEvents(events) {
-  if (!Array.isArray(events)) return events
-  return events.map((e) => {
-    if (!e || typeof e !== 'object' || !RELAY_EVENT_OMIT.some((k) => k in e)) return e
-    const { stateSnapshot, stateBefore, ...out } = e
-    return out
-  })
 }
 
 // The PIN-free, personal-data-free bundle every match-full-data /
@@ -5299,8 +5278,11 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
   const official = !DB_MODE || opts.dbProved === true ||
     (!opts.dbChecked && !clientInfo.ownedMatches.has(matchId)) ||
     (clientInfo.ownedMatches.has(matchId) && stored?.relayOfficial === true)
+  // The match counts as the relay may keep it: with the stored PINs a sync leaves
+  // out carried over (carryMatchSecrets below; connection_pins may be any object).
   const storedEvents = opts.storedEvents ?? relayEvents(events)
-  const bundleBytes = opts.bundleBytes ?? approxHeapBytes([match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, storedEvents])
+  const bundleBytes = opts.bundleBytes ??
+    approxHeapBytes([stored?.match ? carryMatchSecrets(stored.match, match) : match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, storedEvents])
   const memoryRefusal = bundleBytes > MAX_RELAY_BUNDLE_BYTES
     ? 'too-large'
     : relayMemoryRefusal(clientInfo, matchId, bundleBytes + (stored?.liveStateBytes || 0), { newRoom, official })

@@ -8,9 +8,10 @@
  *   - /api/official-matches looks up federation and league as own keys only
  *   - a synced PIN that is not text or a number is refused at the sync, so no
  *     PIN header on GET /api/match/:id can make it throw
- *   - bundles: array lengths, a heap estimate per room (lib/relayLimits.js)
- *     and a relay memory budget per address and in total; live states over
- *     256 KB are refused before they are stored or relayed
+ *   - bundles: array lengths, a heap bound per room (lib/relayLimits.js, with
+ *     the PINs the relay carries over from the stored match) and a relay
+ *     memory budget per address and in total; live states over 256 KB are
+ *     refused before they are stored or relayed
  *   - a long five-set match from an older scorer (undo snapshots, signatures)
  *     is kept whole
  */
@@ -236,6 +237,32 @@ describe('anonymous input on a venue relay (--local)', () => {
     assert.equal(await alive(srv.base), true)
     const kept = await get(srv.base, '/api/match/heap-1', { 'X-OV-Match-Pin': PIN })
     assert.deepEqual(kept.json.sets.map((s) => s.homePoints), [5], 'the hostile bundle never replaced the real one')
+  })
+
+  it('counts the PIN fields a later sync leaves out and the relay keeps from the stored match', async () => {
+    // A scoreboard that already proved the match sends its PINs only when they
+    // change, and the relay carries the stored ones over (carryMatchSecrets).
+    // connection_pins may be any object: what is carried must count toward the
+    // room's bytes, or each later sync could hold another bundle's worth more.
+    const scorer = await open()
+    scorer.send(syncMessage('carry-1', { match: { connection_pins: { referee: 'c'.repeat(5 * 1024 * 1024) } } }))
+    await settle(scorer)
+    assert.deepEqual(errorsOf(scorer), [])
+
+    // the same scorer and room, connection_pins left out, 5 MB of events: kept
+    // with the carried 5 MB, the room would be over its 8 MB
+    scorer.send(syncMessage('carry-1', { events: [{ id: 1, type: 'remark', payload: { notes: 'n'.repeat(5 * 1024 * 1024) } }] }))
+    await settle(scorer)
+    assert.equal(lastError(scorer)?.code, 'too-large', srv.output.join('').slice(-1500))
+    const kept = await get(srv.base, '/api/match/carry-1', { 'X-OV-Match-Pin': PIN })
+    assert.equal(kept.json?.events?.length, 0, 'the room keeps its last bundle')
+
+    // a later sync that fits with what is carried is kept, the PINs with it
+    scorer.send(syncMessage('carry-1', { events: [{ id: 1, type: 'point', payload: { team: 'home' } }] }))
+    await settle(scorer)
+    assert.equal(errorsOf(scorer).length, 1)
+    assert.equal((await get(srv.base, '/api/match/carry-1', { 'X-OV-Match-Pin': PIN })).json?.events?.length, 1)
+    assert.equal(await alive(srv.base), true)
   })
 
   it('refuses a status, scheduledAt or team name that is not text or a number, and keeps the list and PIN check answering', async () => {

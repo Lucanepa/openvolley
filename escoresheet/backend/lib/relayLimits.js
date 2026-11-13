@@ -8,9 +8,10 @@
  *
  * Measured (a long five-set match: 30:28, 23:25, 27:25, 22:25, 18:16): about
  * 600 events, 80 KB as JSON; with its 14 signature images (PNG data URLs,
- * 20-80 KB each) 0.5-1.2 MB, about as much in the heap. An older scorer
+ * 20-80 KB each) 0.5-1.2 MB, about as much in the heap, which approxHeapBytes
+ * counts at 0.7-1.8 MB (an upper bound for any layout). An older scorer
  * (before 2026-10-26) sends each event's undo snapshot too, 2-3 MB in all,
- * which the relay drops before it keeps the bundle (server.js relayEvents).
+ * which the relay drops before it keeps the bundle (relayEvents).
  * The limits below are far above that.
  *
  * Pure module: node:buffer only, safe in the LAN / SEA bundle.
@@ -38,8 +39,8 @@ export const MAX_FRAME_VALUES = 300000
 /**
  * Share of V8's heap limit the relay's bundles and live states may hold in
  * all; one address (IPv4, IPv6 /64 on the cloud) may hold half of that. With
- * --max-old-space-size=256 (V8 limit 304 MB on Node 22) about 106 MB: 80 to
- * 170 matches at their end with all 14 signatures, half of them behind one
+ * --max-old-space-size=256 (V8 limit 304 MB on Node 22) about 106 MB: 60 to
+ * 160 matches at their end with all 14 signatures, half of them behind one
  * hall's address. A backend started with a bigger heap (deploy/README.md, big
  * events) keeps more; OV_RELAY_MAX_MB sets the total instead.
  */
@@ -61,59 +62,68 @@ export const NEW_ROOM_SHARE = 0.8
  */
 export const RELAY_ANON_SHARE = 0.6
 
-// approxHeapBytes: what V8 keeps of a parsed JSON value (measured with Node
-// 22 and 24): a property or array element 8 bytes, an empty object 56 (room
-// for 4 properties), an array 32 and 16 more for its elements, a string 24
-// plus its characters (one byte each when all are ASCII, else two), a number
-// that is no small integer 16. A key costs once per value walked: V8 keeps
-// each name once and shares the hidden class of objects with the same keys;
-// new keys cost about 130 bytes each (one object with many, or many objects
-// each with its own).
-// That is the compact (fast-properties) layout. V8 keeps an object as a hash
-// table instead (dictionary mode, up to 72 bytes per property and about 100
-// for the table) when it has many properties: JSON.parse from 128 on, an
-// object built key by key (server.js carryMatchSecrets) from about 20 on. Its
-// integer-like keys ("7", "1000") go to a hash table of their own whenever they
-// are not dense, 88 bytes each with large ones. Which layout V8 chose cannot be
-// seen from here, so such an object is counted as a hash table too.
+// approxHeapBytes: an upper bound on the heap V8 keeps of a parsed JSON value
+// (Node 22 / 24, 64-bit, no pointer compression), so that no layout a socket
+// chooses can make a stored bundle take more heap than the relay's limits
+// count. Every part is counted at the most V8 can give it:
+// - a value: the 8-byte slot that holds it (a property or array element);
+// - a number: a 16-byte box on top, whatever the number. V8 keeps a small
+//   integer unboxed only while the field holds integers: once one object with
+//   the same keys had a decimal there, that field is boxed in every object of
+//   the key order, and of every key list that starts with the same keys;
+// - a string: a 32-byte header (16) with its alignment (up to 7) plus its
+//   characters, two bytes each unless it is long and plain ASCII;
+// - an object: 88 bytes, its 24-byte header, the four in-object slots V8
+//   reserves and the property array an object built key by key grows (its
+//   header and up to two unused slots);
+// - an array: 176 bytes, its header, its store's header and the 16 slots V8
+//   adds when it grows one, plus half again of its elements' slots (the room
+//   left after growing; a filter() result keeps it);
+// - a key name: 128 bytes and two per character, once (V8 interns it);
+// - a hash table (dictionary mode) for an object with more than
+//   FAST_PROPERTIES named keys (JSON.parse switches at 128, an object built key
+//   by key at about 20, and which one V8 chose cannot be seen from here), and
+//   one for integer-like keys ("7", "1000"): 128 bytes and 72 per entry (88 for
+//   an integer key), the capacity of up to three times the entries;
+// - its hidden classes, below.
 const SLOT_BYTES = 8
-const OBJECT_BYTES = 56
-const ARRAY_BYTES = 32
-const ELEMENTS_BYTES = 16
-const STRING_BYTES = 24
 const HEAP_NUMBER_BYTES = 16
+const STRING_BYTES = 32
+const OBJECT_BYTES = 88
+const ARRAY_BYTES = 176
+// Per element of an array: the half again of room a grown store may keep
+const ARRAY_SLACK_BYTES = SLOT_BYTES / 2
 const NEW_KEY_BYTES = 128
 /** Named properties an object may have and still be counted in the compact layout */
 export const FAST_PROPERTIES = 16
 const DICTIONARY_BYTES = 128
 const DICTIONARY_ENTRY_BYTES = 72
 const INDEX_ENTRY_BYTES = DICTIONARY_ENTRY_BYTES + HEAP_NUMBER_BYTES
-// An object carries a hidden class, a V8 map chain. Objects built with the same
-// keys in the SAME order share one; a different insertion order is a fresh
-// chain of several hundred bytes, and an anonymous socket can give every event
-// in an array its own order. NEW_KEY_BYTES counts each name once (V8 interns it
-// and the shared map keeps it once); this counts the per-object map on top,
-// once per distinct ordered shape seen -- an upper bound, since V8 shares map
-// prefixes and this does not. JSON.parse keeps objects of up to 127 keys in the
-// compact layout, each order with its own chain, so the charge applies at any
-// key count (a hash table on top of it past FAST_PROPERTIES). The shape is the
-// key list with each name length-prefixed, so no name (one holding the
-// separator, say) can make two different key lists one shape. Measured on
-// Node 22/24: an array of 17000 fresh-order objects took about 440 (8 keys),
-// 760 (12) and 1070-2170 (16, a plain array or the object-rest strip path)
-// bytes each, and 24-127 keys about 1.06-1.33x the hash-table charge alone;
-// the shape charge keeps the estimate at or above all of these.
+// An object carries a hidden class, a V8 map chain: a map, descriptors, an
+// enum cache and transitions per key, under MAP_KEY_BYTES each. Objects with
+// the same keys in the same order share one; a different order has a chain of
+// its own, and an anonymous socket can give every object its own order. V8
+// also gives a key order a new chain when one of its fields widens (a small
+// integer, then a decimal, then anything else: at most twice per field), and
+// the objects parsed before keep the old chain alive. A key order lives under
+// two roots (the one JSON.parse uses, and the one of objects built key by key
+// such as relayEvents' copies). So the first chainsPerOrder(named) objects of
+// every key order each count a whole chain: more chains than V8 can keep for
+// that order, whatever the values and their order. A bundle of real events
+// has a few dozen key orders. The order is the key list with each name
+// length-prefixed, so no name (one holding the separator, say) can make two
+// key lists one.
 const MAP_BASE_BYTES = 64
 const MAP_KEY_BYTES = 160
-// Ordered shapes remembered per value; past that every object counts as a fresh
-// shape (an upper bound: an attacker needs this many distinct shapes to get here)
+const chainsPerOrder = (named) => 2 * (2 * named + 1)
+// Key orders remembered per value; past that every object counts a chain of
+// its own (an upper bound: an attacker needs this many key orders to get here)
 const MAX_TRACKED_SHAPES = 4096
 // Names remembered per value; past that every name counts as new (more is no bundle)
 const MAX_TRACKED_KEYS = 4096
 // A short string is counted at two bytes per character without looking at it
 const SHORT_STRING = 64
 
-const isSmallInt = (n) => Number.isInteger(n) && n >= -0x40000000 && n < 0x40000000
 const stringBytes = (s) => (s.length <= SHORT_STRING || Buffer.byteLength(s) !== s.length ? 2 * s.length : s.length)
 // An integer-like key, which V8 keeps as an element ("0", "17"; not "007", "-1")
 const isIndexKey = (k) => {
@@ -127,19 +137,19 @@ const isIndexKey = (k) => {
 }
 
 /**
- * About how many heap bytes a parsed JSON value takes (see above): at least
- * what V8 used for every shape measured (empty and nested objects and
- * arrays, numbers, unique keys and strings, objects with many or with
- * integer-like keys in either layout), 1.1-1.8x of it for real bundles.
- * Iterative: the frame was checked for depth before (realtimeHub.js
- * jsonTooDeep).
+ * At most how many heap bytes a parsed JSON value takes, an upper bound (see
+ * above): at or above the heap V8 keeps for every layout measured along the
+ * relay's own path (tests/helpers/heapShapes.js), about 1.3-1.6x of it for
+ * real bundles. Iterative: the frame was checked for depth before
+ * (realtimeHub.js jsonTooDeep).
  * @param {unknown} value
  * @returns {number}
  */
 export function approxHeapBytes(value) {
   let bytes = 0
   const keys = new Set()
-  const shapes = new Set()
+  // key order -> objects of it counted with a chain of their own
+  const shapes = new Map()
   const stack = [value]
   while (stack.length > 0) {
     const v = stack.pop()
@@ -147,10 +157,10 @@ export function approxHeapBytes(value) {
     if (typeof v === 'string') {
       bytes += STRING_BYTES + stringBytes(v)
     } else if (typeof v === 'number') {
-      if (!isSmallInt(v)) bytes += HEAP_NUMBER_BYTES
+      bytes += HEAP_NUMBER_BYTES
     } else if (v !== null && typeof v === 'object') {
       if (Array.isArray(v)) {
-        bytes += ARRAY_BYTES + (v.length > 0 ? ELEMENTS_BYTES : 0)
+        bytes += ARRAY_BYTES + ARRAY_SLACK_BYTES * v.length
         for (let i = 0; i < v.length; i++) stack.push(v[i])
       } else {
         bytes += OBJECT_BYTES
@@ -167,10 +177,14 @@ export function approxHeapBytes(value) {
           }
           stack.push(v[k])
         }
-        if (named > 0 && (shapes.size >= MAX_TRACKED_SHAPES || !shapes.has(shape))) {
-          // A key order not seen before is a fresh hidden class, at any key count.
-          bytes += MAP_BASE_BYTES + MAP_KEY_BYTES * named
-          if (shapes.size < MAX_TRACKED_SHAPES) shapes.add(shape)
+        if (named > 0) {
+          // A whole hidden-class chain while the key order may still have a new
+          // one, at any key count (shapes stops tracking new orders when full)
+          const counted = shapes.get(shape) ?? 0
+          if (counted < chainsPerOrder(named)) {
+            bytes += MAP_BASE_BYTES + MAP_KEY_BYTES * named
+            if (counted > 0 || shapes.size < MAX_TRACKED_SHAPES) shapes.set(shape, counted + 1)
+          }
         }
         if (named > FAST_PROPERTIES) {
           // A hash table (dictionary mode), per object and order-independent.
@@ -203,6 +217,34 @@ export function frameTooLarge(data) {
     }
   }
   return false
+}
+
+// The scorer's undo snapshots on its events: stateSnapshot on every point,
+// stateBefore on rally starts, rotations and substitutions. Its own undo and
+// corrections use them; no relay subscriber reads them (referee, bench,
+// livescore, the LedBox bridge). They were about 90% of a bundle (2.5 KB per
+// point, 2.4 MB at the end of a 5-set match), kept parsed per match in
+// activeMatches and sent to every tablet twice per rally: at a national peak
+// that alone filled the backend's 256 MiB. Dropped when a sync is stored;
+// scorers since 2026-10-26 leave them out themselves (frontend relayEvents).
+// The copy is made in one step (object rest): one built key by key turns into
+// a hash table past about 20 keys, several times the heap of the parsed event
+// (approxHeapBytes).
+const RELAY_EVENT_OMIT = ['stateSnapshot', 'stateBefore']
+
+/**
+ * The events of a sync as the relay keeps them (server.js handleSyncMatchData):
+ * each without its undo snapshots; anything that is no array as it is.
+ * @param {unknown} events
+ * @returns {unknown}
+ */
+export function relayEvents(events) {
+  if (!Array.isArray(events)) return events
+  return events.map((e) => {
+    if (!e || typeof e !== 'object' || !RELAY_EVENT_OMIT.some((k) => k in e)) return e
+    const { stateSnapshot, stateBefore, ...out } = e
+    return out
+  })
 }
 
 // A PIN the relay compares (gamePin, refereePin, the bench and upload PINs):

@@ -194,17 +194,19 @@ number); the status, the scheduled time and the team names (which the match
 list, landing page and PIN check turn into a string or a date) must be text, a
 number or missing (else `bad-request`, so one crafted room cannot make those
 answer 500 or refuse correct PINs for everyone); at most 20000 events, 20 sets
-and 200 players per list, 8 MB per room (a heap estimate that counts a fresh V8
-hidden class for every object whose key list or key order is new, at any key
-count, so a bundle cannot hide its real size; `tests/relayLimits.test.js`
-measures it against real heap) and 300,000 JSON values per frame (else `too-large`); a live state at most
+and 200 players per list, 8 MB per room (counted as an upper bound on the heap
+V8 can keep for it: every number boxed, every object and array at its largest
+layout, the hidden classes V8 may build and rebuild for each key order, and the
+PINs the relay carries over from the stored match, so no layout can hide a
+bundle's real size; `tests/relayLimits.test.js` measures it along the relay's
+own path) and 300,000 JSON values per frame (else `too-large`); a live state at most
 256 KB as JSON (`too-large`); all rooms together `OV_RELAY_MAX_MB`, one address
 half of it (`relay-full`). When the relay fills, a room it does not hold yet is
 refused first (at 80% of the total / of an address's share), so the matches in
 play keep the headroom they grow into; on the cloud the rooms the database does
 not know as official matches (anything an anonymous socket syncs) hold at most
 60% of the total together, so a flood cannot take the memory an official match
-needs. A long five-set match with all its signatures takes 0.5-1.3 MB.
+needs. A long five-set match with all its signatures counts 0.7-1.8 MB.
 `/api/admin/*` and `/api/saved-teams*` 300 per user; `/api/match/official-check`
 120 per user; `/api/account/redeem-invite` at most **10 failed attempts per
 account and per IP (/64) in 10 minutes** (a success is refunded; 429
