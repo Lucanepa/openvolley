@@ -2036,6 +2036,7 @@
       "connectionLost": "Connexion perdue. Reconnexion requise.",
       "matchEnded": "Le match est fini.",
       "connectionDisabled": "Connexion désactivée.",
+      "accessLost": "Le marqueur a changé le PIN ou désactivé cette connexion. Saisis le nouveau PIN.",
       "serverUnreachable": "Pas de connexion au serveur – vérifiez le Wi-Fi et réessayez.",
       "reconnecting": "Pas de connexion au serveur. Le tableau de bord arbitre se reconnecte à son match dès qu’il est de retour.",
       "waitingForScoresheet": "Le serveur est de retour. Le tableau de bord arbitre se reconnecte à son match dès que la feuille de match est reconnectée.",

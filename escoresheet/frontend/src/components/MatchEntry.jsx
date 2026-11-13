@@ -35,7 +35,8 @@ const SURFACE = {
   boxShadow: 'var(--ov-shadow-card)'
 }
 import { setsToWin, displaySetNumber } from '../utils/matchFormat'
-import { getSideAForSet } from '../domain/rules'
+import { getSideAForSet, getFirstServeForSet } from '../domain/rules'
+import { countRegularSubstitutions } from '../domain/substitutions'
 import { sanctionTarget, compareBySeq } from '../domain/describe'
 import { TEAM_COLOUR_MARK, matchDiscPaint, teamLiberoColour, markColourOn, teamBoxStyle, effectiveTeamColour } from '../utils/teamColours'
 import { TIMEOUT_LIMIT, SUBSTITUTION_LIMIT, counterTone, counterPips, benchShortName } from './bench/benchLayout.js'
@@ -433,14 +434,10 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     ).length
   }, [data?.events, data?.set, team])
 
-  // Get substitutions used in current set
+  // Regular substitutions used in current set (exceptional ones do not count toward the 6)
   const substitutionsUsed = useMemo(() => {
     if (!data?.events || !data?.set) return 0
-    return data.events.filter(
-      event => event.type === 'substitution' && 
-      event.setIndex === data.set.index && 
-      event.payload?.team === team
-    ).length
+    return countRegularSubstitutions(data.events, team, data.set.index)
   }, [data?.events, data?.set, team])
 
   // Get who is serving
@@ -452,9 +449,8 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
       .sort(newestFirst)
     
     if (serveEvents.length === 0) {
-      // Check first serve from match
-      const firstServe = data.match?.firstServe
-      return firstServe === team
+      // The set's first serve (it alternates; set 5 has its own toss)
+      return getFirstServeForSet(data.set.index, data.match || {}) === team
     }
     
     const lastPoint = serveEvents[0]

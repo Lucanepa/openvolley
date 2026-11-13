@@ -7691,6 +7691,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // The undo's live state: the interval again when the set 5 setup's
     // confirmation (which ended it) is undone while it still runs
     let undoLiveData = null
+    let undidSetEnd = false // the referees' break countdown of that set end closes
 
     console.log('[handleUndo] Starting snapshot-based undo for event:', lastEvent.type, 'seq:', lastEventSeq)
 
@@ -7852,6 +7853,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // Handle special cases for set_end undo
       if (lastEvent.type === 'set_end') {
+        undidSetEnd = true
         // Delete the next set if it was created: the first set after the ended
         // one (best-of-3 jumps 2 -> 5, so it is not always index + 1)
         const endedSetIndex = lastEvent.payload?.setIndex ?? lastEvent.setIndex ?? data.set.index
@@ -7948,6 +7950,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     } finally {
       // Sync to Referee and Supabase after undo (after the commit)
       syncToReferee()
+      if (undidSetEnd) sendActionToReferee('end_interval', {})
       syncLiveStateToSupabase('undo', null, undoLiveData)
       notifyScoresheetUpdate('undo')
     }

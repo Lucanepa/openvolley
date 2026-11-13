@@ -129,7 +129,7 @@ describe('referee match link', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'server screen' }))
       expect(await screen.findByLabelText('refereeDashboard.connectionPin')).toBeInTheDocument()
       await waitFor(() => expect(sync.getMatchData).toHaveBeenCalledWith(SEED))
-      await waitFor(() => expect(localStorage.getItem('refereeMatchId')).toBeNull())
+      await waitFor(() => expect(sessionStorage.getItem('refereeMatchId')).toBeNull())
       expect(screen.queryByTestId('dashboard')).toBeNull()
     })
   })
@@ -155,7 +155,7 @@ describe('referee match link', () => {
     expect(dashboard.textContent).toBe(SEED)
     // the typed PIN is checked for the match of the link (its own PIN budget)
     expect(sync.validatePinSupabase).toHaveBeenCalledWith('786270', 'referee', { matchExternalId: SEED })
-    expect(localStorage.getItem('refereeMatchId')).toBe(SEED)
+    expect(sessionStorage.getItem('refereeMatchId')).toBe(SEED)
   })
 
   // 2026-10-27 review: after a wrong court's QR code, the referee picks the
@@ -186,7 +186,7 @@ describe('referee match link', () => {
     const dashboard = await screen.findByTestId('dashboard')
     expect(dashboard.textContent).toBe(OTHER)
     expect(sync.validatePinSupabase).toHaveBeenCalledWith('445566', 'referee', { matchExternalId: OTHER })
-    expect(localStorage.getItem('refereeMatchId')).toBe(OTHER)
+    expect(sessionStorage.getItem('refereeMatchId')).toBe(OTHER)
   })
 
   it('picking the linked game itself in the list keeps the link\'s match', async () => {

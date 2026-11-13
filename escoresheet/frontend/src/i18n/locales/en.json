@@ -2038,6 +2038,7 @@
       "connectionLost": "Connection lost. Please reconnect.",
       "matchEnded": "Match has ended.",
       "connectionDisabled": "Connection has been disabled.",
+      "accessLost": "The scorer changed the PIN or switched this connection off. Enter the new PIN.",
       "serverUnreachable": "No connection to the server – check the Wi-Fi and try again.",
       "reconnecting": "No connection to the server. The referee dashboard reconnects to its match as soon as it is back.",
       "waitingForScoresheet": "The server is back. The referee dashboard rejoins its match as soon as the scoresheet has reconnected.",
