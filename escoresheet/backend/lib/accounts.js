@@ -53,6 +53,8 @@ export const AUDIT_ACTIONS = Object.freeze([
   'match.claim_game', 'match.claim_pin', 'match.game_taken',
   'match.close',
   'match.reopen', 'match.editor_add', 'match.release_game',
+  // db/018: a home-club scorer took over a game an account outside the club held (takeOverHeldGame)
+  'match.game_taken_over',
   // lib/approvals.js (db/011); match.approval_void is written by the trigger
   'approval_pin.set', 'approval_pin.remove', 'approval_pin.locked',
   'match.approve', 'match.approval_revoke', 'match.approval_void',
@@ -105,8 +107,9 @@ const GAME_TAKEN_DEDUP = '24 hours'
 
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 const withoutUndefined = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined))
-// The columns of the official-game key a matches update may change (created_at is server-only)
-const OFFICIAL_KEY_COLUMNS = ['game_n', 'scheduled_at', 'sport_type', 'test']
+// The columns of the official-game key a matches update may change (its season
+// is the server's, db/034: scheduled_at no longer moves a match to another key)
+const OFFICIAL_KEY_COLUMNS = ['game_n', 'sport_type', 'test']
 export const isUuid = (v) => typeof v === 'string' && UUID_RE.test(v)
 
 export function ok (data, status = 200) {
@@ -1145,7 +1148,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
       const claims = new Map()
       if (numbers.length) {
         const { rows } = await pool.query(
-          `SELECT m.id, m.external_id, m.game_n, m.status, m.closed_at, m.updated_at, m.scheduled_at, m.created_at,
+          `SELECT m.id, m.external_id, m.game_n, m.status, m.closed_at, m.updated_at, m.scheduled_at, m.official_season,
                   ${nameSql('p')} AS scorer_name, u.email AS scorer_email, ${sheetScorerSql('m')} AS sheet_scorer_name,
                   (SELECT count(*)::int FROM public.match_editors e WHERE e.match_id = m.id) AS editors
              FROM public.matches m
@@ -1154,7 +1157,8 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
             WHERE m.test IS NOT TRUE AND NOT m.official_game_exempt AND m.game_n = ANY($1::int[])
               AND (m.sport_type IS NOT DISTINCT FROM 'beach') IS NOT TRUE`, [numbers])
         for (const m of rows) {
-          const key = `${m.game_n}|${seasonOf(m.scheduled_at || m.created_at)}`
+          // the key's season is the server's (db/034), not the match's scheduled_at
+          const key = `${m.game_n}|${m.official_season}`
           if (!claims.has(key)) claims.set(key, m)
         }
       }
@@ -1417,6 +1421,9 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
    * The friendly pre-check of a match insert/upsert: the first row whose
    * official game another match already holds. Returns null or the full claim
    * (with match_id; send publicClaim() to the client). Throws on a DB error.
+   * The key's season is the server's (db/034): a stored match keeps its own
+   * while its game number and sport stay, any other row gets the season a
+   * match of its game gets now (findClaim) - never the payload's scheduled_at.
    */
   async function findTakenGame ({ userId, rows, sports }) {
     const list = (Array.isArray(rows) ? rows : [rows]).filter((r) => r && typeof r === 'object').slice(0, 50)
@@ -1426,7 +1433,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     const stored = new Map()
     if (exts.length) {
       const { rows: found } = await pool.query(
-        `SELECT external_id, game_n, scheduled_at, created_at, sport_type::text AS sport_type, test
+        `SELECT external_id, game_n, official_season, sport_type::text AS sport_type, test
            FROM public.matches WHERE external_id = ANY($1::text[])`, [exts])
       for (const r of found) stored.set(r.external_id, r)
     }
@@ -1436,51 +1443,84 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
       if (officialRowsOf([row]).length === 0) continue
       // Only the sports the caller can score in (the others are refused by pgQuery first)
       if (Array.isArray(sports) && !sports.includes(sportOf(row.sport_type))) continue
-      const ext = typeof row.external_id === 'string' ? row.external_id : null
-      // The season the index sees: scheduled_at, else created_at, else now
-      const declaredAt = row.scheduled_at ?? row.created_at ?? null
+      const keepsKey = !!old && Number(old.game_n) === Number(row.game_n) && sportOf(old.sport_type) === sportOf(row.sport_type)
+      // a row from before db/034 without a season: its key holds nothing in the index
+      if (keepsKey && old.official_season == null) continue
       const claim = await findClaim(pool, {
         gameN: row.game_n,
-        scheduledAt: declaredAt,
+        season: keepsKey ? Number(old.official_season) : null,
         sportType: row.sport_type,
-        excludeExternalId: ext,
+        excludeExternalId: typeof row.external_id === 'string' ? row.external_id : null,
         callerId: userId
       })
       if (claim) return claim
-      const real = await vmSeasonClaim({ userId, row, old, declaredAt, ext })
-      if (real) return real
     }
     return null
   }
 
   /**
-   * The client declares the season (scheduled_at; created_at is server-only on
-   * /api/db). For an indoor game VolleyManager knows (svrz_games), a match
-   * that takes a NEW key in another season than VolleyManager's kick-off is
-   * also checked against the game's real season, so shifting the date cannot
-   * open a second cloud match for a claimed game. A stored match whose key
-   * does not change (an old season's match re-synced after its number was
-   * reused) is left alone. A friendly check, not a database guarantee.
+   * The club rule's answer to a game another club holds (db/018, the rule on):
+   * a scorer of the club the game's home team plays for (VolleyManager's, as
+   * the rule reads it) takes over an official game that an account outside
+   * that club holds while its match is still in setup. That match is released
+   * as an admin's release-game does (official_game_exempt; it stays, it no
+   * longer holds the game) and the take-over audited (match.game_taken_over),
+   * so the home club's scorer can create the game's match. Nothing changes
+   * for a holder of the home club (creator or editor), an admin's match, a
+   * match that has started, or without clubs. `claim`: findTakenGame's.
+   * Returns { released, changes } (changes: the released row for realtime).
+   * Throws on a DB error.
    */
-  async function vmSeasonClaim ({ userId, row, old, declaredAt, ext }) {
-    if (sportOf(row.sport_type) !== 'indoor') return null
-    const n = Number(row.game_n)
-    const declaredSeason = seasonOf(declaredAt ?? new Date())
-    if (old && old.test !== true && Number(old.game_n) === n && sportOf(old.sport_type) === 'indoor' &&
-        seasonOf(old.scheduled_at ?? old.created_at ?? new Date()) === declaredSeason) return null
-    let vmAt
+  async function takeOverHeldGame ({ actorId, claim }) {
+    const none = { released: false, changes: [] }
+    if (!claim || claim.mine || claim.sport !== 'indoor' || !isUuid(claim.match_id) || !isUuid(actorId)) return none
+    const c = clubs()
+    if (!c || !(await c.ruleOn(pool))) return none
+    let out
     try {
-      const { rows: games } = await pool.query(
-        'SELECT datetime FROM public.svrz_games WHERE game_number = $1 AND datetime IS NOT NULL ORDER BY id DESC LIMIT 1', [String(n)])
-      vmAt = games[0]?.datetime
+      out = await takeOverTx(actorId, claim)
     } catch (err) {
-      // no VolleyManager table (a LAN or test database): the declared key only
-      if (err?.code === '42P01' || err?.code === '42703') return null
+      // no VolleyManager table (a LAN or test database): nobody's home club is known
+      if (err?.code === '42P01') return none
       throw err
     }
-    const vmSeason = seasonOf(vmAt)
-    if (vmSeason == null || vmSeason === declaredSeason) return null
-    return findClaim(pool, { gameN: n, scheduledAt: new Date(vmAt).toISOString(), sportType: 'indoor', excludeExternalId: ext, callerId: userId })
+    return out || none
+  }
+
+  async function takeOverTx (actorId, claim) {
+    return withTx(async (client) => {
+      await client.query("SELECT set_config('ov.user_id', $1, true)", [actorId])
+      const { rows: [m] } = await client.query(
+        `SELECT id, external_id, game_n, status, created_by, official_season FROM public.matches
+          WHERE id = $1 AND test IS NOT TRUE AND NOT official_game_exempt AND closed_at IS NULL
+            AND sport_type IS DISTINCT FROM 'beach' FOR UPDATE`, [claim.match_id])
+      if (!m || m.status !== 'setup') return null
+      const { rows: [home] } = await client.query(
+        `SELECT ct.club_id, g.team_home
+           FROM (SELECT sg.team_home FROM public.svrz_games sg WHERE sg.game_number = $1 AND sg.team_home IS NOT NULL
+                  ORDER BY sg.id DESC LIMIT 1) g
+           JOIN public.club_teams ct ON lower(btrim(ct.team_name)) = lower(btrim(g.team_home))`, [String(m.game_n)])
+      if (!home) return null
+      const { rows: [who] } = await client.query(
+        `SELECT EXISTS (SELECT 1 FROM public.account_clubs WHERE user_id = $1 AND club_id = $2) AS caller_home,
+                EXISTS (SELECT 1 FROM public.account_clubs ac WHERE ac.club_id = $2 AND (ac.user_id = $3
+                          OR ac.user_id IN (SELECT e.user_id FROM public.match_editors e WHERE e.match_id = $4))) AS holder_home,
+                EXISTS (SELECT 1 FROM public.profiles p WHERE p.user_id = $3
+                          AND p.roles && ARRAY['admin', 'super_admin']::text[]) AS holder_admin`,
+        [actorId, home.club_id, m.created_by, m.id])
+      if (!who.caller_home || who.holder_home || who.holder_admin) return null
+      const r = await db.runQuery({ table: 'matches', action: 'update', params: { data: { official_game_exempt: true }, filters: [{ type: 'eq', column: 'id', value: m.id }] } },
+        { internal: true, client, collectChanges: true })
+      if (r.body.error) throw Object.assign(new Error(`release failed: ${r.body.error.code}`), { code: r.body.error.code })
+      await audit(client, {
+        actorId,
+        action: 'match.game_taken_over',
+        targetUserId: m.created_by,
+        matchId: m.id,
+        details: { game_n: m.game_n, season: m.official_season, external_id: m.external_id, home_team: home.team_home, from_status: m.status }
+      })
+      return { released: true, changes: r.changes || [] }
+    })
   }
 
   /**
@@ -1506,10 +1546,9 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     if (!isPlainObject(body)) return invalid('body: must be an object')
     const gameN = intIn(body.game_n, 1, 2147483647, undefined)
     if (gameN === undefined) return invalid('game_n: a positive integer')
-    let scheduledAt = null
+    // scheduled_at: checked for its shape only (the apps send it); the season is the server's (db/034)
     if (body.scheduled_at != null && body.scheduled_at !== '') {
       if (typeof body.scheduled_at !== 'string' || Number.isNaN(new Date(body.scheduled_at).getTime())) return invalid('scheduled_at: an ISO date-time or null')
-      scheduledAt = body.scheduled_at
     }
     const sportType = body.sport_type == null ? 'indoor' : body.sport_type
     if (!['indoor', 'beach'].includes(sportType)) return invalid('sport_type: indoor or beach')
@@ -1519,7 +1558,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
       externalId = body.external_id
     }
     return guarded('official-check', async () => {
-      const claim = await findClaim(pool, { gameN, scheduledAt, sportType, excludeExternalId: externalId, callerId: userId })
+      const claim = await findClaim(pool, { gameN, sportType, excludeExternalId: externalId, callerId: userId })
       // db/018: may this account score this game at all (home games of its clubs)?
       const c = clubs()
       const club = c ? await c.verdict({ userId, access: callerAccess, gameN, sportType }) : { ok: true }
@@ -1548,7 +1587,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     for (const c of Array.isArray(changes) ? changes : []) {
       const row = c?.row
       if (c?.table !== 'matches' || c.eventType !== 'INSERT' || !row || row.test === true || !(Number(row.game_n) > 0)) continue
-      await auditQuietly({ actorId, action: 'match.claim_game', matchId: row.id, details: { external_id: row.external_id ?? null, game_n: row.game_n, season: seasonOf(row.scheduled_at || row.created_at), sport: sportOf(row.sport_type) } })
+      await auditQuietly({ actorId, action: 'match.claim_game', matchId: row.id, details: { external_id: row.external_id ?? null, game_n: row.game_n, season: row.official_season ?? seasonOf(row.scheduled_at || row.created_at), sport: sportOf(row.sport_type) } })
     }
   }
 
@@ -1582,6 +1621,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     listAudit,
     findTakenGame,
     findTakenGameForUpdate,
+    takeOverHeldGame,
     officialCheck,
     auditGameTaken,
     auditClaimedGames,

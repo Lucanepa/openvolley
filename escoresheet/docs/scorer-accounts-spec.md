@@ -55,6 +55,13 @@ Rules:
 `season = year(kick-off in Europe/Zurich) − (month < 7 ? 1 : 0)`, and kick-off is
 `coalesce(scheduled_at, created_at)`. The key applies to rows with `test IS NOT TRUE AND game_n > 0 AND NOT official_game_exempt`.
 
+From db/034 on, the season is the server's: `matches.official_season`, set by a
+trigger when a match is created or its game number changes, from VolleyManager's
+kick-off of the game (`svrz_games`), else from the server's clock. The client's
+`scheduled_at` no longer moves a match to another season's key (a second
+official match of a game filed with a date in another season). Rows stored
+before 034 keep the key they had.
+
 Why this key, from the code:
 - `svrz_games.game_number` is `UNIQUE` and `lib/vmSync.js` upserts `ON CONFLICT (game_number)`. VolleyManager keeps one row per number, and next season's game with the same number overwrites it. Numbers are therefore unique within a season, not forever. **`game_n` alone would block a legitimate game in a later season**, so it is not used alone.
 - `matches.external_id` is the device's `seed_key` (`match_<ts>_<rand>`). Every device and every new setup makes a new one, so it cannot identify a game. That is exactly the duplicate we want to stop.

@@ -107,7 +107,8 @@ describe('clubs end to end', { skip: SKIP }, () => {
     const list = await call(users.admin, 'GET', '/api/admin/clubs')
     assert.equal(list.status, 200, list.text)
     assert.deepEqual(list.json.data.clubs.map((c) => c.name), ['VBC Musterdorf', 'VBC Other'])
-    assert.equal(list.json.data.rule.enabled, false, 'off until an admin turns it on')
+    // db/034 turns it on unless an admin switched it off; the test databases start switched off (pgTestDb)
+    assert.equal(list.json.data.rule.enabled, false, 'switched off')
 
     const teams = await call(users.admin, 'GET', '/api/admin/club-teams?q=musterdorf')
     assert.equal(teams.status, 200, teams.text)

@@ -237,7 +237,10 @@ describe('pgQuery and matchRestore: scorer access, closing, official games', { s
       assert.equal(r.body.error.details, undefined)
       assert.equal(r.body.error.retryable, undefined)
       assert.equal(JSON.stringify(r.body).includes(String(n)), false, 'no key values')
-      // next season, beach, a test match: all fine
+      // db/034: a kick-off in another season is the same key (the season is the server's)
+      expectCode(await q('matches', 'insert', { data: { external_id: uniq(), game_n: n, scheduled_at: '2027-10-10T16:00:00Z' } }, asScorer(other)), 409, 'OV_GAME_TAKEN')
+      // next season (VolleyManager's schedule has moved on), beach, a test match: all fine
+      await raw.query("INSERT INTO svrz_games (game_number, datetime) VALUES ($1, '2027-10-10T18:00:00')", [String(n)])
       assert.equal((await q('matches', 'insert', { data: { external_id: uniq(), game_n: n, scheduled_at: '2027-10-10T16:00:00Z' } }, asScorer(other))).status, 200)
       assert.equal((await q('matches', 'insert', { data: { external_id: uniq(), game_n: n, sport_type: 'beach', scheduled_at: '2026-10-10T16:00:00Z' } }, asScorer(other))).status, 200)
       assert.equal((await q('matches', 'insert', { data: { external_id: uniq(), game_n: n, test: true, scheduled_at: '2026-10-10T16:00:00Z' } }, asScorer(other))).status, 200)

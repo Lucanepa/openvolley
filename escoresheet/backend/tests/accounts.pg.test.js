@@ -44,6 +44,17 @@ describe('accounts on Postgres', { skip: SKIP_PG }, () => {
   }
   const rolesOf = async (id) => (await pool.query('SELECT roles FROM public.profiles WHERE user_id = $1', [id])).rows[0]?.roles
   const auditOf = async (action) => (await pool.query('SELECT * FROM public.audit_log WHERE action = $1 ORDER BY id', [action])).rows
+  // A match of last season: db/034 gives a new match the season of VolleyManager's
+  // kick-off or the clock, so a test back-dates the key with the user triggers off.
+  async function lastSeason (externalId) {
+    const c = await pool.connect()
+    try {
+      await c.query('BEGIN')
+      await c.query("SET LOCAL session_replication_role = 'replica'")
+      await c.query('UPDATE public.matches SET official_season = official_season - 1 WHERE external_id = $1', [externalId])
+      await c.query('COMMIT')
+    } finally { c.release() }
+  }
   const actor = (name, roles) => ({ id: ids[name], access: accessFromRoles(roles) })
 
   before(async () => {
@@ -351,6 +362,7 @@ describe('accounts on Postgres', { skip: SKIP_PG }, () => {
       // the same number last season is not this game's claim
       await db.runQuery({ table: 'matches', action: 'insert', params: { data: { external_id: `og_old_${gameSeq + 1}`, game_n: gameSeq + 1, scheduled_at: '2025-10-10T14:00:00Z' } } },
         { proto: 2, matchOwner: { userId: ids.scorer }, actorId: ids.scorer })
+      await lastSeason(`og_old_${gameSeq + 1}`)
       const r = await accounts.listOfficialGames({ from: '2026-10-09', to: '2026-10-12' })
       assert.equal(r.status, 200, JSON.stringify(r.body))
       const [g1, g2] = r.body.data.games
@@ -433,14 +445,17 @@ describe('accounts on Postgres', { skip: SKIP_PG }, () => {
       const n = gameSeq++
       // last season's match, then the number comes back this season and is claimed
       assert.equal((await insert({ external_id: `old_${n}`, game_n: n, scheduled_at: '2025-10-10T16:00:00Z' })).status, 200)
+      await lastSeason(`old_${n}`)
       await pool.query("INSERT INTO public.svrz_games (game_number, datetime, league) VALUES ($1, '2026-11-10T18:00:00', '2L')", [String(n)])
       const rival = await user(`now${n}`, ['scorer'])
       assert.equal((await insert({ external_id: `new_${n}`, game_n: n, scheduled_at: '2026-11-10T16:00:00Z' }, rival)).status, 200)
       // the old match's sync upserts (full, or partial without the date) pass
       assert.equal(await accounts.findTakenGame({ userId: ids.scorer, rows: [{ external_id: `old_${n}`, game_n: n, scheduled_at: '2025-10-10T16:00:00Z', status: 'live' }] }), null)
       assert.equal(await accounts.findTakenGame({ userId: ids.scorer, rows: [{ external_id: `old_${n}`, status: 'ended' }] }), null)
-      // moving it onto this season's game is caught
-      assert.ok(await accounts.findTakenGame({ userId: ids.scorer, rows: [{ external_id: `old_${n}`, scheduled_at: '2026-11-10T16:00:00Z' }] }))
+      // db/034: a date in this season does not move it onto this season's game (the key's season is the server's)
+      assert.equal(await accounts.findTakenGame({ userId: ids.scorer, rows: [{ external_id: `old_${n}`, scheduled_at: '2026-11-10T16:00:00Z' }] }), null)
+      assert.equal((await db.runQuery({ table: 'matches', action: 'update', params: { data: { scheduled_at: '2026-11-10T16:00:00Z' }, filters: [{ type: 'eq', column: 'external_id', value: `old_${n}` }] } }, asScorer(ids.scorer))).status, 200)
+      assert.equal((await pool.query('SELECT official_season FROM public.matches WHERE external_id = $1', [`old_${n}`])).rows[0].official_season, 2025)
     })
 
     it('with sports, never names the holder of a game of another sport (the stored sport counts)', async () => {
