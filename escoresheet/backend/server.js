@@ -14,7 +14,6 @@
 import { createServer } from 'http'
 import { gzip } from 'zlib'
 import { WebSocketServer } from 'ws'
-import nodemailer from 'nodemailer'
 import ical from 'node-ical'
 import { randomBytes, timingSafeEqual, createHash } from 'crypto'
 import { existsSync, readFileSync, statSync } from 'fs'
@@ -47,7 +46,7 @@ import { signPageFile } from './lib/signPage.js'
 // The scoring-device handover's pure helpers (the pg part runs in DATABASE_URL mode only)
 import { SCORER_TABLES, deviceOf, matchRefsOfWrite, scorerMovedBody } from './lib/scorerDevice.js'
 // The support form (POST /api/contact): its body, checks and the one mail to CONTACT_EMAIL
-import { BUSY_BODY, contactMailerFromEnv, createContactSlots, handleContact, MAX_CONTACT_BODY_BYTES } from './lib/contact.js'
+import { BUSY_BODY, contactMailerFromEnv, createContactSlots, handleContact, matchMailDateTime, MAX_CONTACT_BODY_BYTES } from './lib/contact.js'
 // What the relay keeps of an anonymous socket's bundles and live states
 import { approxHeapBytes, createFrameBudget, frameTooLarge, relayBundleProblem, relayEvents, relayMemoryBudget, MAX_RELAY_BUNDLE_BYTES, MAX_LIVE_STATE_BYTES, RELAY_ANON_SHARE } from './lib/relayLimits.js'
 // A team's uploaded roster: the app's rules, the signatures it may fill in, its end at the coin toss
@@ -116,6 +115,12 @@ const CONTACT_EMAIL = process.env.CONTACT_EMAIL || 'support@openvolley.app'
 // by the relay, GET /api/match/:id and anonymous /api/db reads. A too short
 // OV_MATCH_TOKEN_SECRET stops the start (like OV_PIN_SECRET); unset, the
 // secret is derived from OV_PIN_SECRET, else random per process.
+// PINs at rest (lib/pinHash.js): with a database the secret is required. An
+// empty one used to start fine and store every PIN in plaintext.
+if (DB_MODE && !process.env.OV_PIN_SECRET) {
+  console.error('[Config] OV_PIN_SECRET is required with DATABASE_URL (at least 32 characters; README "PINs at rest")')
+  process.exit(1)
+}
 let matchTokens
 try {
   matchTokens = createMatchTokens({ secret: matchTokenSecretFromEnv(process.env) })
@@ -254,6 +259,7 @@ function manageFamilyOf(pathname) {
   if (pathname === '/api/club-licences' || pathname.startsWith('/api/club-licences/')) return 'clubLicences'
   if (pathname === '/api/settings') return 'settings'
   if (pathname === '/api/notifications' || pathname === '/api/notifications/read') return 'notifications'
+  if (pathname.startsWith('/api/match-editors/')) return 'matchEditors'
   return null
 }
 // GET /api/public/clubs (lib/accountRequests.js publicClubs, db/025): the sign-up
@@ -317,10 +323,8 @@ function getDataLayer() {
       ...(poolMax ? { poolMax } : {})
     })
     // PINs at rest: HMAC with OV_PIN_SECRET (lib/pinHash.js); unset = plaintext as before.
+    // (required in DB mode: the start stops without it, see above)
     const pins = ph.pinHasherFromEnv(process.env)
-    if (!pins.enabled) {
-      console.warn('⚠️  [Config] OV_PIN_SECRET is not set: game and connection PINs are stored in plaintext in the database (README "PINs at rest").')
-    }
     // restore-by-pin and claim count in the budget of every other PIN check
     const restore = mr.createMatchRestore(db, { pinHasher: pins, pinBudget: pinFailureLimiter })
     const storage = st.createStorage({
@@ -619,9 +623,12 @@ const PIN_TYPE_OF_KEY = { team1_data: 'bench_team1', team2_data: 'bench_team2' }
  * the budget counts anything, and again by done() after it succeeded.
  * Returns { done } or null; never throws (a failed read lifts nothing).
  */
-async function watchPinWrites(layer, action, params) {
-  if (!pinFailureLimiter.tracksAny() || (action !== 'insert' && action !== 'upsert' && action !== 'update')) return null
+async function watchPinWrites(layer, action, params, actorId = null) {
+  if (action !== 'insert' && action !== 'upsert' && action !== 'update') return null
   const rows = params?.data == null ? [] : (Array.isArray(params.data) ? params.data : [params.data])
+  // A game PIN change also ends the editors added by the old PIN, so it is watched always
+  const writesGamePin = rows.some((r) => r && typeof r === 'object' && 'game_pin' in r)
+  if (!writesGamePin && !pinFailureLimiter.tracksAny()) return null
   if (!rows.some((r) => r && typeof r === 'object' && ('game_pin' in r || 'connection_pins' in r))) return null
   const refs = matchRefsOfWrite('matches', action, params)
   const read = async ({ externalIds, ids }) => {
@@ -631,7 +638,7 @@ async function watchPinWrites(layer, action, params) {
       const r = await layer.db.runQuery({
         table: 'matches',
         action: 'select',
-        params: { columns: 'external_id, game_pin, connection_pins', filters: [{ type: 'in', column, value: values }] }
+        params: { columns: 'id, external_id, game_pin, connection_pins', filters: [{ type: 'in', column, value: values }] }
       }, { internal: true })
       if (r.body.error) throw new Error(r.body.error.code || 'lookup failed')
       for (const row of r.body.data || []) if (row.external_id) out.set(row.external_id, row)
@@ -658,11 +665,36 @@ async function watchPinWrites(layer, action, params) {
             .filter((k) => JSON.stringify(was[k] ?? null) !== JSON.stringify(now[k] ?? null))
             .map((k) => (k === 'game_pin' ? 'game' : PIN_TYPE_OF_KEY[k] || k))
           if (changed.length) pinFailureLimiter.pinChanged(ext, changed)
+          if (changed.includes('game') && !sameGamePin(layer, was.game_pin, now.game_pin)) await dropPinEditors(layer, row.id, actorId)
         }
       } catch (err) {
         console.warn('[DB] stored PINs not read after a match write:', err?.message)
       }
     }
+  }
+}
+
+/** The same game PIN, also when one side is its legacy plaintext and the other its hash. */
+function sameGamePin(layer, was, now) {
+  const a = was == null ? '' : String(was).trim()
+  const b = now == null ? '' : String(now).trim()
+  // matches() never takes a hash for the typed side: only plaintext -> its hash
+  return a === b || (a !== '' && b !== '' && layer.pins.matches('game', a, b))
+}
+
+/**
+ * The game PIN of a match changed: the accounts that became editors by the
+ * old PIN are editors no more, except the account that changed it (a
+ * take-over tablet that sets a new PIN keeps scoring).
+ */
+async function dropPinEditors(layer, matchUuid, actorId = null) {
+  if (!matchUuid || !layer.db?.pool) return
+  try {
+    await layer.db.pool.query(
+      "DELETE FROM public.match_editors WHERE match_id = $1 AND granted_via <> 'admin' AND ($2::uuid IS NULL OR user_id <> $2::uuid)",
+      [matchUuid, actorId || null])
+  } catch (err) {
+    console.warn('[DB] editors by the old game PIN not removed:', err?.code || err?.message)
   }
 }
 
@@ -963,24 +995,12 @@ function matchDataMessage(type, matchId, entry, scoreboardTs, view = null) {
 }
 
 
-// Option 1: Resend API (recommended - uses HTTPS, never blocked)
-// RESEND_API_KEY
-// Option 2: SMTP (may be blocked by some cloud providers)
-// SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, CONTACT_EMAIL
-// The SMTP settings are the account-email mailbox (lib/mailer.js). The legacy
-// route /api/match/send-info mails an address that an anonymous request
-// supplies, so it uses it only with SMTP_LEGACY_ROUTES=1: otherwise
-// configuring password-reset mail would turn it into an open relay of the
-// noreply mailbox. /api/contact mails only CONTACT_EMAIL (lib/contact.js) and
-// uses the mailbox without that switch.
-const LEGACY_SMTP = !!process.env.SMTP_HOST && process.env.SMTP_LEGACY_ROUTES === '1'
-if (process.env.RESEND_API_KEY || LEGACY_SMTP) {
-  console.log('[Email Config] RESEND_API_KEY:', process.env.RESEND_API_KEY ? 'SET' : 'NOT SET')
-  console.log('[Email Config] SMTP_HOST:', process.env.SMTP_HOST ? 'SET' : 'NOT SET')
-  console.log('[Email Config] SMTP_PORT:', process.env.SMTP_PORT || 'NOT SET')
-  console.log('[Email Config] SMTP_USER:', process.env.SMTP_USER ? 'SET' : 'NOT SET')
-  console.log('[Email Config] SMTP_PASS:', process.env.SMTP_PASS ? 'SET' : 'NOT SET')
-}
+// POST /api/match/send-info mails through the Resend API (RESEND_API_KEY)
+// only, to the signed-in scorer's own address. The SMTP settings are the
+// account-email mailbox (lib/mailer.js); /api/contact mails only CONTACT_EMAIL
+// (lib/contact.js). The old SMTP transport of send-info (SMTP_LEGACY_ROUTES=1)
+// is gone.
+if (process.env.RESEND_API_KEY) console.log('[Email Config] RESEND_API_KEY: SET')
 
 // Resend email helper (uses HTTPS - works on all cloud platforms)
 async function sendViaResend(to, subject, text) {
@@ -1010,18 +1030,6 @@ async function sendViaResend(to, subject, text) {
     clearTimeout(timeout)
   }
 }
-const emailTransporter = LEGACY_SMTP ? nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: parseInt(process.env.SMTP_PORT || '587'),
-  secure: process.env.SMTP_PORT === '465',
-  connectionTimeout: 10000, // 10 seconds max to connect
-  greetingTimeout: 10000,
-  socketTimeout: 15000,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS
-  }
-}) : null
 // The support form's mail (lib/contact.js): From MAIL_FROM, To CONTACT_EMAIL,
 // Reply-To the user, so FreeScout makes the user the ticket's customer.
 const contactMailer = contactMailerFromEnv(process.env)
@@ -2821,116 +2829,106 @@ function handleHttpRequest(req, res) {
     return
   }
 
-  // Send match info email
+  // POST /api/match/send-info { externalId }: the match's information (no
+  // PIN) to the signed-in scorer's own confirmed address, built from the
+  // stored match the account created or edits. It used to mail any typed
+  // address a text from the request, the game PIN included.
   if (url.pathname === '/api/match/send-info' && req.method === 'POST') {
     if (isRateLimited(addressKey(req), EMAIL_RATE_LIMIT_MAX, 'email')) {
-      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
-      res.end(JSON.stringify({ error: 'Too many requests' }))
+      sendJson(res, 429, { success: false, error: 'Too many requests' }, { 'Retry-After': '60' })
       return
     }
-    let body = ''
-    req.on('data', chunk => {
-      body += chunk
-      if (body.length > MAX_MATCH_BODY_SIZE) {
-        req.destroy()
-        return
-      }
-    })
-    req.on('end', async () => {
+    ;(async () => {
       try {
-        const matchData = JSON.parse(body)
-
-        if (!isValidEmail(matchData.email)) {
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ success: false, error: 'Invalid email address' }))
+        if (!DB_MODE) {
+          req.resume()
+          sendJson(res, 503, { success: false, error: 'Email not configured on server' })
           return
         }
-
-        console.log('[Match Email] Sending match info to:', sanitizeLog(matchData.email))
-
-        // Check if any email method is configured
-        const hasResend = !!process.env.RESEND_API_KEY
-        const hasSmtp = !!emailTransporter
-
-        if (!hasResend && !hasSmtp) {
-          console.log('[Match Email] ERROR: No email method configured (need RESEND_API_KEY or SMTP)')
-          res.writeHead(500, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({
-            success: false,
-            error: 'Email not configured on server'
-          }))
+        const layer = await getDataLayer()
+        const user = await layer.auth.requireUser(req, res)
+        if (!user) return
+        if (!process.env.RESEND_API_KEY) {
+          req.resume()
+          sendJson(res, 503, { success: false, error: 'Email not configured on server' })
           return
         }
-
-        // Format date and time
-        const formatDate = (dateStr) => {
-          if (!dateStr) return 'TBD'
-          const [year, month, day] = dateStr.split('-')
-          return `${day}.${month}.${year}`
+        if (isRateLimited(user.id, EMAIL_RATE_LIMIT_MAX, 'email')) {
+          req.resume()
+          sendJson(res, 429, { success: false, error: 'Too many requests' }, { 'Retry-After': '60' })
+          return
         }
-
-        const formatTime = (timeStr) => {
-          if (!timeStr) return 'TBD'
-          return timeStr.substring(0, 5) // HH:MM
+        let body
+        try {
+          body = await readJsonBody(req)
+        } catch {
+          sendJson(res, 400, { success: false, error: 'Invalid request' })
+          return
         }
-
-        // Build email content
-        const subject = `Game ${matchData.gameN || 'N/A'} eScoresheet`
-
+        const ext = typeof body?.externalId === 'string' ? body.externalId.trim() : ''
+        if (!ext || ext.length > 200) {
+          sendJson(res, 400, { success: false, error: 'Invalid request: externalId is required' })
+          return
+        }
+        const a = await layer.access.get(user.id)
+        if (!MATCH_SPORTS.some((sport) => accessForSport(a, sport).canScore === true)) {
+          sendJson(res, 403, { success: false, error: 'Only scorers can send match information' })
+          return
+        }
+        const { rows: [m] } = await layer.db.pool.query(
+          `SELECT m.game_n, m.home_team, m.away_team, m.scheduled_at,
+                  m.match_info->>'hall' AS hall, m.match_info->>'city' AS city, m.match_info->>'league' AS league
+             FROM public.matches m
+            WHERE m.external_id = $1
+              AND (m.created_by = $2::uuid OR EXISTS (SELECT 1 FROM public.match_editors e WHERE e.match_id = m.id AND e.user_id = $2::uuid))
+            LIMIT 1`, [ext, user.id])
+        if (!m) {
+          sendJson(res, 404, { success: false, error: 'Match not found' })
+          return
+        }
+        const { rows: [u] } = await layer.db.pool.query('SELECT email FROM auth.users WHERE id = $1', [user.id])
+        const confirmed = await layer.accounts.confirmationOf(layer.db.pool, user.id)
+        if (!u?.email || !isValidEmail(u.email) || !confirmed || confirmed.unconfirmed) {
+          sendJson(res, 409, { success: false, code: 'OV_EMAIL_UNCONFIRMED', error: 'Confirm your email address first' })
+          return
+        }
+        const text = (v, max = 120) => (typeof v === 'string' && v.trim() ? v.trim().replace(/[\r\n]+/g, ' ').slice(0, max) : 'N/A')
+        const team = (t) => {
+          const name = text(t?.name)
+          const short = t?.short_name || t?.shortName
+          return typeof short === 'string' && short.trim() ? `${name} (${text(short, 20)})` : name
+        }
+        const { date, time } = matchMailDateTime(m.scheduled_at)
+        const gameN = m.game_n ?? 'N/A'
         const emailBody = `
 Match Information
 =================
 
-Game Number: ${matchData.gameN || 'N/A'}
-Game PIN: ${matchData.gamePin}
+Game Number: ${gameN}
 
 Teams
 -----
-Home: ${matchData.home || 'N/A'}${matchData.homeShortName ? ` (${matchData.homeShortName})` : ''}
-Away: ${matchData.away || 'N/A'}${matchData.awayShortName ? ` (${matchData.awayShortName})` : ''}
+Home: ${team(m.home_team)}
+Away: ${team(m.away_team)}
 
 Match Details
 -------------
-Date: ${formatDate(matchData.date)}
-Time: ${formatTime(matchData.time)}
-Venue: ${matchData.hall || 'N/A'}
-City: ${matchData.city || 'N/A'}
-League: ${matchData.league || 'N/A'}
+Date: ${date}
+Time: ${time}
+Venue: ${text(m.hall)}
+City: ${text(m.city)}
+League: ${text(m.league)}
 
 ---
 Generated by eScoresheet
 `.trim()
-
-        // Send email - try Resend first (HTTPS), then SMTP as fallback
-        if (hasResend) {
-          console.log('[Match Email] Using Resend API...')
-          await sendViaResend(matchData.email, subject, emailBody)
-        } else {
-          console.log('[Match Email] Using SMTP...')
-          await emailTransporter.sendMail({
-            from: process.env.SMTP_USER,
-            to: matchData.email,
-            subject: subject,
-            text: emailBody
-          })
-        }
-
-        console.log('[Match Email] Sent successfully to:', matchData.email)
-
-        res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({
-          success: true,
-          message: 'Match info sent to email'
-        }))
+        await sendViaResend(u.email, `Game ${gameN} eScoresheet`, emailBody)
+        sendJson(res, 200, { success: true, message: 'Match info sent to your account email' })
       } catch (err) {
-        console.error('[Match Email] Error:', err)
-        res.writeHead(500, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({
-          success: false,
-          error: 'Failed to send email'
-        }))
+        console.error('[Match Email] Error:', err?.message)
+        if (!res.headersSent) sendJson(res, 500, { success: false, error: 'Failed to send email' })
       }
-    })
+    })()
     return
   }
 
@@ -3145,7 +3143,12 @@ Generated by eScoresheet
         // Capability for this match (relay bundle, GET /api/match/:id, its
         // rosters on anonymous /api/db reads), see lib/matchAccess.js
         // (none for the upload PINs: the Upload Roster app reads nothing with it)
-        const token = matchRow.external_id && isTokenRole(type) ? matchTokens.issue({ matchKey: matchRow.external_id, role: type, matchUuid: matchRow.id, pin: pinStr }) : null
+        // storedPin: the stored form the PIN matched, so a PIN change ends the token on /api/db too
+        const storedPins = matchRow.connection_pins || {}
+        const storedKey = cfg.pinKeys.find((k) => layer.pins.matches(k, pinStr, storedPins[k]))
+        const token = matchRow.external_id && isTokenRole(type)
+          ? matchTokens.issue({ matchKey: matchRow.external_id, role: type, matchUuid: matchRow.id, pin: pinStr, storedPin: storedKey ? storedPins[storedKey] : null })
+          : null
         if (isBeach) {
           // openbeach's names: teams are team1 / team2 (matches.team1_data / team2_data)
           sendJson(res, 200, {
@@ -3428,7 +3431,7 @@ Generated by eScoresheet
             ? isRateLimited(user.id, APPROVAL_PIN_RATE_LIMIT_MAX, 'approvalPin')
             : manageFamily === 'approvals'
               ? isRateLimited(user.id, APPROVALS_RATE_LIMIT_MAX, 'approvals')
-              : (manageFamily === 'admin' || manageFamily === 'savedTeams' || manageFamily === 'me' || manageFamily === 'join' || manageFamily === 'beach' || manageFamily === 'scoresheets' || manageFamily === 'club' || manageFamily === 'games' || manageFamily === 'settings' || manageFamily === 'team' || manageFamily === 'gameRosters' || manageFamily === 'clubLicences' || manageFamily === 'notifications') &&
+              : (manageFamily === 'admin' || manageFamily === 'savedTeams' || manageFamily === 'me' || manageFamily === 'join' || manageFamily === 'beach' || manageFamily === 'scoresheets' || manageFamily === 'club' || manageFamily === 'games' || manageFamily === 'settings' || manageFamily === 'team' || manageFamily === 'gameRosters' || manageFamily === 'clubLicences' || manageFamily === 'notifications' || manageFamily === 'matchEditors') &&
                 isRateLimited(user.id, MANAGE_RATE_LIMIT_MAX, 'manage')
         if (limited) {
           req.resume()
@@ -3844,7 +3847,7 @@ Generated by eScoresheet
           ...(anonymousRead ? anonReadOptions(table, p) : {})
         }
         // A PIN this write changes starts its count across callers again
-        const pinWrites = table === 'matches' && isWrite ? await watchPinWrites(layer, action, p) : null
+        const pinWrites = table === 'matches' && isWrite ? await watchPinWrites(layer, action, p, authUser?.id || null) : null
         // The scoring device's writes: checked, run and adopted in one transaction
         const runRequest = async () => {
           if (!scoringDevice) return layer.db.runQuery({ table, action, params: p }, runOpts)
@@ -3906,8 +3909,12 @@ Generated by eScoresheet
         // Anonymous: public columns; a match's rosters only with the match
         // token of its PIN check (referee/bench fallback, lib/matchAccess.js).
         // The token is bound to its role: the role's connection must still be on.
-        const granted = anonView || readOwner ? matchTokens.verify(req.headers['x-ov-match-token']) : null
-        const grantOpts = { grantedExternalId: granted?.m || null, grantedMatchUuid: granted?.u || null, grantRow: (row) => matchTokens.stillGrantsRow(granted, row) }
+        // Only a token from the database's PIN check (it names matches.id) unlocks
+        // database rows; a relay room's token grants the relay copy only.
+        const verified = anonView || readOwner ? matchTokens.verify(req.headers['x-ov-match-token']) : null
+        const granted = verified?.u ? verified : null
+        const grantedPins = granted?.s ? await connectionPinsOf(layer, granted.u) : null
+        const grantOpts = { grantedExternalId: granted?.m || null, grantedMatchUuid: granted?.u || null, grantRow: (row) => matchTokens.stillGrantsRow(granted, row, grantedPins) }
         const data = anonView ? projectAnonDbRows(table, redacted, grantOpts)
           : readOwner ? projectNonOwnerRows(table, redacted, grantOpts)
             : redacted
@@ -3984,7 +3991,7 @@ Generated by eScoresheet
           // ago, by the app's clock) must not replace that device's score.
           // Checked inside the restore's transaction (a take-over waits for it).
           const scorerCheck = scorerCheckOf(layer, deviceOf(body?.device), matchOwner, { ageMs: body?.age_ms ?? null })
-          const pinWrites = body?.match && typeof body.match === 'object' ? await watchPinWrites(layer, 'upsert', { data: body.match }) : null
+          const pinWrites = body?.match && typeof body.match === 'object' ? await watchPinWrites(layer, 'upsert', { data: body.match }, user.id) : null
           let r = await layer.restore.restoreMatch(body, { proto: req.headers['x-ov-proto'], matchOwner, actorId: user.id, scorerCheck })
           r = await enrichGameTaken(layer, user.id, r, body?.match ? [body.match] : [], matchOwner)
           if (r.status === 200) {
@@ -4293,6 +4300,9 @@ Generated by eScoresheet
         const r = await layer.restore.restoreByPin(body, { limitKey: layer.ipKey(clientIp), editorUserId, takeOver })
         if (r.status === 200 && editorUserId && r.body.data?.access === 'editor') {
           await layer.accounts.auditClaimPin({ actorId: editorUserId, matchId: r.body.data.match?.id, via: 'restore-by-pin' })
+        } else if (r.status === 200) {
+          // every other read by game PIN too, anonymous ones included
+          await layer.accounts.auditRestorePin({ actorId: editorUserId, matchId: r.body.data?.match?.id, access: r.body.data?.access || 'full' })
         }
         sendJson(res, r.status, r.body, r.status === 429 ? { 'Retry-After': '600' } : {})
       } catch (err) {
@@ -5156,6 +5166,21 @@ function relayPinAttempt(clientInfo, scope, compare, budget = {}) {
  * that PIN must still be the match's (a device the scorer disconnected, or
  * whose PIN was regenerated, loses access at once, not when the token expires).
  */
+/** matches.connection_pins of one match (stored form), for a token's PIN check; null when unreadable. */
+async function connectionPinsOf(layer, matchUuid) {
+  try {
+    const { status, body } = await layer.db.runQuery({
+      table: 'matches',
+      action: 'select',
+      params: { columns: 'connection_pins', filters: [{ type: 'eq', column: 'id', value: matchUuid }] }
+    }, { internal: true, maxRows: 1 })
+    const row = status === 200 && Array.isArray(body?.data) ? body.data[0] : null
+    return row?.connection_pins && typeof row.connection_pins === 'object' ? row.connection_pins : null
+  } catch {
+    return null
+  }
+}
+
 function tokenGrantsRelay(token, matchId, match) {
   const p = matchTokens.verify(token)
   if (!p || matchId == null || p.m !== String(matchId)) return false

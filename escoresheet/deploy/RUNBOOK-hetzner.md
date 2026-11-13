@@ -152,6 +152,12 @@ hetzner# cd /opt/openvolley && install -m 600 env.example .env && editor .env
 
 - `OV_BACKEND_IMAGE` = the tag from step 3.
 - `OV_OWNER_PW`, `OV_APP_PW` = `openssl rand -hex 32` each (into Vaultwarden).
+- `OV_PIN_SECRET` = `openssl rand -base64 48` (into Vaultwarden next to `OV_OWNER_PW` and
+  `OV_APP_PW`; required, compose and the backend refuse to start without it). Never change or
+  lose it: the stored PINs are HMACs with it. On a database with plaintext PINs run
+  `docker exec ov-backend node scripts/hash-pins.mjs --apply` once after the first start. A restored
+  dump needs the secret it was written with (the nightly backup keeps an encrypted copy,
+  `secrets-<UTC>.env.gpg`).
 - `TUNNEL_TOKEN` from step 2.
 - `RESEND_*`, `CONTACT_EMAIL` from the old backend's settings. (No `REOPEN_PASSWORD_HASH`:
   it was replaced by the admin reopen of db/007.) `SMTP_*`, `MAIL_FROM`, `MANAGER_URL`: leave
@@ -340,6 +346,18 @@ Kit changes (`compose.yaml`, `cloudflared/config.yml`, `pkgs/Caddyfile`, scripts
 lenovo$ sudo rsync -rlt --chmod=D750,F640 --exclude=.env escoresheet/deploy/ /opt/openvolley/
 lenovo$ sudo sh -c 'chmod 750 /opt/openvolley/*.sh && chmod 644 /opt/openvolley/cloudflared/config.yml /opt/openvolley/pkgs/Caddyfile'
 lenovo$ sudo docker compose --project-directory /opt/openvolley config -q && sudo docker compose --project-directory /opt/openvolley up -d
+```
+
+Once, for the kit that gives `ov-edge` a fixed subnet (172.30.250.0/24, the tunnel at
+172.30.250.2, `TRUST_PROXY_FROM` set to it): an existing `ov-edge` keeps its old subnet and `up`
+fails or keeps it, so first check that no other network uses the range, then recreate the
+networks with `down` (no `-v`: the volumes and data stay) before the `up -d` above. A short
+outage: outside match days.
+
+```bash
+host$ sudo docker network inspect $(sudo docker network ls -q) -f '{{.Name}} {{range .IPAM.Config}}{{.Subnet}} {{end}}' | grep '172\.30\.250\.' || echo free
+host$ sudo docker compose --project-directory /opt/openvolley down     # never with -v
+host$ sudo docker compose --project-directory /opt/openvolley up -d
 ```
 
 Script changes also need `sudo /opt/openvolley/host-prep.sh` (reinstalls `backup-openvolley.sh`

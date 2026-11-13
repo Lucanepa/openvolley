@@ -167,7 +167,6 @@ Deploy to Render for cloud backup, also run locally when available. The frontend
 | `MANAGER_URL` | Base of the links in the account emails (`#reset?token=`, `#confirm?token=`); https only | `https://manager.openvolley.app` |
 | `MAIL_FROM_BEACH` | Sender of the OpenBeach account emails (requests with `app: 'beach'`); the same mailbox. Set but without an address: the mails are off | `OpenBeach <address of MAIL_FROM>` |
 | `MANAGER_URL_BEACH` | Base of the links in the OpenBeach account emails; https only (set but unusable: the mails are off) | `https://manager-beach.openvolley.app` |
-| `SMTP_LEGACY_ROUTES` | `1`: `/api/match/send-info` may also send through the SMTP account. Off by default: it mails an address an anonymous request supplies. (`/api/contact` uses the SMTP account without it: it mails only `CONTACT_EMAIL`) | - |
 
 `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` are no longer read, nor are the
 `POCKETBASE_*` variables (the PocketBase relay snapshot backup was removed).
@@ -805,7 +804,7 @@ answers at the same backend URL. Optional, to decouple the two: first ship a
 backend-only change to the current production backend that adds `X-OV-Proto`
 to `Access-Control-Allow-Headers`.
 
-Match-info email (`/api/match/send-info`) requires `RESEND_API_KEY`, or the SMTP settings with `SMTP_LEGACY_ROUTES=1`. The support form (`/api/contact`) needs the SMTP settings of the account emails ("Account emails" above), nothing else.
+Match-info email (`/api/match/send-info`) requires `RESEND_API_KEY`. The support form (`/api/contact`) needs the SMTP settings of the account emails ("Account emails" above), nothing else.
 
 ## Self-hosted storage (`lib/storage.js`)
 
@@ -1110,7 +1109,7 @@ Errors: 401 no session, 403 `OV_FORBIDDEN` (role), 400 `OV_INVALID_REQUEST`
 
 ### `POST /api/match/send-info`
 
-Send match info email to a specified address. Requires email configuration.
+A signed-in scorer's `{ externalId }`: the game number, teams, date and venue of a match the account created or edits (built from the stored match, no PIN) to the account's own confirmed address. Needs `RESEND_API_KEY` (503 without it); 409 `OV_EMAIL_UNCONFIRMED` for an unconfirmed address, 404 for a match the account does not edit.
 
 ### `POST /api/contact`
 
@@ -1198,7 +1197,7 @@ Password-reset links, confirmation links for new accounts and the "your password
 - **Limits**: reset 10/hour per IP (/64), 3/hour per delivered inbox (`inboxKey`), counted for unknown addresses too; redeeming links (`reset-password/confirm`, `confirm-email`) 30 per 15 min per IP; `resend-confirmation` 3/hour per account and 10/hour per IP.
 - **Audit log** (when `public.audit_log` exists): `account.password_reset_requested` (existing accounts only; never visible in an API answer), `account.password_reset`, `account.email_confirmed`.
 - **Turned off** (no `SMTP_HOST`/`SMTP_PASS`, or `auth.app_tokens` missing): reset answers 503 `reset_unavailable` as before, sign-up confirms at once, `resend-confirmation` answers 503 `confirm_unavailable`. Links already sent stay redeemable while the table exists.
-- **Legacy route**: `/api/match/send-info` does **not** use these SMTP settings unless `SMTP_LEGACY_ROUTES=1` (it sends to an address an anonymous request supplies). The support form (`/api/contact`) does, without that switch: its only recipient is `CONTACT_EMAIL`.
+- `/api/match/send-info` does not use these SMTP settings (Resend only). The support form (`/api/contact`) does, without that switch: its only recipient is `CONTACT_EMAIL`.
 - **Tests**: `tests/mailer.test.js` (templates, settings, real SMTP sessions over implicit TLS and STARTTLS against `tests/helpers/fakeSmtp.js`, an `smtp-server` sink with a throwaway certificate), `tests/emailAuth.pg.test.js` (the flows against Postgres), `tests/emailAuth.e2e.test.js` (server.js end to end, links followed out of the captured mails). Never against a real mailbox.
 - **Operations**: deploy/RUNBOOK-hetzner.md, "Account emails (SMTP)".
 

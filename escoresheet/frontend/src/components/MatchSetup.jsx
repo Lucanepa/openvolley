@@ -20,11 +20,12 @@ import { useScaledLayout } from '../hooks/useScaledLayout'
 const ballImage = ballFallback
 import { parseRosterPdf } from '../utils/parseRosterPdf'
 import { getCloudApiUrl } from '../utils/backendConfig'
+import { sendMatchInfoMail } from '../utils/matchInfoMail'
 import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
 import { toastQueuedSync } from '../utils/syncToast'
 import { hasStoredSessionToken, isAuthError } from '../hooks/useSyncQueue'
-import { apiFrom } from '../lib/apiClient'
+import { apiFrom, authorizationHeader } from '../lib/apiClient'
 import { generateMatchSeedKey, liveStateNow } from '../utils/serverDataSync'
 import { TEST_TEAM_SEED_DATA, TEST_HOME_BENCH, TEST_AWAY_BENCH } from '../constants/testSeeds'
 import { splitLocalDateTime, parseLocalDateTimeToISO } from '../utils/timeUtils'
@@ -2513,32 +2514,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       setMatchInfoConfirmed(true)
       setCurrentView('main')
 
-      // Send match info email if provided (non-blocking)
-      if (notificationEmail && notificationEmail.trim() && match?.gamePin) {
-        const emailData = {
-          email: notificationEmail.trim(),
-          gameN: gameN || 'N/A',
-          gamePin: match.gamePin,
-          home: home.trim(),
-          away: away.trim(),
-          homeShortName: homeShortName || '',
-          awayShortName: awayShortName || '',
-          date: date || '',
-          time: time || '',
-          hall: hall || '',
-          city: city || '',
-          league: league || ''
-        }
-
-        // The cloud backend sends the email (a LAN relay has no mailer)
+      // Match info email (non-blocking): the server mails the signed-in
+      // scorer's own confirmed address, built from the stored match, no PIN
+      // (the cloud backend sends it; a LAN relay has no mailer)
+      if (notificationEmail && notificationEmail.trim() && matchSeedKey && !isTestMatch) {
         const sendInfoUrl = getCloudApiUrl('/api/match/send-info')
-
-        if (sendInfoUrl) fetch(sendInfoUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(emailData)
-        })
-          .then(res => res.json())
+        const auth = authorizationHeader()
+        // (the match is new: sendMatchInfoMail waits for the sync's upload)
+        if (sendInfoUrl && auth.Authorization) sendMatchInfoMail({ url: sendInfoUrl, headers: auth, externalId: matchSeedKey })
           .then(data => {
             if (data.success) {
               console.log('[MatchSetup] Match info email sent successfully')
@@ -4289,23 +4272,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                           }
                           setSendingEmail(true)
                           try {
+                            // the signed-in scorer's own address, from the stored match, no PIN
                             const res = await fetch(sendInfoUrl, {
                               method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                email: notificationEmail,
-                                gameN: gameN,
-                                gamePin: match.gamePin,
-                                home: home,
-                                homeShortName: homeShortName,
-                                away: away,
-                                awayShortName: awayShortName,
-                                date: date,
-                                time: time,
-                                hall: hall,
-                                city: city,
-                                league: league
-                              })
+                              headers: { 'Content-Type': 'application/json', ...authorizationHeader() },
+                              body: JSON.stringify({ externalId: match?.seed_key || null })
                             })
                             const data = await res.json()
                             if (data.success) {

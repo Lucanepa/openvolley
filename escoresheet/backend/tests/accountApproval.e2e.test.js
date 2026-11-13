@@ -306,23 +306,7 @@ describe('account approvals end to end', { skip: SKIP }, () => {
     }
   })
 
-  it('without OV_PIN_SECRET every endpoint is 503 OV_APPROVAL_UNAVAILABLE; the status says unavailable', async () => {
-    const off = await bootServer({ ...env(), OV_PIN_SECRET: '' })
-    try {
-      const { owner, ref1 } = users
-      const c = (method, path, body) => api(off.base, path, { method, token: owner.token, body, proto: null, headers: { 'cf-connecting-ip': '203.0.113.240' } })
-      const st = await c('GET', '/api/account/approval-pin')
-      assert.equal(st.status, 200, st.text)
-      assert.deepEqual(st.json.data, { available: false, eligible: false, set: false, set_at: null, locked_until: null, locked_scope: null, disabled: false })
-      expectCode(await c('POST', '/api/account/approval-pin', { password: PASSWORD, pin: '518203' }), 503, 'OV_APPROVAL_UNAVAILABLE')
-      expectCode(await c('POST', '/api/account/approval-pin/remove', { password: PASSWORD }), 503, 'OV_APPROVAL_UNAVAILABLE')
-      const m = await endedMatch(owner)
-      expectCode(await c('POST', '/api/approvals', approveBody(m, 'referee1', ref1, MARKER_PIN)), 503, 'OV_APPROVAL_UNAVAILABLE')
-      expectCode(await c('GET', `/api/approvals?external_id=${encodeURIComponent(m.ext)}`), 503, 'OV_APPROVAL_UNAVAILABLE')
-      expectCode(await c('DELETE', '/api/approvals/6f1c2a9b-0000-4000-8000-000000000001'), 503, 'OV_APPROVAL_UNAVAILABLE')
-      assert.ok(off.output.join('').includes('approval with an account is off'))
-    } finally {
-      await off.stop()
-    }
+  it('without OV_PIN_SECRET the database backend does not start (no plaintext PINs, no approvals off)', async () => {
+    await assert.rejects(bootServer({ ...env(), OV_PIN_SECRET: '' }), /OV_PIN_SECRET is required/)
   })
 })

@@ -11,6 +11,7 @@ import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
 import nodemailer from 'nodemailer'
 import {
+  matchMailDateTime,
   parseMultipart, parseContactBody, boundaryOf, sniffFile, safeFilename, checkAttachments, normalizeContact,
   areaOf, pageUrlOf, priorityOf, supportSubject, buildSupportMail, handleContact, isHoneypotHit,
   createContactMailer, contactMailerFromEnv, disabledContactMailer, createContactSlots, ContactError,
@@ -729,5 +730,16 @@ describe('contact: settings', () => {
     const b = contactMailerFromEnv({ ...smtp, MAIL_FROM: 'OpenVolley <noreply@openvolley.example>', CONTACT_EMAIL: 'help@example.test' })
     assert.deepEqual([b.from, b.to], ['OpenVolley <noreply@openvolley.example>', 'help@example.test'])
     b.close()
+  })
+})
+
+describe('matchMailDateTime (send-info)', () => {
+  it('prints the match time in OV_TIMEZONE, not UTC', () => {
+    assert.deepEqual(matchMailDateTime('2026-11-14T17:30:00.000Z', 'Europe/Zurich'), { date: '14.11.2026', time: '18:30' })
+    assert.deepEqual(matchMailDateTime('2026-07-04T22:15:00.000Z', 'Europe/Zurich'), { date: '05.07.2026', time: '00:15' })
+  })
+  it('falls back to UTC on an unknown zone and says so; no time is TBD', () => {
+    assert.deepEqual(matchMailDateTime('2026-11-14T17:30:00.000Z', 'Not/AZone'), { date: '14.11.2026', time: '17:30 UTC' })
+    assert.deepEqual(matchMailDateTime(null), { date: 'TBD', time: 'TBD' })
   })
 })

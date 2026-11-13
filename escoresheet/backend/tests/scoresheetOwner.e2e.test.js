@@ -102,6 +102,17 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
   const close = (user, id) => setStatus(user, id, 'final')
   // Closed `minAgo` minutes ago (the final mail waits 2 minutes after the
   // close): backdated with the triggers off, as tests/finalMail.e2e.test.js
+  // POST /api/match/claim; past the close's window the game PIN is retired
+  // (409 OV_MATCH_CLOSED): the editor row is then planted as one made before
+  // that (the editors these tests are about)
+  async function claimPin (user, ext, pin) {
+    const r = await call(user, 'POST', '/api/match/claim', { externalId: ext, pin })
+    if (r.status !== 409) return r
+    assert.equal(r.json.error.code, 'OV_MATCH_CLOSED', r.text)
+    await sql.query("INSERT INTO public.match_editors (match_id, user_id, granted_via) SELECT id, $2, 'claim' FROM public.matches WHERE external_id = $1 ON CONFLICT DO NOTHING", [ext, user.id])
+    return { status: 200, json: { data: { role: 'editor' } }, text: '' }
+  }
+
   async function closeAgo (id, minAgo, by) {
     await sql.query(`UPDATE public.matches SET status = 'final', closed_by = $2 WHERE id = $1`, [id, by])
     await sql.query('SET session_replication_role = replica')
@@ -912,7 +923,7 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
       return { ...x, pin, p, forged }
     }
     const claim = async (x) => {
-      const r = await call(users.mallory, 'POST', '/api/match/claim', { externalId: x.ext, pin: x.pin })
+      const r = await claimPin(users.mallory, x.ext, x.pin)
       assert.equal(r.status, 200, r.text)
       assert.equal(r.json.data.role, 'editor')
     }
@@ -962,7 +973,7 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
       const pin = String(100000 + (x.n % 899999))
       await sql.query('UPDATE public.matches SET game_pin = $2 WHERE id = $1', [x.id, pin])
       await closeAgo(x.id, minAgo, users.ivan.id)
-      const r = await call(users.mallory, 'POST', '/api/match/claim', { externalId: x.ext, pin })
+      const r = await claimPin(users.mallory, x.ext, pin)
       assert.equal(r.status, 200, r.text)
       assert.equal(r.json.data.role, 'editor')
       return x
@@ -1015,7 +1026,7 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
     const pin = String(100000 + (y.n % 899999))
     await sql.query('UPDATE public.matches SET game_pin = $2 WHERE id = $1', [y.id, pin])
     await closeAgo(y.id, 2 * 24 * 60, users.ivan.id)
-    assert.equal((await call(users.erin, 'POST', '/api/match/claim', { externalId: y.ext, pin })).status, 200)
+    assert.equal((await claimPin(users.erin, y.ext, pin)).status, 200)
     const fp = `${y.day}/game${y.n}_${key()}.pdf`
     const sent = pdfBytes('queued on the tablet 3:1, claimed before')
     expectCode(await upload(users.erin, fp, sent, { matchExternalId: y.ext }), 409, 'OV_MATCH_CLOSED')
@@ -1023,7 +1034,7 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
     assert.equal((await upload(users.erin, fp, sent, { matchExternalId: y.ext })).status, 200)
     assert.deepEqual(await readAs(users.cm, y.id), { status: 200, body: sent.toString() })
     // the game PIN alone still gives no say: another account that proves it now
-    assert.equal((await call(users.mallory, 'POST', '/api/match/claim', { externalId: y.ext, pin })).status, 200)
+    assert.equal((await claimPin(users.mallory, y.ext, pin)).status, 200)
     expectCode(await upload(users.mallory, fp, pdfBytes('late claimer 0:3'), { matchExternalId: y.ext }), 409, 'OV_MATCH_CLOSED')
     // a match closed before db/033 whose file of its name is that account's
     // (stored days after the close): the admin's grant makes it the match's
@@ -1045,7 +1056,7 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
     const pin = String(100000 + (x.n % 899999))
     await sql.query('UPDATE public.matches SET game_pin = $2 WHERE id = $1', [x.id, pin])
     await closeAgo(x.id, LATE_EDITOR_WINDOW_MS / 60000 - 3, users.ivan.id)
-    assert.equal((await call(users.erin, 'POST', '/api/match/claim', { externalId: x.ext, pin })).status, 200)
+    assert.equal((await claimPin(users.erin, x.ext, pin)).status, 200)
     const fp = `${x.day}/game${x.n}_${key()}.pdf`
     const first = pdfBytes('approved 3:1, sent under the next account')
     assert.equal((await upload(users.erin, fp, first, { matchExternalId: x.ext })).status, 200)
@@ -1058,7 +1069,7 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
     assert.deepEqual(await readAs(users.cm, x.id), { status: 200, body: corrected.toString() })
     // nothing else: another file, another account that proves the PIN now, that file after the grace
     expectCode(await upload(users.erin, `${x.day}/game${x.n}_${key()}.pdf`, pdfBytes('another file 0:3'), { matchExternalId: x.ext }), 409, 'OV_MATCH_CLOSED')
-    assert.equal((await call(users.mallory, 'POST', '/api/match/claim', { externalId: x.ext, pin })).status, 200)
+    assert.equal((await claimPin(users.mallory, x.ext, pin)).status, 200)
     expectCode(await upload(users.mallory, fp, pdfBytes('late claimer 0:3'), { matchExternalId: x.ext }), 409, 'OV_MATCH_CLOSED')
     await backdate(x.id, PAST_GRACE)
     expectCode(await upload(users.erin, fp, pdfBytes('changed later 0:3'), { matchExternalId: x.ext }), 409, 'OV_MATCH_CLOSED')
@@ -1078,7 +1089,7 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
     await sql.query('UPDATE public.matches SET game_pin = $2 WHERE id = $1', [x.id, pin])
     plantFile(`${x.day}/game${x.n}_${key()}.pdf`, pdfBytes('stored before db/033 0:3'), [users.mallory.id], BEFORE_033() - 2 * 86400)
     await closeAgo(x.id, 1, users.ivan.id)
-    const claim = await call(users.mallory, 'POST', '/api/match/claim', { externalId: x.ext, pin })
+    const claim = await claimPin(users.mallory, x.ext, pin)
     assert.equal(claim.status, 200, claim.text)
     const real = pdfBytes('the scorer\'s approval 3:1')
     const up = await upload(users.ivan, `${x.day}/game${x.n}_${key()}.pdf`, real, { matchExternalId: x.ext })

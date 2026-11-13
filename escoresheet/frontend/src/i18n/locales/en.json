@@ -3512,6 +3512,8 @@
         "match_close": "Match closed",
         "match_reopen": "Match reopened",
         "match_editor_add": "Editor added by admin",
+        "match_editor_remove": "Editor removed",
+        "match_restore_pin": "Match read by game PIN",
         "match_release_game": "Game released",
         "match_game_taken_over": "Game taken over by the home club",
         "match_scorer_device": "Scoring device changed",

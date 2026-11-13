@@ -3505,6 +3505,8 @@
         "match_close": "Match clôturé",
         "match_reopen": "Match rouvert",
         "match_editor_add": "Éditeur ajouté par un admin",
+        "match_editor_remove": "Éditeur retiré",
+        "match_restore_pin": "Match lu avec le PIN du match",
         "match_release_game": "Match libéré",
         "match_game_taken_over": "Match repris par le club à domicile",
         "match_scorer_device": "Appareil du marqueur changé",

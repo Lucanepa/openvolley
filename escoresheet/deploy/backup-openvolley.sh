@@ -8,6 +8,9 @@
 # Nightly with --with-files (openvolley-backup-files.timer), additionally:
 #   scoresheets-<UTC>.tar.gpg  every file under storage/scoresheets
 #   snapshots-<UTC>.tar.gpg    storage/backup files changed in the last ~26 h
+#   secrets-<UTC>.env.gpg      OV_PIN_SECRET and OV_MATCH_TOKEN_SECRET from
+#                              OV_ENV_FILE: a dump's hashed PINs can be checked
+#                              only with the secret it was written with
 #
 # Safety:
 #   - refuses to run when the pg filesystem sentinel is missing (unmounted fs)
@@ -53,6 +56,7 @@ OV_MIN_FREE_MB=${OV_MIN_FREE_MB:-10240}
 OV_BACKUP_MAX_MB=${OV_BACKUP_MAX_MB:-20480}
 OV_COUNT_DROP_PCT=${OV_COUNT_DROP_PCT:-10}
 OV_LOCK_FILE=${OV_LOCK_FILE:-/run/lock/openvolley-backup.lock}
+OV_ENV_FILE=${OV_ENV_FILE:-/opt/openvolley/.env}
 
 WITH_FILES=0
 case "${1:-}" in
@@ -195,7 +199,16 @@ if (( WITH_FILES )); then
   else
     log "no backup/ yet, skipped"
   fi
-  find "$OUT" -maxdepth 1 -type f \( -name 'scoresheets-*.tar.gpg' -o -name 'snapshots-*.tar.gpg' \) \
+  # the secrets the database's PIN hashes and match tokens need (encrypted like the dumps)
+  if [[ -r "$OV_ENV_FILE" ]] && grep -q '^OV_PIN_SECRET=.' "$OV_ENV_FILE"; then
+    begin_out "$OUT/secrets-${TS}.env.gpg"
+    grep -E '^(OV_PIN_SECRET|OV_MATCH_TOKEN_SECRET)=' "$OV_ENV_FILE" | "${GPG[@]}" -o "$PART" || fail "secrets"
+    end_out "$OUT/secrets-${TS}.env.gpg"
+    log "secrets ok"
+  else
+    log "no OV_PIN_SECRET in ${OV_ENV_FILE}, secrets skipped"
+  fi
+  find "$OUT" -maxdepth 1 -type f \( -name 'scoresheets-*.tar.gpg' -o -name 'snapshots-*.tar.gpg' -o -name 'secrets-*.env.gpg' \) \
     -mtime "+${OV_FILES_KEEP_DAYS}" -delete
 fi
 
