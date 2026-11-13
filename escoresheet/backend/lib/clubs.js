@@ -37,7 +37,7 @@
  *     namesOf(client, clubIds)            Map clubId -> name (the audit list, GET /api/admin/audit)
  *     ruleOn(client)                      is the rule on?
  *     verdict({ userId, access, gameN, sportType })  { ok } or { ok: false, code, home_team }
- *     todayGames({ userId })              today's home games of the account's clubs (GET /api/games/today)
+ *     todayGames({ userId, refereeDob })  today's home games of the account's clubs (GET /api/games/today)
  *
  * Every answer is the { status, body } shape of lib/accounts.js. A database
  * without db/018 reads as "no clubs, rule off" (deploy order), never a 503.
@@ -73,6 +73,9 @@ const SCHEDULE_FIELDS = Object.freeze([
   'referee_1_first_name', 'referee_1_last_name', 'referee_1_dob', 'referee_2_first_name', 'referee_2_last_name', 'referee_2_dob',
   'linesman_1', 'linesman_2', 'group_display'
 ])
+// Null unless the account fills the sheet's officials (todayGames refereeDob;
+// the same rule as /api/db, server.js REFEREE_DOB_SPORTS)
+const REFEREE_DOB_FIELDS = Object.freeze(['referee_1_dob', 'referee_2_dob'])
 const zurichDayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Zurich', year: 'numeric', month: '2-digit', day: '2-digit' })
 /** Europe/Zurich calendar day of `d` as YYYY-MM-DD. */
 export const zurichDay = (d = new Date()) => zurichDayFmt.format(d)
@@ -294,9 +297,10 @@ export function createClubs ({ pool, audit, access = null, createInvite = null, 
    * one of the account's clubs (owner, 2026-10-29: the club scores its home
    * games), each with the schedule fields the app fills the match from and
    * whether a match claims it already (`claim`: { mine, closed } or null).
-   * No club: no games. [] without db/018.
+   * The referees' dates of birth only with `refereeDob` (the account can
+   * score indoor), else null. No club: no games. [] without db/018.
    */
-  async function todayGames ({ userId, now = new Date() } = {}) {
+  async function todayGames ({ userId, refereeDob = false, now = new Date() } = {}) {
     if (!isUuid(userId)) return fail(401, 'invalid_token', 'Not signed in')
     return guarded('today-games', async () => {
       const day = zurichDay(now)
@@ -309,7 +313,7 @@ export function createClubs ({ pool, audit, access = null, createInvite = null, 
           WHERE g.datetime >= $1 AND g.datetime < $2 AND lower(btrim(g.team_home)) = ANY($3::text[])
           ORDER BY g.datetime, g.game_number
           LIMIT 200`, [day, nextDay(day), [...teams.keys()]])
-      const games = rows.map((r) => Object.fromEntries(SCHEDULE_FIELDS.map((k) => [k, r.g[k] ?? null])))
+      const games = rows.map((r) => Object.fromEntries(SCHEDULE_FIELDS.map((k) => [k, !refereeDob && REFEREE_DOB_FIELDS.includes(k) ? null : (r.g[k] ?? null)])))
       const numbers = [...new Set(games.map((g) => Number(g.game_number)).filter((n) => Number.isInteger(n) && n > 0))]
       const claims = new Map()
       if (numbers.length) {
