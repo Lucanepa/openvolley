@@ -151,12 +151,16 @@ const DB_READ_RATE_LIMIT_MAX = 600   // /api/db reads per IP and minute
 const DB_WRITE_RATE_LIMIT_MAX = 600  // /api/db writes per user id and minute
 const DB_WRITE_IP_RATE_LIMIT_MAX = 1200 // /api/db writes per IP, checked before the token lookup
 // /api/db reads answered without a checked session (no token, or a read that
-// needs none, so it was not looked up). They share the database pool with
-// sign-in and every scorer's writes (5 connections by default), and ten such
-// reads with count:true or an unindexed order held all of it for the 10 s
-// statement timeout. Each counts at most ANON_DB_COUNT_CAP rows, ends after
-// ANON_DB_STATEMENT_TIMEOUT_MS, at most ANON_DB_CONCURRENCY run at once (two
-// connections stay free), and one of the big child tables (events, sets)
+// needs none, so it was not looked up), and those of an account without any
+// role (anyone may sign up for one: a session alone proves nothing). They
+// share the database pool with sign-in and every scorer's writes (5
+// connections by default), and ten such reads with count:true or an
+// unindexed order held all of it for the 10 s statement timeout. Each counts
+// at most ANON_DB_COUNT_CAP rows, ends after ANON_DB_STATEMENT_TIMEOUT_MS, at
+// most ANON_DB_CONCURRENCY run at once (two connections stay free) with at
+// most ANON_DB_QUEUE waiting, each at most ANON_DB_QUEUE_WAIT_MS (then a
+// retryable 503, well within the apps' 20 s request timeout; one whose caller
+// left meanwhile is not run), and one of the big child tables (events, sets)
 // without a filter on one match or row returns at most ANON_DB_SCAN_ROWS
 // rows. The apps' anonymous reads fit in these: the livescore and picker
 // lists, the archive (500 rows), the referee and schedule directories (pages
@@ -167,7 +171,9 @@ const ANON_DB_SCAN_ROWS = 100
 const ANON_DB_SCAN_TABLES = new Set(['events', 'sets'])
 const ANON_DB_KEY_COLUMNS = new Set(['id', 'external_id', 'match_id'])
 const ANON_DB_CONCURRENCY = Math.max(1, (Number(process.env.PG_POOL_MAX) > 0 ? Math.floor(Number(process.env.PG_POOL_MAX)) : 5) - 2)
-const anonDbGate = createConcurrencyGate({ maxConcurrent: ANON_DB_CONCURRENCY, maxQueue: 200 })
+const ANON_DB_QUEUE = 40
+const ANON_DB_QUEUE_WAIT_MS = 5000
+const anonDbGate = createConcurrencyGate({ maxConcurrent: ANON_DB_CONCURRENCY, maxQueue: ANON_DB_QUEUE, maxWaitMs: ANON_DB_QUEUE_WAIT_MS })
 const STORAGE_IP_RATE_LIMIT_MAX = 600 // /api/storage/* per IP (per-user write quota lives in lib/storage.js)
 const PIN_RATE_LIMIT_MAX = 20        // validate-connection-pin per IP (/64) + PIN type
 const PIN_IP_RATE_LIMIT_MAX = 60     // validate-connection-pin per IP (/64), coarse total
@@ -482,6 +488,21 @@ async function readsRefereeDob(layer, userId, table) {
   if (a.isAdmin) return true
   // the rule of GET /api/games/today's dates of birth too (lib/manageApi.js)
   return REFEREE_DOB_SPORTS[table].some((sport) => accessForSport(a, sport).canScore === true)
+}
+
+/**
+ * Does this account's /api/db read get the limits of an anonymous one
+ * (anonReadOptions, anonDbGate)? An account without any role: anyone may
+ * sign up for one. When the roles cannot be read, yes: the limits only bound
+ * the read.
+ */
+async function readsLikeAnonymous(layer, userId) {
+  try {
+    return (await layer.access.get(userId)).roles.length === 0
+  } catch (err) {
+    console.warn('[DB] access check failed (read limited like an anonymous one):', err?.message)
+    return true
+  }
 }
 
 /**
@@ -1273,10 +1294,10 @@ setInterval(() => {
 }, 5 * 60 * 1000)
 
 /**
- * The pgQuery options of an /api/db read without a checked session (see
- * ANON_DB_COUNT_CAP): a bounded count, a short statement timeout, and on
- * events / sets without an eq or in filter on id, external_id or match_id
- * the small row cap.
+ * The pgQuery options of an /api/db read without a checked session or by an
+ * account without a role (see ANON_DB_COUNT_CAP): a bounded count, a short
+ * statement timeout, and on events / sets without an eq or in filter on id,
+ * external_id or match_id the small row cap.
  */
 function anonReadOptions(table, params) {
   const keyed = Array.isArray(params?.filters) && params.filters.some((f) =>
@@ -1629,6 +1650,24 @@ const wsRateLimitMap = new Map()
 // ... and bytes: the frame budget of lib/relayLimits.js (large frames of a
 // socket without a proved claim, bytes per socket and address)
 const frameBudget = createFrameBudget({ windowMs: WS_RATE_LIMIT_WINDOW_MS })
+
+/**
+ * What a socket owns, for the frame budget (createFrameBudget): 'none' (no
+ * room), 'relay' (on the cloud, only rooms whose game PIN no database row
+ * proved: anyone may sync a made-up room id and own it) or 'proved' (a room
+ * the database proved, relayOfficial; any room of a venue relay, which has no
+ * database and no internet callers).
+ */
+function frameProofOf(clientInfo) {
+  if (clientInfo.ownedMatches.size === 0) return 'none'
+  if (!IS_CLOUD) return 'proved'
+  if (DB_MODE) {
+    for (const matchId of clientInfo.ownedMatches) {
+      if (activeMatches.get(matchId)?.relayOfficial === true) return 'proved'
+    }
+  }
+  return 'relay'
+}
 
 function isWsRateLimited(clientId) {
   const now = Date.now()
@@ -2109,16 +2148,16 @@ function handleHttpRequest(req, res) {
     return
   }
 
-  // Server status
+  // Server status. The cloud leaves out how many sockets, matches and rooms
+  // it holds (as its landing page does; the internal /health has them): the
+  // apps read status, mode and wsPort.
   if (url.pathname === '/api/server/status') {
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({
       status: 'online',
       mode: IS_CLOUD ? 'cloud' : 'local',
       wsPort: PORT,
-      connections: connections.size,
-      matches: activeMatches.size,
-      rooms: rooms.size,
+      ...(IS_CLOUD ? {} : { connections: connections.size, matches: activeMatches.size, rooms: rooms.size }),
       uptime: process.uptime()
     }))
     return
@@ -2484,7 +2523,8 @@ function handleHttpRequest(req, res) {
 
     const body = {
       access: detail ? 'detail' : 'counts',
-      totalClients: connections.size,
+      // every socket of the server: the cloud does not say (/api/server/status)
+      totalClients: IS_CLOUD ? null : connections.size,
       dashboardClients: watchers.length,
       referees: refereesCount,
       benches: benchCount,
@@ -3521,8 +3561,9 @@ Generated by eScoresheet
           }
         }
 
-        // A read without a checked session: anonReadOptions, and a slot of anonDbGate
-        const anonymousRead = !isWrite && !authUser && !sessionReader
+        // A read without a checked session, or by an account without a role:
+        // anonReadOptions, and a slot of anonDbGate
+        const anonymousRead = !isWrite && !authUser && (!sessionReader || await readsLikeAnonymous(layer, sessionReader.id))
         const runOpts = {
           proto: req.headers['x-ov-proto'],
           scope: ownerScoped ? { column: 'user_id', value: authUser.id } : undefined,
@@ -3537,13 +3578,20 @@ Generated by eScoresheet
         const pinWrites = table === 'matches' && isWrite ? await watchPinWrites(layer, action, p) : null
         let r
         if (anonymousRead) {
+          // A caller that gives up while queued: its read is not run
+          let gone = false
+          const onGone = () => { if (!res.writableEnded) gone = true }
+          res.on('close', onGone)
           try {
-            r = await anonDbGate.run(() => layer.db.runQuery({ table, action, params: p }, runOpts))
+            r = await anonDbGate.run(() => layer.db.runQuery({ table, action, params: p }, runOpts), { abandoned: () => gone })
           } catch (err) {
+            if (err?.code === 'GATE_ABANDONED') return
             if (err?.code !== 'AUTH_BUSY') throw err
             logRejected(503, 'OV_DB_BUSY')
             sendJson(res, 503, { data: null, error: { message: 'Server busy, please retry', code: 'OV_DB_BUSY', retryable: true } }, { 'Retry-After': '2' })
             return
+          } finally {
+            res.off('close', onGone)
           }
         } else {
           r = await layer.db.runQuery({ table, action, params: p }, runOpts)
@@ -4404,8 +4452,10 @@ wss.on('connection', (ws, req) => {
       return
     }
     // The frame's bytes, before anything parses it: a socket that owns no
-    // room sends only a few large frames (its claim), see createFrameBudget
-    const frame = frameBudget.check(clientInfo.frames, relayAddressOf(clientInfo), data.length, clientInfo.ownedMatches.size > 0)
+    // room sends only a few large frames (its claim), one that owns only
+    // rooms no database proved a budget per socket and address, see
+    // createFrameBudget and frameProofOf
+    const frame = frameBudget.check(clientInfo.frames, relayAddressOf(clientInfo), data.length, frameProofOf(clientInfo))
     if (frame !== 'ok') {
       transportRefusals.frames++
       relaySummary.count('refused (frame budget)')

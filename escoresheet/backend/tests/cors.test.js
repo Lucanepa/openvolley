@@ -56,6 +56,29 @@ describe('CORS origin policy (lib/cors.js)', () => {
       { origin: 'https://backend.openvolley.app', credentials: true })
   })
 
+  it("the server's own pages: only by a name no outside party can point at the server (DNS rebinding)", () => {
+    const own = (policy, origin) => policy.isTrustedOrigin(origin, { host: new URL(origin).host })
+    // addresses, localhost, .local and single-label names: on a venue server and on the cloud
+    for (const o of ['http://192.168.1.20:8080', 'http://203.0.113.5:8080', 'http://[2001:db8::5]:8080', 'http://localhost:8080',
+      'http://scoretable.local:8080', 'http://scoretable:8080']) {
+      assert.equal(own(lan, o), true, o)
+      assert.equal(own(cloud, o), true, o)
+    }
+    // the cloud's own name and the hosts of PUBLIC_ORIGINS (any port or scheme)
+    assert.equal(own(cloud, 'https://backend.openvolley.app'), true)
+    assert.equal(own(cloud, 'http://backend.openvolley.app:8080'), true)
+    assert.equal(own(cloud, 'http://dev.openvolley-app.pages.dev:8080'), true)
+    // any other name may be an outside page re-pointed at the server's address
+    for (const o of ['http://rebind.attacker.example:8080', 'http://scorer-pc.fritz.box:8080', 'http://10.0.0.7.nip.io:8080',
+      'https://backend.openvolley.app.evil.test', 'https://dev-backend.openvolley.app']) {
+      assert.equal(own(lan, o), false, o)
+      assert.equal(own(cloud, o), false, o)
+    }
+    // a dev backend is its own page once PUBLIC_ORIGINS names it
+    const dev = createOriginPolicy({ isCloud: true, publicOrigins: ['https://dev-backend.openvolley.app'] })
+    assert.equal(dev.isTrustedOrigin('http://dev-backend.openvolley.app:8080', { host: 'dev-backend.openvolley.app:8080' }), true)
+  })
+
   it('cloud: both desktop apps\' windows are trusted on their own ports only', () => {
     // OpenVolley eScoresheet on 5173, OpenBeach on 5174 (src-tauri flavour.rs)
     for (const o of ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:5174', 'http://127.0.0.1:5174']) {

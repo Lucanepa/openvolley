@@ -138,6 +138,44 @@ describe('concurrency gate', () => {
     assert.equal(gate.active, 0)
     assert.equal(await job(), 'done')
   })
+
+  it('maxWaitMs: a job queued that long rejects AUTH_BUSY and leaves the queue', async () => {
+    const gate = createConcurrencyGate({ maxConcurrent: 1, maxQueue: 5, maxWaitMs: 30 })
+    let release
+    const slow = gate.run(() => new Promise((resolve) => { release = resolve }))
+    const waited = gate.run(async () => 'never')
+    assert.equal(gate.queued, 1)
+    await assert.rejects(waited, (err) => err.code === 'AUTH_BUSY')
+    assert.equal(gate.queued, 0)
+    release('slow')
+    assert.equal(await slow, 'slow')
+    assert.equal(gate.active, 0)
+    // a queued job that gets its slot in time runs
+    let release2
+    const first = gate.run(() => new Promise((resolve) => { release2 = resolve }))
+    const second = gate.run(async () => 'ran')
+    setTimeout(() => release2('first'), 5)
+    assert.deepEqual(await Promise.all([first, second]), ['first', 'ran'])
+    assert.equal(gate.active, 0)
+  })
+
+  it('a job whose caller left while it waited is not run; the slot goes on', async () => {
+    const gate = createConcurrencyGate({ maxConcurrent: 1, maxQueue: 5 })
+    let release
+    const slow = gate.run(() => new Promise((resolve) => { release = resolve }))
+    let gone = false
+    let ran = false
+    const left = gate.run(async () => { ran = true }, { abandoned: () => gone })
+    const next = gate.run(async () => 'next')
+    gone = true
+    release()
+    await slow
+    await assert.rejects(left, (err) => err.code === 'GATE_ABANDONED')
+    assert.equal(ran, false)
+    assert.equal(await next, 'next')
+    assert.equal(gate.active, 0)
+    assert.equal(gate.queued, 0)
+  })
 })
 
 describe('ipBucketKey', () => {

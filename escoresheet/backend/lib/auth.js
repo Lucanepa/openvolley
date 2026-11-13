@@ -391,30 +391,54 @@ export function createRateLimiter({ max, windowMs, now = Date.now } = {}) {
 /**
  * Limits how many async jobs run at once. run(fn) starts fn when a slot is
  * free, waits in a FIFO queue of at most maxQueue otherwise, and rejects at
- * once with err.code === 'AUTH_BUSY' when the queue is full.
+ * once with err.code === 'AUTH_BUSY' when the queue is full. With maxWaitMs a
+ * job that waited that long in the queue rejects with 'AUTH_BUSY' too. A job
+ * run with { abandoned } whose abandoned() is true once its slot comes (its
+ * caller left while it waited) is not run: it rejects with 'GATE_ABANDONED'
+ * and the slot goes on.
  */
-export function createConcurrencyGate({ maxConcurrent, maxQueue = 0 } = {}) {
+export function createConcurrencyGate({ maxConcurrent, maxQueue = 0, maxWaitMs = 0 } = {}) {
   if (!(maxConcurrent > 0) || !(maxQueue >= 0)) {
     throw new Error('createConcurrencyGate: maxConcurrent (> 0) and maxQueue (>= 0) are required')
   }
   let active = 0
   let peak = 0
-  const waiting = []
+  const waiting = [] // { resolve, timer }
   const release = () => {
     const next = waiting.shift()
-    if (next) next() // the slot passes straight to the next job
-    else active--
+    if (next) {
+      // the slot passes straight to the next job
+      clearTimeout(next.timer)
+      next.resolve()
+    } else active--
   }
+  const busy = () => Object.assign(new Error('auth: bcrypt queue is full'), { code: 'AUTH_BUSY' })
   return {
     maxConcurrent,
     maxQueue,
-    async run(fn) {
+    async run(fn, { abandoned } = {}) {
       if (active < maxConcurrent) {
         active++
       } else if (waiting.length < maxQueue) {
-        await new Promise(resolve => waiting.push(resolve))
+        await new Promise((resolve, reject) => {
+          const entry = { resolve, timer: null }
+          if (maxWaitMs > 0) {
+            entry.timer = setTimeout(() => {
+              const i = waiting.indexOf(entry)
+              if (i === -1) return
+              waiting.splice(i, 1)
+              reject(busy())
+            }, maxWaitMs)
+            entry.timer.unref?.()
+          }
+          waiting.push(entry)
+        })
       } else {
-        throw Object.assign(new Error('auth: bcrypt queue is full'), { code: 'AUTH_BUSY' })
+        throw busy()
+      }
+      if (typeof abandoned === 'function' && abandoned()) {
+        release()
+        throw Object.assign(new Error('gate: the caller left while queued'), { code: 'GATE_ABANDONED' })
       }
       if (active > peak) peak = active
       try {

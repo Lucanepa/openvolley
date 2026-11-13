@@ -387,6 +387,46 @@ describe('createFrameBudget', () => {
     budget.sweep()
     assert.equal(budget.addresses, 0)
   })
+
+  it("owning a room no database proved ('relay') is no proof: large frames per socket, and the address's budget is shared", () => {
+    const { budget, tick } = make({ relayRoomSocketBytes: 1024 * KB, relayRoomAddressBytes: 2048 * KB, unprovedAddressBytes: 512 * KB })
+    // per socket: more large frames than a claim, up to its bytes
+    const one = {}
+    for (let i = 0; i < 8; i++) assert.equal(budget.check(one, 'hall', 128 * KB, 'relay'), 'ok', `frame ${i + 1}`)
+    assert.equal(budget.check(one, 'hall', 128 * KB, 'relay'), 'refused')
+    // small frames are not counted
+    assert.equal(budget.check(one, 'hall', 60 * KB, 'relay'), 'ok')
+    // every socket of the address shares what is left (1 MB), however many rooms they made up
+    let ok = 0
+    for (let s = 0; s < 6; s++) {
+      const sock = {}
+      for (let i = 0; i < 4; i++) if (budget.check(sock, 'hall', 128 * KB, 'relay') === 'ok') ok++
+    }
+    assert.equal(ok, 8, 'the address had 1 MB left')
+    // claims (no room) count within the same budget
+    assert.equal(budget.check({}, 'hall', 128 * KB, 'none'), 'refused')
+    // another address, a proved room and loopback are apart
+    assert.equal(budget.check({}, 'other', 128 * KB, 'relay'), 'ok')
+    assert.equal(budget.check({}, 'hall', 128 * KB, 'proved'), 'ok')
+    assert.equal(budget.check({}, null, 128 * KB, 'relay'), 'ok')
+    tick(61000)
+    assert.equal(budget.check({}, 'hall', 128 * KB, 'relay'), 'ok', 'a new window')
+  })
+
+  it('claims keep their own smaller share of the address budget', () => {
+    const { budget } = make({ unprovedAddressBytes: 512 * KB, relayRoomAddressBytes: 2048 * KB })
+    for (let i = 0; i < 4; i++) assert.equal(budget.check({}, 'hall', 128 * KB, 'none'), 'ok')
+    assert.equal(budget.check({}, 'hall', 128 * KB, 'none'), 'refused', 'claims: 512 KB')
+    // the relay-room owners still have the rest of the address's 2 MB
+    assert.equal(budget.check({}, 'hall', 128 * KB, 'relay'), 'ok')
+  })
+
+  it('true and false still mean a proved room and no room', () => {
+    const { budget } = make({ unprovedAddressBytes: 256 * KB })
+    for (let i = 0; i < 2; i++) assert.equal(budget.check({}, 'a', 128 * KB, false), 'ok')
+    assert.equal(budget.check({}, 'a', 128 * KB, false), 'refused')
+    assert.equal(budget.check({}, 'a', 128 * KB, true), 'ok')
+  })
 })
 
 describe('relayMemoryBudget', () => {

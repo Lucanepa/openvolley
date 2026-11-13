@@ -191,17 +191,24 @@ buckets; `/api/match/upload-roster` shares the validate-connection-pin per-IP
 and failed-guess buckets; a wrong `X-OV-Match-Pin` on `GET /api/match/:id`
 counts as a failed guess too, and a wrong `subscribe-match` PIN 5 per socket /
 20 per IP and minute. `/api/db` reads without a checked session (no token,
-or a read that needs none): `count` counts at most 1000 rows, the select ends
-after 3 s, at most `PG_POOL_MAX` - 2 run at once (200 queued, then 503
-`OV_DB_BUSY`, so two pool connections stay for sign-in and the scorers'
-writes), and `events` / `sets` without an `eq` / `in` filter on `id`,
-`external_id` or `match_id` return at most 100 rows. Role sockets: 200 per IP in cloud mode (50 on
+or a read that needs none) and those of an account without any role (anyone
+may sign up for one): `count` counts at most 1000 rows, the select ends after
+3 s, at most `PG_POOL_MAX` - 2 run at once (40 queued, each at most 5 s, then
+503 `OV_DB_BUSY`; a read whose caller left while queued is not run), so two
+pool connections stay for sign-in and the scorers' writes, and `events` /
+`sets` without an `eq` / `in` filter on `id`, `external_id` or `match_id`
+return at most 100 rows. Role sockets: 200 per IP in cloud mode (50 on
 the LAN), 2000 in total; `?purpose=live` sockets: 500 per IP, 3000 in total.
 Role-socket frames (`lib/relayLimits.js` `createFrameBudget`, before a frame
 is parsed): 120 a minute per socket; a socket that owns no room (no proved
 scoreboard claim) may send 4 frames over 64 KB a minute (its claim), together
-at most 32 MB per IP; any socket at most 128 MB a minute. A refused frame
-answers `too-large`; the third in a minute closes the socket (1009).
+at most 32 MB per IP; on the cloud, a socket whose rooms no database row
+proved (anyone may sync a made-up room id; a signed-out scorer's room is one
+too) sends at most 32 MB of frames over 64 KB a minute, and all such sockets
+of an IP together, claims included, 64 MB; a socket that owns a room whose
+game PIN the database proved, or any room of a venue relay, has no limit of
+its own for large frames; any socket at most 128 MB a minute. A refused
+frame answers `too-large`; the third in a minute closes the socket (1009).
 What the relay keeps of a socket's syncs (`lib/relayLimits.js`, both modes):
 the PINs it compares must be text (at most 64 characters) or numbers (else
 `bad-request`; `matchPin`, which it never compares, only has to be text or a
@@ -270,9 +277,11 @@ allows that header.
 ### Origin rule
 
 One rule for every OpenVolley server and relay (`lib/cors.js`; tests:
-`tests/cors.test.js`, no database needed). The LAN relays (`frontend/server.js`,
-`frontend/electron/lanRelayCore.cjs`, the desktop app's `src-tauri/src/relay.rs`)
-apply the same rule. A browser origin is trusted when it is
+`tests/cors.test.js`, no database needed). The backend applies it; the LAN
+relays (`frontend/server.js`, `frontend/electron/lanRelayCore.cjs`, the desktop
+app's `src-tauri/src/relay.rs`) are to apply the same rule (the LAN relay and
+Tauri relay work of the rollout fixes) and do not yet. A browser origin is
+trusted when it is
 
 1. in the exact list of `ALLOWED_ORIGINS`: the sites (`openvolley.app`,
    `www.openvolley.app`, `app`, `referee`, `bench`, `livescore`, `roster`,
@@ -286,8 +295,14 @@ apply the same rule. A browser origin is trusted when it is
    (the support desk, the download host, a dev build, a forgotten DNS record)
    is a stranger. Cloudflare Pages previews and dev sites are trusted only
    when listed in `PUBLIC_ORIGINS`;
-2. the server's own pages: the origin's host is the request's `Host` (the
-   sign page, a venue server reached by its name);
+2. the server's own pages: the origin's host is the request's `Host`, by a
+   name no outside party can point at the server: an address, `localhost`, a
+   `.local` or single-label name (`scoretable`), or one of the server's
+   public names (`backend.openvolley.app` and the hosts of `PUBLIC_ORIGINS`).
+   The sign page, a venue server reached by its address or its `.local` or
+   bare name. A DNS-rebinding page (an outside name such as
+   `rebind.example` re-pointed at a venue server's address, which the browser
+   sends as the `Host`) is not the server's own page;
 3. on a venue server (not cloud) only: an `http(s)` page of the hall's
    network, the host **parsed as an address**: `localhost`, loopback
    (127/8, `::1`), private (10/8, 172.16/12, 192.168/16, fc00::/7) and
@@ -306,9 +321,13 @@ or `/api/db` budgets from its visitors' browsers; a WebSocket upgrade (role and
 `?purpose=live` sockets) from an untrusted origin is refused with 403. A
 request without an `Origin` (the native apps' sockets, scripts, the board
 bridge) is no browser page and is not refused for it. The counts are in the
-internal `/health` body (`transport`). DNS rebinding: a page whose own name
-points at a venue server is "the server's own page" by rule 2; the hall guide
-keeps the relay on a network of its own (lan-relay unit).
+internal `/health` body (`transport`). DNS rebinding: rule 2 trusts no
+outside name, so a rebinding page's writes and sockets are refused like any
+other foreign page's (a browser sends the page's `Origin` with both). Its GET
+reads are same-origin for the browser and are answered: what any device on
+the hall network reads without a PIN. A venue server reached by a dotted name
+of the hall's router (`scorer-pc.fritz.box`) is no own page either: open it
+by its address or `.local` name.
 
 ## Security model (Phase 7 security release)
 

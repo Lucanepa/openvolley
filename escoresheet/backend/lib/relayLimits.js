@@ -237,6 +237,21 @@ export const MAX_UNPROVED_FRAME_BYTES = 64 * 1024
 export const MAX_UNPROVED_LARGE_FRAMES = 4
 /** Bytes of such large frames per address (IPv6 /64 on the cloud) and window: a hall's scorers claiming at once. */
 export const MAX_UNPROVED_ADDRESS_BYTES = 32 * 1024 * 1024
+/**
+ * Large frames (over MAX_UNPROVED_FRAME_BYTES) per socket and window of a
+ * socket whose rooms only the relay vouches for: on the cloud, rooms whose
+ * game PIN no database row proved (a made-up room id is claimed without any
+ * proof; a scorer signed out, or syncing before its match row is up, has such
+ * a room too). An older scorer syncs its 2-3 MB bundle twice per rally, at
+ * most about 20 MB a minute; a current one under 1.5 MB a sync.
+ */
+export const MAX_RELAY_ROOM_SOCKET_BYTES = 32 * 1024 * 1024
+/**
+ * Large frames per address and window of every socket there without a room
+ * the database proved (claims included, which keep their own
+ * MAX_UNPROVED_ADDRESS_BYTES within it): a hall's scorers behind one address.
+ */
+export const MAX_RELAY_ROOM_ADDRESS_BYTES = 64 * 1024 * 1024
 /** Bytes per socket and window, any socket: several times an older scorer's 3 MB bundle synced on every rally. */
 export const MAX_SOCKET_WINDOW_BYTES = 128 * 1024 * 1024
 /** Frames refused per socket and window after which the socket is closed. */
@@ -246,14 +261,22 @@ export const MAX_REFUSED_FRAMES = 3
  * The byte budget of the role sockets' frames (server.js), checked on the
  * frame's length before it is parsed. Parsing and walking a frame cost the
  * one CPU about 35 ms per MB, and a socket could send 120 frames of up to
- * 10 MB (compressed, a few KB on the wire) a minute without any claim. Now a
- * socket that owns no room sends a few large frames per window
- * (MAX_UNPROVED_LARGE_FRAMES, MAX_UNPROVED_ADDRESS_BYTES per address), every
- * socket at most MAX_SOCKET_WINDOW_BYTES, and one refused MAX_REFUSED_FRAMES
- * times is closed.
+ * 10 MB (compressed, a few KB on the wire) a minute without any claim. Now
+ * large frames (over MAX_UNPROVED_FRAME_BYTES) go by what the socket owns
+ * (`proof`):
+ * - 'none', no room: a few per window (MAX_UNPROVED_LARGE_FRAMES,
+ *   MAX_UNPROVED_ADDRESS_BYTES per address);
+ * - 'relay', only rooms no database proved (the cloud): MAX_RELAY_ROOM_SOCKET_BYTES
+ *   per socket;
+ * - 'proved', a room the database proved, or any room of a venue relay: no
+ *   limit of their own.
+ * The large frames of 'none' and 'relay' sockets share MAX_RELAY_ROOM_ADDRESS_BYTES
+ * per address: owning a made-up room never lifts the address's budget. Every
+ * socket sends at most MAX_SOCKET_WINDOW_BYTES, and one refused
+ * MAX_REFUSED_FRAMES times is closed.
  *
  *   const frames = createFrameBudget()
- *   frames.check(clientInfo.frames, address, data.length, owned) -> 'ok' | 'refused' | 'close'
+ *   frames.check(clientInfo.frames, address, data.length, proof) -> 'ok' | 'refused' | 'close'
  *
  * @param {{ windowMs?: number, now?: () => number, maxAddresses?: number, limits?: object }} [opts]
  */
@@ -262,11 +285,14 @@ export function createFrameBudget({ windowMs = 60 * 1000, now = Date.now, maxAdd
     unprovedFrameBytes: MAX_UNPROVED_FRAME_BYTES,
     unprovedLargeFrames: MAX_UNPROVED_LARGE_FRAMES,
     unprovedAddressBytes: MAX_UNPROVED_ADDRESS_BYTES,
+    relayRoomSocketBytes: MAX_RELAY_ROOM_SOCKET_BYTES,
+    relayRoomAddressBytes: MAX_RELAY_ROOM_ADDRESS_BYTES,
     socketBytes: MAX_SOCKET_WINDOW_BYTES,
     refusedFrames: MAX_REFUSED_FRAMES,
     ...limits
   }
-  // address -> { windowStart, bytes }: the large frames of unproved sockets
+  // address -> { windowStart, bytes, claimBytes }: the large frames of the
+  // sockets without a proved room, and of those the ones that own no room
   const addresses = new Map()
   const fresh = (e, t) => !!e && t - e.windowStart <= windowMs
   return {
@@ -274,27 +300,38 @@ export function createFrameBudget({ windowMs = 60 * 1000, now = Date.now, maxAdd
      * @param {object} socket the socket's own state (an object kept per socket, filled here)
      * @param {string|null} address its address bucket; null: not limited per address (loopback)
      * @param {number} bytes the frame's length
-     * @param {boolean} proved the socket owns a room (a proved scoreboard claim)
+     * @param {'none'|'relay'|'proved'|boolean} proof what the socket owns (see above;
+     *        true: 'proved', false: 'none')
      * @returns {'ok'|'refused'|'close'}
      */
-    check(socket, address, bytes, proved) {
+    check(socket, address, bytes, proof) {
+      const tier = proof === true || proof === 'proved' ? 'proved' : (proof === 'relay' ? 'relay' : 'none')
       const t = now()
-      if (!fresh(socket, t)) Object.assign(socket, { windowStart: t, bytes: 0, large: 0, refused: 0 })
+      if (!fresh(socket, t)) Object.assign(socket, { windowStart: t, bytes: 0, large: 0, largeBytes: 0, refused: 0 })
       let ok = socket.bytes + bytes <= lim.socketBytes
-      if (ok && !proved && bytes > lim.unprovedFrameBytes) {
-        ok = socket.large < lim.unprovedLargeFrames
+      if (ok && tier !== 'proved' && bytes > lim.unprovedFrameBytes) {
+        ok = tier === 'none'
+          ? socket.large < lim.unprovedLargeFrames
+          : socket.largeBytes + bytes <= lim.relayRoomSocketBytes
         if (ok && address != null) {
           let a = addresses.get(address)
           if (!fresh(a, t)) {
             addresses.delete(address)
             while (addresses.size >= maxAddresses) addresses.delete(addresses.keys().next().value)
-            a = { windowStart: t, bytes: 0 }
+            a = { windowStart: t, bytes: 0, claimBytes: 0 }
             addresses.set(address, a)
           }
-          ok = a.bytes + bytes <= lim.unprovedAddressBytes
-          if (ok) a.bytes += bytes
+          ok = a.bytes + bytes <= lim.relayRoomAddressBytes &&
+            (tier !== 'none' || a.claimBytes + bytes <= lim.unprovedAddressBytes)
+          if (ok) {
+            a.bytes += bytes
+            if (tier === 'none') a.claimBytes += bytes
+          }
         }
-        if (ok) socket.large++
+        if (ok) {
+          socket.large++
+          socket.largeBytes += bytes
+        }
       }
       if (!ok) {
         socket.refused++

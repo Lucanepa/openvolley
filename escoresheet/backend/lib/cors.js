@@ -9,8 +9,13 @@
  *   host under openvolley.app that is not listed (the support desk, the
  *   download host, a dev build, a forgotten DNS record) is a stranger;
  * - the native shells and local development (in the list);
- * - the server's own pages: an origin whose host is the request's Host
- *   (the sign page, a venue server reached by its name);
+ * - the server's own pages: an origin whose host is the request's Host, by
+ *   a name no outside party can point at this server (DNS rebinding: a page
+ *   of an outside name re-pointed at a venue server's address sends that
+ *   name as its Host): an address, localhost, a .local or single-label name,
+ *   or one of the server's public names (backend.openvolley.app and the
+ *   hosts of PUBLIC_ORIGINS). The sign page, a venue server reached by its
+ *   address or its .local or bare name;
  * - on a venue server (not cloud) only: http(s) pages of this network, the
  *   host parsed as an address, never matched as a prefix: localhost,
  *   loopback (127/8, ::1), private (10/8, 172.16/12, 192.168/16, fc00::/7)
@@ -22,8 +27,9 @@
  * and the WebSocket upgrade refuse it (server.js). A request without an
  * Origin (native apps' sockets, scripts, the board bridge, curl) is no
  * browser page and is not refused for it. The LAN relays (frontend/server.js,
- * lanRelayCore, the desktop app's relay.rs) apply the same rule (README,
- * "Origin rule").
+ * lanRelayCore, the desktop app's relay.rs) are to apply the same rule
+ * (README, "Origin rule"; the LAN relay and Tauri relay work of the rollout
+ * fixes).
  */
 import { isIP } from 'node:net'
 
@@ -122,6 +128,26 @@ export function isLanHost(hostname) {
   return /^[a-z0-9-]+(\.[a-z0-9-]+)*\.local$/.test(h)
 }
 
+/** The cloud server's own public names: the phone-sign page is served there. */
+export const SERVER_HOSTS = Object.freeze(['backend.openvolley.app'])
+
+/**
+ * May a page whose host is the request's Host count as this server's own
+ * (rule 2)? Only by a name no outside party can point at the server: an
+ * address (no DNS), localhost, a .local (mDNS) or single-label (the hall's
+ * own DNS) name, or one of `ownNames`. A DNS-rebinding page has an outside
+ * name re-pointed at the server's address, and the browser sends that name
+ * as the Host.
+ * @param {string} hostname URL hostname (IPv6 without brackets)
+ * @param {string[]} ownNames
+ */
+function isOwnPageHost(hostname, ownNames) {
+  const h = String(hostname || '').toLowerCase()
+  if (!h) return false
+  if (isIP(h) || isLanHost(h) || !h.includes('.')) return true
+  return ownNames.includes(h)
+}
+
 /**
  * @param {{ isCloud: boolean, publicOrigins?: string[] }} opts
  * @returns {{ isTrustedOrigin: (origin?: string, opts?: { host?: string }) => boolean,
@@ -129,6 +155,9 @@ export function isLanHost(hostname) {
  */
 export function createOriginPolicy({ isCloud, publicOrigins = [] }) {
   const extra = [...publicOrigins]
+  // The names the server's own pages may have besides addresses and LAN
+  // names (rule 2, isOwnPageHost)
+  const ownNames = [...SERVER_HOSTS, ...extra.map((o) => parseOrigin(o)?.hostname).filter(Boolean)]
 
   /**
    * @param {string} [origin] the Origin header
@@ -140,7 +169,7 @@ export function createOriginPolicy({ isCloud, publicOrigins = [] }) {
     if (extra.includes(origin)) return true
     const o = parseOrigin(origin)
     if (!o) return false
-    if (typeof host === 'string' && host && o.host === host.toLowerCase()) return true
+    if (typeof host === 'string' && host && o.host === host.toLowerCase() && isOwnPageHost(o.hostname, ownNames)) return true
     // Pages of the venue network (LAN / standalone server only)
     return !isCloud && isLanHost(o.hostname)
   }

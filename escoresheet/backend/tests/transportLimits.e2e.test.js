@@ -12,15 +12,23 @@
  *     sites and (venue relay) pages of the hall network connect
  *   - the CORS answer never reflects a foreign origin
  *   - the cloud landing page lists no rooms
- *   - a socket that owns no room sends only a few large frames; client text
- *     reaches the log cut short and without control characters
+ *   - a socket that owns no room sends only a few large frames; sockets that
+ *     own only rooms no database proved share their address's budget for
+ *     them; client text reaches the log cut short and without control
+ *     characters
+ *   - a page of an outside name re-pointed at a venue relay (DNS rebinding)
+ *     is no page of the server's own
+ *   - the cloud's /api/server/status names no counts
  *   - DATABASE_URL: approvals, the approval PIN and the test mail count in
- *     counters of their own; anonymous /api/db reads count at most 1000 rows
- *     and scan at most 100 of events; backups need a role and fit a total
+ *     counters of their own; anonymous /api/db reads, and those of an account
+ *     without a role, count at most 1000 rows and scan at most 100 of events;
+ *     a scorer whose room the database proved is not held back by its
+ *     address's frame budget; backups need a role and fit a total
  */
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
+import http from 'node:http'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -28,6 +36,7 @@ import pg from 'pg'
 import WebSocket from 'ws'
 import { SKIP, bootServer, api, openSocket, provisionDatabase, sleep } from './helpers/e2eServer.js'
 import { grantRoles } from './helpers/pgTestDb.js'
+import { MAX_RELAY_ROOM_ADDRESS_BYTES, MAX_RELAY_ROOM_SOCKET_BYTES } from '../lib/relayLimits.js'
 
 const EVIL = 'https://evil.example'
 
@@ -65,6 +74,44 @@ async function received(c, type, n, timeoutMs = 3000) {
   while (Date.now() < end && c.messages.filter((m) => m.type === type).length < n) await sleep(20)
   return c.messages.filter((m) => m.type === type)
 }
+
+/** A ping of exactly 1,000,000 bytes: a large frame (over 64 KB) that is cheap to parse. */
+const LARGE_FRAME = JSON.stringify({ type: 'ping', pad: 'x'.repeat(1000000 - 24) })
+
+/**
+ * Sends `n` copies of `frame` on each socket, waits until every copy was
+ * answered (pong, or too-large) or the socket closed, and counts the answers.
+ */
+async function flood(socks, frame, n) {
+  const from = socks.map((c) => c.messages.length)
+  for (let i = 0; i < n; i++) for (const c of socks) if (c.ws.readyState === WebSocket.OPEN) c.ws.send(frame)
+  const since = (c, i) => c.messages.slice(from[i])
+  const answered = (c, i) => since(c, i).filter((m) => m.type === 'pong' || m.code === 'too-large').length
+  const end = Date.now() + 30000
+  while (Date.now() < end && !socks.every((c, i) => c.ws.readyState === WebSocket.CLOSED || answered(c, i) >= n)) await sleep(20)
+  const count = (pred) => socks.reduce((sum, c, i) => sum + since(c, i).filter(pred).length, 0)
+  return {
+    pongs: count((m) => m.type === 'pong'),
+    refused: count((m) => m.code === 'too-large'),
+    closed: socks.filter((c) => c.ws.readyState === WebSocket.CLOSED).length
+  }
+}
+
+/** A raw upgrade or POST with the Host header given: the status code. */
+function rawRequest(port, { method = 'GET', headers = {}, body } = {}) {
+  return new Promise((resolve) => {
+    const req = http.request({ host: '127.0.0.1', port, path: method === 'GET' ? '/' : '/api/match/validate-pin', method, headers })
+    req.on('upgrade', (res, sock) => { sock.destroy(); resolve(res.statusCode) })
+    req.on('response', (res) => { res.resume(); resolve(res.statusCode) })
+    req.on('error', () => resolve('error'))
+    req.end(body)
+  })
+}
+const upgradeHeaders = (host, origin) => ({
+  Host: host, Origin: origin, Connection: 'Upgrade', Upgrade: 'websocket',
+  // a fresh 16-byte nonce, as every WebSocket client sends
+  'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': randomBytes(16).toString('base64')
+})
 
 const closed = (c, timeoutMs = 3000) => new Promise((resolve) => {
   if (c.ws.readyState === WebSocket.CLOSED) return resolve(c.closeCode ?? null)
@@ -205,6 +252,50 @@ describe('transport limits: cloud relay behind Cloudflare', () => {
     assert.deepEqual(errors, [])
     assert.notEqual(scorer.ws.readyState, WebSocket.CLOSED)
   })
+
+  it("owning a made-up room is no proof: the address's sockets share one budget for large frames", async () => {
+    assert.equal(LARGE_FRAME.length, 1000000)
+    const hall = { 'cf-connecting-ip': '198.51.100.40' }
+    const owners = []
+    for (let s = 0; s < 4; s++) {
+      const c = await open(hall)
+      // a sync of a room no one else knows: the relay lets the socket own it
+      c.send(syncMessage(`made-up-room-${s}`))
+      c.send({ type: 'ping' })
+      await received(c, 'pong', 1)
+      owners.push(c)
+    }
+    const r = await flood(owners, LARGE_FRAME, 20)
+    assert.equal(r.pongs, Math.floor(MAX_RELAY_ROOM_ADDRESS_BYTES / LARGE_FRAME.length), JSON.stringify(r))
+    assert.ok(r.refused >= 1, JSON.stringify(r))
+    // another address has its own budget
+    const other = await open({ 'cf-connecting-ip': '198.51.100.41' })
+    other.send(syncMessage('made-up-room-other'))
+    other.send({ type: 'ping' })
+    await received(other, 'pong', 1)
+    assert.deepEqual(await flood([other], LARGE_FRAME, 5), { pongs: 5, refused: 0, closed: 0 })
+  })
+
+  it('a socket that owns only made-up rooms sends at most its own bytes of large frames, then is closed', async () => {
+    const c = await open({ 'cf-connecting-ip': '198.51.100.42' })
+    c.send(syncMessage('made-up-room-single'))
+    c.send({ type: 'ping' })
+    await received(c, 'pong', 1)
+    const allowed = Math.floor(MAX_RELAY_ROOM_SOCKET_BYTES / LARGE_FRAME.length)
+    const r = await flood([c], LARGE_FRAME, allowed + 3)
+    assert.deepEqual(r, { pongs: allowed, refused: 2, closed: 1 })
+    assert.equal(await closed(c), 1009)
+  })
+
+  it('/api/server/status and /api/server/connections name no counts of the cloud', async () => {
+    const status = await (await fetch(`${srv.base}/api/server/status`)).json()
+    assert.equal(status.status, 'online')
+    assert.equal(status.mode, 'cloud')
+    assert.ok(status.wsPort != null, 'the apps read wsPort')
+    for (const k of ['connections', 'matches', 'rooms']) assert.equal(k in status, false, k)
+    const conns = await (await fetch(`${srv.base}/api/server/connections`)).json()
+    assert.equal(conns.totalClients, null)
+  })
 })
 
 describe('transport limits: venue relay', () => {
@@ -235,6 +326,26 @@ describe('transport limits: venue relay', () => {
     const html = await (await fetch(`${srv.base}/`)).text()
     scorer.ws.terminate()
     assert.ok(html.includes('Fictional Home VC'))
+  })
+
+  it("a page of an outside name re-pointed at the relay (DNS rebinding) is not the server's own; a bare or .local name is", async () => {
+    const rebind = `rebind.attacker.example:${srv.port}`
+    assert.equal(await rawRequest(srv.port, { headers: upgradeHeaders(rebind, `http://${rebind}`) }), 403)
+    const body = JSON.stringify({ pin: '123456', type: 'referee' })
+    const write = await rawRequest(srv.port, {
+      method: 'POST', body,
+      headers: { Host: rebind, Origin: `http://${rebind}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+    })
+    assert.equal(write, 403)
+    for (const host of [`scoretable:${srv.port}`, `scoretable.local:${srv.port}`, `127.0.0.1:${srv.port}`]) {
+      assert.equal(await rawRequest(srv.port, { headers: upgradeHeaders(host, `http://${host}`) }), 101, host)
+    }
+  })
+
+  it('/api/server/status names the counts on a venue relay', async () => {
+    const status = await (await fetch(`${srv.base}/api/server/status`)).json()
+    assert.equal(status.mode, 'local')
+    for (const k of ['connections', 'matches', 'rooms']) assert.equal(typeof status[k], 'number', k)
   })
 })
 
@@ -306,11 +417,52 @@ describe('transport limits: DATABASE_URL mode', { skip: SKIP }, () => {
     assert.equal(scan.json.data.length, 100)
     const one = await anon({ columns: 'id', filters: [{ type: 'eq', column: 'match_id', value: matchId }] })
     assert.equal(one.json.data.length, 1000)
-    // a signed-in reader gets the exact count
+    // an account without a role (anyone may sign up) reads like an anonymous caller
+    const none = await account('noroles', null)
+    const roleless = (params) => api(srv.base, '/api/db', { token: none.token, proto: null, body: { table: 'events', action: 'select', params } })
+    const rolelessCount = await roleless({ columns: '*', count: true, limit: 1 })
+    assert.equal(rolelessCount.status, 200, rolelessCount.text)
+    assert.equal(rolelessCount.json.count, 1000)
+    assert.equal((await roleless({ columns: '*' })).json.data.length, 100)
+    // a signed-in reader with a role gets the exact count
     const u = await account('reader', ['scorer'])
     const exact = await api(srv.base, '/api/db', { token: u.token, proto: null, body: { table: 'events', action: 'select', params: { columns: '*', count: true, limit: 1, filters: [{ type: 'eq', column: 'match_id', value: matchId }] } } })
     assert.equal(exact.status, 200, exact.text)
     assert.equal(exact.json.count, 1200)
+  })
+
+  it("a scorer whose room the database proved is not held back by its address's budget for large frames", async () => {
+    const room = `match_${randomBytes(4).toString('hex')}`
+    await sql.query('SET session_replication_role = replica')
+    try {
+      await sql.query("INSERT INTO public.matches (external_id, status, game_pin) VALUES ($1, 'live', '987654')", [room])
+    } finally {
+      await sql.query('SET session_replication_role = origin')
+    }
+    const hall = { 'cf-connecting-ip': '198.51.100.140' }
+    const sockets = []
+    try {
+      // sockets of the hall's address that own made-up rooms spend its budget
+      for (let s = 0; s < 3; s++) {
+        const c = await openSocket(srv.wsUrl, { headers: hall })
+        sockets.push(c)
+        c.send(syncMessage(`made-up-${room}-${s}`))
+        c.send({ type: 'ping' })
+        await received(c, 'pong', 1)
+      }
+      const spent = await flood(sockets, LARGE_FRAME, 25)
+      assert.equal(spent.pongs, Math.floor(MAX_RELAY_ROOM_ADDRESS_BYTES / LARGE_FRAME.length), JSON.stringify(spent))
+      // the match's scorer proves its game PIN against the database row
+      const scorer = await openSocket(srv.wsUrl, { headers: hall })
+      sockets.push(scorer)
+      scorer.send(syncMessage(room))
+      scorer.send({ type: 'ping' })
+      await received(scorer, 'pong', 1)
+      assert.deepEqual(scorer.messages.filter((m) => m.type === 'error'), [])
+      assert.deepEqual(await flood([scorer], LARGE_FRAME, 10), { pongs: 10, refused: 0, closed: 0 })
+    } finally {
+      for (const c of sockets) c.ws.terminate()
+    }
   })
 
   it('backups need an account with a role, and one account holds at most its total', async () => {
