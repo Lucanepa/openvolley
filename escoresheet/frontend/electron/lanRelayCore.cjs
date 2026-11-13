@@ -165,7 +165,7 @@ const MATCH_SECRET_FIELDS = [
 ]
 
 const WS_MAX_PAYLOAD = 10 * 1024 * 1024 // same cap as the cloud relay
-// permessage-deflate for the relays' WebSocketServer (server.js, dev plugin): a
+// permessage-deflate for the standalone relay's WebSocketServer (server.js): a
 // tablet gets the scorer's whole match on every sync, two per rally, over the
 // hall Wi-Fi or the scorer's own hotspot. A frame above 1 KB goes compressed
 // to a client that offers it (browsers do; a client that does not gets plain
