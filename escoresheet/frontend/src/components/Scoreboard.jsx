@@ -4,7 +4,7 @@ import { useAlert } from '../contexts/AlertContext'
 import { useLiveQuery } from 'dexie-react-hooks'
 import Dexie from 'dexie'
 import { db } from '../db/db'
-import { queueMatchUpdate, toCloudPlayers } from '../db/matchRepository'
+import { queueMatchUpdate, toCloudPlayers, toCloudBench } from '../db/matchRepository'
 import { withActivityContext, currentActivityContext, maxVoidedSeq, rememberSeedKey } from '../db/eventHistory'
 import Modal from './Modal'
 import RostersPanel from './rosters/RostersPanel'
@@ -153,6 +153,21 @@ async function addSyncedSubEvent(row) {
   const id = await db.events.add(row)
   await queueEventSync(db, id)
   return id
+}
+
+// A team's roster to the cloud (players_home / players_away, the whole list:
+// it replaces the stored one), with `columns` in the same update, in the
+// caller's action transaction. What the scoreboard changes on the roster
+// rows (the libero marks of a re-designation and of its undo, an edited
+// roster) stayed on this device otherwise: a device that continued the match
+// had the old marks, no usable libero and offered the re-designation again,
+// and the tablets' cloud fallback showed them too.
+async function queueTeamRoster(matchId, teamKey, columns = {}) {
+  const m = await db.matches.get(matchId)
+  const teamId = teamKey === 'home' ? m?.homeTeamId : teamKey === 'away' ? m?.awayTeamId : null
+  if (teamId == null || !m?.seed_key) return null
+  const roster = await db.players.where('teamId').equals(teamId).sortBy('number')
+  return queueMatchUpdate(db, m.seed_key, { [teamKey === 'home' ? 'players_home' : 'players_away']: toCloudPlayers(roster), ...columns }, { test: m.test === true })
 }
 
 // ── volleyui chrome for the scoreboard (RESTYLE-SPEC P5) ──────────────────────
@@ -4162,9 +4177,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Validate lineup - check if any player in lineup has become a libero
   // If so, invalidate the lineup and reopen lineup modal (only once per issue)
+  // Only before the set's first rally: once it has started the starting
+  // line-up is history. A starter substituted out and re-designated libero
+  // mid-set opened an empty starting line-up dialog (again after every
+  // remount), and its confirmation reset the court with no substitution or
+  // rotation recorded.
   useEffect(() => {
     if (!data?.events || !data?.set || !data?.homePlayers || !data?.awayPlayers) return
     if (lineupModal) return // Don't interfere if modal already open
+    const setIndex = data.set.index
+    if (data.events.some(e => e.setIndex === setIndex && (e.type === 'set_start' || e.type === 'rally_start' || e.type === 'point'))) return
 
     const validateTeamLineup = (teamKey) => {
       const players = teamKey === 'home' ? data.homePlayers : data.awayPlayers
@@ -4706,8 +4728,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return { changes, remarkLines }
   }, [])
 
-  // Save reopened roster: persist changes, log to manualChanges and remarks
-  const handleSaveReopenedRoster = useCallback(async (teamKey, editedPlayers, editedBench, snapshotPlayers, snapshotBench) => {
+  // Save reopened roster: persist changes, log to manualChanges and remarks.
+  // One keyed scorer action (one transaction: the manual changes, players,
+  // bench, remarks, renumbered record and their cloud jobs, or nothing), with
+  // Save disabled while it runs. It was a plain async function: a double tap
+  // repeated every write (the new player added twice, in the cloud roster
+  // too), and a failure part-way left the first writes behind.
+  const saveReopenedRoster = useCallback(async (teamKey, editedPlayers, editedBench, snapshotPlayers, snapshotBench) => {
     const teamLabel = teamKey === 'home'
       ? (data?.homeTeam?.name || 'Home')
       : (data?.awayTeam?.name || 'Away')
@@ -4719,15 +4746,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // below (domain/roster, tested). The editor stays open on an error.
     const { valid, errors, renumbers } = validateReopenedRoster(editedPlayers, snapshotPlayers, referencedPlayerNumbers(data?.events, teamKey))
     if (!valid) {
-      showAlert(errors.join('\n'), 'error')
+      deferUi(() => showAlert(errors.join('\n'), 'error'))
       return
     }
 
     const { changes, remarkLines } = diffRosters(snapshotPlayers, editedPlayers, snapshotBench, editedBench, teamLabel)
 
     if (changes.length === 0) {
-      showAlert(t('scoreboard.reopenRoster.noChanges', 'No changes were made.'), 'info')
-      setReopenRosterTeam(null)
+      deferUi(() => {
+        showAlert(t('scoreboard.reopenRoster.noChanges', 'No changes were made.'), 'info')
+        setReopenRosterTeam(null)
+      })
       return
     }
 
@@ -4824,26 +4853,48 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         t, match: matchNow, homeTeam: data?.homeTeam, awayTeam: data?.awayTeam, matchId, mode: 'live',
         players: { home: teamKey === 'home' ? snapshotPlayers : (data?.homePlayers || []), away: teamKey === 'away' ? snapshotPlayers : (data?.awayPlayers || []) }
       })
-      if (plan.error) showAlert(correctionErrorText(plan, t), 'error')
-      else await applyCorrectionPlan(plan, { matchId, db, mode: 'live' })
-    }
-    // The team's roster to the cloud (names, liberos, captain, numbers): the
-    // tablets' cloud fallback and a hand-over read it from there
-    {
-      const teamId = teamKey === 'home' ? data?.match?.homeTeamId : data?.match?.awayTeamId
-      const m = await db.matches.get(matchId)
-      if (teamId != null && m?.seed_key) {
-        const roster = await db.players.where('teamId').equals(teamId).sortBy('number')
-        await queueMatchUpdate(db, m.seed_key, { [teamKey === 'home' ? 'players_home' : 'players_away']: toCloudPlayers(roster) }, { test: m.test === true })
+      if (plan.error) {
+        // The whole save rolls back (the roster without its renumbered
+        // record was a player without history); the editor stays open
+        showAlert(correctionErrorText(plan, t), 'error')
+        throw markActionErrorReported(new Error(plan.error))
       }
+      await applyCorrectionPlan(plan, { matchId, db, mode: 'live' })
     }
+    // The team's roster and bench officials to the cloud (names, liberos,
+    // captain, numbers, the officials): the tablets' cloud fallback and a
+    // hand-over read them from there. The bench stayed on this device: the
+    // server kept the pre-match bench for good
+    await queueTeamRoster(matchId, teamKey, { [benchField]: toCloudBench(editedBench) })
     notifyScoresheetUpdate('roster_reopen')
     syncToReferee()
     syncLiveStateToSupabase('manual_roster', null, null)
 
-    showAlert(t('scoreboard.reopenRoster.savedSuccess', { count: changes.length }), 'success')
-    setReopenRosterTeam(null)
+    deferUi(() => {
+      showAlert(t('scoreboard.reopenRoster.savedSuccess', { count: changes.length }), 'success')
+      setReopenRosterTeam(null)
+    })
   }, [matchId, data?.homeTeam, data?.awayTeam, data?.set, data?.match?.homeTeamId, data?.match?.awayTeamId, data?.events, data?.homePlayers, data?.awayPlayers, diffRosters, showAlert, t, deferUi, notifyScoresheetUpdate, syncToReferee, syncLiveStateToSupabase])
+
+  // The editor's Save: one save at a time, a tap while one runs is dropped
+  // (and the action's key holds until its data is on screen)
+  const reopenRosterSavingRef = useRef(false)
+  const [reopenRosterSaving, setReopenRosterSaving] = useState(false)
+  const handleSaveReopenedRoster = useCallback(async (teamKey, editedPlayers, editedBench, snapshotPlayers, snapshotBench) => {
+    if (reopenRosterSavingRef.current) return
+    reopenRosterSavingRef.current = true
+    setReopenRosterSaving(true)
+    try {
+      await runAction('reopenRoster', () => saveReopenedRoster(teamKey, editedPlayers, editedBench, snapshotPlayers, snapshotBench), { reason: 'roster_reopen' })
+    } catch (err) {
+      // Nothing was saved and the scorer was told (onActionFailed); the
+      // editor stays open with the edits
+      if (!isReportedActionError(err)) console.error('[reopenRoster] save failed', err)
+    } finally {
+      reopenRosterSavingRef.current = false
+      setReopenRosterSaving(false)
+    }
+  }, [runAction, saveReopenedRoster])
 
   // Log one event: the event, its state snapshot and its cloud sync job are
   // written in one transaction (runAction). Called inside a scorer action it
@@ -7481,18 +7532,32 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
     }
 
+    const rosterTeams = new Set()
     for (const e of removed) {
       if (e.type === 'court_captain_designation' && (e.payload?.team === 'home' || e.payload?.team === 'away')) {
         matchUpdate[e.payload.team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'] = e.payload.previousCourtCaptain ?? null
       }
       if (e.type === 'libero_redesignation' && e.payload?.previousLiberoFlags) {
+        const team = e.payload.team
         const { unableLibero, newLibero } = e.payload.previousLiberoFlags
-        if (unableLibero?.id != null) await db.players.update(unableLibero.id, { libero: unableLibero.libero })
-        if (newLibero?.id != null) await db.players.update(newLibero.id, { libero: newLibero.libero })
+        // The team's rows by shirt number: the ids are those of the device
+        // that re-designated, and a device that continued the match gave its
+        // players new ones (there an id names nobody, or someone else). The
+        // id only when the number finds nobody.
+        const teamId = team === 'home' ? match?.homeTeamId : team === 'away' ? match?.awayTeamId : null
+        const roster = teamId != null ? await db.players.where('teamId').equals(teamId).toArray() : []
+        const rowOf = (number, flag) => roster.find(p => String(p.number) === String(number)) || roster.find(p => p.id === flag.id)
+        const unableRow = unableLibero?.id != null ? rowOf(e.payload.unableLiberoNumber, unableLibero) : null
+        const newRow = newLibero?.id != null ? rowOf(e.payload.newLiberoNumber, newLibero) : null
+        if (unableRow) await db.players.update(unableRow.id, { libero: unableLibero.libero })
+        if (newRow) await db.players.update(newRow.id, { libero: newLibero.libero })
+        if (unableRow || newRow) rosterTeams.add(team)
       }
     }
 
     if (Object.keys(matchUpdate).length > 0) await db.matches.update(matchId, matchUpdate)
+    // The marks put back reach the cloud roster too
+    for (const team of rosterTeams) await queueTeamRoster(matchId, team)
     if (removed.some(e => e.type === 'sanction')) await resyncTeamSanctionFlags()
   }, [matchId, resyncTeamSanctionFlags])
 
@@ -8037,6 +8102,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           [newField]: newTeamPoints + 1,
           finished: false
         })
+        // The cloud set row too (awaited: same transaction). Without it the
+        // server kept the score from before the swap until the next rally, and
+        // a device that continued the match in between scored on from it
+        await queueSetScoreSync(db, { matchId, setIndex: data.set.index })
 
         // Update the point event's team
         await db.events.update(lastEvent.id, {
@@ -8069,6 +8138,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           ts: new Date().toISOString(),
           seq: nextSeq
         })
+        // ...and its cloud copy, before the undo record below is written in
+        // (local ids, this device's bookkeeping: no edit job for it)
+        await queueEventSync(db, decisionEventId)
 
         // Handle rotation changes if serve changed
         // If old team was NOT serving (sideout happened), we need to undo their rotation
@@ -12841,6 +12913,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if (newLiberoPlayer?.id) {
         await db.players.update(newLiberoPlayer.id, { libero: 'redesignated' })
       }
+      // The new marks to the cloud roster (the event alone left them on this device)
+      await queueTeamRoster(matchId, team)
     }
 
     {
@@ -14547,6 +14621,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             players={reopenRosterTeam === 'home' ? (data?.homePlayers || []) : (data?.awayPlayers || [])}
             bench={reopenRosterTeam === 'home' ? (data?.match?.bench_home || []) : (data?.match?.bench_away || [])}
             onSave={handleSaveReopenedRoster}
+            saving={reopenRosterSaving}
             onClose={() => setReopenRosterTeam(null)}
             t={t}
             benchRoles={ROSTER_BENCH_ROLES}
