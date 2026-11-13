@@ -38,6 +38,7 @@ vi.mock('../../../lib/apiClient', async (importOriginal) => {
 
 import LoginModal from '../LoginModal'
 import PasskeyOfferHost from '../PasskeyOfferHost'
+import PasskeySection from '../PasskeySection'
 import { clearPasskeyOffer } from '../passkeyOffer'
 import { passkeyErrorText } from '../passkeyErrors'
 import { passkeysPossible } from '../../../lib/passkeys'
@@ -59,6 +60,7 @@ describe('sign-in dialog with passkeys', () => {
     api.listPasskeys.mockResolvedValue({ data: { passkeys: [] }, error: null })
     passkeysLib.markPasskeyHere.mockClear?.()
     clearPasskeyOffer()
+    localStorage.removeItem('ov_shared_device')
     auth.value = {
       signIn: vi.fn().mockResolvedValue({ data: { user: { id: 'u1' } }, error: null }),
       signInWithPasskey: vi.fn().mockResolvedValue({ data: { user: { id: 'u1' } }, error: null }),
@@ -151,6 +153,43 @@ describe('sign-in dialog with passkeys', () => {
     signInWithPassword()
     await waitFor(() => expect(onClose).toHaveBeenCalled())
     expect(screen.queryByTestId('passkey-offer')).toBeNull()
+  })
+
+  // fe-auth-client-6: a passkey on a shared club laptop lets anyone who can
+  // unlock the laptop sign in as that person
+  it('the offer and the profile\'s passkey section say: only on your own device', async () => {
+    render(<><LoginModal open onClose={() => {}} onSwitchToSignUp={() => {}} /><PasskeyOfferHost /></>)
+    signInWithPassword()
+    expect(await screen.findByTestId('passkey-offer')).toHaveTextContent('passkeys.ownDeviceOnly')
+    clearPasskeyOffer()
+    auth.value = { ...auth.value, user: { id: 'u1' } }
+    render(<PasskeySection />)
+    expect(await screen.findByTestId('passkey-section')).toHaveTextContent('passkeys.ownDeviceOnly')
+  })
+
+  it('"Shared device" at sign-in: no offer, and this browser keeps the choice', async () => {
+    const onClose = vi.fn()
+    const first = render(<><LoginModal open onClose={onClose} onSwitchToSignUp={() => {}} /><PasskeyOfferHost /></>)
+    fireEvent.click(screen.getByLabelText(/passkeys\.sharedDevice/))
+    signInWithPassword()
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+    expect(screen.queryByTestId('passkey-offer')).toBeNull()
+    expect(api.listPasskeys).not.toHaveBeenCalled()
+    first.unmount()
+
+    // the next sign-in in this browser: still a shared device
+    const second = render(<><LoginModal open onClose={() => {}} onSwitchToSignUp={() => {}} /><PasskeyOfferHost /></>)
+    expect(screen.getByLabelText(/passkeys\.sharedDevice/)).toBeChecked()
+    signInWithPassword()
+    await waitFor(() => expect(auth.value.signIn).toHaveBeenCalledTimes(2))
+    expect(screen.queryByTestId('passkey-offer')).toBeNull()
+    second.unmount()
+
+    // untick: the offer comes again
+    render(<><LoginModal open onClose={() => {}} onSwitchToSignUp={() => {}} /><PasskeyOfferHost /></>)
+    fireEvent.click(screen.getByLabelText(/passkeys\.sharedDevice/))
+    signInWithPassword()
+    expect(await screen.findByTestId('passkey-offer')).toBeInTheDocument()
   })
 
   it('no passkey button where passkeys cannot work', () => {

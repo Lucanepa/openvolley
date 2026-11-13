@@ -6,7 +6,7 @@ import { apiAuth } from '../../lib/apiClient'
 import {
   isPasskeyAlreadyHere, isPasskeyCancel, markPasskeyHere, passkeysPossible, runPasskeySetUp
 } from '../../lib/passkeys'
-import { Button, confirmDialog, Field, IconButton, Input, toast } from '../../ui'
+import { Button, confirmDialog, Field, FieldNote, IconButton, Input, toast } from '../../ui'
 import { passkeyErrorText } from './passkeyErrors'
 
 function shortDate(value, lang) {
@@ -99,6 +99,7 @@ export default function PasskeySection({ className }) {
       </div>
       <div className="rounded-xl border border-stone-200/70 bg-stone-50/60 p-3">
         <p className="m-0 text-xs text-stone-600">{t('passkeys.sectionHint')}</p>
+        <FieldNote>{t('passkeys.ownDeviceOnly')}</FieldNote>
         {loadError && <p role="alert" className="m-0 mt-2 text-xs text-red-700">{loadError}</p>}
         {entries && entries.length === 0 && <p className="m-0 mt-2 text-sm text-stone-500">{t('passkeys.none')}</p>}
         {entries && entries.length > 0 && (
