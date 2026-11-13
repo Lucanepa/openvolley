@@ -47,7 +47,7 @@ import { signPageFile } from './lib/signPage.js'
 // The scoring-device handover's pure helpers (the pg part runs in DATABASE_URL mode only)
 import { SCORER_TABLES, deviceOf, matchRefsOfWrite, scorerMovedBody } from './lib/scorerDevice.js'
 // The support form (POST /api/contact): its body, checks and the one mail to CONTACT_EMAIL
-import { BUSY_BODY, contactMailerFromEnv, createContactSlots, handleContact, MAX_CONTACT_BODY_BYTES } from './lib/contact.js'
+import { BUSY_BODY, contactMailerFromEnv, createContactSlots, handleContact, LIVE_MATCH_SQL, MAX_CONTACT_BODY_BYTES } from './lib/contact.js'
 // What the relay keeps of an anonymous socket's bundles and live states
 import { approxHeapBytes, createFrameBudget, frameTooLarge, relayBundleProblem, relayEvents, relayMemoryBudget, MAX_RELAY_BUNDLE_BYTES, MAX_LIVE_STATE_BYTES, RELAY_ANON_SHARE } from './lib/relayLimits.js'
 // A team's uploaded roster: the app's rules, the signatures it may fill in, its end at the coin toss
@@ -1337,9 +1337,7 @@ async function contactSender(req) {
     let liveMatch = false
     try {
       const { rows } = await layer.db.pool.query(
-        `SELECT 1 FROM public.match_scorer_devices d JOIN public.matches m ON m.id = d.match_id
-          WHERE d.claimed_by = $1 AND d.claimed_at > now() - interval '12 hours'
-            AND coalesce(m.status, '') NOT IN ('final', 'ended', 'completed', 'finished') LIMIT 1`, [user.id])
+        LIVE_MATCH_SQL, [user.id])
       liveMatch = rows.length > 0
     } catch { /* no db/019: no live match known */ }
     return { signedIn: true, liveMatch }

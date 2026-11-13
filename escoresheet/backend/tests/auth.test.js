@@ -683,7 +683,7 @@ describe('auth against Postgres', { skip: PG_TEST_URL ? false : 'PG_TEST_URL not
       assert.equal((await signIn(auth, 'notlocked@example.ch', 'pw12345678')).status, 200)
     })
 
-    it('wrong passwords from many sources do not lock the owner out; past the account-wide ceiling only a source that signed in before gets in', async () => {
+    it('wrong passwords from many sources do not lock the owner out; past the account-wide ceiling a source that signed in before gets in', async () => {
       await insertUser('official@example.ch', 'right-password')
       const auth = makeAuth({ accountLockout: { maxFailures: 30, windowMs: 60_000, lockMs: 60_000 } })
       const home = nextIp()
@@ -691,8 +691,22 @@ describe('auth against Postgres', { skip: PG_TEST_URL ? false : 'PG_TEST_URL not
       for (let i = 0; i < 10; i++) assert.equal((await signIn(auth, 'official@example.ch', `wrong-${i}`, `192.0.2.${i}`)).status, 400)
       assert.equal((await signIn(auth, 'official@example.ch', 'right-password', nextIp())).status, 200, 'ten strangers lock nobody out')
       for (let i = 0; i < 25; i++) await signIn(auth, 'official@example.ch', `wrong-${i}`, `198.51.100.${i}`)
-      assert.equal((await signIn(auth, 'official@example.ch', 'right-password', nextIp())).body.error.code, 'account_locked')
+      const fresh = nextIp()
+      for (let i = 0; i < 3; i++) await signIn(auth, 'official@example.ch', `guess-${i}`, fresh)
+      assert.equal((await signIn(auth, 'official@example.ch', 'right-password', fresh)).body.error.code, 'account_locked', 'a new source past the ceiling gets only a few tries')
       assert.equal((await signIn(auth, 'official@example.ch', 'right-password', home)).status, 200, 'a source that signed in before passes the ceiling')
+    })
+
+    it('past the account-wide ceiling a new source still gets a few tries, then is locked', async () => {
+      await insertUser('official2@example.ch', 'right-password')
+      const auth = makeAuth({ accountLockout: { maxFailures: 30, windowMs: 60_000, lockMs: 60_000, newSourceTries: 3 } })
+      for (let i = 0; i < 30; i++) await signIn(auth, 'official2@example.ch', `wrong-${i}`, `198.51.100.${i}`)
+      const venue = nextIp()
+      assert.equal((await signIn(auth, 'official2@example.ch', 'typo', venue)).status, 400)
+      assert.equal((await signIn(auth, 'official2@example.ch', 'right-password', venue)).status, 200, 'the owner on a new network gets in')
+      const stranger = nextIp()
+      for (let i = 0; i < 3; i++) assert.equal((await signIn(auth, 'official2@example.ch', `guess-${i}`, stranger)).status, 400)
+      assert.equal((await signIn(auth, 'official2@example.ch', 'right-password', stranger)).body.error.code, 'account_locked')
     })
 
     it('unlocks after the lock period, and a success resets the failure count', async () => {

@@ -74,6 +74,14 @@ import { transportOptions, maskEmail, describeMailError, DEFAULT_FROM_NAME } fro
 import { EMAIL_RE } from './emailAddress.js'
 
 export const DEFAULT_CONTACT_EMAIL = 'support@openvolley.app'
+
+/**
+ * The sender ($1 = user id) holds the scoring device of a match claimed in the
+ * last 12 hours that is not over: approved and final matches do not count.
+ */
+export const LIVE_MATCH_SQL = `SELECT 1 FROM public.match_scorer_devices d JOIN public.matches m ON m.id = d.match_id
+  WHERE d.claimed_by = $1 AND d.claimed_at > now() - interval '12 hours'
+    AND coalesce(m.status, '') NOT IN ('approved', 'final', 'ended', 'completed', 'finished') LIMIT 1`
 export const CONTACT_TYPES = Object.freeze(['support', 'feedback', 'request'])
 export const SUPPORT_TYPES = Object.freeze(['bug', 'help'])
 export const SOURCES = Object.freeze(['app', 'website'])

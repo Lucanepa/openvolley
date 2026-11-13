@@ -261,10 +261,12 @@ const DEFAULTS = Object.freeze({
     passkeyAddedUser: { max: 5, windowMs: 60 * 60 * 1000 }
   },
   // Per account and source: 10 failures lock that source out of that
-  // account. accountLockout is the account-wide ceiling: past it, only a
-  // source that signed in to the account before still gets in.
+  // account. accountLockout is the account-wide ceiling: past it, a source
+  // that signed in to the account before still gets in, and any other source
+  // gets newSourceTries tries per window (so the owner on a new network, or
+  // after a restart, can still type the password).
   lockout: { maxFailures: 10, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000 },
-  accountLockout: { maxFailures: 100, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000 }
+  accountLockout: { maxFailures: 100, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000, newSourceTries: 3 }
 })
 const FAILED_SOURCE_MS = 15 * 60 * 1000
 const KNOWN_SOURCE_MS = 60 * DAY * 1000
@@ -660,6 +662,10 @@ export function createAuth(options = {}) {
   }
   const lockout = typeof cfg.lockout.check === 'function' ? cfg.lockout : createLockout(cfg.lockout)
   const accountLockout = cfg.accountLockout ? createLockout(cfg.accountLockout) : null
+  // Tries a new source still gets while the ceiling is reached (per account+source)
+  const newSourceLockout = cfg.accountLockout
+    ? createLockout({ ...cfg.accountLockout, maxFailures: cfg.accountLockout.newSourceTries ?? 3 })
+    : null
   // Sources (address buckets) whose last sign-in failed, for the global budget
   const failedSources = new Map() // bucket -> time of the last failure
   // email -> Map(bucket -> time of the last success): who gets past the ceiling
@@ -671,6 +677,7 @@ export function createAuth(options = {}) {
     lockout.reset?.(email) // verifyPassword's key
     lockout.resetPrefix?.(`${email}|`)
     accountLockout?.reset(email)
+    newSourceLockout?.resetPrefix(`${email}|`)
     limits.signInEmail?.resetPrefix?.(`${email}|`)
   }
   function rememberSource(email, bucket) {
@@ -1240,11 +1247,14 @@ export function createAuth(options = {}) {
         `Too many failed sign-in attempts. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`)
     }
     const ceiling = accountLockout?.check(email)
-    if (ceiling?.locked && !knownSource(email, source)) return locked(ceiling.retryAfterSec)
+    const pastCeiling = ceiling?.locked && !knownSource(email, source)
+    const newSourceTry = pastCeiling ? newSourceLockout.begin(key) : null
+    if (newSourceTry?.locked) return locked(ceiling.retryAfterSec)
     const attempt = typeof lockout.begin === 'function' ? lockout.begin(key) : lockout.check(key)
-    if (attempt.locked) return locked(attempt.retryAfterSec)
+    if (attempt.locked) { newSourceTry?.release?.(); return locked(attempt.retryAfterSec) }
     const failed = () => {
       lockout.fail(key)
+      if (newSourceTry) newSourceLockout.fail(key)
       accountLockout?.fail(email)
       failedSources.set(source, Date.now())
       return INVALID_CREDENTIALS()
@@ -1268,6 +1278,7 @@ export function createAuth(options = {}) {
       return await finishSignIn(user, cols, session)
     } finally {
       attempt.release?.()
+      newSourceTry?.release?.()
     }
   }
 
