@@ -1478,14 +1478,9 @@ async function signMatchOf(layer, body, userId, access) {
 /** --local: a scoreboard socket at this address bucket owns the room of `matchKey` right now. */
 const roomHeldFrom = (matchKey, ipKey) => ownersOf(matchKey).some((c) => c.ipKey === ipKey)
 
-/**
- * The request comes from this machine itself: loopback or one of its own
- * addresses. Behind a trusted proxy (TRUST_PROXY, getClientIp) the client's
- * address decides, not the proxy's: a proxy on the same machine does not make
- * every caller the relay host.
- */
-function isLocalCaller(req) {
-  const addr = String(getClientIp(req) || '').replace(/^::ffff:/, '')
+/** Loopback or one of this machine's own addresses. */
+function isOwnAddress(value) {
+  const addr = String(value || '').replace(/^::ffff:/, '')
   if (!addr) return false
   if (addr === '::1' || addr.startsWith('127.')) return true
   try {
@@ -1494,6 +1489,18 @@ function isLocalCaller(req) {
     }
   } catch { /* remote */ }
   return false
+}
+
+/**
+ * The request comes from this machine itself: the socket's peer is one of its
+ * own addresses, and so is the client address behind a trusted proxy
+ * (TRUST_PROXY, getClientIp). The forwarded address can only take that away
+ * (a proxy on the same machine does not make every caller the relay host),
+ * never grant it: with TRUST_PROXY and no TRUST_PROXY_FROM any peer's
+ * cf-connecting-ip is believed.
+ */
+function isLocalCaller(req) {
+  return isOwnAddress(req.socket?.remoteAddress) && isOwnAddress(getClientIp(req))
 }
 
 async function handleSignRequest(req, res, endpoint) {
