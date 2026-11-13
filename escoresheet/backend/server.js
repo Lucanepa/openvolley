@@ -12,11 +12,12 @@
  */
 
 import { createServer } from 'http'
+import { monitorEventLoopDelay, PerformanceObserver, constants as perfConstants } from 'perf_hooks'
 import { gzip } from 'zlib'
 import { WebSocketServer } from 'ws'
 import ical from 'node-ical'
 import { randomBytes, timingSafeEqual, createHash } from 'crypto'
-import { existsSync, readFileSync, statSync } from 'fs'
+import { existsSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { readFile } from 'fs/promises'
 import { isIP, BlockList } from 'net'
 import { join, extname } from 'path'
@@ -48,7 +49,7 @@ import { SCORER_TABLES, deviceOf, matchRefsOfWrite, scorerMovedBody } from './li
 // The support form (POST /api/contact): its body, checks and the one mail to CONTACT_EMAIL
 import { BUSY_BODY, contactMailerFromEnv, createContactSlots, handleContact, LIVE_MATCH_SQL, matchMailDateTime, MAX_CONTACT_BODY_BYTES } from './lib/contact.js'
 // What the relay keeps of an anonymous socket's bundles and live states
-import { approxHeapBytes, createFrameBudget, frameTooLarge, relayBundleProblem, relayEvents, relayMemoryBudget, MAX_RELAY_BUNDLE_BYTES, MAX_LIVE_STATE_BYTES, RELAY_ANON_SHARE } from './lib/relayLimits.js'
+import { admissionHeapPressure, approxHeapBytes, createFrameBudget, frameTooLarge, relayBundleProblem, relayEvents, relayMemoryBudget, MAX_RELAY_BUNDLE_BYTES, MAX_LIVE_STATE_BYTES, RELAY_ANON_SHARE } from './lib/relayLimits.js'
 // A team's uploaded roster: the app's rules, the signatures it may fill in, its end at the coin toss
 import { checkUploadedRoster, signaturesAfterUpload, uploadedRosterProblemText, withPendingRostersCleared } from './lib/uploadedRoster.js'
 
@@ -89,6 +90,12 @@ if (TRUST_PROXY_FROM && TRUST_PROXY !== 'cloudflare') {
 if (DB_MODE && !TRUST_PROXY) {
   console.warn('⚠️  [Config] DATABASE_URL is set but TRUST_PROXY is not: every per-IP limit keys on the socket peer. ' +
     'Behind cloudflared/Traefik that is the proxy, so all clients share ONE bucket. Set TRUST_PROXY=cloudflare (and TRUST_PROXY_FROM).')
+} else if (TRUST_PROXY && !TRUST_PROXY_FROM && process.env.IS_CLOUD && DB_MODE) {
+  // The cloud deployment (IS_CLOUD=1 with DATABASE_URL, deploy/compose.yaml) shares its proxy
+  // network with other containers: trusting cf-connecting-ip from every peer
+  // there lets any of them pick its own client address for every limit.
+  console.error('[Config] IS_CLOUD with TRUST_PROXY=cloudflare needs TRUST_PROXY_FROM (the tunnel\'s address, deploy/compose.yaml)')
+  process.exit(1)
 } else if (TRUST_PROXY && !TRUST_PROXY_FROM) {
   console.warn('⚠️  [Config] TRUST_PROXY=cloudflare without TRUST_PROXY_FROM: cf-connecting-ip is trusted from ANY peer. ' +
     'The origin port must be reachable only through the tunnel/proxy.')
@@ -1174,7 +1181,25 @@ if (realtimeHub) {
 
 // --- Capacity limits ---
 const MAX_ROOMS = 500
-const MAX_CONNECTIONS = 2000
+const MAX_CONNECTIONS = Number(process.env.OV_MAX_CONNECTIONS) > 0 ? Math.floor(Number(process.env.OV_MAX_CONNECTIONS)) : 2000
+// Admission: above this share of V8's heap limit a new socket is told "relay
+// busy" (1013, the apps retry) instead of the process running into the heap
+// limit or the container's memory limit and dropping every match it holds.
+const ADMIT_HEAP_PCT = Number(process.env.OV_ADMIT_HEAP_PCT) > 0 ? Math.min(100, Number(process.env.OV_ADMIT_HEAP_PCT)) : 85
+let admissionRefused = 0
+// Heap left after the last major GC (the live data); the boot heap until the
+// first one. admissionHeapPressure counts the lower of this and the heap now.
+let heapAfterMajorGc = getHeapStatistics().used_heap_size
+const gcObserver = new PerformanceObserver(list => {
+  if (list.getEntries().some(e => e.detail?.kind === perfConstants.NODE_PERFORMANCE_GC_MAJOR)) {
+    heapAfterMajorGc = getHeapStatistics().used_heap_size
+  }
+})
+gcObserver.observe({ entryTypes: ['gc'] })
+function heapPressure() {
+  const h = getHeapStatistics()
+  return admissionHeapPressure({ usedNow: h.used_heap_size, usedAfterMajorGc: heapAfterMajorGc, limit: h.heap_size_limit })
+}
 // Role sockets (scoreboard/referee/bench/livescore relay) per IP. A cloud relay
 // sits behind venue NATs (plan §4 Phase 3: 200); the LAN relay keeps 50.
 // `?purpose=live` sockets are counted separately by the realtime hub (500/IP, 3000 total).
@@ -1605,7 +1630,9 @@ function sendJsonText(req, res, status, text) {
 // (OV_UNSCOPED_EXTERNAL_ID, OV_CLIENT_TOO_OLD). Dropped lines are reported per
 // code once a minute. Socket churn (connectivity checks open and close a socket every few
 // seconds) and /api/match/list polls: one summary line a minute.
-// OV_LOG_CONNECTIONS=1 restores the per-socket lines for debugging.
+// Per-message relay lines (room joins and leaves, bundle syncs, broadcasts,
+// match fetches) are counted there too, so a match day fits the log rotation.
+// OV_LOG_CONNECTIONS=1 restores the per-socket and per-message lines for debugging.
 const LOG_EACH_CONNECTION = process.env.OV_LOG_CONNECTIONS === '1'
 const logDbRejection = createLogLimiter({ max: 30, windowMs: 60_000 })
 const relaySummary = createConnectionSummary({ label: '[WS]', intervalMs: 60_000 })
@@ -2133,8 +2160,11 @@ const CLOUD_CONNECT_SRC = [
 // /health/live: process is up (Docker healthcheck). Never touches the database.
 // /health:      monitors. DATABASE_URL mode: db ping, catalog, storage sentinel,
 //               free space (floor), last backup age, socket pools, account-email
-//               counters (mail), the VolleyManager sync (vmSync, informational). 503 when the
-//               db, catalog, floor, sentinel or backup is not ok. Cached for 2 s.
+//               counters (mail), the VolleyManager sync (vmSync, informational),
+//               the schema state, pg pool (waiting), process memory, heap and
+//               event-loop lag, refused frames and sockets. A readiness check:
+//               503 when the db, catalog, floor, sentinel or backup is not ok or
+//               the schema is behind this image or broken. Cached for 2 s.
 //               Full body for internal callers only (isInternalCaller).
 const HEALTH_CACHE_MS = 2000
 const HEALTH_DB_TIMEOUT_MS = 3000
@@ -2172,8 +2202,45 @@ function relayStats() {
     connections: { role: connections.size, live: realtimeHub ? realtimeHub.stats().sockets : 0 },
     activeRooms: rooms.size,
     // what the transport refused since the start (transportRefusals)
-    transport: { ...transportRefusals }
+    transport: { ...transportRefusals },
+    // new sockets told "relay busy" (heap above OV_ADMIT_HEAP_PCT) since the start
+    admission: { refused: admissionRefused, heapPct: ADMIT_HEAP_PCT, maxConnections: MAX_CONNECTIONS }
   }
+}
+
+// Event-loop delay since the last /health read (a stalled loop delays every
+// match on this process); reset on each read so it covers the recent past.
+const loopDelay = monitorEventLoopDelay({ resolution: 20 })
+loopDelay.enable()
+
+/** Memory, event loop and start of this process, for /health and the monitoring. */
+function processStats() {
+  const mem = process.memoryUsage()
+  const heap = getHeapStatistics()
+  const mb = (n) => Math.round(n / 1048576)
+  const ms = (ns) => Math.round(ns / 1e6)
+  const stats = {
+    startedAt: new Date(Date.now() - process.uptime() * 1000).toISOString(),
+    revision: process.env.OV_REVISION || null,
+    rssMB: mb(mem.rss),
+    heapUsedMB: mb(heap.used_heap_size),
+    heapLimitMB: mb(heap.heap_size_limit),
+    heapPct: Math.round(heap.used_heap_size / heap.heap_size_limit * 100),
+    eventLoopLagMs: { p99: ms(loopDelay.percentile(99)), max: ms(loopDelay.max) }
+  }
+  loopDelay.reset()
+  return stats
+}
+
+/** The schema of this image (lib/schemaVersion.js) for /health: ok, behind, problems or unknown. */
+async function schemaHealth() {
+  let st = null
+  try {
+    st = await (await import('./lib/schemaVersion.js')).refreshSchemaStatus()
+  } catch { /* unknown */ }
+  if (!st || st.error || st.record === 'missing' || st.record === 'unreadable') return { state: 'unknown' }
+  const state = st.pending?.length ? 'behind' : (st.changed?.length || st.problems?.length) ? 'problems' : st.ready ? 'ok' : 'unknown'
+  return { state, applied: st.applied ?? null, expected: st.expected ?? null, pending: st.pending?.length ?? 0, problems: (st.problems?.length ?? 0) + (st.changed?.length ?? 0) }
 }
 
 // The VolleyManager schedule sync, once started (the start block at the end)
@@ -2224,6 +2291,10 @@ async function computeCloudHealth() {
     // Write columns the database lacks, dropped with a warning (pgQuery): a
     // web release out before its migration
     if (layer.db.droppedColumns) body.droppedColumns = layer.db.droppedColumns()
+    // pg pool: a waiting count above zero means requests queue for a connection (PG_POOL_MAX)
+    const pool = layer.db.pool
+    if (pool) body.pool = { total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount, max: pool.options?.max ?? null }
+    if (body.db === 'ok') body.schema = await schemaHealth()
     const st = await layer.storage.health()
     body.sentinel = st.sentinel ? 'ok' : 'missing'
     body.storageWritable = !!st.storageWritable
@@ -2231,6 +2302,7 @@ async function computeCloudHealth() {
     body.floor = st.lowSpace === true ? 'low' : (st.lowSpace === false ? 'ok' : 'unknown')
   }
   Object.assign(body, await readLastBackup(), relayStats())
+  body.process = processStats()
   body.backup = backupState(body.lastBackupAgeMin)
   // Account emails (lib/mailer.js): budgets used / dropped this hour, failed
   // sends. Informational: a used-up budget does not make the server unhealthy.
@@ -2240,8 +2312,11 @@ async function computeCloudHealth() {
   if (realtimeHub) body.realtime = realtimeHub.stats()
   // the official schedule's sync: informational, not part of `healthy`
   body.vmSync = layer && body.db === 'ok' ? await vmSyncStatus(layer) : { state: vmSync ? 'unknown' : 'off' }
+  // Readiness: a schema behind this image (a migration not run) or with a
+  // changed migration or a missing guard is not ready either
   const healthy = body.db === 'ok' && body.catalog.ok && body.sentinel === 'ok' && body.floor === 'ok' &&
-    (body.backup === 'ok' || body.backup === 'unchecked')
+    (body.backup === 'ok' || body.backup === 'unchecked') &&
+    body.schema?.state !== 'behind' && body.schema?.state !== 'problems'
   if (!healthy) body.status = 'degraded'
   return { status: healthy ? 200 : 503, body }
 }
@@ -2677,7 +2752,8 @@ function handleHttpRequest(req, res) {
     const matchData = activeMatches.get(matchId)
 
     if (matchData) {
-      console.log(`[API] /api/match/${logValue(matchId)} - Found match`)
+      if (LOG_EACH_CONNECTION) console.log(`[API] /api/match/${logValue(matchId)} - Found match`)
+      else relaySummary.count('match fetches')
       // The bundle (rosters, events) only after the PIN step: a match token
       // from the PIN check, or one of the match's PINs, each its role's view
       // (relayBundleView). Else the summary.
@@ -2705,7 +2781,8 @@ function handleHttpRequest(req, res) {
         awayTeam
       }))
     } else {
-      console.log(`[API] /api/match/${logValue(matchId)} - Match not found (${activeMatches.size} active)`)
+      if (LOG_EACH_CONNECTION) console.log(`[API] /api/match/${logValue(matchId)} - Match not found (${activeMatches.size} active)`)
+      else relaySummary.count('match fetches (not found)')
       res.writeHead(404, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({
         success: false,
@@ -4708,6 +4785,12 @@ wss.on('connection', (ws, req) => {
     ws.close(1013, 'Server connection limit reached')
     return
   }
+  if (heapPressure() * 100 >= ADMIT_HEAP_PCT) {
+    admissionRefused++
+    relaySummary.count('refused (relay busy)')
+    ws.close(1013, 'Relay busy, retry shortly')
+    return
+  }
 
   const clientId = randomBytes(8).toString('hex')
   const ip = getClientIp(req)
@@ -5029,7 +5112,8 @@ function handleJoinMatch(clientInfo, message) {
   }
   enterRoom(clientInfo, matchId)
 
-  console.log(`🎯 ${clientInfo.id} (${validatedRole}) joined match ${logValue(matchId)} (Room size: ${room.clients.size})`)
+  if (LOG_EACH_CONNECTION) console.log(`🎯 ${clientInfo.id} (${validatedRole}) joined match ${logValue(matchId)} (Room size: ${room.clients.size})`)
+  else relaySummary.count('room joins')
 
   // Notify client
   clientInfo.ws.send(JSON.stringify({
@@ -5366,7 +5450,8 @@ function leaveRoom(clientInfo, matchId) {
   const room = rooms.get(matchId)
   if (!room || !room.clients.delete(clientInfo.id)) return
 
-  console.log(`👋 ${clientInfo.id} left match ${logValue(matchId)} (Room size: ${room.clients.size})`)
+  if (LOG_EACH_CONNECTION) console.log(`👋 ${clientInfo.id} left match ${logValue(matchId)} (Room size: ${room.clients.size})`)
+  else relaySummary.count('room leaves')
 
   // Notify other clients
   broadcastToRoom(matchId, {
@@ -5379,7 +5464,8 @@ function leaveRoom(clientInfo, matchId) {
   // Clean up empty room
   if (room.clients.size === 0) {
     holdRoom(matchId)
-    console.log(`🗑️  Empty room deleted: ${logValue(matchId)} (its claim is held for the take-over grace)`)
+    if (LOG_EACH_CONNECTION) console.log(`🗑️  Empty room deleted: ${logValue(matchId)} (its claim is held for the take-over grace)`)
+    else relaySummary.count('empty rooms deleted')
   }
 }
 
@@ -5556,7 +5642,8 @@ function handleMatchUpdate(clientInfo, message) {
     timestamp: new Date().toISOString()
   }, clientInfo.id, true) // Exclude sender to avoid echo
 
-  console.log(`📤 Match update broadcasted to room ${logValue(matchId)}`)
+  if (LOG_EACH_CONNECTION) console.log(`📤 Match update broadcasted to room ${logValue(matchId)}`)
+  else relaySummary.count('match updates broadcast')
 }
 
 // Handle action (timeout, substitution, etc.) — legacy format
@@ -5582,7 +5669,8 @@ function handleAction(clientInfo, message) {
     from: clientInfo.id
   }, clientInfo.id, true) // Exclude sender; access only
 
-  console.log(`⚡ Action broadcasted to room ${logValue(matchId)}: ${logValue(action.type)}`)
+  if (LOG_EACH_CONNECTION) console.log(`⚡ Action broadcasted to room ${logValue(matchId)}: ${logValue(action.type)}`)
+  else relaySummary.count('actions broadcast')
 }
 
 // Handle client disconnect
@@ -6356,7 +6444,8 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
   // The tablets that subscribed before the room existed
   if (created) admitWaiting(matchId)
 
-  console.log(`📤 Match data synced for ${logValue(matchId)} (Game #${logValue(match?.gameN || 'unknown')})`)
+  if (LOG_EACH_CONNECTION) console.log(`📤 Match data synced for ${logValue(matchId)} (Game #${logValue(match?.gameN || 'unknown')})`)
+  else relaySummary.count('match bundles synced')
 }
 
 // Handle match-action from frontend
@@ -6383,7 +6472,8 @@ function handleMatchAction(clientInfo, message) {
     from: clientInfo.id
   }, clientInfo.id, true) // access only: actions carry players and sanctions
 
-  console.log(`⚡ Match action broadcasted to room ${logValue(matchId)}: ${logValue(action)}`)
+  if (LOG_EACH_CONNECTION) console.log(`⚡ Match action broadcasted to room ${logValue(matchId)}: ${logValue(action)}`)
+  else relaySummary.count('match actions broadcast')
 }
 
 // A live state no more than this many bytes bigger than the room's last one is
@@ -6657,7 +6747,8 @@ function broadcastToRoom(matchId, message, excludeClientId = null, accessOnly = 
     }
   })
 
-  console.log(`📡 Broadcasted to ${sent} clients in room ${logValue(matchId)}`)
+  if (LOG_EACH_CONNECTION) console.log(`📡 Broadcasted to ${sent} clients in room ${logValue(matchId)}`)
+  else relaySummary.count('room broadcasts')
 }
 
 // Periodic cleanup of stale connections, and of the held claims of emptied
@@ -6831,6 +6922,10 @@ process.on('SIGTERM', () => shutdown('SIGTERM'))
 process.on('SIGINT', () => shutdown('SIGINT'))
 
 server.listen(PORT, () => {
+  // The image's healthcheck watchdog kills this pid when /health/live stops answering
+  if (process.env.OV_PID_FILE) {
+    try { writeFileSync(process.env.OV_PID_FILE, String(process.pid)) } catch (err) { console.warn('[Server] pid file not written:', err.message) }
+  }
   const ips = getLocalIPs()
   const primaryIP = ips[0]?.address || 'localhost'
   const mode = DB_MODE ? 'CLOUD (DATABASE_URL)' : IS_CLOUD ? 'CLOUD RELAY' : 'LOCAL'

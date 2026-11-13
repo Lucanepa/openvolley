@@ -516,3 +516,17 @@ export function relayMemoryBudget({ heapLimitBytes, maxMb = null }) {
     anonTotal: Math.floor(total * RELAY_ANON_SHARE)
   }
 }
+
+/**
+ * Heap pressure for socket admission, as a share of `limit` (v8
+ * heap_size_limit). used_heap_size counts garbage not collected yet, so a burst
+ * can pass the admission mark just before a major GC with little live data.
+ * Only the lower of the heap now and the heap left after the last major GC
+ * counts: a new socket is refused only while the heap stays high after a GC.
+ * @param {{ usedNow: number, usedAfterMajorGc: number, limit: number }} heap
+ * @returns {number} 0..1
+ */
+export function admissionHeapPressure({ usedNow, usedAfterMajorGc, limit }) {
+  if (!(limit > 0)) return 0
+  return Math.min(usedNow, usedAfterMajorGc) / limit
+}

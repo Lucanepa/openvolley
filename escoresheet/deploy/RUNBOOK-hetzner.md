@@ -1,6 +1,14 @@
 # Runbook: first deploy on hetzner (Option A, co-tenant on `lucanepa-prod`)
 
-> **Since 16.10.2026 production runs on lenovoserver, not on hetzner.** The Hetzner VPS
+> **Since 09.11.2026 production runs on the Infomaniak VPS `ov-vps` (`ssh ov-vps`, user
+> `debian` with sudo).** Every command from "Match-day rules" on is for `ov-vps` (prompt
+> `ov-vps$`); images ship with `build-image.sh --ship ov-vps` from the build machine
+> (`build$`, a clean checkout). lenovoserver's stack in `/opt/openvolley` is a stopped
+> fallback: its `.env` must hold no `TUNNEL_TOKEN` and no `COMPOSE_PROFILES` (ov-tunnel is in
+> the compose profile `tunnel`), so a plain `up -d` there starts no second connector.
+> The history below (16.10-09.11.2026 on lenovoserver) stays for the record.
+>
+> **From 16.10.2026 to 09.11.2026 production ran on lenovoserver, not on hetzner.** The Hetzner VPS
 > (`lucanepa-prod`, `ssh hetzner`) was transferred to another owner's
 > Hetzner account. OpenVolley is the owner's private project and must **never be deployed there
 > again**. The stack (compose project `openvolley`: `ov-postgres`, `ov-backend`, `ov-tunnel`,
@@ -227,7 +235,9 @@ hetzner# docker stats --no-stream $(docker compose ps -q)
 ```
 
 Expected: `/health` 200 with `"db":"ok"`, catalog ok, floor ok, `sentinel` true, `diskFreeMB > 0`;
-`ov-internal` holds only `ov-postgres` + `ov-backend`; `ov-edge` only `ov-backend` + `ov-tunnel`.
+`ov-internal` holds only `ov-postgres` + `ov-backend`; `ov-edge` only `ov-backend` + `ov-tunnel`
+(today's kit also has `ov-pkgs-edge` = `ov-pkgs` + `ov-tunnel` and `ov-helpdesk` = `freescout` +
+`ov-tunnel`; nothing but the tunnel reaches `ov-backend`).
 
 ## 10. External checks, then go live (lenovoserver)
 
@@ -306,12 +316,50 @@ Check that the key really is read-only: from the NAS,
 
 ## 13. Monitoring
 
-- Uptime Kuma (on hetzner): HTTP keyword `"db":"ok"` on `https://backend.openvolley.app/health`, 60 s.
+Today's setup (production on `ov-vps`; the monitor runs on another host, never on `ov-vps`
+itself, so it still alerts when the VPS is down):
+
+- Uptime Kuma (on lenovoserver): HTTP status 200 on `https://backend.openvolley.app/health`,
+  60 s, 2 retries. `/health` is the readiness check: 503 when the db, catalog, storage sentinel,
+  disk floor or backup is not ok, or the schema is behind the image (a migration not run) or
+  broken. Alerts to ntfy.
+- Push monitor from `ov-vps` (root cron, every minute) with the internal body, which the
+  public one leaves out: restarts, OOM kills, memory, event-loop lag, pg pool waiting, refusals:
+
+  ```bash
+  ov-vps$ sudo install -m 700 /dev/stdin /usr/local/bin/ov-health-push <<'EOF'
+  #!/bin/sh
+  # Push to Uptime Kuma: down when /health is not 200, the backend restarted
+  # or was OOM-killed since the last run, or the event loop / pool look stuck.
+  set -u
+  C=$(docker compose --project-directory /opt/openvolley ps -q ov-backend) || exit 0
+  S=/var/lib/openvolley-status/ov-health-push.last
+  R=$(docker inspect -f '{{.RestartCount}} {{.State.OOMKilled}} {{.State.Health.Status}}' "$C")
+  B=$(docker exec "$C" node -e 'fetch("http://127.0.0.1:8080/health").then(async r=>{const b=await r.json();const p=b.process||{};console.log(r.status,p.rssMB,p.heapPct,(p.eventLoopLagMs||{}).max,(b.pool||{}).waiting,(b.admission||{}).refused,(b.transport||{}).frames,(b.schema||{}).state)}).catch(()=>console.log(0))')
+  set -- $R $B; LAST=$(cat "$S" 2>/dev/null || echo "$1"); echo "$1" > "$S"
+  MSG="restarts=$1 oom=$2 health=$3 http=$4 rssMB=${5:-} heap%=${6:-} lagMs=${7:-} poolWaiting=${8:-} busy=${9:-} frames=${10:-} schema=${11:-}"
+  ST=up; { [ "$4" = 200 ] && [ "$1" = "$LAST" ] && [ "$2" = false ] && [ "${7:-0}" -lt 2000 ] && [ "${8:-0}" -lt 5 ]; } || ST=down
+  curl -fsS -m 10 -G "$OV_KUMA_PUSH_URL" --data-urlencode "status=$ST" --data-urlencode "msg=$MSG" >/dev/null
+  EOF
+  ov-vps$ echo '* * * * * root OV_KUMA_PUSH_URL=<push url> /usr/local/bin/ov-health-push' | sudo tee /etc/cron.d/ov-health-push
+  ```
+
+  The Kuma push monitor (heartbeat 120 s) goes down when a push says `down` or none arrives.
+  A restart, an OOM kill (exit 137), event-loop lag above 2 s or a pg pool queue on a match day
+  is a page: read `docker compose logs --since 30m ov-backend` before anything restarts again.
+- The backend restarts itself when it hangs: the image's healthcheck kills the server after
+  `OV_WATCHDOG_FAILURES` (4) failed `/health/live` checks in a row (compose `init: true`), and
+  `restart: unless-stopped` starts it again; the push monitor reports that restart.
 - Push monitors: backup (2 h), NAS pull (26 h), restore test (8 days). Alerts to ntfy.
 - Beszel: alerts at 80% of the `ov-backend` and `ov-postgres` memory limits and at 80% use of
   `/data/openvolley/pg` and `/data/openvolley/storage`.
 - diun: notify-only for `postgres:17-alpine`, `node:22-slim`, `cloudflare/cloudflared`.
-- The synthetic probe on lenovoserver (migration plan §8) points at `backend.openvolley.app`.
+- Logs: json-file 10 x 20 MB per container (compose.yaml); the relay writes one summary line a
+  minute instead of a line per message, so a match day stays in the log. After an incident,
+  copy it off at once: `docker compose logs --since 24h ov-backend > /root/ov-incident-<UTC>.log`.
+- Before the first official Saturday, and after a change of `PG_POOL_MAX`, `OV_*_CPUS`,
+  `OV_NODE_HEAP_MB` or the host: run the peak harness (README.md "Capacity and limits for big events") against `ov-vps` on a
+  weekday and set the `.env` capacity values from its result (env.example, "Capacity").
 
 ---
 
@@ -329,9 +377,12 @@ Backend release (Monday to Friday, before 17:00): build and load the image, then
 the production host does the rest ("Apply a new db migration" below):
 
 ```bash
-lenovo$ git pull && escoresheet/deploy/build-image.sh --ship local            # prints NEW tag
-lenovo$ sudo /opt/openvolley/deploy.sh openvolley-backend:<NEW>
+build$ git pull && escoresheet/deploy/build-image.sh --ship ov-vps           # prints NEW tag
+ov-vps$ sudo /opt/openvolley/deploy.sh openvolley-backend:<NEW>
 ```
+
+The image is built from the committed tree (`git archive HEAD`), never from files lying in the
+checkout; `--allow-dirty` test builds cannot be shipped.
 
 It takes a fresh dump, runs the migrations of the new image, applies its `roles.sql`, checks the
 schema, switches `OV_BACKEND_IMAGE` (previous tag in `DEPLOYED.log`), and checks `/health` and
@@ -343,10 +394,19 @@ Kit changes (`compose.yaml`, `cloudflared/config.yml`, `pkgs/Caddyfile`, scripts
 (never `.env`), then `config -q` and `up -d` (recreates only what changed):
 
 ```bash
-lenovo$ sudo rsync -rlt --chmod=D750,F640 --exclude=.env escoresheet/deploy/ /opt/openvolley/
-lenovo$ sudo sh -c 'chmod 750 /opt/openvolley/*.sh && chmod 644 /opt/openvolley/cloudflared/config.yml /opt/openvolley/pkgs/Caddyfile'
-lenovo$ sudo docker compose --project-directory /opt/openvolley config -q && sudo docker compose --project-directory /opt/openvolley up -d
+build$ rsync -rlt --chmod=D750,F640 --exclude=.env --rsync-path='sudo rsync' escoresheet/deploy/ ov-vps:/opt/openvolley/
+ov-vps$ sudo sh -c 'chmod 750 /opt/openvolley/*.sh && chmod 644 /opt/openvolley/cloudflared/config.yml /opt/openvolley/pkgs/Caddyfile'
+ov-vps$ grep -c '^COMPOSE_PROFILES=tunnel$' /opt/openvolley/.env    # 1 on ov-vps only (ov-tunnel is in profile "tunnel")
+ov-vps$ sudo docker compose --project-directory /opt/openvolley config -q && sudo docker compose --project-directory /opt/openvolley up -d
 ```
+
+Once, for the kit with one network per tunnel origin (`ov-pkgs-edge`, `ov-helpdesk`) and the
+`tunnel` profile: add `COMPOSE_PROFILES=tunnel` to `ov-vps`'s `.env` first (without it `up -d`
+leaves the running tunnel alone but a later recreate would not start it), then move the
+FreeScout stack from `openvolley_ov-edge` to the external network `openvolley_ov-helpdesk`
+(its compose file, service `freescout`), and check that `ov-edge` holds only `ov-backend` and
+`ov-tunnel` (step 9's `docker network inspect` line). On lenovoserver's stopped fallback,
+remove `TUNNEL_TOKEN` (and any `COMPOSE_PROFILES`) from `/opt/openvolley/.env`.
 
 Once, for the kit that gives `ov-edge` a fixed subnet (172.30.250.0/24, the tunnel at
 172.30.250.2, `TRUST_PROXY_FROM` set to it): an existing `ov-edge` keeps its old subnet and `up`
@@ -506,7 +566,7 @@ emails"). Without `SMTP_HOST`/`SMTP_PASS` the backend sends nothing: reset answe
    signed out and a "password was changed" notice arrives. A failed send is in
    `sudo docker compose --project-directory /opt/openvolley logs ov-backend | grep 'reset-password mail failed'` (addresses masked).
 7. **Watch** (any time): the mail counters are in the internal health body,
-   `lenovo$ sudo docker compose --project-directory /opt/openvolley exec -T ov-backend wget -qO- http://127.0.0.1:3000/health` (or the
+   `lenovo$ sudo docker compose --project-directory /opt/openvolley exec -T ov-backend wget -qO- http://127.0.0.1:8080/health` (or the
    status network), under `mail`: `budgets.account` (reset, password changed) and
    `budgets.confirm` (confirmation links), 50 each per hour, with `used`, `dropped` this hour
    and `droppedTotal`; `exhausted` names a budget that is used up; `inboxDropped` counts mails
@@ -517,6 +577,30 @@ emails"). Without `SMTP_HOST`/`SMTP_PASS` the backend sends nothing: reset answe
 To switch the mails off again: empty `SMTP_PASS=` in `/opt/openvolley/.env` (with `sudo`),
 `sudo docker compose --project-directory /opt/openvolley up -d ov-backend`.
 To rotate the password: set it in Migadu, then run the script again (it replaces the lines).
+
+## Edge and mail domain (Cloudflare, DNS)
+
+Target values (owner, Cloudflare dashboard and DNS; nothing in this kit sets them). Check them
+with `escoresheet/deploy/check-edge.sh` (read-only) before go-live and after every change here;
+it exits 0 only when all of them hold.
+
+- SSL/TLS, Edge Certificates: **Always Use HTTPS** on (http:// answers a redirect, also for
+  `backend.` and `get.`); **Minimum TLS Version 1.2** (TLS 1.0/1.1 refused).
+- HSTS: `max-age=31536000; includeSubDomains`, no preload until every subdomain is HTTPS-only
+  (then `preload` and the hstspreload.org submission). The backend (cloud mode) and
+  `ov-pkgs` (pkgs/Caddyfile) send it themselves; Cloudflare's HSTS setting covers the Pages sites.
+- CAA on `openvolley.app`: `0 issue "pki.goog"`, `0 issue "letsencrypt.org"`,
+  `0 issue "ssl.com"`, the same three as `issuewild`, and `0 iodef "mailto:<security contact>"`.
+  Compare with the CAA records Cloudflare adds for its own certificates (Universal SSL): its CAs
+  must stay on the list, or certificate renewal fails.
+- DMARC (`_dmarc.openvolley.app` TXT), keeping `rua`: read the aggregate reports for both
+  senders (Migadu: `noreply@`, account mails; Resend: `escoresheet@`, match mails) until both
+  pass SPF or DKIM aligned, then `p=quarantine; pct=25`, `50`, `100` over a few weeks, then
+  `p=reject; pct=25`, then `100`. Each step only after a week of clean reports.
+
+```bash
+build$ escoresheet/deploy/check-edge.sh            # CAA, DMARC, TLS 1.0/1.1/1.2, http->https, HSTS
+```
 
 ## Rollback
 

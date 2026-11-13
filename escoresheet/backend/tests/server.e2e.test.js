@@ -291,6 +291,17 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
     assert.equal(h.json.backup, 'ok')
     // no VolleyManager account here: the schedule sync is off, and says why (informational, still 200)
     assert.deepEqual(h.json.vmSync, { state: 'off', reason: 'not_configured' })
+    // readiness and the match-day alarms: schema, pg pool, process memory and event loop, refusals
+    // this test database has no migration record (scripts/migrate.mjs): not judged, still ready
+    assert.ok(['ok', 'unknown'].includes(h.json.schema.state), h.json.schema.state)
+    assert.equal(h.json.pool.waiting, 0)
+    assert.equal(typeof h.json.pool.max, 'number')
+    assert.equal(typeof h.json.process.rssMB, 'number')
+    assert.ok(h.json.process.heapUsedMB > 0 && h.json.process.heapLimitMB >= h.json.process.heapUsedMB)
+    assert.equal(typeof h.json.process.eventLoopLagMs.p99, 'number')
+    assert.ok(Date.parse(h.json.process.startedAt) <= Date.now())
+    assert.equal(typeof h.json.transport.frames, 'number')
+    assert.equal(h.json.admission.refused, 0)
     const liveness = await api(srv.base, '/health/live', { method: 'GET', proto: null })
     assert.equal(liveness.status, 200)
     assert.equal(liveness.json.status, 'ok')
@@ -901,6 +912,32 @@ describe('server.js without a database (LAN relay mode)', () => {
       }
     } finally {
       await inside.stop()
+    }
+  })
+
+  it('refuses to start as the cloud deployment (IS_CLOUD, DATABASE_URL, TRUST_PROXY) without TRUST_PROXY_FROM', async () => {
+    const r = spawnSync(process.execPath, ['server.js'], {
+      cwd: BACKEND_DIR,
+      env: { PATH: process.env.PATH, PORT: '0', IS_CLOUD: '1', TRUST_PROXY: 'cloudflare', DATABASE_URL: 'postgres://nobody@127.0.0.1:1/none', OV_PIN_SECRET: 'x'.repeat(40) },
+      encoding: 'utf8',
+      timeout: 10000
+    })
+    assert.equal(r.status, 1, r.stderr)
+    assert.match(r.stderr, /IS_CLOUD with TRUST_PROXY=cloudflare needs TRUST_PROXY_FROM/)
+  })
+
+  it('tells a new socket "relay busy" (1013) above OV_ADMIT_HEAP_PCT instead of admitting it', async () => {
+    const busy = await bootServer({ OV_ADMIT_HEAP_PCT: '0.001' }, ['--local'])
+    try {
+      const ws = new WebSocket(busy.wsUrl)
+      const [code, reason] = await new Promise((ok, fail) => {
+        ws.on('close', (c, r) => ok([c, String(r)]))
+        ws.on('error', fail)
+      })
+      assert.equal(code, 1013)
+      assert.match(reason, /Relay busy/)
+    } finally {
+      await busy.stop()
     }
   })
 
