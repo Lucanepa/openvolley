@@ -222,6 +222,9 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
     const { rows } = await sql.query('SELECT stored_by, sha256 FROM public.match_scoresheets WHERE match_id = $1', [m.id])
     assert.deepEqual(rows, [{ stored_by: users.ivan.id, sha256: createHash('sha256').update(real).digest('hex') }])
 
+    // the game in the imported schedule: the final mail goes to its clubs (lib/finalMail.js)
+    await sql.query('INSERT INTO public.svrz_games (game_number, datetime, team_home, team_away) VALUES ($1, $2, $3, $4)',
+      [String(m.n), m.scheduledAt.slice(0, 19), 'VBC Musterdorf H1', 'VBC Other H1'])
     await closeAgo(m.id, 3, users.ivan.id)
     const mail = await smtp.waitForMail((x) => x.envelope.to.includes('contact@musterdorf.example.ch') && x.text.includes(String(m.n)), 15000)
     const raw = mail.raw.replace(/\r?\n/g, '')

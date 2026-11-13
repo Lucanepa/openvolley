@@ -39,6 +39,9 @@
  * Volume (per process, fixed one-hour windows):
  *   - two budgets, so sign-ups cannot starve password resets: "account"
  *     (reset, password_changed) and "confirm" (sign-up / resend confirmation);
+ *     the final scoresheets ("scoresheet") and the test scoresheets
+ *     ("scoresheet_test") have their own, so test mails cannot starve the
+ *     real ones; budgetsFromEnv reads the operator's sizes (BUDGET_ENV);
  *   - per delivered inbox (inboxKey: plus-tags removed, Gmail dots ignored,
  *     googlemail.com = gmail.com) for reset and confirm mails, so one inbox
  *     cannot be flooded through spelling variants of its address.
@@ -56,9 +59,11 @@
  *                                            kind: reset | confirm | password_changed | approval | approval_pin_locked
  *                                            | scoresheet | scoresheet_test (the final scoresheet, lib/finalMail.js:
  *                                            attachments [{ filename, content: Buffer }], PDFs only)
+ *                                            | scoresheet_no_pdf | scoresheet_reopened (its notices)
  *                                            (vars: the approval notices' values, see T)
  *                                            skipped: 'budget' | 'inbox' | 'disabled'
  *   mailer.stats()                 -> { enabled, budgets, inboxDropped, failed, lastDropAt, ... }
+ *   budgetsFromEnv(env)            -> { budgets, warnings }  the hourly budgets the environment sets (BUDGET_ENV)
  *   mailer.close()
  *   renderMail(kind, lang, { link, app, vars }) -> { subject, text, html }
  *   mailApp(raw) -> 'indoor' | 'beach'   (the allowlist of a request's `app`)
@@ -73,7 +78,7 @@ import nodemailer from 'nodemailer'
 import { legalUrl } from './legalLinks.js'
 
 export const MAIL_LANGS = Object.freeze(['en', 'de', 'fr', 'it'])
-export const MAIL_KINDS = Object.freeze(['reset', 'confirm', 'password_changed', 'passkey_added', 'approval', 'approval_pin_locked', 'scoresheet', 'scoresheet_test', 'signup', 'club_manager_invite'])
+export const MAIL_KINDS = Object.freeze(['reset', 'confirm', 'password_changed', 'passkey_added', 'approval', 'approval_pin_locked', 'scoresheet', 'scoresheet_test', 'scoresheet_no_pdf', 'scoresheet_reopened', 'signup', 'club_manager_invite'])
 export const DEFAULT_MANAGER_URL = 'https://manager.openvolley.app'
 export const DEFAULT_FROM_NAME = 'OpenVolley'
 export const DEFAULT_MANAGER_URL_BEACH = 'https://manager-beach.openvolley.app'
@@ -112,12 +117,32 @@ export function mailBrandOf(kind, app) {
 // and password-changed mails, "confirm" the confirmation links: a burst of
 // sign-ups uses up only the latter (whose holders can resend later).
 // "notify" carries the approval notices of lib/approvals.js (an approval made
-// with an official's PIN, a locked PIN) and the sign-up notices to admins and
-// approvers (lib/signupNotices.js): they cannot starve the account mails.
-export const MAIL_BUDGET_OF = Object.freeze({ reset: 'account', password_changed: 'account', passkey_added: 'account', confirm: 'confirm', approval: 'notify', approval_pin_locked: 'notify', scoresheet: 'scoresheet', scoresheet_test: 'scoresheet', signup: 'notify', club_manager_invite: 'notify' })
+// with an official's PIN, a locked PIN), the sign-up notices to admins and
+// approvers (lib/signupNotices.js) and the final mail's notices (a missing
+// PDF, a reopened match): they cannot starve the account mails.
+export const MAIL_BUDGET_OF = Object.freeze({ reset: 'account', password_changed: 'account', passkey_added: 'account', confirm: 'confirm', approval: 'notify', approval_pin_locked: 'notify', scoresheet: 'scoresheet', scoresheet_test: 'scoresheet_test', scoresheet_no_pdf: 'notify', scoresheet_reopened: 'notify', signup: 'notify', club_manager_invite: 'notify' })
 // scoresheet: a busy match day (a dozen recipients a game) must not starve
-// the account mails, nor be starved by them
-export const DEFAULT_BUDGETS = Object.freeze({ account: 50, confirm: 50, notify: 100, scoresheet: 300 })
+// the account mails, nor be starved by them; scoresheet_test: test mails
+// (any scorer, any time) must not use up the final scoresheets' budget
+export const DEFAULT_BUDGETS = Object.freeze({ account: 50, confirm: 50, notify: 100, scoresheet: 300, scoresheet_test: 50 })
+// The budgets an operator sizes (deploy/env.example), each by its variable:
+// a whole number above 0 per hour; anything else keeps the default, with a
+// warning at startup. A size given to createMailer wins (tests).
+export const BUDGET_ENV = Object.freeze({ scoresheet: 'MAIL_BUDGET_FINAL', scoresheet_test: 'MAIL_BUDGET_TEST' })
+
+/** The hourly budgets the environment sets (BUDGET_ENV): { budgets: { name: n }, warnings: [line] }. */
+export function budgetsFromEnv(env = process.env) {
+  const budgets = {}
+  const warnings = []
+  for (const [name, key] of Object.entries(BUDGET_ENV)) {
+    const raw = String(env?.[key] ?? '').trim()
+    if (!raw) continue
+    if (/^\d{1,7}$/.test(raw) && Number(raw) > 0) budgets[name] = Number(raw)
+    else warnings.push(`${key} is not a whole number above 0 (${raw.slice(0, 20)}): ${DEFAULT_BUDGETS[name]} per hour, the default`)
+  }
+  return { budgets, warnings }
+}
+
 // Reset + confirmation mails to one delivered inbox per hour. A real user
 // needs at most: a confirmation, three resends, one reset. password_changed
 // is not counted (only the inbox's holder can cause it, with a reset link).
@@ -479,66 +504,149 @@ const T = {
     })
   },
   // The final scoresheet (lib/finalMail.js), the PDF attached. vars: teams,
-  // game ('' when none), date, result ('' when unknown), corrected
+  // game ('' when none), date, result ('' when unknown), corrected; pdf:
+  // false when it goes without the PDF (that follows), late: the PDF that
+  // was missing from it
   scoresheet: {
     en: (v) => ({
       subject: `${v.corrected ? 'Corrected scoresheet' : 'Scoresheet'}: ${v.teams}`,
-      before: ['Hello,', `the ${v.corrected ? 'corrected ' : ''}final scoresheet of this match is attached.`,
+      before: ['Hello,', v.pdf === false
+        ? `this match is over and its ${v.corrected ? 'corrected ' : ''}result is final. Its scoresheet PDF has not reached the server yet: it follows in another mail as soon as it does.`
+        : `the ${v.corrected ? 'corrected ' : ''}final scoresheet of this match is attached${v.late ? ': it was missing from the result mail you got' : ''}.`,
         `Match: ${v.teams}`, ...(v.game ? [`Game: ${v.game}`] : []), `Date: ${v.date}`, ...(v.result ? [`Result: ${v.result}`] : [])],
       button: null,
       after: ['You get this mail as an official of the match or as the contact of one of its clubs. Questions about the match go to the organiser of the competition.']
     }),
     de: (v) => ({
       subject: `${v.corrected ? 'Korrigiertes Matchblatt' : 'Matchblatt'}: ${v.teams}`,
-      before: ['Hallo', `Im Anhang finden Sie das ${v.corrected ? 'korrigierte ' : ''}fertige Matchblatt dieses Spiels.`,
+      before: ['Hallo', v.pdf === false
+        ? `Dieses Spiel ist beendet, sein ${v.corrected ? 'korrigiertes ' : ''}Resultat ist definitiv. Das PDF des Matchblatts ist noch nicht auf dem Server angekommen: Es folgt in einer weiteren E-Mail, sobald es da ist.`
+        : `Im Anhang finden Sie das ${v.corrected ? 'korrigierte ' : ''}fertige Matchblatt dieses Spiels${v.late ? ': Es fehlte in der E-Mail mit dem Resultat' : ''}.`,
         `Spiel: ${v.teams}`, ...(v.game ? [`Spielnummer: ${v.game}`] : []), `Datum: ${v.date}`, ...(v.result ? [`Resultat: ${v.result}`] : [])],
       button: null,
       after: ['Sie erhalten diese E-Mail als Offizielle/r des Spiels oder als Kontakt eines der beiden Vereine. Fragen zum Spiel richten Sie an den Veranstalter der Meisterschaft.']
     }),
     fr: (v) => ({
       subject: `${v.corrected ? 'Feuille de match corrigée' : 'Feuille de match'} : ${v.teams}`,
-      before: ['Bonjour,', `vous trouverez en pièce jointe la feuille de match ${v.corrected ? 'corrigée ' : ''}finale de ce match.`,
+      before: ['Bonjour,', v.pdf === false
+        ? `ce match est terminé et son résultat ${v.corrected ? 'corrigé ' : ''}est définitif. Le PDF de sa feuille de match n’est pas encore arrivé sur le serveur : il suivra dans un autre e-mail dès qu’il sera là.`
+        : `vous trouverez en pièce jointe la feuille de match ${v.corrected ? 'corrigée ' : ''}finale de ce match${v.late ? ' : elle manquait dans l’e-mail du résultat' : ''}.`,
         `Match : ${v.teams}`, ...(v.game ? [`Numéro : ${v.game}`] : []), `Date : ${v.date}`, ...(v.result ? [`Résultat : ${v.result}`] : [])],
       button: null,
       after: ['Vous recevez cet e-mail en tant qu’officiel du match ou contact de l’un de ses clubs. Les questions sur le match vont à l’organisateur du championnat.']
     }),
     it: (v) => ({
       subject: `${v.corrected ? 'Referto corretto' : 'Referto'}: ${v.teams}`,
-      before: ['Buongiorno,', `in allegato trova il referto ${v.corrected ? 'corretto ' : ''}finale di questa partita.`,
+      before: ['Buongiorno,', v.pdf === false
+        ? `questa partita è terminata e il suo risultato ${v.corrected ? 'corretto ' : ''}è definitivo. Il PDF del referto non è ancora arrivato sul server: seguirà in un’altra e-mail appena ci sarà.`
+        : `in allegato trova il referto ${v.corrected ? 'corretto ' : ''}finale di questa partita${v.late ? ': mancava nell’e-mail del risultato' : ''}.`,
         `Partita: ${v.teams}`, ...(v.game ? [`Numero: ${v.game}`] : []), `Data: ${v.date}`, ...(v.result ? [`Risultato: ${v.result}`] : [])],
       button: null,
       after: ['Riceve questa e-mail come ufficiale della partita o come contatto di una delle due società. Le domande sulla partita vanno all’organizzatore del campionato.']
     })
   },
-  // A test match's scoresheet to its scorer (never stored). vars: teams, result
+  // A test match's scoresheet to its scorer (never stored). vars: teams,
+  // result: the caller's text, so in the body only (a fixed subject)
   scoresheet_test: {
     en: (v) => ({
-      subject: `Test scoresheet: ${v.teams}`,
+      subject: 'Test scoresheet',
       before: ['Hello,', 'the scoresheet of your test match is attached. Test matches are not kept on the server or on your device: this mail is their only copy.',
         `Match: ${v.teams}`, ...(v.result ? [`Result: ${v.result}`] : [])],
       button: null,
       after: []
     }),
     de: (v) => ({
-      subject: `Test-Matchblatt: ${v.teams}`,
+      subject: 'Test-Matchblatt',
       before: ['Hallo', 'Im Anhang finden Sie das Matchblatt Ihres Testspiels. Testspiele werden weder auf dem Server noch auf Ihrem Gerät aufbewahrt: Diese E-Mail ist die einzige Kopie.',
         `Spiel: ${v.teams}`, ...(v.result ? [`Resultat: ${v.result}`] : [])],
       button: null,
       after: []
     }),
     fr: (v) => ({
-      subject: `Feuille de match de test : ${v.teams}`,
+      subject: 'Feuille de match de test',
       before: ['Bonjour,', 'vous trouverez en pièce jointe la feuille de votre match de test. Les matchs de test ne sont gardés ni sur le serveur ni sur votre appareil : cet e-mail en est la seule copie.',
         `Match : ${v.teams}`, ...(v.result ? [`Résultat : ${v.result}`] : [])],
       button: null,
       after: []
     }),
     it: (v) => ({
-      subject: `Referto di prova: ${v.teams}`,
+      subject: 'Referto di prova',
       before: ['Buongiorno,', 'in allegato trova il referto della sua partita di prova. Le partite di prova non vengono conservate né sul server né sul suo dispositivo: questa e-mail è l’unica copia.',
         `Partita: ${v.teams}`, ...(v.result ? [`Risultato: ${v.result}`] : [])],
       button: null,
       after: []
+    })
+  },
+  // The final mail went without the PDF (lib/finalMail.js), to the closing
+  // scorer and the admins. vars: teams, game, date, result, admin
+  scoresheet_no_pdf: {
+    en: (v) => ({
+      subject: `Scoresheet PDF missing: ${v.teams}`,
+      before: ['Hello,', 'the result mail of this match went to its officials and clubs without the scoresheet PDF: the PDF did not reach the server within 2 hours of the close.',
+        `Match: ${v.teams}`, ...(v.game ? [`Game: ${v.game}`] : []), `Date: ${v.date}`, ...(v.result ? [`Result: ${v.result}`] : [])],
+      button: null,
+      after: [v.admin
+        ? 'The scorer was asked to open OpenVolley online on the device that closed the match, so that it sends the PDF; it is then mailed on its own. The match is in the manager under Closed matches.'
+        : 'Open OpenVolley online on the device that closed the match: it then sends the PDF, which is mailed on its own. If that device is no longer at hand, tell an admin.']
+    }),
+    de: (v) => ({
+      subject: `Matchblatt-PDF fehlt: ${v.teams}`,
+      before: ['Hallo', 'Die E-Mail mit dem Resultat dieses Spiels ging ohne das PDF des Matchblatts an die Offiziellen und die Vereine: Das PDF ist innert 2 Stunden nach dem Abschluss nicht auf dem Server angekommen.',
+        `Spiel: ${v.teams}`, ...(v.game ? [`Spielnummer: ${v.game}`] : []), `Datum: ${v.date}`, ...(v.result ? [`Resultat: ${v.result}`] : [])],
+      button: null,
+      after: [v.admin
+        ? 'Der Schreiber wurde gebeten, OpenVolley auf dem Gerät, das das Spiel abgeschlossen hat, mit Internetverbindung zu öffnen, damit es das PDF sendet; es wird dann von selbst verschickt. Das Spiel steht im Manager unter Abgeschlossene Spiele.'
+        : 'Öffnen Sie OpenVolley mit Internetverbindung auf dem Gerät, das das Spiel abgeschlossen hat: Es sendet dann das PDF, das von selbst verschickt wird. Ist das Gerät nicht mehr verfügbar, informieren Sie einen Admin.']
+    }),
+    fr: (v) => ({
+      subject: `PDF de la feuille de match manquant : ${v.teams}`,
+      before: ['Bonjour,', 'l’e-mail du résultat de ce match est parti aux officiels et aux clubs sans le PDF de la feuille de match : le PDF n’est pas arrivé sur le serveur dans les 2 heures après la clôture.',
+        `Match : ${v.teams}`, ...(v.game ? [`Numéro : ${v.game}`] : []), `Date : ${v.date}`, ...(v.result ? [`Résultat : ${v.result}`] : [])],
+      button: null,
+      after: [v.admin
+        ? 'Le marqueur a été invité à ouvrir OpenVolley, connecté à Internet, sur l’appareil qui a clôturé le match, afin qu’il envoie le PDF ; celui-ci est ensuite envoyé automatiquement. Le match figure dans le manager sous Matchs clôturés.'
+        : 'Ouvrez OpenVolley, connecté à Internet, sur l’appareil qui a clôturé le match : il envoie alors le PDF, qui est ensuite envoyé automatiquement. Si cet appareil n’est plus disponible, prévenez un admin.']
+    }),
+    it: (v) => ({
+      subject: `PDF del referto mancante: ${v.teams}`,
+      before: ['Buongiorno,', 'l’e-mail con il risultato di questa partita è partita verso gli ufficiali e le società senza il PDF del referto: il PDF non è arrivato sul server entro 2 ore dalla chiusura.',
+        `Partita: ${v.teams}`, ...(v.game ? [`Numero: ${v.game}`] : []), `Data: ${v.date}`, ...(v.result ? [`Risultato: ${v.result}`] : [])],
+      button: null,
+      after: [v.admin
+        ? 'Il segnapunti è stato invitato ad aprire OpenVolley, con connessione a Internet, sul dispositivo che ha chiuso la partita, affinché invii il PDF; verrà poi inviato automaticamente. La partita è elencata nel manager sotto Partite chiuse.'
+        : 'Apra OpenVolley, con connessione a Internet, sul dispositivo che ha chiuso la partita: invierà il PDF, che verrà poi inviato automaticamente. Se il dispositivo non è più disponibile, avvisi un admin.']
+    })
+  },
+  // An admin reopened a mailed match (lib/finalMail.js), to the officials
+  // whose approvals that voided. vars: teams, game, date, reason
+  scoresheet_reopened: {
+    en: (v) => ({
+      subject: `Match reopened: ${v.teams}`,
+      before: ['Hello,', 'an administrator reopened this match after it was closed, so your approval of its result no longer counts.',
+        `Match: ${v.teams}`, ...(v.game ? [`Game: ${v.game}`] : []), `Date: ${v.date}`, ...(v.reason ? [`Reason: ${v.reason}`] : [])],
+      button: null,
+      after: ['Once the match is closed again you get the corrected scoresheet. Questions about the match go to the organiser of the competition.']
+    }),
+    de: (v) => ({
+      subject: `Spiel wieder geöffnet: ${v.teams}`,
+      before: ['Hallo', 'Ein Administrator hat dieses Spiel nach dem Abschluss wieder geöffnet. Ihre Genehmigung des Resultats gilt damit nicht mehr.',
+        `Spiel: ${v.teams}`, ...(v.game ? [`Spielnummer: ${v.game}`] : []), `Datum: ${v.date}`, ...(v.reason ? [`Grund: ${v.reason}`] : [])],
+      button: null,
+      after: ['Sobald das Spiel wieder abgeschlossen ist, erhalten Sie das korrigierte Matchblatt. Fragen zum Spiel richten Sie an den Veranstalter der Meisterschaft.']
+    }),
+    fr: (v) => ({
+      subject: `Match rouvert : ${v.teams}`,
+      before: ['Bonjour,', 'un administrateur a rouvert ce match après sa clôture : votre approbation de son résultat ne compte donc plus.',
+        `Match : ${v.teams}`, ...(v.game ? [`Numéro : ${v.game}`] : []), `Date : ${v.date}`, ...(v.reason ? [`Motif : ${v.reason}`] : [])],
+      button: null,
+      after: ['Dès que le match sera de nouveau clôturé, vous recevrez la feuille de match corrigée. Les questions sur le match vont à l’organisateur du championnat.']
+    }),
+    it: (v) => ({
+      subject: `Partita riaperta: ${v.teams}`,
+      before: ['Buongiorno,', 'un amministratore ha riaperto questa partita dopo la chiusura: la sua approvazione del risultato non vale quindi più.',
+        `Partita: ${v.teams}`, ...(v.game ? [`Numero: ${v.game}`] : []), `Data: ${v.date}`, ...(v.reason ? [`Motivo: ${v.reason}`] : [])],
+      button: null,
+      after: ['Quando la partita sarà di nuovo chiusa riceverà il referto corretto. Le domande sulla partita vanno all’organizzatore del campionato.']
     })
   },
   // vars: game, until ('' when disabled), disabled
@@ -821,7 +929,7 @@ export function transportOptions({ host, port, user, pass, tls = {}, secure }) {
  * @param {boolean} [o.secure]      implicit TLS (default: port === 465)
  * @param {object} [o.transport]    a ready nodemailer-like { sendMail, close } (tests)
  * @param {number} [o.maxPerHour]     every budget at once (tests); else o.budgets
- * @param {{account?: number, confirm?: number}} [o.budgets]  per hour, see DEFAULT_BUDGETS
+ * @param {{account?: number, confirm?: number, notify?: number, scoresheet?: number, scoresheet_test?: number}} [o.budgets]  per hour, see DEFAULT_BUDGETS
  * @param {number} [o.maxPerInbox]    reset + confirm mails per inbox and hour
  * @param {object} [o.logger]
  */
@@ -964,9 +1072,11 @@ export function mailerFromEnv(env = process.env, { logger, tls, maxPerHour, budg
     managerUrlBeach = derived.url
     beachNote = derived.note
   }
+  const sized = budgetsFromEnv(env)
   try {
-    const mailer = createMailer({ host, port, user, pass, from, managerUrl, fromBeach, managerUrlBeach, logger, tls, maxPerHour, budgets, maxPerInbox })
-    if (beachNote) mailer.warnings = [beachNote]
+    const mailer = createMailer({ host, port, user, pass, from, managerUrl, fromBeach, managerUrlBeach, logger, tls, maxPerHour, budgets: { ...sized.budgets, ...budgets }, maxPerInbox })
+    const warnings = [...(beachNote ? [beachNote] : []), ...sized.warnings]
+    if (warnings.length) mailer.warnings = warnings
     return mailer
   } catch (err) {
     return disabledMailer(err.message)

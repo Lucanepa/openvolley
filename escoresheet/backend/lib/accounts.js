@@ -1317,20 +1317,28 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     return { ...ok({ match: { id: m.id, external_id: m.external_id, status: 'ended', closed_at: null } }), changes }
   }
 
+  /**
+   * POST /api/admin/matches/:id/release-game: the match no longer holds its
+   * official game (another match may take the number), and released_at
+   * (db/040) says since when: a released match is left out of the final
+   * scoresheet mail (lib/finalMail.js) and marked in the managers' Scoresheets
+   * list, until it moves to another game key (db/007 ends the exemption).
+   */
   async function releaseGame ({ actorId, matchId, body } = {}) {
     if (!isUuid(matchId)) return notFound()
     const reason = trimmedText(isPlainObject(body) ? body.reason : undefined, { min: 3, max: 500 })
     if (reason === undefined) return invalid('reason: 3 to 500 characters')
+    const releasedAt = new Date().toISOString()
     const { res, changes } = await adminMatchUpdate({
       where: 'release-game',
       actorId,
       matchId,
-      data: () => ({ official_game_exempt: true }),
+      data: () => ({ official_game_exempt: true, released_at: releasedAt }),
       action: 'match.release_game',
       details: (m) => ({ reason, game_n: m.game_n, external_id: m.external_id })
     })
     if (!res.match) return res
-    return { ...ok({ match: { id: res.match.id, official_game_exempt: true } }), changes }
+    return { ...ok({ match: { id: res.match.id, official_game_exempt: true, released_at: releasedAt } }), changes }
   }
 
   async function addMatchEditor ({ actorId, matchId, body } = {}) {

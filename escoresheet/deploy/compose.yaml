@@ -156,6 +156,10 @@ services:
       MANAGER_URL_BEACH: ${MANAGER_URL_BEACH:-}
       SMTP_LEGACY_ROUTES: ${SMTP_LEGACY_ROUTES:-}
       CONTACT_EMAIL: ${CONTACT_EMAIL:-}
+      # Hourly budgets of the final and the test scoresheet mails (lib/mailer.js
+      # BUDGET_ENV; empty: 300 and 50)
+      MAIL_BUDGET_FINAL: ${MAIL_BUDGET_FINAL:-}
+      MAIL_BUDGET_TEST: ${MAIL_BUDGET_TEST:-}
       VM_USERNAME: ${VM_USERNAME:-}
       VM_PASSWORD: ${VM_PASSWORD:-}
       VM_SYNC: ${VM_SYNC:-on}
