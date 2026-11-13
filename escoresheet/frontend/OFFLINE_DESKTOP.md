@@ -543,7 +543,11 @@ could open it (`src/utils/backupCrypto/`):
   scores and the time of the file (public on the livescore anyway). They are
   bound to the ciphertext: an edited header no longer opens. Everything else
   (names, birth dates, officials, signatures, events) is encrypted, and the
-  PINs themselves are never in the file.
+  PINs themselves are never in the file. The one exception is the cloud
+  copy: inside its ciphertext it carries the referee, bench and upload PINs
+  (`"connectionPins"`, never the game PIN or session ids), so a restore on a
+  replacement device sends the server the PINs the referee and bench tablets
+  hold instead of new ones that would shut them out mid-match.
 - A 6-digit PIN is a **speed bump**, not a lock: Argon2id with 32 MiB and 3
   passes takes about 76 ms per guess on a desktop core (about 0.5 s on a
   mid-range tablet), so all 10^6 PINs of a copied file take a 16-core
@@ -556,7 +560,8 @@ could open it (`src/utils/backupCrypto/`):
   scoring device or the server); `node scripts/backup-recovery.mjs keygen`
   makes the pair, `node scripts/backup-recovery.mjs open --key <file>
   <backup.json>` opens any file of such a build, also one whose PINs are
-  lost, into a plain backup the app restores (with new connection PINs).
+  lost, into a plain backup the app restores (with new connection PINs; a
+  cloud copy keeps its own).
   A build without the key writes PIN slots only.
 - **Authenticated slots** (version 2): each slot's wrap has the slot's own
   fields (kind, label, KDF parameters and salt; key id and one-off key) as
@@ -565,7 +570,10 @@ could open it (`src/utils/backupCrypto/`):
   edited opens with no PIN, so a restore never takes the game PIN for the
   referee PIN; an added or removed slot makes the file damaged. Version 1
   files (3.0.9 to 3.1.4) still open; an app before this version says "written
-  by a newer version" for a version 2 file.
+  by a newer version" for a version 2 file (before 3.0.9: "not an OpenVolley
+  match backup"). The cloud copies are version 2 too: during the rollout a
+  replacement device must run this version to restore one, or take the match
+  over with Restore by game PIN (the server's copy).
 - The coalescing ("same state as the last file") compares the plain state.
   If a file cannot be encrypted, nothing is written in the clear: the backup
   fails (red **Backup** badge) and the next event tries again.
@@ -576,7 +584,8 @@ Backup → Restore from a backup file, then pick the file: the app asks for the
 game number, teams, date and set scores). A wrong PIN says so and asks again;
 Cancel goes back, also while a PIN is being tried. Then the usual preview.
 The restored match keeps the PIN that was typed (the other PINs come from the
-local copy it replaces, or are new); plain files of older versions restore as
+local copy it replaces, then from the file when it is a cloud copy, or are
+new); plain files of older versions restore as
 before, without a PIN. An app from before the encryption says "not an
 OpenVolley match backup" for an encrypted file. Against a damaged or crafted
 file: the readable header is shown as text and scores only (it is not
