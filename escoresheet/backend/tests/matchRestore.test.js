@@ -307,6 +307,15 @@ describe('matchRestore on Postgres', { skip: SKIP_PG }, () => {
   const uniq = (p = 'R') => `${p}${Date.now().toString(36)}${(seq++).toString(36)}`
   const W = { proto: 2 }
   const count = async (table, matchId) => (await raw.query(`SELECT count(*)::int n FROM ${table} WHERE match_id = $1`, [matchId])).rows[0].n
+  // A match of an earlier season: db/034 gives a new match the season of the
+  // server's clock (no VolleyManager row here), so a test back-dates the key
+  // with the user triggers off.
+  async function earlierSeason (matchId, years = 1) {
+    await raw.query('BEGIN')
+    await raw.query("SET LOCAL session_replication_role = 'replica'")
+    await raw.query('UPDATE matches SET official_season = official_season - $2::int WHERE id = $1', [matchId, years])
+    await raw.query('COMMIT')
+  }
 
   // One cloud match per official game (db/007): each backup its own game number by default
   let gameSeq = 70000
@@ -784,7 +793,8 @@ describe('matchRestore on Postgres', { skip: SKIP_PG }, () => {
       // game numbers repeat across seasons (db/007: one cloud match per game and season)
       const older = uniq('OLD')
       const newer = uniq('NEW')
-      await restore.restoreMatch(backup(older, { gameN: 8484, pin: '848484', scheduledAt: '2024-10-05T16:00:00Z' }), W)
+      const o = await restore.restoreMatch(backup(older, { gameN: 8484, pin: '848484', scheduledAt: '2024-10-05T16:00:00Z' }), W)
+      await earlierSeason(o.body.data.id)
       await restore.restoreMatch(backup(newer, { gameN: 8484, pin: '858585', scheduledAt: '2025-10-05T16:00:00Z' }), W)
       for (const [i, pin] of ['100001', '100002', '100003'].entries()) {
         assert.equal((await r3.claimMatch({ externalId: older, pin }, { limitKey: `ip-claim-${i}` })).status, 404, pin)
@@ -825,6 +835,7 @@ describe('matchRestore on Postgres', { skip: SKIP_PG }, () => {
     it('picks the most recently updated match when game number and PIN repeat', async () => {
       // Game numbers repeat across seasons (db/007 allows one cloud match per game and season)
       const older = await restore.restoreMatch(backup(uniq(), { gameN: 4242, pin: '999999', scheduledAt: '2024-10-05T16:00:00Z' }), W)
+      await earlierSeason(older.body.data.id)
       const newer = await restore.restoreMatch(backup(uniq(), { gameN: 4242, pin: '999999', scheduledAt: '2025-10-05T16:00:00Z' }), W)
       // (db/006's trigger would reset updated_at: back-date it with the user triggers off)
       await raw.query('BEGIN')

@@ -1,17 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft } from 'lucide-react'
-import { clubsApi } from '../../lib/accountApi'
-import { usePanelData, usePanelRoute, useOnline, OfflineBanner, PageMissing, PanelHead, InlineError, useErrorText } from './common'
-import { Button, Checkbox, Chip, EmptyInset, Field, Input, Notice, Row, RowList, RowTool, SearchInput, SkeletonRows, Switch, confirmDialog, toast } from '../../ui'
+import { admin, clubsApi } from '../../lib/accountApi'
+import { usePanelData, usePanelRoute, useOnline, OfflineBanner, PageMissing, PanelHead, InlineError, MatchStatusPill, ReasonModal, useErrorText } from './common'
+import { Banner, Button, Checkbox, Chip, EmptyInset, Field, Input, Notice, Row, RowList, RowTool, SearchInput, SkeletonRows, Switch, confirmDialog, toast } from '../../ui'
 import ClubManagersField from './ClubManagersField'
 
 /**
  * Clubs (admins, OpenVolley; db/018, lib/clubs.js): a scorer scores the home
  * games of its own club(s). A club is a name and the VolleyManager team names
  * that play for it; accounts get their clubs in Accounts or through an invite
- * code. The rule is off until it is switched on here: then every scorer
- * without a club is blocked from official games, so set the clubs up first.
+ * code. The rule is on unless it is switched off here (db/034): then every
+ * scorer without a club is blocked from official games, so set the clubs up
+ * first. While it is off a warning says so, and the official matches that an
+ * account outside the home club holds are listed to release (with the rule
+ * on, a scorer of the home club takes over such a game still in setup).
  * db/020: each club may have managers (they run the club's codes and members
  * in their own My club tab), picked from the accounts linked to the club or
  * invited with a club manager link (db/029, ClubManagersField), and a contact
@@ -27,9 +30,11 @@ export default function ClubsPanel({ route = '', onRoute = null }) {
   const { data, error, loading, reload } = usePanelData(() => clubsApi.list(), [], { enabled: online })
   const clubs = data?.clubs || []
   const ruleOn = data?.rule?.enabled === true
+  const heldOutside = data?.held_outside || []
   const [[pageId = null], go] = usePanelRoute(route, onRoute)
   const setEditing = (c, opts) => go(c ? [c.id || 'new'] : [], opts)
   const [ruleBusy, setRuleBusy] = useState(false)
+  const [releaseFor, setReleaseFor] = useState(null)
 
   const setRule = async (enabled) => {
     if (enabled) {
@@ -103,6 +108,46 @@ export default function ClubsPanel({ route = '', onRoute = null }) {
           <p className="mt-0.5 text-xs text-stone-600">{ruleOn ? t('manage.clubs.ruleOnHint') : t('manage.clubs.ruleOffHint')}</p>
         </div>
       </div>
+      {data && !ruleOn && <Banner tone="warning" className="mb-4" data-testid="club-rule-off-warning">{t('manage.clubs.ruleOffWarning')}</Banner>}
+      {heldOutside.length > 0 && (
+        <div className="mb-4" data-testid="club-held-outside">
+          <p className="text-sm font-semibold text-stone-900">{t('manage.clubs.heldOutsideTitle')}</p>
+          <p className="mb-2 mt-0.5 text-xs text-stone-600">{t('manage.clubs.heldOutsideHint')}</p>
+          <RowList>
+            {heldOutside.map((m) => (
+              <Row
+                key={m.match_id}
+                stripe={false}
+                toolsIndent="sm:pl-2"
+                actionIndent="pl-1.5"
+                title={t('manage.clubs.heldOutsideGame', { game: m.game_n })}
+                meta={<>
+                  <span>{m.home_team}</span>
+                  <span>{m.club}</span>
+                  {m.scorer_name && <span>{m.scorer_name}</span>}
+                </>}
+                status={<MatchStatusPill status={m.status} />}
+                tools={<RowTool disabled={!online} onClick={() => setReleaseFor(m)}>{t('manage.games.releaseGame')}</RowTool>}
+              />
+            ))}
+          </RowList>
+        </div>
+      )}
+      <ReasonModal
+        open={!!releaseFor}
+        title={t('manage.games.releaseConfirmTitle', { game: releaseFor?.game_n ?? '' })}
+        body={t('manage.games.releaseConfirmBody')}
+        label={t('manage.games.reason')}
+        confirmLabel={t('manage.games.releaseGame')}
+        onClose={() => setReleaseFor(null)}
+        onSubmit={async (reason) => {
+          const res = await admin.releaseGame(releaseFor.match_id, { reason })
+          if (res.error) return errorText(res.error)
+          setReleaseFor(null)
+          reload()
+          return null
+        }}
+      />
       {error && <Notice className="mb-3">{errorText(error)}</Notice>}
       {error && !data ? null : loading && !data ? (
         <SkeletonRows rows={4} pill={false} />

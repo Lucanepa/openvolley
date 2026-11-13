@@ -9,7 +9,8 @@
  * this module is what the manager and the scorer app see of it:
  *
  *   admins (lib/manageApi.js, /api/admin/...)
- *     list()                              clubs with their teams and scorer count, the rule
+ *     list()                              clubs with their teams and scorer count, the rule,
+ *                                         the official matches held outside their home club
  *     create({ actorId, body })           { name, teams?: [team name] }
  *     update({ actorId, id, body })       { name?, teams? } (teams: the whole list)
  *     remove({ actorId, id })             the club, its teams and memberships
@@ -319,11 +320,12 @@ export function createClubs ({ pool, audit, access = null, createInvite = null, 
       const claims = new Map()
       if (numbers.length) {
         const { rows: ms } = await pool.query(
-          `SELECT m.game_n, m.created_by, m.closed_at, m.scheduled_at, m.created_at FROM public.matches m
+          `SELECT m.game_n, m.created_by, m.closed_at, m.official_season FROM public.matches m
             WHERE m.test IS NOT TRUE AND NOT m.official_game_exempt AND m.game_n = ANY($1::int[])
               AND (m.sport_type IS NOT DISTINCT FROM 'beach') IS NOT TRUE`, [numbers])
         for (const m of ms) {
-          const key = `${m.game_n}|${seasonOf(m.scheduled_at || m.created_at)}`
+          // the key's season is the server's (db/034), not the match's scheduled_at
+          const key = `${m.game_n}|${m.official_season}`
           if (!claims.has(key)) claims.set(key, m)
         }
       }
@@ -368,13 +370,59 @@ export function createClubs ({ pool, audit, access = null, createInvite = null, 
     }))
   }
 
+  /**
+   * The open official indoor matches an account outside the home club holds
+   * (be the rule on or off): the home team is VolleyManager's (the newest
+   * svrz_games row, as db/018's rule reads it), its club one of the clubs
+   * here, and neither the match's creator nor an editor scores for that club
+   * (admins left out: the rule does not check them). For the Clubs tab, to
+   * release (POST /api/admin/matches/:id/release-game) before the home
+   * club's scorer is refused on match day. [] without db/018 or svrz_games.
+   */
+  async function heldOutside (client) {
+    try {
+      const { rows } = await client.query(
+        `SELECT m.id, m.game_n, m.status, m.scheduled_at, g.team_home, c.name AS club,
+                nullif(trim(coalesce(p.first_name, '') || ' ' || coalesce(p.last_name, '')), '') AS scorer_name
+           FROM public.matches m
+           JOIN LATERAL (SELECT sg.team_home FROM public.svrz_games sg
+                          WHERE sg.game_number = m.game_n::text AND sg.team_home IS NOT NULL
+                          ORDER BY sg.id DESC LIMIT 1) g ON true
+           JOIN public.club_teams ct ON lower(btrim(ct.team_name)) = lower(btrim(g.team_home))
+           JOIN public.clubs c ON c.id = ct.club_id
+           LEFT JOIN public.profiles p ON p.user_id = m.created_by
+          WHERE m.test IS NOT TRUE AND NOT m.official_game_exempt AND m.closed_at IS NULL
+            AND m.game_n > 0 AND m.sport_type IS DISTINCT FROM 'beach'
+            AND NOT EXISTS (SELECT 1 FROM public.account_clubs ac WHERE ac.user_id = m.created_by AND ac.club_id = ct.club_id)
+            AND NOT EXISTS (SELECT 1 FROM public.match_editors e JOIN public.account_clubs ac ON ac.user_id = e.user_id
+                             WHERE e.match_id = m.id AND ac.club_id = ct.club_id)
+            AND NOT EXISTS (SELECT 1 FROM public.profiles pa WHERE pa.user_id = m.created_by
+                             AND pa.roles && ARRAY['admin', 'super_admin']::text[])
+          ORDER BY m.scheduled_at NULLS LAST, m.game_n
+          LIMIT 200`)
+      return rows.map((r) => ({
+        match_id: r.id,
+        game_n: r.game_n,
+        status: r.status ?? null,
+        scheduled_at: r.scheduled_at instanceof Date ? r.scheduled_at.toISOString() : (r.scheduled_at ?? null),
+        home_team: r.team_home,
+        club: r.club,
+        scorer_name: r.scorer_name ?? null
+      }))
+    } catch (err) {
+      if (MISSING.has(err?.code)) return []
+      throw err
+    }
+  }
+
   /** GET /api/admin/clubs */
   async function list () {
     return guarded('list', async () => {
       const { rows: [rule] } = await pool.query('SELECT enabled, changed_at FROM public.club_rule WHERE id')
       return ok({
         clubs: await readClubs(pool),
-        rule: { enabled: rule?.enabled === true, changed_at: rule?.changed_at instanceof Date ? rule.changed_at.toISOString() : (rule?.changed_at ?? null) }
+        rule: { enabled: rule?.enabled === true, changed_at: rule?.changed_at instanceof Date ? rule.changed_at.toISOString() : (rule?.changed_at ?? null) },
+        held_outside: await heldOutside(pool)
       })
     })
   }

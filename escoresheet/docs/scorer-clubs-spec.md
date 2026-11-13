@@ -17,6 +17,13 @@ Also decided in the design:
 - An admin switches the rule on. It is **off** after the deploy. Turning it on
   blocks every scorer without a club at once, so the clubs and their scorers are
   set up first.
+- From db/034 on the rule is **on unless an admin switched it off**: the
+  migration turns on a rule no admin ever set, and a rule an admin switched off
+  stays off. While it is off the Clubs tab warns, and it lists the open official
+  matches that an account outside the home club holds, to release them. With
+  the rule on, a scorer of the home club takes over such a game itself while its
+  match is still in setup (the outside match is released as by release-game,
+  audited as `match.game_taken_over`).
 - Admins score any game.
 - A game that is not in the VolleyManager schedule (`svrz_games`) has no
   known home team, so it is refused while the rule is on.

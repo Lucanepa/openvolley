@@ -9,7 +9,7 @@ vi.mock('react-i18next', () => ({
 
 const api = vi.hoisted(() => ({
   clubs: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), vmTeams: vi.fn(), setRule: vi.fn() },
-  admin: { listAccounts: vi.fn(), setRoles: vi.fn(), setAccountClubs: vi.fn(), listInvites: vi.fn(), createInvite: vi.fn() }
+  admin: { listAccounts: vi.fn(), setRoles: vi.fn(), setAccountClubs: vi.fn(), listInvites: vi.fn(), createInvite: vi.fn(), releaseGame: vi.fn() }
 }))
 vi.mock('../../lib/accountApi', async (orig) => ({ ...(await orig()), clubsApi: api.clubs, admin: api.admin }))
 const ui = vi.hoisted(() => ({ confirm: vi.fn(async () => true), toasts: [] }))
@@ -58,6 +58,35 @@ describe('ClubsPanel', () => {
     fireEvent.click(sw)
     await waitFor(() => expect(ui.confirm).toHaveBeenCalledTimes(2))
     expect(api.clubs.setRule).not.toHaveBeenCalled()
+  })
+
+  it('warns while the club rule is off', async () => {
+    render(<ClubsPanel />)
+    expect(await screen.findByTestId('club-rule-off-warning')).toHaveTextContent('manage.clubs.ruleOffWarning')
+  })
+
+  it('no warning while the rule is on', async () => {
+    api.clubs.list.mockResolvedValue({ data: { clubs: [VBCM], rule: { enabled: true }, held_outside: [] }, error: null, status: 200 })
+    render(<ClubsPanel />)
+    await screen.findByText('VBC Musterdorf')
+    expect(screen.queryByTestId('club-rule-off-warning')).toBeNull()
+    expect(screen.queryByTestId('club-held-outside')).toBeNull()
+  })
+
+  it('lists the official games held outside their home club and releases one with a reason', async () => {
+    const held = { match_id: 'm1', game_n: 960001, status: 'setup', home_team: 'VBC Musterdorf H1', club: 'VBC Musterdorf', scorer_name: 'Rolf Beispiel' }
+    api.clubs.list.mockResolvedValue({ data: { clubs: [VBCM], rule: { enabled: true }, held_outside: [held] }, error: null, status: 200 })
+    api.admin.releaseGame.mockResolvedValue({ data: { match: { id: 'm1', official_game_exempt: true } }, error: null, status: 200 })
+    render(<ClubsPanel />)
+    const list = await screen.findByTestId('club-held-outside')
+    expect(within(list).getByText('manage.clubs.heldOutsideGame')).toBeInTheDocument()
+    expect(within(list).getByText('Rolf Beispiel')).toBeInTheDocument()
+    fireEvent.click(within(list).getByRole('button', { name: 'manage.games.releaseGame' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'held by another club' } })
+    fireEvent.click(within(dialog).getByTestId('reason-confirm'))
+    await waitFor(() => expect(api.admin.releaseGame).toHaveBeenCalledWith('m1', { reason: 'held by another club' }))
+    await waitFor(() => expect(api.clubs.list).toHaveBeenCalledTimes(2))
   })
 
   it('a new club takes a name and VolleyManager teams; another club\'s team cannot be picked', async () => {

@@ -577,7 +577,12 @@ export function createMatchRestore (db, options = {}) {
     return renames.length
   }
 
-  async function restoreMatch (payload, { proto, matchOwner, actorId } = {}) {
+  /**
+   * `scorerCheck(client, externalId)`: the scoring device's check (db/019,
+   * server.js scorerCheckOf), run first in the restore's transaction; an
+   * answer (409 OV_SCORER_MOVED) refuses the restore, nothing written.
+   */
+  async function restoreMatch (payload, { proto, matchOwner, actorId, scorerCheck = null } = {}) {
     if (!isPlainObject(payload)) return errorBody(400, 'OV_INVALID_REQUEST', 'Invalid request')
     const { match, sets = [], events = [], liveState = null } = payload
     const rekey = rekeyOf(payload.rekey)
@@ -650,6 +655,9 @@ export function createMatchRestore (db, options = {}) {
         if (typeof actorId === 'string' && UUID_RE.test(actorId)) {
           await client.query("SELECT set_config('ov.user_id', $1, true)", [actorId])
         }
+        // Before the match is written (locked): a take-over locks the scorer row first too
+        const refused = scorerCheck ? await scorerCheck(client, match[cfg.matchKey]) : null
+        if (refused) return { refused }
         const run = async (step, request, extra = {}) => {
           const r = await db.runQuery(request, { client, proto, collectChanges: true, ...(matchOwner ? { matchOwner } : {}), ...extra })
           if (r.body.error) throw new RestoreAbort(step, r)
@@ -693,6 +701,7 @@ export function createMatchRestore (db, options = {}) {
         if (closingStatus) await closeMatch(run, matchUuid, closingStatus)
         return { id: matchUuid, counts, dropped: droppedOut }
       }, { statementTimeoutMs: cfg.statementTimeoutMs })
+      if (out.refused) return out.refused
       return { status: 200, body: { data: out, error: null }, changes }
     } catch (err) {
       if (err instanceof RestoreAbort) {

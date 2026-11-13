@@ -16,7 +16,11 @@ Owner checklist for `feat/scorer-clubs` (OpenVolley). Design and decisions:
 rule on.**
 
 The rule is **off** after the migration. Nothing changes for anyone until an
-admin switches it on in the manager (Clubs tab). The backend tolerates a
+admin switches it on in the manager (Clubs tab). **db/034 turns it on** where no
+admin ever set it (an admin's "off" stays): before deploying 034, set up the
+clubs and their scorers (section 4), or switch the rule off in the Clubs tab
+first. The Clubs tab warns while it is off and lists the official matches held
+outside their home club. The backend tolerates a
 database without 018 (it reads as "no clubs, rule off"), and old clients keep
 working while the rule is off. With it on, an old client gets 403
 `OV_CLUB_REQUIRED` / `OV_NOT_YOUR_CLUB` / `OV_GAME_NOT_IN_SCHEDULE` from the
