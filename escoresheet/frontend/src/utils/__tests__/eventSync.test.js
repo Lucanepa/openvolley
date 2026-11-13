@@ -35,7 +35,10 @@ function fakeTable(rows = []) {
     get: async (id) => map.get(id),
     add: async (row) => { const id = nextId++; map.set(id, { ...row, id }); return id },
     bulkDelete: async (ids) => { for (const id of ids) map.delete(id) },
-    where: (field) => ({ equals: (v) => collection(r => r[field] === v) })
+    where: (field) => ({
+      equals: (v) => collection(r => r[field] === v),
+      anyOf: (...values) => collection(r => values.flat().includes(r[field]))
+    })
   }
 }
 
@@ -219,20 +222,23 @@ describe('set update jobs', () => {
 })
 
 describe('sets deleted on the device', () => {
-  it('drop their unsent jobs and queue a cloud delete behind whatever of them already left', async () => {
+  it('drop their undelivered jobs and queue a cloud delete', async () => {
     db.sync_queue = fakeTable([
       // set 6 went out (sent), its running score is still queued
       { id: 1, resource: 'set', action: 'insert', status: 'sent', payload: { external_id: 'match_100_aaa:s:6', match_id: 'match_100_aaa' } },
       { id: 2, resource: 'set', action: 'update', status: 'queued', payload: { external_id: 'match_100_aaa:s:6', home_points: 3 } },
       // another match's set with the same local id stays
       { id: 3, resource: 'set', action: 'update', status: 'queued', payload: { external_id: 'match_200_bbb:s:6', home_points: 1 } },
-      // an insert of set 6 still waiting out a backoff: the delete goes behind it
-      { id: 4, resource: 'set', action: 'insert', status: 'error', payload: { external_id: 'match_100_aaa:s:6', match_id: 'match_100_aaa' } }
+      // parked: an insert waiting out a backoff, an update refused for good
+      // (kept, they would hold the delete behind them; it removes whatever
+      // of them reached the cloud)
+      { id: 4, resource: 'set', action: 'insert', status: 'error', payload: { external_id: 'match_100_aaa:s:6', match_id: 'match_100_aaa' } },
+      { id: 5, resource: 'set', action: 'update', status: 'failed', payload: { external_id: 'match_100_aaa:s:6', finished: true } }
     ])
     expect(await queueSetDeletes(db, { seed_key: 'match_100_aaa' }, [6])).toBe(1)
     const rows = [...db.sync_queue.map.values()]
-    expect(rows.map(j => j.id)).toEqual([1, 3, 4, 5])
-    expect(rows[3]).toMatchObject({ resource: 'set', action: 'delete', status: 'queued', payload: { external_id: 'match_100_aaa:s:6', match_id: 'match_100_aaa' } })
+    expect(rows.map(j => j.id)).toEqual([1, 3, 6])
+    expect(rows[2]).toMatchObject({ resource: 'set', action: 'delete', status: 'queued', payload: { external_id: 'match_100_aaa:s:6', match_id: 'match_100_aaa' } })
     expect(setDeleteJob('match_100_aaa', 6, 't')).toEqual(
       { resource: 'set', action: 'delete', payload: { external_id: 'match_100_aaa:s:6', match_id: 'match_100_aaa' }, ts: 't', status: 'queued' })
   })

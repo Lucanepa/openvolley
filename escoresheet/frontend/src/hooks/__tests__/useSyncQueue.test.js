@@ -170,6 +170,7 @@ import {
   runUploadLane
 } from '../useSyncQueue'
 import { splitRefusedRestore, RESTORE_REFUSED } from '../../utils/refusedRestore'
+import { queueSetDeletes } from '../../utils/eventSync'
 import { queueAndWait, useSequentialSync } from '../useSequentialSync'
 import { scoresheetUploadJob, supersedeUnsentScoresheetUploads } from '../../utils/scoresheetUploader'
 
@@ -2386,20 +2387,32 @@ describe('one flusher per origin (two pages over one queue)', () => {
   let restoreLocks
   let restoreChannel
 
+  // Web Locks: ifAvailable, and steal (the old holder's request rejects
+  // with an AbortError at once, its callback runs on)
   function fakeLocks() {
-    const held = new Set()
+    const held = new Map()
     return {
       async request(name, options, callback) {
-        if (held.has(name)) {
+        if (held.has(name) && !options?.steal) {
           if (options?.ifAvailable) return callback(null)
-          throw new Error('only ifAvailable is modelled')
+          throw new Error('only ifAvailable and steal are modelled')
         }
-        held.add(name)
-        try {
-          return await callback({ name, mode: 'exclusive' })
-        } finally {
+        if (held.has(name)) {
+          held.get(name).reject(new DOMException('The lock was stolen', 'AbortError'))
           held.delete(name)
         }
+        let reject
+        const stolen = new Promise((_, r) => { reject = r })
+        const entry = { reject }
+        held.set(name, entry)
+        const run = (async () => {
+          try {
+            return await callback({ name, mode: 'exclusive' })
+          } finally {
+            if (held.get(name) === entry) held.delete(name)
+          }
+        })()
+        return Promise.race([run, stolen])
       }
     }
   }
@@ -2409,9 +2422,12 @@ describe('one flusher per origin (two pages over one queue)', () => {
     constructor(name) {
       this.name = name
       this.onmessage = null
+      // a suspended page: what it posts reaches nobody
+      this.frozen = false
       FakeChannel.open.add(this)
     }
     postMessage(data) {
+      if (this.frozen) return
       for (const other of FakeChannel.open) {
         if (other !== this && other.name === this.name) queueMicrotask(() => other.onmessage?.({ data }))
       }
@@ -2512,6 +2528,117 @@ describe('one flusher per origin (two pages over one queue)', () => {
     a.unmount()
     b.unmount()
   })
+
+  // A page suspended while it held the lock (a background tab on iOS) kept
+  // it, and no other page sent anything until it ran again
+  it('a page not heard for 90 s while it holds the queue is taken over; it ends its pass when it runs again', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'set', action: 'update', status: 'queued', payload: { external_id: `${SEED}:s:5`, match_id: SEED, home_points: 3 } },
+      { id: 2, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: `${SEED}:e:1`, match_id: SEED, type: 'point', seq: 1 } }
+    ])
+    const suspended = gate()
+    // page 2's event is still on its way when page 1 runs again
+    const eventOnItsWay = gate()
+    let firstSet = true
+    let firstEvent = true
+    api.respond = async (call) => {
+      if (call.table === 'sets' && firstSet) { firstSet = false; await suspended.wait }
+      if (call.table === 'events' && firstEvent) { firstEvent = false; await eventOnItsWay.wait }
+      return defaultRespond(call)
+    }
+    const page1 = await openPage()
+    const page2 = await openPage()
+    const a = renderHook(() => page1.useSyncQueue())
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+    expect(api.calls.filter(c => c.table === 'sets')).toHaveLength(1)
+    // page 1 is suspended in its pass: it says nothing any more
+    for (const channel of FakeChannel.open) channel.frozen = true
+    const b = renderHook(() => page2.useSyncQueue())
+    await act(async () => { await vi.advanceTimersByTimeAsync(60000) })
+    expect(api.calls.filter(c => c.table === 'sets')).toHaveLength(1)
+    expect(api.calls.filter(c => c.table === 'events')).toHaveLength(0)
+
+    // over 90 s without a word from page 1: page 2 sends the queue
+    await act(async () => { await vi.advanceTimersByTimeAsync(40000) })
+    expect(api.calls.filter(c => c.table === 'sets')).toHaveLength(2)
+    expect(api.calls.filter(c => c.table === 'events')).toHaveLength(1)
+
+    // page 1 runs again: its request comes back, and its pass ends there
+    // (the event, still queued, is page 2's to send)
+    await act(async () => { suspended.open(); await vi.advanceTimersByTimeAsync(10) })
+    expect(api.calls.filter(c => c.table === 'events')).toHaveLength(1)
+    await act(async () => { eventOnItsWay.open(); await vi.advanceTimersByTimeAsync(10) })
+    expect([...fakeDb.sync_queue.map.values()].map(j => j.status)).toEqual(['sent', 'sent'])
+    expect(api.calls.filter(c => c.table === 'events')).toHaveLength(1)
+    a.unmount()
+    b.unmount()
+  })
+
+  it('a page heard while its pass runs keeps the queue, however long one request takes', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'match', action: 'restore', status: 'queued', ts: new Date().toISOString(), payload: { match: { external_id: SEED, status: 'live' }, sets: [], events: [{ external_id: `${SEED}:e:1`, seq: 1 }], liveState: null } }
+    ])
+    const slow = gate()
+    api.respond = async (call) => {
+      if (call.table === '__restore') await slow.wait
+      return defaultRespond(call)
+    }
+    const page1 = await openPage()
+    const page2 = await openPage()
+    const a = renderHook(() => page1.useSyncQueue())
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+    const b = renderHook(() => page2.useSyncQueue())
+    await act(async () => { await vi.advanceTimersByTimeAsync(150000) })
+    expect(api.calls.filter(c => c.table === '__restore')).toHaveLength(1)
+    await act(async () => { slow.open(); await vi.advanceTimersByTimeAsync(6000) })
+    expect(api.calls.filter(c => c.table === '__restore')).toHaveLength(1)
+    a.unmount()
+    b.unmount()
+  })
+
+  it('where the browser refuses the lock itself, the page sends the queue on its own', async () => {
+    Object.defineProperty(navigator, 'locks', {
+      value: { request: async () => { throw new DOMException('not allowed here', 'SecurityError') } },
+      configurable: true
+    })
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: `${SEED}:e:1`, match_id: SEED, type: 'point', seq: 1 } }
+    ])
+    const page = await openPage()
+    const a = renderHook(() => page.useSyncQueue())
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+    a.unmount()
+  })
+
+  // The scoreboard's live-state catch-up and Match End's listen in the
+  // scorer's page; another page now sends the scorer's jobs
+  it('a pass that sent jobs tells every page (sync-queue-drained), and that is no wake', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: `${SEED}:e:1`, match_id: SEED, type: 'point', seq: 1 } }
+    ])
+    // another page of the app, on the same line
+    const other = new FakeChannel('ov-sync-queue')
+    const heard = []
+    other.onmessage = (e) => heard.push(e.data)
+    const page = await openPage()
+    const a = renderHook(() => page.useSyncQueue())
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+    expect(heard).toContainEqual({ type: 'drained', sent: 1, pending: false })
+    expect(heard).toContainEqual({ type: 'busy', lock: 'ov-sync-queue' })
+
+    // the page hears another page's: the window event, no pass of its own
+    const drained = []
+    const onDrained = (e) => drained.push(e.detail)
+    window.addEventListener('sync-queue-drained', onDrained)
+    const before = api.calls.length
+    other.postMessage({ type: 'drained', sent: 4, pending: true })
+    await act(async () => { await vi.advanceTimersByTimeAsync(10) })
+    window.removeEventListener('sync-queue-drained', onDrained)
+    expect(drained).toEqual([{ sent: 4, pending: true }])
+    expect(api.calls.length).toBe(before)
+    a.unmount()
+  })
 })
 
 describe('a pass reads each job again before it sends it', () => {
@@ -2600,6 +2727,25 @@ describe('set delete jobs', () => {
     expect(fakeDb.sync_queue.map.get(1).status).toBe('dropped')
   })
 
+  // A refused insert of the deleted set, kept in front of the delete, held
+  // it for good (per-set order), and the queued delete held the approval
+  it('a set refused for good and then deleted holds neither its delete nor the approval', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'set', action: 'insert', status: 'failed', failed_at: Date.now(), failed_auto_retries: 24, attempts: 25, payload: { external_id: 'match_100_aaa:s:7', match_id: 'match_100_aaa', index: 4, finished: true } }
+    ])
+    // Reopen set: set 7 is deleted on the device, set 4 played again (set 8), the match approved
+    expect(await queueSetDeletes(fakeDb, { seed_key: 'match_100_aaa' }, [7])).toBe(1)
+    await fakeDb.sync_queue.add({ resource: 'set', action: 'insert', status: 'queued', retry_count: 0, payload: { external_id: 'match_100_aaa:s:8', match_id: 'match_100_aaa', index: 4, finished: true } })
+    await fakeDb.sync_queue.add({ resource: 'match', action: 'update', status: 'queued', retry_count: 0, payload: { id: 'match_100_aaa', status: 'approved' } })
+    for (let i = 0; i < 3; i++) await runQueuePass()
+    const rows = [...fakeDb.sync_queue.map.values()]
+    expect(rows.map(j => `${j.resource}/${j.action}=${j.status}`)).toEqual(['set/delete=sent', 'set/insert=sent', 'match/update=sent'])
+    expect(api.calls.filter(c => c.table === 'sets' && c.action === 'delete').map(c => c.filters)).toEqual([[['eq', 'external_id', 'match_100_aaa:s:7']]])
+    // the approval went after the set it waits for
+    const writes = api.calls.filter(c => c.action !== 'select').map(c => `${c.table}/${c.action}`)
+    expect(writes.indexOf('matches/update')).toBeGreaterThan(writes.indexOf('sets/upsert'))
+  })
+
   it('a bare id is never sent (the backend refuses unscoped deletes)', async () => {
     fakeDb.sync_queue.reset([{ id: 1, resource: 'set', action: 'delete', status: 'queued', payload: { external_id: '7' } }])
     await runQueuePass()
@@ -2654,6 +2800,48 @@ describe('requests per pass', () => {
     expect(api.calls.filter(c => c.table === 'events')).toHaveLength(1)
     expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'queued', network_stops: 1 })
     expect(fakeDb.sync_queue.map.get(2).status).toBe('queued')
+  })
+
+  // A batch lost on its way (the 20 s request timeout on a weak hall link)
+  // was built again at the same size, and the backlog never drained
+  it('a batch lost on its way is smaller next time, down to one by one: a slow link still drains', async () => {
+    fakeDb.sync_queue.reset(Array.from({ length: 10 }, (_, i) => ev(i + 1)))
+    // the link gives out on any body of more than 2 rows
+    api.respond = (call) => {
+      if (call.table === 'events' && Array.isArray(call.data) && call.data.length > 2) return { data: null, error: { message: 'The operation timed out', status: 0, network: true } }
+      return defaultRespond(call)
+    }
+    for (let i = 0; i < 12; i++) await runQueuePass()
+    expect([...fakeDb.sync_queue.map.values()].every(j => j.status === 'sent')).toBe(true)
+    const sizes = api.calls.filter(c => c.table === 'events').map(c => (Array.isArray(c.data) ? c.data.length : 1))
+    expect(sizes.slice(0, 3)).toEqual([10, 5, 2])
+    // no event was parked for the batch's failures
+    expect(Math.max(...[...fakeDb.sync_queue.map.values()].map(j => j.network_stops || 0))).toBeLessThan(10)
+  })
+
+  it('down to one by one, and back up after events go through', async () => {
+    fakeDb.sync_queue.reset([ev(1), ev(2)])
+    api.respond = (call) => (call.table === 'events' && Array.isArray(call.data) ? { data: null, error: { message: 'Failed to fetch', status: 0, network: true } } : defaultRespond(call))
+    await runQueuePass()
+    // one by one now: the batch of 2 halved to 1
+    api.respond = defaultRespond
+    await runQueuePass()
+    expect(api.calls.filter(c => c.table === 'events').map(c => Array.isArray(c.data))).toEqual([true, false, false])
+    // each one through doubled it back: a batch again
+    fakeDb.sync_queue.reset([ev(3), ev(4), ev(5)])
+    await runQueuePass()
+    const last = api.calls.filter(c => c.table === 'events').pop()
+    expect(last.data.map(r => r.seq)).toEqual([3, 4, 5])
+  })
+
+  it('a batch stays small enough for a weak link (64 KB)', async () => {
+    // rally rows of about 6 KB (state snapshot, both line-ups)
+    fakeDb.sync_queue.reset(Array.from({ length: 20 }, (_, i) => ev(i + 1, { state_snapshot: { blob: 'x'.repeat(6000) } })))
+    await runQueuePass()
+    const upserts = api.calls.filter(c => c.table === 'events' && c.action === 'upsert')
+    expect(upserts.length).toBeGreaterThan(1)
+    expect(upserts.every(c => JSON.stringify(c.data).length < 80 * 1024)).toBe(true)
+    expect(upserts.reduce((n, c) => n + c.data.length, 0)).toBe(20)
   })
 
   it('never batches over a revision of the same events or a row of another shape', async () => {

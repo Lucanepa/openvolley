@@ -75,13 +75,19 @@ export function setDeleteJob(seedKey, setId, ts = new Date().toISOString()) {
 
 /**
  * Sets deleted on the device (a set end undone, Reopen set, a forfeit
- * reversed): their jobs not sent yet go, and their cloud rows are deleted.
- * The delete is queued behind whatever of the set already left (sent, in
- * flight, waiting out a backoff: the queue keeps one set's jobs in order), so
- * the server never keeps a set the device no longer has. A finished one left
- * there counted in the result the account approval checks (409
- * OV_RESULT_NOT_SYNCED at every try) and came back on the next import. Call
- * it after the local delete. Official matches only. Never throws.
+ * reversed): their jobs not delivered go, and their cloud rows are deleted.
+ * A finished set left in the cloud counted in the result the account
+ * approval checks (409 OV_RESULT_NOT_SYNCED at every try) and came back on
+ * the next import. Call it after the local delete. Official matches only.
+ * Never throws.
+ *
+ * The jobs that go: the queued ones, and the parked ones ('error' waiting
+ * out a backoff, 'failed' refused). A refused insert kept would hold the
+ * delete behind it for good (the queue keeps one set's jobs in order), and
+ * the delete the approval (closingMustWait). The delete by the namespaced id
+ * removes whatever of them reached the cloud. It is queued whatever is left:
+ * a queued job may be on its way in the running pass right now (it stays
+ * 'queued' until answered), and the delete then goes after it.
  * @param {object} db the app's Dexie database
  * @param {{ seed_key?: string, test?: boolean }} match the local match
  * @param {Iterable<number>} setIds local ids of the deleted sets
@@ -91,8 +97,8 @@ export async function queueSetDeletes(db, match, setIds) {
   const ids = [...(setIds || [])].filter(id => id != null)
   if (ids.length === 0 || !match?.seed_key || match.test) return 0
   try {
-    const queued = await db.sync_queue.where('status').equals('queued').toArray()
-    const stale = syncJobsForSets(queued, ids, match.seed_key)
+    const unsent = await db.sync_queue.where('status').anyOf('queued', 'error', 'failed').toArray()
+    const stale = syncJobsForSets(unsent, ids, match.seed_key)
     if (stale.length > 0) await db.sync_queue.bulkDelete(stale.map(j => j.id))
     const ts = new Date().toISOString()
     for (const id of ids) await db.sync_queue.add(setDeleteJob(match.seed_key, id, ts))

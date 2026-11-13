@@ -151,12 +151,30 @@ const QUEUE_WAKE_CHANNEL = 'ov-sync-queue'
 // A wake heard by a page that holds no pass runs its flush through this
 // event (each mounted hook listens; the first one runs it)
 const QUEUE_WAKE_EVENT = 'ov-sync-queue-wake'
+// The lock has no lease of its own: a page suspended while it holds it (a
+// background tab on iOS, its pass waiting on a request) keeps it until it
+// runs again, and every other page sent nothing meanwhile, silently. The
+// page holding it says so when its pass begins and every QUEUE_BEAT_MS
+// while it runs; a page that has found the lock taken for QUEUE_LEASE_MS
+// without hearing the holder takes it over (steal), and the holder, once
+// it runs again, ends its pass before its next job (runQueuePass lease).
+// Over a minute: a hidden page's timers may run only once a minute
+// (intensive throttling), and a page still sending must keep the lock.
+const QUEUE_BEAT_MS = 5000
+const QUEUE_LEASE_MS = 90 * 1000
+// A page that has not tried the lock for this long (suspended itself, or
+// hidden and throttled) heard nothing meanwhile: it watches afresh
+const QUEUE_WATCH_GAP_MS = 30 * 1000
 
 // Event inserts of one match sent as one upsert (runQueuePass): after a long
 // offline match hundreds of them waited, one request each against the
-// per-user write limit (600 a minute). The /api/db body limit is 5 MB.
+// per-user write limit (600 a minute). The /api/db body limit is 5 MB. A
+// rally row (state snapshot, both line-ups) is about 5 KB: 64 KB take a few
+// seconds on a weak hall uplink (20 KB/s), well inside the 20 s request
+// timeout. A batch that failed on its way is halved for its match
+// (eventBatchLimit), down to one by one, and doubles back after a success.
 const EVENT_BATCH_MAX = 50
-const EVENT_BATCH_MAX_BYTES = 256 * 1024
+const EVENT_BATCH_MAX_BYTES = 64 * 1024
 
 // processJob result: stop this pass, leave the job queued untouched (rate limited)
 export const STOP_PASS = 'stop'
@@ -1745,6 +1763,25 @@ function isBatchableEventInsert(job) {
 // write NULL into the columns a row does not carry
 const payloadShape = (job) => Object.keys(job.payload || {}).sort().join(',')
 
+// Rows per event batch of a match, where lowered from EVENT_BATCH_MAX: a
+// batch that did not get through on its way (network, the request's
+// timeout, a page from in front of the backend) was built again at the same
+// size by the next pass, and on a link too slow for it the backlog never
+// drained. Halved after each such failure, down to one by one; doubled back
+// after each event or batch of the match that went through. Per page load.
+const eventBatchLimits = new Map()
+const eventBatchLimit = (seedKey) => eventBatchLimits.get(seedKey) ?? EVENT_BATCH_MAX
+function noteEventBatch(seedKey, rows, delivered) {
+  if (!delivered) {
+    eventBatchLimits.set(seedKey, Math.max(1, Math.floor(rows / 2)))
+    return
+  }
+  const limit = eventBatchLimits.get(seedKey)
+  if (limit == null) return
+  if (limit * 2 >= EVENT_BATCH_MAX) eventBatchLimits.delete(seedKey)
+  else eventBatchLimits.set(seedKey, limit * 2)
+}
+
 /**
  * Event inserts of one match in one upsert (EVENT_BATCH_MAX). A refusal by
  * the backend is left to the jobs one by one, each with its own answer (one
@@ -1782,9 +1819,11 @@ async function sendEventBatch(jobs, ctx) {
 /**
  * One pass over the queued jobs, in dependency order. `resources`: the lane
  * (SCORE_LANE by default; the scoresheet files go in runUploadLane).
- * @returns {Promise<{ processed: number, sent: number, hasError: boolean, hasFailed: boolean, hasRetry: boolean, stopped: boolean, authRequired: boolean }>}
+ * `lease`: withQueueLock's; once another page has taken the lock over, the
+ * pass ends before its next job (leaseLost).
+ * @returns {Promise<{ processed: number, sent: number, hasError: boolean, hasFailed: boolean, hasRetry: boolean, stopped: boolean, authRequired: boolean, leaseLost?: boolean }>}
  */
-export async function runQueuePass({ resources = SCORE_LANE } = {}) {
+export async function runQueuePass({ resources = SCORE_LANE, lease = null } = {}) {
   const queued = (await db.sync_queue.where('status').equals('queued').toArray()).filter(j => resources.includes(j.resource))
   const outcome = { processed: queued.length, sent: 0, hasError: false, hasFailed: false, hasRetry: false, stopped: false, authRequired: false }
   if (queued.length === 0) return outcome
@@ -1832,7 +1871,8 @@ export async function runQueuePass({ resources = SCORE_LANE } = {}) {
     const ids = new Set([first.payload.external_id])
     let bytes = JSON.stringify(first.payload).length
     const batch = [first]
-    for (let k = start + 1; k < jobs.length && batch.length < EVENT_BATCH_MAX; k++) {
+    const limit = Math.min(EVENT_BATCH_MAX, eventBatchLimit(seedKey))
+    for (let k = start + 1; k < jobs.length && batch.length < limit; k++) {
       const next = jobs[k]
       if (!isBatchableEventInsert(next) || next.payload.match_id !== seedKey) break
       if (isHeldBack(entityKey(next), next.id) || isHeldBack(`whole:${seedKey}`, next.id)) break
@@ -1858,6 +1898,12 @@ export async function runQueuePass({ resources = SCORE_LANE } = {}) {
 
     for (let i = 0; i < jobs.length; i++) {
       if (handled.has(jobs[i].id)) continue
+      if (lease && !lease.held()) {
+        // Another page sends the queue now; it reads every job again
+        outcome.leaseLost = true
+        outcome.hasRetry = true
+        return outcome
+      }
       let job = jobs[i]
       const key = entityKey(job)
       const matchKey = jobMatchKey(job)
@@ -1889,6 +1935,7 @@ export async function runQueuePass({ resources = SCORE_LANE } = {}) {
             handled.add(b.id)
           }
           outcome.sent += batch.length
+          noteEventBatch(job.payload.match_id, batch.length, true)
           await clearCloudBlock(job)
           continue
         }
@@ -1896,6 +1943,8 @@ export async function runQueuePass({ resources = SCORE_LANE } = {}) {
           // as if the first job had got the answer
           result = answer.result
           jobError = ctx.error
+          // (lost on its way: smaller next time)
+          if (result === STOP_NETWORK || result === STOP_ERROR) noteEventBatch(job.payload.match_id, batch.length, false)
         } else {
           noBatch.add(job.payload.match_id)
         }
@@ -1910,6 +1959,7 @@ export async function runQueuePass({ resources = SCORE_LANE } = {}) {
       if (result === true) {
         await db.sync_queue.update(job.id, { status: 'sent', retry_count: 0, network_stops: 0, last_error: null })
         outcome.sent++
+        if (isBatchableEventInsert(job)) noteEventBatch(job.payload.match_id, 1, true)
         continue
       }
 
@@ -2037,7 +2087,7 @@ export async function runUploadLane() {
   uploadLaneBusy = true
   try {
     // (another page sending the files: it sends these too)
-    const { ran, value } = await withQueueLock(UPLOAD_LOCK, () => runQueuePass({ resources: UPLOAD_LANE }))
+    const { ran, value } = await runAsQueueHolder(UPLOAD_LOCK, (lease) => runQueuePass({ resources: UPLOAD_LANE, lease }))
     return ran ? value : null
   } finally {
     uploadLaneBusy = false
@@ -2070,37 +2120,88 @@ let flushAgain = false
 // This page is running a pass of the score's lane (under QUEUE_LOCK)
 let queuePassRunning = false
 
+// Web Locks are there but refuse every request (an opaque origin, a browser
+// bug): logged once, then each page flushes on its own
+let queueLockRefusedLogged = false
+
 /**
  * Run `fn` holding the origin-wide Web Lock `name`, if no other page of the
  * app holds it (one flusher per origin). Without Web Locks (browsers before
- * 2022) `fn` runs at once: one flusher per page, as before.
+ * 2022), or where the browser refuses the request itself, `fn` runs at once:
+ * one flusher per page, as before. `steal`: take the lock from the page
+ * holding it (QUEUE_LEASE_MS). `fn` gets a lease: held() turns false once
+ * another page has taken the lock over; the pass then ends before its next
+ * job.
  * @returns {Promise<{ ran: boolean, value?: * }>} ran false: another page holds it
  */
-export async function withQueueLock(name, fn) {
+export async function withQueueLock(name, fn, { steal = false } = {}) {
   const locks = typeof navigator !== 'undefined' ? navigator.locks : null
-  if (!locks || typeof locks.request !== 'function') return { ran: true, value: await fn() }
+  const unlocked = { locked: false, held: () => true }
+  if (!locks || typeof locks.request !== 'function') return { ran: true, value: await fn(unlocked) }
+  let entered = false
+  let lost = false
+  let work = null
+  const lease = { locked: true, held: () => !lost }
   let out = { ran: false }
-  await locks.request(name, { ifAvailable: true }, async (lock) => {
-    if (!lock) return
-    out = { ran: true, value: await fn() }
-  })
+  try {
+    await locks.request(name, steal ? { steal: true } : { ifAvailable: true }, async (lock) => {
+      if (!lock) return
+      entered = true
+      work = (async () => fn(lease))()
+      out = { ran: true, value: await work }
+    })
+  } catch (err) {
+    if (!entered) {
+      if (!queueLockRefusedLogged) {
+        queueLockRefusedLogged = true
+        safeLog.warn('[SyncQueue] The browser refused the queue lock; this page sends the queue on its own:', err?.name || err?.message)
+      }
+      return { ran: true, value: await fn(unlocked) }
+    }
+    // Another page took the lock over (it did not hear this one for
+    // QUEUE_LEASE_MS): this pass ends before its next job
+    if (err?.name !== 'AbortError' || !work) throw err
+    lost = true
+    safeLog.warn(`[SyncQueue] Another page took ${name} over; this pass ends after its current job`)
+    return { ran: true, value: await work }
+  }
   return out
 }
 
-// The pages' wake-up line (BroadcastChannel; none in old browsers): a page
-// that found the queue taken asks the page holding it to run once more after
-// its pass (the pass it runs read the queue before this page's write). A page
-// that hears it while it holds no pass and runs no flush flushes itself (the
-// holder may have just finished); it never asks on in turn, so pages cannot
-// wake each other in a loop.
+// The pages' line (BroadcastChannel; none in old browsers), by message type:
+// - 'flush': a page that found the queue taken asks the page holding it to
+//   run once more after its pass (the pass it runs read the queue before
+//   this page's write). A page that hears it while it holds no pass and runs
+//   no flush flushes itself (the holder may have just finished); it never
+//   asks on in turn, so pages cannot wake each other in a loop.
+// - 'busy': the page holding `lock` is alive (QUEUE_BEAT_MS).
+// - 'drained': the holder's pass sent jobs. Each page dispatches
+//   'sync-queue-drained' too: the scoreboard's live-state catch-up and Match
+//   End's listen in the scorer's page, whichever page sent its jobs.
 let wakeChannel
+// Per lock: when this page first found it taken (since it last held it),
+// when it last heard the page holding it, and when it last tried it
+const lockTakenSince = new Map()
+const holderHeardAt = new Map()
+const lockTriedAt = new Map()
 function queueWakeChannel() {
   if (wakeChannel !== undefined) return wakeChannel
   wakeChannel = null
   try {
     if (typeof BroadcastChannel === 'function') {
       wakeChannel = new BroadcastChannel(QUEUE_WAKE_CHANNEL)
-      wakeChannel.onmessage = () => {
+      wakeChannel.onmessage = (e) => {
+        const msg = e?.data || {}
+        if (msg.type === 'busy') {
+          if (typeof msg.lock === 'string') holderHeardAt.set(msg.lock, Date.now())
+          return
+        }
+        if (msg.type === 'drained') {
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('sync-queue-drained', { detail: { sent: Number(msg.sent) || 0, pending: !!msg.pending } }))
+          }
+          return
+        }
         if (queuePassRunning) flushAgain = true
         else if (!flushInProgress && typeof window !== 'undefined') window.dispatchEvent(new Event(QUEUE_WAKE_EVENT))
       }
@@ -2110,10 +2211,44 @@ function queueWakeChannel() {
   }
   return wakeChannel
 }
-function wakeQueueHolder() {
+function postQueueMessage(message) {
   try {
-    queueWakeChannel()?.postMessage({ type: 'flush' })
+    queueWakeChannel()?.postMessage(message)
   } catch { /* closed: the 5 s poll catches up */ }
+}
+function wakeQueueHolder() {
+  postQueueMessage({ type: 'flush' })
+}
+
+/**
+ * withQueueLock for this page's passes: the holder is heard (a 'busy' when
+ * its pass begins and every QUEUE_BEAT_MS while it runs), and a lock held
+ * by a page not heard for QUEUE_LEASE_MS while this page kept finding it
+ * taken is taken over.
+ */
+async function runAsQueueHolder(name, fn) {
+  const now = Date.now()
+  const lastTry = lockTriedAt.get(name)
+  lockTriedAt.set(name, now)
+  if (lockTakenSince.has(name) && (lastTry == null || now - lastTry > QUEUE_WATCH_GAP_MS)) lockTakenSince.set(name, now)
+  const since = lockTakenSince.get(name)
+  const quietFor = since == null ? 0 : now - Math.max(since, holderHeardAt.get(name) || 0)
+  const steal = quietFor > QUEUE_LEASE_MS
+  if (steal) safeLog.warn(`[SyncQueue] The page holding ${name} has not been heard for ${Math.round(quietFor / 1000)} s; taking it over`)
+  const out = await withQueueLock(name, async (lease) => {
+    lockTakenSince.delete(name)
+    if (!lease.locked) return fn(lease)
+    const beat = () => postQueueMessage({ type: 'busy', lock: name })
+    beat()
+    const timer = setInterval(beat, QUEUE_BEAT_MS)
+    try {
+      return await fn(lease)
+    } finally {
+      clearInterval(timer)
+    }
+  }, { steal })
+  if (!out.ran && !lockTakenSince.has(name)) lockTakenSince.set(name, Date.now())
+  return out
 }
 
 // Last run of flush's throttled housekeeping (requeue of errored jobs, prune)
@@ -2162,6 +2297,10 @@ export function resetQueueHousekeeping() {
   lastRequeueAt = 0
   lastPruneAt = 0
   claimAttempts.clear()
+  eventBatchLimits.clear()
+  lockTakenSince.clear()
+  holderHeardAt.clear()
+  lockTriedAt.clear()
   staleCopiesSweep = null
   movedMatchesCheck = null
 }
@@ -2298,8 +2437,8 @@ export function useSyncQueue() {
     }
   }, [])
 
-  // One flush's work, under the queue's lock (flush)
-  const flushPass = useCallback(async () => {
+  // One flush's work, under the queue's lock (flush; `lease` withQueueLock's)
+  const flushPass = useCallback(async (lease) => {
     const connected = await checkSupabaseConnection()
     if (!connected) return
 
@@ -2334,7 +2473,12 @@ export function useSyncQueue() {
     // A session is there (the checks above): the "sign in again" banner must
     // not stay up through this pass (a long queue takes a minute)
     if (currentSyncStatus === 'auth_required') setSyncStatus('syncing')
-    const outcome = await runQueuePass()
+    const outcome = await runQueuePass({ lease })
+    if (outcome.leaseLost) {
+      // Another page sends the queue now (runAsQueueHolder)
+      setSyncStatus('syncing')
+      return
+    }
     noteSyncPass({ sent: outcome.sent, failed: outcome.hasFailed || outcome.hasError ? 1 : 0, pending: outcome.hasRetry ? 1 : 0 })
     lastSyncPass = {
       at: Date.now(),
@@ -2358,8 +2502,10 @@ export function useSyncQueue() {
     runUploadLane().catch((err) => safeLog.warn('[SyncQueue] Scoresheet upload lane failed:', err?.message))
 
     if (outcome.sent > 0 && !outcome.stopped && typeof window !== 'undefined') {
-      // Consumers that push state outside the queue (match_live_state) catch up
+      // Consumers that push state outside the queue (match_live_state) catch
+      // up, in every page of the app (QUEUE_WAKE_CHANNEL)
       window.dispatchEvent(new CustomEvent('sync-queue-drained', { detail: { sent: outcome.sent, pending: outcome.hasRetry } }))
+      postQueueMessage({ type: 'drained', sent: outcome.sent, pending: outcome.hasRetry })
     }
 
     if (outcome.processed === 0) {
@@ -2396,10 +2542,10 @@ export function useSyncQueue() {
       }
       // One flusher per origin: when another page is sending the queue, it
       // runs once more for this page's writes when its pass is through
-      const { ran } = await withQueueLock(QUEUE_LOCK, async () => {
+      const { ran } = await runAsQueueHolder(QUEUE_LOCK, async (lease) => {
         queuePassRunning = true
         try {
-          return await flushPass()
+          return await flushPass(lease)
         } finally {
           queuePassRunning = false
         }
