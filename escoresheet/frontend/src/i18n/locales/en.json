@@ -2889,6 +2889,8 @@
       "a_pin": "Step 3 shows the PIN of the chosen tablet. The links and codes never contain it. A tablet that is off is refused: turn it on in step 2 (“Let … in”). After too many wrong PINs, wait a few minutes.",
       "q_hallServer": "What is the hall server?",
       "a_hallServer": "The OpenVolley desktop app runs a server for the tablets on the hall network, with no internet needed. A venue box or the downloadable server does the same. With internet, the match also syncs to the cloud.",
+      "q_hallNetwork": "Which Wi-Fi should the hall server use?",
+      "a_hallNetwork": "Give the scorer, referee and bench tablets their own Wi-Fi with a password (WPA2 or WPA3) that spectators do not get. On an open or shared Wi-Fi, others in the hall can read the match traffic, including the PINs and the team lists.",
       "q_internetTablets": "Do the tablets need internet?",
       "a_internetTablets": "Only with “Internet”. Then you must be signed in, and the match must be synced (the status says Synced) before the tablets find it. On the hall network, no internet is needed."
     },

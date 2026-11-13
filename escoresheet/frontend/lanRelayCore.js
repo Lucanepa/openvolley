@@ -37,6 +37,9 @@ export const {
   createMainInstanceGate,
   OTHER_COURT_COOKIE,
   MAX_OWNED_PER_IP,
+  isTrustedRelayOrigin,
+  isAllowedRelayHost,
+  relayRequestRefusal,
 } = core
 
 /**

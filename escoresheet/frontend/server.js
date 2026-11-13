@@ -7,12 +7,13 @@
 import { createServer as createHttpServer } from 'http'
 import { createServer as createHttpsServer } from 'https'
 import { createServer as createNetServer } from 'net'
-import { readFileSync, existsSync, statSync } from 'fs'
+import { readFileSync, existsSync, statSync, mkdirSync, writeFileSync, renameSync } from 'fs'
+import { createHash, randomBytes, timingSafeEqual } from 'crypto'
 import { fileURLToPath } from 'url'
 import { dirname, join, resolve, extname, basename, sep } from 'path'
 import { WebSocketServer } from 'ws'
-import { networkInterfaces } from 'os'
-import { createLanRelay, createLocalAddressCheck, createMainInstanceGate, WS_MAX_PAYLOAD, WS_PER_MESSAGE_DEFLATE, signCore } from './lanRelayCore.js'
+import { networkInterfaces, homedir } from 'os'
+import { createLanRelay, createLocalAddressCheck, createMainInstanceGate, isTrustedRelayOrigin, WS_MAX_PAYLOAD, WS_PER_MESSAGE_DEFLATE, signCore } from './lanRelayCore.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -84,9 +85,80 @@ if (useHttps) {
 const isLocalAddress = createLocalAddressCheck(networkInterfaces)
 const mainGate = createMainInstanceGate({ isLocal: isLocalAddress })
 
+/**
+ * The game PIN of every room this relay held, as a salted hash on disk
+ * (OV_RELAY_STATE_DIR, default ~/.openvolley-relay/claims.json): after a
+ * restart a room is still the scorer's, and a sync without its game PIN does
+ * not take it over (lanRelayCore claim). Rooms are forgotten after
+ * CLAIM_KEEP_MS or when the scorer deletes the match. Errors writing the file
+ * are logged and leave the claims in memory. `dir` null: in memory only (the
+ * tests' relays, NODE_ENV=test without OV_RELAY_STATE_DIR).
+ */
+const CLAIM_KEEP_MS = 7 * 24 * 60 * 60 * 1000
+const MAX_STORED_CLAIMS = 2000
+function createClaimFileStore(dir) {
+  const file = dir ? join(dir, 'claims.json') : null
+  let state = { salt: randomBytes(16).toString('hex'), rooms: {} }
+  if (file) try {
+    const read = JSON.parse(readFileSync(file, 'utf8'))
+    if (read && typeof read.salt === 'string' && read.rooms && typeof read.rooms === 'object') state = read
+  } catch { /* first start, or an unreadable file: start afresh */ }
+  const digest = (matchId, pin) => createHash('sha256').update(`${state.salt}\0${matchId}\0${pin}`).digest('hex')
+  const save = () => {
+    if (!file) return
+    try {
+      mkdirSync(dir, { recursive: true, mode: 0o700 })
+      writeFileSync(`${file}.tmp`, JSON.stringify(state), { mode: 0o600 })
+      renameSync(`${file}.tmp`, file)
+    } catch (err) {
+      console.warn('[Relay] could not save the room claims:', err.message)
+    }
+  }
+  const prune = () => {
+    const now = Date.now()
+    const entries = Object.entries(state.rooms).filter(([, r]) => r && now - r.at < CLAIM_KEEP_MS)
+    entries.sort((a, b) => b[1].at - a[1].at)
+    state.rooms = Object.fromEntries(entries.slice(0, MAX_STORED_CLAIMS))
+  }
+  prune()
+  return {
+    check(matchId, pin) {
+      const r = Object.hasOwn(state.rooms, matchId) ? state.rooms[matchId] : null
+      if (!r || Date.now() - r.at >= CLAIM_KEEP_MS) return undefined
+      if (pin === null || pin === undefined) return false
+      const a = Buffer.from(digest(matchId, pin), 'hex')
+      const b = Buffer.from(String(r.h), 'hex')
+      return a.length === b.length && timingSafeEqual(a, b)
+    },
+    remember(matchId, pin) {
+      const h = digest(matchId, pin)
+      const r = Object.hasOwn(state.rooms, matchId) ? state.rooms[matchId] : null
+      // the file is written when a room or its PIN is new, and once an hour per room
+      if (r && r.h === h && Date.now() - r.at < 60 * 60 * 1000) return
+      state.rooms[matchId] = { h, at: Date.now() }
+      prune()
+      save()
+    },
+    forget(matchId) {
+      if (!Object.hasOwn(state.rooms, matchId)) return
+      delete state.rooms[matchId]
+      save()
+    },
+  }
+}
+
+// The names this relay is reached by besides addresses and LAN names (Host check)
+const RELAY_HOSTS = [HOSTNAME, ...String(process.env.OV_RELAY_HOSTS || '').split(',')]
+  .map((h) => h.trim().toLowerCase()).filter(Boolean)
+
 // Shared match data store + WS protocol (populated by the scoreboard via WebSocket).
 // Sign on phone: this machine may start a session, others prove the game PIN.
-const relay = createLanRelay({ isLocal: isLocalAddress })
+const relay = createLanRelay({
+  isLocal: isLocalAddress,
+  claimStore: createClaimFileStore(process.env.OV_RELAY_STATE_DIR ? resolve(process.env.OV_RELAY_STATE_DIR)
+    : process.env.NODE_ENV === 'test' ? null : join(homedir(), '.openvolley-relay')),
+  allowedHosts: RELAY_HOSTS,
+})
 
 // MIME types for static files
 const MIME_TYPES = {
@@ -125,22 +197,25 @@ function getLocalIP() {
   return '127.0.0.1'
 }
 
-// Request handler for static files
+// Request handler: a throw answers 500 and never ends the relay process
+// (every court's tablets would lose it)
 const requestHandler = (req, res) => {
+  try {
+    handleRequest(req, res)
+  } catch (err) {
+    console.error('[HTTP] request failed:', err && err.message)
+    if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'application/json' })
+    if (!res.writableEnded) res.end(JSON.stringify({ success: false, error: 'Internal error' }))
+  }
+}
+
+function handleRequest(req, res) {
   let urlPath = req.url.split('?')[0] // Remove query string
 
   // --- Centralized CORS headers ---
   const origin = req.headers.origin
-  if (origin && (
-    origin.match(/^https:\/\/[a-z0-9-]+\.openvolley\.app$/) ||
-    origin.startsWith('http://localhost:') ||
-    origin.startsWith('http://127.0.0.1:') ||
-    origin.startsWith('https://localhost:') ||
-    origin.startsWith('https://127.0.0.1:') ||
-    origin.match(/^https?:\/\/192\.168\.\d{1,3}\.\d{1,3}(:\d+)?$/) ||
-    origin.match(/^https?:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$/) ||
-    origin.match(/^https?:\/\/172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}(:\d+)?$/)
-  )) {
+  // Same rule as the relay's own routes (lanRelayCore isTrustedRelayOrigin)
+  if (origin && isTrustedRelayOrigin(origin, req.headers.host)) {
     res.setHeader('Access-Control-Allow-Origin', origin)
   } else {
     res.setHeader('Access-Control-Allow-Origin', 'https://app.openvolley.app')
@@ -335,6 +410,12 @@ const wsPlainServer = createHttpServer(wsOnly)
 const wsTlsServer = httpsOptions ? createHttpsServer(httpsOptions, wsOnly) : null
 for (const server of [wsPlainServer, wsTlsServer]) {
   server?.on('upgrade', (req, socket, head) => {
+    // A page elsewhere (any Origin a browser sends that is not the app's) or
+    // a re-pointed name (Host) gets no socket (lanRelayCore upgradeRefusal)
+    if (relay.upgradeRefusal(req)) {
+      socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n')
+      return
+    }
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req))
   })
 }
