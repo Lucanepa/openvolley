@@ -125,9 +125,11 @@ export function connectionPinType (sport, type) {
  * check, and a few concurrent referee / bench joins OOM-killed Postgres and
  * the backend. A wrong PIN now reads no row at all. The rows found are
  * still checked here, in constant time, as before.
+ * `skip(row)`: a match left out (a PIN-only search skips a match whose PIN
+ * type is locked by the PIN failure budget: it proves nothing then).
  * @returns {Promise<{ ok: boolean, row?: object|null }>} ok false: the database failed
  */
-export async function findMatchByConnectionPin ({ runQuery, pins, sport, cfg, pin, matchExternalId = null, maxRows }) {
+export async function findMatchByConnectionPin ({ runQuery, pins, sport, cfg, pin, matchExternalId = null, maxRows, skip = null }) {
   const isBeach = sport === 'beach'
   const pinStr = pinText(pin)
   const found = new Map()
@@ -169,9 +171,38 @@ export async function findMatchByConnectionPin ({ runQuery, pins, sport, cfg, pi
     const stored = m.connection_pins || {}
     const conns = m.connections || {}
     if (cfg.enabledKey && !conns[cfg.enabledKey]) return false
+    if (skip && skip(m)) return false
     return pinMatchers.some(([k, matches]) => matches(stored[k]))
   })
   return { ok: true, row: row || null }
+}
+
+/**
+ * Is `matchExternalId` a match validate-connection-pin compares PINs with (a
+ * setup / live match of `sport`)? After a wrong PIN for a named match: one
+ * that is not has no PIN to guess. Never throws.
+ * @returns {Promise<boolean|null>} null: the database failed
+ */
+export async function isConnectionPinMatch ({ runQuery, sport, matchExternalId }) {
+  try {
+    const { status, body } = await runQuery({
+      table: 'matches',
+      action: 'select',
+      params: {
+        columns: 'id',
+        filters: [
+          { type: 'eq', column: 'external_id', value: matchExternalId },
+          { type: 'in', column: 'status', value: ['setup', 'live'] },
+          { type: 'eq', column: 'sport_type', value: sport === 'beach' ? 'beach' : 'indoor' }
+        ],
+        limit: 1
+      }
+    }, { internal: true })
+    if (status !== 200) return null
+    return (body.data || []).length > 0
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -270,6 +301,48 @@ export function createMatchTokens ({ secret = null, ttlMs = MATCH_TOKEN_TTL_MS, 
 }
 
 /**
+ * The PINs of a relayed match (the scorer's Dexie match object) by PIN type,
+ * as [type, pin] pairs, under the names the PIN failure budget counts them
+ * by (validate-connection-pin's types, 'game' for the game PIN; on a beach
+ * match the home / away wire fields are its team1 / team2 benches). With
+ * `open` (default) only those pinGrantsAccess accepts: the referee PIN while
+ * the referee connection is on, a team's bench PIN while that bench
+ * connection is on, and the game PIN; else every PIN the match carries.
+ */
+export function relayPinsByType (match, { sport = 'indoor', open = true } = {}) {
+  if (!match || typeof match !== 'object') return []
+  const beach = sport === 'beach'
+  const out = []
+  const add = (type, on, pin) => {
+    const s = pinText(pin)
+    if (s && (on || !open)) out.push([type, s])
+  }
+  add('referee', match.refereeConnectionEnabled === true, match.refereePin)
+  add(beach ? 'bench_team1' : 'bench_home', match.homeTeamConnectionEnabled === true, match.homeTeamPin)
+  add(beach ? 'bench_team2' : 'bench_away', match.awayTeamConnectionEnabled === true, match.awayTeamPin)
+  add('bench_team1', match.team1TeamConnectionEnabled === true, firstPin(match, ['team1Pin', 'team1TeamPin']))
+  add('bench_team2', match.team2TeamConnectionEnabled === true, firstPin(match, ['team2Pin', 'team2TeamPin']))
+  add('game', true, match.gamePin != null && match.gamePin !== '' ? match.gamePin : match.game_pin)
+  return out
+}
+
+/**
+ * The PIN type `pin` proves for a relayed match (pinGrantsAccess's rules),
+ * among `types` only when given (the PIN failure budget leaves locked types
+ * out), else null. Constant-time compares, every candidate compared.
+ */
+export function pinTypeOf (match, pin, { sport = 'indoor', types = null } = {}) {
+  const p = pinText(pin)
+  if (!p) return null
+  let hit = null
+  for (const [type, stored] of relayPinsByType(match, { sport })) {
+    if (types && !types.includes(type)) continue
+    if (safeEqual(stored, p) && hit === null) hit = type
+  }
+  return hit
+}
+
+/**
  * Does `pin` prove access to a relayed match (the scorer's Dexie match object)?
  * Accepted: the referee PIN while the referee connection is on, a team's bench
  * PIN while that bench connection is on, and the game PIN (the scorer's own
@@ -278,21 +351,7 @@ export function createMatchTokens ({ secret = null, ttlMs = MATCH_TOKEN_TTL_MS, 
  * (there is no PIN step to have passed).
  */
 export function pinGrantsAccess (match, pin) {
-  const p = pinText(pin)
-  if (!p || !match || typeof match !== 'object') return false
-  const candidates = []
-  if (match.refereeConnectionEnabled === true) candidates.push(match.refereePin)
-  if (match.homeTeamConnectionEnabled === true) candidates.push(match.homeTeamPin)
-  if (match.awayTeamConnectionEnabled === true) candidates.push(match.awayTeamPin)
-  if (match.team1TeamConnectionEnabled === true) candidates.push(firstPin(match, ['team1Pin', 'team1TeamPin']))
-  if (match.team2TeamConnectionEnabled === true) candidates.push(firstPin(match, ['team2Pin', 'team2TeamPin']))
-  candidates.push(match.gamePin != null && match.gamePin !== '' ? match.gamePin : match.game_pin)
-  let ok = false
-  for (const c of candidates) {
-    const s = pinText(c)
-    if (s && safeEqual(s, p)) ok = true
-  }
-  return ok
+  return pinTypeOf(match, pin) !== null
 }
 
 /**
