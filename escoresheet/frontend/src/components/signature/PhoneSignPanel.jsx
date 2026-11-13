@@ -166,9 +166,12 @@ export default function PhoneSignPanel({ transports, slot, matchKey = null, cont
         return
       }
       if (!r.ok) {
-        // Offline / unreachable / an older relay: the other way, once
+        // Offline / unreachable / an older relay, or a match the server does
+        // not hold (OV_SIGN_MATCH: a test match, one not synced yet): the
+        // other way, once
         const other = transport === 'cloud' ? 'lan' : 'cloud'
-        if (!fellBackRef.current && transports?.[other]?.ok && (r.network || r.status >= 500 || r.code === 'OV_SIGN_UNSUPPORTED')) {
+        const otherWay = r.network || r.status >= 500 || r.code === 'OV_SIGN_UNSUPPORTED' || (transport === 'cloud' && r.code === 'OV_SIGN_MATCH')
+        if (!fellBackRef.current && transports?.[other]?.ok && otherWay) {
           fellBackRef.current = true
           setTransport(other)
           return
@@ -394,12 +397,15 @@ export default function PhoneSignPanel({ transports, slot, matchKey = null, cont
 
 /**
  * What to say when a link could not be made: the account's session ran out
- * (401), the account may not start one (403 on the internet), else the
- * generic "try again".
+ * (401), the account may not start one (403 on the internet), the server
+ * does not hold the match or this account does not write it (OV_SIGN_MATCH:
+ * a test match never reaches the server, a new one only once it synced),
+ * else the generic "try again".
  */
 export function startFailureKey(err, transport) {
   if (err?.status === 401 || err?.code === 'OV_AUTH_REQUIRED') return 'phoneSign.reasonSignIn'
   if (transport === 'cloud' && err?.code === 'OV_SIGN_FORBIDDEN') return 'phoneSign.reasonRole'
+  if (transport === 'cloud' && err?.code === 'OV_SIGN_MATCH') return 'phoneSign.notOnServer'
   return 'phoneSign.startFailed'
 }
 

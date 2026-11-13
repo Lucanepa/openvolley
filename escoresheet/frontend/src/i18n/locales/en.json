@@ -4547,6 +4547,7 @@
     "revalidateFailed": "An account approval is no longer valid. Check the signatures and approve again.",
     "unconfirmedTitle": "Approvals not confirmed",
     "unconfirmedBody": "This device cannot reach the server, so the approvals with an account of {{roles}} cannot be checked. If you go on, these signatures are printed as pending on the scoresheet. To complete them, draw the signatures, or connect and try again.",
+    "unconfirmedBodySignedOut": "This device is signed out, so the approvals with an account of {{roles}} cannot be checked. If you go on, these signatures are printed as pending on the scoresheet. To complete them, draw the signatures, or sign in and try again.",
     "unconfirmedApprove": "Approve without them",
     "errors": {
       "pinInvalid": "Email or PIN not accepted. After several wrong PINs the PIN pauses: the official sees it in their profile. Or sign by hand.",
@@ -5270,7 +5271,8 @@
     "reasonSignIn": "Sign in to sign on a phone over the internet. Or sign on this device.",
     "reasonRole": "Your account can’t start phone signing yet. Sign on this device.",
     "reasonNoNetwork": "No network for phones: connect this laptop to the hall Wi-Fi or turn on its own Wi-Fi (Connect tablets).",
-    "startFailed": "Could not make a link. Try again, or sign on this device."
+    "startFailed": "Could not make a link. Try again, or sign on this device.",
+    "notOnServer": "This match is not on the server (a test match never is, a new match only once it has synced), so the internet way cannot start. Sign on this device, use the hall network, or try again in a moment."
   },
   "sizeGate": {
     "title": "To use this application, please use a tablet or larger screen (minimum 800×600).",

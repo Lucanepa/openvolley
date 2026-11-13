@@ -4529,6 +4529,7 @@
     "revalidateFailed": "Eine Konto-Genehmigung ist nicht mehr gültig. Prüfe die Unterschriften und genehmige neu.",
     "unconfirmedTitle": "Genehmigungen nicht bestätigt",
     "unconfirmedBody": "Dieses Gerät erreicht den Server nicht, darum können die Genehmigungen mit Konto von {{roles}} nicht geprüft werden. Wenn du weitermachst, erscheinen diese Unterschriften auf dem Spielbericht als ausstehend. Um sie zu vervollständigen, unterschreibe von Hand, oder verbinde dich und versuche es nochmals.",
+    "unconfirmedBodySignedOut": "Dieses Gerät ist abgemeldet, darum können die Genehmigungen mit Konto von {{roles}} nicht geprüft werden. Wenn du weitermachst, erscheinen diese Unterschriften auf dem Spielbericht als ausstehend. Um sie zu vervollständigen, unterschreibe von Hand, oder melde dich an und versuche es nochmals.",
     "unconfirmedApprove": "Ohne sie genehmigen",
     "errors": {
       "pinInvalid": "E-Mail oder PIN nicht akzeptiert. Nach mehreren falschen PINs pausiert die PIN: Der Offizielle sieht das in seinem Profil. Oder von Hand unterschreiben.",
@@ -5252,7 +5253,8 @@
     "reasonSignIn": "Anmelden, um übers Internet auf einem Handy zu unterschreiben. Oder auf diesem Gerät unterschreiben.",
     "reasonRole": "Dein Konto kann das Unterschreiben auf dem Handy noch nicht starten. Auf diesem Gerät unterschreiben.",
     "reasonNoNetwork": "Kein Netz für Handys: diesen Laptop mit dem Hallen-WLAN verbinden oder sein eigenes WLAN einschalten (Tablets verbinden).",
-    "startFailed": "Kein Link möglich. Nochmals versuchen oder auf diesem Gerät unterschreiben."
+    "startFailed": "Kein Link möglich. Nochmals versuchen oder auf diesem Gerät unterschreiben.",
+    "notOnServer": "Dieses Spiel ist nicht auf dem Server (ein Testspiel nie, ein neues Spiel erst nach dem Synchronisieren), darum geht es übers Internet nicht. Auf diesem Gerät unterschreiben, das Hallennetz verwenden oder gleich nochmals versuchen."
   },
   "sizeGate": {
     "title": "Diese Anwendung braucht ein Tablet oder einen grösseren Bildschirm (mindestens 800×600).",

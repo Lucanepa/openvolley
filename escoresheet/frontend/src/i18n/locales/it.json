@@ -4546,6 +4546,7 @@
     "revalidateFailed": "Un'approvazione con account non è più valida. Controlla le firme e approva di nuovo.",
     "unconfirmedTitle": "Approvazioni non confermate",
     "unconfirmedBody": "Questo dispositivo non raggiunge il server, quindi le approvazioni con account di {{roles}} non possono essere verificate. Se continua, queste firme vengono stampate come in sospeso sul referto. Per completarle firmi a mano, oppure si colleghi e riprovi.",
+    "unconfirmedBodySignedOut": "Su questo dispositivo nessuno ha effettuato l’accesso, quindi le approvazioni con account di {{roles}} non possono essere verificate. Se continua, queste firme vengono stampate come in sospeso sul referto. Per completarle firmi a mano, oppure acceda e riprovi.",
     "unconfirmedApprove": "Approva senza di esse",
     "errors": {
       "pinInvalid": "E-mail o PIN non accettati. Dopo diversi PIN sbagliati il PIN va in pausa: l’ufficiale lo vede nel suo profilo. Oppure firmi a mano.",
@@ -5269,7 +5270,8 @@
     "reasonSignIn": "Accedi per firmare su un telefono via internet. Oppure firma su questo dispositivo.",
     "reasonRole": "Il tuo account non può ancora avviare la firma sul telefono. Firma su questo dispositivo.",
     "reasonNoNetwork": "Nessuna rete per i telefoni: collega questo portatile al Wi-Fi della palestra o attiva il suo Wi-Fi (Collega tablet).",
-    "startFailed": "Impossibile creare un link. Riprova, oppure firma su questo dispositivo."
+    "startFailed": "Impossibile creare un link. Riprova, oppure firma su questo dispositivo.",
+    "notOnServer": "Questa partita non è sul server (una partita test mai, una nuova solo dopo la sincronizzazione), quindi via internet non si può avviare. Firma su questo dispositivo, usa la rete della palestra o riprova tra un attimo."
   },
   "sizeGate": {
     "title": "Per usare questa applicazione serve un tablet o uno schermo più grande (almeno 800×600).",

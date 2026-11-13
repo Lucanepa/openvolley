@@ -4541,6 +4541,7 @@
     "revalidateFailed": "E Konto-Genehmigung isch nüme gültig. Prüef d Underschrifte und genehmig neu.",
     "unconfirmedTitle": "Genehmigunge nöd bestätigt",
     "unconfirmedBody": "Das Grät erreicht de Server nöd, drum chönd d Genehmigunge mit Konto vo {{roles}} nöd prüeft werde. Wänn du wiitermachsch, erschiined die Underschrifte uf em Spiilbricht als offe. Zum sie vervollständige, underschriib vo Hand, oder verbind di und probier s nomal.",
+    "unconfirmedBodySignedOut": "Das Grät isch abgmäldet, drum chönd d Genehmigunge mit Konto vo {{roles}} nöd prüeft werde. Wänn du wiitermachsch, erschiined die Underschrifte uf em Spiilbricht als offe. Zum sie vervollständige, underschriib vo Hand, oder mäld di aa und probier s nomal.",
     "unconfirmedApprove": "Ohni sie genehmige",
     "errors": {
       "pinInvalid": "E-Mail oder PIN nöd akzeptiert. Nach mehrere falsche PINs macht d PIN e Pause: De Offizielli gseht das i sim Profil. Oder vo Hand underschriibe.",
@@ -5264,7 +5265,8 @@
     "reasonSignIn": "Mäld dich aa, zum übers Internet uf emne Handy underschriibe. Oder uf däm Grät underschriibe.",
     "reasonRole": "Dis Konto cha s Underschriibe uf em Handy no nöd starte. Uf däm Grät underschriibe.",
     "reasonNoNetwork": "Kei Netz für Handys: dä Laptop mit em Halle-WLAN verbinde oder sis eigete WLAN iischalte (Tablets verbinde).",
-    "startFailed": "Kei Link möglich. Nomal probiere oder uf däm Grät underschriibe."
+    "startFailed": "Kei Link möglich. Nomal probiere oder uf däm Grät underschriibe.",
+    "notOnServer": "Das Spiil isch nöd uf em Server (es Testspiil nie, es neus Spiil erscht nach em Synchronisiere), drum gaht s übers Internet nöd. Uf däm Grät underschriibe, s Hallenetz bruuche oder grad nomal probiere."
   },
   "sizeGate": {
     "title": "Die Aawändig bruucht es Tablet oder en grössere Bildschirm (mindestens 800×600).",

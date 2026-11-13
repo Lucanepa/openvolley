@@ -4540,6 +4540,7 @@
     "revalidateFailed": "Une approbation par compte n'est plus valable. Vérifiez les signatures et approuvez à nouveau.",
     "unconfirmedTitle": "Approbations non confirmées",
     "unconfirmedBody": "Cet appareil n’atteint pas le serveur, les approbations par compte de {{roles}} ne peuvent donc pas être vérifiées. Si vous continuez, ces signatures sont imprimées comme en attente sur la feuille de match. Pour les compléter, signez à la main, ou connectez-vous et réessayez.",
+    "unconfirmedBodySignedOut": "Cet appareil n’est connecté à aucun compte, les approbations par compte de {{roles}} ne peuvent donc pas être vérifiées. Si vous continuez, ces signatures sont imprimées comme en attente sur la feuille de match. Pour les compléter, signez à la main, ou connectez-vous et réessayez.",
     "unconfirmedApprove": "Approuver sans elles",
     "errors": {
       "pinInvalid": "E-mail ou PIN non accepté. Après plusieurs PIN faux, le PIN est mis en pause : l’officiel le voit dans son profil. Ou signez à la main.",
@@ -5263,7 +5264,8 @@
     "reasonSignIn": "Se connecter pour signer sur un téléphone via Internet. Ou signer sur cet appareil.",
     "reasonRole": "Votre compte ne peut pas encore lancer la signature sur téléphone. Signer sur cet appareil.",
     "reasonNoNetwork": "Pas de réseau pour les téléphones : connecter cet ordinateur au Wi-Fi de la salle ou activer son propre Wi-Fi (Connecter des tablettes).",
-    "startFailed": "Impossible de créer un lien. Réessayer, ou signer sur cet appareil."
+    "startFailed": "Impossible de créer un lien. Réessayer, ou signer sur cet appareil.",
+    "notOnServer": "Ce match n’est pas sur le serveur (un match amical jamais, un nouveau match seulement une fois synchronisé) : la signature via Internet ne peut pas démarrer. Signer sur cet appareil, utiliser le réseau de la salle, ou réessayer dans un instant."
   },
   "sizeGate": {
     "title": "Pour utiliser cette application, utilisez une tablette ou un écran plus grand (au moins 800×600).",

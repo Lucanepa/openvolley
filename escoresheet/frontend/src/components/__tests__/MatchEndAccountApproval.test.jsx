@@ -290,8 +290,8 @@ describe('MatchEnd: approve with an account', () => {
     expect(await screen.findByTestId('account-approval-ref1')).toHaveTextContent(en.approval.done)
     expect(screen.getByTestId('account-approval-ref1')).toHaveTextContent('Muster Anna · 07.10.2026 21:42 · ID 6F1C2A9B')
     await waitFor(() => expect(confirmButton()).toBeEnabled())
-    // remembered on this device for the official's name
-    expect(JSON.parse(localStorage.getItem('ov.approvalEmails'))).toEqual([{ k: 'muster anna', e: 'anna@example.ch' }])
+    // the official's address is not kept on this shared device (rollout audit be-accounts-5)
+    expect(localStorage.getItem('ov.approvalEmails')).toBeNull()
     // both drawings went to the queue as they were made
     expect([...store.tables.sync_queue.values()].filter(j => j.payload?.signatures).length).toBe(2)
     window.removeEventListener('sync-queue-write', sendQueue)
@@ -477,7 +477,8 @@ describe('MatchEnd: approve with an account', () => {
 
   it('an approval the server cannot confirm prints as pending, only after the scorer agrees (rollout audit logic-matchend-sheet-7)', async () => {
     const approved = { referee1: record('referee1') }
-    seed({ scorerSignature: 'data:s', ref2Signature: 'data:r2', accountApprovals: approved })
+    // a game number and a date: the final JSON gets its storage name
+    seed({ scorerSignature: 'data:s', ref2Signature: 'data:r2', accountApprovals: approved, gameNumber: '4711', scheduledAt: '2026-11-01T18:00:00.000Z' })
     // the mount refresh answers; at Confirm and approve the server is unreachable
     api.list = vi.fn()
       .mockResolvedValueOnce({ data: { match: {}, approvals: [approved.referee1] }, error: null, status: 200 })
@@ -502,6 +503,30 @@ describe('MatchEnd: approve with an account', () => {
     expect(store.tables.matches.get(1).accountApprovals ?? null).toBeNull()
     const job = [...store.tables.sync_queue.values()].find(j => j.payload?.status === 'approved')
     expect(job.payload.approval.accounts).toEqual({ ref1: null, ref2: null, scorer: null })
+    // ... and so does the final JSON for the cloud (the storage scoresheet
+    // view prints it) and the PDF window's data: no record for that slot
+    const finalUpload = () => [...store.tables.sync_queue.values()].find(j => typeof j.payload?.path === 'string' && /_final\.json$/.test(j.payload.path))
+    await waitFor(() => expect(finalUpload()).toBeTruthy())
+    const upload = finalUpload()
+    const finalJson = JSON.parse(await upload.payload.file.text())
+    expect(finalJson.match.accountApprovals ?? null).toBeNull()
+    expect(JSON.stringify(finalJson)).not.toContain('6F1C2A9B')
+    expect(JSON.parse(sessionStorage.getItem('scoresheetData')).match.accountApprovals ?? null).toBeNull()
+  })
+
+  it('signed out at "Confirm and approve": the prompt names the missing session, not the connection', async () => {
+    const approved = { referee1: record('referee1') }
+    seed({ scorerSignature: 'data:s', ref2Signature: 'data:r2', accountApprovals: approved })
+    auth.value = null
+    asked.fn = vi.fn(async () => false)
+    render(<MatchEnd matchId={1} />)
+    await waitFor(() => expect(confirmButton()).toBeEnabled())
+    fireEvent.click(confirmButton())
+    await waitFor(() => expect(asked.fn).toHaveBeenCalledTimes(1))
+    const [before, after] = en.approval.unconfirmedBodySignedOut.split('{{roles}}')
+    const { message } = asked.fn.mock.calls[0][0]
+    expect(message.startsWith(before) && message.endsWith(after)).toBe(true)
+    expect([...store.tables.sync_queue.values()].some(j => j.payload?.status === 'approved')).toBe(false)
   })
 
   it('a stale approval in a slot signed by hand never blocks Confirm (review fix)', async () => {

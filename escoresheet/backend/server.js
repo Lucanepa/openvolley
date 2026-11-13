@@ -1444,7 +1444,9 @@ function mayStartPhoneSign(access) {
  * it, or an admin). { body, app } with the body's context taking the stored
  * teams and game number (a beach match's team1 / team2), and the app of the
  * phone page's name and mark (open answers app: 'beach'); { error } otherwise
- * (403 OV_SIGN_MATCH, 503 when the database does not answer).
+ * (403 OV_SIGN_MATCH, 503 when the database does not answer). A test match
+ * never reaches the server, a new one only once its insert synced: the app
+ * takes the hall network then, or says so (PhoneSignPanel startFailureKey).
  */
 async function signMatchOf(layer, body, userId, access) {
   const key = typeof body?.matchKey === 'string' ? body.matchKey.trim() : ''
