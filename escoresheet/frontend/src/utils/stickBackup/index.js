@@ -68,7 +68,18 @@ const defaultDeviceTag = () => {
   return tagPromise
 }
 
-const EMPTY = { supported: false, sticks: [], lastCopy: null, writing: false, error: null }
+const EMPTY = { supported: false, sticks: [], lastCopy: null, writing: false, error: null, auto: null }
+
+/** Owner 2026-11-13: the copy to every stick is automatic; the switch is in Match Setup / Options (default on). */
+const AUTO_KEY = 'backupToStick'
+export function getStickAutoEnabled(storage = globalThis.localStorage) {
+  try { return storage?.getItem(AUTO_KEY) !== 'false' } catch { return true }
+}
+export function setStickAutoEnabled(on, storage = globalThis.localStorage) {
+  try { storage?.setItem(AUTO_KEY, String(!!on)) } catch { /* private mode: the default stays */ }
+}
+/** The automatic copy waits at least this long between two files of a match. */
+export const STICK_AUTO_MS = 10000
 
 /**
  * @param {object} o
@@ -81,6 +92,8 @@ export function createStickBackup({
   deviceTag = defaultDeviceTag,
   now = () => new Date(),
   pollMs = STICK_POLL_MS,
+  autoMs = STICK_AUTO_MS,
+  autoEnabled = getStickAutoEnabled,
   doc = typeof document !== 'undefined' ? document : undefined,
   log = console
 }) {
@@ -193,8 +206,46 @@ export function createStickBackup({
     return copying
   }
 
+  /**
+   * The engine wrote a backup file: copy it silently to every stick as
+   * <devtag>-latest.json (newest wins, at most one copy per autoMs and match,
+   * the last write of a burst is never dropped). Nothing happens without a
+   * stick or with the switch off. Never throws, never blocks scoring.
+   */
+  const auto = new Map() // matchId -> { lastAt, timer, written, running }
+  function mirrorWritten(matchId, written) {
+    if (!platform || !written || !autoEnabled()) return Promise.resolve()
+    const a = auto.get(matchId) || { lastAt: 0, timer: null, written: null, running: null }
+    auto.set(matchId, a)
+    a.written = written
+    if (a.running || a.timer) return Promise.resolve()
+    const wait = Math.max(0, a.lastAt + autoMs - Date.now())
+    a.timer = setTimeout(() => {
+      a.timer = null
+      a.running = (async () => {
+        const w = a.written
+        a.lastAt = Date.now()
+        try {
+          const tag = await deviceTag()
+          const results = await platform.mirror({ stickIds: null, matchDir: w.dir, sourceFile: w.name, destFile: `${tag}-latest.json`, verify: true })
+          if (!results.length) { set({ auto: { at: now(), matchId, results: [], status: 'noStick' } }); return }
+          const okCount = results.filter(r => r.ok).length
+          set({ auto: { at: now(), matchId, results, status: okCount === results.length ? 'ok' : okCount ? 'partial' : 'failed' } })
+        } catch (e) {
+          log.warn?.('[StickBackup] automatic copy failed:', e?.message || e)
+          set({ auto: { at: now(), matchId, results: [], status: 'failed', error: e?.message || String(e) } })
+        } finally {
+          a.running = null
+          if (a.written !== w) mirrorWritten(matchId, a.written) // a newer file arrived meanwhile
+        }
+      })()
+    }, wait)
+    return Promise.resolve()
+  }
+
   return {
     getState: () => state,
+    mirrorWritten,
     subscribe(listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)
@@ -220,6 +271,11 @@ export function useStickBackup({ poll = false } = {}) {
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
   useEffect(() => (poll ? getStickBackup().startPolling() : undefined), [poll])
   return snapshot
+}
+
+/** The engine's hook (nativeBackup/index.js): see createStickBackup mirrorWritten. */
+export function mirrorWrittenToSticks(matchId, written) {
+  return getStickBackup().mirrorWritten(matchId, written)
 }
 
 /** "Copy to stick now": see createStickBackup copyMatch. */

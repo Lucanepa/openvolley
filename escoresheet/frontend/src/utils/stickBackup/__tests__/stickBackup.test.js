@@ -180,3 +180,56 @@ describe('stick list polling', () => {
     expect(sb.getState().error).toBe('io: boom')
   })
 })
+
+describe('automatic copy (mirrorWritten)', () => {
+  const written = (n) => ({ dir: 'game7-seed', name: `2026111210000${n}.000Z-0000${n}.json`, at: NOW })
+  const make = (platform, extra = {}) =>
+    createStickBackup({ platform, getEngine: async () => null, deviceTag: async () => 'abcd1234', now: () => NOW, autoMs: 10000, autoEnabled: () => true, doc: undefined, log: { warn() {}, error() {} }, ...extra })
+
+  it('copies the newest file as <tag>-latest.json to every stick, at once for the first file', async () => {
+    vi.useFakeTimers()
+    const platform = fakePlatform([STICK_A, STICK_B])
+    const store = make(platform)
+    store.mirrorWritten(7, written(1))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(platform.mirror).toHaveBeenCalledTimes(1)
+    expect(platform.mirror).toHaveBeenCalledWith({ stickIds: null, matchDir: 'game7-seed', sourceFile: written(1).name, destFile: 'abcd1234-latest.json', verify: true })
+    expect(store.getState().auto.status).toBe('ok')
+  })
+
+  it('throttles a burst and still copies the last file of it', async () => {
+    vi.useFakeTimers()
+    const platform = fakePlatform([STICK_A])
+    const store = make(platform)
+    store.mirrorWritten(7, written(1))
+    await vi.advanceTimersByTimeAsync(0)
+    store.mirrorWritten(7, written(2))
+    store.mirrorWritten(7, written(3))
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(platform.mirror).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(5100)
+    expect(platform.mirror).toHaveBeenCalledTimes(2)
+    expect(platform.mirror.mock.calls[1][0].sourceFile).toBe(written(3).name)
+  })
+
+  it('does nothing with the switch off, without a stick platform, or reports noStick', async () => {
+    vi.useFakeTimers()
+    const platform = fakePlatform([STICK_A])
+    make(platform, { autoEnabled: () => false }).mirrorWritten(7, written(1))
+    make(null).mirrorWritten(7, written(1))
+    await vi.advanceTimersByTimeAsync(20000)
+    expect(platform.mirror).not.toHaveBeenCalled()
+    const empty = make(fakePlatform([]))
+    empty.mirrorWritten(7, written(1))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(empty.getState().auto.status).toBe('noStick')
+  })
+
+  it('a failing stick is reported, never thrown', async () => {
+    vi.useFakeTimers()
+    const store = make(fakePlatform([STICK_A], { a1: () => 'full' }))
+    store.mirrorWritten(7, written(1))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(store.getState().auto.status).toBe('failed')
+  })
+})

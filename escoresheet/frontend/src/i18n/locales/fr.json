@@ -1293,6 +1293,42 @@
       "manual": "Saisir le match moi-même"
     }
   },
+  "backupTargets": {
+    "title": "Sauvegardes",
+    "summary": "Cloud · Cet appareil · Support amovible",
+    "cloud": "Cloud",
+    "cloudOn": "Activé : sauvegarde dans le cloud pendant le match.",
+    "cloudOffline": "Hors ligne : en attente, rattrapage dès le retour de la connexion.",
+    "cloudTest": "Match test : jamais envoyé au cloud.",
+    "cloudHint": "La copie cloud ne peut pas être désactivée.",
+    "device": "Cet appareil",
+    "off": "Désactivé",
+    "preparing": "Préparation du dossier…",
+    "folderIs": "Dossier : {{name}}",
+    "folderNone": "Aucun dossier choisi. En attendant, un fichier est téléchargé en fin de set et de match.",
+    "folderReconnect": "Dossier : {{name}}. Le navigateur demande un appui pour l’autoriser à nouveau.",
+    "reconnect": "Reconnecter le dossier",
+    "downloads": "Ce navigateur télécharge un fichier en fin de set et de match.",
+    "deviceAndroid": "Enregistré dans Documents/OpenVolley/backups sur cette tablette.",
+    "drive": "Support amovible",
+    "driveNone": "Aucune clé USB trouvée. Branchez-en une : toutes conviennent.",
+    "driveCopied": "copié {{time}}",
+    "driveHint": "Chaque sauvegarde est aussi copiée sur chaque clé USB branchée (un dossier OpenVolley y est créé).",
+    "driveBrowser": "Choisissez ci-dessus un dossier sur le support.",
+    "driveAndroid": "Pas encore disponible dans l’app Android.",
+    "driveDownload": "Ce navigateur ne peut pas écrire sur un support : utilisez les fichiers téléchargés.",
+    "driveFailed": "La copie sur la clé USB a échoué."
+  },
+  "savedBackups": {
+    "title": "Sauvegardé sur cet appareil ou un support",
+    "device": "Sur cet appareil",
+    "drive": "Clé USB",
+    "folder": "Dossier du navigateur",
+    "restore": "Restaurer",
+    "pin": "PIN requis",
+    "none": "Aucune sauvegarde trouvée sur cet appareil ni sur un support.",
+    "err_io": "Cette sauvegarde n’a pas pu être lue."
+  },
   "options": {
     "title": "Options",
     "close": "Fermer",

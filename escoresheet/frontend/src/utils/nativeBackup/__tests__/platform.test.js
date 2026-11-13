@@ -35,7 +35,7 @@ describe('createTauriStore', () => {
     expect(await store.write('game1-x', 'a.json', '{}', { latest: true })).toEqual({})
     expect(invoke).toHaveBeenCalledWith('backup_write', { matchDir: 'game1-x', fileName: 'a.json', contents: '{}', latest: true })
 
-    expect(await store.list()).toEqual([{ dir: 'game1-x', files: [{ name: 'latest.json', size: 3 }] }])
+    expect(await store.list()).toEqual([{ dir: 'game1-x', files: [{ name: 'latest.json', size: 3, modifiedMs: 1 }] }])
 
     await store.remove('game1-x', [])
     expect(invoke.mock.calls.some(c => c[0] === 'backup_remove')).toBe(false)

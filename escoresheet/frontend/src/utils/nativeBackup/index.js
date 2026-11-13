@@ -33,7 +33,9 @@ export function getNativeBackupEngine() {
         store,
         exportMatch: exportMatchData,
         readMatch: (matchId) => db.matches.get(matchId),
-        skipMatch: isContinuedElsewhere
+        skipMatch: isContinuedElsewhere,
+        // Every file also goes to the USB sticks plugged in (desktop; utils/stickBackup)
+        onWritten: (matchId, written) => import('../stickBackup').then(m => m.mirrorWrittenToSticks(matchId, written))
       })
       engine.subscribe(emit)
       emit()

@@ -266,6 +266,25 @@ pub async fn backup_open_dir<R: Runtime>(app: AppHandle<R>) -> Result<(), String
     Ok(())
 }
 
+/// Reads one backup file of the backup folder (the restore list). The page
+/// names <matchDir>/<fileName> (strict segments, nothing leaves the root).
+pub fn read_backup(root: &Path, match_dir: &str, file_name: &str) -> Result<String, String> {
+    check_dir(match_dir)?;
+    check_file(file_name)?;
+    let path = root.join(match_dir).join(file_name);
+    let meta = fs::metadata(&path).map_err(|e| format!("cannot read {match_dir}/{file_name}: {e}"))?;
+    if !meta.is_file() || meta.len() as usize > MAX_BACKUP_BYTES {
+        return Err("not a backup file".into());
+    }
+    fs::read_to_string(&path).map_err(|e| format!("cannot read {match_dir}/{file_name}: {e}"))
+}
+
+#[tauri::command]
+pub async fn backup_read<R: Runtime>(app: AppHandle<R>, match_dir: String, file_name: String) -> Result<String, String> {
+    let root = backup_root(&app)?;
+    blocking(move || read_backup(&root, &match_dir, &file_name)).await
+}
+
 /// Native "open file" dialog starting in the backup folder; returns the chosen
 /// file's text (the page parses and restores it), or None when cancelled.
 #[tauri::command]
@@ -382,6 +401,17 @@ mod tests {
         let cmd = file_manager_command(dir);
         let args: Vec<_> = cmd.get_args().collect();
         assert_eq!(args, [dir.as_os_str()]);
+    }
+
+    #[test]
+    fn read_gives_the_file_and_nothing_outside() {
+        let root = temp_root("read");
+        write_backup(&root, "game7-seed", "20261006T100000.000Z-00001.json", "{\"a\":1}", true).unwrap();
+        assert_eq!(read_backup(&root, "game7-seed", "latest.json").unwrap(), "{\"a\":1}");
+        assert!(read_backup(&root, "..", "latest.json").is_err());
+        assert!(read_backup(&root, "game7-seed", "../x.json").is_err());
+        assert!(read_backup(&root, "game7-seed", "missing.json").is_err());
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

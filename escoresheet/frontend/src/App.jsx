@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
 import { wipeMatchEvents } from './db/eventHistory'
+import SavedBackupsList from './components/SavedBackupsList'
 import MatchSetup, { preloadMatchSetup } from './components/MatchSetup'
 import Scoreboard, { preloadScoreboard } from './components/Scoreboard'
 import CoinToss from './components/CoinToss'
@@ -3843,6 +3844,7 @@ export default function App() {
                     setShowCoinToss(true)
                   }}
                   offlineMode={offlineMode}
+                  backup={backup}
                   lfpTrackingEnabled={lfpTrackingEnabled}
                   initialOfficialGame={pendingOfficialGame}
                   onInitialOfficialGameUsed={() => setPendingOfficialGame(null)}
@@ -4254,6 +4256,18 @@ export default function App() {
                       <div className="h-px flex-1 bg-stone-200" />
                     </div>
                   )}
+
+                  {/* Saved on this device, a USB stick or the browser's backup folder */}
+                  <div className="mb-6">
+                    <h3 className="mb-3 text-sm font-semibold text-stone-800">{t('savedBackups.title')}</h3>
+                    <SavedBackupsList
+                      disabled={restoreLoading}
+                      onPick={async (file) => {
+                        const data = await unlockBackup(matchBackupFromFile(file))
+                        if (data) setRestorePreviewData({ data, source: 'local' })
+                      }}
+                    />
+                  </div>
 
                   {/* Offline/File restore */}
                   <div>

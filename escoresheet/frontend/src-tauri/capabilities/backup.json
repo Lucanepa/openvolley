@@ -12,6 +12,7 @@
     "allow-backup-list",
     "allow-backup-remove",
     "allow-backup-open-dir",
-    "allow-backup-pick-file"
+    "allow-backup-pick-file",
+    "allow-backup-read"
   ]
 }

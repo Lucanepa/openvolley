@@ -1294,6 +1294,42 @@
       "manual": "Inserisci tu la partita"
     }
   },
+  "backupTargets": {
+    "title": "Backup",
+    "summary": "Cloud · Questo dispositivo · Unità rimovibile",
+    "cloud": "Cloud",
+    "cloudOn": "Attivo: salvataggio nel cloud durante la partita.",
+    "cloudOffline": "Offline: attende e si aggiorna al ritorno della connessione.",
+    "cloudTest": "Partita di prova: mai inviata al cloud.",
+    "cloudHint": "La copia nel cloud non si può disattivare.",
+    "device": "Questo dispositivo",
+    "off": "Disattivato",
+    "preparing": "Preparazione della cartella…",
+    "folderIs": "Cartella: {{name}}",
+    "folderNone": "Nessuna cartella scelta. Nel frattempo a fine set e fine partita si scarica un file.",
+    "folderReconnect": "Cartella: {{name}}. Il browser richiede un tocco per consentirla di nuovo.",
+    "reconnect": "Ricollega cartella",
+    "downloads": "Questo browser scarica un file a fine set e fine partita.",
+    "deviceAndroid": "Salvato in Documenti/OpenVolley/backups su questo tablet.",
+    "drive": "Unità rimovibile",
+    "driveNone": "Nessuna chiavetta USB trovata. Inseriscine una: va bene qualsiasi.",
+    "driveCopied": "copiato {{time}}",
+    "driveHint": "Ogni backup viene copiato anche su ogni chiavetta USB inserita (vi si crea una cartella OpenVolley).",
+    "driveBrowser": "Scegli sopra una cartella sull’unità.",
+    "driveAndroid": "Non ancora disponibile nell’app Android.",
+    "driveDownload": "Questo browser non può scrivere su un’unità: usa i file scaricati.",
+    "driveFailed": "La copia sulla chiavetta USB non è riuscita."
+  },
+  "savedBackups": {
+    "title": "Salvato su questo dispositivo o su un’unità",
+    "device": "Su questo dispositivo",
+    "drive": "Chiavetta USB",
+    "folder": "Cartella del browser",
+    "restore": "Ripristina",
+    "pin": "Serve il PIN",
+    "none": "Nessun backup trovato su questo dispositivo né su un’unità.",
+    "err_io": "Impossibile leggere questo backup."
+  },
   "options": {
     "title": "Opzioni",
     "close": "Chiudere",

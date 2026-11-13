@@ -157,6 +157,20 @@ export async function verifyDirectoryPermission(handle) {
 }
 
 /**
+ * Permission of a stored folder WITHOUT asking: 'granted' | 'prompt' | 'denied'.
+ * A browser only shows its permission question after a click, so a folder from
+ * an earlier session is 'prompt' until the scorer taps "Reconnect folder".
+ */
+export async function queryDirectoryPermission(handle) {
+  if (!handle) return 'denied'
+  try {
+    return await handle.queryPermission({ mode: 'readwrite' })
+  } catch {
+    return 'denied'
+  }
+}
+
+/**
  * Select backup directory using File System Access API
  */
 export async function selectBackupDirectory() {
@@ -1991,7 +2005,7 @@ async function afterJoin(localMatchId, { claim = false } = {}) {
 
 // A backup file's JSON; a file that is not JSON (damaged, cut off by a full
 // disk) throws BACKUP_UNREADABLE_ERROR
-function parseBackupText(text) {
+export function parseBackupText(text) {
   try {
     return JSON.parse(text)
   } catch {
