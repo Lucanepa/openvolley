@@ -1,13 +1,13 @@
 /**
- * What the app backup files leave out of the match row, and what the
+ * What the backup files leave out of the match row, and what the
  * coalescing key ignores.
  *
- * The files are written to a folder the tablet owner (and on Android 10 and
- * older, other apps) can read, and on Android they stay after an uninstall.
+ * Every backup file (the app's, the browser's folder and downloads, the
+ * set-end download, the cloud copy: utils/backupFile) may end up where others
+ * read it: a USB stick, a shared laptop's Downloads, the cloud bucket.
  * Connection PINs and session ids are access secrets, not scoring data: a
  * restore keeps the PINs of the local copy it replaces or makes new ones
- * (backupManager.restoreMatchFromJson). The cloud and the "download backup"
- * file are unchanged.
+ * (backupManager.restoreMatchFromJson).
  */
 
 import { VOLATILE_MATCH_KEY } from './matchWriteHook'

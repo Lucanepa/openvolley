@@ -6900,9 +6900,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             // (exportMatchData), unindented. It was every table of the device,
             // pretty-printed: on a laptop that kept a season's matches 89 to
             // 297 MB per set end, behind this overlay for 2 to 8 s, and a file
-            // the restore refused (stress test 2026-10-25).
-            const jsonString = JSON.stringify(await exportMatchData(matchId))
-            const blob = new Blob([jsonString], { type: 'application/json' })
+            // the restore refused (stress test 2026-10-25). The app backup
+            // file (utils/backupFile): the Downloads folder may be a shared
+            // laptop's, so no PINs inside and the rest encrypted.
+            const { backupFileText } = await import('../utils/backupFile')
+            const fileText = await backupFileText(matchId, await exportMatchData(matchId))
+            const blob = new Blob([fileText], { type: 'application/json' })
             const url = URL.createObjectURL(blob)
             const link = document.createElement('a')
             link.href = url

@@ -14,6 +14,7 @@ import {
 import BackupTable from '../BackupTable'
 import SavedBackupsList from '../SavedBackupsList'
 import { useBackupUnlock } from '../../hooks/useBackupUnlock'
+import { backupPins } from '../../utils/backupCrypto/sealer'
 import { clearCachesAndReload } from '../../hooks/useServiceWorker'
 import { ChevronDown, Info, Tablet, X } from 'lucide-react'
 import { cn, IconButton, Select, SegmentedControl, StatusPill, Switch, toast } from '../../ui'
@@ -259,6 +260,8 @@ export default function ScoreboardOptionsModal({
   const [fontSelectorOpen, setFontSelectorOpen] = useState(false)
   const [showCloudBackups, setShowCloudBackups] = useState(false)
   const [cloudBackups, setCloudBackups] = useState([])
+  // The open match's game PIN and referee PIN: they open its encrypted cloud copies
+  const [cloudBackupPins, setCloudBackupPins] = useState([])
   const [backupsLoading, setBackupsLoading] = useState(false)
   const [restoreConfirm, setRestoreConfirm] = useState(null) // backup to confirm restore
   // An encrypted backup file asks for the game PIN or the referee PIN first
@@ -303,6 +306,7 @@ export default function ScoreboardOptionsModal({
       const match = await db.matches.get(matchId)
       const gameN = match?.gameN || match?.game_n || match?.gameNumber || 1
       const backups = await listCloudBackups(null, gameN)
+      setCloudBackupPins(backupPins(match).map(p => p.value))
       setCloudBackups(backups)
       setShowCloudBackups(true)
     } catch (err) {
@@ -316,8 +320,12 @@ export default function ScoreboardOptionsModal({
   // Restore from a cloud backup
   const handleRestore = async (backup) => {
     try {
-      // a local file was read already (handleRestoreFromFile); cloud: download it
-      const backupData = backup.fileData || await fetchCloudBackup(backup.path)
+      // a local file was read already (handleRestoreFromFile); cloud: download
+      // it, opened with the match's PINs (else the PIN dialog asks; cancelled:
+      // nothing restored)
+      const fetched = backup.fileData ? null : await fetchCloudBackup(backup.path, { pins: cloudBackupPins })
+      const backupData = backup.fileData || (fetched && await unlockBackup(fetched))
+      if (fetched && !backupData) return // cancelled at the PIN dialog
       await restoreBackupData(backupData)
     } catch (err) {
       console.error('Failed to restore backup:', err)
@@ -1068,6 +1076,7 @@ export default function ScoreboardOptionsModal({
                 <div className="mb-4 flex-1 overflow-y-auto rounded-lg border border-stone-200">
                   <BackupTable
                     backups={cloudBackups}
+                    unlockPins={cloudBackupPins}
                     onBackupSelect={(backup) => setRestoreConfirm(backup)}
                     showRestoreButton={true}
                     mode="row"

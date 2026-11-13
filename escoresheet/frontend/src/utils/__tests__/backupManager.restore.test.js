@@ -638,8 +638,12 @@ describe('a Match End file (the MatchData JSON of the approval ZIP)', () => {
   })
 
   it('the file Match End writes now is a backup file: written, read back, it restores as it is', async () => {
-    const data = matchEndExportData(ended(), new Date('2026-10-29T19:00:00.000Z'))
-    expect(data).toMatchObject({ version: 1, lastUpdated: '2026-10-29T19:00:00.000Z', exportedAt: '2026-10-29T19:00:00.000Z', homeTeam: { name: 'Home' } })
+    const source = ended()
+    source.match = { ...source.match, gamePin: '135790', refereePin: '246802', homeTeamUploadPin: '112233', sessionId: 'sess-1' }
+    const data = matchEndExportData(source, new Date('2026-10-29T19:00:00.000Z'))
+    expect(data).toMatchObject({ version: 1, lastUpdated: '2026-10-29T19:00:00.000Z', exportedAt: '2026-10-29T19:00:00.000Z', homeTeam: { name: 'Home' }, secretsRemoved: true })
+    // the ZIP is kept and passed on: no PIN or session id in it
+    expect(JSON.stringify(data)).not.toMatch(/135790|246802|112233|sess-1/)
     const file = JSON.parse(JSON.stringify(data, null, 2)) // the ZIP's text
     expect(matchBackupFromFile(file)).toBe(file) // nothing to convert
     const id = await restoreMatchFromJson(file, { checkServer: async () => false, cloudLiveState: async () => null })

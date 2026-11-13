@@ -505,13 +505,15 @@ from a backup file** (or Restore match → local file) restores any of them.
 ### Encrypted backup files
 
 A match with a game PIN or a referee PIN gets encrypted files (every event
-file and `latest.json`); a match with neither (test matches, some unofficial
-ones) is written plain as before, since nothing could open it
-(`src/utils/backupCrypto/`):
+file and `latest.json`, and every other backup file the app writes: the
+browser's folder and downloads, the set-end download, the cloud copy and the
+USB stick copy, all through `src/utils/backupFile.js`); a match with neither
+(test matches, some unofficial ones) is written plain as before, since no PIN
+could open it (`src/utils/backupCrypto/`):
 
 ```json
 {
-  "format": "openvolley-encrypted-backup", "formatVersion": 1,
+  "format": "openvolley-encrypted-backup", "formatVersion": 2,
   "about": "OpenVolley match backup, encrypted. …",
   "readable": { "gameN": 1042, "homeTeam": "…", "awayTeam": "…",
                 "scheduledAt": "…", "sets": [{ "index": 1, "home": 25, "away": 20 }],
@@ -521,7 +523,9 @@ ones) is written plain as before, since nothing could open it
     { "kind": "pin", "pin": "game",
       "kdf": { "alg": "argon2id", "memoryKiB": 32768, "iterations": 3, "parallelism": 1, "salt": "<base64>" },
       "iv": "<base64>", "wrappedKey": "<base64>" },
-    { "kind": "pin", "pin": "referee", … }
+    { "kind": "pin", "pin": "referee", … },
+    { "kind": "recovery", "key": "<key id>", "alg": "ECDH-P256+HKDF-SHA256+A256GCM",
+      "epk": "<base64>", "iv": "<base64>", "wrappedKey": "<base64>" }
   ],
   "ciphertext": "<base64 of the backup JSON>"
 }
@@ -543,8 +547,25 @@ ones) is written plain as before, since nothing could open it
 - A 6-digit PIN is a **speed bump**, not a lock: Argon2id with 32 MiB and 3
   passes takes about 76 ms per guess on a desktop core (about 0.5 s on a
   mid-range tablet), so all 10^6 PINs of a copied file take a 16-core
-  desktop about 80 minutes. Later phases add a server recovery slot (a new
-  slot `kind`; readers skip kinds they do not know).
+  desktop about 80 minutes.
+- The **recovery slot** is the strong key: with a recovery public key in the
+  build (`VITE_BACKUP_RECOVERY_KEY`, else `BUILT_IN_RECOVERY_KEY` in
+  `backupCrypto/recovery.js`), every data key is also wrapped for it (ECDH
+  P-256 with a one-off key per match and session, HKDF-SHA-256, AES-GCM).
+  The league keeps the private half offline (paper and vault, never on a
+  scoring device or the server); `node scripts/backup-recovery.mjs keygen`
+  makes the pair, `node scripts/backup-recovery.mjs open --key <file>
+  <backup.json>` opens any file of such a build, also one whose PINs are
+  lost, into a plain backup the app restores (with new connection PINs).
+  A build without the key writes PIN slots only.
+- **Authenticated slots** (version 2): each slot's wrap has the slot's own
+  fields (kind, label, KDF parameters and salt; key id and one-off key) as
+  its additional data, and the ciphertext's additional data is the format,
+  the readable header and every slot. A slot whose label or parameters were
+  edited opens with no PIN, so a restore never takes the game PIN for the
+  referee PIN; an added or removed slot makes the file damaged. Version 1
+  files (3.0.9 to 3.1.4) still open; an app before this version says "written
+  by a newer version" for a version 2 file.
 - The coalescing ("same state as the last file") compares the plain state.
   If a file cannot be encrypted, nothing is written in the clear: the backup
   fails (red **Backup** badge) and the next event tries again.
@@ -559,8 +580,9 @@ local copy it replaces, or are new); plain files of older versions restore as
 before, without a PIN. An app from before the encryption says "not an
 OpenVolley match backup" for an encrypted file. Against a damaged or crafted
 file: the readable header is shown as text and scores only (it is not
-authenticated before the file opens), at most 8 PIN slots are tried and a
-slot asking for more than 128 MiB (or 16 passes) is skipped.
+authenticated before the file opens), at most 4 PIN slots are tried and a
+slot asking for more than 64 MiB, 6 passes or twice the app's own cost
+(memory x passes) is skipped, never derived.
 
 When it writes: after a write of the match, once nothing more was written for
 150 ms (at most 1.5 s later), on an idle moment, so a point (event, its state

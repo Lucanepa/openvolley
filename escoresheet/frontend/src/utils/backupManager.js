@@ -24,6 +24,8 @@ import { postMatchSignaturesFromServer } from '../domain/signatureEdits'
 import { signatureSourcesFromApproval } from '../domain/phoneSignature'
 import { liveClockOffset, liveClockOffsetAfter, liveStateNow } from './serverDataSync'
 import { isEncryptedBackup, BACKUP_DAMAGED } from './backupCrypto/envelope'
+import { backupFileText, openWithKnownPins } from './backupFile'
+import { redactMatch, SECRETS_REMOVED } from './nativeBackup/redact'
 import { recomputeMatch } from '../domain/recompute'
 import { queueEventSync } from './eventSync'
 
@@ -189,27 +191,11 @@ export async function selectBackupDirectory() {
   return handle
 }
 
-let browserSealer = null
-
-/**
- * The text of a browser backup file (folder or download): the same file the
- * apps write (utils/nativeBackup: no PINs inside, encrypted so the game PIN or
- * the referee PIN opens it; a match with neither, a test match, stays plain).
- * Such a file may end up on a USB stick or in a shared Downloads folder, so
- * the PINs and player data are not left in the clear. Throws when a match with
- * PINs cannot be encrypted: it is never written in the clear.
- */
-export async function backupFileText(matchId, data) {
-  const [{ serializeBackup }, { createBackupSealer }] = await Promise.all([
-    import('./nativeBackup/engine'),
-    import('./backupCrypto/sealer')
-  ])
-  if (!browserSealer) browserSealer = createBackupSealer()
-  const iso = new Date().toISOString()
-  const { build } = serializeBackup(data)
-  const { text } = await browserSealer.seal(matchId, data, build(iso), iso)
-  return text
-}
+// The text of a browser backup file (folder or download), the set-end
+// download and the cloud copy: the app backup file (utils/backupFile: no
+// PINs inside, encrypted for the game PIN, the referee PIN and the league's
+// recovery key; a match with no PIN, a test match, stays plain).
+export { backupFileText }
 
 /**
  * Export a single match with all related data
@@ -577,7 +563,9 @@ export function matchBackupFromFile(jsonData) {
 /**
  * The MatchData_*.json of the match-end ZIP (MatchEnd, Approve): the backup
  * file format (exportMatchData), so Restore match takes it back as it is,
- * with the time it was written as exportedAt too.
+ * with the time it was written as exportedAt too. Without the match's PINs
+ * and session ids, like every backup file (nativeBackup/redact): the ZIP is
+ * kept and passed on, the PINs are access secrets.
  * @param {{ match: object, homeTeam?: object, awayTeam?: object, homePlayers?: object[], awayPlayers?: object[], sets?: object[], events?: object[] }} data
  * @param {Date} [now]
  */
@@ -586,7 +574,8 @@ export function matchEndExportData({ match, homeTeam, awayTeam, homePlayers, awa
   return {
     version: 1,
     lastUpdated: at,
-    match,
+    [SECRETS_REMOVED]: true,
+    match: redactMatch(match),
     homeTeam: homeTeam || null,
     awayTeam: awayTeam || null,
     homePlayers: homePlayers || [],
@@ -2200,11 +2189,16 @@ export async function listCloudBackups(gamePin, gameN = 1) {
 }
 
 /**
- * Fetch a cloud backup file content
+ * Fetch a cloud backup file content. The cloud copies are encrypted backup
+ * files (utils/backupFile): one is opened with the first of `pins` that opens
+ * it (the game PIN typed to list them, the open match's PINs) and comes back
+ * as the backup inside; else as the envelope, for the PIN dialog
+ * (hooks/useBackupUnlock). Older cloud copies are plain.
  * @param {string} path - Full path to the backup file
+ * @param {{ pins?: Array<string|null|undefined> }} [options]
  * @returns {Object} Parsed JSON backup data
  */
-export async function fetchCloudBackup(path) {
+export async function fetchCloudBackup(path, { pins = [] } = {}) {
   const { data, error } = await apiStorage
     .from('backup')
     .download(path)
@@ -2212,7 +2206,7 @@ export async function fetchCloudBackup(path) {
   if (error) throw error
 
   const text = await data.text()
-  return JSON.parse(text)
+  return openWithKnownPins(parseBackupText(text), pins)
 }
 
 /**

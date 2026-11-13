@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
 
 const storage = vi.hoisted(() => ({ uploads: [], downloads: 0, result: null }))
 vi.mock('../../lib/apiClient', () => ({
@@ -41,6 +41,13 @@ import {
 const signIn = (userId = 'u1') => localStorage.setItem('api_auth_token', JSON.stringify({ access_token: 't', expires_at: Date.now() / 1000 + 3600, user: { id: userId } }))
 const sink = () => ({ log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() })
 const lines = (body) => body.split('\n').filter(Boolean)
+
+// The backup upload writes the app backup file (utils/backupFile), whose
+// modules load on first use: loaded here, before the fake timers
+beforeAll(async () => {
+  const { backupFileText } = await import('../backupFile')
+  await backupFileText('warm-up', { match: { test: true } })
+})
 
 beforeEach(() => {
   localStorage.clear()
