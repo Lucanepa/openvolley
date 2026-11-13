@@ -72,6 +72,15 @@ describe('sent game rosters on the device', () => {
     expect(await db.game_rosters.count()).toBe(0)
   })
 
+  it('clearGameRosters({ keepUserId }) keeps that account\'s rows only', async () => {
+    await storeGameRosters({ games: [], rosters: [roster('1', 'home')] }, 'u1')
+    await db.game_rosters.put({ ...(await db.game_rosters.get('1|home')), key: '2|home', gameNumber: '2', userId: 'u2' })
+    await clearGameRosters({ keepUserId: 'u1' })
+    expect((await db.game_rosters.toArray()).map((r) => r.userId)).toEqual(['u1'])
+    await clearGameRosters({ keepUserId: null })
+    expect(await db.game_rosters.count()).toBe(0)
+  })
+
   it('Match Setup offers a sent roster until the match starts, once per version', () => {
     const home = { key: '1|home', side: 'home', userId: 'u1', updatedAt: 'v1' }
     const away = { key: '1|away', side: 'away', userId: 'u1', updatedAt: 'v1' }

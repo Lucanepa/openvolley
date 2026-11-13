@@ -103,9 +103,11 @@ export async function storeClubPlayers(answer, userId) {
   return rows
 }
 
-export async function clearClubPlayers() {
+/** Drop the lists; `keepUserId`: all but that account's (an account change, or the start of the app). */
+export async function clearClubPlayers({ keepUserId = null } = {}) {
   try {
-    await db.club_players.clear()
+    if (!keepUserId) await db.club_players.clear()
+    else if (!(await db.club_players.filter((r) => r.userId !== keepUserId).delete())) return
     notify()
   } catch (e) {
     console.warn('[clubPlayers] clear failed:', e?.message)

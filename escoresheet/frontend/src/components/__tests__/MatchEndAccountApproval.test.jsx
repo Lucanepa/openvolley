@@ -289,8 +289,8 @@ describe('MatchEnd: approve with an account', () => {
     expect(await screen.findByTestId('account-approval-ref1')).toHaveTextContent(en.approval.done)
     expect(screen.getByTestId('account-approval-ref1')).toHaveTextContent('Muster Anna · 07.10.2026 21:42 · ID 6F1C2A9B')
     await waitFor(() => expect(confirmButton()).toBeEnabled())
-    // remembered on this device for the official's name
-    expect(JSON.parse(localStorage.getItem('ov.approvalEmails'))).toEqual([{ k: 'muster anna', e: 'anna@example.ch' }])
+    // remembered on this device for the official's name (and when: kept for a week)
+    expect(JSON.parse(localStorage.getItem('ov.approvalEmails'))).toEqual([{ k: 'muster anna', e: 'anna@example.ch', t: expect.any(Number) }])
     // both drawings went to the queue as they were made
     expect([...store.tables.sync_queue.values()].filter(j => j.payload?.signatures).length).toBe(2)
     window.removeEventListener('sync-queue-write', sendQueue)
