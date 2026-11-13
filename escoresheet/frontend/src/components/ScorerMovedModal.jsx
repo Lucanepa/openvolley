@@ -35,12 +35,14 @@ const PLATFORM_KEYS = {
  *   onTakeBack: () => Promise<{ok?: boolean, error?: string}|void>|void, onClose: () => void,
  *   onPreview?: () => Promise<{score?: object, error?: string}>, onScoresheet?: () => void }} props
  */
-export default function ScorerMovedModal({ scorer, closed = false, onTakeBack, onClose, onPreview = null, onScoresheet = null }) {
+export default function ScorerMovedModal({ scorer, closed = false, onTakeBack, onClose, onPreview = null, onScoresheet = null, onKeepLocal = null }) {
   const { t, i18n } = useTranslation()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   // the server's score, shown before the take-back (onPreview)
   const [preview, setPreview] = useState(null)
+  // this device's points the server never got (onPreview): offered to keep
+  const [unsent, setUnsent] = useState(0)
   const platformKey = PLATFORM_KEYS[scorer?.platform] || null
   const platform = platformKey ? t(`scorerMoved.platforms.${platformKey}`) : null
   const time = formatTakeOver(scorer?.at, i18n.language)
@@ -66,7 +68,7 @@ export default function ScorerMovedModal({ scorer, closed = false, onTakeBack, o
   }
   // the final result of a closed match needs no comparison
   const takeBack = () => (onPreview && !closed && !preview
-    ? run(onPreview, (r) => setPreview(r?.score || {}))
+    ? run(onPreview, (r) => { setPreview(r?.score || {}); setUnsent(r?.unsent || 0) })
     : run(onTakeBack))
 
   return (
@@ -82,6 +84,9 @@ export default function ScorerMovedModal({ scorer, closed = false, onTakeBack, o
             <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-500">{t('scorerMoved.serverScore')}</div>
             <div className="mt-0.5 text-lg font-bold tabular-nums text-stone-900">{scoreText(t, preview)}</div>
             <p className="mt-1 mb-0 text-xs text-stone-600">{t('scorerMoved.compareHint')}</p>
+            {unsent > 0 && onKeepLocal && (
+              <p className="mt-1 mb-0 text-xs font-medium text-amber-800" data-testid="scorer-moved-unsent">{t('scorerMoved.unsentHere', { count: unsent })}</p>
+            )}
           </div>
         )}
         {error && (
@@ -105,6 +110,11 @@ export default function ScorerMovedModal({ scorer, closed = false, onTakeBack, o
                 </Button>
               )}
             </>
+          )}
+          {preview && unsent > 0 && onKeepLocal && (
+            <Button variant="secondary" size="lg" onClick={() => run(onKeepLocal)} disabled={busy}>
+              {t('scorerMoved.keepLocal')}
+            </Button>
           )}
           <Button variant="dark" size="lg" onClick={takeBack} disabled={busy} aria-busy={busy || undefined}>
             {t(closed ? 'scorerMoved.showResult' : preview ? 'scorerMoved.confirmTakeBack' : 'scorerMoved.takeBack')}

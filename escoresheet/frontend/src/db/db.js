@@ -409,7 +409,9 @@ export async function requestPersistentStorage() {
   }
 }
 
-// Fire once on load (does not block the module).
-requestPersistentStorage()
+// Fire once on load (does not block the module). Its answer: Home warns when
+// the browser refused while an official match has writes not sent yet
+// (audit logic-hooks-misc-2; it was only logged)
+export const persistentStorage = requestPersistentStorage()
 
 
