@@ -262,6 +262,59 @@ describe('Phase 7: ownership, PIN-gated data, backups, PINs at rest', { skip: SK
     }
   })
 
+  it('the game PIN: editors end with a PIN change, the creator removes them, the close retires the PIN', async () => {
+    const ext2 = `${ext}-close`
+    const PIN2 = '573918'
+    const PIN3 = '690412'
+    const made = await dbCall(users.alice, 'matches', 'upsert', {
+      data: { external_id: ext2, game_n: 9402, game_pin: PIN2, status: 'live', sport_type: 'indoor', home_team: { name: 'Home VC' }, away_team: { name: 'Away VC' }, players_home: [{ number: 4, last_name: 'Muster', dob: '2002-03-04' }] },
+      onConflict: 'external_id', returning: 'id', single: true
+    })
+    assert.equal(made.status, 200, made.text)
+    const id2 = made.json.data.id
+    const claim = (u, pin) => api(srv.base, '/api/match/claim', { token: u.token, headers: { 'cf-connecting-ip': nextIp() }, body: { externalId: ext2, pin } })
+    const editors = (u) => api(srv.base, `/api/match-editors/${id2}`, { method: 'GET', token: u.token, proto: null })
+    assert.equal((await claim(users.bob, PIN2)).json.data.role, 'editor')
+    const listed = await editors(users.alice)
+    assert.equal(listed.status, 200, listed.text)
+    assert.deepEqual(listed.json.data.editors.map((e) => e.user_id), [users.bob.id])
+    assert.equal((await editors(users.bob)).status, 404, 'an editor does not manage the editors')
+    // a new game PIN ends the editors of the old one
+    assert.equal((await dbCall(users.alice, 'matches', 'update', { data: { game_pin: PIN3 }, filters: [{ type: 'eq', column: 'id', value: id2 }] })).status, 200)
+    assert.deepEqual((await editors(users.alice)).json.data.editors, [])
+    // the same PIN written again keeps them
+    assert.equal((await claim(users.bob, PIN3)).json.data.role, 'editor')
+    assert.equal((await dbCall(users.alice, 'matches', 'update', { data: { game_pin: PIN3 }, filters: [{ type: 'eq', column: 'id', value: id2 }] })).status, 200)
+    assert.equal((await editors(users.alice)).json.data.editors.length, 1)
+    // the creator removes an editor
+    const del = await api(srv.base, `/api/match-editors/${id2}/${users.bob.id}`, { method: 'DELETE', token: users.alice.token, proto: null })
+    assert.equal(del.status, 200, del.text)
+    assert.deepEqual((await editors(users.alice)).json.data.editors, [])
+    assert.equal((await claim(users.bob, PIN3)).json.data.role, 'editor')
+
+    // the close retires the game PIN
+    const closed = await dbCall(users.alice, 'matches', 'update', { data: { status: 'final' }, filters: [{ type: 'eq', column: 'id', value: id2 }] })
+    assert.equal(closed.status, 200, closed.text)
+    const { rows: [c] } = await sql.query('SELECT closed_at FROM matches WHERE id = $1', [id2])
+    assert.ok(c.closed_at, 'the match is closed')
+    const audits = async () => (await sql.query("SELECT count(*)::int AS n FROM audit_log WHERE action = 'match.restore_pin' AND match_id = $1", [id2])).rows[0].n
+    const auditedBefore = await audits()
+    const anon = await api(srv.base, '/api/match/restore-by-pin', { proto: null, body: { gameN: 9402, pin: PIN3 } })
+    assert.equal(anon.status, 200, anon.text)
+    assert.equal(anon.json.data.access, 'public')
+    assert.equal(anon.text.includes('2002-03-04'), false, 'a date of birth by game PIN after the close')
+    assert.equal(await audits(), auditedBefore + 1, 'an anonymous restore is audited')
+    const asEditor = await api(srv.base, '/api/match/restore-by-pin', { token: users.bob.token, proto: null, body: { gameN: 9402, pin: PIN3 } })
+    assert.equal(asEditor.json.data.access, 'public', 'an editor by PIN gets the public view after the close')
+    const read = await dbCall(users.bob, 'matches', 'select', { columns: '*', filters: [{ type: 'eq', column: 'id', value: id2 }], maybeSingle: true })
+    assert.equal(read.text.includes('2002-03-04'), false, 'an editor by PIN reads the closed match whole')
+    const asCreator = await api(srv.base, '/api/match/restore-by-pin', { token: users.alice.token, proto: null, body: { gameN: 9402, pin: PIN3 } })
+    assert.equal(asCreator.json.data.match.players_home[0].dob, '2002-03-04', 'the creator keeps the whole record')
+    const late = await claim(users.dave, PIN3)
+    assert.equal(late.status, 409, late.text)
+    assert.equal(late.json.error.code, 'OV_MATCH_CLOSED')
+  })
+
   it('relay and GET /api/match/:id: the summary before the PIN step, the bundle after it', async () => {
     const scoreboard = await openSocket(srv.wsUrl)
     const viewer = await openSocket(srv.wsUrl)

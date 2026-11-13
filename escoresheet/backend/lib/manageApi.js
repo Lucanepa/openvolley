@@ -151,6 +151,7 @@ export function manageFamilyOf (pathname) {
   if (pathname === '/api/club-licences') return 'clubLicences'
   if (pathname === '/api/settings') return 'settings'
   if (pathname === '/api/notifications' || pathname === '/api/notifications/read') return 'notifications'
+  if (pathname.startsWith('/api/match-editors/')) return 'matchEditors'
   return null
 }
 
@@ -335,6 +336,9 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['GET', /^\/api\/admin\/matches$/, 'admin', (m, c) => accounts.listMatches({ state: q(c.query, 'state') || 'closed', q: q(c.query, 'q') ?? '', limit: q(c.query, 'limit'), app: q(c.query, 'app') })],
     ['POST', new RegExp(`^/api/admin/matches/${ID}/reopen$`), (m, c) => (c.access?.isAdmin || beachManager(c.access) ? null : FORBIDDEN()),
       (m, c) => accounts.reopenMatch({ actorId: c.user.id, matchId: m[1], body: c.body, access: c.access })],
+    // the accounts that edit a match: its creator (or an admin) lists and removes them
+    ['GET', new RegExp(`^/api/match-editors/${ID}$`), 'any', (m, c) => accounts.listMatchEditors({ actorId: c.user.id, matchId: m[1], isAdmin: !!c.access?.isAdmin })],
+    ['DELETE', new RegExp(`^/api/match-editors/${ID}/${ID}$`), 'any', (m, c) => accounts.removeMatchEditor({ actorId: c.user.id, matchId: m[1], userId: m[2], isAdmin: !!c.access?.isAdmin })],
     ['POST', new RegExp(`^/api/admin/matches/${ID}/editors$`), 'admin', (m, c) => accounts.addMatchEditor({ actorId: c.user.id, matchId: m[1], body: c.body })],
     ['POST', new RegExp(`^/api/admin/matches/${ID}/release-game$`), 'admin', (m, c) => accounts.releaseGame({ actorId: c.user.id, matchId: m[1], body: c.body })],
     // The activity log (db/016, lib/activityLog.js); the export is streamed by server.js

@@ -79,6 +79,7 @@
  *   const p = await restore.restoreByPin(body, { limitKey: clientIp })
  */
 import { createHash, timingSafeEqual } from 'node:crypto'
+import { projectAnonDbRows } from './publicColumns.js'
 
 export const RESTORE_DEFAULTS = Object.freeze({
   matchTable: 'matches',
@@ -106,6 +107,9 @@ export const RESTORE_DEFAULTS = Object.freeze({
   closingPlaceholderStatus: 'ended',
   // Never in the match that restore-by-pin returns (closed_at stays).
   restoreByPinHidden: ['created_by', 'closed_by', 'official_game_exempt'],
+  // Set when a match closes (db/007): from then on its game PIN is retired.
+  closedColumn: 'closed_at',
+  closedByColumn: 'closed_by',
   // Only the key columns travel in the DELETE changes of a restore.
   deleteChangeColumns: ['id', 'external_id', 'match_id'],
   // restore-by-pin: per caller and game number, and per caller across all game numbers.
@@ -789,6 +793,28 @@ export function createMatchRestore (db, options = {}) {
    * POST /api/match/claim { externalId, pin }: the caller (signed in) proves
    * the match's game PIN and becomes an editor of it.
    */
+  /**
+   * May `userId` read the closed match `row` (selected with '*') whole? Its
+   * creator, the account that closed it and an editor an admin added: the
+   * game PIN gives a closed match's full record to nobody. Never throws.
+   */
+  async function readsClosedWhole (row, userId) {
+    if (typeof userId !== 'string' || !UUID_RE.test(userId)) return false
+    const own = db.config.ownership
+    if ((own && row[own.ownerColumn] === userId) || row[cfg.closedByColumn] === userId) return true
+    if (!own) return false
+    try {
+      const r = await db.pool.query(
+        `SELECT 1 FROM ${quote(db.config.schema || 'public')}.${quote(own.editors.table)}
+          WHERE ${quote(own.editors.matchColumn)} = $1 AND ${quote(own.editors.userColumn)} = $2::uuid AND granted_via = 'admin' LIMIT 1`,
+        [row[cfg.matchId], userId])
+      return r.rows.length > 0
+    } catch (err) {
+      log.warn?.(`[matchRestore] could not read the editors: ${err.code || err.message}`)
+      return false
+    }
+  }
+
   async function claimMatch (input, { userId, limitKey = 'anon' } = {}) {
     if (!isPlainObject(input)) return errorBody(400, 'OV_INVALID_REQUEST', 'Invalid request')
     const ext = typeof input.externalId === 'string' ? input.externalId.trim() : ''
@@ -804,11 +830,13 @@ export function createMatchRestore (db, options = {}) {
       // The match first, then its game PIN (constant time): a match that
       // does not exist, or has no game PIN, has no PIN to guess and is
       // counted nowhere across callers
+      const cat = await db.ensureCatalog()
+      const hasClosed = cat.tables.get(cfg.matchTable)?.columns.has(cfg.closedColumn) === true
       const found = await db.runQuery({
         table: cfg.matchTable,
         action: 'select',
         params: {
-          columns: `${cfg.matchId}, ${cfg.pinColumn}`,
+          columns: `${cfg.matchId}, ${cfg.pinColumn}${hasClosed ? `, ${cfg.closedColumn}` : ''}`,
           filters: [{ type: 'eq', column: cfg.matchKey, value: ext }],
           limit: 1
         }
@@ -825,6 +853,10 @@ export function createMatchRestore (db, options = {}) {
       pinBudget.matchRefund([[ext, 'game']])
       pinLimiter.reset(gameKey)
       callerLimiter.refund(callerKey)
+      // The game PIN is retired at the close: it makes no editor of a closed match
+      if (hasClosed && row[cfg.closedColumn] != null) {
+        return errorBody(409, 'OV_MATCH_CLOSED', 'This match is closed: its game PIN no longer gives access')
+      }
       const role = await addEditor(row[cfg.matchId], userId, 'claim')
       if (!role) return errorBody(503, 'OV_DB_UNAVAILABLE', 'Service unavailable')
       return { status: 200, body: { data: { id: row[cfg.matchId], external_id: ext, role }, error: null } }
@@ -898,13 +930,19 @@ export function createMatchRestore (db, options = {}) {
         for (const key of Object.keys(match)) if (key.toLowerCase() === k) delete match[key]
       }
       const matchUuid = row[cfg.matchId]
+      // After the close the game PIN is retired: it makes no editor and no
+      // scorer, and gives the public view of the match only (no rosters'
+      // dates of birth, contacts, signatures, event payloads). Its creator,
+      // its closer and an admin's editor still get the whole record.
+      const closed = row[cfg.closedColumn] != null
+      const anonymous = closed && !(await readsClosedWhole(row, editorUserId))
       // A signed-in caller who proved the game PIN may now write the match.
-      const editor = editorUserId ? await addEditor(matchUuid, editorUserId, 'restore-by-pin') : null
+      const editor = editorUserId && !closed ? await addEditor(matchUuid, editorUserId, 'restore-by-pin') : null
       for (const k of cfg.restoreByPinHidden) delete match[k]
       // The caller scores the match from here on (before the read: a write
       // of the device it leaves is in what is read, or refused after it)
       let scorer = null
-      if (typeof takeOver === 'function') {
+      if (typeof takeOver === 'function' && !closed) {
         try {
           scorer = await takeOver({ id: matchUuid, external_id: row[cfg.matchKey] })
         } catch (err) {
@@ -929,6 +967,10 @@ export function createMatchRestore (db, options = {}) {
         read(cfg.liveStateTable, { maybeSingle: true }),
         idFloor(cat, matchUuid, row[cfg.matchKey])
       ])
+      if (anonymous) {
+        const pub = (table, rows) => projectAnonDbRows(table, rows)
+        return { status: 200, body: { data: { match: pub(cfg.matchTable, match), sets: pub(cfg.setsTable, s.body.data), events: pub(cfg.eventsTable, e.body.data), liveState: pub(cfg.liveStateTable, l.body.data), access: 'public' }, error: null } }
+      }
       return { status: 200, body: { data: { match, sets: s.body.data, events: e.body.data, liveState: l.body.data, ...(floor ? { idFloor: floor } : {}), ...(editor ? { access: editor } : {}), ...(scorer ? { scorer } : {}) }, error: null } }
     } catch (err) {
       if (err?.result) return { status: err.result.status, body: err.result.body }

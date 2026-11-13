@@ -51,9 +51,9 @@ export const AUDIT_ACTIONS = Object.freeze([
   // written by lib/auth.js (passkeys, db/022)
   'account.passkey_added', 'account.passkey_removed',
   'invite.create', 'invite.revoke', 'invite.redeem',
-  'match.claim_game', 'match.claim_pin', 'match.game_taken',
+  'match.claim_game', 'match.claim_pin', 'match.restore_pin', 'match.game_taken',
   'match.close',
-  'match.reopen', 'match.editor_add', 'match.release_game',
+  'match.reopen', 'match.editor_add', 'match.editor_remove', 'match.release_game',
   // db/018: a home-club scorer took over a game an account outside the club held (takeOverHeldGame)
   'match.game_taken_over',
   // lib/approvals.js (db/011); match.approval_void is written by the trigger;
@@ -1446,6 +1446,40 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     })
   }
 
+  /** May `actorId` manage the editors of `matchId` (its creator, or an admin)? The match row or a failure. */
+  async function editorsManagerOf (actorId, matchId, isAdmin) {
+    if (!isUuid(matchId)) return { res: notFound() }
+    const { rows: [m] } = await pool.query('SELECT id, created_by FROM public.matches WHERE id = $1', [matchId])
+    if (!m || (!isAdmin && m.created_by !== actorId)) return { res: notFound('match') }
+    return { m }
+  }
+
+  /** GET /api/match/:id/editors: the accounts that edit the match (its creator or an admin asks). */
+  async function listMatchEditors ({ actorId, matchId, isAdmin = false } = {}) {
+    return guarded('list-editors', async () => {
+      const { res } = await editorsManagerOf(actorId, matchId, isAdmin)
+      if (res) return res
+      const { rows } = await pool.query(
+        `SELECT e.user_id, e.granted_via, e.created_at, u.email
+           FROM public.match_editors e LEFT JOIN auth.users u ON u.id = e.user_id
+          WHERE e.match_id = $1 ORDER BY e.created_at, e.user_id`, [matchId])
+      return ok({ editors: rows.map((r) => ({ user_id: r.user_id, email: r.email ?? null, granted_via: r.granted_via, created_at: r.created_at })) })
+    })
+  }
+
+  /** DELETE /api/match/:id/editors/:userId: the match's creator or an admin removes an editor. */
+  async function removeMatchEditor ({ actorId, matchId, userId, isAdmin = false } = {}) {
+    if (!isUuid(userId)) return notFound()
+    return guarded('remove-editor', async () => {
+      const { res } = await editorsManagerOf(actorId, matchId, isAdmin)
+      if (res) return res
+      const { rowCount } = await pool.query('DELETE FROM public.match_editors WHERE match_id = $1 AND user_id = $2', [matchId, userId])
+      if (!rowCount) return notFound('editor')
+      await audit(pool, { actorId, action: 'match.editor_remove', targetUserId: userId, matchId })
+      return ok({ removed: true })
+    })
+  }
+
   // ------------------------------------------------------------------ audit log
   /** GET /api/admin/audit?limit=&before=&action=[&app=indoor|beach] (every app without ?app=). */
   async function listAudit ({ limit, before, action, app } = {}) {
@@ -1686,9 +1720,15 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     await auditQuietly({ actorId, action: 'match.claim_pin', targetUserId: actorId, matchId, details: { via, ...(role ? { role } : {}) } })
   }
 
+  /** Audit match.restore_pin (a read of a match by game number and game PIN, with or without an account). Never throws. */
+  async function auditRestorePin ({ actorId = null, matchId, access }) {
+    await auditQuietly({ actorId, action: 'match.restore_pin', matchId, details: { access } })
+  }
+
   return {
     audit,
     auditQuietly,
+    auditRestorePin,
     addRolesIn,
     confirmationOf,
     joinApp,
@@ -1708,6 +1748,8 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     reopenMatch,
     releaseGame,
     addMatchEditor,
+    listMatchEditors,
+    removeMatchEditor,
     listAudit,
     findTakenGame,
     findTakenGameForUpdate,

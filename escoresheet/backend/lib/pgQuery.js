@@ -863,13 +863,22 @@ export function createPgQuery (options = {}) {
     return isParent ? ownedSql('t', ctx, ro.userId) : childOwnedSql('t', fk, ctx, ro.userId)
   }
 
-  /** SQL: the match row `alias` is owned by the user (creator or editor). */
+  /**
+   * SQL: the match row `alias` is owned by the user (creator or editor). An
+   * editor added by game PIN (granted_via other than 'admin') counts until the
+   * match closes, unless that editor closed it: the PIN is retired at the close.
+   */
   function ownedSql (alias, ctx, userId) {
     const own = cfg.ownership
     const u = ctx.p(userId)
+    const parentCols = catalog?.tables.get(own.parent)?.columns
+    const editorCols = catalog?.tables.get(own.editors.table)?.columns
+    const pinEnds = parentCols?.has('closed_at') && parentCols.has('closed_by') && editorCols?.has('granted_via')
+      ? ` AND (oe.granted_via = 'admin' OR ${alias}.closed_at IS NULL OR ${alias}.closed_by = oe.${quoteIdent(own.editors.userColumn)})`
+      : ''
     // coalesce: a row without an owner (NULL) is owned by nobody, also under NOT
     return `(coalesce(${alias}.${quoteIdent(own.ownerColumn)} = ${u}::uuid, false) OR EXISTS (SELECT 1 FROM ${qTable(own.editors.table)} AS oe ` +
-      `WHERE oe.${quoteIdent(own.editors.matchColumn)} = ${alias}.${quoteIdent(own.key)} AND oe.${quoteIdent(own.editors.userColumn)} = ${u}::uuid))`
+      `WHERE oe.${quoteIdent(own.editors.matchColumn)} = ${alias}.${quoteIdent(own.key)} AND oe.${quoteIdent(own.editors.userColumn)} = ${u}::uuid${pinEnds}))`
   }
 
   /** SQL: the child row `alias` belongs to a match the user owns. */
