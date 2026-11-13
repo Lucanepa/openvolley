@@ -89,6 +89,22 @@ describe('saved teams cache', () => {
     expect(savedTeamsApi.fetchBundle).toHaveBeenCalledTimes(2)
   })
 
+  // gap-fe-unread-dialogs-6: at start (a session that lapsed while the app
+  // was closed) and at an account change only another account's cache goes
+  it('clearSavedTeams({ keepUserId }) keeps that account\'s cache, drops any other', async () => {
+    savedTeamsApi.fetchBundle.mockResolvedValue({ data: bundle(), error: null, status: 200 })
+    await refreshSavedTeams({ access: scorer, userId: 'u1', online: true })
+    await clearSavedTeams({ keepUserId: 'u1' })
+    expect(await getSavedTeams({ userId: 'u1' })).toHaveLength(1)
+    await clearSavedTeams({ keepUserId: 'u2' })
+    expect(await getSavedTeamsMeta()).toBeNull()
+    expect(await db.saved_teams.count()).toBe(0)
+    // nobody signed in: everything goes
+    await refreshSavedTeams({ access: scorer, userId: 'u1', online: true, force: true })
+    await clearSavedTeams({ keepUserId: null })
+    expect(await db.saved_teams.count()).toBe(0)
+  })
+
   it('a 403 clears the cache', async () => {
     savedTeamsApi.fetchBundle.mockResolvedValueOnce({ data: bundle(), error: null, status: 200 })
     await refreshSavedTeams({ access: scorer, userId: 'u1', online: true })

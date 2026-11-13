@@ -87,6 +87,14 @@ describe('the clubs\' players on the device', () => {
     expect(clubOfTeam([older], 'VBC Musterdorf H1', 'u1').people.map((p) => p.lists)).toEqual([['players']])
   })
 
+  it('clearClubPlayers({ keepUserId }) keeps that account\'s lists only', async () => {
+    await storeClubPlayers(answer(), 'u1')
+    await clearClubPlayers({ keepUserId: 'u1' })
+    expect(await db.club_players.count()).toBe(1)
+    await clearClubPlayers({ keepUserId: 'u2' })
+    expect(await db.club_players.count()).toBe(0)
+  })
+
   it('is cleared on sign-out', async () => {
     await storeClubPlayers(answer(), 'u1')
     await clearClubPlayers()

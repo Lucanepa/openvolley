@@ -8,6 +8,8 @@ import { fetchMe, redeemInvite as apiRedeemInvite } from '../lib/accountApi'
 import { clearSavedTeams, refreshSavedTeams } from '../db/savedTeams'
 import { clearGameRosters, refreshGameRosters, GAME_ROSTERS_REFRESH_MS } from '../db/gameRosters'
 import { clearClubPlayers, refreshClubPlayers } from '../db/clubPlayers'
+import { forgetApprovalEmails } from '../domain/accountApproval'
+import { TODAY_GAMES_CACHE_KEY } from '../lib/todayGamesCache'
 import i18n from 'i18next'
 import PasskeyOfferHost from '../components/auth/PasskeyOfferHost'
 
@@ -47,6 +49,69 @@ export function readCachedClubs(userId) {
 }
 function cacheClubs(value) {
   try { localStorage.setItem(CLUBS_CACHE_KEY, JSON.stringify(value)) } catch { /* the online check still applies */ }
+}
+
+// What the device keeps per account in localStorage, with how to read whose
+const ACCOUNT_ENTRIES = [
+  ['cachedProfile', (v) => v?.user_id],
+  [CLUBS_CACHE_KEY, (v) => v?.userId],
+  [TODAY_GAMES_CACHE_KEY, (v) => v?.userId]
+]
+
+function removeAccountEntries(keepUserId) {
+  for (const [key, ownerOf] of ACCOUNT_ENTRIES) {
+    try {
+      const raw = localStorage.getItem(key)
+      if (raw === null) continue
+      let owner = null
+      try { owner = ownerOf(JSON.parse(raw)) ?? null } catch { /* unreadable: it goes */ }
+      if (!keepUserId || owner !== keepUserId) localStorage.removeItem(key)
+    } catch { /* storage blocked */ }
+  }
+  // The saved-team cache holds DOBs and licence numbers of the account's
+  // teams; the rosters teams sent (db/023) and the clubs' licence lists (db/024) too
+  clearSavedTeams({ keepUserId })
+  clearGameRosters({ keepUserId })
+  clearClubPlayers({ keepUserId })
+}
+
+// The service worker of earlier versions kept every API answer by URL
+// ('api-cache'); nothing writes it any more (pwa-workbox.js API_NETWORK_ONLY_ROUTE)
+function dropOldApiCache() {
+  try {
+    if (typeof caches !== 'undefined') Promise.resolve(caches.delete('api-cache')).catch(() => {})
+  } catch { /* no Cache Storage */ }
+}
+
+/**
+ * Everything this device keeps for the account that was signed in: its
+ * profile and clubs, today's games, the officials' approval addresses, the
+ * console lines not uploaded yet, the saved-team, sent-roster and licence
+ * caches, and the old service worker copies of API answers. Removed whenever
+ * a session ends here: Sign out, a session that expired or that the server
+ * refused, another account signing in, account deletion. On a shared tablet
+ * or club laptop none of it is left for the next person.
+ * @param {{ keepUserId?: string|null }} [opts] an account change: the entries
+ *   of the account signed in now stay
+ */
+export function clearLocalAccountData({ keepUserId = null } = {}) {
+  removeAccountEntries(keepUserId)
+  forgetApprovalEmails()
+  // Console lines not uploaded yet belong to this account: never upload
+  // them under the next one signing in on this device
+  discardUnsentLogs()
+  dropOldApiCache()
+}
+
+/**
+ * At start: whatever belongs to another account than `userId` (null: nobody
+ * is signed in). A session that lapsed while the app was closed ended
+ * without any of the moments above. (The approval addresses carry no owner
+ * and expire by themselves; the unsent console lines are kept per account.)
+ */
+export function clearOtherAccountsData(userId) {
+  removeAccountEntries(userId)
+  dropOldApiCache()
 }
 
 // A pending account re-reads its profile this often, so an admin's approval
@@ -91,9 +156,15 @@ export function AuthProvider({ children, app = null }) {
   // Prevent duplicate profile fetches: a second call while one runs gets
   // the running one's answer (not null, which read as "no profile")
   const fetchingProfile = useRef(null)
+  // The account signed in now, as the auth events and the sign-in calls set
+  // it, before React state follows: a profile read that answers for another
+  // account (signed out, or the next one signed in meanwhile on a slow
+  // network) is dropped instead of putting that profile back.
+  const activeUserId = useRef(null)
 
   // One read of the profile row (fetchProfile shares a running one)
   const readProfile = useCallback(async (userId) => {
+    const stillActive = () => activeUserId.current === userId
     try {
       console.log('[AuthContext] Fetching profile...')
 
@@ -111,6 +182,10 @@ export function AuthProvider({ children, app = null }) {
 
       if (import.meta.env.DEV) console.log('[AuthContext] Profile query result:', { data, error })
 
+      if (!stillActive()) {
+        console.log('[AuthContext] Profile answer for an account no longer signed in: dropped')
+        return null
+      }
       if (error) {
         console.warn('[AuthContext] Failed to fetch profile:', error.message, error)
         setProfile(null)
@@ -124,7 +199,7 @@ export function AuthProvider({ children, app = null }) {
       return data
     } catch (err) {
       console.error('[AuthContext] Profile fetch error:', err.message, err)
-      setProfile(null)
+      if (stillActive()) setProfile(null)
       return null
     }
   }, [])
@@ -170,7 +245,16 @@ export function AuthProvider({ children, app = null }) {
       async (event, session) => {
         console.log('[AuthContext] onAuthStateChange:', event, session?.user?.id)
         clearTimeout(loadingTimeout)
+        const nextUserId = session?.user?.id ?? null
+        const previousUserId = activeUserId.current
+        activeUserId.current = nextUserId
         setUser(prev => keepSameUser(prev, session?.user ?? null))
+        // The first state of this page: what another account left (also a
+        // session that lapsed while the app was closed). Later, a session
+        // that ends (expired, refused by the server, signed out in another
+        // tab): everything of that account. (An account change: the effect below.)
+        if (event === 'INITIAL_SESSION') clearOtherAccountsData(nextUserId)
+        else if (!nextUserId && previousUserId) clearLocalAccountData()
 
         if (session?.user && (event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED')) {
           await fetchProfile(session.user.id)
@@ -194,6 +278,7 @@ export function AuthProvider({ children, app = null }) {
     apiAuth.getSession().then(({ data: { session } }) => {
       console.log('[AuthContext] getSession result:', session?.user?.id, session?.unverified ? '(unverified)' : '')
       if (!session) {
+        activeUserId.current = null
         setUser(null)
         setProfile(null)
       } else if (session.user && !session.unverified) {
@@ -225,6 +310,7 @@ export function AuthProvider({ children, app = null }) {
     })
 
     if (!error && data?.user) {
+      activeUserId.current = data.user.id
       setUser(prev => keepSameUser(prev, data.user))
       await fetchProfile(data.user.id)
     }
@@ -241,6 +327,7 @@ export function AuthProvider({ children, app = null }) {
     const { runPasskeySignIn } = await import('../lib/passkeys')
     const { data, error } = await apiAuth.signInWithPasskey(runPasskeySignIn)
     if (!error && data?.user) {
+      activeUserId.current = data.user.id
       setUser(prev => keepSameUser(prev, data.user))
       await fetchProfile(data.user.id)
     }
@@ -283,22 +370,15 @@ export function AuthProvider({ children, app = null }) {
       return { error: { message: 'Backend not configured' } }
     }
 
+    // Signed out on this device at once, before the server is asked
+    // (apiAuth.signOut waits for it only briefly and sends it again later):
+    // a hall network that stalls must not leave the account signed in, or
+    // its data on a shared tablet, while the request hangs
+    activeUserId.current = null
+    setUser(null)
+    setProfile(null)
+    clearLocalAccountData()
     const { error } = await apiAuth.signOut()
-    if (!error) {
-      setUser(null)
-      setProfile(null)
-      localStorage.removeItem('cachedProfile')
-      localStorage.removeItem(CLUBS_CACHE_KEY)
-      // Console lines not uploaded yet belong to this account: never upload
-      // them under the next one signing in on this device
-      discardUnsentLogs()
-      // The saved-team cache holds DOBs and licence numbers of this account's
-      // teams: never leave it for the next one on a shared tablet
-      clearSavedTeams()
-      // the rosters teams sent (db/023) too, and the clubs' licence lists (db/024)
-      clearGameRosters()
-      clearClubPlayers()
-    }
 
     return { error }
   }, [])
@@ -381,11 +461,18 @@ export function AuthProvider({ children, app = null }) {
     return { data, error }
   }, [user])
 
-  // Get cached profile for offline use
+  const userId = user?.id ?? null
+  // The profile of the account signed in now, never another's (the state may
+  // still hold the previous account's for a render after a change)
+  const currentProfile = profile && userId && (!profile.user_id || profile.user_id === userId) ? profile : null
+
+  // The cached profile for offline use (Match Setup prefills the scorer from
+  // it): the signed-in account's own only, nothing for a signed-out device
   const getCachedProfile = useCallback(() => {
-    const cached = localStorage.getItem('cachedProfile')
-    return cached ? JSON.parse(cached) : null
-  }, [])
+    if (!userId) return null
+    const cached = readCachedProfile()
+    return cached && cached.user_id === userId ? cached : null
+  }, [userId])
 
   // Delete account
   const deleteAccount = useCallback(async () => {
@@ -402,14 +489,10 @@ export function AuthProvider({ children, app = null }) {
       }
 
       // Clear local state
+      activeUserId.current = null
       setUser(null)
       setProfile(null)
-      localStorage.removeItem('cachedProfile')
-      localStorage.removeItem(CLUBS_CACHE_KEY)
-      discardUnsentLogs()
-      clearSavedTeams()
-      clearGameRosters()
-      clearClubPlayers()
+      clearLocalAccountData()
 
       return { error: null }
     } catch (err) {
@@ -423,13 +506,12 @@ export function AuthProvider({ children, app = null }) {
   // every rule; the UI only hides what the account cannot do.
   // `known` is false while neither a profile nor a cached one is at hand
   // (first load on a new device): the UI then shows no "pending" state yet.
-  const userId = user?.id ?? null
   const accessSource = useMemo(() => {
     if (!userId) return null
-    if (profile) return profile
+    if (currentProfile) return currentProfile
     const cached = readCachedProfile()
     return cached && (!cached.user_id || cached.user_id === userId) ? cached : null
-  }, [userId, profile])
+  }, [userId, currentProfile])
   const rolesKey = JSON.stringify(accessSource?.roles ?? [])
   const known = !!accessSource
   // db/018: the account's clubs (from /api/me, else the cache of this account)
@@ -507,22 +589,20 @@ export function AuthProvider({ children, app = null }) {
     }
   }, [access])
 
-  // Another account (or none) on this device: drop the saved-team cache.
+  // Another account on this device (e.g. signed in in another tab): drop
+  // what the previous one left, keep the new one's. (A session that ends
+  // without a next one: the auth listener, signOut and deleteAccount.)
   const previousUserId = useRef(undefined)
   useEffect(() => {
     const id = userId
     const prev = previousUserId.current
     previousUserId.current = id
-    if (prev !== undefined && prev !== null && prev !== id) {
-      clearSavedTeams()
-      clearGameRosters()
-      clearClubPlayers()
-    }
+    if (prev && id && prev !== id) clearLocalAccountData({ keepUserId: id })
   }, [userId])
 
   // The refreshes below run per account and per access, not per profile
   // object: a re-read profile with the same roles changes nothing they read
-  const hasProfile = !!profile
+  const hasProfile = !!currentProfile
 
   // db/023, offline first: download the rosters teams sent for the coming
   // home games while there is a connection (sign-in, every 15 minutes, back
@@ -590,7 +670,7 @@ export function AuthProvider({ children, app = null }) {
 
   const value = useMemo(() => ({
     user,
-    profile,
+    profile: currentProfile,
     access,
     meLoaded,
     redeemInvite,
@@ -608,7 +688,7 @@ export function AuthProvider({ children, app = null }) {
     fetchProfile,
     getCachedProfile,
     deleteAccount
-  }), [user, profile, access, meLoaded, redeemInvite, loading, signIn, signInWithPasskey, signUp, signOut, updateProfile, updateEmail, resetPassword, resendConfirmation, refreshUser, fetchProfile, getCachedProfile, deleteAccount])
+  }), [user, currentProfile, access, meLoaded, redeemInvite, loading, signIn, signInWithPasskey, signUp, signOut, updateProfile, updateEmail, resetPassword, resendConfirmation, refreshUser, fetchProfile, getCachedProfile, deleteAccount])
 
   return (
     <AuthContext.Provider value={value}>

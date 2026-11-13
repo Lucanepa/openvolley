@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { readFileSync } from 'fs'
+import { resolve } from 'path'
 import { offlineNavigationRoute, IGNORE_URL_PARAMETERS, PRECACHE_GLOB_PATTERNS } from '../../pwa-workbox.js'
 
 // offlineNavigationRoute is stringified into sw.js; here it runs against
@@ -124,5 +126,36 @@ describe('pwa-workbox and the phone signing page (/sign)', () => {
     expect(PRECACHE_GLOB_IGNORES).toContain('sign/**')
     // vite-plugin-pwa's defaults stay ignored too
     expect(PRECACHE_GLOB_IGNORES).toEqual(expect.arrayContaining(['**/node_modules/**/*', 'sw.js', 'workbox-*.js']))
+  })
+})
+
+// fe-auth-client-1 / fe-shell-pwa-2: the API's answers belong to the account
+// signed in. A runtime cache of the service worker kept every /api/ GET by URL
+// only (the token not part of the key): after sign-out it answered the next
+// account's requests on a shared device whenever the network failed or took
+// over 10 s, as a normal 200, and on referee tablets an old match bundle
+// replaced newer data. The app keeps its own per-account offline copies.
+describe('pwa-workbox and the account API', () => {
+  const frontendDir = resolve(__dirname, '../..')
+
+  it('the /api/ route goes to the network only and keeps no cache', async () => {
+    const { API_NETWORK_ONLY_ROUTE } = await import('../../pwa-workbox.js')
+    expect(API_NETWORK_ONLY_ROUTE.handler).toBe('NetworkOnly')
+    expect(API_NETWORK_ONLY_ROUTE.options?.cacheName).toBeUndefined()
+    expect(API_NETWORK_ONLY_ROUTE.options?.expiration).toBeUndefined()
+    // a RegExp matching from the start of the URL: Workbox applies it to the
+    // backend on its own origin too
+    const re = API_NETWORK_ONLY_ROUTE.urlPattern
+    for (const u of ['https://backend.example.test/api/me', 'http://127.0.0.1:8080/api/match/list', 'https://backend.example.test/api/club-licences?club=1', 'https://backend.example.test/api/storage/download/logo.png']) {
+      expect(re.exec(u)?.index, u).toBe(0)
+    }
+    for (const u of ['https://app.example.test/referee/', 'https://app.example.test/assets/index-abc.js']) expect(re.test(u), u).toBe(false)
+  })
+
+  it.each(['vite.config.js', 'scripts/build-subdomains.js'])('%s lists it right after the page route, before the asset rules, and caches no API answer', (file) => {
+    const src = readFileSync(resolve(frontendDir, file), 'utf8')
+    // first match wins: no later rule (static assets, html) can keep an /api/ answer
+    expect(src).toMatch(/runtimeCaching: \[\s*(?:\/\/[^\n]*\n\s*)*offlineNavigationRoute,\s*(?:\/\/[^\n]*\n\s*)*API_NETWORK_ONLY_ROUTE,/)
+    expect(src).not.toMatch(/api-cache/)
   })
 })

@@ -210,7 +210,15 @@ les listes d'équipe) dans votre compte Google ; les conditions de Google
 s'appliquent.
 
 Sur un appareil partagé, déconnectez-vous après le match. La déconnexion
-efface votre jeton de connexion et les équipes mises en cache.
+efface de l'application votre jeton de connexion, votre profil et vos clubs,
+les matchs du jour, les équipes, listes et listes de licences des clubs mises en
+cache, ainsi que les adresses e-mail avec lesquelles des officiels ont
+confirmé sur cet appareil ; de même lorsque votre session expire ou qu'un
+autre compte se connecte. Sans connexion, la déconnexion met aussi fin à
+votre session sur le serveur dès que l'appareil est de nouveau en ligne. Les
+adresses des officiels sont conservées 7 jours au plus. Ne configurez pas de
+clé d'accès sur un appareil partagé (cochez "Appareil partagé" à la
+connexion).
 
 ## 6. Compte et e-mails
 

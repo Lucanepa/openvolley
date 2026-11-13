@@ -41,10 +41,13 @@ export async function readSessionMirror() {
   }
 }
 
-/** Keep `session` as the copy; null removes it. */
+/** Keep `session` as the copy; null removes it. True once done, false when it failed. */
 export async function writeSessionMirror(session) {
   try {
     if (session) await openMirror().session.put({ key: KEY, session })
     else await openMirror().session.delete(KEY)
-  } catch { /* no IndexedDB: localStorage only, as before */ }
+    return true
+  } catch {
+    return false // no IndexedDB: localStorage only, as before
+  }
 }

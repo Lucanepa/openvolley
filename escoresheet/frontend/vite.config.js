@@ -8,7 +8,7 @@ import { dirname, resolve } from 'path'
 import { vitePluginApiRoutes } from './vite-plugin-api-routes.js'
 import { BUILD_TARGET } from './build-target.js'
 import { themeBoot } from './theme-boot.js'
-import { PRECACHE_GLOB_PATTERNS, PRECACHE_GLOB_IGNORES, PRECACHE_MAX_FILE_BYTES, NAVIGATE_FALLBACK_DENYLIST, IGNORE_URL_PARAMETERS, offlineNavigationRoute, PWA_INCLUDE_ASSETS, PWA_ICONS } from './pwa-workbox.js'
+import { PRECACHE_GLOB_PATTERNS, PRECACHE_GLOB_IGNORES, PRECACHE_MAX_FILE_BYTES, NAVIGATE_FALLBACK_DENYLIST, IGNORE_URL_PARAMETERS, offlineNavigationRoute, API_NETWORK_ONLY_ROUTE, PWA_INCLUDE_ASSETS, PWA_ICONS } from './pwa-workbox.js'
 
 // Valid HTML pages for the app (folder-based structure for clean URLs)
 const validPages = [
@@ -229,26 +229,12 @@ export default defineConfig({
         // Without this, navigating to /scoresheet, /referee, etc. falls back to index.html
         // (offlineNavigationRoute below maps each page URL to its own index.html instead)
         navigateFallback: null,
-        // Network-first strategy for API calls, cache-first for assets
+        // The API from the network only (never cached), cache-first for assets
         runtimeCaching: [
           // Extension-less page URLs (/referee?match=..) -> that entry's precached index.html
           offlineNavigationRoute,
-          {
-            // API routes - network first, fallback to cache
-            urlPattern: /^https?:\/\/.*\/api\/.*/i,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-cache',
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 // 24 hours
-              },
-              networkTimeoutSeconds: 10,
-              cacheableResponse: {
-                statuses: [0, 200]
-              }
-            }
-          },
+          // API routes - network only: the answers are the signed-in account's
+          API_NETWORK_ONLY_ROUTE,
           {
             // Static assets - cache first
             urlPattern: /\.(?:js|mjs|css|png|jpg|jpeg|svg|gif|webp|woff|woff2)$/,

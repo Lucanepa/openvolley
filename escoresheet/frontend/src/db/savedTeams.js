@@ -117,13 +117,20 @@ export async function getSavedTeams({ userId = currentUserId() } = {}) {
   }
 }
 
-export async function clearSavedTeams() {
+/**
+ * Drop the cache. `keepUserId`: unless it is that account's (an account
+ * change, or the start of the app with that account signed in).
+ */
+export async function clearSavedTeams({ keepUserId = null } = {}) {
   try {
+    let cleared = false
     await db.transaction('rw', db.saved_teams, db.saved_teams_meta, async () => {
+      if (keepUserId && (await db.saved_teams_meta.get(META_KEY))?.userId === keepUserId) return
       await db.saved_teams.clear()
       await db.saved_teams_meta.clear()
+      cleared = true
     })
-    notify()
+    if (cleared) notify()
   } catch (e) {
     console.warn('[savedTeams] clear failed:', e?.message)
   }

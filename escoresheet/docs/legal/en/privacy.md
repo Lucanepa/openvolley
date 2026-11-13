@@ -178,8 +178,14 @@ needed. If you have turned on Google device backup, Android may also back up
 the app data (with rosters) to your Google account; Google's terms apply to
 that.
 
-On a shared device, sign out after the match. Signing out deletes your
-sign-in token and the cached teams from the app.
+On a shared device, sign out after the match. Signing out deletes from the
+app your sign-in token, your profile and clubs, today's games, the cached
+teams, rosters and club licence lists, and the email addresses officials
+approved with on this device; the same happens when your session expires or
+another account signs in. Without a connection, the sign-out also ends your
+session on the server as soon as the device is online again. The addresses
+officials approved with are kept for 7 days at most. Do not set up a passkey
+on a shared device (tick "Shared device" when signing in).
 
 ## 6. Account and emails
 

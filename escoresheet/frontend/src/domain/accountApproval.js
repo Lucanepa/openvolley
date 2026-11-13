@@ -340,43 +340,58 @@ export function namesDiffer(accountName, enteredName) {
 
 const EMAILS_KEY = 'ov.approvalEmails'
 export const APPROVAL_EMAILS_MAX = 50
+// An official's address is kept this long after the approval: a re-approval
+// after a correction, the next match days. The officials' private sign-in
+// addresses must not pile up on a shared scorer device over a season.
+export const APPROVAL_EMAILS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 
 // The device id moved to utils/deviceId (the activity log uses it too)
 export { deviceId } from '../utils/deviceId'
 
 const memoryKey = (officialNameText) => String(officialNameText || '').trim().replace(/\s+/g, ' ').toLowerCase()
 
-function readEmails(storage) {
+// The entries not older than APPROVAL_EMAILS_MAX_AGE_MS (`t`: when remembered;
+// an entry without one is from an older version and counts as old)
+function readEmails(storage, now) {
   const raw = storage.getItem(EMAILS_KEY)
   const list = raw ? JSON.parse(raw) : []
-  return Array.isArray(list) ? list.filter(e => e && typeof e.k === 'string' && typeof e.e === 'string') : []
+  return Array.isArray(list)
+    ? list.filter(e => e && typeof e.k === 'string' && typeof e.e === 'string' && Number(e.t) > now - APPROVAL_EMAILS_MAX_AGE_MS)
+    : []
 }
 
 /**
  * Remember which email an official approved with on this device, keyed by
  * the lower-cased "last first" name. At most 50 entries, least recently used
- * dropped first. A convenience only: failures are ignored.
+ * dropped first, none older than APPROVAL_EMAILS_MAX_AGE_MS; all of them go
+ * when a session ends on the device (AuthContext clearLocalAccountData). A
+ * convenience only: failures are ignored.
  */
-export function rememberApprovalEmail(officialNameText, email, storage = globalThis.localStorage) {
+export function rememberApprovalEmail(officialNameText, email, storage = globalThis.localStorage, now = Date.now()) {
   const k = memoryKey(officialNameText)
   const e = String(email || '').trim().toLowerCase()
   if (!k || !e) return
   try {
-    const list = readEmails(storage).filter(x => x.k !== k)
-    list.push({ k, e })
+    const list = readEmails(storage, now).filter(x => x.k !== k)
+    list.push({ k, e, t: now })
     storage.setItem(EMAILS_KEY, JSON.stringify(list.slice(-APPROVAL_EMAILS_MAX)))
   } catch { /* storage full or blocked */ }
 }
 
 /** The email remembered for an official's name on this device, or ''. */
-export function recallApprovalEmail(officialNameText, storage = globalThis.localStorage) {
+export function recallApprovalEmail(officialNameText, storage = globalThis.localStorage, now = Date.now()) {
   const k = memoryKey(officialNameText)
   if (!k) return ''
   try {
-    return readEmails(storage).find(x => x.k === k)?.e || ''
+    return readEmails(storage, now).find(x => x.k === k)?.e || ''
   } catch {
     return ''
   }
+}
+
+/** Forget every remembered address (sign-out, another account, deletion). */
+export function forgetApprovalEmails(storage = globalThis.localStorage) {
+  try { storage.removeItem(EMAILS_KEY) } catch { /* storage blocked */ }
 }
 
 // ── Sync queue ──

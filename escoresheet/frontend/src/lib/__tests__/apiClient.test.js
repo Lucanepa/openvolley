@@ -462,7 +462,7 @@ describe('self-hosted backend contract', () => {
     expect(sentHeaders().Authorization).toBe('Bearer tok')
   })
 
-  it('signOut revokes the session on the server, then clears it locally (even offline)', async () => {
+  it('signOut clears the session locally, then revokes it on the server (offline it is cleared too)', async () => {
     globalThis.fetch = vi.fn(async () => jsonResponse({ data: null, error: null }))
     await apiAuth.signOut()
     expect(globalThis.fetch.mock.calls[0][0]).toBe('http://backend.test/api/auth/sign-out')

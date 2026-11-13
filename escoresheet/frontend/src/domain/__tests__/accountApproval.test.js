@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   ROLE_TO_SLOT, APPROVAL_ROLES, PIN_RE, isWeakPin, resultKey, resultTriples, approvalFor, isApprovalValid,
   slotComplete, formatApprovalStamp, approvalLine, approvalsBySlot, officialFor, officialName, namesDiffer,
-  deviceId, rememberApprovalEmail, recallApprovalEmail, APPROVAL_EMAILS_MAX, pendingSyncJobsFor, approvalSummary,
+  deviceId, rememberApprovalEmail, recallApprovalEmail, forgetApprovalEmails, APPROVAL_EMAILS_MAX, APPROVAL_EMAILS_MAX_AGE_MS, pendingSyncJobsFor, approvalSummary,
   approvalsCompletingSlots, approvalsStillValid, normalizeApprovalQuery, changedSets, approvedSheetChanged,
   optionalSignatureSlots
 } from '../accountApproval'
@@ -229,6 +229,25 @@ describe('device memory', () => {
     rememberApprovalEmail('Ref new', 'new@x.ch', s)
     expect(recallApprovalEmail('Ref 0', s)).toBe('r0@x.ch')
     expect(recallApprovalEmail('Ref 1', s)).toBe('')
+  })
+  // x-privacy-6: the officials' sign-in addresses on a shared scorer device
+  it('forgets an address after APPROVAL_EMAILS_MAX_AGE_MS, and all of them with forgetApprovalEmails', () => {
+    const s = memoryStorage()
+    const now = Date.parse('2026-11-14T18:00:00Z')
+    rememberApprovalEmail('Muster Anna', 'anna@example.ch', s, now)
+    expect(recallApprovalEmail('Muster Anna', s, now + APPROVAL_EMAILS_MAX_AGE_MS - 1000)).toBe('anna@example.ch')
+    expect(recallApprovalEmail('Muster Anna', s, now + APPROVAL_EMAILS_MAX_AGE_MS + 1000)).toBe('')
+    // a newer one drops the old ones from storage too
+    rememberApprovalEmail('Ref New', 'new@x.ch', s, now + APPROVAL_EMAILS_MAX_AGE_MS + 1000)
+    expect(s.dump().get('ov.approvalEmails')).not.toContain('anna@example.ch')
+    // an entry of an older version (no time) counts as old
+    s.setItem('ov.approvalEmails', JSON.stringify([{ k: 'ref old', e: 'old@x.ch' }]))
+    expect(recallApprovalEmail('Ref Old', s)).toBe('')
+    rememberApprovalEmail('Muster Anna', 'anna@example.ch', s)
+    forgetApprovalEmails(s)
+    expect(s.getItem('ov.approvalEmails')).toBeNull()
+    expect(recallApprovalEmail('Muster Anna', s)).toBe('')
+    expect(() => forgetApprovalEmails(throwingStorage)).not.toThrow()
   })
   it('the memory never throws when storage does', () => {
     expect(() => rememberApprovalEmail('Muster Anna', 'a@b.ch', throwingStorage)).not.toThrow()
