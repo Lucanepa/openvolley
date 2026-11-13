@@ -119,6 +119,43 @@ describe('pgQuery and matchRestore: scorer access, closing, official games', { s
       assert.equal((await raw.query('SELECT count(*)::int n FROM sets WHERE match_id = $1', [m.id])).rows[0].n, 1)
     })
 
+    it('children of a non-test match: the match id in another spelling (upper case, braces, no hyphens) is the same match', async () => {
+      const m = await matchOf(asScorer(scorer))
+      await raw.query("INSERT INTO match_editors (match_id, user_id, granted_via) VALUES ($1, $2, 'claim')", [m.id, pending])
+      assert.equal((await q('events', 'insert', { data: eventOf(m, 1) }, asScorer(scorer))).status, 200)
+      const spellings = [m.id.toUpperCase(), `{${m.id}}`, m.id.replace(/-/g, '')]
+      for (const [i, id] of spellings.entries()) {
+        scorerRequired(await q('events', 'insert', { data: { ...eventOf(m, 10 + i), match_id: id } }, asPending(pending)))
+        scorerRequired(await q('events', 'upsert', { data: { ...eventOf(m, 1), type: 'timeout', match_id: id }, onConflict: 'external_id' }, asPending(pending)))
+        scorerRequired(await q('sets', 'insert', { data: { ...setOf(m, 1 + i), match_id: id } }, asPending(pending)))
+        scorerRequired(await q('match_live_state', 'upsert', { data: { match_id: id, points_a: 24 }, onConflict: 'match_id' }, asPending(pending)))
+      }
+      // moving an event of its own test match into the non-test match
+      const t = await matchOf(asPending(pending), { test: true })
+      assert.equal((await q('events', 'insert', { data: eventOf(t, 1) }, asPending(pending))).status, 200)
+      for (const id of spellings) {
+        scorerRequired(await q('events', 'update', { data: { match_id: id, external_id: `${m.external_id}:e:7` }, filters: [eq('external_id', `${t.external_id}:e:1`)] }, asPending(pending)))
+      }
+      const count = async (table, id) => (await raw.query(`SELECT count(*)::int n FROM ${table} WHERE match_id = $1`, [id])).rows[0].n
+      assert.deepEqual([await count('events', m.id), await count('sets', m.id), await count('match_live_state', m.id)], [1, 0, 0])
+      assert.equal((await raw.query('SELECT type FROM events WHERE match_id = $1', [m.id])).rows[0].type, 'point')
+      assert.equal(await count('events', t.id), 1)
+      // the check before the statement answers, as for the id as stored: a
+      // closed non-test match is OV_SCORER_REQUIRED, not the closed lock's 409
+      const c = await matchOf(asScorer(scorer))
+      await raw.query("INSERT INTO match_editors (match_id, user_id, granted_via) VALUES ($1, $2, 'claim')", [c.id, pending])
+      assert.equal((await q('matches', 'update', { data: { status: 'approved' }, filters: [eq('id', c.id)] }, asScorer(scorer))).status, 200)
+      for (const id of [c.id, c.id.toUpperCase(), `{${c.id}}`, c.id.replace(/-/g, '')]) {
+        scorerRequired(await q('events', 'insert', { data: { ...eventOf(c, 1), match_id: id } }, asPending(pending)))
+      }
+      // a malformed id is still a 400, not a write
+      assert.equal((await q('sets', 'insert', { data: { ...setOf(t, 1), match_id: 'not-a-uuid' } }, asPending(pending))).status, 400)
+      // its own test match in another spelling: written, stored under the match's id
+      assert.equal((await q('sets', 'insert', { data: { ...setOf(t, 1), match_id: t.id.toUpperCase() } }, asPending(pending))).status, 200)
+      assert.equal((await q('match_live_state', 'upsert', { data: { match_id: `{${t.id}}`, points_a: 3 }, onConflict: 'match_id' }, asPending(pending))).status, 200)
+      assert.deepEqual([await count('sets', t.id), await count('match_live_state', t.id)], [1, 1])
+    })
+
     it('a live-state upsert on its id cannot move another match\'s row into a test match', async () => {
       // review: a pending PIN holder (editor of N) upserted {id: L.id, match_id: T}
       const n = await matchOf(asScorer(scorer))
