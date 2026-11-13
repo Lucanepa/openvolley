@@ -40,7 +40,7 @@ import { sanitizeForFilename } from '../utils/stringUtils'
 import { formatTimeLocal } from '../utils/timeUtils'
 import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
 import { waitForScoresheetPdf, PDF_FAIL, PDF_REQUEST_PARAM } from '../utils/scoresheetPdfRequest'
-import { getMatchWinner, clearedPostMatchSignatures, planForfeitReversal } from '../domain/matchEnd'
+import { getMatchWinner, clearedPostMatchSignatures, planForfeitReversal, matchForfeitOf, restoredSetWrites } from '../domain/matchEnd'
 import {
   ROLE_TO_SLOT, approvalFor, isApprovalValid, slotComplete, approvalLine, approvalsBySlot, approvalSummary,
   resultKey, rememberApprovalEmail, namesDiffer, approvalsCompletingSlots, approvalsStillValid, pinApprovalState,
@@ -92,14 +92,15 @@ const formatDurationHHMM = (durationStr) => {
   return durationStr
 }
 
-// Standard Results component for MatchEnd page
-const ResultsTable = ({ teamAName, teamBName, setResults, matchStart, matchEnd, matchDuration }) => {
+// Standard Results component for MatchEnd page. `winnerLabel` ('A' | 'B' |
+// null) is the match winner (getMatchWinner): a match stopped without the
+// sets needed has none, and no result, as the winner card and the PDF
+const ResultsTable = ({ teamAName, teamBName, setResults, matchStart, matchEnd, matchDuration, winnerLabel = null }) => {
   const { t } = useTranslation()
 
-  // Calculate winner
   const teamAWins = setResults?.reduce((sum, r) => sum + (r.teamAWon ?? 0), 0) || 0
   const teamBWins = setResults?.reduce((sum, r) => sum + (r.teamBWon ?? 0), 0) || 0
-  const winnerName = teamAWins > teamBWins ? teamAName : teamBWins > teamAWins ? teamBName : null
+  const winnerName = winnerLabel === 'A' ? teamAName : winnerLabel === 'B' ? teamBName : null
 
   return (
     <div style={{ padding: '12px', fontSize: '12px', background: '#fff', color: '#000', height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -197,7 +198,7 @@ const ResultsTable = ({ teamAName, teamBName, setResults, matchStart, matchEnd, 
         </div>
         <div style={{ textAlign: 'right' }}>
           <span style={{ fontSize: '9px', color: '#666', textTransform: 'uppercase' }}>{t('matchEnd.result', 'Result')}</span>
-          <div style={{ fontWeight: 700, fontSize: '14px', color: '#000' }}>{Math.max(teamAWins, teamBWins)}:{Math.min(teamAWins, teamBWins)}</div>
+          <div style={{ fontWeight: 700, fontSize: '14px', color: '#000' }}>{winnerName ? `${Math.max(teamAWins, teamBWins)}:${Math.min(teamAWins, teamBWins)}` : '-'}</div>
         </div>
       </div>
 
@@ -738,6 +739,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     : winnerKey === 'away'
       ? (awayTeam?.name || t('common.away'))
       : t('matchEnd.noWinner', 'No winner (match stopped)')
+  const winnerLabel = winnerKey === 'home' ? homeLabel : winnerKey === 'away' ? (homeLabel === 'A' ? 'B' : 'A') : null
 
   // Match start = set 1's actual start (its first rally), end = the last set's
   // end, duration = end - start: the PDF's values (scoresheet_pdf/utils/matchTimes),
@@ -1655,14 +1657,14 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       // A forfeit is REVERSED, not reopened as it stands: the last set is often
       // one the forfeit created (0-25) and the forfeit set holds awarded points.
       // Remove the created sets, the awarded points, the forfeit set_end and
-      // forfait events, and reopen the forfeit set at its pre-forfeit score
-      // (planForfeitReversal, tested).
+      // forfait events, reopen the forfeit set at its pre-forfeit score and
+      // give the played sets a default rewrote their score back
+      // (planForfeitReversal, tested). The match forfeit is read from its
+      // forfait event: a copy continued from the cloud has no forfeitTeam.
       const allEvents = await db.events.where('matchId').equals(matchId).toArray()
-      const forfaitIndexes = allEvents
-        .filter(e => e.type === 'forfait' && (match?.forfeitTeam ? e.payload?.scope !== 'set' : true))
-        .map(e => e.setIndex)
-      const fromSetIndex = forfaitIndexes.length && match?.forfeitTeam
-        ? Math.min(lastSet.index, ...forfaitIndexes)
+      const matchForfeit = matchForfeitOf(allEvents)
+      const fromSetIndex = matchForfeit?.setIndex != null
+        ? Math.min(lastSet.index, matchForfeit.setIndex)
         : lastSet.index
       const forfeitPlan = planForfeitReversal({ events: allEvents, sets: allSets, fromSetIndex })
       if (forfeitPlan.hasForfeit) {
@@ -1671,7 +1673,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         await withActivityContext({ reason: 'forfeit_reversal' }, () => db.events.bulkDelete(forfeitPlan.deleteEventIds))
         if (forfeitPlan.deleteSetIds.length > 0) await db.sets.bulkDelete(forfeitPlan.deleteSetIds)
         for (const r of forfeitPlan.restoreSets) {
-          await db.sets.update(r.id, { homePoints: r.homePoints, awayPoints: r.awayPoints, finished: false, endTime: null })
+          await db.sets.update(r.id, restoredSetWrites(r).local)
         }
         // Never send the removed rows to the cloud; the created sets already
         // there are deleted (a finished one counted in the approved result)
@@ -1682,7 +1684,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         await queueSetDeletes(db, match, forfeitPlan.deleteSetIds)
         if (!match?.test && match?.seed_key) {
           for (const r of forfeitPlan.restoreSets) {
-            await db.sync_queue.add(setUpdateJob(match, r.id, { home_points: r.homePoints, away_points: r.awayPoints, finished: false, end_time: null }))
+            await db.sync_queue.add(setUpdateJob(match, r.id, restoredSetWrites(r).cloud))
           }
         }
         // The set to reopen is the forfeit set, or else the last remaining set
@@ -1727,6 +1729,19 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         // The event history (db/eventHistory) voids the server's copy; the
         // old 'event delete' job was never handled by the sync queue.
         await withActivityContext({ reason: 'reopen_set' }, () => db.events.delete(setEndEvent.id))
+      }
+
+      // The set is played on: the match was not stopped there (Impossibility
+      // to resume), as the Scoreboard's Reopen set; through the event history
+      // too, and its insert never sent goes with it
+      const stoppedIds = (await db.events.where('matchId').equals(matchId).toArray())
+        .filter(e => e.type === 'match_stopped' && e.setIndex === lastSet.index)
+        .map(e => e.id)
+      if (stoppedIds.length > 0) {
+        await withActivityContext({ reason: 'reopen_set' }, () => db.events.bulkDelete(stoppedIds))
+        const queuedJobs = await db.sync_queue.where('status').equals('queued').toArray()
+        const stoppedJobs = syncJobsForEvents(queuedJobs, new Set(stoppedIds), match?.seed_key)
+        if (stoppedJobs.length > 0) await db.sync_queue.bulkDelete(stoppedJobs.map(j => j.id))
       }
 
       // Queue sync to Supabase for the set update
@@ -1828,6 +1843,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               matchStart={matchStart}
               matchEnd={matchEndTime}
               matchDuration={matchDuration}
+              winnerLabel={winnerLabel}
             />
           </div>
         </div>
@@ -2199,6 +2215,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
                 matchStart={matchStart}
                 matchEnd={matchEndTime}
                 matchDuration={matchDuration}
+                winnerLabel={winnerLabel}
               />
             )}
             {zoomedSection === 'sanctions' && (

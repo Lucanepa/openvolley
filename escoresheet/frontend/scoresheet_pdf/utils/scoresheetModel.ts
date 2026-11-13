@@ -149,14 +149,19 @@ export function displaySetNumber(setIndex: number, bestOf: number | undefined): 
 /**
  * A set awarded by default / forfeit without a single rally: created by the
  * forfeit (forfeitCreated), or every one of its points was awarded (a default
- * before the start). It has no start / end time and no duration (field-spec 11).
+ * before the start), or it has no point at all and the forfeit ended it (a
+ * set the forfeit created, as a copy continued from the cloud has it: the
+ * forfeitCreated flag stays on the scoring device; a default before its
+ * first rally). It has no start / end time and no duration (field-spec 11).
  */
 export function isDefaultSet(sets: any[], events: any[], setIndex: number): boolean {
   const info = (sets || []).find(s => s?.index === setIndex);
   if (!info) return false;
   if (info.forfeitCreated) return true;
-  const pts = (events || []).filter(e => e?.setIndex === setIndex && e?.type === 'point');
-  return pts.length > 0 && pts.every(e => e.payload?.forfeitAwarded === true);
+  const ofSet = (events || []).filter(e => e?.setIndex === setIndex);
+  const pts = ofSet.filter(e => e?.type === 'point');
+  if (pts.length > 0) return pts.every(e => e.payload?.forfeitAwarded === true);
+  return info.finished === true && ofSet.some(e => e?.type === 'set_end' && e.payload?.reason === 'forfait');
 }
 
 /**

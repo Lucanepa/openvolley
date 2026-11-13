@@ -81,7 +81,7 @@ import CorrectionsPanel from './corrections/CorrectionsPanel.jsx'
 import RectifyPanel from './rectify/RectifyPanel.jsx'
 import { planRectificationReversal, rectifyErrorText } from '../domain/rectify'
 import { servingTeamFromLog } from '../domain/rules'
-import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon, forfeitScope, playersAvailableForNextSet, planForfeitReversal } from '../domain/matchEnd'
+import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon, forfeitScope, playersAvailableForNextSet, planForfeitReversal, restoredSetWrites, matchForfeitOf } from '../domain/matchEnd'
 import { signaturesPayload } from '../domain/signatureEdits'
 import { missingPreMatchSignatures, beforeFirstServe } from '../domain/preMatchSignatures'
 import PreMatchSignDialog, { SignaturesMissingModal, MissingSignatureButton } from './signature/PreMatchSignDialog.jsx'
@@ -774,9 +774,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [replayRallyConfirm, setReplayRallyConfirm] = useState(null) // { event: Event, description: string, selectedOption: 'swap'|'replay' } | null
   const [replayConfirm, setReplayConfirm] = useState(false) // "Replay rally" during a rally waits for this confirmation
   const [stopMatchModal, setStopMatchModal] = useState(null) // 'select' | null - Stop the match modal selection
-  const [stopMatchTeamSelect, setStopMatchTeamSelect] = useState(null) // { pendingAction: 'forfeit' } | null - Team selection for forfeit
-  const [stopMatchConfirm, setStopMatchConfirm] = useState(null) // { type: 'forfeit'|'impossibility', team?: 'home'|'away' } | null - Confirmation modal
-  const [stopMatchRemarksStep, setStopMatchRemarksStep] = useState(null) // { type: 'forfeit'|'impossibility', team?: 'home'|'away' } | null - After remarks
+  // rule: 'default' (refused to play / did not appear, FIVB 6.4.1-2) or 'incomplete' (6.4.3)
+  const [stopMatchTeamSelect, setStopMatchTeamSelect] = useState(null) // { pendingAction: 'forfeit', rule } | null - Team selection for forfeit
+  const [stopMatchConfirm, setStopMatchConfirm] = useState(null) // { type: 'forfeit'|'impossibility', team?: 'home'|'away', rule? } | null - Confirmation modal
+  const [stopMatchRemarksStep, setStopMatchRemarksStep] = useState(null) // { type: 'forfeit'|'impossibility', team?: 'home'|'away', rule? } | null - After remarks
   const [recentlySubstitutedPlayers, setRecentlySubstitutedPlayers] = useState([]) // [{ team, playerNumber, timestamp }] - for flashing effect
   const recentSubFlashTimeoutRef = useRef(null) // Timeout ref for clearing flash
   const leftCourtPositionVRef = useRef(null) // Ref for position V on left court (for modal positioning)
@@ -5531,6 +5532,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     (side, skipConfirmation = false, { tap = false, penaltySeq = null } = {}) => runAction('point', async () => {
       cLogger.logHandler('handlePoint', { side, skipConfirmation, tap })
       if (!data?.set) return
+      // A match over in the database (stopped, forfeited; opened here from
+      // the cloud or a backup with its set unfinished) takes no point
+      if (isMatchOverStatus((await db.matches.get(matchId))?.status)) {
+        console.warn('[Scoreboard] Point on a match that is over: ignored')
+        return
+      }
       if (tap && await readRallyStatus() !== 'in_play') {
         console.warn('[Scoreboard] Point tap without a rally in play (the screen was behind): ignored')
         return
@@ -6040,6 +6047,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const handleStartRally = useCallback((skipConfirmation = false) => runAction('rally', async () => {
     const skipCheck = skipConfirmation === true
     cLogger.logHandler('handleStartRally', { skipConfirmation: skipCheck })
+    // Nor a match over in the database (see handlePoint)
+    if (isMatchOverStatus((await db.matches.get(matchId))?.status)) {
+      console.warn('[Scoreboard] Start rally on a match that is over: ignored')
+      return
+    }
     if (await readRallyStatus() === 'in_play') {
       console.warn('[Scoreboard] Start rally with a rally in play (the screen was behind): ignored')
       return
@@ -7503,7 +7515,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Reverse a forfeit (set or match) at or after `fromSetIndex`: drop the sets
   // it created, the points it awarded, its set_end and forfait events, and put
-  // the set it finished back to unfinished at its pre-forfeit score
+  // the set it finished back to unfinished at its pre-forfeit score, the
+  // played sets a default rewrote back to their score, still finished
   // (planForfeitReversal, tested). Used by undo of a forfait and by Reopen Set.
   const applyForfeitReversal = useCallback(async (fromSetIndex) => {
     const events = await db.events.where('matchId').equals(matchId).toArray()
@@ -7515,8 +7528,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     await discardEvents(events.filter(e => deleteIds.has(e.id)), 'forfeit_reversal')
     if (plan.deleteSetIds.length > 0) await db.sets.bulkDelete(plan.deleteSetIds)
     for (const r of plan.restoreSets) {
-      await db.sets.update(r.id, { homePoints: r.homePoints, awayPoints: r.awayPoints, finished: false, endTime: null })
-      confirmedSetEndRef.current.delete(r.index)
+      await db.sets.update(r.id, restoredSetWrites(r).local)
+      if (r.finished !== true) confirmedSetEndRef.current.delete(r.index)
     }
 
     // Cloud: the sets it created go there too (a finished one counted in the
@@ -7525,7 +7538,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     await queueSetDeletes(db, match, plan.deleteSetIds)
     if (match && !match.test && match.seed_key) {
       for (const r of plan.restoreSets) {
-        await db.sync_queue.add(setUpdateJob(match, r.id, { home_points: r.homePoints, away_points: r.awayPoints, finished: false, end_time: null }))
+        await db.sync_queue.add(setUpdateJob(match, r.id, restoredSetWrites(r).cloud))
       }
     }
     if (match?.forfeitTeam || match?.forfeitReason) {
@@ -10637,22 +10650,25 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     })
   }, [data?.set, data?.events, data?.homePlayers, data?.awayPlayers, isLiberoUnable, getAvailablePlayersForRedesignation])
 
-  // Handle forfait (FIVB 6.4.3, 7.3.1, 15.8; domain/matchEnd, tested).
+  // Handle forfait (FIVB 6.4, 7.3.1, 15.8; domain/matchEnd, tested).
   //  scope 'set'   - the team is INCOMPLETE for the SET (injured / expelled
   //                  player, or a disqualified one while six can still play
   //                  next set, with no legal or exceptional substitute): the
   //                  opponent gets the points to win the set in progress, then
   //                  the normal set-end confirmation finishes the set and starts
   //                  the next one, or ends the match if that set decides it.
-  //  scope 'match' - default / incomplete for the MATCH (manual "Stop the
-  //                  match" forfeit, or fewer than six players for next set):
-  //                  the opponent gets the points and the sets needed, the
-  //                  match ends and Match End opens.
+  //  scope 'match' - incomplete for the MATCH (fewer than six players for
+  //                  next set, or the manual "A team is incomplete"): the
+  //                  opponent gets the points and the sets needed, the match
+  //                  ends and Match End opens. With inDefault (the manual
+  //                  "A team forfeits": refused to play, did not appear,
+  //                  6.4.1-2) every set of the result is 0:25, the played
+  //                  ones rewritten, and no points are awarded.
   // Everything written is tagged (forfeitAwarded points, forfeitCreated sets,
-  // set_end reason 'forfait', setsBefore on the forfait event) so a reopen or
-  // an undo can reverse it (planForfeitReversal).
-  const handleForfait = useCallback(async (teamKey, reason, { scope = 'match' } = {}) => {
-    cLogger.logHandler('handleForfait', { teamKey, reason, scope })
+  // set_end reason 'forfait', inDefault and setsBefore on the forfait event)
+  // so a reopen or an undo can reverse it (planForfeitReversal).
+  const handleForfait = useCallback(async (teamKey, reason, { scope = 'match', inDefault = false } = {}) => {
+    cLogger.logHandler('handleForfait', { teamKey, reason, scope, inDefault })
     if (!data?.set || !data?.match) return
     // Idempotent: a second call while one is running, or once the match is
     // over, must not log a second forfait or navigate twice
@@ -10673,13 +10689,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if (isMatchOverStatus(matchRecord?.status)) return
       const isTest = matchRecord?.test === true
       const allSets = await db.sets.where({ matchId }).sortBy('index')
-      const plan = planForfeit({ sets: allSets, forfeitingTeam: teamKey, currentSetIndex, bestOf: matchRecord?.bestOf, setOnly })
+      const plan = planForfeit({ sets: allSets, forfeitingTeam: teamKey, currentSetIndex, bestOf: matchRecord?.bestOf, setOnly, inDefault })
       // Score of the existing sets the forfeit touches, for a later reversal
+      // (a played set a default rewrites or sets aside: with its end)
       const setsBefore = plan.sets
         .filter(p => p.id != null)
         .map(p => allSets.find(x => x.id === p.id))
         .filter(Boolean)
-        .map(x => ({ id: x.id, index: x.index, homePoints: x.homePoints || 0, awayPoints: x.awayPoints || 0 }))
+        .map(x => ({
+          id: x.id, index: x.index, homePoints: x.homePoints || 0, awayPoints: x.awayPoints || 0,
+          ...(x.finished ? { finished: true, endTime: x.endTime ?? null } : {})
+        }))
 
       if (setOnly) {
         const planned = plan.sets[0]
@@ -10724,8 +10744,23 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       await db.matches.update(matchId, { status: 'ended', forfeitTeam: teamKey, forfeitReason: reason })
 
       const nowIso = roundToMinute(new Date().toISOString())
+      const queueSets = !isTest && !!matchRecord?.seed_key
       for (const planned of plan.sets) {
         const { index, homePoints, awayPoints } = planned
+        if (planned.voided) {
+          // Default at 2:1 or 2:2: a played set past the 0:3 no longer
+          // counts (its score and end are in setsBefore)
+          await db.sets.update(planned.id, { finished: false, endTime: null })
+          if (queueSets) await db.sync_queue.add(setUpdateJob(matchRecord, planned.id, { finished: false, end_time: null }))
+          continue
+        }
+        if (planned.wasFinished) {
+          // Default: a played set becomes 0:25; it keeps its end, its own
+          // set_end stays (setsBefore keeps the played score)
+          await db.sets.update(planned.id, { homePoints, awayPoints })
+          if (queueSets) await db.sync_queue.add(setUpdateJob(matchRecord, planned.id, { home_points: homePoints, away_points: awayPoints }))
+          continue
+        }
         if (planned.isCurrent) {
           // Award points until opponent wins (point events keep the running score)
           for (let i = 0; i < planned.awardedPoints; i++) {
@@ -10740,7 +10775,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           setId = await db.sets.add({ matchId, index, homePoints, awayPoints, finished: true, startTime: nowIso, endTime: nowIso, forfeitCreated: true })
         }
 
-        if (!isTest && matchRecord?.seed_key) {
+        if (queueSets) {
           await db.sync_queue.add(planned.id != null
             ? setUpdateJob(matchRecord, setId, { home_points: homePoints, away_points: awayPoints, finished: true, end_time: nowIso })
             : {
@@ -10766,6 +10801,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         team: teamKey,
         reason: reason,
         scope: 'match',
+        inDefault,
         setIndex: currentSetIndex,
         setsBefore
       }, { setIndexOverride: currentSetIndex })
@@ -10809,11 +10845,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     setExceptionalSubstitutionModal({ team, position, playerOut, reason })
   }, [])
 
-  // Handle manual forfeit from "Stop the match" menu
-  const handleManualForfeit = useCallback(async (teamKey) => {
+  // Handle manual forfeit from "Stop the match" menu: `rule` 'default' (the
+  // team refuses to play or did not appear, FIVB 6.4.1-2: 0:25 in every set)
+  // or 'incomplete' (6.4.3: it keeps its points and sets)
+  const handleManualForfeit = useCallback(async (teamKey, rule = 'default') => {
     if (!data?.set || !data?.match) return
     // handleForfait awards the sets, ends the match and navigates to Match End
-    await handleForfait(teamKey, 'forfeit', { scope: 'match' })
+    if (rule === 'incomplete') await handleForfait(teamKey, 'incomplete', { scope: 'match' })
+    else await handleForfait(teamKey, 'forfeit', { scope: 'match', inDefault: true })
   }, [data?.set, data?.match, handleForfait])
 
   // Go back (domain/rectify, components/rectify/RectifyPanel): the plan,
@@ -10838,81 +10877,64 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return true
   }, [data?.set, matchId, runAction, deferUi, afterPointScored, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate])
 
-  // Handle "Impossibility to resume" - end match as-is without a winner
+  // Handle "Impossibility to resume" - end match as-is without a winner.
+  // One action (runAction 'stopMatch'): the match_stopped event and the
+  // match row are written together. A failed write (storage full) is shown
+  // (onActionFailed) and the stop can be tried again; true once stopped.
+  // Nothing is downloaded: the encrypted backup of the match end
+  // (onTriggerEventBackup) keeps the match. (A plain file of every match on
+  // the device, PINs and signatures included, used to land in Downloads.)
   const handleImpossibilityToResume = useCallback(async () => {
-    if (!data?.set || !data?.match) return
+    if (!data?.set || !data?.match) return false
     // Once: the match ends here and navigates to Match End
-    if (matchEndingRef.current || forfaitInProgressRef.current) return
+    if (matchEndingRef.current || forfaitInProgressRef.current) return false
     matchEndingRef.current = true
 
-    // Log match stopped event
-    await logEvent('match_stopped', {
-      reason: 'impossibility_to_resume',
-      setIndex: data.set.index,
-      homePoints: data.set.homePoints,
-      awayPoints: data.set.awayPoints
-    })
-
-    // Update match status to 'ended' without declaring a winner
-    await db.matches.update(matchId, {
-      status: 'ended',
-      stoppedReason: 'impossibility_to_resume'
-    })
+    let stopped = false
+    try {
+      stopped = await runAction('stopMatch', async () => {
+        await logEvent('match_stopped', {
+          reason: 'impossibility_to_resume',
+          setIndex: data.set.index,
+          homePoints: data.set.homePoints,
+          awayPoints: data.set.awayPoints
+        })
+        // Update match status to 'ended' without declaring a winner
+        await db.matches.update(matchId, {
+          status: 'ended',
+          stoppedReason: 'impossibility_to_resume'
+        })
+        return true
+      }) === true
+    } catch (error) {
+      // Nothing was written; the action said so
+      console.error('[handleImpossibilityToResume] Error:', error)
+    }
+    if (!stopped) {
+      matchEndingRef.current = false
+      return false
+    }
     syncToReferee()
 
     // Trigger backup
     onTriggerEventBackup?.('match_end')
 
-    // Download game data (same logic as menu export)
-    try {
-      const allMatches = await db.matches.toArray()
-      const allTeams = await db.teams.toArray()
-      const allPlayers = await db.players.toArray()
-      const allSets = await db.sets.toArray()
-      const allEvents = await db.events.toArray()
-      const allReferees = await db.referees.toArray()
-      const allScorers = await db.scorers.toArray()
-
-      const exportData = {
-        exportDate: new Date().toISOString(),
-        matchId: matchId,
-        matches: allMatches,
-        teams: allTeams,
-        players: allPlayers,
-        sets: allSets,
-        events: allEvents,
-        referees: allReferees,
-        scorers: allScorers
-      }
-
-      const jsonString = JSON.stringify(exportData, null, 2)
-      const blob = new Blob([jsonString], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `match_stopped_${matchId}_${new Date().toISOString().split('T')[0]}.json`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      URL.revokeObjectURL(url)
-    } catch (error) {
-      console.error('Error exporting match data:', error)
-    }
-
     // Navigate to match end (App.finishSet sees status 'ended' and creates no set)
     if (onFinishSet) onFinishSet(data.set)
-  }, [data?.set, data?.match, matchId, logEvent, syncToReferee, onTriggerEventBackup, onFinishSet])
+    return true
+  }, [data?.set, data?.match, matchId, runAction, logEvent, syncToReferee, onTriggerEventBackup, onFinishSet])
 
   // Complete the stop match flow after remarks are recorded
   const completeStopMatchFlow = useCallback(async () => {
     if (!stopMatchRemarksStep) return
 
-    const { type, team } = stopMatchRemarksStep
+    const { type, team, rule } = stopMatchRemarksStep
 
     if (type === 'forfeit' && team) {
-      await handleManualForfeit(team)
+      await handleManualForfeit(team, rule)
     } else if (type === 'impossibility') {
-      await handleImpossibilityToResume()
+      // Not written (its failure is shown): the step stays, to try again
+      if (!await handleImpossibilityToResume()) return
     }
 
     // Clear all stop match states
@@ -19885,10 +19907,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               className="h-12 justify-start text-base"
               onClick={() => {
                 setStopMatchModal(null)
-                setStopMatchTeamSelect({ pendingAction: 'forfeit' })
+                setStopMatchTeamSelect({ pendingAction: 'forfeit', rule: 'default' })
               }}
             >
               {t('scoreboard.stopMatch.teamForfeits', 'A team forfeits')}
+            </SbButton>
+            <SbButton
+              block
+              className="h-12 justify-start text-base"
+              onClick={() => {
+                setStopMatchModal(null)
+                setStopMatchTeamSelect({ pendingAction: 'forfeit', rule: 'incomplete' })
+              }}
+            >
+              {t('scoreboard.stopMatch.teamIncomplete', 'A team is incomplete')}
             </SbButton>
             <SbButton
               block
@@ -19919,7 +19951,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             <button
               onClick={() => {
                 setStopMatchTeamSelect(null)
-                setStopMatchConfirm({ type: 'forfeit', team: 'home' })
+                setStopMatchConfirm({ type: 'forfeit', team: 'home', rule: stopMatchTeamSelect.rule })
               }}
               style={{
                 padding: '16px',
@@ -19935,7 +19967,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             <button
               onClick={() => {
                 setStopMatchTeamSelect(null)
-                setStopMatchConfirm({ type: 'forfeit', team: 'away' })
+                setStopMatchConfirm({ type: 'forfeit', team: 'away', rule: stopMatchTeamSelect.rule })
               }}
               style={{
                 padding: '16px',
@@ -19966,19 +19998,27 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             {stopMatchConfirm.type === 'forfeit' ? (
               <>
                 <div style={{ marginBottom: '16px', fontSize: '16px' }}>
-                  {t('scoreboard.stopMatch.confirmForfeitMessage',
-                    '{{team}} will forfeit. The opponent will be awarded all remaining points and sets to win the match.', {
-                    team: stopMatchConfirm.team === 'home'
-                      ? (data?.homeTeam?.name || t('common.home', 'Home'))
-                      : (data?.awayTeam?.name || t('common.away', 'Away'))
-                  })}
+                  {stopMatchConfirm.rule === 'incomplete'
+                    ? t('scoreboard.stopMatch.confirmIncompleteMessage',
+                      '{{team}} is incomplete and loses the match. The opponent is given the points and sets needed to win; {{team}} keeps its points and sets.', {
+                      team: stopMatchConfirm.team === 'home'
+                        ? (data?.homeTeam?.name || t('common.home', 'Home'))
+                        : (data?.awayTeam?.name || t('common.away', 'Away'))
+                    })
+                    : t('scoreboard.stopMatch.confirmForfeitMessage',
+                      '{{team}} is declared in default (refused to play or did not appear) and loses the match {{result}}, 0:25 in every set, including the sets already played.', {
+                      team: stopMatchConfirm.team === 'home'
+                        ? (data?.homeTeam?.name || t('common.home', 'Home'))
+                        : (data?.awayTeam?.name || t('common.away', 'Away')),
+                      result: data?.match?.bestOf === 3 ? '0:2' : '0:3'
+                    })}
                 </div>
               </>
             ) : (
               <>
                 <div style={{ marginBottom: '16px', fontSize: '16px' }}>
                   {t('scoreboard.stopMatch.confirmImpossibilityMessage',
-                    'The match will end with current scores. No winner will be declared. Match data will be downloaded.')}
+                    'The match will end with current scores. No winner will be declared.')}
                 </div>
               </>
             )}
@@ -19994,7 +20034,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   // Move to remarks step
                   setStopMatchRemarksStep({
                     type: stopMatchConfirm.type,
-                    team: stopMatchConfirm.team
+                    team: stopMatchConfirm.team,
+                    rule: stopMatchConfirm.rule
                   })
                   setStopMatchConfirm(null)
                   setShowRemarks(true) // Open the existing remarks modal
@@ -22490,15 +22531,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   const matchRecord = await db.matches.get(matchId)
                   // A match forfeit is reversed as a whole: reopening any set it
                   // finished or created reopens the set the forfeit happened in
-                  if (matchRecord?.forfeitTeam) {
-                    const forfaitIndexes = (await db.events.where('matchId').equals(matchId).toArray())
-                      .filter(e => e.type === 'forfait' && e.payload?.scope !== 'set')
-                      .map(e => e.setIndex)
-                    const forfaitIndex = forfaitIndexes.length ? Math.min(...forfaitIndexes) : null
-                    if (forfaitIndex != null && forfaitIndex < reopenIndex) {
-                      const forfaitSet = await db.sets.where({ matchId }).and(x => x.index === forfaitIndex).first()
-                      if (forfaitSet) { reopenIndex = forfaitIndex; reopenSetId = forfaitSet.id }
-                    }
+                  // (from its forfait event: a copy continued from the cloud
+                  // has no forfeitTeam)
+                  const forfaitIndex = matchForfeitOf(await db.events.where('matchId').equals(matchId).toArray())?.setIndex ?? null
+                  if (forfaitIndex != null && forfaitIndex < reopenIndex) {
+                    const forfaitSet = await db.sets.where({ matchId }).and(x => x.index === forfaitIndex).first()
+                    if (forfaitSet) { reopenIndex = forfaitIndex; reopenSetId = forfaitSet.id }
                   }
                   // Reverse a forfeit in this set or later: awarded points, created
                   // sets, forfeit set_end / forfait events, pre-forfeit score

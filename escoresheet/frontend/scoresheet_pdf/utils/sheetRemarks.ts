@@ -2,12 +2,14 @@
  * Remarks the sheet writes itself (field-spec 8 and 11): a default / forfeit,
  * an incomplete team, and a set of sets 1-4 that went past the 48 points of
  * its column (field-spec 4.4). Scoreboard.handleForfait records them as a 'forfait'
- * event (team, reason, scope 'match' | 'set', setsBefore) plus the awarded
- * points (payload.forfeitAwarded) and sets (forfeitCreated), but writes no
- * remark. Every remark names the team (A/B), the set and the score, the
- * concerned team first (SC p.71).
+ * event (team, reason, scope 'match' | 'set', inDefault, setsBefore) plus the
+ * awarded points (payload.forfeitAwarded) and sets (forfeitCreated), but writes
+ * no remark. Every remark names the team (A/B), the set and the score, the
+ * concerned team first (SC p.71). A match lost by default (FIVB 6.4.1-2) is
+ * "declared in default", one lost as an incomplete team (6.4.3) says so.
  */
 import { compareEventsBySeq, displaySetNumber } from './scoresheetModel'
+import { isDefaultForfait } from '../../src/domain/matchEnd.js'
 
 type TeamKey = 'home' | 'away'
 
@@ -81,13 +83,19 @@ export function generatedRemarks({ sets, events, teamAKey, bestOf }: {
       continue
     }
 
-    // The whole match: the defaulting team loses 0:3 / 0:2, the result written from the winner's side
+    // The whole match: the defaulting team loses 0:3 / 0:2 (the incomplete
+    // one keeps its sets), the result written from the winner's side
     const finished = allSets.filter(s => s.finished).sort((a, b) => a.index - b.index)
     const won = finished.filter(s => pts(s, opp) > pts(s, team)).length
     const lost = finished.filter(s => pts(s, team) > pts(s, opp)).length
     const scores = finished.map(s => `${pts(s, opp)}:${pts(s, team)}`).join(', ')
     const anyRally = allEvents.some(x => x.type === 'point' && x.payload?.forfeitAwarded !== true)
-    if (!anyRally) {
+    if (!isDefaultForfait(p)) {
+      lines.push(
+        `Team ${letter(team)}, Set ${shown}, Result ${atForfeit}: incomplete team${inBrackets(why === 'incomplete team' ? '' : why)}. ` +
+        `Match awarded to Team ${letter(opp)}, ${won}:${lost}${scores ? ` (${scores})` : ''}.`
+      )
+    } else if (!anyRally) {
       lines.push(`Team ${letter(team)} declared in default${inBrackets(why)}, match result ${won}:${lost}${scores ? ` (${scores})` : ''}.`)
     } else {
       lines.push(
