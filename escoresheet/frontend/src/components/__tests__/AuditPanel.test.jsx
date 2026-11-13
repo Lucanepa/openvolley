@@ -141,6 +141,9 @@ describe('the audit log screen', () => {
     expect(line('match.final_mail', { recipients: 1, corrected: false, game_n: 4711 })).toBe('#4711 · 1 recipient')
     expect(line('activity.delete', { match: 'match_1', account: null, rows: 12 })).toBe('match_1 · 12 entries')
     expect(line('activity.delete', { match: null, account: 'u-1', rows: 1 })).toBe('1 entry')
+    // an admin's read of a match, an export (be-mail-contact-8)
+    expect(line('activity.read', { match: '4711', rows: 3 })).toBe('4711 · 3 entries')
+    expect(line('activity.export', { account: 'u-1', format: 'csv', emails: false, rows: 120 })).toBe('120 entries · CSV')
     // a club's invite code: its club after the label and role
     expect(line('invite.create', { invite_id: 'i-1', label: 'H1 scorers', role: 'scorer', club_id: VBCM }, { club_name: 'VBC Musterdorf' })).toBe('H1 scorers · scorer · VBC Musterdorf')
     // without t: English, no key

@@ -315,14 +315,14 @@ export const admin = {
   listActivity({ match, account, kind, level, from, to, app, before, limit } = {}) {
     return apiRequest('GET', `/api/admin/activity${query({ match, account, kind, level, from, to, app, before, limit })}`)
   },
-  /** CSV / NDJSON of the same filters (at most 50,000 rows). */
-  exportActivity({ format = 'csv', ...filters } = {}) {
+  /** CSV / NDJSON of the same filters (at most 50,000 rows; audited). The accounts' email addresses only with `emails`. */
+  exportActivity({ format = 'csv', emails = false, ...filters } = {}) {
     const { match, account, kind, level, from, to, app } = filters
-    return apiDownload(`/api/admin/activity/export${query({ match, account, kind, level, from, to, app, format })}`)
+    return apiDownload(`/api/admin/activity/export${query({ match, account, kind, level, from, to, app, format, emails: emails ? '1' : undefined })}`)
   },
-  /** Delete on request: every entry of a match or an account (audited). */
-  deleteActivity({ match, account } = {}) {
-    return apiRequest('DELETE', `/api/admin/activity${query({ match, account, confirm: 'yes' })}`)
+  /** Delete on request: the entries the list shows for the same filters (a match or an account; audited). */
+  deleteActivity({ match, account, kind, level, from, to, app } = {}) {
+    return apiRequest('DELETE', `/api/admin/activity${query({ match, account, kind, level, from, to, app, confirm: 'yes' })}`)
   },
   /** Undone / deleted / edited events of a match (db/015). */
   listRevisions(matchId) {
