@@ -43,6 +43,18 @@ describe('HomePage: the downloads link', () => {
     expect(global.fetch).not.toHaveBeenCalled()
   })
 
+  it('an iPad (a Mac user agent with a touch screen, Safari and the iOS app) shows no downloads', () => {
+    uaSpy.mockReturnValue('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)')
+    Object.defineProperty(window.navigator, 'maxTouchPoints', { value: 5, configurable: true })
+    try {
+      render(<HomePage />)
+      expect(screen.queryByText(/Download the desktop app/)).not.toBeInTheDocument()
+      expect(global.fetch).not.toHaveBeenCalled()
+    } finally {
+      delete window.navigator.maxTouchPoints
+    }
+  })
+
   it('a page served by the local relay (desktop app window, venue LAN) shows no downloads', () => {
     backend.local = true
     render(<HomePage />)

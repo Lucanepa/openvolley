@@ -9,6 +9,7 @@ import { Button, Card, cn, dayLabel, FOCUS_RING, Notice, Row, RowList, RowTool, 
 import { duplicateGameNumbers } from '../../utils/deviceMatches'
 import { formatTakeOver, scoreText } from '../ScorerMovedModal'
 import { isServedFromLocalServer } from '../../utils/backendConfig'
+import { detectOs } from '../../utils/deviceKind'
 import { BRAND } from '../../brand'
 import { MadeBy } from '../../legal/LegalLinks'
 
@@ -17,13 +18,12 @@ import { MadeBy } from '../../legal/LegalLinks'
 // downloads page")
 const DOWNLOADS_PAGE = 'https://get.openvolley.app/'
 
+// The desktop app's download for this computer, none on a phone or tablet. An
+// iPad asks for desktop sites as a Mac (Safari and the iOS app alike):
+// detectOs counts it as iOS.
 function detectDesktopOS() {
-  const ua = navigator.userAgent
-  if (/android|iphone|ipad|ipod|mobile|tablet/i.test(ua)) return null
-  if (/Windows/i.test(ua)) return 'windows'
-  if (/Mac OS X|Macintosh/i.test(ua)) return 'macos'
-  if (/Linux/i.test(ua)) return 'linux'
-  return null
+  const os = detectOs()
+  return os === 'windows' || os === 'macos' || os === 'linux' ? os : null
 }
 
 // Already running inside the Electron/Tauri desktop app, or served by a local

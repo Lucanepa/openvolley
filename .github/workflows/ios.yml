@@ -1,0 +1,188 @@
+name: Build iOS App (Capacitor)
+
+# The scorer app (plus the referee, bench and livescore views) for iPad and
+# iPhone: the frontend bundled into a Capacitor app (escoresheet/frontend/ios,
+# IOS.md), like the Android app. Every run builds it for the simulator and
+# starts it on an iPad simulator (screenshot and log uploaded). A manual run
+# with "testflight", or a pull request with the label "testflight", also
+# archives the App Store build, signed with the Apple
+# Distribution certificate and the "OpenVolley App Store" profile, and uploads
+# it to App Store Connect, where it shows in TestFlight after Apple's
+# processing. Secrets: IOS_DIST_CERTIFICATE (.p12, base64),
+# IOS_DIST_CERTIFICATE_PASSWORD, IOS_PROVISIONING_PROFILE (.mobileprovision,
+# base64) and the App Store Connect API key APPLE_API_KEY, APPLE_API_ISSUER,
+# APPLE_API_PRIVATE_KEY (shared with desktop.yml).
+on:
+  workflow_dispatch:
+    inputs:
+      testflight:
+        description: 'Also upload the App Store build to TestFlight'
+        type: boolean
+        default: false
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    paths:
+      - 'escoresheet/frontend/ios/**'
+      - '.github/workflows/ios.yml'
+
+jobs:
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+        working-directory: escoresheet/frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      # App Store Connect takes builds made with the current SDK only: the
+      # newest stable Xcode on the image, not its default
+      - name: Pick the newest Xcode
+        run: |
+          x=$(ls -d /Applications/Xcode_*.app 2>/dev/null | grep -viE 'beta|release_candidate|_rc' | sort -V | tail -n1 || true)
+          [ -z "$x" ] || sudo xcode-select -s "$x/Contents/Developer"
+          xcodebuild -version
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: escoresheet/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: |
+          npm ci
+          # native canvas is not needed in the bundle and can break installs
+          if [ -d node_modules/canvas ]; then rm -rf node_modules/canvas; fi
+
+      - name: Check the iOS project
+        run: npx vitest run src/__tests__/iosApp.test.js
+
+      # As scripts/release-android.sh: no service worker (CAPACITOR=true), the
+      # cloud backend by default (a venue relay is chosen in Options)
+      - name: Build the bundled web app
+        env:
+          CAPACITOR: 'true'
+          VITE_BACKEND_URL: https://backend.openvolley.app
+          NODE_OPTIONS: '--max-old-space-size=4096'
+        run: |
+          npx vite build --outDir dist-capacitor --emptyOutDir
+          npx cap sync ios
+
+      - name: Build for the simulator
+        working-directory: escoresheet/frontend/ios/App
+        run: |
+          xcodebuild -quiet -project App.xcodeproj -scheme App -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/dd-sim" CODE_SIGNING_ALLOWED=NO build
+
+      # The newest iPad simulator: the app starts, shows its page and is still
+      # running 25 s later
+      - name: Start the app on an iPad simulator
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/ios-smoke"; mkdir -p "$out"
+          app="$RUNNER_TEMP/dd-sim/Build/Products/Debug-iphonesimulator/App.app"
+          [ -d "$app" ] || { echo "::error::no $app"; exit 1; }
+          udid=$(xcrun simctl list devices available -j | jq -r '
+            [.devices | to_entries[] | select(.key | test("SimRuntime\\.iOS-"))
+              | {v: (.key | capture("iOS-(?<a>[0-9]+)-(?<b>[0-9]+)") | [(.a | tonumber), (.b | tonumber)]), d: .value[]}
+              | select(.d.name | test("^iPad"))]
+            | sort_by(.v) | last | .d.udid // empty')
+          [ -n "$udid" ] || { xcrun simctl list devices available; echo "::error::no iPad simulator"; exit 1; }
+          xcrun simctl list devices available | grep "$udid"
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          xcrun simctl install "$udid" "$app"
+          xcrun simctl launch "$udid" com.openvolley.escoresheet
+          sleep 25
+          xcrun simctl io "$udid" screenshot "$out/ipad.png"
+          xcrun simctl spawn "$udid" log show --last 3m --style compact --predicate 'process == "App"' > "$out/app.log" 2>&1 || true
+          procs=$(xcrun simctl spawn "$udid" launchctl list)
+          if ! grep -q 'com.openvolley.escoresheet' <<<"$procs"; then
+            tail -n 80 "$out/app.log"; echo "::error::the app ended by itself"; exit 1
+          fi
+          grep -iE 'error|exception|fatal' "$out/app.log" | grep -v 'CoreData\|CFNetwork' | tail -n 20 || true
+          xcrun simctl shutdown "$udid" || true
+
+      - name: Upload the simulator smoke test
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-smoke
+          path: ${{ runner.temp }}/ios-smoke
+          retention-days: 14
+          if-no-files-found: ignore
+
+      # The Apple Distribution certificate in a keychain of its own, the
+      # profile where Xcode looks for it, the API key where altool does
+      - name: Set up App Store signing
+        id: sign
+        if: (github.event_name == 'workflow_dispatch' && inputs.testflight) || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'testflight'))
+        env:
+          IOS_DIST_CERTIFICATE: ${{ secrets.IOS_DIST_CERTIFICATE }}
+          IOS_DIST_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DIST_CERTIFICATE_PASSWORD }}
+          IOS_PROVISIONING_PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          for v in IOS_DIST_CERTIFICATE IOS_DIST_CERTIFICATE_PASSWORD IOS_PROVISIONING_PROFILE APPLE_API_KEY APPLE_API_PRIVATE_KEY; do
+            [ -n "${!v}" ] || { echo "::error::secret $v is missing"; exit 1; }
+          done
+          kc="$RUNNER_TEMP/ios-signing.keychain-db"
+          kcpw=$(openssl rand -base64 24)
+          security create-keychain -p "$kcpw" "$kc"
+          security set-keychain-settings -lut 21600 "$kc"
+          security unlock-keychain -p "$kcpw" "$kc"
+          p12="$RUNNER_TEMP/apple-distribution.p12"
+          printf '%s' "$IOS_DIST_CERTIFICATE" | base64 --decode > "$p12"
+          security import "$p12" -k "$kc" -P "$IOS_DIST_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          rm -f "$p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$kcpw" "$kc" >/dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          security find-identity -v -p codesigning "$kc" | grep -q '"Apple Distribution: ' \
+            || { security find-identity -v -p codesigning "$kc"; echo "::error::no Apple Distribution identity in the certificate"; exit 1; }
+          prof="$RUNNER_TEMP/OpenVolley_App_Store.mobileprovision"
+          printf '%s' "$IOS_PROVISIONING_PROFILE" | base64 --decode > "$prof"
+          security cms -D -i "$prof" > "$RUNNER_TEMP/profile.plist"
+          name=$(plutil -extract Name raw "$RUNNER_TEMP/profile.plist")
+          uuid=$(plutil -extract UUID raw "$RUNNER_TEMP/profile.plist")
+          [ "$name" = "OpenVolley App Store" ] || { echo "::error::profile '$name', expected 'OpenVolley App Store'"; exit 1; }
+          for d in "$HOME/Library/MobileDevice/Provisioning Profiles" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+            mkdir -p "$d"; cp "$prof" "$d/$uuid.mobileprovision"
+          done
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          printf '%s\n' "$APPLE_API_PRIVATE_KEY" > "$HOME/.appstoreconnect/private_keys/AuthKey_$APPLE_API_KEY.p8"
+          echo "IOS_KEYCHAIN=$kc" >> "$GITHUB_ENV"
+
+      # Version = the frontend's (as the Android app and the desktop app),
+      # build number = this workflow's run number (always higher)
+      - name: Archive and upload to App Store Connect
+        if: steps.sign.outcome == 'success'
+        working-directory: escoresheet/frontend/ios/App
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          v=$(jq -r .version ../../package.json)
+          echo "OpenVolley $v ($BUILD_NUMBER)"
+          xcodebuild -quiet -project App.xcodeproj -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/dd-ios" \
+            -archivePath "$RUNNER_TEMP/OpenVolley.xcarchive" \
+            MARKETING_VERSION="$v" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" archive
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/OpenVolley.xcarchive" \
+            -exportOptionsPlist ExportOptions.plist -exportPath "$RUNNER_TEMP/export"
+          ipa=$(ls "$RUNNER_TEMP"/export/*.ipa)
+          xcrun altool --validate-app -f "$ipa" -t ios --apiKey "$APPLE_API_KEY" --apiIssuer "$APPLE_API_ISSUER"
+          xcrun altool --upload-app -f "$ipa" -t ios --apiKey "$APPLE_API_KEY" --apiIssuer "$APPLE_API_ISSUER"
+          echo "::notice::OpenVolley $v ($BUILD_NUMBER) uploaded: TestFlight shows it after Apple's processing"
+
+      - name: Remove the signing keychain
+        if: always()
+        run: |
+          [ -z "${IOS_KEYCHAIN:-}" ] || security delete-keychain "$IOS_KEYCHAIN" || true
+          rm -rf "$HOME/.appstoreconnect/private_keys"

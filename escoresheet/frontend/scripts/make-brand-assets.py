@@ -14,6 +14,8 @@ renders, commit them with the SVG. It writes:
 - android/app/src/main/res: launcher icons (square, round, adaptive
   foreground, themed-icon monochrome) for every density, pre-Android-12 splash
 - src-tauri/icons and electron/: desktop app icons (png, ico, icns)
+- ios/App/App/Assets.xcassets: the iOS app icon (1024 px, opaque: iOS draws
+  the rounded corners) and the launch screen
 - fastlane/metadata/android/en-US/images/icon.png (repo root): store icon
 - ../backend/lib/brandMark.js: the mark as inline SVG for the server's page
 - ../deploy/pkgs/index.html: the install page's favicon and header icon, inline
@@ -175,6 +177,16 @@ for folder, (w, h) in SPLASH.items():
     art = fit_box('lockup-stacked.svg', round(min(w, h) * 0.45))
     canvas.alpha_composite(art, ((w - art.width) // 2, (h - art.height) // 2))
     save_png(canvas, RES / folder / 'splash.png', rgb=True)
+
+# ---- iOS (Capacitor) -------------------------------------------------------
+# One 1024 px icon, square and opaque (iOS masks it, App Store Connect refuses
+# transparency): the ball at the tile's size (icon-tile.svg). The launch
+# screen is scaled to fill the screen, so the lockup sits small in the middle
+# of its square, about as big as on the Android splash.
+XCASSETS = ROOT / 'ios/App/App/Assets.xcassets'
+save_png(on_canvas(1024, 'mark.svg', 0.62), XCASSETS / 'AppIcon.appiconset/AppIcon-512@2x.png', rgb=True)
+for f in ('splash-2732x2732.png', 'splash-2732x2732-1.png', 'splash-2732x2732-2.png'):
+    save_png(on_canvas(2732, 'lockup-stacked.svg', 0.21), XCASSETS / 'Splash.imageset' / f, rgb=True)
 
 # ---- desktop (Tauri, Electron) ------------------------------------------
 # 16-32 px: the fuller 4-seam tile; 48 px and up: the inset tile
