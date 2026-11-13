@@ -9,9 +9,32 @@
 #   CAA     only the CAs Cloudflare and this kit use (pki.goog, letsencrypt.org,
 #           ssl.com, as issue and issuewild) plus an iodef contact
 #   DMARC   p=quarantine or p=reject, with rua (the aggregate reports)
-#   TLS     TLS 1.0 and 1.1 refused, TLS 1.2 accepted (backend., app., get.)
+#   TLS     TLS 1.0 and 1.1 refused, TLS 1.2 accepted (backend., app., get.);
+#           a client that cannot offer TLS 1.0/1.1 fails the check
 #   HTTPS   http:// redirects to https://; https:// sends Strict-Transport-Security
 set -uo pipefail
+
+# tls_probe host port version -> prints accepted | refused | cannot-test | no-answer
+# The client ignores the system openssl.cnf (Debian/Ubuntu set MinProtocol
+# TLSv1.2 there) and allows every cipher, so a TLS 1.0 offer really leaves this
+# machine. "refused" needs a TCP connection and a handshake the peer ended; an
+# error raised by the local client (version compiled out, no protocols) is
+# "cannot-test", never a pass.
+tls_probe() {
+  local out
+  if out=$(OPENSSL_CONF=/dev/null openssl s_client -connect "$1:$2" -servername "$1" "-$3" \
+      -cipher 'DEFAULT:@SECLEVEL=0' </dev/null 2>&1); then
+    echo accepted
+  elif grep -qiE 'no protocols available|unknown option|unsupported option|no ciphers available|null ssl method' <<<"$out"; then
+    echo cannot-test
+  elif grep -q 'CONNECTED(' <<<"$out"; then
+    echo refused
+  else
+    echo no-answer
+  fi
+}
+# Test hook (tests/check-edge.test.sh): probe one host:port and stop.
+if [[ "${1:-}" == --tls-probe ]]; then tls_probe "$2" "$3" "$4"; exit 0; fi
 
 DOMAIN=${1:-openvolley.app}
 HOSTS=("backend.$DOMAIN" "app.$DOMAIN" "get.$DOMAIN")
@@ -50,12 +73,16 @@ else
 fi
 
 # --- TLS versions and HTTPS --------------------------------------------------
-tls() { openssl s_client -connect "$1:443" -servername "$1" "-$2" </dev/null >/dev/null 2>&1; }
 for h in "${HOSTS[@]}"; do
   for v in tls1 tls1_1; do
-    if tls "$h" "$v"; then fail "TLS $h: $v accepted (Minimum TLS Version must be 1.2)"; else pass "TLS $h: $v refused"; fi
+    case $(tls_probe "$h" 443 "$v") in
+      refused) pass "TLS $h: $v refused" ;;
+      accepted) fail "TLS $h: $v accepted (Minimum TLS Version must be 1.2)" ;;
+      cannot-test) fail "TLS $h: $v cannot test, this openssl cannot offer $v (use another machine)" ;;
+      *) fail "TLS $h: $v no answer" ;;
+    esac
   done
-  if tls "$h" tls1_2; then pass "TLS $h: tls1_2 accepted"; else fail "TLS $h: tls1_2 refused"; fi
+  if [[ $(tls_probe "$h" 443 tls1_2) == accepted ]]; then pass "TLS $h: tls1_2 accepted"; else fail "TLS $h: tls1_2 refused"; fi
 
   loc=$(curl -sS -o /dev/null -m 15 -w '%{http_code} %{redirect_url}' "http://$h/" 2>/dev/null)
   if [[ "$loc" =~ ^30[1278]\ https:// ]]; then pass "HTTP $h: redirects to https"; else fail "HTTP $h: http:// answers '${loc:-no answer}' instead of a redirect to https:// (Always Use HTTPS)"; fi
