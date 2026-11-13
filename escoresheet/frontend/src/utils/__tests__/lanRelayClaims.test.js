@@ -121,6 +121,46 @@ describe('wrong-PIN budget', () => {
     expect(ref.last('error').code).toBe('pin-invalid')
     roles.close()
   })
+
+  it('counts a right PIN offered before the first sync once and refunds it when it is checked', () => {
+    const relay = createLanRelay({ pinFailureLimit: 5 })
+    // a referee tablet that wakes and resubscribes before the scorer syncs
+    for (let i = 0; i < 8; i++) {
+      const ref = connect(relay, '192.168.1.20')
+      msg(relay, ref, { type: 'subscribe-match', matchId: KEY, device: 'referee', pin: '222222' })
+      expect(ref.last('error')).toBeUndefined()
+      relay.removeClient(ref)
+    }
+    const ref = connect(relay, '192.168.1.20')
+    msg(relay, ref, { type: 'subscribe-match', matchId: KEY, device: 'referee', pin: '222222' })
+    msg(relay, connect(relay, '192.168.1.10'), sync())
+    expect(ref.last('match-data-update')?.access ?? ref.last('match-full-data')?.access).toBe('full')
+    // the refunded offer leaves the whole budget: 4 wrong ones still compared
+    for (let i = 0; i < 4; i++) {
+      const g = connect(relay, '192.168.1.20')
+      msg(relay, g, { type: 'subscribe-match', matchId: KEY, device: 'referee', pin: String(600000 + i) })
+      expect(g.last('error').code).toBe('pin-invalid')
+    }
+    relay.close()
+  })
+
+  it('lets an address that proved a PIN of the match back in after others spent the match budget', async () => {
+    const relay = createLanRelay({ matchPinFailureLimit: 5 })
+    const scorer = connect(relay, '192.168.1.10')
+    msg(relay, scorer, sync())
+    const ref = connect(relay, '192.168.1.20')
+    msg(relay, ref, { type: 'subscribe-match', matchId: KEY, device: 'referee', pin: '222222' })
+    for (let i = 0; i < 5; i++) await relay.getMatch(KEY, { pin: String(700000 + i), ip: `192.168.2.${i + 1}` })
+    expect((await relay.getMatch(KEY, { pin: '222222', ip: '192.168.3.1' })).status).toBe(429)
+    // the referee reconnects mid-match
+    relay.removeClient(ref)
+    const again = connect(relay, '192.168.1.20')
+    msg(relay, again, { type: 'subscribe-match', matchId: KEY, device: 'referee', pin: '222222' })
+    expect(again.last('error')).toBeUndefined()
+    expect(again.last('match-full-data').access).toBe('full')
+    expect((await relay.getMatch(KEY, { pin: '222222', ip: '192.168.1.20' })).body.access).toBe('full')
+    relay.close()
+  })
 })
 
 describe('memory bounds', () => {

@@ -877,6 +877,8 @@ function createFailureCounter({ windowMs = 60 * 1000, max = CLAIM_FAILURE_LIMIT 
       if (e) e.count++
       else entries.set(key, { count: 1, windowStart: Date.now() })
     },
+    /** Takes back one count (a PIN that turned out right). */
+    refund: (key) => { const e = fresh(key); if (e && e.count > 0) e.count-- },
   }
 }
 
@@ -1321,6 +1323,26 @@ function createLanRelay(options = {}) {
   // Wrong PINs per match from every address (MATCH_PIN_FAILURE_LIMIT)
   const matchPinFailures = createFailureCounter({ windowMs: MATCH_PIN_WINDOW_MS, max: options.matchPinFailureLimit ?? MATCH_PIN_FAILURE_LIMIT })
   const matchPinKey = (matchId) => `m:${matchId}`
+  // Addresses that proved a PIN of a match (room key -> Set of `ip:` keys):
+  // the per-match budget others spent does not hold them, only their own
+  // address budget (a referee or bench that reconnects mid-match)
+  const provenAddrs = new Map()
+  const MAX_PROVEN_PER_MATCH = 64
+  const noteProven = (matchId, addr) => {
+    if (!addr || addr === 'ip:unknown') return
+    let set = provenAddrs.get(matchId)
+    if (!set) {
+      if (provenAddrs.size >= 10000) provenAddrs.clear() // bound memory under a flood
+      provenAddrs.set(matchId, (set = new Set()))
+    }
+    if (set.size < MAX_PROVEN_PER_MATCH) set.add(addr)
+  }
+  const matchBlockedFor = (matchId, addr) =>
+    !(provenAddrs.get(matchId)?.has(addr)) && matchPinFailures.blocked(matchPinKey(matchId))
+  // PINs offered before their match reached the relay, counted once per
+  // address, match and PIN (`addr|matchId|pin` -> time): a tablet that wakes
+  // and resubscribes does not spend its budget on the same offer again
+  const pendingOffers = new Map()
   // { check(matchId, pin) -> true | false | undefined, remember(matchId, pin), forget(matchId) }:
   // the game PIN of each room kept beyond a restart of the relay (frontend/server.js
   // keeps a salted hash on disk). Without it the claims live in memory only.
@@ -1387,12 +1409,20 @@ function createLanRelay(options = {}) {
     // Offered before the match reached the relay: counted when it was
     // offered (offerPin), compared once, and not at all once the match is
     // over its wrong-PIN budget
-    if (!a.verified && matchPinFailures.blocked(matchPinKey(matchId))) {
+    const addr = pinFailureKeys(meta)[0]
+    if (!a.verified && matchBlockedFor(matchId, addr)) {
       meta.access.delete(matchId)
       return false
     }
     if (pinGrantsAccessAs(bundle.match, a.pin, a.role)) {
+      if (!a.verified) {
+        // The offer was right: it no longer counts as a failure
+        for (const k of a.counted || []) pinFailures.refund(k)
+        pendingOffers.delete(`${addr}|${matchId}|${a.pin}`)
+        noteProven(matchId, addr)
+      }
       a.verified = true
+      a.counted = null
       return true
     }
     if (!a.verified) {
@@ -1624,6 +1654,7 @@ function createLanRelay(options = {}) {
     movedClaims.delete(matchId)
     supersededClaims.delete(matchId)
     benchRequests.drop(matchId)
+    provenAddrs.delete(matchId)
   }
 
   /**
@@ -1685,6 +1716,7 @@ function createLanRelay(options = {}) {
     const grant = (kind) => {
       meta.owned.add(matchId)
       orphanedSince.delete(matchId)
+      noteProven(matchId, keys[0])
       return { ok: true, kind }
     }
     const denyNew = () => (wasOwner ? null : newClaimDenied(meta, matchId))
@@ -1692,7 +1724,7 @@ function createLanRelay(options = {}) {
     const scorer = scorers.get(matchId)
     const isScorer = !!device && !!scorer && scorer.id === device.id && scorer.claim === device.claim
     const overBudget = () => keys.some((k) => claimFailures.blocked(k)) ||
-      (!isScorer && matchPinFailures.blocked(matchPinKey(matchId)))
+      (!isScorer && matchBlockedFor(matchId, keys[0]))
     const wrongPin = () => {
       for (const k of keys) claimFailures.fail(k)
       matchPinFailures.fail(matchPinKey(matchId))
@@ -1860,6 +1892,7 @@ function createLanRelay(options = {}) {
     movedClaims.delete(matchId)
     supersededClaims.delete(matchId)
     benchRequests.drop(matchId)
+    provenAddrs.delete(matchId)
     for (const meta of clients.values()) meta.owned.delete(matchId)
   }
 
@@ -2121,24 +2154,38 @@ function createLanRelay(options = {}) {
   function offerPin(ws, meta, matchId, rawPin, role = null) {
     const pin = rawPin === undefined || rawPin === null || typeof rawPin === 'object' ? '' : String(rawPin).trim().slice(0, 32)
     if (!pin) return
-    if (pinFailureKeys(meta).some((k) => pinFailures.blocked(k)) || matchPinFailures.blocked(matchPinKey(matchId))) {
+    const keys = pinFailureKeys(meta)
+    if (keys.some((k) => pinFailures.blocked(k)) || matchBlockedFor(matchId, keys[0])) {
       sendError(ws, 'rate-limited', 'Too many wrong PINs. Wait a minute.', matchId)
       return
     }
     const stored = store.get(matchId)
     if (stored && stored.match && !pinGrantsAccessAs(stored.match, pin, role)) {
-      for (const k of pinFailureKeys(meta)) pinFailures.fail(k)
+      for (const k of keys) pinFailures.fail(k)
       matchPinFailures.fail(matchPinKey(matchId))
       sendError(ws, 'pin-invalid', 'Wrong PIN for this match', matchId)
       return
     }
     // Not on the relay yet: compared at its first sync (hasAccess). The offer
     // counts against the address's budget now, so offers spread over many
-    // sockets cannot all be compared at once.
-    if (!(stored && stored.match)) for (const k of pinFailureKeys(meta)) pinFailures.fail(k)
+    // sockets cannot all be compared at once. The same offer again from the
+    // same address is not counted twice; a right one is refunded (hasAccess).
+    const known = !!(stored && stored.match)
+    let counted = null
+    if (known) noteProven(matchId, keys[0])
+    else {
+      const offerKey = `${keys[0]}|${matchId}|${pin}`
+      const at = pendingOffers.get(offerKey)
+      if (at === undefined || Date.now() - at > MATCH_PIN_WINDOW_MS) {
+        if (pendingOffers.size >= 10000) pendingOffers.clear() // bound memory under a flood
+        pendingOffers.set(offerKey, Date.now())
+        for (const k of keys) pinFailures.fail(k)
+        counted = keys
+      }
+    }
     meta.access.delete(matchId)
     if (meta.access.size >= MAX_ACCESS_KEYS) meta.access.delete(meta.access.keys().next().value)
-    meta.access.set(matchId, { pin, role, verified: !!(stored && stored.match) })
+    meta.access.set(matchId, { pin, role, verified: known, counted })
   }
 
   function onUnsubscribe(ws, msg) {
@@ -2311,7 +2358,7 @@ function createLanRelay(options = {}) {
     if (!matchId) return { status: 400, body: { success: false, error: 'Match ID required' } }
     const offered = pin === undefined || pin === null ? '' : String(pin).trim()
     const key = `ip:${ip || 'unknown'}`
-    if (offered && (pinFailures.blocked(key) || matchPinFailures.blocked(matchPinKey(matchId)))) {
+    if (offered && (pinFailures.blocked(key) || matchBlockedFor(matchId, key))) {
       return { status: 429, body: { success: false, error: 'Too many wrong PINs. Wait a minute.' } }
     }
     const bundle = store.get(matchId) || await requestFromScoreboards('match-data-request', { matchId }, matchId)
@@ -2323,6 +2370,7 @@ function createLanRelay(options = {}) {
       pinFailures.fail(key)
       matchPinFailures.fail(matchPinKey(matchId))
     }
+    if (full) noteProven(matchId, key)
     return { status: 200, body: { success: true, ...(full ? { access: 'full', ...toWireBundle(bundle) } : relaySummaryBundle(bundle)) } }
   }
 
