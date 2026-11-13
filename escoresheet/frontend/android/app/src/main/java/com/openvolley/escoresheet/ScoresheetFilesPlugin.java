@@ -21,8 +21,8 @@ import java.io.IOException;
  * "Open" and "Share" for a scoresheet PDF the app saved
  * (src/utils/openAppWindow.js savePdf: the app's own folder,
  * files/OpenVolley/scoresheets, or its external folder; the public
- * Documents/OpenVolley/scoresheets of older versions and of Export to
- * Documents). A local plugin: Android intents through the app's FileProvider
+ * Documents/OpenVolley/scoresheets of older versions, until the first start
+ * moves them in). A local plugin: Android intents through the app's FileProvider
  * (AndroidManifest.xml, res/xml/file_paths.xml), no new dependency, nothing
  * proprietary, so the F-Droid build stays as it is.
  *

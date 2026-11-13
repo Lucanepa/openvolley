@@ -1317,7 +1317,7 @@
     "folderReconnect": "Dossier : {{name}}. Le navigateur demande un appui pour l’autoriser à nouveau.",
     "reconnect": "Reconnecter le dossier",
     "downloads": "Ce navigateur télécharge un fichier en fin de set et de match.",
-    "deviceAndroid": "Enregistré dans Documents/OpenVolley/backups sur cette tablette.",
+    "deviceAndroid": "Enregistré dans l’app sur cette tablette (OpenVolley/backups) : aucune autre app n’y accède.",
     "drive": "Support amovible",
     "driveNone": "Aucune clé USB trouvée. Branchez-en une : toutes conviennent.",
     "driveCopied": "copié {{time}}",

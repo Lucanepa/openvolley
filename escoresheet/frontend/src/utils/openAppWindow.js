@@ -455,7 +455,7 @@ async function savePdf({ arrayBuffer, filename }, status, actions, win = window)
           status.textContent = `${saved} - ${t('appWindow.pdfActionFailed', `It could not be opened: ${error}`, { error })}`
         }
       }
-      // a copy the user keeps: Documents/OpenVolley/scoresheets, never deleted by the app
+      // a copy the user keeps: Documents/OpenVolley/exported, never moved or deleted by the app
       const exportCopy = async () => {
         try {
           const path = await exportPdfToDocuments(fs, name)

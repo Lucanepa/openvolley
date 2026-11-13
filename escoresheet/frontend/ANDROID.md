@@ -300,7 +300,7 @@ its state. The page in the view talks to the app through
 which writes it with `@capacitor/filesystem` to the app's own folder
 (`files/OpenVolley/scoresheets/`; fallback: the app's external files folder)
 and offers **Open**, **Share** and **Export to Documents** (a copy in
-`Documents/OpenVolley/scoresheets/`, which the app never deletes) in the bar.
+`Documents/OpenVolley/exported/`, which the app never moves or deletes) in the bar.
 Saved PDFs follow the backups' 30 days (deleted at the next start after
 that). The WebView has no print and cannot download a blob, so there is no
 print dialog. External links and
@@ -373,16 +373,23 @@ to the app's own **`files/OpenVolley/backups/<match>/`** folder
 - Copies go out only on request: **Options → Backup → Export to Documents**
   copies each match's `latest.json` (as `<match>.json`) and every saved PDF
   to a new `Documents/OpenVolley/export-<yyyymmdd-hhmm>/` folder; the PDF
-  view has its own Export to Documents. Those copies are the user's: the app
-  never deletes them.
+  view's Export to Documents copies one PDF to `Documents/OpenVolley/exported/`.
+  Those copies are the user's: the app never moves or deletes them (the move
+  below never reads these folders).
 - First start of this version: the files older versions left in
-  `Documents/OpenVolley/backups`, `Documents/OpenVolley/scoresheets` (and the
+  `Documents/OpenVolley/backups`, `Documents/OpenVolley/scoresheets`,
+  `Documents/OpenVolley/logs` (the activity log's daily files; and the
   external fallback) are moved into the app folder, once
   (`nativeBackup/androidFiles.js` moveLegacyFiles; a `latest.json` the app
-  wrote since is kept). Files an earlier install left on Android 11+ belong
-  to that install and stay (logged). On Android 10 and older Documents is
-  only read with the storage permission already granted: the start never
-  asks for it.
+  wrote since is kept, a day's log the app already writes to gets the older
+  lines). Once is a marker file in the app folder
+  (`OpenVolley/legacy-files-moved`), so Options "Clear all" does not run it
+  again. Files an earlier install left on Android 11+ belong to that install
+  and stay (logged). On Android 10 and older Documents is only read with the
+  storage permission already granted: the start never asks for it. Android
+  only: on iOS Capacitor maps Documents, Data and External to one folder.
+- The activity log's daily files (`src/utils/activity/fileSink.js`) are in the
+  app folder too (`OpenVolley/logs/`).
 - At every start (a few seconds in) the rotation below runs over every
   match folder, and saved PDFs older than 30 days are deleted; before, the
   rotation waited for the session's first backup.

@@ -18,13 +18,27 @@ beforeEach(() => { calls.length = 0 })
 
 describe('start-up housekeeping of the apps\' files', () => {
   it('Android: moves the old Documents files in first, then the PDF clean-up and the backups\' rotation', async () => {
-    window.Capacitor = { isNativePlatform: () => true }
+    window.Capacitor = { isNativePlatform: () => true, getPlatform: () => 'android' }
     try {
       await startNativeFileHousekeeping({ delayMs: 0 })
     } finally {
       delete window.Capacitor
     }
     expect(calls).toEqual(['move', 'prune', 'rotate'])
+  })
+
+  // Capacitor on iOS maps Documents, Data and External to one folder: a move
+  // there deleted the latest.json of every match
+  it('another Capacitor app (iOS): no move and no PDF clean-up', async () => {
+    window.Capacitor = { isNativePlatform: () => true, getPlatform: () => 'ios' }
+    try {
+      await startNativeFileHousekeeping({ delayMs: 0 })
+    } finally {
+      delete window.Capacitor
+    }
+    // (the rotation runs once per app session: the test above started it)
+    expect(calls).not.toContain('move')
+    expect(calls).not.toContain('prune')
   })
 
   it('a browser: nothing', async () => {

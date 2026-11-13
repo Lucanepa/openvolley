@@ -1311,7 +1311,7 @@
     "folderReconnect": "Ordner: {{name}}. Der Browser braucht einen Tipp, um ihn wieder zuzulassen.",
     "reconnect": "Ordner neu verbinden",
     "downloads": "Dieser Browser lädt am Satz- und Spielende eine Datei herunter.",
-    "deviceAndroid": "Gespeichert in Dokumente/OpenVolley/backups auf diesem Tablet.",
+    "deviceAndroid": "Gespeichert in der App auf diesem Tablet (OpenVolley/backups): Keine andere App kann darauf zugreifen.",
     "drive": "Wechseldatenträger",
     "driveNone": "Kein USB-Stick gefunden. Stecken Sie einen ein: jeder Stick funktioniert.",
     "driveCopied": "kopiert {{time}}",

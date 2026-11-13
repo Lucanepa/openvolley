@@ -1318,7 +1318,7 @@
     "folderReconnect": "Cartella: {{name}}. Il browser richiede un tocco per consentirla di nuovo.",
     "reconnect": "Ricollega cartella",
     "downloads": "Questo browser scarica un file a fine set e fine partita.",
-    "deviceAndroid": "Salvato in Documenti/OpenVolley/backups su questo tablet.",
+    "deviceAndroid": "Salvato nell’app su questo tablet (OpenVolley/backups): nessun’altra app vi accede.",
     "drive": "Unità rimovibile",
     "driveNone": "Nessuna chiavetta USB trovata. Inseriscine una: va bene qualsiasi.",
     "driveCopied": "copiato {{time}}",

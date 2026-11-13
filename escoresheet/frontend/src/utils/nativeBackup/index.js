@@ -101,6 +101,15 @@ export async function flushNativeBackups(timeoutMs = QUIT_BACKUP_WAIT_MS) {
 // After the start's own work (the database, the first screen)
 export const HOUSEKEEPING_DELAY_MS = 5000
 
+// The Capacitor app's OS: 'android', 'ios', or null when it cannot tell
+function capacitorOs(win) {
+  try {
+    return win?.Capacitor?.getPlatform?.() || null
+  } catch {
+    return null
+  }
+}
+
 /**
  * At app start (main.jsx), a few seconds in: on Android the files older
  * versions left in the public Documents folder are moved into the app's own
@@ -109,12 +118,18 @@ export const HOUSEKEEPING_DELAY_MS = 5000
  * the rotation of the backup folders runs (it waited for the first backup of
  * a session, so a tablet that was only switched on kept every old file).
  * Nothing in a browser. Never throws.
+ * Android only, not every Capacitor app: on iOS the Documents, Data and
+ * External folders are one folder, which a move would empty.
  */
-export async function startNativeFileHousekeeping({ delayMs = HOUSEKEEPING_DELAY_MS, platform = detectBackupPlatform() } = {}) {
+export async function startNativeFileHousekeeping({
+  delayMs = HOUSEKEEPING_DELAY_MS,
+  platform = detectBackupPlatform(),
+  win = typeof window !== 'undefined' ? window : undefined
+} = {}) {
   if (!isNativeBackupPlatform(platform)) return
   await new Promise(resolve => setTimeout(resolve, delayMs))
   try {
-    if (platform === 'capacitor') {
+    if (platform === 'capacitor' && capacitorOs(win) === 'android') {
       const [fs, { moveLegacyFiles, pruneScoresheetPdfs }] = await Promise.all([
         import('@capacitor/filesystem'),
         import('./androidFiles')

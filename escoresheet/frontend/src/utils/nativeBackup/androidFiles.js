@@ -1,24 +1,28 @@
 /**
  * The Android app's own files: the match backups (platform.js
- * createCapacitorStore) and the saved scoresheet PDFs (openAppWindow
- * savePdf), both in the app's own folder (platform.appFilesDirectories:
- * internal storage). No other app, file manager or USB cable reaches them,
- * and they go with the app when it is uninstalled. Owner decision 2026-11:
- * the public Documents folder kept every roster, birth date and signature
- * open to whoever held the tablet, and after an uninstall.
+ * createCapacitorStore), the saved scoresheet PDFs (openAppWindow savePdf)
+ * and the activity log's daily files (activity/fileSink), all in the app's
+ * own folder (platform.appFilesDirectories: internal storage). No other app,
+ * file manager or USB cable reaches them, and they go with the app when it
+ * is uninstalled. Owner decision 2026-11: the public Documents folder kept
+ * every roster, birth date and signature open to whoever held the tablet,
+ * and after an uninstall.
  *
  * - moveLegacyFiles: at the first start of this version, the files older
- *   versions wrote to Documents/OpenVolley (or to the app's external folder,
- *   their fallback) are moved in, so the restore list still has them and
- *   nothing stays behind. Once per install; a file that cannot be moved
- *   (one an earlier install of the app left, on Android 11 and newer) stays
- *   where it is and is logged.
+ *   versions wrote to Documents/OpenVolley/backups, scoresheets and logs (or
+ *   to the app's external folder, their fallback) are moved in, so the
+ *   restore list still has them and nothing stays behind. Once per install
+ *   (a marker file in the app folder, which "Clear all" does not touch); a
+ *   file that cannot be moved (one an earlier install of the app left, on
+ *   Android 11 and newer) stays where it is and is logged. The export
+ *   folders below are never read.
  * - pruneScoresheetPdfs: the PDFs follow the backups' age limit (30 days),
  *   at every start.
  * - exportToDocuments: the explicit copy out (Options, Export to Documents):
  *   each match's newest backup and every PDF into a new
- *   Documents/OpenVolley/export-<time> folder. Those copies are the user's:
- *   the app never deletes them.
+ *   Documents/OpenVolley/export-<time> folder; exportPdfToDocuments (the PDF
+ *   view): one PDF into Documents/OpenVolley/exported. Those copies are the
+ *   user's: the app never moves or deletes them.
  *
  * Every function takes the @capacitor/filesystem module ({ Filesystem,
  * Directory }) and never throws for one file.
@@ -26,10 +30,15 @@
 
 import { appFilesDirectories, BACKUP_SUBDIR } from './platform'
 import { DEFAULT_MAX_AGE_DAYS, LATEST_FILE } from './rotation'
+import { LOG_SUBDIR } from '../activity/fileSink'
 
 export const PDF_SUBDIR = 'OpenVolley/scoresheets'
 export const EXPORT_PARENT = 'OpenVolley'
-export const MOVED_MARKER = 'ov.androidFilesMoved'
+// The PDF view's Export to Documents: never a folder moveLegacyFiles reads
+export const EXPORTED_PDF_SUBDIR = 'OpenVolley/exported'
+// In the app folder: "Clear all" (localStorage.clear) and a storage that
+// refuses writes leave it, so the move never runs twice
+export const MOVED_MARKER = 'OpenVolley/legacy-files-moved'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const message = (e) => e?.message || String(e)
@@ -84,6 +93,19 @@ export async function appDirectory({ Filesystem, Directory }, subdir = BACKUP_SU
   throw new Error('No writable app folder on this device')
 }
 
+// Is `path` in directory a the same folder as in b? (iOS maps Documents,
+// Data and External to one folder: moving would delete what it copies)
+async function sameFolder(Filesystem, path, a, b) {
+  if (a === b) return true
+  if (typeof Filesystem.getUri !== 'function') return false
+  try {
+    const [x, y] = await Promise.all([Filesystem.getUri({ path, directory: a }), Filesystem.getUri({ path, directory: b })])
+    return !!x?.uri && x.uri === y?.uri
+  } catch {
+    return false
+  }
+}
+
 // May the app read the public folders without asking? (Android 10 and older:
 // only with the storage permission, which a start must never ask for)
 async function publicFoldersReadable(Filesystem) {
@@ -97,17 +119,19 @@ async function publicFoldersReadable(Filesystem) {
 }
 
 /**
- * Moves the backups and PDFs an older version left in Documents/OpenVolley
- * (and the external folder) into the app's own folder. Once per install
- * (MOVED_MARKER in `storage`); resolves to { moved, left }.
+ * Moves the backups, PDFs and activity logs an older version left in
+ * Documents/OpenVolley (and the external folder) into the app's own folder.
+ * Once per install (the MOVED_MARKER file in the app folder); resolves to
+ * { moved, left }.
  */
-export async function moveLegacyFiles(fs, { storage = globalThis.localStorage, log = console } = {}) {
-  const { Filesystem, Directory } = fs
-  try {
-    if (storage?.getItem(MOVED_MARKER) === '1') return { moved: 0, left: 0, skipped: true }
-  } catch { /* no storage: move (again) */ }
+export async function moveLegacyFiles(fs, { log = console } = {}) {
+  const { Filesystem, Directory, Encoding } = fs
+  for (const directory of appFilesDirectories(Directory)) {
+    if (await exists(Filesystem, MOVED_MARKER, directory)) return { moved: 0, left: 0, skipped: true }
+  }
   const backupDir = await appDirectory(fs, BACKUP_SUBDIR)
   const pdfDir = await appDirectory(fs, PDF_SUBDIR)
+  const logDir = await appDirectory(fs, LOG_SUBDIR)
   const sources = []
   if (Directory.Documents && await publicFoldersReadable(Filesystem)) sources.push(Directory.Documents)
   if (Directory.External && Directory.External !== backupDir) sources.push(Directory.External)
@@ -124,7 +148,8 @@ export async function moveLegacyFiles(fs, { storage = globalThis.localStorage, l
     }
   }
   for (const source of sources) {
-    for (const entry of await list(Filesystem, BACKUP_SUBDIR, source)) {
+    const backupsHere = await sameFolder(Filesystem, BACKUP_SUBDIR, source, backupDir)
+    for (const entry of backupsHere ? [] : await list(Filesystem, BACKUP_SUBDIR, source)) {
       if (entry.type !== 'directory') continue
       const from = `${BACKUP_SUBDIR}/${entry.name}`
       await mkdirs(Filesystem, from, backupDir).catch(() => {})
@@ -141,17 +166,42 @@ export async function moveLegacyFiles(fs, { storage = globalThis.localStorage, l
       }
       try { await Filesystem.rmdir({ path: from, directory: source }) } catch { /* not empty */ }
     }
-    for (const file of await list(Filesystem, PDF_SUBDIR, source)) {
+    const pdfsHere = await sameFolder(Filesystem, PDF_SUBDIR, source, pdfDir)
+    for (const file of pdfsHere ? [] : await list(Filesystem, PDF_SUBDIR, source)) {
       if (file.type === 'directory') continue
       const name = await freeName(Filesystem, PDF_SUBDIR, pdfDir, file.name)
       await move(`${PDF_SUBDIR}/${file.name}`, source, `${PDF_SUBDIR}/${name}`, pdfDir)
     }
-    for (const path of [BACKUP_SUBDIR, PDF_SUBDIR, EXPORT_PARENT]) {
+    const logsHere = await sameFolder(Filesystem, LOG_SUBDIR, source, logDir)
+    for (const file of logsHere ? [] : await list(Filesystem, LOG_SUBDIR, source)) {
+      if (file.type === 'directory') continue
+      const path = `${LOG_SUBDIR}/${file.name}`
+      if (!(await exists(Filesystem, path, logDir))) {
+        await move(path, source, path, logDir)
+        continue
+      }
+      // the day this version already writes to: the older lines join it
+      try {
+        const encoding = Encoding?.UTF8 || 'utf8'
+        const { data } = await Filesystem.readFile({ path, directory: source, encoding })
+        await Filesystem.appendFile({ path, data, directory: logDir, encoding })
+        await Filesystem.deleteFile({ path, directory: source })
+        moved++
+      } catch (e) {
+        left++
+        log.warn?.(`[AndroidFiles] cannot move ${path}:`, message(e))
+      }
+    }
+    for (const path of [BACKUP_SUBDIR, PDF_SUBDIR, LOG_SUBDIR, EXPORT_PARENT]) {
       try { await Filesystem.rmdir({ path, directory: source }) } catch { /* not empty, or not there */ }
     }
   }
   if (moved || left) log.info?.(`[AndroidFiles] moved ${moved} file(s) into the app folder${left ? `, ${left} could not be moved` : ''}`)
-  try { storage?.setItem(MOVED_MARKER, '1') } catch { /* asked again next start */ }
+  try {
+    await Filesystem.writeFile({ path: MOVED_MARKER, data: '1', directory: backupDir, encoding: Encoding?.UTF8 || 'utf8', recursive: true })
+  } catch (e) {
+    log.warn?.('[AndroidFiles] the move runs again next start:', message(e))
+  }
   return { moved, left }
 }
 
@@ -218,8 +268,10 @@ export async function exportToDocuments(fs, { now = new Date(), log = console } 
 }
 
 /**
- * Copies one saved PDF to Documents/OpenVolley/scoresheets (the PDF view's
- * Export to Documents), under a free name. Resolves to the path shown.
+ * Copies one saved PDF to Documents/OpenVolley/exported (the PDF view's
+ * Export to Documents), under a free name. Resolves to the path shown. Not
+ * Documents/OpenVolley/scoresheets: older versions wrote there, and
+ * moveLegacyFiles takes what it finds there into the app folder.
  */
 export async function exportPdfToDocuments(fs, name) {
   const { Filesystem, Directory } = fs
@@ -229,8 +281,8 @@ export async function exportPdfToDocuments(fs, name) {
     if (await exists(Filesystem, `${PDF_SUBDIR}/${name}`, directory)) { source = directory; break }
   }
   if (!source) throw new Error('The PDF is no longer in the app')
-  await mkdirs(Filesystem, PDF_SUBDIR, Directory.Documents)
-  const free = await freeName(Filesystem, PDF_SUBDIR, Directory.Documents, name)
-  await Filesystem.copy({ from: `${PDF_SUBDIR}/${name}`, to: `${PDF_SUBDIR}/${free}`, directory: source, toDirectory: Directory.Documents })
-  return `Documents/${PDF_SUBDIR}/${free}`
+  await mkdirs(Filesystem, EXPORTED_PDF_SUBDIR, Directory.Documents)
+  const free = await freeName(Filesystem, EXPORTED_PDF_SUBDIR, Directory.Documents, name)
+  await Filesystem.copy({ from: `${PDF_SUBDIR}/${name}`, to: `${EXPORTED_PDF_SUBDIR}/${free}`, directory: source, toDirectory: Directory.Documents })
+  return `Documents/${EXPORTED_PDF_SUBDIR}/${free}`
 }

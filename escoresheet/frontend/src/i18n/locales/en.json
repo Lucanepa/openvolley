@@ -1319,7 +1319,7 @@
     "folderReconnect": "Folder: {{name}}. The browser needs one tap to allow it again.",
     "reconnect": "Reconnect folder",
     "downloads": "This browser downloads a file at set end and match end.",
-    "deviceAndroid": "Saved in the documents folder of this device, in OpenVolley/backups.",
+    "deviceAndroid": "Saved inside the app on this tablet (OpenVolley/backups): no other app can reach it.",
     "drive": "Removable drive",
     "driveNone": "No USB stick found. Plug one in: any stick works.",
     "driveCopied": "copied {{time}}",
