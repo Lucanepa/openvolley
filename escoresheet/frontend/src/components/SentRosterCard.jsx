@@ -35,6 +35,7 @@ export default function SentRosterCard({ row, side, onUse, onDismiss, className 
             })}
           </p>
           {signed && <p className="m-0 mt-0.5 text-xs font-medium text-emerald-900" data-testid={`sent-roster-signed-${side}`}>{t(`sentRoster.signed.${signed}`)}</p>}
+          {signed && row.signedByName && <p className="m-0 mt-0.5 text-xs text-emerald-800" data-testid={`sent-roster-signed-by-${side}`}>{t('sentRoster.signedBy', { name: row.signedByName })}</p>}
         </div>
       </div>
       {open && (

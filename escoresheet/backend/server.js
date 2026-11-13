@@ -6627,6 +6627,9 @@ if (DB_MODE) {
       .catch((err) => console.warn('[Activity] purge failed:', err.message))
     setTimeout(purgeActivity, 10 * 60 * 1000).unref()
     setInterval(purgeActivity, 24 * 60 * 60 * 1000).unref()
+    // Rosters sent ahead (db/023, db/035): deleted at expires_at, hourly,
+    // also while no team or scorer calls a roster route
+    layer.teams?.startSweeps?.()
     // Expired sessions, hourly
     setInterval(() => {
       layer.auth.sweepExpiredSessions().catch((err) => console.warn('[Auth] session sweep failed:', err.message))
