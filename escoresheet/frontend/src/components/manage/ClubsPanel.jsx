@@ -190,6 +190,12 @@ function ClubPage({ club, online, onBack, onSaved }) {
   const [teams, setTeams] = useState(() => new Set(club?.teams || []))
   // db/020: the contact address and the managers (picked, ClubManagersField)
   const [contact, setContact] = useState(club?.contact_email || '')
+  // A new club once created: a later save (after an error in the contact or
+  // managers step) goes on as an edit of it, never a second create
+  const [createdId, setCreatedId] = useState(null)
+  // the stored contact: sent only when the admin changed it, so an edit never
+  // writes back the address the list held when the page opened
+  const [contactSaved, setContactSaved] = useState(club?.contact_email || '')
   const managersBefore = (club?.managers || []).map((m) => m.user_id).sort().join(',')
   const [managers, setManagers] = useState(() => club?.managers || [])
   const [q, setQ] = useState('')
@@ -222,10 +228,18 @@ function ClubPage({ club, online, onBack, onSaved }) {
     if (!valid || busy) return
     setBusy(true)
     const body = { name: name.trim(), teams: [...teams] }
-    let res = club ? await clubsApi.update(club.id, { ...body, contact_email: contact.trim() || null }) : await clubsApi.create(body)
-    // a new club: its contact address once it exists
-    if (!res.error && !club && contact.trim()) res = await clubsApi.update(res.data.club.id, { contact_email: contact.trim() })
-    const clubId = club?.id || res.data?.club?.id
+    const contactChanged = contact.trim() !== (contactSaved || '').trim()
+    let clubId = club?.id || createdId
+    let res = clubId
+      ? await clubsApi.update(clubId, contactChanged ? { ...body, contact_email: contact.trim() || null } : body)
+      : await clubsApi.create(body)
+    if (!res.error && !clubId) {
+      clubId = res.data?.club?.id
+      if (clubId) setCreatedId(clubId)
+      // a new club: its contact address once it exists
+      if (clubId && contact.trim()) res = await clubsApi.update(clubId, { contact_email: contact.trim() })
+    }
+    if (!res.error && (contactChanged || !club)) setContactSaved(contact.trim())
     const ids = managers.map((m) => m.user_id)
     if (!res.error && clubId && [...ids].sort().join(',') !== managersBefore) res = await clubsApi.setManagers(clubId, ids)
     setBusy(false)
@@ -238,7 +252,7 @@ function ClubPage({ club, online, onBack, onSaved }) {
       return
     }
     toast.success(t('manage.clubs.saved'))
-    onSaved(res.data?.club || club)
+    onSaved(res.data?.club || club || (clubId ? { id: clubId } : null))
   }
   return (
     <section data-testid="club-page">

@@ -26,6 +26,7 @@
 
 import pg from 'pg'
 import { readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
@@ -43,7 +44,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 // after all of them, as scripts/migrate.mjs applies it after the numbered
 // files: a file added to the list that redefines one of its functions
 // without updating it shows up in the tests too.
-export const MIGRATIONS_SQL = ['005_match_ownership.sql', '006_matches_updated_at.sql', '007_scorer_accounts.sql', '008_live_state_tto.sql', '009_beach_saved_teams.sql', '010_auth_tokens.sql', '011_account_approvals.sql', '012_app_memberships.sql', '013_beach_official_index.sql', '014_beach_tournaments.sql', '015_event_revisions.sql', '016_activity_log.sql', '017_match_remarks.sql', '018_clubs.sql', '019_match_scorer_device.sql', '020_club_managers.sql', '021_final_mail.sql', '022_passkeys.sql', '023_team_managers.sql', '024_club_licences.sql', '025_account_requests.sql', '026_club_licences_manual.sql', '027_account_deactivate.sql', '028_notifications.sql', '029_club_manager_links.sql', '030_manager_roles.sql', '031_manager_roles_definer.sql', '032_match_id_scoping.sql', '033_match_scoresheets.sql', '034_official_game_season.sql', '036_team_manager_confirm.sql', '037_club_data_scope.sql', '040_final_mail.sql', '041_schedule_sync.sql']
+export const MIGRATIONS_SQL = ['005_match_ownership.sql', '006_matches_updated_at.sql', '007_scorer_accounts.sql', '008_live_state_tto.sql', '009_beach_saved_teams.sql', '010_auth_tokens.sql', '011_account_approvals.sql', '012_app_memberships.sql', '013_beach_official_index.sql', '014_beach_tournaments.sql', '015_event_revisions.sql', '016_activity_log.sql', '017_match_remarks.sql', '018_clubs.sql', '019_match_scorer_device.sql', '020_club_managers.sql', '021_final_mail.sql', '022_passkeys.sql', '023_team_managers.sql', '024_club_licences.sql', '025_account_requests.sql', '026_club_licences_manual.sql', '027_account_deactivate.sql', '028_notifications.sql', '029_club_manager_links.sql', '030_manager_roles.sql', '031_manager_roles_definer.sql', '032_match_id_scoping.sql', '033_match_scoresheets.sql', '034_official_game_season.sql', '036_team_manager_confirm.sql', '037_club_data_scope.sql', '038_audit_protection.sql', '040_final_mail.sql', '041_schedule_sync.sql']
   .map((f) => readFileSync(join(here, '..', '..', 'db', f), 'utf8'))
   .join('\n') + '\n' + readFileSync(join(here, '..', '..', 'db', 'current_definitions.sql'), 'utf8')
 // db/034 turns the club rule (db/018) on unless an admin switched it off. The
@@ -162,6 +163,34 @@ export async function createTestDatabase (label, { schemaSql = SCHEMA_SQL } = {}
       } finally { await admin.end() }
     }
   }
+}
+
+/**
+ * Applies db/roles.sql itself (with psql, like apply-roles.sh) to the
+ * database at `dbUrl`, with `appRole` / `ownerRole` in place of ov_app /
+ * ov_owner: roles are cluster-wide and the test server is shared, so every
+ * test database gets its own pair. Returns the app role's connection string:
+ * the backend then runs with exactly the production grants. The caller drops
+ * both roles after the database (dropRoles).
+ */
+export function applyRolesSql (dbUrl, { appRole, ownerRole }) {
+  const sql = readFileSync(join(here, '..', '..', 'db', 'roles.sql'), 'utf8')
+    .replace(/\bov_app\b/g, appRole)
+    .replace(/\bov_owner\b/g, ownerRole)
+  const password = 'app-' + Math.random().toString(36).slice(2).padEnd(16, '0')
+  // ov_owner is the cluster superuser in production (roles.sql header): the
+  // foreign-key checks run as the owner of the referenced table
+  execFileSync('psql', ['-X', '-q', '-v', 'ON_ERROR_STOP=1', '-v', `ov_app_pw=${password}`, '-d', dbUrl],
+    { input: `CREATE ROLE "${ownerRole}" NOLOGIN SUPERUSER;\n` + sql, stdio: ['pipe', 'ignore', 'pipe'] })
+  const u = new URL(dbUrl)
+  u.username = appRole
+  u.password = password
+  return u.toString()
+}
+
+/** Drops the roles of applyRolesSql once their database is gone. */
+export async function dropRoles (admin, roles) {
+  for (const r of roles) await admin.query(`DROP ROLE IF EXISTS "${r}"`)
 }
 
 /** Logger that keeps test output quiet but remembers what was logged. */

@@ -13,7 +13,7 @@ import { dirname, join, resolve } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import pg from 'pg'
 import WebSocket from 'ws'
-import { createDatabase, testSchemaSql } from './pgTestDb.js'
+import { createDatabase, testSchemaSql, applyRolesSql, dropRoles } from './pgTestDb.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const BACKEND_DIR = resolve(HERE, '..', '..')
@@ -173,8 +173,12 @@ export async function provisionDatabase() {
     await admin.end().catch(() => {})
     throw err
   }
+  const roles = []
   cleanup.unshift(async () => {
-    try { await admin.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`) } finally { await admin.end().catch(() => {}) }
+    try {
+      await admin.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`)
+      await dropRoles(admin, roles)
+    } finally { await admin.end().catch(() => {}) }
   })
   const url = new URL(adminUrl)
   url.pathname = '/' + name
@@ -184,8 +188,21 @@ export async function provisionDatabase() {
     await c.query(testSchemaSql({ useTemplate: !USE_DOCKER }))
     await c.query(SESSIONS_SQL)
   } finally { await c.end() }
+  let appUrl = null
   return {
     url: url.toString(),
+    /**
+     * The connection string of a role with exactly the grants of db/roles.sql
+     * (production's ov_app), for the server's DATABASE_URL; `url` stays the
+     * superuser for the test's own setup. Created on first call.
+     */
+    appUrl() {
+      if (!appUrl) {
+        roles.push(`${name}_app`, `${name}_owner`)
+        appUrl = applyRolesSql(url.toString(), { appRole: `${name}_app`, ownerRole: `${name}_owner` })
+      }
+      return appUrl
+    },
     async drop() {
       for (const fn of cleanup) {
         try { await fn() } catch { /* best effort */ }

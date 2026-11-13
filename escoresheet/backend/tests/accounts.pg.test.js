@@ -7,7 +7,7 @@ import pg from 'pg'
 import { createPgQuery } from '../lib/pgQuery.js'
 import { createMatchRestore } from '../lib/matchRestore.js'
 import { createAccessResolver, accessFromRoles } from '../lib/access.js'
-import { createAccounts, normalizeInviteCode, hashInviteCode, generateInviteCode, INVITE_ALPHABET, AUDIT_ACTIONS } from '../lib/accounts.js'
+import { createAccounts, normalizeInviteCode, hashInviteCode, generateInviteCode, INVITE_ALPHABET, AUDIT_ACTIONS, emailDigest } from '../lib/accounts.js'
 import { createApprovals } from '../lib/approvals.js'
 import { SKIP_PG, createTestDatabase, quietLogger } from './helpers/pgTestDb.js'
 
@@ -353,7 +353,9 @@ describe('accounts on Postgres', { skip: SKIP_PG }, () => {
       const row = (await pool.query('SELECT u.email, p.first_name, p.last_name FROM auth.users u JOIN public.profiles p ON p.user_id = u.id WHERE u.id = $1', [id])).rows[0]
       assert.deepEqual(row, { email: 'anna.muster@example.ch', first_name: 'Anna Maria', last_name: 'Muster' })
       const entry = (await auditOf('account.profile')).find((x) => x.target_user_id === id)
-      assert.deepEqual(entry.details.before, { first_name: 'Rename', last_name: 'Test', email: 'rename@example.ch' })
+      // the addresses as digests (the entry outlives the account)
+      assert.deepEqual(entry.details.before, { first_name: 'Rename', last_name: 'Test', email_sha256: emailDigest('rename@example.ch') })
+      assert.equal(entry.details.after.email_sha256, emailDigest('anna.muster@example.ch'))
       assert.equal(entry.actor_id, ids.admin)
 
       // nothing changed: no audit entry
