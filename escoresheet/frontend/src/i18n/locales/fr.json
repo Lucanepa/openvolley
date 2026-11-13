@@ -3543,6 +3543,8 @@
         "club_licences": "Liste des licences chargée",
         "club_licences_manual": "Ajouté à la main aux listes du club",
         "club_licences_manual_delete": "Retiré à la main des listes du club",
+        "club_licences_dob": "Dates de naissance consultées pour une liste d'équipe",
+        "saved_teams_scope": "Équipes enregistrées de matchs officiels données à un marqueur",
         "saved_teams_competition_delete": "Compétition supprimée",
         "saved_teams_team_delete": "Équipe enregistrée supprimée",
         "saved_teams_roster": "Effectif d’une équipe enregistrée remplacé",

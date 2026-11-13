@@ -3550,6 +3550,8 @@
         "club_licences": "Licence list uploaded",
         "club_licences_manual": "Added to the club's lists by hand",
         "club_licences_manual_delete": "Removed from the club's lists by hand",
+        "club_licences_dob": "Dates of birth looked up for a roster",
+        "saved_teams_scope": "Saved teams of official games given to a scorer",
         "saved_teams_competition_delete": "Competition deleted",
         "saved_teams_team_delete": "Saved team deleted",
         "saved_teams_roster": "Saved team's roster replaced",
