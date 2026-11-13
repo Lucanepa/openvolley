@@ -12,6 +12,18 @@ import { relaySummaryBundle, projectAnonDbRows, projectNonOwnerRows, hasAnonPoli
 const SECRET = 'x'.repeat(40)
 
 describe('pinHash', () => {
+  it('a typed value shaped like a stored hash is never a PIN', () => {
+    const pins = createPinHasher(SECRET)
+    const stored = pins.hash('game', '123456')
+    assert.equal(pins.matches('game', stored, stored), false)
+    assert.equal(pins.matcher('game', stored)(stored), false)
+    assert.deepEqual(pins.candidates('game', stored), [])
+    assert.equal(pins.matches('game', '123456', stored), true)
+    // nor without a secret (a legacy plaintext row can hold no hash either)
+    const plain = createPinHasher(null)
+    assert.equal(plain.matches('game', stored, stored), false)
+  })
+
   it('stores PINs as an HMAC with the secret, per kind; compares hashed and legacy plaintext', () => {
     const h = createPinHasher(SECRET)
     assert.equal(h.enabled, true)
@@ -131,11 +143,29 @@ describe('match access tokens', () => {
       assert.equal(isTokenRole(role), false)
       assert.equal(tokens.stillGrants(tokens.verify(tokens.issue({ matchKey: 'm', role })), match), false, role)
     }
-    // Database rows: the connection flag of the role
-    assert.equal(tokens.stillGrantsRow(ref, { connections: { referee_enabled: true } }), true)
-    assert.equal(tokens.stillGrantsRow(ref, { connections: { referee_enabled: false } }), false)
-    assert.equal(tokens.stillGrantsRow(ref, {}), false)
+    // Database rows: only a token of the database's PIN check of this row
+    // (matches.id), with the connection flag of the role on
+    assert.equal(tokens.stillGrantsRow(ref, { connections: { referee_enabled: true } }), false, 'a relay room token grants no database row')
+    const dbRef = tokens.verify(tokens.issue({ matchKey: 'm', role: 'referee', matchUuid: 'u1', pin: '314159' }))
+    assert.equal(tokens.stillGrantsRow(dbRef, { connections: { referee_enabled: true } }), true)
+    assert.equal(tokens.stillGrantsRow(dbRef, { id: 'u1', connections: { referee_enabled: true } }), true)
+    assert.equal(tokens.stillGrantsRow(dbRef, { id: 'u2', connections: { referee_enabled: true } }), false, 'another row')
+    assert.equal(tokens.stillGrantsRow(dbRef, { connections: { referee_enabled: false } }), false)
+    assert.equal(tokens.stillGrantsRow(dbRef, {}), false)
     assert.equal(tokens.stillGrantsRow(null, { connections: { referee_enabled: true } }), false)
+  })
+
+  it('a database token ends when the role\'s stored PIN changes', () => {
+    const tokens = createMatchTokens({ secret: SECRET })
+    const pins = createPinHasher(SECRET)
+    const stored = pins.hash('referee', '314159')
+    const p = tokens.verify(tokens.issue({ matchKey: 'm', role: 'referee', matchUuid: 'u1', pin: '314159', storedPin: stored }))
+    assert.equal(JSON.stringify(p).includes(stored), false, 'the token does not carry the stored value')
+    const row = { id: 'u1', connections: { referee_enabled: true } }
+    assert.equal(tokens.stillGrantsRow(p, row, { referee: stored }), true)
+    assert.equal(tokens.stillGrantsRow(p, row, { referee: pins.hash('referee', '999999') }), false, 'PIN changed')
+    assert.equal(tokens.stillGrantsRow(p, row, { bench_home: stored }), false, 'another role\'s PIN')
+    assert.equal(tokens.stillGrantsRow(p, row, null), false, 'unknown current PIN')
   })
 })
 

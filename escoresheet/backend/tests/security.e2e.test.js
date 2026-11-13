@@ -234,6 +234,34 @@ describe('Phase 7: ownership, PIN-gated data, backups, PINs at rest', { skip: SK
     assert.equal(ev.text.includes('Muster'), false, 'an event payload reached an anonymous reader')
   })
 
+  it('anonymous /api/db: a relay room token or a token of a changed PIN unlocks no roster', async () => {
+    const select = (headers = {}) => api(srv.base, '/api/db', { proto: null, headers, body: { table: 'matches', action: 'select', params: { columns: '*', filters: [{ type: 'eq', column: 'external_id', value: ext }], maybeSingle: true } } })
+    // a relay room with the database match's key but its own PINs
+    const scoreboard = await openSocket(srv.wsUrl)
+    try {
+      scoreboard.send({ type: 'sync-match-data', matchId: 7, match: { id: 7, seed_key: ext, status: 'live', gamePin: GAME_PIN, refereePin: '615243', refereeConnectionEnabled: true }, homePlayers: [], sets: [], events: [] })
+      scoreboard.send({ type: 'ping' })
+      await scoreboard.waitFor((m) => m.type === 'pong')
+      const v = await api(srv.base, '/api/match/validate-pin', { proto: null, body: { pin: '615243', type: 'referee' } })
+      assert.equal(v.status, 200, v.text)
+      const relayGrant = await select({ 'X-OV-Match-Token': v.json.token })
+      assert.equal(relayGrant.status, 200, relayGrant.text)
+      assert.equal('players_home' in relayGrant.json.data, false, 'a relay room token unlocked the database rosters')
+    } finally {
+      scoreboard.ws.close()
+    }
+    // a bench token ends on /api/db when the bench PIN changes
+    const pin = await api(srv.base, '/api/match/validate-connection-pin', { proto: null, body: { pin: PINS.bench_home, type: 'bench_home' } })
+    assert.deepEqual((await select({ 'X-OV-Match-Token': pin.json.token })).json.data.players_home, [{ number: 4, last_name: 'Muster' }])
+    const { rows: [before] } = await sql.query('SELECT connection_pins FROM matches WHERE id = $1', [matchUuid])
+    try {
+      await sql.query("UPDATE matches SET connection_pins = connection_pins || jsonb_build_object('bench_home', '000111') WHERE id = $1", [matchUuid])
+      assert.equal('players_home' in (await select({ 'X-OV-Match-Token': pin.json.token })).json.data, false, 'the old PIN\'s token still unlocks the roster')
+    } finally {
+      await sql.query('UPDATE matches SET connection_pins = $2 WHERE id = $1', [matchUuid, before.connection_pins])
+    }
+  })
+
   it('relay and GET /api/match/:id: the summary before the PIN step, the bundle after it', async () => {
     const scoreboard = await openSocket(srv.wsUrl)
     const viewer = await openSocket(srv.wsUrl)

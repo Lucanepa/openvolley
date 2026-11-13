@@ -52,15 +52,15 @@ export const MIN_TOKEN_SECRET_LENGTH = 32
  * a beach scorer that sends the home/away wire names instead is covered by the
  * home/away fallbacks.
  */
-const role = (enabled, pin, dbEnabled) => Object.freeze({ enabled: Object.freeze(enabled), pin: Object.freeze(pin), dbEnabled })
+const role = (enabled, pin, dbEnabled, dbPins = []) => Object.freeze({ enabled: Object.freeze(enabled), pin: Object.freeze(pin), dbEnabled, dbPins: Object.freeze(dbPins) })
 const TOKEN_ROLES = Object.freeze({
-  referee: role(['refereeConnectionEnabled'], ['refereePin'], 'referee_enabled'),
-  bench_home: role(['homeTeamConnectionEnabled'], ['homeTeamPin'], 'home_bench_enabled'),
-  bench_away: role(['awayTeamConnectionEnabled'], ['awayTeamPin'], 'away_bench_enabled'),
+  referee: role(['refereeConnectionEnabled'], ['refereePin'], 'referee_enabled', ['referee']),
+  bench_home: role(['homeTeamConnectionEnabled'], ['homeTeamPin'], 'home_bench_enabled', ['bench_home']),
+  bench_away: role(['awayTeamConnectionEnabled'], ['awayTeamPin'], 'away_bench_enabled', ['bench_away']),
   homeTeam: role(['homeTeamConnectionEnabled'], ['homeTeamPin'], 'home_bench_enabled'),
   awayTeam: role(['awayTeamConnectionEnabled'], ['awayTeamPin'], 'away_bench_enabled'),
-  bench_team1: role(['team1TeamConnectionEnabled', 'homeTeamConnectionEnabled'], ['team1Pin', 'team1TeamPin', 'homeTeamPin'], 'team1_bench_enabled'),
-  bench_team2: role(['team2TeamConnectionEnabled', 'awayTeamConnectionEnabled'], ['team2Pin', 'team2TeamPin', 'awayTeamPin'], 'team2_bench_enabled')
+  bench_team1: role(['team1TeamConnectionEnabled', 'homeTeamConnectionEnabled'], ['team1Pin', 'team1TeamPin', 'homeTeamPin'], 'team1_bench_enabled', ['bench_team1', 'team1_data']),
+  bench_team2: role(['team2TeamConnectionEnabled', 'awayTeamConnectionEnabled'], ['team2Pin', 'team2TeamPin', 'awayTeamPin'], 'team2_bench_enabled', ['bench_team2', 'team2_data'])
 })
 
 const has = (obj, k) => Object.prototype.hasOwnProperty.call(obj, k)
@@ -243,16 +243,24 @@ export function createMatchTokens ({ secret = null, ttlMs = MATCH_TOKEN_TTL_MS, 
   const key = secret ? String(secret) : randomBytes(32).toString('base64url')
   const sign = (body) => createHmac('sha256', key).update(`ov-match-access:${body}`, 'utf8').digest('base64url')
   const fingerprint = (pin) => createHmac('sha256', key).update(`ov-match-pin-fp:${pinText(pin)}`, 'utf8').digest('base64url').slice(0, 22)
+  // of the PIN's stored form (matches.connection_pins, maybe hashed): what /api/db can compare
+  const storedFingerprint = (stored) => createHmac('sha256', key).update(`ov-match-pin-stored:${pinText(stored)}`, 'utf8').digest('base64url').slice(0, 22)
 
   /**
    * A token for one match key (room key = external_id), bound to `role`; with
-   * `pin` (the PIN just proved) it carries that PIN's fingerprint.
+   * `pin` (the PIN just proved) it carries that PIN's fingerprint, with
+   * `storedPin` (its matches.connection_pins value) that one's as well.
+   * `matchUuid` (matches.id) is the database audience: only a token checked
+   * against the database row (validate-connection-pin) carries it, and only
+   * such a token unlocks that row on /api/db (stillGrantsRow). A token from a
+   * relay room's own PINs (the relay's validate-pin) grants the relay copy only.
    */
-  function issue ({ matchKey, role = 'viewer', matchUuid = null, pin = null }) {
+  function issue ({ matchKey, role = 'viewer', matchUuid = null, pin = null, storedPin = null }) {
     if (typeof matchKey !== 'string' || !matchKey) return null
     const payload = { m: matchKey, r: String(role).slice(0, 20), exp: now() + ttlMs }
     if (typeof matchUuid === 'string' && matchUuid) payload.u = matchUuid
     if (pinText(pin)) payload.f = fingerprint(pin)
+    if (pinText(storedPin)) payload.s = storedFingerprint(storedPin)
     const body = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url')
     return `v1.${body}.${sign(body)}`
   }
@@ -272,11 +280,24 @@ export function createMatchTokens ({ secret = null, ttlMs = MATCH_TOKEN_TTL_MS, 
     return true
   }
 
-  /** The same for a matches row (its connections flags; the PINs there may be hashed). */
-  function stillGrantsRow (payload, row) {
+  /**
+   * The same for a matches row on /api/db: the token must come from the
+   * database's PIN check of this row (payload.u, matches.id), its role's
+   * connections flag must be on, and when it carries the stored PIN's
+   * fingerprint, `storedPins` (the row's current connection_pins) must still
+   * hold that PIN (a changed PIN ends the token). Without `storedPins` such a
+   * token grants nothing. Tokens issued before the fingerprint was added
+   * (no payload.s) keep the flag check until they expire.
+   */
+  function stillGrantsRow (payload, row, storedPins = null) {
     const role = payload && isTokenRole(payload.r) ? TOKEN_ROLES[payload.r] : null
-    const conns = row?.connections
-    return !!role && !!conns && typeof conns === 'object' && conns[role.dbEnabled] === true
+    if (!role || typeof payload.u !== 'string' || !payload.u || !row || typeof row !== 'object') return false
+    if (has(row, 'id') && row.id !== payload.u) return false
+    const conns = row.connections
+    if (!conns || typeof conns !== 'object' || conns[role.dbEnabled] !== true) return false
+    if (!payload.s) return true
+    if (!storedPins || typeof storedPins !== 'object') return false
+    return role.dbPins.some((k) => pinText(storedPins[k]) !== '' && safeEqual(storedFingerprint(storedPins[k]), payload.s))
   }
 
   /** The payload of a valid, unexpired token, else null. Never throws. */
