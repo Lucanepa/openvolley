@@ -1244,19 +1244,36 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
       // The account approvals that complete a slot (no drawn signature there)
       // are re-checked with the server before the result is approved (one may
-      // have been voided, or the sets changed). A stale record in a slot that
-      // was signed by hand never blocks: the drawn signature is the fallback.
-      // Offline the local copy is trusted: the approvals were made online.
+      // have been voided or undone, or the sets changed). A stale record in a
+      // slot that was signed by hand never blocks: the drawn signature is the
+      // fallback. When the server cannot be asked (offline, an error), the
+      // approvals are not confirmed: only once the scorer agrees, and those
+      // slots then print as pending (no "Approved electronically") and the
+      // approval's summary leaves them out; the server's records come back
+      // with the next refresh.
       const currentSets = await db.sets.where('matchId').equals(matchId).toArray()
       const completing = approvalsCompletingSlots(match, currentSets, { hasRef2 })
-      if (completing.length && online && match.seed_key) {
-        const fresh = await refreshAccountApprovals()
-        if (fresh) {
-          if (!approvalsStillValid(completing, fresh.bySlot, resultKey(currentSets))) {
-            showAlert(t('approval.revalidateFailed'), 'warning')
+      if (completing.length) {
+        const fresh = online && match.seed_key ? await refreshAccountApprovals() : null
+        if (fresh && !approvalsStillValid(completing, fresh.bySlot, resultKey(currentSets))) {
+          showAlert(t('approval.revalidateFailed'), 'warning')
+          setIsSaving(false)
+          return
+        }
+        if (!fresh) {
+          const go = await askConfirm({
+            title: t('approval.unconfirmedTitle'),
+            message: t('approval.unconfirmedBody', { roles: completing.map(c => getSignatureLabel(c.role)).join(', ') }),
+            confirmLabel: t('approval.unconfirmedApprove')
+          })
+          if (!go) {
             setIsSaving(false)
             return
           }
+          const row = await db.matches.get(matchId)
+          const kept = { ...(row?.accountApprovals || {}) }
+          for (const c of completing) delete kept[c.slot]
+          await db.matches.update(matchId, { accountApprovals: Object.keys(kept).length ? kept : null })
         }
       }
 
@@ -1391,8 +1408,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             },
             // Signed on a phone or on this device (docs/qr-signing-spec.md 5.6)
             signatureSources: approvalSignatureSources(match),
-            // Approved with an account: names and short IDs only (no user ids, no emails)
-            accounts: approvalSummary(match, allSets)
+            // Approved with an account: names and short IDs only (no user ids,
+            // no emails), from the stored row (without approvals left unconfirmed)
+            accounts: approvalSummary((await db.matches.get(matchId)) || match, allSets)
           }
 
           // The remarks as approved, just before the approval (db/017)

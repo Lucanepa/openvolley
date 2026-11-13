@@ -3414,6 +3414,7 @@
         "approval_pin_set": "Genehmigungs-PIN gesetzt",
         "approval_pin_remove": "Genehmigungs-PIN entfernt",
         "approval_pin_locked": "Genehmigungs-PIN gesperrt",
+        "approval_pin_failed": "Falschi Genehmigungs-PIN",
         "match_approve": "Resultat mit Konto genehmigt",
         "match_approval_revoke": "Konto-Genehmigung rückgängig gemacht",
         "match_approval_void": "Konto-Genehmigungen ungültig",
@@ -4537,6 +4538,9 @@
     "syncing": "Resultat wird gschickt…",
     "nameDiffers": "Kontoname {{account}} wiicht vom erfasste Offizielle ab ({{entered}})",
     "revalidateFailed": "E Konto-Genehmigung isch nüme gültig. Prüef d Underschrifte und genehmig neu.",
+    "unconfirmedTitle": "Genehmigunge nöd bestätigt",
+    "unconfirmedBody": "Das Grät erreicht de Server nöd, drum chönd d Genehmigunge mit Konto vo {{roles}} nöd prüeft werde. Wänn du wiitermachsch, erschiined die Underschrifte uf em Spiilbricht als offe. Zum sie vervollständige, underschriib vo Hand, oder verbind di und probier s nomal.",
+    "unconfirmedApprove": "Ohni sie genehmige",
     "errors": {
       "pinInvalid": "E-Mail oder PIN nöd akzeptiert. Nach mehrere falsche PINs macht d PIN e Pause: De Offizielli gseht das i sim Profil. Oder vo Hand underschriibe.",
       "pinFormat": "D PIN muess 4 bis 6 Ziffere ha.",
@@ -4554,6 +4558,8 @@
       "unavailable": "D Genehmigung mit Konto isch uf däm Server nöd verfüegbar.",
       "emailUnconfirmed": "De Offizielli hät d E-Mail-Adresse vom Konto no nöd bestätigt.",
       "scorerNotReferee": "S Konto, wo das Spiil schriibt, cha nöd als Schiri genehmige.",
+      "notMatchOfficial": "Die E-Mail isch nöd die, wo i de Spiiliirichtig für dä Schiri erfasst worde isch. De Schiri genehmigt mit em Konto vo dere Adresse oder underschriibt vo Hand.",
+      "officialEmailMissing": "Für dä Schiri isch i de Spiiliirichtig kei E-Mail erfasst worde, drum cha sis Konto nöd prüeft werde. Vo Hand underschriibe.",
       "callerRole": "Für d Genehmigung mit Konto bruucht das Grät es Schriiber- oder Schirikonto."
     },
     "mine": {

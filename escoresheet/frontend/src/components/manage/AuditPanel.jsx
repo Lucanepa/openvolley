@@ -59,7 +59,7 @@ export function auditDetailsLine(entry, opts = {}) {
     if (typeof d.account_id === 'string') parts.push(`ID ${d.account_id.slice(0, 8)}`)
     return parts.join(' · ')
   }
-  if (entry?.action === 'approval_pin.locked') {
+  if (entry?.action === 'approval_pin.locked' || entry?.action === 'approval_pin.failed') {
     if (Number.isFinite(d.failures)) parts.push(tr('manage.approvals.wrongPins', `${d.failures} wrong PINs`, { failures: d.failures }))
     if (d.disabled) parts.push(tr('manage.approvals.blocked', 'blocked'))
     return parts.join(' · ')

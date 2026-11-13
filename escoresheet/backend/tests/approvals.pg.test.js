@@ -11,7 +11,7 @@ import { createMatchRestore } from '../lib/matchRestore.js'
 import { createAccessResolver } from '../lib/access.js'
 import { createAccounts } from '../lib/accounts.js'
 import { createAuth } from '../lib/auth.js'
-import { createApprovals, approvalRoleFor, callerRolesFor, PIN_LOCK_EVERY } from '../lib/approvals.js'
+import { createApprovals, approvalRoleFor, callerRolesFor, PIN_LOCK_EVERY, PIN_CALLER_MAX, PIN_DISABLE_AT, officialAddressOf } from '../lib/approvals.js'
 import { macPin, deriveKeys } from '../lib/approvalPin.js'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -64,9 +64,24 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
     return { id: m.id, ext, gameN }
   }
 
-  async function approveAs (caller, m, slot, official, { pin, sets = SETS, email, deviceId, ip = '203.0.113.7' } = {}) {
+  // The match setup: the address of a referee slot's official, stored with
+  // the match (matches.officials), which a referee approval is bound to.
+  // Nothing on a closed match (its row is read-only).
+  const OFFICIAL_ROLE = { referee1: '1st referee', referee2: '2nd referee' }
+  async function nameOfficial (m, slot, email) {
+    const role = OFFICIAL_ROLE[slot]
+    const { rows: [r] } = await pool.query('SELECT officials, closed_at FROM public.matches WHERE id = $1', [m.id])
+    if (!role || !r || r.closed_at) return
+    const list = (Array.isArray(r.officials) ? r.officials : []).filter((o) => o?.role !== role)
+    list.push({ role, firstName: 'Given', lastName: 'Name', email })
+    await pool.query('UPDATE public.matches SET officials = $2 WHERE id = $1', [m.id, JSON.stringify(list)])
+  }
+
+  // bind: the typed address is the one the match setup stored for the slot
+  async function approveAs (caller, m, slot, official, { pin, sets = SETS, email, deviceId, ip = '203.0.113.7', bind = true } = {}) {
     const body = { external_id: m.ext ?? m, slot, email: email ?? U[official].email, pin: pin ?? U[official].pin, result: { sets } }
     if (deviceId !== undefined) body.device_id = deviceId
+    if (bind && m?.id) await nameOfficial(m, slot, body.email)
     return approvals.approve({ callerId: U[caller].id, access: await access.get(U[caller].id), body, ip })
   }
   const listAs = async (caller, m) => approvals.listForMatch({ callerId: U[caller].id, access: await access.get(U[caller].id), externalId: m.ext })
@@ -254,6 +269,7 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
 
     it('checks in the contract order', async () => {
       const m = await newMatch('owner')
+      await nameOfficial(m, 'referee1', U.ref1.email)
       const good = { external_id: m.ext, slot: 'referee1', email: U.ref1.email, pin: U.ref1.pin, result: { sets: SETS } }
       const call = (body, caller = 'owner') => access.get(U[caller].id).then((a) => approvals.approve({ callerId: U[caller].id, access: a, body, ip: '203.0.113.9' }))
       // 1. body
@@ -282,8 +298,16 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       assert.deepEqual(ns.body.error.details, { server: SETS })
       const empty = await newMatch('owner', { sets: [] })
       expectErr(await call({ ...good, external_id: empty.ext, result: { sets: [] } }), 409, 'OV_RESULT_NOT_SYNCED')
-      // 9. unknown email answers exactly like a wrong PIN
-      const unknown = await call({ ...good, email: 'ghost@example.ch' })
+      // 9. only the address the match stores for the slot, before any lookup
+      expectErr(await call({ ...good, email: U.ref2.email }), 403, 'OV_APPROVAL_NOT_MATCH_OFFICIAL')
+      expectErr(await call({ ...good, slot: 'referee2' }), 409, 'OV_APPROVAL_OFFICIAL_EMAIL_MISSING')
+      expectErr(await call({ ...good, slot: 'scorer', email: 'ghost@example.ch' }), 403, 'OV_APPROVAL_NOT_MATCH_SCORER')
+      expectErr(await call({ ...good, slot: 'scorer', email: U.scorer2.email }), 403, 'OV_APPROVAL_NOT_MATCH_SCORER')
+      assert.equal((await pinRow('ref2')).failed_attempts, 0)
+      // 10. an unknown email (stored for the slot) answers exactly like a wrong PIN
+      const ghost = await newMatch('owner')
+      await nameOfficial(ghost, 'referee1', 'ghost@example.ch')
+      const unknown = await call({ ...good, external_id: ghost.ext, email: 'ghost@example.ch' })
       const wrong = await call({ ...good, pin: '000001' })
       expectErr(unknown, 403, 'OV_APPROVAL_PIN_INVALID')
       assert.deepEqual(unknown, wrong)
@@ -294,8 +318,10 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       assert.equal(r.status, 200, JSON.stringify(r.body))
       assert.equal((await pinRow('ref1')).failed_attempts, 1, 'a right PIN does not clear the rolling count')
       await pool.query('UPDATE auth.approval_pins SET failed_attempts = 0, last_failed_at = NULL WHERE user_id = $1', [U.ref1.id])
+      await pool.query("DELETE FROM public.audit_log WHERE action = 'approval_pin.failed' AND target_user_id = $1", [U.ref1.id])
       // an admin who is not the owner may send it
       const m2 = await newMatch('owner')
+      await nameOfficial(m2, 'referee1', U.ref1.email)
       assert.equal((await call({ ...good, external_id: m2.ext }, 'admin')).status, 200)
     })
 
@@ -311,14 +337,16 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       const lr = await pinRow('lostRole')
       assert.equal(lr.failed_attempts, 1, 'the failure is committed with the refusal')
       assert.ok(lr.last_used_at, 'and so is the use of the right PIN')
-      // a referee cannot take the scorer slot; a scorer cannot take a referee slot
-      const rs = await approveAs('owner', m, 'scorer', 'ref1')
+      // a referee cannot take the scorer slot (nor is it the match's scorer);
+      // a scorer cannot take a referee slot
+      expectErr(await approveAs('owner', m, 'scorer', 'ref1'), 403, 'OV_APPROVAL_NOT_MATCH_SCORER')
+      expectErr(await approveAs('owner', m, 'referee2', 'scorer2'), 403, 'OV_APPROVAL_ROLE_REQUIRED')
+      // admin alone does not make a scorer (D2), not even as an editor of the match
+      const adminPin = await user('adminPin', ['admin', 'referee'], { first: 'Ari', last: 'Admin', pin: '471920' })
+      await pool.query("INSERT INTO public.match_editors (match_id, user_id, granted_via) VALUES ($1, $2, 'admin')", [m.id, adminPin.id])
+      const rs = await approveAs('owner', m, 'scorer', 'adminPin')
       expectErr(rs, 403, 'OV_APPROVAL_ROLE_REQUIRED')
       assert.deepEqual(rs.body.error.details, { role: 'scorer' })
-      expectErr(await approveAs('owner', m, 'referee2', 'scorer2'), 403, 'OV_APPROVAL_ROLE_REQUIRED')
-      // admin alone does not make a scorer (D2)
-      await user('adminPin', ['admin', 'referee'], { first: 'Ari', last: 'Admin', pin: '471920' })
-      expectErr(await approveAs('owner', m, 'scorer', 'adminPin'), 403, 'OV_APPROVAL_ROLE_REQUIRED')
       // the scorer slot needs the match's creator or an editor
       expectErr(await approveAs('owner', m, 'scorer', 'scorer2'), 403, 'OV_APPROVAL_NOT_MATCH_SCORER')
       await pool.query("INSERT INTO public.match_editors (match_id, user_id, granted_via) VALUES ($1, $2, 'admin')", [m.id, U.scorer2.id])
@@ -342,15 +370,16 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       assert.equal((await rowsOf(m)).length, 1)
     })
 
-    it('lockout: 5 wrong PINs lock for 15 min, 10 disable; a paused PIN answers like a wrong one; audited and committed', async () => {
+    it('lockout: 5 wrong PINs lock for 15 min for that caller, 10 block it, 20 from two callers disable; a paused PIN answers like a wrong one; audited and committed', async () => {
       const m = await newMatch('owner')
       const lk = await user('lockRef', ['referee'], { first: 'Lou', last: 'Lock', pin: '709152' })
+      await pool.query("UPDATE auth.approval_pins SET set_at = set_at - interval '1 day' WHERE user_id = $1", [lk.id])
+      const earlier = () => pool.query("UPDATE public.audit_log SET at = at - interval '16 minutes' WHERE action = 'approval_pin.failed' AND target_user_id = $1", [lk.id])
       for (let i = 1; i <= 5; i++) expectErr(await approveAs('owner', m, 'referee1', 'lockRef', { pin: '100000' }), 403, 'OV_APPROVAL_PIN_INVALID')
       let p = await pinRow('lockRef')
       assert.equal(p.failed_attempts, 5)
-      assert.ok(p.locked_until > new Date(Date.now() + 14 * 60000))
       assert.equal(p.disabled_at, null)
-      // locked: even the right PIN answers exactly like an unknown address (no oracle), not counted
+      // locked for this caller: even the right PIN answers exactly like an unknown address (no oracle), not counted
       const locked = await approveAs('owner', m, 'referee1', 'lockRef')
       const ghost = await approveAs('owner', m, 'referee1', 'lockRef', { email: 'ghost@example.ch' })
       expectErr(locked, 403, 'OV_APPROVAL_PIN_INVALID')
@@ -361,21 +390,33 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       assert.equal(a1.target_user_id, lk.id)
       assert.equal(a1.details.failures, 5)
       assert.equal(a1.details.disabled, false)
-      assert.ok(a1.details.locked_until)
-      // the owner sees it in the profile
-      assert.ok((await approvals.getPinStatus({ userId: lk.id })).body.data.locked_until)
-      // the lock expires
-      await pool.query("UPDATE auth.approval_pins SET locked_until = now() - interval '1 second' WHERE user_id = $1", [lk.id])
+      assert.equal(a1.details.scope, 'caller')
+      assert.ok(new Date(a1.details.locked_until) > new Date(Date.now() + 14 * 60000))
+      assert.equal((await auditOf('approval_pin.failed', m.id)).length, 5, 'every failure, with its caller')
+      // the lock expires; the 10th failure blocks this caller, the PIN stays usable
+      await earlier()
       for (let i = 6; i <= 10; i++) expectErr(await approveAs('owner', m, 'referee1', 'lockRef', { pin: '100000' }), 403, 'OV_APPROVAL_PIN_INVALID')
+      await earlier()
+      assert.deepEqual(await approveAs('owner', m, 'referee1', 'lockRef'), ghost, 'blocked for this caller')
       p = await pinRow('lockRef')
       assert.equal(p.failed_attempts, 10)
+      assert.equal(p.disabled_at, null, 'never disabled by one caller')
+      // another scoring table: ten more wrong PINs reach the ceiling and disable it
+      const m2 = await newMatch('scorer2')
+      for (let i = 1; i <= 10; i++) {
+        if (i === 6) await earlier()
+        expectErr(await approveAs('scorer2', m2, 'referee1', 'lockRef', { pin: '100000' }), 403, 'OV_APPROVAL_PIN_INVALID')
+      }
+      p = await pinRow('lockRef')
+      assert.equal(p.failed_attempts, 20)
       assert.ok(p.disabled_at)
-      await pool.query("UPDATE auth.approval_pins SET locked_until = now() - interval '1 second' WHERE user_id = $1", [lk.id])
-      const dis = await approveAs('owner', m, 'referee1', 'lockRef')
+      await earlier()
+      // a caller with no failure of its own (an admin) meets the disabled PIN
+      const dis = await approveAs('admin', m, 'referee1', 'lockRef')
       assert.deepEqual(dis, ghost, 'disabled: the same answer as a wrong PIN')
-      const audits = await auditOf('approval_pin.locked', m.id)
-      assert.equal(audits.length, 2)
-      assert.deepEqual([audits[1].details.failures, audits[1].details.disabled], [10, true])
+      const audits = (await auditOf('approval_pin.locked')).filter((a) => a.target_user_id === lk.id)
+      assert.deepEqual(audits.map((a) => [a.actor_id, a.details.failures, a.details.disabled]), [
+        [U.owner.id, 5, false], [U.owner.id, 10, false], [U.scorer2.id, 5, false], [U.scorer2.id, 10, true]])
       assert.equal((await approvals.getPinStatus({ userId: lk.id })).body.data.disabled, true)
       // only a new PIN (with the password) clears it
       assert.equal((await approvals.setPin({ userId: lk.id, body: { password: PW, pin: '518203' } })).status, 200)
@@ -387,22 +428,25 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
     it('the failure count is rolling: a right PIN does not clear it, 30 quiet days restart it (review fix)', async () => {
       const m = await newMatch('owner')
       const rs = await user('rollRef', ['referee'], { first: 'Rolf', last: 'Roll', pin: '362915' })
+      await pool.query("UPDATE auth.approval_pins SET set_at = set_at - interval '40 days' WHERE user_id = $1", [rs.id])
       for (let i = 0; i < 4; i++) expectErr(await approveAs('owner', m, 'referee2', 'rollRef', { pin: '362916' }), 403, 'OV_APPROVAL_PIN_INVALID')
       const ok1 = await approveAs('owner', m, 'referee2', 'rollRef')
       assert.equal(ok1.status, 200, JSON.stringify(ok1.body))
       assert.equal((await pinRow('rollRef')).failed_attempts, 4, 'a right PIN keeps the count')
-      // the official's next approval: one more wrong PIN locks (5 in the window)
+      // the official's next approval: one more wrong PIN locks it for this caller (5 in the window)
       await undoAs('owner', ok1.body.data.approval.id)
       expectErr(await approveAs('owner', m, 'referee2', 'rollRef', { pin: '362916' }), 403, 'OV_APPROVAL_PIN_INVALID')
       let p = await pinRow('rollRef')
       assert.equal(p.failed_attempts, 5)
-      assert.ok(p.locked_until > new Date())
-      // 30 days without a failure: the count starts again at 1
-      await pool.query("UPDATE auth.approval_pins SET locked_until = NULL, last_failed_at = now() - interval '31 days' WHERE user_id = $1", [rs.id])
+      expectErr(await approveAs('owner', m, 'referee2', 'rollRef'), 403, 'OV_APPROVAL_PIN_INVALID')
+      // 30 days without a failure: both counts start again
+      await pool.query("UPDATE auth.approval_pins SET last_failed_at = now() - interval '31 days' WHERE user_id = $1", [rs.id])
+      await pool.query("UPDATE public.audit_log SET at = at - interval '31 days' WHERE action = 'approval_pin.failed' AND target_user_id = $1", [rs.id])
       expectErr(await approveAs('owner', m, 'referee2', 'rollRef', { pin: '362916' }), 403, 'OV_APPROVAL_PIN_INVALID')
       p = await pinRow('rollRef')
       assert.equal(p.failed_attempts, 1)
       assert.equal(p.disabled_at, null)
+      assert.equal((await approveAs('owner', m, 'referee2', 'rollRef')).status, 200)
     })
 
     it('a malformed PIN is refused before any lookup and never counted (review fix)', async () => {
@@ -537,12 +581,112 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       assert.equal(u.status, 200, JSON.stringify(u.body))
     })
 
-    it('parallel approves of one slot by two officials: exactly one wins', async () => {
+    it('parallel approves of one slot: exactly one row (one official per slot: the one the match names)', async () => {
       const m = await newMatch('owner')
-      const results = await Promise.all([approveAs('owner', m, 'referee1', 'ref1'), approveAs('owner', m, 'referee1', 'ref2')])
-      assert.deepEqual(results.map((r) => r.status).sort(), [200, 409])
-      expectErr(results.find((r) => r.status === 409), 409, 'OV_APPROVAL_SLOT_TAKEN')
+      await nameOfficial(m, 'referee1', U.ref1.email)
+      const results = await Promise.all([approveAs('owner', m, 'referee1', 'ref1', { bind: false }), approveAs('admin', m, 'referee1', 'ref1', { bind: false })])
+      assert.deepEqual(results.map((r) => r.status), [200, 200])
+      assert.deepEqual(results.map((r) => r.body.data.already).sort(), [false, true])
       assert.equal((await rowsOf(m)).length, 1)
+      // the slot taken, another official named there afterwards is refused
+      const taken = await approveAs('owner', m, 'referee1', 'ref2')
+      expectErr(taken, 409, 'OV_APPROVAL_SLOT_TAKEN')
+    })
+  })
+
+  describe('bound to the match\'s officials (rollout audit be-accounts-5, be-auth-7)', () => {
+    it('a referee slot takes only the address the match stores for that referee; the account keeps its own name', async () => {
+      // a second account with the referee role (a club code), named like the appointed 1st referee
+      const helper = await user('helperRef', ['referee'], { first: 'Anna', last: 'Muster', pin: '730592' })
+      const m = await newMatch('owner')
+      await nameOfficial(m, 'referee1', U.ref1.email)
+      const r = await approveAs('owner', m, 'referee1', 'helperRef', { bind: false })
+      expectErr(r, 403, 'OV_APPROVAL_NOT_MATCH_OFFICIAL')
+      // a wrong PIN for an address the match does not name is not counted either
+      expectErr(await approveAs('owner', m, 'referee1', 'helperRef', { bind: false, pin: '100000' }), 403, 'OV_APPROVAL_NOT_MATCH_OFFICIAL')
+      assert.equal((await pinRow('helperRef')).failed_attempts, 0)
+      assert.equal((await pinRow('helperRef')).last_used_at, null, 'its PIN was never checked')
+      // no address stored for the 2nd referee: nothing to bind to
+      expectErr(await approveAs('owner', m, 'referee2', 'ref2', { bind: false }), 409, 'OV_APPROVAL_OFFICIAL_EMAIL_MISSING')
+      assert.equal((await rowsOf(m)).length, 0)
+      // the appointed referee: the stored address in any case and spacing
+      await pool.query('UPDATE public.matches SET officials = $2 WHERE id = $1',
+        [m.id, JSON.stringify([{ role: '1st referee', firstName: 'Anna', lastName: 'Muster', email: `  ${U.ref1.email.toUpperCase()} ` }])])
+      const ok1 = await approveAs('owner', m, 'referee1', 'ref1', { bind: false })
+      assert.equal(ok1.status, 200, JSON.stringify(ok1.body))
+      assert.equal(ok1.body.data.approval.name, 'Muster Anna', 'the account\'s own name')
+      assert.deepEqual((await rowsOf(m)).map((x) => [x.slot, x.user_id, x.display_name]), [['referee1', U.ref1.id, 'Muster Anna']])
+      // the older object keyed by role and OpenBeach's spelling are read too
+      const m2 = await newMatch('owner')
+      await pool.query('UPDATE public.matches SET officials = $2 WHERE id = $1', [m2.id, JSON.stringify({ ref2: { firstName: 'Ben', lastName: 'Beispiel', email: U.ref2.email } })])
+      assert.equal((await approveAs('owner', m2, 'referee2', 'ref2', { bind: false })).status, 200)
+      const m3 = await newMatch('owner')
+      await pool.query('UPDATE public.matches SET officials = $2 WHERE id = $1', [m3.id, JSON.stringify([{ role: 'referee 1', email: U.ref1.email }])])
+      assert.equal((await approveAs('owner', m3, 'referee1', 'ref1', { bind: false })).status, 200)
+    })
+
+    it('officialAddressOf: the address of a referee slot in either officials format, else null', () => {
+      const list = [{ role: '1st referee', email: ' Ref.One@Example.CH ' }, { role: '2nd_referee', email: 'not an address' }, { role: 'scorer', email: 's@example.ch' }]
+      assert.equal(officialAddressOf(list, 'referee1'), 'ref.one@example.ch')
+      assert.equal(officialAddressOf(list, 'referee2'), null)
+      assert.equal(officialAddressOf(list, 'scorer'), null)
+      assert.equal(officialAddressOf(JSON.stringify(list), 'referee1'), 'ref.one@example.ch')
+      assert.equal(officialAddressOf({ ref2: { email: 'two@example.ch' } }, 'referee2'), 'two@example.ch')
+      for (const bad of [null, undefined, '', '{', 7, [null, 'x'], { ref1: 'a@b.ch' }]) assert.equal(officialAddressOf(bad, 'referee1'), null)
+    })
+
+    it('one caller locks an official\'s PIN for itself only and never disables it; two callers reach the ceiling', async () => {
+      const victim = await user('victimRef', ['referee'], { first: 'Vera', last: 'Opfer', pin: '846203' })
+      const rival = await user('rivalScorer', ['scorer'], { first: 'Rico', last: 'Rival' })
+      // the PIN is older than the failures moved back in time below
+      await pool.query("UPDATE auth.approval_pins SET set_at = set_at - interval '1 day' WHERE user_id = $1", [victim.id])
+      const mine = await newMatch('rivalScorer')
+      const honest = await newMatch('owner')
+      // the scorer slot names only the match's own scorer: nothing counted for anyone else
+      expectErr(await approveAs('rivalScorer', mine, 'scorer', 'victimRef', { pin: '100000' }), 403, 'OV_APPROVAL_NOT_MATCH_SCORER')
+      assert.equal((await pinRow('victimRef')).failed_attempts, 0)
+      // the rival names the official on its own match and types wrong PINs
+      for (let i = 1; i <= PIN_LOCK_EVERY; i++) expectErr(await approveAs('rivalScorer', mine, 'referee1', 'victimRef', { pin: '100000' }), 403, 'OV_APPROVAL_PIN_INVALID')
+      // locked for the rival only: its right PIN answers like a wrong one, not counted
+      expectErr(await approveAs('rivalScorer', mine, 'referee1', 'victimRef'), 403, 'OV_APPROVAL_PIN_INVALID')
+      assert.equal((await pinRow('victimRef')).failed_attempts, PIN_LOCK_EVERY)
+      // the honest scoring table approves at once
+      const ok1 = await approveAs('owner', honest, 'referee1', 'victimRef')
+      assert.equal(ok1.status, 200, JSON.stringify(ok1.body))
+      await undoAs('owner', ok1.body.data.approval.id)
+      // after the 15 minutes the rival goes on to its ceiling: blocked for it, the PIN stays usable
+      await pool.query("UPDATE public.audit_log SET at = at - interval '16 minutes' WHERE action = 'approval_pin.failed' AND target_user_id = $1", [victim.id])
+      for (let i = PIN_LOCK_EVERY + 1; i <= PIN_CALLER_MAX; i++) expectErr(await approveAs('rivalScorer', mine, 'referee1', 'victimRef', { pin: '100000' }), 403, 'OV_APPROVAL_PIN_INVALID')
+      await pool.query("UPDATE public.audit_log SET at = at - interval '16 minutes' WHERE action = 'approval_pin.failed' AND target_user_id = $1", [victim.id])
+      expectErr(await approveAs('rivalScorer', mine, 'referee1', 'victimRef', { pin: '100001' }), 403, 'OV_APPROVAL_PIN_INVALID')
+      let p = await pinRow('victimRef')
+      assert.equal(p.failed_attempts, PIN_CALLER_MAX, 'blocked: no more tries counted')
+      assert.equal(p.disabled_at, null, 'one caller never disables the PIN')
+      assert.equal(p.locked_until, null)
+      assert.equal((await approvals.getPinStatus({ userId: victim.id })).body.data.disabled, false)
+      const ok2 = await approveAs('owner', honest, 'referee1', 'victimRef')
+      assert.equal(ok2.status, 200, JSON.stringify(ok2.body))
+      await undoAs('owner', ok2.body.data.approval.id)
+      // every failure is in the audit log with its caller; the locks too
+      const failed = (await auditOf('approval_pin.failed')).filter((a) => a.target_user_id === victim.id)
+      assert.equal(failed.length, PIN_CALLER_MAX)
+      assert.ok(failed.every((a) => a.actor_id === rival.id && a.match_id === mine.id))
+      const locks = (await auditOf('approval_pin.locked')).filter((a) => a.target_user_id === victim.id)
+      assert.deepEqual(locks.map((a) => [a.details.failures, a.details.scope, a.details.disabled]), [[5, 'caller', false], [10, 'caller', false]])
+      // a second caller adds its own ten: the official's ceiling disables the PIN
+      for (let i = 1; i <= PIN_CALLER_MAX; i++) {
+        if (i === PIN_LOCK_EVERY + 1) await pool.query("UPDATE public.audit_log SET at = at - interval '16 minutes' WHERE action = 'approval_pin.failed' AND target_user_id = $1", [victim.id])
+        expectErr(await approveAs('owner', honest, 'referee1', 'victimRef', { pin: '100000' }), 403, 'OV_APPROVAL_PIN_INVALID')
+      }
+      p = await pinRow('victimRef')
+      assert.equal(p.failed_attempts, PIN_DISABLE_AT)
+      assert.ok(p.disabled_at, 'disabled by the failures of two callers')
+      assert.equal((await approvals.getPinStatus({ userId: victim.id })).body.data.disabled, true)
+      // a new PIN (with the password) starts every count again
+      assert.equal((await approvals.setPin({ userId: victim.id, body: { password: PW, pin: '529064' } })).status, 200)
+      U.victimRef.pin = '529064'
+      allPins.add('529064')
+      assert.equal((await approveAs('rivalScorer', mine, 'referee1', 'victimRef')).status, 200)
     })
   })
 
@@ -710,6 +854,7 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       const mailed = createApprovals({ pool, auth, secret: SECRET, mailer, logger })
       const official = await user('mailRef', ['referee'], { first: 'Mia', last: 'Mail', pin: '736185' })
       const m = await newMatch('owner')
+      await nameOfficial(m, 'referee1', official.email)
       const call = async (pin, slot = 'referee1') => mailed.approve({
         callerId: U.owner.id,
         access: await access.get(U.owner.id),
@@ -754,6 +899,7 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       // a failing mailer never fails the request
       const broken = createApprovals({ pool, auth, secret: SECRET, logger, mailer: { enabled: true, managerUrl: 'https://x.test', async send () { throw new Error('smtp down') } } })
       const m2 = await newMatch('owner')
+      await nameOfficial(m2, 'referee2', U.ref2.email)
       const r = await broken.approve({ callerId: U.owner.id, access: await access.get(U.owner.id), body: { external_id: m2.ext, slot: 'referee2', email: U.ref2.email, pin: U.ref2.pin, result: { sets: SETS } } })
       assert.equal(r.status, 200, JSON.stringify(r.body))
       await broken.settle()
@@ -787,7 +933,7 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       B[name] = u
       return u
     }
-    const beachApprove = async (caller, m, slot, official, { pin } = {}) => beachApp.approve({
+    const beachApprove = async (caller, m, slot, official, { pin } = {}) => (await nameOfficial(m, slot, U[official].email), beachApp).approve({
       callerId: U[caller].id,
       access: await access.get(U[caller].id),
       body: { external_id: m.ext, slot, email: U[official].email, pin: pin ?? U[official].pin, result: { sets: SETS } },
@@ -833,6 +979,7 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
 
     it('an indoor match: referee slots need referee, beach:referee is not enough', async () => {
       const m = await newMatch('owner')
+      await nameOfficial(m, 'referee1', B.bRef1.email)
       for (const app of [approvals, beachApp]) {
         const r = await app.approve({ callerId: U.owner.id, access: await access.get(U.owner.id), body: { external_id: m.ext, slot: 'referee1', email: B.bRef1.email, pin: B.bRef1.pin, result: { sets: SETS } }, ip: '203.0.113.22' })
         expectErr(r, 403, 'OV_APPROVAL_ROLE_REQUIRED')
@@ -931,6 +1078,7 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       // the beach sets' home_points / away_points are the column default 0
       const { rows: stored } = await pool.query('SELECT home_points, away_points FROM public.sets WHERE match_id = $1', [m.id])
       assert.ok(stored.every((r) => r.home_points === 0 && r.away_points === 0))
+      await nameOfficial(m, 'referee1', U.bRef1.email)
       // OpenBeach sends [index, team1, team2] (accountApproval_beach.js resultKey)
       const asCaller = async (sets) => beachApp.approve({
         callerId: U.bOwner.id,
@@ -973,6 +1121,7 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       // as OpenBeach stores a match: team1_data / team2_data, no home_team / away_team
       await pool.query(`UPDATE public.matches SET home_team = NULL, away_team = NULL,
         team1_data = '{"name":"Muster / Beispiel"}', team2_data = '{"name":"Sand / Strand"}' WHERE id = $1`, [m.id])
+      await nameOfficial(m, 'referee1', B.bRef2.email)
       const r = await mailed.approve({
         callerId: U.bOwner.id,
         access: await access.get(U.bOwner.id),

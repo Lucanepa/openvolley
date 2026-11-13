@@ -11,16 +11,40 @@ import { Button, EmptyInset, Field, FormError, Input, Notice, Row, RowList, Skel
 
 /**
  * Attributes of every approval-PIN field: masked, numeric keypad, never
- * autofilled or remembered by the browser.
+ * autofilled or remembered by the browser. Not a password field: browsers
+ * ignore autocomplete="off" there and offer to save the PIN with the e-mail
+ * beside it on the shared scoring device. A text field marked one-time-code
+ * (as EntryKit and InviteCodeForm) and kept away from password managers,
+ * masked by the WebKit / Blink text security.
  */
 export const PIN_INPUT_PROPS = Object.freeze({
-  type: 'password',
+  type: 'text',
   inputMode: 'numeric',
   pattern: '[0-9]*',
   maxLength: 6,
-  autoComplete: 'off',
+  autoComplete: 'one-time-code',
   autoCorrect: 'off',
-  spellCheck: false
+  autoCapitalize: 'none',
+  spellCheck: false,
+  style: Object.freeze({ WebkitTextSecurity: 'disc' }),
+  'data-1p-ignore': true,
+  'data-lpignore': 'true',
+  'data-bwignore': true,
+  'data-form-type': 'other'
+})
+
+/** The e-mail beside an approval PIN: no saved address offered, nothing for a password manager. */
+export const APPROVAL_EMAIL_PROPS = Object.freeze({
+  type: 'email',
+  inputMode: 'email',
+  autoComplete: 'off',
+  autoCapitalize: 'none',
+  autoCorrect: 'off',
+  spellCheck: false,
+  'data-1p-ignore': true,
+  'data-lpignore': 'true',
+  'data-bwignore': true,
+  'data-form-type': 'other'
 })
 
 const STATUS_CACHE_KEY = 'ov.approvalPinStatus'

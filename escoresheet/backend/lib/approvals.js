@@ -22,14 +22,25 @@
  * salt, the approver's email (admins see it through adminSearch only), and the
  * IP and device hashes (admins see their first 8 hex characters).
  *
- * Wrong PINs are counted per approver in auth.approval_pins under the row
- * lock of the approve transaction, and COMMITTED with the error answer. The
- * count is a rolling one: a right PIN does not clear it, it restarts only
- * after 30 days without a failure. Every 5th failure locks the PIN for 15
- * minutes, the 10th disables it until its owner sets a new one with their
- * password. A locked or disabled PIN answers exactly like a wrong one (no
- * oracle for whose address has a PIN); its owner sees the state in the
- * profile and gets an email (with a mailer).
+ * Only an official of the match may be named: a referee slot takes the
+ * address stored with the match for that referee (matches.officials, typed in
+ * the match setup; nothing is looked up or counted for another address), the
+ * scorer slot the match's creator or one of its editors. The approval keeps
+ * the approving account's own profile name next to the slot.
+ *
+ * Wrong PINs are counted per approver in auth.approval_pins and per approver
+ * and caller in the audit log (approval_pin.failed), under the row lock of
+ * the approve transaction, and COMMITTED with the error answer. The counts
+ * are rolling: a right PIN does not clear them, the approver's restarts only
+ * after 30 days without a failure, a caller's covers the last 30 days, and a
+ * new PIN restarts both. Every 5th failure of one caller locks the PIN for
+ * that caller for 15 minutes, its 10th until those 30 days pass. The
+ * approver's count is the higher ceiling: its 20th failure disables the PIN
+ * until its owner sets a new one with their password, and only when the
+ * failures came from at least two callers (one caller never disables it). A
+ * locked or disabled PIN answers exactly like a wrong one (no oracle for
+ * whose address has a PIN); its owner sees the state in the profile and gets
+ * an email (with a mailer).
  *
  * With a mailer (lib/mailer.js) the official gets an email for every approval
  * made with their PIN and when it is locked or disabled. The mails go out
@@ -64,10 +75,21 @@ export const SLOTS = Object.freeze(['referee1', 'referee2', 'scorer'])
 // The plain role of each slot; approvalRoleFor() names it in the match's sport
 const SLOT_ROLE = Object.freeze({ referee1: 'referee', referee2: 'referee', scorer: 'scorer' })
 const APPROVAL_ROLES = Object.freeze(['referee', 'scorer'])
+// Per approver and caller: every 5th wrong PIN locks it for that caller for
+// 15 minutes, the 10th until the window has passed (or a new PIN)
 export const PIN_LOCK_EVERY = 5
 export const PIN_LOCK_MINUTES = 15
-export const PIN_DISABLE_AT = 10
+export const PIN_CALLER_MAX = 10
+// Per approver, from at least two callers: the 20th disables the PIN
+export const PIN_DISABLE_AT = 20
 export const PIN_FAILURE_WINDOW_DAYS = 30
+// The match.officials entries of the referee slots (frontend
+// domain/officials.js OFFICIAL_ROLES and OpenBeach's 'referee 1' / 'referee 2';
+// `key`: the older object keyed by role)
+const SLOT_OFFICIAL = Object.freeze({
+  referee1: Object.freeze({ key: 'ref1', roles: ['1st referee', 'ref1', '1st_referee', 'referee 1'] }),
+  referee2: Object.freeze({ key: 'ref2', roles: ['2nd referee', 'ref2', '2nd_referee', 'referee 2'] })
+})
 // Who may send an approval: a scorer or referee account (the scoring table),
 // or an admin. A pending self-registered account may not, even on its own
 // test match: it could otherwise lock any official's PIN by address.
@@ -88,6 +110,26 @@ const DUMMY_UUID = '00000000-0000-0000-0000-000000000000'
 
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 const iso = (v) => (v instanceof Date ? v.toISOString() : (v ?? null))
+
+/**
+ * The address stored with the match for the official of a referee slot
+ * (matches.officials: the array of { role, email, ... }, or the older object
+ * keyed by role), lower-cased; null when there is none or it is no address.
+ */
+export function officialAddressOf (officials, slot) {
+  const spec = SLOT_OFFICIAL[slot]
+  if (!spec) return null
+  let list = officials
+  if (typeof list === 'string') {
+    try { list = JSON.parse(list) } catch { return null }
+  }
+  const entry = Array.isArray(list)
+    ? list.find((o) => isPlainObject(o) && spec.roles.includes(String(o.role ?? '').trim().toLowerCase()))
+    : (isPlainObject(list) && isPlainObject(list[spec.key]) ? list[spec.key] : null)
+  const email = typeof entry?.email === 'string' ? entry.email.trim().toLowerCase() : ''
+  return email.length <= 254 && EMAIL_RE.test(email) ? email : null
+}
+
 /**
  * An admin lookup term as typed or pasted: "ID 6F1C2A9B" (as the PDF prints
  * it), "#6F1C2A9B" or "#1234" become the bare short ID or game number;
@@ -249,7 +291,7 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
   /** The match row of external_id, locked for the transaction. */
   async function lockMatch (client, { externalId, id }) {
     const { rows: [m] } = await client.query(
-      `SELECT id, external_id, game_n, status, closed_at, created_by, sport_type::text AS sport_type,
+      `SELECT id, external_id, game_n, status, closed_at, created_by, sport_type::text AS sport_type, officials,
               ${teamNamesSql(null)}
          FROM public.matches WHERE ${externalId ? 'external_id' : 'id'} = $1 LIMIT 1 FOR UPDATE`, [externalId || id])
     return m || null
@@ -423,14 +465,37 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
     return { id: u.id, email: u.email, unconfirmed: u.unconfirmed === true, roles: rolesOf(u.roles), name: String(u.name || '').replace(/\s+/g, ' ').trim().slice(0, 160) }
   }
 
+  // The wrong PINs of the current PIN within the window, in the audit log
+  const FAILURES_SINCE_SQL = `action = 'approval_pin.failed' AND target_user_id = $1
+     AND at > greatest(now() - make_interval(days => $2), $3::timestamptz)`
+
   /**
-   * A wrong PIN on an existing current row: count it, lock or disable (spec
-   * 1.2). The count is rolling: it restarts only after PIN_FAILURE_WINDOW_DAYS
-   * without a failure, never on a right PIN, so a guesser gets at most
-   * PIN_DISABLE_AT - 1 tries per window however often the official approves.
-   * Returns { locked, disabled } when this failure locked or disabled the PIN.
+   * The wrong PINs one caller typed for this approver's current PIN in the
+   * window: { failures, paused } (paused: every PIN_LOCK_EVERY-th locks that
+   * caller for PIN_LOCK_MINUTES, PIN_CALLER_MAX blocks it for the window).
    */
-  async function countFailure (client, { approver, row, callerId, match }) {
+  async function callerFailures (client, { approver, row, callerId }) {
+    const { rows: [r] } = await client.query(
+      `SELECT count(*)::int AS n, min(at) AS first_at,
+              coalesce(max(at) > now() - make_interval(mins => $5), false) AS recent
+         FROM public.audit_log WHERE ${FAILURES_SINCE_SQL} AND actor_id = $4`,
+      [approver.id, PIN_FAILURE_WINDOW_DAYS, row.set_at, callerId, PIN_LOCK_MINUTES])
+    const failures = Number(r?.n || 0)
+    const paused = failures >= PIN_CALLER_MAX || (failures > 0 && failures % PIN_LOCK_EVERY === 0 && r.recent === true)
+    return { failures, paused, firstAt: r?.first_at ?? null }
+  }
+
+  /**
+   * A wrong PIN on an existing current row: count it for the approver and for
+   * this caller, lock it for the caller or disable it (spec 1.2). The counts
+   * are rolling: they restart only after PIN_FAILURE_WINDOW_DAYS without a
+   * failure (the approver's) or cover that window (the caller's), never on a
+   * right PIN, so one caller gets at most PIN_CALLER_MAX tries per official
+   * and window however often the official approves, and cannot disable the
+   * PIN alone. Returns { lockedUntil, disabled } when this failure locked the
+   * PIN for the caller or disabled it.
+   */
+  async function countFailure (client, { approver, row, callerId, match, before }) {
     const { rows: [r] } = await client.query(
       `UPDATE auth.approval_pins
           SET failed_attempts = CASE WHEN last_failed_at IS NULL OR last_failed_at < now() - make_interval(days => $2)
@@ -438,25 +503,37 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
               last_failed_at = now()
         WHERE user_id = $1
         RETURNING failed_attempts`, [approver.id, PIN_FAILURE_WINDOW_DAYS])
-    const failures = Number(r?.failed_attempts ?? Number(row.failed_attempts) + 1)
-    const lock = failures % PIN_LOCK_EVERY === 0
-    const disable = failures >= PIN_DISABLE_AT
+    const total = Number(r?.failed_attempts ?? Number(row.failed_attempts) + 1)
+    const failures = before.failures + 1
+    const app = auditAppOf(match)
+    await audit(client, {
+      actorId: callerId, action: 'approval_pin.failed', targetUserId: approver.id, matchId: match.id, details: { failures }, app
+    })
+    const lock = failures % PIN_LOCK_EVERY === 0 || failures >= PIN_CALLER_MAX
+    let disable = false
+    if (total >= PIN_DISABLE_AT) {
+      const { rows: [c] } = await client.query(
+        `SELECT count(DISTINCT actor_id)::int AS n FROM public.audit_log WHERE ${FAILURES_SINCE_SQL}`,
+        [approver.id, PIN_FAILURE_WINDOW_DAYS, row.set_at])
+      disable = Number(c?.n || 0) >= 2
+    }
     if (!lock && !disable) return null
-    const { rows: [l] } = await client.query(
-      `UPDATE auth.approval_pins
-          SET locked_until = CASE WHEN $2 THEN now() + make_interval(mins => $4) ELSE locked_until END,
-              disabled_at = CASE WHEN $3 THEN coalesce(disabled_at, now()) ELSE disabled_at END
-        WHERE user_id = $1
-        RETURNING locked_until`, [approver.id, lock, disable, PIN_LOCK_MINUTES])
+    if (disable) await client.query('UPDATE auth.approval_pins SET disabled_at = coalesce(disabled_at, now()) WHERE user_id = $1', [approver.id])
+    // Until when this caller may not try again: 15 minutes, or (blocked) until
+    // its oldest failure in the window leaves it
+    const first = before.firstAt ? new Date(before.firstAt).getTime() : Date.now()
+    const lockedUntil = disable
+      ? null
+      : new Date(failures >= PIN_CALLER_MAX ? first + PIN_FAILURE_WINDOW_DAYS * 86400000 : Date.now() + PIN_LOCK_MINUTES * 60000)
     await audit(client, {
       actorId: callerId,
       action: 'approval_pin.locked',
       targetUserId: approver.id,
       matchId: match.id,
-      details: { failures, locked_until: iso(l?.locked_until), disabled: disable },
-      app: auditAppOf(match)
+      details: { failures, total, locked_until: iso(lockedUntil), disabled: disable, scope: disable ? 'all' : 'caller' },
+      app
     })
-    return { lockedUntil: l?.locked_until ?? null, disabled: disable }
+    return { lockedUntil, disabled: disable }
   }
 
   /** "Home – Away" and the game number of a match row, for the mails. */
@@ -496,21 +573,43 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
         return fail(409, 'OV_RESULT_NOT_SYNCED', 'The result on the server differs: sync and try again', { server: triplesOf(currentKey) })
       }
 
-      // 9. Email and PIN. Both lookups always run; verifyPin always MACs once.
-      // A locked or disabled PIN answers like a wrong one and is not counted:
-      // only its owner learns the state (profile, mail).
+      // 9. Only an official of this match is named: nothing is looked up or
+      // counted for any other address. A referee slot takes the address
+      // stored with the match for that referee (typed in the match setup), so
+      // the approving account is the appointed official's, by its confirmed
+      // address, whatever name it gives itself.
+      if (v.slot !== 'scorer') {
+        const stored = officialAddressOf(m.officials, v.slot)
+        if (!stored) {
+          return fail(409, 'OV_APPROVAL_OFFICIAL_EMAIL_MISSING', 'The match has no email for this referee: enter it in the match setup first')
+        }
+        if (stored !== v.email) {
+          return fail(403, 'OV_APPROVAL_NOT_MATCH_OFFICIAL', 'This email is not the one entered for this official of the match')
+        }
+      }
+
+      // 10. Email and PIN. The lookups always run; verifyPin always MACs once.
+      // The scorer slot is the match's creator or an editor (an unknown
+      // address answers the same). A locked or disabled PIN, or one locked
+      // for this caller, answers like a wrong one and is not counted: only its
+      // owner learns the state (profile, mail).
       const approver = await findApprover(client, v.email)
+      const ownerOrEditor = !!approver && await isOwnerOrEditor(client, m, approver.id)
+      if (v.slot === 'scorer' && !ownerOrEditor) {
+        return fail(403, 'OV_APPROVAL_NOT_MATCH_SCORER', 'The scorer must be the account that scores this match, or one of its editors')
+      }
       const { rows: [pinRow] } = await client.query(
-        `SELECT key_id, salt, mac, failed_attempts, disabled_at,
+        `SELECT key_id, salt, mac, set_at, failed_attempts, disabled_at,
                 CASE WHEN locked_until > now() THEN ceil(extract(epoch FROM locked_until - now()))::int END AS retry_after_sec
            FROM auth.approval_pins WHERE user_id = $1 FOR UPDATE`, [approver?.id ?? DUMMY_UUID])
       const current = approver && isCurrentPinRow(pinRow) ? pinRow : null
-      const paused = !!current && (current.disabled_at != null || current.retry_after_sec > 0)
+      const before = await callerFailures(client, { approver: approver ?? { id: DUMMY_UUID }, row: current ?? {}, callerId })
+      const paused = !!current && (current.disabled_at != null || current.retry_after_sec > 0 || before.paused)
       const row = paused ? null : current
       const good = verifyPin(keys.pinKey, row, approver?.id ?? null, v.pin)
       if (!good) {
         if (row) {
-          const locked = await countFailure(client, { approver, row, callerId, match: m })
+          const locked = await countFailure(client, { approver, row, callerId, match: m, before })
           if (locked) {
             after.push(() => sendLater('approval_pin_locked', approver.email, mailLang, {
               game: gameText(m),
@@ -523,25 +622,23 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
       }
       await client.query('UPDATE auth.approval_pins SET last_used_at = now() WHERE user_id = $1', [approver.id])
 
-      // 10. Eligibility, only after a correct PIN
+      // 11. Eligibility, only after a correct PIN
       if (approver.unconfirmed) return EMAIL_UNCONFIRMED()
       // the role of the slot in the match's sport (beach:referee on a beach match)
       const role = approvalRoleFor(v.slot, m.sport_type)
       if (!approver.roles.includes(role)) {
         return fail(403, 'OV_APPROVAL_ROLE_REQUIRED', `This account does not have the ${role} role`, { role })
       }
-      const ownerOrEditor = await isOwnerOrEditor(client, m, approver.id)
-      if (v.slot === 'scorer' && !ownerOrEditor) {
-        return fail(403, 'OV_APPROVAL_NOT_MATCH_SCORER', 'The scorer must be the account that scores this match, or one of its editors')
-      }
       // A referee is never the scoring side of the same match: not the
       // account that sends the approval, not its creator, not an editor.
       if (v.slot !== 'scorer' && (ownerOrEditor || approver.id === callerId)) {
         return fail(403, 'OV_APPROVAL_SCORER_NOT_REFEREE', 'The account that scores this match cannot approve as a referee')
       }
+      // The account's own name is what the slot keeps (display_name), never
+      // the name typed for the official
       if (!approver.name) return fail(409, 'OV_APPROVAL_NAME_REQUIRED', 'The approving account has no name in its profile')
 
-      // 11. Slots of this match
+      // 12. Slots of this match
       const { rows: active } = await client.query(
         `SELECT ${APPROVAL_COLUMNS} FROM public.match_approvals WHERE match_id = $1 AND revoked_at IS NULL`, [m.id])
       const currentHash = resultHash(currentKey)
@@ -566,7 +663,7 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
         await revokeStale(holder)
       }
 
-      // 12. The approval
+      // 13. The approval
       await client.query("SELECT set_config('ov.user_id', $1, true)", [callerId])
       await client.query('SAVEPOINT approve_insert')
       let inserted

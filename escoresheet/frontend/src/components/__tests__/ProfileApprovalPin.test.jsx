@@ -151,10 +151,11 @@ describe('set, change, remove', () => {
     fireEvent.click(await screen.findByRole('button', { name: en.approval.pin.set }))
     expect(within(dialog()).getByText(en.approval.pin.setTitle)).toBeInTheDocument()
     const pin = field(en.approval.pin.newPin)
-    expect(pin).toHaveAttribute('type', 'password')
+    // no password field: a browser would offer to save it (rollout audit gap-fe-unread-dialogs-1)
+    expect(pin).toHaveAttribute('type', 'text')
+    expect(pin).toHaveAttribute('autocomplete', 'one-time-code')
     expect(pin).toHaveAttribute('inputmode', 'numeric')
     expect(pin).toHaveAttribute('maxlength', '6')
-    expect(pin).toHaveAttribute('autocomplete', 'off')
     expect(field(en.approval.pin.currentPassword)).toHaveAttribute('autocomplete', 'current-password')
 
     // no password yet

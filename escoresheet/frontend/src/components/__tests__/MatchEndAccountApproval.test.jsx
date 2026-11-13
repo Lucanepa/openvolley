@@ -131,6 +131,7 @@ vi.mock('../../db/db', () => {
 
 import MatchEnd from '../MatchEnd'
 import AccountApprovalDialog from '../AccountApprovalDialog'
+import { PIN_INPUT_PROPS } from '../auth/ApprovalPinSection'
 import { StrictMode } from 'react'
 
 const SEED = 'match_1_acc'
@@ -304,9 +305,7 @@ describe('MatchEnd: approve with an account', () => {
     // the scorer slot starts with the signed-in account's email
     expect(within(dialog).getByLabelText(en.approval.email)).toHaveValue('scorer@club.ch')
     const pinField = within(dialog).getByLabelText(en.approval.pinLabel)
-    expect(pinField).toHaveAttribute('type', 'password')
     expect(pinField).toHaveAttribute('inputmode', 'numeric')
-    expect(pinField).toHaveAttribute('autocomplete', 'off')
     fireEvent.change(pinField, { target: { value: PIN } })
     fireEvent.click(within(dialog).getByTestId('account-approval-submit'))
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(en.approval.errors.pinInvalid)
@@ -316,6 +315,51 @@ describe('MatchEnd: approve with an account', () => {
     expect(seen).not.toContain(PIN)
     expect(localStorage.getItem('ov.approvalEmails') || '').not.toContain(PIN)
     expect(JSON.stringify([...store.tables.matches.values()])).not.toContain(PIN)
+  })
+
+  it('the PIN is no password field and the form offers no saved address: no browser saves the official\'s PIN with their e-mail (rollout audit gap-fe-unread-dialogs-1)', async () => {
+    seed({ scorerSignature: 'data:s', ref2Signature: 'data:r2' })
+    render(<MatchEnd matchId={1} />)
+    const dialog = await openApprove('ref1')
+    expect(dialog.querySelector('input[type="password"]')).toBeNull()
+    const pinField = within(dialog).getByLabelText(en.approval.pinLabel)
+    expect(pinField).toHaveAttribute('type', 'text')
+    expect(pinField).toHaveAttribute('inputmode', 'numeric')
+    expect(pinField).toHaveAttribute('autocomplete', 'one-time-code')
+    // masked on screen (jsdom drops the WebKit property, the props carry it)
+    expect(PIN_INPUT_PROPS.style).toEqual({ WebkitTextSecurity: 'disc' })
+    const email = within(dialog).getByLabelText(en.approval.email)
+    expect(email).toHaveAttribute('autocomplete', 'off')
+    for (const field of [pinField, email]) {
+      expect(field).toHaveAttribute('data-1p-ignore')
+      expect(field).toHaveAttribute('data-lpignore', 'true')
+      expect(field).toHaveAttribute('data-bwignore')
+    }
+  })
+
+  it('a referee\'s address is the one the match setup stored, never one remembered on the device (rollout audit be-accounts-5)', async () => {
+    localStorage.setItem('ov.approvalEmails', JSON.stringify([{ k: 'muster anna', e: 'helper@example.ch' }]))
+    seed({ scorerSignature: 'data:s', ref2Signature: 'data:r2' })
+    render(<MatchEnd matchId={1} />)
+    let dialog = await openApprove('ref1')
+    expect(within(dialog).getByLabelText(en.approval.email)).toHaveValue('')
+    expect(dialog).toHaveTextContent(en.approval.errors.officialEmailMissing)
+    fireEvent.click(within(dialog).getByRole('button', { name: en.common.cancel }))
+    cleanup()
+    seed({
+      scorerSignature: 'data:s',
+      ref2Signature: 'data:r2',
+      officials: [{ role: '1st referee', firstName: 'Anna', lastName: 'Muster', email: 'anna@example.ch' }, { role: '2nd referee', firstName: 'Ben', lastName: 'Beispiel' }]
+    })
+    api.approve = vi.fn(async () => ({ data: null, error: { code: 'OV_APPROVAL_NOT_MATCH_OFFICIAL', status: 403 }, status: 403 }))
+    render(<MatchEnd matchId={1} />)
+    dialog = await openApprove('ref1')
+    expect(within(dialog).getByLabelText(en.approval.email)).toHaveValue('anna@example.ch')
+    expect(dialog).not.toHaveTextContent(en.approval.errors.officialEmailMissing)
+    fireEvent.change(within(dialog).getByLabelText(en.approval.pinLabel), { target: { value: PIN } })
+    fireEvent.click(within(dialog).getByTestId('account-approval-submit'))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(en.approval.errors.notMatchOfficial)
+    localStorage.removeItem('ov.approvalEmails')
   })
 
   it('Approve stays disabled until the PIN has 4 to 6 digits (a slip is never sent; review fix)', async () => {
@@ -429,6 +473,35 @@ describe('MatchEnd: approve with an account', () => {
     fireEvent.click(confirmButton())
     await waitFor(() => expect(alerts.showAlert).toHaveBeenCalledWith(en.approval.revalidateFailed, 'warning'))
     expect([...store.tables.sync_queue.values()].some(j => j.payload?.status === 'approved')).toBe(false)
+  })
+
+  it('an approval the server cannot confirm prints as pending, only after the scorer agrees (rollout audit logic-matchend-sheet-7)', async () => {
+    const approved = { referee1: record('referee1') }
+    seed({ scorerSignature: 'data:s', ref2Signature: 'data:r2', accountApprovals: approved })
+    // the mount refresh answers; at Confirm and approve the server is unreachable
+    api.list = vi.fn()
+      .mockResolvedValueOnce({ data: { match: {}, approvals: [approved.referee1] }, error: null, status: 200 })
+      .mockResolvedValue({ data: null, error: { code: 'OV_NETWORK', status: 0 }, status: 0 })
+    window.open = vi.fn(() => null)
+    URL.createObjectURL = vi.fn(() => 'blob:x')
+    asked.fn = vi.fn(async () => false)
+    render(<MatchEnd matchId={1} />)
+    await waitFor(() => expect(confirmButton()).toBeEnabled())
+    fireEvent.click(confirmButton())
+    await waitFor(() => expect(asked.fn).toHaveBeenCalledTimes(1))
+    expect(asked.fn.mock.calls[0][0]).toMatchObject({ title: en.approval.unconfirmedTitle, confirmLabel: en.approval.unconfirmedApprove })
+    // declined: nothing approved, the record kept
+    expect([...store.tables.sync_queue.values()].some(j => j.payload?.status === 'approved')).toBe(false)
+    expect(store.tables.matches.get(1).accountApprovals).toEqual(approved)
+    // agreed: the slot prints as pending (no record for the PDF) and the summary leaves it out
+    asked.fn = vi.fn(async () => true)
+    await waitFor(() => expect(confirmButton()).toBeEnabled())
+    fireEvent.click(confirmButton())
+    fireEvent.click(await findButton(en.matchEnd.export.approveWithoutPdf))
+    await waitFor(() => expect([...store.tables.sync_queue.values()].some(j => j.payload?.status === 'approved')).toBe(true))
+    expect(store.tables.matches.get(1).accountApprovals ?? null).toBeNull()
+    const job = [...store.tables.sync_queue.values()].find(j => j.payload?.status === 'approved')
+    expect(job.payload.approval.accounts).toEqual({ ref1: null, ref2: null, scorer: null })
   })
 
   it('a stale approval in a slot signed by hand never blocks Confirm (review fix)', async () => {
