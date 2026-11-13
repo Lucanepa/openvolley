@@ -760,8 +760,8 @@ export function createClubs ({ pool, audit, access = null, createInvite = null, 
   }
 
   /**
-   * The scorer / referee roles club `clubId` gave `userId` and nothing else
-   * did, taken away when the account is in no club any more (inside
+   * The scorer / referee roles a club gave `userId` (`clubId`, or another club
+   * it left before) and nothing else did, taken away when the account is in no club any more (inside
    * removeMember's transaction; audited account.roles). Returns the roles
    * removed. Where a role came from is read from the audit: invite.redeem of
    * a code (its club), account.request_approve (the club of the part) and
@@ -775,24 +775,26 @@ export function createClubs ({ pool, audit, access = null, createInvite = null, 
     const before = Array.isArray(prof?.roles) ? prof.roles : []
     const held = CLUB_INVITE_ROLES.filter((r) => before.includes(r))
     if (!held.length) return []
+    // a role any club gave (a club's code or a club's approval) and nothing
+    // else gave: with no club left, no club explains it any more
     const { rows } = await client.query(
-      `SELECT r.role FROM unnest($3::text[]) AS r(role)
+      `SELECT r.role FROM unnest($2::text[]) AS r(role)
         WHERE EXISTS (SELECT 1 FROM public.audit_log a
                        WHERE a.target_user_id = $1
                          AND ((a.action = 'invite.redeem' AND a.details ->> 'role' = r.role
-                               AND EXISTS (SELECT 1 FROM public.invite_codes i WHERE i.id::text = a.details ->> 'invite_id' AND i.club_id::text = $2::text))
-                           OR (a.action = 'account.request_approve' AND a.details ->> 'kind' = r.role AND a.details ->> 'club_id' = $2::text)))
+                               AND EXISTS (SELECT 1 FROM public.invite_codes i WHERE i.id::text = a.details ->> 'invite_id' AND i.club_id IS NOT NULL))
+                           OR (a.action = 'account.request_approve' AND a.details ->> 'kind' = r.role AND a.details ->> 'club_id' IS NOT NULL)))
           AND NOT EXISTS (SELECT 1 FROM public.audit_log a
                            WHERE a.target_user_id = $1
                              AND ((a.action = 'invite.redeem' AND a.details ->> 'role' = r.role
-                                   AND NOT EXISTS (SELECT 1 FROM public.invite_codes i WHERE i.id::text = a.details ->> 'invite_id' AND i.club_id::text = $2::text))
+                                   AND NOT EXISTS (SELECT 1 FROM public.invite_codes i WHERE i.id::text = a.details ->> 'invite_id' AND i.club_id IS NOT NULL))
                                OR (a.action = 'account.request_approve' AND a.details ->> 'kind' = r.role
-                                   AND a.details ->> 'club_id' IS DISTINCT FROM $2::text)
+                                   AND a.details ->> 'club_id' IS NULL)
                                OR (a.action = 'account.roles' AND coalesce(a.details -> 'added', '[]'::jsonb) ? r.role
                                    AND NOT EXISTS (SELECT 1 FROM public.audit_log q
                                                     WHERE q.action = 'account.request_approve' AND q.target_user_id = $1 AND q.at = a.at
-                                                      AND q.details ->> 'kind' = r.role AND q.details ->> 'club_id' = $2::text))))`,
-      [userId, clubId, held])
+                                                      AND q.details ->> 'kind' = r.role AND q.details ->> 'club_id' IS NOT NULL))))`,
+      [userId, held])
     const removed = rows.map((r) => r.role)
     if (!removed.length) return []
     const after = before.filter((r) => !removed.includes(r))

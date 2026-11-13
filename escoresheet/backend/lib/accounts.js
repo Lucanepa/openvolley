@@ -410,9 +410,14 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
    * make it (be-accounts-6): an admin, or for a club's scorer / referee code
    * or team link a manager of that club. A code of a deleted account
    * (created_by NULL), of an admin no more, or of a club manager taken off the
-   * club is dead, and listed as revoked.
+   * club is dead, and listed as revoked. So is a code of an account an admin
+   * deactivated, while it stays deactivated.
    */
-  const creatorMaySql = (i) => `(${i}.created_by IS NOT NULL AND (
+  const creatorMaySql = (i) => `(${i}.created_by IS NOT NULL
+    AND EXISTS (SELECT 1 FROM auth.users cu WHERE cu.id = ${i}.created_by
+                   AND (to_jsonb(cu) ->> 'deleted_at') IS NULL
+                   AND ((to_jsonb(cu) ->> 'banned_until') IS NULL OR (to_jsonb(cu) ->> 'banned_until')::timestamptz <= now()))
+    AND (
       EXISTS (SELECT 1 FROM public.profiles cp WHERE cp.user_id = ${i}.created_by
                  AND ${hasRoleSql('cp.roles', `ARRAY[${ADMIN_ROLES.map((r) => `'${r}'`).join(', ')}]`)})
       OR (${i}.club_id IS NOT NULL AND ${i}.role IN ('scorer', 'referee', 'team_manager')
@@ -482,7 +487,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
       // about the code and does not use it up.
       if ((await confirmationOf(client, userId))?.unconfirmed) throw abort(EMAIL_UNCONFIRMED())
       const { rows: [inv] } = await client.query(
-        `SELECT i.id, i.label, i.role, i.sport, i.max_uses, i.uses, i.revoked_at, to_jsonb(i) ->> 'club_id' AS club_id,
+        `SELECT i.id, i.label, i.role, i.sport, i.max_uses, i.uses, i.revoked_at, i.created_at, to_jsonb(i) ->> 'club_id' AS club_id,
                 to_jsonb(i) ->> 'team_id' AS team_id, to_jsonb(i) ->> 'invited_email' AS invited_email,
                 (i.expires_at IS NOT NULL AND i.expires_at <= now()) AS expired, ${creatorMaySql('i')} AS creator_may
            FROM public.invite_codes i WHERE i.code_hash = $1 FOR UPDATE OF i`, [hashInviteCode(normalized)])
@@ -569,6 +574,13 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     // taken off it (lib/teams.js removeManager); the same link does not bring it back
     const { rows: [again] } = await client.query('SELECT 1 FROM public.invite_redemptions WHERE invite_id = $1 AND user_id = $2', [inv.id, userId])
     if (again) throw abort(INVITE_REMOVED())
+    // nor does another link of the team made before it was taken off; a link
+    // made after that is the club asking it back
+    const { rows: [removed] } = await client.query(
+      `SELECT 1 FROM public.audit_log
+        WHERE action = 'team.managers' AND target_user_id = $1 AND details ->> 'team_id' = $2::text
+          AND details ->> 'removed' = 'true' AND at >= $3 LIMIT 1`, [userId, team.id, inv.created_at])
+    if (removed) throw abort(INVITE_REMOVED())
     if (inv.max_uses != null && inv.uses >= inv.max_uses) throw abort(fail(409, 'OV_INVITE_USED_UP', 'This invite code has been used up'))
     await client.query('INSERT INTO public.invite_redemptions (invite_id, user_id) VALUES ($1, $2)', [inv.id, userId])
     await client.query('UPDATE public.invite_codes SET uses = uses + 1 WHERE id = $1', [inv.id])

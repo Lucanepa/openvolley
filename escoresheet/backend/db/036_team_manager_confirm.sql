@@ -97,7 +97,10 @@ WITH team_since AS (
                       THEN (a.details ->> 'club_id')::uuid END,
                  a.at
             FROM public.audit_log a
-           WHERE a.action = 'account.request_approve' AND a.details ->> 'kind' = 'team_manager' AND a.target_user_id IS NOT NULL) x
+           WHERE a.target_user_id IS NOT NULL
+             AND ((a.action = 'account.request_approve' AND a.details ->> 'kind' = 'team_manager')
+               -- a team link redeemed, also of a team taken off the club since
+               OR (a.action = 'invite.redeem' AND a.details ->> 'role' = 'team_manager'))) x
    WHERE x.user_id IS NOT NULL AND x.club_id IS NOT NULL
    GROUP BY x.user_id, x.club_id
 ), gone AS (
