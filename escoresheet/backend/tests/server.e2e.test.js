@@ -262,6 +262,7 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
     assert.equal(h.json.db, 'ok')
     assert.equal(h.json.catalog.ok, true)
     assert.equal(h.json.catalog.tables, 8) // ALLOWED_TABLES (beach_competition_matches is server-side only)
+    assert.equal(h.json.droppedColumns.total, 0) // no write column the database lacks
     assert.equal(h.json.sentinel, 'ok')
     assert.equal(h.json.floor, 'ok')
     assert.equal(h.json.storageWritable, true)
