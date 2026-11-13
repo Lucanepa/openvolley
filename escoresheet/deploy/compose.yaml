@@ -2,12 +2,22 @@
 #
 #   cd /opt/openvolley && docker compose up -d          # project name is fixed below
 #
-# Four services, two private networks, zero published ports:
+# Four services, one network per tunnel origin, zero published ports:
 #
 #   Cloudflare edge ──(outbound QUIC/HTTP2 from ov-tunnel)──> ov-tunnel
 #        ov-tunnel ──ov-edge──> ov-backend:8080 (HTTP + WS upgrade)
-#        ov-tunnel ──ov-edge──> ov-pkgs:80 (get.openvolley.app, static, read-only)
+#        ov-tunnel ──ov-pkgs-edge (internal)──> ov-pkgs:80 (get.openvolley.app, static, read-only)
+#        ov-tunnel ──ov-helpdesk──> freescout:80 (the helpdesk stack, not part of this kit)
 #       ov-backend ──ov-internal (internal: true, no egress)──> ov-postgres:5432
+#
+# Only the tunnel reaches ov-backend: the download host and the helpdesk sit
+# on networks of their own with the tunnel, so neither can talk to the backend
+# or claim a client address (TRUST_PROXY_FROM is the tunnel's fixed address).
+#
+# ov-tunnel is in the compose profile "tunnel": only the production host's
+# .env sets COMPOSE_PROFILES=tunnel, so a plain `up -d` on a fallback or test
+# host starts no second connector (Cloudflare would balance between two
+# databases).
 #
 # Nothing here is a Coolify resource and nothing joins Coolify's networks or
 # carries Traefik routing labels, so Coolify/Traefik can neither route to it
@@ -17,11 +27,14 @@
 
 name: openvolley
 
+# Sized for a match day: the relay folds its per-message lines into one
+# summary a minute (server.js relaySummary), so 10 x 20 MB per container keep
+# several busy days; `docker logs --since` reads them after an incident.
 x-logging: &logging
   driver: json-file
   options:
-    max-size: "10m"
-    max-file: "5"
+    max-size: "20m"
+    max-file: "10"
 
 services:
   ov-postgres:
@@ -66,6 +79,13 @@ services:
       - max_connections=20
       - -c
       - log_min_duration_statement=500
+      # A slow or failed statement is logged without its bind parameters:
+      # those are rosters, birth dates, signatures and e-mail addresses, and
+      # the container log is outside the deletion and export paths
+      - -c
+      - log_parameter_max_length=0
+      - -c
+      - log_parameter_max_length_on_error=0
       - -c
       - timezone=UTC
       - -c
@@ -89,7 +109,8 @@ services:
     security_opt: ["no-new-privileges:true"]
     mem_limit: 256m
     memswap_limit: 256m
-    cpus: 0.5
+    # OV_PG_CPUS in .env: the peak load test asks for 1 on a big match day
+    cpus: ${OV_PG_CPUS:-0.5}
     pids_limit: 128
     shm_size: 64m
     oom_score_adj: 500
@@ -113,6 +134,11 @@ services:
     pull_policy: never
     restart: unless-stopped
     user: node
+    # docker-init as PID 1: the image's healthcheck watchdog can then kill a
+    # hung server (an event loop that no longer answers /health/live), the
+    # container exits and `restart: unless-stopped` starts it again. Plain
+    # Docker never restarts a container that is only unhealthy.
+    init: true
     # Same mount guard as ov-postgres, for the storage filesystem. Docker
     # resolves a bind mount when the container starts: a backend started while
     # the loop fs was missing would keep the bare (immutable) mountpoint even
@@ -140,6 +166,15 @@ services:
       # cf-connecting-ip only from the tunnel (its fixed address on ov-edge):
       # the other containers on ov-edge cannot set their own client address
       TRUST_PROXY_FROM: ${TRUST_PROXY_FROM:-172.30.250.2/32}
+      # pg connections of the backend (max_connections=20 above keeps room for
+      # backups and psql); the peak load test asks for 10 on a big match day
+      PG_POOL_MAX: ${PG_POOL_MAX:-5}
+      # New sockets are told "relay busy" above this share of the heap limit
+      OV_ADMIT_HEAP_PCT: ${OV_ADMIT_HEAP_PCT:-85}
+      # Consecutive failed /health/live checks (15 s apart) before the
+      # healthcheck kills a hung server; 0 = never
+      OV_WATCHDOG_FAILURES: ${OV_WATCHDOG_FAILURES:-4}
+      OV_PID_FILE: /tmp/ov-backend.pid
       IS_CLOUD: "1"
       OV_MIN_MATCHES: ${OV_MIN_MATCHES:-0}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
@@ -184,8 +219,10 @@ services:
       # crash-looped on exit 137 while part of the heap was garbage. With
       # 256 MB of old space V8 collects first; buffers, sockets and code keep
       # the rest of the 512 MB (at the national peak about 110-130 MB of the
-      # backend's memory was outside V8's heap).
-      NODE_OPTIONS: --max-old-space-size=256
+      # backend's memory was outside V8's heap). OV_NODE_HEAP_MB and
+      # OV_BACKEND_MEM in .env: raise them together (about half of the memory
+      # limit for the heap).
+      NODE_OPTIONS: --max-old-space-size=${OV_NODE_HEAP_MB:-256}
     volumes:
       - type: bind
         source: ${OV_STORAGE_HOST_DIR:?set OV_STORAGE_HOST_DIR in .env}
@@ -206,14 +243,17 @@ services:
     # 512m since 2026-10-27 (owner): at 256m the national peak load test's
     # backend died 4-6 times in set 1 on memory outside V8's heap, and the
     # host has RAM to spare. CPU stays at 1.
-    mem_limit: 512m
-    memswap_limit: 512m
-    cpus: 1.0
+    mem_limit: ${OV_BACKEND_MEM:-512m}
+    memswap_limit: ${OV_BACKEND_MEM:-512m}
+    # OV_BACKEND_CPUS in .env: the peak load test asks for 2 on a big match day
+    cpus: ${OV_BACKEND_CPUS:-1.0}
     pids_limit: 256
     oom_score_adj: 500
     # Healthcheck (GET /health/live, no DB, plus the storage sentinel) comes
     # from the image; it has no fallback, so a pre-wiring image never turns
-    # healthy and ov-tunnel never starts in front of it.
+    # healthy and ov-tunnel never starts in front of it. Its watchdog kills a
+    # hung server (OV_WATCHDOG_FAILURES, init: true above). Readiness is
+    # GET /health (the monitoring, RUNBOOK-hetzner.md "Monitoring").
     depends_on:
       ov-postgres:
         condition: service_healthy
@@ -224,10 +264,14 @@ services:
 
   ov-tunnel:
     image: ${OV_CLOUDFLARED_IMAGE:-cloudflare/cloudflared:2026.10.3}
+    # Started only with COMPOSE_PROFILES=tunnel (the production host's .env)
+    profiles: [tunnel]
     restart: unless-stopped
     command: ["tunnel", "--config", "/etc/cloudflared/config.yml", "run"]
     environment:
-      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
+      # Only the production host's .env holds it; a host without it starts no
+      # connector even with the profile on (cloudflared refuses an empty token)
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
     volumes:
       - type: bind
         source: ./cloudflared/config.yml
@@ -252,6 +296,8 @@ services:
       ov-edge:
         # fixed: the backend trusts cf-connecting-ip from this address only (TRUST_PROXY_FROM)
         ipv4_address: 172.30.250.2
+      ov-pkgs-edge: {}
+      ov-helpdesk: {}
     logging: *logging
     labels:
       traefik.enable: "false"
@@ -301,7 +347,7 @@ services:
       timeout: 5s
       start_period: 5s
       retries: 3
-    networks: [ov-edge]
+    networks: [ov-pkgs-edge]
     logging: *logging
     labels:
       traefik.enable: "false"
@@ -311,10 +357,17 @@ networks:
   # Backend <-> Postgres only. internal: no route out, no published ports.
   ov-internal:
     internal: true
-  # Tunnel <-> backend, plus outbound egress (Cloudflare edge for the tunnel,
-  # Resend/SMTP for the backend). Nothing listens on the host. A fixed subnet:
-  # the tunnel's address in it is the backend's TRUST_PROXY_FROM.
+  # Tunnel <-> backend only, plus outbound egress (Cloudflare edge for the
+  # tunnel, Resend/SMTP for the backend). Nothing listens on the host. A fixed
+  # subnet: the tunnel's address in it is the backend's TRUST_PROXY_FROM.
   ov-edge:
     ipam:
       config:
         - subnet: 172.30.250.0/24
+  # Tunnel <-> ov-pkgs. internal: the static download host needs no egress.
+  ov-pkgs-edge:
+    internal: true
+  # Tunnel <-> the FreeScout helpdesk (its own stack joins this network as
+  # `freescout`, the name cloudflared/config.yml routes to). Never ov-edge.
+  ov-helpdesk:
+    name: openvolley_ov-helpdesk

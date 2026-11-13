@@ -16,7 +16,8 @@ Postgres on one Linux VM, reachable only through a Cloudflare Tunnel.
   commands on `ov-vps`). Moved with [RUNBOOK-move-to-own-vm.md](RUNBOOK-move-to-own-vm.md).
 - **16.10.–09.11.2026: lenovoserver**, the owner's home server, still the build machine. Its
   stack in `/opt/openvolley` is stopped: a fallback for one week, then removed. Never start its
-  `ov-tunnel` while the VPS runs (Cloudflare would balance between two databases).
+  `ov-tunnel` while the VPS runs (Cloudflare would balance between two databases): its `.env`
+  holds no `TUNNEL_TOKEN` and no `COMPOSE_PROFILES=tunnel`, so `up -d` there starts no tunnel.
 - **Before (Option A):** co-tenant on the Hetzner VM `lucanepa-prod` (`ssh hetzner`) next to
   another production stack. That VPS now belongs to another owner:
   OpenVolley is the owner's private project and must **never be deployed there again**.
@@ -35,14 +36,15 @@ network, and carries `traefik.enable=false`.
         ^  outbound-only QUIC/HTTP2 connections opened by cloudflared (no inbound port, no IP allowlist)
         |
  +-- compose project "openvolley" (any VM with Docker) -----------------------------------+
- |  ov-tunnel    cloudflare/cloudflared:2026.5.2   128 MB, 0.5 CPU, read-only, no caps    |
- |      | network ov-edge (egress allowed)                                                 |
+ |  ov-tunnel    cloudflare/cloudflared  (profile "tunnel") 128 MB, 0.5 CPU, read-only    |
+ |      | network ov-edge (egress allowed): tunnel + backend only                          |
+ |      | network ov-pkgs-edge (internal): tunnel + ov-pkgs; ov-helpdesk: tunnel + helpdesk |
  |  ov-backend   openvolley-backend:<git-sha>      256 MB, 1 CPU, pids 256, read-only,    |
  |      |        :8080 HTTP + WebSocket upgrade     user node, no caps, tmpfs /tmp         |
  |      | network ov-internal (internal: true, no egress)                                  |
  |  ov-postgres  postgres:17.11-alpine             256 MB, 0.5 CPU, pids 128, read-only,  |
  |               uid 70, refuses to start without /ovpg/.ovdata                            |
- |  ov-pkgs      caddy:2.11.7-alpine (ov-edge only) 64 MB, 0.25 CPU, read-only, nobody,   |
+ |  ov-pkgs      caddy:2.11.7-alpine (ov-pkgs-edge) 64 MB, 0.25 CPU, read-only, nobody,   |
  |               get.openvolley.app: static APT + F-Droid repos from /data/openvolley/pkgs |
  +----------------------------------------------------------------------------------------+
    /data/openvolley/pg       8 GB loop ext4  (.ovdata sentinel, data/ = PGDATA)
@@ -73,7 +75,8 @@ network, and carries `traefik.enable=false`.
 | `tests/bump-cask.test.sh` | any machine | Offline tests of `bump-cask.sh` |
 | `tests/publish-desktop.test.sh` | any machine with Node, `dpkg-deb` and tauri-cli >= 2.12 | Offline tests of `--desktop` (OpenVolley and `--app beach`) with a throwaway key: signing, verification, `latest.json`, staging, rollback and leak guards, the per-app APT hold-back, GitHub's "Latest" and the OpenBeach fallback (stubbed `gh`), APT names, the Android certificate per app id, `install.sh` and the landing page |
 | `Dockerfile.backend` (+ `.dockerignore`) | build machine | Packages `escoresheet/backend`: `node:22.23.3-bookworm-slim`, `npm ci --omit=dev`, user `node`, HEALTHCHECK on `/health/live` + storage sentinel (no fallback) |
-| `build-image.sh` | lenovoserver | Builds `openvolley-backend:<git-sha>`, refusing a backend tree without the self-host contract; `--ship <host>` streams it to the VM, keeps a `.tar.gz` for rollbacks and prunes to the newest 5 (`prune-images.sh`); `--ship local` does the archive and the prune with `sudo` when the VM is lenovoserver itself |
+| `build-image.sh` | build machine (lenovoserver) | Builds `openvolley-backend:<git-sha>` from the committed tree (`git archive HEAD`, allowlist `Dockerfile.backend.dockerignore`), refusing a backend tree without the self-host contract; `--ship <host>` streams it to the VM, keeps a `.tar.gz` for rollbacks and prunes to the newest 5 (`prune-images.sh`); `--ship local` does the archive and the prune with `sudo` when the VM is lenovoserver itself |
+| `check-edge.sh` | any machine, before go-live and after each Cloudflare/DNS change | Read-only: CAA (only pki.goog, letsencrypt.org, ssl.com + iodef), DMARC p=quarantine/reject with rua, TLS 1.0/1.1 refused and 1.2 accepted, http->https redirect and HSTS on backend., app., get. (RUNBOOK-hetzner.md "Edge and mail domain") |
 | `apply-roles.sh` | VM, root | `roles.sql` from stdin with `OV_APP_PW` read from `.env` (never exported into a shell), then checks the `ov_app` login |
 | `restore-db.sh` | VM, root | Restores a decrypted dump into a **fresh** database, all-or-nothing (`--single-transaction`), count check, rolls back on any failure, resets the backup count guard |
 | `host-prep.sh` | VM, as root | Idempotent host setup: loop filesystems, sentinels, `chattr +i`, fstab (`nofail`), dirs, `ovbackup` user, backup units. `--check` is read-only |
@@ -92,7 +95,10 @@ These names are shared with the self-host wiring in `escoresheet/backend` and mu
 | `STATUS_DIR` | `/var/lib/openvolley-status` | Read-only; contains `last_backup` (ISO timestamp) written by the backup job |
 | `PORT` | `8080` | HTTP **and** WebSocket. `server.js` attaches `ws` to the HTTP server (`new WebSocketServer({ server })`), so there is no separate WS port and the tunnel needs one origin only |
 | `PUBLIC_ORIGINS` | from `.env` | Comma-separated CORS origins |
-| `TRUST_PROXY` | `cloudflare` | Client IP from `cf-connecting-ip`. Safe because the tunnel is the only way in: no host port exists that could be hit with a forged header |
+| `TRUST_PROXY` | `cloudflare` | Client IP from `cf-connecting-ip`, honoured only from `TRUST_PROXY_FROM` |
+| `TRUST_PROXY_FROM` | `172.30.250.2/32` (`.env` may override) | The tunnel's fixed address on `ov-edge`. No host port exists, and only the tunnel shares `ov-edge` with the backend; the backend refuses to start in cloud mode with `TRUST_PROXY` but no `TRUST_PROXY_FROM` |
+| `PG_POOL_MAX`, `OV_NODE_HEAP_MB`, `OV_BACKEND_MEM`, `OV_BACKEND_CPUS`, `OV_PG_CPUS` | from `.env` (defaults 5, 256, 512m, 1.0, 0.5) | Capacity; raise them as the load test below says (env.example "Capacity") |
+| `OV_ADMIT_HEAP_PCT`, `OV_WATCHDOG_FAILURES`, `OV_PID_FILE` | 85, 4, `/tmp/ov-backend.pid` | New sockets get "relay busy" (1013, retried) above 85% of the heap limit; the healthcheck kills a server that failed 4 `/health/live` checks in a row (`init: true`), compose restarts it |
 | `RESEND_API_KEY`, `RESEND_FROM`, `CONTACT_EMAIL` | from `.env` | Unchanged from today. (`REOPEN_PASSWORD_HASH` was replaced by the admin reopen of db/007 and is no longer read.) |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`, `MANAGER_URL` | from `.env`, all optional | Account emails (backend README "Account emails"): reset and confirmation links. Without `SMTP_HOST`/`SMTP_PASS`: none, reset answers 503, sign-up confirms at once. The support form `/api/contact` uses the account too (its only recipient is `CONTACT_EMAIL`). `/api/match/send-info` uses Resend only |
 | `IS_CLOUD` | `1` | Existing switch for HSTS/CSP in `server.js` |
@@ -179,6 +185,14 @@ about 100 simultaneous matches, raise for that day and measure again with the pe
 
 A national rollout (404 matches at the peak) needs these limits plus sharding by association
 (several backends behind the tunnel), not one bigger container.
+
+All of these come from `.env` (env.example "Capacity"; `OV_NODE_HEAP_MB`, `OV_BACKEND_MEM`,
+`OV_BACKEND_CPUS`, `OV_PG_CPUS`, `PG_POOL_MAX`), so a scale-up is an `.env` edit and an
+`up -d`, not a kit change. Production (`ov-vps`, 2 vCPU / 4 GB, also running the helpdesk) has
+not been measured: the sum of the CPU limits must stay within the host's, and the peak harness
+must run there on a weekday before the first official Saturday (RUNBOOK-hetzner.md
+"Monitoring"). Above `OV_ADMIT_HEAP_PCT` (85%) of the heap limit, new sockets are told "relay
+busy" (close 1013, the apps retry) instead of the process running out of memory.
 
 The relay's memory for match data (stored bundles and live states) follows the heap limit: 35% of
 it, about 106 MB at `--max-old-space-size=256` and 260 MB at 700, half of that per address. A long

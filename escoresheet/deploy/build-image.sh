@@ -9,7 +9,15 @@
 # (default 5; the tag in .env is always kept), and records the tag in
 # ${OV_OPS_DIR:-~/ov-ops}/shipped-<ssh-host>.
 #
-# --ship local: production runs on this machine (lenovoserver since 16.10.2026;
+# Production is the VPS ov-vps: build-image.sh --ship ov-vps (RUNBOOK-hetzner.md).
+#
+# The build context is the COMMITTED escoresheet/backend (git archive HEAD),
+# never the working directory: files git ignores (certificates, .dev.vars,
+# local data) cannot reach the image. --allow-dirty builds the working tree
+# instead, tagged <sha>-dirty, for local tests only (never shipped).
+#
+# --ship local: production on the build machine itself (lenovoserver from
+# 16.10.2026 until the move to ov-vps on 09.11.2026; now only a fallback;
 # no root ssh into itself). The image is already in the local Docker, so it is
 # not loaded again: the gzipped copy is written to /opt/openvolley/images/
 # (checked with gzip -t before it gets its name) and pruned there, both with
@@ -78,11 +86,21 @@ if (( ${#missing[@]} )); then
 fi
 TAG="openvolley-backend:${SHA}"
 
-echo "[build-image] building ${TAG} (${PLATFORM})"
+# Build context: the committed backend tree (git archive), so ignored and
+# untracked files of the build machine never reach the image. A dirty test
+# build (--allow-dirty, never shipped) uses the working tree.
+CONTEXT="$BACKEND"
+if [[ "$SHA" != *-dirty ]]; then
+  CONTEXT=$(mktemp -d "${TMPDIR:-/tmp}/ov-build-context.XXXXXX")
+  trap 'rm -rf "$CONTEXT"' EXIT
+  git -C "$REPO" archive --format=tar HEAD:escoresheet/backend | tar -x -C "$CONTEXT"
+fi
+
+echo "[build-image] building ${TAG} (${PLATFORM}) from ${CONTEXT}"
 docker build --platform "$PLATFORM" \
   -f "$KIT_DIR/Dockerfile.backend" \
   --build-arg OV_REVISION="$SHA" \
-  -t "$TAG" "$BACKEND"
+  -t "$TAG" "$CONTEXT"
 
 if [[ "$SHIP" == local ]]; then
   ARCHIVE="/opt/openvolley/images/openvolley-backend-${SHA}.tar.gz"

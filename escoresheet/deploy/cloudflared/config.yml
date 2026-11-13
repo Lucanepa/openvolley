@@ -8,8 +8,10 @@
 #   docker run --rm -v "$PWD/cloudflared:/etc/cloudflared:ro" \
 #     cloudflare/cloudflared:2026.10.3 tunnel --config /etc/cloudflared/config.yml ingress validate
 #
-# The backend hostnames reach ov-backend and get.openvolley.app reaches ov-pkgs,
-# both on the compose network "ov-edge". No host port is involved.
+# The backend hostnames reach ov-backend on the compose network "ov-edge",
+# get.openvolley.app reaches ov-pkgs on "ov-pkgs-edge" and support. reaches the
+# helpdesk on "ov-helpdesk": one network per origin, only the tunnel on all of
+# them. No host port is involved.
 no-autoupdate: true
 originRequest:
   connectTimeout: 10s
@@ -27,8 +29,8 @@ ingress:
   # Public download host (APT + F-Droid repos, install page): ov-pkgs, static.
   - hostname: get.openvolley.app
     service: http://ov-pkgs:80
-  # FreeScout helpdesk (~/stacks/freescout on lenovoserver, joins the ov-edge network as
-  # `freescout`; not part of this kit). A 502 while that stack is down.
+  # FreeScout helpdesk (its own stack on the production host, joins the network
+  # openvolley_ov-helpdesk as `freescout`, never ov-edge; not part of this kit). A 502 while that stack is down.
   - hostname: support.openvolley.app
     service: http://freescout:80
   - service: http_status:404
