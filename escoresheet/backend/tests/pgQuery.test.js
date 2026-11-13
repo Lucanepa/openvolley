@@ -493,12 +493,85 @@ describe('pgQuery on Postgres', { skip: SKIP_PG }, () => {
       assert.deepEqual(r.changes.map(c => c.eventType), ['INSERT', 'INSERT'])
     })
 
-    it('unknown write columns are an error (PGRST204) and nothing is written', async () => {
-      const ext = uniq('X')
-      const r = await q('matches', 'insert', { data: [{ external_id: ext }, { external_id: `${ext}b`, team_a: {} }] }, W)
-      assert.equal(r.body.error.code, 'PGRST204')
-      const n = (await raw.query('SELECT count(*)::int AS n FROM matches WHERE external_id LIKE $1', [`${ext}%`])).rows[0].n
-      assert.equal(n, 0)
+    // x-rollout-ops-9: an app newer than the database (its migration not
+    // applied yet) wrote a column the table lacks; the whole row was refused
+    // (PGRST204) and a refused match insert held back every write of the match
+    describe('a write column the table does not have', () => {
+      const dropLines = () => logger.lines.filter(l => l.includes('unknown column dropped'))
+
+      it('is left out with a warning, counted, and the rest of the row is written', async () => {
+        const ext = uniq('X')
+        const before = db.droppedColumns().columns['matches.team_a'] ?? 0
+        const r = await q('matches', 'insert', { data: [{ external_id: ext }, { external_id: `${ext}b`, team_a: {} }], returning: 'external_id' }, W)
+        assert.equal(r.status, 200, JSON.stringify(r.body))
+        assert.deepEqual(r.body.data.map(x => x.external_id), [ext, `${ext}b`])
+        const n = (await raw.query('SELECT count(*)::int AS n FROM matches WHERE external_id LIKE $1', [`${ext}%`])).rows[0].n
+        assert.equal(n, 2)
+        assert.equal(db.droppedColumns().columns['matches.team_a'], before + 1)
+        assert.ok(db.droppedColumns().total >= 1)
+        assert.ok(dropLines().some(l => l.includes('matches') && l.includes('team_a')), logger.lines.join('\n'))
+      })
+
+      it('in an update and an upsert the known columns are written', async () => {
+        const m = await newMatch({ status: 'live' })
+        let r = await q('matches', 'update', { data: { status: 'ended', team_a: { name: 'x' } }, filters: [eq('id', m.id)], returning: 'status' }, W)
+        assert.equal(r.status, 200, JSON.stringify(r.body))
+        assert.deepEqual(r.body.data, [{ status: 'ended' }])
+        r = await q('matches', 'upsert', { data: { external_id: m.external_id, status: 'live', team_b: {} }, onConflict: 'external_id', returning: 'status' }, W)
+        assert.equal(r.status, 200, JSON.stringify(r.body))
+        assert.deepEqual(r.body.data, [{ status: 'live' }])
+      })
+
+      it('is logged once a minute per column, counted every time', async () => {
+        const quiet = quietLogger()
+        const own = createPgQuery({ pool: db.pool, logger: quiet })
+        const ext = uniq('XL')
+        for (const i of [1, 2, 3]) {
+          const r = await own.runQuery({ table: 'matches', action: 'insert', params: { data: { external_id: `${ext}-${i}`, team_a: {} } } }, W)
+          assert.equal(r.status, 200, JSON.stringify(r.body))
+        }
+        assert.equal(own.droppedColumns().columns['matches.team_a'], 3)
+        assert.equal(quiet.lines.filter(l => l.includes('unknown column dropped')).length, 1)
+      })
+
+      it('a row or an update with no column of the table left is still refused (PGRST204), nothing written', async () => {
+        const ext = uniq('XN')
+        let r = await q('matches', 'insert', { data: [{ external_id: ext }, { team_a: {} }] }, W)
+        assert.equal(r.body.error.code, 'PGRST204')
+        const n = (await raw.query('SELECT count(*)::int AS n FROM matches WHERE external_id = $1', [ext])).rows[0].n
+        assert.equal(n, 0)
+        const m = await newMatch({ status: 'live' })
+        r = await q('matches', 'update', { data: { team_a: { name: 'x' } }, filters: [eq('id', m.id)] }, W)
+        assert.equal(r.body.error.code, 'PGRST204')
+      })
+
+      it('a key that cannot be a column name is refused, and filters and onConflict keep refusing unknown columns', async () => {
+        const ext = uniq('XK')
+        let r = await q('matches', 'insert', { data: { external_id: ext, 'team a': 1 } }, W)
+        assert.equal(r.body.error.code, 'PGRST204')
+        r = await q('matches', 'update', { data: { status: 'x' }, filters: [eq('team_a', 1)] }, W)
+        assert.equal(r.status, 400)
+        r = await q('matches', 'upsert', { data: { external_id: ext }, onConflict: 'team_a' }, W)
+        assert.equal(r.body.error.code, 'PGRST204')
+        const n = (await raw.query('SELECT count(*)::int AS n FROM matches WHERE external_id = $1', [ext])).rows[0].n
+        assert.equal(n, 0)
+      })
+
+      it('a column added after startup is written by the first write (the catalog is read again first)', async () => {
+        const fresh = createPgQuery({ connectionString: tdb.url, logger: quietLogger(), catalogRefreshMinMs: 0 })
+        try {
+          assert.equal((await fresh.runQuery({ table: 'beach_competition_matches', action: 'select', params: { limit: 0 } })).status, 200)
+          await raw.query('ALTER TABLE beach_competition_matches ADD COLUMN court_label text')
+          const ext = uniq('BC')
+          const r = await fresh.runQuery({ table: 'beach_competition_matches', action: 'insert', params: { data: { external_id: ext, court_label: 'Court 2' }, returning: 'court_label' } }, { internal: true })
+          assert.equal(r.status, 200, JSON.stringify(r.body))
+          assert.deepEqual(r.body.data, [{ court_label: 'Court 2' }])
+          assert.equal(fresh.droppedColumns().total, 0)
+        } finally {
+          await raw.query('ALTER TABLE beach_competition_matches DROP COLUMN IF EXISTS court_label')
+          await fresh.close()
+        }
+      })
     })
 
     it('bad data shapes are refused', async () => {
