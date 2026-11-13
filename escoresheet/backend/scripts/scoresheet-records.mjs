@@ -1,19 +1,24 @@
 #!/usr/bin/env node
 /**
- * Deploy step, right after db/033_match_scoresheets.sql: record the PDF of
- * every match closed before it (lib/scoresheets.js recordOldPdfs).
+ * Deploy step, after db/033_match_scoresheets.sql and the backend image that
+ * reads it: record the PDF of every match closed before it
+ * (lib/scoresheets.js recordOldPdfs).
  *
  * Those matches have their approval's PDF on disk without a
  * public.match_scoresheets row, so the server finds it by its name (the
- * match's day folder, game number, owner record; only a file stored before
- * db/033 ran). Recorded, it is held as every later match's PDF: the
- * closed-match rules apply by the record, other matches of the same name
- * never reach it, and deleting its uploader's account no longer hides it
- * from the Scoresheets tab. A file that the names serve for two closed
- * matches is left as it is (counted as shared; the server logs each such
- * match when it serves it). Idempotent; dry run unless --apply. Run it with
- * the new backend image and db/033 in (it can run while the server does),
- * and again any time.
+ * match's day folder, game number, owner record: its creator, closing
+ * account or an editor it had at the close). Recorded, it is held as every
+ * later match's PDF: the closed-match rules apply by the record, other
+ * matches of the same name never reach it, and deleting its uploader's
+ * account no longer hides it from the Scoresheets tab. A file that the
+ * names serve for two closed matches is left as it is (counted as shared;
+ * the server logs each such match when it serves it). A match whose only
+ * file of its name is from an editor added after the close is counted as
+ * such and left: record it by hand once the scorer is confirmed (README
+ * "Files stored before this change"). Idempotent; dry run unless --apply. It
+ * can run while the server does, and again any time: after a database
+ * restore from an older dump, or after an older backend image served for a
+ * while, it records the PDFs stored since that have no row.
  *
  * Usage (in the backend container, with its DATABASE_URL and STORAGE_ROOT / STORAGE_DIR;
  * from the production folder of the compose file):
@@ -50,9 +55,9 @@ async function main () {
   try {
     const apply = args.includes('--apply')
     const r = await createScoresheets({ pool, storage, accounts: null }).recordOldPdfs({ apply })
-    console.log(`db/033 ran ${r.started_at}; PDFs stored since are recorded by the server.`)
     console.log(`${r.matches} closed matches without a recorded PDF: ${r.recorded} ${apply ? 'recorded' : 'to record (dry run: --apply records them)'}, ` +
-      `${r.shared} shared with another match (left by name), ${r.none} without a PDF, ${r.unknown} unreadable`)
+      `${r.shared} shared with another match (left by name), ${r.none} without a PDF, ` +
+      `${r.lateEditor} only with a file of an editor added after the close (left: README), ${r.unknown} unreadable`)
     return 0
   } finally {
     await pool.end()

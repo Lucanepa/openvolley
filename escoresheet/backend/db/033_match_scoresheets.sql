@@ -16,23 +16,21 @@
 -- approval's). The manager's Scoresheets tab and the final mail serve only
 -- these files of the match (the newest); a match without a row (files stored
 -- before this file ran) falls back to the file names, and then only to files
--- stored before this file ran (public.match_scoresheets_start) that have no
--- row and whose storage owner created, edits or closed the match.
--- scripts/scoresheet-records.mjs --apply, right after this file, writes the
--- row of the file each match closed before this file ran has by the names
--- (its time kept; idempotent). From then on a closed match is served and
--- held by its row; the names stay only for one the step could not record (a
--- file the names give to two closed matches), and the server logs each.
---
--- public.match_scoresheets_start: one row, when this file first ran. From
--- then on the backend records every PDF it stores, or refuses it, so a file
--- without a row is from before that time or no match's: its row failed, or
--- went with its match (ON DELETE CASCADE; the app's sync queue deletes open
--- and test matches). Such a newer file is never a match's by its name, and
--- the step above never records it.
+-- that have no row (also none with a NULL match_id) and whose storage owner
+-- created the match, closed it or was its editor before the close.
+-- scripts/scoresheet-records.mjs --apply, a deploy step after this file and
+-- the new backend, writes the row of the file each match closed before this
+-- file ran has by the names (its time kept; idempotent). From then on a
+-- closed match is served and held by its row; the names stay only for one
+-- the step could not record (a file the names give to two closed matches),
+-- and the server logs each.
 --
 --   path       the object's key in the bucket ({day}/game{n}_k{hex}.pdf,
 --              beach/{day}/game{n}_{seed}.pdf); one match per file
+--   match_id   NULL once the match is deleted (the app's sync queue deletes
+--              open and test matches): the row stays, so that file is never
+--              another match's by its name (a delete must not hand a file
+--              stored for one match to a closed match of the same name)
 --   stored_by  the account that stored it; NULL once that account is deleted
 --              (the file stays the match's record, like matches.created_by)
 --   sha256     of the stored bytes: a resent job after the close (the same
@@ -50,21 +48,23 @@
 -- apply-roles.sh after this file as with every migration all the same.
 -- Not on the /api/db allowlist: only lib/scoresheets.js reads and writes it.
 --
--- Idempotent, adds two tables only (and the first_stored_at column to a
--- table an earlier draft of this file made without it: NULL there, not the
--- time this file ran, which would open the 10 minutes again); a re-run keeps
--- the start time of the first run. Deploy: the backend image FIRST, then
--- right after it 033 and apply-roles.sh (until 033 is in, the new image
--- answers PDF uploads with 503 and the apps send them again), then
--- scripts/scoresheet-records.mjs in the backend container (a dry run, then
--- --apply). Not the other way round: a PDF the old image stores after 033
--- ran has no row and is newer than the start, so the Scoresheets tab and
--- the final mail would not find it (README "Files stored before this change").
+-- Idempotent, adds one table only. On a database where an earlier draft of
+-- this file ran: first_stored_at is added (NULL there, not the time this
+-- file ran, which would open the 10 minutes again), match_id becomes
+-- nullable with ON DELETE SET NULL (it was CASCADE), and that draft's
+-- public.match_scoresheets_start (one row, no longer read) is dropped.
+-- Deploy as every migration: this file and apply-roles.sh before or with
+-- the backend that reads the table (a backend without the table answers PDF
+-- uploads with 503 and the apps send them again; PDFs the previous backend
+-- stores after this file ran have no row and are found by their names, the
+-- step records them). Then, in the new backend's container,
+-- scripts/scoresheet-paths.mjs and scripts/scoresheet-records.mjs (each a
+-- dry run first, then --apply; README "Files stored before this change").
 BEGIN;
 
 CREATE TABLE IF NOT EXISTS public.match_scoresheets (
   path       text        PRIMARY KEY CHECK (length(path) BETWEEN 1 AND 1024),
-  match_id   uuid        NOT NULL REFERENCES public.matches(id) ON DELETE CASCADE,
+  match_id   uuid        REFERENCES public.matches(id) ON DELETE SET NULL,
   stored_by  uuid        REFERENCES auth.users(id) ON DELETE SET NULL,
   sha256     text        NOT NULL CHECK (sha256 ~ '^[0-9a-f]{64}$'),
   size       integer     NOT NULL CHECK (size >= 0),
@@ -75,16 +75,22 @@ CREATE TABLE IF NOT EXISTS public.match_scoresheets (
 ALTER TABLE public.match_scoresheets ADD COLUMN IF NOT EXISTS first_stored_at timestamptz;
 ALTER TABLE public.match_scoresheets ALTER COLUMN first_stored_at SET DEFAULT now();
 
+-- an earlier draft: match_id NOT NULL ... ON DELETE CASCADE
+ALTER TABLE public.match_scoresheets ALTER COLUMN match_id DROP NOT NULL;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                  WHERE conname = 'match_scoresheets_match_id_fkey' AND conrelid = 'public.match_scoresheets'::regclass
+                    AND confdeltype = 'n') THEN
+    ALTER TABLE public.match_scoresheets DROP CONSTRAINT IF EXISTS match_scoresheets_match_id_fkey;
+    ALTER TABLE public.match_scoresheets ADD CONSTRAINT match_scoresheets_match_id_fkey
+      FOREIGN KEY (match_id) REFERENCES public.matches(id) ON DELETE SET NULL;
+  END IF;
+END $$;
+DROP TABLE IF EXISTS public.match_scoresheets_start;
+
 CREATE INDEX IF NOT EXISTS match_scoresheets_match_idx ON public.match_scoresheets (match_id, stored_at DESC);
 
--- One row: since when every stored PDF is recorded
-CREATE TABLE IF NOT EXISTS public.match_scoresheets_start (
-  id          boolean     PRIMARY KEY DEFAULT true CHECK (id),
-  started_at  timestamptz NOT NULL DEFAULT now()
-);
-INSERT INTO public.match_scoresheets_start (id) VALUES (true) ON CONFLICT (id) DO NOTHING;
-
-COMMENT ON TABLE public.match_scoresheets IS 'The scoresheet PDFs the server accepted for each match: who stored them, when, their SHA-256 (db/033).';
-COMMENT ON TABLE public.match_scoresheets_start IS 'One row: when db/033 first ran; a PDF stored since then without a match_scoresheets row is no match''s (db/033).';
+COMMENT ON TABLE public.match_scoresheets IS 'The scoresheet PDFs the server accepted for each match (match_id NULL: its match was deleted): who stored them, when, their SHA-256 (db/033).';
 
 COMMIT;

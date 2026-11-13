@@ -455,7 +455,7 @@ To rotate the password: set it in Migadu, then run the script again (it replaces
 | Situation | Action |
 |---|---|
 | Before go-live (step 10) | `docker compose down`. Nothing public changed. |
-| Bad backend release | Put the previous tag (from `/opt/openvolley/DEPLOYED.log`) back into `OV_BACKEND_IMAGE` (with `sudo`), check `sudo docker compose --project-directory /opt/openvolley config --images` shows it (if not, the shell exports `OV_BACKEND_IMAGE`: see Shell hygiene), and `sudo docker compose --project-directory /opt/openvolley up -d ov-backend`. If the image was pruned: `sudo sh -c 'gunzip -c /opt/openvolley/images/openvolley-backend-<sha>.tar.gz \| docker load'` first. Same database and storage, so sessions survive and no data moves. If the release changed the schema, first restore the pre-deploy dump into a side container (as `restore-test.sh` does) and compare. |
+| Bad backend release | Put the previous tag (from `/opt/openvolley/DEPLOYED.log`) back into `OV_BACKEND_IMAGE` (with `sudo`), check `sudo docker compose --project-directory /opt/openvolley config --images` shows it (if not, the shell exports `OV_BACKEND_IMAGE`: see Shell hygiene), and `sudo docker compose --project-directory /opt/openvolley up -d ov-backend`. If the image was pruned: `sudo sh -c 'gunzip -c /opt/openvolley/images/openvolley-backend-<sha>.tar.gz \| docker load'` first. Same database and storage, so sessions survive and no data moves. If the release changed the schema, first restore the pre-deploy dump into a side container (as `restore-test.sh` does) and compare. Back on the newer image after a rollback to one from before `db/033`: `sudo docker compose --project-directory /opt/openvolley exec ov-backend node scripts/scoresheet-records.mjs --apply` (the PDFs the older image stored have no `match_scoresheets` record; backend README "Files stored before this change"). |
 | Data corruption | "Restore the database" below. |
 | lenovoserver lost | Same compose on another host (never the club's Hetzner VPS) with the **same `TUNNEL_TOKEN`** and the newest dump from lenovoserver's borg backup on the NAS (RUNBOOK-move-to-own-vm.md, steps 3-9, restoring that dump instead of reading from `old`; it needs the backup private key). No DNS change. Make sure the lenovoserver `ov-tunnel` is stopped, or Cloudflare splits traffic between both. |
 | Anything on a match day | LAN mode / Pi / desktop build from `pre-selfhost`. Scoring never depends on the cloud. |
@@ -484,6 +484,8 @@ lenovo$ sudo /opt/openvolley/restore-db.sh --counts /data/openvolley/pg/import/d
 lenovo$ sudo /opt/openvolley/apply-roles.sh < escoresheet/backend/db/roles.sql
 lenovo$ env | grep -E '^(OV_|TUNNEL_TOKEN)=' ; sudo docker compose --project-directory /opt/openvolley up -d && sudo docker compose --project-directory /opt/openvolley ps
 lenovo$ sudo docker compose --project-directory /opt/openvolley exec ov-backend node -e 'fetch("http://127.0.0.1:8080/health").then(async r=>console.log(r.status, await r.text()))'
+# 4b. scoresheet PDFs stored after the dump have lost their match_scoresheets record (db/033): record them again
+lenovo$ sudo docker compose --project-directory /opt/openvolley exec ov-backend node scripts/scoresheet-records.mjs --apply
 # 5. backups back on (restore-db.sh touched counts.reset: the first run takes the restored counts as baseline)
 lenovo$ sudo systemctl start openvolley-backup.service && journalctl -u openvolley-backup -n 5 --no-pager
 lenovo$ sudo systemctl enable --now openvolley-backup.timer openvolley-backup-files.timer

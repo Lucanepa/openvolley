@@ -1143,6 +1143,28 @@ describe('remove and delete-account clean-up', () => {
     assert.equal(await exists(path.join(outside, 'secret.json')), true)
   })
 
+  it('removeTrusted (operator tool): an object, or a folder with all in it, whoever owns them; the owner records go too', async () => {
+    const s = make(opts)
+    await upSheet(s, U1, '2026-10-06')
+    await upSheet(s, U1, `${pdf}/x.json`)
+    await upSheet(s, U2, `${pdf}/a/b.json`)
+    await upSheet(s, U2, sheet)
+    assert.equal((await ownerRecords()).length, 4)
+    await fs.symlink(path.join(outside, 'secret.json'), path.join(root, 'scoresheets', pdf, 'a', 'link.json'))
+    assert.deepEqual(await s.removeTrusted({ bucket: 'scoresheets', path: '2026-10-06' }), { objectsRemoved: 1, bytesRemoved: 11, foldersRemoved: 0 })
+    // the symlink stays (never followed): its folder with it
+    assert.deepEqual(await s.removeTrusted({ bucket: 'scoresheets', path: pdf }), { objectsRemoved: 2, bytesRemoved: 22, foldersRemoved: 0 })
+    assert.equal(await exists(path.join(outside, 'secret.json')), true)
+    await fs.unlink(path.join(root, 'scoresheets', pdf, 'a', 'link.json'))
+    assert.deepEqual(await s.removeTrusted({ bucket: 'scoresheets', path: pdf }), { objectsRemoved: 0, bytesRemoved: 0, foldersRemoved: 2 })
+    assert.equal(await exists(path.join(root, 'scoresheets', pdf)), false)
+    assert.equal(await exists(path.join(root, 'scoresheets', '2026-10-06')), false)
+    assert.equal((await ownerRecords()).length, 1, 'only the record of the object left')
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: sheet }), [U2])
+    assert.deepEqual(await s.removeTrusted({ bucket: 'scoresheets', path: '2026-10-07' }), { objectsRemoved: 0, bytesRemoved: 0, foldersRemoved: 0 })
+    await rejectsWith(s.removeTrusted({ bucket: 'scoresheets', path: '../x' }), 400)
+  })
+
   it('deleteUserData: the account\'s backups and owner entries go; scoresheets stay as unowned records', async () => {
     const s = make(opts)
     await upBackup(s, U1, 'backups/backup_g1/a.json')

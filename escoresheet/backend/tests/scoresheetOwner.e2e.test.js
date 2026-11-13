@@ -10,7 +10,7 @@
  */
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, utimesSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, utimesSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash, randomBytes } from 'node:crypto'
@@ -27,6 +27,7 @@ const key = () => `k${randomBytes(16).toString('hex')}`
 const pdfBytes = (label) => Buffer.from(`%PDF-1.4\n% ${label}\n%%EOF\n`)
 const execFileP = promisify(execFile)
 const RECORDS_SCRIPT = fileURLToPath(new URL('../scripts/scoresheet-records.mjs', import.meta.url))
+const PATHS_SCRIPT = fileURLToPath(new URL('../scripts/scoresheet-paths.mjs', import.meta.url))
 
 describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
   let db, srv, sql, smtp, storageRoot, statusDir
@@ -63,6 +64,9 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
   /** A JSON file as the apps send it (the final JSON, OpenBeach's coin toss copy). */
   const uploadJson = (user, path, json) =>
     api(srv.base, '/api/storage/upload', { token: user.token, body: { bucket: 'scoresheets', path, fileBase64: Buffer.from(JSON.stringify(json)).toString('base64'), contentType: 'application/json', upsert: true } })
+  /** Any upload to the bucket. */
+  const put = (user, path, buf, contentType) =>
+    api(srv.base, '/api/storage/upload', { token: user.token, body: { bucket: 'scoresheets', path, fileBase64: buf.toString('base64'), contentType, upsert: true } })
   /** The caller's own download: { status, code, text } (a missing file answers 200 with a code). */
   const download = async (user, path) => {
     const r = await api(srv.base, '/api/storage/download', { token: user.token, body: { bucket: 'scoresheets', path } })
@@ -127,7 +131,8 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
    * Another match of closed match `x`'s name that the same scorer writes (a
    * test match of its game number, or an open match whose external id is the
    * game number) takes a new file in x's folder and is then deleted (/api/db,
-   * as the app's sync queue): the file's record goes with it. The file's path.
+   * as the app's sync queue): the file's record stays, without its match.
+   * The file's path.
    */
   async function storeForDeletedMatch (x, kind) {
     const ext = kind === 'test match' ? `match_${Date.now()}_${randomBytes(3).toString('hex')}` : String(x.n)
@@ -139,9 +144,12 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
     assert.equal(up.status, 200, up.text)
     const del = await deleteMatch(users.ivan, other)
     assert.equal(del.status, 200, del.text)
-    assert.equal((await sql.query('SELECT 1 FROM public.match_scoresheets WHERE path = $1', [fp])).rows.length, 0, 'the record went with its match')
+    assert.deepEqual((await sql.query('SELECT match_id FROM public.match_scoresheets WHERE path = $1', [fp])).rows, [{ match_id: null }], 'the record stays without its match')
     return fp
   }
+  /** scripts/scoresheet-records.mjs (dry run without `--apply`): its stdout. */
+  const runRecords = async (...args) =>
+    (await execFileP(process.execPath, [RECORDS_SCRIPT, ...args], { env: { ...process.env, DATABASE_URL: db.url, STORAGE_ROOT: storageRoot } })).stdout
   /** A file put on disk as an older server stored it: no db/033 record, the owner record of its uploader. */
   function plantFile (path, buf, owners, mtimeSec) {
     const full = join(storageRoot, 'scoresheets', ...path.split('/'))
@@ -159,8 +167,6 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
     db = await provisionDatabase()
     sql = new pg.Client({ connectionString: db.url })
     await sql.connect()
-    // db/033 runs as this suite starts (a copy of PG_TEST_TEMPLATE can carry an older start)
-    await sql.query('UPDATE public.match_scoresheets_start SET started_at = now()')
     storageRoot = mkdtempSync(join(tmpdir(), 'ov-sheet-owner-storage-'))
     writeFileSync(join(storageRoot, '.ovdata'), '')
     statusDir = mkdtempSync(join(tmpdir(), 'ov-sheet-owner-status-'))
@@ -680,10 +686,9 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
     assert.equal((await readAs(users.bcm, b.id)).body, pdfBytes('beach approved before db/033 2:0').toString())
   })
 
-  // The record of a file goes with its match (ON DELETE CASCADE), and the
-  // app's sync queue deletes an open or test match with an ordinary /api/db
-  // delete. A file stored for another match of the closed match's name is
-  // then on disk without a record: it must not become the closed match's PDF.
+  // The app's sync queue deletes an open or test match with an ordinary
+  // /api/db delete. The record of a file stored for it stays (match_id NULL):
+  // the file must not become the PDF of a closed match of the same name.
   it('a match closed before db/033: a file stored for another match of its name stays out once that match is deleted', async () => {
     const approved = pdfBytes('approved before db/033 3:1')
     const mtime = BEFORE_033()
@@ -695,18 +700,26 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
       assert.deepEqual(await readAs(users.cm, x.id), { status: 200, body: approved.toString() }, kind)
       const listed = (await call(users.cm, 'GET', `/api/scoresheets?app=indoor&q=${x.n}`)).json.data.matches.find((r) => r.id === x.id)
       assert.equal(listed.pdf_updated_at, new Date(mtime * 1000).toISOString(), 'the list shows the old file too')
-      // that file is no match's now: its uploader may withdraw it
+      // nor does it hold the closed match: its own file stays, and the other cannot be stored for it
+      expectCode(await upload(users.ivan, fp, pdfBytes(`stored for the ${kind} 0:3`), { matchExternalId: x.ext }), 409, 'OV_MATCH_CLOSED')
+      // that file is no match's now: its uploader may withdraw it, and its record goes with it
       const rm = await remove(users.ivan, [fp])
       assert.equal(rm.status, 200, rm.text)
       assert.deepEqual(rm.json.data, [{ name: fp }])
+      assert.equal((await sql.query('SELECT 1 FROM public.match_scoresheets WHERE path = $1', [fp])).rows.length, 0)
     }
 
-    // a newer file of the scorer's on disk without a record, stored after
-    // db/033 (its record failed): not the closed match's either
+    // an admin reopens a match with a PDF, and its scorer deletes it while
+    // it is open: its file stays out of the names of a closed match too
     const y = await newMatch(users.ivan, { hoursAgo: 72 })
-    plantFile(`${y.day}/game${y.n}_${key()}.pdf`, approved, [users.ivan.id], BEFORE_033())
+    plantFile(`${y.day}/game${y.n}_${key()}.pdf`, approved, [users.ivan.id], mtime)
     await closeAgo(y.id, 3 * 24 * 60, users.ivan.id)
-    plantFile(`${y.day}/game${y.n}_${key()}.pdf`, pdfBytes('stored after db/033, no record 0:3'), [users.ivan.id])
+    const z = await insertMatch(users.ivan, { ext: String(y.n), scheduledAt: y.scheduledAt })
+    const zp = `${y.day}/game${y.n}_${key()}.pdf`
+    assert.equal((await upload(users.ivan, zp, pdfBytes('the other match\'s sheet 0:3'), { matchExternalId: String(y.n) })).status, 200)
+    await setStatus(users.ivan, z, 'approved')
+    assert.equal((await call(users.admin, 'POST', `/api/admin/matches/${z}/reopen`, { reason: 'wrong final score' })).status, 200)
+    assert.equal((await deleteMatch(users.ivan, z)).status, 200)
     assert.deepEqual(await readAs(users.cm, y.id), { status: 200, body: approved.toString() })
   })
 
@@ -787,6 +800,185 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
     assert.equal(readFileSync(join(storageRoot, 'scoresheets', ...p.split('/'))).toString(), pdfBytes('approved, the uploader gone 3:1').toString())
   })
 
+  // A day folder's and a scoresheet's path are public (game numbers, days,
+  // beach seeds), and lib/storage.js never replaces a folder with a file or
+  // the other way round: a file at a day's name, or one below a scoresheet's
+  // name, would refuse the real uploads there for good
+  it('uploads go only to the apps\' paths: no file at a day folder\'s name, no folder at a scoresheet\'s name', async () => {
+    const soon = new Date(Date.now() + 3 * 86400 * 1000).toISOString().slice(0, 10)
+    const b = await newMatch(users.bea, { sport: 'beach' })
+    const bpdf = `beach/${b.day}/game${b.n}_${b.ext}.pdf`
+    const bjson = `beach/${b.day}/game${b.n}_${b.ext}_final.json`
+    const squats = [
+      [users.bob, `${bpdf}/x.json`, 'application/json'],
+      [users.bob, `${bjson}/x.json`, 'application/json'],
+      [users.erin, soon, 'text/plain'],
+      [users.bob, `beach/${soon}`, 'text/plain'],
+      [users.bob, 'beach', 'text/plain'],
+      [users.bob, `beach/${soon}/x/game1.json`, 'application/json'],
+      [users.bob, `beach/game${b.n}_${b.ext}.pdf`, 'application/pdf'],
+      [users.erin, `${soon}/game1.pdf/x.pdf`, 'application/pdf'],
+      [users.erin, `${soon}/notes.txt`, 'text/plain'],
+      [users.erin, `${soon}/game1_final.json.txt`, 'text/plain']
+    ]
+    for (const [who, p, ct] of squats) expectCode(await put(who, p, Buffer.from('x'), ct), 400, 'OV_STORAGE_INVALID_PATH')
+    // a beach scorer's path that names the indoor sport is still the scorer check's
+    expectCode(await put(users.bob, `${soon}/game1_final.json`, Buffer.from('{}'), 'application/json'), 403, 'OV_SCORER_REQUIRED')
+
+    // the apps' own files, of every version, are stored as before
+    assert.equal((await upload(users.bea, bpdf, pdfBytes('the real beach sheet'))).status, 200)
+    assert.equal((await uploadJson(users.bea, bjson, { real: true })).status, 200)
+    assert.equal((await uploadJson(users.bea, `beach/${b.day}/game${b.n}_final.json`, { older: true })).status, 200)
+    assert.equal((await readAs(users.bcm, b.id)).body, pdfBytes('the real beach sheet').toString())
+    const m = await newMatch(users.ivan, { hoursAgo: -72 })
+    assert.equal((await upload(users.ivan, `${m.day}/game${m.n}_${key()}.pdf`, pdfBytes('indoor sheet'), { matchExternalId: m.ext })).status, 200)
+    assert.equal((await uploadJson(users.ivan, `${m.day}/game${m.n}_${key()}_final.json`, { real: true })).status, 200)
+    assert.equal((await uploadJson(users.ivan, `${m.day}/game${m.n}_final.json`, { older: true })).status, 200)
+    assert.equal((await uploadJson(users.ivan, `${m.day}/gameunknown.json`, { older: true })).status, 200)
+  })
+
+  // Entries an upload of any path left before this release: the deploy step
+  // scripts/scoresheet-paths.mjs removes them, and nothing else
+  it('scripts/scoresheet-paths.mjs removes what an upload of another path left in the way of the apps\' paths', async () => {
+    const run = async (...args) => (await execFileP(process.execPath, [PATHS_SCRIPT, ...args], { env: { ...process.env, STORAGE_ROOT: storageRoot } })).stdout
+    const onDisk = (p) => existsSync(join(storageRoot, 'scoresheets', ...p.split('/')))
+    const ownerRecord = (p) => existsSync(join(storageRoot, '.owners', 'scoresheets', `${createHash('sha256').update(p).digest('hex')}.json`))
+    const [day, beachDay] = ['2031-02-03', '2031-02-04']
+    const ext = `match_${Date.now()}_paths`
+    const n = gameSeq++
+    await insertMatch(users.ivan, { ext, gameN: n, scheduledAt: `${day}T10:00:00Z` })
+    const bext = `match_${Date.now()}_pathsb`
+    const bn = gameSeq++
+    await insertMatch(users.bea, { ext: bext, gameN: bn, scheduledAt: `${beachDay}T10:00:00Z`, sport: 'beach' })
+    const b = await newMatch(users.bea, { sport: 'beach' })
+    const bpdf = `beach/${b.day}/game${b.n}_${b.ext}.pdf`
+    const legacyJson = `${b.day}/game${b.n}_final.json`
+    // as the server stored them before: a file at a day folder's name (indoor,
+    // beach), a file below a beach PDF's name, and two levels below an indoor JSON's
+    plantFile(day, Buffer.from('x'), [users.erin.id])
+    plantFile(`beach/${beachDay}`, Buffer.from('x'), [users.bob.id])
+    plantFile(`${bpdf}/x.json`, Buffer.from('{}'), [users.bob.id])
+    plantFile(`${legacyJson}/a/b.json`, Buffer.from('{}'), [users.erin.id])
+    // off the apps' paths, but in nobody's way: left as it is
+    plantFile(`${b.day}/notes.txt`, Buffer.from('x'), [users.erin.id])
+    const uploads = async () => [
+      await upload(users.ivan, `${day}/game${n}_${key()}.pdf`, pdfBytes('indoor sheet'), { matchExternalId: ext }),
+      await upload(users.bea, bpdf, pdfBytes('the real beach sheet')),
+      await upload(users.bea, `beach/${beachDay}/game${bn}_${bext}.pdf`, pdfBytes('beach sheet of that day')),
+      await uploadJson(users.ivan, legacyJson, { older: true })
+    ]
+    for (const r of await uploads()) expectCode(r, 409, 'OV_STORAGE_CONFLICT')
+
+    const dry = await run()
+    for (const line of [`file ${day}`, `file beach/${beachDay}`, `folder ${bpdf}`, `folder ${legacyJson}`]) assert.ok(dry.split('\n').includes(line), `${line}\n${dry}`)
+    assert.match(dry, /^4 entries in the way of the apps' scoresheet paths: to remove \(dry run/m)
+    assert.equal(onDisk(day) && onDisk(`${bpdf}/x.json`), true, 'a dry run removes nothing')
+
+    assert.match(await run('--apply'), /^4 entries in the way of the apps' scoresheet paths: removed/m)
+    for (const p of [day, `beach/${beachDay}`, bpdf, legacyJson]) assert.equal(onDisk(p), false, p)
+    for (const p of [day, `${bpdf}/x.json`, `${legacyJson}/a/b.json`]) assert.equal(ownerRecord(p), false, `the owner record of ${p} went with it`)
+    assert.equal(onDisk(`${b.day}/notes.txt`), true)
+    for (const r of await uploads()) assert.equal(r.status, 200, r.text)
+    assert.equal((await readAs(users.bcm, b.id)).body, pdfBytes('the real beach sheet').toString())
+    assert.match(await run(), /^0 entries/m)
+  })
+
+  // The game PIN shows on the scorer's tablet during the match. An account
+  // that proves it after the close becomes an editor (POST /api/match/claim:
+  // a shared tablet's next account sends the approval's PDF so), but its own
+  // older file of the match's name does not become the closed match's sheet
+  it('a match closed before db/033: an editor added after the close does not make its older file of the name the match\'s', async () => {
+    const mtime = BEFORE_033()
+    const approved = pdfBytes('approved before db/033 3:1')
+    const closedMatch = async () => {
+      const x = await newMatch(users.ivan, { hoursAgo: 72 })
+      const pin = String(100000 + (x.n % 899999))
+      await sql.query('UPDATE public.matches SET game_pin = $2 WHERE id = $1', [x.id, pin])
+      const p = `${x.day}/game${x.n}_${key()}.pdf`
+      plantFile(p, approved, [users.ivan.id], mtime)
+      // another scorer's file of the name, newer, also from before db/033 (any scorer could store one then)
+      const forged = `${x.day}/game${x.n}_${key()}.pdf`
+      plantFile(forged, pdfBytes('another scorer, before db/033 0:3'), [users.mallory.id], mtime + 3600)
+      await closeAgo(x.id, 3 * 24 * 60, users.ivan.id)
+      return { ...x, pin, p, forged }
+    }
+    const claim = async (x) => {
+      const r = await call(users.mallory, 'POST', '/api/match/claim', { externalId: x.ext, pin: x.pin })
+      assert.equal(r.status, 200, r.text)
+      assert.equal(r.json.data.role, 'editor')
+    }
+    const kept = async (x) => assert.deepEqual(await readAs(users.cm, x.id), { status: 200, body: approved.toString() })
+
+    // the claim before the deploy step
+    const x = await closedMatch()
+    await claim(x)
+    await kept(x)
+    const listed = (await call(users.cm, 'GET', `/api/scoresheets?app=indoor&q=${x.n}`)).json.data.matches.find((r) => r.id === x.id)
+    assert.equal(listed.pdf_updated_at, new Date(mtime * 1000).toISOString())
+    expectCode(await upload(users.mallory, x.forged, pdfBytes('another scorer, before db/033 0:3'), { matchExternalId: x.ext }), 409, 'OV_MATCH_CLOSED')
+    expectCode(await upload(users.mallory, `${x.day}/game${x.n}_${key()}.pdf`, pdfBytes('another scorer, now 0:3'), { matchExternalId: x.ext }), 409, 'OV_MATCH_CLOSED')
+    // a shared tablet before db/033: the next account claimed the closed
+    // match and stored its PDF; the names no longer give it, the step counts it
+    const h = await newMatch(users.ivan, { hoursAgo: 72 })
+    await closeAgo(h.id, 3 * 24 * 60, users.ivan.id)
+    await sql.query("INSERT INTO public.match_editors (match_id, user_id, granted_via) VALUES ($1, $2, 'claim')", [h.id, users.erin.id])
+    plantFile(`${h.day}/game${h.n}_${key()}.pdf`, pdfBytes('sent under the next account 3:1'), [users.erin.id], mtime)
+    expectCode(await call(users.cm, 'GET', `/api/scoresheets/${h.id}/pdf`), 404, 'OV_SCORESHEET_NOT_FOUND')
+    // and no other file takes its place
+    expectCode(await upload(users.ivan, `${h.day}/game${h.n}_${key()}.pdf`, pdfBytes('a new file days later 0:3'), { matchExternalId: h.ext }), 409, 'OV_MATCH_CLOSED')
+
+    assert.match(await runRecords(), /, [1-9]\d* only with a file of an editor added after the close/)
+    await runRecords('--apply')
+    assert.deepEqual((await sql.query('SELECT path, stored_by FROM public.match_scoresheets WHERE match_id = $1', [x.id])).rows, [{ path: x.p, stored_by: users.ivan.id }])
+    assert.deepEqual((await sql.query('SELECT 1 FROM public.match_scoresheets WHERE match_id = $1', [h.id])).rows, [])
+    await kept(x)
+
+    // the claim after the step
+    const y = await closedMatch()
+    await runRecords('--apply')
+    await claim(y)
+    await kept(y)
+    expectCode(await upload(users.mallory, y.forged, pdfBytes('another scorer, before db/033 0:3'), { matchExternalId: y.ext }), 409, 'OV_MATCH_CLOSED')
+    await kept(y)
+  })
+
+  // RUNBOOK "Restore the database" (a dump older than a PDF's record; the
+  // storage is kept) and "Bad backend release" (the previous image stores
+  // PDFs without a record): the closed match's PDF is still found by its
+  // name and held as before, and the deploy step records it again
+  it('a closed match\'s PDF whose record is gone (database restore) or was never written (older backend) stays its PDF', async () => {
+    const hoursAgo = Math.floor(Date.now() / 1000) - 3 * 3600
+    const done = []
+    for (const kind of ['restore', 'rollback']) {
+      const x = await newMatch(users.ivan, { hoursAgo: 4 })
+      const p = `${x.day}/game${x.n}_${key()}.pdf`
+      const real = pdfBytes(`the real sheet, ${kind} 3:1`)
+      if (kind === 'restore') {
+        assert.equal((await upload(users.ivan, p, real, { matchExternalId: x.ext })).status, 200)
+        await setStatus(users.ivan, x.id, 'approved')
+        await sql.query('DELETE FROM public.match_scoresheets WHERE match_id = $1', [x.id])
+      } else {
+        await setStatus(users.ivan, x.id, 'approved')
+        plantFile(p, real, [users.ivan.id])
+      }
+      // a file stored well after db/033 ran
+      assert.deepEqual(await readAs(users.cm, x.id), { status: 200, body: real.toString() }, kind)
+      // hours after the close
+      utimesSync(join(storageRoot, 'scoresheets', ...p.split('/')), hoursAgo, hoursAgo)
+      await backdate(x.id, 3 * 3600)
+      expectCode(await upload(users.ivan, `${x.day}/game${x.n}_${key()}.pdf`, pdfBytes('changed hours later 0:3'), { matchExternalId: x.ext }), 409, 'OV_MATCH_CLOSED')
+      expectCode(await upload(users.ivan, `${x.day}/game${x.n}_${key()}.pdf`, pdfBytes('changed hours later, older app 0:3')), 409, 'OV_MATCH_CLOSED')
+      expectCode(await upload(users.ivan, p, pdfBytes('changed hours later 0:3')), 409, 'OV_MATCH_CLOSED')
+      expectCode(await remove(users.ivan, [p]), 409, 'OV_MATCH_CLOSED')
+      assert.deepEqual(await readAs(users.cm, x.id), { status: 200, body: real.toString() }, kind)
+      done.push({ ...x, p })
+    }
+    await runRecords('--apply')
+    for (const x of done) {
+      assert.deepEqual((await sql.query('SELECT path, stored_by FROM public.match_scoresheets WHERE match_id = $1', [x.id])).rows, [{ path: x.p, stored_by: users.ivan.id }])
+    }
+  })
+
   // The operator step after db/033 (deploy): every match closed before it
   // gets the record of the PDF the managers already see. Last in this file:
   // it records the old files of every closed match of the database.
@@ -806,24 +998,20 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
     const y2 = await insertMatch(users.ivan, { ext: String(y.n), scheduledAt: y.scheduledAt })
     await closeAgo(y2, 3 * 24 * 60, users.ivan.id)
     // before the step: a newer file of the scorer's in x's folder, stored for
-    // a test match of x's game number that was deleted since (no record)
-    const unrecorded = await storeForDeletedMatch(x, 'test match')
+    // a test match of x's game number that was deleted since (its record stays)
+    const orphan = await storeForDeletedMatch(x, 'test match')
     const recordsOf = async (id) => (await sql.query('SELECT path, stored_by, sha256, size, stored_at, first_stored_at FROM public.match_scoresheets WHERE match_id = $1', [id])).rows
 
-    const run = (...args) => execFileP(process.execPath, [RECORDS_SCRIPT, ...args], { env: { ...process.env, DATABASE_URL: db.url, STORAGE_ROOT: storageRoot } })
-    const dry = await run()
-    assert.match(dry.stdout, /dry run/)
-    assert.match(dry.stdout, /^db\/033 ran \d{4}-\d\d-\d\dT/)
+    assert.match(await runRecords(), /dry run/)
     assert.deepEqual(await recordsOf(x.id), [])
-    const applied = await run('--apply')
-    assert.match(applied.stdout, /[1-9]\d* recorded, [1-9]\d* shared with another match/)
-    assert.equal((await sql.query('SELECT 1 FROM public.match_scoresheets WHERE path = $1', [unrecorded])).rows.length, 0, 'a file stored since db/033 is never recorded by the step')
+    assert.match(await runRecords('--apply'), /[1-9]\d* recorded, [1-9]\d* shared with another match/)
+    assert.deepEqual((await sql.query('SELECT match_id FROM public.match_scoresheets WHERE path = $1', [orphan])).rows, [{ match_id: null }], 'a file of a deleted match is never recorded for another')
     assert.deepEqual(await recordsOf(x.id), [{
       path: p, stored_by: users.ivan.id, sha256: createHash('sha256').update(approved).digest('hex'), size: approved.length,
       stored_at: new Date(mtime * 1000), first_stored_at: new Date(mtime * 1000)
     }])
     assert.deepEqual([...await recordsOf(y.id), ...await recordsOf(y2)], [])
-    assert.match((await run('--apply')).stdout, /: 0 recorded,/)
+    assert.match(await runRecords('--apply'), /: 0 recorded,/)
 
     // the managers get what they got before, now by the record
     assert.deepEqual(await readAs(users.cm, x.id), { status: 200, body: approved.toString() })

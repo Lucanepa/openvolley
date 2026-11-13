@@ -16,7 +16,7 @@ import { randomBytes } from 'node:crypto'
 import pg from 'pg'
 import { SKIP, bootServer, api, provisionDatabase, sleep } from './helpers/e2eServer.js'
 import { grantRoles } from './helpers/pgTestDb.js'
-import { VIEW_LINK_MAX, VIEW_LINK_TTL_MS, beachJsonPathParts, bestPdf, cleanGame, createScoresheets, downloadName, filePart, isMatchScoresheetFile, isScoresheetPdf, pdfLocator, pdfPathParts } from '../lib/scoresheets.js'
+import { VIEW_LINK_MAX, VIEW_LINK_TTL_MS, beachJsonPathParts, bestPdf, cleanGame, createScoresheets, downloadName, filePart, isMatchScoresheetFile, isScoresheetPdf, isScoresheetUploadPath, pdfLocator, pdfPathParts } from '../lib/scoresheets.js'
 import { manageFamilyOf } from '../lib/manageApi.js'
 
 const key = () => `k${randomBytes(16).toString('hex')}`
@@ -100,6 +100,21 @@ describe('scoresheets (unit)', () => {
     assert.equal(isMatchScoresheetFile('beach/2026-10-11/game7_match_1_x_final.json'), true)
     assert.equal(isMatchScoresheetFile('beach/2026-10-11/game7_match_1_x.pdf'), true)
     assert.equal(isMatchScoresheetFile(`2026-10-10/game1_${key()}.json`), false)
+  })
+
+  it('uploads to the bucket: only the paths the apps write, of every version', () => {
+    const k = key()
+    for (const p of [`2026-10-10/game402397_${k}.pdf`, `2026-10-10/game402397_${k}_final.json`, `2026-10-10/game402397_${k}.json`,
+      '2026-10-10/game402397.pdf', '2026-10-10/game402397_final.json', '2026-10-10/gameunknown.json', '2026-10-10/gamematch_1_x.json',
+      'beach/2026-10-11/game7_match_1_ab-c.pdf', 'beach/2026-10-11/game7_match_1_ab-c_final.json', 'beach/2026-10-11/game7_final.json']) {
+      assert.equal(isScoresheetUploadPath(p), true, p)
+    }
+    // a file at a folder's name, a file below a scoresheet's name, anything else
+    for (const p of ['2026-10-10', 'beach', 'beach/2026-10-11', `2026-10-10/game1_${k}.pdf/x.json`, 'beach/2026-10-11/game7_match_1.pdf/x.json',
+      'beach/2026-10-11/x/game7.json', 'beach/game7_match_1.pdf', '2026-10-10/notes.txt', '2026-10-10/game1.json.txt', '2026-10-10/game1.PDF',
+      '2026-10-10/scoresheet.pdf', 'Beach/2026-10-11/game7.pdf', 'misc/2026-10-10/game1.pdf', '2026-1-10/game1.pdf', '../2026-10-10/game1.pdf', '', null, 7]) {
+      assert.equal(isScoresheetUploadPath(p), false, String(p))
+    }
   })
 
   it('the best file: a file of the match before an older one, then the newest', () => {

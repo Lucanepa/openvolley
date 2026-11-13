@@ -634,6 +634,30 @@ export function createStorage(options = {}) {
   }
 
   /**
+   * Operator tool (scripts/scoresheet-paths.mjs, never reachable over HTTP):
+   * remove the object at a path, or the folder there with everything in it,
+   * whoever owns them; the owner records go with the objects. Symlinks are
+   * never followed or removed. { objectsRemoved, bytesRemoved, foldersRemoved }.
+   */
+  async function removeTrusted({ bucket, path: p } = {}) {
+    assertBucket(bucket)
+    const segs = parse(p)
+    const rr = await assertWritable()
+    const result = { objectsRemoved: 0, bytesRemoved: 0, foldersRemoved: 0 }
+    const st = await objectStat(bucket, segs)
+    if (st?.isDirectory()) {
+      await removeTree(rr, bucket, segs, result)
+    } else if (st?.isFile()) {
+      const size = await unlinkObject(rr, bucket, segs)
+      if (size !== null) {
+        result.objectsRemoved++
+        result.bytesRemoved += size
+      }
+    }
+    return result
+  }
+
+  /**
    * Unlink one object (a regular file, never a symlink or folder) and, in an
    * uploader-only bucket, its owner record, under the key's owner lock. When
    * `mayRemove(owners)` returns false nothing is touched (403). Returns the
@@ -1415,6 +1439,7 @@ export function createStorage(options = {}) {
     handle,
     bodyTooLarge,
     getOwners,
-    setOwners
+    setOwners,
+    removeTrusted
   }
 }
