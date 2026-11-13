@@ -716,8 +716,12 @@ const MATCH_SECRET_FIELDS = ['refereePin', 'homeTeamPin', 'awayTeamPin', 'homeTe
 // matchPin is openbeach's device lock, never compared by the relay and typed
 // with no maximum length, so only its type is checked, not its length
 // (MATCH_PIN_TYPE_ONLY_FIELDS): a long one must not stop a sync silently.
+// Those the relay only keeps and carries over (MATCH_CARRIED_PIN_FIELDS) are
+// bounded in size instead, far above what an app holds
+// (MAX_RELAY_CARRIED_PIN_BYTES each).
 const MATCH_PIN_TYPE_ONLY_FIELDS = ['matchPin']
 const MATCH_PIN_FIELDS = MATCH_SECRET_FIELDS.filter((k) => k !== 'connection_pins' && k !== 'connectionPins' && !MATCH_PIN_TYPE_ONLY_FIELDS.includes(k))
+const MATCH_CARRIED_PIN_FIELDS = MATCH_SECRET_FIELDS.filter((k) => !MATCH_PIN_FIELDS.includes(k))
 function stripMatchSecrets(match) {
   if (!match || typeof match !== 'object') return match
   const clean = { ...match }
@@ -5217,9 +5221,10 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
 
   // Refused before anything reads it (lib/relayLimits.js): a PIN that is not
   // text or a number (String() of {"toString":1} throws, and the PIN check of
-  // GET /api/match/:id ended the backend with it), a list that is no array or
+  // GET /api/match/:id ended the backend with it), a PIN field the relay only
+  // carries over that is larger than any app's, a list that is no array or
   // longer than any match has
-  const problem = relayBundleProblem(message, MATCH_PIN_FIELDS, MATCH_PIN_TYPE_ONLY_FIELDS)
+  const problem = relayBundleProblem(message, MATCH_PIN_FIELDS, MATCH_PIN_TYPE_ONLY_FIELDS, MATCH_CARRIED_PIN_FIELDS)
   if (problem) {
     sendRelayRefusal(clientInfo, problem.code, relayKeyOf(normalizeMatchId(message.matchId), message.match), problem.message)
     return
@@ -5279,18 +5284,19 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
   const official = !DB_MODE || opts.dbProved === true ||
     (!opts.dbChecked && !clientInfo.ownedMatches.has(matchId)) ||
     (clientInfo.ownedMatches.has(matchId) && stored?.relayOfficial === true)
-  // The match counts as the relay may keep it: with the stored PINs a sync leaves
-  // out carried over (carryMatchSecrets below; connection_pins may be any object).
-  // The count of a claim's first pass is reused after the database check only
-  // while the stored match is still the one it was counted with: the room's
-  // owner may sync meanwhile, and its PINs are what the claim carries then.
+  // Counted first as the sync sends it, before its claim is made: what any
+  // claim keeps at least. It depends on the message alone, so a cloud claim's
+  // second pass reuses it. A sync that continues the room also keeps the stored
+  // PINs it leaves out and the room's live state; they are counted once the
+  // claim says so (below). A take-over or reclaim keeps neither, so what the
+  // room's last holder stored never counts against it.
   const storedEvents = opts.storedEvents ?? relayEvents(events)
-  const bundleBytes = opts.bundleBytes != null && opts.countedWith === stored?.match
-    ? opts.bundleBytes
-    : approxHeapBytes([stored?.match ? carryMatchSecrets(stored.match, match) : match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, storedEvents])
-  const memoryRefusal = bundleBytes > MAX_RELAY_BUNDLE_BYTES
+  const countBundle = (m) => approxHeapBytes([m, homeTeam, awayTeam, homePlayers, awayPlayers, sets, storedEvents])
+  const memoryRefusalOf = (bytes, liveStateBytes = 0) => (bytes > MAX_RELAY_BUNDLE_BYTES
     ? 'too-large'
-    : relayMemoryRefusal(clientInfo, matchId, bundleBytes + (stored?.liveStateBytes || 0), { newRoom, official })
+    : relayMemoryRefusal(clientInfo, matchId, bytes + liveStateBytes, { newRoom, official }))
+  let bundleBytes = opts.bundleBytes ?? countBundle(match)
+  const memoryRefusal = memoryRefusalOf(bundleBytes)
   if (memoryRefusal) {
     sendRelayRefusal(clientInfo, memoryRefusal, matchId)
     return
@@ -5313,7 +5319,7 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
         clientInfo.ws.send(JSON.stringify({ type: 'error', code: v.code, message: CLAIM_ERRORS[v.code] || 'Refused', matchId }))
         return
       }
-      handleSyncMatchData(clientInfo, message, { dbChecked: true, dbProved: v.dbProved, knownScorer: v.knownScorer, storedEvents, bundleBytes, countedWith: stored?.match })
+      handleSyncMatchData(clientInfo, message, { dbChecked: true, dbProved: v.dbProved, knownScorer: v.knownScorer, storedEvents, bundleBytes })
     })
   }
 
@@ -5337,6 +5343,29 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     return
   }
 
+  // A sync that continues the room (its owner, or a proof of the stored game
+  // PIN) keeps the stored PINs it leaves out (PINs are sent only when they
+  // change), and the room's last live state while the same game PIN keeps the
+  // match: never across a takeover, reclaim or PIN change (it would describe
+  // another match: sides, sets won, 'ended', ...). Counted here, with the
+  // memory checked again, before anything is stored. Refusing here leaves
+  // nothing to undo: claimMatch changes nothing for such a claim but refund a
+  // correct PIN.
+  const previous = activeMatches.get(matchId)
+  const continues = claimed.kind === 'owner' || claimed.kind === 'proved'
+  const carried = continues && previous?.match ? carryMatchSecrets(previous.match, match) : match
+  const carryLiveState = continues && gamePinOf(previous?.match) === gamePinOf(carried)
+  const carriedLiveStateBytes = carryLiveState ? (previous?.liveStateBytes || 0) : 0
+  if (carried !== match || carriedLiveStateBytes > 0) {
+    if (carried !== match) bundleBytes = countBundle(carried)
+    const refusal = memoryRefusalOf(bundleBytes, carriedLiveStateBytes)
+    if (refusal) {
+      sendRelayRefusal(clientInfo, refusal, matchId)
+      return
+    }
+    match = carried
+  }
+
   // Enforce room cap before storing anything
   if (!rooms.has(matchId) && rooms.size >= MAX_ROOMS) {
     clientInfo.ws.send(JSON.stringify({ type: 'error', code: 'room-limit', message: CLAIM_ERRORS['room-limit'], matchId }))
@@ -5354,16 +5383,8 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     clientInfo.aliases.set(rawMatchId, matchId)
   }
 
-  // Store/update match in activeMatches with all the data. A sync carries no
-  // live-state: keep the last one pushed only while the same scoreboard / game
-  // PIN keeps the match — never across a takeover, reclaim or PIN change (it
-  // would describe another match: sides, sets won, 'ended', ...).
-  const previous = activeMatches.get(matchId)
-  if (previous?.match && (claimed.kind === 'owner' || claimed.kind === 'proved')) {
-    match = carryMatchSecrets(previous.match, match)
-  }
-  const carryLiveState = (claimed.kind === 'owner' || claimed.kind === 'proved') &&
-    gamePinOf(previous?.match) === gamePinOf(match)
+  // Store/update match in activeMatches with all the data (a sync carries no
+  // live state: the room's last one is kept as decided above).
   // Whether the database knows this as an official match (cloud), for the
   // memory budget: proved now, or carried by its owner's later syncs (which do
   // not re-check the database). Venue rooms (no database) are all official.

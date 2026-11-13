@@ -10,11 +10,14 @@ import { fileURLToPath } from 'node:url'
 import {
   approxHeapBytes, frameTooLarge, relayBundleProblem, relayMemoryBudget,
   MAX_RELAY_EVENTS, MAX_RELAY_SETS, MAX_RELAY_PLAYERS, MAX_RELAY_PIN_LENGTH, MAX_FRAME_VALUES, MAX_RELAY_BUNDLE_BYTES,
-  RELAY_HEAP_SHARE, NEW_ROOM_SHARE, RELAY_ANON_SHARE, FAST_PROPERTIES
+  MAX_RELAY_CARRIED_PIN_BYTES, RELAY_HEAP_SHARE, NEW_ROOM_SHARE, RELAY_ANON_SHARE, FAST_PROPERTIES
 } from '../lib/relayLimits.js'
 
 const HEAP_SHAPES = fileURLToPath(new URL('./helpers/heapShapes.js', import.meta.url))
 const PIN_FIELDS = ['refereePin', 'homeTeamPin', 'awayTeamPin', 'gamePin', 'game_pin', 'team1Pin', 'team2Pin']
+// server.js MATCH_PIN_TYPE_ONLY_FIELDS / MATCH_CARRIED_PIN_FIELDS
+const TYPE_ONLY = ['matchPin']
+const CARRIED = ['connection_pins', 'connectionPins', 'matchPin']
 
 describe('relayBundleProblem', () => {
   const sync = (extra = {}) => ({
@@ -55,8 +58,7 @@ describe('relayBundleProblem', () => {
     }
   })
 
-  it('a type-only field (matchPin) must be text or a number, but may be any length', () => {
-    const TYPE_ONLY = ['matchPin']
+  it('a type-only field (matchPin) must be text or a number, and may be longer than a PIN', () => {
     // the relay never compares matchPin, so a long one must not stop the sync
     assert.equal(relayBundleProblem(sync({ match: { matchPin: 'p'.repeat(MAX_RELAY_PIN_LENGTH + 100) } }), PIN_FIELDS, TYPE_ONLY), null)
     assert.equal(relayBundleProblem(sync({ match: { matchPin: 1234 } }), PIN_FIELDS, TYPE_ONLY), null)
@@ -68,6 +70,30 @@ describe('relayBundleProblem', () => {
     }
     // without the type-only list, matchPin is not checked at all
     assert.equal(relayBundleProblem(sync({ match: { matchPin: 'x'.repeat(5000) } }), PIN_FIELDS), null)
+  })
+
+  it('a PIN field the relay only carries over (connection_pins, matchPin) is at most MAX_RELAY_CARRIED_PIN_BYTES as kept: too-large', () => {
+    // A sync that leaves these out keeps the stored ones (server.js
+    // carryMatchSecrets), so a room's holder could park megabytes in them.
+    // What apps send is far below: the five connection PINs (plain, or hashed
+    // as the database keeps them), a device PIN someone typed.
+    const hashed = 'h1:' + 'A'.repeat(43)
+    const real = { referee: hashed, bench_home: hashed, bench_away: hashed, upload_home: hashed, upload_away: hashed }
+    assert.equal(relayBundleProblem(sync({ match: { connection_pins: real, connectionPins: { referee: '314159' }, matchPin: 'p'.repeat(1000) } }), PIN_FIELDS, TYPE_ONLY, CARRIED), null)
+    assert.equal(relayBundleProblem(sync({ match: { connection_pins: null, matchPin: 4711 } }), PIN_FIELDS, TYPE_ONLY, CARRIED), null)
+    const over = [
+      ['connection_pins', { referee: 'c'.repeat(MAX_RELAY_CARRIED_PIN_BYTES) }],
+      // counted as the relay keeps it, not by its JSON (6 KB here)
+      ['connectionPins', Array.from({ length: 2000 }, () => ({}))],
+      ['matchPin', 'm'.repeat(MAX_RELAY_CARRIED_PIN_BYTES)]
+    ]
+    for (const [field, value] of over) {
+      const r = relayBundleProblem(sync({ match: { [field]: value } }), PIN_FIELDS, TYPE_ONLY, CARRIED)
+      assert.deepEqual([r?.code, r?.field], ['too-large', `match.${field}`], field)
+      assert.match(r.message, /too large/)
+    }
+    // a matchPin of the wrong type is still a bad request first
+    assert.equal(relayBundleProblem(sync({ match: { matchPin: { x: 'm'.repeat(MAX_RELAY_CARRIED_PIN_BYTES) } } }), PIN_FIELDS, TYPE_ONLY, CARRIED)?.code, 'bad-request')
   })
 
   it('refuses a status, scheduledAt or team name that is not text or a number (bad-request)', () => {

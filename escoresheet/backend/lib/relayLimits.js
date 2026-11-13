@@ -26,6 +26,13 @@ export const MAX_RELAY_SETS = 20
 export const MAX_RELAY_PLAYERS = 200
 /** Length of a PIN field as text (the PINs have 6 digits; restore takes 32). */
 export const MAX_RELAY_PIN_LENGTH = 64
+/**
+ * One PIN field the relay never compares, only keeps and carries over into the
+ * room's later syncs that leave it out (a connection_pins object, openbeach's
+ * matchPin), as approxHeapBytes counts it. Real ones are a few hundred bytes:
+ * five PINs, a PIN someone typed.
+ */
+export const MAX_RELAY_CARRIED_PIN_BYTES = 16 * 1024
 /** One room's bundle, as approxHeapBytes counts it. */
 export const MAX_RELAY_BUNDLE_BYTES = 8 * 1024 * 1024
 /** A live state as JSON: the live hub's limit (lib/realtimeHub.js maxPayloadBytes). */
@@ -256,8 +263,9 @@ const isPinValue = (v) =>
   (typeof v === 'number' && Number.isFinite(v))
 // A PIN field the relay never compares (openbeach's matchPin, the device's own
 // lock): only its type matters (an object would still have to be String()d
-// safely elsewhere). No length limit: the user types it with no maximum, and a
-// long one must not stop the sync.
+// safely elsewhere). No PIN length limit: the user types it with no maximum,
+// and a long one must not stop the sync; its size is bounded far above what
+// anyone types (MAX_RELAY_CARRIED_PIN_BYTES).
 const isPinType = (v) =>
   v === undefined || v === null || typeof v === 'string' ||
   (typeof v === 'number' && Number.isFinite(v))
@@ -297,6 +305,11 @@ const PROBLEM_TEXT = {
  * field (pinFields) that is not text of at most MAX_RELAY_PIN_LENGTH or a
  * number ('bad-request': the PIN checks compare text), a typeOnlyField that is
  * not text or a number (its length does not matter, it is never compared), a
+ * carriedField (a PIN field the relay only keeps and carries over into the
+ * room's later syncs: connection_pins, matchPin) over
+ * MAX_RELAY_CARRIED_PIN_BYTES as approxHeapBytes counts it ('too-large': a
+ * room's holder could park megabytes there, counted against every later sync
+ * that leaves it out), a
  * display field (status, scheduledAt, a team's name) that is not text, a finite
  * number or missing ('bad-request': the match list, landing page and PIN check
  * turn it into a string or a Date, and an object there answers 500 for
@@ -306,9 +319,10 @@ const PROBLEM_TEXT = {
  * @param {object} message
  * @param {readonly string[]} pinFields
  * @param {readonly string[]} [typeOnlyFields]
+ * @param {readonly string[]} [carriedFields]
  * @returns {{ code: 'bad-request'|'too-large', message: string, field: string }|null}
  */
-export function relayBundleProblem(message, pinFields, typeOnlyFields = []) {
+export function relayBundleProblem(message, pinFields, typeOnlyFields = [], carriedFields = []) {
   const fail = (code, field) => ({ code, message: `${PROBLEM_TEXT[code]} (${field})`, field })
   const match = message?.match
   if (match && typeof match === 'object') {
@@ -317,6 +331,9 @@ export function relayBundleProblem(message, pinFields, typeOnlyFields = []) {
     }
     for (const k of typeOnlyFields) {
       if (!isPinType(match[k])) return fail('bad-request', `match.${k}`)
+    }
+    for (const k of carriedFields) {
+      if (match[k] != null && approxHeapBytes(match[k]) > MAX_RELAY_CARRIED_PIN_BYTES) return fail('too-large', `match.${k}`)
     }
     // Fields the match list, landing page and PIN check turn into a string or
     // a Date: an object there makes one crafted room answer 500 for everyone.

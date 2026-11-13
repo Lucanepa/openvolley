@@ -8,9 +8,11 @@
  *   - /api/official-matches looks up federation and league as own keys only
  *   - a synced PIN that is not text or a number is refused at the sync, so no
  *     PIN header on GET /api/match/:id can make it throw
- *   - bundles: array lengths, a heap bound per room (lib/relayLimits.js, with
- *     the PINs the relay carries over from the stored match, as it is once a
- *     cloud claim's database check is done) and a relay
+ *   - bundles: array lengths, a bound on the PIN fields the relay only carries
+ *     over, a heap bound per room (lib/relayLimits.js, with the PINs a sync that
+ *     continues the room carries over from the stored match, as it is once a
+ *     cloud claim's database check is done; a reclaim counts nothing the room's
+ *     last holder stored) and a relay
  *     memory budget per address and in total; live states over 256 KB are
  *     refused before they are stored or relayed
  *   - a long five-set match from an older scorer (undo snapshots, signatures)
@@ -23,9 +25,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import pg from 'pg'
 import { bootServer, openSocket, provisionDatabase, subscribe, sleep, SKIP } from './helpers/e2eServer.js'
+import { approxHeapBytes, relayEvents, MAX_RELAY_BUNDLE_BYTES } from '../lib/relayLimits.js'
 
 const POISON = { toString: 1 } // JSON {"toString":1}: String() of it throws
 const PIN = '314159'
+const MB = 1024 * 1024
 
 async function alive(base) {
   try {
@@ -67,6 +71,23 @@ function syncMessage(room, { match = {}, ...extra } = {}) {
     events: [],
     ...extra
   }
+}
+
+// The PIN fields a sync may hold that the relay never compares, only keeps and
+// carries over into the room's later syncs that leave them out (an indoor app
+// never sends them): each near its bound (lib/relayLimits.js
+// MAX_RELAY_CARRIED_PIN_BYTES), about 46 KB together as the relay counts them.
+const CARRIED_PINS = { connection_pins: { referee: 'c'.repeat(15000) }, connectionPins: { referee: 'p'.repeat(15000) }, matchPin: 'm'.repeat(15000) }
+
+// What the relay counts of a sync's own bundle (server.js handleSyncMatchData)
+const ownBytes = (m) => approxHeapBytes([m.match, m.homeTeam, m.awayTeam, m.homePlayers, m.awayPlayers, m.sets, relayEvents(m.events)])
+// A sync of `room` whose own bundle counts exactly `bytes`, padded in
+// match.remarks (a long ASCII string counts one byte per character)
+function syncCounting(room, bytes, { match = {}, ...extra } = {}) {
+  const padded = (n) => syncMessage(room, { ...extra, match: { ...match, remarks: 'r'.repeat(n) } })
+  const out = padded(1000 + bytes - ownBytes(padded(1000)))
+  assert.equal(ownBytes(out), bytes)
+  return out
 }
 
 // What an older scorer (before 2026-10-26) sends at the end of a long five-set
@@ -242,27 +263,55 @@ describe('anonymous input on a venue relay (--local)', () => {
 
   it('counts the PIN fields a later sync leaves out and the relay keeps from the stored match', async () => {
     // A scoreboard that already proved the match sends its PINs only when they
-    // change, and the relay carries the stored ones over (carryMatchSecrets).
-    // connection_pins may be any object: what is carried must count toward the
-    // room's bytes, or each later sync could hold another bundle's worth more.
+    // change, and the relay carries the stored ones over (carryMatchSecrets):
+    // what is carried must count toward the room's bytes.
     const scorer = await open()
-    scorer.send(syncMessage('carry-1', { match: { connection_pins: { referee: 'c'.repeat(5 * 1024 * 1024) } } }))
+    scorer.send(syncMessage('carry-1', { match: CARRIED_PINS }))
     await settle(scorer)
     assert.deepEqual(errorsOf(scorer), [])
 
-    // the same scorer and room, connection_pins left out, 5 MB of events: kept
-    // with the carried 5 MB, the room would be over its 8 MB
-    scorer.send(syncMessage('carry-1', { events: [{ id: 1, type: 'remark', payload: { notes: 'n'.repeat(5 * 1024 * 1024) } }] }))
+    // the same scorer and room, those PINs left out, its own bundle 20 KB under
+    // the room's 8 MB: with the carried ones the room would be over it
+    const nearCap = syncCounting('carry-1', MAX_RELAY_BUNDLE_BYTES - 20 * 1024, { events: [{ id: 1, type: 'point', payload: { team: 'home' } }] })
+    scorer.send(nearCap)
     await settle(scorer)
     assert.equal(lastError(scorer)?.code, 'too-large', srv.output.join('').slice(-1500))
     const kept = await get(srv.base, '/api/match/carry-1', { 'X-OV-Match-Pin': PIN })
     assert.equal(kept.json?.events?.length, 0, 'the room keeps its last bundle')
 
-    // a later sync that fits with what is carried is kept, the PINs with it
+    // a later sync that fits with what is carried is kept, the PINs with it:
+    // the bundle near the cap is still over it
     scorer.send(syncMessage('carry-1', { events: [{ id: 1, type: 'point', payload: { team: 'home' } }] }))
     await settle(scorer)
     assert.equal(errorsOf(scorer).length, 1)
     assert.equal((await get(srv.base, '/api/match/carry-1', { 'X-OV-Match-Pin': PIN })).json?.events?.length, 1)
+    scorer.send(nearCap)
+    await settle(scorer)
+    assert.deepEqual(errorsOf(scorer).map((m) => m.code), ['too-large', 'too-large'])
+    assert.equal(await alive(srv.base), true)
+  })
+
+  it('refuses a PIN field the relay only carries over (connection_pins, matchPin) past its bound, before it is stored', async () => {
+    // Never compared, only kept and carried into the room's later syncs: a
+    // room's holder could park megabytes in them otherwise, counted against
+    // every later sync that leaves them out
+    const fields = [['connection_pins', { referee: 'c'.repeat(MB) }], ['connectionPins', { x: 'c'.repeat(MB) }], ['matchPin', 'c'.repeat(MB)]]
+    const refused = []
+    for (const [field, value] of fields) {
+      const c = await open()
+      c.send(syncMessage(`carried-${field}`, { match: { [field]: value } }))
+      await settle(c)
+      refused.push([field, lastError(c)?.code, lastError(c)?.matchId])
+      assert.equal((await get(srv.base, `/api/match/carried-${field}`)).status, 404, `${field}: not stored`)
+    }
+    assert.deepEqual(refused, fields.map(([field]) => [field, 'too-large', `carried-${field}`]))
+
+    // what apps hold is kept: the five connection PINs, a typed device PIN
+    const c = await open()
+    c.send(syncMessage('carried-real', { match: { connection_pins: { referee: PIN, bench_home: '271828', bench_away: '161803', upload_home: '141421', upload_away: '173205' }, matchPin: '4711' } }))
+    await settle(c)
+    assert.deepEqual(errorsOf(c), [])
+    assert.equal((await get(srv.base, '/api/match/carried-real', { 'X-OV-Match-Pin': PIN })).json?.access, 'full')
     assert.equal(await alive(srv.base), true)
   })
 
@@ -618,11 +667,9 @@ describe('official matches keep priority over an anonymous flood (DATABASE_URL)'
 describe('a claim counts the PINs it carries as the room holds them after the database check (DATABASE_URL)', { skip: SKIP }, () => {
   let db, srv, storageRoot, statusDir
   const sockets = []
-  const MB = 1024 * 1024
   before(async () => {
     db = await provisionDatabase()
     ;({ storageRoot, statusDir } = tempStorage())
-    // 20 MB total: rooms the database does not know at most 12 MB together
     srv = await bootServer(CLOUD_ENV(db, { STORAGE_ROOT: storageRoot, STATUS_DIR: statusDir, OV_RELAY_MAX_MB: '20' }))
   })
   after(async () => {
@@ -654,8 +701,9 @@ describe('a claim counts the PINs it carries as the room holds them after the da
     await settle(owner)
     assert.deepEqual(errorsOf(owner), [])
 
-    // a second scoreboard claims the room with its game PIN; its database
-    // check waits while the matches table is locked
+    // a second scoreboard claims the room with its game PIN, its own bundle
+    // 20 KB under the room's 8 MB; its database check waits while the matches
+    // table is locked
     const lock = new pg.Client({ connectionString: db.url })
     await lock.connect()
     let claimant
@@ -663,11 +711,11 @@ describe('a claim counts the PINs it carries as the room holds them after the da
       await lock.query('BEGIN')
       await lock.query('LOCK TABLE matches IN ACCESS EXCLUSIVE MODE')
       claimant = await open('203.0.113.222')
-      claimant.send(syncMessage('carry-db'))
+      claimant.send(syncCounting('carry-db', MAX_RELAY_BUNDLE_BYTES - 20 * 1024))
       await untilLockWaited(lock)
-      // meanwhile the owner syncs 6 MB of connection_pins (no database check),
-      // which the claimant's sync leaves out and so carries over
-      owner.send(syncMessage('carry-db', { match: { connection_pins: { referee: 'c'.repeat(6 * MB) } } }))
+      // meanwhile the owner syncs the PIN fields the claimant's sync leaves out
+      // (no database check), so the claim carries them over
+      owner.send(syncMessage('carry-db', { match: CARRIED_PINS, sets: [{ id: 1, index: 1, homePoints: 2, awayPoints: 0 }] }))
       await settle(owner)
       assert.deepEqual(errorsOf(owner), [])
       await lock.query('COMMIT')
@@ -675,20 +723,115 @@ describe('a claim counts the PINs it carries as the room holds them after the da
       await lock.end()
     }
     await settle(claimant)
-    assert.deepEqual(errorsOf(claimant), [], 'the claimant proved the room')
+    // counted with them, the claimant's bundle is over the room's 8 MB
+    assert.equal(lastError(claimant)?.code, 'too-large', 'the PINs carried after the database check must count')
+    assert.deepEqual((await get(srv.base, '/api/match/carry-db', { 'X-OV-Match-Pin': PIN })).json?.sets?.map((s) => s.homePoints), [2], 'the room keeps the owner\'s bundle')
 
-    // the room still counts the carried 6 MB: another 6.5 MB room the database
-    // does not know is over the 12 MB share (only that share stops it)
-    const other = await open('203.0.113.223')
-    other.send(syncMessage('carry-db-other', { match: { remarks: 'r'.repeat(6.5 * MB), gamePin: 'x-other' } }))
-    await settle(other)
-    assert.equal(lastError(other)?.code, 'relay-full', 'the carried PINs must count after the database check')
-
-    // and the claimant keeps scoring the match
+    // a claim that fits with them is kept, and the claimant scores the match on
     claimant.send(syncMessage('carry-db', { sets: [{ id: 1, index: 1, homePoints: 3, awayPoints: 1 }] }))
     await settle(claimant)
-    assert.deepEqual(errorsOf(claimant), [])
+    assert.equal(errorsOf(claimant).length, 1)
     assert.deepEqual((await get(srv.base, '/api/match/carry-db', { 'X-OV-Match-Pin': PIN })).json?.sets?.map((s) => s.homePoints), [3])
+    assert.equal(await alive(srv.base), true)
+  })
+})
+
+// A device that held a room before the scorer (a take-over of a room left
+// alone, or a room the database did not know yet) leaves its stored match and
+// live state behind. A reclaim or take-over replaces both and carries nothing
+// over, so what it left must not count against the claim.
+describe('a reclaim counts what it keeps, not the PIN fields the room\'s last holder stored (DATABASE_URL)', { skip: SKIP }, () => {
+  let db, srv, storageRoot, statusDir
+  const sockets = []
+  before(async () => {
+    db = await provisionDatabase()
+    ;({ storageRoot, statusDir } = tempStorage())
+    srv = await bootServer(CLOUD_ENV(db, { STORAGE_ROOT: storageRoot, STATUS_DIR: statusDir, OV_RELAY_MAX_MB: '20' }))
+  })
+  after(async () => {
+    for (const c of sockets) { try { c.ws.terminate() } catch { /* gone */ } }
+    await srv?.stop()
+    if (db) await db.drop()
+    for (const d of [storageRoot, statusDir]) { try { rmSync(d, { recursive: true, force: true }) } catch { /* best effort */ } }
+  })
+  const open = async (ip) => {
+    const c = await openSocket(srv.wsUrl, { headers: { 'cf-connecting-ip': ip } })
+    sockets.push(c)
+    return c
+  }
+
+  it('the scorer proving its game PIN against the database gets its room back from a device that parked PIN fields in it', async () => {
+    // another device holds the room while the database has no row for it, with
+    // a game PIN of its own and the PIN fields an indoor app never sends
+    const squatter = await open('203.0.113.231')
+    squatter.send(syncMessage('squat-db', { match: { ...CARRIED_PINS, gamePin: 'x-squat' } }))
+    await settle(squatter)
+    assert.deepEqual(errorsOf(squatter), [])
+    // the match is then stored in the database, with its game PIN
+    await seedOfficialMatch(db.url, { externalId: 'squat-db' })
+
+    // the scorer syncs with that PIN, its own bundle 20 KB under the room's
+    // 8 MB: the database proves it (a reclaim), which carries nothing over
+    const scorer = await open('203.0.113.232')
+    scorer.send(syncCounting('squat-db', MAX_RELAY_BUNDLE_BYTES - 20 * 1024, { sets: [{ id: 1, index: 1, homePoints: 4, awayPoints: 2 }] }))
+    await settle(scorer)
+    assert.deepEqual(errorsOf(scorer).map((m) => m.code), [], 'the scorer must get its match back')
+    const full = await get(srv.base, '/api/match/squat-db', { 'X-OV-Match-Pin': PIN })
+    assert.equal(full.json?.access, 'full')
+    assert.deepEqual(full.json.sets.map((s) => s.homePoints), [4])
+
+    // and scores it on; the device that held the room no longer writes it
+    scorer.send(syncMessage('squat-db', { sets: [{ id: 1, index: 1, homePoints: 5, awayPoints: 2 }] }))
+    squatter.send(syncMessage('squat-db', { match: { gamePin: 'x-squat' }, sets: [{ id: 1, index: 1, homePoints: 0, awayPoints: 25 }] }))
+    await settle(scorer)
+    await settle(squatter)
+    assert.deepEqual(errorsOf(scorer), [])
+    assert.equal(lastError(squatter)?.code, 'not-match-owner')
+    assert.deepEqual((await get(srv.base, '/api/match/squat-db', { 'X-OV-Match-Pin': PIN })).json?.sets?.map((s) => s.homePoints), [5])
+    assert.equal(await alive(srv.base), true)
+  })
+})
+
+describe('a reclaim counts what it keeps, not the live state the room\'s last holder stored (DATABASE_URL)', { skip: SKIP }, () => {
+  let db, srv, storageRoot, statusDir
+  const sockets = []
+  before(async () => {
+    db = await provisionDatabase()
+    ;({ storageRoot, statusDir } = tempStorage())
+    // 4 MB total, 2 MB per address
+    srv = await bootServer(CLOUD_ENV(db, { STORAGE_ROOT: storageRoot, STATUS_DIR: statusDir, OV_RELAY_MAX_MB: '4' }))
+  })
+  after(async () => {
+    for (const c of sockets) { try { c.ws.terminate() } catch { /* gone */ } }
+    await srv?.stop()
+    if (db) await db.drop()
+    for (const d of [storageRoot, statusDir]) { try { rmSync(d, { recursive: true, force: true }) } catch { /* best effort */ } }
+  })
+  const open = async (ip) => {
+    const c = await openSocket(srv.wsUrl, { headers: { 'cf-connecting-ip': ip } })
+    sockets.push(c)
+    return c
+  }
+
+  it('a live state the reclaim drops is not counted in the scorer\'s share', async () => {
+    const squatter = await open('203.0.113.241')
+    squatter.send(syncMessage('squat-live', { match: { gamePin: 'x-squat' } }))
+    await settle(squatter)
+    // a live state of many small values (60 KB as JSON, about 0.8 MB as kept)
+    squatter.send({ type: 'live-state-update', matchId: 'squat-live', liveState: { points_a: 1, pad: new Array(30000).fill(0) } })
+    await settle(squatter)
+    assert.deepEqual(errorsOf(squatter), [])
+    await seedOfficialMatch(db.url, { externalId: 'squat-live' })
+
+    // 1.5 MB of its own fits the scorer's 2 MB share; with the dropped live
+    // state it would not
+    const scorer = await open('203.0.113.242')
+    scorer.send(syncCounting('squat-live', 1.5 * MB, { sets: [{ id: 1, index: 1, homePoints: 4, awayPoints: 2 }] }))
+    await settle(scorer)
+    assert.deepEqual(errorsOf(scorer).map((m) => m.code), [], 'the scorer must get its match back')
+    const full = await get(srv.base, '/api/match/squat-live', { 'X-OV-Match-Pin': PIN })
+    assert.deepEqual(full.json?.sets?.map((s) => s.homePoints), [4])
+    assert.equal(full.json?.liveState, undefined, 'the last holder\'s live state is not kept')
     assert.equal(await alive(srv.base), true)
   })
 })

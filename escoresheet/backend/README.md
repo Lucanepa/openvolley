@@ -190,15 +190,20 @@ the LAN), 2000 in total; `?purpose=live` sockets: 500 per IP, 3000 in total.
 What the relay keeps of a socket's syncs (`lib/relayLimits.js`, both modes):
 the PINs it compares must be text (at most 64 characters) or numbers (else
 `bad-request`; `matchPin`, which it never compares, only has to be text or a
-number); the status, the scheduled time and the team names (which the match
+number); the PIN fields it only keeps and carries over into later syncs that
+leave them out (`connection_pins`, `connectionPins`, `matchPin`) at most 16 KB
+each as counted below (else `too-large`; an app's are a few hundred bytes);
+the status, the scheduled time and the team names (which the match
 list, landing page and PIN check turn into a string or a date) must be text, a
 number or missing (else `bad-request`, so one crafted room cannot make those
 answer 500 or refuse correct PINs for everyone); at most 20000 events, 20 sets
 and 200 players per list, 8 MB per room (counted as an upper bound on the heap
 V8 can keep for it: every number boxed, every object and array at its largest
 layout, the hidden classes V8 may build and rebuild for each key order, and the
-PINs the relay carries over from the stored match, so no layout can hide a
-bundle's real size; `tests/relayLimits.test.js` measures it along the relay's
+stored PINs a sync that continues the room carries over, so no layout can hide a
+bundle's real size; a take-over or reclaim carries nothing over, nor the room's
+live state, so what the room's last holder stored never counts against it;
+`tests/relayLimits.test.js` measures it along the relay's
 own path) and 300,000 JSON values per frame (else `too-large`); a live state at most
 256 KB as JSON (`too-large`); all rooms together `OV_RELAY_MAX_MB`, one address
 half of it (`relay-full`). When the relay fills, a room it does not hold yet is

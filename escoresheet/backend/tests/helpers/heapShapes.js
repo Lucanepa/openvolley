@@ -40,10 +40,11 @@ import { jsonTooDeep } from '../../lib/realtimeHub.js'
 const [, , name] = process.argv
 if (typeof global.gc !== 'function') throw new Error('run with --expose-gc')
 
-// server.js MATCH_PIN_FIELDS / MATCH_PIN_TYPE_ONLY_FIELDS (the frames hold
-// valid PINs, so only the order of the checks matters here)
+// server.js MATCH_PIN_FIELDS / MATCH_PIN_TYPE_ONLY_FIELDS / MATCH_CARRIED_PIN_FIELDS
+// (the frames hold valid PINs, so only the order of the checks matters here)
 const PIN_FIELDS = ['refereePin', 'homeTeamPin', 'awayTeamPin', 'gamePin', 'game_pin', 'team1Pin', 'team2Pin']
 const TYPE_ONLY_FIELDS = ['matchPin']
+const CARRIED_FIELDS = ['connection_pins', 'connectionPins', 'matchPin']
 // Room for the frame around the case's values, under MAX_FRAME_VALUES
 const VALUES = MAX_FRAME_VALUES - 400
 // The relay's frame limit (server.js wss maxPayload)
@@ -204,7 +205,7 @@ function keep(data) {
   if (frameTooLarge(data)) throw new Error('frame refused before it is parsed (frameTooLarge)')
   const message = JSON.parse(data.toString())
   if (jsonTooDeep(message)) throw new Error('frame refused: nested too deeply')
-  const problem = relayBundleProblem(message, PIN_FIELDS, TYPE_ONLY_FIELDS)
+  const problem = relayBundleProblem(message, PIN_FIELDS, TYPE_ONLY_FIELDS, CARRIED_FIELDS)
   if (problem) throw new Error(`frame refused: ${problem.message}`)
   const storedEvents = relayEvents(message.events)
   const kept = [message.match, message.homeTeam, message.awayTeam, message.homePlayers, message.awayPlayers, message.sets, storedEvents]
