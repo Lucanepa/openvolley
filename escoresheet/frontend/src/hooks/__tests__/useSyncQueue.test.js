@@ -105,6 +105,11 @@ vi.mock('../../lib/apiClient', () => {
       api.calls.push(call)
       return api.respond(call)
     },
+    apiMatchKnown: async (externalId) => {
+      const call = { table: '__known', action: 'known', data: { externalId }, filters: [] }
+      api.calls.push(call)
+      return api.respond(call)
+    },
     apiMatchClaim: async (externalId, pin) => {
       const call = { table: '__claim', action: 'claim', data: { externalId, pin }, filters: [] }
       api.calls.push(call)
@@ -3194,9 +3199,31 @@ describe('a match the server lacks (OV_MATCH_UNKNOWN)', () => {
 
   it('an event of a match the server no longer finds sends the match again', async () => {
     fakeDb.sync_queue.reset([...sentJobs(), { id: 5, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: `${SEED}:e:10`, match_id: SEED } }])
-    api.respond = (call) => (call.table === 'matches' && call.action === 'select' ? ok(null) : defaultRespond(call))
+    api.respond = (call) => (call.table === 'matches' && call.action === 'select' ? ok(null)
+      : call.table === '__known' ? ok({ state: 'unknown' }) : defaultRespond(call))
     expect(await processJob(fakeDb.sync_queue.map.get(5))).toBeNull()
     expect(fakeDb.sync_queue.map.get(1).status).toBe('queued')
+  })
+
+  // review 2026-11: a match deleted on another device must not come back
+  it('a set or event of a match the server deleted sends nothing again', async () => {
+    for (const resource of ['set', 'event']) {
+      resetResyncAttempts()
+      fakeDb.sync_queue.reset([...sentJobs(), { id: 5, resource, action: 'insert', status: 'queued', payload: { external_id: `${SEED}:x:10`, match_id: SEED } }])
+      api.respond = (call) => (call.table === 'matches' && call.action === 'select' ? ok(null)
+        : call.table === '__known' ? ok({ state: 'deleted' }) : defaultRespond(call))
+      expect(await processJob(fakeDb.sync_queue.map.get(5))).toBeNull()
+      expect([1, 2, 3].map(id => fakeDb.sync_queue.map.get(id).status)).toEqual(['sent', 'sent', 'sent'])
+    }
+  })
+
+  it('an update answered OV_MATCH_DELETED is dropped and sends nothing again', async () => {
+    fakeDb.sync_queue.reset([...sentJobs(), { id: 5, resource: 'match', action: 'update', status: 'queued', payload: { id: SEED, status: 'live' } }])
+    api.respond = (call) => (call.table === 'matches' && call.action === 'update'
+      ? { data: null, error: { message: 'deleted', code: 'OV_MATCH_DELETED', status: 404 }, status: 404 }
+      : defaultRespond(call))
+    expect(await processJob(fakeDb.sync_queue.map.get(5))).toBe(true)
+    expect([1, 2, 3].map(id => fakeDb.sync_queue.map.get(id).status)).toEqual(['sent', 'sent', 'sent'])
   })
 
   it('nothing is queued again without a sent insert, and once per match within the retry window', async () => {

@@ -95,12 +95,14 @@ services:
       # backup-openvolley.sh encrypts each one into the backup directory every
       # hour and removes it here. A missing directory fails the archiving
       # (Postgres keeps the segment and retries) and the backup run, never
-      # silently. archive_timeout: a segment at least every 5 min while
+      # silently. A segment already there with the same content (archived,
+      # then Postgres stopped before it noted that) counts as archived; a
+      # different one fails. archive_timeout: a segment at least every 5 min while
       # anything is written.
       - -c
       - archive_mode=on
       - -c
-      - archive_command=test -d /ovpg/walarchive && test ! -f /ovpg/walarchive/%f && cp %p /ovpg/walarchive/.%f.tmp && mv /ovpg/walarchive/.%f.tmp /ovpg/walarchive/%f
+      - archive_command=test -d /ovpg/walarchive && { test -f /ovpg/walarchive/%f && cmp -s %p /ovpg/walarchive/%f || { test ! -f /ovpg/walarchive/%f && cp %p /ovpg/walarchive/.%f.tmp && mv /ovpg/walarchive/.%f.tmp /ovpg/walarchive/%f; }; }
       - -c
       - archive_timeout=300
     environment:

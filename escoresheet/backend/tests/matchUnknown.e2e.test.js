@@ -76,6 +76,27 @@ describe('writes of a match the server lacks', { skip: SKIP }, () => {
     assert.equal((await updateMatch(owner, ext, { status: 'live' })).status, 200)
   })
 
+  // review 2026-11: a match deleted on purpose must not come back from a
+  // device that still holds its sent jobs
+  it('a deleted match is 404 OV_MATCH_DELETED, not OV_MATCH_UNKNOWN; /api/match/known tells them apart', async () => {
+    const owner = await account('nora')
+    const ext = `match_${Date.now()}_${randomBytes(3).toString('hex')}`
+    const known = async (e) => (await api(srv.base, '/api/match/known', { token: owner.token, headers: { 'cf-connecting-ip': ip }, body: { external_id: e } })).json?.data?.state
+    assert.equal(await known(ext), 'unknown')
+    assert.equal((await dbCall(owner, 'matches', 'insert', { data: { external_id: ext, game_n: 91003, status: 'live', game_pin: '615283' } })).status, 200)
+    assert.equal(await known(ext), 'stored')
+    // deleted on another device
+    assert.equal((await dbCall(owner, 'matches', 'delete', { filters: [{ type: 'eq', column: 'external_id', value: ext }] })).status, 200)
+    const upd = await updateMatch(owner, ext, { status: 'live' })
+    assert.equal(upd.status, 404, upd.text)
+    assert.equal(upd.json.error.code, 'OV_MATCH_DELETED')
+    assert.equal(await known(ext), 'deleted')
+    // made again: stored, the deletion record is gone
+    assert.equal((await dbCall(owner, 'matches', 'insert', { data: { external_id: ext, game_n: 91003, status: 'live', game_pin: '615283' } })).status, 200)
+    assert.equal((await sql.query('SELECT 1 FROM deleted_matches WHERE external_id = $1', [ext])).rowCount, 0)
+    assert.equal((await api(srv.base, '/api/match/known', { body: { external_id: ext } })).status, 401)
+  })
+
   it('an update of another account\'s match stays 403, never OV_MATCH_UNKNOWN', async () => {
     const owner = await account('lena')
     const other = await account('tino')

@@ -104,6 +104,7 @@ export const REQUIRED_TRIGGERS = [
   { table: 'public.event_revisions', name: 'event_revisions_closed_guard', fn: 'public.ov_match_children_guard' }, // 015
   { table: 'public.events', name: 'events_apply_void', fn: 'public.ov_events_apply_void' }, // 015, 032
   { table: 'public.matches', name: 'matches_delete_activity', fn: 'public.ov_matches_delete_activity' }, // 016
+  { table: 'public.matches', name: 'matches_deleted_record', fn: 'public.ov_matches_deleted_record' }, // 043
   { table: 'public.clubs', name: 'clubs_touch_updated_at', fn: 'public.ov_touch_updated_at' }, // 018
   { table: 'public.matches', name: 'matches_club_guard', fn: 'public.ov_matches_club_guard' }, // 018
   { table: 'public.club_managers', name: 'club_managers_roles', fn: 'public.ov_manager_rows_changed' }, // 030

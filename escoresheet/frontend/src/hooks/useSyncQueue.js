@@ -1,7 +1,7 @@
 import { useEffect, useCallback, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
-import { apiFrom, apiMatchRestore, apiMatchClaim, apiMatchScorer, apiPostEventRevisions, AUTH_TOKEN_CHANGE_EVENT, AUTH_TOKEN_STORAGE_KEY, BACKEND_REACHED_EVENT } from '../lib/apiClient'
+import { apiFrom, apiMatchKnown, apiMatchRestore, apiMatchClaim, apiMatchScorer, apiPostEventRevisions, AUTH_TOKEN_CHANGE_EVENT, AUTH_TOKEN_STORAGE_KEY, BACKEND_REACHED_EVENT } from '../lib/apiClient'
 import { REVISION_OPS, revisionOfJob } from '../domain/eventRevisions'
 import { emitActivity, noteSyncPass } from '../utils/activity/bus'
 import { setDiagnosticsInfo } from '../utils/diagnosticsInfo'
@@ -1199,10 +1199,13 @@ export const RESYNC_RECENT = -1
  * is an upsert by external_id or a full snapshot, so sending one twice is
  * harmless. Only when the match's insert or restore is among them (else the
  * match was never sent from here, or its jobs are pruned), once per match
- * and RESYNC_RETRY_MS.
+ * and RESYNC_RETRY_MS. ask: no answer of the server named the match unknown
+ * yet (a set or event found no match): the server is asked first
+ * (apiMatchKnown), and only a match it never saw deleted is sent again; a
+ * match deleted on purpose (OV_MATCH_DELETED) stays deleted.
  * @returns {Promise<number>} jobs queued again, or RESYNC_RECENT
  */
-export async function resyncMatch(seedKey, { database = db, now = Date.now() } = {}) {
+export async function resyncMatch(seedKey, { database = db, now = Date.now(), ask = false } = {}) {
   if (!seedKey) return 0
   const last = resyncAttempts.get(seedKey)
   if (last !== undefined && now - last < RESYNC_RETRY_MS) return RESYNC_RECENT
@@ -1215,6 +1218,10 @@ export async function resyncMatch(seedKey, { database = db, now = Date.now() } =
     if (!sent.some(j => j.resource === 'match' && (j.action === 'insert' || j.action === 'restore'))) {
       safeLog.warn('[SyncQueue] The server lacks match', seedKey, 'and this device holds no sent insert of it to send again')
       return 0
+    }
+    if (ask) {
+      const { data } = await apiMatchKnown(seedKey)
+      if (data?.state !== 'unknown') return 0
     }
     for (const j of sent) await database.sync_queue.update(j.id, { status: 'queued', retry_count: 0 })
     safeLog.warn('[SyncQueue] The server lacks match', seedKey, `: ${sent.length} sent job(s) queued again`)
@@ -1356,6 +1363,11 @@ async function processJobInner(job, ctx) {
       const { error } = await apiFrom('matches')
         .update(finalUpdateData)
         .eq('external_id', id)
+      if (error?.code === 'OV_MATCH_DELETED') {
+        // deleted on purpose (another device, an admin): nothing to write
+        safeLog.warn('[SyncQueue] Match update of a deleted match, dropped:', id)
+        return true
+      }
       if (error?.code === 'OV_MATCH_UNKNOWN') {
         // the server lacks the match: send it again, then this update
         const queued = await resyncMatch(id)
@@ -1572,7 +1584,7 @@ async function processJobInner(job, ctx) {
         if (!matchUuid) {
           // Match not yet synced - keep job queued for retry; or synced and
           // lost on the server since: sent again (resyncMatch)
-          await resyncMatch(setPayload.match_id)
+          await resyncMatch(setPayload.match_id, { ask: true })
           return null // null means "retry later"
         }
         setPayload.match_id = matchUuid
@@ -1642,7 +1654,7 @@ async function processJobInner(job, ctx) {
           // Match not yet synced - keep job queued for retry (will be limited
           // by MAX_DEPENDENCY_RETRIES); or synced and lost on the server
           // since: sent again (resyncMatch)
-          await resyncMatch(eventPayload.match_id)
+          await resyncMatch(eventPayload.match_id, { ask: true })
           return null // null means "retry later"
         }
         eventPayload.match_id = matchUuid
