@@ -10,18 +10,33 @@ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 export const PDF_WORKER_URL = pdfWorkerUrl
 
+// A roster PDF is a page or two (an Einsatzliste, a club's list): a file far
+// bigger, or with many pages or much text, is not one, and reading it would
+// hold the device up (the scorer's tablet during setup). Checked before pdf.js
+// parses it, and the text before the patterns run over it.
+export const ROSTER_PDF_MAX_BYTES = 5 * 1024 * 1024
+export const ROSTER_PDF_MAX_PAGES = 10
+export const ROSTER_TEXT_MAX_CHARS = 100000
+const tooBig = (what) => new Error(`This PDF is not a roster (${what})`)
+
 export async function parseRosterPdf(file) {
+  let loadingTask = null
   try {
+    if (typeof file?.size === 'number' && file.size > ROSTER_PDF_MAX_BYTES) throw tooBig('more than 5 MB')
+
     // Dynamic import of pdfjs-dist
     const pdfjsLib = await import('pdfjs-dist')
 
     pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_WORKER_URL
 
     const arrayBuffer = await file.arrayBuffer()
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+    if (arrayBuffer.byteLength > ROSTER_PDF_MAX_BYTES) throw tooBig('more than 5 MB')
+    loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
+    const pdf = await loadingTask.promise
+    if (pdf.numPages > ROSTER_PDF_MAX_PAGES) throw tooBig(`more than ${ROSTER_PDF_MAX_PAGES} pages`)
 
     let fullText = ''
-    // Collect all positioned text items for GFL column detection
+    // All positioned text items: the columns of the rows (playersFromColumns)
     const allPositionedItems = []
 
     // Extract text from all pages
@@ -30,6 +45,7 @@ export async function parseRosterPdf(file) {
       const textContent = await page.getTextContent()
       const pageText = textContent.items.map(item => item.str).join(' ')
       fullText += pageText + '\n'
+      if (fullText.length > ROSTER_TEXT_MAX_CHARS) throw tooBig('too much text')
 
       // Store items with position info (transform[4]=x, transform[5]=y)
       for (const item of textContent.items) {
@@ -38,85 +54,189 @@ export async function parseRosterPdf(file) {
             str: item.str.trim(),
             x: item.transform[4],
             y: item.transform[5],
+            width: item.width,
             page: i
           })
         }
       }
     }
 
-    // Build GFL/LFP lookup using x-coordinates from positioned text items
-    const gflPlayerNames = buildGflLookup(allPositionedItems)
-
-    // Parse the text to extract player and official data
-    const result = parseRosterText(fullText, gflPlayerNames)
-    return result
+    return parseRosterContent(fullText, allPositionedItems)
   } catch (error) {
     console.error('Error parsing PDF:', error)
     // Callers prefix "Failed to parse PDF:" themselves
     throw error
+  } finally {
+    try { loadingTask?.destroy?.() } catch { /* already gone */ }
   }
 }
 
 /**
- * Use PDF x-coordinates to detect which players have an "X" in the GFL column.
- * Returns a Set of "firstName|lastName" strings for players marked as GFL/LFP.
+ * A roster from the PDF's text and its positioned items: the players from
+ * the rows' columns when the items have them (playersFromColumns), else the
+ * text's patterns; the officials from the text.
  */
-function buildGflLookup(items) {
-  const gflPlayerNames = new Set()
-
-  // Find GFL/LAS/JFL/LFP column header by text
-  const gflHeader = items.find(item =>
-    /^(GFL|LAS|JFL|LFP)$/i.test(item.str)
-  )
-  if (!gflHeader) return gflPlayerNames
-
-  const gflX = gflHeader.x
-  const tolerance = 15 // x-coordinate tolerance in PDF units
-
-  // Find all "X" marks near the GFL column x-position
-  const gflMarks = items.filter(item =>
-    item.str === 'X' &&
-    Math.abs(item.x - gflX) < tolerance
-  )
-
-  if (gflMarks.length === 0) return gflPlayerNames
-
-  // For each GFL "X" mark, find the player on the same row (same y-coordinate)
-  // by looking for a 5-6 digit SV number at the same y position
-  const yTolerance = 3
-  for (const mark of gflMarks) {
-    // Find the SV number on the same line
-    const svNumberItem = items.find(item =>
-      /^\d{5,6}$/.test(item.str) &&
-      Math.abs(item.y - mark.y) < yTolerance
-    )
-    if (!svNumberItem) continue
-
-    // Find name items on the same row — items between the SV number x and the GFL column x
-    const rowItems = items.filter(item =>
-      Math.abs(item.y - mark.y) < yTolerance &&
-      item.x > svNumberItem.x &&
-      item.x < gflX - tolerance &&
-      !/^\d{5,6}$/.test(item.str) && // not SV number
-      !/^[MFH]$/.test(item.str) && // not gender
-      !/^\d{1,2}[./]\d{1,2}[./]\d{4}$/.test(item.str) && // not date
-      !/^(LLR|NLR|LLA|NLA|LLB|NLB|1L|2L|3L|4L)$/i.test(item.str) // not league/club codes
-    ).sort((a, b) => a.x - b.x)
-
-    // Typically first 2 text items are firstName, lastName (or lastName, firstName)
-    if (rowItems.length >= 2) {
-      // Store both orderings since parser may swap them
-      const name1 = rowItems[0].str
-      const name2 = rowItems[1].str
-      gflPlayerNames.add(`${name1}|${name2}`)
-      gflPlayerNames.add(`${name2}|${name1}`)
-    }
+export function parseRosterContent(text, items = []) {
+  const result = parseRosterText(String(text ?? '').slice(0, ROSTER_TEXT_MAX_CHARS), lfpLicences(items))
+  const fromColumns = playersFromColumns(items)
+  if (fromColumns.length > 0 && fromColumns.length >= result.players.length) {
+    result.players = fromColumns.map(p => ({ ...p, ...moveNameParticles(p.firstName, p.lastName) }))
   }
-
-  return gflPlayerNames
+  return result
 }
 
-export function parseRosterText(text, gflPlayerNames = new Set()) {
+// ---------------------------------------------------------------- columns
+const Y_TOLERANCE = 3 // same row: y within this (PDF units)
+const X_TOLERANCE = 2 // same column start
+const LFP_TOLERANCE = 15 // an "X" under the LFP header
+const LICENCE_RE = /^\d{5,6}$/
+const SHIRT_RE = /^\d{1,2}$/
+const GENDER_RE = /^[MFH]$/
+const DATE_IN_RE = /^(\d{1,2})\s*[./]\s*(\d{1,2})\s*[./]\s*(\d{4})/
+const LEAGUE_RE = /^(LLR|NLR|LLA|NLA|LLB|NLB|1L|2L|3L|4L)$/i
+const LFP_HEADER_RE = /^(GFL|LAS|JFL|LFP)$/i
+// Header words of the name columns (Italian "Nome" is the first name, French "Nom" the last)
+const FIRST_NAME_HEADER = /^(vorname|prénom|prenom|nome|first ?name|given ?name)$/i
+const LAST_NAME_HEADER = /^(name|nachname|nom|cognome|last ?name|family ?name|surname)$/i
+const HAS_LETTER = /\p{L}/u
+
+/** The items in rows: same page, y within Y_TOLERANCE; top to bottom, each row left to right. */
+function textRows(items) {
+  const sorted = (items || []).filter(it => it && typeof it.str === 'string' && Number.isFinite(it.x) && Number.isFinite(it.y))
+    .slice().sort((a, b) => ((a.page || 0) - (b.page || 0)) || (b.y - a.y) || (a.x - b.x))
+  const rows = []
+  for (const it of sorted) {
+    const row = rows[rows.length - 1]
+    if (row && row.page === (it.page || 0) && Math.abs(row.y - it.y) < Y_TOLERANCE) row.items.push(it)
+    else rows.push({ page: it.page || 0, y: it.y, items: [it] })
+  }
+  for (const r of rows) r.items.sort((a, b) => a.x - b.x)
+  return rows
+}
+
+/** A date of birth of a player (born 1900 up to 4 years ago), 'DD/MM/YYYY', or null. */
+function birthDate(day, month, year, now = new Date()) {
+  const d = Number(day)
+  const m = Number(month)
+  const y = Number(year)
+  if (!(d >= 1 && d <= 31 && m >= 1 && m <= 12 && y >= 1900 && y <= now.getFullYear() - 4)) return null
+  return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`
+}
+
+/**
+ * The SV numbers (licences) of the rows with an "X" in the LFP column (its
+ * header GFL, LAS, JFL or LFP): the mark goes with the licence, whatever the
+ * name's words.
+ */
+function lfpLicences(items) {
+  const out = new Set()
+  const rows = textRows(items)
+  const header = (items || []).find(it => LFP_HEADER_RE.test(String(it?.str || '')))
+  if (!header) return out
+  for (const row of rows) {
+    const licence = row.items.find(it => LICENCE_RE.test(it.str))
+    if (licence && row.items.some(it => it.str === 'X' && Math.abs(it.x - header.x) < LFP_TOLERANCE)) out.add(licence.str)
+  }
+  return out
+}
+
+/**
+ * The players of a roster PDF from its columns: the rows that start with an
+ * SV number (an Einsatzliste: no shirt number) or a shirt number 1 to 99 and
+ * hold a date of birth. The two name cells are told apart by their x position
+ * (where the columns start: the header's, else the one the rows share), never
+ * by how many words a name has: "Sofia | Garcia Lopez" stays so. A row
+ * without a date of birth (a header, a team line, a date of the match) is no
+ * player. [] when the items have no such rows, or the names cannot be split.
+ */
+export function playersFromColumns(items) {
+  const rows = textRows(items)
+  const headerX = (re) => (items || []).find(it => re.test(String(it?.str || '').trim()))?.x
+  const firstHeaderX = headerX(FIRST_NAME_HEADER)
+  const lastHeaderX = headerX(LAST_NAME_HEADER)
+  const lfpX = headerX(LFP_HEADER_RE)
+  const parsed = { licence: [], shirt: [] }
+  for (const row of rows) {
+    const [key, ...rest] = row.items
+    const kind = LICENCE_RE.test(key.str) ? 'licence' : SHIRT_RE.test(key.str) && Number(key.str) >= 1 ? 'shirt' : null
+    if (!kind) continue
+    const names = []
+    let i = 0
+    while (i < rest.length && HAS_LETTER.test(rest[i].str) && !GENDER_RE.test(rest[i].str) && !LEAGUE_RE.test(rest[i].str) && rest[i].str !== 'X') names.push(rest[i++])
+    let gender = false
+    if (i < rest.length && GENDER_RE.test(rest[i].str)) { gender = true; i++ }
+    const date = DATE_IN_RE.exec(rest.slice(i).map(it => it.str).join(''))
+    const dob = date ? birthDate(date[1], date[2], date[3]) : null
+    if (!names.length || !dob) continue
+    parsed[kind].push({
+      kind, key: key.str, names, gender, dob,
+      isLfp: lfpX != null && row.items.some(it => it.str === 'X' && Math.abs(it.x - lfpX) < LFP_TOLERANCE)
+    })
+  }
+  // One format per file: the one with more rows (as the text patterns)
+  const list = parsed.licence.length >= parsed.shirt.length ? parsed.licence : parsed.shirt
+  if (!list.length) return []
+  const headers = firstHeaderX != null && lastHeaderX != null
+  const boundary = nameColumnStart(list, headers ? Math.max(firstHeaderX, lastHeaderX) : null)
+  if (boundary == null) return []
+  // The order of the two cells: the header's, else first name first in an
+  // Einsatzliste row (with its gender letter) and last name first otherwise
+  const firstNameFirst = headers ? firstHeaderX < lastHeaderX : list[0].gender || list[0].kind === 'licence'
+  const out = []
+  for (const r of list) {
+    const left = r.names.filter(it => it.x < boundary - X_TOLERANCE).map(it => it.str).join(' ').trim()
+    const right = r.names.filter(it => it.x >= boundary - X_TOLERANCE).map(it => it.str).join(' ').trim()
+    if (!left || !right) return []
+    const [firstName, lastName] = firstNameFirst ? [left, right] : [right, left]
+    out.push(r.kind === 'licence'
+      ? { number: null, licence: r.key, firstName, lastName, dob: r.dob, isLfp: r.isLfp }
+      : { number: Number(r.key), firstName, lastName, dob: r.dob, isLfp: r.isLfp })
+  }
+  return out
+}
+
+/**
+ * Where the second name column starts: the x most rows have a name cell
+ * starting at (not counting each row's first), else the second name
+ * header's x, else, for a single row, the widest gap between its name items.
+ * null when there is none (every row one item: the cells are not apart).
+ */
+function nameColumnStart(list, headerX = null) {
+  const counts = new Map()
+  for (const r of list) {
+    const seen = new Set()
+    for (const it of r.names.slice(1)) {
+      const x = Math.round(it.x)
+      for (const k of [x - 1, x, x + 1]) {
+        if (seen.has(k)) continue
+        seen.add(k)
+        counts.set(k, (counts.get(k) || 0) + 1)
+      }
+    }
+  }
+  let best = null
+  for (const [x, n] of counts) if (n >= 2 && (!best || n > best.n || (n === best.n && x < best.x))) best = { x, n }
+  if (best) return best.x
+  if (headerX != null) return headerX
+  if (list.length !== 1 || list[0].names.length < 2) return null
+  const names = list[0].names
+  let at = 1
+  let widest = -Infinity
+  for (let k = 1; k < names.length; k++) {
+    const prev = names[k - 1]
+    const gap = names[k].x - (prev.x + (Number.isFinite(prev.width) ? prev.width : 0))
+    if (gap > widest) { widest = gap; at = k }
+  }
+  return names[at].x
+}
+
+/**
+ * A roster from the text alone (the PDF's items joined): players, coach and
+ * assistants. lfp: the SV numbers marked LFP (lfpLicences). Names are told
+ * apart by the patterns' words only, so playersFromColumns' answer is
+ * preferred where the PDF has columns.
+ */
+export function parseRosterText(text, lfp = new Set()) {
   const result = {
     players: [],
     coach: null,
@@ -143,69 +263,64 @@ export function parseRosterText(text, gflPlayerNames = new Set()) {
   const lower = 'a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ\u0100-\u024F'
   // Either: lowercase+ (optionally with apostrophe after), OR apostrophe+content (for O'Brien, D'Angelo)
   const nameWord = `[${upper}](?:[${lower}]+(?:'[${upper}]?[${lower}]+)?|'[${upper}]?[${lower}]+)(?:-[${upper}][${lower}]+)*`
-  // Full name: one or more name words separated by spaces
-  const fullName = `${nameWord}(?:\\s+${nameWord})*`
+  // Full name: one to six name words separated by spaces. Bounded: unbounded,
+  // two names in a row backtracked over every split of a long run of words
+  // (a minute for a page of short words)
+  const fullName = `${nameWord}(?:\\s+${nameWord}){0,5}`
 
-  // Common patterns for different languages
-  const patterns = {
-    // Player patterns - look for number, name, DOB
-    // Format variations: "1. LastName FirstName DD/MM/YYYY" or "1 LastName FirstName DD/MM/YYYY"
-    player: new RegExp(`(\\d+)[.\\s]+(${fullName})\\s+(${fullName})\\s+(\\d{1,2}[./]\\d{1,2}[./]\\d{4})`, 'gi'),
+  // A shirt number: one or two digits on their own, never part of a longer
+  // number or of a date ("Saison 2026", a licence 123456). No lookbehind:
+  // older Safari and WebViews refuse the whole pattern
+  const shirt = '(?:^|[^\\d./])(\\d{1,2})(?!\\d|[./]\\d)'
+  const date = '(\\d{1,2}[./]\\d{1,2}[./]\\d{4})'
+  // Format variations: "1. LastName FirstName DD/MM/YYYY" or "1 LastName FirstName DD/MM/YYYY"
+  const playerPattern = new RegExp(`${shirt}[.\\s]+(${fullName})\\s+(${fullName})\\s+${date}`, 'gi')
 
-    // Coach patterns - look for "Coach", "Entraîneur", "Allenatore", "Trainer"
-    coach: new RegExp(`(?:Coach|Entraîneur|Allenatore|Trainer)[:\\s]+(${fullName})\\s+(${fullName})(?:\\s+(\\d{1,2}[./]\\d{1,2}[./]\\d{4}))?`, 'gi'),
-
-    // Assistant Coach patterns
-    ac1: new RegExp(`(?:Assistant\\s+Coach\\s+1|Entraîneur\\s+adjoint\\s+1|Allenatore\\s+assistente\\s+1|Assistenttrainer\\s+1)[:\\s]+(${fullName})\\s+(${fullName})(?:\\s+(\\d{1,2}[./]\\d{1,2}[./]\\d{4}))?`, 'gi'),
-
-    ac2: new RegExp(`(?:Assistant\\s+Coach\\s+2|Entraîneur\\s+adjoint\\s+2|Allenatore\\s+assistente\\s+2|Assistenttrainer\\s+2)[:\\s]+(${fullName})\\s+(${fullName})(?:\\s+(\\d{1,2}[./]\\d{1,2}[./]\\d{4}))?`, 'gi')
+  // Extract players: a shirt number 1-99 and a date of birth (a header line
+  // "Runde 3 Volley Musterdorf 01.09.2026" carries the match's date)
+  let match
+  while ((match = playerPattern.exec(normalizedText)) !== null) {
+    const number = parseInt(match[1], 10)
+    const dob = dobOf(match[4])
+    if (number < 1 || !dob) continue
+    result.players.push({
+      number,
+      firstName: match[3].trim(),
+      lastName: match[2].trim(),
+      dob
+    })
   }
 
-    // Extract players
-    let match
-    while ((match = patterns.player.exec(normalizedText)) !== null) {
-      const number = parseInt(match[1])
-      const lastName = match[2].trim()
-      const firstName = match[3].trim()
-      const dob = match[4].trim()
-      
-      result.players.push({
-        number,
-        firstName,
-        lastName,
-        dob: normalizeDate(dob)
-      })
+  // The officials written "<role>: <first> <last> [date]". The assistants
+  // first, each taken out of the text, so "Assistant Coach: …" never reads as
+  // the head coach; a name stops at the next label word ("Coach: Hans Muster
+  // Assistant Coach 1: …" is Hans Muster)
+  if (!hasLabelledOfficials(normalizedText)) {
+    const labelWord = `(?:assist[${lower}]*|adjoint[${lower}]*|coach|trainer[${lower}]*|entra[iî]neur[${lower}]*|allenator[${lower}]*)(?![${lower}])`
+    const officialName = `(?!${labelWord})${nameWord}(?:\\s+(?!${labelWord})${nameWord}){0,5}`
+    // the label starts a word: "Trainer" inside "Assistenttrainer" is none
+    const official = (label) => new RegExp(`(?:^|[^${upper}${lower}])(${label})[:\\s]+(${officialName})\\s+(${officialName})(?:\\s+${date})?`, 'gi')
+    const assistant = 'Assistant\\s+Coach|Entraîneur\\s+adjoint|Allenatore\\s+assistente|Assistenttrainer|Assistenztrainer'
+    let rest = normalizedText
+    // The first match `skip` does not refuse, taken out of the text
+    const take = (re, skip = () => false) => {
+      let m
+      while ((m = re.exec(rest)) !== null && skip(m[1])) { /* the next one */ }
+      if (!m) return null
+      rest = `${rest.slice(0, m.index)} ${rest.slice(m.index + m[0].length)}`
+      return { firstName: m[2].trim(), lastName: m[3].trim(), dob: m[4] ? (dobOf(m[4]) || '') : '' }
     }
-
-    // Extract coach
-    const coachMatch = patterns.coach.exec(normalizedText)
-    if (coachMatch && !hasLabelledOfficials(normalizedText)) {
-      result.coach = {
-        firstName: coachMatch[1]?.trim() || '',
-        lastName: coachMatch[2]?.trim() || '',
-        dob: coachMatch[3] ? normalizeDate(coachMatch[3].trim()) : ''
-      }
+    result.ac1 = take(official(`(?:${assistant})\\s+1`))
+    result.ac2 = take(official(`(?:${assistant})\\s+2`))
+    // an assistant without its number takes the first free slot
+    const anyAssistant = take(official(`(?:${assistant})(?!\\s*\\d)`))
+    if (anyAssistant) {
+      if (!result.ac1) result.ac1 = anyAssistant
+      else if (!result.ac2) result.ac2 = anyAssistant
     }
-
-    // Extract AC1
-    const ac1Match = patterns.ac1.exec(normalizedText)
-    if (ac1Match && !hasLabelledOfficials(normalizedText)) {
-      result.ac1 = {
-        firstName: ac1Match[1]?.trim() || '',
-        lastName: ac1Match[2]?.trim() || '',
-        dob: ac1Match[3] ? normalizeDate(ac1Match[3].trim()) : ''
-      }
-    }
-
-    // Extract AC2
-    const ac2Match = patterns.ac2.exec(normalizedText)
-    if (ac2Match && !hasLabelledOfficials(normalizedText)) {
-      result.ac2 = {
-        firstName: ac2Match[1]?.trim() || '',
-        lastName: ac2Match[2]?.trim() || '',
-        dob: ac2Match[3] ? normalizeDate(ac2Match[3].trim()) : ''
-      }
-    }
+    // "Coach" right after "Assistant" is an assistant's label
+    result.coach = take(official('(?:assist[a-z]*\\s+)?(?:Coach|Entraîneur|Allenatore|Trainer)(?!\\s*(?:adjoint|assistente|\\d))'), (label) => /^assist/i.test(label))
+  }
 
     // Try Italian/German SV number format (even if some players were found, as the first pattern might miss some)
     // This format is common in Swiss Volleyball rosters
@@ -227,9 +342,10 @@ export function parseRosterText(text, gflPlayerNames = new Set()) {
     while ((match = svPlayerPattern.exec(normalizedText)) !== null) {
       const firstName = match[2].trim()
       const lastName = match[3].trim()
-      const dob = normalizeDate(match[4].replace(/\s+/g, '').trim())
-      // Use coordinate-based GFL lookup instead of trailing text heuristic
-      const isLfp = gflPlayerNames.has(`${firstName}|${lastName}`)
+      const dob = dobOf(match[4])
+      if (!dob) continue
+      // The LFP column's mark, by the licence (lfpLicences)
+      const isLfp = lfp.has(match[1])
 
       svFormatPlayers.push({
         number: null,
@@ -249,9 +365,10 @@ export function parseRosterText(text, gflPlayerNames = new Set()) {
       while ((matchOriginal = svPlayerPatternOriginal.exec(text)) !== null) {
         const firstName = matchOriginal[2].trim()
         const lastName = matchOriginal[3].trim()
-        const dob = normalizeDate(matchOriginal[4].replace(/\s+/g, '').trim())
-        // Use coordinate-based GFL lookup instead of trailing text heuristic
-        const isLfp = gflPlayerNames.has(`${firstName}|${lastName}`)
+        const dob = dobOf(matchOriginal[4])
+        if (!dob) continue
+        // The LFP column's mark, by the licence (lfpLicences)
+        const isLfp = lfp.has(matchOriginal[1])
 
         svFormatPlayers.push({
           number: null,
@@ -277,17 +394,16 @@ export function parseRosterText(text, gflPlayerNames = new Set()) {
       // Try pattern: number, firstname, lastname, M/F, date (with hyphen/apostrophe support)
       // Must have lowercase+ OR apostrophe+content (prevents matching single letters like M/F)
       const simpleNameWord = "[A-Z](?:[a-z]+(?:'[A-Z]?[a-z]+)?|'[A-Z]?[a-z]+)(?:-[A-Z][a-z]+)*"
-      const simpleFullName = `${simpleNameWord}(?:\\s+${simpleNameWord})*`
-      const simplePattern = new RegExp(`(\\d+)\\s+(${simpleFullName})\\s+(${simpleFullName})\\s+[MF]\\s+(\\d{1,2}[./]\\d{1,2}[./]\\d{4})`, 'gi')
+      const simpleFullName = `${simpleNameWord}(?:\\s+${simpleNameWord}){0,5}`
+      const simplePattern = new RegExp(`${shirt}\\s+(${simpleFullName})\\s+(${simpleFullName})\\s+[MF]\\s+${date}`, 'gi')
       simplePattern.lastIndex = 0
       while ((match = simplePattern.exec(text)) !== null) {
-          const number = parseInt(match[1])
+          const number = parseInt(match[1], 10)
           const firstName = match[2].trim()
           const lastName = match[3].trim()
-          const dob = normalizeDate(match[4].trim())
-          
-          // Removed console.log('[parseRosterText] Found simple format player:', { number, firstName, lastName, dob })
-          
+          const dob = dobOf(match[4])
+          if (number < 1 || !dob) continue
+
           result.players.push({
             number,
             firstName,
@@ -300,7 +416,7 @@ export function parseRosterText(text, gflPlayerNames = new Set()) {
       // Removed console.log('[parseRosterText] Total players found:', result.players.length)
     
     // VolleyManager's officials, in any language: "<role>: #<SV number> | <first> <last> (<year>)",
-    // e.g. "Allenatore: #52205 | …", "1. Assistant Coach: #72458 | …".
+    // e.g. "Allenatore: #10001 | …", "1. Assistant Coach: #10002 | …" (made-up numbers).
     // The role is told by its words (officialRoleOf), the SV number is kept as the licence and a
     // year alone is no date of birth (birthYear).
     for (const o of parseLabelledOfficials(normalizedText, fullName)) {
@@ -376,8 +492,8 @@ export function moveNameParticles(firstName, lastName) {
   return { firstName: words.join(' '), lastName: [...moved, String(lastName ?? '').trim()].filter(Boolean).join(' ') }
 }
 
-function normalizeDate(dateStr) {
-  if (!dateStr) return ''
-  // Normalize date format to DD/MM/YYYY
-  return dateStr.replace(/\./g, '/')
+/** A date of birth as written ('14.03.2008', '07.10 .2007') -> 'DD/MM/YYYY', or null when it is none (birthDate). */
+function dobOf(raw) {
+  const m = DATE_IN_RE.exec(String(raw ?? '').replace(/\s+/g, ''))
+  return m ? birthDate(m[1], m[2], m[3]) : null
 }
