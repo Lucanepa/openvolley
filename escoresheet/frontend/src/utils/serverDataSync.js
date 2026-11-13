@@ -1513,7 +1513,8 @@ export async function findMatchByGameNumber(gameNumber) {
     }
 
     const result = await response.json()
-    return result.match || null
+    // relayMatchId: the relay's room key, under which GET / PATCH find the match
+    return result.match ? { ...result.match, relayMatchId: result.matchId ?? null } : null
   } catch (error) {
     console.error('Error finding match by game number:', error)
     return null
@@ -1521,16 +1522,18 @@ export async function findMatchByGameNumber(gameNumber) {
 }
 
 /**
- * Update match data on server (for upload roster, etc.)
+ * Update match data on server (for upload roster, etc.). `pin`: the team's
+ * upload PIN of the match, which the relay checks (X-OV-Match-Pin).
  */
-export async function updateMatchData(matchId, updates) {
+export async function updateMatchData(matchId, updates, { pin = null } = {}) {
   const serverUrl = getServerUrl()
 
   try {
-    const response = await fetch(`${serverUrl}/api/match/${matchId}`, {
+    const response = await fetch(`${serverUrl}/api/match/${encodeURIComponent(matchId)}`, {
       method: 'PATCH',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        ...(pin ? { 'X-OV-Match-Pin': String(pin) } : {})
       },
       body: JSON.stringify(updates)
     })

@@ -120,7 +120,11 @@ describe('the Scoreboard\'s sync and remarks', () => {
     const start = src.indexOf('const handleMatchDataRequest = async (request) => {')
     expect(start).toBeGreaterThan(-1)
     const body = src.slice(start, src.indexOf("console.error('[WebSocket] Error handling match data request:'", start))
-    const answer = body.slice(body.indexOf('success: true,'))
+    // the answer's bundle (readRelayBundle, also the match-update-response's)
+    expect(body.slice(body.indexOf('success: true,'))).toContain('data: await readRelayBundle(freshMatch, syncMark)')
+    const helper = src.indexOf('const readRelayBundle = async (freshMatch, syncMark) => {')
+    expect(helper).toBeGreaterThan(-1)
+    const answer = src.slice(helper, src.indexOf('const handleMatchDataRequest', helper))
     for (const k of ['homeTeam: relayTeamPayload(freshHomeTeam),', 'awayTeam: relayTeamPayload(freshAwayTeam),',
       'homePlayers: relayPeoplePayload(freshHomePlayers),', 'awayPlayers: relayPeoplePayload(freshAwayPlayers),',
       'events: relayEvents(freshEvents || [])']) expect(answer).toContain(k)

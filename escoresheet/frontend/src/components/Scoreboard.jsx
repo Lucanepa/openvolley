@@ -22,6 +22,7 @@ import NativeBackupAlert from './options/NativeBackupAlert'
 import ConnectTabletsModal from './connect/ConnectTabletsModal'
 import { useSyncQueue, isAuthBlocked, checkScorerMoved } from '../hooks/useSyncQueue'
 import { isScorerMoved, SCORER_MOVED, relaySyncDevice } from '../utils/matchHandover'
+import { checkUploadedRoster } from '../domain/uploadedRoster'
 import { useSequentialSync, setEndBackupPlan, setEndStillUndelivered, SET_END_DOWNLOAD_GRACE_MS } from '../hooks/useSequentialSync'
 import SyncProgressModal from './SyncProgressModal'
 import SignaturePad from './SignaturePad'
@@ -1952,6 +1953,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           } else if (message.type === 'game-number-request') {
             // Respond to game number request
             handleGameNumberRequest(message)
+          } else if (message.type === 'match-update-request') {
+            // A team's roster from the upload page (the relay checked its upload PIN)
+            handleMatchUpdateRequest(message)
           } else if (message.type === 'pong') {
             // Heartbeat response
           } else if (relayKeyRef.current && isRelayErrorFor(message, [relayKeyRef.current])) {
@@ -2135,6 +2139,31 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
     }
 
+    // The bundle a relay keeps for the match (as sync-match-data sends it)
+    const readRelayBundle = async (freshMatch, syncMark) => {
+      const [freshHomeTeam, freshAwayTeam, freshSets, freshEvents, freshHomePlayers, freshAwayPlayers] = await Promise.all([
+        db.teams.get(freshMatch?.homeTeamId),
+        db.teams.get(freshMatch?.awayTeamId),
+        db.sets.where('matchId').equals(matchId).toArray(),
+        db.events.where('matchId').equals(matchId).toArray(),
+        freshMatch?.homeTeamId ? db.players.where('teamId').equals(freshMatch.homeTeamId).toArray() : [],
+        freshMatch?.awayTeamId ? db.players.where('teamId').equals(freshMatch.awayTeamId).toArray() : []
+      ])
+      return {
+        // Never game_pin / connection_pins (the relay needs only its PIN fields)
+        match: relayMatchPayload(freshMatch, null, { mark: syncMark }).match,
+        // as sync-match-data: names and colours, rosters without dates
+        // of birth, events without the undo snapshots (a LAN relay keeps
+        // the answer as the room's bundle and hands it on)
+        homeTeam: relayTeamPayload(freshHomeTeam),
+        awayTeam: relayTeamPayload(freshAwayTeam),
+        homePlayers: relayPeoplePayload(freshHomePlayers),
+        awayPlayers: relayPeoplePayload(freshAwayPlayers),
+        sets: freshSets || [],
+        events: relayEvents(freshEvents || [])
+      }
+    }
+
     const handleMatchDataRequest = async (request) => {
       if (!ws || ws.readyState !== WebSocket.OPEN) return
 
@@ -2173,33 +2202,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           return
         }
 
-        const [freshHomeTeam, freshAwayTeam, freshSets, freshEvents, freshHomePlayers, freshAwayPlayers] = await Promise.all([
-          db.teams.get(freshMatch?.homeTeamId),
-          db.teams.get(freshMatch?.awayTeamId),
-          db.sets.where('matchId').equals(matchId).toArray(),
-          db.events.where('matchId').equals(matchId).toArray(),
-          freshMatch?.homeTeamId ? db.players.where('teamId').equals(freshMatch.homeTeamId).toArray() : [],
-          freshMatch?.awayTeamId ? db.players.where('teamId').equals(freshMatch.awayTeamId).toArray() : []
-        ])
-
         ws.send(JSON.stringify({
           type: 'match-data-response',
           requestId,
           matchId: requestedMatchId,
           success: true,
-          data: {
-            // Never game_pin / connection_pins (the relay needs only its PIN fields)
-            match: relayMatchPayload(freshMatch, null, { mark: syncMark }).match,
-            // as sync-match-data: names and colours, rosters without dates
-            // of birth, events without the undo snapshots (a LAN relay keeps
-            // the answer as the room's bundle and hands it on)
-            homeTeam: relayTeamPayload(freshHomeTeam),
-            awayTeam: relayTeamPayload(freshAwayTeam),
-            homePlayers: relayPeoplePayload(freshHomePlayers),
-            awayPlayers: relayPeoplePayload(freshAwayPlayers),
-            sets: freshSets || [],
-            events: relayEvents(freshEvents || [])
-          }
+          data: await readRelayBundle(freshMatch, syncMark)
         }))
       } catch (err) {
         console.error('[WebSocket] Error handling match data request:', err)
@@ -2212,6 +2220,37 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             error: 'Error fetching match data'
           }))
         }
+      }
+    }
+
+    // PATCH /api/match/:id on a LAN relay: the upload page's roster, stored
+    // as pending on this match like a cloud upload (Match Setup offers it).
+    // The answer carries the bundle; the relay takes it only from this match's
+    // scoreboard.
+    const handleMatchUpdateRequest = async (request) => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return
+      const { requestId, matchId: requestedMatchId, updates } = request
+      const answer = (body) => ws.send(JSON.stringify({ type: 'match-update-response', requestId, matchId: requestedMatchId, ...body }))
+      try {
+        const freshMatch = await db.matches.get(matchId)
+        const keyOfMatch = relayMatchKey(freshMatch)
+        const field = ['pendingHomeRoster', 'pendingAwayRoster'].find((f) => updates && Object.prototype.hasOwnProperty.call(updates, f))
+        const checked = field && Object.keys(updates).length === 1 ? checkUploadedRoster(updates[field]) : null
+        if (!keyOfMatch || String(requestedMatchId) !== keyOfMatch || !freshMatch || isScorerMoved(freshMatch)) {
+          answer({ success: false, error: 'Match ID mismatch' })
+          return
+        }
+        if (!checked?.ok || freshMatch.status === 'final') {
+          answer({ success: false, error: 'Roster not accepted' })
+          return
+        }
+        const syncMark = liveStateOrderRef.current.mark()
+        await db.matches.update(matchId, { [field]: checked.roster })
+        const stored = await db.matches.get(matchId)
+        answer({ success: true, data: await readRelayBundle(stored, syncMark) })
+      } catch (err) {
+        console.error('[WebSocket] Error handling match update request:', err)
+        if (ws && ws.readyState === WebSocket.OPEN) answer({ success: false, error: 'Error storing roster' })
       }
     }
 
