@@ -6,7 +6,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createPinHasher, isHashedPin, pinHasherFromEnv } from '../lib/pinHash.js'
-import { createMatchTokens, pinGrantsAccess, matchTokenSecretFromEnv, isTokenRole } from '../lib/matchAccess.js'
+import { createMatchTokens, pinGrantsAccess, pinRoleOf, matchTokenSecretFromEnv, isTokenRole } from '../lib/matchAccess.js'
 import { relaySummaryBundle, projectAnonDbRows, projectNonOwnerRows, hasAnonPolicy, anonSelectCheck } from '../lib/publicColumns.js'
 
 const SECRET = 'x'.repeat(40)
@@ -157,6 +157,23 @@ describe('pinGrantsAccess (relay)', () => {
     assert.equal(pinGrantsAccess({}, ''), false)
     assert.equal(pinGrantsAccess({ status: 'live' }, '000000'), false, 'a match without PINs grants nothing')
     assert.equal(pinGrantsAccess(null, '314159'), false)
+  })
+
+  // A synced match is any socket's JSON: String() of {"toString":1} throws,
+  // and in GET /api/match/:id that throw ended the backend
+  it('a PIN that is not text or a number grants nothing and never throws', () => {
+    const poison = { toString: 1 }
+    const odd = { refereeConnectionEnabled: true, homeTeamConnectionEnabled: true, refereePin: poison, homeTeamPin: ['271828'], gamePin: poison }
+    assert.equal(pinGrantsAccess(odd, '1'), false)
+    assert.equal(pinGrantsAccess(odd, '271828'), false, 'an array is no PIN')
+    assert.equal(pinGrantsAccess(match, poison), false)
+    assert.equal(pinRoleOf(odd, '1'), null)
+    assert.equal(pinRoleOf(match, poison), null)
+    const tokens = createMatchTokens({ secret: SECRET })
+    assert.equal(typeof tokens.stillGrants(tokens.verify(tokens.issue({ matchKey: 'm', role: 'referee', pin: '314159' })), odd), 'boolean')
+    assert.equal(tokens.verify(tokens.issue({ matchKey: 'm', role: 'referee', pin: poison })).f, undefined, 'no PIN, no fingerprint')
+    // numbers stay PINs (older scorers stored them as numbers)
+    assert.equal(pinGrantsAccess({ refereeConnectionEnabled: true, refereePin: 314159 }, '314159'), true)
   })
 })
 

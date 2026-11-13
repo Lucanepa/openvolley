@@ -487,13 +487,18 @@ export function relayMatchListRow(entry, { includeFinished = false } = {}) {
   const match = (entry?.match && typeof entry.match === 'object') ? entry.match : {}
   const status = match.status == null || match.status === '' ? 'scheduled' : String(match.status)
   if (!LISTED_STATUSES.has(status) && !(includeFinished && FINISHED_STATUSES.has(status.toLowerCase()))) return null
+  // Only a string or a finite number: the /api/match/list sort calls new Date()
+  // on this, which throws for an object whose toString is not a function, and
+  // that makes the whole list answer 500 (a sync stores only validated values,
+  // this is the second guard on the read).
+  const scheduledAt = typeof match.scheduledAt === 'string' || Number.isFinite(match.scheduledAt) ? match.scheduledAt : null
   return {
     id: entry.matchId,
     gameNumber: entry.gameNumber || match.gameNumber || match.game_n || entry.matchId,
     homeTeam: teamNameOf(entry.homeTeam, teamNameOf(match.homeTeamName, 'Home')),
     awayTeam: teamNameOf(entry.awayTeam, teamNameOf(match.awayTeamName, 'Away')),
-    scheduledAt: match.scheduledAt ?? null,
-    dateTime: formatListDateTime(match.scheduledAt),
+    scheduledAt,
+    dateTime: formatListDateTime(scheduledAt),
     status,
     // 'beach' (openbeach) or 'indoor': each app lists its own sport's matches
     sportType: entry.sportType === 'beach' ? 'beach' : 'indoor',

@@ -180,6 +180,15 @@ about 100 simultaneous matches, raise for that day and measure again with the pe
 A national rollout (404 matches at the peak) needs these limits plus sharding by association
 (several backends behind the tunnel), not one bigger container.
 
+The relay's memory for match data (stored bundles and live states) follows the heap limit: 35% of
+it, about 106 MB at `--max-old-space-size=256` and 260 MB at 700, half of that per address. A long
+five-set match counts 0.7-1.8 MB of it (an upper bound on its heap). As it fills, the relay sheds
+new matches first (new rooms are refused at 80% of the total, or of an address's share) so the
+matches in play keep syncing to their referee and bench tablets; on the cloud the rooms the
+database does not know as official matches hold at most 60% of the total, so an anonymous flood
+cannot freeze official matches. Refusals (`relay-full`) show in the `[WS]` summary;
+`OV_RELAY_MAX_MB` sets the total by hand (backend README).
+
 ## Public downloads: get.openvolley.app
 
 `https://get.openvolley.app` serves the public install routes from `ov-pkgs`, through the same

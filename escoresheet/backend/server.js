@@ -23,6 +23,7 @@ import { isIP, BlockList } from 'net'
 import { join, extname } from 'path'
 import { fileURLToPath } from 'url'
 import os from 'os'
+import { getHeapStatistics } from 'v8'
 import QRCode from 'qrcode'
 import PocketBase from 'pocketbase'
 import { SECRET_COLUMNS, redactSecrets } from './lib/secrets.js'
@@ -39,7 +40,7 @@ import { normalizeBenchRequest, normalizeBenchResponse, createBenchRequestStore,
 import { ipBucketKey, createConcurrencyGate, bearerFromHeaders } from './lib/auth.js'
 import { createAttemptLimiter, createPinFailureBudget } from './lib/matchRestore.js'
 import { newRequestId, formatDbRejection, createLogLimiter, createConnectionSummary } from './lib/opsLog.js'
-import { renderLandingPage, INDOOR_ROLES, BEACH_ROLES } from './lib/landingPage.js'
+import { renderLandingPage, landingMatchRow, INDOOR_ROLES, BEACH_ROLES } from './lib/landingPage.js'
 import { createOriginPolicy, parsePublicOrigins } from './lib/cors.js'
 import { createSignSessions, signEndpointOf, signBodyLimit, signError, isSignPagePath, SIGN_API_HEADERS, SIGN_PAGE_HEADERS } from './lib/signSessions.js'
 import { signPageFile } from './lib/signPage.js'
@@ -47,6 +48,8 @@ import { signPageFile } from './lib/signPage.js'
 import { SCORER_TABLES, deviceOf, matchRefsOfWrite, scorerMovedBody } from './lib/scorerDevice.js'
 // The support form (POST /api/contact): its body, checks and the one mail to CONTACT_EMAIL
 import { BUSY_BODY, contactMailerFromEnv, createContactSlots, handleContact, MAX_CONTACT_BODY_BYTES } from './lib/contact.js'
+// What the relay keeps of an anonymous socket's bundles and live states
+import { approxHeapBytes, frameTooLarge, relayBundleProblem, relayEvents, relayMemoryBudget, MAX_RELAY_BUNDLE_BYTES, MAX_LIVE_STATE_BYTES } from './lib/relayLimits.js'
 
 const PORT = process.env.PORT || 8080
 
@@ -707,6 +710,18 @@ function notifyScorerMoved(externalId, deviceId = null) {
 // protects the match on the scorer's device.
 const MATCH_SECRET_FIELDS = ['refereePin', 'homeTeamPin', 'awayTeamPin', 'homeTeamUploadPin', 'awayTeamUploadPin', 'connection_pins', 'connectionPins', 'game_pin', 'gamePin',
   'team1Pin', 'team2Pin', 'team1TeamPin', 'team2TeamPin', 'team1UploadPin', 'team2UploadPin', 'team1TeamUploadPin', 'team2TeamUploadPin', 'matchPin']
+// The PINs among them that the relay compares or hands to a PIN check: text of
+// at most 64 characters or a number in a sync (relayBundleProblem). The
+// connection_pins objects are the database's, never compared by the relay.
+// matchPin is openbeach's device lock, never compared by the relay and typed
+// with no maximum length, so only its type is checked, not its length
+// (MATCH_PIN_TYPE_ONLY_FIELDS): a long one must not stop a sync silently.
+// Those the relay only keeps and carries over (MATCH_CARRIED_PIN_FIELDS) are
+// bounded in size instead, far above what an app holds
+// (MAX_RELAY_CARRIED_PIN_BYTES each).
+const MATCH_PIN_TYPE_ONLY_FIELDS = ['matchPin']
+const MATCH_PIN_FIELDS = MATCH_SECRET_FIELDS.filter((k) => k !== 'connection_pins' && k !== 'connectionPins' && !MATCH_PIN_TYPE_ONLY_FIELDS.includes(k))
+const MATCH_CARRIED_PIN_FIELDS = MATCH_SECRET_FIELDS.filter((k) => !MATCH_PIN_FIELDS.includes(k))
 function stripMatchSecrets(match) {
   if (!match || typeof match !== 'object') return match
   const clean = { ...match }
@@ -768,11 +783,12 @@ function rememberKey(set, key, max) {
 // need the PIN.
 const DEVICE_LABELS = ['referee', 'bench', 'livescore']
 
-// The match's game PIN as a comparable string, or null (test matches have none).
+// The match's game PIN as a comparable string, or null (test matches have
+// none). Text or a number only, like the other PINs (lib/matchAccess.js).
 function gamePinOf(match) {
   if (!match || typeof match !== 'object') return null
   const v = match.gamePin != null && match.gamePin !== '' ? match.gamePin : match.game_pin
-  if (v === undefined || v === null) return null
+  if (typeof v !== 'string' && !(typeof v === 'number' && Number.isFinite(v))) return null
   const s = String(v).trim()
   return s || null
 }
@@ -787,25 +803,6 @@ function safeEqualStr(a, b) {
 // publicRelayMatch). Joining a room needs no PIN and its key is public.
 function publicMatch(match) {
   return publicRelayMatch(stripMatchSecrets(match))
-}
-
-// The scorer's undo snapshots on its events: stateSnapshot on every point,
-// stateBefore on rally starts, rotations and substitutions. Its own undo and
-// corrections use them; no relay subscriber reads them (referee, bench,
-// livescore, the LedBox bridge). They were about 90% of a bundle (2.5 KB per
-// point, 2.4 MB at the end of a 5-set match), kept parsed per match in
-// activeMatches and sent to every tablet twice per rally: at a national peak
-// that alone filled the backend's 256 MiB. Dropped when a sync is stored;
-// scorers since 2026-10-26 leave them out themselves (frontend relayEvents).
-const RELAY_EVENT_OMIT = ['stateSnapshot', 'stateBefore']
-function relayEvents(events) {
-  if (!Array.isArray(events)) return events
-  return events.map((e) => {
-    if (!e || typeof e !== 'object' || !RELAY_EVENT_OMIT.some((k) => k in e)) return e
-    const out = {}
-    for (const k of Object.keys(e)) if (!RELAY_EVENT_OMIT.includes(k)) out[k] = e[k]
-    return out
-  })
 }
 
 // The PIN-free, personal-data-free bundle every match-full-data /
@@ -1055,6 +1052,18 @@ const CLAIM_FAILURE_LIMIT = 5
 const MAX_OWNED_PER_IP = 64
 const NEW_CLAIM_LIMIT = 64
 const FINISHED_STATUSES = new Set(['final', 'ended', 'completed', 'finished'])
+// Memory the stored bundles and live states may take (approxHeapBytes,
+// lib/relayLimits.js), in total and per address: the IPv6 /64 on the cloud,
+// the address on a venue relay (as MAX_CONNECTIONS_PER_IP); the relay host
+// itself counts in the total only, as it is exempt from MAX_OWNED_PER_IP.
+let RELAY_MEMORY
+try {
+  RELAY_MEMORY = relayMemoryBudget({ heapLimitBytes: getHeapStatistics().heap_size_limit, maxMb: process.env.OV_RELAY_MAX_MB })
+} catch (err) {
+  console.error(`[Config] ${err.message}`)
+  process.exit(1)
+}
+console.log(`[Relay] memory for match data: ${Math.round(RELAY_MEMORY.total / 1048576)} MB, ${Math.round(RELAY_MEMORY.perAddress / 1048576)} MB per address`)
 
 // --- PocketBase sync (5s trailing-edge debounce) ---
 const PB_SYNC_DEBOUNCE_MS = 5000
@@ -1961,8 +1970,21 @@ function cloudHealth() {
   return healthInFlight
 }
 
-// Create HTTP server
+// Create HTTP server. A route that throws answers 500 and is logged with its
+// stack; it never ends the process, which holds every relay room, PIN budget
+// and sign session (an anonymous GET did that). Async route bodies catch
+// their own errors.
 const server = createServer((req, res) => {
+  try {
+    handleHttpRequest(req, res)
+  } catch (err) {
+    console.error(`❌ ${req.method} ${sanitizeLog(String(req.url || '').split('?')[0])} failed:`, err)
+    if (res.headersSent) res.destroy()
+    else sendJson(res, 500, { success: false, error: 'Internal server error' })
+  }
+})
+
+function handleHttpRequest(req, res) {
   // Enable CORS with proper origin handling
   const cors = getCorsOrigin(req)
   res.setHeader('Access-Control-Allow-Origin', cors.origin)
@@ -2269,36 +2291,42 @@ const server = createServer((req, res) => {
           return
         }
 
-        // Search active matches for matching PIN
+        // Search active matches for matching PIN. Per entry: one crafted room
+        // must never make the right PIN of another match answer 400 for
+        // everyone (a sync stores only validated PINs; this is a second guard).
         let matchFound = null
         for (const [matchId, matchData] of activeMatches.entries()) {
-          const match = matchData.match || matchData
-          if (!match) continue
-          if ((matchData.sportType || 'indoor') !== sport) continue
+          try {
+            const match = matchData.match || matchData
+            if (!match) continue
+            if ((matchData.sportType || 'indoor') !== sport) continue
 
-          let matchPin = null
-          if (type === 'referee') {
-            matchPin = match.refereePin
-          } else if (type === 'homeTeam') {
-            matchPin = match.homeTeamPin
-          } else if (type === 'awayTeam') {
-            matchPin = match.awayTeamPin
-          }
-
-          if (matchPin && safeEqualStr(String(matchPin).trim(), pinStr)) {
-            let connectionEnabled = true
+            let matchPin = null
             if (type === 'referee') {
-              connectionEnabled = match.refereeConnectionEnabled === true
+              matchPin = match.refereePin
             } else if (type === 'homeTeam') {
-              connectionEnabled = match.homeTeamConnectionEnabled === true
+              matchPin = match.homeTeamPin
             } else if (type === 'awayTeam') {
-              connectionEnabled = match.awayTeamConnectionEnabled === true
+              matchPin = match.awayTeamPin
             }
 
-            if (connectionEnabled && match.status !== 'final') {
-              matchFound = { ...match, id: matchId }
-              break
+            if (matchPin && safeEqualStr(String(matchPin).trim(), pinStr)) {
+              let connectionEnabled = true
+              if (type === 'referee') {
+                connectionEnabled = match.refereeConnectionEnabled === true
+              } else if (type === 'homeTeam') {
+                connectionEnabled = match.homeTeamConnectionEnabled === true
+              } else if (type === 'awayTeam') {
+                connectionEnabled = match.awayTeamConnectionEnabled === true
+              }
+
+              if (connectionEnabled && match.status !== 'final') {
+                matchFound = { ...match, id: matchId }
+                break
+              }
             }
+          } catch (err) {
+            console.error('[API] validate-pin skipped a room:', err?.message)
           }
         }
 
@@ -2370,19 +2398,26 @@ const server = createServer((req, res) => {
       }
       const matches = []
       for (const entry of activeMatches.values()) {
-        if (IS_CLOUD && entry.match?.test === true) continue
-        const owners = ownersByMatch.get(entry.matchId) || []
-        if (entry.orphanedAt && now - entry.orphanedAt >= STALE_TAKEOVER_MS && owners.length === 0) continue
-        // The cloud: a match without the referee connection only to its own
-        // venue (same public address as its scoreboard), see cloudListsMatch
-        if (IS_CLOUD && !cloudListsMatch({
-          refereeConnectionEnabled: entry.match?.refereeConnectionEnabled === true,
-          requesterIp,
-          requesterIpKey,
-          ownerIpKeys: owners.map(c => c.ipKey)
-        })) continue
-        const row = relayMatchListRow(entry, { includeFinished })
-        if (row) matches.push(row)
+        // Per entry: one crafted room must never turn the whole list into 500
+        // for everyone (a sync stores only validated fields; this is a second
+        // guard on the read).
+        try {
+          if (IS_CLOUD && entry.match?.test === true) continue
+          const owners = ownersByMatch.get(entry.matchId) || []
+          if (entry.orphanedAt && now - entry.orphanedAt >= STALE_TAKEOVER_MS && owners.length === 0) continue
+          // The cloud: a match without the referee connection only to its own
+          // venue (same public address as its scoreboard), see cloudListsMatch
+          if (IS_CLOUD && !cloudListsMatch({
+            refereeConnectionEnabled: entry.match?.refereeConnectionEnabled === true,
+            requesterIp,
+            requesterIpKey,
+            ownerIpKeys: owners.map(c => c.ipKey)
+          })) continue
+          const row = relayMatchListRow(entry, { includeFinished })
+          if (row) matches.push(row)
+        } catch (err) {
+          console.error(`[API] /api/match/list skipped a room:`, err?.message)
+        }
       }
       const at = (m) => (m.scheduledAt ? new Date(m.scheduledAt).getTime() || 0 : 0)
       matches.sort((a, b) => at(b) - at(a))
@@ -2726,8 +2761,10 @@ Generated by eScoresheet
     const federation = url.searchParams.get('federation')
     const league = url.searchParams.get('league')
 
-    // Validate federation
-    if (!federation || !ICAL_FEEDS[federation]) {
+    // Validate federation. Own keys only: an inherited name (constructor,
+    // __proto__, toString) passed a plain lookup, and reading its .leagues
+    // threw in this handler, which ended the backend.
+    if (!federation || !Object.hasOwn(ICAL_FEEDS, federation)) {
       res.writeHead(400, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({
         success: false,
@@ -2736,9 +2773,9 @@ Generated by eScoresheet
       return
     }
 
-    // Validate league
-    const leagueConfig = ICAL_FEEDS[federation].leagues[league]
-    if (!league || !leagueConfig) {
+    // Validate league (own keys only, as the federation)
+    const leagueConfig = league && Object.hasOwn(ICAL_FEEDS[federation].leagues, league) ? ICAL_FEEDS[federation].leagues[league] : null
+    if (!leagueConfig) {
       res.writeHead(400, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({
         success: false,
@@ -4097,19 +4134,15 @@ Generated by eScoresheet
         // Active matches info
         const matchList = []
         for (const [matchId, matchData] of activeMatches.entries()) {
-          // Synced matches store { homeTeam, awayTeam, ... }; the legacy path
-          // stored { data: {...} }. Read both so names actually render.
-          const d = matchData.data || {}
-          const homeName = (typeof matchData.homeTeam === 'object' ? matchData.homeTeam?.name : matchData.homeTeam)
-            || d.homeTeamName || d.home_team_name || 'Home'
-          const awayName = (typeof matchData.awayTeam === 'object' ? matchData.awayTeam?.name : matchData.awayTeam)
-            || d.awayTeamName || d.away_team_name || 'Away'
-          matchList.push({
-            id: matchId,
-            home: homeName,
-            away: awayName,
-            updatedAt: matchData.updatedAt
-          })
+          // Per entry: one crafted room must never turn the landing page into
+          // 500 for everyone. A sync stores only validated team names; a room
+          // recovered from storage is not validated, so landingMatchRow keeps
+          // only names (and a time) the page can print.
+          try {
+            matchList.push(landingMatchRow(matchId, matchData))
+          } catch (err) {
+            console.error('[Landing] skipped a room:', err?.message)
+          }
         }
 
         const html = renderLandingPage({
@@ -4175,7 +4208,7 @@ Generated by eScoresheet
 
   res.writeHead(404)
   res.end('Not Found')
-})
+}
 
 // Create WebSocket server. HTTP and WebSocket share one port (PORT): upgrades
 // are routed here. `?purpose=live` sockets (DATABASE_URL mode) go to the
@@ -4358,6 +4391,13 @@ function runSocketMessage(clientInfo, data) {
 function handleSocketMessage(clientInfo, data) {
   const ws = clientInfo.ws
   try {
+    // Refused before it is parsed: more JSON values than any bundle has. Up
+    // to the 10 MB frame limit, tiny values parse to over 200 MB of heap.
+    if (frameTooLarge(data)) {
+      relaySummary.count('refused (too-large)')
+      ws.send(JSON.stringify({ type: 'error', code: 'too-large', message: 'Message too large for the relay' }))
+      return undefined
+    }
     const message = JSON.parse(data.toString())
     // Refused before anything keeps or sends it on: the relay stores what a
     // socket syncs (activeMatches, liveState) and stringifies it for every
@@ -4401,11 +4441,11 @@ function handleSocketMessage(clientInfo, data) {
         break
 
       case 'live-state-update':
-        // Scoreboard's computed live-state (same message as the LAN relays)
-        handleLiveStateUpdate(clientInfo, message)
+        // Scoreboard's computed live-state (same message as the LAN relays).
         // DATABASE_URL mode: also a match_live_state db-change for live
-        // subscribers (livescore, scorer alarm), even when HTTP sync is down.
-        if (liveStateRelay) {
+        // subscribers (livescore, scorer alarm), even when HTTP sync is down;
+        // not one the relay refused (too large, relay memory full).
+        if (handleLiveStateUpdate(clientInfo, message) && liveStateRelay) {
           liveStateRelay.handle(clientInfo, { ...message, matchId: resolveMatchKey(clientInfo, message.matchId) }).then((r) => {
             // pin_mismatch: the synced game PIN is not the row's (or the row has
             // none); expected for a forged room, so not logged per update
@@ -5121,7 +5161,51 @@ const CLAIM_ERRORS = {
   'too-many-matches': 'This address already drives the maximum number of matches',
   'pins-required': 'Send this match again with its PINs (the relay lost it, or this connection has not proved it yet)',
   'room-limit': 'Server room limit reached',
-  'scorer-moved': 'This match is now scored on another device'
+  'scorer-moved': 'This match is now scored on another device',
+  'too-large': 'Match data too large for the relay',
+  'relay-full': 'The relay cannot keep more match data right now. Try again in a few minutes.'
+}
+
+// The address a socket's stored match data counts against (relayMemoryRefusal);
+// null for the relay host itself
+const relayAddressOf = (clientInfo) => (isLoopbackIp(clientInfo.ip) ? null : (IS_CLOUD ? clientInfo.ipKey : clientInfo.ip))
+
+/**
+ * 'relay-full' when `bytes` (approxHeapBytes) for room `matchId` would take
+ * the relay past its memory budget; else null. The room's own bundle and live
+ * state are left out: they are the ones replaced, so replacing a stored room's
+ * bundle never adds a room. At most MAX_ROOMS entries to add up.
+ *
+ * A room the relay does not hold yet (`newRoom`) is refused at the lower
+ * new-room marks, so the headroom above is kept for the rooms already in play
+ * (they grow with every rally and must not freeze when the relay fills). A room
+ * the database does not know as an official match (`official` false, cloud
+ * only) may not take the slice reserved for official matches; official matches
+ * and venue rooms use the whole budget.
+ */
+function relayMemoryRefusal(clientInfo, matchId, bytes, { newRoom = false, official = true } = {}) {
+  const address = relayAddressOf(clientInfo)
+  let total = bytes
+  let fromAddress = bytes
+  let anon = official ? 0 : bytes
+  for (const [id, entry] of activeMatches) {
+    if (id === matchId) continue
+    const held = (entry.bundleBytes || 0) + (entry.liveStateBytes || 0)
+    total += held
+    if (address !== null && entry.relayAddress === address) fromAddress += held
+    if (!entry.relayOfficial) anon += held
+  }
+  if (total > RELAY_MEMORY.total) return 'relay-full'
+  if (address !== null && fromAddress > RELAY_MEMORY.perAddress) return 'relay-full'
+  if (newRoom && total > RELAY_MEMORY.newRoomTotal) return 'relay-full'
+  if (newRoom && address !== null && fromAddress > RELAY_MEMORY.newRoomPerAddress) return 'relay-full'
+  if (!official && anon > RELAY_MEMORY.anonTotal) return 'relay-full'
+  return null
+}
+
+function sendRelayRefusal(clientInfo, code, matchId, message = CLAIM_ERRORS[code]) {
+  relaySummary.count(`refused (${code})`)
+  clientInfo.ws.send(JSON.stringify({ type: 'error', code, message, matchId }))
 }
 
 // Handle sync-match-data from frontend scoreboard
@@ -5132,6 +5216,17 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
       type: 'error',
       message: 'Only scoreboard can sync match data'
     }))
+    return
+  }
+
+  // Refused before anything reads it (lib/relayLimits.js): a PIN that is not
+  // text or a number (String() of {"toString":1} throws, and the PIN check of
+  // GET /api/match/:id ended the backend with it), a PIN field the relay only
+  // carries over that is larger than any app's, a list that is no array or
+  // longer than any match has
+  const problem = relayBundleProblem(message, MATCH_PIN_FIELDS, MATCH_PIN_TYPE_ONLY_FIELDS, MATCH_CARRIED_PIN_FIELDS)
+  if (problem) {
+    sendRelayRefusal(clientInfo, problem.code, relayKeyOf(normalizeMatchId(message.matchId), message.match), problem.message)
     return
   }
 
@@ -5174,6 +5269,39 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     return
   }
 
+  // What the relay would keep (without the undo snapshots) and whether its
+  // memory has room for it; the room's last bundle is replaced, not added.
+  // A cloud claim comes back here after its database check and checks the
+  // memory again with what the relay holds then.
+  // A room the relay does not hold yet is new (shed first when the relay is
+  // nearly full); replacing a stored room's bundle keeps a match in play going.
+  // Official (the database proved its game PIN, or the venue relay with no
+  // database, or a first pass whose database check runs next and re-decides)
+  // reserves memory an anonymous room cannot take; a room continued by its
+  // owner keeps the status its last sync earned.
+  const stored = activeMatches.get(matchId)
+  const newRoom = !stored
+  const official = !DB_MODE || opts.dbProved === true ||
+    (!opts.dbChecked && !clientInfo.ownedMatches.has(matchId)) ||
+    (clientInfo.ownedMatches.has(matchId) && stored?.relayOfficial === true)
+  // Counted first as the sync sends it, before its claim is made: what any
+  // claim keeps at least. It depends on the message alone, so a cloud claim's
+  // second pass reuses it. A sync that continues the room also keeps the stored
+  // PINs it leaves out and the room's live state; they are counted once the
+  // claim says so (below). A take-over or reclaim keeps neither, so what the
+  // room's last holder stored never counts against it.
+  const storedEvents = opts.storedEvents ?? relayEvents(events)
+  const countBundle = (m) => approxHeapBytes([m, homeTeam, awayTeam, homePlayers, awayPlayers, sets, storedEvents])
+  const memoryRefusalOf = (bytes, liveStateBytes = 0) => (bytes > MAX_RELAY_BUNDLE_BYTES
+    ? 'too-large'
+    : relayMemoryRefusal(clientInfo, matchId, bytes + liveStateBytes, { newRoom, official }))
+  let bundleBytes = opts.bundleBytes ?? countBundle(match)
+  const memoryRefusal = memoryRefusalOf(bundleBytes)
+  if (memoryRefusal) {
+    sendRelayRefusal(clientInfo, memoryRefusal, matchId)
+    return
+  }
+
   // Cloud: a claim of a room this socket does not own yet is checked against
   // the database first (verifyRelayClaim), then made. Returns the promise, so
   // the socket's next messages wait for it.
@@ -5191,7 +5319,7 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
         clientInfo.ws.send(JSON.stringify({ type: 'error', code: v.code, message: CLAIM_ERRORS[v.code] || 'Refused', matchId }))
         return
       }
-      handleSyncMatchData(clientInfo, message, { dbChecked: true, dbProved: v.dbProved, knownScorer: v.knownScorer })
+      handleSyncMatchData(clientInfo, message, { dbChecked: true, dbProved: v.dbProved, knownScorer: v.knownScorer, storedEvents, bundleBytes })
     })
   }
 
@@ -5215,6 +5343,29 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     return
   }
 
+  // A sync that continues the room (its owner, or a proof of the stored game
+  // PIN) keeps the stored PINs it leaves out (PINs are sent only when they
+  // change), and the room's last live state while the same game PIN keeps the
+  // match: never across a takeover, reclaim or PIN change (it would describe
+  // another match: sides, sets won, 'ended', ...). Counted here, with the
+  // memory checked again, before anything is stored. Refusing here leaves
+  // nothing to undo: claimMatch changes nothing for such a claim but refund a
+  // correct PIN.
+  const previous = activeMatches.get(matchId)
+  const continues = claimed.kind === 'owner' || claimed.kind === 'proved'
+  const carried = continues && previous?.match ? carryMatchSecrets(previous.match, match) : match
+  const carryLiveState = continues && gamePinOf(previous?.match) === gamePinOf(carried)
+  const carriedLiveStateBytes = carryLiveState ? (previous?.liveStateBytes || 0) : 0
+  if (carried !== match || carriedLiveStateBytes > 0) {
+    if (carried !== match) bundleBytes = countBundle(carried)
+    const refusal = memoryRefusalOf(bundleBytes, carriedLiveStateBytes)
+    if (refusal) {
+      sendRelayRefusal(clientInfo, refusal, matchId)
+      return
+    }
+    match = carried
+  }
+
   // Enforce room cap before storing anything
   if (!rooms.has(matchId) && rooms.size >= MAX_ROOMS) {
     clientInfo.ws.send(JSON.stringify({ type: 'error', code: 'room-limit', message: CLAIM_ERRORS['room-limit'], matchId }))
@@ -5232,16 +5383,13 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     clientInfo.aliases.set(rawMatchId, matchId)
   }
 
-  // Store/update match in activeMatches with all the data. A sync carries no
-  // live-state: keep the last one pushed only while the same scoreboard / game
-  // PIN keeps the match — never across a takeover, reclaim or PIN change (it
-  // would describe another match: sides, sets won, 'ended', ...).
-  const previous = activeMatches.get(matchId)
-  if (previous?.match && (claimed.kind === 'owner' || claimed.kind === 'proved')) {
-    match = carryMatchSecrets(previous.match, match)
-  }
-  const carryLiveState = (claimed.kind === 'owner' || claimed.kind === 'proved') &&
-    gamePinOf(previous?.match) === gamePinOf(match)
+  // Store/update match in activeMatches with all the data (a sync carries no
+  // live state: the room's last one is kept as decided above).
+  // Whether the database knows this as an official match (cloud), for the
+  // memory budget: proved now, or carried by its owner's later syncs (which do
+  // not re-check the database). Venue rooms (no database) are all official.
+  const relayOfficial = !DB_MODE || opts.dbProved === true ||
+    ((claimed.kind === 'owner' || claimed.kind === 'proved' || claimed.kind === 'reclaim') && previous?.relayOfficial === true)
   // The sport of the room: openbeach syncs team1/team2 (or names its sport);
   // a sync without teams keeps the sport the same scorer set before.
   const beachSync = !!(message.team1Team || message.team2Team || message.team1Players || message.team2Players) ||
@@ -5263,8 +5411,14 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     homePlayers,
     awayPlayers,
     sets,
-    events: relayEvents(events),
+    events: storedEvents,
     liveState: carryLiveState ? previous?.liveState : undefined,
+    // the relay memory it takes (relayMemoryRefusal), whose it is and whether
+    // the database knows it as an official match
+    bundleBytes,
+    liveStateBytes: carryLiveState ? previous?.liveStateBytes : undefined,
+    relayAddress: relayAddressOf(clientInfo),
+    relayOfficial,
     gameNumber: match?.gameN || match?.gameNumber || match?.game_n,
     updatedAt: new Date().toISOString(),
     updatedBy: clientInfo.id
@@ -5331,17 +5485,54 @@ function handleMatchAction(clientInfo, message) {
   console.log(`⚡ Match action broadcasted to room ${matchId}: ${action}`)
 }
 
-// Handle live-state-update (scoreboard's computed live state)
+// A live state no more than this many bytes bigger than the room's last one is
+// a routine replacement (score, rotation): it adds almost nothing to the heap,
+// so the relay's memory never refuses it and a match in play keeps publishing.
+const LIVE_STATE_GROWTH_SLACK = 8 * 1024
+
+// Handle live-state-update (scoreboard's computed live state). False: refused
+// because it is too large (over the live hub's own limit), so the database
+// live-state path is skipped too. True otherwise, including when the relay's
+// memory is full: the relay then does not store or broadcast it, but the
+// database path (livescore, scorer alarm) still publishes it — that path has
+// its own limit and must not depend on the relay's memory.
 function handleLiveStateUpdate(clientInfo, message) {
   const matchId = resolveMatchKey(clientInfo, message.matchId)
-  if (!requireMatchOwner(clientInfo, matchId, 'live-state-update')) return
-  if (!message.liveState || typeof message.liveState !== 'object') return
+  if (!requireMatchOwner(clientInfo, matchId, 'live-state-update')) return true
+  if (!message.liveState || typeof message.liveState !== 'object') return true
   const stored = activeMatches.get(matchId)
   // A test (rehearsal) match publishes its live state to the venue's relay
   // only (the scorer never sends it here): the cloud drops it.
-  if (IS_CLOUD && stored?.match?.test === true) return
-  if (stored) stored.liveState = message.liveState
+  if (IS_CLOUD && stored?.match?.test === true) return true
+  // The live hub's size limit (a real one is a few KB)
+  if (JSON.stringify(message.liveState).length > MAX_LIVE_STATE_BYTES) {
+    sendRelayRefusal(clientInfo, 'too-large', matchId, 'Live state too large for the relay')
+    return false
+  }
+  // The relay's memory, only when the live state grows materially past the
+  // room's last one (a routine replacement adds almost nothing): the room is
+  // already stored, so this never refuses a match in play for its own updates.
+  const liveStateBytes = approxHeapBytes(message.liveState)
+  const grew = liveStateBytes > (stored?.liveStateBytes || 0) + LIVE_STATE_GROWTH_SLACK
+  const memoryRefusal = stored && grew
+    ? relayMemoryRefusal(clientInfo, matchId, (stored.bundleBytes || 0) + liveStateBytes, { official: stored.relayOfficial !== false })
+    : null
+  if (memoryRefusal) {
+    // Not stored or broadcast here, but the database live-state path still runs
+    sendRelayRefusal(clientInfo, memoryRefusal, matchId)
+    return true
+  }
+  if (stored) {
+    stored.liveState = message.liveState
+    // The accounted size only moves when the memory check ran (grew): a sync of
+    // sub-slack updates would otherwise creep the baseline up step by step and
+    // never re-trigger the check, so the room's live state could reach the hub's
+    // 256 KB cap while the budget still saw near-zero. Now it lags real by at
+    // most the slack, which the budget's headroom absorbs.
+    if (grew) stored.liveStateBytes = liveStateBytes
+  }
   broadcastToRoom(matchId, { type: 'live-state-update', matchId, liveState: message.liveState }, clientInfo.id)
+  return true
 }
 
 // Remove a match from the relay: tell its room first, then drop room + state.
