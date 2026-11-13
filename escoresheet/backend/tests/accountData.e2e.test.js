@@ -207,8 +207,10 @@ describe('account deletion, storage remove, tablet list', { skip: SKIP }, () => 
       assert.equal(anon.json.access, 'counts')
       assert.equal(anon.json.referees, 1)
       assert.equal(anon.json.benches, 1)
-      assert.deepEqual(anon.json.clients.map((c) => Object.keys(c).sort()), [['matchId', 'role', 'team'], ['matchId', 'role', 'team']])
+      assert.deepEqual(anon.json.clients.map((c) => Object.keys(c).sort()), [['matchId', 'proved', 'role', 'team'], ['matchId', 'proved', 'role', 'team']])
       assert.deepEqual(anon.json.clients.map((c) => c.role).sort(), ['bench', 'referee'])
+      // both proved their PIN: a referee and a bench, not just a label
+      assert.deepEqual(anon.json.clients.map((c) => c.proved), [true, true])
 
       const wrong = await get(`?matchId=${encodeURIComponent(ext)}`, { 'X-OV-Match-Pin': '000000', 'cf-connecting-ip': nextIp() })
       assert.equal(wrong.json.access, 'counts')

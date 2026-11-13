@@ -825,14 +825,20 @@ Connected dashboard clients (referee, bench, livescore), for the scorer's
 tablet status and the LAN server dashboard.
 
 - **LAN relay:** the full list as before: `clients[]` with `id`, `ip`, `role`,
-  `team`, `matchId`, `connectedAt`, and `matchSubscriptions` (watchers per
-  room). Optional `matchId` filter.
+  `team`, `proved`, `matchId`, `connectedAt` (one entry per socket and match it
+  watches or waits for), and `matchSubscriptions` (watchers per room).
+  Optional `matchId` filter.
+- Both modes: `role` is `referee` or `bench` (with `team`) only for a socket
+  that proved that role's PIN or match token (`proved: true`, also in
+  `referees` / `benches`); a socket that only named the role
+  (`subscribe-match { device }`, `join_match { role }`) is `subscriber` (or
+  `livescore`), `proved: false`.
 - **Cloud** (`DATABASE_URL` or `IS_CLOUD`), anonymous: counts only.
   Without `matchId`: `{access:"counts", totalClients, dashboardClients,
   referees, benches, clients: []}`, no list of rooms. With `matchId`: the same
   counts for that match and one entry per watching tablet carrying only
-  `{role, team, matchId}` (what the scorer's tablet status reads; no id, IP or
-  connect time).
+  `{role, team, proved, matchId}` (what the scorer's tablet status reads; no
+  id, IP or connect time).
 - **Cloud with proof:** `X-OV-Match-Pin` (a PIN of that match, as for
   `GET /api/match/:id`; a wrong one counts as a failed guess) or
   `X-OV-Match-Token` with `matchId`: `access:"detail"`, the entries of that
@@ -879,8 +885,14 @@ Validate a 6-digit PIN for referee/bench access against the relay's copy. The
 answer carries the match (no PINs) and `token`, the match access token.
 
 ```json
-{ "pin": "123456", "type": "referee|homeTeam|awayTeam", "sport": "indoor|beach" }
+{ "pin": "123456", "type": "referee|homeTeam|awayTeam", "sport": "indoor|beach", "matchId": "match_…", "gameNumber": "12" }
 ```
+
+`matchId` (the room key, the match's seed key) or else `gameNumber` names the
+match the tablet picked: the PIN is compared with that match only (404
+otherwise). Without either (older apps) every live match of the sport is
+searched; a PIN two of them share is refused with 409
+`{ code: "game-number-required" }` and no token, the tablet asks for the game.
 
 `sport` (default `indoor`) limits the search to rooms of that sport: a room is
 `beach` when its scoreboard syncs `team1Team`/`team2Team`/`team1Players`/
