@@ -91,8 +91,6 @@ describe('referee line-up after a mid-set correction', () => {
     const homeLineups = after.filter(e => e.type === 'lineup' && e.setIndex === 1 && e.payload?.team === 'home')
     const scorerCurrent = [...homeLineups].sort(compareBySeq).at(-1).payload.lineup // Scoreboard / bench: by seq
     const lastInArray = homeLineups.at(-1).payload.lineup // Referee.jsx:1447-1454
-    console.log('[PoC] scorer/bench current home line-up:', JSON.stringify(scorerCurrent))
-    console.log('[PoC] last home lineup row in bundle order:', JSON.stringify(lastInArray), 'seq', homeLineups.at(-1).seq)
 
     const setRow = (await db.sets.where('matchId').equals(matchId).toArray())[0]
     const bundle = {
