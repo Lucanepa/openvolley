@@ -25,9 +25,18 @@
  * on the mailer's 'notify' budget. A notice row is stored even when the mail
  * is dropped or fails. Without db/028 the mails still go out.
  *
+ * A team manager's yes to a team manager request (owner decision 3, db/036,
+ * lib/accountRequests.js decide) is a proposal: the managers of the team's
+ * club confirm it (the admins when the club has none), told by a notice of
+ * kind 'team_manager_proposal' (page myclub/<club id>, admins accounts/<id>)
+ * and the mail 'team_manager_proposal'. One notice per recipient and account:
+ * a later proposal brings a read one back unread (and mails again), an
+ * unread one stays as it is.
+ *
  * Public API:
  *   createSignupNotices({ pool, mailer, logger })
  *     notify(userId)                 -> { recipients, mailed }  (never throws)
+ *     proposal({ userId, teamId, proposerId }) -> { recipients, mailed }  (never throws)
  *     list({ userId, app })          -> { status, body }  GET /api/notifications?app=
  *     markRead({ userId, app, body }) -> { status, body } POST /api/notifications/read { ids } | { all: true }
  */
@@ -206,6 +215,84 @@ export function createSignupNotices ({ pool, mailer = null, logger = console } =
   }
 
   /**
+   * A team manager (`proposerId`) said yes to `userId`'s team manager request
+   * for team `teamId`: the managers of the team's club confirm it, or the
+   * admins of a club without managers (see the header).
+   */
+  async function proposal ({ userId, teamId, proposerId = null } = {}) {
+    if (!isUuid(userId) || !isUuid(teamId)) return { recipients: 0, mailed: 0 }
+    try {
+      const account = await accountOf(userId)
+      if (!account) return { recipients: 0, mailed: 0 }
+      const { rows: [team] } = await pool.query(
+        `SELECT ct.team_name AS team, c.id AS club_id, c.name AS club
+           FROM public.club_teams ct JOIN public.clubs c ON c.id = ct.club_id WHERE ct.id = $1`, [teamId])
+      if (!team) return { recipients: 0, mailed: 0 }
+      const { rows: [proposer] } = isUuid(proposerId)
+        ? await pool.query(
+          `SELECT u.email, nullif(trim(coalesce(p.first_name, '') || ' ' || coalesce(p.last_name, '')), '') AS name
+             FROM auth.users u LEFT JOIN public.profiles p ON p.user_id = u.id WHERE u.id = $1`, [proposerId])
+        : { rows: [] }
+      const skip = new Set([userId, proposerId])
+      const parts = [{ kind: 'team_manager', club: team.club, team: team.team }]
+      const seen = new Set()
+      const once = (list) => list.filter((m) => m.email && !skip.has(m.user_id) && !seen.has(m.user_id) && seen.add(m.user_id))
+      let recipients = once(await managersOf('club_managers', 'club_id', [team.club_id]))
+        .map((m) => ({ userId: m.user_id, email: m.email, lang: m.lang || null, admin: false, target: `myclub/${team.club_id}` }))
+      if (!recipients.length) {
+        const { rows: admins } = await pool.query(
+          `SELECT p.user_id, u.email, u.raw_user_meta_data->>'mail_lang' AS lang
+             FROM public.profiles p JOIN auth.users u ON u.id = p.user_id
+            WHERE p.roles && $1::text[] AND ${ACTIVE('u')}
+            ORDER BY u.created_at, p.user_id`, [[...ADMIN_ROLES]])
+        recipients = once(admins).map((a) => ({ userId: a.user_id, email: a.email, lang: a.lang || null, admin: true, target: `accounts/${userId}` }))
+      }
+      if (!recipients.length) return { recipients: 0, mailed: 0 }
+      let fresh
+      try {
+        // new, or read and brought back; an unread notice stays as it is (no second mail)
+        const { rows } = await pool.query(
+          `INSERT INTO public.notifications (user_id, kind, app, subject_user_id, target, details)
+           SELECT x.u, 'team_manager_proposal', 'indoor', $3, x.t, $4::jsonb
+             FROM unnest($1::uuid[], $2::text[]) AS x(u, t)
+           ON CONFLICT (user_id, kind, subject_user_id) DO UPDATE
+              SET target = EXCLUDED.target, details = EXCLUDED.details, created_at = now(), read_at = NULL
+            WHERE public.notifications.read_at IS NOT NULL
+           RETURNING user_id`,
+          [recipients.map((r) => r.userId), recipients.map((r) => r.target), userId, JSON.stringify({ parts })])
+        fresh = new Set(rows.map((r) => r.user_id))
+      } catch (err) {
+        if (!MISSING.has(err?.code) && err?.code !== '23514') throw err
+        // no db/028 / db/036 (the kind): mailed, not stored
+        log.warn?.('[notices] db/036 is not applied: the team manager proposal was mailed, not stored')
+        fresh = new Set(recipients.map((r) => r.userId))
+      }
+      let mailed = 0
+      if (mailer?.enabled) {
+        const base = typeof mailer.managerUrlFor === 'function' ? mailer.managerUrlFor('indoor') : mailer.managerUrl
+        for (const r of recipients.filter((x) => fresh.has(x.userId))) {
+          try {
+            const res = await mailer.send('team_manager_proposal', {
+              to: r.email,
+              lang: r.lang,
+              link: `${String(base || '').replace(/\/+$/, '')}/#${r.target}`,
+              vars: { name: account.name || '', email: account.email, team: team.team, club: team.club, proposer: proposer?.name || proposer?.email || '', admin: r.admin }
+            })
+            if (res?.sent) mailed++
+          } catch (err) {
+            log.error?.(`[notices] proposal mail to ${maskEmail(r.email)} failed: ${describeMailError(err)}`)
+          }
+        }
+      }
+      log.log?.(`[notices] team manager proposal ${userId.slice(0, 8)}: ${fresh.size} notified, ${mailed} mailed`)
+      return { recipients: fresh.size, mailed }
+    } catch (err) {
+      log.error?.(`[notices] proposal notice failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 200)}`)
+      return { recipients: 0, mailed: 0 }
+    }
+  }
+
+  /**
    * GET /api/notifications?app=indoor|beach: the account's latest notices of
    * that manager, newest first, with the signed-up account's name and address
    * read live, and whether its requests are still open.
@@ -279,5 +366,5 @@ export function createSignupNotices ({ pool, mailer = null, logger = console } =
     }
   }
 
-  return { notify, list, markRead }
+  return { notify, proposal, list, markRead }
 }

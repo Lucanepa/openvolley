@@ -3144,6 +3144,8 @@
       "inviteInvalid": "Ce code d’invitation n’est pas valable.",
       "inviteExpired": "Ce code d’invitation a expiré.",
       "inviteUsedUp": "Ce code d’invitation a déjà été utilisé jusqu’au bout.",
+      "inviteRemoved": "Ce compte a été retiré de ce club ou de cette équipe. Demandez un nouveau code à ses responsables.",
+      "inviteOtherAccount": "Ce lien a été envoyé à une autre adresse. Connectez-vous avec le compte de cette adresse.",
       "tooManyAttempts": "Trop de tentatives. Merci d’attendre quelques minutes.",
       "offline": "Utiliser un code nécessite une connexion.",
       "emailUnconfirmed": "Confirme d’abord ton adresse e-mail : ouvre le lien de notre e-mail ou demande-en un nouveau dans ton profil."
@@ -3227,7 +3229,17 @@
     "teamLinkAlready": "Vous gérez déjà {{team}}.",
     "clubLinkNote": "Vous avez ouvert un lien de responsable du club. Connectez-vous ou créez un compte, et vous gérez le club.",
     "clubLinkDone": "Vous gérez maintenant {{club}}.",
-    "clubLinkAlready": "Vous gérez déjà {{club}}."
+    "clubLinkAlready": "Vous gérez déjà {{club}}.",
+    "linkAskTeam": "Gérer {{team}} avec {{email}} ?",
+    "linkAskClub": "Gérer {{club}} avec {{email}} ?",
+    "linkAskTeamUnnamed": "Gérer cette équipe avec {{email}} ?",
+    "linkAskClubUnnamed": "Gérer ce club avec {{email}} ?",
+    "linkAskTeamBody": "Vous avez ouvert un lien d’équipe. Avec Oui, ce compte devient responsable de l’équipe : son contingent et les compositions qu’elle envoie pour ses matchs.",
+    "linkAskClubBody": "Vous avez ouvert un lien de responsable du club. Avec Oui, ce compte gère le club : ses membres, ses codes d’invitation, ses listes de licences et ses demandes.",
+    "linkAskYes": "Oui, avec ce compte",
+    "linkAskOtherAccount": "Utiliser un autre compte",
+    "linkAskForget": "Oublier ce lien",
+    "linkAskLater": "Plus tard"
   },
   "managerBeach": {
     "signInHeading": "Gérer OpenBeach",
@@ -3255,6 +3267,7 @@
       "empty": "Aucune notification pour l’instant.",
       "loading": "Chargement…",
       "signupTitle": "Nouvelle inscription : {{name}}",
+      "proposalTitle": "À confirmer : {{name}}, responsable d’équipe",
       "noRole": "Ne demande encore aucun rôle",
       "stillOpen": "En attente d’approbation",
       "decided": "Décidé",
@@ -3518,7 +3531,8 @@
         "club_licences": "Liste des licences chargée",
         "club_licences_manual": "Ajouté à la main aux listes du club",
         "account_request_approve": "Demande d’inscription validée",
-        "account_request_reject": "Demande d’inscription refusée"
+        "account_request_reject": "Demande d’inscription refusée",
+        "account_request_propose": "Demande d’inscription proposée par un responsable d’équipe"
       }
     },
     "approvals": {
@@ -3882,9 +3896,14 @@
       "title": "Demandes",
       "clubHint": "Les personnes inscrites qui ont indiqué marquer pour ce club, s’occuper d’une de ses équipes ou du club. Valider leur donne exactement cela ; leurs autres demandes restent pour les autres.",
       "teamHint": "Les personnes inscrites comme responsable ou entraîneur de cette équipe. Valider en fait des responsables d’équipe.",
+      "teamHintPropose": "Les personnes inscrites comme responsable ou entraîneur de cette équipe. Proposer les transmet aux responsables du club : elles deviennent responsables d’équipe dès qu’un responsable du club valide.",
       "empty": "Aucune demande ouverte.",
       "approve": "Valider",
       "reject": "Refuser",
+      "propose": "Proposer",
+      "proposed": "Proposé : un responsable du club valide",
+      "waitingForClub": "Proposé, en attente du club",
+      "proposedBy": "Proposé par {{name}}",
       "approveAll": "Valider comme demandé",
       "review": "Examiner la demande",
       "reviewTitle": "Demande de {{name}}",

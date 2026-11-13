@@ -28,7 +28,8 @@
  *     clubDetail({ id })                  the club with its teams, contact address and scorer count
  *     setContact({ actorId, id, body })   { contact_email } (null clears it)
  *     members({ id })                     the accounts that score for the club
- *     removeMember({ actorId, id, userId })  the club link only: the account and its roles stay
+ *     removeMember({ actorId, id, userId })  the club link; with the last one the scorer or referee
+ *                                         role the club gave (and nothing else did) goes too
  *     clubInviteBody(body)                an invite code body within a club manager's limits
  *     isManager(userId, clubId)           does the account manage the club?
  *   everyone else (lib/accounts.js)
@@ -519,15 +520,25 @@ export function createClubs ({ pool, audit, access = null, createInvite = null, 
     }))
   }
 
-  /** DELETE /api/admin/clubs/:id: its teams and memberships go with it. */
+  /**
+   * DELETE /api/admin/clubs/:id: its teams and memberships go with it, and its
+   * open codes are revoked first (be-clubs-teams-8: invite_codes.club_id is
+   * ON DELETE SET NULL, so a scorer code of the club would go on giving the
+   * role without a club).
+   */
   async function remove ({ actorId, id } = {}) {
     if (!isUuid(id)) return notFound()
     return guarded('delete', () => withTx(async (client) => {
       const { rows: [cur] } = await client.query('SELECT name FROM public.clubs WHERE id = $1 FOR UPDATE', [id])
       if (!cur) throw abort(notFound())
       const { rows: members } = await client.query('SELECT user_id FROM public.account_clubs WHERE club_id = $1', [id])
+      const { rows: revoked } = await client.query(
+        'UPDATE public.invite_codes SET revoked_at = now() WHERE club_id = $1 AND revoked_at IS NULL RETURNING id, label', [id])
+      for (const r of revoked) {
+        await audit(client, { actorId, action: 'invite.revoke', details: { invite_id: r.id, label: r.label, reason: 'club_deleted' }, app: 'indoor' })
+      }
       await client.query('DELETE FROM public.clubs WHERE id = $1', [id])
-      await audit(client, { actorId, action: 'club.delete', details: { club_id: id, name: cur.name, scorers: members.length } })
+      await audit(client, { actorId, action: 'club.delete', details: { club_id: id, name: cur.name, scorers: members.length, codes_revoked: revoked.length } })
       for (const m of members) access?.invalidate?.(m.user_id)
       return ok({ deleted: id })
     }))
@@ -683,9 +694,9 @@ export function createClubs ({ pool, audit, access = null, createInvite = null, 
    * POST /api/admin/clubs/:id/manager-invites { email }: a one-use club
    * manager link (db/029, two weeks) for someone not linked to the club,
    * mailed to `email` (lib/mailer.js club_manager_invite) and answered too,
-   * so the admin can pass it on when the mail does not arrive. The address
-   * is the link's label only: whoever opens the link and signs in becomes
-   * the manager. { invite, link, mailed }
+   * so the admin can pass it on when the mail does not arrive. The link works
+   * for an account of that address only (db/036 invited_email; another
+   * account answers 403 OV_INVITE_OTHER_ACCOUNT). { invite, link, mailed }
    */
   async function inviteManager ({ actorId, id, body, lang = null } = {}) {
     if (!isUuid(id)) return notFound()
@@ -704,7 +715,7 @@ export function createClubs ({ pool, audit, access = null, createInvite = null, 
     }
     const made = await createInvite({
       actorId,
-      body: { label: `Club manager · ${email}`.slice(0, 120), role: 'club_manager', club_id: id, sport: 'indoor', max_uses: 1, expires_at: new Date(Date.now() + MANAGER_LINK_DAYS * DAY_MS).toISOString() },
+      body: { label: `Club manager · ${email}`.slice(0, 120), role: 'club_manager', club_id: id, sport: 'indoor', max_uses: 1, expires_at: new Date(Date.now() + MANAGER_LINK_DAYS * DAY_MS).toISOString(), invited_email: email },
       app: 'indoor'
     })
     if (made.status !== 201) return made
@@ -779,15 +790,66 @@ export function createClubs ({ pool, audit, access = null, createInvite = null, 
     })
   }
 
-  /** DELETE /api/club/:id/members/:userId: the club link only; the account and its roles stay. */
+  /**
+   * DELETE /api/club/:id/members/:userId: the club link. Its last club link
+   * gone, the account also loses a scorer or referee role this club gave it
+   * (be-clubs-teams-7: a code of the club, or a request the club approved)
+   * and nothing else gave (another club's code or none, an admin's grant);
+   * the account and its other roles stay. { removed, roles_removed }
+   */
   async function removeMember ({ actorId, id, userId } = {}) {
     if (!isUuid(id) || !isUuid(userId)) return notFound()
     return guarded('remove-member', () => withTx(async (client) => {
       const { rowCount } = await client.query('DELETE FROM public.account_clubs WHERE club_id = $1 AND user_id = $2', [id, userId])
       if (!rowCount) throw abort(notFound())
       await audit(client, { actorId, action: 'club.member_remove', targetUserId: userId, details: { club_id: id } })
-      return ok({ removed: userId })
+      const rolesRemoved = await dropClubRoles(client, { actorId, clubId: id, userId })
+      return ok({ removed: userId, roles_removed: rolesRemoved })
     })).finally(() => access?.invalidate?.(userId))
+  }
+
+  /**
+   * The scorer / referee roles a club gave `userId` (`clubId`, or another club
+   * it left before) and nothing else did, taken away when the account is in no club any more (inside
+   * removeMember's transaction; audited account.roles). Returns the roles
+   * removed. Where a role came from is read from the audit: invite.redeem of
+   * a code (its club), account.request_approve (the club of the part) and
+   * account.roles (an admin's grant, or the role an approved request added in
+   * the same transaction).
+   */
+  async function dropClubRoles (client, { actorId, clubId, userId }) {
+    const { rows: [other] } = await client.query('SELECT 1 FROM public.account_clubs WHERE user_id = $1 LIMIT 1', [userId])
+    if (other) return []
+    const { rows: [prof] } = await client.query('SELECT roles FROM public.profiles WHERE user_id = $1 LIMIT 1 FOR UPDATE', [userId])
+    const before = Array.isArray(prof?.roles) ? prof.roles : []
+    const held = CLUB_INVITE_ROLES.filter((r) => before.includes(r))
+    if (!held.length) return []
+    // a role any club gave (a club's code or a club's approval) and nothing
+    // else gave: with no club left, no club explains it any more
+    const { rows } = await client.query(
+      `SELECT r.role FROM unnest($2::text[]) AS r(role)
+        WHERE EXISTS (SELECT 1 FROM public.audit_log a
+                       WHERE a.target_user_id = $1
+                         AND ((a.action = 'invite.redeem' AND a.details ->> 'role' = r.role
+                               AND EXISTS (SELECT 1 FROM public.invite_codes i WHERE i.id::text = a.details ->> 'invite_id' AND i.club_id IS NOT NULL))
+                           OR (a.action = 'account.request_approve' AND a.details ->> 'kind' = r.role AND a.details ->> 'club_id' IS NOT NULL)))
+          AND NOT EXISTS (SELECT 1 FROM public.audit_log a
+                           WHERE a.target_user_id = $1
+                             AND ((a.action = 'invite.redeem' AND a.details ->> 'role' = r.role
+                                   AND NOT EXISTS (SELECT 1 FROM public.invite_codes i WHERE i.id::text = a.details ->> 'invite_id' AND i.club_id IS NOT NULL))
+                               OR (a.action = 'account.request_approve' AND a.details ->> 'kind' = r.role
+                                   AND a.details ->> 'club_id' IS NULL)
+                               OR (a.action = 'account.roles' AND coalesce(a.details -> 'added', '[]'::jsonb) ? r.role
+                                   AND NOT EXISTS (SELECT 1 FROM public.audit_log q
+                                                    WHERE q.action = 'account.request_approve' AND q.target_user_id = $1 AND q.at = a.at
+                                                      AND q.details ->> 'kind' = r.role AND q.details ->> 'club_id' IS NOT NULL))))`,
+      [userId, held])
+    const removed = rows.map((r) => r.role)
+    if (!removed.length) return []
+    const after = before.filter((r) => !removed.includes(r))
+    await client.query('UPDATE public.profiles SET roles = $2::text[] WHERE user_id = $1', [userId, after])
+    await audit(client, { actorId, action: 'account.roles', targetUserId: userId, details: { added: [], removed, before, after, club_id: clubId, reason: 'club_member_remove' }, app: 'indoor' })
+    return removed
   }
 
   return {

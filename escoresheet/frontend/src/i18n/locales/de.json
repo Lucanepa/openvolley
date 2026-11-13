@@ -3129,6 +3129,8 @@
       "inviteInvalid": "Dieser Einladungscode ist nicht gültig.",
       "inviteExpired": "Dieser Einladungscode ist abgelaufen.",
       "inviteUsedUp": "Dieser Einladungscode ist aufgebraucht.",
+      "inviteRemoved": "Dieses Konto wurde aus diesem Verein oder Team entfernt. Frag seine Verantwortlichen nach einem neuen Code.",
+      "inviteOtherAccount": "Dieser Link wurde an eine andere Adresse geschickt. Melde dich mit dem Konto dieser Adresse an.",
       "tooManyAttempts": "Zu viele Versuche. Bitte warte einige Minuten.",
       "offline": "Zum Einlösen eines Codes braucht es eine Verbindung.",
       "emailUnconfirmed": "Bestätige zuerst deine E-Mail-Adresse: Öffne den Link aus unserer E-Mail oder schick dir im Profil einen neuen."
@@ -3212,7 +3214,17 @@
     "teamLinkAlready": "Du verwaltest {{team}} bereits.",
     "clubLinkNote": "Sie haben einen Link als Vereinsverantwortliche/r geöffnet. Melden Sie sich an oder erstellen Sie ein Konto, dann verwalten Sie den Verein.",
     "clubLinkDone": "Sie verwalten jetzt {{club}}.",
-    "clubLinkAlready": "Sie verwalten {{club}} bereits."
+    "clubLinkAlready": "Sie verwalten {{club}} bereits.",
+    "linkAskTeam": "{{team}} mit {{email}} verwalten?",
+    "linkAskClub": "{{club}} mit {{email}} verwalten?",
+    "linkAskTeamUnnamed": "Dieses Team mit {{email}} verwalten?",
+    "linkAskClubUnnamed": "Diesen Verein mit {{email}} verwalten?",
+    "linkAskTeamBody": "Du hast einen Team-Link geöffnet. Mit Ja wird dieses Konto Teamverantwortliche/r: das Kader und die Aufstellungen, die das Team für seine Spiele schickt.",
+    "linkAskClubBody": "Du hast einen Link als Vereinsverantwortliche/r geöffnet. Mit Ja verwaltet dieses Konto den Verein: Mitglieder, Einladungscodes, Lizenzlisten und Anfragen.",
+    "linkAskYes": "Ja, mit diesem Konto",
+    "linkAskOtherAccount": "Anderes Konto verwenden",
+    "linkAskForget": "Link vergessen",
+    "linkAskLater": "Später"
   },
   "managerBeach": {
     "signInHeading": "OpenBeach verwalten",
@@ -3240,6 +3252,7 @@
       "empty": "Noch keine Benachrichtigungen.",
       "loading": "Wird geladen…",
       "signupTitle": "Neue Registrierung: {{name}}",
+      "proposalTitle": "Zu bestätigen: {{name}} als Teamverantwortliche/r",
       "noRole": "Fragt noch nach keiner Rolle",
       "stillOpen": "Wartet auf Freigabe",
       "decided": "Entschieden",
@@ -3503,7 +3516,8 @@
         "club_licences": "Lizenzliste hochgeladen",
         "club_licences_manual": "Von Hand in die Listen des Vereins aufgenommen",
         "account_request_approve": "Registrierungsanfrage freigegeben",
-        "account_request_reject": "Registrierungsanfrage abgelehnt"
+        "account_request_reject": "Registrierungsanfrage abgelehnt",
+        "account_request_propose": "Registrierungsanfrage von Teamverantwortlichen vorgeschlagen"
       }
     },
     "approvals": {
@@ -3867,9 +3881,14 @@
       "title": "Anfragen",
       "clubHint": "Personen, die sich registriert und angegeben haben, dass sie für diesen Verein schreiben, eines seiner Teams betreuen oder den Verein betreuen. Freigeben gibt ihnen genau das; ihre anderen Anfragen bleiben für die anderen.",
       "teamHint": "Personen, die sich als Verantwortliche oder Trainer dieses Teams registriert haben. Freigeben macht sie zu Teamverantwortlichen.",
+      "teamHintPropose": "Personen, die sich als Verantwortliche oder Trainer dieses Teams registriert haben. Vorschlagen gibt sie an die Vereinsverantwortlichen weiter: Teamverantwortliche werden sie erst mit deren Freigabe.",
       "empty": "Keine offenen Anfragen.",
       "approve": "Freigeben",
       "reject": "Ablehnen",
+      "propose": "Vorschlagen",
+      "proposed": "Vorgeschlagen: Die Vereinsverantwortlichen geben es frei",
+      "waitingForClub": "Vorgeschlagen, wartet auf den Verein",
+      "proposedBy": "Vorgeschlagen von {{name}}",
       "approveAll": "Wie angefragt freigeben",
       "review": "Anfrage prüfen",
       "reviewTitle": "Anfrage von {{name}}",

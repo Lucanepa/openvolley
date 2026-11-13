@@ -1,5 +1,5 @@
 -- current_definitions.sql: the current body of every function that more
--- than one numbered migration defines. current as of: db/033
+-- than one numbered migration defines. current as of: db/036
 --
 -- scripts/migrate.mjs applies it after the numbered files on every run, in
 -- one transaction. A numbered file never runs twice through the runner, but
@@ -9,7 +9,8 @@
 -- deleted) and the close audit without 012's app; db/011 the approval void
 -- without the app; db/015 the born-voided trigger that takes another match's
 -- revisions (032); db/030 the manager-role functions without 031's SECURITY
--- DEFINER (every write of club_managers / team_managers failed with 42501).
+-- DEFINER (every write of club_managers / team_managers failed with 42501)
+-- and with the club membership for a team manager that 036 took out.
 -- The next runner run puts the bodies below back; lib/schemaVersion.js (the
 -- backend at start, scripts/check-schema.mjs) reports a body that differs.
 -- The numbered files stay as they are: a fresh database still builds from
@@ -145,27 +146,22 @@ BEGIN
    WHERE p.ctid = n.row_id AND p.roles IS DISTINCT FROM n.next;
 END $$;
 
--- db/030, with db/031's SECURITY DEFINER and search_path: it calls ov_sync_manager_roles, which ov_app may not execute
+-- db/036 (db/030 with db/031's SECURITY DEFINER and search_path: it calls ov_sync_manager_roles, which ov_app may not
+-- execute): a new club manager joins the club, a team manager no club
 CREATE OR REPLACE FUNCTION public.ov_manager_rows_changed()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
-DECLARE
-  club uuid;
 BEGIN
   IF TG_OP IN ('INSERT', 'UPDATE') THEN
     PERFORM public.ov_sync_manager_roles(NEW.user_id);
-    -- a new manager joins the club (of the team)
+    -- a new club manager joins the club; a team manager no club (db/036:
+    -- it reads through its team, lib/teams.js mayManage)
     IF TG_TABLE_NAME = 'club_managers' THEN
-      club := NEW.club_id;
-    ELSE
-      SELECT ct.club_id INTO club FROM public.club_teams ct WHERE ct.id = NEW.team_id;
-    END IF;
-    IF club IS NOT NULL THEN
       INSERT INTO public.account_clubs (user_id, club_id, granted_by)
-      VALUES (NEW.user_id, club, NEW.added_by)
+      VALUES (NEW.user_id, NEW.club_id, NEW.added_by)
       ON CONFLICT (user_id, club_id) DO NOTHING;
     END IF;
   END IF;

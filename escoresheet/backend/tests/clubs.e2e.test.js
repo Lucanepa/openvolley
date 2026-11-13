@@ -222,12 +222,54 @@ describe('clubs end to end', { skip: SKIP }, () => {
     assert.equal(scored.status, 200, scored.text)
   })
 
-  it('a deleted club takes its teams and memberships with it', async () => {
+  it('the last club link taken off: the scorer role the club\'s code gave goes too; an admin\'s grant stays (be-clubs-teams-7)', async () => {
+    const inv = await call(users.admin, 'POST', '/api/admin/invites', { label: 'VBCM helpers', club_id: musterdorf.id, max_uses: 5 })
+    const roleOf = async (u) => (await call(u, 'GET', '/api/me')).json.data.roles
+    // a scorer by the club's code only
+    const helper = await account('helper', null)
+    assert.equal((await call(helper, 'POST', '/api/account/redeem-invite', { code: inv.json.data.code })).status, 200)
+    assert.deepEqual(await roleOf(helper), ['scorer'])
+    const off = await call(users.admin, 'DELETE', `/api/club/${musterdorf.id}/members/${helper.id}`)
+    assert.equal(off.status, 200, off.text)
+    assert.deepEqual(off.json.data.roles_removed, ['scorer'])
+    const me = (await call(helper, 'GET', '/api/me')).json.data
+    assert.deepEqual([me.roles, me.clubs, me.canScore], [[], [], false])
+    assert.equal((await call(helper, 'GET', '/api/game-rosters')).status, 403)
+    const { rows: [entry] } = await sql.query("SELECT details FROM public.audit_log WHERE action = 'account.roles' AND target_user_id = $1", [helper.id])
+    assert.deepEqual([entry.details.removed, entry.details.club_id, entry.details.reason], [['scorer'], musterdorf.id, 'club_member_remove'])
+    // a scorer an admin made, who joined the club with its code: keeps the role
+    const pro = await account('pro', null)
+    assert.equal((await call(users.admin, 'POST', `/api/admin/accounts/${pro.id}/roles`, { add: ['scorer'] })).status, 200)
+    assert.equal((await call(pro, 'POST', '/api/account/redeem-invite', { code: inv.json.data.code })).status, 200)
+    const off2 = await call(users.admin, 'DELETE', `/api/club/${musterdorf.id}/members/${pro.id}`)
+    assert.deepEqual(off2.json.data.roles_removed, [])
+    assert.deepEqual(await roleOf(pro), ['scorer'])
+    // still in another club: not its last link, the role stays
+    const both = await account('both', null)
+    assert.equal((await call(both, 'POST', '/api/account/redeem-invite', { code: inv.json.data.code })).status, 200)
+    const { rows: [other] } = await sql.query("SELECT id FROM public.clubs WHERE name = 'VBC Other'")
+    assert.equal((await call(users.admin, 'PUT', `/api/admin/accounts/${both.id}/clubs`, { club_ids: [musterdorf.id, other.id] })).status, 200)
+    assert.deepEqual((await call(users.admin, 'DELETE', `/api/club/${musterdorf.id}/members/${both.id}`)).json.data.roles_removed, [])
+    assert.deepEqual(await roleOf(both), ['scorer'])
+  })
+
+  it('a deleted club takes its teams and memberships with it, and its codes stop working (be-clubs-teams-8)', async () => {
+    const inv = await call(users.admin, 'POST', '/api/admin/invites', { label: 'VBCM season', club_id: musterdorf.id, max_uses: 50 })
+    assert.equal(inv.status, 201, inv.text)
     const del = await call(users.admin, 'DELETE', `/api/admin/clubs/${musterdorf.id}`)
     assert.equal(del.status, 200, del.text)
     const me = await call(users.musterdorf, 'GET', '/api/me')
     assert.deepEqual(me.json.data.clubs, [])
     expectCode(await insertMatch(users.musterdorf, { game_n: 900008 }), 403, 'OV_CLUB_REQUIRED')
     expectCode(await call(users.admin, 'DELETE', `/api/admin/clubs/${musterdorf.id}`), 404, 'OV_NOT_FOUND')
+    // the club's code: revoked with it, no scorer role without a club
+    const late = await account('late', null)
+    expectCode(await call(late, 'POST', '/api/account/redeem-invite', { code: inv.json.data.code }), 404, 'OV_INVITE_INVALID')
+    assert.deepEqual((await call(late, 'GET', '/api/me')).json.data.roles, [])
+    const { rows: [row] } = await sql.query('SELECT club_id, revoked_at FROM public.invite_codes WHERE id = $1', [inv.json.data.invite.id])
+    assert.equal(row.club_id, null)
+    assert.ok(row.revoked_at)
+    const { rows: [entry] } = await sql.query("SELECT details FROM public.audit_log WHERE action = 'club.delete' ORDER BY at DESC LIMIT 1")
+    assert.ok(entry.details.codes_revoked >= 1)
   })
 })

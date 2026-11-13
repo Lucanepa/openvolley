@@ -98,7 +98,10 @@ export const AUDIT_ACTIONS = Object.freeze([
   'club.licences.manual',
   // db/025: a part of a sign-up request approved or rejected (lib/accountRequests.js;
   // the kind, the club and team ids, who decided: admin, club or team)
-  'account.request_approve', 'account.request_reject'
+  'account.request_approve', 'account.request_reject',
+  // db/036: a team manager said yes to a team manager part: proposed, for the
+  // club's managers to confirm (the kind, the club and team ids)
+  'account.request_propose'
 ])
 export const APPS = SPORTS
 // How a membership came about (auth.app_memberships.joined_via)
@@ -410,11 +413,28 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
   }
 
   // ------------------------------------------------------------------ invites
+  /**
+   * SQL: invite code `i` stands only while the account that made it may still
+   * make it (be-accounts-6): an admin, or for a club's scorer / referee code
+   * or team link a manager of that club. A code of a deleted account
+   * (created_by NULL), of an admin no more, or of a club manager taken off the
+   * club is dead, and listed as revoked. So is a code of an account an admin
+   * deactivated, while it stays deactivated.
+   */
+  const creatorMaySql = (i) => `(${i}.created_by IS NOT NULL
+    AND EXISTS (SELECT 1 FROM auth.users cu WHERE cu.id = ${i}.created_by
+                   AND (to_jsonb(cu) ->> 'deleted_at') IS NULL
+                   AND ((to_jsonb(cu) ->> 'banned_until') IS NULL OR (to_jsonb(cu) ->> 'banned_until')::timestamptz <= now()))
+    AND (
+      EXISTS (SELECT 1 FROM public.profiles cp WHERE cp.user_id = ${i}.created_by
+                 AND ${hasRoleSql('cp.roles', `ARRAY[${ADMIN_ROLES.map((r) => `'${r}'`).join(', ')}]`)})
+      OR (${i}.club_id IS NOT NULL AND ${i}.role IN ('scorer', 'referee', 'team_manager')
+          AND EXISTS (SELECT 1 FROM public.club_managers cm WHERE cm.club_id = ${i}.club_id AND cm.user_id = ${i}.created_by))))`
   const INVITE_SELECT = `
     SELECT i.id, i.code_hint, i.label, i.club, to_jsonb(i) ->> 'club_id' AS club_id, to_jsonb(i) ->> 'team_id' AS team_id,
            i.role, i.sport, i.max_uses, i.uses, i.expires_at, i.revoked_at, i.created_at,
            ${nameSql('p')} AS created_by_name,
-           CASE WHEN i.revoked_at IS NOT NULL THEN 'revoked'
+           CASE WHEN i.revoked_at IS NOT NULL OR NOT ${creatorMaySql('i')} THEN 'revoked'
                 WHEN i.expires_at IS NOT NULL AND i.expires_at <= now() THEN 'expired'
                 WHEN i.max_uses IS NOT NULL AND i.uses >= i.max_uses THEN 'used_up'
                 ELSE 'active' END AS state
@@ -453,65 +473,95 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     }
   }
 
-  async function redeemInvite ({ userId, code } = {}) {
+  const INVITE_INVALID = () => fail(404, 'OV_INVITE_INVALID', 'This invite code is not valid')
+  // be-accounts-4, be-clubs-teams-5: an account taken off the club or the team
+  // does not come back with the code or team link it used
+  const INVITE_REMOVED = () => fail(409, 'OV_INVITE_REMOVED',
+    'You were taken off this club or team. Ask its manager for a new code.')
+
+  /**
+   * POST /api/account/redeem-invite { code }. `preview` (POST
+   * /api/account/invite-preview, fe-auth-client-7): the same checks and the
+   * same answer with `preview: true`, and nothing kept (the transaction rolls
+   * back): the manager asks "Manage <team> with <account>?" before it redeems.
+   */
+  async function redeemInvite ({ userId, code, preview = false } = {}) {
     if (!isUuid(userId)) return fail(401, 'invalid_token', 'Not signed in')
     if (typeof code !== 'string' || code.length > 64) return invalid('code: required')
     const normalized = normalizeInviteCode(code)
-    if (!normalized) return fail(404, 'OV_INVITE_INVALID', 'This invite code is not valid')
-    return guarded('redeem-invite', () => withTx(async (client) => {
+    if (!normalized) return INVITE_INVALID()
+    const res = guarded(preview ? 'invite-preview' : 'redeem-invite', () => withTx(async (client) => {
       // Before the code is looked at: an unconfirmed account learns nothing
       // about the code and does not use it up.
       if ((await confirmationOf(client, userId))?.unconfirmed) throw abort(EMAIL_UNCONFIRMED())
       const { rows: [inv] } = await client.query(
-        `SELECT id, label, role, sport, max_uses, uses, revoked_at, to_jsonb(invite_codes) ->> 'club_id' AS club_id,
-                to_jsonb(invite_codes) ->> 'team_id' AS team_id,
-                (expires_at IS NOT NULL AND expires_at <= now()) AS expired
-           FROM public.invite_codes WHERE code_hash = $1 FOR UPDATE`, [hashInviteCode(normalized)])
-      if (!inv || inv.revoked_at) throw abort(fail(404, 'OV_INVITE_INVALID', 'This invite code is not valid'))
+        `SELECT i.id, i.label, i.role, i.sport, i.max_uses, i.uses, i.revoked_at, i.created_at, to_jsonb(i) ->> 'club_id' AS club_id,
+                to_jsonb(i) ->> 'team_id' AS team_id, to_jsonb(i) ->> 'invited_email' AS invited_email,
+                (i.expires_at IS NOT NULL AND i.expires_at <= now()) AS expired, ${creatorMaySql('i')} AS creator_may
+           FROM public.invite_codes i WHERE i.code_hash = $1 FOR UPDATE OF i`, [hashInviteCode(normalized)])
+      // be-accounts-6: a code of an account that may no longer make it is dead
+      if (!inv || inv.revoked_at || !inv.creator_may) throw abort(INVITE_INVALID())
       if (inv.expired) throw abort(fail(410, 'OV_INVITE_EXPIRED', 'This invite code has expired'))
-      // db/023: a team link makes the account a manager of that team, and
-      // nothing else (no role, no club membership: it scores nothing)
-      if (inv.role === 'team_manager') return redeemTeamLink(client, userId, inv)
-      // db/029: a club manager link makes the account a manager of that club, and nothing else
-      if (inv.role === 'club_manager') return redeemClubLink(client, userId, inv)
-      // The role in the code's sport: a beach code grants beach:<role> (db/012)
-      const sport = inv.sport === 'beach' ? 'beach' : 'indoor'
-      const role = roleFor(sport, inv.role)
-      if (!role) throw abort(fail(404, 'OV_INVITE_INVALID', 'This invite code is not valid'))
-      const beachOnly = sport === 'beach' ? { sport } : {}
-      const { rows: [prof] } = await client.query('SELECT roles FROM public.profiles WHERE user_id = $1 LIMIT 1 FOR UPDATE', [userId])
-      const before = normalizeRoles(prof?.roles)
-      const { rows: [again] } = await client.query('SELECT 1 FROM public.invite_redemptions WHERE invite_id = $1 AND user_id = $2', [inv.id, userId])
-      // Idempotent: a code redeemed before, or a role the account already has,
-      // is not counted (a single-use code is not wasted).
-      // db/018: an indoor code's club is joined too (also on a repeat: a second
-      // club's code adds that club)
-      const club = sport === 'indoor' && isUuid(inv.club_id) ? inv.club_id : null
-      const joinClub = async () => {
-        if (!club) return false
-        const { rowCount } = await client.query(
-          `INSERT INTO public.account_clubs (user_id, club_id, granted_by)
-           SELECT $1, $2, NULL WHERE EXISTS (SELECT 1 FROM public.clubs WHERE id = $2)
-           ON CONFLICT (user_id, club_id) DO NOTHING`, [userId, club])
-        return rowCount > 0
-      }
-      if (again || before.includes(role)) {
-        await addMembership(client, userId, sport, 'invite')
-        if (await joinClub()) {
-          await audit(client, { actorId: userId, action: 'account.clubs', targetUserId: userId, details: { invite_id: inv.id, joined: club } })
-        }
-        return ok({ roles: before, role_granted: role, already_had: true, ...beachOnly })
-      }
-      if (inv.max_uses != null && inv.uses >= inv.max_uses) throw abort(fail(409, 'OV_INVITE_USED_UP', 'This invite code has been used up'))
-      await client.query('INSERT INTO public.invite_redemptions (invite_id, user_id) VALUES ($1, $2)', [inv.id, userId])
-      await client.query('UPDATE public.invite_codes SET uses = uses + 1 WHERE id = $1', [inv.id])
-      const after = [...before, role]
-      await writeRoles(client, userId, after, !!prof)
+      const out = await redeemFound(client, userId, inv)
+      // a preview keeps nothing: the answer, then a rollback
+      if (preview) throw abort(ok({ ...out.body.data, preview: true }))
+      return out
+    }))
+    return preview ? res : res.finally(() => access?.invalidate(userId))
+  }
+
+  /** The rest of redeemInvite: the code row `inv` locked and valid. */
+  async function redeemFound (client, userId, inv) {
+    // db/023: a team link makes the account a manager of that team, and
+    // nothing else (no role, no club membership: it scores nothing; db/036)
+    if (inv.role === 'team_manager') return redeemTeamLink(client, userId, inv)
+    // db/029: a club manager link makes the account a manager of that club, and nothing else
+    if (inv.role === 'club_manager') return redeemClubLink(client, userId, inv)
+    // The role in the code's sport: a beach code grants beach:<role> (db/012)
+    const sport = inv.sport === 'beach' ? 'beach' : 'indoor'
+    const role = roleFor(sport, inv.role)
+    if (!role) throw abort(INVITE_INVALID())
+    const beachOnly = sport === 'beach' ? { sport } : {}
+    const { rows: [prof] } = await client.query('SELECT roles FROM public.profiles WHERE user_id = $1 LIMIT 1 FOR UPDATE', [userId])
+    const before = normalizeRoles(prof?.roles)
+    const hadRole = before.includes(role)
+    const { rows: [again] } = await client.query('SELECT 1 FROM public.invite_redemptions WHERE invite_id = $1 AND user_id = $2', [inv.id, userId])
+    // db/018: an indoor code's club is joined too (a second club's code adds that club)
+    const club = sport === 'indoor' && isUuid(inv.club_id) ? inv.club_id : null
+    const { rows: [member] } = club
+      ? await client.query('SELECT 1 FROM public.account_clubs WHERE user_id = $1 AND club_id = $2', [userId, club])
+      : { rows: [{}] }
+    // A code this account used before: nothing new. Its club only while the
+    // account is still a member: one taken off the club needs a new code.
+    if (again && !member) throw abort(INVITE_REMOVED())
+    // Idempotent: a code redeemed before, or nothing to give (the role held,
+    // the club joined) is not counted (a single-use code is not wasted)
+    if (again || (hadRole && member)) {
       await addMembership(client, userId, sport, 'invite')
-      const joined = await joinClub()
+      return ok({ roles: before, role_granted: role, already_had: true, ...beachOnly })
+    }
+    // A use: the role, or the club for an account that holds the role
+    // already (be-accounts-4: counted and recorded like any other use)
+    if (inv.max_uses != null && inv.uses >= inv.max_uses) throw abort(fail(409, 'OV_INVITE_USED_UP', 'This invite code has been used up'))
+    await client.query('INSERT INTO public.invite_redemptions (invite_id, user_id) VALUES ($1, $2)', [inv.id, userId])
+    await client.query('UPDATE public.invite_codes SET uses = uses + 1 WHERE id = $1', [inv.id])
+    const after = hadRole ? before : [...before, role]
+    if (!hadRole) await writeRoles(client, userId, after, !!prof)
+    await addMembership(client, userId, sport, 'invite')
+    let joined = false
+    if (club) {
+      const { rowCount } = await client.query(
+        `INSERT INTO public.account_clubs (user_id, club_id, granted_by)
+         SELECT $1, $2, NULL WHERE EXISTS (SELECT 1 FROM public.clubs WHERE id = $2)
+         ON CONFLICT (user_id, club_id) DO NOTHING`, [userId, club])
+      joined = rowCount > 0
+    }
+    if (hadRole) {
+      await audit(client, { actorId: userId, action: 'account.clubs', targetUserId: userId, details: { invite_id: inv.id, joined: club } })
+    } else {
       await audit(client, { actorId: userId, action: 'invite.redeem', targetUserId: userId, details: { invite_id: inv.id, label: inv.label, role, ...(joined ? { club_id: club } : {}), ...beachOnly }, app: sport })
-      return ok({ roles: after, role_granted: role, already_had: false, ...beachOnly })
-    })).finally(() => access?.invalidate(userId))
+    }
+    return ok({ roles: after, role_granted: role, already_had: hadRole, ...beachOnly })
   }
 
   /** The team link part of redeemInvite (inside its transaction, the code row locked). */
@@ -521,20 +571,31 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
         `SELECT ct.id, ct.team_name AS name, c.id AS club_id, c.name AS club_name
            FROM public.club_teams ct JOIN public.clubs c ON c.id = ct.club_id WHERE ct.id = $1`, [inv.team_id])
       : { rows: [] }
-    if (!team) throw abort(fail(404, 'OV_INVITE_INVALID', 'This invite code is not valid'))
+    if (!team) throw abort(INVITE_INVALID())
     const { rows: [prof] } = await client.query('SELECT roles FROM public.profiles WHERE user_id = $1 LIMIT 1', [userId])
     const roles = normalizeRoles(prof?.roles)
     const teamOut = { id: team.id, name: team.name, club_id: team.club_id, club_name: team.club_name }
     const { rows: [already] } = await client.query('SELECT 1 FROM public.team_managers WHERE team_id = $1 AND user_id = $2', [team.id, userId])
     // Idempotent: a team the account already manages does not use the code up
     if (already) return ok({ roles, role_granted: 'team_manager', already_had: true, team: teamOut })
+    // be-clubs-teams-5: redeemed before and no longer a manager of the team:
+    // taken off it (lib/teams.js removeManager); the same link does not bring it back
+    const { rows: [again] } = await client.query('SELECT 1 FROM public.invite_redemptions WHERE invite_id = $1 AND user_id = $2', [inv.id, userId])
+    if (again) throw abort(INVITE_REMOVED())
+    // nor does another link of the team made before it was taken off; a link
+    // made after that is the club asking it back
+    const { rows: [removed] } = await client.query(
+      `SELECT 1 FROM public.audit_log
+        WHERE action = 'team.managers' AND target_user_id = $1 AND details ->> 'team_id' = $2::text
+          AND details ->> 'removed' = 'true' AND at >= $3 LIMIT 1`, [userId, team.id, inv.created_at])
+    if (removed) throw abort(INVITE_REMOVED())
     if (inv.max_uses != null && inv.uses >= inv.max_uses) throw abort(fail(409, 'OV_INVITE_USED_UP', 'This invite code has been used up'))
-    await client.query('INSERT INTO public.invite_redemptions (invite_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [inv.id, userId])
+    await client.query('INSERT INTO public.invite_redemptions (invite_id, user_id) VALUES ($1, $2)', [inv.id, userId])
     await client.query('UPDATE public.invite_codes SET uses = uses + 1 WHERE id = $1', [inv.id])
     await client.query('INSERT INTO public.team_managers (team_id, user_id, added_by) VALUES ($1, $2, NULL) ON CONFLICT DO NOTHING', [team.id, userId])
     await addMembership(client, userId, 'indoor', 'invite')
     await audit(client, { actorId: userId, action: 'invite.redeem', targetUserId: userId, details: { invite_id: inv.id, label: inv.label, role: 'team_manager', team_id: team.id, club_id: team.club_id }, app: 'indoor' })
-    // db/030: the database added the manager role (and the club): the roles as they are now
+    // db/030: the database added the manager role: the roles as they are now
     const { rows: [now] } = await client.query('SELECT roles FROM public.profiles WHERE user_id = $1 LIMIT 1', [userId])
     return ok({ roles: normalizeRoles(now?.roles ?? roles), role_granted: 'team_manager', already_had: false, team: teamOut })
   }
@@ -544,13 +605,20 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     const { rows: [club] } = isUuid(inv.club_id)
       ? await client.query('SELECT id, name FROM public.clubs WHERE id = $1', [inv.club_id])
       : { rows: [] }
-    if (!club) throw abort(fail(404, 'OV_INVITE_INVALID', 'This invite code is not valid'))
+    if (!club) throw abort(INVITE_INVALID())
     const { rows: [prof] } = await client.query('SELECT roles FROM public.profiles WHERE user_id = $1 LIMIT 1', [userId])
     const roles = normalizeRoles(prof?.roles)
     const clubOut = { id: club.id, name: club.name }
     const { rows: [already] } = await client.query('SELECT 1 FROM public.club_managers WHERE club_id = $1 AND user_id = $2', [club.id, userId])
     // Idempotent: a club the account already manages does not use the code up
     if (already) return ok({ roles, role_granted: 'club_manager', already_had: true, club: clubOut })
+    // db/036 (delta-fe-manage-3): the link works for the address it was mailed to only
+    if (inv.invited_email) {
+      const { rows: [u] } = await client.query('SELECT lower(email) AS email FROM auth.users WHERE id = $1', [userId])
+      if (!u || u.email !== String(inv.invited_email).toLowerCase()) {
+        throw abort(fail(403, 'OV_INVITE_OTHER_ACCOUNT', 'This link was sent to another address. Sign in with the account of that address.'))
+      }
+    }
     if (inv.max_uses != null && inv.uses >= inv.max_uses) throw abort(fail(409, 'OV_INVITE_USED_UP', 'This invite code has been used up'))
     await client.query('INSERT INTO public.invite_redemptions (invite_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [inv.id, userId])
     await client.query('UPDATE public.invite_codes SET uses = uses + 1 WHERE id = $1', [inv.id])
@@ -600,6 +668,14 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     // db/029: a club manager link names its club (lib/clubs.js inviteManager)
     if (role === 'club_manager' && (!isUuid(body.club_id) || sport !== 'indoor')) return invalid('club_id: the club of a club_manager code (indoor)')
     if (!INVITE_ROLES.includes(role) && role !== 'team_manager' && role !== 'club_manager') return fail(400, 'OV_INVALID_ROLE', 'This role cannot be given by an invite code', 'role: scorer, referee or competition_manager')
+    // db/036: a club manager link names the address it is for (lib/clubs.js inviteManager)
+    let invitedEmail = null
+    if (body.invited_email != null && body.invited_email !== '') {
+      if (role !== 'club_manager') return invalid('invited_email: only for a club_manager code')
+      const e = typeof body.invited_email === 'string' ? body.invited_email.trim().toLowerCase() : ''
+      if (e.length < 3 || e.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return invalid('invited_email: an email address')
+      invitedEmail = e
+    }
     // db/018: the club whoever redeems the code joins (indoor codes only)
     let clubId = null
     if (body.club_id != null && body.club_id !== '') {
@@ -643,6 +719,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
             const vals = [hashInviteCode(normalized), normalized.slice(-4), label, club, role, maxUses, expiresAt, isUuid(actorId) ? actorId : null, sport]
             if (clubId) { cols.push('club_id'); vals.push(clubId) }
             if (teamId) { cols.push('team_id'); vals.push(teamId) }
+            if (invitedEmail) { cols.push('invited_email'); vals.push(invitedEmail) }
             const { rows: [row] } = await client.query(
               `INSERT INTO public.invite_codes (${cols.join(', ')}) VALUES (${vals.map((_, i) => `$${i + 1}`).join(', ')}) RETURNING id`, vals)
             await audit(client, { actorId, action: 'invite.create', details: { invite_id: row.id, label, role, ...(clubId ? { club_id: clubId } : {}), ...(teamId ? { team_id: teamId } : {}), ...(sport === 'beach' ? { sport } : {}) }, app: sport })

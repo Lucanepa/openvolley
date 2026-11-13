@@ -69,7 +69,8 @@ export function auditDetailsLine(entry, opts = {}) {
   const club = entry?.club_name ? String(entry.club_name) : null
   // db/025: a part of a sign-up request approved or rejected: the kind, the
   // club (by its name today), whether the approver changed it, who decided
-  if (entry?.action === 'account.request_approve' || entry?.action === 'account.request_reject') {
+  // (db/036: account.request_propose, a team manager's yes for the club to confirm)
+  if (entry?.action === 'account.request_approve' || entry?.action === 'account.request_reject' || entry?.action === 'account.request_propose') {
     if (d.kind) parts.push(tr(`access.requests.kinds.${d.kind}`, String(d.kind)))
     if (club) parts.push(club)
     if (d.changed) parts.push(tr('manage.requests.changed', 'changed'))

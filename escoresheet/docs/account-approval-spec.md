@@ -732,6 +732,16 @@ a team manager part takes its team's club. Nothing is granted at sign-up.
 | A manager of team T (db/023), or of its club | team manager of T | My teams → Requests (`GET/POST /api/team/:id/requests[/:userId]`) |
 | Referee parts | admins only | |
 
+Owner decision 3 (rollout audit, db/036): a team manager of T who says yes
+only **proposes** the part ("Propose"): it stays open with `proposed_by` /
+`proposed_at`, shows "Proposed, waiting for a club manager" on the team's
+page and "Proposed by <name>" under My club, and the club's managers (the
+admins of a club without managers) get a notice and a mail
+(`team_manager_proposal`). The role comes only with the yes of a manager of
+T's club or an admin, on either page (audited `account.request_approve` with
+`proposed: true`). The proposal is audited `account.request_propose`. The
+answer of a decision carries `approved`, `proposed` and `rejected`.
+
 Each approver sees and decides its own parts; the rest stays for the others.
 Body of a decision: `{ approve: [{ id, club_id?, team_id? }], reject: [id] }`;
 a part outside the approver's parts, or decided meanwhile, answers 409
@@ -741,7 +751,8 @@ and team ids, `changed` and `via` (`admin`, `club`, `team`); never a name.
 
 ### 8.3 Data
 
-`public.account_requests (id, user_id, kind, club_id, team_id, created_at)`:
+`public.account_requests (id, user_id, kind, club_id, team_id, created_at,
+proposed_by, proposed_at)` (the last two db/036, team manager parts only):
 CHECKs per kind (referee: no club, no team; scorer and club manager: a club,
 no team; team manager: a team and its club, the composite key to
 `club_teams (id, club_id)`), one row per part, `ON DELETE CASCADE` with the

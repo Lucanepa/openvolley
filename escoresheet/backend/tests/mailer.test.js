@@ -19,7 +19,8 @@ import { startFakeSmtp, makeTestCert, linkToken, SMTP_USER, SMTP_PASS } from './
 const APPROVAL_KINDS = ['approval', 'approval_pin_locked']
 const SCORESHEET_KINDS = ['scoresheet', 'scoresheet_test', 'scoresheet_no_pdf', 'scoresheet_reopened']
 // The sign-up notice (lib/signupNotices.js) goes to the admins and approvers, not the account: tested on its own
-const NOTICE_TO_APPROVERS = ['signup', 'club_manager_invite']
+// (and so are the club manager link and the team manager proposal, db/036)
+const NOTICE_TO_APPROVERS = ['signup', 'club_manager_invite', 'team_manager_proposal']
 const ACCOUNT_KINDS = MAIL_KINDS.filter((k) => !APPROVAL_KINDS.includes(k) && !SCORESHEET_KINDS.includes(k) && !NOTICE_TO_APPROVERS.includes(k))
 // Notices that link nothing: the way out is in the app, and a genuine mail
 // can be told by that (password changed, passkey added).
@@ -528,6 +529,21 @@ describe('mailer: brands (OpenVolley / OpenBeach)', () => {
     }
     assert.match(renderMail('club_manager_invite', 'en', { link: page, vars: { club: 'X', inviter: '', days: '14' } }).text, /An OpenVolley admin invites you/)
     assert.equal(mailBrandOf('club_manager_invite', 'beach'), 'indoor')
+  })
+
+  it('the team manager proposal (db/036): who, the team, who proposed, one link, every language; OpenVolley only', () => {
+    const page = 'https://manager.example.test/#myclub/0b6b1a52-6f1e-4a43-9d6c-1d8c0f7d2a11'
+    const vars = { name: 'Nora Neu', email: 'nora@example.ch', team: 'VBC Musterdorf H1', club: 'VBC Musterdorf', proposer: 'Tom Team', admin: false }
+    for (const lang of MAIL_LANGS) {
+      const m = renderMail('team_manager_proposal', lang, { link: page, vars })
+      assert.match(m.subject, /Nora Neu/)
+      for (const bit of ['Nora Neu (nora@example.ch)', 'VBC Musterdorf H1 (VBC Musterdorf)', 'Tom Team', page]) assert.ok(m.text.includes(bit), `${lang}: ${bit}`)
+      assert.doesNotMatch(m.text + m.subject, /ß/, 'Swiss spelling')
+      assert.doesNotMatch(m.html, /<img|<script|<link|url\(|@import/i)
+      assert.notEqual(renderMail('team_manager_proposal', lang, { link: page, vars: { ...vars, admin: true } }).text, m.text)
+    }
+    assert.match(renderMail('team_manager_proposal', 'en', { link: page, vars: { ...vars, proposer: '' } }).text, /A team manager proposes/)
+    assert.equal(mailBrandOf('team_manager_proposal', 'beach'), 'indoor')
   })
 
   it('the approval notices are OpenVolley\'s only: app beach changes nothing', () => {

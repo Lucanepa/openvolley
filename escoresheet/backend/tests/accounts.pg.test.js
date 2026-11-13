@@ -180,6 +180,135 @@ describe('accounts on Postgres', { skip: SKIP_PG }, () => {
       const r = await accounts.redeemInvite({ userId: id, code })
       assert.deepEqual(r.body.data.roles, ['competition_manager'])
     })
+
+    // be-accounts-4, x-test-gaps-12: what a repeat or a used-up club code does, not only its answer
+    describe('club codes: every use counted, a removal sticks', () => {
+      let clubId
+      const memberOf = async (id) => (await pool.query('SELECT count(*)::int AS n FROM public.account_clubs WHERE user_id = $1 AND club_id = $2', [id, clubId])).rows[0].n
+      const usesOf = async (inviteId) => (await pool.query('SELECT uses FROM public.invite_codes WHERE id = $1', [inviteId])).rows[0].uses
+      const redemptionsOf = async (inviteId) => (await pool.query('SELECT user_id FROM public.invite_redemptions WHERE invite_id = $1 ORDER BY redeemed_at', [inviteId])).rows.map((r) => r.user_id)
+      const clubCode = async (body) => (await accounts.createInvite({ actorId: ids.admin, body: { label: 'Club code', club_id: clubId, ...body } })).body.data
+      before(async () => {
+        clubId = (await pool.query("INSERT INTO public.clubs (name) VALUES ('VBC Codeburg') RETURNING id")).rows[0].id
+      })
+
+      it('used up: an account that holds the role already is refused and joins nothing', async () => {
+        const { code, invite } = await clubCode({ max_uses: 1 })
+        const helper = await user('helper', [])
+        assert.equal((await accounts.redeemInvite({ userId: helper, code })).status, 200)
+        assert.equal(await memberOf(helper), 1)
+        const outsider = await user('outsider', ['scorer'])
+        const r = await accounts.redeemInvite({ userId: outsider, code })
+        assert.equal(r.status, 409, JSON.stringify(r.body))
+        assert.equal(r.body.error.code, 'OV_INVITE_USED_UP')
+        assert.equal(await memberOf(outsider), 0)
+        assert.equal(await usesOf(invite.id), 1)
+        assert.deepEqual(await redemptionsOf(invite.id), [helper])
+      })
+
+      it('a scorer joining the club through the code uses it: counted, recorded, audited; a repeat is not', async () => {
+        const { code, invite } = await clubCode({ max_uses: 2 })
+        const joiner = await user('joiner', ['scorer'])
+        const r = await accounts.redeemInvite({ userId: joiner, code })
+        assert.equal(r.status, 200, JSON.stringify(r.body))
+        assert.deepEqual(r.body.data, { roles: ['scorer'], role_granted: 'scorer', already_had: true })
+        assert.equal(await memberOf(joiner), 1)
+        assert.equal(await usesOf(invite.id), 1)
+        assert.deepEqual(await redemptionsOf(invite.id), [joiner])
+        assert.ok((await auditOf('account.clubs')).some((a) => a.target_user_id === joiner && a.details.invite_id === invite.id && a.details.joined === clubId))
+        // again: nothing new, not counted
+        assert.equal((await accounts.redeemInvite({ userId: joiner, code })).status, 200)
+        assert.equal(await usesOf(invite.id), 1)
+        // a scorer already in the club: nothing to give, not counted
+        const inside = await user('inside', ['scorer'])
+        await pool.query('INSERT INTO public.account_clubs (user_id, club_id) VALUES ($1, $2)', [inside, clubId])
+        assert.equal((await accounts.redeemInvite({ userId: inside, code })).body.data.already_had, true)
+        assert.equal(await usesOf(invite.id), 1)
+      })
+
+      it('taken off the club: the same code does not bring the account back, a new one does', async () => {
+        const { code, invite } = await clubCode({ max_uses: 5 })
+        const leaver = await user('leaver', [])
+        assert.equal((await accounts.redeemInvite({ userId: leaver, code })).status, 200)
+        // as the club manager's Remove (lib/clubs.js removeMember)
+        await pool.query('DELETE FROM public.account_clubs WHERE user_id = $1 AND club_id = $2', [leaver, clubId])
+        const r = await accounts.redeemInvite({ userId: leaver, code })
+        assert.equal(r.status, 409, JSON.stringify(r.body))
+        assert.equal(r.body.error.code, 'OV_INVITE_REMOVED')
+        assert.equal(await memberOf(leaver), 0)
+        assert.equal(await usesOf(invite.id), 1)
+        const fresh = await clubCode({ max_uses: 1 })
+        assert.equal((await accounts.redeemInvite({ userId: leaver, code: fresh.code })).status, 200)
+        assert.equal(await memberOf(leaver), 1)
+      })
+
+      it('a preview answers as a redeem would, and keeps nothing', async () => {
+        const { code, invite } = await clubCode({ max_uses: 1 })
+        const looker = await user('looker', [])
+        const auditsBefore = (await pool.query('SELECT count(*)::int AS n FROM public.audit_log')).rows[0].n
+        const p = await accounts.redeemInvite({ userId: looker, code, preview: true })
+        assert.equal(p.status, 200, JSON.stringify(p.body))
+        assert.deepEqual(p.body.data, { roles: ['scorer'], role_granted: 'scorer', already_had: false, preview: true })
+        assert.deepEqual(await rolesOf(looker), [])
+        assert.equal(await memberOf(looker), 0)
+        assert.equal(await usesOf(invite.id), 0)
+        assert.equal((await pool.query('SELECT count(*)::int AS n FROM public.audit_log')).rows[0].n, auditsBefore)
+        // the refusals are the redeem's
+        await accounts.redeemInvite({ userId: looker, code })
+        const peeker = await user('peeker', [])
+        assert.equal((await accounts.redeemInvite({ userId: peeker, code, preview: true })).body.error.code, 'OV_INVITE_USED_UP')
+      })
+    })
+
+    // be-accounts-6: a code stands only while its creator may still make it
+    describe('codes and their creator', () => {
+      const stateOf = async (inviteId) => (await accounts.listInvites()).body.data.invites.find((i) => i.id === inviteId)?.state
+
+      it('an admin demoted: the codes it made are dead (listed revoked)', async () => {
+        const leaving = await user('leaving', ['admin'])
+        const { code, invite } = (await accounts.createInvite({ actorId: leaving, body: { label: 'Forever', role: 'competition_manager', max_uses: null, expires_at: null } })).body.data
+        assert.equal(await stateOf(invite.id), 'active')
+        await pool.query("UPDATE public.profiles SET roles = '{}' WHERE user_id = $1", [leaving])
+        assert.equal(await stateOf(invite.id), 'revoked')
+        const newcomer = await user('newcomer', [])
+        const r = await accounts.redeemInvite({ userId: newcomer, code })
+        assert.equal(r.status, 404, JSON.stringify(r.body))
+        assert.deepEqual(await rolesOf(newcomer), [])
+      })
+
+      it('an account deleted: the codes it made are dead', async () => {
+        const gone = await user('gone', ['admin'])
+        const { code, invite } = (await accounts.createInvite({ actorId: gone, body: { label: 'Orphan', role: 'scorer', max_uses: 10 } })).body.data
+        await pool.query('DELETE FROM public.profiles WHERE user_id = $1', [gone])
+        await pool.query('DELETE FROM auth.users WHERE id = $1', [gone])
+        assert.equal((await pool.query('SELECT created_by FROM public.invite_codes WHERE id = $1', [invite.id])).rows[0].created_by, null)
+        assert.equal(await stateOf(invite.id), 'revoked')
+        const newcomer = await user('newcomer2', [])
+        assert.equal((await accounts.redeemInvite({ userId: newcomer, code })).status, 404)
+        assert.deepEqual(await rolesOf(newcomer), [])
+      })
+
+      it('a club manager taken off the club: its club codes are dead; another manager\'s and an admin\'s stay', async () => {
+        const clubId = (await pool.query("INSERT INTO public.clubs (name) VALUES ('VBC Codehausen') RETURNING id")).rows[0].id
+        const cmA = await user('cma', [])
+        const cmB = await user('cmb', [])
+        await pool.query('INSERT INTO public.club_managers (club_id, user_id) VALUES ($1, $2), ($1, $3)', [clubId, cmA, cmB])
+        const mk = async (actorId) => (await accounts.createInvite({ actorId, body: { label: 'Club scorers', club_id: clubId, max_uses: 5 } })).body.data
+        const a = await mk(cmA)
+        const b = await mk(cmB)
+        const ad = await mk(ids.admin)
+        await pool.query('DELETE FROM public.club_managers WHERE club_id = $1 AND user_id = $2', [clubId, cmA])
+        assert.deepEqual([await stateOf(a.invite.id), await stateOf(b.invite.id), await stateOf(ad.invite.id)], ['revoked', 'active', 'active'])
+        const s1 = await user('s1', [])
+        assert.equal((await accounts.redeemInvite({ userId: s1, code: a.code })).status, 404)
+        assert.equal((await accounts.redeemInvite({ userId: s1, code: b.code })).status, 200)
+        const s2 = await user('s2', [])
+        assert.equal((await accounts.redeemInvite({ userId: s2, code: ad.code })).status, 200)
+        // a club manager's code without its club (the club deleted) is dead too
+        await pool.query('UPDATE public.invite_codes SET club_id = NULL WHERE id = $1', [b.invite.id])
+        assert.equal(await stateOf(b.invite.id), 'revoked')
+      })
+    })
   })
 
   describe('roles', () => {

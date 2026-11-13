@@ -25,9 +25,10 @@ const api = vi.hoisted(() => ({
     listAudit: vi.fn(async () => ({ data: { entries: [], next_before: null }, error: null, status: 200 }))
   },
   savedTeamsApi: { fetchBundle: vi.fn(async () => ({ data: { version: '0', competitions: [], teams: [] }, error: null, status: 200 })) },
-  scoresheetsApi: { list: vi.fn(async () => ({ data: { matches: [] }, error: null, status: 200 })), pdf: vi.fn() }
+  scoresheetsApi: { list: vi.fn(async () => ({ data: { matches: [] }, error: null, status: 200 })), pdf: vi.fn() },
+  previewInvite: vi.fn()
 }))
-vi.mock('../lib/accountApi', async (orig) => ({ ...(await orig()), admin: api.admin, savedTeamsApi: api.savedTeamsApi, scoresheetsApi: api.scoresheetsApi }))
+vi.mock('../lib/accountApi', async (orig) => ({ ...(await orig()), admin: api.admin, savedTeamsApi: api.savedTeamsApi, scoresheetsApi: api.scoresheetsApi, previewInvite: api.previewInvite }))
 vi.mock('../db/savedTeams', () => ({ storeSavedTeamsBundle: vi.fn(async () => []) }))
 vi.mock('../lib/apiClient', () => ({
   apiFrom: () => {
@@ -518,6 +519,113 @@ describe('ManagerApp #signup (accounts are made here)', () => {
     fill(page, valid)
     fireEvent.click(within(page).getByRole('button', { name: 'Create account' }))
     expect(await within(page).findByRole('alert')).toHaveTextContent('This email is already registered')
+  })
+})
+
+// fe-auth-client-7, delta-fe-manage-3: a team or club manager link kept on
+// the device is redeemed only after the signed-in account said yes
+describe('ManagerApp: a kept team link asks first', () => {
+  const LINK = 'ov:pendingTeamLink'
+  const CODE = 'ABCD-EFGH-JKMN'
+  const keepLink = (kind = 'team') => localStorage.setItem(LINK, JSON.stringify({ code: CODE, at: Date.now(), ...(kind === 'club' ? { kind } : {}) }))
+  const teamPreview = { data: { role_granted: 'team_manager', already_had: false, preview: true, team: { id: 't-1', name: 'VBC Example H1', club_name: 'VBC Example' } }, error: null, status: 200 }
+  beforeEach(() => {
+    vi.clearAllMocks()
+    localStorage.clear()
+    window.history.replaceState(null, '', '/')
+    api.previewInvite.mockResolvedValue(teamPreview)
+  })
+
+  it('names the team and the account, and redeems only on Yes', async () => {
+    keepLink()
+    setAuth({ user: { id: 'u-7', email: 'coach@example.test' }, roles: [] })
+    render(<ManagerApp />)
+    const q = await screen.findByTestId('team-link-question')
+    expect(api.previewInvite).toHaveBeenCalledWith(CODE)
+    expect(auth.value.redeemInvite).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog')).toHaveTextContent('managerSite.linkAskTeam')
+    expect(q).toHaveTextContent('managerSite.linkAskTeamBody')
+    auth.value.redeemInvite.mockResolvedValue({ data: { role_granted: 'team_manager', team: { name: 'VBC Example H1' } }, error: null })
+    fireEvent.click(within(q).getByTestId('team-link-yes'))
+    await waitFor(() => expect(auth.value.redeemInvite).toHaveBeenCalledWith(CODE))
+    await waitFor(() => expect(screen.queryByTestId('team-link-question')).toBeNull())
+    expect(localStorage.getItem(LINK)).toBeNull()
+  })
+
+  it('Forget this link: nothing redeemed, nothing kept', async () => {
+    keepLink()
+    setAuth({ roles: ['admin'] })
+    render(<ManagerApp />)
+    fireEvent.click(await screen.findByTestId('team-link-forget-question'))
+    await waitFor(() => expect(screen.queryByTestId('team-link-question')).toBeNull())
+    expect(localStorage.getItem(LINK)).toBeNull()
+    expect(auth.value.redeemInvite).not.toHaveBeenCalled()
+  })
+
+  it('Use another account: signs out, nothing redeemed, the link kept for the next sign-in', async () => {
+    keepLink('club')
+    api.previewInvite.mockResolvedValue({ data: { role_granted: 'club_manager', already_had: false, preview: true, club: { id: 'c-1', name: 'VBC Example' } }, error: null, status: 200 })
+    setAuth({ roles: ['scorer'] })
+    // signing out clears the device (AuthContext clearLocalAccountData)
+    auth.value.signOut = vi.fn(async () => { localStorage.removeItem(LINK); return { error: null } })
+    render(<ManagerApp />)
+    expect(await screen.findByRole('dialog')).toHaveTextContent('managerSite.linkAskClub')
+    fireEvent.click(screen.getByTestId('team-link-other-account'))
+    await waitFor(() => expect(auth.value.signOut).toHaveBeenCalled())
+    await waitFor(() => expect(JSON.parse(localStorage.getItem(LINK) || 'null')).toMatchObject({ code: CODE, kind: 'club' }))
+    expect(auth.value.redeemInvite).not.toHaveBeenCalled()
+  })
+
+  it('a link opened in a signed-in tab (hashchange) asks too', async () => {
+    setAuth({ roles: ['admin'] })
+    render(<ManagerApp />)
+    expect(screen.getByTestId('manage-console')).toBeInTheDocument()
+    expect(api.previewInvite).not.toHaveBeenCalled()
+    await act(async () => {
+      window.history.replaceState(null, '', `/#team=${CODE}`)
+      window.dispatchEvent(new HashChangeEvent('hashchange'))
+    })
+    expect(await screen.findByTestId('team-link-question')).toBeInTheDocument()
+    expect(auth.value.redeemInvite).not.toHaveBeenCalled()
+  })
+
+  it('a club manager link mailed to another address: no Yes, only another account or forget', async () => {
+    keepLink('club')
+    api.previewInvite.mockResolvedValue({ data: null, error: { code: 'OV_INVITE_OTHER_ACCOUNT', status: 403, message: 'x' }, status: 403 })
+    setAuth({ roles: [] })
+    render(<ManagerApp />)
+    const q = await screen.findByTestId('team-link-question')
+    expect(within(q).queryByTestId('team-link-yes')).toBeNull()
+    expect(within(q).getByTestId('team-link-question-error')).toHaveTextContent('access.errors.inviteOtherAccount')
+    expect(within(q).getByTestId('team-link-other-account')).toBeInTheDocument()
+  })
+
+  it('a link that can no longer work is forgotten without a question', async () => {
+    keepLink()
+    api.previewInvite.mockResolvedValue({ data: null, error: { code: 'OV_INVITE_REMOVED', status: 409, message: 'x' }, status: 409 })
+    setAuth({ roles: [] })
+    render(<ManagerApp />)
+    await waitFor(() => expect(localStorage.getItem(LINK)).toBeNull())
+    expect(screen.queryByTestId('team-link-question')).toBeNull()
+    expect(auth.value.redeemInvite).not.toHaveBeenCalled()
+  })
+
+  it('an older server without the preview: asked all the same, without the team\'s name', async () => {
+    keepLink()
+    api.previewInvite.mockResolvedValue({ data: null, error: { status: 404, message: 'Not found' }, status: 404 })
+    setAuth({ roles: [] })
+    render(<ManagerApp />)
+    expect(await screen.findByRole('dialog')).toHaveTextContent('managerSite.linkAskTeamUnnamed')
+    expect(auth.value.redeemInvite).not.toHaveBeenCalled()
+  })
+
+  it('signed out: the sign-in card\'s note forgets the link', () => {
+    keepLink()
+    setAuth({ user: null })
+    render(<ManagerApp />)
+    fireEvent.click(within(screen.getByTestId('team-link-note')).getByTestId('team-link-forget'))
+    expect(localStorage.getItem(LINK)).toBeNull()
+    expect(screen.queryByTestId('team-link-note')).toBeNull()
   })
 })
 

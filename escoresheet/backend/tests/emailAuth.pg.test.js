@@ -513,6 +513,8 @@ describe('email links (db/010) against Postgres', { skip: SKIP_PG }, () => {
       const auth = makeAuth({ mailer })
       const accounts = createAccounts({ pool, logger: silent })
       const { rows: [adminRow] } = await pool.query("INSERT INTO auth.users (email, email_confirmed_at) VALUES ('roles-admin@example.ch', now()) RETURNING id")
+      // a code stands while its creator may make it (an admin)
+      await pool.query("INSERT INTO public.profiles (user_id, roles) VALUES ($1, '{admin}')", [adminRow.id])
       const inv = await accounts.createInvite({ actorId: adminRow.id, body: { label: 'Club', role: 'scorer', max_uses: 1 } })
       assert.equal(inv.status, 201, JSON.stringify(inv.body))
 
@@ -550,7 +552,9 @@ describe('email links (db/010) against Postgres', { skip: SKIP_PG }, () => {
       const accounts = createAccounts({ pool, logger: silent })
       const up = await auth.handleAuthRequest('sign-up', { email: 'nomail-roles@example.ch', password: PW }, { ip: nextV6() })
       const legacy = await addUser('legacy-roles@example.ch', { confirmed: false })
-      const inv = await accounts.createInvite({ actorId: null, body: { label: 'Club 2', role: 'referee', max_uses: 5 } })
+      const { rows: [adminRow] } = await pool.query("INSERT INTO auth.users (email, email_confirmed_at) VALUES ('roles-admin-2@example.ch', now()) RETURNING id")
+      await pool.query("INSERT INTO public.profiles (user_id, roles) VALUES ($1, '{admin}')", [adminRow.id])
+      const inv = await accounts.createInvite({ actorId: adminRow.id, body: { label: 'Club 2', role: 'referee', max_uses: 5 } })
       for (const userId of [up.body.data.user.id, legacy]) {
         const r = await accounts.redeemInvite({ userId, code: inv.body.data.code })
         assert.equal(r.status, 200, JSON.stringify(r.body))

@@ -3151,6 +3151,8 @@
       "inviteInvalid": "This invite code is not valid.",
       "inviteExpired": "This invite code has expired.",
       "inviteUsedUp": "This invite code has been used up.",
+      "inviteRemoved": "This account was taken off this club or team. Ask its managers for a new code.",
+      "inviteOtherAccount": "This link was sent to another address. Sign in with the account of that address.",
       "tooManyAttempts": "Too many attempts. Please wait a few minutes.",
       "offline": "Redeeming a code needs a connection.",
       "emailUnconfirmed": "Confirm your email address first: open the link we emailed you, or send a new one from your profile."
@@ -3234,7 +3236,17 @@
     "teamLinkAlready": "You manage {{team}} already.",
     "clubLinkNote": "You opened a club manager link. Sign in or create an account, and you manage the club.",
     "clubLinkDone": "You now manage {{club}}.",
-    "clubLinkAlready": "You manage {{club}} already."
+    "clubLinkAlready": "You manage {{club}} already.",
+    "linkAskTeam": "Manage {{team}} with {{email}}?",
+    "linkAskClub": "Manage {{club}} with {{email}}?",
+    "linkAskTeamUnnamed": "Manage this team with {{email}}?",
+    "linkAskClubUnnamed": "Manage this club with {{email}}?",
+    "linkAskTeamBody": "You opened a team link. With Yes this account becomes a manager of the team: its squad and the rosters it sends for its games.",
+    "linkAskClubBody": "You opened a club manager link. With Yes this account manages the club: its members, invite codes, licence lists and requests.",
+    "linkAskYes": "Yes, with this account",
+    "linkAskOtherAccount": "Use another account",
+    "linkAskForget": "Forget this link",
+    "linkAskLater": "Later"
   },
   "managerBeach": {
     "signInHeading": "Manage OpenBeach",
@@ -3262,6 +3274,7 @@
       "empty": "No notifications yet.",
       "loading": "Loading…",
       "signupTitle": "New sign-up: {{name}}",
+      "proposalTitle": "To confirm: {{name}}, team manager",
       "noRole": "Asks for no role yet",
       "stillOpen": "Waiting for approval",
       "decided": "Decided",
@@ -3525,7 +3538,8 @@
         "club_licences": "Licence list uploaded",
         "club_licences_manual": "Added to the club's lists by hand",
         "account_request_approve": "Sign-up request approved",
-        "account_request_reject": "Sign-up request rejected"
+        "account_request_reject": "Sign-up request rejected",
+        "account_request_propose": "Sign-up request proposed by a team manager"
       }
     },
     "approvals": {
@@ -3889,9 +3903,14 @@
       "title": "Requests",
       "clubHint": "People who signed up and said they score for this club, manage one of its teams or manage the club. Approve gives them exactly that; their other requests stay for the others.",
       "teamHint": "People who signed up as a manager or coach of this team. Approve makes them a team manager.",
+      "teamHintPropose": "People who signed up as a manager or coach of this team. Propose passes them on to the club's managers: they become team managers once a club manager approves.",
       "empty": "No open requests.",
       "approve": "Approve",
       "reject": "Reject",
+      "propose": "Propose",
+      "proposed": "Proposed: a club manager approves it",
+      "waitingForClub": "Proposed, waiting for a club manager",
+      "proposedBy": "Proposed by {{name}}",
       "approveAll": "Approve as requested",
       "review": "Review request",
       "reviewTitle": "Request of {{name}}",
