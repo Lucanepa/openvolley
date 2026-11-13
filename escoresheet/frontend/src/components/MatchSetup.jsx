@@ -53,7 +53,7 @@ import SentRosterCard from './SentRosterCard'
 import BackupTargetsPanel from './BackupTargetsPanel'
 import ClubPlayerPickerModal from './ClubPlayerPickerModal'
 import ClubGenderNotice from './ClubGenderNotice'
-import { clubOfTeam } from '../db/clubPlayers'
+import { clubOfTeam, withClubDob } from '../db/clubPlayers'
 import { addClubPlayersToRoster, applyClubFill, benchOfficialOfRole, benchRolesOf, clubFillOfRow, clubGenderWarnings, clubPersonOfRow, linkRowToClub, matchGenderOf, offeredClubPlayers, rosterHasPerson, setBenchOfficial } from '../domain/clubPlayers'
 import ClubShield from './manage/ClubShield'
 import { officialCheck, OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS } from '../lib/accountApi'
@@ -1103,6 +1103,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     const roster = side === 'home' ? homeRoster : awayRoster
     const bench = side === 'home' ? benchHome : benchAway
     const team = (side === 'home' ? home : away) || club?.clubName || ''
+    // owner decision 2: the tablet's copy has no dates of birth; those of the
+    // people added are asked for while online (else the scorer types them)
+    const withDob = (chosen) => withClubDob(club?.clubId, chosen)
     return (
       <>
         <ClubPlayerPickerModal
@@ -1112,12 +1115,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           players={players}
           title={t('clubPlayers.titleTeam', { team })}
           isTaken={(c) => rosterHasPerson(roster, c)}
+          resolve={withDob}
         />
         <ClubPlayerPickerModal
           open={officialPicker === side && !!club}
           mode="officials"
           onClose={() => setOfficialPicker(null)}
           onPick={(chosen, role) => officialFromClub(side, chosen, role)}
+          resolve={withDob}
           players={club?.people || []}
           title={t('clubPlayers.officialTitleTeam', { team })}
           roles={BENCH_ROLES.map((r) => ({ value: r.value, label: t(r.fullLabelKey) }))}
@@ -1133,6 +1138,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           mode="link"
           onClose={() => setLinkTarget(null)}
           onPick={linkRow}
+          resolve={withDob}
           players={(linkTarget?.kind === 'bench' ? club?.people || [] : players).filter((c) => !c.manual)}
           initialQuery={linkTarget?.query || ''}
         />

@@ -7,6 +7,16 @@
  * /api/saved-teams*, never on the /api/db allowlist, never anonymous, never in
  * a public projection. Who may read (approved scorers, competition managers,
  * admins) and write (competition managers, admins) is decided by the server.
+ * Owner decision 1: competition managers and admins read every saved team of
+ * the sport; an account that only reads them (an indoor scorer) gets those of
+ * its own matches in the current season (getBundle `scope`): its clubs'
+ * teams, the teams they meet at home in the schedule, and the teams of the
+ * matches it created or edits; never an archived competition.
+ *
+ * Deleting a competition or a team, and replacing a team's roster, write an
+ * audit entry (who, the ids, the name, the counts; never a person). A
+ * competition that still has teams, or a team that still has people, is
+ * deleted only with its name typed as `confirm` (400 OV_CONFIRM_NAME).
  *
  * Every handler returns { status, body } and never throws (a database error
  * is 503 OV_DB_UNAVAILABLE, retryable).
@@ -22,6 +32,7 @@
 import { randomUUID } from 'node:crypto'
 import { fail, invalid, isUuid, notFound, ok, unavailable } from './accounts.js'
 import { connectClient } from './pgClient.js'
+import { seasonOf } from './officialGame.js'
 
 export const STAFF_ROLES = Object.freeze(['Coach', 'Assistant Coach 1', 'Assistant Coach 2', 'Physiotherapist', 'Medic'])
 export const GENDERS = Object.freeze(['men', 'women', 'mixed'])
@@ -30,6 +41,12 @@ export const MAX_STAFF = 10
 export const SPORTS = Object.freeze(['indoor', 'beach'])
 export const BEACH_MAX_PLAYERS = 2
 export const BEACH_MAX_STAFF = 1
+// A scorer's own matches give it the saved teams of their official games only
+// near the game (from a day before the game until it is OWN_GAME_DAYS_AHEAD
+// days away), and of at most MAX_OWN_GAMES official games a week (audited):
+// changing a match's game number does not walk through the league's teams
+export const OWN_GAME_DAYS_AHEAD = 7
+export const MAX_OWN_GAMES = 6
 
 const SEASON_RE = /^(\d{4})\/(\d{2})$/
 const BEACH_SEASON_RE = /^\d{4}$/
@@ -305,8 +322,24 @@ const ROSTER_SQL = (alias) => `
             'last_name', s.last_name, 'dob', s.dob, 'license_number', s.license_number, 'sort_order', s.sort_order) ORDER BY s.sort_order, s.id)
        FROM public.competition_staff s WHERE s.team_id = ${alias}.id), '[]'::json) AS staff`
 
-export function createSavedTeams ({ pool, logger = console } = {}) {
+// A delete of a competition with teams or a team with people: its name typed as ?confirm=
+export const CONFIRM_NAME = (what) => fail(400, 'OV_CONFIRM_NAME', `Type the ${what}'s name to delete it with everything in it`)
+const sameName = (a, b) => typeof a === 'string' && typeof b === 'string' &&
+  a.trim().replace(/\s+/g, ' ').toLowerCase() === b.trim().replace(/\s+/g, ' ').toLowerCase()
+const latest = (rows) => rows.reduce((max, r) => {
+  const v = iso(r.updated_at)
+  return v && (!max || v > max) ? v : max
+}, null)
+
+/**
+ * @param {object} o
+ * @param {import('pg').Pool} o.pool
+ * @param {(client: any, entry: object) => Promise<void>} [o.audit]  lib/accounts.js audit (throws); without
+ *   it (tests of this module alone) nothing is audited
+ */
+export function createSavedTeams ({ pool, audit = null, logger = console, clock = () => new Date() } = {}) {
   const log = logger
+  const auditOf = (client, entry) => (audit ? audit(client, entry) : null)
 
   async function withTx (fn) {
     const client = await connectClient(pool, log)
@@ -348,26 +381,108 @@ export function createSavedTeams ({ pool, logger = console } = {}) {
   }
 
   /**
+   * The indoor teams of `userId`'s own matches in the current season (owner
+   * decision 1), with their rosters: the teams of its clubs (account_clubs),
+   * the teams they meet at home in the schedule (svrz_games from the season's
+   * start) and the teams of the official games of the matches it created or
+   * edits this season, while the game is near and for at most MAX_OWN_GAMES
+   * games a week (each newly given game is audited as saved_teams.scope); of competitions of the current season that are not
+   * archived. A saved team is one of these by its VolleyManager name, else by
+   * its name when it has none (as lib/teams.js squadId).
+   */
+  async function ownTeams (userId) {
+    if (!isUuid(userId)) return []
+    const now = clock()
+    const year = seasonOf(now)
+    const label = `${year}/${String((year + 1) % 100).padStart(2, '0')}`
+    const day = (d) => new Date(now.getTime() + d * 86400000).toISOString().slice(0, 10)
+    // the official games of its matches that are near (svrz_games.datetime is ISO text)
+    const { rows: near } = await pool.query(
+      `SELECT DISTINCT g.game_number::text AS n FROM public.svrz_games g
+        WHERE g.datetime >= $2 AND g.datetime >= $3 AND g.datetime < $4
+          AND g.game_number::text IN (
+            SELECT m.game_n::text FROM public.matches m
+             WHERE m.game_n IS NOT NULL AND m.test IS NOT TRUE AND m.created_at >= $5::timestamptz
+               AND (m.created_by = $1 OR EXISTS (SELECT 1 FROM public.match_editors e WHERE e.match_id = m.id AND e.user_id = $1)))`,
+      [userId, `${year}-07-01`, day(-1), day(OWN_GAME_DAYS_AHEAD + 1), `${year}-07-01T00:00:00Z`])
+    let ownGames = near.map((r) => r.n)
+    if (ownGames.length && audit) {
+      // the games given in the last week, and new ones up to MAX_OWN_GAMES
+      const { rows: given } = await pool.query(
+        `SELECT DISTINCT jsonb_array_elements_text(details -> 'games') AS n FROM public.audit_log
+          WHERE actor_id = $1 AND action = 'saved_teams.scope' AND at > now() - interval '7 days'`, [userId])
+      const had = new Set(given.map((r) => r.n))
+      const fresh = ownGames.filter((n) => !had.has(n)).slice(0, Math.max(0, MAX_OWN_GAMES - had.size))
+      if (fresh.length) await auditOf(pool, { actorId: userId, action: 'saved_teams.scope', details: { games: fresh } })
+      ownGames = ownGames.filter((n) => had.has(n) || fresh.includes(n))
+    } else {
+      ownGames = ownGames.slice(0, MAX_OWN_GAMES)
+    }
+    const { rows } = await pool.query(
+      `WITH mine AS (
+         SELECT DISTINCT lower(btrim(ct.team_name)) AS k
+           FROM public.account_clubs ac JOIN public.club_teams ct ON ct.club_id = ac.club_id
+          WHERE ac.user_id = $1),
+       games AS (
+         SELECT g.team_home, g.team_away FROM public.svrz_games g
+          WHERE g.datetime >= $2 AND (lower(btrim(g.team_home)) IN (SELECT k FROM mine) OR g.game_number::text = ANY($3::text[]))),
+       names AS (
+         SELECT k FROM mine
+         UNION SELECT lower(btrim(team_home)) FROM games WHERE team_home IS NOT NULL
+         UNION SELECT lower(btrim(team_away)) FROM games WHERE team_away IS NOT NULL)
+       SELECT ${TEAM_SELECT}, ${ROSTER_SQL('t')}
+         FROM public.competition_teams t JOIN public.competitions c ON c.id = t.competition_id
+        WHERE c.sport = 'indoor' AND c.season = $4 AND NOT c.archived
+          AND (lower(btrim(t.svrz_team_name)) IN (SELECT k FROM names)
+               OR (coalesce(btrim(t.svrz_team_name), '') = '' AND lower(btrim(t.name)) IN (SELECT k FROM names)))
+        ORDER BY lower(t.name), t.id`,
+      [userId, `${year}-07-01`, ownGames, label])
+    return rows
+  }
+
+  /**
    * GET /api/saved-teams?sport=indoor|beach|all (absent or '' = indoor, for 2.1.0 clients).
    * `sports`: what 'all' covers (the sports the caller may read; default both).
+   * `scope` { userId, sports }: the sports in which the caller only reads (an
+   * indoor scorer, owner decision 1): there the teams of its own matches in
+   * the current season (ownTeams; indoor only) and their competitions. The
+   * other sports answer every competition and team. `version`: the newest
+   * updated_at of what the answer holds ('0' for nothing).
    */
-  async function getBundle ({ sport, sports = SPORTS } = {}) {
+  async function getBundle ({ sport, sports = SPORTS, scope = null } = {}) {
     if (sport === undefined || sport === null || sport === '') sport = 'indoor'
     if (sport !== 'all' && !SPORTS.includes(sport)) return invalid('sport: indoor, beach or all')
-    const all = SPORTS.filter((s) => Array.isArray(sports) && sports.includes(s))
+    const readable = SPORTS.filter((s) => Array.isArray(sports) && sports.includes(s))
+    const wanted = sport === 'all' ? readable : [sport]
+    const scoped = (s) => s === 'indoor' && Array.isArray(scope?.sports) && scope.sports.includes(s)
+    const full = wanted.filter((s) => !scoped(s))
     return guarded('bundle', async () => {
-      const { rows: comps } = await pool.query(
-        `SELECT ${COMPETITION_COLS} FROM public.competitions WHERE (($1::text = 'all' AND sport = ANY($2::text[])) OR sport = $1::text) ORDER BY season DESC, lower(name), id`, [sport, all])
-      const { rows: teams } = await pool.query(`SELECT ${TEAM_SELECT}, ${ROSTER_SQL('t')}
-        FROM public.competition_teams t JOIN public.competitions c ON c.id = t.competition_id
-        WHERE (($1::text = 'all' AND c.sport = ANY($2::text[])) OR c.sport = $1::text) ORDER BY lower(t.name), t.id`, [sport, all])
-      const { rows: [v] } = await pool.query(
-        `SELECT greatest(
-           (SELECT max(updated_at) FROM public.competitions WHERE (($1::text = 'all' AND sport = ANY($2::text[])) OR sport = $1::text)),
-           (SELECT max(t.updated_at) FROM public.competition_teams t JOIN public.competitions c ON c.id = t.competition_id
-             WHERE (($1::text = 'all' AND c.sport = ANY($2::text[])) OR c.sport = $1::text))) AS version`, [sport, all])
+      const { rows: comps } = full.length
+        ? await pool.query(`SELECT ${COMPETITION_COLS} FROM public.competitions WHERE sport = ANY($1::text[])
+            ORDER BY season DESC, lower(name), id`, [full])
+        : { rows: [] }
+      const { rows: teams } = full.length
+        ? await pool.query(`SELECT ${TEAM_SELECT}, ${ROSTER_SQL('t')}
+            FROM public.competition_teams t JOIN public.competitions c ON c.id = t.competition_id
+           WHERE c.sport = ANY($1::text[]) ORDER BY lower(t.name), t.id`, [full])
+        : { rows: [] }
+      if (wanted.some(scoped)) {
+        const own = await ownTeams(scope.userId)
+        const ids = [...new Set(own.map((t) => t.competition_id))]
+        if (ids.length) {
+          comps.push(...(await pool.query(`SELECT ${COMPETITION_COLS} FROM public.competitions WHERE id = ANY($1::uuid[])
+            ORDER BY season DESC, lower(name), id`, [ids])).rows)
+        }
+        teams.push(...own)
+        if (full.length) {
+          // 'all' with one sport of each kind: one order again
+          const text = (v) => String(v ?? '').toLowerCase()
+          comps.sort((a, b) => text(b.season).localeCompare(text(a.season)) || text(a.name).localeCompare(text(b.name)) || text(a.id).localeCompare(text(b.id)))
+          teams.sort((a, b) => text(a.name).localeCompare(text(b.name)) || text(a.id).localeCompare(text(b.id)))
+        }
+      }
       return ok({
-        version: v?.version ? iso(v.version) : '0',
+        version: latest([...comps, ...teams]) ?? '0',
         fetched_at: new Date().toISOString(),
         sport,
         competitions: comps.map(competitionOut),
@@ -376,7 +491,8 @@ export function createSavedTeams ({ pool, logger = console } = {}) {
     })
   }
 
-  async function createCompetition ({ actorId, body } = {}) {
+  /** `client`: inside the caller's transaction (lib/teams.js putSquad). */
+  async function createCompetition ({ actorId, body, client = null } = {}) {
     if (!isPlainObject(body)) return invalid('body: must be an object')
     const sport = body.sport == null ? 'indoor' : body.sport
     if (!SPORTS.includes(sport)) return invalid('sport: indoor or beach')
@@ -384,7 +500,7 @@ export function createSavedTeams ({ pool, logger = console } = {}) {
     if (f.error) return f.error
     return guarded('create-competition', async () => {
       const v = f.out
-      const { rows: [r] } = await pool.query(
+      const { rows: [r] } = await (client || pool).query(
         `INSERT INTO public.competitions (name, season, gender, category, vm_leagues, created_by, sport)
          VALUES ($1, $2, $3, $4, $5::text[], $6, $7) RETURNING ${COMPETITION_COLS}`,
         [v.name, v.season, v.gender ?? null, v.category ?? null, v.vm_leagues ?? [], isUuid(actorId) ? actorId : null, sport])
@@ -419,23 +535,45 @@ export function createSavedTeams ({ pool, logger = console } = {}) {
     })
   }
 
-  async function deleteCompetition ({ id } = {}) {
+  /**
+   * DELETE /api/saved-teams/competitions/:id[?confirm=<name>]: the competition
+   * with its teams, players and officials (ON DELETE CASCADE). One that still
+   * has teams only with its name as `confirm` (fe-manage-2: every club's squad
+   * of a league goes with it). Audited (the name and the counts).
+   */
+  async function deleteCompetition ({ id, actorId = null, confirm = null } = {}) {
     if (!isUuid(id)) return notFound()
-    return guarded('delete-competition', async () => {
-      const { rowCount } = await pool.query('DELETE FROM public.competitions WHERE id = $1', [id])
-      return rowCount ? ok({ deleted: true }) : notFound()
-    })
+    return guarded('delete-competition', () => withTx(async (client) => {
+      const { rows: [c] } = await client.query(
+        `SELECT c.id, c.name, c.season, c.sport,
+                (SELECT count(*)::int FROM public.competition_teams t WHERE t.competition_id = c.id) AS teams,
+                (SELECT count(*)::int FROM public.competition_players p JOIN public.competition_teams t ON t.id = p.team_id WHERE t.competition_id = c.id) AS players,
+                (SELECT count(*)::int FROM public.competition_staff s JOIN public.competition_teams t ON t.id = s.team_id WHERE t.competition_id = c.id) AS staff
+           FROM public.competitions c WHERE c.id = $1 FOR UPDATE`, [id])
+      if (!c) throw abort(notFound())
+      if (c.teams > 0 && !sameName(confirm, c.name)) throw abort(CONFIRM_NAME('competition'))
+      await client.query('DELETE FROM public.competitions WHERE id = $1', [id])
+      await auditOf(client, {
+        actorId,
+        action: 'saved_teams.competition_delete',
+        details: { competition_id: id, name: c.name, season: c.season, teams: c.teams, players: c.players, staff: c.staff },
+        ...(sportOut(c.sport) === 'beach' ? { app: 'beach' } : {})
+      })
+      return ok({ deleted: true })
+    }))
   }
 
-  async function createTeam ({ actorId, body } = {}) {
+  /** `client`: inside the caller's transaction (lib/teams.js putSquad). */
+  async function createTeam ({ actorId, body, client = null } = {}) {
     if (!isPlainObject(body)) return invalid('body: must be an object')
     const f = teamFields(body, { partial: false })
     if (f.error) return f.error
+    const db = client || pool
     return guarded('create-team', async () => {
       const v = f.out
-      const { rows: [c] } = await pool.query('SELECT id, sport FROM public.competitions WHERE id = $1', [v.competition_id])
+      const { rows: [c] } = await db.query('SELECT id, sport FROM public.competitions WHERE id = $1', [v.competition_id])
       if (!c) return notFound('competition_id: no such competition')
-      const { rows: [r] } = await pool.query(
+      const { rows: [r] } = await db.query(
         `INSERT INTO public.competition_teams (competition_id, name, short_name, club, color, svrz_team_name, created_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING ${TEAM_COLS}`,
         [v.competition_id, v.name, v.short_name ?? null, v.club ?? null, v.color ?? null, v.svrz_team_name ?? null, isUuid(actorId) ? actorId : null])
@@ -458,68 +596,114 @@ export function createSavedTeams ({ pool, logger = console } = {}) {
     })
   }
 
-  async function deleteTeam ({ id } = {}) {
+  /**
+   * DELETE /api/saved-teams/teams/:id[?confirm=<name>]: the team with its
+   * players and officials. One that still has people only with its name as
+   * `confirm`. Audited (the name and the counts).
+   */
+  async function deleteTeam ({ id, actorId = null, confirm = null } = {}) {
     if (!isUuid(id)) return notFound()
     return guarded('delete-team', () => withTx(async (client) => {
-      const { rows: [t] } = await client.query('DELETE FROM public.competition_teams WHERE id = $1 RETURNING competition_id', [id])
+      const { rows: [t] } = await client.query(
+        `SELECT t.id, t.name, t.competition_id, c.sport,
+                (SELECT count(*)::int FROM public.competition_players p WHERE p.team_id = t.id) AS players,
+                (SELECT count(*)::int FROM public.competition_staff s WHERE s.team_id = t.id) AS staff
+           FROM public.competition_teams t JOIN public.competitions c ON c.id = t.competition_id
+          WHERE t.id = $1 FOR UPDATE OF t`, [id])
       if (!t) throw abort(notFound())
+      if (t.players + t.staff > 0 && !sameName(confirm, t.name)) throw abort(CONFIRM_NAME('team'))
+      await client.query('DELETE FROM public.competition_teams WHERE id = $1', [id])
       // The bundle version follows deletions too
       await client.query('UPDATE public.competitions SET updated_at = now() WHERE id = $1', [t.competition_id])
+      await auditOf(client, {
+        actorId,
+        action: 'saved_teams.team_delete',
+        details: { team_id: id, competition_id: t.competition_id, name: t.name, players: t.players, staff: t.staff },
+        ...(sportOut(t.sport) === 'beach' ? { app: 'beach' } : {})
+      })
       return ok({ deleted: true })
     }))
   }
 
-  /** PUT /api/saved-teams/teams/:id/roster { players, staff }: the team's whole roster. */
-  async function putRoster ({ id, body } = {}) {
+  /** The roster write of putRoster on `client` (in a transaction): { team, before } or an abort. */
+  async function replaceRoster (client, id, body) {
+    const { rows: [team] } = await client.query(
+      `SELECT t.id, t.name, t.competition_id, c.sport,
+              (SELECT count(*)::int FROM public.competition_players p WHERE p.team_id = t.id) AS players,
+              (SELECT count(*)::int FROM public.competition_staff s WHERE s.team_id = t.id) AS staff
+         FROM public.competition_teams t JOIN public.competitions c ON c.id = t.competition_id
+        WHERE t.id = $1 FOR UPDATE OF t`, [id])
+    if (!team) throw abort(notFound())
+    // The rules of the team's sport (a beach pair, or the indoor roster)
+    const v = validateRoster(body, { sport: team.sport })
+    if (v.error) throw abort(v.error)
+    for (const [table, rows, label] of [['competition_players', v.players, 'players'], ['competition_staff', v.staff, 'staff']]) {
+      const given = rows.filter((r) => r.id).map((r) => r.id)
+      const { rows: found } = given.length
+        ? await client.query(`SELECT id, team_id FROM public.${table} WHERE id = ANY($1::uuid[])`, [given])
+        : { rows: [] }
+      const owner = new Map(found.map((r) => [r.id, r.team_id]))
+      const kept = []
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i]
+        if (r.id && owner.has(r.id)) {
+          if (owner.get(r.id) !== id) throw abort(invalid(`${label}[${i}].id: belongs to another team`))
+          kept.push(r.id)
+        } else {
+          r.id = randomUUID() // a new row (an unknown id is not taken from the client)
+        }
+      }
+      await client.query(`DELETE FROM public.${table} WHERE team_id = $1 AND NOT (id = ANY($2::uuid[]))`, [id, kept])
+      for (const r of rows) {
+        if (table === 'competition_players') {
+          await client.query(
+            `INSERT INTO public.competition_players (id, team_id, number, first_name, last_name, dob, license_number, is_libero, is_captain, active, sort_order, country)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+             ON CONFLICT (id) DO UPDATE SET number = EXCLUDED.number, first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name,
+               dob = EXCLUDED.dob, license_number = EXCLUDED.license_number, is_libero = EXCLUDED.is_libero,
+               is_captain = EXCLUDED.is_captain, active = EXCLUDED.active, sort_order = EXCLUDED.sort_order, country = EXCLUDED.country`,
+            [r.id, id, r.number, r.first_name, r.last_name, r.dob, r.license_number, r.is_libero, r.is_captain, r.active, r.sort_order, r.country ?? null])
+        } else {
+          await client.query(
+            `INSERT INTO public.competition_staff (id, team_id, role, first_name, last_name, dob, license_number, sort_order)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             ON CONFLICT (id) DO UPDATE SET role = EXCLUDED.role, first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name,
+               dob = EXCLUDED.dob, license_number = EXCLUDED.license_number, sort_order = EXCLUDED.sort_order`,
+            [r.id, id, r.role, r.first_name, r.last_name, r.dob, r.license_number, r.sort_order])
+        }
+      }
+    }
+    await client.query('UPDATE public.competition_teams SET updated_at = now() WHERE id = $1', [id])
+    return { team: await teamById(client, id), before: team, players: v.players.length, staff: v.staff.length }
+  }
+
+  /**
+   * PUT /api/saved-teams/teams/:id/roster { players, staff }: the team's whole
+   * roster. Audited (the counts before and after, never a person). `client`:
+   * inside the caller's transaction, which audits it itself (lib/teams.js
+   * putSquad, team.squad).
+   */
+  async function putRoster ({ id, body, actorId = null, client = null } = {}) {
     if (!isUuid(id)) return notFound()
     const shape = rosterShapeError(body)
     if (shape) return shape
-    return guarded('put-roster', () => withTx(async (client) => {
-      const { rows: [team] } = await client.query(
-        `SELECT t.id, c.sport FROM public.competition_teams t JOIN public.competitions c ON c.id = t.competition_id
-          WHERE t.id = $1 FOR UPDATE OF t`, [id])
-      if (!team) throw abort(notFound())
-      // The rules of the team's sport (a beach pair, or the indoor roster)
-      const v = validateRoster(body, { sport: team.sport })
-      if (v.error) throw abort(v.error)
-      for (const [table, rows, label] of [['competition_players', v.players, 'players'], ['competition_staff', v.staff, 'staff']]) {
-        const given = rows.filter((r) => r.id).map((r) => r.id)
-        const { rows: found } = given.length
-          ? await client.query(`SELECT id, team_id FROM public.${table} WHERE id = ANY($1::uuid[])`, [given])
-          : { rows: [] }
-        const owner = new Map(found.map((r) => [r.id, r.team_id]))
-        const kept = []
-        for (let i = 0; i < rows.length; i++) {
-          const r = rows[i]
-          if (r.id && owner.has(r.id)) {
-            if (owner.get(r.id) !== id) throw abort(invalid(`${label}[${i}].id: belongs to another team`))
-            kept.push(r.id)
-          } else {
-            r.id = randomUUID() // a new row (an unknown id is not taken from the client)
-          }
-        }
-        await client.query(`DELETE FROM public.${table} WHERE team_id = $1 AND NOT (id = ANY($2::uuid[]))`, [id, kept])
-        for (const r of rows) {
-          if (table === 'competition_players') {
-            await client.query(
-              `INSERT INTO public.competition_players (id, team_id, number, first_name, last_name, dob, license_number, is_libero, is_captain, active, sort_order, country)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-               ON CONFLICT (id) DO UPDATE SET number = EXCLUDED.number, first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name,
-                 dob = EXCLUDED.dob, license_number = EXCLUDED.license_number, is_libero = EXCLUDED.is_libero,
-                 is_captain = EXCLUDED.is_captain, active = EXCLUDED.active, sort_order = EXCLUDED.sort_order, country = EXCLUDED.country`,
-              [r.id, id, r.number, r.first_name, r.last_name, r.dob, r.license_number, r.is_libero, r.is_captain, r.active, r.sort_order, r.country ?? null])
-          } else {
-            await client.query(
-              `INSERT INTO public.competition_staff (id, team_id, role, first_name, last_name, dob, license_number, sort_order)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-               ON CONFLICT (id) DO UPDATE SET role = EXCLUDED.role, first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name,
-                 dob = EXCLUDED.dob, license_number = EXCLUDED.license_number, sort_order = EXCLUDED.sort_order`,
-              [r.id, id, r.role, r.first_name, r.last_name, r.dob, r.license_number, r.sort_order])
-          }
-        }
-      }
-      await client.query('UPDATE public.competition_teams SET updated_at = now() WHERE id = $1', [id])
-      return ok({ team: await teamById(client, id) })
+    if (client) return guarded('put-roster', async () => ok({ team: (await replaceRoster(client, id, body)).team }))
+    return guarded('put-roster', () => withTx(async (c) => {
+      const out = await replaceRoster(c, id, body)
+      await auditOf(c, {
+        actorId,
+        action: 'saved_teams.roster',
+        details: {
+          team_id: id,
+          competition_id: out.before.competition_id,
+          name: out.before.name,
+          before: { players: out.before.players, staff: out.before.staff },
+          players: out.players,
+          staff: out.staff
+        },
+        ...(sportOut(out.before.sport) === 'beach' ? { app: 'beach' } : {})
+      })
+      return ok({ team: out.team })
     }))
   }
 

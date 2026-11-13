@@ -235,6 +235,10 @@ export const clubApi = {
   putLicences(clubId, list, people) {
     const only = (people || []).map(({ sv_number, last_name, first_name, dob, gender }) => ({ sv_number, last_name, first_name, dob, gender }))
     return apiRequest('PUT', `/api/club/${enc(clubId)}/licences/${enc(list)}`, { people: only }, { timeoutMs: 30000 })
+  },
+  /** db/037: one row added by hand (a person's hand_rows[].id) -> { deleted, list } */
+  deleteLicenceRow(clubId, rowId) {
+    return apiRequest('DELETE', `/api/club/${enc(clubId)}/licences/rows/${enc(rowId)}`)
   }
 }
 
@@ -270,11 +274,20 @@ export const teamApi = {
   },
   /**
    * db/024: the team's club for "Add from club" -> { team, gender: 'm' | 'f' |
-   * null, players (the players list), people (everyone of the club's lists
-   * once, with `lists`; missing from a server before it) }
+   * null, age_class: 'U16' | null, players (the players list of the team's
+   * gender and age class), people (the people of the team's saved team and
+   * those players, with `lists`) }; dates of birth only of the people of the
+   * saved team (owner decision 2)
    */
   clubPlayers(teamId) {
     return apiRequest('GET', `/api/team/${enc(teamId)}/club-players`)
+  },
+  /**
+   * A few people of the club's lists by name or licence number (an official
+   * may be anyone of the club; at least 3 characters) -> { people, more }
+   */
+  searchClubPeople(teamId, q) {
+    return apiRequest('GET', `/api/team/${enc(teamId)}/club-people${query({ q })}`)
   },
   /**
    * db/026: people typed by hand into the squad, kept in the club's lists
@@ -301,6 +314,15 @@ export const teamApi = {
  */
 export function fetchClubLicences({ timeoutMs } = {}) {
   return apiRequest('GET', '/api/club-licences', undefined, timeoutMs ? { timeoutMs } : undefined)
+}
+
+/**
+ * GET /api/club-licences/dob: the dates of birth of the people a scorer adds
+ * to a roster (the download has none; owner decision 2), of one of its clubs,
+ * at most 30 licence numbers -> { club_id, people: [{ sv_number, dob }] }
+ */
+export function fetchClubDob({ clubId, svNumbers, timeoutMs } = {}) {
+  return apiRequest('GET', `/api/club-licences/dob${query({ club: clubId, sv: (svNumbers || []).join(',') })}`, undefined, timeoutMs ? { timeoutMs } : undefined)
 }
 
 /**
@@ -530,8 +552,9 @@ export const savedTeamsApi = {
   updateCompetition(id, body) {
     return apiRequest('PATCH', `/api/saved-teams/competitions/${enc(id)}`, body)
   },
-  deleteCompetition(id) {
-    return apiRequest('DELETE', `/api/saved-teams/competitions/${enc(id)}`)
+  /** `confirm`: the competition's name as typed (one with teams is deleted only with it) */
+  deleteCompetition(id, { confirm } = {}) {
+    return apiRequest('DELETE', `/api/saved-teams/competitions/${enc(id)}${query({ confirm })}`)
   },
   createTeam(body) {
     return apiRequest('POST', '/api/saved-teams/teams', body)
@@ -539,8 +562,9 @@ export const savedTeamsApi = {
   updateTeam(id, body) {
     return apiRequest('PATCH', `/api/saved-teams/teams/${enc(id)}`, body)
   },
-  deleteTeam(id) {
-    return apiRequest('DELETE', `/api/saved-teams/teams/${enc(id)}`)
+  /** `confirm`: the team's name as typed (one with players or officials is deleted only with it) */
+  deleteTeam(id, { confirm } = {}) {
+    return apiRequest('DELETE', `/api/saved-teams/teams/${enc(id)}${query({ confirm })}`)
   },
   putRoster(id, { players, staff }) {
     return apiRequest('PUT', `/api/saved-teams/teams/${enc(id)}/roster`, { players, staff })
@@ -588,6 +612,11 @@ export function errorKeyOf(error, { context } = {}) {
     case 'OV_GAME_NOT_YOURS': return 'manage.myTeams.notYourGame'
     // db/024: a player of the club's list with the other gender than the team's
     case 'OV_WRONG_GENDER': return 'manage.licences.wrongGender'
+    // db/037: people added by hand, bounded per club and per account a day; one row removed
+    case 'OV_MANUAL_LIMIT': return 'clubPlayers.offer.limit'
+    case 'OV_NOT_HAND_ADDED': return 'manage.licences.notHandAdded'
+    // a competition or team with content: deleted only with its name typed
+    case 'OV_CONFIRM_NAME': return 'savedTeams.confirmNameMismatch'
     // db/025: a sign-up request decided meanwhile (or not this approver's)
     case 'OV_REQUEST_GONE': return 'manage.requests.gone'
     default:

@@ -140,6 +140,16 @@ export function savedTeamToRoster(team) {
 }
 
 /**
+ * Is `typed` the name `name` (spaces at the ends and case aside)? A
+ * competition with teams, or a team with people, is deleted only with its
+ * name typed (the server compares the same way, lib/savedTeams.js).
+ */
+export function sameTypedName(typed, name) {
+  const norm = (v) => String(v ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
+  return typeof typed === 'string' && norm(typed) !== '' && norm(typed) === norm(name)
+}
+
+/**
  * MatchSetup roster + bench → the PUT /api/saved-teams/teams/:id/roster body.
  *
  * The roster is this match's players, often some of the team ("Choose
@@ -150,10 +160,15 @@ export function savedTeamToRoster(team) {
  * number a roster player now wears loses the number, and a kept captain is
  * not one when the roster names one.
  *
- * A saved player is the roster player with the same number and last name,
- * else the same last and first name (a new number) and no other date of
- * birth; it keeps its id and licence number. Staff: the bench replaces them
- * (role + last name keeps the id and licence number).
+ * A saved player is the roster player with the same number, last and first
+ * name (its date of birth may be corrected), else the same last and first
+ * name (a new number) and no other date of birth; it keeps its id and
+ * licence number. Another first name is another person, also with the same
+ * number, last name or date of birth (a sibling, a twin, who wears the
+ * other's former number never takes over the other's record and licence): a
+ * new row without a licence number. Staff: the bench replaces them; an
+ * official keeps its id and licence number with the same role, last name and
+ * first name (or none on the bench), else the same names in another role.
  */
 export function rosterToSavedRoster(roster, bench, existingTeam = null) {
   const existingPlayers = Array.isArray(existingTeam?.players) ? existingTeam.players : []
@@ -162,15 +177,16 @@ export function rosterToSavedRoster(roster, bench, existingTeam = null) {
 
   const playerKey = (number, lastName) => `${toNumberOrNull(number) ?? ''}|${normalizeName(lastName)}`
   const free = (p) => p?.id && !usedIds.has(p.id)
+  const sameFirst = (saved, row) => normalizeName(saved?.first_name) === normalizeName(row?.firstName)
   const findPlayer = (p) => {
-    const byNumber = existingPlayers.find(e => free(e) && playerKey(e.number, e.last_name) === playerKey(p.number, p.lastName))
+    const byNumber = existingPlayers.find(e => free(e) && playerKey(e.number, e.last_name) === playerKey(p.number, p.lastName) && sameFirst(e, p))
     if (byNumber) return byNumber
     const last = normalizeName(p.lastName)
     const first = normalizeName(p.firstName)
     if (!last || !first) return null
     const dob = displayDobToIso(p.dob)
     return existingPlayers.find(e => free(e) &&
-      normalizeName(e.last_name) === last && normalizeName(e.first_name) === first &&
+      normalizeName(e.last_name) === last && sameFirst(e, p) &&
       !(dob && e.dob && String(e.dob).slice(0, 10) !== dob)) || null
   }
 
@@ -224,8 +240,9 @@ export function rosterToSavedRoster(roster, bench, existingTeam = null) {
   const staff = (Array.isArray(bench) ? bench : [])
     .filter(b => b && STAFF_ROLES.includes(b.role) && (String(b.lastName || '').trim() || String(b.firstName || '').trim()))
     .map(b => {
-      const match = existingStaff.find(s => s?.id && !usedStaff.has(s.id) && s.role === b.role &&
-        normalizeName(s.last_name) === normalizeName(b.lastName))
+      const free = (s) => s?.id && !usedStaff.has(s.id) && normalizeName(s.last_name) === normalizeName(b.lastName)
+      const match = existingStaff.find(s => free(s) && s.role === b.role && (sameFirst(s, b) || !normalizeName(b.firstName))) ||
+        (normalizeName(b.firstName) ? existingStaff.find(s => free(s) && sameFirst(s, b)) : null) || null
       if (match) usedStaff.add(match.id)
       const row = {
         role: b.role,

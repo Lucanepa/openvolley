@@ -10,11 +10,13 @@
  *   putSquad({ actorId, teamId, body })         { players, staff }: creates the saved team when needed
  *                                               (db/024: 400 OV_WRONG_GENDER for a player of the
  *                                               club's players list with the other gender than the team's;
- *                                               the players only: an official may be anyone of the club)
+ *                                               the players only: an official may be anyone of the club);
+ *                                               one transaction under a lock on the team; the club's
+ *                                               dates of birth fill the empty ones (lib/licences.js fillTeamDob)
  *   games({ teamId })                           the team's games from today, each with its roster summary
  *   getRoster({ teamId, game })                 the team's roster of game `game`, or null
  *   putRoster({ actorId, teamId, game, body })  { players, staff, coach_signature?, captain_signature? }, any time
- *                                               (OV_WRONG_GENDER as putSquad)
+ *                                               (OV_WRONG_GENDER and the dates of birth as putSquad)
  *   deleteRoster({ actorId, teamId, game })
  * Club managers of the club (and admins):
  *   clubTeams({ clubId })                       the club's teams with their managers
@@ -511,6 +513,12 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
       // the officials are not checked: they may be anyone of the club
       const wrong = licences ? await licences.wrongGender(client, x.team, v.players) : null
       if (wrong) throw abort(WRONG_GENDER(wrong.index, wrong.gender))
+      // the dates of birth of the club's people the roster leaves empty (owner
+      // decision 2: a team manager sees them once the person is in a roster)
+      if (licences) {
+        v.players = await licences.fillTeamDob(client, x.team, v.players)
+        v.staff = await licences.fillTeamDob(client, x.team, v.staff)
+      }
       const n = String(x.game.game_number)
       await client.query(
         `INSERT INTO public.game_rosters (game_number, season, side, team_name, players, staff, coach_signature, captain_signature, kickoff, updated_by)
@@ -573,58 +581,91 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
   /**
    * The season's competition of the team's league (vm_leagues), else a new
    * one named after the league (owner decision D1). The league is the one of
-   * the team's games this season.
+   * the team's games this season. On `client`, in putSquad's transaction:
+   * one look-up-and-create per league at a time (be-races-4).
    */
-  async function competitionFor (actorId, team, label, seasonYear) {
-    const { rows: g } = await pool.query(
+  async function competitionFor (client, actorId, team, label, seasonYear) {
+    const { rows: g } = await client.query(
       `SELECT g.league, g.gender, count(*)::int AS n FROM public.svrz_games g
         WHERE (lower(btrim(g.team_home)) = $1 OR lower(btrim(g.team_away)) = $1) AND g.datetime >= $2
           AND coalesce(btrim(g.league), '') <> ''
         GROUP BY g.league, g.gender ORDER BY n DESC, g.league LIMIT 1`, [key(team.name), `${seasonYear}-07-01`])
     const league = g[0]?.league?.trim() || null
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`ov:squad-league:${label}:${league ? key(league) : `team:${key(team.name)}`}`])
     if (league) {
-      const { rows: [c] } = await pool.query(
+      const { rows: [c] } = await client.query(
         `SELECT id FROM public.competitions WHERE sport = 'indoor' AND season = $1 AND NOT archived AND $2 = ANY(vm_leagues)
           ORDER BY created_at LIMIT 1`, [label, league])
       if (c) return { id: c.id }
     }
     const made = await savedTeams.createCompetition({
       actorId,
+      client,
       body: { name: (league || team.name).slice(0, 120), season: label, gender: genderOf(g[0]?.gender), vm_leagues: league ? [league] : [], sport: 'indoor' }
     })
     if (made.status !== 201) return { answer: made }
     return { id: made.body.data.competition.id }
   }
 
-  /** PUT /api/team/:teamId/squad { players, staff }: the saved team's whole roster; creates it when there is none. */
+  /**
+   * PUT /api/team/:teamId/squad { players, staff }: the saved team's whole
+   * roster; creates it when there is none. One transaction, the look-up and
+   * the creation under a lock on the team (two first saves at once make one
+   * saved team, be-races-4). The dates of birth of the club's people the
+   * roster leaves empty come from the club's lists (owner decision 2: a team
+   * manager sees them once the person is in the squad).
+   */
   async function putSquad ({ actorId, teamId, body } = {}) {
     const v = validateRoster(body, { sport: 'indoor' })
     if (v.error) return v.error
-    return guarded('put-squad', async () => {
-      const team = await teamRow(pool, teamId)
-      if (!team) return notFound()
+    return guarded('put-squad', () => withTx(async (client) => {
+      const team = await teamRow(client, teamId)
+      if (!team) throw abort(notFound())
       // db/024: a player can't play in the wrong gender (owner 2026-11-09);
       // the officials are not checked: they may be anyone of the club
-      const wrong = licences ? await licences.wrongGender(pool, team, v.players) : null
-      if (wrong) return WRONG_GENDER(wrong.index, wrong.gender)
+      const wrong = licences ? await licences.wrongGender(client, team, v.players) : null
+      if (wrong) throw abort(WRONG_GENDER(wrong.index, wrong.gender))
       const year = seasonOf(clock())
       const label = seasonLabel(year)
-      let id = await squadId(pool, team, label)
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`ov:squad:${label}:${key(team.name)}`])
+      let id = await squadId(client, team, label)
       if (!id) {
-        const comp = await competitionFor(actorId, team, label, year)
-        if (comp.answer) return comp.answer
+        const comp = await competitionFor(client, actorId, team, label, year)
+        if (comp.answer) throw abort(comp.answer)
         const made = await savedTeams.createTeam({
           actorId,
+          client,
           body: { competition_id: comp.id, name: team.name.slice(0, 120), club: team.club_name.slice(0, 120), svrz_team_name: team.name }
         })
-        if (made.status !== 201) return made
+        if (made.status !== 201) throw abort(made)
         id = made.body.data.team.id
       }
-      const put = await savedTeams.putRoster({ id, body })
-      if (put.status !== 200) return put
-      await audit(pool, { actorId, action: 'team.squad', details: { team_id: team.id, saved_team_id: id, players: v.players.length, staff: v.staff.length } })
+      const filled = licences
+        ? { ...body, players: await licences.fillTeamDob(client, team, body.players), staff: await licences.fillTeamDob(client, team, body.staff) }
+        : body
+      const { rows: before } = await client.query(
+        `SELECT btrim(license_number) AS lic FROM public.competition_players WHERE team_id = $1
+         UNION SELECT btrim(license_number) FROM public.competition_staff WHERE team_id = $1`, [id])
+      const put = await savedTeams.putRoster({ id, body: filled, client })
+      if (put.status !== 200) throw abort(put)
+      // who came and went, by licence number (never a name): a squad change
+      // that reveals a date of birth can be traced to its account
+      const was = new Set(before.map((r) => r.lic).filter(Boolean))
+      const now = new Set([...v.players, ...v.staff].map((p) => String(p?.license_number ?? '').trim()).filter(Boolean))
+      await audit(client, {
+        actorId,
+        action: 'team.squad',
+        details: {
+          team_id: team.id,
+          saved_team_id: id,
+          players: v.players.length,
+          staff: v.staff.length,
+          added: [...now].filter((l) => !was.has(l)).slice(0, 60),
+          removed: [...was].filter((l) => !now.has(l)).slice(0, 60)
+        }
+      })
       return ok({ team, season: label, squad: put.body.data.team })
-    })
+    }))
   }
 
   // ---------------------------------------------------------------- club managers

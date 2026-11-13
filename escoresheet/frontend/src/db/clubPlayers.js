@@ -12,13 +12,15 @@
  * people: [{ ...the same five fields, lists }] (everyone of the three lists
  * once), fetchedAt, userId }. A server before `people` (or a row kept by an
  * older app) has the players list only: people are then the players.
+ * Owner decision 2: the server sends no dates of birth here (dob null);
+ * withClubDob asks for those of the people added to a roster, online.
  * Personal data (names, dates of birth, licence numbers, gender): only for
  * the account that loaded them (row.userId) and cleared on sign-out and
  * account switch (AuthContext), like the saved teams and the sent rosters.
  */
 
 import { db } from './db'
-import { fetchClubLicences } from '../lib/accountApi'
+import { fetchClubDob, fetchClubLicences } from '../lib/accountApi'
 import { accessFromRoles } from '../lib/access'
 import { currentUserId } from './savedTeams'
 
@@ -156,6 +158,28 @@ export async function refreshClubPlayers({ access, userId, online, force = false
   } catch (e) {
     console.warn('[clubPlayers] refresh failed:', e?.message)
     return 'error'
+  }
+}
+
+/**
+ * `people` (club people chosen in Match Setup) with the dates of birth of
+ * club `clubId` filled in where they have none (GET /api/club-licences/dob:
+ * those of the chosen people only, at most 30). Never throws: offline, on a
+ * server that does not know the route, or on any error, `people` as they are
+ * (the scorer types the date, or a sent roster brings it).
+ */
+export async function withClubDob(clubId, people, { online, timeoutMs = 5000 } = {}) {
+  const list = Array.isArray(people) ? people : []
+  const want = [...new Set(list.filter((p) => p && !p.dob && p.sv_number != null).map((p) => String(p.sv_number)))].slice(0, 30)
+  if (!clubId || !want.length || !(online ?? isOnline())) return list
+  try {
+    const { data, error } = await fetchClubDob({ clubId, svNumbers: want, timeoutMs })
+    if (error || !Array.isArray(data?.people)) return list
+    const dobOf = new Map(data.people.filter((x) => x && x.dob).map((x) => [String(x.sv_number), x.dob]))
+    return list.map((p) => (p && !p.dob && dobOf.has(String(p.sv_number)) ? { ...p, dob: dobOf.get(String(p.sv_number)) } : p))
+  } catch (e) {
+    console.warn('[clubPlayers] dates of birth not read:', e?.message)
+    return list
   }
 }
 
