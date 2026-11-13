@@ -766,6 +766,11 @@ export function createPgQuery (options = {}) {
     return `EXISTS (SELECT 1 FROM ${qTable(own.parent)} AS om WHERE om.${quoteIdent(own.key)} = ${alias}.${quoteIdent(fk)} AND ${ownedSql('om', ctx, userId)})`
   }
 
+  /** SQL: the row `alias` of the guarded table is (of) a match the user owns. */
+  function rowOwnedSql (guard, alias, ctx) {
+    return guard.isParent ? ownedSql(alias, ctx, guard.userId) : childOwnedSql(alias, guard.fk, ctx, guard.userId)
+  }
+
   const notOwner = (details) => fail('OV_NOT_MATCH_OWNER', details, 403)
   const freshCtx = () => {
     const values = []
@@ -789,7 +794,7 @@ export function createPgQuery (options = {}) {
   async function assertFilteredRowsOwned (client, t, params, secrets, guard) {
     const c = freshCtx()
     const where = buildWhere(t, params, secrets, c, null)
-    const owned = guard.isParent ? ownedSql('t', c, guard.userId) : childOwnedSql('t', guard.fk, c, guard.userId)
+    const owned = rowOwnedSql(guard, 't', c)
     const sql = `SELECT count(*)::int AS bad FROM ${qTable(t.name)} AS t${where.sql ? where.sql + ' AND' : ' WHERE'} NOT ${owned}`
     const res = await client.query(sql, c.values)
     if (res.rows[0].bad > 0) notOwner(`${res.rows[0].bad} ${t.name} row(s) of a match you do not own`)
@@ -837,21 +842,29 @@ export function createPgQuery (options = {}) {
     const list = [...new Set(ids.filter(v => v != null && v !== '').map(String))]
     if (list.length === 0) return
     const c = freshCtx()
-    // Compared as text: a malformed id is left to the ownership check, not a cast error here
+    const pkey = requireColumn(guard.parent, own.key)
+    // Compared as the key's type, like the ownership check and the statement:
+    // every spelling of an id that Postgres reads (upper case, braces, no
+    // hyphens) is that match. A malformed id fails the cast here, as it would there.
     const sql = `SELECT count(*)::int AS bad FROM ${qTable(own.parent)} AS m
-      WHERE m.${quoteIdent(own.key)}::text = ANY(${c.p(list)}::text[]) AND ${nonTestSql(guard, 'm')}`
+      WHERE m.${quoteIdent(own.key)} = ANY(${c.p(list)}::${pkey.typeSql}[]) AND ${nonTestSql(guard, 'm')}`
     const res = await client.query(sql, c.values)
     if (res.rows[0].bad > 0) scorerRequired(`${res.rows[0].bad} match(es) are not test matches`)
   }
 
+  /** SQL: the row `alias` of the guarded table is, or belongs to, a non-test match. */
+  function rowNonTestSql (guard, alias) {
+    const own = cfg.ownership
+    return guard.isParent
+      ? nonTestSql(guard, alias)
+      : `EXISTS (SELECT 1 FROM ${qTable(own.parent)} AS tm WHERE tm.${quoteIdent(own.key)} = ${alias}.${quoteIdent(guard.fk)} AND ${nonTestSql(guard, 'tm')})`
+  }
+
   /** No row matched by `params` (update/delete) is, or belongs to, a non-test match. */
   async function assertFilteredRowsTest (client, t, params, secrets, guard) {
-    const own = cfg.ownership
     const c = freshCtx()
     const where = buildWhere(t, params, secrets, c, null)
-    const cond = guard.isParent
-      ? nonTestSql(guard, 't')
-      : `EXISTS (SELECT 1 FROM ${qTable(own.parent)} AS tm WHERE tm.${quoteIdent(own.key)} = t.${quoteIdent(guard.fk)} AND ${nonTestSql(guard, 'tm')})`
+    const cond = rowNonTestSql(guard, 't')
     const sql = `SELECT count(*)::int AS bad FROM ${qTable(t.name)} AS t${where.sql ? where.sql + ' AND' : ' WHERE'} ${cond}`
     const res = await client.query(sql, c.values)
     if (res.rows[0].bad > 0) scorerRequired(`${res.rows[0].bad} ${t.name} row(s) of a non-test match`)
@@ -875,19 +888,37 @@ export function createPgQuery (options = {}) {
     const c = freshCtx()
     const on = target.map(col => `t.${quoteIdent(col)} = r.${quoteIdent(col)}`).join(' AND ')
     let cond = `(t.ctid IS NOT NULL AND ${nonTestSql(guard, 't')})`
-    if (!guard.allSports) {
-      const tc = cfg.testColumn
-      const sc = cfg.sportColumn
-      const notTest = tc && guard.parent.columns.has(tc) ? `${cols.includes(tc) ? 'r' : 't'}.${quoteIdent(tc)} IS NOT TRUE` : 'true'
-      const sport = sportIsSql(guard, sc && cols.includes(sc) ? 'r' : 't', guard.testSports[0])
-      cond += ` OR (${notTest} AND ${sport})`
-    }
+    if (!guard.allSports) cond += ` OR ${mergedNonTestSql(guard, cols, 'r')}`
     const sql = `SELECT count(*)::int AS bad
       FROM json_populate_recordset(NULL::${qTable(t.name)}, ${c.p(JSON.stringify(rows))}::json) AS r
       LEFT JOIN ${qTable(t.name)} AS t ON ${on}
      WHERE ${cond}`
     const res = await client.query(sql, c.values)
     if (res.rows[0].bad > 0) scorerRequired(`${res.rows[0].bad} match row(s) are not test matches`)
+  }
+
+  /**
+   * SQL, one sport only: the merged row of a matches upsert is a non-test
+   * match of that sport. `payload` (its alias) for the columns the payload
+   * sets (cols), else the stored match t.
+   */
+  function mergedNonTestSql (guard, cols, payload) {
+    const tc = cfg.testColumn
+    const sc = cfg.sportColumn
+    const notTest = tc && guard.parent.columns.has(tc) ? `${cols.includes(tc) ? payload : 't'}.${quoteIdent(tc)} IS NOT TRUE` : 'true'
+    const sport = sportIsSql(guard, sc && cols.includes(sc) ? payload : 't', guard.testSports[0])
+    return `(${notTest} AND ${sport})`
+  }
+
+  /**
+   * SQL for the DO UPDATE of a matches upsert: the conflicting match t, or
+   * the row it would become (EXCLUDED, what the SET writes), breaks the rule
+   * of assertUpsertTargetsTest.
+   */
+  function upsertNonTestSql (guard, cols) {
+    return guard.allSports
+      ? nonTestSql(guard, 't')
+      : `(${nonTestSql(guard, 't')} OR ${mergedNonTestSql(guard, cols, 'EXCLUDED')})`
   }
 
   async function runWrite (cat, t, action, params, opts, ctx) {
@@ -917,6 +948,29 @@ export function createPgQuery (options = {}) {
 
     let dml
     let postCheck = false
+    // update / delete: the checks run before the statement, and Postgres is
+    // READ COMMITTED, so the statement also sees rows committed after them
+    // (an event synced in between, a match created in between). Their rules
+    // are therefore part of the UPDATE / DELETE too: a row that breaks one is
+    // never written, and the rows the filter matches that break one are
+    // counted in the same statement (its snapshot), which is then refused
+    // as a whole, with the code the check gives. In the checks' order.
+    const rowRules = []
+    let rowRulesWhere = ''
+    const rowRulesSql = (where, untests) => {
+      // bad: the row breaks the rule; ok: it does not
+      const rule = (bad, refuse, ok = `NOT (${bad})`) => rowRules.push({ bad, ok, refuse })
+      if (testOnly) {
+        if (untests) rule(sportIsSql(testOnly, 't', testOnly.testSports[0]), () => scorerRequired('a match cannot stop being a test match'))
+        rule(rowNonTestSql(testOnly, 't'), (n) => scorerRequired(`${n} ${t.name} row(s) of a non-test match`))
+      }
+      if (enforce) {
+        const owned = rowOwnedSql(enforce, 't', ctx)
+        rule(`NOT ${owned}`, (n) => notOwner(`${n} ${t.name} row(s) of a match you do not own`), owned)
+      }
+      rowRulesWhere = where.sql
+      return rowRules.map(r => ` AND ${r.ok}`).join('')
+    }
     if (action === 'insert' || action === 'upsert') {
       if (guard?.isParent) {
         // The creator is the caller, whatever the client sent.
@@ -989,12 +1043,21 @@ export function createPgQuery (options = {}) {
         else if (moveGuard) guards.push(`t.${quoteIdent(guard.fk)} IS NOT DISTINCT FROM EXCLUDED.${quoteIdent(guard.fk)}`)
         // A conflicting row of a match the caller does not own is never changed.
         if (enforce) guards.push(enforce.isParent ? ownedSql('t', ctx, enforce.userId) : childOwnedSql('t', enforce.fk, ctx, enforce.userId))
+        // Nor a conflicting match the test-only rule refuses: testPre judges
+        // the matches committed before it, this also one committed after it
+        // (ON CONFLICT meets rows the statement's snapshot does not see).
+        // A match deleted after it leaves an INSERT instead: judgeWritten.
+        const testGuard = testOnly && testOnly.isParent
+        if (testGuard) guards.push(`NOT (${upsertNonTestSql(testOnly, cols)})`)
         if (guards.length) dml += ` WHERE ${guards.join(' AND ')}`
         if (childSpec || enforce || moveGuard) {
           ctx.expectRows = rows.length
           // children: the new rows' match is owned (checked first), so a
           // skipped row is one of another match; otherwise it is not owned.
           ctx.expectRowsCode = (childSpec || (moveGuard && !enforce)) ? 'OV_UNSCOPED_WRITE' : 'OV_NOT_MATCH_OWNER'
+          // A match skipped by the test-only rule: testPre once more, which
+          // now sees it, answers first (OV_SCORER_REQUIRED, as before the statement)
+          if (testGuard) ctx.expectRowsRecheck = testPre
         }
       }
       if (childSpec) ctx.preCheck = rows.map(r => ({ ext: r[childSpec.ext], mid: r[childSpec.fk] }))
@@ -1004,10 +1067,10 @@ export function createPgQuery (options = {}) {
       const where = buildWhere(t, params, secrets, ctx, scope)
       if (where.filters.length === 0) fail('OV_UNFILTERED_WRITE', 'update needs a filter')
       if (guard?.isParent && cols.includes(ownerCol)) fail('OV_INVALID_DATA', `${ownerCol} is set by the server`)
+      // Making matches non-test: refused at once in every sport, else for
+      // the matched rows of the test-only sport (checked in the transaction)
+      const untests = !!testOnly && testOnly.isParent && cols.includes(cfg.testColumn) && row[cfg.testColumn] !== true
       if (testOnly) {
-        // Making matches non-test: refused at once in every sport, else for
-        // the matched rows of the test-only sport (checked in the transaction)
-        const untests = testOnly.isParent && cols.includes(cfg.testColumn) && row[cfg.testColumn] !== true
         if (untests && testOnly.allSports) scorerRequired('a match cannot stop being a test match')
         const movedTo = !testOnly.isParent && cols.includes(testOnly.fk) ? [row[testOnly.fk]] : null
         const p1 = params
@@ -1039,7 +1102,7 @@ export function createPgQuery (options = {}) {
         return merge.has(c) && col.isJson ? `${quoteIdent(c)} = ${mergeExpr(t, col, 'r')}` : `${quoteIdent(c)} = r.${quoteIdent(c)}`
       })
       if (stampCol && !cols.includes(stampCol)) sets.push(`${quoteIdent(stampCol)} = now()`)
-      dml = `UPDATE ${qt} AS t SET ${sets.join(', ')} FROM json_populate_record(NULL::${qt}, ${ctx.p(JSON.stringify(row))}::json) AS r${where.sql}`
+      dml = `UPDATE ${qt} AS t SET ${sets.join(', ')} FROM json_populate_record(NULL::${qt}, ${ctx.p(JSON.stringify(row))}::json) AS r${where.sql}${rowRulesSql(where, untests)}`
     } else {
       const where = buildWhere(t, params, secrets, ctx, scope)
       if (where.filters.length === 0) fail('OV_UNFILTERED_WRITE', 'delete needs a filter')
@@ -1052,7 +1115,7 @@ export function createPgQuery (options = {}) {
         const p0 = params
         ownPre = (client) => assertFilteredRowsOwned(client, t, p0, secrets, enforce)
       }
-      dml = `DELETE FROM ${qt} AS t${where.sql}`
+      dml = `DELETE FROM ${qt} AS t${where.sql}${rowRulesSql(where, false)}`
     }
 
     // RETURNING: all visible columns when anything needs rows, else just a count.
@@ -1069,9 +1132,23 @@ export function createPgQuery (options = {}) {
     let returning = needRows ? retCols.map(c => `t.${quoteIdent(c)}`).join(', ') : '1 AS one'
     if (needRows && action === 'upsert') returning += (returning ? ', ' : '') + '(t.xmax = 0) AS "__inserted"'
     if (needRows && !returning) returning = '1 AS one'
+    // A test-only account: the rows it wrote are judged by the rule too
+    // (RETURNING sees the final row; no trigger rewrites test, sport_type or
+    // match_id). An upsert of matches: testPre judges the payload merged with
+    // the match stored when it ran; if that match is deleted before the
+    // statement, the statement inserts the payload with the column defaults
+    // (test false, indoor), a row nothing else judges. A child insert, upsert
+    // or update: the match the row points to as stored (the typed match_id),
+    // in the statement's snapshot, so also a match that stopped being a test
+    // match after testPre.
+    const judgeWritten = !!testOnly && (testOnly.isParent ? action === 'upsert' : action !== 'delete')
+    if (judgeWritten) returning += `, (${rowNonTestSql(testOnly, 't')}) AS "__nontest"`
+    const nonTestCount = judgeWritten ? ', count(*) FILTER (WHERE w."__nontest")::int AS nontest' : ''
+    // The matched rows that break each rule (rowRules), in the statement's snapshot
+    const badSql = rowRules.map((r, i) => `, (SELECT count(*) FROM ${qt} AS t${rowRulesWhere} AND ${r.bad})::int AS bad${i}`).join('')
     const sql = needRows
-      ? `WITH w AS (${dml} RETURNING ${returning}) SELECT coalesce(json_agg(w), '[]'::json) AS rows, count(*) AS n FROM w`
-      : `WITH w AS (${dml} RETURNING ${returning}) SELECT NULL::json AS rows, count(*) AS n FROM w`
+      ? `WITH w AS (${dml} RETURNING ${returning}) SELECT coalesce(json_agg(w), '[]'::json) AS rows, count(*) AS n${nonTestCount}${badSql} FROM w`
+      : `WITH w AS (${dml} RETURNING ${returning}) SELECT NULL::json AS rows, count(*) AS n${nonTestCount}${badSql} FROM w`
 
     const run = async (client) => {
       // The acting account, for db/007's triggers (closed_by of a closing write)
@@ -1080,11 +1157,23 @@ export function createPgQuery (options = {}) {
       if (ctx.preCheck) await assertChildrenScoped(client, cat, t.name, ctx.preCheck)
       if (ownPre) await ownPre(client)
       const res = await client.query(sql, ctx.values)
+      // A row committed after the checks that breaks a rule: the write is refused (rolled back)
+      rowRules.forEach((rule, i) => {
+        const bad = Number(res.rows[0][`bad${i}`])
+        if (bad > 0) rule.refuse(bad)
+      })
+      // A written row the test-only rule refuses: the write is refused (rolled back)
+      if (judgeWritten && res.rows[0].nontest > 0) {
+        const bad = res.rows[0].nontest
+        scorerRequired(testOnly.isParent ? `${bad} match row(s) are not test matches` : `${bad} ${t.name} row(s) of a non-test match`)
+      }
       const rows = res.rows[0].rows || []
       const n = Number(res.rows[0].n)
       // Upsert rows skipped by a guard: the conflicting row belongs to another
-      // match, or to a match the caller does not own.
+      // match, or to a match the caller does not own, or is a match the
+      // test-only rule refuses (the recheck answers that one).
       if (ctx.expectRows != null && n < ctx.expectRows) {
+        if (ctx.expectRowsRecheck) await ctx.expectRowsRecheck(client)
         if (ctx.expectRowsCode === 'OV_NOT_MATCH_OWNER') notOwner(`${ctx.expectRows - n} ${t.name} row(s) of a match you do not own`)
         fail('OV_UNSCOPED_WRITE', `${ctx.expectRows - n} ${t.name} row(s) conflict with a row of another match`)
       }
@@ -1104,7 +1193,7 @@ export function createPgQuery (options = {}) {
       result.changes = out.rows.map(r => {
         const row = {}
         for (const [k, v] of Object.entries(r)) {
-          if (k !== '__inserted' && !secretAll.has(k.toLowerCase())) row[k] = v
+          if (k !== '__inserted' && k !== '__nontest' && !secretAll.has(k.toLowerCase())) row[k] = v
         }
         const eventType = action === 'delete' ? 'DELETE'
           : action === 'update' ? 'UPDATE'
@@ -1226,7 +1315,8 @@ export function createPgQuery (options = {}) {
    * @param {number} [opts.maxRows]        raise/lower the select row cap (server code only)
    * @param {string[]} [opts.mergeOnUpsert] JSON columns an upsert merges into the stored object (server code only)
    * @param {string[]} [opts.changeColumns] narrow the `changes` rows to these columns (server code only)
-   * @param {pg.PoolClient} [opts.client]  run inside the caller's transaction
+   * @param {pg.PoolClient} [opts.client]  run inside the caller's transaction. A non-200 result
+   *        may come after the statement ran (a refused write): the caller must then roll back.
    * @returns {Promise<{status:number, body:{data:any, error:null|{message,code,details?}, count?:number}, changes?:Array}>}
    */
   async function runQuery (request, opts = {}) {
