@@ -912,9 +912,17 @@ read again with the row locked in the write: a coin toss between the PIN check
 and the write answers 409, and two teams uploading at the same moment both
 keep their signatures. An upload fills only signature keys the match does not
 have (empty or absent): it never replaces the scorer's or an earlier upload's.
-A match update through `/api/db` whose `status` leaves `setup` (the coin toss)
-also sets both `connections.pending_*_roster` to null, so a device that
-restores the running match finds no roster to accept.
+A match update through `/api/db` whose `status` leaves `setup` for `live` (the
+coin toss) or `ended` also sets both `connections.pending_*_roster` to null, so
+a device that restores the running match finds no roster to accept. A closing
+write (`approved`, `final`) is passed on as sent: `db/007` lets a closed match
+take nothing but approved -> final or a no-op rewrite.
+
+Upload Roster apps older than these rules (installed or cached) can build
+rosters the rules refuse (two captains, a libero slot twice, two officials left
+on the role Coach, a number above 99 from the old PDF reader) and show the 400
+as "the scoresheet could not be reached": the coach updates the app or hands
+the roster to the scorer.
 
 The upload PINs reach the server with the match: Match Setup's Create match
 sends the full `connection_pins` (referee, benches, both upload PINs) with the

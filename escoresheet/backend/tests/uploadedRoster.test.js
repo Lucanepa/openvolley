@@ -114,7 +114,12 @@ describe('withPendingRostersCleared', () => {
     assert.deepEqual(server.withPendingRostersCleared({ status: 'ended' }).connections, { pending_home_roster: null, pending_away_roster: null })
   })
   it('anything else is left as it is', () => {
-    for (const data of [{ status: 'setup', connections: {} }, { current_set: 2 }, null, [{ status: 'live' }], { status: 'live', connections: 'x' }]) {
+    for (const data of [{ status: 'setup', connections: {} }, { status: 'scheduled' }, { current_set: 2 }, null, [{ status: 'live' }], { status: 'live', connections: 'x' }]) {
+      assert.deepEqual(server.withPendingRostersCleared(data), data)
+    }
+  })
+  it('a closing write (approved, final) is left as it is: a closed match takes no other change', () => {
+    for (const data of [{ status: 'approved', current_set: null }, { status: 'final' }, { status: 'final', connections: { referee_enabled: true } }]) {
       assert.deepEqual(server.withPendingRostersCleared(data), data)
     }
   })

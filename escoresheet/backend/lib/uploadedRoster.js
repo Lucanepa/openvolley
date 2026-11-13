@@ -7,7 +7,7 @@
  * that the two answer alike; change both.
  *
  * Also: the signatures an upload may fill in (never one the match has), and
- * the pending rosters a match drops when its status leaves 'setup'.
+ * the pending rosters a match drops at the coin toss or the match end.
  */
 import { SIGNATURE_RE } from './teams.js'
 import { STAFF_ROLES as BENCH_ROLES } from './savedTeams.js'
@@ -156,14 +156,23 @@ export function signaturesAfterUpload(stored, team, { coachSignature, captainSig
   return Object.keys(add).length ? { ...base, ...add } : null
 }
 
+// The statuses of a match that has left 'setup' and is not closed: the coin
+// toss ('live') and the match end ('ended'). A closing write ('approved',
+// 'final') is left alone: db/007's guard lets a closed match take only
+// approved -> final or a no-op rewrite, so two added keys there would refuse
+// Close match on every match closed without them; the coin toss or the match
+// end has dropped the rosters by then.
+const CLEARING_STATUSES = new Set(['live', 'ended'])
+
 /**
- * A match update (/api/db) whose status leaves 'setup': the teams' uploaded
- * rosters the server still holds go with it (connections is merged, so only
- * these two keys change). The scorer can no longer accept them, and a device
- * that restores the running match must not find them. Anything else as given.
+ * A match update (/api/db) whose status leaves 'setup' (CLEARING_STATUSES):
+ * the teams' uploaded rosters the server still holds go with it (connections
+ * is merged, so only these two keys change). The scorer can no longer accept
+ * them, and a device that restores the running match must not find them.
+ * Anything else as given.
  */
 export function withPendingRostersCleared(data) {
-  if (!isPlainObject(data) || typeof data.status !== 'string' || data.status === 'setup') return data
+  if (!isPlainObject(data) || !CLEARING_STATUSES.has(data.status)) return data
   if (data.connections !== undefined && !isPlainObject(data.connections)) return data
   return { ...data, connections: { ...(data.connections || {}), pending_home_roster: null, pending_away_roster: null } }
 }

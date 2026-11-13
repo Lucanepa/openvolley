@@ -9,7 +9,10 @@
  *      teams uploading at once both keep theirs
  *   3. the status is tested again in the write: a coin toss that lands
  *      between the PIN check and the write refuses the upload
- *   4. a match update that leaves 'setup' drops the pending rosters
+ *   4. a match update that leaves 'setup' drops the pending rosters, and a
+ *      closing write leaves them alone: a match closed without the two keys
+ *      (before this server version, or by a backup restore) still takes
+ *      approved -> final and a resent approval
  *
  * Made-up names.
  */
@@ -207,5 +210,51 @@ describe('upload-roster: checked, never over stored signatures, never after the 
     })
     assert.equal(info.status, 200, info.text)
     assert.ok((await stored()).connections.pending_home_roster)
+  })
+
+  it('a match closed without the pending keys still takes approved -> final and a resent approval', async () => {
+    const closed = async (n, connections) => {
+      const id = `match_${Date.now()}_${randomBytes(3).toString('hex')}`
+      const r = await api(srv.base, '/api/db', {
+        token: alice.token,
+        body: {
+          table: 'matches',
+          action: 'upsert',
+          params: {
+            data: { external_id: id, game_n: n, status: 'setup', sport_type: 'indoor', connections, home_team: { name: 'Home VC' }, away_team: { name: 'Away VC' } },
+            onConflict: 'external_id',
+            returning: 'id',
+            single: true
+          }
+        }
+      })
+      assert.equal(r.status, 200, r.text)
+      // closed as before this version: the coin toss never added the two keys
+      await sql.query("UPDATE matches SET status = 'approved', current_set = NULL WHERE external_id = $1", [id])
+      const { rows: [row] } = await sql.query('SELECT closed_at FROM matches WHERE external_id = $1', [id])
+      assert.ok(row.closed_at, 'closed')
+      return id
+    }
+    const update = (id, data) => api(srv.base, '/api/db', {
+      token: alice.token,
+      body: { table: 'matches', action: 'update', params: { data, filters: [{ type: 'eq', column: 'external_id', value: id }] } }
+    })
+    const statusOf = async (id) => (await sql.query('SELECT status, connections FROM matches WHERE external_id = $1', [id])).rows[0]
+
+    const resent = await closed(9403, { referee_enabled: true })
+    const again = await update(resent, { status: 'approved', current_set: null })
+    assert.equal(again.status, 200, again.text)
+    const final = await update(resent, { status: 'final' })
+    assert.equal(final.status, 200, final.text)
+    assert.equal((await statusOf(resent)).status, 'final')
+    const finalAgain = await update(resent, { status: 'final' })
+    assert.equal(finalAgain.status, 200, finalAgain.text)
+    assert.deepEqual((await statusOf(resent)).connections, { referee_enabled: true })
+
+    // a stale pending roster on a closed match: Close match still passes
+    const stale = await closed(9404, { referee_enabled: true, pending_home_roster: { players: [], bench: [] } })
+    const r = await update(stale, { status: 'final' })
+    assert.equal(r.status, 200, r.text)
+    assert.equal((await statusOf(stale)).status, 'final')
   })
 })
