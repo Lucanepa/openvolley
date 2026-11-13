@@ -81,10 +81,10 @@ const SIGNATURE_PREFIX = 'data:image/png;base64,'
 export const SIGNATURE_RE = /^data:image\/png;base64,[A-Za-z0-9+/]+=*$/
 
 /** '2026/27' for season year 2026 (the saved teams' season label). */
+export const seasonLabel = (year) => `${year}/${String((year + 1) % 100).padStart(2, '0')}`
+
 /** db/035: what a signature made ahead was made on (the players and staff as stored). */
 export const rosterHash = (v) => createHash('sha256').update(JSON.stringify({ players: v.players, staff: v.staff })).digest('hex')
-
-export const seasonLabel = (year) => `${year}/${String((year + 1) % 100).padStart(2, '0')}`
 
 const zurichClockFmt = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Europe/Zurich', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
@@ -528,7 +528,8 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
       const actor = isUuid(actorId) ? actorId : null
       // db/035: a signature made ahead belongs to the players and staff it was
       // made on and to the account that sent it; the same image re-sent with
-      // another roster is dropped, a new image is the sender's
+      // another roster is dropped, a new image is the sender's. One from
+      // before db/035 has no hash yet: kept, and it takes this one
       const { rows: [prev] } = await client.query(
         `SELECT coach_signature, captain_signature, coach_signed_hash, captain_signed_hash, coach_signed_by, captain_signed_by
            FROM public.game_rosters WHERE game_number = $1 AND season = $2 AND side = $3 FOR UPDATE`, [n, x.season, x.side])
@@ -537,8 +538,9 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
       for (const k of ['coach', 'captain']) {
         const img = v[`${k}_signature`]
         const kept = img && prev && prev[`${k}_signature`] === img
-        if (kept && prev[`${k}_signed_hash`] !== hash) sig[k] = [null, null, null]
-        else if (kept) sig[k] = [img, prev[`${k}_signed_hash`], prev[`${k}_signed_by`]]
+        const was = kept ? prev[`${k}_signed_hash`] : null
+        if (kept && was != null && was !== hash) sig[k] = [null, null, null]
+        else if (kept) sig[k] = [img, hash, prev[`${k}_signed_by`]]
         else sig[k] = img ? [img, hash, actor] : [null, null, null]
       }
       await client.query(
@@ -724,7 +726,8 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
   /**
    * Who may read and accept a sent roster (db/035): the home club's scorers
    * (both sides of its home games), an editor of the match that holds the
-   * game (official, not a test), and the managers of the sending team.
+   * game (official, not a test, not released or taken over) who scores for
+   * the home or the away club, and the managers of the sending team.
    * { mayRead(row, teamHome), matchOf(n, season) }
    */
   async function accessOf (db, userId, numbers) {
@@ -732,12 +735,16 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
     const home = new Set(myClubs.flatMap((c) => c.teams || []).map(key).filter(Boolean))
     const ints = numbers.map(Number).filter((n) => Number.isInteger(n) && n > 0 && n <= 2147483647)
     const held = new Map()
-    if (ints.length) {
+    // creating the first match of a free game number alone makes no holder:
+    // the holder's clubs must play the game
+    if (ints.length && home.size) {
       const { rows } = await db.query(
         `SELECT m.id, m.game_n, m.official_season FROM public.matches m
-          WHERE m.game_n = ANY($1::int[]) AND m.test IS NOT TRUE AND m.sport_type IS DISTINCT FROM 'beach'
+          WHERE m.game_n = ANY($1::int[]) AND m.test IS NOT TRUE AND m.official_game_exempt IS NOT TRUE AND m.sport_type IS DISTINCT FROM 'beach'
             AND (m.created_by = $2 OR EXISTS (SELECT 1 FROM public.match_editors e WHERE e.match_id = m.id AND e.user_id = $2))
-          ORDER BY m.created_at NULLS LAST, m.id`, [ints, userId])
+            AND EXISTS (SELECT 1 FROM public.svrz_games g WHERE g.game_number = m.game_n::text
+                         AND (lower(btrim(g.team_home)) = ANY($3::text[]) OR lower(btrim(g.team_away)) = ANY($3::text[])))
+          ORDER BY m.created_at NULLS LAST, m.id`, [ints, userId, [...home]])
       for (const m of rows) { const k = `${m.game_n}|${m.official_season}`; if (!held.has(k)) held.set(k, m.id) }
     }
     const { rows: tm } = await db.query('SELECT team_id FROM public.team_managers WHERE user_id = $1', [userId])

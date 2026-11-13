@@ -3,12 +3,14 @@
 --
 -- 1. club_id / team_id: the sending team (lib/teams.js putRoster). Removing
 --    the team or the club deletes its rosters (ON DELETE CASCADE). Rows
---    from before are filled in from club_teams by the team's name.
+--    from before are filled in from club_teams by the team's name; the
+--    others are deleted.
 -- 2. used_match_id: the match that accepted the roster (lib/teams.js
 --    markUsed). Accepting no longer empties the row; it goes at expires_at.
 -- 3. coach_/captain_signed_hash, _signed_by: a signature made ahead holds a
 --    hash of the players and staff it was made on and the account that sent
---    it. A signature re-sent with another roster is dropped (putRoster).
+--    it. A signature re-sent with another roster is dropped (putRoster); one
+--    from before has no hash and takes the hash of its next save.
 -- 4. expires_at: 14 days after the game day (56 days after the last change
 --    without a kickoff); lib/teams.js sweep() deletes on it, on a timer.
 --
@@ -26,11 +28,12 @@ ALTER TABLE public.game_rosters
   ADD COLUMN IF NOT EXISTS captain_signed_by uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS expires_at timestamptz;
 
+-- a team name is in one club only (db/018 club_teams_name_uidx)
 UPDATE public.game_rosters r SET club_id = ct.club_id, team_id = ct.id
   FROM public.club_teams ct
  WHERE r.team_id IS NULL AND lower(btrim(ct.team_name)) = lower(btrim(r.team_name));
 
--- rows no team claims any more: their team is gone
+-- rows no team claims any more: their team is gone or renamed (it sends again)
 DELETE FROM public.game_rosters WHERE team_id IS NULL;
 
 -- signatures from before carry no hash: the sender is the last writer

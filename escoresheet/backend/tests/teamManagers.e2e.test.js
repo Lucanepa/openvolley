@@ -256,8 +256,18 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
     assert.deepEqual(held.json.data.rosters.map((x) => `${x.game_number}|${x.side}`), ['940001|home'])
     // the signatures made ahead name the account that sent them
     assert.equal(held.json.data.rosters[0].coach_signed_by_name, 'coach Test')
+    // a match released by an admin or taken over by the home club holds nothing
+    await sql.query("UPDATE public.matches SET official_game_exempt = true WHERE external_id = 'm-940001'")
+    assert.deepEqual((await call(users.otherscorer, 'GET', '/api/game-rosters?games=940001')).json.data.rosters, [])
     await sql.query("DELETE FROM public.matches WHERE external_id = 'm-940001'")
     assert.deepEqual((await call(users.otherscorer, 'GET', '/api/game-rosters?games=940001')).json.data.rosters, [])
+    // a scorer whose clubs don't play the game: creating its match makes no holder
+    const outsider = await account('outsider', ['scorer'])
+    await sql.query("INSERT INTO public.matches (external_id, status, created_by, game_n, sport_type) VALUES ('m-940001-x', 'setup', $1, 940001, 'indoor')", [outsider.id])
+    assert.deepEqual((await call(outsider, 'GET', '/api/game-rosters?games=940001')).json.data.rosters, [])
+    const notHeld = await call(outsider, 'POST', '/api/game-rosters/used', { game_number: '940001', side: 'home', season, updated_at: sent.updated_at })
+    assert.deepEqual(notHeld.json.data, { used: false, reason: 'gone' })
+    await sql.query("DELETE FROM public.matches WHERE external_id = 'm-940001-x'")
     // every read that hands out a roster is audited (game numbers and sides only)
     const { rows: reads } = await sql.query("SELECT details FROM public.audit_log WHERE action = 'team.roster' AND actor_id = $1 AND details ? 'read'", [users.otherscorer.id])
     assert.ok(reads.some((x) => x.details.read.includes('940001|home')))
@@ -326,6 +336,23 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
     assert.equal(r.coach_signed_by, users.coach.id)
     assert.match(r.coach_signed_hash, /^[0-9a-f]{64}$/)
     assert.deepEqual([r.club_id, r.team_id], [musterdorf.id, h1.id])
+    // a signature from before db/035 (no hash) survives the next save and takes its hash
+    await sql.query("UPDATE public.game_rosters SET coach_signed_hash = NULL WHERE game_number = '940001'")
+    const old = await call(users.coach, 'PUT', path, { players: before.players, staff: before.staff, coach_signature: SIG2 })
+    assert.equal(old.json.data.roster.coach_signature, SIG2)
+    const { rows: [h] } = await sql.query("SELECT coach_signed_hash FROM public.game_rosters WHERE game_number = '940001'")
+    assert.equal(h.coach_signed_hash, r.coach_signed_hash)
+  })
+
+  it('db/035 run again: rows from before go to the team of their name; a name no team has is deleted', async () => {
+    const { readFile } = await import('node:fs/promises')
+    await sql.query(`INSERT INTO public.game_rosters (game_number, season, side, team_name, kickoff) VALUES
+      ('940201', $1, 'home', 'VBC Musterdorf D2', $2), ('940203', $1, 'home', 'VBC Gone H9', $2)`, [season, `${today}T18:00:00`])
+    await sql.query(await readFile(new URL('../db/035_game_rosters_scope.sql', import.meta.url), 'utf8'))
+    const { rows } = await sql.query("SELECT game_number, club_id, team_id FROM public.game_rosters WHERE game_number LIKE '9402%' ORDER BY game_number")
+    assert.deepEqual(rows.map((x) => x.game_number), ['940201'])
+    assert.deepEqual([rows[0].club_id, rows[0].team_id], [musterdorf.id, d2.id])
+    await sql.query("DELETE FROM public.game_rosters WHERE game_number = '940201'")
   })
 
   it('rosters go at expires_at (also without requests) and with their team (db/035)', async () => {
