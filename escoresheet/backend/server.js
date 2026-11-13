@@ -25,7 +25,6 @@ import { fileURLToPath } from 'url'
 import os from 'os'
 import { getHeapStatistics } from 'v8'
 import QRCode from 'qrcode'
-import PocketBase from 'pocketbase'
 import { SECRET_COLUMNS, redactSecrets } from './lib/secrets.js'
 // realtimeHub only needs `ws` and node core, so the LAN/SEA bundle can import it
 // statically. It is only *instantiated* in DATABASE_URL mode.
@@ -125,73 +124,6 @@ try {
 // X-OV-Proto this server requires for writes (pgQuery minWriteProto).
 const MIN_WRITE_PROTO = 2
 
-// --- PocketBase backup client (server-side only, parallel to Supabase) ---
-const POCKETBASE_URL = process.env.POCKETBASE_URL
-const POCKETBASE_ADMIN_EMAIL = process.env.POCKETBASE_ADMIN_EMAIL
-const POCKETBASE_ADMIN_PASSWORD = process.env.POCKETBASE_ADMIN_PASSWORD
-
-let pbClient = null
-let pbReady = false
-
-async function ensurePocketBaseCollection() {
-  if (!pbReady || !pbClient) return
-  try {
-    await pbClient.collections.getOne('matches')
-  } catch (err) {
-    if (err.status === 404) {
-      console.log('[PocketBase] Creating "matches" collection...')
-      await pbClient.collections.create({
-        name: 'matches',
-        type: 'base',
-        fields: [
-          { name: 'match_id', type: 'text', required: true },
-          { name: 'external_id', type: 'text' },
-          { name: 'status', type: 'text' },
-          { name: 'sport_type', type: 'text' },
-          { name: 'game_number', type: 'number' },
-          { name: 'match_data', type: 'json' },
-          { name: 'home_team', type: 'json' },
-          { name: 'away_team', type: 'json' },
-          { name: 'home_players', type: 'json' },
-          { name: 'away_players', type: 'json' },
-          { name: 'sets', type: 'json' },
-          { name: 'events', type: 'json' },
-          { name: 'updated_at', type: 'text' }
-        ],
-        indexes: [
-          'CREATE UNIQUE INDEX idx_match_id ON matches (match_id)'
-        ]
-      })
-      console.log('[PocketBase] "matches" collection created successfully')
-    } else {
-      throw err
-    }
-  }
-}
-
-async function initPocketBase() {
-  if (!POCKETBASE_URL || !POCKETBASE_ADMIN_EMAIL || !POCKETBASE_ADMIN_PASSWORD) return
-  try {
-    pbClient = new PocketBase(POCKETBASE_URL)
-    pbClient.autoCancellation(false)
-    await pbClient.collection('_superusers').authWithPassword(POCKETBASE_ADMIN_EMAIL, POCKETBASE_ADMIN_PASSWORD)
-    pbReady = true
-    console.log('[PocketBase] Admin client: CONFIGURED and AUTHENTICATED')
-    await ensurePocketBaseCollection()
-    await loadMatchesFromPocketBase()
-  } catch (err) {
-    if (pbReady) {
-      console.error('[PocketBase] Post-auth initialization error:', err.message)
-    } else {
-      pbClient = null
-      console.warn('[PocketBase] Admin client: FAILED to authenticate -', err.message)
-    }
-  }
-}
-
-// Initialize asynchronously (non-blocking — server starts regardless)
-if (POCKETBASE_URL) initPocketBase()
-
 // Tables /api/db may touch ('teams' was dropped: the table no longer exists;
 // beach_competition_matches is not read or written by any client and stays
 // server-side). Columns are checked against the live catalog by
@@ -212,7 +144,6 @@ const REFEREE_DIRECTORY_UPDATABLE = new Set(['sport_type'])
 // every 10 s, referee and bench fetches). 200 ran out at about 12 matches in
 // the national peak load test (2026-10-26, literal halls).
 const DB_RATE_LIMIT_MAX = 1000
-const AUTH_RATE_LIMIT_MAX = 10 // PocketBase PIN proof
 const EMAIL_RATE_LIMIT_MAX = 3
 const ICAL_RATE_LIMIT_MAX = 10
 // Venue-NAT sized buckets (plan §4 Phase 2/3, §9): one address may carry a whole hall.
@@ -1172,144 +1103,6 @@ try {
 }
 console.log(`[Relay] memory for match data: ${Math.round(RELAY_MEMORY.total / 1048576)} MB, ${Math.round(RELAY_MEMORY.perAddress / 1048576)} MB per address`)
 
-// --- PocketBase sync (5s trailing-edge debounce) ---
-const PB_SYNC_DEBOUNCE_MS = 5000
-const pbPendingSync = new Map() // matchId → { data, timer }
-const pbSyncedMatches = new Set() // track which matches have been synced at least once
-
-function syncToPocketBase(matchId, matchData) {
-  if (!pbReady || !pbClient) return
-  const existing = pbPendingSync.get(matchId)
-  if (existing) {
-    existing.data = matchData // overwrite with latest snapshot
-    return // timer already running
-  }
-  const entry = { data: matchData, timer: null }
-  entry.timer = setTimeout(() => {
-    pbPendingSync.delete(matchId)
-    executePocketBaseSync(matchId, entry.data)
-  }, PB_SYNC_DEBOUNCE_MS)
-  pbPendingSync.set(matchId, entry)
-}
-
-async function executePocketBaseSync(matchId, matchData) {
-  if (!pbReady || !pbClient) return
-  try {
-    const payload = {
-      match_id: String(matchId),
-      external_id: matchData.match?.external_id || matchData.match?.seed_key || '',
-      status: matchData.match?.status || 'unknown',
-      sport_type: matchData.sportType || matchData.match?.sport_type || 'indoor',
-      game_number: matchData.match?.gameN || matchData.match?.gameNumber || matchData.match?.game_n || 0,
-      match_data: matchData.match || {},
-      home_team: matchData.homeTeam || {},
-      away_team: matchData.awayTeam || {},
-      home_players: matchData.homePlayers || [],
-      away_players: matchData.awayPlayers || [],
-      sets: matchData.sets || [],
-      events: matchData.events || [],
-      updated_at: new Date().toISOString()
-    }
-    try {
-      const existing = await pbClient.collection('matches').getFirstListItem(
-        pbClient.filter('match_id = {:id}', { id: String(matchId) })
-      )
-      await pbClient.collection('matches').update(existing.id, payload)
-    } catch (findErr) {
-      if (findErr.status === 404) {
-        await pbClient.collection('matches').create(payload)
-      } else {
-        throw findErr
-      }
-    }
-    // Only log first sync per match to keep logs clean
-    if (!pbSyncedMatches.has(matchId)) {
-      pbSyncedMatches.add(matchId)
-      console.log(`[PocketBase] First sync for match ${matchId}`)
-    }
-  } catch (err) {
-    if (err.status === 401) {
-      console.warn('[PocketBase] Auth expired, re-authenticating...')
-      pbReady = false
-      try {
-        await pbClient.collection('_superusers').authWithPassword(POCKETBASE_ADMIN_EMAIL, POCKETBASE_ADMIN_PASSWORD)
-        pbReady = true
-        executePocketBaseSync(matchId, matchData)
-      } catch (reAuthErr) {
-        console.error('[PocketBase] Re-authentication failed:', reAuthErr.message)
-      }
-      return
-    }
-    console.error(`[PocketBase] Sync failed for match ${matchId}:`, err.message)
-  }
-}
-
-// Relay room cleanup must not destroy the backup: mark the record retired
-// (skipped by startup recovery) instead of deleting it.
-async function retirePocketBaseMatch(matchId) {
-  // Cancel any pending debounced sync
-  const pending = pbPendingSync.get(matchId)
-  if (pending) { clearTimeout(pending.timer); pbPendingSync.delete(matchId) }
-  pbSyncedMatches.delete(matchId)
-  if (!pbReady || !pbClient) return
-  try {
-    const existing = await pbClient.collection('matches').getFirstListItem(
-      pbClient.filter('match_id = {:id}', { id: String(matchId) })
-    )
-    try {
-      await pbClient.collection('matches').update(existing.id, { status: 'deleted', updated_at: new Date().toISOString() })
-    } catch (err) {
-      // executePocketBaseSync stores any match status ('unknown' included), so
-      // `status` is free text in practice; a deployment whose schema made it a
-      // select field would reject 'deleted'. 'final' is skipped by recovery too.
-      if (err.status !== 400) throw err
-      await pbClient.collection('matches').update(existing.id, { status: 'final', updated_at: new Date().toISOString() })
-    }
-    // Retired records stay in the restore list (with their status): retiring
-    // exists precisely so a cleared relay match can still be restored.
-    console.log(`[PocketBase] Retired match ${matchId}`)
-  } catch (err) {
-    if (err.status !== 404) console.error(`[PocketBase] Retire failed for match ${matchId}:`, err.message)
-  }
-}
-
-async function loadMatchesFromPocketBase() {
-  if (!pbReady || !pbClient) return
-  try {
-    const records = await pbClient.collection('matches').getFullList({ sort: '-updated_at' })
-    let loaded = 0
-    for (const record of records) {
-      const matchId = record.match_id
-      if (!matchId || record.status === 'final' || record.status === 'deleted' || activeMatches.has(matchId)) continue
-      activeMatches.set(matchId, {
-        matchId,
-        match: record.match_data || {},
-        homeTeam: record.home_team || {},
-        awayTeam: record.away_team || {},
-        homePlayers: record.home_players || [],
-        awayPlayers: record.away_players || [],
-        sets: record.sets || [],
-        events: record.events || [],
-        gameNumber: record.game_number || record.match_data?.gameN,
-        sportType: record.sport_type === 'beach' ? 'beach' : 'indoor',
-        updatedAt: record.updated_at || record.updated,
-        updatedBy: 'pocketbase-recovery',
-        orphanedAt: Date.now() // no scoreboard connected yet
-      })
-      rooms.set(matchId, {
-        matchId,
-        clients: new Set(),
-        createdAt: new Date().toISOString(),
-        lastActivity: Date.now()
-      })
-      loaded++
-    }
-    if (loaded > 0) console.log(`[PocketBase] Recovered ${loaded} active match(es) from backup`)
-  } catch (err) {
-    console.error('[PocketBase] Failed to load matches on startup:', err.message)
-  }
-}
-
 // --- Input validation constants ---
 const VALID_ROLES = ['scoreboard', 'referee', 'bench', 'subscriber', 'livescore']
 const VALID_TEAMS = ['home', 'away']
@@ -1384,10 +1177,9 @@ const CONTACT_RATE_LIMIT_MAX = 3
 // One Map per category so counters don't interfere across endpoint types
 const rateLimitMaps = {
   default: new Map(),   // validate-pin, etc.
-  relay: new Map(),     // relay reads: /api/match/list|:id, /api/server/connections, /api/pocketbase/*
+  relay: new Map(),     // relay reads: /api/match/list|:id, /api/server/connections
   contact: new Map(),   // /api/contact
   email: new Map(),     // /api/match/send-info
-  auth: new Map(),      // PocketBase PIN proof (lib/auth.js has its own buckets)
   ical: new Map(),      // /api/official-matches
   db: new Map(),        // /api/db reads, per IP
   dbWrite: new Map(),   // /api/db writes, per user id
@@ -2199,8 +1991,7 @@ function handleHttpRequest(req, res) {
       connections: connections.size,
       matches: activeMatches.size,
       rooms: rooms.size,
-      uptime: process.uptime(),
-      pocketbase: pbReady ? 'connected' : (POCKETBASE_URL ? 'configured' : 'not_configured')
+      uptime: process.uptime()
     }))
     return
   }
@@ -2219,127 +2010,6 @@ function handleHttpRequest(req, res) {
       console.error('[Sign] request failed:', err?.message)
       sendJson(res, 503, signError(503, 'OV_SIGN_UNAVAILABLE').body, SIGN_API_HEADERS)
     })
-    return
-  }
-
-  // PocketBase matches list (for restore UI)
-  if (url.pathname === '/api/pocketbase/matches' && req.method === 'GET') {
-    const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, DB_RATE_LIMIT_MAX, 'relay')) {
-      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
-      res.end(JSON.stringify({ data: [], error: 'Rate limited' }))
-      return
-    }
-    if (!pbReady || !pbClient) {
-      res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ data: [], error: 'pocketbase_not_available' }))
-      return
-    }
-    ;(async () => {
-      try {
-        const gameNumber = url.searchParams.get('game_number')
-        const sportType = url.searchParams.get('sport_type')
-        const filterParams = {}
-        const filterParts = []
-        if (gameNumber) {
-          filterParts.push('game_number = {:gn}')
-          filterParams.gn = parseInt(gameNumber)
-        }
-        if (sportType && /^(indoor|beach)$/.test(sportType)) {
-          filterParts.push('sport_type = {:st}')
-          filterParams.st = sportType
-        }
-        const filter = filterParts.length
-          ? pbClient.filter(filterParts.join(' && '), filterParams)
-          : undefined
-        const records = await pbClient.collection('matches').getFullList({
-          sort: '-updated_at',
-          filter,
-          fields: 'id,match_id,external_id,status,sport_type,game_number,updated_at,home_team,away_team,sets'
-        })
-        res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ data: records }))
-      } catch (err) {
-        res.writeHead(500, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ data: [], error: err.message }))
-      }
-    })()
-    return
-  }
-
-  // PocketBase single match (full snapshot for restore)
-  if (url.pathname.startsWith('/api/pocketbase/matches/') && req.method === 'GET') {
-    const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, DB_RATE_LIMIT_MAX, 'relay')) {
-      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
-      res.end(JSON.stringify({ data: null, error: 'Rate limited' }))
-      return
-    }
-    if (!pbReady || !pbClient) {
-      res.writeHead(503, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ data: null, error: 'pocketbase_not_available' }))
-      return
-    }
-    const matchId = decodeURIComponent(url.pathname.split('/api/pocketbase/matches/')[1])
-    if (!matchId) {
-      res.writeHead(400, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ data: null, error: 'match_id required' }))
-      return
-    }
-    // The backup's match_data holds every connection PIN. Anonymous callers get
-    // it stripped; a restore that presents the match's game PIN gets it whole.
-    const proofPin = url.searchParams.get('gamePin')
-    const pinIpKey = ipBucketKey(clientIp)
-    if (proofPin && isRateLimited(pinIpKey, AUTH_RATE_LIMIT_MAX, 'auth')) {
-      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
-      res.end(JSON.stringify({ data: null, error: 'Rate limited' }))
-      return
-    }
-    // A game PIN offered here is a guess like any other PIN check: counted in
-    // the brute-force budget, in this match's game-PIN scope (refunded when it
-    // proves the backup).
-    const pinScopeKey = pinScope.match(matchId, 'game')
-    if (proofPin && pinFailureLimiter.isLimited(pinIpKey, pinScopeKey)) {
-      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '600' })
-      res.end(JSON.stringify({ data: null, error: 'Too many failed attempts. Please wait 10 minutes before trying again.' }))
-      return
-    }
-    ;(async () => {
-      try {
-        const record = await pbClient.collection('matches').getFirstListItem(
-          pbClient.filter('match_id = {:id}', { id: String(matchId) })
-        )
-        const storedPin = gamePinOf(record.match_data)
-        const proven = !!(proofPin && storedPin && safeEqualStr(String(proofPin).trim(), storedPin))
-        if (proofPin && (proven || !storedPin)) pinFailureLimiter.refund(pinIpKey, pinScopeKey)
-        if (proofPin && storedPin && !proven) {
-          // A restore with the wrong game PIN gets a clear refusal, not a
-          // silently PIN-less match.
-          res.writeHead(403, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ data: null, error: 'Game PIN does not match this backup' }))
-          return
-        }
-        // Without the game PIN: no PINs and no personal data (rosters' dates
-        // of birth, officials, signatures), like the relay.
-        const data = proven ? record : {
-          ...record,
-          match_data: publicMatch(record.match_data),
-          home_players: publicPeople(record.home_players),
-          away_players: publicPeople(record.away_players)
-        }
-        res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ data }))
-      } catch (err) {
-        if (proofPin) pinFailureLimiter.refund(pinIpKey, pinScopeKey) // no PIN was compared
-        if (err.status === 404) {
-          res.writeHead(404, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ data: null, error: 'Match not found' }))
-        } else {
-          res.writeHead(500, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ data: null, error: err.message }))
-        }
-      }
-    })()
     return
   }
 
@@ -5780,9 +5450,6 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
   broadcastMatchData(matchId, 'match-data-update', activeMatches.get(matchId), message._timestamp, clientInfo.id, { timestamp: new Date().toISOString() })
 
   console.log(`📤 Match data synced for ${matchId} (Game #${match?.gameN || 'unknown'})`)
-
-  // Queue PocketBase backup sync (fire-and-forget, debounced)
-  syncToPocketBase(matchId, { match, sportType, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events })
 }
 
 // Handle match-action from frontend
@@ -5863,7 +5530,6 @@ function handleLiveStateUpdate(clientInfo, message) {
 }
 
 // Remove a match from the relay: tell its room first, then drop room + state.
-// The PocketBase backup is retired, not deleted.
 function removeMatch(matchId) {
   if (liveStateRelay) {
     const key = matchKeyFromSyncedMatch(activeMatches.get(matchId)?.match)
@@ -5882,7 +5548,6 @@ function removeMatch(matchId) {
   displacedPins.delete(matchId)
   benchRequests.drop(matchId)
   for (const c of connections.values()) c.ownedMatches.delete(matchId)
-  retirePocketBaseMatch(matchId)
 }
 
 // Handle clear-all-matches: only ever the sender's OWN (proven) matches —
@@ -6198,7 +5863,6 @@ server.listen(PORT, () => {
 ║
 ║  Port: ${PORT}   Status: READY
 ║  Static files: ${HAS_STATIC ? 'YES' : 'NO'}
-║  PocketBase: ${pbReady ? 'CONNECTED' : POCKETBASE_URL ? 'CONNECTING...' : 'NOT CONFIGURED'}
 ║
 ${ipLines || `  📡 http://localhost:${PORT}`}
 ║

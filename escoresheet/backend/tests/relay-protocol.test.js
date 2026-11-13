@@ -1,7 +1,7 @@
 /**
  * Contract test for the backend WebSocket relay: same client-facing protocol as
  * the LAN relays (frontend/electron/lanRelayCore.cjs). Boots server.js in local
- * mode (no Supabase, no PocketBase) on a random port.
+ * mode (no Supabase) on a random port.
  */
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -100,7 +100,7 @@ describe('backend WebSocket relay protocol', () => {
   before(async () => {
     port = await freePort()
     const env = { ...process.env, PORT: String(port) }
-    for (const k of ['DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'POCKETBASE_URL', 'IS_CLOUD', 'TRUST_PROXY']) delete env[k]
+    for (const k of ['DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'IS_CLOUD', 'TRUST_PROXY']) delete env[k]
     child = spawn(process.execPath, ['server.js', '--local'], { cwd: BACKEND_DIR, env, stdio: 'ignore' })
     const start = Date.now()
     for (;;) {
@@ -800,7 +800,7 @@ describe('backend relay in cloud mode (IS_CLOUD)', () => {
   before(async () => {
     port = await freePort()
     const env = { ...process.env, PORT: String(port), IS_CLOUD: '1' }
-    for (const k of ['DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'POCKETBASE_URL', 'TRUST_PROXY']) delete env[k]
+    for (const k of ['DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'TRUST_PROXY']) delete env[k]
     child = spawn(process.execPath, ['server.js', '--local'], { cwd: BACKEND_DIR, env, stdio: 'ignore' })
     const start = Date.now()
     for (;;) {
@@ -858,6 +858,19 @@ describe('backend relay in cloud mode (IS_CLOUD)', () => {
     const { wire, bytes } = await bundleOnTheWire(`ws://127.0.0.1:${port}`, { id: 44, seed: 'match_1791215210060_cdefla', gamePin: '444444' })
     assert.ok(wire >= bytes, 'the bundle arrived as a plain frame')
   })
+
+  // The PocketBase snapshot backup is gone (it was never deployed): no
+  // anonymous backup list, no snapshot read with the game PIN in the URL.
+  it('the PocketBase backup routes are gone', async () => {
+    for (const path of ['/api/pocketbase/matches', '/api/pocketbase/matches?game_number=1', '/api/pocketbase/matches/7?gamePin=987654']) {
+      const res = await fetch(`http://127.0.0.1:${port}${path}`)
+      assert.equal(res.status, 404, path)
+      await res.arrayBuffer()
+    }
+    const status = await (await fetch(`http://127.0.0.1:${port}/api/server/status`)).json()
+    assert.equal(status.status, 'online')
+    assert.equal('pocketbase' in status, false)
+  })
 })
 
 describe('backend relay in cloud mode behind Cloudflare: a hall behind one address', () => {
@@ -868,7 +881,7 @@ describe('backend relay in cloud mode behind Cloudflare: a hall behind one addre
   before(async () => {
     port = await freePort()
     const env = { ...process.env, PORT: String(port), IS_CLOUD: '1', TRUST_PROXY: 'cloudflare' }
-    for (const k of ['DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'POCKETBASE_URL', 'TRUST_PROXY_FROM']) delete env[k]
+    for (const k of ['DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'TRUST_PROXY_FROM']) delete env[k]
     child = spawn(process.execPath, ['server.js', '--local'], { cwd: BACKEND_DIR, env, stdio: 'ignore' })
     const start = Date.now()
     for (;;) {

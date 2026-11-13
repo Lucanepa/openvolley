@@ -63,7 +63,7 @@ describe('venue mode: the --local relay serves several beach courts', () => {
   before(async () => {
     port = await freePort()
     const env = { ...process.env, PORT: String(port) }
-    for (const k of ['DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'POCKETBASE_URL', 'IS_CLOUD', 'TRUST_PROXY']) delete env[k]
+    for (const k of ['DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'IS_CLOUD', 'TRUST_PROXY']) delete env[k]
     child = spawn(process.execPath, ['server.js', '--local'], { cwd: BACKEND_DIR, env, stdio: 'ignore' })
     const start = Date.now()
     for (;;) {

@@ -78,7 +78,7 @@ import {
 } from './constants/testSeeds'
 import { apiFrom, apiMatchRestoreByPin, writingDevice } from './lib/apiClient'
 import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
-import { fetchMatchByPin, fetchMatchToContinue, importMatchFromSupabase, cloudBestOf, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, listPocketBaseBackups, fetchPocketBaseMatch, matchBackupFromFile, restoreErrorText } from './utils/backupManager'
+import { fetchMatchByPin, fetchMatchToContinue, importMatchFromSupabase, cloudBestOf, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, matchBackupFromFile, restoreErrorText } from './utils/backupManager'
 import UpdateBanner from './components/UpdateBanner'
 import DesktopUpdateNotice from './components/DesktopUpdateNotice'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from './utils/matchFormat'
@@ -4213,13 +4213,12 @@ export default function App() {
                           setCloudBackupError('')
                           try {
                             const gameN = parseInt(cloudBackupGameN) || 1
-                            // Fetch the cloud backups, PocketBase and the cloud match itself in parallel.
+                            // Fetch the cloud backups and the cloud match itself in parallel.
                             // Backups are per account: a replacement tablet signed in with another
                             // account lists none, but game number + game PIN still find the match
                             // (restore-by-pin; signed in, it also makes this account an editor).
-                            const [cloudResults, pbResults, dbMatch] = await Promise.all([
+                            const [cloudResults, dbMatch] = await Promise.all([
                               listCloudBackups(cloudBackupPin, gameN).catch(() => []),
-                              listPocketBaseBackups(gameN).catch(() => []),
                               fetchMatchByPin(cloudBackupPin, gameN).catch(() => null)
                             ])
                             // Tag cloud results with source
@@ -4233,7 +4232,7 @@ export default function App() {
                               cloudData: dbMatch
                             }] : []
                             // Merge and sort by most recent first
-                            const merged = [...dbEntries, ...taggedCloud, ...pbResults].sort((a, b) => {
+                            const merged = [...dbEntries, ...taggedCloud].sort((a, b) => {
                               const dateA = a.created || a.updated_at || ''
                               const dateB = b.created || b.updated_at || ''
                               return dateB.localeCompare(dateA)
@@ -4269,12 +4268,7 @@ export default function App() {
                                   setRestorePreviewData({ data: backup.cloudData, source: 'database' })
                                   return
                                 }
-                                let cloudData
-                                if (backup.source === 'pocketbase') {
-                                  cloudData = await fetchPocketBaseMatch(backup.match_id, cloudBackupPin)
-                                } else {
-                                  cloudData = await fetchCloudBackup(backup.path)
-                                }
+                                const cloudData = await fetchCloudBackup(backup.path)
                                 if (!cloudData) {
                                   setRestoreError(t('options.alerts.failedToLoadBackupData'))
                                   setRestoreLoading(false)

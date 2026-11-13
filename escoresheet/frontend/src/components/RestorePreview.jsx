@@ -13,7 +13,6 @@ const SIDES = ['home', 'away']
 
 const SOURCE_PILL = {
   database: 'bg-sky-100 text-sky-800',
-  pocketbase: 'bg-emerald-100 text-emerald-800',
   cloud: 'bg-violet-100 text-violet-800',
   local: 'bg-amber-100 text-amber-800'
 }
@@ -61,9 +60,8 @@ export default function RestorePreview({ data, source, backupName }) {
   const tp = (key, opts) => t(`settings.backup.preview.${key}`, opts)
 
   const sourceLabel = source === 'database' ? t('settings.backup.fromDatabase', 'From database')
-    : source === 'pocketbase' ? 'PocketBase backup'
-      : source === 'cloud' ? t('settings.backup.restoreFromCloudBackup')
-        : t('settings.backup.fromLocalFile')
+    : source === 'cloud' ? t('settings.backup.restoreFromCloudBackup')
+      : t('settings.backup.fromLocalFile')
   const hasSubs = s.substitutions.home.length > 0 || s.substitutions.away.length > 0
 
   return (

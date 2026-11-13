@@ -6,7 +6,7 @@
  * useSyncQueue, useSequentialSync, and backupManager — e.g. the valid-columns
  * whitelist (backupManager's copy was missing `sport_type`) and the JSONB
  * merge-column list. Keeping it in one module also makes a future backend swap
- * (self-hosted Postgres / PocketBase) a single-file change.
+ * a single-file change.
  */
 
 // Valid columns on the Supabase `matches` table. Payloads are filtered to these
