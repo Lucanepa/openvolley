@@ -611,15 +611,17 @@ Admins see emails (it is their job). No endpoint ever returns PINs, password has
 ### 5.5 Saved teams (`/api/saved-teams*`)
 GET needs `canReadTeams`, and writes need `canManageTeams` (else 403 `OV_FORBIDDEN`). Anonymous requests get 401. Pending accounts get 403.
 
+Owner decision 1 (rollout audit, 2026-11): competition managers and admins read every saved team. An account that only reads the indoor saved teams (a scorer) gets those of its own matches in the current season: the teams of its clubs, the teams they meet at home in the schedule (`svrz_games`) and the teams of the official games of the matches it created or edits this season, of competitions of the current season that are not archived (lib/savedTeams.js getBundle `scope`). The deletes and roster replacements are audited (`saved_teams.competition_delete`, `saved_teams.team_delete`, `saved_teams.roster`: ids, name, counts); a competition that still has teams and a team that still has people are deleted only with `?confirm=<their name>` (400 `OV_CONFIRM_NAME`).
+
 | Method, path | Body | 200/201 `data` |
 |---|---|---|
 | `GET /api/saved-teams` | none | `Bundle` (below) |
 | `POST /api/saved-teams/competitions` | `{ name, season: "2026/27", gender?: "men"\|"women"\|"mixed"\|null, category?: str\|null, vm_leagues?: str[] (≤ 20, each ≤ 60) }` | **201** `{ competition }` |
 | `PATCH /api/saved-teams/competitions/:id` | Any subset of the above, plus `archived: bool` | `{ competition }` |
-| `DELETE /api/saved-teams/competitions/:id` | none | `{ "deleted": true }` (cascades) |
+| `DELETE /api/saved-teams/competitions/:id[?confirm=<name>]` | none | `{ "deleted": true }` (cascades) |
 | `POST /api/saved-teams/teams` | `{ competition_id, name, short_name?, club?, color?: "#rrggbb", svrz_team_name? }` | **201** `{ team }` (with `players: []`, `staff: []`). 409 `OV_DUPLICATE`. |
 | `PATCH /api/saved-teams/teams/:id` | Any subset of the team fields (not `competition_id`) | `{ team }` |
-| `DELETE /api/saved-teams/teams/:id` | none | `{ "deleted": true }` |
+| `DELETE /api/saved-teams/teams/:id[?confirm=<name>]` | none | `{ "deleted": true }` |
 | `PUT /api/saved-teams/teams/:id/roster` | `{ players: [Player], staff: [Staff] }` | `{ team }` with the new roster |
 
 Roster validation (400 `OV_INVALID_REQUEST`, `details` names the row index):

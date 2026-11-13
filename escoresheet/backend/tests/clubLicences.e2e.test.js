@@ -152,30 +152,32 @@ describe('club licence lists', { skip: SKIP }, () => {
     assert.deepEqual(own.json.data.lists.players, { count: 0, manual: 0, imported_at: null, imported_by_name: null })
   })
 
-  it('the team manager reads the club\'s lists through its team only, with the team\'s gender', async () => {
+  it('the team manager reads the club\'s players of its team\'s gender only, without dates of birth', async () => {
     const r = await call(users.coach, 'GET', `/api/team/${h1.id}/club-players`)
     assert.equal(r.status, 200, r.text)
     assert.equal(r.json.data.gender, 'm')
+    assert.equal(r.json.data.age_class, null)
     assert.equal(r.json.data.team.club_id, musterdorf.id)
-    // players: the players list (the player rows, as before)
-    assert.deepEqual(r.json.data.players.map((p) => p.sv_number), ['100001', '100002', '100003', '100004'])
+    // owner decision 2: players of the team's gender (and those without one), filtered by the server
+    assert.deepEqual(r.json.data.players.map((p) => p.sv_number), ['100003', '100004'])
     assert.deepEqual(Object.keys(r.json.data.players[0]).sort(), READ)
-    assert.ok(r.json.data.players.every((p) => p.manual === false))
-    // people: everyone of the three lists once, with its lists (the team officials)
-    assert.deepEqual(r.json.data.people.map((p) => [p.sv_number, p.lists]), [
-      ['100001', ['players']], ['100002', ['players']], ['100003', ['players', 'coaches']], ['100004', ['players']], ['200001', ['coaches']]
-    ])
+    assert.ok(r.json.data.players.every((p) => p.manual === false && p.dob === null))
+    // people: those players with their lists (the saved team is empty yet); an official of the club is searched for
+    assert.deepEqual(r.json.data.people.map((p) => [p.sv_number, p.lists]), [['100003', ['players', 'coaches']], ['100004', ['players']]])
     assert.deepEqual(Object.keys(r.json.data.people[0]).sort(), [...READ, 'lists'].sort())
-    assert.deepEqual(r.json.data.people.find((p) => p.sv_number === '200001'), { ...COACH, manual: false, lists: ['coaches'] })
     // not the club's other teams
     assert.equal((await call(users.coach, 'GET', `/api/team/${d1.id}/club-players`)).status, 403)
     assert.equal((await call(users.stranger, 'GET', `/api/team/${h1.id}/club-players`)).status, 403)
-    // the club manager acts for each team; a mixed team has no gender
-    assert.equal((await call(users.clubmgr, 'GET', `/api/team/${d1.id}/club-players`)).json.data.gender, 'f')
-    assert.equal((await call(users.clubmgr, 'GET', `/api/team/${mixed.id}/club-players`)).json.data.gender, null)
+    // the club manager acts for each team; a mixed team has no gender (no filter)
+    const women = await call(users.clubmgr, 'GET', `/api/team/${d1.id}/club-players`)
+    assert.equal(women.json.data.gender, 'f')
+    assert.deepEqual(women.json.data.players.map((p) => p.sv_number), ['100001', '100002'])
+    const mix = await call(users.clubmgr, 'GET', `/api/team/${mixed.id}/club-players`)
+    assert.equal(mix.json.data.gender, null)
+    assert.deepEqual(mix.json.data.players.map((p) => p.sv_number), ['100001', '100002', '100003', '100004'])
   })
 
-  it('a scorer downloads the lists of its own clubs only', async () => {
+  it('a scorer downloads the lists of its own clubs only, without dates of birth', async () => {
     const r = await call(users.scorer, 'GET', '/api/club-licences')
     assert.equal(r.status, 200, r.text)
     assert.equal(r.json.data.clubs.length, 1)
@@ -190,7 +192,9 @@ describe('club licence lists', { skip: SKIP }, () => {
     assert.deepEqual(c.people.map((p) => [p.last_name, p.lists]), [
       ['Beispiel', ['players']], ['Muster', ['players']], ['Probe', ['players', 'coaches']], ['Testmann', ['players']], ['Trainer', ['coaches']]
     ])
-    assert.deepEqual(c.people.find((p) => p.sv_number === '100003'), { ...MARCO, manual: false, lists: ['players', 'coaches'] })
+    assert.deepEqual(c.people.find((p) => p.sv_number === '100003'), { ...MARCO, dob: null, manual: false, lists: ['players', 'coaches'] })
+    // owner decision 2: the tablet keeps no date of birth
+    assert.ok([...c.players, ...c.people].every((p) => p.dob === null))
     const o = await call(users.otherscorer, 'GET', '/api/club-licences')
     assert.equal(o.status, 200, o.text)
     assert.deepEqual(o.json.data.clubs.map((x) => [x.club_id, x.players.length, x.people.length]), [[other.id, 0, 0]])
@@ -258,7 +262,9 @@ describe('club licence lists', { skip: SKIP }, () => {
     assert.deepEqual(by['200001'].teams.map((t) => [t.id, t.name]), [[h1.id, 'VBC Musterdorf H1']])
     assert.deepEqual(by['100004'].teams.map((t) => t.name), ['VBC Musterdorf H1'])
     assert.equal(by['100004'].dob, null)
-    assert.deepEqual(Object.keys(by['100001']).sort(), ['dob', 'first_name', 'gender', 'last_name', 'lists', 'manual', 'sv_number', 'teams'])
+    assert.deepEqual(Object.keys(by['100001']).sort(), ['dob', 'first_name', 'gender', 'hand_rows', 'id', 'last_name', 'lists', 'manual', 'sv_number', 'teams'])
+    assert.match(by['100001'].id, /^[0-9a-f-]{36}$/)
+    assert.deepEqual(by['100001'].hand_rows, [])
     assert.deepEqual([d.lists.players.manual, d.lists.coaches.manual, d.lists.scorers.manual], [0, 0, 0])
   })
 

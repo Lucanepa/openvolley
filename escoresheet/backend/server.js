@@ -224,7 +224,7 @@ function manageFamilyOf(pathname) {
   if (pathname === '/api/games/today') return 'games'
   if (pathname.startsWith('/api/team/')) return 'team'
   if (pathname === '/api/game-rosters' || pathname.startsWith('/api/game-rosters/')) return 'gameRosters'
-  if (pathname === '/api/club-licences') return 'clubLicences'
+  if (pathname === '/api/club-licences' || pathname.startsWith('/api/club-licences/')) return 'clubLicences'
   if (pathname === '/api/settings') return 'settings'
   if (pathname === '/api/notifications' || pathname === '/api/notifications/read') return 'notifications'
   return null
@@ -347,7 +347,8 @@ function getDataLayer() {
     const accounts = acc.createAccounts({ pool: db.pool, db, restore, access, approvalsForMatches: approvals.approvalsForMatches, clubs: () => clubs, teams: () => teams, requests: () => requests, eraseAccount: auth.eraseAccount })
     // db/029: a club manager link for someone not linked to the club, mailed
     clubs = cl.createClubs({ pool: db.pool, audit: accounts.audit, access, createInvite: accounts.createInvite, mailer })
-    const savedTeams = svt.createSavedTeams({ pool: db.pool })
+    // Saved teams; deletes and roster replacements are audited
+    const savedTeams = svt.createSavedTeams({ pool: db.pool, audit: accounts.audit })
     // A club's licence lists (db/024, lib/licences.js): My club, "Add from club", the gender check
     const licences = lic.createLicences({ pool: db.pool, audit: accounts.audit, clubs })
     teams = tms.createTeams({ pool: db.pool, audit: accounts.audit, savedTeams, clubs, licences })
@@ -365,7 +366,7 @@ function getDataLayer() {
     const manage = mg.createManageApi({ accounts, savedTeams, beach, approvals, revisions, activity, scoresheets, clubs, finalMail, teams, licences, requests, notices })
     // The active scoring device of each match (db/019, the scoring-device handover)
     const scorer = sd.createScorerDevices({ pool: db.pool, db, audit: accounts.audit })
-    dataLayer = { db, restore, auth, storage, pins, access, accounts, savedTeams, beach, approvals, manage, requests, revisions, activity, scoresheets, scorer, finalMail, isScoresheetPdf: ss.isScoresheetPdf, isMatchScoresheetFile: ss.isMatchScoresheetFile, isScoresheetUploadPath: ss.isScoresheetUploadPath, activityCsvLine: act.csvLine, activityCsvColumns: act.CSV_COLUMNS, publicClaim: og.publicClaim, sendAuthResult: au.sendAuthResult, AUTH_ACTIONS: au.AUTH_ACTIONS, ipKey: au.ipBucketKey }
+    dataLayer = { db, restore, auth, storage, pins, access, accounts, savedTeams, licences, teams, beach, approvals, manage, requests, revisions, activity, scoresheets, scorer, finalMail, isScoresheetPdf: ss.isScoresheetPdf, isMatchScoresheetFile: ss.isMatchScoresheetFile, isScoresheetUploadPath: ss.isScoresheetUploadPath, activityCsvLine: act.csvLine, activityCsvColumns: act.CSV_COLUMNS, publicClaim: og.publicClaim, sendAuthResult: au.sendAuthResult, AUTH_ACTIONS: au.AUTH_ACTIONS, ipKey: au.ipBucketKey }
     return dataLayer
   })
   return dataLayerPromise
@@ -5792,6 +5793,16 @@ if (DB_MODE) {
     }
     setTimeout(runSweep, 5 * 60 * 1000).unref()
     setInterval(runSweep, 24 * 60 * 60 * 1000).unref()
+    // Personal data kept for a time only: the club licence lists of past
+    // seasons (db/037, lib/licences.js) and the sent game rosters 14 days
+    // after their game (lib/teams.js, also run by its routes): 15 min after
+    // start, then daily, also without any request
+    const sweepClubData = () => Promise.all([
+      layer.licences.sweep(),
+      layer.teams.sweep({ force: true })
+    ]).catch((err) => console.warn('[Club data] sweep failed:', err.message))
+    setTimeout(sweepClubData, 15 * 60 * 1000).unref()
+    setInterval(sweepClubData, 24 * 60 * 60 * 1000).unref()
     // The final scoresheet by email (db/021, lib/finalMail.js): every minute
     // (FINAL_MAIL_SWEEP_MS), cloud only (a venue relay has no mailer). It
     // sends nothing while the Settings switch is off.
