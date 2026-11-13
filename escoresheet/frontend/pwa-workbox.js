@@ -27,7 +27,9 @@ export const PRECACHE_GLOB_PATTERNS = ['**/*.{js,mjs,css,html,ico,png,jpg,jpeg,s
 // scorers work offline.
 export const PRECACHE_MAX_FILE_BYTES = 8 * 1024 * 1024
 
-export const PRECACHE_GLOB_IGNORES = ['**/node_modules/**/*', 'sw.js', 'workbox-*.js', 'sign/**']
+// assets/404.html: the page host's answer for a file of the build it no
+// longer has (public/assets/404.html, STATIC_ASSETS_ROUTE), not an app file
+export const PRECACHE_GLOB_IGNORES = ['**/node_modules/**/*', 'sw.js', 'workbox-*.js', 'sign/**', 'assets/404.html']
 export const NAVIGATE_FALLBACK_DENYLIST = [/^\/api\//, /^\/sign(\/|$)/]
 
 // Logo files the pages' heads link to (rendered from brand/ by
@@ -66,6 +68,38 @@ export const IGNORE_URL_PARAMETERS = [/.*/]
 export const API_NETWORK_ONLY_ROUTE = {
   urlPattern: /^https?:\/\/.*\/api\/.*/i,
   handler: 'NetworkOnly'
+}
+
+/**
+ * The build's files (content-hashed scripts, styles, fonts, images): from the
+ * cache first, kept 30 days. An answer in HTML is never one of them: a host
+ * answers a file it no longer has (an older build's lazy chunk, after a newer
+ * release replaced it) with its index.html as a 200, and kept under the
+ * file's address it came back on every later try, for 30 days, so a tab
+ * still on the older build could not load that part again even after the
+ * network was back. Such an answer is passed on as a 404 and never kept:
+ * the import fails at once and vite:preloadError asks for a reload
+ * (useServiceWorker installPreloadErrorNotice). Cloudflare Pages answers a
+ * missing /assets/ file with a 404 itself (public/assets/404.html).
+ *
+ * NOTE: workbox-build stringifies the plugin into sw.js: self-contained.
+ */
+export const STATIC_ASSETS_ROUTE = {
+  urlPattern: /\.(?:js|mjs|css|png|jpg|jpeg|svg|gif|webp|woff|woff2)$/,
+  handler: 'CacheFirst',
+  options: {
+    cacheName: 'static-assets',
+    expiration: {
+      maxEntries: 100,
+      maxAgeSeconds: 60 * 60 * 24 * 30 // 30 days
+    },
+    plugins: [{
+      fetchDidSucceed: async ({ response }) =>
+        /^\s*text\/html/i.test(response.headers.get('content-type') || '')
+          ? new Response(null, { status: 404, statusText: 'Not Found' })
+          : response
+    }]
+  }
 }
 
 /**

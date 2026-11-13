@@ -16,6 +16,7 @@ import { uploadQueuedScoresheet } from '../utils/scoresheetUploader'
 import { ACCESS_CHANGED_EVENT } from '../lib/access'
 import { SCORER_CLAIM_ACTION, SCORER_MOVED, MATCH_CLOSED, SERVER_CLOSED_BY, isScorerMoved, noteScorerMoved, markScorerMoved, hasUnsentClaim, closeMovedMatches, retireIfSuperseded, retireStaleGameCopies, setAsideClosedJobs, setAsideClosedCopies } from '../utils/matchHandover'
 import { RESTORE_REFUSED, partsMayHelp } from '../utils/refusedRestore'
+import { UPDATE_NEEDED_SERVER, noteAppUpdateNeeded, clearAppUpdateNeeded } from '../utils/appUpdate'
 
 /**
  * ============================================================================
@@ -70,6 +71,15 @@ import { RESTORE_REFUSED, partsMayHelp } from '../utils/refusedRestore'
  * - 401 (no or expired session): every cloud write needs an account. The job
  *   stays queued without counting an attempt, the status becomes
  *   'auth_required' and the queue waits for a sign-in (re-probed every 5 min).
+ * - 426 OV_CLIENT_TOO_OLD (the backend's minimum write protocol is above this
+ *   build's): the job stays queued untouched and the pass stops, as for a
+ *   401; the status becomes 'update_required' (utils/appUpdate: "Update
+ *   needed", the update banner on the match screens too) until a write goes
+ *   through after a reload onto a newer build.
+ * - Refused because the server lacks a column or table of this app version
+ *   (PGRST204, 42703, 42P01, OV_TABLE_NOT_ALLOWED; isServerBehindError): parked
+ *   as 'failed' like any refusal, and counted apart (countServerBehindJobs),
+ *   so the indicator says the server is behind, not "Error".
  * - Rate limiting (429) and network failures stop the pass and leave jobs queued.
  * - Connection caching: Only recheck Supabase every 30 seconds; a failed probe is
  *   retried with backoff instead of stopping the poll.
@@ -80,7 +90,7 @@ import { RESTORE_REFUSED, partsMayHelp } from '../utils/refusedRestore'
  * ============================================================================
  */
 
-// Sync status types: 'offline' | 'online_no_supabase' | 'connecting' | 'syncing' | 'synced' | 'error' | 'auth_required'
+// Sync status types: 'offline' | 'online_no_supabase' | 'connecting' | 'syncing' | 'synced' | 'error' | 'auth_required' | 'update_required'
 
 // Resource processing order - matches must be synced before sets/events (FK
 // dependency); the account links ("My Matches") come last
@@ -191,6 +201,10 @@ export const DROP_JOB = 'drop'
 // processJob result: the backend wants a session (401). The job stays queued
 // untouched and the pass stops: every other write would get the same answer.
 export const AUTH_REQUIRED = 'auth_required'
+// processJob result: the backend refuses this app version's writes (426
+// OV_CLIENT_TOO_OLD). The job stays queued untouched and the pass stops, as
+// for AUTH_REQUIRED: only a newer build gets them through.
+export const UPDATE_REQUIRED = 'update_required'
 // processJob result: the backend refused the request itself (4xx validation,
 // scoping, permission). Parked as 'failed' (see FAILED_RETRY_MS).
 export const PERMANENT_FAILURE = 'permanent'
@@ -219,7 +233,7 @@ export function isStopError(error) {
 // fetch() rejection messages: Chrome, Firefox, Safari, Node/undici, React Native
 const NETWORK_ERROR_MESSAGE = /failed to fetch|networkerror|load failed|fetch failed|network request failed|network unavailable/i
 
-/** Worth retrying later (426 upgrade required, 5xx, timeouts) rather than an error. */
+/** Worth retrying later (5xx, timeouts; 426 once the app is updated: isUpdateRequiredError) rather than an error. */
 export function isTransientError(error) {
   if (!error) return false
   const status = error.status ?? 0
@@ -232,6 +246,24 @@ const AUTH_ERROR_CODES = new Set(['missing_token', 'invalid_token', 'session_exp
 export function isAuthError(error) {
   if (!error || error.network) return false
   return (error.status ?? 0) === 401 || AUTH_ERROR_CODES.has(error.code)
+}
+
+/** This app version is too old to write (426 OV_CLIENT_TOO_OLD): a newer build is needed. */
+export function isUpdateRequiredError(error) {
+  if (!error || error.network) return false
+  return (error.status ?? 0) === 426 || error.code === 'OV_CLIENT_TOO_OLD'
+}
+
+// The server lacks a column (PGRST204: pgQuery, 42703: Postgres) or a table
+// (42P01, OV_TABLE_NOT_ALLOWED) this app version writes: its database
+// migration or backend release is not out yet. A newer server takes the
+// same job, so it stays parked ('failed', retried hourly) and is counted
+// apart (countServerBehindJobs).
+const SERVER_BEHIND_CODES = new Set(['PGRST204', '42703', '42P01', 'OV_TABLE_NOT_ALLOWED'])
+
+/** Refused because the server is older than this app (see SERVER_BEHIND_CODES). */
+export function isServerBehindError(error) {
+  return !!error && !error.network && SERVER_BEHIND_CODES.has(error.code)
 }
 
 // Error codes only the OpenVolley backend answers with: its own checks (OV_*),
@@ -418,6 +450,8 @@ function failureResult(error, ctx) {
   if (error?.network) return STOP_NETWORK
   if (isStopError(error)) return STOP_PASS
   if (isAuthError(error)) return AUTH_REQUIRED
+  // (before the transient ones: 426 is one, but no later pass gets through)
+  if (isUpdateRequiredError(error)) return UPDATE_REQUIRED
   if (isTransientError(error)) return null
   if (isPermanentError(error)) return PERMANENT_FAILURE
   if (isForeignClientError(error)) return STOP_ERROR
@@ -994,8 +1028,9 @@ installAuthListener()
 /**
  * Process a single job.
  * Returns true (sent), false (error), null (retry later), STOP_PASS,
- * STOP_NETWORK, STOP_ERROR, AUTH_REQUIRED, PERMANENT_FAILURE or DROP_JOB. The
- * failure reason is available once through takeJobError(job.id).
+ * STOP_NETWORK, STOP_ERROR, AUTH_REQUIRED, UPDATE_REQUIRED, PERMANENT_FAILURE
+ * or DROP_JOB. The failure reason is available once through
+ * takeJobError(job.id).
  *
  * A write refused as OV_NOT_MATCH_OWNER is taken over here (once per match
  * and CLAIM_RETRY_MS, see claimMatchWithLocalPin) and sent again. After a
@@ -1461,7 +1496,7 @@ async function processJobInner(job, ctx) {
         })
         if (error) {
           safeLog.error('[SyncQueue] Restore failed:', error.code || error.status, error.message, error.details || '')
-          // 426 (old bundle), 429, 5xx and network errors: retry later
+          // 429, 5xx and network errors: retry later; 426 (an old bundle): an update
           return failureResult(error, ctx)
         }
         safeLog.log('[SyncQueue] Restore complete for match:', externalId, data?.counts || '')
@@ -1881,11 +1916,13 @@ async function sendEventBatch(jobs, ctx) {
  * (SCORE_LANE by default; the scoresheet files go in runUploadLane).
  * `lease`: withQueueLock's; once another page has taken the lock over, the
  * pass ends before its next job (leaseLost).
- * @returns {Promise<{ processed: number, sent: number, hasError: boolean, hasFailed: boolean, hasRetry: boolean, stopped: boolean, authRequired: boolean, leaseLost?: boolean }>}
+ * updateRequired: the backend refuses this app version's writes (426);
+ * serverBehind: a job was refused for a column or table the server lacks.
+ * @returns {Promise<{ processed: number, sent: number, hasError: boolean, hasFailed: boolean, hasRetry: boolean, stopped: boolean, authRequired: boolean, updateRequired: boolean, serverBehind: boolean, leaseLost?: boolean }>}
  */
 export async function runQueuePass({ resources = SCORE_LANE, lease = null } = {}) {
   const queued = (await db.sync_queue.where('status').equals('queued').toArray()).filter(j => resources.includes(j.resource))
-  const outcome = { processed: queued.length, sent: 0, hasError: false, hasFailed: false, hasRetry: false, stopped: false, authRequired: false }
+  const outcome = { processed: queued.length, sent: 0, hasError: false, hasFailed: false, hasRetry: false, stopped: false, authRequired: false, updateRequired: false, serverBehind: false }
   if (queued.length === 0) return outcome
   // (marks left by an earlier pass; only the score lane sets jobs aside, and
   // the upload lane runs beside it)
@@ -2032,6 +2069,19 @@ export async function runQueuePass({ resources = SCORE_LANE, lease = null } = {}
         return outcome
       }
 
+      if (result === UPDATE_REQUIRED) {
+        // This build is too old for the backend (426): every write gets the
+        // same answer. Leave the job queued as it is (no attempt counted: it
+        // must not end up parked) until a newer build sends it.
+        if (currentSyncStatus !== 'update_required') {
+          safeLog.warn(`[SyncQueue] The backend refuses this app version's writes (${jobError?.code || jobError?.status}); kept on this device until the app is updated`)
+        }
+        outcome.stopped = true
+        outcome.hasRetry = true
+        outcome.updateRequired = true
+        return outcome
+      }
+
       if (result === DROP_JOB) {
         await db.sync_queue.update(job.id, { status: 'dropped' })
         // A dropped match creation (its match retired, utils/matchHandover),
@@ -2086,8 +2136,12 @@ export async function runQueuePass({ resources = SCORE_LANE, lease = null } = {}
       }
 
       if (result === PERMANENT_FAILURE) {
-        // Refused by the backend: the same payload would be refused again
-        safeLog.warn(`[SyncQueue] Job ${job.id} (${job.resource} ${job.action}) refused by the backend, retried only hourly or by hand:`, jobError?.code || jobError?.status)
+        // Refused by the backend: the same payload would be refused again.
+        // Refused for a column or table the server lacks: it waits for the
+        // server's update (counted apart, countServerBehindJobs)
+        const behind = isServerBehindError(jobError)
+        if (behind) outcome.serverBehind = true
+        safeLog.warn(`[SyncQueue] Job ${job.id} (${job.resource} ${job.action}) refused by the backend${behind ? ' (the server lacks a column or table of this app version: its update is not out yet)' : ''}, retried only hourly or by hand:`, jobError?.code || jobError?.status)
         await db.sync_queue.update(job.id, {
           status: 'failed',
           attempts: (job.attempts || 0) + 1,
@@ -2387,7 +2441,7 @@ const syncStatusListeners = new Set()
 const SYNC_STATE_GROUP = { synced: 'ok', syncing: 'ok', connecting: 'ok' }
 const syncGroup = (s) => SYNC_STATE_GROUP[s] || s
 // Statuses that say the cloud answered
-const CLOUD_REACHED = new Set(['synced', 'syncing', 'auth_required'])
+const CLOUD_REACHED = new Set(['synced', 'syncing', 'auth_required', 'update_required'])
 // The support diagnostics (utils/diagnosticsInfo): the status, since when,
 // and what the last queue pass did
 let syncStatusSince = Date.now()
@@ -2548,7 +2602,9 @@ export function useSyncQueue() {
       failed: !!outcome.hasFailed,
       retry: !!outcome.hasRetry,
       stopped: !!outcome.stopped,
-      authRequired: !!outcome.authRequired
+      authRequired: !!outcome.authRequired,
+      updateRequired: !!outcome.updateRequired,
+      serverBehind: !!outcome.serverBehind
     }
     publishSyncDiagnostics()
 
@@ -2560,6 +2616,17 @@ export function useSyncQueue() {
     clearAuthBlock()
     // The scoresheet files, beside the score (not waited for)
     runUploadLane().catch((err) => safeLog.warn('[SyncQueue] Scoresheet upload lane failed:', err?.message))
+
+    if (outcome.updateRequired) {
+      // Too old for the backend (426): "Update needed", the update banner on
+      // the match screens too, and the worker looks for the newer build now.
+      // The writes stay queued; each pass tries the first one again.
+      noteAppUpdateNeeded(UPDATE_NEEDED_SERVER)
+      setSyncStatus('update_required')
+      return
+    }
+    // A write went through: the backend takes this version's writes again
+    if (outcome.sent > 0) clearAppUpdateNeeded(UPDATE_NEEDED_SERVER)
 
     if (outcome.sent > 0 && !outcome.stopped && typeof window !== 'undefined') {
       // Consumers that push state outside the queue (match_live_state) catch
@@ -2774,11 +2841,22 @@ export async function getSyncQueueStats() {
   return { pending, error, failed }
 }
 
+/**
+ * The 'failed' jobs refused for a column or table the server does not have
+ * yet (isServerBehindError): they wait for the server's update, and the
+ * indicator says so instead of "Error".
+ */
+export async function countServerBehindJobs() {
+  return db.sync_queue.where('status').equals('failed').and(j => isServerBehindError(j.last_error)).count()
+}
+
 const EMPTY_STATS = { pending: 0, error: 0, failed: 0 }
 
-/** Live sync queue counts (see getSyncQueueStats); zeros until the first read. */
+/** Live sync queue counts (getSyncQueueStats, and serverBehind: countServerBehindJobs); zeros until the first read. */
 export function useSyncQueueStats() {
-  return useLiveQuery(() => getSyncQueueStats().catch(() => EMPTY_STATS), [], EMPTY_STATS)
+  return useLiveQuery(() => Promise.all([getSyncQueueStats(), countServerBehindJobs()])
+    .then(([stats, serverBehind]) => ({ ...stats, serverBehind }))
+    .catch(() => EMPTY_STATS), [], EMPTY_STATS)
 }
 
 // ---------------------------------------------------------------------------

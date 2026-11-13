@@ -419,6 +419,59 @@ export function createPgQuery (options = {}) {
     }
   }
 
+  /**
+   * The table as the catalog has it after a refresh (scheduleCatalogRefresh:
+   * at most once per catalogRefreshMinMs), for a write that names a column
+   * the loaded catalog lacks: a migration applied while the backend runs.
+   * Never throws; the table as it was when no newer catalog is there.
+   */
+  async function freshTableDef (t) {
+    scheduleCatalogRefresh()
+    if (refreshPromise) await refreshPromise
+    return catalog?.tables.get(t.name) || t
+  }
+
+  // ---------------------------------------------------- dropped write columns
+  // A write naming a column this database does not have (an app newer than
+  // the schema: its migration not applied yet, the web app deployed first)
+  // is written without that column. Refusing the row (PGRST204) held a match
+  // insert back, and with it every later write of the match, until the
+  // migration ran. Counted per table.column (droppedColumns(), for /health)
+  // and logged at most once a minute per column. Filters, selects, order,
+  // returning and onConflict still refuse an unknown column, and so does a
+  // row with no column of the table left.
+  const DROPPED_LOG_MS = 60000
+  const DROPPED_KEYS_MAX = 50
+  let droppedTotal = 0
+  const droppedByColumn = new Map() // 'table.column' -> { count, loggedAt }
+  const droppedOverflow = { count: 0, loggedAt: 0 } // the columns past DROPPED_KEYS_MAX
+  function noteDroppedColumns (table, names) {
+    const now = Date.now()
+    for (const name of names) {
+      droppedTotal += 1
+      const key = `${table}.${name}`
+      let entry = droppedByColumn.get(key)
+      if (!entry && droppedByColumn.size < DROPPED_KEYS_MAX) {
+        entry = { count: 0, loggedAt: 0 }
+        droppedByColumn.set(key, entry)
+      }
+      entry ??= droppedOverflow
+      entry.count += 1
+      if (now - entry.loggedAt >= DROPPED_LOG_MS || now < entry.loggedAt) {
+        entry.loggedAt = now
+        log.warn?.(`[pgQuery] unknown column dropped from a write on ${table}: ${safeText(name)} (${entry.count} so far; a migration not applied?)`)
+      }
+    }
+  }
+
+  /** Columns dropped from writes since start: { total, columns: { 'table.column': n } }. */
+  function droppedColumns () {
+    const columns = {}
+    for (const [key, entry] of droppedByColumn) columns[key] = entry.count
+    if (droppedOverflow.count) columns['(other)'] = droppedOverflow.count
+    return { total: droppedTotal, columns }
+  }
+
   // ------------------------------------------------------------ SQL helpers
   const qTable = (name) => `${quoteIdent(cfg.schema)}.${quoteIdent(name)}`
 
@@ -655,12 +708,36 @@ export function createPgQuery (options = {}) {
   }
 
   // ------------------------------------------------------------------ writes
+  /** Does the write data name a column the table (as loaded) does not have? */
+  function namesUnknownColumn (t, data) {
+    const rows = Array.isArray(data) ? data : [data]
+    return rows.some(r => isPlainObject(r) && Object.keys(r).some(k => !t.columns.has(k)))
+  }
+
+  /**
+   * The rows to write and their columns. A column the table does not have is
+   * left out of every row (noteDroppedColumns); a key that cannot be a column
+   * name, or a row none of whose keys is a column, is refused (PGRST204).
+   */
   function writeRows (t, params, scope) {
     const data = params.data
     const rows = Array.isArray(data) ? data : [data]
     if (rows.length === 0) fail('OV_INVALID_DATA', 'no rows')
     if (!rows.every(isPlainObject)) fail('OV_INVALID_DATA', 'rows must be objects')
-    const out = rows.map(r => (scope ? { ...r, [scope.column]: scope.value } : r))
+    const unknown = []
+    for (const r of rows) {
+      const keys = Object.keys(r)
+      for (const k of keys) {
+        if (t.columns.has(k)) continue
+        if (!IDENT_RE.test(k)) requireColumn(t, k)
+        if (!unknown.includes(k)) unknown.push(k)
+      }
+      // nothing of the row would be written (the scope column is the server's)
+      if (keys.length && !keys.some(k => t.columns.has(k))) requireColumn(t, keys[0])
+    }
+    if (unknown.length) noteDroppedColumns(t.name, unknown)
+    const known = (r) => (unknown.length ? Object.fromEntries(Object.entries(r).filter(([k]) => t.columns.has(k))) : r)
+    const out = rows.map(r => (scope ? { ...known(r), [scope.column]: scope.value } : known(r)))
     const cols = []
     for (const r of out) {
       for (const k of Object.keys(r)) {
@@ -957,6 +1034,9 @@ export function createPgQuery (options = {}) {
   }
 
   async function runWrite (cat, t, action, params, opts, ctx) {
+    // A column the loaded catalog lacks may have come with a migration since:
+    // the catalog is read again first; what it still lacks is dropped (writeRows)
+    if (action !== 'delete' && namesUnknownColumn(t, params.data)) t = await freshTableDef(t)
     const internal = !!opts.internal
     const secrets = secretsFor(t.name, internal)
     const scope = opts.scope || null
@@ -1428,6 +1508,7 @@ export function createPgQuery (options = {}) {
     ensureCatalog,
     invalidateCatalog,
     catalogStatus,
+    droppedColumns,
     ping,
     close,
     pool,

@@ -1,8 +1,10 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useSyncExternalStore } from 'react'
 import { allowLeaving } from '../utils/leaveGuard'
 import { reloadWithReason } from '../diagnostics/reload'
 import { clearStorageKeepingDeviceId } from '../utils/deviceId'
 import { writeSessionMirror } from '../lib/sessionMirror'
+import { UPDATE_NEEDED_FILES, appUpdateNeeded, noteAppUpdateNeeded, subscribeAppUpdateNeeded } from '../utils/appUpdate'
+import { toast } from '../ui/uiStore.js'
 import i18next from 'i18next'
 
 const CACHE_BUST_PARAM = 'cache_bust'
@@ -126,23 +128,103 @@ export async function clearCachesAndReload({ includeLocalStorage = false } = {})
   return true
 }
 
+// --- Tabs of one origin -------------------------------------------------------
+// Every tab of the origin runs under one service worker: SKIP_WAITING in one
+// tab hands all of them to the new build, and the old build's files leave
+// the cache with its precache. A tab that stays on the old code (a match in
+// another tab or window) then fails its next lazy load: a language, the
+// backup key, a passkey sign-in, the logs. So a tab asks the others on
+// UPDATE_CHANNEL before it activates an update; one with a match on show
+// answers (answerUpdateQuestions), and the update waits: that tab's Home
+// screen offers it once the match is closed there.
+export const UPDATE_CHANNEL = 'ov-app-update'
+// How long a tab waits for the others' answers (a page in the background
+// answers at once; a frozen one does not answer at all)
+const UPDATE_ANSWER_MS = 300
+// applyServiceWorkerUpdate's result when another tab has a match on show
+export const UPDATE_DEFERRED = 'deferred'
+
+let updateChannel
+let answeringUpdates = false
+// One channel per page, for asking and answering: a BroadcastChannel never
+// hears its own messages, every other one of the name (other tabs) does
+function pageUpdateChannel() {
+  if (updateChannel !== undefined) return updateChannel
+  try {
+    updateChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel(UPDATE_CHANNEL) : null
+    // (Node, the tests: an open channel must not keep the process alive)
+    updateChannel?.unref?.()
+  } catch {
+    updateChannel = null
+  }
+  return updateChannel
+}
+
+/**
+ * This page answers the other tabs' "may I update?" (the scorer app,
+ * main.jsx): `isBusy()` true while a match is on show here (readOpenMatch).
+ * A page that needs the update itself ("Update needed", utils/appUpdate)
+ * holds nobody back: its match cannot sync on the old build anyway.
+ */
+export function answerUpdateQuestions({ isBusy = () => false } = {}) {
+  const channel = pageUpdateChannel()
+  if (!channel || answeringUpdates) return
+  answeringUpdates = true
+  channel.addEventListener('message', (e) => {
+    if (e.data?.type !== 'update-ask') return
+    let busy = false
+    try { busy = !!isBusy() && !appUpdateNeeded() } catch { busy = false }
+    if (busy) channel.postMessage({ type: 'update-busy', id: e.data.id })
+  })
+}
+
+/** Does another tab of the origin have a match on show? Asks, and waits UPDATE_ANSWER_MS for an answer. */
+export function otherTabHasOpenMatch({ timeoutMs = UPDATE_ANSWER_MS } = {}) {
+  const channel = pageUpdateChannel()
+  if (!channel) return Promise.resolve(false)
+  const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+  return new Promise((resolve) => {
+    const done = (busy) => {
+      clearTimeout(timer)
+      channel.removeEventListener('message', onMessage)
+      resolve(busy)
+    }
+    const onMessage = (e) => { if (e.data?.type === 'update-busy' && e.data.id === id) done(true) }
+    const timer = setTimeout(() => done(false), timeoutMs)
+    channel.addEventListener('message', onMessage)
+    try {
+      channel.postMessage({ type: 'update-ask', id })
+    } catch {
+      done(false)
+    }
+  })
+}
+
+/** Tests: forget this page's channel. */
+export function resetUpdateChannelForTests() {
+  try { updateChannel?.close() } catch { /* already closed */ }
+  updateChannel = undefined
+  answeringUpdates = false
+}
+
 /**
  * Activate the waiting service worker and reload this tab with it.
  *
- * Only this tab reloads: other tabs of the origin (e.g. a scorer mid-match next
- * to a livescore window) keep running and are never reloaded by this.
+ * Only this tab reloads. Activating the worker moves every other tab of the
+ * origin to the new build's worker too (and the old build's files go with
+ * the old precache), so a tab with a match on show is asked first
+ * (otherTabHasOpenMatch): while one has, nothing is activated or cleared and
+ * this resolves UPDATE_DEFERRED (a notice says why) instead of reloading.
  * Caches are NOT wiped and no worker is unregistered - the new worker is already
  * fully precached, and Workbox drops outdated precache entries on activate, so
  * the app still loads offline right after the update.
  */
-export async function applyServiceWorkerUpdate({ clearIndexedDB = false, checkForUpdate = false, timeoutMs = 4000 } = {}) {
+export async function applyServiceWorkerUpdate({ clearIndexedDB = false, checkForUpdate = false, timeoutMs = 4000, askOtherTabs = otherTabHasOpenMatch, notify = true } = {}) {
   const reload = () => {
     allowLeaving()
     reloadWithReason(clearIndexedDB ? 'sw-update-clear-db' : 'sw-update', { how: 'replace', url: buildReloadUrl() })
   }
   try {
-    if (clearIndexedDB) await deleteAllIndexedDB()
-
     const sw = typeof navigator !== 'undefined' ? navigator.serviceWorker : null
     const reg = sw ? await sw.getRegistration() : null
     // Options > "Update": the new worker may not even be downloaded yet. A plain
@@ -152,6 +234,15 @@ export async function applyServiceWorkerUpdate({ clearIndexedDB = false, checkFo
       await reg.update().catch(() => {})
     }
     const waiting = reg?.waiting || (reg?.installing ? await waitUntilInstalled(reg.installing, timeoutMs) : null)
+    // What reaches the other tabs (a worker switched under them, their
+    // database deleted) waits while one of them has a match on show
+    if ((waiting || clearIndexedDB) && await askOtherTabs()) {
+      // (`notify: false`: the caller says so itself, the update banner)
+      const text = 'A match is open in another window of OpenVolley. The update waits until it is closed there.'
+      if (notify) toast.info(i18next.t?.('update.waitsForOtherWindow', text) || text, { duration: 8000 })
+      return UPDATE_DEFERRED
+    }
+    if (clearIndexedDB) await deleteAllIndexedDB()
     if (waiting) {
       // Wait for the new worker to take control before reloading, so the reload
       // is served by it (with a timeout in case controllerchange never fires).
@@ -212,6 +303,19 @@ export function holdTapsUntilReload(win = typeof window !== 'undefined' ? window
     showUpdatingNotice(win)
   } catch {
     // never block the update
+  }
+}
+
+/**
+ * The update did not happen after all (UPDATE_DEFERRED: a match is open in
+ * another tab): taps work again and the "Updating" notice goes.
+ */
+export function releaseTaps(win = typeof window !== 'undefined' ? window : undefined) {
+  try {
+    if (win?.document?.body) win.document.body.inert = false
+    win?.document?.getElementById('ov-updating-notice')?.remove()
+  } catch {
+    // nothing to undo
   }
 }
 
@@ -279,7 +383,8 @@ export function applyUpdateAtStart({
     close()
     note()
     holdTapsUntilReload(win)
-    apply()
+    // (another window has a match open: the home screen's banner asks later)
+    Promise.resolve(apply()).then((r) => { if (r === UPDATE_DEFERRED) releaseTaps(win) }).catch(() => {})
   }
   const watch = (worker) => worker?.addEventListener('statechange', () => {
     if (worker.state === 'installed') go()
@@ -290,6 +395,38 @@ export function applyUpdateAtStart({
     watch(reg.installing)
     reg.addEventListener('updatefound', () => watch(reg.installing))
   }).catch(() => {})
+}
+
+/**
+ * Files of this build gone from the site (vite:preloadError: a lazy chunk,
+ * after a newer version replaced it): the page needs the update
+ * (utils/appUpdate 'files': the banner on the match screens too, the worker
+ * looks for the newer build) and the scorer is told once to reload after the
+ * rally. The failed import still fails for its caller (no preventDefault).
+ * The scorer app, at start (main.jsx).
+ */
+let preloadNoticeInstalled = false
+export function installPreloadErrorNotice(win = typeof window !== 'undefined' ? window : undefined) {
+  if (!win?.addEventListener || preloadNoticeInstalled) return
+  preloadNoticeInstalled = true
+  let told = false
+  win.addEventListener('vite:preloadError', () => {
+    noteAppUpdateNeeded(UPDATE_NEEDED_FILES)
+    if (told) return
+    told = true
+    const text = 'A part of OpenVolley could not be loaded: a newer version is out. Reload the app after this rally.'
+    toast.info(i18next.t?.('update.reloadAfterRally', text) || text, { duration: 0 })
+  })
+}
+
+/** Tests: install the notice again. */
+export function resetPreloadErrorNoticeForTests() {
+  preloadNoticeInstalled = false
+}
+
+/** Why this page needs an update ('server' | 'files', utils/appUpdate), or null; re-renders on a change. */
+export function useAppUpdateNeeded() {
+  return useSyncExternalStore(subscribeAppUpdateNeeded, appUpdateNeeded, appUpdateNeeded)
 }
 
 /**
@@ -313,7 +450,8 @@ export function useServiceWorker() {
     // No controllerchange -> reload listener here: with clientsClaim, a first
     // install or another tab's SKIP_WAITING would otherwise reload this page
     // (possibly the scorer mid-match). applyServiceWorkerUpdate() reloads only
-    // the tab that asked for the update.
+    // the tab that asked for the update, and waits while another tab has a
+    // match on show (otherTabHasOpenMatch).
 
     function trackInstalling(worker) {
       worker.addEventListener('statechange', () => {
@@ -371,10 +509,12 @@ export function useServiceWorker() {
   }, [])
 
   /**
-   * Activate the waiting worker and reload this tab (URL query kept)
+   * Activate the waiting worker and reload this tab (URL query kept).
+   * Resolves UPDATE_DEFERRED, without a notice, while another tab has a
+   * match on show: the caller shows it.
    */
   const updateServiceWorker = useCallback((clearIndexedDB = false) => {
-    return applyServiceWorkerUpdate({ clearIndexedDB })
+    return applyServiceWorkerUpdate({ clearIndexedDB, notify: false })
   }, [])
 
   /**

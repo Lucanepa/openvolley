@@ -27,7 +27,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 import { BUILD_TARGET } from '../build-target.js'
 import { themeBoot } from '../theme-boot.js'
 import { buildChannelPlugin } from '../build-channel.js'
-import { PRECACHE_GLOB_PATTERNS, PRECACHE_GLOB_IGNORES, PRECACHE_MAX_FILE_BYTES, NAVIGATE_FALLBACK_DENYLIST, IGNORE_URL_PARAMETERS, offlineNavigationRoute, API_NETWORK_ONLY_ROUTE, PWA_INCLUDE_ASSETS, PWA_ICONS } from '../pwa-workbox.js'
+import { PRECACHE_GLOB_PATTERNS, PRECACHE_GLOB_IGNORES, PRECACHE_MAX_FILE_BYTES, NAVIGATE_FALLBACK_DENYLIST, IGNORE_URL_PARAMETERS, offlineNavigationRoute, API_NETWORK_ONLY_ROUTE, STATIC_ASSETS_ROUTE, PWA_INCLUDE_ASSETS, PWA_ICONS } from '../pwa-workbox.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const frontendDir = resolve(__dirname, '..')
@@ -367,14 +367,8 @@ async function buildSubdomain(subdomain, basePath = '/') {
               offlineNavigationRoute,
               // the API from the network only, never cached (pwa-workbox.js)
               API_NETWORK_ONLY_ROUTE,
-              {
-                urlPattern: /\.(?:js|mjs|css|png|jpg|jpeg|svg|gif|webp|woff|woff2)$/,
-                handler: 'CacheFirst',
-                options: {
-                  cacheName: 'static-assets',
-                  expiration: { maxEntries: 100, maxAgeSeconds: 2592000 }
-                }
-              },
+              // cache first, never an HTML answer (pwa-workbox.js)
+              STATIC_ASSETS_ROUTE,
               {
                 urlPattern: /\.html$/,
                 handler: 'NetworkFirst',

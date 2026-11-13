@@ -830,6 +830,13 @@ export default function App() {
         status: 'connected',
         message: 'Cloud backend is reachable. Sign in to sync this device\'s matches.'
       })
+    } else if (syncStatus === 'update_required') {
+      // Reachable, but it refuses this version's writes (426): they wait on
+      // the device; the indicator says "Update needed"
+      updateStatus('supabase', 'connected', {
+        status: 'connected',
+        message: 'Cloud backend is reachable. This app version is too old to write: update the app.'
+      })
     } else if (syncStatus === 'online_no_supabase' && isCloudBlockedOnThisPort()) {
       const port = window.location.port
       updateStatus('supabase', 'not_configured', {
@@ -3971,6 +3978,10 @@ export default function App() {
                   onTriggerEventBackup={backup.triggerEventBackup}
                 />
               )}
+              {/* The match screens: the update banner only while this build
+                  cannot do its work (the server refuses its writes, its files
+                  are gone: "Update needed", utils/appUpdate) */}
+              {matchId && <UpdateBanner whenUpdateNeeded />}
             </div>
 
             {/* Another device scores this match now (db/019): this one stops

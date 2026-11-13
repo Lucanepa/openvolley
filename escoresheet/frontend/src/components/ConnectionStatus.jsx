@@ -5,6 +5,8 @@ import { ChevronDown } from 'lucide-react'
 import { cn } from '../ui/cn.js'
 import { StatusPill } from '../ui/StatusPill.jsx'
 import { backendOnLocalNetwork } from '../utils/localNetwork'
+import { UPDATE_NEEDED_SERVER, updatesByReload } from '../utils/appUpdate'
+import { applyServiceWorkerUpdate, useAppUpdateNeeded } from '../hooks/useServiceWorker'
 import { FOCUS_RING, KIT_SCOPE, POPOVER_PANEL, STATUS_PILL, STATUS_TONES } from './chromeClasses'
 
 // The local server + WebSocket path (LAN relay) works on its own, cloud or not
@@ -72,10 +74,17 @@ export default function ConnectionStatus({
   const liveCounts = useSyncQueueStats()
   const given = queueStats && typeof queueStats === 'object' ? queueStats : {}
   const count = (key) => (typeof given[key] === 'number' ? given[key] : (liveCounts?.[key] || 0))
-  const stats = { pending: count('pending'), error: count('error'), failed: count('failed') }
+  const stats = { pending: count('pending'), error: count('error'), failed: count('failed'), serverBehind: count('serverBehind') }
   const pendingCount = stats.pending
   const errorCount = stats.error + stats.failed
   const authRequired = given.authRequired === true || queueStats === 'auth_required'
+  // This build is too old for the server (426, utils/appUpdate): its writes
+  // wait on the device until the app is updated. The whole pill says so.
+  const updateNeeded = useAppUpdateNeeded()
+  const updateRequired = updateNeeded === UPDATE_NEEDED_SERVER || given.updateRequired === true || queueStats === 'update_required'
+  // Every refusal is for a column or table the server lacks: the server is
+  // behind this app (its update is not out yet), not an error of this device
+  const serverBehind = stats.serverBehind > 0 && stats.serverBehind >= errorCount
   const syncingLong = useHeldFor(pendingCount > 0, SYNCING_SHOW_AFTER_MS)
 
   // The browser's own view of the network (the 'Online' switch is offline mode)
@@ -99,7 +108,11 @@ export default function ConnectionStatus({
   // Read on every render (cheap): a backend chosen at runtime on the server
   // connection screen counts at once.
   const lanBackend = backendOnLocalNetwork()
-  const shownStatuses = browserOffline ? offlineStatuses(connectionStatuses, lanBackend) : connectionStatuses
+  const polledStatuses = browserOffline ? offlineStatuses(connectionStatuses, lanBackend) : connectionStatuses
+  // (the cloud answers, it takes no write of this version)
+  const shownStatuses = updateRequired && !browserOffline && 'supabase' in polledStatuses
+    ? { ...polledStatuses, supabase: 'update_required' }
+    : polledStatuses
   const localPathViable = lanBackend && isServerWebsocketViable(connectionStatuses.server, connectionStatuses.websocket)
 
   const [showConnectionMenu, setShowConnectionMenu] = useState(false)
@@ -216,6 +229,10 @@ export default function ConnectionStatus({
       return { tone: 'warn', text: t('connectionStatus.connecting', 'Connecting') }
     } else if (status === 'auth_required') {
       return { tone: 'warn', text: t('connectionStatus.signInToSync', 'Sign in to sync') }
+    } else if (status === 'update_required') {
+      return { tone: 'warn', text: t('connectionStatus.updateNeeded', 'Update needed') }
+    } else if (status === 'server_behind') {
+      return { tone: 'warn', text: t('connectionStatus.serverUpdatePending', 'Server update pending') }
     } else if (status === 'test_mode') {
       return { tone: 'violet', text: t('connectionStatus.testMode', 'Test mode') }
     } else {
@@ -290,11 +307,13 @@ export default function ConnectionStatus({
   // match runs normally and only the cloud copy waits ('Local only' + count).
   const baseStatus = browserOffline && !localPathViable
     ? 'offline'
-    : errorCount > 0
-      ? 'attention'
-      : authRequired
-        ? 'auth_required'
-        : getOverallStatus()
+    : updateRequired
+      ? 'update_required'
+      : errorCount > 0
+        ? (serverBehind ? 'server_behind' : 'attention')
+        : authRequired
+          ? 'auth_required'
+          : getOverallStatus()
   // The venue runs on the local relay while the cloud is out of reach
   // (desktop app or LAN scoretable without internet): say so instead of
   // 'Connected' / 'Syncing...', which would claim the cloud copy is moving.
@@ -324,7 +343,9 @@ export default function ConnectionStatus({
           ? t('connectionStatus.offlinePending', 'Offline ({{count}} waiting)', { count: pendingCount })
           : t('connectionStatus.offline', 'Offline'))
         : overallStatus === 'auth_required' ? t('connectionStatus.signInToSync', 'Sign in to sync') :
-          t('connectionStatus.error', 'Error')
+          overallStatus === 'update_required' ? t('connectionStatus.updateNeeded', 'Update needed') :
+            overallStatus === 'server_behind' ? t('connectionStatus.serverUpdatePending', 'Server update pending') :
+              t('connectionStatus.error', 'Error')
   const overallTone = STATUS_TONES[statusInfo.tone] || STATUS_TONES.neutral
   // The compact pill shows only the dot and the error badge: its name says both
   const compactLabel = errorCount > 0
@@ -395,7 +416,8 @@ export default function ConnectionStatus({
             const isConnected = status === 'connected' || status === 'live' || status === 'scheduled' || status === 'synced' || status === 'syncing'
             const isReady = key === 'match' && status === 'no_match'
             const debugInfo = connectionDebugInfo[key]
-            const expandable = !isConnected && !isReady
+            // (an update needed: the box below says what to do)
+            const expandable = !isConnected && !isReady && status !== 'update_required'
 
             return (
               <div key={key} className="relative border-b border-stone-100 last:border-b-0" data-debug-menu>
@@ -421,8 +443,30 @@ export default function ConnectionStatus({
                 </div>
 
                 {/* Queue stats for the cloud backend */}
-                {key === 'supabase' && (pendingCount > 0 || errorCount > 0 || authRequired) && (
+                {key === 'supabase' && (pendingCount > 0 || errorCount > 0 || authRequired || updateRequired) && (
                   <div className="mx-1.5 mb-2 flex flex-col gap-1 rounded-lg border border-stone-200 bg-stone-50 p-2 text-[11px]">
+                    {updateRequired && (
+                      <div className="flex flex-col gap-1.5 text-amber-800">
+                        <span>
+                          {updatesByReload()
+                            ? t('connectionStatus.updateNeededHint', 'Update needed: reload the app after this rally. This version is too old for the server; the changes stay on this device and are sent after the update.')
+                            : t('connectionStatus.updateNeededAppHint', 'Update needed: install the app update after this match. This version is too old for the server; the changes stay on this device and are sent after the update.')}
+                        </span>
+                        {updatesByReload() && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              // the newer build, when the worker has it (else a plain reload)
+                              applyServiceWorkerUpdate({ checkForUpdate: true })
+                            }}
+                            className={cn('inline-flex h-8 items-center self-start rounded-lg border-0 bg-slate-900 px-2.5 text-[11px] font-semibold tracking-normal text-white hover:bg-slate-800 transition-colors cursor-pointer', FOCUS_RING)}
+                          >
+                            {t('connectionStatus.reloadNow', 'Reload now')}
+                          </button>
+                        )}
+                      </div>
+                    )}
                     {authRequired && (
                       <div className="text-amber-800">
                         {t('connectionStatus.signInToSyncHint', 'Not signed in: changes are kept on this device until you sign in.')}
@@ -438,6 +482,15 @@ export default function ConnectionStatus({
                       <div className="flex justify-between gap-2 text-red-700">
                         <span>{t('connectionStatus.refusedByServer', 'Refused by the server:')}</span>
                         <span className="font-bold tabular-nums">{stats.failed}</span>
+                      </div>
+                    )}
+                    {stats.serverBehind > 0 && (
+                      <div className="flex flex-col gap-0.5 text-amber-800">
+                        <div className="flex justify-between gap-2">
+                          <span>{t('connectionStatus.waitingForServerUpdate', 'Waiting for a server update:')}</span>
+                          <span className="font-bold tabular-nums">{stats.serverBehind}</span>
+                        </div>
+                        <span>{t('connectionStatus.waitingForServerUpdateHint', 'The server does not know some data of this app version yet. The changes stay on this device and are sent again every hour.')}</span>
                       </div>
                     )}
                     {errorCount > 0 && (

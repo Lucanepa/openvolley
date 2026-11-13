@@ -10,7 +10,8 @@ import { LoggingProvider } from './contexts/LoggingContext'
 import { ScaleProvider } from './contexts/ScaleContext'
 import ErrorBoundary from './components/ErrorBoundary'
 import { UiHost } from './ui/UiHost.jsx'
-import { stripCacheBustParam, applyUpdateAtStart } from './hooks/useServiceWorker'
+import { stripCacheBustParam, applyUpdateAtStart, answerUpdateQuestions, installPreloadErrorNotice } from './hooks/useServiceWorker'
+import { readOpenMatch } from './utils/deviceSelfCheck'
 import { isDesktopScoretable, resolveDesktopWindow } from './utils/appLifecycle'
 import { setAppEntry } from './utils/appEntry'
 import { watchFormStack } from './utils/formLayout'
@@ -33,6 +34,13 @@ installDiagnostics({ db })
 // Clean up cache_bust query parameter (added by cache clear / update flow).
 // Keep the rest of the query: ?match=&team= attach tablets to the live match.
 stripCacheBustParam()
+
+// An update accepted in another tab or window of the app waits while this
+// page has a match on show (its worker would switch under it); a file of
+// this build gone from the site (vite:preloadError) asks for a reload after
+// the rally
+answerUpdateQuestions({ isBusy: () => readOpenMatch() != null })
+installPreloadErrorNotice()
 
 // The desktop app: a new build waiting at start is applied before the scorer
 // touches anything (the binary is the update; see applyUpdateAtStart). In the

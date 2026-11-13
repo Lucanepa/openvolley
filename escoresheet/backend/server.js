@@ -2096,6 +2096,9 @@ async function computeCloudHealth() {
     }
     const cat = layer.db.catalogStatus()
     body.catalog = { ok: !!cat.ok, tables: cat.tables ?? 0, loadedAt: cat.loadedAt ?? null }
+    // Write columns the database lacks, dropped with a warning (pgQuery): a
+    // web release out before its migration
+    if (layer.db.droppedColumns) body.droppedColumns = layer.db.droppedColumns()
     const st = await layer.storage.health()
     body.sentinel = st.sentinel ? 'ok' : 'missing'
     body.storageWritable = !!st.storageWritable
