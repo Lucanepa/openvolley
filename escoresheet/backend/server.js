@@ -391,7 +391,7 @@ function getDataLayer() {
     const manage = mg.createManageApi({ accounts, savedTeams, beach, approvals, revisions, activity, scoresheets, clubs, finalMail, teams, licences, requests, notices })
     // The active scoring device of each match (db/019, the scoring-device handover)
     const scorer = sd.createScorerDevices({ pool: db.pool, db, audit: accounts.audit })
-    dataLayer = { db, restore, auth, storage, pins, access, accounts, savedTeams, beach, approvals, manage, requests, revisions, activity, scoresheets, scorer, finalMail, isScoresheetPdf: ss.isScoresheetPdf, isMatchScoresheetFile: ss.isMatchScoresheetFile, isScoresheetUploadPath: ss.isScoresheetUploadPath, activityCsvLine: act.csvLine, activityCsvColumns: act.CSV_COLUMNS, publicClaim: og.publicClaim, sendAuthResult: au.sendAuthResult, AUTH_ACTIONS: au.AUTH_ACTIONS, ipKey: au.ipBucketKey }
+    dataLayer = { db, restore, auth, storage, pins, access, accounts, savedTeams, teams, beach, approvals, manage, requests, revisions, activity, scoresheets, scorer, finalMail, isScoresheetPdf: ss.isScoresheetPdf, isMatchScoresheetFile: ss.isMatchScoresheetFile, isScoresheetUploadPath: ss.isScoresheetUploadPath, activityCsvLine: act.csvLine, activityCsvColumns: act.CSV_COLUMNS, publicClaim: og.publicClaim, sendAuthResult: au.sendAuthResult, AUTH_ACTIONS: au.AUTH_ACTIONS, ipKey: au.ipBucketKey }
     return dataLayer
   })
   return dataLayerPromise
@@ -6580,6 +6580,9 @@ if (DB_MODE) {
       .catch((err) => console.warn('[Activity] purge failed:', err.message))
     setTimeout(purgeActivity, 10 * 60 * 1000).unref()
     setInterval(purgeActivity, 24 * 60 * 60 * 1000).unref()
+    // Rosters sent ahead (db/023, db/035): deleted at expires_at, hourly,
+    // also while no team or scorer calls a roster route
+    layer.teams?.startSweeps?.()
     // Expired sessions, hourly
     setInterval(() => {
       layer.auth.sweepExpiredSessions().catch((err) => console.warn('[Auth] session sweep failed:', err.message))

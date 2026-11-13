@@ -22,7 +22,7 @@
  *   removeManager({ actorId, clubId, teamId, userId })  the team links it redeemed are revoked too
  * Scorers (indoor canReadTeams, the read right of the saved teams):
  *   scorerRosters({ userId, games })            the sent rosters the scoring tablet keeps
- *   markUsed({ userId, body })                  accepted in Match Setup: the content is deleted
+ *   markUsed({ userId, body })                  accepted in Match Setup (who, which match)
  * Everyone else (lib/accounts.js, lib/manageApi.js):
  *   managedTeamsOf(client, userId, { all })     [{ id, name, club_id, club_name, via }] (/api/me; all: admins)
  *   mayManage({ userId, access, teamId })       may the account act for the team?
@@ -31,10 +31,10 @@
  * Personal data (names, dates of birth, licence numbers): served only through
  * these routes, never on the /api/db allowlist, never anonymous; the audit
  * keeps game numbers, sides and counts only. Owner 2026-11-08: a sent roster
- * has no lock (the team may change it at any time) and its content is deleted
- * as soon as a scorer accepts it (markUsed: the row stays without personal
- * data, so the team sees it was accepted); every row goes 14 days after its
- * game (sweep()).
+ * has no lock (the team may change it at any time). db/035: it is read and
+ * accepted only by the home club's scorers, the match holder and the sending
+ * team, every read is audited, accepting records the match, and every row
+ * goes at expires_at, 14 days after its game (sweep(), on a timer).
  *
  * Every answer is the { status, body } shape of lib/accounts.js; nothing
  * throws. A database without db/023 answers "no teams" to the reads that
@@ -47,6 +47,7 @@ import { STAFF_ROLES, validateRoster } from './savedTeams.js'
 import { zurichDay } from './clubs.js'
 import { WRONG_GENDER, teamGenderOf } from './licences.js'
 import { connectClient } from './pgClient.js'
+import { createHash } from 'node:crypto'
 
 // A team link (owner, 2026-11-08): a few uses, never unlimited, gone after 90 days at most
 export const TEAM_INVITE_MAX_USES = 10
@@ -80,6 +81,9 @@ const SIGNATURE_PREFIX = 'data:image/png;base64,'
 export const SIGNATURE_RE = /^data:image\/png;base64,[A-Za-z0-9+/]+=*$/
 
 /** '2026/27' for season year 2026 (the saved teams' season label). */
+/** db/035: what a signature made ahead was made on (the players and staff as stored). */
+export const rosterHash = (v) => createHash('sha256').update(JSON.stringify({ players: v.players, staff: v.staff })).digest('hex')
+
 export const seasonLabel = (year) => `${year}/${String((year + 1) % 100).padStart(2, '0')}`
 
 const zurichClockFmt = new Intl.DateTimeFormat('en-CA', {
@@ -249,15 +253,23 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
       const cutoff = addDays(zurichDay(now), -ROSTER_KEEP_DAYS)
       const { rowCount } = await pool.query(
         `DELETE FROM public.game_rosters
-          WHERE (kickoff ~ '^\\d{4}-\\d{2}-\\d{2}' AND left(kickoff, 10) < $1)
-             OR (NOT coalesce(kickoff ~ '^\\d{4}-\\d{2}-\\d{2}', false) AND updated_at < $2)`,
-        [cutoff, new Date(now.getTime() - 4 * ROSTER_KEEP_DAYS * DAY_MS)])
+          WHERE expires_at < $3
+             OR (expires_at IS NULL AND ((kickoff ~ '^\\d{4}-\\d{2}-\\d{2}' AND left(kickoff, 10) < $1)
+             OR (NOT coalesce(kickoff ~ '^\\d{4}-\\d{2}-\\d{2}', false) AND updated_at < $2)))`,
+        [cutoff, new Date(now.getTime() - 4 * ROSTER_KEEP_DAYS * DAY_MS), now])
       if (rowCount) log.info?.(`[teams] swept ${rowCount} game roster(s)`)
       return rowCount
     } catch (err) {
       if (!MISSING.has(err?.code)) log.warn?.(`[teams] sweep failed: ${err?.code || err?.message}`)
       return 0
     }
+  }
+
+  /** db/035: sweep() every SWEEP_EVERY_MS without request traffic too; returns stop(). */
+  function startSweeps () {
+    const t = setInterval(() => { sweep({ force: true }).catch(() => {}) }, SWEEP_EVERY_MS)
+    t.unref?.()
+    return () => clearInterval(t)
   }
 
   // ---------------------------------------------------------------- who
@@ -389,16 +401,17 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
     const out = new Map()
     if (!keys.length) return out
     const { rows } = await db.query(
-      `SELECT r.game_number, r.season, r.side, r.team_name, r.kickoff, r.updated_at, r.used_at,
+      `SELECT r.game_number, r.season, r.side, r.team_name, r.kickoff, r.updated_at, r.used_at, r.team_id,
               jsonb_array_length(r.players) AS player_count, jsonb_array_length(r.staff) AS staff_count,
               r.coach_signature IS NOT NULL AS coach_signed, r.captain_signature IS NOT NULL AS captain_signed,
-              ${full ? 'r.players, r.staff, r.coach_signature, r.captain_signature,' : ''} ${nameSql('p')} AS updated_by_name,
+              ${full ? `r.players, r.staff, r.coach_signature, r.captain_signature, ${nameSql('pc')} AS coach_signed_by_name, ${nameSql('pk')} AS captain_signed_by_name,` : ''} ${nameSql('p')} AS updated_by_name,
               ${nameSql('pu')} AS used_by_name
          FROM public.game_rosters r
          JOIN unnest($1::text[], $2::int[], $3::text[]) AS k(game_number, season, side)
            ON k.game_number = r.game_number AND k.season = r.season AND k.side = r.side
          LEFT JOIN public.profiles p ON p.user_id = r.updated_by
          LEFT JOIN public.profiles pu ON pu.user_id = r.used_by
+         ${full ? 'LEFT JOIN public.profiles pc ON pc.user_id = r.coach_signed_by LEFT JOIN public.profiles pk ON pk.user_id = r.captain_signed_by' : ''}
         ${unused ? 'WHERE r.used_at IS NULL' : ''}`,
       [keys.map((k) => k.game_number), keys.map((k) => k.season), keys.map((k) => k.side)])
     for (const r of rows) out.set(`${r.game_number}|${r.season}|${r.side}`, r)
@@ -512,18 +525,40 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
       const wrong = licences ? await licences.wrongGender(client, x.team, v.players) : null
       if (wrong) throw abort(WRONG_GENDER(wrong.index, wrong.gender))
       const n = String(x.game.game_number)
+      const actor = isUuid(actorId) ? actorId : null
+      // db/035: a signature made ahead belongs to the players and staff it was
+      // made on and to the account that sent it; the same image re-sent with
+      // another roster is dropped, a new image is the sender's
+      const { rows: [prev] } = await client.query(
+        `SELECT coach_signature, captain_signature, coach_signed_hash, captain_signed_hash, coach_signed_by, captain_signed_by
+           FROM public.game_rosters WHERE game_number = $1 AND season = $2 AND side = $3 FOR UPDATE`, [n, x.season, x.side])
+      const hash = rosterHash(v)
+      const sig = {}
+      for (const k of ['coach', 'captain']) {
+        const img = v[`${k}_signature`]
+        const kept = img && prev && prev[`${k}_signature`] === img
+        if (kept && prev[`${k}_signed_hash`] !== hash) sig[k] = [null, null, null]
+        else if (kept) sig[k] = [img, prev[`${k}_signed_hash`], prev[`${k}_signed_by`]]
+        else sig[k] = img ? [img, hash, actor] : [null, null, null]
+      }
       await client.query(
-        `INSERT INTO public.game_rosters (game_number, season, side, team_name, players, staff, coach_signature, captain_signature, kickoff, updated_by)
-         VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9, $10)
+        `INSERT INTO public.game_rosters (game_number, season, side, team_name, players, staff, coach_signature, captain_signature, kickoff, updated_by,
+                club_id, team_id, coach_signed_hash, coach_signed_by, captain_signed_hash, captain_signed_by, expires_at)
+         VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+                 CASE WHEN $9::text ~ '^\\d{4}-\\d{2}-\\d{2}' THEN (left($9::text, 10)::date + ${ROSTER_KEEP_DAYS + 1})::timestamp AT TIME ZONE 'Europe/Zurich'
+                      ELSE now() + interval '${4 * ROSTER_KEEP_DAYS} days' END)
          ON CONFLICT (game_number, season, side) DO UPDATE SET team_name = EXCLUDED.team_name, players = EXCLUDED.players,
            staff = EXCLUDED.staff, coach_signature = EXCLUDED.coach_signature, captain_signature = EXCLUDED.captain_signature,
-           kickoff = EXCLUDED.kickoff, updated_by = EXCLUDED.updated_by, updated_at = now(), used_at = NULL, used_by = NULL`,
-        [n, x.season, x.side, x.team.name, JSON.stringify(v.players), JSON.stringify(v.staff), v.coach_signature, v.captain_signature,
-          x.game.datetime ?? null, isUuid(actorId) ? actorId : null])
+           kickoff = EXCLUDED.kickoff, updated_by = EXCLUDED.updated_by, updated_at = now(), used_at = NULL, used_by = NULL,
+           used_match_id = NULL, club_id = EXCLUDED.club_id, team_id = EXCLUDED.team_id, expires_at = EXCLUDED.expires_at,
+           coach_signed_hash = EXCLUDED.coach_signed_hash, coach_signed_by = EXCLUDED.coach_signed_by,
+           captain_signed_hash = EXCLUDED.captain_signed_hash, captain_signed_by = EXCLUDED.captain_signed_by`,
+        [n, x.season, x.side, x.team.name, JSON.stringify(v.players), JSON.stringify(v.staff), sig.coach[0], sig.captain[0],
+          x.game.datetime ?? null, actor, x.team.club_id, x.team.id, sig.coach[1], sig.coach[2], sig.captain[1], sig.captain[2]])
       await audit(client, {
         actorId,
         action: 'team.roster',
-        details: { team_id: x.team.id, game_number: n, side: x.side, players: v.players.length, staff: v.staff.length, signed: { coach: !!v.coach_signature, captain: !!v.captain_signature } }
+        details: { team_id: x.team.id, game_number: n, side: x.side, players: v.players.length, staff: v.staff.length, signed: { coach: !!sig.coach[0], captain: !!sig.captain[0] } }
       })
       const rosters = await rostersFor(client, [{ game_number: n, season: x.season, side: x.side }], { full: true })
       return ok({ team: x.team, game: gameOut(x.game), side: x.side, started: x.started, roster: rosterOut(rosters.get(`${n}|${x.season}|${x.side}`)) })
@@ -687,6 +722,34 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
 
   // ---------------------------------------------------------------- scorers
   /**
+   * Who may read and accept a sent roster (db/035): the home club's scorers
+   * (both sides of its home games), an editor of the match that holds the
+   * game (official, not a test), and the managers of the sending team.
+   * { mayRead(row, teamHome), matchOf(n, season) }
+   */
+  async function accessOf (db, userId, numbers) {
+    const myClubs = clubs?.clubsOf ? await clubs.clubsOf(db, userId) : []
+    const home = new Set(myClubs.flatMap((c) => c.teams || []).map(key).filter(Boolean))
+    const ints = numbers.map(Number).filter((n) => Number.isInteger(n) && n > 0 && n <= 2147483647)
+    const held = new Map()
+    if (ints.length) {
+      const { rows } = await db.query(
+        `SELECT m.id, m.game_n, m.official_season FROM public.matches m
+          WHERE m.game_n = ANY($1::int[]) AND m.test IS NOT TRUE AND m.sport_type IS DISTINCT FROM 'beach'
+            AND (m.created_by = $2 OR EXISTS (SELECT 1 FROM public.match_editors e WHERE e.match_id = m.id AND e.user_id = $2))
+          ORDER BY m.created_at NULLS LAST, m.id`, [ints, userId])
+      for (const m of rows) { const k = `${m.game_n}|${m.official_season}`; if (!held.has(k)) held.set(k, m.id) }
+    }
+    const { rows: tm } = await db.query('SELECT team_id FROM public.team_managers WHERE user_id = $1', [userId])
+    const teamsOfUser = new Set(tm.map((t) => t.team_id))
+    const matchOf = (n, season) => held.get(`${Number(n)}|${season}`) ?? null
+    return {
+      matchOf,
+      mayRead: (r, teamHome) => home.has(key(teamHome)) || !!matchOf(r.game_number, r.season) || (r.team_id != null && teamsOfUser.has(r.team_id))
+    }
+  }
+
+  /**
    * GET /api/game-rosters[?games=1,2]: the rosters the scoring tablet keeps
    * (offline first). Without `games`: those of the home games of the caller's
    * clubs from today to SCORER_AHEAD_DAYS ahead. With `games` (at most 50):
@@ -707,7 +770,7 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
       let schedule
       if (numbers) {
         const { rows } = await pool.query(
-          `SELECT DISTINCT ON (g.game_number) g.game_number, g.datetime FROM public.svrz_games g
+          `SELECT DISTINCT ON (g.game_number) g.game_number, g.datetime, g.team_home FROM public.svrz_games g
             WHERE g.game_number = ANY($1::text[]) ORDER BY g.game_number, g.id DESC`, [numbers])
         schedule = rows
       } else {
@@ -715,7 +778,7 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
         const names = [...new Set(myClubs.flatMap((c) => c.teams || []).map(key).filter(Boolean))]
         if (!names.length) return ok({ fetched_at: now.toISOString(), games: [], rosters: [] })
         const { rows } = await pool.query(
-          `SELECT g.game_number, g.datetime FROM public.svrz_games g
+          `SELECT g.game_number, g.datetime, g.team_home FROM public.svrz_games g
             WHERE lower(btrim(g.team_home)) = ANY($1::text[]) AND g.datetime >= $2 AND g.datetime < $3
             ORDER BY g.datetime LIMIT 200`, [names, today, addDays(today, SCORER_AHEAD_DAYS + 1)])
         schedule = rows
@@ -726,11 +789,18 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
         const season = seasonOf(g.datetime) ?? seasonOf(now)
         for (const side of ['home', 'away']) keys.push({ game_number: String(g.game_number), season, side })
       }
-      const rosters = await rostersFor(pool, keys, { full: true, unused: true })
+      const homeOf = new Map(covered.map((g) => [String(g.game_number), g.team_home]))
+      const access = await accessOf(pool, userId, [...homeOf.keys()])
+      const rosters = [...(await rostersFor(pool, keys, { full: true, unused: true })).values()]
+        .filter((r) => access.mayRead(r, homeOf.get(r.game_number)))
+      // every read of personal data is audited: game numbers and sides only
+      if (rosters.length) {
+        await audit(pool, { actorId: userId, action: 'team.roster', details: { read: rosters.map((r) => `${r.game_number}|${r.side}`) } })
+      }
       return ok({
         fetched_at: now.toISOString(),
         games: covered.map((g) => ({ game_number: String(g.game_number), season: seasonOf(g.datetime) ?? seasonOf(now) })),
-        rosters: [...rosters.values()].map((r) => ({
+        rosters: rosters.map((r) => ({
           game_number: r.game_number,
           season: r.season,
           side: r.side,
@@ -740,6 +810,9 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
           staff: r.staff ?? [],
           coach_signature: r.coach_signature ?? null,
           captain_signature: r.captain_signature ?? null,
+          // db/035: made ahead, sent by this account (Accept shows it)
+          coach_signed_by_name: r.coach_signature ? (r.coach_signed_by_name ?? null) : null,
+          captain_signed_by_name: r.captain_signature ? (r.captain_signed_by_name ?? null) : null,
           updated_at: iso(r.updated_at),
           updated_by_name: r.updated_by_name ?? null
         }))
@@ -751,10 +824,11 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
 
   /**
    * POST /api/game-rosters/used { game_number, side, season?, updated_at }: a
-   * scorer accepted this version in Match Setup (owner 2026-11-08: deleted as
-   * soon as it is used). Its names, dates of birth, licence numbers and
-   * signatures are deleted at once; the row stays without them (used_at,
-   * used_by) for the team's "Accepted". A newer version (the team changed it
+   * scorer accepted this version in Match Setup. Only those who may read it
+   * (accessOf) may; anyone else gets 'gone'. db/035: the row keeps its content
+   * until expires_at and records who accepted it and for which match
+   * (used_at, used_by, used_match_id); scorers' downloads leave it out from
+   * then on, the team sees "Accepted". A newer version (the team changed it
    * since) is left alone: the tablet gets it offered again. Idempotent:
    * { used: true } or { used: false, reason: 'changed' | 'gone' }.
    */
@@ -770,18 +844,23 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
     if (!version || Number.isNaN(version.getTime())) return invalid('updated_at: the version accepted (ISO date-time)')
     return guarded('mark-used', () => withTx(async (client) => {
       const { rows } = await client.query(
-        `SELECT season, team_name, used_at, date_trunc('milliseconds', updated_at) = date_trunc('milliseconds', $4::timestamptz) AS same
+        `SELECT game_number, season, team_id, used_at, date_trunc('milliseconds', updated_at) = date_trunc('milliseconds', $4::timestamptz) AS same
            FROM public.game_rosters WHERE game_number = $1 AND side = $2 AND ($3::int IS NULL OR season = $3)
           ORDER BY season DESC LIMIT 1 FOR UPDATE`, [n, body.side, season, version.toISOString()])
       const r = rows[0]
       if (!r) return ok({ used: false, reason: 'gone' })
+      const { rows: [g] } = await client.query(
+        'SELECT g.team_home FROM public.svrz_games g WHERE g.game_number = $1 ORDER BY g.id DESC LIMIT 1', [n])
+      const access = await accessOf(client, userId, [n])
+      // not one of the caller's games: the same answer as no roster at all
+      if (!access.mayRead(r, g?.team_home)) return ok({ used: false, reason: 'gone' })
       if (!r.same) return ok({ used: false, reason: 'changed' })
       if (r.used_at) return ok({ used: true, already: true })
+      const matchId = access.matchOf(n, r.season)
       await client.query(
-        `UPDATE public.game_rosters SET players = '[]', staff = '[]', coach_signature = NULL, captain_signature = NULL,
-                used_at = now(), used_by = $4
-          WHERE game_number = $1 AND side = $2 AND season = $3`, [n, body.side, r.season, userId])
-      await audit(client, { actorId: userId, action: 'team.roster', details: { game_number: n, side: body.side, used: true } })
+        `UPDATE public.game_rosters SET used_at = now(), used_by = $4, used_match_id = $5
+          WHERE game_number = $1 AND side = $2 AND season = $3`, [n, body.side, r.season, userId, matchId])
+      await audit(client, { actorId: userId, action: 'team.roster', matchId, details: { game_number: n, side: body.side, used: true } })
       return ok({ used: true })
     }))
   }
@@ -789,6 +868,6 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
   return {
     managedTeamsOf, mayManage, teamOfClub,
     teamDetail, games, getRoster, putRoster, deleteRoster, squad, putSquad,
-    clubTeams, removeManager, scorerRosters, markUsed, sweep
+    clubTeams, removeManager, scorerRosters, markUsed, sweep, startSweeps
   }
 }
