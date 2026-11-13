@@ -43,8 +43,8 @@ Or Vite will automatically try the next available port.
 ### Data not syncing to cloud
 
 - Check the connection status indicator in the app
-- Open browser DevTools (F12) and check the Console for Supabase or WebSocket errors
-- Verify that `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set correctly
+- Open browser DevTools (F12) and check the Console for sync or WebSocket errors
+- Make sure you are signed in: nothing is uploaded without an account
 - The sync queue processes in order (match > set > event). If a match sync fails, sets and events will also be blocked
 
 ### WebSocket connection not working

@@ -174,11 +174,8 @@ Configured via `vite-plugin-pwa` with:
 
 ## CI/CD
 
-GitHub Actions workflow (`.github/workflows/release.yml`):
+GitHub Actions workflows (`.github/workflows/` at the repository root):
 
-- **Triggers**: Push a tag matching `v*` or manual workflow dispatch with version input
-- **Builds**: Parallel jobs for Windows (NSIS installer + portable), macOS (DMG + ZIP, x64 + arm64), Linux (AppImage + DEB + RPM)
-- **Node.js**: v22
-- **Output**: Creates a GitHub Release with all artifacts
-- **Cleanup**: Automatically deletes releases older than the last 3
-- **Required secrets**: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
+- **`desktop.yml`**: the Tauri desktop apps for Windows, Linux and macOS, on a `desktop-v<version>` tag (OpenBeach: `beach-desktop-v<version>`); creates the GitHub release
+- **`release.yml`**: the standalone server binaries (Node.js SEA) with the referee, bench and roster pages, on a `v*` tag or a manual run
+- **`backend-tests.yml`**, **`desktop-flavours.yml`**, **`leak-scan.yml`**: backend tests, the desktop app identity check and the secret scan
