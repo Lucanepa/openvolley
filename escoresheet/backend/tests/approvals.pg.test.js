@@ -127,9 +127,9 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       assert.equal(s.body.data.eligible, true)
       assert.equal(s.body.data.set, true)
       assert.ok(Date.parse(s.body.data.set_at) > Date.now() - 60000)
-      assert.deepEqual({ ...s.body.data, set_at: null }, { available: true, eligible: true, set: true, set_at: null, locked_until: null, disabled: false })
+      assert.deepEqual({ ...s.body.data, set_at: null }, { available: true, eligible: true, set: true, set_at: null, locked_until: null, locked_scope: null, disabled: false })
       const p = await approvals.getPinStatus({ userId: U.plain.id })
-      assert.deepEqual(p.body.data, { available: true, eligible: false, set: false, set_at: null, locked_until: null, disabled: false })
+      assert.deepEqual(p.body.data, { available: true, eligible: false, set: false, set_at: null, locked_until: null, locked_scope: null, disabled: false })
       const unc = await user('uncStatus', ['referee'], { confirmed: false })
       assert.equal((await approvals.getPinStatus({ userId: unc.id })).body.data.eligible, false)
       // a row of an older key generation reads as not set
@@ -207,7 +207,7 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
 
     it('without OV_PIN_SECRET: status says unavailable, everything else is 503', async () => {
       const off = createApprovals({ pool, auth, secret: null, logger })
-      assert.deepEqual((await off.getPinStatus({ userId: U.ref1.id })).body.data, { available: false, eligible: false, set: false, set_at: null, locked_until: null, disabled: false })
+      assert.deepEqual((await off.getPinStatus({ userId: U.ref1.id })).body.data, { available: false, eligible: false, set: false, set_at: null, locked_until: null, locked_scope: null, disabled: false })
       expectErr(await off.setPin({ userId: U.ref1.id, body: { password: PW, pin: '482917' } }), 503, 'OV_APPROVAL_UNAVAILABLE')
       expectErr(await off.removePin({ userId: U.ref1.id, body: { password: PW } }), 503, 'OV_APPROVAL_UNAVAILABLE')
       expectErr(await off.approve({ callerId: U.owner.id, body: { external_id: 'x', slot: 'scorer', email: 'a@b.ch', pin: '482917', result: { sets: [] } } }), 503, 'OV_APPROVAL_UNAVAILABLE')
@@ -616,13 +616,10 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       assert.equal(ok1.status, 200, JSON.stringify(ok1.body))
       assert.equal(ok1.body.data.approval.name, 'Muster Anna', 'the account\'s own name')
       assert.deepEqual((await rowsOf(m)).map((x) => [x.slot, x.user_id, x.display_name]), [['referee1', U.ref1.id, 'Muster Anna']])
-      // the older object keyed by role and OpenBeach's spelling are read too
+      // the older object keyed by role is read too
       const m2 = await newMatch('owner')
       await pool.query('UPDATE public.matches SET officials = $2 WHERE id = $1', [m2.id, JSON.stringify({ ref2: { firstName: 'Ben', lastName: 'Beispiel', email: U.ref2.email } })])
       assert.equal((await approveAs('owner', m2, 'referee2', 'ref2', { bind: false })).status, 200)
-      const m3 = await newMatch('owner')
-      await pool.query('UPDATE public.matches SET officials = $2 WHERE id = $1', [m3.id, JSON.stringify([{ role: 'referee 1', email: U.ref1.email }])])
-      assert.equal((await approveAs('owner', m3, 'referee1', 'ref1', { bind: false })).status, 200)
     })
 
     it('officialAddressOf: the address of a referee slot in either officials format, else null', () => {
@@ -650,6 +647,11 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       // locked for the rival only: its right PIN answers like a wrong one, not counted
       expectErr(await approveAs('rivalScorer', mine, 'referee1', 'victimRef'), 403, 'OV_APPROVAL_PIN_INVALID')
       assert.equal((await pinRow('victimRef')).failed_attempts, PIN_LOCK_EVERY)
+      // the official sees that lock in the profile, as one scoring table's
+      let st = (await approvals.getPinStatus({ userId: victim.id })).body.data
+      assert.equal(st.locked_scope, 'caller')
+      assert.ok(Math.abs(new Date(st.locked_until) - (Date.now() + 15 * 60000)) < 60000, st.locked_until)
+      assert.equal(st.disabled, false)
       // the honest scoring table approves at once
       const ok1 = await approveAs('owner', honest, 'referee1', 'victimRef')
       assert.equal(ok1.status, 200, JSON.stringify(ok1.body))
@@ -663,7 +665,11 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       assert.equal(p.failed_attempts, PIN_CALLER_MAX, 'blocked: no more tries counted')
       assert.equal(p.disabled_at, null, 'one caller never disables the PIN')
       assert.equal(p.locked_until, null)
-      assert.equal((await approvals.getPinStatus({ userId: victim.id })).body.data.disabled, false)
+      // blocked for the rival until its oldest failure leaves the 30 days: shown too
+      st = (await approvals.getPinStatus({ userId: victim.id })).body.data
+      assert.equal(st.disabled, false)
+      assert.equal(st.locked_scope, 'caller')
+      assert.ok(new Date(st.locked_until) > new Date(Date.now() + 29 * 86400000), st.locked_until)
       const ok2 = await approveAs('owner', honest, 'referee1', 'victimRef')
       assert.equal(ok2.status, 200, JSON.stringify(ok2.body))
       await undoAs('owner', ok2.body.data.approval.id)
@@ -681,9 +687,12 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       p = await pinRow('victimRef')
       assert.equal(p.failed_attempts, PIN_DISABLE_AT)
       assert.ok(p.disabled_at, 'disabled by the failures of two callers')
-      assert.equal((await approvals.getPinStatus({ userId: victim.id })).body.data.disabled, true)
+      st = (await approvals.getPinStatus({ userId: victim.id })).body.data
+      assert.deepEqual([st.disabled, st.locked_scope, st.locked_until], [true, null, null])
       // a new PIN (with the password) starts every count again
       assert.equal((await approvals.setPin({ userId: victim.id, body: { password: PW, pin: '529064' } })).status, 200)
+      st = (await approvals.getPinStatus({ userId: victim.id })).body.data
+      assert.deepEqual([st.disabled, st.locked_scope, st.locked_until], [false, null, null], 'the old locks are gone with the old PIN')
       U.victimRef.pin = '529064'
       allPins.add('529064')
       assert.equal((await approveAs('rivalScorer', mine, 'referee1', 'victimRef')).status, 200)
@@ -1016,6 +1025,35 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       assert.equal((await beachApprove('bOwner', m, 'referee2', 'bRef2')).status, 200)
       const sc = await beachApprove('bOwner', m, 'scorer', 'bOwner')
       assert.equal(sc.status, 200, JSON.stringify(sc.body))
+    })
+
+    it('a beach match without a stored referee address keeps the older rule until OpenBeach stores one (installed OpenBeach apps)', async () => {
+      const call = async (app, caller, m, slot, official) => {
+        const id = B[caller]?.id ?? U[caller].id
+        const o = B[official] ?? U[official]
+        return app.approve({ callerId: id, access: await access.get(id), body: { external_id: m.ext, slot, email: o.email, pin: o.pin, result: { sets: SETS } }, ip: '203.0.113.23' })
+      }
+      // OpenBeach's officials: names only, no address (MatchSetup_beach buildOfficialsArray)
+      const m = await newMatch('bOwner', { sport: 'beach' })
+      await pool.query('UPDATE public.matches SET officials = $2 WHERE id = $1',
+        [m.id, JSON.stringify([{ role: '1st referee', firstName: 'Rita', lastName: 'Sand', country: null, dob: null }])])
+      const r1 = await call(beachApp, 'bOwner', m, 'referee1', 'bRef1')
+      assert.equal(r1.status, 200, JSON.stringify(r1.body))
+      // the rest of the rule still holds: never the scoring side
+      await pool.query('INSERT INTO public.match_editors (match_id, user_id) VALUES ($1, $2)', [m.id, B.bRef3.id])
+      expectErr(await call(beachApp, 'bOwner', m, 'referee2', 'bRef3'), 403, 'OV_APPROVAL_SCORER_NOT_REFEREE')
+      // a stored address binds a beach slot too
+      const m2 = await newMatch('bOwner', { sport: 'beach' })
+      await nameOfficial(m2, 'referee1', B.bRef1.email)
+      expectErr(await call(beachApp, 'bOwner', m2, 'referee1', 'bRef2'), 403, 'OV_APPROVAL_NOT_MATCH_OFFICIAL')
+      assert.equal((await call(beachApp, 'bOwner', m2, 'referee1', 'bRef1')).status, 200)
+      // an indoor match without one stays refused
+      const indoor = await newMatch('owner')
+      expectErr(await call(beachApp, 'owner', indoor, 'referee1', 'ref1'), 409, 'OV_APPROVAL_OFFICIAL_EMAIL_MISSING')
+      // once OpenBeach stores the address, the server requires it for beach too
+      const strict = createApprovals({ pool, auth, secret: SECRET, logger, beachApprovals: true, beachOfficialAddressRequired: true })
+      const m3 = await newMatch('bOwner', { sport: 'beach' })
+      expectErr(await call(strict, 'bOwner', m3, 'referee1', 'bRef2'), 409, 'OV_APPROVAL_OFFICIAL_EMAIL_MISSING')
     })
 
     it('audit entries carry the match\'s app: approve, undo, PIN lockout and void', async () => {

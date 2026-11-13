@@ -52,8 +52,10 @@ Other design decisions made in this spec. Each one is flagged so the owner can o
 - **R7 The official is told.** With a mailer (SMTP configured), the official gets an email for every approval made with their PIN (match, result, slot, time, short ID, and who sent it) and when their PIN is locked or blocked. Mails go out after COMMIT, in the background, from the new `notify` budget (100 per hour). `GET /api/account/approvals` lists the caller's own approvals (active and revoked, newest first, with `requested_by_name` and the match). The profile shows them under "Your approvals", with undo while the match is open.
 - **R8 Teams are part of what was approved.** The `matches_void_approvals` trigger also voids the approvals (reason `result_changed`) when the home or away team's name changes (trimmed, case-insensitive) while the status is ended, approved or final. Swapping the teams after an approval no longer leaves it valid.
 - **R10 The PIN is always visible (owner feedback 2026-10-07).** A drawn signature no longer hides "Approve with PIN" (it was `!isSigned` in `SignatureBox`, so a sheet signed by hand showed no PIN at all). Next to each official's signature MatchEnd shows exactly one of: "Approve with PIN", the approved state with Undo, or one line saying why not (`pinApprovalState` in `src/domain/accountApproval.js`, keys `approval.why.*`: assistant scorer signs only, match approved or closed, beach, match not online, no cloud on this device, feature off on the server, signed out, account without the role, offline). Signed boxes get "Re-sign" and "Clear" (`src/domain/signatureEdits.js`); each change is written at once and queued as the match's whole `signatures` object. An approval is bound to the result, not to the image, so re-signing keeps it.
-- **R11 Bound to the match's officials (rollout audit, 2026-11).** A referee slot takes only the address the match setup stored for that referee (`matches.officials`, the 1st or 2nd referee's `email`), compared case-insensitively before any account or PIN is looked up: another address answers 403 `OV_APPROVAL_NOT_MATCH_OFFICIAL`, a referee without a stored address 409 `OV_APPROVAL_OFFICIAL_EMAIL_MISSING`, and nothing is counted. The scorer slot names only the match's creator or an editor (403 `OV_APPROVAL_NOT_MATCH_SCORER`, the same for an unknown address), also before the PIN. The slot keeps the approving account's own profile name. A second account with the referee role and a borrowed name can no longer approve as the appointed referee, and a caller can no longer name any official's address to lock their PIN. The dialog starts with the stored address and offers no address remembered on the device.
-- **R12 Wrong PINs per caller (rollout audit, 2026-11).** 1.2 as rebuilt: the lock is per approver and caller, and one caller never disables a PIN.
+- **R11 Bound to the match's officials (rollout audit, 2026-11).** A referee slot takes only the address the match setup stored for that referee (`matches.officials`, the 1st or 2nd referee's `email`), compared case-insensitively before any account or PIN is looked up: another address answers 403 `OV_APPROVAL_NOT_MATCH_OFFICIAL`, a referee without a stored address 409 `OV_APPROVAL_OFFICIAL_EMAIL_MISSING`, and nothing is counted. The scorer slot names only the match's creator or an editor (403 `OV_APPROVAL_NOT_MATCH_SCORER`, the same for an unknown address), also before the PIN. The slot keeps the approving account's own profile name. A caller can no longer name any official's address to lock their PIN, and a second account with the referee role and a borrowed name no longer approves as a referee the match setup names with another address. The dialog starts with the stored address, and no official's address is remembered on the device.
+  - **What it does not bind (open, owner).** The stored address is the scoring side's own entry: the match's scorer types it in the match setup and can still change it through `/api/db`, also on an ended match. A scorer who enters a second account's address for the referee still fills that slot with it; the address is then on the match record and the final mail goes to it. Binding a slot to the referee the league appointed needs someone other than the scoring side to vouch for the address: the referee role only from admin-issued codes (not from club codes), the league's appointment, or an admin-kept referee directory linked to accounts. A cheaper hardening is to refuse or audit a change of a referee's address once the match has left the setup. Neither is built.
+  - **OpenBeach.** OpenBeach (another repository) stores no referee address in its officials yet. A beach referee slot without one keeps the older rule (any account with `beach:referee`, never the scoring side), so its installed apps keep approving; a beach slot with a stored address is bound like an indoor one. Once an OpenBeach release stores the addresses, `server.js` creates the module with `beachOfficialAddressRequired: true`.
+- **R12 Wrong PINs per caller (rollout audit, 2026-11).** 1.2 as rebuilt: the lock is per approver and caller, and one caller never disables a PIN. Two accounts that each name the official on a match of their own still can (the ceiling, 20 failures); the official is mailed and sets a new PIN with the password. The profile shows a lock for one account too (`locked_scope: 'caller'`, 3.1).
 - **R13 PIN fields are no password fields (rollout audit, 2026-11).** Every approval-PIN field is a masked `type="text"` field with `autocomplete="one-time-code"` and the password-manager ignore attributes, and the e-mail beside it offers no saved address, so a browser on the shared scoring device never offers to save an official's PIN with their e-mail.
 - **R14 Unconfirmed approvals print as pending (rollout audit, 2026-11).** When "Confirm and approve" cannot ask the server (offline, an error), the approvals that complete a slot are not confirmed: the scorer is asked first, and then those slots print as pending (no "Approved electronically") and the approval's summary leaves them out. The server's records come back with the next refresh.
 - **R9 Frontend.** Before "Confirm and approve", only the approvals that complete a slot are re-checked: no drawn signature in that slot, and a match with the current result. A stale record in a slot that was signed by hand never blocks, and drawing a signature drops it. "Reopen match" keeps the account approvals, as it keeps the drawn signatures: the result is unchanged and the server keeps them on approved → ended. The admin reopen, "Reopen last set" and a result or team change in Manual adjustments drop them. Manual adjustments now sends the corrected sets through the sync queue, so an approval can bind to them. When the result or a team name changes there, it also clears the post-match signatures and undoes the account approvals online. The admin lookup reads "ID 6F1C2A9B", "#6F1C2A9B" and "#4711" as the bare ID or game number, both in the client and on the server.
@@ -161,7 +163,7 @@ address into the officials of a match it scores can type wrong PINs there. That 
 for that account (5 per 15 minutes, 10 per 30 days), never for the other scoring tables, and one
 account alone never disables it. Two or more such accounts together can disable it after 20
 failures; the official then signs by hand, which is the fallback, gets an email (R7) and sees the
-state in the profile. A locked or disabled PIN answers exactly like a wrong PIN or an unknown
+state in the profile (a lock for one account too, 3.1). A locked or disabled PIN answers exactly like a wrong PIN or an unknown
 address (R5), so the answers never tell which addresses belong to officials with a PIN. Every
 failure and every lock writes an audit row with the sender as actor.
 
@@ -317,9 +319,10 @@ with the existing `TOO_MANY` body).
 **`GET /api/account/approval-pin`** → 200
 ```json
 { "available": true, "eligible": true, "set": true, "set_at": "2026-10-07T10:00:00.000Z",
-  "locked_until": null, "disabled": false }
+  "locked_until": null, "locked_scope": null, "disabled": false }
 ```
 - `available` is false when there is no `OV_PIN_SECRET`. All other fields are then false or null.
+- `locked_until` with `locked_scope`: `'all'` for a lock of `auth.approval_pins.locked_until`, `'caller'` for the latest lock of the current PIN for one account (1.2, from its `approval_pin.locked` audit row) that still holds; both null otherwise and while the PIN is disabled.
 - `eligible` means the account holds `referee` or `scorer` and its email is confirmed. As built, "confirmed" here and in 3.1 step 5 and 3.2 step 10 means `email_confirmed_at` is set, whenever the users table has that column.
 - A row with an old `key_id` reads as `set: false`.
 
@@ -379,7 +382,7 @@ The order of the checks is part of the contract:
 6. `closed_at IS NOT NULL`: 409 `OV_MATCH_CLOSED`.
 7. `status <> 'ended'`: 409 `OV_MATCH_NOT_ENDED` `{ details: { status } }`.
 8. `resultKey(server sets)` differs from `resultKey(body.result.sets)`, or the server has no finished set at all: 409 `OV_RESULT_NOT_SYNCED` `{ details: { server: [[i,h,a],…] } }`. The client syncs and retries.
-8b. Only an official of the match is named (R11), before any lookup and never counted: a referee slot's `email` must be the address stored for that referee in `matches.officials` (403 `OV_APPROVAL_NOT_MATCH_OFFICIAL`; none stored: 409 `OV_APPROVAL_OFFICIAL_EMAIL_MISSING`); the scorer slot's approver must be `created_by` or an editor (403 `OV_APPROVAL_NOT_MATCH_SCORER`, the same for an unknown address).
+8b. Only an official of the match is named (R11), before any lookup and never counted: a referee slot's `email` must be the address stored for that referee in `matches.officials` (403 `OV_APPROVAL_NOT_MATCH_OFFICIAL`; none stored: 409 `OV_APPROVAL_OFFICIAL_EMAIL_MISSING`, except on a beach match while `beachOfficialAddressRequired` is off); the scorer slot's approver must be `created_by` or an editor (403 `OV_APPROVAL_NOT_MATCH_SCORER`, the same for an unknown address).
 9. Look up the approver with `auth.users` by `lower(email)`. Deleted, banned or blocked users count as unknown. Then `SELECT … FROM auth.approval_pins WHERE user_id = $1 FOR UPDATE`, which is skipped for an unknown user, but `verifyPin` still runs once with the dummy inputs:
    - Disabled, locked, or locked for this caller (1.2): 403 `OV_APPROVAL_PIN_INVALID`, like a wrong PIN. Not counted (R5).
    - Wrong PIN, unknown email, no PIN or old `key_id`: 403 `OV_APPROVAL_PIN_INVALID` (message "Email or PIN not accepted", no details). When a row exists, the failure is counted (1.2) and **committed**. A failure that locks or disables mails the official (R7).
@@ -442,7 +445,7 @@ These are active approvals only, fetched in one extra query per page, with `WHER
 | 403 | **`OV_APPROVAL_NOT_MATCH_SCORER`** | Scorer slot, but the approver is not the owner or an editor |
 | 403 | **`OV_APPROVAL_SCORER_NOT_REFEREE`** | Referee slot, but the approver is the owner, an editor or the caller (R1) |
 | 403 | **`OV_APPROVAL_NOT_MATCH_OFFICIAL`** | Referee slot, but the email is not the one the match stores for that referee (R11) |
-| 409 | **`OV_APPROVAL_OFFICIAL_EMAIL_MISSING`** | Referee slot, but the match stores no email for that referee (R11) |
+| 409 | **`OV_APPROVAL_OFFICIAL_EMAIL_MISSING`** | Referee slot, but the match stores no email for that referee (R11; beach: only with `beachOfficialAddressRequired`) |
 | 403 | **`OV_APPROVAL_CALLER_ROLE`** | The caller has neither the scorer nor the referee role and is not an admin (R2) |
 | 403 | `OV_NOT_MATCH_OWNER` | The caller may not write this match |
 | 403 | `OV_FORBIDDEN` | GET or undo by someone else |
@@ -502,7 +505,7 @@ export const approvalsApi = {
 - `formatApprovalStamp(approval, { timeZone = 'Europe/Zurich' })` returns `"Approved electronically · <name> · dd.mm.yyyy hh:mm · ID <short_id>"`. The text is English because the PDF sheet is English, and the time is 24 h.
 - `isWeakPin(pin)` and `PIN_RE` mirror the server, for inline validation.
 - `deviceId()` reads or creates `localStorage['ov.deviceId']` (a uuid, try/catch). It returns null when storage is unavailable.
-- `rememberApprovalEmail(officialName, email)` and `recallApprovalEmail(officialName)` keep a per-device map in `localStorage['ov.approvalEmails']`, keyed by the lower-cased "last first" name, at most 50 entries, LRU, try/catch. This is a convenience only. **Never** write emails into `match.officials`: officials sync to `matches.officials`, which referee and bench tokens can read.
+- `rememberApprovalEmail(officialName, email)` and `recallApprovalEmail(officialName)` keep a per-device map in `localStorage['ov.approvalEmails']`, keyed by the lower-cased "last first" name, at most 50 entries, LRU, try/catch. Since the rollout audit (R11) nothing writes or reads it: a referee approves only with the stored address, and an official's address is not kept on the shared scoring device. Clearing the existing map is left to the shared-device session clean-up. **Never** write emails into `match.officials` from the approval dialog: officials sync to `matches.officials`, which referee and bench tokens can read.
 
 `clearedPostMatchSignatures()` in `src/domain/matchEnd.js` also returns `accountApprovals: null`,
 so every reopen path clears them locally. The server voids them through the trigger in 1.5.
@@ -562,16 +565,15 @@ Only `scorer`, `ref2` and `ref1` change. Captains and the assistant scorer stay 
   - **Title:** `approval.dialogTitle` ("Approve as {{role}}").
   - **Name hint:** the name entered for that official in `match.officials`.
   - **Email field** (`type=email`, `autocomplete=off`, `autoCapitalize=none`). It is prefilled, in order, from:
-    1. the official entry's `email` (forward-compatible; nothing writes one today);
+    1. the official entry's `email` (the match setup stores the referees' addresses; a referee slot takes no other, R11);
     2. for the scorer slot, the signed-in user's email;
-    3. `recallApprovalEmail(official name)`;
-    4. otherwise empty.
+    3. otherwise empty (no address remembered on the device, R11).
   - **PIN field** with the same attributes as 4.4. The hint `approval.pinHint` reads "The official types their own approval PIN. It is set in their profile."
   - **Submit:** `approval.approve` ("Approve"). Nothing auto-submits.
   - **On submit:**
     1. If `db.sync_queue` has jobs for this match that are not done, show `approval.syncing` ("Sending the result…"), dispatch `sync-queue-write` and wait until the jobs are done, for at most 10 s. After that, show the `approval.errors.resultNotSynced` text and stop.
     2. Send `{ external_id: seed_key, slot, email, pin, result: { sets: finished sets as [index, homePoints, awayPoints] }, device_id: deviceId() }`.
-    3. On 200: write Dexie, call `rememberApprovalEmail` (not for the scorer slot), show the toast `approval.approved`, close the dialog and clear the PIN.
+    3. On 200: write Dexie, show the toast `approval.approved`, close the dialog and clear the PIN (no address is remembered on the device, R11).
     4. On `OV_RESULT_NOT_SYNCED`: retry steps 1–2 once, then show the error.
     5. (Removed by R5: a locked PIN reads as `approval.errors.pinInvalid`, whose text says that the PIN pauses after several wrong tries.)
     6. Other errors appear inline through `errorKeyOf`. Clear the PIN field on every error.
@@ -637,7 +639,7 @@ Claude-Session: https://claude.ai/code/session_01Tf9Me5uXmbq7Y9pLyiVvbq
   - Set, change and remove PIN: password required, wrong password gives 403 and counts in the email lockout, format and weak checks, the unconfirmed and role gates, idempotent remove, and the audit rows.
   - Approve, happy path, for all three slots. The record shape has no `user_id` or email keys (assert on the JSON keys).
   - Every error in the 3.2 order, including that a wrong PIN for an ineligible account answers `PIN_INVALID`, not `ROLE_REQUIRED`, and that an unknown email gives the same answer as a wrong PIN.
-  - Lockout: after 5 wrong PINs the PIN is locked; the answer stays 403 `OV_APPROVAL_PIN_INVALID` (R5) and the 6th attempt is not counted. After the lock expires (move the clock with `UPDATE locked_until`), 5 more wrong PINs set `disabled`. A correct PIN keeps the count; 30 quiet days restart it (R4). The counter persists even though the handler returned an error (committed). The `approval_pin.locked` audit row exists.
+  - Lockout (1.2 as rebuilt, R12): after 5 wrong PINs from one caller the PIN is locked for that caller; the answer stays 403 `OV_APPROVAL_PIN_INVALID` (R5) and the next attempt is not counted. After the lock expires (move the `approval_pin.failed` rows back), 5 more block that caller; the PIN stays usable for others and the profile shows the lock (`locked_scope: 'caller'`). Ten more from a second caller disable it. A correct PIN keeps the count; 30 quiet days restart it (R4). The counts persist even though the handler returned an error (committed). The `approval_pin.locked` audit rows exist.
   - One slot per user; slot taken; an idempotent retry returns `already: true` with no second audit row.
   - Stale replacement: change the set points with `UPDATE sets`, approve again, and check that the old row has `result_changed`.
   - `OV_RESULT_NOT_SYNCED` with the server sets in `details`.

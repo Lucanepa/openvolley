@@ -4500,6 +4500,7 @@
       "notSet": "Non impostato",
       "setOn": "Impostato il {{date}}",
       "lockedUntil": "Bloccato fino alle {{time}}",
+      "lockedForCallerUntil": "In pausa per un account fino alle {{time}}, dopo PIN sbagliati da quell'account. Gli altri account possono ancora usare il tuo PIN. Un nuovo PIN termina la pausa.",
       "disabled": "Bloccato dopo troppi PIN errati. Impostane uno nuovo.",
       "ineligible": {
         "email": "Conferma prima il tuo indirizzo e-mail",

@@ -4501,6 +4501,7 @@
       "notSet": "Not set",
       "setOn": "Set on {{date}}",
       "lockedUntil": "Locked until {{time}}",
+      "lockedForCallerUntil": "Paused for one account until {{time}}, after wrong PINs from it. Other accounts can still use your PIN. A new PIN ends the pause.",
       "disabled": "Blocked after too many wrong PINs. Set a new one.",
       "ineligible": {
         "email": "Confirm your email address first",

@@ -4483,6 +4483,7 @@
       "notSet": "Nicht gesetzt",
       "setOn": "Gesetzt am {{date}}",
       "lockedUntil": "Gesperrt bis {{time}}",
+      "lockedForCallerUntil": "Für ein Konto pausiert bis {{time}}, nach falschen PINs von diesem Konto. Andere Konten können deine PIN weiter verwenden. Eine neue PIN beendet die Pause.",
       "disabled": "Gesperrt nach zu vielen falschen PINs. Setze eine neue.",
       "ineligible": {
         "email": "Bestätige zuerst deine E-Mail-Adresse",

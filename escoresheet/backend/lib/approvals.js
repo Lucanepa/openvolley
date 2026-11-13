@@ -26,7 +26,13 @@
  * address stored with the match for that referee (matches.officials, typed in
  * the match setup; nothing is looked up or counted for another address), the
  * scorer slot the match's creator or one of its editors. The approval keeps
- * the approving account's own profile name next to the slot.
+ * the approving account's own profile name next to the slot. The stored
+ * address is the scoring side's own entry: it binds the slot to the account
+ * the match setup names, not to a league appointment (who may vouch for a
+ * referee's address is the owner's decision, account-approval-spec R11).
+ * OpenBeach stores no referee address yet: a beach referee slot without one
+ * keeps the older rule (any account with the role, not on the scoring side)
+ * until the module is created with `beachOfficialAddressRequired: true`.
  *
  * Wrong PINs are counted per approver in auth.approval_pins and per approver
  * and caller in the audit log (approval_pin.failed), under the row lock of
@@ -37,10 +43,11 @@
  * that caller for 15 minutes, its 10th until those 30 days pass. The
  * approver's count is the higher ceiling: its 20th failure disables the PIN
  * until its owner sets a new one with their password, and only when the
- * failures came from at least two callers (one caller never disables it). A
+ * failures came from at least two callers (one caller never disables it;
+ * two accounts that each name the official on a match of their own can). A
  * locked or disabled PIN answers exactly like a wrong one (no oracle for
- * whose address has a PIN); its owner sees the state in the profile and gets
- * an email (with a mailer).
+ * whose address has a PIN); its owner sees the state in the profile (a lock
+ * for one caller too) and gets an email (with a mailer).
  *
  * With a mailer (lib/mailer.js) the official gets an email for every approval
  * made with their PIN and when it is locked or disabled. The mails go out
@@ -84,11 +91,11 @@ export const PIN_CALLER_MAX = 10
 export const PIN_DISABLE_AT = 20
 export const PIN_FAILURE_WINDOW_DAYS = 30
 // The match.officials entries of the referee slots (frontend
-// domain/officials.js OFFICIAL_ROLES and OpenBeach's 'referee 1' / 'referee 2';
-// `key`: the older object keyed by role)
+// domain/officials.js OFFICIAL_ROLES; OpenBeach writes '1st referee' /
+// '2nd referee' too; `key`: the older object keyed by role)
 const SLOT_OFFICIAL = Object.freeze({
-  referee1: Object.freeze({ key: 'ref1', roles: ['1st referee', 'ref1', '1st_referee', 'referee 1'] }),
-  referee2: Object.freeze({ key: 'ref2', roles: ['2nd referee', 'ref2', '2nd_referee', 'referee 2'] })
+  referee1: Object.freeze({ key: 'ref1', roles: ['1st referee', 'ref1', '1st_referee'] }),
+  referee2: Object.freeze({ key: 'ref2', roles: ['2nd referee', 'ref2', '2nd_referee'] })
 })
 // Who may send an approval: a scorer or referee account (the scoring table),
 // or an admin. A pending self-registered account may not, even on its own
@@ -211,13 +218,20 @@ const safeMessage = (err) => String(err?.message || err).replace(/"[^"]*"/g, '"â
  * @param {string|null} o.secret  OV_PIN_SECRET; null = the feature is off
  * @param {object} [o.mailer]  lib/mailer.js mailer; none or disabled: no notification mails
  * @param {object} [o.logger]
+ * @param {boolean} [o.beachApprovals]  beach matches are approved with accounts (OpenBeach)
+ * @param {boolean} [o.beachOfficialAddressRequired]  a beach referee slot needs a stored
+ *   address, as an indoor one does (once an OpenBeach release stores them)
  */
-export function createApprovals ({ pool, auth = null, secret = null, mailer = null, logger = console, beachApprovals = false } = {}) {
+export function createApprovals ({ pool, auth = null, secret = null, mailer = null, logger = console, beachApprovals = false, beachOfficialAddressRequired = false } = {}) {
   if (!pool || typeof pool.query !== 'function') throw new Error('createApprovals: pool is required')
   const log = logger
   // Who may hold an approval PIN: a referee or scorer of a sport that is approved with an account
   const pinRoles = beachApprovals ? [...APPROVAL_ROLES, ...APPROVAL_ROLES.map((r) => roleFor('beach', r))] : [...APPROVAL_ROLES]
   const beachRefused = (m) => !beachApprovals && sportOf(m.sport_type) === 'beach'
+  // OpenBeach's match setup stores no referee address (MatchSetup_beach
+  // buildOfficialsArray): until it does, a beach referee slot without one is
+  // not bound, so its installed apps keep approving
+  const addressOptional = (m) => !beachOfficialAddressRequired && sportOf(m.sport_type) === 'beach'
   const keys = secret ? deriveKeys(secret) : null
   const mails = mailer && mailer.enabled && typeof mailer.send === 'function' ? mailer : null
 
@@ -359,8 +373,14 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
   }
 
   // ------------------------------------------------------------------ approval PIN
+  /**
+   * The approval PIN's state for its owner's profile. locked_until: until
+   * when it is locked, for every caller (locked_scope 'all', the older
+   * per-approver lock) or for one scoring table (locked_scope 'caller', 1.2:
+   * the latest such lock of the current PIN that still holds).
+   */
   async function getPinStatus ({ userId } = {}) {
-    const off = { available: false, eligible: false, set: false, set_at: null, locked_until: null, disabled: false }
+    const off = { available: false, eligible: false, set: false, set_at: null, locked_until: null, locked_scope: null, disabled: false }
     if (!keys) return ok(off)
     if (!isUuid(userId)) return NOT_SIGNED_IN()
     return guarded('pin-status', async () => {
@@ -370,12 +390,27 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
         `SELECT key_id, salt, mac, set_at, disabled_at, CASE WHEN locked_until > now() THEN locked_until END AS locked_until
            FROM auth.approval_pins WHERE user_id = $1`, [userId])
       const current = isCurrentPinRow(p)
+      let lockedUntil = current ? p.locked_until : null
+      let scope = lockedUntil ? 'all' : null
+      if (current && !lockedUntil && p.disabled_at == null) {
+        const { rows: [c] } = await pool.query(
+          `SELECT max(until) AS until FROM (
+             SELECT CASE WHEN details->>'locked_until' ~ '^[0-9]{4}-' THEN (details->>'locked_until')::timestamptz END AS until
+               FROM public.audit_log
+              WHERE action = 'approval_pin.locked' AND target_user_id = $1 AND at >= $2::timestamptz AND details->>'scope' = 'caller'
+           ) l WHERE until > now()`, [userId, p.set_at])
+        if (c?.until) {
+          lockedUntil = c.until
+          scope = 'caller'
+        }
+      }
       return ok({
         available: true,
         eligible: !me.unconfirmed && pinRoles.some((r) => me.roles.includes(r)),
         set: current,
         set_at: current ? iso(p.set_at) : null,
-        locked_until: current ? iso(p.locked_until) : null,
+        locked_until: iso(lockedUntil),
+        locked_scope: scope,
         disabled: current && p.disabled_at != null
       })
     }, { missingTable: () => ok(off) })
@@ -576,14 +611,15 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
       // 9. Only an official of this match is named: nothing is looked up or
       // counted for any other address. A referee slot takes the address
       // stored with the match for that referee (typed in the match setup), so
-      // the approving account is the appointed official's, by its confirmed
-      // address, whatever name it gives itself.
+      // the approving account is the one the match setup names, by its
+      // confirmed address, whatever name it gives itself. A beach match
+      // without one: the older rule (addressOptional).
       if (v.slot !== 'scorer') {
         const stored = officialAddressOf(m.officials, v.slot)
-        if (!stored) {
+        if (!stored && !addressOptional(m)) {
           return fail(409, 'OV_APPROVAL_OFFICIAL_EMAIL_MISSING', 'The match has no email for this referee: enter it in the match setup first')
         }
-        if (stored !== v.email) {
+        if (stored && stored !== v.email) {
           return fail(403, 'OV_APPROVAL_NOT_MATCH_OFFICIAL', 'This email is not the one entered for this official of the match')
         }
       }

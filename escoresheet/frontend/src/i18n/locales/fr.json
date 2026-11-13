@@ -4494,6 +4494,7 @@
       "notSet": "Non défini",
       "setOn": "Défini le {{date}}",
       "lockedUntil": "Bloqué jusqu'à {{time}}",
+      "lockedForCallerUntil": "En pause pour un compte jusqu'à {{time}}, après des PIN faux venant de ce compte. Les autres comptes peuvent toujours utiliser votre PIN. Un nouveau PIN met fin à la pause.",
       "disabled": "Bloqué après trop de PIN erronés. Définissez-en un nouveau.",
       "ineligible": {
         "email": "Confirmez d'abord votre adresse e-mail",

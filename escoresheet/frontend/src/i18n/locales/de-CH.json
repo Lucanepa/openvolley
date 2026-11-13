@@ -4495,6 +4495,7 @@
       "notSet": "Nöd gsetzt",
       "setOn": "Gsetzt am {{date}}",
       "lockedUntil": "Gsperrt bis {{time}}",
+      "lockedForCallerUntil": "Für eis Konto pausiert bis {{time}}, nach falsche PINs vo dem Konto. Anderi Konte chönd dini PIN wiiter bruuche. E neui PIN beendet d Pause.",
       "disabled": "Gsperrt nach z vill falsche PINs. Setz e neui.",
       "ineligible": {
         "email": "Bestätig zersch dini E-Mail-Adresse",

@@ -118,6 +118,12 @@ describe('visibility', () => {
     expect(await screen.findByTestId('approval-pin-status')).toHaveTextContent(/^Locked until /)
     view.unmount()
 
+    // paused for one account only (its wrong PINs): the official sees it too (rollout audit be-auth-7)
+    api.status = vi.fn(async () => ok({ ...STATUS, set: true, locked_until: new Date(Date.now() + 600000).toISOString(), locked_scope: 'caller' }))
+    view = render(<ApprovalPinSection />)
+    expect(await screen.findByTestId('approval-pin-status')).toHaveTextContent(/^Paused for one account until .+ Other accounts can still use your PIN/)
+    view.unmount()
+
     setAuth(['referee'], { confirmed: false })
     api.status = vi.fn(async () => ok({ ...STATUS, eligible: false }))
     render(<ApprovalPinSection />)

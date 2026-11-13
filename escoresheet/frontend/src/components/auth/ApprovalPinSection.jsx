@@ -122,7 +122,9 @@ export default function ApprovalPinSection({ className = '' }) {
   } else if (status.disabled) {
     line = <span className="font-medium text-red-700">{t('approval.pin.disabled')}</span>
   } else if (lockedUntil) {
-    line = <span className="font-medium text-amber-700">{t('approval.pin.lockedUntil', { time: formatApprovalTime(lockedUntil) })}</span>
+    // locked_scope 'caller': paused only for the account that typed the wrong PINs
+    const key = status.locked_scope === 'caller' ? 'approval.pin.lockedForCallerUntil' : 'approval.pin.lockedUntil'
+    line = <span className="font-medium text-amber-700">{t(key, { time: formatApprovalTime(lockedUntil) })}</span>
   } else if (status.set) {
     line = <span className="text-emerald-700">{t('approval.pin.setOn', { date: formatApprovalTime(status.set_at) })}</span>
   } else {
@@ -164,7 +166,7 @@ export default function ApprovalPinSection({ className = '' }) {
         onDone={(next) => {
           setDialog(null)
           if (next) {
-            const merged = { ...status, ...next, locked_until: null, disabled: false }
+            const merged = { ...status, ...next, locked_until: null, locked_scope: null, disabled: false }
             setStatus(merged)
             writeCachedStatus(userId, merged)
           }
