@@ -2100,6 +2100,9 @@
   "backupTable": {
     "noActions": "Keine Aktionen",
     "error": "Fehler",
+    "locked": "Verschlüsselt",
+    "showMoreLastActions_one": "Letzte Aktion von 1 weiteren Backup zeigen",
+    "showMoreLastActions_other": "Letzte Aktion von {{count}} weiteren Backups zeigen",
     "gameN": "Spiel Nr.",
     "set": "Satz",
     "score": "Punkte",

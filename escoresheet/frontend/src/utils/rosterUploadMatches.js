@@ -1,5 +1,5 @@
 import { apiFrom } from '../lib/apiClient'
-import { formatTimeLocal } from './timeUtils'
+import { dayTimeLabel } from '../ui/format'
 import { isBeachPickerRow, pickerTeamNames } from './pickerMatches'
 
 /**
@@ -40,8 +40,9 @@ function displayDateTime(scheduledAt) {
     const iso = /Z$|[+-]\d\d:?\d\d$/.test(scheduledAt) ? scheduledAt : `${scheduledAt}Z`
     const d = new Date(iso)
     if (Number.isNaN(d.getTime())) return 'TBD'
-    const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    return `${dateStr} ${formatTimeLocal(iso)}`
+    // "05.10.2026 20:00": date and time both on the Zürich clock (the date
+    // was the device's: a 00:30 game showed under the day before on UTC)
+    return dayTimeLabel(d)
   } catch {
     return 'TBD'
   }

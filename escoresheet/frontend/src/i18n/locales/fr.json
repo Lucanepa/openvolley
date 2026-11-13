@@ -2254,6 +2254,9 @@
   "backupTable": {
     "noActions": "Aucune action",
     "error": "Erreur",
+    "locked": "Chiffré",
+    "showMoreLastActions_one": "Afficher la dernière action d’une autre sauvegarde",
+    "showMoreLastActions_other": "Afficher la dernière action de {{count}} autres sauvegardes",
     "gameN": "Match N",
     "set": "Set",
     "score": "Score",

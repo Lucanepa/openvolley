@@ -2255,6 +2255,9 @@
   "backupTable": {
     "noActions": "Kei Aktione",
     "error": "Fähler",
+    "locked": "Verschlüsslet",
+    "showMoreLastActions_one": "Letschti Aktion vo 1 wiitere Backup zeige",
+    "showMoreLastActions_other": "Letschti Aktion vo {{count}} wiitere Backups zeige",
     "gameN": "Spiil Nr.",
     "set": "Satz",
     "score": "Stand",

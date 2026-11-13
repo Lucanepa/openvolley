@@ -2260,6 +2260,9 @@
   "backupTable": {
     "noActions": "Nessuna azione",
     "error": "Errore",
+    "locked": "Cifrato",
+    "showMoreLastActions_one": "Mostra l’ultima azione di un altro backup",
+    "showMoreLastActions_other": "Mostra l’ultima azione di altri {{count}} backup",
     "gameN": "Partita N",
     "set": "Set",
     "score": "Punteggio",
