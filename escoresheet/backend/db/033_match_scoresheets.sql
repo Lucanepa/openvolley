@@ -16,10 +16,20 @@
 -- approval's). The manager's Scoresheets tab and the final mail serve only
 -- these files of the match (the newest); a match without a row (files stored
 -- before this file ran) falls back to the file names, and then only to files
--- whose storage owner created, edits or closed the match and that have no
--- row of another match. scripts/scoresheet-records.mjs --apply, once after
--- this file and the new backend image, writes the row of the file each match
--- closed before this file ran has by the names (its time kept; idempotent).
+-- stored before this file ran (public.match_scoresheets_start) that have no
+-- row and whose storage owner created, edits or closed the match.
+-- scripts/scoresheet-records.mjs --apply, right after this file, writes the
+-- row of the file each match closed before this file ran has by the names
+-- (its time kept; idempotent). From then on a closed match is served and
+-- held by its row; the names stay only for one the step could not record (a
+-- file the names give to two closed matches), and the server logs each.
+--
+-- public.match_scoresheets_start: one row, when this file first ran. From
+-- then on the backend records every PDF it stores, or refuses it, so a file
+-- without a row is from before that time or no match's: its row failed, or
+-- went with its match (ON DELETE CASCADE; the app's sync queue deletes open
+-- and test matches). Such a newer file is never a match's by its name, and
+-- the step above never records it.
 --
 --   path       the object's key in the bucket ({day}/game{n}_k{hex}.pdf,
 --              beach/{day}/game{n}_{seed}.pdf); one match per file
@@ -40,12 +50,16 @@
 -- apply-roles.sh after this file as with every migration all the same.
 -- Not on the /api/db allowlist: only lib/scoresheets.js reads and writes it.
 --
--- Idempotent, adds a table only (and its first_stored_at column to a table
--- an earlier draft of this file made without it: NULL there, not the time
--- this file ran, which would open the 10 minutes again). Deploy: 033,
--- apply-roles.sh, then the backend image (an image without this table
--- answers PDF uploads with 503), then scripts/scoresheet-records.mjs in the
--- backend container (a dry run, then --apply).
+-- Idempotent, adds two tables only (and the first_stored_at column to a
+-- table an earlier draft of this file made without it: NULL there, not the
+-- time this file ran, which would open the 10 minutes again); a re-run keeps
+-- the start time of the first run. Deploy: the backend image FIRST, then
+-- right after it 033 and apply-roles.sh (until 033 is in, the new image
+-- answers PDF uploads with 503 and the apps send them again), then
+-- scripts/scoresheet-records.mjs in the backend container (a dry run, then
+-- --apply). Not the other way round: a PDF the old image stores after 033
+-- ran has no row and is newer than the start, so the Scoresheets tab and
+-- the final mail would not find it (README "Files stored before this change").
 BEGIN;
 
 CREATE TABLE IF NOT EXISTS public.match_scoresheets (
@@ -63,6 +77,14 @@ ALTER TABLE public.match_scoresheets ALTER COLUMN first_stored_at SET DEFAULT no
 
 CREATE INDEX IF NOT EXISTS match_scoresheets_match_idx ON public.match_scoresheets (match_id, stored_at DESC);
 
+-- One row: since when every stored PDF is recorded
+CREATE TABLE IF NOT EXISTS public.match_scoresheets_start (
+  id          boolean     PRIMARY KEY DEFAULT true CHECK (id),
+  started_at  timestamptz NOT NULL DEFAULT now()
+);
+INSERT INTO public.match_scoresheets_start (id) VALUES (true) ON CONFLICT (id) DO NOTHING;
+
 COMMENT ON TABLE public.match_scoresheets IS 'The scoresheet PDFs the server accepted for each match: who stored them, when, their SHA-256 (db/033).';
+COMMENT ON TABLE public.match_scoresheets_start IS 'One row: when db/033 first ran; a PDF stored since then without a match_scoresheets row is no match''s (db/033).';
 
 COMMIT;

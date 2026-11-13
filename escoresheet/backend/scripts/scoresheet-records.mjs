@@ -1,17 +1,19 @@
 #!/usr/bin/env node
 /**
- * Operator CLI, once after db/033_match_scoresheets.sql: record the PDF of
+ * Deploy step, right after db/033_match_scoresheets.sql: record the PDF of
  * every match closed before it (lib/scoresheets.js recordOldPdfs).
  *
  * Those matches have their approval's PDF on disk without a
  * public.match_scoresheets row, so the server finds it by its name (the
- * match's day folder, game number, owner record). Recorded, it is held as
- * every later match's PDF: the closed-match rules apply by the record, other
- * matches of the same name never reach it, and deleting its uploader's
- * account no longer hides it from the Scoresheets tab. A file that the names
- * serve for two closed matches is left as it is (counted as shared).
- * Idempotent; dry run unless --apply. Run it with the new backend image up
- * (it can run while the server does), and again any time.
+ * match's day folder, game number, owner record; only a file stored before
+ * db/033 ran). Recorded, it is held as every later match's PDF: the
+ * closed-match rules apply by the record, other matches of the same name
+ * never reach it, and deleting its uploader's account no longer hides it
+ * from the Scoresheets tab. A file that the names serve for two closed
+ * matches is left as it is (counted as shared; the server logs each such
+ * match when it serves it). Idempotent; dry run unless --apply. Run it with
+ * the new backend image and db/033 in (it can run while the server does),
+ * and again any time.
  *
  * Usage (in the backend container, with its DATABASE_URL and STORAGE_ROOT / STORAGE_DIR;
  * from the production folder of the compose file):
@@ -48,6 +50,7 @@ async function main () {
   try {
     const apply = args.includes('--apply')
     const r = await createScoresheets({ pool, storage, accounts: null }).recordOldPdfs({ apply })
+    console.log(`db/033 ran ${r.started_at}; PDFs stored since are recorded by the server.`)
     console.log(`${r.matches} closed matches without a recorded PDF: ${r.recorded} ${apply ? 'recorded' : 'to record (dry run: --apply records them)'}, ` +
       `${r.shared} shared with another match (left by name), ${r.none} without a PDF, ${r.unknown} unreadable`)
     return 0
