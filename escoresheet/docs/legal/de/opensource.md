@@ -46,7 +46,6 @@ Inter, IBM Plex Mono, JetBrains Mono, Orbitron, Roboto Mono, Space Mono
 | JSZip | MIT (oder GPL-3.0-or-later) |
 | fflate | MIT |
 | html-to-image | MIT |
-| html5-qrcode | Apache-2.0 |
 | qrcode.react | ISC |
 | Tailwind CSS, tailwind-merge, clsx | MIT |
 | class-variance-authority | Apache-2.0 |
@@ -79,7 +78,7 @@ Linux); diese gehören zum System und werden nicht mitgeliefert.
 
 Node.js (MIT), PostgreSQL (PostgreSQL License), pg (MIT), bcryptjs
 (BSD-3-Clause), Nodemailer (MIT-0), node-ical (Apache-2.0), qrcode (MIT),
-cors (MIT), ws (MIT), Caddy (Apache-2.0), cloudflared (Apache-2.0).
+ws (MIT), Caddy (Apache-2.0), cloudflared (Apache-2.0).
 
 ## Vollständige Liste
 

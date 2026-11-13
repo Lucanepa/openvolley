@@ -18,14 +18,6 @@ vi.mock('../../utils/backendConfig', () => ({
   learnRelayWsPort: vi.fn(async () => null)
 }))
 
-vi.mock('html5-qrcode', () => ({
-  Html5Qrcode: vi.fn().mockImplementation(() => ({
-    start: vi.fn().mockResolvedValue(undefined),
-    stop: vi.fn().mockResolvedValue(undefined),
-    clear: vi.fn()
-  }))
-}))
-
 import ServerConnectionScreen from '../ServerConnectionScreen'
 import { learnRelayWsPort, setBackendOverride } from '../../utils/backendConfig'
 
