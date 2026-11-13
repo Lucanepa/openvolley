@@ -237,21 +237,21 @@ the account (4.5a).
 | **Retention as built** | **Indefinitely.** Once a match is approved/final it is **closed and read-only**, even for its creator (`db/007` `ov_matches_guard`). Only an admin can reopen it. Account deletion keeps the matches (creator set NULL) |
 | **Delete path** | Open matches: the owner can delete over `/api/db`. Closed matches: **no endpoint deletes or anonymises personal data**. It takes a manual SQL session with `ov.allow_closed = 'on'`, and the copies in `events.state_snapshot`, `backup/` files, scoresheet files and the backups (F2) |
 
-### 4.7a Final scoresheet by email (db/021)
+### 4.7a Final scoresheet by email (db/021, db/040)
 
 | | |
 |---|---|
-| **Data** | Sent: the stored scoresheet PDF of a closed official indoor match (4.12), team names, game number, date, result. Kept: `public.match_final_mails` (match, close time, outcome, number of recipients, corrected), `public.app_settings.send_final_email` (on/off, who, when). Referees' optional addresses in `matches.officials[].email` (typed in the match setup) |
+| **Data** | Sent: the stored scoresheet PDF of the approval of a closed official indoor match (4.12), team names (the schedule's when the game is in it), game number, date, result; the notices of a missing PDF and of an admin reopen (with the reopen's reason). Kept: `public.match_final_mails` (match, close time, outcome, number of recipients, corrected, tries, next try, whether the reopen notice went; while a round of mails is open, `delivered`: SHA-256 prefixes of round, match, close and address, emptied when it is done), `public.matches.released_at`, `public.app_settings.send_final_email` (on/off, who, when). Referees' optional addresses in `matches.officials[].email` (typed in the match setup) |
 | **Whose** | Scorer, referees, club contacts (recipients); players and officials named in the PDF |
-| **Recipients** | The closing account and the scorer-approval account; referee-approval accounts and the typed referee addresses; the contact address of each team's club (`club_teams` name match). One mail per address, at most 12 |
-| **When** | Only while the switch is on (off by default; admins and indoor competition managers, Settings tab); matches closed after it was turned on, once per close (a reopened and closed again match is mailed again, marked corrected); not mailed without a PDF within 2 h of the close |
-| **Test matches** | `POST /api/scoresheet/test-mail`: the PDF from the request to the caller's own account address only; not stored; capped per inbox |
+| **Recipients** | The closing account and the scorer-approval account; referee-approval accounts (a corrected close: also those whose approvals the reopen voided); for a game of the imported schedule only, the typed referee addresses (the first 1st and 2nd referee) and the contact address of the club of each of the schedule's two teams (`club_teams` of the schedule's team names, never the typed ones). One mail per address, at most 12. Missing PDF: the closing account and the admins. Reopen notice: the accounts whose approvals the reopen voided |
+| **When** | Only while the switch is on (off by default; admins and indoor competition managers, Settings tab); matches with a game number closed after it was turned on and not released by an admin (release-game), once per close (a reopened and closed again match is mailed again, marked corrected, with the new approval's PDF); without that PDF 2 h after the close it goes without it, and the PDF follows when it is stored (up to 7 days); a mail the hourly budget holds back goes later |
+| **Test matches** | `POST /api/scoresheet/test-mail`: the PDF from the request to the caller's own confirmed account address only, for accounts that may score; not stored; its own hourly budget; capped per inbox; the caller's text in the body only |
 | **Basis** | (f) delivering the official record to the officials and clubs concerned; the referee address is optional |
 | **Processor** | Migadu (SMTP) |
 | **Stored** | `match_final_mails` and the referee addresses with the match (VM, backups); addresses are never logged (`maskEmail`) and never in the audit log |
 | **Who sees the referee addresses** | Like the rest of `officials`: the match's owner and editors, admins; never public (`lib/publicColumns.js`) |
 | **Retention as built** | With the match (FK cascade on `match_final_mails`) |
-| **Audit** | `settings.final_email`, `match.final_mail` (number of recipients, corrected, game number) |
+| **Audit** | `settings.final_email`, `match.final_mail` (number of recipients, corrected, game number, with or without the PDF, a give-up) |
 
 ### 4.8 What is public (no account, no PIN)
 

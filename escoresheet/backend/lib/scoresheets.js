@@ -6,7 +6,10 @@
  *
  *   list({ app, state, q, limit })           that sport's non-test matches, each
  *                                            with `pdf`: a stored PDF was found
- *                                            (true / false; null = storage unreadable)
+ *                                            (true / false; null = storage unreadable),
+ *                                            and `released`: an admin released its game
+ *                                            (release-game, db/040: not the game's official
+ *                                            match, and not mailed as its final scoresheet)
  *   readPdf({ actorId, matchId, download })  the newest stored PDF of a match,
  *                                            as { status, file }; audited first
  *                                            (scoresheet.read): no entry, no file
@@ -574,7 +577,8 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
         `SELECT ${ROW_COLUMNS},
                 ${NAME_COLUMNS}, m.match_info->>'league' AS league,
                 nullif(trim(coalesce(p.first_name, '') || ' ' || coalesce(p.last_name, '')), '') AS scorer_name,
-                ${sheetScorerSql('m')} AS sheet_scorer_name
+                ${sheetScorerSql('m')} AS sheet_scorer_name,
+                (m.official_game_exempt IS TRUE AND (to_jsonb(m) ->> 'released_at') IS NOT NULL) AS released
            FROM public.matches m
            LEFT JOIN public.profiles p ON p.user_id = m.created_by
           WHERE ${where.join(' AND ')}
@@ -600,6 +604,7 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
           scorer_name: r.scorer_name ?? null,
           sheet_scorer_name: r.sheet_scorer_name ?? null,
           sport: sportOut(r.is_beach),
+          released: r.released === true,
           pdf: located[i].files.length ? true : located[i].unknown ? null : false,
           pdf_updated_at: located[i].files.length ? new Date(located[i].files[0].mtimeMs).toISOString() : null
         }))

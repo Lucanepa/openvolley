@@ -314,9 +314,12 @@ describe('accounts on Postgres', { skip: SKIP_PG }, () => {
       const m = await closedMatch()
       const r = await accounts.releaseGame({ actorId: ids.admin, matchId: m.id, body: { reason: 'Wrong game number' } })
       assert.equal(r.status, 200, JSON.stringify(r.body))
-      assert.deepEqual(r.body.data.match, { id: m.id, official_game_exempt: true })
-      const { rows: [row] } = await pool.query('SELECT official_game_exempt, closed_at, status FROM matches WHERE id = $1', [m.id])
+      const { released_at: releasedAt, ...match } = r.body.data.match
+      assert.deepEqual(match, { id: m.id, official_game_exempt: true })
+      const { rows: [row] } = await pool.query('SELECT official_game_exempt, released_at, closed_at, status FROM matches WHERE id = $1', [m.id])
       assert.equal(row.official_game_exempt, true)
+      // db/040: since when, so the final mail leaves it out
+      assert.equal(row.released_at?.toISOString(), releasedAt)
       assert.ok(row.closed_at, 'still closed')
       // another scorer may now create the game
       const other = await user('other', ['scorer'])

@@ -58,6 +58,15 @@ describe('ScoresheetsPanel', () => {
     await waitFor(() => expect(api.list).toHaveBeenLastCalledWith({ app: 'beach', state: 'closed', q: undefined, limit: 200 }))
   })
 
+  it('a match whose game an admin released is marked (db/040: not the official one, not mailed as final)', async () => {
+    api.list.mockResolvedValue({ data: { matches: [{ ...MATCHES[0], released: true }, MATCHES[1]] }, error: null, status: 200 })
+    render(<ScoresheetsPanel />)
+    await screen.findByText('Voléro vs Smash')
+    expect(within(rowOf('Voléro vs Smash')).getByText('manage.games.releaseGame')).toBeInTheDocument()
+    expect(within(rowOf('Voléro vs Smash')).getByText('manage.scoresheets.storedAt')).toBeInTheDocument()
+    expect(within(rowOf('Musterdorf vs Züri')).queryByText('manage.games.releaseGame')).toBeNull()
+  })
+
   it('View opens a tab at the click (no popup blocker) and sends it to the server\'s view link; no file is fetched', async () => {
     let resolveLink
     api.viewLink.mockReturnValue(new Promise((r) => { resolveLink = r }))
