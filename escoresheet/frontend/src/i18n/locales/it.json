@@ -1104,6 +1104,9 @@
       "restorePreview": "Anteprima ripristino",
       "fromDatabase": "Dal database",
       "fromLocalFile": "Da file locale",
+      "restoreLoss": {
+        "body": "Questo dispositivo contiene più di questa partita della copia scelta: {{local}} eventi qui, {{incoming}} nella copia, {{unsent}} modifica/e non ancora inviata/e. Il ripristino li sostituisce e ciò che ha solo questo dispositivo va perso. Ripristinare comunque?"
+      },
       "restoreErrors": {
         "unreadable": "Impossibile leggere questo file: è danneggiato o incompleto. Scegli un altro file di backup.",
         "notABackup": "Questo file non è un backup di partita OpenVolley. Scegli un altro file.",
@@ -1205,6 +1208,7 @@
     "scorer": "Segnapunti"
   },
   "home": {
+    "storageWarning": "Questo browser può cancellare i dati dell'app, e una partita su questo dispositivo ha modifiche non ancora inviate. Accedi perché vengano sincronizzate, installa l'app o aggiungila alla schermata iniziale, oppure attiva i download dei backup nelle Opzioni.",
     "openingMatch": "Apertura della partita…",
     "title": "eScoresheet",
     "newMatch": "Nuova partita",
@@ -5395,7 +5399,9 @@
     },
     "serverScore": "Ora sul server",
     "compareHint": "Confrontalo con il tabellone di questo dispositivo. Riprendendola, questo punteggio viene caricato qui e l'altro dispositivo si ferma.",
-    "confirmTakeBack": "Sì, riprendi la partita qui"
+    "confirmTakeBack": "Sì, riprendi la partita qui",
+    "unsentHere": "Questo dispositivo ha {{count}} punto/i che il server non ha mai ricevuto. Riprendere carica il punteggio del server e vanno persi. «Mantieni il punteggio di questo dispositivo» invia invece al server il punteggio di questo dispositivo.",
+    "keepLocal": "Mantieni il punteggio di questo dispositivo"
   },
   "preMatchSignatures": {
     "missingButton_one": "Firma mancante",

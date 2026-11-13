@@ -1104,6 +1104,9 @@
       "restorePreview": "Widerherstelligs-Vorschau",
       "fromDatabase": "Vo Datebank",
       "fromLocalFile": "Vo lokaler Datei",
+      "restoreLoss": {
+        "body": "Dieses Gerät hat mehr von diesem Spiel als die gewählte Kopie: {{local}} Ereignisse hier, {{incoming}} in der Kopie, {{unsent}} noch nicht gesendete Änderung(en). Die Wiederherstellung ersetzt sie, und was nur dieses Gerät hat, geht verloren. Trotzdem wiederherstellen?"
+      },
       "restoreErrors": {
         "unreadable": "Die Datei cha nöd gläse werde: Si isch beschädigt oder unvollständig. Wähl en anderi Backup-Datei.",
         "notABackup": "Die Datei isch kes OpenVolley-Spiilbackup. Wähl en anderi Datei.",
@@ -1205,6 +1208,7 @@
     "scorer": "Schriiber"
   },
   "home": {
+    "storageWarning": "Dieser Browser darf die Daten der App löschen, und ein Spiel auf diesem Gerät hat noch nicht gesendete Änderungen. Melde dich an, damit sie synchronisiert werden, installiere die App oder füge sie dem Startbildschirm hinzu, oder schalte in den Optionen Backup-Downloads ein.",
     "openingMatch": "Spiel wird geöffnet…",
     "title": "eScoresheet",
     "newMatch": "Neus Spiil",
@@ -5390,7 +5394,9 @@
     },
     "serverScore": "Jetzt uf em Server",
     "compareHint": "Vergliich ihn mit de Aazeig uf däm Grät. Bim Übernäh wird dä Spielstand da glade, und s ander Grät hört uf.",
-    "confirmTakeBack": "Ja, da wieder übernäh"
+    "confirmTakeBack": "Ja, da wieder übernäh",
+    "unsentHere": "Dieses Gerät hat {{count}} Punkt(e), die der Server nie erhalten hat. Zurückholen lädt den Stand des Servers, und sie gehen verloren. «Stand dieses Geräts behalten» sendet stattdessen den Stand dieses Geräts an den Server.",
+    "keepLocal": "Stand dieses Geräts behalten"
   },
   "preMatchSignatures": {
     "missingButton_one": "Underschrift fehlt",

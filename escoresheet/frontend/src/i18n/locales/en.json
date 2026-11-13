@@ -1105,6 +1105,9 @@
       "restorePreview": "Restore preview",
       "fromDatabase": "From database",
       "fromLocalFile": "From local file",
+      "restoreLoss": {
+        "body": "This device holds more of this match than the copy you chose: {{local}} events here, {{incoming}} in the copy, {{unsent}} change(s) not sent yet. Restoring replaces them, and what only this device has is lost. Restore anyway?"
+      },
       "restoreErrors": {
         "unreadable": "This file cannot be read: it is damaged or incomplete. Choose another backup file.",
         "notABackup": "This file is not an OpenVolley match backup. Choose another file.",
@@ -1206,6 +1209,7 @@
     "scorer": "Scorer"
   },
   "home": {
+    "storageWarning": "This browser may clear the app's data, and a match on this device has changes not sent yet. Sign in so they sync, install the app or add it to the home screen, or switch on backup downloads in Options.",
     "openingMatch": "Opening the match…",
     "title": "eScoresheet",
     "newMatch": "New match",
@@ -5396,7 +5400,9 @@
     },
     "serverScore": "On the server now",
     "compareHint": "Compare it with the scoreboard on this device. Taking back loads this score here, and the other device stops.",
-    "confirmTakeBack": "Yes, take back scoring here"
+    "confirmTakeBack": "Yes, take back scoring here",
+    "unsentHere": "This device has {{count}} point(s) the server never got. Taking back loads the server's score and they are lost. Keep this device's score sends this device's score to the server instead.",
+    "keepLocal": "Keep this device's score"
   },
   "preMatchSignatures": {
     "missingButton_one": "Missing signature",

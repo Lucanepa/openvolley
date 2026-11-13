@@ -1097,6 +1097,9 @@
       "restorePreview": "Wiederherstellungs-Vorschau",
       "fromDatabase": "Aus Datenbank",
       "fromLocalFile": "Aus lokaler Datei",
+      "restoreLoss": {
+        "body": "Dieses Gerät hat mehr von diesem Spiel als die gewählte Kopie: {{local}} Ereignisse hier, {{incoming}} in der Kopie, {{unsent}} noch nicht gesendete Änderung(en). Die Wiederherstellung ersetzt sie, und was nur dieses Gerät hat, geht verloren. Trotzdem wiederherstellen?"
+      },
       "restoreErrors": {
         "unreadable": "Diese Datei kann nicht gelesen werden: Sie ist beschädigt oder unvollständig. Wählen Sie eine andere Backup-Datei.",
         "notABackup": "Diese Datei ist kein OpenVolley-Spielbackup. Wählen Sie eine andere Datei.",
@@ -1198,6 +1201,7 @@
     "scorer": "Schreiber"
   },
   "home": {
+    "storageWarning": "Dieser Browser darf die Daten der App löschen, und ein Spiel auf diesem Gerät hat noch nicht gesendete Änderungen. Melde dich an, damit sie synchronisiert werden, installiere die App oder füge sie dem Startbildschirm hinzu, oder schalte in den Optionen Backup-Downloads ein.",
     "openingMatch": "Spiel wird geöffnet…",
     "title": "eScoresheet",
     "newMatch": "Neues Spiel",
@@ -5378,7 +5382,9 @@
     },
     "serverScore": "Jetzt auf dem Server",
     "compareHint": "Vergleiche ihn mit der Anzeige auf diesem Gerät. Beim Übernehmen wird dieser Spielstand hier geladen, und das andere Gerät hört auf.",
-    "confirmTakeBack": "Ja, hier wieder übernehmen"
+    "confirmTakeBack": "Ja, hier wieder übernehmen",
+    "unsentHere": "Dieses Gerät hat {{count}} Punkt(e), die der Server nie erhalten hat. Zurückholen lädt den Stand des Servers, und sie gehen verloren. «Stand dieses Geräts behalten» sendet stattdessen den Stand dieses Geräts an den Server.",
+    "keepLocal": "Stand dieses Geräts behalten"
   },
   "preMatchSignatures": {
     "missingButton_one": "Unterschrift fehlt",

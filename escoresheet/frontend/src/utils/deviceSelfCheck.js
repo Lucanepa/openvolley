@@ -201,13 +201,27 @@ async function contentOf(database, m) {
   const sets = await database.sets.where('matchId').equals(m.id).toArray()
   const history = database.event_history ? await database.event_history.where('matchId').equals(m.id).count() : 0
   const teamIds = [m.homeTeamId, m.awayTeamId].filter(id => id != null)
-  const players = teamIds.length ? await database.players.where('teamId').anyOf(teamIds).count() : 0
+  const rows = teamIds.length ? await database.players.where('teamId').anyOf(teamIds).toArray() : []
+  // Each player by side and value: the team rows are the copy's own
+  const players = rows.map(p => `${p.teamId === m.homeTeamId ? 'home' : 'away'}|${playerIdentity(p)}`)
   const newest = events.reduce((best, e) => (best == null || (timeOf(e.ts) ?? -Infinity) >= (timeOf(best.ts) ?? -Infinity) ? e : best), null)
   return { match: m, events, sets, history, players, activity: lastActivityAt(m, newest) }
 }
 
-// An event as two copies of one match both have it (a restore keeps seq and type)
-const eventIdentity = (e) => (e.seq != null ? `${e.setIndex ?? ''}|${e.seq}|${e.type}` : `${e.setIndex ?? ''}|${e.ts}|${e.type}`)
+// A value as text with its keys in order: two copies' lists, payloads and
+// images compared by what they hold
+function canonical(v) {
+  if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`
+  if (v && typeof v === 'object') return `{${Object.keys(v).sort().map(k => `${JSON.stringify(k)}:${canonical(v[k])}`).join(',')}}`
+  return JSON.stringify(v ?? null)
+}
+const PLAYER_FIELDS = ['number', 'firstName', 'lastName', 'name', 'dob', 'licence', 'license', 'libero', 'isCaptain', 'captain']
+const playerIdentity = (p) => canonical(PLAYER_FIELDS.map(f => p[f] ?? null))
+
+// An event as two copies of one match both have it (a restore keeps seq,
+// type and payload): the same seq with another team or player is the copy's
+// own (audit fe-ui-rest-2)
+const eventIdentity = (e) => `${e.setIndex ?? ''}|${e.seq != null ? e.seq : e.ts}|${e.type}|${canonical(e.payload)}`
 
 /** Does `kept` hold everything `other` holds? */
 function covers(kept, other) {
@@ -221,13 +235,15 @@ function covers(kept, other) {
   }
   const a = other.match
   const b = kept.match
+  // By value: another signature image or another list is the copy's own
   for (const [field, value] of Object.entries(a)) {
-    if (SIGNED.test(field) && hasValue(value) && !hasValue(b[field])) return false
+    if (SIGNED.test(field) && hasValue(value) && canonical(value) !== canonical(b[field])) return false
   }
-  if (LISTS.some(field => hasValue(a[field]) && !hasValue(b[field]))) return false
+  if (LISTS.some(field => hasValue(a[field]) && canonical(a[field]) !== canonical(b[field]))) return false
   if (hasValue(a.remarks) && a.remarks !== b.remarks) return false
   if ((STATUS_RANK[a.status] ?? 0) > (STATUS_RANK[b.status] ?? 0)) return false
-  return other.players <= kept.players
+  const keptPlayers = new Set(kept.players)
+  return other.players.every(p => keptPlayers.has(p))
 }
 
 // The copy furthest on first: most events, then the latest activity

@@ -51,6 +51,20 @@ describe('ScorerMovedModal', () => {
 
   // The owner, 2026-10-27: Take back shows the server's score first, so the
   // scorer compares it with the scoreboard; only the second tap takes back
+  // audit fe-connect-devices-3: this device's unsent points could only be dropped
+  it('with points not sent from here: the confirmation offers to keep this device\'s score', async () => {
+    const onPreview = vi.fn(async () => ({ score: { set: 1, home: 12, away: 15, setsHome: 0, setsAway: 0 }, unsent: 3 }))
+    const onTakeBack = vi.fn(async () => {})
+    const onKeepLocal = vi.fn(async () => {})
+    render(<ScorerMovedModal scorer={{ platform: 'android', at }} onPreview={onPreview} onTakeBack={onTakeBack} onKeepLocal={onKeepLocal} onClose={() => {}} />)
+    expect(screen.queryByRole('button', { name: "Keep this device's score" })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Take back scoring here' }))
+    await waitFor(() => expect(screen.getByTestId('scorer-moved-unsent').textContent).toMatch(/3 point/))
+    fireEvent.click(screen.getByRole('button', { name: "Keep this device's score" }))
+    await waitFor(() => expect(onKeepLocal).toHaveBeenCalledTimes(1))
+    expect(onTakeBack).not.toHaveBeenCalled()
+  })
+
   it('with onPreview: Take back shows the server\'s score and asks again; Cancel leaves it', async () => {
     const onPreview = vi.fn(async () => ({ score: { set: 3, home: 14, away: 12, setsHome: 1, setsAway: 1 } }))
     const onTakeBack = vi.fn(async () => ({ ok: true }))

@@ -1103,6 +1103,9 @@
       "restorePreview": "Aperçu de la restauration",
       "fromDatabase": "Depuis la base de données",
       "fromLocalFile": "Depuis un fichier local",
+      "restoreLoss": {
+        "body": "Cet appareil contient plus de ce match que la copie choisie : {{local}} événements ici, {{incoming}} dans la copie, {{unsent}} modification(s) pas encore envoyée(s). La restauration les remplace, et ce que seul cet appareil possède est perdu. Restaurer quand même ?"
+      },
       "restoreErrors": {
         "unreadable": "Ce fichier ne peut pas être lu : il est endommagé ou incomplet. Choisissez un autre fichier de sauvegarde.",
         "notABackup": "Ce fichier n’est pas une sauvegarde de match OpenVolley. Choisissez un autre fichier.",
@@ -1204,6 +1207,7 @@
     "scorer": "Marqueur"
   },
   "home": {
+    "storageWarning": "Ce navigateur peut effacer les données de l'application, et un match sur cet appareil a des modifications pas encore envoyées. Connectez-vous pour les synchroniser, installez l'application ou ajoutez-la à l'écran d'accueil, ou activez les téléchargements de sauvegarde dans les Options.",
     "openingMatch": "Ouverture du match…",
     "title": "e-Feuille",
     "newMatch": "Nouveau match",
@@ -5389,7 +5393,9 @@
     },
     "serverScore": "Sur le serveur maintenant",
     "compareHint": "Compare-le avec le tableau de cet appareil. Reprendre le match charge ce score ici, et l'autre appareil s'arrête.",
-    "confirmTakeBack": "Oui, reprendre le match ici"
+    "confirmTakeBack": "Oui, reprendre le match ici",
+    "unsentHere": "Cet appareil a {{count}} point(s) que le serveur n'a jamais reçu(s). Reprendre charge le score du serveur, et ils sont perdus. « Garder le score de cet appareil » envoie plutôt le score de cet appareil au serveur.",
+    "keepLocal": "Garder le score de cet appareil"
   },
   "preMatchSignatures": {
     "missingButton_one": "Signature manquante",

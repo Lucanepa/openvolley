@@ -287,10 +287,15 @@ export async function markScorerMoved(database, local, { scorer = null, closed =
  * scoring screens open the replaced match. Needs a connection and the game
  * PIN the device kept; a match closed meanwhile loads as closed (its Match
  * End), the claim then has nothing to take.
- * @param {{ fetchCloud: (pin: string, gameN: number|string, options: { claim: boolean, externalId: string }) => Promise<object>, importCloud: (cloudData: object) => Promise<number>, online?: boolean }} deps
+ * With keepLocal the scorer keeps this device's score instead (its points
+ * not sent before the other device took over): after the claim the local
+ * copy is sent to the server in place of the other device's (keepLocal,
+ * backupManager.continueWithLocalCopy). It was loaded over them with no
+ * choice (audit fe-connect-devices-3).
+ * @param {{ fetchCloud: (pin: string, gameN: number|string, options: { claim: boolean, externalId: string }) => Promise<object>, importCloud: (cloudData: object) => Promise<number>, keepLocal?: ((matchId: number) => Promise<object|null>)|null, online?: boolean }} deps
  * @returns {Promise<{ ok: true, matchId: number, cloud: object } | { ok: false, reason: 'offline'|'noPin'|'notFound'|'otherMatch'|'failed', message?: string }>}
  */
-export async function takeBackScoring(database, matchId, { fetchCloud, importCloud, online = true } = {}) {
+export async function takeBackScoring(database, matchId, { fetchCloud, importCloud, keepLocal = null, online = true } = {}) {
   const match = await database.matches.get(matchId)
   if (!match?.seed_key) return { ok: false, reason: 'notFound' }
   const pin = match.gamePin ?? match.game_pin
@@ -308,6 +313,12 @@ export async function takeBackScoring(database, matchId, { fetchCloud, importClo
   if (!cloud?.match) return { ok: false, reason: 'notFound' }
   // The game PIN names the game: never load another match over this one
   if (cloud.match.external_id && cloud.match.external_id !== match.seed_key) return { ok: false, reason: 'otherMatch' }
+  if (keepLocal) {
+    const local = await keepLocal(matchId)
+    if (!local) return { ok: false, reason: 'failed' }
+    console.log(`[Handover] ${match.seed_key}: scoring taken back on this device with its own score`)
+    return { ok: true, matchId, cloud: local }
+  }
   const newId = await importCloud(cloud)
   if (newId == null) return { ok: false, reason: 'failed' }
   console.log(`[Handover] ${match.seed_key}: scoring taken back on this device from the cloud copy`)

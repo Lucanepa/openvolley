@@ -18,7 +18,11 @@ vi.mock('../../lib/apiClient', () => ({
 }))
 
 import { db } from '../../db/db'
-import { importMatchFromSupabase } from '../backupManager'
+import { importMatchFromSupabase as importFromCloud } from '../backupManager'
+
+// over this device's own copy on the second confirmation (replaceNewer): the
+// question is backupManager.restoreSafety.dexie.test.js's
+const importMatchFromSupabase = (data, opts = {}) => importFromCloud(data, { replaceNewer: true, ...opts })
 import { queueSetScoreSync, buildEventInsertJob } from '../eventSync'
 import { withActivityContext, eventHistorySettled } from '../../db/eventHistory'
 import { liveStateNow } from '../serverDataSync'

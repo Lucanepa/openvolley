@@ -99,6 +99,25 @@ describe('findDuplicateCopies: two copies of one official match are flagged, nev
     expect(r.flagged.map(c => [c.id, c.removable])).toEqual([[other, false]])
   })
 
+  // Compared by value (audit fe-ui-rest-2): the same seq and type with
+  // another team, another player, another signature image is the copy's own
+  it('a point for the other team, another signature, other players or officials: not removable', async () => {
+    const copy = async ({ events = 3, team = 'home', signature = 'AAA', referee = 'Muster', number = 1 } = {}) => {
+      const id = await addMatch({ awayCaptainSignature: `data:image/png;base64,${signature}`, officials: [{ role: '1st referee', lastName: referee }] })
+      const m = await db.matches.get(id)
+      await db.players.where('teamId').equals(m.homeTeamId).modify({ number })
+      for (let seq = 1; seq <= events; seq++) await db.events.add({ matchId: id, setIndex: 1, type: 'point', seq, ts: ago(HOUR), payload: { team } })
+      return id
+    }
+    await copy({ events: 4 })
+    for (const change of [{}, { team: 'away' }, { signature: 'BBB' }, { referee: 'Beispiel' }, { number: 7 }]) {
+      const other = await copy(change)
+      const removable = (await findDuplicateCopies(db)).flagged.find(c => c.id === other)?.removable
+      expect([change, removable]).toEqual([change, Object.keys(change).length === 0])
+      await db.matches.delete(other)
+    }
+  })
+
   it('a roster the kept copy lacks: not removable', async () => {
     await addMatch({ events: 5, teams: false })
     const other = await addMatch({ events: 0 })

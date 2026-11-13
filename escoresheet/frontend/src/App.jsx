@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db } from './db/db'
+import { db, persistentStorage } from './db/db'
 import { wipeMatchEvents } from './db/eventHistory'
 import SavedBackupsList from './components/SavedBackupsList'
 import MatchSetup, { preloadMatchSetup } from './components/MatchSetup'
@@ -79,7 +79,7 @@ import {
 } from './constants/testSeeds'
 import { apiFrom, apiMatchRestoreByPin, writingDevice } from './lib/apiClient'
 import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
-import { fetchMatchByPin, fetchMatchToContinue, importMatchFromSupabase, cloudBestOf, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, matchBackupFromFile, restoreErrorText } from './utils/backupManager'
+import { fetchMatchByPin, fetchMatchToContinue, importMatchFromSupabase, cloudBestOf, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, matchBackupFromFile, restoreErrorText, localLossOnReplace, restoreLossText, RESTORE_LOSES_LOCAL, continueWithLocalCopy } from './utils/backupManager'
 import UpdateBanner from './components/UpdateBanner'
 import DesktopUpdateNotice from './components/DesktopUpdateNotice'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from './utils/matchFormat'
@@ -89,7 +89,7 @@ import { deviceMatchRows, jobsOfMatch, matchGameNumber, resumeStage, setScore } 
 import { PhoneIcon } from './components/icons'
 import { Maximize } from 'lucide-react'
 import { Button, cn, FormError, Input, ScreenLoading } from './ui'
-import { getBackendOverride, getCloudApiUrl, getLocalServerStatusUrl, isCloudBlockedOnThisPort, isStaticHost } from './utils/backendConfig'
+import { getBackendOverride, getCloudApiUrl, getLocalServerStatusUrl, isCloudBlockedOnThisPort, isNativeApp, isStaticHost } from './utils/backendConfig'
 import { isViewportTooSmall } from './utils/formLayout'
 import { onPointHubBoard } from './utils/pointHubBoard'
 import { installAppLifecycle, liveOf, setLiveMatch } from './utils/appLifecycle'
@@ -734,6 +734,18 @@ export default function App() {
       return null
     }
   }, [onHome], null)
+
+  // The browser refused durable storage (db persistentStorage): it may clear
+  // this device's database, and with it writes of a match not sent yet.
+  // Apps keep their data; a browser says so on Home while writes wait
+  const [storageRefused, setStorageRefused] = useState(false)
+  useEffect(() => {
+    if (isNativeApp()) return
+    let live = true
+    Promise.resolve(persistentStorage).then(v => { if (live) setStorageRefused(v === false) }, () => {})
+    return () => { live = false }
+  }, [])
+  const unsentAtRisk = storageRefused && !!unsentByKey && [...unsentByKey.values()].some(u => u.changes > 0)
 
   // Every local match id -> whether it is a copy the server has closed, for
   // the self-check's notice (below) while there is one
@@ -1930,13 +1942,77 @@ export default function App() {
     setShowMatchEnd(false)
   }
 
+  // Home > Restore match, Confirm: the previewed backup or server copy
+  // replaces this device's copy of the match. replaceNewer: the scorer
+  // confirmed losing what this device's copy holds beyond it
+  const runHomeRestore = async (replaceNewer = false) => {
+    setRestoreLoading(true)
+    setRestoreError('')
+    try {
+      let cloudData = restorePreviewData.data
+      let newMatchId
+
+      if (restorePreviewData.source === 'database') {
+        // Compared before the claim, which stops the other device: the
+        // server's copy over a copy here with more events or unsent writes
+        // only on a second confirmation (audit var-local-delete-1)
+        const loss = replaceNewer ? null : await localLossOnReplace(cloudData?.match?.external_id, cloudData?.events)
+        if (loss) throw Object.assign(new Error('This device holds newer data of the match'), { code: RESTORE_LOSES_LOCAL, loss })
+        // Read again with the claim: this device scores the
+        // match from here on (backupManager.fetchMatchToContinue)
+        cloudData = await fetchMatchToContinue(cloudData)
+        newMatchId = await importMatchFromSupabase(cloudData, { replaceNewer: true })
+      } else {
+        newMatchId = await restoreMatchFromJson(cloudData, { replaceNewer })
+      }
+
+      // Close modals
+      setRestorePreviewData(null)
+      setRestoreMatchModal(false)
+      setRestoreMatchIdInput('')
+      setRestorePin('')
+      setCloudBackups([])
+      setCloudBackupPin('')
+      setCloudBackupGameN('')
+      setCloudBackupError('')
+      openRestoredMatch(newMatchId, cloudData)
+    } catch (err) {
+      // backupManager refuses a backup of a match the server
+      // has closed, before it writes anything: a restored
+      // closed copy left a sync error nothing could clear
+      // (2026-10-23). Said here; back to the backup list.
+      if (err?.code === RESTORE_LOSES_LOCAL) {
+        // asked a second time, naming what this device's copy loses
+        setConfirmModal({
+          message: restoreLossText(err.loss, t),
+          onConfirm: () => { setConfirmModal(null); runHomeRestore(true) },
+          onCancel: () => setConfirmModal(null)
+        })
+      } else if (err?.code === 'OV_MATCH_CLOSED') {
+        setRestorePreviewData(null)
+        setAlertModal(t('cloudBlock.restoreRefused'))
+      } else {
+        setRestoreError(restoreErrorText(err, t))
+      }
+    } finally {
+      setRestoreLoading(false)
+    }
+  }
+
   // The server's copy of a match in place of this device's (take back
   // scoring, Load the official version): fetched with the game PIN this
-  // device kept, imported over the local copy (its jobs set aside), then the
-  // screen the loaded match needs
-  const loadOfficialVersion = async (id) => {
+  // device kept, imported over the local copy (its jobs set aside; the
+  // take-back's own confirmation compared the scores), then the screen the
+  // loaded match needs. keepLocal: this device's own score, its unsent points
+  // included, goes to the server instead
+  const loadOfficialVersion = async (id, { keepLocal = false } = {}) => {
     const online = typeof navigator === 'undefined' || navigator.onLine !== false
-    const r = await takeBackScoring(db, id, { fetchCloud: fetchMatchByPin, importCloud: importMatchFromSupabase, online })
+    const r = await takeBackScoring(db, id, {
+      fetchCloud: fetchMatchByPin,
+      importCloud: (cloud) => importMatchFromSupabase(cloud, { replaceNewer: true }),
+      keepLocal: keepLocal ? continueWithLocalCopy : null,
+      online
+    })
     if (!r.ok) return { error: r.reason }
     openRestoredMatch(r.matchId, r.cloud)
     try { window.dispatchEvent(new Event('sync-queue-write')) } catch { /* no window */ }
@@ -1959,7 +2035,12 @@ export default function App() {
   const previewTakeBack = async (id) => {
     const online = typeof navigator === 'undefined' || navigator.onLine !== false
     const r = await serverScoreForTakeBack(db, id, { lookup: (gameN, pin) => apiMatchRestoreByPin(gameN, pin), online })
-    return r.ok ? { score: r.score } : { error: r.reason }
+    if (!r.ok) return { error: r.reason }
+    // this device's points the server never got (set aside on the move):
+    // the confirmation offers to keep them
+    const local = await db.matches.get(id)
+    const unsent = unsentOfMatch(await db.sync_queue.toArray(), local?.seed_key).events
+    return { score: r.score, unsent }
   }
 
   // Home's Clean up (SelfCheckNotice), after one question: the copies of a
@@ -3981,6 +4062,8 @@ export default function App() {
                 closed={openMatchBlock?.closed === true}
                 // The other device's score from the cloud first, then the claim
                 onTakeBack={() => loadOfficialVersion(matchId)}
+                // ... or this device's own score, its unsent points included
+                onKeepLocal={() => loadOfficialVersion(matchId, { keepLocal: true })}
                 // the server's score to compare, before the take-back
                 onPreview={() => previewTakeBack(matchId)}
                 onScoresheet={() => openCopyScoresheet(matchId)}
@@ -4385,47 +4468,7 @@ export default function App() {
                     {t('settings.backup.preview.selectAnother')}
                   </button>
                   <button
-                    onClick={async () => {
-                      setRestoreLoading(true)
-                      setRestoreError('')
-                      try {
-                        let cloudData = restorePreviewData.data
-                        let newMatchId
-
-                        if (restorePreviewData.source === 'database') {
-                          // Read again with the claim: this device scores the
-                          // match from here on (backupManager.fetchMatchToContinue)
-                          cloudData = await fetchMatchToContinue(cloudData)
-                          newMatchId = await importMatchFromSupabase(cloudData)
-                        } else {
-                          newMatchId = await restoreMatchFromJson(cloudData)
-                        }
-
-                        // Close modals
-                        setRestorePreviewData(null)
-                        setRestoreMatchModal(false)
-                        setRestoreMatchIdInput('')
-                        setRestorePin('')
-                        setCloudBackups([])
-                        setCloudBackupPin('')
-                        setCloudBackupGameN('')
-                        setCloudBackupError('')
-                        openRestoredMatch(newMatchId, cloudData)
-                      } catch (err) {
-                        // backupManager refuses a backup of a match the server
-                        // has closed, before it writes anything: a restored
-                        // closed copy left a sync error nothing could clear
-                        // (2026-10-23). Said here; back to the backup list.
-                        if (err?.code === 'OV_MATCH_CLOSED') {
-                          setRestorePreviewData(null)
-                          setAlertModal(t('cloudBlock.restoreRefused'))
-                        } else {
-                          setRestoreError(restoreErrorText(err, t))
-                        }
-                      } finally {
-                        setRestoreLoading(false)
-                      }
-                    }}
+                    onClick={() => runHomeRestore()}
                     disabled={restoreLoading}
                     aria-busy={restoreLoading || undefined}
                     className="col-span-2 inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
@@ -4612,6 +4655,13 @@ export default function App() {
 
             {/* Not signed in while the cloud needs an account: non-blocking */}
             {!offlineMode && <SyncSignInBanner syncStatus={syncStatus} compact={currentPage === 'scoreboard'} />}
+
+            {/* The browser may clear this device's data, unsent writes included */}
+            {onHome && unsentAtRisk && (
+              <div role="alert" data-testid="storage-warning" className="mx-auto mt-3 max-w-xl rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                {t('home.storageWarning')}
+              </div>
+            )}
 
           </div>
         </>

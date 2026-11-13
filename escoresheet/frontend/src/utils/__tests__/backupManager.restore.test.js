@@ -46,7 +46,14 @@ vi.mock('../../db/db', () => ({ db: fakeDb }))
 vi.mock('../backendConfig', () => ({ getApiUrl: (p) => `http://backend.test${p}`, getCloudApiUrl: (p) => `http://backend.test${p}` }))
 vi.mock('../../lib/apiClient', () => ({ apiFrom: vi.fn(), apiStorage: { from: vi.fn() } }))
 
-import { restoreMatchFromJson, restoreMatchInPlace, importMatchFromSupabase, serverClosedState, matchBackupFromDatabaseExport, matchBackupFromMatchEndExport, matchBackupFromFile, matchEndExportData, restoreErrorText, BACKUP_FORMAT_ERROR, BACKUP_UNREADABLE_ERROR, BACKUP_LOCKED_ERROR } from '../backupManager'
+import { restoreMatchFromJson as restoreFromJson, restoreMatchInPlace as restoreInPlace, importMatchFromSupabase as importFromCloud, serverClosedState, matchBackupFromDatabaseExport, matchBackupFromMatchEndExport, matchBackupFromFile, matchEndExportData, restoreErrorText, BACKUP_FORMAT_ERROR, BACKUP_UNREADABLE_ERROR, BACKUP_LOCKED_ERROR } from '../backupManager'
+
+// The fixture's match has unsent jobs and events of its own: every restore
+// here replaces it on the second confirmation (replaceNewer), the question
+// itself is backupManager.restoreSafety.dexie.test.js's
+const restoreMatchFromJson = (data, opts = {}) => restoreFromJson(data, { replaceNewer: true, ...opts })
+const restoreMatchInPlace = (id, data, opts = {}) => restoreInPlace(id, data, { replaceNewer: true, ...opts })
+const importMatchFromSupabase = (data, opts = {}) => importFromCloud(data, { replaceNewer: true, ...opts })
 import { createBackupSealer } from '../backupCrypto/sealer'
 import { backupFileText, openWithKnownPins } from '../backupFile'
 import { openEnvelope } from '../backupCrypto/envelope'
@@ -120,8 +127,10 @@ describe('restoreMatchFromJson', () => {
     // the cloud unknown (offline) or behind this clock: none, whatever the file says
     const offline = await restoreMatchFromJson(backup({ liveClockOffsetMs: 3000000 }), { checkServer: async () => null, cloudLiveState: async () => null })
     expect(fakeDb.matches.map.get(offline).liveClockOffsetMs).toBe(0)
-    // a test match never syncs: not asked
+    // a test match never syncs: not asked (on a device without a copy of
+    // it: over a local copy, the copy's own test flag decides, fe-backup-6)
     asked.length = 0
+    for (const [id, m] of fakeDb.matches.map) if (m.seed_key === SEED) fakeDb.matches.map.delete(id)
     const t = await restoreMatchFromJson(backup({ test: true, liveClockOffsetMs: 5000 }), { cloudLiveState })
     expect(asked).toEqual([])
     expect(fakeDb.matches.map.get(t).liveClockOffsetMs).toBe(0)
@@ -174,8 +183,11 @@ describe('restoreMatchFromJson', () => {
     expect(restoredSets).toHaveLength(2)
     expect([...fakeDb.sets.map.values()].some(s => s.matchId === 2)).toBe(false)
 
-    // this match's old jobs are replaced by one restore job
-    for (const id of [1, 2, 3, 4]) expect(fakeDb.sync_queue.map.get(id)).toBeUndefined()
+    // this match's old set and event jobs are replaced by one restore job;
+    // its unsent match insert and update jobs stay, for the columns the
+    // restore does not send (fe-backup-3, as restoreMatchInPlace)
+    for (const id of [3, 4]) expect(fakeDb.sync_queue.map.get(id)).toBeUndefined()
+    for (const id of [1, 2]) expect(fakeDb.sync_queue.map.get(id)).toBeDefined()
     const restore = [...fakeDb.sync_queue.map.values()].find(j => j.action === 'restore')
     expect(restore.payload.match.external_id).toBe(SEED)
     expect(restore.payload.match.connection_pins).toEqual({ referee: '111111', bench_home: '222222' })
@@ -219,6 +231,7 @@ describe('restoreMatchFromJson', () => {
   })
 
   it('never queues a restore for a test match', async () => {
+    fakeDb.matches.map.delete(2) // no local copy: the file's test flag decides
     await restoreMatchFromJson(backup({ test: true }))
     expect([...fakeDb.sync_queue.map.values()].some(j => j.action === 'restore')).toBe(false)
   })
@@ -872,6 +885,7 @@ describe('restoring a match closed on the server', () => {
 
   it('a test backup never asks the server', async () => {
     const checkServer = vi.fn(async () => true)
+    fakeDb.matches.map.delete(2) // no local copy: the file's test flag decides
     await restoreMatchFromJson(backup({ test: true, status: 'approved' }), { checkServer })
     await restoreMatchInPlace([...fakeDb.matches.map.values()].find(m => m.seed_key === SEED).id, backup({ test: true }), { checkServer })
     expect(checkServer).not.toHaveBeenCalled()
