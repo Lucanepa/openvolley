@@ -17,6 +17,9 @@ import { dirname, resolve } from 'node:path'
 import WebSocket from 'ws'
 import { coveredLiveLineupTeam, redactRemarkDobs, relayBundleView, relayLiveStateView, relayMatchView, relaySummaryBundle } from '../lib/publicColumns.js'
 
+// The cloud relay stamps the order it received each live state in (server.js stampRelayOrder)
+const unstamped = (o) => { if (!o || typeof o !== 'object') return o; const { _relayEpoch, _relaySeq, ...rest } = o; return rest }
+
 const BACKEND_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 const PINS = {
@@ -345,21 +348,22 @@ describe('cloud relay: the bundle by role', () => {
       await c.waitFor(() => c.messages.filter((m) => m.type === 'live-state-update').length >= n)
       return c.messages.filter((m) => m.type === 'live-state-update')[n - 1].liveState
     }
-    for (const c of [viewer, away]) {
-      assert.deepEqual(await liveOf(c), { ...liveState, lineup_a: null, last_event_data: null })
-    }
-    for (const c of [home, referee]) assert.deepEqual(await liveOf(c), liveState)
+    // the away bench: no covered line-up; a socket without a PIN: no line-ups at all
+    assert.deepEqual(unstamped(await liveOf(away)), { ...liveState, lineup_a: null, last_event_data: null })
+    const { lineup_a: _a, lineup_b: _b, last_event_data: _d, ...publicState } = liveState
+    assert.deepEqual(unstamped(await liveOf(viewer)), publicState)
+    for (const c of [home, referee]) assert.deepEqual(unstamped(await liveOf(c)), liveState)
 
     // stored as it came: the summary and the next bundles by view
     const summary = await (await fetch(`http://127.0.0.1:${port}/api/match/${seed}`)).json()
     assert.equal(summary.access, 'summary')
-    assert.equal(summary.liveState.lineup_a, null)
+    assert.equal(summary.liveState.lineup_a, undefined)
     scoreboard.send(scorerSync(seed, { events }))
     const update = await away.waitFor((m) => m.type === 'match-data-update')
     assert.equal(update.liveState.lineup_a, null)
     assert.equal(update.data.liveState.lineup_a, null, 'the LedBox copy')
     const viewerUpdate = await viewer.waitFor((m) => m.type === 'match-data-update')
-    assert.equal(viewerUpdate.liveState.lineup_a, null)
+    assert.equal(viewerUpdate.liveState.lineup_a, undefined)
     const refUpdate = await referee.waitFor((m) => m.type === 'match-data-update')
     assert.deepEqual(refUpdate.liveState.lineup_a, liveState.lineup_a)
     for (const name of ['"number":21', '"number":22', '"playerNumber":23']) {
@@ -367,10 +371,12 @@ describe('cloud relay: the bundle by role', () => {
       assert.equal(away.raw.join('\n').includes(name), false, name)
     }
 
-    // the away line-up in: the live state goes to everyone as it came
+    // the away line-up in: the live state goes to every PIN-proved socket as it
+    // came, without line-ups to a socket without a PIN
     const both = { ...liveState, lineup_b: { I: { number: 31 } }, last_event_type: 'lineup', last_event_team: 'away', last_event_data: null }
     scoreboard.send({ type: 'live-state-update', matchId: seed, liveState: both })
-    for (const c of [viewer, away, home, referee]) assert.deepEqual(await liveOf(c, 2), both)
+    for (const c of [away, home, referee]) assert.deepEqual(unstamped(await liveOf(c, 2)), both)
+    assert.deepEqual(unstamped(await liveOf(viewer, 2)), { ...publicState, last_event_type: 'lineup', last_event_team: 'away' })
 
     for (const c of [scoreboard, viewer, away, home, referee]) c.ws.close()
   })
@@ -480,6 +486,6 @@ describe('relayBundleView', () => {
     ]) assert.equal(relayLiveStateView(ls, null, awayIsA), ls)
     assert.equal(relayLiveStateView(undefined, null, awayIsA), undefined)
     // the summary of a bundle with a covered live state
-    assert.equal(relaySummaryBundle({ match: awayIsA, liveState: covered }).liveState.lineup_a, null)
+    assert.equal(relaySummaryBundle({ match: awayIsA, liveState: covered }).liveState.lineup_a, undefined)
   })
 })

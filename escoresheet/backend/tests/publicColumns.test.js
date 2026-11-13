@@ -15,6 +15,9 @@ import {
   projectLiveRow,
   hasAnonPolicy,
   anonSelectCheck,
+  projectAnonDbRows,
+  relaySummaryBundle,
+  publicLiveState,
   publicRelayMatch,
   publicPeople,
   relayMatchListRow,
@@ -139,7 +142,7 @@ describe('publicColumns: anonymous /api/db reads', () => {
     // single / maybeSingle answers are one object
     assert.equal(projectRows(ANON_DB_COLUMNS, 'matches', fullMatchRow()).officials, undefined)
     assert.equal(hasAnonPolicy('matches'), true)
-    assert.equal(hasAnonPolicy('match_live_state'), false)
+    assert.equal(hasAnonPolicy('match_live_state'), true)
   })
 
   it('anonSelectCheck: public columns need no session; JSON columns and non-public filters do', () => {
@@ -153,7 +156,7 @@ describe('publicColumns: anonymous /api/db reads', () => {
       assert.equal(anonSelectCheck('matches', { columns: 'id', filters: [{ type: 'contains', column, value: '[]' }] }).badFilter, column)
       assert.equal(anonSelectCheck('matches', { columns: 'id', order: { column } }).badFilter, column)
     }
-    assert.deepEqual(anonSelectCheck('match_live_state', { columns: '*' }), { needsMore: false, badFilter: null })
+    assert.deepEqual(anonSelectCheck('match_live_state', { columns: '*' }), { needsMore: true, badFilter: null })
     assert.ok(ANON_DB_FILTER_COLUMNS.matches.every((c) => ANON_DB_COLUMNS.matches[c] === true))
   })
 })
@@ -494,5 +497,36 @@ describe('realtimeHub: one frame per scorer state', () => {
     assert.equal(v2.changes().length, 1)
     hub.close()
     projected.hub.close()
+  })
+})
+
+describe('anonymous live states (match_live_state, sets)', () => {
+  const row = {
+    id: 'r1', match_id: 'm1', sport_type: 'indoor', points_a: 3, points_b: 1, updated_at: '2026-10-05T12:00:00Z',
+    lineup_a: [{ position: 1, number: 4 }], subs_b: [{ in: 7, out: 9 }], sanctions_a: [{ type: 'yellow', playerNumber: 4 }],
+    last_event_data: { playerNumber: 4 }, scorer_attention_trigger: 'x', matches: { set_results: [{ a: 25, b: 20 }], remarks: 'r' }
+  }
+  it('gives an anonymous reader the score columns only, and the embed set_results', () => {
+    const out = projectAnonDbRows('match_live_state', { ...row })
+    for (const c of ['lineup_a', 'subs_b', 'sanctions_a', 'last_event_data', 'scorer_attention_trigger']) assert.equal(out[c], undefined, c)
+    assert.equal(out.points_a, 3)
+    assert.deepEqual(out.matches, { set_results: [{ a: 25, b: 20 }] })
+  })
+  it('keeps the line-ups on the row of the match token only', () => {
+    const [mine, other] = projectAnonDbRows('match_live_state', [{ ...row }, { ...row, match_id: 'm2' }], { grantedMatchUuid: 'm1' })
+    assert.deepEqual(mine.lineup_a, row.lineup_a)
+    assert.equal(other.lineup_a, undefined)
+  })
+  it('refuses anonymous filters on JSON columns of live states and sets', () => {
+    assert.equal(anonSelectCheck('match_live_state', { columns: '*', filters: [{ type: 'eq', column: 'lineup_a->>pos1', value: '4' }] }).badFilter, 'lineup_a->>pos1')
+    assert.equal(anonSelectCheck('match_live_state', { columns: '*', filters: [{ type: 'eq', column: 'sport_type', value: 'indoor' }], order: [{ column: 'updated_at' }] }).badFilter, null)
+    assert.equal(hasAnonPolicy('sets'), true)
+  })
+  it('the PIN-less relay summary and public live state leave out line-ups, substitutions and sanctions', () => {
+    const live = { points_a: 3, lineup_a: row.lineup_a, subs_b: row.subs_b, sanctions_a: row.sanctions_a, last_event_data: {}, _seq: 4, _session: 'S' }
+    const out = relaySummaryBundle({ match: {}, sets: [], liveState: live }).liveState
+    assert.deepEqual(out, { points_a: 3, _seq: 4, _session: 'S' })
+    assert.deepEqual(publicLiveState(live), out)
+    assert.equal(live.lineup_a, row.lineup_a, 'not mutated')
   })
 })

@@ -268,8 +268,10 @@ export async function runBeachVenueContract ({ httpBase, wsUrl, openClient, tag 
     const live2 = { points_a: 3, points_b: 5, sets_won_a: 0, serve_player: 1 }
     court1.send({ type: 'live-state-update', matchId: 1, liveState: live1 }) // its Dexie id: an alias of seed1
     court2.send({ type: 'live-state-update', matchId: 1, liveState: live2 })
-    assert.deepEqual((await ref1.waitFor((m) => m.type === 'live-state-update')).liveState, live1)
-    assert.deepEqual((await ref2.waitFor((m) => m.type === 'live-state-update')).liveState, live2)
+    // the cloud relay stamps its receive order (_relayEpoch/_relaySeq); a venue relay does not
+    const unstamped = ({ _relayEpoch, _relaySeq, ...rest }) => rest
+    assert.deepEqual(unstamped((await ref1.waitFor((m) => m.type === 'live-state-update')).liveState), live1)
+    assert.deepEqual(unstamped((await ref2.waitFor((m) => m.type === 'live-state-update')).liveState), live2)
     const before = pong(ref1) + pong(ref2)
     await settle(ref1)
     await settle(ref2)
