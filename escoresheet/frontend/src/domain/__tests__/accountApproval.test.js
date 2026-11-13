@@ -3,8 +3,11 @@ import {
   ROLE_TO_SLOT, APPROVAL_ROLES, PIN_RE, isWeakPin, resultKey, resultTriples, approvalFor, isApprovalValid,
   slotComplete, formatApprovalStamp, approvalLine, approvalsBySlot, officialFor, officialName, namesDiffer,
   deviceId, rememberApprovalEmail, recallApprovalEmail, APPROVAL_EMAILS_MAX, pendingSyncJobsFor, approvalSummary,
-  approvalsCompletingSlots, approvalsStillValid, normalizeApprovalQuery, changedSets, approvedSheetChanged
+  approvalsCompletingSlots, approvalsStillValid, normalizeApprovalQuery, changedSets, approvedSheetChanged,
+  optionalSignatureSlots
 } from '../accountApproval'
+import { clearedPostMatchSignatures } from '../matchEnd'
+import { postMatchSignaturesFromServer } from '../signatureEdits'
 import { isWeakPin as serverIsWeakPin } from '../../../../backend/lib/approvalPin.js'
 
 const set = (index, homePoints, awayPoints, finished = true) => ({ index, homePoints, awayPoints, finished })
@@ -102,6 +105,39 @@ describe('slotComplete', () => {
   })
   it('a revoked record never counts', () => {
     expect(isApprovalValid(record({ revoked_at: '2026-10-07T20:00:00Z' }), VECTOR_SETS)).toBe(false)
+  })
+})
+
+describe('optionalSignatureSlots (assistant scorer, 2nd referee)', () => {
+  const ONE_REFEREE = [
+    { role: '1st referee', firstName: 'Anna', lastName: 'Muster' },
+    { role: 'scorer', firstName: 'Sam', lastName: 'Scorer' }
+  ]
+  const none = { asstScorer: false, ref2: false }
+  it('a match with one referee and no assistant scorer has neither slot', () => {
+    expect(optionalSignatureSlots({ officials: ONE_REFEREE })).toEqual(none)
+    expect(optionalSignatureSlots({})).toEqual(none)
+    expect(optionalSignatureSlots(null)).toEqual(none)
+  })
+  it('cleared (Reopen last set, a correction) or restored from the cloud: null is no official', () => {
+    expect(optionalSignatureSlots({ officials: ONE_REFEREE, ...clearedPostMatchSignatures() })).toEqual(none)
+    expect(optionalSignatureSlots({ officials: ONE_REFEREE, ...postMatchSignaturesFromServer({ scorer: 'data:s', ref1: 'data:r1' }) })).toEqual(none)
+    expect(optionalSignatureSlots({ officials: ONE_REFEREE, asstScorerSignature: '', ref2Signature: '' })).toEqual(none)
+  })
+  it('a named official has the slot, whatever the signature holds', () => {
+    const full = [...ONE_REFEREE, { role: '2nd referee', firstName: 'Ben', lastName: 'Beispiel' }, { role: 'assistant scorer', firstName: 'Ada', lastName: 'Assist' }]
+    expect(optionalSignatureSlots({ officials: full })).toEqual({ asstScorer: true, ref2: true })
+    expect(optionalSignatureSlots({ officials: full, ...clearedPostMatchSignatures() })).toEqual({ asstScorer: true, ref2: true })
+    // older spellings and the role-keyed object of older Manual adjustments saves
+    expect(optionalSignatureSlots({ officials: [{ role: '2nd_referee', lastName: 'B' }, { role: 'Assistant Scorer', lastName: 'A' }] })).toEqual({ asstScorer: true, ref2: true })
+    expect(optionalSignatureSlots({ officials: [{ role: 'ref2', lastName: 'B' }] })).toEqual({ asstScorer: false, ref2: true })
+    expect(optionalSignatureSlots({ officials: { ref1: { lastName: 'M' }, ref2: { firstName: 'Ben' }, asstScorer: { firstName: '', lastName: '' } } })).toEqual({ asstScorer: false, ref2: true })
+  })
+  it('a drawn signature or a 2nd referee approval keeps its slot', () => {
+    expect(optionalSignatureSlots({ officials: ONE_REFEREE, asstScorerSignature: 'data:a' })).toEqual({ asstScorer: true, ref2: false })
+    expect(optionalSignatureSlots({ officials: ONE_REFEREE, ref2Signature: 'data:r2' })).toEqual({ asstScorer: false, ref2: true })
+    expect(optionalSignatureSlots({ officials: ONE_REFEREE, accountApprovals: { referee2: record({ slot: 'referee2' }) } })).toEqual({ asstScorer: false, ref2: true })
+    expect(optionalSignatureSlots({ officials: ONE_REFEREE, accountApprovals: { referee1: record() } })).toEqual(none)
   })
 })
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { officialsToArray, mergeOfficialsEdits, officialsFromSchedule } from '../officials'
+import { officialsToArray, hasOfficial, mergeOfficialsEdits, officialsFromSchedule } from '../officials'
 
 const existing = [
   { role: '1st referee', firstName: 'Anna', lastName: 'Muster', country: 'CHE', dob: '01.02.1980' },
@@ -23,6 +23,22 @@ describe('officialsToArray', () => {
   })
   it('handles nothing', () => {
     expect(officialsToArray(null)).toEqual([])
+  })
+})
+
+describe('hasOfficial', () => {
+  it('finds a role in the array, in older spellings and in the role-keyed object', () => {
+    expect(hasOfficial(existing, 'ref2')).toBe(true)
+    expect(hasOfficial(existing, 'asstScorer')).toBe(false)
+    expect(hasOfficial([{ role: '2nd Referee', lastName: 'B' }, { role: 'assistant_scorer', lastName: 'A' }], 'ref2')).toBe(true)
+    expect(hasOfficial([{ role: 'assistant_scorer', lastName: 'A' }], 'asstScorer')).toBe(true)
+    expect(hasOfficial({ ref2: { firstName: '', lastName: '' }, asstScorer: { lastName: 'Z' } }, 'ref2')).toBe(false)
+    expect(hasOfficial({ ref2: { firstName: '', lastName: '' }, asstScorer: { lastName: 'Z' } }, 'asstScorer')).toBe(true)
+  })
+  it('nothing stored, or an unknown key', () => {
+    expect(hasOfficial(null, 'ref2')).toBe(false)
+    expect(hasOfficial(undefined, 'asstScorer')).toBe(false)
+    expect(hasOfficial(existing, 'lineJudge1')).toBe(false)
   })
 })
 

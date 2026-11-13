@@ -43,7 +43,8 @@ import { waitForScoresheetPdf, PDF_FAIL, PDF_REQUEST_PARAM } from '../utils/scor
 import { getMatchWinner, clearedPostMatchSignatures, planForfeitReversal } from '../domain/matchEnd'
 import {
   ROLE_TO_SLOT, approvalFor, isApprovalValid, slotComplete, approvalLine, approvalsBySlot, approvalSummary,
-  resultKey, rememberApprovalEmail, namesDiffer, approvalsCompletingSlots, approvalsStillValid, pinApprovalState
+  resultKey, rememberApprovalEmail, namesDiffer, approvalsCompletingSlots, approvalsStillValid, pinApprovalState,
+  optionalSignatureSlots
 } from '../domain/accountApproval'
 import { signatureEditLocked, signaturesPayload, signaturesSyncJob } from '../domain/signatureEdits'
 import { MAX_REMARKS_SIGNATURES, REMARKS_NAME_MAX, REMARKS_ROLE_MAX, remarksSignatureCaption, remarksSignaturesOf, withRemarksSignature, withoutRemarksSignature } from '../domain/remarksSignatures'
@@ -756,16 +757,10 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   const overflowSanctions = processedSanctions.slice(SANCTION_ROWS)
   const autoRemarks = generatedRemarks({ sets, events, teamAKey, bestOf: match?.bestOf })
 
-  // Check if optional fields exist
-  // Check if officials array has these roles
-  const hasAsstScorer = match.asstScorerSignature !== undefined ||
-    (Array.isArray(match.officials) && match.officials.some(o =>
-      o.role?.toLowerCase() === 'assistant scorer' || o.role?.toLowerCase() === 'assistant_scorer'
-    ))
-  const hasRef2 = match.ref2Signature !== undefined || !!approvalFor(match, 'ref2') ||
-    (Array.isArray(match.officials) && match.officials.some(o =>
-      o.role?.toLowerCase() === '2nd referee' || o.role?.toLowerCase() === '2nd_referee'
-    ))
+  // The assistant scorer and the 2nd referee sign only when the match has
+  // them: a named official, or a slot already signed (or approved). A null
+  // field after Reopen last set, a correction or a cloud import is no official.
+  const { asstScorer: hasAsstScorer, ref2: hasRef2 } = optionalSignatureSlots(match)
 
   // Signature status checks - use POST-GAME captain signatures (not pre-match)
   const captainASigned = homeLabel === 'A' ? !!match.homePostGameCaptainSignature : !!match.awayPostGameCaptainSignature
