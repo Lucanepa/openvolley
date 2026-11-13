@@ -196,6 +196,55 @@ production's. Production needs no backend change.
 `npm run dev`, then `http://localhost:5173/manager-beach.html` (the icons are
 OpenVolley's in dev; the build swaps them).
 
+# Web releases: match days and migrations (every Pages project)
+
+Every Pages project built from this repository (`openvolley-app`, `-referee`,
+`-bench`, `-livescore`, `-roster`, `-scoresheet`, `openvolley-manager`,
+`openbeach-manager` and the OpenBeach sites) builds `main` on each merge and
+puts it live within minutes; an open app takes the new build at its next start
+or update. A merge to `main` is a web release, so it follows the backend's
+rules:
+
+- **Match-day freeze.** From Friday 17:00 to Sunday 23:59 nothing is merged to
+  `main` (the window of `deploy/RUNBOOK-hetzner.md`, "Match-day rules"). Work
+  goes to `dev`, whose builds talk to the test backend only, and is merged on
+  Monday. A fix that cannot wait is the owner's call; check `/health` before
+  and after it.
+- **The migration first.** A change whose web app writes a new column or table
+  (a new `backend/db/NNN_*.sql` with it) is released in two steps: first the
+  backend, with `deploy.sh` (it runs the migrations), and a check that the
+  database has it:
+
+  ```bash
+  ov-vps$ sudo docker compose --project-directory /opt/openvolley exec -T ov-backend node scripts/check-schema.mjs
+  ov-vps$ sudo docker compose --project-directory /opt/openvolley exec -T ov-backend node scripts/migrate.mjs --status
+  ```
+
+  (the first exits 0, the second lists `NNN`); only then the web part is
+  merged to `main`. While the migration is not released, keep the web part in
+  its own pull request.
+- **If the web app is out first anyway.** The backend writes the rows without
+  the columns it does not know and logs
+  `[pgQuery] unknown column dropped from a write on <table>: <column>` (once a
+  minute per column; counted per column by the data layer's `droppedColumns()`,
+  for `/health`). The matches still reach the cloud, but the values of those
+  columns are lost until the migration. A write the backend cannot take at all
+  (a table it does not have yet) is refused: the app keeps it, its sync
+  indicator says "Server update pending", and it sends it again every hour.
+- **Raising the minimum write protocol** (`MIN_WRITE_PROTO` in
+  `backend/server.js` against the apps' `OV_PROTO` in
+  `frontend/src/lib/apiClient.js`): only once the apps that speak the new
+  protocol have been out for a while (the web app reloaded on every hall
+  tablet, the Android and desktop apps updated), and never on a match day. An
+  older app then keeps its writes on the device and says "Update needed:
+  reload the app after this rally" (the web app) or asks for the app's update
+  (Android, desktop); nothing is lost, but nothing reaches the cloud until it
+  is updated.
+
+Owner, optional: as a lock on the freeze, pause the production branch's
+automatic deployments of each Pages project for the weekend (Settings ->
+Builds) and turn them on again on Monday.
+
 # Dev builds and the test backend (owner decision 5)
 
 Builds of the `dev` branch, and of any other branch but `main`, are Cloudflare
