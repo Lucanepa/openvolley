@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { validatePin, validatePinSupabase, listAvailableMatches, getWebSocketStatus, listAvailableMatchesForBenchSupabase, getMatchData, matchTeamNames, setRelayDevice, getRelayServerStatus } from './utils/serverDataSync'
+import { validatePin, validatePinSupabase, listAvailableMatches, getWebSocketStatus, listAvailableMatchesForBenchSupabase, getMatchData, matchTeamNames, setRelayDevice, getRelayServerStatus, isOtherGame } from './utils/serverDataSync'
 import { benchJoinableMatches } from './utils/relayMatchList'
 import MatchEntry from './components/MatchEntry'
 import { useUprightLock } from './components/referee/upright.js'
@@ -97,8 +97,10 @@ const isRefusal = (status) => status >= 400 && status < 500 && status !== 429
  * The relay is asked for matchExternalId too (else for `gameNumber`, the game
  * picked), and its answer for another match is refused: a relay that
  * compared the PIN with every match it holds opened another hall's match
- * whose bench PIN was the same. A relay that finds the PIN in more than one
- * match and was not told which says ambiguous: true.
+ * whose bench PIN was the same. Without matchExternalId (a numeric LAN id,
+ * no link) an answer, cloud or relay, for another game number than
+ * `gameNumber` is refused too (isOtherGame). A relay that finds the PIN in
+ * more than one match and was not told which says ambiguous: true.
  */
 export async function validateBenchPin(pin, team, { connectionMode = CONNECTION_MODES.AUTO, preferLan = false, matchExternalId, gameNumber = null } = {}) {
   const pinType = team === 'home' ? 'homeTeam' : 'awayTeam'
@@ -114,6 +116,10 @@ export async function validateBenchPin(pin, team, { connectionMode = CONNECTION_
     if (isRefusal(r?.status) || (r?.status >= 200 && r?.status < 300 && !r.success)) cloudRefused = true
     if (r?.status >= 500) cloudFailed = true
     if (!r.success || !r.match) return r
+    if (!matchExternalId && isOtherGame(r.match, gameNumber)) {
+      cloudRefused = true
+      return { success: false, error: 'Invalid PIN code' }
+    }
     // The server only accepts a bench PIN while that bench is enabled; older
     // backends don't echo the flag, which would trip the disconnect check.
     const flag = team === 'home' ? 'homeTeamConnectionEnabled' : 'awayTeamConnectionEnabled'
@@ -121,7 +127,7 @@ export async function validateBenchPin(pin, team, { connectionMode = CONNECTION_
   }
   const named = matchExternalId ? { matchId: String(matchExternalId) } : (gameNumber != null && gameNumber !== '' ? { gameNumber: String(gameNumber) } : {})
   const checkLan = () => validatePin(pin, pinType, named).then((r) => {
-    if (r?.success && r.match && matchExternalId && String(r.match.id) !== String(matchExternalId)) {
+    if (r?.success && r.match && (matchExternalId ? String(r.match.id) !== String(matchExternalId) : isOtherGame(r.match, gameNumber))) {
       lanRefused = true
       return { success: false }
     }

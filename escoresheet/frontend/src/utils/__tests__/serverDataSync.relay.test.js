@@ -189,6 +189,19 @@ describe('tablet status from the relay', () => {
     expect(summarizeRelayTablets(null, SEED)).toEqual({ referee: 0, benchHome: 0, benchAway: 0, watchers: 0 })
   })
 
+  // review of the 2026-11 fix: the Connect dialog left out tablets the relay
+  // says are unproved, the scorer's tablet pill still counted them
+  it('counts a referee or bench the relay says is unproved as a watcher only', () => {
+    const c = {
+      clients: [
+        { role: 'referee', team: null, matchId: SEED, proved: false },
+        { role: 'bench', team: 'home', matchId: SEED, proved: false },
+        { role: 'bench', team: 'away', matchId: SEED, proved: true }
+      ]
+    }
+    expect(summarizeRelayTablets(c, SEED)).toEqual({ referee: 0, benchHome: 0, benchAway: 1, watchers: 3 })
+  })
+
   it('attributes a bench without a team when only one bench is enabled', () => {
     const c = { clients: [{ role: 'bench', team: null, matchId: SEED }] }
     expect(summarizeRelayTablets(c, SEED, { homeTeamConnectionEnabled: false, awayTeamConnectionEnabled: true }).benchAway).toBe(1)

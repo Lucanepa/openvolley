@@ -165,7 +165,8 @@ describe('typed tablet PINs are checked against the match the page knows', () =>
   it('the referee: its link, or the game picked in the list', () => {
     // (a game picked after a link replaces it: refereeLink.test.jsx)
     expect(refereeSrc).toMatch(/const picked = linkedMatch\?\.id \?\? \(listed\.length === 1 \? listed\[0\]\.id : null\)/)
-    expect(refereeSrc).toMatch(/validateRefereePin\(pinInput\.trim\(\), \{\n\s*matchExternalId: typeof picked === 'string' && picked \? picked : null,\n\s*gameNumber: linkedMatch\?\.gameNumber \?\? \(selectedGameNumber \|\| null\)\n\s*\}\)/)
+    expect(refereeSrc).toMatch(/const gameNumber = linkedMatch\?\.gameNumber \?\? \(selectedGameNumber \|\| null\)/)
+    expect(refereeSrc).toMatch(/validateRefereePin\(pinInput\.trim\(\), \{\n\s*matchExternalId: typeof picked === 'string' && picked \? picked : null,\n\s*gameNumber\n\s*\}\)/)
   })
   it('the bench: the match picked (its link or the list)', () => {
     const at = benchSrc.indexOf('const result = await validateBenchPin(pin, selectedTeam, {')

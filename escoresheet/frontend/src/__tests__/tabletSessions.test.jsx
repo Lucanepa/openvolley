@@ -54,6 +54,19 @@ describe('bench session (survives a reload)', () => {
     expect(sync.validatePin).toHaveBeenLastCalledWith('372449', 'homeTeam', { gameNumber: '12' })
   })
 
+  // review of the 2026-11 fix: a game picked by its number only (a numeric
+  // LAN id) took the cloud's or the relay's answer for any game
+  it('with only a game number picked, an answer for another game number is refused', async () => {
+    const other = { id: 'match_1791215210099_other1', gameNumber: 13, homeTeamConnectionEnabled: true }
+    sync.validatePinSupabase.mockResolvedValue({ success: true, match: other })
+    sync.validatePin.mockResolvedValue({ success: true, match: other })
+    const r = await validateBenchPin('372449', 'home', { gameNumber: 12 })
+    expect(r.success).toBe(false)
+    expect(r.noAnswer).toBeUndefined()
+    sync.validatePin.mockResolvedValue({ success: true, match: { id: SEED, gameNumber: 12, homeTeamConnectionEnabled: true } })
+    expect((await validateBenchPin('372449', 'home', { gameNumber: 12 })).match.id).toBe(SEED)
+  })
+
   it('fills in the enabled flag an older cloud backend does not echo', async () => {
     sync.validatePinSupabase.mockResolvedValue({ success: true, match: { id: SEED } })
     const r = await validateBenchPin('372449', 'away')
