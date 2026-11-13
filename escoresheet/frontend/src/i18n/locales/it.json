@@ -190,6 +190,9 @@
     "duplicatePlayers": "La squadra {{team}} ha giocatori duplicati: {{names}}",
     "invalidBirthdate": "Alcuni giocatori o ufficiali hanno una data di nascita non valida (01.01.1900). Correggi queste date.",
     "invalidJerseyNumbers": "La squadra {{team}} ha numeri di maglia non validi (deve essere 1-99): {{numbers}}",
+    "tooManyLiberos": "La squadra {{team}} ha più di 2 liberi: {{count}}",
+    "liberoSlotTwice": "La squadra {{team}} ha due giocatori come {{slot}}",
+    "tooManyCaptains": "La squadra {{team}} ha più di un capitano: {{count}}",
     "playersWithoutNumbers": "La squadra {{team}} ha {{count}} giocatore/i senza numero di maglia",
     "tooManyPlayers": "La squadra {{team}} ha più di {{max}} giocatori: {{count}}",
     "completeSignatures": "Completa tutte le firme prima di confermare il sorteggio.",
@@ -281,6 +284,10 @@
     "benchOfficialsCount": "Ufficiali ammessi in panchina",
     "acceptRoster": "Accetta",
     "rejectRoster": "Rifiuta",
+    "uploadedRosterStarted": "La partita è iniziata: una rosa caricata può ormai solo essere rifiutata.",
+    "uploadedRosterInvalid": "Questa rosa non rispetta le regole (un numero doppio, due capitani, un posto di libero doppio o una voce danneggiata) e non può essere accettata. Rifiutala e chiedi alla squadra di inviarla di nuovo.",
+    "uploadedRosterSaveFailed": "Non è stato possibile salvare la rosa. Riprova.",
+    "uploadedRosterOpen": "Apri",
     "uploadPin": "PIN per upload",
     "uploadPdf": "Carica PDF",
     "searchForRoster": "Cerca rosa",
@@ -1906,7 +1913,16 @@
     "confirmMessage": "Questo invierà la rosa al eScoresheet per l'approvazione.",
     "uploading": "Caricamento",
     "uploadingMessage": "Invio della rosa in corso...",
-    "rosterSentToScoresheet": "La rosa è stata inviata al eScoresheet. Il segnapunti esaminerà e accetterà o rifiuterà la rosa."
+    "rosterSentToScoresheet": "La rosa è stata inviata al eScoresheet. Il segnapunti esaminerà e accetterà o rifiuterà la rosa.",
+    "problems": {
+      "numberTwice": "Il numero {{number}} è dato a due giocatori.",
+      "badNumber": "I numeri di maglia vanno da 1 a 99.",
+      "roleTwice": "{{role}} c’è due volte: ogni ruolo di ufficiale una sola volta.",
+      "tooMany": "Al massimo {{max}} giocatori.",
+      "badText": "Un nome ha più di {{max}} caratteri.",
+      "badDate": "Una data di nascita non è una data.",
+      "other": "La rosa non può essere inviata ({{problem}})."
+    }
   },
   "benchDashboard": {
     "title": "Dashboard squadra",

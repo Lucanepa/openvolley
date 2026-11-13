@@ -25,6 +25,7 @@ import TodayGamesModal from './components/TodayGamesModal'
 import { useAuth } from './contexts/AuthContext'
 import { EASY_TEAM_SEED_KEYS, easyMatchPrefill } from './domain/easyMatch'
 import { SIMPLE_BOARD_OPEN_KEY } from './domain/simpleScoreboard'
+import { takesUploadedRoster } from './domain/uploadedRoster'
 import HomeOptionsModal from './components/options/HomeOptionsModal'
 import ConnectTabletsModal from './components/connect/ConnectTabletsModal'
 import { useSyncQueue, useUserMatchLink, checkScorerMoved, askScoringDevice, matchEndUpdateNeeded, isClosedHere, hasStoredSessionToken, noteMatchClosedOnServer } from './hooks/useSyncQueue'
@@ -1401,9 +1402,12 @@ export default function App() {
   // A roster waiting for the open match (uploaded by a team, or restored from
   // the cloud with it): its Match Setup. Only for the match on the screen: on
   // Home it opened the match by itself, at start too, against the start rule
-  // (the app opens on Home; utils/deviceSelfCheck). As OpenBeach #14.
+  // (the app opens on Home; utils/deviceSelfCheck). As OpenBeach #14. Only
+  // before the coin toss: a running match takes no uploaded roster (Match
+  // Setup offers only Reject then), and "Return to match" came straight back.
   useEffect(() => {
     if (!currentMatch || matchId == null || currentMatch.id !== matchId) return
+    if (!takesUploadedRoster(currentMatch)) return
 
     // Check if there are pending rosters
     const hasPendingHomeRoster = currentMatch.pendingHomeRoster !== null && currentMatch.pendingHomeRoster !== undefined

@@ -188,6 +188,9 @@
     "duplicatePlayers": "Team {{team}} hat doppelte Spielende: {{names}}",
     "invalidBirthdate": "Einige Spielende oder Offizielle haben ein ungültiges Geburtsdatum (01.01.1900). Bitte korrigieren.",
     "invalidJerseyNumbers": "Team {{team}} hat ungültige Trikotnummern (muss 1-99 sein): {{numbers}}",
+    "tooManyLiberos": "Team {{team}} hat mehr als 2 Liberos: {{count}}",
+    "liberoSlotTwice": "Team {{team}} hat zwei Spielende als {{slot}}",
+    "tooManyCaptains": "Team {{team}} hat mehr als einen Captain: {{count}}",
     "playersWithoutNumbers": "Team {{team}} hat {{count}} Spielende ohne Trikotnummer",
     "tooManyPlayers": "Team {{team}} hat mehr als {{max}} Spielende: {{count}}",
     "completeSignatures": "Bitte alle Unterschriften vor Bestätigung der Seitenwahl vervollständigen.",
@@ -273,6 +276,10 @@
     "benchOfficialsCount": "Bankoffizielle",
     "acceptRoster": "Akzeptieren",
     "rejectRoster": "Ablehnen",
+    "uploadedRosterStarted": "Das Spiel läuft schon: ein hochgeladener Kader kann nur noch abgelehnt werden.",
+    "uploadedRosterInvalid": "Dieser Kader verletzt die Kaderregeln (eine Nummer doppelt, zwei Captains, ein Libero-Platz doppelt oder ein beschädigter Eintrag) und kann nicht akzeptiert werden. Lehne ihn ab und bitte das Team, ihn neu zu senden.",
+    "uploadedRosterSaveFailed": "Der Kader konnte nicht gespeichert werden. Bitte versuche es noch einmal.",
+    "uploadedRosterOpen": "Öffnen",
     "uploadPin": "Upload-PIN",
     "roleLibero": "Libero",
     "uploadPdf": "PDF hochladen",
@@ -1751,7 +1758,16 @@
     "confirmMessage": "Dies sendet den Kader zur Genehmigung an das eScoresheet.",
     "uploading": "Hochladen",
     "uploadingMessage": "Kader wird gesendet...",
-    "rosterSentToScoresheet": "Der Kader wurde an das eScoresheet gesendet. Der Schreiber wird den Kader überprüfen und akzeptieren oder ablehnen."
+    "rosterSentToScoresheet": "Der Kader wurde an das eScoresheet gesendet. Der Schreiber wird den Kader überprüfen und akzeptieren oder ablehnen.",
+    "problems": {
+      "numberTwice": "Die Nummer {{number}} haben zwei Spielende.",
+      "badNumber": "Trikotnummern gehen von 1 bis 99.",
+      "roleTwice": "{{role}} ist zweimal da: jede Rolle der Teamoffiziellen nur einmal.",
+      "tooMany": "Höchstens {{max}} Spielende.",
+      "badText": "Ein Name hat mehr als {{max}} Zeichen.",
+      "badDate": "Ein Geburtsdatum ist kein Datum.",
+      "other": "Der Kader kann nicht gesendet werden ({{problem}})."
+    }
   },
   "benchDashboard": {
     "title": "Team-Dashboard",

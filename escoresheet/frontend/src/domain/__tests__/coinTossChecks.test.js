@@ -54,10 +54,24 @@ describe('coinTossConfirmIssues', () => {
     ])
   })
 
+  // An uploaded roster with three liberos, "Libero 1" twice and two captains
+  // passed (fe-roster-import-5); 7 and '7' were two numbers, 7.5 a valid one
+  it('liberos, libero slots and captains; numbers compared as numbers', () => {
+    const home = [...roster(6), player(7, { libero: 'libero1' }), player(8, { libero: 'libero1' }), player(9, { libero: 'libero2' }), player(10, { isCaptain: true })]
+    const away = [...roster(6), player('7'), player(7, { lastName: 'Q7' }), player(7.5)]
+    expect(coinTossConfirmIssues({ ...ok(), homeRoster: home, awayRoster: away })).toEqual([
+      { key: 'validation.tooManyLiberos', params: { team: 'home', count: 3 } },
+      { key: 'validation.liberoSlotTwice', params: { team: 'home', slot: 'L1' } },
+      { key: 'validation.tooManyCaptains', params: { team: 'home', count: 2 } },
+      { key: 'validation.duplicateNumbers', params: { team: 'away', numbers: '7' } },
+      { key: 'validation.invalidJerseyNumbers', params: { team: 'away', numbers: '7.5' } }
+    ])
+  })
+
   it.each([['en', en], ['de', de], ['de-CH', deCH], ['fr', fr], ['it', it_]])('every key is in %s', (_, locale) => {
     const all = ['homeTeamNotSet', 'awayTeamNotSet', 'refereeNotSet', 'scorerNotSet', 'hallNotSet', 'cityNotSet', 'leagueNotSet', 'dateNotSet',
       'needMorePlayers', 'tooManyPlayers', 'playersWithoutNumbers', 'coachNotSet', 'captainNotSet', 'duplicateNumbers', 'duplicatePlayers',
-      'invalidBirthdate', 'invalidJerseyNumbers']
+      'invalidBirthdate', 'invalidJerseyNumbers', 'tooManyLiberos', 'liberoSlotTwice', 'tooManyCaptains']
     for (const k of all) expect(typeof locale.validation[k], k).toBe('string')
   })
 })

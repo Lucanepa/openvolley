@@ -106,7 +106,7 @@ export function SanctionChip({ entry }) {
 }
 
 function SanctionList({ entries }) {
-  if (!entries?.length) return null
+  if (!Array.isArray(entries) || !entries.length) return null
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'nowrap' }}>
       {entries.map(e => <SanctionChip key={e.id} entry={e} />)}
@@ -220,7 +220,7 @@ function PlayerTable({ team, rows, showPos, kind }) {
               </td>
               {!phone && <td className="roster-dob" style={CELL}>{player.dob || '—'}</td>}
               {showPos && <PositionCell position={position} isServer={team.serving && position === 'I'} />}
-              <td style={CELL}><SanctionList entries={team.sanctions.players[num]} /></td>
+              <td style={CELL}><SanctionList entries={team.sanctions.players.get(num)} /></td>
             </tr>
           )
         })}
@@ -258,7 +258,7 @@ function BenchTable({ team, rows, emptyAll }) {
                   <NameWithDob name={`${official.lastName || ''} ${official.firstName || ''}`.trim()} dob={official.dob} phone={phone} />
                 </td>
                 {!phone && <td style={CELL}>{official.dob || '—'}</td>}
-                <td style={CELL}><SanctionList entries={team.sanctions.officials[official.role]} /></td>
+                <td style={CELL}><SanctionList entries={team.sanctions.officials.get(String(official.role))} /></td>
               </>
             ) : (
               <td colSpan={phone ? 3 : 4} />

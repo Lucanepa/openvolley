@@ -191,6 +191,9 @@
     "duplicatePlayers": "Team {{team}} hät doppleti Spieler: {{names}}",
     "invalidBirthdate": "Einigi Spieler oder Offizielli händ es ungültigs Geburtsdatum (01.01.1900). Bitte korrigiere.",
     "invalidJerseyNumbers": "Team {{team}} hät ungültigi Trikotnummere (muess 1-99 sii): {{numbers}}",
+    "tooManyLiberos": "Team {{team}} hät meh als 2 Liberos: {{count}}",
+    "liberoSlotTwice": "Team {{team}} hät zwei Spieler als {{slot}}",
+    "tooManyCaptains": "Team {{team}} hät meh als ein Captain: {{count}}",
     "playersWithoutNumbers": "Team {{team}} hät {{count}} Spieler ohni Trikotnummere",
     "tooManyPlayers": "Team {{team}} hät meh als {{max}} Spieler: {{count}}",
     "completeSignatures": "Bitte alli Underschrifte vor de Bestätigung vo de Usloosig vervollständige.",
@@ -281,6 +284,10 @@
     "benchOfficialsCount": "Bankoffizielli",
     "acceptRoster": "Akzeptiere",
     "rejectRoster": "Ablehne",
+    "uploadedRosterStarted": "S Spiil lauft scho: en ufeglade Kader cha nur no abglehnt werde.",
+    "uploadedRosterInvalid": "Dä Kader verletzt d Kaderregle (e Nummere doppelt, zwei Captains, en Libero-Platz doppelt oder en kaputte Iitrag) und cha nöd akzeptiert werde. Lehn en ab und bitt s Team, en nomal z schicke.",
+    "uploadedRosterSaveFailed": "Dä Kader hät nöd chöne gspeicheret werde. Bitte probier s nomal.",
+    "uploadedRosterOpen": "Öffne",
     "uploadPin": "Upload-PIN",
     "uploadPdf": "PDF ufelade",
     "searchForRoster": "Kader sueche",
@@ -1906,7 +1913,16 @@
     "confirmMessage": "Das schickt s Kader zur Genehmigung as eScoresheet.",
     "uploading": "Ufelade",
     "uploadingMessage": "S Kader wird as eScoresheet gschickt...",
-    "rosterSentToScoresheet": "S Kader isch as eScoresheet gschickt worde. De Schriiber wird s Kader überprüefe und akzeptiere oder ablehne."
+    "rosterSentToScoresheet": "S Kader isch as eScoresheet gschickt worde. De Schriiber wird s Kader überprüefe und akzeptiere oder ablehne.",
+    "problems": {
+      "numberTwice": "D Nummere {{number}} händ zwei Spieler.",
+      "badNumber": "Trikotnummere gönd vo 1 bis 99.",
+      "roleTwice": "{{role}} isch zweimal da: jedi Rolle vo de Teamoffizielle nur eimal.",
+      "tooMany": "Höchschtens {{max}} Spieler.",
+      "badText": "En Name hät meh als {{max}} Zeiche.",
+      "badDate": "Es Geburtsdatum isch kei Datum.",
+      "other": "Dä Kader cha nöd gschickt werde ({{problem}})."
+    }
   },
   "benchDashboard": {
     "title": "Team-Dashboard",
