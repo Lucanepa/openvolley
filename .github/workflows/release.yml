@@ -84,8 +84,6 @@ jobs:
       - name: Build indoor frontend (referee, bench, roster)
         working-directory: escoresheet/frontend
         env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           NODE_OPTIONS: '--max-old-space-size=4096'
         run: |
           node scripts/build-subdomains.js referee --base /referee/
@@ -135,8 +133,6 @@ jobs:
       - name: Build beach frontend (referee + scoreboard)
         working-directory: escoresheet/frontend
         env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           NODE_OPTIONS: '--max-old-space-size=4096'
         run: |
           node scripts/build-subdomains.js beach-referee --base /beach-referee/

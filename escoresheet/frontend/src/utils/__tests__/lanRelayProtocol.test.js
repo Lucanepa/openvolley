@@ -2,8 +2,8 @@
 /**
  * Contract tests for the LAN relay wire protocol (electron/lanRelayCore.cjs),
  * exercised through every Node relay runtime that uses it — the standalone
- * server (server.js), the Electron in-process relay and the Vite dev plugin —
- * and checked against what the client (serverDataSync.readRelayBundle) reads.
+ * server (server.js) and the Vite dev plugin — and checked against what the
+ * client (serverDataSync.readRelayBundle) reads.
  * Each runtime (and the Tauri relay with OV_TAURI_RELAY_BIN) also runs the
  * venue contract shared with the backend's --local relay: several beach
  * courts on one relay (backend/tests/helpers/beachVenueContract.js).
@@ -14,7 +14,6 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createServer as createNetServer } from 'node:net'
 import { createServer as createHttpServer } from 'node:http'
-import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import WebSocket from 'ws'
@@ -26,7 +25,6 @@ import { runBenchRequestContract } from '../../../../backend/tests/helpers/bench
 
 const here = dirname(fileURLToPath(import.meta.url))
 const FRONTEND_DIR = resolve(here, '../../..')
-const require = createRequire(import.meta.url)
 
 const PINS = {
   refereePin: '314159',
@@ -1517,23 +1515,6 @@ describe('relay runtimes speak the shared protocol', () => {
       for (const c of clients) c.ws.close()
       child.kill('SIGKILL')
       rmSync(dir, { recursive: true, force: true })
-    }
-  })
-
-  it('Electron in-process relay', async () => {
-    const relayServer = require('../../../electron/relayServer.js')
-    const [port, wsPort] = [await freePort(), await freePort()]
-    await relayServer.start({ port, wsPort })
-    try {
-      await relayScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
-      await runBeachVenueContract({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'electron' })
-      await runBenchRequestContract({ wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'electron' })
-      await hostileFrameScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
-      await hallCrowdScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
-      await deflateScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
-      await pinCheckBudgetScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
-    } finally {
-      await relayServer.stop()
     }
   })
 

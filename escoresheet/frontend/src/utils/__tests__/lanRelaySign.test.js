@@ -4,8 +4,8 @@
  * docs/qr-signing-spec.md 4.5, 8.2): who may start a session (the relay host,
  * or the game PIN of a match the relay holds), the body caps, the timer
  * lifecycle that must never keep `vite build` alive (B3), and the same HTTP
- * scenario through every runtime: server.js, the Electron relay, the Vite
- * plugin and (OV_TAURI_RELAY_BIN) the Rust relay.
+ * scenario through every runtime: server.js, the Vite plugin and
+ * (OV_TAURI_RELAY_BIN) the Rust relay.
  */
 import { describe, it, expect, afterEach } from 'vitest'
 import { spawn } from 'node:child_process'
@@ -248,18 +248,6 @@ describe('every Node relay runtime and the Rust relay speak Sign on phone', () =
       if (HAS_SIGN_PAGE) expect(await signPageCheck({ httpBase: `http://127.0.0.1:${port}` })).toEqual([])
     } finally {
       child.kill('SIGKILL')
-    }
-  })
-
-  it('Electron in-process relay', async () => {
-    const relayServer = require('../../../electron/relayServer.js')
-    const [port, wsPort] = [await freePort(), await freePort()]
-    await relayServer.start({ port, wsPort })
-    try {
-      expect(await signHttpScenario({ httpBase: `http://127.0.0.1:${port}` })).toEqual([])
-      if (HAS_SIGN_PAGE) expect(await signPageCheck({ httpBase: `http://127.0.0.1:${port}` })).toEqual([])
-    } finally {
-      await relayServer.stop()
     }
   })
 

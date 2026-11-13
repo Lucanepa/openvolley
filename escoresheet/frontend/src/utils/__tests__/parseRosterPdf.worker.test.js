@@ -36,7 +36,6 @@ describe('parseRosterPdf worker source', () => {
   // the bundled worker is a .mjs file: every static server must know .mjs.
   it.each([
     '../../../server.js',
-    '../../../electron/relayServer.js',
     '../../../../backend/server.js'
   ])('%s serves .mjs as JavaScript', (file) => {
     const src = readFileSync(resolve(__dirname, file), 'utf8')

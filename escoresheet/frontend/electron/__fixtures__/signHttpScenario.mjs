@@ -1,7 +1,7 @@
 /**
  * Sign on phone over HTTP, from the relay host itself (loopback, so `start`
- * needs no PIN): one scenario for every relay runtime (server.js, Electron,
- * the Vite plugin, the Tauri binary, backend/server.js --local). Returns a
+ * needs no PIN): one scenario for every relay runtime (server.js, the Vite
+ * plugin, the Tauri binary, backend/server.js --local). Returns a
  * list of mismatches (empty = the runtime speaks the protocol of
  * docs/qr-signing-spec.md 4), so the frontend vitest and the backend node:test
  * suites can both use it.

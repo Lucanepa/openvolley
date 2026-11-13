@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Build script for subdomain deployments
- * Builds each dashboard as a standalone app for Render static site deployment
+ * Builds each dashboard as a standalone static app, one site per subdomain
  *
  * Usage:
  *   node scripts/build-subdomains.js          # Build all subdomains
@@ -120,7 +120,6 @@ export const subdomains = {
     pwa: false,
     noindex: true,
     host: 'manager-beach.openvolley.app',
-    packageName: 'openbeach-manager',
     brandFiles: {
       'favicon.ico': 'brand/beach/favicon.ico',
       'favicon.svg': 'brand/beach/favicon.svg',
@@ -430,23 +429,6 @@ async function buildSubdomain(subdomain, basePath = '/') {
     for (const [name, source] of Object.entries(config.brandFiles || {})) {
       copyFileSync(resolve(frontendDir, source), resolve(outDir, name))
     }
-
-    // Create package.json for Render deployment
-    const renderPackageJson = {
-      name: config.packageName || `openvolley-${subdomain}`,
-      version: appVersion,
-      private: true,
-      scripts: {
-        start: 'npx serve . -s -l $PORT'
-      },
-      dependencies: {
-        serve: '^14.2.5'
-      }
-    }
-    writeFileSync(
-      resolve(outDir, 'package.json'),
-      JSON.stringify(renderPackageJson, null, 2)
-    )
 
     console.log(`✅ Built ${hostFor(subdomain)} → dist-${subdomain}/`)
 

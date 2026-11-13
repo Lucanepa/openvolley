@@ -54,8 +54,8 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 | --- | --- |
 | Frontend | React 19, Vite 7.3 |
 | Offline Storage | Dexie.js 4.3 (IndexedDB) |
-| Cloud Sync | Supabase (PostgreSQL) |
-| Desktop | Electron 40 |
+| Cloud Sync | Own Node.js backend + PostgreSQL |
+| Desktop | Tauri 2 |
 | Mobile | Capacitor 8 |
 | PDF | jsPDF, pdf-lib, pdfjs-dist |
 | i18n | i18next (5 languages) |

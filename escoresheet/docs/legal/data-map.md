@@ -62,8 +62,9 @@ say otherwise.
 What there is **not** (verified): no analytics, no tracking, no ads, no
 cookies (no `Set-Cookie`, no `document.cookie` in backend or frontend), no
 third-party fonts or CDNs (fonts are self-hosted in `frontend/public/fonts`; a
-test forbids CDN workers), no Sentry or similar error reporting. Two pieces of
-dead code would call third parties if ever wired up (F18). Cloudflare can
+test forbids CDN workers), no Sentry or similar error reporting. The two pieces
+of dead code that would have called third parties (F18) were removed in
+2026-11, and a test keeps pages and sources off those hosts. Cloudflare can
 inject Web Analytics at the edge, and the code cannot show that: **check in
 the Cloudflare dashboard that Web Analytics / RUM is off for every Pages
 project and the zone.**
@@ -372,8 +373,14 @@ file tar). The policy must say so (F8).
 | Uptime Kuma pushes | Status only | Operator's own | No personal data | — |
 
 Not in use (code present but not configured in `deploy/compose.yaml`):
-Supabase (left in 2026-10). The PocketBase relay backup (never configured)
-was removed from the code in 2026-11.
+Supabase (left in 2026-10). No code talks to it any more; in 2026-11 the
+copy of its old vm-sync Edge Function (`backend/legacy/`), the
+`VITE_SUPABASE_*` lines of the release workflow and the Supabase MCP config
+were removed from the repository. Its anon key stays readable in the public
+git history, so **record here when the project was deleted** (Supabase
+dashboard; if it still exists, delete it or at least rotate its JWT secret).
+The PocketBase relay backup (never configured) was removed from the code in
+2026-11.
 
 ## 6. Retention as built: summary
 
@@ -426,7 +433,7 @@ was removed from the code in 2026-11.
 | F15 | Low | The sign-up data (names, country, DOB) is kept twice: `profiles` and `auth.users.raw_user_meta_data`; profile edits leave the raw copy stale | `lib/auth.js:1193` | Do not store the raw copy, or clear it after creating the profile |
 | F16 | Info | TLS ends at Cloudflare: all API traffic, rosters and DOBs included, is visible to Cloudflare | `deploy/cloudflared/config.yml` | Name it in the policy (processor, US transfer) |
 | F17 | Low | OpenBeach shows `luca.canepa@gmail.com` as support and its support-form fallback mails `volleyball@lucanepa.com` | openbeach `HomeOptionsModal_beach.jsx:410`, `SupportFeedbackModal_beach.jsx:201` | Use support@openvolley.app (Appendix A) |
-| F18 | Info | Dead code calling third parties: flag images from `flagcdn.com` (`DashboardOptionsMenu.jsx`, used only by a test) and QR codes from `api.qrserver.com` (`utils/networkInfo.js:118`, unused) | frontend | Delete, so they can never ship |
+| F18 | Info | Dead code calling third parties: flag images from `flagcdn.com` (`DashboardOptionsMenu.jsx`, used only by a test) and QR codes from `api.qrserver.com` (`utils/networkInfo.js:118`, unused) | frontend | Delete, so they can never ship. **Fixed 2026-11-13**: both deleted, with the unused AI Studio page `scoresheet_pdf/index_scoresheet.html` (React from `aistudiocdn.com`); `src/__tests__/legacySurface.test.js` keeps them out |
 | F19 | Low | Referee tablets keep the referee PIN in localStorage (shared devices) | `refereePin` | Session storage or clear at match end |
 | F20 | Info | Approvals keep a pseudonymous IP hash and device hash forever | `db/011` | Mention in the policy; consider dropping them after the season |
 | F21 | Low | Saved teams and beach tournaments made by a deleted account stay (third parties' DOBs and licence numbers) with no owner | `lib/auth.js` `detachedColumns`; `db/007`, `db/014` | Decide: hand them over to the club or admin, or delete orphaned ones |

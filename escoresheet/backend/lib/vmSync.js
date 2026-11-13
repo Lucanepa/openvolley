@@ -1,6 +1,6 @@
 /**
  * VolleyManager -> public.svrz_games sync (self-hosted port of the Supabase
- * Edge Function kept in legacy/supabase-functions/vm-sync/index.ts).
+ * Edge Function vm-sync; its source left the tree in 2026-11, see git history).
  *
  * Logs into VolleyManager (volleymanager.volleyball.ch, a Neos Flow app) with a
  * cookie jar, reads the CSRF token from the referee-game page, pages through the
