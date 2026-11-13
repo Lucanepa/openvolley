@@ -11,9 +11,11 @@
 -- bucket that the server accepted for a match (lib/scoresheets.js storePdf,
 -- POST /api/storage/upload): only from the match's creator, an editor or an
 -- admin (pgQuery assertMatchWritable), after the close once per approval
--- (that same file replaceable for 10 minutes by its uploader or the closing
--- account; for a match closed before this file ran, its file on disk is the
--- approval's). The manager's Scoresheets tab and the final mail serve only
+-- (from an editor added after the close only within 6 hours of it,
+-- lib/scoresheets.js LATE_EDITOR_WINDOW_MS; that same file replaceable for
+-- 10 minutes by its uploader or the closing account; for a match closed
+-- before this file ran, its file on disk is the approval's). The manager's
+-- Scoresheets tab and the final mail serve only
 -- these files of the match (the newest); a match without a row (files stored
 -- before this file ran) falls back to the file names, and then only to files
 -- that have no row (also none with a NULL match_id) and whose storage owner

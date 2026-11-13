@@ -13,9 +13,12 @@
  * account no longer hides it from the Scoresheets tab. A file that the
  * names serve for two closed matches is left as it is (counted as shared;
  * the server logs each such match when it serves it). A match whose only
- * file of its name is from an editor added after the close is counted as
- * such and left: record it by hand once the scorer is confirmed (README
- * "Files stored before this change"). Idempotent; dry run unless --apply. It
+ * file of its name is from an editor added after the close, stored after it
+ * was added and within 6 hours of the close (a shared tablet's,
+ * LATE_EDITOR_WINDOW_MS), is counted as such and left: record it by hand
+ * once the scorer is confirmed (README "Files stored before this change").
+ * Such an editor's file of any other time counts as none. Idempotent; dry
+ * run unless --apply. It
  * can run while the server does, and again any time: after a database
  * restore from an older dump, or after an older backend image served for a
  * while, it records the PDFs stored since that have no row.

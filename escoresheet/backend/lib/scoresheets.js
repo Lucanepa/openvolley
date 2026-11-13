@@ -62,11 +62,16 @@
  * apps, OpenBeach; a beach name is the one match's whose external id is its
  * seed). After the close it is stored once per approval: the approval's PDF
  * (the app queues it with the approval, which closes the match, so it comes
- * before or after the close; a shared tablet may send it under the next
- * account signed in there, which takes the match over with the game PIN),
- * unless one was stored since the last reopen: recorded, or for a match
- * closed before db/033 without a record the file the tab serves by its name
- * (below). The same bytes
+ * before or after the close), unless one was stored since the last reopen:
+ * recorded, or for a match closed before db/033 without a record the file
+ * the tab serves by its name (below). It may come from the match's creator,
+ * the closing account or an editor it had at the close at any time, and
+ * from an account that became an editor after the close only within
+ * LATE_EDITOR_WINDOW_MS of the close: a shared tablet sends it under the
+ * next account signed in there, which takes the match over with the game
+ * PIN. So within that window whoever proves the game PIN can store the
+ * first PDF of a closed match that has none yet; later the PIN gives no say
+ * over the sheet (409 OV_MATCH_CLOSED). The same bytes
  * again (a resent job) are accepted, and that same file may be replaced by
  * its uploader or the closing account for CLOSED_REPLACE_GRACE_MS (a
  * corrected approval's PDF sent right after an older one still queued); any
@@ -84,13 +89,18 @@
  * scheduled day: the days it was closed, updated and created; more than one
  * file: the newest), but only files without a record whose storage owner
  * created the match, closed it, or was its editor before the close (a game
- * PIN proved after the close gives no say over its sheet); a closed one
- * served so is logged. That also covers a PDF stored since db/033 whose
- * record is gone (a database restored from an older dump) or was never
- * written (an older backend put back): the step records those too. Such a
+ * PIN proved after the close never makes a file the served sheet); a
+ * closed one served so is logged. That also covers a PDF stored since
+ * db/033 whose record is gone (a database restored from an older dump) or
+ * was never written (an older backend put back): the step records those too. Such a
  * file of a closed match stays its own: an upload for another match of the
  * same name neither replaces nor takes it, and it is not removed (409
- * OV_MATCH_CLOSED).
+ * OV_MATCH_CLOSED). A closed match without such a file but with a file of
+ * its name that an editor added after the close stored after it was added
+ * and within LATE_EDITOR_WINDOW_MS of the close (a shared tablet's approval
+ * PDF from before db/033) is not served that file, but no other file is
+ * stored for it (admins excepted) until an operator records one; that
+ * editor's files of any other time hold nothing.
  *
  * A beach name has no secret part (an indoor name has its device's random
  * part), so another beach scorer could create a match's file paths first and
@@ -316,6 +326,16 @@ const MATCH_NOT_IN_CLOUD = () => ({ status: 503, body: { data: null, error: { me
  * or OpenBeach may send the first approval's PDF just before the corrected one.
  */
 export const CLOSED_REPLACE_GRACE_MS = 10 * 60 * 1000
+/**
+ * An account that becomes an editor of a match after its close (the game PIN
+ * proved then: a shared tablet's next account, whose queue sends the
+ * approval's PDF) stores that first PDF only this long after the close, and
+ * a file of such an account without a record counts as the approval's only
+ * when it was stored after the account was added and this long after the
+ * close at most (owner decision: enough for a shared tablet's queue). Later
+ * the game PIN gives no say over the closed match's sheet.
+ */
+export const LATE_EDITOR_WINDOW_MS = 6 * 60 * 60 * 1000
 
 /** An answer for the caller, thrown out of a transaction (which then rolls back). */
 class Refused extends Error {
@@ -403,19 +423,23 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
    * a file without any record (one recorded for a match, also a deleted
    * one, is that match's) whose storage owner is one of its `writers` (Set
    * of user ids: sheetWritersOf); with `since` (ms) only one stored after
-   * that time.
+   * that time. `late` (lateEditorsOf, never for serving): also a file of an
+   * editor added after the close, stored after it was added and at most
+   * LATE_EDITOR_WINDOW_MS after the close.
    */
-  async function locate (m, read, recorded, writers, { since = null } = {}) {
+  async function locate (m, read, recorded, writers, { since = null, late = null } = {}) {
     if (recorded?.length) return { files: recorded }
     const { folders, rank } = pdfLocator(m)
     const lists = await Promise.all(folders.map(read))
     let unknown = lists.some((l) => l === null)
     const named = lists.filter(Boolean).flat()
       .filter((e) => rank(e.name) && !e.recorded && (since === null || e.mtimeMs > since))
+    const lateUntil = late?.size && m.closed_at ? new Date(m.closed_at).getTime() + LATE_EDITOR_WINDOW_MS : null
+    const lateFile = (e, owners) => lateUntil !== null && e.mtimeMs <= lateUntil && owners.some((o) => late.has(o) && late.get(o) <= e.mtimeMs)
     const allowed = await Promise.all(named.map(async (e) => {
       try {
         const owners = await storage.getOwners({ bucket: SCORESHEETS_BUCKET, path: `${e.folder}/${e.name}` })
-        return owners.some((o) => writers?.has(o))
+        return owners.some((o) => writers?.has(o)) || lateFile(e, owners)
       } catch (err) {
         log.warn?.(`[scoresheets] owner record unreadable: ${err?.code || ''} ${String(err?.message || err).slice(0, 120)}`)
         unknown = true
@@ -473,6 +497,29 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
    * files of the match's name are not the closed match's sheet for that.
    */
   const sheetWritersOf = (ids, q = pool) => writersOf(ids, q, { atClose: true })
+
+  /**
+   * The editors the closed matches `ids` got after the close and at most
+   * LATE_EDITOR_WINDOW_MS after it (a shared tablet's next account): Map(id ->
+   * Map(user id -> when it was added, ms)). A file such an editor stored
+   * after it was added, also within the window, can be the approval's PDF
+   * (locate `late`): not served, but no other file takes its place. `q`: a
+   * transaction's client.
+   */
+  async function lateEditorsOf (ids, q = pool) {
+    if (!ids.length) return new Map()
+    const { rows } = await q.query(
+      `SELECT e.match_id::text AS id, e.user_id::text AS user_id, e.created_at
+         FROM public.match_editors e JOIN public.matches m ON m.id = e.match_id
+        WHERE e.match_id = ANY($1::uuid[]) AND e.created_at > m.closed_at
+          AND e.created_at <= m.closed_at + make_interval(secs => $2)`, [ids, LATE_EDITOR_WINDOW_MS / 1000])
+    const out = new Map()
+    for (const r of rows) {
+      if (!out.has(r.id)) out.set(r.id, new Map())
+      out.get(r.id).set(r.user_id, new Date(r.created_at).getTime())
+    }
+    return out
+  }
 
   /** locate() for one match row, its records and writers read first. */
   async function locateOne (m) {
@@ -752,11 +799,14 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
                 m.scheduled_at DESC NULLS LAST, m.created_at DESC NULLS LAST, m.id LIMIT 20`, values)
       const fits = rows.map(matchRow).filter((m) => pdfLocator(m).rank(parts.name))
       const closed = fits.filter((m) => m.none_recorded)
-      // (any file of its accounts on disk holds it, also an editor's added after the close: storePdf)
-      const writers = await writersOf(closed.map((m) => m.id), client)
+      // (the files on disk storePdf holds it by: its accounts' at the close,
+      // and a late editor's from the window after the close)
+      const ids = closed.map((m) => m.id)
+      const writers = await sheetWritersOf(ids, client)
+      const late = await lateEditorsOf(ids, client)
       const read = folderReader(client)
       const waiting = new Set((await Promise.all(closed.map(async (m) => {
-        const { files, unknown } = await locate(m, read, null, writers.get(m.id), { since: m.reopened_at ? new Date(m.reopened_at).getTime() : null })
+        const { files, unknown } = await locate(m, read, null, writers.get(m.id), { since: m.reopened_at ? new Date(m.reopened_at).getTime() : null, late: late.get(m.id) })
         return files.length || unknown ? null : m.id
       }))).filter(Boolean))
       // ties keep the SQL order (sort is stable)
@@ -785,12 +835,12 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
    * manager's tab serves for it by its name (a match closed before db/033
    * that recordOldPdfs has not recorded has its approval's PDF on disk
    * without a record), if that file was stored since the reopen. `writers`:
-   * sheetWritersOf. { key, mtimeMs, owners } or null; { unknown: true } when
-   * the storage could not be read.
+   * sheetWritersOf; `late`: lateEditorsOf (locate). { key, mtimeMs, owners }
+   * or null; { unknown: true } when the storage could not be read.
    */
-  async function unrecordedApprovalPdf (m, writers, reopenedAt, read) {
+  async function unrecordedApprovalPdf (m, writers, reopenedAt, read, late = null) {
     const since = reopenedAt ? new Date(reopenedAt).getTime() : null
-    const { files: [f], unknown } = await locate(m, read, null, writers, { since })
+    const { files: [f], unknown } = await locate(m, read, null, writers, { since, late })
     if (!f) return unknown ? { unknown: true } : null
     noteByName(m.id, 'its PDF held')
     const key = `${f.folder}/${f.name}`
@@ -884,13 +934,14 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
                   coalesce(x.match_id = m.id AND (r.at IS NULL OR x.stored_at > r.at), false) AS path_of_approval,
                   coalesce(x.sha256 = $3, false) AS same_bytes,
                   coalesce(greatest(m.closed_at, x.first_stored_at) > now() - make_interval(secs => $4), false) AS in_grace,
+                  coalesce(m.closed_at > now() - make_interval(secs => $5), false) AS in_late_window,
                   EXISTS (SELECT 1 FROM public.match_scoresheets o
                            WHERE o.match_id = m.id AND (r.at IS NULL OR o.stored_at > r.at) AND o.path <> $2) AS other_of_approval
              FROM public.matches m
              LEFT JOIN public.match_scoresheets x ON x.path = $2
              LEFT JOIN LATERAL (SELECT max(a.at) AS at FROM public.audit_log a
                                  WHERE a.action = 'match.reopen' AND a.match_id = m.id) r ON true
-            WHERE m.id = $1`, [m.id, parts.key, sha256, CLOSED_REPLACE_GRACE_MS / 1000])
+            WHERE m.id = $1`, [m.id, parts.key, sha256, CLOSED_REPLACE_GRACE_MS / 1000, LATE_EDITOR_WINDOW_MS / 1000])
         // A beach name is its seed's match's (namedMatch, pathMatch): a file
         // recorded for a match made to fit the seed before that one was in
         // the cloud goes to it
@@ -908,18 +959,22 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
         let firstStoredAt = null
         if (s.closed && matchOwner?.admin !== true) {
           // The approval's PDF, once: the first one stored since the last
-          // reopen, from any account that may write the match (the closing
-          // tablet may send it under the next account signed in there). A
-          // resent job is answered as stored; that same file is replaced only
-          // within the grace, by its uploader or the closing account.
+          // reopen, from any account that may write the match: its creator,
+          // the closing account, an editor it had at the close, or within
+          // LATE_EDITOR_WINDOW_MS of the close an editor added since (the
+          // closing tablet may send it under the next account signed in
+          // there). A resent job is answered as stored; that same file is
+          // replaced only within the grace, by its uploader or the closing account.
           if (s.path_of_approval && s.same_bytes) return ok({ path: parts.key, id: objectId(SCORESHEETS_BUCKET, parts.key), fullPath: `${SCORESHEETS_BUCKET}/${parts.key}` })
+          const sheetWriters = (await sheetWritersOf([m.id], client)).get(m.id) ?? new Set()
+          // (the caller writes the match: when none of these, an editor added after the close)
+          if (!sheetWriters.has(userId) && !s.in_late_window) throw new Refused(MATCH_CLOSED())
           if (s.other_of_approval) throw new Refused(MATCH_CLOSED())
           let held = null
           if (s.path_of_approval) {
             held = { sameBytes: s.same_bytes, inGrace: s.in_grace, by: [s.path_stored_by] }
           } else {
             // none recorded: a match closed before db/033 has its PDF on disk all the same
-            const sheetWriters = (await sheetWritersOf([m.id], client)).get(m.id)
             const old = await unrecordedApprovalPdf(m, sheetWriters, s.reopened_at, read)
             if (old?.unknown) throw new Refused(unavailable())
             if (old) {
@@ -931,10 +986,12 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
               held = { sameBytes: createHash('sha256').update(bytes).digest('hex') === sha256, inGrace: g.in_grace === true, by: old.owners }
               firstStoredAt = new Date(old.mtimeMs)
             } else {
-              // only a file of an editor added after the close: not the
-              // match's sheet (never served or recorded for it), and no other
-              // file takes its place either (an operator records it, README)
-              const late = await unrecordedApprovalPdf(m, writers, s.reopened_at, read)
+              // only a file an editor added after the close stored within
+              // the window (a shared tablet's approval PDF, locate `late`):
+              // not the match's sheet (never served or recorded for it), and
+              // no other file takes its place either (an operator records
+              // it, README). Its files of any other time hold nothing.
+              const late = await unrecordedApprovalPdf(m, sheetWriters, s.reopened_at, read, (await lateEditorsOf([m.id], client)).get(m.id))
               if (late?.unknown) throw new Refused(unavailable())
               if (late) throw new Refused(MATCH_CLOSED())
             }
@@ -1046,11 +1103,13 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
    * removeFiles, no other match's names reach it, and an account deletion no
    * longer hides it. A file the names serve for another of these matches too
    * is left to the names (shared; logged when served). A match whose only
-   * file of its name is one of an editor added after the close is counted
-   * (lateEditor) and left: such a file is not served (sheetWritersOf), an
-   * operator records it by hand once the scorer is confirmed. Idempotent: a
-   * match with a record and a recorded path are left alone. `apply` false:
-   * counts only. { matches, recorded, shared, none, lateEditor, unknown }
+   * file of its name is one an editor added after the close stored within
+   * LATE_EDITOR_WINDOW_MS of it (a shared tablet's, locate `late`) is
+   * counted (lateEditor) and left: such a file is not served
+   * (sheetWritersOf), an operator records it by hand once the scorer is
+   * confirmed. Such an editor's file of any other time counts as none.
+   * Idempotent: a match with a record and a recorded path are left alone.
+   * `apply` false: counts only. { matches, recorded, shared, none, lateEditor, unknown }
    */
   async function recordOldPdfs ({ apply = false } = {}) {
     const { rows } = await pool.query(
@@ -1070,9 +1129,9 @@ export function createScoresheets ({ pool, db = null, storage, accounts, logger 
       else if (unknown) out.unknown++
       else without.push(m)
     }
-    const everyWriter = await writersOf(without.map((m) => m.id))
+    const late = await lateEditorsOf(without.map((m) => m.id))
     for (const m of without) {
-      const { files: [f], unknown } = await locate(m, read, null, everyWriter.get(m.id))
+      const { files: [f], unknown } = await locate(m, read, null, writers.get(m.id), { late: late.get(m.id) })
       out[f ? 'lateEditor' : unknown ? 'unknown' : 'none']++
     }
     const servedFor = new Map()

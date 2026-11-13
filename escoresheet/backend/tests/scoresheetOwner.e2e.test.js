@@ -21,7 +21,7 @@ import pg from 'pg'
 import { SKIP, bootServer, api, provisionDatabase, sleep, waitUntil } from './helpers/e2eServer.js'
 import { grantRoles } from './helpers/pgTestDb.js'
 import { startFakeSmtp } from './helpers/fakeSmtp.js'
-import { CLOSED_REPLACE_GRACE_MS } from '../lib/scoresheets.js'
+import { CLOSED_REPLACE_GRACE_MS, LATE_EDITOR_WINDOW_MS } from '../lib/scoresheets.js'
 
 const key = () => `k${randomBytes(16).toString('hex')}`
 const pdfBytes = (label) => Buffer.from(`%PDF-1.4\n% ${label}\n%%EOF\n`)
@@ -123,6 +123,12 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
                        first_stored_at = first_stored_at - make_interval(secs => $2) WHERE match_id = $1`, [id, secs])
   }
   const PAST_GRACE = CLOSED_REPLACE_GRACE_MS / 1000 + 1
+  /** The close of match `id`, in seconds since 1970. */
+  const closedAtSec = async (id) => Number((await sql.query('SELECT extract(epoch FROM closed_at) AS t FROM public.matches WHERE id = $1', [id])).rows[0].t)
+  /** `user` an editor of closed match `id` from `secs` seconds after its close (the game PIN proved then). */
+  const editorAfterClose = (id, user, secs) => sql.query(
+    `INSERT INTO public.match_editors (match_id, user_id, granted_via, created_at)
+     SELECT id, $2, 'claim', closed_at + make_interval(secs => $3) FROM public.matches WHERE id = $1`, [id, user.id, secs])
   /** The app's sync queue deleting a match (/api/db; an open or test match only). */
   const deleteMatch = (user, id) => call(user, 'POST', '/api/db', { table: 'matches', action: 'delete', params: { filters: [{ type: 'eq', column: 'id', value: id }] } })
   /** A file time well before db/033 ran (as this suite started). */
@@ -918,11 +924,12 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
     expectCode(await upload(users.mallory, x.forged, pdfBytes('another scorer, before db/033 0:3'), { matchExternalId: x.ext }), 409, 'OV_MATCH_CLOSED')
     expectCode(await upload(users.mallory, `${x.day}/game${x.n}_${key()}.pdf`, pdfBytes('another scorer, now 0:3'), { matchExternalId: x.ext }), 409, 'OV_MATCH_CLOSED')
     // a shared tablet before db/033: the next account claimed the closed
-    // match and stored its PDF; the names no longer give it, the step counts it
+    // match soon after the close and its queue stored the PDF then; the
+    // names no longer give that file, the step counts it
     const h = await newMatch(users.ivan, { hoursAgo: 72 })
     await closeAgo(h.id, 3 * 24 * 60, users.ivan.id)
-    await sql.query("INSERT INTO public.match_editors (match_id, user_id, granted_via) VALUES ($1, $2, 'claim')", [h.id, users.erin.id])
-    plantFile(`${h.day}/game${h.n}_${key()}.pdf`, pdfBytes('sent under the next account 3:1'), [users.erin.id], mtime)
+    await editorAfterClose(h.id, users.erin, 300)
+    plantFile(`${h.day}/game${h.n}_${key()}.pdf`, pdfBytes('sent under the next account 3:1'), [users.erin.id], Math.floor(await closedAtSec(h.id)) + 600)
     expectCode(await call(users.cm, 'GET', `/api/scoresheets/${h.id}/pdf`), 404, 'OV_SCORESHEET_NOT_FOUND')
     // and no other file takes its place
     expectCode(await upload(users.ivan, `${h.day}/game${h.n}_${key()}.pdf`, pdfBytes('a new file days later 0:3'), { matchExternalId: h.ext }), 409, 'OV_MATCH_CLOSED')
@@ -940,6 +947,75 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
     await kept(y)
     expectCode(await upload(users.mallory, y.forged, pdfBytes('another scorer, before db/033 0:3'), { matchExternalId: y.ext }), 409, 'OV_MATCH_CLOSED')
     await kept(y)
+  })
+
+  // A shared tablet's queue sends the approval's PDF under the next account
+  // signed in there, which proves the game PIN after the close. That is
+  // allowed for LATE_EDITOR_WINDOW_MS after the close; later the PIN gives
+  // no say over the closed match's sheet
+  it('an account that takes a closed match over with the game PIN stores its first PDF only soon after the close', async () => {
+    const closedAndClaimed = async (minAgo) => {
+      const x = await newMatch(users.ivan, { hoursAgo: 72 })
+      const pin = String(100000 + (x.n % 899999))
+      await sql.query('UPDATE public.matches SET game_pin = $2 WHERE id = $1', [x.id, pin])
+      await closeAgo(x.id, minAgo, users.ivan.id)
+      const r = await call(users.mallory, 'POST', '/api/match/claim', { externalId: x.ext, pin })
+      assert.equal(r.status, 200, r.text)
+      assert.equal(r.json.data.role, 'editor')
+      return x
+    }
+    const windowMin = LATE_EDITOR_WINDOW_MS / 60000
+    // closed days ago, no PDF on the server at all
+    const x = await closedAndClaimed(3 * 24 * 60)
+    expectCode(await upload(users.mallory, `${x.day}/game${x.n}_${key()}.pdf`, pdfBytes('late claimer 0:3'), { matchExternalId: x.ext }), 409, 'OV_MATCH_CLOSED')
+    expectCode(await upload(users.mallory, `${x.day}/game${x.n}_${key()}.pdf`, pdfBytes('late claimer, older app 0:3')), 409, 'OV_MATCH_CLOSED')
+    expectCode(await call(users.cm, 'GET', `/api/scoresheets/${x.id}/pdf`), 404, 'OV_SCORESHEET_NOT_FOUND')
+    // the scorer's approval PDF, whenever it comes
+    const real = pdfBytes('the scorer\'s approval 3:1')
+    assert.equal((await upload(users.ivan, `${x.day}/game${x.n}_${key()}.pdf`, real, { matchExternalId: x.ext })).status, 200)
+    assert.deepEqual(await readAs(users.cm, x.id), { status: 200, body: real.toString() })
+    // just past the window: the same
+    const y = await closedAndClaimed(windowMin + 1)
+    expectCode(await upload(users.mallory, `${y.day}/game${y.n}_${key()}.pdf`, pdfBytes('late claimer 0:3'), { matchExternalId: y.ext }), 409, 'OV_MATCH_CLOSED')
+    // within it: the approval's first PDF, as a shared tablet's queue sends it
+    const z = await closedAndClaimed(windowMin - 5)
+    const sent = pdfBytes('approved 3:1, sent under the next account')
+    assert.equal((await upload(users.mallory, `${z.day}/game${z.n}_${key()}.pdf`, sent, { matchExternalId: z.ext })).status, 200)
+    assert.deepEqual(await readAs(users.cm, z.id), { status: 200, body: sent.toString() })
+  })
+
+  // A file of the match's name without a record (any scorer could store one
+  // before db/033) holds a closed match's PDF back only as the approval's
+  // PDF of a shared tablet: stored by an account added after the close,
+  // after it was added and within LATE_EDITOR_WINDOW_MS of the close
+  it('a file of an account added after the close holds the closed match\'s PDF back only when that account stored it soon after the close', async () => {
+    // closed a minute ago, its PDF still queued on the scorer's tablet; the
+    // other account has a file of the name from days before and takes the
+    // match over with the game PIN
+    const x = await newMatch(users.ivan, { hoursAgo: 2 })
+    const pin = String(100000 + (x.n % 899999))
+    await sql.query('UPDATE public.matches SET game_pin = $2 WHERE id = $1', [x.id, pin])
+    plantFile(`${x.day}/game${x.n}_${key()}.pdf`, pdfBytes('stored before db/033 0:3'), [users.mallory.id], BEFORE_033() - 2 * 86400)
+    await closeAgo(x.id, 1, users.ivan.id)
+    const claim = await call(users.mallory, 'POST', '/api/match/claim', { externalId: x.ext, pin })
+    assert.equal(claim.status, 200, claim.text)
+    const real = pdfBytes('the scorer\'s approval 3:1')
+    const up = await upload(users.ivan, `${x.day}/game${x.n}_${key()}.pdf`, real, { matchExternalId: x.ext })
+    assert.equal(up.status, 200, up.text)
+    assert.deepEqual(await readAs(users.cm, x.id), { status: 200, body: real.toString() })
+    // a match closed before db/033 with only such a file: stored before its
+    // account was added, or later than the window
+    for (const [kind, addedSecs, storedSecs] of [['before its account was added', 600, 300], ['after the window', 300, LATE_EDITOR_WINDOW_MS / 1000 + 60]]) {
+      const h = await newMatch(users.ivan, { hoursAgo: 72 })
+      await closeAgo(h.id, 3 * 24 * 60, users.ivan.id)
+      await editorAfterClose(h.id, users.erin, addedSecs)
+      plantFile(`${h.day}/game${h.n}_${key()}.pdf`, pdfBytes(`the other account, ${kind} 0:3`), [users.erin.id], Math.floor(await closedAtSec(h.id)) + storedSecs)
+      expectCode(await call(users.cm, 'GET', `/api/scoresheets/${h.id}/pdf`), 404, 'OV_SCORESHEET_NOT_FOUND')
+      const own = pdfBytes(`the scorer's approval, ${kind} 3:1`)
+      const r = await upload(users.ivan, `${h.day}/game${h.n}_${key()}.pdf`, own, { matchExternalId: h.ext })
+      assert.equal(r.status, 200, `${kind}: ${r.text}`)
+      assert.deepEqual(await readAs(users.cm, h.id), { status: 200, body: own.toString() }, kind)
+    }
   })
 
   // RUNBOOK "Restore the database" (a dump older than a PDF's record; the
