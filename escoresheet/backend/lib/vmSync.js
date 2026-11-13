@@ -1095,6 +1095,7 @@ function wrapLogger(logger, redact) {
  * today's games and the loader stop offering a cancelled, renumbered or moved
  * game. No games at all while the schedule holds upcoming ones, or more than
  * REMOVAL_GUARD_MIN and half of them missing, is 'partial' and removes nothing.
+ * So are pages that overlapped (fewer distinct game numbers than the total).
  * `withoutFormat`: rows written with match_format NULL (VolleyManager gave no
  * number of win sets the sync knows).
  *
@@ -1232,9 +1233,19 @@ export async function runVmSync({
     }
     result.written = result.created + result.updated + result.unchanged
 
+    // Offset paging sorts on the kick-off alone: when VolleyManager breaks a tie
+    // differently between two page requests, a page can repeat one game and
+    // skip another while the count still adds up. Fewer distinct games than
+    // the total means some were skipped: nothing is removed, the run is partial.
+    const distinct = prepared.numbers.size + (fetched.items.length - prepared.transformed)
+    const overlap = !fetched.incomplete && distinct < fetched.total
+      ? `${distinct} distinct of ${fetched.total} games (pages overlapped), none removed`
+      : null
+    if (overlap) log.warn(`vm-sync: ${overlap}`)
+
     // the cancelled, renumbered or moved games: only after a complete run
-    let suspicious = null
-    if (!dryRun && !fetched.incomplete && result.errors === 0) {
+    let suspicious = overlap
+    if (!dryRun && !fetched.incomplete && !overlap && result.errors === 0) {
       const gone = upcoming.filter((r) => !prepared.numbers.has(r.game_number)).map((r) => r.game_number)
       if (gone.length && !fetched.items.length) {
         suspicious = `VolleyManager returned no games; the schedule holds ${upcoming.length} upcoming in this window, none removed`

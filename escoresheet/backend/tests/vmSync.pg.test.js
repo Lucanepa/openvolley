@@ -191,6 +191,34 @@ describe('vm-sync on Postgres', { skip: SKIP }, () => {
     assert.equal((await q('SELECT count(*)::int AS n FROM public.svrz_games_removed')).rows[0].n, 0)
   })
 
+  it('pages that overlap (ties on the kick-off broken differently) remove nothing and make the run partial', async () => {
+    await reset()
+    // 30 upcoming games at one kick-off, pages of 25
+    const games = Array.from({ length: 30 }, (_, i) => makeGame(7001 + i, { startingDateTime: '2026-10-10T12:00:00Z' }))
+    let r = await sync(createFakeVolleyManager({ games }), { pageSize: 25 })
+    assert.equal(r.status, 'success', r.message)
+
+    // the second page comes in another tie order: 7024/7025 twice, 7029/7030 never
+    const vm = createFakeVolleyManager({ games })
+    const other = [...games.slice(0, 23), games[28], games[29], games[25], games[26], games[27], games[23], games[24]]
+    const fetch = async (url, init = {}) => {
+      const resp = await vm.fetch(url, init)
+      const form = new URLSearchParams(typeof init.body === 'string' ? init.body : '')
+      const off = Number(form.get('searchConfiguration[offset]'))
+      if (String(url).includes('searchForManagingAssociation') && resp.ok && off > 0) {
+        const lim = Number(form.get('searchConfiguration[limit]'))
+        return new Response(JSON.stringify({ totalItemsCount: 30, items: other.slice(off, off + lim) }), { status: 200, headers: { 'content-type': 'application/json' } })
+      }
+      return resp
+    }
+    r = await sync({ fetch, baseUrl: vm.baseUrl }, { pageSize: 25 })
+    assert.equal(r.status, 'partial', r.message)
+    assert.equal(r.removed, 0)
+    assert.match(r.message, /28 distinct of 30 games/)
+    assert.equal((await q("SELECT count(*)::int AS n FROM public.svrz_games WHERE game_number IN ('7029', '7030')")).rows[0].n, 2)
+    assert.equal((await q('SELECT count(*)::int AS n FROM public.svrz_games_removed')).rows[0].n, 0)
+  })
+
   it('the format: 3 or 5 from VolleyManager, NULL (counted) when it says neither; the category is stored', async () => {
     await reset()
     const noFormat = makeGame(6202)
