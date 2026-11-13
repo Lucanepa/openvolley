@@ -21,7 +21,8 @@
  *   - After the numbered files, db/current_definitions.sql (the current body
  *     of every function that more than one file defines), on every run: a
  *     file run again by hand (007, 011, 015, 030) cannot leave its older
- *     trigger function behind past the next run.
+ *     trigger function behind past the next run. A --rerun applies it in the
+ *     file's own transaction too, so the file's older bodies never commit.
  *   - Then USAGE + SELECT on the record for the app role (ov_app), so the
  *     backend can tell whether the database is behind its image
  *     (lib/schemaVersion.js), also after a restore without privileges.
@@ -32,10 +33,12 @@
  *     writes behind it.
  *
  * First run (no record yet): the files up to 033 were applied by hand or by
- * restore.sh. When the objects of db/030 to db/033 are there, 000-033 are
- * recorded without running them; otherwise the run stops and asks where the
- * database stands: --baseline NNN records 000..NNN without running them
- * (checking what it can of them) and runs the files after NNN.
+ * restore.sh. When the objects of every file from 002 to 033 are there (one
+ * catalog check per file, PROBES), 000-033 are recorded without running
+ * them; otherwise the run stops, names the files whose objects are missing
+ * and asks where the database stands: --baseline NNN records 000..NNN
+ * without running them (refused while a file up to NNN lacks its objects)
+ * and runs the files after NNN (each is idempotent).
  * --baseline 001 builds a freshly restored dump from 002 on.
  *
  * Usage (production: deploy/deploy.sh; the dev database by hand):
@@ -46,7 +49,9 @@
  *     --baseline NNN    first run only (see above)
  *     --rerun NNN       run a recorded file once more (a file whose header asks
  *                       for a second run, e.g. 032 after the switch; or 007 to
- *                       put dropped guard triggers back); repeatable
+ *                       put dropped guard triggers back), with
+ *                       current_definitions.sql in the same transaction;
+ *                       repeatable
  *     --db-dir DIR      the migrations (default: this checkout's / image's db/)
  *   The password comes from PGPASSWORD or the URL (never a command-line
  *   argument). OV_MIGRATE_APP_ROLE (default ov_app), OV_MIGRATE_LOCK_TIMEOUT
@@ -75,16 +80,51 @@ const RESTORE_ONLY = new Set([0, 1])
 const BASELINE_MAX = 33
 const LOCK_KEY_SQL = "hashtextextended('openvolley:migrate', 0)"
 
-// What each of the last hand-applied files left, to check a first run's
-// baseline against (true when the file's objects are there).
-const PROBES = {
-  30: `EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'club_managers_roles' AND tgrelid = to_regclass('public.club_managers'))
-       AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'team_managers_roles' AND tgrelid = to_regclass('public.team_managers'))`,
+// What each hand-applied file left, to check a first run's baseline against
+// (true when the file's objects are there): one cheap catalog predicate per
+// file, on objects no later file up to 033 drops. null: the file changes data
+// only (003), nothing in the catalog tells whether it ran.
+const rel = (name) => `to_regclass('${name}') IS NOT NULL`
+const col = (table, column) => `EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = to_regclass('${table}') AND attname = '${column}' AND NOT attisdropped)`
+const trg = (table, name) => `EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = '${name}' AND tgrelid = to_regclass('${table}'))`
+const all = (...predicates) => predicates.join('\n       AND ')
+export const PROBES = {
+  2: rel('auth.app_sessions'),
+  3: null,
+  4: col('public.match_live_state', 'best_of'),
+  5: all(rel('public.match_editors'), col('public.matches', 'created_by')),
+  6: trg('public.matches', 'matches_touch_updated_at'),
+  7: all(rel('public.audit_log'), rel('public.invite_codes'), col('public.matches', 'closed_at')),
+  8: col('public.match_live_state', 'tto_started_at'),
+  9: all(col('public.competitions', 'sport'), col('public.competition_players', 'country')),
+  10: rel('auth.app_tokens'),
+  11: all(rel('public.match_approvals'), rel('auth.approval_pins')),
+  12: all(rel('auth.app_memberships'), col('public.invite_codes', 'sport'), col('public.audit_log', 'app')),
+  // 013 leaves the index alone on a database without matches.sport_type
+  13: `NOT ${col('public.matches', 'sport_type')}
+       OR EXISTS (SELECT 1 FROM pg_index i WHERE i.indexrelid = to_regclass('public.matches_official_game_uidx') AND pg_get_expr(i.indpred, i.indrelid) LIKE '%beach%')`,
+  14: all(rel('public.beach_tournaments'), col('public.matches', 'tournament_match_id')),
+  15: all(rel('public.event_revisions'), col('public.events', 'voided_at')),
+  16: rel('public.activity_log'),
+  17: col('public.matches', 'remarks'),
+  18: all(rel('public.clubs'), rel('public.account_clubs'), col('public.invite_codes', 'club_id')),
+  19: rel('public.match_scorer_devices'),
+  20: all(rel('public.club_managers'), col('public.clubs', 'contact_email')),
+  21: all(rel('public.app_settings'), rel('public.match_final_mails')),
+  22: rel('auth.passkeys'),
+  23: all(rel('public.team_managers'), rel('public.game_rosters')),
+  24: rel('public.club_licences'),
+  25: rel('public.account_requests'),
+  26: col('public.club_licences', 'source'),
+  27: col('auth.users', 'banned_until'),
+  28: rel('public.notifications'),
+  29: `EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'invite_codes_role_team_check' AND conrelid = to_regclass('public.invite_codes')
+       AND pg_get_constraintdef(oid) LIKE '%club_manager%')`,
+  30: all(trg('public.club_managers', 'club_managers_roles'), trg('public.team_managers', 'team_managers_roles')),
   31: `EXISTS (SELECT 1 FROM pg_proc WHERE oid = to_regprocedure('public.ov_manager_rows_changed()') AND prosecdef)`,
-  32: `EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'matches_external_id_lock' AND tgrelid = to_regclass('public.matches'))
-       AND EXISTS (SELECT 1 FROM pg_proc WHERE oid = to_regprocedure('public.ov_events_apply_void()') AND prosrc LIKE '%match_id = NEW.match_id%')`,
-  33: `to_regclass('public.match_scoresheets') IS NOT NULL AND to_regclass('public.match_scoresheets_start') IS NULL
-       AND EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = to_regclass('public.match_scoresheets') AND attname = 'first_stored_at' AND NOT attisdropped)`
+  32: all(trg('public.matches', 'matches_external_id_lock'),
+    `EXISTS (SELECT 1 FROM pg_proc WHERE oid = to_regprocedure('public.ov_events_apply_void()') AND prosrc LIKE '%match_id = NEW.match_id%')`),
+  33: all(rel('public.match_scoresheets'), "to_regclass('public.match_scoresheets_start') IS NULL", col('public.match_scoresheets', 'first_stored_at'))
 }
 
 // --- SQL text ---------------------------------------------------------------------
@@ -398,15 +438,18 @@ export async function migrate ({
     if (rows.length && baseline != null) throw new MigrationError(`--baseline is for the first run only; ${RECORD_TABLE} already records ${rows.length} file(s)`)
     if (!rows.length) {
       summary.firstRun = true
-      const probes = {}
-      for (const [v, sql] of Object.entries(PROBES)) probes[v] = (await client.query(`SELECT (${sql}) AS ok`)).rows[0].ok
-      const have = Object.keys(probes).filter((v) => probes[v]).map(Number)
-      const lacking = Object.keys(probes).filter((v) => !probes[v]).map(Number)
+      const lacking = []
+      for (const [v, sql] of Object.entries(PROBES)) {
+        if (sql && !(await client.query(`SELECT (${sql}) AS ok`)).rows[0].ok) lacking.push(Number(v))
+      }
+      lacking.sort((x, y) => x - y)
+      const named = (vs) => vs.map((v) => `db/${pad3(v)}`).join(', ')
       let b = baseline
       if (b == null) {
         if (lacking.length) {
-          const msg = `no migration record yet, and the objects of ${lacking.map((v) => `db/${pad3(v)}`).join(', ')} are missing${have.length ? ` (those of ${have.map((v) => `db/${pad3(v)}`).join(', ')} are there)` : ''}: ` +
-            'tell the runner the last file this database has, --baseline NNN (files up to NNN are recorded without running, the later ones run; --baseline 001 for a freshly restored dump). Nothing was changed.'
+          const msg = `no migration record yet, and the objects of ${named(lacking)} are missing: ` +
+            'tell the runner the last file this database has, --baseline NNN (files up to NNN are recorded without running, the later ones run; each is idempotent): ' +
+            `here --baseline ${pad3(lacking[0] - 1)}, or --baseline 001 for a freshly restored dump. Nothing was changed.`
           if (!dryRun) throw new MigrationError(msg)
           log(`[migrate] ${msg}`)
           summary.pending = files.filter((f) => !RESTORE_ONLY.has(f.version)).map((f) => f.version)
@@ -415,7 +458,10 @@ export async function migrate ({
         b = BASELINE_MAX
       } else {
         const wrong = lacking.filter((v) => v <= b)
-        if (wrong.length) throw new MigrationError(`--baseline ${pad3(b)}: the objects of ${wrong.map((v) => `db/${pad3(v)}`).join(', ')} are missing, so this database is not at db/${pad3(b)}. Nothing was changed.`)
+        if (wrong.length) {
+          throw new MigrationError(`--baseline ${pad3(b)}: the objects of ${named(wrong)} are missing, so this database is not at db/${pad3(b)}; ` +
+            `--baseline ${pad3(wrong[0] - 1)} runs db/${pad3(wrong[0])} and the files after it. Nothing was changed.`)
+        }
       }
       summary.baseline = b
       const recordNow = files.filter((f) => f.version <= b)
@@ -490,10 +536,19 @@ export async function migrate ({
       try {
         await inTransaction(client, async () => {
           await runStatements(client, f.body, f.file)
+          // In the same transaction: the older function bodies of a file run
+          // again (007, 011, 015, 030) never commit, not even for a moment.
+          current = CURRENT_DEFINITIONS_FILE
+          try {
+            await runStatements(client, currentBody, CURRENT_DEFINITIONS_FILE)
+          } catch (err) {
+            err.ovCurrent = true
+            throw err
+          }
           await client.query(`UPDATE ${RECORD_TABLE} SET last_run_at = now() WHERE version = $1`, [f.version])
         })
       } catch (err) {
-        throw failure(f, f.sql, err)
+        throw err.ovCurrent ? failure({ file: `${CURRENT_DEFINITIONS_FILE} (after ${f.file} ran again)` }, currentSql, err) : failure(f, f.sql, err)
       }
       summary.rerun.push(v)
       log(`[migrate] ${f.file} run again`)

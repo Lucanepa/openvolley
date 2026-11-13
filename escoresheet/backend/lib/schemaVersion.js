@@ -12,16 +12,22 @@
  *   changed   recorded files whose content is no longer what ran
  *   problems  required guard triggers, unique indexes and current trigger
  *             functions (db/current_definitions.sql) that are missing,
- *             disabled, invalid or old (schemaProblems)
+ *             disabled, invalid or old (schemaProblems). On a database that
+ *             is ahead (an older image after a rollback) the function bodies
+ *             are not compared: a newer migration changed them on purpose
  *   ready     a readable record, nothing pending or changed, no problem
  *
- * The backend calls checkSchemaAtStart once at start (server.js) and logs the
- * result; schemaStatus() returns it (for /health). scripts/check-schema.mjs is
- * the same check from the command line (deploy.sh, restore.sh).
+ * The backend calls checkSchemaAtStart at start (server.js): it logs the
+ * result, checks again every few minutes (sooner while the database cannot be
+ * reached) and logs only what changed. schemaStatus() returns the last state,
+ * refreshSchemaStatus() one at most a minute old (for /health).
+ * scripts/check-schema.mjs is the same check from the command line
+ * (deploy.sh, restore.sh).
  *
  * The record lives in its own schema, so that roles.sql's grants on public
- * (DML on every table for ov_app) never reach it: the runner gives the app
- * role USAGE + SELECT only.
+ * (DML on every table for ov_app) never reach it: the app role gets USAGE +
+ * SELECT only (from the runner, and from roles.sql after a restore without
+ * privileges).
  */
 
 import { readdirSync, readFileSync } from 'node:fs'
@@ -33,6 +39,9 @@ export const RECORD_SCHEMA = 'ov_meta'
 export const RECORD_TABLE = 'ov_meta.schema_migrations'
 export const CURRENT_DEFINITIONS_FILE = 'current_definitions.sql'
 export const MIGRATION_FILE_RE = /^(\d{3})_[a-z0-9_]+\.sql$/
+// What restore.sh and a person take for a migration (NNN...sql): one that
+// MIGRATION_FILE_RE does not accept would never run and never count as pending.
+const LOOKS_LIKE_MIGRATION_RE = /^\d{3}.*\.sql$/i
 
 /** backend/db of this checkout or image. */
 export function defaultDbDir () {
@@ -44,14 +53,18 @@ export const sha256 = (text) => createHash('sha256').update(text, 'utf8').digest
 /**
  * The numbered migration files of a db/ directory, in number order:
  * [{ version, file, path }]. Two files with one number are refused (they would
- * run in an order nobody chose).
+ * run in an order nobody chose), and so is a file named like a migration that
+ * is not NNN_lowercase_words.sql (it would be skipped without a word).
  */
 export function migrationFiles (dbDir = defaultDbDir()) {
   const files = []
   const seen = new Map()
   for (const file of readdirSync(dbDir)) {
     const m = MIGRATION_FILE_RE.exec(file)
-    if (!m) continue
+    if (!m) {
+      if (LOOKS_LIKE_MIGRATION_RE.test(file)) throw new Error(`${dbDir}/${file}: not a migration name the runner takes (NNN_lowercase_words.sql: digits, a-z and _ only); rename it`)
+      continue
+    }
     const version = Number(m[1])
     if (seen.has(version)) throw new Error(`${dbDir} has two migrations numbered ${m[1]}: ${seen.get(version)} and ${file} (renumber one)`)
     seen.set(version, file)
@@ -140,22 +153,54 @@ const lit = (s) => s == null ? 'NULL' : `'${String(s).replace(/'/g, "''")}'`
  * One SQL query (no parameters) that lists every problem of the required
  * objects, one row each (column `problem`), none when all is in place. Plain
  * SQL so that restore.sh can run it through psql (check-schema.mjs --print-sql).
+ * `functions: false` leaves out the comparison with db/current_definitions.sql
+ * (a database ahead of this image: its newer bodies are not old ones).
  */
-export function schemaCheckSql ({ dbDir = defaultDbDir() } = {}) {
+export function schemaCheckSql ({ dbDir = defaultDbDir(), functions = true } = {}) {
   // Names are resolved through the catalog, never with to_regclass: that one
   // raises for a schema the role has no USAGE on, and the check runs as any role.
   const split = (q) => q.split('.').map(lit).join(', ')
   const trg = REQUIRED_TRIGGERS.map((t) =>
     `(${split(t.table)}, ${lit(t.name)}, ${lit(t.fn)}, ${lit(t.ifColumn ?? null)})`).join(',\n    ')
   const idx = REQUIRED_INDEXES.map((i) => `(${split(i)})`).join(', ')
-  const fns = currentDefinitions(dbDir).map((f) =>
+  const defs = functions ? currentDefinitions(dbDir) : []
+  const fns = defs.map((f) =>
     `(${lit(f.name)}, ${lit(sha256(f.body))}, ${f.securityDefiner}, ${f.searchPath})`).join(',\n    ')
-  return `-- lib/schemaVersion.js schemaCheckSql: required triggers, unique indexes and current trigger functions
+  const fnCtes = defs.length
+    ? `,
+want_fn (name, src_sha256, secdef, search_path) AS (VALUES
+    ${fns}),
+fn AS (
+  SELECT w.*, count(p.oid) AS n,
+         bool_and(encode(sha256(convert_to(p.prosrc, 'UTF8')), 'hex') = w.src_sha256) AS same_src,
+         bool_and(p.prosecdef) AS is_secdef,
+         bool_and(coalesce(array_to_string(p.proconfig, ','), '') LIKE '%search_path=%') AS has_path
+    FROM want_fn w
+    LEFT JOIN pg_namespace n ON n.nspname = split_part(w.name, '.', 1)
+    LEFT JOIN pg_proc p ON p.pronamespace = n.oid AND p.proname = split_part(w.name, '.', 2)
+   GROUP BY w.name, w.src_sha256, w.secdef, w.search_path
+)`
+    : ''
+  const fnRows = defs.length
+    ? `
+  UNION ALL
+  SELECT 3, name, format('function %s() is missing', name) FROM fn WHERE n = 0
+  UNION ALL
+  SELECT 3, name, format('function %s() has %s definitions', name, n) FROM fn WHERE n > 1
+  UNION ALL
+  SELECT 3, name, format('function %s() is not the current definition (db/current_definitions.sql): an older migration ran again; scripts/migrate.mjs puts it back', name)
+    FROM fn WHERE n = 1 AND NOT same_src
+  UNION ALL
+  SELECT 3, name, format('function %s() should %s SECURITY DEFINER (db/current_definitions.sql); scripts/migrate.mjs puts it back', name, CASE WHEN secdef THEN 'be' ELSE 'not be' END)
+    FROM fn WHERE n = 1 AND is_secdef IS DISTINCT FROM secdef
+  UNION ALL
+  SELECT 3, name, format('function %s() has no fixed search_path (db/current_definitions.sql); scripts/migrate.mjs puts it back', name)
+    FROM fn WHERE n = 1 AND search_path AND NOT has_path`
+    : ''
+  return `-- lib/schemaVersion.js schemaCheckSql: required triggers, unique indexes${defs.length ? ' and current trigger functions' : ''}
 WITH want_trg (tschema, trel, name, fn, if_col) AS (VALUES
     ${trg}),
 want_idx (ischema, iname) AS (VALUES ${idx}),
-want_fn (name, src_sha256, secdef, search_path) AS (VALUES
-    ${fns}),
 trg AS (
   SELECT w.tschema || '.' || w.trel AS tbl, w.name, w.fn,
          (w.if_col IS NULL OR EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attname = w.if_col AND NOT a.attisdropped)) AS applies,
@@ -171,17 +216,7 @@ idx AS (
     LEFT JOIN pg_namespace n ON n.nspname = w.ischema
     LEFT JOIN pg_class c ON c.relnamespace = n.oid AND c.relname = w.iname AND c.relkind = 'i'
     LEFT JOIN pg_index i ON i.indexrelid = c.oid
-),
-fn AS (
-  SELECT w.*, count(p.oid) AS n,
-         bool_and(encode(sha256(convert_to(p.prosrc, 'UTF8')), 'hex') = w.src_sha256) AS same_src,
-         bool_and(p.prosecdef) AS is_secdef,
-         bool_and(coalesce(array_to_string(p.proconfig, ','), '') LIKE '%search_path=%') AS has_path
-    FROM want_fn w
-    LEFT JOIN pg_namespace n ON n.nspname = split_part(w.name, '.', 1)
-    LEFT JOIN pg_proc p ON p.pronamespace = n.oid AND p.proname = split_part(w.name, '.', 2)
-   GROUP BY w.name, w.src_sha256, w.secdef, w.search_path
-)
+)${fnCtes}
 SELECT problem FROM (
   SELECT 1 AS k, tbl || '.' || name AS o, format('trigger %s on %s is missing', name, tbl) AS problem
     FROM trg WHERE applies AND tgenabled IS NULL
@@ -197,28 +232,18 @@ SELECT problem FROM (
   SELECT 2, name, format('index %s is not valid (a failed CREATE INDEX CONCURRENTLY?)', name)
     FROM idx WHERE indexrelid IS NOT NULL AND NOT (indisvalid AND indisready)
   UNION ALL
-  SELECT 2, name, format('index %s is not unique', name) FROM idx WHERE indexrelid IS NOT NULL AND NOT indisunique
-  UNION ALL
-  SELECT 3, name, format('function %s() is missing', name) FROM fn WHERE n = 0
-  UNION ALL
-  SELECT 3, name, format('function %s() has %s definitions', name, n) FROM fn WHERE n > 1
-  UNION ALL
-  SELECT 3, name, format('function %s() is not the current definition (db/current_definitions.sql): an older migration ran again; scripts/migrate.mjs puts it back', name)
-    FROM fn WHERE n = 1 AND NOT same_src
-  UNION ALL
-  SELECT 3, name, format('function %s() should %s SECURITY DEFINER (db/current_definitions.sql); scripts/migrate.mjs puts it back', name, CASE WHEN secdef THEN 'be' ELSE 'not be' END)
-    FROM fn WHERE n = 1 AND is_secdef IS DISTINCT FROM secdef
-  UNION ALL
-  SELECT 3, name, format('function %s() has no fixed search_path (db/current_definitions.sql); scripts/migrate.mjs puts it back', name)
-    FROM fn WHERE n = 1 AND search_path AND NOT has_path
+  SELECT 2, name, format('index %s is not unique', name) FROM idx WHERE indexrelid IS NOT NULL AND NOT indisunique${fnRows}
 ) p
 ORDER BY k, o, problem;
 `
 }
 
-/** The problems of the required objects (schemaCheckSql), as strings; [] when all is in place. */
-export async function schemaProblems (db, { dbDir } = {}) {
-  const { rows } = await db.query(schemaCheckSql({ dbDir }))
+/**
+ * The problems of the required objects (schemaCheckSql), as strings; [] when
+ * all is in place. `functions: false`: without the current-definition check.
+ */
+export async function schemaProblems (db, { dbDir, functions = true } = {}) {
+  const { rows } = await db.query(schemaCheckSql({ dbDir, functions }))
   return rows.map((r) => r.problem)
 }
 
@@ -236,12 +261,14 @@ export async function recordAccess (db) {
 /**
  * The schema state of the database behind `db` (a pg Client or Pool) against
  * the files of `dbDir` (this image's). `objects: false` leaves the object
- * check out.
+ * check out. `functionsChecked` is false when the database is ahead: the
+ * bodies of db/current_definitions.sql are then this image's older ones, and
+ * a newer migration's are no problem (the newer image's runner puts them).
  */
 export async function readSchemaState (db, { dbDir = defaultDbDir(), objects = true } = {}) {
   const files = migrationFiles(dbDir)
   const expected = files.length ? files[files.length - 1].version : null
-  const state = { expected, applied: null, record: 'missing', pending: files.map((f) => f.version), ahead: [], changed: [], problems: [], ready: false, checkedAt: new Date().toISOString() }
+  const state = { expected, applied: null, record: 'missing', pending: files.map((f) => f.version), ahead: [], changed: [], problems: [], functionsChecked: false, ready: false, checkedAt: new Date().toISOString() }
   const access = await recordAccess(db)
   if (access.has_table && !access.readable) state.record = 'unreadable'
   if (access.readable) {
@@ -257,50 +284,106 @@ export async function readSchemaState (db, { dbDir = defaultDbDir(), objects = t
         sha256(readFileSync(byVersion.get(r.version).path, 'utf8')) !== r.checksum).map((r) => r.version)
     }
   }
-  if (objects) state.problems = await schemaProblems(db, { dbDir })
+  if (objects) {
+    state.functionsChecked = !state.ahead.length
+    state.problems = await schemaProblems(db, { dbDir, functions: state.functionsChecked })
+  }
   state.ready = state.record === 'ok' && !state.pending.length && !state.changed.length && !state.problems.length
   return state
 }
 
 /** One line per finding of a state (no secrets, no row data). */
 export function describeSchemaState (st, { dbDir = defaultDbDir() } = {}) {
+  if (st.error) return [{ level: 'warn', text: `schema not checked: ${st.error}` }]
   const names = new Map(migrationFiles(dbDir).map((f) => [f.version, f.file]))
   const list = (vs) => vs.map((v) => names.get(v) ? `db/${names.get(v)}` : `db/${pad3(v)}`).join(', ')
   const lines = []
-  if (st.error) return [{ level: 'warn', text: `schema not checked: ${st.error}` }]
   if (st.record === 'missing') lines.push({ level: 'warn', text: `schema: no migration record (${RECORD_TABLE}); run scripts/migrate.mjs (deploy/deploy.sh does)` })
-  else if (st.record === 'unreadable') lines.push({ level: 'warn', text: `schema: the migration record (${RECORD_TABLE}) is not readable by this role; scripts/migrate.mjs grants it` })
+  else if (st.record === 'unreadable') lines.push({ level: 'warn', text: `schema: the migration record (${RECORD_TABLE}) is not readable by this role; roles.sql (apply-roles.sh) and scripts/migrate.mjs grant it` })
   else if (st.pending.length) lines.push({ level: 'error', text: `schema behind this image (db/${pad3(st.expected)}): ${list(st.pending)} not applied; run scripts/migrate.mjs (deploy/deploy.sh)` })
   if (st.changed.length) lines.push({ level: 'error', text: `schema: ${list(st.changed)} changed after they ran (a migration is never edited once applied)` })
-  if (st.ahead.length) lines.push({ level: 'warn', text: `schema: the database has ${st.ahead.map((v) => `db/${pad3(v)}`).join(', ')}, which this image does not know (an older image?)` })
+  if (st.ahead.length) lines.push({ level: 'warn', text: `schema: the database has ${st.ahead.map((v) => `db/${pad3(v)}`).join(', ')}, which this image does not know (an older image, e.g. after a rollback); trigger functions not compared with this image's` })
   if (st.problems.length) lines.push({ level: 'error', text: `schema check: ${st.problems.length} problem(s): ${st.problems.slice(0, 5).join('; ')}${st.problems.length > 5 ? '; ...' : ''} (scripts/check-schema.mjs lists all)` })
-  if (st.ready) lines.push({ level: 'log', text: `schema: db/${pad3(st.applied)} applied (this image: db/${pad3(st.expected)}), guard triggers, unique indexes and trigger functions in place` })
+  if (st.ready) lines.push({ level: 'log', text: `schema: db/${pad3(st.applied)} applied (this image: db/${pad3(st.expected)}), guard triggers, unique indexes${st.functionsChecked ? ' and trigger functions' : ''} in place` })
   return lines
 }
 
+// The backend's check (checkSchemaAtStart): the pool and options it watches,
+// the last state, and the text last logged (only a change is logged again).
+const RECHECK_MS = 5 * 60 * 1000
+const RETRY_MS = [5000, 15000, 30000, 60000]
+const REFRESH_MAX_AGE_MS = 60 * 1000
+const ERROR_MAX_AGE_MS = 5000 // a failed check is not repeated for every /health call
+let watch = null
 let lastState = null
+
+async function runCheck (w) {
+  if (w.inflight) return w.inflight
+  w.inflight = (async () => {
+    let st
+    try {
+      st = await readSchemaState(w.pool, { dbDir: w.dbDir })
+    } catch (err) {
+      st = { ready: false, error: err.message, checkedAt: new Date().toISOString() }
+    }
+    if (watch !== w) return st // stopped or replaced meanwhile
+    lastState = st
+    const lines = describeSchemaState(st, { dbDir: w.dbDir })
+    const text = lines.map((l) => l.text).join('\n')
+    if (text !== w.logged) {
+      w.logged = text
+      for (const { level, text } of lines) {
+        const prefix = level === 'error' ? '❌ [DB] ' : level === 'warn' ? '⚠️  [DB] ' : '[DB] '
+        ;(w.log[level] ?? w.log.log)(prefix + text)
+      }
+    }
+    // Next check: soon while the database cannot be reached (it may still be
+    // starting, e.g. after a host reboot), else every few minutes.
+    clearTimeout(w.timer)
+    w.retry = st.error ? w.retry + 1 : 0
+    const ms = st.error ? w.retryMs[Math.min(w.retry, w.retryMs.length) - 1] : w.recheckMs
+    if (ms > 0) {
+      w.timer = setTimeout(() => { runCheck(w) }, ms)
+      w.timer.unref?.()
+    }
+    return st
+  })().finally(() => { w.inflight = null })
+  return w.inflight
+}
 
 /**
  * Startup check (server.js, DATABASE_URL mode): reads the state, logs it and
- * keeps it for schemaStatus(). Never throws: a database that is down is
- * logged and reported as not checked.
+ * keeps it for schemaStatus(); then checks again every `recheckMs` (5 min),
+ * after a failure sooner (`retryMs`: 5, 15, 30 s, then every 60 s), and logs
+ * only a change (a guard dropped later, a migration applied, the database
+ * reachable again). Never throws: a database that is down is logged and
+ * reported as not checked. The timers do not keep the process alive.
  */
-export async function checkSchemaAtStart (pool, { log = console, dbDir = defaultDbDir() } = {}) {
-  let st
-  try {
-    st = await readSchemaState(pool, { dbDir })
-  } catch (err) {
-    st = { ready: false, error: err.message, checkedAt: new Date().toISOString() }
-  }
-  lastState = st
-  for (const { level, text } of describeSchemaState(st, { dbDir })) {
-    const prefix = level === 'error' ? '❌ [DB] ' : level === 'warn' ? '⚠️  [DB] ' : '[DB] '
-    ;(log[level] ?? log.log)(prefix + text)
-  }
-  return st
+export async function checkSchemaAtStart (pool, { log = console, dbDir = defaultDbDir(), recheckMs = RECHECK_MS, retryMs = RETRY_MS } = {}) {
+  stopSchemaChecks()
+  watch = { pool, log, dbDir, recheckMs, retryMs: retryMs.length ? retryMs : [0], retry: 0, timer: null, inflight: null, logged: null }
+  return runCheck(watch)
 }
 
-/** The state of the last checkSchemaAtStart (null before it ran). */
+/** The state of the last check (null before checkSchemaAtStart). */
 export function schemaStatus () {
   return lastState
+}
+
+/**
+ * A state at most `maxAgeMs` old (default 60 s; a failed check 5 s), checked
+ * again now when the last one is older; for /health. Concurrent calls share
+ * one check. Never throws; null before checkSchemaAtStart.
+ */
+export async function refreshSchemaStatus ({ maxAgeMs = REFRESH_MAX_AGE_MS } = {}) {
+  if (!watch) return lastState
+  const age = lastState ? Date.now() - Date.parse(lastState.checkedAt) : Infinity
+  if (age < (lastState?.error ? Math.min(maxAgeMs, ERROR_MAX_AGE_MS) : maxAgeMs)) return lastState
+  return runCheck(watch)
+}
+
+/** Ends the checks of checkSchemaAtStart (tests; a server that shuts down). */
+export function stopSchemaChecks () {
+  if (watch) clearTimeout(watch.timer)
+  watch = null
 }
