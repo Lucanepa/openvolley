@@ -170,7 +170,9 @@ import {
   runUploadLane,
   isUpdateRequiredError,
   isServerBehindError,
-  countServerBehindJobs
+  countServerBehindJobs,
+  resyncMatch,
+  resetResyncAttempts
 } from '../useSyncQueue'
 import { appUpdateNeeded, resetAppUpdateNeededForTests } from '../../utils/appUpdate'
 import { splitRefusedRestore, RESTORE_REFUSED } from '../../utils/refusedRestore'
@@ -3164,5 +3166,45 @@ describe('writes refused by version', () => {
       expect(appUpdateNeeded()).toBe(null)
       unmount()
     })
+  })
+})
+
+// review 2026-11 (x-rollout-ops-4): after a database restore the server
+// lacks a match this device sent; its jobs stayed 'sent', later events
+// waited forever and updates counted as sent
+describe('a match the server lacks (OV_MATCH_UNKNOWN)', () => {
+  const SEED = 'match_100_aaa'
+  const sentJobs = () => [
+    { id: 1, resource: 'match', action: 'insert', status: 'sent', payload: { external_id: SEED, game_n: 7 } },
+    { id: 2, resource: 'set', action: 'insert', status: 'sent', payload: { external_id: `${SEED}:s:5`, match_id: SEED } },
+    { id: 3, resource: 'event', action: 'insert', status: 'sent', payload: { external_id: `${SEED}:e:9`, match_id: SEED } },
+    { id: 4, resource: 'match', action: 'insert', status: 'sent', payload: { external_id: 'match_200_bbb' } }
+  ]
+  beforeEach(() => resetResyncAttempts())
+
+  it('an update answered OV_MATCH_UNKNOWN queues the match\'s sent jobs again and waits', async () => {
+    fakeDb.sync_queue.reset([...sentJobs(), { id: 5, resource: 'match', action: 'update', status: 'queued', payload: { id: SEED, status: 'live' } }])
+    api.respond = (call) => (call.table === 'matches' && call.action === 'update'
+      ? { data: null, error: { message: 'gone', code: 'OV_MATCH_UNKNOWN', status: 404 }, status: 404 }
+      : defaultRespond(call))
+    expect(await processJob(fakeDb.sync_queue.map.get(5))).toBeNull()
+    expect([1, 2, 3].map(id => fakeDb.sync_queue.map.get(id).status)).toEqual(['queued', 'queued', 'queued'])
+    expect(fakeDb.sync_queue.map.get(4).status).toBe('sent')
+  })
+
+  it('an event of a match the server no longer finds sends the match again', async () => {
+    fakeDb.sync_queue.reset([...sentJobs(), { id: 5, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: `${SEED}:e:10`, match_id: SEED } }])
+    api.respond = (call) => (call.table === 'matches' && call.action === 'select' ? ok(null) : defaultRespond(call))
+    expect(await processJob(fakeDb.sync_queue.map.get(5))).toBeNull()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('queued')
+  })
+
+  it('nothing is queued again without a sent insert, and once per match within the retry window', async () => {
+    fakeDb.sync_queue.reset(sentJobs().slice(1, 3))
+    expect(await resyncMatch(SEED, { database: fakeDb })).toBe(0)
+    fakeDb.sync_queue.reset(sentJobs())
+    expect(await resyncMatch(SEED, { database: fakeDb })).toBe(-1)
+    resetResyncAttempts()
+    expect(await resyncMatch(SEED, { database: fakeDb })).toBe(3)
   })
 })

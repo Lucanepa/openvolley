@@ -90,6 +90,19 @@ services:
       - timezone=UTC
       - -c
       - log_timezone=UTC
+      # Point-in-time recovery: each finished WAL segment is copied to
+      # /ovpg/walarchive (host-prep.sh creates it, on the pg filesystem);
+      # backup-openvolley.sh encrypts each one into the backup directory every
+      # hour and removes it here. A missing directory fails the archiving
+      # (Postgres keeps the segment and retries) and the backup run, never
+      # silently. archive_timeout: a segment at least every 5 min while
+      # anything is written.
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=test -d /ovpg/walarchive && test ! -f /ovpg/walarchive/%f && cp %p /ovpg/walarchive/.%f.tmp && mv /ovpg/walarchive/.%f.tmp /ovpg/walarchive/%f
+      - -c
+      - archive_timeout=300
     environment:
       POSTGRES_DB: openvolley
       POSTGRES_USER: ov_owner
@@ -126,6 +139,32 @@ services:
     labels:
       traefik.enable: "false"
       diun.enable: "true"
+
+  # The hourly pg_dump (backup-openvolley.sh: docker compose run --rm
+  # ov-backup pg_dump ...): its own CPU and memory quota and nice 10, so the
+  # dump's compression never takes ov-postgres's 0.5 CPU on a match day. Only
+  # started by that run (profile "backup"), on ov-internal only, read-only.
+  ov-backup:
+    image: ${OV_POSTGRES_IMAGE:-postgres:17.11-alpine}
+    profiles: [backup]
+    user: "70:70"
+    entrypoint: ["nice", "-n", "10"]
+    environment:
+      PGHOST: ov-postgres
+      PGPASSWORD: ${OV_OWNER_PW:?set OV_OWNER_PW in .env}
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: ${OV_BACKUP_CPUS:-0.5}
+    pids_limit: 32
+    networks: [ov-internal]
+    logging: *logging
+    labels:
+      traefik.enable: "false"
 
   ov-backend:
     image: ${OV_BACKEND_IMAGE:?set OV_BACKEND_IMAGE in .env (e.g. openvolley-backend:abc1234)}

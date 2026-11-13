@@ -65,6 +65,8 @@ rsync -rt --partial-dir=.rsync-partial --timeout=600 \
   --exclude='.*' \
   --include='db-*.dump.gpg' --include='db-*.counts' \
   --include='scoresheets-*.tar.gpg' --include='snapshots-*.tar.gpg' \
+  --include='quarantine-db-*' --include='base-*.tar.gpg' \
+  --include='wal/' --include='wal/*.gpg' \
   --exclude='*' \
   -e "$SSH" "${NP_REMOTE}:./" "$NP_DEST/" \
   || fail "rsync exit $?"
@@ -72,8 +74,10 @@ rsync -rt --partial-dir=.rsync-partial --timeout=600 \
 # NAS-side retention (independent of the server's).
 find "$NP_DEST" -maxdepth 1 -type f \( -name 'db-*.dump.gpg' -o -name 'db-*.counts' \) \
   -mtime +"$NP_KEEP_DB_DAYS" -exec rm -f {} \;
-find "$NP_DEST" -maxdepth 1 -type f \( -name 'scoresheets-*.tar.gpg' -o -name 'snapshots-*.tar.gpg' \) \
+find "$NP_DEST" -maxdepth 1 -type f \( -name 'scoresheets-*.tar.gpg' -o -name 'snapshots-*.tar.gpg' -o -name 'base-*.tar.gpg' -o -name 'quarantine-db-*' \) \
   -mtime +"$NP_KEEP_FILES_DAYS" -exec rm -f {} \;
+# WAL segments (point-in-time recovery): kept a day longer than the base backups they replay on
+[ ! -d "$NP_DEST/wal" ] || find "$NP_DEST/wal" -maxdepth 1 -type f -name '*.gpg' -mtime +"$((NP_KEEP_FILES_DAYS + 1))" -exec rm -f {} \;
 
 # Freshness: rsync -t kept the server mtimes, so this checks the server's
 # backups are still being produced, not only that the pull ran.

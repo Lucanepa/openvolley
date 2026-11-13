@@ -1185,6 +1185,49 @@ async function requeueParkedJobsOf(matchKey, exceptId) {
   }
 }
 
+// Resyncs tried per match key (one per RESYNC_RETRY_MS, see resyncMatch)
+const RESYNC_RETRY_MS = 10 * 60 * 1000
+const resyncAttempts = new Map()
+export const RESYNC_RECENT = -1
+
+/**
+ * The server lacks a match this device already sent (a database restored to
+ * an earlier time: an update answered 404 OV_MATCH_UNKNOWN, or a set or event
+ * whose match the server no longer has): the match's jobs already sent go
+ * back to the queue, in their order (lower ids than the job that noticed),
+ * so the server gets the match again from this device's data. Each of them
+ * is an upsert by external_id or a full snapshot, so sending one twice is
+ * harmless. Only when the match's insert or restore is among them (else the
+ * match was never sent from here, or its jobs are pruned), once per match
+ * and RESYNC_RETRY_MS.
+ * @returns {Promise<number>} jobs queued again, or RESYNC_RECENT
+ */
+export async function resyncMatch(seedKey, { database = db, now = Date.now() } = {}) {
+  if (!seedKey) return 0
+  const last = resyncAttempts.get(seedKey)
+  if (last !== undefined && now - last < RESYNC_RETRY_MS) return RESYNC_RECENT
+  if (resyncAttempts.size >= 200) resyncAttempts.delete(resyncAttempts.keys().next().value)
+  resyncAttempts.delete(seedKey)
+  resyncAttempts.set(seedKey, now)
+  try {
+    const sent = (await database.sync_queue.where('status').equals('sent').toArray())
+      .filter(j => j.resource !== 'activity' && jobMatchKey(j) === seedKey)
+    if (!sent.some(j => j.resource === 'match' && (j.action === 'insert' || j.action === 'restore'))) {
+      safeLog.warn('[SyncQueue] The server lacks match', seedKey, 'and this device holds no sent insert of it to send again')
+      return 0
+    }
+    for (const j of sent) await database.sync_queue.update(j.id, { status: 'queued', retry_count: 0 })
+    safeLog.warn('[SyncQueue] The server lacks match', seedKey, `: ${sent.length} sent job(s) queued again`)
+    return sent.length
+  } catch (err) {
+    safeLog.warn('[SyncQueue] Could not queue match', seedKey, 'again:', err?.message)
+    return 0
+  }
+}
+
+/** Test hook: forget the resyncs tried. */
+export function resetResyncAttempts() { resyncAttempts.clear() }
+
 // Answers to a scoring-device claim that leave nothing to record (see below)
 const NO_SCORER_RECORD = ['OV_MATCH_CLOSED', 'OV_SCORER_UNAVAILABLE', 'OV_DB_NOT_CONFIGURED']
 
@@ -1313,6 +1356,13 @@ async function processJobInner(job, ctx) {
       const { error } = await apiFrom('matches')
         .update(finalUpdateData)
         .eq('external_id', id)
+      if (error?.code === 'OV_MATCH_UNKNOWN') {
+        // the server lacks the match: send it again, then this update
+        const queued = await resyncMatch(id)
+        if (queued !== 0) return null
+        safeLog.warn('[SyncQueue] Match update of a match the server lacks, nothing to send again:', id)
+        return true
+      }
       if (error) {
         safeLog.error('[SyncQueue] Match update error:', error, id, payloadForLog(rawUpdateData))
         return failureResult(error, ctx)
@@ -1520,7 +1570,9 @@ async function processJobInner(job, ctx) {
         const { id: matchUuid, error: lookupError } = await cloudMatchId(setPayload.match_id, ctx)
         if (lookupError) return failureResult(lookupError, ctx)
         if (!matchUuid) {
-          // Match not yet synced - keep job queued for retry
+          // Match not yet synced - keep job queued for retry; or synced and
+          // lost on the server since: sent again (resyncMatch)
+          await resyncMatch(setPayload.match_id)
           return null // null means "retry later"
         }
         setPayload.match_id = matchUuid
@@ -1587,7 +1639,10 @@ async function processJobInner(job, ctx) {
         const { id: matchUuid, error: lookupError } = await cloudMatchId(eventPayload.match_id, ctx)
         if (lookupError) return failureResult(lookupError, ctx)
         if (!matchUuid) {
-          // Match not yet synced - keep job queued for retry (will be limited by MAX_DEPENDENCY_RETRIES)
+          // Match not yet synced - keep job queued for retry (will be limited
+          // by MAX_DEPENDENCY_RETRIES); or synced and lost on the server
+          // since: sent again (resyncMatch)
+          await resyncMatch(eventPayload.match_id)
           return null // null means "retry later"
         }
         eventPayload.match_id = matchUuid
