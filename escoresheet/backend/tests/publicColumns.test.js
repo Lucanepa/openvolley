@@ -190,7 +190,7 @@ describe('publicColumns: referee dates of birth', () => {
 })
 
 describe('publicColumns: the match relay bundle', () => {
-  it('publicRelayMatch drops officials, signatures, approval, pending rosters, manual changes and dob', () => {
+  it('publicRelayMatch drops officials, signatures, approvals, remarks, pending rosters, manual changes and dob', () => {
     const match = {
       id: 7,
       status: 'live',
@@ -200,6 +200,7 @@ describe('publicColumns: the match relay bundle', () => {
       homeCoachSignature: SIGNATURE,
       away_captain_signature: SIGNATURE,
       approval: { approved: true },
+      accountApprovals: { referee1: { id: 'acc-1', name: 'Ref', at: '2026-11-12T10:00:00.000Z' } },
       manualChanges: [{ a: 1 }],
       manual_changes: [{ a: 1 }],
       pendingHomeRoster: { players: [] },
@@ -216,8 +217,7 @@ describe('publicColumns: the match relay bundle', () => {
       status: 'live',
       refereeConnectionEnabled: true,
       bench_home: [{ role: 'Coach', lastName: 'Coach' }],
-      players_home: [{ number: 4, lastName: 'P' }],
-      remarks: 'ok'
+      players_home: [{ number: 4, lastName: 'P' }]
     })
     assert.deepEqual(publicPeople([{ number: 1, dob: DOB, country: 'SUI', email: 'a@b' }, null]), [{ number: 1 }, null])
     assert.equal(publicRelayMatch(null), null)

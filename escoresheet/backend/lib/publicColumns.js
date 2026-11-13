@@ -369,17 +369,27 @@ export const PERSON_PRIVATE_FIELDS = Object.freeze([
 ])
 /** Match keys never relayed (besides any key containing "signature"). */
 export const MATCH_PRIVATE_FIELDS = Object.freeze([
-  'officials', 'signatures', 'approval', 'manualChanges', 'manual_changes',
+  'officials', 'signatures', 'approval', 'accountApprovals', 'account_approvals', 'manualChanges', 'manual_changes',
   'pendingHomeRoster', 'pendingAwayRoster', 'pending_home_roster', 'pending_away_roster',
   // openbeach's uploaded rosters waiting for the scorer (with dob)
   'pendingTeam1Roster', 'pendingTeam2Roster', 'pending_team1_roster', 'pending_team2_roster'
 ])
+/**
+ * Match keys only the referee and the scorer's own devices get (relayBundleView):
+ * the remarks name people and their injuries.
+ */
+export const REFEREE_MATCH_FIELDS = Object.freeze(['remarks'])
 /** Match keys holding people: kept, each entry without PERSON_PRIVATE_FIELDS. */
 export const MATCH_ROSTER_FIELDS = Object.freeze([
   'players_home', 'players_away', 'bench_home', 'bench_away',
   'players_team1', 'players_team2', 'benchHome', 'benchAway', 'homePlayers', 'awayPlayers',
   'team1Players', 'team2Players'
 ])
+/** The MATCH_ROSTER_FIELDS of each team (beach: team 1 is home, team 2 away). */
+const TEAM_ROSTER_FIELDS = Object.freeze({
+  home: Object.freeze(['players_home', 'bench_home', 'players_team1', 'benchHome', 'homePlayers', 'team1Players']),
+  away: Object.freeze(['players_away', 'bench_away', 'players_team2', 'benchAway', 'awayPlayers', 'team2Players'])
+})
 
 const isSignatureKey = (k) => /signature/i.test(k)
 
@@ -553,6 +563,7 @@ export const publicPeople = (list) => (Array.isArray(list) ? list.map(publicPers
 
 /**
  * A match object as the relay may hand it out: no MATCH_PRIVATE_FIELDS, no
+ * REFEREE_MATCH_FIELDS (relayBundleView gives those back to the referee), no
  * signature keys, rosters without dates of birth/country. PINs are NOT
  * handled here (stripMatchSecrets in server.js). Never mutates `match`.
  */
@@ -560,8 +571,133 @@ export function publicRelayMatch(match) {
   if (match == null || typeof match !== 'object' || Array.isArray(match)) return match
   const out = {}
   for (const [k, v] of Object.entries(match)) {
-    if (MATCH_PRIVATE_FIELDS.includes(k) || isSignatureKey(k)) continue
+    if (MATCH_PRIVATE_FIELDS.includes(k) || REFEREE_MATCH_FIELDS.includes(k) || isSignatureKey(k)) continue
     out[k] = MATCH_ROSTER_FIELDS.includes(k) ? publicPeople(v) : v
   }
+  return out
+}
+
+// ---------------------------------------------------------------------------
+// After the PIN: the bundle by what the PIN proved
+// ---------------------------------------------------------------------------
+//
+// Any PIN of the match opens the bundle, but each tablet gets what its screen
+// needs (relayBundleView): the referee and the scorer's own devices (game
+// PIN) both rosters and the remarks; a bench its own roster and, of the other
+// team, the shirt numbers only, and no remarks. Team rows: names and colours.
+// Nobody gets a date of birth or the account approvals. A team's first
+// line-up of a set stays off the other bench while it is covered (only that
+// team's line-up is in and no point has been scored: FIVB 7.3,
+// frontend/src/domain/lineupPrivacy.js). The LAN relays
+// (frontend/electron/lanRelayCore.cjs, frontend/src-tauri/src/relay.rs) do
+// not apply it yet: they hand the whole bundle to any PIN holder.
+
+/** Team keys a bundle keeps: the names and colours the tablets draw. */
+export const RELAY_TEAM_FIELDS = Object.freeze([...SUMMARY_TEAM_FIELDS, 'liberoColor', 'liberoColour', 'libero_color', 'libero_colour'])
+
+/**
+ * The bundle view a proved PIN type (lib/matchAccess.js pinTypeOf: 'game',
+ * 'referee', 'bench_home', ...) or match token role ('homeTeam', ...) gets:
+ * 'scorer', 'referee', 'home', 'away', else null.
+ */
+export function relayViewOf(type) {
+  switch (type) {
+    case 'game': return 'scorer'
+    case 'referee': return 'referee'
+    case 'bench_home': case 'homeTeam': case 'bench_team1': return 'home'
+    case 'bench_away': case 'awayTeam': case 'bench_team2': return 'away'
+    default: return null
+  }
+}
+
+// A corrected date of birth in the remarks (an older scorer's in-match roster
+// edit wrote "Player #7 dob: 03.05.2011 → 04.06.2011 (Team)"): the change
+// stays, the two dates go. The values run to the team label at the end of the
+// line, or to its end.
+const REMARK_DOB_CHANGE = /\bdob: .+? (?:→|->) .+?(?= \([^()\n]*\)$|$)/gm
+
+/** The remarks text without the values of date-of-birth corrections. */
+export function redactRemarkDobs(text) {
+  return typeof text === 'string' ? text.replace(REMARK_DOB_CHANGE, 'date of birth changed') : text
+}
+
+/** Someone of the other team on a bench's tablet: the shirt number (an official: the role). */
+function numberOnly(p) {
+  if (p == null || typeof p !== 'object' || Array.isArray(p)) return p
+  if (has(p, 'number')) return { number: p.number }
+  return has(p, 'role') ? { role: p.role } : {}
+}
+
+const relayTeam = (team) => (typeof team === 'string' ? team : pickFields(team, RELAY_TEAM_FIELDS))
+const relayPeople = (list, numbersOnly) => (Array.isArray(list) ? list.map(numbersOnly ? numberOnly : publicPerson) : [])
+
+function withoutAutoRemark(e) {
+  if (!e?.payload || typeof e.payload !== 'object' || !has(e.payload, 'autoRemark')) return e
+  const { autoRemark: _remark, ...payload } = e.payload
+  return { ...e, payload }
+}
+
+/**
+ * The events a bench of `team` ('home' / 'away', null: neither) gets: no
+ * remark lines (payload.autoRemark), and none of the other team's events of
+ * a set in which that team's first line-up is covered.
+ */
+function benchEvents(events, team) {
+  if (!Array.isArray(events)) return []
+  const sets = new Map()
+  for (const e of events) {
+    if (!e || typeof e !== 'object') continue
+    const i = Number(e.setIndex ?? 1)
+    const s = sets.get(i) || { started: false, home: false, away: false }
+    if (e.type === 'point') s.started = true
+    if (e.type === 'lineup' && (e.payload?.team === 'home' || e.payload?.team === 'away')) s[e.payload.team] = true
+    sets.set(i, s)
+  }
+  const covered = new Map()
+  for (const [i, s] of sets) {
+    if (!s.started && s.home !== s.away) covered.set(i, s.home ? 'home' : 'away')
+  }
+  const out = []
+  for (const e of events) {
+    const coveredTeam = e && typeof e === 'object' ? covered.get(Number(e.setIndex ?? 1)) : undefined
+    if (coveredTeam && coveredTeam !== team && e.payload?.team === coveredTeam) continue
+    out.push(withoutAutoRemark(e))
+  }
+  return out
+}
+
+/**
+ * The bundle ({ match, homeTeam, awayTeam, homePlayers, awayPlayers, sets,
+ * events, liveState? }) for a socket whose PIN proved `view` (relayViewOf).
+ * PINs are NOT handled here (stripMatchSecrets in server.js). Never mutates
+ * `entry`. Any other view gets the bench view of neither team.
+ * @param {object} entry
+ * @param {'scorer'|'referee'|'home'|'away'|null} view
+ */
+export function relayBundleView(entry, view) {
+  const official = view === 'referee' || view === 'scorer'
+  const team = view === 'home' || view === 'away' ? view : null
+  const numbersOf = (side) => !official && side !== team
+  const match = publicRelayMatch(entry?.match)
+  if (match && typeof match === 'object' && !Array.isArray(match)) {
+    if (official) {
+      if (has(entry.match, 'remarks')) match.remarks = redactRemarkDobs(entry.match.remarks)
+    } else {
+      for (const side of ['home', 'away']) {
+        if (!numbersOf(side)) continue
+        for (const k of TEAM_ROSTER_FIELDS[side]) if (Array.isArray(match[k])) match[k] = match[k].map(numberOnly)
+      }
+    }
+  }
+  const out = {
+    match,
+    homeTeam: relayTeam(entry?.homeTeam),
+    awayTeam: relayTeam(entry?.awayTeam),
+    homePlayers: relayPeople(entry?.homePlayers, numbersOf('home')),
+    awayPlayers: relayPeople(entry?.awayPlayers, numbersOf('away')),
+    sets: entry?.sets || [],
+    events: official ? (entry?.events || []) : benchEvents(entry?.events, team)
+  }
+  if (entry?.liveState !== undefined) out.liveState = entry.liveState
   return out
 }
