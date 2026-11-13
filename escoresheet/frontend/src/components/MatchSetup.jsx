@@ -20,6 +20,7 @@ import { useScaledLayout } from '../hooks/useScaledLayout'
 const ballImage = ballFallback
 import { parseRosterPdf } from '../utils/parseRosterPdf'
 import { getCloudApiUrl } from '../utils/backendConfig'
+import { sendMatchInfoMail } from '../utils/matchInfoMail'
 import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
 import { toastQueuedSync } from '../utils/syncToast'
@@ -2513,12 +2514,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       if (notificationEmail && notificationEmail.trim() && matchSeedKey && !isTestMatch) {
         const sendInfoUrl = getCloudApiUrl('/api/match/send-info')
         const auth = authorizationHeader()
-        if (sendInfoUrl && auth.Authorization) fetch(sendInfoUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...auth },
-          body: JSON.stringify({ externalId: matchSeedKey })
-        })
-          .then(res => res.json())
+        // (the match is new: sendMatchInfoMail waits for the sync's upload)
+        if (sendInfoUrl && auth.Authorization) sendMatchInfoMail({ url: sendInfoUrl, headers: auth, externalId: matchSeedKey })
           .then(data => {
             if (data.success) {
               console.log('[MatchSetup] Match info email sent successfully')

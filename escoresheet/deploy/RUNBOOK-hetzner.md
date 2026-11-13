@@ -348,6 +348,18 @@ lenovo$ sudo sh -c 'chmod 750 /opt/openvolley/*.sh && chmod 644 /opt/openvolley/
 lenovo$ sudo docker compose --project-directory /opt/openvolley config -q && sudo docker compose --project-directory /opt/openvolley up -d
 ```
 
+Once, for the kit that gives `ov-edge` a fixed subnet (172.30.250.0/24, the tunnel at
+172.30.250.2, `TRUST_PROXY_FROM` set to it): an existing `ov-edge` keeps its old subnet and `up`
+fails or keeps it, so first check that no other network uses the range, then recreate the
+networks with `down` (no `-v`: the volumes and data stay) before the `up -d` above. A short
+outage: outside match days.
+
+```bash
+host$ sudo docker network inspect $(sudo docker network ls -q) -f '{{.Name}} {{range .IPAM.Config}}{{.Subnet}} {{end}}' | grep '172\.30\.250\.' || echo free
+host$ sudo docker compose --project-directory /opt/openvolley down     # never with -v
+host$ sudo docker compose --project-directory /opt/openvolley up -d
+```
+
 Script changes also need `sudo /opt/openvolley/host-prep.sh` (reinstalls `backup-openvolley.sh`
 and the units). A changed bind-mounted file alone (`pkgs/Caddyfile`, `cloudflared/config.yml`)
 is not a compose change: also `sudo docker compose --project-directory /opt/openvolley up -d --force-recreate ov-pkgs`
