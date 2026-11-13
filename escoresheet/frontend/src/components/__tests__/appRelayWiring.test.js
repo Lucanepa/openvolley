@@ -66,7 +66,25 @@ describe('App.jsx relay wiring', () => {
     expect(answer).toMatch(/relayMatchBundle\(db, activeMatchId, \{ relayUrl: scorerRelay\.url \}\)/)
     expect(answer).toMatch(/events: bundle\.events\n/)
     expect(answer).not.toMatch(/db\.(sets|events|teams|players)\./)
-    expect(src).toMatch(/import \{ relayMatchBundle \} from '\.\/utils\/relayMatchSync'/)
+    expect(src).toMatch(/import \{ relayMatchBundle\b[^}]*\} from '\.\/utils\/relayMatchSync'/)
+  })
+
+  // Audit 2026-11 review: the two syncs at once (a seed key from Create
+  // Match, a connection or PIN changed) were built from currentMatch, the
+  // newest unfinished match, while the effect publishes the open one. With an
+  // older match open next to a newer one, the open match's new PIN reached
+  // the relay only with the 30 s backup sync, and the tablet was refused.
+  it('the syncs at once follow the match the relay effect publishes', () => {
+    const body = slice('const openMatchRelayTrigger = useLiveQuery(', 'useEffect(() => {\n    // Keep the match on the relay')
+    expect(body).toMatch(/if \(!matchId\) return null/)
+    expect(body).toMatch(/return relaySyncTrigger\(await db\.matches\.get\(matchId\)\)/)
+    expect(body).toMatch(/\}, \[matchId\]\)/)
+    expect(body).toMatch(/const relayTrigger = matchId \? openMatchRelayTrigger : relaySyncTrigger\(currentMatch\)/)
+    expect(body).toMatch(/if \(relayTrigger != null && relaySyncRef\.current\) relaySyncRef\.current\(\)\n\s*\}, \[relayTrigger\]\)/)
+    // the same match as the effect: matchId, else currentMatch
+    expect(src).toMatch(/const activeMatchId = matchId \|\| currentMatch\?\.id/)
+    expect(src).not.toMatch(/relayMatchKey\(currentMatch\)|currentMatch\.refereePin/)
+    expect(src).toMatch(/import \{ relayMatchBundle, relaySyncTrigger \} from '\.\/utils\/relayMatchSync'/)
   })
 
   // Stress test 2026-10-25: the laptop a match moved away from re-synced its

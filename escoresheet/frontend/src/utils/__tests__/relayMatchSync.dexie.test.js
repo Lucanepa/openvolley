@@ -3,7 +3,7 @@
 import 'fake-indexeddb/auto'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { db } from '../../db/db'
-import { relayMatchBundle } from '../relayMatchSync'
+import { relayMatchBundle, relaySyncTrigger } from '../relayMatchSync'
 
 const CLOUD = 'wss://backend.example.org'
 const LOCAL = 'ws://192.168.1.20:8080'
@@ -60,5 +60,29 @@ describe('relayMatchBundle: the relay gets one whole match', () => {
     for (const id of [final, blank, moved, closed, 999, null]) {
       expect(await relayMatchBundle(db, id, { relayUrl: CLOUD }), String(id)).toBeNull()
     }
+  })
+})
+
+describe('relaySyncTrigger: what makes App sync a match at once', () => {
+  const match = {
+    id: 3, seed_key: OFFICIAL, status: 'live',
+    refereeConnectionEnabled: true, homeTeamConnectionEnabled: false, awayTeamConnectionEnabled: false,
+    refereePin: '314159', homeTeamPin: '271828', awayTeamPin: '161803'
+  }
+
+  it('changes with the room key, a connection or a PIN, and with nothing else', () => {
+    const base = relaySyncTrigger(match)
+    expect(typeof base).toBe('string')
+    expect(relaySyncTrigger({ ...match, updatedAt: 5, homeShortName: 'H' })).toBe(base)
+    for (const change of [
+      { seed_key: 'match_1791215210299_other' },
+      { homeTeamConnectionEnabled: true },
+      { refereePin: '000001' },
+      { awayTeamPin: null }
+    ]) expect(relaySyncTrigger({ ...match, ...change }), JSON.stringify(change)).not.toBe(base)
+    // a blank match (no seed key yet) has one too: Create Match changes it
+    expect(relaySyncTrigger({ ...match, seed_key: undefined })).not.toBe(base)
+    expect(relaySyncTrigger(null)).toBeNull()
+    expect(relaySyncTrigger(undefined)).toBeNull()
   })
 })

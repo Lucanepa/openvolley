@@ -2163,12 +2163,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           data: {
             // Never game_pin / connection_pins (the relay needs only its PIN fields)
             match: relayMatchPayload(freshMatch, null, { mark: syncMark }).match,
-            homeTeam: freshHomeTeam || null,
-            awayTeam: freshAwayTeam || null,
-            homePlayers: freshHomePlayers || [],
-            awayPlayers: freshAwayPlayers || [],
+            // as sync-match-data: names and colours, rosters without dates
+            // of birth, events without the undo snapshots (a LAN relay keeps
+            // the answer as the room's bundle and hands it on)
+            homeTeam: relayTeamPayload(freshHomeTeam),
+            awayTeam: relayTeamPayload(freshAwayTeam),
+            homePlayers: relayPeoplePayload(freshHomePlayers),
+            awayPlayers: relayPeoplePayload(freshAwayPlayers),
             sets: freshSets || [],
-            events: freshEvents || []
+            events: relayEvents(freshEvents || [])
           }
         }))
       } catch (err) {

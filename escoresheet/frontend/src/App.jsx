@@ -101,7 +101,7 @@ import { OPEN_MANAGE_EVENT, OPEN_RESTORE_EVENT, openRestore, restorePrefill } fr
 import { relayMatchKey, relayMatchPayload, liveStateNow } from './utils/serverDataSync'
 import { needsEventCheck, pickCurrentMatch, newOfficialMatchStep, OFFICIAL_MATCH_KEPT_STEPS } from './utils/currentMatch'
 import { isRelayErrorFor, relayConnectionStatus, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
-import { relayMatchBundle } from './utils/relayMatchSync'
+import { relayMatchBundle, relaySyncTrigger } from './utils/relayMatchSync'
 import { PHONE_MAX_WIDTH, isPhoneScreen, phoneLayoutKept } from './components/scoreboard/phoneLayout'
 import { useSystemBarsHidden } from './utils/nativeSystemBars'
 
@@ -1446,28 +1446,30 @@ export default function App() {
   // The effect's sync, to publish at once when the match gets its seed key
   const relaySyncRef = useRef(null)
 
-  // A blank match is not published (no seed key, see relayMatchKey): publish
-  // it as soon as Create Match gives it one, not after the 30 s backup sync.
-  const currentRelayKey = relayMatchKey(currentMatch)
+  // Tell the relay at once, not after the 30 s backup sync, when the match it
+  // gets has a change the tablets wait for: a blank match is not published
+  // (no seed key, see relayMatchKey) until Create Match gives it one; a role
+  // let in or out (Connect tablets, Match setup) or a new PIN: the relay
+  // checks the PINs itself, so until then a tablet just let in was told its
+  // right PIN is wrong (and each retry counted toward the per-minute PIN
+  // limit), and one just switched off could still get in. An open Scoreboard
+  // syncs on these changes itself; a second sync of the same data is
+  // harmless. The match is the one the effect below publishes: the open one,
+  // on Home the newest unfinished one (with an older match open next to a
+  // newer one, the newer one's changes synced the open one and the open
+  // one's waited). A string (relaySyncTrigger): no re-render on other writes.
+  const openMatchRelayTrigger = useLiveQuery(async () => {
+    if (!matchId) return null
+    try {
+      return relaySyncTrigger(await db.matches.get(matchId))
+    } catch {
+      return null
+    }
+  }, [matchId])
+  const relayTrigger = matchId ? openMatchRelayTrigger : relaySyncTrigger(currentMatch)
   useEffect(() => {
-    if (currentRelayKey && relaySyncRef.current) relaySyncRef.current()
-  }, [currentRelayKey])
-
-  // A role let in or out (Connect tablets, Match setup) or a new PIN: tell
-  // the relay at once, not after the 30 s backup sync. The relay checks the
-  // PINs itself, so until then a tablet just let in was told its right PIN
-  // is wrong (and each retry counted toward the per-minute PIN limit), and
-  // one just switched off could still get in. An open Scoreboard syncs on
-  // these changes itself; a second sync of the same data is harmless.
-  const relayAccessSignature = currentMatch
-    ? [
-        currentMatch.refereeConnectionEnabled, currentMatch.homeTeamConnectionEnabled, currentMatch.awayTeamConnectionEnabled,
-        currentMatch.refereePin, currentMatch.homeTeamPin, currentMatch.awayTeamPin
-      ].map(v => String(v ?? '')).join('|')
-    : null
-  useEffect(() => {
-    if (relayAccessSignature != null && relaySyncRef.current) relaySyncRef.current()
-  }, [relayAccessSignature])
+    if (relayTrigger != null && relaySyncRef.current) relaySyncRef.current()
+  }, [relayTrigger])
 
   useEffect(() => {
     // Keep the match on the relay even on the home screen (for dashboards):

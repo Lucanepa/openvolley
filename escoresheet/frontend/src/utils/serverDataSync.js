@@ -1946,12 +1946,68 @@ export function relayTeamPayload(team) {
 
 // An in-match roster edit wrote a corrected date of birth with both dates
 // ("- Player #7 dob: 03.05.2011 → 04.06.2011 (Team)"): the change stays, the
-// dates go (backend/lib/publicColumns.js redactRemarkDobs).
-const REMARK_DOB_CHANGE = /\bdob: .+? (?:→|->) .+?(?= \([^()\n]*\)$|$)/gm
+// dates go, to the team label at the end of the line or to its end
+// (backend/lib/publicColumns.js redactRemarkDobs, the same steps). Read with
+// indexOf, never a backtracking pattern: a long remarks text took the relay
+// seconds per bundle.
+const DOB_LABEL = 'dob: '
+const DOB_ARROWS = [' → ', ' -> ']
+const DOB_CHANGED = 'date of birth changed'
+// Where a line ends (the line ends of `.` and `$` in a pattern)
+const LINE_END = /[\n\r\u2028\u2029]/g
+const WORD_CHAR = /[A-Za-z0-9_]/
+
+/** Where the value after the first arrow at or after `from` starts, or -1. */
+function dobValueAt(line, from) {
+  let start = -1
+  let length = 0
+  for (const arrow of DOB_ARROWS) {
+    const i = line.indexOf(arrow, from)
+    if (i !== -1 && (start === -1 || i < start)) {
+      start = i
+      length = arrow.length
+    }
+  }
+  return start === -1 ? -1 : start + length
+}
+
+/** Where a line's trailing " (Team)" starts (no brackets inside), or -1. */
+function teamLabelAt(line) {
+  if (!line.endsWith(')')) return -1
+  const at = line.lastIndexOf(' (')
+  if (at === -1) return -1
+  const inner = line.slice(at + 2, -1)
+  return inner.includes('(') || inner.includes(')') ? -1 : at
+}
 
 /** The remarks text as the relay gets it: no dates of a date-of-birth correction. */
 export function relayRemarks(text) {
-  return typeof text === 'string' ? text.replace(REMARK_DOB_CHANGE, 'date of birth changed') : text
+  if (typeof text !== 'string' || !text.includes(DOB_LABEL)) return text
+  let out = ''
+  let copied = 0
+  let from = 0
+  for (;;) {
+    const at = text.indexOf(DOB_LABEL, from)
+    if (at === -1) break
+    if (at > 0 && WORD_CHAR.test(text[at - 1])) {
+      from = at + 1
+      continue
+    }
+    LINE_END.lastIndex = at
+    const lineEnd = LINE_END.exec(text)?.index ?? text.length
+    // from "dob: " to the end of its line: at least one character before
+    // the arrow and one after it
+    const rest = text.slice(at, lineEnd)
+    const value = dobValueAt(rest, DOB_LABEL.length + 1)
+    if (value === -1 || value >= rest.length) {
+      from = lineEnd
+      continue
+    }
+    const label = teamLabelAt(rest)
+    out += text.slice(copied, at) + DOB_CHANGED
+    copied = from = at + (label > value ? label : rest.length)
+  }
+  return copied === 0 ? text : out + text.slice(copied)
 }
 
 /**

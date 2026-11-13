@@ -54,3 +54,22 @@ export async function relayMatchBundle(database, matchId, { relayUrl = null } = 
     events: relayEvents(events)
   }
 }
+
+// What the tablets wait for on the relay: who may connect, with which PIN
+const RELAY_ACCESS_FIELDS = [
+  'refereeConnectionEnabled', 'homeTeamConnectionEnabled', 'awayTeamConnectionEnabled',
+  'refereePin', 'homeTeamPin', 'awayTeamPin'
+]
+
+/**
+ * What makes App sync a match to its relay at once, as one string (a live
+ * query of it re-renders nothing while it stays the same): its room key
+ * (relayMatchKey; a blank match gets one with Create Match) and who may
+ * connect with which PIN. null without a match.
+ * @param {object|null|undefined} match
+ * @returns {string|null}
+ */
+export function relaySyncTrigger(match) {
+  if (!match) return null
+  return [relayMatchKey(match), ...RELAY_ACCESS_FIELDS.map((k) => match[k])].map((v) => String(v ?? '')).join('|')
+}
