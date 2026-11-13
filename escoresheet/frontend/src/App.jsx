@@ -83,7 +83,7 @@ import { fetchMatchByPin, fetchMatchToContinue, importMatchFromSupabase, cloudBe
 import UpdateBanner from './components/UpdateBanner'
 import DesktopUpdateNotice from './components/DesktopUpdateNotice'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from './utils/matchFormat'
-import { getMatchWinner } from './domain/matchEnd'
+import { getMatchWinner, opensAtMatchEnd } from './domain/matchEnd'
 import { jobMatchKey, setExtId } from './utils/syncIds'
 import { deviceMatchRows, jobsOfMatch, matchGameNumber, resumeStage, setScore } from './utils/deviceMatches'
 import { PhoneIcon } from './components/icons'
@@ -1900,10 +1900,10 @@ export default function App() {
     const finishedSets = (cloudData.sets || []).filter(s => s.finished)
     const homeSetsWon = finishedSets.filter(s => (s.homePoints ?? s.home_points ?? 0) > (s.awayPoints ?? s.away_points ?? 0)).length
     const awaySetsWon = finishedSets.filter(s => (s.awayPoints ?? s.away_points ?? 0) > (s.homePoints ?? s.home_points ?? 0)).length
-    const isMatchFinished = isMatchFinishedUtil(homeSetsWon, awaySetsWon, cloudBestOf(cloudData.match))
-    // An approved or final match is closed even when its sets do not count
-    // as finished (a forfeit): its Match End, never the scoring screen
-    if (isMatchFinished || ['approved', 'final'].includes(matchStatus)) {
+    // A match over is over on every device: its sets decide it, or it is
+    // ended (also stopped for impossibility to resume, its set unfinished),
+    // approved or final: its Match End, never the scoring screen
+    if (opensAtMatchEnd({ status: matchStatus, homeSetsWon, awaySetsWon, bestOf: cloudBestOf(cloudData.match) })) {
       setShowMatchSetup(false)
       setShowMatchEnd(true)
     } else if ((matchStatus === 'live' || hasEvents || hasSets) && (hasEvents || hasSets)) {

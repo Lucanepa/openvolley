@@ -18,7 +18,13 @@ describe('set jobs of the scoring screens', () => {
     expect(scoreboard).toContain('setUpdateJob(matchRecord, reopenSetId, { finished: false, end_time: null })')
     expect(scoreboard).toContain('setUpdateJob(matchRecord, setId, { home_points: homePoints, away_points: awayPoints, finished: true, end_time: nowIso })')
     expect(matchEnd).toContain('setUpdateJob(match, lastSet.id, { finished: false, end_time: null })')
-    expect(matchEnd).toContain('setUpdateJob(match, r.id, { home_points: r.homePoints, away_points: r.awayPoints, finished: false, end_time: null })')
+    // a forfeit reversed: the set's score back (unfinished, or still finished
+    // for a played set a default rewrote: domain/matchEnd restoredSetWrites)
+    expect(matchEnd).toContain('setUpdateJob(match, r.id, restoredSetWrites(r).cloud)')
+    expect(scoreboard).toContain('setUpdateJob(match, r.id, restoredSetWrites(r).cloud)')
+    // a default rewrites the played sets, or sets one past the result aside
+    expect(scoreboard).toContain('setUpdateJob(matchRecord, planned.id, { home_points: homePoints, away_points: awayPoints })')
+    expect(scoreboard).toContain('setUpdateJob(matchRecord, planned.id, { finished: false, end_time: null })')
   })
 
   // fe-sync-2: a set deleted on the device stayed in the cloud; a finished
@@ -36,7 +42,9 @@ describe('set jobs of the scoring screens', () => {
   // var-local-delete-2: jobs are found by the whole external id
   it('unsent event jobs are found by the match key and the local id together', () => {
     const calls = [...scoreboard.matchAll(/syncJobsForEvents\(([^\n]*)\)/g), ...matchEnd.matchAll(/syncJobsForEvents\(([^\n]*)\)/g)]
-    expect(calls.length).toBe(3)
+    // Scoreboard: discardEvents, the undone set end's next set; MatchEnd:
+    // the forfeit reversal, the match_stopped event of a reopened set
+    expect(calls.length).toBe(4)
     for (const call of calls) {
       expect(call[1].split(',').length, call[0]).toBe(3)
     }
