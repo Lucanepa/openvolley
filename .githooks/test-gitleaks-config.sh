@@ -27,9 +27,10 @@ b64url() { python3 -c "import base64,sys;print(base64.urlsafe_b64encode(sys.argv
 jwt() { echo "$(b64url '{"alg":"HS256","typ":"JWT"}').$(b64url "$1").$(rnd 43)"; }
 
 # expect <hit|miss> <rule-id> <filename> <content>
+# The filename may hold folders (tests/fixtures/a.json) for the path rules.
 expect() {
   local want="$1" rule="$2" name="$3" content="$4" dir report got
-  dir="$TMP/case$RANDOM$RANDOM"; mkdir -p "$dir"
+  dir="$TMP/case$RANDOM$RANDOM"; mkdir -p "$(dirname "$dir/$name")"
   printf '%s\n' "$content" > "$dir/$name"
   report="$dir.json"
   gitleaks dir "$dir" --no-banner --log-level error --config "$CONFIG" \
@@ -124,6 +125,68 @@ expect miss generic-api-key b.json "{\"seed_key\": \"match_$(rnd 10)_$(rnd 10)\"
 hex64() { python3 -c "import secrets;print(secrets.token_hex(32))"; }
 expect miss generic-api-key app.yml "AllowedAPKSigningKeys: $(hex64)"
 expect hit  generic-api-key app.yml "api_key: $(hex64)"
+
+# Personal data from matches: a date of birth, a signature image, a contact
+# list, an encrypted backup, an app backup/log file. Fictional people only.
+P='"firstName": "Anna", "lastName": "Muster"'
+SIG="data:image/png;base64,$(python3 -c "import base64,os;print(base64.b64encode(os.urandom(300)).decode())")"
+ENV="{\"format\": \"openvolley-encrypted-backup\", \"formatVersion\": 1, \"readable\": {\"gameN\": 3}, \"ciphertext\": \"$(rnd 64)\"}"
+expect hit  match-data-birth-date  export.json "[{\"number\": 7, $P, \"dob\": \"01.02.2008\", \"libero\": \"\"}]"
+expect hit  match-data-birth-date  export.json "{\"first_name\": \"Anna\", \"last_name\": \"Muster\", \"date_of_birth\": \"2008-02-01\"}"
+expect hit  match-data-birth-date  export.json "{\"dob\": \"01/02/2008\", \"role\": \"Coach\", \"lastName\": \"Muster\"}"
+expect hit  match-data-birth-date  notes.txt   "10:00:01 state {\\\"lastName\\\":\\\"Muster\\\",\\\"dob\\\":\\\"2008-02-01\\\"}"
+expect hit  match-data-birth-date  export.json "{\"team\": {\"name\": \"Home\"}, \"players\": [{\"dob\": \"01.02.2008\"}]}"
+expect hit  match-data-birth-date  dump.json   "[{\"dob\": \"2008-02-01T00:00:00.000Z\", $P}]"
+expect hit  match-data-birth-date  dump.json   "[{$P, \"licence\": {\"number\": \"12345\"}, \"dob\": \"01.02.2008\"}]"
+expect hit  match-data-birth-date  games.json  "[{\"game_n\": 3, \"referee_1_first_name\": \"Anna\", \"referee_1_dob\": \"1990-02-01\"}]"
+expect hit  match-data-birth-date  games.json  "[{\"gameN\": 3, \"referee1First\": \"Anna\", \"referee1Dob\": \"01.02.1990\"}]"
+expect hit  match-data-birth-date  persons.json "[{$P, \"formattedAndTimezoneIndependentBirthday\": \"01.02.2008\"}]"
+expect hit  match-data-birth-date  session.har "{\"text\": \"[{\\\"lastName\\\":\\\"Muster\\\",\\\"birthDate\\\":\\\"2008-02-01\\\"}]\"}"
+expect hit  match-data-birth-date  league-fixtures/2026/roster.json "[{$P, \"dob\": \"01.02.2008\"}]"
+expect miss match-data-birth-date  de.json     "{\"firstName\": \"Vorname\", \"lastName\": \"Nachname\", \"dob\": \"Geburtsdatum\"}"
+expect miss match-data-birth-date  en.json     "{\"dobFormat\": \"dd.mm.yyyy\", \"birthYear\": 2008}"
+expect miss match-data-birth-date  export.json "{$P, \"dob\": \"\"}"
+expect miss match-data-birth-date  tests/fixtures/match.json "[{$P, \"dob\": \"01.02.2008\"}]"
+expect miss match-data-birth-date  relay.rs    "json!([{ $P, \"dob\": \"1980-01-01\" }])"
+expect hit  match-data-signature   backup.json "{\"homeCoachSignature\": \"$SIG\"}"
+expect hit  match-data-signature   notes.txt   "{\"signatures\": {\"home_coach\": \"$SIG\"}}"
+expect miss match-data-signature   backup.json "{\"icon\": \"data:image/png;base64,iVBORw0KGgo=\"}"
+expect miss match-data-signature   __tests__/fixtures/sign.json "{\"homeCoachSignature\": \"$SIG\"}"
+expect miss match-data-signature   a.js        "const sheet = {\"homeCoachSignature\": \"$SIG\"}"
+expect hit  match-data-contact     list.json   "[{$P, \"phone\": \"079 000 00 00\"}]"
+expect hit  match-data-contact     list.json   "[{\"mobile\": \"+41 79 000 00 00\", \"name\": \"Anna Muster\"}]"
+expect miss match-data-contact     en.json     "{\"name\": \"Name\", \"phone\": \"Phone\"}"
+expect miss match-data-contact     tests/fixtures/list.json "[{\"name\": \"Anna Muster\", \"phone\": \"079 000 00 00\"}]"
+expect hit  match-data-email       list.json   "[{$P, \"email\": \"anna.muster@mail.example\"}]"
+expect hit  match-data-email       list.json   "[{\"contactEmail\": \"a.muster@club-mail.example\", \"name\": \"Anna Muster\"}]"
+expect miss match-data-email       list.json   "[{\"name\": \"Anna Muster\", \"email\": \"anna@example.org\"}]"
+expect miss match-data-email       list.json   "[{\"name\": \"Anna Muster\", \"email\": \"anna@club.test\"}]"
+expect miss match-data-email       en.json     "{\"name\": \"Name\", \"email\": \"Email\", \"emailPlaceholder\": \"name@email\"}"
+expect miss match-data-email       __fixtures__/list.json "[{\"name\": \"Anna Muster\", \"email\": \"anna.muster@mail.example\"}]"
+expect hit  match-data-encrypted-backup  exports/game3.json "$ENV"
+expect hit  match-data-encrypted-backup  game3-match_1/latest.json "$ENV"
+expect miss match-data-encrypted-backup  envelope.js "export const ENVELOPE = { \"format\": \"openvolley-encrypted-backup\" }"
+expect miss match-data-encrypted-backup  tests/fixtures/envelope.json "$ENV"
+expect hit  match-data-file        backup_g1_set2_scoreleft15_scoreright12_20250104_153045_123.json "{}"
+expect hit  match-data-file        game1-match_1/20261112T101500.123Z-00042.json "{}"
+expect hit  match-data-file        OpenVolley/game1-match_1/a1b2c3d4-manual-20261112T101500Z.json "{}"
+expect hit  match-data-file        OpenVolley/backups/game3-match_1759740000000_ab12cd/latest.json "{}"
+expect hit  match-data-file        game9/latest.json "{}"
+expect hit  match-data-file        match-5/latest.json "{}"
+expect hit  match-data-file        test-game1-s/latest.json "{}"
+expect hit  match-data-file        debug_logs/notes.txt "-"
+expect hit  match-data-file        logs_match_1_2026-11-12T10-15-00-000Z.txt "-"
+expect hit  match-data-file        openvolley-diagnostics-20261112-1015-g1.txt "-"
+expect hit  match-data-file        openvolley-diagnostics.txt "-"
+expect hit  match-data-file        openvolley-activity-all-2026-11-12T10-15-00-000Z.csv "-"
+expect hit  match-data-file        openvolley-activity.json "{}"
+expect miss match-data-file        tests/fixtures/backup_g1_set1_scoreleft0_scoreright0_20250104_153045_123.json "{}"
+expect miss match-data-file        tests/fixtures/game1-match_1/latest.json "{}"
+expect miss match-data-file        latest.json "{}"
+expect miss match-data-file        deploy/latest.json "{}"
+expect miss match-data-file        deploy/systemd/openvolley-diagnostics-cleanup.timer "-"
+expect miss match-data-file        docs/openvolley-activity-log.md "-"
+expect miss match-data-file        backupManager.js "-"
 
 if (( fails > 0 )); then
   echo "$fails case(s) failed"; exit 1
