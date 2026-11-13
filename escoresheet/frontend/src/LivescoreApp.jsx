@@ -7,7 +7,7 @@ import DashboardHeader from './components/DashboardHeader'
 import ContextualHelpPanel from './components/help/ContextualHelpPanel'
 import LegalLinks from './legal/LegalLinks'
 import ServerConnectionScreen from './components/ServerConnectionScreen'
-import { applyServerParam, getApiUrl, getBackendOverride, isServedFromLocalServer, isStaticDeployment } from './utils/backendConfig'
+import { applyServerParam, getApiUrl, getBackendOverride, isServedFromLocalServer, isStaticDeployment, serverParamNeedsConfirm } from './utils/backendConfig'
 import { createRelayLivescoreFeed, fetchRelayLivescoreList, relayLivescoreMode, relayLivescoreWsUrl } from './utils/relayLivescore'
 import { applyLiveChange, visibleGames } from './utils/livescoreChanges'
 import { setDiagnosticsInfo } from './utils/diagnosticsInfo'
@@ -27,6 +27,9 @@ import { ListLoading } from './ui/Skeleton.jsx'
 
 function shouldAutoConnectNow() {
   if (typeof window === 'undefined') return false
+  // A link naming another server than this page's: the connection screen
+  // asks first, naming it
+  if (serverParamNeedsConfirm(new URLSearchParams(window.location.search).get('server'))) return false
   return shouldAutoConnect({
     servedFromLocalServer: isServedFromLocalServer(),
     staticDeployment: isStaticDeployment(),
@@ -108,8 +111,9 @@ export default function LivescoreApp() {
     })
   }, [serverReady, liveGames, selectedGame, loading, stale, error])
 
-  // ?server= sets the backend for this and later visits (the initial state
-  // already counts it as a known server)
+  // ?server= naming this page's own server is used at once, for this tab
+  // (backendConfig.applyServerParam); another one only once the connection
+  // screen asked (the initial state did not skip it)
   useEffect(() => {
     const serverParam = new URLSearchParams(window.location.search).get('server')
     if (serverParam) {

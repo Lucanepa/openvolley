@@ -31,12 +31,17 @@ vi.mock('../components/ServerConnectionScreen', () => ({ default: ({ onConnected
 vi.mock('../db/db', () => ({ db: { matches: { count: vi.fn().mockResolvedValue(0) } } }))
 
 import RefereeApp from '../RefereeApp'
+import { setAppEntry } from '../utils/appEntry'
 
 describe('referee match link', () => {
   let realLocation
 
   beforeEach(() => {
     localStorage.clear()
+    sessionStorage.clear()
+    setAppEntry('referee')
+    // The referee site's build: the scorer's links name its backend
+    vi.stubEnv('VITE_BACKEND_URL', 'https://backend.openvolley.app')
     for (const fn of Object.values(sync)) fn.mockReset()
     // The relay copy carries the scorer's Dexie id
     sync.getMatchData.mockResolvedValue({ success: true, match: { id: 1, gameNumber: 991202, status: 'live' } })
@@ -56,6 +61,81 @@ describe('referee match link', () => {
   afterEach(() => {
     Object.defineProperty(window, 'location', { value: realLocation, writable: true, configurable: true })
     localStorage.clear()
+    sessionStorage.clear()
+    setAppEntry(null)
+    vi.unstubAllEnvs()
+  })
+
+  // fe-connect-devices-1: a link naming another server than the page's is
+  // never used without the connection screen's question
+  it('a link naming another server shows the server question first', async () => {
+    Object.defineProperty(window, 'location', {
+      value: { ...realLocation, search: `?server=${encodeURIComponent('http://192.168.1.66:8080')}&match=${SEED}` },
+      writable: true,
+      configurable: true
+    })
+    render(<RefereeApp />)
+    const question = await screen.findByRole('button', { name: 'server screen' })
+    expect(screen.queryByLabelText('refereeDashboard.connectionPin')).toBeNull()
+    expect(sync.getMatchData).not.toHaveBeenCalled()
+    expect(localStorage.getItem('openvolley_backend_override')).toBeNull()
+
+    // answered there: the link's match is preselected as usual
+    fireEvent.click(question)
+    expect(await screen.findByLabelText('refereeDashboard.connectionPin')).toBeInTheDocument()
+    await waitFor(() => expect(sync.getMatchData).toHaveBeenCalledWith(SEED))
+  })
+
+  // Review: the stored credentials were restored against the page's default
+  // server while the link's server question was open; their success removed
+  // the question and dropped the link's server and match without a word
+  describe('stored credentials and a link naming another server', () => {
+    const OLD = 'match_1791223004100_a1b2c3'
+    beforeEach(() => {
+      localStorage.setItem('refereeMatchId', OLD)
+      localStorage.setItem('refereePin', '111222')
+      Object.defineProperty(window, 'location', {
+        value: { ...realLocation, search: `?server=${encodeURIComponent('http://192.168.1.66:8080')}&match=${SEED}` },
+        writable: true,
+        configurable: true
+      })
+    })
+
+    it('wait for the answer, then are checked against the server chosen there', async () => {
+      sync.validatePinSupabase.mockResolvedValue({ success: true, match: { id: OLD, refereeConnectionEnabled: true, status: 'live' } })
+      render(<RefereeApp />)
+      const question = await screen.findByRole('button', { name: 'server screen' })
+      // a while later the question is still there, and no PIN went anywhere
+      await new Promise(r => setTimeout(r, 100))
+      expect(screen.getByRole('button', { name: 'server screen' })).toBe(question)
+      expect(screen.queryByTestId('dashboard')).toBeNull()
+      expect(sync.validatePinSupabase).not.toHaveBeenCalled()
+      expect(sync.validatePin).not.toHaveBeenCalled()
+
+      // answered: the chosen server knows the old match, the referee rejoins it
+      fireEvent.click(question)
+      expect((await screen.findByTestId('dashboard')).textContent).toBe(OLD)
+      expect(sync.validatePinSupabase).toHaveBeenCalledWith('111222', 'referee', { matchExternalId: OLD })
+    })
+
+    it('a chosen server that refuses them leaves the link\'s PIN step', async () => {
+      sync.validatePinSupabase.mockResolvedValue({ success: false, status: 404, error: 'Invalid PIN code' })
+      sync.validatePin.mockResolvedValue({ success: false })
+      render(<RefereeApp />)
+      fireEvent.click(await screen.findByRole('button', { name: 'server screen' }))
+      expect(await screen.findByLabelText('refereeDashboard.connectionPin')).toBeInTheDocument()
+      await waitFor(() => expect(sync.getMatchData).toHaveBeenCalledWith(SEED))
+      await waitFor(() => expect(localStorage.getItem('refereeMatchId')).toBeNull())
+      expect(screen.queryByTestId('dashboard')).toBeNull()
+    })
+  })
+
+  it('stored credentials with no link question are restored at once, as before', async () => {
+    localStorage.setItem('refereeMatchId', SEED)
+    localStorage.setItem('refereePin', '786270')
+    render(<RefereeApp />)
+    expect((await screen.findByTestId('dashboard')).textContent).toBe(SEED)
+    expect(sync.validatePinSupabase).toHaveBeenCalledWith('786270', 'referee', { matchExternalId: SEED })
   })
 
   it('asks for the PIN, then follows the match by the key the PIN check returns', async () => {

@@ -4,17 +4,70 @@
  * Supports runtime override via localStorage for local server connections
  */
 
-// Cloud relay URL for tablets/mobile (non-Electron/non-desktop)
+import { getAppEntry } from './appEntry'
+
+// Cloud relay URL for tablets/mobile (non-Electron/non-desktop): the
+// production backend. A dev build never falls back to it (isDevBuild).
 const CLOUD_RELAY_URL = 'https://backend.openvolley.app'
+const PRODUCTION_BACKEND_HOST = new URL(CLOUD_RELAY_URL).hostname
 
 // localStorage key for runtime backend URL override
 const OVERRIDE_KEY = 'openvolley_backend_override'
 
+// sessionStorage: { "<role page>": "<url>" }, the server a role link's
+// ?server= named, once confirmed (applyServerParam / confirmLinkServer). Kept
+// per role page and per tab, never for later visits, and never read by the
+// scoretable (see linkServerOverride).
+const LINK_SERVER_KEY = 'openvolley_link_server'
+const LINK_SERVER_PAGES = ['referee', 'bench', 'livescore']
+
+/**
+ * A build of a dev branch: a Cloudflare Pages preview, the dev-* sites
+ * (build-channel.js sets VITE_OV_DEV_BUILD). Owner decision 5: such a build
+ * never talks to the production backend. Its backend is the test backend the
+ * build named (VITE_DEV_BACKEND_URL, put in VITE_BACKEND_URL); without one it
+ * has none and says "No test backend configured".
+ */
+export function isDevBuild() {
+  return import.meta.env.VITE_OV_DEV_BUILD === 'true'
+}
+
+/** A dev build whose build named no test backend. */
+export function isDevBuildWithoutBackend() {
+  return isDevBuild() && !import.meta.env.VITE_BACKEND_URL
+}
+
+// The backend of a build that names none: the production backend, except in
+// a dev build (none there)
+function cloudFallbackUrl() {
+  return isDevBuild() ? null : CLOUD_RELAY_URL
+}
+
+/**
+ * A host on this machine or the local network: loopback, RFC 1918, *.local.
+ * Such a host is a venue relay (desktop app, Pi, standalone server), never
+ * the cloud backend.
+ * @param {string} hostname
+ */
+function isLanHost(hostname) {
+  const host = String(hostname || '').replace(/^\[|\]$/g, '').toLowerCase()
+  if (host === 'localhost' || host === '::1' || host.endsWith('.local')) return true
+  if (/^127\.(\d{1,3}\.){2}\d{1,3}$/.test(host)) return true
+  if (/^10\.(\d{1,3}\.){2}\d{1,3}$/.test(host)) return true
+  if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)) return true
+  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(host)) return true
+  return false
+}
+
 /**
  * SECURITY: the backend override decides where the app sends requests carrying
  * the user's auth token. It can be set from the ?server= query param, so it must
- * be restricted to trusted targets (LAN/localhost or an openvolley.app host) —
- * otherwise a crafted link could exfiltrate the session token to any origin.
+ * be restricted to trusted targets: a venue relay on this machine or the hall
+ * network (loopback, RFC 1918, *.local) over http or https, or an
+ * openvolley.app host over https only (plain http to the cloud would carry the
+ * password and the session token in clear) — otherwise a crafted link could
+ * exfiltrate the session token to any origin. A dev build never takes the
+ * production backend.
  * @param {string} url
  * @returns {boolean}
  */
@@ -23,20 +76,74 @@ export function isAllowedBackendUrl(url) {
   let u
   try { u = new URL(url) } catch { return false }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return false
-  const host = u.hostname
-  if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true
-  if (host.endsWith('.openvolley.app') || host === 'openvolley.app') return true
-  if (host.endsWith('.local')) return true // mDNS LAN hostnames
-  // Private (RFC1918) LAN ranges
-  if (/^10\.(\d{1,3}\.){2}\d{1,3}$/.test(host)) return true
-  if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)) return true
-  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(host)) return true
-  return false
+  if (isLanHost(u.hostname)) return true
+  if (u.protocol !== 'https:') return false
+  const host = u.hostname.toLowerCase()
+  if (host !== 'openvolley.app' && !host.endsWith('.openvolley.app')) return false
+  return !(isDevBuild() && host === PRODUCTION_BACKEND_HOST)
+}
+
+/**
+ * An address typed on the connection screen or named by a link, as a URL:
+ * trimmed, no trailing slash. A bare one gets http:// on the hall network (an
+ * IP address, *.local, localhost: venue relays speak plain http) and https://
+ * anywhere else.
+ * @param {string} address
+ * @returns {string}
+ */
+export function normalizeServerAddress(address) {
+  const raw = String(address ?? '').trim().replace(/\/+$/, '')
+  if (!raw || /^https?:\/\//i.test(raw)) return raw
+  return `${isLanBackendUrl(`http://${raw}`) ? 'http' : 'https'}://${raw}`
+}
+
+// The role page this is, when it may follow a link's ?server= (not the
+// scoretable, not an unmarked page)
+function linkServerPage() {
+  const entry = getAppEntry()
+  return LINK_SERVER_PAGES.includes(entry) ? entry : null
+}
+
+function readLinkServers() {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(LINK_SERVER_KEY) || '{}')
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeLinkServer(url) {
+  const page = linkServerPage()
+  if (!page) return
+  try {
+    const servers = readLinkServers()
+    if (url) servers[page] = url
+    else delete servers[page]
+    sessionStorage.setItem(LINK_SERVER_KEY, JSON.stringify(servers))
+  } catch { /* sessionStorage unavailable */ }
+}
+
+// A link that named this page's own server on an address isAllowedBackendUrl
+// does not cover (a venue relay on a plain host name, ...): this tab uses the
+// page's default, with no override (linkServerOverride)
+const OWN_SERVER = Symbol('own server')
+
+// This role page's confirmed link server in this tab, if any
+function linkServerOverride() {
+  const page = linkServerPage()
+  if (!page) return null
+  const url = readLinkServers()[page]
+  if (typeof url !== 'string') return null
+  if (isAllowedBackendUrl(url)) return url
+  return isDefaultBackendUrl(url) ? OWN_SERVER : null
 }
 
 /**
  * Set a runtime backend URL override (persists in localStorage)
- * Used when connecting to a local server at a custom IP:port
+ * Used when connecting to a local server at a custom IP:port. A server chosen
+ * here (connection screen, Android "Change server") also replaces the one a
+ * link gave this role page.
  * @param {string|null} url - Backend URL to override with, or null to clear
  */
 export function setBackendOverride(url) {
@@ -51,13 +158,20 @@ export function setBackendOverride(url) {
       localStorage.removeItem(OVERRIDE_KEY)
     }
   } catch { /* localStorage unavailable */ }
+  writeLinkServer(null)
 }
 
 /**
- * Get the current backend URL override, if set (and still trusted)
+ * Get the current backend URL override, if set (and still trusted): on a role
+ * page the server its link named (confirmed in this tab; none when that was
+ * the page's own server on an address the allow-list does not cover), else
+ * the stored one
  * @returns {string|null}
  */
 export function getBackendOverride() {
+  const link = linkServerOverride()
+  if (link === OWN_SERVER) return null
+  if (link) return link
   try {
     const v = localStorage.getItem(OVERRIDE_KEY) || null
     if (v && !isAllowedBackendUrl(v)) {
@@ -69,10 +183,11 @@ export function getBackendOverride() {
 }
 
 /**
- * Clear the backend URL override
+ * Clear the backend URL override (and the server a link gave this role page)
  */
 export function clearBackendOverride() {
   try { localStorage.removeItem(OVERRIDE_KEY) } catch {}
+  writeLinkServer(null)
 }
 
 /**
@@ -170,11 +285,16 @@ export function getLocalServerStatusUrl() {
 // Get backend URL from environment or use current host
 export function getBackendUrl() {
   // Check runtime override first (set by local server connection UI)
-  const override = getBackendOverride()
-  if (override) {
-    return override
-  }
+  return getBackendOverride() || defaultBackendUrl()
+}
 
+/**
+ * The backend this page uses when nothing was chosen on it (no override): the
+ * build's VITE_BACKEND_URL, the cloud on a static deployment, the page's own
+ * server when a local server serves it, the dev server.
+ * @returns {string|null}
+ */
+export function defaultBackendUrl() {
   // If VITE_BACKEND_URL is set, use it (production with separate backend)
   if (import.meta.env.VITE_BACKEND_URL) {
     return import.meta.env.VITE_BACKEND_URL
@@ -185,9 +305,9 @@ export function getBackendUrl() {
   if (typeof window === 'undefined' || !window.location) return null
 
   // On static deployments (*.openvolley.app), always use cloud relay
-  // These deployments have no backend server
+  // These deployments have no backend server (a dev build: none at all)
   if (isStaticDeployment()) {
-    return CLOUD_RELAY_URL
+    return cloudFallbackUrl()
   }
 
   // If served from a local server (non-openvolley.app, not localhost dev),
@@ -198,7 +318,7 @@ export function getBackendUrl() {
 
   // On tablets/mobile in production, use cloud relay automatically
   if (!import.meta.env.DEV && isTabletOrMobile()) {
-    return CLOUD_RELAY_URL
+    return cloudFallbackUrl()
   }
 
   // In development, use local server
@@ -233,7 +353,8 @@ export function getWebSocketUrl() {
 
   // On static deployments, use cloud relay WebSocket
   if (isStaticDeployment()) {
-    return httpToWsUrl(CLOUD_RELAY_URL)
+    const cloud = cloudFallbackUrl()
+    return cloud ? httpToWsUrl(cloud) : null
   }
 
   // If served from local server, use same origin for WebSocket
@@ -340,18 +461,101 @@ export async function learnRelayWsPort(baseUrl, { fetchImpl = typeof fetch === '
   }
 }
 
+const sameServer = (a, b) => {
+  if (!a || !b) return false
+  try {
+    const [x, y] = [new URL(a), new URL(b)]
+    return x.origin === y.origin && x.pathname.replace(/\/+$/, '') === y.pathname.replace(/\/+$/, '')
+  } catch {
+    return false
+  }
+}
+
 /**
- * A role link's ?server= (referee, bench, livescore): the backend override for
- * this and later visits (a bare host is https), and for a venue relay its
- * WebSocket port, learnt in the background (the 5173 -> 8080 default of
- * getRelayWebSocketUrl covers the desktop app until then).
+ * Is this the backend this page uses when nothing was chosen on it
+ * (defaultBackendUrl)? The page reaches it with no override, so it is
+ * accepted even where isAllowedBackendUrl does not cover its address: a page
+ * a venue relay serves on a plain host name, an IPv6 or 100.64/10 address.
+ * @param {string|null|undefined} url
+ */
+export function isDefaultBackendUrl(url) {
+  return sameServer(url, defaultBackendUrl())
+}
+
+/**
+ * The server a role link's ?server= names, as a URL (normalizeServerAddress),
+ * or null when it names none this app would use (isAllowedBackendUrl).
  * @param {string|null} serverParam
  */
+export function serverParamUrl(serverParam) {
+  if (!serverParam || typeof serverParam !== 'string') return null
+  const url = normalizeServerAddress(serverParam)
+  return isAllowedBackendUrl(url) ? url : null
+}
+
+/**
+ * What a role page does with its link's ?server=:
+ *   'none'   no server, or one isAllowedBackendUrl refuses: the page's own
+ *            choice stands, nothing is fetched from it
+ *   'known'  the server this page uses already, or its own default (the
+ *            scorer's QR links name the backend it syncs to; on a page a
+ *            venue relay serves, that relay, whatever its address): used at
+ *            once
+ *   'ask'    another server: used only once the connection screen asked,
+ *            naming its host, and the user said yes (confirmLinkServer)
+ * @param {string|null} serverParam
+ * @returns {{ state: 'none'|'known'|'ask', url: string|null }}
+ */
+export function linkServerState(serverParam) {
+  if (!serverParam || typeof serverParam !== 'string') return { state: 'none', url: null }
+  const named = normalizeServerAddress(serverParam)
+  if (sameServer(named, getBackendUrl()) || isDefaultBackendUrl(named)) return { state: 'known', url: named }
+  const url = serverParamUrl(serverParam)
+  if (!url) return { state: 'none', url: null }
+  return { state: 'ask', url }
+}
+
+/** Does this page's link name a server the connection screen must ask about first? */
+export function serverParamNeedsConfirm(serverParam) {
+  return linkServerState(serverParam).state === 'ask'
+}
+
+/**
+ * Use the server a role link named, for this role page in this tab only: not
+ * for later visits, never on the scoretable (a link opened on the scoring
+ * device must not move the relay its PINs and rosters go to, nor its
+ * sign-in). For a venue relay its WebSocket port is learnt in the background
+ * (the 5173 -> 8080 default of getRelayWebSocketUrl covers the desktop app
+ * until then). The connection screen calls it once the user confirmed the
+ * host. The page's own server on an address isAllowedBackendUrl does not
+ * cover is kept as "the page's default" (no override, OWN_SERVER).
+ * @param {string} url
+ * @returns {boolean} whether this page now uses it
+ */
+export function confirmLinkServer(url) {
+  if (!isAllowedBackendUrl(url)) {
+    if (!isDefaultBackendUrl(url)) return false
+    writeLinkServer(url)
+    return sameServer(getBackendUrl(), url)
+  }
+  writeLinkServer(url)
+  if (getBackendOverride() !== url) return false
+  void learnRelayWsPort(url)
+  return true
+}
+
+/**
+ * A role link's ?server= (referee, bench, livescore), on page load. The
+ * server this page uses already, or its own default, is used at once (kept
+ * for this page in this tab, so a reload asks nothing); another one only
+ * after the connection screen asked (linkServerState 'ask').
+ * @param {string|null} serverParam
+ * @returns {'none'|'known'|'ask'}
+ */
 export function applyServerParam(serverParam) {
-  if (!serverParam) return
-  const url = serverParam.startsWith('http') ? serverParam : `https://${serverParam}`
-  setBackendOverride(url)
-  if (getBackendOverride() === url) void learnRelayWsPort(url)
+  const { state, url } = linkServerState(serverParam)
+  if (state === 'known') confirmLinkServer(url)
+  return state
 }
 
 /**
@@ -394,7 +598,10 @@ export function getRelayWebSocketUrl({ wsPort = null } = {}) {
   if (override) return overrideWebSocketUrl(override)
   if (import.meta.env.VITE_BACKEND_URL) return httpToWsUrl(import.meta.env.VITE_BACKEND_URL)
   if (typeof window === 'undefined' || !window.location) return null
-  if (isStaticDeployment()) return httpToWsUrl(CLOUD_RELAY_URL)
+  if (isStaticDeployment()) {
+    const cloud = cloudFallbackUrl()
+    return cloud ? httpToWsUrl(cloud) : null
+  }
   const { protocol: pageProtocol, hostname, port, origin } = window.location
   if (pageProtocol !== 'http:' && pageProtocol !== 'https:') return null
   const protocol = pageProtocol === 'https:' ? 'wss' : 'ws'
@@ -433,13 +640,7 @@ export function isLanBackendUrl(url) {
   if (!url) return false
   let host
   try { host = new URL(url).hostname } catch { return false }
-  host = host.replace(/^\[|\]$/g, '')
-  if (host === 'localhost' || host === '::1' || host.endsWith('.local')) return true
-  if (/^127\.(\d{1,3}\.){2}\d{1,3}$/.test(host)) return true
-  if (/^10\.(\d{1,3}\.){2}\d{1,3}$/.test(host)) return true
-  if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)) return true
-  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(host)) return true
-  return false
+  return isLanHost(host)
 }
 
 const isLoopbackHost = (hostname) => {
@@ -532,11 +733,12 @@ export function getCloudApiBaseUrl() {
   const override = getBackendOverride()
   if (override && !isLanBackendUrl(override)) return stripTrailingSlash(override)
   if (import.meta.env.VITE_BACKEND_URL) return stripTrailingSlash(import.meta.env.VITE_BACKEND_URL)
-  if (override) return CLOUD_RELAY_URL
-  if (isStaticDeployment()) return CLOUD_RELAY_URL
+  // A dev build without its test backend has no cloud (cloudFallbackUrl)
+  if (override) return cloudFallbackUrl()
+  if (isStaticDeployment()) return cloudFallbackUrl()
   // The desktop window off port 5173: the cloud would reject it (CORS), so
   // there is no cloud here (isCloudBlockedOnThisPort) and the relay goes on
-  if (isServedFromLocalServer()) return isCloudBlockedOnThisPort() ? null : CLOUD_RELAY_URL
+  if (isServedFromLocalServer()) return isCloudBlockedOnThisPort() ? null : cloudFallbackUrl()
   const base = getBackendUrl()
   return base ? stripTrailingSlash(base) : null
 }

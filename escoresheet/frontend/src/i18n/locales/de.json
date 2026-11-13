@@ -1933,6 +1933,13 @@
     "gamePin": "Spiel-PIN",
     "invalidUrl": "Ungültige Server-URL",
     "noBackendConfigured": "Kein Backend-Server konfiguriert",
+    "noTestBackend": "Kein Test-Backend konfiguriert",
+    "notAllowed": "Diese Adresse kann nicht verwendet werden. Gib die IP-Adresse des Servers im Hallennetz ein (zum Beispiel 192.168.1.42:5173), einen Namen, der auf .local endet, oder eine https://-Adresse auf openvolley.app.",
+    "notKept": "Dieser Browser konnte die Serveradresse nicht speichern. Erlaube dieser Website, Daten zu speichern, und versuche es erneut.",
+    "linkServerTitle": "Dieser Link verbindet mit einem anderen Server",
+    "linkServerHint": "Fahre nur fort, wenn du diesen Link vom Schreiber erhalten hast. Diese Seite verwendet dann diesen Server, bis der Tab geschlossen wird.",
+    "linkServerConnect": "Mit diesem Server verbinden",
+    "linkServerDecline": "Server selbst wählen",
     "scanWithPhone": "Mit der Kamera eines Smartphones oder Tablets scannen, um direkt zu verbinden",
     "role": {
       "referee": "Schiedsrichter-Dashboard",

@@ -165,7 +165,8 @@ choose the `openvolley` repository.
 | Root directory | `escoresheet/frontend` |
 | Build command | `npm ci && node scripts/build-subdomains.js manager-beach` |
 | Build output directory | `dist-manager-beach` |
-| Environment variables (Production and Preview) | `VITE_BACKEND_URL` = `https://backend.openvolley.app` |
+| Environment variables (Production) | `VITE_BACKEND_URL` = `https://backend.openvolley.app` |
+| Environment variables (Preview) | `VITE_DEV_BACKEND_URL` = the test backend (see `docs/manager-site-deploy.md`, "Dev builds and the test backend"); a preview build ignores `VITE_BACKEND_URL` |
 | Custom domain | `manager-beach.openvolley.app` |
 
 When you set the custom domain, Cloudflare adds the proxied record
@@ -174,8 +175,10 @@ When you set the custom domain, Cloudflare adds the proxied record
 
 - **CORS and CSP:** nothing to change. The backend already trusts
   `https://manager-beach.openvolley.app`.
-- **Preview builds:** for `https://dev.openbeach-manager.pages.dev`, add that
-  origin to `PUBLIC_ORIGINS` on the VM, as for the other previews.
+- **Preview builds:** `https://dev.openbeach-manager.pages.dev` uses the test
+  backend: add that origin to the test backend's `PUBLIC_ORIGINS`, never to
+  production's (`docs/manager-site-deploy.md`, "Dev builds and the test
+  backend").
 
 Only once this site is up: release the OpenBeach app build whose "Create
 account" opens `manager-beach.openvolley.app/#signup`.

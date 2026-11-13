@@ -2105,6 +2105,13 @@
     "retry": "Retry",
     "cameraError": "Could not access camera",
     "noBackendConfigured": "No backend server configured",
+    "noTestBackend": "No test backend configured",
+    "notAllowed": "This address can't be used. Enter the server's IP address on the hall network (for example 192.168.1.42:5173), a name ending in .local, or an https:// address on openvolley.app.",
+    "notKept": "This browser could not keep the server address. Allow this site to store data, then try again.",
+    "linkServerTitle": "This link connects to another server",
+    "linkServerHint": "Continue only if the scorer gave you this link. This page then uses that server until the tab is closed.",
+    "linkServerConnect": "Connect to this server",
+    "linkServerDecline": "Choose the server myself",
     "scanWithPhone": "Scan with phone or tablet camera to connect directly",
     "showQR": "Show QR",
     "role": {

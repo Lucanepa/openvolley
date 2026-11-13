@@ -2088,6 +2088,13 @@
     "gamePin": "Spiil-PIN",
     "invalidUrl": "Ungültigi Server-URL",
     "noBackendConfigured": "Kei Backend-Server konfiguriert",
+    "noTestBackend": "Kei Test-Backend konfiguriert",
+    "notAllowed": "Die Adrässe chan nöd bruucht werde. Gib d IP-Adresse vom Server im Hallenetz ii (zum Biispiel 192.168.1.42:5173), en Name, wo uf .local ändet, oder e https://-Adrässe uf openvolley.app.",
+    "notKept": "De Browser hät d Serveradrässe nöd chöne speichere. Erlaub dere Websiite, Date z speichere, und probier nomal.",
+    "linkServerTitle": "De Link verbindet mit emne andere Server",
+    "linkServerHint": "Mach nur wiiter, wänn du de Link vom Schriiber übercho häsch. Die Siite bruucht dänn dä Server, bis de Tab zue isch.",
+    "linkServerConnect": "Mit dem Server verbinde",
+    "linkServerDecline": "Server sälber wähle",
     "scanWithPhone": "Mit de Kamera vom Handy oder Tablet scanne, zum diräkt verbinde",
     "role": {
       "referee": "Schiri-Dashboard",

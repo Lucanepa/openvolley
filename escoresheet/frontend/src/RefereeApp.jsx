@@ -11,7 +11,7 @@ import ContextualHelpPanel from './components/help/ContextualHelpPanel'
 import ServerConnectionScreen from './components/ServerConnectionScreen'
 import { isServedFromLocalServer } from './utils/backendConfig'
 import { loadMatchList } from './utils/matchListSource'
-import { applyServerParam } from './utils/backendConfig'
+import { applyServerParam, serverParamNeedsConfirm } from './utils/backendConfig'
 import { Whistle } from './ui/AppSpinner.jsx'
 import { db } from './db/db'
 import { Check, ChevronRight, CalendarX2, Loader2, RefreshCw } from 'lucide-react'
@@ -101,6 +101,11 @@ export default function RefereeApp() {
   // where the platform allows it, from the game and PIN page on
   useUprightLock()
   const [serverReady, setServerReady] = useState(isServedFromLocalServer())
+  // A link naming another server than this page's: until the connection
+  // screen's question is answered, the stored credentials wait (then they are
+  // checked against the server chosen there, like the bench's session)
+  const [linkServerPending, setLinkServerPending] = useState(() =>
+    serverParamNeedsConfirm(new URLSearchParams(window.location.search).get('server')))
   const [autoConnectMatch, setAutoConnectMatch] = useState(null) // match seed_key from URL params
   const [linkedMatch, setLinkedMatch] = useState(null) // { id: seed key, gameNumber } preselected by a link
   const [pinInput, setPinInput] = useState('')
@@ -142,14 +147,15 @@ export default function RefereeApp() {
     const matchParam = params.get('match')
     const serverParam = params.get('server')
 
-    if (serverParam) {
-      applyServerParam(serverParam)
-    }
+    // A link naming another server than this page's: the connection screen
+    // asks first, naming it (also on a page a venue relay serves)
+    const askServer = serverParam ? applyServerParam(serverParam) === 'ask' : false
+    if (askServer) setServerReady(false)
 
     if (matchParam) {
       setAutoConnectMatch(matchParam)
       // Skip server connection screen if we have URL params
-      setServerReady(true)
+      if (!askServer) setServerReady(true)
     }
   }, [])
 
@@ -184,6 +190,7 @@ export default function RefereeApp() {
 
   // Handle server connection established
   const handleServerConnected = useCallback(() => {
+    setLinkServerPending(false)
     setServerReady(true)
   }, [])
 
@@ -399,7 +406,11 @@ export default function RefereeApp() {
   // publish the match again. A referee reloading during an outage kept its
   // credentials but stayed on the PIN step once the server was back, and one
   // checking in the gap before the scorer was back lost them (2026-10-27).
+  // While a link's server question is open nothing is restored: a restore
+  // against the page's default dropped the question, the link's server and
+  // its match without a word.
   useEffect(() => {
+    if (linkServerPending) return
     const storedMasterMode = localStorage.getItem('refereeMasterMode')
     if (storedMasterMode === 'true') {
       setIsMasterMode(true)
@@ -459,7 +470,7 @@ export default function RefereeApp() {
     stopRestoreRef.current = stop
     check()
     return stop
-  }, [])
+  }, [linkServerPending])
 
   const handleSelectGame = (game) => {
     setSelectedGameNumber(String(game.gameNumber))
