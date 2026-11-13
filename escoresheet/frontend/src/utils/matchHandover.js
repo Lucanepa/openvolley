@@ -41,7 +41,7 @@
  */
 import { jobMatchKey } from './syncIds'
 import { matchGameNumber, setScore } from './deviceMatches'
-import { isClosingSyncJob } from './matchReopen'
+import { isClosingSyncJob, serverRowClosed } from './matchReopen'
 import { randomUuid } from './deviceId'
 
 export const SCORER_MOVED = 'OV_SCORER_MOVED'
@@ -291,7 +291,8 @@ export async function markScorerMoved(database, local, { scorer = null, closed =
  * not sent before the other device took over): after the claim the local
  * copy is sent to the server in place of the other device's (keepLocal,
  * backupManager.continueWithLocalCopy). It was loaded over them with no
- * choice (audit fe-connect-devices-3).
+ * choice (audit fe-connect-devices-3). Not for a match the server has
+ * closed meanwhile: that one loads as closed (its Match End), as without it.
  * @param {{ fetchCloud: (pin: string, gameN: number|string, options: { claim: boolean, externalId: string }) => Promise<object>, importCloud: (cloudData: object) => Promise<number>, keepLocal?: ((matchId: number) => Promise<object|null>)|null, online?: boolean }} deps
  * @returns {Promise<{ ok: true, matchId: number, cloud: object } | { ok: false, reason: 'offline'|'noPin'|'notFound'|'otherMatch'|'failed', message?: string }>}
  */
@@ -313,7 +314,7 @@ export async function takeBackScoring(database, matchId, { fetchCloud, importClo
   if (!cloud?.match) return { ok: false, reason: 'notFound' }
   // The game PIN names the game: never load another match over this one
   if (cloud.match.external_id && cloud.match.external_id !== match.seed_key) return { ok: false, reason: 'otherMatch' }
-  if (keepLocal) {
+  if (keepLocal && !serverRowClosed(cloud.match)) {
     const local = await keepLocal(matchId)
     if (!local) return { ok: false, reason: 'failed' }
     console.log(`[Handover] ${match.seed_key}: scoring taken back on this device with its own score`)

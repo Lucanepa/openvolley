@@ -19,6 +19,7 @@ import {
   localLossOnReplace, continueWithLocalCopy, RESTORE_LOSES_LOCAL, BACKUP_FORMAT_ERROR, MAX_BACKUP_FILE_BYTES
 } from '../backupManager'
 import { takeBackScoring, markScorerMoved } from '../matchHandover'
+import { unsentOfMatch } from '../deviceSelfCheck'
 
 const seed = 'match_1792931096817_restoresafe'
 const offline = { checkServer: async () => null, cloudLiveState: async () => null }
@@ -161,5 +162,38 @@ describe('"Take back scoring here" keeping this device\'s score (fe-connect-devi
     expect(await db.events.where('matchId').equals(id).count()).toBe(15)
     const restore = (await db.sync_queue.toArray()).find(j => j.action === 'restore' && j.status === 'queued')
     expect(restore.payload.events).toHaveLength(15)
+  })
+  it('the set-aside points go in the restore and are no longer counted as unsent', async () => {
+    const id = await localMatch({ events: 15 })
+    await db.sync_queue.add({ resource: 'event', action: 'insert', status: 'queued', payload: { match_id: seed, external_id: `${seed}_e_15` } })
+    await markScorerMoved(db, await db.matches.get(id), { scorer: { platform: 'web' } })
+    await continueWithLocalCopy(id, { checkServer: async () => null })
+    const jobs = await db.sync_queue.toArray()
+    expect(jobs.filter(j => j.resource === 'event')).toHaveLength(0)
+    expect(unsentOfMatch(jobs, seed).events).toBe(0)
+    expect(jobs.some(j => j.superseded_by)).toBe(false)
+  })
+
+  it('a match closed on the server meanwhile: the block stays and nothing set aside goes again', async () => {
+    const id = await localMatch({ events: 15 })
+    await db.sync_queue.add({ resource: 'match', action: 'update', status: 'queued', payload: { id: seed, external_id: seed } })
+    await markScorerMoved(db, await db.matches.get(id), { scorer: { platform: 'web' } })
+    const before = await db.sync_queue.toArray()
+    const err = await continueWithLocalCopy(id, { checkServer: async () => true }).catch(e => e)
+    expect(err?.code).toBe('OV_MATCH_CLOSED')
+    expect((await db.matches.get(id)).cloudBlock).toBeTruthy()
+    expect(await db.sync_queue.toArray()).toEqual(before)
+  })
+
+  it('a closed server copy loads as closed instead of keeping this device\'s score', async () => {
+    const id = await localMatch({ events: 15 })
+    await markScorerMoved(db, await db.matches.get(id), { scorer: { platform: 'web' } })
+    const cloud = { match: { external_id: seed, status: 'final' }, sets: [], events: ev(12) }
+    const keepLocal = vi.fn()
+    const importCloud = vi.fn(async () => 99)
+    const r = await takeBackScoring(db, id, { fetchCloud: async () => cloud, importCloud, keepLocal, online: true })
+    expect(keepLocal).not.toHaveBeenCalled()
+    expect(importCloud).toHaveBeenCalledWith(cloud)
+    expect(r).toMatchObject({ ok: true, matchId: 99 })
   })
 })

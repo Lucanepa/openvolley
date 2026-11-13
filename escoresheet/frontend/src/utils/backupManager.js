@@ -1026,15 +1026,20 @@ export async function restoreMatchFromJson(jsonData, { checkServer = serverClose
  * is lifted.
  * @returns {Promise<object>} the copy, in exportMatchData's shape
  */
-export async function continueWithLocalCopy(matchId) {
+export async function continueWithLocalCopy(matchId, { checkServer = serverClosedState } = {}) {
   const data = await exportMatchData(matchId)
   const key = localMatchKey(data.match)
   data.match = { ...data.match, cloudBlock: null }
-  await db.matches.update(matchId, { cloudBlock: null })
+  // The restore first: it refuses a match closed on the server, and then the
+  // block stays and nothing set aside goes again. It lifts the block itself.
+  await restoreMatchInPlace(matchId, data, { replaceNewer: true, checkServer })
   const setAside = (await db.sync_queue.where('status').equals('superseded').toArray())
-    .filter(j => j.superseded_by === SCORER_MOVED_BY && j.resource === 'match' && (j.action === 'insert' || j.action === 'update') && jobMatchKey(j) === key)
-  for (const j of setAside) await db.sync_queue.update(j.id, { status: 'queued', retry_count: 0, superseded_by: null })
-  await restoreMatchInPlace(matchId, data, { replaceNewer: true })
+    .filter(j => j.superseded_by === SCORER_MOVED_BY && jobMatchKey(j) === key)
+  const isMatchWrite = (j) => j.resource === 'match' && (j.action === 'insert' || j.action === 'update')
+  for (const j of setAside.filter(isMatchWrite)) await db.sync_queue.update(j.id, { status: 'queued', retry_count: 0, superseded_by: null })
+  // The set and event writes set aside are in the restore's payload now: no
+  // longer unsent (deviceSelfCheck unsentOfMatch)
+  await db.sync_queue.bulkDelete(setAside.filter(j => j.resource === 'set' || j.resource === 'event').map(j => j.id))
   return data
 }
 
