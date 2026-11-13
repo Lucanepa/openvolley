@@ -13,8 +13,9 @@
  *
  * With a recovery key in the build (recovery.js), every data key is also
  * wrapped for it (the recovery slot): the strong key, kept offline by the
- * league. A key that does not import is logged once and left out; the files
- * still get their PIN slots.
+ * league. A key that does not import, or that this device's WebCrypto cannot
+ * wrap for (ECDH, HKDF), is logged once and left out; the files still get
+ * their PIN slots.
  */
 
 import { derivePinKey } from './kdf.js'
@@ -50,6 +51,7 @@ export function createBackupSealer({ derive = derivePinKey, params, recoveryKey 
   const pinKeys = new Map() // `${scope}\n${pin}\n${value}` -> Promise<{ kek, kdf }>
   const keyrings = new Map() // scope -> { signature, promise: Promise<{ dataKey, slots }> }
   let recovery = null // Promise<{ id, publicKey } | null>, imported once
+  let recoveryUnusable = false // its slot failed once: left out for this session
 
   function recoveryOf() {
     if (!recovery) {
@@ -61,6 +63,21 @@ export function createBackupSealer({ derive = derivePinKey, params, recoveryKey 
         : Promise.resolve(null)
     }
     return recovery
+  }
+
+  // The recovery slot of a new data key, or null: never a reason to write no file
+  async function recoverySlotOf(dataKey) {
+    const strong = recoveryUnusable ? null : await recoveryOf()
+    if (!strong) return null
+    try {
+      return await recoverySlot(dataKey, strong)
+    } catch (e) {
+      if (!recoveryUnusable) {
+        recoveryUnusable = true
+        console.error('[BackupCrypto] this device cannot use the recovery key of this build, files get PIN slots only:', e?.message || e)
+      }
+      return null
+    }
   }
 
   // Forgotten when it fails, so the next file tries again
@@ -83,8 +100,8 @@ export function createBackupSealer({ derive = derivePinKey, params, recoveryKey 
       const dataKey = await newDataKey()
       const slots = []
       for (const p of pins) slots.push(await pinSlot(p.pin, dataKey, await keyOf(scope, p)))
-      const strong = await recoveryOf()
-      if (strong) slots.push(await recoverySlot(dataKey, strong))
+      const strong = await recoverySlotOf(dataKey)
+      if (strong) slots.push(strong)
       return { dataKey, slots }
     })()
     const entry = { signature, promise }

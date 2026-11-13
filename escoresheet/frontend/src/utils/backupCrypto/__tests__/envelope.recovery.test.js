@@ -77,6 +77,35 @@ describe('the recovery slot (the strong key beside the PINs)', () => {
     error.mockRestore()
   })
 
+  // A WebView that imports the key but cannot do ECDH (generateKey,
+  // deriveBits) or HKDF: every seal threw, so no backup file, cloud copy or
+  // download for any match with a PIN
+  it('a recovery key this device cannot wrap for: logged once, every file keeps its PIN slots', async () => {
+    const pair = await generateRecoveryKeyPair()
+    const subtle = globalThis.crypto.subtle
+    const generateKey = subtle.generateKey.bind(subtle)
+    const noEcdh = vi.spyOn(subtle, 'generateKey').mockImplementation((alg, ...rest) => (
+      alg?.name === 'ECDH' ? Promise.reject(new Error('ECDH is not supported')) : generateKey(alg, ...rest)
+    ))
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const sealer = createBackupSealer({ params: FAST, recoveryKey: pair.publicKey })
+      const first = backup()
+      const second = backup({ id: 2, gameN: 2078, seed_key: 'match_3_z', gamePin: '111222', refereePin: '333444' })
+      const a = JSON.parse((await sealer.seal(1, first, plainOf(first), '2026-11-13T18:00:00.000Z')).text)
+      const b = JSON.parse((await sealer.seal(2, second, plainOf(second), '2026-11-13T18:01:00.000Z')).text)
+      expect(a.slots.map(s => s.kind)).toEqual(['pin', 'pin'])
+      expect(b.slots.map(s => s.kind)).toEqual(['pin', 'pin'])
+      await expect(openEnvelope(a, '123456')).resolves.toMatchObject({ unlockedWith: { pin: 'game' } })
+      await expect(openEnvelope(b, '333444')).resolves.toMatchObject({ unlockedWith: { pin: 'referee' } })
+      expect(error).toHaveBeenCalledTimes(1)
+      expect(error).toHaveBeenCalledWith(expect.stringContaining('recovery key'), 'ECDH is not supported')
+    } finally {
+      noEcdh.mockRestore()
+      error.mockRestore()
+    }
+  })
+
   it('a recovery slot edited to another key id or one-off key no longer opens', async () => {
     const pair = await generateRecoveryKeyPair()
     const key = await importRecoveryPrivateKey(pair.privateKey)
