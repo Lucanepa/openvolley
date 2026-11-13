@@ -235,17 +235,53 @@ describe('sign-up requests and their approval', { skip: SKIP }, () => {
     assert.equal((await me(anna)).requests.length, 5)
   })
 
-  it('the team\'s manager approves the team part: the account manages the team and is no longer pending', async () => {
+  it('the team\'s manager says yes to the team part: a proposal, nothing granted (owner decision 3); the club\'s managers are told', async () => {
     const h1 = partOf(parts, 'team_manager')
     const r = await call(users.coach, 'POST', `/api/team/${mustH1.id}/requests/${anna.id}`, { approve: [{ id: h1.id }] })
     assert.equal(r.status, 200, r.text)
-    assert.equal(r.json.data.approved, 1)
-    assert.deepEqual(r.json.data.requests, [])
+    assert.deepEqual([r.json.data.approved, r.json.data.proposed], [0, 1])
+    // still open, marked proposed, for the team and for the club
+    assert.equal(r.json.data.requests.length, 1)
+    assert.ok(r.json.data.requests[0].proposed_at)
+    assert.equal(r.json.data.requests[0].proposed_by_name, 'coach Beispiel')
+    const club = await call(users.clubmgr, 'GET', `/api/club/${must.id}/requests`)
+    const part = club.json.data.requests.find((x) => x.user.id === anna.id).parts.find((x) => x.id === h1.id)
+    assert.equal(part.proposed_by_name, 'coach Beispiel')
+    // the account itself sees it proposed, not by whom
+    const m = await me(anna)
+    const own = m.requests.find((x) => x.id === h1.id)
+    assert.ok(own.proposed_at)
+    assert.equal('proposed_by_name' in own, false)
+    // nothing granted: no team, no role, no club, still pending
+    assert.deepEqual([m.managedTeams, m.roles, m.clubs, m.isPending], [[], [], [], true])
+    assert.equal(await count('SELECT count(*)::int AS n FROM public.team_managers WHERE user_id = $1', [anna.id]), 0)
+    assert.equal((await call(anna, 'GET', `/api/team/${mustH1.id}/club-players`)).status, 403)
+    // the club's manager gets a notice (in the background)
+    let notice
+    for (let i = 0; i < 40 && !notice; i++) {
+      notice = (await call(users.clubmgr, 'GET', '/api/notifications?app=indoor')).json.data.notifications.find((n) => n.kind === 'team_manager_proposal')
+      if (!notice) await sleep(50)
+    }
+    assert.ok(notice, 'the club manager is told')
+    assert.deepEqual([notice.target, notice.user.id, notice.parts], [`myclub/${must.id}`, anna.id, [{ kind: 'team_manager', club: 'VBC Musterdorf', team: 'VBC Musterdorf H1' }]])
+    // never the proposer
+    assert.equal((await call(users.coach, 'GET', '/api/notifications?app=indoor')).json.data.notifications.some((n) => n.kind === 'team_manager_proposal'), false)
+    // a second yes changes nothing (the first proposal stays)
+    const again = await call(users.coach, 'POST', `/api/team/${mustH1.id}/requests/${anna.id}`, { approve: [{ id: h1.id }] })
+    assert.equal(again.status, 200, again.text)
+    assert.equal(again.json.data.requests[0].proposed_at, r.json.data.requests[0].proposed_at)
+  })
+
+  it('the club\'s manager confirms the proposal: the account manages the team (no club) and is no longer pending', async () => {
+    const h1 = partOf(parts, 'team_manager')
+    const r = await call(users.clubmgr, 'POST', `/api/club/${must.id}/requests/${anna.id}`, { approve: [{ id: h1.id }] })
+    assert.equal(r.status, 200, r.text)
+    assert.deepEqual([r.json.data.approved, r.json.data.proposed], [1, 0])
     const m = await me(anna)
     assert.deepEqual(m.managedTeams.map((t) => [t.name, t.via]), [['VBC Musterdorf H1', 'team']])
-    // db/030: the team manager role and the team's club
+    // db/030: the team manager role; db/036: no club membership
     assert.deepEqual(m.roles, ['team_manager'])
-    assert.deepEqual(m.clubs.map((c) => c.name), ['VBC Musterdorf'])
+    assert.deepEqual(m.clubs, [])
     assert.equal(m.requests.length, 4)
     // approved once: not pending for the admin any more, but its open parts keep it in the list
     const row = (await pendingList()).find((a) => a.id === anna.id)
@@ -259,6 +295,17 @@ describe('sign-up requests and their approval', { skip: SKIP }, () => {
     // done meanwhile: a second decision of the same part
     const again = await call(users.coach, 'POST', `/api/team/${mustH1.id}/requests/${anna.id}`, { approve: [{ id: h1.id }] })
     assert.equal(again.status, 409, again.text)
+  })
+
+  it('on the team\'s page a manager of the club (or an admin) confirms at once', async () => {
+    const hans = await account('hans', { requests: [{ kind: 'team_manager', team_id: mustD2.id }] })
+    const ida = await account('ida', { requests: [{ kind: 'team_manager', team_id: mustD2.id }] })
+    const r1 = await call(users.clubmgr, 'POST', `/api/team/${mustD2.id}/requests/${hans.id}`, { approve: [partOf((await me(hans)).requests, 'team_manager').id] })
+    assert.deepEqual([r1.status, r1.json.data.approved, r1.json.data.proposed], [200, 1, 0], r1.text)
+    const r2 = await call(users.admin, 'POST', `/api/team/${mustD2.id}/requests/${ida.id}`, { approve: [partOf((await me(ida)).requests, 'team_manager').id] })
+    assert.deepEqual([r2.status, r2.json.data.approved, r2.json.data.proposed], [200, 1, 0], r2.text)
+    assert.deepEqual((await me(hans)).managedTeams.map((t) => t.name), ['VBC Musterdorf D2'])
+    assert.deepEqual((await me(ida)).managedTeams.map((t) => t.name), ['VBC Musterdorf D2'])
   })
 
   it('the club\'s manager approves the scorer part and rejects the club manager part', async () => {
@@ -294,10 +341,15 @@ describe('sign-up requests and their approval', { skip: SKIP }, () => {
     assert.equal(a.status, 200, a.text)
     const mineA = a.json.data.entries.filter((e) => e.target_email === anna.email)
     assert.deepEqual(mineA.map((e) => [e.details.kind, e.details.via]).sort(), [
-      ['referee', 'admin'], ['scorer', 'admin'], ['scorer', 'club'], ['team_manager', 'team']
+      ['referee', 'admin'], ['scorer', 'admin'], ['scorer', 'club'], ['team_manager', 'club']
     ])
     const teamEntry = mineA.find((e) => e.details.kind === 'team_manager')
-    assert.deepEqual(teamEntry.details, { kind: 'team_manager', club_id: must.id, team_id: mustH1.id, via: 'team' })
+    assert.deepEqual(teamEntry.details, { kind: 'team_manager', club_id: must.id, team_id: mustH1.id, proposed: true, via: 'club' })
+    // the team manager's yes: a proposal entry of its own
+    const prop = await call(users.admin, 'GET', '/api/admin/audit?action=account.request_propose')
+    assert.equal(prop.status, 200, prop.text)
+    assert.deepEqual(prop.json.data.entries.filter((e) => e.target_email === anna.email).map((e) => e.details),
+      [{ kind: 'team_manager', club_id: must.id, team_id: mustH1.id, via: 'team' }, { kind: 'team_manager', club_id: must.id, team_id: mustH1.id, via: 'team' }])
     const rej = await call(users.admin, 'GET', '/api/admin/audit?action=account.request_reject')
     const mineR = rej.json.data.entries.filter((e) => e.target_email === anna.email)
     assert.deepEqual(mineR.map((e) => e.details), [{ kind: 'club_manager', club_id: must.id, via: 'club' }])
@@ -395,6 +447,18 @@ describe('sign-up requests and their approval', { skip: SKIP }, () => {
     assert.deepEqual((await me(gina)).managedTeams.map((t) => t.name), ['VBC Musterdorf D2'])
     // a team link account approved nobody needs: not pending for the admin, and deleted, not rejected
     assert.equal((await pendingList()).some((a) => a.id === gina.id), false)
+  })
+
+  it('a scorer the club approved, taken off its only club, loses that role; the admin\'s referee stays (be-clubs-teams-7)', async () => {
+    const jana = await account('jana', { requests: [{ kind: 'scorer', club_id: must.id }, { kind: 'referee' }] })
+    const p = (await me(jana)).requests
+    assert.equal((await call(users.clubmgr, 'POST', `/api/club/${must.id}/requests/${jana.id}`, { approve: [partOf(p, 'scorer').id] })).status, 200)
+    assert.equal((await call(users.admin, 'POST', `/api/admin/accounts/${jana.id}/requests`, { approve: [partOf(p, 'referee').id] })).status, 200)
+    assert.deepEqual((await rolesOf(jana)).sort(), ['referee', 'scorer'])
+    const off = await call(users.clubmgr, 'DELETE', `/api/club/${must.id}/members/${jana.id}`)
+    assert.equal(off.status, 200, off.text)
+    assert.deepEqual(off.json.data.roles_removed, ['scorer'])
+    assert.deepEqual(await rolesOf(jana), ['referee'])
   })
 
   it('the saved team editor\'s VolleyManager names: competition managers only', async () => {

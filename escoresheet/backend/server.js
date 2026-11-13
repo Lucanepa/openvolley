@@ -212,7 +212,7 @@ const approvalPinFailLimiter = createAttemptLimiter(APPROVAL_PIN_FAILURES)
 function manageFamilyOf(pathname) {
   if (pathname === '/api/me') return 'me'
   if (pathname === '/api/account/join') return 'join'
-  if (pathname === '/api/account/redeem-invite') return 'account'
+  if (pathname === '/api/account/redeem-invite' || pathname === '/api/account/invite-preview') return 'account'
   if (pathname === '/api/match/official-check') return 'officialCheck'
   if (pathname.startsWith('/api/admin/')) return 'admin'
   if (pathname === '/api/saved-teams' || pathname.startsWith('/api/saved-teams/')) return 'savedTeams'

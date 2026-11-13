@@ -73,7 +73,7 @@ import nodemailer from 'nodemailer'
 import { legalUrl } from './legalLinks.js'
 
 export const MAIL_LANGS = Object.freeze(['en', 'de', 'fr', 'it'])
-export const MAIL_KINDS = Object.freeze(['reset', 'confirm', 'password_changed', 'passkey_added', 'approval', 'approval_pin_locked', 'scoresheet', 'scoresheet_test', 'signup', 'club_manager_invite'])
+export const MAIL_KINDS = Object.freeze(['reset', 'confirm', 'password_changed', 'passkey_added', 'approval', 'approval_pin_locked', 'scoresheet', 'scoresheet_test', 'signup', 'club_manager_invite', 'team_manager_proposal'])
 export const DEFAULT_MANAGER_URL = 'https://manager.openvolley.app'
 export const DEFAULT_FROM_NAME = 'OpenVolley'
 export const DEFAULT_MANAGER_URL_BEACH = 'https://manager-beach.openvolley.app'
@@ -114,7 +114,7 @@ export function mailBrandOf(kind, app) {
 // "notify" carries the approval notices of lib/approvals.js (an approval made
 // with an official's PIN, a locked PIN) and the sign-up notices to admins and
 // approvers (lib/signupNotices.js): they cannot starve the account mails.
-export const MAIL_BUDGET_OF = Object.freeze({ reset: 'account', password_changed: 'account', passkey_added: 'account', confirm: 'confirm', approval: 'notify', approval_pin_locked: 'notify', scoresheet: 'scoresheet', scoresheet_test: 'scoresheet', signup: 'notify', club_manager_invite: 'notify' })
+export const MAIL_BUDGET_OF = Object.freeze({ reset: 'account', password_changed: 'account', passkey_added: 'account', confirm: 'confirm', approval: 'notify', approval_pin_locked: 'notify', scoresheet: 'scoresheet', scoresheet_test: 'scoresheet', signup: 'notify', club_manager_invite: 'notify', team_manager_proposal: 'notify' })
 // scoresheet: a busy match day (a dozen recipients a game) must not starve
 // the account mails, nor be starved by them
 export const DEFAULT_BUDGETS = Object.freeze({ account: 50, confirm: 50, notify: 100, scoresheet: 300 })
@@ -413,6 +413,48 @@ const T = {
       after: [v.admin
         ? 'Riceve questa e-mail come admin di OpenVolley. Nulla viene concesso prima di un’approvazione.'
         : 'Riceve questa e-mail perché approva queste richieste per la sua società o squadra. Nulla viene concesso prima di un’approvazione.']
+    })
+  },
+  // A team manager proposed someone as team manager of its team (db/036,
+  // lib/signupNotices.js proposal), to the club's managers (or the admins of a
+  // club without managers). vars: name, email (the account), team, club,
+  // proposer (may be ''), admin. The link opens My club (admins: the account).
+  team_manager_proposal: {
+    en: (v) => ({
+      subject: `Confirm a team manager: ${v.name || v.email}`,
+      before: ['Hello,', `${v.proposer || 'A team manager'} proposes ${signupWho(v)} as team manager of ${v.team} (${v.club}).`,
+        'The account gets the team only when a manager of the club or an admin approves the request.'],
+      button: 'Open in the manager',
+      after: [v.admin
+        ? 'You get this mail as an admin of OpenVolley: the club has no club manager.'
+        : 'You get this mail as a manager of the club. Nothing is granted until it is approved.']
+    }),
+    de: (v) => ({
+      subject: `Teamverantwortliche/n bestätigen: ${v.name || v.email}`,
+      before: ['Hallo', `${v.proposer || 'Ein/e Teamverantwortliche/r'} schlägt ${signupWho(v)} als Teamverantwortliche/n von ${v.team} (${v.club}) vor.`,
+        'Das Konto bekommt das Team erst, wenn eine vereinsverantwortliche Person oder ein Admin die Anfrage freigibt.'],
+      button: 'Im Manager öffnen',
+      after: [v.admin
+        ? 'Sie erhalten diese E-Mail als Admin von OpenVolley: Der Verein hat keine Vereinsverantwortlichen.'
+        : 'Sie erhalten diese E-Mail als Vereinsverantwortliche/r. Erst eine Freigabe gibt dem Konto Rechte.']
+    }),
+    fr: (v) => ({
+      subject: `Confirmer un responsable d’équipe : ${v.name || v.email}`,
+      before: ['Bonjour,', `${v.proposer || 'Un responsable d’équipe'} propose ${signupWho(v)} comme responsable d’équipe de ${v.team} (${v.club}).`,
+        'Le compte ne reçoit l’équipe qu’après l’approbation de la demande par un responsable du club ou un admin.'],
+      button: 'Ouvrir dans le manager',
+      after: [v.admin
+        ? 'Vous recevez cet e-mail en tant qu’admin d’OpenVolley : le club n’a pas de responsable.'
+        : 'Vous recevez cet e-mail en tant que responsable du club. Rien n’est accordé avant une approbation.']
+    }),
+    it: (v) => ({
+      subject: `Confermare un responsabile della squadra: ${v.name || v.email}`,
+      before: ['Buongiorno,', `${v.proposer || 'Un responsabile della squadra'} propone ${signupWho(v)} come responsabile della squadra ${v.team} (${v.club}).`,
+        'L’account riceve la squadra solo dopo che un responsabile della società o un admin ha approvato la richiesta.'],
+      button: 'Aprire nel manager',
+      after: [v.admin
+        ? 'Riceve questa e-mail come admin di OpenVolley: la società non ha responsabili.'
+        : 'Riceve questa e-mail come responsabile della società. Nulla viene concesso prima di un’approvazione.']
     })
   },
   // A club manager link (lib/clubs.js inviteManager, db/029), to someone an

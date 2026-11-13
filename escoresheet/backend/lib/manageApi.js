@@ -8,6 +8,8 @@
  *   GET    /api/me                                    any signed-in account (roles, flags per app)
  *   POST   /api/account/join { app }                  any signed-in account (joins indoor|beach)
  *   POST   /api/account/redeem-invite                 any signed-in account
+ *   POST   /api/account/invite-preview { code }       the same: what redeeming would do, nothing kept
+ *                                                    (the manager asks before it redeems a team link)
  *   POST   /api/match/official-check                  canScore in body.sport_type (else 403 OV_SCORER_REQUIRED)
  *   *      /api/admin/*[?app=indoor|beach]            isAdmin  (else 403 OV_FORBIDDEN), except:
  *   POST   /api/admin/matches/:id/reopen             isAdmin, or beach canManageTeams for a BEACH
@@ -79,7 +81,10 @@
  *                                                    for parts of that club (a team of the club only)
  *   GET    /api/team/:id/requests                    whoever may manage the team (lib/teams.js
  *                                                    mayManage): its team manager requests
- *   POST   /api/team/:id/requests/:userId            the same: { approve: [{ id }], reject: [id] }
+ *   POST   /api/team/:id/requests/:userId            the same: { approve: [{ id }], reject: [id] }; a team
+ *                                                    manager's approve is a proposal that a manager of the
+ *                                                    club (or an admin) confirms (owner decision 3, db/036),
+ *                                                    and the club's managers are told
  *   GET    /api/saved-teams/vm-teams?q=              indoor canManageTeams: the schedule's team names
  *                                                    (svrz_games home and away) with their club, for
  *                                                    the saved team editor
@@ -131,7 +136,7 @@ const ID = '([0-9a-fA-F-]{36})'
 export function manageFamilyOf (pathname) {
   if (pathname === '/api/me') return 'me'
   if (pathname === '/api/account/join') return 'join'
-  if (pathname === '/api/account/redeem-invite') return 'account'
+  if (pathname === '/api/account/redeem-invite' || pathname === '/api/account/invite-preview') return 'account'
   if (pathname === '/api/match/official-check') return 'officialCheck'
   if (pathname.startsWith('/api/admin/')) return 'admin'
   if (pathname === '/api/saved-teams' || pathname.startsWith('/api/saved-teams/')) return 'savedTeams'
@@ -242,6 +247,7 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['GET', /^\/api\/me$/, 'any', (m, c) => accounts.me({ userId: c.user.id, access: c.access })],
     ['POST', /^\/api\/account\/join$/, 'any', (m, c) => accounts.joinApp({ userId: c.user.id, body: c.body })],
     ['POST', /^\/api\/account\/redeem-invite$/, 'any', (m, c) => accounts.redeemInvite({ userId: c.user.id, code: c.body?.code })],
+    ['POST', /^\/api\/account\/invite-preview$/, 'any', (m, c) => accounts.redeemInvite({ userId: c.user.id, code: c.body?.code, preview: true })],
     // db/028: the manager's notices (lib/signupNotices.js), each account its own
     ['GET', /^\/api\/notifications$/, 'any', (m, c) => (notices ? notices.list({ userId: c.user.id, app: q(c.query, 'app') }) : notFound())],
     ['POST', /^\/api\/notifications\/read$/, 'any', (m, c) => (notices ? notices.markRead({ userId: c.user.id, app: q(c.query, 'app'), body: c.body }) : notFound())],
@@ -308,7 +314,14 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['POST', new RegExp(`^/api/team/${ID}/club-people$`), teamManagerOf, (m, c) => lic((l) => l.addPeople({ teamId: m[1], body: c.body, userId: c.user.id }))],
     // db/025: the team manager requests of the team
     ['GET', new RegExp(`^/api/team/${ID}/requests$`), teamManagerOf, (m) => req((r) => r.listForTeam({ teamId: m[1] }))],
-    ['POST', new RegExp(`^/api/team/${ID}/requests/${ID}$`), teamManagerOf, (m, c) => req((r) => r.decide({ actorId: c.user.id, userId: m[2], body: c.body, scope: { teamId: m[1] } }))],
+    ['POST', new RegExp(`^/api/team/${ID}/requests/${ID}$`), teamManagerOf, (m, c) => req(async (r) => {
+      const res = await r.decide({ actorId: c.user.id, userId: m[2], body: c.body, scope: { teamId: m[1], confirms: !!c.access?.isAdmin } })
+      // a proposal: the club's managers confirm it (in the background, never fails the answer)
+      if (res.status === 200 && res.body?.data?.proposed > 0 && typeof notices?.proposal === 'function') {
+        notices.proposal({ userId: m[2], teamId: m[1], proposerId: c.user.id }).catch(() => {})
+      }
+      return res
+    })],
     // db/023: the rosters a scoring tablet keeps (offline first)
     ['GET', /^\/api\/game-rosters$/, readIndoorTeams, (m, c) => team((tm) => tm.scorerRosters({ userId: c.user.id, games: q(c.query, 'games') }))],
     // accepted in Match Setup: the content is deleted at once

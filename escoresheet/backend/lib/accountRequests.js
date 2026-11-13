@@ -15,7 +15,12 @@
  *                   club's teams, club manager (POST /api/club/:id/requests/:userId);
  *                   a team manager part may move to another team of the club
  *   team managers   the team manager parts of their team, and so may the
- *                   club's managers (POST /api/team/:id/requests/:userId)
+ *                   club's managers (POST /api/team/:id/requests/:userId).
+ *                   Owner decision 3 (db/036): a team manager's yes is a
+ *                   proposal (proposed_by / proposed_at); the part stays open
+ *                   until a manager of the team's club or an admin approves
+ *                   it, and the club's managers are told (lib/signupNotices.js
+ *                   proposal). A proposal is audited account.request_propose.
  *   referee parts   admins only (they have no club)
  * Each approver sees and decides its own parts only; the rest stays for the
  * others.
@@ -231,19 +236,27 @@ export function createAccountRequests ({ pool, accounts, access = null, logger =
     }
   }
 
+  // db/036: a proposed part (a team manager said yes), with who proposed it
+  const PROPOSAL_COLUMNS = `r.proposed_at, coalesce(${nameSql('pp')}, pu.email) AS proposed_by_name`
+  const PROPOSAL_JOINS = `
+      LEFT JOIN auth.users pu ON pu.id = r.proposed_by
+      LEFT JOIN public.profiles pp ON pp.user_id = r.proposed_by`
   const PART_SELECT = `
-    SELECT r.id, r.user_id, r.kind, r.club_id, c.name AS club_name, r.team_id, ct.team_name, r.created_at
+    SELECT r.id, r.user_id, r.kind, r.club_id, c.name AS club_name, r.team_id, ct.team_name, r.created_at, ${PROPOSAL_COLUMNS}
       FROM public.account_requests r
       LEFT JOIN public.clubs c ON c.id = r.club_id
-      LEFT JOIN public.club_teams ct ON ct.id = r.team_id`
-  const partOut = (r) => ({
+      LEFT JOIN public.club_teams ct ON ct.id = r.team_id${PROPOSAL_JOINS}`
+  // `own`: the account's own parts (GET /api/me): proposed or not, never by whom
+  const partOut = (r, { own = false } = {}) => ({
     id: r.id,
     kind: r.kind,
     club_id: r.club_id ?? null,
     club_name: r.club_name ?? null,
     team_id: r.team_id ?? null,
     team_name: r.team_name ?? null,
-    created_at: iso(r.created_at)
+    created_at: iso(r.created_at),
+    proposed_at: iso(r.proposed_at),
+    ...(own ? {} : { proposed_by_name: r.proposed_at ? (r.proposed_by_name ?? null) : null })
   })
   // the order an approver reads them in: scorer, referee, team manager, club manager
   const byKind = (a, b) => REQUEST_KINDS.indexOf(a.kind) - REQUEST_KINDS.indexOf(b.kind) ||
@@ -251,7 +264,7 @@ export function createAccountRequests ({ pool, accounts, access = null, logger =
 
   // ---------------------------------------------------------------- reads
   /** userId -> [part] for these accounts (the admin's account list). Empty without db/025. */
-  async function requestsOfMany (client, userIds) {
+  async function requestsOfMany (client, userIds, { own = false } = {}) {
     const ids = [...new Set((userIds || []).filter(isUuid))]
     const out = new Map()
     if (!ids.length) return out
@@ -259,7 +272,7 @@ export function createAccountRequests ({ pool, accounts, access = null, logger =
       const { rows } = await (client || pool).query(`${PART_SELECT} WHERE r.user_id = ANY($1::uuid[])`, [ids])
       for (const r of rows) {
         if (!out.has(r.user_id)) out.set(r.user_id, [])
-        out.get(r.user_id).push(partOut(r))
+        out.get(r.user_id).push(partOut(r, { own }))
       }
       for (const list of out.values()) list.sort(byKind)
     } catch (err) {
@@ -271,7 +284,7 @@ export function createAccountRequests ({ pool, accounts, access = null, logger =
   /** The account's own open requests (GET /api/me). [] without db/025. */
   async function mine (client, userId) {
     if (!isUuid(userId)) return []
-    return (await requestsOfMany(client, [userId])).get(userId) || []
+    return (await requestsOfMany(client, [userId], { own: true })).get(userId) || []
   }
 
   /** The accounts with an open request: their ids (the admin's Pending list). Empty without db/025. */
@@ -307,14 +320,14 @@ export function createAccountRequests ({ pool, accounts, access = null, logger =
       let rows
       try {
         ({ rows } = await pool.query(
-          `SELECT r.id, r.user_id, r.kind, r.club_id, c.name AS club_name, r.team_id, ct.team_name, r.created_at,
+          `SELECT r.id, r.user_id, r.kind, r.club_id, c.name AS club_name, r.team_id, ct.team_name, r.created_at, ${PROPOSAL_COLUMNS},
                   u.email, ${nameSql('pr')} AS user_name, u.created_at AS user_created_at,
                   (to_jsonb(u) ->> 'email_confirmed_at') IS NOT NULL AS email_confirmed
              FROM public.account_requests r
              JOIN auth.users u ON u.id = r.user_id
              LEFT JOIN public.profiles pr ON pr.user_id = r.user_id
              LEFT JOIN public.clubs c ON c.id = r.club_id
-             LEFT JOIN public.club_teams ct ON ct.id = r.team_id
+             LEFT JOIN public.club_teams ct ON ct.id = r.team_id${PROPOSAL_JOINS}
             WHERE ${scopeSql(scope, p)}
             ORDER BY r.created_at, r.id
             LIMIT 2000`, values))
@@ -435,12 +448,25 @@ export function createAccountRequests ({ pool, accounts, access = null, logger =
     }
   }
 
+  /** Does `actorId` manage the club of team `teamId`? */
+  async function managesClubOfTeam (client, actorId, teamId) {
+    if (!isUuid(actorId) || !isUuid(teamId)) return false
+    const { rows } = await client.query(
+      `SELECT 1 FROM public.club_teams ct JOIN public.club_managers cm ON cm.club_id = ct.club_id
+        WHERE ct.id = $1 AND cm.user_id = $2 LIMIT 1`, [teamId, actorId])
+    return rows.length > 0
+  }
+
   /**
    * Approve and reject parts of one account's request. `scope`: { admin: true }
-   * (every part), { clubId } (the club's parts), { teamId } (the team's team
-   * manager parts). A part outside the scope, or decided meanwhile, answers 409
-   * OV_REQUEST_GONE and nothing changes. { approved, rejected, requests } with
-   * the parts of the scope that are still open.
+   * (every part), { clubId } (the club's parts), { teamId, confirms? } (the
+   * team's team manager parts; `confirms`: the caller is an admin). In the
+   * team's scope the yes of a team manager is a proposal (owner decision 3):
+   * the part stays open, marked proposed, for a manager of the team's club or
+   * an admin, who approve it there or under My club. A part outside the
+   * scope, or decided meanwhile, answers 409 OV_REQUEST_GONE and nothing
+   * changes. { approved, proposed, rejected, requests } with the parts of the
+   * scope that are still open.
    */
   async function decide ({ actorId, userId, body, scope } = {}) {
     if (!isUuid(userId)) return notFound()
@@ -452,7 +478,7 @@ export function createAccountRequests ({ pool, accounts, access = null, logger =
       const u = await accounts.confirmationOf(client, userId)
       if (!u) throw abort(fail(404, 'OV_ACCOUNT_NOT_FOUND', 'This account does not exist (any more)'))
       const { rows: locked } = await client.query(
-        'SELECT id, user_id, kind, club_id, team_id FROM public.account_requests WHERE user_id = $1 ORDER BY id FOR UPDATE', [userId])
+        'SELECT id, user_id, kind, club_id, team_id, proposed_at FROM public.account_requests WHERE user_id = $1 ORDER BY id FOR UPDATE', [userId])
       const byId = new Map(locked.filter((r) => inScope(scope, r)).map((r) => [r.id, r]))
       const gone = [...d.approve.map((a) => a.id), ...d.reject].filter((id) => !byId.has(id))
       if (gone.length) {
@@ -461,21 +487,32 @@ export function createAccountRequests ({ pool, accounts, access = null, logger =
       if (d.approve.length && u.unconfirmed) {
         throw abort(fail(409, 'OV_EMAIL_UNCONFIRMED', 'Confirm your email address first: open the link we sent you, or send a new one from your profile'))
       }
+      // Owner decision 3: only the team's club (its managers) or an admin confirms
+      const confirms = !scope?.teamId || scope.confirms === true || await managesClubOfTeam(client, actorId, scope.teamId)
       const granted = []
+      const proposed = []
       for (const a of d.approve) {
         const c = await changedPart(client, scope || {}, byId.get(a.id), a)
         if (c.answer) throw abort(c.answer)
-        granted.push(c.part)
+        ;(confirms ? granted : proposed).push(c.part)
       }
+      const where = (part) => ({ ...(part.club_id ? { club_id: part.club_id } : {}), ...(part.team_id ? { team_id: part.team_id } : {}) })
       for (const part of granted) {
         await grant(client, { actorId, userId, part })
         await accounts.audit(client, {
           actorId,
           action: 'account.request_approve',
           targetUserId: userId,
-          details: { kind: part.kind, ...(part.club_id ? { club_id: part.club_id } : {}), ...(part.team_id ? { team_id: part.team_id } : {}), ...(part.changed ? { changed: true } : {}), via },
+          details: { kind: part.kind, ...where(part), ...(part.changed ? { changed: true } : {}), ...(part.proposed_at ? { proposed: true } : {}), via },
           app: 'indoor'
         })
+      }
+      for (const part of proposed) {
+        // the first proposal stays (who said yes first, and when)
+        await client.query(
+          'UPDATE public.account_requests SET proposed_by = coalesce(proposed_by, $2), proposed_at = coalesce(proposed_at, now()) WHERE id = $1',
+          [part.id, isUuid(actorId) ? actorId : null])
+        await accounts.audit(client, { actorId, action: 'account.request_propose', targetUserId: userId, details: { kind: part.kind, ...where(part), via }, app: 'indoor' })
       }
       for (const id of d.reject) {
         const r = byId.get(id)
@@ -489,14 +526,14 @@ export function createAccountRequests ({ pool, accounts, access = null, logger =
       }
       // The decided parts go, and so does any other open part a grant answers
       // (an admin who moved a scorer part to a club the account also asked for)
-      const decided = [...d.approve.map((a) => a.id), ...d.reject]
+      const decided = [...granted.map((part) => part.id), ...d.reject]
       const answered = new Set(granted.map(partKey))
       const extra = locked.filter((r) => !decided.includes(r.id) && answered.has(partKey(r))).map((r) => r.id)
       await client.query('DELETE FROM public.account_requests WHERE id = ANY($1::uuid[])', [[...decided, ...extra]])
       const values = [userId]
       const p = (v) => { values.push(v); return '$' + values.length }
       const { rows: left } = await client.query(`${PART_SELECT} WHERE r.user_id = $1 AND ${scopeSql(scope, p)}`, values)
-      return ok({ approved: granted.length, rejected: d.reject.length, requests: left.map(partOut).sort(byKind) })
+      return ok({ approved: granted.length, proposed: proposed.length, rejected: d.reject.length, requests: left.map((r) => partOut(r)).sort(byKind) })
     })).finally(() => access?.invalidate?.(userId))
   }
 

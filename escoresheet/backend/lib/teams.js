@@ -19,7 +19,7 @@
  * Club managers of the club (and admins):
  *   clubTeams({ clubId })                       the club's teams with their managers
  *   teamInviteBody(body)                        a team link within the limits below
- *   removeManager({ actorId, clubId, teamId, userId })
+ *   removeManager({ actorId, clubId, teamId, userId })  the team links it redeemed are revoked too
  * Scorers (indoor canReadTeams, the read right of the saved teams):
  *   scorerRosters({ userId, games })            the sent rosters the scoring tablet keeps
  *   markUsed({ userId, body })                  accepted in Match Setup: the content is deleted
@@ -656,7 +656,14 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
     })
   }
 
-  /** DELETE /api/club/:id/teams/:teamId/managers/:userId: the team link only. */
+  /**
+   * DELETE /api/club/:id/teams/:teamId/managers/:userId: the account no
+   * longer manages the team. The team links it redeemed are revoked with it
+   * (be-clubs-teams-5: also for anyone it passed them on to), and the same
+   * link refuses it from now on (lib/accounts.js redeemTeamLink). It is in no
+   * club through the team (db/036), so it keeps no club data either.
+   * { removed, links_revoked }
+   */
   async function removeManager ({ actorId, clubId, teamId, userId } = {}) {
     if (!isUuid(clubId) || !isUuid(teamId) || !isUuid(userId)) return notFound()
     return guarded('remove-manager', () => withTx(async (client) => {
@@ -665,7 +672,15 @@ export function createTeams ({ pool, audit, savedTeams, clubs, licences = null, 
           WHERE tm.team_id = ct.id AND ct.id = $1 AND ct.club_id = $2 AND tm.user_id = $3`, [teamId, clubId, userId])
       if (!rowCount) throw abort(notFound())
       await audit(client, { actorId, action: 'team.managers', targetUserId: userId, details: { team_id: teamId, club_id: clubId, removed: true } })
-      return ok({ removed: userId })
+      const { rows: links } = await client.query(
+        `UPDATE public.invite_codes i SET revoked_at = now()
+          WHERE i.team_id = $1 AND i.revoked_at IS NULL
+            AND EXISTS (SELECT 1 FROM public.invite_redemptions r WHERE r.invite_id = i.id AND r.user_id = $2)
+          RETURNING i.id, i.label`, [teamId, userId])
+      for (const l of links) {
+        await audit(client, { actorId, action: 'invite.revoke', details: { invite_id: l.id, label: l.label, reason: 'team_manager_removed' }, app: 'indoor' })
+      }
+      return ok({ removed: userId, links_revoked: links.length })
     }))
   }
 
