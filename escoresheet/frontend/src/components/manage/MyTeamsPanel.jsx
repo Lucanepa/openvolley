@@ -124,13 +124,15 @@ function TeamSections({ team, gameNumber = null, onOpenGame, onCloseGame }) {
   const squad = usePanelData(() => teamApi.squad(team.id), [team.id], { enabled: online })
   const games = usePanelData(() => teamApi.games(team.id), [team.id], { enabled: online })
   const saved = squad.data?.squad || null
-  // db/024: the club's lists ("Add from club": the players list for the
-  // players, everyone of the lists for the officials) and the team's gender;
-  // a server or club without them simply offers nothing
+  // db/024: the club's lists ("Add from club": the players of the team's
+  // gender and age class for the players, the people of the saved team, and
+  // the server's name search for an official: owner decision 2, never the
+  // whole lists) and the team's gender; a server or club without them simply
+  // offers nothing
   const club = usePanelData(() => teamApi.clubPlayers(team.id), [team.id], { enabled: online })
   const clubPlayers = useMemo(() => (club.data && Array.isArray(club.data.players)
-    ? { players: club.data.players, gender: club.data.gender ?? null, people: clubPeopleOf(club.data) }
-    : null), [club.data])
+    ? { players: club.data.players, gender: club.data.gender ?? null, people: clubPeopleOf(club.data), search: (q) => teamApi.searchClubPeople(team.id, q) }
+    : null), [club.data, team.id])
   // TeamEditor's shape for a team without a saved team yet (the first save makes it)
   const editorTeam = useMemo(() => saved || { id: `new-${team.id}`, name: team.name, players: [], staff: [] }, [saved, team.id, team.name])
   const saveSquad = async (body) => {
@@ -636,6 +638,7 @@ function GameRosterPage({ team, game, squad, squadLoading = false, clubPlayers, 
         onClose={() => setOfficialPicker(false)}
         onPick={officialFromClub}
         players={clubPlayers?.people || []}
+        search={clubPlayers?.search || null}
         zIndex={2050}
         roles={staffRoles}
         initialRole={STAFF_ROLES.find((r) => !officialOfRole(pickedStaff, r, { pickedOnly: true })) || STAFF_ROLES[0]}

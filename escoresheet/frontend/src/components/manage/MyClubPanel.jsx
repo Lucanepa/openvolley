@@ -21,8 +21,9 @@ import { Button, Chip, EmptyInset, Field, Input, Notice, Row, RowList, RowTool, 
  *
  * Pages (owner 2026-11-10: "every page there gets their own page (team,
  * club, game, player etc)"): the club at #myclub/<club id>, a person of its
- * licence lists at #myclub/<club id>/person/<licence number>; a team opens
- * in My teams (`navigate`, when this account has that tab).
+ * licence lists at #myclub/<club id>/person/<row id> (db/037: never the
+ * licence number, which the browser's history of a shared laptop would keep);
+ * a team opens in My teams (`navigate`, when this account has that tab).
  */
 export default function MyClubPanel({ clubs = [], route = '', onRoute = null, navigate = null, canOpen = () => false }) {
   const { t } = useTranslation()
@@ -31,7 +32,7 @@ export default function MyClubPanel({ clubs = [], route = '', onRoute = null, na
   if (!club) return <EmptyInset>{t('manage.myClub.none')}</EmptyInset>
   const openTeam = navigate && canOpen('myteams') ? (teamId) => navigate(`myteams/${encodeURIComponent(teamId)}`) : null
   if (kind === 'person' && key) {
-    return <ClubPersonPage key={`${club.id}/${key}`} club={club} svNumber={key} onBack={() => go([club.id])} onOpenTeam={openTeam} />
+    return <ClubPersonPage key={`${club.id}/${key}`} club={club} personId={key} onBack={() => go([club.id])} onOpenTeam={openTeam} />
   }
   return (
     <div className="space-y-8" data-testid="manage-my-club">
@@ -45,7 +46,7 @@ export default function MyClubPanel({ clubs = [], route = '', onRoute = null, na
       {/* keyed: another club starts its sections afresh, and appears whole
           (contact, requests, members, teams, licences, codes) */}
       <PageLoadGate key={club.id} className="space-y-8" fallback={<PageSpinner />}>
-        <ClubSections club={club} onOpenPerson={(sv) => go([club.id, 'person', sv])} onOpenTeam={openTeam} />
+        <ClubSections club={club} onOpenPerson={(id) => go([club.id, 'person', id])} onOpenTeam={openTeam} />
       </PageLoadGate>
     </div>
   )

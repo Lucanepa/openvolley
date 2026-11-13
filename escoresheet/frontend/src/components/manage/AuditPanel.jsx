@@ -9,7 +9,9 @@ const PAGE = 50
 
 const APPROVAL_ACTIONS = new Set(['match.approve', 'match.approval_revoke', 'match.approval_void'])
 // The entries about one club (db/018, db/020): the club's name leads their line
-const CLUB_ACTIONS = new Set(['club.create', 'club.update', 'club.delete', 'club.managers', 'club.contact', 'club.member_remove', 'club.licences', 'club.licences.manual'])
+const CLUB_ACTIONS = new Set(['club.create', 'club.update', 'club.delete', 'club.managers', 'club.contact', 'club.member_remove', 'club.licences', 'club.licences.manual', 'club.licences.manual_delete'])
+// db/037: a competition or saved team deleted, a saved team's roster replaced (the name and the counts)
+const SAVED_TEAM_ACTIONS = new Set(['saved_teams.competition_delete', 'saved_teams.team_delete', 'saved_teams.roster'])
 
 /** "club_rule.set" -> "Club rule set": an action this build has no label for yet reads as words, never as a code. */
 export function readableAction(action) {
@@ -85,12 +87,22 @@ export function auditDetailsLine(entry, opts = {}) {
       if (d.list) parts.push(tr(`manage.licences.lists.${d.list}`, String(d.list)))
       if (Number.isFinite(d.count)) parts.push(tr('manage.licences.people', `${d.count} people`, { count: d.count }))
     }
+    // db/037: one row by hand removed (its list, never a name)
+    if (entry.action === 'club.licences.manual_delete' && d.list) parts.push(tr(`manage.licences.lists.${d.list}`, String(d.list)))
     // db/026: people typed into a squad by hand, kept in the club's lists (counts per list, never a name)
     if (entry.action === 'club.licences.manual' && d.lists && typeof d.lists === 'object') {
       for (const [list, n] of Object.entries(d.lists)) {
         if (Number.isFinite(n) && n > 0) parts.push(`${tr(`manage.licences.lists.${list}`, String(list))}: ${n}`)
       }
     }
+    return parts.join(' · ')
+  }
+  if (SAVED_TEAM_ACTIONS.has(entry?.action)) {
+    if (d.name) parts.push(String(d.name))
+    if (d.season) parts.push(String(d.season))
+    if (Number.isFinite(d.teams)) parts.push(tr('manage.audit.teamsCount', `${d.teams} teams`, { count: d.teams }))
+    if (Number.isFinite(d.players)) parts.push(tr('manage.audit.playersCount', `${d.players} players`, { count: d.players }))
+    if (Number.isFinite(d.staff)) parts.push(tr('manage.audit.staffCount', `${d.staff} officials`, { count: d.staff }))
     return parts.join(' · ')
   }
   if (entry?.action === 'account.clubs') {

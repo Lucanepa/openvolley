@@ -5,12 +5,13 @@ import 'fake-indexeddb/auto'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('../../lib/accountApi', () => ({
-  fetchClubLicences: vi.fn()
+  fetchClubLicences: vi.fn(),
+  fetchClubDob: vi.fn()
 }))
 
 import { db } from '../db'
-import { fetchClubLicences } from '../../lib/accountApi'
-import { clearClubPlayers, clubOfTeam, clubToRow, refreshClubPlayers, resetClubPlayersThrottle, storeClubPlayers } from '../clubPlayers'
+import { fetchClubDob, fetchClubLicences } from '../../lib/accountApi'
+import { clearClubPlayers, clubOfTeam, clubToRow, refreshClubPlayers, resetClubPlayersThrottle, storeClubPlayers, withClubDob } from '../clubPlayers'
 import { accessFromRoles } from '../../lib/access'
 
 const scorer = accessFromRoles(['scorer'])
@@ -99,5 +100,34 @@ describe('the clubs\' players on the device', () => {
     await storeClubPlayers(answer(), 'u1')
     await clearClubPlayers()
     expect(await db.club_players.count()).toBe(0)
+  })
+})
+
+// Owner decision 2: the tablet's copy has no dates of birth; those of the
+// people added to a roster are asked for (online), never the whole club's
+describe('the dates of birth of the people added', () => {
+  const people = [
+    { sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', dob: null, gender: 'f' },
+    { sv_number: '100002', last_name: 'Muster', first_name: 'Lea', dob: '2006-01-31', gender: 'f' },
+    { sv_number: '100003', last_name: 'Probe', first_name: 'Marco', dob: null, gender: 'm' }
+  ]
+  beforeEach(() => fetchClubDob.mockReset())
+
+  it('asks for those without one, of that club, and fills them in', async () => {
+    fetchClubDob.mockResolvedValue({ data: { club_id: 'c1', people: [{ sv_number: '100001', dob: '2004-05-06' }] }, error: null, status: 200 })
+    const out = await withClubDob('c1', people, { online: true })
+    expect(fetchClubDob).toHaveBeenCalledWith(expect.objectContaining({ clubId: 'c1', svNumbers: ['100001', '100003'] }))
+    expect(out.map((p) => p.dob)).toEqual(['2004-05-06', '2006-01-31', null])
+  })
+
+  it('offline, without a club or when the server says no: the people as they are', async () => {
+    expect(await withClubDob('c1', people, { online: false })).toEqual(people)
+    expect(await withClubDob(null, people, { online: true })).toEqual(people)
+    fetchClubDob.mockResolvedValue({ data: null, error: { status: 404 }, status: 404 })
+    expect(await withClubDob('c1', people, { online: true })).toEqual(people)
+    // offline on the way (apiRequest answers, it never throws)
+    fetchClubDob.mockResolvedValue({ data: null, error: { network: true }, status: 0 })
+    expect(await withClubDob('c1', people, { online: true })).toEqual(people)
+    expect(fetchClubDob).toHaveBeenCalledTimes(2)
   })
 })
