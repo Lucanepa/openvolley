@@ -36,6 +36,11 @@ export const PASSKEY_CHALLENGE_TTL_MS = PASSKEY_CEREMONY_MS + 60 * 1000
  *  the map has a ceiling that does not depend on the rate limits; the oldest
  *  go first. */
 export const PASSKEY_CHALLENGES_MAX = 5000
+/** Outstanding challenges per bucket (a client address for the sign-in
+ *  options, an account for a set-up): a full bucket loses its own oldest,
+ *  and a full map loses the oldest of its largest bucket, so a flood from
+ *  many addresses never evicts somebody else's pending ceremony. */
+export const PASSKEY_CHALLENGES_PER_BUCKET = 20
 /** Passkeys one account may have: phones, tablets, laptops and their
  *  replacements fit; a script making thousands does not. */
 export const PASSKEYS_PER_USER_MAX = 10
@@ -126,27 +131,43 @@ export class PasskeyError extends Error {
  */
 export function createPasskeyCeremonies(config, now = Date.now) {
   const challenges = new Map()
+  const buckets = new Map() // bucket -> Set of challenge ids, oldest first
+
+  function drop(id) {
+    const entry = challenges.get(id)
+    if (!entry) return
+    challenges.delete(id)
+    const ids = buckets.get(entry.bucket)
+    ids?.delete(id)
+    if (ids && !ids.size) buckets.delete(entry.bucket)
+  }
 
   function sweep() {
     const t = now()
-    for (const [id, entry] of challenges) if (entry.expiresAt < t) challenges.delete(id)
+    for (const [id, entry] of challenges) if (entry.expiresAt < t) drop(id)
   }
 
-  function issue(entry) {
+  function issue(entry, bucket = '') {
     sweep()
+    const key = String(bucket)
+    const own = buckets.get(key)
+    while (own && own.size >= PASSKEY_CHALLENGES_PER_BUCKET) drop(own.values().next().value)
     while (challenges.size >= PASSKEY_CHALLENGES_MAX) {
-      const oldest = challenges.keys().next().value
-      if (oldest === undefined) break
-      challenges.delete(oldest)
+      let largest = null
+      for (const ids of buckets.values()) if (!largest || ids.size > largest.size) largest = ids
+      if (!largest) break
+      drop(largest.values().next().value)
     }
     const id = randomBytes(18).toString('base64url')
-    challenges.set(id, { ...entry, expiresAt: now() + PASSKEY_CHALLENGE_TTL_MS })
+    challenges.set(id, { ...entry, bucket: key, expiresAt: now() + PASSKEY_CHALLENGE_TTL_MS })
+    if (!buckets.has(key)) buckets.set(key, new Set())
+    buckets.get(key).add(id)
     return id
   }
 
   function take(id, purpose) {
     const entry = typeof id === 'string' ? challenges.get(id) : undefined
-    if (entry) challenges.delete(id)
+    if (entry) drop(id)
     if (!entry || entry.purpose !== purpose || entry.expiresAt < now()) {
       throw new PasskeyError('challenge', 'challenge unknown, used or expired')
     }
@@ -185,7 +206,7 @@ export function createPasskeyCeremonies(config, now = Date.now) {
         authenticatorSelection: { residentKey: 'required', requireResidentKey: true, userVerification: 'required' },
         preferredAuthenticatorType: 'localDevice'
       })
-      const challengeId = issue({ challenge: options.challenge, purpose: 'register', userId: String(userId) })
+      const challengeId = issue({ challenge: options.challenge, purpose: 'register', userId: String(userId) }, `user:${userId}`)
       return { challengeId, options }
     },
 
@@ -218,13 +239,13 @@ export function createPasskeyCeremonies(config, now = Date.now) {
 
     /** Options for signing in: no list of keys — the device offers what it
      *  has for openvolley.app, and the answer says whose it was. */
-    async authenticationOptions() {
+    async authenticationOptions({ bucket = '' } = {}) {
       const options = await generateAuthenticationOptions({
         rpID: config.rpId,
         timeout: PASSKEY_CEREMONY_MS,
         userVerification: 'required'
       })
-      const challengeId = issue({ challenge: options.challenge, purpose: 'login', userId: '' })
+      const challengeId = issue({ challenge: options.challenge, purpose: 'login', userId: '' }, `ip:${bucket}`)
       return { challengeId, options }
     },
 

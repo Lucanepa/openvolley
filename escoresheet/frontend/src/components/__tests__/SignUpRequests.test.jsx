@@ -27,8 +27,8 @@ const fill = (form) => {
   fireEvent.change(input('First name'), { target: { value: 'Lea' } })
   fireEvent.change(input('Last name'), { target: { value: 'Muster' } })
   fireEvent.change(input('Email'), { target: { value: 'lea@example.ch' } })
-  fireEvent.change(input('Password'), { target: { value: 'secret12' } })
-  fireEvent.change(input('Confirm password'), { target: { value: 'secret12' } })
+  fireEvent.change(input('Password'), { target: { value: 'secret1234' } })
+  fireEvent.change(input('Confirm password'), { target: { value: 'secret1234' } })
 }
 const submit = (form) => fireEvent.click(within(form).getByRole('button', { name: 'Create account' }))
 

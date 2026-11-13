@@ -199,9 +199,9 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       const r = await approvals.setPin({ userId: me.id, body: { password: PW, pin: '482917' } })
       expectErr(r, 429, 'OV_TOO_MANY_ATTEMPTS')
       assert.ok(Number(r.headers['Retry-After']) > 0)
-      // the same address cannot sign in either
+      // a lock of the PIN change does not lock the official out of sign-in
       const s = await auth.handleAuthRequest('sign-in', { email: me.email, password: PW }, { ip: '198.51.100.1' })
-      assert.equal(s.status, 429)
+      assert.equal(s.status, 200)
       auth.lockout.reset(me.email)
     })
 

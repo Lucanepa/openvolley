@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
 import { getCloudApiUrl } from '../utils/backendConfig'
+import { authorizationHeader } from '../lib/apiClient'
 import { getLiveMatch, onLiveMatchChange } from '../utils/appLifecycle'
 import { openAppWindow } from '../utils/openAppWindow'
 import { useScaledLayout } from '../hooks/useScaledLayout'
@@ -418,6 +419,9 @@ export default function SupportFeedbackModal({ open, onClose, area: areaProp, cu
       const diag = await diagnosticsToSend()
       const response = await fetch(apiUrl, {
         method: 'POST',
+        // signed in: the server keeps a share of its budget for scorers and
+        // believes "a match is running" only from a session scoring one
+        headers: authorizationHeader(),
         body: buildContactForm(request(diag))
       })
       if (!response.ok) {

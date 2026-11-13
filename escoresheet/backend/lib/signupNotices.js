@@ -90,6 +90,21 @@ export function recipientsOf ({ userId, parts = [], admins = [], clubManagers = 
   return [...out.values()]
 }
 
+/**
+ * A self-chosen name as a notice shows it: one line, no control or bidi
+ * characters, nothing that reads as a link (scheme, www., a dotted host),
+ * at most 80 characters. Mails and the bell show it as the account's
+ * name, never as OpenVolley's words.
+ */
+export function noticeName (raw) {
+  return String(raw ?? '')
+    .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]+/g, ' ')
+    .replace(/\b[a-z][a-z0-9+.-]*:\/\/\S*/gi, ' ')
+    .replace(/\bwww\.\S*/gi, ' ')
+    .replace(/\S+\.[a-z]{2,}(\/\S*)?/gi, ' ')
+    .replace(/\s+/g, ' ').trim().slice(0, 80)
+}
+
 export function createSignupNotices ({ pool, mailer = null, logger = console } = {}) {
   const log = logger
 
@@ -123,8 +138,13 @@ export function createSignupNotices ({ pool, mailer = null, logger = console } =
     }
   }
 
-  /** The signed-up account: its name, address and the app it signed up in. */
+  /** The signed-up account: its name (noticeName), address and the app it signed up in. */
   async function accountOf (userId) {
+    const row = await accountRow(userId)
+    return row ? { ...row, name: noticeName(row.name) } : null
+  }
+
+  async function accountRow (userId) {
     let rows
     try {
       ({ rows } = await pool.query(
@@ -151,7 +171,7 @@ export function createSignupNotices ({ pool, mailer = null, logger = console } =
          SELECT x.u, 'signup', x.a, x.s, x.t, x.d
            FROM unnest($1::uuid[], $2::text[], $3::uuid[], $4::text[], $5::jsonb[]) AS x(u, a, s, t, d)
          ON CONFLICT (user_id, kind, subject_user_id) DO NOTHING`,
-        [rows.map((r) => r.userId), rows.map((r) => r.app), rows.map((r) => r.subject), rows.map((r) => r.target), rows.map((r) => JSON.stringify({ parts: r.parts }))])
+        [rows.map((r) => r.userId), rows.map((r) => r.app), rows.map((r) => r.subject), rows.map((r) => r.target), rows.map((r) => JSON.stringify({ parts: r.parts, name: r.subjectName ?? null, email: r.subjectEmail ?? null }))])
       return rowCount
     } catch (err) {
       if (MISSING.has(err?.code)) {
@@ -185,7 +205,7 @@ export function createSignupNotices ({ pool, mailer = null, logger = console } =
       const teamManagers = await managersOf('team_managers', 'team_id', teamIds)
       const recipients = recipientsOf({ userId, parts, admins, clubManagers, teamManagers })
       if (!recipients.length) return { recipients: 0, mailed: 0 }
-      const stored = await store(recipients.map((r) => ({ ...r, app, subject: userId })))
+      const stored = await store(recipients.map((r) => ({ ...r, app, subject: userId, subjectName: account.name || null, subjectEmail: account.email || null })))
       // all were stored before: this sign-up was told already
       if (stored === 0) return { recipients: recipients.length, mailed: 0 }
       let mailed = 0
@@ -259,7 +279,7 @@ export function createSignupNotices ({ pool, mailer = null, logger = console } =
               SET target = EXCLUDED.target, details = EXCLUDED.details, created_at = now(), read_at = NULL
             WHERE public.notifications.read_at IS NOT NULL
            RETURNING user_id`,
-          [recipients.map((r) => r.userId), recipients.map((r) => r.target), userId, JSON.stringify({ parts })])
+          [recipients.map((r) => r.userId), recipients.map((r) => r.target), userId, JSON.stringify({ parts, name: account.name || null, email: account.email || null })])
         fresh = new Set(rows.map((r) => r.user_id))
       } catch (err) {
         if (!MISSING.has(err?.code) && err?.code !== '23514') throw err
@@ -298,6 +318,17 @@ export function createSignupNotices ({ pool, mailer = null, logger = console } =
    * read live, and whether its requests are still open.
    * { notifications: [{ id, kind, created_at, read, target, user, parts, open }], unread }
    */
+  // The name and address as they were when the notice was made (details);
+  // a notice from before that read them live, now only while its requests
+  // are open, so a former approver does not keep seeing a changed address.
+  function subjectOf (r) {
+    const d = r.details && typeof r.details === 'object' ? r.details : {}
+    if ('email' in d) return { id: r.subject_user_id, email: d.email ?? null, name: d.name ?? null }
+    return r.open === true
+      ? { id: r.subject_user_id, email: r.subject_email ?? null, name: noticeName(r.subject_name) || null }
+      : { id: r.subject_user_id, email: null, name: null }
+  }
+
   async function list ({ userId, app } = {}) {
     if (!isUuid(userId)) return ok({ notifications: [], unread: 0 })
     const a = mailApp(app)
@@ -323,7 +354,7 @@ export function createSignupNotices ({ pool, mailer = null, logger = console } =
           created_at: iso(r.created_at),
           read: r.read_at != null,
           target: r.target,
-          user: r.subject_user_id ? { id: r.subject_user_id, email: r.subject_email ?? null, name: r.subject_name ?? null } : null,
+          user: r.subject_user_id ? subjectOf(r) : null,
           parts: Array.isArray(r.details?.parts) ? r.details.parts : [],
           open: r.open === true
         })),

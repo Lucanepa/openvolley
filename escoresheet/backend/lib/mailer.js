@@ -116,19 +116,22 @@ export function mailBrandOf(kind, app) {
 // (100 per hour in total, as before the split). "account" carries the reset
 // and password-changed mails, "confirm" the confirmation links: a burst of
 // sign-ups uses up only the latter (whose holders can resend later).
-// "notify" carries the approval notices of lib/approvals.js (an approval made
-// with an official's PIN, a locked PIN), the sign-up notices to admins and
-// approvers (lib/signupNotices.js), the team-manager proposals and the final mail's notices (a missing
-// PDF, a reopened match): they cannot starve the account mails.
-export const MAIL_BUDGET_OF = Object.freeze({ reset: 'account', password_changed: 'account', passkey_added: 'account', email_changed: 'account', confirm: 'confirm', approval: 'notify', approval_pin_locked: 'notify', scoresheet: 'scoresheet', scoresheet_test: 'scoresheet_test', scoresheet_no_pdf: 'notify', scoresheet_reopened: 'notify', signup: 'notify', club_manager_invite: 'notify', team_manager_proposal: 'notify' })
+// "security" is reserved for the approval notices of lib/approvals.js (an
+// approval made with an official's PIN, a locked PIN): nothing else draws
+// from it, so no amount of sign-ups can silence them. "signup" carries the
+// sign-up notices to admins and approvers (lib/signupNotices.js), "notify"
+// the club-manager invitations, the team-manager proposals and the final
+// mail's notices (a missing PDF, a reopened match): none can starve the
+// account mails. email_changed (a changed login address) is an account mail too.
+export const MAIL_BUDGET_OF = Object.freeze({ reset: 'account', password_changed: 'account', passkey_added: 'account', email_changed: 'account', confirm: 'confirm', approval: 'security', approval_pin_locked: 'security', scoresheet: 'scoresheet', scoresheet_test: 'scoresheet_test', scoresheet_no_pdf: 'notify', scoresheet_reopened: 'notify', signup: 'signup', club_manager_invite: 'notify', team_manager_proposal: 'notify' })
 // scoresheet: a busy match day (a dozen recipients a game) must not starve
 // the account mails, nor be starved by them; scoresheet_test: test mails
 // (any scorer, any time) must not use up the final scoresheets' budget
-export const DEFAULT_BUDGETS = Object.freeze({ account: 50, confirm: 50, notify: 100, scoresheet: 300, scoresheet_test: 50 })
+export const DEFAULT_BUDGETS = Object.freeze({ account: 50, confirm: 150, notify: 100, signup: 100, security: 50, scoresheet: 300, scoresheet_test: 50 })
 // The budgets an operator sizes (deploy/env.example), each by its variable:
 // a whole number above 0 per hour; anything else keeps the default, with a
 // warning at startup. A size given to createMailer wins (tests).
-export const BUDGET_ENV = Object.freeze({ scoresheet: 'MAIL_BUDGET_FINAL', scoresheet_test: 'MAIL_BUDGET_TEST' })
+export const BUDGET_ENV = Object.freeze({ account: 'MAIL_BUDGET_ACCOUNT', confirm: 'MAIL_BUDGET_CONFIRM', notify: 'MAIL_BUDGET_NOTIFY', signup: 'MAIL_BUDGET_SIGNUP', security: 'MAIL_BUDGET_SECURITY', scoresheet: 'MAIL_BUDGET_FINAL', scoresheet_test: 'MAIL_BUDGET_TEST' })
 
 /** The hourly budgets the environment sets (BUDGET_ENV): { budgets: { name: n }, warnings: [line] }. */
 export function budgetsFromEnv(env = process.env) {
@@ -432,7 +435,7 @@ const T = {
   // team.
   signup: {
     en: (v) => ({
-      subject: `New OpenVolley sign-up: ${v.name || v.email}`,
+      subject: `New OpenVolley sign-up`,
       before: ['Hello,', `${signupWho(v)} just created an OpenVolley account and confirmed the email address.`,
         ...signupParts(v, 'en')],
       button: 'Open in the manager',
@@ -441,7 +444,7 @@ const T = {
         : 'You get this mail because you approve these requests for your club or team. Nothing is granted until someone approves it.']
     }),
     de: (v) => ({
-      subject: `Neue OpenVolley-Registrierung: ${v.name || v.email}`,
+      subject: `Neue OpenVolley-Registrierung`,
       before: ['Hallo', `${signupWho(v)} hat soeben ein OpenVolley-Konto erstellt und die E-Mail-Adresse bestätigt.`,
         ...signupParts(v, 'de')],
       button: 'Im Manager öffnen',
@@ -450,7 +453,7 @@ const T = {
         : 'Sie erhalten diese E-Mail, weil Sie diese Anfragen für Ihren Verein oder Ihr Team freigeben. Erst eine Freigabe gibt dem Konto Rechte.']
     }),
     fr: (v) => ({
-      subject: `Nouvelle inscription OpenVolley : ${v.name || v.email}`,
+      subject: `Nouvelle inscription OpenVolley`,
       before: ['Bonjour,', `${signupWho(v)} vient de créer un compte OpenVolley et a confirmé son adresse e-mail.`,
         ...signupParts(v, 'fr')],
       button: 'Ouvrir dans le manager',
@@ -459,7 +462,7 @@ const T = {
         : 'Vous recevez cet e-mail parce que vous approuvez ces demandes pour votre club ou votre équipe. Rien n’est accordé avant une approbation.']
     }),
     it: (v) => ({
-      subject: `Nuova registrazione OpenVolley: ${v.name || v.email}`,
+      subject: `Nuova registrazione OpenVolley`,
       before: ['Buongiorno,', `${signupWho(v)} ha appena creato un account OpenVolley e confermato l’indirizzo e-mail.`,
         ...signupParts(v, 'it')],
       button: 'Aprire nel manager',
@@ -474,7 +477,7 @@ const T = {
   // proposer (may be ''), admin. The link opens My club (admins: the account).
   team_manager_proposal: {
     en: (v) => ({
-      subject: `Confirm a team manager: ${v.name || v.email}`,
+      subject: `Confirm a team manager`,
       before: ['Hello,', `${v.proposer || 'A team manager'} proposes ${signupWho(v)} as team manager of ${v.team} (${v.club}).`,
         'The account gets the team only when a manager of the club or an admin approves the request.'],
       button: 'Open in the manager',
@@ -483,7 +486,7 @@ const T = {
         : 'You get this mail as a manager of the club. Nothing is granted until it is approved.']
     }),
     de: (v) => ({
-      subject: `Teamverantwortliche/n bestätigen: ${v.name || v.email}`,
+      subject: `Teamverantwortliche/n bestätigen`,
       before: ['Hallo', `${v.proposer || 'Ein/e Teamverantwortliche/r'} schlägt ${signupWho(v)} als Teamverantwortliche/n von ${v.team} (${v.club}) vor.`,
         'Das Konto bekommt das Team erst, wenn eine vereinsverantwortliche Person oder ein Admin die Anfrage freigibt.'],
       button: 'Im Manager öffnen',
@@ -492,7 +495,7 @@ const T = {
         : 'Sie erhalten diese E-Mail als Vereinsverantwortliche/r. Erst eine Freigabe gibt dem Konto Rechte.']
     }),
     fr: (v) => ({
-      subject: `Confirmer un responsable d’équipe : ${v.name || v.email}`,
+      subject: `Confirmer un responsable d’équipe`,
       before: ['Bonjour,', `${v.proposer || 'Un responsable d’équipe'} propose ${signupWho(v)} comme responsable d’équipe de ${v.team} (${v.club}).`,
         'Le compte ne reçoit l’équipe qu’après l’approbation de la demande par un responsable du club ou un admin.'],
       button: 'Ouvrir dans le manager',
@@ -501,7 +504,7 @@ const T = {
         : 'Vous recevez cet e-mail en tant que responsable du club. Rien n’est accordé avant une approbation.']
     }),
     it: (v) => ({
-      subject: `Confermare un responsabile della squadra: ${v.name || v.email}`,
+      subject: `Confermare un responsabile della squadra`,
       before: ['Buongiorno,', `${v.proposer || 'Un responsabile della squadra'} propone ${signupWho(v)} come responsabile della squadra ${v.team} (${v.club}).`,
         'L’account riceve la squadra solo dopo che un responsabile della società o un admin ha approvato la richiesta.'],
       button: 'Aprire nel manager',
@@ -857,9 +860,10 @@ function hourlyBudget(max, now = Date.now) {
   let used = 0
   let dropped = 0 // in this window
   let droppedTotal = 0 // since start
+  let alerted = false // in this window
   const roll = () => {
     const t = now()
-    if (t - windowStart >= HOUR_MS) { windowStart = t; used = 0; dropped = 0 }
+    if (t - windowStart >= HOUR_MS) { windowStart = t; used = 0; dropped = 0; alerted = false }
   }
   return {
     max,
@@ -871,6 +875,10 @@ function hourlyBudget(max, now = Date.now) {
     },
     /** Gives back a mail that did not go out after all (e.g. its inbox cap). */
     refund() { if (used > 0) used-- },
+    /** True once per window: the first drop alerts the operator. */
+    alertDue() { roll(); if (alerted) return false; alerted = true; return true },
+    /** Milliseconds until the window ends and mails go out again. */
+    get resetsInMs() { roll(); return Math.max(0, windowStart + HOUR_MS - now()) },
     get used() { roll(); return used },
     snapshot() {
       roll()
@@ -1048,6 +1056,9 @@ export function createMailer(o = {}) {
     if (!budget.take()) {
       counters.lastDropAt = new Date().toISOString()
       log.warn(`[mail] hourly ${budgetName} budget (${budget.max}) used up; ${kind} mail to ${maskEmail(to)} dropped`)
+      // The operator hears of it once per window (an error line, as the
+      // storage alerts; stats() lists it under exhausted)
+      if (budget.alertDue()) log.error(`[mail] ALERT: the hourly ${budgetName} mail budget (${budget.max}) is used up; mails are dropped until the window ends (raise ${BUDGET_ENV[budgetName] || 'it'} if this is real traffic)`)
       return { sent: false, skipped: 'budget' }
     }
     if (INBOX_CAPPED.has(kind) && !perInbox.take(inboxKey(to))) {
@@ -1112,10 +1123,21 @@ export function createMailer(o = {}) {
 
 /**
  * The mailer described by the environment, or a disabled one (with the reason)
- * when SMTP_HOST or SMTP_PASS is missing or the settings are invalid. Never
- * throws and never logs the password.
+ * when neither SMTP_HOST nor SMTP_PASS is set. Once either is set, mail is
+ * meant to be on: a missing or unusable setting throws (the server does not
+ * start), instead of silently turning mail off, which would also confirm
+ * every sign-up at once. Never logs the password.
  */
-export function mailerFromEnv(env = process.env, { logger, tls, maxPerHour, budgets, maxPerInbox } = {}) {
+export function mailerFromEnv(env = process.env, opts = {}) {
+  const host = (env.SMTP_HOST || '').trim()
+  const pass = env.SMTP_PASS || ''
+  if (!host && !pass) return disabledMailer('SMTP_HOST not set')
+  const m = mailerFromSettings(env, opts)
+  if (!m.enabled) throw new Error(`mail settings unusable: ${m.reason}`)
+  return m
+}
+
+function mailerFromSettings(env, { logger, tls, maxPerHour, budgets, maxPerInbox } = {}) {
   const host = (env.SMTP_HOST || '').trim()
   const pass = env.SMTP_PASS || ''
   if (!host || !pass) return disabledMailer(!host ? 'SMTP_HOST not set' : 'SMTP_PASS not set')

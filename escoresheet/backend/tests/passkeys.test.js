@@ -194,8 +194,22 @@ describe('passkey ceremonies with a software authenticator', () => {
     assert.equal(looked, 0)
 
     const many = createPasskeyCeremonies(config)
-    for (let i = 0; i < PASSKEY_CHALLENGES_MAX + 10; i++) await many.authenticationOptions()
+    for (let i = 0; i < PASSKEY_CHALLENGES_MAX + 10; i++) await many.authenticationOptions({ bucket: `198.51.100.${i % 255}` })
     assert.equal(many.pending, PASSKEY_CHALLENGES_MAX)
+  })
+
+  it('a flood of sign-in options from many addresses evicts no other pending ceremony', async () => {
+    const c = createPasskeyCeremonies(config)
+    const device = softAuthenticator()
+    const reg = await c.registrationOptions({ userId: 'u', email: 'u@example.ch', existing: [] })
+    const stored = { id: 'r', userId: 'u', ...(await c.finishRegistration({ challengeId: reg.challengeId, userId: 'u', response: device.create(reg.options, APP) })) }
+    const mine = await c.authenticationOptions({ bucket: '192.0.2.7' })
+    const setUp = await c.registrationOptions({ userId: 'v', email: 'v@example.ch', existing: [] })
+    for (let i = 0; i < PASSKEY_CHALLENGES_MAX + 50; i++) await c.authenticationOptions({ bucket: `2001:db8:0:${i % 300}::/64` })
+    assert.ok(c.pending <= PASSKEY_CHALLENGES_MAX)
+    const out = await c.finishAuthentication({ challengeId: mine.challengeId, response: device.get(mine.options, APP), lookup: async () => stored })
+    assert.equal(out.passkey.userId, 'u')
+    await c.finishRegistration({ challengeId: setUp.challengeId, userId: 'v', response: softAuthenticator().create(setUp.options, APP) })
   })
 })
 

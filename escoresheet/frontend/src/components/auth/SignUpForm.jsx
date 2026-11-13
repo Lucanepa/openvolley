@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Check } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
-import { confirmationLinkSent, needsEmailConfirmation } from './signUpResult'
+import { confirmationLinkQueued, confirmationLinkSent, needsEmailConfirmation } from './signUpResult'
 import DateOfBirthInput from './DateOfBirthInput'
 import SignUpRequestsFields from './SignUpRequestsFields'
 import { fetchPublicClubs } from '../../lib/accountApi'
@@ -10,7 +10,7 @@ import { emptyRequestChoice, requestChoiceProblem, signUpRequestsOf } from '../.
 import { Button, cn, Field, FOCUS_RING, Input, Select } from '../../ui'
 import { LegalSentence } from '../../legal/LegalLinks'
 
-export const MIN_PASSWORD_LENGTH = 6
+export const MIN_PASSWORD_LENGTH = 10
 
 /**
  * The sign-up form: name, country, date of birth (starts empty), email,
@@ -55,6 +55,7 @@ export default function SignUpForm({ onSignedUp, onSwitchToLogin, existingAccoun
   const [success, setSuccess] = useState(false)
   const [confirmByEmail, setConfirmByEmail] = useState(false)
   const [linkSentTo, setLinkSentTo] = useState(null)
+  const [linkQueued, setLinkQueued] = useState(false)
   // db/025: what the account asks for, and the clubs to pick from
   const [choice, setChoice] = useState(emptyRequestChoice)
   const [choiceProblem, setChoiceProblem] = useState(null)
@@ -90,7 +91,7 @@ export default function SignUpForm({ onSignedUp, onSwitchToLogin, existingAccoun
       return
     }
     if (password.length < MIN_PASSWORD_LENGTH) {
-      setError(t('auth.passwordTooShort', 'Password must be at least 6 characters'))
+      setError(t('auth.passwordTooShort', 'Password must be at least 10 characters'))
       return
     }
     const problem = askRoles ? requestChoiceProblem(choice) : null
@@ -129,20 +130,23 @@ export default function SignUpForm({ onSignedUp, onSwitchToLogin, existingAccoun
     // will not let in before the confirmation gets the "check your email" step.
     const mustConfirm = needsEmailConfirmation(signUpData)
     // A confirmation link went out, but the account may sign in already
-    const sentTo = confirmationLinkSent(signUpData) ? email.trim() : null
+    // ... or holds it back for its hourly budget (the app is told, not "sent")
+    const queued = confirmationLinkQueued(signUpData)
+    const sentTo = confirmationLinkSent(signUpData) || queued ? email.trim() : null
     setConfirmByEmail(mustConfirm)
     setLinkSentTo(sentTo)
+    setLinkQueued(queued)
     if (!mustConfirm) {
       const { error: signInError } = await signIn(email.trim(), password)
       if (!signInError) {
         setLoading(false)
-        onSignedUp?.({ signedIn: true, confirmByEmail: false, linkSentTo: sentTo })
+        onSignedUp?.({ signedIn: true, confirmByEmail: false, linkSentTo: sentTo, linkQueued: queued })
         return
       }
     }
     setSuccess(true)
     setLoading(false)
-    onSignedUp?.({ signedIn: false, confirmByEmail: mustConfirm, linkSentTo: sentTo })
+    onSignedUp?.({ signedIn: false, confirmByEmail: mustConfirm, linkSentTo: sentTo, linkQueued: queued })
   }
 
   if (success) {
@@ -156,7 +160,7 @@ export default function SignUpForm({ onSignedUp, onSwitchToLogin, existingAccoun
           {confirmByEmail
             ? t('auth.checkEmail', 'Check your email to confirm your account')
             : linkSentTo
-              ? t('authEmail.signUpLinkSent', { email: linkSentTo })
+              ? t(linkQueued ? 'authEmail.signUpLinkQueued' : 'authEmail.signUpLinkSent', { email: linkSentTo })
               : t('auth.accountReady', 'Your account is ready. You can sign in now.')}
         </p>
         {onSwitchToLogin && (

@@ -455,7 +455,7 @@ function OpenRequestsNote({ requests }) {
  * page turns into "you're all set"); without one an admin approves it, which
  * AuthContext picks up on its own (it re-reads a pending profile every minute).
  */
-function InviteStepScreen({ justSignedUp, linkSentTo = null }) {
+function InviteStepScreen({ justSignedUp, linkSentTo = null, linkQueued = false }) {
   const { t } = useTranslation()
   const text = useBrandText()
   const { access } = useAuth()
@@ -473,7 +473,7 @@ function InviteStepScreen({ justSignedUp, linkSentTo = null }) {
         {justSignedUp && linkSentTo && (
           <p role="status" data-testid="signup-link-sent" className="-mt-2 mb-4 flex items-start gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">
             <MailCheck size={16} aria-hidden className="mt-0.5 shrink-0 text-sky-600" />
-            {t('authEmail.signUpLinkSent', { email: linkSentTo })}
+            {t(linkQueued ? 'authEmail.signUpLinkQueued' : 'authEmail.signUpLinkSent', { email: linkSentTo })}
           </p>
         )}
         {/* Any unconfirmed account, not only a new one: no code works before
@@ -664,6 +664,7 @@ export default function ManagerApp({ authLink = null }) {
   const [justSignedUp, setJustSignedUp] = useState(false)
   // The address a confirmation link was mailed to at sign-up (this session only)
   const [linkSentTo, setLinkSentTo] = useState(null)
+  const [linkQueued, setLinkQueued] = useState(false)
 
   // The link carries the language the email was written in (en/de/fr/it):
   // follow it unless the site already shows that language (de-CH for de).
@@ -705,10 +706,11 @@ export default function ManagerApp({ authLink = null }) {
     setSignInMode(null)
     goRoute(SIGN_UP_HASH)
   }, [goRoute])
-  const onSignedUp = useCallback(({ signedIn, linkSentTo: sentTo = null }) => {
+  const onSignedUp = useCallback(({ signedIn, linkSentTo: sentTo = null, linkQueued: queued = false }) => {
     if (!signedIn) return
     setJustSignedUp(true)
     setLinkSentTo(sentTo)
+    setLinkQueued(queued)
   }, [])
 
   // The open tab lives in the URL hash, so a reload or a bookmark keeps it.
@@ -896,7 +898,7 @@ export default function ManagerApp({ authLink = null }) {
     if (membership.member === null) return <div className="ov-kit"><AccountLoadingScreen /></div>
     if (membership.member === false) return <div className="ov-kit"><JoinAppScreen app={brand.app} onJoined={membership.joined} />{question}</div>
     let screen = <NoAccessScreen />
-    if (own.isPending) screen = <InviteStepScreen justSignedUp={justSignedUp} linkSentTo={linkSentTo} />
+    if (own.isPending) screen = <InviteStepScreen justSignedUp={justSignedUp} linkSentTo={linkSentTo} linkQueued={linkQueued} />
     else if (own.canScore) screen = <AllSetScreen />
     return <div className="ov-kit">{screen}{question}</div>
   }

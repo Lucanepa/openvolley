@@ -71,8 +71,17 @@
 
 import nodemailer from 'nodemailer'
 import { transportOptions, maskEmail, describeMailError, DEFAULT_FROM_NAME } from './mailer.js'
+import { EMAIL_RE } from './emailAddress.js'
 
 export const DEFAULT_CONTACT_EMAIL = 'support@openvolley.app'
+
+/**
+ * The sender ($1 = user id) holds the scoring device of a match claimed in the
+ * last 12 hours that is not over: approved and final matches do not count.
+ */
+export const LIVE_MATCH_SQL = `SELECT 1 FROM public.match_scorer_devices d JOIN public.matches m ON m.id = d.match_id
+  WHERE d.claimed_by = $1 AND d.claimed_at > now() - interval '12 hours'
+    AND coalesce(m.status, '') NOT IN ('approved', 'final', 'ended', 'completed', 'finished') LIMIT 1`
 export const CONTACT_TYPES = Object.freeze(['support', 'feedback', 'request'])
 export const SUPPORT_TYPES = Object.freeze(['bug', 'help'])
 export const SOURCES = Object.freeze(['app', 'website'])
@@ -145,6 +154,9 @@ const MAX_PART_HEADER_BYTES = 2048
 export const MAX_COMMENTS = 5000
 export const MAX_DIAGNOSTICS_BYTES = 32 * 1024
 export const CONTACT_MAILS_PER_HOUR = 30
+// The share of the hourly budget only signed-in senders may use, so
+// anonymous messages from one client cannot use up the whole hour
+export const CONTACT_SIGNED_IN_SHARE = 1 / 3
 const HOUR_MS = 60 * 60 * 1000
 // Requests in flight at once (createContactSlots): each holds its body, up to
 // MAX_CONTACT_BODY_BYTES, in memory for up to 2 minutes, so 10 hold 140 MB
@@ -296,7 +308,7 @@ export function parseContactBody(buffer, contentType) {
 
 // Address: one @, a dot in the domain, nothing an address list or a display
 // name could be read from (no comma, semicolon, brackets, quotes, spaces).
-const EMAIL = /^[^\s@<>()[\]\\,;:"]+@[^\s@<>()[\]\\,;:"]+\.[^\s@<>()[\]\\,;:"]+$/
+const EMAIL = EMAIL_RE // lib/emailAddress.js
 // Control characters, bidi overrides and zero-width characters
 const CONTROL = /[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁦-⁩﻿]/g
 const CONTROL_EXCEPT_NEWLINE_TAB = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f​-‏‪-‮⁦-⁩﻿]/g
@@ -608,7 +620,9 @@ export function disabledContactMailer(reason = 'not configured') {
 
 /**
  * Sends the support mails: from and to are fixed here, never taken from a
- * request. At most maxPerHour mails per fixed hour window (all senders).
+ * request. At most maxPerHour mails per fixed hour window (all senders); the
+ * last CONTACT_SIGNED_IN_SHARE of it only for send(mail, { signedIn: true }).
+ * A mail the SMTP server does not take is given back to the budget.
  * @param {{ transport: { sendMail: Function, close?: Function }, from: string, to: string, maxPerHour?: number, now?: () => number }} o
  */
 export function createContactMailer({ transport, from, to, maxPerHour = CONTACT_MAILS_PER_HOUR, now = Date.now } = {}) {
@@ -622,12 +636,18 @@ export function createContactMailer({ transport, from, to, maxPerHour = CONTACT_
     reason: null,
     from,
     to,
-    async send(mail) {
+    async send(mail, { signedIn = false } = {}) {
       const t = now()
       if (t - windowStart >= HOUR_MS) { windowStart = t; used = 0 }
-      if (used >= maxPerHour) return { sent: false, skipped: 'budget' }
+      const cap = signedIn ? maxPerHour : Math.floor(maxPerHour * (1 - CONTACT_SIGNED_IN_SHARE))
+      if (used >= cap) return { sent: false, skipped: 'budget' }
       used++
-      await transport.sendMail({ ...mail, from, to, disableFileAccess: true, disableUrlAccess: true })
+      try {
+        await transport.sendMail({ ...mail, from, to, disableFileAccess: true, disableUrlAccess: true })
+      } catch (err) {
+        if (used > 0) used--
+        throw err
+      }
       return { sent: true }
     },
     close() { try { transport.close?.() } catch { /* already closed */ } }
@@ -714,8 +734,11 @@ export function createContactSlots(max = MAX_CONTACT_IN_FLIGHT) {
  *   503 { success: false, code: 'unavailable' | 'busy' }  no mail configured / hourly budget used up
  *   502 { success: false, code: 'send_failed' }   the SMTP server did not take it
  * The app offers to send the message by email (mailto) after a 5xx.
+ * sender (server.js): { signedIn, liveMatch } of the request's session.
+ * "A match is running" (P1) is kept only from a session that scores a live
+ * match; a signed-in sender may use the budget's reserved share.
  */
-export async function handleContact({ body, contentType, mailer, logger = console, now = () => new Date() } = {}) {
+export async function handleContact({ body, contentType, mailer, sender = {}, logger = console, now = () => new Date() } = {}) {
   let value
   let attachments
   let diagnosticsFile
@@ -726,6 +749,7 @@ export async function handleContact({ body, contentType, mailer, logger = consol
       return answer(200, { success: true })
     }
     value = normalizeContact(fields)
+    if (value.matchRunning && sender.liveMatch !== true) value = { ...value, matchRunning: false }
     attachments = checkAttachments(files)
     diagnosticsFile = checkDiagnosticsFile(report)
   } catch (err) {
@@ -739,7 +763,7 @@ export async function handleContact({ body, contentType, mailer, logger = consol
     return answer(503, { success: false, code: 'unavailable', error: 'The support form is not available right now' })
   }
   try {
-    const r = await mailer.send(buildSupportMail(value, attachments, { receivedAt: now(), diagnosticsFile }))
+    const r = await mailer.send(buildSupportMail(value, attachments, { receivedAt: now(), diagnosticsFile }), { signedIn: sender.signedIn === true })
     if (!r.sent) {
       logger.warn(`[Contact] ${what} not mailed: ${r.skipped === 'budget' ? 'hourly budget used up' : r.skipped}`)
       return answer(503, BUSY_BODY)
