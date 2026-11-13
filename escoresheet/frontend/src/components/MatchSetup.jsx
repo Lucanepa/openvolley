@@ -49,6 +49,7 @@ import { savedTeamToRoster, findSavedTeamSuggestions } from '../domain/savedTeam
 import { getSavedTeams, refreshSavedTeams } from '../db/savedTeams'
 import { markGameRosterAccepted, offeredSentRosters, refreshGameRosters, rowToPendingRoster } from '../db/gameRosters'
 import SentRosterCard from './SentRosterCard'
+import BackupTargetsPanel from './BackupTargetsPanel'
 import ClubPlayerPickerModal from './ClubPlayerPickerModal'
 import ClubGenderNotice from './ClubGenderNotice'
 import { clubOfTeam } from '../db/clubPlayers'
@@ -500,7 +501,7 @@ function formatDobForSync(dob) {
   return null // Unknown format, don't sync
 }
 
-export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, onOpenCoinToss, offlineMode = false, lfpTrackingEnabled = false, initialOfficialGame = null, onInitialOfficialGameUsed, onReady }) {
+export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, onOpenCoinToss, offlineMode = false, lfpTrackingEnabled = false, initialOfficialGame = null, onInitialOfficialGameUsed, onReady, backup = null }) {
   const { t, i18n } = useTranslation()
   const { showAlert } = useAlert()
   const { user, profile, getCachedProfile, access } = useAuth()
@@ -7011,6 +7012,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         </div>
       </div>
       <div className="setup-section">
+        {/* Cloud / this device / removable drive: where this match is backed up */}
+        {backup && <div className="ov-kit mb-3"><BackupTargetsPanel backup={backup} test={match?.test === true} /></div>}
         {/* Why this match does not sync, if the server refused it for good */}
         {match?.cloudBlock && <CloudBlockNotice match={match} className="mb-3" />}
 

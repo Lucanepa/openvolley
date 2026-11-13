@@ -13,6 +13,7 @@ const APP_COMMANDS: &[&str] = &[
     "backup_remove",
     "backup_open_dir",
     "backup_pick_file",
+    "backup_read",
     // copies of the match backups on USB sticks (stick.rs)
     "stick_list",
     "stick_mirror",

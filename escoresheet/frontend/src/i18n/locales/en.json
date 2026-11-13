@@ -1295,6 +1295,42 @@
       "manual": "Enter the game yourself"
     }
   },
+  "backupTargets": {
+    "title": "Backups",
+    "summary": "Cloud, this device, removable drive",
+    "cloud": "Cloud",
+    "cloudOn": "On: saved to the cloud while you score.",
+    "cloudOffline": "Offline: it waits and catches up when the connection is back.",
+    "cloudTest": "Test match: never sent to the cloud.",
+    "cloudHint": "The cloud copy cannot be switched off.",
+    "device": "This device",
+    "off": "Off",
+    "preparing": "Preparing the folder…",
+    "folderIs": "Folder: {{name}}",
+    "folderNone": "No folder chosen yet. Until then a file is downloaded at set end and match end.",
+    "folderReconnect": "Folder: {{name}}. The browser needs one tap to allow it again.",
+    "reconnect": "Reconnect folder",
+    "downloads": "This browser downloads a file at set end and match end.",
+    "deviceAndroid": "Saved in the documents folder of this device, in OpenVolley/backups.",
+    "drive": "Removable drive",
+    "driveNone": "No USB stick found. Plug one in: any stick works.",
+    "driveCopied": "copied {{time}}",
+    "driveHint": "Every backup is also copied to each USB stick plugged in (an OpenVolley folder is made on it).",
+    "driveBrowser": "Choose a folder on the drive above.",
+    "driveAndroid": "Not available in the mobile app yet.",
+    "driveDownload": "This browser cannot write to a drive: use the downloaded files.",
+    "driveFailed": "The copy to the USB stick failed."
+  },
+  "savedBackups": {
+    "title": "Saved on this device or a drive",
+    "device": "Saved on this device",
+    "drive": "USB stick",
+    "folder": "Browser folder",
+    "restore": "Restore",
+    "pin": "Needs the PIN",
+    "none": "No backups found on this device or on a drive.",
+    "err_io": "This backup could not be read."
+  },
   "options": {
     "title": "Options",
     "close": "Close",

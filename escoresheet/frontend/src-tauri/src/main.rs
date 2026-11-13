@@ -368,6 +368,7 @@ fn with_app_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Bu
         backup::backup_remove,
         backup::backup_open_dir,
         backup::backup_pick_file,
+        backup::backup_read,
         stick::stick_list,
         stick::stick_mirror,
         stick::stick_list_backups,
@@ -751,7 +752,7 @@ mod ipc_acl_tests {
             "contents": "{}",
             "latest": true
         });
-        for cmd in ["backup_info", "backup_write", "backup_list", "backup_remove", "backup_open_dir", "backup_pick_file",
+        for cmd in ["backup_info", "backup_write", "backup_list", "backup_remove", "backup_open_dir", "backup_pick_file", "backup_read",
                     "stick_list", "stick_mirror", "stick_list_backups", "stick_read", "stick_remove",
                     "activity_append", "activity_open_dir",
                     "diagnostics_append", "diagnostics_native",

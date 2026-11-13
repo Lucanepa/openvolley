@@ -1287,6 +1287,42 @@
       "manual": "Spiel selbst eingeben"
     }
   },
+  "backupTargets": {
+    "title": "Sicherungen",
+    "summary": "Cloud · Dieses Gerät · Wechseldatenträger",
+    "cloud": "Cloud",
+    "cloudOn": "An: wird während des Spiels in der Cloud gesichert.",
+    "cloudOffline": "Offline: wartet und holt nach, sobald die Verbindung wieder da ist.",
+    "cloudTest": "Testspiel: wird nie an die Cloud gesendet.",
+    "cloudHint": "Die Cloud-Sicherung lässt sich nicht ausschalten.",
+    "device": "Dieses Gerät",
+    "off": "Aus",
+    "preparing": "Ordner wird vorbereitet…",
+    "folderIs": "Ordner: {{name}}",
+    "folderNone": "Noch kein Ordner gewählt. Bis dahin wird am Satz- und Spielende eine Datei heruntergeladen.",
+    "folderReconnect": "Ordner: {{name}}. Der Browser braucht einen Tipp, um ihn wieder zuzulassen.",
+    "reconnect": "Ordner neu verbinden",
+    "downloads": "Dieser Browser lädt am Satz- und Spielende eine Datei herunter.",
+    "deviceAndroid": "Gespeichert in Dokumente/OpenVolley/backups auf diesem Tablet.",
+    "drive": "Wechseldatenträger",
+    "driveNone": "Kein USB-Stick gefunden. Stecken Sie einen ein: jeder Stick funktioniert.",
+    "driveCopied": "kopiert {{time}}",
+    "driveHint": "Jede Sicherung wird zusätzlich auf jeden eingesteckten USB-Stick kopiert (dort wird ein Ordner OpenVolley angelegt).",
+    "driveBrowser": "Wählen Sie oben einen Ordner auf dem Laufwerk.",
+    "driveAndroid": "In der Android-App noch nicht verfügbar.",
+    "driveDownload": "Dieser Browser kann nicht auf ein Laufwerk schreiben: nutzen Sie die heruntergeladenen Dateien.",
+    "driveFailed": "Das Kopieren auf den USB-Stick ist fehlgeschlagen."
+  },
+  "savedBackups": {
+    "title": "Auf diesem Gerät oder einem Laufwerk gesichert",
+    "device": "Auf diesem Gerät",
+    "drive": "USB-Stick",
+    "folder": "Browser-Ordner",
+    "restore": "Wiederherstellen",
+    "pin": "PIN nötig",
+    "none": "Keine Sicherungen auf diesem Gerät oder einem Laufwerk gefunden.",
+    "err_io": "Diese Sicherung konnte nicht gelesen werden."
+  },
   "options": {
     "title": "Optionen",
     "close": "Schliessen",

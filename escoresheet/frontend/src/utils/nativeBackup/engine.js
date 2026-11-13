@@ -102,6 +102,8 @@ export function createNativeBackupEngine({
   readMatch = null,
   // { seal(matchId, data, plainText, lastUpdated) -> { text, encrypted }, warm(matchId, match) } (backupCrypto)
   sealer = createBackupSealer(),
+  // (matchId, { dir, name, at }) after each file is written: the USB stick copy. Never awaited, never throws into the engine.
+  onWritten = null,
   log = console
 }) {
   const quiet = quietMs ?? settleMs ?? 150
@@ -260,6 +262,9 @@ export function createNativeBackupEngine({
     if (result?.warning) log.warn?.('[NativeBackup]', result.warning)
     lastKey.set(matchId, key)
     lastWritten.set(matchId, { dir, name, at: stamp })
+    if (onWritten) {
+      try { Promise.resolve(onWritten(matchId, { dir, name, at: stamp })).catch(() => {}) } catch { /* a hook never breaks a backup */ }
+    }
     writtenDirs.add(dir)
     addKnown(dir, [{ name, size: text.length }])
 

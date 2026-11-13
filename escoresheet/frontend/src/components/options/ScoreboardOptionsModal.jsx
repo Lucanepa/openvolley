@@ -12,6 +12,7 @@ import {
   pickNativeBackupFile
 } from '../../utils/nativeBackup'
 import BackupTable from '../BackupTable'
+import SavedBackupsList from '../SavedBackupsList'
 import { useBackupUnlock } from '../../hooks/useBackupUnlock'
 import { clearCachesAndReload } from '../../hooks/useServiceWorker'
 import { ChevronDown, Info, Tablet, X } from 'lucide-react'
@@ -973,6 +974,25 @@ export default function ScoreboardOptionsModal({
             )}
           </Row>
           <DiagnosticsSection showAlert={showAlert} testIdPrefix="options" />
+        </Section>
+
+        <Section title={t('savedBackups.title')}>
+          <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
+            <SavedBackupsList
+              disabled={!matchId}
+              onPick={async (file) => {
+                const backupData = await unlockBackup(matchBackupFromFile(file))
+                if (!backupData) return
+                const lastSet = [...(backupData.sets || [])].sort((a, b) => (b.index || 0) - (a.index || 0))[0]
+                setRestoreConfirm({
+                  fileData: backupData,
+                  name: t('savedBackups.title'),
+                  ...(lastSet ? { setIndex: lastSet.index || 1, homePoints: lastSet.homePoints ?? 0, awayPoints: lastSet.awayPoints ?? 0 } : {}),
+                  timestamp: backupData.lastUpdated ? new Date(backupData.lastUpdated).toLocaleString() : undefined
+                })
+              }}
+            />
+          </Row>
         </Section>
 
         <Section title={t('options.cloudBackup')}>
