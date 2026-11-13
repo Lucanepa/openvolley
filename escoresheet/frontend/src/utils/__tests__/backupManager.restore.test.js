@@ -91,7 +91,10 @@ beforeEach(() => {
     { id: 3, resource: 'set', action: 'update', status: 'queued', payload: { external_id: `${SEED}:s:2`, home_points: 4 } },
     { id: 4, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: `${SEED}:e:2`, match_id: SEED } },
     { id: 5, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: `${OTHER}:e:1`, match_id: OTHER } },
-    { id: 6, resource: 'match', action: 'update', status: 'sent', payload: { id: OTHER, status: 'final' } }
+    { id: 6, resource: 'match', action: 'update', status: 'sent', payload: { id: OTHER, status: 'final' } },
+    // jobs of no match: the activity log upload, a set job of an older app
+    { id: 7, resource: 'activity', action: 'flush', status: 'queued', payload: {} },
+    { id: 8, resource: 'set', action: 'update', status: 'queued', payload: { external_id: '1', home_points: 3 } }
   ])
   fakeDb.transaction = async (...args) => args[args.length - 1]()
 })
@@ -158,6 +161,9 @@ describe('restoreMatchFromJson', () => {
     expect(fakeDb.events.map.get(1)).toMatchObject({ matchId: 1 })
     expect(fakeDb.sync_queue.map.get(5)).toBeDefined()
     expect(fakeDb.sync_queue.map.get(6)).toBeDefined()
+    // and so do the jobs of no match (fe-sync-4: deleted with every restore)
+    expect(fakeDb.sync_queue.map.get(7)).toBeDefined()
+    expect(fakeDb.sync_queue.map.get(8)).toBeDefined()
 
     // the old copy of this match is gone, the restored one has a new id
     expect(fakeDb.matches.map.get(2)).toBeUndefined()

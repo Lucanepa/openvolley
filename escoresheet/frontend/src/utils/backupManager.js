@@ -639,11 +639,12 @@ export async function restoreMatchFromJson(jsonData, { checkServer = serverClose
       if (previous.length) console.log(`[Restore] Replaced ${previous.length} local copy/copies of match ${externalId}`)
     }
     // Keep other matches' jobs (unsynced writes and the sent history their
-    // retries are trimmed against); drop this match's jobs (the local match they
-    // describe is gone and the restore job below replaces them) and anything
-    // that cannot be attributed to a match.
+    // retries are trimmed against) and the jobs of no match (the activity log
+    // uploads; a set job of an older app that only a pass attributes); drop
+    // this match's jobs (the local match they describe is gone and the
+    // restore job below replaces them).
     const queuedJobs = await db.sync_queue.toArray()
-    const keepJob = (j) => !!jobMatchKey(j) && jobMatchKey(j) !== externalId
+    const keepJob = (j) => { const key = jobMatchKey(j); return !key || key !== externalId }
     await db.sync_queue.bulkDelete(queuedJobs.filter(j => !keepJob(j)).map(j => j.id))
 
     // STEP B: the restored match's own team rows, always new. A team found

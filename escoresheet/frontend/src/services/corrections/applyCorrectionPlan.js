@@ -203,7 +203,7 @@ async function writePlan(plan, { matchId, db, mode = 'live', hooks = {}, now = n
         // An insert still waiting for a removed row is dropped; the void job
         // the deletion queued (event history) stays and voids the server copy
         const queued = await db.sync_queue.where('status').equals('queued').toArray()
-        const stale = syncJobsForEvents(queued, removeIds)
+        const stale = syncJobsForEvents(queued, removeIds, match.seed_key)
         if (stale.length) await db.sync_queue.bulkDelete(stale.map(j => j.id))
       }
       for (const id of touched) {

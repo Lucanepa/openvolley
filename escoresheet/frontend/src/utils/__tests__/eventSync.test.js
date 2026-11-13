@@ -14,8 +14,12 @@ import {
   isLiveStateRefused,
   markLiveStateRefused,
   clearLiveStateRefused,
-  LIVE_REFUSAL_PAUSE_MS
+  LIVE_REFUSAL_PAUSE_MS,
+  setUpdateJob,
+  setDeleteJob,
+  queueSetDeletes
 } from '../eventSync'
+import { jobMatchKey } from '../syncIds'
 
 // In-memory stand-in for the Dexie tables used here
 function fakeTable(rows = []) {
@@ -196,6 +200,49 @@ describe('undo of a set end', () => {
       reopenedSetIndex: 2
     })
     expect(p).toEqual({ id: 'm', current_set: 2, set_results: [{ set: 1, home: 25, away: 20 }] })
+  })
+})
+
+describe('set update jobs', () => {
+  it('carry the namespaced set id and the match key, never a bare local id', () => {
+    const job = setUpdateJob({ seed_key: 'match_100_aaa' }, 6, { finished: false, end_time: null }, 't')
+    expect(job).toEqual({
+      resource: 'set',
+      action: 'update',
+      payload: { finished: false, end_time: null, external_id: 'match_100_aaa:s:6', match_id: 'match_100_aaa' },
+      ts: 't',
+      status: 'queued'
+    })
+    // per-match order, the approval's wait and the restore clean-up see it
+    expect(jobMatchKey(job)).toBe('match_100_aaa')
+  })
+})
+
+describe('sets deleted on the device', () => {
+  it('drop their unsent jobs and queue a cloud delete behind whatever of them already left', async () => {
+    db.sync_queue = fakeTable([
+      // set 6 went out (sent), its running score is still queued
+      { id: 1, resource: 'set', action: 'insert', status: 'sent', payload: { external_id: 'match_100_aaa:s:6', match_id: 'match_100_aaa' } },
+      { id: 2, resource: 'set', action: 'update', status: 'queued', payload: { external_id: 'match_100_aaa:s:6', home_points: 3 } },
+      // another match's set with the same local id stays
+      { id: 3, resource: 'set', action: 'update', status: 'queued', payload: { external_id: 'match_200_bbb:s:6', home_points: 1 } },
+      // an insert of set 6 still waiting out a backoff: the delete goes behind it
+      { id: 4, resource: 'set', action: 'insert', status: 'error', payload: { external_id: 'match_100_aaa:s:6', match_id: 'match_100_aaa' } }
+    ])
+    expect(await queueSetDeletes(db, { seed_key: 'match_100_aaa' }, [6])).toBe(1)
+    const rows = [...db.sync_queue.map.values()]
+    expect(rows.map(j => j.id)).toEqual([1, 3, 4, 5])
+    expect(rows[3]).toMatchObject({ resource: 'set', action: 'delete', status: 'queued', payload: { external_id: 'match_100_aaa:s:6', match_id: 'match_100_aaa' } })
+    expect(setDeleteJob('match_100_aaa', 6, 't')).toEqual(
+      { resource: 'set', action: 'delete', payload: { external_id: 'match_100_aaa:s:6', match_id: 'match_100_aaa' }, ts: 't', status: 'queued' })
+  })
+
+  it('nothing for a test match or a match without a key', async () => {
+    db.sync_queue = fakeTable([])
+    expect(await queueSetDeletes(db, { seed_key: 'match_200_bbb', test: true }, [7])).toBe(0)
+    expect(await queueSetDeletes(db, { seed_key: null }, [7])).toBe(0)
+    expect(await queueSetDeletes(db, { seed_key: 'match_100_aaa' }, [])).toBe(0)
+    expect(db.sync_queue.map.size).toBe(0)
   })
 })
 
