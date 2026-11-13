@@ -17,7 +17,8 @@ import {
   maxBodyBytesFor,
   StorageError,
   SENTINEL_NAME,
-  TMP_DIR_NAME
+  TMP_DIR_NAME,
+  DEFAULTS
 } from '../lib/storage.js'
 
 const GiB = 1024 ** 3
@@ -1087,6 +1088,16 @@ describe('per-account totals and growth alerts', () => {
     await off.upload({ bucket: 'backup', path: 'backups/g2/big.json', fileBase64: b64('x'.repeat(64)), userId: U1 })
     const unscoped = make({ maxOwnerBytes: { backup: 1 } })
     await unscoped.upload({ bucket: 'backup', path: 'backups/g3/big.json', fileBase64: b64('x'.repeat(64)) })
+  })
+
+  it('the default total holds 30 days of a club account that scores every weekend; STORAGE_BACKUP_ACCOUNT_MAX_MB sets it', () => {
+    // a backup a minute, each the whole match: up to 250 MB for a long
+    // five-set match; three matches on each of 8 weekend days
+    assert.equal(DEFAULTS.maxOwnerBytes.backup, 6 * GiB)
+    assert.ok(DEFAULTS.maxOwnerBytes.backup >= 24 * 250 * 1024 * 1024)
+    assert.deepEqual(storageOptionsFromEnv({ STORAGE_BACKUP_ACCOUNT_MAX_MB: '8192' }).maxOwnerBytes, { backup: 8 * GiB })
+    assert.deepEqual(storageOptionsFromEnv({ STORAGE_BACKUP_ACCOUNT_MAX_MB: '0' }).maxOwnerBytes, { backup: 0 })
+    assert.equal(storageOptionsFromEnv({}).maxOwnerBytes, undefined)
   })
 
   it('the operator is alerted when a bucket grows fast or an account nears its total', async () => {

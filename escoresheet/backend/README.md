@@ -624,9 +624,12 @@ reachable through the API; the 30-day sweep still removes them. The sweep
 covers all of `backup/`: every account's backups, logs and any other file in
 its folder older than 30 days. Writes need an account with a role (scorer,
 referee, manager or admin, either sport; 403 `OV_STORAGE_FORBIDDEN`
-otherwise), and one account holds at most `STORAGE_BACKUP_ACCOUNT_MAX_MB`
-(507 `OV_STORAGE_ACCOUNT_FULL` above it), so no account can fill the volume
-to the free-space floor every account's backups share.
+otherwise: a pending account, which scores test matches only, keeps its
+backups on the device and in the desktop / Android backup folder, and its
+log lines are not uploaded), and one account holds at most
+`STORAGE_BACKUP_ACCOUNT_MAX_MB` (507 `OV_STORAGE_ACCOUNT_FULL` above it), so
+no account can fill the volume to the free-space floor every account's
+backups share.
 
 ### Deleting an account
 
@@ -779,7 +782,7 @@ Replaces Supabase Storage behind `POST /api/storage/upload`, `/download`, `/list
 | `STORAGE_BACKUP_MIN_FREE_MB` | `backup/` writes are refused (507) when free space would drop below this, so the space above the scoresheets floor stays for scoresheets. | `2048` |
 | `STORAGE_SCORESHEETS_MIN_FREE_MB` | Smaller floor for `scoresheets/` writes, so the volume never reaches ENOSPC. | `256` |
 | `STORAGE_MAX_FILE_MB` | Per-object size cap (413 above it). server.js must read the body with `storage.maxBodyBytes` (base64 + 64 KiB) for this to hold. | `5` |
-| `STORAGE_BACKUP_ACCOUNT_MAX_MB` | What one account may hold in `backup/` (its `{user id}/` folder, counted on disk; 507 `OV_STORAGE_ACCOUNT_FULL` above it). `0` turns it off. An account past 80% of it, and a bucket that grows by more than 2 GB (`backup/`) or 1 GB (`scoresheets/`) in an hour, write a `❌ [Storage] ALERT` line (and `storage.health().alerts`). | `2048` |
+| `STORAGE_BACKUP_ACCOUNT_MAX_MB` | What one account may hold in `backup/` (its `{user id}/` folder, counted on disk; 507 `OV_STORAGE_ACCOUNT_FULL` above it). `0` turns it off. Sized from the backups themselves: the scorer uploads the whole match once a minute, about 50 MB for a three-set match and 100-250 MB for a long five-set one, kept 30 days; set it from the largest `backup/{user id}/` folders measured on the server. An account past 80% of it, and a bucket that grows by more than 2 GB (`backup/`) or 1 GB (`scoresheets/`) in an hour, write a `❌ [Storage] ALERT` line (and `storage.health().alerts`). | `6144` |
 | `STORAGE_OWNER_SCOPE` | `off`, `require` (first path segment must be the caller's user id) or `prefix` (user id prepended transparently), on the buckets of `STORAGE_OWNER_SCOPE_BUCKETS`. Any other value stops the server at startup. | `prefix` |
 | `STORAGE_OWNER_SCOPE_BUCKETS` | Buckets the owner scope applies to: a comma list or `all`. With the default every account sees only its own `backup/` objects (see "Security model"). | `backup` |
 | `STORAGE_UPLOADER_READ_BUCKETS` | Buckets whose objects only the account that created them may read, replace or list (see "Who can read a scoresheet" below); `none` turns it off. Any bucket other than `scoresheets`/`backup` stops the server at startup. | `scoresheets` |

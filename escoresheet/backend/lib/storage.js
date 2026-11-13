@@ -76,10 +76,15 @@ export const DEFAULTS = Object.freeze({
   sweepMaxAgeMs: 30 * DAY_MS,
   sweepDirGraceMs: 5 * 60 * 1000, // sweep never removes a folder touched this recently
   // What one account may hold in an owner-scoped bucket ({bucket}/{userId}/),
-  // counted on disk. A scorer's 30 days of match backups and logs are a few
-  // hundred MB (one backup a minute, each the whole match); the free-space
-  // floor is shared by every account, so one account must never reach it.
-  maxOwnerBytes: Object.freeze({ backup: 2 * GiB }),
+  // counted on disk; the sweep removes what is older than 30 days. The scorer
+  // uploads the whole match once a minute (utils/logger.js
+  // BACKUP_MIN_INTERVAL_MS, a new file each time) with every event's undo
+  // snapshot, 1-3 MB at the end of a match: about 50 MB for a three-set match,
+  // 100-250 MB for a long five-set one. 6 GiB holds 30 days of a club account
+  // that scores several matches every weekend (STORAGE_BACKUP_ACCOUNT_MAX_MB
+  // sets it from the measured folders). The free-space floor is shared by
+  // every account, so one account must never reach it.
+  maxOwnerBytes: Object.freeze({ backup: 6 * GiB }),
   // Bytes written to a bucket in one hour above which the operator is alerted
   // (an error line in the log, and health().alerts)
   growthAlertBytes: Object.freeze({ backup: 2 * GiB, scoresheets: 1 * GiB }),
@@ -268,7 +273,7 @@ export function createWriteQuota({ windowMs = 60_000, maxWrites = 300, maxBytes 
  *   STORAGE_BACKUP_MIN_FREE_MB       free-space floor for backup/ writes (default 2048)
  *   STORAGE_SCORESHEETS_MIN_FREE_MB  free-space floor for scoresheets/ writes (default 256)
  *   STORAGE_MAX_FILE_MB              per-object size cap (default 5)
- *   STORAGE_BACKUP_ACCOUNT_MAX_MB    what one account may hold in backup/ (default 2048; 0: no cap)
+ *   STORAGE_BACKUP_ACCOUNT_MAX_MB    what one account may hold in backup/ (default 6144; 0: no cap)
  *   STORAGE_OWNER_SCOPE              off | require | prefix (default prefix since the Phase 7
  *                                    security release)
  *   STORAGE_OWNER_SCOPE_BUCKETS      buckets the owner scope applies to: a comma list or 'all'
@@ -338,7 +343,7 @@ export function storageOptionsFromEnv(env = process.env) {
  * @param {number}   [options.maxDownloadBytes=64 MiB]
  * @param {string[]} [options.allowedContentTypes] media types accepted on upload
  * @param {Object<string,number>} [options.minFreeBytes={scoresheets: 256 MiB, backup: 2 GiB}] per-bucket free-space floor
- * @param {Object<string,number>} [options.maxOwnerBytes={backup: 2 GiB}] what one account may hold in a
+ * @param {Object<string,number>} [options.maxOwnerBytes={backup: 6 GiB}] what one account may hold in a
  *        'prefix' owner-scoped bucket, counted on disk (0: no cap); 507 OV_STORAGE_ACCOUNT_FULL above it
  * @param {Object<string,number>} [options.growthAlertBytes] bytes written to a bucket in an hour that alert the operator
  * @param {(ctx:{userId,bucket,path,size,contentType}) => (boolean|{ok:boolean,message?:string}|Promise)} [options.checkQuota]
