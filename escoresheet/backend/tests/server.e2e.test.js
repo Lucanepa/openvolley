@@ -224,6 +224,23 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
   const ext = `e2e-${randomBytes(4).toString('hex')}`
   const email = `e2e-${randomBytes(4).toString('hex')}@example.ch`
   const password = 'correct-horse-battery'
+  // Another signed-in account with `roles` (none: a self-registered one), one
+  // per role set: its session token. After the sign-in the next second starts,
+  // so the global sign-in budget (5 a second, lib/auth.js) is whole again for
+  // the tests that sign in next.
+  const otherAccounts = new Map()
+  async function otherAccount(roles) {
+    const key = roles.join()
+    if (otherAccounts.has(key)) return otherAccounts.get(key)
+    const address = `e2e-reader-${randomBytes(4).toString('hex')}@example.ch`
+    assert.equal((await api(srv.base, '/api/auth/sign-up', { body: { email: address, password } })).status, 200)
+    const inn = await api(srv.base, '/api/auth/sign-in', { body: { email: address, password } })
+    assert.equal(inn.status, 200, inn.text)
+    await sleep(1100)
+    if (roles.length) await grantRoles(db.url, inn.json.data.user.id, roles)
+    otherAccounts.set(key, inn.json.data.session.access_token)
+    return inn.json.data.session.access_token
+  }
   let matchUuid
 
   before(async () => {
@@ -568,11 +585,22 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
         assert.equal(r.status, 400, JSON.stringify(params))
         assert.equal(r.json.error.code, 'OV_SECRET_FILTER')
       }
-      // A signed-in scorer still reads the whole row (its sync queue merges officials etc.)
-      const mine = await api(srv.base, '/api/db', { token, proto: null, body: { table: 'matches', action: 'select', params: { columns: 'officials, players_home', filters: [{ type: 'eq', column: 'external_id', value: ext }], single: true } } })
+      // The intended reader: the account that scores the match reads its whole
+      // row (its sync queue merges officials etc.)
+      const rowOf = (t) => api(srv.base, '/api/db', { token: t, proto: null, body: { table: 'matches', action: 'select', params: { columns: 'officials, players_home, bench_home, signatures, approval', filters: [{ type: 'eq', column: 'external_id', value: ext }], maybeSingle: true } } })
+      const mine = await rowOf(token)
       assert.equal(mine.status, 200, mine.text)
       assert.equal(mine.json.data.officials[0].dob, DOB)
       assert.equal(mine.json.data.players_home[0].dob, DOB)
+      // Every other account, role-less or a scorer of another match, reads it
+      // like an anonymous caller: no rosters, no dates of birth, no signatures
+      for (const roles of [[], ['scorer']]) {
+        const other = await otherAccount(roles)
+        const theirs = await rowOf(other)
+        assert.equal(theirs.status, 200, theirs.text)
+        assert.equal(leaks(theirs.text), false, `${roles.join() || 'role-less'}: ${theirs.text.slice(0, 300)}`)
+        for (const col of ['officials', 'players_home', 'bench_home', 'signatures', 'approval']) assert.equal(col in (theirs.json.data || {}), false, col)
+      }
     } finally {
       spy.ws.close()
     }
@@ -612,13 +640,27 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
     const probe = await api(srv.base, '/api/db', { proto: null, body: { table: 'referee_database', action: 'select', params: { columns: 'id', filters: [{ type: 'eq', column: 'dob', value: DOB1 }] } } })
     assert.equal(probe.status, 400, probe.text)
     assert.equal(probe.json.error.code, 'OV_SECRET_FILTER')
-    // A signed-in scorer still gets the dates of birth (picker prefill)
-    const mine = await api(srv.base, '/api/db', { token, proto: null, body: { table: 'svrz_games', action: 'select', params: { columns: '*', filters: [{ type: 'eq', column: 'game_number', value: 'E2E-DOB' }], single: true } } })
+    // The intended reader: a scorer of the sport gets the dates of birth
+    // (the referee picker's prefill; tests/refereeDob.e2e.test.js has the rest)
+    const gameOf = (t) => api(srv.base, '/api/db', { token: t, proto: null, body: { table: 'svrz_games', action: 'select', params: { columns: '*', filters: [{ type: 'eq', column: 'game_number', value: 'E2E-DOB' }], single: true } } })
+    const refsOf = (t) => api(srv.base, '/api/db', { token: t, proto: null, body: { table: 'referee_database', action: 'select', params: { columns: 'last_name, dob', filters: [{ type: 'eq', column: 'last_name', value: 'Dobtest' }] } } })
+    const mine = await gameOf(token)
     assert.equal(mine.status, 200, mine.text)
     assert.equal(String(mine.json.data.referee_2_dob).slice(0, 10), DOB2)
-    const myRefs = await api(srv.base, '/api/db', { token, proto: null, body: { table: 'referee_database', action: 'select', params: { columns: 'last_name, dob', filters: [{ type: 'eq', column: 'last_name', value: 'Dobtest' }] } } })
+    const myRefs = await refsOf(token)
     assert.equal(myRefs.status, 200, myRefs.text)
     assert.equal(String(myRefs.json.data[0].dob).slice(0, 10), DOB1)
+    // A signed-in account without a role reads them like an anonymous caller
+    const roleless = await otherAccount([])
+    const theirGame = await gameOf(roleless)
+    assert.equal(theirGame.status, 200, theirGame.text)
+    assert.equal(leaks(theirGame.text), false, theirGame.text.slice(0, 300))
+    assert.equal(theirGame.json.data.referee_1_last_name, 'Dobtest')
+    const theirRefs = await refsOf(roleless)
+    assert.equal(theirRefs.status, 200, theirRefs.text)
+    assert.equal(leaks(theirRefs.text), false, theirRefs.text.slice(0, 300))
+    const theirProbe = await api(srv.base, '/api/db', { token: roleless, proto: null, body: { table: 'referee_database', action: 'select', params: { columns: 'id', filters: [{ type: 'eq', column: 'dob', value: DOB1 }] } } })
+    assert.equal(theirProbe.status, 400, theirProbe.text)
   })
 
   it('validates connection PINs server-side without returning them', async () => {

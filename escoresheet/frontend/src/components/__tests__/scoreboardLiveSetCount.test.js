@@ -10,7 +10,7 @@ const referee = readFileSync(resolve(__dirname, '../Referee.jsx'), 'utf8')
 function syncLiveStateBody() {
   const start = scoreboard.indexOf('const syncLiveStateToSupabase = useCallback(')
   expect(start).toBeGreaterThan(-1)
-  const end = scoreboard.indexOf('const liveStateData = {', start)
+  const end = scoreboard.indexOf('const liveStateData = ', start)
   expect(end).toBeGreaterThan(start)
   return scoreboard.slice(start, end)
 }

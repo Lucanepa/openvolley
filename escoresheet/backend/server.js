@@ -30,7 +30,7 @@ import { SECRET_COLUMNS, redactSecrets } from './lib/secrets.js'
 // statically. It is only *instantiated* in DATABASE_URL mode.
 import { createRealtimeHub, createLiveStateRelay, createHeartbeat, isLiveRequest, matchKeyFromSyncedMatch, jsonTooDeep } from './lib/realtimeHub.js'
 // What anonymous readers (live sockets, /api/db without a session) may see.
-import { projectLiveRow, hasAnonPolicy, anonSelectCheck, publicRelayMatch, publicPeople, relaySummaryBundle, relayMatchListRow, cloudListsMatch, projectAnonDbRows, projectNonOwnerRows, projectRows, ANON_DB_COLUMNS } from './lib/publicColumns.js'
+import { projectLiveRow, hasAnonPolicy, anonSelectCheck, relayBundleView, relayMatchView, relayLiveStateView, coveredLiveLineupTeam, relayViewOf, relaySummaryBundle, relayMatchListRow, cloudListsMatch, projectAnonDbRows, projectNonOwnerRows, projectRows, ANON_DB_COLUMNS } from './lib/publicColumns.js'
 // PIN-proved access to a relayed match (full bundle) and its capability tokens.
 import { createMatchTokens, pinGrantsAccess, pinTypeOf, relayPinsByType, matchTokenSecretFromEnv, isTokenRole, connectionPinType, findMatchByConnectionPin, isConnectionPinMatch, pinRoleOf, tokenRoleOf } from './lib/matchAccess.js'
 // Bench requests (line-up, time-out, substitution) from a bench tablet to the scorer
@@ -823,39 +823,37 @@ function safeEqualStr(a, b) {
   return x.length === y.length && timingSafeEqual(x, y)
 }
 
-// A match object as the relay hands it out: no PINs, no personal data (see
-// publicRelayMatch). Joining a room needs no PIN and its key is public.
-function publicMatch(match) {
-  return publicRelayMatch(stripMatchSecrets(match))
+// The PIN-free, personal-data-free bundle every match-full-data /
+// match-data-update and GET /api/match/:id carries after the PIN step, by
+// what the PIN proved (`view`: 'scorer', 'referee', 'home', 'away';
+// lib/publicColumns.js relayBundleView) — the same flat shape the LAN relays
+// send (frontend/electron/lanRelayCore.cjs). Only the scorer, who sent it,
+// has the whole bundle. The stored entry goes in as it is: relayBundleView
+// does its costly parts once per stored bundle.
+function wireBundle(entry, view) {
+  const bundle = relayBundleView(entry, view)
+  return { ...bundle, match: stripMatchSecrets(bundle.match) }
 }
 
-// The PIN-free, personal-data-free bundle every match-full-data /
-// match-data-update and GET /api/match/:id carries — the same flat shape the
-// LAN relays send (frontend/electron/lanRelayCore.cjs). Only the scorer, who
-// sent it, has the full bundle.
-function wireBundle(entry) {
-  const out = {
-    match: publicMatch(entry.match),
-    homeTeam: entry.homeTeam ?? null,
-    awayTeam: entry.awayTeam ?? null,
-    homePlayers: publicPeople(entry.homePlayers || []),
-    awayPlayers: publicPeople(entry.awayPlayers || []),
-    sets: entry.sets || [],
-    events: entry.events || []
-  }
-  if (entry.liveState !== undefined) out.liveState = entry.liveState
-  return out
+// The match in validate-pin's answer: the match row of the bundle the PIN
+// opens (relayMatchView), so a bench PIN learns no more of the other team
+// here than from its bundle. `found` is the stored match under its room key.
+function validatePinMatch(found, type, sport) {
+  const entry = activeMatches.get(String(found.id))
+  const match = { ...stripMatchSecrets(relayMatchView(entry?.match ? entry : { match: found }, relayViewOf(type))), id: found.id }
+  return sport === 'beach' ? { ...match, sportType: 'beach' } : match
 }
 
 // match-full-data / match-data-update. A stored liveState is mirrored under
 // `data` (and nothing else is) for the LedBox bridge, which reads
-// msg.data.liveState — same as the LAN relays. `access` 'summary' (no PIN
-// proved): teams, status, set scores and live state only (relaySummaryBundle).
-function matchDataMessage(type, matchId, entry, scoreboardTs, access = 'full') {
+// msg.data.liveState — same as the LAN relays. `view` null (no PIN proved):
+// teams, status, set scores and live state only (relaySummaryBundle), else
+// the bundle of that view, `access` 'full'.
+function matchDataMessage(type, matchId, entry, scoreboardTs, view = null) {
   const now = Date.now()
-  const bundle = access === 'full' ? { access: 'full', ...wireBundle(entry) } : relaySummaryBundle(entry)
+  const bundle = view ? { access: 'full', ...wireBundle(entry, view) } : relaySummaryBundle(entry)
   const msg = { type, matchId, ...bundle, _timestamp: now, _scoreboardTimestamp: scoreboardTs || now }
-  if (entry.liveState !== undefined) msg.data = { liveState: entry.liveState }
+  if (entry.liveState !== undefined) msg.data = { liveState: bundle.liveState }
   return msg
 }
 
@@ -2179,7 +2177,7 @@ function handleHttpRequest(req, res) {
           res.end(JSON.stringify({
             success: true,
             // A beach answer names its sport (the indoor answer is unchanged)
-            match: sport === 'beach' ? { ...publicMatch(matchFound), sportType: 'beach' } : publicMatch(matchFound),
+            match: validatePinMatch(matchFound, type, sport),
             // Capability for this match's full bundle (relay, GET /api/match/:id)
             token: isTokenRole(type) ? matchTokens.issue({ matchKey: String(matchFound.id), role: type, pin: pinStr }) : null
           }))
@@ -2309,18 +2307,20 @@ function handleHttpRequest(req, res) {
     if (matchData) {
       console.log(`[API] /api/match/${matchId} - Found match`)
       // The bundle (rosters, events) only after the PIN step: a match token
-      // from the PIN check, or one of the match's PINs. Else the summary.
-      let full = tokenGrantsRelay(req.headers['x-ov-match-token'], matchId, matchData.match)
+      // from the PIN check, or one of the match's PINs, each its role's view
+      // (relayBundleView). Else the summary.
+      const offeredToken = req.headers['x-ov-match-token']
+      let view = tokenGrantsRelay(offeredToken, matchId, matchData.match) ? relayViewOf(matchTokens.verify(offeredToken)?.r) : null
       const offeredPin = req.headers['x-ov-match-pin']
-      if (!full && typeof offeredPin === 'string' && offeredPin.trim()) {
+      if (!view && typeof offeredPin === 'string' && offeredPin.trim()) {
         const checked = relayPinCheck(ipBucketKey(getClientIp(req)), matchId, matchData, offeredPin)
         if (checked === 'rate-limited') {
           sendJson(res, 429, { success: false, error: 'Too many failed attempts. Please wait 10 minutes before trying again.' }, { 'Retry-After': '600' })
           return
         }
-        full = checked === 'ok'
+        if (checked === 'ok') view = relayViewOf(pinTypeOf(matchData.match, offeredPin, { sport: matchData.sportType }))
       }
-      const bundle = full ? { access: 'full', ...wireBundle(matchData) } : relaySummaryBundle(matchData)
+      const bundle = view ? { access: 'full', ...wireBundle(matchData, view) } : relaySummaryBundle(matchData)
       // Ensure team objects have the correct format
       const homeTeam = typeof bundle.homeTeam === 'object' && bundle.homeTeam ? bundle.homeTeam : { name: matchData.homeTeam || 'Home' }
       const awayTeam = typeof bundle.awayTeam === 'object' && bundle.awayTeam ? bundle.awayTeam : { name: matchData.awayTeam || 'Away' }
@@ -4383,7 +4383,10 @@ function handleSocketMessage(clientInfo, data) {
         // subscribers (livescore, scorer alarm), even when HTTP sync is down;
         // not one the relay refused (too large, relay memory full).
         if (handleLiveStateUpdate(clientInfo, message) && liveStateRelay) {
-          liveStateRelay.handle(clientInfo, { ...message, matchId: resolveMatchKey(clientInfo, message.matchId) }).then((r) => {
+          // the live subscribers prove no PIN: no covered line-up (relayLiveStateView)
+          const liveKey = resolveMatchKey(clientInfo, message.matchId)
+          const liveState = relayLiveStateView(message.liveState, null, activeMatches.get(liveKey)?.match)
+          liveStateRelay.handle(clientInfo, { ...message, matchId: liveKey, liveState }).then((r) => {
             // pin_mismatch: the synced game PIN is not the row's (or the row has
             // none); expected for a forged room, so not logged per update
             if (!r.ok && !['forbidden', 'not_synced', 'no_match_key', 'unknown_match', 'pin_mismatch'].includes(r.reason)) {
@@ -4515,8 +4518,7 @@ function handleJoinMatch(clientInfo, message) {
   // scoreboard's next sync. PIN-free; the summary unless a PIN was proved.
   const stored = activeMatches.get(matchId)
   if (stored?.match) {
-    const access = hasRelayAccess(clientInfo, matchId, stored) ? 'full' : 'summary'
-    clientInfo.ws.send(JSON.stringify(matchDataMessage('match-full-data', matchId, stored, undefined, access)))
+    clientInfo.ws.send(JSON.stringify(matchDataMessage('match-full-data', matchId, stored, undefined, relayViewOfClient(clientInfo, matchId, stored))))
   }
 
   // Notify other clients in room
@@ -4692,6 +4694,20 @@ function hasRelayAccess(clientInfo, matchId, entry) {
   return false
 }
 
+/**
+ * The bundle this socket gets (lib/publicColumns.js relayBundleView): 'scorer'
+ * (it owns the room, or proved the game PIN: the scorer's own devices),
+ * 'referee', 'home' / 'away' (that bench), or null: the summary (no PIN proved).
+ */
+function relayViewOfClient(clientInfo, matchId, entry) {
+  if (!hasRelayAccess(clientInfo, matchId, entry)) return null
+  if (clientInfo.ownedMatches.has(matchId)) return 'scorer'
+  const a = clientInfo.matchAccess.get(matchId)
+  if (a?.token && tokenGrantsRelay(a.token, matchId, entry?.match)) return relayViewOf(matchTokens.verify(a.token)?.r)
+  if (a?.pin) return relayViewOf(pinTypeOf(entry?.match, a.pin, { sport: entry?.sportType }))
+  return null
+}
+
 // A room member whose unsent data is above this when a bundle or action is to
 // go out is dropped: it reconnects and gets the latest bundle, which carries
 // the whole match. A tablet that stopped reading (a dead Wi-Fi link the
@@ -4712,24 +4728,24 @@ function sendToRoomMember(clientInfo, data) {
   return true
 }
 
-/** match-full-data / match-data-update to a room: full or summary per socket. */
+/** match-full-data / match-data-update to a room: each socket its view or the summary. */
 function broadcastMatchData(matchId, type, entry, scoreboardTs, excludeClientId = null, extra = {}) {
   const room = rooms.get(normalizeMatchId(matchId))
   if (!room || !entry) return
-  let full = null
-  let summary = null
+  // one serialisation per view ('' is the summary)
+  const byView = new Map()
   let sent = 0
   room.clients.forEach((clientId) => {
     if (clientId === excludeClientId) return
     const clientInfo = connections.get(clientId)
     if (!clientInfo || clientInfo.ws.readyState !== 1) return
-    if (hasRelayAccess(clientInfo, matchId, entry)) {
-      full ??= JSON.stringify({ ...matchDataMessage(type, matchId, entry, scoreboardTs, 'full'), ...extra })
-      if (sendToRoomMember(clientInfo, full)) sent++
-    } else {
-      summary ??= JSON.stringify({ ...matchDataMessage(type, matchId, entry, scoreboardTs, 'summary'), ...extra })
-      if (sendToRoomMember(clientInfo, summary)) sent++
+    const view = relayViewOfClient(clientInfo, matchId, entry) || ''
+    let data = byView.get(view)
+    if (data === undefined) {
+      data = JSON.stringify({ ...matchDataMessage(type, matchId, entry, scoreboardTs, view || null), ...extra })
+      byView.set(view, data)
     }
+    if (sendToRoomMember(clientInfo, data)) sent++
   })
   if (LOG_EACH_CONNECTION) console.log(`📡 Match data to ${sent} clients in room ${matchId}`)
 }
@@ -5577,8 +5593,35 @@ function handleLiveStateUpdate(clientInfo, message) {
     // most the slack, which the budget's headroom absorbs.
     if (grew) stored.liveStateBytes = liveStateBytes
   }
-  broadcastToRoom(matchId, { type: 'live-state-update', matchId, liveState: message.liveState }, clientInfo.id)
+  broadcastLiveState(matchId, message.liveState, stored, clientInfo.id)
   return true
+}
+
+// live-state-update to a room: as it came, unless it carries a covered
+// line-up (an older scorer app; lib/publicColumns.js relayLiveStateView):
+// then each socket by its view, the referee and the covered team's bench as
+// it came, every other socket without that line-up.
+function broadcastLiveState(matchId, liveState, entry, excludeClientId) {
+  if (!coveredLiveLineupTeam(liveState, entry?.match)) {
+    broadcastToRoom(matchId, { type: 'live-state-update', matchId, liveState }, excludeClientId)
+    return
+  }
+  const room = rooms.get(normalizeMatchId(matchId))
+  if (!room) return
+  // one serialisation per view ('' is no PIN)
+  const byView = new Map()
+  room.clients.forEach((clientId) => {
+    if (clientId === excludeClientId) return
+    const clientInfo = connections.get(clientId)
+    if (!clientInfo || clientInfo.ws.readyState !== 1) return
+    const view = relayViewOfClient(clientInfo, matchId, entry) || ''
+    let data = byView.get(view)
+    if (data === undefined) {
+      data = JSON.stringify({ type: 'live-state-update', matchId, liveState: relayLiveStateView(liveState, view || null, entry?.match) })
+      byView.set(view, data)
+    }
+    sendToRoomMember(clientInfo, data)
+  })
 }
 
 // Remove a match from the relay: tell its room first, then drop room + state.

@@ -1902,6 +1902,114 @@ export function matchTeamNames(match, { homeTeam, awayTeam } = {}) {
 const RELAY_PIN_FIELDS = ['gamePin', 'refereePin', 'homeTeamPin', 'awayTeamPin', 'homeTeamUploadPin', 'awayTeamUploadPin']
 const NEVER_RELAYED = ['game_pin', 'connection_pins', 'connectionPins']
 
+// What no relay hands a tablet stays on the device too (the same lists as
+// backend/lib/publicColumns.js): a person's date of birth, nationality and
+// contact data; the officials (with theirs), every signature image, the
+// approvals, the manual-change log and the rosters waiting for the scorer.
+// The remarks go (the referee's live scoresheet prints them, and the cloud
+// relay gives them to the referee only), without the dates of a
+// date-of-birth correction.
+const RELAY_PERSON_OMIT = ['dob', 'dateOfBirth', 'date_of_birth', 'birthDate', 'birthdate', 'birth_date', 'country', 'nationality', 'email', 'phone', 'address']
+const RELAY_MATCH_OMIT = [
+  'officials', 'signatures', 'approval', 'accountApprovals', 'account_approvals', 'manualChanges', 'manual_changes',
+  'pendingHomeRoster', 'pendingAwayRoster', 'pending_home_roster', 'pending_away_roster',
+  'pendingTeam1Roster', 'pendingTeam2Roster', 'pending_team1_roster', 'pending_team2_roster'
+]
+const RELAY_ROSTER_KEYS = [
+  'players_home', 'players_away', 'bench_home', 'bench_away', 'players_team1', 'players_team2',
+  'benchHome', 'benchAway', 'homePlayers', 'awayPlayers', 'team1Players', 'team2Players'
+]
+// A team row: the names and colours the tablets draw
+const RELAY_TEAM_KEYS = ['name', 'shortName', 'short_name', 'color', 'liberoColor', 'liberoColour', 'libero_color', 'libero_colour']
+const isSignatureKey = (k) => /signature/i.test(k)
+
+function relayPerson(p) {
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return p
+  if (!RELAY_PERSON_OMIT.some((k) => k in p)) return p
+  const out = { ...p }
+  for (const k of RELAY_PERSON_OMIT) delete out[k]
+  return out
+}
+
+/** A roster (players or bench) as sync-match-data carries it: copies without dates of birth or contact data. */
+export function relayPeoplePayload(list) {
+  return Array.isArray(list) ? list.map(relayPerson) : []
+}
+
+/** A team row as sync-match-data carries it: its names and colours, or null. */
+export function relayTeamPayload(team) {
+  if (!team || typeof team !== 'object') return null
+  const out = {}
+  for (const k of RELAY_TEAM_KEYS) if (team[k] !== undefined) out[k] = team[k]
+  return out
+}
+
+// An in-match roster edit wrote a corrected date of birth with both dates
+// ("- Player #7 dob: 03.05.2011 → 04.06.2011 (Team)"): the change stays, the
+// dates go, to the team label at the end of the line or to its end
+// (backend/lib/publicColumns.js redactRemarkDobs, the same steps). Read with
+// indexOf, never a backtracking pattern: a long remarks text took the relay
+// seconds per bundle.
+const DOB_LABEL = 'dob: '
+const DOB_ARROWS = [' → ', ' -> ']
+const DOB_CHANGED = 'date of birth changed'
+// Where a line ends (the line ends of `.` and `$` in a pattern)
+const LINE_END = /[\n\r\u2028\u2029]/g
+const WORD_CHAR = /[A-Za-z0-9_]/
+
+/** Where the value after the first arrow at or after `from` starts, or -1. */
+function dobValueAt(line, from) {
+  let start = -1
+  let length = 0
+  for (const arrow of DOB_ARROWS) {
+    const i = line.indexOf(arrow, from)
+    if (i !== -1 && (start === -1 || i < start)) {
+      start = i
+      length = arrow.length
+    }
+  }
+  return start === -1 ? -1 : start + length
+}
+
+/** Where a line's trailing " (Team)" starts (no brackets inside), or -1. */
+function teamLabelAt(line) {
+  if (!line.endsWith(')')) return -1
+  const at = line.lastIndexOf(' (')
+  if (at === -1) return -1
+  const inner = line.slice(at + 2, -1)
+  return inner.includes('(') || inner.includes(')') ? -1 : at
+}
+
+/** The remarks text as the relay gets it: no dates of a date-of-birth correction. */
+export function relayRemarks(text) {
+  if (typeof text !== 'string' || !text.includes(DOB_LABEL)) return text
+  let out = ''
+  let copied = 0
+  let from = 0
+  for (;;) {
+    const at = text.indexOf(DOB_LABEL, from)
+    if (at === -1) break
+    if (at > 0 && WORD_CHAR.test(text[at - 1])) {
+      from = at + 1
+      continue
+    }
+    LINE_END.lastIndex = at
+    const lineEnd = LINE_END.exec(text)?.index ?? text.length
+    // from "dob: " to the end of its line: at least one character before
+    // the arrow and one after it
+    const rest = text.slice(at, lineEnd)
+    const value = dobValueAt(rest, DOB_LABEL.length + 1)
+    if (value === -1 || value >= rest.length) {
+      from = lineEnd
+      continue
+    }
+    const label = teamLabelAt(rest)
+    out += text.slice(copied, at) + DOB_CHANGED
+    copied = from = at + (label > value ? label : rest.length)
+  }
+  return copied === 0 ? text : out + text.slice(copied)
+}
+
 /**
  * The relay room key of a scorer's match: its seed_key (what the tablets know
  * from the PIN check and the QR code); a test match's seedKey (the relays key
@@ -1927,9 +2035,11 @@ export function relayMatchKey(match) {
 }
 
 /**
- * The match object a scorer sends in sync-match-data. PINs go only with the
- * first sync on a socket and when one changes (the relay keeps the stored ones
- * meanwhile); pass the signature returned last time for this socket, or null.
+ * The match object a scorer sends in sync-match-data, without the personal
+ * data no relay hands on (RELAY_MATCH_OMIT, signatures, people's dates of
+ * birth). PINs go only with the first sync on a socket and when one changes
+ * (the relay keeps the stored ones meanwhile); pass the signature returned
+ * last time for this socket, or null.
  * `_syncedSeq` / `_syncSession` (the scorer's live-state order, marked before
  * the sync read IndexedDB: `mark` = { seq, session, at }) let the tablets tell
  * whether a live-state push is newer than this copy (applyNewerLiveState);
@@ -1958,6 +2068,11 @@ export function relayMatchPayload(match, lastPinSignature = null, { now = Date.n
     delete out[f]
   }
   for (const f of NEVER_RELAYED) delete out[f]
+  for (const k of Object.keys(out)) {
+    if (RELAY_MATCH_OMIT.includes(k) || isSignatureKey(k)) delete out[k]
+    else if (RELAY_ROSTER_KEYS.includes(k)) out[k] = Array.isArray(out[k]) ? out[k].map(relayPerson) : out[k]
+  }
+  if (typeof out.remarks === 'string') out.remarks = relayRemarks(out.remarks)
   const pinSignature = JSON.stringify(pins)
   return {
     match: pinSignature === lastPinSignature ? out : { ...out, ...pins },

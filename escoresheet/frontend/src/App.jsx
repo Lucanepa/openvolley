@@ -100,7 +100,8 @@ import ManagerSiteLink from './components/ManagerSiteLink'
 import { OPEN_MANAGE_EVENT, OPEN_RESTORE_EVENT, openRestore, restorePrefill } from './utils/manageNav'
 import { relayMatchKey, relayMatchPayload, liveStateNow } from './utils/serverDataSync'
 import { needsEventCheck, pickCurrentMatch, newOfficialMatchStep, OFFICIAL_MATCH_KEPT_STEPS } from './utils/currentMatch'
-import { isRelayErrorFor, mayPublishMatchData, relayConnectionStatus, relayEvents, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
+import { isRelayErrorFor, relayConnectionStatus, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
+import { relayMatchBundle, relaySyncTrigger } from './utils/relayMatchSync'
 import { PHONE_MAX_WIDTH, isPhoneScreen, phoneLayoutKept } from './components/scoreboard/phoneLayout'
 import { useSystemBarsHidden } from './utils/nativeSystemBars'
 
@@ -1440,45 +1441,43 @@ export default function App() {
   // no longer refuse each other. Refs keep the socket from being rebuilt.
   const syncIntervalRef = useRef(null)
   const currentMatchIdRef = useRef(null)
-  const currentMatchRef = useRef(null)
   // The relay key this device last published its current match under
   const publishedRelayKeyRef = useRef(null)
   // The effect's sync, to publish at once when the match gets its seed key
   const relaySyncRef = useRef(null)
 
-  // Update currentMatch ref whenever it changes
+  // Tell the relay at once, not after the 30 s backup sync, when the match it
+  // gets has a change the tablets wait for: a blank match is not published
+  // (no seed key, see relayMatchKey) until Create Match gives it one; a role
+  // let in or out (Connect tablets, Match setup) or a new PIN: the relay
+  // checks the PINs itself, so until then a tablet just let in was told its
+  // right PIN is wrong (and each retry counted toward the per-minute PIN
+  // limit), and one just switched off could still get in. An open Scoreboard
+  // syncs on these changes itself; a second sync of the same data is
+  // harmless. The match is the one the effect below publishes: the open one,
+  // on Home the newest unfinished one (with an older match open next to a
+  // newer one, the newer one's changes synced the open one and the open
+  // one's waited). A string (relaySyncTrigger): no re-render on other writes.
+  const openMatchRelayTrigger = useLiveQuery(async () => {
+    if (!matchId) return null
+    try {
+      return relaySyncTrigger(await db.matches.get(matchId))
+    } catch {
+      return null
+    }
+  }, [matchId])
+  const relayTrigger = matchId ? openMatchRelayTrigger : relaySyncTrigger(currentMatch)
   useEffect(() => {
-    currentMatchRef.current = currentMatch
-  }, [currentMatch])
-
-  // A blank match is not published (no seed key, see relayMatchKey): publish
-  // it as soon as Create Match gives it one, not after the 30 s backup sync.
-  const currentRelayKey = relayMatchKey(currentMatch)
-  useEffect(() => {
-    if (currentRelayKey && relaySyncRef.current) relaySyncRef.current()
-  }, [currentRelayKey])
-
-  // A role let in or out (Connect tablets, Match setup) or a new PIN: tell
-  // the relay at once, not after the 30 s backup sync. The relay checks the
-  // PINs itself, so until then a tablet just let in was told its right PIN
-  // is wrong (and each retry counted toward the per-minute PIN limit), and
-  // one just switched off could still get in. An open Scoreboard syncs on
-  // these changes itself; a second sync of the same data is harmless.
-  const relayAccessSignature = currentMatch
-    ? [
-        currentMatch.refereeConnectionEnabled, currentMatch.homeTeamConnectionEnabled, currentMatch.awayTeamConnectionEnabled,
-        currentMatch.refereePin, currentMatch.homeTeamPin, currentMatch.awayTeamPin
-      ].map(v => String(v ?? '')).join('|')
-    : null
-  useEffect(() => {
-    if (relayAccessSignature != null && relaySyncRef.current) relaySyncRef.current()
-  }, [relayAccessSignature])
+    if (relayTrigger != null && relaySyncRef.current) relaySyncRef.current()
+  }, [relayTrigger])
 
   useEffect(() => {
-    // Keep the match on the relay even on the home screen (for dashboards).
-    // Use matchId or fall back to currentMatch?.id for background sync
+    // Keep the match on the relay even on the home screen (for dashboards):
+    // the open match, on Home the newest unfinished one. Everything the relay
+    // gets comes from that ONE match (relayMatchBundle): with two unfinished
+    // matches on the device, one match's room got the other's sets and events.
     const activeMatchId = matchId || currentMatch?.id
-    if (!activeMatchId || !currentMatch) {
+    if (!activeMatchId) {
       currentMatchIdRef.current = null
       return
     }
@@ -1488,8 +1487,10 @@ export default function App() {
     const wsUrl = scorerRelayUrl({ wsPort: serverStatus?.wsPort })
     if (!wsUrl) return // page opened from disk: no relay
 
-    // Relay room key of the current match (its seed key; null before it has one)
-    const relayKeyOfCurrent = () => relayMatchKey(currentMatchRef.current)
+    // The relay room key this device published the match under (null before)
+    const relayKeyOfCurrent = () => publishedRelayKeyRef.current
+    // The stored row of the match on the relay (PIN and game-number checks)
+    const relayMatchRow = async () => (currentMatchIdRef.current === activeMatchId ? db.matches.get(activeMatchId) : null)
 
     // The match for the relay: never game_pin / connection_pins. `mark`: the
     // live-state order marked before the IndexedDB reads (applyNewerLiveState)
@@ -1511,41 +1512,25 @@ export default function App() {
     })
 
     const syncMatchData = async () => {
-      // Use current values from refs
       const ws = scorerRelay.socket
-      const currentActiveMatchId = currentMatchIdRef.current
-      const currentMatchData = currentMatchRef.current // Use ref to get latest value
-
-      if (!ws || ws.readyState !== WebSocket.OPEN || !currentMatchData || currentActiveMatchId !== activeMatchId) {
+      if (!ws || ws.readyState !== WebSocket.OPEN || currentMatchIdRef.current !== activeMatchId) {
         return
       }
-      // No seed key yet (blank match before Create Match): nothing a tablet
-      // could join, and a Dexie id is no room key (see relayMatchKey)
-      const relayKey = relayMatchKey(currentMatchData)
-      if (!relayKey) return
-      // A test match: to a local relay only (mayPublishMatchData)
-      if (!mayPublishMatchData(currentMatchData, scorerRelay.url)) return
-      // Another device scores this match now: its tablets follow that one,
-      // this device's older copy must not overwrite the room (db/019). Nor
-      // does a copy of a match the server has closed (2026-10-23).
-      if (isScorerMoved(currentMatchData) || isStaleClosedCopy(currentMatchData)) return
 
       try {
         // Before the reads: a live state numbered after this mark is newer
         // than what this sync carries (applyNewerLiveState on the tablets)
         const syncMark = scorerLiveOrder.mark()
-        // Load full match data
-        const [homeTeam, awayTeam, sets, events, homePlayers, awayPlayers, device] = await Promise.all([
-          currentMatchData.homeTeamId ? db.teams.get(currentMatchData.homeTeamId) : null,
-          currentMatchData.awayTeamId ? db.teams.get(currentMatchData.awayTeamId) : null,
-          db.sets.where('matchId').equals(currentActiveMatchId).sortBy('index'),
-          db.events.where('matchId').equals(currentActiveMatchId).toArray(),
-          currentMatchData.homeTeamId ? db.players.where('teamId').equals(currentMatchData.homeTeamId).sortBy('number') : [],
-          currentMatchData.awayTeamId ? db.players.where('teamId').equals(currentMatchData.awayTeamId).sortBy('number') : [],
-          relaySyncDevice(db, currentActiveMatchId, writingDevice())
+        // The match, whole, or none: no seed key yet (a blank match before
+        // Create Match: a Dexie id is no room key), a test match on the cloud
+        // relay, a match another device scores now (its tablets follow that
+        // one, db/019) or a copy the server has closed (2026-10-23)
+        const [bundle, device] = await Promise.all([
+          relayMatchBundle(db, activeMatchId, { relayUrl: scorerRelay.url }),
+          relaySyncDevice(db, activeMatchId, writingDevice())
         ])
-
-        if (scorerRelay.socket !== ws || relayMatchKey(currentMatchRef.current) !== relayKey) return
+        if (!bundle || scorerRelay.socket !== ws || currentMatchIdRef.current !== activeMatchId) return
+        const { relayKey } = bundle
 
         // Another match than the one published before (the scorer switched
         // matches): take that one off the relay, this socket owns it
@@ -1557,21 +1542,22 @@ export default function App() {
         // Full match object - scoreboard is source of truth, always overwrite.
         // PINs only on this connection's first sync of the key and when one
         // changed; never game_pin / connection_pins (see relayMatchPayload).
-        const { match: fullMatch, commit: commitPins } = scorerRelay.pins.payloadFor(ws, currentMatchData, relayKey, syncMark)
+        const { match: fullMatch, commit: commitPins } = scorerRelay.pins.payloadFor(ws, bundle.match, relayKey, syncMark)
 
         // Sync full match data to server - this ALWAYS overwrites existing data (scoreboard is source of truth)
         // The relay keys the room by the seed_key (what the tablets know).
+        // Teams and rosters without dates of birth, events without the undo
+        // snapshots (relayMatchBundle)
         const syncPayload = {
           type: 'sync-match-data',
           matchId: relayKey,
           match: fullMatch,
-          homeTeam,
-          awayTeam,
-          homePlayers,
-          awayPlayers,
-          sets,
-          // without the undo snapshots (relayEvents)
-          events: relayEvents(events),
+          homeTeam: bundle.homeTeam,
+          awayTeam: bundle.awayTeam,
+          homePlayers: bundle.homePlayers,
+          awayPlayers: bundle.awayPlayers,
+          sets: bundle.sets,
+          events: bundle.events,
           // This installation (db/019): the cloud relay refuses the copy of a
           // device the match has moved away from ('scorer-moved'), which
           // re-syncs at once when it comes back online; a venue relay, the
@@ -1591,12 +1577,11 @@ export default function App() {
 
     const handlePinValidationRequest = async (request) => {
       const ws = scorerRelay.socket
-      const currentActiveMatchId = currentMatchIdRef.current
-      const currentMatchData = currentMatchRef.current // Use ref to get latest value
-
-      if (!ws || ws.readyState !== WebSocket.OPEN || !currentMatchData) return
+      if (!ws || ws.readyState !== WebSocket.OPEN) return
 
       try {
+        const currentMatchData = await relayMatchRow()
+        if (!currentMatchData || scorerRelay.socket !== ws) return
         const { pin, pinType, requestId } = request
         const pinStr = String(pin).trim()
 
@@ -1638,17 +1623,18 @@ export default function App() {
 
     const handleMatchDataRequest = async (request) => {
       const ws = scorerRelay.socket
-      const currentActiveMatchId = currentMatchIdRef.current
-      const currentMatchData = currentMatchRef.current // Use ref to get latest value
-
-      if (!ws || ws.readyState !== WebSocket.OPEN || !currentMatchData) return
+      if (!ws || ws.readyState !== WebSocket.OPEN || currentMatchIdRef.current !== activeMatchId) return
 
       try {
         const { requestId, matchId: requestedMatchId } = request
 
         // Only by the relay room key (seed_key): a Dexie id is not unique
-        // across scorers, answering it would open a second, frozen room.
-        const relayKey = relayMatchKey(currentMatchData)
+        // across scorers, answering it would open a second, frozen room. The
+        // same one match, under the same rules, as sync-match-data.
+        const syncMark = scorerLiveOrder.mark()
+        const bundle = await relayMatchBundle(db, activeMatchId, { relayUrl: scorerRelay.url })
+        if (scorerRelay.socket !== ws) return
+        const relayKey = bundle?.relayKey ?? null
         if (!relayKey || String(requestedMatchId) !== relayKey) {
           ws.send(JSON.stringify({
             type: 'match-data-response',
@@ -1660,29 +1646,20 @@ export default function App() {
           return
         }
 
-        const syncMark = scorerLiveOrder.mark()
-        const [homeTeam, awayTeam, sets, events, homePlayers, awayPlayers] = await Promise.all([
-          currentMatchData.homeTeamId ? db.teams.get(currentMatchData.homeTeamId) : null,
-          currentMatchData.awayTeamId ? db.teams.get(currentMatchData.awayTeamId) : null,
-          db.sets.where('matchId').equals(currentActiveMatchId).sortBy('index'),
-          db.events.where('matchId').equals(currentActiveMatchId).toArray(),
-          currentMatchData.homeTeamId ? db.players.where('teamId').equals(currentMatchData.homeTeamId).sortBy('number') : [],
-          currentMatchData.awayTeamId ? db.players.where('teamId').equals(currentMatchData.awayTeamId).sortBy('number') : []
-        ])
-
         ws.send(JSON.stringify({
           type: 'match-data-response',
           requestId,
           matchId: relayKey,
           success: true,
           matchData: {
-            match: relayMatchOf(currentMatchData, syncMark),
-            homeTeam,
-            awayTeam,
-            homePlayers,
-            awayPlayers,
-            sets,
-            events
+            match: relayMatchOf(bundle.match, syncMark),
+            homeTeam: bundle.homeTeam,
+            awayTeam: bundle.awayTeam,
+            homePlayers: bundle.homePlayers,
+            awayPlayers: bundle.awayPlayers,
+            sets: bundle.sets,
+            // without the undo snapshots (relayEvents)
+            events: bundle.events
           }
         }))
       } catch (err) {
@@ -1692,11 +1669,11 @@ export default function App() {
 
     const handleGameNumberRequest = async (request) => {
       const ws = scorerRelay.socket
-      const currentMatchData = currentMatchRef.current // Use ref to get latest value
-
-      if (!ws || ws.readyState !== WebSocket.OPEN || !currentMatchData) return
+      if (!ws || ws.readyState !== WebSocket.OPEN) return
 
       try {
+        const currentMatchData = await relayMatchRow()
+        if (!currentMatchData || scorerRelay.socket !== ws) return
         const { requestId, gameNumber } = request
         const gameNumStr = String(gameNumber).trim()
         const matchGameNumber = String(currentMatchData.gameNumber || '')
