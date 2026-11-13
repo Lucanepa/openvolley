@@ -49,6 +49,7 @@ import { fail, invalid, isUuid, notFound, ok, unavailable } from './accounts.js'
 import { seasonOf, sportOf } from './officialGame.js'
 import { pickLang } from './mailer.js'
 import { connectClient } from './pgClient.js'
+import { EMAIL_RE } from './emailAddress.js'
 
 export const CLUB_REQUIRED = () => fail(403, 'OV_CLUB_REQUIRED',
   'Your account has no club yet. An admin adds it before you can score official games.')
@@ -66,7 +67,7 @@ export const CLUB_INVITE_ROLES = Object.freeze(['scorer', 'referee'])
 export const CLUB_INVITE_MAX_USES = 50
 export const CLUB_INVITE_MAX_DAYS = 90
 const DAY_MS = 24 * 60 * 60 * 1000
-const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+// one strict address (lib/emailAddress.js)
 // The schedule fields the scorer app maps into a match (LoadOfficialMatchModal
 // mapSupabaseToMatchFormat): read through to_jsonb, so a column a schedule
 // lacks reads as null instead of failing

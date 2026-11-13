@@ -105,7 +105,7 @@ describe('account emails end to end', { skip: SKIP }, () => {
     const listed = async () => (await api(srv.base, '/api/admin/accounts?filter=all&q=nina', { method: 'GET', token: admin.token, proto: null })).json.data.accounts[0]
     assert.equal((await listed()).email_confirmed, false)
 
-    const c = await auth(srv, 'confirm-email', { token: link.token })
+    const c = await auth(srv, 'confirm-email', { token: link.token, password: PW })
     assert.equal(c.status, 200, c.text)
     assert.deepEqual(c.json.data, { confirmed: true, already_confirmed: false })
     assert.equal((await listed()).email_confirmed, true)
@@ -118,7 +118,7 @@ describe('account emails end to end', { skip: SKIP }, () => {
     assert.equal(up.status, 200, up.text)
     const { token } = linkToken(await mailFor(email))
     tokensSeen.push(token)
-    assert.equal((await auth(srv, 'confirm-email', { token })).status, 200)
+    assert.equal((await auth(srv, 'confirm-email', { token, password: PW })).status, 200)
     const s = await signIn(srv, email, PW)
     assert.equal(s.status, 200, s.text)
     return { id: s.json.data.user.id, token: s.json.data.session.access_token }
@@ -202,7 +202,7 @@ describe('account emails end to end', { skip: SKIP }, () => {
     const token = linkToken(fresh).token
     tokensSeen.push(old, token)
     assert.equal((await auth(srv, 'confirm-email', { token: old })).json.error.code, 'invalid_link')
-    assert.equal((await auth(srv, 'confirm-email', { token })).status, 200)
+    assert.equal((await auth(srv, 'confirm-email', { token, password: PW })).status, 200)
   })
 
   it('OpenBeach (app: beach): its sender, texts and manager links; the membership; never a host from the client', async () => {
@@ -222,7 +222,7 @@ describe('account emails end to end', { skip: SKIP }, () => {
     const rows = (await sql.query('SELECT app, joined_via FROM auth.app_memberships WHERE user_id = $1', [id])).rows
     assert.deepEqual(rows, [{ app: 'beach', joined_via: 'signup' }])
     // the token works on the backend whichever manager shows it
-    assert.equal((await auth(srv, 'confirm-email', { token: c.token, app: 'beach' })).status, 200)
+    assert.equal((await auth(srv, 'confirm-email', { token: c.token, app: 'beach', password: PW })).status, 200)
 
     // resend for an unconfirmed OpenBeach account
     const email2 = 'ben.beach@example.ch'
@@ -312,7 +312,7 @@ describe('account emails end to end', { skip: SKIP }, () => {
     const internal = await (await fetch(`${srv.base}/health`)).json()
     assert.equal(internal.mail.enabled, true)
     assert.ok(internal.mail.sent >= 6, JSON.stringify(internal.mail))
-    assert.deepEqual(Object.keys(internal.mail.budgets).sort(), ['account', 'confirm', 'notify', 'scoresheet', 'scoresheet_test'])
+    assert.deepEqual(Object.keys(internal.mail.budgets).sort(), ['account', 'confirm', 'notify', 'scoresheet', 'scoresheet_test', 'security', 'signup'])
     assert.deepEqual(internal.mail.exhausted, [])
     assert.equal(JSON.stringify(internal.mail).includes('@'), false)
     const proxied = await (await fetch(`${srv.base}/health`, { headers: { 'cf-connecting-ip': nextIp() } })).json()

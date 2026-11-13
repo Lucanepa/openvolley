@@ -67,17 +67,21 @@
  * never an authorisation: it grants no role. confirm-email accepts it and
  * ignores it (no mail, no membership).
  *
- * Sign-up still answers 422 user_already_exists for a registered address (as
- * before): an unconfirmed account may sign in at once, so a uniform sign-up
- * answer would not hide whether an address is registered (sign up, then sign
- * in). reset-password alone gives nothing away.
+ * Sign-up of a registered address: with mail on, the same answer a new
+ * account gets, and the owner is mailed a reset link instead; without mail,
+ * 422 user_already_exists (as before). The confirmation of an account created
+ * with a link keeps the password, sessions and passkeys of whoever signed up
+ * only when the clicker gives that password (confirmEmailLink).
  *
  * CPU guard: bcryptjs is pure JS and runs on the main event loop, which also
  * serves the live-scoring relay. Every bcrypt call goes through a small
  * concurrency gate (bcryptMaxConcurrent, bcryptMaxQueue); when the queue is
  * full the request gets 503 "auth_busy" at once instead of queueing. Sign-in
- * also has a global bucket (limits.signInGlobal) next to the per-IP one, and
- * per-IP buckets key IPv6 clients on their /64 (ipBucketKey).
+ * also has a global bucket (limits.signInGlobal) next to the per-IP one,
+ * charged only to sources that failed lately, and per-IP buckets key IPv6
+ * clients on their /64 (ipBucketKey). The lockout is per account and source
+ * (DEFAULTS.lockout), with an account-wide ceiling that a source which signed
+ * in before passes (DEFAULTS.accountLockout).
  */
 
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
@@ -86,6 +90,7 @@ import bcryptjs from 'bcryptjs'
 import { authLink, describeMailError, disabledMailer, inboxKey, mailApp, maskEmail, MAIL_BRANDS, pickLang } from './mailer.js'
 import { cleanTransports, createPasskeyCeremonies, passkeyConfig, passkeyDeviceLabel, PasskeyError, PASSKEYS_PER_USER_MAX } from './passkeys.js'
 import { connectClient } from './pgClient.js'
+import { EMAIL_RE } from './emailAddress.js'
 
 // ---------------------------------------------------------------------------
 // Constants and small helpers
@@ -192,7 +197,11 @@ const DEFAULTS = Object.freeze({
   absoluteTtlSec: 90 * DAY,
   touchIntervalSec: 5 * 60, // write last_seen_at at most this often per session
 
-  minPasswordLength: 6,
+  // New passwords (sign-up, reset, scripts): at least this long; an account
+  // with the admin role needs adminMinPasswordLength. Existing passwords keep
+  // working.
+  minPasswordLength: 10,
+  adminMinPasswordLength: 14,
   bcryptCost: 10,
   maxBcryptCost: 15, // stored hashes above this are treated as invalid (DoS guard)
   // At most this many bcrypt operations run (interleaved) at once; up to
@@ -214,9 +223,14 @@ const DEFAULTS = Object.freeze({
 
   limits: {
     signInIp: { max: 60, windowMs: 60 * 1000 },
+    // Per account and source (address bucket): a stranger's attempts on an
+    // address never use up its owner's.
     signInEmail: { max: 10, windowMs: 15 * 60 * 1000 },
-    // All sign-ins together, whatever their source. A cost-10 compare is
-    // ~60-150 ms of main-thread CPU; 5/s keeps bcrypt well under one core.
+    // All sign-ins together from sources that failed a sign-in in the last
+    // 15 minutes. A cost-10 compare is ~60-150 ms of main-thread CPU; 5/s
+    // keeps bcrypt well under one core. A source without a recent failure is
+    // not charged (the bcrypt gate still bounds the CPU), so made-up sign-ins
+    // from many addresses cannot turn every real sign-in away.
     signInGlobal: { max: 5, windowMs: 1000 },
     signUpIp: { max: 5, windowMs: 60 * 60 * 1000 },
     // Per delivered inbox (inboxKey: plus-tags removed, Gmail dots ignored,
@@ -246,13 +260,20 @@ const DEFAULTS = Object.freeze({
     passkeyUser: { max: 20, windowMs: 15 * 60 * 1000 },
     passkeyAddedUser: { max: 5, windowMs: 60 * 60 * 1000 }
   },
-  lockout: { maxFailures: 10, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000 }
+  // Per account and source: 10 failures lock that source out of that
+  // account. accountLockout is the account-wide ceiling: past it, only a
+  // source that signed in to the account before still gets in.
+  lockout: { maxFailures: 10, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000 },
+  accountLockout: { maxFailures: 100, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000 }
 })
+const FAILED_SOURCE_MS = 15 * 60 * 1000
+const KNOWN_SOURCE_MS = 60 * DAY * 1000
+const KNOWN_SOURCES_MAX = 50_000
 
 const TOKEN_BYTES = 32
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/ // base64url of 32 bytes, no padding
 const BCRYPT_RE = /^\$2[aby]\$(\d{2})\$[./A-Za-z0-9]{53}$/
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+// one strict address (lib/emailAddress.js)
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 /** 32 random bytes, base64url (43 chars). Returned to the client once, never stored. */
@@ -379,6 +400,7 @@ export function createRateLimiter({ max, windowMs, now = Date.now } = {}) {
       if (e && e.count > 0) e.count--
     },
     reset(key) { entries.delete(key) },
+    resetPrefix(prefix) { for (const k of [...entries.keys()]) if (k.startsWith(prefix)) entries.delete(k) },
     clear() { entries.clear() },
     sweep() {
       const t = now()
@@ -518,6 +540,8 @@ export function createLockout({ maxFailures, windowMs, lockMs, now = Date.now } 
     },
     succeed(key) { entries.delete(key) },
     reset(key) { entries.delete(key) },
+    /** Forgets every key that starts with `prefix` (all sources of one account). */
+    resetPrefix(prefix) { for (const k of [...entries.keys()]) if (k.startsWith(prefix)) entries.delete(k) },
     clear() { entries.clear() },
     sweep() {
       const t = now()
@@ -635,6 +659,33 @@ export function createAuth(options = {}) {
     passkeyAddedUser: resolveLimiter(cfg.limits.passkeyAddedUser)
   }
   const lockout = typeof cfg.lockout.check === 'function' ? cfg.lockout : createLockout(cfg.lockout)
+  const accountLockout = cfg.accountLockout ? createLockout(cfg.accountLockout) : null
+  // Sources (address buckets) whose last sign-in failed, for the global budget
+  const failedSources = new Map() // bucket -> time of the last failure
+  // email -> Map(bucket -> time of the last success): who gets past the ceiling
+  const knownSources = new Map()
+  const lockKey = (email, bucket) => `${email}|${bucket}`
+  /** Forgets the failures of every source of one account (a new password). */
+  function clearLocks(email) {
+    if (!email) return
+    lockout.reset?.(email) // verifyPassword's key
+    lockout.resetPrefix?.(`${email}|`)
+    accountLockout?.reset(email)
+    limits.signInEmail?.resetPrefix?.(`${email}|`)
+  }
+  function rememberSource(email, bucket) {
+    let m = knownSources.get(email)
+    if (m) knownSources.delete(email) // re-inserted: most recent last
+    else m = new Map()
+    m.set(bucket, Date.now())
+    if (m.size > 20) m.delete(m.keys().next().value)
+    knownSources.set(email, m)
+    while (knownSources.size > KNOWN_SOURCES_MAX) knownSources.delete(knownSources.keys().next().value)
+  }
+  function knownSource(email, bucket) {
+    const t = knownSources.get(email)?.get(bucket)
+    return t != null && Date.now() - t < KNOWN_SOURCE_MS
+  }
 
   // --- catalog (lazy, cached only once a table is found) --------------------
   const catalog = new Map()
@@ -706,12 +757,25 @@ export function createAuth(options = {}) {
     return !!real && match === true
   }
 
-  function validateNewPassword(password) {
-    if (typeof password !== 'string' || password.length < cfg.minPasswordLength) {
-      return `Password should be at least ${cfg.minPasswordLength} characters.`
+  function validateNewPassword(password, min = cfg.minPasswordLength) {
+    if (typeof password !== 'string' || password.length < min) {
+      return `Password should be at least ${min} characters.`
     }
     if (utf8Length(password) > 72) return 'Password cannot be longer than 72 bytes.'
     return null
+  }
+
+  /** The shortest new password one account may set: longer for an admin. */
+  async function minPasswordFor(userId, client = pool) {
+    if (!T.profiles || !userId) return cfg.minPasswordLength
+    try {
+      const { rows } = await client.query(
+        `SELECT 1 FROM ${T.profiles} p WHERE p.${quoteIdent(cfg.profileUserIdColumn)} = $1 AND 'admin' = ANY (p.roles)`, [userId])
+      return rows.length ? Math.max(cfg.minPasswordLength, cfg.adminMinPasswordLength || 0) : cfg.minPasswordLength
+    } catch (err) {
+      if (err.code === '42P01' || err.code === '42703') return cfg.minPasswordLength // no profiles table / roles column
+      throw err
+    }
   }
 
   function hashPassword(password) {
@@ -939,10 +1003,13 @@ export function createAuth(options = {}) {
     if (!skipPolicy) {
       const problem = validateNewPassword(newPassword)
       if (problem) throw new Error(problem)
+      const { id } = await findUserId(emailOrId)
+      const adminProblem = validateNewPassword(newPassword, await minPasswordFor(id))
+      if (adminProblem) throw new Error(adminProblem)
     }
     const hash = await hashPassword(newPassword)
     const out = await withTransaction((client) => setPasswordIn(client, emailOrId, hash, { confirmEmail }))
-    lockout.reset(out.email)
+    clearLocks(out.email)
     return out
   }
 
@@ -1161,33 +1228,43 @@ export function createAuth(options = {}) {
     }
     if (email.length > 254 || password.length > 1024) return INVALID_CREDENTIALS()
 
-    // Counts this attempt as in flight before any await, so parallel requests
-    // cannot all slip past the lockout before the first failure is recorded.
-    const attempt = typeof lockout.begin === 'function' ? lockout.begin(email) : lockout.check(email)
-    if (attempt.locked) {
-      const mins = Math.max(1, Math.ceil(attempt.retryAfterSec / 60))
-      return rateLimited(attempt.retryAfterSec, 'account_locked',
+    // Locks are per account AND source (address bucket): wrong passwords from
+    // elsewhere do not lock the owner out. Counts this attempt as in flight
+    // before any await, so parallel requests cannot all slip past the lockout
+    // before the first failure is recorded.
+    const source = ipKey(ctx.ip)
+    const key = lockKey(email, source)
+    const locked = (retryAfterSec) => {
+      const mins = Math.max(1, Math.ceil(retryAfterSec / 60))
+      return rateLimited(retryAfterSec, 'account_locked',
         `Too many failed sign-in attempts. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`)
     }
+    const ceiling = accountLockout?.check(email)
+    if (ceiling?.locked && !knownSource(email, source)) return locked(ceiling.retryAfterSec)
+    const attempt = typeof lockout.begin === 'function' ? lockout.begin(key) : lockout.check(key)
+    if (attempt.locked) return locked(attempt.retryAfterSec)
+    const failed = () => {
+      lockout.fail(key)
+      accountLockout?.fail(email)
+      failedSources.set(source, Date.now())
+      return INVALID_CREDENTIALS()
+    }
     try {
-      const blockedEmail = limit('signInEmail', email)
+      const blockedEmail = limit('signInEmail', key)
       if (blockedEmail) return blockedEmail
-      // Last, so requests refused above never use up the global budget.
-      if (limits.signInGlobal?.hit('*').limited) return BUSY()
+      // Last, so requests refused above never use up the global budget; and
+      // only for sources that failed lately (see DEFAULTS.limits.signInGlobal).
+      const lastFail = failedSources.get(source)
+      if (lastFail != null && Date.now() - lastFail < FAILED_SOURCE_MS && limits.signInGlobal?.hit('*').limited) return BUSY()
 
       const cols = await usersColumns()
       const user = await findUserByEmail(email)
       const passwordOk = await checkPassword(password, user?.encrypted_password)
-      if (!passwordOk || isUserBlocked(user) || isUnconfirmed(user, cols)) {
-        lockout.fail(email)
-        return INVALID_CREDENTIALS()
-      }
+      if (!passwordOk || isUserBlocked(user) || isUnconfirmed(user, cols)) return failed()
       const session = await createSession(user.id, user.encrypted_password)
-      if (!session) { // password changed or account deleted while we were checking
-        lockout.fail(email)
-        return INVALID_CREDENTIALS()
-      }
-      lockout.succeed(email)
+      if (!session) return failed() // password changed or account deleted while we were checking
+      lockout.succeed(key)
+      rememberSource(email, source)
       return await finishSignIn(user, cols, session)
     } finally {
       attempt.release?.()
@@ -1304,8 +1381,10 @@ export function createAuth(options = {}) {
             const text = (v) => (v == null ? null : (typeof v === 'object' ? JSON.stringify(v) : String(v)))
             const prof = { [cfg.profileUserIdColumn]: id }
             const put = (col, v) => { if (writable(pcols, col)) prof[col] = v }
-            put('first_name', text(meta.first_name))
-            put('last_name', text(meta.last_name))
+            // names: one line, at most 80 characters (they reach other people's mails)
+            const name = (v) => { const t = text(v); return t == null ? null : t.replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) }
+            put('first_name', name(meta.first_name))
+            put('last_name', name(meta.last_name))
             put('country', text(meta.country) ?? cfg.defaultCountry)
             put('dob', meta.dob ?? null)
             put('roles', [...cfg.defaultRoles])
@@ -1335,17 +1414,22 @@ export function createAuth(options = {}) {
         if (byLink) confirmToken = await issueToken(client, id, 'confirm')
         return ins.rows[0].u
       })
-      if (!user) {
-        return fail(422, 'A user with this email address has already been registered', 'user_already_exists')
-      }
+      if (!user) return alreadyRegistered(email, body, ctx, { linkPossible, meta })
       if (confirmToken) {
         const lang = mailLang(body, ctx)
         const link = authLink(managerUrlFor(app), 'confirm', confirmToken, lang)
+        // email_confirmation: 'sent' tells the app it may sign in right away;
+        // 'queued' that it may too, but the hourly budget holds the mail back
+        // until its window ends (older apps read it as "check your email").
+        if (confirmBudgetFull()) {
+          queueConfirmation({ to: user.email, lang, link, app })
+          return ok({ user: publicUser(user), email_confirmation: 'queued' })
+        }
         background('sign-up confirmation mail', async () => {
           const r = await mailer.send('confirm', { to: user.email, lang, link, app })
           if (r?.sent) log.log?.(`[auth] confirmation link sent to ${maskEmail(user.email)}`)
+          else if (r?.skipped === 'budget') queueConfirmation({ to: user.email, lang, link, app })
         })
-        // email_confirmation: 'sent' tells the app it may sign in right away.
         return ok({ user: publicUser(user), email_confirmation: 'sent' })
       }
       // Confirmed at once (no mailer or no db/010): the approvers hear of it now
@@ -1354,15 +1438,75 @@ export function createAuth(options = {}) {
     } catch (err) {
       // db/025: a club or team asked for is gone (the form was loaded before)
       if (err?.signUpRequests) return fail(422, err.message, 'validation_failed')
-      if (err.code === '23505') {
-        return fail(422, 'A user with this email address has already been registered', 'user_already_exists')
-      }
+      if (err.code === '23505') return alreadyRegistered(email, body, ctx, { linkPossible, meta })
       // invalid_text_representation / datetime / invalid enum label etc. in metadata
       if (err.code === '22007' || err.code === '22008' || err.code === '22P02' || err.code === '22023') {
         return fail(422, 'Invalid profile data', 'validation_failed')
       }
       throw err
     }
+  }
+
+  /**
+   * Sign-up of an address that has an account. With mail on, the answer is
+   * the one a new account gets (no address oracle) and the owner is mailed a
+   * reset link instead (per inbox limit resetEmail); without mail, 422
+   * user_already_exists as before (the account would be confirmed at once,
+   * so a uniform answer would hide nothing).
+   */
+  function alreadyRegistered(email, body, ctx, { linkPossible, meta }) {
+    if (!linkPossible) return fail(422, 'A user with this email address has already been registered', 'user_already_exists')
+    const app = requestApp(body)
+    const lang = mailLang(body, ctx)
+    if (!limits.resetEmail || !limits.resetEmail.hit(mailboxKey(email)).limited) {
+      background('sign-up of a known address: reset mail', async () => {
+        const user = await findUserByEmail(email)
+        if (!user || isUserBlocked(user)) return
+        const token = await withTransaction((client) => issueToken(client, user.id, 'reset'))
+        await audit('account.password_reset_requested', user.id, { via: 'sign-up' }, app)
+        await mailer.send('reset', { to: user.email, lang, app, link: authLink(managerUrlFor(app), 'reset', token, lang) })
+      })
+    }
+    const nowIso = new Date().toISOString()
+    const shadow = { id: randomUUID(), email, created_at: nowIso, updated_at: nowIso, raw_user_meta_data: meta, raw_app_meta_data: { provider: 'email', providers: ['email'] } }
+    return ok({ user: publicUser(shadow), email_confirmation: confirmBudgetFull() ? 'queued' : 'sent' })
+  }
+
+  // Confirmation mails the hourly budget held back: sent when the window
+  // ends (the links stay valid 24 h). In memory: after a restart the account
+  // asks for a new one (resend-confirmation).
+  const CONFIRM_QUEUE_MAX = 2000
+  const confirmQueue = []
+  let confirmTimer = null
+  function confirmBudgetFull() {
+    const b = mailer.budgets?.confirm
+    return !!b && b.used >= b.max
+  }
+  function queueConfirmation(mail) {
+    if (confirmQueue.length >= CONFIRM_QUEUE_MAX) {
+      const lost = confirmQueue.shift()
+      log.error(`[auth] confirmation queue full; the held-back mail to ${maskEmail(lost.to)} is dropped (it can be sent again from the profile)`)
+    }
+    confirmQueue.push(mail)
+    scheduleConfirmations()
+  }
+  function scheduleConfirmations() {
+    if (confirmTimer || !confirmQueue.length) return
+    const wait = Math.min(60 * 60 * 1000, (mailer.budgets?.confirm?.resetsInMs ?? 60_000) + 1000)
+    confirmTimer = setTimeout(() => { confirmTimer = null; flushConfirmations() }, wait)
+    confirmTimer.unref?.()
+  }
+  function flushConfirmations() {
+    background('held-back confirmation mails', async () => {
+      while (confirmQueue.length) {
+        const mail = confirmQueue[0]
+        const r = await mailer.send('confirm', mail)
+        if (r?.skipped === 'budget') break
+        confirmQueue.shift()
+        if (r?.sent) log.log?.(`[auth] held-back confirmation link sent to ${maskEmail(mail.to)}`)
+      }
+      scheduleConfirmations()
+    })
   }
 
   async function signOut(body, ctx) {
@@ -1438,7 +1582,7 @@ export function createAuth(options = {}) {
       const { rows } = await client.query(`DELETE FROM ${T.users} WHERE id = $1 RETURNING email`, [userId])
       return rows.length ? (rows[0].email ?? '') : null
     })
-    if (email) lockout.reset(normalizeEmail(email))
+    if (email) clearLocks(normalizeEmail(email))
     // Second pass: an upload that passed its session check before the
     // sessions were revoked may have landed in between. Best effort.
     if (typeof cfg.onAccountDeleted === 'function') {
@@ -1532,10 +1676,12 @@ export function createAuth(options = {}) {
     if (!(await tokensAvailable())) return RESET_UNAVAILABLE()
     // Cheap check first, so junk tokens cost no bcrypt.
     const pre = await pool.query(
-      `SELECT 1 FROM ${T.tokens} WHERE hash = $1 AND purpose = 'reset' AND used_at IS NULL AND expires_at > now()`,
+      `SELECT user_id FROM ${T.tokens} WHERE hash = $1 AND purpose = 'reset' AND used_at IS NULL AND expires_at > now()`,
       [hashToken(token)]
     )
     if (!pre.rows.length) return INVALID_LINK()
+    const adminProblem = validateNewPassword(body.password, await minPasswordFor(pre.rows[0].user_id))
+    if (adminProblem) return fail(422, adminProblem, 'weak_password')
     const hash = await hashPassword(body.password)
     const out = await withTransaction(async (client) => {
       const t = await consumeToken(client, token, 'reset')
@@ -1543,7 +1689,7 @@ export function createAuth(options = {}) {
       return setPasswordIn(client, t.userId, hash, { confirmEmail: true })
     })
     if (!out) return INVALID_LINK()
-    lockout.reset(out.email)
+    clearLocks(out.email)
     await audit('account.password_reset', out.userId, { sessions_revoked: out.revokedSessions }, requestApp(body))
     if (mailer.enabled) {
       const lang = mailLang(body, ctx)
@@ -1553,13 +1699,30 @@ export function createAuth(options = {}) {
     return ok({ password_updated: true })
   }
 
-  /** POST confirm-email { token } (an `app` is ignored): marks the address confirmed. */
+  /**
+   * POST confirm-email { token, password? } (an `app` is ignored): marks the
+   * address confirmed. An account created with a link may have been made by
+   * someone else with this address: unless the clicker gives the account's
+   * password, the confirmation keeps nothing of whoever signed up (password,
+   * sessions and passkeys go) and answers set_password_token, a reset link
+   * token for the clicker to choose a password (the click proved the inbox,
+   * as a reset link does).
+   */
   async function confirmEmailLink(body, ctx) {
     const blocked = limit('tokenIp', ipKey(ctx.ip))
     if (blocked) return blocked
     const token = body.token
     if (!isWellFormedToken(token)) return INVALID_LINK()
     if (!(await tokensAvailable())) return CONFIRM_UNAVAILABLE()
+    // The password check runs before the transaction (bcrypt holds no lock)
+    let passwordOk = false
+    if (typeof body.password === 'string' && body.password && body.password.length <= 1024) {
+      const { rows } = await pool.query(
+        `SELECT u.encrypted_password FROM ${T.tokens} t JOIN ${T.users} u ON u.id = t.user_id
+          WHERE t.hash = $1 AND t.purpose = 'confirm' AND t.used_at IS NULL AND t.expires_at > now()`, [hashToken(token)])
+      if (rows[0]) passwordOk = await checkPassword(body.password, rows[0].encrypted_password)
+    }
+    let setPasswordToken = null
     const out = await withTransaction(async (client) => {
       const cols = await usersColumns(client)
       const t = await consumeToken(client, token, 'confirm')
@@ -1570,6 +1733,13 @@ export function createAuth(options = {}) {
         // tell its holder so, instead of "invalid".
         const { rows } = await client.query(`SELECT email_confirmed_at IS NOT NULL AS confirmed FROM ${T.users} WHERE id = $1`, [t.userId])
         return rows[0]?.confirmed ? { userId: t.userId, already: true } : null
+      }
+      const { rows: urows } = await client.query(`SELECT to_jsonb(u) AS u FROM ${T.users} u WHERE u.id = $1 FOR UPDATE`, [t.userId])
+      if (confirmsByLink(urows[0]?.u) && urows[0].u.email_confirmed_at == null && !passwordOk) {
+        // Not shown to be the one who signed up: nothing of theirs stays
+        await setPasswordIn(client, t.userId, `!unset:${generateToken()}`, { confirmEmail: true })
+        setPasswordToken = await issueToken(client, t.userId, 'reset')
+        return { userId: t.userId, already: false, reset: true }
       }
       let set = 'email_confirmed_at = coalesce(email_confirmed_at, now())'
       if (writable(cols, 'updated_at')) set += ', updated_at = now()'
@@ -1582,10 +1752,11 @@ export function createAuth(options = {}) {
     })
     if (!out) return INVALID_LINK()
     if (!out.already) {
-      await audit('account.email_confirmed', out.userId, {})
+      await audit('account.email_confirmed', out.userId, out.reset ? { password_cleared: true } : {})
       accountConfirmed(out.userId)
     }
-    return ok({ confirmed: true, already_confirmed: out.already })
+    if (setPasswordToken) clearLocks(normalizeEmail((await findUserId(out.userId)).email))
+    return ok({ confirmed: true, already_confirmed: out.already, ...(setPasswordToken ? { set_password_token: setPasswordToken } : {}) })
   }
 
   /** POST resend-confirmation { access_token, lang, app }: a fresh link for the signed-in, unconfirmed account. */
@@ -1667,7 +1838,7 @@ export function createAuth(options = {}) {
     const blocked = limit('passkeyIp', ipKey(ctx.ip))
     if (blocked) return blocked
     if (!(await passkeysAvailable())) return PASSKEYS_UNAVAILABLE()
-    return ok(await ceremonies.authenticationOptions())
+    return ok(await ceremonies.authenticationOptions({ bucket: ipKey(ctx.ip) }))
   }
 
   async function passkeyLogin(body, ctx) {
@@ -1855,6 +2026,9 @@ export function createAuth(options = {}) {
   function sweep() {
     for (const l of Object.values(limits)) l?.sweep?.()
     lockout.sweep?.()
+    accountLockout?.sweep()
+    const t = Date.now()
+    for (const [k, at] of failedSources) if (t - at >= FAILED_SOURCE_MS) failedSources.delete(k)
     ceremonies.sweep()
   }
 
@@ -1876,6 +2050,7 @@ export function createAuth(options = {}) {
     sweep,
     limits,
     lockout,
+    accountLockout,
     bcryptGate,
     config: Object.freeze(Object.fromEntries(Object.entries(cfg).filter(
       ([k]) => !['pool', 'bcrypt', 'logger', 'limits', 'lockout', 'ipKey', 'onAccountDeleted', 'mailer'].includes(k)))),

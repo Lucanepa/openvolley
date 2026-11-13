@@ -59,6 +59,7 @@ import { fail, invalid, isUuid, ok, unavailable } from './accounts.js'
 import { ADMIN_ROLES } from './access.js'
 import { MAIL_BUDGET_OF, pickLang } from './mailer.js'
 import { connectClient } from './pgClient.js'
+import { EMAIL_RE } from './emailAddress.js'
 
 export const DELAY_MS = 2 * 60 * 1000
 // No PDF of the approval this long after the close: mailed without it
@@ -83,7 +84,7 @@ const MAX_PER_SWEEP = 200
 export const TEST_PDF_MAX_BYTES = 5 * 1024 * 1024
 // The largest attachment a final mail carries (mail servers refuse bigger)
 export const MAIL_PDF_MAX_BYTES = 10 * 1024 * 1024
-const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+// one strict address (lib/emailAddress.js)
 // An address without an account (a typed referee address, a club's contact):
 // who reads it is not known, so English, the app's binding language (owner,
 // 2026-10-29; FINAL_MAIL_LANG overrides, e.g. de)

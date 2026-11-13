@@ -13,7 +13,7 @@ import { useManagerBrand } from '../../managerBrand'
  * ever sent to its endpoint.
  */
 
-const MIN_PASSWORD = 6
+const MIN_PASSWORD = 10 // as SignUpForm MIN_PASSWORD_LENGTH and the server's minPasswordLength
 const MAX_PASSWORD_BYTES = 72
 
 const quietLink = cn('inline-flex min-h-11 w-full items-center justify-center rounded-lg text-sm text-stone-500 transition-colors hover:text-stone-800', FOCUS_RING)
@@ -138,18 +138,25 @@ export function ConfirmEmailPage({ token, onSignIn }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [state, setState] = useState(token ? 'ask' : 'invalid')
+  const [password, setPassword] = useState('')
+  const [setPasswordToken, setSetPasswordToken] = useState(null)
 
-  const confirm = async () => {
+  const confirm = async (e) => {
+    e?.preventDefault?.()
     if (busy) return
     setError('')
     setBusy(true)
-    const res = await apiAuth.confirmEmail(token)
+    const res = await apiAuth.confirmEmail(token, password)
     setBusy(false)
+    // Not shown to be whoever signed up: the server kept no password, the
+    // clicker chooses one now
+    if (!res?.error && res?.data?.set_password_token) return setSetPasswordToken(res.data.set_password_token)
     if (!res?.error) return setState(res?.data?.already_confirmed ? 'already' : 'done')
     if (res.error.code === 'invalid_link') return setState('invalid')
     setError(linkErrorText(t, res.error))
   }
 
+  if (setPasswordToken) return <ResetPasswordPage token={setPasswordToken} onSignIn={onSignIn} />
   if (state === 'invalid') return <InvalidLink body={t('authEmail.confirmInvalid')} onSignIn={onSignIn} />
   if (state === 'done' || state === 'already') {
     return (
@@ -162,12 +169,15 @@ export function ConfirmEmailPage({ token, onSignIn }) {
     )
   }
   return (
-    <div data-testid="confirm-ask" className="space-y-3">
+    <form data-testid="confirm-ask" onSubmit={confirm} className="space-y-3" noValidate>
       <Heading icon={MailCheck} title={t('authEmail.confirmTitle')}>{t(brand.app === 'beach' ? 'managerBeach.confirmBody' : 'authEmail.confirmBody')}</Heading>
       <FormError size="md">{error}</FormError>
-      <Button variant="hero" block onClick={confirm} disabled={busy} loading={busy} className="mt-3">
+      <Field label={t('authEmail.confirmPassword')} hint={t('authEmail.confirmPasswordHint')}>
+        <Input size="lg" type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" data-testid="confirm-password" />
+      </Field>
+      <Button type="submit" variant="hero" block disabled={busy} loading={busy} className="mt-3">
         {busy ? t('authEmail.confirming') : t('authEmail.confirmButton')}
       </Button>
-    </div>
+    </form>
   )
 }

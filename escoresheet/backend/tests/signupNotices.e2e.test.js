@@ -87,7 +87,7 @@ describe('sign-up notices end to end', { skip: SKIP }, () => {
     const id = up.json.data.user.id
     const mail = await smtp.waitForMail((m) => m.envelope.to.includes(email) && linkToken(m)?.page === 'confirm')
     if (confirm) {
-      const c = await api(srv.base, '/api/auth/confirm-email', { proto: null, headers: { 'cf-connecting-ip': ip() }, body: { token: linkToken(mail).token } })
+      const c = await api(srv.base, '/api/auth/confirm-email', { proto: null, headers: { 'cf-connecting-ip': ip() }, body: { token: linkToken(mail).token, password: PW } })
       assert.equal(c.status, 200, c.text)
     } else {
       await sql.query('UPDATE auth.users SET email_confirmed_at = now() WHERE id = $1', [id])
@@ -159,12 +159,12 @@ describe('sign-up notices end to end', { skip: SKIP }, () => {
     assert.equal(smtp.mails.length, before + 1)
     assert.equal((await call(users.admin, 'GET', '/api/notifications?app=indoor')).json.data.unread, 0)
 
-    const c = await api(srv.base, '/api/auth/confirm-email', { proto: null, headers: { 'cf-connecting-ip': ip() }, body: { token: linkToken(confirmMail).token } })
+    const c = await api(srv.base, '/api/auth/confirm-email', { proto: null, headers: { 'cf-connecting-ip': ip() }, body: { token: linkToken(confirmMail).token, password: PW } })
     assert.equal(c.status, 200, c.text)
 
     // the admin: German (its sign-up language), every part, its account page
     const adminMail = await smtp.waitForMail((m) => m.envelope.to.includes(users.admin.email) && /Registrierung/.test(m.subject))
-    assert.equal(adminMail.subject, 'Neue OpenVolley-Registrierung: Nora Neu')
+    assert.equal(adminMail.subject, 'Neue OpenVolley-Registrierung')
     assert.match(adminMail.text, new RegExp(`Nora Neu \\(${email.replace('.', '\\.')}\\)`))
     assert.match(adminMail.text, /Schreiber · VBC Musterdorf/)
     assert.match(adminMail.text, /Schiedsrichter/)
@@ -200,9 +200,13 @@ describe('sign-up notices end to end', { skip: SKIP }, () => {
     assert.equal((await call(users.admin, 'GET', '/api/notifications?app=beach')).json.data.notifications.length, 0)
     assert.equal((await call(users.othermgr, 'GET', '/api/notifications')).json.data.notifications.length, 0)
     assert.equal((await call(users.coach, 'GET', '/api/notifications')).json.data.notifications[0].target, `myteams/${mustH1.id}`)
+    // the name and address as they were at notice time, not read live
+    await sql.query("UPDATE auth.users SET email = 'changed-later@example.ch' WHERE id = $1", [newbie])
+    assert.equal((await call(users.coach, 'GET', '/api/notifications')).json.data.notifications[0].user.email, email)
+    await sql.query('UPDATE auth.users SET email = $2 WHERE id = $1', [newbie, email])
 
     // a second confirmation tells nobody again
-    const again = await api(srv.base, '/api/auth/confirm-email', { proto: null, headers: { 'cf-connecting-ip': ip() }, body: { token: linkToken(confirmMail).token } })
+    const again = await api(srv.base, '/api/auth/confirm-email', { proto: null, headers: { 'cf-connecting-ip': ip() }, body: { token: linkToken(confirmMail).token, password: PW } })
     assert.equal(again.json.data.already_confirmed, true)
     await sleep(300)
     assert.equal(mailsTo(users.admin.email).filter((m) => /Registrierung/.test(m.subject)).length, 1)
@@ -230,15 +234,15 @@ describe('sign-up notices end to end', { skip: SKIP }, () => {
   it('a sign-up without requests: the admins only; an OpenBeach one in the OpenBeach manager', async () => {
     const plain = await account('plain', { confirm: true })
     await waitUntil(async () => (await call(users.admin, 'GET', '/api/notifications?app=indoor')).json.data.notifications.some((n) => n.user?.id === plain.id), { what: 'plain notice' })
-    const mail = await smtp.waitForMail((m) => m.envelope.to.includes(users.admin.email) && m.subject.includes('plain'))
+    const mail = await smtp.waitForMail((m) => m.envelope.to.includes(users.admin.email) && m.text.includes('plain'))
     assert.match(mail.text, /fragt noch nach keiner Rolle/)
     assert.equal((await call(users.clubmgr, 'GET', '/api/notifications')).json.data.notifications.some((n) => n.user?.id === plain.id), false)
 
     const beach = await account('beachy', { confirm: true, app: 'beach' })
     await waitUntil(async () => (await call(users.admin, 'GET', '/api/notifications?app=beach')).json.data.notifications.some((n) => n.user?.id === beach.id), { what: 'beach notice' })
-    const bm = await smtp.waitForMail((m) => m.envelope.to.includes(users.admin.email) && m.subject.includes('beachy'))
+    const bm = await smtp.waitForMail((m) => m.envelope.to.includes(users.admin.email) && m.text.includes('beachy'))
     assert.match(bm.text, /OpenBeach-Konto/)
-    assert.equal(bm.subject, 'Neue OpenBeach-Registrierung: beachy Beispiel')
+    assert.equal(bm.subject, 'Neue OpenBeach-Registrierung')
     assert.ok(bm.text.includes(`/#accounts/${beach.id}`))
     assert.equal((await call(users.admin, 'GET', '/api/notifications?app=indoor')).json.data.notifications.some((n) => n.user?.id === beach.id), false)
   })

@@ -965,8 +965,10 @@ export const apiAuth = {
     return authRequest('reset-password/confirm', { token, password, ...(lang ? { lang } : {}), ...(app ? { app } : {}) })
   },
 
-  async confirmEmail(token) {
-    return authRequest('confirm-email', { token })
+  // password: the one chosen at sign-up; without it (or wrong) the server
+  // clears the account's password and answers set_password_token
+  async confirmEmail(token, password) {
+    return authRequest('confirm-email', password ? { token, password } : { token })
   },
 
   async resendConfirmation(lang, app) {

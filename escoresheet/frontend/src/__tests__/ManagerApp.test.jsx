@@ -320,8 +320,8 @@ describe('ManagerApp #signup (accounts are made here)', () => {
     'First name': 'Lea',
     'Last name': 'Muster',
     Email: 'lea@club.ch',
-    Password: 'secret1',
-    'Confirm password': 'secret1'
+    Password: 'secret1234',
+    'Confirm password': 'secret1234'
   }
 
   it('the page: every field of the sign-up, the date of birth empty, a way back to sign in', () => {
@@ -361,7 +361,7 @@ describe('ManagerApp #signup (accounts are made here)', () => {
 
     fill(page, { ...valid, Password: 'abc', 'Confirm password': 'abc' })
     submit()
-    expect(await within(page).findByRole('alert')).toHaveTextContent('Password must be at least 6 characters')
+    expect(await within(page).findByRole('alert')).toHaveTextContent('Password must be at least 10 characters')
 
     fill(page, { ...valid, 'Date of birth': '31.02.1990' })
     submit()
@@ -411,7 +411,7 @@ describe('ManagerApp #signup (accounts are made here)', () => {
     fill(page, { ...valid, Email: ' lea@club.ch ' })
     fireEvent.click(within(page).getByRole('button', { name: 'Create account' }))
     await waitFor(() => expect(screen.getByTestId('manager-invite-step')).toBeInTheDocument())
-    expect(signIn).toHaveBeenCalledWith('lea@club.ch', 'secret1')
+    expect(signIn).toHaveBeenCalledWith('lea@club.ch', 'secret1234')
     rerender(<ManagerApp />)
     const step = screen.getByTestId('manager-invite-step')
     expect(within(step).getByText('managerSite.accountCreated')).toBeInTheDocument()
@@ -491,7 +491,7 @@ describe('ManagerApp #signup (accounts are made here)', () => {
     const page = screen.getByTestId('manager-sign-up')
     fill(page, { ...valid, Email: ' lea@club.ch ', 'First name': ' Lea ' })
     fireEvent.click(within(page).getByRole('button', { name: 'Create account' }))
-    await waitFor(() => expect(auth.value.signUp).toHaveBeenCalledWith('lea@club.ch', 'secret1', {
+    await waitFor(() => expect(auth.value.signUp).toHaveBeenCalledWith('lea@club.ch', 'secret1234', {
       firstName: 'Lea', lastName: 'Muster', country: 'CHE', dob: null
     }, { requests: [] }))
   })

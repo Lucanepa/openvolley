@@ -78,6 +78,7 @@ import {
   resultKey, shortId, triplesOf, verifyPin
 } from './approvalPin.js'
 import { connectClient } from './pgClient.js'
+import { EMAIL_RE } from './emailAddress.js'
 
 export const SLOTS = Object.freeze(['referee1', 'referee2', 'scorer'])
 // The plain role of each slot; approvalRoleFor() names it in the match's sport
@@ -113,7 +114,7 @@ export function callerRolesFor (sport) {
 }
 /** The match's app for audit_log.app: 'beach', or null (indoor, as every older entry). */
 const auditAppOf = (m) => (sportOf(m?.sport_type) === 'beach' ? 'beach' : null)
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+// one strict address (lib/emailAddress.js)
 const DUMMY_UUID = '00000000-0000-0000-0000-000000000000'
 
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)

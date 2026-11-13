@@ -329,7 +329,8 @@ function getDataLayer() {
     // One pg Pool for everything (auth shares pgQuery's pool). delete-account
     // removes the account's files too (README "Deleting an account").
     // Account emails (reset / confirmation links; lib/mailer.js). Without
-    // SMTP_HOST or SMTP_PASS: reset answers 503, sign-up confirms at once.
+    // SMTP_HOST and SMTP_PASS: reset answers 503, sign-up confirms at once.
+    // With either set, an unusable mail setting stops the startup (throws).
     const mailer = ml.mailerFromEnv(process.env)
     if (mailer.enabled) {
       console.log(`[Mail] account emails on: SMTP ${process.env.SMTP_HOST}:${process.env.SMTP_PORT || 465} as ${process.env.SMTP_USER}, from ${mailer.from}, links to ${mailer.managerUrl}; OpenBeach from ${mailer.fromFor('beach')}, links to ${mailer.managerUrlFor('beach')}`)
@@ -1320,6 +1321,33 @@ const RATE_LIMIT_MAX_KEYS = 10000
  * relay counts per address, like its socket cap: every tablet of a hall LAN
  * shares one IPv6 /64.
  */
+/**
+ * The support form's sender (lib/contact.js handleContact): signed in (a valid
+ * session in the Authorization header) and scoring a live match (the scoring
+ * device of a match that has not ended, claimed by this account in the last
+ * 12 hours). Never throws: anything unclear is { signedIn: false }.
+ */
+async function contactSender(req) {
+  const token = DB_MODE ? bearerFromHeaders(req.headers) : null
+  if (!token) return { signedIn: false, liveMatch: false }
+  try {
+    const layer = await getDataLayer()
+    const user = (await layer.auth.verifyAccessToken(token))?.user
+    if (!user) return { signedIn: false, liveMatch: false }
+    let liveMatch = false
+    try {
+      const { rows } = await layer.db.pool.query(
+        `SELECT 1 FROM public.match_scorer_devices d JOIN public.matches m ON m.id = d.match_id
+          WHERE d.claimed_by = $1 AND d.claimed_at > now() - interval '12 hours'
+            AND coalesce(m.status, '') NOT IN ('final', 'ended', 'completed', 'finished') LIMIT 1`, [user.id])
+      liveMatch = rows.length > 0
+    } catch { /* no db/019: no live match known */ }
+    return { signedIn: true, liveMatch }
+  } catch {
+    return { signedIn: false, liveMatch: false }
+  }
+}
+
 function addressKey(req) {
   const ip = getClientIp(req)
   return IS_CLOUD ? ipBucketKey(ip) : ip
@@ -2741,7 +2769,8 @@ function handleHttpRequest(req, res) {
   // Support form (lib/contact.js): multipart with up to 5 attachments, one
   // mail to CONTACT_EMAIL with Reply-To the user (FreeScout's customer)
   if (url.pathname === '/api/contact' && req.method === 'POST') {
-    if (isRateLimited(addressKey(req), CONTACT_RATE_LIMIT_MAX, 'contact')) {
+    // one /64 is one client here, also off the cloud
+    if (isRateLimited(ipBucketKey(getClientIp(req)), CONTACT_RATE_LIMIT_MAX, 'contact')) {
       res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
       res.end(JSON.stringify({ success: false, error: 'Too many requests. Please wait before submitting again.' }))
       return
@@ -2761,7 +2790,7 @@ function handleHttpRequest(req, res) {
         })
         return
       }
-      const r = await handleContact({ body, contentType: req.headers['content-type'], mailer: contactMailer })
+      const r = await handleContact({ body, contentType: req.headers['content-type'], mailer: contactMailer, sender: await contactSender(req) })
       sendJson(res, r.status, r.body)
     })
     if (!job) {
