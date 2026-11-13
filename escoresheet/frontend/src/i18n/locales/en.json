@@ -903,6 +903,7 @@
     "relayRejected": {
       "notOwner": "Referee/bench link: another scoresheet holds this match on the server. Referee, bench and livescore do not receive this device's updates.",
       "rateLimited": "Referee/bench link: the server refused this scoresheet for a minute (too many failed attempts).",
+      "roomLimit": "Referee/bench link: the server has no room for this match right now. Referee, bench and livescore do not receive this device's updates.",
       "scorerMoved": "Referee/bench link: this match is now scored on another device. Referee, bench and livescore follow the other device, no longer this one.",
       "tooMany": "Referee/bench link: this device already drives too many matches on the server."
     },
@@ -1983,6 +1984,7 @@
     "connecting": "Connecting...",
     "invalidPin": "Invalid PIN. Please try again.",
     "tooManyAttempts": "Too many wrong PINs from this network. Wait a few minutes, then try again.",
+    "pickGame": "More than one match has this PIN. Pick your game in the list, then enter the PIN again.",
     "reconnecting": "No connection to the server. The bench reconnects to its match as soon as it is back.",
     "waitingForScoresheet": "The server is back. The bench rejoins its match as soon as the scoresheet has reconnected.",
     "roster": "Roster",
@@ -2019,6 +2021,9 @@
     "selected": "Selected",
     "vs": "vs",
     "tbd": "TBD",
+    "confirmGame": "Is this your game?",
+    "openGame": "Open this game",
+    "notMyGame": "Not my game",
     "connectionPin": "Connection PIN",
     "connecting": "Connecting...",
     "enter": "Enter",
@@ -2036,7 +2041,8 @@
       "serverUnreachable": "No connection to the server – check the Wi-Fi and try again.",
       "reconnecting": "No connection to the server. The referee dashboard reconnects to its match as soon as it is back.",
       "waitingForScoresheet": "The server is back. The referee dashboard rejoins its match as soon as the scoresheet has reconnected.",
-      "tooManyAttempts": "Too many wrong PINs from this network. Wait a few minutes, then try again."
+      "tooManyAttempts": "Too many wrong PINs from this network. Wait a few minutes, then try again.",
+      "pickGame": "More than one match has this PIN. Pick your game in the list, then enter the PIN again."
     },
     "connection": {
       "title": "Connection",

@@ -130,6 +130,16 @@ describe('Scoreboard relay connection', () => {
     expect(onOpen).toMatch(/const initialSync = syncMatchData\(\)/)
     expect(onOpen).toMatch(/initialSync\.then\(\(\) => syncLiveStateRef\.current\?\.\(RECONNECT_PUSH, null, null\)/)
   })
+
+  // 2026-11 audit: a relay with no room for the match refused every sync
+  // ('room-limit') and the scorer saw nothing; a cloud claim the relay could
+  // not check with its database is refused now ('claim-unverified')
+  it('shows a full relay to the scorer, and sends a sync the relay could not check again', () => {
+    expect(scoreboardSrc).toMatch(/\} else if \(message\.code === 'room-limit'\) \{\n[\s\S]{0,200}setRelayRejection\(\{ code: message\.code/)
+    expect(scoreboardSrc).toMatch(/relayRejection\.code === 'room-limit'\n\s*\? t\('scoreboard\.relayRejected\.roomLimit'/)
+    expect(scoreboardSrc).toMatch(/message\.code === 'claim-unverified'\) \{[\s\S]{0,300}claimRetry = setTimeout\(\(\) => syncFunctionRef\.current\?\.\(\), 5000\)/)
+    expect(scoreboardSrc).toMatch(/detachRelay = null\n\s*clearTimeout\(claimRetry\)/)
+  })
 })
 
 describe('Scoreboard live state: a test match stays out of the cloud', () => {
@@ -193,12 +203,15 @@ describe('typed tablet PINs are checked against the match the page knows', () =>
   it('the referee: its link, or the game picked in the list', () => {
     // (a game picked after a link replaces it: refereeLink.test.jsx)
     expect(refereeSrc).toMatch(/const picked = linkedMatch\?\.id \?\? \(listed\.length === 1 \? listed\[0\]\.id : null\)/)
-    expect(refereeSrc).toMatch(/validateRefereePin\(pinInput\.trim\(\), \{ matchExternalId: typeof picked === 'string' && picked \? picked : null \}\)/)
+    expect(refereeSrc).toMatch(/const gameNumber = linkedMatch\?\.gameNumber \?\? \(selectedGameNumber \|\| null\)/)
+    expect(refereeSrc).toMatch(/validateRefereePin\(pinInput\.trim\(\), \{\n\s*matchExternalId: typeof picked === 'string' && picked \? picked : null,\n\s*gameNumber\n\s*\}\)/)
   })
   it('the bench: the match picked (its link or the list)', () => {
     const at = benchSrc.indexOf('const result = await validateBenchPin(pin, selectedTeam, {')
     expect(at).toBeGreaterThan(-1)
     expect(benchSrc.slice(at, benchSrc.indexOf('})', at))).toMatch(/matchExternalId: picked/)
+    // and its game number, for the relay
+    expect(benchSrc.slice(at, benchSrc.indexOf('\n      })', at))).toMatch(/gameNumber: selectedMatch\?\.gameNumber \?\? null/)
     expect(benchSrc).toMatch(/const picked = selectedMatch\?\.id/)
   })
 })

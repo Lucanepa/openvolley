@@ -123,9 +123,13 @@ export function matchAccessHeaders(matchId) {
 }
 
 /**
- * Validate PIN and get match data from server
+ * Validate PIN and get match data from server.
+ * `matchId` (its seed key) or `gameNumber`: the match the tablet picked; the
+ * relay compares the PIN with that match only (a PIN two matches share is
+ * refused with 409 'game-number-required' when none is named). Relays from
+ * before 2026-11 ignore both and take the first match with the PIN.
  */
-export async function validatePin(pin, type = 'referee') {
+export async function validatePin(pin, type = 'referee', { matchId = null, gameNumber = null } = {}) {
   const serverUrl = getServerUrl()
 
   try {
@@ -136,7 +140,9 @@ export async function validatePin(pin, type = 'referee') {
       },
       body: JSON.stringify({
         pin: String(pin).trim(),
-        type
+        type,
+        ...(matchId != null && matchId !== '' ? { matchId: String(matchId) } : {}),
+        ...(matchId == null && gameNumber != null && gameNumber !== '' ? { gameNumber: String(gameNumber) } : {})
       })
     })
 
@@ -1858,6 +1864,9 @@ async function requestRelayConnections(url, fetchImpl) {
  * Which tablets the relay sees on a match: { referee, benchHome, benchAway,
  * watchers }. Counts only clients subscribed to matchKey. A bench that did not
  * say which team it is counts for both benches only when one of them is enabled.
+ * A referee or bench counts only when the relay does not say it is unproved
+ * (`proved: false`, the same rule as the Connect dialog's roleClients): a
+ * socket that only named its role is a watcher.
  * @param {object|null} connections - fetchRelayConnections() result
  * @param {string} matchKey
  * @param {object} [match] - scorer's match (connection flags)
@@ -1870,6 +1879,7 @@ export function summarizeRelayTablets(connections, matchKey, match = null) {
   for (const c of connections.clients) {
     if (key && String(c.matchId) !== key) continue
     out.watchers++
+    if (c.proved === false) continue
     if (c.role === 'referee') out.referee++
     else if (c.role === 'bench' && c.team === 'home') out.benchHome++
     else if (c.role === 'bench' && c.team === 'away') out.benchAway++
@@ -1911,6 +1921,20 @@ export function applyRelayTablets(summary, relay) {
  * a matches row (home_team JSONB) or a match list entry (homeTeamName).
  * @returns {{ home: string|null, away: string|null }}
  */
+/**
+ * Is a PIN check's answer for another game than the one picked by its game
+ * number (`gameNumber`; no key could be picked: two listed matches share the
+ * number, a numeric LAN id)? Only when both name one: an answer without a
+ * game number is not compared. A PIN-only check opened whichever match
+ * answered, another hall's whose PIN was the same.
+ */
+export function isOtherGame(match, gameNumber) {
+  const picked = gameNumber == null ? '' : String(gameNumber).trim()
+  const found = match?.gameNumber ?? match?.gameN ?? match?.game_n
+  const answered = found == null ? '' : String(found).trim()
+  return picked !== '' && answered !== '' && answered !== picked
+}
+
 export function matchTeamNames(match, { homeTeam, awayTeam } = {}) {
   const pick = (...vals) => {
     for (const v of vals) {

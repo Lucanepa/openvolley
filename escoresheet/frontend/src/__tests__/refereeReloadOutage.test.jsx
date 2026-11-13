@@ -20,7 +20,11 @@ const sync = vi.hoisted(() => ({
   setRelayDevice: vi.fn()
 }))
 
-vi.mock('../utils/serverDataSync', () => sync)
+// (the pure helpers RefereeApp uses as they are)
+vi.mock('../utils/serverDataSync', async (importOriginal) => {
+  const { isOtherGame, matchTeamNames } = await importOriginal()
+  return { ...sync, isOtherGame, matchTeamNames }
+})
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key, fallback) => (typeof fallback === 'string' ? fallback : key), i18n: { language: 'en' } })
 }))

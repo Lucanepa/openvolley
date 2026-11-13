@@ -1917,6 +1917,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // scorerRelay): one socket owns the match, so the two never refuse each other.
     let ws = null
     let detachRelay = null
+    // A sync the relay could not check yet ('claim-unverified'): sent again soon
+    let claimRetry = null
 
     const connectWebSocket = () => {
       detachRelay = scorerRelay.attach(wsUrl, {
@@ -1959,12 +1961,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             if (message.code === 'pins-required') {
               // The relay lost the match while this socket left the PINs out
               if (syncFunctionRef.current) syncFunctionRef.current()
+            } else if (message.code === 'claim-unverified') {
+              // The cloud relay could not check the match with its database
+              // (refused, not allowed through): the same sync again shortly
+              clearTimeout(claimRetry)
+              claimRetry = setTimeout(() => syncFunctionRef.current?.(), 5000)
             } else if (['not-match-owner', 'rate-limited', 'too-many-matches', 'scorer-moved'].includes(message.code)) {
               // The relay refused our scoreboard role: referee/bench/livescore
               // get no updates from this device until it is resolved.
               // Refused again on every sync; the banner expires when that stops.
               // ('scorer-moved': a venue relay, another device continued the
               // match; the cloud relay says it with a scorer-moved message)
+              setRelayRejection({ code: message.code, message: message.message || '', at: Date.now() })
+            } else if (message.code === 'room-limit') {
+              // The relay has no room for another match: the tablets get
+              // nothing from this device until it has (it used to say nothing)
               setRelayRejection({ code: message.code, message: message.message || '', at: Date.now() })
             }
           }
@@ -2279,6 +2290,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // time blanks every connected referee/bench/livescore dashboard.
       if (detachRelay) detachRelay()
       detachRelay = null
+      clearTimeout(claimRetry)
       ws = null
       wsRef.current = null
     }
@@ -14085,7 +14097,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               ? t('scoreboard.relayRejected.tooMany', 'Referee/bench link: this device already drives too many matches on the server.')
               : relayRejection.code === 'scorer-moved'
                 ? t('scoreboard.relayRejected.scorerMoved', 'Referee/bench link: this match is now scored on another device. Referee, bench and livescore follow the other device, no longer this one.')
-                : t('scoreboard.relayRejected.rateLimited', 'Referee/bench link: the server refused this scoresheet for a minute (too many failed attempts).')}
+                : relayRejection.code === 'room-limit'
+                  ? t('scoreboard.relayRejected.roomLimit', 'Referee/bench link: the server has no room for this match right now. Referee, bench and livescore do not receive this device\'s updates.')
+                  : t('scoreboard.relayRejected.rateLimited', 'Referee/bench link: the server refused this scoresheet for a minute (too many failed attempts).')}
         </div>
       )}
       {/* Portrait mode warning overlay for devices that don't support orientation lock (iOS).

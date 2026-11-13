@@ -49,7 +49,7 @@ import { SCORER_TABLES, deviceOf, matchRefsOfWrite, scorerMovedBody } from './li
 // The support form (POST /api/contact): its body, checks and the one mail to CONTACT_EMAIL
 import { BUSY_BODY, contactMailerFromEnv, createContactSlots, handleContact, MAX_CONTACT_BODY_BYTES } from './lib/contact.js'
 // What the relay keeps of an anonymous socket's bundles and live states
-import { approxHeapBytes, createFrameBudget, frameTooLarge, relayBundleProblem, relayEvents, relayMemoryBudget, MAX_RELAY_BUNDLE_BYTES, MAX_LIVE_STATE_BYTES } from './lib/relayLimits.js'
+import { approxHeapBytes, createFrameBudget, frameTooLarge, relayBundleProblem, relayEvents, relayMemoryBudget, MAX_RELAY_BUNDLE_BYTES, MAX_LIVE_STATE_BYTES, RELAY_ANON_SHARE } from './lib/relayLimits.js'
 // A team's uploaded roster: the app's rules, the signatures it may fill in, its end at the coin toss
 import { checkUploadedRoster, signaturesAfterUpload, uploadedRosterProblemText, withPendingRostersCleared } from './lib/uploadedRoster.js'
 
@@ -773,13 +773,17 @@ function scorerMoved(r, deviceId) {
  * `deviceId`: the new scorer. A socket that synced the room naming another
  * device no longer speaks for it: its next sync is checked again
  * (verifyRelayClaim) and refused, so its copy cannot replace the room before
- * its app has heard of the move.
+ * its app has heard of the move. A claim of such a socket whose database
+ * check is still running (clientInfo.claimCheck) is refused when the check
+ * ends ('scorer-moved'): it was checked before the move.
  */
 function notifyScorerMoved(externalId, deviceId = null) {
   const key = normalizeMatchId(externalId)
   if (key && deviceId) {
     for (const c of connections.values()) {
-      if (c.scorerDevice && c.scorerDevice !== deviceId) c.ownedMatches.delete(key)
+      if (!c.scorerDevice || c.scorerDevice === deviceId) continue
+      c.ownedMatches.delete(key)
+      if (c.claimCheck?.matchId === key) c.claimCheck.moved = true
     }
   }
   const room = key ? rooms.get(key) : null
@@ -822,11 +826,14 @@ function stripMatchSecrets(match) {
 
 // Room / activeMatches key: always String(matchId). The scoreboard sends the
 // numeric Dexie id, subscribers send a string; without this they ended up in
-// different rooms (Map treats 5 and "5" as different keys).
+// different rooms (Map treats 5 and "5" as different keys). At most 128
+// characters and no control characters: a key is looked up in the database
+// (verifyRelayClaim), where a NUL made the query fail.
+const MATCH_KEY_CONTROL_RE = /[\u0000-\u001f\u007f]/
 function normalizeMatchId(id) {
   if (id === undefined || id === null) return null
   const s = String(id).trim()
-  return s && s.length <= 128 ? s : null
+  return s && s.length <= 128 && !MATCH_KEY_CONTROL_RE.test(s) ? s : null
 }
 
 // Room key of a synced match: its seed_key when it carries one, else the id the
@@ -838,6 +845,15 @@ function normalizeMatchId(id) {
 function relayKeyOf(rawId, match) {
   const seed = match && typeof match === 'object' ? (match.seed_key ?? match.seedKey) : null
   return (typeof seed === 'string' && normalizeMatchId(seed)) || normalizeMatchId(rawId)
+}
+// A seed key the relay cannot take as the room key (over 128 characters,
+// control characters): such a sync is refused before anything looks it up.
+// It used to fall back to the id the socket sent, any match's public
+// external id, while the seed key went to the database check, where a NUL
+// failed the query.
+function badSeedKey(match) {
+  const seed = match && typeof match === 'object' ? (match.seed_key ?? match.seedKey) : null
+  return typeof seed === 'string' && seed.trim() !== '' && normalizeMatchId(seed) === null
 }
 const MAX_ALIASES = 16
 function resolveMatchKey(clientInfo, rawId) {
@@ -1067,6 +1083,9 @@ function getLocalIPs() {
 const activeMatches = new Map()
 const connections = new Map()
 const rooms = new Map() // Match rooms for isolated communication
+// The claim of a room that emptied (its PINs and scoring device), kept for
+// the take-over grace (holdRoom)
+const heldRooms = new Map()
 
 // relay live-state-update -> match_live_state db-change for live subscribers
 // (livescore, the referee's scorer alarm) even while the scorer's HTTP sync is down.
@@ -1154,6 +1173,27 @@ const CLAIM_FAILURE_LIMIT = 5
 // once.
 const MAX_OWNED_PER_IP = 64
 const NEW_CLAIM_LIMIT = 64
+// Rooms the syncs of one address keep (entry.relayAddress), as many as it may
+// own: an address whose sockets close and reconnect cannot fill MAX_ROOMS
+// with rooms a subscriber keeps open after it ('room-limit'). On the cloud
+// the rooms the database did not prove count as many per /56 (entry.relayNet):
+// one IPv6 customer holds 256 /64s or more. The same share bounds one
+// address's held claims (heldRooms).
+const MAX_ROOMS_PER_ADDRESS = MAX_OWNED_PER_IP
+// Cloud (DATABASE_URL): the rooms the database did not prove (no game PIN of
+// an official match) may take this many of MAX_ROOMS together, as their
+// bundles may take RELAY_ANON_SHARE of the relay memory: the rest is kept for
+// official matches.
+const MAX_ANON_ROOMS = Math.floor(MAX_ROOMS * RELAY_ANON_SHARE)
+// Rooms one socket is in or waits for (subscribe-match): the relay livescore
+// follows up to 32 matches on one socket (frontend utils/relayLivescore.js).
+// A 33rd leaves the oldest. Joining a match the relay does not hold creates
+// no room: the socket waits for its first sync (admitWaiting).
+const MAX_SOCKET_ROOMS = 32
+// Emptied rooms whose claim is held for the take-over grace (heldRooms), at
+// most; over it the oldest claim of the address holding the most is released
+// (makeHeldRoom)
+const MAX_HELD_ROOMS = 2000
 const FINISHED_STATUSES = new Set(['final', 'ended', 'completed', 'finished'])
 // Memory the stored bundles and live states may take (approxHeapBytes,
 // lib/relayLimits.js), in total and per address: the IPv6 /64 on the cloud,
@@ -1764,11 +1804,15 @@ function isWsRateLimited(clientId) {
 setInterval(() => {
   const now = Date.now()
 
-  // Clean up rooms inactive for >24h
-  for (const [matchId, room] of rooms.entries()) {
-    if (room.clients.size === 0 && now - (room.lastActivity || 0) > ROOM_TTL_MS) {
-      rooms.delete(matchId)
-      activeMatches.delete(matchId)
+  // Clean up rooms no connected socket owns and no scorer synced for >24h,
+  // watchers or not: the stored match, its PINs, owners and bench requests
+  // together (dropRoom). A room empties at once (holdRoom), so the empty
+  // rooms this looked for never existed, and watchers kept any room for good.
+  const owned = new Set()
+  for (const c of connections.values()) for (const id of c.ownedMatches) owned.add(id)
+  for (const [matchId, entry] of [...activeMatches.entries()]) {
+    if (!owned.has(matchId) && now - (Date.parse(entry.updatedAt) || 0) > ROOM_TTL_MS) {
+      dropRoom(matchId)
       console.log(`🧹 TTL cleanup: removed stale room ${logValue(matchId)}`)
     }
   }
@@ -2317,7 +2361,7 @@ function handleHttpRequest(req, res) {
           return
         }
 
-        const { pin, type = 'referee', sport = 'indoor' } = JSON.parse(body)
+        const { pin, type = 'referee', sport = 'indoor', matchId: namedMatch = null, gameNumber = null } = JSON.parse(body)
 
         // The sport of the asking app (openbeach: 'beach'); a PIN never finds
         // a room of the other sport. Without it: indoor, as before.
@@ -2341,14 +2385,29 @@ function handleHttpRequest(req, res) {
           return
         }
 
+        // The match the tablet picked (its link, the game in the list): its
+        // room key, else its game number. The PIN is compared with that match
+        // only. The first live match with the PIN used to answer, so of two
+        // matches that share a referee PIN the second's referee got the
+        // first's. Without either (older apps) every live match is searched,
+        // and a PIN two of them share is refused with a request for the game.
+        const isKeyValue = (v) => typeof v === 'string' || (typeof v === 'number' && Number.isFinite(v))
+        const named = namedMatch !== null && namedMatch !== undefined && namedMatch !== ''
+        const matchKey = named && isKeyValue(namedMatch) ? normalizeMatchId(namedMatch) : null
+        const gameKey = !named && gameNumber !== null && gameNumber !== undefined && isKeyValue(gameNumber) ? String(gameNumber).trim().slice(0, 32) : ''
+        if ((named && !matchKey) || (gameNumber !== null && gameNumber !== undefined && gameNumber !== '' && !isKeyValue(gameNumber))) {
+          sendJson(res, 400, { success: false, error: 'Invalid request' })
+          return
+        }
+
         const pinStr = String(pin).trim()
 
         // The brute-force budget of every PIN check (failed guesses per
         // address bucket, and of every PIN-only lookup across callers), in
-        // the scope validate-connection-pin uses for this PIN type; a success
-        // is refunded below.
+        // the scope validate-connection-pin uses for this PIN type (of the
+        // named match, or of every match); a success is refunded below.
         const pinType = RELAY_PIN_TYPE[sport][type]
-        const scope = pinScope.search(sport, pinType)
+        const scope = matchKey ? pinScope.match(matchKey, pinType) : pinScope.search(sport, pinType)
         if (pinFailureLimiter.isLimited(ipKey, scope)) {
           sendJson(res, 429, { success: false, error: 'Too many failed attempts. Please wait 10 minutes before trying again.' }, { 'Retry-After': '600' })
           return
@@ -2357,12 +2416,15 @@ function handleHttpRequest(req, res) {
         // Search active matches for matching PIN. Per entry: one crafted room
         // must never make the right PIN of another match answer 400 for
         // everyone (a sync stores only validated PINs; this is a second guard).
-        let matchFound = null
-        for (const [matchId, matchData] of activeMatches.entries()) {
+        const candidates = matchKey ? (activeMatches.has(matchKey) ? [[matchKey, activeMatches.get(matchKey)]] : []) : activeMatches.entries()
+        const found = []
+        let comparable = false
+        for (const [matchId, matchData] of candidates) {
           try {
             const match = matchData.match || matchData
             if (!match) continue
             if ((matchData.sportType || 'indoor') !== sport) continue
+            if (gameKey && String(matchData.gameNumber ?? '').trim() !== gameKey) continue
             // A match whose PIN type is locked across callers proves nothing
             if (pinFailureLimiter.locked(matchId, pinType)) continue
 
@@ -2374,6 +2436,7 @@ function handleHttpRequest(req, res) {
             } else if (type === 'awayTeam') {
               matchPin = match.awayTeamPin
             }
+            if (matchPin) comparable = true
 
             if (matchPin && safeEqualStr(String(matchPin).trim(), pinStr)) {
               let connectionEnabled = true
@@ -2386,8 +2449,7 @@ function handleHttpRequest(req, res) {
               }
 
               if (connectionEnabled && match.status !== 'final') {
-                matchFound = { ...match, id: matchId }
-                break
+                found.push({ ...match, id: matchId })
               }
             }
           } catch (err) {
@@ -2395,7 +2457,14 @@ function handleHttpRequest(req, res) {
           }
         }
 
-        if (matchFound) {
+        if (found.length > 1) {
+          // The PIN is right, for more than one match: nothing is issued, the
+          // tablet is asked for the game (its number or the pick in the list)
+          pinFailureLimiter.refund(ipKey, scope)
+          console.log(`[API] PIN for ${type} matches ${found.length} matches: game number required`)
+          sendJson(res, 409, { success: false, code: 'game-number-required', error: 'More than one match has this PIN. Pick your game first (its game number).' })
+        } else if (found.length === 1) {
+          const matchFound = found[0]
           pinFailureLimiter.refund(ipKey, scope)
           console.log(`[API] PIN validated for ${type}: match ${logValue(matchFound.id)}`)
           res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -2410,8 +2479,11 @@ function handleHttpRequest(req, res) {
         } else {
           console.log(`[API] PIN validation failed for ${type}`)
           // The apps check a typed PIN here after the backend's check of the
-          // same PIN: one typo counts once
-          pinFailureLimiter.repeated(ipKey, scope, pinStr)
+          // same PIN: one typo counts once. A named match the relay holds no
+          // PIN of this type for counts nowhere across callers (nothing to guess).
+          if (!pinFailureLimiter.repeated(ipKey, scope, pinStr) && matchKey && !comparable) {
+            pinFailureLimiter.matchRefund([[matchKey, pinType]])
+          }
           res.writeHead(404, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({
             success: false,
@@ -2572,8 +2644,10 @@ function handleHttpRequest(req, res) {
   // Who watches a match (tablet status on the scorer, LAN server dashboard).
   // LAN: the full list (ids, IPs, rooms), as before. Cloud: an anonymous
   // caller gets counts only: without matchId the totals, with matchId one
-  // entry per watching tablet of THAT match carrying just its role and team
-  // (no id, no IP, no connect time, no list of rooms). The detail (ids,
+  // entry per watching tablet of THAT match carrying just its role, team and
+  // `proved` (no id, no IP, no connect time, no list of rooms). A tablet is a
+  // referee or bench only once it proved that role (`proved`, provedRoleOf),
+  // every other watcher a subscriber or livescore. The detail (ids,
   // connect times) of one match needs that match's PIN or match token
   // (X-OV-Match-Pin / X-OV-Match-Token, as GET /api/match/:id).
   if (url.pathname === '/api/server/connections') {
@@ -2601,33 +2675,41 @@ function handleHttpRequest(req, res) {
       }
     }
 
-    // Dashboard clients (referee, bench, livescore...) - not the scoreboard
+    // Dashboard clients (referee, bench, livescore...) - not the scoreboard:
+    // one per socket and match it watches (or waits for)
     const watchers = []
     connections.forEach((client) => {
       if (!client.role || client.role === 'scoreboard') return
-      if (matchId && String(client.matchId) !== String(matchId)) return
-      watchers.push(client)
+      for (const id of client.rooms) {
+        if (matchId && id !== matchId) continue
+        const proved = provedRoleOf(client, id)
+        // Referee or bench only with that role's PIN or match token
+        // (proved): the role a socket names (join_match role, subscribe-match
+        // device) proves nothing, and the scorer's tablet status showed a
+        // referee connected for a socket that only said so.
+        const role = proved ? proved.role : (client.device === 'livescore' || client.role === 'livescore' ? 'livescore' : 'subscriber')
+        watchers.push({ client, matchId: id, role, team: proved?.team ?? null, proved: !!proved })
+      }
     })
-    // A PIN-verified role wins over the subscribe-match label
-    const roleOf = (client) => client.role === 'subscriber' && client.device ? client.device : client.role
-    const refereesCount = watchers.filter(c => roleOf(c) === 'referee').length
-    const benchCount = watchers.filter(c => roleOf(c) === 'bench').length
+    const refereesCount = watchers.filter(w => w.role === 'referee').length
+    const benchCount = watchers.filter(w => w.role === 'bench').length
 
     let clients
     if (detail) {
-      clients = watchers.map((client) => ({
+      clients = watchers.map(({ client, matchId: id, role, team, proved }) => ({
         id: client.id,
         // LAN scorers see which tablet is which; a public cloud relay must
         // not hand every client's IP to anonymous callers.
         ip: IS_CLOUD ? null : client.ip,
-        role: roleOf(client),
-        team: client.team || client.deviceTeam,
-        matchId: client.matchId,
+        role,
+        team,
+        proved,
+        matchId: id,
         connectedAt: client.connectedAt
       }))
     } else if (matchId) {
       // Counts, in the shape the scorer's tablet status reads (role, team)
-      clients = watchers.map((client) => ({ role: roleOf(client), team: client.team || client.deviceTeam || null, matchId: client.matchId }))
+      clients = watchers.map(({ matchId: id, role, team, proved }) => ({ role, team, proved, matchId: id }))
     } else {
       clients = []
     }
@@ -2636,7 +2718,8 @@ function handleHttpRequest(req, res) {
       access: detail ? 'detail' : 'counts',
       // every socket of the server: the cloud does not say (/api/server/status)
       totalClients: IS_CLOUD ? null : connections.size,
-      dashboardClients: watchers.length,
+      // sockets, each once (one hall livescore follows every court)
+      dashboardClients: new Set(watchers.map((w) => w.client.id)).size,
       referees: refereesCount,
       benches: benchCount,
       clients
@@ -4547,7 +4630,11 @@ wss.on('connection', (ws, req) => {
     id: clientId,
     ip,
     ipKey,
+    // The room this socket joined or synced last (of `rooms`)
     matchId: null,
+    // Room keys this socket is in, or waits for (a match the relay does not
+    // hold yet, admitWaiting), oldest first: at most MAX_SOCKET_ROOMS
+    rooms: new Set(),
     role: null, // 'scoreboard', 'referee', 'bench'
     team: null, // 'home' or 'away' for bench clients
     // Matches this socket proved the scoreboard role for (game PIN in sync-match-data)
@@ -4568,6 +4655,8 @@ wss.on('connection', (ws, req) => {
     scorerDevice: null,
     // This socket's window of the frame budget (frameBudget)
     frames: {},
+    // { matchId, moved } while a claim's database check runs (verifyRelayClaim)
+    claimCheck: null,
     connectedAt: new Date().toISOString()
   }
 
@@ -4685,8 +4774,8 @@ function handleSocketMessage(clientInfo, data) {
         break
 
       case 'leave_match':
-        // Client leaves match room
-        handleLeaveMatch(clientInfo)
+        // Client leaves match room (the one named, else every one)
+        handleLeaveMatch(clientInfo, message.matchId ?? null)
         break
 
       case 'match_update':
@@ -4755,6 +4844,14 @@ function handleSocketMessage(clientInfo, data) {
         sendBenchRequestsOnJoin(clientInfo, normalizeMatchId(message.matchId))
         break
 
+      case 'unsubscribe-match': {
+        // One room left, the socket's others kept (the relay livescore
+        // follows several matches on one socket), as on the LAN relays
+        const key = normalizeMatchId(message.matchId)
+        if (key) handleLeaveMatch(clientInfo, key)
+        break
+      }
+
       case 'bench-request':
         handleBenchRequest(clientInfo, message)
         break
@@ -4799,39 +4896,29 @@ function handleJoinMatch(clientInfo, message) {
   const validatedRole = (requestedRole && VALID_ROLES.includes(requestedRole)) ? requestedRole : 'unknown'
   const validatedTeam = (team && VALID_TEAMS.includes(team)) ? team : null
 
-  // Leave previous room if any
-  if (clientInfo.matchId) {
-    handleLeaveMatch(clientInfo)
-  }
-
-  // Enforce room cap
-  if (!rooms.has(matchId) && rooms.size >= MAX_ROOMS) {
-    clientInfo.ws.send(JSON.stringify({
-      type: 'error',
-      message: 'Server room limit reached'
-    }))
-    return
-  }
-
-  // Update client info
-  clientInfo.matchId = matchId
+  // Update client info (a socket may watch several rooms: the last join names it)
   clientInfo.role = validatedRole
   clientInfo.team = validatedTeam
 
-  // Create room if doesn't exist
-  if (!rooms.has(matchId)) {
-    rooms.set(matchId, {
-      matchId,
-      clients: new Set(),
-      createdAt: new Date().toISOString(),
-      lastActivity: Date.now()
-    })
-  }
+  // The PIN / token this socket offers for the match (subscribe-match),
+  // compared now when the relay holds the match
+  registerRelayAccess(clientInfo, matchId, message)
+  // A referee or bench role is answered only once its PIN or token was
+  // accepted; any other socket is a subscriber (it gets the summary)
+  const joinedRole = (validatedRole === 'referee' || validatedRole === 'bench') && !provedRoleOf(clientInfo, matchId) ? 'subscriber' : validatedRole
 
-  // Add client to room
+  // A match the relay does not hold creates no room: the socket waits for
+  // it (in its rooms, capped) and is let in by the match's first accepted
+  // sync (admitWaiting). Any id used to create a room, so idle sockets
+  // filled MAX_ROOMS and no new match got the relay.
   const room = rooms.get(matchId)
-  room.clients.add(clientInfo.id)
-  room.lastActivity = Date.now()
+  if (!room) {
+    rememberRoom(clientInfo, matchId)
+    clientInfo.matchId = matchId
+    clientInfo.ws.send(JSON.stringify({ type: 'joined_match', matchId, role: joinedRole, roomSize: 0, waiting: true }))
+    return
+  }
+  enterRoom(clientInfo, matchId)
 
   console.log(`🎯 ${clientInfo.id} (${validatedRole}) joined match ${logValue(matchId)} (Room size: ${room.clients.size})`)
 
@@ -4839,12 +4926,9 @@ function handleJoinMatch(clientInfo, message) {
   clientInfo.ws.send(JSON.stringify({
     type: 'joined_match',
     matchId,
-    role: validatedRole,
+    role: joinedRole,
     roomSize: room.clients.size
   }))
-
-  // The PIN / token this socket offers for the match (subscribe-match).
-  registerRelayAccess(clientInfo, matchId, message)
 
   // Initial snapshot, like the LAN relays: late subscribers don't wait for the
   // scoreboard's next sync. PIN-free; the summary unless a PIN was proved.
@@ -4857,9 +4941,62 @@ function handleJoinMatch(clientInfo, message) {
   broadcastToRoom(matchId, {
     type: 'client_joined',
     clientId: clientInfo.id,
-    role: validatedRole,
+    role: joinedRole,
     roomSize: room.clients.size
   }, clientInfo.id) // Exclude sender
+}
+
+/** Remember `matchId` among the socket's rooms (newest last); over MAX_SOCKET_ROOMS the oldest is left. */
+function rememberRoom(clientInfo, matchId) {
+  clientInfo.rooms.delete(matchId)
+  while (clientInfo.rooms.size >= MAX_SOCKET_ROOMS) leaveRoom(clientInfo, clientInfo.rooms.values().next().value)
+  clientInfo.rooms.add(matchId)
+}
+
+/** Put the socket in the room of `matchId` (created when the relay has none). */
+function enterRoom(clientInfo, matchId) {
+  let room = rooms.get(matchId)
+  if (!room) {
+    room = { matchId, clients: new Set(), createdAt: new Date().toISOString(), lastActivity: Date.now() }
+    rooms.set(matchId, room)
+  }
+  room.clients.add(clientInfo.id)
+  room.lastActivity = Date.now()
+  rememberRoom(clientInfo, matchId)
+  clientInfo.matchId = matchId
+  return room
+}
+
+/**
+ * The first accepted sync of a match created its room: the sockets that
+ * subscribed to it before (waiting in their rooms) are let in, each with the
+ * snapshot a join gets (the bundle only with an accepted PIN or token).
+ */
+function admitWaiting(matchId) {
+  const room = rooms.get(matchId)
+  const entry = activeMatches.get(matchId)
+  if (!room || !entry?.match) return
+  for (const c of connections.values()) {
+    if (!c.rooms.has(matchId) || room.clients.has(c.id) || c.ws.readyState !== 1) continue
+    room.clients.add(c.id)
+    const access = hasRelayAccess(c, matchId, entry) ? 'full' : 'summary'
+    sendToClient(c, matchDataMessage('match-full-data', matchId, entry, undefined, access))
+    sendBenchRequestsOnJoin(c, matchId)
+  }
+}
+
+/**
+ * The role a socket proved for the match with that role's PIN or match token,
+ * for the scorer's tablet status: { role: 'referee' | 'bench', team }, else
+ * null. The roles the bench requests take (relayRoleOf), comparing nothing
+ * new: a PIN not checked yet (offered before the match reached the relay)
+ * counts as none. A socket's own label (join_match role, subscribe-match
+ * device) proves nothing, nor does the game PIN (the scorer's own devices).
+ */
+function provedRoleOf(clientInfo, matchId, entry = activeMatches.get(matchId)) {
+  const role = relayRoleOf(clientInfo, matchId, entry, { compare: false })
+  if (role === 'referee') return { role: 'referee', team: null }
+  return role === 'home' || role === 'away' ? { role: 'bench', team: role } : null
 }
 
 // --- PIN-proved relay access (lib/matchAccess.js) ---------------------------
@@ -5087,34 +5224,175 @@ function joinRole(requested) {
   return requested === 'scoreboard' ? 'subscriber' : requested
 }
 
-// Handle client leaving match room
-function handleLeaveMatch(clientInfo) {
-  if (!clientInfo.matchId) return
+// Handle client leaving match room: the one named (unsubscribe-match,
+// leave_match { matchId }), else every room the socket is in or waits for
+function handleLeaveMatch(clientInfo, rawId = null) {
+  const key = rawId === null ? null : resolveMatchKey(clientInfo, rawId)
+  if (rawId !== null && !key) return
+  for (const id of key ? [key] : [...clientInfo.rooms]) leaveRoom(clientInfo, id)
+  if (clientInfo.rooms.size === 0) {
+    clientInfo.matchId = null
+    clientInfo.role = null
+  }
+}
 
-  const room = rooms.get(clientInfo.matchId)
+/** Take the socket out of one room; the room's last socket out holds its claim (holdRoom). */
+function leaveRoom(clientInfo, matchId) {
+  forgetRoom(clientInfo, matchId)
+  const room = rooms.get(matchId)
+  if (!room || !room.clients.delete(clientInfo.id)) return
+
+  console.log(`👋 ${clientInfo.id} left match ${logValue(matchId)} (Room size: ${room.clients.size})`)
+
+  // Notify other clients
+  broadcastToRoom(matchId, {
+    type: 'client_left',
+    clientId: clientInfo.id,
+    role: clientInfo.role,
+    roomSize: room.clients.size
+  }, clientInfo.id)
+
+  // Clean up empty room
+  if (room.clients.size === 0) {
+    holdRoom(matchId)
+    console.log(`🗑️  Empty room deleted: ${logValue(matchId)} (its claim is held for the take-over grace)`)
+  }
+}
+
+/** The socket's own record of a room it is no longer in or waiting for. */
+function forgetRoom(clientInfo, matchId) {
+  clientInfo.rooms.delete(matchId)
+  if (clientInfo.matchId === matchId) clientInfo.matchId = [...clientInfo.rooms].pop() ?? null
+}
+
+/**
+ * A room emptied (its last socket left): its stored match goes, but the
+ * claim on its key (the PINs, the scoring device and its take-overs, the
+ * owners, its open bench requests) is held for the take-over grace
+ * (heldRoomOf): a first sync of the key must carry the stored game PIN as a
+ * sync of the held room had to. The relay used to drop both at once, so the
+ * next sync without any PIN owned the key, and the scorer coming back with
+ * the right PIN was refused. After the grace (counted from when the room's
+ * last scoreboard went, else from now) everything goes together
+ * (releaseRoomClaim). The bundle itself is not kept: its memory is given back
+ * at once.
+ */
+function holdRoom(matchId) {
+  const entry = activeMatches.get(matchId)
+  rooms.delete(matchId)
+  activeMatches.delete(matchId)
+  heldRooms.delete(matchId)
+  if (!entry?.match) {
+    releaseRoomClaim(matchId)
+    return
+  }
+  makeHeldRoom(entry.relayNet ?? null)
+  const match = { status: entry.match.status }
+  for (const k of MATCH_SECRET_FIELDS) if (entry.match[k] !== undefined) match[k] = entry.match[k]
+  heldRooms.set(matchId, {
+    matchId,
+    since: entry.orphanedAt ?? Date.now(),
+    match,
+    sportType: entry.sportType,
+    scorerDevice: entry.scorerDevice,
+    scorerClaim: entry.scorerClaim,
+    movedClaims: entry.movedClaims,
+    supersededClaims: entry.supersededClaims,
+    dbRows: entry.dbRows,
+    relayAddress: entry.relayAddress,
+    relayNet: entry.relayNet ?? null,
+    relayOfficial: entry.relayOfficial
+  })
+}
+
+/**
+ * Room in heldRooms for one more claim of `net` (relayNetOf): one address
+ * keeps at most MAX_ROOMS_PER_ADDRESS held claims (over it, its own oldest
+ * goes, a lapsed one first), the relay MAX_HELD_ROOMS (over it, the oldest
+ * of the address holding the most). The oldest of all used to go, so the
+ * rooms other addresses synced and left pushed a scorer's claim out within
+ * its grace, and a sync without its game PIN owned the key.
+ */
+function makeHeldRoom(net) {
+  const byNet = new Map()
+  for (const h of heldRooms.values()) {
+    const list = byNet.get(h.relayNet) ?? []
+    list.push(h)
+    byNet.set(h.relayNet, list)
+  }
+  const oldest = (list) => list.find((h) => h.lapsed) ?? list[0]
+  const own = net !== null ? byNet.get(net) : null
+  if (own && own.length >= MAX_ROOMS_PER_ADDRESS) {
+    releaseHeld(oldest(own))
+  } else if (heldRooms.size >= MAX_HELD_ROOMS) {
+    let most = null
+    for (const list of byNet.values()) if (!most || list.length > most.length) most = list
+    releaseHeld(oldest(most))
+  }
+}
+
+/** Release one held claim: a lapsed one is only forgotten (its claim went with its grace). */
+function releaseHeld(held) {
+  if (held.lapsed) heldRooms.delete(held.matchId)
+  else releaseRoomClaim(held.matchId)
+}
+
+/**
+ * The held claim of an emptied room (holdRoom) while its grace runs, else
+ * null. Once the grace is over the claim goes (releaseRoomClaim): the key is
+ * new to the next sync. Of a match still in play with a game PIN the scorer
+ * was gone too long for, that PIN is kept (a lapsed entry, for ROOM_TTL_MS):
+ * the next claim takes the key, but the scorer may reclaim it once with its
+ * own PIN (handleSyncMatchData moves it to displacedPins), as after a stale
+ * take-over of a room a tablet kept open. The next sync without any PIN used
+ * to own the key for good, the scorer back with the right PIN refused.
+ */
+function heldRoomOf(matchId) {
+  const held = heldRooms.get(matchId)
+  if (!held || held.lapsed) return null
+  const finished = isFinishedMatch(held.match)
+  if (Date.now() - held.since < (finished ? ORPHAN_TAKEOVER_MS : STALE_TAKEOVER_MS)) return held
+  const pin = finished ? null : gamePinOf(held.match)
+  releaseRoomClaim(matchId)
+  if (pin !== null) heldRooms.set(matchId, { matchId, lapsed: true, pin, since: Date.now(), relayNet: held.relayNet })
+  return null
+}
+
+/** The held claims whose grace is over go (heldRoomOf), lapsed ones after ROOM_TTL_MS. */
+function sweepHeldRooms() {
+  const now = Date.now()
+  for (const held of [...heldRooms.values()]) {
+    if (!held.lapsed) heldRoomOf(held.matchId)
+    else if (now - held.since >= ROOM_TTL_MS) heldRooms.delete(held.matchId)
+  }
+}
+
+/**
+ * The end of a room key's claim, whatever ended it (the grace of an emptied
+ * room, delete-match, the TTL sweep): no socket owns the key any more, its
+ * bench requests and displaced PIN go. Ownership used to outlive the room, so
+ * an earlier owner kept speaking for the key next to the scorer who created
+ * the room again, and the next owner was sent the benches' open requests.
+ */
+function releaseRoomClaim(matchId) {
+  heldRooms.delete(matchId)
+  displacedPins.delete(matchId)
+  benchRequests.drop(matchId)
+  for (const c of connections.values()) c.ownedMatches.delete(matchId)
+}
+
+/** Drop a room with its stored match and its claim at once (delete-match, the TTL sweep). */
+function dropRoom(matchId) {
+  const room = rooms.get(matchId)
   if (room) {
-    room.clients.delete(clientInfo.id)
-
-    console.log(`👋 ${clientInfo.id} left match ${logValue(clientInfo.matchId)} (Room size: ${room.clients.size})`)
-
-    // Notify other clients
-    broadcastToRoom(clientInfo.matchId, {
-      type: 'client_left',
-      clientId: clientInfo.id,
-      role: clientInfo.role,
-      roomSize: room.clients.size
-    }, clientInfo.id)
-
-    // Clean up empty room
-    if (room.clients.size === 0) {
-      rooms.delete(clientInfo.matchId)
-      activeMatches.delete(clientInfo.matchId)
-      console.log(`🗑️  Empty room deleted: ${logValue(clientInfo.matchId)}`)
+    for (const id of room.clients) {
+      const member = connections.get(id)
+      if (member) forgetRoom(member, matchId)
     }
   }
-
-  clientInfo.matchId = null
-  clientInfo.role = null
+  rooms.delete(matchId)
+  activeMatches.delete(matchId)
+  releaseRoomClaim(matchId)
 }
 
 // Only the socket that proved the match's game PIN (see claimMatch) may
@@ -5250,7 +5528,8 @@ function newClaimDenied(clientInfo, matchId) {
 /**
  * SECURITY: the scoreboard role is proved with the match's own game PIN, not
  * self-declared. Returns { ok:true, kind } or { ok:false, code }.
- * - a match new to the relay is claimed by its first scoreboard;
+ * - a match new to the relay is claimed by its first scoreboard (a room that
+ *   emptied within the take-over grace is not new: heldRoomOf);
  * - a stored match with a game PIN requires the same PIN;
  * - a stored match without one (test match) may be written by anyone, but only
  *   an existing owner may attach a game PIN to it;
@@ -5275,7 +5554,9 @@ function newClaimDenied(clientInfo, matchId) {
  * isRoomScorer).
  */
 function claimMatch(clientInfo, matchId, incomingMatch, opts = {}) {
-  const existing = activeMatches.get(matchId)
+  // The stored match, else the held claim of a room that emptied (holdRoom):
+  // the same rules, PINs and scoring device
+  const existing = activeMatches.get(matchId) || heldRoomOf(matchId)
   const wasOwner = clientInfo.ownedMatches.has(matchId)
   const incomingPin = gamePinOf(incomingMatch)
   const grant = (kind) => ({ ok: true, kind })
@@ -5283,7 +5564,14 @@ function claimMatch(clientInfo, matchId, incomingMatch, opts = {}) {
 
   if (!existing || !existing.match) {
     const denied = denyNew()
-    return denied ? { ok: false, code: denied } : grant(wasOwner ? 'owner' : 'new')
+    if (denied) return { ok: false, code: denied }
+    // The database proved this claim: no earlier socket speaks for the key
+    // next to it, as on a reclaim
+    if (opts.dbProved && incomingPin !== null) {
+      displacedPins.delete(matchId)
+      for (const c of connections.values()) if (c !== clientInfo) c.ownedMatches.delete(matchId)
+    }
+    return grant(wasOwner ? 'owner' : 'new')
   }
   const storedPin = gamePinOf(existing.match)
   if (storedPin === null && (incomingPin === null || wasOwner)) {
@@ -5339,11 +5627,14 @@ function claimMatch(clientInfo, matchId, incomingMatch, opts = {}) {
  * cannot tell (a room key new to it is claimed by its first scoreboard, e.g.
  * after a relay restart), but the database can: when the match is stored
  * there with a game PIN (looked up by the room key = external_id, and by the
- * key the live-state relay would publish to, matchKeyFromSyncedMatch), the
- * synced game PIN must be that one. A wrong PIN is a counted guess
+ * match uuid the live-state relay would publish to, matchKeyFromSyncedMatch),
+ * the synced game PIN must be that one. A wrong PIN is a counted guess
  * (relayPinAttempt). A match not in the database, or stored without a game
- * PIN, is left to the relay's own rules; a database error fails open (the
- * live-state relay checks the PIN again before publishing anything).
+ * PIN, is left to the relay's own rules. A database error refuses the claim
+ * ('claim-unverified', the app syncs again): it used to let it through, and a
+ * sync could make the lookup fail on purpose (a NUL in its seed key) and take
+ * a match's room without its game PIN. The seed key is never looked up: it is
+ * the room key (relayKeyOf; one the relay cannot take is refused, badSeedKey).
  *
  * `device` (db/019): the installation the sync names. The game PIN is known
  * to every device the match was ever scored on, so it cannot tell the scorer
@@ -5371,7 +5662,7 @@ function claimMatch(clientInfo, matchId, incomingMatch, opts = {}) {
 async function verifyRelayClaim(clientInfo, matchId, match, device = null) {
   const keys = [{ column: 'external_id', value: matchId }]
   const synced = matchKeyFromSyncedMatch(match)
-  if (synced && !(synced.column === 'external_id' && synced.value === matchId)) keys.push(synced)
+  if (synced?.column === 'id') keys.push(synced)
   let layer
   let rows
   try {
@@ -5386,8 +5677,8 @@ async function verifyRelayClaim(clientInfo, matchId, match, device = null) {
       return r.body.data?.[0] || null
     }))
   } catch (err) {
-    console.warn('[relay] database check of a scoreboard claim failed (allowed):', err?.message)
-    return { ok: true, dbProved: false, knownScorer: false, dbRows: [] }
+    console.warn('[relay] database check of a scoreboard claim failed (refused, the scoreboard syncs again):', err?.message)
+    return { ok: false, code: 'claim-unverified' }
   }
   // Who scores the match, read before the PIN is compared (the answer waits
   // for the PIN all the same)
@@ -5500,7 +5791,8 @@ function venueDeviceClaim(raw) {
 }
 
 function isMovedVenueClaim(matchId, device) {
-  const entry = activeMatches.get(matchId)
+  // a room that emptied keeps its take-overs for the grace (holdRoom)
+  const entry = activeMatches.get(matchId) || heldRoomOf(matchId)
   const scorer = entry?.scorerClaim
   if (!scorer || scorer.id === device.id) return false
   if (entry.movedClaims?.get(device.id) !== device.claim && !entry.supersededClaims?.has(device.claim)) return false
@@ -5544,6 +5836,7 @@ const CLAIM_ERRORS = {
   'rate-limited': 'Too many failed scoreboard claims. Wait a few minutes.',
   'too-many-matches': 'This address already drives the maximum number of matches',
   'pins-required': 'Send this match again with its PINs (the relay lost it, or this connection has not proved it yet)',
+  'claim-unverified': 'The server could not check this match right now. It is tried again with the next sync.',
   'room-limit': 'Server room limit reached',
   'scorer-moved': 'This match is now scored on another device',
   'too-large': 'Match data too large for the relay',
@@ -5553,6 +5846,70 @@ const CLAIM_ERRORS = {
 // The address a socket's stored match data counts against (relayMemoryRefusal);
 // null for the relay host itself
 const relayAddressOf = (clientInfo) => (isLoopbackIp(clientInfo.ip) ? null : (IS_CLOUD ? clientInfo.ipKey : clientInfo.ip))
+// The wider network of that address (MAX_ROOMS_PER_ADDRESS for the rooms the
+// database did not prove, held claims): the /56 of an IPv6 /64 bucket on the
+// cloud (ipBucketKey "2001:db8:0:1::/64"), else the address itself
+function relayNetOf(clientInfo) {
+  const address = relayAddressOf(clientInfo)
+  const v6 = IS_CLOUD && address !== null ? /^([0-9a-f]{1,4}):([0-9a-f]{1,4}):([0-9a-f]{1,4}):([0-9a-f]{1,4})::\/64$/.exec(address) : null
+  return v6 ? `${v6[1]}:${v6[2]}:${v6[3]}:${(parseInt(v6[4], 16) & 0xff00).toString(16)}::/56` : address
+}
+// A room the database proved (cloud): its scorer synced the game PIN of the
+// match's database row (relayOfficial). None on a venue relay.
+const isDbProvedRoom = (entry) => DB_MODE && entry?.relayOfficial === true
+
+/**
+ * 'room-limit' when a new room of this socket (`dbProved`: the database proved
+ * its game PIN) would take the relay past one of its room caps, else null:
+ * MAX_ROOMS_PER_ADDRESS for the address (the rooms its syncs keep, whoever
+ * keeps them open), as many per /56 for rooms the database did not prove
+ * (cloud), MAX_ANON_ROOMS for all of those (DATABASE_URL), MAX_ROOMS in all.
+ * At a cap the room no connected socket owns whose scorer left first is ended
+ * to make room (endIdleRoom), an address's own rooms first. A room kept open
+ * by watchers alone used to keep its slot for good: idle sockets of a few
+ * /64s filled the relay and no new match got a room.
+ */
+function roomLimitRefusal(clientInfo, dbProved) {
+  const address = relayAddressOf(clientInfo)
+  const net = relayNetOf(clientInfo)
+  const unproved = (e) => !isDbProvedRoom(e)
+  const caps = []
+  if (address !== null) caps.push([MAX_ROOMS_PER_ADDRESS, (e) => e.relayAddress === address])
+  if (IS_CLOUD && !dbProved && net !== null && net !== address) caps.push([MAX_ROOMS_PER_ADDRESS, (e) => e.relayNet === net && unproved(e)])
+  if (DB_MODE && !dbProved) caps.push([MAX_ANON_ROOMS, unproved])
+  caps.push([MAX_ROOMS, () => true])
+  for (const [max, inCap] of caps) {
+    let n = 0
+    for (const entry of activeMatches.values()) if (inCap(entry)) n++
+    if (n >= max && !endIdleRoom(inCap)) return 'room-limit'
+  }
+  return null
+}
+
+/**
+ * End one room among those `inCap` takes that no connected socket owns: the
+ * one whose scorer left first, rooms the database did not prove first. Its
+ * bundle goes and its claim is held for what is left of its take-over grace
+ * (holdRoom), as when its last socket leaves: its watchers wait for the match
+ * again (admitWaiting lets them back in with its next first sync), its scorer
+ * coming back with the game PIN continues it. Nothing reaches such a room
+ * meanwhile anyway: no socket may sync it. Returns whether one was ended.
+ */
+function endIdleRoom(inCap) {
+  const owned = new Set()
+  for (const c of connections.values()) for (const id of c.ownedMatches) owned.add(id)
+  let pick = null
+  for (const [id, entry] of activeMatches) {
+    if (owned.has(id) || !inCap(entry)) continue
+    const rank = [isDbProvedRoom(entry) ? 1 : 0, entry.orphanedAt ?? 0]
+    if (!pick || rank[0] < pick.rank[0] || (rank[0] === pick.rank[0] && rank[1] < pick.rank[1])) pick = { id, rank }
+  }
+  if (!pick) return false
+  holdRoom(pick.id)
+  relaySummary.count('rooms ended for a new one')
+  console.log(`🗑️  Room ${pick.id} ended for a new room (no socket owns it; its claim is held for the take-over grace)`)
+  return true
+}
 
 /**
  * 'relay-full' when `bytes` (approxHeapBytes) for room `matchId` would take
@@ -5637,6 +5994,10 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     }))
     return
   }
+  if (badSeedKey(match)) {
+    sendRelayRefusal(clientInfo, 'bad-request', matchId, 'Invalid match key (seed_key: at most 128 characters, no control characters)')
+    return
+  }
 
   // A scoreboard leaves its PINs out once the relay holds them. If the relay
   // lost the match meanwhile, a PIN-less sync would recreate it without PINs
@@ -5667,7 +6028,7 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
   const newRoom = !stored
   const official = !DB_MODE || opts.dbProved === true ||
     (!opts.dbChecked && !clientInfo.ownedMatches.has(matchId)) ||
-    (clientInfo.ownedMatches.has(matchId) && stored?.relayOfficial === true)
+    (clientInfo.ownedMatches.has(matchId) && (stored || heldRoomOf(matchId))?.relayOfficial === true)
   // Counted first as the sync sends it, before its claim is made: what any
   // claim keeps at least. It depends on the message alone, so a cloud claim's
   // second pass reuses it. A sync that continues the room also keeps the stored
@@ -5691,9 +6052,18 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
   // the socket's next messages wait for it.
   const device = deviceOf(message.device)
   if (DB_MODE && !opts.dbChecked && !clientInfo.ownedMatches.has(matchId)) {
+    // The device this sync names, before the check: a take-over committed
+    // while it runs (notifyScorerMoved) marks this claim moved, and it is
+    // refused when the check ends. It used to make the socket the owner,
+    // with the copy of the device the match had just left.
+    if (device) clientInfo.scorerDevice = device.id
+    const check = { matchId, moved: false }
+    clientInfo.claimCheck = check
+    const done = () => { if (clientInfo.claimCheck === check) clientInfo.claimCheck = null }
     return verifyRelayClaim(clientInfo, matchId, match, device).then((v) => {
+      done()
       if (clientInfo.ws.readyState !== 1 || !connections.has(clientInfo.id)) return
-      if (v.code === 'scorer-moved') {
+      if (v.code === 'scorer-moved' || (v.ok && check.moved)) {
         // The app asks POST /api/match/scorer whether it still scores the
         // match (ScorerMovedModal), as when it is told in the room
         clientInfo.ws.send(JSON.stringify({ type: 'scorer-moved', matchId, timestamp: Date.now() }))
@@ -5704,6 +6074,9 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
         return
       }
       handleSyncMatchData(clientInfo, message, { dbChecked: true, dbProved: v.dbProved, knownScorer: v.knownScorer, dbRows: v.dbRows, storedEvents, bundleBytes })
+    }, (err) => {
+      done()
+      throw err
     })
   }
 
@@ -5734,8 +6107,9 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
   // another match: sides, sets won, 'ended', ...). Counted here, with the
   // memory checked again, before anything is stored. Refusing here leaves
   // nothing to undo: claimMatch changes nothing for such a claim but refund a
-  // correct PIN.
-  const previous = activeMatches.get(matchId)
+  // correct PIN. A room that emptied within the grace is continued from its
+  // held claim (holdRoom): its PINs and scoring device, no bundle.
+  const previous = activeMatches.get(matchId) || heldRoomOf(matchId)
   const continues = claimed.kind === 'owner' || claimed.kind === 'proved'
   const carried = continues && previous?.match ? carryMatchSecrets(previous.match, match) : match
   const carryLiveState = continues && gamePinOf(previous?.match) === gamePinOf(carried)
@@ -5750,15 +6124,25 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     match = carried
   }
 
-  // Enforce room cap before storing anything
-  if (!rooms.has(matchId) && rooms.size >= MAX_ROOMS) {
-    clientInfo.ws.send(JSON.stringify({ type: 'error', code: 'room-limit', message: CLAIM_ERRORS['room-limit'], matchId }))
-    return
+  // Whether the database knows this as an official match (cloud), for the
+  // memory budget and the room caps: proved now, or carried by its owner's
+  // later syncs (which do not re-check the database). Venue rooms (no
+  // database) are all official.
+  const relayOfficial = !DB_MODE || opts.dbProved === true ||
+    ((claimed.kind === 'owner' || claimed.kind === 'proved' || claimed.kind === 'reclaim') && previous?.relayOfficial === true)
+
+  // Enforce the room caps before storing anything (roomLimitRefusal)
+  if (!rooms.has(matchId)) {
+    const refusal = roomLimitRefusal(clientInfo, DB_MODE && relayOfficial)
+    if (refusal) {
+      sendRelayRefusal(clientInfo, refusal, matchId)
+      return
+    }
   }
 
   // A scoreboard switching matches leaves its previous room first
   if (clientInfo.matchId && clientInfo.matchId !== matchId) {
-    handleLeaveMatch(clientInfo)
+    leaveRoom(clientInfo, clientInfo.matchId)
   }
 
   if (rawMatchId && rawMatchId !== matchId) {
@@ -5769,11 +6153,6 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
 
   // Store/update match in activeMatches with all the data (a sync carries no
   // live state: the room's last one is kept as decided above).
-  // Whether the database knows this as an official match (cloud), for the
-  // memory budget: proved now, or carried by its owner's later syncs (which do
-  // not re-check the database). Venue rooms (no database) are all official.
-  const relayOfficial = !DB_MODE || opts.dbProved === true ||
-    ((claimed.kind === 'owner' || claimed.kind === 'proved' || claimed.kind === 'reclaim') && previous?.relayOfficial === true)
   // The sport of the room: openbeach syncs team1/team2 (or names its sport);
   // a sync without teams keeps the sport the same scorer set before.
   const beachSync = !!(message.team1Team || message.team2Team || message.team1Players || message.team2Players) ||
@@ -5816,39 +6195,41 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     bundleBytes,
     liveStateBytes: carryLiveState ? previous?.liveStateBytes : undefined,
     relayAddress: relayAddressOf(clientInfo),
+    relayNet: relayNetOf(clientInfo),
     relayOfficial,
     gameNumber: match?.gameN || match?.gameNumber || match?.game_n,
     updatedAt: new Date().toISOString(),
     updatedBy: clientInfo.id
   })
+  // A key whose held claim lapsed (heldRoomOf: its scorer gone past the grace
+  // of a match in play) is new, but that claim's game PIN may reclaim it once
+  // from this one, as after a stale take-over
+  const lapsed = heldRooms.get(matchId)?.lapsed ? heldRooms.get(matchId) : null
+  heldRooms.delete(matchId)
+  if (lapsed && opts.dbProved !== true && (gamePinOf(match) === null || !safeEqualStr(gamePinOf(match), lapsed.pin))) {
+    displacedPins.set(matchId, lapsed.pin)
+  }
   const newlyOwned = !clientInfo.ownedMatches.has(matchId)
   clientInfo.ownedMatches.add(matchId)
   // Bench requests of a set that is over are dropped; a scorer that has just
-  // (re)proved the match gets the open ones again
+  // (re)proved the match gets the open ones again. A take-over or a new claim
+  // proved no PIN the benches asked under: their open requests (line-ups
+  // too) go, they were replayed to whoever took a room a tablet kept open.
+  if (fresh) benchRequests.drop(matchId)
   benchRequests.prune(matchId, currentSetOfBundle(activeMatches.get(matchId)))
-  if (newlyOwned) replayBenchRequests(clientInfo, matchId)
+  if (newlyOwned && !fresh) replayBenchRequests(clientInfo, matchId)
 
-  // Ensure room exists
-  if (!rooms.has(matchId)) {
-    rooms.set(matchId, {
-      matchId,
-      clients: new Set(),
-      createdAt: new Date().toISOString(),
-      lastActivity: Date.now()
-    })
-  }
-
-  // Add client to room if not already there
-  const room = rooms.get(matchId)
-  room.lastActivity = Date.now()
-  room.clients.add(clientInfo.id)
-  clientInfo.matchId = matchId
+  // The room (created by the match's first accepted sync), with this socket in it
+  const created = !rooms.has(matchId)
+  enterRoom(clientInfo, matchId)
   clientInfo.role = 'scoreboard'
 
   // Broadcast to other clients in the room. Subscribers (referee/bench/livescore)
   // must never receive the connection PINs — wireBundle strips them — and get
   // the bundle only after the PIN step (the summary otherwise).
   broadcastMatchData(matchId, 'match-data-update', activeMatches.get(matchId), message._timestamp, clientInfo.id, { timestamp: new Date().toISOString() })
+  // The tablets that subscribed before the room existed
+  if (created) admitWaiting(matchId)
 
   console.log(`📤 Match data synced for ${logValue(matchId)} (Game #${logValue(match?.gameN || 'unknown')})`)
 }
@@ -5977,18 +6358,7 @@ function removeMatch(matchId) {
     if (key) liveStateRelay.invalidate(key.value)
   }
   broadcastToRoom(matchId, { type: 'match-deleted', matchId })
-  const room = rooms.get(matchId)
-  if (room) {
-    for (const id of room.clients) {
-      const member = connections.get(id)
-      if (member && member.matchId === matchId) member.matchId = null
-    }
-  }
-  rooms.delete(matchId)
-  activeMatches.delete(matchId)
-  displacedPins.delete(matchId)
-  benchRequests.drop(matchId)
-  for (const c of connections.values()) c.ownedMatches.delete(matchId)
+  dropRoom(matchId)
 }
 
 // Handle clear-all-matches: only ever the sender's OWN (proven) matches —
@@ -6036,14 +6406,16 @@ const benchRequestLimiter = createWindowLimiter()
 /**
  * The role this socket proved for the match: 'home' / 'away' (that bench's
  * PIN or token while its connection is on), 'referee', else null. The game
- * PIN (the scorer's own devices) is none of them.
+ * PIN (the scorer's own devices) is none of them. `compare: false` takes a
+ * PIN already proved only (the tablet status, provedRoleOf); else a PIN not
+ * compared yet is compared now, counted (hasRelayAccess).
  */
-function relayRoleOf(clientInfo, matchId, entry = activeMatches.get(matchId)) {
+function relayRoleOf(clientInfo, matchId, entry = activeMatches.get(matchId), { compare = true } = {}) {
   if (!clientInfo || !matchId || !entry?.match) return null
   const a = clientInfo.matchAccess.get(matchId)
   if (!a) return null
   if (a.token && tokenGrantsRelay(a.token, matchId, entry.match)) return tokenRoleOf(matchTokens.verify(a.token))
-  if (a.pin && hasRelayAccess(clientInfo, matchId, entry)) return pinRoleOf(entry.match, a.pin)
+  if (a.pin && (compare ? hasRelayAccess(clientInfo, matchId, entry) : a.verified)) return pinRoleOf(entry.match, a.pin)
   return null
 }
 
@@ -6163,13 +6535,15 @@ function broadcastToRoom(matchId, message, excludeClientId = null, accessOnly = 
   console.log(`📡 Broadcasted to ${sent} clients in room ${logValue(matchId)}`)
 }
 
-// Periodic cleanup of stale connections
+// Periodic cleanup of stale connections, and of the held claims of emptied
+// rooms whose grace is over (heldRoomOf releases them)
 setInterval(() => {
   connections.forEach((clientInfo, clientId) => {
     if (clientInfo.ws.readyState === 3) { // WebSocket.CLOSED
       handleClientDisconnect(clientInfo)
     }
   })
+  sweepHeldRooms()
 }, 30000) // Every 30 seconds
 
 server.on('error', (err) => {

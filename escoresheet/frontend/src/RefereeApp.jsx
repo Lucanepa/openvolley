@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { validatePin, listAvailableMatches, validatePinSupabase, listAvailableMatchesSupabase, getMatchData, setRelayDevice, getRelayServerStatus } from './utils/serverDataSync'
+import { validatePin, listAvailableMatches, validatePinSupabase, listAvailableMatchesSupabase, getMatchData, setRelayDevice, getRelayServerStatus, isOtherGame, matchTeamNames } from './utils/serverDataSync'
 import { refereeJoinableMatches } from './utils/relayMatchList'
 import Referee from './components/Referee'
 import { useUprightLock } from './components/referee/upright.js'
@@ -32,7 +32,7 @@ const UNREACHABLE_RE = /failed to fetch|networkerror|load failed|timed out|not a
 const isUnreachable = (r) => !!r && (r.unreachable === true || UNREACHABLE_RE.test(String(r.error || '')))
 // A thrown check (the relay's validatePin throws on any refusal): 429 is a
 // refusal without comparing, too many wrong PINs from this address
-const failedCheck = (err) => ({ success: false, error: err?.message, unreachable: err?.name === 'TypeError', rateLimited: err?.status === 429 })
+const failedCheck = (err) => ({ success: false, error: err?.message, unreachable: err?.name === 'TypeError', rateLimited: err?.status === 429, ambiguous: err?.status === 409 })
 
 // Stored credentials no server could check yet are checked again this often;
 // after such an outage a refusal is believed only after the grace (a backend
@@ -60,7 +60,7 @@ export async function revalidateRefereeSession(storedMatchId, storedPin, { check
   try { cloud = await checkCloud(storedPin, 'referee', { matchExternalId: String(storedMatchId) }) } catch (err) { cloud = failedCheck(err) }
   if (same(cloud)) return cloud.match
   let lan
-  try { lan = await checkLan(storedPin, 'referee') } catch (err) { lan = failedCheck(err) }
+  try { lan = await checkLan(storedPin, 'referee', { matchId: String(storedMatchId) }) } catch (err) { lan = failedCheck(err) }
   if (same(lan)) return lan.match
   if (cloud?.rateLimited || lan?.rateLimited) throw Object.assign(new Error('Too many failed attempts'), { rateLimited: true })
   if (isUnreachable(cloud) && isUnreachable(lan)) throw new Error('Server unreachable')
@@ -78,17 +78,30 @@ export async function revalidateRefereeSession(storedMatchId, storedPin, { check
  * list): the backend checks the PIN against it only, in its own brute-force
  * scope. Without it, the wrong PINs of a whole hall (one venue address) for
  * other matches made a new referee with the right PIN wait up to 10 minutes.
- * @returns {Promise<{ match: object|null, source?: 'supabase'|'websocket', reason?: 'invalid'|'unreachable'|'rate-limited' }>}
+ * The relay is asked for that match too (else for `gameNumber`), and an
+ * answer for another match is refused: a relay that compared the PIN with
+ * every match it holds opened another hall's match whose referee PIN was the
+ * same. Without a match, an answer (cloud or relay) for another game number
+ * than `gameNumber` is refused too (isOtherGame). A relay that finds the PIN
+ * in more than one match and was not told which one asks for the game
+ * ('ambiguous').
+ * @returns {Promise<{ match: object|null, source?: 'supabase'|'websocket', reason?: 'invalid'|'unreachable'|'rate-limited'|'ambiguous' }>}
  */
-export async function validateRefereePin(pin, { checkCloud = validatePinSupabase, checkLan = validatePin, matchExternalId = null } = {}) {
+export async function validateRefereePin(pin, { checkCloud = validatePinSupabase, checkLan = validatePin, matchExternalId = null, gameNumber = null } = {}) {
   const ok = (r) => r?.success && r.match
+  const otherGame = (r) => !matchExternalId && isOtherGame(r.match, gameNumber)
   let cloud
   try { cloud = await (matchExternalId ? checkCloud(pin, 'referee', { matchExternalId: String(matchExternalId) }) : checkCloud(pin, 'referee')) } catch (err) { cloud = failedCheck(err) }
+  if (ok(cloud) && otherGame(cloud)) cloud = { success: false }
   if (ok(cloud)) return { match: cloud.match, source: 'supabase' }
   let lan
-  try { lan = await checkLan(pin, 'referee') } catch (err) { lan = failedCheck(err) }
+  try {
+    lan = await checkLan(pin, 'referee', matchExternalId ? { matchId: String(matchExternalId) } : (gameNumber != null && gameNumber !== '' ? { gameNumber: String(gameNumber) } : {}))
+  } catch (err) { lan = failedCheck(err) }
+  if (ok(lan) && ((matchExternalId && String(lan.match.id) !== String(matchExternalId)) || otherGame(lan))) lan = { success: false }
   if (ok(lan)) return { match: lan.match, source: 'websocket' }
   if (cloud?.rateLimited || lan?.rateLimited) return { match: null, reason: 'rate-limited' }
+  if (lan?.ambiguous) return { match: null, reason: 'ambiguous' }
   return { match: null, reason: isUnreachable(cloud) && isUnreachable(lan) ? 'unreachable' : 'invalid' }
 }
 
@@ -123,6 +136,9 @@ export default function RefereeApp() {
   const [loadingMatches, setLoadingMatches] = useState(true)
   const [matchesLoadedOnce, setMatchesLoadedOnce] = useState(false)
   const [showGameModal, setShowGameModal] = useState(false)
+  // A match the PIN found while no game was picked (no list, no link): shown
+  // for the referee to confirm before it opens
+  const [foundMatch, setFoundMatch] = useState(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [serverConnected, setServerConnected] = useState(false)
   const [isMasterMode, setIsMasterMode] = useState(false)
@@ -473,6 +489,7 @@ export default function RefereeApp() {
   }, [linkServerPending])
 
   const handleSelectGame = (game) => {
+    setFoundMatch(null)
     setSelectedGameNumber(String(game.gameNumber))
     // A game picked in the list replaces the link's (a wrong court's QR
     // code): the PIN is then checked against the picked game. With the link
@@ -495,8 +512,18 @@ export default function RefereeApp() {
     }
   }, [match, t])
 
+  const openMatch = (found, pin) => {
+    setFoundMatch(null)
+    setLinkedMatch(null)
+    setMatchId(found.id)
+    setMatch(found)
+    localStorage.setItem('refereeMatchId', String(found.id))
+    localStorage.setItem('refereePin', pin)
+  }
+
   const handlePinSubmit = async (e) => {
     e.preventDefault()
+    setFoundMatch(null)
     // A typed PIN ends the stored credentials' re-checks
     stopRestoreRef.current?.()
     setError('')
@@ -519,25 +546,34 @@ export default function RefereeApp() {
     try {
       // Backend database check first, then the LAN relay; against the match
       // the page knows (its link, the game picked in the list), if any. A
-      // game number two listed matches share names neither: the check
-      // against every match finds the right one.
+      // game number two listed matches share (or a numeric LAN id) names no
+      // match: the backend checks the PIN against every match, the relay
+      // against those of that game number, and an answer for another game
+      // number is refused.
       const listed = availableMatches.filter(m => String(m.gameNumber) === selectedGameNumber)
       const picked = linkedMatch?.id ?? (listed.length === 1 ? listed[0].id : null)
-      const result = await validateRefereePin(pinInput.trim(), { matchExternalId: typeof picked === 'string' && picked ? picked : null })
+      const gameNumber = linkedMatch?.gameNumber ?? (selectedGameNumber || null)
+      const result = await validateRefereePin(pinInput.trim(), {
+        matchExternalId: typeof picked === 'string' && picked ? picked : null,
+        gameNumber
+      })
 
-      if (result.match) {
+      if (result.match && (picked == null || picked === '') && (gameNumber == null || gameNumber === '')) {
+        // No game picked (no list, no link): the referee confirms the game
+        // the PIN found before it opens
+        setFoundMatch(result.match)
+      } else if (result.match) {
         console.log(`[RefereeApp] PIN validated via ${result.source}`)
-        setLinkedMatch(null)
-        setMatchId(result.match.id)
-        setMatch(result.match)
-        localStorage.setItem('refereeMatchId', String(result.match.id))
-        localStorage.setItem('refereePin', pinInput)
+        openMatch(result.match, pinInput)
       } else if (pinInput === MASTER_PIN) {
         enterMasterMode()
       } else if (result.reason === 'rate-limited') {
         // Refused without comparing: the PIN may well be right, and a stored
         // one stays for the next load
         setError(t('refereeDashboard.errors.tooManyAttempts', 'Too many wrong PINs from this network. Wait a few minutes, then try again.'))
+      } else if (result.reason === 'ambiguous') {
+        // The relay holds more than one match with this PIN: the PIN stays typed
+        setError(t('refereeDashboard.errors.pickGame', 'More than one match has this PIN. Pick your game in the list, then enter the PIN again.'))
       } else {
         setError(result.reason === 'unreachable'
           ? t('refereeDashboard.errors.serverUnreachable', 'No connection to the server – check the Wi-Fi and try again.')
@@ -742,7 +778,7 @@ export default function RefereeApp() {
               <Field label={t('refereeDashboard.connectionPin')} className="text-left">
                 <PinInput
                   value={pinInput}
-                  onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ''))}
+                  onChange={(e) => { setFoundMatch(null); setPinInput(e.target.value.replace(/\D/g, '')) }}
                   placeholder="000000"
                   aria-label={t('refereeDashboard.connectionPin')}
                   maxLength={6}
@@ -754,7 +790,35 @@ export default function RefereeApp() {
 
             <FormError size="md" className="text-center">{error}</FormError>
 
-            {(!serverConnected || linkedMatch || (availableMatches.length > 0 && selectedGameNumber)) && (
+            {foundMatch && (() => {
+              // The game the PIN found with no game picked: opened once the
+              // referee says it is theirs
+              const names = matchTeamNames(foundMatch)
+              const number = foundMatch.gameNumber ?? foundMatch.gameN ?? foundMatch.game_n
+              return (
+                <div className="flex flex-col gap-3" data-testid="referee-found-game">
+                  <ListLabel>{t('refereeDashboard.confirmGame', 'Is this your game?')}</ListLabel>
+                  <RowList framed soft className="rounded-lg">
+                    <GameRow
+                      match={foundMatch}
+                      lang={i18n.language}
+                      home={names.home}
+                      away={names.away}
+                      gameLabel={number != null && number !== '' ? t('refereeDashboard.gameNumber', { number }) : undefined}
+                      noDate={t('refereeDashboard.tbd')}
+                    />
+                  </RowList>
+                  <Button type="button" size="xl" block onClick={() => openMatch(foundMatch, pinInput)}>
+                    {t('refereeDashboard.openGame', 'Open this game')}
+                  </Button>
+                  <Button type="button" variant="ghost" size="xl" block onClick={() => { setFoundMatch(null); setPinInput('') }}>
+                    {t('refereeDashboard.notMyGame', 'Not my game')}
+                  </Button>
+                </div>
+              )
+            })()}
+
+            {!foundMatch && (!serverConnected || linkedMatch || (availableMatches.length > 0 && selectedGameNumber)) && (
               <Button type="submit" size="xl" block disabled={isLoading} loading={isLoading}>
                 {isLoading ? t('refereeDashboard.connecting') : t('refereeDashboard.enter')}
               </Button>
