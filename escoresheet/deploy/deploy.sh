@@ -10,18 +10,21 @@
 #      match-day freeze (Friday 17:00 to Sunday 23:59, Europe/Zurich) and no
 #      live relay room in the running backend (/health activeRooms), unless
 #      --any-time
-#   1. a fresh dump: openvolley-backup.service (stops here when its
-#      count-drop guard trips)
+#   1. a fresh dump: openvolley-backup.service, which must have run now
+#      (stops here when its count-drop guard trips or its condition, the
+#      backup config, is not met)
 #   2. the migrations of the NEW image: scripts/migrate.mjs as ov_owner, in a
 #      one-off container in ov-postgres's network namespace (the owner
 #      password never reaches the backend); the running backend keeps
 #      serving meanwhile (every migration is written to be safe for it)
-#   3. roles.sql of the new image, through apply-roles.sh
+#   3. roles.sql of the new image, through apply-roles.sh; then
+#      scripts/check-schema.mjs of the new image as ov_owner (every migration
+#      recorded, guard triggers, unique indexes and trigger functions in
+#      place), and the freeze / live-room check once more
 #   4. the switch: the previous OV_BACKEND_IMAGE into DEPLOYED.log, the new
 #      one into .env, docker compose up -d --wait ov-backend
 #   5. the new backend's /health answers 200 and scripts/check-schema.mjs
-#      passes in its container (every migration of the image recorded, guard
-#      triggers, unique indexes and trigger functions in place)
+#      passes in its container (as ov_app: it reads the record)
 #   A failure in 0-3 changes no container (migrations that already ran stay:
 #   each is one transaction, and the old backend works with them). A failure
 #   in 4-5 puts the previous image back into .env and starts it again.
@@ -32,7 +35,8 @@
 #                     the last db/ file this database got by hand
 #   --rerun NNN       run db/NNN once more after the switch (a file whose header
 #                     asks for a second run, e.g. 032); repeatable
-#   --migrate-only    steps 0-3 only (and --rerun at once): no switch
+#   --migrate-only    steps 0-3 only (and --rerun at once, before the schema
+#                     check): no switch
 #
 # Settings (environment): OV_ENV_FILE (default .env next to this script),
 # OV_PROJECT (default openvolley), OV_DB_NAME (default openvolley),
@@ -126,36 +130,47 @@ mapfile -t ids < <(docker ps -q \
 (( ${#ids[@]} == 1 )) || die "expected one running ov-postgres of project ${OV_PROJECT}, found ${#ids[@]}"
 PG=${ids[0]}
 
-if (( ! ANY_TIME )); then
+live_check() {  # the freeze window and the running backend's live relay rooms (skipped with --any-time)
+  local dow hm h rooms
+  (( ! ANY_TIME )) || return 0
   dow=$(TZ=Europe/Zurich date +%u)
   hm=$(TZ=Europe/Zurich date +%H%M)
   if (( dow == 6 || dow == 7 || (dow == 5 && 10#$hm >= 1700) )); then
-    die "match-day freeze (Friday 17:00 to Sunday 23:59, Europe/Zurich): a restart drops every live relay room. --any-time overrides"
+    die "match-day freeze (Friday 17:00 to Sunday 23:59, Europe/Zurich): a restart drops every live relay room. --any-time overrides${1:+ ($1)}"
   fi
   if h=$(backend_health 2>/dev/null) || [[ "$h" == 503\ * ]]; then
     rooms=$(printf '%s' "${h#* }" | sed -n 's/.*"activeRooms":\([0-9][0-9]*\).*/\1/p')
-    [[ "${rooms:-0}" == 0 ]] || die "${rooms} live relay room(s) in the running backend: a restart drops them. --any-time overrides"
+    [[ "${rooms:-0}" == 0 ]] || die "${rooms} live relay room(s) in the running backend: a restart drops them. --any-time overrides${1:+ ($1)}"
   else
     log "running backend did not answer /health (${h:-no answer}); not checking for live rooms"
   fi
-fi
+}
+live_check
 log "deploying ${NEW} (running: ${PREV})"
 
 # --- 1. fresh dump ---------------------------------------------------------------------
 if command -v systemctl >/dev/null && systemctl cat "$OV_BACKUP_UNIT" >/dev/null 2>&1; then
   systemctl start "$OV_BACKUP_UNIT" || die "the backup (${OV_BACKUP_UNIT}) failed: journalctl -u ${OV_BACKUP_UNIT}; nothing was changed"
+  # A unit whose condition fails (no /etc/openvolley/backup.conf) "starts" with
+  # exit 0 and runs nothing.
+  ran=$(systemctl show -p ConditionResult --value "$OV_BACKUP_UNIT" 2>/dev/null || true)
+  result=$(systemctl show -p Result --value "$OV_BACKUP_UNIT" 2>/dev/null || true)
+  [[ "$ran" == yes && "$result" == success ]] \
+    || die "the backup (${OV_BACKUP_UNIT}) did not run (ConditionResult=${ran:-?}, Result=${result:-?}; /etc/openvolley/backup.conf missing?): no deploy without a fresh dump; nothing was changed"
   log "fresh dump written (${OV_BACKUP_UNIT})"
 else
   die "${OV_BACKUP_UNIT} is not installed (host-prep.sh): no deploy without a fresh dump"
 fi
 
 # --- 2. migrations ---------------------------------------------------------------------
-migrate() {  # migrate.mjs of the new image, as ov_owner over ov-postgres's loopback
-  OV_MIGRATE_DATABASE_URL="postgres://ov_owner@127.0.0.1:5432/${OV_DB_NAME}" PGPASSWORD="$OWNER_PW" \
+owner_node() {  # SCRIPT ARGS...: a script of the new image, as ov_owner over ov-postgres's loopback
+  OV_MIGRATE_DATABASE_URL="postgres://ov_owner@127.0.0.1:5432/${OV_DB_NAME}" \
+  DATABASE_URL="postgres://ov_owner@127.0.0.1:5432/${OV_DB_NAME}" PGPASSWORD="$OWNER_PW" \
     docker run --rm --network "container:${PG}" --read-only --tmpfs /tmp:size=16m --cap-drop ALL \
       --security-opt no-new-privileges:true --user node --pids-limit 64 --memory 256m \
-      -e OV_MIGRATE_DATABASE_URL -e PGPASSWORD --entrypoint node "$NEW" scripts/migrate.mjs "$@"
+      -e OV_MIGRATE_DATABASE_URL -e DATABASE_URL -e PGPASSWORD --entrypoint node "$NEW" "$@"
 }
+migrate() { owner_node scripts/migrate.mjs "$@"; }
 margs=()
 [[ -z "$BASELINE" ]] || margs+=(--baseline "$BASELINE")
 migrate ${margs[@]+"${margs[@]}"} || die "migrations failed (see above); the running backend is unchanged. A file that failed changed nothing; the ones before it are applied and recorded"
@@ -177,9 +192,16 @@ rerun_all() {
 
 if (( MIGRATE_ONLY )); then
   rerun_all || die "--rerun failed (see above)"
-  log "migrations and roles applied; no switch (--migrate-only)"
+  owner_node scripts/check-schema.mjs || die "migrations and roles applied, but the schema check of ${NEW} fails (see above)"
+  log "migrations and roles applied, schema ready; no switch (--migrate-only)"
   exit 0
 fi
+
+# Before any container changes: what the new backend's check would refuse
+# after the switch (two restarts for nothing), and rooms opened meanwhile.
+owner_node scripts/check-schema.mjs \
+  || die "the schema check of ${NEW} fails (see above); the running backend is unchanged"
+live_check "checked again before the switch"
 
 # --- 4. switch ---------------------------------------------------------------------------
 rollback() {

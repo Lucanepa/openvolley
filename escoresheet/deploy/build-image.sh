@@ -16,9 +16,9 @@
 # sudo (/opt/openvolley is root-only), and the tag is recorded in
 # ${OV_OPS_DIR}/shipped-local (restore-test.sh's default image).
 #
-# Neither restarts anything: deploying is editing OV_BACKEND_IMAGE in
-# /opt/openvolley/.env + `docker compose up -d ov-backend` (RUNBOOK-hetzner.md,
-# Updating).
+# Neither restarts anything: deploying is `sudo /opt/openvolley/deploy.sh
+# openvolley-backend:<sha>` on the production host (dump, migrations, switch,
+# checks; RUNBOOK-hetzner.md, Updating).
 #
 # Refuses to build a tree without the self-host wiring (no /health/live,
 # DATABASE_URL, STORAGE_ROOT or STATUS_DIR in the backend sources): such an
@@ -98,7 +98,7 @@ if [[ "$SHIP" == local ]]; then
 
   mkdir -p "$OV_OPS_DIR"
   printf '%s\n' "$TAG" >"$OV_OPS_DIR/shipped-local.tmp" && mv -f "$OV_OPS_DIR/shipped-local.tmp" "$OV_OPS_DIR/shipped-local"
-  echo "[build-image] archived locally (recorded in ${OV_OPS_DIR}/shipped-local). Deploy: RUNBOOK-hetzner.md, Updating."
+  echo "[build-image] archived locally (recorded in ${OV_OPS_DIR}/shipped-local). Deploy: sudo /opt/openvolley/deploy.sh ${TAG} (RUNBOOK-hetzner.md, Updating)."
 elif [[ -n "$SHIP" ]]; then
   ARCHIVE="/opt/openvolley/images/openvolley-backend-${SHA}.tar.gz"
   echo "[build-image] shipping ${TAG} to ${SHIP}:${ARCHIVE}"
@@ -113,6 +113,6 @@ elif [[ -n "$SHIP" ]]; then
 
   mkdir -p "$OV_OPS_DIR"
   printf '%s\n' "$TAG" >"$OV_OPS_DIR/shipped-${SHIP}.tmp" && mv -f "$OV_OPS_DIR/shipped-${SHIP}.tmp" "$OV_OPS_DIR/shipped-${SHIP}"
-  echo "[build-image] loaded on ${SHIP} (recorded in ${OV_OPS_DIR}/shipped-${SHIP}). Deploy: RUNBOOK-hetzner.md, Updating."
+  echo "[build-image] loaded on ${SHIP} (recorded in ${OV_OPS_DIR}/shipped-${SHIP}). Deploy on ${SHIP}: sudo /opt/openvolley/deploy.sh ${TAG} (RUNBOOK-hetzner.md, Updating)."
 fi
 echo "[build-image] ${TAG}"
