@@ -19,7 +19,9 @@ const download = vi.hoisted(() => (path) => {
   })
 })
 vi.mock('../../utils/logger', () => ({ loadCloudBackup: (path) => download(path) }))
-vi.mock('../../utils/backupManager', () => ({ fetchCloudBackup: (path) => download(path) }))
+// A test may answer with the PINs the list passes (cloud.fetch)
+const cloud = vi.hoisted(() => ({ fetch: null }))
+vi.mock('../../utils/backupManager', () => ({ fetchCloudBackup: (path, opts) => (cloud.fetch ? cloud.fetch(path, opts) : download(path)) }))
 
 import BackupTable, { LAST_ACTION_MORE, LAST_ACTION_NEWEST } from '../BackupTable'
 
@@ -45,6 +47,7 @@ beforeEach(() => {
   downloads.inFlight = 0
   downloads.most = 0
   downloads.release = []
+  cloud.fetch = null
 })
 
 describe('restore list: "Last action"', () => {
@@ -78,5 +81,24 @@ describe('restore list: "Last action"', () => {
     expect(loadBackup).toHaveBeenCalledTimes(2)
     // no "show more" when every file is read
     expect(screen.queryByRole('button', { name: /showMoreLastActions/ })).toBeNull()
+  })
+
+  // Home restore list: the game PIN field stays editable under the list. A
+  // wrong PIN corrected after the list loaded left every row at "—"
+  it('reads the newest rows again when the PINs change', async () => {
+    const asked = []
+    cloud.fetch = async (path, { pins } = {}) => {
+      asked.push([path, pins])
+      return pins?.includes('123456')
+        ? { version: 1, events: [{ seq: 1, type: 'timeout' }] }
+        : { format: 'openvolley-encrypted-backup', formatVersion: 2, readable: {} }
+    }
+    const two = backups.slice(38)
+    const { rerender } = render(<BackupTable backups={two} unlockPins={['111111']} onBackupSelect={() => {}} />)
+    await waitFor(() => expect(screen.getAllByText('backupTable.locked')).toHaveLength(2))
+    rerender(<BackupTable backups={two} unlockPins={['123456']} onBackupSelect={() => {}} />)
+    await waitFor(() => expect(screen.getAllByText('backupTable.eventTypes.timeout')).toHaveLength(2))
+    expect(asked).toHaveLength(4)
+    expect(asked.slice(2).every(([, pins]) => pins.join() === '123456')).toBe(true)
   })
 })

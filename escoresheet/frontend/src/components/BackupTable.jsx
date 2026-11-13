@@ -118,7 +118,9 @@ export default function BackupTable({
     return extractLastAction(data.events, t) || t('backupTable.noActions', 'No actions')
   }
 
-  // The last action of the first `shown` files, one file at a time
+  // The last action of the first `shown` files, one file at a time; again
+  // when the PINs change (a game PIN corrected under the list): the reset
+  // above cleared the rows, and `shown` may already be the newest 3
   useEffect(() => {
     let alive = true
     const queue = files.slice(0, shown).map(b => b.path).filter(path => !asked.current.has(path))
@@ -151,7 +153,7 @@ export default function BackupTable({
       // not read yet: asked again by the next run
       for (const path of queue) if (!done.has(path)) asked.current.delete(path)
     }
-  }, [files, shown])
+  }, [files, shown, pinsKey])
 
   if (backups.length === 0) {
     return null
