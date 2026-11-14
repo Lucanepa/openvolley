@@ -1234,7 +1234,7 @@
   "home": {
     "storageWarning": "Dieser Browser darf die Daten der App löschen, und ein Spiel auf diesem Gerät hat noch nicht gesendete Änderungen. Melde dich an, damit sie synchronisiert werden, installiere die App oder füge sie dem Startbildschirm hinzu, oder schalte in den Optionen Backup-Downloads ein.",
     "tool": {"label": "Werkzeug", "swiss": "Schweiz", "global": "Global", "globalNote": "Jedes Turnier: ohne Login, ohne Spielliste. Teams und Spieler bleiben auf diesem Gerät."},
-    "match": "Spiel",
+    "match": "Spiil",
     "openingMatch": "Spiel wird geöffnet…",
     "title": "eScoresheet",
     "newMatch": "Neus Spiil",

@@ -143,7 +143,7 @@ function startupCheckShownRecently(now = Date.now()) {
 const STARTUP_CHECK_SHOWN_RECENTLY = typeof window !== 'undefined' && startupCheckShownRecently()
 
 export default function App() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [matchId, setMatchId] = useState(null)
   const [showMatchSetup, setShowMatchSetup] = useState(false)
   const [showCoinToss, setShowCoinToss] = useState(false)
@@ -1026,6 +1026,10 @@ export default function App() {
   // holds a match takes that match's tool.
   const toolMode = useToolMode()
   const globalTool = toolMode === 'global'
+  // Global has no Swiss German: a device on de-CH takes German (de)
+  useEffect(() => {
+    if (globalTool && i18n.language === 'de-CH') i18n.changeLanguage('de')
+  }, [globalTool, i18n.language, i18n])
   const matchesLoaded = currentOfficialMatch !== undefined && currentTestMatch !== undefined
   const toolLocked = toolModeLocked(currentOfficialMatch, currentTestMatch)
   useEffect(() => {
