@@ -550,6 +550,7 @@
         "libero": "Libéro interdit",
         "disqualified": "Disqualifié",
         "exceptionallySubstituted": "Remplacement exceptionnel",
+        "expelled": "Expulsé dans ce set",
         "saveFailed": "Échec de l’enregistrement",
         "invalidNumber": "1 à 99"
       },
@@ -911,6 +912,7 @@
     },
     "confirmFailed": "Cela n'a pas été enregistré. Vérifiez la feuille de match et réessayez.",
     "storageFull": "Non enregistré : le stockage de cet appareil est plein. Libérez de l'espace (supprimez d'anciens téléchargements ou d'autres fichiers), puis touchez à nouveau. Tout ce qui a été enregistré jusqu'ici est conservé.",
+    "sentOffOnCourt": "Le n° {{number}} est expulsé ou disqualifié et encore sur le terrain : enregistrez d'abord le changement.",
     "storageLow": "Le stockage de cet appareil est presque plein : il reste {{mb}} Mo pour OpenVolley. Libérez de l'espace maintenant (supprimez d'anciens téléchargements ou d'autres fichiers) : une fois plein, plus rien ne pourra être enregistré.",
     "timeoutRequest": {
       "title": "Temps mort — {{team}}",

@@ -552,6 +552,7 @@
         "libero": "Cannot be libero",
         "disqualified": "Disqualified",
         "exceptionallySubstituted": "Exceptionally substituted",
+        "expelled": "Expelled this set",
         "saveFailed": "Save failed",
         "invalidNumber": "1 to 99"
       },
@@ -913,6 +914,7 @@
     },
     "confirmFailed": "That was not saved. Check the scoresheet and try again.",
     "storageFull": "Not saved: this device's storage is full. Free up space (delete old downloads or other files), then tap again. Everything recorded so far is kept.",
+    "sentOffOnCourt": "#{{number}} is expelled or disqualified and still on court: record the substitution first.",
     "storageLow": "This device's storage is almost full: {{mb}} MB left for OpenVolley. Free up space now (delete old downloads or other files): once it is full, nothing more can be recorded.",
     "timeoutRequest": {
       "title": "Time-out — {{team}}",
