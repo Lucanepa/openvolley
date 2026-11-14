@@ -270,7 +270,7 @@ describe('macOS bundles (unsigned, ad-hoc)', () => {
   it('an .app and a .dmg, hardened runtime for notarization, macOS 11 and newer', () => {
     for (const c of [ovMac, beachMac]) {
       expect(c.bundle.targets).toEqual(['app', 'dmg'])
-      // ad-hoc ("-") unless CI sets APPLE_SIGNING_IDENTITY (desktop.yml: Developer ID + notarization)
+      // always ad-hoc ("-"): desktop.yml's sign-macos job signs it with the Developer ID and notarizes it
       expect(c.bundle.macOS).toEqual({
         signingIdentity: '-',
         hardenedRuntime: true,
