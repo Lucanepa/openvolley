@@ -1189,7 +1189,12 @@
     "backToScorer": "Torna al segnapunti",
     "scorer": "Segnapunti"
   },
+  "restoreGlobal": {"title": "Ripristina dal backup online", "desc": "Inserisci il codice di backup della partita (Preparazione partita, Backup).", "code": "Codice di backup", "notFound": "Nessun backup trovato per questo codice.", "button": "Cerca backup"},
+  "toolChooser": {"title": "Come usi OpenVolley?", "swissBody": "Partite di lega svizzere: accesso, elenco partite, Einsatzliste, rose di club e cloud.", "globalBody": "Qualsiasi torneo o amichevole: senza accesso, rose e partite da Excel. Squadre e giocatori restano su questo dispositivo.", "later": "Puoi cambiarlo più tardi in Opzioni, finché non c’è una partita su questo dispositivo."},
+  "globalImport": {"templateGames": "Modello partite (Excel)", "templateRosters": "Modello rose (Excel)", "gamesTitle": "Importa partite", "rostersTitle": "Importa rose", "gamesHint": "Un file Excel o CSV con una riga per partita: partita, data, ora, palestra, città, lega, casa, ospite, best of, arbitri. Nulla viene salvato: il file è letto su questo dispositivo.", "rostersHint": "Un file Excel o CSV con una riga per persona: squadra, numero, nome, cognome, ruolo (giocatore, libero, capitano, allenatore...), data di nascita. Nulla viene salvato: il file è letto su questo dispositivo.", "choose": "Scegli file", "template": "Modello", "errFile": "Impossibile leggere il file.", "errEmpty": "Il file è vuoto.", "errColumns": "Colonne non trovate. Usa il modello.", "noTeamName": "(senza nome squadra)", "counts": "{{players}} giocatori, {{staff}} staff", "warnings": "{{count}} righe non pulite: {{list}}", "applied": "{{count}} giocatori aggiunti", "gamesButton": "Importa partite (Excel)", "rostersButton": "Importa rose (Excel)"},
   "home": {
+    "tool": {"label": "Strumento", "swiss": "Svizzera", "global": "Globale", "globalNote": "Qualsiasi torneo: senza accesso, senza elenco partite. Squadre e giocatori restano su questo dispositivo."},
+    "match": "Partita",
     "openingMatch": "Apertura della partita…",
     "title": "eScoresheet",
     "newMatch": "Nuova partita",
@@ -1224,6 +1229,7 @@
       "easyMatchReplaceTest": "La partita test di questo dispositivo viene sostituita dalla partita semplice e i suoi dati eliminati. Continuare?",
       "unableToPrepareEasyMatch": "Impossibile avviare la partita semplice: {{error}}",
       "deleteEasyMatchConfirm": "Questo eliminerà la partita semplice e tutti i suoi dati. Continuare?",
+      "unableToPrepareGlobalMatch": "Impossibile avviare la partita: {{error}}",
       "easyMatchDeleted": "Partita semplice eliminata."
     },
     "exitFullscreen": "Esci dallo schermo intero",
@@ -1295,6 +1301,9 @@
     }
   },
   "backupTargets": {
+    "cloudGlobal": "Attivo: il backup e il referto finito, senza account",
+    "cloudGlobalHint": "Solo questi due file sono online, sotto questo codice di backup. Squadre e giocatori non sono in nessun elenco. Conserva il codice: ripristina la partita.",
+    "copyCode": "Copia",
     "title": "Backup",
     "summary": "Cloud · Questo dispositivo · Unità rimovibile",
     "cloud": "Cloud",
@@ -1331,6 +1340,7 @@
     "err_io": "Impossibile leggere questo backup."
   },
   "options": {
+    "tool": {"title": "Strumento", "locked": "C’è una partita su questo dispositivo. Eliminala per cambiare strumento.", "swissNote": "Partite di lega svizzere: accesso, elenco partite, Einsatzliste, rose di club e cloud."},
     "title": "Opzioni",
     "close": "Chiudere",
     "checkAccidentalRallyStart": "Controllo avvio accidentale",
@@ -1590,6 +1600,7 @@
     "diagnosticsExportFailed": "Non è stato possibile esportare la diagnostica."
   },
   "matchEnd": {
+    "globalNotStored": "Il referto non è stato salvato online. Resta su questo dispositivo: scarica subito il PDF.",
     "title": "Partita terminata",
     "winner": "Vincitore",
     "teamLabel": "(Squadra {{label}})",

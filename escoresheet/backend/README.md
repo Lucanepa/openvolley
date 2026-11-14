@@ -696,6 +696,19 @@ STORAGE_DIR=~/ov-storage node server.js
 
 Tests: `npm test` (or `node --test tests/storage.test.js`). They use a temp directory only, no Postgres and no Docker.
 
+## Global tool store (`lib/globalStore.js`)
+
+The Global tool (any tournament, no account) keeps nothing in the database. A
+match's backup and its finished scoresheet go to `{STORAGE_ROOT}/global/`,
+under a random key the app made (128 bits, kept in the match on the device,
+shown as the "backup code"):
+
+- `POST /api/global/save` `{ key, kind, contentType, fileBase64 }`, kind `backup` (JSON), `scoresheet` or `scoresheet-final` (PDF, must start with `%PDF-`). The newest file of a kind replaces the last.
+- `POST /api/global/load` `{ key, kind }` (a missing file answers 200 with `OV_GLOBAL_NOT_FOUND`).
+- Anonymous, 120 requests per IP and minute. The key is the only way to a file: no listing, no search. Needs the `.ovdata` sentinel of the storage root.
+- Caps: 12 MiB a file, 40 MiB a key, 20000 keys and 4 GiB in all (a full store answers 507; the app keeps the match on the device). Keys untouched for 180 days are deleted (a sweep on a request, at most hourly).
+- Tests: `tests/globalStore.test.js`, `tests/global.e2e.test.js` (no Postgres needed).
+
 ## API Endpoints
 
 ### `GET /health/live`

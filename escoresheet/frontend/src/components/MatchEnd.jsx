@@ -20,7 +20,8 @@ import KitModal from './manage/KitModal'
 import CloudBlockNotice from './CloudBlockNotice'
 import { Textarea } from '../ui/Textarea.jsx'
 import { scoresheetUploadPath, scoresheetUploadJob, scoresheetJsonBlob, uploadQueuedScoresheet } from '../utils/scoresheetUploader'
-import { matchEndExportData } from '../utils/backupManager'
+import { matchEndExportData, exportMatchData } from '../utils/backupManager'
+import { uploadGlobalFinal } from '../utils/globalCloud'
 import { publishMatchEndLiveState } from '../utils/matchEndLiveState'
 import { isoOf, matchTimes, setDurationMinutes } from '../../scoresheet_pdf/utils/matchTimes'
 import { displaySetNumber, getScoreBeforeEvent, isDefaultSet } from '../../scoresheet_pdf/utils/scoresheetModel'
@@ -1237,7 +1238,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     setIsSaving(true)
     try {
       // Only check signatures for official matches
-      if (!match.test && !allSignaturesDone) {
+      // (a Global match is a real scoresheet: its signatures count too)
+      if ((!match.test || match.global === true) && !allSignaturesDone) {
         showAlert(t('matchEnd.pleaseCompleteSignatures', 'Please complete all signatures before approving.'), 'warning')
         setIsSaving(false)
         return
@@ -1433,7 +1435,14 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       // at that step), and with it the approval and the ZIP, for minutes
       // (stress test 2026-10-25).
       if (!match?.test) await queueApprovalFiles({ pdfResult, sets: allSets, events: allEvents })
-      else if (pdfResult) mailTestScoresheet(pdfResult)
+      else if (match.global === true) {
+        // Global: the PDF and the final backup go to the Global store, by the
+        // match's own key (utils/globalCloud); it stays on the device if that fails
+        // (not awaited: its retries must not hold the approval)
+        exportMatchData(matchId).catch(() => null)
+          .then((backupData) => uploadGlobalFinal({ match, pdfBlob: pdfResult?.blob || null, backupData }))
+          .then((sent) => { if (!sent.ok) showAlert(t('matchEnd.globalNotStored', 'The scoresheet could not be saved online. It stays on this device: download the PDF now.'), 'warning') })
+      } else if (pdfResult) mailTestScoresheet(pdfResult)
 
       // Warn if PDF was not generated (approval still succeeded)
       if (!pdfResult) {
@@ -2004,7 +2013,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               variant="positive"
               size="xl"
               onClick={handleApprove}
-              disabled={isSaving || (!match.test && !allSignaturesDone)}
+              disabled={isSaving || ((!match.test || match.global === true) && !allSignaturesDone)}
               loading={isSaving}
               data-help-id="matchend-export-json"
               // at least h-11, taller when Android's larger text wraps it

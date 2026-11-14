@@ -87,6 +87,9 @@ import { jobMatchKey, setExtId } from './utils/syncIds'
 import { deviceMatchRows, jobsOfMatch, matchGameNumber, resumeStage, setScore } from './utils/deviceMatches'
 import { PhoneIcon } from './components/icons'
 import { Maximize } from 'lucide-react'
+import ToolModeChooser from './components/ToolModeChooser'
+import { newGlobalKey, loadGlobal, isGlobalKey, markGlobalMatch } from './utils/globalCloud'
+import { useToolMode, getToolMode, setToolMode, toolModeLocked, impliedToolMode } from './utils/toolMode'
 import { Button, cn, FormError, Input, ScreenLoading } from './ui'
 import { getBackendOverride, getCloudApiUrl, getLocalServerStatusUrl, isCloudBlockedOnThisPort, isStaticHost } from './utils/backendConfig'
 import { isViewportTooSmall } from './utils/formLayout'
@@ -186,6 +189,9 @@ export default function App() {
   const [cloudBackups, setCloudBackups] = useState([])
   const [cloudBackupPin, setCloudBackupPin] = useState('')
   const [cloudBackupGameN, setCloudBackupGameN] = useState('')
+  // Global: the match's backup code (utils/globalCloud) to restore from
+  const [globalRestoreCode, setGlobalRestoreCode] = useState('')
+  const [globalRestoreBusy, setGlobalRestoreBusy] = useState(false)
   const [cloudBackupLoading, setCloudBackupLoading] = useState(false)
   const [cloudBackupError, setCloudBackupError] = useState('')
   const [restorePreviewData, setRestorePreviewData] = useState(null) // { data, source: 'database'|'cloud'|'local' }
@@ -195,7 +201,7 @@ export default function App() {
   // match in progress.
   useEffect(() => {
     const onManage = (e) => {
-      if (matchId) return
+      if (matchId || getToolMode() === 'global') return
       setManageTab(e?.detail?.tab || 'accounts')
     }
     const onRestore = (e) => {
@@ -1001,6 +1007,19 @@ export default function App() {
       return null
     }
   }, [])
+
+  // Swiss or Global (utils/toolMode): asked at the first open, changed in
+  // Options while no match is on the device. A device that never chose but
+  // holds a match takes that match's tool.
+  const toolMode = useToolMode()
+  const globalTool = toolMode === 'global'
+  const matchesLoaded = currentOfficialMatch !== undefined && currentTestMatch !== undefined
+  const toolLocked = toolModeLocked(currentOfficialMatch, currentTestMatch)
+  useEffect(() => {
+    if (toolMode || !matchesLoaded) return
+    const implied = impliedToolMode(currentOfficialMatch) || impliedToolMode(currentTestMatch)
+    if (implied) setToolMode(implied)
+  }, [toolMode, matchesLoaded, currentOfficialMatch, currentTestMatch])
 
   // Get match status and details
   const matchStatus = useLiveQuery(async () => {
@@ -3178,6 +3197,48 @@ export default function App() {
     }
   }
 
+  /**
+   * Global tool's "Match": a full match (rosters, officials, signatures) kept
+   * on this device. It is a test-flagged match, so the sync queue drops every
+   * job of it and nothing reaches the clubs/games/players tables; `global`
+   * marks it as a real scoresheet, not practice. No sign-in, no Einsatzliste.
+   */
+  async function createGlobalMatch() {
+    if (easyMatchLoading || testMatchLoading) return
+    const recording = matchStatus?.status === 'Match recording' && currentOfficialMatch && !isScorerMoved(matchStatus.match)
+    if (recording) {
+      setAlertModal(t('home.modals.officialMatchStillRecording', 'An official match is still recording on this device. Continue it, or delete it with "Delete match", before creating a new official match.'))
+      return
+    }
+    try {
+      const previous = (await db.matches.filter(m => isTestMatchSeedKey(m.seedKey)).first()) || null
+      const seedKey = testMatchSeedKeyFor(previous?.seedKey)
+      const refereePin = previous?.refereePin || generateRefereePin()
+      await clearLocalTestData()
+      await db.match_setup.clear()
+      const timestamp = new Date().toISOString()
+      const newMatchId = await db.matches.add({
+        status: 'scheduled',
+        refereePin,
+        coinTossConfirmed: false,
+        test: true,
+        global: true,
+        globalKey: newGlobalKey(),
+        seedKey,
+        externalId: TEST_MATCH_EXTERNAL_ID,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      })
+      markGlobalMatch(newMatchId)
+      setMatchId(newMatchId)
+      setShowMatchSetup(true)
+      setShowCoinToss(false)
+    } catch (error) {
+      console.error('Failed to create the global match:', error)
+      setAlertModal(t('home.modals.unableToPrepareGlobalMatch', { error: error.message || error, defaultValue: 'Unable to start the match: {{error}}' }))
+    }
+  }
+
   async function continueTestMatch() {
     if (testMatchLoading) return
 
@@ -3692,6 +3753,7 @@ export default function App() {
             isFullscreen={isFullscreen}
             toggleFullscreen={toggleFullscreen}
             offlineMode={offlineMode}
+            hideAccount={globalTool}
             setOfflineMode={(val) => {
               setOfflineMode(val)
               localStorage.setItem('offlineMode', val.toString())
@@ -3902,6 +3964,7 @@ export default function App() {
                     createNewTestMatch={() => openFromHome(createNewTestMatch)}
                     testMatchLoading={testMatchLoading}
                     createEasyMatch={() => openEasyMatch()}
+                    onGlobalMatch={createGlobalMatch}
                     easyMatchLoading={easyMatchLoading}
                     onOpenScoreboard={() => setSimpleBoardOpen(true)}
                     currentOfficialMatch={homeOfficialMatch}
@@ -4104,8 +4167,47 @@ export default function App() {
                 panelStyle={{ display: 'flex', flexDirection: 'column' }}
               >
                 <div className="ov-kit flex min-h-0 flex-1 flex-col">
+                  {/* Global: restore by the match's backup code (no account, no game PIN) */}
+                  {!offlineMode && globalTool && (
+                    <div className="mb-6 flex flex-col" data-testid="restore-global">
+                      <h3 className="text-sm font-semibold text-stone-800">{t('restoreGlobal.title', 'Restore from the online backup')}</h3>
+                      <p className="mt-1 mb-3 text-xs text-stone-500">{t('restoreGlobal.desc', 'Enter the backup code of the match (Match Setup, Backups).')}</p>
+                      <input
+                        type="text"
+                        value={globalRestoreCode}
+                        onChange={(e) => { setGlobalRestoreCode(e.target.value.trim()); setRestoreError('') }}
+                        placeholder="AbCdEfGhIjKlMnOpQrStUv"
+                        aria-label={t('restoreGlobal.code', 'Backup code')}
+                        data-testid="restore-global-code"
+                        autoCapitalize="off" autoCorrect="off" spellCheck={false}
+                        className="mb-3 w-full h-11 px-3 rounded-xl border border-stone-200 bg-white text-center font-mono text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-red-700/20 focus:border-red-700/40"
+                      />
+                      <button
+                        type="button"
+                        data-testid="restore-global-button"
+                        disabled={globalRestoreBusy || !isGlobalKey(globalRestoreCode)}
+                        onClick={async () => {
+                          setGlobalRestoreBusy(true)
+                          setRestoreError('')
+                          try {
+                            const text = await loadGlobal(globalRestoreCode, 'backup')
+                            if (!text) { setRestoreError(t('restoreGlobal.notFound', 'No backup found for this code.')); return }
+                            setRestorePreviewData({ data: JSON.parse(text), source: 'cloud', backupName: 'global' })
+                          } catch (err) {
+                            setRestoreError(restoreErrorText(err, t))
+                          } finally {
+                            setGlobalRestoreBusy(false)
+                          }
+                        }}
+                        className="inline-flex w-full h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-stone-400"
+                      >
+                        {globalRestoreBusy ? t('common.loading') : t('restoreGlobal.button', 'Find backup')}
+                      </button>
+                      {restoreError && <FormError className="mt-2">{restoreError}</FormError>}
+                    </div>
+                  )}
                   {/* Restore from Cloud Backup */}
-                  {!offlineMode && (
+                  {!offlineMode && !globalTool && (
                     <div className="mb-6 flex min-h-0 flex-col">
                       <h3 className="text-sm font-semibold text-stone-800">
                         {t('settings.backup.restoreFromCloudBackup')}
@@ -4481,7 +4583,9 @@ export default function App() {
             )}
 
             {/* Home Options Modal */}
+            <ToolModeChooser open={toolMode === null && matchesLoaded && !matchId && !homeOptionsModal} />
             <HomeOptionsModal
+              toolMode={{ mode: toolMode, locked: toolLocked, onChange: setToolMode }}
               open={homeOptionsModal}
               onClose={() => setHomeOptionsModal(false)}
               onOpenConnectionSetup={() => setConnectionSetupModal(true)}
@@ -4584,7 +4688,7 @@ export default function App() {
             />
 
             {/* Not signed in while the cloud needs an account: non-blocking */}
-            {!offlineMode && <SyncSignInBanner syncStatus={syncStatus} compact={currentPage === 'scoreboard'} />}
+            {!offlineMode && !globalTool && <SyncSignInBanner syncStatus={syncStatus} compact={currentPage === 'scoreboard'} />}
 
           </div>
         </>

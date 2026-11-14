@@ -1182,7 +1182,12 @@
     "backToScorer": "Zurück zum Schreiber",
     "scorer": "Schreiber"
   },
+  "restoreGlobal": {"title": "Aus der Online-Sicherung wiederherstellen", "desc": "Gib den Sicherungscode des Spiels ein (Spiel einrichten, Sicherungen).", "code": "Sicherungscode", "notFound": "Zu diesem Code wurde keine Sicherung gefunden.", "button": "Sicherung suchen"},
+  "toolChooser": {"title": "Wie nutzt du OpenVolley?", "swissBody": "Schweizer Ligaspiele: Anmeldung, Spielliste, Einsatzliste, Club-Kader und die Cloud.", "globalBody": "Jedes Turnier oder Freundschaftsspiel: ohne Anmeldung, Kader und Spiele aus Excel. Mannschaften und Spieler bleiben auf diesem Gerät.", "later": "Du kannst das später in den Optionen ändern, solange kein Spiel auf diesem Gerät ist."},
+  "globalImport": {"templateGames": "Spiele-Vorlage (Excel)", "templateRosters": "Kader-Vorlage (Excel)", "gamesTitle": "Spiele importieren", "rostersTitle": "Kader importieren", "gamesHint": "Eine Excel- oder CSV-Datei mit einer Zeile pro Spiel: Spiel, Datum, Zeit, Halle, Ort, Liga, Heim, Gast, Best of, Schiedsrichter. Nichts wird gespeichert: Die Datei wird auf diesem Gerät gelesen.", "rostersHint": "Eine Excel- oder CSV-Datei mit einer Zeile pro Person: Mannschaft, Nummer, Vorname, Nachname, Rolle (Spieler, Libero, Kapitän, Trainer ...), Geburtsdatum. Nichts wird gespeichert: Die Datei wird auf diesem Gerät gelesen.", "choose": "Datei wählen", "template": "Vorlage", "errFile": "Die Datei konnte nicht gelesen werden.", "errEmpty": "Die Datei enthält keine Zeilen.", "errColumns": "Die Spalten wurden nicht gefunden. Nimm die Vorlage.", "noTeamName": "(ohne Mannschaftsname)", "counts": "{{players}} Spieler, {{staff}} Betreuer", "warnings": "{{count}} Zeilen waren nicht sauber: {{list}}", "applied": "{{count}} Spieler hinzugefügt", "gamesButton": "Spiele importieren (Excel)", "rostersButton": "Kader importieren (Excel)"},
   "home": {
+    "tool": {"label": "Werkzeug", "swiss": "Schweiz", "global": "Global", "globalNote": "Jedes Turnier: ohne Anmeldung, ohne Spielliste. Teams und Spieler bleiben auf diesem Gerät."},
+    "match": "Spiel",
     "openingMatch": "Spiel wird geöffnet…",
     "title": "eScoresheet",
     "newMatch": "Neues Spiel",
@@ -1217,6 +1222,7 @@
       "easyMatchReplaceTest": "Das Testspiel auf diesem Gerät wird durch das einfache Spiel ersetzt und seine Daten gelöscht. Fortfahren?",
       "unableToPrepareEasyMatch": "Das einfache Spiel konnte nicht gestartet werden: {{error}}",
       "deleteEasyMatchConfirm": "Dies löscht das einfache Spiel und alle seine Daten. Fortfahren?",
+      "unableToPrepareGlobalMatch": "Das Spiel konnte nicht gestartet werden: {{error}}",
       "easyMatchDeleted": "Einfaches Spiel gelöscht."
     },
     "exitFullscreen": "Vollbild beenden",
@@ -1288,6 +1294,9 @@
     }
   },
   "backupTargets": {
+    "cloudGlobal": "An: die Sicherung und der fertige Spielbericht, ohne Konto",
+    "cloudGlobalHint": "Nur diese zwei Dateien liegen online, unter diesem Sicherungscode. Mannschaften und Spieler stehen in keiner Liste. Bewahre den Code auf: Er stellt das Spiel wieder her.",
+    "copyCode": "Kopieren",
     "title": "Sicherungen",
     "summary": "Cloud · Dieses Gerät · Wechseldatenträger",
     "cloud": "Cloud",
@@ -1324,6 +1333,7 @@
     "err_io": "Diese Sicherung konnte nicht gelesen werden."
   },
   "options": {
+    "tool": {"title": "Werkzeug", "locked": "Auf diesem Gerät ist ein Spiel. Lösche es, um das Werkzeug zu wechseln.", "swissNote": "Schweizer Ligaspiele: Anmeldung, Spielliste, Einsatzliste, Club-Kader und die Cloud."},
     "title": "Optionen",
     "close": "Schliessen",
     "checkAccidentalRallyStart": "Versehentlichen Ballwechsel-Start prüfen",
@@ -2859,6 +2869,7 @@
     "awayRosterTooMany": "Gast: höchstens {{max}} Spielende im Kader (jetzt {{count}})"
   },
   "matchEnd": {
+    "globalNotStored": "Der Spielbericht konnte nicht online gespeichert werden. Er bleibt auf diesem Gerät: Lade jetzt das PDF herunter.",
     "errorClosing": "Fehler beim Abschliessen des Spiels: ",
     "noWinner": "Kein Sieger (Spiel abgebrochen)",
     "pdfGenerationFailed": "Spiel genehmigt, aber das PDF konnte nicht erstellt werden. Sie können es über die Schaltfläche eScoresheet erstellen.",

@@ -1190,7 +1190,12 @@
     "backToScorer": "Back to scorer",
     "scorer": "Scorer"
   },
+  "restoreGlobal": {"title": "Restore from the online backup", "desc": "Enter the backup code of the match (Match Setup, Backups).", "code": "Backup code", "notFound": "No backup found for this code.", "button": "Find backup"},
+  "toolChooser": {"title": "How do you use OpenVolley?", "swissBody": "Swiss league games: sign-in, game list, Einsatzliste, club rosters and the cloud.", "globalBody": "Any tournament or friendly: no sign-in, rosters and games from Excel. Teams and players stay on this device.", "later": "You can change this later in Options, as long as no match is on this device."},
+  "globalImport": {"templateGames": "Games template (Excel)", "templateRosters": "Rosters template (Excel)", "gamesTitle": "Import games", "rostersTitle": "Import rosters", "gamesHint": "An Excel or CSV file with one row per game: game, date, time, hall, city, league, home, away, best of, referees. Nothing is stored: the file is read on this device.", "rostersHint": "An Excel or CSV file with one row per person: team, number, first name, last name, role (player, libero, captain, coach...), date of birth. Nothing is stored: the file is read on this device.", "choose": "Choose file", "template": "Template", "errFile": "The file could not be read.", "errEmpty": "The file has no rows.", "errColumns": "The columns were not found. Use the template.", "noTeamName": "(no team name)", "counts": "{{players}} players, {{staff}} staff", "warnings": "{{count}} rows were not clean: {{list}}", "applied": "{{count}} players added", "gamesButton": "Import games (Excel)", "rostersButton": "Import rosters (Excel)"},
   "home": {
+    "tool": {"label": "Tool", "swiss": "Swiss", "global": "Global", "globalNote": "Any tournament: no sign-in, no game list. Teams and players stay on this device."},
+    "match": "Match",
     "openingMatch": "Opening the match…",
     "title": "eScoresheet",
     "newMatch": "New match",
@@ -1225,6 +1230,7 @@
       "easyMatchReplaceTest": "The test match on this device is replaced by the easy match and its data deleted. Continue?",
       "unableToPrepareEasyMatch": "Unable to start the easy match: {{error}}",
       "deleteEasyMatchConfirm": "This will delete the easy match and all its data. Continue?",
+      "unableToPrepareGlobalMatch": "Unable to start the match: {{error}}",
       "easyMatchDeleted": "Easy match deleted."
     },
     "exitFullscreen": "Exit fullscreen",
@@ -1296,6 +1302,9 @@
     }
   },
   "backupTargets": {
+    "cloudGlobal": "On: the backup and the finished scoresheet, no account",
+    "cloudGlobalHint": "Only these two files are stored online, under this backup code. Teams and players are in no list. Keep the code: it restores the match.",
+    "copyCode": "Copy",
     "title": "Backups",
     "summary": "Cloud, this device, removable drive",
     "cloud": "Cloud",
@@ -1332,6 +1341,7 @@
     "err_io": "This backup could not be read."
   },
   "options": {
+    "tool": {"title": "Tool", "locked": "A match is on this device. Delete it to change the tool.", "swissNote": "Swiss league games: sign-in, game list, Einsatzliste, club rosters and the cloud."},
     "title": "Options",
     "close": "Close",
     "checkAccidentalRallyStart": "Check accidental rally start",
@@ -1591,6 +1601,7 @@
     "diagnosticsExportFailed": "The diagnostics could not be exported."
   },
   "matchEnd": {
+    "globalNotStored": "The scoresheet could not be saved online. It stays on this device: download the PDF now.",
     "title": "Match complete",
     "winner": "Winner",
     "teamLabel": "(Team {{label}})",

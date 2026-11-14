@@ -18,6 +18,7 @@ import LegalLinks from '../../legal/LegalLinks'
 import ActivityLogModal from '../ActivityLogModal'
 import DiagnosticsSection from '../../diagnostics/DiagnosticsSection'
 import ThemeOption from './ThemeOption'
+import { downloadGlobalTemplate } from '../../utils/globalTemplates'
 
 // Kit field recipes for the small inline number/select controls (h-9, svrz md).
 const SMALL_FIELD = 'h-9 rounded-lg border border-stone-300 bg-white px-2 text-center text-sm tabular-nums text-stone-800 focus:outline-none focus:ring-2 focus:ring-red-500'
@@ -231,7 +232,8 @@ export default function HomeOptionsModal({
   wakeLock,
   backup = null, // Optional backup props from useAutoBackup
   onRestoreFromFile = null, // Options > Backup > Restore from a backup file
-  dashboardServer = null // Optional dashboard server props from useDashboardServer
+  dashboardServer = null, // Optional dashboard server props from useDashboardServer
+  toolMode = null // { mode, locked, onChange }: Swiss / Global (utils/toolMode)
 }) {
   const { t } = useTranslation()
   const { showAlert } = useAlert()
@@ -379,6 +381,42 @@ export default function HomeOptionsModal({
         currentPage="options"
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pt-4 pb-2 text-stone-800 sm:px-4">
+        {toolMode && (
+          <Section title={t('options.tool.title', 'Tool')}>
+            <Row style={{ alignItems: 'flex-start' }}>
+              <div className="min-w-0 flex-1">
+                <div role="group" aria-label={t('home.tool.label', 'Tool')} className="grid max-w-md grid-cols-2 gap-1 rounded-xl bg-stone-100 p-1">
+                  {['swiss', 'global'].map(mode => (
+                    <button
+                      key={mode}
+                      type="button"
+                      aria-pressed={toolMode.mode === mode}
+                      disabled={toolMode.locked}
+                      data-testid={`options-tool-${mode}`}
+                      onClick={() => toolMode.onChange(mode)}
+                      className={cn('h-11 rounded-lg text-sm font-semibold transition-colors disabled:cursor-not-allowed', toolMode.mode === mode ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500 enabled:hover:text-stone-800 disabled:opacity-50')}
+                    >
+                      {t(`home.tool.${mode}`, mode === 'swiss' ? 'Swiss' : 'Global')}
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-2 text-xs text-stone-500" data-testid="options-tool-hint">
+                  {toolMode.locked
+                    ? t('options.tool.locked', 'A match is on this device. Delete it to change the tool.')
+                    : toolMode.mode === 'global'
+                      ? t('home.tool.globalNote', 'Any tournament: no sign-in, no game list. Teams and players stay on this device.')
+                      : t('options.tool.swissNote', 'Swiss league games: sign-in, game list, Einsatzliste, club rosters and the cloud.')}
+                </div>
+                {toolMode.mode === 'global' && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button type="button" className={BTN_OUTLINE} data-testid="options-template-games" onClick={() => downloadGlobalTemplate('games')}>{t('globalImport.templateGames', 'Games template (Excel)')}</button>
+                    <button type="button" className={BTN_OUTLINE} data-testid="options-template-rosters" onClick={() => downloadGlobalTemplate('rosters')}>{t('globalImport.templateRosters', 'Rosters template (Excel)')}</button>
+                  </div>
+                )}
+              </div>
+            </Row>
+          </Section>
+        )}
         <Section title={null}>
           <Row style={{ marginBottom: '12px', alignItems: 'flex-start' }}>
             <div className="min-w-0 flex-1">

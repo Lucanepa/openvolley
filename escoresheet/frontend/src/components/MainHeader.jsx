@@ -141,6 +141,7 @@ export default function MainHeader({
   isFullscreen,
   toggleFullscreen,
   offlineMode,
+  hideAccount = false,
   setOfflineMode,
   onOpenSetup,
   onRetryErrors,
@@ -482,7 +483,9 @@ export default function MainHeader({
             ? 'border-amber-200 bg-amber-50 text-[11px] uppercase tracking-[0.08em] text-amber-800'
             : 'border-stone-200 bg-stone-50 font-mono tracking-[0.3em] text-stone-900'
         )}>
-          {matchData.match.easy === true
+          {matchData.match.global === true
+            ? t('home.tool.global', 'Global')
+            : matchData.match.easy === true
             ? t('header.unofficial', 'Unofficial')
             : matchData.match.test ? t('header.test') : (matchData.match.gamePin || 'N/A')}
         </div>
@@ -496,13 +499,16 @@ export default function MainHeader({
 
     const isTest = match?.test
     const isEasy = match?.easy === true
+    const isGlobal = match?.global === true
     const matchNumber = match?.gameNumber || match?.game_n || 'N/A'
     // An easy match says it is unofficial (domain/easyMatch.js)
-    const fullText = isEasy
+    const fullText = isGlobal
+      ? t('home.match', 'Match')
+      : isEasy
       ? t('header.easyMatch', 'Easy match · unofficial')
       : isTest ? t('header.testMatch') : t('header.matchNumber', { number: matchNumber })
     const buttonText = isCompactBar
-      ? (isEasy ? t('header.unofficial', 'Unofficial') : isTest ? t('header.test') : `#${matchNumber}`)
+      ? (isGlobal ? t('home.match', 'Match') : isEasy ? t('header.unofficial', 'Unofficial') : isTest ? t('header.test') : `#${matchNumber}`)
       : fullText
 
     // On a phone the chip gets the room the header leaves it (an alarm bell
@@ -1186,7 +1192,7 @@ export default function MainHeader({
 
                     {/* Login / account rows - hidden in offline mode. Inline, not a
                         nested dropdown: the panel's scroll box clipped it. */}
-                    {!offlineMode && (
+                    {!offlineMode && !hideAccount && (
                       <UserButton inline inMatch={!!matchId} onAction={() => setActionsMenuOpen(false)} />
                     )}
 
