@@ -1,5 +1,5 @@
 -- current_definitions.sql: the current body of every function that more
--- than one numbered migration defines. current as of: db/036
+-- than one numbered migration defines. current as of: db/039
 --
 -- scripts/migrate.mjs applies it after the numbered files on every run, in
 -- one transaction. A numbered file never runs twice through the runner, but
@@ -31,7 +31,8 @@
 --   docker exec -i ov-postgres psql -X -U ov_owner -d openvolley -v ON_ERROR_STOP=1 < db/current_definitions.sql
 BEGIN;
 
--- db/007, as db/015 left it: an account deletion may clear voided_by / actor_id of a closed match's rows
+-- db/007, as db/039 left it: an account deletion may clear voided_by / actor_id of a closed match's rows (db/015),
+-- and the match row is read FOR SHARE (a close in flight and the write wait for each other)
 CREATE OR REPLACE FUNCTION public.ov_match_children_guard()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -46,6 +47,13 @@ BEGIN
      AND ((to_jsonb(OLD) ->> 'voided_by') IS NOT NULL OR (to_jsonb(OLD) ->> 'actor_id') IS NOT NULL) THEN
     RETURN NEW;
   END IF;
+  -- FOR SHARE: a close of the match in flight and this write wait for each
+  -- other; the check after it reads the row as the close left it (a new
+  -- snapshot per statement).
+  PERFORM 1 FROM public.matches m
+    WHERE m.id IN (CASE WHEN TG_OP <> 'INSERT' THEN OLD.match_id END,
+                   CASE WHEN TG_OP <> 'DELETE' THEN NEW.match_id END)
+    FOR SHARE OF m;
   IF EXISTS (SELECT 1 FROM public.matches m
               WHERE m.closed_at IS NOT NULL
                 AND m.id IN (CASE WHEN TG_OP <> 'INSERT' THEN OLD.match_id END,
@@ -99,7 +107,8 @@ BEGIN
 END
 $$;
 
--- db/015, as db/032 left it: only a revision of the event's own match makes it born voided
+-- db/015, as db/039 left it: only a revision of the event's own match makes it born voided (db/032),
+-- read after the match row and the revisions' lock of the match
 CREATE OR REPLACE FUNCTION public.ov_events_apply_void()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -109,6 +118,11 @@ BEGIN
   IF NEW.external_id IS NULL OR NEW.match_id IS NULL THEN
     RETURN NEW;
   END IF;
+  -- The match row first (as the restore, the revisions and the closed guard
+  -- lock it), then the revisions' lock of the match (lib/eventRevisions.js):
+  -- a revision stored in flight is read once it committed.
+  PERFORM 1 FROM public.matches WHERE id = NEW.match_id FOR SHARE;
+  PERFORM pg_advisory_xact_lock(15015, hashtext(NEW.match_id::text));
   SELECT op, client_ts, actor_id, reason INTO r
     FROM public.event_revisions
    WHERE event_external_id = NEW.external_id AND match_id = NEW.match_id AND op IN ('void', 'restore')

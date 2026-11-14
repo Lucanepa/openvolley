@@ -729,8 +729,9 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
       assert.equal((await sql.query('SELECT 1 FROM public.match_scoresheets WHERE path = $1', [fp])).rows.length, 0)
     }
 
-    // an admin reopens a match with a PDF, and its scorer deletes it while
-    // it is open: its file stays out of the names of a closed match too
+    // an admin reopens a match with a PDF, and it is deleted while it is
+    // open (db/039: by an admin only, its scorer is refused): its file stays
+    // out of the names of a closed match too
     const y = await newMatch(users.ivan, { hoursAgo: 72 })
     plantFile(`${y.day}/game${y.n}_${key()}.pdf`, approved, [users.ivan.id], mtime)
     await closeAgo(y.id, 3 * 24 * 60, users.ivan.id)
@@ -739,7 +740,8 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
     assert.equal((await upload(users.ivan, zp, pdfBytes('the other match\'s sheet 0:3'), { matchExternalId: String(y.n) })).status, 200)
     await setStatus(users.ivan, z, 'approved')
     assert.equal((await call(users.admin, 'POST', `/api/admin/matches/${z}/reopen`, { reason: 'wrong final score' })).status, 200)
-    assert.equal((await deleteMatch(users.ivan, z)).status, 200)
+    expectCode(await deleteMatch(users.ivan, z), 409, 'OV_MATCH_CLOSED')
+    assert.equal((await deleteMatch(users.admin, z)).status, 200)
     assert.deepEqual(await readAs(users.cm, y.id), { status: 200, body: approved.toString() })
   })
 

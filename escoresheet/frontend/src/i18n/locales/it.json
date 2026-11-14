@@ -3476,7 +3476,33 @@
       "reopened": "Partita riaperta.",
       "empty": "Nessuna partita trovata.",
       "activity": "Attività",
-      "corrections": "Correzioni"
+      "corrections": "Correzioni",
+      "closures": {
+        "title": "Chiusure precedenti",
+        "description": "Ogni riapertura da parte di un admin ha conservato lo stato chiuso; la chiusura successiva aggiunge il nuovo stato.",
+        "empty": "Questa partita non è mai stata riaperta.",
+        "reopened": "Riaperta il {{date}}",
+        "by": "da {{name}}",
+        "asClosed": "Come chiusa",
+        "closedAgain": "Come chiusa di nuovo",
+        "notClosedAgain": "Non ancora chiusa di nuovo",
+        "unchanged": "Nessuna modifica",
+        "fields": {
+          "status": "Stato",
+          "final_score": "Risultato finale",
+          "winner": "Vincitore",
+          "sets": "Set",
+          "set_results": "Risultati dei set",
+          "results": "Risultati",
+          "sanctions": "Sanzioni",
+          "remarks": "Osservazioni",
+          "approval": "Approvazione",
+          "signatures": "Firme",
+          "manual_changes": "Modifiche manuali",
+          "officials": "Ufficiali",
+          "coin_toss": "Sorteggio"
+        }
+      }
     },
     "audit": {
       "noRole": "Nessun ruolo",
@@ -3513,6 +3539,7 @@
         "match_editor_add": "Editor aggiunto da un admin",
         "match_editor_remove": "Editor rimosso",
         "match_restore_pin": "Partita letta con il PIN della partita",
+        "match_restore": "Dati della partita sostituiti da un ripristino",
         "match_release_game": "Partita liberata",
         "match_game_taken_over": "Partita ripresa dalla società di casa",
         "match_scorer_device": "Dispositivo del segnapunti cambiato",

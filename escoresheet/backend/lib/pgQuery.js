@@ -1285,6 +1285,9 @@ export function createPgQuery (options = {}) {
     const run = async (client) => {
       // The acting account, for db/007's triggers (closed_by of a closing write)
       if (actorId) await client.query("SELECT set_config('ov.user_id', $1, true)", [actorId])
+      // An admin session, for db/039's guard: only an admin deletes a match
+      // that was closed, makes it a test match or moves its game
+      if (opts.matchOwner?.admin === true && (t.name === cfg.ownership?.parent)) await client.query("SELECT set_config('ov.admin', 'on', true)")
       if (testPre) await testPre(client)
       if (ctx.preCheck) await assertChildrenScoped(client, cat, t.name, ctx.preCheck)
       if (ownPre) await ownPre(client)

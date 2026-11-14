@@ -101,7 +101,13 @@ export const RESTORE_DEFAULTS = Object.freeze({
   // backupManager.js builds the restore-in-place live state with `status`.
   legacyAliases: { match_live_state: { status: 'match_status' } },
   // Columns only the server writes (db/005, db/007): dropped from a backup's match row.
-  serverOnlyColumns: ['created_by', 'closed_at', 'closed_by', 'official_game_exempt', 'tournament_match_id'],
+  serverOnlyColumns: ['created_by', 'closed_at', 'closed_by', 'first_closed_at', 'official_game_exempt', 'tournament_match_id'],
+  // An event's void and revision count are the server's (db/015: event
+  // revisions only; the insert trigger gives a restored event the void its
+  // match's revisions recorded), never a backup's.
+  eventServerColumns: ['voided_at', 'voided_by', 'void_reason', 'rev'],
+  // Every restore is in the admin audit log (actor, device, counts before and after)
+  auditAction: 'match.restore',
   // Statuses that close a non-test match (db/007's trigger); a restore sets them last.
   closingStatuses: ['approved', 'final'],
   closingPlaceholderStatus: 'ended',
@@ -585,6 +591,43 @@ export function createMatchRestore (db, options = {}) {
   }
 
   /**
+   * What the server holds of a match: its sets, events (voided ones too) and
+   * live state, or null when the tables are not there (pgQuery's own suites).
+   */
+  async function rowCounts (client, cat, matchUuid) {
+    const tables = [cfg.setsTable, cfg.eventsTable, cfg.liveStateTable]
+    if (!tables.every(t => cat.tables.get(t)?.columns.has(cfg.childFk)) || !cat.tables.get(cfg.eventsTable).columns.has('voided_at')) return null
+    const q = (t) => `${quote(db.config.schema || 'public')}.${quote(t)}`
+    const fk = quote(cfg.childFk)
+    const { rows: [c] } = await client.query(
+      `SELECT (SELECT count(*) FROM ${q(cfg.setsTable)} WHERE ${fk} = $1)::int AS sets,
+              (SELECT count(*) FROM ${q(cfg.eventsTable)} WHERE ${fk} = $1)::int AS events,
+              (SELECT count(*) FROM ${q(cfg.eventsTable)} WHERE ${fk} = $1 AND voided_at IS NOT NULL)::int AS voided_events,
+              (SELECT count(*) FROM ${q(cfg.liveStateTable)} WHERE ${fk} = $1)::int AS live_state`, [matchUuid])
+    return c
+  }
+
+  /**
+   * The audit entry of a restore (cfg.auditAction), in its transaction: who,
+   * from which device, and the match's rows before and after. Nothing when
+   * the audit log is not there.
+   */
+  async function auditRestore (client, cat, { actorId, matchUuid, externalId, device, before, rekeyed }) {
+    if (!before || !cat.tables.has('audit_log')) return
+    const after = await rowCounts(client, cat, matchUuid)
+    const details = { external_id: externalId, before, after }
+    // the device id (lib/scorerDevice.js deviceOf: a UUID, a string or { id, platform })
+    const deviceId = typeof device === 'string' ? device : (isPlainObject(device) ? device.id : null)
+    if (typeof deviceId === 'string' && UUID_RE.test(deviceId)) details.device = deviceId.toLowerCase()
+    if (rekeyed) details.rekeyed = rekeyed
+    await client.query(
+      `INSERT INTO public.audit_log (actor_id, action, match_id, details, app)
+       SELECT $1, $2, m.id, $4::jsonb, CASE WHEN to_jsonb(m) ->> 'sport_type' = 'beach' THEN 'beach' END
+         FROM ${quote(db.config.schema || 'public')}.${quote(cfg.matchTable)} m WHERE m.${quote(cfg.matchId)} = $3`,
+      [typeof actorId === 'string' && UUID_RE.test(actorId) ? actorId : null, cfg.auditAction, matchUuid, JSON.stringify(details)])
+  }
+
+  /**
    * `scorerCheck(client, externalId)`: the scoring device's check (db/019,
    * server.js scorerCheckOf), run first in the restore's transaction; an
    * answer (409 OV_SCORER_MOVED) refuses the restore, nothing written.
@@ -647,6 +690,7 @@ export function createMatchRestore (db, options = {}) {
       }
       const setRows = sets.length ? childRows(cfg.setsTable, sets, 'sets') : []
       const eventRows = events.length ? childRows(cfg.eventsTable, events, 'events') : []
+      for (const row of eventRows) for (const k of cfg.eventServerColumns) delete row[k]
       const liveRow = liveState ? childRows(cfg.liveStateTable, [liveState], 'liveState')[0] : null
       for (const [label, rows] of [['sets', setRows], ['events', eventRows]]) {
         const dup = duplicateExternalId(rows, 'external_id')
@@ -678,11 +722,16 @@ export function createMatchRestore (db, options = {}) {
         }, { mergeOnUpsert: matchSecrets })
         const matchUuid = up.body.data[cfg.matchId]
         const withFk = (row) => ({ ...row, [cfg.childFk]: matchUuid })
+        const before = await rowCounts(client, cat, matchUuid)
+        const audited = async (result) => {
+          await auditRestore(client, cat, { actorId, matchUuid, externalId: match[cfg.matchKey], device: payload.device, before, rekeyed: result.counts.rekeyed })
+          return result
+        }
         if (rekey) {
           const rekeyed = (await rekeyRows(client, run, cfg.setsTable, setRows, rekey.sets, matchUuid, withFk)) +
             (await rekeyRows(client, run, cfg.eventsTable, eventRows, rekey.events, matchUuid, withFk))
           if (closingStatus) await closeMatch(run, matchUuid, closingStatus)
-          return { id: matchUuid, counts: { sets: setRows.length, events: eventRows.length, liveState: 0, rekeyed }, dropped: droppedOut }
+          return audited({ id: matchUuid, counts: { sets: setRows.length, events: eventRows.length, liveState: 0, rekeyed }, dropped: droppedOut })
         }
         // DELETE changes carry only the keys, so subscribers drop the old rows.
         const del = (table) => run(`delete ${table}`, {
@@ -706,7 +755,7 @@ export function createMatchRestore (db, options = {}) {
           counts.liveState = r.body.count
         }
         if (closingStatus) await closeMatch(run, matchUuid, closingStatus)
-        return { id: matchUuid, counts, dropped: droppedOut }
+        return audited({ id: matchUuid, counts, dropped: droppedOut })
       }, { statementTimeoutMs: cfg.statementTimeoutMs })
       if (out.refused) return out.refused
       return { status: 200, body: { data: out, error: null }, changes }

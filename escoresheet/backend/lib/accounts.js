@@ -54,6 +54,8 @@ export const AUDIT_ACTIONS = Object.freeze([
   'match.claim_game', 'match.claim_pin', 'match.restore_pin', 'match.game_taken',
   'match.close',
   'match.reopen', 'match.editor_add', 'match.editor_remove', 'match.release_game',
+  // lib/matchRestore.js restoreMatch: a backup or hand-over replaced the match's rows (counts before and after)
+  'match.restore',
   // db/018: a home-club scorer took over a game an account outside the club held (takeOverHeldGame)
   'match.game_taken_over',
   // lib/approvals.js (db/011); match.approval_void is written by the trigger;
@@ -1403,11 +1405,13 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
    * (the only way past db/007's lock): the row is locked, `check` may refuse,
    * `data` is the update, `details` the audit entry.
    */
-  async function adminMatchUpdate ({ where, actorId, matchId, check, data, action, details }) {
+  async function adminMatchUpdate ({ where, actorId, matchId, check, data, action, details, settings = {} }) {
     const changes = []
     const res = await guarded(where, () => withTx(async (client) => {
       await client.query("SELECT set_config('ov.allow_closed', 'on', true)")
       if (isUuid(actorId)) await client.query("SELECT set_config('ov.user_id', $1, true)", [actorId])
+      // for the triggers, e.g. ov.reopen_reason (db/039 match_closures)
+      for (const [k, v] of Object.entries(settings)) await client.query('SELECT set_config($1, $2, true)', [k, v])
       const { rows: [m] } = await client.query(
         `SELECT id, external_id, game_n, status, closed_at, official_game_exempt, to_jsonb(matches) ->> 'sport_type' AS sport_type
            FROM public.matches WHERE id = $1 FOR UPDATE`, [matchId])
@@ -1450,12 +1454,35 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
         return m.closed_at ? null : fail(409, 'OV_NOT_CLOSED', 'This match is not closed')
       },
       data: () => ({ status: 'ended', approval: null, closed_at: null, closed_by: null }),
+      // db/039 keeps the closed record (match_closures) with the reason
+      settings: { 'ov.reopen_reason': reason },
       action: 'match.reopen',
       details: (m) => ({ reason, from_status: m.status, external_id: m.external_id, game_n: m.game_n })
     })
     if (!res.match) return res
     const m = res.match
     return { ...ok({ match: { id: m.id, external_id: m.external_id, status: 'ended', closed_at: null } }), changes }
+  }
+
+  /**
+   * GET /api/admin/matches/:id/closures: each reopen of the match (db/039
+   * match_closures), newest first: the record as it was closed, and as it
+   * closed again (null: still open). Who closed and who reopened by name.
+   */
+  async function listMatchClosures ({ matchId } = {}) {
+    if (!isUuid(matchId)) return notFound()
+    return guarded('closures', async () => {
+      const { rows } = await pool.query(
+        `SELECT c.id::text AS id, c.closed_at, c.reopened_at, c.reason, c.closed_record, c.reclosed_at, c.reclosed_record,
+                ${nameSql('cp')} AS closed_by_name, ${nameSql('rp')} AS reopened_by_name
+           FROM public.match_closures c
+           LEFT JOIN public.profiles cp ON cp.user_id = c.closed_by
+           LEFT JOIN public.profiles rp ON rp.user_id = c.reopened_by
+          WHERE c.match_id = $1
+          ORDER BY c.reopened_at DESC, c.id DESC
+          LIMIT 50`, [matchId])
+      return ok({ closures: rows })
+    })
   }
 
   /**
@@ -1805,6 +1832,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     listOfficialGames,
     listMatches,
     reopenMatch,
+    listMatchClosures,
     releaseGame,
     addMatchEditor,
     listMatchEditors,

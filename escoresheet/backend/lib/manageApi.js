@@ -31,6 +31,7 @@
  *                                                    official's role in the match's sport
  *   GET    /api/admin/approvals[?app=indoor|beach]   isAdmin
  *   GET    /api/admin/matches/:id/revisions          isAdmin: undone / edited events (db/015)
+ *   GET    /api/admin/matches/:id/closures           isAdmin: the closed record of each reopen, and the re-close (db/039)
  *   GET    /api/admin/activity?match=&account=&...   isAdmin: the activity log (db/016; a read of a match or an account audited)
  *   GET    /api/admin/clubs                          isAdmin: clubs, their teams, the rule (db/018, lib/clubs.js)
  *   POST   /api/admin/clubs, PATCH/DELETE /api/admin/clubs/:id   isAdmin
@@ -352,6 +353,8 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['GET', /^\/api\/admin\/matches$/, 'admin', (m, c) => accounts.listMatches({ state: q(c.query, 'state') || 'closed', q: q(c.query, 'q') ?? '', limit: q(c.query, 'limit'), app: q(c.query, 'app') })],
     ['POST', new RegExp(`^/api/admin/matches/${ID}/reopen$`), (m, c) => (c.access?.isAdmin || beachManager(c.access) ? null : FORBIDDEN()),
       (m, c) => accounts.reopenMatch({ actorId: c.user.id, matchId: m[1], body: c.body, access: c.access })],
+    // db/039: the record of each reopened close, before and after
+    ['GET', new RegExp(`^/api/admin/matches/${ID}/closures$`), 'admin', (m, c) => accounts.listMatchClosures({ matchId: m[1] })],
     // the accounts that edit a match: its creator (or an admin) lists and removes them
     ['GET', new RegExp(`^/api/match-editors/${ID}$`), 'any', (m, c) => accounts.listMatchEditors({ actorId: c.user.id, matchId: m[1], isAdmin: !!c.access?.isAdmin })],
     ['DELETE', new RegExp(`^/api/match-editors/${ID}/${ID}$`), 'any', (m, c) => accounts.removeMatchEditor({ actorId: c.user.id, matchId: m[1], userId: m[2], isAdmin: !!c.access?.isAdmin })],

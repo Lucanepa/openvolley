@@ -3455,7 +3455,33 @@
       "reopened": "Spiel wieder geöffnet.",
       "empty": "Keine Spiele gefunden.",
       "activity": "Aktivität",
-      "corrections": "Korrekturen"
+      "corrections": "Korrekturen",
+      "closures": {
+        "title": "Frühere Abschlüsse",
+        "description": "Jedes Wiederöffnen durch einen Admin hat den abgeschlossenen Stand behalten; der nächste Abschluss fügt den neuen Stand hinzu.",
+        "empty": "Dieses Spiel wurde nie wieder geöffnet.",
+        "reopened": "Wieder geöffnet {{date}}",
+        "by": "von {{name}}",
+        "asClosed": "Wie abgeschlossen",
+        "closedAgain": "Wie erneut abgeschlossen",
+        "notClosedAgain": "Noch nicht erneut abgeschlossen",
+        "unchanged": "Nichts geändert",
+        "fields": {
+          "status": "Status",
+          "final_score": "Endresultat",
+          "winner": "Sieger",
+          "sets": "Sätze",
+          "set_results": "Satzresultate",
+          "results": "Resultate",
+          "sanctions": "Sanktionen",
+          "remarks": "Bemerkungen",
+          "approval": "Genehmigung",
+          "signatures": "Unterschriften",
+          "manual_changes": "Manuelle Anpassungen",
+          "officials": "Offizielle",
+          "coin_toss": "Seitenwahl"
+        }
+      }
     },
     "audit": {
       "noRole": "Keine Rolle",
@@ -3492,6 +3518,7 @@
         "match_editor_add": "Bearbeiter durch Admin hinzugefügt",
         "match_editor_remove": "Bearbeiter entfernt",
         "match_restore_pin": "Spiel mit Spiel-PIN gelesen",
+        "match_restore": "Spieldaten durch eine Wiederherstellung ersetzt",
         "match_release_game": "Spiel freigegeben",
         "match_game_taken_over": "Spiel vom Heimverein übernommen",
         "match_scorer_device": "Gerät des Schreibers gewechselt",

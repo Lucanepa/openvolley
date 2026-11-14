@@ -432,6 +432,10 @@ export const admin = {
   reopenMatch(matchId, { reason }) {
     return apiRequest('POST', `/api/admin/matches/${enc(matchId)}/reopen`, { reason })
   },
+  /** The record of each reopened close of a match, and of its next close (db/039). */
+  listMatchClosures(matchId) {
+    return apiRequest('GET', `/api/admin/matches/${enc(matchId)}/closures`)
+  },
   addMatchEditor(matchId, { email }) {
     return apiRequest('POST', `/api/admin/matches/${enc(matchId)}/editors`, { email })
   },

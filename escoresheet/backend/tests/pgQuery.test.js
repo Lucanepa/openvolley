@@ -743,7 +743,8 @@ describe('pgQuery on Postgres', { skip: SKIP_PG }, () => {
         parents.push(await newMatch({ external_id, test: true }))
       }
       const rows = (mid) => ({
-        sets: ['match_1_x:s:1', 'match_1_x_set_2'].map(external_id => ({ external_id, match_id: mid, index: 1 })),
+        // (db/039: one row per set number of a match)
+        sets: ['match_1_x:s:1', 'match_1_x_set_2'].map((external_id, i) => ({ external_id, match_id: mid, index: i + 1 })),
         events: ['match_1_x:e:1', 'match_1_x:e:coin_toss', 'match_1_x_event_7', 'match_1_x_event_7.5'].map(external_id => ({ external_id, match_id: mid, type: 'point' }))
       })
       for (const p of parents) {

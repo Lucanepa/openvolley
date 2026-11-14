@@ -478,7 +478,7 @@ const WRITE_DENYLIST = {
   profiles: ['roles', 'user_id', 'id'],
   user_matches: ['user_id', 'id'],
   // tournament_match_id (db/014): the link to a beach tournament match is the server's
-  matches: ['created_by', 'closed_at', 'closed_by', 'official_game_exempt', 'released_at', 'created_at', 'tournament_match_id'],
+  matches: ['created_by', 'closed_at', 'closed_by', 'first_closed_at', 'official_game_exempt', 'released_at', 'created_at', 'tournament_match_id'],
   // db/015: an event is voided / edited only through POST /api/match/event-revisions
   // (which keeps the revision); /api/db can never void or unvoid one
   events: ['voided_at', 'voided_by', 'void_reason', 'rev']

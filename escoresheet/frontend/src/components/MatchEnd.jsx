@@ -1732,7 +1732,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         }
         return handleReopenMatch({ queue: false })
       case 'serverOpen':
-        return handleReopenMatch({ queue: false, requeueSetAside: true })
+        return handleReopenMatch({ queue: false, requeueSetAside: true, everClosed: isKnownClosedOnServer(current) })
       case 'needsConnection':
         showAlert(t('matchEnd.reopenNeedsConnection'), 'error')
         return
@@ -1766,7 +1766,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     }
     setReopenDialog(null)
     // The admin reopen voided the account approvals on the server (db/011)
-    await handleReopenMatch({ queue: false, voidApprovals: true, requeueSetAside: true })
+    await handleReopenMatch({ queue: false, voidApprovals: true, requeueSetAside: true, everClosed: true })
   }
 
   // Handle reopening match after approval - allows re-approval or adjustments
@@ -1778,7 +1778,10 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   // them. voidApprovals: the admin reopen, which voided them on the server.
   // requeueSetAside: the server is known to have the match open, so the
   // writes it refused as closed and this device set aside go out again.
-  const handleReopenMatch = async ({ queue = true, voidApprovals = false, requeueSetAside = false } = {}) => {
+  // everClosed: the server had closed it (an admin reopened it): the copy
+  // remembers it, so Delete match removes only this copy (utils/matchReopen
+  // wasClosedOnServer; the server refuses the delete, db/039).
+  const handleReopenMatch = async ({ queue = true, voidApprovals = false, requeueSetAside = false, everClosed = false } = {}) => {
     cLogger.logHandler('handleReopenMatch', { matchId, queue, voidApprovals, requeueSetAside })
 
     try {
@@ -1791,7 +1794,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         // the next approval queues its own PDF
         scoresheetPdfMissing: null,
         ...(match?.cloudBlock?.code === 'OV_MATCH_CLOSED' ? { cloudBlock: null } : {}),
-        ...(voidApprovals ? { accountApprovals: null } : {})
+        ...(voidApprovals ? { accountApprovals: null } : {}),
+        ...(everClosed && !match?.test ? { everClosed: true } : {})
       })
       setServerClosed(false)
 
