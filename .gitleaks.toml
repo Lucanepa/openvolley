@@ -295,6 +295,15 @@ targetRules = ["generic-api-key"]
 regexTarget = "match"
 regexes = ['''^AllowedAPKSigningKeys:\s*[0-9a-f]{64}$''']
 
+# The league's backup recovery key: the PUBLIC half of a key pair (the private
+# half is kept offline), built into the apps so encrypted backups get a
+# recovery slot (src/utils/backupCrypto/recovery.js). Public, not a secret.
+[[allowlists]]
+description = "backup recovery public key (recovery.js BUILT_IN_RECOVERY_KEY)"
+targetRules = ["generic-api-key"]
+regexTarget = "match"
+regexes = ['''BUILT_IN_RECOVERY_KEY\s*=''']
+
 # Lockfiles, vendored deps and build output are noise, not history worth purging.
 # ([[allowlists]] form: gitleaks refuses the legacy [allowlist] table next to it.)
 [[allowlists]]

@@ -17,7 +17,7 @@
 import { fromBase64, toBase64 } from './envelope.js'
 
 // The operator's recovery public key (scripts/backup-recovery.mjs keygen)
-export const BUILT_IN_RECOVERY_KEY = ''
+export const BUILT_IN_RECOVERY_KEY = 'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEBW8NUU4CQMt20yPDaDaChjy4y+ZQbQMIFaCN+vLRsG/3ZW3T5/zGGG5jJgyNOJyoUeF/hoFqUuEbheIvOJNaNg=='
 
 const ECDH = { name: 'ECDH', namedCurve: 'P-256' }
 
