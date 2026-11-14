@@ -17,16 +17,17 @@ Base: `https://backend.openvolley.app/api/public/v1`. A match id is the match's
 |---|---|
 | `GET /matches?from=&to=&status=&limit=` | Match infos (no rosters) in a window (default: yesterday to +7 days, max 62 days; `status` = `scheduled,live,finished`; limit ≤ 200) |
 | `GET /matches/:id` | Match info: teams, league, venue, best of, `officials` (roles only), rosters (numbers, captain, libero), staff (roles), result |
-| `GET /matches/:id/live` | Livescore snapshot: sets, points, serving team, timeouts, on court (numbers per position I–VI), sanctions, set results, timeout / interval flags |
-| `GET /matches/:id/stream` | The same snapshot as Server-Sent Events (`event: live`), a frame on every change, a keep-alive comment every 20 s. `EventSource` reconnects by itself |
+| `GET /matches/:id/live` | Livescore snapshot: sets, points, serving team and server's number, timeouts, challenges, set results, timeout / interval flags. No line-ups, substitutions or sanctions: like every anonymous live read (`LIVE_STATE_PRIVATE_COLUMNS` in `lib/publicColumns.js`) they need the match PIN |
+| `GET /matches/:id/stream` | The same snapshot as Server-Sent Events (`event: live`), a frame on every change, a keep-alive comment every 20 s (every 30 s once the match is finished). `EventSource` reconnects by itself |
 | `GET /matches/:id/stats` | After the match (`409` before): everything of `/matches/:id` plus `stats` |
 
 `stats` holds, per team, totals (points, timeouts, substitutions, sanctions), and
 per set: points, winner, minutes, **starting formation** (numbers per position),
 `pointLog` (`[home, away, 'H'|'A']` after each rally), longest run, timeouts,
-substitutions (out / in numbers, exceptional, expelled, disqualified) and
-sanctions (type, number or role), each with the score at that moment, and the
-number of libero actions. Voided (undone) events are left out.
+substitutions (team) and sanctions (team and type), each with the score at
+that moment, and the number of libero actions. A substitution or a sanction
+never says which shirt number or why (an injury, an expulsion): rosters with
+names can be read by number elsewhere. Voided (undone) events are left out.
 
 In the live snapshot the teams are labelled A / B as in the scoresheet:
 `score.pointsA`, `teams.A.name`, `serving` is `"A"` / `"B"`. In `stats` and the
@@ -51,9 +52,17 @@ es.addEventListener('live', (e) => render(JSON.parse(e.data)))
 
 ## Limits
 
-240 requests per minute and 30 new streams per minute per address; 500 viewers
-per match and 3000 streams in all. One database poll every 2 s per streamed
-match, however many viewers. `/live` is cached 2 s, `/matches` 15 s, `/stats` 5 min.
+240 requests per minute and 30 new streams per minute per address (one IPv4
+address or one IPv6 /64, so all viewers on a hall's Wi-Fi share it); at most
+100 open streams per address, 500 viewers per match, 200 streamed matches and 3000
+streams in all. A stream over a limit is refused with `503` and `Retry-After`
+before it starts (the widget then polls `/live`). One database poll every 2 s
+per streamed match, however many viewers, every 30 s once it is finished. A
+viewer that does not read its stream (256 KB unsent) is dropped. `/live` is
+cached 2 s, `/matches` 15 s, `/stats` 30 s while the match is finished but not
+yet closed (a correction or a late event from an offline scorer still changes
+it) and 5 min once it is closed (then built once per version on the server; an
+admin change or reopen makes a new version).
 
 ## Tests
 

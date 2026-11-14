@@ -72,6 +72,36 @@ describe('public match API (server.js)', { skip: SKIP }, () => {
     assert.ok(text.includes('"pointsA":3') && text.includes('"pointsA":4'), text)
     await sleep(50)
   })
+  it('live: no line-ups or sanctions for anonymous callers', async () => {
+    await sql.query(`UPDATE public.match_live_state SET lineup_a = '{"I":{"number":4}}', sanctions_a = '[{"player":5,"type":"expulsion"}]'
+      WHERE match_id = (SELECT id FROM public.matches WHERE external_id = 'pub_e2e')`)
+    const b = await (await get('/api/public/v1/matches/pub_e2e/live')).json()
+    assert.ok(!('onCourt' in b) && !('sanctions' in b), JSON.stringify(b))
+    assert.ok(!JSON.stringify(b).includes('expulsion'))
+  })
+  it('one address gets at most 20 streams; the next is refused with 503, not a 200 that ends', async () => {
+    const acs = []
+    try {
+      for (let i = 0; i < 20; i++) {
+        const ac = new AbortController()
+        acs.push(ac)
+        const r = await fetch(srv.base + '/api/public/v1/matches/pub_e2e/stream', { signal: ac.signal })
+        assert.equal(r.status, 200, `stream ${i}`)
+      }
+      const r = await fetch(srv.base + '/api/public/v1/matches/pub_e2e/stream')
+      assert.equal(r.status, 503)
+      assert.equal(r.headers.get('retry-after'), '60')
+      await r.body?.cancel()
+    } finally {
+      for (const ac of acs) ac.abort()
+    }
+    await sleep(100)
+    const again = new AbortController()
+    const r = await fetch(srv.base + '/api/public/v1/matches/pub_e2e/stream', { signal: again.signal })
+    assert.equal(r.status, 200, 'slots come back when the streams close')
+    again.abort()
+    await sleep(50)
+  })
   it('serves the widget script cross-origin', async () => {
     const r = await get('/embed/livescore.js')
     assert.equal(r.status, 200)
