@@ -49,6 +49,7 @@ import { useRelayTablets } from '../hooks/useRealtimeConnection'
 import { downloadMatchBackup, exportMatchData, getBackupSettings, saveBackupSettings } from '../utils/backupManager'
 import { setExtId, eventExtId } from '../utils/syncIds'
 import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
+import { scoresheetErrorFromEvent } from '../utils/scoresheetErrorMessage'
 import { queueSetStartTimeSync } from '../utils/setStartTimeSync'
 import { ACCESS_CHANGED_EVENT } from '../lib/access'
 import { queueEventSync, queueSetScoreSync, queueSetReopenSync, queueSetDeletes, setUpdateJob, buildSetEndMatchPayload, setLiveStateDirty, isLiveStateDirty, isLiveStateErrorWorthAlert, isLiveStateRefusal, isLiveStateRefused, markLiveStateRefused, clearLiveStateRefused } from '../utils/eventSync'
@@ -14011,12 +14012,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         return
       }
 
+      // only from the app's own origin and the scoresheet window just
+      // opened, as text (src/utils/scoresheetErrorMessage.js)
       const errorListener = (event) => {
-        if (event.data && event.data.type === 'SCORESHEET_ERROR') {
-          setScoresheetErrorModal({
-            error: event.data.error || 'Unknown error',
-            details: event.data.details || event.data.stack || ''
-          })
+        const reported = scoresheetErrorFromEvent(event, { source: opened.window })
+        if (reported) {
+          setScoresheetErrorModal(reported)
           window.removeEventListener('message', errorListener)
         }
       }

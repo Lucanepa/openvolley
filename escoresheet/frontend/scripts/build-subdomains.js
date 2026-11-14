@@ -26,7 +26,8 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import { BUILD_TARGET } from '../build-target.js'
 import { themeBoot } from '../theme-boot.js'
-import { buildChannelPlugin } from '../build-channel.js'
+import { buildChannelPlugin, buildChannel, devHeadersFile } from '../build-channel.js'
+import { securityHeaderLines } from '../csp.js'
 import { PRECACHE_GLOB_PATTERNS, PRECACHE_GLOB_IGNORES, PRECACHE_MAX_FILE_BYTES, NAVIGATE_FALLBACK_DENYLIST, IGNORE_URL_PARAMETERS, offlineNavigationRoute, API_NETWORK_ONLY_ROUTE, STATIC_ASSETS_ROUTE, PWA_INCLUDE_ASSETS, PWA_ICONS } from '../pwa-workbox.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -179,18 +180,30 @@ export function usesPwa(config, pwaDisabled = disablePWA) {
 // Written into dist-<name> of a noindex subdomain (Cloudflare Pages reads
 // _headers from the output root).
 export const NOINDEX_FILES = Object.freeze({
-  'robots.txt': 'User-agent: *\nDisallow: /\n',
-  _headers: [
-    '/*',
-    '  X-Robots-Tag: noindex, nofollow',
-    '  X-Frame-Options: DENY',
-    '  Referrer-Policy: strict-origin-when-cross-origin',
-    ''
-  ].join('\n')
+  'robots.txt': 'User-agent: *\nDisallow: /\n'
 })
 
-export function extraFilesFor(config) {
+/** The name of a subdomain config (its key in `subdomains`). */
+function nameOf(config) {
+  return Object.keys(subdomains).find((k) => subdomains[k] === config) || ''
+}
+
+/**
+ * The _headers file of a build: every build gets the Content-Security-Policy
+ * and frame protection (csp.js; Report-Only on a dev build), a noindex one
+ * (the manager consoles) also X-Robots-Tag and no frames at all.
+ * @param {object} config a subdomains entry
+ * @param {'dev'|'production'} [channel]
+ */
+export function headersFor(config, channel = buildChannel()) {
+  const lines = securityHeaderLines(nameOf(config), channel, { noFrames: !!config.noindex })
+  if (config.noindex) lines.unshift('  X-Robots-Tag: noindex, nofollow')
+  return ['/*', ...lines, '  Referrer-Policy: strict-origin-when-cross-origin', ''].join('\n')
+}
+
+export function extraFilesFor(config, channel = buildChannel()) {
   const files = config.noindex ? { ...NOINDEX_FILES } : {}
+  files._headers = headersFor(config, channel)
   if (config.manifest) files['manifest.webmanifest'] = manifestFor(config)
   return files
 }
@@ -420,8 +433,11 @@ async function buildSubdomain(subdomain, basePath = '/') {
       renameSync(builtHtmlPath, finalHtmlPath)
     }
 
-    for (const [name, content] of Object.entries(extraFilesFor(config))) {
-      writeFileSync(resolve(outDir, name), content)
+    // _headers: over the one a dev build's channel plugin wrote, with its
+    // X-Robots-Tag rule kept (build-channel.js devHeadersFile)
+    const channel = buildChannel()
+    for (const [name, content] of Object.entries(extraFilesFor(config, channel))) {
+      writeFileSync(resolve(outDir, name), name === '_headers' && channel === 'dev' ? devHeadersFile(content) : content)
     }
     // The brand's icons over the OpenVolley ones copied from public/
     for (const [name, source] of Object.entries(config.brandFiles || {})) {
