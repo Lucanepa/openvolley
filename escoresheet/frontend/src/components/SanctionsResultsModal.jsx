@@ -7,6 +7,7 @@ import { isMatchOverStatus, getMatchWinner } from '../domain/matchEnd'
 import { teamBoxStyle } from '../utils/teamColours'
 import { matchTimes, setDurationMinutes } from '../../scoresheet_pdf/utils/matchTimes'
 import { zonedParts } from '../ui/format'
+import { displaySetNumber } from '../utils/matchFormat'
 
 // The scorer's "Sanctions and results" dialog (Match menu): every sanction of
 // the match as the referee's cards, the set results seen from the current
@@ -94,6 +95,8 @@ export default function SanctionsResultsModal({ open, onClose, data, teamAKey, l
   if (!open) return null
 
   const events = data?.events || []
+  // A best-of-3 decider sits in slot 5 but is set III, as on the sheet
+  const setLabel = (setIndex) => toRoman(displaySetNumber(setIndex, data?.match?.bestOf))
   const teamBKey = teamAKey === 'home' ? 'away' : 'home'
   const letter = (key) => (key === teamAKey ? 'A' : 'B')
   const teamData = (key) => (key === 'home' ? data?.homeTeam : data?.awayTeam)
@@ -187,7 +190,7 @@ export default function SanctionsResultsModal({ open, onClose, data, teamAKey, l
                 {s.who ? s.who.short : <span style={{ fontWeight: 500, color: 'var(--ov-text-muted, #78716c)' }}>{t('scoreboard.sanctionsResults.wholeTeam', 'Team')}</span>}
               </td>
               <td style={TD}><TeamChip label={letter(s.team)} colour={teamColour(s.team)} /></td>
-              <td style={TD}>{toRoman(s.setIndex)}</td>
+              <td style={TD}>{setLabel(s.setIndex)}</td>
               <td style={{ ...TD, whiteSpace: 'nowrap' }}>{s.own}:{s.opp}</td>
             </tr>
           ))}
@@ -346,7 +349,7 @@ export default function SanctionsResultsModal({ open, onClose, data, teamAKey, l
               const rightWon = !live && rp > lp
               return (
                 <tr key={set.id} style={{ ...ROW, background: live ? 'var(--ov-surface-sunken, #fafaf9)' : undefined }} data-set-row={set.index}>
-                  <td style={{ ...TD, fontWeight: 700 }}>{toRoman(set.index)}</td>
+                  <td style={{ ...TD, fontWeight: 700 }}>{setLabel(set.index)}</td>
                   <td style={TD}>{count('timeout', set.index, leftKey)}</td>
                   <td style={TD}>{count('substitution', set.index, leftKey)}</td>
                   <td style={TD}>{leftWon ? 1 : 0}</td>

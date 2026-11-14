@@ -3,7 +3,7 @@
 import 'fake-indexeddb/auto'
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
 import { db } from '../../../db/db'
-import { withActivityContext, eventHistorySettled } from '../../../db/eventHistory'
+import { withActivityContext, eventHistorySettled, wipeMatchEvents } from '../../../db/eventHistory'
 import { startActivityLog, listActivity, SYNC } from '..'
 import { emitActivity, flushActivityNow } from '../bus'
 import { setActiveMatch } from '../activeMatch'
@@ -119,6 +119,77 @@ describe('activity log', () => {
     expect(rows[4].data).toEqual({ category: 'player', field: 'dob', before: 'changed', after: 'changed' })
     expect(rows[5].data).toEqual({ team: 'home', number: 7, op: 'add' })
     expect(JSON.stringify(rows)).not.toMatch(/data:image|2000/)
+  })
+
+  // UI tour 14.11: after Close match the log said "Set removed set 1 25:2 /
+  // set 2 25:3" and "Roster changed home #n remove" for the local clean-up
+  // (the server kept both sets). Removing the match from this device is one
+  // entry that says so; a set or player removed on its own still is logged.
+  it('removing a match from this device is one local-removal entry, not set and roster changes', async () => {
+    await db.sets.add({ matchId, index: 1, homePoints: 25, awayPoints: 2, finished: true })
+    await db.sets.add({ matchId, index: 2, homePoints: 25, awayPoints: 3, finished: true })
+    await db.players.add({ teamId: homeTeamId, number: 7, name: 'A' })
+    await db.events.add({ matchId, setIndex: 1, type: 'point', seq: 1, payload: { team: 'home' } })
+    await settle()
+    await db.activity_log.clear()
+    const m = await db.matches.get(matchId)
+    // as MatchEnd's Close match: events wiped in the same transaction
+    await db.transaction('rw', db.events, db.event_history, db.sets, db.players, db.teams, db.matches, async () => {
+      await wipeMatchEvents(db, matchId, { dropHistory: true })
+      await db.sets.where('matchId').equals(matchId).delete()
+      await db.players.where('teamId').equals(m.homeTeamId).delete()
+      await db.teams.delete(m.homeTeamId)
+      await db.matches.delete(matchId)
+    })
+    await settle()
+    expect(await kinds()).toEqual(['match.local_remove'])
+    const [row] = await db.activity_log.toArray()
+    expect(row.matchId).toBe(matchId)
+    expect(row.data).toEqual({ sets: 2, players: 1 })
+
+    // a set removed while the match stays is still a data change
+    const other = await db.matches.add({ status: 'live', seed_key: SEED, homeTeamId, gameNumber: 8 })
+    const setId = await db.sets.add({ matchId: other, index: 1, homePoints: 3, awayPoints: 1 })
+    await settle()
+    await db.activity_log.clear()
+    await db.sets.delete(setId)
+    await settle()
+    expect(await kinds()).toEqual(['set.delete'])
+  })
+
+  // Review 6a: a player goes with the removed match whose team it is, even
+  // when another match is the active one; each entry keeps its place.
+  it('a removed match counts its own teams\' players; entries keep their order', async () => {
+    const other = await db.matches.add({ status: 'live', seed_key: SEED, homeTeamId, gameNumber: 8 })
+    const otherSet = await db.sets.add({ matchId: other, index: 1, homePoints: 3, awayPoints: 1 })
+    await db.sets.add({ matchId, index: 1, homePoints: 25, awayPoints: 2, finished: true })
+    await db.players.add({ teamId: homeTeamId, number: 7, name: 'A' })
+    await settle()
+    setActiveMatch({ ...(await db.matches.get(other)), id: other })
+    await db.activity_log.clear()
+    await db.transaction('rw', db.sets, db.players, db.teams, db.matches, async () => {
+      await db.sets.where('matchId').equals(matchId).delete()
+      await db.players.where('teamId').equals(homeTeamId).delete()
+      await db.teams.delete(homeTeamId)
+      await db.matches.delete(matchId)
+      await db.sets.delete(otherSet) // its match stays: logged, after the removal
+    })
+    await settle()
+    const rows = await db.activity_log.orderBy('lid').toArray()
+    expect(rows.map(r => r.kind)).toEqual(['match.local_remove', 'set.delete'])
+    expect(rows[0].data).toEqual({ sets: 1, players: 1 })
+  })
+
+  it('a team removed without its match: its players\' removals are still logged', async () => {
+    await db.players.add({ teamId: homeTeamId, number: 4, name: 'B' })
+    await settle()
+    await db.activity_log.clear()
+    await db.transaction('rw', db.players, db.teams, async () => {
+      await db.players.where('teamId').equals(homeTeamId).delete()
+      await db.teams.delete(homeTeamId)
+    })
+    await settle()
+    expect(await kinds()).toEqual(['match.roster'])
   })
 
   it('a test match stays local only; a big batch is one bulk entry', async () => {

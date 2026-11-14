@@ -18,7 +18,11 @@ vi.mock('../../lib/apiClient', () => ({
 }))
 
 import { db } from '../../db/db'
-import { importMatchFromSupabase } from '../backupManager'
+import { importMatchFromSupabase as importFromCloud } from '../backupManager'
+
+// over this device's own copy on the second confirmation (replaceNewer): the
+// question is backupManager.restoreSafety.dexie.test.js's
+const importMatchFromSupabase = (data, opts = {}) => importFromCloud(data, { replaceNewer: true, ...opts })
 import { queueSetScoreSync, buildEventInsertJob } from '../eventSync'
 import { withActivityContext, eventHistorySettled } from '../../db/eventHistory'
 import { liveStateNow } from '../serverDataSync'
@@ -167,5 +171,26 @@ describe('importMatchFromSupabase: the device continues the cloud rows', () => {
     expect((await db.events.get(121)).matchId).toBe(localMatchId)
     expect(await db.matches.get(stale)).toBeUndefined()
     expect((await db.sync_queue.toArray()).some(j => j.action === 'restore')).toBe(false)
+  })
+
+  // The match was approved here (its PDF and final JSON queued, not sent yet)
+  // and reopened on the server since: the files are the old approval's, and
+  // the PDF stored while the match is open would count as the next one's
+  // (backend db/033). A closed cloud copy keeps them: they are its approval's.
+  it('the cloud copy is open again: this copy\'s approval files still unsent are dropped; a closed one keeps them', async () => {
+    const sheet = (status, ext, path) => ({ resource: 'scoresheet', action: 'upload', status, ts: new Date().toISOString(), payload: { path, file: new Blob(['first approval']), contentType: 'application/pdf', match_external_id: ext } })
+    await db.matches.add({ seed_key: seed, status: 'ended', approved: true })
+    const mine = await db.sync_queue.bulkAdd([sheet('queued', seed, '2026-10-25/game939714_kaaa.pdf'), sheet('error', seed, '2026-10-25/game939714_kaaa_final.json')], { allKeys: true })
+    const other = await db.sync_queue.add(sheet('queued', 'match_9_other', '2026-10-25/game9_kbbb.pdf'))
+    await importMatchFromSupabase(cloudMatch())
+    for (const id of mine) expect(await db.sync_queue.get(id)).toMatchObject({ status: 'superseded', payload: { file: null } })
+    expect((await db.sync_queue.get(other)).status).toBe('queued')
+
+    await Promise.all(db.tables.map(t => t.clear()))
+    await db.matches.add({ seed_key: seed, status: 'ended', approved: true })
+    const kept = await db.sync_queue.add(sheet('queued', seed, '2026-10-25/game939714_kaaa.pdf'))
+    const closed = cloudMatch()
+    await importMatchFromSupabase({ ...closed, match: { ...closed.match, status: 'approved', closed_at: '2026-10-25T13:00:00Z' } })
+    expect((await db.sync_queue.get(kept)).status).toBe('queued')
   })
 })

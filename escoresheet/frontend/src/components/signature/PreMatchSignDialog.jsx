@@ -8,6 +8,7 @@ import { db } from '../../db/db'
 import { saveMatchSignature } from '../../utils/saveSignature'
 import { phoneSignContext, signatureUpdate, SLOT_OF_ROLE, PRE_MATCH_SIGNATURE_FIELD } from '../../domain/phoneSignature'
 import { PRE_MATCH_ROLES, missingRolesOf } from '../../domain/preMatchSignatures'
+import { signatureReplacedRemark } from '../../domain/rosterSignatures'
 
 // The scoring screen's pre-match signing (owner 2026-10-31): the coin toss no
 // longer waits for the coach and captain signatures, so they sign during the
@@ -52,6 +53,9 @@ export default function PreMatchSignDialog({ data, team, teamTitle, matchId, onC
   const match = data?.match
   const missing = missingRolesOf(match, team)
   const roleLabel = (role) => t(role === 'coach' ? 'coinToss.coach' : 'coinToss.captain')
+  // The stored image of the slot being opened: a signed slot opens read-only
+  const signedImage = signing ? match?.[PRE_MATCH_SIGNATURE_FIELD[`${team}-${signing}`]] || null : null
+  const teamName = (team === 'home' ? data?.homeTeam?.name : data?.awayTeam?.name) || teamTitle
 
   const phoneFor = (role) => {
     if (!role || !match) return null
@@ -135,10 +139,15 @@ export default function PreMatchSignDialog({ data, team, teamTitle, matchId, onC
         onClose={() => setSigning(null)}
         onSave={async (image, meta) => {
           const field = PRE_MATCH_SIGNATURE_FIELD[`${team}-${signing}`]
-          await saveMatchSignature(db, matchId, field, image, signatureUpdate(field, image, meta))
+          // replacing a collected signature (Re-sign) is written to the remarks
+          const remark = meta?.resigned ? signatureReplacedRemark({ team: teamName, role: signing }) : ''
+          await saveMatchSignature(db, matchId, field, image, signatureUpdate(field, image, meta), { remark })
           setSigning(null)
         }}
         phone={signing ? phoneFor(signing) : null}
+        existingSignature={signedImage}
+        readOnly={!!signedImage}
+        allowResign
       />
     </>
   )

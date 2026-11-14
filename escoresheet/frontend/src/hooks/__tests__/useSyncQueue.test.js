@@ -105,6 +105,11 @@ vi.mock('../../lib/apiClient', () => {
       api.calls.push(call)
       return api.respond(call)
     },
+    apiMatchKnown: async (externalId) => {
+      const call = { table: '__known', action: 'known', data: { externalId }, filters: [] }
+      api.calls.push(call)
+      return api.respond(call)
+    },
     apiMatchClaim: async (externalId, pin) => {
       const call = { table: '__claim', action: 'claim', data: { externalId, pin }, filters: [] }
       api.calls.push(call)
@@ -167,9 +172,18 @@ import {
   checkScorerMoved,
   askScoringDevice,
   noteMatchClosedOnServer,
-  runUploadLane
+  runUploadLane,
+  isUpdateRequiredError,
+  isServerBehindError,
+  countServerBehindJobs,
+  resyncMatch,
+  resetResyncAttempts
 } from '../useSyncQueue'
+import { appUpdateNeeded, resetAppUpdateNeededForTests } from '../../utils/appUpdate'
+import { splitRefusedRestore, RESTORE_REFUSED } from '../../utils/refusedRestore'
+import { queueSetDeletes } from '../../utils/eventSync'
 import { queueAndWait, useSequentialSync } from '../useSequentialSync'
+import { scoresheetUploadJob, supersedeUnsentScoresheetUploads } from '../../utils/scoresheetUploader'
 
 const MATCH_UUID = '11111111-2222-4333-8444-555555555555'
 const ok = (data = null) => ({ data, error: null })
@@ -532,8 +546,8 @@ describe('runQueuePass', () => {
     expect(fakeDb.sync_queue.map.get(1).next_attempt_at).toBeGreaterThan(Date.now())
   })
 
-  it('restore stays queued on 426 (old bundle) and 5xx', async () => {
-    for (const status of [426, 503]) {
+  it('restore stays queued on 426 (old bundle: untouched, an update is needed) and 5xx (retried)', async () => {
+    for (const [status, retries] of [[426, undefined], [503, 1]]) {
       fakeDb.sync_queue.reset([restoreJob()])
       api.respond = (call) => (call.table === '__restore'
         ? { data: null, error: { message: 'x', status } }
@@ -541,7 +555,7 @@ describe('runQueuePass', () => {
       await runQueuePass()
       const job = fakeDb.sync_queue.map.get(1)
       expect(job.status, String(status)).toBe('queued')
-      expect(job.retry_count, String(status)).toBe(1)
+      expect(job.retry_count, String(status)).toBe(retries)
     }
   })
 })
@@ -556,15 +570,16 @@ describe('event insert with a decimal shirt number', () => {
       { id: 3, resource: 'event', action: 'insert', status: 'queued', retry_count: 0, payload: { external_id: 'match_100_aaa:e:8', match_id: 'match_100_aaa', type: 'point', seq: 9, serve_player: 15 } }
     ])
     api.respond = (call) => {
-      const sp = call.data?.serve_player
-      if (call.table === 'events' && sp != null && !Number.isInteger(sp)) {
+      const rows = [].concat(call.data ?? [])
+      if (call.table === 'events' && rows.some(r => r?.serve_player != null && !Number.isInteger(r.serve_player))) {
         return { data: null, error: { message: 'invalid input syntax for type integer: "1.5"', code: '22P02', status: 400 } }
       }
       return defaultRespond(call)
     }
     await retryErrorsInternal({ force: true, includeFailed: true })
     await runQueuePass()
-    const sent = api.calls.filter(c => c.table === 'events' && c.action === 'upsert').map(c => c.data)
+    // (one by one or together, runQueuePass)
+    const sent = api.calls.filter(c => c.table === 'events' && c.action === 'upsert').flatMap(c => [].concat(c.data))
     expect(sent.map(d => d.serve_player)).toEqual([null, null, 15])
     expect(sent[1]).toMatchObject({ score_a: 2, score_b: 1, type: 'point' })
     expect([1, 2, 3].map(id => fakeDb.sync_queue.map.get(id).status)).toEqual(['sent', 'sent', 'sent'])
@@ -670,6 +685,76 @@ describe('scoresheet upload job', () => {
     expect(uploads.map(c => c.data.path)).toEqual(['2026-10-25/game903703_k1_final.json', '2026-10-25/game903703_k1.pdf'])
     expect(uploads[1].data).toMatchObject({ bucket: 'scoresheets', file: pdf, options: { contentType: 'application/pdf', upsert: true } })
     expect([...fakeDb.sync_queue.map.values()].map(j => j.status)).toEqual(['sent', 'sent'])
+  })
+
+  // Backend db/033: a PDF is stored only for a match this account may write,
+  // so the upload names its match; the match may not be in the cloud yet
+  it('sends the match of the file; a match not in the cloud yet is retried, not refused', async () => {
+    const pdfJob = (id) => ({ id, resource: 'scoresheet', action: 'upload', status: 'queued', retry_count: 0, payload: { path: '2026-10-25/game903703_k1.pdf', file: new Blob(['%PDF-1.7']), contentType: 'application/pdf', match_external_id: 'match_100_aaa' } })
+    fakeDb.sync_queue.reset([pdfJob(1)])
+    await runUploadLane()
+    const upload = api.calls.find(c => c.table === '__storage')
+    expect(upload.data.options).toMatchObject({ contentType: 'application/pdf', upsert: true, matchExternalId: 'match_100_aaa' })
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+
+    fakeDb.sync_queue.reset([pdfJob(1)])
+    api.respond = (call) => call.table === '__storage'
+      ? { data: null, error: { message: 'No match of this scoresheet was found', code: 'OV_MATCH_NOT_FOUND', status: 404 }, status: 404 }
+      : defaultRespond(call)
+    await runUploadLane()
+    expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'queued', retry_count: 1 })
+
+    // an older app or OpenBeach: no match named, the server answers 503 while
+    // no match of the path is in the cloud: retried soon as well
+    fakeDb.sync_queue.reset([pdfJob(1)])
+    api.respond = (call) => call.table === '__storage'
+      ? { data: null, error: { message: 'Not in the cloud yet', code: 'OV_MATCH_NOT_FOUND', status: 503, retryable: true }, status: 503 }
+      : defaultRespond(call)
+    await runUploadLane()
+    expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'queued', retry_count: 1 })
+
+    // a closed match keeps the PDF it has: this file is never taken, so it
+    // is not sent again every hour (a new approval queues new files)
+    fakeDb.sync_queue.reset([pdfJob(1), { ...pdfJob(2), payload: { ...pdfJob(2).payload, path: '2026-10-25/game903703_k1_final.json', contentType: 'application/json' } }])
+    api.respond = (call) => call.table === '__storage' && call.data.path.endsWith('.pdf')
+      ? { data: null, error: { message: 'Closed', code: 'OV_MATCH_CLOSED', status: 409 }, status: 409 }
+      : defaultRespond(call)
+    await runUploadLane()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('dropped')
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('sent')
+  })
+
+  // Approved (PDF 1 queued), the upload waits (hall Wi-Fi), an admin reopens,
+  // the scorer corrects and approves again (PDF 2, the same path): after the
+  // close the backend keeps the approval's first PDF (db/033), so PDF 1 must
+  // not go first
+  it('a new approval\'s files supersede the earlier approval\'s unsent ones; only the new ones go', async () => {
+    const pdfPath = '2026-10-25/game903703_k1.pdf'
+    const jsonPath = '2026-10-25/game903703_k1_final.json'
+    const job = (id, status, path, label, ext = 'match_100_aaa') => ({ id, resource: 'scoresheet', action: 'upload', status, attempts: 1, next_attempt_at: Date.now() + 60000, payload: { path, file: new Blob([label]), contentType: path.endsWith('.pdf') ? 'application/pdf' : 'application/json', match_external_id: ext } })
+    fakeDb.sync_queue.reset([
+      job(1, 'error', pdfPath, 'first approval'),
+      job(2, 'failed', jsonPath, 'first approval'),
+      job(3, 'sent', '2026-10-24/game903700_k1.pdf', 'another match, sent', 'match_090_zzz'),
+      job(4, 'queued', '2026-10-25/game903704_k2.pdf', 'another match, queued', 'match_200_bbb'),
+      job(5, 'sending', '2026-10-25/game903703_k1.pdf', 'in flight')
+    ])
+    const fresh = [
+      scoresheetUploadJob({ seed_key: 'match_100_aaa' }, pdfPath, new Blob(['second approval']), 'application/pdf'),
+      scoresheetUploadJob({ seed_key: 'match_100_aaa' }, jsonPath, new Blob(['second approval']), 'application/json')
+    ]
+    expect(await supersedeUnsentScoresheetUploads(fakeDb.sync_queue, fresh)).toBe(2)
+    for (const j of fresh) await fakeDb.sync_queue.add(j)
+    expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'superseded', payload: { path: pdfPath, file: null } })
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('superseded')
+    expect([3, 4, 5].map((id) => fakeDb.sync_queue.map.get(id).status)).toEqual(['sent', 'queued', 'sending'])
+
+    // (the in-flight one done: nothing else holds the new files back)
+    await fakeDb.sync_queue.update(5, { status: 'sent' })
+    await runUploadLane()
+    const sent = api.calls.filter(c => c.table === '__storage')
+    expect(sent.map(c => c.data.path)).toEqual(['2026-10-25/game903704_k2.pdf', pdfPath, jsonPath])
+    expect(await Promise.all(sent.slice(1).map(c => c.data.file.text()))).toEqual(['second approval', 'second approval'])
   })
 
   it('a refused upload holds back only the later uploads of the same file', async () => {
@@ -1020,6 +1105,68 @@ describe('failure classes', () => {
   })
 })
 
+describe('console lines carry no personal data (fe-diagnostics-privacy-1)', () => {
+  const PERSONAL = ['Muster', 'Anna', '12.03.2011', '2011-03-12', 'ref.one@example.ch', 'data:image/png', 'NEWCOACHSIG', 'Beispiel']
+
+  it('redactForLog keeps the rosters, officials, signatures, approval and corrections as their size', () => {
+    const out = redactForLog({
+      id: 'm',
+      status: 'live',
+      players_home: [{ number: 7, first_name: 'Anna', last_name: 'Muster', dob: '12.03.2011' }],
+      bench_away: [{ role: 'C', first_name: 'Lea', last_name: 'Beispiel', dob: '1980-01-01' }],
+      officials: [{ role: '1st referee', firstName: 'Ref', lastName: 'One', email: 'ref.one@example.ch' }],
+      signatures: { home_coach: 'data:image/png;base64,NEWCOACHSIG', away_coach: '' },
+      approval: { referee1: { name: 'Ref One' } },
+      manual_changes: [{ category: 'player', before: '#7 Muster Anna' }],
+      playersAway: [{ lastName: 'Muster' }],
+      benchHome: null
+    })
+    expect(out).toEqual({
+      id: 'm',
+      status: 'live',
+      players_home: '[1 item]',
+      bench_away: '[1 item]',
+      officials: '[1 item]',
+      signatures: '[2 fields]',
+      approval: '[1 field]',
+      manual_changes: '[1 item]',
+      playersAway: '[1 item]',
+      benchHome: null
+    })
+  })
+
+  it('a match insert and update log their keys and size, never a value (rosters, officials, signatures)', async () => {
+    const lines = []
+    const capture = (...args) => { lines.push(JSON.stringify(args.map(a => (a instanceof Error ? { message: a.message } : a)))) }
+    const spies = ['log', 'warn', 'error'].map(m => vi.spyOn(console, m).mockImplementation(capture))
+    const roster = [{ number: 7, first_name: 'Anna', last_name: 'Muster', dob: '12.03.2011' }]
+    try {
+      fakeDb.sync_queue.reset([
+        { id: 1, resource: 'match', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa', status: 'live', players_home: roster, officials: [{ role: '1st referee', email: 'ref.one@example.ch', lastName: 'Beispiel' }] } },
+        { id: 2, resource: 'match', action: 'update', status: 'queued', payload: { id: 'match_100_aaa', players_home: roster, signatures: { home_coach: 'data:image/png;base64,NEWCOACHSIG' } } },
+        { id: 3, resource: 'match', action: 'update', status: 'queued', payload: { id: 'match_100_aaa', bench_home: [{ role: 'C', last_name: 'Muster', dob: '2011-03-12' }] } }
+      ])
+      let updates = 0
+      api.respond = (call) => {
+        if (call.table === 'matches' && call.action === 'select') return ok({ id: MATCH_UUID })
+        if (call.table === 'matches' && call.action === 'upsert') return ok()
+        // the second update fails: its error line too
+        if (call.table === 'matches' && call.action === 'update') return ++updates === 1 ? ok() : { data: null, error: { status: 400, code: 'OV_INVALID_DATA', message: 'bad' } }
+        return defaultRespond(call)
+      }
+      await runQueuePass()
+    } finally {
+      spies.forEach(s => s.mockRestore())
+    }
+    expect(lines.some(l => l.includes('Match insert payload'))).toBe(true)
+    expect(lines.some(l => l.includes('Match update payload'))).toBe(true)
+    expect(lines.some(l => l.includes('Match update error'))).toBe(true)
+    // the keys and the size are there
+    expect(lines.find(l => l.includes('Match insert payload'))).toContain('players_home')
+    for (const value of PERSONAL) expect(lines.filter(l => l.includes(value)), value).toEqual([])
+  })
+})
+
 describe('pruneSyncQueue', () => {
   it('removes old sent/superseded/dropped rows, but none newer than a pending job', async () => {
     const now = Date.now()
@@ -1035,6 +1182,23 @@ describe('pruneSyncQueue', () => {
     ])
     expect(await pruneSyncQueue({ now })).toBe(3)
     expect([...fakeDb.sync_queue.map.keys()]).toEqual([4, 5, 6, 7])
+  })
+
+  // fe-sync-6: one job refused for good kept every later sent row of every
+  // match, for as long as it stayed refused (a club laptop, all season)
+  it('a pending job keeps only the history of its own match', async () => {
+    const now = Date.now()
+    const old = now - 8 * 24 * 3600 * 1000
+    const ev = (id, seed, status) => ({ id, resource: 'event', action: 'insert', status, ts: old, payload: { external_id: `${seed}:e:${id}`, match_id: seed } })
+    fakeDb.sync_queue.reset([
+      ev(1, 'match_100_aaa', 'failed'),
+      ev(2, 'match_200_bbb', 'sent'),
+      { id: 3, resource: 'match', action: 'update', status: 'sent', ts: old, payload: { id: 'match_100_aaa', current_set: 2 } },
+      ev(4, 'match_200_bbb', 'sent'),
+      ev(5, 'match_300_ccc', 'sent')
+    ])
+    expect(await pruneSyncQueue({ now })).toBe(3)
+    expect([...fakeDb.sync_queue.map.keys()]).toEqual([1, 3])
   })
 })
 
@@ -1212,6 +1376,22 @@ describe('useSyncQueue flush loop', () => {
     // the next flush (the 5 s poll) finds nothing left
     await act(async () => { await vi.advanceTimersByTimeAsync(6000) })
     expect(result.current.syncStatus).toBe('synced')
+    unmount()
+  })
+
+  // fe-sync-4: Reopen set and the forfeit queued set updates by the bare
+  // local id; Close match deletes the local set, and the job was dropped unsent
+  it('at start, a set job of an older version gets its match while the local set is there', async () => {
+    localStorage.removeItem('api_auth_token') // (nothing is sent: only the rewrite)
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'set', action: 'update', status: 'queued', payload: { external_id: '5', finished: false, end_time: null } },
+      { id: 2, resource: 'set', action: 'update', status: 'error', payload: { external_id: '77', finished: false } }
+    ])
+    const { unmount } = renderHook(() => useSyncQueue())
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+    expect(fakeDb.sync_queue.map.get(1).payload.external_id).toBe('match_100_aaa:s:5')
+    // a set gone already cannot be told apart from another match's: never sent
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('dropped')
     unmount()
   })
 
@@ -1511,10 +1691,75 @@ describe('closing order (approval waits for the match\'s older sets and events)'
     expect(updates.at(-1).data.status).toBe('approved')
   })
 
-  it('a refused (failed) remarks job, e.g. a server without db/017, does not hold the approval', async () => {
+  it('a refused (failed) remarks job, e.g. a server without db/017, is tried once more, then holds the approval no longer', async () => {
     fakeDb.sync_queue.reset([remarksJob(1, 'failed'), close(2)])
+    api.respond = (call) => (call.table === 'matches' && call.action === 'update' && 'remarks' in (call.data || {})
+      ? { data: null, error: { message: 'Unknown column', code: 'OV_UNKNOWN_COLUMN', status: 400 } }
+      : defaultRespond(call))
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('queued')
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('queued')
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('failed')
     await runQueuePass()
     expect(fakeDb.sync_queue.map.get(2).status).toBe('sent')
+    const updates = api.calls.filter(c => c.table === 'matches' && c.action === 'update')
+    expect(updates.map(c => 'remarks' in c.data ? 'remarks' : c.data.status)).toEqual(['remarks', 'approved'])
+  })
+
+  // x-test-gaps-10 / fe-sync-3: the 'ended' update carries the result
+  // (winner, final_score, the last set_results, sanctions), the approval does
+  // not; the approval closes the match and the server refuses what comes after
+  const ended = (id, status) => ({ id, resource: 'match', action: 'update', status, retry_count: 0, attempts: 1, next_attempt_at: Date.now() + 60000,
+    payload: { id: 'match_100_aaa', status: 'ended', set_results: [{ set: 1, home: 25, away: 10 }, { set: 2, home: 25, away: 12 }, { set: 3, home: 25, away: 14 }], final_score: '3-0', winner: 'home' } })
+
+  it('holds the approval while the older match-end update waits out a backoff, and sends that update first', async () => {
+    fakeDb.sync_queue.reset([ended(1, 'error'), close(2)])
+    await runQueuePass()
+    const updates = () => api.calls.filter(c => c.table === 'matches' && c.action === 'update').map(c => c.data.status)
+    expect(updates()).toEqual([])
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('queued')
+    // requeued at once: the approval does not wait up to 10 minutes for it
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('queued')
+    await runQueuePass()
+    expect(updates()).toEqual(['ended', 'approved'])
+    expect(api.calls.find(c => c.table === 'matches' && c.data?.status === 'ended').data).toMatchObject({ final_score: '3-0', winner: 'home' })
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('sent')
+  })
+
+  it('a match-end update failing again keeps holding the approval until it is through', async () => {
+    fakeDb.sync_queue.reset([ended(1, 'error'), close(2)])
+    let down = true
+    // a proxy page (4xx without a backend code): parked as 'error' with its backoff
+    api.respond = (call) => (down && call.table === 'matches' && call.action === 'update'
+      ? { data: null, error: { message: 'Bad gateway page', status: 403 } }
+      : defaultRespond(call))
+    await runQueuePass()
+    await runQueuePass()
+    // tried once more, parked again: still ahead of the approval
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('error')
+    await runQueuePass()
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('queued')
+    expect(api.calls.filter(c => c.table === 'matches' && c.action === 'update').every(c => c.data.status === 'ended')).toBe(true)
+    down = false
+    await fakeDb.sync_queue.update(1, { status: 'queued', next_attempt_at: 0 })
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('sent')
+  })
+
+  it('a stale part of a parked update is not replayed over newer values before the approval', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'match', action: 'update', status: 'error', retry_count: 0, next_attempt_at: Date.now() + 60000, payload: { id: 'match_100_aaa', current_set: 3 } },
+      { id: 2, resource: 'match', action: 'update', status: 'sent', payload: { id: 'match_100_aaa', current_set: 4 } },
+      close(3)
+    ])
+    await runQueuePass()
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('superseded')
+    expect(api.calls.filter(c => c.table === 'matches' && c.action === 'update').map(c => c.data)).toEqual([{ status: 'approved' }])
   })
 })
 
@@ -1601,6 +1846,27 @@ describe('cloud blocks (OV_SCORER_REQUIRED, OV_GAME_TAKEN, OV_MATCH_CLOSED)', ()
     await runQueuePass()
     expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
     expect(fakeDb.matches.map.get(1).cloudBlock).toBeNull()
+  })
+
+  // db/039: a match closed once and reopened by an admin is open, but only an
+  // admin moves it to another game. That refusal is not a close: the match's
+  // other corrections keep syncing.
+  it('OV_MATCH_RECORD refuses only its own job: no block, later sets and events of the reopened match are sent', async () => {
+    fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', status: 'live' }])
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'match', action: 'update', status: 'queued', payload: { id: 'match_100_aaa', game_n: 4712 } },
+      { id: 2, resource: 'set', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa:s:5', match_id: 'match_100_aaa', index: 1 } },
+      eventJob(3)
+    ])
+    api.respond = (call) => (call.table === 'matches' && call.action !== 'select'
+      ? { data: null, error: { message: 'record', code: 'OV_MATCH_RECORD', status: 409 } }
+      : defaultRespond(call))
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('failed')
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('sent')
+    expect(fakeDb.sync_queue.map.get(3).status).toBe('sent')
+    expect(fakeDb.matches.map.get(1).cloudBlock).toBeUndefined()
+    expect(fakeDb.matches.map.get(1).status).toBe('live')
   })
 
   it('other refusals set no block', async () => {
@@ -2201,5 +2467,792 @@ describe('test matches never reach the cloud', () => {
     await runQueuePass()
     expect(api.calls.some(c => c.table === 'matches' && c.action === 'upsert')).toBe(true)
     expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// fe-sync-1: every page of the origin (a second tab, the "already open"
+// duplicate, the referee page beside the scorer) mounts the queue over the
+// same IndexedDB. Two pages are two module instances here, over one queue
+// and one backend, with the browser's Web Locks and BroadcastChannel faked.
+// ---------------------------------------------------------------------------
+describe('one flusher per origin (two pages over one queue)', () => {
+  const SEED = 'match_100_aaa'
+  let restoreLocks
+  let restoreChannel
+
+  // Web Locks: ifAvailable, and steal (the old holder's request rejects
+  // with an AbortError at once, its callback runs on)
+  function fakeLocks() {
+    const held = new Map()
+    return {
+      async request(name, options, callback) {
+        if (held.has(name) && !options?.steal) {
+          if (options?.ifAvailable) return callback(null)
+          throw new Error('only ifAvailable and steal are modelled')
+        }
+        if (held.has(name)) {
+          held.get(name).reject(new DOMException('The lock was stolen', 'AbortError'))
+          held.delete(name)
+        }
+        let reject
+        const stolen = new Promise((_, r) => { reject = r })
+        const entry = { reject }
+        held.set(name, entry)
+        const run = (async () => {
+          try {
+            return await callback({ name, mode: 'exclusive' })
+          } finally {
+            if (held.get(name) === entry) held.delete(name)
+          }
+        })()
+        return Promise.race([run, stolen])
+      }
+    }
+  }
+
+  class FakeChannel {
+    static open = new Set()
+    constructor(name) {
+      this.name = name
+      this.onmessage = null
+      // a suspended page: what it posts reaches nobody
+      this.frozen = false
+      FakeChannel.open.add(this)
+    }
+    postMessage(data) {
+      if (this.frozen) return
+      for (const other of FakeChannel.open) {
+        if (other !== this && other.name === this.name) queueMicrotask(() => other.onmessage?.({ data }))
+      }
+    }
+    close() { FakeChannel.open.delete(this) }
+  }
+
+  // A page = its own instance of the hook module (its own in-page guard)
+  async function openPage() {
+    vi.resetModules()
+    return import('../useSyncQueue')
+  }
+
+  const gate = () => {
+    let open
+    const wait = new Promise(resolve => { open = resolve })
+    return { wait, open }
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+    localStorage.setItem('api_auth_token', JSON.stringify({ access_token: 't' }))
+    const locksBefore = Object.getOwnPropertyDescriptor(navigator, 'locks')
+    Object.defineProperty(navigator, 'locks', { value: fakeLocks(), configurable: true })
+    restoreLocks = () => {
+      if (locksBefore) Object.defineProperty(navigator, 'locks', locksBefore)
+      else delete navigator.locks
+    }
+    const channelBefore = globalThis.BroadcastChannel
+    FakeChannel.open.clear()
+    globalThis.BroadcastChannel = FakeChannel
+    restoreChannel = () => { globalThis.BroadcastChannel = channelBefore }
+  })
+  afterEach(() => {
+    restoreLocks()
+    restoreChannel()
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+    localStorage.removeItem('api_auth_token')
+  })
+
+  it('two pages never send the same restore: the second waits for the first page\'s pass', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'match', action: 'restore', status: 'queued', ts: new Date().toISOString(), payload: { match: { external_id: SEED, status: 'live' }, sets: [], events: [{ external_id: `${SEED}:e:1`, seq: 1 }], liveState: null } },
+      { id: 2, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: `${SEED}:e:2`, match_id: SEED, type: 'point', seq: 2 } }
+    ])
+    // The restore is slow on its way (a large body on a weak link)
+    const slow = gate()
+    api.respond = async (call) => {
+      if (call.table === '__restore') await slow.wait
+      return defaultRespond(call)
+    }
+    const page1 = await openPage()
+    const page2 = await openPage()
+    expect(page1.useSyncQueue).not.toBe(page2.useSyncQueue)
+    const a = renderHook(() => page1.useSyncQueue())
+    const b = renderHook(() => page2.useSyncQueue())
+    // both pages probe, flush, and poll every 5 s while the restore hangs
+    await act(async () => { await vi.advanceTimersByTimeAsync(12000) })
+    expect(api.calls.filter(c => c.table === '__restore')).toHaveLength(1)
+
+    await act(async () => { slow.open(); await vi.advanceTimersByTimeAsync(6000) })
+    expect(api.calls.filter(c => c.table === '__restore')).toHaveLength(1)
+    expect(api.calls.filter(c => c.table === 'events' && c.action === 'upsert')).toHaveLength(1)
+    expect([...fakeDb.sync_queue.map.values()].map(j => j.status)).toEqual(['sent', 'sent'])
+    a.unmount()
+    b.unmount()
+  })
+
+  it('a page that finds the queue taken wakes the page sending it, which goes on with the new write at once', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: `${SEED}:e:1`, match_id: SEED, type: 'point', seq: 1 } }
+    ])
+    const slow = gate()
+    let first = true
+    api.respond = async (call) => {
+      if (call.table === 'events' && first) { first = false; await slow.wait }
+      return defaultRespond(call)
+    }
+    const page1 = await openPage()
+    const page2 = await openPage()
+    const a = renderHook(() => page1.useSyncQueue())
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+    expect(api.calls.filter(c => c.table === 'events')).toHaveLength(1) // page 1's pass hangs on it
+    const b = renderHook(() => page2.useSyncQueue())
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+
+    // The scorer's page writes the set end and asks for a flush; page 1 holds the queue
+    await fakeDb.sync_queue.add({ resource: 'set', action: 'update', status: 'queued', payload: { external_id: `${SEED}:s:5`, match_id: SEED, finished: true } })
+    await act(async () => { await b.result.current.flush(); await vi.advanceTimersByTimeAsync(10) })
+    expect(api.calls.filter(c => c.table === 'sets')).toHaveLength(0)
+
+    // page 1's pass ends: it runs once more right away, no 5 s poll needed
+    await act(async () => { slow.open(); await vi.advanceTimersByTimeAsync(100) })
+    expect(api.calls.filter(c => c.table === 'sets' && c.action === 'update')).toHaveLength(1)
+    expect([...fakeDb.sync_queue.map.values()].map(j => j.status)).toEqual(['sent', 'sent'])
+    a.unmount()
+    b.unmount()
+  })
+
+  // A page suspended while it held the lock (a background tab on iOS) kept
+  // it, and no other page sent anything until it ran again
+  it('a page not heard for 90 s while it holds the queue is taken over; it ends its pass when it runs again', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'set', action: 'update', status: 'queued', payload: { external_id: `${SEED}:s:5`, match_id: SEED, home_points: 3 } },
+      { id: 2, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: `${SEED}:e:1`, match_id: SEED, type: 'point', seq: 1 } }
+    ])
+    const suspended = gate()
+    // page 2's event is still on its way when page 1 runs again
+    const eventOnItsWay = gate()
+    let firstSet = true
+    let firstEvent = true
+    api.respond = async (call) => {
+      if (call.table === 'sets' && firstSet) { firstSet = false; await suspended.wait }
+      if (call.table === 'events' && firstEvent) { firstEvent = false; await eventOnItsWay.wait }
+      return defaultRespond(call)
+    }
+    const page1 = await openPage()
+    const page2 = await openPage()
+    const a = renderHook(() => page1.useSyncQueue())
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+    expect(api.calls.filter(c => c.table === 'sets')).toHaveLength(1)
+    // page 1 is suspended in its pass: it says nothing any more
+    for (const channel of FakeChannel.open) channel.frozen = true
+    const b = renderHook(() => page2.useSyncQueue())
+    await act(async () => { await vi.advanceTimersByTimeAsync(60000) })
+    expect(api.calls.filter(c => c.table === 'sets')).toHaveLength(1)
+    expect(api.calls.filter(c => c.table === 'events')).toHaveLength(0)
+
+    // over 90 s without a word from page 1: page 2 sends the queue
+    await act(async () => { await vi.advanceTimersByTimeAsync(40000) })
+    expect(api.calls.filter(c => c.table === 'sets')).toHaveLength(2)
+    expect(api.calls.filter(c => c.table === 'events')).toHaveLength(1)
+
+    // page 1 runs again: its request comes back, and its pass ends there
+    // (the event, still queued, is page 2's to send)
+    await act(async () => { suspended.open(); await vi.advanceTimersByTimeAsync(10) })
+    expect(api.calls.filter(c => c.table === 'events')).toHaveLength(1)
+    await act(async () => { eventOnItsWay.open(); await vi.advanceTimersByTimeAsync(10) })
+    expect([...fakeDb.sync_queue.map.values()].map(j => j.status)).toEqual(['sent', 'sent'])
+    expect(api.calls.filter(c => c.table === 'events')).toHaveLength(1)
+    a.unmount()
+    b.unmount()
+  })
+
+  it('a page heard while its pass runs keeps the queue, however long one request takes', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'match', action: 'restore', status: 'queued', ts: new Date().toISOString(), payload: { match: { external_id: SEED, status: 'live' }, sets: [], events: [{ external_id: `${SEED}:e:1`, seq: 1 }], liveState: null } }
+    ])
+    const slow = gate()
+    api.respond = async (call) => {
+      if (call.table === '__restore') await slow.wait
+      return defaultRespond(call)
+    }
+    const page1 = await openPage()
+    const page2 = await openPage()
+    const a = renderHook(() => page1.useSyncQueue())
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+    const b = renderHook(() => page2.useSyncQueue())
+    await act(async () => { await vi.advanceTimersByTimeAsync(150000) })
+    expect(api.calls.filter(c => c.table === '__restore')).toHaveLength(1)
+    await act(async () => { slow.open(); await vi.advanceTimersByTimeAsync(6000) })
+    expect(api.calls.filter(c => c.table === '__restore')).toHaveLength(1)
+    a.unmount()
+    b.unmount()
+  })
+
+  it('where the browser refuses the lock itself, the page sends the queue on its own', async () => {
+    Object.defineProperty(navigator, 'locks', {
+      value: { request: async () => { throw new DOMException('not allowed here', 'SecurityError') } },
+      configurable: true
+    })
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: `${SEED}:e:1`, match_id: SEED, type: 'point', seq: 1 } }
+    ])
+    const page = await openPage()
+    const a = renderHook(() => page.useSyncQueue())
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+    a.unmount()
+  })
+
+  // The scoreboard's live-state catch-up and Match End's listen in the
+  // scorer's page; another page now sends the scorer's jobs
+  it('a pass that sent jobs tells every page (sync-queue-drained), and that is no wake', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: `${SEED}:e:1`, match_id: SEED, type: 'point', seq: 1 } }
+    ])
+    // another page of the app, on the same line
+    const other = new FakeChannel('ov-sync-queue')
+    const heard = []
+    other.onmessage = (e) => heard.push(e.data)
+    const page = await openPage()
+    const a = renderHook(() => page.useSyncQueue())
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+    expect(heard).toContainEqual({ type: 'drained', sent: 1, pending: false })
+    expect(heard).toContainEqual({ type: 'busy', lock: 'ov-sync-queue' })
+
+    // the page hears another page's: the window event, no pass of its own
+    const drained = []
+    const onDrained = (e) => drained.push(e.detail)
+    window.addEventListener('sync-queue-drained', onDrained)
+    const before = api.calls.length
+    other.postMessage({ type: 'drained', sent: 4, pending: true })
+    await act(async () => { await vi.advanceTimersByTimeAsync(10) })
+    window.removeEventListener('sync-queue-drained', onDrained)
+    expect(drained).toEqual([{ sent: 4, pending: true }])
+    expect(api.calls.length).toBe(before)
+    a.unmount()
+  })
+})
+
+describe('a pass reads each job again before it sends it', () => {
+  it('a job deleted after the pass read the queue is not sent (a newer score replaced it)', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'set', action: 'update', status: 'queued', payload: { external_id: 'match_100_aaa:s:4', home_points: 25, away_points: 20, finished: true } },
+      // 24:23, the running score of set 5 (utils/eventSync queueSetScoreSync)
+      { id: 2, resource: 'set', action: 'update', status: 'queued', payload: { external_id: 'match_100_aaa:s:5', home_points: 24, away_points: 23 } }
+    ])
+    let release
+    const hanging = new Promise(resolve => { release = resolve })
+    let first = true
+    api.respond = async (call) => {
+      if (call.table === 'sets' && call.action === 'update' && first) { first = false; await hanging }
+      return defaultRespond(call)
+    }
+    const pass = runQueuePass()
+    await vi.waitFor(() => expect(api.calls.some(c => c.table === 'sets')).toBe(true))
+    // The set ends 25:23 meanwhile: the set end is queued, the queued 24:23 goes
+    await fakeDb.sync_queue.add({ resource: 'set', action: 'update', status: 'queued', payload: { external_id: 'match_100_aaa:s:5', home_points: 25, away_points: 23, finished: true } })
+    await fakeDb.sync_queue.bulkDelete([2])
+    release()
+    await pass
+    await runQueuePass()
+    const set5 = api.calls.filter(c => c.table === 'sets' && c.action === 'update' && JSON.stringify(c.filters).includes(':s:5'))
+    expect(set5.map(c => c.data.home_points)).toEqual([25])
+  })
+
+  it('a job requeued or set aside since is sent with the row as it is now', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'set', action: 'update', status: 'queued', payload: { external_id: 'match_100_aaa:s:4', home_points: 1 } },
+      { id: 2, resource: 'set', action: 'update', status: 'queued', payload: { external_id: 'match_100_aaa:s:5', home_points: 2, away_points: 2 } }
+    ])
+    let first = true
+    api.respond = async (call) => {
+      if (call.table === 'sets' && call.action === 'update' && first) {
+        first = false
+        // trimmed meanwhile (supersedeStaleUpdates writes the rest back)
+        await fakeDb.sync_queue.update(2, { payload: { external_id: 'match_100_aaa:s:5', away_points: 2 } })
+      }
+      return defaultRespond(call)
+    }
+    await runQueuePass()
+    const set5 = api.calls.find(c => c.table === 'sets' && c.action === 'update' && JSON.stringify(c.filters).includes(':s:5'))
+    expect(set5.data).toEqual({ away_points: 2, sport_type: 'indoor' })
+  })
+})
+
+// fe-sync-2: a set deleted on the device (a set end undone, Reopen set, a
+// forfeit reversed) stayed in the cloud; a finished one counted in the result
+// the account approval checks
+describe('set delete jobs', () => {
+  const del = (id, setId = 7) => ({ id, resource: 'set', action: 'delete', status: 'queued', retry_count: 0, payload: { external_id: `match_100_aaa:s:${setId}`, match_id: 'match_100_aaa' } })
+
+  it('delete the cloud row by its namespaced id, behind the set\'s insert still waiting out a backoff', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'set', action: 'insert', status: 'error', retry_count: 0, next_attempt_at: Date.now() + 60000, payload: { external_id: 'match_100_aaa:s:7', match_id: 'match_100_aaa', index: 3, finished: true } },
+      del(2)
+    ])
+    await runQueuePass()
+    expect(api.calls.filter(c => c.table === 'sets')).toEqual([])
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('queued')
+
+    await fakeDb.sync_queue.update(1, { status: 'queued', next_attempt_at: 0 })
+    await runQueuePass()
+    const sets = api.calls.filter(c => c.table === 'sets')
+    expect(sets.map(c => c.action)).toEqual(['upsert', 'delete'])
+    expect(sets[1].filters).toEqual([['eq', 'external_id', 'match_100_aaa:s:7']])
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('sent')
+  })
+
+  it('a set the cloud never had: the delete matches nothing and is done', async () => {
+    fakeDb.sync_queue.reset([del(1)])
+    const outcome = await runQueuePass()
+    expect(outcome.hasError).toBe(false)
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+  })
+
+  it('refused as closed: set aside with the match\'s other writes, never a lasting error', async () => {
+    resetCloudBlockCache()
+    fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', status: 'live' }])
+    fakeDb.sync_queue.reset([del(1)])
+    api.respond = (call) => (call.table === 'sets' ? { data: null, error: { message: 'closed', code: 'OV_MATCH_CLOSED', status: 409 } } : defaultRespond(call))
+    const outcome = await runQueuePass()
+    expect(outcome.hasFailed).toBeFalsy()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('dropped')
+  })
+
+  // A refused insert of the deleted set, kept in front of the delete, held
+  // it for good (per-set order), and the queued delete held the approval
+  it('a set refused for good and then deleted holds neither its delete nor the approval', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'set', action: 'insert', status: 'failed', failed_at: Date.now(), failed_auto_retries: 24, attempts: 25, payload: { external_id: 'match_100_aaa:s:7', match_id: 'match_100_aaa', index: 4, finished: true } }
+    ])
+    // Reopen set: set 7 is deleted on the device, set 4 played again (set 8), the match approved
+    expect(await queueSetDeletes(fakeDb, { seed_key: 'match_100_aaa' }, [7])).toBe(1)
+    await fakeDb.sync_queue.add({ resource: 'set', action: 'insert', status: 'queued', retry_count: 0, payload: { external_id: 'match_100_aaa:s:8', match_id: 'match_100_aaa', index: 4, finished: true } })
+    await fakeDb.sync_queue.add({ resource: 'match', action: 'update', status: 'queued', retry_count: 0, payload: { id: 'match_100_aaa', status: 'approved' } })
+    for (let i = 0; i < 3; i++) await runQueuePass()
+    const rows = [...fakeDb.sync_queue.map.values()]
+    expect(rows.map(j => `${j.resource}/${j.action}=${j.status}`)).toEqual(['set/delete=sent', 'set/insert=sent', 'match/update=sent'])
+    expect(api.calls.filter(c => c.table === 'sets' && c.action === 'delete').map(c => c.filters)).toEqual([[['eq', 'external_id', 'match_100_aaa:s:7']]])
+    // the approval went after the set it waits for
+    const writes = api.calls.filter(c => c.action !== 'select').map(c => `${c.table}/${c.action}`)
+    expect(writes.indexOf('matches/update')).toBeGreaterThan(writes.indexOf('sets/upsert'))
+  })
+
+  it('a bare id is never sent (the backend refuses unscoped deletes)', async () => {
+    fakeDb.sync_queue.reset([{ id: 1, resource: 'set', action: 'delete', status: 'queued', payload: { external_id: '7' } }])
+    await runQueuePass()
+    expect(api.calls.filter(c => c.table === 'sets')).toEqual([])
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('dropped')
+  })
+})
+
+// fe-sync-5: every set and event job read the match's cloud id before its
+// write: two requests per job against the per-address read limit, and one
+// write per event against the per-user write limit
+describe('requests per pass', () => {
+  const ev = (id, extra = {}) => ({ id, resource: 'event', action: 'insert', status: 'queued', retry_count: 0, payload: { external_id: `match_100_aaa:e:${id}`, match_id: 'match_100_aaa', type: 'point', seq: id, payload: {}, serve_player: 1, ...extra } })
+  const setUpd = (id, setId) => ({ id, resource: 'set', action: 'update', status: 'queued', retry_count: 0, payload: { external_id: `match_100_aaa:s:${setId}`, home_points: id } })
+
+  it('one lookup of the match per pass, and its events in one upsert', async () => {
+    fakeDb.sync_queue.reset([setUpd(1, 5), setUpd(2, 6), ev(3), ev(4), ev(5), ev(6, { serve_player: '1.5' })])
+    await runQueuePass()
+    expect(api.calls.filter(c => c.table === 'matches' && c.action === 'select')).toHaveLength(1)
+    const upserts = api.calls.filter(c => c.table === 'events' && c.action === 'upsert')
+    expect(upserts).toHaveLength(1)
+    expect(upserts[0].onConflict).toBe('external_id')
+    expect(upserts[0].data.map(r => r.external_id)).toEqual([3, 4, 5, 6].map(id => `match_100_aaa:e:${id}`))
+    expect(upserts[0].data.every(r => r.match_id === MATCH_UUID && r.sport_type === 'indoor')).toBe(true)
+    // the same row clean-up as one by one
+    expect(upserts[0].data[3].serve_player).toBeNull()
+    expect([...fakeDb.sync_queue.map.values()].every(j => j.status === 'sent')).toBe(true)
+  })
+
+  it('a batch the backend refuses is sent event by event: only the refused one is parked', async () => {
+    fakeDb.sync_queue.reset([ev(1), ev(2), ev(3)])
+    api.respond = (call) => {
+      if (call.table === 'events' && call.action === 'upsert') {
+        const rows = Array.isArray(call.data) ? call.data : [call.data]
+        if (rows.some(r => r.external_id === 'match_100_aaa:e:2')) return { data: null, error: { message: 'invalid', code: '22P02', status: 400 } }
+      }
+      return defaultRespond(call)
+    }
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('failed')
+    expect(fakeDb.sync_queue.map.get(3).status).toBe('sent')
+    // one batch, then each on its own (no second batch in the pass)
+    expect(api.calls.filter(c => c.table === 'events' && Array.isArray(c.data))).toHaveLength(1)
+  })
+
+  it('a batch that hits a network failure stops the pass without a second try per event', async () => {
+    fakeDb.sync_queue.reset([ev(1), ev(2), ev(3)])
+    api.respond = (call) => (call.table === 'events' ? { data: null, error: { message: 'Failed to fetch', status: 0, network: true } } : defaultRespond(call))
+    const outcome = await runQueuePass()
+    expect(outcome.stopped).toBe(true)
+    expect(api.calls.filter(c => c.table === 'events')).toHaveLength(1)
+    expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'queued', network_stops: 1 })
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('queued')
+  })
+
+  // A batch lost on its way (the 20 s request timeout on a weak hall link)
+  // was built again at the same size, and the backlog never drained
+  it('a batch lost on its way is smaller next time, down to one by one: a slow link still drains', async () => {
+    fakeDb.sync_queue.reset(Array.from({ length: 10 }, (_, i) => ev(i + 1)))
+    // the link gives out on any body of more than 2 rows
+    api.respond = (call) => {
+      if (call.table === 'events' && Array.isArray(call.data) && call.data.length > 2) return { data: null, error: { message: 'The operation timed out', status: 0, network: true } }
+      return defaultRespond(call)
+    }
+    for (let i = 0; i < 12; i++) await runQueuePass()
+    expect([...fakeDb.sync_queue.map.values()].every(j => j.status === 'sent')).toBe(true)
+    const sizes = api.calls.filter(c => c.table === 'events').map(c => (Array.isArray(c.data) ? c.data.length : 1))
+    expect(sizes.slice(0, 3)).toEqual([10, 5, 2])
+    // no event was parked for the batch's failures
+    expect(Math.max(...[...fakeDb.sync_queue.map.values()].map(j => j.network_stops || 0))).toBeLessThan(10)
+  })
+
+  it('down to one by one, and back up after events go through', async () => {
+    fakeDb.sync_queue.reset([ev(1), ev(2)])
+    api.respond = (call) => (call.table === 'events' && Array.isArray(call.data) ? { data: null, error: { message: 'Failed to fetch', status: 0, network: true } } : defaultRespond(call))
+    await runQueuePass()
+    // one by one now: the batch of 2 halved to 1
+    api.respond = defaultRespond
+    await runQueuePass()
+    expect(api.calls.filter(c => c.table === 'events').map(c => Array.isArray(c.data))).toEqual([true, false, false])
+    // each one through doubled it back: a batch again
+    fakeDb.sync_queue.reset([ev(3), ev(4), ev(5)])
+    await runQueuePass()
+    const last = api.calls.filter(c => c.table === 'events').pop()
+    expect(last.data.map(r => r.seq)).toEqual([3, 4, 5])
+  })
+
+  it('a batch stays small enough for a weak link (64 KB)', async () => {
+    // rally rows of about 6 KB (state snapshot, both line-ups)
+    fakeDb.sync_queue.reset(Array.from({ length: 20 }, (_, i) => ev(i + 1, { state_snapshot: { blob: 'x'.repeat(6000) } })))
+    await runQueuePass()
+    const upserts = api.calls.filter(c => c.table === 'events' && c.action === 'upsert')
+    expect(upserts.length).toBeGreaterThan(1)
+    expect(upserts.every(c => JSON.stringify(c.data).length < 80 * 1024)).toBe(true)
+    expect(upserts.reduce((n, c) => n + c.data.length, 0)).toBe(20)
+  })
+
+  it('never batches over a revision of the same events or a row of another shape', async () => {
+    fakeDb.sync_queue.reset([
+      ev(1), ev(2),
+      { id: 3, resource: 'event', action: 'void', status: 'queued', payload: { external_id: 'match_100_aaa:e:2', match_id: 'match_100_aaa', rev_uid: 'u1', op: 'void' } },
+      ev(4),
+      { id: 5, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa:e:5', match_id: 'match_100_aaa', type: 'coin_toss', seq: 5, payload: {} } }
+    ])
+    await runQueuePass()
+    const writes = api.calls.filter(c => (c.table === 'events' && c.action === 'upsert') || c.table === '__revisions')
+    expect(writes.map(c => (c.table === '__revisions' ? 'void' : Array.isArray(c.data) ? c.data.map(r => r.seq) : c.data.seq))).toEqual([[1, 2], 'void', 4, 5])
+  })
+})
+
+// fe-sync-7: a restore refused with an application code (a body over the
+// server's limit) held every later job of its match, and nothing told why
+describe('a restore the server refuses', () => {
+  const SEED = 'match_100_aaa'
+  const restoreJob = (id, events) => ({ id, resource: 'match', action: 'restore', status: 'queued', retry_count: 0, ts: '2026-11-10T19:00:00.000Z',
+    payload: { match: { external_id: SEED, status: 'approved', game_n: 4711 }, sets: [{ external_id: `${SEED}:s:1`, index: 1 }], events, liveState: { current_set: 1 } } })
+  const events = (n) => Array.from({ length: n }, (_, i) => ({ external_id: `${SEED}:e:${i + 1}`, seq: i + 1, type: 'point' }))
+  const tooLarge = { data: null, error: { message: 'Request body too large', code: 'OV_BODY_TOO_LARGE', status: 413 } }
+
+  beforeEach(() => {
+    resetCloudBlockCache()
+    fakeDb.matches.reset([{ id: 1, seed_key: SEED, gameN: 4711, status: 'ended' }])
+  })
+
+  it('holds the match\'s later jobs, and the match says why', async () => {
+    fakeDb.sync_queue.reset([
+      restoreJob(1, events(3)),
+      { id: 2, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: `${SEED}:e:9`, match_id: SEED, type: 'point' } }
+    ])
+    api.respond = (call) => (call.table === '__restore' ? tooLarge : defaultRespond(call))
+    await runQueuePass()
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('failed')
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('queued')
+    expect(api.calls.filter(c => c.table === 'events')).toEqual([])
+    expect(fakeDb.matches.map.get(1).cloudBlock).toMatchObject({ code: RESTORE_REFUSED, reason: 'OV_BODY_TOO_LARGE' })
+
+    // other jobs of the match that go through leave the notice until the match is up
+    fakeDb.sync_queue.reset([{ id: 3, resource: 'match', action: 'scorer_claim', status: 'queued', payload: { id: SEED } }])
+    api.respond = (call) => (call.table === '__scorer' ? { data: { ok: true }, error: null, status: 200 } : defaultRespond(call))
+    await runQueuePass()
+    expect(fakeDb.matches.map.get(1).cloudBlock).toMatchObject({ code: RESTORE_REFUSED })
+  })
+
+  it('support sends it in parts: the first part replaces the match\'s rows, the later ones add theirs, the closing status last, the later jobs behind', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: 'match_200_bbb:e:1', match_id: 'match_200_bbb', type: 'point' } },
+      { ...restoreJob(2, events(5)), status: 'failed', attempts: 3, last_error: { code: 'OV_BODY_TOO_LARGE' } },
+      { id: 3, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: `${SEED}:e:9`, match_id: SEED, type: 'point' } }
+    ])
+    fakeDb.matches.update(1, { cloudBlock: { code: RESTORE_REFUSED, reason: 'OV_BODY_TOO_LARGE', at: 1 } })
+    expect(await splitRefusedRestore(SEED, { eventsPerPart: 2 })).toBe(3)
+    const rows = [...fakeDb.sync_queue.map.values()]
+    // the other match's job is untouched; this match: the parts, then its later job
+    expect(rows[0].id).toBe(1)
+    const parts = rows.filter(j => j.action === 'restore')
+    expect(parts.map(j => j.status)).toEqual(['queued', 'queued', 'queued'])
+    expect(parts.map(j => j.payload.events.map(e => e.seq))).toEqual([[1, 2], [3, 4], [5]])
+    expect(parts.map(j => j.payload.sets.length)).toEqual([1, 0, 0])
+    expect(parts.map(j => j.payload.match.status)).toEqual(['ended', 'ended', 'approved'])
+    // a backup restore replaces the whole match: so does its first part (no
+    // rekey: the rows the backup does not have go, the live state with it),
+    // the later parts only add theirs (rekey without entries)
+    expect(parts.map(j => j.payload.rekey ?? null)).toEqual([null, { sets: {}, events: {} }, { sets: {}, events: {} }])
+    expect(parts.map(j => j.payload.liveState)).toEqual([{ current_set: 1 }, null, null])
+    expect(parts.every(j => j.ts === '2026-11-10T19:00:00.000Z')).toBe(true)
+    const later = rows.find(j => j.resource === 'event' && j.payload.match_id === SEED)
+    expect(later.id).toBeGreaterThan(Math.max(...parts.map(j => j.id)))
+
+    api.respond = (call) => (call.table === '__restore' ? ok({ id: MATCH_UUID }) : defaultRespond(call))
+    await runQueuePass()
+    await runQueuePass()
+    expect(api.calls.filter(c => c.table === '__restore').map(c => c.data.events.length)).toEqual([2, 2, 1])
+    expect(api.calls.filter(c => c.table === '__restore').map(c => 'rekey' in c.data)).toEqual([false, true, true])
+    expect([...fakeDb.sync_queue.map.values()].every(j => j.status === 'sent')).toBe(true)
+    expect(fakeDb.matches.map.get(1).cloudBlock).toBeNull()
+    // nothing to split once it is through
+    expect(await splitRefusedRestore(SEED)).toBe(0)
+  })
+
+  // A hand-over (importMatchFromSupabase) moves the cloud rows to this
+  // device's ids: parts without the map left the old rows next to the new
+  // ones, every set and event twice, and the approval refused for the result
+  it('a hand-over\'s parts each carry the re-key entries of their own rows', async () => {
+    const rekey = {
+      sets: { [`${SEED}:s:50`]: `${SEED}:s:1` },
+      events: { [`${SEED}:e:60`]: `${SEED}:e:1`, [`${SEED}:e:61`]: `${SEED}:e:2`, [`${SEED}:e:62`]: `${SEED}:e:3` }
+    }
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'match', action: 'restore', status: 'failed', ts: '2026-11-10T19:00:00.000Z', last_error: { code: 'OV_BODY_TOO_LARGE' },
+        payload: { match: { external_id: SEED, status: 'live' }, sets: [{ external_id: `${SEED}:s:50`, index: 1 }],
+          events: [60, 61, 62].map(n => ({ external_id: `${SEED}:e:${n}`, seq: n })), liveState: { current_set: 1 }, rekey } }
+    ])
+    expect(await splitRefusedRestore(SEED, { eventsPerPart: 2 })).toBe(2)
+    const parts = [...fakeDb.sync_queue.map.values()].filter(j => j.action === 'restore')
+    expect(parts.map(j => j.payload.rekey)).toEqual([
+      { sets: { [`${SEED}:s:50`]: `${SEED}:s:1` }, events: { [`${SEED}:e:60`]: `${SEED}:e:1`, [`${SEED}:e:61`]: `${SEED}:e:2` } },
+      { sets: {}, events: { [`${SEED}:e:62`]: `${SEED}:e:3` } }
+    ])
+    api.respond = (call) => (call.table === '__restore' ? ok({ id: MATCH_UUID }) : defaultRespond(call))
+    await runQueuePass()
+    await runQueuePass()
+    expect(api.calls.filter(c => c.table === '__restore').map(c => Object.keys(c.data.rekey.events))).toEqual([[`${SEED}:e:60`, `${SEED}:e:61`], [`${SEED}:e:62`]])
+  })
+
+  it('a re-key onto ids it also moves is not split (the server renames those within one restore)', async () => {
+    const rekey = { sets: {}, events: { [`${SEED}:e:3`]: `${SEED}:e:1`, [`${SEED}:e:4`]: `${SEED}:e:2`, [`${SEED}:e:5`]: `${SEED}:e:3` } }
+    const refused = { id: 1, resource: 'match', action: 'restore', status: 'failed', ts: '2026-11-10T19:00:00.000Z',
+      payload: { match: { external_id: SEED, status: 'live' }, sets: [], events: [3, 4, 5].map(n => ({ external_id: `${SEED}:e:${n}`, seq: n })), liveState: null, rekey } }
+    fakeDb.sync_queue.reset([refused])
+    expect(await splitRefusedRestore(SEED, { eventsPerPart: 1 })).toBe(0)
+    expect([...fakeDb.sync_queue.map.values()]).toEqual([refused])
+  })
+
+  it('a part refused again is noted again, and is split further', async () => {
+    fakeDb.sync_queue.reset([{ ...restoreJob(1, events(4)), status: 'failed', last_error: { code: 'OV_BODY_TOO_LARGE' } }])
+    fakeDb.matches.update(1, { cloudBlock: { code: RESTORE_REFUSED, reason: 'OV_BODY_TOO_LARGE', parts: true, at: 1 } })
+    expect(await splitRefusedRestore(SEED)).toBe(2)
+    // the first part (the replace) is still too large
+    api.respond = (call) => (call.table === '__restore' ? tooLarge : defaultRespond(call))
+    await runQueuePass()
+    const block = fakeDb.matches.map.get(1).cloudBlock
+    expect(block).toMatchObject({ code: RESTORE_REFUSED, reason: 'OV_BODY_TOO_LARGE', parts: true })
+    expect(block.at).toBeGreaterThan(1)
+
+    // half of it each, the replace still first, the second part behind them
+    expect(await splitRefusedRestore(SEED)).toBe(2)
+    const parts = [...fakeDb.sync_queue.map.values()].filter(j => j.action === 'restore')
+    expect(parts.map(j => j.payload.events.map(e => e.seq))).toEqual([[1], [2], [3, 4]])
+    expect(parts.map(j => j.payload.rekey ?? null)).toEqual([null, { sets: {}, events: {} }, { sets: {}, events: {} }])
+    expect(parts.map(j => j.payload.sets.length)).toEqual([1, 0, 0])
+    expect(parts.map(j => j.payload.match.status)).toEqual(['ended', 'ended', 'approved'])
+  })
+
+  it('offers parts only where the refusal is about the size', async () => {
+    // a body over the limit: parts
+    fakeDb.sync_queue.reset([restoreJob(1, events(3))])
+    api.respond = (call) => (call.table === '__restore' ? tooLarge : defaultRespond(call))
+    await runQueuePass()
+    expect(fakeDb.matches.map.get(1).cloudBlock).toMatchObject({ code: RESTORE_REFUSED, parts: true })
+
+    // another owner's match (no game PIN here to take it over), a row the
+    // server cannot take: every part would be refused the same
+    for (const error of [
+      { message: 'not yours', code: 'OV_NOT_MATCH_OWNER', status: 403 },
+      { message: 'Invalid request', code: 'OV_INVALID_REQUEST', status: 400 }
+    ]) {
+      resetCloudBlockCache()
+      resetQueueHousekeeping()
+      fakeDb.matches.reset([{ id: 1, seed_key: SEED, gameN: 4711, status: 'ended' }])
+      fakeDb.sync_queue.reset([restoreJob(1, events(3))])
+      api.respond = (call) => (call.table === '__restore' ? { data: null, error } : defaultRespond(call))
+      await runQueuePass()
+      expect(fakeDb.sync_queue.map.get(1).status).toBe('failed')
+      expect(fakeDb.matches.map.get(1).cloudBlock).toMatchObject({ code: RESTORE_REFUSED, reason: error.code, parts: false })
+    }
+  })
+})
+
+// fe-shell-pwa-5 / x-rollout-ops-9: a build too old for the server (426
+// OV_CLIENT_TOO_OLD) was retried as transient without end and never said
+// so; a refusal for a column the server lacks (PGRST204) was parked as one
+// more "Error" without a word on why
+describe('writes refused by version', () => {
+  const tooOld = { data: null, error: { message: 'This app version is too old to write. Please reload the app.', code: 'OV_CLIENT_TOO_OLD', status: 426 } }
+  const unknownColumn = { data: null, error: { message: 'Database operation failed', code: 'PGRST204', status: 400 } }
+  const insertJob = (id, n) => ({ id, resource: 'event', action: 'insert', status: 'queued', retry_count: 0, payload: { external_id: `match_100_aaa:e:${n}`, match_id: 'match_100_aaa', seq: n } })
+
+  beforeEach(() => resetAppUpdateNeededForTests())
+
+  it('classifies 426 as "update needed" and the schema codes as "server behind"', () => {
+    expect(isUpdateRequiredError({ status: 426, code: 'OV_CLIENT_TOO_OLD' })).toBe(true)
+    expect(isUpdateRequiredError({ status: 426 })).toBe(true)
+    for (const e of [{ status: 503 }, { status: 400, code: 'PGRST204' }, { network: true, status: 0 }, null]) expect(isUpdateRequiredError(e)).toBe(false)
+    for (const code of ['PGRST204', '42703', '42P01', 'OV_TABLE_NOT_ALLOWED']) expect(isServerBehindError({ status: 400, code }), code).toBe(true)
+    for (const e of [{ status: 400, code: 'OV_UNSCOPED_EXTERNAL_ID' }, { status: 426, code: 'OV_CLIENT_TOO_OLD' }, null]) expect(isServerBehindError(e)).toBe(false)
+  })
+
+  it('426: the job stays queued untouched, the pass stops, and it is never parked however often it is tried', async () => {
+    fakeDb.sync_queue.reset([insertJob(1, 1), { id: 2, resource: 'match', action: 'update', status: 'queued', retry_count: 0, payload: { id: 'match_100_aaa', status: 'live' } }])
+    api.respond = (call) => (call.action !== 'select' ? tooOld : defaultRespond(call))
+    for (let pass = 0; pass < 12; pass++) {
+      const outcome = await runQueuePass()
+      expect(outcome).toMatchObject({ updateRequired: true, stopped: true })
+    }
+    for (const id of [1, 2]) {
+      expect(fakeDb.sync_queue.map.get(id), String(id)).toMatchObject({ status: 'queued', retry_count: 0 })
+      expect(fakeDb.sync_queue.map.get(id).attempts ?? 0).toBe(0)
+    }
+    // one write per pass: every other one would get the same answer
+    expect(api.calls.filter(c => c.action !== 'select')).toHaveLength(12)
+  })
+
+  it('426 on a restore: queued untouched too', async () => {
+    fakeDb.sync_queue.reset([{ id: 1, resource: 'match', action: 'restore', status: 'queued', retry_count: 0, payload: { match: { external_id: 'match_100_aaa' }, sets: [], events: [] } }])
+    api.respond = (call) => (call.table === '__restore' ? tooOld : defaultRespond(call))
+    const outcome = await runQueuePass()
+    expect(outcome.updateRequired).toBe(true)
+    expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'queued', retry_count: 0 })
+  })
+
+  it('PGRST204: parked as refused and counted as "server behind", apart from the other refusals', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'match', action: 'update', status: 'queued', retry_count: 0, payload: { id: 'match_100_aaa', status: 'live' } },
+      { id: 2, resource: 'set', action: 'update', status: 'failed', retry_count: 0, failed_at: Date.now(), last_error: { status: 400, code: 'OV_UNSCOPED_WRITE' }, payload: {} }
+    ])
+    api.respond = (call) => (call.table === 'matches' && call.action === 'update' ? unknownColumn : defaultRespond(call))
+    const outcome = await runQueuePass()
+    expect(outcome).toMatchObject({ hasFailed: true, serverBehind: true, updateRequired: false })
+    expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'failed', last_error: { code: 'PGRST204' } })
+    expect(await getSyncQueueStats()).toMatchObject({ failed: 2 })
+    expect(await countServerBehindJobs()).toBe(1)
+  })
+
+  describe('in the flush loop', () => {
+    const originalSW = Object.getOwnPropertyDescriptor(navigator, 'serviceWorker')
+    let regUpdate
+    beforeEach(() => {
+      vi.useFakeTimers()
+      vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+      localStorage.setItem('api_auth_token', JSON.stringify({ access_token: 't' }))
+      regUpdate = vi.fn(async () => {})
+      Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: { getRegistration: vi.fn(async () => ({ update: regUpdate })) } })
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+      vi.restoreAllMocks()
+      localStorage.removeItem('api_auth_token')
+      if (originalSW) Object.defineProperty(navigator, 'serviceWorker', originalSW)
+      else delete navigator.serviceWorker
+    })
+
+    it('says update_required, marks the page as needing an update and asks the worker for it; a write that goes through ends it', async () => {
+      fakeDb.sync_queue.reset([insertJob(1, 1)])
+      let serverTakesIt = false
+      api.respond = (call) => (call.action !== 'select' && !serverTakesIt ? tooOld : defaultRespond(call))
+      const { result, unmount } = renderHook(() => useSyncQueue())
+      await act(async () => { await vi.advanceTimersByTimeAsync(30000) })
+      expect(result.current.syncStatus).toBe('update_required')
+      expect(appUpdateNeeded()).toBe('server')
+      expect(regUpdate).toHaveBeenCalled()
+      expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'queued', retry_count: 0 })
+
+      // (the server's minimum lowered again, or a newer build in this page)
+      serverTakesIt = true
+      await act(async () => { await vi.advanceTimersByTimeAsync(6000) })
+      expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+      expect(result.current.syncStatus).toBe('synced')
+      expect(appUpdateNeeded()).toBe(null)
+      unmount()
+    })
+  })
+})
+
+// review 2026-11 (x-rollout-ops-4): after a database restore the server
+// lacks a match this device sent; its jobs stayed 'sent', later events
+// waited forever and updates counted as sent
+describe('a match the server lacks (OV_MATCH_UNKNOWN)', () => {
+  const SEED = 'match_100_aaa'
+  const sentJobs = () => [
+    { id: 1, resource: 'match', action: 'insert', status: 'sent', payload: { external_id: SEED, game_n: 7 } },
+    { id: 2, resource: 'set', action: 'insert', status: 'sent', payload: { external_id: `${SEED}:s:5`, match_id: SEED } },
+    { id: 3, resource: 'event', action: 'insert', status: 'sent', payload: { external_id: `${SEED}:e:9`, match_id: SEED } },
+    { id: 4, resource: 'match', action: 'insert', status: 'sent', payload: { external_id: 'match_200_bbb' } }
+  ]
+  beforeEach(() => resetResyncAttempts())
+
+  it('an update answered OV_MATCH_UNKNOWN queues the match\'s sent jobs again and waits', async () => {
+    fakeDb.sync_queue.reset([...sentJobs(), { id: 5, resource: 'match', action: 'update', status: 'queued', payload: { id: SEED, status: 'live' } }])
+    api.respond = (call) => (call.table === 'matches' && call.action === 'update'
+      ? { data: null, error: { message: 'gone', code: 'OV_MATCH_UNKNOWN', status: 404 }, status: 404 }
+      : defaultRespond(call))
+    expect(await processJob(fakeDb.sync_queue.map.get(5))).toBeNull()
+    expect([1, 2, 3].map(id => fakeDb.sync_queue.map.get(id).status)).toEqual(['queued', 'queued', 'queued'])
+    expect(fakeDb.sync_queue.map.get(4).status).toBe('sent')
+  })
+
+  it('an event of a match the server no longer finds sends the match again', async () => {
+    fakeDb.sync_queue.reset([...sentJobs(), { id: 5, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: `${SEED}:e:10`, match_id: SEED } }])
+    api.respond = (call) => (call.table === 'matches' && call.action === 'select' ? ok(null)
+      : call.table === '__known' ? ok({ state: 'unknown' }) : defaultRespond(call))
+    expect(await processJob(fakeDb.sync_queue.map.get(5))).toBeNull()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('queued')
+  })
+
+  // review 2026-11: a match deleted on another device must not come back
+  it('a set or event of a match the server deleted sends nothing again', async () => {
+    for (const resource of ['set', 'event']) {
+      resetResyncAttempts()
+      fakeDb.sync_queue.reset([...sentJobs(), { id: 5, resource, action: 'insert', status: 'queued', payload: { external_id: `${SEED}:x:10`, match_id: SEED } }])
+      api.respond = (call) => (call.table === 'matches' && call.action === 'select' ? ok(null)
+        : call.table === '__known' ? ok({ state: 'deleted' }) : defaultRespond(call))
+      expect(await processJob(fakeDb.sync_queue.map.get(5))).toBeNull()
+      expect([1, 2, 3].map(id => fakeDb.sync_queue.map.get(id).status)).toEqual(['sent', 'sent', 'sent'])
+    }
+  })
+
+  it('an update answered OV_MATCH_DELETED is dropped and sends nothing again', async () => {
+    fakeDb.sync_queue.reset([...sentJobs(), { id: 5, resource: 'match', action: 'update', status: 'queued', payload: { id: SEED, status: 'live' } }])
+    api.respond = (call) => (call.table === 'matches' && call.action === 'update'
+      ? { data: null, error: { message: 'deleted', code: 'OV_MATCH_DELETED', status: 404 }, status: 404 }
+      : defaultRespond(call))
+    expect(await processJob(fakeDb.sync_queue.map.get(5))).toBe(true)
+    expect([1, 2, 3].map(id => fakeDb.sync_queue.map.get(id).status)).toEqual(['sent', 'sent', 'sent'])
+  })
+
+  it('nothing is queued again without a sent insert, and once per match within the retry window', async () => {
+    fakeDb.sync_queue.reset(sentJobs().slice(1, 3))
+    expect(await resyncMatch(SEED, { database: fakeDb })).toBe(0)
+    fakeDb.sync_queue.reset(sentJobs())
+    expect(await resyncMatch(SEED, { database: fakeDb })).toBe(-1)
+    resetResyncAttempts()
+    expect(await resyncMatch(SEED, { database: fakeDb })).toBe(3)
   })
 })

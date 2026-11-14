@@ -18,9 +18,9 @@ const __dirname = dirname(__filename)
 
 // Same main-instance rule as every relay: only this machine may take/release it
 const isLocalAddress = createLocalAddressCheck(networkInterfaces)
-// Shared relay state + WS protocol (same module as server.js and the Electron
-// relay). Module level, so it must start no timer: the sign sessions and their
-// sweeper are created on the first /api/sign/* request (vite build never sends one).
+// Shared relay state + WS protocol (same module as server.js). Module level,
+// so it must start no timer: the sign sessions and their sweeper are created
+// on the first /api/sign/* request (vite build never sends one).
 const relay = createLanRelay({ isLocal: isLocalAddress })
 const mainGate = createMainInstanceGate({ isLocal: isLocalAddress })
 

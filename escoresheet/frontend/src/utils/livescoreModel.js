@@ -433,6 +433,26 @@ export function isLateFrame(shownStamp, frameStamp, now = Date.now()) {
 }
 
 /**
+ * The refetched list against the list shown: a refetched row that is a late
+ * copy of the shown one (isLateFrame: the scorer pushes to the relay first and
+ * writes the database afterwards, and the hub never sends the newer state
+ * again) keeps the shown row, with the refetch's joined match columns. Games
+ * the refetch no longer has are gone.
+ * @param {object[]} shown  the list on screen
+ * @param {object[]} fetched  the database rows
+ * @param {number} [now]  this page's clock
+ */
+export function mergeRefetchedGames(shown, fetched, now = Date.now()) {
+  if (!Array.isArray(fetched)) return fetched
+  const byMatch = new Map((shown || []).filter((g) => g?.match_id != null).map((g) => [g.match_id, g]))
+  return fetched.map((row) => {
+    const old = row?.match_id != null ? byMatch.get(row.match_id) : null
+    if (!old || !isLateFrame(old.updated_at, row.updated_at, now)) return row
+    return row.matches !== undefined ? { ...old, matches: row.matches } : old
+  })
+}
+
+/**
  * Settle a realtime match_live_state change against the row already shown,
  * before applyLiveChange merges it:
  *   - a late copy of an older state (updated_at a little earlier than the

@@ -1,19 +1,22 @@
 import { useEffect, useCallback, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
-import { apiFrom, apiMatchRestore, apiMatchClaim, apiMatchScorer, apiPostEventRevisions, AUTH_TOKEN_CHANGE_EVENT, AUTH_TOKEN_STORAGE_KEY, BACKEND_REACHED_EVENT } from '../lib/apiClient'
+import { apiFrom, apiMatchKnown, apiMatchRestore, apiMatchClaim, apiMatchScorer, apiPostEventRevisions, AUTH_TOKEN_CHANGE_EVENT, AUTH_TOKEN_STORAGE_KEY, BACKEND_REACHED_EVENT } from '../lib/apiClient'
 import { REVISION_OPS, revisionOfJob } from '../domain/eventRevisions'
 import { emitActivity, noteSyncPass } from '../utils/activity/bus'
 import { setDiagnosticsInfo } from '../utils/diagnosticsInfo'
 import { uploadActivityBatch, activityFlushJob } from '../utils/activity/upload'
 import { getCloudApiUrl } from '../utils/backendConfig'
 import { filterMatchPayload, JSONB_COLUMNS } from '../db/matchRepository'
-import { parseExtId, resolveJobExternalId, jobMatchKey, USER_MATCH_RESOURCE, SCORESHEET_UPLOAD_RESOURCE, userMatchRoles, userMatchJob } from '../utils/syncIds'
+import { parseExtId, resolveJobExternalId, rewriteQueuedSyncJobs, jobMatchKey, USER_MATCH_RESOURCE, SCORESHEET_UPLOAD_RESOURCE, APPROVAL_RESOURCE, userMatchRoles, userMatchJob } from '../utils/syncIds'
+import { approvalsApi } from '../lib/accountApi'
 import { buildConnectionPins } from '../utils/connectionPins'
 import { isShirtNumber } from '../domain/roster'
 import { uploadQueuedScoresheet } from '../utils/scoresheetUploader'
 import { ACCESS_CHANGED_EVENT } from '../lib/access'
 import { SCORER_CLAIM_ACTION, SCORER_MOVED, MATCH_CLOSED, SERVER_CLOSED_BY, isScorerMoved, noteScorerMoved, markScorerMoved, hasUnsentClaim, closeMovedMatches, retireIfSuperseded, retireStaleGameCopies, setAsideClosedJobs, setAsideClosedCopies } from '../utils/matchHandover'
+import { RESTORE_REFUSED, partsMayHelp } from '../utils/refusedRestore'
+import { UPDATE_NEEDED_SERVER, noteAppUpdateNeeded, clearAppUpdateNeeded } from '../utils/appUpdate'
 
 /**
  * ============================================================================
@@ -51,6 +54,9 @@ import { SCORER_CLAIM_ACTION, SCORER_MOVED, MATCH_CLOSED, SERVER_CLOSED_BY, isSc
  *   sent whole, built from the local match.
  * - Per-entity FIFO: once a job fails in a pass, later jobs for the same entity
  *   (and, for match insert/restore/delete, the whole match) wait for the next pass.
+ * - One flusher per origin: every page of the app runs this hook over the same
+ *   IndexedDB queue; a pass runs under a Web Lock (QUEUE_LOCK), and each job is
+ *   read again right before it is sent.
  * - Retries: dependency waits retry up to MAX_DEPENDENCY_RETRIES per cycle;
  *   errored jobs come back with exponential backoff (capped at 10 min, never
  *   dropped). The due ones are requeued at the start of every flush.
@@ -65,6 +71,15 @@ import { SCORER_CLAIM_ACTION, SCORER_MOVED, MATCH_CLOSED, SERVER_CLOSED_BY, isSc
  * - 401 (no or expired session): every cloud write needs an account. The job
  *   stays queued without counting an attempt, the status becomes
  *   'auth_required' and the queue waits for a sign-in (re-probed every 5 min).
+ * - 426 OV_CLIENT_TOO_OLD (the backend's minimum write protocol is above this
+ *   build's): the job stays queued untouched and the pass stops, as for a
+ *   401; the status becomes 'update_required' (utils/appUpdate: "Update
+ *   needed", the update banner on the match screens too) until a write goes
+ *   through after a reload onto a newer build.
+ * - Refused because the server lacks a column or table of this app version
+ *   (PGRST204, 42703, 42P01, OV_TABLE_NOT_ALLOWED; isServerBehindError): parked
+ *   as 'failed' like any refusal, and counted apart (countServerBehindJobs),
+ *   so the indicator says the server is behind, not "Error".
  * - Rate limiting (429) and network failures stop the pass and leave jobs queued.
  * - Connection caching: Only recheck Supabase every 30 seconds; a failed probe is
  *   retried with backoff instead of stopping the poll.
@@ -75,12 +90,14 @@ import { SCORER_CLAIM_ACTION, SCORER_MOVED, MATCH_CLOSED, SERVER_CLOSED_BY, isSc
  * ============================================================================
  */
 
-// Sync status types: 'offline' | 'online_no_supabase' | 'connecting' | 'syncing' | 'synced' | 'error' | 'auth_required'
+// Sync status types: 'offline' | 'online_no_supabase' | 'connecting' | 'syncing' | 'synced' | 'error' | 'auth_required' | 'update_required'
 
 // Resource processing order - matches must be synced before sets/events (FK
 // dependency); the account links ("My Matches") come last
 // 'activity': the activity log upload (utils/activity/upload), needs no match row
-const RESOURCE_ORDER = ['match', 'set', 'event', USER_MATCH_RESOURCE, SCORESHEET_UPLOAD_RESOURCE, 'activity']
+// APPROVAL_RESOURCE: an account approval undone after the sheet changed
+// (domain/accountApproval approvalUndoJobs); the approval waits for it
+const RESOURCE_ORDER = ['match', APPROVAL_RESOURCE, 'set', 'event', USER_MATCH_RESOURCE, SCORESHEET_UPLOAD_RESOURCE, 'activity']
 
 // The queue's two lanes. The scoresheet files (the approval's PDF and final
 // JSON, up to a megabyte or more) go in their own (runUploadLane), beside the
@@ -133,6 +150,45 @@ const SENT_RETENTION_MS = 7 * 24 * 3600 * 1000
 const ACTIVITY_JOB_RETENTION_MS = 3600 * 1000
 const PRUNE_INTERVAL_MS = 60 * 60 * 1000
 
+// One flusher per origin. Every page of the app (a second tab, the
+// "Scoresheet already open" duplicate, the referee page beside the scorer)
+// mounts this hook over the same IndexedDB queue, and the in-page guard
+// (flushInProgress) holds per page only: two pages sent the same restore
+// twice (the late copy replaced the events sent in between) and an older set
+// score after the newer one. A pass runs under this Web Lock; a page that
+// finds it taken asks the page holding it, over QUEUE_WAKE_CHANNEL, to run
+// once more after its pass. The scoresheet files' lane has its own lock.
+const QUEUE_LOCK = 'ov-sync-queue'
+const UPLOAD_LOCK = 'ov-sync-queue-upload'
+const QUEUE_WAKE_CHANNEL = 'ov-sync-queue'
+// A wake heard by a page that holds no pass runs its flush through this
+// event (each mounted hook listens; the first one runs it)
+const QUEUE_WAKE_EVENT = 'ov-sync-queue-wake'
+// The lock has no lease of its own: a page suspended while it holds it (a
+// background tab on iOS, its pass waiting on a request) keeps it until it
+// runs again, and every other page sent nothing meanwhile, silently. The
+// page holding it says so when its pass begins and every QUEUE_BEAT_MS
+// while it runs; a page that has found the lock taken for QUEUE_LEASE_MS
+// without hearing the holder takes it over (steal), and the holder, once
+// it runs again, ends its pass before its next job (runQueuePass lease).
+// Over a minute: a hidden page's timers may run only once a minute
+// (intensive throttling), and a page still sending must keep the lock.
+const QUEUE_BEAT_MS = 5000
+const QUEUE_LEASE_MS = 90 * 1000
+// A page that has not tried the lock for this long (suspended itself, or
+// hidden and throttled) heard nothing meanwhile: it watches afresh
+const QUEUE_WATCH_GAP_MS = 30 * 1000
+
+// Event inserts of one match sent as one upsert (runQueuePass): after a long
+// offline match hundreds of them waited, one request each against the
+// per-user write limit (600 a minute). The /api/db body limit is 5 MB. A
+// rally row (state snapshot, both line-ups) is about 5 KB: 64 KB take a few
+// seconds on a weak hall uplink (20 KB/s), well inside the 20 s request
+// timeout. A batch that failed on its way is halved for its match
+// (eventBatchLimit), down to one by one, and doubles back after a success.
+const EVENT_BATCH_MAX = 50
+const EVENT_BATCH_MAX_BYTES = 64 * 1024
+
 // processJob result: stop this pass, leave the job queued untouched (rate limited)
 export const STOP_PASS = 'stop'
 // processJob result: the request itself failed (backend unreachable). Stops the
@@ -145,6 +201,10 @@ export const DROP_JOB = 'drop'
 // processJob result: the backend wants a session (401). The job stays queued
 // untouched and the pass stops: every other write would get the same answer.
 export const AUTH_REQUIRED = 'auth_required'
+// processJob result: the backend refuses this app version's writes (426
+// OV_CLIENT_TOO_OLD). The job stays queued untouched and the pass stops, as
+// for AUTH_REQUIRED: only a newer build gets them through.
+export const UPDATE_REQUIRED = 'update_required'
 // processJob result: the backend refused the request itself (4xx validation,
 // scoping, permission). Parked as 'failed' (see FAILED_RETRY_MS).
 export const PERMANENT_FAILURE = 'permanent'
@@ -173,7 +233,7 @@ export function isStopError(error) {
 // fetch() rejection messages: Chrome, Firefox, Safari, Node/undici, React Native
 const NETWORK_ERROR_MESSAGE = /failed to fetch|networkerror|load failed|fetch failed|network request failed|network unavailable/i
 
-/** Worth retrying later (426 upgrade required, 5xx, timeouts) rather than an error. */
+/** Worth retrying later (5xx, timeouts; 426 once the app is updated: isUpdateRequiredError) rather than an error. */
 export function isTransientError(error) {
   if (!error) return false
   const status = error.status ?? 0
@@ -186,6 +246,24 @@ const AUTH_ERROR_CODES = new Set(['missing_token', 'invalid_token', 'session_exp
 export function isAuthError(error) {
   if (!error || error.network) return false
   return (error.status ?? 0) === 401 || AUTH_ERROR_CODES.has(error.code)
+}
+
+/** This app version is too old to write (426 OV_CLIENT_TOO_OLD): a newer build is needed. */
+export function isUpdateRequiredError(error) {
+  if (!error || error.network) return false
+  return (error.status ?? 0) === 426 || error.code === 'OV_CLIENT_TOO_OLD'
+}
+
+// The server lacks a column (PGRST204: pgQuery, 42703: Postgres) or a table
+// (42P01, OV_TABLE_NOT_ALLOWED) this app version writes: its database
+// migration or backend release is not out yet. A newer server takes the
+// same job, so it stays parked ('failed', retried hourly) and is counted
+// apart (countServerBehindJobs).
+const SERVER_BEHIND_CODES = new Set(['PGRST204', '42703', '42P01', 'OV_TABLE_NOT_ALLOWED'])
+
+/** Refused because the server is older than this app (see SERVER_BEHIND_CODES). */
+export function isServerBehindError(error) {
+  return !!error && !error.network && SERVER_BEHIND_CODES.has(error.code)
 }
 
 // Error codes only the OpenVolley backend answers with: its own checks (OV_*),
@@ -268,10 +346,35 @@ function summarizeError(error) {
   return out
 }
 
+const snakeKey = (key) => String(key).replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase()
+
 // A PIN field: 'pin' as a word of the key (game_pin, gamePin, connection_pins,
 // homeTeamUploadPin, PIN), not any key that contains the letters (mapping).
-const isSecretLogKey = (key) =>
-  /(^|_)pins?(_|$)/.test(String(key).replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase())
+const isSecretLogKey = (key) => /(^|_)pins?(_|$)/.test(snakeKey(key))
+
+// Personal data of a match row: the rosters (names, dates of birth), the
+// officials (names, email addresses), the signature images, the approval and
+// the roster corrections (names). A console line says how much, never what:
+// the lines are uploaded as app logs and go into the support diagnostics.
+const isPersonLogKey = (key) => /^(players|bench)(_|$)|^(officials|signatures|approval|manual_changes)$/.test(snakeKey(key))
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+function sizeForLog(value) {
+  if (Array.isArray(value)) return `[${plural(value.length, 'item')}]`
+  if (value && typeof value === 'object') return `[${plural(Object.keys(value).length, 'field')}]`
+  if (typeof value === 'string') return `[${plural(value.length, 'character')}]`
+  return value
+}
+
+/**
+ * A payload for the console: its keys and its size in characters, never a
+ * value (a match's rosters, officials and signatures are personal data).
+ */
+export function payloadForLog(payload) {
+  if (!payload || typeof payload !== 'object') return payload
+  let chars = null
+  try { chars = JSON.stringify(payload).length } catch { /* not serializable */ }
+  return { keys: Object.keys(payload), chars }
+}
 
 // PIN values inside text: `Key (game_pin)=(123456)` from a unique violation,
 // `"refereePin":"123456"` in a serialized body.
@@ -284,7 +387,9 @@ const LOG_REDACT_DEPTH = 6
  * A value for the console (and so for uploaded logs): PIN fields left out at
  * any depth (game_pin, connection_pins, refereePin, ...), PIN values in error
  * texts masked, the scoresheet remarks (db/017) as their length only, like
- * the activity log. Anything else is passed through unchanged.
+ * the activity log, and the rosters, bench, officials, signatures, approval
+ * and roster corrections as their size only. Anything else is passed through
+ * unchanged.
  */
 export function redactForLog(value, depth = 0) {
   if (typeof value === 'string') return redactText(value)
@@ -299,7 +404,8 @@ export function redactForLog(value, depth = 0) {
   const out = {}
   for (const [k, v] of Object.entries(value)) {
     if (isSecretLogKey(k)) continue
-    out[k] = k === 'remarks' && typeof v === 'string' ? `[${v.length} characters]` : redactForLog(v, depth + 1)
+    if (k === 'remarks' && typeof v === 'string') out[k] = `[${v.length} characters]`
+    else out[k] = isPersonLogKey(k) ? sizeForLog(v) : redactForLog(v, depth + 1)
   }
   return out
 }
@@ -344,6 +450,8 @@ function failureResult(error, ctx) {
   if (error?.network) return STOP_NETWORK
   if (isStopError(error)) return STOP_PASS
   if (isAuthError(error)) return AUTH_REQUIRED
+  // (before the transient ones: 426 is one, but no later pass gets through)
+  if (isUpdateRequiredError(error)) return UPDATE_REQUIRED
   if (isTransientError(error)) return null
   if (isPermanentError(error)) return PERMANENT_FAILURE
   if (isForeignClientError(error)) return STOP_ERROR
@@ -515,14 +623,21 @@ export async function retryErrorsInternal({ force = false, includeFailed = false
 
 /**
  * Remove sent, superseded and dropped rows older than `retentionMs`. Rows newer
- * than the oldest job still pending are kept whatever their age: the supersede
- * step of a retried job compares it with the updates sent after it.
+ * than the oldest job still pending of the same match are kept whatever their
+ * age: the supersede step of a retried job compares it with the updates of
+ * its row (so of its match) sent after it. Per match: one job refused for good
+ * kept every later row of every match, for as long as it stayed refused.
  * @returns {Promise<number>} rows removed
  */
 export async function pruneSyncQueue({ retentionMs = SENT_RETENTION_MS, now = Date.now() } = {}) {
   try {
     const pending = await db.sync_queue.where('status').anyOf(['queued', 'sending', 'error', 'failed']).toArray()
-    const oldestPendingId = pending.reduce((min, j) => Math.min(min, j.id), Infinity)
+    // match key (null: jobs without one) -> id of its oldest pending job
+    const oldestPending = new Map()
+    for (const j of pending) {
+      const key = jobMatchKey(j) ?? null
+      if (!oldestPending.has(key) || oldestPending.get(key) > j.id) oldestPending.set(key, j.id)
+    }
     const done = await db.sync_queue.where('status').anyOf(['sent', 'superseded', 'dropped']).toArray()
     const ids = done
       .filter(j => {
@@ -530,7 +645,8 @@ export async function pruneSyncQueue({ retentionMs = SENT_RETENTION_MS, now = Da
         const ts = typeof j.ts === 'number' ? j.ts : Date.parse(j.ts)
         // the activity uploads (one every 10 s in a match) carry nothing to keep
         if (j.resource === 'activity') return Number.isFinite(ts) && now - ts > ACTIVITY_JOB_RETENTION_MS
-        if (j.id >= oldestPendingId) return false
+        const key = jobMatchKey(j) ?? null
+        if (oldestPending.has(key) && j.id >= oldestPending.get(key)) return false
         return Number.isFinite(ts) && now - ts > retentionMs
       })
       .map(j => j.id)
@@ -802,6 +918,9 @@ async function clearCloudBlock(job) {
     // "Closed on the server" stays until a write proves the match open again
     // (an admin reopened it): the closed-copy notice depends on it
     if (local?.cloudBlock?.code === MATCH_CLOSED && !provesMatchOpen(job)) return
+    // A refused restore holds the match back until a restore (or the match
+    // row itself) goes through: a claim or a link going through says nothing
+    if (local?.cloudBlock?.code === RESTORE_REFUSED && !(job.resource === 'match' && (job.action === 'restore' || job.action === 'insert'))) return
     seeds.delete(seedKey)
     if (local?.cloudBlock) await db.matches.update(local.id, { cloudBlock: null })
   } catch (err) {
@@ -809,17 +928,54 @@ async function clearCloudBlock(job) {
   }
 }
 
+/**
+ * A restore refused with the server's own code that is no cloud block (too
+ * large a body, too many rows, a row the server cannot take): parked as
+ * refused, it holds every later job of its match (pendingEntityBlocks), so
+ * the match never reaches the cloud without help. The local match says so
+ * (CloudBlockNotice names the game and what to do); where the refusal is
+ * about its size (`parts`), support sends it in parts (utils/refusedRestore).
+ * A block of another kind stays as it is.
+ */
+async function recordRestoreRefused(job, error) {
+  const seedKey = jobMatchKey(job)
+  if (!seedKey) return
+  try {
+    const local = await findLocalMatchBySeed(seedKey)
+    if (!local || local.test === true || (local.cloudBlock && local.cloudBlock.code !== RESTORE_REFUSED)) return
+    const reason = typeof error?.code === 'string' ? error.code.slice(0, 40) : null
+    await db.matches.update(local.id, { cloudBlock: { code: RESTORE_REFUSED, reason, parts: partsMayHelp(error, job.payload), claim: null, at: Date.now() } })
+    ;(await getBlockedSeeds()).add(seedKey)
+    safeLog.warn('[SyncQueue] Restore refused by the server; the match\'s later writes wait for it:', seedKey, reason)
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(CLOUD_BLOCK_EVENT, { detail: { seedKey, code: RESTORE_REFUSED } }))
+    }
+  } catch (err) {
+    safeLog.warn('[SyncQueue] Could not note the refused restore of a match:', err?.message)
+  }
+}
+
 // A closing update (approved / final) closes the match on the server, and from
 // then on the server refuses its sets and events (409 OV_MATCH_CLOSED). It
 // must not overtake an older set or event job of the same match that is still
-// on its way (queued, in flight or waiting out a backoff). Old 'failed' jobs do
-// not hold it: they were refused and wait for a hand retry. The same holds for
-// an older match update carrying the remarks (db/017): the approval queues the
-// remarks as approved just before itself, and once the match is closed the
-// server refuses them (a server without 017 refuses them as 'failed', which
-// does not hold the approval).
+// on its way (queued, in flight or waiting out a backoff). Old 'failed' set
+// and event jobs do not hold it: they were refused and wait for a hand retry.
+//
+// Nor an older match update not delivered yet: the 'ended' update carries the
+// result (winner, final_score, the last set_results, sanctions), the approval
+// does not, and once the approval has closed the match the server refuses the
+// update. Parked after a failure ('error', its backoff up to 10 minutes; or
+// 'failed'), the approval went first and the official match had no result.
+// Such an update is requeued at once, trimmed against newer sent updates
+// first (supersedeStaleUpdates), once per closing job: one refused again for
+// good ('failed') then no longer holds the approval, one that failed again on
+// its way ('error') holds it until it is through. The remarks as approved
+// (db/017) are such an update too: the approval queues them just before itself.
+//
+// Nor the undo of an account approval given before the sheet changed (a
+// correction, a remarks change at the match end): closed first, the match
+// keeps that approval for good (its approvals are frozen on the server).
 const CLOSING_STATUSES = ['approved', 'final']
-const isRemarksUpdate = (j) => j.resource === 'match' && j.action === 'update' && j.payload != null && typeof j.payload === 'object' && 'remarks' in j.payload
 export function isClosingJob(job) {
   return job?.resource === 'match' && job.action === 'update' && CLOSING_STATUSES.includes(job.payload?.status)
 }
@@ -827,8 +983,18 @@ export async function closingMustWait(job) {
   const matchKey = jobMatchKey(job)
   if (!matchKey || job?.id == null) return false
   try {
-    const pending = await db.sync_queue.where('status').anyOf('queued', 'sending', 'error').toArray()
-    return pending.some(j => j.id < job.id && (j.resource === 'set' || j.resource === 'event' || isRemarksUpdate(j)) && jobMatchKey(j) === matchKey)
+    const pending = await db.sync_queue.where('status').anyOf('queued', 'sending', 'error', 'failed').toArray()
+    const older = pending.filter(j => j.id < job.id && jobMatchKey(j) === matchKey)
+    if (older.some(j => j.status !== 'failed' && (j.resource === 'set' || j.resource === 'event' || j.resource === APPROVAL_RESOURCE))) return true
+    const updates = older.filter(j => j.resource === 'match' && j.action === 'update' &&
+      !(j.status === 'failed' && j.closing_retry_for === job.id))
+    if (updates.length === 0) return false
+    const parked = updates.filter(j => (j.status === 'error' || j.status === 'failed') && j.closing_retry_for !== job.id)
+    const superseded = parked.length > 0 ? await supersedeStaleUpdates(parked) : new Set()
+    for (const j of parked) {
+      if (!superseded.has(j.id)) await db.sync_queue.update(j.id, { status: 'queued', retry_count: 0, closing_retry_for: job.id })
+    }
+    return updates.some(j => !superseded.has(j.id))
   } catch {
     return false
   }
@@ -862,19 +1028,23 @@ installAuthListener()
 /**
  * Process a single job.
  * Returns true (sent), false (error), null (retry later), STOP_PASS,
- * STOP_NETWORK, STOP_ERROR, AUTH_REQUIRED, PERMANENT_FAILURE or DROP_JOB. The
- * failure reason is available once through takeJobError(job.id).
+ * STOP_NETWORK, STOP_ERROR, AUTH_REQUIRED, UPDATE_REQUIRED, PERMANENT_FAILURE
+ * or DROP_JOB. The failure reason is available once through
+ * takeJobError(job.id).
  *
  * A write refused as OV_NOT_MATCH_OWNER is taken over here (once per match
  * and CLAIM_RETRY_MS, see claimMatchWithLocalPin) and sent again. After a
  * successful take-over the match's other parked jobs are queued again.
+ * @param {object} job the sync_queue row
+ * @param {{ matchIds?: Map<string, string> }} [pass] runQueuePass's cache of
+ *   the cloud ids of the matches (cloudMatchId)
  */
-export async function processJob(job) {
-  let result = await processJobOnce(job)
+export async function processJob(job, pass = {}) {
+  let result = await processJobOnce(job, pass)
   if (result === PERMANENT_FAILURE && jobErrors.get(job?.id)?.code === 'OV_NOT_MATCH_OWNER') {
     const matchKey = jobMatchKey(job)
     if (matchKey && claimDue(matchKey) && await claimMatchWithLocalPin(matchKey)) {
-      result = await processJobOnce(job)
+      result = await processJobOnce(job, pass)
       if (result === true) await requeueParkedJobsOf(matchKey, job.id)
     }
   }
@@ -908,6 +1078,9 @@ export async function processJob(job) {
         // one too, are superseded, not refused
         const now = await db.sync_queue.get(job.id).catch(() => null)
         if (now?.status === 'superseded') result = DROP_JOB
+      }
+      if (result === PERMANENT_FAILURE && job?.resource === 'match' && job.action === 'restore' && !CLOUD_BLOCK_CODES.includes(error?.code)) {
+        await recordRestoreRefused(job, error)
       }
     } else if (result === true) {
       await clearCloudBlock(job)
@@ -977,8 +1150,8 @@ export function takeSetAside(jobId) {
   return setAsideJobIds.delete(jobId)
 }
 
-async function processJobOnce(job) {
-  const ctx = { error: null }
+async function processJobOnce(job, pass = {}) {
+  const ctx = { error: null, matchIds: pass?.matchIds ?? null }
   const result = await processJobInner(job, ctx)
   if (ctx.error && job?.id != null) jobErrors.set(job.id, ctx.error)
   else if (job?.id != null) jobErrors.delete(job.id)
@@ -1012,8 +1185,90 @@ async function requeueParkedJobsOf(matchKey, exceptId) {
   }
 }
 
+// Resyncs tried per match key (one per RESYNC_RETRY_MS, see resyncMatch)
+const RESYNC_RETRY_MS = 10 * 60 * 1000
+const resyncAttempts = new Map()
+export const RESYNC_RECENT = -1
+
+/**
+ * The server lacks a match this device already sent (a database restored to
+ * an earlier time: an update answered 404 OV_MATCH_UNKNOWN, or a set or event
+ * whose match the server no longer has): the match's jobs already sent go
+ * back to the queue, in their order (lower ids than the job that noticed),
+ * so the server gets the match again from this device's data. Each of them
+ * is an upsert by external_id or a full snapshot, so sending one twice is
+ * harmless. Only when the match's insert or restore is among them (else the
+ * match was never sent from here, or its jobs are pruned), once per match
+ * and RESYNC_RETRY_MS. ask: no answer of the server named the match unknown
+ * yet (a set or event found no match): the server is asked first
+ * (apiMatchKnown), and only a match it never saw deleted is sent again; a
+ * match deleted on purpose (OV_MATCH_DELETED) stays deleted.
+ * @returns {Promise<number>} jobs queued again, or RESYNC_RECENT
+ */
+export async function resyncMatch(seedKey, { database = db, now = Date.now(), ask = false } = {}) {
+  if (!seedKey) return 0
+  const last = resyncAttempts.get(seedKey)
+  if (last !== undefined && now - last < RESYNC_RETRY_MS) return RESYNC_RECENT
+  if (resyncAttempts.size >= 200) resyncAttempts.delete(resyncAttempts.keys().next().value)
+  resyncAttempts.delete(seedKey)
+  resyncAttempts.set(seedKey, now)
+  try {
+    const sent = (await database.sync_queue.where('status').equals('sent').toArray())
+      .filter(j => j.resource !== 'activity' && jobMatchKey(j) === seedKey)
+    if (!sent.some(j => j.resource === 'match' && (j.action === 'insert' || j.action === 'restore'))) {
+      safeLog.warn('[SyncQueue] The server lacks match', seedKey, 'and this device holds no sent insert of it to send again')
+      return 0
+    }
+    if (ask) {
+      const { data } = await apiMatchKnown(seedKey)
+      if (data?.state !== 'unknown') return 0
+    }
+    for (const j of sent) await database.sync_queue.update(j.id, { status: 'queued', retry_count: 0 })
+    safeLog.warn('[SyncQueue] The server lacks match', seedKey, `: ${sent.length} sent job(s) queued again`)
+    return sent.length
+  } catch (err) {
+    safeLog.warn('[SyncQueue] Could not queue match', seedKey, 'again:', err?.message)
+    return 0
+  }
+}
+
+/** Test hook: forget the resyncs tried. */
+export function resetResyncAttempts() { resyncAttempts.clear() }
+
 // Answers to a scoring-device claim that leave nothing to record (see below)
 const NO_SCORER_RECORD = ['OV_MATCH_CLOSED', 'OV_SCORER_UNAVAILABLE', 'OV_DB_NOT_CONFIGURED']
+
+/**
+ * The cloud id (uuid) of the match `seedKey`, read once per pass (ctx.matchIds,
+ * filled by runQueuePass): every set and event job read it before its write,
+ * two requests per job against the per-address read limit after a long
+ * offline match. Only a match found is kept (not in the cloud yet: asked again).
+ * @returns {Promise<{ id: string|null, error?: object }>}
+ */
+async function cloudMatchId(seedKey, ctx) {
+  const cache = ctx?.matchIds
+  if (cache?.has(seedKey)) return { id: cache.get(seedKey) }
+  const { data, error } = await apiFrom('matches')
+    .select('id')
+    .eq('external_id', seedKey)
+    .maybeSingle()
+  if (error) return { id: null, error }
+  const id = data?.id ?? null
+  if (id && cache) cache.set(seedKey, id)
+  return { id }
+}
+
+/** An event insert as the events table takes it: its match's cloud id, no bad server number. */
+function eventInsertRow(payload, matchUuid) {
+  const row = { ...payload, sport_type: 'indoor' }
+  // serve_player is an integer column: a shirt number stored as '1.5' by
+  // an older roster editor (queued, or already parked as refused) was
+  // refused (22P02) at every retry and the rally never reached the
+  // cloud. Sent without its server, the rally counts.
+  if (row.serve_player != null && !isShirtNumber(row.serve_player)) row.serve_player = null
+  if (matchUuid) row.match_id = matchUuid
+  return row
+}
 
 async function processJobInner(job, ctx) {
   try {
@@ -1040,9 +1295,10 @@ async function processJobInner(job, ctx) {
       }
     }
 
-    // Closing order: the approval waits for the match's older sets and events
+    // Closing order: the approval waits for the match's older sets, events
+    // and match updates
     if (isClosingJob(job) && await closingMustWait(job)) {
-      safeLog.log('[SyncQueue] Closing update waits for older set/event jobs of its match')
+      safeLog.log('[SyncQueue] Closing update waits for older jobs of its match')
       return null
     }
 
@@ -1052,11 +1308,11 @@ async function processJobInner(job, ctx) {
       // Filter to valid columns only - handles old backup formats with invalid fields
       const matchPayload = filterMatchPayload(await withFullConnectionPins(job.payload?.external_id, job.payload))
 
-      safeLog.log('[SyncQueue] Match insert payload:', redactForLog(matchPayload))
+      safeLog.log('[SyncQueue] Match insert payload:', matchPayload.external_id, payloadForLog(matchPayload))
       const { error } = await apiFrom('matches')
         .upsert(matchPayload, { onConflict: 'external_id' })
       if (error) {
-        safeLog.error('[SyncQueue] Match insert error:', error, redactForLog(matchPayload))
+        safeLog.error('[SyncQueue] Match insert error:', error, matchPayload.external_id, payloadForLog(matchPayload))
         return failureResult(error, ctx)
       }
       safeLog.log('[SyncQueue] Match insert successful')
@@ -1103,12 +1359,24 @@ async function processJobInner(job, ctx) {
         }
       }
 
-      safeLog.log('[SyncQueue] Match update payload:', redactForLog({ id, ...finalUpdateData }))
+      safeLog.log('[SyncQueue] Match update payload:', id, payloadForLog(finalUpdateData))
       const { error } = await apiFrom('matches')
         .update(finalUpdateData)
         .eq('external_id', id)
+      if (error?.code === 'OV_MATCH_DELETED') {
+        // deleted on purpose (another device, an admin): nothing to write
+        safeLog.warn('[SyncQueue] Match update of a deleted match, dropped:', id)
+        return true
+      }
+      if (error?.code === 'OV_MATCH_UNKNOWN') {
+        // the server lacks the match: send it again, then this update
+        const queued = await resyncMatch(id)
+        if (queued !== 0) return null
+        safeLog.warn('[SyncQueue] Match update of a match the server lacks, nothing to send again:', id)
+        return true
+      }
       if (error) {
-        safeLog.error('[SyncQueue] Match update error:', error, redactForLog(job.payload))
+        safeLog.error('[SyncQueue] Match update error:', error, id, payloadForLog(rawUpdateData))
         return failureResult(error, ctx)
       }
       safeLog.log('[SyncQueue] Match update successful')
@@ -1138,6 +1406,7 @@ async function processJobInner(job, ctx) {
 
       const matchUuid = matchData.id
       safeLog.log('[SyncQueue] 🔍 Found match UUID:', matchUuid)
+      ctx.matchIds?.delete(id)
 
       // Count records before deletion for debugging
       const { count: eventsCountBefore } = await apiFrom('events')
@@ -1289,7 +1558,7 @@ async function processJobInner(job, ctx) {
         })
         if (error) {
           safeLog.error('[SyncQueue] Restore failed:', error.code || error.status, error.message, error.details || '')
-          // 426 (old bundle), 429, 5xx and network errors: retry later
+          // 429, 5xx and network errors: retry later; 426 (an old bundle): an update
           return failureResult(error, ctx)
         }
         safeLog.log('[SyncQueue] Restore complete for match:', externalId, data?.counts || '')
@@ -1310,17 +1579,15 @@ async function processJobInner(job, ctx) {
       let setPayload = { ...job.payload, sport_type: 'indoor' }
 
       if (setPayload.match_id && typeof setPayload.match_id === 'string') {
-        const { data: matchData, error: lookupError } = await apiFrom('matches')
-          .select('id')
-          .eq('external_id', setPayload.match_id)
-          .maybeSingle()
-
+        const { id: matchUuid, error: lookupError } = await cloudMatchId(setPayload.match_id, ctx)
         if (lookupError) return failureResult(lookupError, ctx)
-        if (!matchData) {
-          // Match not yet synced - keep job queued for retry
+        if (!matchUuid) {
+          // Match not yet synced - keep job queued for retry; or synced and
+          // lost on the server since: sent again (resyncMatch)
+          await resyncMatch(setPayload.match_id, { ask: true })
           return null // null means "retry later"
         }
-        setPayload.match_id = matchData.id
+        setPayload.match_id = matchUuid
       }
 
       const { error } = await apiFrom('sets')
@@ -1340,16 +1607,13 @@ async function processJobInner(job, ctx) {
       let query = apiFrom('sets').update({ ...updateData, sport_type: 'indoor' })
       const parsed = parseExtId(external_id)
       if (parsed) {
-        const { data: matchData, error: lookupError } = await apiFrom('matches')
-          .select('id')
-          .eq('external_id', parsed.seedKey)
-          .maybeSingle()
+        const { id: matchUuid, error: lookupError } = await cloudMatchId(parsed.seedKey, ctx)
         if (lookupError) return failureResult(lookupError, ctx)
-        if (!matchData) return null // match not in the cloud yet - retry later
+        if (!matchUuid) return null // match not in the cloud yet - retry later
         // Also match the row a set insert created before ids were namespaced;
         // the match scope keeps that bare id from touching other matches.
         query = query
-          .eq('match_id', matchData.id)
+          .eq('match_id', matchUuid)
           .in('external_id', [external_id, String(parsed.localId)])
       } else {
         query = query.eq('external_id', external_id)
@@ -1363,28 +1627,37 @@ async function processJobInner(job, ctx) {
       return true
     }
 
+    if (job.resource === 'set' && job.action === 'delete') {
+      // A set deleted on the device (utils/eventSync queueSetDeletes), queued
+      // behind its insert and updates. By the namespaced external_id, which
+      // the backend requires for a child-row delete (pgQuery
+      // assertChildFilterScoped); a row the cloud never had matches nothing.
+      const externalId = job.payload?.external_id
+      if (!parseExtId(externalId)) return DROP_JOB
+      const { error } = await apiFrom('sets').delete().eq('external_id', externalId)
+      if (error) {
+        safeLog.error('[SyncQueue] Set delete error:', error, externalId)
+        return failureResult(error, ctx)
+      }
+      return true
+    }
+
     // ==================== EVENT ====================
     if (job.resource === 'event' && job.action === 'insert') {
       // Resolve match_id from external_id
-      let eventPayload = { ...job.payload, sport_type: 'indoor' }
-      // serve_player is an integer column: a shirt number stored as '1.5' by
-      // an older roster editor (queued, or already parked as refused) was
-      // refused (22P02) at every retry and the rally never reached the
-      // cloud. Sent without its server, the rally counts.
-      if (eventPayload.serve_player != null && !isShirtNumber(eventPayload.serve_player)) eventPayload.serve_player = null
+      let eventPayload = eventInsertRow(job.payload, null)
 
       if (eventPayload.match_id && typeof eventPayload.match_id === 'string') {
-        const { data: matchData, error: lookupError } = await apiFrom('matches')
-          .select('id')
-          .eq('external_id', eventPayload.match_id)
-          .maybeSingle()
-
+        const { id: matchUuid, error: lookupError } = await cloudMatchId(eventPayload.match_id, ctx)
         if (lookupError) return failureResult(lookupError, ctx)
-        if (!matchData) {
-          // Match not yet synced - keep job queued for retry (will be limited by MAX_DEPENDENCY_RETRIES)
+        if (!matchUuid) {
+          // Match not yet synced - keep job queued for retry (will be limited
+          // by MAX_DEPENDENCY_RETRIES); or synced and lost on the server
+          // since: sent again (resyncMatch)
+          await resyncMatch(eventPayload.match_id, { ask: true })
           return null // null means "retry later"
         }
-        eventPayload.match_id = matchData.id
+        eventPayload.match_id = matchUuid
       }
 
       // Use upsert with external_id to avoid duplicates on retry
@@ -1481,12 +1754,48 @@ async function processJobInner(job, ctx) {
       return true
     }
 
+    // ==================== ACCOUNT APPROVAL UNDO ====================
+    // The sheet changed after an official approved it with their account
+    // (domain/accountApproval approvalUndoJobs): the approval goes on the
+    // server too, retried like every write until it is through
+    if (job.resource === APPROVAL_RESOURCE && job.action === 'undo') {
+      const id = job.payload?.id
+      if (!id) return DROP_JOB
+      const { error } = await approvalsApi.undo(id)
+      if (error) {
+        // gone already: replaced by a newer approval of the slot, or undone
+        if (error.status === 404) return true
+        if (error.code === 'OV_MATCH_CLOSED') {
+          // the match was closed first: its approvals are frozen there
+          safeLog.warn('[SyncQueue] Approval undo refused, the match is closed: dropped')
+          ctx.error = summarizeError(error)
+          return DROP_JOB
+        }
+        safeLog.warn('[SyncQueue] Approval undo error:', error.code || error.status || error.message)
+        return failureResult(error, ctx)
+      }
+      return true
+    }
+
     // ==================== SCORESHEET FILES ====================
     // The approval's PDF and final JSON (MatchEnd): the job carries the file
     if (job.resource === SCORESHEET_UPLOAD_RESOURCE && job.action === 'upload') {
       if (!job.payload?.path || !job.payload?.file) return DROP_JOB
-      const { error } = await uploadQueuedScoresheet(job.payload)
+      const { error, status } = await uploadQueuedScoresheet(job.payload)
       if (error) {
+        if ((error.status ?? status) === 404 && error.code === 'OV_MATCH_NOT_FOUND') {
+          // The backend stores a PDF for its match only, and the match is not
+          // in the cloud yet (its insert is in the score's lane): retry later
+          ctx.error = summarizeError(error)
+          return null
+        }
+        if (error.code === 'OV_MATCH_CLOSED') {
+          // The match is closed and keeps the PDF it has: this file is never
+          // taken (after an admin reopen, the new approval queues new files)
+          safeLog.warn('[SyncQueue] Scoresheet upload refused, the match is closed: dropped')
+          ctx.error = summarizeError(error)
+          return DROP_JOB
+        }
         safeLog.warn('[SyncQueue] Scoresheet upload error:', error.code || error.status || error.message)
         return failureResult(error, ctx)
       }
@@ -1511,6 +1820,7 @@ function entityKey(job) {
   if (job.resource === 'match') return `match:${jobMatchKey(job)}`
   if (job.resource === USER_MATCH_RESOURCE) return `${job.resource}:${jobMatchKey(job)}:${job.payload?.role}`
   if (job.resource === SCORESHEET_UPLOAD_RESOURCE) return `${job.resource}:${job.payload?.path}`
+  if (job.resource === APPROVAL_RESOURCE) return `${job.resource}:${job.payload?.id}`
   return `${job.resource}:${job.payload?.external_id}`
 }
 
@@ -1603,14 +1913,83 @@ function reportJobOutcome(job, result, jobError) {
   }, { level: 'warn', matchExt: jobMatchKey(job) })
 }
 
+// An event insert that may go in a batch: its namespaced id names the match
+// it carries (bare and legacy ids are rewritten one by one in processJob)
+function isBatchableEventInsert(job) {
+  if (job?.resource !== 'event' || job.action !== 'insert') return false
+  const seedKey = job.payload?.match_id
+  const parsed = parseExtId(job.payload?.external_id)
+  return typeof seedKey === 'string' && !!seedKey && parsed?.kind === 'event' && parsed.seedKey === seedKey
+}
+// The columns a job writes: one upsert of rows with different columns would
+// write NULL into the columns a row does not carry
+const payloadShape = (job) => Object.keys(job.payload || {}).sort().join(',')
+
+// Rows per event batch of a match, where lowered from EVENT_BATCH_MAX: a
+// batch that did not get through on its way (network, the request's
+// timeout, a page from in front of the backend) was built again at the same
+// size by the next pass, and on a link too slow for it the backlog never
+// drained. Halved after each such failure, down to one by one; doubled back
+// after each event or batch of the match that went through. Per page load.
+const eventBatchLimits = new Map()
+const eventBatchLimit = (seedKey) => eventBatchLimits.get(seedKey) ?? EVENT_BATCH_MAX
+function noteEventBatch(seedKey, rows, delivered) {
+  if (!delivered) {
+    eventBatchLimits.set(seedKey, Math.max(1, Math.floor(rows / 2)))
+    return
+  }
+  const limit = eventBatchLimits.get(seedKey)
+  if (limit == null) return
+  if (limit * 2 >= EVENT_BATCH_MAX) eventBatchLimits.delete(seedKey)
+  else eventBatchLimits.set(seedKey, limit * 2)
+}
+
+/**
+ * Event inserts of one match in one upsert (EVENT_BATCH_MAX). A refusal by
+ * the backend is left to the jobs one by one, each with its own answer (one
+ * refused row parks only itself; take-over, cloud blocks). Any other failure
+ * (network, rate limit, no session, a proxy page, a 5xx) is the first job's:
+ * the pass goes on as it would after it, the match's other events held back.
+ * @returns {Promise<{ result: * }|null>} result true: all sent; another
+ *   processJob result: the first job's; null: send them one by one
+ */
+async function sendEventBatch(jobs, ctx) {
+  const answerOf = (error) => {
+    const result = failureResult(error, ctx)
+    return result === PERMANENT_FAILURE || result === false ? null : { result }
+  }
+  try {
+    const seedKey = jobs[0].payload.match_id
+    if ((await findLocalMatchBySeed(seedKey))?.test === true) return null
+    const { id: matchUuid, error: lookupError } = await cloudMatchId(seedKey, ctx)
+    if (lookupError) return answerOf(lookupError)
+    // not in the cloud yet: the first job waits, and with it the match's others
+    if (!matchUuid) return { result: null }
+    const { error } = await apiFrom('events')
+      .upsert(jobs.map(j => eventInsertRow(j.payload, matchUuid)), { onConflict: 'external_id' })
+    if (error) {
+      safeLog.warn(`[SyncQueue] ${jobs.length} events not sent together (${error.code || error.status})`)
+      return answerOf(error)
+    }
+    return { result: true }
+  } catch (err) {
+    ctx.error = summarizeError(err)
+    return isNetworkException(err) ? { result: STOP_NETWORK } : null
+  }
+}
+
 /**
  * One pass over the queued jobs, in dependency order. `resources`: the lane
  * (SCORE_LANE by default; the scoresheet files go in runUploadLane).
- * @returns {Promise<{ processed: number, sent: number, hasError: boolean, hasFailed: boolean, hasRetry: boolean, stopped: boolean, authRequired: boolean }>}
+ * `lease`: withQueueLock's; once another page has taken the lock over, the
+ * pass ends before its next job (leaseLost).
+ * updateRequired: the backend refuses this app version's writes (426);
+ * serverBehind: a job was refused for a column or table the server lacks.
+ * @returns {Promise<{ processed: number, sent: number, hasError: boolean, hasFailed: boolean, hasRetry: boolean, stopped: boolean, authRequired: boolean, updateRequired: boolean, serverBehind: boolean, leaseLost?: boolean }>}
  */
-export async function runQueuePass({ resources = SCORE_LANE } = {}) {
+export async function runQueuePass({ resources = SCORE_LANE, lease = null } = {}) {
   const queued = (await db.sync_queue.where('status').equals('queued').toArray()).filter(j => resources.includes(j.resource))
-  const outcome = { processed: queued.length, sent: 0, hasError: false, hasFailed: false, hasRetry: false, stopped: false, authRequired: false }
+  const outcome = { processed: queued.length, sent: 0, hasError: false, hasFailed: false, hasRetry: false, stopped: false, authRequired: false, updateRequired: false, serverBehind: false }
   if (queued.length === 0) return outcome
   // (marks left by an earlier pass; only the score lane sets jobs aside, and
   // the upload lane runs beside it)
@@ -1640,6 +2019,39 @@ export async function runQueuePass({ resources = SCORE_LANE } = {}) {
   }
   const isHeldBack = (key, jobId) => blocked.has(key) || (pendingBlocks.has(key) && pendingBlocks.get(key) < jobId)
 
+  // The cloud ids of the matches, read once in this pass (cloudMatchId)
+  const pass = { matchIds: new Map() }
+  // Jobs sent with an earlier one (an event batch), and the matches whose
+  // batch was refused in this pass (their events go one by one)
+  const handled = new Set()
+  const noBatch = new Set()
+
+  // The queued event inserts after jobs[start] (already read again) that go
+  // with it: the same match, the same columns, in order, none held back
+  const eventBatchFrom = async (jobs, start, first) => {
+    if (!isBatchableEventInsert(first) || noBatch.has(first.payload.match_id)) return [first]
+    const seedKey = first.payload.match_id
+    const shape = payloadShape(first)
+    const ids = new Set([first.payload.external_id])
+    let bytes = JSON.stringify(first.payload).length
+    const batch = [first]
+    const limit = Math.min(EVENT_BATCH_MAX, eventBatchLimit(seedKey))
+    for (let k = start + 1; k < jobs.length && batch.length < limit; k++) {
+      const next = jobs[k]
+      if (!isBatchableEventInsert(next) || next.payload.match_id !== seedKey) break
+      if (isHeldBack(entityKey(next), next.id) || isHeldBack(`whole:${seedKey}`, next.id)) break
+      const row = await db.sync_queue.get(next.id)
+      if (!row || row.status !== 'queued' || !isBatchableEventInsert(row) || row.payload.match_id !== seedKey) break
+      // (the same event twice: an upsert cannot write one row twice)
+      if (payloadShape(row) !== shape || ids.has(row.payload.external_id)) break
+      bytes += JSON.stringify(row.payload).length
+      if (bytes > EVENT_BATCH_MAX_BYTES) break
+      batch.push(row)
+      ids.add(row.payload.external_id)
+    }
+    return batch
+  }
+
   // Process in dependency order
   for (const resource of RESOURCE_ORDER) {
     if (!resources.includes(resource)) continue
@@ -1648,7 +2060,15 @@ export async function runQueuePass({ resources = SCORE_LANE } = {}) {
     const claimFirst = (j) => (j.action === SCORER_CLAIM_ACTION ? 0 : 1)
     const jobs = (jobsByResource[resource] || []).sort((a, b) => claimFirst(a) - claimFirst(b) || a.id - b.id)
 
-    for (const job of jobs) {
+    for (let i = 0; i < jobs.length; i++) {
+      if (handled.has(jobs[i].id)) continue
+      if (lease && !lease.held()) {
+        // Another page sends the queue now; it reads every job again
+        outcome.leaseLost = true
+        outcome.hasRetry = true
+        return outcome
+      }
+      let job = jobs[i]
       const key = entityKey(job)
       const matchKey = jobMatchKey(job)
       // (a claim is never held back: the match's other jobs wait for it)
@@ -1659,14 +2079,51 @@ export async function runQueuePass({ resources = SCORE_LANE } = {}) {
         continue
       }
 
-      // processJob takes the match over when the write is refused for ownership
-      const result = await processJob(job)
-      const jobError = takeJobError(job.id)
+      // The row as it is now: the list above was read when the pass began.
+      // A job deleted since (a newer score replaced it, an undone set took
+      // its jobs) or no longer queued (set aside, superseded) is not sent;
+      // the payload sent is the one read now.
+      const current = await db.sync_queue.get(job.id)
+      if (!current || current.status !== 'queued') continue
+      job = current
+
+      let result
+      let jobError = null
+      const batch = await eventBatchFrom(jobs, i, job)
+      if (batch.length > 1) {
+        const ctx = { error: null, matchIds: pass.matchIds }
+        const answer = await sendEventBatch(batch, ctx)
+        if (answer?.result === true) {
+          for (const b of batch) {
+            await db.sync_queue.update(b.id, { status: 'sent', retry_count: 0, network_stops: 0, last_error: null })
+            handled.add(b.id)
+          }
+          outcome.sent += batch.length
+          noteEventBatch(job.payload.match_id, batch.length, true)
+          await clearCloudBlock(job)
+          continue
+        }
+        if (answer) {
+          // as if the first job had got the answer
+          result = answer.result
+          jobError = ctx.error
+          // (lost on its way: smaller next time)
+          if (result === STOP_NETWORK || result === STOP_ERROR) noteEventBatch(job.payload.match_id, batch.length, false)
+        } else {
+          noBatch.add(job.payload.match_id)
+        }
+      }
+      if (result === undefined) {
+        // processJob takes the match over when the write is refused for ownership
+        result = await processJob(job, pass)
+        jobError = takeJobError(job.id)
+      }
       reportJobOutcome(job, result, jobError)
 
       if (result === true) {
         await db.sync_queue.update(job.id, { status: 'sent', retry_count: 0, network_stops: 0, last_error: null })
         outcome.sent++
+        if (isBatchableEventInsert(job)) noteEventBatch(job.payload.match_id, 1, true)
         continue
       }
 
@@ -1676,6 +2133,19 @@ export async function runQueuePass({ resources = SCORE_LANE } = {}) {
         outcome.stopped = true
         outcome.hasRetry = true
         outcome.authRequired = true
+        return outcome
+      }
+
+      if (result === UPDATE_REQUIRED) {
+        // This build is too old for the backend (426): every write gets the
+        // same answer. Leave the job queued as it is (no attempt counted: it
+        // must not end up parked) until a newer build sends it.
+        if (currentSyncStatus !== 'update_required') {
+          safeLog.warn(`[SyncQueue] The backend refuses this app version's writes (${jobError?.code || jobError?.status}); kept on this device until the app is updated`)
+        }
+        outcome.stopped = true
+        outcome.hasRetry = true
+        outcome.updateRequired = true
         return outcome
       }
 
@@ -1733,8 +2203,12 @@ export async function runQueuePass({ resources = SCORE_LANE } = {}) {
       }
 
       if (result === PERMANENT_FAILURE) {
-        // Refused by the backend: the same payload would be refused again
-        safeLog.warn(`[SyncQueue] Job ${job.id} (${job.resource} ${job.action}) refused by the backend, retried only hourly or by hand:`, jobError?.code || jobError?.status)
+        // Refused by the backend: the same payload would be refused again.
+        // Refused for a column or table the server lacks: it waits for the
+        // server's update (counted apart, countServerBehindJobs)
+        const behind = isServerBehindError(jobError)
+        if (behind) outcome.serverBehind = true
+        safeLog.warn(`[SyncQueue] Job ${job.id} (${job.resource} ${job.action}) refused by the backend${behind ? ' (the server lacks a column or table of this app version: its update is not out yet)' : ''}, retried only hourly or by hand:`, jobError?.code || jobError?.status)
         await db.sync_queue.update(job.id, {
           status: 'failed',
           attempts: (job.attempts || 0) + 1,
@@ -1793,7 +2267,9 @@ export async function runUploadLane() {
   if (uploadLaneBusy) return null
   uploadLaneBusy = true
   try {
-    return await runQueuePass({ resources: UPLOAD_LANE })
+    // (another page sending the files: it sends these too)
+    const { ran, value } = await runAsQueueHolder(UPLOAD_LOCK, (lease) => runQueuePass({ resources: UPLOAD_LANE, lease }))
+    return ran ? value : null
   } finally {
     uploadLaneBusy = false
   }
@@ -1815,11 +2291,146 @@ async function uploadLaneHasWork() {
 
 // One flusher per page. App, Scoreboard and Referee each mount this hook; a
 // per-instance flag let two instances process the same queued rows at once
-// (restore/delete are not idempotent).
+// (restore/delete are not idempotent). Across the pages of the origin: the
+// Web Lock (withQueueLock).
 let flushInProgress = false
 // A flush asked for while one ran (the set end's writes, queued after that
-// pass read the queue): run again as soon as it is done
+// pass read the queue; another page's, over QUEUE_WAKE_CHANNEL): run again
+// as soon as it is done
 let flushAgain = false
+// This page is running a pass of the score's lane (under QUEUE_LOCK)
+let queuePassRunning = false
+
+// Web Locks are there but refuse every request (an opaque origin, a browser
+// bug): logged once, then each page flushes on its own
+let queueLockRefusedLogged = false
+
+/**
+ * Run `fn` holding the origin-wide Web Lock `name`, if no other page of the
+ * app holds it (one flusher per origin). Without Web Locks (browsers before
+ * 2022), or where the browser refuses the request itself, `fn` runs at once:
+ * one flusher per page, as before. `steal`: take the lock from the page
+ * holding it (QUEUE_LEASE_MS). `fn` gets a lease: held() turns false once
+ * another page has taken the lock over; the pass then ends before its next
+ * job.
+ * @returns {Promise<{ ran: boolean, value?: * }>} ran false: another page holds it
+ */
+export async function withQueueLock(name, fn, { steal = false } = {}) {
+  const locks = typeof navigator !== 'undefined' ? navigator.locks : null
+  const unlocked = { locked: false, held: () => true }
+  if (!locks || typeof locks.request !== 'function') return { ran: true, value: await fn(unlocked) }
+  let entered = false
+  let lost = false
+  let work = null
+  const lease = { locked: true, held: () => !lost }
+  let out = { ran: false }
+  try {
+    await locks.request(name, steal ? { steal: true } : { ifAvailable: true }, async (lock) => {
+      if (!lock) return
+      entered = true
+      work = (async () => fn(lease))()
+      out = { ran: true, value: await work }
+    })
+  } catch (err) {
+    if (!entered) {
+      if (!queueLockRefusedLogged) {
+        queueLockRefusedLogged = true
+        safeLog.warn('[SyncQueue] The browser refused the queue lock; this page sends the queue on its own:', err?.name || err?.message)
+      }
+      return { ran: true, value: await fn(unlocked) }
+    }
+    // Another page took the lock over (it did not hear this one for
+    // QUEUE_LEASE_MS): this pass ends before its next job
+    if (err?.name !== 'AbortError' || !work) throw err
+    lost = true
+    safeLog.warn(`[SyncQueue] Another page took ${name} over; this pass ends after its current job`)
+    return { ran: true, value: await work }
+  }
+  return out
+}
+
+// The pages' line (BroadcastChannel; none in old browsers), by message type:
+// - 'flush': a page that found the queue taken asks the page holding it to
+//   run once more after its pass (the pass it runs read the queue before
+//   this page's write). A page that hears it while it holds no pass and runs
+//   no flush flushes itself (the holder may have just finished); it never
+//   asks on in turn, so pages cannot wake each other in a loop.
+// - 'busy': the page holding `lock` is alive (QUEUE_BEAT_MS).
+// - 'drained': the holder's pass sent jobs. Each page dispatches
+//   'sync-queue-drained' too: the scoreboard's live-state catch-up and Match
+//   End's listen in the scorer's page, whichever page sent its jobs.
+let wakeChannel
+// Per lock: when this page first found it taken (since it last held it),
+// when it last heard the page holding it, and when it last tried it
+const lockTakenSince = new Map()
+const holderHeardAt = new Map()
+const lockTriedAt = new Map()
+function queueWakeChannel() {
+  if (wakeChannel !== undefined) return wakeChannel
+  wakeChannel = null
+  try {
+    if (typeof BroadcastChannel === 'function') {
+      wakeChannel = new BroadcastChannel(QUEUE_WAKE_CHANNEL)
+      wakeChannel.onmessage = (e) => {
+        const msg = e?.data || {}
+        if (msg.type === 'busy') {
+          if (typeof msg.lock === 'string') holderHeardAt.set(msg.lock, Date.now())
+          return
+        }
+        if (msg.type === 'drained') {
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('sync-queue-drained', { detail: { sent: Number(msg.sent) || 0, pending: !!msg.pending } }))
+          }
+          return
+        }
+        if (queuePassRunning) flushAgain = true
+        else if (!flushInProgress && typeof window !== 'undefined') window.dispatchEvent(new Event(QUEUE_WAKE_EVENT))
+      }
+    }
+  } catch {
+    wakeChannel = null
+  }
+  return wakeChannel
+}
+function postQueueMessage(message) {
+  try {
+    queueWakeChannel()?.postMessage(message)
+  } catch { /* closed: the 5 s poll catches up */ }
+}
+function wakeQueueHolder() {
+  postQueueMessage({ type: 'flush' })
+}
+
+/**
+ * withQueueLock for this page's passes: the holder is heard (a 'busy' when
+ * its pass begins and every QUEUE_BEAT_MS while it runs), and a lock held
+ * by a page not heard for QUEUE_LEASE_MS while this page kept finding it
+ * taken is taken over.
+ */
+async function runAsQueueHolder(name, fn) {
+  const now = Date.now()
+  const lastTry = lockTriedAt.get(name)
+  lockTriedAt.set(name, now)
+  if (lockTakenSince.has(name) && (lastTry == null || now - lastTry > QUEUE_WATCH_GAP_MS)) lockTakenSince.set(name, now)
+  const since = lockTakenSince.get(name)
+  const quietFor = since == null ? 0 : now - Math.max(since, holderHeardAt.get(name) || 0)
+  const steal = quietFor > QUEUE_LEASE_MS
+  if (steal) safeLog.warn(`[SyncQueue] The page holding ${name} has not been heard for ${Math.round(quietFor / 1000)} s; taking it over`)
+  const out = await withQueueLock(name, async (lease) => {
+    lockTakenSince.delete(name)
+    if (!lease.locked) return fn(lease)
+    const beat = () => postQueueMessage({ type: 'busy', lock: name })
+    beat()
+    const timer = setInterval(beat, QUEUE_BEAT_MS)
+    try {
+      return await fn(lease)
+    } finally {
+      clearInterval(timer)
+    }
+  }, { steal })
+  if (!out.ran && !lockTakenSince.has(name)) lockTakenSince.set(name, Date.now())
+  return out
+}
 
 // Last run of flush's throttled housekeeping (requeue of errored jobs, prune)
 let lastRequeueAt = 0
@@ -1833,9 +2444,15 @@ let startupFailedRetryDone = false
 // setAsideClosedCopies): the startup retry would send them only to be
 // refused again (2026-10-23, match 406970: a refused restore was retried at
 // every start and held the match's newer writes back).
+// First, set jobs an older version queued with a bare local id (MatchEnd's
+// and the scoreboard's Reopen set and forfeit) get their match key while the
+// local set is still there: Close match deletes it, and such a job was then
+// dropped unsent (rewriteQueuedSyncJobs never rejects).
 let staleCopiesSweep = null
 function sweepStaleGameCopiesOnce() {
-  staleCopiesSweep ??= retireStaleGameCopies(db)
+  staleCopiesSweep ??= rewriteQueuedSyncJobs({ queue: db.sync_queue, sets: db.sets, matches: db.matches, events: db.events }, { statuses: ['queued', 'error', 'failed'] })
+    .then(({ rewritten, dropped }) => { if (rewritten || dropped) safeLog.log(`[SyncQueue] Bare set/event ids: ${rewritten} given their match, ${dropped} not attributable (dropped)`) })
+    .then(() => retireStaleGameCopies(db))
     .then((n) => { if (n) safeLog.log(`[SyncQueue] Retired ${n} refused local cop${n === 1 ? 'y' : 'ies'} of games continued in their cloud match`) })
     .catch((err) => safeLog.warn('[SyncQueue] Could not check the refused local matches:', err?.message))
     .then(() => setAsideClosedCopies(db))
@@ -1861,6 +2478,10 @@ export function resetQueueHousekeeping() {
   lastRequeueAt = 0
   lastPruneAt = 0
   claimAttempts.clear()
+  eventBatchLimits.clear()
+  lockTakenSince.clear()
+  holderHeardAt.clear()
+  lockTriedAt.clear()
   staleCopiesSweep = null
   movedMatchesCheck = null
 }
@@ -1887,7 +2508,7 @@ const syncStatusListeners = new Set()
 const SYNC_STATE_GROUP = { synced: 'ok', syncing: 'ok', connecting: 'ok' }
 const syncGroup = (s) => SYNC_STATE_GROUP[s] || s
 // Statuses that say the cloud answered
-const CLOUD_REACHED = new Set(['synced', 'syncing', 'auth_required'])
+const CLOUD_REACHED = new Set(['synced', 'syncing', 'auth_required', 'update_required'])
 // The support diagnostics (utils/diagnosticsInfo): the status, since when,
 // and what the last queue pass did
 let syncStatusSince = Date.now()
@@ -1997,7 +2618,112 @@ export function useSyncQueue() {
     }
   }, [])
 
-  const flush = useCallback(async () => {
+  // One flush's work, under the queue's lock (flush; `lease` withQueueLock's)
+  const flushPass = useCallback(async (lease) => {
+    const connected = await checkSupabaseConnection()
+    if (!connected) return
+
+    // Waiting for a sign-in: no request until then (or the periodic recheck)
+    if (isAuthBlocked()) {
+      setSyncStatus('auth_required')
+      return
+    }
+
+    // No session on this device: every write would come back 401, so none
+    // is sent. The queue resumes on sign-in (installAuthListener).
+    if (!hasStoredSessionToken()) {
+      const waiting = await db.sync_queue.where('status').equals('queued').count()
+      setSyncStatus(waiting > 0 ? 'auth_required' : 'synced')
+      return
+    }
+
+    // Errored jobs whose backoff has passed go back into this pass. Done here,
+    // inside the flush claim: a separate timer always found a flush running
+    // (its 30 s period was a multiple of the 5 s poll) and never retried.
+    // Throttled: flush runs 200 ms after every queued write (every rally).
+    const now = Date.now()
+    if (isDue(lastRequeueAt, REQUEUE_INTERVAL_MS, now)) {
+      lastRequeueAt = now
+      await retryErrorsInternal()
+    }
+    if (isDue(lastPruneAt, PRUNE_INTERVAL_MS, now)) {
+      lastPruneAt = now
+      await pruneSyncQueue({ now })
+    }
+
+    // A session is there (the checks above): the "sign in again" banner must
+    // not stay up through this pass (a long queue takes a minute)
+    if (currentSyncStatus === 'auth_required') setSyncStatus('syncing')
+    const outcome = await runQueuePass({ lease })
+    if (outcome.leaseLost) {
+      // Another page sends the queue now (runAsQueueHolder)
+      setSyncStatus('syncing')
+      return
+    }
+    noteSyncPass({ sent: outcome.sent, failed: outcome.hasFailed || outcome.hasError ? 1 : 0, pending: outcome.hasRetry ? 1 : 0 })
+    lastSyncPass = {
+      at: Date.now(),
+      processed: outcome.processed ?? null,
+      sent: outcome.sent,
+      error: !!outcome.hasError,
+      failed: !!outcome.hasFailed,
+      retry: !!outcome.hasRetry,
+      stopped: !!outcome.stopped,
+      authRequired: !!outcome.authRequired,
+      updateRequired: !!outcome.updateRequired,
+      serverBehind: !!outcome.serverBehind
+    }
+    publishSyncDiagnostics()
+
+    if (outcome.authRequired) {
+      authBlockedAt = Date.now()
+      setSyncStatus('auth_required')
+      return
+    }
+    clearAuthBlock()
+    // The scoresheet files, beside the score (not waited for)
+    runUploadLane().catch((err) => safeLog.warn('[SyncQueue] Scoresheet upload lane failed:', err?.message))
+
+    if (outcome.updateRequired) {
+      // Too old for the backend (426): "Update needed", the update banner on
+      // the match screens too, and the worker looks for the newer build now.
+      // The writes stay queued; each pass tries the first one again.
+      noteAppUpdateNeeded(UPDATE_NEEDED_SERVER)
+      setSyncStatus('update_required')
+      return
+    }
+    // A write went through: the backend takes this version's writes again
+    if (outcome.sent > 0) clearAppUpdateNeeded(UPDATE_NEEDED_SERVER)
+
+    if (outcome.sent > 0 && !outcome.stopped && typeof window !== 'undefined') {
+      // Consumers that push state outside the queue (match_live_state) catch
+      // up, in every page of the app (QUEUE_WAKE_CHANNEL)
+      window.dispatchEvent(new CustomEvent('sync-queue-drained', { detail: { sent: outcome.sent, pending: outcome.hasRetry } }))
+      postQueueMessage({ type: 'drained', sent: outcome.sent, pending: outcome.hasRetry })
+    }
+
+    if (outcome.processed === 0) {
+      setSyncStatus(await uploadLaneHasWork() ? 'syncing' : 'synced')
+      return
+    }
+
+    if (outcome.stopped) {
+      // Re-probe (with backoff) before the next pass
+      connectionVerified.current = false
+      setSyncStatus('syncing')
+    } else if (outcome.hasError) {
+      setSyncStatus('error')
+    } else if (outcome.hasRetry) {
+      // Some items need retry - will be processed next cycle
+      setSyncStatus('syncing')
+    } else {
+      setSyncStatus(await uploadLaneHasWork() ? 'syncing' : 'synced')
+    }
+  }, [checkSupabaseConnection])
+
+  // `wake: false`: asked for by another page (QUEUE_WAKE_EVENT); a queue
+  // taken by a third page is not asked again
+  const flush = useCallback(async (options) => {
     if (flushInProgress) return
     // Claim the flush BEFORE any await so two concurrent callers cannot both
     // pass the guard and double-process the same jobs (restore/delete are not
@@ -2008,86 +2734,17 @@ export function useSyncQueue() {
         setSyncStatus('online_no_supabase')
         return
       }
-
-      const connected = await checkSupabaseConnection()
-      if (!connected) return
-
-      // Waiting for a sign-in: no request until then (or the periodic recheck)
-      if (isAuthBlocked()) {
-        setSyncStatus('auth_required')
-        return
-      }
-
-      // No session on this device: every write would come back 401, so none
-      // is sent. The queue resumes on sign-in (installAuthListener).
-      if (!hasStoredSessionToken()) {
-        const waiting = await db.sync_queue.where('status').equals('queued').count()
-        setSyncStatus(waiting > 0 ? 'auth_required' : 'synced')
-        return
-      }
-
-      // Errored jobs whose backoff has passed go back into this pass. Done here,
-      // inside the flush claim: a separate timer always found a flush running
-      // (its 30 s period was a multiple of the 5 s poll) and never retried.
-      // Throttled: flush runs 200 ms after every queued write (every rally).
-      const now = Date.now()
-      if (isDue(lastRequeueAt, REQUEUE_INTERVAL_MS, now)) {
-        lastRequeueAt = now
-        await retryErrorsInternal()
-      }
-      if (isDue(lastPruneAt, PRUNE_INTERVAL_MS, now)) {
-        lastPruneAt = now
-        await pruneSyncQueue({ now })
-      }
-
-      // A session is there (the checks above): the "sign in again" banner must
-      // not stay up through this pass (a long queue takes a minute)
-      if (currentSyncStatus === 'auth_required') setSyncStatus('syncing')
-      const outcome = await runQueuePass()
-      noteSyncPass({ sent: outcome.sent, failed: outcome.hasFailed || outcome.hasError ? 1 : 0, pending: outcome.hasRetry ? 1 : 0 })
-      lastSyncPass = {
-        at: Date.now(),
-        processed: outcome.processed ?? null,
-        sent: outcome.sent,
-        error: !!outcome.hasError,
-        failed: !!outcome.hasFailed,
-        retry: !!outcome.hasRetry,
-        stopped: !!outcome.stopped,
-        authRequired: !!outcome.authRequired
-      }
-      publishSyncDiagnostics()
-
-      if (outcome.authRequired) {
-        authBlockedAt = Date.now()
-        setSyncStatus('auth_required')
-        return
-      }
-      clearAuthBlock()
-      // The scoresheet files, beside the score (not waited for)
-      runUploadLane().catch((err) => safeLog.warn('[SyncQueue] Scoresheet upload lane failed:', err?.message))
-
-      if (outcome.sent > 0 && !outcome.stopped && typeof window !== 'undefined') {
-        // Consumers that push state outside the queue (match_live_state) catch up
-        window.dispatchEvent(new CustomEvent('sync-queue-drained', { detail: { sent: outcome.sent, pending: outcome.hasRetry } }))
-      }
-
-      if (outcome.processed === 0) {
-        setSyncStatus(await uploadLaneHasWork() ? 'syncing' : 'synced')
-        return
-      }
-
-      if (outcome.stopped) {
-        // Re-probe (with backoff) before the next pass
-        connectionVerified.current = false
-        setSyncStatus('syncing')
-      } else if (outcome.hasError) {
-        setSyncStatus('error')
-      } else if (outcome.hasRetry) {
-        // Some items need retry - will be processed next cycle
-        setSyncStatus('syncing')
-      } else {
-        setSyncStatus(await uploadLaneHasWork() ? 'syncing' : 'synced')
-      }
+      // One flusher per origin: when another page is sending the queue, it
+      // runs once more for this page's writes when its pass is through
+      const { ran } = await runAsQueueHolder(QUEUE_LOCK, async (lease) => {
+        queuePassRunning = true
+        try {
+          return await flushPass(lease)
+        } finally {
+          queuePassRunning = false
+        }
+      })
+      if (!ran && options?.wake !== false) wakeQueueHolder()
     } catch (err) {
       safeLog.error('[SyncQueue] Flush error:', err)
       setSyncStatus('error')
@@ -2098,7 +2755,7 @@ export function useSyncQueue() {
         setTimeout(() => { if (!flushInProgress) flush() }, 0)
       }
     }
-  }, [checkSupabaseConnection])
+  }, [flushPass])
 
   // Monitor online/offline status
   useEffect(() => {
@@ -2195,6 +2852,12 @@ export function useSyncQueue() {
     // The backend answered another request after failing ones (a live-state
     // write, a status read): it is back, no need to wait out the backoff
     window.addEventListener(BACKEND_REACHED_EVENT, handleFlushNow)
+    // Another page found the queue taken and asked for a pass (QUEUE_WAKE_CHANNEL)
+    queueWakeChannel()
+    const handleWake = () => {
+      if (!flushInProgress) flush({ wake: false })
+    }
+    window.addEventListener(QUEUE_WAKE_EVENT, handleWake)
 
     // Fallback poll every 5s to catch any missed items (e.g., tab focus, retries)
     const interval = setInterval(() => {
@@ -2205,6 +2868,7 @@ export function useSyncQueue() {
       window.removeEventListener('sync-queue-write', handleQueueWrite)
       window.removeEventListener('sync-queue-flush-now', handleFlushNow)
       window.removeEventListener(BACKEND_REACHED_EVENT, handleFlushNow)
+      window.removeEventListener(QUEUE_WAKE_EVENT, handleWake)
       clearInterval(interval)
       if (flushTimerRef.current) clearTimeout(flushTimerRef.current)
     }
@@ -2244,11 +2908,22 @@ export async function getSyncQueueStats() {
   return { pending, error, failed }
 }
 
+/**
+ * The 'failed' jobs refused for a column or table the server does not have
+ * yet (isServerBehindError): they wait for the server's update, and the
+ * indicator says so instead of "Error".
+ */
+export async function countServerBehindJobs() {
+  return db.sync_queue.where('status').equals('failed').and(j => isServerBehindError(j.last_error)).count()
+}
+
 const EMPTY_STATS = { pending: 0, error: 0, failed: 0 }
 
-/** Live sync queue counts (see getSyncQueueStats); zeros until the first read. */
+/** Live sync queue counts (getSyncQueueStats, and serverBehind: countServerBehindJobs); zeros until the first read. */
 export function useSyncQueueStats() {
-  return useLiveQuery(() => getSyncQueueStats().catch(() => EMPTY_STATS), [], EMPTY_STATS)
+  return useLiveQuery(() => Promise.all([getSyncQueueStats(), countServerBehindJobs()])
+    .then(([stats, serverBehind]) => ({ ...stats, serverBehind }))
+    .catch(() => EMPTY_STATS), [], EMPTY_STATS)
 }
 
 // ---------------------------------------------------------------------------

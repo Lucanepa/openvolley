@@ -13,7 +13,9 @@
           "/usr/libexec/openvolley-escoresheet/apt-upgrade": null,
           "/usr/share/polkit-1/actions/com.openvolley.escoresheet.update.policy": null,
           "/usr/libexec/openbeach-escoresheet/apt-upgrade": "linux/beach/apt-upgrade",
-          "/usr/share/polkit-1/actions/com.openvolley.beach.update.policy": "linux/beach/com.openvolley.beach.update.policy"
+          "/usr/share/polkit-1/actions/com.openvolley.beach.update.policy": "linux/beach/com.openvolley.beach.update.policy",
+          "/usr/lib/firewalld/zones/openvolley-tablets.xml": null,
+          "/usr/lib/firewalld/zones/openbeach-tablets.xml": "linux/beach/openbeach-tablets.xml"
         }
       }
     }

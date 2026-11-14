@@ -69,6 +69,8 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
     await account('otherscorer', ['scorer'])
     await account('coach', null)
     await account('stranger', null)
+    await account('coach2', null)
+    await account('friend', null)
     musterdorf = (await call(admin, 'POST', '/api/admin/clubs', { name: 'VBC Musterdorf', teams: ['VBC Musterdorf H1', 'VBC Musterdorf D2'] })).json.data.club
     other = (await call(admin, 'POST', '/api/admin/clubs', { name: 'VBC Other', teams: ['VBC Other H1', 'VBC Other D1'] })).json.data.club
     await sql.query('INSERT INTO public.club_managers (club_id, user_id) VALUES ($1, $2)', [musterdorf.id, users.clubmgr.id])
@@ -125,7 +127,7 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
     assert.equal(teams.find((t) => t.id === h1.id).open_links, 1)
   })
 
-  it('redeeming it makes the account a manager of that team: the team manager role (db/030) and the team\'s club', async () => {
+  it('redeeming it makes the account a manager of that team: the team manager role (db/030), no club (db/036)', async () => {
     const r = await call(users.coach, 'POST', '/api/account/redeem-invite', { code })
     assert.equal(r.status, 200, r.text)
     assert.equal(r.json.data.role_granted, 'team_manager')
@@ -140,8 +142,8 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
     const me = (await call(users.coach, 'GET', '/api/me')).json.data
     assert.deepEqual(me.managedTeams, [{ id: h1.id, name: 'VBC Musterdorf H1', club_id: musterdorf.id, club_name: 'VBC Musterdorf', via: 'team', gender: 'm', active: true }])
     assert.deepEqual(me.roles, ['team_manager'])
-    // db/030: a member of the team's club (it scores nothing without the scorer role)
-    assert.deepEqual(me.clubs.map((c) => c.id), [musterdorf.id])
+    // db/036 (var-roleless-reads-1): no member of the team's club; its reads go through the team
+    assert.deepEqual(me.clubs, [])
     assert.equal(me.canScore, false)
     assert.equal(me.isPending, false)
     const teams = (await call(users.clubmgr, 'GET', `/api/club/${musterdorf.id}/teams`)).json.data.teams
@@ -243,26 +245,57 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
     const o = await call(users.otherscorer, 'GET', '/api/game-rosters')
     assert.equal(o.status, 200, o.text)
     assert.deepEqual(o.json.data.rosters.map((x) => x.game_number), ['940002'])
+    // db/035: by game number only the home club's games, a match the caller holds, or its own team's roster
     const byGame = await call(users.otherscorer, 'GET', '/api/game-rosters?games=940001,940002')
-    assert.deepEqual(byGame.json.data.rosters.map((x) => `${x.game_number}|${x.side}`).sort(), ['940001|home', '940002|away'])
+    assert.deepEqual(byGame.json.data.rosters.map((x) => `${x.game_number}|${x.side}`).sort(), ['940002|away'])
+    const { rows: [m] } = await sql.query(
+      "INSERT INTO public.matches (external_id, status, created_by, game_n, sport_type) VALUES ('m-940001', 'setup', $1, 940001, 'indoor') RETURNING id, official_season",
+      [users.otherscorer.id])
+    assert.equal(m.official_season, season)
+    const held = await call(users.otherscorer, 'GET', '/api/game-rosters?games=940001')
+    assert.deepEqual(held.json.data.rosters.map((x) => `${x.game_number}|${x.side}`), ['940001|home'])
+    // the signatures made ahead name the account that sent them
+    assert.equal(held.json.data.rosters[0].coach_signed_by_name, 'coach Test')
+    // a match released by an admin or taken over by the home club holds nothing
+    await sql.query("UPDATE public.matches SET official_game_exempt = true WHERE external_id = 'm-940001'")
+    assert.deepEqual((await call(users.otherscorer, 'GET', '/api/game-rosters?games=940001')).json.data.rosters, [])
+    await sql.query("DELETE FROM public.matches WHERE external_id = 'm-940001'")
+    assert.deepEqual((await call(users.otherscorer, 'GET', '/api/game-rosters?games=940001')).json.data.rosters, [])
+    // a scorer whose clubs don't play the game: creating its match makes no holder
+    const outsider = await account('outsider', ['scorer'])
+    await sql.query("INSERT INTO public.matches (external_id, status, created_by, game_n, sport_type) VALUES ('m-940001-x', 'setup', $1, 940001, 'indoor')", [outsider.id])
+    assert.deepEqual((await call(outsider, 'GET', '/api/game-rosters?games=940001')).json.data.rosters, [])
+    const notHeld = await call(outsider, 'POST', '/api/game-rosters/used', { game_number: '940001', side: 'home', season, updated_at: sent.updated_at })
+    assert.deepEqual(notHeld.json.data, { used: false, reason: 'gone' })
+    await sql.query("DELETE FROM public.matches WHERE external_id = 'm-940001-x'")
+    // every read that hands out a roster is audited (game numbers and sides only)
+    const { rows: reads } = await sql.query("SELECT details FROM public.audit_log WHERE action = 'team.roster' AND actor_id = $1 AND details ? 'read'", [users.otherscorer.id])
+    assert.ok(reads.some((x) => x.details.read.includes('940001|home')))
+    assert.ok(!JSON.stringify(reads).includes('Muster'))
     assert.equal((await call(users.otherscorer, 'GET', '/api/game-rosters?games=1;2')).status, 400)
     // a team manager without a scoring role reads nothing here
     assert.equal((await call(users.coach, 'GET', '/api/game-rosters')).status, 403)
     assert.equal((await api(srv.base, '/api/game-rosters')).status, 401)
   })
 
-  it('accepted in Match Setup: the content is deleted at once, the team sees "accepted", a new version is offered again', async () => {
+  it('accepted in Match Setup: the content stays until it expires, the team sees "accepted", a new version is offered again', async () => {
     const r = await call(users.scorer, 'GET', '/api/game-rosters?games=940006')
     const sent = r.json.data.rosters[0]
     // another version than the one on the tablet: left alone
     const stale = await call(users.scorer, 'POST', '/api/game-rosters/used', { game_number: '940006', side: 'home', season: sent.season, updated_at: '2020-01-01T00:00:00.000Z' })
     assert.deepEqual(stale.json.data, { used: false, reason: 'changed' })
     assert.equal((await call(users.coach, 'POST', '/api/game-rosters/used', { game_number: '940006', side: 'home', updated_at: sent.updated_at })).status, 403)
+    // db/035: a scorer of another club can't accept it (the same answer as no roster)
+    const foreign = await call(users.otherscorer, 'POST', '/api/game-rosters/used', { game_number: '940006', side: 'home', season: sent.season, updated_at: sent.updated_at })
+    assert.deepEqual(foreign.json.data, { used: false, reason: 'gone' })
+    assert.equal((await sql.query("SELECT used_at FROM public.game_rosters WHERE game_number = '940006'")).rows[0].used_at, null)
     const used = await call(users.scorer, 'POST', '/api/game-rosters/used', { game_number: '940006', side: 'home', season: sent.season, updated_at: sent.updated_at })
     assert.equal(used.status, 200, used.text)
     assert.deepEqual(used.json.data, { used: true })
-    const { rows: [row] } = await sql.query("SELECT players, staff, coach_signature, captain_signature, used_at, used_by FROM public.game_rosters WHERE game_number = '940006'")
-    assert.deepEqual([row.players, row.staff, row.coach_signature, row.captain_signature], [[], [], null, null])
+    const { rows: [row] } = await sql.query("SELECT players, staff, used_at, used_by, used_match_id, expires_at FROM public.game_rosters WHERE game_number = '940006'")
+    assert.equal(row.players.length, 1)
+    assert.equal(row.used_match_id, null)
+    assert.ok(row.expires_at > new Date())
     assert.ok(row.used_at)
     assert.equal(row.used_by, users.scorer.id)
     // scorers no longer get it (the game is still covered, so tablets drop their copy)
@@ -271,7 +304,7 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
     assert.ok(after.json.data.games.some((g) => g.game_number === '940006'))
     // the team sees who accepted it, when
     const view = (await call(users.coach, 'GET', `/api/team/${h1.id}/roster?game=940006`)).json.data.roster
-    assert.equal(view.players.length, 0)
+    assert.equal(view.players.length, 1)
     assert.equal(view.used_by_name, 'scorer Test')
     const g = (await call(users.coach, 'GET', `/api/team/${h1.id}/games`)).json.data.games.find((x) => x.game_number === '940006')
     assert.ok(g.roster.used_at)
@@ -282,6 +315,62 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
     assert.equal(again.json.data.roster.used_at, null)
     assert.ok((await call(users.scorer, 'GET', '/api/game-rosters')).json.data.rosters.some((x) => x.game_number === '940006'))
     assert.equal((await call(users.scorer, 'POST', '/api/game-rosters/used', { game_number: 'x', side: 'home', updated_at: sent.updated_at })).status, 400)
+  })
+
+  it('a signature made ahead belongs to the roster it was made on and names its sender (db/035)', async () => {
+    const path = `/api/team/${h1.id}/roster?game=940001`
+    const before = (await call(users.coach, 'GET', path)).json.data.roster
+    assert.equal(before.coach_signature, SIG)
+    // the same images sent again with another list of players: dropped
+    const changed = await call(users.clubmgr, 'PUT', path, { players: [...before.players, player(9, 'Extra')], staff: before.staff, coach_signature: SIG, captain_signature: SIG })
+    assert.equal(changed.status, 200, changed.text)
+    assert.equal(changed.json.data.roster.coach_signature, null)
+    assert.equal(changed.json.data.roster.captain_signature, null)
+    // a new image is the sender's; sent again unchanged it stays
+    const SIG2 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAAC'
+    const signed = await call(users.coach, 'PUT', path, { players: before.players, staff: before.staff, coach_signature: SIG2 })
+    assert.equal(signed.json.data.roster.coach_signature, SIG2)
+    const same = await call(users.clubmgr, 'PUT', path, { players: before.players, staff: before.staff, coach_signature: SIG2 })
+    assert.equal(same.json.data.roster.coach_signature, SIG2)
+    const { rows: [r] } = await sql.query("SELECT coach_signed_by, coach_signed_hash, club_id, team_id FROM public.game_rosters WHERE game_number = '940001'")
+    assert.equal(r.coach_signed_by, users.coach.id)
+    assert.match(r.coach_signed_hash, /^[0-9a-f]{64}$/)
+    assert.deepEqual([r.club_id, r.team_id], [musterdorf.id, h1.id])
+    // a signature from before db/035 (no hash) survives the next save and takes its hash
+    await sql.query("UPDATE public.game_rosters SET coach_signed_hash = NULL WHERE game_number = '940001'")
+    const old = await call(users.coach, 'PUT', path, { players: before.players, staff: before.staff, coach_signature: SIG2 })
+    assert.equal(old.json.data.roster.coach_signature, SIG2)
+    const { rows: [h] } = await sql.query("SELECT coach_signed_hash FROM public.game_rosters WHERE game_number = '940001'")
+    assert.equal(h.coach_signed_hash, r.coach_signed_hash)
+  })
+
+  it('db/035 run again: rows from before go to the team of their name; a name no team has is deleted', async () => {
+    const { readFile } = await import('node:fs/promises')
+    await sql.query(`INSERT INTO public.game_rosters (game_number, season, side, team_name, kickoff) VALUES
+      ('940201', $1, 'home', 'VBC Musterdorf D2', $2), ('940203', $1, 'home', 'VBC Gone H9', $2)`, [season, `${today}T18:00:00`])
+    await sql.query(await readFile(new URL('../db/035_game_rosters_scope.sql', import.meta.url), 'utf8'))
+    const { rows } = await sql.query("SELECT game_number, club_id, team_id FROM public.game_rosters WHERE game_number LIKE '9402%' ORDER BY game_number")
+    assert.deepEqual(rows.map((x) => x.game_number), ['940201'])
+    assert.deepEqual([rows[0].club_id, rows[0].team_id], [musterdorf.id, d2.id])
+    await sql.query("DELETE FROM public.game_rosters WHERE game_number = '940201'")
+  })
+
+  it('rosters go at expires_at (also without requests) and with their team (db/035)', async () => {
+    const { createTeams } = await import('../lib/teams.js')
+    const pool = new pg.Pool({ connectionString: db.url, max: 2 })
+    try {
+      await sql.query(`INSERT INTO public.game_rosters (game_number, season, side, team_name, club_id, team_id, kickoff, expires_at)
+        VALUES ('940098', $1, 'home', 'VBC Musterdorf H1', $2, $3, $4, now() - interval '1 minute')`, [season, musterdorf.id, h1.id, `${today}T18:00:00`])
+      const tms = createTeams({ pool, audit: async () => {}, savedTeams: null, clubs: null, logger: { info () {}, warn () {}, error () {} } })
+      assert.ok(await tms.sweep({ force: true }) >= 1)
+      assert.equal((await sql.query("SELECT 1 FROM public.game_rosters WHERE game_number = '940098'")).rows.length, 0)
+      assert.equal((await sql.query("SELECT 1 FROM public.game_rosters WHERE game_number = '940001'")).rows.length, 1)
+    } finally { await pool.end() }
+    const { rows: [t] } = await sql.query("INSERT INTO public.club_teams (club_id, team_name) VALUES ($1, 'VBC Musterdorf X9') RETURNING id", [musterdorf.id])
+    await sql.query(`INSERT INTO public.game_rosters (game_number, season, side, team_name, club_id, team_id, expires_at)
+      VALUES ('940099', $1, 'home', 'VBC Musterdorf X9', $2, $3, now() + interval '1 day')`, [season, musterdorf.id, t.id])
+    await sql.query('DELETE FROM public.club_teams WHERE id = $1', [t.id])
+    assert.equal((await sql.query("SELECT 1 FROM public.game_rosters WHERE game_number = '940099'")).rows.length, 0)
   })
 
   it('/api/me gives an admin every team of every club', async () => {
@@ -340,6 +429,52 @@ describe('team managers and sent game rosters', { skip: SKIP }, () => {
     const { rows } = await sql.query("SELECT action, details FROM public.audit_log WHERE action LIKE 'team.%' ORDER BY at")
     assert.ok(rows.some((x) => x.action === 'team.roster' && x.details.players === 8 && !JSON.stringify(x.details).includes('Muster')))
     assert.ok(rows.some((x) => x.action === 'team.managers' && x.details.removed === true))
+  })
+
+  it('a team manager taken off does not come back with its link, nor does anyone it passes the link to (be-clubs-teams-5)', async () => {
+    const link = await call(users.clubmgr, 'POST', `/api/club/${musterdorf.id}/teams/${h1.id}/invites`, { max_uses: 3 })
+    assert.equal(link.status, 201, link.text)
+    const linkCode = link.json.data.code
+    // a preview tells the team and grants nothing
+    const peek = await call(users.coach2, 'POST', '/api/account/invite-preview', { code: linkCode })
+    assert.equal(peek.status, 200, peek.text)
+    assert.deepEqual([peek.json.data.preview, peek.json.data.role_granted, peek.json.data.team.name, peek.json.data.already_had], [true, 'team_manager', 'VBC Musterdorf H1', false])
+    assert.equal((await call(users.coach2, 'GET', `/api/team/${h1.id}/games`)).status, 403)
+    assert.equal((await sql.query('SELECT uses FROM public.invite_codes WHERE id = $1', [link.json.data.invite.id])).rows[0].uses, 0)
+    const r = await call(users.coach2, 'POST', '/api/account/redeem-invite', { code: linkCode })
+    assert.equal(r.status, 200, r.text)
+    assert.equal((await call(users.coach2, 'GET', `/api/team/${h1.id}/games`)).status, 200)
+    const off = await call(users.clubmgr, 'DELETE', `/api/club/${musterdorf.id}/teams/${h1.id}/managers/${users.coach2.id}`)
+    assert.equal(off.status, 200, off.text)
+    assert.equal(off.json.data.links_revoked, 1)
+    // the same link again: refused, and nothing comes back
+    const again = await call(users.coach2, 'POST', '/api/account/redeem-invite', { code: linkCode })
+    assert.equal(again.status, 404, again.text)
+    assert.equal((await call(users.coach2, 'GET', `/api/team/${h1.id}/games`)).status, 403)
+    assert.equal((await call(users.coach2, 'GET', `/api/team/${h1.id}/club-players`)).status, 403)
+    const me = (await call(users.coach2, 'GET', '/api/me')).json.data
+    assert.deepEqual([me.managedTeams, me.clubs, me.roles], [[], [], []])
+    // passed on to someone else: revoked for them too
+    assert.equal((await call(users.friend, 'POST', '/api/account/redeem-invite', { code: linkCode })).status, 404)
+    const teams = (await call(users.clubmgr, 'GET', `/api/club/${musterdorf.id}/teams`)).json.data.teams
+    assert.deepEqual(teams.find((t) => t.id === h1.id).managers.map((m) => m.user_id).filter((id) => id === users.coach2.id || id === users.friend.id), [])
+    const { rows: [inv] } = await sql.query('SELECT uses, revoked_at FROM public.invite_codes WHERE id = $1', [link.json.data.invite.id])
+    assert.equal(inv.uses, 1)
+    assert.ok(inv.revoked_at)
+    const { rows: audit } = await sql.query("SELECT details FROM public.audit_log WHERE action = 'invite.revoke' AND details ->> 'invite_id' = $1", [link.json.data.invite.id])
+    assert.equal(audit[0]?.details.reason, 'team_manager_removed')
+  })
+
+  it('a link not revoked (made again for the same team): the account taken off it is still refused', async () => {
+    const link = await call(users.clubmgr, 'POST', `/api/club/${musterdorf.id}/teams/${h1.id}/invites`, { max_uses: 3 })
+    const linkCode = link.json.data.code
+    assert.equal((await call(users.coach2, 'POST', '/api/account/redeem-invite', { code: linkCode })).status, 200)
+    await sql.query('DELETE FROM public.team_managers WHERE team_id = $1 AND user_id = $2', [h1.id, users.coach2.id])
+    const again = await call(users.coach2, 'POST', '/api/account/redeem-invite', { code: linkCode })
+    assert.equal(again.status, 409, again.text)
+    assert.equal(again.json.error.code, 'OV_INVITE_REMOVED')
+    assert.equal((await call(users.coach2, 'GET', `/api/team/${h1.id}/games`)).status, 403)
+    assert.equal((await sql.query('SELECT uses FROM public.invite_codes WHERE id = $1', [link.json.data.invite.id])).rows[0].uses, 1)
   })
 
   it('a team manager deletes a sent roster', async () => {

@@ -99,6 +99,20 @@ describe('LoadOfficialMatchModal league list', () => {
     expect(screen.queryByText('loadOfficialMatch.noUpcomingMatches')).toBeNull()
   })
 
+  // UI tour 14.11 (o00c): a lone "Men ♂" path line sat under the selectors
+  // before a league was chosen, and a game read "vsVolley Luzern" (no space
+  // in the text, only a margin)
+  it('shows the selection path only with a league, and a game reads "home vs away"', async () => {
+    render(<LoadOfficialMatchModal open onClose={() => {}} onSelectMatch={() => {}} />)
+    await screen.findByRole('combobox', { name: 'loadOfficialMatch.gender' })
+    chooseGender('men')
+    expect(screen.queryByTestId('schedule-selection-path')).toBeNull()
+    fireEvent.change(leagueSelect(), { target: { value: '1L D' } })
+    expect(await screen.findByTestId('schedule-selection-path')).toHaveTextContent('1L D (♂)')
+    const home = await screen.findByText('Home M3')
+    expect(home.closest('.sg-teams').textContent.replace(/\s+/g, ' ').trim()).toBe('Home M3 common.vs Away M3')
+  })
+
   it('an active league is selectable and still loads its upcoming matches', async () => {
     render(<LoadOfficialMatchModal open onClose={() => {}} onSelectMatch={() => {}} />)
     await screen.findByRole('combobox', { name: 'loadOfficialMatch.gender' })
@@ -187,6 +201,22 @@ describe('the level from a schedule row', () => {
     expect(levelFromSchedule('junior', 'Finalissima U16')).toEqual({ type3: 'other', type3Other: 'U16' })
     expect(levelFromSchedule('junior', 'Juniorinnen')).toEqual({ type3: 'other', type3Other: '' })
     expect(levelFromSchedule(null, '2L')).toEqual({ type3: undefined, type3Other: '' })
+  })
+
+  it('the age of the league whatever the level says: a U21 or U13 league synced as senior is no senior game', () => {
+    expect(levelFromSchedule('senior', 'U21 Damen')).toEqual({ type3: 'U21', type3Other: '' })
+    expect(levelFromSchedule('senior', 'U13 Mixed')).toEqual({ type3: 'other', type3Other: 'U13' })
+    expect(levelFromSchedule(null, 'U19 Herren')).toEqual({ type3: 'U19', type3Other: '' })
+    // no age in the league: the level as it is
+    expect(levelFromSchedule('senior', '3L Damen')).toEqual({ type3: 'senior', type3Other: '' })
+  })
+
+  it('the match format only when the schedule knows it (3 or 5), else none: never a default', () => {
+    expect(mapSupabaseToMatchFormat({ game_number: 1, match_format: 3 }).bestOf).toBe(3)
+    expect(mapSupabaseToMatchFormat({ game_number: 1, match_format: 5 }).bestOf).toBe(5)
+    expect(mapSupabaseToMatchFormat({ game_number: 1, match_format: null }).bestOf).toBeNull()
+    expect(mapSupabaseToMatchFormat({ game_number: 1 }).bestOf).toBeNull()
+    expect(mapSupabaseToMatchFormat({ game_number: 1, match_format: 4 }).bestOf).toBeNull()
   })
 
   it('a row of game 406970 maps to championship, women, senior, regional', () => {

@@ -1,7 +1,7 @@
 /**
  * Sign on phone over HTTP, from the relay host itself (loopback, so `start`
- * needs no PIN): one scenario for every relay runtime (server.js, Electron,
- * the Vite plugin, the Tauri binary, backend/server.js --local). Returns a
+ * needs no PIN): one scenario for every relay runtime (server.js, the Vite
+ * plugin, the Tauri binary, backend/server.js --local). Returns a
  * list of mismatches (empty = the runtime speaks the protocol of
  * docs/qr-signing-spec.md 4), so the frontend vitest and the backend node:test
  * suites can both use it.
@@ -75,7 +75,7 @@ export async function signHttpScenario({ httpBase, startHeaders = {}, matchKey =
   code(await post(httpBase, 'open', { k: 'A'.repeat(43) }), 404, 'OV_SIGN_NOT_FOUND', 'unknown token')
 
   // A second session cancelled before the phone opens it
-  const second = await post(httpBase, 'start', { slot: 'ref1', context: CTX }, { headers: startHeaders })
+  const second = await post(httpBase, 'start', { slot: 'ref1', matchKey, context: CTX }, { headers: startHeaders })
   code(second, 201, null, 'second start')
   if (second.status === 201) {
     const pending = post(httpBase, 'wait', { watch: second.json.watch, known: 'pending' })

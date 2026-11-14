@@ -166,6 +166,46 @@ describe('Requests in My club and My teams', () => {
     expect(await within(row).findByText('manage.accounts.confirmEmailFirst')).toBeInTheDocument()
   })
 
+  // owner decision 3 (db/036): the team's own manager proposes, the club confirms
+  it('the team\'s own manager proposes; a proposed part waits for the club, without a second Propose', async () => {
+    const proposed = { ...PARTS[2], proposed_at: '2026-11-12T10:00:00Z', proposed_by_name: 'Tom Team' }
+    api.team.requests.mockResolvedValue(ok({ requests: [{ ...entry, parts: [PARTS[2]] }] }))
+    api.team.decideRequests.mockResolvedValue(ok({ approved: 0, proposed: 1, rejected: 0, requests: [proposed] }))
+    const { unmount } = render(<RequestsSection team={{ id: 't-h1', name: 'VBC Musterdorf H1', via: 'team' }} />)
+    expect(await screen.findByText('manage.requests.teamHintPropose')).toBeInTheDocument()
+    const row = await screen.findByTestId('request-r-tm')
+    expect(within(row).queryByText('manage.requests.approve')).toBeNull()
+    fireEvent.click(within(row).getByText('manage.requests.propose'))
+    await waitFor(() => expect(api.team.decideRequests).toHaveBeenCalledWith('t-h1', 'u-anna', { approve: [{ id: 'r-tm' }] }))
+    await waitFor(() => expect(ui.toasts).toContainEqual(['ok', 'manage.requests.proposed']))
+    unmount()
+    api.team.requests.mockResolvedValue(ok({ requests: [{ ...entry, parts: [proposed] }] }))
+    render(<RequestsSection team={{ id: 't-h1', name: 'VBC Musterdorf H1', via: 'team' }} />)
+    const waiting = await screen.findByTestId('request-r-tm')
+    expect(within(waiting).getByTestId('request-waiting-r-tm')).toHaveTextContent('manage.requests.waitingForClub')
+    expect(within(waiting).queryByText('manage.requests.propose')).toBeNull()
+    // the proposer's name is the club's to read
+    expect(waiting).not.toHaveTextContent('Tom Team')
+    expect(within(waiting).getByText('manage.requests.reject')).toBeInTheDocument()
+  })
+
+  it('the club\'s managers see who proposed a part and approve it; on the team\'s page too', async () => {
+    const proposed = { ...PARTS[2], proposed_at: '2026-11-12T10:00:00Z', proposed_by_name: 'Tom Team' }
+    api.club.requests.mockResolvedValue(ok({ requests: [{ ...entry, parts: [proposed] }] }))
+    api.club.decideRequests.mockResolvedValue(ok({ approved: 1, proposed: 0, rejected: 0, requests: [] }))
+    const { unmount } = render(<RequestsSection club={{ id: 'c-must', name: 'VBC Musterdorf' }} />)
+    const row = await screen.findByTestId('request-r-tm')
+    expect(within(row).getByTestId('request-proposed-r-tm')).toHaveTextContent('manage.requests.proposedBy|Tom Team')
+    fireEvent.click(within(row).getByText('manage.requests.approve'))
+    await waitFor(() => expect(ui.toasts).toContainEqual(['ok', 'manage.requests.approved']))
+    unmount()
+    api.team.requests.mockResolvedValue(ok({ requests: [{ ...entry, parts: [proposed] }] }))
+    render(<RequestsSection team={{ id: 't-h1', name: 'VBC Musterdorf H1', via: 'club' }} />)
+    const onTeam = await screen.findByTestId('request-r-tm')
+    expect(within(onTeam).getByText('manage.requests.approve')).toBeInTheDocument()
+    expect(within(onTeam).getByTestId('request-proposed-r-tm')).toBeInTheDocument()
+  })
+
   it('nothing open: says so; a server without requests: no section', async () => {
     api.club.requests.mockResolvedValue(ok({ requests: [] }))
     const { unmount } = render(<RequestsSection club={{ id: 'c-must', name: 'VBC Musterdorf' }} />)
@@ -184,5 +224,8 @@ describe('the audit line of a decision', () => {
       .toBe('access.requests.kinds.team_manager · VBC Musterdorf · manage.requests.changed · manage.requests.via.club')
     expect(auditDetailsLine({ action: 'account.request_reject', details: { kind: 'referee', via: 'admin' } }, { t }))
       .toBe('access.requests.kinds.referee · manage.requests.via.admin')
+    // db/036: a team manager's proposal
+    expect(auditDetailsLine({ action: 'account.request_propose', club_name: 'VBC Musterdorf', details: { kind: 'team_manager', club_id: 'c-must', team_id: 't-h1', via: 'team' } }, { t }))
+      .toBe('access.requests.kinds.team_manager · VBC Musterdorf · manage.requests.via.team')
   })
 })

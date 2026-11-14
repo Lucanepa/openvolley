@@ -60,9 +60,22 @@ escoresheet/packaging/scoop/validate.sh --urls
 
 and commit to `main` (users' `scoop update` reads the manifest from `main`).
 `update-manifests.sh` takes the URL from the manifest's `autoupdate` block
-and downloads the installer for the SHA-256 (`--file`, `--sha256` to
-override). On Windows, Scoop's own `checkver.ps1 -u` does the same from the
-`checkver` / `autoupdate` blocks.
+and downloads the installer and its `.sig` for the SHA-256 (`--file PATH` with
+`PATH.sig` next to it, to use a local copy). It writes the hash only when the
+signature verifies against the updater key the app trusts (`../lib/release-asset.sh`;
+it stops otherwise), so run it after `publish-pkgs.sh --desktop`. Do not use
+Scoop's own `checkver.ps1 -u`: it pins whatever the release serves, signed or not.
+
+## Trust
+
+There is no Scoop bucket and nothing reviews these files on the way to the
+user: a scorer's `scoop install` / `scoop update` runs whatever installer the
+manifest on `main` names, with administrator rights. So a change to
+`escoresheet/packaging/scoop/` must be reviewed like a release:
+`.github/CODEOWNERS` names the owner for it, and branch protection on `main`
+(Settings, Branches: require a pull request with a review from Code Owners)
+makes that review required. The install page lists winget first (every
+version is reviewed in microsoft/winget-pkgs); Scoop is the second choice.
 
 `validate.sh` checks the files against Scoop's JSON schema
 (`ScoopInstaller/Scoop/schema.json`), parses the installer and uninstaller

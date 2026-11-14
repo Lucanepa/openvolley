@@ -149,14 +149,19 @@ export function displaySetNumber(setIndex: number, bestOf: number | undefined): 
 /**
  * A set awarded by default / forfeit without a single rally: created by the
  * forfeit (forfeitCreated), or every one of its points was awarded (a default
- * before the start). It has no start / end time and no duration (field-spec 11).
+ * before the start), or it has no point at all and the forfeit ended it (a
+ * set the forfeit created, as a copy continued from the cloud has it: the
+ * forfeitCreated flag stays on the scoring device; a default before its
+ * first rally). It has no start / end time and no duration (field-spec 11).
  */
 export function isDefaultSet(sets: any[], events: any[], setIndex: number): boolean {
   const info = (sets || []).find(s => s?.index === setIndex);
   if (!info) return false;
   if (info.forfeitCreated) return true;
-  const pts = (events || []).filter(e => e?.setIndex === setIndex && e?.type === 'point');
-  return pts.length > 0 && pts.every(e => e.payload?.forfeitAwarded === true);
+  const ofSet = (events || []).filter(e => e?.setIndex === setIndex);
+  const pts = ofSet.filter(e => e?.type === 'point');
+  if (pts.length > 0) return pts.every(e => e.payload?.forfeitAwarded === true);
+  return info.finished === true && ofSet.some(e => e?.type === 'set_end' && e.payload?.reason === 'forfait');
 }
 
 /**
@@ -238,6 +243,12 @@ export function consistencyWarnings({ sets, events, teamAKey, homePlayers, awayP
     const pts = { home: 0, away: 0 }
     for (const e of setEvents) if (e.type === 'point' && (e.payload?.team === 'home' || e.payload?.team === 'away')) pts[e.payload.team as TeamKey]++
     const hasPoints = pts.home + pts.away > 0
+    // A best-of-3 match has sets 1, 2 and the decider (slot 5): a set 3 or 4 means
+    // its format was changed during the match (the sheet still prints it)
+    if (Number(bestOf) === 3 && (set.index === 3 || set.index === 4) &&
+      (hasPoints || (set.homePoints || 0) + (set.awayPoints || 0) > 0 || set.finished === true || !!set.startTime)) {
+      out.push(`Set ${set.index} recorded in a best-of-3 match.`)
+    }
     if (hasPoints && (pts.home !== (set.homePoints || 0) || pts.away !== (set.awayPoints || 0))) {
       out.push(`Set ${n}: the points recorded (${pts.home}:${pts.away}, home:away) do not match the set score (${set.homePoints || 0}:${set.awayPoints || 0}).`)
     }

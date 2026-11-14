@@ -75,11 +75,11 @@ describe('beach match tokens', () => {
   })
 
   it('database rows: the beach connection flags', () => {
-    const t1 = tokens.verify(tokens.issue({ matchKey: 'match_b', role: 'bench_team1', pin: '271828' }))
+    const t1 = tokens.verify(tokens.issue({ matchKey: 'match_b', role: 'bench_team1', matchUuid: 'u1', pin: '271828' }))
     assert.equal(tokens.stillGrantsRow(t1, { connections: { team1_bench_enabled: true } }), true)
     assert.equal(tokens.stillGrantsRow(t1, { connections: { team1_bench_enabled: false } }), false)
     assert.equal(tokens.stillGrantsRow(t1, { connections: { home_bench_enabled: true } }), false, 'the indoor flag is not the beach one')
-    const home = tokens.verify(tokens.issue({ matchKey: 'm', role: 'bench_home', pin: '271828' }))
+    const home = tokens.verify(tokens.issue({ matchKey: 'm', role: 'bench_home', matchUuid: 'u2', pin: '271828' }))
     assert.equal(tokens.stillGrantsRow(home, { connections: { team1_bench_enabled: true } }), false, 'and the other way round')
   })
 
@@ -142,8 +142,8 @@ describe('public projections of beach rows', () => {
     assert.deepEqual(granted.players_team2, [{ number: 2, first_name: 'Lia', last_name: 'Rossi' }])
     // grantRow sees the projected flags, so a bench_team1 token can be checked
     const tokens = createMatchTokens({ secret: SECRET })
-    const t1 = tokens.verify(tokens.issue({ matchKey: 'match_b', role: 'bench_team1', pin: '271828' }))
-    const t2 = tokens.verify(tokens.issue({ matchKey: 'match_b', role: 'bench_team2', pin: '161803' }))
+    const t1 = tokens.verify(tokens.issue({ matchKey: 'match_b', role: 'bench_team1', matchUuid: 'u1', pin: '271828' }))
+    const t2 = tokens.verify(tokens.issue({ matchKey: 'match_b', role: 'bench_team2', matchUuid: 'u1', pin: '161803' }))
     assert.equal('players_team1' in projectAnonDbRows('matches', row, { grantedExternalId: 'match_b', grantRow: (r) => tokens.stillGrantsRow(t1, r) }), true)
     assert.equal('players_team1' in projectAnonDbRows('matches', row, { grantedExternalId: 'match_b', grantRow: (r) => tokens.stillGrantsRow(t2, r) }), false)
   })

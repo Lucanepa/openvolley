@@ -130,6 +130,31 @@ describe('Save asks about the club\'s lists', () => {
     expect(screen.queryByTestId('club-offer')).toBeNull()
   })
 
+  // delta-fe-manage-6: the licence numbers left unticked never stay on a shared laptop
+  it('keeps the ones left unticked in memory only, and drops what an older version kept', async () => {
+    localStorage.setItem('ov_club_offer_declined:t-old', JSON.stringify(['players:123456']))
+    localStorage.setItem('ov_other', 'kept')
+    const saveRoster = vi.fn(async () => okRes({ team: null }))
+    const onAddToClub = vi.fn(async () => okRes({ added: 0, already: 0 }))
+    const t2 = { ...team, id: 't-mem' }
+    const { unmount } = render(<TeamEditor team={t2} competition={null} online fixedFields saveRoster={saveRoster} clubPlayers={clubPlayers} onAddToClub={onAddToClub} clubName="VBC Musterdorf" />)
+    expect(localStorage.getItem('ov_club_offer_declined:t-old')).toBeNull()
+    expect(localStorage.getItem('ov_other')).toBe('kept')
+    fireEvent.click(screen.getByTestId('save-roster'))
+    const offer = await screen.findByTestId('club-offer')
+    fireEvent.click(within(within(offer).getAllByTestId('club-offer-row')[0]).getByRole('checkbox'))
+    fireEvent.click(screen.getByTestId('club-offer-save'))
+    await waitFor(() => expect(saveRoster).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.queryByTestId('club-offer')).toBeNull())
+    expect(Object.keys(localStorage).filter((k) => k.startsWith('ov_club_offer_declined:'))).toEqual([])
+    expect(JSON.stringify({ ...localStorage })).not.toContain('400001')
+    // not asked again while the page is open
+    fireEvent.click(screen.getByTestId('save-roster'))
+    await waitFor(() => expect(saveRoster).toHaveBeenCalledTimes(2))
+    expect(screen.queryByTestId('club-offer')).toBeNull()
+    unmount()
+  })
+
   it('a failed add keeps the saved roster and says so', async () => {
     const saveRoster = vi.fn(async () => okRes({ team: null }))
     const onAddToClub = vi.fn(async () => ({ data: null, status: 500, error: { code: 'OV_INTERNAL' } }))

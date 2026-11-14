@@ -84,7 +84,9 @@ function PoolBody({ onClose, onApply, pool, teamLabel }) {
       {pool.length === 0 ? (
         <EmptyInset>{t('playerPool.empty')}</EmptyInset>
       ) : (
-        <ul className="-mx-1 divide-y divide-stone-100 border-y border-stone-200" data-testid="player-pool-list">
+        // data-sensitive: a tap on a row keeps no name or date of birth in the
+        // interaction log (utils/eventCapture), often a minor's
+        <ul className="-mx-1 divide-y divide-stone-100 border-y border-stone-200" data-testid="player-pool-list" data-sensitive="">
           {pool.map(e => {
             const on = ticked.has(e.key)
             const name = [e.lastName.toUpperCase(), e.firstName].filter(Boolean).join(' ')

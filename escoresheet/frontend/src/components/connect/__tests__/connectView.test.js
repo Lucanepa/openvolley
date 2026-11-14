@@ -138,6 +138,21 @@ describe('connectView: live status', () => {
       .toEqual({ status: 'many', count: 2, since: at(12, 5), ipTail: '31' })
   })
 
+  // 2026-11 audit: a socket that only named the role (subscribe-match
+  // { device: 'referee' }, no PIN) showed as "Tablet connected"
+  it('counts only the tablets the relay says proved the PIN; a relay that does not say is believed', () => {
+    const labelled = [
+      { role: 'referee', matchId: KEY, proved: false, ip: '192.168.1.60', connectedAt: at(12, 0) },
+      { role: 'bench', team: 'home', matchId: KEY, proved: false, ip: '192.168.1.61', connectedAt: at(12, 1) },
+      { role: 'bench', team: 'home', matchId: KEY, proved: true, ip: '192.168.1.30', connectedAt: at(12, 10) }
+    ]
+    expect(roleStatus({ role: 'referee', access: ON, clients: labelled, matchKey: KEY, reachable: true }).status).toBe('waiting')
+    expect(roleStatus({ role: 'bench_home', access: ON, clients: labelled, matchKey: KEY, reachable: true }))
+      .toEqual({ status: 'connected', count: 1, since: at(12, 10), ipTail: '30' })
+    expect(roleClients(labelled, 'bench_home', KEY)).toHaveLength(1)
+    expect(roleClients(clients, 'referee', KEY)).toHaveLength(1) // no `proved`: an older relay
+  })
+
   it('unknown when the relay cannot be read; remote on the internet with nobody seen here', () => {
     expect(roleStatus({ role: 'referee', access: ON, clients: null, matchKey: KEY, reachable: false }).status).toBe('unknown')
     expect(roleStatus({ role: 'bench_away', access: ON, clients, matchKey: KEY, reachable: true, transport: 'server' }).status).toBe('remote')

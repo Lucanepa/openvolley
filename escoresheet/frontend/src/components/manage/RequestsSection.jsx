@@ -12,14 +12,20 @@ import { Chip, EmptyInset, Notice, Row, RowList, RowTool, confirmDialog, dayLabe
  * One row per part: Approve grants exactly that (the role and the club, the
  * team, the club to manage), Reject drops it; the account's other parts stay
  * for the other approvers. The server decides who may decide which part.
+ * Owner decision 3 (db/036): a team manager's yes is a proposal (Propose):
+ * the part stays, "waiting for a club manager", until a manager of the club
+ * or an admin approves it; the club's list names who proposed it.
  *
- * `club` or `team` (one of them): { id, name }.
+ * `club` or `team` (one of them): { id, name } (a team: `via` 'team' for its
+ * own team manager, 'club' / 'admin' for the club's managers and admins).
  */
 export default function RequestsSection({ club = null, team = null }) {
   const { t } = useTranslation()
   const online = useOnline()
   const errorText = useErrorText()
   const scopeId = club?.id || team?.id
+  // a team's own manager proposes; the club's managers and admins approve
+  const proposes = !club && team?.via === 'team'
   const api = club
     ? { list: () => clubApi.requests(club.id), decide: (userId, body) => clubApi.decideRequests(club.id, userId, body) }
     : { list: () => teamApi.requests(team.id), decide: (userId, body) => teamApi.decideRequests(team.id, userId, body) }
@@ -57,14 +63,14 @@ export default function RequestsSection({ club = null, team = null }) {
       setRowError((e) => ({ ...e, [part.id]: res.error.code === 'OV_EMAIL_UNCONFIRMED' ? t('manage.accounts.confirmEmailFirst') : errorText(res.error) }))
       return
     }
-    toast.success(t(approve ? 'manage.requests.approved' : 'manage.requests.rejected'))
+    toast.success(t(!approve ? 'manage.requests.rejected' : res.data?.proposed > 0 ? 'manage.requests.proposed' : 'manage.requests.approved'))
     reload({ quiet: true })
   }
 
   return (
     <section data-testid={club ? 'club-requests' : 'team-requests'}>
       <PanelHead title={t('manage.requests.title')} level={2} />
-      <p className="mb-3 text-sm text-stone-500">{t(club ? 'manage.requests.clubHint' : 'manage.requests.teamHint')}</p>
+      <p className="mb-3 text-sm text-stone-500">{t(club ? 'manage.requests.clubHint' : proposes ? 'manage.requests.teamHintPropose' : 'manage.requests.teamHint')}</p>
       {error && <Notice className="mb-3">{errorText(error)}</Notice>}
       {error && !data ? null : rows.length === 0 ? (
         <EmptyInset>{t('manage.requests.empty')}</EmptyInset>
@@ -82,10 +88,16 @@ export default function RequestsSection({ club = null, team = null }) {
                 {user.name && <span className="min-w-0 max-w-full truncate" title={user.email}>{user.email}</span>}
                 {user.created_at && <span>{t('manage.requests.signedUp', { date: dayLabel(user.created_at, { year: true }) })}</span>}
                 {user.email_confirmed === false && <span className="font-medium text-amber-700">{t('manage.accounts.emailUnconfirmed')}</span>}
+                {part.proposed_at && !proposes && <span data-testid={`request-proposed-${part.id}`}>{t('manage.requests.proposedBy', { name: part.proposed_by_name || '–' })}</span>}
               </>}
-              chips={<Chip tone="amber">{requestPartLabel(part, t)}</Chip>}
+              chips={<>
+                <Chip tone="amber">{requestPartLabel(part, t)}</Chip>
+                {part.proposed_at && proposes && <span data-testid={`request-waiting-${part.id}`}><Chip tone="sky">{t('manage.requests.waitingForClub')}</Chip></span>}
+              </>}
               tools={<>
-                <RowTool primary disabled={!online || busy === part.id} onClick={() => decide({ user, part }, true)}>{t('manage.requests.approve')}</RowTool>
+                {!(proposes && part.proposed_at) && (
+                  <RowTool primary disabled={!online || busy === part.id} onClick={() => decide({ user, part }, true)}>{t(proposes ? 'manage.requests.propose' : 'manage.requests.approve')}</RowTool>
+                )}
                 <RowTool disabled={!online || busy === part.id} onClick={() => decide({ user, part }, false)}>{t('manage.requests.reject')}</RowTool>
                 <InlineError error={rowError[part.id]} className="ml-1" />
               </>}

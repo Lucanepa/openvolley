@@ -149,10 +149,16 @@ if [[ -z "$DEB" ]]; then
   if [[ -f "$pool" ]]; then
     DEB=$pool
   else
+    # A GitHub copy only with the signature publish-pkgs.sh --desktop made
+    # (../lib/release-asset.sh): never one replaced after it was signed.
     command -v gh >/dev/null || die "no $pool and no gh to download $TAG"
-    gh release download "$TAG" --repo "$GH_REPO" --pattern "${CMD}_${VERSION}_amd64.deb" --dir "$WORK" ||
-      die "cannot download ${CMD}_${VERSION}_amd64.deb from $TAG"
+    gh release download "$TAG" --repo "$GH_REPO" --pattern "${CMD}_${VERSION}_amd64.deb" \
+      --pattern "${CMD}_${VERSION}_amd64.deb.sig" --dir "$WORK" ||
+      die "cannot download ${CMD}_${VERSION}_amd64.deb and its .sig from $TAG"
     DEB="$WORK/${CMD}_${VERSION}_amd64.deb"
+    # shellcheck source=SCRIPTDIR/../lib/release-asset.sh
+    . "$HERE/../lib/release-asset.sh"
+    release_asset_verify "$APP" "$VERSION" "$DEB"
   fi
 fi
 [[ -f "$DEB" ]] || die "$DEB: no such file"

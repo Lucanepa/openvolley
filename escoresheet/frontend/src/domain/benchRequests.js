@@ -20,7 +20,7 @@
  *    (scorerQueueReducer).
  */
 import { LINEUP_POSITIONS, lineupEntryErrors, lineupCaptainStatus, gameCaptainOptions, teamCaptainNumber } from './lineupEntry'
-import { timeoutRequestIssues, substitutionRequestIssues, substituteInIllegalReason, entryWithoutCompletedRally } from './interruptionRequests'
+import { timeoutRequestIssues, substitutionRequestIssues, substituteInIllegalReason, entryWithoutCompletedRally, isSentOff } from './interruptionRequests'
 import { countRegularSubstitutions, MAX_SUBSTITUTIONS_PER_SET } from './substitutions'
 
 export const COURT_ORDER = ['I', 'II', 'III', 'IV', 'V', 'VI']
@@ -148,23 +148,9 @@ export function benchLineupCheck({ lineup = {}, players = [], events = [], team,
   return { errors, complete, captainStatus, needsGameCaptain, gameCaptainChoices, canSend, payload }
 }
 
-/**
- * Sent off for good or for this set: expelled this set, disqualified, or
- * substituted exceptionally / because of an expulsion or disqualification.
- */
-export function isSentOff(events, team, number, setIndex) {
-  const n = str(number)
-  return (events || []).some((e) => {
-    if (e.payload?.team !== team) return false
-    if (e.type === 'sanction' && str(e.payload?.playerNumber) === n) {
-      return e.payload?.type === 'disqualification' || (e.payload?.type === 'expulsion' && (e.setIndex ?? 1) === setIndex)
-    }
-    if (e.type === 'substitution' && str(e.payload?.playerOut) === n) {
-      return e.payload?.isExceptional === true || e.payload?.isDisqualified === true || (e.payload?.isExpelled === true && (e.setIndex ?? 1) === setIndex)
-    }
-    return false
-  })
-}
+// Sent off for good or for this set (expelled this set, disqualified, or
+// substituted exceptionally): the scorer's substitution rule asks it too
+export { isSentOff }
 
 /**
  * Who may go off and come on in a prepared substitution, with why not.
@@ -359,7 +345,7 @@ export function scorerQueueReducer(state, action) {
       if (request.kind === 'cancel') return state.filter((e) => !(e.team === team && e.request.id === request.cancelId))
       const same = (e) => e.team === team && (e.request.id === request.id ||
         (e.request.kind === request.kind && (request.kind !== 'lineup' || e.request.setIndex === request.setIndex)))
-      return [...state.filter((e) => !same(e)), { team, request, status: action.message.status || 'pending', at: action.message.at ?? Date.now() }]
+      return [...state.filter((e) => !same(e)), { team, request, status: action.message.status || 'pending', at: action.message.at ?? Date.now(), replay: action.message.replay === true }]
     }
     case 'answered':
       return state.filter((e) => !(e.team === action.team && e.request.id === action.id))

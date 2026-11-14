@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { saveMatchSignature } from '../saveSignature'
+import { saveMatchSignature, clearMatchSignatures } from '../saveSignature'
 import { signatureFieldOfRole } from '../../domain/signatureEdits'
 
 function fakeDb(row) {
@@ -11,7 +11,8 @@ function fakeDb(row) {
       update: vi.fn(async (id, patch) => { rows[id] = { ...rows[id], ...patch } }),
       get: vi.fn(async (id) => rows[id])
     },
-    sync_queue: { add: vi.fn(async (job) => { queue.push(job) }) }
+    sync_queue: { add: vi.fn(async (job) => { queue.push(job) }) },
+    transaction: vi.fn(async (_mode, _table, fn) => fn())
   }
 }
 
@@ -51,4 +52,32 @@ describe('saveMatchSignature (owner 2026-10-07: saved as soon as the pad is conf
     expect(signatureFieldOfRole('away-coach')).toBe('awayCoachSignature')
     expect(signatureFieldOfRole('away-captain-post')).toBe('awayPostGameCaptainSignature')
   })
+
+  it('a Re-sign appends its remark in the same update', async () => {
+    const db = fakeDb({ seed_key: 'k1', homeCaptainSignature: 'data:old', remarks: 'Earlier line' })
+    await saveMatchSignature(db, 1, 'homeCaptainSignature', 'data:new', null, { remark: 'Captain signature of Team V replaced' })
+    expect(db.matches.update).toHaveBeenCalledTimes(1)
+    expect(db.rows[1].homeCaptainSignature).toBe('data:new')
+    expect(db.rows[1].remarks).toBe('Earlier line\nCaptain signature of Team V replaced')
+  })
 })
+
+describe('clearMatchSignatures (a roster change after signing)', () => {
+  it('clears the fields and their sources with the remark, and queues the whole object', async () => {
+    const db = fakeDb({ seed_key: 'k1', homeCoachSignature: 'data:c', homeCaptainSignature: 'data:k', awayCoachSignature: 'data:ac', remarks: '' })
+    expect(await clearMatchSignatures(db, 1, ['homeCoachSignature', 'homeCaptainSignature'], 'Roster changed')).toBe(true)
+    expect(db.matches.update).toHaveBeenCalledWith(1, {
+      homeCoachSignature: null, 'signatureSources.homeCoachSignature': null,
+      homeCaptainSignature: null, 'signatureSources.homeCaptainSignature': null,
+      remarks: 'Roster changed'
+    })
+    expect(db.queue).toHaveLength(1)
+    expect(db.queue[0].payload.signatures).toMatchObject({ home_coach: '', home_captain: '', away_coach: 'data:ac' })
+  })
+  it('does nothing without fields', async () => {
+    const db = fakeDb({})
+    expect(await clearMatchSignatures(db, 1, [])).toBe(false)
+    expect(db.matches.update).not.toHaveBeenCalled()
+  })
+})
+

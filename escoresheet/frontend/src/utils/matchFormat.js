@@ -20,6 +20,20 @@ export function isMatchFinished(homeSetsWon, awaySetsWon, bestOf = 5) {
 }
 
 /**
+ * Best of 3 or 5 of a match as any reader holds it: the app's match (bestOf),
+ * a matches row (match_info.best_of; it has no bestOf) or a live-state row
+ * (best_of). The referee and the bench get the row and the live state when the
+ * relay has no bundle; reading bestOf alone made a best-of-3 decider set 5 there.
+ * @param {object} [match]
+ * @param {object} [liveState]
+ * @returns {3|5}
+ */
+export function resolveBestOf(match, liveState) {
+  const b = Number(match?.bestOf ?? match?.best_of ?? match?.match_info?.best_of ?? liveState?.best_of)
+  return b === 3 ? 3 : 5
+}
+
+/**
  * Returns the index for the next set.
  * For best-of-3: if tied 1-1 after set 2, jumps to set 5 (tiebreak).
  * Otherwise, normal sequential indexing.

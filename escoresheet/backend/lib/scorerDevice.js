@@ -9,13 +9,23 @@
  * ignores it, while a new header would fail its CORS preflight and cut every
  * new app off from an old backend.
  *
- *   check()  before a write: another device scores one of the written
- *            matches -> the server answers 409 OV_SCORER_MOVED with the
- *            scorer's platform and the time of its take-over (never its id).
- *   adopt()  after a write that found no scorer: the writing device becomes
- *            it (the first device that writes a match scores it).
- *   movedSince()  before a backup restore: a restore made before another
- *            device took the match over is refused the same way.
+ *   guardedWrite()  an /api/db write and its check in ONE transaction:
+ *            the scorer rows of the matches the request names are locked
+ *            first (FOR SHARE), a device other than the stored one is
+ *            refused (409 OV_SCORER_MOVED with the scorer's platform and the
+ *            time of its take-over, never its id), the write runs, and the
+ *            matches whose rows it wrote are adopted (none scored yet: the
+ *            first device that writes a match scores it) and checked once
+ *            more. A take-over locks the same row FOR UPDATE, so a write of
+ *            the device a match leaves is either committed before the
+ *            take-over (and in what the new device reads) or refused.
+ *   lockedHolder()  the same check inside another write's transaction (the
+ *            event history).
+ *   movedSince()  inside a backup restore's transaction: a restore made
+ *            before another device took the match over is refused the same
+ *            way.
+ *   check()  the same question without a lock, for the relay (its room sync
+ *            writes nothing to the database).
  *   claim()  POST /api/match/scorer: "continue on this device" (a restore by
  *            game PIN, a backup restore) and "Take back scoring here". The
  *            device becomes the scorer whoever it was; server.js then tells
@@ -25,14 +35,26 @@
  *            no session needed, so a signed-out device that continues a
  *            match scores it at once, and before the match is read for it.
  *
+ * Lock order, everywhere: the scorer row first, then the match. A take-over
+ * locks its scorer row before it reads the match; a write locks the scorer
+ * rows of the matches it names before its statement takes the match's row
+ * locks. In the other order a match update of the old device and a take-over
+ * would wait for each other.
+ *
+ * Which matches a write touches is decided by the rows it wrote (their
+ * match_id), never by what the request names: a filter that matches nothing,
+ * an update without columns or a child id that names another match adopts
+ * nothing. A caller that may not write a match is never told who scores it:
+ * the write goes on to pgQuery's own refusal.
+ *
  * A write that names no device (an app from before the handover) is neither
  * checked nor recorded. Test matches and closed matches are never checked:
  * a test match is shared freely, a closed one refuses every write anyway
  * (db/007, 409 OV_MATCH_CLOSED says more than "moved").
  *
- * Never in the way of a match day: a missing table (a database without 019)
- * or a failing query lets the write through (server.js logs it); the device a
- * scorer explicitly takes back always wins.
+ * A failing check fails the write (5xx, the app keeps the job and sends it
+ * again): a write let through unchecked is the one the new device never
+ * gets. The device a scorer explicitly takes back always wins.
  */
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -57,19 +79,13 @@ export function deviceOf (raw) {
   return { id: id.toLowerCase(), platform: p && PLATFORM_RE.test(p) ? p : null }
 }
 
-// The match key of a set/event external_id (`${seedKey}:s:${id}` /
-// `${seedKey}:e:${id}`, frontend utils/syncIds); null for a bare id.
-function seedOfChildExt (ext) {
-  if (typeof ext !== 'string') return null
-  const i = Math.max(ext.lastIndexOf(':s:'), ext.lastIndexOf(':e:'))
-  return i > 0 ? ext.slice(0, i) : null
-}
-
 /**
- * The matches a /api/db write touches, as far as the request names them:
- * external_ids (matches rows; the seed key of a namespaced set/event id) and
- * match uuids (matches.id, a child's match_id). Best effort: what it cannot
- * name is not checked (pgQuery's ownership rules still apply).
+ * The matches a /api/db write names: external_ids and uuids of matches rows
+ * (data and eq/in filters on external_id / id), and the match_id of a set,
+ * event or live state row (data and filters). Never a match parsed from a
+ * child's external_id: pgQuery decides which match a child row belongs to,
+ * and the check follows the rows written (guardedWrite). Best effort: what
+ * it cannot name is checked after the write.
  * @returns {{ externalIds: string[], ids: string[] }}
  */
 export function matchRefsOfWrite (table, action, params) {
@@ -86,7 +102,6 @@ export function matchRefsOfWrite (table, action, params) {
       addId(r.id)
     } else {
       addId(r.match_id)
-      if (table !== 'match_live_state') addExt(seedOfChildExt(r.external_id))
     }
   }
   if (action === 'update' || action === 'delete') {
@@ -97,11 +112,20 @@ export function matchRefsOfWrite (table, action, params) {
         if (isParent && f.column === 'external_id') addExt(v)
         else if (isParent && f.column === 'id') addId(v)
         else if (!isParent && f.column === 'match_id') addId(v)
-        else if (!isParent && f.column === 'external_id') addExt(seedOfChildExt(v))
       }
     }
   }
   return { externalIds: [...ext], ids: [...ids] }
+}
+
+/** The matches whose rows a write wrote: matches.id, a child's match_id (pgQuery `changes`). */
+export function writtenMatchIds (table, changes) {
+  const ids = new Set()
+  for (const c of Array.isArray(changes) ? changes : []) {
+    const v = table === 'matches' ? c?.row?.id : c?.row?.match_id
+    if (typeof v === 'string' && UUID_RE.test(v)) ids.add(v.toLowerCase())
+  }
+  return [...ids]
 }
 
 const hasRefs = (refs) => !!refs && ((refs.externalIds?.length || 0) + (refs.ids?.length || 0)) > 0
@@ -131,17 +155,36 @@ export function scorerMovedBody (holder) {
   }
 }
 
+// A write refused after its statement ran: withTransaction rolls it back
+class Rollback extends Error {
+  constructor (out) {
+    super('rolled back')
+    this.out = out
+  }
+}
+
+// The scorer rows of the matches `where` selects, in match order (the order
+// FOR SHARE locks them in); `more`: extra columns.
+const SCORER_ROWS_SQL = (where, more = '') =>
+  `SELECT s.match_id::text AS match_id, m.external_id, s.device_id, s.platform, s.claimed_at${more}
+     FROM public.match_scorer_devices s
+     JOIN public.matches m ON m.id = s.match_id
+    WHERE ${where}
+    ORDER BY s.match_id`
+
 /**
- * @param {{ pool: {query: Function}, db?: { withTransaction: Function, assertMatchWritable: Function },
- *   audit?: Function }} deps  audit: accounts.audit(clientOrPool, entry)
+ * @param {{ pool: {query: Function}, db?: { withTransaction: Function, assertMatchWritable: Function,
+ *   toErrorResult?: Function }, audit?: Function }} deps  audit: accounts.audit(clientOrPool, entry)
  */
 export function createScorerDevices ({ pool, db = null, audit = null } = {}) {
   /**
-   * Before a write by `device`: who scores the matches it names.
+   * Who scores the matches `refs` names, without a lock: the relay's room
+   * sync, which writes nothing to the database. A write checks inside its
+   * own transaction (guardedWrite, lockedHolder).
    * @returns {Promise<{ moved: object|null, unclaimed: boolean, mine: boolean }>}
    *   moved: the scorer row (another device); unclaimed: none of the open,
-   *   non-test matches has a scorer yet (adopt() after the write); mine: the
-   *   device is the stored scorer of every one of them (at least one).
+   *   non-test matches has a scorer yet; mine: the device is the stored
+   *   scorer of every one of them (at least one).
    */
   async function check ({ device, refs }) {
     if (!device || !hasRefs(refs)) return { moved: null, unclaimed: false, mine: false }
@@ -159,33 +202,102 @@ export function createScorerDevices ({ pool, db = null, audit = null } = {}) {
       throw err
     }
     const moved = rows.find((r) => r.device_id && r.device_id !== device.id) || null
-    // No stored match yet (an insert): adopt it after the write as well
     const unclaimed = rows.length === 0 || rows.some((r) => !r.device_id)
     const mine = rows.length > 0 && rows.every((r) => r.device_id === device.id)
     return { moved, unclaimed, mine }
   }
 
-  /**
-   * After a successful write that found no scorer: the writing device scores
-   * the open, non-test matches it named that have none (a concurrent claim
-   * wins: ON CONFLICT DO NOTHING). Never throws.
-   */
-  async function adopt ({ device, refs, userId = null }) {
-    if (!device || !hasRefs(refs)) return 0
+  /** May matchOwner write the match `externalId`? (pgQuery's rule; the caller's transaction) */
+  async function mayWrite (client, externalId, matchOwner) {
+    if (!matchOwner || !db?.assertMatchWritable) return true
     try {
-      const r = await pool.query(
-        `INSERT INTO public.match_scorer_devices (match_id, device_id, platform, claimed_by)
-         SELECT m.id, $3, $4, $5::uuid
-           FROM public.matches m
-          WHERE (m.id = ANY($1::uuid[]) OR m.external_id = ANY($2::text[]))
-            AND m.closed_at IS NULL AND m.test IS NOT TRUE
-         ON CONFLICT (match_id) DO NOTHING`,
-        [refs.ids || [], refs.externalIds || [], device.id, device.platform, UUID_RE.test(String(userId)) ? userId : null])
-      return r.rowCount || 0
+      await db.assertMatchWritable(client, externalId, matchOwner)
+      return true
     } catch (err) {
-      if (!isMissingTable(err)) console.warn('[scorer] adopt failed:', err?.message)
-      return 0
+      if (err && (err.status === 403 || err.status === 404)) return false
+      throw err
     }
+  }
+
+  /**
+   * Inside the caller's transaction: lock the scorer rows of the open,
+   * non-test matches `refs` names (FOR SHARE: a take-over waits for this
+   * transaction to end, and this one for a take-over in flight) and return
+   * the first one another device holds, of a match matchOwner may write (a
+   * caller that may not is never told who scores a match: pgQuery refuses
+   * its write). `ageMs` (a backup restore made that long ago): only a scorer
+   * that took the match over after it (movedSince). null: nothing in the way.
+   * Throws on a database error (the caller's write fails with it).
+   */
+  async function lockedHolder (client, { device, refs, matchOwner = null, ageMs = null }) {
+    if (!device || !hasRefs(refs)) return null
+    const age = ageMs == null ? null : Math.min(Math.max(Math.floor(Number(ageMs)) || 0, 0), MAX_RESTORE_AGE_MS)
+    const { rows } = await client.query(
+      `${SCORER_ROWS_SQL('(m.id = ANY($1::uuid[]) OR m.external_id = ANY($2::text[])) AND m.closed_at IS NULL AND m.test IS NOT TRUE',
+        ", ($3::bigint IS NULL OR s.claimed_at > now() - ($3::bigint * interval '1 millisecond')) AS in_time")} FOR SHARE OF s`,
+      [refs.ids || [], refs.externalIds || [], age])
+    for (const r of rows) {
+      if (r.device_id === device.id || !r.in_time) continue
+      if (await mayWrite(client, r.external_id, matchOwner)) return r
+    }
+    return null
+  }
+
+  /**
+   * An /api/db write of `device` and its scorer check in ONE transaction.
+   * `write(client)`: the pgQuery runQuery of the request in that
+   * transaction. Before it: lockedHolder for the matches the request names
+   * (also the state before the write: a write that closes a match is checked
+   * while it is still open). After a 200: the open, non-test matches whose
+   * rows it wrote and that have no scorer get this device (not for a
+   * delete), and the scorer rows of every match it wrote are locked and
+   * compared once more (a take-over that the first check could not see: a
+   * match the request did not name, a scorer row inserted meanwhile).
+   * A refused or failed write is rolled back.
+   * @returns {Promise<{ moved: object|null, result: object|null }>} moved:
+   *   the scorer row that keeps the match (answer 409 scorerMovedBody), else
+   *   result: the write's runQuery answer (a database error as its 5xx)
+   */
+  async function guardedWrite ({ device, refs, table, action, matchOwner = null, userId = null, write }) {
+    try {
+      return await db.withTransaction(async (client) => {
+        const named = await lockedHolder(client, { device, refs, matchOwner })
+        if (named) return { moved: named, result: null }
+        const result = await write(client)
+        if (result.status !== 200) throw new Rollback({ moved: null, result })
+        const ids = writtenMatchIds(table, result.changes)
+        if (ids.length) {
+          if (action !== 'delete') {
+            await client.query(
+              `INSERT INTO public.match_scorer_devices (match_id, device_id, platform, claimed_by)
+               SELECT m.id, $2, $3, $4::uuid
+                 FROM public.matches m
+                WHERE m.id = ANY($1::uuid[]) AND m.closed_at IS NULL AND m.test IS NOT TRUE
+                ORDER BY m.id
+               ON CONFLICT (match_id) DO NOTHING`,
+              [ids, device.id, device.platform, UUID_RE.test(String(userId)) ? userId : null])
+          }
+          const { rows } = await client.query(`${SCORER_ROWS_SQL('s.match_id = ANY($1::uuid[]) AND m.test IS NOT TRUE')} FOR SHARE OF s`, [ids])
+          const moved = rows.find((r) => r.device_id !== device.id)
+          if (moved) throw new Rollback({ moved, result: null })
+        }
+        return { moved: null, result }
+      })
+    } catch (err) {
+      if (err instanceof Rollback) return err.out
+      if (!db.toErrorResult) throw err
+      return { moved: null, result: db.toErrorResult(err, { action, table }) }
+    }
+  }
+
+  /**
+   * The scorer row of `matchId` locked FOR UPDATE (a take-over), before the
+   * match is: the lock order of the header. Nothing to lock yet: null.
+   */
+  async function lockForTakeOver (client, matchId) {
+    const { rows: [held] } = await client.query(
+      'SELECT device_id, platform, claimed_at FROM public.match_scorer_devices WHERE match_id = $1 FOR UPDATE', [matchId])
+    return held || null
   }
 
   /**
@@ -196,8 +308,21 @@ export function createScorerDevices ({ pool, db = null, audit = null } = {}) {
    *   claim() (mine, moved, scorer, previous); matchId for server.js
    */
   async function takeOver (client, match, device, userId, via = null) {
-    const { rows: [held] } = await client.query(
-      'SELECT device_id, platform, claimed_at FROM public.match_scorer_devices WHERE match_id = $1 FOR UPDATE', [match.id])
+    const claimedBy = UUID_RE.test(String(userId)) ? userId : null
+    let held = await lockForTakeOver(client, match.id)
+    if (!held) {
+      // None yet. A write that is adopting the match right now holds its new
+      // row uncommitted: this insert waits for it and then does nothing, and
+      // the row it committed is taken over below like any other.
+      const { rows: [row] } = await client.query(
+        `INSERT INTO public.match_scorer_devices (match_id, device_id, platform, claimed_by, claimed_at)
+         VALUES ($1, $2, $3, $4::uuid, now())
+         ON CONFLICT (match_id) DO NOTHING
+         RETURNING device_id, platform, claimed_at`,
+        [match.id, device.id, device.platform, claimedBy])
+      if (row) return { data: { external_id: match.external_id, mine: true, moved: false, scorer: publicScorer(row), previous: null }, matchId: match.id }
+      held = await lockForTakeOver(client, match.id)
+    }
     if (held && held.device_id === device.id) {
       return { data: { external_id: match.external_id, mine: true, moved: false, scorer: publicScorer(held), previous: null }, matchId: match.id }
     }
@@ -208,7 +333,7 @@ export function createScorerDevices ({ pool, db = null, audit = null } = {}) {
          SET device_id = EXCLUDED.device_id, platform = EXCLUDED.platform,
              claimed_by = EXCLUDED.claimed_by, claimed_at = EXCLUDED.claimed_at
        RETURNING device_id, platform, claimed_at`,
-      [match.id, device.id, device.platform, UUID_RE.test(String(userId)) ? userId : null])
+      [match.id, device.id, device.platform, claimedBy])
     if (audit && held) {
       await audit(client, {
         actorId: userId,
@@ -233,7 +358,8 @@ export function createScorerDevices ({ pool, db = null, audit = null } = {}) {
    * as coming from the device the match had left, and the referee and
    * benches froze. Made before the match is read for the caller, so a write
    * of the previous device is either in what it reads or refused (409
-   * OV_SCORER_MOVED) - never sent in between and overwritten.
+   * OV_SCORER_MOVED) - never sent in between and overwritten: the write holds
+   * the scorer row FOR SHARE until it commits, this take-over waits for it.
    * A test match is never checked, a closed one has nothing left to score:
    * neither is claimed (null). Never throws for a database without db/019.
    * @returns {Promise<{ data: object, matchId: string }|null>}
@@ -242,6 +368,7 @@ export function createScorerDevices ({ pool, db = null, audit = null } = {}) {
     if (!device || !UUID_RE.test(String(matchId)) || !db?.withTransaction) return null
     try {
       return await db.withTransaction(async (client) => {
+        await lockForTakeOver(client, matchId)
         const { rows: [match] } = await client.query(
           `SELECT id::text AS id, external_id, closed_at IS NOT NULL AS closed, test IS TRUE AS test
              FROM public.matches WHERE id = $1 FOR SHARE`, [matchId])
@@ -272,6 +399,12 @@ export function createScorerDevices ({ pool, db = null, audit = null } = {}) {
     if (!db?.withTransaction || !db?.assertMatchWritable) return fail(503, 'OV_DB_UNAVAILABLE', 'Service unavailable')
     try {
       return await db.withTransaction(async (client) => {
+        // the scorer row before the match (assertMatchWritable locks it): the lock order of the header
+        if (wantClaim) {
+          await client.query(
+            `SELECT 1 FROM public.match_scorer_devices s JOIN public.matches m ON m.id = s.match_id
+              WHERE m.external_id = $1 FOR UPDATE OF s`, [externalId])
+        }
         const match = await db.assertMatchWritable(client, externalId, matchOwner)
         if (!wantClaim) {
           const { rows: [held] } = await client.query(
@@ -293,36 +426,24 @@ export function createScorerDevices ({ pool, db = null, audit = null } = {}) {
   }
 
   /**
-   * Before a backup restore by `device` (POST /api/match/restore, which
-   * then takes the match over for it): the restore was made `ageMs` ago (the
-   * app's own clock, so no clock skew), and another device that took the
-   * match over AFTER that keeps it. A restore queued on a device the scorer
-   * left (offline, sent late) must not replace the other device's score; a
-   * restore made after the other device took over is this device taking it
-   * back on purpose. Open, non-test matches only.
+   * Inside a backup restore's transaction (POST /api/match/restore by
+   * `device`, which then takes the match over for it): the restore was made
+   * `ageMs` ago (the app's own clock, so no clock skew), and another device
+   * that took the match over AFTER that keeps it. A restore queued on a
+   * device the scorer left (offline, sent late) must not replace the other
+   * device's score; a restore made after the other device took over is this
+   * device taking it back on purpose. Open, non-test matches only; the scorer
+   * row stays locked until the restore commits (lockedHolder).
    * @returns {Promise<object|null>} the scorer row that keeps the match
    */
-  async function movedSince ({ device, externalId, ageMs }) {
+  async function movedSince (client, { device, externalId, ageMs, matchOwner = null }) {
     if (!device || typeof externalId !== 'string' || !externalId || externalId.length > 200) return null
+    // no age (made now): nothing to refuse, the scorer row is locked all the same
     const age = Number(ageMs)
-    if (!Number.isFinite(age) || age <= 0) return null
-    try {
-      const { rows } = await pool.query(
-        `SELECT m.external_id, s.device_id, s.platform, s.claimed_at
-           FROM public.matches m
-           JOIN public.match_scorer_devices s ON s.match_id = m.id
-          WHERE m.external_id = $1 AND m.closed_at IS NULL AND m.test IS NOT TRUE
-            AND s.device_id <> $2
-            AND s.claimed_at > now() - ($3::bigint * interval '1 millisecond')`,
-        [externalId, device.id, Math.min(Math.floor(age), MAX_RESTORE_AGE_MS)])
-      return rows[0] || null
-    } catch (err) {
-      if (isMissingTable(err)) return null
-      throw err
-    }
+    return lockedHolder(client, { device, refs: { externalIds: [externalId], ids: [] }, matchOwner, ageMs: Number.isFinite(age) && age > 0 ? age : 0 })
   }
 
-  return { check, adopt, claim, claimProved, movedSince }
+  return { check, guardedWrite, lockedHolder, claim, claimProved, movedSince }
 }
 
 function ok (data) {

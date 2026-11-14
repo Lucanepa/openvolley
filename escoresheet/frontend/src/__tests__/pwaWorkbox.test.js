@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { readFileSync } from 'fs'
+import { resolve } from 'path'
 import { offlineNavigationRoute, IGNORE_URL_PARAMETERS, PRECACHE_GLOB_PATTERNS } from '../../pwa-workbox.js'
 
 // offlineNavigationRoute is stringified into sw.js; here it runs against
@@ -124,5 +126,87 @@ describe('pwa-workbox and the phone signing page (/sign)', () => {
     expect(PRECACHE_GLOB_IGNORES).toContain('sign/**')
     // vite-plugin-pwa's defaults stay ignored too
     expect(PRECACHE_GLOB_IGNORES).toEqual(expect.arrayContaining(['**/node_modules/**/*', 'sw.js', 'workbox-*.js']))
+  })
+})
+
+// fe-auth-client-1 / fe-shell-pwa-2: the API's answers belong to the account
+// signed in. A runtime cache of the service worker kept every /api/ GET by URL
+// only (the token not part of the key): after sign-out it answered the next
+// account's requests on a shared device whenever the network failed or took
+// over 10 s, as a normal 200, and on referee tablets an old match bundle
+// replaced newer data. The app keeps its own per-account offline copies.
+describe('pwa-workbox and the account API', () => {
+  const frontendDir = resolve(__dirname, '../..')
+
+  it('the /api/ route goes to the network only and keeps no cache', async () => {
+    const { API_NETWORK_ONLY_ROUTE } = await import('../../pwa-workbox.js')
+    expect(API_NETWORK_ONLY_ROUTE.handler).toBe('NetworkOnly')
+    expect(API_NETWORK_ONLY_ROUTE.options?.cacheName).toBeUndefined()
+    expect(API_NETWORK_ONLY_ROUTE.options?.expiration).toBeUndefined()
+    // a RegExp matching from the start of the URL: Workbox applies it to the
+    // backend on its own origin too
+    const re = API_NETWORK_ONLY_ROUTE.urlPattern
+    for (const u of ['https://backend.example.test/api/me', 'http://127.0.0.1:8080/api/match/list', 'https://backend.example.test/api/club-licences?club=1', 'https://backend.example.test/api/storage/download/logo.png']) {
+      expect(re.exec(u)?.index, u).toBe(0)
+    }
+    for (const u of ['https://app.example.test/referee/', 'https://app.example.test/assets/index-abc.js']) expect(re.test(u), u).toBe(false)
+  })
+
+  it.each(['vite.config.js', 'scripts/build-subdomains.js'])('%s lists it right after the page route, before the asset rules, and caches no API answer', (file) => {
+    const src = readFileSync(resolve(frontendDir, file), 'utf8')
+    // first match wins: no later rule (static assets, html) can keep an /api/ answer
+    expect(src).toMatch(/runtimeCaching: \[\s*(?:\/\/[^\n]*\n\s*)*offlineNavigationRoute,\s*(?:\/\/[^\n]*\n\s*)*API_NETWORK_ONLY_ROUTE,/)
+    expect(src).not.toMatch(/api-cache/)
+  })
+})
+
+// fe-shell-pwa-4: a tab still on an older build asked for one of its lazy
+// files after a newer release replaced them. The page host answered the
+// missing file with its index.html as a 200, and the cache-first rule kept
+// that HTML under the script's address for 30 days: the part never loaded
+// again, even with the network back.
+describe('pwa-workbox static assets', () => {
+  const frontendDir = resolve(__dirname, '../..')
+  const html = () => new Response('<!DOCTYPE html><title>app</title>', { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } })
+  const js = () => new Response('export default 1', { status: 200, headers: { 'Content-Type': 'text/javascript' } })
+
+  it('passes an HTML answer on as a 404 (never kept: CacheFirst keeps 200s only), a file as it is', async () => {
+    const { STATIC_ASSETS_ROUTE } = await import('../../pwa-workbox.js')
+    expect(STATIC_ASSETS_ROUTE.handler).toBe('CacheFirst')
+    expect(STATIC_ASSETS_ROUTE.options.cacheName).toBe('static-assets')
+    const [plugin] = STATIC_ASSETS_ROUTE.options.plugins
+    const missing = await plugin.fetchDidSucceed({ request: new Request('https://app.example.test/assets/i18n-old.js'), response: html() })
+    expect(missing.status).toBe(404)
+    const file = js()
+    expect(await plugin.fetchDidSucceed({ request: new Request('https://app.example.test/assets/i18n-new.js'), response: file })).toBe(file)
+    for (const u of ['/assets/index-abc.js', '/assets/pdf.worker-1.mjs', '/assets/a.css', '/fonts/x.woff2']) expect(STATIC_ASSETS_ROUTE.urlPattern.test(u), u).toBe(true)
+  })
+
+  it('the plugin still works when rebuilt from its source text (workbox stringifies it into sw.js)', async () => {
+    const { STATIC_ASSETS_ROUTE } = await import('../../pwa-workbox.js')
+    const fn = new Function(`return (${STATIC_ASSETS_ROUTE.options.plugins[0].fetchDidSucceed.toString()})`)()
+    expect((await fn({ response: html() })).status).toBe(404)
+    expect((await fn({ response: js() })).status).toBe(200)
+  })
+
+  it.each(['vite.config.js', 'scripts/build-subdomains.js'])('%s uses the shared rule, no static-assets rule of its own', (file) => {
+    const src = readFileSync(resolve(frontendDir, file), 'utf8')
+    expect(src).toMatch(/API_NETWORK_ONLY_ROUTE,\s*(?:\/\/[^\n]*\n\s*)*STATIC_ASSETS_ROUTE,/)
+    expect(src).not.toMatch(/cacheName: 'static-assets'/)
+  })
+
+  it('Cloudflare Pages answers a missing /assets/ file with a 404 page, which is not precached', async () => {
+    const { PRECACHE_GLOB_IGNORES } = await import('../../pwa-workbox.js')
+    const page = readFileSync(resolve(frontendDir, 'public/assets/404.html'), 'utf8')
+    expect(page).toMatch(/<!DOCTYPE html>/i)
+    expect(page).not.toMatch(/<script/i)
+    expect(PRECACHE_GLOB_IGNORES).toContain('assets/404.html')
+    // no rule of _redirects sends /assets/ to a page (a 200 rewrite would
+    // shadow the 404); Pages skips "/x/*  /x/index.html" lines as loops
+    const rules = readFileSync(resolve(frontendDir, 'public/_redirects'), 'utf8').split('\n')
+      .map((l) => l.trim()).filter((l) => l && !l.startsWith('#')).map((l) => l.split(/\s+/))
+    const loop = ([from, to]) => /\/\*$/.test(from) && /\/index(\.html)?$/.test(to)
+    const assetsRule = rules.filter((r) => !loop(r)).find(([from]) => from === '/*' || from.startsWith('/assets'))
+    expect(assetsRule).toBeUndefined()
   })
 })

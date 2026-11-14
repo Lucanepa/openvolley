@@ -53,19 +53,46 @@ COPY <<'EOF' /usr/local/lib/openvolley/healthcheck.cjs
 // Deliberately NO fallback to /health: an image built from a tree without the
 // self-host wiring (no /health/live) must never become healthy, so ov-tunnel
 // (depends_on: service_healthy) never starts in front of it.
+// Watchdog: after OV_WATCHDOG_FAILURES consecutive failed /health/live checks
+// (a hung event loop; 0 or unset = off) it kills the server whose pid is in
+// OV_PID_FILE (server.js writes it), with SIGKILL: a hung loop runs no SIGTERM
+// handler. With compose's init: true the server is not PID 1, so the
+// container exits and `restart: unless-stopped` starts it again.
 const fs = require('fs')
 const port = process.env.PORT || 8080
 const root = process.env.STORAGE_ROOT
+const COUNT = process.env.OV_WATCHDOG_COUNT_FILE || '/tmp/ov-health-failures'
+const limit = Number(process.env.OV_WATCHDOG_FAILURES || 0) | 0
 if (root && !fs.existsSync(`${root}/.ovdata`)) process.exit(1) // storage fs not mounted
+function failed() {
+  let n = 0
+  try { n = Number(fs.readFileSync(COUNT, 'utf8')) | 0 } catch {}
+  n++
+  try { fs.writeFileSync(COUNT, String(n)) } catch {}
+  if (limit > 0 && n >= limit && process.env.OV_PID_FILE) {
+    let pid = 0
+    try { pid = Number(fs.readFileSync(process.env.OV_PID_FILE, 'utf8')) | 0 } catch {}
+    if (pid > 1) {
+      console.error(`watchdog: /health/live failed ${n} times in a row, killing the server (pid ${pid})`)
+      try { process.kill(pid, 'SIGKILL') } catch {}
+      try { fs.unlinkSync(COUNT) } catch {}
+    }
+  }
+  process.exit(1)
+}
 fetch(`http://127.0.0.1:${port}/health/live`, { signal: AbortSignal.timeout(4000) })
-  .then((r) => process.exit(r.status === 200 ? 0 : 1))
-  .catch(() => process.exit(1))
+  .then((r) => {
+    if (r.status !== 200) return failed()
+    try { fs.unlinkSync(COUNT) } catch {}
+    process.exit(0)
+  })
+  .catch(failed)
 EOF
-
 USER node
 EXPOSE 8080
 
-# Liveness only (no database); monitors and restore-test.sh use /health.
+# Liveness only (no database), with the watchdog above; monitors and
+# restore-test.sh use /health (readiness).
 # Unhealthy when /health/live is missing (pre-wiring tree) or the storage
 # sentinel is absent. build-image.sh also refuses to build a pre-wiring tree.
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \

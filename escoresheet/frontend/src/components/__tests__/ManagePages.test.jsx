@@ -18,7 +18,7 @@ vi.mock('react-i18next', () => ({
 const api = vi.hoisted(() => ({
   admin: {
     listAccounts: vi.fn(), setRoles: vi.fn(), setAccountClubs: vi.fn(), deleteAccount: vi.fn(), rejectAccount: vi.fn(), decideRequests: vi.fn(),
-    listMatches: vi.fn(), listRevisions: vi.fn(), reopenMatch: vi.fn(), listApprovals: vi.fn(),
+    listMatches: vi.fn(), listRevisions: vi.fn(), listMatchClosures: vi.fn(), reopenMatch: vi.fn(), listApprovals: vi.fn(),
     listOfficialGames: vi.fn(), addMatchEditor: vi.fn(), releaseGame: vi.fn()
   },
   clubs: { list: vi.fn() },
@@ -201,6 +201,14 @@ describe('an official game is a page (#games/<game number>)', () => {
     expect(await screen.findByTestId('game-4711')).toBeInTheDocument()
   })
 
+  it('shows each game\'s match format, an unknown one marked', async () => {
+    api.admin.listOfficialGames.mockImplementation(async () => ok({ games: [{ ...GAME, match_format: 3 }, { ...FREE, match_format: null }] }))
+    routed(OfficialGamesPanel, {})
+    expect(await screen.findByTestId('game-4711')).toHaveTextContent('matchSetup.bestOf3')
+    const free = screen.getByTestId('game-4712')
+    expect(within(free).getByTestId('game-format-unknown')).toHaveTextContent('manage.games.formatUnknown')
+  })
+
   it('a game nobody scores yet: "Not claimed", no actions', async () => {
     routed(OfficialGamesPanel, {}, '4712')
     const page = await screen.findByTestId('official-game-page')
@@ -238,11 +246,18 @@ const REVISION = {
   id: 'r-1', op: 'void', reason: 'undo', event_type: 'point', event_seq: 3, applied: true, client_ts: '2026-10-07T18:00:00Z',
   actor_email: 'sam@example.ch', before: { type: 'point', payload: { team: 'home' } }
 }
+const CLOSURE = {
+  id: '7', closed_at: '2026-10-07T19:00:00Z', reopened_at: '2026-10-07T19:30:00Z', reason: 'Sanction on the wrong player',
+  reopened_by_name: 'Ada Admin', reclosed_at: '2026-10-07T20:00:00Z',
+  closed_record: { status: 'approved', final_score: '3:1', remarks: 'Protest of the home team', sanctions: [{ type: 'warning' }], sets: [{ index: 1, home_points: 25, away_points: 20 }] },
+  reclosed_record: { status: 'approved', final_score: '3:1', remarks: null, sanctions: [], sets: [{ index: 1, home_points: 25, away_points: 21 }] }
+}
 
 describe('a match is a page (#matches/<match id>)', () => {
   beforeEach(() => {
     api.admin.listMatches.mockImplementation(async ({ state }) => ok({ matches: state === 'all' ? [MATCH, OPEN] : state === 'open' ? [OPEN] : [MATCH] }))
     api.admin.listRevisions.mockResolvedValue(ok([REVISION]))
+    api.admin.listMatchClosures.mockImplementation(async (id) => ok({ closures: id === 'm-1' ? [CLOSURE] : [] }))
     api.admin.reopenMatch.mockResolvedValue(ok({ reopened: true }))
   })
 
@@ -262,6 +277,14 @@ describe('a match is a page (#matches/<match id>)', () => {
     expect(facts).toHaveTextContent('manage.matches.closedBy|Ada Admin')
     await waitFor(() => expect(api.admin.listRevisions).toHaveBeenCalledWith('m-1'))
     expect(await within(page).findByTestId('revisions-list')).toHaveTextContent('sam@example.ch')
+    // the earlier close: the fields that changed, as closed and as closed again (db/039)
+    const closure = await within(page).findByTestId('closure-7')
+    expect(closure).toHaveTextContent('Sanction on the wrong player')
+    expect(closure).toHaveTextContent('Protest of the home team')
+    expect(closure).toHaveTextContent('25:20')
+    expect(closure).toHaveTextContent('25:21')
+    expect(within(closure).getByText('manage.matches.closures.fields.remarks')).toBeInTheDocument()
+    expect(within(closure).queryByText('manage.matches.closures.fields.final_score')).toBeNull()
     fireEvent.click(screen.getByTestId('match-activity'))
     expect(onShowActivity).toHaveBeenCalledWith('match_1')
     fireEvent.click(screen.getByTestId('match-reopen'))
@@ -284,6 +307,7 @@ describe('a match is a page (#matches/<match id>)', () => {
     expect(screen.queryByTestId('match-reopen')).toBeNull()
     expect(screen.queryByTestId('match-activity')).toBeNull()
     await waitFor(() => expect(api.admin.listRevisions).toHaveBeenCalledWith('m-2'))
+    expect(await within(page).findByText('manage.matches.closures.empty')).toBeInTheDocument()
   })
 
   it('a match that is not there: not found, with the way back', async () => {

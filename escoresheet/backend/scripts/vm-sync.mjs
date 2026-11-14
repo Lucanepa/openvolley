@@ -24,7 +24,8 @@
  *   sudo docker compose --project-directory /opt/openvolley exec ov-backend node scripts/vm-sync.mjs --from 2026-10-01 --to 2026-10-31
  *
  * Exit codes: 0 success, 1 failed, 2 usage/config error,
- *             3 skipped (another run holds the lock), 4 partial (some games not written/fetched).
+ *             3 skipped (another run holds the lock), 4 partial (some games not written/fetched,
+ *             or VolleyManager's answer left out most of the window's upcoming games: none removed).
  * The password, cookies and CSRF token are never printed.
  */
 

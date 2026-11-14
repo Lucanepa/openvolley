@@ -323,6 +323,30 @@ describe('MatchEnd: the approval PDF', () => {
     expect(uploads.paths).toHaveLength(0)
   })
 
+  // A reopen and a new approval: the first approval's files, still unsent
+  // (the upload waited out the hall's Wi-Fi), would go first, and after the
+  // close the backend keeps the approval's first PDF (db/033)
+  it('a new approval supersedes the earlier approval\'s files still unsent; other matches\' stay', async () => {
+    uploads.hang = true
+    seed({ gameNumber: 4242 })
+    const old = (id, status, ext, path) => [id, { id, resource: 'scoresheet', action: 'upload', status, payload: { path, file: new Blob(['first approval']), contentType: 'application/pdf', match_external_id: ext } }]
+    store.tables.sync_queue = new Map([
+      old(1, 'error', 'match_1_pdf', '2026-10-25/game4242_kold.pdf'),
+      old(2, 'failed', 'match_1_pdf', '2026-10-25/game4242_kold_final.json'),
+      old(3, 'queued', 'match_9_other', '2026-10-25/game9_kother.pdf')
+    ])
+    render(<MatchEnd matchId={1} />)
+    await approve()
+    await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf' })
+    await findButton(en.matchEnd.closeMatch)
+    await waitFor(() => expect([...store.tables.sync_queue.values()].filter(j => j.resource === 'scoresheet' && j.status === 'queued')).toHaveLength(3))
+    expect(store.tables.sync_queue.get(1)).toMatchObject({ status: 'superseded', payload: { file: null } })
+    expect(store.tables.sync_queue.get(2).status).toBe('superseded')
+    expect(store.tables.sync_queue.get(3).status).toBe('queued')
+    const tx = store.transactions.find(t => t.writes.includes('sync_queue.update'))
+    expect(tx.writes).toEqual(['sync_queue.update', 'sync_queue.update', 'sync_queue.add', 'sync_queue.add'])
+  })
+
   // Backup plan 2026-10-29: the ZIP's MatchData JSON had the teams inside the
   // match and no version, and Restore match refused it
   it('the ZIP\'s match data is a backup file Restore match takes as it is', async () => {

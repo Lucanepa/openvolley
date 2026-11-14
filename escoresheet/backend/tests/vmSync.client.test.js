@@ -2,11 +2,11 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   CookieJar, vmLogin, fetchAllGames, fetchWithRetry, followRedirects, extractFormFields,
-  extractCsrfToken, createRedactor, VmHttpError, SEARCH_PAGE_SIZE, SEARCH_TIMEOUT_MS
+  extractCsrfToken, extractActiveRole, createRedactor, VmHttpError, SEARCH_PAGE_SIZE, SEARCH_TIMEOUT_MS
 } from '../lib/vmSync.js'
 import {
   createFakeVolleyManager, makeGame, FAKE_BASE, FAKE_USER, FAKE_PASSWORD, FAKE_CSRF,
-  FAKE_SESSION_1, FAKE_SESSION_2, TRUSTED_PROPERTIES, FAKE_DASH_CSRF, FAKE_REFEREE_ROLE
+  FAKE_SESSION_1, FAKE_SESSION_2, TRUSTED_PROPERTIES, FAKE_DASH_CSRF, FAKE_REFEREE_ROLE, FAKE_CLUB_ROLE
 } from './helpers/fakeVolleyManager.js'
 
 const noSleep = async () => {}
@@ -96,6 +96,7 @@ describe('login flow against a fake VolleyManager', () => {
       'GET /dashboard',
       'GET /',
       'PUT /api/sportmanager.security/api%5cparty/switchRoleAndAttribute',
+      'GET /', // the role it switched to, read back
       'GET /indoorvolleyball.refadmin/refereegame/index'
     ])
     assert.equal(vm.calls[1].cookies.Neos_Flow_Session, FAKE_SESSION_1)
@@ -132,22 +133,45 @@ describe('login flow against a fake VolleyManager', () => {
     assert.equal(vm.role(), 'other')
   })
 
-  it('a refused switch ends in a 403 that says what to check', async () => {
+  it('a refused switch fails the login at once, saying what to check', async () => {
     const vm = createFakeVolleyManager({ startRole: 'club', refuseSwitch: true })
     const logger = memLogger()
     await assert.rejects(
       vmLogin(creds, { fetch: vm.fetch, baseUrl: vm.baseUrl, http, logger }),
-      (err) => err instanceof VmHttpError && err.status === 403 && /role switch did not go through, check VM_ROLE_ATTRIBUTE_GAMES/.test(err.message)
+      (err) => /role switch .*refused/.test(err.message) && err.message.includes(FAKE_CLUB_ROLE) && /VM_ROLE_ATTRIBUTE_GAMES/.test(err.message)
     )
     assert.ok(logger.lines.some((l) => /role switch answered HTTP 403/.test(l)))
     assert.ok(!logger.lines.join('\n').includes(FAKE_DASH_CSRF))
+    assert.ok(!vm.calls.some((c) => c.path.startsWith('/indoorvolleyball.refadmin/')), 'no read under the wrong role')
   })
 
-  it('already in the referee role: the switch changes nothing and the login works', async () => {
+  it('a switch VolleyManager answers but does not make fails the login: the active role is read back', async () => {
+    const vm = createFakeVolleyManager({ startRole: 'club', ignoreSwitch: true })
+    await assert.rejects(
+      vmLogin(creds, { fetch: vm.fetch, baseUrl: vm.baseUrl, http }),
+      (err) => /still on c1ab0000/.test(err.message) && /not the referee-delegate role/.test(err.message)
+    )
+    assert.ok(!vm.calls.some((c) => c.path.startsWith('/indoorvolleyball.refadmin/')))
+  })
+
+  it('a dashboard without a readable active role fails the login', async () => {
+    const vm = createFakeVolleyManager({ startRole: 'referee', hideRole: true })
+    await assert.rejects(vmLogin(creds, { fetch: vm.fetch, baseUrl: vm.baseUrl, http }), /no readable role/)
+  })
+
+  it('already in the referee role: no switch at all, and the login works', async () => {
     const vm = createFakeVolleyManager({ startRole: 'referee' })
     const { csrfToken } = await vmLogin(creds, { fetch: vm.fetch, baseUrl: vm.baseUrl, http })
     assert.equal(csrfToken, FAKE_CSRF)
     assert.equal(vm.role(), 'referee')
+    assert.ok(!vm.calls.some((c) => c.method === 'PUT'), 'the account is not switched for nothing')
+  })
+
+  it('reads the role attribute, not the association nested before it', () => {
+    const party = (o) => `<div data-csrf-token="x" :active-party="$convertFromBackendToFrontend(${JSON.stringify(o).replace(/"/g, '&quot;')})"></div>`
+    assert.equal(extractActiveRole(party({ activeAttributeValue: { association: { persistenceObjectIdentifier: 'assoc' }, persistenceObjectIdentifier: 'role-1' } })), 'role-1')
+    assert.equal(extractActiveRole('<div data-csrf-token="x"></div>'), '')
+    assert.equal(extractActiveRole('<div :active-party="$convertFromBackendToFrontend({broken)"></div>'), '')
   })
 
   it('a wrong password fails with a clear message (no secret in it)', async () => {

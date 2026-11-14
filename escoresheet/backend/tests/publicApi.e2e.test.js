@@ -19,7 +19,7 @@ describe('public match API (server.js)', { skip: SKIP }, () => {
     writeFileSync(join(storageRoot, '.ovdata'), '')
     statusDir = mkdtempSync(join(tmpdir(), 'ov-pub-status-'))
     writeFileSync(join(statusDir, 'last_backup'), new Date().toISOString().replace(/\.\d{3}Z$/, 'Z') + '\n')
-    srv = await bootServer({ DATABASE_URL: db.url, STORAGE_ROOT: storageRoot, STATUS_DIR: statusDir, STORAGE_BACKUP_MIN_FREE_MB: '1', STORAGE_SCORESHEETS_MIN_FREE_MB: '1' })
+    srv = await bootServer({ DATABASE_URL: db.url, STORAGE_ROOT: storageRoot, STATUS_DIR: statusDir, STORAGE_BACKUP_MIN_FREE_MB: '1', STORAGE_SCORESHEETS_MIN_FREE_MB: '1', PUBLIC_STREAMS_PER_ADDRESS: '20' })
     await sql.query(`INSERT INTO public.matches (external_id, status, game_n, scheduled_at, home_team, away_team, officials)
       VALUES ('pub_e2e','live',1, now(), '{"name":"VBC Home"}', '{"name":"VBC Away"}', '[{"role":"1st referee","firstName":"Anna","lastName":"Muster"}]')`)
     await sql.query(`INSERT INTO public.match_live_state (match_id, current_set, points_a, points_b, sets_won_a, sets_won_b, team_a_name, team_b_name, match_status)
@@ -70,6 +70,36 @@ describe('public match API (server.js)', { skip: SKIP }, () => {
     await read((t) => t.includes('"pointsA":4'))
     ac.abort()
     assert.ok(text.includes('"pointsA":3') && text.includes('"pointsA":4'), text)
+    await sleep(50)
+  })
+  it('live: no line-ups or sanctions for anonymous callers', async () => {
+    await sql.query(`UPDATE public.match_live_state SET lineup_a = '{"I":{"number":4}}', sanctions_a = '[{"player":5,"type":"expulsion"}]'
+      WHERE match_id = (SELECT id FROM public.matches WHERE external_id = 'pub_e2e')`)
+    const b = await (await get('/api/public/v1/matches/pub_e2e/live')).json()
+    assert.ok(!('onCourt' in b) && !('sanctions' in b), JSON.stringify(b))
+    assert.ok(!JSON.stringify(b).includes('expulsion'))
+  })
+  it('one address gets at most PUBLIC_STREAMS_PER_ADDRESS (here 20) streams; the next is refused with 503, not a 200 that ends', async () => {
+    const acs = []
+    try {
+      for (let i = 0; i < 20; i++) {
+        const ac = new AbortController()
+        acs.push(ac)
+        const r = await fetch(srv.base + '/api/public/v1/matches/pub_e2e/stream', { signal: ac.signal })
+        assert.equal(r.status, 200, `stream ${i}`)
+      }
+      const r = await fetch(srv.base + '/api/public/v1/matches/pub_e2e/stream')
+      assert.equal(r.status, 503)
+      assert.equal(r.headers.get('retry-after'), '60')
+      await r.body?.cancel()
+    } finally {
+      for (const ac of acs) ac.abort()
+    }
+    await sleep(100)
+    const again = new AbortController()
+    const r = await fetch(srv.base + '/api/public/v1/matches/pub_e2e/stream', { signal: again.signal })
+    assert.equal(r.status, 200, 'slots come back when the streams close')
+    again.abort()
     await sleep(50)
   })
   it('serves the widget script cross-origin', async () => {

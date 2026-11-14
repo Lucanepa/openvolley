@@ -33,7 +33,6 @@ import {
   liveMatchKnown,
   openInFdroid,
   readNotify,
-  repoBaseOf,
   resetAndroidUpdateForTests,
   setUpdateNotify,
   versionCode,
@@ -88,15 +87,16 @@ describe('latestFromIndex', () => {
     expect(latestFromIndex(index)).toEqual({
       versionName: '2.1.0',
       versionCode: 20010000,
-      apkUrl: 'https://get.openvolley.app/fdroid/repo/com.openvolley.escoresheet_20010000.apk',
     })
   })
 
-  it('builds the APK URL from the index it read', () => {
-    const local = 'http://10.0.2.2:8765/fdroid/repo/index-v2.json'
-    expect(repoBaseOf(local)).toBe('http://10.0.2.2:8765/fdroid/repo')
-    expect(latestFromIndex(indexWith('2.2.0', 20020000), { indexUrl: local }).apkUrl)
-      .toBe('http://10.0.2.2:8765/fdroid/repo/com.openvolley.escoresheet_20020000.apk')
+  // android-4: the index is not signed (its entry.jar is never checked here),
+  // so nothing in it becomes a download link: no APK address from it
+  it('takes no download address from the unsigned index', () => {
+    const evil = indexWith('9.9.9', 99999999)
+    const latest = latestFromIndex(evil)
+    expect(latest.versionCode).toBe(99999999)
+    expect(latest).not.toHaveProperty('apkUrl')
   })
 
   it('skips malformed entries and answers null without the app', () => {
@@ -382,7 +382,7 @@ describe('the controller in the Android app', () => {
     warn.mockRestore()
   })
 
-  it('Later hides that version; the links go to F-Droid or the APK', async () => {
+  it('Later hides that version; the links go to F-Droid or the download page, never an APK from the index', async () => {
     localStorage.setItem(NOTIFY_KEY, 'yes')
     start('sideload')
     await flush()
@@ -392,7 +392,7 @@ describe('the controller in the Android app', () => {
     expect(plugin.openStore).toHaveBeenLastCalledWith({ url: FDROID_REPO_LINK, fallbackUrl: FDROID_REPO_WEB })
     await downloadApk()
     expect(plugin.openStore).toHaveBeenLastCalledWith({
-      url: 'https://get.openvolley.app/fdroid/repo/com.openvolley.escoresheet_20020000.apk',
+      url: 'https://get.openvolley.app/',
       fallbackUrl: 'https://get.openvolley.app/',
     })
   })

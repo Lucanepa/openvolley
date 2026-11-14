@@ -7,7 +7,7 @@ import pg from 'pg'
 import { createPgQuery } from '../lib/pgQuery.js'
 import { createMatchRestore } from '../lib/matchRestore.js'
 import { createAccessResolver, accessFromRoles } from '../lib/access.js'
-import { createAccounts, normalizeInviteCode, hashInviteCode, generateInviteCode, INVITE_ALPHABET, AUDIT_ACTIONS } from '../lib/accounts.js'
+import { createAccounts, normalizeInviteCode, hashInviteCode, generateInviteCode, INVITE_ALPHABET, AUDIT_ACTIONS, emailDigest } from '../lib/accounts.js'
 import { createApprovals } from '../lib/approvals.js'
 import { SKIP_PG, createTestDatabase, quietLogger } from './helpers/pgTestDb.js'
 
@@ -44,6 +44,17 @@ describe('accounts on Postgres', { skip: SKIP_PG }, () => {
   }
   const rolesOf = async (id) => (await pool.query('SELECT roles FROM public.profiles WHERE user_id = $1', [id])).rows[0]?.roles
   const auditOf = async (action) => (await pool.query('SELECT * FROM public.audit_log WHERE action = $1 ORDER BY id', [action])).rows
+  // A match of last season: db/034 gives a new match the season of VolleyManager's
+  // kick-off or the clock, so a test back-dates the key with the user triggers off.
+  async function lastSeason (externalId) {
+    const c = await pool.connect()
+    try {
+      await c.query('BEGIN')
+      await c.query("SET LOCAL session_replication_role = 'replica'")
+      await c.query('UPDATE public.matches SET official_season = official_season - 1 WHERE external_id = $1', [externalId])
+      await c.query('COMMIT')
+    } finally { c.release() }
+  }
   const actor = (name, roles) => ({ id: ids[name], access: accessFromRoles(roles) })
 
   before(async () => {
@@ -169,6 +180,135 @@ describe('accounts on Postgres', { skip: SKIP_PG }, () => {
       const r = await accounts.redeemInvite({ userId: id, code })
       assert.deepEqual(r.body.data.roles, ['competition_manager'])
     })
+
+    // be-accounts-4, x-test-gaps-12: what a repeat or a used-up club code does, not only its answer
+    describe('club codes: every use counted, a removal sticks', () => {
+      let clubId
+      const memberOf = async (id) => (await pool.query('SELECT count(*)::int AS n FROM public.account_clubs WHERE user_id = $1 AND club_id = $2', [id, clubId])).rows[0].n
+      const usesOf = async (inviteId) => (await pool.query('SELECT uses FROM public.invite_codes WHERE id = $1', [inviteId])).rows[0].uses
+      const redemptionsOf = async (inviteId) => (await pool.query('SELECT user_id FROM public.invite_redemptions WHERE invite_id = $1 ORDER BY redeemed_at', [inviteId])).rows.map((r) => r.user_id)
+      const clubCode = async (body) => (await accounts.createInvite({ actorId: ids.admin, body: { label: 'Club code', club_id: clubId, ...body } })).body.data
+      before(async () => {
+        clubId = (await pool.query("INSERT INTO public.clubs (name) VALUES ('VBC Codeburg') RETURNING id")).rows[0].id
+      })
+
+      it('used up: an account that holds the role already is refused and joins nothing', async () => {
+        const { code, invite } = await clubCode({ max_uses: 1 })
+        const helper = await user('helper', [])
+        assert.equal((await accounts.redeemInvite({ userId: helper, code })).status, 200)
+        assert.equal(await memberOf(helper), 1)
+        const outsider = await user('outsider', ['scorer'])
+        const r = await accounts.redeemInvite({ userId: outsider, code })
+        assert.equal(r.status, 409, JSON.stringify(r.body))
+        assert.equal(r.body.error.code, 'OV_INVITE_USED_UP')
+        assert.equal(await memberOf(outsider), 0)
+        assert.equal(await usesOf(invite.id), 1)
+        assert.deepEqual(await redemptionsOf(invite.id), [helper])
+      })
+
+      it('a scorer joining the club through the code uses it: counted, recorded, audited; a repeat is not', async () => {
+        const { code, invite } = await clubCode({ max_uses: 2 })
+        const joiner = await user('joiner', ['scorer'])
+        const r = await accounts.redeemInvite({ userId: joiner, code })
+        assert.equal(r.status, 200, JSON.stringify(r.body))
+        assert.deepEqual(r.body.data, { roles: ['scorer'], role_granted: 'scorer', already_had: true })
+        assert.equal(await memberOf(joiner), 1)
+        assert.equal(await usesOf(invite.id), 1)
+        assert.deepEqual(await redemptionsOf(invite.id), [joiner])
+        assert.ok((await auditOf('account.clubs')).some((a) => a.target_user_id === joiner && a.details.invite_id === invite.id && a.details.joined === clubId))
+        // again: nothing new, not counted
+        assert.equal((await accounts.redeemInvite({ userId: joiner, code })).status, 200)
+        assert.equal(await usesOf(invite.id), 1)
+        // a scorer already in the club: nothing to give, not counted
+        const inside = await user('inside', ['scorer'])
+        await pool.query('INSERT INTO public.account_clubs (user_id, club_id) VALUES ($1, $2)', [inside, clubId])
+        assert.equal((await accounts.redeemInvite({ userId: inside, code })).body.data.already_had, true)
+        assert.equal(await usesOf(invite.id), 1)
+      })
+
+      it('taken off the club: the same code does not bring the account back, a new one does', async () => {
+        const { code, invite } = await clubCode({ max_uses: 5 })
+        const leaver = await user('leaver', [])
+        assert.equal((await accounts.redeemInvite({ userId: leaver, code })).status, 200)
+        // as the club manager's Remove (lib/clubs.js removeMember)
+        await pool.query('DELETE FROM public.account_clubs WHERE user_id = $1 AND club_id = $2', [leaver, clubId])
+        const r = await accounts.redeemInvite({ userId: leaver, code })
+        assert.equal(r.status, 409, JSON.stringify(r.body))
+        assert.equal(r.body.error.code, 'OV_INVITE_REMOVED')
+        assert.equal(await memberOf(leaver), 0)
+        assert.equal(await usesOf(invite.id), 1)
+        const fresh = await clubCode({ max_uses: 1 })
+        assert.equal((await accounts.redeemInvite({ userId: leaver, code: fresh.code })).status, 200)
+        assert.equal(await memberOf(leaver), 1)
+      })
+
+      it('a preview answers as a redeem would, and keeps nothing', async () => {
+        const { code, invite } = await clubCode({ max_uses: 1 })
+        const looker = await user('looker', [])
+        const auditsBefore = (await pool.query('SELECT count(*)::int AS n FROM public.audit_log')).rows[0].n
+        const p = await accounts.redeemInvite({ userId: looker, code, preview: true })
+        assert.equal(p.status, 200, JSON.stringify(p.body))
+        assert.deepEqual(p.body.data, { roles: ['scorer'], role_granted: 'scorer', already_had: false, preview: true })
+        assert.deepEqual(await rolesOf(looker), [])
+        assert.equal(await memberOf(looker), 0)
+        assert.equal(await usesOf(invite.id), 0)
+        assert.equal((await pool.query('SELECT count(*)::int AS n FROM public.audit_log')).rows[0].n, auditsBefore)
+        // the refusals are the redeem's
+        await accounts.redeemInvite({ userId: looker, code })
+        const peeker = await user('peeker', [])
+        assert.equal((await accounts.redeemInvite({ userId: peeker, code, preview: true })).body.error.code, 'OV_INVITE_USED_UP')
+      })
+    })
+
+    // be-accounts-6: a code stands only while its creator may still make it
+    describe('codes and their creator', () => {
+      const stateOf = async (inviteId) => (await accounts.listInvites()).body.data.invites.find((i) => i.id === inviteId)?.state
+
+      it('an admin demoted: the codes it made are dead (listed revoked)', async () => {
+        const leaving = await user('leaving', ['admin'])
+        const { code, invite } = (await accounts.createInvite({ actorId: leaving, body: { label: 'Forever', role: 'competition_manager', max_uses: null, expires_at: null } })).body.data
+        assert.equal(await stateOf(invite.id), 'active')
+        await pool.query("UPDATE public.profiles SET roles = '{}' WHERE user_id = $1", [leaving])
+        assert.equal(await stateOf(invite.id), 'revoked')
+        const newcomer = await user('newcomer', [])
+        const r = await accounts.redeemInvite({ userId: newcomer, code })
+        assert.equal(r.status, 404, JSON.stringify(r.body))
+        assert.deepEqual(await rolesOf(newcomer), [])
+      })
+
+      it('an account deleted: the codes it made are dead', async () => {
+        const gone = await user('gone', ['admin'])
+        const { code, invite } = (await accounts.createInvite({ actorId: gone, body: { label: 'Orphan', role: 'scorer', max_uses: 10 } })).body.data
+        await pool.query('DELETE FROM public.profiles WHERE user_id = $1', [gone])
+        await pool.query('DELETE FROM auth.users WHERE id = $1', [gone])
+        assert.equal((await pool.query('SELECT created_by FROM public.invite_codes WHERE id = $1', [invite.id])).rows[0].created_by, null)
+        assert.equal(await stateOf(invite.id), 'revoked')
+        const newcomer = await user('newcomer2', [])
+        assert.equal((await accounts.redeemInvite({ userId: newcomer, code })).status, 404)
+        assert.deepEqual(await rolesOf(newcomer), [])
+      })
+
+      it('a club manager taken off the club: its club codes are dead; another manager\'s and an admin\'s stay', async () => {
+        const clubId = (await pool.query("INSERT INTO public.clubs (name) VALUES ('VBC Codehausen') RETURNING id")).rows[0].id
+        const cmA = await user('cma', [])
+        const cmB = await user('cmb', [])
+        await pool.query('INSERT INTO public.club_managers (club_id, user_id) VALUES ($1, $2), ($1, $3)', [clubId, cmA, cmB])
+        const mk = async (actorId) => (await accounts.createInvite({ actorId, body: { label: 'Club scorers', club_id: clubId, max_uses: 5 } })).body.data
+        const a = await mk(cmA)
+        const b = await mk(cmB)
+        const ad = await mk(ids.admin)
+        await pool.query('DELETE FROM public.club_managers WHERE club_id = $1 AND user_id = $2', [clubId, cmA])
+        assert.deepEqual([await stateOf(a.invite.id), await stateOf(b.invite.id), await stateOf(ad.invite.id)], ['revoked', 'active', 'active'])
+        const s1 = await user('s1', [])
+        assert.equal((await accounts.redeemInvite({ userId: s1, code: a.code })).status, 404)
+        assert.equal((await accounts.redeemInvite({ userId: s1, code: b.code })).status, 200)
+        const s2 = await user('s2', [])
+        assert.equal((await accounts.redeemInvite({ userId: s2, code: ad.code })).status, 200)
+        // a club manager's code without its club (the club deleted) is dead too
+        await pool.query('UPDATE public.invite_codes SET club_id = NULL WHERE id = $1', [b.invite.id])
+        assert.equal(await stateOf(b.invite.id), 'revoked')
+      })
+    })
   })
 
   describe('roles', () => {
@@ -213,7 +353,9 @@ describe('accounts on Postgres', { skip: SKIP_PG }, () => {
       const row = (await pool.query('SELECT u.email, p.first_name, p.last_name FROM auth.users u JOIN public.profiles p ON p.user_id = u.id WHERE u.id = $1', [id])).rows[0]
       assert.deepEqual(row, { email: 'anna.muster@example.ch', first_name: 'Anna Maria', last_name: 'Muster' })
       const entry = (await auditOf('account.profile')).find((x) => x.target_user_id === id)
-      assert.deepEqual(entry.details.before, { first_name: 'Rename', last_name: 'Test', email: 'rename@example.ch' })
+      // the addresses as digests (the entry outlives the account)
+      assert.deepEqual(entry.details.before, { first_name: 'Rename', last_name: 'Test', email_sha256: emailDigest('rename@example.ch') })
+      assert.equal(entry.details.after.email_sha256, emailDigest('anna.muster@example.ch'))
       assert.equal(entry.actor_id, ids.admin)
 
       // nothing changed: no audit entry
@@ -314,9 +456,12 @@ describe('accounts on Postgres', { skip: SKIP_PG }, () => {
       const m = await closedMatch()
       const r = await accounts.releaseGame({ actorId: ids.admin, matchId: m.id, body: { reason: 'Wrong game number' } })
       assert.equal(r.status, 200, JSON.stringify(r.body))
-      assert.deepEqual(r.body.data.match, { id: m.id, official_game_exempt: true })
-      const { rows: [row] } = await pool.query('SELECT official_game_exempt, closed_at, status FROM matches WHERE id = $1', [m.id])
+      const { released_at: releasedAt, ...match } = r.body.data.match
+      assert.deepEqual(match, { id: m.id, official_game_exempt: true })
+      const { rows: [row] } = await pool.query('SELECT official_game_exempt, released_at, closed_at, status FROM matches WHERE id = $1', [m.id])
       assert.equal(row.official_game_exempt, true)
+      // db/040: since when, so the final mail leaves it out
+      assert.equal(row.released_at?.toISOString(), releasedAt)
       assert.ok(row.closed_at, 'still closed')
       // another scorer may now create the game
       const other = await user('other', ['scorer'])
@@ -331,6 +476,11 @@ describe('accounts on Postgres', { skip: SKIP_PG }, () => {
       assert.equal(r.status, 200, JSON.stringify(r.body))
       assert.deepEqual(r.body.data, { role: 'editor' })
       assert.equal((await pool.query('SELECT granted_via FROM match_editors WHERE match_id = $1 AND user_id = $2', [m.id, ids.pending2])).rows[0].granted_via, 'admin')
+      // an editor by the game PIN already: from now on by the admin's grant, added when it was
+      await pool.query("INSERT INTO match_editors (match_id, user_id, granted_via, created_at) VALUES ($1, $2, 'claim', now() - interval '1 day')", [m.id, ids.pending])
+      assert.deepEqual((await accounts.addMatchEditor({ actorId: ids.admin, matchId: m.id, body: { email: 'pending@example.ch' } })).body.data, { role: 'editor' })
+      const { rows: [claimed] } = await pool.query("SELECT granted_via, created_at < now() - interval '23 hours' AS kept FROM match_editors WHERE match_id = $1 AND user_id = $2", [m.id, ids.pending])
+      assert.deepEqual(claimed, { granted_via: 'admin', kept: true })
       assert.equal((await accounts.addMatchEditor({ actorId: ids.admin, matchId: m.id, body: { email: 'scorer@example.ch' } })).body.data.role, 'creator')
       assert.equal((await accounts.addMatchEditor({ actorId: ids.admin, matchId: m.id, body: { email: 'ghost@example.ch' } })).status, 404)
       assert.equal((await accounts.addMatchEditor({ actorId: ids.admin, matchId: randomUUID(), body: { email: 'scorer@example.ch' } })).status, 404)
@@ -339,19 +489,23 @@ describe('accounts on Postgres', { skip: SKIP_PG }, () => {
     })
 
     it('official games list the claim matched by number and season', async () => {
-      await pool.query(`INSERT INTO public.svrz_games (game_number, datetime, league, team_home, team_away) VALUES
-        ('${gameSeq}', '2026-10-10T16:00:00', '2L', 'A', 'B'), ('${gameSeq + 1}', '2026-10-11T16:00:00', '3L', 'C', 'D')`)
+      await pool.query(`INSERT INTO public.svrz_games (game_number, datetime, league, team_home, team_away, match_format) VALUES
+        ('${gameSeq}', '2026-10-10T16:00:00', '2L', 'A', 'B', 3), ('${gameSeq + 1}', '2026-10-11T16:00:00', '3L', 'C', 'D', NULL)`)
       await db.runQuery({ table: 'matches', action: 'insert', params: { data: { external_id: `og_${gameSeq}`, game_n: gameSeq, scheduled_at: '2026-10-10T14:00:00Z' } } },
         { proto: 2, matchOwner: { userId: ids.scorer }, actorId: ids.scorer })
       // the same number last season is not this game's claim
       await db.runQuery({ table: 'matches', action: 'insert', params: { data: { external_id: `og_old_${gameSeq + 1}`, game_n: gameSeq + 1, scheduled_at: '2025-10-10T14:00:00Z' } } },
         { proto: 2, matchOwner: { userId: ids.scorer }, actorId: ids.scorer })
+      await lastSeason(`og_old_${gameSeq + 1}`)
       const r = await accounts.listOfficialGames({ from: '2026-10-09', to: '2026-10-12' })
       assert.equal(r.status, 200, JSON.stringify(r.body))
       const [g1, g2] = r.body.data.games
       assert.equal(g1.claim.scorer_name, 'Scorer Test')
       assert.equal(g1.claim.external_id, `og_${gameSeq}`)
       assert.equal(g2.claim, null)
+      // the format as the schedule has it; unknown stays null (the panel marks it)
+      assert.equal(g1.match_format, 3)
+      assert.equal(g2.match_format, null)
       assert.equal((await accounts.listOfficialGames({ from: '2026-10-09', to: '2026-10-12', q: '3l' })).body.data.games.length, 1)
       assert.equal((await accounts.listOfficialGames({ from: '2026-01-01', to: '2026-12-31' })).status, 400, 'span')
       assert.equal((await accounts.listOfficialGames({ from: '2026-13-01' })).status, 400)
@@ -428,14 +582,17 @@ describe('accounts on Postgres', { skip: SKIP_PG }, () => {
       const n = gameSeq++
       // last season's match, then the number comes back this season and is claimed
       assert.equal((await insert({ external_id: `old_${n}`, game_n: n, scheduled_at: '2025-10-10T16:00:00Z' })).status, 200)
+      await lastSeason(`old_${n}`)
       await pool.query("INSERT INTO public.svrz_games (game_number, datetime, league) VALUES ($1, '2026-11-10T18:00:00', '2L')", [String(n)])
       const rival = await user(`now${n}`, ['scorer'])
       assert.equal((await insert({ external_id: `new_${n}`, game_n: n, scheduled_at: '2026-11-10T16:00:00Z' }, rival)).status, 200)
       // the old match's sync upserts (full, or partial without the date) pass
       assert.equal(await accounts.findTakenGame({ userId: ids.scorer, rows: [{ external_id: `old_${n}`, game_n: n, scheduled_at: '2025-10-10T16:00:00Z', status: 'live' }] }), null)
       assert.equal(await accounts.findTakenGame({ userId: ids.scorer, rows: [{ external_id: `old_${n}`, status: 'ended' }] }), null)
-      // moving it onto this season's game is caught
-      assert.ok(await accounts.findTakenGame({ userId: ids.scorer, rows: [{ external_id: `old_${n}`, scheduled_at: '2026-11-10T16:00:00Z' }] }))
+      // db/034: a date in this season does not move it onto this season's game (the key's season is the server's)
+      assert.equal(await accounts.findTakenGame({ userId: ids.scorer, rows: [{ external_id: `old_${n}`, scheduled_at: '2026-11-10T16:00:00Z' }] }), null)
+      assert.equal((await db.runQuery({ table: 'matches', action: 'update', params: { data: { scheduled_at: '2026-11-10T16:00:00Z' }, filters: [{ type: 'eq', column: 'external_id', value: `old_${n}` }] } }, asScorer(ids.scorer))).status, 200)
+      assert.equal((await pool.query('SELECT official_season FROM public.matches WHERE external_id = $1', [`old_${n}`])).rows[0].official_season, 2025)
     })
 
     it('with sports, never names the holder of a game of another sport (the stored sport counts)', async () => {

@@ -7,6 +7,7 @@ import { usePageItem } from './usePageItem'
 import { Button, SegmentedControl, SearchInput, RowList, Row, RowTool, Chip, EmptyInset, KeyValue, SectionHeader, SectionNote, SkeletonRows, Notice, dayTimeLabel, toast } from '../../ui'
 import { ApprovalChips, ApprovalLookup } from './ApprovalBits'
 import RevisionsList from './RevisionsList'
+import ClosuresList from './ClosuresList'
 
 /**
  * The read behind a match's page that is not in the list (opened from a link,
@@ -162,7 +163,8 @@ export default function ClosedMatchesPanel({ onShowActivity = null, route = '', 
 /**
  * A match's page: what its row says (game, when, league, scorer, editors,
  * closed when and by whom, its approvals), Reopen (a closed one) and
- * Activity, and its corrections (RevisionsList).
+ * Activity, its earlier closes (ClosuresList: before and after each admin
+ * reopen) and its corrections (RevisionsList).
  */
 function MatchPage({ match: m, online, onBack, onReopen, onShowActivity }) {
   const { t } = useTranslation()
@@ -202,6 +204,9 @@ function MatchPage({ match: m, online, onBack, onReopen, onShowActivity }) {
           </div>
         )}
       </div>
+      <SectionHeader title={t('manage.matches.closures.title')} />
+      <SectionNote className="mb-2">{t('manage.matches.closures.description')}</SectionNote>
+      <div className="mb-6"><ClosuresList matchId={m.id} /></div>
       <SectionHeader title={t('manage.matches.corrections')} />
       <SectionNote className="mb-2">{t('manage.revisions.description')}</SectionNote>
       <RevisionsList matchId={m.id} />

@@ -102,7 +102,8 @@ describe('account deletion, storage remove, tablet list', { skip: SKIP }, () => 
     // The scorer finds it: its own match row, connections.pending_home_roster
     const found = await dbCall(alice, 'matches', 'select', { columns: 'connections', filters: [{ type: 'eq', column: 'external_id', value: ext }], maybeSingle: true })
     assert.equal(found.status, 200, found.text)
-    assert.deepEqual(found.json.data.connections.pending_home_roster.players, [{ number: 3 }])
+    // as the app's rules store it (lib/uploadedRoster.js)
+    assert.deepEqual(found.json.data.connections.pending_home_roster.players, [{ number: 3, firstName: '', lastName: '', dob: '', libero: '', isCaptain: false, isLfp: false }])
   })
 
   it('/api/storage/remove deletes the caller\'s own scoresheet and its owner sidecar', async () => {
@@ -148,7 +149,7 @@ describe('account deletion, storage remove, tablet list', { skip: SKIP }, () => 
     assert.equal((await upload(scorer, 'scoresheets', sheet, '{"sheet":1}')).status, 200)
     assert.equal(existsSync(join(storageRoot, 'backup', scorer.id)), true)
 
-    const del = await api(srv.base, '/api/auth/delete-account', { body: { access_token: scorer.token } })
+    const del = await api(srv.base, '/api/auth/delete-account', { body: { access_token: scorer.token, password: 'correct-horse-battery' } })
     assert.equal(del.status, 200, del.text)
 
     const count = async (q, p) => (await sql.query(q, p)).rows[0].n
@@ -207,8 +208,10 @@ describe('account deletion, storage remove, tablet list', { skip: SKIP }, () => 
       assert.equal(anon.json.access, 'counts')
       assert.equal(anon.json.referees, 1)
       assert.equal(anon.json.benches, 1)
-      assert.deepEqual(anon.json.clients.map((c) => Object.keys(c).sort()), [['matchId', 'role', 'team'], ['matchId', 'role', 'team']])
+      assert.deepEqual(anon.json.clients.map((c) => Object.keys(c).sort()), [['matchId', 'proved', 'role', 'team'], ['matchId', 'proved', 'role', 'team']])
       assert.deepEqual(anon.json.clients.map((c) => c.role).sort(), ['bench', 'referee'])
+      // both proved their PIN: a referee and a bench, not just a label
+      assert.deepEqual(anon.json.clients.map((c) => c.proved), [true, true])
 
       const wrong = await get(`?matchId=${encodeURIComponent(ext)}`, { 'X-OV-Match-Pin': '000000', 'cf-connecting-ip': nextIp() })
       assert.equal(wrong.json.access, 'counts')

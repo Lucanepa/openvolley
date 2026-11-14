@@ -136,6 +136,27 @@ describe('beachSchedule', () => {
     assert.equal(new Map(plain.slots.map((s) => [s.id, s])).get('d-W3').scheduled_at, '2026-07-04T07:50:00.000Z', 'without a clock, the late W3 goes back to 09:50')
   })
 
+  it('the biggest tournament the server takes is planned in milliseconds, not seconds (the planner runs on the shared backend)', () => {
+    // 40 draws of 32 pairs (lib/beachTournaments.js MAX_DRAWS) on one court over 15 days of 10-minute slots
+    const matches = []
+    const draws = []
+    for (let d = 0; d < 40; d++) {
+      draws.push({ id: `d${d}`, slot_minutes: 10, rest_minutes: 0 })
+      matches.push(...matchesOf(`d${d}`, 32, d * 62 + 1))
+    }
+    const days = daysBetween('2026-07-01', '2026-07-15')
+    const started = performance.now()
+    const one = scheduleMatches({ matches, draws, courts: courts(1), days, dayStart: '00:00', dayEnd: '23:59' })
+    const many = scheduleMatches({ matches, draws, courts: courts(40), days, dayStart: '00:00', dayEnd: '23:59' })
+    const ms = performance.now() - started
+    // a planner that re-sorted and scanned every slot took about 6 s for the first one
+    assert.ok(ms < 600, `${Math.round(ms)} ms`)
+    assert.equal(one.slots.length, 15 * 143) // every 10-minute slot of 15 days of 00:00-23:59
+    assert.equal(one.unplaced.length, matches.length - one.slots.length)
+    assert.equal(many.unplaced.length, 0)
+    check({ matches, draws, slots: many.slots, dayStart: '00:00', dayEnd: '23:59' })
+  })
+
   it('more than 18 matches on a court in a day is a warning', () => {
     const matches = matchesOf('d', 16)
     const r = scheduleMatches({ matches, draws: [{ id: 'd', slot_minutes: 20, rest_minutes: 0 }], courts: courts(1), days: ['2026-07-11'], dayStart: '08:00', dayEnd: '20:00' })

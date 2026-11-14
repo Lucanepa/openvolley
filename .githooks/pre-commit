@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
-# Block commits that introduce credentials.
+# Block commits that introduce credentials or personal data.
 #
 # Added 2026-08-13 after a full-history sweep found live keys committed to
 # repos that are public. Disclosure is effectively irreversible: a force-push
 # does not remove the commit, because GitHub keeps unreachable commits
 # addressable by SHA until Support runs GC on the repo. Rotation is the only
 # real remedy, so the only real control is not committing the secret.
+#
+# The same scan blocks personal data from matches (the match-data-* rules in
+# .gitleaks.toml): dates of birth, signature images, contact lists, encrypted
+# backups, and the apps' backup, log and export files by their names. Personal
+# data cannot be rotated at all, so not committing it is the only control
+# there. For clones without this hook (and web uploads), CI runs the same scan
+# on every push and pull request (.github/workflows/leak-scan.yml).
 #
 # Enable in a fresh clone with:  git config core.hooksPath .githooks
 # Nothing sets this automatically (no package.json "prepare" script does it);
@@ -64,8 +71,13 @@ rc=0
 "${scan[@]}" || rc=$?
 if (( rc == LEAKS_FOUND )); then
   echo >&2
-  echo "pre-commit: BLOCKED — a staged change looks like a credential." >&2
-  echo "  Remove it and use an env var / secret store instead." >&2
+  echo "pre-commit: BLOCKED — a staged change looks like a credential or personal data." >&2
+  echo "  Credential: remove it and use an env var / secret store instead." >&2
+  echo "  Personal data (match-data-*: a backup, log, roster, contact list or signature):" >&2
+  echo "    new file: unstage it (git rm --cached <file>);" >&2
+  echo "    edited tracked file: remove the data, or unstage the change (git restore --staged <file>)." >&2
+  echo "  Test data uses fictional people and lives in a tests/fixtures/ folder." >&2
+  echo "  Which file and rule: ${scan[*]} -v" >&2
   echo "  False positive? Add an allowlist entry to .gitleaks.toml." >&2
   exit 1
 elif (( rc != 0 )); then

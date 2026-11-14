@@ -254,3 +254,49 @@ describe('Results', () => {
     expect(resultBox(container)).toBe('2:0')
   })
 })
+
+describe('App_Scoresheet rosters', () => {
+  beforeAll(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+  afterAll(() => vi.restoreAllMocks())
+
+  const liberoRows = (container: HTMLElement, side: 'home' | 'away') =>
+    Array.from(container.querySelectorAll(`[data-testid="roster-${side}"] [data-testid="roster-libero-row"]`))
+      .map(r => (r.textContent || '').trim())
+
+  it('LIBERO box: the registered liberos after a re-designation, the re-designated one noted', () => {
+    const data = buildMatch()
+    data.homePlayers = [
+      ...[2, 3, 4, 5, 6, 9].map(n => ({ number: n, firstName: 'H', lastName: `${n}` })),
+      { number: 1, firstName: 'H', lastName: 'One', libero: 'unable' },
+      { number: 7, firstName: 'H', lastName: 'Seven', libero: 'redesignated' },
+      { number: 10, firstName: 'H', lastName: 'Ten', libero: 'unable' }
+    ] as any
+    data.events.push(
+      ev('libero_unable', 1, { team: 'home', liberoNumber: 1, liberoType: 'libero1' }),
+      ev('libero_unable', 2, { team: 'home', liberoNumber: 10, liberoType: 'libero2' }),
+      ev('libero_redesignation', 2, { team: 'home', unableLiberoNumber: 10, unableLiberoType: 'libero2', newLiberoNumber: 7 })
+    )
+    const { container } = render(<App matchData={data} autoAction="preview" />)
+    const rows = liberoRows(container, 'home')
+    expect(rows[0]).toContain('1')
+    expect(rows[0]).toContain('One')
+    expect(rows[1]).toContain('10')
+    expect(rows[1]).toContain('Ten')
+    // never cut silently: the re-designated libero #7 is named on the box
+    expect(container.querySelector('[data-testid="roster-home"] [data-testid="roster-libero-extra"]')?.textContent).toContain('7')
+  })
+
+  it('signature boxes without a coin-toss signature are read-only on the sheet (no pad, nothing unsaved)', () => {
+    const { container } = render(<App matchData={buildMatch()} autoAction="preview" />)
+    const roster = container.querySelector('[data-testid="roster-home"]') as HTMLElement
+    expect(roster.querySelector('[title="Click to sign"]')).toBeNull()
+    const boxes = Array.from(roster.querySelectorAll('.min-h-\\[20px\\]')) as HTMLElement[]
+    expect(boxes.length).toBe(2)
+    boxes.forEach(b => fireEvent.click(b))
+    expect(document.querySelector('canvas')).toBeNull()
+    expect(screen.queryByText(/Captain Signature|Coach Signature/)).toBeNull()
+  })
+})

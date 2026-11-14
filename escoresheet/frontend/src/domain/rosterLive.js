@@ -5,6 +5,8 @@
  * already derived (the current lineup per team from getTeamLineupState).
  */
 
+import { substitutionBarsForMatch } from './substitutions'
+
 export const COURT_POSITIONS = ['I', 'II', 'III', 'IV', 'V', 'VI']
 
 /** Sanctions given to one person (player or bench official). */
@@ -64,11 +66,17 @@ export function scoreAtEvent(events, event) {
 /**
  * Every sanction of one team in the match, split by who received it, in the
  * order they were given. Each entry: { id, type, setIndex, own, opp } where
- * own:opp is the set score with the sanctioned team first.
- * @returns {{ players: Record<string, Array>, officials: Record<string, Array>, team: Array }}
+ * own:opp is the set score with the sanctioned team first. Players by number
+ * and officials by role in Maps: a role or number named like an object member
+ * ('constructor', from an uploaded roster) is a key like any other.
+ * @returns {{ players: Map<string, Array>, officials: Map<string, Array>, team: Array }}
  */
 export function teamSanctionSummary(events, teamKey) {
-  const out = { players: {}, officials: {}, team: [] }
+  const out = { players: new Map(), officials: new Map(), team: [] }
+  const push = (map, key, entry) => {
+    if (!map.has(key)) map.set(key, [])
+    map.get(key).push(entry)
+  }
   const list = (events || [])
     .filter(e => e.type === 'sanction' && e.payload?.team === teamKey)
     .sort((a, b) => ((a.setIndex || 1) - (b.setIndex || 1)) || compareEvents(a, b))
@@ -88,9 +96,9 @@ export function teamSanctionSummary(events, teamKey) {
     if (TEAM_SANCTIONS.includes(type) || !PERSONAL_SANCTIONS.includes(type)) {
       out.team.push(entry)
     } else if (num !== '') {
-      ;(out.players[num] ||= []).push(entry)
+      push(out.players, num, entry)
     } else if (role) {
-      ;(out.officials[role] ||= []).push(entry)
+      push(out.officials, String(role), entry)
     } else {
       out.team.push(entry)
     }
@@ -106,7 +114,9 @@ const isInjurySub = e =>
  * injured during the match (the Rosters dialog marks both).
  *  - 'disqualified': disqualification (any set) - out for the match
  *  - 'expelled'    : expulsion in the current set - out for this set
- *  - 'exceptional' : exceptionally substituted - out for the match
+ *  - 'exceptional' : exceptionally substituted (injury) - out for the match;
+ *                    an expelled player substituted exceptionally is
+ *                    'expelled' in that set only (FIVB 21.3.2)
  *  - 'unable'      : libero declared unable / re-designated away
  * @returns {{ out: null|'disqualified'|'expelled'|'exceptional'|'unable', injured: boolean }}
  */
@@ -126,7 +136,7 @@ export function playerPlayStatus(events, teamKey, player, currentSetIndex) {
     subsOut.some(e => e.payload?.isExpelled === true && (e.setIndex || 1) === currentSetIndex)
   ) {
     status.out = 'expelled'
-  } else if (subsOut.some(e => e.payload?.isExceptional === true)) {
+  } else if (subsOut.some(e => e.payload?.isExceptional === true && substitutionBarsForMatch(e.payload))) {
     status.out = 'exceptional'
   } else if (
     player?.libero === 'unable' ||

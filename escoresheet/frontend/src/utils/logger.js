@@ -122,10 +122,25 @@ const originalConsole = {
 // diagnostics (utils/diagnosticsReport); never uploaded or persisted
 const STACK_MAX_CHARS = 2000
 
+// A kept line names no email address and holds no data URL (a signature
+// image): the buffer is uploaded as app logs and goes into the support
+// diagnostics. Longer lines are cut. The console itself shows what was logged.
+export const MESSAGE_MAX_CHARS = 4000
+// bounded parts: linear on a long line without an address
+const EMAIL_RE = /[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63}){0,8}\.[A-Za-z]{2,24}/g
+const DATA_URL_RE = /data:[a-z]+\/[a-z0-9.+-]+(?:;[a-z0-9=.+-]+)*,[A-Za-z0-9+/=%._-]*/gi
+
+/** A console line as the buffer keeps it: no email address or data URL, at most MESSAGE_MAX_CHARS. */
+export function cleanLogLine(text) {
+  let s = String(text).replace(DATA_URL_RE, '[data URL]')
+  if (s.includes('@')) s = s.replace(EMAIL_RE, '[email]')
+  return s.length > MESSAGE_MAX_CHARS ? `${s.slice(0, MESSAGE_MAX_CHARS)} [${s.length - MESSAGE_MAX_CHARS} characters cut]` : s
+}
+
 function formatLogEntry(level, args) {
   const now = Date.now()
   const timestamp = new Date(now).toISOString()
-  const message = args.map(arg => {
+  const message = cleanLogLine(args.map(arg => {
     // JSON.stringify(new Error('x')) is "{}"
     if (arg instanceof Error) return `${arg.name}: ${arg.message}`
     if (typeof arg === 'object') {
@@ -136,7 +151,7 @@ function formatLogEntry(level, args) {
       }
     }
     return String(arg)
-  }).join(' ')
+  }).join(' '))
 
   const entry = { seq: nextSeq(now), timestamp, level, message }
   if (level === 'error' || level === 'warn') {
@@ -399,6 +414,12 @@ export function discardUnsentLogs() {
   droppedUnsent = 0
 }
 
+// A match insert / update line of the sync queue saved by a version before
+// it logged only the payload's keys and size (useSyncQueue payloadForLog):
+// it holds the rosters, officials and signatures, and is not sent
+const OLD_PAYLOAD_LINE = /^\[SyncQueue\] Match (insert|update) (payload|error):/
+const isOldPayloadLine = (message) => OLD_PAYLOAD_LINE.test(message) && !message.includes('{"keys":[')
+
 /**
  * Put the entries saved by persistPendingLogs back into the buffer, only when
  * the same account (or none) is signed in now. Not filtered by the shared
@@ -413,7 +434,8 @@ export function restorePendingLogs() {
     if (!saved || saved.uid !== storedSessionUserId()) return 0
     const have = new Set(logBuffer.map(e => e.seq))
     const restored = saved.entries.filter(e =>
-      e && Number.isFinite(e.seq) && !have.has(e.seq) && typeof e.message === 'string')
+      e && Number.isFinite(e.seq) && !have.has(e.seq) && typeof e.message === 'string' && !isOldPayloadLine(e.message))
+      .map(e => ({ ...e, message: cleanLogLine(e.message) }))
     if (restored.length === 0) return 0
     for (const e of restored) if (e.seq > lastSeq) lastSeq = e.seq
     // This tab sends them, even below the shared cursor (another tab's uploads)
@@ -544,26 +566,30 @@ export function resetLoggerForTests() {
 }
 
 /**
- * Upload match backup JSON to Supabase storage (sequential, with state summary)
- * Uses game_pin for folder structure so backups can be found by PIN
+ * Upload a match backup to the cloud storage (sequential, with state summary).
+ * The file is the app backup file (utils/backupFile): no game PIN or session
+ * ids, encrypted for the game PIN, the referee PIN and the league's recovery
+ * key. It keeps the referee, bench and upload PINs inside the encryption: a
+ * restore on a replacement device sends the server those, so the tablets
+ * stay connected. One that cannot be encrypted is not uploaded.
  */
 export async function uploadBackupToCloud(matchId, backupData) {
   // A Global match has no account: its own store, by the match's key
-  if (backupData?.match?.global === true) return uploadGlobalBackup(backupData)
+  if (backupData?.match?.global === true) return uploadGlobalBackup(backupData, matchId)
   // Cloud storage needs an account: nothing to send while signed out
   if (!hasStoredSession()) return null
   const gameN = backupData?.match?.gameN || backupData?.match?.game_n || 1
 
   // Get set and score info for filename
   let setIndex = 1
-  let leftScore = 0
-  let rightScore = 0
+  let homeScore = 0
+  let awayScore = 0
   if (backupData?.sets?.length > 0) {
     const latestSet = backupData.sets.sort((a, b) => (b.index || 0) - (a.index || 0))[0]
     if (latestSet) {
       setIndex = latestSet.index || 1
-      leftScore = latestSet.homePoints || 0
-      rightScore = latestSet.awayPoints || 0
+      homeScore = latestSet.homePoints || 0
+      awayScore = latestSet.awayPoints || 0
     }
   }
 
@@ -574,13 +600,15 @@ export async function uploadBackupToCloud(matchId, backupData) {
   const ms = now.getMilliseconds().toString().padStart(3, '0') // milliseconds
 
   // Folder structure: backups/backup_g{gameN}/
-  const filename = `backups/backup_g${gameN}/backup_g${gameN}_set${setIndex}_scoreleft${leftScore}_scoreright${rightScore}_${utcDate}_${utcTime}_${ms}.json`
+  const filename = `backups/backup_g${gameN}/backup_g${gameN}_set${setIndex}_home${homeScore}_away${awayScore}_${utcDate}_${utcTime}_${ms}.json`
 
   try {
+    const { backupFileText } = await import('./backupFile')
+    const body = await backupFileText(matchId, backupData, now, { keepConnectionPins: true })
     const { data, error } = await apiStorage
       .from('backup')
       // Compact: a match's snapshots pretty-printed were about a third bigger
-      .upload(filename, JSON.stringify(backupData), {
+      .upload(filename, body, {
         contentType: 'application/json',
         upsert: false // Don't overwrite - create new file
       })
@@ -618,17 +646,18 @@ export async function listCloudBackups(gamePin, gameN = 1) {
       return []
     }
 
-    // Parse filenames like "backup_g1_set2_scoreleft15_scoreright12_20250104_153045_123.json"
+    // Parse filenames like "backup_g1_set2_home15_away12_20250104_153045_123.json" (older: scoreleft15_scoreright12)
     return (data || []).map(file => {
-      const match = file.name.match(/^backup_g(\d+)_set(\d+)_scoreleft(\d+)_scoreright(\d+)_(\d{8})_(\d{6})_(\d{3})\.json$/)
+      const match = file.name.match(/^backup_g(\d+)_set(\d+)_(?:home|scoreleft)(\d+)_(?:away|scoreright)(\d+)_(\d{8})_(\d{6})_(\d{3})\.json$/)
       if (match) {
         return {
           name: file.name,
           path: `backups/backup_g${gameN}/${file.name}`,
           gameN: parseInt(match[1]),
           setIndex: parseInt(match[2]),
-          leftScore: parseInt(match[3]),
-          rightScore: parseInt(match[4]),
+          // home / away points (older names: scoreleft / scoreright, the same numbers)
+          homeScore: parseInt(match[3]),
+          awayScore: parseInt(match[4]),
           date: match[5],
           time: match[6],
           ms: match[7],

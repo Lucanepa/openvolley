@@ -9,7 +9,8 @@ import {
   getSet5LeftTeamLabel,
   getFirstServeTeamKey,
   consistencyWarnings,
-  rectificationServerColumn
+  rectificationServerColumn,
+  isDefaultSet
 } from '../scoresheetModel'
 
 const lineup = (team: string, l: Record<string, number>, seq: number, extra: Record<string, unknown> = {}, setIndex = 1) => ({
@@ -347,5 +348,34 @@ describe('rectificationServerColumn', () => {
   it('null without a serving team or a line-up', () => {
     expect(rectificationServerColumn([], head(1, 'home'), startArr)).toBeNull()
     expect(rectificationServerColumn([lineup('home', start, 1)], head(2, ''), startArr)).toBeNull()
+  })
+})
+
+describe('isDefaultSet', () => {
+  const setEnd = (setIndex: number, seq: number, reason?: string) => ({ type: 'set_end', setIndex, seq, payload: reason ? { reason } : {} })
+  // bo5, away forfeits the match in set 2 at 10:8: set 2 played on to 25 with
+  // awarded points, set 3 created 25:0. As a copy continued from the cloud
+  // has it: no forfeitCreated flag (it stays on the scoring device).
+  const sets = [
+    { index: 1, homePoints: 25, awayPoints: 20, finished: true },
+    { index: 2, homePoints: 25, awayPoints: 8, finished: true },
+    { index: 3, homePoints: 25, awayPoints: 0, finished: true }
+  ]
+  const events = [
+    point('home', 1, 1), setEnd(1, 2),
+    point('home', 3, 2), { type: 'point', setIndex: 2, seq: 4, payload: { team: 'home', forfeitAwarded: true } }, setEnd(2, 5, 'forfait'),
+    setEnd(3, 6, 'forfait'),
+    { type: 'forfait', setIndex: 2, seq: 7, payload: { team: 'away', scope: 'match' } }
+  ]
+
+  it('a set the forfeit created is one, with or without its local flag (only its forfeit set end)', () => {
+    expect(isDefaultSet(sets, events, 3)).toBe(true)
+    expect(isDefaultSet(sets.map(s => (s.index === 3 ? { ...s, forfeitCreated: true } : s)), events, 3)).toBe(true)
+  })
+
+  it('a played set is not, with its forfeit end or not', () => {
+    expect(isDefaultSet(sets, events, 1)).toBe(false)
+    expect(isDefaultSet(sets, events, 2)).toBe(false)
+    expect(isDefaultSet(sets, events, 4)).toBe(false)
   })
 })

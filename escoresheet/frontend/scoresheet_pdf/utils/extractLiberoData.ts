@@ -15,12 +15,16 @@ export function getHeaderLiberos(
   teamKey: 'home' | 'away'
 ): { number: number; type: string }[] {
   const registeredType = new Map<number, string>();
+  // a registered type once found is kept (a later event may carry the rewritten flag)
+  const note = (number: number, type: string) => {
+    if (!(registeredType.get(number)! in LIBERO_RANK)) registeredType.set(number, type);
+  };
   (events || []).forEach((e: any) => {
     if (e?.payload?.team !== teamKey) return;
     if (e.type === 'libero_unable' && e.payload?.liberoNumber != null && e.payload?.liberoType) {
-      registeredType.set(Number(e.payload.liberoNumber), e.payload.liberoType);
+      note(Number(e.payload.liberoNumber), e.payload.liberoType);
     } else if (e.type === 'libero_redesignation' && e.payload?.unableLiberoNumber != null && e.payload?.unableLiberoType) {
-      registeredType.set(Number(e.payload.unableLiberoNumber), e.payload.unableLiberoType);
+      note(Number(e.payload.unableLiberoNumber), e.payload.unableLiberoType);
     }
   });
 
@@ -33,6 +37,34 @@ export function getHeaderLiberos(
       return { number, type };
     })
     .sort((a, b) => rank(a.type) - rank(b.type));
+}
+
+/**
+ * The roster's LIBERO box: the registered liberos (libero 1, libero 2) in their
+ * slots, also once unable (registered type recovered as for the LCS header),
+ * then an unable libero whose type is unknown (older events), then the players
+ * re-designated as libero (the one playing now first), marked `redesignated`.
+ * Nothing is cut: the box prints the first two rows and names the rest.
+ */
+export function rosterLiberos(
+  players: Player[],
+  events: any[],
+  teamKey: 'home' | 'away'
+): Array<Player & { redesignated?: boolean }> {
+  const byNumber = new Map(players.map(p => [Number(p.number), p]));
+  const header = getHeaderLiberos(players, events, teamKey);
+  const registered = header.filter(h => h.type in LIBERO_RANK).map(h => h.number);
+  const unknown = header.filter(h => h.type === 'unable').map(h => h.number);
+  const formerRedesignated = header.filter(h => !(h.type in LIBERO_RANK) && h.type !== 'unable').map(h => h.number);
+  const currentRedesignated = players.filter(p => p.libero === 'redesignated').map(p => Number(p.number));
+  const pick = (numbers: number[], redesignated: boolean) =>
+    numbers.map(n => byNumber.get(n)).filter(Boolean).map(p => (redesignated ? { ...p!, redesignated: true } : p!));
+  return [
+    ...pick(registered, false),
+    ...pick(unknown, false),
+    ...pick(currentRedesignated, true),
+    ...pick(formerRedesignated, true)
+  ];
 }
 
 export function extractLiberoData(

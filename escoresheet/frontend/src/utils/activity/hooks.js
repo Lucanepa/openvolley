@@ -19,17 +19,31 @@ export const BULK_EVENTS = 20
 // How long an event.add waits for its state snapshot (the score)
 export const SNAPSHOT_WAIT_MS = 2000
 
+// Callbacks after a transaction's commit, in the order they were added: Dexie
+// fires a transaction's 'complete' listeners last-added first, which wrote a
+// transaction's entries in reverse (review 6a). One listener per transaction
+// runs its queue in order.
+const commitQueues = new WeakMap() // tx -> [fn]
 function afterCommit(tx, fn) {
-  const run = () => {
-    try { fn() } catch (e) { console.warn('[Activity] hook callback failed:', e) }
+  const run = (f) => {
+    try { f() } catch (e) { console.warn('[Activity] hook callback failed:', e) }
   }
   try {
     if (tx && typeof tx.on === 'function') {
-      tx.on('complete', run)
+      let queue = commitQueues.get(tx)
+      if (!queue) {
+        queue = []
+        commitQueues.set(tx, queue)
+        tx.on('complete', () => {
+          commitQueues.delete(tx)
+          for (const f of queue) run(f)
+        })
+      }
+      queue.push(fn)
       return
     }
   } catch { /* fall through */ }
-  setTimeout(run, 0)
+  setTimeout(() => run(fn), 0)
 }
 
 /**
@@ -162,9 +176,74 @@ export function installActivityHooks(db, writer) {
       if (entry.kind === 'set.end') writer.setEnded?.()
     })
   })
+  // ---- removals: a match removed from this device (Close match, Home's
+  // remove) takes its sets, players and teams with it in one transaction.
+  // That is local clean-up, not a data change: the server keeps the match.
+  // One 'match.local_remove' entry says so, instead of a "Set removed" and a
+  // "Roster changed ... remove" per row (UI tour 14.11). A set or player
+  // removed while its match stays is logged as before.
+  // Each row and each match keeps its own place in the log: every one has its
+  // own after-commit callback, in the order of the deletes; the first to run
+  // settles the whole transaction (which rows went with a removed match, and
+  // the counts) once every delete in it is known.
+  const removals = new WeakMap() // tx -> { matches: Map(id -> counts), teamMatch: Map(teamId -> matchId), rows: [], settled }
+  const removalOf = (tx) => {
+    let r = removals.get(tx)
+    if (r) return r
+    r = { matches: new Map(), teamMatch: new Map(), rows: [], settled: false }
+    removals.set(tx, r)
+    return r
+  }
+  // The removed match a row went with, or null (the row's removal is logged)
+  const ownerOf = (r, row) => {
+    if (row.matchId != null && r.matches.has(row.matchId)) return row.matchId
+    if (row.teamId != null && r.teamMatch.has(row.teamId)) return r.teamMatch.get(row.teamId)
+    return null
+  }
+  const settle = (tx, r) => {
+    if (r.settled) return
+    r.settled = true
+    removals.delete(tx)
+    for (const row of r.rows) {
+      row.owner = ownerOf(r, row)
+      // a team removed with no removed match of its own: its rows are not
+      // counted anywhere, so they are logged (as before) and not lost
+      if (row.owner == null) continue
+      r.matches.get(row.owner)[row.count] += 1
+    }
+  }
+  const removed = (tx, row) => {
+    if (!tx || typeof tx.on !== 'function') { afterCommit(tx, () => record(row.kind, row.data, row.opts)); return }
+    const r = removalOf(tx)
+    r.rows.push(row)
+    afterCommit(tx, () => {
+      settle(tx, r)
+      if (row.owner == null) record(row.kind, row.data, row.opts)
+    })
+  }
+
   add(db.sets, 'deleting', function (primKey, obj, tx) {
     if (!obj) return
-    afterCommit(tx, () => record('set.delete', { set: obj.index ?? null, home: obj.homePoints ?? null, away: obj.awayPoints ?? null }, { matchId: obj.matchId, setIndex: obj.index }))
+    removed(tx, {
+      kind: 'set.delete', count: 'sets', matchId: obj.matchId,
+      data: { set: obj.index ?? null, home: obj.homePoints ?? null, away: obj.awayPoints ?? null },
+      opts: { matchId: obj.matchId, setIndex: obj.index }
+    })
+  })
+  add(db.matches, 'deleting', function (primKey, obj, tx) {
+    if (primKey == null) return
+    if (!tx || typeof tx.on !== 'function') { afterCommit(tx, () => record('match.local_remove', { sets: 0, players: 0 }, { matchId: primKey })); return }
+    const r = removalOf(tx)
+    const counts = { sets: 0, players: 0 }
+    r.matches.set(primKey, counts)
+    // its teams' players go with it, whichever match the hook saw as active
+    for (const teamId of [obj?.homeTeamId, obj?.awayTeamId]) {
+      if (teamId != null) r.teamMatch.set(teamId, primKey)
+    }
+    afterCommit(tx, () => {
+      settle(tx, r)
+      record('match.local_remove', counts, { matchId: primKey })
+    })
   })
 
   // ---- the match row
@@ -227,7 +306,11 @@ export function installActivityHooks(db, writer) {
     const team = teamOf(obj?.teamId)
     if (!team) return
     const matchId = getActiveMatch()?.id
-    afterCommit(tx, () => record('match.roster', { team, number: obj.number ?? null, op: 'remove' }, { matchId }))
+    removed(tx, {
+      kind: 'match.roster', count: 'players', matchId, teamId: obj.teamId,
+      data: { team, number: obj.number ?? null, op: 'remove' },
+      opts: { matchId }
+    })
   })
 
   const uninstall = () => {

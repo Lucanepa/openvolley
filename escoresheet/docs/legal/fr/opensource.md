@@ -31,7 +31,8 @@ depuis d'autres serveurs. Elles sont sous **SIL Open Font License 1.1**
 (https://openfontlicense.org) :
 
 Inter, IBM Plex Mono, JetBrains Mono, Orbitron, Roboto Mono, Space Mono
-(intégrées via les paquets Fontsource).
+(intégrées via les paquets Fontsource), et Liberation Sans (intégrée via
+PDF.js, pour le texte du PDF de la feuille de match).
 
 ## Bibliothèques des applications
 
@@ -45,7 +46,6 @@ Inter, IBM Plex Mono, JetBrains Mono, Orbitron, Roboto Mono, Space Mono
 | JSZip | MIT (ou GPL-3.0-or-later) |
 | fflate | MIT |
 | html-to-image | MIT |
-| html5-qrcode | Apache-2.0 |
 | qrcode.react | ISC |
 | Tailwind CSS, tailwind-merge, clsx | MIT |
 | class-variance-authority | Apache-2.0 |
@@ -79,7 +79,7 @@ l'application.
 
 Node.js (MIT), PostgreSQL (PostgreSQL License), pg (MIT), bcryptjs
 (BSD-3-Clause), Nodemailer (MIT-0), node-ical (Apache-2.0), qrcode (MIT),
-cors (MIT), ws (MIT), Caddy (Apache-2.0), cloudflared (Apache-2.0).
+ws (MIT), Caddy (Apache-2.0), cloudflared (Apache-2.0).
 
 ## Liste complète
 

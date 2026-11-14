@@ -64,6 +64,7 @@ export const RELAY_BUNDLE_COVERS_MS = 10000
  * @param {function} options.onAction - Callback when action is received (timeout, substitution, etc.):
  *   (action, actionData, { sentAt }) - sentAt: the scorer's clock when it sent it
  * @param {function} options.onDeleted - Callback when match is deleted from server
+ * @param {function} [options.onAccessLost] - Callback when the relay refuses the PIN this tablet proved
  * @param {boolean} options.enabled - Whether to enable the connection
  */
 export function useRealtimeConnection({
@@ -72,6 +73,7 @@ export function useRealtimeConnection({
   onData,
   onAction,
   onDeleted,
+  onAccessLost,
   enabled = true,
   // AUTO mode: also follow db changes next to the relay room. The referee
   // passes false: it runs its own match_live_state channel.
@@ -92,6 +94,8 @@ export function useRealtimeConnection({
   const onDataRef = useRef(onData)
   const onActionRef = useRef(onAction)
   const onDeletedRef = useRef(onDeleted)
+  const onAccessLostRef = useRef(onAccessLost)
+  onAccessLostRef.current = onAccessLost
 
   // Update refs when callbacks change (without triggering re-renders)
   useEffect(() => {
@@ -410,6 +414,8 @@ export function useRealtimeConnection({
             // it starts runs on the receiver's own clock (utils/countdownClock)
             onActionRef.current(data._action, data._actionData, { sentAt: data._scoreboardTimestamp })
           }
+        } else if (data && data._accessDenied) {
+          if (onAccessLostRef.current) onAccessLostRef.current(data._accessDenied)
         } else if (data && data.match) {
           lastPushAtRef.current = Date.now()
           if (data.events !== lastBundleEventsRef.current) {

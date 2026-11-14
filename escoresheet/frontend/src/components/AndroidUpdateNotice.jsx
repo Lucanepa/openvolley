@@ -94,6 +94,10 @@ export default function AndroidUpdateNotice() {
           {fromFdroid && (
             <p className="mt-2 text-xs leading-relaxed text-stone-500">{t('androidUpdate.fdroidRepoHint')}</p>
           )}
+          {/* the check reads an unsigned index: never uninstall for an update */}
+          {!fromFdroid && (
+            <p className="mt-2 text-xs leading-relaxed text-stone-500">{t('androidUpdate.noUninstall')}</p>
+          )}
         </div>
       </div>
       <div className="mt-4 flex flex-col gap-2">

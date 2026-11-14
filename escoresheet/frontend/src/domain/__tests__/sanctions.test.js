@@ -98,7 +98,7 @@ describe('deferredPenaltyPoints (FIVB 16.2.3 / 21.3.1: a penalty gives the oppon
     const events = [sanction(1, 'away', 'delay_penalty'), lineup(2, 'home')]
     expect(deferredPenaltyPoints(events, 2)).toEqual([])
     // the second line-up, once it is part of the events, makes the point due
-    expect(deferredPenaltyPoints([...events, lineup(3, 'away')], 2)).toEqual(['home'])
+    expect(deferredPenaltyPoints([...events, lineup(3, 'away')], 2)).toEqual([{ team: 'home', penaltySeq: 1 }])
   })
 
   it('one point to the opponent per penalty and delay penalty, in order; warnings give none', () => {
@@ -109,13 +109,13 @@ describe('deferredPenaltyPoints (FIVB 16.2.3 / 21.3.1: a penalty gives the oppon
       sanction(5, 'away', 'delay_warning'),
       sanction(6, 'away', 'delay_penalty')
     ]
-    expect(deferredPenaltyPoints(events, 2)).toEqual(['away', 'home'])
+    expect(deferredPenaltyPoints(events, 2)).toEqual([{ team: 'away', penaltySeq: 3 }, { team: 'home', penaltySeq: 6 }])
   })
 
   it('nothing once the set has a point (the points were given), and other sets do not count', () => {
     const due = [lineup(1, 'home'), lineup(2, 'away'), sanction(3, 'away', 'penalty')]
     expect(deferredPenaltyPoints([...due, { id: 4, seq: 4, setIndex: 2, type: 'point', payload: { team: 'home' } }], 2)).toEqual([])
-    expect(deferredPenaltyPoints([...due, sanction(5, 'home', 'penalty', 1)], 2)).toEqual(['home'])
+    expect(deferredPenaltyPoints([...due, sanction(5, 'home', 'penalty', 1)], 2)).toEqual([{ team: 'home', penaltySeq: 3 }])
     expect(deferredPenaltyPoints(due, 3)).toEqual([])
     // a corrected (non-initial) line-up does not stand for a starting line-up
     const corrected = { ...lineup(2, 'away'), payload: { team: 'away', lineup: {}, isInitial: false } }

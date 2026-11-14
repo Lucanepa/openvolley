@@ -14,6 +14,9 @@ import { cn } from '../../ui/cn.js'
 // both, with the snapshots taken on opening, to the Scoreboard
 // (handleSaveReopenedRoster), which validates, logs the changes and writes.
 //
+// Save is disabled while the save runs (`saving`): a second tap repeated
+// every write.
+//
 // One row per player or official, flat on the dialog with a hairline between
 // them (it was a boxed card per player, "clumsy": the owner, 2026-10-20). The
 // rows are a grid on the dialog's width (container query), as the setup
@@ -67,7 +70,7 @@ const CAPTAIN_CELL = 'flex justify-center [grid-area:cap] [&>button]:!h-11 [&>bu
 // Names: 8 px of padding (the kit's 12 cut "Bachmann" on a phone)
 const NAME = 'px-2'
 
-export default function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose, t, benchRoles, toISODate }) {
+export default function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose, t, benchRoles, toISODate, saving = false }) {
   const [editingPlayers, setEditingPlayers] = useState(() =>
     players.map(p => ({ ...p })).sort((a, b) => (a.number || 0) - (b.number || 0))
   )
@@ -300,6 +303,7 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
             variant="positive"
             size="lg"
             className="h-11 min-w-[88px]"
+            loading={saving}
             onClick={() => onSave(teamKey, editingPlayers, editingBench, snapshotPlayers, snapshotBench)}
           >
             {t('scoreboard.reopenRoster.save', 'Save changes')}

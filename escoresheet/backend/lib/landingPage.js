@@ -159,11 +159,38 @@ function section(title, iconName, roles) {
   </section>`
 }
 
+// A team name the page can print: text or a finite number. Anything else (an
+// object a room recovered from storage may still hold from before syncs were
+// validated) would throw in escapeHtml and turn the page into a 500.
+const printableName = (v) =>
+  (typeof v === 'string' && v) || (typeof v === 'number' && Number.isFinite(v) ? String(v) : null)
+
+/**
+ * One room of activeMatches as a row of the page: { id, home, away, updatedAt }.
+ * Synced matches store { homeTeam, awayTeam, ... } (a name or { name }); the
+ * legacy path stored { data: {...} }. Reads both; a name that is not text or a
+ * number falls back to 'Home' / 'Away', an updatedAt that is neither is left out.
+ * @param {string} matchId
+ * @param {object} matchData
+ */
+export function landingMatchRow(matchId, matchData) {
+  const d = matchData?.data || {}
+  const team = (t) => printableName(t && typeof t === 'object' ? t.name : t)
+  const updatedAt = matchData?.updatedAt
+  return {
+    id: matchId,
+    home: team(matchData?.homeTeam) || printableName(d.homeTeamName) || printableName(d.home_team_name) || 'Home',
+    away: team(matchData?.awayTeam) || printableName(d.awayTeamName) || printableName(d.away_team_name) || 'Away',
+    // set by the server or storage, kept only as a time the page can format
+    updatedAt: typeof updatedAt === 'string' || (typeof updatedAt === 'number' && Number.isFinite(updatedAt)) ? updatedAt : undefined
+  }
+}
+
 /**
  * @param {object} p
  * @param {string} p.baseUrl        http://<Host header>
- * @param {number} p.clientCount    open sockets
- * @param {number} p.matchCount     active matches
+ * @param {number|null} p.clientCount    open sockets; null: not shown (the cloud)
+ * @param {number|null} p.matchCount     active matches; null: not shown (the cloud)
  * @param {Array}  p.indoor         INDOOR_ROLES + { url, svg } (svg: the QR code from `qrcode`)
  * @param {Array}  p.beach          BEACH_ROLES + { url, svg }
  * @param {Array}  p.matches        { home, away, updatedAt }
@@ -188,9 +215,9 @@ export function renderLandingPage({ baseUrl, clientCount, matchCount, indoor, be
     </div>
     <div class="status">
       <span class="pill"><span class="dot green"></span>Server running</span>
-      <span class="pill"><span class="dot sky"></span>${plural(clientCount, 'connected client', 'connected clients')}</span>
-      <span class="pill"><span class="dot sky"></span>${plural(matchCount, 'active match', 'active matches')}</span>
-    </div>
+${clientCount == null ? '' : `      <span class="pill"><span class="dot sky"></span>${plural(clientCount, 'connected client', 'connected clients')}</span>
+`}${matchCount == null ? '' : `      <span class="pill"><span class="dot sky"></span>${plural(matchCount, 'active match', 'active matches')}</span>
+`}    </div>
   </header>
 
   <div class="card how-to">

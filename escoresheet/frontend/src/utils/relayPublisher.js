@@ -4,7 +4,7 @@
  * go with a sync, the order of live-state pushes and match_live_state writes,
  * and how long to wait before reconnecting.
  */
-import { relayMatchPayload, getRelayServerStatus } from './serverDataSync'
+import { relayMatchPayload, relayRemarks, getRelayServerStatus } from './serverDataSync'
 import { getRelayWebSocketUrl, isLocalRelayUrl } from './backendConfig'
 import { BACKEND_REACHED_EVENT } from '../lib/apiClient'
 import { setDiagnosticsInfo } from './diagnosticsInfo'
@@ -441,18 +441,41 @@ export function mayPublishMatchData(match, relayUrl) {
 // from older scorers' syncs too.
 const RELAY_EVENT_OMIT = ['stateSnapshot', 'stateBefore']
 
+// Remark text on the events: every event's remark line (payload.autoRemark)
+// and a remark's added lines (the Scoreboard's Remarks dialog: text) without
+// the dates of a date-of-birth correction (relayRemarks), as match.remarks.
+// The whole remarks text the dialog logs with them (fullRemarks) is read by
+// no relay subscriber and stays on the device.
+function relayEventPayload(e) {
+  const p = e.payload
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return p
+  const remark = e.type === 'remark'
+  let out = null
+  for (const k of remark ? ['autoRemark', 'text'] : ['autoRemark']) {
+    if (!(k in p)) continue
+    const v = relayRemarks(p[k])
+    if (v !== p[k]) (out ??= { ...p })[k] = v
+  }
+  if (remark && 'fullRemarks' in p) delete (out ??= { ...p }).fullRemarks
+  return out ?? p
+}
+
 /**
  * The events as sync-match-data carries them: copies without the undo
- * snapshots; the device's own events are not changed.
+ * snapshots and without a date of birth in their remark text; the device's
+ * own events are not changed.
  * @param {Array<object>|null|undefined} events
  * @returns {Array<object>}
  */
 export function relayEvents(events) {
   if (!Array.isArray(events)) return []
   return events.map((e) => {
-    if (!e || typeof e !== 'object' || !RELAY_EVENT_OMIT.some((k) => k in e)) return e
+    if (!e || typeof e !== 'object') return e
+    const payload = relayEventPayload(e)
+    if (payload === e.payload && !RELAY_EVENT_OMIT.some((k) => k in e)) return e
     const out = {}
     for (const k of Object.keys(e)) if (!RELAY_EVENT_OMIT.includes(k)) out[k] = e[k]
+    if (payload !== e.payload) out.payload = payload
     return out
   })
 }

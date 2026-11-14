@@ -159,7 +159,7 @@ online start (service worker); until then they cannot reopen a closed match.
             (SELECT count(*) FROM public.matches WHERE closed_at IS NOT NULL) AS closed_matches"
    ```
    Expect `1`, `4`, and the number of approved/final real matches.
-3. `curl -s -o /dev/null -w '%{http_code}\n' -X POST https://backend.openvolley.app/api/verify-reopen-password` prints `404`.
+3. `curl -s -o /dev/null -w '%{http_code}\n' -X POST -H 'Content-Type: application/json' -d '{}' https://backend.openvolley.app/api/verify-reopen-password` prints `404` (without the JSON type the server answers `415` before any route).
 4. Sign in as admin in the app: the user menu shows **Admin** and **Saved
    teams**; Admin > Accounts lists the accounts; Closed matches lists the
    backfilled matches; Official games shows the coming VolleyManager games;
@@ -191,7 +191,10 @@ online start (service worker); until then they cannot reopen a closed match.
   DROP TRIGGER IF EXISTS events_closed_guard ON public.events;
   DROP TRIGGER IF EXISTS match_live_state_closed_guard ON public.match_live_state;
   ```
-  Re-running 007 puts them back.
+  To put them back: `deploy.sh --migrate-only --rerun 007 openvolley-backend:<running tag>`
+  (RUNBOOK "Apply a new db migration"). It runs `db/current_definitions.sql`
+  after 007, so the guard functions keep their newer bodies (015, 012); 007
+  run alone with psql would put its first ones back.
 - **Full undo:** restore the dump from step 1 ("Restore the database" in the
   runbook). Accounts, invites and saved teams created after the deploy are
   lost.

@@ -157,11 +157,17 @@ export function initialTransport(saved, options) {
   return (options.find(o => o.recommended) || options[0]).id
 }
 
-/** The relay's subscribers of one role on one match. */
+/**
+ * The relay's subscribers of one role on one match. Only those the relay says
+ * proved that role's PIN or match token: a socket that only named the role
+ * (`proved: false`) is no tablet of it, and showed as "Tablet connected" (two
+ * of them as "2 tablets entered this PIN"). A relay that does not say
+ * (`proved` missing, older relays) is taken at its word.
+ */
 export function roleClients(clients, role, matchKey, match = null) {
   if (!Array.isArray(clients)) return []
   const key = matchKey == null ? null : String(matchKey)
-  const mine = clients.filter(c => c && (!key || String(c.matchId) === key))
+  const mine = clients.filter(c => c && c.proved !== false && (!key || String(c.matchId) === key))
   if (role === 'referee') return mine.filter(c => c.role === 'referee')
   if (role !== 'bench_home' && role !== 'bench_away') return []
   const team = role === 'bench_home' ? 'home' : 'away'

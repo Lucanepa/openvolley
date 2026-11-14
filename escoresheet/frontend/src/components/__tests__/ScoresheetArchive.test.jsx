@@ -5,7 +5,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 // by the uploading account, and this origin has its own session. It must offer
 // a sign-in and open the scoresheet once signed in (no dead end).
 
-const state = vi.hoisted(() => ({ session: false, signInResult: { error: null }, listCalls: 0 }))
+const state = vi.hoisted(() => ({ session: false, signInResult: { error: null }, listCalls: 0, extraRows: [] }))
 
 vi.mock('../../i18n', () => ({}))
 vi.mock('../../../scoresheet_pdf/App_Scoresheet', () => ({
@@ -34,7 +34,8 @@ const FILE = 'game992404_k0123456789abcdef0123456789abcdef_final.json'
 vi.mock('../../lib/apiClient', () => ({
   apiFrom: () => {
     const b = { select: () => b, eq: () => b, order: () => b, limit: () => Promise.resolve({ data: [
-      { external_id: 'm1', game_n: 992404, scheduled_at: '2026-10-06T18:00:00Z', match_info: { match_type_3: 'senior', match_type_1: 'championship', match_type_2: 'men', league: '2L' }, home_team: { name: 'E2E Home' }, away_team: { name: 'E2E Away' }, final_score: '3:0' }
+      { external_id: 'm1', game_n: 992404, scheduled_at: '2026-10-06T18:00:00Z', match_info: { match_type_3: 'senior', match_type_1: 'championship', match_type_2: 'men', league: '2L' }, home_team: { name: 'E2E Home' }, away_team: { name: 'E2E Away' }, final_score: '3:0' },
+      ...state.extraRows
     ], error: null }) }
     return b
   },
@@ -56,10 +57,21 @@ beforeEach(() => {
   state.session = false
   state.signInResult = { error: null }
   state.listCalls = 0
+  state.extraRows = []
 })
 afterEach(() => window.history.pushState({}, '', '/'))
 
 describe('Scoresheet archive (standalone site)', () => {
+  it('a league or match type named like an object member (constructor, __proto__) lists like any other', async () => {
+    state.extraRows = ['constructor', '__proto__', 'toString'].map((name, i) => ({
+      external_id: `x${i}`, game_n: 990000 + i, scheduled_at: '2026-10-07T18:00:00Z',
+      match_info: { match_type_3: name, match_type_1: name, match_type_2: name, league: name },
+      home_team: { name: 'Home' }, away_team: { name: 'Away' }, final_score: '3:1'
+    }))
+    render(<ScoresheetApp />)
+    expect(await screen.findByText('Scoresheet archive')).toBeInTheDocument()
+  })
+
   it('a View link without a session asks for sign-in, then opens the scoresheet', async () => {
     window.history.pushState({}, '', '/?date=2026-10-06&game=992404')
     render(<ScoresheetApp />)

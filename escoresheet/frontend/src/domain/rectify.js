@@ -202,6 +202,16 @@ export function defaultPenaltyTo(cancel) {
 }
 
 let tempCounter = 0
+/**
+ * The key a going back writes on its head and on every row it adds (the
+ * penalty point, the points set by hand, its line-up rows), so its reversal
+ * finds them whatever seq a later correction gave them.
+ */
+function newRectificationKey(ts) {
+  tempCounter += 1
+  return `rx:${ts}:${tempCounter}:${Math.random().toString(36).slice(2, 10)}`
+}
+
 function newRow(ctx, fields) {
   tempCounter += 1
   return { matchId: ctx?.matchId, stateSnapshot: null, manual: true, tempKey: `rx:${tempCounter}`, ...fields }
@@ -293,12 +303,13 @@ function buildRectification(events, { setIndex, moment = null, cancel = null, pe
     if (sub.payload?.autoRemark) plan.remarkRemove.push(sub.payload.autoRemark)
   }
 
-  // Whose points since then
-  const valid = (e) => e.type === 'point' && !removedIds.has(e.id) && e.payload?.forfeitAwarded !== true
+  // Whose points since then. The points of penalties (and their sanctions)
+  // stay in both modes: the sanctions remain valid (CB 2.3)
+  const valid = (e) => e.type === 'point' && !removedIds.has(e.id) && e.payload?.forfeitAwarded !== true && !penaltyOfPoint(all, e)
   let cancelled = []
   if (cancel === 'both') {
-    // the rallies since that score go, the points of penalties (and their sanctions) stay
-    const goes = inSet.filter(e => valid(e) && (e.seq || 0) > boundary && !penaltyOfPoint(all, e))
+    // the rallies since that score go
+    const goes = inSet.filter(e => valid(e) && (e.seq || 0) > boundary)
     for (const p of goes) for (const id of pointGroupIds(all, p)) removedIds.add(id)
     if (inSet.some(e => (e.seq || 0) > boundary && ['timeout', 'substitution', 'sanction'].includes(e.type) && !removedIds.has(e.id))) {
       plan.notes.push(note('timeline', {}, t))
@@ -346,6 +357,17 @@ function buildRectification(events, { setIndex, moment = null, cancel = null, pe
   plan.update = cancelled.map(e => ({ id: e.id, changes: { type: 'cancelled_point', payload: { ...e.payload, cancelledBy: 'rectification' } } }))
   plan.remove = [...removedIds]
   const removedRows = all.filter(e => removedIds.has(e.id)).map(keepRow)
+  // where each row taken out goes back: after the entry that stays before it
+  // (its seq alone no longer says it once a correction renumbered the log)
+  const removedAfter = {}
+  {
+    let lastStaying = null
+    for (const e of all) {
+      if (removedIds.has(e.id)) removedAfter[e.id] = lastStaying ? lastStaying.id : null
+      else lastStaying = e
+    }
+  }
+  const key = newRectificationKey(ts)
 
   // New rows: the penalty point, the points by hand, the head and its line-ups
   let seq = maxBase
@@ -355,14 +377,14 @@ function buildRectification(events, { setIndex, moment = null, cancel = null, pe
   if (penalty) {
     seq += 1
     running[penalty] += 1
-    rows.push(newRow(ctx, { type: 'point', setIndex, seq, ts, payload: { team: penalty, score: { ...running }, rectification: true, penaltyPoint: true } }))
+    rows.push(newRow(ctx, { type: 'point', setIndex, seq, ts, payload: { team: penalty, score: { ...running }, rectification: true, rectificationKey: key, penaltyPoint: true } }))
     addedPointSeqs.push(seq)
   }
   for (const team of ['home', 'away']) {
     for (let i = 0; i < awarded[team]; i++) {
       seq += 1
       running[team] += 1
-      rows.push(newRow(ctx, { type: 'point', setIndex, seq, ts, payload: { team, score: { ...running }, rectification: true, scoreAdjusted: true } }))
+      rows.push(newRow(ctx, { type: 'point', setIndex, seq, ts, payload: { team, score: { ...running }, rectification: true, rectificationKey: key, scoreAdjusted: true } }))
       addedPointSeqs.push(seq)
     }
   }
@@ -383,7 +405,9 @@ function buildRectification(events, { setIndex, moment = null, cancel = null, pe
       serve: null,
       cancelledPointIds: cancelled.map(e => e.id),
       addedPointSeqs,
+      rectificationKey: key,
       removedRows,
+      removedAfter,
       autoRemark: ''
     }
   })
@@ -392,7 +416,7 @@ function buildRectification(events, { setIndex, moment = null, cancel = null, pe
   for (const team of ['home', 'away']) {
     if (!lineupRows?.[team]) continue
     sub += 1
-    rows.push(newRow(ctx, { type: 'lineup', setIndex, seq: Math.round((seq + sub / 10) * 1000) / 1000, ts, payload: lineupRows[team] }))
+    rows.push(newRow(ctx, { type: 'lineup', setIndex, seq: Math.round((seq + sub / 10) * 1000) / 1000, ts, payload: { ...lineupRows[team], rectificationKey: key } }))
   }
   plan.add = rows
   plan.affectedSets = [setIndex]
@@ -482,6 +506,67 @@ function buildRectification(events, { setIndex, moment = null, cancel = null, pe
 }
 
 /**
+ * Where the rows a going back took out go back: each right after the entry
+ * that stayed before it (`after`: removed row id -> that entry's id; a head
+ * written before it was stored: the entry now before the row's stored seq),
+ * in their old order. A row gets the next free base seq; the entries after
+ * it move up where it needs their seq (a correction may have renumbered the
+ * log, or used the seq the row had, since).
+ * @returns {{ seqOf: Map<object, number>, renumber: Array<{id, changes:{seq}}> }}
+ */
+function placeRestoredRows(events, removed, rows, after) {
+  const staying = [...(events || [])].filter(e => !removed.has(e.id)).sort(compareBySeq)
+  const byId = new Map(staying.map(e => [e.id, e]))
+  const anchorOf = (row) => {
+    if (after && Object.prototype.hasOwnProperty.call(after, row.id)) {
+      const id = after[row.id]
+      if (id === null) return null
+      if (byId.has(id)) return byId.get(id)
+    }
+    return staying.filter(e => compareBySeq(e, row) < 0).pop() || null
+  }
+  // the merged order: staying rows by base seq group, the restored rows after their anchor's group
+  const restoredAfter = new Map()
+  for (const row of [...rows].sort(compareBySeq)) {
+    const a = anchorOf(row)
+    const k = a ? baseOf(a) : null
+    if (!restoredAfter.has(k)) restoredAfter.set(k, [])
+    restoredAfter.get(k).push(row)
+  }
+  const groups = []
+  for (const e of staying) {
+    const g = groups[groups.length - 1]
+    if (g && g.base === baseOf(e)) g.rows.push(e)
+    else groups.push({ base: baseOf(e), rows: [e] })
+  }
+  const order = [...(restoredAfter.get(null) || []).map(r => ({ restored: r }))]
+  for (const g of groups) {
+    order.push({ group: g })
+    for (const r of restoredAfter.get(g.base) || []) order.push({ restored: r })
+  }
+  const seqOf = new Map()
+  const renumber = []
+  let last = groups.length ? groups[0].base - 1 : 0
+  order.forEach((item, i) => {
+    if (item.restored) {
+      // its old seq while it is still free, else the next one
+      const nextGroup = order.slice(i + 1).find(x => x.group)?.group
+      const old = baseOf(item.restored)
+      last = old > last && (!nextGroup || old < nextGroup.base) ? old : last + 1
+      seqOf.set(item.restored, last)
+      return
+    }
+    const { base, rows: list } = item.group
+    const next = Math.max(base, last + 1)
+    if (next !== base) {
+      for (const e of list) renumber.push({ id: e.id, changes: { seq: Math.round(((e.seq || 0) + next - base) * 1000) / 1000 } })
+    }
+    last = next
+  })
+  return { seqOf, renumber }
+}
+
+/**
  * Take a going back back: the cancelled points count again, the points it
  * added, its line-up rows and its remark go, the rallies and substitutions
  * it took out come back. The newest going back of a set only; one that took
@@ -506,21 +591,27 @@ export function planRectificationReversal(events, id, ctx = {}) {
     plan.update.push({ id: pid, changes: { type: 'point', payload } })
   }
   const remove = new Set(entryGroupIds(events, head))
+  // the rows it added: by its key (heads before the key: by the seqs it stored)
   const added = new Set(p.addedPointSeqs || [])
+  const addedByIt = (e) => (p.rectificationKey
+    ? e.payload?.rectificationKey === p.rectificationKey
+    : e.payload?.rectification && added.has(e.seq) && compareBySeq(e, head) < 0)
   for (const e of inSet) {
-    if (e.type === 'point' && e.payload?.rectification && added.has(e.seq) && compareBySeq(e, head) < 0) {
+    if (e.type === 'point' && addedByIt(e)) {
       for (const x of entryGroupIds(events, e)) remove.add(x)
     }
   }
   plan.remove = [...remove]
-  for (const row of p.removedRows || []) {
-    // rotation and substitution line-up rows are rebuilt (finalizePlan)
-    if (!['point', 'rally_start', 'substitution'].includes(row.type)) continue
+  // rotation and substitution line-up rows are rebuilt (finalizePlan)
+  const back = (p.removedRows || []).filter(row => ['point', 'rally_start', 'substitution'].includes(row.type))
+  const placed = placeRestoredRows(events, remove, back, p.removedAfter || null)
+  for (const row of back) {
     // eslint-disable-next-line no-unused-vars
     const { id: _old, ...rest } = row
-    plan.add.push(newRow(ctx, { ...rest, stateSnapshot: null }))
+    plan.add.push(newRow(ctx, { ...rest, seq: placed.seqOf.get(row), stateSnapshot: null }))
     if (row.type === 'substitution' && row.payload?.autoRemark) plan.remarkAdd.push(row.payload.autoRemark)
   }
+  plan.update.push(...placed.renumber)
   plan.affectedSets = [setIndex]
   if (typeof p.autoRemark === 'string' && p.autoRemark) plan.remarkRemove = [p.autoRemark]
   plan.log = {

@@ -1,16 +1,24 @@
 import 'fake-indexeddb/auto'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, within } from '@testing-library/react'
 import { buildMatch, MATCH, HOME_TEAM, AWAY_TEAM, pointsFor } from '../../../domain/__tests__/fixtures/correctionsMatch'
 import { applyPlanToEvents } from '../../../domain/manualCorrections'
 
 const applied = vi.hoisted(() => ({ plans: [] }))
-vi.mock('../../../services/corrections/applyCorrectionPlan', () => ({
+vi.mock('../../../services/corrections/applyCorrectionPlan', async (orig) => ({
+  ...(await orig()),
   applyCorrectionPlan: async (plan) => { applied.plans.push(plan); return { addedIds: [], signaturesCleared: false } }
 }))
+// answer: null, the kit dialog as usual; true / false, answered here
+const dialog = vi.hoisted(() => ({ answer: null, calls: [] }))
+vi.mock('../../../ui/uiStore.js', async (orig) => {
+  const real = await orig()
+  return { ...real, confirmDialog: (opts) => (dialog.answer === null ? real.confirmDialog(opts) : (dialog.calls.push(opts), Promise.resolve(dialog.answer))) }
+})
 
 import CorrectionsPanel from '../CorrectionsPanel.jsx'
 import { resetGhostClickGuard } from '../../../hooks/useConfirmAction'
+import { db } from '../../../db/db'
 
 const HOME_PLAYERS = [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => ({ id: n, number: n, name: `Home ${n}` }))
 const AWAY_PLAYERS = [11, 12, 13, 14, 15, 16, 17, 18].map(n => ({ id: 100 + n, number: n, name: `Away ${n}` }))
@@ -130,5 +138,50 @@ describe('CorrectionsPanel (review mode)', () => {
     fireEvent.click(screen.getByRole('radio', { name: /\+1.*VC Smash/ }))
     expect(screen.getByText('A 26:20 B is not a possible final score of set 1.')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Confirm' }).disabled).toBe(true)
+  })
+})
+
+describe('CorrectionsPanel: a correction after the sheet was signed (fe-home-options-1)', () => {
+  beforeEach(async () => {
+    applied.plans = []; dialog.calls = []; resetGhostClickGuard()
+    await db.open()
+    await db.matches.clear()
+  })
+  afterEach(() => { dialog.answer = null })
+
+  const addDelayWarning = () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Add sanction' }))
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Set' })).getByRole('radio', { name: 'Set 1' }))
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Team' })).getByRole('radio', { name: /VC Smash/ }))
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Sanction' })).getByRole('radio', { name: /Delay warning/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+  }
+
+  it('asks first; declined, nothing is written', async () => {
+    await db.matches.put({ id: 1, status: 'ended', accountApprovals: { referee1: { id: 'a1', slot: 'referee1' } } })
+    dialog.answer = false
+    setup()
+    addDelayWarning()
+    await vi.waitFor(() => expect(dialog.calls).toHaveLength(1))
+    await new Promise(r => setTimeout(r, 20))
+    expect(applied.plans).toHaveLength(0)
+  })
+
+  it('confirmed, the correction goes ahead', async () => {
+    await db.matches.put({ id: 1, status: 'ended', ref1Signature: 'data:r1' })
+    dialog.answer = true
+    setup()
+    addDelayWarning()
+    await vi.waitFor(() => expect(applied.plans).toHaveLength(1))
+    expect(dialog.calls).toHaveLength(1)
+  })
+
+  it('nothing signed: no question', async () => {
+    await db.matches.put({ id: 1, status: 'ended' })
+    dialog.answer = true
+    setup()
+    addDelayWarning()
+    await vi.waitFor(() => expect(applied.plans).toHaveLength(1))
+    expect(dialog.calls).toHaveLength(0)
   })
 })

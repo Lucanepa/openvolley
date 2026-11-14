@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAlert } from '../../contexts/AlertContext'
 import Modal from '../Modal'
@@ -18,6 +18,8 @@ import LegalLinks from '../../legal/LegalLinks'
 import ActivityLogModal from '../ActivityLogModal'
 import DiagnosticsSection from '../../diagnostics/DiagnosticsSection'
 import ThemeOption from './ThemeOption'
+import { exportNativeFilesToDocuments } from '../../utils/nativeBackup'
+import { configuredRecoveryKey } from '../../utils/backupCrypto/recovery'
 import { downloadGlobalTemplate } from '../../utils/globalTemplates'
 
 // Kit field recipes for the small inline number/select controls (h-9, svrz md).
@@ -75,8 +77,46 @@ function Row({ children, style }) {
   )
 }
 
+// Android: the backups and saved PDFs stay in the app's own folder; this
+// copies each match's newest backup and the PDFs to Documents/OpenVolley
+// (a copy the user keeps, for a USB cable or another app)
+function ExportToDocuments({ t, exportFiles = exportNativeFilesToDocuments }) {
+  const [state, setState] = useState(null) // null | 'busy' | { done } | { error }
+  return (
+    <div>
+      <button
+        type="button"
+        disabled={state === 'busy'}
+        aria-busy={state === 'busy' || undefined}
+        onClick={async () => {
+          setState('busy')
+          try {
+            setState({ done: await exportFiles() })
+          } catch (e) {
+            setState({ error: e?.message || String(e) })
+          }
+        }}
+        className={BTN_OUTLINE}
+      >
+        {state === 'busy' ? t('options.exportingToDocuments') : t('options.exportToDocuments')}
+      </button>
+      {state?.done && (
+        <div role="status" className="mt-1.5 text-[11px] leading-snug text-stone-600" data-testid="export-to-documents-result">
+          {t('options.exportedToDocuments', { folder: state.done.folder, backups: state.done.backups, scoresheets: state.done.scoresheets })}
+          {state.done.failed > 0 && ` ${t('options.exportToDocumentsSomeFailed', { count: state.done.failed })}`}
+        </div>
+      )}
+      {state?.error && (
+        <div role="status" className="mt-1.5 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">
+          {t('options.exportToDocumentsFailed', { error: state.error })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Apps (desktop / Android): a backup file at every scoring event, no browser API.
-function NativeBackupRow({ backup, onRestoreFromFile, t }) {
+function NativeBackupRow({ backup, backupMatchId, onRestoreFromFile, t }) {
   const [saving, setSaving] = useState(false)
   const enabled = backup.autoBackupEnabled
   return (
@@ -103,6 +143,7 @@ function NativeBackupRow({ backup, onRestoreFromFile, t }) {
           )}
           <div className="mt-1.5 text-[11px] leading-snug text-stone-500" data-testid="native-backup-privacy">
             {t(backup.platform === 'capacitor' ? 'options.nativeBackupPrivacyAndroid' : 'options.nativeBackupPrivacy')}
+            {configuredRecoveryKey() && ` ${t('options.nativeBackupRecoveryNote')}`}
           </div>
         </div>
       ) : (
@@ -136,14 +177,14 @@ function NativeBackupRow({ backup, onRestoreFromFile, t }) {
             {t('options.restoreFromBackupFile')}
           </button>
         )}
-        {backup.activeMatchId != null && (
+        {backupMatchId != null && (
           <button
             type="button"
             disabled={saving}
             aria-busy={saving || undefined}
             onClick={async () => {
               setSaving(true)
-              try { await backup.manualBackup() } finally { setSaving(false) }
+              try { await backup.manualBackup(backupMatchId) } finally { setSaving(false) }
             }}
             className={BTN_OUTLINE}
           >
@@ -151,6 +192,7 @@ function NativeBackupRow({ backup, onRestoreFromFile, t }) {
           </button>
         )}
       </div>
+      {backup.platform === 'capacitor' && <ExportToDocuments t={t} exportFiles={backup.exportToDocuments} />}
     </Row>
   )
 }
@@ -171,7 +213,7 @@ function Section({ title, children }) {
   )
 }
 
-function DurationInput({ value, onChange, label }) {
+function DurationInput({ value, onChange, label, t }) {
   const minutes = Math.floor(value / 60)
   const seconds = value % 60
   const handleMinutes = (e) => {
@@ -187,10 +229,11 @@ function DurationInput({ value, onChange, label }) {
   const inputCls = cn(SMALL_FIELD, 'w-14 font-semibold')
   return (
     <div className="ml-auto flex shrink-0 items-center gap-1 pl-4">
-      <input type="number" min={0} max={10} value={minutes} onChange={handleMinutes} className={inputCls} aria-label={`${label} minutes`} />
-      <span className="text-sm font-semibold text-stone-500">'</span>
-      <input type="number" min={0} max={59} value={seconds.toString().padStart(2, '0')} onChange={handleSeconds} className={inputCls} aria-label={`${label} seconds`} />
-      <span className="text-sm font-semibold text-stone-500">''</span>
+      {/* the units in words (they were bare ' and '', UI tour 14.11) */}
+      <input type="number" min={0} max={10} value={minutes} onChange={handleMinutes} className={inputCls} aria-label={t('options.durationMinutesAria', { label })} />
+      <span className="text-xs font-semibold text-stone-500">{t('options.unitMin', 'min')}</span>
+      <input type="number" min={0} max={59} value={seconds.toString().padStart(2, '0')} onChange={handleSeconds} className={inputCls} aria-label={t('options.durationSecondsAria', { label })} />
+      <span className="text-xs font-semibold text-stone-500">{t('options.unitSec', 's')}</span>
     </div>
   )
 }
@@ -223,6 +266,10 @@ const keyBindingKeys = [
   'startRally'
 ]
 
+// Actions that may share one key: Enter confirms a dialog, and with none
+// open starts the rally (the defaults)
+const mayShareKey = (a, b) => (a === 'confirm' && b === 'startRally') || (a === 'startRally' && b === 'confirm')
+
 export default function HomeOptionsModal({
   open,
   onClose,
@@ -232,11 +279,15 @@ export default function HomeOptionsModal({
   wakeLock,
   backup = null, // Optional backup props from useAutoBackup
   onRestoreFromFile = null, // Options > Backup > Restore from a backup file
+  // The match a backup saves: the open one, else the device's Continue match
+  // (App clears matchId on Home, so backup.activeMatchId alone is null there)
+  backupMatchId = null,
   dashboardServer = null, // Optional dashboard server props from useDashboardServer
   toolMode = null // { mode, locked, onChange }: Swiss / Global (utils/toolMode)
 }) {
   const { t } = useTranslation()
   const { showAlert } = useAlert()
+  const matchToBackUp = backup?.activeMatchId ?? backupMatchId ?? null
   const androidApp = isAndroidApp()
   const [clearCacheModal, setClearCacheModal] = useState(null) // { type: 'cache' | 'all' }
   const [copyFeedback, setCopyFeedback] = useState(null)
@@ -249,6 +300,8 @@ export default function HomeOptionsModal({
   const desktopUpdate = useDesktopUpdate()
   const [keybindingsModalOpen, setKeybindingsModalOpen] = useState(false)
   const [editingKey, setEditingKey] = useState(null)
+  // The key refused for the binding being edited (another action has it)
+  const [keyInUse, setKeyInUse] = useState(null)
   const [keyBindings, setKeyBindings] = useState(() => {
     const saved = localStorage.getItem('keyBindings')
     if (saved) {
@@ -260,6 +313,35 @@ export default function HomeOptionsModal({
     }
     return defaultKeyBindings
   })
+  // The key for the binding being edited ("Press key..."): captured only
+  // while it is edited and the dialog is open. The listener was added on the
+  // click and removed only by the next key: closing the dialog left it
+  // armed, and the next key pressed anywhere (during the match) was swallowed
+  // and became that binding, also another action's key. A key another action
+  // has is refused (two actions on one key: only one of them ever ran).
+  useEffect(() => {
+    setKeyInUse(null)
+    if (!editingKey || !keybindingsModalOpen) return undefined
+    const handleKeyCapture = (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.key === 'Escape') {
+        setEditingKey(null)
+        return
+      }
+      const other = keyBindingKeys.find(k => k !== editingKey && !mayShareKey(k, editingKey) && keyBindings[k] === e.key)
+      if (other) {
+        setKeyInUse({ key: e.key, action: other })
+        return
+      }
+      const newBindings = { ...keyBindings, [editingKey]: e.key }
+      setKeyBindings(newBindings)
+      localStorage.setItem('keyBindings', JSON.stringify(newBindings))
+      setEditingKey(null)
+    }
+    window.addEventListener('keydown', handleKeyCapture, true)
+    return () => window.removeEventListener('keydown', handleKeyCapture, true)
+  }, [editingKey, keybindingsModalOpen, keyBindings])
 
   // Handle copy with feedback
   const handleCopy = useCallback(async (text, label) => {
@@ -543,6 +625,7 @@ export default function HomeOptionsModal({
               <InfoDot title={t('options.setIntervalDurationInfo')} />
             </div>
             <DurationInput
+              t={t}
               value={setIntervalDuration}
               label={t('options.setIntervalDurationLabel', 'set interval duration')}
               onChange={(newVal) => {
@@ -635,7 +718,9 @@ export default function HomeOptionsModal({
                 className="max-w-md [&>button]:capitalize"
                 options={['auto', 'desktop', 'tablet', 'phone'].map(mode => ({
                   value: mode,
-                  label: mode === 'auto' ? t('options.autoWithMode', { mode: detectedDisplayMode }) : mode,
+                  // "Auto (Desktop)" wrapped in its segment (UI tour 14.11): the
+                  // segment says Auto, the line below what it picked
+                  label: mode === 'auto' ? t('options.auto', 'Auto') : mode,
                   title: modeDescriptions[mode]
                 }))}
                 onChange={(mode) => {
@@ -651,6 +736,12 @@ export default function HomeOptionsModal({
                   localStorage.setItem('displayMode', mode)
                 }}
               />
+
+              {displayMode === 'auto' && detectedDisplayMode && (
+                <p data-testid="screen-mode-auto-detected" className="mt-1.5 text-[11px] leading-snug text-stone-500">
+                  {t('options.autoDetectedMode', { mode: detectedDisplayMode.charAt(0).toUpperCase() + detectedDisplayMode.slice(1) })}
+                </p>
+              )}
 
               {displayMode !== 'desktop' && displayMode !== 'auto' && (
                 <div className="mt-3">
@@ -842,7 +933,7 @@ export default function HomeOptionsModal({
 
         {backup?.nativeMode && (
           <Section title={t('options.backup')}>
-            <NativeBackupRow backup={backup} onRestoreFromFile={onRestoreFromFile} t={t} />
+            <NativeBackupRow backup={backup} backupMatchId={matchToBackUp} onRestoreFromFile={onRestoreFromFile} t={t} />
           </Section>
         )}
 
@@ -940,16 +1031,25 @@ export default function HomeOptionsModal({
                 </div>
               )}
 
+              {/* No match on the device at all (after Close match): the button
+                  did nothing and said nothing (UI tour 14.11); now it is off
+                  and says why. A Continue match on Home is backed up. */}
               <div>
                 <button
                   type="button"
-                  onClick={() => backup.manualBackup()}
-                  disabled={backup.isBackingUp}
+                  onClick={() => backup.manualBackup(matchToBackUp)}
+                  disabled={backup.isBackingUp || matchToBackUp == null}
                   aria-busy={backup.isBackingUp || undefined}
+                  aria-describedby={matchToBackUp == null ? 'options-no-match-to-back-up' : undefined}
                   className={BTN_OUTLINE}
                 >
                   {backup.isBackingUp ? t('options.backingUp') : t('options.downloadBackupNow')}
                 </button>
+                {matchToBackUp == null && (
+                  <p id="options-no-match-to-back-up" className="mt-1.5 text-[11px] leading-snug text-stone-500">
+                    {t('options.noMatchToBackUp')}
+                  </p>
+                )}
               </div>
             </Row>
           </Section>
@@ -1044,7 +1144,7 @@ export default function HomeOptionsModal({
               {' · '}{t('options.icons', 'Icons')}{' '}
               <a href="https://lucide.dev/license" target="_blank" rel="noopener noreferrer" className="underline decoration-stone-300 hover:text-stone-700">Lucide</a> (ISC)
               {', '}<a href="https://github.com/phosphor-icons/react/blob/master/LICENSE" target="_blank" rel="noopener noreferrer" className="underline decoration-stone-300 hover:text-stone-700">Phosphor</a> (MIT)
-              {' · '}{t('options.fonts', 'Fonts')} Inter, IBM Plex Mono, JetBrains Mono, Orbitron, Roboto Mono, Space Mono (SIL OFL 1.1)
+              {' · '}{t('options.fonts', 'Fonts')} Inter, IBM Plex Mono, JetBrains Mono, Orbitron, Roboto Mono, Space Mono, Liberation Sans (SIL OFL 1.1)
             </p>
           </Row>
           {/* Privacy policy, terms, legal notice and the full open-source
@@ -1169,27 +1269,7 @@ export default function HomeOptionsModal({
                 >
                   <span className="text-sm text-stone-800">{t(`options.keybindingLabels.${key}`)}</span>
                   <button
-                    onClick={() => {
-                      if (editingKey === key) {
-                        setEditingKey(null)
-                      } else {
-                        setEditingKey(key)
-                        const handleKeyCapture = (e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          if (e.key === 'Escape') {
-                            setEditingKey(null)
-                          } else {
-                            const newBindings = { ...keyBindings, [key]: e.key }
-                            setKeyBindings(newBindings)
-                            localStorage.setItem('keyBindings', JSON.stringify(newBindings))
-                            setEditingKey(null)
-                          }
-                          window.removeEventListener('keydown', handleKeyCapture, true)
-                        }
-                        window.addEventListener('keydown', handleKeyCapture, true)
-                      }
-                    }}
+                    onClick={() => setEditingKey(editingKey === key ? null : key)}
                     type="button"
                     aria-pressed={editingKey === key}
                     className={cn(
@@ -1213,6 +1293,15 @@ export default function HomeOptionsModal({
                 </div>
               ))}
             </div>
+
+            {keyInUse && editingKey && (
+              <p role="alert" className="mt-3 text-sm text-amber-700">
+                {t('options.keyInUse', {
+                  key: keyInUse.key === ' ' ? 'Space' : keyInUse.key,
+                  action: t(`options.keybindingLabels.${keyInUse.action}`)
+                })}
+              </p>
+            )}
 
             <div className="mt-5 flex justify-end gap-2">
               <button

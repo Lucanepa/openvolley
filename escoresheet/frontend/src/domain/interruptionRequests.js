@@ -7,7 +7,8 @@
  *
  * Terms (spec 2026-11-09, table B):
  *  - Completed rally: a `point` event of the set. A penalty point (delay
- *    penalty, misconduct penalty) is one too (CB 4.23, 4.25).
+ *    penalty, misconduct penalty) is one too (CB 4.23, 4.25), and so are a
+ *    point a going back cancelled and the going back itself.
  *  - Interruption: everything after the set's latest point (R15: "the time
  *    between one completed rally and the 1st referee's whistle for the next
  *    service"). A rally that was started and then replayed does NOT end it:
@@ -28,29 +29,45 @@
  * for delays"): old events with payload.reason load and read as before.
  */
 
-import { MAX_SUBSTITUTIONS_PER_SET, countRegularSubstitutions } from './substitutions'
+import { MAX_SUBSTITUTIONS_PER_SET, countRegularSubstitutions, classifySubstitutionRequest, substitutionBarsForMatch } from './substitutions'
 import { TIMEOUTS_PER_SET } from './timeouts'
 import { resolveSanction, teamSanctionCounts } from './sanctions'
+import { playerReplacedByLibero } from './liberos'
+import { isBookkeepingEvent } from './rally'
 
 const setOf = (e) => e?.setIndex ?? 1
 const seqOf = (e) => e?.seq || 0
+const str = (v) => (v === undefined || v === null ? '' : String(v).trim())
 
 /** The events of one set, oldest first (by seq). */
 export function setEventsInOrder(events, setIndex) {
   return (events || []).filter(e => e && setOf(e) === setIndex).sort((a, b) => seqOf(a) - seqOf(b))
 }
 
-/** True for a forced substitution: injury, expulsion, disqualification, exceptional. */
+/**
+ * True for a forced substitution: injury, expulsion, disqualification,
+ * exceptional. An injury substitution recorded before isInjury was stored
+ * is known by its automatic remark (as rosterLive does).
+ */
 export function isForcedSubstitution(request) {
   const p = request?.payload ?? request
-  return !!(p?.isInjury || p?.isExpelled || p?.isDisqualified || p?.isExceptional)
+  return !!(p?.isInjury || p?.isExpelled || p?.isDisqualified || p?.isExceptional ||
+    /due to injury/i.test(p?.autoRemark || ''))
 }
 
-/** The seq of the set's latest completed rally (a point, penalty points too), or -Infinity. */
+// A going back (domain/rectify) ends the interruption too: the rallies it
+// cancelled (cancelled_point) were played, and its head stands for the
+// rallies it took out ('both') and for the score it set
+const ENDS_INTERRUPTION = new Set(['point', 'cancelled_point', 'rectification'])
+
+/**
+ * The seq of the set's latest completed rally (a point, penalty points too;
+ * a point a going back cancelled, and the going back itself), or -Infinity.
+ */
 export function lastCompletedRallySeq(events, setIndex) {
   let last = -Infinity
   for (const e of events || []) {
-    if (e?.type === 'point' && setOf(e) === setIndex && seqOf(e) > last) last = seqOf(e)
+    if (ENDS_INTERRUPTION.has(e?.type) && setOf(e) === setIndex && seqOf(e) > last) last = seqOf(e)
   }
   return last
 }
@@ -170,6 +187,10 @@ export const REQUEST_ISSUES = {
 
 const issue = (reason, extra = {}) => ({ reason, ...REQUEST_ISSUES[reason], ...extra })
 
+/** Does the request name both players (`playerOut` and `playerIn`)? */
+const hasPair = (request) => request?.playerOut !== undefined && request?.playerOut !== null &&
+  request?.playerIn !== undefined && request?.playerIn !== null
+
 /**
  * Everything to tell the scorer about a substitution request by `team`, most
  * serious first. Empty: go ahead. A 'block' issue stops the request (the
@@ -179,21 +200,41 @@ const issue = (reason, extra = {}) => ({ reason, ...REQUEST_ISSUES[reason], ...e
  * A forced substitution (injury, expulsion, disqualification, exceptional)
  * has no issues: it must be made, whatever came before.
  *
+ * With both players of the request (`playerOut` and `playerIn`), the pair
+ * itself is checked too (substitutionIllegalReason, with the team's
+ * `players` for its liberos): one the rules forbid (a libero, the player the
+ * libero replaced, a player sent off, the starter-substitute pairing, a
+ * substitute entering twice: 15.6.2, 15.7, 19.3.1.3) is an illegal
+ * substitution requested (16.1.3), whichever screen asked for it. A forced
+ * substitution is checked for who may come in exceptionally only (15.7):
+ * classifyLiveSubstitution makes it exceptional when the pairing forbids it.
+ *
  * @param {Array} events all match events
  * @param {number} setIndex
  * @param {'home'|'away'} team
- * @param {{isInjury?:boolean,isExpelled?:boolean,isDisqualified?:boolean,isExceptional?:boolean,playerOut?:any}} [request]
- * @param {{maxPerSet?:number}} [opts]
- * @returns {Array<{reason:string, kind:'block'|'notice'|'warn', rule:string, options:string[], playerIn?:any}>}
+ * @param {{isInjury?:boolean,isExpelled?:boolean,isDisqualified?:boolean,isExceptional?:boolean,playerOut?:any,playerIn?:any}} [request]
+ * @param {{maxPerSet?:number, players?:Array<{number:any, libero?:string}>}} [opts] players: the team's roster
+ * @returns {Array<{reason:string, kind:'block'|'notice'|'warn', rule:string, options:string[], playerIn?:any, illegalReason?:string}>}
  */
-export function substitutionRequestIssues(events, setIndex, team, request = {}, { maxPerSet = MAX_SUBSTITUTIONS_PER_SET } = {}) {
-  if (isForcedSubstitution(request)) return []
+export function substitutionRequestIssues(events, setIndex, team, request = {}, { maxPerSet = MAX_SUBSTITUTIONS_PER_SET, players = [] } = {}) {
+  const pair = hasPair(request) ? { playerOut: request.playerOut, playerIn: request.playerIn } : null
+  if (isForcedSubstitution(request)) {
+    const illegal = pair ? substitutionIllegalReason(events, setIndex, team, { ...pair, exceptional: true }, { players }) : null
+    return illegal ? [issue('illegal_substitution', { playerIn: request.playerIn, illegalReason: illegal })] : []
+  }
   if (isReplayPending(events, setIndex)) return [issue('replay_pending')]
   const issues = []
   if (delayWarnedThisInterruption(events, setIndex, team)) issues.push(issue('after_delay_warning'))
   if (countRegularSubstitutions(events, team, setIndex) >= maxPerSet) {
     issues.push(issue('substitution_limit'))
     return issues // a limit warning has no "Continue anyway": nothing after it
+  }
+  const illegal = pair ? substitutionIllegalReason(events, setIndex, team, pair, { players }) : null
+  // 'no_rally_since_out' is the starter back for the player who just came in:
+  // the no_rally_since_entry warning below is about that one
+  if (illegal && illegal !== 'no_rally_since_out') {
+    issues.push(issue('illegal_substitution', { playerIn: request.playerIn, illegalReason: illegal }))
+    return issues // no "Continue anyway" either
   }
   const entry = request?.playerOut !== undefined && request?.playerOut !== null
     ? entryWithoutCompletedRally(events, setIndex, team, request.playerOut)
@@ -272,6 +313,113 @@ export function substituteInIllegalReason(events, setIndex, team, playerOut, pla
   return null
 }
 
+/**
+ * Sent off for good or for this set: expelled this set (also when replaced
+ * exceptionally, FIVB 21.3.2), disqualified, or substituted exceptionally
+ * because of an injury (15.7).
+ */
+export function isSentOff(events, team, number, setIndex) {
+  const n = str(number)
+  return (events || []).some((e) => {
+    if (e.payload?.team !== team) return false
+    if (e.type === 'sanction' && str(e.payload?.playerNumber) === n) {
+      return e.payload?.type === 'disqualification' || (e.payload?.type === 'expulsion' && (e.setIndex ?? 1) === setIndex)
+    }
+    if (e.type === 'substitution' && str(e.payload?.playerOut) === n) {
+      return substitutionBarsForMatch(e.payload) || (e.payload?.isExpelled === true && (e.setIndex ?? 1) === setIndex)
+    }
+    return false
+  })
+}
+
+// Shirt number of a line-up position (a plain number, or { number })
+const lineupNumberOf = (v) => (v && typeof v === 'object' && v.number !== undefined ? v.number : v)
+
+/** The team's latest line-up row of the set (the court now), or null. */
+function courtLineupRow(events, setIndex, team) {
+  const rows = setEventsInOrder(events, setIndex).filter(e => e.type === 'lineup' && e.payload?.team === team && e.payload?.lineup)
+  return rows[rows.length - 1]?.payload || null
+}
+
+/**
+ * The team's liberos (as strings): the roster's, and the libero the court's
+ * line-up row names in its libero replacement.
+ */
+function liberoNumbersOf(events, setIndex, team, players) {
+  const liberos = new Set((players || []).filter(p => p?.libero && p.libero !== '').map(p => str(p.number)))
+  const replacement = courtLineupRow(events, setIndex, team)?.liberoSubstitution
+  if (replacement?.liberoNumber !== undefined && replacement?.liberoNumber !== null) liberos.add(str(replacement.liberoNumber))
+  return liberos
+}
+
+/**
+ * The players a libero on court replaced (FIVB 19.3.2.1), as strings: off
+ * the court, but they come back only for the libero, never as a substitute
+ * while it is in for them (15.7, 19.3.1.3).
+ * @param {{players?: Array<{number:any, libero?:string}>}} [roster] the team's players
+ */
+export function playersReplacedByLiberoOnCourt(events, setIndex, team, { players = [] } = {}) {
+  const row = courtLineupRow(events, setIndex, team)
+  if (!row) return []
+  const liberos = liberoNumbersOf(events, setIndex, team, players)
+  const replaced = []
+  for (const v of Object.values(row.lineup)) {
+    const n = str(lineupNumberOf(v))
+    if (!n || !liberos.has(n)) continue
+    const player = playerReplacedByLibero(events, team, setIndex, lineupNumberOf(v))
+    if (player !== null && player !== undefined) replaced.push(str(player))
+  }
+  return replaced
+}
+
+/**
+ * Why `playerIn` may not come in for `playerOut`, or null when he may: the
+ * one rule every substitution the scorer records passes, whichever screen
+ * asks for it (court and bench menus, drag and drop, the phone, a bench
+ * request, injury, expulsion, disqualification), FIVB 15.5-15.8, 19.3.1.3.
+ * Every substitution, an exceptional one too:
+ *  - 'libero_out': `playerOut` is a libero (he leaves the court only by a
+ *    libero replacement, 19.3.2, or as unable to play, 19.4);
+ *  - 'libero': `playerIn` is a libero;
+ *  - 'replaced_by_libero': `playerIn` is the player the libero on court
+ *    replaced (15.7: not even exceptionally);
+ *  - 'sent_off': `playerIn` is expelled this set, disqualified, or left
+ *    exceptionally (isSentOff).
+ * A regular substitution (one of the 6: not `exceptional`) keeps the pairing
+ * too (substituteInIllegalReason): 'wrong_partner', 'played_out' (a starter
+ * whose out-and-back cycle is complete gets one of these two for anybody),
+ * 'no_rally_since_out'. The 6 per set are the request's to check
+ * (substitutionRequestIssues, classifySubstitutionRequest).
+ * @param {{playerOut:any, playerIn:any, exceptional?:boolean}} pair
+ * @param {{players?: Array<{number:any, libero?:string}>}} [roster] the team's players (who is a libero)
+ * @returns {null|'libero_out'|'libero'|'replaced_by_libero'|'sent_off'|'wrong_partner'|'played_out'|'no_rally_since_out'}
+ */
+export function substitutionIllegalReason(events, setIndex, team, { playerOut, playerIn, exceptional = false } = {}, { players = [] } = {}) {
+  const liberos = liberoNumbersOf(events, setIndex, team, players)
+  if (liberos.has(str(playerOut))) return 'libero_out'
+  if (liberos.has(str(playerIn))) return 'libero'
+  if (playersReplacedByLiberoOnCourt(events, setIndex, team, { players }).includes(str(playerIn))) return 'replaced_by_libero'
+  if (isSentOff(events, team, playerIn, setIndex)) return 'sent_off'
+  if (exceptional) return null
+  return substituteInIllegalReason(events, setIndex, team, playerOut, playerIn)
+}
+
+/**
+ * How a substitution with no request issue left is recorded: by
+ * classifySubstitutionRequest's count, and an injured, expelled or
+ * disqualified player whom the pairing forbids to replace regularly with
+ * `playerIn` (substitutionIllegalReason: a starter whose cycle is complete,
+ * a substitute's wrong partner) is substituted exceptionally (15.7, 15.8),
+ * as the referee orders: beyond the 6, and the player is out of the match.
+ * @param {{players?: Array<{number:any, libero?:string}>, maxPerSet?: number}} [opts]
+ * @returns {'regular'|'exceptional'|'improper_request'}
+ */
+export function classifyLiveSubstitution(events, setIndex, team, request = {}, { maxPerSet = MAX_SUBSTITUTIONS_PER_SET, players = [] } = {}) {
+  const verdict = classifySubstitutionRequest(events, team, setIndex, request, { maxPerSet })
+  if (verdict !== 'regular' || !isForcedSubstitution(request) || !hasPair(request)) return verdict
+  return substitutionIllegalReason(events, setIndex, team, { playerOut: request.playerOut, playerIn: request.playerIn }, { players }) ? 'exceptional' : 'regular'
+}
+
 // ───────────── a late request stopped the rally (row 10) ─────────────
 
 /**
@@ -310,7 +458,9 @@ const baseSeqOf = (e) => Math.floor(seqOf(e))
  * substitution (with its own line-up rows, N.x) or a time-out. A forced
  * substitution (an injured or sanctioned player must be replaced whatever
  * the decision), a libero replacement, a sanction, a started rally or
- * anything else after the point: null (Undo, as before).
+ * anything else after the point: null (Undo, as before). A remark or a bench
+ * injury recorded after the point is not in the way (domain/rally
+ * isBookkeepingEvent): it stays, and is not taken back.
  *
  * @param {Array} events all match events
  * @param {number} setIndex
@@ -323,7 +473,7 @@ export function decisionChangeTakeBack(events, setIndex) {
   if (lastPointSeq === -Infinity) return null
   const point = inSet.find(e => e.type === 'point' && seqOf(e) === lastPointSeq)
   if (!point) return null
-  const after = inSet.filter(e => baseSeqOf(e) > baseSeqOf(point))
+  const after = inSet.filter(e => baseSeqOf(e) > baseSeqOf(point) && !isBookkeepingEvent(e))
   if (after.length === 0) return null
   const heads = after.filter(e => seqOf(e) === baseSeqOf(e))
   const isRequest = (e) => e.type === 'timeout' || (e.type === 'substitution' && !isForcedSubstitution(e))

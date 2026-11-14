@@ -123,6 +123,16 @@ describe('club managers end to end', { skip: SKIP }, () => {
     assert.match(inv.json.data.link, /\/#club=[A-Z0-9-]+$/)
     assert.equal(inv.json.data.invite.role, 'club_manager')
     assert.equal(inv.json.data.invite.max_uses, 1)
+    // db/036 (delta-fe-manage-3): for the invited address only; another account
+    // is refused before the use is counted, also in a preview
+    expectCode(await call(users.scorer, 'POST', '/api/account/invite-preview', { code: inv.json.data.code }), 403, 'OV_INVITE_OTHER_ACCOUNT')
+    expectCode(await call(users.scorer, 'POST', '/api/account/redeem-invite', { code: inv.json.data.code }), 403, 'OV_INVITE_OTHER_ACCOUNT')
+    assert.equal(await count1(`SELECT count(*)::int AS n FROM public.club_managers WHERE user_id = '${users.scorer.id}'`), 0)
+    const peek = await call(users.boss, 'POST', '/api/account/invite-preview', { code: inv.json.data.code })
+    assert.equal(peek.status, 200, peek.text)
+    assert.deepEqual([peek.json.data.preview, peek.json.data.role_granted, peek.json.data.club], [true, 'club_manager', { id: musterdorf.id, name: 'VBC Musterdorf' }])
+    assert.equal(await count1(`SELECT count(*)::int AS n FROM public.club_managers WHERE user_id = '${users.boss.id}'`), 0, 'a preview grants nothing')
+    assert.equal(await count1(`SELECT uses AS n FROM public.invite_codes WHERE id = '${inv.json.data.invite.id}'`), 0, 'nor counts a use')
     const red = await call(users.boss, 'POST', '/api/account/redeem-invite', { code: inv.json.data.code })
     assert.equal(red.status, 200, red.text)
     assert.equal(red.json.data.role_granted, 'club_manager')
@@ -131,7 +141,7 @@ describe('club managers end to end', { skip: SKIP }, () => {
     assert.deepEqual(red.json.data.roles, ['club_manager'])
     assert.equal(await count1(`SELECT count(*)::int AS n FROM public.account_clubs WHERE user_id = '${users.boss.id}' AND club_id = '${musterdorf.id}'`), 1)
     // used once: nobody else becomes manager with it
-    expectCode(await call(users.scorer, 'POST', '/api/account/redeem-invite', { code: inv.json.data.code }), 409, 'OV_INVITE_USED_UP')
+    expectCode(await call(users.scorer, 'POST', '/api/account/redeem-invite', { code: inv.json.data.code }), 403, 'OV_INVITE_OTHER_ACCOUNT')
 
     // now linked (as its manager): the list keeps it
     assert.deepEqual((await candidates()).map((x) => [x.id, x.via]), [[users.boss.id, ['club_manager']]])

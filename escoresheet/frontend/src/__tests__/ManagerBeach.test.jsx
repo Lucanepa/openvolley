@@ -232,7 +232,7 @@ describe('ManagerApp as OpenBeach\'s manager', () => {
     renderBeach()
     const page = screen.getByTestId('manager-sign-up')
     expect(within(page).getByText('managerBeach.signUpBody')).toBeInTheDocument()
-    for (const [label, value] of Object.entries({ Email: 'ivo@club.ch', Password: 'secret1', 'Confirm password': 'secret1' })) {
+    for (const [label, value] of Object.entries({ Email: 'ivo@club.ch', Password: 'secret1234', 'Confirm password': 'secret1234' })) {
       fireEvent.change(within(page).getByLabelText(label), { target: { value } })
     }
     fireEvent.click(within(page).getByRole('button', { name: 'Create account' }))
@@ -322,10 +322,10 @@ describe('the email-link pages on OpenBeach\'s manager', () => {
   it('a new password asks for OpenBeach\'s "password changed" mail and shows OpenBeach\'s text', async () => {
     renderBeach(<ResetPasswordPage token={'A'.repeat(43)} lang="de" onSignIn={() => {}} onRequestNew={() => {}} />)
     expect(screen.getByText('managerBeach.newPasswordBody')).toBeInTheDocument()
-    fireEvent.change(screen.getByLabelText('authEmail.newPassword'), { target: { value: 'secret12' } })
-    fireEvent.change(screen.getByLabelText('authEmail.repeatPassword'), { target: { value: 'secret12' } })
+    fireEvent.change(screen.getByLabelText('authEmail.newPassword'), { target: { value: 'secret1234' } })
+    fireEvent.change(screen.getByLabelText('authEmail.repeatPassword'), { target: { value: 'secret1234' } })
     fireEvent.click(screen.getByRole('button', { name: 'authEmail.savePassword' }))
-    await waitFor(() => expect(apiAuth.confirmPasswordReset).toHaveBeenCalledWith('A'.repeat(43), 'secret12', 'de', 'beach'))
+    await waitFor(() => expect(apiAuth.confirmPasswordReset).toHaveBeenCalledWith('A'.repeat(43), 'secret1234', 'de', 'beach'))
   })
 })
 

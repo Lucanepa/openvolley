@@ -8,7 +8,9 @@ import { dirname, resolve } from 'path'
 import { vitePluginApiRoutes } from './vite-plugin-api-routes.js'
 import { BUILD_TARGET } from './build-target.js'
 import { themeBoot } from './theme-boot.js'
-import { PRECACHE_GLOB_PATTERNS, PRECACHE_GLOB_IGNORES, PRECACHE_MAX_FILE_BYTES, NAVIGATE_FALLBACK_DENYLIST, IGNORE_URL_PARAMETERS, offlineNavigationRoute, PWA_INCLUDE_ASSETS, PWA_ICONS } from './pwa-workbox.js'
+import { buildChannelPlugin } from './build-channel.js'
+import { cspMeta } from './csp.js'
+import { PRECACHE_GLOB_PATTERNS, PRECACHE_GLOB_IGNORES, PRECACHE_MAX_FILE_BYTES, NAVIGATE_FALLBACK_DENYLIST, IGNORE_URL_PARAMETERS, offlineNavigationRoute, API_NETWORK_ONLY_ROUTE, STATIC_ASSETS_ROUTE, PWA_INCLUDE_ASSETS, PWA_ICONS } from './pwa-workbox.js'
 
 // Valid HTML pages for the app (folder-based structure for clean URLs)
 const validPages = [
@@ -33,7 +35,6 @@ const __dirname = dirname(__filename)
 const packageJson = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8'))
 const appVersion = packageJson.version
 
-const isElectron = process.env.ELECTRON === 'true'
 // Android app build (scripts/release-android.sh): the WebView loads the bundled
 // files, so no service worker — an old precache would otherwise keep serving
 // the previous version after an APK update until the user accepted the prompt.
@@ -63,8 +64,7 @@ if (useHttps) {
 export default defineConfig({
   // Set base from env for GitHub Pages project site deployments.
   // If deploying to a custom domain (CNAME), use '/'. Otherwise set to '/<repo-name>/'
-  // For Electron, use './' for relative paths
-  base: isElectron ? './' : (process.env.VITE_BASE_PATH || '/'),
+  base: process.env.VITE_BASE_PATH || '/',
   // Android app: no .env files, only the variables given on the command line
   // (scripts/release-android.sh, the F-Droid recipe). F-Droid builds the APK
   // from source and checks it against the owner-signed one byte for byte, so
@@ -95,6 +95,13 @@ export default defineConfig({
     // Colour theme (src/utils/theme.js): <html data-theme> set before the
     // first paint on every page but the scoresheet and the manager consoles
     themeBoot(),
+    // The Android app's pages: the Content-Security-Policy as a <meta>
+    // (csp.js; the web builds send it in _headers). After themeBoot in this
+    // list, so its tag lands above the boot script and covers it too.
+    cspMeta({ enabled: isCapacitor }),
+    // A dev-branch build (Pages preview): its test backend, never the
+    // production one, noindex and the "Test build" badge (build-channel.js)
+    buildChannelPlugin(),
     // Rewrite clean URLs to their index.html files
     {
       name: 'html-rewrite-handler',
@@ -229,38 +236,14 @@ export default defineConfig({
         // Without this, navigating to /scoresheet, /referee, etc. falls back to index.html
         // (offlineNavigationRoute below maps each page URL to its own index.html instead)
         navigateFallback: null,
-        // Network-first strategy for API calls, cache-first for assets
+        // The API from the network only (never cached), cache-first for assets
         runtimeCaching: [
           // Extension-less page URLs (/referee?match=..) -> that entry's precached index.html
           offlineNavigationRoute,
-          {
-            // API routes - network first, fallback to cache
-            urlPattern: /^https?:\/\/.*\/api\/.*/i,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-cache',
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 // 24 hours
-              },
-              networkTimeoutSeconds: 10,
-              cacheableResponse: {
-                statuses: [0, 200]
-              }
-            }
-          },
-          {
-            // Static assets - cache first
-            urlPattern: /\.(?:js|mjs|css|png|jpg|jpeg|svg|gif|webp|woff|woff2)$/,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'static-assets',
-              expiration: {
-                maxEntries: 100,
-                maxAgeSeconds: 60 * 60 * 24 * 30 // 30 days
-              }
-            }
-          },
+          // API routes - network only: the answers are the signed-in account's
+          API_NETWORK_ONLY_ROUTE,
+          // Static assets - cache first, never an HTML answer (pwa-workbox.js)
+          STATIC_ASSETS_ROUTE,
           {
             // HTML pages - network first
             urlPattern: /\.html$/,

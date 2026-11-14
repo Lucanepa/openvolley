@@ -112,6 +112,49 @@ describe('rosterToSavedRoster', () => {
     expect(body.staff).toEqual([{ id: 's1', role: 'Coach', first_name: 'C', last_name: 'trainer', dob: null, license_number: 'T-1' }])
   })
 
+  // gap-fe-unread-dialogs-4: siblings of one family, the younger now wearing the elder's former number
+  it('never takes another person of the same number and last name for a saved player or official', () => {
+    const team = {
+      players: [player({ id: 'p-elder', number: 7, first_name: 'Elder', last_name: 'Sample', dob: '2008-01-01', license_number: '111111' })],
+      staff: [{ id: 's1', role: 'Coach', first_name: 'Tina', last_name: 'Sample', dob: '1980-02-02', license_number: '222222' }]
+    }
+    const body = rosterToSavedRoster([
+      { number: 7, firstName: 'Younger', lastName: 'Sample', dob: '01.01.2011' },
+      { number: 12, firstName: 'Elder', lastName: 'Sample', dob: '01.01.2008' }
+    ], [{ role: 'Coach', firstName: 'Max', lastName: 'Sample', dob: '' }], team)
+    const younger = body.players.find(p => p.first_name === 'Younger')
+    const elder = body.players.find(p => p.first_name === 'Elder')
+    expect(younger.id).toBeUndefined()
+    expect(younger.license_number).toBeNull()
+    expect(elder).toMatchObject({ id: 'p-elder', number: 12, license_number: '111111' })
+    // another coach of the same last name: a new official, without the licence
+    expect(body.staff).toEqual([{ role: 'Coach', first_name: 'Max', last_name: 'Sample', dob: null, license_number: null }])
+  })
+
+  it('twins of one date of birth who swapped numbers keep their own records', () => {
+    const team = {
+      players: [
+        player({ id: 'p-anna', number: 7, first_name: 'Anna', last_name: 'Sample', dob: '2010-01-01', license_number: '111111' }),
+        player({ id: 'p-lena', number: 8, first_name: 'Lena', last_name: 'Sample', dob: '2010-01-01', license_number: '111112' })
+      ],
+      staff: []
+    }
+    const body = rosterToSavedRoster([
+      { number: 8, firstName: 'Anna', lastName: 'Sample', dob: '01.01.2010' },
+      { number: 7, firstName: 'Lena', lastName: 'Sample', dob: '01.01.2010' }
+    ], [], team)
+    expect(body.players.find(p => p.first_name === 'Anna')).toMatchObject({ id: 'p-anna', number: 8, license_number: '111111' })
+    expect(body.players.find(p => p.first_name === 'Lena')).toMatchObject({ id: 'p-lena', number: 7, license_number: '111112' })
+  })
+
+  it('keeps a saved official whose bench row has the same names, or no first name, in another role too', () => {
+    const team = { players: [], staff: [{ id: 's1', role: 'Coach', first_name: 'Tina', last_name: 'Sample', dob: null, license_number: '222222' }] }
+    const noFirst = rosterToSavedRoster([], [{ role: 'Coach', firstName: '', lastName: 'sample', dob: '' }], team)
+    expect(noFirst.staff[0]).toMatchObject({ id: 's1', license_number: '222222' })
+    const otherRole = rosterToSavedRoster([], [{ role: 'Assistant Coach 1', firstName: 'Tina', lastName: 'Sample', dob: '' }], team)
+    expect(otherRole.staff[0]).toMatchObject({ id: 's1', role: 'Assistant Coach 1', license_number: '222222' })
+  })
+
   it('does not reuse an id when the number changed and the first name is another', () => {
     const body = rosterToSavedRoster([{ number: 6, firstName: 'A', lastName: 'Muster' }], [], existing)
     const six = body.players.find(p => p.number === 6)

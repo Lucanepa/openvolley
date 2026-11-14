@@ -25,7 +25,8 @@ const ACTIONS = [
   ['confirmSubstitution', 'substitution'],
   ['confirmPlayerSanction', 'playerSanction'],
   ['handleSanctionSubstitution', 'sanctionSubstitution'],
-  ['showLiberoConfirm', 'libero'],
+  ['enterLibero', 'libero'],
+  ['takeBackForcedSanction', 'cancelSanction'],
   ['handleLiberoInPlayerSelect', 'libero'],
   ['confirmLibero', 'libero'],
   ['confirmLiberoReentry', 'libero'],
@@ -122,9 +123,12 @@ describe('Scoreboard: one transaction and one screen change per scorer action', 
     const start = src.indexOf('const handleLiberoSelect = ')
     expect(start).toBeGreaterThan(-1)
     const body = src.slice(start, src.indexOf('\n                  return (', start))
-    expect(body).toMatch(/^const handleLiberoSelect = \(libero\) => runAction\('libero', async \(\) => \{/)
-    expect(body).toMatch(/deferUi\(\(\) => \{\s*setPlayerActionMenu\(null\)/)
-    expect(body.indexOf("await logEvent('libero_entry'")).toBeLessThan(body.indexOf("type: 'lineup'"))
+    // the shared libero entry (enterLibero: one action, the menu closes with it)
+    expect(body).toMatch(/^const handleLiberoSelect = \(libero\) => enterLibero\(\{ team, position, playerOut: playerNumber, liberoType: libero\.type \}\)/)
+    expect(handler('enterLibero')).toMatch(/deferUi\(\(\) => \{[^}]*setPlayerActionMenu\(null\)/)
+    expect(handler('enterLibero')).toContain('await writeLiberoEntry(entry)')
+    const write = handler('writeLiberoEntry')
+    expect(write.indexOf("await logEvent('libero_entry'")).toBeLessThan(write.indexOf("type: 'lineup'"))
   })
 
   it('"Libero out" and "Exchange libero" close the player menu with the result, not over the old court', () => {
@@ -180,7 +184,9 @@ describe('Scoreboard: one transaction and one screen change per scorer action', 
   })
 
   it('the line-up dialog never gives out a voided seq again (as getNextSeq)', () => {
-    expect(src).toMatch(/const maxSeq = Math\.max\(\s*allEvents\.reduce\(\(max, e\) => Math\.max\(max, e\.seq \|\| 0\), 0\),\s*Math\.floor\(await maxVoidedSeq\(db, matchId\)\)\s*\)\s*const manualLineupSeq = maxSeq \+ 1/)
+    expect(src).toMatch(/const maxSeq = Math\.max\(\s*allEvents\.reduce\(\(max, e\) => Math\.max\(max, e\.seq \|\| 0\), 0\),\s*Math\.floor\(await maxVoidedSeq\(db, matchId\)\)\s*\)/)
+    // a main entry: an integer seq even after a libero entry's N.1 line-up
+    expect(src).toContain('const manualLineupSeq = Math.floor(maxSeq) + 1')
   })
 
   it('the game captain chosen in the line-up dialog is one action', () => {

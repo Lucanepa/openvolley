@@ -20,7 +20,7 @@ describe('activity log files', () => {
     vi.useRealTimers()
   })
 
-  it('Android: appends to Documents/OpenVolley/logs/activity-<day>.jsonl and prunes old files', async () => {
+  it('Android: appends to <app folder>/OpenVolley/logs/activity-<day>.jsonl and prunes old files', async () => {
     const calls = []
     const Filesystem = {
       mkdir: async () => {},
@@ -30,12 +30,28 @@ describe('activity log files', () => {
       readdir: async () => ({ files: [{ name: 'activity-2026-01-01.jsonl', size: 10 }, ...Array.from({ length: 30 }, (_, i) => ({ name: `activity-2026-09-${String(i + 1).padStart(2, '0')}.jsonl`, size: 10 }))] }),
       deleteFile: async (o) => { calls.push(['delete', o.path]) }
     }
-    const sink = await createActivityFileSink({ platform: 'capacitor', load: async () => ({ Filesystem, Directory: { Documents: 'DOCUMENTS' }, Encoding: { UTF8: 'utf8' } }) })
+    const sink = await createActivityFileSink({ platform: 'capacitor', load: async () => ({ Filesystem, Directory: { Documents: 'DOCUMENTS', External: 'EXTERNAL', Data: 'DATA' }, Encoding: { UTF8: 'utf8' } }) })
     sink.add([{ uid: 'a', kind: 'app.start' }])
     await sink.flush()
-    expect(calls[0]).toEqual(['append', `OpenVolley/logs/${activityFileName()}`, 'DOCUMENTS', '{"uid":"a","kind":"app.start"}\n'])
+    // the app's own folder: never the public Documents (other apps read it, it stays after an uninstall)
+    expect(calls[0]).toEqual(['append', `OpenVolley/logs/${activityFileName()}`, 'DATA', '{"uid":"a","kind":"app.start"}\n'])
     expect(calls.filter(c => c[0] === 'delete').map(c => c[1])).toEqual(['OpenVolley/logs/activity-2026-01-01.jsonl'])
     expect(sink.canOpenFolder).toBe(false)
+  })
+
+  it('Android: the app\'s external folder when its internal one takes no folder, never Documents', async () => {
+    const dirs = []
+    const Filesystem = {
+      mkdir: async (o) => { if (o.directory === 'DATA') throw new Error('EACCES') },
+      stat: async () => ({}),
+      appendFile: async (o) => { dirs.push(o.directory) },
+      readdir: async () => ({ files: [] }),
+      deleteFile: async () => {}
+    }
+    const sink = await createActivityFileSink({ platform: 'capacitor', load: async () => ({ Filesystem, Directory: { Documents: 'DOCUMENTS', External: 'EXTERNAL', Data: 'DATA' }, Encoding: { UTF8: 'utf8' } }) })
+    sink.add([{ uid: 'b', kind: 'app.start' }])
+    await sink.flush()
+    expect(dirs).toEqual(['EXTERNAL'])
   })
 
   it('a browser has no log files', async () => {

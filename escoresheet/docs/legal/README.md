@@ -62,9 +62,9 @@ all four languages); until then the pages show them highlighted.
 7. VolleyManager: the account used by the sync is allowed to store and show
    referee data (privacy 11, F6).
 8. Administrators: "me and people I appoint" (privacy 6, 7).
-9. Retention of finished match records: "current season and archive" with no
-   fixed end; support mails "as long as the request needs it". Set concrete
-   periods if wanted (data-map Q5).
+9. Retention of finished match records: the season and 2 more seasons
+   (privacy 16, db/042 default); support requests 2 years (privacy 13).
+   Confirm the number of years (data-map Q5).
 10. Minimum age 16 for accounts (terms 3) is a rule in the terms only; the
     sign-up does not check it.
 11. Trademarks line in the Impressum names Swiss Volley, VolleyManager, FIVB;
@@ -81,26 +81,32 @@ all four languages); until then the pages show them highlighted.
 The texts describe the code as it is (2026-10-07). When these are fixed,
 update the texts:
 
-- **F1**: referee dates of birth are visible to any signed-in account
-  (privacy 11 says so). After restricting them to scorers/admins, change
-  "signed-in users" to the roles.
-- **F2**: closed matches can only be redacted by manual SQL. Privacy 19
-  promises deletion/anonymisation "as far as the record does not need it";
-  that is done by hand until an admin tool exists.
-- **F4**: uploaded app logs are kept until account deletion (privacy 5, 16).
-- **F9**: Android backups in the public Documents folder (privacy 5).
+- **F1** (fixed 2026-11-12), **F2**, **F3** (fixed 2026-11-14), **F4**
+  (fixed 2026-11-13), **F9** (fixed 2026-11): privacy 1.13 describes the
+  fixed state (dates of birth for scorers and admins, `redact-person`, the
+  season + 2 seasons retention of db/042, app logs 30 days, Android files in
+  the app folder).
+- **Retention years**: privacy 16 names the default of db/042 (the season
+  and 2 more). If the owner picks another number
+  (`app_settings.retention_years`), change section 16 and its example, and
+  the "In short" line, in all four languages.
 - **F14**: the app.openvolley.app home page calls api.github.com (privacy 12).
-- **F3, F5, F10, F21**: no fixed retention for scoresheet files, change log,
-  dormant accounts, orphaned saved teams (privacy 16 says "as long as
-  needed").
+- **F5, F10, F21**: no fixed retention for the change log, dormant accounts,
+  orphaned saved teams (privacy 16 says "as long as needed").
 - **F23**: the browser and Android apps send a created match (rosters
   included) to the cloud relay's memory even without a sign-in. Privacy
   (In short, 3, 5, 9) now says so; if the apps stop doing that, simplify
   those passages again.
-- **Cookies**: the texts say "no cookies". The code sets none, but
-  Cloudflare can (for example `__cf_bm` with Bot Fight Mode or bot
-  management, or a challenge cookie). Check the zone settings; if one is set,
-  name it in privacy 3 as a strictly necessary security cookie.
+- **Cookies and Cloudflare's scripts (F26)**: the code sets no cookie, but
+  Cloudflare's bot check (JavaScript detections) and Email Address
+  Obfuscation inject scripts, and the bot check may set `cf_clearance`.
+  Privacy 3 and 4 (1.13) name them. Once they are turned off for the app,
+  manager and get hosts, check a page body for `/cdn-cgi/` and drop the
+  "Cloudflare's scripts" paragraph and the "(section 3 names ...)" note in
+  "In short", in all four languages.
+- **Health data (F25)**: privacy 7, 16 and 20 name remarks and injury
+  records as health data with GDPR Art. 9(2)(f); have the lawyer confirm the
+  basis.
 - Licence notices: Apache-2.0 and MIT require the notices to travel with
   binaries. Consider shipping a generated third-party licence file with the
   desktop and Android builds.

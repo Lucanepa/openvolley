@@ -82,13 +82,13 @@ describe('planDecisionChangeReversal', () => {
 describe('syncJobsForEvents', () => {
   it('matches queued event jobs by external_id, never a set job with the same id', () => {
     const jobs = [
-      { id: 1, resource: 'event', action: 'insert', payload: { external_id: '61' } },
-      { id: 2, resource: 'set', payload: { external_id: '61' } },
-      { id: 3, resource: 'event', action: 'insert', payload: { external_id: '99' } },
+      { id: 1, resource: 'event', action: 'insert', payload: { external_id: '61', match_id: 'match_100_aaa' } },
+      { id: 2, resource: 'set', payload: { external_id: '61', match_id: 'match_100_aaa' } },
+      { id: 3, resource: 'event', action: 'insert', payload: { external_id: '99', match_id: 'match_100_aaa' } },
       { id: 4, resource: 'match', payload: { id: 'abc' } }
     ]
-    expect(syncJobsForEvents(jobs, [61, 62]).map(j => j.id)).toEqual([1])
-    expect(syncJobsForEvents(jobs, [])).toEqual([])
+    expect(syncJobsForEvents(jobs, [61, 62], 'match_100_aaa').map(j => j.id)).toEqual([1])
+    expect(syncJobsForEvents(jobs, [], 'match_100_aaa')).toEqual([])
   })
 
   it('matches the namespaced ids every job carries now (<seed>:e:<id>)', () => {
@@ -100,7 +100,24 @@ describe('syncJobsForEvents', () => {
       { id: 5, resource: 'event', action: 'insert', payload: { external_id: 'match_100_aaa:e:62' } },
       { id: 6, resource: 'event', action: 'insert', payload: { external_id: 'coin_toss_match_100_aaa' } }
     ]
-    expect(syncJobsForEvents(jobs, [61, 62]).map(j => j.id)).toEqual([1, 5])
+    expect(syncJobsForEvents(jobs, [61, 62], 'match_100_aaa').map(j => j.id)).toEqual([1, 5])
+  })
+
+  // A restore by game PIN keeps the cloud's ids: another match's unsent
+  // jobs (closed here, its local rows gone) can carry the same local numbers
+  it('only the jobs of the match itself, never another match\'s with the same local id', () => {
+    const jobs = [
+      { id: 1, resource: 'event', action: 'insert', payload: { external_id: 'match_100_aaa:e:108', match_id: 'match_100_aaa' } },
+      { id: 2, resource: 'event', action: 'insert', payload: { external_id: 'match_200_bbb:e:108', match_id: 'match_200_bbb' } },
+      // bare ids of older apps: only when the job names the match
+      { id: 3, resource: 'event', action: 'insert', payload: { external_id: '109', match_id: 'match_100_aaa' } },
+      { id: 4, resource: 'event', action: 'insert', payload: { external_id: '109', match_id: 'match_200_bbb' } },
+      { id: 5, resource: 'event', action: 'insert', payload: { external_id: '109' } }
+    ]
+    expect(syncJobsForEvents(jobs, [108, 109], 'match_200_bbb').map(j => j.id)).toEqual([2, 4])
+    expect(syncJobsForEvents(jobs, [108, 109], 'match_100_aaa').map(j => j.id)).toEqual([1, 3])
+    // no match key: nothing can be told apart, nothing is picked
+    expect(syncJobsForEvents(jobs, [108, 109], null)).toEqual([])
   })
 
   it('never the void / edit / restore jobs the deletion itself queued (event history)', () => {
@@ -110,19 +127,23 @@ describe('syncJobsForEvents', () => {
       { id: 3, resource: 'event', action: 'edit', payload: { external_id: 'match_100_aaa:e:61', rev_uid: 'u2' } },
       { id: 4, resource: 'event', action: 'restore', payload: { external_id: 'match_100_aaa:e:61', rev_uid: 'u3' } }
     ]
-    expect(syncJobsForEvents(jobs, [61]).map(j => j.id)).toEqual([1])
+    expect(syncJobsForEvents(jobs, [61], 'match_100_aaa').map(j => j.id)).toEqual([1])
   })
 })
 
 describe('syncJobsForSets', () => {
-  it('matches set jobs by namespaced or bare local id', () => {
+  it('matches set jobs by namespaced id, or a bare one that names the match', () => {
     const jobs = [
       { id: 1, resource: 'set', payload: { external_id: 'match_100_aaa:s:7' } },
-      { id: 2, resource: 'set', payload: { external_id: '7' } },
+      { id: 2, resource: 'set', payload: { external_id: '7', match_id: 'match_100_aaa' } },
       { id: 3, resource: 'event', payload: { external_id: 'match_100_aaa:e:7' } },
-      { id: 4, resource: 'set', payload: { external_id: 'match_100_aaa:s:8' } }
+      { id: 4, resource: 'set', payload: { external_id: 'match_100_aaa:s:8' } },
+      // another match's set 7, and a bare id that names no match
+      { id: 5, resource: 'set', payload: { external_id: 'match_200_bbb:s:7' } },
+      { id: 6, resource: 'set', payload: { external_id: '7' } }
     ]
-    expect(syncJobsForSets(jobs, [7]).map(j => j.id)).toEqual([1, 2])
+    expect(syncJobsForSets(jobs, [7], 'match_100_aaa').map(j => j.id)).toEqual([1, 2])
+    expect(syncJobsForSets(jobs, [7], 'match_200_bbb').map(j => j.id)).toEqual([5])
     expect(localIdOfExtId('match_1_a:e:3', 'set')).toBeNull()
     expect(localIdOfExtId(null, 'event')).toBeNull()
   })
@@ -184,7 +205,7 @@ describe('planPointRemoval (taking back a point recorded in error)', () => {
       // the void the removal itself queued (db/eventHistory) must reach the server
       { id: 5, resource: 'event', action: 'void', payload: { external_id: 'match_1_k:e:20' } }
     ]
-    expect(syncJobsForEvents(jobs, plan.deleteEventIds).map(j => j.id)).toEqual([2, 3])
+    expect(syncJobsForEvents(jobs, plan.deleteEventIds, 'match_1_k').map(j => j.id)).toEqual([2, 3])
   })
 
   it('finds the newest point of the set when no point is given', () => {

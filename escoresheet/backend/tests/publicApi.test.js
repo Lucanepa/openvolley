@@ -49,6 +49,8 @@ describe('public match info: roles and numbers only', () => {
 describe('real status words', () => {
   it('a final / ended match is finished in the API, and A / B know which team is home', () => {
     assert.equal(publicMatchInfo({ ...row, status: 'final' }).status, 'finished')
+    // approved and not yet closed (db/007: approved -> final) is over too
+    assert.equal(publicMatchInfo({ ...row, status: 'approved' }).status, 'finished')
     const l = publicLive({ external_id: 'm', match_status: 'ended', home_team: { name: 'VBC Home' }, team_a_name: 'VBC Away', team_b_name: 'VBC Home' })
     assert.equal(l.status, 'finished')
     assert.equal(l.homeIs, 'B')
@@ -64,12 +66,10 @@ describe('livescore snapshot', () => {
     subs_a: [{ out: 1, in: 2 }], sanctions_a: [{ player: 5, type: 'warning', ts: 'x' }], set_results: [{ index: 1, pointsA: 25, pointsB: 20, winner: 'A' }],
     timeout_active: true, updated_at: new Date('2026-11-14T18:30:00Z')
   })
-  it('maps score, on-court numbers, sanctions', () => {
+  it('maps score, sets and time-outs (line-ups and sanctions need the PIN)', () => {
     assert.deepEqual(live.score, { setsA: 1, setsB: 0, pointsA: 10, pointsB: 8 })
-    assert.equal(live.onCourt.A.I.number, 4)
-    assert.deepEqual(live.onCourt.B, { I: 2 })
-    assert.deepEqual(live.sanctions.A, [{ type: 'warning', number: 5, role: null }])
-    assert.equal(live.substitutions.A, 1)
+    assert.equal(live.teams.A.timeouts, 1)
+    assert.equal(live.serving, 'A')
     assert.equal(live.timeout, true)
     assert.deepEqual(live.setResults, [{ set: 1, pointsA: 25, pointsB: 20, winner: 'A' }])
   })
@@ -96,8 +96,8 @@ describe('end-of-match statistics', () => {
     assert.equal(s.winner, 'home')
     assert.equal(s.minutes, 25)
     assert.deepEqual(s.timeouts, [{ team: 'away', at: { home: 2, away: 1 } }])
-    assert.deepEqual(s.substitutions[0], { team: 'home', out: 2, in: 8, at: { home: 2, away: 1 }, exceptional: false, expelled: false, disqualified: false })
-    assert.deepEqual(s.sanctions, [{ team: 'home', type: 'warning', number: 3, role: 'player', at: { home: 2, away: 1 } }])
+    assert.deepEqual(s.substitutions[0], { team: 'home', at: { home: 2, away: 1 } })
+    assert.deepEqual(s.sanctions, [{ team: 'home', type: 'warning', at: { home: 2, away: 1 } }])
     assert.equal(s.longestRun.home, 2)
     assert.deepEqual(s.pointLog.at(-1), [3, 1, 'H'])
     assert.deepEqual(st.totals.home, { points: 3, timeouts: 0, substitutions: 1, sanctions: 1 })
@@ -153,5 +153,187 @@ describe('stream + widget', () => {
   it('the widget is plain syntax and writes text only', () => {
     new Function(LIVESCORE_JS)
     assert.ok(!/innerHTML|insertAdjacentHTML|document\.write/.test(LIVESCORE_JS))
+  })
+})
+
+// Review of the public API (rollout audit): the live projection rule, the
+// statistics of a finished match, the stream limits and the query cost.
+describe('review: same rule as the anonymous live projection', () => {
+  const liveRow = {
+    external_id: 'match_1', match_status: 'live', points_a: 3, points_b: 2, team_a_name: 'VBC Home', team_b_name: 'VBC Away',
+    lineup_a: { I: { number: 4, isServing: true } }, lineup_b: { I: 2 },
+    subs_a: [{ out: 1, in: 2 }], sanctions_a: [{ player: 5, type: 'expulsion' }], sanctions_b: [{ role: 'coach', type: 'warning' }],
+    last_event_data: { player: 5 }, scorer_attention_trigger: 'x'
+  }
+  it('no line-ups, substitutions or sanctions without the match PIN (LIVE_STATE_PRIVATE_COLUMNS)', () => {
+    const live = publicLive(liveRow)
+    for (const k of ['onCourt', 'substitutions', 'sanctions', 'lastEvent']) assert.ok(!(k in live), `${k} is public`)
+    const s = JSON.stringify(live)
+    assert.ok(!s.includes('expulsion') && !s.includes('coach'), s)
+    assert.equal(live.score.pointsA, 3)
+    assert.equal(live.teams.A.name, 'VBC Home')
+  })
+})
+
+describe('review: statistics carry no disciplinary or health detail by shirt number', () => {
+  const ev = (type, seq, payload) => ({ type, set_index: 1, seq, payload })
+  const st = buildStats({ external_id: 'm', status: 'finished', home_team: { name: 'H' }, away_team: { name: 'A' } }, [
+    ev('point', 1, { team: 'home' }),
+    ev('sanction', 2, { team: 'home', type: 'expulsion', playerType: 'player', playerNumber: 7 }),
+    ev('substitution', 3, { team: 'home', playerOut: 7, playerIn: 9, isExpelled: true }),
+    ev('substitution', 4, { team: 'away', playerOut: 3, playerIn: 4, isExceptional: true }),
+    ev('sanction', 5, { team: 'away', type: 'warning', role: 'coach' })
+  ], [])
+  const s = st.sets[0]
+  it('a sanction says team, type and score, not who', () => {
+    assert.deepEqual(s.sanctions, [
+      { team: 'home', type: 'expulsion', at: { home: 1, away: 0 } },
+      { team: 'away', type: 'warning', at: { home: 1, away: 0 } }
+    ])
+  })
+  it('a substitution says team and score, not who or why (injury, expulsion)', () => {
+    assert.deepEqual(s.substitutions, [{ team: 'home', at: { home: 1, away: 0 } }, { team: 'away', at: { home: 1, away: 0 } }])
+    assert.equal(st.totals.home.substitutions, 1)
+  })
+})
+
+describe('review: query cost', () => {
+  it('the list does not read rosters or benches', async () => {
+    const seen = []
+    const api = createPublicApi({ pool: { query: async (sql) => { seen.push(sql); return { rows: [] } } } })
+    await api.list({})
+    assert.ok(!/players_|bench_/.test(seen[0]), seen[0])
+  })
+  it('statistics of a finished open match are rebuilt (corrections and late events write events only)', async () => {
+    let events = 0
+    const fin = { ...row, status: 'finished', final_score: '3:0', _id: 'u', updated_at: new Date('2026-11-14T20:00:00Z'), closed_at: null }
+    const api = createPublicApi({
+      pool: {
+        query: async (sql) => {
+          if (/FROM public\.events/.test(sql)) { events++; return { rows: [] } }
+          if (/FROM public\.sets/.test(sql)) return { rows: [] }
+          return { rows: [fin] }
+        }
+      }
+    })
+    const r = await api.stats('match_1')
+    assert.equal(r.status, 200)
+    assert.equal(r.headers['Cache-Control'], 'public, max-age=30')
+    assert.equal((await api.stats('match_1')).status, 200)
+    assert.equal(events, 2)
+  })
+  it('statistics of an unchanged closed match are built once', async () => {
+    let events = 0
+    const fin = { ...row, status: 'finished', final_score: '3:0', _id: 'u', updated_at: new Date('2026-11-14T20:00:00Z'), closed_at: new Date('2026-11-14T20:05:00Z') }
+    let m = fin
+    const api = createPublicApi({
+      pool: {
+        query: async (sql) => {
+          if (/FROM public\.events/.test(sql)) { events++; return { rows: [] } }
+          if (/FROM public\.sets/.test(sql)) return { rows: [] }
+          return { rows: [m] }
+        }
+      }
+    })
+    assert.equal((await api.stats('match_1')).status, 200)
+    assert.equal((await api.stats('match_1')).status, 200)
+    assert.equal(events, 1)
+    m = { ...fin, updated_at: new Date('2026-11-14T21:00:00Z') } // admin change after the close
+    assert.equal((await api.stats('match_1')).status, 200)
+    assert.equal(events, 2)
+  })
+})
+
+describe('review: stream limits', () => {
+  const fakeRes = () => {
+    const r = { frames: [], writableLength: 0, destroyed: false, handlers: {} }
+    r.write = (x) => { r.frames.push(x); return true }
+    r.on = (ev, f) => { r.handlers[ev] = f }
+    r.destroy = () => { r.destroyed = true; r.handlers.close?.() }
+    return r
+  }
+  it('one address cannot take every stream', () => {
+    const s = createLiveStreams({ snapshot: async () => ({ p: 1 }), intervalMs: 1000, maxPerKey: 2 })
+    assert.equal(s.attach('m', fakeRes(), { key: 'ip1' }), true)
+    assert.equal(s.attach('m2', fakeRes(), { key: 'ip1' }), true)
+    assert.equal(s.canAttach('m3', 'ip1'), false)
+    assert.equal(s.attach('m3', fakeRes(), { key: 'ip1' }), false)
+    assert.equal(s.canAttach('m3', 'ip2'), true)
+    s.closeAll()
+  })
+  it('a closed stream gives its address slot back', () => {
+    const s = createLiveStreams({ snapshot: async () => ({ p: 1 }), intervalMs: 1000, maxPerKey: 1 })
+    const r = fakeRes()
+    assert.equal(s.attach('m', r, { key: 'ip1' }), true)
+    r.handlers.close()
+    assert.equal(s.canAttach('m', 'ip1'), true)
+    s.closeAll()
+  })
+  it('the number of polled matches is capped (one database poll each)', () => {
+    const s = createLiveStreams({ snapshot: async () => ({ p: 1 }), intervalMs: 1000, maxMatches: 2 })
+    assert.equal(s.attach('a', fakeRes(), { key: '1' }), true)
+    assert.equal(s.attach('b', fakeRes(), { key: '2' }), true)
+    assert.equal(s.canAttach('c', '3'), false)
+    assert.equal(s.canAttach('a', '3'), true) // an already polled match costs nothing more
+    s.closeAll()
+  })
+  it('uses the snapshot it was given (no second query per new viewer)', async () => {
+    let calls = 0
+    const s = createLiveStreams({ snapshot: async () => { calls++; return { p: 1 } }, intervalMs: 1000 })
+    const r = fakeRes()
+    s.attach('m', r, { key: 'k', first: { p: 1 } })
+    await new Promise((res) => setTimeout(res, 20))
+    assert.equal(calls, 0)
+    assert.equal(r.frames.filter((f) => f.startsWith('event: live')).length, 1)
+    s.closeAll()
+  })
+  it('a viewer that does not read is dropped, not buffered without end', async () => {
+    let n = 0
+    const s = createLiveStreams({ snapshot: async () => ({ p: n++ }), intervalMs: 10, maxBuffered: 1000 })
+    const slow = fakeRes()
+    slow.write = (x) => { slow.writableLength += x.length; return false }
+    s.attach('m', slow, { key: 'k' })
+    slow.writableLength = 5000
+    await new Promise((res) => setTimeout(res, 50))
+    assert.equal(slow.destroyed, true)
+    assert.deepEqual(s.stats(), { matches: 0, clients: 0 })
+  })
+  it('a finished match is polled rarely', async () => {
+    let calls = 0
+    const s = createLiveStreams({ snapshot: async () => { calls++; return { status: 'finished' } }, intervalMs: 5, finishedEvery: 1000 })
+    s.attach('m', fakeRes(), { key: 'k', first: { status: 'finished' } })
+    await new Promise((res) => setTimeout(res, 80))
+    assert.ok(calls <= 1, `polled ${calls} times`)
+    s.closeAll()
+  })
+})
+
+// The widget said "Upcoming" for a match being played: it looked for status
+// 'live', while /live answers what the scorer writes (in_progress, interval,
+// timeout; ended / final / approved at the end).
+describe('the <ov-livescore> widget reads the API\'s statuses', () => {
+  const widget = () => {
+    const make = (tag) => ({ tag, className: '', textContent: '', children: [], appendChild(c) { this.children.push(c); return c } })
+    let Live = null
+    const g = {
+      customElements: { get: () => undefined, define: (_n, c) => { Live = c } },
+      document: { createElement: make, currentScript: null },
+      HTMLElement: function () {},
+      window: {}
+    }
+    new Function('customElements', 'document', 'HTMLElement', 'window', LIVESCORE_JS)(g.customElements, g.document, g.HTMLElement, g.window)
+    return (status) => {
+      const card = Live.prototype._card.call({}, { status, currentSet: 2, serving: 'A', teams: { A: { name: 'A' }, B: { name: 'B' } }, score: { setsA: 1, setsB: 0, pointsA: 3, pointsB: 2 }, setResults: [] })
+      return card.children[0].children[0].textContent
+    }
+  }
+  it('a match in play is LIVE', () => {
+    const label = widget()
+    for (const s of ['in_progress', 'live', 'interval', 'timeout']) assert.equal(label(s), 'LIVE', s)
+  })
+  it('a finished match is Final, one not started Upcoming', () => {
+    const label = widget()
+    for (const s of ['ended', 'final', 'approved', 'finished']) assert.equal(label(s), 'Final', s)
+    for (const s of ['setup', 'scheduled', 'pre_match', 'not_started', null]) assert.equal(label(s), 'Upcoming', String(s))
   })
 })

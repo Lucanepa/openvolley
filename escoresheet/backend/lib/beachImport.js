@@ -404,6 +404,18 @@ export function planImport (state, input) {
     if (!byDraw.has(p.key)) byDraw.set(p.key, [])
     byDraw.get(p.key).push(r)
   }
+  // the tournament's bound (state.maxDraws, lib/beachTournaments.js
+  // MAX_DRAWS): new draws past it are errors on their rows, and get no bracket
+  const added = plannedDraws.filter((p) => p.op === 'new')
+  const room = (state.maxDraws ?? Infinity) - state.draws.length
+  if (added.length > room) {
+    for (const p of added) {
+      p.tooMany = true
+      for (const r of byDraw.get(p.key) || []) {
+        r.msgs.push({ level: 'error', code: 'too_many_draws', max: state.maxDraws, adding: added.length, room: Math.max(0, room) })
+      }
+    }
+  }
   // a licence in two draws of the tournament (the file's rows, and the
   // registered pairs of the draws the file leaves alone): a warning, since a
   // player may play two categories, but rarely does
@@ -645,7 +657,7 @@ export function planImport (state, input) {
   }
   const toDraw = []
   for (const p of plannedDraws) {
-    if (!isOpen(p)) continue
+    if (!isOpen(p) || p.tooMany) continue
     const wanted = matchRows.some((r) => r.draw?.key === p.key && r.game != null && !existingGames.has(r.game))
     if (wanted) toDraw.push(p)
   }
@@ -829,15 +841,34 @@ export function planImport (state, input) {
       dur: g.duration_min || drawById.get(g.draw_id)?.slot_minutes || 50
     }
   }).filter((g) => g.status !== 'cancelled')
+  // slotIssues reads only the matches on the slot's court and those of its
+  // draw: these, in the plan's order (all of them for every row made the
+  // preview of a big tournament take a second of the backend's event loop)
+  const byGame = new Map(finalGames.map((x) => [x.game_n, x]))
+  const scheduled = finalGames.filter((x) => x.scheduled_at)
+  const indexBy = (key) => {
+    const out = new Map()
+    scheduled.forEach((x, i) => {
+      const k = key(x)
+      if (k == null) return
+      if (!out.has(k)) out.set(k, [])
+      out.get(k).push(i)
+    })
+    return out
+  }
+  const onCourt = indexBy((x) => x.court_id)
+  const ofDraw = indexBy((x) => x.draw_id)
+  const othersOf = (g) => [...new Set([...((g.court_id && onCourt.get(g.court_id)) || []), ...(ofDraw.get(g.draw_id) || [])])]
+    .sort((a, b) => a - b).map((i) => scheduled[i]).filter((x) => x.game_n !== g.game_n)
   for (const r of matchRows) {
     const op = opOfRow.get(r)
     if (!op || failed(r) || op.op !== 'changed' || !(op.set.court != null || op.set.scheduled_at)) continue
-    const g = finalGames.find((x) => x.game_n === op.game_n)
+    const g = byGame.get(op.game_n)
     if (!g?.scheduled_at) continue
     const d = drawById.get(g.draw_id)
     const issues = slotIssues({
       match: { ...g, duration_min: g.dur },
-      others: finalGames.filter((x) => x.game_n !== g.game_n && x.scheduled_at),
+      others: othersOf(g),
       tournament: { starts_on: t.starts_on, ends_on: t.ends_on, day_start: t.day_start, day_end: t.day_end },
       slotMinutes: d?.slot_minutes || 50,
       restMinutes: d?.rest_minutes || 0

@@ -52,6 +52,28 @@ export function eventRemark({ set, at = new Date(), team, teamScore = 0, oppScor
 }
 
 /**
+ * The text of the automatic remarks the match writes for a player who cannot
+ * go on, in the rules' words and nothing more (no diagnosis): remarks are
+ * part of the record, printed on the scoresheet and mailed with it, and an
+ * injury is health data (privacy policy section 7). The event payload keeps
+ * the reason (isInjury, reason 'injury') for the rules; older matches carry
+ * the earlier wording "... due to injury", which domain/rosterLive and
+ * domain/interruptionRequests still recognise.
+ *   forced substitution of an injured / ill player  (FIVB 15.5, 15.7)
+ *   libero unable to play                           (FIVB 19.3.2.8)
+ */
+export function injurySubstitutionText(playerOut) {
+  return `#${playerOut} substituted, cannot continue playing`
+}
+
+/** `reason` 'injury' (becomes unable) or 'declared' (the coach or the game captain declared it). */
+export function liberoUnableText(liberoNumber, reason) {
+  return reason === 'injury'
+    ? `Libero #${liberoNumber} becomes unable to play`
+    : `Libero #${liberoNumber} declared unable to play`
+}
+
+/**
  * Set 1's actual start, when the scorer confirmed a time other than the
  * scheduled one (owner 2026-10-08): "Actual start time: 12:45". Always in
  * English, like the other automatic remarks the match writes, so the line is

@@ -10,7 +10,8 @@ import { applyPlanToEvents } from '../../../domain/manualCorrections'
 import { compareBySeq } from '../../../domain/describe'
 
 const applied = vi.hoisted(() => ({ plans: [] }))
-vi.mock('../../../services/corrections/applyCorrectionPlan', () => ({
+vi.mock('../../../services/corrections/applyCorrectionPlan', async (orig) => ({
+  ...(await orig()),
   applyCorrectionPlan: async (plan) => { applied.plans.push(plan); return { addedIds: [], signaturesCleared: false } }
 }))
 vi.mock('../../../ui/uiStore.js', async (importOriginal) => ({ ...(await importOriginal()), confirmDialog: async () => true }))

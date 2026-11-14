@@ -43,7 +43,7 @@ function mountActions() {
 async function discardEvents(rows, reason) {
   await withActivityContext({ reason: currentActivityContext()?.reason || reason }, () => db.events.bulkDelete(rows.map(e => e.id)))
   const queued = await db.sync_queue.where('status').equals('queued').toArray()
-  const jobs = syncJobsForEvents(queued, rows.map(e => e.id))
+  const jobs = syncJobsForEvents(queued, rows.map(e => e.id), SEED)
   if (jobs.length > 0) await db.sync_queue.bulkDelete(jobs.map(j => j.id))
 }
 

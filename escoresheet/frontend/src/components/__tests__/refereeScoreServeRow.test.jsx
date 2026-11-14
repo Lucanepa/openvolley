@@ -149,3 +149,26 @@ describe('referee score row: the SERVE block', () => {
     expect(src).not.toMatch(/>SERVE<\/span>/)
   })
 })
+
+// UI tour 14.11 (r07): in the set interval the referee tablet showed the sets
+// won ("1:0") as big as points over an empty court; it reads as a score. The
+// row labels them (caption) while the interval shows sets.
+describe('referee score row: sets in the set interval', () => {
+  it('a caption over the score says what the numbers are', () => {
+    const c = renderRow(null, { leftScore: 1, rightScore: 0, caption: 'SETS' })
+    const caption = c.querySelector('[data-score-caption]')
+    expect(caption).not.toBeNull()
+    expect(caption.textContent).toBe('SETS')
+    expect(c.querySelector('[data-score]').textContent.replace(/\s+/g, '')).toBe('1:0')
+    expect(caption.nextElementSibling).toBe(c.querySelector('[data-score]'))
+  })
+
+  it('no caption for points', () => {
+    expect(renderRow('left').querySelector('[data-score-caption]')).toBeNull()
+  })
+
+  it('the referee screen captions the score with Sets during the interval only', () => {
+    const src = readFileSync(resolve(__dirname, '../Referee.jsx'), 'utf8')
+    expect(src).toMatch(/caption=\{isInSetInterval \? t\('scoreboard\.labels\.sets', 'SETS'\) : null\}/)
+  })
+})

@@ -19,9 +19,16 @@ pub const MAX_REQUESTS_PER_TEAM: usize = 12;
 pub const BENCH_REQUEST_TTL: Duration = Duration::from_secs(30 * 60);
 const LINEUP_KEYS: [&str; 6] = ["I", "II", "III", "IV", "V", "VI"];
 
+// Names every plain JS object has: a scoreboard keys its cards by the id
+const OBJECT_PROTO_NAMES: [&str; 12] = [
+    "constructor", "hasOwnProperty", "isPrototypeOf", "propertyIsEnumerable", "toString", "valueOf",
+    "toLocaleString", "__proto__", "__defineGetter__", "__defineSetter__", "__lookupGetter__", "__lookupSetter__",
+];
+
 fn valid_id(v: Option<&Value>) -> Option<String> {
     let s = v?.as_str()?;
-    (!s.is_empty() && s.len() <= 64 && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'))
+    (!s.is_empty() && s.len() <= 64 && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        && !OBJECT_PROTO_NAMES.contains(&s))
         .then(|| s.to_string())
 }
 
@@ -302,6 +309,14 @@ mod tests {
 
     fn lineup() -> Value {
         json!({ "I": 1, "II": 2, "III": 3, "IV": 4, "V": 5, "VI": 6 })
+    }
+
+    #[test]
+    fn an_id_that_every_js_object_has_is_refused() {
+        for id in ["constructor", "__proto__", "toString"] {
+            assert_eq!(normalize_request(Some(&json!({ "id": id, "kind": "timeout", "setIndex": 1 }))), Err("bad-id"));
+        }
+        assert!(normalize_request(Some(&json!({ "id": "br-0123456789abcdef01234567", "kind": "timeout", "setIndex": 1 }))).is_ok());
     }
 
     #[test]

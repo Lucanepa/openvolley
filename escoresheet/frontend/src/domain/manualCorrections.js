@@ -15,7 +15,7 @@
  *     remarkAdd: string[]  remarkRemove: string[]
  *     log: { action, setIndex, team, before, after, text }
  *     notes: {key, params, text}[]   non-blocking warnings for the preview
- *     followUp: null | { awardPointTo: 'home'|'away' }   live only
+ *     followUp: null | { awardPointTo: 'home'|'away', penaltySeq?: number }   live only
  *   }
  *
  * WHERE A NEW EVENT GOES. The scoresheet places a time-out, substitution or
@@ -436,7 +436,7 @@ export function planAddSubstitution(events, { setIndex, team, playerOut, playerI
       plan.notes.push(note('subLimit', { set }, ctx.t))
     } else {
       const regular = (events || []).filter(e => !(e.type === 'substitution' && e.payload?.isExceptional))
-      const v = validateManualSubstitution(regular, team, setIndex, playerOut, playerIn)
+      const v = validateManualSubstitution(regular, team, setIndex, playerOut, playerIn, { allEvents: events })
       if (!v.legal) plan.notes.push(note(/limit/i.test(v.reason || '') ? 'subLimit' : 'subRule', { set, reason: v.reason }, ctx.t))
     }
   }
@@ -494,7 +494,9 @@ export function entryGroupIds(events, ev) {
 /** True when `row` (N.x) was written by `head` (N): its line-up / rotation rows. */
 function isSubRowOf(row, head) {
   // a point cancelled by a rectification keeps its rotation (domain/rectify)
-  if (row.type === 'lineup') return row.payload?.team === head.payload?.team || isRally(head)
+  // a going back writes a line-up row for each team edited by hand; its
+  // head names one team or none ('both')
+  if (row.type === 'lineup') return row.payload?.team === head.payload?.team || isRally(head) || head.type === 'rectification'
   if (isRotationLiberoExit(row)) return isRally(head)
   return false
 }
@@ -614,6 +616,9 @@ export function planAddSanction(events, { setIndex, team, type, target = {}, at,
   if (type === 'improper_request') plan.notes.push(note('irBox', { letter: teamLetter(team, ctx.match) }, t))
 
   const row = newRow(ctx, { type: 'sanction', setIndex, seq: ins.seq, ts: ins.ts, payload })
+  // the point given now carries the sanction's seq, as a live penalty's does
+  // (domain/sanctions penaltyOfPoint: Undo takes the two back together)
+  if (plan.followUp?.awardPointTo) plan.followUp.penaltySeq = row.seq
   plan.add = [row]
   plan.update = renumberUpdates(ins)
   return done(events, finishPlan(plan, events, ctx, 'addSanction', row), ctx)

@@ -6,7 +6,7 @@
  * useSyncQueue, useSequentialSync, and backupManager — e.g. the valid-columns
  * whitelist (backupManager's copy was missing `sport_type`) and the JSONB
  * merge-column list. Keeping it in one module also makes a future backend swap
- * (self-hosted Postgres / PocketBase) a single-file change.
+ * a single-file change.
  */
 
 // Valid columns on the Supabase `matches` table. Payloads are filtered to these
@@ -36,6 +36,21 @@ export function toCloudPlayers(players) {
     libero: p.libero || '',
     is_captain: !!(p.isCaptain ?? p.is_captain),
     is_lfp: !!(p.isLfp ?? p.is_lfp)
+  }))
+}
+
+/**
+ * Bench officials in the cloud's snake_case shape (bench_home / bench_away),
+ * as the coin toss sends them (CoinToss). importMatchFromSupabase reads both
+ * shapes back into the app's.
+ * @param {Array} bench local bench officials ({ role, firstName, lastName, dob })
+ */
+export function toCloudBench(bench) {
+  return (Array.isArray(bench) ? bench : []).map(b => ({
+    role: b.role,
+    first_name: b.firstName ?? b.first_name ?? '',
+    last_name: b.lastName ?? b.last_name ?? '',
+    dob: b.dob || null
   }))
 }
 

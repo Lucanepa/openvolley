@@ -432,10 +432,33 @@ mod tests {
         let ask = body.find("MessageBox MB_OKCANCEL").expect("one question");
         let kill = body.find("nsis_tauri_utils::KillProcess \"").expect("closes it for all users");
         let failed = body[kill..].find("Abort").map(|i| kill + i).expect("stops when it cannot close it");
-        let uninstall = body.find("ExecWait").expect("runs the old uninstaller");
+        let uninstall = body.find("nsis_tauri_utils::RunAsUser \"$R6\"").expect("runs the old uninstaller");
         assert!(ask < kill && kill < failed && failed < uninstall, "ask, close for all users, stop on failure, then uninstall");
         assert!(!body.contains("KillProcessCurrentUser") && !body.contains("FindProcessCurrentUser"), "all users, never only this one");
         assert_eq!(body.matches("MessageBox").count(), 1, "one question");
+    }
+
+    /// tauri-shell-4: the UninstallString comes from HKCU, which any program
+    /// of the user may write, and the installer runs as administrator. The
+    /// old uninstaller runs only from the path the 2.0.x / 2.1.0 installer
+    /// used, and only as the user: never elevated (no ExecWait / Exec /
+    /// ExecShell of it), never another file.
+    #[test]
+    fn the_old_uninstaller_runs_only_from_its_own_path_and_unelevated() {
+        let hooks = include_str!("../windows/installer-hooks.nsh");
+        let body = &hooks[hooks.find("!macro OV_REMOVE_PER_USER_INSTALL").unwrap()..];
+        let body = &body[..body.find("!macroend").unwrap()];
+        assert!(body.contains(r#"StrCpy $R5 "$LOCALAPPDATA\${PRODUCTNAME}\uninstall.exe""#), "the 2.0.x / 2.1.0 path");
+        let only_own = body.find("${AndIf} $R6 != $R5").expect("another path is never run");
+        let run = body.find("nsis_tauri_utils::RunAsUser \"$R6\"").unwrap();
+        assert!(only_own < run);
+        for elevated in ["ExecWait '\"$R6", "Exec '\"$R6", "ExecShell", "ExecWait \"$R6"] {
+            assert!(!body.contains(elevated), "{elevated}");
+        }
+        // the all-users context comes back after reading the user's folder
+        let current = body.find("SetShellVarContext current").unwrap();
+        let all = body.find("SetShellVarContext all").unwrap();
+        assert!(current < all && all < only_own);
     }
 
     #[cfg(not(windows))]

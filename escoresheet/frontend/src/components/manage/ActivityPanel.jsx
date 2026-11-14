@@ -6,7 +6,7 @@ import { activityLine } from '../../domain/activitySummary'
 import { useOnline, OfflineBanner, PanelHead, useErrorText, useKitLang } from './common'
 import {
   RowList, Row, DateRail, RowExpansion, EmptyInset, SkeletonRows, Notice, Button, Input, Select, Field, DateField,
-  StatusPill, confirmDialog, toast, dayLabel, weekdayLabel
+  Checkbox, StatusPill, confirmDialog, toast, dayLabel, weekdayLabel
 } from '../../ui'
 
 const PAGE = 100
@@ -38,7 +38,9 @@ function saveBlob(blob, name) {
 /**
  * The activity log of every scoring device (admins; db/016). Filters: game
  * number or external id, account email, kind, level, dates. Export CSV /
- * NDJSON; delete on request (audited).
+ * NDJSON (email addresses only when ticked); delete on request (audited):
+ * the entries of the search that was run, all its filters, and the confirm
+ * names that search, not what the fields hold now.
  * `initialMatch`: opened from the matches tab ("Activity").
  */
 export default function ActivityPanel({ app, initialMatch = '' }) {
@@ -47,7 +49,9 @@ export default function ActivityPanel({ app, initialMatch = '' }) {
   const online = useOnline()
   const errorText = useErrorText()
   const [form, setForm] = useState({ match: initialMatch || '', email: '', kind: '', level: '', from: '', to: '' })
-  const [filters, setFilters] = useState(null) // applied: { match, account, kind, level, from, to }
+  const [filters, setFilters] = useState(null) // applied: { match, account, kind, level, from, to, app }
+  const [searchedEmail, setSearchedEmail] = useState('') // the address the applied account was found by
+  const [withEmails, setWithEmails] = useState(false)
   const [entries, setEntries] = useState([])
   const [next, setNext] = useState(null)
   // the first search runs on mount: loading from the start (not "No entries" first)
@@ -73,7 +77,7 @@ export default function ActivityPanel({ app, initialMatch = '' }) {
       if (!hit) return { error: t('manage.activity.noAccount') }
       out.account = hit.id
     }
-    return { filters: out }
+    return { filters: out, email: out.account ? email : '' }
   }
 
   const load = async (applied, before = null, my = ++seq.current) => {
@@ -103,6 +107,7 @@ export default function ActivityPanel({ app, initialMatch = '' }) {
       return
     }
     setFilters(r.filters)
+    setSearchedEmail(r.email)
     setOpen(null)
     await load(r.filters, null, my)
   }
@@ -115,7 +120,7 @@ export default function ActivityPanel({ app, initialMatch = '' }) {
   const exportAs = async (format) => {
     if (!filters) return
     setBusy(true)
-    const res = await admin.exportActivity({ ...filters, format })
+    const res = await admin.exportActivity({ ...filters, format, emails: withEmails })
     setBusy(false)
     if (res.error) {
       toast.error(errorText(res.error))
@@ -124,25 +129,33 @@ export default function ActivityPanel({ app, initialMatch = '' }) {
     saveBlob(res.blob, res.filename || `openvolley-activity.${format}`)
   }
 
+  // What the list shows is what goes: the applied search, every filter of it
   const removeAll = async () => {
-    if (!filters?.match && !filters?.account) return
-    const what = filters.match ? t('manage.activity.ofMatch', { match: filters.match }) : t('manage.activity.ofAccount', { email: form.email.trim() })
+    const applied = filters
+    if (!applied?.match && !applied?.account) return
+    const what = [
+      applied.match ? t('manage.activity.ofMatch', { match: applied.match }) : '',
+      applied.account ? t('manage.activity.ofAccount', { email: searchedEmail }) : ''
+    ].filter(Boolean).join(' ')
+    const narrowed = !!(applied.kind || applied.level || applied.from || applied.to)
     const ok = await confirmDialog({
       title: t('manage.activity.deleteTitle'),
-      message: t('manage.activity.deleteBody', { what }),
+      message: [t('manage.activity.deleteBody', { what }), narrowed ? t('manage.activity.deleteNarrowed') : ''].filter(Boolean).join(' '),
       confirmLabel: t('manage.activity.delete'),
       tone: 'danger'
     })
     if (!ok) return
     setBusy(true)
-    const res = await admin.deleteActivity({ match: filters.match, account: filters.match ? undefined : filters.account })
+    const res = await admin.deleteActivity(applied)
     setBusy(false)
     if (res.error) {
       toast.error(errorText(res.error))
       return
     }
-    toast.success(t('manage.activity.deleted', { count: res.data?.deleted ?? 0 }))
-    load(filters)
+    const deleted = res.data?.deleted ?? 0
+    if (deleted > 0) toast.success(t('manage.activity.deleted', { count: deleted }))
+    else toast.info(t('manage.activity.deletedNone'))
+    load(applied)
   }
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
@@ -151,6 +164,7 @@ export default function ActivityPanel({ app, initialMatch = '' }) {
   return (
     <section>
       <PanelHead title={t('manage.tabs.activity')}>
+        <Checkbox variant="dense" label={t('manage.activity.exportEmails')} checked={withEmails} onChange={(e) => setWithEmails(e.target.checked)} />
         <Button variant="ghost" size="sm" icon={Download} disabled={!online || busy || !filters} onClick={() => exportAs('csv')}>{t('manage.activity.exportCsv')}</Button>
         <Button variant="ghost" size="sm" icon={Download} disabled={!online || busy || !filters} onClick={() => exportAs('ndjson')}>{t('manage.activity.exportNdjson')}</Button>
         <Button variant="danger-outline" size="sm" icon={Trash2} disabled={!online || busy || !canDelete} onClick={removeAll} title={canDelete ? undefined : t('manage.activity.deleteNeedsFilter')}>{t('manage.activity.deleteEllipsis')}</Button>

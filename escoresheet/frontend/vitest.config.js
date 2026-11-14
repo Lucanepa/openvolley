@@ -1,4 +1,9 @@
 import { defineConfig } from 'vitest/config'
+
+// The app is used in Switzerland and many tests assume Swiss local time (set
+// start times, remarks, HH:MM labels). CI runs in UTC, so pin the zone here;
+// the workers inherit it.
+process.env.TZ = 'Europe/Zurich'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({

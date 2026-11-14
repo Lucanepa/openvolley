@@ -7,8 +7,14 @@
          (@capacitor/screen-orientation, src/utils/nativeOrientation.js), since
          Android's WebView ignores screen.orientation.lock(). The referee view
          is the other way round: locked to portrait while it is open. -->
+    <!-- No Auto Backup and no device-to-device transfer of the app data
+         (session, PINs, matches with rosters): allowBackup="false" up to
+         Android 11, the extraction rules from Android 12
+         (res/xml/data_extraction_rules.xml). The app has its own backups. -->
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -56,13 +62,15 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- Automatic match backups go to the public Documents/OpenVolley/backups
-         folder (copyable off the tablet). Android 11+ needs no permission for
-         files the app creates there; Android 10 and older need storage access
-         (plus requestLegacyExternalStorage above on Android 10). If refused,
-         the app falls back to its own external files folder. The app only
-         reads files it wrote itself, so READ is needed only where the
-         Filesystem plugin asks for it with WRITE (Android 10 and older). -->
+    <!-- Match backups and saved scoresheet PDFs are kept in the app's own
+         folder (no permission). Only Export to Documents writes to the
+         public Documents/OpenVolley folder, and the first start of a version
+         moves the files older versions left there: Android 11+ needs no
+         permission for files the app created there; Android 10 and older
+         need storage access (plus requestLegacyExternalStorage above on
+         Android 10). The app only reads files it wrote itself, so READ is
+         needed only where the Filesystem plugin asks for it with WRITE
+         (Android 10 and older). -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
 </manifest>

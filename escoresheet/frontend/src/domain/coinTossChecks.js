@@ -4,8 +4,12 @@
  * `team` is 'home' or 'away', and CoinToss puts the team's word in for it.
  */
 import { ROSTER_MAX } from './playerPool'
+import { isShirtNumber } from './roster'
 
 const hasNumber = (p) => p.number != null && p.number !== ''
+// FIVB 19.1.1: two liberos at most, one per slot
+const MAX_LIBEROS = 2
+const LIBERO_SLOT_LABEL = { libero1: 'L1', libero2: 'L2' }
 
 /**
  * @param {{ match?: object, home?: string, away?: string, homeRoster?: object[], awayRoster?: object[],
@@ -42,18 +46,26 @@ export function coinTossConfirmIssues({ match = {}, home = '', away = '', homeRo
     // 4b. Every player (liberos too) has a number
     const noNumber = roster.filter(p => !hasNumber(p))
     if (noNumber.length > 0) add('validation.playersWithoutNumbers', { team, count: noNumber.length })
+    // 4c. At most two liberos, each libero slot once
+    const liberos = roster.filter(p => p.libero)
+    if (liberos.length > MAX_LIBEROS) add('validation.tooManyLiberos', { team, count: liberos.length })
+    for (const [slot, label] of Object.entries(LIBERO_SLOT_LABEL)) {
+      if (liberos.filter(p => p.libero === slot).length > 1) add('validation.liberoSlotTwice', { team, slot: label })
+    }
   }
 
   for (const [team, roster, bench] of teams) {
     // 5. A coach
     if (!bench.find(b => b.role === 'Coach' && (b.lastName || b.firstName))) add('validation.coachNotSet', { team })
-    // 6. A captain
-    if (!roster.find(p => p.isCaptain)) add('validation.captainNotSet', { team })
+    // 6. A captain, only one
+    const captains = roster.filter(p => p.isCaptain).length
+    if (!captains) add('validation.captainNotSet', { team })
+    else if (captains > 1) add('validation.tooManyCaptains', { team, count: captains })
   }
 
   for (const [team, roster] of teams) {
-    // 7. Duplicate shirt numbers
-    const numbers = roster.filter(hasNumber).map(p => p.number)
+    // 7. Duplicate shirt numbers (7 and '7' are one number)
+    const numbers = roster.filter(hasNumber).map(p => Number(p.number)).filter(Number.isFinite)
     const dupNumbers = [...new Set(numbers.filter((n, i) => numbers.indexOf(n) !== i))]
     if (dupNumbers.length > 0) add('validation.duplicateNumbers', { team, numbers: dupNumbers.join(', ') })
   }
@@ -69,8 +81,8 @@ export function coinTossConfirmIssues({ match = {}, home = '', away = '', homeRo
   if ([...homeRoster, ...awayRoster].some(badDate) || [...benchHome, ...benchAway].some(badDate)) add('validation.invalidBirthdate')
 
   for (const [team, roster] of teams) {
-    // 10. Shirt numbers 1-99
-    const invalid = roster.filter(p => hasNumber(p) && (p.number < 1 || p.number > 99))
+    // 10. Shirt numbers: whole numbers 1-99
+    const invalid = roster.filter(p => hasNumber(p) && !isShirtNumber(p.number))
     if (invalid.length > 0) add('validation.invalidJerseyNumbers', { team, numbers: invalid.map(p => p.number).join(', ') })
   }
   return issues

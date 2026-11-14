@@ -213,12 +213,14 @@ cd escoresheet/packaging/snap
 ```
 
 It downloads the .deb and its `.sig` from the GitHub release, checks the
-minisign signature against the updater key in `tauri.conf.json` /
-`tauri.beach.conf.json` (when `minisign` is installed; it warns otherwise),
-the version in the package and that the binary has the updater switch (it
-refuses 2.4.0 and earlier; `ALLOW_SELF_UPDATING=1` for a local test only;
-needs `curl`, `jq`, `dpkg-deb`), then writes `version`, the URL and the sha256 into
-the snapcraft.yaml. Commit, build, upload.
+signature against the updater key in `tauri.conf.json` /
+`tauri.beach.conf.json` (bound to the version and the file name; always, with
+node: `../lib/release-asset.sh`, no minisign needed; no `.sig` or a wrong one
+stops it), the version in the package and that the binary has the updater
+switch (it refuses 2.4.0 and earlier; `ALLOW_SELF_UPDATING=1` for a local test
+only; needs `curl`, `node`, `dpkg-deb`), then writes `version`, the URL and the
+sha256 into the snapcraft.yaml. Run it after `publish-pkgs.sh --desktop`
+(which makes the `.sig`). Commit, build, upload.
 
 ## Owner steps (store; nothing of this is done)
 
@@ -227,8 +229,7 @@ the snapcraft.yaml. Commit, build, upload.
 2. Register the names: `snapcraft register openvolley-escoresheet` and
    `snapcraft register openbeach-escoresheet`.
 3. Bump to OpenVolley 2.4.1 and OpenBeach 2.0.1, the first releases with the
-   updater switch (e323002f; 2.4.0 does not have it): `bump.sh`, with
-   `minisign` installed. Build both, then upload, first to a test channel:
+   updater switch (e323002f; 2.4.0 does not have it): `bump.sh`. Build both, then upload, first to a test channel:
    `snapcraft upload --release=edge openvolley-escoresheet_<X>_amd64.snap`.
    Install from edge on a real Ubuntu laptop, connect the plugs, test a hotspot
    and a tablet, then `snapcraft release openvolley-escoresheet <rev> stable`.

@@ -85,6 +85,8 @@ describe('AndroidUpdateNotice', () => {
     const notice = screen.getByTestId('android-update-notice')
     expect(notice).toHaveTextContent('androidUpdate.available 2.2.0')
     expect(notice).toHaveTextContent('0.0.0-test')
+    // android-4: a sideload install is told an update never needs an uninstall
+    expect(notice).toHaveTextContent('androidUpdate.noUninstall')
     await act(async () => {
       fireEvent.click(screen.getByText('androidUpdate.getFdroid'))
       await flush()
@@ -103,6 +105,7 @@ describe('AndroidUpdateNotice', () => {
     render(<AndroidUpdateNotice />)
     const notice = screen.getByTestId('android-update-notice')
     expect(notice).toHaveTextContent('androidUpdate.fdroidRepoHint')
+    expect(notice).not.toHaveTextContent('androidUpdate.noUninstall')
     expect(screen.queryByText('androidUpdate.downloadApk')).not.toBeInTheDocument()
     await act(async () => {
       fireEvent.click(screen.getByText('androidUpdate.addRepo'))

@@ -374,7 +374,7 @@ describe('email links (db/010) against Postgres', { skip: SKIP_PG }, () => {
       assert.equal(s.status, 200, 'not blocked: approval gates official scoring')
       assert.equal(s.body.data.user.email_confirmed_at, null)
       const { token } = linkToken(mail)
-      const c = await auth.handleAuthRequest('confirm-email', { token }, { ip: nextIp() })
+      const c = await auth.handleAuthRequest('confirm-email', { token, password: PW }, { ip: nextIp() })
       assert.deepEqual(c.body, { data: { confirmed: true, already_confirmed: false }, error: null })
       const g = await auth.handleAuthRequest('get-user', { access_token: s.body.data.session.access_token }, { ip: nextIp() })
       assert.ok(g.body.data.user.email_confirmed_at)
@@ -382,6 +382,37 @@ describe('email links (db/010) against Postgres', { skip: SKIP_PG }, () => {
       const again = await auth.handleAuthRequest('confirm-email', { token }, { ip: nextIp() })
       assert.deepEqual(again.body.data, { confirmed: true, already_confirmed: true }, 'a second click is not an error')
       assert.equal((await auditOf('account.email_confirmed', g.body.data.user.id)).length, 1)
+    })
+
+    it('a confirmation without the sign-up password keeps nothing of whoever signed up', async () => {
+      await auth.handleAuthRequest('sign-up', { email: 'owner-elsewhere@example.ch', password: 'strangers-password' }, { ip: nextIp() })
+      await auth.settle()
+      const stranger = await signIn(auth, 'owner-elsewhere@example.ch', 'strangers-password')
+      assert.equal(stranger.status, 200)
+      const { token } = linkToken(mailer.find('confirm', 'owner-elsewhere@example.ch'))
+      const c = await auth.handleAuthRequest('confirm-email', { token }, { ip: nextIp() })
+      assert.equal(c.status, 200)
+      assert.equal(c.body.data.confirmed, true)
+      assert.match(c.body.data.set_password_token, /^[A-Za-z0-9_-]{43}$/)
+      assert.equal((await auth.handleAuthRequest('get-user', { access_token: stranger.body.data.session.access_token }, { ip: nextIp() })).status, 401, 'the stranger\'s session is gone')
+      assert.equal((await signIn(auth, 'owner-elsewhere@example.ch', 'strangers-password')).status, 400, 'and their password')
+      const set = await auth.handleAuthRequest('reset-password/confirm', { token: c.body.data.set_password_token, password: 'owners-own-password' }, { ip: nextIp() })
+      assert.equal(set.status, 200)
+      const owner = await signIn(auth, 'owner-elsewhere@example.ch', 'owners-own-password')
+      assert.equal(owner.status, 200)
+      assert.ok(owner.body.data.user.email_confirmed_at)
+    })
+
+    it('sign-up of a registered address answers as for a new one and mails the owner instead', async () => {
+      await addUser('known@example.ch')
+      const r = await auth.handleAuthRequest('sign-up', { email: 'known@example.ch', password: 'some-other-password' }, { ip: nextIp() })
+      const n = await auth.handleAuthRequest('sign-up', { email: 'unknown-yet@example.ch', password: 'some-other-password' }, { ip: nextIp() })
+      await auth.settle()
+      assert.equal(r.status, 200)
+      assert.deepEqual(Object.keys(r.body.data.user).sort(), Object.keys(n.body.data.user).sort())
+      assert.equal(r.body.data.email_confirmation, n.body.data.email_confirmation)
+      assert.ok(mailer.find('reset', 'known@example.ch'), 'the owner gets a reset link')
+      assert.equal(mailer.mails.filter((m) => m.kind === 'confirm' && m.to === 'known@example.ch').length, 0)
     })
 
     it('refuses unknown, malformed and expired confirmation links', async () => {
@@ -416,7 +447,7 @@ describe('email links (db/010) against Postgres', { skip: SKIP_PG }, () => {
       assert.equal(mails.at(-1).lang, 'de')
       const last = linkToken(mails.at(-1)).token
       assert.equal((await auth.handleAuthRequest('confirm-email', { token: first }, { ip: nextIp() })).body.error.code, 'invalid_link', 'replaced')
-      assert.equal((await auth.handleAuthRequest('confirm-email', { token: last }, { ip: nextIp() })).status, 200)
+      assert.equal((await auth.handleAuthRequest('confirm-email', { token: last, password: PW }, { ip: nextIp() })).status, 200)
       const done = await auth.handleAuthRequest('resend-confirmation', { access_token }, { ip: nextIp() })
       assert.deepEqual(done.body.data, { sent: false, already_confirmed: true })
     })
@@ -491,15 +522,18 @@ describe('email links (db/010) against Postgres', { skip: SKIP_PG }, () => {
       await addUser('real-user@example.ch')
       const { mailer, sent, warnings } = stubbedMailer({ budgets: { account: 5, confirm: 3 } })
       const auth = makeAuth({ mailer })
+      const answers = []
       for (let i = 0; i < 6; i++) {
         const r = await auth.handleAuthRequest('sign-up', { email: `drain${i}@example.ch`, password: PW }, { ip: nextV6() })
         assert.equal(r.status, 200)
+        answers.push(r.body.data.email_confirmation)
+        await auth.settle()
       }
-      await auth.settle()
+      // honest: the app hears that the last three mails wait for the next window
+      assert.deepEqual(answers, ['sent', 'sent', 'sent', 'queued', 'queued', 'queued'])
       assert.equal(sent.filter((m) => /Confirm/.test(m.subject)).length, 3)
       assert.deepEqual(mailer.stats().exhausted, ['confirm'])
-      assert.equal(mailer.stats().budgets.confirm.dropped, 3)
-      assert.ok(warnings.some((w) => /confirm budget/.test(w)))
+      assert.equal(warnings.length, 0, 'held back, not dropped')
 
       const r = await requestReset(auth, 'real-user@example.ch', { ip: nextV6() })
       assert.equal(r.status, 200)
@@ -513,6 +547,8 @@ describe('email links (db/010) against Postgres', { skip: SKIP_PG }, () => {
       const auth = makeAuth({ mailer })
       const accounts = createAccounts({ pool, logger: silent })
       const { rows: [adminRow] } = await pool.query("INSERT INTO auth.users (email, email_confirmed_at) VALUES ('roles-admin@example.ch', now()) RETURNING id")
+      // a code stands while its creator may make it (an admin)
+      await pool.query("INSERT INTO public.profiles (user_id, roles) VALUES ($1, '{admin}')", [adminRow.id])
       const inv = await accounts.createInvite({ actorId: adminRow.id, body: { label: 'Club', role: 'scorer', max_uses: 1 } })
       assert.equal(inv.status, 201, JSON.stringify(inv.body))
 
@@ -550,7 +586,9 @@ describe('email links (db/010) against Postgres', { skip: SKIP_PG }, () => {
       const accounts = createAccounts({ pool, logger: silent })
       const up = await auth.handleAuthRequest('sign-up', { email: 'nomail-roles@example.ch', password: PW }, { ip: nextV6() })
       const legacy = await addUser('legacy-roles@example.ch', { confirmed: false })
-      const inv = await accounts.createInvite({ actorId: null, body: { label: 'Club 2', role: 'referee', max_uses: 5 } })
+      const { rows: [adminRow] } = await pool.query("INSERT INTO auth.users (email, email_confirmed_at) VALUES ('roles-admin-2@example.ch', now()) RETURNING id")
+      await pool.query("INSERT INTO public.profiles (user_id, roles) VALUES ($1, '{admin}')", [adminRow.id])
+      const inv = await accounts.createInvite({ actorId: adminRow.id, body: { label: 'Club 2', role: 'referee', max_uses: 5 } })
       for (const userId of [up.body.data.user.id, legacy]) {
         const r = await accounts.redeemInvite({ userId, code: inv.body.data.code })
         assert.equal(r.status, 200, JSON.stringify(r.body))

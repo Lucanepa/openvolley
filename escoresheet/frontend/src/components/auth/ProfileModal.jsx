@@ -10,11 +10,14 @@ import EmailConfirmBanner from './EmailConfirmBanner'
 import DateOfBirthInput from './DateOfBirthInput'
 import ApprovalPinSection from './ApprovalPinSection'
 import PasskeySection from './PasskeySection'
+import AccountSecuritySection from './AccountSecuritySection'
+import { confirmErrorText, withConfirmation } from './confirmIdentity'
+import { isPasskeyCancel, passkeysPossible } from '../../lib/passkeys'
 import { backdropDismiss } from '../../ui/backdropDismiss.js'
 
 export default function ProfileModal({ open, onClose }) {
   const { t } = useTranslation()
-  const { user, profile, access, updateProfile, updateEmail, deleteAccount } = useAuth()
+  const { user, profile, access, updateProfile, deleteAccount } = useAuth()
 
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
@@ -24,16 +27,11 @@ export default function ProfileModal({ open, onClose }) {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
 
-  // Email change state
-  const [isEditingEmail, setIsEditingEmail] = useState(false)
-  const [newEmail, setNewEmail] = useState('')
-  const [emailLoading, setEmailLoading] = useState(false)
-  const [emailSuccess, setEmailSuccess] = useState(false)
-  const [emailError, setEmailError] = useState('')
-
-  // Delete account state
+  // Delete account state: the server wants the password (or a passkey)
+  // besides the session, so a device left signed in cannot delete it
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-  const [deleteEmailInput, setDeleteEmailInput] = useState('')
+  const [passkeyHere] = useState(() => passkeysPossible())
+  const [deletePassword, setDeletePassword] = useState('')
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [deleteError, setDeleteError] = useState('')
 
@@ -59,14 +57,9 @@ export default function ProfileModal({ open, onClose }) {
       setDob(profile.dob || '')
       setError('')
       setSuccess(false)
-      // Reset email change state
-      setIsEditingEmail(false)
-      setNewEmail('')
-      setEmailError('')
-      setEmailSuccess(false)
       // Reset delete state
       setShowDeleteConfirm(false)
-      setDeleteEmailInput('')
+      setDeletePassword('')
       setDeleteError('')
       formInitialized.current = true
     } else if (open && !profile) {
@@ -74,39 +67,24 @@ export default function ProfileModal({ open, onClose }) {
     }
   }, [open, profile])
 
-  const handleEmailChange = async () => {
-    if (!newEmail || newEmail === user?.email) {
-      setEmailError(t('auth.enterNewEmail', 'Please enter a new email address'))
-      return
-    }
-
-    setEmailLoading(true)
-    setEmailError('')
-
-    const { error: emailErr } = await updateEmail(newEmail)
-
-    if (emailErr) {
-      setEmailError(emailErr.message)
-    } else {
-      setEmailSuccess(true)
-      setIsEditingEmail(false)
-    }
-    setEmailLoading(false)
-  }
-
-  const handleDeleteAccount = async () => {
-    if (deleteEmailInput !== user?.email) {
-      setDeleteError(t('auth.emailDoesNotMatch', 'Email does not match'))
-      return
-    }
-
+  const handleDeleteAccount = async (usePasskey = false) => {
+    if (deleteLoading) return
     setDeleteLoading(true)
     setDeleteError('')
 
-    const { error: delError } = await deleteAccount()
+    let delError = null
+    try {
+      ({ error: delError } = await withConfirmation({ password: deletePassword, usePasskey }, ({ password }) => deleteAccount({ password })))
+    } catch (err) {
+      if (isPasskeyCancel(err)) {
+        setDeleteLoading(false)
+        return
+      }
+      delError = err
+    }
 
     if (delError) {
-      setDeleteError(delError.message)
+      setDeleteError(confirmErrorText(t, delError))
       setDeleteLoading(false)
     } else {
       // Account deleted, close modal
@@ -185,75 +163,15 @@ export default function ProfileModal({ open, onClose }) {
             </p>
           )}
 
-          {/* Email */}
+          {/* Email (read-only: an admin changes the address, PATCH /api/admin/accounts/:id) */}
           <div className="mb-4">
-            <label htmlFor={isEditingEmail ? 'profile-new-email' : undefined} className={labelCls}>
+            <div className={labelCls}>
               {t('auth.email', 'Email')}
-            </label>
-
-            {emailSuccess && (
-              <p className="mb-2 rounded-lg border border-green-100 bg-green-50 px-3 py-2 text-xs text-green-700">
-                {t('auth.emailChangeConfirmation', 'Check your new email to confirm the change')}
-              </p>
-            )}
-
-            {emailError && (
-              <p role="alert" className="mb-2 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">
-                {emailError}
-              </p>
-            )}
-
-            {isEditingEmail ? (
-              <div className="flex gap-2">
-                <Input
-                  id="profile-new-email"
-                  size="lg"
-                  type="email"
-                  value={newEmail}
-                  onChange={e => setNewEmail(e.target.value)}
-                  placeholder={t('auth.newEmail', 'New email address')}
-                  aria-label={t('auth.newEmail', 'New email address')}
-                  className="min-w-0 flex-1"
-                  autoFocus
-                />
-                <Button
-                  variant="dark"
-                  size="xl"
-                  onClick={handleEmailChange}
-                  disabled={emailLoading || !newEmail}
-                  loading={emailLoading}
-                  className="shrink-0 whitespace-nowrap rounded-lg font-medium"
-                >
-                  {emailLoading ? '...' : t('auth.save', 'Save')}
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="xl"
-                  onClick={() => {
-                    setIsEditingEmail(false)
-                    setNewEmail('')
-                    setEmailError('')
-                  }}
-                  className="shrink-0 rounded-lg font-medium"
-                >
-                  {t('common.cancel', 'Cancel')}
-                </Button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <div className="flex h-11 min-w-0 flex-1 items-center truncate rounded-xl border border-stone-200 bg-stone-50 px-3 text-base text-stone-600">
-                  {user?.email}
-                </div>
-                <Button
-                  variant="secondary"
-                  size="xl"
-                  onClick={() => setIsEditingEmail(true)}
-                  className="shrink-0 rounded-lg font-medium"
-                >
-                  {t('auth.change', 'Change')}
-                </Button>
-              </div>
-            )}
+            </div>
+            <div className="flex h-11 min-w-0 items-center truncate rounded-xl border border-stone-200 bg-stone-50 px-3 text-base text-stone-600">
+              {user?.email}
+            </div>
+            <p className="mt-1 mb-0 text-xs text-stone-500">{t('accountSecurity.emailChangeHint')}</p>
             <EmailConfirmBanner className="mt-2" />
           </div>
 
@@ -269,6 +187,8 @@ export default function ProfileModal({ open, onClose }) {
           <ApprovalPinSection className="mb-4" />
           {/* Sign-in with the device's fingerprint or face (web only) */}
           <PasskeySection className="mb-4" />
+          {/* A new password, where the account is signed in, sign out everywhere */}
+          <AccountSecuritySection className="mb-4" />
 
           <form onSubmit={handleSubmit} className="space-y-3">
             {/* Name fields */}
@@ -396,29 +316,36 @@ export default function ProfileModal({ open, onClose }) {
               </div>
             </dl>
 
-            <label htmlFor="profile-delete-email" className="mb-1 block text-sm font-medium text-stone-700">
-              {t('auth.typeEmailToConfirm', 'Type your email to confirm:')}
-            </label>
-            <p className="mb-2 font-mono text-xs text-stone-500">
-              {user?.email}
-            </p>
-
             {deleteError && (
               <p role="alert" className="mb-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
                 {deleteError}
               </p>
             )}
 
+            <label htmlFor="profile-delete-password" className="mb-1 block text-sm font-medium text-stone-700">
+              {t('accountSecurity.confirmPassword')}
+            </label>
             <Input
-              id="profile-delete-email"
+              id="profile-delete-password"
               size="lg"
-              type="email"
-              value={deleteEmailInput}
-              onChange={e => setDeleteEmailInput(e.target.value)}
-              placeholder={user?.email}
-              aria-label={t('auth.typeEmailToConfirm', 'Type your email to confirm:')}
+              type="password"
+              autoComplete="current-password"
+              value={deletePassword}
+              onChange={e => setDeletePassword(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && deletePassword) void handleDeleteAccount(false) }}
               className="text-sm"
             />
+            {passkeyHere && (
+              <Button
+                variant="secondary"
+                size="xl"
+                onClick={() => void handleDeleteAccount(true)}
+                disabled={deleteLoading}
+                className="mt-2 w-full rounded-lg font-medium"
+              >
+                {t('accountSecurity.usePasskey')}
+              </Button>
+            )}
 
             {/* Side by side when both labels fit, else stacked (never a two-line label) */}
             <div className="mt-6 flex flex-wrap gap-2">
@@ -433,8 +360,8 @@ export default function ProfileModal({ open, onClose }) {
               <Button
                 variant="danger"
                 size="xl"
-                onClick={handleDeleteAccount}
-                disabled={deleteLoading || deleteEmailInput !== user?.email}
+                onClick={() => void handleDeleteAccount(false)}
+                disabled={deleteLoading || !deletePassword}
                 className={cn('min-w-fit flex-1 whitespace-nowrap rounded-lg', deleteLoading && 'opacity-70')}
               >
                 {deleteLoading

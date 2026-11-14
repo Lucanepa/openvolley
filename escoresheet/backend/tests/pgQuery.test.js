@@ -1,7 +1,7 @@
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import pg from 'pg'
-import { createPgQuery, DEFAULT_CONFIG, parseColumnRef, parseColumnList, mentionsSecret, quoteIdent, sqlstateStatus } from '../lib/pgQuery.js'
+import { createPgQuery, DEFAULT_CONFIG, parseColumnRef, parseColumnList, mentionsSecret, quoteIdent, sqlstateStatus, childMatchKey } from '../lib/pgQuery.js'
 import { SKIP_PG, createTestDatabase, quietLogger } from './helpers/pgTestDb.js'
 
 // ---------------------------------------------------------------------------
@@ -38,6 +38,21 @@ describe('pgQuery helpers', () => {
 
   it('quoteIdent doubles embedded quotes', () => {
     assert.equal(quoteIdent('a"b'), '"a""b"')
+  })
+
+  it('childMatchKey: the one match a set / event id names, never a prefix of it', () => {
+    for (const [ext, key] of [
+      ['match_1_x:s:1', 'match_1_x'], ['match_1_x:e:7', 'match_1_x'], ['match_1_x:e:coin_toss', 'match_1_x'],
+      ['match_1_x:s:5#rekey', 'match_1_x'], ['match_1_x:e:3:e:4', 'match_1_x'],
+      // the backup form of older apps (no ':')
+      ['match_1_x_set_2', 'match_1_x'], ['match_1_x_event_7.5', 'match_1_x'], ['match_1_x_set_2_set_3', 'match_1_x_set_2'],
+      ['test-match-default-0a1b_event_4', 'test-match-default-0a1b'],
+      // nothing else
+      ['match_1_x', null], ['match_1_x_legacy', null], ['match_1_x_set_', null], ['_set_1', null], [':e:1', null],
+      ['match_1_x:', null], ['42', null], ['', null], [null, null], [7, null]
+    ]) {
+      assert.equal(childMatchKey(ext), key, String(ext))
+    }
   })
 })
 
@@ -330,6 +345,18 @@ describe('pgQuery on Postgres', { skip: SKIP_PG }, () => {
       assert.equal(r.body.data.length, 2); assert.equal(r.body.count, 3)
     })
 
+    it('countCap (server code) counts at most that many rows; statementTimeoutMs runs the select under its own timeout', async () => {
+      const ext = uniq('CC')
+      for (let i = 0; i < 3; i++) await newMatch({ external_id: `${ext}-${i}` })
+      const filters = [{ type: 'like', column: 'external_id', value: `${ext}-*` }]
+      let r = await q('matches', 'select', { columns: 'id', count: 'exact', head: true, filters }, { countCap: 2 })
+      assert.equal(r.status, 200); assert.equal(r.body.count, 2)
+      r = await q('matches', 'select', { columns: 'id', count: 'exact', filters }, { countCap: 10 })
+      assert.equal(r.body.count, 3); assert.equal(r.body.data.length, 3)
+      r = await q('matches', 'select', { columns: 'id', filters }, { statementTimeoutMs: 2000 })
+      assert.equal(r.status, 200); assert.equal(r.body.data.length, 3)
+    })
+
     it('order and limit, with a row cap', async () => {
       const ext = uniq('O')
       for (const n of [3, 1, 2]) await newMatch({ external_id: `${ext}-${n}`, game_n: n })
@@ -478,12 +505,85 @@ describe('pgQuery on Postgres', { skip: SKIP_PG }, () => {
       assert.deepEqual(r.changes.map(c => c.eventType), ['INSERT', 'INSERT'])
     })
 
-    it('unknown write columns are an error (PGRST204) and nothing is written', async () => {
-      const ext = uniq('X')
-      const r = await q('matches', 'insert', { data: [{ external_id: ext }, { external_id: `${ext}b`, team_a: {} }] }, W)
-      assert.equal(r.body.error.code, 'PGRST204')
-      const n = (await raw.query('SELECT count(*)::int AS n FROM matches WHERE external_id LIKE $1', [`${ext}%`])).rows[0].n
-      assert.equal(n, 0)
+    // x-rollout-ops-9: an app newer than the database (its migration not
+    // applied yet) wrote a column the table lacks; the whole row was refused
+    // (PGRST204) and a refused match insert held back every write of the match
+    describe('a write column the table does not have', () => {
+      const dropLines = () => logger.lines.filter(l => l.includes('unknown column dropped'))
+
+      it('is left out with a warning, counted, and the rest of the row is written', async () => {
+        const ext = uniq('X')
+        const before = db.droppedColumns().columns['matches.team_a'] ?? 0
+        const r = await q('matches', 'insert', { data: [{ external_id: ext }, { external_id: `${ext}b`, team_a: {} }], returning: 'external_id' }, W)
+        assert.equal(r.status, 200, JSON.stringify(r.body))
+        assert.deepEqual(r.body.data.map(x => x.external_id), [ext, `${ext}b`])
+        const n = (await raw.query('SELECT count(*)::int AS n FROM matches WHERE external_id LIKE $1', [`${ext}%`])).rows[0].n
+        assert.equal(n, 2)
+        assert.equal(db.droppedColumns().columns['matches.team_a'], before + 1)
+        assert.ok(db.droppedColumns().total >= 1)
+        assert.ok(dropLines().some(l => l.includes('matches') && l.includes('team_a')), logger.lines.join('\n'))
+      })
+
+      it('in an update and an upsert the known columns are written', async () => {
+        const m = await newMatch({ status: 'live' })
+        let r = await q('matches', 'update', { data: { status: 'ended', team_a: { name: 'x' } }, filters: [eq('id', m.id)], returning: 'status' }, W)
+        assert.equal(r.status, 200, JSON.stringify(r.body))
+        assert.deepEqual(r.body.data, [{ status: 'ended' }])
+        r = await q('matches', 'upsert', { data: { external_id: m.external_id, status: 'live', team_b: {} }, onConflict: 'external_id', returning: 'status' }, W)
+        assert.equal(r.status, 200, JSON.stringify(r.body))
+        assert.deepEqual(r.body.data, [{ status: 'live' }])
+      })
+
+      it('is logged once a minute per column, counted every time', async () => {
+        const quiet = quietLogger()
+        const own = createPgQuery({ pool: db.pool, logger: quiet })
+        const ext = uniq('XL')
+        for (const i of [1, 2, 3]) {
+          const r = await own.runQuery({ table: 'matches', action: 'insert', params: { data: { external_id: `${ext}-${i}`, team_a: {} } } }, W)
+          assert.equal(r.status, 200, JSON.stringify(r.body))
+        }
+        assert.equal(own.droppedColumns().columns['matches.team_a'], 3)
+        assert.equal(quiet.lines.filter(l => l.includes('unknown column dropped')).length, 1)
+      })
+
+      it('a row or an update with no column of the table left is still refused (PGRST204), nothing written', async () => {
+        const ext = uniq('XN')
+        let r = await q('matches', 'insert', { data: [{ external_id: ext }, { team_a: {} }] }, W)
+        assert.equal(r.body.error.code, 'PGRST204')
+        const n = (await raw.query('SELECT count(*)::int AS n FROM matches WHERE external_id = $1', [ext])).rows[0].n
+        assert.equal(n, 0)
+        const m = await newMatch({ status: 'live' })
+        r = await q('matches', 'update', { data: { team_a: { name: 'x' } }, filters: [eq('id', m.id)] }, W)
+        assert.equal(r.body.error.code, 'PGRST204')
+      })
+
+      it('a key that cannot be a column name is refused, and filters and onConflict keep refusing unknown columns', async () => {
+        const ext = uniq('XK')
+        let r = await q('matches', 'insert', { data: { external_id: ext, 'team a': 1 } }, W)
+        assert.equal(r.body.error.code, 'PGRST204')
+        r = await q('matches', 'update', { data: { status: 'x' }, filters: [eq('team_a', 1)] }, W)
+        assert.equal(r.status, 400)
+        r = await q('matches', 'upsert', { data: { external_id: ext }, onConflict: 'team_a' }, W)
+        assert.equal(r.body.error.code, 'PGRST204')
+        const n = (await raw.query('SELECT count(*)::int AS n FROM matches WHERE external_id = $1', [ext])).rows[0].n
+        assert.equal(n, 0)
+      })
+
+      it('a column added after startup is written by the first write (the catalog is read again first)', async () => {
+        const fresh = createPgQuery({ connectionString: tdb.url, logger: quietLogger(), catalogRefreshMinMs: 0 })
+        try {
+          assert.equal((await fresh.runQuery({ table: 'beach_competition_matches', action: 'select', params: { limit: 0 } })).status, 200)
+          await raw.query('ALTER TABLE beach_competition_matches ADD COLUMN court_label text')
+          const ext = uniq('BC')
+          const r = await fresh.runQuery({ table: 'beach_competition_matches', action: 'insert', params: { data: { external_id: ext, court_label: 'Court 2' }, returning: 'court_label' } }, { internal: true })
+          assert.equal(r.status, 200, JSON.stringify(r.body))
+          assert.deepEqual(r.body.data, [{ court_label: 'Court 2' }])
+          assert.equal(fresh.droppedColumns().total, 0)
+        } finally {
+          await raw.query('ALTER TABLE beach_competition_matches DROP COLUMN IF EXISTS court_label')
+          await fresh.close()
+        }
+      })
     })
 
     it('bad data shapes are refused', async () => {
@@ -526,6 +626,10 @@ describe('pgQuery on Postgres', { skip: SKIP_PG }, () => {
       assert.equal(r.status, 200, JSON.stringify(r.body))
       r = await q('sets', 'upsert', { data: { external_id: setExt, match_id: m.id, index: 1, home_points: 6 }, onConflict: 'external_id', returning: 'home_points' }, W)
       assert.deepEqual(r.body.data, [{ home_points: 6 }])
+      // db/039: a second row with the set's number (another local id) is refused by name
+      r = await q('sets', 'upsert', { data: { external_id: `${m.external_id}:s:9`, match_id: m.id, index: 1 }, onConflict: 'external_id' }, W)
+      assert.equal(r.status, 409)
+      assert.equal(r.body.error.code, 'OV_SET_NUMBER_TAKEN')
 
       const events = [1, 2, 3].map(n => ({ external_id: `${m.external_id}:e:${n}`, match_id: m.id, seq: n + 0.5, type: 'point', payload: { team: 'home' }, ts: '2026-10-05T12:00:0' + n + 'Z' }))
       r = await q('events', 'upsert', { data: events, onConflict: 'external_id', returning: 'id, seq, ts, payload' }, W)
@@ -634,6 +738,70 @@ describe('pgQuery on Postgres', { skip: SKIP_PG }, () => {
       // Legacy backupManager fallback ids (`${externalId}_set_${n}`) are accepted too.
       r = await q('sets', 'insert', { data: { external_id: `${a.external_id}_set_2`, match_id: a.id } }, W)
       assert.equal(r.status, 200)
+    })
+
+    it('a match whose external_id is a prefix of another match\'s ids owns none of them (match, match_1, match_1_x)', async () => {
+      const v = await newMatch({ external_id: 'match_1_x' })
+      const parents = []
+      for (const external_id of ['match', 'match_1', 'match_1_x:e', 'match_1_x:s', 'match_1_x_set', 'match_1_x_event']) {
+        parents.push(await newMatch({ external_id, test: true }))
+      }
+      const rows = (mid) => ({
+        // (db/039: one row per set number of a match)
+        sets: ['match_1_x:s:1', 'match_1_x_set_2'].map((external_id, i) => ({ external_id, match_id: mid, index: i + 1 })),
+        events: ['match_1_x:e:1', 'match_1_x:e:coin_toss', 'match_1_x_event_7', 'match_1_x_event_7.5'].map(external_id => ({ external_id, match_id: mid, type: 'point' }))
+      })
+      for (const p of parents) {
+        for (const [table, list] of Object.entries(rows(p.id))) {
+          for (const row of list) {
+            for (const action of ['insert', 'upsert']) {
+              const r = await q(table, action, { data: row, onConflict: action === 'upsert' ? 'external_id' : undefined }, W)
+              assert.equal(r.body.error?.code, 'OV_UNSCOPED_EXTERNAL_ID', `${p.external_id}: ${table} ${action} ${row.external_id}`)
+            }
+          }
+        }
+      }
+      // nor by renaming a row of its own into the other match's ids
+      for (const p of parents.slice(0, 2)) {
+        const own = `${p.external_id}:s:9`
+        assert.equal((await q('sets', 'insert', { data: { external_id: own, match_id: p.id } }, W)).status, 200)
+        const r = await q('sets', 'update', { data: { external_id: 'match_1_x:s:5' }, filters: [eq('external_id', own)] }, W)
+        assert.equal(r.body.error?.code, 'OV_UNSCOPED_EXTERNAL_ID', p.external_id)
+      }
+      const held = await raw.query('SELECT external_id FROM sets WHERE match_id = ANY($1) UNION ALL SELECT external_id FROM events WHERE match_id = ANY($1)', [parents.map(p => p.id)])
+      assert.deepEqual(held.rows.map(r => r.external_id).sort(), ['match:s:9', 'match_1:s:9'])
+      // the match itself writes every one of them, and its later upserts are not blocked
+      for (const [table, list] of Object.entries(rows(v.id))) {
+        for (let i = 0; i < 2; i++) {
+          const r = await q(table, 'upsert', { data: list, onConflict: 'external_id', count: 'exact' }, W)
+          assert.equal(r.status, 200, JSON.stringify(r.body))
+          assert.equal(r.body.count, list.length)
+        }
+      }
+      assert.equal((await raw.query('SELECT count(*)::int n FROM events WHERE match_id = $1', [v.id])).rows[0].n, 4)
+    })
+
+    it('a match with sets or events keeps its external_id (db/032: 409 OV_MATCH_ID_LOCKED, internal writes too)', async () => {
+      const m = await newMatch({ test: true })
+      assert.equal((await q('events', 'insert', { data: { external_id: `${m.external_id}:e:1`, match_id: m.id, type: 'point' } }, W)).status, 200)
+      const to = uniq('M')
+      for (const [action, params, opts] of [
+        ['update', { data: { external_id: to }, filters: [eq('id', m.id)] }, W],
+        ['upsert', { data: { id: m.id, external_id: to, status: 'live', test: true }, onConflict: 'id' }, W],
+        ['update', { data: { external_id: to }, filters: [eq('id', m.id)] }, { ...W, internal: true }]
+      ]) {
+        const r = await q('matches', action, params, opts)
+        assert.equal(r.status, 409, JSON.stringify(r.body))
+        assert.equal(r.body.error.code, 'OV_MATCH_ID_LOCKED')
+      }
+      assert.equal((await raw.query('SELECT external_id FROM matches WHERE id = $1', [m.id])).rows[0].external_id, m.external_id)
+      // the same value is no change; a match without sets or events may move
+      assert.equal((await q('matches', 'update', { data: { external_id: m.external_id, status: 'setup' }, filters: [eq('id', m.id)] }, W)).status, 200)
+      const bare = await newMatch({ test: true })
+      assert.equal((await q('matches', 'update', { data: { external_id: to }, filters: [eq('id', bare.id)] }, W)).status, 200)
+      // a set alone holds it
+      assert.equal((await q('sets', 'insert', { data: { external_id: `${to}:s:1`, match_id: bare.id } }, W)).status, 200)
+      assert.equal((await q('matches', 'update', { data: { external_id: uniq('M') }, filters: [eq('id', bare.id)] }, W)).body.error?.code, 'OV_MATCH_ID_LOCKED')
     })
 
     it('rejects unscoped ids on insert and upsert, and writes nothing from a mixed batch', async () => {

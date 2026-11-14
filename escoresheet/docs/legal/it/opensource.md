@@ -31,7 +31,8 @@ server. Sono sotto la **SIL Open Font License 1.1**
 (https://openfontlicense.org):
 
 Inter, IBM Plex Mono, JetBrains Mono, Orbitron, Roboto Mono, Space Mono
-(inclusi tramite i pacchetti Fontsource).
+(inclusi tramite i pacchetti Fontsource), e Liberation Sans (inclusa tramite
+PDF.js, per il testo del PDF del referto).
 
 ## Librerie delle app
 
@@ -45,7 +46,6 @@ Inter, IBM Plex Mono, JetBrains Mono, Orbitron, Roboto Mono, Space Mono
 | JSZip | MIT (o GPL-3.0-or-later) |
 | fflate | MIT |
 | html-to-image | MIT |
-| html5-qrcode | Apache-2.0 |
 | qrcode.react | ISC |
 | Tailwind CSS, tailwind-merge, clsx | MIT |
 | class-variance-authority | Apache-2.0 |
@@ -78,7 +78,7 @@ non sono forniti con l'app.
 
 Node.js (MIT), PostgreSQL (PostgreSQL License), pg (MIT), bcryptjs
 (BSD-3-Clause), Nodemailer (MIT-0), node-ical (Apache-2.0), qrcode (MIT),
-cors (MIT), ws (MIT), Caddy (Apache-2.0), cloudflared (Apache-2.0).
+ws (MIT), Caddy (Apache-2.0), cloudflared (Apache-2.0).
 
 ## Elenco completo
 

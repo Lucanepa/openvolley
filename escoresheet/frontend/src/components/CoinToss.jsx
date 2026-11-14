@@ -6,7 +6,8 @@ import { useScaledLayout } from '../hooks/useScaledLayout'
 import { db } from '../db/db'
 import { apiFrom } from '../lib/apiClient'
 import SignaturePad from './SignaturePad'
-import { saveMatchSignature } from '../utils/saveSignature'
+import { saveMatchSignature, clearMatchSignatures } from '../utils/saveSignature'
+import { rosterSignatureKey, staleSignatureFields, signaturesClearedRemark, signatureReplacedRemark } from '../domain/rosterSignatures'
 import { phoneSignContext, signatureSource, signatureUpdate, SLOT_OF_ROLE, PRE_MATCH_SIGNATURE_FIELD as SIGNATURE_FIELD_OF_ROLE } from '../domain/phoneSignature'
 import { coinTossConfirmIssues } from '../domain/coinTossChecks'
 import Modal from './Modal'
@@ -290,6 +291,9 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
 
   // Track original roster/bench data when modal opens for change detection
   const originalRosterDataRef = useRef(null) // { roster: [], bench: [] }
+  // The roster each signature given in the open roster dialog was given for
+  // (match-row field -> domain/rosterSignatures rosterSignatureKey)
+  const rosterSignedForRef = useRef({})
 
   // Signatures
   const [homeCoachSignature, setHomeCoachSignature] = useState(null)
@@ -610,13 +614,18 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
     loadData()
   }, [matchId, match?.id])
 
+  // A confirmed toss changes only through Corrections (planCoinToss updates
+  // the row, the coin_toss event and the cloud together): changed here it
+  // stayed on this device, and a restored match served the other way round
   function switchTeams() {
+    if (isCoinTossConfirmed) return
     const temp = teamA
     setTeamA(teamB)
     setTeamB(temp)
   }
 
   function switchServe() {
+    if (isCoinTossConfirmed) return
     setServeA(!serveA)
     setServeB(!serveB)
   }
@@ -648,10 +657,40 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
   }
 
   // Saved to the match at once, not on "Confirm coin toss result" (owner
-  // 2026-10-07), with its phone-signing record in the same update.
+  // 2026-10-07), with its phone-signing record in the same update. A Re-sign
+  // of a collected signature (SignaturePad allowResign) is written to the remarks.
   function saveSignatureNow(role, image, meta) {
     const field = SIGNATURE_FIELD_OF_ROLE[role]
-    if (field) saveMatchSignature(db, matchId, field, image, signatureUpdate(field, image, meta))
+    if (!field) return
+    const [side, who] = role.split('-')
+    const remark = meta?.resigned ? signatureReplacedRemark({ team: side === 'home' ? home : away, role: who }) : ''
+    saveMatchSignature(db, matchId, field, image, signatureUpdate(field, image, meta), { remark })
+  }
+
+  // Modify in the roster dialog changed a team's players or bench: a coach /
+  // captain signature that no longer fits the roster goes, with a remark, so
+  // the Start set gate asks for it again (domain/rosterSignatures)
+  async function clearStaleRosterSignatures(teamType, roster, bench, original) {
+    if (!matchId) return
+    const fields = ['coach', 'captain'].map(r => SIGNATURE_FIELD_OF_ROLE[`${teamType}-${r}`])
+    const stored = await db.matches.get(matchId)
+    if (!stored || stored.test) return
+    const stale = staleSignatureFields(stored, fields, rosterSignedForRef.current,
+      rosterSignatureKey(original?.roster, original?.bench), rosterSignatureKey(roster, bench))
+    if (!stale.length) return
+    const roles = ['captain', 'coach'].filter(r => stale.includes(SIGNATURE_FIELD_OF_ROLE[`${teamType}-${r}`]))
+    await clearMatchSignatures(db, matchId, stale, signaturesClearedRemark({ team: teamType === 'home' ? home : away, roles }))
+    const setters = {
+      'home-coach': setHomeCoachSignature, 'home-captain': setHomeCaptainSignature,
+      'away-coach': setAwayCoachSignature, 'away-captain': setAwayCaptainSignature
+    }
+    for (const r of roles) setters[`${teamType}-${r}`](null)
+    setSignatureSources(prev => {
+      const next = { ...prev }
+      for (const f of stale) delete next[f]
+      return next
+    })
+    showAlert(t('roster.signaturesCleared'), 'info')
   }
 
   function handleSignatureSave(signatureImage, meta) {
@@ -1291,17 +1330,9 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
   }
 
   async function handleReturnToMatch() {
-    // Save coin toss result when returning
+    // The toss stays as confirmed (Team A and the first serve change through
+    // Corrections only); the teams' data is sent again
     if (matchId) {
-      const firstServeTeam = serveA ? teamA : teamB
-      await db.matches.update(matchId, {
-        firstServe: firstServeTeam,
-        coinTossTeamA: teamA,
-        coinTossTeamB: teamB,
-        coinTossServeA: serveA,
-        coinTossServeB: serveB
-      })
-
       const matchData = await db.matches.get(matchId)
       if (matchData?.seed_key) {
         await db.sync_queue.add({
@@ -1442,6 +1473,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           size="xl"
           data-help-id="cointoss-team-selector"
           onClick={switchTeams}
+          disabled={isCoinTossConfirmed}
           icon={<ArrowLeftRight size={20} aria-hidden="true" />}
           style={{ minHeight: sizes.actionButtonMinHeight, padding: phone ? '0 10px' : '0 20px', fontSize: sizes.actionButtonFont, ...(phone ? { flex: '1 1 auto', whiteSpace: 'nowrap' } : null) }}
         >
@@ -1452,11 +1484,17 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           size="xl"
           data-help-id="cointoss-serve-selector"
           onClick={switchServe}
+          disabled={isCoinTossConfirmed}
           style={{ minHeight: sizes.actionButtonMinHeight, padding: phone ? '0 10px' : '0 20px 0 12px', fontSize: sizes.actionButtonFont, ...(phone ? { flex: '1 1 auto', whiteSpace: 'nowrap' } : null) }}
         >
           <img src={ballImage} onError={(e) => { e.target.src = ballFallback }} alt="" style={{ width: phone ? '1.5em' : '1.75em', height: phone ? '1.5em' : '1.75em' }} /> {t('coinToss.switchServe')}
         </Button>
       </div>
+      {isCoinTossConfirmed && (
+        <p className="ov-kit text-center text-sm text-stone-600" data-testid="coin-toss-locked" style={{ margin: 0, marginBottom: Math.round(8 * vhScale), flexShrink: 0 }}>
+          {t('coinToss.lockedAfterConfirm')}
+        </p>
+      )}
 
       <div data-help-id="cointoss-side-selector" style={{ display: 'grid', gridTemplateColumns: phone ? 'minmax(0, 1fr) minmax(0, 1fr)' : 'minmax(0, 1fr) 16px minmax(0, 1fr)', gap: sizes.gap, flex: phone ? 'none' : 1, alignItems: 'stretch' }}>
         {/* Team A */}
@@ -1734,6 +1772,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
 
         // Store original data on first render of modal
         if (!originalRosterDataRef.current) {
+          rosterSignedForRef.current = {}
           originalRosterDataRef.current = {
             roster: JSON.parse(JSON.stringify(roster)),
             bench: JSON.parse(JSON.stringify(bench))
@@ -1765,8 +1804,15 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               return
             }
             await syncRosterToDatabase(currentTeam, roster, bench)
+            await clearStaleRosterSignatures(currentTeam, roster, bench, originalRosterDataRef.current)
+          } else if (originalRosterDataRef.current) {
+            // edited back to the opening roster: a signature given in between
+            // was for another roster
+            const o = originalRosterDataRef.current
+            await clearStaleRosterSignatures(currentTeam, o.roster, o.bench, o)
           }
           originalRosterDataRef.current = null
+          rosterSignedForRef.current = {}
           setRosterModalSignature(null)
           setRosterModal(null)
         }
@@ -2144,6 +2190,8 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                 onSave={(sig, meta) => {
                   noteSignatureSource(`${currentTeam}-${rosterModalSignature}`, sig, meta)
                   saveSignatureNow(`${currentTeam}-${rosterModalSignature}`, sig, meta)
+                  // given for the roster as it is in the dialog now
+                  rosterSignedForRef.current[SIGNATURE_FIELD_OF_ROLE[`${currentTeam}-${rosterModalSignature}`]] = rosterSignatureKey(roster, bench)
                   if (rosterModalSignature === 'coach') {
                     setCoachSig(sig)
                   } else {
@@ -2155,6 +2203,11 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                   ? t('roster.signatureTitle', { role: t(rosterModalSignature === 'coach' ? 'coinToss.coach' : 'coinToss.captain'), team: teamInfo.name })
                   : ''}
                 phone={rosterModalSignature ? phoneSigning(`${currentTeam}-${rosterModalSignature}`) : null}
+                // a signed slot opens read-only, as the page's pad does;
+                // replacing it is an explicit Re-sign
+                existingSignature={rosterModalSignature === 'coach' ? coachSig : rosterModalSignature === 'captain' ? captainSig : null}
+                readOnly={!!(rosterModalSignature === 'coach' ? coachSig : rosterModalSignature === 'captain' ? captainSig : null)}
+                allowResign
               />
             </div>
 
@@ -2165,13 +2218,18 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                   variant="secondary"
                   size="xl"
                   className="font-medium"
-                  onClick={() => {
-                    // Revert to original data
-                    if (originalRosterDataRef.current) {
-                      setRoster(JSON.parse(JSON.stringify(originalRosterDataRef.current.roster)))
-                      setBench(JSON.parse(JSON.stringify(originalRosterDataRef.current.bench)))
+                  onClick={async () => {
+                    // Revert to original data. A signature given in the dialog
+                    // for the edited roster does not fit the restored one: it
+                    // goes, with a remark (domain/rosterSignatures)
+                    const o = originalRosterDataRef.current
+                    if (o) {
+                      setRoster(JSON.parse(JSON.stringify(o.roster)))
+                      setBench(JSON.parse(JSON.stringify(o.bench)))
+                      await clearStaleRosterSignatures(currentTeam, o.roster, o.bench, o)
                     }
                     originalRosterDataRef.current = null
+                    rosterSignedForRef.current = {}
                     setRosterModalSignature(null)
                     setRosterModal(null)
                   }}
@@ -2627,6 +2685,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           (openSignature === 'away-coach' && !!awayCoachSignature) ||
           (openSignature === 'away-captain' && !!awayCaptainSignature)
         }
+        allowResign
       />
     </div>
   )

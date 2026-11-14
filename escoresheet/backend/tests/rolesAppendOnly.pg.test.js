@@ -72,6 +72,9 @@ describe('roles.sql: append-only logs, detachable accounts', { skip: SKIP_PG }, 
   it('the app role cannot rewrite them otherwise, but can insert and delete', async () => {
     await assert.rejects(() => app.query("UPDATE public.activity_log SET kind = 'x.y' WHERE false"), (e) => e.code === '42501')
     await assert.rejects(() => app.query("UPDATE public.event_revisions SET op = 'void' WHERE false"), (e) => e.code === '42501')
+    // db/039: the one other column, marked when a resent revision is applied
+    await app.query('UPDATE public.event_revisions SET applied = true WHERE false')
+    await assert.rejects(() => app.query('UPDATE public.event_revisions SET applied = true, before = NULL WHERE false'), (e) => e.code === '42501')
     await app.query("INSERT INTO public.activity_log (uid, client_ts, kind) VALUES (gen_random_uuid(), now(), 'app.start')")
     await app.query("DELETE FROM public.activity_log WHERE kind = 'app.start'")
   })

@@ -8,6 +8,7 @@ import { getApiUrl, getBackendUrl, getCloudApiUrl, getRelayWebSocketUrl, isLocal
 import { formatTimeLocal } from './timeUtils'
 import { isShownCloudPickerRow, pickerQuerySince, pickerTeamNames } from './pickerMatches'
 import { onPointHubBoard } from './pointHubBoard'
+import { resolveBestOf } from './matchFormat'
 
 /**
  * Generate a unique seed_key for a match
@@ -123,9 +124,13 @@ export function matchAccessHeaders(matchId) {
 }
 
 /**
- * Validate PIN and get match data from server
+ * Validate PIN and get match data from server.
+ * `matchId` (its seed key) or `gameNumber`: the match the tablet picked; the
+ * relay compares the PIN with that match only (a PIN two matches share is
+ * refused with 409 'game-number-required' when none is named). Relays from
+ * before 2026-11 ignore both and take the first match with the PIN.
  */
-export async function validatePin(pin, type = 'referee') {
+export async function validatePin(pin, type = 'referee', { matchId = null, gameNumber = null } = {}) {
   const serverUrl = getServerUrl()
 
   try {
@@ -136,7 +141,9 @@ export async function validatePin(pin, type = 'referee') {
       },
       body: JSON.stringify({
         pin: String(pin).trim(),
-        type
+        type,
+        ...(matchId != null && matchId !== '' ? { matchId: String(matchId) } : {}),
+        ...(matchId == null && gameNumber != null && gameNumber !== '' ? { gameNumber: String(gameNumber) } : {})
       })
     })
 
@@ -189,6 +196,7 @@ export async function getMatchData(matchId) {
   const serverUrl = getServerUrl()
 
   // Try HTTP endpoint first (WebSocket server may have it)
+  let relayNotFound = false
   try {
     const response = await fetch(`${serverUrl}/api/match/${matchId}`, {
       method: 'GET',
@@ -198,6 +206,7 @@ export async function getMatchData(matchId) {
       }
     })
 
+    relayNotFound = response.status === 404
     if (response.ok) {
       const result = await response.json()
       // Without a proved PIN the relay answers with the public summary (no
@@ -263,11 +272,15 @@ export async function getMatchData(matchId) {
 
       if (!match) {
         console.error('[getMatchData] Supabase match fetch error:', matchError)
-        return { success: false, error: matchError?.message || 'Match not found' }
+        // notFound: a reachable relay and the database both say it is gone
+        // (a viewer leaves only on that, never on a network failure)
+        return { success: false, error: matchError?.message || 'Match not found', ...(relayNotFound && !matchError ? { notFound: true } : {}) }
       }
 
-      // Fetch live state if available (for Referee app)
+      // Fetch live state if available (for Referee app). Its line-ups,
+      // substitutions and sanctions come only with the match token.
       const { data: liveState } = await apiFrom('match_live_state')
+        .headers(matchAccessHeaders(matchId))
         .select('*')
         .eq('match_id', match.id)
         .maybeSingle()
@@ -312,12 +325,32 @@ function liveStateOrderOf(liveState) {
 }
 
 /**
+ * The order the relay received a live state or a bundle's match in
+ * (_relayEpoch/_relaySeq, stamped by the cloud relay: server.js
+ * stampRelayOrder), or null (a database row, a venue relay, an older relay).
+ */
+function relayOrderOf(obj) {
+  const seq = Number(obj?._relaySeq)
+  const epoch = obj?._relayEpoch
+  return Number.isFinite(seq) && typeof epoch === 'string' && epoch ? { seq, epoch } : null
+}
+
+/** Both stamped by the same relay run: their relay order, else null. */
+function sameRelayOrders(x, y) {
+  const a = relayOrderOf(x)
+  const b = relayOrderOf(y)
+  return a && b && a.epoch === b.epoch ? [a.seq, b.seq] : null
+}
+
+/**
  * Which live state to keep when `incoming` arrives after `current` (relay
  * push, relay bundle, match_live_state row): `incoming` unless it is older.
  * Two states of one scorer session compare by sequence number (never by the
  * wall clock: an NTP step back would freeze the view on the state from before
- * the step); otherwise by updated_at. Either may be missing; unknown
- * timestamps count as newer.
+ * the step); two sessions (a device switch) by the order the relay received
+ * them in, when it stamped both: the new device's clock may be behind, and in
+ * a hall without internet nothing corrects it. Otherwise by updated_at.
+ * Either may be missing; unknown timestamps count as newer.
  */
 export function newerLiveState(current, incoming) {
   if (!incoming) return current || null
@@ -325,6 +358,8 @@ export function newerLiveState(current, incoming) {
   const a = liveStateOrderOf(current)
   const b = liveStateOrderOf(incoming)
   if (a && b && a.session === b.session) return b.seq < a.seq ? current : incoming
+  const relay = sameRelayOrders(current, incoming)
+  if (relay) return relay[1] < relay[0] ? current : incoming
   return liveStateTime(incoming) < liveStateTime(current) ? current : incoming
 }
 
@@ -386,6 +421,8 @@ export function liveClockOffsetAfter(cloudLiveState, now = Date.now()) {
  * Was `liveState` computed after the relay bundle was read on the scorer?
  * - Same scorer session: its sequence number is higher than the bundle's
  *   match._syncedSeq (the last number issued before the sync read IndexedDB).
+ * - Another session, both stamped by the relay: the relay received it after
+ *   the bundle (_relaySeq).
  * - Otherwise its updated_at is later than match._syncedAt (both on the
  *   scorer's clock; the fallback for a database row or an older scorer).
  * False when the bundle carries neither (an older scorer).
@@ -398,6 +435,8 @@ export function isLiveStateNewerThanBundle(liveState, bundle) {
   if (order && Number.isFinite(syncedSeq) && match?._syncSession === order.session) {
     return order.seq > syncedSeq
   }
+  const relay = sameRelayOrders(liveState, match)
+  if (relay) return relay[0] > relay[1]
   const syncedAt = Number(match?._syncedAt)
   const liveAt = liveStateTime(liveState)
   return Number.isFinite(syncedAt) && !Number.isNaN(liveAt) && liveAt > syncedAt
@@ -418,6 +457,8 @@ export function isBundleNewerThanLiveState(liveState, bundle) {
   if (order && Number.isFinite(syncedSeq) && match?._syncSession === order.session) {
     return syncedSeq > order.seq
   }
+  const relay = sameRelayOrders(liveState, match)
+  if (relay) return relay[1] > relay[0]
   const syncedAt = Number(match?._syncedAt)
   const liveAt = liveStateTime(liveState)
   return Number.isFinite(syncedAt) && !Number.isNaN(liveAt) && syncedAt > liveAt
@@ -809,6 +850,9 @@ export function buildLiveStateMatchData(match, liveState, matchId) {
       coinTossTeamA: coinTossTeamA, // Derived from live state if not in matches table
       coinTossTeamB: coinTossTeamA === 'home' ? 'away' : 'home',
       coinTossServeA: match.coin_toss?.serve_a ?? match.coin_toss_serve_a,
+      // the row has match_info.best_of, not bestOf: the bench and the referee's
+      // recorded popups number a best-of-3 decider from this
+      bestOf: resolveBestOf(match, liveState),
       firstServe: match.coin_toss?.first_serve || match.first_serve,
       // coin_toss_confirmed = true if we have liveState with team names (means coin toss happened)
       coin_toss_confirmed: !!(liveState?.team_a_name),
@@ -1284,6 +1328,9 @@ export function subscribeToMatchData(matchId, onUpdate) {
             // Relay refused something (rate limit, not the match's scoreboard, ...)
             wsDebugInfo.lastServerError = { time: Date.now(), code: message.code || null, message: message.message || 'Server error' }
             console.warn('[ServerDataSync] Relay error:', message.code || '', message.message || '')
+            // The PIN this tablet proved is no longer this match's (the scorer
+            // changed it): its view of the match ends (useRealtimeConnection onAccessLost)
+            if (message.code === 'pin-invalid' && String(message.matchId) === matchIdStr) notify({ _accessDenied: message.code, matchId: matchIdStr })
           } else if (message.type === 'match-action' && String(message.matchId) === matchIdStr) {
             // Action received from scoreboard (timeout, substitution, set_end, etc.)
             connection.subscribers.forEach(subscriber => {
@@ -1477,7 +1524,8 @@ export async function findMatchByGameNumber(gameNumber) {
     }
 
     const result = await response.json()
-    return result.match || null
+    // relayMatchId: the relay's room key, under which GET / PATCH find the match
+    return result.match ? { ...result.match, relayMatchId: result.matchId ?? null } : null
   } catch (error) {
     console.error('Error finding match by game number:', error)
     return null
@@ -1485,16 +1533,18 @@ export async function findMatchByGameNumber(gameNumber) {
 }
 
 /**
- * Update match data on server (for upload roster, etc.)
+ * Update match data on server (for upload roster, etc.). `pin`: the team's
+ * upload PIN of the match, which the relay checks (X-OV-Match-Pin).
  */
-export async function updateMatchData(matchId, updates) {
+export async function updateMatchData(matchId, updates, { pin = null } = {}) {
   const serverUrl = getServerUrl()
 
   try {
-    const response = await fetch(`${serverUrl}/api/match/${matchId}`, {
+    const response = await fetch(`${serverUrl}/api/match/${encodeURIComponent(matchId)}`, {
       method: 'PATCH',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        ...(pin ? { 'X-OV-Match-Pin': String(pin) } : {})
       },
       body: JSON.stringify(updates)
     })
@@ -1828,6 +1878,9 @@ async function requestRelayConnections(url, fetchImpl) {
  * Which tablets the relay sees on a match: { referee, benchHome, benchAway,
  * watchers }. Counts only clients subscribed to matchKey. A bench that did not
  * say which team it is counts for both benches only when one of them is enabled.
+ * A referee or bench counts only when the relay does not say it is unproved
+ * (`proved: false`, the same rule as the Connect dialog's roleClients): a
+ * socket that only named its role is a watcher.
  * @param {object|null} connections - fetchRelayConnections() result
  * @param {string} matchKey
  * @param {object} [match] - scorer's match (connection flags)
@@ -1840,6 +1893,7 @@ export function summarizeRelayTablets(connections, matchKey, match = null) {
   for (const c of connections.clients) {
     if (key && String(c.matchId) !== key) continue
     out.watchers++
+    if (c.proved === false) continue
     if (c.role === 'referee') out.referee++
     else if (c.role === 'bench' && c.team === 'home') out.benchHome++
     else if (c.role === 'bench' && c.team === 'away') out.benchAway++
@@ -1881,6 +1935,20 @@ export function applyRelayTablets(summary, relay) {
  * a matches row (home_team JSONB) or a match list entry (homeTeamName).
  * @returns {{ home: string|null, away: string|null }}
  */
+/**
+ * Is a PIN check's answer for another game than the one picked by its game
+ * number (`gameNumber`; no key could be picked: two listed matches share the
+ * number, a numeric LAN id)? Only when both name one: an answer without a
+ * game number is not compared. A PIN-only check opened whichever match
+ * answered, another hall's whose PIN was the same.
+ */
+export function isOtherGame(match, gameNumber) {
+  const picked = gameNumber == null ? '' : String(gameNumber).trim()
+  const found = match?.gameNumber ?? match?.gameN ?? match?.game_n
+  const answered = found == null ? '' : String(found).trim()
+  return picked !== '' && answered !== '' && answered !== picked
+}
+
 export function matchTeamNames(match, { homeTeam, awayTeam } = {}) {
   const pick = (...vals) => {
     for (const v of vals) {
@@ -1901,6 +1969,114 @@ export function matchTeamNames(match, { homeTeam, awayTeam } = {}) {
 // itself (LAN). Nothing else secret goes over the relay.
 const RELAY_PIN_FIELDS = ['gamePin', 'refereePin', 'homeTeamPin', 'awayTeamPin', 'homeTeamUploadPin', 'awayTeamUploadPin']
 const NEVER_RELAYED = ['game_pin', 'connection_pins', 'connectionPins']
+
+// What no relay hands a tablet stays on the device too (the same lists as
+// backend/lib/publicColumns.js): a person's date of birth, nationality and
+// contact data; the officials (with theirs), every signature image, the
+// approvals, the manual-change log and the rosters waiting for the scorer.
+// The remarks go (the referee's live scoresheet prints them, and the cloud
+// relay gives them to the referee only), without the dates of a
+// date-of-birth correction.
+const RELAY_PERSON_OMIT = ['dob', 'dateOfBirth', 'date_of_birth', 'birthDate', 'birthdate', 'birth_date', 'country', 'nationality', 'email', 'phone', 'address']
+const RELAY_MATCH_OMIT = [
+  'officials', 'signatures', 'approval', 'accountApprovals', 'account_approvals', 'manualChanges', 'manual_changes',
+  'pendingHomeRoster', 'pendingAwayRoster', 'pending_home_roster', 'pending_away_roster',
+  'pendingTeam1Roster', 'pendingTeam2Roster', 'pending_team1_roster', 'pending_team2_roster'
+]
+const RELAY_ROSTER_KEYS = [
+  'players_home', 'players_away', 'bench_home', 'bench_away', 'players_team1', 'players_team2',
+  'benchHome', 'benchAway', 'homePlayers', 'awayPlayers', 'team1Players', 'team2Players'
+]
+// A team row: the names and colours the tablets draw
+const RELAY_TEAM_KEYS = ['name', 'shortName', 'short_name', 'color', 'liberoColor', 'liberoColour', 'libero_color', 'libero_colour']
+const isSignatureKey = (k) => /signature/i.test(k)
+
+function relayPerson(p) {
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return p
+  if (!RELAY_PERSON_OMIT.some((k) => k in p)) return p
+  const out = { ...p }
+  for (const k of RELAY_PERSON_OMIT) delete out[k]
+  return out
+}
+
+/** A roster (players or bench) as sync-match-data carries it: copies without dates of birth or contact data. */
+export function relayPeoplePayload(list) {
+  return Array.isArray(list) ? list.map(relayPerson) : []
+}
+
+/** A team row as sync-match-data carries it: its names and colours, or null. */
+export function relayTeamPayload(team) {
+  if (!team || typeof team !== 'object') return null
+  const out = {}
+  for (const k of RELAY_TEAM_KEYS) if (team[k] !== undefined) out[k] = team[k]
+  return out
+}
+
+// An in-match roster edit wrote a corrected date of birth with both dates
+// ("- Player #7 dob: 03.05.2011 → 04.06.2011 (Team)"): the change stays, the
+// dates go, to the team label at the end of the line or to its end
+// (backend/lib/publicColumns.js redactRemarkDobs, the same steps). Read with
+// indexOf, never a backtracking pattern: a long remarks text took the relay
+// seconds per bundle.
+const DOB_LABEL = 'dob: '
+const DOB_ARROWS = [' → ', ' -> ']
+const DOB_CHANGED = 'date of birth changed'
+// Where a line ends (the line ends of `.` and `$` in a pattern)
+const LINE_END = /[\n\r\u2028\u2029]/g
+const WORD_CHAR = /[A-Za-z0-9_]/
+
+/** Where the value after the first arrow at or after `from` starts, or -1. */
+function dobValueAt(line, from) {
+  let start = -1
+  let length = 0
+  for (const arrow of DOB_ARROWS) {
+    const i = line.indexOf(arrow, from)
+    if (i !== -1 && (start === -1 || i < start)) {
+      start = i
+      length = arrow.length
+    }
+  }
+  return start === -1 ? -1 : start + length
+}
+
+/** Where a line's trailing " (Team)" starts (no brackets inside), or -1. */
+function teamLabelAt(line) {
+  if (!line.endsWith(')')) return -1
+  const at = line.lastIndexOf(' (')
+  if (at === -1) return -1
+  const inner = line.slice(at + 2, -1)
+  return inner.includes('(') || inner.includes(')') ? -1 : at
+}
+
+/** The remarks text as the relay gets it: no dates of a date-of-birth correction. */
+export function relayRemarks(text) {
+  if (typeof text !== 'string' || !text.includes(DOB_LABEL)) return text
+  let out = ''
+  let copied = 0
+  let from = 0
+  for (;;) {
+    const at = text.indexOf(DOB_LABEL, from)
+    if (at === -1) break
+    if (at > 0 && WORD_CHAR.test(text[at - 1])) {
+      from = at + 1
+      continue
+    }
+    LINE_END.lastIndex = at
+    const lineEnd = LINE_END.exec(text)?.index ?? text.length
+    // from "dob: " to the end of its line: at least one character before
+    // the arrow and one after it
+    const rest = text.slice(at, lineEnd)
+    const value = dobValueAt(rest, DOB_LABEL.length + 1)
+    if (value === -1 || value >= rest.length) {
+      from = lineEnd
+      continue
+    }
+    const label = teamLabelAt(rest)
+    out += text.slice(copied, at) + DOB_CHANGED
+    copied = from = at + (label > value ? label : rest.length)
+  }
+  return copied === 0 ? text : out + text.slice(copied)
+}
 
 /**
  * The relay room key of a scorer's match: its seed_key (what the tablets know
@@ -1927,9 +2103,11 @@ export function relayMatchKey(match) {
 }
 
 /**
- * The match object a scorer sends in sync-match-data. PINs go only with the
- * first sync on a socket and when one changes (the relay keeps the stored ones
- * meanwhile); pass the signature returned last time for this socket, or null.
+ * The match object a scorer sends in sync-match-data, without the personal
+ * data no relay hands on (RELAY_MATCH_OMIT, signatures, people's dates of
+ * birth). PINs go only with the first sync on a socket and when one changes
+ * (the relay keeps the stored ones meanwhile); pass the signature returned
+ * last time for this socket, or null.
  * `_syncedSeq` / `_syncSession` (the scorer's live-state order, marked before
  * the sync read IndexedDB: `mark` = { seq, session, at }) let the tablets tell
  * whether a live-state push is newer than this copy (applyNewerLiveState);
@@ -1958,6 +2136,11 @@ export function relayMatchPayload(match, lastPinSignature = null, { now = Date.n
     delete out[f]
   }
   for (const f of NEVER_RELAYED) delete out[f]
+  for (const k of Object.keys(out)) {
+    if (RELAY_MATCH_OMIT.includes(k) || isSignatureKey(k)) delete out[k]
+    else if (RELAY_ROSTER_KEYS.includes(k)) out[k] = Array.isArray(out[k]) ? out[k].map(relayPerson) : out[k]
+  }
+  if (typeof out.remarks === 'string') out.remarks = relayRemarks(out.remarks)
   const pinSignature = JSON.stringify(pins)
   return {
     match: pinSignature === lastPinSignature ? out : { ...out, ...pins },

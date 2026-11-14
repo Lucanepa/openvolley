@@ -327,6 +327,27 @@ describe('native backup engine', () => {
     expect(store.list).toHaveBeenCalledTimes(1) // once per session
   })
 
+  // A tablet only switched on (no match scored) kept every old file: the
+  // rotation waited for the session's first backup
+  it('cleanup() at app start rotates every folder without a backup, once per session', async () => {
+    const old = eventFileName(T0 - 45 * DAY, 10)
+    const older = eventFileName(T0 - 46 * DAY, 9)
+    const store = memoryStore({ 'game1-old': [older, old, LATEST_FILE] })
+    const { engine, m } = setup({ store })
+    await engine.cleanup()
+    expect(store.write).not.toHaveBeenCalled()
+    expect([...store.dirs.get('game1-old').keys()].sort()).toEqual([old, LATEST_FILE].sort())
+    expect(store.list).toHaveBeenCalledTimes(1)
+    // the first backup of the session does not list again
+    m.point('home')
+    engine.notify(1)
+    await engine.flush()
+    expect(store.write).toHaveBeenCalledTimes(1)
+    expect(store.list).toHaveBeenCalledTimes(1)
+    await engine.cleanup()
+    expect(store.list).toHaveBeenCalledTimes(1)
+  })
+
   it('gives every file a unique, increasing name even within one millisecond', async () => {
     const { engine, store, m } = setup() // clock never advances
     for (let i = 0; i < 3; i++) {

@@ -74,8 +74,10 @@ async function waitUntil(fn, { timeoutMs = 15000, intervalMs = 100, what = 'cond
 async function bootServer(env, args = []) {
   const port = await freePort()
   const inherited = { ...process.env }
-  for (const k of ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'POCKETBASE_URL', 'IS_CLOUD', 'TRUST_PROXY', 'TRUST_PROXY_FROM', 'BACKUP_MAX_AGE_HOURS', 'PG_TEST_URL', 'TEST_DATABASE_URL', 'DATABASE_URL']) delete inherited[k]
+  for (const k of ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'IS_CLOUD', 'TRUST_PROXY', 'TRUST_PROXY_FROM', 'BACKUP_MAX_AGE_HOURS', 'PG_TEST_URL', 'TEST_DATABASE_URL', 'DATABASE_URL']) delete inherited[k]
   const childEnv = { ...inherited, ...env, PORT: String(port) }
+  // the database mode needs a PIN secret (server.js); a test that names none gets one
+  if (childEnv.DATABASE_URL && childEnv.OV_PIN_SECRET === undefined) childEnv.OV_PIN_SECRET = 'e2e-test-pin-secret-'.padEnd(40, 'x')
   const child = spawn(process.execPath, ['server.js', ...args], { cwd: BACKEND_DIR, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] })
   const output = []
   child.stdout.on('data', (d) => output.push(d.toString()))
@@ -224,6 +226,23 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
   const ext = `e2e-${randomBytes(4).toString('hex')}`
   const email = `e2e-${randomBytes(4).toString('hex')}@example.ch`
   const password = 'correct-horse-battery'
+  // Another signed-in account with `roles` (none: a self-registered one), one
+  // per role set: its session token. After the sign-in the next second starts,
+  // so the global sign-in budget (5 a second, lib/auth.js) is whole again for
+  // the tests that sign in next.
+  const otherAccounts = new Map()
+  async function otherAccount(roles) {
+    const key = roles.join()
+    if (otherAccounts.has(key)) return otherAccounts.get(key)
+    const address = `e2e-reader-${randomBytes(4).toString('hex')}@example.ch`
+    assert.equal((await api(srv.base, '/api/auth/sign-up', { body: { email: address, password } })).status, 200)
+    const inn = await api(srv.base, '/api/auth/sign-in', { body: { email: address, password } })
+    assert.equal(inn.status, 200, inn.text)
+    await sleep(1100)
+    if (roles.length) await grantRoles(db.url, inn.json.data.user.id, roles)
+    otherAccounts.set(key, inn.json.data.session.access_token)
+    return inn.json.data.session.access_token
+  }
   let matchUuid
 
   before(async () => {
@@ -262,6 +281,7 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
     assert.equal(h.json.db, 'ok')
     assert.equal(h.json.catalog.ok, true)
     assert.equal(h.json.catalog.tables, 8) // ALLOWED_TABLES (beach_competition_matches is server-side only)
+    assert.equal(h.json.droppedColumns.total, 0) // no write column the database lacks
     assert.equal(h.json.sentinel, 'ok')
     assert.equal(h.json.floor, 'ok')
     assert.equal(h.json.storageWritable, true)
@@ -269,6 +289,19 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
     assert.ok(h.json.lastBackupAgeMin >= 4 && h.json.lastBackupAgeMin <= 10, String(h.json.lastBackupAgeMin))
     assert.deepEqual(Object.keys(h.json.connections).sort(), ['live', 'role'])
     assert.equal(h.json.backup, 'ok')
+    // no VolleyManager account here: the schedule sync is off, and says why (informational, still 200)
+    assert.deepEqual(h.json.vmSync, { state: 'off', reason: 'not_configured' })
+    // readiness and the match-day alarms: schema, pg pool, process memory and event loop, refusals
+    // this test database has no migration record (scripts/migrate.mjs): not judged, still ready
+    assert.ok(['ok', 'unknown'].includes(h.json.schema.state), h.json.schema.state)
+    assert.equal(h.json.pool.waiting, 0)
+    assert.equal(typeof h.json.pool.max, 'number')
+    assert.equal(typeof h.json.process.rssMB, 'number')
+    assert.ok(h.json.process.heapUsedMB > 0 && h.json.process.heapLimitMB >= h.json.process.heapUsedMB)
+    assert.equal(typeof h.json.process.eventLoopLagMs.p99, 'number')
+    assert.ok(Date.parse(h.json.process.startedAt) <= Date.now())
+    assert.equal(typeof h.json.transport.frames, 'number')
+    assert.equal(h.json.admission.refused, 0)
     const liveness = await api(srv.base, '/health/live', { method: 'GET', proto: null })
     assert.equal(liveness.status, 200)
     assert.equal(liveness.json.status, 'ok')
@@ -554,9 +587,11 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
       const named = await api(srv.base, '/api/db', { proto: null, body: { table: 'matches', action: 'select', params: { columns: 'signatures, officials, players_home', filters: [{ type: 'eq', column: 'external_id', value: ext }] } } })
       assert.equal(named.status, 200)
       assert.equal(leaks(named.text), false)
-      // A forged or expired token reads the public view too
+      // A forged or expired token: 401 like a write, not the public view (a
+      // client could merge that cut-down row and write it back)
       const forged = await api(srv.base, '/api/db', { token: 'y'.repeat(43), proto: null, body: { table: 'matches', action: 'select', params: { columns: '*', filters: [{ type: 'eq', column: 'external_id', value: ext }] } } })
-      assert.equal(forged.status, 200)
+      assert.equal(forged.status, 401, forged.text)
+      assert.equal(forged.json.error.code, 'invalid_token')
       assert.equal(leaks(forged.text), false)
       // Hidden keys cannot be probed through a filter or an order
       for (const params of [
@@ -568,11 +603,22 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
         assert.equal(r.status, 400, JSON.stringify(params))
         assert.equal(r.json.error.code, 'OV_SECRET_FILTER')
       }
-      // A signed-in scorer still reads the whole row (its sync queue merges officials etc.)
-      const mine = await api(srv.base, '/api/db', { token, proto: null, body: { table: 'matches', action: 'select', params: { columns: 'officials, players_home', filters: [{ type: 'eq', column: 'external_id', value: ext }], single: true } } })
+      // The intended reader: the account that scores the match reads its whole
+      // row (its sync queue merges officials etc.)
+      const rowOf = (t) => api(srv.base, '/api/db', { token: t, proto: null, body: { table: 'matches', action: 'select', params: { columns: 'officials, players_home, bench_home, signatures, approval', filters: [{ type: 'eq', column: 'external_id', value: ext }], maybeSingle: true } } })
+      const mine = await rowOf(token)
       assert.equal(mine.status, 200, mine.text)
       assert.equal(mine.json.data.officials[0].dob, DOB)
       assert.equal(mine.json.data.players_home[0].dob, DOB)
+      // Every other account, role-less or a scorer of another match, reads it
+      // like an anonymous caller: no rosters, no dates of birth, no signatures
+      for (const roles of [[], ['scorer']]) {
+        const other = await otherAccount(roles)
+        const theirs = await rowOf(other)
+        assert.equal(theirs.status, 200, theirs.text)
+        assert.equal(leaks(theirs.text), false, `${roles.join() || 'role-less'}: ${theirs.text.slice(0, 300)}`)
+        for (const col of ['officials', 'players_home', 'bench_home', 'signatures', 'approval']) assert.equal(col in (theirs.json.data || {}), false, col)
+      }
     } finally {
       spy.ws.close()
     }
@@ -612,13 +658,27 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
     const probe = await api(srv.base, '/api/db', { proto: null, body: { table: 'referee_database', action: 'select', params: { columns: 'id', filters: [{ type: 'eq', column: 'dob', value: DOB1 }] } } })
     assert.equal(probe.status, 400, probe.text)
     assert.equal(probe.json.error.code, 'OV_SECRET_FILTER')
-    // A signed-in scorer still gets the dates of birth (picker prefill)
-    const mine = await api(srv.base, '/api/db', { token, proto: null, body: { table: 'svrz_games', action: 'select', params: { columns: '*', filters: [{ type: 'eq', column: 'game_number', value: 'E2E-DOB' }], single: true } } })
+    // The intended reader: a scorer of the sport gets the dates of birth
+    // (the referee picker's prefill; tests/refereeDob.e2e.test.js has the rest)
+    const gameOf = (t) => api(srv.base, '/api/db', { token: t, proto: null, body: { table: 'svrz_games', action: 'select', params: { columns: '*', filters: [{ type: 'eq', column: 'game_number', value: 'E2E-DOB' }], single: true } } })
+    const refsOf = (t) => api(srv.base, '/api/db', { token: t, proto: null, body: { table: 'referee_database', action: 'select', params: { columns: 'last_name, dob', filters: [{ type: 'eq', column: 'last_name', value: 'Dobtest' }] } } })
+    const mine = await gameOf(token)
     assert.equal(mine.status, 200, mine.text)
     assert.equal(String(mine.json.data.referee_2_dob).slice(0, 10), DOB2)
-    const myRefs = await api(srv.base, '/api/db', { token, proto: null, body: { table: 'referee_database', action: 'select', params: { columns: 'last_name, dob', filters: [{ type: 'eq', column: 'last_name', value: 'Dobtest' }] } } })
+    const myRefs = await refsOf(token)
     assert.equal(myRefs.status, 200, myRefs.text)
     assert.equal(String(myRefs.json.data[0].dob).slice(0, 10), DOB1)
+    // A signed-in account without a role reads them like an anonymous caller
+    const roleless = await otherAccount([])
+    const theirGame = await gameOf(roleless)
+    assert.equal(theirGame.status, 200, theirGame.text)
+    assert.equal(leaks(theirGame.text), false, theirGame.text.slice(0, 300))
+    assert.equal(theirGame.json.data.referee_1_last_name, 'Dobtest')
+    const theirRefs = await refsOf(roleless)
+    assert.equal(theirRefs.status, 200, theirRefs.text)
+    assert.equal(leaks(theirRefs.text), false, theirRefs.text.slice(0, 300))
+    const theirProbe = await api(srv.base, '/api/db', { token: roleless, proto: null, body: { table: 'referee_database', action: 'select', params: { columns: 'id', filters: [{ type: 'eq', column: 'dob', value: DOB1 }] } } })
+    assert.equal(theirProbe.status, 400, theirProbe.text)
   })
 
   it('validates connection PINs server-side without returning them', async () => {
@@ -852,6 +912,32 @@ describe('server.js without a database (LAN relay mode)', () => {
       }
     } finally {
       await inside.stop()
+    }
+  })
+
+  it('refuses to start as the cloud deployment (IS_CLOUD, DATABASE_URL, TRUST_PROXY) without TRUST_PROXY_FROM', async () => {
+    const r = spawnSync(process.execPath, ['server.js'], {
+      cwd: BACKEND_DIR,
+      env: { PATH: process.env.PATH, PORT: '0', IS_CLOUD: '1', TRUST_PROXY: 'cloudflare', DATABASE_URL: 'postgres://nobody@127.0.0.1:1/none', OV_PIN_SECRET: 'x'.repeat(40) },
+      encoding: 'utf8',
+      timeout: 10000
+    })
+    assert.equal(r.status, 1, r.stderr)
+    assert.match(r.stderr, /IS_CLOUD with TRUST_PROXY=cloudflare needs TRUST_PROXY_FROM/)
+  })
+
+  it('tells a new socket "relay busy" (1013) above OV_ADMIT_HEAP_PCT instead of admitting it', async () => {
+    const busy = await bootServer({ OV_ADMIT_HEAP_PCT: '0.001' }, ['--local'])
+    try {
+      const ws = new WebSocket(busy.wsUrl)
+      const [code, reason] = await new Promise((ok, fail) => {
+        ws.on('close', (c, r) => ok([c, String(r)]))
+        ws.on('error', fail)
+      })
+      assert.equal(code, 1013)
+      assert.match(reason, /Relay busy/)
+    } finally {
+      await busy.stop()
     }
   })
 

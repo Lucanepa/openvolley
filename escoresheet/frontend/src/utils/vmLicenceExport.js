@@ -18,16 +18,18 @@
  * numbers. A file without a licence, last name or first name column is
  * refused (LicenceExportError).
  *
- * An XLSX file is a zip of XML parts: jszip unpacks it, the browser's
- * DOMParser reads the XML. Dates: an Excel date cell (a serial number, 1900
+ * An XLSX file is a zip of XML parts: fflate unpacks it (into a buffer of the
+ * size each part declares, checked first: a part never grows past it, as in
+ * lib/xlsxCodec.js), the browser's DOMParser reads the XML. Dates: an Excel date cell (a serial number, 1900
  * system with its leap-year bug, or 1904), an ISO date (t="d" or text) or
  * DD.MM.YYYY text.
  */
-import JSZip from 'jszip'
+import { strFromU8, unzipSync } from 'fflate'
 
 export const LICENCE_EXPORT_MAX_BYTES = 20 * 1024 * 1024
-// an unpacked part bigger than this is not a club's list (zip bombs)
-const MAX_PART_CHARS = 60 * 1024 * 1024
+// the workbook's parts unpacked, together: more than this is not a club's
+// list (zip bombs). Checked on the sizes the parts declare, before unpacking
+const MAX_UNPACKED_BYTES = 60 * 1024 * 1024
 const MAX_ROWS = 20000
 const HEADER_SCAN_ROWS = 30
 const NAME_MAX = 100
@@ -249,12 +251,27 @@ function columnIndex(ref) {
 /** The text of a shared or inline string: its runs, without phonetic hints. */
 const richText = (node) => els(node, 't').filter((t) => t.parentNode?.localName !== 'rPh').map((t) => t.textContent).join('')
 
-async function readPart(zip, path) {
-  const f = zip.file(path.replace(/^\//, ''))
-  if (!f) return null
-  const text = await f.async('string')
-  if (text.length > MAX_PART_CHARS) throw new LicenceExportError('OV_LICENCE_TOO_BIG', 'The file is too big for a club list')
-  return text
+/** The zip's XML parts (path -> bytes), unpacked within MAX_UNPACKED_BYTES. */
+function unzipParts(bytes) {
+  let unpacked = 0
+  try {
+    return unzipSync(bytes, {
+      filter: (f) => {
+        if (!/\.(xml|rels)$/i.test(f.name)) return false
+        unpacked += f.originalSize
+        if (unpacked > MAX_UNPACKED_BYTES) throw new LicenceExportError('OV_LICENCE_TOO_BIG', 'The file is too big for a club list')
+        return true
+      }
+    })
+  } catch (err) {
+    if (err instanceof LicenceExportError) throw err
+    throw new LicenceExportError('OV_LICENCE_NOT_XLSX', 'Not an .xlsx file')
+  }
+}
+
+function readPart(parts, path) {
+  const bytes = parts[path.replace(/^\//, '')]
+  return bytes ? strFromU8(bytes) : null
 }
 /** A relationship target -> a path in the zip, relative to the part's folder. */
 function resolveTarget(base, target) {
@@ -273,28 +290,28 @@ const relsPathOf = (part) => {
 }
 
 /** The cell values of the workbook's first sheet: rows (arrays, row 1 first) and the date system. */
-async function firstSheetRows(zip) {
-  const rootRels = await readPart(zip, '_rels/.rels')
+function firstSheetRows(parts) {
+  const rootRels = readPart(parts, '_rels/.rels')
   let workbookPath = 'xl/workbook.xml'
   if (rootRels) {
     const rel = els(parseXml(rootRels), 'Relationship').find((r) => /\/officeDocument$/.test(attr(r, 'Type') || ''))
     if (rel) workbookPath = resolveTarget('', attr(rel, 'Target')) || workbookPath
   }
-  const workbookXml = await readPart(zip, workbookPath)
+  const workbookXml = readPart(parts, workbookPath)
   if (!workbookXml) throw new LicenceExportError('OV_LICENCE_NOT_XLSX', 'No workbook in the file')
   const workbook = parseXml(workbookXml)
   const date1904 = els(workbook, 'workbookPr').some((p) => ['1', 'true'].includes(String(attr(p, 'date1904') || '').toLowerCase()))
   const sheet = els(workbook, 'sheet')[0]
   if (!sheet) throw new LicenceExportError('OV_LICENCE_NO_SHEET', 'The workbook has no sheet')
-  const relsXml = await readPart(zip, relsPathOf(workbookPath))
+  const relsXml = readPart(parts, relsPathOf(workbookPath))
   const rels = relsXml ? els(parseXml(relsXml), 'Relationship') : []
   const rid = attr(sheet, 'r:id') || attr(sheet, 'id')
   const sheetRel = rels.find((r) => attr(r, 'Id') === rid)
   const sheetPath = sheetRel ? resolveTarget(workbookPath, attr(sheetRel, 'Target')) : 'xl/worksheets/sheet1.xml'
   const sharedRel = rels.find((r) => /\/sharedStrings$/.test(attr(r, 'Type') || ''))
-  const sharedXml = await readPart(zip, sharedRel ? resolveTarget(workbookPath, attr(sharedRel, 'Target')) : 'xl/sharedStrings.xml')
+  const sharedXml = readPart(parts, sharedRel ? resolveTarget(workbookPath, attr(sharedRel, 'Target')) : 'xl/sharedStrings.xml')
   const shared = sharedXml ? els(parseXml(sharedXml), 'si').map(richText) : []
-  const sheetXml = await readPart(zip, sheetPath)
+  const sheetXml = readPart(parts, sheetPath)
   if (!sheetXml) throw new LicenceExportError('OV_LICENCE_NO_SHEET', 'The first sheet is missing')
   const rows = []
   let rowSeq = 0
@@ -339,12 +356,7 @@ export async function readLicenceExport(input) {
   const size = data?.byteLength ?? 0
   if (!size) throw new LicenceExportError('OV_LICENCE_NOT_XLSX', 'The file is empty')
   if (size > LICENCE_EXPORT_MAX_BYTES) throw new LicenceExportError('OV_LICENCE_TOO_BIG', 'The file is too big for a club list')
-  let zip
-  try {
-    zip = await JSZip.loadAsync(data)
-  } catch {
-    throw new LicenceExportError('OV_LICENCE_NOT_XLSX', 'Not an .xlsx file')
-  }
-  const { rows, date1904 } = await firstSheetRows(zip)
+  const bytes = data instanceof Uint8Array ? data : new Uint8Array(data)
+  const { rows, date1904 } = firstSheetRows(unzipParts(bytes))
   return licencePeopleFromRows(rows, { date1904 })
 }

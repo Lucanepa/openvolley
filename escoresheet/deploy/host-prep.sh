@@ -289,6 +289,9 @@ ensure_fs() {  # name label size
       # a cluster exists; afterwards an empty data/ refuses to start (no
       # silent initdb over lost data).
       install -d -o "$PG_UID" -g "$PG_UID" -m 0700 "${mp}/state"
+      # ov-postgres's archive_command (compose.yaml): WAL segments until
+      # backup-openvolley.sh encrypts them into the backup directory
+      install -d -o "$PG_UID" -g "$PG_UID" -m 0700 "${mp}/walarchive"
       ;;
     storage)
       chown "${NODE_UID}:${NODE_UID}" "$mp"; chmod 0750 "$mp"
@@ -341,8 +344,10 @@ OV_GPG_FPR=
 # Cap on the total size of ${OV_BACKUP_DIR} in MB (it lives on the shared root
 # filesystem); each output is checked against it and against OV_MIN_FREE_MB.
 #OV_BACKUP_MAX_MB=20480
-# Uptime Kuma push URL (…/api/push/<token>), empty = no push.
+# Uptime Kuma push URLs (…/api/push/<token>), empty = no push: one monitor
+# for the hourly database run, one for the nightly files run.
 OV_KUMA_PUSH_URL=
+OV_KUMA_FILES_PUSH_URL=
 EOF
     chmod 0640 "${OV_ETC_DIR}/backup.conf"
   fi

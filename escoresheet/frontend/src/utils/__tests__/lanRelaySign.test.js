@@ -4,8 +4,8 @@
  * docs/qr-signing-spec.md 4.5, 8.2): who may start a session (the relay host,
  * or the game PIN of a match the relay holds), the body caps, the timer
  * lifecycle that must never keep `vite build` alive (B3), and the same HTTP
- * scenario through every runtime: server.js, the Electron relay, the Vite
- * plugin and (OV_TAURI_RELAY_BIN) the Rust relay.
+ * scenario through every runtime: server.js, the Vite plugin and
+ * (OV_TAURI_RELAY_BIN) the Rust relay.
  */
 import { describe, it, expect, afterEach } from 'vitest'
 import { spawn } from 'node:child_process'
@@ -20,6 +20,7 @@ import { dirname, resolve } from 'node:path'
 import { createLanRelay } from '../../../lanRelayCore.js'
 import { vitePluginApiRoutes } from '../../../vite-plugin-api-routes.js'
 import { signHttpScenario, signPageCheck } from '../../../electron/__fixtures__/signHttpScenario.mjs'
+import { TAURI_RELAY_BIN, startTauriRelay } from './tauriRelay.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const FRONTEND_DIR = resolve(here, '../../..')
@@ -104,6 +105,21 @@ describe('Sign on phone on the LAN relay core', () => {
     // The session works like any other
     const open = await call(relay, '/api/sign/open', { k: ok.json.token }, { addr: '192.168.1.77' })
     expect(open.json).toMatchObject({ ok: true, state: 'opened', slot: 'captain-a' })
+  })
+
+  it('a device\'s live sessions are capped per address, not per match it names; the relay host keeps a share (rollout audit gap-phone-signing-1)', async () => {
+    const relay = newRelay({ isLocal: (addr) => addr === '127.0.0.1', signOptions: { caps: { total: 30, localReserve: 5 } } })
+    for (const n of [1, 2, 3]) syncMatch(relay, `made-up-${n}`, '111111')
+    const start = (n, addr) => call(relay, '/api/sign/start', { slot: 'captain-a', matchKey: `made-up-${n}`, context: CTX }, { headers: { 'x-ov-match-pin': '111111' }, addr })
+    for (let i = 0; i < 20; i++) expect((await start(1 + (i % 3), '192.168.1.66')).status).toBe(201)
+    for (const n of [1, 2, 3]) expect((await start(n, '192.168.1.66')).json.code).toBe('OV_SIGN_RATE_LIMITED')
+    // a second device takes what is left for other devices, then the relay is busy for them
+    for (let i = 0; i < 5; i++) expect((await start(1, '192.168.1.67')).status).toBe(201)
+    const busy = await start(2, '192.168.1.67')
+    expect(busy.status).toBe(503)
+    expect(busy.json.code).toBe('OV_SIGN_BUSY')
+    // the relay host's own scorer still starts
+    expect((await call(relay, '/api/sign/start', { slot: 'scorer', context: CTX }, { addr: '127.0.0.1' })).status).toBe(201)
   })
 
   it('wrong game PINs are counted per IP and then refused without comparing', async () => {
@@ -251,18 +267,6 @@ describe('every Node relay runtime and the Rust relay speak Sign on phone', () =
     }
   })
 
-  it('Electron in-process relay', async () => {
-    const relayServer = require('../../../electron/relayServer.js')
-    const [port, wsPort] = [await freePort(), await freePort()]
-    await relayServer.start({ port, wsPort })
-    try {
-      expect(await signHttpScenario({ httpBase: `http://127.0.0.1:${port}` })).toEqual([])
-      if (HAS_SIGN_PAGE) expect(await signPageCheck({ httpBase: `http://127.0.0.1:${port}` })).toEqual([])
-    } finally {
-      await relayServer.stop()
-    }
-  })
-
   it('Vite dev plugin', async () => {
     // Port 0: bound at once on a port the system picks (a freePort() port can
     // be taken by another worker before the plugin binds it)
@@ -293,20 +297,15 @@ describe('every Node relay runtime and the Rust relay speak Sign on phone', () =
     }
   })
 
-  // The Rust port needs a built binary (its dist/ embedded):
-  //   OV_TAURI_RELAY_BIN=<target>/debug/openvolley-escoresheet npx vitest run lanRelaySign
-  it.skipIf(!process.env.OV_TAURI_RELAY_BIN)('Tauri Rust relay (OV_TAURI_RELAY_BIN)', async () => {
-    const [port, wsPort] = [await freePort(), await freePort()]
-    const child = spawn(process.env.OV_TAURI_RELAY_BIN, ['--server-only'], {
-      env: { ...process.env, OPENVOLLEY_HTTP_PORT: String(port), OPENVOLLEY_WS_PORT: String(wsPort) },
-      stdio: 'ignore',
-    })
+  // The Rust port needs a built binary with dist/ (the phone page) beside it;
+  // CI builds it (relay-contract.yml, see tauriRelay.js)
+  it.skipIf(!TAURI_RELAY_BIN)('Tauri Rust relay (OV_TAURI_RELAY_BIN)', async () => {
+    const relay = await startTauriRelay()
     try {
-      await waitForHttp(`http://127.0.0.1:${port}/api/health`)
-      expect(await signHttpScenario({ httpBase: `http://127.0.0.1:${port}` })).toEqual([])
-      expect(await signPageCheck({ httpBase: `http://127.0.0.1:${port}` })).toEqual([])
+      expect(await signHttpScenario({ httpBase: relay.base })).toEqual([])
+      expect(await signPageCheck({ httpBase: relay.base })).toEqual([])
     } finally {
-      child.kill('SIGKILL')
+      await relay.stop()
     }
   }, 60000)
 })

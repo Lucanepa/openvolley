@@ -75,7 +75,8 @@ All under `https://openvolley.app`.
    `RefereeApp_beach.jsx`, and by `LivescoreApp_beach.jsx` with
    `showOptionsMenu={false}`): add the three links (privacy, terms,
    impressum) at the end of the menu, as `components/DashboardHeader.jsx` does
-   in openvolley (`DashboardOptionsMenu.jsx` there is unused: not that one).
+   in openvolley (not the old `DashboardOptionsMenu.jsx`, which no page used and
+   which was removed in 2026-11).
 
 7. **Livescore** (`LivescoreApp_beach.jsx`, the list page; its header has no
    options menu): a footer line under the list,

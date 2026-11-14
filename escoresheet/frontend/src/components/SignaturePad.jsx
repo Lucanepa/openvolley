@@ -25,8 +25,12 @@ import { REASON_KEYS } from '../utils/phoneSignTransport'
  * `closeOnSave` (default true): the pad calls onClose right after onSave.
  * False when the caller closes it with the saved signature on screen
  * (MatchEnd: the pad went a frame before the signature showed in its box).
+ *
+ * `allowResign` (with `readOnly`): a collected signature opens read-only with
+ * a "Re-sign" button; only that opens an empty pad, and its Save passes
+ * `meta.resigned: true`, so the caller can record the replacement.
  */
-export default function SignaturePad({ open, onClose, onSave, title = 'Sign', existingSignature = null, readOnly = false, zIndex, phone = null, closeOnSave = true }) {
+export default function SignaturePad({ open, onClose, onSave, title = 'Sign', existingSignature = null, readOnly: readOnlyProp = false, allowResign = false, zIndex, phone = null, closeOnSave = true }) {
   const { t } = useTranslation()
   const canvasRef = useRef(null)
   const isDrawingRef = useRef(false)
@@ -34,6 +38,13 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign', ex
   const [hasSignature, setHasSignature] = useState(false)
   const [mode, setMode] = useState('draw') // 'draw' | 'phone'
   const [hallIp, setHallIp] = useState(null)
+  // Re-sign was tapped on a read-only signature: an empty pad until closed
+  const [resigning, setResigning] = useState(false)
+  useEffect(() => {
+    if (!open) setResigning(false)
+  }, [open])
+  const readOnly = readOnlyProp && !resigning
+  const shownSignature = resigning ? null : existingSignature
   const phoneOffered = !!phone && !readOnly
   const phoneLocked = phoneOffered && !!phone.locked
   // Locked while on the phone view: unmounting PhoneSignPanel closes its session
@@ -83,7 +94,7 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign', ex
       ctx.lineJoin = 'round'
       
       // Load existing signature if provided, otherwise clear canvas
-      if (existingSignature) {
+      if (shownSignature) {
         const img = new Image()
         img.onload = () => {
           // Draw the existing signature to fill the canvas
@@ -96,7 +107,7 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign', ex
           ctx.clearRect(0, 0, rect.width, rect.height)
           setHasSignature(false)
         }
-        img.src = existingSignature
+        img.src = shownSignature
       } else {
         // Clear canvas (transparent background)
         ctx.clearRect(0, 0, rect.width, rect.height)
@@ -158,7 +169,7 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign', ex
       if (timerId) clearTimeout(timerId)
       if (cleanup) cleanup()
     }
-  }, [open, existingSignature, readOnly, mode])
+  }, [open, shownSignature, readOnly, mode])
 
   function getPoint(e) {
     const canvas = canvasRef.current
@@ -218,14 +229,14 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign', ex
     if (!canvas || !hasSignature || savedRef.current) return
     const dataURL = canvas.toDataURL('image/png')
     if (!closeOnSave) savedRef.current = true
-    onSave(dataURL, { source: 'device' })
+    onSave(dataURL, resigning ? { source: 'device', resigned: true } : { source: 'device' })
     if (closeOnSave) onClose()
   }
 
   function acceptPhoneSignature(dataUrl, meta) {
     if (savedRef.current) return
     if (!closeOnSave) savedRef.current = true
-    onSave(dataUrl, meta)
+    onSave(dataUrl, resigning ? { ...(meta || {}), resigned: true } : meta)
     if (closeOnSave) onClose()
   }
 
@@ -288,7 +299,14 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign', ex
             on the right (emerald = saving). h-11: signed courtside. */}
         <div className="ov-kit flex flex-wrap items-center gap-2">
           {readOnly ? (
-            <Button variant="dark" size="xl" className="ml-auto" onClick={onClose}>{t('signature.close', 'Close')}</Button>
+            <>
+              {allowResign && (
+                <Button variant="secondary" size="xl" className="font-medium" onClick={() => setResigning(true)} data-testid="signature-resign">
+                  {t('signature.resign', 'Re-sign')}
+                </Button>
+              )}
+              <Button variant="dark" size="xl" className="ml-auto" onClick={onClose}>{t('signature.close', 'Close')}</Button>
+            </>
           ) : (
             <>
               {phoneOffered && (

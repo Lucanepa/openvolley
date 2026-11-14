@@ -70,7 +70,8 @@ describe('penalty points deferred until both line-ups are in (FIVB 16.2.3 / 21.3
     expect(sb).toMatch(/onPenaltyPointsOwed=\{awardOwedPenaltyPoints\}/)
     const award = between('const awardOwedPenaltyPoints = useCallback(', 'const handleStartRally = useCallback(')
     // one action; handlePoint joins it (a second keyed 'point' call would be dropped as a double tap)
-    expect(award).toMatch(/runAction\('penaltyPoints', async \(\) => \{\n\s*for \(const team of teams\) await handlePoint\(mapTeamKeyToSide\(team\), true\)/)
+    // with its sanction's seq: Undo takes the penalty back with its point
+    expect(award).toMatch(/runAction\('penaltyPoints', async \(\) => \{\n\s*for \(const \{ team, penaltySeq \} of owed\) await handlePoint\(mapTeamKeyToSide\(team\), true, \{ penaltySeq \}\)/)
   })
 })
 

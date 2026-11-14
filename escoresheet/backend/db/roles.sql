@@ -31,7 +31,10 @@
 --                                          INSERT (sign-up), DELETE
 --                                          (delete-account), UPDATE of
 --                                          encrypted_password, updated_at,
---                                          email_confirmed_at, last_sign_in_at only
+--                                          email_confirmed_at, last_sign_in_at,
+--                                          banned_until (deactivate), email and
+--                                          raw_app_meta_data (the admin's
+--                                          address change) only
 --                       auth.app_sessions  SELECT, INSERT, UPDATE, DELETE
 --                       auth.app_tokens    SELECT, INSERT, UPDATE, DELETE
 --                                          (db/010; skipped when absent)
@@ -44,6 +47,9 @@
 --                       auth.app_memberships SELECT, INSERT, DELETE
 --                                          (db/012, lib/accounts.js; skipped
 --                                          when absent)
+--               ov_meta USAGE, and SELECT on schema_migrations (the
+--                       migration record of scripts/migrate.mjs, read by
+--                       lib/schemaVersion.js; skipped when absent)
 
 \set ON_ERROR_STOP on
 BEGIN;
@@ -185,12 +191,22 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ov_app;
 -- of those account columns only. Without it every account deletion fails
 -- (the UPDATE privilege is checked even when no row matches). A table-level
 -- REVOKE also drops column grants, so the column GRANT comes after it.
+-- The other: event_revisions.applied, set when a revision stored before its
+-- event is applied on its resend (lib/eventRevisions.js, db/039).
 SELECT format('REVOKE UPDATE ON %s FROM ov_app', t)
   FROM unnest(ARRAY['public.event_revisions', 'public.activity_log']) AS t
  WHERE to_regclass(t) IS NOT NULL \gexec
+-- The admin audit log (db/007) is insert-only for the app: never rewritten,
+-- never deleted (its retention, if any, runs as ov_owner). The account
+-- columns stay updatable for the detach (ON DELETE SET NULL, and any explicit
+-- one like the tables above).
+SELECT format('REVOKE UPDATE, DELETE ON %s FROM ov_app', t)
+  FROM unnest(ARRAY['public.audit_log']) AS t
+ WHERE to_regclass(t) IS NOT NULL \gexec
 SELECT format('GRANT UPDATE (%s) ON %s TO ov_app', c, t)
-  FROM (VALUES ('public.event_revisions', 'actor_id'),
-               ('public.activity_log', 'account_id, uploader_id')) AS g(t, c)
+  FROM (VALUES ('public.event_revisions', 'actor_id, applied'),
+               ('public.activity_log', 'account_id, uploader_id'),
+               ('public.audit_log', 'actor_id, target_user_id')) AS g(t, c)
  WHERE to_regclass(t) IS NOT NULL \gexec
 
 -- No public table is held back: the daily VolleyManager sync (lib/vmSync.js,
@@ -224,7 +240,11 @@ BEGIN
   EXECUTE format('REVOKE ALL (%s) ON auth.users FROM ov_app', cols);
 END $$;
 GRANT SELECT, INSERT, DELETE ON auth.users TO ov_app;
-GRANT UPDATE (encrypted_password, updated_at, email_confirmed_at, last_sign_in_at) ON auth.users TO ov_app;
+-- banned_until: lib/accounts.js setActive (deactivate / reactivate, db/027);
+-- email, raw_app_meta_data: its updateProfile (an admin moves an account to a
+-- new address, left unconfirmed until its owner confirms it).
+GRANT UPDATE (encrypted_password, updated_at, email_confirmed_at, last_sign_in_at,
+              banned_until, email, raw_app_meta_data) ON auth.users TO ov_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON auth.app_sessions TO ov_app;
 -- db/010: one-time email links (reset / confirm). Optional: on a database
 -- without 010 there is no such table (lib/auth.js then answers 503).
@@ -242,5 +262,19 @@ SELECT 'GRANT SELECT, INSERT, DELETE ON auth.app_memberships TO ov_app'
 -- table the passkey actions answer 503; deletion cascades from auth.users.
 SELECT 'GRANT SELECT, INSERT, UPDATE, DELETE ON auth.passkeys TO ov_app'
  WHERE to_regclass('auth.passkeys') IS NOT NULL \gexec
+
+-- ov_meta: the migration record (scripts/migrate.mjs). The backend reads it
+-- to tell whether the database is behind its image (lib/schemaVersion.js);
+-- only ov_owner writes it. A restore without privileges (restore-db.sh,
+-- restore-test.sh, scripts/migrate/restore.sh) drops these grants; they come
+-- back here. Optional: absent until the runner's first run.
+SELECT format('REVOKE ALL ON SCHEMA %s FROM PUBLIC, ov_app', s)
+  FROM unnest(ARRAY['ov_meta']) AS s WHERE to_regnamespace(s) IS NOT NULL \gexec
+SELECT format('GRANT USAGE ON SCHEMA %s TO ov_app', s)
+  FROM unnest(ARRAY['ov_meta']) AS s WHERE to_regnamespace(s) IS NOT NULL \gexec
+SELECT format('REVOKE ALL ON %s FROM PUBLIC, ov_app', t)
+  FROM unnest(ARRAY['ov_meta.schema_migrations']) AS t WHERE to_regclass(t) IS NOT NULL \gexec
+SELECT format('GRANT SELECT ON %s TO ov_app', t)
+  FROM unnest(ARRAY['ov_meta.schema_migrations']) AS t WHERE to_regclass(t) IS NOT NULL \gexec
 
 COMMIT;

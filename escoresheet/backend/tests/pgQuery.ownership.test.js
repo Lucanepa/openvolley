@@ -92,6 +92,24 @@ describe('pgQuery match ownership', { skip: SKIP_PG }, () => {
     assert.equal(rows.length, 2)
   })
 
+  // The sync queue deletes a set the device deleted (an undone set end,
+  // Reopen set, a forfeit reversed) by its scoped external_id
+  it('the creator deletes one set of its match by its scoped external_id; a bare id is refused', async () => {
+    const m = await matchOf(alice)
+    const s1 = { external_id: `${m.external_id}:s:1`, match_id: m.id, index: 1, home_points: 25, finished: true }
+    const s2 = { external_id: `${m.external_id}:s:2`, match_id: m.id, index: 2, home_points: 25, finished: true }
+    assert.equal((await q('sets', 'insert', { data: [s1, s2] }, as(alice))).status, 200)
+    const r = await q('sets', 'delete', { filters: [eq('external_id', s2.external_id)] }, as(alice))
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    const left = (await raw.query('SELECT external_id FROM sets WHERE match_id = $1', [m.id])).rows
+    assert.deepEqual(left, [{ external_id: s1.external_id }])
+    // a set the cloud never had: nothing matched, no error
+    assert.equal((await q('sets', 'delete', { filters: [eq('external_id', `${m.external_id}:s:9`)] }, as(alice))).status, 200)
+    const bare = await q('sets', 'delete', { filters: [eq('external_id', '1')] }, as(alice))
+    assert.equal(bare.status, 400)
+    assert.equal(bare.body.error.code, 'OV_UNSCOPED_WRITE')
+  })
+
   it('a stranger cannot write sets, events or the live state of the match', async () => {
     const m = await matchOf(alice)
     const set = { external_id: `${m.external_id}:s:1`, match_id: m.id, index: 1, home_points: 1 }

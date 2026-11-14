@@ -10,7 +10,7 @@ import {
 import { useBenchRequests } from './useBenchRequests'
 import BenchLineupSheet from './BenchLineupSheet'
 import BenchSubstitutionSheet from './BenchSubstitutionSheet'
-import { displaySetNumber } from '../../utils/matchFormat'
+import { displaySetNumber, resolveBestOf } from '../../utils/matchFormat'
 
 /**
  * The bench's requests to the scorer (like the bench app of a DataProject
@@ -27,7 +27,7 @@ export default function BenchRequestPanel({ matchId, team, data, players, discSt
   const events = useMemo(() => data?.events || [], [data?.events])
   const setIndex = data?.set?.index ?? benchSetIndex(data?.allSets, data?.liveState)
   const intervalRunning = data?.liveState?.set_interval_active === true
-  const bestOf = data?.match?.bestOf ?? 5
+  const bestOf = resolveBestOf(data?.match, data?.liveState)
   const ctx = { match: data?.match, events, setIndex, team, intervalRunning }
 
   const lineupAvail = benchLineupAvailability(ctx)

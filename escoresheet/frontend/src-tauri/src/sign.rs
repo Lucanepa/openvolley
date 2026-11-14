@@ -37,6 +37,10 @@ pub const SIGN_PATH: &str = "/sign";
 /// Headers of the phone page (/sign*), spec 4.7.
 pub const SIGN_PAGE_CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
+/// `per_owner` / `start_per_owner`: per owner as the relay names it (the
+/// relay host "local", or the caller's address for a game-PIN start).
+/// `local_reserve`: the last live sessions of the total that only the relay
+/// host may take, so other devices never fill the relay for its own scorer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Caps {
     pub total: usize,
@@ -44,9 +48,10 @@ pub struct Caps {
     pub start_per_owner: u32,
     pub phone_per_ip: u32,
     pub waiters: usize,
+    pub local_reserve: usize,
 }
 
-pub const LAN_CAPS: Caps = Caps { total: 200, per_owner: 20, start_per_owner: 60, phone_per_ip: 600, waiters: 200 };
+pub const LAN_CAPS: Caps = Caps { total: 200, per_owner: 20, start_per_owner: 60, phone_per_ip: 600, waiters: 200, local_reserve: 40 };
 
 pub const SLOTS: &[&str] = &[
     "captain-a", "captain-b", "asst-scorer", "scorer", "ref2", "ref1",
@@ -586,12 +591,14 @@ impl SignSessions {
             Ok(c) => c,
             Err(code) => return sign_error(400, code),
         };
-        if inner.by_token.len() >= self.caps.total {
+        // The relay host may fill the whole total, every other owner all but its reserve
+        let room = if owner == "local" { self.caps.total } else { self.caps.total.saturating_sub(self.caps.local_reserve) };
+        if inner.by_token.len() >= room {
             drop(inner);
             self.sweep();
             inner = self.lock();
         }
-        if inner.by_token.len() >= self.caps.total {
+        if inner.by_token.len() >= room {
             return sign_error_retry(503, "OV_SIGN_BUSY", 30);
         }
         if inner.by_token.values().filter(|s| s.owner == owner).count() >= self.caps.per_owner {
@@ -903,6 +910,7 @@ mod tests {
                         "startPerOwner" => caps.start_per_owner = n as u32,
                         "phonePerIp" => caps.phone_per_ip = n as u32,
                         "waiters" => caps.waiters = n as usize,
+                        "localReserve" => caps.local_reserve = n as usize,
                         other => panic!("unknown cap {other}"),
                     }
                 }

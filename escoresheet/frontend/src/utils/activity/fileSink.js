@@ -2,13 +2,16 @@
  * The activity log as daily files in the apps, next to the native backups:
  *   desktop:  <data dir>/OpenVolley/logs/activity-YYYY-MM-DD.jsonl
  *             (src-tauri/src/activity.rs: activity_append, activity_open_dir)
- *   Android:  Documents/OpenVolley/logs/activity-YYYY-MM-DD.jsonl
- *             (@capacitor/filesystem, the folders the backups use)
+ *   Android:  <app folder>/OpenVolley/logs/activity-YYYY-MM-DD.jsonl
+ *             (@capacitor/filesystem, the app's own folders the backups use:
+ *             nativeBackup/platform appFilesDirectories; no other app reads
+ *             them, and they go with the app. Older versions wrote to the
+ *             public Documents folder: nativeBackup/androidFiles moves them in)
  *   browser:  none (Dexie only)
  * One JSON object per line; written every 2 s or 50 lines and on quit. At
  * most 30 daily files and 50 MB are kept. Never throws into the app.
  */
-import { detectBackupPlatform } from '../nativeBackup/platform'
+import { appFilesDirectories, detectBackupPlatform } from '../nativeBackup/platform'
 
 export const LOG_SUBDIR = 'OpenVolley/logs'
 export const FILE_FLUSH_MS = 2000
@@ -52,7 +55,7 @@ function tauriWriter(invoke) {
 }
 
 function capacitorWriter({ Filesystem, Directory, Encoding }, { log = console } = {}) {
-  const candidates = [Directory.Documents, Directory.External, Directory.Data].filter(Boolean)
+  const candidates = appFilesDirectories(Directory)
   let ready = null
   let lastPrune = 0
 

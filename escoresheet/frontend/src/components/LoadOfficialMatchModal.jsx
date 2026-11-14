@@ -113,17 +113,25 @@ const SETUP_LEVELS = ['U23', 'U21', 'U19', 'U17']
  * Match setup's level (type3 / type3Other) from a schedule row. The schedule
  * says only "junior" for youth games: the age is in the league ("U23 2. Liga",
  * "SM Quali U18", "U20 Ligamodus"), so it is read from there. An age Match
- * setup does not offer is "other" with the age as its text.
+ * setup does not offer is "other" with the age as its text. The league's age
+ * wins over the level: the sync marks a league "senior" when it does not
+ * know it as a youth one ("U21 Damen", "U13 Mixed"), and such a game printed
+ * Senior on the sheet.
  * @param {string|null|undefined} level svrz_games.match_level
  * @param {string|null|undefined} league svrz_games.league
  * @returns {{ type3: string|undefined, type3Other: string }}
  */
 export function levelFromSchedule(level, league) {
-  if (level !== 'junior') return { type3: level || undefined, type3Other: '' }
   const age = /\bU ?(\d{2})\b/i.exec(String(league || ''))
-  if (!age) return { type3: 'other', type3Other: '' }
+  if (!age) return level === 'junior' ? { type3: 'other', type3Other: '' } : { type3: level || undefined, type3Other: '' }
   const u = `U${age[1]}`
   return SETUP_LEVELS.includes(u) ? { type3: u, type3Other: '' } : { type3: 'other', type3Other: u }
+}
+
+/** svrz_games.match_format as Match setup's format: 3, 5 or null (unknown). */
+export function knownMatchFormat(value) {
+  const n = Number(value)
+  return value != null && (n === 3 || n === 5) ? n : null
 }
 
 /**
@@ -144,7 +152,9 @@ export function mapSupabaseToMatchFormat(row) {
     type3,
     type3Other,
     championshipType: row.championship_type,
-    bestOf: row.match_format,
+    // 3 or 5 when the schedule knows it; else none, and Match setup asks
+    // (a guessed best of 5 played a best-of-3 decider to 25 points)
+    bestOf: knownMatchFormat(row.match_format),
     referee1First: row.referee_1_first_name,
     referee1Last: row.referee_1_last_name,
     referee1Dob: row.referee_1_dob,
@@ -573,19 +583,16 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch, a
           </div>
         )}
 
-        {/* Selection Path - shown when selections are made */}
-        {gender && (
-          <div className="mt-3 border-t border-stone-100 pt-2.5">
+        {/* Selection path, once a league is chosen: with the gender alone it
+            was a lone "Men ♂" line under the selectors (UI tour 14.11) */}
+        {gender && league && (
+          <div className="mt-3 border-t border-stone-100 pt-2.5" data-testid="schedule-selection-path">
             <div className="flex items-center gap-2 text-sm text-stone-700">
               <span>
                 {gender === 'men' ? `${t('matchSetup.men', 'Men')} ♂` : `${t('matchSetup.women', 'Women')} ♀`}
               </span>
-              {league && (
-                <>
-                  <span className="text-stone-300">·</span>
-                  <span className="font-semibold text-stone-900">{formatLeagueDisplay(league, gender)}</span>
-                </>
-              )}
+              <span className="text-stone-300">·</span>
+              <span className="font-semibold text-stone-900">{formatLeagueDisplay(league, gender)}</span>
             </div>
           </div>
         )}
@@ -700,9 +707,12 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch, a
                     (tailwind.css, "Load match from schedule"): game #, date
                     and time over the home team over "vs" the away team */}
                 <span className="sg-teams flex min-w-0 flex-wrap items-baseline gap-x-1.5">
-                  <span className="max-w-full truncate font-semibold text-stone-900">{match.home}</span>
+                  {/* real spaces between the words: copied text, screen
+                      readers and the phone card read "home vs away" (the gap
+                      and margin alone gave "vsVolley Luzern") */}
+                  <span className="max-w-full truncate font-semibold text-stone-900">{match.home}</span>{' '}
                   <span className="max-w-full truncate">
-                    <span className="mr-1.5 text-stone-400">{t('common.vs', 'vs')}</span>
+                    <span className="text-stone-400">{t('common.vs', 'vs')}</span>{' '}
                     <span className="font-semibold text-stone-900">{match.away}</span>
                   </span>
                 </span>

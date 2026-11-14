@@ -66,22 +66,29 @@ describe('teamSanctionSummary', () => {
 
   it('splits player, official and team sanctions, in order', () => {
     const s = teamSanctionSummary(events, 'away')
-    expect(s.players['7'].map(x => x.type)).toEqual(['warning', 'penalty'])
-    expect(s.officials.Coach.map(x => x.type)).toEqual(['warning'])
+    expect(s.players.get('7').map(x => x.type)).toEqual(['warning', 'penalty'])
+    expect(s.officials.get('Coach').map(x => x.type)).toEqual(['warning'])
     expect(s.team.map(x => x.type)).toEqual(['delay_warning', 'improper_request'])
-    expect(s.players['4']).toBeUndefined()
+    expect(s.players.get('4')).toBeUndefined()
   })
 
   it('records set and score with the sanctioned team first', () => {
     const s = teamSanctionSummary(events, 'away')
-    expect(s.players['7'][0]).toMatchObject({ setIndex: 1, own: 2, opp: 1 })
-    expect(s.players['7'][1]).toMatchObject({ setIndex: 2, own: 0, opp: 0 })
+    expect(s.players.get('7')[0]).toMatchObject({ setIndex: 1, own: 2, opp: 1 })
+    expect(s.players.get('7')[1]).toMatchObject({ setIndex: 2, own: 0, opp: 0 })
     const h = teamSanctionSummary(events, 'home')
-    expect(h.players['4'][0]).toMatchObject({ type: 'expulsion', own: 1, opp: 2 })
+    expect(h.players.get('4')[0]).toMatchObject({ type: 'expulsion', own: 1, opp: 2 })
   })
 
   it('is empty without events', () => {
-    expect(teamSanctionSummary(undefined, 'home')).toEqual({ players: {}, officials: {}, team: [] })
+    expect(teamSanctionSummary(undefined, 'home')).toEqual({ players: new Map(), officials: new Map(), team: [] })
+  })
+
+  it('keys by Map: a role or number named like an object member is just a key', () => {
+    const s = teamSanctionSummary([sanction({ team: 'home', type: 'warning', role: 'constructor' }, 1, 1)], 'home')
+    expect(s.officials.get('constructor').map(x => x.type)).toEqual(['warning'])
+    expect(s.officials.get('hasOwnProperty')).toBeUndefined()
+    expect(s.players.get('constructor')).toBeUndefined()
   })
 })
 

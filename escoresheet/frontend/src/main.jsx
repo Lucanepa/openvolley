@@ -10,7 +10,8 @@ import { LoggingProvider } from './contexts/LoggingContext'
 import { ScaleProvider } from './contexts/ScaleContext'
 import ErrorBoundary from './components/ErrorBoundary'
 import { UiHost } from './ui/UiHost.jsx'
-import { stripCacheBustParam, applyUpdateAtStart } from './hooks/useServiceWorker'
+import { stripCacheBustParam, applyUpdateAtStart, answerUpdateQuestions, installPreloadErrorNotice } from './hooks/useServiceWorker'
+import { readOpenMatch } from './utils/deviceSelfCheck'
 import { isDesktopScoretable, resolveDesktopWindow } from './utils/appLifecycle'
 import { setAppEntry } from './utils/appEntry'
 import { watchFormStack } from './utils/formLayout'
@@ -21,6 +22,7 @@ import { installDiagnostics } from './diagnostics'
 import { initTheme } from './utils/theme'
 import { isNativeApp } from './utils/backendConfig'
 import { unlockOrientation } from './utils/nativeOrientation'
+import { startNativeFileHousekeeping } from './utils/nativeBackup'
 
 // The scoretable: the only page that saves automatic match backups
 setAppEntry('scorer')
@@ -32,6 +34,13 @@ installDiagnostics({ db })
 // Clean up cache_bust query parameter (added by cache clear / update flow).
 // Keep the rest of the query: ?match=&team= attach tablets to the live match.
 stripCacheBustParam()
+
+// An update accepted in another tab or window of the app waits while this
+// page has a match on show (its worker would switch under it); a file of
+// this build gone from the site (vite:preloadError) asks for a reload after
+// the rally
+answerUpdateQuestions({ isBusy: () => readOpenMatch() != null })
+installPreloadErrorNotice()
 
 // The desktop app: a new build waiting at start is applied before the scorer
 // touches anything (the binary is the update; see applyUpdateAtStart). In the
@@ -47,6 +56,11 @@ initLogger()
 // The match activity log (scoring, corrections, sync, app start/quit, errors):
 // local, synced, and a daily file in the apps (utils/activity)
 startActivityLog({ db })
+
+// The apps: the backups' (and on Android the saved PDFs') clean-up at every
+// start, and on Android the first start's move of the files older versions
+// left in the public Documents folder into the app's own (utils/nativeBackup)
+startNativeFileHousekeeping()
 
 // Portrait data entry: <body> carries ov-form-stack while a tablet is held
 // upright, which switches on the one-field-per-row rules in tailwind.css for

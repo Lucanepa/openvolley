@@ -1,5 +1,5 @@
 {
- "about": "Shared vectors of the Sign on phone protocol (docs/qr-signing-spec.md 8.4). One file, three runners: electron/signSessionCore.cjs (vitest), backend/lib/signSessions.js (node --test) and src-tauri/src/sign.rs (cargo test). Flows: each step runs at `at` ms on a fake clock (default: the previous step's time), as `owner` (default \"local\") from `ip` (default \"192.0.2.1\"); $token / $watch name the last start, $token:<save> a saved one; `expect` lists the status, body.code, body.state, other body keys to compare, `has` / `lacks` body keys and `retryAfter` (a Retry-After header). Caps: LAN defaults with the flow's `caps` over them; `waitMs` is the long-poll hold.",
+ "about": "Shared vectors of the Sign on phone protocol (docs/qr-signing-spec.md 8.4). One file, three runners: electron/signSessionCore.cjs (vitest), backend/lib/signSessions.js (node --test) and src-tauri/src/sign.rs (cargo test). Flows: each step runs at `at` ms on a fake clock (default: the previous step's time), as `owner` (default \"local\") from `ip` (default \"192.0.2.1\"); $token / $watch name the last start, $token:<save> a saved one; `expect` lists the status, body.code, body.state, other body keys to compare, `has` / `lacks` body keys and `retryAfter` (a Retry-After header). Caps: LAN defaults (localReserve 40: the live sessions only the owner \"local\" may take) with the flow's `caps` over them; `waitMs` is the long-poll hold.",
  "context": [
   {
    "name": "full context, unknown key dropped",
@@ -2126,7 +2126,8 @@
   {
    "name": "live sessions in total",
    "caps": {
-    "total": 2
+    "total": 2,
+    "localReserve": 0
    },
    "steps": [
     {
@@ -2187,6 +2188,110 @@
       }
      },
      "owner": "c",
+     "at": 600000,
+     "expect": {
+      "status": 201
+     }
+    }
+   ]
+  },
+  {
+   "name": "the relay host keeps a share of the total",
+   "caps": {
+    "total": 3,
+    "localReserve": 1
+   },
+   "steps": [
+    {
+     "op": "start",
+     "body": {
+      "slot": "captain-a",
+      "matchKey": "m1",
+      "context": {
+       "home": "A",
+       "away": "B"
+      }
+     },
+     "owner": "pin:192.0.2.7",
+     "expect": {
+      "status": 201
+     }
+    },
+    {
+     "op": "start",
+     "body": {
+      "slot": "captain-a",
+      "matchKey": "m1",
+      "context": {
+       "home": "A",
+       "away": "B"
+      }
+     },
+     "owner": "pin:192.0.2.8",
+     "expect": {
+      "status": 201
+     }
+    },
+    {
+     "op": "start",
+     "body": {
+      "slot": "captain-a",
+      "matchKey": "m1",
+      "context": {
+       "home": "A",
+       "away": "B"
+      }
+     },
+     "owner": "pin:192.0.2.9",
+     "expect": {
+      "status": 503,
+      "code": "OV_SIGN_BUSY",
+      "retryAfter": true
+     }
+    },
+    {
+     "op": "start",
+     "body": {
+      "slot": "captain-a",
+      "matchKey": "m1",
+      "context": {
+       "home": "A",
+       "away": "B"
+      }
+     },
+     "owner": "local",
+     "expect": {
+      "status": 201
+     }
+    },
+    {
+     "op": "start",
+     "body": {
+      "slot": "captain-a",
+      "matchKey": "m1",
+      "context": {
+       "home": "A",
+       "away": "B"
+      }
+     },
+     "owner": "local",
+     "expect": {
+      "status": 503,
+      "code": "OV_SIGN_BUSY",
+      "retryAfter": true
+     }
+    },
+    {
+     "op": "start",
+     "body": {
+      "slot": "captain-a",
+      "matchKey": "m1",
+      "context": {
+       "home": "A",
+       "away": "B"
+      }
+     },
+     "owner": "pin:192.0.2.9",
      "at": 600000,
      "expect": {
       "status": 201

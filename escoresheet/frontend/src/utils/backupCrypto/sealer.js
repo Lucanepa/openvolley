@@ -10,10 +10,17 @@
  * PIN is derived, and the files written from then on do not open with the
  * old PIN. warm() derives them when the match is opened, so the first file
  * (maybe the last one before the app quits) only encrypts.
+ *
+ * With a recovery key in the build (recovery.js), every data key is also
+ * wrapped for it (the recovery slot): the strong key, kept offline by the
+ * league. A key that does not import, or that this device's WebCrypto cannot
+ * wrap for (ECDH, HKDF), is logged once and left out; the files still get
+ * their PIN slots.
  */
 
-import { derivePinKey } from './kdf'
-import { newDataKey, pinKey, pinSlot, readableHeader, sealText } from './envelope'
+import { derivePinKey } from './kdf.js'
+import { newDataKey, pinKey, pinSlot, readableHeader, recoverySlot, sealText } from './envelope.js'
+import { configuredRecoveryKey, importRecoveryPublicKey } from './recovery.js'
 
 const pinValue = (v) => (v === undefined || v === null ? '' : String(v).trim())
 
@@ -37,11 +44,41 @@ export function backupPins(match) {
 }
 
 /**
- * @param {{ derive?: typeof derivePinKey, params?: object }} [options] the KDF (tests)
+ * @param {{ derive?: typeof derivePinKey, params?: object, recoveryKey?: string }} [options]
+ *   the KDF (tests); the recovery public key (SPKI, base64; default: the build's, '' for none)
  */
-export function createBackupSealer({ derive = derivePinKey, params } = {}) {
+export function createBackupSealer({ derive = derivePinKey, params, recoveryKey = configuredRecoveryKey() } = {}) {
   const pinKeys = new Map() // `${scope}\n${pin}\n${value}` -> Promise<{ kek, kdf }>
   const keyrings = new Map() // scope -> { signature, promise: Promise<{ dataKey, slots }> }
+  let recovery = null // Promise<{ id, publicKey } | null>, imported once
+  let recoveryUnusable = false // its slot failed once: left out for this session
+
+  function recoveryOf() {
+    if (!recovery) {
+      recovery = recoveryKey
+        ? importRecoveryPublicKey(recoveryKey).catch((e) => {
+          console.error('[BackupCrypto] the recovery key of this build cannot be used, files get PIN slots only:', e?.message || e)
+          return null
+        })
+        : Promise.resolve(null)
+    }
+    return recovery
+  }
+
+  // The recovery slot of a new data key, or null: never a reason to write no file
+  async function recoverySlotOf(dataKey) {
+    const strong = recoveryUnusable ? null : await recoveryOf()
+    if (!strong) return null
+    try {
+      return await recoverySlot(dataKey, strong)
+    } catch (e) {
+      if (!recoveryUnusable) {
+        recoveryUnusable = true
+        console.error('[BackupCrypto] this device cannot use the recovery key of this build, files get PIN slots only:', e?.message || e)
+      }
+      return null
+    }
+  }
 
   // Forgotten when it fails, so the next file tries again
   function remember(map, key, promise) {
@@ -63,6 +100,8 @@ export function createBackupSealer({ derive = derivePinKey, params } = {}) {
       const dataKey = await newDataKey()
       const slots = []
       for (const p of pins) slots.push(await pinSlot(p.pin, dataKey, await keyOf(scope, p)))
+      const strong = await recoverySlotOf(dataKey)
+      if (strong) slots.push(strong)
       return { dataKey, slots }
     })()
     const entry = { signature, promise }

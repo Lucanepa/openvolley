@@ -34,8 +34,9 @@ const SURFACE = {
   border: '1px solid var(--ov-hairline-soft)',
   boxShadow: 'var(--ov-shadow-card)'
 }
-import { setsToWin, displaySetNumber } from '../utils/matchFormat'
-import { getSideAForSet } from '../domain/rules'
+import { setsToWin, displaySetNumber, resolveBestOf } from '../utils/matchFormat'
+import { getSideAForSet, getFirstServeForSet } from '../domain/rules'
+import { countRegularSubstitutions } from '../domain/substitutions'
 import { sanctionTarget, compareBySeq } from '../domain/describe'
 import { TEAM_COLOUR_MARK, matchDiscPaint, teamLiberoColour, markColourOn, teamBoxStyle, effectiveTeamColour } from '../utils/teamColours'
 import { TIMEOUT_LIMIT, SUBSTITUTION_LIMIT, counterTone, counterPips, benchShortName } from './bench/benchLayout.js'
@@ -322,7 +323,8 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
   }, [data?.allSets, team])
 
   // Check if match is finished
-  const matchBestOf = data?.match?.bestOf ?? 5
+  // the matches row (match_info) or the live state when the relay has no bundle
+  const matchBestOf = resolveBestOf(data?.match, data?.liveState)
   const isMatchFinished = useMemo(() => {
     const needed = setsToWin(matchBestOf)
     return setsWon.team >= needed || setsWon.opponent >= needed
@@ -433,14 +435,10 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     ).length
   }, [data?.events, data?.set, team])
 
-  // Get substitutions used in current set
+  // Regular substitutions used in current set (exceptional ones do not count toward the 6)
   const substitutionsUsed = useMemo(() => {
     if (!data?.events || !data?.set) return 0
-    return data.events.filter(
-      event => event.type === 'substitution' && 
-      event.setIndex === data.set.index && 
-      event.payload?.team === team
-    ).length
+    return countRegularSubstitutions(data.events, team, data.set.index)
   }, [data?.events, data?.set, team])
 
   // Get who is serving
@@ -452,9 +450,8 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
       .sort(newestFirst)
     
     if (serveEvents.length === 0) {
-      // Check first serve from match
-      const firstServe = data.match?.firstServe
-      return firstServe === team
+      // The set's first serve (it alternates; set 5 has its own toss)
+      return getFirstServeForSet(data.set.index, data.match || {}) === team
     }
     
     const lastPoint = serveEvents[0]
@@ -623,11 +620,9 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
       })
       .map(p => {
         const sanctions = getPlayerSanctions(p.number)
+        // the chips show the shirt number only: no names, no date of birth
         return {
           number: p.number,
-          firstName: p.firstName || '',
-          lastName: p.lastName || p.name || '',
-          dob: p.dob || '',
           sanctions,
           type: 'player'
         }
@@ -673,9 +668,6 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
         const sanctions = getPlayerSanctions(p.number)
         return {
           number: p.number,
-          firstName: p.firstName || '',
-          lastName: p.lastName || p.name || '',
-          dob: p.dob || '',
           libero: p.libero,
           isCaptain: p.isCaptain || p.captain || false,
           sanctions,
@@ -700,11 +692,9 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
       .filter(b => b.firstName || b.lastName || b.role)
       .map(bench => {
         const sanctions = getOfficialSanctions(bench.role || '')
+        // the chips show the role code only
         return {
           role: bench.role || '',
-          firstName: bench.firstName || '',
-          lastName: bench.lastName || '',
-          dob: bench.dob || '',
           sanctions,
           type: 'official'
         }

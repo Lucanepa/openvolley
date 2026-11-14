@@ -66,8 +66,10 @@ export const SERVE_GREEN_FILL = 'rgba(34, 197, 94, 0.1)'
  * @param {string} props.serveLabel "SERVE", translated
  * @param {(v: number) => number} props.vmin scaled vmin to px (useScaledLayout)
  * @param {string} [props.scoreFont]
+ * @param {string|null} [props.caption] what the numbers are when they are not
+ *   points ("SETS" in the set interval: the sets won read as a score)
  */
-export default function ScoreServeRow({ leftScore, rightScore, servingSide, serverNumber, serveLabel, vmin, scoreFont = 'inherit' }) {
+export default function ScoreServeRow({ leftScore, rightScore, servingSide, serverNumber, serveLabel, vmin, scoreFont = 'inherit', caption = null }) {
   const slot = (side) => (
     <div
       data-serve-slot={side}
@@ -91,6 +93,13 @@ export default function ScoreServeRow({ leftScore, rightScore, servingSide, serv
   )
 
   const digits = { fontFamily: scoreFont, fontSize: vmin(SCORE_ROW.scoreVmin), fontWeight: 600, lineHeight: 1 }
+  const score = (
+    <div data-score="" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'clamp(4px, 1vw, 12px)' }}>
+      <span style={{ ...digits, textAlign: 'right' }}>{leftScore}</span>
+      <span style={{ fontFamily: scoreFont, fontSize: vmin(SCORE_ROW.colonVmin), fontWeight: 800, color: 'var(--accent)', lineHeight: 1, marginTop: vmin(-0.5) }}>:</span>
+      <span style={{ ...digits, textAlign: 'left' }}>{rightScore}</span>
+    </div>
+  )
   return (
     <div
       data-score-row=""
@@ -108,11 +117,13 @@ export default function ScoreServeRow({ leftScore, rightScore, servingSide, serv
       }}
     >
       {slot('left')}
-      <div data-score="" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'clamp(4px, 1vw, 12px)' }}>
-        <span style={{ ...digits, textAlign: 'right' }}>{leftScore}</span>
-        <span style={{ fontFamily: scoreFont, fontSize: vmin(SCORE_ROW.colonVmin), fontWeight: 800, color: 'var(--accent)', lineHeight: 1, marginTop: vmin(-0.5) }}>:</span>
-        <span style={{ ...digits, textAlign: 'left' }}>{rightScore}</span>
-      </div>
+      {caption ? (
+        // the numbers are not points (sets in the interval): their name over them
+        <div data-score-col="" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          <span data-score-caption="" style={{ fontSize: vmin(2.4), fontWeight: 700, letterSpacing: '0.12em', color: 'var(--muted, #64748b)', lineHeight: 1.1, textTransform: 'uppercase' }}>{caption}</span>
+          {score}
+        </div>
+      ) : score}
       {slot('right')}
     </div>
   )

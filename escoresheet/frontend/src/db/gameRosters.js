@@ -58,6 +58,8 @@ export function rosterToRow(r, userId) {
     staff: Array.isArray(r.staff) ? r.staff : [],
     coachSignature: r.coach_signature || null,
     captainSignature: r.captain_signature || null,
+    // db/035: the account that sent the signatures made ahead (Accept shows it)
+    signedByName: r.coach_signed_by_name || r.captain_signed_by_name || null,
     updatedAt: r.updated_at || null,
     updatedByName: r.updated_by_name || null,
     userId
@@ -159,9 +161,11 @@ export async function pruneGameRosters(now = new Date()) {
   }
 }
 
-export async function clearGameRosters() {
+/** Drop the rows; `keepUserId`: all but that account's (an account change, or the start of the app). */
+export async function clearGameRosters({ keepUserId = null } = {}) {
   try {
-    await db.game_rosters.clear()
+    if (!keepUserId) await db.game_rosters.clear()
+    else if (!(await db.game_rosters.filter((r) => r.userId !== keepUserId).delete())) return
     notify()
   } catch (e) {
     console.warn('[gameRosters] clear failed:', e?.message)

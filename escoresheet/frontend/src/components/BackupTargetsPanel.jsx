@@ -54,7 +54,7 @@ function Line({ title, hint, status, children }) {
   )
 }
 
-export default function BackupTargetsPanel({ backup, test = false, globalKey = null, className }) {
+export default function BackupTargetsPanel({ backup, test = false, globalKey = null, globalPin = null, className }) {
   const { t } = useTranslation()
   const online = useOnline()
   const nativeStatus = useNativeBackupStatus()
@@ -85,11 +85,13 @@ export default function BackupTargetsPanel({ backup, test = false, globalKey = n
         <Line
           title={t('backupTargets.cloud')}
           status={globalKey ? (online ? t('backupTargets.cloudGlobal', 'On: the backup and the finished scoresheet, no account') : t('backupTargets.cloudOffline')) : test ? t('backupTargets.cloudTest') : online ? t('backupTargets.cloudOn') : t('backupTargets.cloudOffline')}
-          hint={globalKey ? t('backupTargets.cloudGlobalHint', 'Only these two files are stored online, under this backup code. Teams and players are in no list. Keep the code: it restores the match.') : t('backupTargets.cloudHint')}
+          hint={globalKey ? t('backupTargets.cloudGlobalHint', "Only these two files are stored online, under this backup code; the backup is encrypted with the match's referee PIN. Teams and players are in no list. Keep the code and the referee PIN: together they restore the match.") : t('backupTargets.cloudHint')}
         >
           {globalKey ? (
             <div className="flex shrink-0 items-center gap-2">
               <code className="rounded-md bg-stone-100 px-2 py-1 text-xs" data-testid="backup-global-code">{globalKey}</code>
+              {/* the online backup opens with it (utils/backupFile): kept with the code */}
+              {globalPin ? <code className="rounded-md bg-stone-100 px-2 py-1 text-xs" data-testid="backup-global-pin" title={t('backupTargets.refereePin', 'Referee PIN')}>{t('backupTargets.refereePin', 'Referee PIN')} {globalPin}</code> : null}
               <button type="button" className={BTN} data-testid="backup-global-copy" onClick={() => { try { navigator.clipboard?.writeText(globalKey) } catch { /* no clipboard */ } }}>{t('backupTargets.copyCode', 'Copy')}</button>
             </div>
           ) : null}

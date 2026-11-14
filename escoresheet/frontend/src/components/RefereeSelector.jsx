@@ -17,6 +17,28 @@ const ROW = cn(
   FOCUS_RING_INSET
 )
 
+const nameKey = (r) => `${r.lastName}\u0000${r.firstName}`.trim().toLowerCase()
+const yearOf = (dob) => (/\b(\d{4})\b/.exec(String(dob || '')) || [])[1] || ''
+
+/**
+ * The directory rows with a `detail` for a name that occurs more than once:
+ * the country and the year of birth, the whole date when the year is the
+ * same too. The scorer sees which person (and which date of birth for the
+ * sheet) the pick takes.
+ */
+export function withNameDetails(referees) {
+  const byName = new Map()
+  for (const r of referees) byName.set(nameKey(r), [...(byName.get(nameKey(r)) || []), r])
+  return referees.map((r) => {
+    const same = byName.get(nameKey(r))
+    if (same.length < 2) return r
+    const year = yearOf(r.dob)
+    const sameYear = same.filter((o) => yearOf(o.dob) === year).length > 1
+    const when = sameYear ? (r.dob || '–') : year
+    return { ...r, detail: [r.country, when].filter(Boolean).join(' · ') }
+  })
+}
+
 /**
  * The referee database picker of Match setup (1st / 2nd referee): a kit
  * Modal with a search field and the referees of the cloud referee_database.
@@ -57,14 +79,16 @@ export default function RefereeSelector({ open, onClose, onSelect }) {
           return
         }
         setOffline(false)
-        // Unique already (unique index); map to the shape Match setup expects
-        setReferees((data || []).map(ref => ({
-          id: `${ref.last_name}_${ref.first_name}`.toLowerCase(),
+        // Map to the shape Match setup expects. Names are not unique in the
+        // directory (two people, or one entered twice with another date of
+        // birth): rows are keyed by their id, and same names show a detail.
+        setReferees(withNameDetails((data || []).map((ref, i) => ({
+          id: ref.id != null ? String(ref.id) : `${ref.last_name}_${ref.first_name}_${i}`.toLowerCase(),
           firstName: ref.first_name || '',
           lastName: ref.last_name || '',
           country: ref.country || 'CHE',
           dob: ref.dob || ''
-        })))
+        }))))
       } catch (error) {
         if (cancelled) return
         console.error('Error loading referees:', error)
@@ -115,6 +139,7 @@ export default function RefereeSelector({ open, onClose, onSelect }) {
             }}
           >
             <span className="min-w-0 truncate">{referee.lastName}, {referee.firstName}</span>
+            {referee.detail && <span className="ml-auto shrink-0 pl-3 text-xs font-normal tabular-nums text-stone-500">{referee.detail}</span>}
           </button>
         ))}
       </div>

@@ -157,6 +157,7 @@ export default function OfficialGamesPanel({ route = '', onRoute = null, navigat
                   <span className="tabular-nums">#{g.game_number}</span>
                   {g.league && <span>{g.league}</span>}
                   {g.hall && <span>{g.hall}{g.city ? `, ${g.city}` : ''}</span>}
+                  <GameFormat value={g.match_format} />
                 </>}
                 status={claim ? <MatchStatusPill status={claim.status} /> : <StatusPill tone="neutral">{t('manage.games.notClaimed')}</StatusPill>}
                 chips={claim ? <>
@@ -179,6 +180,17 @@ export default function OfficialGamesPanel({ route = '', onRoute = null, navigat
 }
 
 /**
+ * A game's match format as the schedule has it (svrz_games.match_format):
+ * best of 3 or 5, else marked unknown. The scorer then chooses it in Match
+ * setup; an unknown format is no longer taken as best of 5.
+ */
+function GameFormat({ value }) {
+  const { t } = useTranslation()
+  if (value === 3 || value === 5) return <span>{t(value === 3 ? 'matchSetup.bestOf3' : 'matchSetup.bestOf5')}</span>
+  return <span className="font-medium text-amber-700" data-testid="game-format-unknown">{t('manage.games.formatUnknown')}</span>
+}
+
+/**
  * An official game's page: when, where, league, game number, and the cloud
  * match that scores it (status, scorer, editors, approvals), with Add editor,
  * Release game and its page in Closed matches.
@@ -194,6 +206,7 @@ function OfficialGamePage({ game: g, online, onBack, onAddEditor, onRelease, onO
     { label: t('manage.matches.facts.game'), value: <span className="tabular-nums">#{g.game_number}</span> },
     { label: t('manage.matches.facts.league'), value: g.league || '–' },
     { label: t('manage.matches.facts.hall'), value: hall || '–' },
+    { label: t('matchSetup.matchFormat'), value: <GameFormat value={g.match_format} /> },
     ...(claim ? [
       { label: t('manage.matches.facts.scorer'), value: scorer },
       { label: t('manage.matches.facts.editors'), value: <span className="tabular-nums">{claim.editors ?? 0}</span> }

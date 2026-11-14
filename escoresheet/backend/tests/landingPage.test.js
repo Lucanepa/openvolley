@@ -1,7 +1,7 @@
 // The status page at '/' (lib/landingPage.js) and its icons (lib/icons.js).
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { renderLandingPage, escapeHtml, INDOOR_ROLES, BEACH_ROLES } from '../lib/landingPage.js'
+import { renderLandingPage, landingMatchRow, escapeHtml, INDOOR_ROLES, BEACH_ROLES } from '../lib/landingPage.js'
 import { ICONS, icon } from '../lib/icons.js'
 import { BRAND_MARK, brandMark } from '../lib/brandMark.js'
 import { legalUrl } from '../lib/legalLinks.js'
@@ -70,6 +70,33 @@ describe('landing page', () => {
     assert.ok(!html.includes('<img'))
     assert.ok(!html.includes('<script'))
     assert.ok(html.includes('&lt;img src=x onerror=alert(1)&gt; vs B &amp; &quot;C&quot;'))
+  })
+
+  it('reads a room\'s team names in every stored format (landingMatchRow)', () => {
+    assert.deepEqual(landingMatchRow('m1', { homeTeam: { name: 'Home VC' }, awayTeam: 'Away VC', updatedAt: '2026-10-06T18:00:00.000Z' }),
+      { id: 'm1', home: 'Home VC', away: 'Away VC', updatedAt: '2026-10-06T18:00:00.000Z' })
+    // the legacy { data } path, a numeric name, and nothing at all
+    assert.deepEqual(landingMatchRow('m2', { data: { homeTeamName: 'Legacy A', away_team_name: 'Legacy B' } }),
+      { id: 'm2', home: 'Legacy A', away: 'Legacy B', updatedAt: undefined })
+    assert.equal(landingMatchRow('m3', { homeTeam: 7 }).home, '7')
+    assert.deepEqual([landingMatchRow('m4', {}).home, landingMatchRow('m4', {}).away], ['Home', 'Away'])
+  })
+
+  it('a room with a name that is not text still renders the page (a room recovered from storage is not validated)', () => {
+    // Objects that cannot become a string: escapeHtml(String(...)) threw on them,
+    // and the whole page answered 500 for everyone
+    const bad = { toString: 1 }
+    const rooms = [
+      ['r1', { homeTeam: { name: bad }, awayTeam: { name: ['x'] }, updatedAt: bad }],
+      ['r2', { homeTeam: bad, data: { awayTeamName: bad, homeTeamName: {} } }],
+      ['r3', { homeTeam: 'Home VC', awayTeam: { name: 'Away VC' } }]
+    ]
+    const matches = rooms.map(([id, data]) => landingMatchRow(id, data))
+    assert.deepEqual(matches.map((m) => [m.home, m.away]), [['Home', 'Away'], ['Home', 'Away'], ['Home VC', 'Away VC']])
+    assert.equal(matches[0].updatedAt, undefined)
+    const html = render({ matches, formatTime: (ts) => new Date(ts).toISOString() })
+    assert.match(html, /Home VC vs Away VC/)
+    assert.match(html, /Home vs Away/)
   })
 
   it('loads nothing from anywhere: no scripts, stylesheets, images or fonts', () => {

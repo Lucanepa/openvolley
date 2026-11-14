@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useAlert } from '../../contexts/AlertContext'
 import Modal from '../Modal'
 import { db } from '../../db/db'
-import { restoreMatchInPlace, listCloudBackups, fetchCloudBackup, selectBackupFile, getBackupSettings, matchBackupFromFile } from '../../utils/backupManager'
+import { restoreMatchInPlace, listCloudBackups, fetchCloudBackup, selectBackupFile, getBackupSettings, matchBackupFromFile, RESTORE_LOSES_LOCAL, restoreLossText } from '../../utils/backupManager'
 import {
   detectBackupPlatform,
   isNativeBackupPlatform,
@@ -14,6 +14,7 @@ import {
 import BackupTable from '../BackupTable'
 import SavedBackupsList from '../SavedBackupsList'
 import { useBackupUnlock } from '../../hooks/useBackupUnlock'
+import { backupPins } from '../../utils/backupCrypto/sealer'
 import { clearCachesAndReload } from '../../hooks/useServiceWorker'
 import { ChevronDown, Info, Tablet, X } from 'lucide-react'
 import { cn, IconButton, Select, SegmentedControl, StatusPill, Switch, toast } from '../../ui'
@@ -99,7 +100,7 @@ function Section({ title, children }) {
   )
 }
 
-function DurationInput({ value, onChange, label }) {
+function DurationInput({ value, onChange, label, t }) {
   const minutes = Math.floor(value / 60)
   const seconds = value % 60
   const handleMinutes = (e) => {
@@ -115,10 +116,11 @@ function DurationInput({ value, onChange, label }) {
   const inputCls = cn(SMALL_FIELD, 'w-14 font-semibold')
   return (
     <div className="ml-auto flex shrink-0 items-center gap-1 pl-4">
-      <input type="number" min={0} max={10} value={minutes} onChange={handleMinutes} className={inputCls} aria-label={`${label} minutes`} />
-      <span className="text-sm font-semibold text-stone-500">'</span>
-      <input type="number" min={0} max={59} value={seconds.toString().padStart(2, '0')} onChange={handleSeconds} className={inputCls} aria-label={`${label} seconds`} />
-      <span className="text-sm font-semibold text-stone-500">''</span>
+      {/* the units in words (they were bare ' and '', UI tour 14.11) */}
+      <input type="number" min={0} max={10} value={minutes} onChange={handleMinutes} className={inputCls} aria-label={t('options.durationMinutesAria', { label })} />
+      <span className="text-xs font-semibold text-stone-500">{t('options.unitMin', 'min')}</span>
+      <input type="number" min={0} max={59} value={seconds.toString().padStart(2, '0')} onChange={handleSeconds} className={inputCls} aria-label={t('options.durationSecondsAria', { label })} />
+      <span className="text-xs font-semibold text-stone-500">{t('options.unitSec', 's')}</span>
     </div>
   )
 }
@@ -259,6 +261,8 @@ export default function ScoreboardOptionsModal({
   const [fontSelectorOpen, setFontSelectorOpen] = useState(false)
   const [showCloudBackups, setShowCloudBackups] = useState(false)
   const [cloudBackups, setCloudBackups] = useState([])
+  // The open match's game PIN and referee PIN: they open its encrypted cloud copies
+  const [cloudBackupPins, setCloudBackupPins] = useState([])
   const [backupsLoading, setBackupsLoading] = useState(false)
   const [restoreConfirm, setRestoreConfirm] = useState(null) // backup to confirm restore
   // An encrypted backup file asks for the game PIN or the referee PIN first
@@ -303,6 +307,7 @@ export default function ScoreboardOptionsModal({
       const match = await db.matches.get(matchId)
       const gameN = match?.gameN || match?.game_n || match?.gameNumber || 1
       const backups = await listCloudBackups(null, gameN)
+      setCloudBackupPins(backupPins(match).map(p => p.value))
       setCloudBackups(backups)
       setShowCloudBackups(true)
     } catch (err) {
@@ -315,11 +320,23 @@ export default function ScoreboardOptionsModal({
 
   // Restore from a cloud backup
   const handleRestore = async (backup) => {
+    let backupData = null
     try {
-      // a local file was read already (handleRestoreFromFile); cloud: download it
-      const backupData = backup.fileData || await fetchCloudBackup(backup.path)
-      await restoreBackupData(backupData)
+      // a local file was read already (handleRestoreFromFile); cloud: download
+      // it, opened with the match's PINs (else the PIN dialog asks; cancelled:
+      // nothing restored)
+      const fetched = backup.fileData ? null : await fetchCloudBackup(backup.path, { pins: cloudBackupPins })
+      backupData = backup.fileData || (fetched && await unlockBackup(fetched))
+      if (fetched && !backupData) return // cancelled at the PIN dialog
+      // a second confirmation that named the loss replaces the newer copy
+      await restoreBackupData(backupData, { replaceNewer: !!backup.loss })
     } catch (err) {
+      // The open match holds more than the backup: asked again, naming what
+      // goes (backupManager localLossOnReplace)
+      if (err?.code === RESTORE_LOSES_LOCAL && backupData) {
+        setRestoreConfirm({ ...backup, fileData: backupData, loss: err.loss })
+        return
+      }
       console.error('Failed to restore backup:', err)
       // backupManager refuses a backup of a match the server has closed
       // before it writes anything: say so plainly (a restored closed copy
@@ -353,7 +370,7 @@ export default function ScoreboardOptionsModal({
     }
   }
 
-  const restoreBackupData = async (backupData) => {
+  const restoreBackupData = async (backupData, { replaceNewer = false } = {}) => {
     if (!backupData) {
       showAlert(t('options.alerts.failedToLoadBackupData'), 'error')
       return
@@ -363,15 +380,16 @@ export default function ScoreboardOptionsModal({
     const current = await db.matches.get(matchId)
     const currentKey = current?.seed_key || current?.externalId
     const backupKey = backupData.match?.seed_key || backupData.match?.seedKey || backupData.match?.external_id
-    if (currentKey && backupKey && currentKey !== backupKey) {
+    // A backup without a key over a keyed match is another game's too
+    if (currentKey && currentKey !== backupKey) {
       showAlert(t('options.alerts.failedToRestoreBackup', { error: 'This backup belongs to a different match' }), 'error')
       return
     }
     // Use the callback or in-place restore
     if (onRestoreBackup) {
-      await onRestoreBackup(backupData)
+      await onRestoreBackup(backupData, { replaceNewer })
     } else {
-      await restoreMatchInPlace(matchId, backupData)
+      await restoreMatchInPlace(matchId, backupData, { replaceNewer })
     }
     setShowCloudBackups(false)
     setRestoreConfirm(null)
@@ -668,6 +686,7 @@ export default function ScoreboardOptionsModal({
               <InfoDot title={t('options.setIntervalDurationInfo')} />
             </div>
             <DurationInput
+              t={t}
               value={setIntervalDuration}
               label={t('options.setIntervalDurationLabel', 'set interval duration')}
               onChange={(newVal) => {
@@ -842,7 +861,9 @@ export default function ScoreboardOptionsModal({
                 className="max-w-md [&>button]:capitalize"
                 options={['auto', 'desktop', 'tablet', 'phone'].map(mode => ({
                   value: mode,
-                  label: mode === 'auto' ? t('options.autoWithMode', { mode: detectedDisplayMode }) : mode,
+                  // "Auto (Desktop)" wrapped in its segment (UI tour 14.11): the
+                  // segment says Auto, the line below what it picked
+                  label: mode === 'auto' ? t('options.auto', 'Auto') : mode,
                   title: modeDescriptions[mode]
                 }))}
                 onChange={(mode) => {
@@ -858,6 +879,12 @@ export default function ScoreboardOptionsModal({
                   localStorage.setItem('displayMode', mode)
                 }}
               />
+
+              {displayMode === 'auto' && detectedDisplayMode && (
+                <p data-testid="screen-mode-auto-detected" className="mt-1.5 text-[11px] leading-snug text-stone-500">
+                  {t('options.autoDetectedMode', { mode: detectedDisplayMode.charAt(0).toUpperCase() + detectedDisplayMode.slice(1) })}
+                </p>
+              )}
 
               {displayMode !== 'desktop' && displayMode !== 'auto' && (
                 <div className="mt-3">
@@ -1068,6 +1095,7 @@ export default function ScoreboardOptionsModal({
                 <div className="mb-4 flex-1 overflow-y-auto rounded-lg border border-stone-200">
                   <BackupTable
                     backups={cloudBackups}
+                    unlockPins={cloudBackupPins}
                     onBackupSelect={(backup) => setRestoreConfirm(backup)}
                     showRestoreButton={true}
                     mode="row"
@@ -1120,8 +1148,8 @@ export default function ScoreboardOptionsModal({
                   {restoreConfirm.timestamp || restoreConfirm.created_at}
                 </div>
               </div>
-              <p className="text-xs font-medium text-red-700">
-                {t('options.warningStateReplaced')}
+              <p className="text-xs font-medium text-red-700" data-testid="restore-loss">
+                {restoreConfirm.loss ? restoreLossText(restoreConfirm.loss, t) : t('options.warningStateReplaced')}
               </p>
               <div className="mt-6 flex justify-end gap-2">
                 <button

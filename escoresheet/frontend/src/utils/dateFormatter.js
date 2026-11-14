@@ -1,13 +1,43 @@
 /**
- * Date formatting utility for consistent datetime display across the app
+ * Date formatting utility for consistent datetime display across the app.
+ * Zürich time (ui/format APP_TZ), the gym's clock, like every other clock in
+ * the app: a scorer laptop left on another zone (GMT+2 after the October
+ * change, UTC) listed a backup written at 14:30 gym time as 15:30.
  */
 
+import { APP_TZ } from '../ui/format'
+
+const pad = (n) => String(n).padStart(2, '0')
+
+let zurichSeconds = null
+// day, month, year, hour, minute, second of an instant on the Zürich clock
+function zurichFields(date) {
+  if (!zurichSeconds) {
+    zurichSeconds = new Intl.DateTimeFormat('en-GB', {
+      timeZone: APP_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+    })
+  }
+  const at = Object.fromEntries(zurichSeconds.formatToParts(date).map(p => [p.type, p.value]))
+  // Some ICU builds render midnight as hour 24
+  return { ...at, hour: at.hour === '24' ? '00' : at.hour }
+}
+
+/** "04.01.2025, 16:30:45": an instant (Date, ms or ISO text) on the Zürich clock, '' when there is none. */
+export function formatZurichDateTime(value) {
+  if (value === null || value === undefined || value === '') return ''
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const p = zurichFields(date)
+  return `${pad(p.day)}.${pad(p.month)}.${p.year}, ${pad(p.hour)}:${pad(p.minute)}:${pad(p.second)}`
+}
+
 /**
- * Format backup timestamp to dd.mm.yyyy, hh:mm:ss (24hrs) in local time
+ * Format a backup's UTC timestamp to dd.mm.yyyy, hh:mm:ss (24 h) on the Zürich clock
  * @param {string} date - Date string in yyyymmdd format (e.g., "20250104")
  * @param {string} time - Time string in hhmmss format (e.g., "153045")
  * @param {string} ms - Milliseconds string (e.g., "123")
- * @returns {string} Formatted datetime string (e.g., "04.01.2025, 15:30:45")
+ * @returns {string} Formatted datetime string (e.g., "04.01.2025, 16:30:45")
  */
 export function formatBackupDateTime(date, time, ms = '000') {
   if (!date || !time) return 'Unknown'
@@ -22,16 +52,7 @@ export function formatBackupDateTime(date, time, ms = '000') {
   const minutes = time.substring(2, 4)
   const seconds = time.substring(4, 6)
 
-  // Create UTC date object from the timestamp
+  // The file name's timestamp is UTC
   const dateObj = new Date(`${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${ms}Z`)
-
-  // Format to local time with dd.mm.yyyy, hh:mm:ss
-  const localDay = String(dateObj.getDate()).padStart(2, '0')
-  const localMonth = String(dateObj.getMonth() + 1).padStart(2, '0')
-  const localYear = dateObj.getFullYear()
-  const localHours = String(dateObj.getHours()).padStart(2, '0')
-  const localMinutes = String(dateObj.getMinutes()).padStart(2, '0')
-  const localSeconds = String(dateObj.getSeconds()).padStart(2, '0')
-
-  return `${localDay}.${localMonth}.${localYear}, ${localHours}:${localMinutes}:${localSeconds}`
+  return formatZurichDateTime(dateObj) || 'Unknown'
 }

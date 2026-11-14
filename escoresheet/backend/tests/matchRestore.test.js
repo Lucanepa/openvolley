@@ -121,12 +121,201 @@ describe('createPinFailureBudget', () => {
   })
 })
 
+// Wrong PINs per match and PIN type from every address together (an attacker
+// with many address buckets never reaches a per-address limit), and per
+// PIN-only search
+describe('createPinFailureBudget across callers', () => {
+  const quiet = () => {}
+
+  it('wrong PINs from several addresses lock that match and PIN type, the right PIN too; one log line', () => {
+    const lines = []
+    const b = createPinFailureBudget({ matchMax: 3, log: (l) => lines.push(l) })
+    for (const ip of ['ip-1', 'ip-2', 'ip-3']) assert.equal(b.isLimited(ip, 'm:referee:match-1'), false)
+    // a fourth address: refused before anything is compared
+    assert.equal(b.isLimited('ip-4', 'm:referee:match-1'), true)
+    assert.equal(b.isLimited('ip-5', 'm:referee:match-1'), true)
+    assert.equal(b.locked('match-1', 'referee'), true)
+    assert.equal(lines.length, 1)
+    assert.match(lines[0], /^\[PIN\] match match-1: 3 wrong referee PINs/)
+    // the match's other PIN types, and another match, go on
+    assert.equal(b.isLimited('ip-4', 'm:bench_home:match-1'), false)
+    assert.equal(b.isLimited('ip-4', 'm:game:match-1'), false)
+    assert.equal(b.isLimited('ip-4', 'm:referee:match-2'), false)
+    // the address refused across callers was not charged for it
+    const c = createPinFailureBudget({ max: 1, ipMax: 1, matchMax: 1, log: quiet })
+    assert.equal(c.isLimited('ip-1', 'm:referee:match-1'), false)
+    assert.equal(c.isLimited('ip-2', 'm:referee:match-1'), true)
+    assert.equal(c.isLimited('ip-2', 'm:referee:match-2'), false)
+  })
+
+  it('right PINs are refunded and never add up', () => {
+    const b = createPinFailureBudget({ matchMax: 2, log: quiet })
+    for (let i = 0; i < 10; i++) {
+      assert.equal(b.isLimited(`ip-${i}`, 'm:game:match-1'), false)
+      b.refund(`ip-${i}`, 'm:game:match-1')
+    }
+    assert.equal(b.locked('match-1', 'game'), false)
+    assert.equal(b.tracks('match-1'), false, 'a key refunded to nothing is dropped')
+  })
+
+  it('the lock ends after its cool-down', () => {
+    let t = 1000000
+    const b = createPinFailureBudget({ matchMax: 2, windowMs: 60000, lockMs: 120000, now: () => t, log: quiet })
+    assert.equal(b.isLimited('ip-1', 'm:game:match-1'), false)
+    assert.equal(b.isLimited('ip-2', 'm:game:match-1'), false)
+    assert.equal(b.isLimited('ip-3', 'm:game:match-1'), true)
+    t += 119000
+    assert.equal(b.isLimited('ip-4', 'm:game:match-1'), true, 'still in the cool-down')
+    t += 2000
+    assert.equal(b.isLimited('ip-5', 'm:game:match-1'), false)
+  })
+
+  it('a new PIN starts its counter again', () => {
+    const b = createPinFailureBudget({ matchMax: 2, log: quiet })
+    for (const ip of ['ip-1', 'ip-2', 'ip-3']) b.isLimited(ip, 'm:referee:match-1')
+    b.isLimited('ip-1', 'm:bench_home:match-1')
+    assert.equal(b.locked('match-1', 'referee'), true)
+    b.pinChanged('match-1', ['referee'])
+    assert.equal(b.isLimited('ip-4', 'm:referee:match-1'), false)
+    // the PIN types not changed keep their count
+    b.isLimited('ip-2', 'm:bench_home:match-1')
+    assert.equal(b.isLimited('ip-3', 'm:bench_home:match-1'), true)
+  })
+
+  it('PIN-only searches have a limit of their own, apart from the matches', () => {
+    const lines = []
+    const b = createPinFailureBudget({ matchMax: 2, searchMax: 3, log: (l) => lines.push(l) })
+    for (const ip of ['ip-1', 'ip-2', 'ip-3']) assert.equal(b.isLimited(ip, 'any:indoor:referee'), false)
+    assert.equal(b.isLimited('ip-4', 'any:indoor:referee'), true)
+    assert.equal(lines.length, 1)
+    assert.match(lines[0], /without a match/)
+    // another PIN type is another search; no match was locked by them
+    assert.equal(b.isLimited('ip-4', 'any:indoor:bench_home'), false)
+    assert.equal(b.isLimited('ip-4', 'any:beach:referee'), false)
+    assert.equal(b.isLimited('ip-4', 'm:referee:match-1'), false)
+    assert.equal(b.tracks('match-1'), true)
+    // and a locked match leaves the search alone
+    b.isLimited('ip-5', 'm:bench_home:match-1')
+    b.isLimited('ip-6', 'm:bench_home:match-1')
+    assert.equal(b.locked('match-1', 'bench_home'), true)
+    assert.equal(b.isLimited('ip-7', 'any:indoor:bench_home'), false)
+  })
+
+  it('the same wrong PIN again from the same address is no new guess across callers either', () => {
+    const b = createPinFailureBudget({ matchMax: 2, log: quiet })
+    for (let i = 0; i < 3; i++) {
+      assert.equal(b.isLimited('ip-1', 'm:referee:match-1'), false)
+      b.repeated('ip-1', 'm:referee:match-1', '111111')
+    }
+    assert.equal(b.isLimited('ip-2', 'm:referee:match-1'), false)
+    assert.equal(b.isLimited('ip-3', 'm:referee:match-1'), true)
+  })
+
+  // the scoreboard of the device the database names as the match's scorer,
+  // re-proving its own match on the relay (server.js verifyRelayClaim)
+  it('scopeOnly: neither refused nor counted across callers', () => {
+    const b = createPinFailureBudget({ matchMax: 2, log: quiet })
+    for (const ip of ['ip-1', 'ip-2', 'ip-3']) b.isLimited(ip, 'm:game:match-1')
+    assert.equal(b.isLimited('hall', 'm:game:match-1'), true)
+    assert.equal(b.isLimited('hall', 'm:game:match-1', { scopeOnly: true }), false)
+    b.refund('hall', 'm:game:match-1', { scopeOnly: true })
+    assert.equal(b.locked('match-1', 'game'), true)
+    const c = createPinFailureBudget({ matchMax: 1, log: quiet })
+    for (let i = 0; i < 3; i++) assert.equal(c.isLimited(`ip-${i}`, 'm:game:match-1', { scopeOnly: true }), false)
+    assert.equal(c.tracks('match-1'), false)
+  })
+
+  it('a check of several PIN types at once counts each, and leaves out the locked ones', () => {
+    const b = createPinFailureBudget({ matchMax: 2, log: quiet })
+    const kinds = ['referee', 'bench_home', 'game']
+    // two wrong game PINs elsewhere lock the game PIN
+    b.isLimited('ip-1', 'm:game:match-1')
+    b.isLimited('ip-2', 'm:game:match-1')
+    const open = b.openKinds('match-1', kinds)
+    assert.deepEqual(open, ['referee', 'bench_home'])
+    // a wrong PIN compared with the open ones counts against each of them
+    assert.equal(b.isLimited('ip-3', 'm:all:match-1', { kinds: open }), false)
+    assert.equal(b.isLimited('ip-4', 'm:all:match-1', { kinds: open }), false)
+    assert.deepEqual(b.openKinds('match-1', kinds), [])
+    assert.equal(b.isLimited('ip-5', 'm:referee:match-1'), true)
+    // a right one gives back what it took
+    const c = createPinFailureBudget({ matchMax: 1, log: quiet })
+    assert.equal(c.isLimited('ip-1', 'm:all:match-1', { kinds }), false)
+    c.refund('ip-1', 'm:all:match-1', { kinds })
+    assert.deepEqual(c.openKinds('match-1', kinds), kinds)
+  })
+
+  // restore-by-pin compares one PIN with every match of a game number
+  it('restore-by-pin counts per game number, apart from the matches\' own PINs', () => {
+    const lines = []
+    const b = createPinFailureBudget({ matchMax: 3, log: (l) => lines.push(l) })
+    for (let i = 0; i < 3; i++) assert.equal(b.gameLimited(8181), false)
+    assert.equal(b.gameLimited(8181), true)
+    assert.equal(lines.length, 1)
+    assert.match(lines[0], /^\[PIN\] game number 8181: 3 wrong game PINs in restore-by-pin/)
+    // another game number, and every match's own checks, go on
+    assert.equal(b.gameLimited(8282), false)
+    assert.equal(b.tracksAny(), false)
+    assert.equal(b.isLimited('ip-1', 'm:game:match-1'), false)
+    // a right PIN gives its attempt back
+    const c = createPinFailureBudget({ matchMax: 1, log: quiet })
+    for (let i = 0; i < 3; i++) {
+      assert.equal(c.gameLimited(5), false)
+      c.gameRefund(5)
+    }
+  })
+
+  // the relay's database check of a scoreboard claim: the room key is the
+  // caller's choice, the rows it compares with are not
+  it('across: the matches named are counted, not the scope\'s own', () => {
+    const b = createPinFailureBudget({ matchMax: 2, log: quiet })
+    const across = [['row-1', 'game'], ['row-2', 'game']]
+    assert.equal(b.isLimited('ip-1', 'm:game:room-a', { across }), false)
+    assert.equal(b.isLimited('ip-2', 'm:game:room-b', { across: [['row-1', 'game']] }), false)
+    assert.equal(b.tracks('room-a'), false)
+    assert.equal(b.tracks('room-b'), false)
+    // row-1 is locked for every scope that compares it, its own included
+    assert.equal(b.isLimited('ip-3', 'm:game:room-c', { across: [['row-1', 'game']] }), true)
+    assert.equal(b.isLimited('ip-3', 'm:game:row-1'), true)
+    assert.equal(b.locked('row-2', 'game'), false)
+    // a right PIN gives back what it took; scopeOnly counts nothing across callers
+    b.refund('ip-1', 'm:game:room-a', { across: [['row-2', 'game']] })
+    assert.equal(b.tracks('row-2'), false)
+    for (let i = 0; i < 3; i++) assert.equal(b.isLimited(`ip-s${i}`, 'm:game:room-d', { scopeOnly: true, across: [['row-2', 'game']] }), false)
+    assert.equal(b.tracks('row-2'), false)
+  })
+
+  it('a full table refuses new keys and keeps its locks', () => {
+    const b = createPinFailureBudget({ matchMax: 1, lockKeys: 3, log: quiet })
+    b.isLimited('ip-1', 'm:game:match-1')
+    assert.equal(b.isLimited('ip-2', 'm:game:match-1'), true)
+    assert.equal(b.isLimited('ip-3', 'm:game:match-2'), false)
+    assert.equal(b.isLimited('ip-3', 'm:game:match-3'), false)
+    // no room for a fourth key: refused, nothing forgotten
+    assert.equal(b.isLimited('ip-4', 'm:game:match-4'), true)
+    assert.equal(b.locked('match-1', 'game'), true)
+    // a right PIN frees its key, and the next key fits again
+    b.refund('ip-3', 'm:game:match-3')
+    assert.equal(b.isLimited('ip-4', 'm:game:match-4'), false)
+    assert.equal(b.locked('match-1', 'game'), true)
+  })
+})
+
 describe('matchRestore on Postgres', { skip: SKIP_PG }, () => {
   let tdb, db, restore, raw
   let seq = 0
   const uniq = (p = 'R') => `${p}${Date.now().toString(36)}${(seq++).toString(36)}`
   const W = { proto: 2 }
   const count = async (table, matchId) => (await raw.query(`SELECT count(*)::int n FROM ${table} WHERE match_id = $1`, [matchId])).rows[0].n
+  // A match of an earlier season: db/034 gives a new match the season of the
+  // server's clock (no VolleyManager row here), so a test back-dates the key
+  // with the user triggers off.
+  async function earlierSeason (matchId, years = 1) {
+    await raw.query('BEGIN')
+    await raw.query("SET LOCAL session_replication_role = 'replica'")
+    await raw.query('UPDATE matches SET official_season = official_season - $2::int WHERE id = $1', [matchId, years])
+    await raw.query('COMMIT')
+  }
 
   // One cloud match per official game (db/007): each backup its own game number by default
   let gameSeq = 70000
@@ -330,6 +519,50 @@ describe('matchRestore on Postgres', { skip: SKIP_PG }, () => {
       assert.equal(await count('events', id), 5)
     })
 
+    // fe-sync-7: support sends a refused restore in parts (frontend
+    // utils/refusedRestore splitRefusedRestore): each part must leave the
+    // cloud as the whole one would have
+    it('a backup restore in parts: the first replaces the match\'s rows, the later ones add theirs', async () => {
+      const ext = uniq('PARTS')
+      const made = await restore.restoreMatch(backup(ext, { sets: 3, events: 8 }), W)
+      const id = made.body.data.id
+      // sent after the backup was saved: the whole restore deletes it
+      await raw.query(`INSERT INTO events (match_id, external_id, set_index, type, seq, payload, sport_type)
+                       VALUES ($1, $2, 1, 'point', 20, '{}', 'indoor')`, [id, `${ext}:e:20`])
+      const b = backup(ext, { sets: 2, events: 5 })
+      const first = await restore.restoreMatch({ ...b, events: b.events.slice(0, 2) }, W)
+      assert.equal(first.status, 200, JSON.stringify(first.body))
+      const second = await restore.restoreMatch({ ...b, sets: [], events: b.events.slice(2), liveState: null, rekey: { sets: {}, events: {} } }, W)
+      assert.equal(second.status, 200, JSON.stringify(second.body))
+      const keys = (await raw.query('SELECT external_id FROM events WHERE match_id = $1 ORDER BY seq', [id])).rows.map((x) => x.external_id)
+      assert.deepEqual(keys, [1, 2, 3, 4, 5].map((n) => `${ext}:e:${n}`))
+      assert.equal(await count('sets', id), 2)
+      assert.equal((await raw.query('SELECT points_a FROM match_live_state WHERE match_id = $1', [id])).rows[0].points_a, 3)
+    })
+
+    it('a hand-over in parts, each with the re-key entries of its rows: every row renamed in place, none twice', async () => {
+      const ext = uniq('PARTSRK')
+      const made = await restore.restoreMatch(backup(ext, { sets: 2, events: 5 }), W)
+      const id = made.body.data.id
+      const idOf = Object.fromEntries((await raw.query('SELECT id, external_id FROM events WHERE match_id = $1', [id])).rows.map((r) => [r.external_id, r.id]))
+      const b = backup(ext, { sets: 2, events: 5 })
+      const to = (key) => key.replace(/:(s|e):(\d+)$/, (_, k, n) => `:${k}:${Number(n) + (k === 's' ? 100 : 200)}`)
+      const entries = (rows) => Object.fromEntries(rows.map((r) => [to(r.external_id), r.external_id]))
+      const moved = (rows) => rows.map((r) => ({ ...r, external_id: to(r.external_id) }))
+      const parts = [
+        { ...b, sets: moved(b.sets), events: moved(b.events.slice(0, 3)), rekey: { sets: entries(b.sets), events: entries(b.events.slice(0, 3)) } },
+        { ...b, sets: [], events: moved(b.events.slice(3)), liveState: null, rekey: { sets: {}, events: entries(b.events.slice(3)) } }
+      ]
+      for (const part of parts) {
+        const r = await restore.restoreMatch(part, W)
+        assert.equal(r.status, 200, JSON.stringify(r.body))
+      }
+      const after = (await raw.query('SELECT id, external_id FROM events WHERE match_id = $1 ORDER BY seq', [id])).rows
+      assert.deepEqual(after.map((x) => x.external_id), [201, 202, 203, 204, 205].map((n) => `${ext}:e:${n}`))
+      for (let n = 1; n <= 5; n++) assert.equal(after[n - 1].id, idOf[`${ext}:e:${n}`], `e:${n}`)
+      assert.deepEqual((await raw.query('SELECT external_id FROM sets WHERE match_id = $1 ORDER BY index', [id])).rows.map((x) => x.external_id), [`${ext}:s:101`, `${ext}:s:102`])
+    })
+
     it('restores a match without sets, events or live state', async () => {
       const ext = uniq()
       const r = await restore.restoreMatch({ match: { external_id: ext } }, W)
@@ -520,6 +753,78 @@ describe('matchRestore on Postgres', { skip: SKIP_PG }, () => {
       assert.equal(r2.pinLimiter.size, before)
     })
 
+    it('wrong game PINs from several callers lock restore-by-pin of that game number, the right PIN too, and not the match itself', async () => {
+      const lines = []
+      const budget = createPinFailureBudget({ matchMax: 3, log: (l) => lines.push(l) })
+      const r3 = createMatchRestore(db, { logger: quietLogger(), pinBudget: budget })
+      const locked = uniq('LOCK')
+      await restore.restoreMatch(backup(locked, { gameN: 8181, pin: '818181' }), W)
+      await restore.restoreMatch(backup(uniq('FREE'), { gameN: 8282, pin: '828282' }), W)
+      for (const [i, pin] of ['100001', '100002', '100003'].entries()) {
+        assert.equal((await r3.restoreByPin({ gameN: 8181, pin }, { limitKey: `ip-lock-${i}` })).status, 404, pin)
+      }
+      const right = await r3.restoreByPin({ gameN: 8181, pin: '818181' }, { limitKey: 'ip-lock-right' })
+      assert.equal(right.status, 429)
+      assert.equal(right.body.error.code, 'OV_TOO_MANY_ATTEMPTS')
+      assert.equal(lines.length, 1)
+      assert.match(lines[0], /^\[PIN\] game number 8181: 3 wrong game PINs in restore-by-pin/)
+      // counted once for the game number, never against the match's own game
+      // PIN: claim (and the relay, the scorer's reconnects) still prove it.
+      // (Proved: claim gets as far as recording the editor, 503 in this test
+      // database without ownership.)
+      assert.equal(budget.tracks(locked), false)
+      const claimed = await r3.claimMatch({ externalId: locked, pin: '818181' }, { limitKey: 'ip-lock-claim' })
+      assert.equal(claimed.status, 503, JSON.stringify(claimed.body))
+      // another game number is not affected
+      assert.equal((await r3.restoreByPin({ gameN: 8282, pin: '828282' }, { limitKey: 'ip-lock-right' })).status, 200)
+      // a game number no match has, or a match that does not exist: nothing to guess, nothing counted
+      for (let i = 0; i < 4; i++) {
+        assert.equal((await r3.restoreByPin({ gameN: 8383, pin: '100001' }, { limitKey: `ip-none-${i}` })).status, 404)
+        assert.equal((await r3.claimMatch({ externalId: 'NOSUCH', pin: '100001' }, { limitKey: `ip-none-${i}` })).status, 404)
+      }
+      assert.equal((await r3.restoreByPin({ gameN: 8383, pin: '100001' }, { limitKey: 'ip-none-x' })).status, 404)
+      assert.equal(budget.tracks('NOSUCH'), false)
+      assert.equal(lines.length, 1)
+    })
+
+    it('wrong claims lock that match\'s game PIN; restore-by-pin then never proves it, another match of the game number it does', async () => {
+      const budget = createPinFailureBudget({ matchMax: 3, log: () => {} })
+      const r3 = createMatchRestore(db, { logger: quietLogger(), pinBudget: budget })
+      // game numbers repeat across seasons (db/007: one cloud match per game and season)
+      const older = uniq('OLD')
+      const newer = uniq('NEW')
+      const o = await restore.restoreMatch(backup(older, { gameN: 8484, pin: '848484', scheduledAt: '2024-10-05T16:00:00Z' }), W)
+      await earlierSeason(o.body.data.id)
+      await restore.restoreMatch(backup(newer, { gameN: 8484, pin: '858585', scheduledAt: '2025-10-05T16:00:00Z' }), W)
+      for (const [i, pin] of ['100001', '100002', '100003'].entries()) {
+        assert.equal((await r3.claimMatch({ externalId: older, pin }, { limitKey: `ip-claim-${i}` })).status, 404, pin)
+      }
+      assert.equal((await r3.claimMatch({ externalId: older, pin: '848484' }, { limitKey: 'ip-claim-right' })).status, 429)
+      assert.equal(budget.locked(older, 'game'), true)
+      // the locked match's right PIN is answered as a wrong one, not as 429 (no oracle)
+      const viaRestore = await r3.restoreByPin({ gameN: 8484, pin: '848484' }, { limitKey: 'ip-restore-1' })
+      assert.equal(viaRestore.status, 404, JSON.stringify(viaRestore.body))
+      const other = await r3.restoreByPin({ gameN: 8484, pin: '858585' }, { limitKey: 'ip-restore-2' })
+      assert.equal(other.status, 200, JSON.stringify(other.body))
+      assert.equal(other.body.data.match.external_id, newer)
+    })
+
+    it('finds an older match of its game number however many newer ones there are', async () => {
+      // beach game numbers start again in every tournament
+      const oldest = uniq('FIRST')
+      const first = await restore.restoreMatch(backup(oldest, { gameN: 8686, pin: '868686', sets: 0, events: 0 }), W)
+      await raw.query('BEGIN')
+      await raw.query("SET LOCAL session_replication_role = 'replica'")
+      await raw.query("UPDATE matches SET updated_at = now() - interval '30 days' WHERE id = $1", [first.body.data.id])
+      await raw.query('COMMIT')
+      await raw.query(
+        `INSERT INTO matches (external_id, game_n, game_pin, test, status)
+         SELECT $1 || g, 8686, '000000', true, 'live' FROM generate_series(1, 60) g`, [uniq('LATER')])
+      const r = await restore.restoreByPin({ gameN: 8686, pin: '868686' }, { limitKey: 'ip-oldest' })
+      assert.equal(r.status, 200, JSON.stringify(r.body))
+      assert.equal(r.body.data.match.external_id, oldest)
+    })
+
     it('successful lookups do not count against the caller', async () => {
       for (let i = 0; i < 25; i++) {
         const r = await restore.restoreByPin({ gameN: 31337, pin: '135790' }, { limitKey: 'ip-repeat' })
@@ -530,6 +835,7 @@ describe('matchRestore on Postgres', { skip: SKIP_PG }, () => {
     it('picks the most recently updated match when game number and PIN repeat', async () => {
       // Game numbers repeat across seasons (db/007 allows one cloud match per game and season)
       const older = await restore.restoreMatch(backup(uniq(), { gameN: 4242, pin: '999999', scheduledAt: '2024-10-05T16:00:00Z' }), W)
+      await earlierSeason(older.body.data.id)
       const newer = await restore.restoreMatch(backup(uniq(), { gameN: 4242, pin: '999999', scheduledAt: '2025-10-05T16:00:00Z' }), W)
       // (db/006's trigger would reset updated_at: back-date it with the user triggers off)
       await raw.query('BEGIN')
@@ -585,7 +891,7 @@ describe('matchRestore on Postgres', { skip: SKIP_PG }, () => {
     it('idFloor: the highest set / event ids the match used, voided events and revisions included', async () => {
       const ext3 = uniq('FLOOR')
       const b = backup(ext3, { gameN: 6160, pin: '616161', sets: 2, events: 3 })
-      b.events.push({ external_id: `${ext3}_legacy`, set_index: 1, type: 'point', seq: 9, payload: {}, sport_type: 'indoor' })
+      b.events.push({ external_id: `${ext3}_event_9`, set_index: 1, type: 'point', seq: 9, payload: {}, sport_type: 'indoor' })
       const r = await restore.restoreMatch(b, W)
       const matchId = r.body.data.id
       const floorOf = async (key) => (await restore.restoreByPin({ gameN: 6160, pin: '616161' }, { limitKey: key })).body.data.idFloor

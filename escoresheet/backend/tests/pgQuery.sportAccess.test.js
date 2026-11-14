@@ -131,6 +131,22 @@ describe('pgQuery and matchRestore: scoring rights per sport', { skip: SKIP_PG }
       okay(await q('match_live_state', 'upsert', { data: { match_id: m.id, points_a: 1 }, onConflict: 'match_id' }, asBeach(beach)))
     })
 
+    it('the match id of a child in another spelling is judged by that match\'s sport too', async () => {
+      const m = await matchOf(asBeach(beach), { sport_type: 'beach' })
+      await editor(m, indoor)
+      for (const [i, id] of [m.id.toUpperCase(), `{${m.id}}`, m.id.replace(/-/g, '')].entries()) {
+        scorerRequired(await q('events', 'insert', { data: { ...eventOf(m, 1 + i), match_id: id } }, asIndoor(indoor)))
+        scorerRequired(await q('sets', 'upsert', { data: { ...setOf(m, 1), match_id: id }, onConflict: 'external_id' }, asIndoor(indoor)))
+        scorerRequired(await q('match_live_state', 'upsert', { data: { match_id: id, points_a: 1 }, onConflict: 'match_id' }, asIndoor(indoor)))
+      }
+      const count = async (table) => (await raw.query(`SELECT count(*)::int n FROM ${table} WHERE match_id = $1`, [m.id])).rows[0].n
+      assert.deepEqual([await count('events'), await count('sets'), await count('match_live_state')], [0, 0, 0])
+      // its own indoor match in another spelling: written
+      const own = await matchOf(asIndoor(indoor), { sport_type: 'indoor' })
+      okay(await q('events', 'insert', { data: { ...eventOf(own, 1), match_id: own.id.toUpperCase() } }, asIndoor(indoor)))
+      assert.equal((await raw.query('SELECT count(*)::int n FROM events WHERE match_id = $1', [own.id])).rows[0].n, 1)
+    })
+
     it('an indoor scorer can update its own indoor rows and children (unchanged)', async () => {
       const m = await matchOf(asIndoor(indoor))
       okay(await q('sets', 'upsert', { data: setOf(m, 1), onConflict: 'external_id' }, asIndoor(indoor)))

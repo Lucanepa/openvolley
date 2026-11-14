@@ -32,12 +32,23 @@ account is "pending" in the scorer app unless it has another role, and it scores
   `https://manager.openvolley.app/#team=<CODE>`. It is shown once, like every invite code
   (only the hash is stored), with Copy and Share.
 - The code rides in the URL **fragment**, so it never reaches a server log. The manager keeps it
-  on the device (localStorage, 7 days) through sign-up and the email confirmation, then redeems
-  it by itself and opens My teams.
+  on the device (localStorage, 7 days) through sign-up and the email confirmation. Signed in, it
+  asks "Manage <team> with <address>?" (the team named by `POST /api/account/invite-preview`,
+  which checks the code as a redeem does and keeps nothing): Yes redeems it and opens My teams,
+  "Use another account" signs out and keeps the link, "Forget this link" drops it. A link opened
+  in a tab that is already signed in asks too. The kept link goes when a session ends on the
+  device or another account signs in (AuthContext `clearLocalAccountData`). A club manager link
+  (`#club=`, db/029) asks the same and works only for the address it was mailed to (db/036
+  `invite_codes.invited_email`; another account: 403 `OV_INVITE_OTHER_ACCOUNT`).
 - The same code can also be typed into the existing "Invite code" field.
-- Redeeming adds the `team_managers` row only (no role, no club membership: the account does not
-  score for the club). A code of a removed team is invalid (`ON DELETE CASCADE`).
-- The club manager sees each team's managers and removes one (the link only).
+- Redeeming adds the `team_managers` row and, through db/030, the `team_manager` role; no club
+  membership (db/036: a team manager's reads go through its team, `mayManage`). A code of a
+  removed team is invalid (`ON DELETE CASCADE`).
+- The club manager sees each team's managers and removes one. Removing one revokes the team
+  links that account redeemed (audited `invite.revoke`, reason `team_manager_removed`), and the
+  same link refuses it afterwards (409 `OV_INVITE_REMOVED`); a new link from the club manager
+  works. A link, like every code, stands only while its creator may still make it (an admin, or a
+  manager of the link's club).
 
 ## 3. My teams (manager)
 

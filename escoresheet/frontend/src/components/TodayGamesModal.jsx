@@ -7,21 +7,11 @@ import { refreshGameRosters } from '../db/gameRosters'
 import { mapSupabaseToMatchFormat, matchDataFromSchedule } from './LoadOfficialMatchModal'
 import { Button, Chip, cn, FOCUS_RING, IconButton, Notice } from '../ui'
 import { timeLabel } from '../ui/format'
+// The last list of the day, per account (a venue whose network drops still
+// shows the games), without the referees' dates of birth
+import { cacheTodayGames, readCachedTodayGames } from '../lib/todayGamesCache'
 
-// The last list of the day, per account: a venue whose network drops still
-// shows the games (owner plan 2026-10-29, step 3)
-const CACHE_KEY = 'ov:todayGames'
-export function readCachedTodayGames(userId, day) {
-  try {
-    const v = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null')
-    return v && v.userId === userId && v.day === day ? v.data : null
-  } catch {
-    return null
-  }
-}
-function cacheTodayGames(userId, data) {
-  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ userId, day: data.day, data })) } catch { /* the list still shows */ }
-}
+export { readCachedTodayGames }
 const zurichToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Zurich', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
 
 /**

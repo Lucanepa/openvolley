@@ -1,8 +1,10 @@
 // @vitest-environment node
 /**
  * The 6-substitution limit (FIVB 15.6) and the request rules are decided by
- * the tested domain rules (substitutionRequestIssues, classifySubstitutionRequest)
- * at the one place every live substitution goes through. Scoreboard.jsx is too large to mount: this pins the wiring.
+ * the tested domain rules (substitutionRequestIssues, classifyLiveSubstitution)
+ * at the one place every live substitution goes through, with the team's
+ * roster for the pair (substitutionIllegalReason). This pins the wiring; the
+ * behaviour is ScoreboardSubstitutionLegality.test.jsx's (mounted).
  */
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
@@ -22,10 +24,12 @@ describe('Scoreboard substitution limit', () => {
     expect(scoreboard).toMatch(/const \[substitutionConfirm, setSubstitutionConfirmState\] = useState\(null\)/)
     const guard = slice('const setSubstitutionConfirm = useCallback(', 900)
     // the request rules first (domain/interruptionRequests.js): replay pending,
-    // second request, 7th substitution, request after a delay warning
-    expect(guard).toMatch(/substitutionRequestIssues\(guard\.events, guard\.setIndex, next\.team, next\)/)
+    // second request, 7th substitution, request after a delay warning, the
+    // pair (with the team's roster: its liberos)
+    expect(guard).toMatch(/const roster = \{ players: guard\.players\?\.\[next\.team\] \|\| \[\] \}/)
+    expect(guard).toMatch(/substitutionRequestIssues\(guard\.events, guard\.setIndex, next\.team, next, roster\)/)
     expect(guard).toMatch(/guard\.onIssues\(next, issues, acknowledged\)/)
-    expect(guard).toMatch(/classifySubstitutionRequest\(guard\.events, next\.team, guard\.setIndex, next\)/)
+    expect(guard).toMatch(/classifyLiveSubstitution\(guard\.events, guard\.setIndex, next\.team, next, roster\)/)
     expect(guard).toMatch(/verdict === 'exceptional' && !next\.isExceptional/)
     // the raw state setter is used only by the guard and confirmSubstitution
     expect(scoreboard.match(/setSubstitutionConfirmState\(/g)).toHaveLength(3)
@@ -41,7 +45,7 @@ describe('Scoreboard substitution limit', () => {
 
   it('confirmSubstitution re-checks before writing the event', () => {
     const body = slice('const confirmSubstitution = useCallback(', 6000)
-    const check = body.indexOf('classifySubstitutionRequest(data.events, team, data.set.index, substitutionConfirm)')
+    const check = body.indexOf('classifyLiveSubstitution(data.events, data.set.index, team, substitutionConfirm,')
     const write = body.indexOf("logEvent('substitution'")
     expect(check).toBeGreaterThan(-1)
     expect(write).toBeGreaterThan(check)

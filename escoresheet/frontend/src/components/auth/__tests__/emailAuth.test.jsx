@@ -15,7 +15,7 @@ vi.mock('../../../contexts/AuthContext', () => ({ useAuth: () => auth.value }))
 
 import LoginModal, { contactFromMessage } from '../LoginModal'
 import EmailConfirmBanner from '../EmailConfirmBanner'
-import { needsEmailConfirmation, confirmationLinkSent } from '../signUpResult'
+import { needsEmailConfirmation, confirmationLinkSent, confirmationLinkQueued } from '../signUpResult'
 
 function openReset() {
   render(<LoginModal open onClose={() => {}} onSwitchToSignUp={() => {}} />)
@@ -106,5 +106,12 @@ describe('sign-up result', () => {
     expect(needsEmailConfirmation({ user })).toBe(true)
     expect(needsEmailConfirmation({ user: { ...user, email_confirmed_at: 'x' } })).toBe(false)
     expect(confirmationLinkSent({ user })).toBe(false)
+  })
+
+  it('a link held back by the mail budget: may sign in, and is not called sent', () => {
+    const user = { id: 'u', email_confirmed_at: null }
+    expect(needsEmailConfirmation({ user, email_confirmation: 'queued' })).toBe(false)
+    expect(confirmationLinkSent({ user, email_confirmation: 'queued' })).toBe(false)
+    expect(confirmationLinkQueued({ user, email_confirmation: 'queued' })).toBe(true)
   })
 })

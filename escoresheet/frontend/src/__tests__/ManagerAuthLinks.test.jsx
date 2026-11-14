@@ -161,7 +161,7 @@ describe('manager email-link pages', () => {
       expect(api.confirmEmail).not.toHaveBeenCalled()
       fireEvent.click(screen.getByRole('button', { name: 'authEmail.confirmButton' }))
       expect(await screen.findByTestId('confirm-done')).toHaveTextContent('authEmail.confirmed')
-      expect(api.confirmEmail).toHaveBeenCalledWith(TOKEN)
+      expect(api.confirmEmail).toHaveBeenCalledWith(TOKEN, '')
     })
 
     it('says so when the address was already confirmed', async () => {
@@ -213,7 +213,7 @@ describe('manager email-link pages', () => {
       expect(window.location.hash).toBe('')
       fireEvent.click(screen.getByRole('button', { name: 'authEmail.confirmButton' }))
       expect(await screen.findByTestId('confirm-done')).toBeInTheDocument()
-      expect(api.confirmEmail).toHaveBeenCalledWith(TOKEN)
+      expect(api.confirmEmail).toHaveBeenCalledWith(TOKEN, '')
       // Back to the account: the session's user is re-read (now confirmed)
       fireEvent.click(screen.getByRole('button', { name: 'managerSite.signIn' }))
       await waitFor(() => expect(auth.value.refreshUser).toHaveBeenCalledTimes(1))

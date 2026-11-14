@@ -11,6 +11,7 @@ import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
 import nodemailer from 'nodemailer'
 import {
+  matchMailDateTime,
   parseMultipart, parseContactBody, boundaryOf, sniffFile, safeFilename, checkAttachments, normalizeContact,
   areaOf, pageUrlOf, priorityOf, supportSubject, buildSupportMail, handleContact, isHoneypotHit,
   createContactMailer, contactMailerFromEnv, disabledContactMailer, createContactSlots, ContactError,
@@ -436,7 +437,7 @@ describe('contact: the mail', () => {
     const { mailer, sent } = streamMailer()
     const { body, contentType } = await formBody([...VALID.filter(([k]) => k !== 'severity'), ['severity', '3'], ['matchRunning', '1']])
     const lines = []
-    const r = await handleContact({ body, contentType, mailer, logger: { log: (l) => lines.push(l), warn() {}, error() {} } })
+    const r = await handleContact({ body, contentType, mailer, sender: { signedIn: true, liveMatch: true }, logger: { log: (l) => lines.push(l), warn() {}, error() {} } })
     assert.equal(r.status, 200)
     const { mail, raw } = sent[0]
     assert.equal(mail.subject, '[P1 – match running] [scoring] Support – Bug report')
@@ -489,13 +490,32 @@ describe('contact: the mail', () => {
     assert.doesNotMatch(lines.join('\n'), /tester@example\.ch|support@example\.test/, 'addresses masked in the log')
 
     let t = 0
-    const { mailer, sent } = streamMailer({ maxPerHour: 2, now: () => t })
+    const { mailer, sent } = streamMailer({ maxPerHour: 3, now: () => t })
     for (let i = 0; i < 2; i++) assert.equal((await handleContact({ body, contentType, mailer, logger: silent })).status, 200)
     const busy = await handleContact({ body, contentType, mailer, logger: silent })
     assert.deepEqual([busy.status, busy.body.code], [503, 'busy'])
+    // the last third is kept for signed-in senders
+    assert.equal((await handleContact({ body, contentType, mailer, sender: { signedIn: true }, logger: silent })).status, 200)
+    assert.equal((await handleContact({ body, contentType, mailer, sender: { signedIn: true }, logger: silent })).status, 503)
     t += 60 * 60 * 1000
     assert.equal((await handleContact({ body, contentType, mailer, logger: silent })).status, 200, 'a new hour')
-    assert.equal(sent.length, 3)
+    assert.equal(sent.length, 4)
+  })
+
+  it('a mail the SMTP server refused is given back to the budget; "match running" needs a session with a live match', async () => {
+    const { body, contentType } = await formBody([...VALID, ['matchRunning', '1']])
+    let fail = true
+    const sent = []
+    const mailer = createContactMailer({
+      transport: { async sendMail(m) { if (fail) throw new Error('421 try later'); sent.push(m) } },
+      from: 'OpenVolley <noreply@example.test>', to: 'support@example.test', maxPerHour: 3
+    })
+    for (let i = 0; i < 4; i++) assert.equal((await handleContact({ body, contentType, mailer, logger: silent })).status, 502)
+    fail = false
+    assert.equal((await handleContact({ body, contentType, mailer, logger: silent })).status, 200, 'the failures used nothing up')
+    assert.doesNotMatch(sent[0].subject, /P1/)
+    await handleContact({ body, contentType, mailer, sender: { signedIn: true, liveMatch: true }, logger: silent })
+    assert.match(sent[1].subject, /P1 – match running/)
   })
 
   it('from and to come from the mailer, never from the request', async () => {
@@ -729,5 +749,16 @@ describe('contact: settings', () => {
     const b = contactMailerFromEnv({ ...smtp, MAIL_FROM: 'OpenVolley <noreply@openvolley.example>', CONTACT_EMAIL: 'help@example.test' })
     assert.deepEqual([b.from, b.to], ['OpenVolley <noreply@openvolley.example>', 'help@example.test'])
     b.close()
+  })
+})
+
+describe('matchMailDateTime (send-info)', () => {
+  it('prints the match time in OV_TIMEZONE, not UTC', () => {
+    assert.deepEqual(matchMailDateTime('2026-11-14T17:30:00.000Z', 'Europe/Zurich'), { date: '14.11.2026', time: '18:30' })
+    assert.deepEqual(matchMailDateTime('2026-07-04T22:15:00.000Z', 'Europe/Zurich'), { date: '05.07.2026', time: '00:15' })
+  })
+  it('falls back to UTC on an unknown zone and says so; no time is TBD', () => {
+    assert.deepEqual(matchMailDateTime('2026-11-14T17:30:00.000Z', 'Not/AZone'), { date: '14.11.2026', time: '17:30 UTC' })
+    assert.deepEqual(matchMailDateTime(null), { date: 'TBD', time: 'TBD' })
   })
 })

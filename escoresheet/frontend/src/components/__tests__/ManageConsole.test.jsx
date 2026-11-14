@@ -24,7 +24,8 @@ const api = vi.hoisted(() => ({
     listActivity: vi.fn(async () => ({ data: { entries: [], next: null }, error: null, status: 200 })),
     exportActivity: vi.fn(),
     deleteActivity: vi.fn(),
-    listRevisions: vi.fn(async () => ({ data: [], error: null, status: 200 }))
+    listRevisions: vi.fn(async () => ({ data: [], error: null, status: 200 })),
+    listMatchClosures: vi.fn(async () => ({ data: { closures: [] }, error: null, status: 200 }))
   },
   savedTeamsApi: { fetchBundle: vi.fn(async () => ({ data: { version: '0', competitions: [], teams: [] }, error: null, status: 200 })) },
   scoresheetsApi: { list: vi.fn(async () => ({ data: { matches: [] }, error: null, status: 200 })), pdf: vi.fn() }

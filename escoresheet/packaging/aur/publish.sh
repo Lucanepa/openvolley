@@ -18,6 +18,15 @@ case ${1:-} in
 esac
 yes=${2:-}
 dir=$here/$pkg
+# arch_image: the pinned build image (../pacman/archlinux-image, written by
+# publish-pacman.sh --pin-image).
+arch_image() {
+  local ref
+  ref=$(grep -v '^#' "$here/../pacman/archlinux-image" 2>/dev/null | head -n1) || true
+  [[ "$ref" =~ ^archlinux:base-devel@sha256:[0-9a-f]{64}$ ]] ||
+    { echo "no pinned image in ../pacman/archlinux-image: run ../pacman/publish-pacman.sh --pin-image and commit it" >&2; exit 1; }
+  echo "$ref"
+}
 
 # .SRCINFO must describe this PKGBUILD (the AUR web page and helpers read it)
 ver=$(sed -n 's/^pkgver=//p' "$dir/PKGBUILD")
@@ -29,7 +38,7 @@ srcinfo() {
   if command -v makepkg >/dev/null 2>&1; then
     (cd "$dir" && makepkg --printsrcinfo)
   else
-    docker run --rm -v "$dir/PKGBUILD:/in/PKGBUILD:ro" archlinux:latest bash -c '
+    docker run --rm -v "$dir/PKGBUILD:/in/PKGBUILD:ro" "$(arch_image)" bash -c '
       set -e
       mkdir /p && cp /in/PKGBUILD /p/ && chown -R nobody /p && cd /p
       runuser -u nobody -- makepkg --printsrcinfo'

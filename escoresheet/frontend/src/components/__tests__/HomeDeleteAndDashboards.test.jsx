@@ -17,7 +17,7 @@ vi.mock('../../hooks/useSyncQueue', () => ({ useSyncQueueStats: () => ({ pending
 vi.mock('../../hooks/useScaledLayout', () => ({
   useScaledLayout: () => ({ scaleFactor: 1, userScaleOverride: null, setUserScaleOverride: () => {} })
 }))
-vi.mock('../../hooks/useServiceWorker', () => ({ clearCachesAndReload: async () => true }))
+vi.mock('../../hooks/useServiceWorker', () => ({ clearCachesAndReload: async () => true, useAppUpdateNeeded: () => null }))
 vi.mock('../ConnectionStatus', () => ({ default: () => null }))
 vi.mock('../TabletStatusIndicator', () => ({ default: () => null }))
 vi.mock('../auth/UserButton', () => ({ default: () => null }))

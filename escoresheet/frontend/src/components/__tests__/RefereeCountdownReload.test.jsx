@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, act, waitFor, cleanup } from '@testing-library/react'
 
 // A referee that reloads, or joins, during a time-out or the break between
@@ -97,7 +97,13 @@ const breakClock = () => {
   const el = [...document.querySelectorAll('div')].find(d => d.children.length === 0 && /^\d:\d\d$/.test(d.textContent.trim()))
   return el ? el.textContent.trim() : null
 }
-const settle = (ms = 400) => act(async () => { await new Promise(r => setTimeout(r, ms)) })
+// The tablet's clocks (Date and the monotonic performance.now) are fake and
+// move only here, by `ms`: the seconds shown do not depend on how fast this
+// machine renders. Timers stay real, so the 100 ms countdown tick runs.
+const settle = (ms = 400) => act(async () => {
+  vi.advanceTimersByTime(ms)
+  await new Promise(r => setTimeout(r, 250))
+})
 
 // Open the referee on the relay copy `first` (a reload is another open)
 async function openReferee(first) {
@@ -118,6 +124,7 @@ async function refetch(copy) {
 
 describe('Referee: a reload or a join during a time-out or the break', () => {
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date', 'performance'] })
     cleanup()
     sessionStorage.clear()
     relay.fetches = []
@@ -126,6 +133,7 @@ describe('Referee: a reload or a join during a time-out or the break', () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 })
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 1000 })
   })
+  afterEach(() => { vi.useRealTimers() })
 
   it('joins 12 s into a time-out: 18 left, from this tablet\'s clock', async () => {
     await openReferee(bundle(timeoutRow(Date.now() - 12000)))

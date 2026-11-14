@@ -43,17 +43,16 @@ function ToastRow({ item }) {
       // NO role/aria-live on the card: the container is already role="status";
       // nesting role="alert" made screen readers announce errors twice. Errors
       // must ALSO land inline — the toast is a supplement, not the only signal.
-      // Pause on a real mouse only: a tap fires pointerenter with no
-      // pointerleave, which used to park the toast on screen for good.
-      onPointerEnter={(e) => { if (e.pointerType === 'mouse') setPaused(true); }}
-      onPointerLeave={(e) => { if (e.pointerType === 'mouse') setPaused(false); }}
       onFocus={() => setPaused(true)}
       onBlur={() => setPaused(false)}
       className={cn(
-        // pointer-events-none below sm: the stack sits over row buttons on a
-        // phone, and a 4-second toast must never eat a tap. The dismiss button
-        // re-enables events for itself.
-        'pointer-events-none sm:pointer-events-auto w-full sm:w-auto sm:min-w-[15rem] max-w-sm bg-white rounded-xl shadow-lg',
+        // pointer-events-none at every width: the stack sits over primary
+        // actions (Match setup's Coin toss, a phone's row buttons), and a
+        // toast must never eat a click or a tap. A mouse resting over the
+        // card used to pause it and keep it there, catching the clicks on
+        // Coin toss (UI tour 14.11). Only the dismiss button takes the
+        // pointer, and only it pauses the toast.
+        'pointer-events-none w-full sm:w-auto sm:min-w-[15rem] max-w-sm bg-white rounded-xl shadow-lg',
         'border border-stone-200 border-l-4 flex items-start gap-2.5 py-3 pl-3 pr-2',
         accent.border,
       )}
@@ -65,6 +64,10 @@ function ToastRow({ item }) {
         data-testid="toast-dismiss"
         aria-label={t('common.dismissNotification', 'Dismiss notification')}
         onClick={() => dismissToast(item.id)}
+        // Pause on a real mouse only: a tap fires pointerenter with no
+        // pointerleave, which used to park the toast on screen for good.
+        onPointerEnter={(e) => { if (e.pointerType === 'mouse') setPaused(true); }}
+        onPointerLeave={(e) => { if (e.pointerType === 'mouse') setPaused(false); }}
         className={cn('pointer-events-auto shrink-0 h-10 w-10 sm:h-7 sm:w-7 -my-1.5 sm:my-0 inline-flex items-center justify-center rounded text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors', FOCUS_RING)}
       >
         <X size={14} />

@@ -4,13 +4,15 @@ import { Bell } from 'lucide-react'
 import { cn, consoleHeaderBtn, FOCUS_RING, PickerPopover } from '../../ui'
 import { notificationsApi } from '../../lib/accountApi'
 import { useOnline } from './common'
+import { dayTimeLabel } from '../../ui/format.js'
 
 // How often the bell asks for new notices while the manager is open
 export const NOTIFICATIONS_POLL_MS = 60 * 1000
 
 /**
  * The console header's bell (db/028, backend lib/signupNotices.js): the
- * account's own notices in this manager ("Nora Neu signed up"), newest
+ * account's own notices in this manager ("Nora Neu signed up"; db/036 "to
+ * confirm: Nora Neu, team manager", a team manager's proposal), newest
  * first, with the unread count on the button. A notice opens its page
  * (`onOpen(target)`: the account, My club or My teams) and is marked read;
  * "Mark all read" clears the count. Read every minute and when the window
@@ -18,7 +20,7 @@ export const NOTIFICATIONS_POLL_MS = 60 * 1000
  * db/028 (the list answers 404 there: no button).
  */
 export default function NotificationsBell({ app, onOpen }) {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const online = useOnline()
   const [state, setState] = useState({ list: [], unread: 0, known: false, missing: false })
   const [open, setOpen] = useState(false)
@@ -62,13 +64,8 @@ export default function NotificationsBell({ app, onOpen }) {
 
   if (state.missing) return null
   const { list, unread } = state
-  const when = (iso) => {
-    try {
-      return new Date(iso).toLocaleString(i18n.language, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Zurich' })
-    } catch {
-      return ''
-    }
-  }
+  // the app's dd.mm.yyyy HH:mm, 24 h, Zürich time (it read "Nov 14, 07:12 PM")
+  const when = (iso) => dayTimeLabel(iso)
   const partText = (p) => {
     const kind = t(`access.requests.kinds.${p.kind}`)
     const where = p.kind === 'team_manager' ? (p.team || p.club) : p.club
@@ -123,7 +120,7 @@ export default function NotificationsBell({ app, onOpen }) {
                     <span aria-hidden className={cn('mt-1.5 h-2 w-2 shrink-0 rounded-full', n.read ? 'bg-transparent' : 'bg-red-600')} />
                     <span className="min-w-0 flex-1">
                       <span className={cn('block truncate text-sm', n.read ? 'text-stone-700' : 'font-semibold text-stone-900')}>
-                        {t('manage.notifications.signupTitle', { name: who })}
+                        {t(n.kind === 'team_manager_proposal' ? 'manage.notifications.proposalTitle' : 'manage.notifications.signupTitle', { name: who })}
                       </span>
                       {n.user?.name && n.user?.email && <span className="block truncate text-xs text-stone-500">{n.user.email}</span>}
                       <span className="mt-0.5 block text-xs text-stone-600">

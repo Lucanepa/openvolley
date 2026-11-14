@@ -19,8 +19,17 @@
  *   once per 24 h after a check that worked (an hour after one that failed),
  *   never offline and never during a live match (not even before the app
  *   knows whether one is live). A newer version shows a notice on the home screen (never over the
- *   scoreboard): get it from F-Droid (it then updates itself) or download the
- *   APK.
+ *   scoreboard): get it from F-Droid (it then updates itself) or open the
+ *   download page.
+ *
+ * The index is read with a plain fetch: its signature (entry.jar, against
+ * REPO_FINGERPRINT) is not checked here. So it only says THAT a version is
+ * out, never where to get it: the buttons hand over to the F-Droid client
+ * (which checks the repo's signature against the fingerprint in the link) or
+ * open the download page, never an APK address taken from the index. The
+ * notice also says that an update never needs an uninstall (Android refuses
+ * an APK signed with another key; uninstalling for it loses the matches on
+ * the device).
  *
  * Nothing but the GET of the index is sent. The state lives in this module
  * (one controller per page, installAndroidUpdates in App.jsx); the notice and
@@ -91,16 +100,12 @@ export function versionCode(v) {
   return (Number(m[1]) * 1000000 + Number(m[2]) * 1000 + Number(m[3])) * 10
 }
 
-/** The repo folder of an index URL (APK file names are relative to it). */
-export function repoBaseOf(indexUrl) {
-  return String(indexUrl).replace(/\/index-v2\.json(?:[?#].*)?$/, '')
-}
-
 /**
- * The newest version of the app in an F-Droid index-v2.json.
- * @returns {{versionName: string, versionCode: number, apkUrl: string} | null}
+ * The newest version of the app in an F-Droid index-v2.json (unsigned as
+ * read here: the version only, no download address).
+ * @returns {{versionName: string, versionCode: number} | null}
  */
-export function latestFromIndex(json, { indexUrl = INDEX_URL, appId = APP_ID } = {}) {
+export function latestFromIndex(json, { appId = APP_ID } = {}) {
   const versions = json?.packages?.[appId]?.versions
   if (!versions || typeof versions !== 'object') return null
   let best = null
@@ -112,7 +117,7 @@ export function latestFromIndex(json, { indexUrl = INDEX_URL, appId = APP_ID } =
     if (typeof name !== 'string' || !/^\d+\.\d+\.\d+$/.test(name)) continue
     if (typeof file !== 'string' || !/^\/[A-Za-z0-9._-]+\.apk$/.test(file)) continue
     if (!best || code > best.versionCode) {
-      best = { versionName: name, versionCode: code, apkUrl: repoBaseOf(indexUrl) + file }
+      best = { versionName: name, versionCode: code }
     }
   }
   return best
@@ -200,7 +205,7 @@ function writeLastCheck(storage, at) {
  * asking: the opt-in question is waiting for the home screen
  * installedCode: the installed versionCode (null until known / unknown)
  * status: 'idle' | 'checking' | 'upToDate' | 'available' | 'failed'
- * latest: the newest version seen ({versionName, versionCode, apkUrl})
+ * latest: the newest version seen ({versionName, versionCode})
  * dismissed: the version whose notice got "Later" (until the next start)
  */
 const INITIAL = Object.freeze({
@@ -284,7 +289,7 @@ async function check() {
       signal: controller?.signal,
     })
     if (!res.ok) throw new Error(`index ${res.status}`)
-    const latest = latestFromIndex(await res.json(), { indexUrl })
+    const latest = latestFromIndex(await res.json())
     if (!latest) throw new Error('app not in the index')
     writeLastCheck(storage, startedAt)
     update({ status: isNewer(latest, APP_VERSION, state.installedCode) ? 'available' : 'upToDate', latest })
@@ -357,11 +362,12 @@ export function getFromFdroid() {
   return openStore({ url: FDROID_REPO_LINK, fallbackUrl: FDROID_REPO_WEB })
 }
 
-/** The newest APK, in the browser (Android asks before it installs it). */
+/**
+ * The download page in the browser (the APK and its signing fingerprint),
+ * never an APK address from the unsigned index.
+ */
 export function downloadApk() {
-  const url = state.latest?.apkUrl
-  if (!url) return Promise.resolve(false)
-  return openStore({ url, fallbackUrl: INSTALL_PAGE })
+  return openStore({ url: INSTALL_PAGE, fallbackUrl: INSTALL_PAGE })
 }
 
 /**

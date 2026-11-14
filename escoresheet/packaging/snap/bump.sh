@@ -6,18 +6,20 @@
 #   ./bump.sh openbeach 2.0.1      # beach-desktop-v2.0.1 -> openbeach-escoresheet
 #
 # The .deb is downloaded from the GitHub release and checked before its hash
-# is written down: its minisign signature (<deb>.sig, the updater key in
-# tauri.conf.json / tauri.beach.conf.json) when `minisign` is installed, and
-# the version in its control file. The hash then pins exactly that file: the
+# is written down: its signature (<deb>.sig, the updater key in
+# tauri.conf.json / tauri.beach.conf.json, bound to the version and the file
+# name; ../lib/release-asset.sh, always, minisign is not needed) and the
+# version in its control file. The hash then pins exactly that file: the
 # snap build fails if the release asset ever changes.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
-tauri="$here/../../frontend/src-tauri"
+# shellcheck source=SCRIPTDIR/../lib/release-asset.sh
+. "$here/../lib/release-asset.sh"
 
 case "${1:-}" in
-  openvolley) snap=openvolley-escoresheet; tag=desktop-v; conf=tauri.conf.json ;;
-  openbeach) snap=openbeach-escoresheet; tag=beach-desktop-v; conf=tauri.beach.conf.json ;;
+  openvolley) snap=openvolley-escoresheet; tag=desktop-v ;;
+  openbeach) snap=openbeach-escoresheet; tag=beach-desktop-v ;;
   *) echo "usage: $0 openvolley|openbeach VERSION" >&2; exit 2 ;;
 esac
 version=${2:?usage: $0 openvolley|openbeach VERSION}
@@ -29,18 +31,8 @@ url="https://github.com/Lucanepa/openvolley/releases/download/${tag}${version}/$
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-echo "downloading $url"
-curl -fsSL -o "$tmp/$deb" "$url"
-curl -fsSL -o "$tmp/$deb.sig" "$url.sig"
-
-if command -v minisign >/dev/null; then
-  jq -r .plugins.updater.pubkey "$tauri/$conf" | base64 -d > "$tmp/key.pub"
-  base64 -d "$tmp/$deb.sig" > "$tmp/$deb.minisig"
-  minisign -Vq -p "$tmp/key.pub" -x "$tmp/$deb.minisig" -m "$tmp/$deb"
-  echo "signature OK (updater key in $conf)"
-else
-  echo "WARNING: minisign not installed, the .deb's signature was NOT checked" >&2
-fi
+release_asset_fetch "$1" "$version" "$url" "$tmp" >/dev/null
+echo "signature OK (updater key, $version, $deb)"
 
 command -v dpkg-deb >/dev/null || { echo "dpkg-deb is needed to check the .deb" >&2; exit 1; }
 got=$(dpkg-deb -f "$tmp/$deb" Version)

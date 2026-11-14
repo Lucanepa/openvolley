@@ -17,6 +17,13 @@ Also decided in the design:
 - An admin switches the rule on. It is **off** after the deploy. Turning it on
   blocks every scorer without a club at once, so the clubs and their scorers are
   set up first.
+- From db/034 on the rule is **on unless an admin switched it off**: the
+  migration turns on a rule no admin ever set, and a rule an admin switched off
+  stays off. While it is off the Clubs tab warns, and it lists the open official
+  matches that an account outside the home club holds, to release them. With
+  the rule on, a scorer of the home club takes over such a game itself while its
+  match is still in setup (the outside match is released as by release-game,
+  audited as `match.game_taken_over`).
 - Admins score any game.
 - A game that is not in the VolleyManager schedule (`svrz_games`) has no
   known home team, so it is refused while the rule is on.
@@ -95,7 +102,8 @@ backend is deployed before the migration).
 **Scorer app:**
 - `AuthContext` loads `clubs` and `clubRule` from `/api/me` once signed in, on
   focus and when the connection comes back. It caches them per account in
-  `localStorage['ov:clubs']` (removed at sign-out and account deletion). Redeeming
+  `localStorage['ov:clubs']` (removed whenever a session ends on the device: sign-out,
+  expiry or refusal, another account, deletion; data-map 4.11). Redeeming
   an invite code loads them again (a code may carry a club).
 - `access.clubs` / `access.clubRule` / `access.clubsKnown`.
 - A change of clubs or of the rule is an access change (`ACCESS_CHANGED_EVENT`),

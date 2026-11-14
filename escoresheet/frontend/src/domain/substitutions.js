@@ -16,6 +16,8 @@
  * corrections holes the audit flagged.
  */
 
+import { isSentOff, substituteInIllegalReason } from './interruptionRequests'
+
 /** Substitutions already recorded for a team in a set. */
 export function getSetSubstitutions(events, teamKey, setIndex) {
   return (events || []).filter(e =>
@@ -25,7 +27,17 @@ export function getSetSubstitutions(events, teamKey, setIndex) {
   )
 }
 
-/** Max regular substitutions per team per set (FIVB 15.6, Swiss Volley senior 6-6). */
+/**
+ * Max regular substitutions per team per set (FIVB 15.6, Swiss Volley senior 6-6).
+ *
+ * League-wide by decision (owner, rollout audit 2026-11): the same rule limits
+ * hold for every category and league, youth included. No rule reads the
+ * category or the league: 6 regular substitutions and 2 time-outs per set,
+ * sets to 25 and the decider to 15 with a 2-point lead, court change at 8 in
+ * the decider. The only per-match setting is the format, best of 3 or 5
+ * (matchFormat.js), and best of 3 is supported end to end. A category with
+ * other limits needs a per-match rule profile first.
+ */
 export const MAX_SUBSTITUTIONS_PER_SET = 6
 
 /**
@@ -36,6 +48,20 @@ export const MAX_SUBSTITUTIONS_PER_SET = 6
  */
 export function countRegularSubstitutions(events, teamKey, setIndex) {
   return getSetSubstitutions(events, teamKey, setIndex).filter(e => !e.payload?.isExceptional).length
+}
+
+/**
+ * True when a substitution keeps its player out (playerOut) for the rest of
+ * the match: a substitution because of a disqualification (FIVB 21.3.3), or
+ * an exceptional substitution of an injured or ill player (15.7). An expelled
+ * player replaced exceptionally (beyond the 6) is out for that set only
+ * (21.3.2, 15.8), as after a regular expulsion substitution.
+ * @param {object} payload the substitution event's payload
+ */
+export function substitutionBarsForMatch(payload) {
+  if (!payload) return false
+  if (payload.isDisqualified === true) return true
+  return payload.isExceptional === true && payload.isExpelled !== true
 }
 
 /** True while the team still has a regular substitution left in the set. */
@@ -61,10 +87,17 @@ export function classifySubstitutionRequest(events, teamKey, setIndex, request =
 }
 
 /**
- * Validate a proposed substitution against the set's history.
+ * Validate a proposed substitution against the set's history: the rules of
+ * the live check (interruptionRequests substituteInIllegalReason and
+ * isSentOff) as far as the history alone tells them. Whether a rally was
+ * completed since the player went out depends on where the entry is added
+ * and is not checked here.
+ * @param {{maxPerSet?: number, allEvents?: Array}} [opts] allEvents: the whole
+ *   log when `events` leaves some rows out (exceptional substitutions), for
+ *   who was sent off
  * @returns {{legal: boolean, reason?: string}}
  */
-export function validateManualSubstitution(events, teamKey, setIndex, playerOut, playerIn, { maxPerSet = MAX_SUBSTITUTIONS_PER_SET } = {}) {
+export function validateManualSubstitution(events, teamKey, setIndex, playerOut, playerIn, { maxPerSet = MAX_SUBSTITUTIONS_PER_SET, allEvents = null } = {}) {
   const out = Number(playerOut)
   const inn = Number(playerIn)
   if (!out || !inn) return { legal: false, reason: 'Select both the player going out and the player coming in.' }
@@ -86,6 +119,15 @@ export function validateManualSubstitution(events, teamKey, setIndex, playerOut,
   const cameOnAs = subs.find(s => Number(s.payload?.playerIn) === out)
   if (cameOnAs && Number(cameOnAs.payload?.playerOut) !== inn) {
     return { legal: false, reason: `#${out} came on for #${cameOnAs.payload?.playerOut}; only that player may return for him.` }
+  }
+  // Disqualified, expelled this set or replaced exceptionally: not back (FIVB 15.7, 15.8)
+  if (isSentOff(allEvents || events, teamKey, inn, setIndex)) {
+    return { legal: false, reason: `#${inn} was expelled, disqualified or replaced exceptionally; he may not come back.` }
+  }
+  // A starter who went out comes back only for his own substitute (FIVB 15.6.1)
+  const exit = subs.filter(s => Number(s.payload?.playerOut) === inn).pop()
+  if (exit && substituteInIllegalReason(events, setIndex, teamKey, out, inn) === 'wrong_partner') {
+    return { legal: false, reason: `#${inn} went out for #${exit?.payload?.playerIn}; he may come back only for him.` }
   }
 
   return { legal: true }

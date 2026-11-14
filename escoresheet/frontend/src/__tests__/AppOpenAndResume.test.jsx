@@ -92,9 +92,13 @@ describe('Opening the app lands on Home', () => {
   })
 
   // A team's uploaded roster waiting for review opened that match's Match
-  // Setup by itself at start (App's pending-roster effect, on Home too)
+  // Setup by itself at start (App's pending-roster effect, on Home too).
+  // Before the coin toss only: a running match takes no uploaded roster
+  // (AppPendingRosterLiveMatch.test.jsx)
   it('a match with a roster waiting stays on Home; its Match Setup opens once the match is open', async () => {
-    await seedMatch({ at: ago(HOUR), pendingAwayRoster: { players: [{ number: 1, lastName: 'Fischer', firstName: 'B' }] } })
+    await seedMatch({ at: ago(HOUR), status: 'setup', pendingAwayRoster: { players: [{ number: 1, lastName: 'Fischer', firstName: 'B' }] } })
+    await db.sets.clear()
+    await db.events.clear()
     const onLine = offlineDevice()
     try {
       mountApp()
@@ -105,7 +109,7 @@ describe('Opening the app lands on Home', () => {
       expect(sessionStorage.getItem(OPEN_MATCH_KEY)).toBeNull()
 
       // Continue opens the match: then the waiting roster takes it to Match Setup
-      fireEvent.click(button('Continue match'))
+      fireEvent.click(continueCard().querySelector('button'))
       await waitFor(() => expect(matchSetupShown()).toBe(true))
     } finally {
       onLine.mockRestore()

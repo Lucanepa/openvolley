@@ -118,6 +118,12 @@ describe('visibility', () => {
     expect(await screen.findByTestId('approval-pin-status')).toHaveTextContent(/^Locked until /)
     view.unmount()
 
+    // paused for one account only (its wrong PINs): the official sees it too (rollout audit be-auth-7)
+    api.status = vi.fn(async () => ok({ ...STATUS, set: true, locked_until: new Date(Date.now() + 600000).toISOString(), locked_scope: 'caller' }))
+    view = render(<ApprovalPinSection />)
+    expect(await screen.findByTestId('approval-pin-status')).toHaveTextContent(/^Paused for one account until .+ Other accounts can still use your PIN/)
+    view.unmount()
+
     setAuth(['referee'], { confirmed: false })
     api.status = vi.fn(async () => ok({ ...STATUS, eligible: false }))
     render(<ApprovalPinSection />)
@@ -151,10 +157,11 @@ describe('set, change, remove', () => {
     fireEvent.click(await screen.findByRole('button', { name: en.approval.pin.set }))
     expect(within(dialog()).getByText(en.approval.pin.setTitle)).toBeInTheDocument()
     const pin = field(en.approval.pin.newPin)
-    expect(pin).toHaveAttribute('type', 'password')
+    // no password field: a browser would offer to save it (rollout audit gap-fe-unread-dialogs-1)
+    expect(pin).toHaveAttribute('type', 'text')
+    expect(pin).toHaveAttribute('autocomplete', 'one-time-code')
     expect(pin).toHaveAttribute('inputmode', 'numeric')
     expect(pin).toHaveAttribute('maxlength', '6')
-    expect(pin).toHaveAttribute('autocomplete', 'off')
     expect(field(en.approval.pin.currentPassword)).toHaveAttribute('autocomplete', 'current-password')
 
     // no password yet

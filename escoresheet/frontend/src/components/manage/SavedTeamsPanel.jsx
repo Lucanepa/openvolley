@@ -6,7 +6,7 @@ import { apiFrom } from '../../lib/apiClient'
 import { selectAll } from '../../lib/selectAll'
 import { storeSavedTeamsBundle } from '../../db/savedTeams'
 import { seasonOptions, seasonOf, seasonLabel } from '../../domain/season'
-import { sportOf, beachSeasonOptions } from '../../domain/savedTeams'
+import { sportOf, beachSeasonOptions, sameTypedName } from '../../domain/savedTeams'
 import { TEAM_COLOUR_MARK } from '../../utils/teamColours'
 import KitModal from './KitModal'
 import TeamEditor from './TeamEditor'
@@ -100,16 +100,22 @@ export default function SavedTeamsPanel({ userId, sport: fixedSport, route = '',
     await reload()
   }
 
+  // fe-manage-2: a competition with teams (every club's squad of the league)
+  // goes only with its name typed; the server checks it too and audits the delete
   const deleteCompetition = async (c) => {
-    const ok = await confirmDialog({
+    const withTeams = teams.some(x => x.competition_id === c.id)
+    const answer = await confirmDialog({
       title: t('savedTeams.deleteCompetitionConfirmTitle', { name: c.name }),
       message: t('savedTeams.deleteCompetitionConfirmBody'),
       confirmLabel: t('savedTeams.deleteCompetition'),
       cancelLabel: t('common.cancel', 'Cancel'),
-      tone: 'danger'
+      tone: 'danger',
+      ...(withTeams ? { input: { label: t('savedTeams.typeNameToDelete', { name: c.name }), placeholder: c.name } } : {})
     })
-    if (!ok) return
-    const res = await savedTeamsApi.deleteCompetition(c.id)
+    if (answer === false) return
+    if (withTeams && !sameTypedName(answer, c.name)) return setActionError(t('savedTeams.confirmNameMismatch'))
+    setActionError('')
+    const res = await savedTeamsApi.deleteCompetition(c.id, { confirm: withTeams ? answer : undefined })
     if (res.error) return setActionError(errorText(res.error))
     setCompetitionId(null, { push: false })
     afterWrite()
@@ -117,7 +123,7 @@ export default function SavedTeamsPanel({ userId, sport: fixedSport, route = '',
 
   // a page of the URL whose competition or team is not (yet) loaded or gone
   if (competitionId && (!competition || (teamId && !team))) {
-    return <PageMissing loading={loading || !data} error={error} onBack={() => setCompetitionId(null)} backLabel={t('savedTeams.competitions')} />
+    return <PageMissing loading={loading || !data} error={error} onBack={() => setCompetitionId(null)} backLabel={t('savedTeams.title')} />
   }
 
   // ── Team editor ──
@@ -148,7 +154,7 @@ export default function SavedTeamsPanel({ userId, sport: fixedSport, route = '',
     return (
       <section>
         <div className="mb-2">
-          <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={() => setCompetitionId(null)}>{t('savedTeams.competitions')}</Button>
+          <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={() => setCompetitionId(null)}>{t('savedTeams.title')}</Button>
         </div>
         <PanelHead title={competition.name}>
           <Button variant="secondary" icon={Pencil} onClick={() => setCompetitionForm(competition)} disabled={!online}>{t('common.edit', 'Edit')}</Button>
@@ -204,10 +210,11 @@ export default function SavedTeamsPanel({ userId, sport: fixedSport, route = '',
     )
   }
 
-  // ── Competitions ──
+  // ── Competitions ── (the page of the "Saved teams" tab: titled like it, the
+  // teams grouped by competition)
   return (
     <section>
-      <PanelHead title={t('savedTeams.competitions')}>
+      <PanelHead title={t('savedTeams.title')}>
         <Button icon={Plus} onClick={() => setCompetitionForm({})} disabled={!online}>{t('savedTeams.newCompetition')}</Button>
       </PanelHead>
       <OfflineBanner online={online} />

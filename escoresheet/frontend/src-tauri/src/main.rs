@@ -98,7 +98,11 @@ fn main() {
         );
     }
 
-    let builder = with_app_commands(builder.plugin(tauri_plugin_dialog::init()));
+    let builder = with_app_commands(builder.plugin(tauri_plugin_dialog::init()))
+        // No camera, microphone or screen for any page of the app: it has no
+        // feature that needs them (the desktop shows QR codes, it never scans
+        // one), and WKWebView would grant them without asking (delta-infra-2).
+        .on_permission_request(|_, kind| media_permission(kind));
     // No native menu bar on Linux / Windows: it held only Help > Connect a
     // Tablet and rendered in the GTK system theme (dark on a dark desktop).
     // The app's own header menu has Connect tablets (LAN addresses + QR),
@@ -133,6 +137,16 @@ fn main() {
                 log::error!("Cannot bind WebSocket port {ws}: {e}");
                 std::process::exit(1);
             });
+            // and the same ports on [::1], where http://localhost goes first
+            // (bind_loopback_v6): taken by another program, the app exits too
+            let http_v6 = bind_loopback_v6(http).unwrap_or_else(|e| {
+                log::error!("Cannot bind HTTP port {http} on [::1]: {e}");
+                std::process::exit(1);
+            });
+            let ws_v6 = bind_loopback_v6(ws).unwrap_or_else(|e| {
+                log::error!("Cannot bind WebSocket port {ws} on [::1]: {e}");
+                std::process::exit(1);
+            });
 
             log::info!("[app] OpenVolley {} starting (http :{http}, ws :{ws})", app.package_info().version);
             if http != DEFAULT_HTTP_PORT {
@@ -152,7 +166,9 @@ fn main() {
             // Start the LAN relay on Tauri's async runtime.
             let st = state.clone();
             tauri::async_runtime::spawn(async move {
-                relay::serve(st, http_listener, ws_listener).await;
+                let http_all = std::iter::once(http_listener).chain(http_v6).collect();
+                let ws_all = std::iter::once(ws_listener).chain(ws_v6).collect();
+                relay::serve_all(st, http_all, ws_all).await;
             });
 
             // Closing the window hides it to the tray (lifecycle.rs); its
@@ -185,9 +201,14 @@ fn main() {
             // loaded, never during a match (updater.rs)
             updater::start(app.handle().clone());
 
+            // The app's commands for its own origin only, http://localhost:<this
+            // port> (grant_own_origin): never a page on another local port.
+            grant_own_origin(app.handle(), http)?;
+
             // Load the desktop window from the local relay so window.location is
             // a real http origin (the existing LAN client code + the scoresheet
-            // popups resolve correctly, and http://localhost keeps camera/QR).
+            // popups resolve correctly). The origin stays http://localhost:<port>:
+            // the match data (IndexedDB) and the sign-in live under it.
             let mut main = WebviewWindowBuilder::new(
                 app,
                 lifecycle::MAIN,
@@ -213,6 +234,8 @@ fn main() {
             // window.open(): the scoresheet etc. as app windows, web links in
             // the system browser (popups.rs); "Save PDF" into Downloads.
             .on_new_window(popups::new_window_handler(app.handle().clone(), http))
+            // and it stays on the app's own pages (popups.rs navigation_allowed)
+            .on_navigation(popups::navigation_handler(http))
             .on_download(popups::on_download)
             // a (re)loading page cannot answer "close" / "quit" until it has
             // called app_page_state again
@@ -280,6 +303,71 @@ fn main() {
             tauri::RunEvent::Reopen { .. } => lifecycle::show_windows(app),
             _ => {}
         });
+}
+
+/// The answer to a page's permission request: no to every capture device,
+/// the webview's default (Linux: no) for the rest.
+fn media_permission(kind: tauri::webview::PermissionKind) -> tauri::webview::PermissionResponse {
+    use tauri::webview::{PermissionKind, PermissionResponse};
+    match kind {
+        PermissionKind::Camera | PermissionKind::Microphone | PermissionKind::DisplayCapture => {
+            log::warn!("[app] refused a page's request for {kind:?}");
+            PermissionResponse::Deny
+        }
+        _ => PermissionResponse::Default,
+    }
+}
+
+/// The relay's `port` on [::1] as well. The scoretable window loads
+/// http://localhost:<port>, and `localhost` resolves to ::1 first: with the
+/// relay on IPv4 only, any other local program (another Windows / macOS /
+/// Linux account, a sandboxed app) could listen on [::1]:<port> and the window
+/// would load its page, as the app's own origin with all of the app's
+/// commands. Holding the port there too closes that. Ok(None): this machine
+/// has no IPv6 loopback, so no program can listen there either. Err: another
+/// program has it already (the app then exits, as when the IPv4 port is taken).
+fn bind_loopback_v6(port: u16) -> std::io::Result<Option<std::net::TcpListener>> {
+    match std::net::TcpListener::bind((std::net::Ipv6Addr::LOCALHOST, port)) {
+        Ok(listener) => Ok(Some(listener)),
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => Err(e),
+        Err(e) => {
+            log::info!("[app] no IPv6 loopback for port {port} ({e}): IPv4 only");
+            Ok(None)
+        }
+    }
+}
+
+/// The capabilities that grant the app's commands to a page (capabilities/,
+/// all but `default`). tauri.conf.json activates only `default` from that
+/// folder; these are added at start for the relay's actual port
+/// (grant_own_origin), so a page on any other localhost port (another
+/// program's server) gets none of the commands.
+const OWN_ORIGIN_CAPABILITIES: &[(&str, &str)] = &[
+    ("activity", include_str!("../capabilities/activity.json")),
+    ("app", include_str!("../capabilities/app.json")),
+    ("backup", include_str!("../capabilities/backup.json")),
+    ("diagnostics", include_str!("../capabilities/diagnostics.json")),
+    ("downloads", include_str!("../capabilities/downloads.json")),
+    ("netshare", include_str!("../capabilities/netshare.json")),
+    ("stick", include_str!("../capabilities/stick.json")),
+    ("update", include_str!("../capabilities/update.json")),
+];
+
+/// The origin pattern the capability files name ("any port"), replaced by
+/// the relay's port when they are granted.
+const ANY_LOCALHOST_PORT: &str = "\"http://localhost:*\"";
+
+/// A capability file for `http://localhost:<http_port>` only.
+fn own_origin_capability(json: &str, http_port: u16) -> String {
+    json.replace(ANY_LOCALHOST_PORT, &format!("\"http://localhost:{http_port}\""))
+}
+
+/// Grants the app's commands to its own origin, http://localhost:<http_port>.
+fn grant_own_origin<R: tauri::Runtime, M: Manager<R>>(app: &M, http_port: u16) -> tauri::Result<()> {
+    for (_, json) in OWN_ORIGIN_CAPABILITIES {
+        app.add_capability(own_origin_capability(json, http_port))?;
+    }
+    Ok(())
 }
 
 /// tauri-plugin-single-instance needs the session bus on Linux (it unwraps
@@ -483,6 +571,68 @@ mod tests {
         }
     }
 
+    /// tauri-shell-1: with the relay on IPv4 only, another program could
+    /// listen on [::1]:<port> (where http://localhost goes first) and serve
+    /// the scoretable window its own page. The app now holds [::1] too, and a
+    /// [::1] port another program holds stops it.
+    #[test]
+    fn the_relay_ports_are_held_on_ipv6_loopback_too() {
+        let v4 = std::net::TcpListener::bind(("0.0.0.0", 0)).unwrap();
+        let port = v4.local_addr().unwrap().port();
+        let Ok(Some(v6)) = super::bind_loopback_v6(port) else {
+            eprintln!("no IPv6 loopback here: nothing to hold");
+            return;
+        };
+        assert_eq!(v6.local_addr().unwrap().ip(), std::net::Ipv6Addr::LOCALHOST);
+        // nobody else gets [::1]:<port> now
+        assert!(std::net::TcpListener::bind((std::net::Ipv6Addr::LOCALHOST, port)).is_err());
+        drop(v6);
+        // taken by another program first: an error, the app exits
+        let squatter = std::net::TcpListener::bind((std::net::Ipv6Addr::LOCALHOST, port)).unwrap();
+        let err = super::bind_loopback_v6(port).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::AddrInUse);
+        drop(squatter);
+    }
+
+    /// delta-infra-2: no page gets the camera, microphone or screen.
+    #[test]
+    fn capture_devices_are_refused() {
+        use tauri::webview::{PermissionKind, PermissionResponse};
+        for kind in [PermissionKind::Camera, PermissionKind::Microphone, PermissionKind::DisplayCapture] {
+            assert!(matches!(super::media_permission(kind), PermissionResponse::Deny));
+        }
+        assert!(matches!(super::media_permission(PermissionKind::ClipboardRead), PermissionResponse::Default));
+    }
+
+    /// Only `default` is active from the capabilities folder; every file that
+    /// grants a page commands is granted at start for the relay's port
+    /// (grant_own_origin), never for any localhost port.
+    #[test]
+    fn page_capabilities_are_granted_for_the_own_port_only() {
+        let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(conf["app"]["security"]["capabilities"], serde_json::json!(["default"]));
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("capabilities");
+        let mut with_remote = Vec::new();
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            let text = std::fs::read_to_string(&path).unwrap();
+            let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+            if json.get("remote").is_some() {
+                assert_eq!(json["remote"]["urls"], serde_json::json!(["http://localhost:*"]), "{}", path.display());
+                with_remote.push(json["identifier"].as_str().unwrap().to_string());
+            }
+        }
+        with_remote.sort();
+        let mut granted: Vec<String> = super::OWN_ORIGIN_CAPABILITIES.iter().map(|(id, _)| id.to_string()).collect();
+        granted.sort();
+        assert_eq!(granted, with_remote, "a capability with a page origin is not in OWN_ORIGIN_CAPABILITIES");
+        for (id, json) in super::OWN_ORIGIN_CAPABILITIES {
+            let own: serde_json::Value = serde_json::from_str(&super::own_origin_capability(json, 5174)).unwrap();
+            assert_eq!(own["remote"]["urls"], serde_json::json!(["http://localhost:5174"]), "{id}");
+            assert_eq!(own["identifier"].as_str(), Some(*id));
+        }
+    }
+
     #[test]
     fn keeps_a_light_theme() {
         assert_eq!(light_gtk_theme_name("Yaru"), None);
@@ -531,6 +681,7 @@ mod ipc_acl_tests {
         let app = super::with_app_commands(mock_builder())
             .build(tauri::generate_context!())
             .expect("mock app");
+        super::grant_own_origin(&app, 5173).unwrap();
         let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::External("http://localhost:5173/".parse().unwrap()))
             .build()
             .unwrap();
@@ -554,7 +705,7 @@ mod ipc_acl_tests {
         assert_eq!(listed[0]["dir"], "game7-match_1759740000000_ab12cd");
 
         // anything else: a LAN address, another site, a look-alike host
-        for url in ["http://192.168.1.20:5173/", "https://example.com/", "http://localhost.evil.com:5173/"] {
+        for url in ["http://192.168.1.20:5173/", "https://example.com/", "http://localhost.evil.com:5173/", "http://localhost:5174/", "http://localhost:3000/"] {
             for cmd in ["backup_write", "backup_list", "backup_remove", "backup_info"] {
                 let err = get_ipc_response(&window, request(cmd, url, write.clone()))
                     .expect_err(&format!("{cmd} from {url} must be refused"));
@@ -583,6 +734,7 @@ mod ipc_acl_tests {
         let app = super::with_app_commands(mock_builder())
             .build(tauri::generate_context!())
             .expect("mock app");
+        super::grant_own_origin(&app, 5173).unwrap();
         let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::External("http://localhost:5173/".parse().unwrap()))
             .build()
             .unwrap();
@@ -645,7 +797,7 @@ mod ipc_acl_tests {
         assert_eq!(removed, 1);
 
         let any = serde_json::json!({ "stickId": id, "stickIds": [id], "matchDir": dir, "sourceFile": source, "destFile": "a1b2c3d4-latest.json", "fileName": "a1b2c3d4-latest.json", "fileNames": [], "verify": true });
-        for url in ["http://192.168.1.20:5173/", "http://10.42.0.1:5173/", "https://example.com/", "http://localhost.evil.com:5173/"] {
+        for url in ["http://192.168.1.20:5173/", "http://10.42.0.1:5173/", "https://example.com/", "http://localhost.evil.com:5173/", "http://localhost:5174/", "http://localhost:3000/"] {
             for cmd in ["stick_list", "stick_mirror", "stick_list_backups", "stick_read", "stick_remove"] {
                 let err = get_ipc_response(&window, request(cmd, url, any.clone()))
                     .expect_err(&format!("{cmd} from {url} must be refused"));
@@ -669,6 +821,7 @@ mod ipc_acl_tests {
         let app = super::with_app_commands(mock_builder())
             .build(tauri::generate_context!())
             .expect("mock app");
+        super::grant_own_origin(&app, 5173).unwrap();
         let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::External("http://localhost:5173/".parse().unwrap()))
             .build()
             .unwrap();
@@ -681,7 +834,7 @@ mod ipc_acl_tests {
         let bad = get_ipc_response(&window, request("activity_append", "http://localhost:5173/", serde_json::json!({ "lines": ["not json"] })));
         assert!(bad.is_err(), "an invalid line is refused");
 
-        for url in ["http://192.168.1.20:5173/", "https://example.com/", "http://localhost.evil.com:5173/"] {
+        for url in ["http://192.168.1.20:5173/", "https://example.com/", "http://localhost.evil.com:5173/", "http://localhost:5174/", "http://localhost:3000/"] {
             for cmd in ["activity_append", "activity_open_dir"] {
                 let err = get_ipc_response(&window, request(cmd, url, body.clone()))
                     .expect_err(&format!("{cmd} from {url} must be refused"));
@@ -704,6 +857,7 @@ mod ipc_acl_tests {
         let app = super::with_app_commands(mock_builder())
             .build(tauri::generate_context!())
             .expect("mock app");
+        super::grant_own_origin(&app, 5173).unwrap();
         let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::External("http://localhost:5173/".parse().unwrap()))
             .build()
             .unwrap();
@@ -723,7 +877,7 @@ mod ipc_acl_tests {
             .unwrap();
         assert_eq!(on, crate::diagnostics::env_enabled());
 
-        for url in ["http://192.168.1.20:5173/", "https://example.com/", "http://localhost.evil.com:5173/"] {
+        for url in ["http://192.168.1.20:5173/", "https://example.com/", "http://localhost.evil.com:5173/", "http://localhost:5174/", "http://localhost:3000/"] {
             for cmd in ["diagnostics_append", "diagnostics_native"] {
                 let err = get_ipc_response(&window, request(cmd, url, serde_json::json!({ "lines": [], "on": true })))
                     .expect_err(&format!("{cmd} from {url} must be refused"));
@@ -742,6 +896,7 @@ mod ipc_acl_tests {
         let app = super::with_app_commands(mock_builder())
             .build(tauri::generate_context!())
             .expect("mock app");
+        super::grant_own_origin(&app, 5173).unwrap();
         let label = crate::popups::next_popup_label();
         let popup = WebviewWindowBuilder::new(&app, label.as_str(), WebviewUrl::External("http://localhost:5173/scoresheet/".parse().unwrap()))
             .build()
@@ -775,6 +930,7 @@ mod ipc_acl_tests {
         let app = super::with_app_commands(mock_builder())
             .build(tauri::generate_context!())
             .expect("mock app");
+        super::grant_own_origin(&app, 5173).unwrap();
         let label = crate::popups::next_popup_label();
         let popup = WebviewWindowBuilder::new(&app, label.as_str(), WebviewUrl::External("http://localhost:5173/scoresheet/".parse().unwrap()))
             .build()
@@ -819,6 +975,7 @@ mod ipc_acl_tests {
         let app = super::with_app_commands(mock_builder())
             .build(tauri::generate_context!())
             .expect("mock app");
+        super::grant_own_origin(&app, 5173).unwrap();
         let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::External("http://localhost:5173/".parse().unwrap()))
             .build()
             .unwrap();
@@ -860,7 +1017,7 @@ mod ipc_acl_tests {
             .unwrap();
         assert_eq!(windows.len(), 2, "both scoresheet windows, not the scoretable: {windows:?}");
 
-        for url in ["http://192.168.1.20:5173/", "http://10.42.0.1:5173/", "https://example.com/", "http://localhost.evil.com:5173/"] {
+        for url in ["http://192.168.1.20:5173/", "http://10.42.0.1:5173/", "https://example.com/", "http://localhost.evil.com:5173/", "http://localhost:5174/", "http://localhost:3000/"] {
             for cmd in ["app_page_state", "app_page_gone", "app_hide", "app_quit", "app_quit_ack", "app_flush_done", "app_close_ack", "app_quit_cancel", "app_windows"] {
                 let err = get_ipc_response(&window, request(cmd, url, state.clone()))
                     .expect_err(&format!("{cmd} from {url} must be refused"));
@@ -878,6 +1035,7 @@ mod ipc_acl_tests {
         let app = super::with_app_commands(mock_builder())
             .build(tauri::generate_context!())
             .expect("mock app");
+        super::grant_own_origin(&app, 5173).unwrap();
         let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::External("http://localhost:5173/".parse().unwrap()))
             .build()
             .unwrap();
@@ -911,7 +1069,7 @@ mod ipc_acl_tests {
             assert!(err.to_string().contains("not allowed"), "{cmd}: refused by the ACL, got {err}");
         }
         let ours = ["update_status", "update_check_now", "update_install_now", "update_set_prefs"];
-        for url in ["http://192.168.1.20:5173/", "http://10.42.0.1:5173/", "https://example.com/", "http://localhost.evil.com:5173/"] {
+        for url in ["http://192.168.1.20:5173/", "http://10.42.0.1:5173/", "https://example.com/", "http://localhost.evil.com:5173/", "http://localhost:5174/", "http://localhost:3000/"] {
             for cmd in ours.iter().chain(plugin.iter()) {
                 let err = get_ipc_response(&window, request(cmd, url, serde_json::json!({})))
                     .expect_err(&format!("{cmd} from {url} must be refused"));
@@ -925,6 +1083,7 @@ mod ipc_acl_tests {
         let app = super::with_app_commands(mock_builder())
             .build(tauri::generate_context!())
             .expect("mock app");
+        super::grant_own_origin(&app, 5173).unwrap();
         let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::External("http://localhost:5173/".parse().unwrap()))
             .build()
             .unwrap();
@@ -951,7 +1110,7 @@ mod ipc_acl_tests {
 
         // a tablet on the LAN, another site, a look-alike host: the ACL refuses
         let cmds = ["hotspot_status", "hotspot_start", "hotspot_stop", "bluetooth_status", "bluetooth_start", "bluetooth_stop", "firewall_status"];
-        for url in ["http://192.168.1.20:5173/", "http://10.42.0.1:5173/", "https://example.com/", "http://localhost.evil.com:5173/"] {
+        for url in ["http://192.168.1.20:5173/", "http://10.42.0.1:5173/", "https://example.com/", "http://localhost.evil.com:5173/", "http://localhost:5174/", "http://localhost:3000/"] {
             for cmd in cmds {
                 let err = get_ipc_response(&window, request(cmd, url, bad.clone()))
                     .expect_err(&format!("{cmd} from {url} must be refused"));
