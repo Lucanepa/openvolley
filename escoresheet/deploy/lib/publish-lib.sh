@@ -178,6 +178,18 @@ github_dmg_url() {
   printf '%s\n' "$url"
 }
 
+# github_asset_sha256 TAG SUFFIX: the SHA-256 GitHub keeps for the asset of
+# the GitHub release TAG whose name ends in SUFFIX (its "digest"), for the
+# download page; nothing when GitHub cannot be asked or has none.
+github_asset_sha256() {
+  local sha
+  sha=$(curl -fsS --max-time 20 "https://api.github.com/repos/$OV_GH_REPO/releases/tags/$1" 2>/dev/null |
+    python3 -c 'import json, sys; print(next((a.get("digest") or "" for a in json.load(sys.stdin)["assets"] if a["name"].lower().endswith(sys.argv[1].lower())), ""))' "$2" 2>/dev/null) || sha=''
+  sha=${sha#sha256:}
+  [[ "$sha" =~ ^[0-9a-f]{64}$ ]] || sha=''
+  printf '%s\n' "$sha"
+}
+
 # newest_deb PACKAGES NAME: the newest version of NAME in an APT Packages file.
 newest_deb() {
   awk -v want="$2" '/^Package:/ { p = $2 } /^Version:/ && p == want { print $2 }' "$1" | sort -V | tail -1
@@ -206,13 +218,18 @@ PY
 # published next to OUT (OUT's directory: flatpak/, arch/).
 landing_page() {
   local template=$1 packages=$2 index=$3 out=$4 ver apk_ver='' apk_file='' win_url mac_url
-  local b_ver b_apk_ver='' b_apk_file='' b_win='' b_mac='' sed_args=()
+  local b_ver b_apk_ver='' b_apk_file='' b_win='' b_mac='' sed_args=() win_sha mac_sha b_win_sha='' b_mac_sha=
   ver=$(newest_deb "$packages" openvolley-escoresheet)
   read -r apk_ver apk_file < <(newest_apk "$index" com.openvolley.escoresheet) || true
   [[ -n "$ver" && -n "$apk_file" ]] || die "need at least one openvolley-escoresheet .deb and one com.openvolley.escoresheet APK"
   win_url=$(github_setup_exe_url "desktop-v$ver")
   mac_url=$(github_dmg_url "desktop-v$ver")
   [[ -n "$mac_url" ]] || sed_args+=(-e '/<!--mac/,/<!--\/mac-->/d')
+  # The SHA-256 next to each Windows and macOS download (the Windows
+  # installer is not Authenticode-signed yet); a line is left out when GitHub
+  # gives no digest for that file.
+  win_sha=$(github_asset_sha256 "desktop-v$ver" -setup.exe)
+  mac_sha=$(github_asset_sha256 "desktop-v$ver" _universal.dmg)
   # The per-machine Windows installer (administrator prompt, firewall rule for
   # the tablets) comes after 2.1.0: up to 2.1.0 the linked setup.exe installs
   # per user, so the <!--per-machine--> block of the page is left out.
@@ -228,6 +245,8 @@ landing_page() {
     if [[ -n "$b_ver" ]]; then
       b_win=$(github_setup_exe_url "beach-desktop-v$b_ver")
       b_mac=$(github_dmg_url "beach-desktop-v$b_ver")
+      b_win_sha=$(github_asset_sha256 "beach-desktop-v$b_ver" -setup.exe)
+      b_mac_sha=$(github_asset_sha256 "beach-desktop-v$b_ver" _universal.dmg)
       [[ -n "$b_mac" ]] || sed_args+=(-e '/<!--beach-mac-->/,/<!--\/beach-mac-->/d')
     else
       sed_args+=(-e '/<!--beach-desktop-->/,/<!--\/beach-desktop-->/d')
@@ -253,6 +272,11 @@ landing_page() {
   else
     sed_args+=(-e 's|<!--pacman-->.*<!--/pacman-->||' -e '/<!--pacman-->/,/<!--\/pacman-->/d')
   fi
+  local ph sha
+  for ph in WINDOWS_SHA256:$win_sha MAC_SHA256:$mac_sha BEACH_WINDOWS_SHA256:$b_win_sha BEACH_MAC_SHA256:$b_mac_sha; do
+    sha=${ph#*:} ph=${ph%%:*}
+    if [[ -n "$sha" ]]; then sed_args+=(-e "s|@$ph@|$sha|g"); else sed_args+=(-e "/@$ph@/d"); fi
+  done
   sed "${sed_args[@]}" \
     -e "s|@DESKTOP_VERSION@|$ver|g" -e "s|@DEB_PACKAGE@|openvolley-escoresheet|g" -e "s|@WINDOWS_URL@|$win_url|g" \
     -e "s|@MAC_URL@|$mac_url|g" -e "s|@BEACH_MAC_URL@|$b_mac|g" \
