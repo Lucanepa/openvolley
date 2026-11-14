@@ -22,7 +22,10 @@ trap 'rm -rf "$TMP"' EXIT
 fails=0
 
 # Random-looking but obviously fake material.
-rnd() { python3 -c "import secrets,string,sys;a=string.ascii_letters+string.digits;print(''.join(secrets.choice(a) for _ in range(int(sys.argv[1]))))" "$1"; }
+# Fixed fake values (not random): a random value could now and then contain an
+# allowlisted word and turn a "hit" case into a flaky miss in CI. rnd runs in a
+# $(...) subshell, so every call of one length gives the same fixed value.
+rnd() { python3 -c "import hashlib,string,sys;a=string.ascii_letters+string.digits;h=hashlib.sha512(('ov-gitleaks-test-'+sys.argv[2]).encode()).digest()*4;print(''.join(a[b%len(a)] for b in h[:int(sys.argv[1])]))" "$1" "$1"; }
 b64url() { python3 -c "import base64,sys;print(base64.urlsafe_b64encode(sys.argv[1].encode()).decode().rstrip('='))" "$1"; }
 jwt() { echo "$(b64url '{"alg":"HS256","typ":"JWT"}').$(b64url "$1").$(rnd 43)"; }
 
