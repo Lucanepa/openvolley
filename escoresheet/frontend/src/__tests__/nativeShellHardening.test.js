@@ -6,6 +6,7 @@ import { resolve } from 'path'
 import { subdomains, extraFilesFor, headersFor } from '../../scripts/build-subdomains.js'
 import { contentSecurityPolicy, cspMeta, securityHeaderLines, THEME_BOOT_HASH } from '../../csp.js'
 import { THEME_BOOT_SCRIPT } from '../../theme-boot.js'
+import { sectionVideo } from '../components/help/helpSections.js'
 
 const frontendDir = resolve(__dirname, '../..')
 const read = (p) => readFileSync(resolve(frontendDir, p), 'utf8')
@@ -61,9 +62,24 @@ describe('Content-Security-Policy (fe-shell-pwa-6, android-7)', () => {
     expect(policy).not.toMatch(/'unsafe-eval'/)
     expect(policy).toContain("object-src 'none'")
     expect(policy).toContain("base-uri 'self'")
-    expect(policy).toContain("img-src 'self' data: blob:;")
+    expect(policy).toContain("img-src 'self' data: blob: https://openvolley.app;")
     expect(policy).toContain("frame-ancestors 'self'")
     expect(contentSecurityPolicy({ frameAncestors: null })).not.toContain('frame-ancestors')
+  })
+
+  it("the help panel's videos, posters and subtitles from the website are allowed, no other host", () => {
+    // A blocked poster made every help video show "unavailable" (CSP check of
+    // the production build, 2026-11-14)
+    const policy = contentSecurityPolicy()
+    const sources = (name) => policy.match(new RegExp(`${name} ([^;]+)`))[1].split(' ')
+    const video = sectionVideo('scoring')
+    expect(video).not.toBeNull()
+    const allowed = (name, url) => sources(name).includes(new URL(url).origin)
+    expect(allowed('img-src', video.poster)).toBe(true)
+    expect(allowed('media-src', video.src)).toBe(true)
+    for (const track of video.tracks) expect(allowed('media-src', track.src)).toBe(true)
+    expect(sources('img-src')).toEqual(["'self'", 'data:', 'blob:', 'https://openvolley.app'])
+    expect(sources('media-src')).toEqual(["'self'", 'data:', 'blob:', 'https://openvolley.app'])
   })
 
   it('every web build sends it with frame protection; a dev build as Report-Only', () => {

@@ -1,5 +1,6 @@
 import { createHash } from 'crypto'
 import { THEME_BOOT_SCRIPT } from './theme-boot.js'
+import { VIDEO_BASE } from './src/components/help/helpSections.js'
 
 /**
  * Content-Security-Policy of the app's pages (fe-shell-pwa-6, android-7).
@@ -16,7 +17,10 @@ import { THEME_BOOT_SCRIPT } from './theme-boot.js'
  *   - styles: inline style attributes (React's style props, the dev build's
  *     badge) and <style> tags of libraries: 'unsafe-inline' for styles only.
  *   - images: the app's own, data: (signatures, QR codes) and blob: (PDF
- *     capture). No image from another host.
+ *     capture), and the help videos' posters from the website.
+ *   - media: the help videos and their subtitle tracks, on the website
+ *     (openvolley.app/support/videos, helpSections.js VIDEO_BASE; the
+ *     backend's own policy in server.js allows them the same way).
  *   - connections: the backend is per build and per user (?server=, the
  *     test backend, a club's own backend) and the venue relays are LAN
  *     addresses (http / ws on any private IP), so connect-src names schemes,
@@ -28,18 +32,21 @@ import { THEME_BOOT_SCRIPT } from './theme-boot.js'
  *     display (no action on it; a club may show it in its own page).
  */
 
+/** The website, where the help panel's videos, posters and subtitles are. */
+export const HELP_VIDEO_ORIGIN = new URL(VIDEO_BASE).origin
+
 export const THEME_BOOT_HASH = `'sha256-${createHash('sha256').update(THEME_BOOT_SCRIPT, 'utf8').digest('base64')}'`
 
 const DIRECTIVES = [
   ["default-src", "'self'"],
   ["script-src", `'self' 'wasm-unsafe-eval' ${THEME_BOOT_HASH}`],
   ["style-src", "'self' 'unsafe-inline'"],
-  ["img-src", "'self' data: blob:"],
+  ["img-src", `'self' data: blob: ${HELP_VIDEO_ORIGIN}`],
   ["font-src", "'self' data:"],
   ["connect-src", "'self' https: wss: http: ws:"],
   ["worker-src", "'self' blob:"],
   ["frame-src", "'self' blob:"],
-  ["media-src", "'self' data: blob:"],
+  ["media-src", `'self' data: blob: ${HELP_VIDEO_ORIGIN}`],
   ["manifest-src", "'self'"],
   ["object-src", "'none'"],
   ["base-uri", "'self'"],
