@@ -175,4 +175,16 @@ describe('club API end to end', { skip: SKIP }, () => {
     assert.equal((await club(readTok, 'GET', '/matches/ca_m2/live')).status, 404)
     assert.equal((await club(readTok, 'GET', '/matches/ca_m1/live')).status, 200)
   })
+  it('refused tokens: 60 a minute per address, before the lookup; a valid token does not count', async () => {
+    const ip = nextIp()
+    const from = (token) => api(srv.base, '/api/club/v1/teams', { method: 'GET', proto: null, headers: { 'cf-connecting-ip': ip, Authorization: `Bearer ${token}` } })
+    const wrong = 'ovk_' + 'A'.repeat(43)
+    for (let i = 0; i < 65; i++) assert.equal((await from(readTok)).status, 200)
+    for (let i = 0; i < 60; i++) assert.equal((await from(wrong)).status, 401)
+    assert.equal((await from(wrong)).status, 429)
+    // the address is over: even a valid token waits (no lookup at all)
+    assert.equal((await from(readTok)).status, 429)
+    // another address is not
+    assert.equal((await club(readTok, 'GET', '/teams')).status, 200)
+  })
 })
