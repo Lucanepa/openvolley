@@ -1,6 +1,6 @@
 # Privacy policy
 
-**OpenVolley and OpenBeach** · Version 1.14 · As of 14 November 2026
+**OpenVolley and OpenBeach** · Version 1.15 · As of 14 November 2026
 
 This policy is available in German, English, French and Italian. The English
 version is binding.
@@ -460,7 +460,9 @@ Without an account and without a PIN, the following is visible:
   names and countries, seeding, rank, schedule, courts.
 
 This data can also be retrieved through the server's programming interface
-(`backend.openvolley.app`).
+(`backend.openvolley.app`). Any website can show the livescore of a match, or
+the day's games of a club, with the livescore widget (also as an `<iframe>`);
+it shows the same data without names of players.
 
 **Never public:** dates of birth, licence numbers, signatures, approvals,
 email addresses and PINs. Rosters with names are only visible to whoever
@@ -548,6 +550,20 @@ hold people that a team manager or a club manager added by hand from a team's
 roster (licence number, names, date of birth and gender only); an upload keeps
 them, and they are deleted with their list or the club. On a scoring device
 the copy is replaced by each download and deleted when the account signs out.
+
+**Club API (OpenVolley):** a club's managers can make API tokens for the
+club's own software or website (for example its member administration). A
+token belongs to that club (or one of its teams), acts with the rights of the
+manager who made it and stops working when it is revoked, expires or that
+person no longer manages the club. With it the club's software reads and,
+if the token allows it, writes the club's teams, the rosters sent ahead of
+its games, its saved teams and its licence lists, with the data described
+above (names, dates of birth, licence numbers), and the club's matches as the
+public interface shows them (section 8). A token that can write needs the
+manager's password. The server stores only a fingerprint of the token, its
+name, rights, team, expiry and last use, and records who made or revoked it
+and each change made with it in the change log. Whatever the club's software
+does with the data it reads is the club's responsibility.
 
 **Beach tournaments:** title, venue, dates, teams with the players' first and
 last names, licence numbers and countries, schedule, results, names of

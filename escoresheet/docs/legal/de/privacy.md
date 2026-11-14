@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-**OpenVolley und OpenBeach** · Version 1.14 · Stand: 14. November 2026
+**OpenVolley und OpenBeach** · Version 1.15 · Stand: 14. November 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
 Massgebend ist die englische Fassung.
@@ -513,7 +513,10 @@ Ohne Anmeldung und ohne PIN sind sichtbar:
   Länder der Spielerinnen und Spieler, Setzung, Rang, Spielplan, Felder.
 
 Diese Daten sind auch über die Programmierschnittstelle des Servers
-(`backend.openvolley.app`) abrufbar.
+(`backend.openvolley.app`) abrufbar. Jede Website kann mit dem Livescore-Widget
+(auch als `<iframe>`) den Livescore eines Spiels oder die Spiele eines Vereins
+an einem Tag zeigen; es zeigt dieselben Daten, ohne Namen von Spielerinnen und
+Spielern.
 
 **Nie öffentlich:** Geburtsdaten, Lizenznummern, Unterschriften, Freigaben,
 E-Mail-Adressen und PINs. Kaderlisten mit Namen sieht nur, wer den PIN des
@@ -612,6 +615,23 @@ Hand aus dem Kader eines Teams hinzugefügt haben (nur Lizenznummer, Namen,
 Geburtsdatum und Geschlecht); ein Upload behält sie, und sie werden mit ihrer
 Liste oder dem Verein gelöscht. Auf dem Gerät ersetzt jeder Download die
 Kopie, beim Abmelden wird sie gelöscht.
+
+**Vereins-API (OpenVolley):** Die Vereinsverantwortlichen können API-Tokens
+für die eigene Software oder Website des Vereins erstellen (zum Beispiel die
+Mitgliederverwaltung). Ein Token gehört zu diesem Verein (oder einem seiner
+Teams), handelt mit den Rechten der Person, die es erstellt hat, und gilt
+nicht mehr, sobald es widerrufen wird, abläuft oder diese Person den Verein
+nicht mehr verwaltet. Damit liest die Software des Vereins und, wenn das Token
+es erlaubt, schreibt sie die Teams des Vereins, die im Voraus geschickten
+Kader seiner Spiele, seine gespeicherten Teams und seine Lizenzlisten mit den
+oben beschriebenen Daten (Namen, Geburtsdaten, Lizenznummern), dazu die
+Spiele des Vereins so, wie sie die öffentliche Schnittstelle zeigt
+(Abschnitt 8). Ein Token, das schreiben darf, braucht das Passwort der
+verantwortlichen Person. Der Server speichert vom Token nur einen
+Fingerabdruck, seinen Namen, seine Rechte, das Team, den Ablauf und die
+letzte Verwendung; im Änderungsprotokoll steht, wer es erstellt oder
+widerrufen hat, und jede Änderung, die damit gemacht wurde. Was die Software
+des Vereins mit den gelesenen Daten macht, verantwortet der Verein.
 
 **Beachturniere:** Titel, Ort, Daten, Teams mit Vor- und Nachname,
 Lizenznummer und Land der Spielerinnen und Spieler, Spielplan, Resultate,

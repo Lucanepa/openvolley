@@ -201,6 +201,20 @@ the account (4.5a).
 | **Retention as built** | **Each upload replaces the imported rows of that list** (one transaction); the hand-added rows stay until the list is deleted, and one an upload contains becomes an imported row (the upload's fields); a club manager can delete a list (an empty upload: every row of it, the hand-added ones too) or one hand-added row; rows of past seasons are deleted daily (db/037, `lib/licences.js` sweep); all rows go with the club (`ON DELETE CASCADE`); `imported_by` is set NULL when that account is deleted. Device copies: replaced by each download, cleared at sign-out, account deletion and account switch |
 | **Audit** | `club.licences` (club id, list, count: never a name or a licence number); `club.licences.manual` (club id, team id or null, the number added and per list: never a name or a licence number) (4.6) |
 
+### 4.5f Club API tokens (db/044, OpenVolley, privacy 1.15)
+
+| | |
+|---|---|
+| **Data** | `public.club_api_tokens`: per club (optionally one team) a **SHA-256 of the token** (never the token: shown once at creation), its first characters, a label, scopes (`read`, `rosters:write`, `teams:write`, `licences:write`), expiry, last use, who made it and when, revoked |
+| **Whose** | The club manager who made it; through it, the club's people of 4.5c and 4.5d |
+| **Purpose** | The club's own software (member administration, website) reads and writes the club's teams, rosters sent ahead, saved teams and licence lists without the manager console (`lib/clubApi.js`, `docs/club-api.md`) |
+| **Basis** | (f) the club's administration of its own teams; the same data the club's managers already see |
+| **Stored** | VM; backups |
+| **Who sees it** | The club's managers and admins (the manager's API tab: never the secret). A token holder sees exactly what the manager who made it sees through the same functions (`lib/teams.js`, `lib/licences.js`, `lib/clubs.js`), limited to the club (and the token's team), and the club's matches as the public interface shows them (4.8). The token stops when revoked, expired or its maker no longer manages the club. Never public, never on `/api/db` |
+| **Flows** | Club's software ↔ backend (`/api/club/v1/*`, bearer token, 240 requests a minute per token, failed tokens limited per IP). What the club's software does with the data is the club's own processing |
+| **Retention as built** | Kept with the club: deleted with the club, the team or the account that made it (`ON DELETE CASCADE`); a revoked token stays listed (no secret) |
+| **Audit** | `club_api.token` (made or revoked: club, token id, scopes, team); `club_api.call` (every write: token id, club, method, route, status; never a body) (4.6) |
+
 ### 4.5e Sign-up requests (db/025, OpenVolley)
 
 | | |
@@ -264,6 +278,7 @@ the account (4.5a).
 | Public beach tournament page (`/api/public/beach/t/:slug`) | Only tournaments marked public and not drafts: pair names, **player first and last names and countries**, seeds, ranks, schedule, courts. Never licence numbers |
 | Sign-up form's clubs (`/api/public/clubs`, db/025) | Club ids and names and their teams' ids and VolleyManager names (`clubs`, `club_teams`): no account, no person, no count. Rate-limited per IP, cached 60 s |
 | LED board | Team names and scores |
+| Livescore widget and its `<iframe>` pages (`/embed/livescore.js`, `/embed/match/:id`, `/embed/club/:id`) | What `/api/public/v1` serves: no player names; a club's games of the day by club id |
 
 ### 4.9 Saved teams (competition manager) and beach tournaments
 

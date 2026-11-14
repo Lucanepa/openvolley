@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.14 · État au 14 novembre 2026
+**OpenVolley et OpenBeach** · Version 1.15 · État au 14 novembre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version anglaise fait foi.
@@ -532,7 +532,10 @@ Sans compte et sans NIP, sont visibles :
   terrains.
 
 Ces données peuvent aussi être obtenues via l'interface de programmation du
-serveur (`backend.openvolley.app`).
+serveur (`backend.openvolley.app`). Tout site web peut afficher le livescore
+d'un match, ou les matchs du jour d'un club, avec le widget livescore (aussi
+en `<iframe>`) ; il montre les mêmes données, sans noms de joueuses et de
+joueurs.
 
 **Jamais publics :** dates de naissance, numéros de licence, signatures,
 validations, adresses e-mail et NIP. Les listes d'équipe avec les noms ne
@@ -635,6 +638,23 @@ date de naissance et sexe uniquement) ; un chargement les conserve, et elles
 sont supprimées avec leur liste ou le club. Sur un appareil de marquage,
 chaque téléchargement remplace la copie, et elle est supprimée à la
 déconnexion.
+
+**API des clubs (OpenVolley) :** les responsables d'un club peuvent créer
+des jetons d'API pour le logiciel ou le site web du club (par exemple sa
+gestion des membres). Un jeton appartient à ce club (ou à l'une de ses
+équipes), agit avec les droits de la personne qui l'a créé et cesse de
+fonctionner dès qu'il est révoqué, qu'il expire ou que cette personne ne gère
+plus le club. Avec lui, le logiciel du club lit et, si le jeton le permet,
+écrit les équipes du club, les listes envoyées à l'avance pour ses matchs, ses
+équipes enregistrées et ses listes de licences, avec les données décrites
+ci-dessus (noms, dates de naissance, numéros de licence), ainsi que les matchs
+du club tels que les montre l'interface publique (section 8). Un jeton qui
+peut écrire exige le mot de passe de la personne responsable. Le serveur ne
+conserve du jeton qu'une empreinte, son nom, ses droits, l'équipe,
+l'expiration et la dernière utilisation ; le journal des modifications
+indique qui l'a créé ou révoqué et chaque modification faite avec lui. Ce que
+le logiciel du club fait des données lues relève de la responsabilité du
+club.
 
 **Tournois de beach-volley :** titre, lieu, dates, équipes avec prénoms, noms,
 numéros de licence et pays des joueuses et joueurs, programme, résultats,

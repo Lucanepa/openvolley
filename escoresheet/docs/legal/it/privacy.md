@@ -1,6 +1,6 @@
 # Informativa sulla protezione dei dati
 
-**OpenVolley e OpenBeach** · Versione 1.14 · Aggiornata al 14 novembre 2026
+**OpenVolley e OpenBeach** · Versione 1.15 · Aggiornata al 14 novembre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
 la versione inglese.
@@ -501,7 +501,10 @@ Senza account e senza PIN sono visibili:
   calendario, campi.
 
 Questi dati sono ottenibili anche tramite l'interfaccia di programmazione del
-server (`backend.openvolley.app`).
+server (`backend.openvolley.app`). Qualsiasi sito web può mostrare il livescore
+di una partita, o le partite del giorno di una società, con il widget
+livescore (anche come `<iframe>`); mostra gli stessi dati, senza nomi di
+giocatrici e giocatori.
 
 **Mai pubblici:** date di nascita, numeri di licenza, firme, approvazioni,
 indirizzi e-mail e PIN. Le liste squadra con i nomi sono visibili solo a chi
@@ -600,6 +603,22 @@ squadra (solo numero di licenza, nomi, data di nascita e sesso); un
 caricamento le mantiene, e vengono cancellate con il loro elenco o con la
 società. Su un dispositivo del segnapunti ogni download sostituisce la copia,
 che viene cancellata all'uscita dall'account.
+
+**API delle società (OpenVolley):** i responsabili di una società possono
+creare token API per il software o il sito web della società (per esempio la
+gestione dei soci). Un token appartiene a quella società (o a una delle sue
+squadre), agisce con i diritti della persona che l'ha creato e smette di
+funzionare quando viene revocato, scade o quella persona non gestisce più la
+società. Con esso il software della società legge e, se il token lo consente,
+scrive le squadre della società, gli elenchi inviati in anticipo per le sue
+partite, le sue squadre salvate e le sue liste delle licenze, con i dati
+descritti sopra (nomi, date di nascita, numeri di licenza), e le partite della
+società come le mostra l'interfaccia pubblica (sezione 8). Un token che può
+scrivere richiede la password della persona responsabile. Il server conserva
+del token solo un'impronta, il nome, i diritti, la squadra, la scadenza e
+l'ultimo uso; il registro delle modifiche indica chi l'ha creato o revocato e
+ogni modifica fatta con esso. Di ciò che il software della società fa con i
+dati letti risponde la società.
 
 **Tornei di beach volley:** titolo, luogo, date, squadre con nomi, cognomi,
 numeri di licenza e paesi delle giocatrici e dei giocatori, calendario,
