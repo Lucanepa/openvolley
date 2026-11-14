@@ -1848,6 +1848,27 @@ describe('cloud blocks (OV_SCORER_REQUIRED, OV_GAME_TAKEN, OV_MATCH_CLOSED)', ()
     expect(fakeDb.matches.map.get(1).cloudBlock).toBeNull()
   })
 
+  // db/039: a match closed once and reopened by an admin is open, but only an
+  // admin moves it to another game. That refusal is not a close: the match's
+  // other corrections keep syncing.
+  it('OV_MATCH_RECORD refuses only its own job: no block, later sets and events of the reopened match are sent', async () => {
+    fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', status: 'live' }])
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'match', action: 'update', status: 'queued', payload: { id: 'match_100_aaa', game_n: 4712 } },
+      { id: 2, resource: 'set', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa:s:5', match_id: 'match_100_aaa', index: 1 } },
+      eventJob(3)
+    ])
+    api.respond = (call) => (call.table === 'matches' && call.action !== 'select'
+      ? { data: null, error: { message: 'record', code: 'OV_MATCH_RECORD', status: 409 } }
+      : defaultRespond(call))
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('failed')
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('sent')
+    expect(fakeDb.sync_queue.map.get(3).status).toBe('sent')
+    expect(fakeDb.matches.map.get(1).cloudBlock).toBeUndefined()
+    expect(fakeDb.matches.map.get(1).status).toBe('live')
+  })
+
   it('other refusals set no block', async () => {
     fakeDb.sync_queue.reset([eventJob(1)])
     api.respond = (call) => {

@@ -20,6 +20,8 @@ import { createMatchRestore } from '../lib/matchRestore.js'
 const here = dirname(fileURLToPath(import.meta.url))
 const M039 = readFileSync(join(here, '..', 'db', '039_record_integrity.sql'), 'utf8')
 const isClosedError = (e) => e.code === 'OVC01'
+// The record guard of a reopened match: not OVC01, the match is open
+const isRecordError = (e) => e.code === 'OVC02'
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 describe('db/039 (record integrity)', { skip: SKIP_PG }, () => {
@@ -128,9 +130,9 @@ describe('db/039 (record integrity)', { skip: SKIP_PG }, () => {
     assert.equal(o.closed_at, null)
     assert.equal(o.first_closed_at.getTime(), c.first_closed_at.getTime())
     // the scorer's writes (no admin setting)
-    await assert.rejects(() => raw.query('DELETE FROM public.matches WHERE id = $1', [m.id]), isClosedError)
-    await assert.rejects(() => raw.query('UPDATE public.matches SET test = true WHERE id = $1', [m.id]), isClosedError)
-    await assert.rejects(() => raw.query('UPDATE public.matches SET game_n = game_n + 1 WHERE id = $1', [m.id]), isClosedError)
+    await assert.rejects(() => raw.query('DELETE FROM public.matches WHERE id = $1', [m.id]), isRecordError)
+    await assert.rejects(() => raw.query('UPDATE public.matches SET test = true WHERE id = $1', [m.id]), isRecordError)
+    await assert.rejects(() => raw.query('UPDATE public.matches SET game_n = game_n + 1 WHERE id = $1', [m.id]), isRecordError)
     // the stamp is the server's
     await raw.query('UPDATE public.matches SET first_closed_at = NULL WHERE id = $1', [m.id])
     const { rows: [k] } = await raw.query('SELECT first_closed_at FROM public.matches WHERE id = $1', [m.id])
@@ -248,6 +250,25 @@ describe('db/039 (record integrity)', { skip: SKIP_PG }, () => {
       assert.equal(e.void_reason, 'undo')
       // and once more: nothing left to do
       assert.deepEqual((await revisions.apply(args)).body.data, { applied: 0, pending: 0 })
+    })
+
+    it('a resent edit applied once is marked applied: a further resend changes nothing', async () => {
+      const m = await newMatch()
+      const ev = `${m.ext}:e:8`
+      const body = { match_external_id: m.ext, revisions: [rev({ rev_uid: 'c3e8a4d2-9e77-4d90-a1f2-5f3e4d6c7b8a', op: 'edit', reason: 'correction', event_external_id: ev, after: { score_a: 9 } })] }
+      const args = { body, user: { id: users.scorer }, matchOwner: { userId: users.scorer } }
+      assert.deepEqual((await revisions.apply(args)).body.data, { applied: 0, pending: 1 })
+      await raw.query("INSERT INTO public.events (external_id, match_id, type, seq, score_a) VALUES ($1, $2, 'point', 8, 8)", [ev, m.id])
+      assert.deepEqual((await revisions.apply(args)).body.data, { applied: 1, pending: 0 })
+      const read = async () => (await raw.query(
+        `SELECT e.score_a, e.rev, r.applied FROM public.events e
+           JOIN public.event_revisions r ON r.match_id = e.match_id AND r.event_external_id = e.external_id
+          WHERE e.external_id = $1`, [ev])).rows[0]
+      const once = await read()
+      assert.equal(once.score_a, 9)
+      assert.equal(once.applied, true)
+      assert.deepEqual((await revisions.apply(args)).body.data, { applied: 0, pending: 0 })
+      assert.deepEqual(await read(), once)
     })
   })
 

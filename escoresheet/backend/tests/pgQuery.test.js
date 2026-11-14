@@ -626,6 +626,10 @@ describe('pgQuery on Postgres', { skip: SKIP_PG }, () => {
       assert.equal(r.status, 200, JSON.stringify(r.body))
       r = await q('sets', 'upsert', { data: { external_id: setExt, match_id: m.id, index: 1, home_points: 6 }, onConflict: 'external_id', returning: 'home_points' }, W)
       assert.deepEqual(r.body.data, [{ home_points: 6 }])
+      // db/039: a second row with the set's number (another local id) is refused by name
+      r = await q('sets', 'upsert', { data: { external_id: `${m.external_id}:s:9`, match_id: m.id, index: 1 }, onConflict: 'external_id' }, W)
+      assert.equal(r.status, 409)
+      assert.equal(r.body.error.code, 'OV_SET_NUMBER_TAKEN')
 
       const events = [1, 2, 3].map(n => ({ external_id: `${m.external_id}:e:${n}`, match_id: m.id, seq: n + 0.5, type: 'point', payload: { team: 'home' }, ts: '2026-10-05T12:00:0' + n + 'Z' }))
       r = await q('events', 'upsert', { data: events, onConflict: 'external_id', returning: 'id, seq, ts, payload' }, W)

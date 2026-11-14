@@ -740,7 +740,7 @@ describe('scoresheet PDFs belong to their match', { skip: SKIP }, () => {
     assert.equal((await upload(users.ivan, zp, pdfBytes('the other match\'s sheet 0:3'), { matchExternalId: String(y.n) })).status, 200)
     await setStatus(users.ivan, z, 'approved')
     assert.equal((await call(users.admin, 'POST', `/api/admin/matches/${z}/reopen`, { reason: 'wrong final score' })).status, 200)
-    expectCode(await deleteMatch(users.ivan, z), 409, 'OV_MATCH_CLOSED')
+    expectCode(await deleteMatch(users.ivan, z), 409, 'OV_MATCH_RECORD')
     assert.equal((await deleteMatch(users.admin, z)).status, 200)
     assert.deepEqual(await readAs(users.cm, y.id), { status: 200, body: approved.toString() })
   })

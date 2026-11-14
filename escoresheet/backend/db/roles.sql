@@ -191,6 +191,8 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ov_app;
 -- of those account columns only. Without it every account deletion fails
 -- (the UPDATE privilege is checked even when no row matches). A table-level
 -- REVOKE also drops column grants, so the column GRANT comes after it.
+-- The other: event_revisions.applied, set when a revision stored before its
+-- event is applied on its resend (lib/eventRevisions.js, db/039).
 SELECT format('REVOKE UPDATE ON %s FROM ov_app', t)
   FROM unnest(ARRAY['public.event_revisions', 'public.activity_log']) AS t
  WHERE to_regclass(t) IS NOT NULL \gexec
@@ -202,7 +204,7 @@ SELECT format('REVOKE UPDATE, DELETE ON %s FROM ov_app', t)
   FROM unnest(ARRAY['public.audit_log']) AS t
  WHERE to_regclass(t) IS NOT NULL \gexec
 SELECT format('GRANT UPDATE (%s) ON %s TO ov_app', c, t)
-  FROM (VALUES ('public.event_revisions', 'actor_id'),
+  FROM (VALUES ('public.event_revisions', 'actor_id, applied'),
                ('public.activity_log', 'account_id, uploader_id'),
                ('public.audit_log', 'actor_id, target_user_id')) AS g(t, c)
  WHERE to_regclass(t) IS NOT NULL \gexec

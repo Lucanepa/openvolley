@@ -214,6 +214,7 @@ export function createEventRevisions(db, { log = console } = {}) {
           const before = ev
             ? { type: ev.type, set_index: ev.set_index, seq: ev.seq == null ? null : Number(ev.seq), payload: ev.payload, score_a: ev.score_a, score_b: ev.score_b, voided: ev.voided_at != null }
             : null
+          let resent = null
           const ins = await client.query(
             `INSERT INTO public.event_revisions
                (rev_uid, match_id, event_external_id, op, reason, event_seq, set_index, event_type,
@@ -227,7 +228,7 @@ export function createEventRevisions(db, { log = console } = {}) {
           if (ins.rowCount === 0) {
             // Sent before (a retry), or a rev_uid another match / event holds
             const { rows: [stored] } = await client.query(
-              `SELECT r.match_id::text AS match_id, r.event_external_id, r.op, r.applied,
+              `SELECT r.id, r.match_id::text AS match_id, r.event_external_id, r.op, r.applied,
                       EXISTS (SELECT 1 FROM public.event_revisions l
                                WHERE l.match_id = r.match_id AND l.event_external_id = r.event_external_id AND l.id > r.id) AS superseded
                  FROM public.event_revisions r WHERE r.rev_uid = $1`, [r.revUid])
@@ -239,6 +240,7 @@ export function createEventRevisions(db, { log = console } = {}) {
             // live now (its insert did not see the revision): applied as on
             // the first send.
             if (stored.applied || !ev || stored.superseded) continue
+            resent = stored.id
           } else if (!ev) {
             pending++
             continue
@@ -267,6 +269,12 @@ export function createEventRevisions(db, { log = console } = {}) {
           if (upd.rowCount > 0) {
             applied++
             changes.push({ table: 'events', eventType: 'UPDATE', row: upd.rows[0] })
+          }
+          // A resent revision applied now is marked so: the next resend skips
+          // it (an edit would bump rev again) and the history shows it applied
+          // (db/039 grants ov_app UPDATE of this one column).
+          if (resent != null) {
+            await client.query('UPDATE public.event_revisions SET applied = true WHERE id = $1 AND NOT applied', [resent])
           }
         }
         return { applied, pending, changes }

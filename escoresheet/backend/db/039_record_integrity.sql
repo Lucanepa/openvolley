@@ -22,9 +22,10 @@
 --      guard sees the close.
 --   2. matches.first_closed_at: when the match first closed (server only,
 --      kept by the reopen). For such a match a DELETE, test = true and a
---      move to another game number or season are refused (SQLSTATE OVC01,
---      409 OV_MATCH_CLOSED) unless the write is an admin's (ov.admin, set
---      by lib/pgQuery.js for an admin session, or ov.allow_closed).
+--      move to another game number or season are refused (SQLSTATE OVC02,
+--      409 OV_MATCH_RECORD) unless the write is an admin's (ov.admin, set
+--      by lib/pgQuery.js for an admin session, or ov.allow_closed). Not
+--      OVC01: the match is open, so the app keeps syncing its other writes.
 --   3. public.match_closures: each reopen keeps the record as it was closed
 --      (status, approval, final score, set results, sanctions, remarks, ...
 --      and the sets), and the next close adds the record as it closed
@@ -39,6 +40,9 @@
 --      names them; an admin resolves them, then the file runs again.
 --   6. Indexes for the account deletion (the ON DELETE SET NULL columns) and
 --      events(match_id).
+--   7. ov_app may UPDATE event_revisions.applied (only that column): a
+--      revision stored before its event is marked applied when its resend
+--      applies it (lib/eventRevisions.js). roles.sql grants the same.
 -- Idempotent; one transaction (scripts/migrate.mjs). Safe while the old
 -- backend serves: it does not know first_closed_at (an admin's delete of a
 -- once-closed match is refused until the new image runs) and it never writes
@@ -171,7 +175,7 @@ DECLARE
 BEGIN
   IF TG_OP = 'DELETE' THEN
     IF OLD.first_closed_at IS NOT NULL AND NOT admin THEN
-      RAISE EXCEPTION 'match was closed: only an admin deletes it' USING ERRCODE = 'OVC01';
+      RAISE EXCEPTION 'match was closed: only an admin deletes it' USING ERRCODE = 'OVC02';
     END IF;
     RETURN OLD;
   END IF;
@@ -188,7 +192,7 @@ BEGIN
      AND ((NEW.test IS TRUE AND OLD.test IS NOT TRUE)
           OR NEW.game_n IS DISTINCT FROM OLD.game_n
           OR NEW.official_season IS DISTINCT FROM OLD.official_season) THEN
-    RAISE EXCEPTION 'match was closed: only an admin makes it a test match or moves it to another game' USING ERRCODE = 'OVC01';
+    RAISE EXCEPTION 'match was closed: only an admin makes it a test match or moves it to another game' USING ERRCODE = 'OVC02';
   END IF;
   RETURN NEW;
 END
@@ -258,5 +262,14 @@ CREATE TRIGGER matches_closure_record
   AFTER UPDATE ON public.matches
   FOR EACH ROW WHEN (OLD.closed_at IS DISTINCT FROM NEW.closed_at)
   EXECUTE FUNCTION public.ov_matches_closure_record();
+
+-- 7. A resent revision is marked applied --------------------------------------------
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ov_app') THEN
+    GRANT UPDATE (applied) ON public.event_revisions TO ov_app;
+  END IF;
+END
+$$;
 
 COMMIT;
