@@ -3588,6 +3588,8 @@
         "club_licences_manual_delete": "Von Hand Eingetragene aus den Listen des Vereins entfernt",
         "club_licences_dob": "Geburtsdaten für einen Kader nachgeschlagen",
         "saved_teams_scope": "Gespeicherte Teams offizieller Spiele einem Schreiber freigegeben",
+        "retention_sweep": "Abgelaufene Matchdaten gelöscht (Aufbewahrung)",
+        "person_redact": "Daten einer Person auf Anfrage geschwärzt",
         "saved_teams_competition_delete": "Wettbewerb gelöscht",
         "saved_teams_team_delete": "Gespeichertes Team gelöscht",
         "saved_teams_roster": "Kader eines gespeicherten Teams ersetzt",

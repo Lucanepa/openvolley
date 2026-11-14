@@ -323,8 +323,9 @@ function getDataLayer() {
     import('./lib/licences.js'),
     import('./lib/accountRequests.js'),
     import('./lib/signupNotices.js'),
-    import('./lib/publicApi.js')
-  ]).then(([pgq, mr, au, st, ph, ac, acc, svt, mg, og, ml, apv, bt, evr, act, ss, cl, sd, fm, tms, lic, arq, sn, pub]) => {
+    import('./lib/publicApi.js'),
+    import('./lib/retention.js')
+  ]).then(([pgq, mr, au, st, ph, ac, acc, svt, mg, og, ml, apv, bt, evr, act, ss, cl, sd, fm, tms, lic, arq, sn, pub, ret]) => {
     const poolMax = Number(process.env.PG_POOL_MAX) > 0 ? Math.floor(Number(process.env.PG_POOL_MAX)) : undefined
     const db = pgq.createPgQuery({
       connectionString: DATABASE_URL,
@@ -414,7 +415,9 @@ function getDataLayer() {
     // The active scoring device of each match (db/019, the scoring-device handover)
     const scorer = sd.createScorerDevices({ pool: db.pool, db, audit: accounts.audit })
     const publicApi = pub.createPublicApi({ pool: db.pool })
-    dataLayer = { publicApi, db, restore, auth, storage, pins, access, accounts, savedTeams, licences, teams, beach, approvals, manage, requests, revisions, activity, scoresheets, scorer, finalMail, isScoresheetPdf: ss.isScoresheetPdf, isMatchScoresheetFile: ss.isMatchScoresheetFile, isScoresheetUploadPath: ss.isScoresheetUploadPath, activityCsvLine: act.csvLine, activityCsvColumns: act.CSV_COLUMNS, publicClaim: og.publicClaim, sendAuthResult: au.sendAuthResult, AUTH_ACTIONS: au.AUTH_ACTIONS, ipKey: au.ipBucketKey }
+    // The end of the match records (db/042, lib/retention.js): the daily sweep below
+    const retention = ret.createRetention({ pool: db.pool, storage, audit: accounts.audit })
+    dataLayer = { publicApi, retention, db, restore, auth, storage, pins, access, accounts, savedTeams, licences, teams, beach, approvals, manage, requests, revisions, activity, scoresheets, scorer, finalMail, isScoresheetPdf: ss.isScoresheetPdf, isMatchScoresheetFile: ss.isMatchScoresheetFile, isScoresheetUploadPath: ss.isScoresheetUploadPath, activityCsvLine: act.csvLine, activityCsvColumns: act.CSV_COLUMNS, publicClaim: og.publicClaim, sendAuthResult: au.sendAuthResult, AUTH_ACTIONS: au.AUTH_ACTIONS, ipKey: au.ipBucketKey }
     return dataLayer
   })
   return dataLayerPromise
@@ -7001,6 +7004,17 @@ if (DB_MODE) {
     ]).catch((err) => console.warn('[Club data] sweep failed:', err.message))
     setTimeout(sweepClubData, 15 * 60 * 1000).unref()
     setInterval(sweepClubData, 24 * 60 * 60 * 1000).unref()
+    // Match records past their season and app_settings.retention_years
+    // (db/042, lib/retention.js; privacy policy section 16): matches with
+    // their rows, scoresheet files, svrz_games. 20 min after start, then
+    // daily; RETENTION_SWEEP=off (a dev copy) leaves everything.
+    if (String(process.env.RETENTION_SWEEP || '').toLowerCase() !== 'off') {
+      const sweepRetention = () => layer.retention.sweep()
+        .then((r) => { if (r.matches || r.scoresheetFiles || r.scoresheetRecords || r.svrzGames || r.svrzRemoved || r.skipped) console.log('[Retention] sweep', JSON.stringify(r)) })
+        .catch((err) => console.warn('[Retention] sweep failed:', err.message))
+      setTimeout(sweepRetention, 20 * 60 * 1000).unref()
+      setInterval(sweepRetention, 24 * 60 * 60 * 1000).unref()
+    }
     // The final scoresheet by email (db/021, lib/finalMail.js): every minute
     // (FINAL_MAIL_SWEEP_MS), cloud only (a venue relay has no mailer). It
     // sends nothing while the Settings switch is off.

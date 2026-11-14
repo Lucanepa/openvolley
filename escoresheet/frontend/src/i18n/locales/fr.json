@@ -3603,6 +3603,8 @@
         "club_licences_manual_delete": "Retiré à la main des listes du club",
         "club_licences_dob": "Dates de naissance consultées pour une liste d'équipe",
         "saved_teams_scope": "Équipes enregistrées de matchs officiels données à un marqueur",
+        "retention_sweep": "Données de match expirées supprimées (conservation)",
+        "person_redact": "Données d'une personne masquées sur demande",
         "saved_teams_competition_delete": "Compétition supprimée",
         "saved_teams_team_delete": "Équipe enregistrée supprimée",
         "saved_teams_roster": "Effectif d’une équipe enregistrée remplacé",

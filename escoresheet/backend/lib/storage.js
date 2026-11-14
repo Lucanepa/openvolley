@@ -1183,6 +1183,24 @@ export function createStorage(options = {}) {
     return out.filter(Boolean)
   }
 
+  /**
+   * The names of the folders in a folder (no dot-names, never a symlink):
+   * trusted server code only (lib/retention.js finds the expired day folders
+   * of the scoresheets bucket). A missing folder gives [].
+   */
+  async function listFoldersTrusted({ bucket, path: p } = {}) {
+    assertBucket(bucket)
+    const r = await resolve(bucket, parse(p ?? '', true), { isDir: true })
+    if (!r) return []
+    try {
+      const dirents = await fsp.readdir(r.dir, { withFileTypes: true })
+      return dirents.filter((d) => d.isDirectory() && !d.name.startsWith('.')).map((d) => d.name)
+    } catch (e) {
+      if (isCode(e, 'ENOENT', 'ENOTDIR')) return []
+      throw e
+    }
+  }
+
   /** The object at diskSegs as a Buffer; `mayRead(realRoot)` (when given) must answer true. */
   async function readObject(bucket, diskSegs, mayRead) {
     const r = await resolve(bucket, diskSegs)
@@ -1615,6 +1633,7 @@ export function createStorage(options = {}) {
     list,
     readTrusted,
     listFilesTrusted,
+    listFoldersTrusted,
     remove,
     deleteUserData,
     sweep,
