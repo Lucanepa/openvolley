@@ -13,7 +13,7 @@
  *   docker stop ov-test-auth
  */
 
-import { describe, it, before, after } from 'node:test'
+import { describe, it, before, after, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
@@ -113,6 +113,13 @@ describe('auth counters', () => {
 })
 
 describe('concurrency gate', () => {
+  // The gate's wait timer is unref()'d (it must never hold the backend open). On
+  // Node 22 a test that only waits for that timer lets the event loop end, and the
+  // runner cancels this file's remaining tests; keep the loop alive meanwhile.
+  let keepAlive
+  beforeEach(() => { keepAlive = setInterval(() => {}, 1000) })
+  afterEach(() => clearInterval(keepAlive))
+
   it('runs at most maxConcurrent jobs, queues maxQueue, rejects the rest at once', async () => {
     const gate = createConcurrencyGate({ maxConcurrent: 2, maxQueue: 3 })
     let running = 0

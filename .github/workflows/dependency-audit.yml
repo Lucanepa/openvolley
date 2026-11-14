@@ -44,7 +44,7 @@ jobs:
     env:
       # crates.io versions never change; raise it by hand when the advisory
       # database needs a newer one
-      CARGO_AUDIT_VERSION: '0.21.2'
+      CARGO_AUDIT_VERSION: '0.23.0'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
