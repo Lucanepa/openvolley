@@ -14,9 +14,17 @@
  * are club data and stay. Every key is built here from an allowlist, so a field
  * added to a row later is hidden until it is listed.
  *
+ * The live snapshot follows the anonymous live projection (publicColumns.js
+ * LIVE_STATE_PRIVATE_COLUMNS): no line-ups, substitutions or sanctions, which
+ * need the match PIN. The statistics of a finished match say when a team
+ * substituted or was sanctioned, never which shirt number or why (an injury,
+ * an expulsion): rosters with names are readable elsewhere by number.
+ *
  * Pure builders (no I/O) first, then createPublicApi({ pool }) for the queries.
  * Every handler answers { status, body, headers? } and never throws.
  */
+
+import { LIVE_STATE_PRIVATE_COLUMNS } from './publicColumns.js'
 
 const iso = (v) => (v instanceof Date ? v.toISOString() : (v ?? null))
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
@@ -143,30 +151,13 @@ const lineupNumbers = (l) => {
   }
   return Object.keys(out).length ? out : null
 }
-const lineupFlags = (l) => {
-  const v = jsonOf(l)
-  if (!isObj(v)) return null
-  const out = {}
-  for (const p of POSITIONS) {
-    const e = v[p]
-    if (!isObj(e) || num(e.number) == null) continue
-    out[p] = { number: Number(e.number), serving: !!e.isServing, libero: !!e.isLibero, captain: !!(e.isCaptain || e.isCourtCaptain) }
-  }
-  return Object.keys(out).length ? out : null
-}
-
-const sanctionOut = (s) => {
-  if (!isObj(s)) return null
-  return {
-    type: str(s.type, 30),
-    // who: a shirt number, or a role for staff; never a name
-    number: num(s.player ?? s.playerNumber),
-    role: str(s.role, 30) || str(s.playerType, 30)
-  }
-}
-
-/** The livescore snapshot: scores and what is on court, from match_live_state (+ the match row). */
-export function publicLive(row) {
+/**
+ * The livescore snapshot: scores, sets, time-outs, from match_live_state (+ the
+ * match row). The PIN-only columns are dropped first, whatever reads them below.
+ */
+export function publicLive(input) {
+  const row = { ...input }
+  for (const c of LIVE_STATE_PRIVATE_COLUMNS) delete row[c]
   const sets = jsonOf(row.set_results)
   return {
     id: row.external_id,
@@ -185,12 +176,6 @@ export function publicLive(row) {
     sideA: str(row.side_a, 10),
     serving: str(row.serving_team, 10),
     serverNumber: num(row.server_number),
-    onCourt: { A: lineupFlags(row.lineup_a) || lineupNumbers(row.lineup_a), B: lineupFlags(row.lineup_b) || lineupNumbers(row.lineup_b) },
-    substitutions: { A: Array.isArray(jsonOf(row.subs_a)) ? jsonOf(row.subs_a).length : 0, B: Array.isArray(jsonOf(row.subs_b)) ? jsonOf(row.subs_b).length : 0 },
-    sanctions: {
-      A: (Array.isArray(jsonOf(row.sanctions_a)) ? jsonOf(row.sanctions_a) : []).map(sanctionOut).filter(Boolean),
-      B: (Array.isArray(jsonOf(row.sanctions_b)) ? jsonOf(row.sanctions_b) : []).map(sanctionOut).filter(Boolean)
-    },
     setResults: (Array.isArray(sets) ? sets : []).filter(isObj).map((s) => ({
       set: num(s.index), pointsA: num(s.pointsA ?? s.home_points), pointsB: num(s.pointsB ?? s.away_points), winner: str(s.winner, 2)
     })),
@@ -250,16 +235,14 @@ export function buildStats(match, events, sets) {
         break
       case 'substitution':
         if (t) {
-          s.substitutions.push({
-            team: t, out: num(p.playerOut), in: num(p.playerIn), at,
-            exceptional: !!p.isExceptional, expelled: !!p.isExpelled, disqualified: !!p.isDisqualified
-          })
+          // not who (rosters with names are public by number) or why (injury, expulsion)
+          s.substitutions.push({ team: t, at })
           totals[t].substitutions++
         }
         break
       case 'sanction':
         if (t) {
-          s.sanctions.push({ team: t, type: str(p.type, 30), number: num(p.playerNumber), role: str(p.role, 30) || str(p.playerType, 30), at })
+          s.sanctions.push({ team: t, type: str(p.type, 30), at })
           totals[t].sanctions++
         }
         break
@@ -302,15 +285,22 @@ export function buildStats(match, events, sets) {
 
 // ---------------------------------------------------------------- data layer
 
-const MATCH_COLUMNS = `m.external_id, m.sport_type, m.game_n, m.status, m.scheduled_at, m.final_score, m.winner,
-  m.match_info, m.officials, m.home_team, m.away_team, m.team1_data, m.team2_data,
-  m.players_home, m.players_away, m.players_team1, m.players_team2, m.bench_home, m.bench_away, m.updated_at`
+// The list shows no rosters: up to 200 rows, so their JSON is not read at all
+const LIST_COLUMNS = `m.external_id, m.sport_type, m.game_n, m.status, m.scheduled_at, m.final_score, m.winner,
+  m.match_info, m.officials, m.home_team, m.away_team, m.team1_data, m.team2_data, m.updated_at`
+const MATCH_COLUMNS = `${LIST_COLUMNS},
+  m.players_home, m.players_away, m.players_team1, m.players_team2, m.bench_home, m.bench_away`
+// Built statistics of finished matches, by id and updated_at (a correction
+// after the end moves updated_at): up to 20000 events are read once, not on
+// every anonymous request.
+const STATS_CACHE_MAX = 100
 
 const ok = (body, headers = {}) => ({ status: 200, body, headers })
 const fail = (status, error) => ({ status, body: { error } , headers: { 'Cache-Control': 'no-store' } })
 const MISSING = new Set(['42P01', '42703'])
 
 export function createPublicApi({ pool, logger = console } = {}) {
+  const statsCache = new Map() // `${id}|${updated_at}` -> body
   async function guarded(what, fn) {
     try {
       return await fn()
@@ -346,7 +336,7 @@ export function createPublicApi({ pool, logger = console } = {}) {
       }
       args.push(lim)
       const { rows } = await pool.query(
-        `SELECT ${MATCH_COLUMNS} FROM public.matches m
+        `SELECT ${LIST_COLUMNS} FROM public.matches m
           WHERE coalesce(m.test, false) = false AND m.external_id IS NOT NULL
             AND m.scheduled_at >= $1 AND m.scheduled_at < $2${statusSql}
           ORDER BY m.scheduled_at, m.game_n LIMIT $${args.length}`, args)
@@ -390,12 +380,19 @@ export function createPublicApi({ pool, logger = console } = {}) {
       const m = await matchRow(id)
       if (!m) return fail(404, 'match not found')
       if (!['finished', 'ended'].includes(m.status)) return fail(409, 'statistics are published when the match is finished')
+      const cacheKey = `${id}|${iso(m.updated_at)}`
+      const cached = statsCache.get(cacheKey)
+      if (cached) return ok(cached, { 'Cache-Control': 'public, max-age=300' })
       const ev = await pool.query(
         `SELECT type, set_index, seq, payload FROM public.events
           WHERE match_id = $1 AND voided_at IS NULL AND coalesce(test, false) = false
           ORDER BY set_index, seq LIMIT 20000`, [m._id])
       const st = await pool.query(`SELECT index, start_time, end_time FROM public.sets WHERE match_id = $1`, [m._id])
-      return ok({ ...publicMatchInfo(m, { withRosters: true }), stats: buildStats(m, ev.rows, st.rows) }, { 'Cache-Control': 'public, max-age=300' })
+      const body = { ...publicMatchInfo(m, { withRosters: true }), stats: buildStats(m, ev.rows, st.rows) }
+      for (const k of statsCache.keys()) if (k.startsWith(`${id}|`)) statsCache.delete(k)
+      while (statsCache.size >= STATS_CACHE_MAX) statsCache.delete(statsCache.keys().next().value)
+      statsCache.set(cacheKey, body)
+      return ok(body, { 'Cache-Control': 'public, max-age=300' })
     })
   }
 
@@ -404,33 +401,70 @@ export function createPublicApi({ pool, logger = console } = {}) {
 
 /**
  * Server-Sent Events for one match: one shared poller per match (every
- * `intervalMs`), a frame only when the snapshot changed, a comment every
- * 20 s so proxies keep the connection. Pure of http details except `res`.
+ * `intervalMs`, every `finishedEvery` ms once the match is finished), a frame
+ * only when the snapshot changed, a comment every 20 s so proxies keep the
+ * connection. Pure of http details except `res`.
+ *
+ * Limits, checked with canAttach() BEFORE the 200 (a refused stream must be an
+ * error status: a 200 that ends makes EventSource reconnect every 3 s):
+ * `maxPerKey` streams per caller key (the address bucket; the per-minute rate
+ * alone let one address hold every slot over time), `maxPerMatch` viewers of
+ * one match, `maxMatches` polled matches (each one is a query every
+ * `intervalMs`), `maxTotal` streams. A viewer whose unsent output passes
+ * `maxBuffered` bytes (it does not read) is dropped.
  */
-export function createLiveStreams({ snapshot, intervalMs = 2000, maxPerMatch = 500, maxTotal = 3000, logger = console } = {}) {
-  const pollers = new Map() // id -> { clients:Set, timer, last, busy }
+export function createLiveStreams({
+  snapshot, intervalMs = 2000, finishedEvery = 30000, maxPerMatch = 500, maxTotal = 3000, maxPerKey = 20, maxMatches = 200,
+  maxBuffered = 256 * 1024, logger = console
+} = {}) {
+  const pollers = new Map() // id -> { clients:Set, timer, last, lastFinished, busy, beat, skip }
+  const perKey = new Map() // key -> open streams
   let total = 0
 
-  const send = (res, data) => res.write(`event: live\ndata: ${data}\n\n`)
+  const FINISHED = new Set(['finished', 'ended'])
+  const isFinished = (snap) => !!snap && FINISHED.has(snap.status)
 
-  function attach(id, res) {
+  function canAttach(id, key = '') {
+    if (total >= maxTotal) return false
+    if ((perKey.get(key) || 0) >= maxPerKey) return false
+    const p = pollers.get(id)
+    if (p) return p.clients.size < maxPerMatch
+    return pollers.size < maxMatches
+  }
+
+  function drop(p, res) {
+    try { res.destroy?.() } catch { /* ignore */ }
+    // destroy emits close; a fake or an already closed one may not
+    p.done.get(res)?.()
+  }
+  function write(p, res, text) {
+    if ((res.writableLength || 0) > maxBuffered) { drop(p, res); return }
+    res.write(text)
+  }
+  const send = (p, res, data) => write(p, res, `event: live\ndata: ${data}\n\n`)
+
+  function attach(id, res, { key = '', first = null } = {}) {
+    if (!canAttach(id, key)) return false
     let p = pollers.get(id)
-    if (total >= maxTotal || (p && p.clients.size >= maxPerMatch)) return false
     if (!p) {
-      p = { clients: new Set(), last: null, busy: false, timer: null, beat: 0 }
+      p = { clients: new Set(), done: new Map(), last: null, lastFinished: false, busy: false, timer: null, beat: 0, skip: 0 }
+      const finishedTicks = Math.max(1, Math.ceil(finishedEvery / intervalMs))
       p.timer = setInterval(async () => {
         if (p.busy) return
+        // a finished match changes only by a correction: poll it rarely
+        if (p.lastFinished && ++p.skip < finishedTicks) return
+        p.skip = 0
         p.busy = true
         try {
           const snap = await snapshot(id)
           const text = snap ? JSON.stringify(snap) : null
-          // updatedAt alone moves on every write; compare the content that matters
           if (text && text !== p.last) {
             p.last = text
-            for (const c of p.clients) send(c, text)
-          } else if (++p.beat >= Math.ceil(20000 / intervalMs)) {
+            p.lastFinished = isFinished(snap)
+            for (const c of [...p.clients]) send(p, c, text)
+          } else if (++p.beat >= Math.ceil(20000 / intervalMs) || p.lastFinished) {
             p.beat = 0
-            for (const c of p.clients) c.write(': keep-alive\n\n')
+            for (const c of [...p.clients]) write(p, c, ': keep-alive\n\n')
           }
         } catch (err) {
           logger.warn?.('[public-api] stream poll failed:', err?.message)
@@ -440,20 +474,32 @@ export function createLiveStreams({ snapshot, intervalMs = 2000, maxPerMatch = 5
       }, intervalMs)
       p.timer.unref?.()
       pollers.set(id, p)
+      if (first) { p.last = JSON.stringify(first); p.lastFinished = isFinished(first) }
     }
     p.clients.add(res)
     total++
-    if (p.last) send(res, p.last)
-    else snapshot(id).then((s) => { if (s) { p.last = JSON.stringify(s); send(res, p.last) } }).catch(() => {})
+    perKey.set(key, (perKey.get(key) || 0) + 1)
     const done = () => {
       if (!p.clients.delete(res)) return
+      p.done.delete(res)
       total--
-      if (p.clients.size === 0) { clearInterval(p.timer); pollers.delete(id) }
+      const n = (perKey.get(key) || 1) - 1
+      if (n > 0) perKey.set(key, n)
+      else perKey.delete(key)
+      if (p.clients.size === 0) { clearInterval(p.timer); if (pollers.get(id) === p) pollers.delete(id) }
     }
+    p.done.set(res, done)
     res.on('close', done)
+    if (p.last) send(p, res, p.last)
+    else snapshot(id).then((s) => { if (s && p.clients.has(res)) { p.last = JSON.stringify(s); p.lastFinished = isFinished(s); send(p, res, p.last) } }).catch(() => {})
     return true
   }
-  return { attach, stats: () => ({ matches: pollers.size, clients: total }), closeAll() { for (const p of pollers.values()) clearInterval(p.timer); pollers.clear(); total = 0 } }
+  return {
+    attach,
+    canAttach,
+    stats: () => ({ matches: pollers.size, clients: total }),
+    closeAll() { for (const p of pollers.values()) clearInterval(p.timer); pollers.clear(); perKey.clear(); total = 0 }
+  }
 }
 
 /** `?from`, `?to`, `?status`, `?limit` from a URL. */
