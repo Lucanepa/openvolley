@@ -56,7 +56,8 @@ beforeEach(() => {
 describe('the cloud copy (set end, match end, every minute)', () => {
   it('is the app backup file: no PIN, session id, birth date, name or signature in the clear', async () => {
     const path = await uploadBackupToCloud(9, backup())
-    expect(path).toMatch(/^backups\/backup_g3141\/backup_g3141_set2_scoreleft10_scoreright8_\d{8}_\d{6}_\d{3}\.json$/)
+    // named by what the scores are: home and away (it said scoreleft/scoreright)
+    expect(path).toMatch(/^backups\/backup_g3141\/backup_g3141_set2_home10_away8_\d{8}_\d{6}_\d{3}\.json$/)
     const body = bucket.files.get(path)
     for (const secret of SECRETS) expect(body).not.toContain(secret)
     expect(isEncryptedBackup(JSON.parse(body))).toBe(true)

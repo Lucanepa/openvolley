@@ -78,6 +78,14 @@ function backupTime(backup) {
  * unlockPins: the PINs an encrypted cloud copy is opened with for its last
  * action (the game PIN typed to list them, the open match's PINs).
  */
+// home:away points of the latest set; lists from before 14.11.2026 called
+// them leftScore / rightScore (the same numbers, from the file name)
+function backupScore(backup) {
+  const home = backup.homeScore ?? backup.leftScore
+  const away = backup.awayScore ?? backup.rightScore
+  return home !== undefined && away !== undefined ? `${home}:${away}` : 'N/A'
+}
+
 export default function BackupTable({
   backups = [],
   onBackupSelect,
@@ -219,9 +227,7 @@ export default function BackupTable({
               <span className={cn(gameCell, 'font-semibold')}>{backup.gameN || 'N/A'}</span>
               <span className="text-center">{backup.setIndex || 'N/A'}</span>
               <span className="text-center font-semibold text-stone-900">
-                {backup.leftScore !== undefined && backup.rightScore !== undefined
-                  ? `${backup.leftScore}:${backup.rightScore}`
-                  : 'N/A'}
+                {backupScore(backup)}
               </span>
               <span className="text-[11px] text-stone-500">
                 {lastAction}
@@ -243,9 +249,7 @@ export default function BackupTable({
               <span className={cn(gameCell, 'font-semibold')}>{backup.gameN || 'N/A'}</span>
               <span className="text-center">{backup.setIndex || 'N/A'}</span>
               <span className="text-center font-semibold text-stone-900">
-                {backup.leftScore !== undefined && backup.rightScore !== undefined
-                  ? `${backup.leftScore}:${backup.rightScore}`
-                  : 'N/A'}
+                {backupScore(backup)}
               </span>
               <span className="text-[11px] text-stone-500">
                 {lastAction}

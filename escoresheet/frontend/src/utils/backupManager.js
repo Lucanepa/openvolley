@@ -235,21 +235,23 @@ export async function exportMatchData(matchId) {
 
 /**
  * Generate backup filename with UTC timestamp
- * Format: backup_g[gameN]_set[setN]_scoreleft[left]_scoreright[right]_[yyyymmdd]_[hhmm].json
+ * Format: backup_g[gameN]_set[setN]_home[points]_away[points]_[yyyymmdd]_[hhmm].json
+ * (the latest set's home and away points; files before 14.11.2026 said
+ * scoreleft / scoreright for the same numbers, which read as the screen's sides)
  */
 export function generateBackupFilename(data) {
   const gameN = data?.match?.gameN || data?.match?.game_n || 1
 
   // Get latest set info
   let setIndex = 1
-  let leftScore = 0
-  let rightScore = 0
+  let homeScore = 0
+  let awayScore = 0
   if (data?.sets?.length > 0) {
     const latestSet = data.sets.sort((a, b) => (b.index || 0) - (a.index || 0))[0]
     if (latestSet) {
       setIndex = latestSet.index || 1
-      leftScore = latestSet.homePoints || 0
-      rightScore = latestSet.awayPoints || 0
+      homeScore = latestSet.homePoints || 0
+      awayScore = latestSet.awayPoints || 0
     }
   }
 
@@ -258,7 +260,7 @@ export function generateBackupFilename(data) {
   const utcDate = now.toISOString().slice(0, 10).replace(/-/g, '') // yyyymmdd
   const utcTime = now.toISOString().slice(11, 16).replace(':', '') // hhmm
 
-  return `backup_g${gameN}_set${setIndex}_scoreleft${leftScore}_scoreright${rightScore}_${utcDate}_${utcTime}.json`
+  return `backup_g${gameN}_set${setIndex}_home${homeScore}_away${awayScore}_${utcDate}_${utcTime}.json`
 }
 
 /**
@@ -2410,19 +2412,20 @@ export async function listCloudBackups(gamePin, gameN = 1) {
   if (error) throw error
 
   // Parse filenames to extract useful info
-  // Format: backup_g785111_set2_scoreleft23_scoreright23_20260105_113229_798.json
+  // Format: backup_g785111_set2_home23_away23_20260105_113229_798.json (older: scoreleft23_scoreright23)
   const backups = (data || [])
     .filter(f => f.name.endsWith('.json'))
     .map(f => {
-      const match = f.name.match(/^backup_g(\d+)_set(\d+)_scoreleft(\d+)_scoreright(\d+)_(\d{8})_(\d{6})_(\d{3})\.json$/)
+      const match = f.name.match(/^backup_g(\d+)_set(\d+)_(?:home|scoreleft)(\d+)_(?:away|scoreright)(\d+)_(\d{8})_(\d{6})_(\d{3})\.json$/)
       if (match) {
         return {
           name: f.name,
           path: `${folderPath}/${f.name}`,
           gameN: parseInt(match[1]),
           setIndex: parseInt(match[2]),
-          leftScore: parseInt(match[3]),
-          rightScore: parseInt(match[4]),
+          // home / away points (older names: scoreleft / scoreright, the same numbers)
+          homeScore: parseInt(match[3]),
+          awayScore: parseInt(match[4]),
           date: match[5],
           time: match[6],
           ms: match[7],

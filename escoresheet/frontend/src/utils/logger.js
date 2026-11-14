@@ -582,14 +582,14 @@ export async function uploadBackupToCloud(matchId, backupData) {
 
   // Get set and score info for filename
   let setIndex = 1
-  let leftScore = 0
-  let rightScore = 0
+  let homeScore = 0
+  let awayScore = 0
   if (backupData?.sets?.length > 0) {
     const latestSet = backupData.sets.sort((a, b) => (b.index || 0) - (a.index || 0))[0]
     if (latestSet) {
       setIndex = latestSet.index || 1
-      leftScore = latestSet.homePoints || 0
-      rightScore = latestSet.awayPoints || 0
+      homeScore = latestSet.homePoints || 0
+      awayScore = latestSet.awayPoints || 0
     }
   }
 
@@ -600,7 +600,7 @@ export async function uploadBackupToCloud(matchId, backupData) {
   const ms = now.getMilliseconds().toString().padStart(3, '0') // milliseconds
 
   // Folder structure: backups/backup_g{gameN}/
-  const filename = `backups/backup_g${gameN}/backup_g${gameN}_set${setIndex}_scoreleft${leftScore}_scoreright${rightScore}_${utcDate}_${utcTime}_${ms}.json`
+  const filename = `backups/backup_g${gameN}/backup_g${gameN}_set${setIndex}_home${homeScore}_away${awayScore}_${utcDate}_${utcTime}_${ms}.json`
 
   try {
     const { backupFileText } = await import('./backupFile')
@@ -646,17 +646,18 @@ export async function listCloudBackups(gamePin, gameN = 1) {
       return []
     }
 
-    // Parse filenames like "backup_g1_set2_scoreleft15_scoreright12_20250104_153045_123.json"
+    // Parse filenames like "backup_g1_set2_home15_away12_20250104_153045_123.json" (older: scoreleft15_scoreright12)
     return (data || []).map(file => {
-      const match = file.name.match(/^backup_g(\d+)_set(\d+)_scoreleft(\d+)_scoreright(\d+)_(\d{8})_(\d{6})_(\d{3})\.json$/)
+      const match = file.name.match(/^backup_g(\d+)_set(\d+)_(?:home|scoreleft)(\d+)_(?:away|scoreright)(\d+)_(\d{8})_(\d{6})_(\d{3})\.json$/)
       if (match) {
         return {
           name: file.name,
           path: `backups/backup_g${gameN}/${file.name}`,
           gameN: parseInt(match[1]),
           setIndex: parseInt(match[2]),
-          leftScore: parseInt(match[3]),
-          rightScore: parseInt(match[4]),
+          // home / away points (older names: scoreleft / scoreright, the same numbers)
+          homeScore: parseInt(match[3]),
+          awayScore: parseInt(match[4]),
           date: match[5],
           time: match[6],
           ms: match[7],
