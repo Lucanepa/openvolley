@@ -192,9 +192,27 @@ describe('review: query cost', () => {
     await api.list({})
     assert.ok(!/players_|bench_/.test(seen[0]), seen[0])
   })
-  it('statistics of an unchanged finished match are built once', async () => {
+  it('statistics of a finished open match are rebuilt (corrections and late events write events only)', async () => {
     let events = 0
-    const fin = { ...row, status: 'finished', final_score: '3:0', _id: 'u', updated_at: new Date('2026-11-14T20:00:00Z') }
+    const fin = { ...row, status: 'finished', final_score: '3:0', _id: 'u', updated_at: new Date('2026-11-14T20:00:00Z'), closed_at: null }
+    const api = createPublicApi({
+      pool: {
+        query: async (sql) => {
+          if (/FROM public\.events/.test(sql)) { events++; return { rows: [] } }
+          if (/FROM public\.sets/.test(sql)) return { rows: [] }
+          return { rows: [fin] }
+        }
+      }
+    })
+    const r = await api.stats('match_1')
+    assert.equal(r.status, 200)
+    assert.equal(r.headers['Cache-Control'], 'public, max-age=30')
+    assert.equal((await api.stats('match_1')).status, 200)
+    assert.equal(events, 2)
+  })
+  it('statistics of an unchanged closed match are built once', async () => {
+    let events = 0
+    const fin = { ...row, status: 'finished', final_score: '3:0', _id: 'u', updated_at: new Date('2026-11-14T20:00:00Z'), closed_at: new Date('2026-11-14T20:05:00Z') }
     let m = fin
     const api = createPublicApi({
       pool: {
@@ -208,7 +226,7 @@ describe('review: query cost', () => {
     assert.equal((await api.stats('match_1')).status, 200)
     assert.equal((await api.stats('match_1')).status, 200)
     assert.equal(events, 1)
-    m = { ...fin, updated_at: new Date('2026-11-14T21:00:00Z') } // corrected after the end
+    m = { ...fin, updated_at: new Date('2026-11-14T21:00:00Z') } // admin change after the close
     assert.equal((await api.stats('match_1')).status, 200)
     assert.equal(events, 2)
   })

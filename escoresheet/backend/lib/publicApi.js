@@ -289,10 +289,13 @@ export function buildStats(match, events, sets) {
 const LIST_COLUMNS = `m.external_id, m.sport_type, m.game_n, m.status, m.scheduled_at, m.final_score, m.winner,
   m.match_info, m.officials, m.home_team, m.away_team, m.team1_data, m.team2_data, m.updated_at`
 const MATCH_COLUMNS = `${LIST_COLUMNS},
-  m.players_home, m.players_away, m.players_team1, m.players_team2, m.bench_home, m.bench_away`
-// Built statistics of finished matches, by id and updated_at (a correction
-// after the end moves updated_at): up to 20000 events are read once, not on
-// every anonymous request.
+  m.players_home, m.players_away, m.players_team1, m.players_team2, m.bench_home, m.bench_away, m.closed_at`
+// Built statistics of CLOSED matches, by id and updated_at: up to 20000 events
+// are read once, not on every anonymous request. Only closed ones: a correction
+// (lib/eventRevisions.js) or an event that syncs late from an offline scorer
+// writes events only, so updated_at of a finished but open match does not
+// move. Children of a closed match are frozen (ov_match_children_guard), and an
+// admin change or reopen updates the row (adminMatchUpdate), so updated_at does.
 const STATS_CACHE_MAX = 100
 
 const ok = (body, headers = {}) => ({ status: 200, body, headers })
@@ -380,9 +383,11 @@ export function createPublicApi({ pool, logger = console } = {}) {
       const m = await matchRow(id)
       if (!m) return fail(404, 'match not found')
       if (!['finished', 'ended'].includes(m.status)) return fail(409, 'statistics are published when the match is finished')
-      const cacheKey = `${id}|${iso(m.updated_at)}`
-      const cached = statsCache.get(cacheKey)
-      if (cached) return ok(cached, { 'Cache-Control': 'public, max-age=300' })
+      const cacheKey = m.closed_at ? `${id}|${iso(m.updated_at)}` : null
+      const cached = cacheKey && statsCache.get(cacheKey)
+      // an open match can still be corrected: proxies keep it 30 s, not 5 min
+      const cacheControl = { 'Cache-Control': `public, max-age=${m.closed_at ? 300 : 30}` }
+      if (cached) return ok(cached, cacheControl)
       const ev = await pool.query(
         `SELECT type, set_index, seq, payload FROM public.events
           WHERE match_id = $1 AND voided_at IS NULL AND coalesce(test, false) = false
@@ -390,9 +395,11 @@ export function createPublicApi({ pool, logger = console } = {}) {
       const st = await pool.query(`SELECT index, start_time, end_time FROM public.sets WHERE match_id = $1`, [m._id])
       const body = { ...publicMatchInfo(m, { withRosters: true }), stats: buildStats(m, ev.rows, st.rows) }
       for (const k of statsCache.keys()) if (k.startsWith(`${id}|`)) statsCache.delete(k)
-      while (statsCache.size >= STATS_CACHE_MAX) statsCache.delete(statsCache.keys().next().value)
-      statsCache.set(cacheKey, body)
-      return ok(body, { 'Cache-Control': 'public, max-age=300' })
+      if (cacheKey) {
+        while (statsCache.size >= STATS_CACHE_MAX) statsCache.delete(statsCache.keys().next().value)
+        statsCache.set(cacheKey, body)
+      }
+      return ok(body, cacheControl)
     })
   }
 
@@ -402,19 +409,20 @@ export function createPublicApi({ pool, logger = console } = {}) {
 /**
  * Server-Sent Events for one match: one shared poller per match (every
  * `intervalMs`, every `finishedEvery` ms once the match is finished), a frame
- * only when the snapshot changed, a comment every 20 s so proxies keep the
- * connection. Pure of http details except `res`.
+ * only when the snapshot changed, a comment every 20 s (every 30 s, on each
+ * poll, once finished) so proxies keep the connection. Pure of http details except `res`.
  *
  * Limits, checked with canAttach() BEFORE the 200 (a refused stream must be an
  * error status: a 200 that ends makes EventSource reconnect every 3 s):
  * `maxPerKey` streams per caller key (the address bucket; the per-minute rate
- * alone let one address hold every slot over time), `maxPerMatch` viewers of
+ * alone let one address hold every slot over time; 100, as a hall's Wi-Fi or
+ * a carrier NAT puts many viewers behind one address), `maxPerMatch` viewers of
  * one match, `maxMatches` polled matches (each one is a query every
  * `intervalMs`), `maxTotal` streams. A viewer whose unsent output passes
  * `maxBuffered` bytes (it does not read) is dropped.
  */
 export function createLiveStreams({
-  snapshot, intervalMs = 2000, finishedEvery = 30000, maxPerMatch = 500, maxTotal = 3000, maxPerKey = 20, maxMatches = 200,
+  snapshot, intervalMs = 2000, finishedEvery = 30000, maxPerMatch = 500, maxTotal = 3000, maxPerKey = 100, maxMatches = 200,
   maxBuffered = 256 * 1024, logger = console
 } = {}) {
   const pollers = new Map() // id -> { clients:Set, timer, last, lastFinished, busy, beat, skip }
