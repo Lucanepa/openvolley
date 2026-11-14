@@ -250,7 +250,7 @@ export function isSetupLocked(match) {
 
 // The info page's fields kept in its draft (db/setupDrafts) until Save
 const INFO_DRAFT_KEYS = ['date', 'time', 'hall', 'city', 'type1', 'type1Other', 'championshipType', 'championshipTypeOther',
-  'type2', 'type3', 'type3Other', 'bestOf', 'gameN', 'league', 'home', 'away', 'homeColor', 'awayColor', 'homeShortName', 'awayShortName',
+  'type2', 'type3', 'type3Other', 'bestOf', 'pointsRegular', 'pointsDeciding', 'gameN', 'league', 'home', 'away', 'homeColor', 'awayColor', 'homeShortName', 'awayShortName',
   'ref1First', 'ref1Last', 'ref1Country', 'ref1Dob', 'ref1Email', 'ref2First', 'ref2Last', 'ref2Country', 'ref2Dob', 'ref2Email',
   'scorerFirst', 'scorerLast', 'scorerCountry', 'scorerDob', 'asstFirst', 'asstLast', 'asstCountry', 'asstDob',
   'lineJudge1', 'lineJudge2', 'lineJudge3', 'lineJudge4']
@@ -2074,7 +2074,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (view === 'info') {
       const values = {
         date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther, type2, type3, type3Other, bestOf,
-        gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName,
+        pointsRegular, pointsDeciding, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName,
         ref1First, ref1Last, ref1Country, ref1Dob, ref1Email, ref2First, ref2Last, ref2Country, ref2Dob, ref2Email,
         scorerFirst, scorerLast, scorerCountry, scorerDob, asstFirst, asstLast, asstCountry, asstDob,
         lineJudge1, lineJudge2, lineJudge3, lineJudge4
@@ -3352,7 +3352,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       const setters = {
         date: setDate, time: setTime, hall: setHall, city: setCity, type1: setType1, type1Other: setType1Other,
         championshipType: setChampionshipType, championshipTypeOther: setChampionshipTypeOther, type2: setType2, type3: setType3,
-        type3Other: setType3Other, bestOf: setBestOf, gameN: setGameN, league: setLeague, home: setHome, away: setAway,
+        type3Other: setType3Other, bestOf: setBestOf, pointsRegular: setPointsRegular, pointsDeciding: setPointsDeciding, gameN: setGameN, league: setLeague, home: setHome, away: setAway,
         homeColor: setHomeColor, awayColor: setAwayColor, homeShortName: setHomeShortName, awayShortName: setAwayShortName,
         ref1First: setRef1First, ref1Last: setRef1Last, ref1Country: setRef1Country, ref1Dob: setRef1Dob, ref1Email: setRef1Email,
         ref2First: setRef2First, ref2Last: setRef2Last, ref2Country: setRef2Country, ref2Dob: setRef2Dob, ref2Email: setRef2Email,
