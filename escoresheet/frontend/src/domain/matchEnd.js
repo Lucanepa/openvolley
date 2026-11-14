@@ -28,6 +28,7 @@
  * signatures) -> final (closed). Any of the last three means the match is over.
  */
 import { setsToWin, getNextSetIndex, isMatchFinished, displaySetNumber } from '../utils/matchFormat'
+import { substitutionBarsForMatch } from './substitutions'
 import { isDecidingSet, scoreFromPointEvents } from './rules'
 
 /** Match statuses that mean "no more rallies will be played". */
@@ -307,10 +308,11 @@ const PLAYER_SANCTION_TYPES = new Set([undefined, null, 'player', 'bench', 'libe
 
 /**
  * Players of a team who may still take part in the NEXT set: non-liberos who
- * are not disqualified and were not taken out by an exceptional substitution
- * or a disqualification substitution (FIVB 15.7, 15.8 — they cannot re-enter
- * for the rest of the match). Expelled players are back next set, so they
- * count.
+ * are not disqualified and were not taken out by a disqualification
+ * substitution or an exceptional substitution of an injured player (FIVB
+ * 15.7, 21.3.3 — they cannot re-enter for the rest of the match). Expelled
+ * players are back next set, so they count, also when they were replaced
+ * exceptionally (21.3.2).
  * @param {Array} players the team roster
  * @param {Array} events
  * @param {'home'|'away'} teamKey
@@ -327,7 +329,7 @@ export function playersAvailableForNextSet(players, events, teamKey, { exclude =
       PLAYER_SANCTION_TYPES.has(p.playerType)) {
       out.add(String(p.playerNumber))
     }
-    if (e.type === 'substitution' && (p.isExceptional || p.isDisqualified) && p.playerOut != null) {
+    if (e.type === 'substitution' && substitutionBarsForMatch(p) && p.playerOut != null) {
       out.add(String(p.playerOut))
     }
   }

@@ -40,6 +40,20 @@ export function countRegularSubstitutions(events, teamKey, setIndex) {
   return getSetSubstitutions(events, teamKey, setIndex).filter(e => !e.payload?.isExceptional).length
 }
 
+/**
+ * True when a substitution keeps its player out (playerOut) for the rest of
+ * the match: a substitution because of a disqualification (FIVB 21.3.3), or
+ * an exceptional substitution of an injured or ill player (15.7). An expelled
+ * player replaced exceptionally (beyond the 6) is out for that set only
+ * (21.3.2, 15.8), as after a regular expulsion substitution.
+ * @param {object} payload the substitution event's payload
+ */
+export function substitutionBarsForMatch(payload) {
+  if (!payload) return false
+  if (payload.isDisqualified === true) return true
+  return payload.isExceptional === true && payload.isExpelled !== true
+}
+
 /** True while the team still has a regular substitution left in the set. */
 export function canMakeRegularSubstitution(events, teamKey, setIndex, { maxPerSet = MAX_SUBSTITUTIONS_PER_SET } = {}) {
   return countRegularSubstitutions(events, teamKey, setIndex) < maxPerSet

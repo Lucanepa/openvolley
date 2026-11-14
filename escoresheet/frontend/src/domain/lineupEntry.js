@@ -4,6 +4,8 @@
 // The errors are derived from the whole line-up every time (never stored per
 // field), so fixing a duplicate in either box clears it in both.
 
+import { substitutionBarsForMatch } from './substitutions'
+
 /** Line-up array order used by the modal: front row IV III II, back row V VI I */
 export const LINEUP_POSITIONS = ['IV', 'III', 'II', 'V', 'VI', 'I']
 
@@ -14,6 +16,7 @@ export const LINEUP_ERRORS = {
   invalidNumber: 'invalidNumber',
   libero: 'libero',
   disqualified: 'disqualified',
+  expelled: 'expelled',
   exceptionallySubstituted: 'exceptionallySubstituted',
   duplicate: 'duplicate'
 }
@@ -31,12 +34,29 @@ function isDisqualified(events, team, number) {
   )
 }
 
+// Out for the match by a substitution: substituted exceptionally because of
+// an injury or illness (FIVB 15.7). An expelled player replaced exceptionally
+// is back the next set (21.3.2); a disqualified one is caught above.
 function wasExceptionallySubstituted(events, team, number) {
   return (events || []).some(e =>
     e.type === 'substitution' &&
     e.payload?.team === team &&
     sameNumber(e.payload?.playerOut, number) &&
-    e.payload?.isExceptional === true
+    e.payload?.isExceptional === true &&
+    substitutionBarsForMatch(e.payload)
+  )
+}
+
+// Expelled in this set (FIVB 21.3.2): by the sanction, or substituted
+// because of it. A sanction given in the interval before a set is recorded
+// in that set (21.5), so the starting line-up must leave the player out.
+function wasExpelledInSet(events, team, number, setIndex) {
+  if (setIndex == null) return false
+  return (events || []).some(e =>
+    e.payload?.team === team &&
+    (e.setIndex ?? 1) === setIndex &&
+    ((e.type === 'sanction' && e.payload?.type === 'expulsion' && sameNumber(e.payload?.playerNumber, number)) ||
+      (e.type === 'substitution' && e.payload?.isExpelled === true && sameNumber(e.payload?.playerOut, number)))
   )
 }
 
@@ -46,7 +66,8 @@ function wasExceptionallySubstituted(events, team, number) {
  * - required: an empty box, only once the scorer has tried to confirm
  *   (`requireAll`), so an incomplete line-up is not flagged while it is
  *   being filled
- * - notOnRoster / libero / disqualified / exceptionallySubstituted: per box
+ * - notOnRoster / libero / disqualified / expelled / exceptionallySubstituted:
+ *   per box (expelled: in the set being entered, only with `setIndex`)
  * - duplicate: every box holding a number that appears more than once (it
  *   wins over the per-box checks, as the modal always did)
  *
@@ -55,12 +76,13 @@ function wasExceptionallySubstituted(events, team, number) {
  * @param {object[]} [args.players] the team's roster ({ number, libero })
  * @param {object[]} [args.events] the match events (disqualifications, exceptional substitutions)
  * @param {'home'|'away'} [args.team]
+ * @param {number} [args.setIndex] the set the line-up is for (expulsions of that set)
  * @param {boolean} [args.requireAll] flag empty boxes as required
  * @param {boolean} [args.allowUnknown] an easy match: a number that is no player yet is fine
  *   (domain/easyMatch.js adds it when the line-up is saved)
  * @returns {Record<number, string>} position index -> LINEUP_ERRORS code (valid boxes are absent)
  */
-export function lineupEntryErrors({ lineup, players = [], events = [], team = null, requireAll = false, allowUnknown = false }) {
+export function lineupEntryErrors({ lineup, players = [], events = [], team = null, setIndex = null, requireAll = false, allowUnknown = false }) {
   const values = (lineup || []).map(v => (isBlank(v) ? '' : String(Number(v))))
   const counts = values.reduce((acc, v) => {
     if (v) acc[v] = (acc[v] || 0) + 1
@@ -80,9 +102,11 @@ export function lineupEntryErrors({ lineup, players = [], events = [], team = nu
     if (!player && allowUnknown) {
       if (Number(value) < 1 || Number(value) > 99) errors[i] = LINEUP_ERRORS.invalidNumber
       else if (isDisqualified(events, team, value)) errors[i] = LINEUP_ERRORS.disqualified
+      else if (wasExpelledInSet(events, team, value, setIndex)) errors[i] = LINEUP_ERRORS.expelled
     } else if (!player) errors[i] = LINEUP_ERRORS.notOnRoster
     else if (isLiberoPlayer(player)) errors[i] = LINEUP_ERRORS.libero
     else if (isDisqualified(events, team, value)) errors[i] = LINEUP_ERRORS.disqualified
+    else if (wasExpelledInSet(events, team, value, setIndex)) errors[i] = LINEUP_ERRORS.expelled
     else if (wasExceptionallySubstituted(events, team, value)) errors[i] = LINEUP_ERRORS.exceptionallySubstituted
   })
   return errors
@@ -90,34 +114,26 @@ export function lineupEntryErrors({ lineup, players = [], events = [], team = nu
 
 /**
  * Roster players the scorer can still pick: not a libero, not already in
- * the line-up, not out of the game (disqualified, or substituted
- * exceptionally or because of a disqualification) and not expelled in this
- * set. Sorted by shirt number.
+ * the line-up, not out of the game (disqualified, or substituted because of
+ * a disqualification or exceptionally because of an injury) and not expelled
+ * in this set. Sorted by shirt number.
  */
 export function lineupCandidates({ players = [], lineup = [], events = [], team = null, setIndex = null }) {
   const taken = new Set((lineup || []).filter(v => !isBlank(v)).map(v => String(Number(v))))
   const evts = events || []
-  const subbedOut = (number, flag, inSet = false) => evts.some(e =>
+  const subbedOutDisqualified = (number) => evts.some(e =>
     e.type === 'substitution' &&
     e.payload?.team === team &&
     sameNumber(e.payload?.playerOut, number) &&
-    e.payload?.[flag] === true &&
-    (!inSet || e.setIndex === setIndex)
-  )
-  const sanctioned = (number, type, inSet = false) => evts.some(e =>
-    e.type === 'sanction' &&
-    e.payload?.team === team &&
-    sameNumber(e.payload?.playerNumber, number) &&
-    e.payload?.type === type &&
-    (!inSet || e.setIndex === setIndex)
+    e.payload?.isDisqualified === true
   )
   return (players || [])
     .filter(p => {
       if (isLiberoPlayer(p)) return false
       if (taken.has(String(Number(p.number)))) return false
-      if (subbedOut(p.number, 'isDisqualified') || subbedOut(p.number, 'isExceptional')) return false
-      if (setIndex && (subbedOut(p.number, 'isExpelled', true) || sanctioned(p.number, 'expulsion', true))) return false
-      if (sanctioned(p.number, 'disqualification')) return false
+      if (subbedOutDisqualified(p.number) || wasExceptionallySubstituted(evts, team, p.number)) return false
+      if (setIndex && wasExpelledInSet(evts, team, p.number, setIndex)) return false
+      if (isDisqualified(evts, team, p.number)) return false
       return true
     })
     .sort((a, b) => Number(a.number) - Number(b.number))

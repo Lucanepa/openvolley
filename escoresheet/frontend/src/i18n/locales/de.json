@@ -544,6 +544,7 @@
         "libero": "Libero nicht erlaubt",
         "disqualified": "Disqualifiziert",
         "exceptionallySubstituted": "Ausserordentlich ersetzt",
+        "expelled": "In diesem Satz ausgeschlossen",
         "saveFailed": "Speichern fehlgeschlagen",
         "invalidNumber": "1 bis 99"
       },
@@ -905,6 +906,7 @@
     },
     "confirmFailed": "Das wurde nicht gespeichert. Bitte das Matchblatt prüfen und erneut versuchen.",
     "storageFull": "Nicht gespeichert: Der Speicher dieses Geräts ist voll. Platz freigeben (alte Downloads oder andere Dateien löschen) und erneut tippen. Alles bisher Erfasste bleibt erhalten.",
+    "sentOffOnCourt": "#{{number}} ist ausgeschlossen oder disqualifiziert und noch auf dem Feld: zuerst die Auswechslung erfassen.",
     "storageLow": "Der Speicher dieses Geräts ist fast voll: noch {{mb}} MB für OpenVolley. Jetzt Platz freigeben (alte Downloads oder andere Dateien löschen): Ist er voll, kann nichts mehr erfasst werden.",
     "timeoutRequest": {
       "title": "Timeout — {{team}}",
