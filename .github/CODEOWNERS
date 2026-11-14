@@ -1,0 +1,16 @@
+# Who must review a change before it reaches main, once branch protection asks
+# for a review from Code Owners (Settings, Branches). These paths ship code to
+# users' machines without a signing step on the owner's computer:
+#   - the Scoop manifests: `scoop install` / `scoop update` run the installer
+#     they name, with administrator rights, straight from main;
+#   - the workflows and their scripts: they build every installer and release;
+#   - the publish and channel scripts and the keys they trust.
+
+/escoresheet/packaging/scoop/ @Lucanepa
+/escoresheet/packaging/ @Lucanepa
+/escoresheet/deploy/pkgs/ @Lucanepa
+/escoresheet/deploy/lib/ @Lucanepa
+/escoresheet/deploy/publish-pkgs.sh @Lucanepa
+/escoresheet/frontend/src-tauri/tauri.conf.json @Lucanepa
+/escoresheet/frontend/src-tauri/tauri.beach.conf.json @Lucanepa
+/.github/ @Lucanepa
