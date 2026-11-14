@@ -116,7 +116,7 @@ function ExportToDocuments({ t, exportFiles = exportNativeFilesToDocuments }) {
 }
 
 // Apps (desktop / Android): a backup file at every scoring event, no browser API.
-function NativeBackupRow({ backup, onRestoreFromFile, t }) {
+function NativeBackupRow({ backup, backupMatchId, onRestoreFromFile, t }) {
   const [saving, setSaving] = useState(false)
   const enabled = backup.autoBackupEnabled
   return (
@@ -177,14 +177,14 @@ function NativeBackupRow({ backup, onRestoreFromFile, t }) {
             {t('options.restoreFromBackupFile')}
           </button>
         )}
-        {backup.activeMatchId != null && (
+        {backupMatchId != null && (
           <button
             type="button"
             disabled={saving}
             aria-busy={saving || undefined}
             onClick={async () => {
               setSaving(true)
-              try { await backup.manualBackup() } finally { setSaving(false) }
+              try { await backup.manualBackup(backupMatchId) } finally { setSaving(false) }
             }}
             className={BTN_OUTLINE}
           >
@@ -279,11 +279,15 @@ export default function HomeOptionsModal({
   wakeLock,
   backup = null, // Optional backup props from useAutoBackup
   onRestoreFromFile = null, // Options > Backup > Restore from a backup file
+  // The match a backup saves: the open one, else the device's Continue match
+  // (App clears matchId on Home, so backup.activeMatchId alone is null there)
+  backupMatchId = null,
   dashboardServer = null, // Optional dashboard server props from useDashboardServer
   toolMode = null // { mode, locked, onChange }: Swiss / Global (utils/toolMode)
 }) {
   const { t } = useTranslation()
   const { showAlert } = useAlert()
+  const matchToBackUp = backup?.activeMatchId ?? backupMatchId ?? null
   const androidApp = isAndroidApp()
   const [clearCacheModal, setClearCacheModal] = useState(null) // { type: 'cache' | 'all' }
   const [copyFeedback, setCopyFeedback] = useState(null)
@@ -929,7 +933,7 @@ export default function HomeOptionsModal({
 
         {backup?.nativeMode && (
           <Section title={t('options.backup')}>
-            <NativeBackupRow backup={backup} onRestoreFromFile={onRestoreFromFile} t={t} />
+            <NativeBackupRow backup={backup} backupMatchId={matchToBackUp} onRestoreFromFile={onRestoreFromFile} t={t} />
           </Section>
         )}
 
@@ -1027,20 +1031,21 @@ export default function HomeOptionsModal({
                 </div>
               )}
 
-              {/* Nothing open (after Close match): the button did nothing and
-                  said nothing (UI tour 14.11); now it is off and says why */}
+              {/* No match on the device at all (after Close match): the button
+                  did nothing and said nothing (UI tour 14.11); now it is off
+                  and says why. A Continue match on Home is backed up. */}
               <div>
                 <button
                   type="button"
-                  onClick={() => backup.manualBackup()}
-                  disabled={backup.isBackingUp || backup.activeMatchId == null}
+                  onClick={() => backup.manualBackup(matchToBackUp)}
+                  disabled={backup.isBackingUp || matchToBackUp == null}
                   aria-busy={backup.isBackingUp || undefined}
-                  aria-describedby={backup.activeMatchId == null ? 'options-no-match-to-back-up' : undefined}
+                  aria-describedby={matchToBackUp == null ? 'options-no-match-to-back-up' : undefined}
                   className={BTN_OUTLINE}
                 >
                   {backup.isBackingUp ? t('options.backingUp') : t('options.downloadBackupNow')}
                 </button>
-                {backup.activeMatchId == null && (
+                {matchToBackUp == null && (
                   <p id="options-no-match-to-back-up" className="mt-1.5 text-[11px] leading-snug text-stone-500">
                     {t('options.noMatchToBackUp')}
                   </p>

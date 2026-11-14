@@ -119,6 +119,25 @@ describe('Options > Backup', () => {
     expect(screen.queryByText('options.noMatchToBackUp')).toBeNull()
   })
 
+  // Review 8a: App clears matchId on Home, so an unfinished match the device
+  // offers to Continue is backed up through backupMatchId, not refused.
+  it('browsers: on Home the Continue match is backed up', () => {
+    const manualBackup = vi.fn()
+    render(<HomeOptionsModal {...baseProps} backupMatchId={7} backup={{ nativeMode: false, hasFileSystemAccess: false, autoBackupEnabled: false, toggleAutoBackup: vi.fn(), activeMatchId: null, manualBackup }} />)
+    const button = screen.getByRole('button', { name: 'options.downloadBackupNow' })
+    expect(button).not.toBeDisabled()
+    expect(screen.queryByText('options.noMatchToBackUp')).toBeNull()
+    fireEvent.click(button)
+    expect(manualBackup).toHaveBeenCalledWith(7)
+  })
+
+  it('apps: on Home the Continue match can be saved now', () => {
+    const backup = nativeBackup({ activeMatchId: null })
+    render(<HomeOptionsModal {...baseProps} backup={backup} backupMatchId={9} />)
+    fireEvent.click(screen.getByRole('button', { name: 'options.saveBackupNow' }))
+    expect(backup.manualBackup).toHaveBeenCalledWith(9)
+  })
+
   // useAutoBackup downloads at the set end and the match end, and every few
   // minutes when the match changed; the list also named the set start and a
   // timeout, which never download

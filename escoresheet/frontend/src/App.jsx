@@ -4710,6 +4710,7 @@ export default function App() {
                 toggleWakeLock
               }}
               backup={backup}
+              backupMatchId={matchId || currentMatch?.id || null}
               onRestoreFromFile={restoreFromBackupFile}
               dashboardServer={isElectron ? {
                 enabled: dashboardServerEnabled,
