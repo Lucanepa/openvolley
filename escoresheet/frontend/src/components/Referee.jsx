@@ -3237,6 +3237,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             serveLabel={t('scoreboard.labels.serveLabel', 'SERVE')}
             vmin={vmin}
             scoreFont={getScoreFont()}
+            // the interval shows the sets won: say so (they read as points, UI tour 14.11)
+            caption={isInSetInterval ? t('scoreboard.labels.sets', 'SETS') : null}
           />
         </div>
 
