@@ -1479,6 +1479,7 @@
     "eventBasedNote": "Nota: Ogni download crea un nuovo file nella cartella Download",
     "lastBackup": "Ultimo backup",
     "downloadBackupNow": "Scarica backup ora",
+    "noMatchToBackUp": "Nessuna partita è aperta su questo dispositivo: non c'è nulla da salvare.",
     "backingUp": "Backup in corso...",
     "nativeBackupOn": "Attivo – ogni evento viene salvato in:",
     "nativeBackupOff": "Disattivo – non vengono scritti backup automatici.",

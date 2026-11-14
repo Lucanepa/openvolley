@@ -1017,16 +1017,24 @@ export default function HomeOptionsModal({
                 </div>
               )}
 
+              {/* Nothing open (after Close match): the button did nothing and
+                  said nothing (UI tour 14.11); now it is off and says why */}
               <div>
                 <button
                   type="button"
                   onClick={() => backup.manualBackup()}
-                  disabled={backup.isBackingUp}
+                  disabled={backup.isBackingUp || backup.activeMatchId == null}
                   aria-busy={backup.isBackingUp || undefined}
+                  aria-describedby={backup.activeMatchId == null ? 'options-no-match-to-back-up' : undefined}
                   className={BTN_OUTLINE}
                 >
                   {backup.isBackingUp ? t('options.backingUp') : t('options.downloadBackupNow')}
                 </button>
+                {backup.activeMatchId == null && (
+                  <p id="options-no-match-to-back-up" className="mt-1.5 text-[11px] leading-snug text-stone-500">
+                    {t('options.noMatchToBackUp')}
+                  </p>
+                )}
               </div>
             </Row>
           </Section>

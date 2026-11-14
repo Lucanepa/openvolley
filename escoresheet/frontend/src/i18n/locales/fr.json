@@ -1477,6 +1477,7 @@
     "eventBasedNote": "Note : Chaque téléchargement crée un nouveau fichier dans le dossier Téléchargements",
     "lastBackup": "Dernière sauvegarde",
     "downloadBackupNow": "Télécharger maintenant",
+    "noMatchToBackUp": "Aucun match n'est ouvert sur cet appareil : il n'y a rien à sauvegarder.",
     "backingUp": "Sauvegarde...",
     "nativeBackupOn": "Activée – chaque événement est enregistré dans :",
     "nativeBackupOff": "Désactivée – aucune sauvegarde automatique n’est écrite.",

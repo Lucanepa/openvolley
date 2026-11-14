@@ -1471,6 +1471,7 @@
     "eventBasedNote": "Hinweis: Jeder Download erstellt eine neue Datei im Download-Ordner",
     "lastBackup": "Letzte Sicherung",
     "downloadBackupNow": "Backup jetzt herunterladen",
+    "noMatchToBackUp": "Auf diesem Gerät ist kein Spiel offen: Es gibt nichts zu sichern.",
     "backingUp": "Sicherung läuft...",
     "nativeBackupOn": "Ein – jedes Ereignis wird gespeichert in:",
     "nativeBackupOff": "Aus – es werden keine automatischen Backups geschrieben.",

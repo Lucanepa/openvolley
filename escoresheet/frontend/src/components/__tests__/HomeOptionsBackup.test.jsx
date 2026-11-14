@@ -99,6 +99,26 @@ describe('Options > Backup', () => {
     expect(screen.queryByTestId('native-backup-folder')).toBeNull()
   })
 
+  // UI tour 14.11 (o40): after Close match, "Download backup now" started no
+  // download and said nothing (useAutoBackup has no match to back up). With
+  // no open match the button is off and the screen says why.
+  it('browsers: Download backup now with no open match is off and says why', () => {
+    const manualBackup = vi.fn()
+    render(<HomeOptionsModal {...baseProps} backup={{ nativeMode: false, hasFileSystemAccess: false, autoBackupEnabled: false, toggleAutoBackup: vi.fn(), activeMatchId: null, manualBackup }} />)
+    const button = screen.getByRole('button', { name: 'options.downloadBackupNow' })
+    expect(button).toBeDisabled()
+    expect(screen.getByText('options.noMatchToBackUp')).toBeInTheDocument()
+    expect(button).toHaveAttribute('aria-describedby', screen.getByText('options.noMatchToBackUp').id)
+  })
+
+  it('browsers: Download backup now with an open match downloads it', () => {
+    const manualBackup = vi.fn()
+    render(<HomeOptionsModal {...baseProps} backup={{ nativeMode: false, hasFileSystemAccess: false, autoBackupEnabled: false, toggleAutoBackup: vi.fn(), activeMatchId: 4, manualBackup }} />)
+    fireEvent.click(screen.getByRole('button', { name: 'options.downloadBackupNow' }))
+    expect(manualBackup).toHaveBeenCalled()
+    expect(screen.queryByText('options.noMatchToBackUp')).toBeNull()
+  })
+
   // useAutoBackup downloads at the set end and the match end, and every few
   // minutes when the match changed; the list also named the set start and a
   // timeout, which never download

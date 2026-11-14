@@ -1480,6 +1480,7 @@
     "eventBasedNote": "Note: Each download creates a new file in your Downloads folder",
     "lastBackup": "Last backup",
     "downloadBackupNow": "Download backup now",
+    "noMatchToBackUp": "No match is open on this device: there is nothing to back up.",
     "backingUp": "Backing up...",
     "nativeBackupOn": "On – every event is saved to:",
     "nativeBackupOff": "Off – no automatic backups are written.",

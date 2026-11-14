@@ -1478,6 +1478,7 @@
     "eventBasedNote": "Hiwiis: Jede Download erstellt e neui Datei im Download-Ordner",
     "lastBackup": "Letschti Sicherig",
     "downloadBackupNow": "Backup jetzt abelade",
+    "noMatchToBackUp": "Uf däm Grät isch kei Spiil offe: Es git nüt zum Sichere.",
     "backingUp": "Sicherig lauft...",
     "nativeBackupOn": "Aa – jedes Ereignis wird gspeicheret in:",
     "nativeBackupOff": "Us – es werded kei automatischi Backups gschribe.",
