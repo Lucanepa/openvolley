@@ -1,0 +1,117 @@
+name: Relay contract
+
+# A hall runs one of three relays: the cloud backend, the standalone
+# server.js (and the Electron app, the same core) and the relay inside the
+# desktop app (src-tauri/src/relay.rs, a separate port in Rust). This runs
+# the desktop app's Rust tests, builds its relay and runs the shared JS
+# contract against it as well: the protocol and the PIN-check budget
+# (lanRelayProtocol), room claims across a restart and the Origin rule
+# (lanRelayClaims), the private-field lists, by-game-number and the roster
+# upload (lanRelayData), and Sign on phone (lanRelaySign).
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'escoresheet/frontend/src-tauri/**'
+      - 'escoresheet/frontend/electron/**'
+      - 'escoresheet/frontend/lanRelayCore.js'
+      - 'escoresheet/frontend/server.js'
+      - 'escoresheet/frontend/vite-plugin-api-routes.js'
+      - 'escoresheet/frontend/shared/**'
+      - 'escoresheet/frontend/public/sign/**'
+      - 'escoresheet/frontend/src/utils/__tests__/lanRelay*.test.js'
+      - 'escoresheet/frontend/src/utils/__tests__/tauriRelay.js'
+      - 'escoresheet/backend/tests/helpers/*Contract.js'
+      - '.github/workflows/relay-contract.yml'
+  pull_request:
+    paths:
+      - 'escoresheet/frontend/src-tauri/**'
+      - 'escoresheet/frontend/electron/**'
+      - 'escoresheet/frontend/lanRelayCore.js'
+      - 'escoresheet/frontend/server.js'
+      - 'escoresheet/frontend/vite-plugin-api-routes.js'
+      - 'escoresheet/frontend/shared/**'
+      - 'escoresheet/frontend/public/sign/**'
+      - 'escoresheet/frontend/src/utils/__tests__/lanRelay*.test.js'
+      - 'escoresheet/frontend/src/utils/__tests__/tauriRelay.js'
+      - 'escoresheet/backend/tests/helpers/*Contract.js'
+      - '.github/workflows/relay-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: relay-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tauri-relay:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      # The Tauri crate links WebKitGTK even for --server-only (as desktop.yml)
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: escoresheet/frontend/package-lock.json
+
+      # rustup of the runner image, the toolchain of desktop.yml
+      - name: Install Rust toolchain
+        shell: bash
+        env:
+          RUST_TOOLCHAIN: '1.96.0'
+        run: |
+          set -euo pipefail
+          command -v rustup >/dev/null || { echo "::error::no rustup on this runner image"; exit 1; }
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --no-self-update
+          rustup default "$RUST_TOOLCHAIN"
+          rustc --version
+
+      - name: Install frontend dependencies
+        working-directory: escoresheet/frontend
+        run: npm ci
+
+      # The relay embeds dist/ (relay.rs Assets). The contract needs only the
+      # phone page of Sign on phone, so no web build: a stub start page and
+      # public/sign as the build would copy it.
+      - name: Stub dist for the relay
+        working-directory: escoresheet/frontend
+        run: |
+          mkdir -p dist
+          cp -r public/sign dist/
+          printf '<!doctype html><title>OpenVolley relay test</title>\n' > dist/index.html
+
+      - name: Rust tests
+        working-directory: escoresheet/frontend/src-tauri
+        run: cargo test --locked
+
+      - name: Build the relay
+        working-directory: escoresheet/frontend/src-tauri
+        run: cargo build --locked
+
+      - name: Shared contract against every relay
+        working-directory: escoresheet/frontend
+        env:
+          OV_TAURI_RELAY_BIN: ${{ github.workspace }}/escoresheet/frontend/src-tauri/target/debug/openvolley-escoresheet
+        run: >-
+          npx vitest run
+          src/utils/__tests__/lanRelayProtocol.test.js
+          src/utils/__tests__/lanRelayClaims.test.js
+          src/utils/__tests__/lanRelayData.test.js
+          src/utils/__tests__/lanRelaySign.test.js
