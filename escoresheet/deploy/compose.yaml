@@ -302,7 +302,13 @@ services:
     depends_on:
       ov-postgres:
         condition: service_healthy
-    networks: [ov-edge, ov-internal]
+    networks:
+      ov-edge:
+        # fixed too: with an automatic address the backend, which starts
+        # first (the tunnel waits for it), took .2 and the tunnel then failed
+        # with "Address already in use"
+        ipv4_address: 172.30.250.3
+      ov-internal: {}
     logging: *logging
     labels:
       traefik.enable: "false"
