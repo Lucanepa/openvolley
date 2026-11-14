@@ -46,6 +46,16 @@ describe('public match info: roles and numbers only', () => {
   })
 })
 
+describe('real status words', () => {
+  it('a final / ended match is finished in the API, and A / B know which team is home', () => {
+    assert.equal(publicMatchInfo({ ...row, status: 'final' }).status, 'finished')
+    const l = publicLive({ external_id: 'm', match_status: 'ended', home_team: { name: 'VBC Home' }, team_a_name: 'VBC Away', team_b_name: 'VBC Home' })
+    assert.equal(l.status, 'finished')
+    assert.equal(l.homeIs, 'B')
+    assert.equal(publicLive({ external_id: 'm', team_a_name: 'X', team_b_name: 'Y', home_team: { name: 'X' } }).homeIs, 'A')
+  })
+})
+
 describe('livescore snapshot', () => {
   const live = publicLive({
     external_id: 'match_1', match_status: 'live', current_set: 2, best_of: 5, sets_won_a: 1, sets_won_b: 0, points_a: 10, points_b: 8,

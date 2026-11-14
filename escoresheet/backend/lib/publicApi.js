@@ -106,7 +106,12 @@ export function publicBench(raw) {
   return out
 }
 
-const STATUS = new Set(['setup', 'scheduled', 'live', 'finished', 'ended'])
+// What the database calls a finished match: matches.status 'final' (older rows 'ended'), live row 'ended'
+const FINISHED_DB = ['final', 'ended', 'finished']
+const isFinished = (v) => FINISHED_DB.includes(v)
+// The API's own words: setup, scheduled, live, finished
+const STATUS = new Set(['setup', 'scheduled', 'live', 'finished'])
+const normStatus = (v) => (isFinished(v) ? 'finished' : (v || null))
 
 export function publicMatchInfo(row, { withRosters = true } = {}) {
   const info = isObj(jsonOf(row.match_info)) ? jsonOf(row.match_info) : {}
@@ -118,7 +123,7 @@ export function publicMatchInfo(row, { withRosters = true } = {}) {
     id: row.external_id,
     sport: row.sport_type || 'indoor',
     gameNumber: row.game_n ?? null,
-    status: STATUS.has(row.status) ? row.status : (row.status || null),
+    status: normStatus(row.status),
     scheduledAt: iso(row.scheduled_at),
     league: str(info.league),
     venue: { hall: str(info.hall), city: str(info.city) },
@@ -151,6 +156,13 @@ const lineupNumbers = (l) => {
   }
   return Object.keys(out).length ? out : null
 }
+
+function homeSide(row) {
+  const home = str(isObj(jsonOf(row.home_team)) ? jsonOf(row.home_team).name : null)
+  if (home && str(row.team_b_name) === home && str(row.team_a_name) !== home) return 'B'
+  return 'A'
+}
+
 /**
  * The livescore snapshot: scores, sets, time-outs, from match_live_state (+ the
  * match row). The PIN-only columns are dropped first, whatever reads them below.
@@ -161,7 +173,7 @@ export function publicLive(input) {
   const sets = jsonOf(row.set_results)
   return {
     id: row.external_id,
-    status: row.match_status || row.status || null,
+    status: normStatus(row.match_status || row.status),
     sport: row.sport_type || 'indoor',
     currentSet: num(row.current_set),
     bestOf: num(row.best_of),
@@ -173,6 +185,8 @@ export function publicLive(input) {
       A: { name: str(row.team_a_name) || 'A', shortName: str(row.team_a_short), color: str(row.team_a_color, 20), timeouts: num(row.timeouts_a), challenges: num(row.challenges_used_a) },
       B: { name: str(row.team_b_name) || 'B', shortName: str(row.team_b_short), color: str(row.team_b_color, 20), timeouts: num(row.timeouts_b), challenges: num(row.challenges_used_b) }
     },
+    // the scoresheet's A / B are not always home / away: homeIs says which one is the home team
+    homeIs: homeSide(row),
     sideA: str(row.side_a, 10),
     serving: str(row.serving_team, 10),
     serverNumber: num(row.server_number),
@@ -274,7 +288,7 @@ export function buildStats(match, events, sets) {
 
   return {
     id: match.external_id,
-    status: match.status || null,
+    status: normStatus(match.status),
     result: match.final_score ? { score: String(match.final_score).slice(0, 20), winner: str(match.winner, 10) } : null,
     home: team(jsonOf(match.sport_type === 'beach' ? match.team1_data : match.home_team), 'Home').name,
     away: team(jsonOf(match.sport_type === 'beach' ? match.team2_data : match.away_team), 'Away').name,
@@ -301,6 +315,7 @@ const STATS_CACHE_MAX = 100
 const ok = (body, headers = {}) => ({ status: 200, body, headers })
 const fail = (status, error) => ({ status, body: { error } , headers: { 'Cache-Control': 'no-store' } })
 const MISSING = new Set(['42P01', '42703'])
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export function createPublicApi({ pool, logger = console } = {}) {
   const statsCache = new Map() // `${id}|${updated_at}` -> body
@@ -322,7 +337,7 @@ export function createPublicApi({ pool, logger = console } = {}) {
     return rows[0] || null
   }
 
-  async function list({ from, to, status, limit }) {
+  async function list({ from, to, status, limit, teams = null, club = null }) {
     return guarded('list', async () => {
       const lim = Math.min(Math.max(Number(limit) || 50, 1), 200)
       const now = Date.now()
@@ -334,17 +349,38 @@ export function createPublicApi({ pool, logger = console } = {}) {
       if (status) {
         const list = String(status).split(',').map((s) => s.trim()).filter((s) => STATUS.has(s))
         if (!list.length) return fail(400, 'unknown status')
-        args.push(list)
+        args.push(list.flatMap((x) => (x === 'finished' ? FINISHED_DB : [x])))
         statusSql = ` AND m.status = ANY($${args.length})`
+      }
+      // one club's matches: its team names (the club API) or a club id (the public ?club=)
+      let names = Array.isArray(teams) ? teams : null
+      if (!names && club) {
+        if (!UUID_RE.test(club)) return fail(400, 'bad club id')
+        names = (await pool.query('SELECT team_name FROM public.club_teams WHERE club_id = $1', [club])).rows.map((r) => r.team_name)
+      }
+      let clubSql = ''
+      if (names) {
+        if (!names.length) return ok({ matches: [] }, { 'Cache-Control': 'public, max-age=15' })
+        args.push(names)
+        clubSql = ` AND (m.home_team->>'name' = ANY($${args.length}) OR m.away_team->>'name' = ANY($${args.length}))`
       }
       args.push(lim)
       const { rows } = await pool.query(
         `SELECT ${LIST_COLUMNS} FROM public.matches m
           WHERE coalesce(m.test, false) = false AND m.external_id IS NOT NULL
-            AND m.scheduled_at >= $1 AND m.scheduled_at < $2${statusSql}
+            AND m.scheduled_at >= $1 AND m.scheduled_at < $2${statusSql}${clubSql}
           ORDER BY m.scheduled_at, m.game_n LIMIT $${args.length}`, args)
       return ok({ matches: rows.map((r) => publicMatchInfo(r, { withRosters: false })) }, { 'Cache-Control': 'public, max-age=15' })
     })
+  }
+
+  /** Is one of `names` playing in match `id`? (the club API's check before it serves a match) */
+  async function involves(id, names) {
+    if (!MATCH_ID_RE.test(id) || !names?.length) return false
+    const { rows } = await pool.query(
+      `SELECT 1 FROM public.matches m WHERE m.external_id = $1 AND coalesce(m.test, false) = false
+          AND (m.home_team->>'name' = ANY($2) OR m.away_team->>'name' = ANY($2))`, [id, names])
+    return rows.length > 0
   }
 
   async function info(id) {
@@ -382,7 +418,7 @@ export function createPublicApi({ pool, logger = console } = {}) {
       if (!MATCH_ID_RE.test(id)) return fail(400, 'bad match id')
       const m = await matchRow(id)
       if (!m) return fail(404, 'match not found')
-      if (!['finished', 'ended'].includes(m.status)) return fail(409, 'statistics are published when the match is finished')
+      if (!isFinished(m.status)) return fail(409, 'statistics are published when the match is finished')
       const cacheKey = m.closed_at ? `${id}|${iso(m.updated_at)}` : null
       const cached = cacheKey && statsCache.get(cacheKey)
       // an open match can still be corrected: proxies keep it 30 s, not 5 min
@@ -403,7 +439,7 @@ export function createPublicApi({ pool, logger = console } = {}) {
     })
   }
 
-  return { list, info, live, liveSnapshot, stats }
+  return { list, info, live, liveSnapshot, stats, involves }
 }
 
 /**
@@ -512,5 +548,5 @@ export function createLiveStreams({
 
 /** `?from`, `?to`, `?status`, `?limit` from a URL. */
 export const listParams = (u) => ({
-  from: u.searchParams.get('from'), to: u.searchParams.get('to'), status: u.searchParams.get('status'), limit: u.searchParams.get('limit')
+  from: u.searchParams.get('from'), to: u.searchParams.get('to'), status: u.searchParams.get('status'), limit: u.searchParams.get('limit'), club: u.searchParams.get('club')
 })
