@@ -1626,7 +1626,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         // match's own key (utils/globalCloud); it stays on the device if that fails
         // (not awaited: its retries must not hold the approval)
         exportMatchData(matchId).catch(() => null)
-          .then((backupData) => uploadGlobalFinal({ match, pdfBlob: pdfResult?.blob || null, backupData }))
+          .then((backupData) => uploadGlobalFinal({ match, matchId, pdfBlob: pdfResult?.blob || null, backupData }))
           .then((sent) => { if (!sent.ok) showAlert(t('matchEnd.globalNotStored', 'The scoresheet could not be saved online. It stays on this device: download the PDF now.'), 'warning') })
       } else if (pdfResult) mailTestScoresheet(pdfResult)
 

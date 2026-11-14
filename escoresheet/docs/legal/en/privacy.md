@@ -401,8 +401,11 @@ file: teams, rosters with names, shirt numbers and dates of birth, officials,
 signatures, the course of the match) and, once the match is approved, the
 scoresheet as a PDF. They lie under a random backup code (128 bits) that the
 app creates for the match and shows in Match Setup. The code is the only way
-to the files: there is no list and no search. Whoever knows it can restore the
-match, so keep it like a password. A new backup replaces the previous one. The
+to the files: there is no list and no search. The backup is encrypted like
+every backup file of the app (without the PINs in it): it opens only with the
+referee PIN of the match, or with the league's recovery key, which it keeps
+offline. Whoever knows the code and that PIN can restore the match, so keep
+both like a password. A new backup replaces the previous one. The
 files are deleted 180 days after the last change; the server backups
 (section 18) keep a copy for a while longer. The organiser of the tournament is
 responsible for being allowed to record the data and for informing the players

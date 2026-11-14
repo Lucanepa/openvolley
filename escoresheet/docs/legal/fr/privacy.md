@@ -464,8 +464,12 @@ officiels, signatures, déroulement du match) et, une fois le match validé, la
 feuille de match en PDF. Ils sont rangés sous un code de sauvegarde aléatoire
 (128 bits) que l'application crée pour le match et affiche dans la
 préparation du match. Le code est le seul accès aux fichiers : il n'y a ni
-liste ni recherche. Qui le connaît peut restaurer le match ; conservez-le donc
-comme un mot de passe. Une nouvelle sauvegarde remplace la précédente. Les
+liste ni recherche. La sauvegarde est chiffrée comme tout fichier de
+sauvegarde de l'application (sans les PIN) : elle ne s'ouvre qu'avec le PIN
+arbitre du match ou avec la clé de récupération de la fédération, que
+celle-ci conserve hors ligne. Qui connaît le code et ce PIN peut restaurer le
+match ; conservez-les donc comme un mot de passe. Une nouvelle sauvegarde
+remplace la précédente. Les
 fichiers sont supprimés 180 jours après la dernière modification ; les
 sauvegardes du serveur (section 18) en gardent encore une copie quelque temps.
 L'organisatrice ou l'organisateur du tournoi est responsable d'avoir le droit

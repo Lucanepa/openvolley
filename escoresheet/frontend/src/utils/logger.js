@@ -575,7 +575,7 @@ export function resetLoggerForTests() {
  */
 export async function uploadBackupToCloud(matchId, backupData) {
   // A Global match has no account: its own store, by the match's key
-  if (backupData?.match?.global === true) return uploadGlobalBackup(backupData)
+  if (backupData?.match?.global === true) return uploadGlobalBackup(backupData, matchId)
   // Cloud storage needs an account: nothing to send while signed out
   if (!hasStoredSession()) return null
   const gameN = backupData?.match?.gameN || backupData?.match?.game_n || 1

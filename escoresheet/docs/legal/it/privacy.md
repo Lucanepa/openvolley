@@ -436,8 +436,11 @@ ufficiali di gara, firme, andamento della partita) e, una volta approvata la
 partita, il referto in PDF. Si trovano sotto un codice di backup casuale
 (128 bit) che l'app crea per la partita e mostra nella preparazione della
 partita. Il codice è l'unico accesso ai file: non esistono né un elenco né una
-ricerca. Chi lo conosce può ripristinare la partita; lo conservi quindi come
-una password. Un nuovo backup sostituisce il precedente. I file vengono
+ricerca. Il backup è cifrato come ogni file di backup dell'app (senza i PIN):
+si apre solo con il PIN arbitro della partita o con la chiave di recupero
+della federazione, che questa conserva offline. Chi conosce il codice e questo
+PIN può ripristinare la partita; li conservi quindi come una password. Un
+nuovo backup sostituisce il precedente. I file vengono
 cancellati 180 giorni dopo l'ultima modifica; i backup del server (sezione 18)
 ne conservano ancora una copia per un certo tempo. L'organizzatrice o
 l'organizzatore del torneo è responsabile di poter registrare i dati e di

@@ -79,7 +79,7 @@ import {
 } from './constants/testSeeds'
 import { apiFrom, apiMatchRestoreByPin, writingDevice } from './lib/apiClient'
 import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
-import { fetchMatchByPin, fetchMatchToContinue, importMatchFromSupabase, cloudBestOf, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, matchBackupFromFile, restoreErrorText, localLossOnReplace, restoreLossText, RESTORE_LOSES_LOCAL, continueWithLocalCopy } from './utils/backupManager'
+import { fetchMatchByPin, fetchMatchToContinue, importMatchFromSupabase, cloudBestOf, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, matchBackupFromFile, parseBackupText, restoreErrorText, localLossOnReplace, restoreLossText, RESTORE_LOSES_LOCAL, continueWithLocalCopy } from './utils/backupManager'
 import UpdateBanner from './components/UpdateBanner'
 import DesktopUpdateNotice from './components/DesktopUpdateNotice'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from './utils/matchFormat'
@@ -4288,7 +4288,7 @@ export default function App() {
                   {!offlineMode && globalTool && (
                     <div className="mb-6 flex flex-col" data-testid="restore-global">
                       <h3 className="text-sm font-semibold text-stone-800">{t('restoreGlobal.title', 'Restore from the online backup')}</h3>
-                      <p className="mt-1 mb-3 text-xs text-stone-500">{t('restoreGlobal.desc', 'Enter the backup code of the match (Match Setup, Backups).')}</p>
+                      <p className="mt-1 mb-3 text-xs text-stone-500">{t('restoreGlobal.desc', 'Enter the backup code of the match (Match Setup, Backups). The app then asks for its referee PIN.')}</p>
                       <input
                         type="text"
                         value={globalRestoreCode}
@@ -4309,7 +4309,11 @@ export default function App() {
                           try {
                             const text = await loadGlobal(globalRestoreCode, 'backup')
                             if (!text) { setRestoreError(t('restoreGlobal.notFound', 'No backup found for this code.')); return }
-                            setRestorePreviewData({ data: JSON.parse(text), source: 'cloud', backupName: 'global' })
+                            // a backup file like any other (utils/backupFile): an
+                            // encrypted one asks for the match's referee PIN first
+                            const data = await unlockBackup(matchBackupFromFile(parseBackupText(text)))
+                            if (!data) return // cancelled
+                            setRestorePreviewData({ data, source: 'cloud', backupName: 'global' })
                           } catch (err) {
                             setRestoreError(restoreErrorText(err, t))
                           } finally {

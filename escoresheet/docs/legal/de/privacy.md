@@ -446,8 +446,11 @@ Offizielle, Unterschriften, Spielverlauf) und, sobald das Spiel freigegeben
 ist, der Spielbericht als PDF. Sie liegen unter einem zufälligen Sicherungscode
 (128 Bit), den die App für das Spiel erzeugt und im Match-Setup anzeigt. Der
 Code ist der einzige Weg zu den Dateien: Es gibt keine Liste und keine Suche.
-Wer ihn kennt, kann das Spiel wiederherstellen; bewahren Sie ihn daher wie ein
-Passwort auf. Eine neue Sicherung ersetzt die vorherige. Die Dateien werden
+Die Sicherung ist wie jede Sicherungsdatei der App verschlüsselt (ohne die PINs
+darin): Sie öffnet sich nur mit der Schiedsrichter-PIN des Spiels oder mit dem
+Wiederherstellungsschlüssel des Verbands, den dieser offline aufbewahrt. Wer
+den Code und diese PIN kennt, kann das Spiel wiederherstellen; bewahren Sie
+beide daher wie ein Passwort auf. Eine neue Sicherung ersetzt die vorherige. Die Dateien werden
 180 Tage nach der letzten Änderung gelöscht; die Serversicherungen
 (Abschnitt 18) behalten noch eine Weile eine Kopie. Die Turnierveranstalterin
 oder der Turnierveranstalter ist dafür verantwortlich, dass die Daten erfasst

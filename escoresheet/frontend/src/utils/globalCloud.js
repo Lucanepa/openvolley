@@ -78,22 +78,49 @@ export const peekGlobalMatch = (matchId) => globalIds.get(matchId)
 export const markGlobalMatch = (matchId, isGlobal = true) => { globalIds.set(matchId, isGlobal) }
 export const forgetGlobalMatchIds = () => globalIds.clear()
 
+/**
+ * The backup file of a Global match as every other backup file is written
+ * (utils/backupFile, the cloud copy's options): no PINs or session ids in the
+ * clear, encrypted so the match's referee PIN (or the league's recovery key)
+ * opens it; the connection PINs ride inside the encryption for a restore on
+ * another device. Throws when it cannot be sealed: never stored in the clear.
+ */
+async function globalBackupText(matchId, backupData) {
+  const { backupFileText } = await import('./backupFile')
+  return backupFileText(matchId ?? backupData?.match?.id, backupData, new Date(), { keepConnectionPins: true })
+}
+
 /** The every-action / set-end backup of a Global match (the newest copy replaces the last). */
-export async function uploadGlobalBackup(backupData) {
+export async function uploadGlobalBackup(backupData, matchId = null) {
   const m = backupData?.match
   if (m?.global !== true || !isGlobalKey(m.globalKey)) return null
-  const r = await saveGlobal(m.globalKey, 'backup', JSON.stringify(backupData), 'application/json')
+  let text
+  try {
+    text = await globalBackupText(matchId, backupData)
+  } catch (err) {
+    console.warn('[Global] Backup not sealed, not stored:', err?.message)
+    return null
+  }
+  const r = await saveGlobal(m.globalKey, 'backup', text, 'application/json')
   if (!r.ok && r.reason !== 'offline') console.warn('[Global] Backup not stored:', r.reason)
   return r.ok ? `global/${m.globalKey}/backup` : null
 }
 
 /** The closed match: its PDF and its final backup, retried a few times (never queued: nothing of a Global match goes through the sync queue). */
-export async function uploadGlobalFinal({ match, pdfBlob, backupData }, { retries = 3, waitMs = 4000 } = {}) {
+export async function uploadGlobalFinal({ match, matchId = null, pdfBlob, backupData }, { retries = 3, waitMs = 4000 } = {}) {
   if (match?.global !== true || !isGlobalKey(match.globalKey)) return { ok: false, reason: 'not-global' }
   const jobs = []
+  let allOk = true
   if (pdfBlob) jobs.push(['scoresheet-final', pdfBlob, 'application/pdf'])
-  if (backupData) jobs.push(['backup', JSON.stringify(backupData), 'application/json'])
-  let allOk = jobs.length > 0
+  if (backupData) {
+    try {
+      jobs.push(['backup', await globalBackupText(matchId ?? match.id, backupData), 'application/json'])
+    } catch (err) {
+      console.warn('[Global] Final backup not sealed, not stored:', err?.message)
+      allOk = false
+    }
+  }
+  allOk = allOk && jobs.length > 0
   for (const [kind, body, type] of jobs) {
     let r
     for (let i = 0; i <= retries; i++) {
