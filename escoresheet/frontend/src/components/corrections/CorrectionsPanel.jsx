@@ -151,7 +151,7 @@ export default function CorrectionsPanel({
       setBusy(true)
       try {
         const res = await applyCorrectionPlan(plan, { matchId, db, mode, hooks })
-        if (plan.followUp?.awardPointTo) await hooks.addPoint?.(plan.followUp.awardPointTo)
+        if (plan.followUp?.awardPointTo) await hooks.addPoint?.(plan.followUp.awardPointTo, { penaltySeq: plan.followUp.penaltySeq ?? null })
         if (res.signaturesCleared) setSignaturesCleared(true)
         await hooks.afterApply?.(res, plan)
         toast.success(plan.log?.text || tr(t, 'corrections.saved', 'Correction saved'))

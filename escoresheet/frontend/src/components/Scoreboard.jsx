@@ -19932,7 +19932,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 canUndo,
                 undo: () => { setShowManualPanel(false); showUndoConfirm() },
                 wrongTeam: () => { setShowManualPanel(false); handleReplay() },
-                addPoint: (team) => handlePoint(mapTeamKeyToSide(team), true),
+                addPoint: (team, { penaltySeq = null } = {}) => handlePoint(mapTeamKeyToSide(team), true, { penaltySeq }),
                 openTimeout: (team) => { setShowManualPanel(false); handleTimeout(mapTeamKeyToSide(team)) },
                 openManualLineup: (team) => { setShowManualPanel(false); openManualLineup(team) },
                 reopenSet: (set) => { setShowManualPanel(false); setReopenSetConfirm({ setId: set.id, setIndex: set.index }) },

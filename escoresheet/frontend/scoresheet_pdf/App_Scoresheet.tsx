@@ -306,14 +306,15 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
 
     // Identify points scored due to sanctions
     // Get all events (including sanctions) sorted chronologically
+    const compareSeqTs = (a: any, b: any) => {
+      const aSeq = a.seq || 0;
+      const bSeq = b.seq || 0;
+      if (aSeq !== 0 || bSeq !== 0) return aSeq - bSeq;
+      return new Date(a.ts).getTime() - new Date(b.ts).getTime();
+    };
     const allEventsWithSanctions = setEvents
       .filter(e => e.type === 'point' || e.type === 'sanction')
-      .sort((a, b) => {
-        const aSeq = a.seq || 0;
-        const bSeq = b.seq || 0;
-        if (aSeq !== 0 || bSeq !== 0) return aSeq - bSeq;
-        return new Date(a.ts).getTime() - new Date(b.ts).getTime();
-      });
+      .sort(compareSeqTs);
 
     // Track which points should be circled due to sanctions
     // For each sanction that awards a point (penalty, expulsion, disqualification, delay_penalty),
@@ -339,7 +340,21 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
 
         // Penalty and delay penalty give the opponent a point (domain/sanctions.awardsPoint);
         // warnings, expulsions and disqualifications do not
-        if (sanctionAwardsPoint(sanctionType)) {
+        // The point written for the penalty carries its seq (penaltySeq,
+        // domain/sanctions penaltyOfPoint): that point is circled, wherever
+        // it is; none when a going back cancelled it (domain/rectify)
+        const linked = sanctionAwardsPoint(sanctionType)
+          ? setEvents.find(x => (x.type === 'point' || x.type === 'cancelled_point') &&
+            x.payload?.penaltySeq != null && x.payload.penaltySeq === event.seq && x.payload?.team === opponentTeam)
+          : undefined;
+        if (linked) {
+          if (linked.type === 'point') {
+            const n = allEventsWithSanctions.filter(x => x.type === 'point' && x.payload?.team === opponentTeam &&
+              (x === linked || compareSeqTs(x, linked) < 0)).length;
+            const circled = opponentTeam === 'home' ? homeCircledPoints : awayCircledPoints;
+            if (!circled.includes(n)) circled.push(n);
+          }
+        } else if (sanctionAwardsPoint(sanctionType)) {
           // Find the next point event scored by the opponent after this sanction
           // We need to calculate what the score will be when that point is scored
           let futureHomeCount = homePointCount;

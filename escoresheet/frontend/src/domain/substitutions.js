@@ -16,6 +16,8 @@
  * corrections holes the audit flagged.
  */
 
+import { isSentOff, substituteInIllegalReason } from './interruptionRequests'
+
 /** Substitutions already recorded for a team in a set. */
 export function getSetSubstitutions(events, teamKey, setIndex) {
   return (events || []).filter(e =>
@@ -61,10 +63,17 @@ export function classifySubstitutionRequest(events, teamKey, setIndex, request =
 }
 
 /**
- * Validate a proposed substitution against the set's history.
+ * Validate a proposed substitution against the set's history: the rules of
+ * the live check (interruptionRequests substituteInIllegalReason and
+ * isSentOff) as far as the history alone tells them. Whether a rally was
+ * completed since the player went out depends on where the entry is added
+ * and is not checked here.
+ * @param {{maxPerSet?: number, allEvents?: Array}} [opts] allEvents: the whole
+ *   log when `events` leaves some rows out (exceptional substitutions), for
+ *   who was sent off
  * @returns {{legal: boolean, reason?: string}}
  */
-export function validateManualSubstitution(events, teamKey, setIndex, playerOut, playerIn, { maxPerSet = MAX_SUBSTITUTIONS_PER_SET } = {}) {
+export function validateManualSubstitution(events, teamKey, setIndex, playerOut, playerIn, { maxPerSet = MAX_SUBSTITUTIONS_PER_SET, allEvents = null } = {}) {
   const out = Number(playerOut)
   const inn = Number(playerIn)
   if (!out || !inn) return { legal: false, reason: 'Select both the player going out and the player coming in.' }
@@ -86,6 +95,15 @@ export function validateManualSubstitution(events, teamKey, setIndex, playerOut,
   const cameOnAs = subs.find(s => Number(s.payload?.playerIn) === out)
   if (cameOnAs && Number(cameOnAs.payload?.playerOut) !== inn) {
     return { legal: false, reason: `#${out} came on for #${cameOnAs.payload?.playerOut}; only that player may return for him.` }
+  }
+  // Disqualified, expelled this set or replaced exceptionally: not back (FIVB 15.7, 15.8)
+  if (isSentOff(allEvents || events, teamKey, inn, setIndex)) {
+    return { legal: false, reason: `#${inn} was expelled, disqualified or replaced exceptionally; he may not come back.` }
+  }
+  // A starter who went out comes back only for his own substitute (FIVB 15.6.1)
+  const exit = subs.filter(s => Number(s.payload?.playerOut) === inn).pop()
+  if (exit && substituteInIllegalReason(events, setIndex, teamKey, out, inn) === 'wrong_partner') {
+    return { legal: false, reason: `#${inn} went out for #${exit?.payload?.playerIn}; he may come back only for him.` }
   }
 
   return { legal: true }

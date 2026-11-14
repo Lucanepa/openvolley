@@ -52,17 +52,28 @@ export function planDecisionChangeReversal(decisionEvent, events) {
   const existingIds = new Set(all.map(e => e.id))
   const deleteEventIds = [decisionEvent.id, ...(p.createdSubEventIds || []).filter(id => existingIds.has(id))]
   const deleted = new Set(deleteEventIds)
-  const restoreEvents = (p.removedSubEvents || []).filter(e => e && !existingIds.has(e.id))
+  // the old team's rows were N.x sub-rows of the point: put back under the
+  // point's seq now (a correction since may have renumbered it)
+  const base = Math.floor(point.seq || 0)
+  const restoreEvents = (p.removedSubEvents || []).filter(e => e && !existingIds.has(e.id)).map(e => {
+    const frac = Math.round(((e.seq || 0) - Math.floor(e.seq || 0)) * 1000) / 1000
+    const seq = Math.round((base + frac) * 1000) / 1000
+    return seq === e.seq && e.setIndex === point.setIndex ? e : { ...e, seq, setIndex: point.setIndex }
+  })
+  // a penalty link the point carries now follows the renumbering (recompute)
+  const pointPayload = point.payload?.penaltySeq != null && p.pointPayloadBefore.penaltySeq != null
+    ? { ...p.pointPayloadBefore, penaltySeq: point.payload.penaltySeq }
+    : p.pointPayloadBefore
 
   const setIndex = point.setIndex
   const after = all
     .filter(e => !deleted.has(e.id))
-    .map(e => (e.id === point.id ? { ...e, payload: p.pointPayloadBefore } : e))
+    .map(e => (e.id === point.id ? { ...e, payload: pointPayload } : e))
     .concat(restoreEvents)
 
   return {
     pointEventId: point.id,
-    pointPayload: p.pointPayloadBefore,
+    pointPayload,
     setIndex,
     deleteEventIds,
     restoreEvents,

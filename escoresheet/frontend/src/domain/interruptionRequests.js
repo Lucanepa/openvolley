@@ -7,7 +7,8 @@
  *
  * Terms (spec 2026-11-09, table B):
  *  - Completed rally: a `point` event of the set. A penalty point (delay
- *    penalty, misconduct penalty) is one too (CB 4.23, 4.25).
+ *    penalty, misconduct penalty) is one too (CB 4.23, 4.25), and so are a
+ *    point a going back cancelled and the going back itself.
  *  - Interruption: everything after the set's latest point (R15: "the time
  *    between one completed rally and the 1st referee's whistle for the next
  *    service"). A rally that was started and then replayed does NOT end it:
@@ -48,11 +49,19 @@ export function isForcedSubstitution(request) {
   return !!(p?.isInjury || p?.isExpelled || p?.isDisqualified || p?.isExceptional)
 }
 
-/** The seq of the set's latest completed rally (a point, penalty points too), or -Infinity. */
+// A going back (domain/rectify) ends the interruption too: the rallies it
+// cancelled (cancelled_point) were played, and its head stands for the
+// rallies it took out ('both') and for the score it set
+const ENDS_INTERRUPTION = new Set(['point', 'cancelled_point', 'rectification'])
+
+/**
+ * The seq of the set's latest completed rally (a point, penalty points too;
+ * a point a going back cancelled, and the going back itself), or -Infinity.
+ */
 export function lastCompletedRallySeq(events, setIndex) {
   let last = -Infinity
   for (const e of events || []) {
-    if (e?.type === 'point' && setOf(e) === setIndex && seqOf(e) > last) last = seqOf(e)
+    if (ENDS_INTERRUPTION.has(e?.type) && setOf(e) === setIndex && seqOf(e) > last) last = seqOf(e)
   }
   return last
 }
