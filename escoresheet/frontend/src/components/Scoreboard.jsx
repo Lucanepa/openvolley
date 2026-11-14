@@ -61,7 +61,7 @@ import { resolveSanction, deriveTeamSanctionFlags, deferredPenaltyPoints, penalt
 import { REQUEST_ISSUES, isReplayPending, substitutionRequestIssues, timeoutRequestIssues, requestBlockReason, entryWithoutCompletedRally, substitutionRequestThisInterruption, substitutionIllegalReason, classifyLiveSubstitution, lateRequestOutcome, decisionChangeTakeBack, decisionTakeBackTextKey } from '../domain/interruptionRequests'
 import RequestWarningDialog, { RequestOptionRow } from './scoreboard/RequestWarningDialog.jsx'
 import { classifyTimeoutRequest } from '../domain/timeouts'
-import { rallyStatusOf, currentSetOf } from '../domain/rally'
+import { rallyStatusOf, currentSetOf, isBookkeepingEvent, isFirstRallyOf, startingLineupsIn } from '../domain/rally'
 import { useConfirmAction } from '../hooks/useConfirmAction'
 import { useRallyTapGuard } from '../hooks/useRallyTapGuard'
 import RallyTapNotice, { RALLY_TAP_NOTICE_MS } from './scoreboard/RallyTapNotice'
@@ -141,6 +141,18 @@ const settleTap = (promise) => {
   Promise.resolve(promise).catch((err) => {
     if (!isReportedActionError(err)) console.error('[action] tap failed', err)
   })
+}
+
+// The deciding set's inline setup: the left team it shows is its saved
+// choice, else (a match restored in the break without it, an older match)
+// the sides set 4 ended on, as the court draws them (getSideAForSet). 'A' in
+// its place moved the teams on "Switch sides" or on Confirm when A was on
+// the left in set 4.
+const set5SetupLeftTeam = (match) => getLeftTeamLabelForSet(5, { ...(match || {}), set5CourtSwitched: false })
+// Its first server: the saved choice, else the one the court shows (getFirstServeForSet)
+const set5SetupFirstServe = (match) => {
+  if (match?.set5FirstServe === 'A' || match?.set5FirstServe === 'B') return match.set5FirstServe
+  return getFirstServeForSet(5, match || {}) === (match?.coinTossTeamA || 'home') ? 'A' : 'B'
 }
 
 // A sub-event (N.x) the scoreboard writes itself, not through logEvent: the
@@ -3427,7 +3439,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     !!data?.set && isReplayPending(data?.events, data.set.index)
   ), [data?.events, data?.set])
 
-  // Check if the last event was a point (can replay rally)
+  // Check if the last event was a point (can replay rally). A remark or a
+  // bench injury recorded since does not count (domain/rally isBookkeepingEvent)
   const canReplayRally = useMemo(() => {
     if (!data?.events || !data?.set || data.events.length === 0) {
       return false
@@ -3435,7 +3448,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Get events for current set only and sort by sequence number (most recent first)
     const currentSetEvents = data.events
-      .filter(e => e.setIndex === data.set.index)
+      .filter(e => e.setIndex === data.set.index && !isBookkeepingEvent(e))
       .sort((a, b) => {
         const aSeq = a.seq || 0
         const bSeq = b.seq || 0
@@ -3485,12 +3498,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   ), [canReplayRally, data?.events, data?.set])
   const canChangeDecision = canReplayRally || !!decisionTakeBack
 
+  // "Start set" vs "Start rally": the set's first rally is not started yet
+  // (no set_start, no rally_start: domain/rally isFirstRallyOf). A penalty
+  // point before the first serve does not end it
   const isFirstRally = useMemo(() => {
     if (!data?.events || !data?.set) return true
-    // Check if there are any points in the current set
-    // This determines if we show "Start set" vs "Start rally"
-    const hasPoints = data.events.some(e => e.type === 'point' && e.setIndex === data.set.index)
-    return !hasPoints
+    return isFirstRallyOf(data.events, data.set.index)
   }, [data?.events, data?.set])
 
   // The coach and captain signatures still missing before the first serve of
@@ -4963,6 +4976,51 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     [data?.set, runAction, matchId, getNextSeq, getNextSubSeq, captureFullStateSnapshot, syncToReferee, syncLiveStateToSupabase]
   )
 
+  // The remarks box's text, saved as one action: the match remarks (read
+  // inside it, not from the screen) and a 'remark' event with the lines
+  // added. Saved on blur and again on close, one after the other. A failure
+  // is shown and keeps the dialog open with the text typed: it was an
+  // unhandled rejection with no message, and closing cleared the text (the
+  // reason of a match stoppage was lost, and the match ended without it)
+  const remarksSaveRef = useRef(null)
+  const saveRemarks = useCallback((text) => {
+    const save = () => runAction(null, async () => {
+      const oldRemarks = (await db.matches.get(matchId))?.remarks || ''
+      const newRemarks = (text || '').trim()
+      if (newRemarks === oldRemarks) return
+      await db.matches.update(matchId, { remarks: newRemarks })
+      // Log remark insertion as an event if new text was added
+      if (!data?.set || !newRemarks) return
+      const oldLines = oldRemarks.split('\n')
+      // Find what was added (new lines that weren't in old)
+      const addedLines = newRemarks.split('\n').filter((line, idx) => {
+        // If old remarks is empty, all new lines are added
+        if (!oldRemarks) return line.trim()
+        // Check if this line is new (not in old remarks)
+        return idx >= oldLines.length || line !== oldLines[idx]
+      }).filter(line => line.trim())
+      if (addedLines.length > 0) {
+        await logEvent('remark', { text: addedLines.join('\n'), fullRemarks: newRemarks })
+      }
+    }).catch((err) => {
+      console.error('[remarks] not saved', err)
+      showAlert(t(isStorageFullError(err) ? 'scoreboard.storageFull' : 'scoreboard.confirmFailed'), 'error')
+      throw err
+    })
+    const run = (remarksSaveRef.current || Promise.resolve()).catch(() => {}).then(save)
+    remarksSaveRef.current = run
+    return run
+  }, [runAction, matchId, data?.set, logEvent, showAlert, t])
+  const closeRemarks = useCallback(async () => {
+    try {
+      await saveRemarks(remarksText)
+    } catch {
+      return
+    }
+    setShowRemarks(false)
+    setRemarksText('')
+  }, [saveRemarks, remarksText])
+
   // The database part of logEvent; inside a transaction only (Dexie awaits only)
   async function logEventTx(type, payload = {}, options = {}) {
     const _t0 = performance.now()
@@ -5017,6 +5075,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       seq: nextSeq // Use sequence for ordering
     })
     console.log(`[PERF] After db.events.add: +${(performance.now() - _t0).toFixed(0)}ms`)
+
+    // Rows the event writes with it (a side-out point: the rotation and an
+    // automatic libero exit, handlePoint), before its snapshot and cloud job
+    // below are taken from the events: they describe the state after them
+    if (options.beforeSnapshot) await options.beforeSnapshot(nextSeq)
 
     // Lightweight events (rally_start, replay) skip snapshot and sync queue for speed
     const lightweightEvents = ['rally_start', 'replay']
@@ -5740,33 +5803,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       const scoringTeamHadServe = serveBeforePoint === teamKey
 
-      // Update score and log point FIRST (using fresh set ID)
-      await db.sets.update(freshCurrentSet.id, {
-        [field]: newPoints
-      })
-      // A penalty's point names its sanction: Undo takes the two back together
-      const pointPayload = { team: teamKey, score: { home: homePoints, away: awayPoints }, ...(penaltySeq != null ? { penaltySeq } : {}) }
-      const pointSeq = await logEvent('point', pointPayload, { setIndexOverride: setIndex })
+      // A side-out: the scoring team rotates (FIVB 7.6.1), and a libero who
+      // would go to the front row goes out. Written as the point's sub-events
+      // (N.x) right after its row and BEFORE its state snapshot and cloud job
+      // are taken (logEventTx beforeSnapshot): built after them, every
+      // side-out point was stored and synced with the line-up before the
+      // rotation and the old position I as server. Same transaction: the
+      // point never shows without its rotation
+      const writeSideOutRows = async (pointSeq) => {
+        if (scoringTeamHadServe) return
 
-      // Debug log: point awarded
-      debugLogger.log('POINT_AWARDED', {
-        team: teamKey,
-        side,
-        newScore: { home: homePoints, away: awayPoints },
-        serveBeforePoint,
-        scoringTeamHadServe,
-        setIndex: setIndex,
-        pointSeq
-      }, getStateSnapshot())
-
-      // Track when point was awarded (for accidental rally start check)
-      lastPointAwardedTimeRef.current = Date.now()
-      // Reset rally start time since rally ended
-      rallyStartTimeRef.current = null
-
-      // If scoring team didn't have serve, they rotate their lineup AFTER the point
-      // (same transaction: the point never shows without its rotation)
-      if (!scoringTeamHadServe) {
         // Query database directly for the most recent lineup (data.events might be stale)
         const allLineupEvents = await db.events
           .where('matchId')
@@ -6067,6 +6113,30 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
       }
 
+      // Update score and log point FIRST (using fresh set ID)
+      await db.sets.update(freshCurrentSet.id, {
+        [field]: newPoints
+      })
+      // A penalty's point names its sanction: Undo takes the two back together
+      const pointPayload = { team: teamKey, score: { home: homePoints, away: awayPoints }, ...(penaltySeq != null ? { penaltySeq } : {}) }
+      const pointSeq = await logEvent('point', pointPayload, { setIndexOverride: setIndex, beforeSnapshot: writeSideOutRows })
+
+      // Debug log: point awarded
+      debugLogger.log('POINT_AWARDED', {
+        team: teamKey,
+        side,
+        newScore: { home: homePoints, away: awayPoints },
+        serveBeforePoint,
+        scoringTeamHadServe,
+        setIndex: setIndex,
+        pointSeq
+      }, getStateSnapshot())
+
+      // Track when point was awarded (for accidental rally start check)
+      lastPointAwardedTimeRef.current = Date.now()
+      // Reset rally start time since rally ended
+      rallyStartTimeRef.current = null
+
       // After point is logged, the scoring team (teamKey) now has serve
       // So the OTHER team is receiving - check if they had a libero exit
       // Note: We use teamKey directly instead of getCurrentServe() because the event
@@ -6154,9 +6224,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // line-up dialog finds them, deferredPenaltyPoints): one action, each point
   // awarded as any point is (handlePoint): score, event with its snapshot,
   // cloud jobs and, when it gives the receiving team the service, its
-  // rotation (FIVB 7.6.1), as the immediate penalty point does.
-  const awardOwedPenaltyPoints = useCallback((teams) => runAction('penaltyPoints', async () => {
-    for (const team of teams) await handlePoint(mapTeamKeyToSide(team), true)
+  // rotation (FIVB 7.6.1), as the immediate penalty point does. Each point
+  // names its sanction (penaltySeq): Undo takes the two back together (it
+  // took the point only, and the penalty stayed without its point)
+  const awardOwedPenaltyPoints = useCallback((owed) => runAction('penaltyPoints', async () => {
+    for (const { team, penaltySeq } of owed) await handlePoint(mapTeamKeyToSide(team), true, { penaltySeq })
   }), [runAction, handlePoint, mapTeamKeyToSide])
 
   // Only the literal true skips the accidental rally start check (its own
@@ -6214,8 +6286,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
     }
 
-    // If this is the first rally, show set start time confirmation
-    if (isFirstRally) {
+    // If this is the first rally, show set start time confirmation. Read
+    // from the database, as the gates below: the screen can be behind
+    const eventsNow = await db.events.where('matchId').equals(matchId).toArray()
+    const setIndexNow = playedSet?.index ?? data?.set?.index
+    if (isFirstRallyOf(eventsNow, setIndexNow)) {
+      // Both starting line-ups first (an Easy match excepted). Start set is
+      // disabled without them, but Enter (keyboard scoring) came here
+      // directly and started the set with no line-up
+      if (data?.match?.easy !== true && !startingLineupsIn(eventsNow, setIndexNow)) {
+        deferUi(() => showAlert(t('scoreboard.lineupsNeeded'), 'warning'))
+        return
+      }
       // The match's first serve waits for the coach and captain signatures of
       // both teams (domain/preMatchSignatures). Read from the row: one signed
       // a moment ago is there before this screen's data has it.
@@ -6275,7 +6357,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       clearTimeout(recentSubFlashTimeoutRef.current)
     }
     deferUi(() => setRecentlySubstitutedPlayers([]))
-  }), [logEvent, isFirstRally, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, data?.match, matchId, getNextSubSeq, syncToReferee, checkAccidentalRallyStart, accidentalRallyStartDuration, runAction, deferUi, readRallyStatus, showAlert, t])
+  }), [logEvent, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, data?.match, matchId, getNextSubSeq, syncToReferee, checkAccidentalRallyStart, accidentalRallyStartDuration, runAction, deferUi, readRallyStatus, showAlert, t])
 
   // A tap on the rally buttons (Start rally, Point A | Point B), on every
   // layout, with its click event: none that is the end of the tap before it
@@ -6382,8 +6464,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
     // After point: show confirmation modal to undo point
     if (rallyStatus === 'idle' && canReplayRally && data?.events) {
-      // Find the last event by sequence number (highest seq)
-      const allEvents = [...data.events].sort((a, b) => {
+      // Find the last event by sequence number (highest seq), past a remark
+      // or a bench injury recorded since (as canReplayRally)
+      const allEvents = data.events.filter(e => !isBookkeepingEvent(e)).sort((a, b) => {
         const aSeq = a.seq || 0
         const bSeq = b.seq || 0
         if (aSeq !== 0 || bSeq !== 0) {
@@ -6537,6 +6620,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // dialog closing appear together
   const confirmSetStartTime = useCallback((time) => runAction('setStart', async () => {
     if (!setStartTimeModal || !data?.set) return
+    // The same gate as Start set (handleStartRally), against the database:
+    // the set started already (a second set_start), or a line-up is missing
+    const eventsNow = await db.events.where('matchId').equals(matchId).toArray()
+    if (!isFirstRallyOf(eventsNow, data.set.index)) {
+      deferUi(() => setSetStartTimeModal(null))
+      return
+    }
+    if (data.match?.easy !== true && !startingLineupsIn(eventsNow, data.set.index)) {
+      deferUi(() => {
+        setSetStartTimeModal(null)
+        showAlert(t('scoreboard.lineupsNeeded'), 'warning')
+      })
+      return
+    }
 
     // Check if the confirmed time differs from the expected time
     // Compare only hours and minutes since the modal only shows time, not date
@@ -6629,7 +6726,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (timeDifferent && !fromSchedule) {
       deferUi(() => setShowRemarks(true))
     }
-  }), [setStartTimeModal, data?.set, data?.match?.scheduledAt, data?.match?.test, matchId, onTriggerEventBackup, syncToReferee, syncLiveStateToSupabase, runAction, deferUi, deferEffect])
+  }), [setStartTimeModal, data?.set, data?.match, matchId, onTriggerEventBackup, syncToReferee, syncLiveStateToSupabase, runAction, deferUi, deferEffect, showAlert, t])
 
   // Confirm set end time
   const confirmSetEndTime = useCallback(async (time) => {
@@ -6647,6 +6744,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
 
     const { setIndex, winner, homePoints, awayPoints } = setEndTimeModal
+    // Shown again when the set end could not be saved (catch below)
+    const modalAtConfirm = setEndTimeModal
     // A set lost by forfeit (team incomplete for the set) keeps that reason on
     // its set_end, so a reopen can find and reverse the forfeit
     const setEndReason = setEndTimeModal.reason ||
@@ -6721,9 +6820,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Get start time from current set
       const startTime = data.set.startTime
 
-      // STEP 3: Log set_end event to local DB
+      // STEP 3: Log set_end event to local DB. Once: a set end confirmed
+      // again after a failed write (catch below) can find it written already
       console.log('[SET_END_DEBUG] STEP 3: Logging set_end event...')
-      await logEvent('set_end', {
+      const setEndWritten = (await db.events.where('matchId').equals(matchId).toArray())
+        .some(e => e.type === 'set_end' && e.setIndex === setIndex)
+      if (!setEndWritten) await logEvent('set_end', {
         team: winner,
         teamLabel: winnerLabel,
         setIndex: setIndex,
@@ -7247,11 +7349,30 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       console.error('[SET_END] CRITICAL ERROR in confirmSetEndTime:', error)
       console.error('[SET_END] Error stack:', error.stack)
 
-      // Show user-friendly error message
-      showAlert(t('scoreboard.errors.setEndFailed', 'Set end failed. Data saved locally.'), 'error')
-
       // Ensure cleanup happens
       cleanup('uncaught exception: ' + error.message)
+
+      // The set row not finished: the set end was not saved. The set is no
+      // longer marked confirmed and its dialog comes back, so it can be
+      // confirmed again. Left marked, the set stayed won and open until a
+      // reload: points and rallies refused, the dialog ignored as "already
+      // confirmed", under "Data saved locally."
+      let setEnded = false
+      try {
+        const rows = (await db.sets.where('matchId').equals(matchId).toArray()).filter(s => s.index === setIndex)
+        setEnded = rows.length > 0 && rows.every(s => s.finished)
+      } catch (readError) {
+        console.error('[SET_END] Could not read the set after the failure:', readError)
+      }
+      if (!setEnded) {
+        confirmedSetEndRef.current.delete(setIndex)
+        setSetEndTimeModal(modalAtConfirm)
+        showAlert(t(isStorageFullError(error) ? 'scoreboard.storageFull' : 'scoreboard.setEndNotSaved'), 'error')
+        return
+      }
+
+      // Show user-friendly error message
+      showAlert(t('scoreboard.errors.setEndFailed', 'Set end failed. Data saved locally.'), 'error')
 
       // Don't re-throw - the match can continue from local data
     }
@@ -7282,8 +7403,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       deferUi(() => setSet5SideServiceModal(null))
     }
 
-    const teamAKey = data.match.coinTossTeamA || 'home'
-    const teamBKey = data.match.coinTossTeamB || 'away'
+    // Inline: the choice is the match row's, read here (a Switch tapped just
+    // before is in it), not the screen's
+    const freshMatch = (await db.matches.get(matchId)) || data.match
+    if (inlineMode) {
+      leftTeam = set5SetupLeftTeam(freshMatch)
+      firstServe = set5SetupFirstServe(freshMatch)
+    }
+
+    const teamAKey = freshMatch.coinTossTeamA || 'home'
+    const teamBKey = freshMatch.coinTossTeamB || 'away'
 
     // Determine which team (home/away) is on the left
     const leftTeamKey = leftTeam === 'A' ? teamAKey : teamBKey
@@ -7295,7 +7424,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // (and write the confirmed choice when the match has none: restored in the
     // break without it, the court showed set 4's sides, now pinned)
     // For modal mode, update the database now
-    if (inlineMode && (data.match.set5LeftTeam !== leftTeam || data.match.set5FirstServe !== firstServe)) {
+    if (inlineMode && (freshMatch.set5LeftTeam !== leftTeam || freshMatch.set5FirstServe !== firstServe)) {
       await db.matches.update(matchId, { set5LeftTeam: leftTeam, set5FirstServe: firstServe })
     }
     if (!inlineMode) {
@@ -8436,9 +8565,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
 
   const handleTimeout = useCallback(
-    (side, { acknowledged = [] } = {}) => {
+    async (side, { acknowledged = [] } = {}) => {
       cLogger.logHandler('handleTimeout', { side })
       if (!data?.set) return
+      // Not while a rally is in play, from any entry: the TO counters are
+      // gated on screen, but the corrections panel's live time-out and the
+      // phone layout came here directly and wrote a time-out after the
+      // rally_start (the rally ended on the scorer). Read from the database,
+      // as a point tap is: the screen can be behind
+      if (rallyStatus === 'in_play' || await readRallyStatus() === 'in_play') {
+        showAlert(t('scoreboard.timeoutRallyInPlay'), 'warning')
+        return
+      }
       const teamKey = mapSideToTeamKey(side)
       // Set interval, replay pending (blocked), a request after a delay
       // warning (15.2.4) and the 3rd time-out (15.11.1.4: the improper-request
@@ -8465,7 +8603,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         ...(prev?.started ? { running: prev } : prev?.running ? { running: prev.running } : {})
       }))
     },
-    [mapSideToTeamKey, data?.events, data?.set, rallyStatus, openRequestWarning, isBetweenSets, betweenSetsCountdown]
+    [mapSideToTeamKey, data?.events, data?.set, rallyStatus, readRallyStatus, showAlert, t, openRequestWarning, isBetweenSets, betweenSetsCountdown]
   )
 
   // The scorer's answer in the request warning. Cancel and the sanctions
@@ -8516,6 +8654,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const anchor = countdownAnchor(0)
     deferUi(() => setTimeoutModal({ ...request, started: true, startedAt: new Date(startTimestamp).toISOString(), anchor }))
 
+    // A rally started since the request dialog opened (another device's
+    // tap synced in, or a key): no time-out under it. Applied after the
+    // close above, in the same change
+    if (await readRallyStatus() === 'in_play') {
+      deferUi(() => {
+        // a running time-out the request would have replaced runs on
+        setTimeoutModal(timeoutModal.running || null)
+        showAlert(t('scoreboard.timeoutRallyInPlay'), 'warning')
+      })
+      return
+    }
+
     try {
       await logEvent('timeout', { team: request.team })
     } catch (err) {
@@ -8545,7 +8695,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Trigger event backup for Safari/Firefox (after the commit)
     deferEffect({ run: () => onTriggerEventBackup?.('timeout') })
-  })), [runTimeoutConfirm, timeoutModal, logEvent, sendActionToReferee, onTriggerEventBackup, showAlert, t, runAction, deferUi, deferEffect])
+  })), [runTimeoutConfirm, timeoutModal, logEvent, sendActionToReferee, onTriggerEventBackup, showAlert, t, runAction, deferUi, deferEffect, readRallyStatus])
 
   const cancelTimeout = useCallback(() => {
     // Only cancel if timeout hasn't started yet
@@ -13270,9 +13420,41 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     })
   }), [runAction, deferUi, rallyStatus, mapSideToTeamKey, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set, data?.homePlayers, data?.awayPlayers, matchId, logEvent, isLiberoUnable])
 
-  // Keyboard shortcuts handler
+  // The key for the binding being edited in the keyboard shortcuts dialog:
+  // captured only while it is edited and the dialog is open (as in Options,
+  // HomeOptionsModal). Added on the click and removed only by the next key,
+  // it outlived a closed dialog and swallowed the next key of the match,
+  // which became that binding, also another action's key: refused now
+  // (Enter confirms and starts the rally, the two may share it)
   useEffect(() => {
-    if (!keybindingsEnabled) return
+    if (!editingKey || !keybindingsModalOpen) return undefined
+    const handleKeyCapture = (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.key === 'Escape') {
+        setEditingKey(null)
+        return
+      }
+      const shared = (a, b) => (a === 'confirm' && b === 'startRally') || (a === 'startRally' && b === 'confirm')
+      const other = Object.keys(keyBindings).find(k => k !== editingKey && !shared(k, editingKey) && keyBindings[k] === e.key)
+      if (other) {
+        showAlert(t('options.keyInUse', { key: e.key === ' ' ? 'Space' : e.key, action: t(`options.keybindingLabels.${other}`, other) }), 'warning')
+        return
+      }
+      const newBindings = { ...keyBindings, [editingKey]: e.key }
+      setKeyBindings(newBindings)
+      localStorage.setItem('keyBindings', JSON.stringify(newBindings))
+      setEditingKey(null)
+    }
+    window.addEventListener('keydown', handleKeyCapture, true)
+    return () => window.removeEventListener('keydown', handleKeyCapture, true)
+  }, [editingKey, keybindingsModalOpen, keyBindings, showAlert, t])
+
+  // Keyboard shortcuts handler. None on the "Scoresheet already open"
+  // screen: the tab stays mounted under it, and Enter and A scored there
+  // while another tab was the scoring one
+  useEffect(() => {
+    if (!keybindingsEnabled || duplicateTabError) return
 
     const handleKeyDown = (e) => {
       // Don't handle if editing key bindings
@@ -13438,7 +13620,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [
-    keybindingsEnabled, keyBindings, editingKey, showOptionsInMenu, keybindingsModalOpen,
+    keybindingsEnabled, duplicateTabError, keyBindings, editingKey, showOptionsInMenu, keybindingsModalOpen,
     rallyStatus, handleStartRally, handlePoint, handleTimeout, handleExchangeLibero, handleUndo, canUndo, showUndoConfirm,
     playerActionMenu, benchPlayerActionMenu, liberoDropdown, liberoInDropdown, sanctionDropdown, substitutionDropdown,
     timeoutModal, lineupModal, menuModal,
@@ -13770,32 +13952,30 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
   }
 
-  // The deciding set's inline setup (desktop centre column, phone layout)
-  // The left team the setup shows: its saved choice, else (a match restored
-  // in the break without it, an older match) the sides set 4 ended on, as the
-  // court draws them (getSideAForSet). 'A' in its place moved the teams on
-  // "Switch sides" or on Confirm when A was on the left in set 4.
-  const set5SetupLeftTeam = (match) => getLeftTeamLabelForSet(5, { ...(match || {}), set5CourtSwitched: false })
-  // Its first server: the saved choice, else the one the court shows (getFirstServeForSet)
-  const set5SetupFirstServe = (match) => {
-    if (match?.set5FirstServe === 'A' || match?.set5FirstServe === 'B') return match.set5FirstServe
-    return getFirstServeForSet(5, match || {}) === (match?.coinTossTeamA || 'home') ? 'A' : 'B'
-  }
-  const set5SwitchSides = async () => {
-    const newLeftTeam = set5SetupLeftTeam(data?.match) === 'A' ? 'B' : 'A'
+  // The deciding set's inline setup (desktop centre column, phone layout).
+  // Switch sides, Switch serve and Confirm are scorer actions that read the
+  // match row inside their transaction (set5SetupLeftTeam / FirstServe):
+  // computed from the screen's match, a Switch tapped just before Confirm on
+  // a slow tablet was lost, or the row and the synced set5_coin_toss event
+  // (the server's only record of set 5's first server) disagreed
+  const set5SwitchSides = () => settleTap(runAction('set5Switch', async () => {
+    const duringInterval = !!betweenSetsCountdown || !intervalEndedByHandRef.current
+    const newLeftTeam = set5SetupLeftTeam(await db.matches.get(matchId)) === 'A' ? 'B' : 'A'
     await db.matches.update(matchId, { set5LeftTeam: newLeftTeam })
-    syncSet5Setup({ duringInterval: !!betweenSetsCountdown || !intervalEndedByHandRef.current })
-  }
-  const set5SwitchServe = async () => {
-    const newFirstServe = set5SetupFirstServe(data?.match) === 'A' ? 'B' : 'A'
+    deferEffect({ run: () => syncSet5Setup({ duringInterval }) })
+  }))
+  const set5SwitchServe = () => settleTap(runAction('set5Switch', async () => {
+    const duringInterval = !!betweenSetsCountdown || !intervalEndedByHandRef.current
+    const newFirstServe = set5SetupFirstServe(await db.matches.get(matchId)) === 'A' ? 'B' : 'A'
     await db.matches.update(matchId, { set5FirstServe: newFirstServe })
-    syncSet5Setup({ duringInterval: !!betweenSetsCountdown || !intervalEndedByHandRef.current })
-  }
+    deferEffect({ run: () => syncSet5Setup({ duringInterval }) })
+  }))
   const set5ConfirmSetup = async () => {
     // Ends the interval here and on the tablets, with the confirmed sides /
     // serve: the action tells the tablets itself, after its commit
-    // (ScoreboardSet5SetupOneChange)
-    await confirmSet5SideService(set5SetupLeftTeam(data?.match), set5SetupFirstServe(data?.match), true)
+    // (ScoreboardSet5SetupOneChange). The sides and serve are read from the
+    // match row inside it (inline mode)
+    await confirmSet5SideService(null, null, true)
   }
 
   // Preview, print or save the scoresheet in its own window (the toolbar's
@@ -20001,10 +20181,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         <Modal
           title={t('scoreboard.modals.remarksRecording')}
           open={true}
-          onClose={() => {
-            setShowRemarks(false)
-            setRemarksText('')
-          }}
+          onClose={closeRemarks}
           width={600}
         >
           <div>
@@ -20017,38 +20194,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 onChange={e => {
                   setRemarksText(e.target.value)
                 }}
-                onBlur={async () => {
+                onBlur={() => {
                   // When user finishes editing, save and log as event
-                  const oldRemarks = data?.match?.remarks || ''
-                  const newRemarks = remarksText.trim()
-
-                  if (newRemarks !== oldRemarks) {
-                    // Save the new remarks
-                    await db.matches.update(matchId, { remarks: newRemarks })
-
-                    // Log remark insertion as an event if new text was added
-                    if (data?.set && newRemarks) {
-                      // Get the added text (what's new compared to old)
-                      const oldLines = oldRemarks.split('\n')
-                      const newLines = newRemarks.split('\n')
-
-                      // Find what was added (new lines that weren't in old)
-                      const addedLines = newLines.filter((line, idx) => {
-                        // If old remarks is empty, all new lines are added
-                        if (!oldRemarks) return line.trim()
-                        // Check if this line is new (not in old remarks)
-                        return idx >= oldLines.length || line !== oldLines[idx]
-                      }).filter(line => line.trim())
-
-                      if (addedLines.length > 0) {
-                        const addedText = addedLines.join('\n')
-                        await logEvent('remark', {
-                          text: addedText,
-                          fullRemarks: newRemarks
-                        })
-                      }
-                    }
-                  }
+                  // (a failure is shown by saveRemarks, the text stays)
+                  saveRemarks(remarksText).catch(() => {})
                 }}
                 className="w-full min-h-[300px] px-3 py-2 rounded-lg border border-stone-300 bg-white text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-slate-900/20 focus:border-slate-900/40 resize-y"
               />
@@ -20366,17 +20515,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           // Optional game captain chosen in the modal (FIVB 5.2), written the
           // same way as the scoreboard's "Game captain" prompt
           // (domain/lineupEntry.js lineupGameCaptainDecision)
-          // One action: the remembered captain and the designation event
-          // commit together (a failure saves neither and says so)
+          // Part of the line-up action (runSave): the remembered captain and
+          // the designation event commit with the line-up. A failure is not
+          // caught here: the whole save rolls back and the dialog says so
+          // (saveFailed). Caught, the line-up and the captain's match row
+          // were stored without the designation event, and nothing was shown
           if (gameCaptain && matchId) {
-            try {
-              await runAction('gameCaptain', async () => {
-                if (Object.keys(gameCaptain.matchUpdate).length) await db.matches.update(matchId, gameCaptain.matchUpdate)
-                if (gameCaptain.event) await logEvent('court_captain_designation', gameCaptain.event)
-              })
-            } catch (err) {
-              console.error('[LineupModal] game captain not saved', err)
-            }
+            await runAction('gameCaptain', async () => {
+              if (Object.keys(gameCaptain.matchUpdate).length) await db.matches.update(matchId, gameCaptain.matchUpdate)
+              if (gameCaptain.event) await logEvent('court_captain_designation', gameCaptain.event)
+            })
           }
           // Check if captain is on court after lineup is saved
           // Use timeout to allow data to update from database (increased to 300ms for reliability)
@@ -21537,39 +21685,40 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <SbMenuItem
                   tone="danger"
                   icon={SB_INJURY_ICON}
-                  onClick={async () => {
-                    // For bench player injury, add a remark with time, set, score (team first), team, number
-                    try {
-                      const setIndex = data?.set?.index || 1
-                      const teamLabel = team === teamAKey ? 'A' : 'B'
-                      const teamScore = team === 'home' ? (data?.set?.homePoints || 0) : (data?.set?.awayPoints || 0)
-                      const opponentScore = team === 'home' ? (data?.set?.awayPoints || 0) : (data?.set?.homePoints || 0)
-                      // "Set 3, 14:28, B 15:5, #4 injured (bench)": the sheet's remark convention (owner 2026-10-07)
-                      const remark = eventRemark({ set: displaySetNumber(setIndex, data?.match?.bestOf), team: teamLabel, teamScore, oppScore: opponentScore, text: `#${playerNumber} injured (bench)` })
-                      const currentRemarks = data?.match?.remarks || ''
-                      const newRemarks = currentRemarks ? `${currentRemarks}\n${remark}` : remark
-                      await db.matches.update(matchId, { remarks: newRemarks })
+                  onClick={() => settleTap(runAction('benchInjury', async () => {
+                    // For bench player injury, add a remark with time, set, score (team first), team, number.
+                    // One keyed action: a double tap writes it once, and a
+                    // failed write is shown (onActionFailed) with nothing of
+                    // it stored (the remark line used to stay without its
+                    // event, silently). Read inside it, not from the screen.
+                    const set = currentSetOf(await db.sets.where('matchId').equals(matchId).toArray())
+                    if (!set) return
+                    const setIndex = set.index
+                    const teamLabel = team === teamAKey ? 'A' : 'B'
+                    const teamScore = team === 'home' ? (set.homePoints || 0) : (set.awayPoints || 0)
+                    const opponentScore = team === 'home' ? (set.awayPoints || 0) : (set.homePoints || 0)
+                    // "Set 3, 14:28, B 15:5, #4 injured (bench)": the sheet's remark convention (owner 2026-10-07)
+                    const remark = eventRemark({ set: displaySetNumber(setIndex, data?.match?.bestOf), team: teamLabel, teamScore, oppScore: opponentScore, text: `#${playerNumber} injured (bench)` })
+                    const currentRemarks = (await db.matches.get(matchId))?.remarks || ''
+                    const newRemarks = currentRemarks ? `${currentRemarks}\n${remark}` : remark
+                    await db.matches.update(matchId, { remarks: newRemarks })
 
-                      // Log as event so we can track and show red cross. It
-                      // carries its remark line (autoRemark), as every entry
-                      // that writes one: Undo takes the line out with it, a
-                      // correction or a renumbered player rewrites it
-                      if (logEventRef.current) {
-                        await logEventRef.current('bench_injury', {
-                          team,
-                          playerNumber,
-                          setIndex,
-                          autoRemark: remark
-                        })
-                      }
+                    // Log as event so we can track and show red cross. It
+                    // carries its remark line (autoRemark), as every entry
+                    // that writes one: Undo takes the line out with it, a
+                    // correction or a renumbered player rewrites it
+                    await logEventTx('bench_injury', {
+                      team,
+                      playerNumber,
+                      setIndex,
+                      autoRemark: remark
+                    }, { setIndexOverride: setIndex })
 
+                    deferUi(() => {
                       setBenchPlayerActionMenu(null)
                       showAlert(t('scoreboard.benchInjuryRecorded', { number: playerNumber }), 'success')
-                    } catch (err) {
-                      console.error('Failed to record bench injury:', err)
-                      setBenchPlayerActionMenu(null)
-                    }
-                  }}
+                    })
+                  }))}
                 >
                   {t('corrections.reasonLabel.injury')}
                 </SbMenuItem>
@@ -21808,28 +21957,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   <div style={{ fontSize: '11px', color: 'var(--muted)' }}>{t(descKey, description)}</div>
                 </div>
                 <button
-                  onClick={() => {
-                    if (editingKey === key) {
-                      setEditingKey(null)
-                    } else {
-                      setEditingKey(key)
-                      // Listen for next keypress
-                      const handleKeyCapture = (e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        if (e.key === 'Escape') {
-                          setEditingKey(null)
-                        } else {
-                          const newBindings = { ...keyBindings, [key]: e.key }
-                          setKeyBindings(newBindings)
-                          localStorage.setItem('keyBindings', JSON.stringify(newBindings))
-                          setEditingKey(null)
-                        }
-                        window.removeEventListener('keydown', handleKeyCapture, true)
-                      }
-                      window.addEventListener('keydown', handleKeyCapture, true)
-                    }
-                  }}
+                  onClick={() => setEditingKey(editingKey === key ? null : key)}
                   style={{
                     padding: '6px 12px',
                     fontSize: '12px',
@@ -22624,7 +22752,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   await applyForfeitReversal(reopenIndex)
                   // Mark the set as not finished (and no longer ended)
                   await db.sets.update(reopenSetId, { finished: false, endTime: null })
-                  confirmedSetEndRef.current.delete(reopenIndex)
+                  // ... and every later set it deletes: one still marked as
+                  // confirmed here could never be ended again once recreated
+                  for (const index of [...confirmedSetEndRef.current]) {
+                    if (index >= reopenIndex) confirmedSetEndRef.current.delete(index)
+                  }
                   matchEndingRef.current = false
                   // Remove what ending the set wrote: its set_end (and a forfait) event
                   const allEventsForReopen = await db.events.where('matchId').equals(matchId).toArray()

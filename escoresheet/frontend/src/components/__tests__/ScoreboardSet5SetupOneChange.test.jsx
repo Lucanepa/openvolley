@@ -86,4 +86,43 @@ describe('Scoreboard: confirming the set 5 setup during the interval', () => {
     expect(states.filter(st => st.setup !== st.countdown)).toEqual([])
     cleanup()
   })
+
+  // review 2026-11: Switch serve tapped just before Confirm, before the
+  // screen had the switched row, recorded the old first server in the synced
+  // set5_coin_toss event while the match row had the new one
+  it('Switch serve then Confirm at once: the coin toss event has the switched server', async () => {
+    await Promise.all(db.tables.map(t => t.clear()))
+    const home = await db.teams.add({ name: 'Home VC', shortName: 'HOM' })
+    const away = await db.teams.add({ name: 'Away VC', shortName: 'AWY' })
+    const players = []
+    for (const teamId of [home, away]) for (let n = 1; n <= 8; n++) players.push({ teamId, number: n, name: `P${n}`, firstName: 'X' })
+    await db.players.bulkAdd(players)
+    const matchId = await db.matches.add({
+      homeTeamId: home, awayTeamId: away, status: 'live', test: true, bestOf: 5,
+      firstServe: 'home', coinTossTeamA: 'home', coinTossTeamB: 'away',
+      set5FirstServe: 'A', set5LeftTeam: 'A'
+    })
+    const t = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+    const end4 = new Date(Date.now() - 30000).toISOString()
+    for (const index of [1, 2, 3, 4]) {
+      const homeWins = index % 2 === 1
+      await db.sets.add({ matchId, index, homePoints: homeWins ? 25 : 20, awayPoints: homeWins ? 20 : 25, finished: true, startTime: t, endTime: index === 4 ? end4 : t })
+    }
+    await db.sets.add({ matchId, index: 5, homePoints: 0, awayPoints: 0, finished: false })
+    await db.events.add({ matchId, setIndex: 1, type: 'coin_toss', payload: {}, seq: 1, ts: t })
+
+    render(<ScaleProvider><AlertProvider><LoggingProvider><Scoreboard matchId={matchId} /></LoggingProvider></AlertProvider></ScaleProvider>)
+    await waitFor(() => expect(button('Confirm set 5 setup')).toBeTruthy(), { timeout: 10000 })
+    const switchServe = [...document.querySelectorAll('button')].find(b => /serve/i.test(b.textContent) && /switch/i.test(b.textContent) && !b.disabled)
+    expect(switchServe).toBeTruthy()
+    const confirm = button('Confirm set 5 setup')
+    fireEvent.click(switchServe)
+    fireEvent.click(confirm)
+    await waitFor(async () => expect(await db.events.where({ matchId, type: 'set5_coin_toss' }).count()).toBe(1))
+    const toss = (await db.events.where({ matchId, type: 'set5_coin_toss' }).toArray())[0]
+    expect((await db.matches.get(matchId)).set5FirstServe).toBe('B')
+    expect(toss.payload.firstServe).toBe('B')
+    expect(toss.payload.firstServeTeamKey).toBe('away')
+    cleanup()
+  })
 })

@@ -681,6 +681,16 @@ describe('decision change after a substitution or time-out (row 19)', () => {
     }
   })
 
+  it('a remark or a bench injury after the point is not in the way, and is not taken back', () => {
+    const p = point('home')
+    const t1 = timeout('away')
+    const remark = ev('remark', { text: 'Ball changed' })
+    const injury = ev('bench_injury', { team: 'away', role: 'Coach' })
+    const take = decisionChangeTakeBack([p, t1, remark, injury], 1)
+    expect(take.point).toBe(p)
+    expect(take.requests).toEqual([t1])
+  })
+
   it('a line-up row of the other team under a substitution is not its own: not offered', () => {
     const events = [point('home'), subst('away', 2, 8), sub('lineup', { team: 'home' })]
     expect(decisionChangeTakeBack(events, 1)).toBeNull()

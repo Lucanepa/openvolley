@@ -922,6 +922,9 @@
       "show": "Wärchzüüglischte iiblände"
     },
     "confirmFailed": "Das isch nöd gspeicheret worde. Bitte s Matchblatt prüefe und nomal probiere.",
+    "lineupsNeeded": "Zerscht beidi Startufstellige erfasse, dänn uf «Satz starte» tippe.",
+    "setEndNotSaved": "S Satzänd isch nöd gspeicheret worde. Bitte de Spielstand prüefe und s Satzänd nomal bestätige.",
+    "timeoutRallyInPlay": "En Ballwächsel lauft: s Time-out erscht nach em Ballwächsel erfasse.",
     "storageFull": "Nöd gspeicheret: De Speicher vo däm Grät isch voll. Platz freimache (alti Downloads oder anderi Dateie lösche) und nomal tippe. Alles, wo bis jetzt erfasst isch, bliibt erhalte.",
     "sentOffOnCourt": "#{{number}} isch usgschlosse oder disqualifiziert und no uf em Fäld: zersch de Wächsel erfasse.",
     "storageLow": "De Speicher vo däm Grät isch fascht voll: no {{mb}} MB für OpenVolley. Jetzt Platz freimache (alti Downloads oder anderi Dateie lösche): Wänn er voll isch, cha nüüt meh erfasst werde.",
@@ -1544,6 +1547,7 @@
     "support": "Support",
     "keybindings": "Tastebelegig",
     "pressKey": "Taste drücke...",
+    "keyInUse": "«{{key}}» isch scho d Taste für «{{action}}». E anderi Taste drücke.",
     "resetDefaults": "Zruggsetze",
     "keybindingLabels": {
       "pointLeft": "Punkt links",

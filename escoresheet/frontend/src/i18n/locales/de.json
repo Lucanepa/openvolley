@@ -915,6 +915,9 @@
       "show": "Werkzeugleiste einblenden"
     },
     "confirmFailed": "Das wurde nicht gespeichert. Bitte das Matchblatt prüfen und erneut versuchen.",
+    "lineupsNeeded": "Zuerst beide Startaufstellungen erfassen, dann auf «Satz starten» tippen.",
+    "setEndNotSaved": "Das Satzende wurde nicht gespeichert. Bitte den Spielstand prüfen und das Satzende erneut bestätigen.",
+    "timeoutRallyInPlay": "Ein Ballwechsel läuft: das Time-out erst nach dem Ballwechsel erfassen.",
     "storageFull": "Nicht gespeichert: Der Speicher dieses Geräts ist voll. Platz freigeben (alte Downloads oder andere Dateien löschen) und erneut tippen. Alles bisher Erfasste bleibt erhalten.",
     "sentOffOnCourt": "#{{number}} ist ausgeschlossen oder disqualifiziert und noch auf dem Feld: zuerst die Auswechslung erfassen.",
     "storageLow": "Der Speicher dieses Geräts ist fast voll: noch {{mb}} MB für OpenVolley. Jetzt Platz freigeben (alte Downloads oder andere Dateien löschen): Ist er voll, kann nichts mehr erfasst werden.",
@@ -1537,6 +1540,7 @@
     "support": "Support",
     "keybindings": "Tastenbelegung",
     "pressKey": "Taste drücken...",
+    "keyInUse": "«{{key}}» ist bereits die Taste für «{{action}}». Eine andere Taste drücken.",
     "resetDefaults": "Zurücksetzen",
     "nativeBench": "Bank",
     "nativeOpenView": "Dieses Tablet verwenden als",
