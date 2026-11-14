@@ -16,6 +16,7 @@
 #   scoresheets-<UTC>.tar.gpg  every file under storage/scoresheets plus the
 #                              owner records storage/.owners (who may read or
 #                              replace each one)
+#   global-<UTC>.tar.gpg       every file under storage/global (the Global tool's only copy)
 #   snapshots-<UTC>.tar.gpg    storage/backup files changed in the last ~26 h
 #                              (increments: restore-storage.sh unpacks them
 #                              in order)
@@ -292,6 +293,15 @@ if (( WITH_FILES )); then
   else
     log "no scoresheets/ yet, skipped"
   fi
+  if [[ -d "${OV_STORAGE_MOUNT}/global" ]]; then
+    room_for global "$(du -sm "${OV_STORAGE_MOUNT}/global" | awk '{print $1 + 1}')"
+    begin_out "$OUT/global-${TS}.tar.gpg"
+    tar -C "$OV_STORAGE_MOUNT" -cf - global | "${GPG[@]}" -o "$PART" || fail "tar-global"
+    end_out "$OUT/global-${TS}.tar.gpg"
+    log "global ok"
+  else
+    log "no global/ yet, skipped"
+  fi
   if [[ -d "${OV_STORAGE_MOUNT}/backup" ]]; then
     room_for snapshots "$(cd "$OV_STORAGE_MOUNT" && find backup -type f -mmin "-${OV_SNAPSHOT_WINDOW_MIN}" -printf '%s\n' \
                           | awk '{s += $1} END {print int(s / 1048576) + 1}')"
@@ -312,7 +322,7 @@ if (( WITH_FILES )); then
   else
     log "no OV_PIN_SECRET in ${OV_ENV_FILE}, secrets skipped"
   fi
-  find "$OUT" -maxdepth 1 -type f \( -name 'scoresheets-*.tar.gpg' -o -name 'snapshots-*.tar.gpg' -o -name 'secrets-*.env.gpg' -o -name 'base-*.tar.gpg' \) \
+  find "$OUT" -maxdepth 1 -type f \( -name 'scoresheets-*.tar.gpg' -o -name 'global-*.tar.gpg' -o -name 'snapshots-*.tar.gpg' -o -name 'secrets-*.env.gpg' -o -name 'base-*.tar.gpg' \) \
     -mtime "+${OV_FILES_KEEP_DAYS}" -delete
   # WAL older than the oldest kept base backup cannot be replayed on anything
   [[ ! -d "$OUT/wal" ]] || find "$OUT/wal" -maxdepth 1 -type f -name '*.gpg' -mtime "+$((OV_FILES_KEEP_DAYS + 1))" -delete
