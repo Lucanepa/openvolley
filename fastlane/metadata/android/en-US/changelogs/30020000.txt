@@ -1,0 +1,5 @@
+OpenVolley 3.2.0
+- Security and permission fixes from the review before the wider rollout.
+- Global mode: score any tournament without an account; matches stay on the device, Excel/CSV import of games and rosters, points per set.
+- Public match API for club websites: livescore and match statistics, no names.
+- Many scoring and match-end fixes (sanctions, substitutions, best of 3, signatures, backups).
