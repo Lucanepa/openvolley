@@ -50,6 +50,8 @@ export const AUDIT_ACTIONS = Object.freeze([
   'account.password_reset_requested', 'account.password_reset', 'account.email_confirmed',
   // written by lib/auth.js (passkeys, db/022)
   'account.passkey_added', 'account.passkey_removed',
+  // written by lib/auth.js (the account's own security)
+  'account.password_changed', 'account.signed_out_everywhere',
   'invite.create', 'invite.revoke', 'invite.redeem',
   'match.claim_game', 'match.claim_pin', 'match.restore_pin', 'match.game_taken',
   'match.close',
@@ -1258,6 +1260,51 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     return res
   }
 
+  /**
+   * The account's own delete-account (lib/auth.js deleteAccount, its
+   * `selfDelete` hook), inside the deletion's transaction before anything
+   * goes: the admin path's locks (every super admin's profile rows, then the
+   * account's users row), never the last super admin that can still sign in
+   * (409 OV_LAST_SUPER_ADMIN, thrown as the answer), and the same
+   * `account.delete` audit entries with `self: true` (actor = the account,
+   * NULL once it is gone). Throws on a database error.
+   */
+  async function selfDeleteIn (client, userId) {
+    const superParam = ['super_admin']
+    const { rows: locked } = await client.query(
+      `SELECT user_id, roles FROM public.profiles
+        WHERE user_id = $1 OR ${hasRoleSql('roles', '$2')}
+        ORDER BY user_id FOR UPDATE`, [userId, superParam])
+    const { rows: [u] } = await client.query('SELECT id, email, created_at FROM auth.users WHERE id = $1 FOR UPDATE', [userId])
+    if (!u) throw abort(ACCOUNT_NOT_FOUND())
+    const targetRoles = [...new Set(locked.filter((r) => r.user_id === userId).flatMap((r) => normalizeRoles(r.roles)))]
+    const target = accessFromRoles(targetRoles)
+    if (target.isSuperAdmin) {
+      const { rows: [{ n }] } = await client.query(
+        `SELECT count(DISTINCT p.user_id)::int AS n
+           FROM public.profiles p JOIN auth.users u ON u.id = p.user_id
+          WHERE p.user_id <> $1 AND ${hasRoleSql('p.roles', '$2')} AND ${usableSql('u')}`, [userId, superParam])
+      if (n < 1) throw abort(fail(409, 'OV_LAST_SUPER_ADMIN', 'The last super admin cannot be deleted'))
+    }
+    const { rows: [{ n: matchesKept }] } = await client.query(
+      'SELECT count(*)::int AS n FROM public.matches WHERE created_by = $1 AND test IS NOT TRUE', [userId])
+    const member = await membershipsOf(client, userId, target)
+    const apps = APPS.filter((a) => member[a])
+    const details = {
+      account_id: userId,
+      email_sha256: emailDigest(u.email),
+      roles: targetRoles,
+      apps,
+      created_at: iso(u.created_at),
+      matches_kept: matchesKept,
+      self: true
+    }
+    for (const app of apps.length ? apps : ['indoor']) {
+      await audit(client, { actorId: userId, action: 'account.delete', details, app })
+    }
+    access?.invalidate(userId)
+  }
+
   // ------------------------------------------------------------------ official games
   async function listOfficialGames ({ from, to, q = '' } = {}) {
     const today = zurichDay()
@@ -1802,6 +1849,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     updateProfile,
     setActive,
     deleteAccount,
+    selfDeleteIn,
     listOfficialGames,
     listMatches,
     reopenMatch,

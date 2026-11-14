@@ -104,8 +104,15 @@ export const AUTH_ACTIONS = Object.freeze([
   'confirm-email', 'resend-confirmation',
   // passkeys (lib/passkeys.js): sign-in with the device's fingerprint or face
   'passkey/login-options', 'passkey/login', 'passkey/register-options',
-  'passkey/register', 'passkey/list', 'passkey/delete'
+  'passkey/register', 'passkey/list', 'passkey/delete',
+  // the account's own security: confirm it is you (password or passkey) for
+  // the sensitive actions, a new password, the sessions, sign out everywhere
+  'reauth', 'change-password', 'session/list', 'sign-out-everywhere'
 ])
+
+// A confirmation (password or passkey) holds this long for the session that
+// gave it: deleting the account, removing passkeys (reauth, below).
+export const REAUTH_FRESH_MS = 5 * 60 * 1000
 
 // raw_app_meta_data marker of accounts created unconfirmed with a link.
 export const EMAIL_CONFIRMATION_MARK = Object.freeze({ key: 'ov_email_confirmation', value: 'link' })
@@ -171,6 +178,12 @@ const DEFAULTS = Object.freeze({
   // deletes no row, so the user can retry) and once more after the commit
   // (an upload that was in flight). null: no files to remove.
   onAccountDeleted: null,
+  // async (client, userId) => void: the account's own delete-account runs it
+  // first in the deletion's transaction (server.js: lib/accounts.js
+  // selfDeleteIn, the locks, the last-super-admin refusal and the audit
+  // entry of the admin path). A thrown error with `__result` ({ status, body })
+  // is the answer and nothing is deleted. null: no checks.
+  selfDelete: null,
   // db/025 (lib/accountRequests.js): what a new account asks for at sign-up
   // (the body's `requests`: scorer, referee, team or club manager, with the
   // club and team), stored in the sign-up's transaction; nothing is granted.
@@ -1546,12 +1559,28 @@ export function createAuth(options = {}) {
     return ok({ user: v.user, session: v.session })
   }
 
+  /**
+   * POST delete-account { access_token, password | passkey }: the session
+   * alone is not enough (reauth). The admin path's rules apply in the
+   * deletion's transaction (cfg.selfDelete): never the last super admin (409
+   * OV_LAST_SUPER_ADMIN), an account.delete audit entry.
+   */
   async function deleteAccount(body, ctx) {
     const blocked = limit('sessionIp', ipKey(ctx.ip))
     if (blocked) return blocked
     const v = await sessionFromBody(body, ctx)
     if (v.error) return v.error
-    await eraseAccount(v.user.id)
+    const token = bearerOf(body, ctx)
+    const denied = await confirmIdentity(body, token, v.user.id)
+    if (denied) return denied
+    const userId = v.user.id
+    try {
+      await eraseAccount(userId, { inTransaction: typeof cfg.selfDelete === 'function' ? (client) => cfg.selfDelete(client, userId) : null })
+    } catch (err) {
+      if (err?.__result) return result(err.__result.status, err.__result.body)
+      throw err
+    }
+    forgetFresh(token)
     return ok(null)
   }
 
@@ -1561,19 +1590,21 @@ export function createAuth(options = {}) {
    * account's own delete-account and an admin's delete or reject in the
    * manager (lib/accounts.js deleteAccount, POST /api/admin/accounts/:id/delete|reject).
    *
-   * Files first: when they cannot be removed nothing is deleted (throws, 503),
-   * so the account is never gone while its backups stay behind. Then one
-   * transaction: `inTransaction(client)` first (the admin's locks, checks
-   * and audit entry; whatever it throws rolls everything back and is thrown
-   * on), the sessions, the owned rows, the detached columns, the users row.
+   * One transaction: `inTransaction(client)` first (the caller's locks,
+   * refusal rules and audit entry; whatever it throws rolls everything back
+   * and is thrown on), so a refusal (403, 409) leaves the account with all it
+   * had, its files included. Then the files, while those locks are held: when
+   * they cannot be removed nothing is deleted (throws, 503), so the account is
+   * never gone while its backups stay behind. Then the sessions, the owned
+   * rows, the detached columns, the users row.
    * Throws on a database error. Returns { deleted: false } when there was no
    * such users row (nothing was deleted but the files), else { deleted: true }.
    */
   async function eraseAccount(userId, { inTransaction = null } = {}) {
     if (typeof userId !== 'string' || !userId) throw new Error('eraseAccount: a user id is required')
-    if (typeof cfg.onAccountDeleted === 'function') await cfg.onAccountDeleted(userId)
     const email = await withTransaction(async (client) => {
       if (typeof inTransaction === 'function') await inTransaction(client)
+      if (typeof cfg.onAccountDeleted === 'function') await cfg.onAccountDeleted(userId)
       await revokeUserSessions(userId, client)
       for (const { table, column } of cfg.ownedTables) {
         const cols = await columnsOf(table, client)
@@ -1994,11 +2025,211 @@ export function createAuth(options = {}) {
     if (v.error) return v.error
     const id = typeof body.id === 'string' ? body.id : ''
     if (!UUID_RE.test(id)) return fail(400, 'Invalid passkey id', 'validation_failed')
-    // The account filter is the ownership check.
-    const { rows } = await pool.query(`DELETE FROM ${T.passkeys} WHERE id = $1 AND user_id = $2 RETURNING label`, [id, v.user.id])
-    if (!rows[0]) return fail(404, 'No such passkey', 'not_found')
-    await audit('account.passkey_removed', v.user.id, { label: rows[0].label }, requestApp(body))
-    return ok({ removed: true })
+    const token = bearerOf(body, ctx)
+    const denied = await confirmIdentity(body, token, v.user.id)
+    if (denied) return denied
+    const out = await withTransaction(async (client) => {
+      // The account filter is the ownership check.
+      const { rows } = await client.query(`DELETE FROM ${T.passkeys} WHERE id = $1 AND user_id = $2 RETURNING label`, [id, v.user.id])
+      if (!rows[0]) return null
+      // A session does not record the key it was made with: every other
+      // session of the account ends (the removed device's among them), this
+      // one stays. The removed device then signs in with the password.
+      const revoked = await client.query(`DELETE FROM ${T.sessions} WHERE user_id = $1 AND token_hash <> $2`, [v.user.id, hashToken(token)])
+      return { label: rows[0].label, revokedSessions: revoked.rowCount }
+    })
+    if (!out) return fail(404, 'No such passkey', 'not_found')
+    await audit('account.passkey_removed', v.user.id, { label: out.label, sessions_revoked: out.revokedSessions }, requestApp(body))
+    return ok({ removed: true, revoked_sessions: out.revokedSessions })
+  }
+
+  // --- the account's own security --------------------------------------------
+  // Deleting the account, removing a passkey and removing every passkey with
+  // "sign out everywhere" need more than the session (a tablet left signed
+  // in, a copied token): the request carries the account's password or a
+  // passkey answer, or the session gave one within REAUTH_FRESH_MS (the
+  // reauth action, or an earlier such request), so a person removing two
+  // keys confirms once. In this process only: a restart asks once more.
+  const freshSessions = new Map() // token hash (hex) -> until (ms)
+  const FRESH_SESSIONS_MAX = 10_000
+  const freshKey = (token) => hashToken(token).toString('hex')
+  function markFresh(token) {
+    const key = freshKey(token)
+    freshSessions.delete(key)
+    freshSessions.set(key, Date.now() + REAUTH_FRESH_MS)
+    while (freshSessions.size > FRESH_SESSIONS_MAX) freshSessions.delete(freshSessions.keys().next().value)
+  }
+  function isFresh(token) {
+    const until = freshSessions.get(freshKey(token))
+    return until != null && until > Date.now()
+  }
+  function forgetFresh(token) { freshSessions.delete(freshKey(token)) }
+
+  const REAUTH_REQUIRED = () => fail(403, 'Confirm it is you: enter your password or use your passkey.', 'reauth_required')
+
+  /**
+   * The confirmation of a sensitive action by the account `userId` whose
+   * session is `token`: `body.password`, or `body.passkey` ({ challengeId,
+   * response }: the answer to passkey/login-options with a key of this
+   * account), or a recent one of this session. A success marks the session
+   * fresh. Returns null when confirmed, else the answer (403 reauth_required,
+   * 401 invalid_password, 429 account_locked, 401 passkey_*).
+   */
+  async function confirmIdentity(body, token, userId) {
+    const password = typeof body.password === 'string' ? body.password : ''
+    if (isPlainObject(body.passkey)) {
+      if (!(await passkeysAvailable())) return PASSKEYS_UNAVAILABLE()
+      let verified
+      try {
+        verified = await ceremonies.finishAuthentication({
+          challengeId: typeof body.passkey.challengeId === 'string' ? body.passkey.challengeId : '',
+          response: isPlainObject(body.passkey.response) ? body.passkey.response : {},
+          lookup: async (credentialId) => {
+            const { rows } = await pool.query(`SELECT * FROM ${T.passkeys} WHERE credential_id = $1 AND user_id = $2`, [credentialId, userId])
+            return rows[0] ? passkeyRow(rows[0]) : null
+          }
+        })
+      } catch (err) {
+        if (!(err instanceof PasskeyError)) throw err
+        if (err.code === 'challenge') return PASSKEY_EXPIRED()
+        if (err.code === 'unknown') return PASSKEY_UNKNOWN()
+        log.warn?.(`[auth] passkey confirmation refused: ${err.code}`)
+        return PASSKEY_INVALID()
+      }
+      await pool.query(`UPDATE ${T.passkeys} SET counter = $2, last_used_at = now() WHERE id = $1`, [verified.passkey.id, verified.newCounter])
+    } else if (password) {
+      if (password.length > 1024) return fail(401, 'Wrong password.', 'invalid_password')
+      const check = await verifyPassword(userId, password)
+      if (check.locked) {
+        const mins = Math.max(1, Math.ceil(check.retryAfterSec / 60))
+        return rateLimited(check.retryAfterSec, 'account_locked', `Too many failed attempts. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`)
+      }
+      if (!check.ok) return fail(401, 'Wrong password.', 'invalid_password')
+    } else if (isFresh(token)) {
+      return null
+    } else {
+      return REAUTH_REQUIRED()
+    }
+    markFresh(token)
+    return null
+  }
+
+  /** POST reauth { access_token, password | passkey } -> { fresh_until } (ms). */
+  async function reauth(body, ctx) {
+    const blocked = limit('sessionIp', ipKey(ctx.ip))
+    if (blocked) return blocked
+    const v = await sessionFromBody(body, ctx)
+    if (v.error) return v.error
+    if (!isPlainObject(body.passkey) && !(typeof body.password === 'string' && body.password)) return REAUTH_REQUIRED()
+    const token = bearerOf(body, ctx)
+    const denied = await confirmIdentity(body, token, v.user.id)
+    if (denied) return denied
+    return ok({ fresh_until: freshSessions.get(freshKey(token)) })
+  }
+
+  /**
+   * POST change-password { access_token, password, new_password }: the
+   * current password, then the new one as a reset sets it (lib setPasswordIn:
+   * every session and every passkey of the account go). This device gets a
+   * new session, returned like a sign-in's.
+   */
+  async function changePassword(body, ctx) {
+    const blocked = limit('sessionIp', ipKey(ctx.ip))
+    if (blocked) return blocked
+    const v = await sessionFromBody(body, ctx)
+    if (v.error) return v.error
+    const userId = v.user.id
+    const current = typeof body.password === 'string' ? body.password : ''
+    if (!current || current.length > 1024) return fail(400, 'Your current password is needed.', 'password_required')
+    const next = typeof body.new_password === 'string' ? body.new_password : ''
+    const pwProblem = validateNewPassword(next) || validateNewPassword(next, await minPasswordFor(userId))
+    if (pwProblem) return fail(422, pwProblem, 'weak_password')
+    const check = await verifyPassword(userId, current)
+    if (check.locked) {
+      const mins = Math.max(1, Math.ceil(check.retryAfterSec / 60))
+      return rateLimited(check.retryAfterSec, 'account_locked', `Too many failed attempts. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`)
+    }
+    if (!check.ok) return fail(401, 'Wrong password.', 'invalid_password')
+    const hash = await hashPassword(next)
+    const out = await withTransaction(async (client) => {
+      const r = await setPasswordIn(client, userId, hash)
+      const session = await createSession(userId, hash, client)
+      const { rows } = await client.query(`SELECT to_jsonb(u) AS u FROM ${T.users} u WHERE u.id = $1`, [userId])
+      return { ...r, session, user: rows[0]?.u }
+    })
+    clearLocks(out.email)
+    if (!out.session || !out.user) return INVALID_TOKEN()
+    await audit('account.password_changed', userId, { sessions_revoked: out.revokedSessions }, requestApp(body))
+    return await finishSignIn(out.user, await usersColumns(), out.session)
+  }
+
+  /**
+   * POST session/list { access_token } -> { sessions: [{ id, created_at,
+   * last_seen_at, expires_at, current }] }: where the account is signed in
+   * (a session records no device). `id` is a short digest, nothing to sign
+   * in with.
+   */
+  async function sessionList(body, ctx) {
+    const blocked = limit('sessionIp', ipKey(ctx.ip))
+    if (blocked) return blocked
+    const v = await sessionFromBody(body, ctx)
+    if (v.error) return v.error
+    const { rows } = await pool.query(
+      `SELECT encode(substring(token_hash from 1 for 8), 'hex') AS id, created_at, last_seen_at, expires_at,
+              token_hash = $2 AS current
+         FROM ${T.sessions}
+        WHERE user_id = $1 AND expires_at > now() AND created_at + make_interval(secs => $3) > now()
+        ORDER BY coalesce(last_seen_at, created_at) DESC
+        LIMIT 100`,
+      [v.user.id, hashToken(bearerOf(body, ctx)), cfg.absoluteTtlSec]
+    )
+    return ok({ sessions: rows.map((r) => ({ id: r.id, created_at: r.created_at, last_seen_at: r.last_seen_at, expires_at: r.expires_at, current: r.current === true })) })
+  }
+
+  /**
+   * POST sign-out-everywhere { access_token, remove_passkeys?, password |
+   * passkey }: every other session of the account ends; with
+   * `remove_passkeys` (confirmed, reauth) every passkey goes too, so a lost
+   * or shared device that holds one cannot sign straight back in. This device
+   * stays signed in.
+   */
+  async function signOutEverywhere(body, ctx) {
+    const blocked = limit('sessionIp', ipKey(ctx.ip))
+    if (blocked) return blocked
+    const v = await sessionFromBody(body, ctx)
+    if (v.error) return v.error
+    const token = bearerOf(body, ctx)
+    const removePasskeys = body.remove_passkeys === true
+    if (removePasskeys) {
+      const denied = await confirmIdentity(body, token, v.user.id)
+      if (denied) return denied
+    }
+    const out = await withTransaction(async (client) => {
+      const s = await client.query(`DELETE FROM ${T.sessions} WHERE user_id = $1 AND token_hash <> $2`, [v.user.id, hashToken(token)])
+      let removed = 0
+      if (removePasskeys && await passkeysAvailable(client)) {
+        removed = (await client.query(`DELETE FROM ${T.passkeys} WHERE user_id = $1`, [v.user.id])).rowCount
+      }
+      return { revokedSessions: s.rowCount, removedPasskeys: removed }
+    })
+    await audit('account.signed_out_everywhere', v.user.id, { sessions_revoked: out.revokedSessions, passkeys_removed: out.removedPasskeys }, requestApp(body))
+    return ok({ revoked_sessions: out.revokedSessions, removed_passkeys: out.removedPasskeys })
+  }
+
+  /**
+   * Signs an account out everywhere (scripts/set-password.mjs --revoke-only):
+   * every session and, unless `keepPasskeys`, every passkey, in one
+   * transaction. -> { revokedSessions, removedPasskeys }.
+   */
+  async function revokeUserAccess(userId, { keepPasskeys = false } = {}) {
+    return withTransaction(async (client) => {
+      const revokedSessions = await revokeUserSessions(userId, client)
+      let removedPasskeys = 0
+      if (!keepPasskeys && await passkeysAvailable(client)) {
+        removedPasskeys = (await client.query(`DELETE FROM ${T.passkeys} WHERE user_id = $1`, [userId])).rowCount
+      }
+      return { revokedSessions, removedPasskeys }
+    })
   }
 
   async function handleAuthRequest(action, body, ctx = {}) {
@@ -2024,6 +2255,10 @@ export function createAuth(options = {}) {
         case 'passkey/register': return await passkeyRegister(b, c)
         case 'passkey/list': return await passkeyList(b, c)
         case 'passkey/delete': return await passkeyDelete(b, c)
+        case 'reauth': return await reauth(b, c)
+        case 'change-password': return await changePassword(b, c)
+        case 'session/list': return await sessionList(b, c)
+        case 'sign-out-everywhere': return await signOutEverywhere(b, c)
         default:
           return fail(404, 'Invalid request', 'not_found')
       }
@@ -2041,6 +2276,7 @@ export function createAuth(options = {}) {
     const t = Date.now()
     for (const [k, at] of failedSources) if (t - at >= FAILED_SOURCE_MS) failedSources.delete(k)
     ceremonies.sweep()
+    for (const [k, until] of freshSessions) if (until <= t) freshSessions.delete(k)
   }
 
   return {
@@ -2053,6 +2289,7 @@ export function createAuth(options = {}) {
     findUserId,
     revokeSession,
     revokeUserSessions,
+    revokeUserAccess,
     eraseAccount,
     sweepExpiredSessions,
     sweepExpiredTokens,
@@ -2064,7 +2301,7 @@ export function createAuth(options = {}) {
     accountLockout,
     bcryptGate,
     config: Object.freeze(Object.fromEntries(Object.entries(cfg).filter(
-      ([k]) => !['pool', 'bcrypt', 'logger', 'limits', 'lockout', 'ipKey', 'onAccountDeleted', 'mailer'].includes(k)))),
+      ([k]) => !['pool', 'bcrypt', 'logger', 'limits', 'lockout', 'ipKey', 'onAccountDeleted', 'selfDelete', 'mailer'].includes(k)))),
     /** Drops the cached column lists (after a restore or migration). */
     refreshCatalog() { catalog.clear() },
     // exposed for tests and scripts

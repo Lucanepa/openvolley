@@ -669,7 +669,11 @@ backups share.
 
 `POST /api/auth/delete-account` (Profile > Delete account) removes the
 account's personal data on the server and keeps the match records, which
-belong to the clubs and the federation, not to the scorer's account.
+belong to the clubs and the federation, not to the scorer's account. It needs
+the password or a passkey besides the session (`reauth`), refuses the last
+super admin (409 `OV_LAST_SUPER_ADMIN`) and writes an `account.delete` audit
+entry, as an admin's delete does. Both run the refusal rules under their row
+locks before any file is removed (lib/auth.js `eraseAccount`).
 
 | Deleted | Where |
 |---|---|
@@ -1159,9 +1163,13 @@ Replaces Supabase GoTrue behind `/api/auth/*` once the backend runs against its 
 | `sign-up` `{email, password, metadata}` | Creates `auth.users` + `profiles` in one transaction (the `handle_new_user` mapping; client `roles` are dropped and the account gets **no role**: pending, see "Approved scorers"). 200 `{user}`, no session; 422 on duplicates or bad input |
 | `get-user` `{access_token}` | 200 `{user, session:{expires_at, expires_in}}`; **401 `invalid_token`** when unknown, expired or revoked |
 | `sign-out` `{access_token}` | Deletes the session; always 200 |
-| `delete-account` `{access_token}` | Deletes the account's personal data (user, sessions, profile, user_matches, match_editors, backups, scoresheet owner entries) and keeps its matches with `created_by` NULL; see "Deleting an account". 503 and nothing deleted when the files cannot be removed |
+| `delete-account` `{access_token, password \| passkey}` | Needs the session **and a confirmation** (see `reauth`). Deletes the account's personal data (user, sessions, profile, user_matches, match_editors, backups, scoresheet owner entries) and keeps its matches with `created_by` NULL; see "Deleting an account". The admin path's rules in the same transaction (lib/accounts.js `selfDeleteIn`): 409 `OV_LAST_SUPER_ADMIN`, an `account.delete` audit entry with `self: true`. 503 and nothing deleted when the files cannot be removed |
 | `profile` `{access_token}` | Read-only; `updates` is ignored |
-| `update-user` | 501 (email change returns in Phase 7) |
+| `update-user` | 501: the address is changed by an admin (PATCH /api/admin/accounts/:id); the profile shows it read-only |
+| `reauth` `{access_token, password \| passkey}` | Confirms it is the account's owner: the password (`verifyPassword`, counted in the sign-in lockout) or `passkey` `{challengeId, response}` (an answer to `passkey/login-options` with a key **of this account**). The session counts as confirmed for 5 minutes (`REAUTH_FRESH_MS`, in this process). `delete-account`, `passkey/delete` and `sign-out-everywhere` with `remove_passkeys` take the same fields inline, or use that window; without either: 403 `reauth_required`; 401 `invalid_password`, 429 `account_locked`, 401 `passkey_unknown`/`passkey_invalid`. 200 `{fresh_until}` |
+| `change-password` `{access_token, password, new_password}` | The current password, then the new one as a reset sets it: **every** session and passkey of the account go; this device gets a new session (200 like `sign-in`). 400 `password_required`, 401 `invalid_password`, 422 `weak_password`, 429 `account_locked`; audit `account.password_changed` |
+| `session/list` `{access_token}` | Where the account is signed in: `{sessions:[{id, created_at, last_seen_at, expires_at, current}]}` (`id`: a short digest, no device is recorded) |
+| `sign-out-everywhere` `{access_token, remove_passkeys?, password \| passkey}` | Every other session ends (this one stays); with `remove_passkeys: true` (confirmed, see `reauth`) every passkey goes too, so a lost or shared device that holds one cannot sign straight back in. 200 `{revoked_sessions, removed_passkeys}`; audit `account.signed_out_everywhere` |
 | `reset-password` `{email, lang}` | With account emails: always 200 `{requested: true}` for a valid address, known or not (no enumeration; the lookup and the mail happen after the answer); 422 `email_address_invalid`; 429 per client / per address. Without: 503 `reset_unavailable` "temporarily unavailable. Contact CONTACT_EMAIL" |
 | `reset-password/confirm` `{token, password, lang}` | Sets the password (policy as at sign-up), marks the address confirmed, revokes **all** sessions, spends the link and every other open reset link, mails a "password changed" notice. 200 `{password_updated: true}`; 400 `invalid_link` (unknown, used, superseded or expired); 422 `weak_password` (the link stays valid) |
 | `confirm-email` `{token}` | 200 `{confirmed: true, already_confirmed}` (a spent link of an address confirmed by now is not an error); 400 `invalid_link` |
@@ -1171,7 +1179,7 @@ Replaces Supabase GoTrue behind `/api/auth/*` once the backend runs against its 
 | `passkey/register-options` `{access_token, password}` | Setting one up needs the session **and the password** (`verifyPassword`, counted in the sign-in lockout), so a stolen session cannot add its own key. `{challengeId, options}`; 400 `password_required`, 401 `invalid_password`, 429 `account_locked`, 400 `passkey_limit` (10 per account) |
 | `passkey/register` `{access_token, challengeId, response, lang, app}` | Files the public key (`auth.passkeys`, db/022), mails the account "a passkey was added" (`passkey_added`, links nothing). 200 `{passkey:{id, label, created_at, last_used_at}}`; 409 `passkey_duplicate`; 5 set-ups per account per hour |
 | `passkey/list` `{access_token}` | The account's keys: `{passkeys:[{id, label, created_at, last_used_at, credential_id}]}` |
-| `passkey/delete` `{access_token, id}` | Removes one of the account's own keys; 404 otherwise |
+| `passkey/delete` `{access_token, id, password \| passkey}` | Removes one of the account's own keys (confirmed, see `reauth`) and ends every **other** session of the account: a session records no key, so the removed device's session goes with the rest. 200 `{removed: true, revoked_sessions}`; 404 otherwise |
 
 Sessions last 30 days, slide forward when fewer than 15 days remain, and never live past `created_at + 90 days`. A database failure is a **503** `auth_unavailable`, never a 401, so clients keep their session.
 
@@ -1201,7 +1209,7 @@ Password-reset links, confirmation links for new accounts and the "your password
 - **Tests**: `tests/mailer.test.js` (templates, settings, real SMTP sessions over implicit TLS and STARTTLS against `tests/helpers/fakeSmtp.js`, an `smtp-server` sink with a throwaway certificate), `tests/emailAuth.pg.test.js` (the flows against Postgres), `tests/emailAuth.e2e.test.js` (server.js end to end, links followed out of the captured mails). Never against a real mailbox.
 - **Operations**: deploy/RUNBOOK-hetzner.md, "Account emails (SMTP)".
 
-**Passkeys** (lib/passkeys.js, db/022, since 2026-11-02): sign-in with the device's fingerprint, face or PIN, as an extra way into an account that has a password. One relying party, `openvolley.app` (`WEBAUTHN_RP_ID`), so a key set up on any OpenVolley or OpenBeach site works on all of them; a page may run a ceremony when it is served over https from that host or a subdomain (`WEBAUTHN_ORIGINS` replaces the rule for a local test). The installed apps (Capacitor `https://localhost`, Tauri, Electron) cannot hold a web passkey and keep the password; the frontend hides every passkey control there. A new password (`setPassword`: the reset link, the owner CLI) deletes the account's keys with its sessions; account deletion cascades. Challenges live in the process (single use, 3 min, at most 5000). Without `auth.passkeys` every passkey action answers 503 and nothing else changes.
+**Passkeys** (lib/passkeys.js, db/022, since 2026-11-02): sign-in with the device's fingerprint, face or PIN, as an extra way into an account that has a password. One relying party, `openvolley.app` (`WEBAUTHN_RP_ID`), so a key set up on any OpenVolley or OpenBeach site works on all of them; a page may run a ceremony only from the app's own sites: the exact https origins of lib/cors.js `ALLOWED_ORIGINS` under the RP ID, never any other host under openvolley.app (support desk, downloads, dev builds, other apps); `WEBAUTHN_ORIGINS` (comma list, deploy/compose.yaml passes it) replaces the list, e.g. for a local test. The installed apps (Capacitor `https://localhost`, Tauri, Electron) cannot hold a web passkey and keep the password; the frontend hides every passkey control there. A new password (`setPassword`: the reset link, the owner CLI) deletes the account's keys with its sessions; account deletion cascades. Challenges live in the process (single use, 3 min, at most 5000). Without `auth.passkeys` every passkey action answers 503 and nothing else changes.
 
 **Contact address** in the reset-password message: `contactEmail` option, else `CONTACT_EMAIL`, else the same fallback as server.js.
 
@@ -1210,7 +1218,8 @@ Password-reset links, confirmation links for new accounts and the "your password
 ```bash
 DATABASE_URL=postgres://ov_owner@.../openvolley node scripts/set-password.mjs someone@example.com
 node scripts/set-password.mjs someone@example.com --generate     # prints a random password once
-node scripts/set-password.mjs someone@example.com --revoke-only  # sign out everywhere
+node scripts/set-password.mjs someone@example.com --revoke-only  # sign out everywhere: sessions and passkeys
+node scripts/set-password.mjs someone@example.com --revoke-only --keep-passkeys  # sessions only
 node scripts/set-password.mjs someone@example.com --confirm-email  # also mark the email confirmed
 ```
 

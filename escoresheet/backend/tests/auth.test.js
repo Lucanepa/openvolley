@@ -213,10 +213,10 @@ describe('auth token helpers', () => {
 
   it('lists the supported actions', () => {
     assert.deepEqual([...AUTH_ACTIONS].sort(), [
-      'confirm-email', 'delete-account', 'get-user',
+      'change-password', 'confirm-email', 'delete-account', 'get-user',
       'passkey/delete', 'passkey/list', 'passkey/login', 'passkey/login-options', 'passkey/register', 'passkey/register-options',
-      'profile', 'resend-confirmation',
-      'reset-password', 'reset-password/confirm', 'sign-in', 'sign-out', 'sign-up', 'update-user'
+      'profile', 'reauth', 'resend-confirmation',
+      'reset-password', 'reset-password/confirm', 'session/list', 'sign-in', 'sign-out', 'sign-out-everywhere', 'sign-up', 'update-user'
     ])
   })
 })
@@ -609,7 +609,14 @@ describe('auth against Postgres', { skip: PG_TEST_URL ? false : 'PG_TEST_URL not
       await signIn(auth, 'deleteme@example.ch', 'pw12345678')
       const bad = await auth.handleAuthRequest('delete-account', { access_token: generateToken() }, { ip })
       assert.equal(bad.status, 401)
-      const r = await auth.handleAuthRequest('delete-account', { access_token: t1 }, { ip })
+      const bare = await auth.handleAuthRequest('delete-account', { access_token: t1 }, { ip })
+      assert.equal(bare.status, 403, 'the session alone is not enough')
+      assert.equal(bare.body.error.code, 'reauth_required')
+      const wrong = await auth.handleAuthRequest('delete-account', { access_token: t1, password: 'not-it-123' }, { ip })
+      assert.equal(wrong.status, 401)
+      assert.equal(wrong.body.error.code, 'invalid_password')
+      assert.equal((await pool.query('SELECT count(*)::int AS n FROM auth.users WHERE id = $1', [id])).rows[0].n, 1, 'nothing deleted')
+      const r = await auth.handleAuthRequest('delete-account', { access_token: t1, password: 'pw12345678' }, { ip })
       assert.equal(r.status, 200)
       assert.deepEqual(r.body, { data: null, error: null })
       for (const [sql, label] of [
@@ -634,7 +641,7 @@ describe('auth against Postgres', { skip: PG_TEST_URL ? false : 'PG_TEST_URL not
       const { rows: [m2] } = await pool.query(`INSERT INTO public.matches (external_id, status, created_by) VALUES ('del-m2', 'final', $1) RETURNING id`, [other.id])
       await pool.query(`INSERT INTO public.match_editors (match_id, user_id) VALUES ($1, $2), ($3, $2), ($3, $4)`, [m1.id, id, m2.id, other.id])
       const token = (await signIn(auth, 'scorer-del@example.ch', 'pw12345678')).body.data.session.access_token
-      const r = await auth.handleAuthRequest('delete-account', { access_token: token }, { ip })
+      const r = await auth.handleAuthRequest('delete-account', { access_token: token, password: 'pw12345678' }, { ip })
       assert.equal(r.status, 200, JSON.stringify(r.body))
       assert.deepEqual(calls, [id, id], 'files removed before the rows and once more after the commit')
       const { rows: matches } = await pool.query(`SELECT external_id, created_by FROM public.matches WHERE external_id IN ('del-m1', 'del-m2') ORDER BY external_id`)
@@ -650,11 +657,67 @@ describe('auth against Postgres', { skip: PG_TEST_URL ? false : 'PG_TEST_URL not
       const su = await auth.handleAuthRequest('sign-up', { email: 'keepme-del@example.ch', password: 'pw12345678' }, { ip })
       const id = su.body.data.user.id
       const token = (await signIn(auth, 'keepme-del@example.ch', 'pw12345678')).body.data.session.access_token
-      const r = await auth.handleAuthRequest('delete-account', { access_token: token }, { ip })
+      const r = await auth.handleAuthRequest('delete-account', { access_token: token, password: 'pw12345678' }, { ip })
       assert.equal(r.status, 503)
       assert.equal((await pool.query('SELECT count(*)::int AS n FROM auth.users WHERE id = $1', [id])).rows[0].n, 1)
       assert.equal((await auth.handleAuthRequest('get-user', { access_token: token }, { ip })).status, 200, 'the session still works, so the user can retry')
       assert.equal(auth.config.onAccountDeleted, undefined, 'the hook is not exposed in config')
+    })
+
+    it('a refusal under the locks (inTransaction) comes before any file is removed', async () => {
+      const calls = []
+      const auth = makeAuth({ onAccountDeleted: async (uid) => { calls.push(uid); return {} } })
+      const u = await insertUser('refused-del@example.ch', 'pw12345678')
+      const refusal = Object.assign(new Error('abort'), { __result: { status: 409, body: { data: null, error: { message: 'no', code: 'OV_LAST_SUPER_ADMIN' } } } })
+      await assert.rejects(() => auth.eraseAccount(u.id, { inTransaction: async () => { throw refusal } }), (err) => err === refusal)
+      assert.deepEqual(calls, [], 'no file pass before the refusal')
+      assert.equal((await pool.query('SELECT count(*)::int AS n FROM auth.users WHERE id = $1', [u.id])).rows[0].n, 1)
+    })
+
+    it('the own delete-account runs the selfDelete hook in its transaction and answers its refusal', async () => {
+      const calls = []
+      const seen = []
+      const auth = makeAuth({
+        onAccountDeleted: async (uid) => { calls.push(uid); return {} },
+        selfDelete: async (client, uid) => {
+          seen.push(uid)
+          throw Object.assign(new Error('abort'), { __result: { status: 409, body: { data: null, error: { message: 'The last super admin cannot be deleted', code: 'OV_LAST_SUPER_ADMIN' } } } })
+        }
+      })
+      const ip = nextIp()
+      const su = await auth.handleAuthRequest('sign-up', { email: 'lastsuper-del@example.ch', password: 'pw12345678' }, { ip })
+      const id = su.body.data.user.id
+      const token = (await signIn(auth, 'lastsuper-del@example.ch', 'pw12345678')).body.data.session.access_token
+      const r = await auth.handleAuthRequest('delete-account', { access_token: token, password: 'pw12345678' }, { ip })
+      assert.equal(r.status, 409)
+      assert.equal(r.body.error.code, 'OV_LAST_SUPER_ADMIN')
+      assert.deepEqual(seen, [id])
+      assert.deepEqual(calls, [], 'no file went')
+      assert.equal((await auth.handleAuthRequest('get-user', { access_token: token }, { ip })).status, 200)
+    })
+
+    it('change-password: the current password, then every other session and passkey go and this device gets a new session', async () => {
+      const u = await insertUser('changepw@example.ch', 'old-password-1')
+      const auth = makeAuth()
+      const ip = nextIp()
+      const t1 = (await signIn(auth, 'changepw@example.ch', 'old-password-1')).body.data.session.access_token
+      const t2 = (await signIn(auth, 'changepw@example.ch', 'old-password-1')).body.data.session.access_token
+      const listed = await auth.handleAuthRequest('session/list', { access_token: t1 }, { ip })
+      assert.equal(listed.body.data.sessions.length, 2)
+      const none = await auth.handleAuthRequest('change-password', { access_token: t1, new_password: 'new-password-1' }, { ip })
+      assert.equal(none.body.error.code, 'password_required')
+      const wrong = await auth.handleAuthRequest('change-password', { access_token: t1, password: 'nope-nope-1', new_password: 'new-password-1' }, { ip })
+      assert.equal(wrong.body.error.code, 'invalid_password')
+      const weak = await auth.handleAuthRequest('change-password', { access_token: t1, password: 'old-password-1', new_password: 'short' }, { ip })
+      assert.equal(weak.body.error.code, 'weak_password')
+      const r = await auth.handleAuthRequest('change-password', { access_token: t1, password: 'old-password-1', new_password: 'new-password-1' }, { ip })
+      assert.equal(r.status, 200, JSON.stringify(r.body))
+      const fresh = r.body.data.session.access_token
+      assert.notEqual(fresh, t1)
+      for (const t of [t1, t2]) assert.equal((await auth.handleAuthRequest('get-user', { access_token: t }, { ip })).status, 401)
+      assert.equal((await auth.handleAuthRequest('get-user', { access_token: fresh }, { ip })).status, 200)
+      assert.equal((await signIn(auth, 'changepw@example.ch', 'new-password-1')).status, 200)
+      assert.equal((await sessionRows(u.id)).length, 2)
     })
   })
 
@@ -950,7 +1013,7 @@ describe('auth against Postgres', { skip: PG_TEST_URL ? false : 'PG_TEST_URL not
       assert.equal((await auth.handleAuthRequest('get-user', { access_token }, { ip })).status, 200)
       assert.equal((await auth.handleAuthRequest('profile', { access_token }, { ip })).status, 200)
       assert.ok(await auth.sweepExpiredSessions() >= 0)
-      const del = await auth.handleAuthRequest('delete-account', { access_token }, { ip })
+      const del = await auth.handleAuthRequest('delete-account', { access_token, password: 'pw12345678' }, { ip })
       assert.equal(del.status, 200, JSON.stringify(del.body))
       const { rows } = await pool.query(`SELECT count(*)::int AS n FROM auth.users WHERE email = 'approle@example.ch'`)
       assert.equal(rows[0].n, 0)

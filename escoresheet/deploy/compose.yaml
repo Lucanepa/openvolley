@@ -235,6 +235,10 @@ services:
       MAIL_FROM_BEACH: ${MAIL_FROM_BEACH:-}
       MANAGER_URL_BEACH: ${MANAGER_URL_BEACH:-}
       CONTACT_EMAIL: ${CONTACT_EMAIL:-}
+      # Passkeys (backend/lib/passkeys.js): empty = RP openvolley.app and the
+      # app's own sites only (lib/cors.js ALLOWED_ORIGINS)
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-}
+      WEBAUTHN_ORIGINS: ${WEBAUTHN_ORIGINS:-}
       # Hourly budgets of the final and the test scoresheet mails (lib/mailer.js
       # BUDGET_ENV; empty: 300 and 50)
       MAIL_BUDGET_FINAL: ${MAIL_BUDGET_FINAL:-}

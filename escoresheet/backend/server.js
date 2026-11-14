@@ -363,6 +363,10 @@ function getDataLayer() {
       contactEmail: CONTACT_EMAIL,
       // db/025: what a new account asks for at sign-up (nothing is granted then)
       signUpRequests: { parse: arq.parseSignUpRequests, store: (client, userId, rows) => arq.storeSignUpRequests(client, userId, rows) },
+      // The account's own delete-account: the admin path's last-super-admin
+      // refusal and audit entry, in the deletion's transaction (accounts is
+      // made below; this runs only on a request)
+      selfDelete: (client, userId) => accounts.selfDeleteIn(client, userId),
       onAccountDeleted: async (userId) => {
         const r = await storage.deleteUserData(userId)
         if (r.objectsRemoved || r.ownerRecordsUpdated || r.ownerRecordsRemoved) {
