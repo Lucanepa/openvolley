@@ -928,7 +928,7 @@
     "setEndNotSaved": "La fin du set n'a pas été enregistrée. Vérifiez le score et confirmez à nouveau la fin du set.",
     "timeoutRallyInPlay": "Un échange est en cours : enregistrez le temps mort une fois l'échange terminé.",
     "storageFull": "Non enregistré : le stockage de cet appareil est plein. Libérez de l'espace (supprimez d'anciens téléchargements ou d'autres fichiers), puis touchez à nouveau. Tout ce qui a été enregistré jusqu'ici est conservé.",
-    "sentOffOnCourt": "Le n° {{number}} est expulsé ou disqualifié et encore sur le terrain : enregistrez d'abord le changement.",
+    "sentOffOnCourt": "Le n° {{number}} est expulsé ou disqualifié et encore sur le terrain : enregistrez d'abord le remplacement.",
     "storageLow": "Le stockage de cet appareil est presque plein : il reste {{mb}} Mo pour OpenVolley. Libérez de l'espace maintenant (supprimez d'anciens téléchargements ou d'autres fichiers) : une fois plein, plus rien ne pourra être enregistré.",
     "timeoutRequest": {
       "title": "Temps mort — {{team}}",
@@ -4705,7 +4705,7 @@
       "notSet": "Non défini",
       "setOn": "Défini le {{date}}",
       "lockedUntil": "Bloqué jusqu'à {{time}}",
-      "lockedForCallerUntil": "En pause pour un compte jusqu'à {{time}}, après des PIN faux venant de ce compte. Les autres comptes peuvent toujours utiliser votre PIN. Un nouveau PIN met fin à la pause.",
+      "lockedForCallerUntil": "En pause pour un compte jusqu'à {{time}}, après des PIN erronés venant de ce compte. Les autres comptes peuvent toujours utiliser votre PIN. Un nouveau PIN met fin à la pause.",
       "disabled": "Bloqué après trop de PIN erronés. Définissez-en un nouveau.",
       "ineligible": {
         "email": "Confirmez d'abord votre adresse e-mail",
