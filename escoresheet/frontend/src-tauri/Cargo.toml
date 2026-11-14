@@ -72,7 +72,7 @@ zbus = { version = "5", default-features = false, features = ["tokio"] }
 # probe for libayatana-appindicator3 / libappindicator3 before building the
 # tray: tray-icon panics when neither loads (lifecycle.rs). In the tree
 # through tray-icon, no new crate.
-libloading = "0.7"
+libloading = "0.9"
 
 # Mobile Hotspot (WinRT tethering) and the Wi-Fi Direct legacy access point
 # (hotspot/windows.rs). Same version as tauri's (wry/webview2-com), so only
