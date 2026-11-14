@@ -309,6 +309,7 @@ const MATCH_COLUMNS = `m.external_id, m.sport_type, m.game_n, m.status, m.schedu
 const ok = (body, headers = {}) => ({ status: 200, body, headers })
 const fail = (status, error) => ({ status, body: { error } , headers: { 'Cache-Control': 'no-store' } })
 const MISSING = new Set(['42P01', '42703'])
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export function createPublicApi({ pool, logger = console } = {}) {
   async function guarded(what, fn) {
@@ -329,7 +330,7 @@ export function createPublicApi({ pool, logger = console } = {}) {
     return rows[0] || null
   }
 
-  async function list({ from, to, status, limit }) {
+  async function list({ from, to, status, limit, teams = null, club = null }) {
     return guarded('list', async () => {
       const lim = Math.min(Math.max(Number(limit) || 50, 1), 200)
       const now = Date.now()
@@ -344,14 +345,35 @@ export function createPublicApi({ pool, logger = console } = {}) {
         args.push(list)
         statusSql = ` AND m.status = ANY($${args.length})`
       }
+      // one club's matches: its team names (the club API) or a club id (the public ?club=)
+      let names = Array.isArray(teams) ? teams : null
+      if (!names && club) {
+        if (!UUID_RE.test(club)) return fail(400, 'bad club id')
+        names = (await pool.query('SELECT team_name FROM public.club_teams WHERE club_id = $1', [club])).rows.map((r) => r.team_name)
+      }
+      let clubSql = ''
+      if (names) {
+        if (!names.length) return ok({ matches: [] }, { 'Cache-Control': 'public, max-age=15' })
+        args.push(names)
+        clubSql = ` AND (m.home_team->>'name' = ANY($${args.length}) OR m.away_team->>'name' = ANY($${args.length}))`
+      }
       args.push(lim)
       const { rows } = await pool.query(
         `SELECT ${MATCH_COLUMNS} FROM public.matches m
           WHERE coalesce(m.test, false) = false AND m.external_id IS NOT NULL
-            AND m.scheduled_at >= $1 AND m.scheduled_at < $2${statusSql}
+            AND m.scheduled_at >= $1 AND m.scheduled_at < $2${statusSql}${clubSql}
           ORDER BY m.scheduled_at, m.game_n LIMIT $${args.length}`, args)
       return ok({ matches: rows.map((r) => publicMatchInfo(r, { withRosters: false })) }, { 'Cache-Control': 'public, max-age=15' })
     })
+  }
+
+  /** Is one of `names` playing in match `id`? (the club API's check before it serves a match) */
+  async function involves(id, names) {
+    if (!MATCH_ID_RE.test(id) || !names?.length) return false
+    const { rows } = await pool.query(
+      `SELECT 1 FROM public.matches m WHERE m.external_id = $1 AND coalesce(m.test, false) = false
+          AND (m.home_team->>'name' = ANY($2) OR m.away_team->>'name' = ANY($2))`, [id, names])
+    return rows.length > 0
   }
 
   async function info(id) {
@@ -399,7 +421,7 @@ export function createPublicApi({ pool, logger = console } = {}) {
     })
   }
 
-  return { list, info, live, liveSnapshot, stats }
+  return { list, info, live, liveSnapshot, stats, involves }
 }
 
 /**
@@ -458,5 +480,5 @@ export function createLiveStreams({ snapshot, intervalMs = 2000, maxPerMatch = 5
 
 /** `?from`, `?to`, `?status`, `?limit` from a URL. */
 export const listParams = (u) => ({
-  from: u.searchParams.get('from'), to: u.searchParams.get('to'), status: u.searchParams.get('status'), limit: u.searchParams.get('limit')
+  from: u.searchParams.get('from'), to: u.searchParams.get('to'), status: u.searchParams.get('status'), limit: u.searchParams.get('limit'), club: u.searchParams.get('club')
 })

@@ -10,7 +10,7 @@ vi.mock('react-i18next', () => ({
 }))
 
 const api = vi.hoisted(() => ({
-  club: { get: vi.fn(), setContact: vi.fn(), members: vi.fn(), removeMember: vi.fn(), listInvites: vi.fn(), createInvite: vi.fn(), revokeInvite: vi.fn(), teams: vi.fn(), createTeamLink: vi.fn(), removeTeamManager: vi.fn(), licences: vi.fn(), putLicences: vi.fn(), requests: vi.fn(), decideRequests: vi.fn() },
+  club: { get: vi.fn(), setContact: vi.fn(), members: vi.fn(), removeMember: vi.fn(), listInvites: vi.fn(), createInvite: vi.fn(), revokeInvite: vi.fn(), teams: vi.fn(), createTeamLink: vi.fn(), removeTeamManager: vi.fn(), licences: vi.fn(), putLicences: vi.fn(), requests: vi.fn(), decideRequests: vi.fn(), apiTokens: vi.fn(), createApiToken: vi.fn(), revokeApiToken: vi.fn() },
   clubs: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), vmTeams: vi.fn(), setRule: vi.fn(), setManagers: vi.fn(), managerCandidates: vi.fn(), inviteManager: vi.fn() },
   admin: { listInvites: vi.fn(), createInvite: vi.fn(), revokeInvite: vi.fn() }
 }))
@@ -38,6 +38,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   ui.toasts = []
   ui.confirm.mockResolvedValue(true)
+  api.club.apiTokens.mockResolvedValue({ data: { tokens: [] }, error: null, status: 200 })
   api.club.get.mockResolvedValue(okRes({ club: { ...VBCM, teams: ['VBC Musterdorf H1'], contact_email: 'info@vbc-musterdorf.ch', managers: [], scorers: 1 } }))
   // db/023: the club's teams and their team links
   api.club.teams.mockResolvedValue(okRes({ teams: [{ id: 'team-h1', name: 'VBC Musterdorf H1', managers: [], open_links: 0 }] }))

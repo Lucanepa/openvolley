@@ -148,7 +148,7 @@ export function manageFamilyOf (pathname) {
   return null
 }
 
-export function createManageApi ({ accounts, savedTeams, beach = null, approvals = null, revisions = null, activity = null, scoresheets = null, clubs = null, finalMail = null, teams = null, licences = null, requests = null, notices = null }) {
+export function createManageApi ({ accounts, savedTeams, beach = null, approvals = null, revisions = null, activity = null, scoresheets = null, clubs = null, finalMail = null, teams = null, licences = null, requests = null, notices = null, clubApi = null }) {
   // approvals?.x, or 503 when the module is not there
   const ap = (name) => (args) => (approvals && typeof approvals[name] === 'function' ? approvals[name](args) : APPROVALS_OFF())
   const q = (query, k) => {
@@ -280,6 +280,10 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['GET', new RegExp(`^/api/club/${ID}/invites$`), clubManagerOf, (m) => club(() => accounts.listInvites({ clubId: m[1] }))],
     ['POST', new RegExp(`^/api/club/${ID}/invites$`), clubManagerOf, clubInvite],
     ['POST', new RegExp(`^/api/club/${ID}/invites/${ID}/revoke$`), clubManagerOf, (m, c) => club(() => accounts.revokeInvite({ actorId: c.user.id, id: m[2], clubId: m[1] }))],
+    // db/032: the club's API tokens (lib/clubApi.js); the secret is shown once, at creation
+    ['GET', new RegExp(`^/api/club/${ID}/api-tokens$`), clubManagerOf, (m) => (clubApi ? clubApi.list({ clubId: m[1] }) : notFound())],
+    ['POST', new RegExp(`^/api/club/${ID}/api-tokens$`), clubManagerOf, (m, c) => (clubApi ? clubApi.create({ actorId: c.user.id, clubId: m[1], body: c.body }) : notFound())],
+    ['DELETE', new RegExp(`^/api/club/${ID}/api-tokens/${ID}$`), clubManagerOf, (m, c) => (clubApi ? clubApi.revoke({ actorId: c.user.id, clubId: m[1], id: m[2] }) : notFound())],
     // db/023: the club's teams, their team links and team managers
     ['GET', new RegExp(`^/api/club/${ID}/teams$`), clubManagerOf, (m) => team((tm) => tm.clubTeams({ clubId: m[1] }))],
     ['POST', new RegExp(`^/api/club/${ID}/teams/${ID}/invites$`), clubManagerOf, teamInvite],

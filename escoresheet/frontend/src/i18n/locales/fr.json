@@ -3592,6 +3592,45 @@
       "notAMember": "Un responsable doit être un compte du club. Envoyez plutôt un lien de responsable."
     },
     "myClub": {
+      "api": {
+        "title": "API",
+        "new": "Nouveau jeton d'API",
+        "intro": "Laissez votre propre site ou logiciel lire les matchs et les scores en direct de votre club, et envoyer des feuilles d'équipe. Un jeton vaut pour ce club seulement. Pour les scores en direct sur un site, aucun jeton n'est nécessaire : utilisez le widget public.",
+        "empty": "Aucun jeton d'API pour l'instant.",
+        "revoke": "Révoquer",
+        "revokeTitle": "Révoquer ce jeton ?",
+        "revokeBody": "Les logiciels qui l'utilisent cessent de fonctionner immédiatement. Cette action est irréversible.",
+        "state": {
+          "active": "Actif",
+          "expired": "Expiré",
+          "revoked": "Révoqué"
+        },
+        "lastUsed": "Dernière utilisation {{date}}",
+        "neverUsed": "Jamais utilisé",
+        "expires": "Expire",
+        "createdTitle": "Jeton d'API créé",
+        "createdOnce": "Copiez-le maintenant – il n'est affiché qu'une seule fois.",
+        "copy": "Copier",
+        "copied": "Copié.",
+        "example": "Essayez :",
+        "create": "Créer le jeton",
+        "label": "Libellé",
+        "labelHint": "Par exemple site web ou synchronisation des rosters",
+        "scopes": "Ce qu'il peut faire",
+        "scope": {
+          "read": "Lire le club, les équipes, les matchs, les listes de licences et les rencontres",
+          "rosters:write": "Envoyer et supprimer le roster d'un match",
+          "teams:write": "Remplacer l'effectif d'une équipe",
+          "licences:write": "Remplacer une liste de licences"
+        },
+        "team": "Équipe",
+        "teamHint": "Limiter le jeton à une équipe, ou laisser vide pour tout le club",
+        "wholeClub": "Tout le club",
+        "days": "Valable (jours)",
+        "daysHint": "1 à 730, ou vide pour sans fin",
+        "password": "Votre mot de passe",
+        "passwordHint": "Un jeton qui peut écrire demande votre mot de passe."
+      },
       "none": "Vous ne gérez aucun club.",
       "pick": "Club",
       "save": "Enregistrer",

@@ -5,6 +5,7 @@ import InvitesPanel from './InvitesPanel'
 import ClubTeamsSection from './ClubTeamsSection'
 import ClubLicencesSection from './ClubLicencesSection'
 import RequestsSection from './RequestsSection'
+import ClubApiSection from './ClubApiSection'
 import ClubPersonPage from './ClubPersonPage'
 import { usePanelData, usePanelRoute, useOnline, OfflineBanner, PageLoadGate, PageSpinner, PanelHead, InlineError, useErrorText } from './common'
 import { Button, Chip, EmptyInset, Field, Input, Notice, Row, RowList, RowTool, Select, SkeletonRows, confirmDialog, dayLabel, toast } from '../../ui'
@@ -64,6 +65,8 @@ function ClubSections({ club, onOpenPerson, onOpenTeam }) {
       {/* db/024: the club's licence lists from VolleyManager */}
       <ClubLicencesSection club={club} onOpenPerson={onOpenPerson} />
       <InvitesPanel club={club} title={t('manage.myClub.invites')} />
+      {/* db/032: the club's API tokens */}
+      <ClubApiSection club={club} />
     </>
   )
 }

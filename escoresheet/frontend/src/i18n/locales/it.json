@@ -3598,6 +3598,45 @@
       "notAMember": "Un responsabile deve essere un account della società. Invii invece un link da responsabile."
     },
     "myClub": {
+      "api": {
+        "title": "API",
+        "new": "Nuovo token API",
+        "intro": "Lascia che il tuo sito o software legga le partite e i punteggi in diretta del tuo club e invii i roster. Un token vale solo per questo club. Per i punteggi in diretta su un sito non serve un token: usa il widget pubblico.",
+        "empty": "Ancora nessun token API.",
+        "revoke": "Revoca",
+        "revokeTitle": "Revocare questo token?",
+        "revokeBody": "Il software che lo usa smette subito di funzionare. L'azione non si può annullare.",
+        "state": {
+          "active": "Attivo",
+          "expired": "Scaduto",
+          "revoked": "Revocato"
+        },
+        "lastUsed": "Ultimo uso {{date}}",
+        "neverUsed": "Mai usato",
+        "expires": "Scade",
+        "createdTitle": "Token API creato",
+        "createdOnce": "Copialo ora – viene mostrato una sola volta.",
+        "copy": "Copia",
+        "copied": "Copiato.",
+        "example": "Provalo:",
+        "create": "Crea token",
+        "label": "Etichetta",
+        "labelHint": "Per esempio sito web o sincronizzazione dei roster",
+        "scopes": "Cosa può fare",
+        "scope": {
+          "read": "Leggere club, squadre, partite, elenchi di licenze e incontri",
+          "rosters:write": "Inviare ed eliminare il roster di una partita",
+          "teams:write": "Sostituire la rosa di una squadra",
+          "licences:write": "Sostituire un elenco di licenze"
+        },
+        "team": "Squadra",
+        "teamHint": "Limita il token a una squadra, o lascia vuoto per tutto il club",
+        "wholeClub": "Tutto il club",
+        "days": "Valido per (giorni)",
+        "daysHint": "Da 1 a 730, o vuoto per nessuna scadenza",
+        "password": "La tua password",
+        "passwordHint": "Un token che può scrivere richiede la tua password."
+      },
       "none": "Non gestisci nessuna società.",
       "pick": "Società",
       "save": "Salva",

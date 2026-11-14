@@ -182,6 +182,17 @@ export const clubApi = {
   revokeInvite(clubId, inviteId) {
     return apiRequest('POST', `/api/club/${enc(clubId)}/invites/${enc(inviteId)}/revoke`, {})
   },
+  /** db/032: the club's API tokens (never the secret), a new one (the token is shown once), revoke. */
+  apiTokens(clubId) {
+    return apiRequest('GET', `/api/club/${enc(clubId)}/api-tokens`)
+  },
+  /** { label, scopes, team_id?, expires_in_days?, password (for a write scope) } -> { token, ... } */
+  createApiToken(clubId, body) {
+    return apiRequest('POST', `/api/club/${enc(clubId)}/api-tokens`, body)
+  },
+  revokeApiToken(clubId, tokenId) {
+    return apiRequest('DELETE', `/api/club/${enc(clubId)}/api-tokens/${enc(tokenId)}`)
+  },
   /** db/023: the club's teams with ids, their team managers and open links. */
   teams(clubId) {
     return apiRequest('GET', `/api/club/${enc(clubId)}/teams`)
