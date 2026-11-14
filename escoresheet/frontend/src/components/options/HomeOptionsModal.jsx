@@ -213,7 +213,7 @@ function Section({ title, children }) {
   )
 }
 
-function DurationInput({ value, onChange, label }) {
+function DurationInput({ value, onChange, label, t }) {
   const minutes = Math.floor(value / 60)
   const seconds = value % 60
   const handleMinutes = (e) => {
@@ -229,10 +229,11 @@ function DurationInput({ value, onChange, label }) {
   const inputCls = cn(SMALL_FIELD, 'w-14 font-semibold')
   return (
     <div className="ml-auto flex shrink-0 items-center gap-1 pl-4">
-      <input type="number" min={0} max={10} value={minutes} onChange={handleMinutes} className={inputCls} aria-label={`${label} minutes`} />
-      <span className="text-sm font-semibold text-stone-500">'</span>
-      <input type="number" min={0} max={59} value={seconds.toString().padStart(2, '0')} onChange={handleSeconds} className={inputCls} aria-label={`${label} seconds`} />
-      <span className="text-sm font-semibold text-stone-500">''</span>
+      {/* the units in words (they were bare ' and '', UI tour 14.11) */}
+      <input type="number" min={0} max={10} value={minutes} onChange={handleMinutes} className={inputCls} aria-label={t('options.durationMinutesAria', { label })} />
+      <span className="text-xs font-semibold text-stone-500">{t('options.unitMin', 'min')}</span>
+      <input type="number" min={0} max={59} value={seconds.toString().padStart(2, '0')} onChange={handleSeconds} className={inputCls} aria-label={t('options.durationSecondsAria', { label })} />
+      <span className="text-xs font-semibold text-stone-500">{t('options.unitSec', 's')}</span>
     </div>
   )
 }
@@ -620,6 +621,7 @@ export default function HomeOptionsModal({
               <InfoDot title={t('options.setIntervalDurationInfo')} />
             </div>
             <DurationInput
+              t={t}
               value={setIntervalDuration}
               label={t('options.setIntervalDurationLabel', 'set interval duration')}
               onChange={(newVal) => {
@@ -712,7 +714,9 @@ export default function HomeOptionsModal({
                 className="max-w-md [&>button]:capitalize"
                 options={['auto', 'desktop', 'tablet', 'phone'].map(mode => ({
                   value: mode,
-                  label: mode === 'auto' ? t('options.autoWithMode', { mode: detectedDisplayMode }) : mode,
+                  // "Auto (Desktop)" wrapped in its segment (UI tour 14.11): the
+                  // segment says Auto, the line below what it picked
+                  label: mode === 'auto' ? t('options.auto', 'Auto') : mode,
                   title: modeDescriptions[mode]
                 }))}
                 onChange={(mode) => {
@@ -728,6 +732,12 @@ export default function HomeOptionsModal({
                   localStorage.setItem('displayMode', mode)
                 }}
               />
+
+              {displayMode === 'auto' && detectedDisplayMode && (
+                <p data-testid="screen-mode-auto-detected" className="mt-1.5 text-[11px] leading-snug text-stone-500">
+                  {t('options.autoDetectedMode', { mode: detectedDisplayMode.charAt(0).toUpperCase() + detectedDisplayMode.slice(1) })}
+                </p>
+              )}
 
               {displayMode !== 'desktop' && displayMode !== 'auto' && (
                 <div className="mt-3">

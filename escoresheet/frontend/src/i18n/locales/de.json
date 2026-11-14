@@ -1580,6 +1580,11 @@
     "lfpTrackingInfo": "Lokal ausgebildete Spielende (LAS/LFP/JFL/GFL) auf dem Feld verfolgen. Wenn aktiviert, wird der LAS-Status auf den Spielerkreisen angezeigt und gewarnt, wenn die Mindestanzahl nicht erreicht ist.",
     "minimumLfpsOnCourt": "Minimum LAS auf dem Feld:",
     "autoWithMode": "Auto ({{mode}})",
+    "unitMin": "Min.",
+    "unitSec": "Sek.",
+    "durationMinutesAria": "{{label}}, Minuten",
+    "durationSecondsAria": "{{label}}, Sekunden",
+    "autoDetectedMode": "Auto verwendet auf diesem Bildschirm {{mode}}.",
     "keybindingLabels": {
       "pointLeft": "Punkt links",
       "pointRight": "Punkt rechts",
