@@ -374,15 +374,19 @@ const OfficialCard = memo(function OfficialCard({
   onOpenDatabase,
   collapsible = false,
   defaultCollapsed = false,
-  forceExpanded = false,
+  // the card holds a name: it is on until the switch turns it off
+  filled = false,
   dobRequired = false,
   // a referee's optional address for the final scoresheet (setEmail: shown)
   email = '',
   setEmail = null,
   t
 }) {
-  const [collapsed, setCollapsed] = useState(defaultCollapsed)
-  const isCollapsed = collapsible && collapsed && !forceExpanded
+  // null: the switch was not touched, the card follows defaultCollapsed and
+  // is on while it holds a name (review 7a: before, a name held it on and
+  // the switch did nothing)
+  const [collapsed, setCollapsed] = useState(null)
+  const isCollapsed = collapsible && (collapsed ?? (defaultCollapsed && !filled))
   // The coin toss needs this date of birth (scorer): flag it while it is
   // missing or still the 01.01.1900 placeholder, which is shown as empty.
   const dobMissing = dobRequired && !isKnownDob(dob)
@@ -407,7 +411,7 @@ const OfficialCard = memo(function OfficialCard({
             </Button>
           )}
           {collapsible && (
-            <ToggleSwitch on={!isCollapsed} onToggle={() => setCollapsed(c => !c)} label={title} />
+            <ToggleSwitch on={!isCollapsed} onToggle={() => setCollapsed(!isCollapsed)} label={title} />
           )}
         </div>
       </div>
@@ -457,16 +461,16 @@ const LineJudgesCard = memo(function LineJudgesCard({
   setLineJudge3,
   setLineJudge4,
   defaultCollapsed = false,
-  forceExpanded = false,
+  filled = false, // a line judge is named: on until the switch turns it off
   t
 }) {
-  const [collapsed, setCollapsed] = useState(defaultCollapsed)
-  const isCollapsed = collapsed && !forceExpanded
+  const [collapsed, setCollapsed] = useState(null) // null: switch not touched
+  const isCollapsed = collapsed ?? (defaultCollapsed && !filled)
   return (
     <div className={isCollapsed ? OFFICIAL_BOX_COLLAPSED : OFFICIAL_BOX}>
       <div className={isCollapsed ? OFFICIAL_HEAD_COLLAPSED : OFFICIAL_HEAD}>
         <span className={cn(OFFICIAL_TITLE, isCollapsed && 'text-stone-500')}>{t('matchSetup.lineJudges')}</span>
-        <ToggleSwitch on={!isCollapsed} onToggle={() => setCollapsed(c => !c)} label={t('matchSetup.lineJudges')} />
+        <ToggleSwitch on={!isCollapsed} onToggle={() => setCollapsed(!isCollapsed)} label={t('matchSetup.lineJudges')} />
       </div>
       {!isCollapsed && (
         <div className="p-4">
@@ -4078,7 +4082,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               onOpenDatabase={handleOpenDatabase}
               collapsible={true}
               defaultCollapsed={true}
-              forceExpanded={!!(ref2First || ref2Last)}
+              filled={!!(ref2First || ref2Last)}
               t={t}
             />
             <OfficialCard
@@ -4112,7 +4116,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               onOpenDatabase={handleOpenDatabase}
               collapsible={true}
               defaultCollapsed={true}
-              forceExpanded={!!(asstFirst || asstLast)}
+              filled={!!(asstFirst || asstLast)}
               t={t}
             />
             <LineJudgesCard
@@ -4125,7 +4129,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               setLineJudge3={setLineJudge3}
               setLineJudge4={setLineJudge4}
               defaultCollapsed={true}
-              forceExpanded={!!(lineJudge1 || lineJudge2 || lineJudge3 || lineJudge4)}
+              filled={!!(lineJudge1 || lineJudge2 || lineJudge3 || lineJudge4)}
               t={t}
             />
           </div>
