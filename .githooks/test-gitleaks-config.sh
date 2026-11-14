@@ -75,6 +75,13 @@ expect miss openvolley-env-secret a.js      "  jwt_secret: jwtSecret,"
 expect miss openvolley-env-secret c.yml     "      POSTGRES_PASSWORD: postgres"
 expect hit  openvolley-env-secret c.yml     "      POSTGRES_PASSWORD: $(rnd 20)"
 expect hit  resend-api-key        a.js      "const k = 're_$(rnd 8)_$(rnd 24)'"
+# The two database passwords of the cloud stack (deploy/.env, roles.sql).
+expect hit  openvolley-env-secret .env.prod "OV_OWNER_PW=$(rnd 32)"
+expect hit  openvolley-env-secret .env.prod "OV_APP_PW=$(rnd 32)"
+expect miss openvolley-env-secret a.sh      'pw=$(sed -n "s/^OV_APP_PW=//p" "$OV_ENV_FILE" | tail -n1)'
+# A shell expansion (${VAR:?}, ${VAR:-x}) and a printf format are no literal.
+expect miss openvolley-env-secret a.sh      'url=ov_app:${OV_APP''_PW:?}@ov-postgres:5432/openvolley'
+expect miss openvolley-env-secret a.sh      "printf 'OV_OWNER""_PW=%s\\nOV_APP""_PW=app\\n' \"\$pw\""
 
 # DeepL: translate.js reads DEEPL_KEY (Pro keys have no :fx suffix).
 expect hit  deepl-api-key-assignment .env "DEEPL_KEY=$(python3 -c 'import uuid;print(uuid.uuid4())')"

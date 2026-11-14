@@ -114,8 +114,9 @@ Windows installers are produced by CI (`.github/workflows/desktop.yml`, a
 A `macos-15` (arm64) runner builds one universal app (`--target
 universal-apple-darwin`, both slices), signed with the Developer ID of team
 T2Q99T2KH5 (hardened runtime, `Entitlements.plist`) and notarized by Apple,
-tickets stapled to the app and the .dmg (secrets `APPLE_*`; a manual run
-without them builds an ad-hoc signed app, a tag build fails), as
+tickets stapled to the app and the .dmg (the `sign-macos` job, tag pushes
+only, secrets `APPLE_*` of the environment `macos-signing`; a manual run
+builds an ad-hoc signed app), as
 `OpenVolley.eScoresheet_<v>_universal.dmg` and the updater's
 `openvolley-escoresheet_<v>_universal.app.tar.gz` (OpenBeach: `OpenBeach_…`,
 `openbeach-escoresheet_…`). The job checks the bundle and smoke-tests it (each

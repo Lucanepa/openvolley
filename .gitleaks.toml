@@ -66,10 +66,10 @@ keywords = ["re_"]
 
 [[rules]]
 id = "openvolley-env-secret"
-description = "A secret env var this stack reads (SMTP, Resend, Supabase service role, PocketBase admin, DeepL, TLS key, Postgres, publish tokens) assigned a literal"
-regex = '''(?i)\b[A-Z0-9_]*(?:SMTP_PASS(?:WORD)?|RESEND_API_KEY|SERVICE_ROLE_KEY|POCKETBASE_ADMIN_PASSWORD|PB_ADMIN_PASSWORD|DEEPL(?:_API)?_KEY|SSL_KEY_BASE64|LIVE_PUBLISH_TOKEN|REOPEN_PASSWORD_HASH|POSTGRES_PASSWORD|PGPASSWORD|JWT_SECRET)\b["'\s]*[:=][ \t]*["']?([^\s"'`$<{]{8,})'''
+description = "A secret env var this stack reads (SMTP, Resend, Supabase service role, PocketBase admin, DeepL, TLS key, Postgres and its two role passwords, publish tokens) assigned a literal"
+regex = '''(?i)\b[A-Z0-9_]*(?:SMTP_PASS(?:WORD)?|RESEND_API_KEY|SERVICE_ROLE_KEY|POCKETBASE_ADMIN_PASSWORD|PB_ADMIN_PASSWORD|DEEPL(?:_API)?_KEY|SSL_KEY_BASE64|LIVE_PUBLISH_TOKEN|REOPEN_PASSWORD_HASH|POSTGRES_PASSWORD|PGPASSWORD|JWT_SECRET|OV_OWNER_PW|OV_APP_PW)\b["'\s]*[:=][ \t]*["']?([^\s"'`$<{]{8,})'''
 secretGroup = 1
-keywords = ["smtp_pass", "resend_api_key", "service_role_key", "admin_password", "deepl", "ssl_key_base64", "live_publish_token", "reopen_password_hash", "postgres_password", "pgpassword", "jwt_secret"]
+keywords = ["smtp_pass", "resend_api_key", "service_role_key", "admin_password", "deepl", "ssl_key_base64", "live_publish_token", "reopen_password_hash", "postgres_password", "pgpassword", "jwt_secret", "ov_owner_pw", "ov_app_pw"]
 allowlists = [
   # Values that are references, not literals: env.X, process.env.X, secrets.X, a ternary/expression.
   { regexes = ['''(?i)^(?:process\.|import\.meta|env\.|secrets\.|vars\.|os\.environ|getenv|req\.|config\.)'''] },
@@ -85,6 +85,9 @@ allowlists = [
   ] },
   # Well-known dev defaults in compose files (POSTGRES_PASSWORD: postgres).
   { regexes = ['''(?i)^(?:postgres|password|passwort|changeme)$'''] },
+  # A shell expansion read as "VAR:" + value (${OV_APP_PW:?}, ${X:-default})
+  # and a printf format (OV_OWNER_PW=%s): the value comes from elsewhere.
+  { regexes = ['''^[?+=-][^}\s]*\}''', '''^%[a-z]'''] },
 ]
 
 [[rules]]

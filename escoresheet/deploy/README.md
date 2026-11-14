@@ -348,12 +348,18 @@ Test: `tests/publish-svrz-rc.test.sh`.
 
 Both macOS apps are signed with the Developer ID of Apple team T2Q99T2KH5 (Luca Canepa) and
 notarized by Apple: `desktop.yml` staples the tickets to the .app, the updater's .app.tar.gz
-and the .dmg, so they open like any other app, also without internet in a hall. Repository
-secrets: `APPLE_CERTIFICATE` (the Developer ID Application .p12, base64) and
-`APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_TEAM_ID`, and the App Store
-Connect API key `APPLE_API_KEY` (key ID), `APPLE_API_ISSUER`, `APPLE_API_PRIVATE_KEY` (.p8).
-A tag build without them fails its macOS job (a release is never ad-hoc signed); a manual run
-without them builds an ad-hoc app. The certificate expires in December 2027 and the developer
+and the .dmg, so they open like any other app, also without internet in a hall. The build job
+makes an ad-hoc app without any secret; only on a tag push the `sign-macos` job signs,
+notarizes and staples it and makes the .dmg. That job runs no npm, cargo or third-party action
+and never starts the app, and it is the only one with the secrets, which live in the GitHub
+environment `macos-signing` (Settings › Environments, deployment tags `desktop-v*` and
+`beach-desktop-v*` only): `APPLE_CERTIFICATE` (the Developer ID Application .p12, base64) and
+`APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, and the App Store Connect API key
+`APPLE_API_KEY` (key ID), `APPLE_API_ISSUER`, `APPLE_API_PRIVATE_KEY` (.p8; a key with the
+Developer role is enough for notarization). A tag build without them fails `sign-macos` (a
+release is never ad-hoc signed; the release then goes out without macOS files); a manual run
+never signs and builds an ad-hoc app. A release is never replaced: running the workflow again
+on a published tag only adds the files the release lacks. The certificate expires in December 2027 and the developer
 membership on 9 November each year: renew both, then put the new .p12 into
 `APPLE_CERTIFICATE*`. Apps signed before stay valid (secure timestamp). Updating from an
 ad-hoc version (3.0.13 and older) to a signed one asks once more for the local network and

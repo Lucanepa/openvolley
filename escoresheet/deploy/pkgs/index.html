@@ -11,7 +11,9 @@
 <!-- Template: publish-pkgs.sh (lib/publish-lib.sh landing_page) fills in the placeholders
      DESKTOP_VERSION, DEB_PACKAGE, WINDOWS_URL, MAC_URL, APK_VERSION, APK_FILE and, for OpenBeach,
      BEACH_DESKTOP_VERSION, BEACH_WINDOWS_URL, BEACH_MAC_URL, BEACH_APK_VERSION and BEACH_APK_FILE (each
-     between @ signs) from the packages it publishes. The beach block is left out until an OpenBeach
+     between @ signs) from the packages it publishes. WINDOWS_SHA256, MAC_SHA256, BEACH_WINDOWS_SHA256 and
+     BEACH_MAC_SHA256 come from GitHub's digest of that release file; a line with one is left out when
+     GitHub gives none. The beach block is left out until an OpenBeach
      package is published, its beach-desktop / beach-android parts until that one is.
      The flatpak / beach-flatpak parts appear once flatpak/<app id>.flatpakref is
      published (packaging/flatpak/publish-flatpak.sh); the pacman parts once arch/x86_64/openvolley.db
@@ -213,6 +215,7 @@
         <a class="btn btn-primary" href="@WINDOWS_URL@">Download for Windows</a>
         <a class="btn btn-ghost" href="https://github.com/Lucanepa/openvolley/releases/tag/desktop-v@DESKTOP_VERSION@">All downloads</a>
       </div>
+      <p class="meta">Check the download before you run it: PowerShell <code>Get-FileHash</code> on the file must show this SHA-256: <code>@WINDOWS_SHA256@</code></p>
       <details class="more">
         <summary>With a package manager: Scoop, winget</summary>
         <h4>Scoop</h4>
@@ -236,6 +239,7 @@
         <a class="btn btn-primary" href="@MAC_URL@">Download for macOS</a>
         <a class="btn btn-ghost" href="https://github.com/Lucanepa/openvolley/releases/tag/desktop-v@DESKTOP_VERSION@">All downloads</a>
       </div>
+      <p class="meta"><code>shasum -a 256</code> on the disk image shows this SHA-256: <code>@MAC_SHA256@</code></p>
       <p>Signed and notarized by Apple: it opens like any other app, also without internet.</p>
       <p class="meta">Start it from Applications: from there it updates itself. The tablet Wi-Fi of the Windows and Linux app is not available on macOS: connect the tablets through the venue's Wi-Fi, a travel router or macOS Internet Sharing.</p>
     </div>
@@ -346,6 +350,7 @@ sudo snap connect openvolley-escoresheet:bluez</code></pre><button class="copy" 
         <a class="btn btn-primary" href="@BEACH_WINDOWS_URL@">Download OpenBeach for Windows</a>
         <a class="btn btn-ghost" href="https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v@BEACH_DESKTOP_VERSION@">All downloads</a>
       </div>
+      <p class="meta">Check the download before you run it: PowerShell <code>Get-FileHash</code> on the file must show this SHA-256: <code>@BEACH_WINDOWS_SHA256@</code></p>
       <details class="more">
         <summary>With a package manager: Scoop, winget</summary>
         <h4>Scoop</h4>
@@ -366,6 +371,7 @@ sudo snap connect openvolley-escoresheet:bluez</code></pre><button class="copy" 
       <div class="actions">
         <a class="btn btn-primary" href="@BEACH_MAC_URL@">Download OpenBeach for macOS</a>
       </div>
+      <p class="meta"><code>shasum -a 256</code> on the disk image shows this SHA-256: <code>@BEACH_MAC_SHA256@</code></p>
       <p class="meta">Updates: like OpenVolley's, in the background, installed when you quit it, never during a match.</p>
     </div>
     <!--/beach-mac-->

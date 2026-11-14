@@ -619,7 +619,23 @@ if [[ "$(id -u)" != 0 ]] && command -v apt-get >/dev/null && [[ "$(dpkg --print-
   ok "install.sh: the root hint repeats the package name only when it is not the default"
 fi
 
+# github_asset_sha256: the SHA-256 GitHub keeps for a release asset ("digest"),
+# nothing when it has none or something else.
+curl() { cat "$T/release.json"; }
+hex=$(printf 'a%.0s' {1..64})
+printf '{"assets":[{"name":"A_1_x64-setup.exe","digest":"sha256:%s"},{"name":"A_1_universal.dmg"}]}' "$hex" > "$T/release.json"
+[[ "$(github_asset_sha256 desktop-v1 -setup.exe)" == "$hex" ]] || bad "github_asset_sha256: the installer's digest"
+[[ -z "$(github_asset_sha256 desktop-v1 _universal.dmg)" ]] || bad "github_asset_sha256: an asset without a digest"
+[[ -z "$(github_asset_sha256 desktop-v1 .deb)" ]] || bad "github_asset_sha256: no such asset"
+printf '{"assets":[{"name":"A_1_x64-setup.exe","digest":"sha256:%s<b>"}]}' "$hex" > "$T/release.json"
+[[ -z "$(github_asset_sha256 desktop-v1 -setup.exe)" ]] || bad "github_asset_sha256: a digest that is not 64 hex digits"
+unset -f curl
+ok "github_asset_sha256: GitHub's digest of the asset, or nothing"
+
 # The landing page: OpenVolley's sections always, OpenBeach's once published.
+# the releases listed in $SHA_TAGS have digests: e... for the .exe, d... for the .dmg
+SHA_TAGS=''
+github_asset_sha256() { if [[ " $SHA_TAGS " == *" $1 "* ]]; then if [[ "$2" == *.dmg ]]; then printf 'd%.0s' {1..64}; else printf 'e%.0s' {1..64}; fi; echo; fi; }
 github_setup_exe_url() { echo "https://github.com/Lucanepa/openvolley/releases/download/$1/Setup_x64-setup.exe"; }
 # the releases listed in $MAC_TAGS have a .dmg
 MAC_TAGS=''
@@ -665,7 +681,16 @@ ok "page: OpenBeach's desktop part once its .deb is published; each app its own 
 page "$T/bPackages" "$T/index-both.json"
 if grep -q '@[A-Z_]*@' "$T/index.html"; then bad "page: placeholders left"; fi
 if grep -q 'lucanepa/tap/openbeach' "$T/index.html"; then bad "page: OpenBeach macOS part without its .dmg"; fi
+if grep -q 'this SHA-256' "$T/index.html"; then bad "page: a SHA-256 line without GitHub's digest"; fi
 ok "page: both apps, every placeholder filled"
+SHA_TAGS="desktop-v2.2.1 beach-desktop-v2.0.1" MAC_TAGS="desktop-v2.2.1 beach-desktop-v2.0.1"
+page "$T/bPackages" "$T/index-both.json"
+e64=$(printf 'e%.0s' {1..64}) d64=$(printf 'd%.0s' {1..64})
+[[ "$(grep -c "SHA-256: <code>$e64</code>" "$T/index.html")" == 2 && "$(grep -c "SHA-256: <code>$d64</code>" "$T/index.html")" == 2 ]] ||
+  bad "page: the SHA-256 of each Windows installer and disk image"
+if grep -q '@[A-Z_]*@' "$T/index.html"; then bad "page: placeholders left with digests"; fi
+SHA_TAGS='' MAC_TAGS="desktop-v2.2.1"
+ok "page: the SHA-256 next to each Windows and macOS download"
 if grep -qE 'flatpak install|href="/flatpak/"' "$T/index.html"; then bad "page: Flatpak parts without a published Flatpak"; fi
 mkdir -p "$T/flatpak"
 touch "$T/flatpak/com.openvolley.escoresheet.flatpakref"

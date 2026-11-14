@@ -176,6 +176,7 @@ Configured via `vite-plugin-pwa` with:
 
 GitHub Actions workflows (`.github/workflows/` at the repository root):
 
-- **`desktop.yml`**: the Tauri desktop apps for Windows, Linux and macOS, on a `desktop-v<version>` tag (OpenBeach: `beach-desktop-v<version>`); creates the GitHub release
-- **`release.yml`**: the standalone server binaries (Node.js SEA) with the referee, bench and roster pages, on a `v*` tag or a manual run
+- **`desktop.yml`**: the Tauri desktop apps for Windows, Linux and macOS, on a `desktop-v<version>` tag (OpenBeach: `beach-desktop-v<version>`); `sign-macos` signs and notarizes the macOS app in a job of its own; creates the GitHub release (never replaces one)
+- **`release.yml`**: the standalone server binaries (Node.js SEA) with the referee, bench and roster pages and the beach pages of the OpenBeach commit in `.github/openbeach-commit`; a `v*` tag publishes the release, a manual run only builds
 - **`backend-tests.yml`**, **`desktop-flavours.yml`**, **`leak-scan.yml`**: backend tests, the desktop app identity check and the secret scan
+- **`dependency-audit.yml`**: `npm audit` (production dependencies, high and critical) and `cargo audit` on pull requests and weekly; `.github/dependabot.yml` proposes the updates
