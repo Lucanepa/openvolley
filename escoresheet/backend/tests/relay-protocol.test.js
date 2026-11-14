@@ -12,6 +12,7 @@ import { dirname, resolve } from 'node:path'
 import WebSocket from 'ws'
 import { get as httpGet } from 'node:http'
 import { gunzipSync } from 'node:zlib'
+import { randomBytes } from 'node:crypto'
 
 // The cloud relay stamps the order it received each live state in (server.js stampRelayOrder)
 const unstamped = (o) => { if (!o || typeof o !== 'object') return o; const { _relayEpoch, _relaySeq, ...rest } = o; return rest }
@@ -484,7 +485,10 @@ describe('backend WebSocket relay protocol', () => {
     const wsUrl = `ws://127.0.0.1:${port}`
     const seed = 'match_1791215210060_stalls'
     const match = makeMatch({ id: 45, seed_key: seed, gamePin: '454545' })
-    const big = 'b'.repeat(1024 * 1024)
+    // Text that does not compress: the venue relay (--local) deflates frames,
+    // and 1 MB of one letter left a few KB, so whether the queue passed the
+    // limit depended on a deflate still running when the next bundle came.
+    const big = () => randomBytes(768 * 1024).toString('base64')
     const scoreboard = await openClient(wsUrl)
     const referee = await openClient(wsUrl)
     scoreboard.send(syncMessage(match))
@@ -496,12 +500,16 @@ describe('backend WebSocket relay protocol', () => {
     // the tablet stops reading; the scorer goes on (30 bundles of 1 MB)
     referee.ws._socket.pause()
     for (let i = 0; i < 30; i++) {
-      scoreboard.send(syncMessage(match, { events: [{ id: i + 1, seq: i + 1, setIndex: 1, type: 'remark', payload: { text: big }, ts: '2026-11-29T10:00:00.000Z' }] }))
+      scoreboard.send(syncMessage(match, { events: [{ id: i + 1, seq: i + 1, setIndex: 1, type: 'remark', payload: { text: big() }, ts: '2026-11-29T10:00:00.000Z' }] }))
       scoreboard.send({ type: 'ping' })
       await scoreboard.waitFor((m) => m.type === 'pong' && !m.seen && (m.seen = true))
     }
     referee.ws._socket.resume()
-    const outcome = await Promise.race([closed, new Promise((resolve) => setTimeout(() => resolve(false), 5000))])
+    // 30 MB cannot all sit in the loopback's socket buffers, so the drop
+    // happened at one of the sends above; the wait only guards against a hang
+    let guard
+    const outcome = await Promise.race([closed, new Promise((resolve) => { guard = setTimeout(() => resolve(false), 30000) })])
+    clearTimeout(guard)
     assert.equal(outcome, true, 'the stalled tablet was dropped (it reconnects and gets the latest bundle)')
     assert.ok(referee.messages.filter((m) => m.type === 'match-data-update').length < 30)
     scoreboard.send({ type: 'delete-match', matchId: 45 })

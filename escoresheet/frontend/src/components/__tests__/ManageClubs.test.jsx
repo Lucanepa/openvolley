@@ -8,7 +8,7 @@ vi.mock('react-i18next', () => ({
 }))
 
 const api = vi.hoisted(() => ({
-  clubs: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), vmTeams: vi.fn(), setRule: vi.fn() },
+  clubs: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), vmTeams: vi.fn(), setRule: vi.fn(), managerCandidates: vi.fn(), inviteManager: vi.fn() },
   admin: { listAccounts: vi.fn(), setRoles: vi.fn(), setAccountClubs: vi.fn(), listInvites: vi.fn(), createInvite: vi.fn(), releaseGame: vi.fn() }
 }))
 vi.mock('../../lib/accountApi', async (orig) => ({ ...(await orig()), clubsApi: api.clubs, admin: api.admin }))
@@ -25,6 +25,7 @@ vi.mock('../../ui', async (orig) => {
 import ClubsPanel from '../manage/ClubsPanel'
 import AccountsPanel from '../manage/AccountsPanel'
 import InvitesPanel from '../manage/InvitesPanel'
+import ClubManagersField from '../manage/ClubManagersField'
 
 const VBCM = { id: 'c1', name: 'VBC Musterdorf', teams: ['VBC Musterdorf H1'], scorers: 2 }
 const OTHER = { id: 'c2', name: 'VBC Other', teams: ['VBC Other H1'], scorers: 0 }
@@ -38,6 +39,8 @@ beforeEach(() => {
     data: { teams: [{ name: 'VBC Musterdorf D2', club_id: null, club_name: null }, { name: 'VBC Musterdorf H1', club_id: 'c1', club_name: 'VBC Musterdorf' }, { name: 'VBC Other H1', club_id: 'c2', club_name: 'VBC Other' }] },
     error: null, status: 200
   })
+  // a club page opens its manager picker (db/029)
+  api.clubs.managerCandidates.mockResolvedValue({ data: { candidates: [] }, error: null, status: 200 })
 })
 
 describe('ClubsPanel', () => {
@@ -198,5 +201,63 @@ describe('InvitesPanel: a code\'s club', () => {
     fireEvent.click(within(dialog).getByTestId('create-invite'))
     await waitFor(() => expect(api.admin.createInvite).toHaveBeenCalled())
     expect(api.admin.createInvite.mock.calls[0][0]).toMatchObject({ label: 'VBCM 2026', club: null, club_id: 'c1', sport: 'indoor' })
+  })
+})
+
+describe('ClubManagersField: managers from the club\'s accounts, a link for anyone else', () => {
+  const ADA = { id: 'u1', email: 'ada@example.ch', name: 'Ada Scorer', via: ['scorer'] }
+  const BEA = { id: 'u2', email: 'bea@example.ch', name: '', via: ['teamManager'] }
+
+  it('lists the club\'s accounts not picked yet and adds the one picked', async () => {
+    api.clubs.managerCandidates.mockResolvedValue({ data: { candidates: [ADA, BEA] }, error: null, status: 200 })
+    const onChange = vi.fn()
+    render(<ClubManagersField club={{ id: 'c1' }} picked={[{ user_id: 'u2', email: 'bea@example.ch', name: '' }]} onChange={onChange} />)
+    const pick = await screen.findByTestId('club-manager-pick')
+    expect(api.clubs.managerCandidates).toHaveBeenCalledWith('c1')
+    // the one already picked is not offered again
+    expect(within(pick).getAllByRole('option').map((o) => o.value)).toEqual(['', 'u1'])
+    fireEvent.change(pick, { target: { value: 'u1' } })
+    expect(onChange).toHaveBeenCalledWith([
+      { user_id: 'u2', email: 'bea@example.ch', name: '' },
+      { user_id: 'u1', email: 'ada@example.ch', name: 'Ada Scorer' }
+    ])
+    // and a picked manager can be taken off
+    onChange.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: 'manage.clubs.removeManager' }))
+    expect(onChange).toHaveBeenCalledWith([])
+  })
+
+  it('a new club has no picker and no link yet: save it first', () => {
+    render(<ClubManagersField club={null} picked={[]} onChange={vi.fn()} />)
+    expect(screen.getByText('manage.clubs.saveFirst')).toBeInTheDocument()
+    expect(screen.queryByTestId('club-manager-invite-email')).toBeNull()
+    expect(api.clubs.managerCandidates).not.toHaveBeenCalled()
+  })
+
+  it('mails a club manager link to another address and shows the link', async () => {
+    api.clubs.inviteManager.mockResolvedValue({ data: { link: 'https://app.example.org/manage#club=abc', mailed: true }, error: null, status: 201 })
+    render(<ClubManagersField club={{ id: 'c1' }} picked={[]} onChange={vi.fn()} />)
+    expect(await screen.findByText('manage.clubs.noCandidates')).toBeInTheDocument()
+    const email = screen.getByTestId('club-manager-invite-email')
+    const send = screen.getByTestId('club-manager-invite-send')
+    fireEvent.change(email, { target: { value: 'not-an-address' } })
+    expect(send).toBeDisabled()
+    fireEvent.change(email, { target: { value: ' new.manager@example.ch ' } })
+    fireEvent.click(send)
+    await waitFor(() => expect(api.clubs.inviteManager).toHaveBeenCalledWith('c1', { email: 'new.manager@example.ch', lang: 'en' }))
+    const sent = await screen.findByTestId('club-manager-invite-sent')
+    expect(within(sent).getByText('manage.clubs.inviteMailed')).toBeInTheDocument()
+    expect(within(sent).getByText('https://app.example.org/manage#club=abc')).toBeInTheDocument()
+  })
+
+  it('shows the server\'s refusal and keeps the address', async () => {
+    api.clubs.inviteManager.mockResolvedValue({ data: null, error: { status: 0, network: true }, status: 0 })
+    render(<ClubManagersField club={{ id: 'c1' }} picked={[]} onChange={vi.fn()} />)
+    const email = await screen.findByTestId('club-manager-invite-email')
+    fireEvent.change(email, { target: { value: 'new.manager@example.ch' } })
+    fireEvent.click(screen.getByTestId('club-manager-invite-send'))
+    expect(await screen.findByRole('alert')).toHaveTextContent('manage.errors.offline')
+    expect(email).toHaveValue('new.manager@example.ch')
+    expect(screen.queryByTestId('club-manager-invite-sent')).toBeNull()
   })
 })

@@ -22,6 +22,7 @@ import { vitePluginApiRoutes } from '../../../vite-plugin-api-routes.js'
 import { readRelayBundle } from '../serverDataSync'
 import { runBeachVenueContract } from '../../../../backend/tests/helpers/beachVenueContract.js'
 import { runBenchRequestContract } from '../../../../backend/tests/helpers/benchRequestContract.js'
+import { TAURI_RELAY_BIN, startTauriRelay } from './tauriRelay.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const FRONTEND_DIR = resolve(here, '../../..')
@@ -1520,26 +1521,24 @@ describe('relay runtimes speak the shared protocol', () => {
     }
   })
 
-  // The Rust port can't run in plain CI without building Tauri; point this at a
-  // built binary to check it too:
-  //   OV_TAURI_RELAY_BIN=src-tauri/target/debug/openvolley-escoresheet npx vitest run lanRelayProtocol
-  it.skipIf(!process.env.OV_TAURI_RELAY_BIN)('Tauri Rust relay (OV_TAURI_RELAY_BIN)', async () => {
-    const [port, wsPort] = [await freePort(), await freePort()]
-    const child = spawn(process.env.OV_TAURI_RELAY_BIN, ['--server-only'], {
-      env: { ...process.env, OPENVOLLEY_HTTP_PORT: String(port), OPENVOLLEY_WS_PORT: String(wsPort) },
-      stdio: 'ignore'
-    })
+  // The desktop app's relay (src-tauri/src/relay.rs), a built binary; CI
+  // builds it (relay-contract.yml). It speaks the same protocol, but its
+  // WebSocket server (axum) offers no permessage-deflate, so deflateScenario
+  // is server.js's only.
+  it.skipIf(!TAURI_RELAY_BIN)('Tauri Rust relay (OV_TAURI_RELAY_BIN)', async () => {
+    const relay = await startTauriRelay()
+    const { base: httpBase, wsUrl } = relay
     try {
-      await waitForHttp(`http://127.0.0.1:${port}/api/health`)
-      await relayScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
-      await runBeachVenueContract({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'tauri' })
-      await runBenchRequestContract({ wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'tauri' })
-      await hostileFrameScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
-      await hallCrowdScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
-      const unknown = await fetch(`http://127.0.0.1:${port}/api/nope`)
+      await relayScenario({ httpBase, wsUrl })
+      await runBeachVenueContract({ httpBase, wsUrl, openClient, tag: 'tauri' })
+      await runBenchRequestContract({ wsUrl, openClient, tag: 'tauri' })
+      await hostileFrameScenario({ httpBase, wsUrl })
+      await hallCrowdScenario({ wsUrl })
+      await pinCheckBudgetScenario({ httpBase, wsUrl })
+      const unknown = await fetch(`${httpBase}/api/nope`)
       expect(unknown.status).toBe(404)
     } finally {
-      child.kill('SIGKILL')
+      await relay.stop()
     }
   })
 

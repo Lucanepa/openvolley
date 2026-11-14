@@ -14,6 +14,7 @@ import { dirname, resolve } from 'node:path'
 import WebSocket from 'ws'
 import core from '../../../electron/lanRelayCore.cjs'
 import * as backendColumns from '../../../../backend/lib/publicColumns.js'
+import { TAURI_RELAY_BIN, startTauriRelay } from './tauriRelay.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const FRONTEND_DIR = resolve(here, '../../..')
@@ -137,24 +138,38 @@ function openClient(url) {
   })
 }
 
-describe('LAN relay (server.js): by-game-number and the roster upload', () => {
-  let child, http, wsUrl, scorer, intruder
+/** The standalone relay (server.js); resolves once it answers. */
+async function startServerJs() {
+  const [port, wsPort] = [await freePort(), await freePort()]
+  const child = spawn(process.execPath, ['server.js'], {
+    cwd: FRONTEND_DIR,
+    env: { ...process.env, PORT: String(port), WS_PORT: String(wsPort), HTTPS: 'false', NODE_ENV: 'test' },
+    stdio: 'ignore'
+  })
+  const base = `http://127.0.0.1:${port}`
+  for (let start = Date.now(); ;) {
+    try { if ((await fetch(`${base}/api/server/status`)).ok) break } catch { /* not up yet */ }
+    if (Date.now() - start > 10000) throw new Error('server.js did not start')
+    await new Promise((r) => setTimeout(r, 100))
+  }
+  return { base, wsUrl: `ws://127.0.0.1:${wsPort}`, stop: async () => { child.kill('SIGKILL') } }
+}
+
+// The same through each relay a hall can run: the standalone server.js and,
+// built (OV_TAURI_RELAY_BIN, see tauriRelay.js), the desktop app's Rust relay
+const RELAYS = [
+  { name: 'server.js', start: startServerJs },
+  ...(TAURI_RELAY_BIN ? [{ name: 'Tauri Rust relay', start: () => startTauriRelay() }] : [])
+]
+
+describe.each(RELAYS)('LAN relay ($name): by-game-number and the roster upload', ({ start }) => {
+  let relay, http, wsUrl, scorer, intruder
   const roster = { players: [{ number: 4, firstName: 'Anna', lastName: 'Player', dob: '2008-03-14' }], bench: [], coachSignature: null, captainSignature: null, timestamp: null }
 
   beforeAll(async () => {
-    const [port, wsPort] = [await freePort(), await freePort()]
-    child = spawn(process.execPath, ['server.js'], {
-      cwd: FRONTEND_DIR,
-      env: { ...process.env, PORT: String(port), WS_PORT: String(wsPort), HTTPS: 'false', NODE_ENV: 'test' },
-      stdio: 'ignore'
-    })
-    http = `http://127.0.0.1:${port}`
-    wsUrl = `ws://127.0.0.1:${wsPort}`
-    for (let start = Date.now(); ;) {
-      try { if ((await fetch(`${http}/api/server/status`)).ok) break } catch { /* not up yet */ }
-      if (Date.now() - start > 10000) throw new Error('server.js did not start')
-      await new Promise((r) => setTimeout(r, 100))
-    }
+    relay = await start()
+    http = relay.base
+    wsUrl = relay.wsUrl
     scorer = await openClient(wsUrl)
     scorer.send({ type: 'sync-match-data', matchId: 7, ...bundle(), _timestamp: Date.now() })
     // another device on the hall network owns a match of its own
@@ -168,9 +183,9 @@ describe('LAN relay (server.js): by-game-number and the roster upload', () => {
     }
   }, 20000)
 
-  afterAll(() => {
+  afterAll(async () => {
     for (const c of [scorer, intruder]) c?.ws.close()
-    child?.kill('SIGKILL')
+    await relay?.stop()
   })
 
   const byGameNumber = (pin) => fetch(`${http}/api/match/by-game-number?gameNumber=5151`, { headers: pin ? { 'X-OV-Match-Pin': pin } : {} })

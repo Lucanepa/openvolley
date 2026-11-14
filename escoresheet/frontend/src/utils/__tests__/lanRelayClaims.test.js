@@ -3,17 +3,19 @@
  * LAN relay core (electron/lanRelayCore.cjs) and the standalone relay
  * (server.js): room claims need the game PIN (also after a restart), the
  * wrong-PIN budget per match, memory bounds, the HTTP crash boundary and the
- * Origin / Host rule.
+ * Origin / Host rule. The claim and Origin checks run through the desktop
+ * app's Rust relay too when it is built (OV_TAURI_RELAY_BIN, tauriRelay.js).
  */
 import { describe, it, expect } from 'vitest'
 import { spawn } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { tmpdir, networkInterfaces } from 'node:os'
 import { createServer as createNetServer } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import WebSocket from 'ws'
 import { createLanRelay, relayRequestRefusal } from '../../../lanRelayCore.js'
+import { TAURI_RELAY_BIN, startTauriRelay } from './tauriRelay.js'
 
 const FRONTEND_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 const KEY = 'seed-court-1'
@@ -292,6 +294,36 @@ describe('standalone relay (server.js)', () => {
     } finally {
       srv.child.kill('SIGKILL')
       rmSync(dir, { recursive: true, force: true })
+    }
+  }, 30000)
+})
+
+// The same through the desktop app's relay: its claims file is kept in the
+// relay's HOME, per HTTP port, so the restart reuses both. The desktop app
+// itself (loopback) may take back a room it published, so the scorer and the
+// intruder are LAN devices: they come in on this machine's own LAN address.
+const LAN_ADDRESS = Object.values(networkInterfaces()).flat().find((a) => a && a.family === 'IPv4' && !a.internal)?.address
+describe.skipIf(!TAURI_RELAY_BIN)('Tauri Rust relay (OV_TAURI_RELAY_BIN)', () => {
+  it.skipIf(!LAN_ADDRESS)('refuses a WebSocket and an API call from another site, keeps a claimed room after a restart', async () => {
+    let relay = await startTauriRelay()
+    const lanWs = () => `ws://${LAN_ADDRESS}:${relay.wsPort}`
+    try {
+      await expect(open(relay.wsUrl, { Origin: 'https://evil.example' })).rejects.toThrow(/403/)
+      const scorer = await open(lanWs())
+      scorer.ws.send(JSON.stringify(sync()))
+      await new Promise((r) => setTimeout(r, 300))
+      scorer.ws.close()
+      await relay.stop({ keepHome: true })
+
+      relay = await startTauriRelay({ home: relay.home, port: relay.port, wsPort: relay.wsPort })
+      const intruder = await open(lanWs())
+      intruder.ws.send(JSON.stringify(sync(match({ gamePin: '666666' }))))
+      expect((await intruder.next('error')).code).toBe('not-match-owner')
+      intruder.ws.close()
+      const r = await fetch(`${relay.base}/api/match/validate-pin`, { method: 'POST', headers: { Origin: 'https://evil.example', 'Content-Type': 'application/json' }, body: '{"pin":"222222"}' })
+      expect(r.status).toBe(403)
+    } finally {
+      await relay.stop()
     }
   }, 30000)
 })

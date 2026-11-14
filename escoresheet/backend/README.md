@@ -340,7 +340,8 @@ What protects what, in cloud mode (`DATABASE_URL`) and on the LAN. Tests:
 `tests/security.e2e.test.js` (the matrix below against a real Postgres and a
 LAN relay), `tests/pgQuery.ownership.test.js`, `tests/matchAccess.test.js`,
 `tests/hashPins.test.js`, the frontend's `lanRelayProtocol.test.js` (every relay
-runtime; the Tauri one with `OV_TAURI_RELAY_BIN`).
+runtime; the Tauri one with `OV_TAURI_RELAY_BIN`, built and run on every relay
+change by `.github/workflows/relay-contract.yml`).
 
 ### Who may write a match (cloud)
 

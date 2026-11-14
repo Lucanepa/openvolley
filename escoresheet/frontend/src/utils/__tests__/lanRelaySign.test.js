@@ -20,6 +20,7 @@ import { dirname, resolve } from 'node:path'
 import { createLanRelay } from '../../../lanRelayCore.js'
 import { vitePluginApiRoutes } from '../../../vite-plugin-api-routes.js'
 import { signHttpScenario, signPageCheck } from '../../../electron/__fixtures__/signHttpScenario.mjs'
+import { TAURI_RELAY_BIN, startTauriRelay } from './tauriRelay.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const FRONTEND_DIR = resolve(here, '../../..')
@@ -296,20 +297,15 @@ describe('every Node relay runtime and the Rust relay speak Sign on phone', () =
     }
   })
 
-  // The Rust port needs a built binary (its dist/ embedded):
-  //   OV_TAURI_RELAY_BIN=<target>/debug/openvolley-escoresheet npx vitest run lanRelaySign
-  it.skipIf(!process.env.OV_TAURI_RELAY_BIN)('Tauri Rust relay (OV_TAURI_RELAY_BIN)', async () => {
-    const [port, wsPort] = [await freePort(), await freePort()]
-    const child = spawn(process.env.OV_TAURI_RELAY_BIN, ['--server-only'], {
-      env: { ...process.env, OPENVOLLEY_HTTP_PORT: String(port), OPENVOLLEY_WS_PORT: String(wsPort) },
-      stdio: 'ignore',
-    })
+  // The Rust port needs a built binary with dist/ (the phone page) beside it;
+  // CI builds it (relay-contract.yml, see tauriRelay.js)
+  it.skipIf(!TAURI_RELAY_BIN)('Tauri Rust relay (OV_TAURI_RELAY_BIN)', async () => {
+    const relay = await startTauriRelay()
     try {
-      await waitForHttp(`http://127.0.0.1:${port}/api/health`)
-      expect(await signHttpScenario({ httpBase: `http://127.0.0.1:${port}` })).toEqual([])
-      expect(await signPageCheck({ httpBase: `http://127.0.0.1:${port}` })).toEqual([])
+      expect(await signHttpScenario({ httpBase: relay.base })).toEqual([])
+      expect(await signPageCheck({ httpBase: relay.base })).toEqual([])
     } finally {
-      child.kill('SIGKILL')
+      await relay.stop()
     }
   }, 60000)
 })
