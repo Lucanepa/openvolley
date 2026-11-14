@@ -8,10 +8,13 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import http from 'node:http'
 import { bootServer } from './helpers/e2eServer.js'
 
 const KEY = 'AbCdEfGhIjKlMnOpQrStUv'
 const b64 = (s) => Buffer.from(s).toString('base64')
+// a backup as the app writes it (utils/backupCrypto/envelope.js): the only kind the store keeps
+const SEALED = JSON.stringify({ format: 'openvolley-encrypted-backup', formatVersion: 2, about: 'x', readable: {}, cipher: { alg: 'AES-256-GCM', iv: 'AAAA' }, slots: [{ kind: 'pin', pin: 'referee' }], ciphertext: 'QUJD' })
 let srv
 let root
 let ipSeq = 1
@@ -29,17 +32,17 @@ describe('POST /api/global/* (server.js --local)', () => {
   after(async () => { await srv?.stop(); await fs.rm(root, { recursive: true, force: true }) })
 
   it('saves and loads a backup with no account', async () => {
-    const s = await post('save', { key: KEY, kind: 'backup', contentType: 'application/json', fileBase64: b64('{"match":1}') })
+    const s = await post('save', { key: KEY, kind: 'backup', contentType: 'application/json', fileBase64: b64(SEALED) })
     assert.equal(s.status, 200)
     assert.equal(s.headers.get('cache-control'), 'no-store')
     const l = await post('load', { key: KEY, kind: 'backup' })
-    assert.equal(Buffer.from(l.json.data.fileBase64, 'base64').toString(), '{"match":1}')
+    assert.equal(Buffer.from(l.json.data.fileBase64, 'base64').toString(), SEALED)
   })
 
   it('stores a PDF, refuses other types and bad keys', async () => {
     assert.equal((await post('save', { key: KEY, kind: 'scoresheet-final', contentType: 'application/pdf', fileBase64: b64('%PDF-1.4 x') })).status, 200)
     assert.equal((await post('save', { key: KEY, kind: 'scoresheet', contentType: 'application/pdf', fileBase64: b64('<html>') })).status, 415)
-    assert.equal((await post('save', { key: '../../x', kind: 'backup', contentType: 'application/json', fileBase64: b64('{}') })).status, 400)
+    assert.equal((await post('save', { key: '../../x', kind: 'backup', contentType: 'application/json', fileBase64: b64(SEALED) })).status, 400)
   })
 
   it('answers GET with 405, an unknown action with 404, and a missing file with 200 not-found', async () => {
@@ -49,6 +52,36 @@ describe('POST /api/global/* (server.js --local)', () => {
     const m = await post('load', { key: 'ZyXwVuTsRqPoNmLkJiHgFe', kind: 'backup' })
     assert.equal(m.status, 200)
     assert.equal(m.json.error.code, 'OV_GLOBAL_NOT_FOUND')
+  })
+
+  it('refuses a backup in the clear (names, birth dates)', async () => {
+    const r = await post('save', { key: KEY, kind: 'backup', contentType: 'application/json', fileBase64: b64(JSON.stringify({ match: { id: 1 }, players: [{ firstName: 'Ann', dob: '2012-01-01' }] })) })
+    assert.equal(r.status, 400)
+    assert.equal(r.json.error.code, 'OV_GLOBAL_NOT_SEALED')
+  })
+
+  it('one address that trickles its bodies holds one slot at most, and a load never waits behind saves', async () => {
+    // two saves from one address that never finish their body (each would
+    // hold a body slot up to RESTORE_BODY_TOTAL_MS)
+    const u = new URL(srv.base)
+    const stalled = []
+    for (let i = 0; i < 3; i++) {
+      const req = http.request({ host: u.hostname, port: u.port, path: '/api/global/save', method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': '100000', 'cf-connecting-ip': '192.0.2.9' } })
+      req.on('error', () => {})
+      req.write('{"key":"')
+      stalled.push(req)
+    }
+    await new Promise((r) => setTimeout(r, 300))
+    try {
+      const t0 = Date.now()
+      const s = await post('save', { key: 'QwErTyUiOpAsDfGhJkLzXc', kind: 'scoresheet', contentType: 'application/pdf', fileBase64: b64('%PDF-1.4 y') }, '192.0.2.10')
+      assert.equal(s.status, 200)
+      const l = await post('load', { key: KEY, kind: 'backup' }, '192.0.2.11')
+      assert.equal(l.status, 200)
+      assert.ok(Date.now() - t0 < 5000, 'served while the stalled saves still hold their slot')
+    } finally {
+      for (const req of stalled) req.destroy()
+    }
   })
 
   it('limits requests per IP', async () => {
@@ -71,9 +104,34 @@ describe('POST /api/global/save keeps the storage volume\'s free-space floor', (
   after(async () => { await srv2?.stop(); await fs.rm(root2, { recursive: true, force: true }) })
 
   it('answers 507 and stores nothing', async () => {
-    const res = await fetch(`${srv2.base}/api/global/save`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: KEY, kind: 'backup', contentType: 'application/json', fileBase64: b64('{}') }) })
+    const res = await fetch(`${srv2.base}/api/global/save`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: KEY, kind: 'backup', contentType: 'application/json', fileBase64: b64(SEALED) }) })
     assert.equal(res.status, 507)
     assert.equal((await res.json()).error.code, 'OV_GLOBAL_FULL')
     assert.deepEqual(await fs.readdir(root2).then((l) => l.filter((n) => n === 'global')), [])
+  })
+})
+
+describe('the Global store\'s retention runs with no request at all (server.js timer)', () => {
+  let srv3
+  let root3
+  const dir = () => path.join(root3, 'global', KEY.slice(0, 2), KEY)
+  before(async () => {
+    root3 = await fs.mkdtemp(path.join(os.tmpdir(), 'ov-global-sweep-'))
+    await fs.writeFile(path.join(root3, '.ovdata'), '')
+    await fs.mkdir(dir(), { recursive: true })
+    await fs.writeFile(path.join(dir(), 'backup.json'), SEALED)
+    const old = new Date(Date.now() - 200 * 86400_000) // past the 180 days the privacy policy promises
+    await fs.utimes(path.join(dir(), 'backup.json'), old, old)
+    srv3 = await bootServer({ STORAGE_ROOT: root3 }, ['--local'])
+  })
+  after(async () => { await srv3?.stop(); await fs.rm(root3, { recursive: true, force: true }) })
+
+  it('deletes a key untouched for 180 days soon after start', async () => {
+    let gone = false
+    for (let i = 0; i < 80 && !gone; i++) {
+      await new Promise((r) => setTimeout(r, 100))
+      gone = !(await fs.stat(dir()).then(() => true, () => false))
+    }
+    assert.equal(gone, true)
   })
 })

@@ -938,8 +938,9 @@ shown as the "backup code"):
 - `POST /api/global/save` `{ key, kind, contentType, fileBase64 }`, kind `backup` (JSON), `scoresheet` or `scoresheet-final` (PDF, must start with `%PDF-`). The newest file of a kind replaces the last.
 - `POST /api/global/load` `{ key, kind }` (a missing file answers 200 with `OV_GLOBAL_NOT_FOUND`).
 - Anonymous, 120 requests per IP and minute. The key is the only way to a file: no listing, no search. Needs the `.ovdata` sentinel of the storage root.
-- Caps: 12 MiB a file, 40 MiB a key, 20000 keys and 4 GiB in all, and never below the storage volume's free-space floor (the highest `STORAGE_*_MIN_FREE_MB`, 2 GiB by default: it stops no later than the official backups do). A full store answers 507; the app keeps the match on the device.
-- At most 2 bodies are read at once (6 wait up to 15 s, then 503 `OV_BUSY`), each within the restore's idle and total read limits; every file is fsynced in `.tmp` and renamed. Keys untouched for 180 days are deleted (a sweep on a request, at most hourly).
+- A backup must be the app's encrypted backup file (`format: openvolley-encrypted-backup`, its own fields only, a ciphertext and a key slot): anything else answers 400 `OV_GLOBAL_NOT_SEALED`, so names and birth dates are never kept in the clear.
+- Caps: 12 MiB a file, 40 MiB a key, 20000 keys and 4 GiB in all, counted on every write (a key that grows too), and never below the storage volume's free-space floor (the highest `STORAGE_*_MIN_FREE_MB`, 2 GiB by default) plus a 1 GiB reserve, so a full Global store never stops the official backups, which stop at that floor. A full store answers 507; the app keeps the match on the device.
+- Saves and loads have a gate each: at most 2 bodies read at once (6 wait up to 15 s, then 503 `OV_BUSY`), each within the restore's idle and total read limits, and one address holds one slot at a time (its next requests wait in a queue of its own, 3 deep), so a client that trickles its bodies does not hold every slot. A load's body is at most 4 KiB. Every file is fsynced in `.tmp` and renamed. Keys untouched for 180 days are deleted (a sweep at most hourly: on any request and on server.js's timer, so also when nobody uses the Global tool).
 - Tests: `tests/globalStore.test.js`, `tests/global.e2e.test.js` (no Postgres needed).
 
 ## API Endpoints
