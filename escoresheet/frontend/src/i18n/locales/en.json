@@ -5454,6 +5454,7 @@
       "match_remarks": "Remarks",
       "match_forfeit": "Forfeit",
       "match_roster": "Roster changed",
+      "match_local_remove": "Removed from this device",
       "sync_error": "Upload refused",
       "sync_dropped": "Upload dropped",
       "sync_state": "Connection",

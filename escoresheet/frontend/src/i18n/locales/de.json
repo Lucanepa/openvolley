@@ -5436,6 +5436,7 @@
       "match_remarks": "Bemerkungen",
       "match_forfeit": "Forfait",
       "match_roster": "Aufstellung geändert",
+      "match_local_remove": "Von diesem Gerät entfernt",
       "sync_error": "Upload abgelehnt",
       "sync_dropped": "Upload verworfen",
       "sync_state": "Verbindung",

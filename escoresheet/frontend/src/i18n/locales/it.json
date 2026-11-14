@@ -5453,6 +5453,7 @@
       "match_remarks": "Osservazioni",
       "match_forfeit": "Forfait",
       "match_roster": "Elenco modificato",
+      "match_local_remove": "Rimosso da questo dispositivo",
       "sync_error": "Invio rifiutato",
       "sync_dropped": "Invio scartato",
       "sync_state": "Connessione",

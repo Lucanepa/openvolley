@@ -5447,6 +5447,7 @@
       "match_remarks": "Remarques",
       "match_forfeit": "Forfait",
       "match_roster": "Liste modifiée",
+      "match_local_remove": "Retiré de cet appareil",
       "sync_error": "Envoi refusé",
       "sync_dropped": "Envoi abandonné",
       "sync_state": "Connexion",

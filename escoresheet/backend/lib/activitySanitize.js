@@ -40,6 +40,8 @@ export const ACTIVITY_KINDS = Object.freeze({
   'match.remarks': { cat: 'match', keys: ['length'] },
   'match.forfeit': { cat: 'correction', keys: ['team', 'forfeit', 'stopped'] },
   'match.roster': { cat: 'match', keys: ['team', 'number', 'fields', 'op'] },
+  // removed from this device (Close match, Home's remove): local clean-up
+  'match.local_remove': { cat: 'match', keys: ['sets', 'players'] },
   'sync.error': { cat: 'sync', keys: ['resource', 'action', 'status', 'code', 'requestId', 'attempt'] },
   'sync.dropped': { cat: 'sync', keys: ['resource', 'action', 'status', 'code', 'requestId', 'attempt'] },
   'sync.state': { cat: 'sync', keys: ['from', 'to'] },

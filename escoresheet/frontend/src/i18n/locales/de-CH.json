@@ -5448,6 +5448,7 @@
       "match_remarks": "Bemerkige",
       "match_forfeit": "Forfait",
       "match_roster": "Kader gänderet",
+      "match_local_remove": "Von diesem Gerät entfernt",
       "sync_error": "Upload abglehnt",
       "sync_dropped": "Upload verworfe",
       "sync_state": "Verbindig",
