@@ -14,7 +14,7 @@ import { downloadGlobalTemplate } from '../utils/globalTemplates'
  *   kind 'rosters' -> onApplyTeam(side, team); a team named like the home or
  *                     away team goes to that side, the rest are offered both
  */
-export default function GlobalImportModal({ open, kind, onClose, onPickGame, onApplyTeam, homeName = '', awayName = '' }) {
+export default function GlobalImportModal({ open, kind, onClose, onPickGame, onApplyTeam, homeName = '', awayName = '', idMode = 'dob' }) {
   const { t } = useTranslation()
   const [result, setResult] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -38,7 +38,7 @@ export default function GlobalImportModal({ open, kind, onClose, onPickGame, onA
         date1904 = wb.date1904
         rows = wb.sheets[0]?.rows || []
       }
-      const parsed = kind === 'games' ? parseGames(rows, { date1904 }) : parseRosters(rows, { date1904 })
+      const parsed = kind === 'games' ? parseGames(rows, { date1904 }) : parseRosters(rows, { date1904, idMode })
       if (!parsed.ok) setFailed(parsed.error === 'empty' ? 'empty' : 'columns')
       else setResult(parsed)
     } catch {
@@ -48,7 +48,7 @@ export default function GlobalImportModal({ open, kind, onClose, onPickGame, onA
     }
   }
 
-  const download = () => downloadGlobalTemplate(kind)
+  const download = () => downloadGlobalTemplate(kind, idMode)
 
   const sideOf = (name) => (name && fold(name) === fold(homeName) ? 'home' : name && fold(name) === fold(awayName) ? 'away' : null)
 

@@ -14,6 +14,7 @@ import RefereeSelector from './RefereeSelector'
 import LoadOfficialMatchModal, { knownMatchFormat } from './LoadOfficialMatchModal'
 import GlobalImportModal from './GlobalImportModal'
 import { setTargetsOf } from '../domain/rules'
+import { idModeOf, cleanIdValue, ID_LABEL_FALLBACK } from '../domain/idMode'
 import ballFallback from '../ball_fallback.png'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 
@@ -358,6 +359,51 @@ const OFFICIAL_TITLE = 'whitespace-nowrap text-sm font-semibold text-stone-700'
 // panels): the kit Block, sunken stone-50/60 with a hairline and no shadow.
 const SETUP_BLOCK = 'rounded-xl border border-stone-200/70 bg-stone-50/60'
 
+/**
+ * The person's date of birth, or what a Global match prints instead
+ * (domain/idMode): the same stored `dob` string. 'dob' draws the DateField with
+ * the props it always had; 'number' / 'text' draw a plain input of the stored
+ * text (onRawChange gets the typed text).
+ */
+function IdField({ idMode = 'dob', rawValue = '', onRawChange, ...dateProps }) {
+  if (idMode === 'dob') return <DateField {...dateProps} />
+  const { wrapperClassName, onKeyDown, 'aria-label': aria, className } = dateProps
+  const input = (
+    <input
+      aria-label={aria}
+      className={cn(wrapperClassName ? 'w-full' : '', className)}
+      inputMode={idMode === 'number' ? 'numeric' : 'text'}
+      autoComplete="off"
+      value={/^(01[./]01[./]1900|1900-01-01)$/.test(rawValue || '') ? '' : (rawValue || '')}
+      onChange={e => onRawChange(cleanIdValue(idMode, e.target.value))}
+      onKeyDown={onKeyDown}
+    />
+  )
+  return wrapperClassName ? <div className={wrapperClassName}>{input}</div> : input
+}
+
+/**
+ * The role cell of a bench row. In a Global match the official may also be
+ * called differently ("Teacher", "Manager"): a text box beside the standard
+ * role, which stays the slot on the sheet (domain: bench role + roleLabel).
+ */
+function BenchRoleCell({ global = false, label = '', onLabel, testId, placeholder, children }) {
+  if (!global) return children
+  return (
+    <div className="cell-head flex min-w-0 gap-1">
+      {children}
+      <input
+        aria-label={placeholder}
+        data-testid={testId}
+        placeholder={placeholder}
+        maxLength={30}
+        value={label}
+        onChange={e => onLabel(e.target.value)}
+      />
+    </div>
+  )
+}
+
 const OfficialCard = memo(function OfficialCard({
   title,
   officialKey,
@@ -377,6 +423,8 @@ const OfficialCard = memo(function OfficialCard({
   // the card holds a name: it is on until the switch turns it off
   filled = false,
   dobRequired = false,
+  idMode = 'dob',
+  idLabel = '',
   // a referee's optional address for the final scoresheet (setEmail: shown)
   email = '',
   setEmail = null,
@@ -389,7 +437,7 @@ const OfficialCard = memo(function OfficialCard({
   const isCollapsed = collapsible && (collapsed ?? (defaultCollapsed && !filled))
   // The coin toss needs this date of birth (scorer): flag it while it is
   // missing or still the 01.01.1900 placeholder, which is shown as empty.
-  const dobMissing = dobRequired && !isKnownDob(dob)
+  const dobMissing = dobRequired && idMode === 'dob' && !isKnownDob(dob)
   const dobValue = dob && !(dobRequired && dobMissing) ? formatDateToISO(dob) : ''
   const dobNoteId = `${officialKey || 'official'}-dob-required`
   return (
@@ -422,9 +470,12 @@ const OfficialCard = memo(function OfficialCard({
             <Field tone="compact" className={FIELD} label={t('matchSetup.firstName')}><Input aria-label={t('matchSetup.firstName')} className="capitalize" value={firstName} onChange={e => setFirstName(e.target.value)} /></Field>
             <Field tone="compact" className={FIELD} label={t('matchSetup.country')}><Input aria-label={t('matchSetup.country')} value={country} onChange={e => setCountry(e.target.value)} /></Field>
             <div className="min-w-0">
-              <Field tone="compact" className={FIELD} required={dobRequired || undefined} label={dobRequired ? `${t('matchSetup.dateOfBirth')} *` : t('matchSetup.dateOfBirth')}>
-                <DateField
-                  aria-label={t('matchSetup.dateOfBirth')}
+              <Field tone="compact" className={FIELD} required={dobRequired || undefined} label={dobRequired && idMode === 'dob' ? `${idLabel || t('matchSetup.dateOfBirth')} *` : (idLabel || t('matchSetup.dateOfBirth'))}>
+                <IdField
+                  idMode={idMode}
+                  rawValue={dob}
+                  onRawChange={setDob}
+                  aria-label={idLabel || t('matchSetup.dateOfBirth')}
                   aria-describedby={dobMissing ? dobNoteId : undefined}
                   className={cn(dobMissing && 'border-amber-400')}
                   value={dobValue}
@@ -615,6 +666,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // 5 played a best-of-3 decider to 25 points): Create match waits for it
   const [bestOf, setBestOf] = useState(null)
   // Points a set is played to (Global may play shorter sets; domain/rules setTargetsOf)
+  // what the sheet carries beside a name: birthdate, number or text (Global; domain/idMode)
+  const [idMode, setIdModeState] = useState('dob')
   const [pointsRegular, setPointsRegular] = useState(25)
   const [pointsDeciding, setPointsDeciding] = useState(15)
   const [gameN, setGameN] = useState('')
@@ -784,7 +837,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [scorerDob, setScorerDob] = useState('')
   // Not needed to create the match, but the coin toss waits for it: shown
   // next to Create match so it is filled in with the rest of the form.
-  const scorerDobMissing = !isKnownDob(scorerDob)
 
   const [asstFirst, setAsstFirst] = useState('')
   const [asstLast, setAsstLast] = useState('')
@@ -1096,6 +1148,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   }, [user?.id])
   const clubTeams = useMemo(() => ({ home: clubOfTeam(clubRows, home, user?.id), away: clubOfTeam(clubRows, away, user?.id) }), [clubRows, home, away, user?.id])
   const clubGender = matchGenderOf({ test: match?.test === true, type2 })
+  // The scorer's date of birth is a Swiss coin-toss rule: not asked in a Global match
+  const scorerDobMissing = match?.global !== true && !isKnownDob(scorerDob)
+  // What the sheet carries beside a name (Global: birthdate, number or text), kept on the match
+  useEffect(() => { if (match) setIdModeState(idModeOf(match)) }, [match?.idMode]) // eslint-disable-line react-hooks/exhaustive-deps
+  const setIdMode = (mode) => {
+    setIdModeState(mode)
+    if (matchId != null) db.matches.update(matchId, { idMode: mode, updatedAt: new Date().toISOString() }).catch(() => {})
+  }
+  // (a birthdate keeps its own, long-translated label)
+  const idLabel = idMode === 'dob' ? t('matchSetup.dateOfBirth') : t(`idMode.label.${idMode}`, ID_LABEL_FALLBACK[idMode])
   const [clubPicker, setClubPicker] = useState(null) // 'home' | 'away' | null
   const clubWarnings = useMemo(() => ({
     home: clubTeams.home ? clubGenderWarnings(homeRoster, clubTeams.home.players, clubGender) : [],
@@ -4028,6 +4090,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 </Select>
               </Field>
               {match?.global === true && (
+                <Field tone="compact" className={FIELD} label={t('idMode.title', 'Next to each name')}>
+                  <Select aria-label={t('idMode.title', 'Next to each name')} block value={idMode} data-testid="global-id-mode" onChange={e => setIdMode(e.target.value)}>
+                    <option value="dob">{t('idMode.dob', 'Use birthdates')}</option>
+                    <option value="number">{t('idMode.number', 'Use an ID number')}</option>
+                    <option value="text">{t('idMode.text', 'Use text')}</option>
+                  </Select>
+                </Field>
+              )}
+              {match?.global === true && (
                 <div className="grid grid-cols-2 gap-2" data-testid="global-set-rules">
                   <Field tone="compact" className={FIELD} label={t('matchSetup.pointsPerSet', 'Points per set')}>
                     <Select aria-label={t('matchSetup.pointsPerSet', 'Points per set')} block value={pointsRegular} onChange={e => setPointsRegular(Number(e.target.value))}>
@@ -4048,6 +4119,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           <div className="col-span-5 grid grid-cols-5 items-start gap-4 stack:col-span-1 stack:grid-cols-1">
             <OfficialCard
               title={t('matchSetup.referee1')}
+              idMode={idMode}
+              idLabel={idLabel}
               officialKey="ref1"
               lastName={ref1Last}
               firstName={ref1First}
@@ -4066,6 +4139,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             />
             <OfficialCard
               title={t('matchSetup.referee2')}
+              idMode={idMode}
+              idLabel={idLabel}
               officialKey="ref2"
               lastName={ref2Last}
               firstName={ref2First}
@@ -4087,6 +4162,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             />
             <OfficialCard
               title={t('matchSetup.scorer')}
+              idMode={idMode}
+              idLabel={idLabel}
               officialKey="scorer"
               lastName={scorerLast}
               firstName={scorerFirst}
@@ -4096,7 +4173,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               setFirstName={setScorerFirst}
               setCountry={setScorerCountry}
               setDob={setScorerDob}
-              dobRequired={true}
+              dobRequired={match?.global !== true}
+              idMode={idMode}
+              idLabel={idLabel}
               hasDatabase={false}
               selectorKey="scorer"
               onOpenDatabase={handleOpenDatabase}
@@ -4104,6 +4183,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             />
             <OfficialCard
               title={t('matchSetup.assistantScorer')}
+              idMode={idMode}
+              idLabel={idLabel}
               officialKey="asst"
               lastName={asstLast}
               firstName={asstFirst}
@@ -4680,8 +4761,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <input aria-label={t('matchSetup.lastName')} className="capitalize cell-last" placeholder={t('matchSetup.lastName')} value={homeLast} onChange={e => setHomeLast(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
                 <input aria-label={t('matchSetup.firstName')} className="capitalize cell-first" placeholder={t('matchSetup.firstName')} value={homeFirst} onChange={e => setHomeFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
-                <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
-                <DateField size="bare" wrapperClassName={DOB_CELL} aria-label={t('matchSetup.dateOfBirth')} value={homeDob ? formatDateToISO(homeDob) : ''} onChange={v => setHomeDob(v ? formatDateToDDMMYYYY(v) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <StackLabel>{idLabel}</StackLabel>
+                <IdField idMode={idMode} rawValue={homeDob} onRawChange={v => setHomeDob(v)} size="bare" wrapperClassName={DOB_CELL} aria-label={idLabel} value={homeDob ? formatDateToISO(homeDob) : ''} onChange={v => setHomeDob(v ? formatDateToDDMMYYYY(v) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
                 <StackLabel>{t('matchSetup.roleLibero')} · {t('matchSetup.captain')}</StackLabel>
                 <select aria-label={t('matchSetup.libero', 'Libero')} className={`cell-libero${homeLibero ? '' : ' libero-unset'}`} data-help-id="setup-libero-toggle" value={homeLibero} onChange={e => {
                   let newValue = e.target.value
@@ -4752,7 +4833,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div style={{ textAlign: 'center' }}>#</div>
             <div>{t('matchSetup.lastName')}</div>
             <div>{t('matchSetup.firstName')}</div>
-            <div className="cell-dob">{t('matchSetup.dateOfBirth')}</div>
+            <div className="cell-dob">{idLabel}</div>
             <div style={{ textAlign: 'center' }}>{t('matchSetup.roleLibero')}</div>
             <div className="cell-captain">C</div>
             {lfpTrackingEnabled && <div style={{ textAlign: 'center' }}>LFP</div>}
@@ -4845,11 +4926,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     setHomeRoster(updated)
                   }}
                 />
-                <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
-                <DateField
+                <StackLabel>{idLabel}</StackLabel>
+                <IdField
+                  idMode={idMode}
+                  rawValue={p.dob}
+                  onRawChange={v => {
+                    const updated = [...homeRoster]
+                    updated[i] = { ...updated[i], dob: v }
+                    setHomeRoster(updated)
+                  }}
                   size="bare"
                   wrapperClassName={DOB_CELL}
-                  aria-label={t('matchSetup.dateOfBirth')}
+                  aria-label={idLabel}
                   value={p.dob ? formatDateToISO(p.dob) : ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                   onChange={v => {
@@ -4960,7 +5048,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div>{t('matchSetup.role')}</div>
             <div>{t('matchSetup.lastName')}</div>
             <div>{t('matchSetup.firstName')}</div>
-            <div className="cell-dob">{t('matchSetup.dateOfBirth')}</div>
+            <div className="cell-dob">{idLabel}</div>
             <div></div>
           </div>
           {sortBenchByHierarchy(benchHome).map((m, i) => {
@@ -4968,6 +5056,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             return (
               <div key={`bh-${originalIdx}`} className="bench-grid-row">
                 <StackLabel head>{t('matchSetup.role')}</StackLabel>
+                <BenchRoleCell global={match?.global === true} label={m.roleLabel || ''} testId="bench-role-name-home" placeholder={t('matchSetup.roleName', 'Role name')} onLabel={v => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], roleLabel: v }; return a })}>
                 <select aria-label={t('matchSetup.role')} className="cell-head" value={m.role || 'Coach'} onChange={e => {
                   const newRole = e.target.value || 'Coach'
                   const isRoleTaken = benchHome.some((b, idx) => idx !== originalIdx && b.role === newRole)
@@ -4987,12 +5076,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     )
                   })}
                 </select>
+                </BenchRoleCell>
                 <StackLabel>{t('matchSetup.lastName')}</StackLabel>
                 <input aria-label={t('matchSetup.lastName')} className="capitalize cell-last" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
                 <input aria-label={t('matchSetup.firstName')} className="capitalize cell-first" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
-                <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
-                <DateField size="bare" wrapperClassName={DOB_CELL} aria-label={t('matchSetup.dateOfBirth')} value={m.dob ? formatDateToISO(m.dob) : ''} onChange={v => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v ? formatDateToDDMMYYYY(v) : '' }; return a })} />
+                <StackLabel>{idLabel}</StackLabel>
+                <IdField idMode={idMode} rawValue={m.dob} onRawChange={v => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v }; return a })} size="bare" wrapperClassName={DOB_CELL} aria-label={idLabel} value={m.dob ? formatDateToISO(m.dob) : ''} onChange={v => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v ? formatDateToDDMMYYYY(v) : '' }; return a })} />
                 <div className="cell-action gap-1">
                   {rowShield('home', 'bench', m, originalIdx)}
                   <Button variant="danger-outline" size="md" title={t('common.delete')} onClick={() => {
@@ -5775,8 +5865,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <input aria-label={t('matchSetup.lastName')} className="capitalize cell-last" placeholder={t('matchSetup.lastName')} value={awayLast} onChange={e => setAwayLast(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
                 <input aria-label={t('matchSetup.firstName')} className="capitalize cell-first" placeholder={t('matchSetup.firstName')} value={awayFirst} onChange={e => setAwayFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
-                <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
-                <DateField size="bare" wrapperClassName={DOB_CELL} aria-label={t('matchSetup.dateOfBirth')} value={awayDob ? formatDateToISO(awayDob) : ''} onChange={v => setAwayDob(v ? formatDateToDDMMYYYY(v) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <StackLabel>{idLabel}</StackLabel>
+                <IdField idMode={idMode} rawValue={awayDob} onRawChange={v => setAwayDob(v)} size="bare" wrapperClassName={DOB_CELL} aria-label={idLabel} value={awayDob ? formatDateToISO(awayDob) : ''} onChange={v => setAwayDob(v ? formatDateToDDMMYYYY(v) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
                 <StackLabel>{t('matchSetup.roleLibero')} · {t('matchSetup.captain')}</StackLabel>
                 <select aria-label={t('matchSetup.libero', 'Libero')} className={`cell-libero${awayLibero ? '' : ' libero-unset'}`} value={awayLibero} onChange={e => {
                   let newValue = e.target.value
@@ -5846,7 +5936,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div style={{ textAlign: 'center' }}>#</div>
             <div>{t('matchSetup.lastName')}</div>
             <div>{t('matchSetup.firstName')}</div>
-            <div className="cell-dob">{t('matchSetup.dateOfBirth')}</div>
+            <div className="cell-dob">{idLabel}</div>
             <div style={{ textAlign: 'center' }}>{t('matchSetup.roleLibero')}</div>
             <div className="cell-captain">C</div>
             {lfpTrackingEnabled && <div style={{ textAlign: 'center' }}>LFP</div>}
@@ -5937,11 +6027,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     setAwayRoster(updated)
                   }}
                 />
-                <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
-                <DateField
+                <StackLabel>{idLabel}</StackLabel>
+                <IdField
+                  idMode={idMode}
+                  rawValue={p.dob}
+                  onRawChange={v => {
+                    const updated = [...awayRoster]
+                    updated[i] = { ...updated[i], dob: v }
+                    setAwayRoster(updated)
+                  }}
                   size="bare"
                   wrapperClassName={DOB_CELL}
-                  aria-label={t('matchSetup.dateOfBirth')}
+                  aria-label={idLabel}
                   value={p.dob ? formatDateToISO(p.dob) : ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                   onChange={v => {
@@ -6049,7 +6146,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div>{t('matchSetup.role')}</div>
             <div>{t('matchSetup.lastName')}</div>
             <div>{t('matchSetup.firstName')}</div>
-            <div className="cell-dob">{t('matchSetup.dateOfBirth')}</div>
+            <div className="cell-dob">{idLabel}</div>
             <div></div>
           </div>
           {sortBenchByHierarchy(benchAway).map((m, i) => {
@@ -6057,6 +6154,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             return (
               <div key={`ba-${originalIdx}`} className="bench-grid-row">
                 <StackLabel head>{t('matchSetup.role')}</StackLabel>
+                <BenchRoleCell global={match?.global === true} label={m.roleLabel || ''} testId="bench-role-name-away" placeholder={t('matchSetup.roleName', 'Role name')} onLabel={v => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], roleLabel: v }; return a })}>
                 <select aria-label={t('matchSetup.role')} className="cell-head" value={m.role || 'Coach'} onChange={e => {
                   const newRole = e.target.value || 'Coach'
                   const isRoleTaken = benchAway.some((b, idx) => idx !== originalIdx && b.role === newRole)
@@ -6076,12 +6174,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     )
                   })}
                 </select>
+                </BenchRoleCell>
                 <StackLabel>{t('matchSetup.lastName')}</StackLabel>
                 <input aria-label={t('matchSetup.lastName')} className="capitalize cell-last" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
                 <input aria-label={t('matchSetup.firstName')} className="capitalize cell-first" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
-                <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
-                <DateField size="bare" wrapperClassName={DOB_CELL} aria-label={t('matchSetup.dateOfBirth')} value={m.dob ? formatDateToISO(m.dob) : ''} onChange={v => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v ? formatDateToDDMMYYYY(v) : '' }; return a })} />
+                <StackLabel>{idLabel}</StackLabel>
+                <IdField idMode={idMode} rawValue={m.dob} onRawChange={v => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v }; return a })} size="bare" wrapperClassName={DOB_CELL} aria-label={idLabel} value={m.dob ? formatDateToISO(m.dob) : ''} onChange={v => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v ? formatDateToDDMMYYYY(v) : '' }; return a })} />
                 <div className="cell-action gap-1">
                   {rowShield('away', 'bench', m, originalIdx)}
                   <Button variant="danger-outline" size="md" title={t('common.delete')} onClick={() => {
@@ -6701,7 +6800,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // Officials are complete if at least 1st referee and scorer are filled
   // 2nd referee and assistant scorer are optional
   const officialsConfigured =
-    !!(ref1Last && ref1First && scorerLast && scorerFirst && isKnownDob(scorerDob))
+    !!(ref1Last && ref1First && scorerLast && scorerFirst && (match?.global === true || isKnownDob(scorerDob)))
   const matchInfoConfigured = !!(date || time || hall || city || league)
   // Basic roster configured (enough for saving)
   const homeRosterExists = !!(home && homeRoster.length >= 6 && homeCounts.liberos >= 0)
@@ -6723,7 +6822,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (!officialsConfigured) {
       if (!ref1Last || !ref1First) missing.push(t('warnings.firstRefereeMissing'))
       if (!scorerLast || !scorerFirst) missing.push(t('warnings.scorerNameMissing'))
-      if (!isKnownDob(scorerDob)) missing.push(t('warnings.scorerDobMissing'))
+      if (match?.global !== true && !isKnownDob(scorerDob)) missing.push(t('warnings.scorerDobMissing'))
     }
     if (!homeConfigured) {
       if (!home || homeRoster.length < 6) missing.push(t('warnings.homeRosterIncomplete', { count: homeRoster.length }))
@@ -8048,6 +8147,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         onApplyTeam={applyGlobalTeam}
         homeName={home}
         awayName={away}
+        idMode={idMode}
       />
     </MatchSetupMainView>
   )

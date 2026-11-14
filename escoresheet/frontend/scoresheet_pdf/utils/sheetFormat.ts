@@ -21,6 +21,18 @@ function validDate(y: number, m: number, d: number): boolean {
 const isPlaceholderDob = (y: number, m: number, d: number) => y === 1900 && m === 1 && d === 1
 
 /**
+ * The heading of the column beside a name: "DoB" for a birthdate (every Swiss
+ * match), "ID" or "Info" when a Global match uses a number or text instead
+ * (src/domain/idMode.js; the person's value is the same `dob` string).
+ */
+export function idHeadingOf(match: any): string {
+  return match?.idMode === 'number' ? 'ID' : match?.idMode === 'text' ? 'Info' : 'DoB'
+}
+
+/** A bench official's own name for the role (Global: "Teacher"), else ''. */
+export const roleLabelOf = (official: any): string => (typeof official?.roleLabel === 'string' ? official.roleLabel.trim().slice(0, 30) : '')
+
+/**
  * A date of birth as printed on the sheet: `DD.MM.YYYY`.
  * Accepts ISO `YYYY-MM-DD` (with or without a time), `D.M.YYYY`, `DD.MM.YYYY`,
  * `DD/MM/YYYY` and `DD-MM-YYYY`. Empty for nothing and for the 01.01.1900

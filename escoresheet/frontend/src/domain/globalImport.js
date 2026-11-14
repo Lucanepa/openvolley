@@ -1,3 +1,5 @@
+import { cleanIdValue } from './idMode'
+
 /**
  * Global tool: the two Excel/CSV uploads of Match Setup. Pure: no React, no
  * network, nothing stored. Rosters and games live in the file and on the
@@ -26,7 +28,7 @@ const ROSTER_COLUMNS = {
   first: ['firstname', 'first', 'vorname', 'prenom', 'nome'],
   last: ['lastname', 'last', 'surname', 'nachname', 'name', 'nom', 'cognome'],
   role: ['role', 'rolle', 'position', 'funktion', 'ruolo'],
-  dob: ['dateofbirth', 'dob', 'birthdate', 'geburtsdatum', 'geboren', 'birthday']
+  dob: ['dateofbirth', 'dob', 'birthdate', 'geburtsdatum', 'geboren', 'birthday', 'id', 'idnumber', 'licence', 'license', 'licenceno', 'licenseno', 'info', 'text', 'class', 'klasse', 'schoolclass', 'grade']
 }
 const GAME_COLUMNS = {
   gameN: ['game', 'gamenumber', 'gameno', 'spiel', 'spielnummer', 'spielnr', 'match', 'matchnumber', 'nr', 'no', 'number'],
@@ -112,7 +114,7 @@ const BENCH_ROLE = (r) => {
  * @param {Array<Array<string|number|null>>} rows the sheet's cells
  * @returns {{ ok: boolean, error?: string, teams: Array<{ name: string, players: object[], bench: object[] }>, warnings: string[] }}
  */
-export function parseRosters(rows, { date1904 = false } = {}) {
+export function parseRosters(rows, { date1904 = false, idMode = 'dob' } = {}) {
   const head = findHeader(rows || [], ROSTER_COLUMNS, 3)
   if (!head || head.cols.last === undefined) return { ok: false, error: 'columns', teams: [], warnings: [] }
   const { cols } = head
@@ -131,8 +133,10 @@ export function parseRosters(rows, { date1904 = false } = {}) {
     const role = text(get('role'))
     const roleFold = fold(role)
     const benchRole = role && !['player', 'spieler', 'spielerin', 'libero', 'captain', 'kapitan', 'kapitaen', 'c', 'l'].includes(roleFold) ? BENCH_ROLE(role) : ''
+    // what is printed beside a name: a birthdate, or (Global idMode) the cell as typed
+    const idValue = () => (idMode === 'dob' ? toDisplayDob(get('dob'), date1904) : cleanIdValue(idMode, text(get('dob'))))
     if (benchRole) {
-      team.bench.push({ role: benchRole, firstName: first, lastName: last, dob: toDisplayDob(get('dob'), date1904) })
+      team.bench.push({ role: benchRole, firstName: first, lastName: last, dob: idValue() })
       continue
     }
     if (role && !benchRole && !['player', 'spieler', 'spielerin', 'libero', 'captain', 'kapitan', 'kapitaen', 'c', 'l'].includes(roleFold)) {
@@ -147,7 +151,7 @@ export function parseRosters(rows, { date1904 = false } = {}) {
       number: Number.isInteger(number) && number >= 0 && number <= 99 ? number : null,
       firstName: first,
       lastName: last,
-      dob: toDisplayDob(get('dob'), date1904),
+      dob: idValue(),
       libero: roleFold === 'libero' || roleFold === 'l' ? 'libero1' : '',
       isCaptain: roleFold === 'captain' || roleFold === 'kapitan' || roleFold === 'kapitaen' || roleFold === 'c',
       isLfp: false
@@ -205,11 +209,11 @@ export function parseGames(rows, { date1904 = false } = {}) {
   return games.length ? { ok: true, games } : { ok: false, error: 'empty', games: [] }
 }
 
-export const rosterTemplate = () => ({
+export const rosterTemplate = (idMode = 'dob') => ({
   name: 'Rosters',
   rows: [
-    ['Team', 'Number', 'First name', 'Last name', 'Role', 'Date of birth'],
-    ['Team A', 1, 'Anna', 'Example', 'Captain', '14.03.2008'],
+    ['Team', 'Number', 'First name', 'Last name', 'Role', idMode === 'number' ? 'ID number' : idMode === 'text' ? 'Info' : 'Date of birth'],
+    ['Team A', 1, 'Anna', 'Example', 'Captain', idMode === 'number' ? '100234' : idMode === 'text' ? 'Class 9b' : '14.03.2008'],
     ['Team A', 7, 'Berta', 'Example', 'Libero', ''],
     ['Team A', 9, 'Clara', 'Example', 'Player', ''],
     ['Team A', '', 'Chris', 'Coach', 'Coach', ''],

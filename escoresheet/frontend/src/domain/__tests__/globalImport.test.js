@@ -37,3 +37,21 @@ describe('globalImport', () => {
     expect(toTime('25:00')).toBe('')
   })
 })
+
+describe('globalImport: what is printed beside a name', () => {
+  const rows = [['Team', 'Number', 'Last name', 'Class'], ['A', 4, 'Roth', '9b'], ['A', 5, 'Lang', '10a']]
+  it('keeps the cell as typed when the match uses text or numbers', () => {
+    const r = parseRosters(rows, { idMode: 'text' })
+    expect(r.teams[0].players.map(p => p.dob)).toEqual(['9b', '10a'])
+    expect(parseRosters([['Team', 'No', 'Last name', 'ID'], ['A', 1, 'X', 100234]], { idMode: 'number' }).teams[0].players[0].dob).toBe('100234')
+  })
+  it('reads a date as a birthdate only in dob mode', () => {
+    const d = [['Team', 'No', 'Last name', 'Date of birth'], ['A', 1, 'X', '14.03.2008']]
+    expect(parseRosters(d).teams[0].players[0].dob).toBe('14/03/2008')
+    expect(parseRosters(d, { idMode: 'text' }).teams[0].players[0].dob).toBe('14.03.2008')
+  })
+  it('the template follows the mode', () => {
+    expect(rosterTemplate('number').rows[0][5]).toBe('ID number')
+    expect(rosterTemplate('text').rows[1][5]).toBe('Class 9b')
+  })
+})
