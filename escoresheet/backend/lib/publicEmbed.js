@@ -4,8 +4,9 @@
  *   <script src="https://backend.openvolley.app/embed/livescore.js" async></script>
  *   <ov-livescore match="MATCH_ID"></ov-livescore>
  *
- * Attributes: match (required), api (default: the origin the script came from),
- * theme ("light" | "dark" | unset = the visitor's setting). The widget draws in
+ * Attributes: match (a match id) or club (a club id: that club's games of the day
+ * as a ticker, refreshed every 10 s), api (default: the origin the script came
+ * from), theme ("light" | "dark" | unset = the visitor's setting). The widget draws in
  * a shadow root, so the host page's CSS cannot break it and it cannot break the
  * page. Server-Sent Events, with polling when EventSource is missing or fails.
  * Only text is written with textContent: nothing from the API is parsed as HTML.
@@ -39,18 +40,36 @@ export const LIVESCORE_JS = `(function () {
   Live.prototype._stop = function () { if (this._es) { this._es.close(); this._es = null; } clearInterval(this._t); this._t = null; };
   Live.prototype._start = function () {
     var self = this; this._stop();
-    var id = this.getAttribute('match'); if (!id) { this._msg('Set the match attribute.'); return; }
-    var base = (this.getAttribute('api') || origin).replace(/\\/$/, '') + '/api/public/v1/matches/' + encodeURIComponent(id);
-    var poll = function () { fetch(base + '/live').then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); }).then(function (d) { self._draw(d); }).catch(function () { self._msg('Score not available.'); }); };
+    var api = (this.getAttribute('api') || origin).replace(/\\/$/, '') + '/api/public/v1';
+    var club = this.getAttribute('club'), id = this.getAttribute('match');
+    if (club) { this._ticker(api, club); return; }
+    if (!id) { this._msg('Set the match or club attribute.'); return; }
+    var base = api + '/matches/' + encodeURIComponent(id);
+    var poll = function () { fetch(base + '/live').then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); }).then(function (d) { self._box.textContent = ''; self._box.appendChild(self._card(d)); }).catch(function () { self._msg('Score not available.'); }); };
     if (window.EventSource) {
       this._es = new EventSource(base + '/stream');
-      this._es.addEventListener('live', function (ev) { try { self._draw(JSON.parse(ev.data)); } catch (e) {} });
+      this._es.addEventListener('live', function (ev) { try { self._box.textContent = ''; self._box.appendChild(self._card(JSON.parse(ev.data))); } catch (e) {} });
       this._es.onerror = function () { if (self._es && self._es.readyState === 2) { self._es = null; poll(); self._t = setInterval(poll, 5000); } };
     } else { poll(); this._t = setInterval(poll, 5000); }
   };
+  // a club's games of the day: the list, then each game's live score
+  Live.prototype._ticker = function (api, club) {
+    var self = this;
+    var run = function () {
+      var from = new Date(Date.now() - 6 * 3600e3).toISOString(), to = new Date(Date.now() + 24 * 3600e3).toISOString();
+      fetch(api + '/matches?club=' + encodeURIComponent(club) + '&from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to) + '&limit=6')
+        .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+        .then(function (d) {
+          if (!d.matches.length) { self._msg('No games today.'); return; }
+          return Promise.all(d.matches.map(function (m) { return fetch(api + '/matches/' + encodeURIComponent(m.id) + '/live').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }); }))
+            .then(function (cards) { self._box.textContent = ''; cards.forEach(function (c) { if (c) { var e = self._card(c); e.style.marginBottom = '10px'; self._box.appendChild(e); } }); });
+        }).catch(function () { self._msg('Scores not available.'); });
+    };
+    run(); this._t = setInterval(run, 10000);
+  };
   Live.prototype._msg = function (m) { this._box.textContent = ''; this._box.appendChild(el('div', 'e', m)); };
-  Live.prototype._draw = function (d) {
-    var b = this._box; b.textContent = '';
+  Live.prototype._card = function (d) {
+    var b = el('div');
     var st = d.status === 'live' ? 'LIVE' : (d.status === 'finished' || d.status === 'ended') ? 'Final' : 'Upcoming';
     var h = el('div', 'h'); h.appendChild(el('span', st === 'LIVE' ? 'live' : '', st)); h.appendChild(el('span', '', d.currentSet ? 'Set ' + d.currentSet : '')); b.appendChild(h);
     ['A', 'B'].forEach(function (k) {
@@ -62,7 +81,21 @@ export const LIVESCORE_JS = `(function () {
       b.appendChild(r);
     });
     if (d.setResults && d.setResults.length) b.appendChild(el('div', 'hist', d.setResults.map(function (s) { return s.pointsA + '-' + s.pointsB; }).join('   ')));
+    return b;
   };
   customElements.define('ov-livescore', Live);
 })();
 `
+
+/**
+ * The page of GET /embed/match/:id and /embed/club/:id: for a site that can only
+ * <iframe> (no script tags). It is just the widget on a bare page. `kind` is
+ * 'match' or 'club'; `id` is checked by the caller, escaped here again.
+ */
+export function embedPage(kind, id, { theme = '' } = {}) {
+  const esc = (v) => String(v).replace(/[^A-Za-z0-9_.:-]/g, '')
+  const th = theme === 'dark' || theme === 'light' ? ` theme="${theme}"` : ''
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Livescore</title>` +
+    `<style>html,body{margin:0;padding:8px;background:transparent}</style></head><body>` +
+    `<ov-livescore ${kind}="${esc(id)}"${th}></ov-livescore><script src="/embed/livescore.js"></script></body></html>`
+}

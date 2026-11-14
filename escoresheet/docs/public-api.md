@@ -15,7 +15,7 @@ Base: `https://backend.openvolley.app/api/public/v1`. A match id is the match's
 
 | Request | What |
 |---|---|
-| `GET /matches?from=&to=&status=&limit=` | Match infos (no rosters) in a window (default: yesterday to +7 days, max 62 days; `status` = `scheduled,live,finished`; limit ≤ 200) |
+| `GET /matches?from=&to=&status=&limit=&club=` | Match infos (no rosters) in a window (default: yesterday to +7 days, max 62 days; `status` = `scheduled,live,finished`; limit ≤ 200); `club=<club id>`: only that club's matches |
 | `GET /matches/:id` | Match info: teams, league, venue, best of, `officials` (roles only), rosters (numbers, captain, libero), staff (roles), result |
 | `GET /matches/:id/live` | Livescore snapshot: sets, points, serving team, timeouts, on court (numbers per position I–VI), sanctions, set results, timeout / interval flags |
 | `GET /matches/:id/stream` | The same snapshot as Server-Sent Events (`event: live`), a frame on every change, a keep-alive comment every 20 s. `EventSource` reconnects by itself |
@@ -39,10 +39,10 @@ match info they are `home` / `away`.
 <ov-livescore match="MATCH_ID"></ov-livescore>
 ```
 
-Attributes: `match` (required), `api` (another backend's origin), `theme`
+Attributes: `match` (a match id) or `club` (a club id: that club's games of the day as a ticker, refreshed every 10 s), `api` (another backend's origin), `theme`
 (`light` / `dark`, default: the visitor's setting). It draws in a shadow root,
 so the page's CSS cannot break it, uses the stream and falls back to polling
-every 5 s. Or call the JSON yourself:
+every 5 s. A site that cannot add a script can use an iframe: `<iframe src="https://backend.openvolley.app/embed/match/MATCH_ID?theme=dark" style="border:0;width:100%;height:160px">` (or `/embed/club/CLUB_ID`). Or call the JSON yourself:
 
 ```js
 const es = new EventSource('https://backend.openvolley.app/api/public/v1/matches/MATCH_ID/stream')
