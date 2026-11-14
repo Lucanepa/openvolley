@@ -757,7 +757,7 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       await closeMatch(m)
       const s = await auth.handleAuthRequest('sign-in', { email: gone.email, password: PW }, { ip: '198.51.100.7' })
       assert.equal(s.status, 200, JSON.stringify(s.body))
-      const del = await auth.handleAuthRequest('delete-account', { access_token: s.body.data.session.access_token }, { ip: '198.51.100.7' })
+      const del = await auth.handleAuthRequest('delete-account', { access_token: s.body.data.session.access_token, password: PW }, { ip: '198.51.100.7' })
       assert.equal(del.status, 200, JSON.stringify(del.body))
       const [row] = await rowsOf(m)
       assert.deepEqual([row.user_id, row.display_name, row.revoked_at], [null, 'Weg Gina', null])

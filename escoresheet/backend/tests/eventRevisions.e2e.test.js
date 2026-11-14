@@ -457,7 +457,7 @@ describe('event revisions end to end', { skip: SKIP }, () => {
     assert.equal((await sql.query('SELECT count(*)::int n FROM event_revisions WHERE match_id = $1', [m.id])).rows[0].n, 1)
 
     // the scorer deletes the account: the voids and revisions of the closed match stay, without it
-    const del = await api(srv.base, '/api/auth/delete-account', { proto: null, body: { access_token: users.anna.token } })
+    const del = await api(srv.base, '/api/auth/delete-account', { proto: null, body: { access_token: users.anna.token, password: 'correct-horse-battery' } })
     assert.equal(del.status, 200, del.text)
     const row = await eventRow(e2)
     assert.ok(row.voided_at)

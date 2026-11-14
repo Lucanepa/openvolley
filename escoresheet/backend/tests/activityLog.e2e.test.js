@@ -337,7 +337,7 @@ describe('activity log end to end', { skip: SKIP }, () => {
     const dev = entry({ kind: 'app.start', account_id: dora.id, data: { version: '2.4.0' } })
     const inMatch = entry({ match_external_id: m.ext, account_id: dora.id })
     assert.equal((await upload(dora, [dev, inMatch])).status, 200)
-    const del = await api(srv.base, '/api/auth/delete-account', { proto: null, body: { access_token: dora.token } })
+    const del = await api(srv.base, '/api/auth/delete-account', { proto: null, body: { access_token: dora.token, password: 'correct-horse-battery' } })
     assert.equal(del.status, 200, del.text)
     assert.equal((await sql.query('SELECT count(*)::int n FROM activity_log WHERE uid = $1', [dev.uid])).rows[0].n, 0)
     const { rows: [kept] } = await sql.query('SELECT account_id, uploader_id FROM activity_log WHERE uid = $1', [inMatch.uid])

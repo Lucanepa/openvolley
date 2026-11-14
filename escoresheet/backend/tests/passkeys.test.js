@@ -95,6 +95,16 @@ describe('passkey rules', () => {
     }
   })
 
+  it('only the app\'s own sites ask: no other page under openvolley.app (support desk, downloads, dev builds, other apps)', () => {
+    for (const o of ['https://support.openvolley.app', 'https://get.openvolley.app', 'https://readvolley.openvolley.app',
+      'https://dev-app.openvolley.app', 'https://dev-referee.openvolley.app', 'https://forgotten.openvolley.app', 'https://backend.openvolley.app']) {
+      assert.equal(originAllowed(o, config), false, o)
+    }
+    for (const o of ['https://referee.openvolley.app', 'https://scoresheet.openvolley.app', 'https://beach-referee.openvolley.app']) {
+      assert.equal(originAllowed(o, config), true, o)
+    }
+  })
+
   it('a local test names its origins explicitly', () => {
     const local = passkeyConfig({ WEBAUTHN_RP_ID: 'localhost', WEBAUTHN_ORIGINS: 'http://localhost:5173' })
     assert.equal(local.rpId, 'localhost')
@@ -329,12 +339,89 @@ describe('passkeys against Postgres', { skip: PG_TEST_URL ? false : 'PG_TEST_URL
     const auth = makeAuth()
     const a = await setUp(auth, 'dora@example.ch', 'pw-dora-123')
     const b = await setUp(auth, 'emil@example.ch', 'pw-emil-123')
-    const foreign = await auth.handleAuthRequest('passkey/delete', { access_token: b.token, id: a.passkey.id }, ctx())
+    const foreign = await auth.handleAuthRequest('passkey/delete', { access_token: b.token, id: a.passkey.id, password: 'pw-emil-123' }, ctx())
     assert.equal(foreign.status, 404)
     assert.equal((await passkeySignIn(auth, a.device)).status, 200)
-    const own = await auth.handleAuthRequest('passkey/delete', { access_token: a.token, id: a.passkey.id }, ctx())
+    const own = await auth.handleAuthRequest('passkey/delete', { access_token: a.token, id: a.passkey.id, password: 'pw-dora-123' }, ctx())
     assert.equal(own.status, 200)
     assert.equal((await passkeySignIn(auth, a.device)).body.error.code, 'passkey_unknown')
+  })
+
+  it('removing a key needs a confirmation and ends the sessions it may have made', async () => {
+    const auth = makeAuth()
+    const { device, token, passkey } = await setUp(auth, 'gina@example.ch', 'pw-gina-123')
+    const viaKey = (await passkeySignIn(auth, device)).body.data.session.access_token
+    const bare = await auth.handleAuthRequest('passkey/delete', { access_token: token, id: passkey.id }, ctx())
+    assert.equal(bare.status, 403)
+    assert.equal(bare.body.error.code, 'reauth_required')
+    const wrong = await auth.handleAuthRequest('passkey/delete', { access_token: token, id: passkey.id, password: 'nope' }, ctx())
+    assert.equal(wrong.body.error.code, 'invalid_password')
+    assert.equal((await auth.handleAuthRequest('get-user', { access_token: viaKey }, ctx())).status, 200, 'nothing removed yet')
+    const r = await auth.handleAuthRequest('passkey/delete', { access_token: token, id: passkey.id, password: 'pw-gina-123' }, ctx())
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.equal(r.body.data.revoked_sessions, 1)
+    assert.equal((await auth.handleAuthRequest('get-user', { access_token: viaKey }, ctx())).status, 401, 'the session the key made is gone')
+    assert.equal((await auth.handleAuthRequest('get-user', { access_token: token }, ctx())).status, 200, 'this device stays signed in')
+  })
+
+  it('a passkey of the account confirms too, for a few minutes; another account\'s key does not', async () => {
+    const auth = makeAuth()
+    const a = await setUp(auth, 'hugo@example.ch', 'pw-hugo-123')
+    const b = await setUp(auth, 'ines@example.ch', 'pw-ines-123')
+    const answer = async (device) => {
+      const o = await auth.handleAuthRequest('passkey/login-options', {}, ctx())
+      return { challengeId: o.body.data.challengeId, response: device.get(o.body.data.options, APP) }
+    }
+    const foreign = await auth.handleAuthRequest('reauth', { access_token: a.token, passkey: await answer(b.device) }, ctx())
+    assert.equal(foreign.body.error.code, 'passkey_unknown')
+    const support = await auth.handleAuthRequest('passkey/login-options', {}, ctx())
+    const fromSupport = await auth.handleAuthRequest('reauth', {
+      access_token: a.token, passkey: { challengeId: support.body.data.challengeId, response: a.device.get(support.body.data.options, 'https://support.openvolley.app') }
+    }, ctx())
+    assert.equal(fromSupport.body.error.code, 'passkey_invalid', 'a page outside the app\'s sites never confirms')
+    const ok = await auth.handleAuthRequest('reauth', { access_token: a.token, passkey: await answer(a.device) }, ctx())
+    assert.equal(ok.status, 200, JSON.stringify(ok.body))
+    assert.ok(ok.body.data.fresh_until > Date.now())
+    // within the window the session needs no second confirmation
+    const del = await auth.handleAuthRequest('passkey/delete', { access_token: a.token, id: a.passkey.id }, ctx())
+    assert.equal(del.status, 200, JSON.stringify(del.body))
+    // another session of the same account is not confirmed by it
+    const other = (await auth.handleAuthRequest('sign-in', { email: 'ines@example.ch', password: 'pw-ines-123' }, ctx())).body.data.session.access_token
+    const otherDel = await auth.handleAuthRequest('passkey/delete', { access_token: other, id: b.passkey.id }, ctx())
+    assert.equal(otherDel.body.error.code, 'reauth_required')
+  })
+
+  it('sign out everywhere: the other sessions, and with remove_passkeys (confirmed) every key', async () => {
+    const auth = makeAuth()
+    const { device, token, userId } = await setUp(auth, 'jana@example.ch', 'pw-jana-123')
+    const viaKey = (await passkeySignIn(auth, device)).body.data.session.access_token
+    const sessions = await auth.handleAuthRequest('session/list', { access_token: token }, ctx())
+    assert.equal(sessions.status, 200)
+    assert.equal(sessions.body.data.sessions.length, 2)
+    assert.equal(sessions.body.data.sessions.filter((x) => x.current).length, 1)
+    assert.match(sessions.body.data.sessions[0].id, /^[0-9a-f]{16}$/)
+    const bare = await auth.handleAuthRequest('sign-out-everywhere', { access_token: token, remove_passkeys: true }, ctx())
+    assert.equal(bare.body.error.code, 'reauth_required')
+    assert.equal((await auth.handleAuthRequest('get-user', { access_token: viaKey }, ctx())).status, 200, 'nothing done without the confirmation')
+    const r = await auth.handleAuthRequest('sign-out-everywhere', { access_token: token, remove_passkeys: true, password: 'pw-jana-123' }, ctx())
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.deepEqual(r.body.data, { revoked_sessions: 1, removed_passkeys: 1 })
+    assert.equal((await auth.handleAuthRequest('get-user', { access_token: viaKey }, ctx())).status, 401)
+    assert.equal((await passkeySignIn(auth, device)).body.error.code, 'passkey_unknown', 'the device cannot sign straight back in')
+    assert.equal((await auth.handleAuthRequest('get-user', { access_token: token }, ctx())).status, 200, 'this device stays signed in')
+    const { rows } = await pool.query('SELECT count(*)::int AS n FROM auth.passkeys WHERE user_id = $1', [userId])
+    assert.equal(rows[0].n, 0)
+  })
+
+  it('the operator\'s sign-out everywhere (set-password.mjs --revoke-only) removes the keys too', async () => {
+    const auth = makeAuth()
+    const { device, userId } = await setUp(auth, 'kurt@example.ch', 'pw-kurt-123')
+    const kept = await auth.revokeUserAccess(userId, { keepPasskeys: true })
+    assert.deepEqual(kept, { revokedSessions: 1, removedPasskeys: 0 })
+    assert.equal((await passkeySignIn(auth, device)).status, 200)
+    const r = await auth.revokeUserAccess(userId)
+    assert.deepEqual(r, { revokedSessions: 1, removedPasskeys: 1 })
+    assert.equal((await passkeySignIn(auth, device)).body.error.code, 'passkey_unknown')
   })
 
   it('a deleted account\'s keys go with it', async () => {

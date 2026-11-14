@@ -149,7 +149,7 @@ describe('account deletion, storage remove, tablet list', { skip: SKIP }, () => 
     assert.equal((await upload(scorer, 'scoresheets', sheet, '{"sheet":1}')).status, 200)
     assert.equal(existsSync(join(storageRoot, 'backup', scorer.id)), true)
 
-    const del = await api(srv.base, '/api/auth/delete-account', { body: { access_token: scorer.token } })
+    const del = await api(srv.base, '/api/auth/delete-account', { body: { access_token: scorer.token, password: 'correct-horse-battery' } })
     assert.equal(del.status, 200, del.text)
 
     const count = async (q, p) => (await sql.query(q, p)).rows[0].n

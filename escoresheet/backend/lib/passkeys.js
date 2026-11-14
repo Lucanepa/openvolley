@@ -27,6 +27,7 @@ import {
 } from '@simplewebauthn/server'
 import { isoBase64URL, isoUint8Array } from '@simplewebauthn/server/helpers'
 import { randomBytes } from 'node:crypto'
+import { ALLOWED_ORIGINS } from './cors.js'
 
 /** How long the device's sheet may stay open. */
 export const PASSKEY_CEREMONY_MS = 2 * 60 * 1000
@@ -50,28 +51,36 @@ const CREDENTIAL_ID_RE = /^[A-Za-z0-9_-]{1,1024}$/
 
 /**
  * The relying party and who may ask. `WEBAUTHN_RP_ID` defaults to
- * openvolley.app; a page may run a ceremony when it is served over https from
- * that host or one of its subdomains (every OpenVolley and OpenBeach site), or
- * from `WEBAUTHN_ORIGINS` when set (a local test: RP `localhost`, origin
- * http://localhost:5173). The apps' own schemes (capacitor, tauri, a local
- * relay) never match: their pages cannot hold a passkey for a web host.
+ * openvolley.app; a page may run a ceremony when its origin is one of the
+ * app's own https sites under that host, the exact list of lib/cors.js
+ * (ALLOWED_ORIGINS: the apps, the manage consoles, OpenBeach's sites), or one
+ * of `WEBAUTHN_ORIGINS` when set (replaces the list; a local test: RP
+ * `localhost`, origin http://localhost:5173). No wildcard: another page under
+ * openvolley.app (the support desk, the download host, a dev build, another
+ * app) may hold a script that turns one passkey prompt into a session, so it
+ * never asks. The apps' own schemes (capacitor, tauri, a local relay) never
+ * match: their pages cannot hold a passkey for a web host.
  */
 export function passkeyConfig(env = process.env) {
   const rpId = String(env.WEBAUTHN_RP_ID || 'openvolley.app').trim().toLowerCase()
-  const explicit = String(env.WEBAUTHN_ORIGINS || '').split(',').map((o) => o.trim()).filter(Boolean)
-  return { rpId, rpName: 'OpenVolley', explicitOrigins: explicit }
+  const explicit = String(env.WEBAUTHN_ORIGINS || '').split(',').map((o) => o.trim().replace(/\/+$/, '')).filter(Boolean)
+  return { rpId, rpName: 'OpenVolley', explicitOrigins: explicit, origins: explicit.length ? explicit : appOrigins(rpId) }
 }
 
-/** May a page at `origin` run a ceremony for this relying party? */
+/** The https sites of ALLOWED_ORIGINS on `rpId` or under it. */
+export function appOrigins(rpId) {
+  return ALLOWED_ORIGINS.filter((o) => {
+    let url
+    try { url = new URL(o) } catch { return false }
+    return url.protocol === 'https:' && (url.hostname === rpId || url.hostname.endsWith(`.${rpId}`))
+  })
+}
+
+/** May a page at `origin` run a ceremony for this relying party? Exact match only. */
 export function originAllowed(origin, config) {
   if (typeof origin !== 'string' || !origin) return false
-  if (config.explicitOrigins.length) return config.explicitOrigins.includes(origin)
-  let url
-  try { url = new URL(origin) } catch { return false }
-  if (url.origin !== origin) return false // no paths, no trailing slash games
-  const host = url.hostname
-  if (host !== config.rpId && !host.endsWith(`.${config.rpId}`)) return false
-  return url.protocol === 'https:' || (url.protocol === 'http:' && host === 'localhost')
+  const list = config.origins || (config.explicitOrigins?.length ? config.explicitOrigins : appOrigins(config.rpId))
+  return list.includes(origin)
 }
 
 /** The origin a browser wrote into the answer (clientDataJSON), or ''. */
