@@ -7046,7 +7046,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       </div>
       <div className="setup-section">
         {/* Cloud / this device / removable drive: where this match is backed up */}
-        {backup && <div className="ov-kit mb-3"><BackupTargetsPanel backup={backup} test={match?.test === true} /></div>}
+        {backup && <div className="ov-kit mb-3"><BackupTargetsPanel backup={backup} test={match?.test === true} globalKey={match?.global === true ? (match.globalKey || null) : null} /></div>}
         {/* Why this match does not sync, if the server refused it for good */}
         {match?.cloudBlock && <CloudBlockNotice match={match} className="mb-3" />}
 
