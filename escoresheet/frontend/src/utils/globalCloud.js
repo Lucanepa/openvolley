@@ -86,8 +86,26 @@ export const forgetGlobalMatchIds = () => globalIds.clear()
  * another device. Throws when it cannot be sealed: never stored in the clear.
  */
 async function globalBackupText(matchId, backupData) {
-  const { backupFileText } = await import('./backupFile')
-  return backupFileText(matchId ?? backupData?.match?.id, backupData, new Date(), { keepConnectionPins: true })
+  const [{ backupFileText }, { isEncryptedBackup }] = await Promise.all([import('./backupFile'), import('./backupCrypto/envelope')])
+  const text = await backupFileText(matchId ?? backupData?.match?.id, backupData, new Date(), { keepConnectionPins: true })
+  // a match with no PIN gets a plain file (names, birth dates in the clear):
+  // the Global store keeps only an encrypted one (backend lib/globalStore.js)
+  let sealed = false
+  try { sealed = isEncryptedBackup(JSON.parse(text)) } catch { /* not JSON */ }
+  if (!sealed) throw new Error('the match has no PIN to encrypt its backup')
+  return text
+}
+
+/**
+ * A backup read by its code, as Global mode restores it: only a Global match,
+ * kept test-flagged (the sync queue and the restore never send a test match
+ * to the league's server). null for anything else: a code that holds an
+ * official match, or a file someone with the code replaced, is not restored
+ * into this device's official matches.
+ */
+export function globalRestoreData(data) {
+  if (!data || typeof data !== 'object' || !data.match || data.match.global !== true) return null
+  return { ...data, match: { ...data.match, global: true, test: true } }
 }
 
 /** The every-action / set-end backup of a Global match (the newest copy replaces the last). */

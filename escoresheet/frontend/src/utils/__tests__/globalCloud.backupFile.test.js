@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 const store = vi.hoisted(() => ({ files: new Map() }))
 vi.mock('../backendConfig', async (orig) => ({ ...(await orig()), getCloudApiUrl: (p) => `https://api.test${p}` }))
 
-import { uploadGlobalBackup, uploadGlobalFinal, loadGlobal } from '../globalCloud'
+import { uploadGlobalBackup, uploadGlobalFinal, loadGlobal, globalRestoreData } from '../globalCloud'
 import { openWithKnownPins } from '../backupFile'
 import { isEncryptedBackup } from '../backupCrypto/envelope'
 
@@ -74,17 +74,33 @@ describe('the Global store copy is an app backup file (utils/backupFile)', () =>
     expect(isEncryptedBackup(JSON.parse(body))).toBe(true)
   }, 60000)
 
-  it('a match without a PIN stays plain, still without its secrets', async () => {
-    await uploadGlobalBackup(backup({ refereePin: null }), 9)
-    const file = JSON.parse(store.files.get(`${KEY}/backup`))
-    expect(isEncryptedBackup(file)).toBe(false)
-    expect(file.secretsRemoved).toBe(true)
-    expect(store.files.get(`${KEY}/backup`)).not.toContain('333333')
-    expect(store.files.get(`${KEY}/backup`)).not.toContain('sess-77')
+  // the server keeps only an encrypted backup (lib/globalStore.js): a plain
+  // file (names, birth dates in the clear) is never sent (audit 2026-11-14)
+  it('a match without a PIN is not sent: its file would be plain', async () => {
+    expect(await uploadGlobalBackup(backup({ refereePin: null }), 9)).toBeNull()
+    expect(store.files.has(`${KEY}/backup`)).toBe(false)
+    const r = await uploadGlobalFinal({ match: backup({ refereePin: null }).match, matchId: 9, pdfBlob: null, backupData: backup({ refereePin: null }) }, { retries: 0 })
+    expect(r.ok).toBe(false)
+    expect(store.files.has(`${KEY}/backup`)).toBe(false)
   }, 60000)
 
   it('not a Global match: nothing sent', async () => {
     expect(await uploadGlobalBackup(backup({ global: false }), 9)).toBeNull()
     expect(fetch).not.toHaveBeenCalled()
+  })
+})
+
+// Global mode restores only a Global match: a backup under a code that holds
+// an official (Swiss) match, or one that says test: false, would queue a
+// restore job against the league's server (backupManager.restoreMatchFromJson)
+describe('globalRestoreData (restore by backup code)', () => {
+  it('takes a Global match, and keeps it a test-flagged one (never synced)', () => {
+    const d = globalRestoreData({ match: { id: 1, global: true, test: false, seedKey: 'x' }, sets: [] })
+    expect(d.match).toMatchObject({ global: true, test: true, seedKey: 'x' })
+  })
+  it('refuses anything else', () => {
+    for (const d of [null, {}, { match: null }, { match: { global: false, test: false } }, { match: { test: true } }, { match: { global: 'true' } }]) {
+      expect(globalRestoreData(d)).toBeNull()
+    }
   })
 })

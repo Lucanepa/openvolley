@@ -89,7 +89,7 @@ import { deviceMatchRows, jobsOfMatch, matchGameNumber, resumeStage, setScore } 
 import { PhoneIcon } from './components/icons'
 import { Maximize } from 'lucide-react'
 import ToolModeChooser from './components/ToolModeChooser'
-import { newGlobalKey, loadGlobal, isGlobalKey, markGlobalMatch } from './utils/globalCloud'
+import { newGlobalKey, loadGlobal, isGlobalKey, markGlobalMatch, globalRestoreData } from './utils/globalCloud'
 import { useToolMode, getToolMode, setToolMode, toolModeLocked, impliedToolMode } from './utils/toolMode'
 import { Button, cn, FormError, Input, ScreenLoading } from './ui'
 import { getBackendOverride, getCloudApiUrl, getLocalServerStatusUrl, isCloudBlockedOnThisPort, isNativeApp, isStaticHost } from './utils/backendConfig'
@@ -4311,8 +4311,12 @@ export default function App() {
                             if (!text) { setRestoreError(t('restoreGlobal.notFound', 'No backup found for this code.')); return }
                             // a backup file like any other (utils/backupFile): an
                             // encrypted one asks for the match's referee PIN first
-                            const data = await unlockBackup(matchBackupFromFile(parseBackupText(text)))
-                            if (!data) return // cancelled
+                            const unlocked = await unlockBackup(matchBackupFromFile(parseBackupText(text)))
+                            if (!unlocked) return // cancelled
+                            // only a Global match, kept test-flagged: never an
+                            // official match into this device (utils/globalCloud)
+                            const data = globalRestoreData(unlocked)
+                            if (!data) { setRestoreError(t('restoreGlobal.notGlobal', 'This code holds no match of the Global tool.')); return }
                             setRestorePreviewData({ data, source: 'cloud', backupName: 'global' })
                           } catch (err) {
                             setRestoreError(restoreErrorText(err, t))
