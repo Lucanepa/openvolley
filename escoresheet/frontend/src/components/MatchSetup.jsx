@@ -10,7 +10,7 @@ import { saveMatchSignature } from '../utils/saveSignature'
 import { phoneSignContext, signatureSource, signatureUpdate, SLOT_OF_ROLE, PRE_MATCH_SIGNATURE_FIELD } from '../domain/phoneSignature'
 import Modal from './Modal'
 import RefereeSelector from './RefereeSelector'
-import LoadOfficialMatchModal from './LoadOfficialMatchModal'
+import LoadOfficialMatchModal, { knownMatchFormat } from './LoadOfficialMatchModal'
 import ballFallback from '../ball_fallback.png'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 
@@ -21,7 +21,8 @@ const ballImage = ballFallback
 import { parseRosterPdf } from '../utils/parseRosterPdf'
 import { getCloudApiUrl } from '../utils/backendConfig'
 import { sendMatchInfoMail } from '../utils/matchInfoMail'
-import { exportMatchData } from '../utils/backupManager'
+import { exportMatchData, officialsFromCloud } from '../utils/backupManager'
+import { clearSetupDraft, dropStaleSetupDrafts, readSetupDraft, writeSetupDraft } from '../db/setupDrafts'
 import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
 import { toastQueuedSync } from '../utils/syncToast'
 import { hasStoredSessionToken, isAuthError } from '../hooks/useSyncQueue'
@@ -232,6 +233,53 @@ function isEqual(a, b) {
   }
   return false
 }
+
+/**
+ * Is Match setup read-only for this match? Once the coin toss is confirmed
+ * or the match is live, ended or approved: its edits went past the in-match
+ * checks (no manual-change log, signatures given for another roster, a
+ * format changed at 1:1).
+ */
+export function isSetupLocked(match) {
+  if (!match) return false
+  return match.coinTossConfirmed === true || match.approved === true || ['live', 'ended', 'final', 'approved'].includes(match.status)
+}
+
+// The info page's fields kept in its draft (db/setupDrafts) until Save
+const INFO_DRAFT_KEYS = ['date', 'time', 'hall', 'city', 'type1', 'type1Other', 'championshipType', 'championshipTypeOther',
+  'type2', 'type3', 'type3Other', 'bestOf', 'gameN', 'league', 'home', 'away', 'homeColor', 'awayColor', 'homeShortName', 'awayShortName',
+  'ref1First', 'ref1Last', 'ref1Country', 'ref1Dob', 'ref1Email', 'ref2First', 'ref2Last', 'ref2Country', 'ref2Dob', 'ref2Email',
+  'scorerFirst', 'scorerLast', 'scorerCountry', 'scorerDob', 'asstFirst', 'asstLast', 'asstCountry', 'asstDob',
+  'lineJudge1', 'lineJudge2', 'lineJudge3', 'lineJudge4']
+
+/**
+ * The side-bound fields of a stored match with home and away swapped (a
+ * schedule load with the teams the other way round): pre-match signatures and
+ * their "signed on phone" marks. The team ids swap in the same write.
+ */
+function swappedSideFields(match) {
+  const m = match || {}
+  const out = {
+    homeCoachSignature: m.awayCoachSignature ?? null,
+    homeCaptainSignature: m.awayCaptainSignature ?? null,
+    awayCoachSignature: m.homeCoachSignature ?? null,
+    awayCaptainSignature: m.homeCaptainSignature ?? null
+  }
+  if (m.signatureSources && typeof m.signatureSources === 'object') {
+    const src = m.signatureSources
+    out.signatureSources = {
+      ...src,
+      homeCoachSignature: src.awayCoachSignature ?? null,
+      homeCaptainSignature: src.awayCaptainSignature ?? null,
+      awayCoachSignature: src.homeCoachSignature ?? null,
+      awayCaptainSignature: src.homeCaptainSignature ?? null
+    }
+  }
+  return out
+}
+
+// Team names as the schedule comparison sees them
+const sameTeamName = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase()
 
 // Helper to check if match info has changed
 function hasMatchInfoChanged(original, current) {
@@ -540,8 +588,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     '--text-2xl': `${1.5 * baseScaleFactor}rem`
   }), [baseScaleFactor])
   const [home, setHome] = useState('')
-  // Match created popup state
-  const [matchCreatedModal, setMatchCreatedModal] = useState(null) // { matchId, gamePin, refereePin, homeTeamPin, awayTeamPin }
   const [away, setAway] = useState('')
 
   // Match info fields
@@ -558,7 +604,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [type2, setType2] = useState('men') // men | women
   const [type3, setType3] = useState('senior') // senior | U23 | U19 | other
   const [type3Other, setType3Other] = useState('') // For "other" level
-  const [bestOf, setBestOf] = useState(5) // 3 or 5
+  // 3 or 5; null until chosen or known from the schedule (a guessed best of
+  // 5 played a best-of-3 decider to 25 points): Create match waits for it
+  const [bestOf, setBestOf] = useState(null)
   const [gameN, setGameN] = useState('')
   const [league, setLeague] = useState('')
   const [homeColor, setHomeColor] = useState(DEFAULT_HOME_COLOUR)
@@ -586,6 +634,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     league?.trim() &&    // League must be filled
     city?.trim() &&      // City must be filled
     hall?.trim() &&      // Hall must be filled
+    (bestOf === 3 || bestOf === 5) &&  // Match format must be chosen
     (!requireEmail || notificationEmail?.trim())  // Email required if VITE_REQUIRE_EMAIL=true
   )
 
@@ -604,6 +653,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (!league?.trim()) missing.push(t('matchSetup.league') || 'League')
     if (!city?.trim()) missing.push(t('matchSetup.city') || 'City')
     if (!hall?.trim()) missing.push(t('matchSetup.hall') || 'Hall')
+    if (bestOf !== 3 && bestOf !== 5) missing.push(t('matchSetup.matchFormat'))
     if (requireEmail && !notificationEmail?.trim()) missing.push(t('matchSetup.notificationEmail') || 'Email')
 
     if (missing.length === 0) return ''
@@ -625,6 +675,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (!league?.trim()) missing.push(t('matchSetup.league') || 'League')
     if (!city?.trim()) missing.push(t('matchSetup.city') || 'City')
     if (!hall?.trim()) missing.push(t('matchSetup.hall') || 'Hall')
+    if (bestOf !== 3 && bestOf !== 5) missing.push(t('matchSetup.matchFormat'))
     if (requireEmail && !notificationEmail?.trim()) missing.push(t('matchSetup.notificationEmail') || 'Email')
     return missing
   }
@@ -688,7 +739,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // Rosters
   const [homeRoster, setHomeRoster] = useState([])
   const [awayRoster, setAwayRoster] = useState([])
-  const rosterLoadedFromDraft = useRef({ home: false, away: false })
   const [homeNum, setHomeNum] = useState('')
   const [homeFirst, setHomeFirst] = useState('')
   const [homeLast, setHomeLast] = useState('')
@@ -999,6 +1049,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   }, [matchId], preloaded?.match)
 
   const isMatchOngoing = match?.status === 'live'
+  // Read-only once the coin toss is confirmed or the match runs: rosters then
+  // change through the match menu's Edit roster (logged as manual changes,
+  // signatures checked), the format or game number through Corrections
+  const setupLocked = isSetupLocked(match)
 
   // db/023, offline first: the rosters teams sent ahead for this official
   // game, read from the device's copy (downloaded while online; AuthContext).
@@ -1436,7 +1490,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (!o) return
     setDate(o.date); setTime(o.time); setHall(o.hall); setCity(o.city)
     setType1(o.type1); setType1Other(o.type1Other); setChampionshipType(o.championshipType); setChampionshipTypeOther(o.championshipTypeOther)
-    setType2(o.type2); setType3(o.type3); setType3Other(o.type3Other); setBestOf(o.bestOf ?? 5); setGameN(o.gameN); setLeague(o.league)
+    setType2(o.type2); setType3(o.type3); setType3Other(o.type3Other); setBestOf(o.bestOf ?? null); setGameN(o.gameN); setLeague(o.league)
     setHome(o.home); setAway(o.away); setHomeColor(o.homeColor); setAwayColor(o.awayColor)
     setHomeShortName(o.homeShortName); setAwayShortName(o.awayShortName)
   }
@@ -1558,7 +1612,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         if (match.match_type_2) setType2(match.match_type_2)
         if (match.match_type_3) setType3(match.match_type_3)
         if (match.match_type_3_other) setType3Other(match.match_type_3_other)
-        if (match.bestOf) setBestOf(match.bestOf)
+        // A created match without a stored format plays best of 5 (older
+        // matches, test matches): shown as such; a new one starts unset
+        if (match.bestOf === 3 || match.bestOf === 5) setBestOf(match.bestOf)
+        else if (match.matchInfoConfirmedAt) setBestOf(5)
         // The placeholder will show a suggestion, but won't auto-fill a value
         if (match.homeShortName && match.homeShortName.trim()) {
           setHomeShortName(match.homeShortName)
@@ -1570,8 +1627,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         else if (match.gameNumber) setGameN(String(match.gameNumber))
 
         // Load players only on initial load (when matchId changes, not when match updates)
-        // Skip if roster was already loaded from draft (to preserve user edits like number/captain changes)
-        if (match.homeTeamId && !rosterLoadedFromDraft.current.home) {
+        if (match.homeTeamId) {
           setHomeRoster(homePlayers.map(p => ({
             id: p.id, // Store player ID for updates
             number: p.number,
@@ -1583,7 +1639,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             isLfp: p.isLfp || false
           })))
         }
-        if (match.awayTeamId && !rosterLoadedFromDraft.current.away) {
+        if (match.awayTeamId) {
           setAwayRoster(awayPlayers.map(p => ({
             id: p.id, // Store player ID for updates
             number: p.number,
@@ -1599,9 +1655,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         // Bench officials are already loaded above via resolvedHomeBench/resolvedAwayBench
         // This section is kept for backward compatibility but should not override if already set
 
-        // Load match officials
-        if (match.officials && match.officials.length > 0) {
-          const ref1 = match.officials.find(o => o.role === '1st referee')
+        // Load match officials, in the app's shape or the cloud's (first_name,
+        // ISO date: Create match sends those, a restored copy keeps them)
+        const officials = officialsFromCloud(match.officials)
+        if (officials.length > 0) {
+          const ref1 = officials.find(o => o.role === '1st referee')
           if (ref1) {
             setRef1First(ref1.firstName || '')
             setRef1Last(ref1.lastName || '')
@@ -1609,7 +1667,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             setRef1Dob(ref1.dob || '01.01.1900')
             setRef1Email(ref1.email || '')
           }
-          const ref2 = match.officials.find(o => o.role === '2nd referee')
+          const ref2 = officials.find(o => o.role === '2nd referee')
           if (ref2) {
             setRef2First(ref2.firstName || '')
             setRef2Last(ref2.lastName || '')
@@ -1617,14 +1675,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             setRef2Dob(ref2.dob || '01.01.1900')
             setRef2Email(ref2.email || '')
           }
-          const scorer = match.officials.find(o => o.role === 'scorer')
+          const scorer = officials.find(o => o.role === 'scorer')
           if (scorer) {
             setScorerFirst(scorer.firstName || '')
             setScorerLast(scorer.lastName || '')
             setScorerCountry(scorer.country || 'CHE')
             setScorerDob(scorer.dob || '')
           }
-          const asst = match.officials.find(o => o.role === 'assistant scorer')
+          const asst = officials.find(o => o.role === 'assistant scorer')
           if (asst) {
             setAsstFirst(asst.firstName || '')
             setAsstLast(asst.lastName || '')
@@ -1632,13 +1690,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             setAsstDob(asst.dob || '01.01.1900')
           }
           // Load line judges
-          const lj1 = match.officials.find(o => o.role === 'line judge 1')
+          const lj1 = officials.find(o => o.role === 'line judge 1')
           if (lj1) setLineJudge1(lj1.name || '')
-          const lj2 = match.officials.find(o => o.role === 'line judge 2')
+          const lj2 = officials.find(o => o.role === 'line judge 2')
           if (lj2) setLineJudge2(lj2.name || '')
-          const lj3 = match.officials.find(o => o.role === 'line judge 3')
+          const lj3 = officials.find(o => o.role === 'line judge 3')
           if (lj3) setLineJudge3(lj3.name || '')
-          const lj4 = match.officials.find(o => o.role === 'line judge 4')
+          const lj4 = officials.find(o => o.role === 'line judge 4')
           if (lj4) setLineJudge4(lj4.name || '')
         }
 
@@ -1874,137 +1932,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     }
   }, [serverRunning, serverStatus, matchId, instanceId])
 
-  // Load saved draft data on mount (only if no matchId)
-  useEffect(() => {
-    if (matchId) return // Skip draft loading if matchId is provided
-
-    async function loadDraft() {
-      try {
-        const draft = await db.match_setup.orderBy('updatedAt').last()
-        if (draft) {
-          if (draft.home !== undefined) setHome(draft.home)
-          if (draft.away !== undefined) setAway(draft.away)
-          if (draft.date !== undefined) setDate(draft.date)
-          if (draft.time !== undefined) setTime(draft.time)
-          if (draft.hall !== undefined) setHall(draft.hall)
-          if (draft.city !== undefined) setCity(draft.city)
-          if (draft.type1 !== undefined) setType1(draft.type1)
-          if (draft.type1Other !== undefined) setType1Other(draft.type1Other)
-          if (draft.championshipType !== undefined) setChampionshipType(draft.championshipType)
-          if (draft.championshipTypeOther !== undefined) setChampionshipTypeOther(draft.championshipTypeOther)
-          if (draft.type2 !== undefined) setType2(draft.type2)
-          if (draft.type3 !== undefined) setType3(draft.type3)
-          if (draft.type3Other !== undefined) setType3Other(draft.type3Other)
-          if (draft.bestOf !== undefined) setBestOf(draft.bestOf)
-          if (draft.homeShortName !== undefined) setHomeShortName(draft.homeShortName)
-          if (draft.awayShortName !== undefined) setAwayShortName(draft.awayShortName)
-          if (draft.gameN !== undefined) setGameN(draft.gameN)
-          if (draft.league !== undefined) setLeague(draft.league)
-          if (draft.homeColor !== undefined) setHomeColor(draft.homeColor)
-          if (draft.awayColor !== undefined) setAwayColor(draft.awayColor)
-          if (draft.homeRoster !== undefined && draft.homeRoster.length > 0) {
-            setHomeRoster(draft.homeRoster)
-            rosterLoadedFromDraft.current.home = true
-          }
-          if (draft.awayRoster !== undefined && draft.awayRoster.length > 0) {
-            setAwayRoster(draft.awayRoster)
-            rosterLoadedFromDraft.current.away = true
-          }
-          if (draft.benchHome !== undefined) setBenchHome(draft.benchHome)
-          if (draft.benchAway !== undefined) setBenchAway(draft.benchAway)
-          if (draft.ref1First !== undefined) setRef1First(draft.ref1First)
-          if (draft.ref1Last !== undefined) setRef1Last(draft.ref1Last)
-          if (draft.ref1Country !== undefined) setRef1Country(draft.ref1Country)
-          if (draft.ref1Dob !== undefined) setRef1Dob(draft.ref1Dob)
-          if (draft.ref1Email !== undefined) setRef1Email(draft.ref1Email)
-          if (draft.ref2First !== undefined) setRef2First(draft.ref2First)
-          if (draft.ref2Last !== undefined) setRef2Last(draft.ref2Last)
-          if (draft.ref2Country !== undefined) setRef2Country(draft.ref2Country)
-          if (draft.ref2Dob !== undefined) setRef2Dob(draft.ref2Dob)
-          if (draft.ref2Email !== undefined) setRef2Email(draft.ref2Email)
-          if (draft.scorerFirst !== undefined) setScorerFirst(draft.scorerFirst)
-          if (draft.scorerLast !== undefined) setScorerLast(draft.scorerLast)
-          if (draft.scorerCountry !== undefined) setScorerCountry(draft.scorerCountry)
-          if (draft.scorerDob !== undefined) setScorerDob(draft.scorerDob)
-          if (draft.asstFirst !== undefined) setAsstFirst(draft.asstFirst)
-          if (draft.asstLast !== undefined) setAsstLast(draft.asstLast)
-          if (draft.asstCountry !== undefined) setAsstCountry(draft.asstCountry)
-          if (draft.asstDob !== undefined) setAsstDob(draft.asstDob)
-          if (draft.homeCoachSignature !== undefined) setHomeCoachSignature(draft.homeCoachSignature)
-          if (draft.homeCaptainSignature !== undefined) setHomeCaptainSignature(draft.homeCaptainSignature)
-          if (draft.awayCoachSignature !== undefined) setAwayCoachSignature(draft.awayCoachSignature)
-          if (draft.awayCaptainSignature !== undefined) setAwayCaptainSignature(draft.awayCaptainSignature)
-        }
-      } catch (error) {
-        console.error('Error loading draft:', error)
-      }
-    }
-    loadDraft()
-  }, [matchId])
-
-  // Save draft data to database
+  // Write the form into the stored match and its teams (the setup's main view
+  // and roster editors; the info page writes only on its Save). Nothing on a
+  // match that is gone or read-only (after the coin toss).
   async function saveDraft(silent = false) {
     try {
-      const draft = {
-        home,
-        away,
-        date,
-        time,
-        hall,
-        city,
-        type1,
-        type1Other,
-        championshipType,
-        championshipTypeOther,
-        type2,
-        type3,
-        type3Other,
-        bestOf,
-        gameN,
-        league,
-        homeColor,
-        awayColor,
-        homeShortName,
-        awayShortName,
-        homeRoster,
-        awayRoster,
-        benchHome,
-        benchAway,
-        ref1First,
-        ref1Last,
-        ref1Country,
-        ref1Dob,
-        ref1Email,
-        ref2First,
-        ref2Last,
-        ref2Country,
-        ref2Dob,
-        ref2Email,
-        scorerFirst,
-        scorerLast,
-        scorerCountry,
-        scorerDob,
-        asstFirst,
-        asstLast,
-        asstCountry,
-        asstDob,
-        homeCoachSignature,
-        homeCaptainSignature,
-        awayCoachSignature,
-        awayCaptainSignature,
-        updatedAt: new Date().toISOString()
-      }
-      // Get existing draft or create new one
-      const existing = await db.match_setup.orderBy('updatedAt').last()
-      if (existing) {
-        await db.match_setup.update(existing.id, draft)
-      } else {
-        await db.match_setup.add(draft)
-      }
-
-      // Also update the actual match record if matchId exists
-      if (matchId) {
-        let scheduledAt = match?.scheduledAt // Default to existing value
+      // The stored row as it is now: its team ids may have changed since this
+      // render (a schedule load that swapped the teams)
+      const current = matchId ? await db.matches.get(matchId) : null
+      if (current && !isSetupLocked(current)) {
+        let scheduledAt = current.scheduledAt // Default to existing value
 
         // Only validate date/time if at least one is set
         if (date || time) {
@@ -2032,7 +1969,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           game_n: gameN ? Number(gameN) : null,
           gameNumber: gameN ? gameN : null,
           league,
-          gamePin: match && !match.test ? (match.gamePin || generateSecurePin([])) : null,
+          gamePin: !current.test ? (current.gamePin || generateSecurePin([])) : null,
           scheduledAt,
           officials: buildOfficialsArray(
             { firstName: ref1First, lastName: ref1Last, country: ref1Country, email: ref1Email, dob: ref1Dob },
@@ -2047,7 +1984,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
         // Only save match type fields if explicitly saving OR match was previously confirmed
         // This prevents scoresheet from showing default Xs before user confirms match info
-        if (!silent || match?.matchInfoConfirmedAt) {
+        if (!silent || current.matchInfoConfirmedAt) {
           matchUpdate.match_type_1 = type1
           matchUpdate.match_type_1_other = type1 === 'other' ? type1Other : null
           matchUpdate.championshipType = championshipType
@@ -2060,8 +1997,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         await db.matches.update(matchId, matchUpdate)
 
         // Update or create teams
-        let homeTeamId = match?.homeTeamId
-        let awayTeamId = match?.awayTeamId
+        let homeTeamId = current.homeTeamId
+        let awayTeamId = current.awayTeamId
 
         if (home && home.trim()) {
           if (homeTeamId) {
@@ -2120,16 +2057,54 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     }
   }
 
-  // Auto-save when data changes (debounced)
-  useEffect(() => {
-    if (currentView === 'main' || currentView === 'info' || currentView === 'home' || currentView === 'away') {
-      const timeoutId = setTimeout(() => {
-        saveDraft(true) // Silent auto-save
-      }, 500) // Debounce 500ms
+  // The match whose setup draft was looked at (restored or dropped): drafts
+  // are written, and cleared on the main view, only from then on
+  const [draftReadyFor, setDraftReadyFor] = useState(null)
+  // A schedule load swapped the rosters with the team names (home and away
+  // the other way round): Save stores the swap, Back undoes it
+  const rosterSwapRef = useRef(false)
 
-      return () => clearTimeout(timeoutId)
+  // The draft of the view being edited
+  const draftDataOf = (view) => {
+    if (view === 'info') {
+      const values = {
+        date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther, type2, type3, type3Other, bestOf,
+        gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName,
+        ref1First, ref1Last, ref1Country, ref1Dob, ref1Email, ref2First, ref2Last, ref2Country, ref2Dob, ref2Email,
+        scorerFirst, scorerLast, scorerCountry, scorerDob, asstFirst, asstLast, asstCountry, asstDob,
+        lineJudge1, lineJudge2, lineJudge3, lineJudge4
+      }
+      return { ...values, swapRosters: rosterSwapRef.current }
     }
-  }, [date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther, type2, type3, type3Other, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName, homeRoster, awayRoster, benchHome, benchAway, ref1First, ref1Last, ref1Country, ref1Dob, ref1Email, ref2First, ref2Last, ref2Country, ref2Dob, ref2Email, scorerFirst, scorerLast, scorerCountry, scorerDob, asstFirst, asstLast, asstCountry, asstDob, homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature, currentView])
+    if (view === 'home') return { roster: homeRoster, bench: benchHome }
+    if (view === 'away') return { roster: awayRoster, bench: benchAway }
+    return null
+  }
+
+  // Auto-save when data changes (debounced): the main view and the roster
+  // editors into the match, as before; the info page and the roster editors
+  // into the match's draft. Nothing after the coin toss.
+  useEffect(() => {
+    if (setupLocked) return
+    const view = currentView
+    const intoMatch = view === 'main' || view === 'home' || view === 'away'
+    const intoDraft = draftReadyFor === matchId && matchId != null && (view === 'info' || view === 'home' || view === 'away')
+    if (!intoMatch && !intoDraft) return
+    const timeoutId = setTimeout(() => {
+      if (intoMatch) saveDraft(true) // Silent auto-save
+      if (intoDraft) writeSetupDraft(matchId, view, draftDataOf(view)).catch((err) => console.warn('[MatchSetup] Saving the draft failed:', err?.message))
+    }, 500) // Debounce 500ms
+
+    return () => clearTimeout(timeoutId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther, type2, type3, type3Other, bestOf, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName, homeRoster, awayRoster, benchHome, benchAway, ref1First, ref1Last, ref1Country, ref1Dob, ref1Email, ref2First, ref2Last, ref2Country, ref2Dob, ref2Email, scorerFirst, scorerLast, scorerCountry, scorerDob, asstFirst, asstLast, asstCountry, asstDob, lineJudge1, lineJudge2, lineJudge3, lineJudge4, homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature, currentView, setupLocked, draftReadyFor])
+
+  // Back on the main view (Save, Back, a roster confirmed): no draft left
+  useEffect(() => {
+    if (currentView !== 'main' || draftReadyFor !== matchId || matchId == null) return
+    rosterSwapRef.current = false
+    clearSetupDraft(matchId).catch(() => {})
+  }, [currentView, draftReadyFor, matchId])
 
   // Update input widths when home/away values change - set default width based on content
   useEffect(() => {
@@ -2300,6 +2275,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       setNoticeModal({ message: t('matchSetup.invalidTime', { error: timeError }) })
       return
     }
+    if (bestOf !== 3 && bestOf !== 5) {
+      setNoticeModal({ message: t('matchSetup.matchFormatRequired') })
+      return
+    }
+    // After the coin toss: Corrections only
+    if (setupLocked) return
 
     // Check if any changes were made (skip sync if no changes)
     const currentMatchInfo = {
@@ -2353,10 +2334,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       }
     }
 
+    // The schedule load swapped the teams (home and away the other way round):
+    // the stored teams swap sides with their players, bench and signatures
+    const swapSides = rosterSwapRef.current
     try {
       // Create teams if they don't exist
-      let homeTeamId = match?.homeTeamId
-      let awayTeamId = match?.awayTeamId
+      let homeTeamId = swapSides ? match?.awayTeamId : match?.homeTeamId
+      let awayTeamId = swapSides ? match?.homeTeamId : match?.awayTeamId
 
       if (!homeTeamId) {
         homeTeamId = await db.teams.add({
@@ -2415,6 +2399,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       // upload's PIN check works from Create match on (stored hashed there).
       const localMatch = await db.matches.get(matchId)
       const pinUpdates = missingConnectionPins(localMatch)
+      const swapUpdates = swapSides ? swappedSideFields(localMatch) : {}
 
       // Update match with team IDs and match info
       // matchInfoConfirmedAt flag indicates user explicitly clicked "Create Match"
@@ -2452,6 +2437,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           { firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
           { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 }
         ),
+        ...swapUpdates,
         matchInfoConfirmedAt: new Date().toISOString(),
         // The insert below carries connection_pins: no separate PIN sync on the next open
         connectionPinsQueuedAt: new Date().toISOString(),
@@ -2510,6 +2496,36 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         ts: new Date().toISOString(),
         status: 'queued'
       })
+      // The swapped rosters and signatures for the cloud, as a roster's Save sends them
+      if (swapSides && !isTestMatch && matchSeedKey) {
+        const cloudPlayers = (roster) => roster.filter(p => p.firstName || p.lastName).map(p => ({
+          number: p.number || null,
+          first_name: p.firstName || '',
+          last_name: p.lastName || '',
+          dob: formatDobForSync(p.dob),
+          is_captain: !!p.isCaptain,
+          libero: p.libero || null,
+          is_lfp: !!p.isLfp
+        }))
+        await db.sync_queue.add({
+          resource: 'match',
+          action: 'update',
+          payload: {
+            id: matchSeedKey,
+            players_home: cloudPlayers(homeRoster),
+            players_away: cloudPlayers(awayRoster),
+            signatures: {
+              home_coach: swapUpdates.homeCoachSignature || '',
+              home_captain: swapUpdates.homeCaptainSignature || '',
+              away_coach: swapUpdates.awayCoachSignature || '',
+              away_captain: swapUpdates.awayCaptainSignature || ''
+            }
+          },
+          ts: new Date().toISOString(),
+          status: 'queued'
+        })
+      }
+      rosterSwapRef.current = false
 
       setMatchInfoConfirmed(true)
       setCurrentView('main')
@@ -2613,313 +2629,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     const benchSorted = sortBenchByHierarchy(bench.filter(m => m.firstName || m.lastName || m.dob))
 
     return { players, liberos, bench: benchSorted }
-  }
-
-  async function createMatch() {
-    // Check for existing validation errors
-    if (dateError) {
-      setNoticeModal({ message: t('matchSetup.invalidDate', { error: dateError }) })
-      return
-    }
-    if (timeError) {
-      setNoticeModal({ message: t('matchSetup.invalidTime', { error: timeError }) })
-      return
-    }
-
-    // Validate date/time first
-    let scheduledAt
-    try {
-      scheduledAt = createScheduledAt(date, time, { allowEmpty: false })
-    } catch (err) {
-      setNoticeModal({ message: t('matchSetup.invalidDateTime', { error: err.message }) })
-      return
-    }
-
-    // Validate at least one captain per team
-    const homeHasCaptain = homeRoster.some(p => p.isCaptain)
-    const awayHasCaptain = awayRoster.some(p => p.isCaptain)
-
-    if (!homeHasCaptain) {
-      setNoticeModal({ message: t('matchSetup.homeCaptainRequired') })
-      return
-    }
-
-    if (!awayHasCaptain) {
-      setNoticeModal({ message: t('matchSetup.awayCaptainRequired') })
-      return
-    }
-
-    // Validate no duplicate player numbers within each team
-    const homeDuplicates = homeRoster.filter((p, i) =>
-      p.number && homeRoster.findIndex(other => other.number === p.number) !== i
-    )
-    if (homeDuplicates.length > 0) {
-      const dupNumbers = [...new Set(homeDuplicates.map(p => p.number))].join(', ')
-      setNoticeModal({
-        message: t('validation.duplicateNumbersDetailed', { team: home || t('common.home'), numbers: dupNumbers })
-      })
-      return
-    }
-
-    const awayDuplicates = awayRoster.filter((p, i) =>
-      p.number && awayRoster.findIndex(other => other.number === p.number) !== i
-    )
-    if (awayDuplicates.length > 0) {
-      const dupNumbers = [...new Set(awayDuplicates.map(p => p.number))].join(', ')
-      setNoticeModal({
-        message: t('validation.duplicateNumbersDetailed', { team: away || t('common.away'), numbers: dupNumbers })
-      })
-      return
-    }
-
-    // Validate birthdates - check for suspicious dates
-    const allPlayers = [...homeRoster, ...awayRoster]
-    const playersWithBadDate = allPlayers.filter(p =>
-      p.dob === '01.01.1900' || p.dob === '01/01/1900' || p.dob === '1900-01-01'
-    )
-    if (playersWithBadDate.length > 0) {
-      const badNames = playersWithBadDate.map(p => `${p.lastName || ''} ${p.firstName || ''} (#${p.number})`).join('\n')
-      setNoticeModal({
-        message: t('validation.invalidBirthdatesDetailed', { names: badNames })
-      })
-      return
-    }
-
-    // Check for missing birthdates (warning, not blocking)
-    const playersWithoutDob = allPlayers.filter(p => !p.dob && (p.firstName || p.lastName))
-    if (playersWithoutDob.length > 0) {
-      const missingNames = playersWithoutDob.slice(0, 5).map(p => `${p.lastName || ''} ${p.firstName || ''} (#${p.number})`).join('\n')
-      const moreCount = playersWithoutDob.length > 5 ? `\n...and ${playersWithoutDob.length - 5} more` : ''
-      // This is just a warning - show it but continue
-      console.warn(`[MatchSetup] Players missing birthdate:\n${missingNames}${moreCount}`)
-    }
-
-    // Match PIN code (for opening/continuing match). Asked before the
-    // transaction: awaiting the user inside it would commit it early, and a
-    // cancel must not leave the two teams behind. Cancel creates nothing.
-    const matchPin = await askText({
-      title: t('matchSetup.matchPinTitle'),
-      message: t('matchSetup.enterPinPrompt'),
-      label: t('matchSetup.matchPinLabel'),
-      confirmLabel: t('matchSetup.createMatch')
-    })
-    if (matchPin === null) return
-    if (matchPin.trim() === '') {
-      setNoticeModal({ message: t('matchSetup.matchPinRequired') })
-      return
-    }
-
-    await db.transaction('rw', db.matches, db.teams, db.players, db.sync_queue, async () => {
-      const homeId = await db.teams.add({ name: home, color: homeColor, shortName: homeShortName || home.substring(0, 8).toUpperCase(), benchStaff: benchHome, createdAt: new Date().toISOString() })
-      const awayId = await db.teams.add({ name: away, color: awayColor, shortName: awayShortName || away.substring(0, 8).toUpperCase(), benchStaff: benchAway, createdAt: new Date().toISOString() })
-
-      // Auto-generate gamePin for official matches
-      const generatedGamePin = generateSecurePin([])
-
-      // Generate all PINs upfront so we can display them in the modal
-      const generatedRefereePin = generateSecurePin([])
-      const generatedHomeTeamPin = generateSecurePin([generatedRefereePin])
-      const generatedAwayTeamPin = generateSecurePin([generatedRefereePin, generatedHomeTeamPin])
-
-      // Generate a unique seed_key for Supabase sync (stored as external_id)
-      // This is the stable unique identifier - never includes modifiable fields like gameN
-      const seedKey = generateMatchSeedKey()
-
-      const createdMatchId = await db.matches.add({
-        homeTeamId: homeId,
-        awayTeamId: awayId,
-        status: 'live',
-        scheduledAt,
-        hall,
-        city,
-        match_type_1: type1,
-        match_type_1_other: type1 === 'other' ? type1Other : null,
-        championshipType,
-        championshipTypeOther: championshipType === 'other' ? championshipTypeOther : null,
-        match_type_2: type2,
-        match_type_3: type3,
-        match_type_3_other: type3 === 'other' ? type3Other : null,
-        sport_type: 'indoor',
-        // Team names and colors for local access
-        homeName: home.trim(),
-        awayName: away.trim(),
-        homeShortName: homeShortName || home.substring(0, 3).toUpperCase(),
-        awayShortName: awayShortName || away.substring(0, 3).toUpperCase(),
-        homeColor: homeColor || DEFAULT_HOME_COLOUR,
-        awayColor: awayColor || DEFAULT_AWAY_COLOUR,
-        game_n: gameN ? Number(gameN) : null,
-        seed_key: seedKey, // Unique key for Supabase sync
-        league,
-        gamePin: generatedGamePin, // Game PIN for official matches (not test matches)
-        refereePin: String(generatedRefereePin).trim(),
-        homeTeamPin: String(generatedHomeTeamPin).trim(),
-        awayTeamPin: String(generatedAwayTeamPin).trim(),
-        matchPin: matchPin.trim(),
-        refereeConnectionEnabled: false,
-        homeTeamConnectionEnabled: false,
-        awayTeamConnectionEnabled: false,
-        officials: buildOfficialsArray(
-          { firstName: ref1First, lastName: ref1Last, country: ref1Country, email: ref1Email, dob: ref1Dob },
-          { firstName: ref2First, lastName: ref2Last, country: ref2Country, email: ref2Email, dob: ref2Dob },
-          { firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
-          { firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
-          { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 }
-        ),
-        bench_home: benchHome,
-        bench_away: benchAway,
-        homeCoachSignature: null,
-        homeCaptainSignature: null,
-        awayCoachSignature: null,
-        awayCaptainSignature: null,
-        coinTossConfirmed: false,  // Set to true when coin toss is confirmed
-        createdAt: new Date().toISOString()
-      })
-
-      // Add match to sync queue - all data stored as JSONB
-      await db.sync_queue.add({
-        resource: 'match',
-        action: 'insert',
-        payload: {
-          external_id: seedKey,
-          status: 'live',
-          scheduled_at: scheduledAt || null,
-          test: false,
-          sport_type: 'indoor',
-          created_at: new Date().toISOString(),
-          // JSONB columns: match_info with every key (the server replaces it whole)
-          match_info: {
-            hall: hall || '',
-            city: city || '',
-            league: league || '',
-            championship_type: championshipType || '',
-            championship_type_other: championshipTypeOther || '',
-            match_type_1: type1 || '',
-            match_type_1_other: type1Other || '',
-            match_type_2: type2 || '',
-            match_type_3: type3 || '',
-            match_type_3_other: type3Other || '',
-            best_of: bestOf
-          },
-          home_team: { name: home.trim(), short_name: homeShortName || generateShortName(home.trim()), color: homeColor || DEFAULT_HOME_COLOUR },
-          away_team: { name: away.trim(), short_name: awayShortName || generateShortName(away.trim()), color: awayColor || DEFAULT_AWAY_COLOUR },
-          players_home: homeRoster.map(p => ({
-            number: p.number,
-            first_name: p.firstName,
-            last_name: p.lastName,
-            dob: formatDobForSync(p.dob),
-            libero: p.libero || null,
-            is_captain: !!p.isCaptain,
-            is_lfp: !!p.isLfp
-          })),
-          players_away: awayRoster.map(p => ({
-            number: p.number,
-            first_name: p.firstName,
-            last_name: p.lastName,
-            dob: formatDobForSync(p.dob),
-            libero: p.libero || null,
-            is_captain: !!p.isCaptain,
-            is_lfp: !!p.isLfp
-          })),
-          bench_home: benchHome || [],
-          bench_away: benchAway || [],
-          officials: buildOfficialsArray(
-            { firstName: ref1First, lastName: ref1Last, country: ref1Country, email: ref1Email, dob: ref1Dob },
-            { firstName: ref2First, lastName: ref2Last, country: ref2Country, email: ref2Email, dob: ref2Dob },
-            { firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
-            { firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
-            { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 },
-            true // useSnakeCase for Supabase
-          ),
-          // PINs for dashboard connections
-          game_pin: generatedGamePin,
-          game_n: gameN ? Number(gameN) : null,
-          connection_pins: {
-            referee: String(generatedRefereePin).trim(),
-            bench_home: String(generatedHomeTeamPin).trim(),
-            bench_away: String(generatedAwayTeamPin).trim()
-          }
-        },
-        ts: new Date().toISOString(),
-        status: 'queued'
-      })
-
-      // Associate user with this match if logged in
-      if (user) {
-        try {
-          await apiFrom('user_matches').upsert({
-            user_id: user.id,
-            match_external_id: seedKey,
-            role: 'scorer',
-            sport_type: 'indoor'
-          }, { onConflict: 'user_id,match_external_id,role' })
-          console.log('[MatchSetup] Associated user with match:', seedKey)
-        } catch (err) {
-          // Don't fail match creation if user_matches insert fails
-          console.warn('[MatchSetup] Failed to associate user with match:', err)
-        }
-      }
-
-      // Add players to local Dexie (still needed for local functionality)
-      if (homeRoster.length) {
-        await db.players.bulkAdd(
-          homeRoster.map(p => ({
-            teamId: homeId,
-            number: p.number,
-            name: `${p.lastName} ${p.firstName}`,
-            lastName: p.lastName,
-            firstName: p.firstName,
-            dob: p.dob || null,
-            libero: p.libero || '',
-            isCaptain: !!p.isCaptain,
-            isLfp: !!p.isLfp,
-            role: null,
-            createdAt: new Date().toISOString()
-          }))
-        )
-      }
-      if (awayRoster.length) {
-        await db.players.bulkAdd(
-          awayRoster.map(p => ({
-            teamId: awayId,
-            number: p.number,
-            name: `${p.lastName} ${p.firstName}`,
-            lastName: p.lastName,
-            firstName: p.firstName,
-            dob: p.dob || null,
-            libero: p.libero || '',
-            isCaptain: !!p.isCaptain,
-            isLfp: !!p.isLfp,
-            role: null,
-            createdAt: new Date().toISOString()
-          }))
-        )
-      }
-
-      // Don't start match yet - go to coin toss first
-      // Check if team names and short names are set
-      if (!home || home.trim() === '' || home === 'Home' || !away || away.trim() === '' || away === 'Away') {
-        setNoticeModal({ message: t('matchSetup.teamNamesRequired') })
-        return
-      }
-
-      if (!homeShortName || homeShortName.trim() === '' || !awayShortName || awayShortName.trim() === '') {
-        setNoticeModal({ message: t('matchSetup.teamShortNamesRequired') })
-        return
-      }
-
-      // Show match created popup if online (has gamePin)
-      if (!offlineMode && generatedGamePin) {
-        setMatchCreatedModal({
-          matchId: createdMatchId,
-          gamePin: generatedGamePin,
-          refereePin: generatedRefereePin,
-          homeTeamPin: generatedHomeTeamPin,
-          awayTeamPin: generatedAwayTeamPin
-        })
-      } else {
-        onOpenCoinToss()
-      }
-    })
   }
 
   // Open scoresheet in a new window
@@ -3284,11 +2993,56 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (current()) setClubBlock(currentClubBlock(matchData.home))
   }
 
-  const handleOfficialMatchSelect = (matchData) => {
+  // Swap the two sides' rosters, benches and pre-match signatures in the
+  // form (the colours and names are info fields): each roster stays with its
+  // team when the schedule has home and away the other way round
+  const swapSidesInForm = () => {
+    setHomeRoster(awayRoster); setAwayRoster(homeRoster)
+    setBenchHome(benchAway); setBenchAway(benchHome)
+    setHomeCoachSignature(awayCoachSignature); setAwayCoachSignature(homeCoachSignature)
+    setHomeCaptainSignature(awayCaptainSignature); setAwayCaptainSignature(homeCaptainSignature)
+    setSavedSignatures(p => ({ homeCoach: p.awayCoach, homeCaptain: p.awayCaptain, awayCoach: p.homeCoach, awayCaptain: p.homeCaptain }))
+  }
+
+  const handleOfficialMatchSelect = async (matchData) => {
+    if (setupLocked) return
     // db/018: a game of another club is never applied (the list leaves them out; ICAL fallback, stale list)
     if (!match?.test) {
       const blocked = clubVerdict(access, matchData?.home)
       if (blocked) { showAlert(clubBlockText(blocked), 'error'); return }
+    }
+    // Rosters entered under other team names: ask before the schedule renames
+    // the teams (each roster would end up under the other club's name). Home
+    // and away the other way round: the rosters move with their teams.
+    let swap = false
+    const typed = home?.trim() || away?.trim()
+    if (typed && (homeRoster.length > 0 || awayRoster.length > 0) && !(sameTeamName(matchData?.home, home) && sameTeamName(matchData?.away, away))) {
+      const names = { home: matchData?.home || '', away: matchData?.away || '', ourHome: home || '', ourAway: away || '' }
+      if (sameTeamName(matchData?.home, away) && sameTeamName(matchData?.away, home)) {
+        const ok = await confirmDialog({
+          title: t('matchSetup.scheduleSwapTitle'),
+          message: t('matchSetup.scheduleSwapBody', names),
+          confirmLabel: t('matchSetup.scheduleSwapConfirm'),
+          cancelLabel: t('common.cancel', 'Cancel')
+        })
+        if (!ok) return
+        swap = true
+      } else {
+        const ok = await confirmDialog({
+          title: t('matchSetup.scheduleTeamsTitle'),
+          message: t('matchSetup.scheduleTeamsBody', names),
+          confirmLabel: t('matchSetup.scheduleTeamsConfirm'),
+          cancelLabel: t('common.cancel', 'Cancel'),
+          tone: 'danger'
+        })
+        if (!ok) return
+      }
+    }
+    if (swap) {
+      swapSidesInForm()
+      setHomeColor(awayColor)
+      setAwayColor(homeColor)
+      rosterSwapRef.current = !rosterSwapRef.current
     }
     // Populate all the form fields from the selected official match
     setDate(matchData.date)
@@ -3302,7 +3056,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (matchData.type2) setType2(matchData.type2)
     setType3(matchData.type3 || 'senior')
     setType3Other(matchData.type3 === 'other' ? (matchData.type3Other || '') : '')
-    if (matchData.bestOf) setBestOf(matchData.bestOf)
+    // the schedule's format when it knows one, else none: the scorer chooses
+    setBestOf(knownMatchFormat(matchData.bestOf))
     setGameN(matchData.gameN)
     setLeague(matchData.league)
     setHome(matchData.home)
@@ -3359,6 +3114,81 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     onInitialOfficialGameUsed?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pickedGamePhase, currentView, initialOfficialGame])
+
+  // Back from the info page after a swapping schedule load: the rosters return
+  const undoRosterSwap = () => {
+    if (!rosterSwapRef.current) return
+    swapSidesInForm()
+    rosterSwapRef.current = false
+  }
+
+  // The match's unsaved draft (db/setupDrafts), once its stored fields are
+  // in: its page opens (the Back snapshot taken from the stored values first,
+  // as for a picked game), then the draft fills it. Dropped on a match that is
+  // read-only now or opened for a picked game; drafts of matches no longer on
+  // the device go too.
+  const draftCheckedRef = useRef(null)
+  const [draftToApply, setDraftToApply] = useState(null)
+  useEffect(() => {
+    if (!matchId || storedAppliedFor !== matchId || draftCheckedRef.current === matchId) return
+    draftCheckedRef.current = matchId
+    let alive = true
+    ;(async () => {
+      let draft = null
+      try {
+        await dropStaleSetupDrafts()
+        draft = await readSetupDraft(matchId)
+        if (draft && (setupLocked || initialOfficialGame || !draft.data || !['info', 'home', 'away'].includes(draft.view))) {
+          await clearSetupDraft(matchId)
+          draft = null
+        }
+      } catch (err) {
+        console.warn('[MatchSetup] Reading the draft failed:', err?.message)
+        draft = null
+      }
+      if (!alive) return
+      if (!draft) { setDraftReadyFor(matchId); return }
+      setDraftToApply(draft)
+      setCurrentView(draft.view)
+    })()
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchId, storedAppliedFor])
+  useEffect(() => {
+    if (!draftToApply || currentView !== draftToApply.view) return
+    const { view, data } = draftToApply
+    setDraftToApply(null)
+    if (view === 'info') {
+      const setters = {
+        date: setDate, time: setTime, hall: setHall, city: setCity, type1: setType1, type1Other: setType1Other,
+        championshipType: setChampionshipType, championshipTypeOther: setChampionshipTypeOther, type2: setType2, type3: setType3,
+        type3Other: setType3Other, bestOf: setBestOf, gameN: setGameN, league: setLeague, home: setHome, away: setAway,
+        homeColor: setHomeColor, awayColor: setAwayColor, homeShortName: setHomeShortName, awayShortName: setAwayShortName,
+        ref1First: setRef1First, ref1Last: setRef1Last, ref1Country: setRef1Country, ref1Dob: setRef1Dob, ref1Email: setRef1Email,
+        ref2First: setRef2First, ref2Last: setRef2Last, ref2Country: setRef2Country, ref2Dob: setRef2Dob, ref2Email: setRef2Email,
+        scorerFirst: setScorerFirst, scorerLast: setScorerLast, scorerCountry: setScorerCountry, scorerDob: setScorerDob,
+        asstFirst: setAsstFirst, asstLast: setAsstLast, asstCountry: setAsstCountry, asstDob: setAsstDob,
+        lineJudge1: setLineJudge1, lineJudge2: setLineJudge2, lineJudge3: setLineJudge3, lineJudge4: setLineJudge4
+      }
+      for (const key of INFO_DRAFT_KEYS) if (key in data) setters[key](data[key])
+      if (data.date !== undefined) handleDateChange(data.date)
+      if (data.time !== undefined) handleTimeChange(data.time)
+      if (data.swapRosters) {
+        swapSidesInForm()
+        rosterSwapRef.current = true
+      }
+    } else if (Array.isArray(data.roster)) {
+      if (view === 'home') { setHomeRoster(data.roster); if (Array.isArray(data.bench)) setBenchHome(data.bench) }
+      else { setAwayRoster(data.roster); if (Array.isArray(data.bench)) setBenchAway(data.bench) }
+    }
+    setDraftReadyFor(matchId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftToApply, currentView])
+
+  // Read-only: only the main view
+  useEffect(() => {
+    if (setupLocked && currentView !== 'main') setCurrentView('main')
+  }, [setupLocked, currentView])
 
   // PDF file handlers - must be defined before conditional returns
   const handleHomeFileSelect = (e) => {
@@ -3525,6 +3355,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const renderPendingRosterNotice = (team) => pendingRosterOf(team) ? (
     <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-sky-200 bg-sky-50/60 px-3 py-2 text-sm text-stone-800" data-testid={`pending-roster-notice-${team}`}>
       <span>{t('matchSetup.rosterUploaded')}</span>
+      {/* after the coin toss the roster editor is closed: Reject only */}
+      {setupLocked ? (
+        <Button variant="danger-outline" size="sm" onClick={() => rejectPendingRoster(team)} data-testid={`pending-roster-notice-${team}-reject`}>
+          {t('matchSetup.rejectRoster')}
+        </Button>
+      ) : (
       <Button
         variant="secondary"
         size="sm"
@@ -3536,6 +3372,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       >
         {t('matchSetup.uploadedRosterOpen')}
       </Button>
+      )}
     </div>
   ) : null
   // The card of a team's uploaded roster (Edit roster -> Remote): counts of
@@ -3864,7 +3701,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         {/* "Load match from schedule" sits on the setup card, next to "Create match" */}
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
           <div>
-            <Button variant="ghost" size="xl" className="whitespace-nowrap bg-white" onClick={() => { restoreMatchInfo(); restoreOfficials(); forgetScheduleLoad(); setCurrentView('main') }}>← {t('common.back')}</Button>
+            <Button variant="ghost" size="xl" className="whitespace-nowrap bg-white" onClick={() => { restoreMatchInfo(); restoreOfficials(); undoRosterSwap(); forgetScheduleLoad(); setCurrentView('main') }}>← {t('common.back')}</Button>
           </div>
           <h1 className="m-0 text-xl sm:text-2xl font-bold tracking-tight text-stone-900">{t('matchSetup.matchInfo')}</h1>
           <div />
@@ -3990,7 +3827,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <Field tone="compact" className={FIELD} label={t('matchSetup.league')}><Input aria-label={t('matchSetup.league')} value={league} onChange={e => setLeague(e.target.value)} /></Field>
               </div>
               <Field tone="compact" className={FIELD} label={t('matchSetup.matchFormat')}>
-                <Select aria-label={t('matchSetup.matchFormat')} block value={bestOf} onChange={e => setBestOf(Number(e.target.value))}>
+                <Select aria-label={t('matchSetup.matchFormat')} block value={bestOf ?? ''} onChange={e => setBestOf(knownMatchFormat(e.target.value))}>
+                  {bestOf == null && <option value="">{t('matchSetup.chooseMatchFormat')}</option>}
                   <option value={5}>{t('matchSetup.bestOf5')}</option>
                   <option value={3}>{t('matchSetup.bestOf3')}</option>
                 </Select>
@@ -7115,13 +6953,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               { label: t('matchSetup.homeTeam'), value: <span className={cn(TRUNC, 'font-semibold text-stone-900')} title={home}>{home || t('common.notSet')}</span> },
               { label: t('matchSetup.awayTeam'), value: <span className={cn(TRUNC, 'font-semibold text-stone-900')} title={away}>{away || t('common.notSet')}</span> },
               { label: t('matchSetup.league'), value: <span className={TRUNC}>{league || t('common.notSet')}</span> },
-              { label: t('matchSetup.matchFormat'), value: <span>{bestOf === 5 ? t('matchSetup.bestOf5') : t('matchSetup.bestOf3')}</span> }
+              { label: t('matchSetup.matchFormat'), value: <span>{bestOf === 5 ? t('matchSetup.bestOf5') : bestOf === 3 ? t('matchSetup.bestOf3') : t('common.notSet')}</span> }
             ]} />
           </div>
 
           {/* on a phone the two share a row when they fit, else each takes a row
               of its own, and a label longer than the row wraps (130 % text:
               "Load match from schedule" widened the card past the column) */}
+          {setupLocked ? (
+            <p className="mt-4 mb-0 rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm text-stone-700" role="note" data-testid="setup-locked">
+              {t('matchSetup.lockedAfterCoinToss')}
+            </p>
+          ) : (
           <div className="mt-4 flex flex-wrap justify-end gap-2">
             {/* opens the info page with the schedule on top: the snapshot for
                 Back is taken before a game is picked, so Back still discards it */}
@@ -7136,6 +6979,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               </Button>
             )}
           </div>
+          )}
         </div>
       </div>
       {/* Connection toggles moved to Scoreboard Options menu (ConnectionSetupModal) */}
@@ -7183,8 +7027,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <TeamShirt
               color={homeColor}
               numberColor={getContrastColor(homeColor)}
-              style={{ cursor: 'pointer', transform: `scale(${scaleFactor})` }}
+              style={{ cursor: setupLocked ? 'default' : 'pointer', transform: `scale(${scaleFactor})` }}
               onClick={(e) => {
+                if (setupLocked) return
                 const rect = e.currentTarget.getBoundingClientRect()
                 const centerX = rect.left + rect.width / 2
                 setColorPickerModal({
@@ -7193,10 +7038,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 })
               }}
             />
-            <Button variant="secondary" size="xl" className="max-sm:w-full sm:ml-auto" onClick={() => setCurrentView('home')}>{t('matchSetup.editRoster')}</Button>
+            {!setupLocked && <Button variant="secondary" size="xl" className="max-sm:w-full sm:ml-auto" onClick={() => setCurrentView('home')}>{t('matchSetup.editRoster')}</Button>}
           </div>
           {coloursTooClose(homeColor, awayColor) && <CloseColourNote />}
-          <SentRosterCard row={sentRosters.home} side="home" onUse={() => applySentRoster('home')} onDismiss={() => dismissSentRoster('home')} />
+          <SentRosterCard row={setupLocked ? null : sentRosters.home} side="home" onUse={() => applySentRoster('home')} onDismiss={() => dismissSentRoster('home')} />
           {renderPendingRosterNotice('home')}
           <ClubGenderNotice warnings={clubWarnings.home} gender={clubGender} />
         </div>
@@ -7243,8 +7088,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <TeamShirt
               color={awayColor}
               numberColor={getContrastColor(awayColor)}
-              style={{ cursor: 'pointer', transform: `scale(${scaleFactor})` }}
+              style={{ cursor: setupLocked ? 'default' : 'pointer', transform: `scale(${scaleFactor})` }}
               onClick={(e) => {
+                if (setupLocked) return
                 const rect = e.currentTarget.getBoundingClientRect()
                 const centerX = rect.left + rect.width / 2
                 setColorPickerModal({
@@ -7253,10 +7099,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 })
               }}
             />
-            <Button variant="secondary" size="xl" className="max-sm:w-full sm:ml-auto" onClick={() => setCurrentView('away')}>{t('matchSetup.editRoster')}</Button>
+            {!setupLocked && <Button variant="secondary" size="xl" className="max-sm:w-full sm:ml-auto" onClick={() => setCurrentView('away')}>{t('matchSetup.editRoster')}</Button>}
           </div>
           {coloursTooClose(homeColor, awayColor) && <CloseColourNote />}
-          <SentRosterCard row={sentRosters.away} side="away" onUse={() => applySentRoster('away')} onDismiss={() => dismissSentRoster('away')} />
+          <SentRosterCard row={setupLocked ? null : sentRosters.away} side="away" onUse={() => applySentRoster('away')} onDismiss={() => dismissSentRoster('away')} />
           {renderPendingRosterNotice('away')}
           <ClubGenderNotice warnings={clubWarnings.away} gender={clubGender} />
         </div>
@@ -7378,6 +7224,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             disabled={!canProceedToCoinToss}
             className="disabled:cursor-not-allowed"
             onClick={async () => {
+              // The match as stored now: one deleted while the setup was open
+              // (another page of the app) is not made again here
+              const stored = matchId ? await db.matches.get(matchId) : null
+              if (!stored) {
+                setNoticeModal({ message: t('matchSetup.matchNotFound') })
+                return
+              }
               // Check if match has no data (no sets, no signatures)
               if (matchId && match) {
                 const sets = await db.sets.where('matchId').equals(matchId).toArray()
@@ -7546,9 +7399,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   // The match already exists with data, so just navigate
                   onOpenCoinToss()
                 }
-              } else {
-                // No match exists - create new match
-                await createMatch()
               }
             }}>{t('matchSetup.coinToss')}</Button>
           {!canProceedToCoinToss && (
@@ -7928,89 +7778,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
             <Button variant="dark" size="xl" block onClick={() => setImportSummaryModal(null)}>
               {t('common.ok')}
-            </Button>
-          </div>
-        </Modal>
-      )}
-
-      {/* Match Created Modal - shows Match ID and all PINs for recovery */}
-      {matchCreatedModal && (
-        <Modal
-          title={t('matchSetup.modals.matchCreated')}
-          open={true}
-          onClose={() => {
-            setMatchCreatedModal(null)
-            onOpenCoinToss()
-          }}
-          width={500}
-          hideCloseButton={true}
-        >
-          <div className="p-6 text-center">
-            {/* Match ID and Game PIN */}
-            <div className="mb-4 rounded-xl border border-stone-200 bg-stone-50 p-5">
-              <div className="mb-4">
-                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-stone-500">
-                  {t('matchSetup.modals.matchId')}
-                </span>
-                <span className="font-mono text-2xl font-bold tracking-[0.15em] text-stone-900">
-                  {matchCreatedModal.matchId}
-                </span>
-              </div>
-              <div>
-                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-stone-500">
-                  {t('matchSetup.gamePin')}
-                </span>
-                <span className="font-mono text-3xl font-bold tracking-[0.3em] text-stone-900">
-                  {matchCreatedModal.gamePin}
-                </span>
-              </div>
-            </div>
-
-            {/* Connection PINs */}
-            <div className="mb-5 rounded-xl border border-stone-200 p-4">
-              <div className="mb-3 text-sm font-semibold text-stone-700">
-                {t('matchSetup.modals.connectionPins')}
-              </div>
-              <div className="flex flex-wrap justify-center gap-4">
-                <div className="text-center">
-                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-stone-500">
-                    {t('matchSetup.refereePinLabel')}
-                  </span>
-                  <span className="font-mono text-lg font-bold tracking-[0.15em] text-stone-900">
-                    {matchCreatedModal.refereePin}
-                  </span>
-                </div>
-                <div className="text-center">
-                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-stone-500">
-                    {t('matchSetup.homeBenchPinLabel')}
-                  </span>
-                  <span className="font-mono text-lg font-bold tracking-[0.15em] text-stone-900">
-                    {matchCreatedModal.homeTeamPin}
-                  </span>
-                </div>
-                <div className="text-center">
-                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-stone-500">
-                    {t('matchSetup.awayBenchPinLabel')}
-                  </span>
-                  <span className="font-mono text-lg font-bold tracking-[0.15em] text-stone-900">
-                    {matchCreatedModal.awayTeamPin}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <p className="mb-5 text-xs leading-normal text-stone-500">
-              {t('matchSetup.modals.saveInfoToRecover')}
-            </p>
-            <Button
-              variant="primary"
-              size="xl"
-              onClick={() => {
-                setMatchCreatedModal(null)
-                onOpenCoinToss()
-              }}
-            >
-              {t('matchSetup.modals.continueToCoinToss')}
             </Button>
           </div>
         </Modal>

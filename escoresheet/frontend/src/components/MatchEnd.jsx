@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useLayoutEffect, useRef, useCallback } fr
 import { useTranslation } from 'react-i18next'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
+import { clearSetupDraft } from '../db/setupDrafts'
 import { remarksSnapshotJob } from '../db/remarksSync'
 import { withActivityContext, wipeMatchEvents } from '../db/eventHistory'
 import { useAlert } from '../contexts/AlertContext'
@@ -1693,6 +1694,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         // Delete the match itself
         await db.matches.delete(matchId)
       })
+      // and its Match setup draft (names and dates of birth of unsaved edits)
+      await clearSetupDraft(matchId).catch(() => {})
 
       // Navigate home (the match is gone: App leaves it out at once)
       if (onGoHome) onGoHome({ closed: true })
