@@ -369,6 +369,31 @@ describe('set 5, defaults and sanctions on the sheet', () => {
     expect(getByTestId('remarks-text').textContent).toContain(remark)
   })
 
+  it('a penalty circles the point written for it; none when a going back cancelled that point', () => {
+    seq = 0
+    const base = fixture()
+    const linkedRun = () => {
+      const pts = [ev('point', 1, { team: 'away' }), ev('point', 1, { team: 'home' })]
+      const sanction = ev('sanction', 1, { team: 'home', type: 'penalty', playerNumber: 12, playerType: 'player' })
+      return { pts, sanction }
+    }
+    const a = linkedRun()
+    const kept = [...a.pts, a.sanction, ev('point', 1, { team: 'away', penaltySeq: a.sanction.seq }), ev('point', 1, { team: 'away' })]
+    const one = render(<App matchData={{ ...base, events: kept }} autoAction="preview" />)
+    expect([...one.container.querySelectorAll('[data-mark="circle"]')].map(e => Number(e.getAttribute('data-point')))).toEqual([2])
+    cleanup()
+    seq = 0
+    const b = linkedRun()
+    const cancelled = [
+      ...b.pts, b.sanction,
+      ev('cancelled_point', 1, { team: 'away', penaltySeq: b.sanction.seq, cancelledBy: 'rectification' }),
+      ev('rectification', 1, { cancel: 'away', penaltyTo: null, serve: 'away', autoRemark: '' }),
+      ev('point', 1, { team: 'away' })
+    ]
+    const two = render(<App matchData={{ ...base, events: cancelled }} autoAction="preview" />)
+    expect([...two.container.querySelectorAll('[data-mark="circle"]')].map(e => Number(e.getAttribute('data-point')))).toEqual([])
+  })
+
   it('9 sanction rows; the 10th continues in REMARKS; a bench player\'s number not circled (owner 2026-10-13)', () => {
     seq = 0
     const base = fixture()

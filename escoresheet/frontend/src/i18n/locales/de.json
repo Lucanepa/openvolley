@@ -5280,6 +5280,8 @@
       "subInTwice": "Satz {{set}}, {{score}}: #{{n}} von {{team}} kommt in diesem Satz ein zweites Mal rein.",
       "subOutTwice": "Satz {{set}}, {{score}}: #{{n}} von {{team}} geht in diesem Satz ein zweites Mal raus.",
       "subPairing": "Satz {{set}}, {{score}}: #{{out}} von {{team}} kam für #{{starter}} rein: nur #{{starter}} darf #{{out}} ersetzen.",
+      "subStarterReturn": "Satz {{set}}, {{score}}: #{{in}} von {{team}} ging für #{{sub}} raus: #{{in}} darf nur für #{{sub}} zurückkommen.",
+      "subSentOff": "Satz {{set}}, {{score}}: Wechsel von {{team}}, #{{in}} für #{{out}}: #{{in}} wurde vorher des Feldes verwiesen, disqualifiziert oder ausnahmsweise ersetzt.",
       "liberoEntryNotOnCourt": "Satz {{set}}, {{score}}: Libero #{{libero}} für #{{n}} ({{team}}): #{{n}} ist nicht auf dem Feld.",
       "liberoAlreadyOnCourt": "Satz {{set}}, {{score}}: Libero #{{libero}} rein ({{team}}): Libero #{{other}} ist schon auf dem Feld.",
       "liberoFrontRow": "Satz {{set}}, {{score}}: Libero #{{libero}} ersetzt #{{n}} von {{team}} in der Vorderreihe (Position {{position}}).",

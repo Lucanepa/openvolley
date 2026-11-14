@@ -5292,6 +5292,8 @@
       "subInTwice": "Satz {{set}}, {{score}}: #{{n}} vo {{team}} chunnt i däm Satz es zweits Mal ine.",
       "subOutTwice": "Satz {{set}}, {{score}}: #{{n}} vo {{team}} gaht i däm Satz es zweits Mal use.",
       "subPairing": "Satz {{set}}, {{score}}: #{{out}} vo {{team}} isch für #{{starter}} inecho: nur #{{starter}} darf #{{out}} ersetze.",
+      "subStarterReturn": "Satz {{set}}, {{score}}: #{{in}} vo {{team}} isch für #{{sub}} use: #{{in}} darf nur für #{{sub}} zruggcho.",
+      "subSentOff": "Satz {{set}}, {{score}}: Wächsel vo {{team}}, #{{in}} für #{{out}}: #{{in}} isch vorher vom Feld verwise, disqualifiziert oder usnahmswiis ersetzt worde.",
       "liberoEntryNotOnCourt": "Satz {{set}}, {{score}}: Libero #{{libero}} für #{{n}} ({{team}}): #{{n}} isch nöd uf em Fäld.",
       "liberoAlreadyOnCourt": "Satz {{set}}, {{score}}: Libero #{{libero}} ine ({{team}}): Libero #{{other}} isch scho uf em Fäld.",
       "liberoFrontRow": "Satz {{set}}, {{score}}: Libero #{{libero}} ersetzt #{{n}} vo {{team}} i de vordere Reihe (Position {{position}}).",
