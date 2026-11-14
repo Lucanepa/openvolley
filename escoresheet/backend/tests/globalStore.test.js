@@ -76,6 +76,22 @@ describe('globalStore', () => {
     assert.equal((await s.handle('save', { key: KEY, kind: 'backup', contentType: 'application/json', fileBase64: b64('{}') })).status, 503)
   })
 
+  it('keeps the volume above its free-space floor (the room the league\'s backups share)', async () => {
+    let free = 10_000
+    const statfs = async () => ({ bavail: free, bsize: 1 })
+    const s = createGlobalStore({ root, logger: silent, statfs, minFreeBytes: 9_000 })
+    const save = () => s.handle('save', { key: KEY, kind: 'backup', contentType: 'application/json', fileBase64: b64('{"a":1}') })
+    assert.equal((await save()).status, 200)
+    free = 9_003 // 7 more bytes would go below the floor
+    const r = await save()
+    assert.equal(r.status, 507)
+    assert.equal(r.body.error.code, 'OV_GLOBAL_FULL')
+    const broken = createGlobalStore({ root, logger: silent, statfs: async () => { throw new Error('EIO') } })
+    assert.equal((await broken.handle('save', { key: KEY, kind: 'backup', contentType: 'application/json', fileBase64: b64('{}') })).status, 503)
+    // nothing left behind in the temp folder
+    assert.deepEqual(await fs.readdir(path.join(root, '.tmp')), [])
+  })
+
   it('sweeps keys untouched for the retention time', async () => {
     let t = Date.now()
     const s = createGlobalStore({ root, logger: silent, now: () => t, retentionDays: 10 })

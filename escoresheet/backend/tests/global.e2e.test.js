@@ -58,3 +58,22 @@ describe('POST /api/global/* (server.js --local)', () => {
     assert.equal(last.status, 429)
   })
 })
+
+describe('POST /api/global/save keeps the storage volume\'s free-space floor', () => {
+  let srv2
+  let root2
+  before(async () => {
+    root2 = await fs.mkdtemp(path.join(os.tmpdir(), 'ov-global-floor-'))
+    await fs.writeFile(path.join(root2, '.ovdata'), '')
+    // a backup/ floor no volume has free: the Global store stops with it
+    srv2 = await bootServer({ STORAGE_ROOT: root2, STORAGE_BACKUP_MIN_FREE_MB: String(1024 * 1024 * 1024) }, ['--local'])
+  })
+  after(async () => { await srv2?.stop(); await fs.rm(root2, { recursive: true, force: true }) })
+
+  it('answers 507 and stores nothing', async () => {
+    const res = await fetch(`${srv2.base}/api/global/save`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: KEY, kind: 'backup', contentType: 'application/json', fileBase64: b64('{}') }) })
+    assert.equal(res.status, 507)
+    assert.equal((await res.json()).error.code, 'OV_GLOBAL_FULL')
+    assert.deepEqual(await fs.readdir(root2).then((l) => l.filter((n) => n === 'global')), [])
+  })
+})

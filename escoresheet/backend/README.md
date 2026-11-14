@@ -938,7 +938,8 @@ shown as the "backup code"):
 - `POST /api/global/save` `{ key, kind, contentType, fileBase64 }`, kind `backup` (JSON), `scoresheet` or `scoresheet-final` (PDF, must start with `%PDF-`). The newest file of a kind replaces the last.
 - `POST /api/global/load` `{ key, kind }` (a missing file answers 200 with `OV_GLOBAL_NOT_FOUND`).
 - Anonymous, 120 requests per IP and minute. The key is the only way to a file: no listing, no search. Needs the `.ovdata` sentinel of the storage root.
-- Caps: 12 MiB a file, 40 MiB a key, 20000 keys and 4 GiB in all (a full store answers 507; the app keeps the match on the device). Keys untouched for 180 days are deleted (a sweep on a request, at most hourly).
+- Caps: 12 MiB a file, 40 MiB a key, 20000 keys and 4 GiB in all, and never below the storage volume's free-space floor (the highest `STORAGE_*_MIN_FREE_MB`, 2 GiB by default: it stops no later than the official backups do). A full store answers 507; the app keeps the match on the device.
+- At most 2 bodies are read at once (6 wait up to 15 s, then 503 `OV_BUSY`), each within the restore's idle and total read limits; every file is fsynced in `.tmp` and renamed. Keys untouched for 180 days are deleted (a sweep on a request, at most hourly).
 - Tests: `tests/globalStore.test.js`, `tests/global.e2e.test.js` (no Postgres needed).
 
 ## API Endpoints

@@ -16,8 +16,12 @@
  * root's .ovdata sentinel (lib/storage.js) so a missing volume never writes to
  * the bare disk. Refused: a body that is not JSON (backup) or does not start
  * with %PDF- (scoresheets); more than MAX_KINDS files or MAX_BYTES_PER_KEY per
- * key; more than maxKeys keys or maxTotalBytes in total (a full store says 507,
- * the app keeps the file on the device and retries). Keys untouched for
+ * key; more than maxKeys keys or maxTotalBytes in total, or a write that would
+ * leave less than minFreeBytes free on the volume (the floor lib/storage.js
+ * keeps for the league's backups and scoresheets, which share it): a full
+ * store says 507, the app keeps the file on the device and retries. Each file
+ * is written to {root}/.tmp, fsynced and renamed (lib/storage.js sweeps
+ * leftovers there). Keys untouched for
  * retentionDays are deleted (sweep at most hourly, on a request).
  *
  * Node built-ins only. Pure: the HTTP layer (server.js) does the rate limit
@@ -39,6 +43,10 @@ export const DEFAULTS = Object.freeze({
   maxBytesPerKey: 40 * MiB,
   maxKeys: 20000,
   maxTotalBytes: 4 * 1024 * MiB,
+  // the volume's free-space floor: at least lib/storage.js's highest
+  // (backup/ stops at 2 GiB free), so the Global store never eats the room
+  // official matches need (server.js passes the configured floors)
+  minFreeBytes: 2 * 1024 * MiB,
   retentionDays: 180,
   sweepEveryMs: 60 * 60 * 1000
 })
@@ -49,7 +57,7 @@ export const maxBodyBytesFor = (maxFileBytes = DEFAULTS.maxFileBytes) => Math.ce
 const fail = (status, code, message) => ({ status, body: { data: null, error: { message, code } } })
 const ok = (data) => ({ status: 200, body: { data, error: null } })
 
-export function createGlobalStore({ root, logger = console, now = Date.now, ...limits } = {}) {
+export function createGlobalStore({ root, logger = console, now = Date.now, statfs = (p) => fsp.statfs(p), ...limits } = {}) {
   if (!root) throw new TypeError('globalStore: root required')
   const o = { ...DEFAULTS, ...limits }
   const base = path.join(root, 'global')
@@ -60,6 +68,17 @@ export function createGlobalStore({ root, logger = console, now = Date.now, ...l
     try { return (await fsp.lstat(path.join(root, '.ovdata'))).isFile() } catch { return false }
   }
   const dirOf = (key) => path.join(base, key.slice(0, 2), key)
+
+  /** Would `size` more bytes leave the volume above its floor? null: unknown (statfs failed). */
+  async function roomFor(size) {
+    try {
+      const st = await statfs(root)
+      return Number(st.bavail) * Number(st.bsize) - size >= o.minFreeBytes
+    } catch (e) {
+      logger.error?.('[Global] statfs failed:', e?.message)
+      return null
+    }
+  }
 
   async function usage() {
     if (counted && now() - counted.at < 60_000) return counted
@@ -124,11 +143,26 @@ export function createGlobalStore({ root, logger = console, now = Date.now, ...l
       for (const f of existing) if (f !== `${kind}.${spec.ext}`) bytes += (await fsp.stat(path.join(dir, f)).catch(() => ({ size: 0 }))).size
       if (bytes + data.length > o.maxBytesPerKey) return fail(413, 'OV_GLOBAL_TOO_LARGE', 'Too much data for this match')
     }
+    const room = await roomFor(data.length)
+    if (room === null) return fail(503, 'OV_GLOBAL_UNAVAILABLE', 'Storage unavailable')
+    if (!room) {
+      logger.warn?.('[Global] refusing a write: the volume is at its free-space floor')
+      return fail(507, 'OV_GLOBAL_FULL', 'Storage is full, try again later')
+    }
     await fsp.mkdir(dir, { recursive: true })
     const tmp = path.join(root, '.tmp')
     await fsp.mkdir(tmp, { recursive: true })
     const tmpFile = path.join(tmp, `global-${crypto.randomBytes(8).toString('hex')}`)
-    await fsp.writeFile(tmpFile, data, { mode: 0o600 })
+    const fh = await fsp.open(tmpFile, 'wx', 0o600)
+    try {
+      await fh.writeFile(data)
+      await fh.sync()
+    } catch (e) {
+      await fh.close().catch(() => {})
+      await fsp.rm(tmpFile, { force: true }).catch(() => {})
+      throw e
+    }
+    await fh.close()
     await fsp.rename(tmpFile, file)
     counted = null
     return ok({ kind, bytes: data.length, replaced: had })
