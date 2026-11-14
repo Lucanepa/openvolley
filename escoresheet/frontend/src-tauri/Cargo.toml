@@ -68,7 +68,7 @@ gtk = "0.18"
 webkit2gtk = "2.0"
 # NetworkManager over D-Bus: the tablet Wi-Fi (hotspot) and the Bluetooth
 # network (hotspot/linux.rs). On the tokio runtime the app already runs.
-zbus = { version = "5", default-features = false, features = ["tokio"] }
+zbus = { version = "6", default-features = false, features = ["tokio"] }
 # probe for libayatana-appindicator3 / libappindicator3 before building the
 # tray: tray-icon panics when neither loads (lifecycle.rs). In the tree
 # through tray-icon, no new crate.
