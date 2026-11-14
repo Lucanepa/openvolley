@@ -2623,11 +2623,37 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (matchId) saveMatchSignature(db, matchId, field, null, signatureUpdate(field, null, null))
   }
 
-  // Back: the side's signatures as stored (a sent roster's are not)
+  // Back: the roster goes back to the one the editor opened with, and the
+  // side's signatures to what is stored (a sent roster's are not). A pad
+  // signature given in this visit for an edited roster no longer fits it:
+  // it is cleared, with a remark, as Confirm does
   const restoreSideSignatures = async (side) => {
+    const opened = side === 'home' ? originalHomeTeamRef.current : originalAwayTeamRef.current
+    const openedKey = opened
+      ? rosterSignatureKey(side === 'home' ? opened.homeRoster : opened.awayRoster, side === 'home' ? opened.benchHome : opened.benchAway)
+      : rosterSignatureKey(sideRoster(side), sideBench(side))
+    const fields = ['coach', 'captain'].map(role => PRE_MATCH_SIGNATURE_FIELD[`${side}-${role}`])
+    const signedFor = {}
+    for (const f of fields) if (f in signedForRef.current) signedFor[f] = signedForRef.current[f]
+    // a sent signature still pending was never stored: the stored image is the
+    // one from before it
+    const pending = pendingSentRef.current[side]
+    for (const role of Object.keys(pending?.signatures || {})) {
+      const field = PRE_MATCH_SIGNATURE_FIELD[`${side}-${role}`]
+      const before = pending.storedFor?.[role]
+      if (before === undefined) delete signedFor[field]
+      else signedFor[field] = before
+    }
     forgetSideSignatures(side)
     if (!matchId) return
-    const stored = await db.matches.get(matchId).catch(() => null)
+    let stored = await db.matches.get(matchId).catch(() => null)
+    const stale = staleSignatureFields(stored, fields, signedFor, openedKey, openedKey)
+    if (stale.length) {
+      const roles = ['captain', 'coach'].filter(role => stale.includes(PRE_MATCH_SIGNATURE_FIELD[`${side}-${role}`]))
+      await clearMatchSignatures(db, matchId, stale, signaturesClearedRemark({ team: sideTeamName(side), roles }))
+      toast.info(t('roster.signaturesCleared'))
+      stored = await db.matches.get(matchId).catch(() => null)
+    }
     for (const role of ['coach', 'captain']) {
       const slot = `${side}-${role}`
       signatureStateOf[slot][1](stored?.[PRE_MATCH_SIGNATURE_FIELD[slot]] || null)
@@ -2912,12 +2938,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       // given for the roster as sent: stored by Save only while it still is
       const key = rosterSignatureKey(roster, bench)
       const signatures = {}
+      // what the stored image (not this one) was given for, for Back
+      const storedFor = { ...(pendingSentRef.current[side]?.storedFor || {}) }
       for (const [role, image] of [['coach', pending.coachSignature], ['captain', pending.captainSignature]]) {
         if (!image) continue
+        const field = PRE_MATCH_SIGNATURE_FIELD[`${side}-${role}`]
         signatures[role] = image
-        signedForRef.current[PRE_MATCH_SIGNATURE_FIELD[`${side}-${role}`]] = key
+        if (!(role in storedFor)) storedFor[role] = signedForRef.current[field]
+        signedForRef.current[field] = key
       }
-      pendingSentRef.current[side] = { row, signatures }
+      pendingSentRef.current[side] = { row, signatures, storedFor }
       toast.success(t('sentRoster.used', { count: roster.length }))
       return
     }

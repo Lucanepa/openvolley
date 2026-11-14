@@ -11,7 +11,8 @@ function fakeDb(row) {
       update: vi.fn(async (id, patch) => { rows[id] = { ...rows[id], ...patch } }),
       get: vi.fn(async (id) => rows[id])
     },
-    sync_queue: { add: vi.fn(async (job) => { queue.push(job) }) }
+    sync_queue: { add: vi.fn(async (job) => { queue.push(job) }) },
+    transaction: vi.fn(async (_mode, _table, fn) => fn())
   }
 }
 

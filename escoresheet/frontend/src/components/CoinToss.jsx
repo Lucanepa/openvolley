@@ -1805,6 +1805,11 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             }
             await syncRosterToDatabase(currentTeam, roster, bench)
             await clearStaleRosterSignatures(currentTeam, roster, bench, originalRosterDataRef.current)
+          } else if (originalRosterDataRef.current) {
+            // edited back to the opening roster: a signature given in between
+            // was for another roster
+            const o = originalRosterDataRef.current
+            await clearStaleRosterSignatures(currentTeam, o.roster, o.bench, o)
           }
           originalRosterDataRef.current = null
           rosterSignedForRef.current = {}
@@ -2213,11 +2218,15 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                   variant="secondary"
                   size="xl"
                   className="font-medium"
-                  onClick={() => {
-                    // Revert to original data
-                    if (originalRosterDataRef.current) {
-                      setRoster(JSON.parse(JSON.stringify(originalRosterDataRef.current.roster)))
-                      setBench(JSON.parse(JSON.stringify(originalRosterDataRef.current.bench)))
+                  onClick={async () => {
+                    // Revert to original data. A signature given in the dialog
+                    // for the edited roster does not fit the restored one: it
+                    // goes, with a remark (domain/rosterSignatures)
+                    const o = originalRosterDataRef.current
+                    if (o) {
+                      setRoster(JSON.parse(JSON.stringify(o.roster)))
+                      setBench(JSON.parse(JSON.stringify(o.bench)))
+                      await clearStaleRosterSignatures(currentTeam, o.roster, o.bench, o)
                     }
                     originalRosterDataRef.current = null
                     rosterSignedForRef.current = {}

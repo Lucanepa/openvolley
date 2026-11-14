@@ -49,10 +49,15 @@ export async function clearMatchSignatures(db, matchId, fields, remark = '') {
 async function writeSignatures(db, matchId, update, remark) {
   try {
     if (remark) {
-      const row = await db.matches.get(matchId)
-      update = { ...update, remarks: appendRemark(row?.remarks || '', remark) }
+      // read and write the remarks in one transaction, so a remark written
+      // elsewhere in between is not lost
+      await db.transaction('rw', db.matches, async () => {
+        const row = await db.matches.get(matchId)
+        await db.matches.update(matchId, { ...update, remarks: appendRemark(row?.remarks || '', remark) })
+      })
+    } else {
+      await db.matches.update(matchId, update)
     }
-    await db.matches.update(matchId, update)
     const job = signaturesSyncJob(await db.matches.get(matchId))
     if (job) {
       await db.sync_queue.add(job)

@@ -9,7 +9,9 @@
  *    writes it;
  *  - Confirm refuses a named player without a shirt number;
  *  - a sent-ahead roster used in the editor is stored and marked used only by
- *    the editor's Save; Back loses nothing.
+ *    the editor's Save; Back loses nothing;
+ *  - Back after a pad signature given for an edited roster clears it, as the
+ *    roster goes back to the one the signature was not given for.
  * In-memory Dexie stand-in, useLiveQuery run once per deps change. Made-up names.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -124,6 +126,9 @@ vi.mock('../../utils/logger', () => ({ uploadBackupToCloud: vi.fn(), uploadLogsT
 vi.mock('../../utils/parseRosterPdf', () => ({ parseRosterPdf: vi.fn() }))
 vi.mock('../../db/rememberedPlayers', () => ({ rememberedRosters: async () => [] }))
 vi.mock('../../ui', async (orig) => ({ ...(await orig()), confirmDialog: async () => true }))
+vi.mock('../SignaturePad', () => ({
+  default: ({ open, onSave, title }) => (open ? <button type="button" onClick={() => onSave(PAD_INK, { source: 'device' })}>draw {title}</button> : null)
+}))
 
 import MatchSetup from '../MatchSetup'
 import { ScaleProvider } from '../../contexts/ScaleContext'
@@ -136,6 +141,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const AWAY_COACH = 'data:image/png;base64,AWAYCOACH'
 const AWAY_CAPT = 'data:image/png;base64,AWAYCAPT'
 const SENT_AT = '2026-11-10T17:00:00.000Z'
+const PAD_INK = 'data:image/png;base64,PADINK'
 
 function storeMatch (extra = {}) {
   store.tables.matches = new Map([[1, {
@@ -307,6 +313,57 @@ describe('Match Setup roster editor: Confirm', () => {
     await sleep(100)
     expect(stored().awayCoachSignature).toBe(AWAY_COACH)
     expect(stored().awayCaptainSignature).toBe(AWAY_CAPT)
+    expect(stored().remarks).toBe('')
+  })
+})
+
+describe('Match Setup roster editor: Back after signing in the editor', () => {
+  const signAwayCoach = async () => {
+    fireEvent.click(screen.getAllByText('Tap to sign').at(-1)) // the coach slot comes last
+    fireEvent.click(await screen.findByRole('button', { name: 'draw Away coach signature' }))
+    await waitFor(() => expect(stored().awayCoachSignature).toBe(PAD_INK))
+  }
+
+  it('a signature given for an edited roster goes when Back restores the roster', async () => {
+    storeMatch()
+    render(<Setup matchId={1} />)
+    await openEditor(1, 2)
+    addPlayer({ number: '7', last: 'Golf', first: 'G' })
+    await waitFor(() => expect(editorRows()).toHaveLength(3))
+    await signAwayCoach()
+    back()
+    await waitFor(() => expect(stored().awayCoachSignature).toBeNull())
+    expect(stored().remarks).toMatch(/Roster of Away V changed after signing.*Coach signature removed/)
+    expect(sigJobs().pop().payload.signatures).toMatchObject({ away_coach: '' })
+    expect(teamPlayers(12)).toHaveLength(2)
+  })
+
+  it('a signature given for the opening roster, and one from before, stay on Back', async () => {
+    storeMatch({ awayCaptainSignature: AWAY_CAPT })
+    render(<Setup matchId={1} />)
+    await openEditor(1, 2)
+    await signAwayCoach()
+    addPlayer({ number: '7', last: 'Golf', first: 'G' })
+    await waitFor(() => expect(editorRows()).toHaveLength(3))
+    back()
+    await sleep(100)
+    expect(stored().awayCoachSignature).toBe(PAD_INK)
+    expect(stored().awayCaptainSignature).toBe(AWAY_CAPT)
+    expect(stored().remarks).toBe('')
+  })
+
+  it('Back after using a sent-ahead roster keeps the signature from before', async () => {
+    storeMatch({ homeCoachSignature: AWAY_COACH })
+    store.tables.players = new Map()
+    sentRosterRow()
+    render(<Setup matchId={1} />)
+    await screen.findByTestId('sent-roster-home')
+    await openEditor(0, 0)
+    fireEvent.click(await screen.findByTestId('sent-roster-use-home'))
+    await waitFor(() => expect(editorRows()).toHaveLength(7))
+    back()
+    await sleep(100)
+    expect(stored().homeCoachSignature).toBe(AWAY_COACH)
     expect(stored().remarks).toBe('')
   })
 })
