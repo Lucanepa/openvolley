@@ -583,19 +583,16 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch, a
           </div>
         )}
 
-        {/* Selection Path - shown when selections are made */}
-        {gender && (
-          <div className="mt-3 border-t border-stone-100 pt-2.5">
+        {/* Selection path, once a league is chosen: with the gender alone it
+            was a lone "Men ♂" line under the selectors (UI tour 14.11) */}
+        {gender && league && (
+          <div className="mt-3 border-t border-stone-100 pt-2.5" data-testid="schedule-selection-path">
             <div className="flex items-center gap-2 text-sm text-stone-700">
               <span>
                 {gender === 'men' ? `${t('matchSetup.men', 'Men')} ♂` : `${t('matchSetup.women', 'Women')} ♀`}
               </span>
-              {league && (
-                <>
-                  <span className="text-stone-300">·</span>
-                  <span className="font-semibold text-stone-900">{formatLeagueDisplay(league, gender)}</span>
-                </>
-              )}
+              <span className="text-stone-300">·</span>
+              <span className="font-semibold text-stone-900">{formatLeagueDisplay(league, gender)}</span>
             </div>
           </div>
         )}
@@ -710,9 +707,12 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch, a
                     (tailwind.css, "Load match from schedule"): game #, date
                     and time over the home team over "vs" the away team */}
                 <span className="sg-teams flex min-w-0 flex-wrap items-baseline gap-x-1.5">
-                  <span className="max-w-full truncate font-semibold text-stone-900">{match.home}</span>
+                  {/* real spaces between the words: copied text, screen
+                      readers and the phone card read "home vs away" (the gap
+                      and margin alone gave "vsVolley Luzern") */}
+                  <span className="max-w-full truncate font-semibold text-stone-900">{match.home}</span>{' '}
                   <span className="max-w-full truncate">
-                    <span className="mr-1.5 text-stone-400">{t('common.vs', 'vs')}</span>
+                    <span className="text-stone-400">{t('common.vs', 'vs')}</span>{' '}
                     <span className="font-semibold text-stone-900">{match.away}</span>
                   </span>
                 </span>

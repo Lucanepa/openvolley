@@ -99,6 +99,20 @@ describe('LoadOfficialMatchModal league list', () => {
     expect(screen.queryByText('loadOfficialMatch.noUpcomingMatches')).toBeNull()
   })
 
+  // UI tour 14.11 (o00c): a lone "Men ♂" path line sat under the selectors
+  // before a league was chosen, and a game read "vsVolley Luzern" (no space
+  // in the text, only a margin)
+  it('shows the selection path only with a league, and a game reads "home vs away"', async () => {
+    render(<LoadOfficialMatchModal open onClose={() => {}} onSelectMatch={() => {}} />)
+    await screen.findByRole('combobox', { name: 'loadOfficialMatch.gender' })
+    chooseGender('men')
+    expect(screen.queryByTestId('schedule-selection-path')).toBeNull()
+    fireEvent.change(leagueSelect(), { target: { value: '1L D' } })
+    expect(await screen.findByTestId('schedule-selection-path')).toHaveTextContent('1L D (♂)')
+    const home = await screen.findByText('Home M3')
+    expect(home.closest('.sg-teams').textContent.replace(/\s+/g, ' ').trim()).toBe('Home M3 common.vs Away M3')
+  })
+
   it('an active league is selectable and still loads its upcoming matches', async () => {
     render(<LoadOfficialMatchModal open onClose={() => {}} onSelectMatch={() => {}} />)
     await screen.findByRole('combobox', { name: 'loadOfficialMatch.gender' })
