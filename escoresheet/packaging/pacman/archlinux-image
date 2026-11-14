@@ -1,0 +1,3 @@
+# The build image of publish-pacman.sh and ../aur (archlinux:base-devel
+# pinned by digest). Written by publish-pacman.sh --pin-image on 2026-11-14; review and commit.
+archlinux:base-devel@sha256:fa2d4ce3310ddd90a4208e5168be8ad367da5129af1245f38fd2d803bcbe3239
