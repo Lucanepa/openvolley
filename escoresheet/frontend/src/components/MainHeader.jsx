@@ -2,6 +2,8 @@ import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import i18n from '../i18n'
 import ConnectionStatus from './ConnectionStatus'
+import { useConnectionSummary } from '../hooks/useConnectionSummary'
+import { dayTimeLabel } from '../ui/format.js'
 import UserButton from './auth/UserButton'
 import TabletStatusIndicator from './TabletStatusIndicator'
 import ConnectTabletsModal from './connect/ConnectTabletsModal'
@@ -334,6 +336,23 @@ export default function MainHeader({
     setActionsMenuOpen(false)
   }, [matchId, showMatchSetup, currentPage])
 
+  // The match chip's popover: one popup at a time. A press anywhere outside
+  // it closes it, also on a button that stops its click (the scoreboard's
+  // Match menu opened over it, UI tour 14.11); the menus close themselves on
+  // a press outside them, the chip included.
+  useEffect(() => {
+    if (!matchInfoMenuOpen) return
+    const handlePointerDown = (e) => {
+      if (!e.target?.closest?.('[data-match-info-menu]')) setMatchInfoMenuOpen?.(false)
+    }
+    document.addEventListener('pointerdown', handlePointerDown, true)
+    return () => document.removeEventListener('pointerdown', handlePointerDown, true)
+  }, [matchInfoMenuOpen, setMatchInfoMenuOpen])
+
+  // The popover names the header's connection state (the pill's word), not a
+  // fixed "Not synced"
+  const connection = useConnectionSummary({ connectionStatuses, queueStats })
+
   // Close dashboard menu when clicking outside
   useEffect(() => {
     if (!dashboardMenuOpen) return
@@ -436,7 +455,7 @@ export default function MainHeader({
         style={{ zIndex: 1000 }}
       >
         {/* Match Number */}
-        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">{t('header.notSynced')}</div>
+        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">{offlineMode ? t('header.offline') : connection.pillText}</div>
         <div className="text-sm font-bold text-stone-900 tabular-nums">
           {t('header.match')} {(matchData.match.gameNumber || matchData.match.game_n) ? (matchData.match.gameNumber || matchData.match.game_n) : t('header.notSet')}
         </div>
@@ -457,23 +476,11 @@ export default function MainHeader({
 
         {/* Date and Time */}
         <div className="text-xs tabular-nums text-stone-500">
-          {matchData.match.scheduledAt ? (
-            (() => {
-              try {
-                const date = new Date(matchData.match.scheduledAt)
-                // Display as UTC (no timezone conversion) since we store time as-entered
-                // Explicitly format as dd/mm/yyyy HH:mm
-                const day = String(date.getUTCDate()).padStart(2, '0')
-                const month = String(date.getUTCMonth() + 1).padStart(2, '0')
-                const year = date.getUTCFullYear()
-                const hours = String(date.getUTCHours()).padStart(2, '0')
-                const minutes = String(date.getUTCMinutes()).padStart(2, '0')
-                return `${day}/${month}/${year}, ${hours}:${minutes}`
-              } catch {
-                return matchData.match.scheduledAt
-              }
-            })()
-          ) : t('header.notSet')}
+          {/* The kick-off in Zürich time, as setup and the schedule give it
+              (it read UTC: 18:20 for a 19:20 game) */}
+          {matchData.match.scheduledAt
+            ? (dayTimeLabel(matchData.match.scheduledAt) || String(matchData.match.scheduledAt))
+            : t('header.notSet')}
         </div>
 
         {/* PIN or TEST */}
