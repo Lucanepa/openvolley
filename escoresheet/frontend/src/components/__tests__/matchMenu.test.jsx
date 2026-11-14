@@ -86,6 +86,23 @@ describe('MenuList with sections', () => {
     return actions
   }
 
+  // UI tour 14.11: getByRole('button', { name: 'Go back' }) and
+  // { name: 'Corrections' } found nothing in the Match menu. The rows are
+  // menu items (role menuitem, the right role inside role="menu", with arrow
+  // keys), named by their visible English labels: query them as menu items.
+  it('Go back and Corrections are named menu items (English as users read it)', () => {
+    const actions = allActions()
+    const enT = (key, fallback) => (typeof lookup(en, key) === 'string' ? lookup(en, key) : fallback)
+    render(<MenuList buttonLabel="Match" menuTitle="Match" columns={2} sections={toMenuListSections(matchMenuSections(enT, actions))} />)
+    fireEvent.click(screen.getByRole('button', { name: /Match/ }))
+    const menu = screen.getByRole('menu', { name: 'Match' })
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Go back' }))
+    expect(actions.goBack).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: /Match/ }))
+    fireEvent.click(within(screen.getByRole('menu', { name: 'Match' })).getByRole('menuitem', { name: 'Corrections' }))
+    expect(actions.manualChanges).toHaveBeenCalledTimes(1)
+  })
+
   it('opened from the keyboard, the first row takes the focus', () => {
     setup({ detail: 0 })
     expect(document.activeElement).toBe(screen.getAllByRole('menuitem')[0])
