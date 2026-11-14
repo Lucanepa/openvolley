@@ -23,7 +23,7 @@
  * signatures) -> final (closed). Any of the last three means the match is over.
  */
 import { setsToWin, getNextSetIndex } from '../utils/matchFormat'
-import { isDecidingSet, scoreFromPointEvents } from './rules'
+import { pointsToWinFor, DEFAULT_SET_TARGETS, scoreFromPointEvents } from './rules'
 
 /** Match statuses that mean "no more rallies will be played". */
 export const MATCH_OVER_STATUSES = Object.freeze(['ended', 'approved', 'final'])
@@ -115,8 +115,8 @@ export function findPreviousSet(sets, currentIndex) {
  * target (25, or 15 in the deciding set) with a 2-point lead over the
  * forfeiting team, never fewer than it already has.
  */
-export function forfeitSetPoints(forfeitingTeamPoints, opponentPoints, setIndex) {
-  const target = isDecidingSet(setIndex) ? 15 : 25
+export function forfeitSetPoints(forfeitingTeamPoints, opponentPoints, setIndex, targets = DEFAULT_SET_TARGETS) {
+  const target = pointsToWinFor(setIndex, targets)
   return Math.max(target, (forfeitingTeamPoints || 0) + 2, opponentPoints || 0)
 }
 
@@ -127,6 +127,7 @@ export function forfeitSetPoints(forfeitingTeamPoints, opponentPoints, setIndex)
  * @param {'home'|'away'} args.forfeitingTeam
  * @param {number} args.currentSetIndex index of the set in progress
  * @param {number} [args.bestOf=5]
+ * @param {{regular:number,deciding:number}} [args.targets] points to win (rules.setTargetsOf)
  * @param {boolean} [args.setOnly=false] incomplete for the set only: award the
  *   set in progress and nothing else
  * @returns {{winner:'home'|'away', sets:Array<{index:number, id:any, homePoints:number,
@@ -134,7 +135,7 @@ export function forfeitSetPoints(forfeitingTeamPoints, opponentPoints, setIndex)
  *   `id` is the existing row id or null for a set that must be created;
  *   `awardedPoints` is how many points the opponent gains in that set.
  */
-export function planForfeit({ sets, forfeitingTeam, currentSetIndex, bestOf = 5, setOnly = false }) {
+export function planForfeit({ sets, forfeitingTeam, currentSetIndex, bestOf = 5, setOnly = false, targets = DEFAULT_SET_TARGETS }) {
   const opponent = otherTeam(forfeitingTeam)
   const needed = setsToWin(bestOf)
   const byIndex = new Map((sets || []).map(s => [s.index, s]))
@@ -144,7 +145,7 @@ export function planForfeit({ sets, forfeitingTeam, currentSetIndex, bestOf = 5,
   const award = (index, existing, isCurrent) => {
     const teamPts = existing ? (existing[pointsKey(forfeitingTeam)] || 0) : 0
     const oppBefore = existing ? (existing[pointsKey(opponent)] || 0) : 0
-    const oppPts = forfeitSetPoints(teamPts, oppBefore, index)
+    const oppPts = forfeitSetPoints(teamPts, oppBefore, index, targets)
     planned.push({
       index,
       id: existing?.id ?? null,

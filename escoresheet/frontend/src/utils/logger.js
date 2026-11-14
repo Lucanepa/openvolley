@@ -30,6 +30,7 @@
  */
 
 import { apiStorage, AUTH_TOKEN_STORAGE_KEY } from '../lib/apiClient'
+import { isGlobalMatchId, peekGlobalMatch, uploadGlobalBackup } from './globalCloud'
 
 // In-memory log buffer
 let logBuffer = []
@@ -547,6 +548,8 @@ export function resetLoggerForTests() {
  * Uses game_pin for folder structure so backups can be found by PIN
  */
 export async function uploadBackupToCloud(matchId, backupData) {
+  // A Global match has no account: its own store, by the match's key
+  if (backupData?.match?.global === true) return uploadGlobalBackup(backupData)
   // Cloud storage needs an account: nothing to send while signed out
   if (!hasStoredSession()) return null
   const gameN = backupData?.match?.gameN || backupData?.match?.game_n || 1
@@ -724,8 +727,11 @@ export const BACKUP_MIN_INTERVAL_MS = 60 * 1000
  * @param {string|number|null} gameNumber - Game number for human-readable paths
  */
 export async function triggerContinuousBackup(matchId, getBackupData, gameNumber = null) {
-  // Signed out: the cloud would refuse it
-  if (!hasStoredSession()) {
+  // Signed out: the cloud would refuse it (a Global match has its own store)
+  // (a synchronous answer: a read here would delay every action's backup; the
+  // first action of a match not asked about yet only warms the answer)
+  if (!hasStoredSession() && peekGlobalMatch(matchId) !== true) {
+    if (peekGlobalMatch(matchId) === undefined) isGlobalMatchId(matchId)
     return
   }
 
@@ -754,7 +760,7 @@ export async function triggerContinuousBackup(matchId, getBackupData, gameNumber
 function runTrailingBackup() {
   const due = trailingBackup
   trailingBackup = null
-  if (!due || !hasStoredSession()) return
+  if (!due || (!hasStoredSession() && peekGlobalMatch(due.matchId) !== true)) return
   if (isBackupInProgress) {
     trailingBackup = { ...due, timer: setTimeout(runTrailingBackup, 1000) }
     return

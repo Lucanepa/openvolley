@@ -1,6 +1,6 @@
 # Privacy policy
 
-**OpenVolley and OpenBeach** · Version 1.12 · As of 10 November 2026
+**OpenVolley and OpenBeach** · Version 1.13 · As of 14 November 2026
 
 This policy is available in German, English, French and Italian. The English
 version is binding.
@@ -13,6 +13,10 @@ version is binding.
   server's database only once you sign in. So that tablets receive a running
   match, the browser and Android apps send it through my server even without
   signing in, held in memory only.
+- The Global tool of OpenVolley needs no account. Its matches stay on your
+  device. Only a backup of the match and, at the end, the scoresheet as a PDF
+  are stored on the server, under a random backup code and without any
+  account, and deleted 180 days after the last change (section 7).
 - An electronic scoresheet contains data about players, team staff and
   officials: names, shirt numbers, dates of birth and signatures. Only team
   names, the score and shirt numbers are public, for beach volleyball also the
@@ -326,6 +330,25 @@ Emails are sent through Migadu (section 15).
 test match while signed in, the app sends its scoresheet as a PDF to your
 account's email address and to no other. The server does not store it; on
 your device the test match is deleted when you close it.
+
+**Global tool (no account):** in the Global tool of OpenVolley (chosen when
+the app starts, changed in Options as long as no match is on the device) you
+score the matches of any tournament without an account. The rosters, officials
+and games you type in or load from an Excel or CSV file stay on your device;
+the app reads the file on the device and does not upload it. A Global match is
+not synced to the database: it is in no match, team or player record, and not
+in the manager or the public displays. Two files per match are stored on the
+server, without an account: the backup of the match (the content of a backup
+file: teams, rosters with names, shirt numbers and dates of birth, officials,
+signatures, the course of the match) and, once the match is approved, the
+scoresheet as a PDF. They lie under a random backup code (128 bits) that the
+app creates for the match and shows in Match Setup. The code is the only way
+to the files: there is no list and no search. Whoever knows it can restore the
+match, so keep it like a password. A new backup replaces the previous one. The
+files are deleted 180 days after the last change; the server backups
+(section 18) keep a copy for a while longer. The organiser of the tournament is
+responsible for being allowed to record the data and for informing the players
+and their parents (section 17).
 
 **Approval with a PIN:** officials can confirm the result with a personal
 approval PIN in addition to their signature. Stored are: the PIN as a
@@ -646,6 +669,7 @@ copy of these safeguards.
 | A referee's email address for a match | With the match, as part of the scoresheet |
 | Sending of the final scoresheet (time, number of recipients, no addresses) | With the match |
 | Scoresheet of a test match by email | Not stored on the server |
+| Global tool: backup and scoresheet PDF of a match (under the backup code) | 180 days after the last change |
 | Uploaded backup copies | 30 days |
 | Uploaded app logs | Until you delete your account |
 | Activity log of a match (server) | 24 months, or until the match is deleted; earlier on request |
@@ -668,6 +692,11 @@ entered by them but by clubs, team managers, scorers or organisers. These are
 responsible for being allowed to record the data and for informing the
 players and their parents. The date of birth is used to check eligibility and
 age category on the official scoresheet and is never public.
+
+In the Global tool the organiser of the tournament or the scorer who enters
+the data is responsible in the same way. Parents can ask for the backup of a
+match to be deleted; for that I need the backup code or the match details
+(section 19).
 
 Parents or other legal representatives can exercise the rights in section 19
 for their child.
@@ -721,7 +750,7 @@ country.
 Where the GDPR applies, I rely on:
 
 - **Contract** (Art. 6(1)(b) GDPR): account, sync, account emails, support,
-  the features you use.
+  the features you use, the online backup of the Global tool.
 - **Legitimate interests** (Art. 6(1)(f) GDPR): correct and verifiable
   official match records for clubs, the association and officials (rosters,
   dates of birth to check eligibility, signatures, approvals, activity log and

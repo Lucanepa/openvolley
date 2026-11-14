@@ -55,7 +55,7 @@ import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from 
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
 import { defaultSetStartTime, actualStartRemark, startsFromSchedule, startScheduleOf, typedStartNear } from '../utils/setStartTime'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
-import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet, getLeftTeamLabelForSet } from '../domain/rules'
+import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet, getLeftTeamLabelForSet, setTargetsOf, pointsToWinFor, courtSwitchPointOf } from '../domain/rules'
 import { resolveSanction, deriveTeamSanctionFlags, deferredPenaltyPoints, penaltyOfPoint, teamSanctionCounts } from '../domain/sanctions'
 import { REQUEST_ISSUES, isReplayPending, substitutionRequestIssues, timeoutRequestIssues, requestBlockReason, entryWithoutCompletedRally, substitutionRequestThisInterruption, substituteInIllegalReason, lateRequestOutcome, decisionChangeTakeBack, decisionTakeBackTextKey } from '../domain/interruptionRequests'
 import RequestWarningDialog, { RequestOptionRow } from './scoreboard/RequestWarningDialog.jsx'
@@ -1316,6 +1316,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // paint shows the match, not 'Loading...' first
   const preloaded = usePreloaded(matchId != null ? scoreboardKey(matchId) : null)
   const [data, liveCommits] = useActionLiveQuery(() => readScoreboard(matchId), [matchId], preloaded)
+  // Points a set is played to (25 / 15; a Global match may set shorter ones). A
+  // ref, so a callback made before the match loaded still reads the current one.
+  const setTargetsRef = useRef(setTargetsOf(null))
+  setTargetsRef.current = setTargetsOf(data?.match)
   scorerMovedRef.current = isScorerMoved(data?.match)
 
   // Monitor tablet connection health — notify when a device drops
@@ -1843,7 +1847,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           ? Math.max(scoreAfter.homePoints || 0, scoreAfter.awayPoints || 0)
           : Math.max(snapshot.pointsA || 0, snapshot.pointsB || 0)
         await db.matches.update(matchId, {
-          set5CourtSwitched: !!snapshot.set5CourtSwitched || (!!match.set5CourtSwitched && leaderPoints >= 8)
+          set5CourtSwitched: !!snapshot.set5CourtSwitched || (!!match.set5CourtSwitched && leaderPoints >= courtSwitchPointOf(setTargetsOf(match)))
         })
       }
     } catch (err) {
@@ -3540,7 +3544,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const homePoints = set.homePoints || 0
     const awayPoints = set.awayPoints || 0
     const switched = !!data.match.set5CourtSwitched
-    if ((Math.max(homePoints, awayPoints) >= 8) === switched) return
+    if ((Math.max(homePoints, awayPoints) >= courtSwitchPointOf(setTargetsRef.current)) === switched) return
     setCourtSwitchModal(prev => prev || { set, homePoints, awayPoints, teamThatScored: null, back: switched })
   }, [data?.set, data?.match])
 
@@ -3566,7 +3570,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Check if score indicates set should have ended (shared rules)
     const { winner, isSetWon, isMatchEnd } = getSetResult(homePoints, awayPoints, data.set.index, {
-      bestOf: data?.match?.bestOf, homeSetsWon, awaySetsWon
+      bestOf: data?.match?.bestOf, homeSetsWon, awaySetsWon, targets: setTargetsRef.current
     })
 
     if (isSetWon) {
@@ -5150,7 +5154,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (setEndTimeModal) return false
 
     // Does this score end the set? (shared rules; deciding set = index 5, to 15)
-    const { winner, isSetWon } = getSetResult(homePoints, awayPoints, set.index)
+    const { winner, isSetWon } = getSetResult(homePoints, awayPoints, set.index, { targets: setTargetsRef.current })
     if (!isSetWon) return false
 
     // Close all libero modals (with the winning point: deferUi)
@@ -5171,7 +5175,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // first-render undefined and bestOf fell back to 5 ('Set 2 End' at 2-0 in a bo3)
     const matchRecord = await db.matches.get(matchId)
     const { isMatchEnd } = getSetResult(homePoints, awayPoints, set.index, {
-      bestOf: matchRecord?.bestOf ?? data?.match?.bestOf, homeSetsWon, awaySetsWon
+      bestOf: matchRecord?.bestOf ?? data?.match?.bestOf, homeSetsWon, awaySetsWon, targets: setTargetsOf(matchRecord || data?.match)
     })
 
     const defaultTime = new Date().toISOString()
@@ -5191,7 +5195,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (!set || set.index !== 5 || set.finished) return false
     const match = await db.matches.get(matchId)
     const switched = !!match?.set5CourtSwitched
-    if ((Math.max(homePoints, awayPoints) >= 8) === switched) return false
+    if ((Math.max(homePoints, awayPoints) >= courtSwitchPointOf(setTargetsOf(match))) === switched) return false
     deferUi(() => setCourtSwitchModal({ set, homePoints, awayPoints, teamThatScored: teamKey, back: switched }))
     return true
   }, [matchId, deferUi])
@@ -5243,7 +5247,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const awayPoints = set.awayPoints || 0
     const match = await db.matches.get(matchId)
     const switched = !!match?.set5CourtSwitched
-    const reached8 = Math.max(homePoints, awayPoints) >= 8
+    const reached8 = Math.max(homePoints, awayPoints) >= courtSwitchPointOf(setTargetsOf(match))
     // The undone decision change's own courts, when they fit the score
     if (typeof switchedBefore === 'boolean' && switchedBefore !== switched && switchedBefore === reached8) {
       await db.matches.update(matchId, { set5CourtSwitched: switchedBefore })
@@ -5546,7 +5550,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // A set its score has won takes no point more: its Set end dialog is
       // open, its end not confirmed yet (a 26th point under it was kept in
       // the events while the dialog stored 25:22)
-      if (getSetResult(freshCurrentSet.homePoints, freshCurrentSet.awayPoints, freshCurrentSet.index).isSetWon) {
+      if (getSetResult(freshCurrentSet.homePoints, freshCurrentSet.awayPoints, freshCurrentSet.index, { targets: setTargetsRef.current }).isSetWon) {
         console.warn('[Scoreboard] Point on a set its score has already won: ignored')
         return
       }
@@ -5811,8 +5815,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 }
 
                 // Calculate if this point finishes the set
-                const isSet5 = setIndex === 5
-                const winningScore = isSet5 ? 15 : 25
+                const winningScore = pointsToWinFor(setIndex, setTargetsRef.current)
                 // We must use the NEW scores that were just calculated above
                 // homePoints/awayPoints variables hold the updated score
                 const currentDiff = Math.abs(homePoints - awayPoints)
@@ -5968,8 +5971,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
               // Ask if they want to put a libero back in at position I (if option enabled)
               // But don't show if set is ending (set end modal should show first/only)
-              const is5thSetLibero = data.set.index === 5
-              const pointsToWinLibero = is5thSetLibero ? 15 : 25
+              const pointsToWinLibero = pointsToWinFor(data.set.index, setTargetsRef.current)
               // The ">= 2" check handles deuce scenarios (e.g., 25-24 doesn't end, 26-24 does)
               const willSetEnd = (homePoints >= pointsToWinLibero && homePoints - awayPoints >= 2) ||
                 (awayPoints >= pointsToWinLibero && awayPoints - homePoints >= 2)
@@ -6024,7 +6026,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
     // Nor in a set its score has won (its Set end dialog is open)
     const playedSet = currentSetOf(await db.sets.where('matchId').equals(matchId).toArray())
-    if (playedSet && getSetResult(playedSet.homePoints, playedSet.awayPoints, playedSet.index).isSetWon) {
+    if (playedSet && getSetResult(playedSet.homePoints, playedSet.awayPoints, playedSet.index, { targets: setTargetsRef.current }).isSetWon) {
       console.warn('[Scoreboard] Start rally in a set its score has already won: ignored')
       return
     }
@@ -10632,7 +10634,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if (isMatchOverStatus(matchRecord?.status)) return
       const isTest = matchRecord?.test === true
       const allSets = await db.sets.where({ matchId }).sortBy('index')
-      const plan = planForfeit({ sets: allSets, forfeitingTeam: teamKey, currentSetIndex, bestOf: matchRecord?.bestOf, setOnly })
+      const plan = planForfeit({ sets: allSets, forfeitingTeam: teamKey, currentSetIndex, bestOf: matchRecord?.bestOf, setOnly, targets: setTargetsOf(matchRecord) })
       // Score of the existing sets the forfeit touches, for a later reversal
       const setsBefore = plan.sets
         .filter(p => p.id != null)
@@ -10660,6 +10662,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // reason 'forfait', next set or match end, sync, backups)
         const finishedBefore = allSets.filter(x => x.finished)
         const { isMatchEnd } = getSetResult(homePoints, awayPoints, index, {
+          targets: setTargetsOf(matchRecord),
           bestOf: matchRecord?.bestOf,
           homeSetsWon: finishedBefore.filter(x => x.homePoints > x.awayPoints).length,
           awaySetsWon: finishedBefore.filter(x => x.awayPoints > x.homePoints).length
@@ -13396,7 +13399,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // the courts not changed and nothing asked
     const set5 = await db.sets.where({ matchId }).and(s => s.index === 5).first()
     const changed = set5
-      ? Math.max(set5.homePoints || 0, set5.awayPoints || 0) >= 8
+      ? Math.max(set5.homePoints || 0, set5.awayPoints || 0) >= courtSwitchPointOf(setTargetsRef.current)
       : !courtSwitchModal.back
     const back = !changed
     await db.matches.update(matchId, { set5CourtSwitched: changed })
@@ -19353,7 +19356,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 } else if (setIdx === 5) {
                   // Set 5: check if we've switched sides (at 8 points)
                   const totalPoints = homeScore + awayScore
-                  const hasSwitched = totalPoints >= 8
+                  const hasSwitched = totalPoints >= courtSwitchPointOf(setTargetsRef.current)
 
                   // In set 5, Team A starts on same side as set 1 (left), so A:B initially
                   // After switch, it becomes B:A

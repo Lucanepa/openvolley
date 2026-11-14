@@ -14,6 +14,26 @@
  */
 import { setsToWin } from '../utils/matchFormat'
 
+/**
+ * Points a set is played to: 25 (regular) and 15 (deciding), FIVB. A Global
+ * match may set shorter ones (match.setTargets = { regular, deciding }, e.g.
+ * 21/15 or 15/10 for a school tournament); anything missing or out of range
+ * falls back to the default, so a Swiss match is never affected.
+ */
+export const DEFAULT_SET_TARGETS = Object.freeze({ regular: 25, deciding: 15 })
+export function setTargetsOf(match) {
+  const t = match?.setTargets || {}
+  const ok = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi
+  return {
+    regular: ok(t.regular, 5, 50) ? t.regular : DEFAULT_SET_TARGETS.regular,
+    deciding: ok(t.deciding, 5, 50) ? t.deciding : DEFAULT_SET_TARGETS.deciding
+  }
+}
+/** The target of one set. */
+export const pointsToWinFor = (setIndex, targets = DEFAULT_SET_TARGETS) => (setIndex === 5 ? targets.deciding : targets.regular)
+/** Where the teams change courts in the deciding set: 8 of 15, half the target rounded up. */
+export const courtSwitchPointOf = (targets = DEFAULT_SET_TARGETS) => Math.ceil(targets.deciding / 2)
+
 /** The deciding "short" set is always index 5 in this app (bo3 and bo5). */
 export function isDecidingSet(setIndex) {
   return setIndex === 5
@@ -90,13 +110,14 @@ export function getLeftTeamLabelForSet(setIndex, match = {}) {
  * @param {number} [opts.bestOf=5] 3 or 5
  * @param {number} [opts.homeSetsWon=0] sets home has won BEFORE this set
  * @param {number} [opts.awaySetsWon=0] sets away has won BEFORE this set
+ * @param {{regular:number,deciding:number}} [opts.targets] points to win (setTargetsOf(match))
  * @returns {{winner:'home'|'away'|null, isSetWon:boolean, pointsToWin:number, isMatchEnd:boolean}}
  */
 export function getSetResult(homePoints, awayPoints, setIndex, opts = {}) {
-  const { bestOf = 5, homeSetsWon = 0, awaySetsWon = 0 } = opts
+  const { bestOf = 5, homeSetsWon = 0, awaySetsWon = 0, targets = DEFAULT_SET_TARGETS } = opts
   const h = homePoints || 0
   const a = awayPoints || 0
-  const pointsToWin = isDecidingSet(setIndex) ? 15 : 25
+  const pointsToWin = pointsToWinFor(setIndex, targets)
   const homeWon = h >= pointsToWin && h - a >= 2
   const awayWon = a >= pointsToWin && a - h >= 2
   const winner = homeWon ? 'home' : awayWon ? 'away' : null

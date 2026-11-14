@@ -64,7 +64,7 @@ log "pulling from ${NP_REMOTE}"
 rsync -rt --partial-dir=.rsync-partial --timeout=600 \
   --exclude='.*' \
   --include='db-*.dump.gpg' --include='db-*.counts' \
-  --include='scoresheets-*.tar.gpg' --include='snapshots-*.tar.gpg' \
+  --include='scoresheets-*.tar.gpg' --include='global-*.tar.gpg' --include='snapshots-*.tar.gpg' \
   --exclude='*' \
   -e "$SSH" "${NP_REMOTE}:./" "$NP_DEST/" \
   || fail "rsync exit $?"
@@ -72,7 +72,7 @@ rsync -rt --partial-dir=.rsync-partial --timeout=600 \
 # NAS-side retention (independent of the server's).
 find "$NP_DEST" -maxdepth 1 -type f \( -name 'db-*.dump.gpg' -o -name 'db-*.counts' \) \
   -mtime +"$NP_KEEP_DB_DAYS" -exec rm -f {} \;
-find "$NP_DEST" -maxdepth 1 -type f \( -name 'scoresheets-*.tar.gpg' -o -name 'snapshots-*.tar.gpg' \) \
+find "$NP_DEST" -maxdepth 1 -type f \( -name 'scoresheets-*.tar.gpg' -o -name 'global-*.tar.gpg' -o -name 'snapshots-*.tar.gpg' \) \
   -mtime +"$NP_KEEP_FILES_DAYS" -exec rm -f {} \;
 
 # Freshness: rsync -t kept the server mtimes, so this checks the server's
