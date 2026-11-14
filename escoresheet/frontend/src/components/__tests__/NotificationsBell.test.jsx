@@ -60,6 +60,17 @@ describe('NotificationsBell', () => {
     await waitFor(() => expect(screen.queryByTestId('notifications-unread')).toBeNull())
   })
 
+  // UI tour 14.11 (m12): the times read "Nov 14, 07:12 PM" (US, 12 h); the
+  // app writes dd.mm.yyyy HH:mm, 24 h, Zürich time
+  it('gives each notice\'s time as dd.mm.yyyy HH:mm, 24 h, Zürich time', async () => {
+    api.list.mockResolvedValue({ data: { notifications: [notice({ created_at: '2026-11-14T18:12:00Z' })], unread: 1 }, error: null, status: 200 })
+    render(<NotificationsBell app="indoor" />)
+    fireEvent.click(await screen.findByTestId('notifications-bell'))
+    const list = await screen.findByTestId('notifications-list')
+    expect(list).toHaveTextContent('14.11.2026 19:12')
+    expect(list).not.toHaveTextContent(/PM|AM|Nov/)
+  })
+
   it('a team manager\'s proposal (db/036): its own title, opens My club', async () => {
     api.list.mockResolvedValue({
       data: { notifications: [notice({ kind: 'team_manager_proposal', target: 'myclub/c-1', parts: [{ kind: 'team_manager', club: 'VBC Musterdorf', team: 'VBC Musterdorf H1' }] })], unread: 1 },

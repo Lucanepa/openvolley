@@ -4,6 +4,7 @@ import { Bell } from 'lucide-react'
 import { cn, consoleHeaderBtn, FOCUS_RING, PickerPopover } from '../../ui'
 import { notificationsApi } from '../../lib/accountApi'
 import { useOnline } from './common'
+import { dayTimeLabel } from '../../ui/format.js'
 
 // How often the bell asks for new notices while the manager is open
 export const NOTIFICATIONS_POLL_MS = 60 * 1000
@@ -19,7 +20,7 @@ export const NOTIFICATIONS_POLL_MS = 60 * 1000
  * db/028 (the list answers 404 there: no button).
  */
 export default function NotificationsBell({ app, onOpen }) {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const online = useOnline()
   const [state, setState] = useState({ list: [], unread: 0, known: false, missing: false })
   const [open, setOpen] = useState(false)
@@ -63,13 +64,8 @@ export default function NotificationsBell({ app, onOpen }) {
 
   if (state.missing) return null
   const { list, unread } = state
-  const when = (iso) => {
-    try {
-      return new Date(iso).toLocaleString(i18n.language, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Zurich' })
-    } catch {
-      return ''
-    }
-  }
+  // the app's dd.mm.yyyy HH:mm, 24 h, Zürich time (it read "Nov 14, 07:12 PM")
+  const when = (iso) => dayTimeLabel(iso)
   const partText = (p) => {
     const kind = t(`access.requests.kinds.${p.kind}`)
     const where = p.kind === 'team_manager' ? (p.team || p.club) : p.club
