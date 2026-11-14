@@ -75,13 +75,14 @@ node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({ productNa
   plugins: { updater: { pubkey: require("fs").readFileSync(process.argv[2], "utf8").trim() } } }, null, 2))' \
   "$OV_BEACH_TAURI_CONF" "$T/keys/updater.key.pub"
 
-# make_deb OUT VERSION [PACKAGE]
+# make_deb OUT VERSION [PACKAGE]; DEB_NOTE=x makes the bytes differ from another build (dpkg-deb is
+# byte-identical for the same input within one second).
 make_deb() {
   local out=$1 ver=$2 pkg=${3:-openvolley-escoresheet} root="$T/debroot"
   rm -rf "$root"
   mkdir -p "$root/DEBIAN" "$root/usr/bin"
-  printf 'Package: %s\nVersion: %s\nArchitecture: amd64\nMaintainer: test <test@example.invalid>\nDescription: test package\n' \
-    "$pkg" "$ver" > "$root/DEBIAN/control"
+  printf 'Package: %s\nVersion: %s\nArchitecture: amd64\nMaintainer: test <test@example.invalid>\nDescription: test package%s\n' \
+    "$pkg" "$ver" "${DEB_NOTE:+ ($DEB_NOTE)}" > "$root/DEBIAN/control"
   printf '#!/bin/sh\necho %s\n' "$ver" > "$root/usr/bin/$pkg"
   chmod 755 "$root/usr/bin/$pkg"
   dpkg-deb --root-owner-group -b "$root" "$out" >/dev/null
@@ -207,7 +208,7 @@ expect_fail "is not on main (behind)" prov_gh
 GH_STATUS=ahead GH_RUNS=''
 expect_fail "desktop-v$V: no desktop.yml push run on $TAG_SHA" prov_gh
 GH_RUNS=4711 GH_ARTIFACTS="$T/run-other"
-cp -r "$T/run" "$T/run-other"; make_deb "$T/run-other/escoresheet-desktop-linux/deb/openvolley-escoresheet_${V}_amd64.deb" "$V"
+cp -r "$T/run" "$T/run-other"; DEB_NOTE=other-build make_deb "$T/run-other/escoresheet-desktop-linux/deb/openvolley-escoresheet_${V}_amd64.deb" "$V"
 expect_fail "openvolley-escoresheet_${V}_amd64.deb of desktop-v$V is not a file the tag's desktop.yml run built" prov_gh
 GH_ARTIFACTS="$T/nothing"
 expect_fail "is not a file the tag's desktop.yml run built" prov_gh
