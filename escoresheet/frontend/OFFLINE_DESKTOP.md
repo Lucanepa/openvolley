@@ -34,8 +34,15 @@ dev plugin, the backend and the tests use.
 
 - The relay starts **in-process** when the app launches; the window then loads
   the app from `http://localhost:5173`. Serving over `http://localhost` (a
-  secure context) keeps the desktop's camera/QR working, and the app's normal
-  LAN client code resolves its backend/WebSocket URLs correctly.
+  secure context) lets the app's normal LAN client code resolve its
+  backend/WebSocket URLs correctly. The relay holds its ports on IPv4 and on
+  `[::1]` (where `localhost` goes first), so no other local program can
+  answer for `http://localhost:5173`; the app exits when either is taken. The
+  app's commands are granted to `http://localhost:<its port>` only (main.rs
+  `grant_own_origin`), its windows never load another address
+  (`popups.rs navigation_allowed`), they may download only the app's own file
+  types (pdf, zip, json, jsonl, ndjson, txt, csv, xlsx) and no page gets the
+  camera, the microphone or the screen.
 - Data lives locally in IndexedDB (Dexie). Cloud sync is optional and degrades
   gracefully when offline: the relay has no database, so cloud calls (/api/db,
   auth, storage, sync queue, restore, database realtime) go to
@@ -55,7 +62,7 @@ dev plugin, the backend and the tests use.
   status says "Cloud sync unavailable on port N"
   (`isCloudBlockedOnThisPort` in `src/utils/backendConfig.js`) and the app
   logs the same at start. The automatic backups do not depend on the port
-  (the `backup` capability allows the window on any loopback port).
+  (the `backup` capability is granted for the port the relay runs on).
 - Only the desktop window (loopback origin) talks to the cloud. Pages the
   relay serves to the venue tablets from the LAN address
   (`http://<LAN-IP>:5173/referee`, `/bench`, `/livescore`) keep cloud calls on
@@ -331,8 +338,9 @@ Android 10+ → Settings › Wi-Fi › QR icon (or the camera); answer
 - **Linux** (`src-tauri/src/netshare/linux.rs`): NetworkManager over D-Bus
   (zbus, no shell). A WPA2 (RSN/CCMP, PMF off) 2.4 GHz access point,
   `ipv4.method shared` (laptop `10.42.0.1`, DHCP by dnsmasq), firewalld zone
-  `trusted` (the default `nm-shared` zone blocks ports 5173 / 8080; see
-  **Firewall exposure** below), owned by
+  `openvolley-tablets` (OpenBeach: `openbeach-tablets`; the default
+  `nm-shared` zone blocks ports 5173 / 8080; see **Firewall exposure**
+  below), owned by
   the desktop user (no admin password with the stock polkit rules), volatile
   and bound to the app's D-Bus connection: if the app crashes or quits,
   NetworkManager takes the network down and the laptop's normal Wi-Fi comes
@@ -368,14 +376,20 @@ Android 10+ → Settings › Wi-Fi › QR icon (or the camera); answer
   the travel-router way (a small router, no internet, everyone on it, then Hall
   Wi-Fi).
 
-**Firewall exposure (Linux).** The `trusted` zone opens *every* service of
-the laptop to anyone holding the tablets' Wi-Fi password (or paired over
-Bluetooth), not just 5173 / 8080: ssh, CUPS, a dev server. The password is
-shown in large type on the scorer's screen in a public hall, and the relay's
-WebSocket has no authentication of its own (PINs only). Accepted for v1; use
-**New password** after the match if it may have been seen. Follow-up: a
-custom firewalld zone (DHCP, DNS, 5173, 8080 only) shipped by the `.deb`
-postinst, with `trusted` as the fallback for the AppImage.
+**Firewall exposure (Linux).** The `.deb` ships its own firewalld zone,
+`/usr/lib/firewalld/zones/openvolley-tablets.xml` (`src-tauri/linux/`;
+OpenBeach `openbeach-tablets.xml`): from the tablets' network only DHCP, DNS,
+ping and the relay's two default ports reach the laptop, and nothing is
+forwarded to its other networks. firewalld reads it at its next start or
+reload. The app asks firewalld for its zones each time it starts a network
+(`nm_settings.rs firewall_zone`) and uses `trusted` only where its own zone is
+not there (the AppImage, a `.deb` before firewalld was reloaded) or the relay
+runs on other ports (`OPENVOLLEY_HTTP_PORT` / `OPENVOLLEY_WS_PORT`); the
+desktop log says so. `trusted` opens *every* service of the laptop to anyone
+holding the tablets' Wi-Fi password (or paired over Bluetooth): ssh, CUPS, a
+dev server. The password is shown in large type on the scorer's screen in a
+public hall: use **New password** after the match if it may have been seen.
+Without firewalld the zone is ignored (ufw and other firewalls do not use it).
 
 ### Server
 

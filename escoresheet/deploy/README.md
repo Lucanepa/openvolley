@@ -356,8 +356,9 @@ A tag build without them fails its macOS job (a release is never ad-hoc signed);
 without them builds an ad-hoc app. The certificate expires in December 2027 and the developer
 membership on 9 November each year: renew both, then put the new .p12 into
 `APPLE_CERTIFICATE*`. Apps signed before stay valid (secure timestamp). Updating from an
-ad-hoc version (3.0.13 and older) to a signed one asks once more for the local network and
-camera permissions (macOS ties them to the signature). The casks live in our tap `Lucanepa/homebrew-tap`
+ad-hoc version (3.0.13 and older) to a signed one asks once more for the local network
+permission (macOS ties it to the signature). The app has no camera or microphone entitlement
+(`Entitlements.plist`): it never asks for either. The casks live in our tap `Lucanepa/homebrew-tap`
 (`brew install --cask lucanepa/tap/openvolley`, `lucanepa/tap/openbeach`). They declare
 `auto_updates`: the app updates itself, `brew upgrade` only follows.
 

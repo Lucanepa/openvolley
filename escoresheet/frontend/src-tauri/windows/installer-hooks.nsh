@@ -20,7 +20,11 @@
 ;      application data" box is never ticked, so the match data
 ;      (%LOCALAPPDATA%\com.openvolley.escoresheet, WebView2) stays, and the
 ;      backups (%APPDATA%\OpenVolley\backups) are never touched by any
-;      uninstaller.
+;      uninstaller. Only the uninstaller at the path those versions used,
+;      and only as the user (unelevated): the UninstallString comes from the
+;      user's own registry (HKCU), which any program of that user may write,
+;      and this installer runs as administrator. Anything else is left
+;      alone, with a line to remove it in Settings > Apps.
 ;
 ; These macros are inserted into Tauri's installer.nsi, which defines
 ; PRODUCTNAME, MAINBINARYNAME, UNINSTKEY, $PassiveMode and includes LogicLib,
@@ -87,12 +91,23 @@
       StrCpy $R6 $R6 -1
     ${EndIf}
     ${GetParent} "$R6" $R7
+    ; $R5 = where the 2.0.x / 2.1.0 per-user installer put its uninstaller
+    ; (this user's %LOCALAPPDATA%, not the all-users folder of this installer)
+    SetShellVarContext current
+    StrCpy $R5 "$LOCALAPPDATA\${PRODUCTNAME}\uninstall.exe"
+    !if "${INSTALLMODE}" != "currentUser"
+      SetShellVarContext all
+    !endif
 
     ${If} $R7 == ""
     ${OrIf} $R7 == $INSTDIR
       ; the same folder (installed over it): nothing to remove but the entry
       DetailPrint "Earlier per-user install in $R7: replaced in place"
       DeleteRegKey HKCU "${UNINSTKEY}"
+    ${ElseIf} ${FileExists} "$R6"
+    ${AndIf} $R6 != $R5
+      ; not the old installer's own uninstaller: never run it from here
+      DetailPrint "An earlier per-user install names $R6 as its uninstaller: not run. Remove it in Settings > Apps."
     ${ElseIf} ${FileExists} "$R6"
       ; The app must be closed before anything is removed, and for every
       ; Windows user. The template's own check right after this hook
@@ -122,13 +137,25 @@
       ${EndIf}
 
       DetailPrint "Removing the earlier per-user install in $R7 (match data and backups stay)"
-      ; _?= runs it in place, so ExecWait really waits for it (it cannot
-      ; delete itself then: done below). No /UPDATE: its shortcuts go too.
+      ; As the user, not as administrator (RunAsUser: the user's own token,
+      ; as Tauri's "run the app" at the end). It does not wait, so wait here
+      ; for the old program to be gone (at most 30 s). _?= runs it in place
+      ; (it cannot delete itself then: done below). No /UPDATE: its
+      ; shortcuts go too.
+      nsis_tauri_utils::RunAsUser "$R6" "/S _?=$R7"
+      Pop $0
+      StrCpy $R1 0
+      ${Do}
+        ${IfNot} ${FileExists} "$R7\${MAINBINARYNAME}.exe"
+        ${OrIf} $R1 >= 60
+          ${Break}
+        ${EndIf}
+        Sleep 500
+        IntOp $R1 $R1 + 1
+      ${Loop}
       ClearErrors
-      ExecWait '"$R6" /S _?=$R7' $0
-      ${If} ${Errors}
-      ${OrIf} $0 <> 0
-        DetailPrint "The earlier per-user install could not be removed (code $0): uninstall it in Settings > Apps. Its match data stays."
+      ${If} ${FileExists} "$R7\${MAINBINARYNAME}.exe"
+        DetailPrint "The earlier per-user install could not be removed: uninstall it in Settings > Apps. Its match data stays."
       ${Else}
         Delete "$R6"
         RMDir "$R7"

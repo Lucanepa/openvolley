@@ -13,7 +13,8 @@
         "desktopTemplate": "openvolley-escoresheet.desktop",
         "files": {
           "/usr/libexec/openvolley-escoresheet/apt-upgrade": "linux/apt-upgrade",
-          "/usr/share/polkit-1/actions/com.openvolley.escoresheet.update.policy": "linux/com.openvolley.escoresheet.update.policy"
+          "/usr/share/polkit-1/actions/com.openvolley.escoresheet.update.policy": "linux/com.openvolley.escoresheet.update.policy",
+          "/usr/lib/firewalld/zones/openvolley-tablets.xml": "linux/openvolley-tablets.xml"
         }
       }
     }

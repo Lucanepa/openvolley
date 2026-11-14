@@ -1156,26 +1156,42 @@ pub async fn serve(
     http_listener: std::net::TcpListener,
     ws_listener: std::net::TcpListener,
 ) {
-    http_listener.set_nonblocking(true).ok();
-    ws_listener.set_nonblocking(true).ok();
-    let http = tokio::net::TcpListener::from_std(http_listener).expect("http listener");
-    let ws = tokio::net::TcpListener::from_std(ws_listener).expect("ws listener");
+    serve_all(state, vec![http_listener], vec![ws_listener]).await
+}
 
+/// The relay on several sockets per port: the desktop app's IPv4 one and its
+/// [::1] one (main.rs bind_loopback_v6), the same routes and state on each.
+/// Returns when one of them stops.
+pub async fn serve_all(
+    state: Arc<AppState>,
+    http_listeners: Vec<std::net::TcpListener>,
+    ws_listeners: Vec<std::net::TcpListener>,
+) {
+    let tokio_listener = |l: std::net::TcpListener| {
+        l.set_nonblocking(true).ok();
+        tokio::net::TcpListener::from_std(l).expect("relay listener")
+    };
     let http_app = http_router(state.clone());
     let ws_app = Router::new()
         .route("/", get(ws_handler))
         .with_state(state.clone());
 
-    let http_fut = axum::serve(
-        http,
-        http_app.into_make_service_with_connect_info::<SocketAddr>(),
-    );
-    let ws_fut = axum::serve(ws, ws_app.into_make_service_with_connect_info::<SocketAddr>());
-
-    tokio::select! {
-        _ = http_fut => {},
-        _ = ws_fut => {},
+    let mut servers = tokio::task::JoinSet::new();
+    for l in http_listeners {
+        let app = http_app.clone().into_make_service_with_connect_info::<SocketAddr>();
+        let l = tokio_listener(l);
+        servers.spawn(async move {
+            let _ = axum::serve(l, app).await;
+        });
     }
+    for l in ws_listeners {
+        let app = ws_app.clone().into_make_service_with_connect_info::<SocketAddr>();
+        let l = tokio_listener(l);
+        servers.spawn(async move {
+            let _ = axum::serve(l, app).await;
+        });
+    }
+    servers.join_next().await;
 }
 
 fn http_router(state: Arc<AppState>) -> Router {
