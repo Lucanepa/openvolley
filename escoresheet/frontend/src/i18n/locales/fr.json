@@ -154,6 +154,7 @@
     "dateOfBirth": "Date de naissance",
     "enterNames": "Veuillez entrer le nom et le prénom",
     "deleteRoster": "Supprimer effectif",
+    "signaturesCleared": "L'effectif a été modifié après la signature : les signatures ont été retirées, l'entraîneur et le capitaine le signent à nouveau.",
     "loadTestRoster": "Charger effectif TEST",
     "confirmLoadTestRoster": "Charger effectif test?",
     "confirmLoadTestRosterMessage": "Ceci remplacera l'effectif actuel par des données de test ({{team}}).",
@@ -210,7 +211,8 @@
     "clear": "Effacer",
     "save": "Enregistrer",
     "cancel": "Annuler",
-    "close": "Fermer"
+    "close": "Fermer",
+    "resign": "Signer à nouveau"
   },
   "modal": {
     "deletePlayer": "Supprimer le joueur",
@@ -414,6 +416,7 @@
       "noCoach": "No coach set",
       "duplicateNumbers": "Duplicate jersey numbers: {{numbers}}",
       "invalidNumbers": "Invalid jersey numbers (must be 1-99): {{numbers}}",
+      "missingNumbers": "Ces joueurs n'ont pas de numéro de maillot : {{names}}. Donnez un numéro à chacun ou retirez le joueur.",
       "playersWithoutNumbers": "{{count}} player(s) without jersey numbers",
       "fixIssues": "Please fix the following issues:\n\n• {{issues}}",
       "completeBeforeCoinToss": "Please complete the following before proceeding to coin toss:\n\n• {{issues}}",

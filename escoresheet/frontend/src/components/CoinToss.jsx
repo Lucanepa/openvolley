@@ -6,7 +6,8 @@ import { useScaledLayout } from '../hooks/useScaledLayout'
 import { db } from '../db/db'
 import { apiFrom } from '../lib/apiClient'
 import SignaturePad from './SignaturePad'
-import { saveMatchSignature } from '../utils/saveSignature'
+import { saveMatchSignature, clearMatchSignatures } from '../utils/saveSignature'
+import { rosterSignatureKey, staleSignatureFields, signaturesClearedRemark, signatureReplacedRemark } from '../domain/rosterSignatures'
 import { phoneSignContext, signatureSource, signatureUpdate, SLOT_OF_ROLE, PRE_MATCH_SIGNATURE_FIELD as SIGNATURE_FIELD_OF_ROLE } from '../domain/phoneSignature'
 import { coinTossConfirmIssues } from '../domain/coinTossChecks'
 import Modal from './Modal'
@@ -290,6 +291,9 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
 
   // Track original roster/bench data when modal opens for change detection
   const originalRosterDataRef = useRef(null) // { roster: [], bench: [] }
+  // The roster each signature given in the open roster dialog was given for
+  // (match-row field -> domain/rosterSignatures rosterSignatureKey)
+  const rosterSignedForRef = useRef({})
 
   // Signatures
   const [homeCoachSignature, setHomeCoachSignature] = useState(null)
@@ -653,10 +657,40 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
   }
 
   // Saved to the match at once, not on "Confirm coin toss result" (owner
-  // 2026-10-07), with its phone-signing record in the same update.
+  // 2026-10-07), with its phone-signing record in the same update. A Re-sign
+  // of a collected signature (SignaturePad allowResign) is written to the remarks.
   function saveSignatureNow(role, image, meta) {
     const field = SIGNATURE_FIELD_OF_ROLE[role]
-    if (field) saveMatchSignature(db, matchId, field, image, signatureUpdate(field, image, meta))
+    if (!field) return
+    const [side, who] = role.split('-')
+    const remark = meta?.resigned ? signatureReplacedRemark({ team: side === 'home' ? home : away, role: who }) : ''
+    saveMatchSignature(db, matchId, field, image, signatureUpdate(field, image, meta), { remark })
+  }
+
+  // Modify in the roster dialog changed a team's players or bench: a coach /
+  // captain signature that no longer fits the roster goes, with a remark, so
+  // the Start set gate asks for it again (domain/rosterSignatures)
+  async function clearStaleRosterSignatures(teamType, roster, bench, original) {
+    if (!matchId) return
+    const fields = ['coach', 'captain'].map(r => SIGNATURE_FIELD_OF_ROLE[`${teamType}-${r}`])
+    const stored = await db.matches.get(matchId)
+    if (!stored || stored.test) return
+    const stale = staleSignatureFields(stored, fields, rosterSignedForRef.current,
+      rosterSignatureKey(original?.roster, original?.bench), rosterSignatureKey(roster, bench))
+    if (!stale.length) return
+    const roles = ['captain', 'coach'].filter(r => stale.includes(SIGNATURE_FIELD_OF_ROLE[`${teamType}-${r}`]))
+    await clearMatchSignatures(db, matchId, stale, signaturesClearedRemark({ team: teamType === 'home' ? home : away, roles }))
+    const setters = {
+      'home-coach': setHomeCoachSignature, 'home-captain': setHomeCaptainSignature,
+      'away-coach': setAwayCoachSignature, 'away-captain': setAwayCaptainSignature
+    }
+    for (const r of roles) setters[`${teamType}-${r}`](null)
+    setSignatureSources(prev => {
+      const next = { ...prev }
+      for (const f of stale) delete next[f]
+      return next
+    })
+    showAlert(t('roster.signaturesCleared'), 'info')
   }
 
   function handleSignatureSave(signatureImage, meta) {
@@ -1738,6 +1772,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
 
         // Store original data on first render of modal
         if (!originalRosterDataRef.current) {
+          rosterSignedForRef.current = {}
           originalRosterDataRef.current = {
             roster: JSON.parse(JSON.stringify(roster)),
             bench: JSON.parse(JSON.stringify(bench))
@@ -1769,8 +1804,10 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               return
             }
             await syncRosterToDatabase(currentTeam, roster, bench)
+            await clearStaleRosterSignatures(currentTeam, roster, bench, originalRosterDataRef.current)
           }
           originalRosterDataRef.current = null
+          rosterSignedForRef.current = {}
           setRosterModalSignature(null)
           setRosterModal(null)
         }
@@ -2148,6 +2185,8 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                 onSave={(sig, meta) => {
                   noteSignatureSource(`${currentTeam}-${rosterModalSignature}`, sig, meta)
                   saveSignatureNow(`${currentTeam}-${rosterModalSignature}`, sig, meta)
+                  // given for the roster as it is in the dialog now
+                  rosterSignedForRef.current[SIGNATURE_FIELD_OF_ROLE[`${currentTeam}-${rosterModalSignature}`]] = rosterSignatureKey(roster, bench)
                   if (rosterModalSignature === 'coach') {
                     setCoachSig(sig)
                   } else {
@@ -2159,6 +2198,11 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                   ? t('roster.signatureTitle', { role: t(rosterModalSignature === 'coach' ? 'coinToss.coach' : 'coinToss.captain'), team: teamInfo.name })
                   : ''}
                 phone={rosterModalSignature ? phoneSigning(`${currentTeam}-${rosterModalSignature}`) : null}
+                // a signed slot opens read-only, as the page's pad does;
+                // replacing it is an explicit Re-sign
+                existingSignature={rosterModalSignature === 'coach' ? coachSig : rosterModalSignature === 'captain' ? captainSig : null}
+                readOnly={!!(rosterModalSignature === 'coach' ? coachSig : rosterModalSignature === 'captain' ? captainSig : null)}
+                allowResign
               />
             </div>
 
@@ -2176,6 +2220,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                       setBench(JSON.parse(JSON.stringify(originalRosterDataRef.current.bench)))
                     }
                     originalRosterDataRef.current = null
+                    rosterSignedForRef.current = {}
                     setRosterModalSignature(null)
                     setRosterModal(null)
                   }}
@@ -2631,6 +2676,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           (openSignature === 'away-coach' && !!awayCoachSignature) ||
           (openSignature === 'away-captain' && !!awayCaptainSignature)
         }
+        allowResign
       />
     </div>
   )

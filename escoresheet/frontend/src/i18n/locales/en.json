@@ -155,6 +155,7 @@
     "dateOfBirth": "Date of birth",
     "enterNames": "Please enter last name and first name",
     "deleteRoster": "Delete roster",
+    "signaturesCleared": "The roster changed after it was signed: its signatures were removed, and the coach and captain sign it again.",
     "loadTestRoster": "Load TEST roster",
     "confirmLoadTestRoster": "Load test roster?",
     "confirmLoadTestRosterMessage": "This will replace the current roster with test data ({{team}}).",
@@ -211,7 +212,8 @@
     "clear": "Clear",
     "save": "Save",
     "cancel": "Cancel",
-    "close": "Close"
+    "close": "Close",
+    "resign": "Re-sign"
   },
   "modal": {
     "deletePlayer": "Delete player",
@@ -416,6 +418,7 @@
       "noCoach": "No coach set",
       "duplicateNumbers": "Duplicate jersey numbers: {{numbers}}",
       "invalidNumbers": "Invalid jersey numbers (must be 1-99): {{numbers}}",
+      "missingNumbers": "These players have no shirt number: {{names}}. Give each one a number or remove the player.",
       "playersWithoutNumbers": "{{count}} player(s) without jersey numbers",
       "fixIssues": "Please fix the following issues:\n\n• {{issues}}",
       "completeBeforeCoinToss": "Please complete the following before proceeding to coin toss:\n\n• {{issues}}",

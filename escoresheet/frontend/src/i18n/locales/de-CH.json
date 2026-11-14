@@ -155,6 +155,7 @@
     "dateOfBirth": "Geburtsdatum",
     "enterNames": "Bitte Nachname und Vorname iigäh",
     "deleteRoster": "Kader lösche",
+    "signaturesCleared": "De Kader isch nach em Underschriibe gänderet worde: D Underschrifte sind entfernt, Trainer und Captain underschriibed en neu.",
     "loadTestRoster": "TEST Kader lade",
     "confirmLoadTestRoster": "Test Kader lade?",
     "confirmLoadTestRosterMessage": "Das tuet s aktuelle Kader mit Testdate ersetze ({{team}}).",
@@ -211,7 +212,8 @@
     "clear": "Lösche",
     "save": "Speichere",
     "cancel": "Abbräche",
-    "close": "Schliesse"
+    "close": "Schliesse",
+    "resign": "Neu underschriibe"
   },
   "modal": {
     "deletePlayer": "Spieler lösche",
@@ -415,6 +417,7 @@
       "noCoach": "Kei Trainer feschtgleit",
       "duplicateNumbers": "Doppleti Trikotnummere: {{numbers}}",
       "invalidNumbers": "Ungültigi Trikotnummere (müend 1-99 sii): {{numbers}}",
+      "missingNumbers": "Die Spieler händ kei Trikotnummere: {{names}}. Gib jedem e Nummere oder lösch de Spieler.",
       "playersWithoutNumbers": "{{count}} Spieler ohni Trikotnummere",
       "fixIssues": "Bitte die folgende Problem behebe:\n\n• {{issues}}",
       "completeBeforeCoinToss": "Bitte vervollständig no das, bevor du zur Usloosig gahsch:\n\n• {{issues}}",

@@ -152,6 +152,7 @@
     "dateOfBirth": "Geburtsdatum",
     "enterNames": "Bitte Nachname und Vorname eingeben",
     "deleteRoster": "Kader löschen",
+    "signaturesCleared": "Der Kader wurde nach dem Unterschreiben geändert: Die Unterschriften wurden entfernt, Trainer und Captain unterschreiben ihn neu.",
     "loadTestRoster": "TEST Kader laden",
     "confirmLoadTestRoster": "Test Kader laden?",
     "confirmLoadTestRosterMessage": "Dies ersetzt das aktuelle Kader mit Testdaten ({{team}}).",
@@ -204,7 +205,8 @@
     "clear": "Löschen",
     "save": "Speichern",
     "cancel": "Abbrechen",
-    "close": "Schliessen"
+    "close": "Schliessen",
+    "resign": "Neu unterschreiben"
   },
   "modal": {
     "deletePlayer": "Spieler löschen",
@@ -408,6 +410,7 @@
       "noCoach": "Kein Trainer festgelegt",
       "duplicateNumbers": "Doppelte Trikotnummern: {{numbers}}",
       "invalidNumbers": "Ungültige Trikotnummern (muss 1-99 sein): {{numbers}}",
+      "missingNumbers": "Diese Spieler haben keine Trikotnummer: {{names}}. Gib jedem eine Nummer oder entferne den Spieler.",
       "playersWithoutNumbers": "{{count}} Spieler ohne Trikotnummer",
       "fixIssues": "Bitte folgende Probleme beheben:\n\n• {{issues}}",
       "completeBeforeCoinToss": "Bitte vor der Auslosung vervollständigen:\n\n• {{issues}}",

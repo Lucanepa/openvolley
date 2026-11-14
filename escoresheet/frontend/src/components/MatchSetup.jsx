@@ -6,8 +6,9 @@ import { useAuth } from '../contexts/AuthContext'
 import { clubVerdict, matchClubBlock } from '../lib/access'
 import { db } from '../db/db'
 import SignaturePad from './SignaturePad'
-import { saveMatchSignature } from '../utils/saveSignature'
-import { phoneSignContext, signatureSource, signatureUpdate, SLOT_OF_ROLE, PRE_MATCH_SIGNATURE_FIELD } from '../domain/phoneSignature'
+import { saveMatchSignature, clearMatchSignatures } from '../utils/saveSignature'
+import { rosterSignatureKey, staleSignatureFields, signaturesClearedRemark, signatureReplacedRemark } from '../domain/rosterSignatures'
+import { phoneSignContext, signatureUpdate, SLOT_OF_ROLE, PRE_MATCH_SIGNATURE_FIELD } from '../domain/phoneSignature'
 import Modal from './Modal'
 import RefereeSelector from './RefereeSelector'
 import LoadOfficialMatchModal, { knownMatchFormat } from './LoadOfficialMatchModal'
@@ -1012,16 +1013,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [awayCoachSignature, setAwayCoachSignature] = useState(null)
   const [awayCaptainSignature, setAwayCaptainSignature] = useState(null)
   const [savedSignatures, setSavedSignatures] = useState({ homeCoach: null, homeCaptain: null, awayCoach: null, awayCaptain: null })
-  // "Signed on phone" of the signatures given here (field -> source | null),
-  // written with the images (docs/qr-signing-spec.md 5.6)
-  const [signatureSources, setSignatureSources] = useState({})
-  /** The source updates of `fields` that were signed on this screen. */
-  const signatureSourceUpdates = (fields, written) => {
-    const out = {}
-    for (const f of fields) if (f in signatureSources) out[`signatureSources.${f}`] = written[f] ? signatureSources[f] : null
-    return out
-  }
-
   // Check if coin toss was previously confirmed (all signatures match saved ones)
   const isCoinTossConfirmed = useMemo(() => {
     return homeCoachSignature && homeCaptainSignature && awayCoachSignature && awayCaptainSignature &&
@@ -1232,11 +1223,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         homeRoster: JSON.parse(JSON.stringify(homeRoster)),
         benchHome: JSON.parse(JSON.stringify(benchHome))
       }
+      // what this visit signs or brings from a sent roster starts empty
+      signedForRef.current = {}
+      pendingSentRef.current.home = null
     } else if (currentView === 'away') {
       originalAwayTeamRef.current = {
         awayRoster: JSON.parse(JSON.stringify(awayRoster)),
         benchAway: JSON.parse(JSON.stringify(benchAway))
       }
+      // what this visit signs or brings from a sent roster starts empty
+      signedForRef.current = {}
+      pendingSentRef.current.away = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentView])
@@ -2593,12 +2590,105 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     }
   }
 
+  // ---- Pre-match signatures in the roster editor (domain/rosterSignatures) ----
+  // The roster each signature of this visit was given for (match-row field ->
+  // rosterSignatureKey): a pad here, or a sent-ahead roster. A signature from
+  // before the editor opened counts as given for the roster it opened with.
+  const signedForRef = useRef({})
+  // A sent-ahead roster used in the editor: { home|away: { row, signatures } }.
+  // Only the editor's Save stores its signatures and marks it used; Back drops it
+  const pendingSentRef = useRef({ home: null, away: null })
+  const signatureStateOf = {
+    'home-coach': [homeCoachSignature, setHomeCoachSignature],
+    'home-captain': [homeCaptainSignature, setHomeCaptainSignature],
+    'away-coach': [awayCoachSignature, setAwayCoachSignature],
+    'away-captain': [awayCaptainSignature, setAwayCaptainSignature]
+  }
+  const sideRoster = (side) => (side === 'home' ? homeRoster : awayRoster)
+  const sideBench = (side) => (side === 'home' ? benchHome : benchAway)
+  const sideTeamName = (side) => (side === 'home' ? home : away) || t(side === 'home' ? 'common.home' : 'common.away')
+  const forgetSideSignatures = (side) => {
+    for (const role of ['coach', 'captain']) delete signedForRef.current[PRE_MATCH_SIGNATURE_FIELD[`${side}-${role}`]]
+    pendingSentRef.current[side] = null
+  }
+
+  // Clear: the stored signature goes at once (saved and synced), as a pad's
+  // signature is stored at once
+  const clearSignatureSlot = (side, role) => {
+    const slot = `${side}-${role}`
+    const field = PRE_MATCH_SIGNATURE_FIELD[slot]
+    signatureStateOf[slot][1](null)
+    delete signedForRef.current[field]
+    if (pendingSentRef.current[side]) delete pendingSentRef.current[side].signatures[role]
+    if (matchId) saveMatchSignature(db, matchId, field, null, signatureUpdate(field, null, null))
+  }
+
+  // Back: the side's signatures as stored (a sent roster's are not)
+  const restoreSideSignatures = async (side) => {
+    forgetSideSignatures(side)
+    if (!matchId) return
+    const stored = await db.matches.get(matchId).catch(() => null)
+    for (const role of ['coach', 'captain']) {
+      const slot = `${side}-${role}`
+      signatureStateOf[slot][1](stored?.[PRE_MATCH_SIGNATURE_FIELD[slot]] || null)
+    }
+  }
+
+  // The editor's Save, after its players and bench are written: a sent-ahead
+  // roster used here is stored as used, with its signatures when the roster
+  // is still the one sent; then every signature of the side that no longer
+  // fits the roster is cleared, with a remark, and the scorer is told
+  const saveSideSignatures = async (side, roster, bench, openedRoster, openedBench) => {
+    if (!matchId) return
+    const currentKey = rosterSignatureKey(roster, bench)
+    const openedKey = rosterSignatureKey(openedRoster, openedBench)
+    const pending = pendingSentRef.current[side]
+    if (pending) {
+      for (const role of ['coach', 'captain']) {
+        const field = PRE_MATCH_SIGNATURE_FIELD[`${side}-${role}`]
+        const image = pending.signatures[role]
+        if (image && signedForRef.current[field] === currentKey) await saveMatchSignature(db, matchId, field, image)
+      }
+      try {
+        const fresh = await db.matches.get(matchId)
+        await db.matches.update(matchId, { sentRosterUsed: { ...(fresh?.sentRosterUsed || {}), [side]: pending.row.updatedAt || 'sent' } })
+      } catch (err) {
+        console.warn('[MatchSetup] Writing the sent roster failed:', err?.message)
+      }
+      markGameRosterAccepted(pending.row)
+    }
+    const fields = ['coach', 'captain'].map(role => PRE_MATCH_SIGNATURE_FIELD[`${side}-${role}`])
+    const stored = await db.matches.get(matchId)
+    const stale = staleSignatureFields(stored, fields, signedForRef.current, openedKey, currentKey)
+    forgetSideSignatures(side)
+    if (stale.length) {
+      const roles = ['captain', 'coach'].filter(role => stale.includes(PRE_MATCH_SIGNATURE_FIELD[`${side}-${role}`]))
+      await clearMatchSignatures(db, matchId, stale, signaturesClearedRemark({ team: sideTeamName(side), roles }))
+      toast.info(t('roster.signaturesCleared'))
+    }
+    // the editor shows what is stored (a sent signature for a roster changed
+    // before Save was not stored)
+    const after = stale.length ? await db.matches.get(matchId) : stored
+    for (const role of ['coach', 'captain']) {
+      const slot = `${side}-${role}`
+      signatureStateOf[slot][1](after?.[PRE_MATCH_SIGNATURE_FIELD[slot]] || null)
+    }
+  }
+
   function handleSignatureSave(signatureImage, meta) {
     const field = PRE_MATCH_SIGNATURE_FIELD[openSignature]
-    if (field) setSignatureSources(prev => ({ ...prev, [field]: signatureSource(signatureImage, meta) }))
+    const [side, role] = String(openSignature || '').split('-')
+    // given for the roster on screen; a sent roster's signature it replaces is not stored
+    if (field && currentView === side) signedForRef.current[field] = rosterSignatureKey(sideRoster(side), sideBench(side))
+    if (pendingSentRef.current[side]) delete pendingSentRef.current[side].signatures[role]
     // an existing match: saved at once (owner 2026-10-07), with its phone-signing
-    // record in the same update; a new one keeps it in the draft
-    if (field && matchId) saveMatchSignature(db, matchId, field, signatureImage, signatureUpdate(field, signatureImage, meta))
+    // record in the same update; a new one keeps it in the draft. A Re-sign
+    // of a collected signature is written to the remarks
+    if (field && matchId) {
+      saveMatchSignature(db, matchId, field, signatureImage, signatureUpdate(field, signatureImage, meta), {
+        remark: meta?.resigned ? signatureReplacedRemark({ team: sideTeamName(side), role }) : ''
+      })
+    }
     if (openSignature === 'home-coach') {
       setHomeCoachSignature(signatureImage)
     } else if (openSignature === 'home-captain') {
@@ -2789,7 +2879,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // accepted remote roster does (after the usual question when the side has
   // players already), with the coach's and captain's signatures when they
   // signed ahead. From the main view the stored players follow; in the
-  // roster editor only its Save writes them. Accepted = used: the server
+  // roster editor only its Save writes them, stores the signatures and marks
+  // the roster used (its Back loses nothing). Accepted = used: the server
   // deletes its copy (owner 2026-11-08), now or once the tablet is online.
   const applySentRoster = async (side) => {
     const row = sentRosters[side]
@@ -2817,6 +2908,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     }
     const teamId = side === 'home' ? match?.homeTeamId : match?.awayTeamId
     const inRosterEditor = currentView === 'home' || currentView === 'away'
+    if (inRosterEditor) {
+      // given for the roster as sent: stored by Save only while it still is
+      const key = rosterSignatureKey(roster, bench)
+      const signatures = {}
+      for (const [role, image] of [['coach', pending.coachSignature], ['captain', pending.captainSignature]]) {
+        if (!image) continue
+        signatures[role] = image
+        signedForRef.current[PRE_MATCH_SIGNATURE_FIELD[`${side}-${role}`]] = key
+      }
+      pendingSentRef.current[side] = { row, signatures }
+      toast.success(t('sentRoster.used', { count: roster.length }))
+      return
+    }
     // signed ahead: saved at once, as a pad's signature is (and synced)
     if (matchId) {
       for (const [role, image] of [['coach', pending.coachSignature], ['captain', pending.captainSignature]]) {
@@ -2826,7 +2930,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     }
     if (matchId) {
       try {
-        if (teamId && !inRosterEditor) {
+        if (teamId) {
           await db.transaction('rw', db.players, async () => {
             await db.players.where('teamId').equals(teamId).delete()
             await db.players.bulkAdd(roster.map(p => ({
@@ -2845,11 +2949,25 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           })
         }
         await db.matches.update(matchId, {
-          ...(!inRosterEditor ? { [side === 'home' ? 'bench_home' : 'bench_away']: bench } : {}),
+          [side === 'home' ? 'bench_home' : 'bench_away']: bench,
           sentRosterUsed: { ...(match?.sentRosterUsed || {}), [side]: row.updatedAt || 'sent' }
         })
       } catch (err) {
         console.warn('[MatchSetup] Writing the sent roster failed:', err?.message)
+      }
+      // a signature of the replaced roster that the sent one did not bring
+      // goes (domain/rosterSignatures)
+      const currentKey = rosterSignatureKey(roster, bench)
+      const signedFor = {}
+      if (pending.coachSignature) signedFor[PRE_MATCH_SIGNATURE_FIELD[`${side}-coach`]] = currentKey
+      if (pending.captainSignature) signedFor[PRE_MATCH_SIGNATURE_FIELD[`${side}-captain`]] = currentKey
+      const stored = await db.matches.get(matchId).catch(() => null)
+      const fields = ['coach', 'captain'].map(role => PRE_MATCH_SIGNATURE_FIELD[`${side}-${role}`])
+      const stale = staleSignatureFields(stored, fields, signedFor, rosterSignatureKey(sideRoster(side), sideBench(side)), currentKey)
+      if (stale.length) {
+        const roles = ['captain', 'coach'].filter(role => stale.includes(PRE_MATCH_SIGNATURE_FIELD[`${side}-${role}`]))
+        await clearMatchSignatures(db, matchId, stale, signaturesClearedRemark({ team: sideTeamName(side), roles }))
+        for (const role of roles) signatureStateOf[`${side}-${role}`][1](null)
       }
     }
     markGameRosterAccepted(row)
@@ -4262,7 +4380,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       <MatchSetupHomeTeamView kitScale={kitScale}>
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
           <div>
-            <Button variant="ghost" size="xl" className="bg-white" onClick={() => { restoreHomeTeam(); setCurrentView('main') }}>← {t('common.back')}</Button>
+            <Button variant="ghost" size="xl" className="bg-white" onClick={() => { restoreHomeTeam(); restoreSideSignatures('home'); setCurrentView('main') }}>← {t('common.back')}</Button>
           </div>
           {/* a long team name wraps, never widens the page */}
           <h2 className="m-0 min-w-0 text-center text-base font-semibold text-stone-700 [overflow-wrap:anywhere]">{home || t('matchSetup.homeTeam')}</h2>
@@ -4277,8 +4395,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               onClick={() => {
                 setHomeRoster([])
                 setBenchHome([{ role: 'Coach', firstName: '', lastName: '', dob: '' }])
-                setHomeCoachSignature(null)
-                setHomeCaptainSignature(null)
                   }}
                 >
                   {t('roster.deleteRoster')}
@@ -4654,7 +4770,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   aria-label={t('matchSetup.libero', 'Libero')}
                   className={`cell-libero${p.libero ? '' : ' libero-unset'}`}
                   value={p.libero || ''}
-                  onChange={async e => {
+                  onChange={e => {
                     const updated = [...homeRoster]
                     const oldValue = updated[i].libero
                     updated[i] = { ...updated[i], libero: e.target.value }
@@ -4672,19 +4788,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       const l2Idx = updated.findIndex((player, idx) => idx !== i && player.libero === 'libero2')
                       if (l2Idx !== -1) {
                         updated[l2Idx] = { ...updated[l2Idx], libero: 'libero1' }
-                        // Update L2->L1 player in database if they have an ID
-                        if (updated[l2Idx].id) {
-                          await db.players.update(updated[l2Idx].id, { libero: 'libero1' })
-                        }
                       }
                     }
 
+                    // state only: the editor's Save writes it with the other
+                    // edits, its Back discards it
                     setHomeRoster(updated)
-
-                    // Update database immediately if player has an ID
-                    if (p.id) {
-                      await db.players.update(p.id, { libero: updated[i].libero })
-                    }
                   }}
                 >
                   <option key={`none-${liberoLabels.key}`} value="">{liberoLabels.none}</option>
@@ -4860,7 +4969,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   variant="danger-outline"
                   size="sm"
                   className="mt-1.5"
-                  onClick={(e) => { e.stopPropagation(); setHomeCaptainSignature(null); }}
+                  onClick={(e) => { e.stopPropagation(); clearSignatureSlot('home', 'captain') }}
                 >
                   {t('common.clear', 'Clear')}
                 </Button>
@@ -4892,7 +5001,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   variant="danger-outline"
                   size="sm"
                   className="mt-1.5"
-                  onClick={(e) => { e.stopPropagation(); setHomeCoachSignature(null); }}
+                  onClick={(e) => { e.stopPropagation(); clearSignatureSlot('home', 'coach') }}
                 >
                   {t('common.clear', 'Clear')}
                 </Button>
@@ -4913,14 +5022,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             )
 
             // If no changes, just go back to main view
-            if (!hasChanges) {
+            if (!hasChanges && !pendingSentRef.current.home) {
               console.log('[MatchSetup] No home roster changes, skipping sync')
               setCurrentView('main')
               return
             }
 
-            // Roster save validation - only block for critical errors (duplicates, invalid numbers)
-            // Missing numbers, captain, coach are validated at coin toss confirmation instead
+            // Roster save validation - only block for critical errors (duplicates,
+            // invalid or missing numbers); captain and coach are validated at
+            // coin toss confirmation instead
             const validationErrors = []
 
             // Check for duplicate numbers (critical - must block)
@@ -4929,6 +5039,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             if (duplicateNumbers.length > 0) {
               console.log('[MatchSetup] Home duplicate numbers:', duplicateNumbers)
               validationErrors.push(t('matchSetup.validation.duplicateNumbers', { numbers: [...new Set(duplicateNumbers)].join(', ') }))
+            }
+
+            // A named player without a shirt number: the stored roster (coin toss,
+            // scoresheet) and the cloud would hold different players
+            const unnumbered = homeRoster.filter(p => (p.firstName || p.lastName) && (p.number == null || p.number === ''))
+            if (unnumbered.length > 0) {
+              validationErrors.push(t('matchSetup.validation.missingNumbers', { names: unnumbered.map(p => [p.lastName, p.firstName].filter(Boolean).join(' ')).join(', ') }))
             }
 
             // Check for invalid numbers (whole numbers 1-99) - critical - must block
@@ -5012,42 +5129,22 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 }
               }
 
-              // Update match with short name, bench officials, and restore signatures (re-lock)
+              // Update match with short name and bench officials. The
+              // signatures are stored by their pads and Clear at once (each
+              // queues the match's whole signatures object): this save sends
+              // none, a partial object would replace the cloud's
               const updateData = {
                 homeShortName: homeShortName || home.substring(0, 3).toUpperCase(),
                 bench_home: benchHome  // Save bench officials to match record
               }
 
-              // Save current signatures (new or existing) to database
-              if (homeCoachSignature) {
-                updateData.homeCoachSignature = homeCoachSignature
-                setSavedSignatures(prev => ({ ...prev, homeCoach: homeCoachSignature }))
-              } else if (savedSignatures.homeCoach) {
-                // Restore previously saved signature if current is empty (re-lock the team)
-                updateData.homeCoachSignature = savedSignatures.homeCoach
-                setHomeCoachSignature(savedSignatures.homeCoach)
-              }
-              if (homeCaptainSignature) {
-                updateData.homeCaptainSignature = homeCaptainSignature
-                setSavedSignatures(prev => ({ ...prev, homeCaptain: homeCaptainSignature }))
-              } else if (savedSignatures.homeCaptain) {
-                updateData.homeCaptainSignature = savedSignatures.homeCaptain
-                setHomeCaptainSignature(savedSignatures.homeCaptain)
-              }
-              // "Signed on phone" of the images signed on this screen (not of restored ones)
-              const currentHomeSignatures = { homeCoachSignature: homeCoachSignature, homeCaptainSignature: homeCaptainSignature }
-              Object.assign(updateData, signatureSourceUpdates(
-                Object.keys(currentHomeSignatures).filter(f => updateData[f] && updateData[f] === currentHomeSignatures[f]),
-                updateData
-              ))
-
               await db.matches.update(matchId, updateData)
+              // a signature of the side that no longer fits its roster goes
+              await saveSideSignatures('home', homeRoster, benchHome, originalHomeTeamRef.current?.homeRoster, originalHomeTeamRef.current?.benchHome)
 
               // Sync home team data to Supabase as JSONB
               let homeSyncJobId = null
               if (match?.seed_key) {
-                const homeCoachSig = homeCoachSignature || savedSignatures.homeCoach || null
-                const homeCaptainSig = homeCaptainSignature || savedSignatures.homeCaptain || null
                 homeSyncJobId = await db.sync_queue.add({
                   resource: 'match',
                   action: 'update',
@@ -5055,10 +5152,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     id: match.seed_key,
                     // JSONB columns
                     home_team: { name: home?.trim() || '', short_name: homeShortName || generateShortName(home), color: homeColor },
-                    signatures: {
-                      home_coach: homeCoachSig || '',
-                      home_captain: homeCaptainSig || ''
-                    },
                     players_home: homeRoster.filter(p => p.firstName || p.lastName).map(p => ({
                       number: p.number || null,
                       first_name: p.firstName || '',
@@ -5356,6 +5449,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             openSignature === 'home-captain' ? 'Home captain signature' :
               openSignature === 'away-coach' ? 'Away coach signature' :
                 openSignature === 'away-captain' ? 'Away captain signature' : 'Sign'}
+          // a signed slot opens read-only; replacing it is an explicit Re-sign
+          existingSignature={signatureStateOf[openSignature]?.[0] || null}
+          readOnly={!!signatureStateOf[openSignature]?.[0]}
+          allowResign
         />
       </MatchSetupHomeTeamView>
     )
@@ -5366,7 +5463,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       <MatchSetupAwayTeamView kitScale={kitScale}>
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
           <div>
-            <Button variant="ghost" size="xl" className="bg-white" onClick={() => { restoreAwayTeam(); setCurrentView('main') }}>← {t('common.back')}</Button>
+            <Button variant="ghost" size="xl" className="bg-white" onClick={() => { restoreAwayTeam(); restoreSideSignatures('away'); setCurrentView('main') }}>← {t('common.back')}</Button>
           </div>
           {/* a long team name wraps, never widens the page */}
           <h2 className="m-0 min-w-0 text-center text-base font-semibold text-stone-700 [overflow-wrap:anywhere]">{away || t('matchSetup.awayTeam')}</h2>
@@ -5381,8 +5478,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               onClick={() => {
                 setAwayRoster([])
                 setBenchAway([{ role: 'Coach', firstName: '', lastName: '', dob: '' }])
-                setAwayCoachSignature(null)
-                setAwayCaptainSignature(null)
                   }}
                 >
                   {t('roster.deleteRoster')}
@@ -5765,7 +5860,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   aria-label={t('matchSetup.libero', 'Libero')}
                   className={`cell-libero${p.libero ? '' : ' libero-unset'}`}
                   value={p.libero || ''}
-                  onChange={async e => {
+                  onChange={e => {
                     const updated = [...awayRoster]
                     const oldValue = updated[i].libero
                     updated[i] = { ...updated[i], libero: e.target.value }
@@ -5781,17 +5876,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       const l2Idx = updated.findIndex((player, idx) => idx !== i && player.libero === 'libero2')
                       if (l2Idx !== -1) {
                         updated[l2Idx] = { ...updated[l2Idx], libero: 'libero1' }
-                        if (updated[l2Idx].id) {
-                          await db.players.update(updated[l2Idx].id, { libero: 'libero1' })
-                        }
                       }
                     }
 
+                    // state only, as on the home side
                     setAwayRoster(updated)
-
-                    if (p.id) {
-                      await db.players.update(p.id, { libero: updated[i].libero })
-                    }
                   }}
                 >
                   <option key={`none-${liberoLabels.key}`} value="">{liberoLabels.none}</option>
@@ -5967,7 +6056,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   variant="danger-outline"
                   size="sm"
                   className="mt-1.5"
-                  onClick={(e) => { e.stopPropagation(); setAwayCaptainSignature(null); }}
+                  onClick={(e) => { e.stopPropagation(); clearSignatureSlot('away', 'captain') }}
                 >
                   {t('common.clear', 'Clear')}
                 </Button>
@@ -5999,7 +6088,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   variant="danger-outline"
                   size="sm"
                   className="mt-1.5"
-                  onClick={(e) => { e.stopPropagation(); setAwayCoachSignature(null); }}
+                  onClick={(e) => { e.stopPropagation(); clearSignatureSlot('away', 'coach') }}
                 >
                   {t('common.clear', 'Clear')}
                 </Button>
@@ -6020,14 +6109,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             )
 
             // If no changes, just go back to main view
-            if (!hasChanges) {
+            if (!hasChanges && !pendingSentRef.current.away) {
               console.log('[MatchSetup] No away roster changes, skipping sync')
               setCurrentView('main')
               return
             }
 
-            // Roster save validation - only block for critical errors (duplicates, invalid numbers)
-            // Missing numbers, captain, coach are validated at coin toss confirmation instead
+            // Roster save validation - only block for critical errors (duplicates,
+            // invalid or missing numbers); captain and coach are validated at
+            // coin toss confirmation instead
             const validationErrors = []
 
             // Check for duplicate numbers (critical - must block)
@@ -6036,6 +6126,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             if (duplicateNumbers.length > 0) {
               console.log('[MatchSetup] Away duplicate numbers:', duplicateNumbers)
               validationErrors.push(t('matchSetup.validation.duplicateNumbers', { numbers: [...new Set(duplicateNumbers)].join(', ') }))
+            }
+
+            // A named player without a shirt number: the stored roster (coin toss,
+            // scoresheet) and the cloud would hold different players
+            const unnumbered = awayRoster.filter(p => (p.firstName || p.lastName) && (p.number == null || p.number === ''))
+            if (unnumbered.length > 0) {
+              validationErrors.push(t('matchSetup.validation.missingNumbers', { names: unnumbered.map(p => [p.lastName, p.firstName].filter(Boolean).join(' ')).join(', ') }))
             }
 
             // Check for invalid numbers (whole numbers 1-99) - critical - must block
@@ -6119,42 +6216,22 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 }
               }
 
-              // Update match with short name, bench officials, and restore signatures (re-lock)
+              // Update match with short name and bench officials. The
+              // signatures are stored by their pads and Clear at once (each
+              // queues the match's whole signatures object): this save sends
+              // none, a partial object would replace the cloud's
               const updateData = {
                 awayShortName: awayShortName || away.substring(0, 3).toUpperCase(),
                 bench_away: benchAway  // Save bench officials to match record
               }
 
-              // Save current signatures (new or existing) to database
-              if (awayCoachSignature) {
-                updateData.awayCoachSignature = awayCoachSignature
-                setSavedSignatures(prev => ({ ...prev, awayCoach: awayCoachSignature }))
-              } else if (savedSignatures.awayCoach) {
-                // Restore previously saved signature if current is empty (re-lock the team)
-                updateData.awayCoachSignature = savedSignatures.awayCoach
-                setAwayCoachSignature(savedSignatures.awayCoach)
-              }
-              if (awayCaptainSignature) {
-                updateData.awayCaptainSignature = awayCaptainSignature
-                setSavedSignatures(prev => ({ ...prev, awayCaptain: awayCaptainSignature }))
-              } else if (savedSignatures.awayCaptain) {
-                updateData.awayCaptainSignature = savedSignatures.awayCaptain
-                setAwayCaptainSignature(savedSignatures.awayCaptain)
-              }
-              // "Signed on phone" of the images signed on this screen (not of restored ones)
-              const currentAwaySignatures = { awayCoachSignature: awayCoachSignature, awayCaptainSignature: awayCaptainSignature }
-              Object.assign(updateData, signatureSourceUpdates(
-                Object.keys(currentAwaySignatures).filter(f => updateData[f] && updateData[f] === currentAwaySignatures[f]),
-                updateData
-              ))
-
               await db.matches.update(matchId, updateData)
+              // a signature of the side that no longer fits its roster goes
+              await saveSideSignatures('away', awayRoster, benchAway, originalAwayTeamRef.current?.awayRoster, originalAwayTeamRef.current?.benchAway)
 
               // Sync away team data to Supabase as JSONB
               let awaySyncJobId = null
               if (match?.seed_key) {
-                const awayCoachSig = awayCoachSignature || savedSignatures.awayCoach || null
-                const awayCaptainSig = awayCaptainSignature || savedSignatures.awayCaptain || null
                 awaySyncJobId = await db.sync_queue.add({
                   resource: 'match',
                   action: 'update',
@@ -6162,10 +6239,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     id: match.seed_key,
                     // JSONB columns
                     away_team: { name: away?.trim() || '', short_name: awayShortName || generateShortName(away), color: awayColor },
-                    signatures: {
-                      away_coach: awayCoachSig || '',
-                      away_captain: awayCaptainSig || ''
-                    },
                     players_away: awayRoster.filter(p => p.firstName || p.lastName).map(p => ({
                       number: p.number || null,
                       first_name: p.firstName || '',
@@ -6464,6 +6537,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             openSignature === 'home-captain' ? 'Home captain signature' :
               openSignature === 'away-coach' ? 'Away coach signature' :
                 openSignature === 'away-captain' ? 'Away captain signature' : 'Sign'}
+          // a signed slot opens read-only; replacing it is an explicit Re-sign
+          existingSignature={signatureStateOf[openSignature]?.[0] || null}
+          readOnly={!!signatureStateOf[openSignature]?.[0]}
+          allowResign
         />
       </MatchSetupAwayTeamView>
     )
