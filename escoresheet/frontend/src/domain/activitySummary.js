@@ -397,7 +397,10 @@ export function activityLine(entry) {
     case 'match.approval': return `${d.role} ${d.approved ? `approved (${d.method})` : 'approval removed'}`
     case 'match.remarks': return `${d.length} characters`
     case 'match.roster': return `${d.team || ''} #${d.number ?? '?'} ${d.op || ''}`.trim()
-    case 'match.local_remove': return `${d.sets ?? 0} sets, ${d.players ?? 0} players`
+    case 'match.local_remove': {
+      const n = (count, one, many) => `${count ?? 0} ${count === 1 ? one : many}`
+      return `${n(d.sets, 'set', 'sets')}, ${n(d.players, 'player', 'players')}`
+    }
     case 'sync.error':
     case 'sync.dropped': return `${d.resource} ${d.action}: ${d.status ?? ''} ${d.code ?? ''}`.trim()
     case 'sync.summary': return `sent ${d.sent}, failed ${d.failed}, pending ${d.pending}`

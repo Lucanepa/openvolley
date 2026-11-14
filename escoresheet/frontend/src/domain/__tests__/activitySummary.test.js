@@ -128,5 +128,9 @@ describe('events and errors', () => {
     expect(activityCategory('event.undo')).toBe('correction')
     expect(activityCategory('sync.state', 'error')).toBe('error')
     expect(activityLine({ kind: 'event.add', data: { type: 'point', team: 'home', scoreA: 3, scoreB: 1 } })).toBe('point home 3:1')
+
+    // review 6a: one set, one player (not "1 players")
+    expect(activityLine({ kind: 'match.local_remove', data: { sets: 1, players: 1 } })).toBe('1 set, 1 player')
+    expect(activityLine({ kind: 'match.local_remove', data: { sets: 2, players: 0 } })).toBe('2 sets, 0 players')
   })
 })
