@@ -98,7 +98,12 @@ export function publicBench(raw) {
   return out
 }
 
-const STATUS = new Set(['setup', 'scheduled', 'live', 'finished', 'ended'])
+// What the database calls a finished match: matches.status 'final' (older rows 'ended'), live row 'ended'
+const FINISHED_DB = ['final', 'ended', 'finished']
+const isFinished = (v) => FINISHED_DB.includes(v)
+// The API's own words: setup, scheduled, live, finished
+const STATUS = new Set(['setup', 'scheduled', 'live', 'finished'])
+const normStatus = (v) => (isFinished(v) ? 'finished' : (v || null))
 
 export function publicMatchInfo(row, { withRosters = true } = {}) {
   const info = isObj(jsonOf(row.match_info)) ? jsonOf(row.match_info) : {}
@@ -110,7 +115,7 @@ export function publicMatchInfo(row, { withRosters = true } = {}) {
     id: row.external_id,
     sport: row.sport_type || 'indoor',
     gameNumber: row.game_n ?? null,
-    status: STATUS.has(row.status) ? row.status : (row.status || null),
+    status: normStatus(row.status),
     scheduledAt: iso(row.scheduled_at),
     league: str(info.league),
     venue: { hall: str(info.hall), city: str(info.city) },
@@ -165,12 +170,18 @@ const sanctionOut = (s) => {
   }
 }
 
+function homeSide(row) {
+  const home = str(isObj(jsonOf(row.home_team)) ? jsonOf(row.home_team).name : null)
+  if (home && str(row.team_b_name) === home && str(row.team_a_name) !== home) return 'B'
+  return 'A'
+}
+
 /** The livescore snapshot: scores and what is on court, from match_live_state (+ the match row). */
 export function publicLive(row) {
   const sets = jsonOf(row.set_results)
   return {
     id: row.external_id,
-    status: row.match_status || row.status || null,
+    status: normStatus(row.match_status || row.status),
     sport: row.sport_type || 'indoor',
     currentSet: num(row.current_set),
     bestOf: num(row.best_of),
@@ -182,6 +193,8 @@ export function publicLive(row) {
       A: { name: str(row.team_a_name) || 'A', shortName: str(row.team_a_short), color: str(row.team_a_color, 20), timeouts: num(row.timeouts_a), challenges: num(row.challenges_used_a) },
       B: { name: str(row.team_b_name) || 'B', shortName: str(row.team_b_short), color: str(row.team_b_color, 20), timeouts: num(row.timeouts_b), challenges: num(row.challenges_used_b) }
     },
+    // the scoresheet's A / B are not always home / away: homeIs says which one is the home team
+    homeIs: homeSide(row),
     sideA: str(row.side_a, 10),
     serving: str(row.serving_team, 10),
     serverNumber: num(row.server_number),
@@ -291,7 +304,7 @@ export function buildStats(match, events, sets) {
 
   return {
     id: match.external_id,
-    status: match.status || null,
+    status: normStatus(match.status),
     result: match.final_score ? { score: String(match.final_score).slice(0, 20), winner: str(match.winner, 10) } : null,
     home: team(jsonOf(match.sport_type === 'beach' ? match.team1_data : match.home_team), 'Home').name,
     away: team(jsonOf(match.sport_type === 'beach' ? match.team2_data : match.away_team), 'Away').name,
@@ -341,7 +354,7 @@ export function createPublicApi({ pool, logger = console } = {}) {
       if (status) {
         const list = String(status).split(',').map((s) => s.trim()).filter((s) => STATUS.has(s))
         if (!list.length) return fail(400, 'unknown status')
-        args.push(list)
+        args.push(list.flatMap((x) => (x === 'finished' ? FINISHED_DB : [x])))
         statusSql = ` AND m.status = ANY($${args.length})`
       }
       args.push(lim)
@@ -389,7 +402,7 @@ export function createPublicApi({ pool, logger = console } = {}) {
       if (!MATCH_ID_RE.test(id)) return fail(400, 'bad match id')
       const m = await matchRow(id)
       if (!m) return fail(404, 'match not found')
-      if (!['finished', 'ended'].includes(m.status)) return fail(409, 'statistics are published when the match is finished')
+      if (!isFinished(m.status)) return fail(409, 'statistics are published when the match is finished')
       const ev = await pool.query(
         `SELECT type, set_index, seq, payload FROM public.events
           WHERE match_id = $1 AND voided_at IS NULL AND coalesce(test, false) = false
