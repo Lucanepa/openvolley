@@ -102,7 +102,9 @@ describe('OpenVolley desktop identity (unchanged)', () => {
     expect(deb.desktopTemplate).toBe('openvolley-escoresheet.desktop')
     expect(deb.files).toEqual({
       '/usr/libexec/openvolley-escoresheet/apt-upgrade': 'linux/apt-upgrade',
-      '/usr/share/polkit-1/actions/com.openvolley.escoresheet.update.policy': 'linux/com.openvolley.escoresheet.update.policy'
+      '/usr/share/polkit-1/actions/com.openvolley.escoresheet.update.policy': 'linux/com.openvolley.escoresheet.update.policy',
+      // the tablets' firewalld zone (nm_settings.rs TABLET_ZONE)
+      '/usr/lib/firewalld/zones/openvolley-tablets.xml': 'linux/openvolley-tablets.xml'
     })
     const entry = read('openvolley-escoresheet.desktop')
     expect(entry).toMatch(/^Name=OpenVolley eScoresheet$/m)
@@ -204,7 +206,8 @@ describe('OpenBeach desktop flavour', () => {
     expect(deb.recommends).toEqual(ovLinux.bundle.linux.deb.recommends)
     expect(deb.files).toEqual({
       '/usr/libexec/openbeach-escoresheet/apt-upgrade': 'linux/beach/apt-upgrade',
-      '/usr/share/polkit-1/actions/com.openvolley.beach.update.policy': 'linux/beach/com.openvolley.beach.update.policy'
+      '/usr/share/polkit-1/actions/com.openvolley.beach.update.policy': 'linux/beach/com.openvolley.beach.update.policy',
+      '/usr/lib/firewalld/zones/openbeach-tablets.xml': 'linux/beach/openbeach-tablets.xml'
     })
     expect(Object.keys(deb.files)[0]).toBe(beach.apt_helper)
     expect(statSync(join(TAURI, 'linux/beach/apt-upgrade')).mode & 0o111).toBeTruthy()
@@ -292,8 +295,9 @@ describe('macOS bundles (unsigned, ad-hoc)', () => {
     expect(plist).not.toMatch(/NSAllowsArbitraryLoads/)
   })
 
-  it('Entitlements.plist: the camera only (the hardened runtime blocks it otherwise)', () => {
+  it('Entitlements.plist: none, so the hardened runtime blocks the camera and microphone', () => {
     const plist = read('Entitlements.plist')
-    expect([...plist.matchAll(/<key>([^<]+)<\/key>/g)].map((m) => m[1])).toEqual(['com.apple.security.device.camera'])
+    expect([...plist.matchAll(/<key>([^<]+)<\/key>/g)].map((m) => m[1])).toEqual([])
+    expect(plist).toMatch(/<dict>\s*<\/dict>/)
   })
 })

@@ -73,6 +73,10 @@ export default function AndroidVersionRows() {
               {fromFdroid && (
                 <p className="mt-1 text-xs leading-relaxed text-stone-600">{t('androidUpdate.fdroidRepoHint')}</p>
               )}
+              {/* the check reads an unsigned index: never uninstall for an update */}
+              {!fromFdroid && (
+                <p className="mt-1 text-xs leading-relaxed text-stone-600">{t('androidUpdate.noUninstall')}</p>
+              )}
               <div className="mt-3 flex flex-wrap gap-2">
                 {fromFdroid ? (
                   <>

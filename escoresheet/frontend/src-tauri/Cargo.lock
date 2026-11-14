@@ -2761,6 +2761,7 @@ name = "openvolley-escoresheet"
 version = "3.1.4"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "futures-util",
  "gtk",
  "http-body-util",

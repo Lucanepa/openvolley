@@ -529,7 +529,8 @@ jobs:
           grep -qxF "Authority=$APPLE_SIGNING_IDENTITY" <<<"$sig" || { echo "$sig"; echo "::error::not signed by $APPLE_SIGNING_IDENTITY"; exit 1; }
           grep -qE '^CodeDirectory .*flags=0x[0-9a-f]*\(.*runtime' <<<"$sig" || { echo "$sig"; echo "::error::no hardened runtime"; exit 1; }
           grep -q '^Timestamp=' <<<"$sig" || { echo "$sig"; echo "::error::no secure timestamp"; exit 1; }
-          codesign -d --entitlements - --xml "$app" 2>/dev/null | grep -q 'com.apple.security.device.camera' || { echo "::error::no camera entitlement"; exit 1; }
+          # no camera / microphone entitlement: the app has no feature that needs them
+          ! codesign -d --entitlements - --xml "$app" 2>/dev/null | grep -qE 'com\.apple\.security\.device\.(camera|audio-input|microphone)' || { echo "::error::camera or microphone entitlement"; exit 1; }
           ditto -c -k --keepParent "$app" "$w/notarize.zip"
           notarize "$w/notarize.zip"
           rm -f "$w/notarize.zip"

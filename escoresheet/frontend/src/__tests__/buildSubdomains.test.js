@@ -42,7 +42,9 @@ describe('build-subdomains: manager.openvolley.app', () => {
     expect(files._headers).toMatch(/^\/\*\n/)
     expect(files._headers).toContain('X-Robots-Tag: noindex, nofollow')
     expect(files._headers).toContain('X-Frame-Options: DENY')
-    expect(extraFilesFor(subdomains.app)).toEqual({})
+    // the others: no robots.txt, only the security headers (csp.js)
+    expect(Object.keys(extraFilesFor(subdomains.app))).toEqual(['_headers'])
+    expect(extraFilesFor(subdomains.app)._headers).not.toContain('X-Robots-Tag')
   })
 
   it('the other subdomains still get a generated page', () => {

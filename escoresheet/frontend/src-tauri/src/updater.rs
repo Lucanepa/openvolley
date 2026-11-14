@@ -861,13 +861,40 @@ pub fn foreign_update(url: &tauri::Url, f: &crate::flavour::Flavour) -> bool {
     foreign_tag || foreign_file
 }
 
-/// The plugin's check, minus a manifest of the other app (foreign_update).
+/// The file name a release was signed for: `file:` in the trusted comment of
+/// its minisign signature (`tauri signer sign` writes
+/// `timestamp:<t>\tfile:<name>\tversion:<v>`). The download URL comes from
+/// the manifest, which is not signed; this name is. It is read here before
+/// the plugin verifies the download, for a refusal only: that verification
+/// covers the trusted comment, so a manifest that changed the name would
+/// fail it (tauri-shell-5: a renamed copy of the other app's installer).
+pub fn signed_file_name(signature: &str) -> Option<String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(signature.trim()).ok()?;
+    let text = String::from_utf8(bytes).ok()?;
+    let comment = text.lines().find_map(|l| l.strip_prefix("trusted comment: "))?;
+    comment.split('\t').find_map(|f| f.strip_prefix("file:")).map(str::to_string)
+}
+
+/// Was this release signed as the other app's installer? (signed_file_name)
+pub fn foreign_signed_file(signature: &str, f: &crate::flavour::Flavour) -> bool {
+    let (_, file_prefix) = f.foreign_installers;
+    signed_file_name(signature).is_some_and(|name| name.to_ascii_lowercase().starts_with(file_prefix))
+}
+
+/// The plugin's check, minus a manifest of the other app (foreign_update,
+/// foreign_signed_file).
 async fn check_own(u: &tauri_plugin_updater::Updater) -> Result<Option<Update>, String> {
     match u.check().await.map_err(|e| e.to_string())? {
-        Some(update) if foreign_update(&update.download_url, crate::flavour::CURRENT) => Err(format!(
-            "the update manifest announces {} at {}: the other app's installer, ignored",
-            update.version, update.download_url
-        )),
+        Some(update)
+            if foreign_update(&update.download_url, crate::flavour::CURRENT)
+                || foreign_signed_file(&update.signature, crate::flavour::CURRENT) =>
+        {
+            Err(format!(
+                "the update manifest announces {} at {}: the other app's installer, ignored",
+                update.version, update.download_url
+            ))
+        }
         found => Ok(found),
     }
 }
@@ -1350,6 +1377,39 @@ mod tests {
         // a mirror elsewhere with the app's own file names still passes
         assert!(!foreign_update(&u("https://mirror.example/x/openvolley-escoresheet_2.2.1_amd64.AppImage"), &OPENVOLLEY));
         assert!(!foreign_update(&u("https://mirror.example/x/OpenBeach_2.0.0_x64-setup.exe"), &BEACH));
+    }
+
+    fn sig(trusted: &str) -> String {
+        use base64::Engine;
+        let text = format!("untrusted comment: signature from tauri secret key\nRUQfakeSignatureBytes==\ntrusted comment: {trusted}\nfakeGlobalSignature==\n");
+        base64::engine::general_purpose::STANDARD.encode(text)
+    }
+
+    /// tauri-shell-5: the other app's installer under a neutral name in an
+    /// otherwise normal manifest. The URL says nothing; the signed file name does.
+    #[test]
+    fn the_signed_file_name_tells_the_other_app() {
+        use crate::flavour::{BEACH, OPENVOLLEY};
+        let u = |s: &str| -> tauri::Url { s.parse().unwrap() };
+        let beach = sig("timestamp:1700000000\tfile:OpenBeach_3.1.0_x64-setup.exe\tversion:3.1.0");
+        let beach_deb = sig("timestamp:1700000000\tfile:openbeach-escoresheet_3.1.0_amd64.deb\tversion:3.1.0");
+        let ov = sig("timestamp:1700000000\tfile:Openvolley eScoresheet_3.1.0_x64-setup.exe\tversion:3.1.0");
+        let ov_mac = sig("timestamp:1700000000\tfile:openvolley-escoresheet_3.1.0_universal.app.tar.gz\tversion:3.1.0");
+        assert_eq!(signed_file_name(&beach).as_deref(), Some("OpenBeach_3.1.0_x64-setup.exe"));
+        let neutral = u("https://get.openvolley.app/desktop/files/setup.exe");
+        assert!(!foreign_update(&neutral, &OPENVOLLEY), "the URL alone passes");
+        for s in [&beach, &beach_deb] {
+            assert!(foreign_signed_file(s, &OPENVOLLEY));
+            assert!(!foreign_signed_file(s, &BEACH));
+        }
+        for s in [&ov, &ov_mac] {
+            assert!(!foreign_signed_file(s, &OPENVOLLEY));
+            assert!(foreign_signed_file(s, &BEACH));
+        }
+        // no file in the comment (older signatures), or no signature at all: the URL check decides
+        for s in [sig("timestamp:1700000000\tversion:3.1.0"), "not base64!".to_string(), String::new()] {
+            assert!(!foreign_signed_file(&s, &OPENVOLLEY), "{s}");
+        }
     }
 
     fn gate(live: MatchLive, tablets: usize, net: bool, page: bool) -> GateInput {

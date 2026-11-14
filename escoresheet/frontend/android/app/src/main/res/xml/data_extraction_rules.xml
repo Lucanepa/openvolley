@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+: nothing of the app goes into the Google cloud backup or a
+     device-to-device transfer (allowBackup="false" in AndroidManifest.xml
+     stops the backup only; the transfer needs these rules). The app data
+     holds the sign-in session, match and referee PINs, the device id and
+     the matches with rosters, birth dates and signatures (WebView storage
+     and the files of the app's own backups). The app keeps its own
+     encrypted backups and the cloud sync; a restored copy would bring back
+     another person's session and give two tablets one device id. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+        <exclude domain="device_root" path="." />
+        <exclude domain="device_file" path="." />
+        <exclude domain="device_database" path="." />
+        <exclude domain="device_sharedpref" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+        <exclude domain="device_root" path="." />
+        <exclude domain="device_file" path="." />
+        <exclude domain="device_database" path="." />
+        <exclude domain="device_sharedpref" path="." />
+    </device-transfer>
+</data-extraction-rules>

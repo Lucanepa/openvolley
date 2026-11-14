@@ -66,6 +66,36 @@ pub fn classify(url: &Url, http_port: u16) -> PopupTarget {
     }
 }
 
+/// Whether an app window (the scoretable, a scoresheet window) may load
+/// `url` itself: only the app's own pages, on its own port, and what they
+/// make (about:blank / about:srcdoc frames, blob: URLs of the app's origin:
+/// the PDF and ZIP downloads). Any other address, also another local port,
+/// never loads in a window that holds the app's commands.
+pub fn navigation_allowed(url: &Url, http_port: u16) -> bool {
+    match url.scheme() {
+        "about" => matches!(url.path(), "blank" | "srcdoc"),
+        "blob" => Url::parse(url.path()).is_ok_and(|inner| classify(&inner, http_port) == PopupTarget::AppWindow),
+        _ => classify(url, http_port) == PopupTarget::AppWindow,
+    }
+}
+
+/// The navigation guard of every app window: its own pages load; a web or
+/// mail link goes to the system browser / mail app (as from window.open, at
+/// most one a second); anything else is refused.
+pub fn navigation_handler(http_port: u16) -> impl Fn(&Url) -> bool + Send + 'static {
+    move |url| {
+        if navigation_allowed(url, http_port) {
+            return true;
+        }
+        if classify(url, http_port) == PopupTarget::System {
+            open_in_system(url);
+        } else {
+            log::warn!("[popup] refused to load {} in an app window", short(url));
+        }
+        false
+    }
+}
+
 /// The command that hands `url` to the system's default browser / mail app.
 /// The URL is one argument (no shell), and classify() only lets http(s) and
 /// mailto through.
@@ -229,7 +259,8 @@ fn build_popup<R: Runtime>(
         .on_document_title_changed(|window, title| {
             let _ = window.set_title(&title);
         })
-        .on_new_window(new_window_handler(app.clone(), http_port));
+        .on_new_window(new_window_handler(app.clone(), http_port))
+        .on_navigation(navigation_handler(http_port));
     // WebView2 (and WKWebView) report downloads per webview: the popup needs
     // its own handler, or the scoresheet's "Save PDF" never says where the
     // file went. On WebKitGTK the handler is on the web context the popups
@@ -365,6 +396,32 @@ pub fn verify_download(path: &Path) -> bool {
     }
 }
 
+/// What the app's windows may save in Downloads and have the app open: the
+/// files the app makes itself (the scoresheet PDF, the match-end ZIP, backup
+/// and data exports as JSON / JSON lines, logs and diagnostics as text, CSV
+/// and XLSX lists). Anything else (a program, a script, a shortcut) is
+/// refused in on_download, so a script in an app window can neither drop it
+/// in Downloads nor have download_open start it.
+pub const DOWNLOAD_EXTENSIONS: &[&str] = &["pdf", "zip", "json", "jsonl", "ndjson", "txt", "csv", "xlsx"];
+
+/// Whether a file name ends in one of DOWNLOAD_EXTENSIONS. Windows drops
+/// trailing dots and spaces ("x.exe." is x.exe) and reads "name:stream" as an
+/// alternate data stream: such names are refused outright.
+pub fn allowed_download_name(name: &str) -> bool {
+    if name.is_empty() || name.ends_with('.') || name.ends_with(' ') || name.contains(':') {
+        return false;
+    }
+    match name.rsplit_once('.') {
+        Some((stem, ext)) if !stem.is_empty() => DOWNLOAD_EXTENSIONS.iter().any(|e| ext.eq_ignore_ascii_case(e)),
+        _ => false,
+    }
+}
+
+/// The same for a path (download_open checks it again before it starts anything).
+pub fn allowed_download_path(path: &Path) -> bool {
+    path.file_name().is_some_and(|n| allowed_download_name(&n.to_string_lossy()))
+}
+
 /// Downloads that finished and were checked, by id (the newest RECENT_DOWNLOADS):
 /// the only files download_open / download_reveal will touch.
 const RECENT_DOWNLOADS: usize = 32;
@@ -466,6 +523,10 @@ fn existing_download(id: u64) -> Result<PathBuf, String> {
 #[tauri::command]
 pub async fn download_open(id: u64) -> Result<(), String> {
     let path = existing_download(id)?;
+    // on_download refused other types already; never start one anyway
+    if !allowed_download_path(&path) {
+        return Err(format!("{} is not a file the app opens: shown in its folder instead", path.display()));
+    }
     spawn_and_reap(open_file_command(&path))
 }
 
@@ -516,12 +577,17 @@ pub fn free_path(dir: &Path, file_name: &str) -> PathBuf {
 pub fn on_download<R: Runtime>(webview: Webview<R>, event: DownloadEvent<'_>) -> bool {
     match event {
         DownloadEvent::Requested { url, destination } => {
+            let name = destination
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "download".into());
+            // only the app's own file types (DOWNLOAD_EXTENSIONS)
+            if !allowed_download_name(&name) {
+                log::warn!("[download] refused {}: not a file type the app saves", short(&url));
+                return false;
+            }
             let paths = webview.path();
             if let Some(dir) = downloads_dir(paths.download_dir().ok(), paths.home_dir().ok()) {
-                let name = destination
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| "download".into());
                 // always a free name of our own (wry numbers "a.b.pdf" as "a (1).b.pdf")
                 *destination = free_path(&dir, &name);
             }
@@ -597,6 +663,66 @@ mod tests {
         for s in ["file:///etc/passwd", "data:text/html,<b>x</b>", "javascript:alert(1)", "ftp://example.com/", "blob:http://localhost:5173/abc", "about:blank"] {
             assert_eq!(classify(&u(s), 5173), PopupTarget::Deny, "{s}");
         }
+    }
+
+    #[test]
+    fn app_windows_stay_on_the_app_pages() {
+        for ok in [
+            "http://localhost:5173/",
+            "http://localhost:5173/scoresheet/?matchId=7&action=save",
+            "http://127.0.0.1:5173/referee/",
+            "about:blank",
+            "about:srcdoc",
+            "blob:http://localhost:5173/0b6e4c1e-2f4c-4d7a-9a1e-3c1f0e8f7a11",
+        ] {
+            assert!(navigation_allowed(&u(ok), 5173), "{ok}");
+        }
+        for bad in [
+            // another local server: the [::1] / other-port takeover
+            "http://localhost:3000/",
+            "http://localhost:5174/",
+            "http://localhost:8080/",
+            "https://localhost:5173/",
+            "http://localhost.evil.com:5173/",
+            "http://192.168.1.20:5173/",
+            "https://example.com/",
+            "file:///etc/passwd",
+            "data:text/html,<b>x</b>",
+            "blob:https://example.com/abc",
+            "blob:http://localhost:3000/abc",
+            "about:config",
+        ] {
+            assert!(!navigation_allowed(&u(bad), 5173), "{bad}");
+        }
+    }
+
+    #[test]
+    fn only_the_app_file_types_are_downloaded_and_opened() {
+        for ok in ["20261007_7_A_vs_B.pdf", "Match_A_vs_B_2026-10-07.zip", "backup_g7_set1.json", "x.JSON", "openvolley-diagnostics.jsonl", "diagnostic_log.ndjson", "logs_match_7.txt", "ranking.csv", "template.xlsx"] {
+            assert!(allowed_download_name(ok), "{ok}");
+            assert!(allowed_download_path(Path::new(&format!("/x/Downloads/{ok}"))), "{ok}");
+        }
+        for bad in [
+            "result.exe", "setup.msi", "run.bat", "run.cmd", "x.ps1", "x.vbs", "x.js", "x.lnk", "x.scr", "x.html", "x.svg", "x.sh", "x.desktop", "x.app", "x.dmg", "x.AppImage", "x.deb",
+            "x.pdf.exe", "x.exe.", "x.pdf ", "x.pdf:evil.exe", "x.pdf::$DATA", ".pdf", "pdf", "download", "",
+        ] {
+            assert!(!allowed_download_name(bad), "{bad}");
+        }
+        assert!(!allowed_download_path(Path::new("/x/Downloads/result.exe")));
+        assert!(!allowed_download_path(Path::new("/")));
+    }
+
+    #[test]
+    fn download_open_refuses_another_file_type() {
+        let tmp = std::env::temp_dir().join(format!("ov-dl-open-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let exe = tmp.join("result.exe");
+        std::fs::write(&exe, b"MZ").unwrap();
+        let id = record_download(exe);
+        let err = tauri::async_runtime::block_on(download_open(id)).unwrap_err();
+        assert!(err.contains("not a file the app opens"), "{err}");
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]

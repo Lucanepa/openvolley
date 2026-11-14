@@ -74,6 +74,39 @@ impl Inner {
     }
 }
 
+const FIREWALLD: &str = "org.fedoraproject.FirewallD1";
+const FIREWALLD_PATH: &str = "/org/fedoraproject/FirewallD1";
+const FIREWALLD_ZONE: &str = "org.fedoraproject.FirewallD1.zone";
+
+/// The firewalld zone for a tablet network (nm_settings::firewall_zone),
+/// from firewalld's zone list (a read-only call every user may make).
+async fn tablet_zone(conn: &Connection) -> &'static str {
+    let running = match zbus::fdo::DBusProxy::new(conn).await {
+        Ok(bus) => bus.name_has_owner(FIREWALLD.try_into().expect("bus name")).await.unwrap_or(false),
+        Err(_) => false,
+    };
+    // firewalld runs but does not answer: an empty list, so "trusted"
+    let zones = if running {
+        let listed = match Proxy::new(conn, FIREWALLD, FIREWALLD_PATH, FIREWALLD_ZONE).await {
+            Ok(p) => p.call::<_, _, Vec<String>>("getZones", &()).await.ok(),
+            Err(_) => None,
+        };
+        Some(listed.unwrap_or_default())
+    } else {
+        None
+    };
+    let default_ports = crate::http_port() == crate::DEFAULT_HTTP_PORT && crate::ws_port() == crate::DEFAULT_WS_PORT;
+    let zone = nm_settings::firewall_zone(zones.as_deref(), default_ports);
+    if zone == nm_settings::FALLBACK_ZONE {
+        log::warn!(
+            "[netshare] firewalld zone {} {}: the tablets' network uses \"{zone}\" (every port of this computer open to it)",
+            nm_settings::TABLET_ZONE,
+            if default_ports { "is not loaded (installed by the .deb; reload firewalld once)" } else { "opens only the default relay ports" }
+        );
+    }
+    zone
+}
+
 fn dbus_err(code: &'static str, e: zbus::Error) -> NetError {
     NetError::new(code, e.to_string())
 }
@@ -409,7 +442,7 @@ pub async fn hotspot_start(inner: &mut Inner, c: &Credentials) -> Result<(), Net
         WifiProbe::NoWifi => return Err(NetError::new("no-wifi-device", "")),
         WifiProbe::NoApMode(names) => return Err(NetError::new("no-ap-mode", names)),
     };
-    let settings = nm_settings::hotspot_settings(c, login().as_deref());
+    let settings = nm_settings::hotspot_settings(c, login().as_deref(), tablet_zone(&conn).await);
     let running = add_and_activate(&conn, &settings, dev.path.clone().into_inner(), dev.interface.clone(), "hotspot-failed").await?;
     wait_for_ip(&running.interface, "10.42.0.1").await;
     inner.hotspot = Some(running);
@@ -539,7 +572,7 @@ pub async fn bluetooth_start(inner: &mut Inner) -> Result<(), NetError> {
     }
     let bdaddr = nm_settings::parse_bdaddr(&adapter.address)
         .ok_or_else(|| NetError::new("no-adapter", format!("unreadable adapter address {}", adapter.address)))?;
-    let settings = nm_settings::bt_nap_settings(bdaddr, netifs::BT_BRIDGE_NAME, login().as_deref());
+    let settings = nm_settings::bt_nap_settings(bdaddr, netifs::BT_BRIDGE_NAME, login().as_deref(), tablet_zone(&conn).await);
     let running = add_and_activate(
         &conn,
         &settings,

@@ -4175,7 +4175,8 @@
     "askYes": "Benachrichtigen",
     "askNo": "Nein, danke",
     "getFdroid": "Über F-Droid holen (aktualisiert sich danach selbst)",
-    "downloadApk": "APK herunterladen",
+    "downloadApk": "Download-Seite",
+    "noUninstall": "Ein Update wird über diese Version installiert. Verlangt Android, dass Sie OpenVolley zuerst deinstallieren, brechen Sie ab: Diese Datei stammt nicht von OpenVolley, und die Spiele auf diesem Gerät gingen verloren.",
     "fdroidRepoHint": "Im OpenVolley-Repo erschienen. Zeigt F-Droid noch kein Update, füge dieses Repo hinzu: f-droid.org baut es einige Tage später.",
     "addRepo": "OpenVolley-Repo hinzufügen"
   },

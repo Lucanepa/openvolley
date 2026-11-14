@@ -126,7 +126,16 @@ build stays valid.
   scoreboard, setup or match end, never while a match is live; a version found
   then waits): `{current} → {new}`, "Get it from F-Droid" (adds the repo via
   `fdroidrepos://…`, or fdroid.link in the browser without a client),
-  "Download APK", Later (hidden for that version until the next start).
+  "Download page" (`https://get.openvolley.app/`), Later (hidden for that
+  version until the next start), and the line that an update never needs an
+  uninstall. The index is read with a plain fetch and its signature is not
+  checked in the app, so it only says that a version is out: no APK address
+  is taken from it. The F-Droid client checks the repo's signature against
+  the fingerprint in the link.
+- No Auto Backup and no device-to-device transfer of the app data:
+  `android:allowBackup="false"` and `res/xml/data_extraction_rules.xml`
+  (Android 12+). The FileProvider (`res/xml/file_paths.xml`) shares only the
+  scoresheet folders and the file field's camera folder.
 - Prefs: `localStorage` `ov.update.notify` (`yes` / `no`) and
   `ov.update.lastCheck` (the time of the last check that worked; after a
   failure set so that the next one is due in an hour).
