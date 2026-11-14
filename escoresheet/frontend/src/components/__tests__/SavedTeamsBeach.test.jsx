@@ -52,6 +52,15 @@ describe('saved teams console: beach', () => {
     expect(screen.queryByRole('heading', { level: 1, name: 'savedTeams.competitions' })).toBeNull()
   })
 
+  // review 3a: inside a competition the back button named the old page
+  // ("Competitions"); it goes back to Saved teams and says so
+  it('inside a competition the back button says Saved teams', async () => {
+    render(<SavedTeamsPanel userId="u1" />)
+    fireEvent.click(await screen.findByRole('button', { name: '2. Liga Damen' }))
+    expect(await screen.findByRole('button', { name: 'savedTeams.title' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'savedTeams.competitions' })).toBeNull()
+  })
+
   it('loads every sport, hands the mixed bundle to the cache unchanged, and the segment switches the lists', async () => {
     render(<SavedTeamsPanel userId="u1" />)
     expect(await screen.findByRole('button', { name: '2. Liga Damen' })).toBeInTheDocument()

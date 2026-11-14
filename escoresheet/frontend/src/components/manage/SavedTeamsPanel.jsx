@@ -123,7 +123,7 @@ export default function SavedTeamsPanel({ userId, sport: fixedSport, route = '',
 
   // a page of the URL whose competition or team is not (yet) loaded or gone
   if (competitionId && (!competition || (teamId && !team))) {
-    return <PageMissing loading={loading || !data} error={error} onBack={() => setCompetitionId(null)} backLabel={t('savedTeams.competitions')} />
+    return <PageMissing loading={loading || !data} error={error} onBack={() => setCompetitionId(null)} backLabel={t('savedTeams.title')} />
   }
 
   // ── Team editor ──
@@ -154,7 +154,7 @@ export default function SavedTeamsPanel({ userId, sport: fixedSport, route = '',
     return (
       <section>
         <div className="mb-2">
-          <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={() => setCompetitionId(null)}>{t('savedTeams.competitions')}</Button>
+          <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={() => setCompetitionId(null)}>{t('savedTeams.title')}</Button>
         </div>
         <PanelHead title={competition.name}>
           <Button variant="secondary" icon={Pencil} onClick={() => setCompetitionForm(competition)} disabled={!online}>{t('common.edit', 'Edit')}</Button>
