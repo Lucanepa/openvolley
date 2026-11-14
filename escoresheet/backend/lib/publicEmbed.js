@@ -24,6 +24,10 @@ export const LIVESCORE_JS = `(function () {
     '.p{font-variant-numeric:tabular-nums;font-size:28px;font-weight:700;min-width:1.6em;text-align:right}' +
     '.hist{border-top:1px solid var(--line);margin-top:6px;padding-top:6px;color:var(--mut);font-size:12px;font-variant-numeric:tabular-nums}' +
     '.e{color:var(--mut);padding:8px 0}';
+  // the statuses /live answers: the scorer writes in_progress (interval, timeout) while
+  // the match is played and ended / final / approved after it; anything else that is not
+  // a pre-start status counts as being played
+  var FINAL = ['ended', 'final', 'approved', 'finished'], NOT_STARTED = ['setup', 'scheduled', 'pre_match', 'not_started'];
   function el(t, c, x) { var e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; }
   function Live() { return Reflect.construct(HTMLElement, [], Live); }
   Live.prototype = Object.create(HTMLElement.prototype);
@@ -51,7 +55,7 @@ export const LIVESCORE_JS = `(function () {
   Live.prototype._msg = function (m) { this._box.textContent = ''; this._box.appendChild(el('div', 'e', m)); };
   Live.prototype._draw = function (d) {
     var b = this._box; b.textContent = '';
-    var st = d.status === 'live' ? 'LIVE' : (d.status === 'finished' || d.status === 'ended') ? 'Final' : 'Upcoming';
+    var st = FINAL.indexOf(d.status) >= 0 ? 'Final' : (!d.status || NOT_STARTED.indexOf(d.status) >= 0) ? 'Upcoming' : 'LIVE';
     var h = el('div', 'h'); h.appendChild(el('span', st === 'LIVE' ? 'live' : '', st)); h.appendChild(el('span', '', d.currentSet ? 'Set ' + d.currentSet : '')); b.appendChild(h);
     ['A', 'B'].forEach(function (k) {
       var t = d.teams[k], r = el('div', 'r');

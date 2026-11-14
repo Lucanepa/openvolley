@@ -295,3 +295,34 @@ describe('review: stream limits', () => {
     s.closeAll()
   })
 })
+
+// The widget said "Upcoming" for a match being played: it looked for status
+// 'live', while /live answers what the scorer writes (in_progress, interval,
+// timeout; ended / final / approved at the end).
+describe('the <ov-livescore> widget reads the API\'s statuses', () => {
+  const widget = () => {
+    const make = (tag) => ({ tag, className: '', textContent: '', children: [], appendChild(c) { this.children.push(c); return c } })
+    let Live = null
+    const g = {
+      customElements: { get: () => undefined, define: (_n, c) => { Live = c } },
+      document: { createElement: make, currentScript: null },
+      HTMLElement: function () {},
+      window: {}
+    }
+    new Function('customElements', 'document', 'HTMLElement', 'window', LIVESCORE_JS)(g.customElements, g.document, g.HTMLElement, g.window)
+    return (status) => {
+      const box = make('div')
+      Live.prototype._draw.call({ _box: box }, { status, currentSet: 2, serving: 'A', teams: { A: { name: 'A' }, B: { name: 'B' } }, score: { setsA: 1, setsB: 0, pointsA: 3, pointsB: 2 }, setResults: [] })
+      return box.children[0].children[0].textContent
+    }
+  }
+  it('a match in play is LIVE', () => {
+    const label = widget()
+    for (const s of ['in_progress', 'live', 'interval', 'timeout']) assert.equal(label(s), 'LIVE', s)
+  })
+  it('a finished match is Final, one not started Upcoming', () => {
+    const label = widget()
+    for (const s of ['ended', 'final', 'approved', 'finished']) assert.equal(label(s), 'Final', s)
+    for (const s of ['setup', 'scheduled', 'pre_match', 'not_started', null]) assert.equal(label(s), 'Upcoming', String(s))
+  })
+})
