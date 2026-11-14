@@ -51,9 +51,9 @@ export const LIVESCORE_JS = `(function () {
   Live.prototype._msg = function (m) { this._box.textContent = ''; this._box.appendChild(el('div', 'e', m)); };
   Live.prototype._draw = function (d) {
     var b = this._box; b.textContent = '';
-    var st = d.status === 'live' ? 'LIVE' : (d.status === 'finished' || d.status === 'ended') ? 'Final' : 'Upcoming';
+    var st = d.status === 'live' ? 'LIVE' : d.status === 'finished' ? 'Final' : 'Upcoming';
     var h = el('div', 'h'); h.appendChild(el('span', st === 'LIVE' ? 'live' : '', st)); h.appendChild(el('span', '', d.currentSet ? 'Set ' + d.currentSet : '')); b.appendChild(h);
-    ['A', 'B'].forEach(function (k) {
+    (d.homeIs === 'B' ? ['B', 'A'] : ['A', 'B']).forEach(function (k) {
       var t = d.teams[k], r = el('div', 'r');
       r.appendChild(el('span', 'd' + (d.serving && String(d.serving).toUpperCase().charAt(0) === k && st === 'LIVE' ? ' s' : '')));
       r.appendChild(el('span', 'n', t.name));
