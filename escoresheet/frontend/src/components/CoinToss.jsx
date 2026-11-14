@@ -610,13 +610,18 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
     loadData()
   }, [matchId, match?.id])
 
+  // A confirmed toss changes only through Corrections (planCoinToss updates
+  // the row, the coin_toss event and the cloud together): changed here it
+  // stayed on this device, and a restored match served the other way round
   function switchTeams() {
+    if (isCoinTossConfirmed) return
     const temp = teamA
     setTeamA(teamB)
     setTeamB(temp)
   }
 
   function switchServe() {
+    if (isCoinTossConfirmed) return
     setServeA(!serveA)
     setServeB(!serveB)
   }
@@ -1291,17 +1296,9 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
   }
 
   async function handleReturnToMatch() {
-    // Save coin toss result when returning
+    // The toss stays as confirmed (Team A and the first serve change through
+    // Corrections only); the teams' data is sent again
     if (matchId) {
-      const firstServeTeam = serveA ? teamA : teamB
-      await db.matches.update(matchId, {
-        firstServe: firstServeTeam,
-        coinTossTeamA: teamA,
-        coinTossTeamB: teamB,
-        coinTossServeA: serveA,
-        coinTossServeB: serveB
-      })
-
       const matchData = await db.matches.get(matchId)
       if (matchData?.seed_key) {
         await db.sync_queue.add({
@@ -1442,6 +1439,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           size="xl"
           data-help-id="cointoss-team-selector"
           onClick={switchTeams}
+          disabled={isCoinTossConfirmed}
           icon={<ArrowLeftRight size={20} aria-hidden="true" />}
           style={{ minHeight: sizes.actionButtonMinHeight, padding: phone ? '0 10px' : '0 20px', fontSize: sizes.actionButtonFont, ...(phone ? { flex: '1 1 auto', whiteSpace: 'nowrap' } : null) }}
         >
@@ -1452,11 +1450,17 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           size="xl"
           data-help-id="cointoss-serve-selector"
           onClick={switchServe}
+          disabled={isCoinTossConfirmed}
           style={{ minHeight: sizes.actionButtonMinHeight, padding: phone ? '0 10px' : '0 20px 0 12px', fontSize: sizes.actionButtonFont, ...(phone ? { flex: '1 1 auto', whiteSpace: 'nowrap' } : null) }}
         >
           <img src={ballImage} onError={(e) => { e.target.src = ballFallback }} alt="" style={{ width: phone ? '1.5em' : '1.75em', height: phone ? '1.5em' : '1.75em' }} /> {t('coinToss.switchServe')}
         </Button>
       </div>
+      {isCoinTossConfirmed && (
+        <p className="ov-kit text-center text-sm text-stone-600" data-testid="coin-toss-locked" style={{ margin: 0, marginBottom: Math.round(8 * vhScale), flexShrink: 0 }}>
+          {t('coinToss.lockedAfterConfirm')}
+        </p>
+      )}
 
       <div data-help-id="cointoss-side-selector" style={{ display: 'grid', gridTemplateColumns: phone ? 'minmax(0, 1fr) minmax(0, 1fr)' : 'minmax(0, 1fr) 16px minmax(0, 1fr)', gap: sizes.gap, flex: phone ? 'none' : 1, alignItems: 'stretch' }}>
         {/* Team A */}

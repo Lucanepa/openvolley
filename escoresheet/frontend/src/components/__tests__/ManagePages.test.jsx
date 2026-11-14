@@ -201,6 +201,14 @@ describe('an official game is a page (#games/<game number>)', () => {
     expect(await screen.findByTestId('game-4711')).toBeInTheDocument()
   })
 
+  it('shows each game\'s match format, an unknown one marked', async () => {
+    api.admin.listOfficialGames.mockImplementation(async () => ok({ games: [{ ...GAME, match_format: 3 }, { ...FREE, match_format: null }] }))
+    routed(OfficialGamesPanel, {})
+    expect(await screen.findByTestId('game-4711')).toHaveTextContent('matchSetup.bestOf3')
+    const free = screen.getByTestId('game-4712')
+    expect(within(free).getByTestId('game-format-unknown')).toHaveTextContent('manage.games.formatUnknown')
+  })
+
   it('a game nobody scores yet: "Not claimed", no actions', async () => {
     routed(OfficialGamesPanel, {}, '4712')
     const page = await screen.findByTestId('official-game-page')

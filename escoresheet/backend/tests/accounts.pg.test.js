@@ -489,8 +489,8 @@ describe('accounts on Postgres', { skip: SKIP_PG }, () => {
     })
 
     it('official games list the claim matched by number and season', async () => {
-      await pool.query(`INSERT INTO public.svrz_games (game_number, datetime, league, team_home, team_away) VALUES
-        ('${gameSeq}', '2026-10-10T16:00:00', '2L', 'A', 'B'), ('${gameSeq + 1}', '2026-10-11T16:00:00', '3L', 'C', 'D')`)
+      await pool.query(`INSERT INTO public.svrz_games (game_number, datetime, league, team_home, team_away, match_format) VALUES
+        ('${gameSeq}', '2026-10-10T16:00:00', '2L', 'A', 'B', 3), ('${gameSeq + 1}', '2026-10-11T16:00:00', '3L', 'C', 'D', NULL)`)
       await db.runQuery({ table: 'matches', action: 'insert', params: { data: { external_id: `og_${gameSeq}`, game_n: gameSeq, scheduled_at: '2026-10-10T14:00:00Z' } } },
         { proto: 2, matchOwner: { userId: ids.scorer }, actorId: ids.scorer })
       // the same number last season is not this game's claim
@@ -503,6 +503,9 @@ describe('accounts on Postgres', { skip: SKIP_PG }, () => {
       assert.equal(g1.claim.scorer_name, 'Scorer Test')
       assert.equal(g1.claim.external_id, `og_${gameSeq}`)
       assert.equal(g2.claim, null)
+      // the format as the schedule has it; unknown stays null (the panel marks it)
+      assert.equal(g1.match_format, 3)
+      assert.equal(g2.match_format, null)
       assert.equal((await accounts.listOfficialGames({ from: '2026-10-09', to: '2026-10-12', q: '3l' })).body.data.games.length, 1)
       assert.equal((await accounts.listOfficialGames({ from: '2026-01-01', to: '2026-12-31' })).status, 400, 'span')
       assert.equal((await accounts.listOfficialGames({ from: '2026-13-01' })).status, 400)

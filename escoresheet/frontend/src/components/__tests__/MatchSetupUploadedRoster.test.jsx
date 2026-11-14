@@ -234,10 +234,13 @@ describe('Match Setup: an uploaded roster', () => {
 
   it('a running match: only Reject, the played roster stays', async () => {
     seed({ status: 'live' })
-    const card = await openCard()
-    expect(card.textContent).toContain('matchSetup.uploadedRosterStarted')
+    // the setup is read-only after the coin toss: no roster editor, Reject on the notice
+    render(<Setup matchId={1} />)
+    await screen.findByTestId('pending-roster-notice-home')
+    expect(screen.queryByRole('button', { name: 'matchSetup.editRoster' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'matchSetup.uploadedRosterOpen' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'matchSetup.acceptRoster' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'matchSetup.rejectRoster' }))
+    fireEvent.click(screen.getByTestId('pending-roster-notice-home-reject'))
     await waitFor(() => expect(store.tables.matches.get(1).pendingHomeRoster).toBeNull())
     expect(homeNumbers()).toEqual(HALL)
     expect(store.tables.matches.get(1).homeCoachSignature).toBe(PNG('hall-coach'))
