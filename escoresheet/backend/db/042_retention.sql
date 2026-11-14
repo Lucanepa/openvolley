@@ -22,7 +22,7 @@
 -- app_settings is not on the /api/db allowlist.
 -- Idempotent; one transaction (scripts/migrate.mjs). Safe while the old
 -- backend serves: it never reads the column, and nothing is removed before
--- the new backend's first sweep (15 minutes after its start).
+-- the new backend's first sweep (20 minutes after its start).
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 

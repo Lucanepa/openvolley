@@ -14,7 +14,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createTestDatabase, SKIP_PG } from './helpers/pgTestDb.js'
-import { redactPerson, redactValue, matcherOf, nameTextRe, personDigest, parseArgs, REDACTED } from '../scripts/redact-person.mjs'
+import { redactPerson, redactValue, matcherOf, nameTextRe, personDigest, parseArgs, dateOf, REDACTED } from '../scripts/redact-person.mjs'
 
 describe('redact-person: the walk', () => {
   const who = { first: 'Mia', last: 'Example', dob: '2011-03-02' }
@@ -38,6 +38,30 @@ describe('redact-person: the walk', () => {
     const { value } = redactValue(row, { match: matcherOf(who), mode: 'correct', setDob: '2011-03-20' })
     assert.equal(value.referee_1_dob, '2011-03-20')
     assert.equal(value.referee_2_first_name, 'Ada')
+  })
+
+  it('a beach entry player ({ first, last, licence, country }) is a person; other first/last pairs are not', () => {
+    const entry = { name: 'Pair One', player1: { first: 'Mia', last: 'Example', licence: '123456', country: 'SUI' }, player2: { first: 'Lea', last: 'Other', licence: '654321', country: 'SUI' }, range: { first: 1, last: 9 } }
+    const { value, hits } = redactValue(entry, { match: matcherOf(who), textRe: nameTextRe(who) })
+    assert.equal(hits, 1)
+    assert.deepEqual(value.player1, { first: REDACTED, last: REDACTED, licence: null, country: 'SUI' })
+    assert.deepEqual(value.player2, entry.player2)
+    assert.deepEqual(value.range, entry.range)
+  })
+
+  it('a date of birth kept in the display form (DD.MM.YYYY, DD/MM/YYYY) is the same date', () => {
+    assert.equal(dateOf('2.3.2011'), '2011-03-02')
+    assert.equal(dateOf('02/03/2011'), '2011-03-02')
+    assert.equal(dateOf('2011-03-02T00:00:00Z'), '2011-03-02')
+    assert.equal(dateOf('soon'), null)
+    const officials = [
+      { role: 'referee1', firstName: 'Mia', lastName: 'Example', dob: '02.03.2011' },
+      { role: 'referee2', firstName: 'Mia', lastName: 'Example', dob: '05.05.2008' }
+    ]
+    const { value, hits } = redactValue({ officials }, { match: matcherOf(who) })
+    assert.equal(hits, 1)
+    assert.equal(value.officials[0].lastName, REDACTED)
+    assert.deepEqual(value.officials[1], officials[1], 'another date in the display form: a namesake')
   })
 
   it('the arguments', () => {
@@ -155,6 +179,48 @@ describe('redact-person: the database', { skip: SKIP_PG }, () => {
       assert.equal(JSON.stringify(lines).includes('Example'), false)
     } finally {
       fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('erases a beach player from the tournament entries', async () => {
+    const { rows: [t] } = await owner.query("INSERT INTO public.beach_tournaments (slug, title, starts_on, ends_on) VALUES ('beach-one', 'Beach One', '2026-06-01', '2026-06-02') RETURNING id")
+    const { rows: [d] } = await owner.query("INSERT INTO public.beach_draws (tournament_id, gender, category) VALUES ($1, 'women', 'A') RETURNING id", [t.id])
+    await owner.query(`INSERT INTO public.beach_entries (draw_id, seed, name, player1, player2) VALUES ($1, 1, 'Pair One', $2::jsonb, $3::jsonb)`,
+      [d.id, JSON.stringify({ first: 'Mia', last: 'Example', licence: '123456', country: 'SUI' }), JSON.stringify({ first: 'Lea', last: 'Other', licence: '654321', country: 'SUI' })])
+    const r = await tx(() => redactPerson(owner, { who: { first: 'Mia', last: 'Example' }, matches: [] }))
+    assert.equal(r.tables.beach_entries, 1)
+    const { rows: [e] } = await owner.query('SELECT player1, player2 FROM public.beach_entries WHERE draw_id = $1', [d.id])
+    assert.deepEqual(e.player1, { first: REDACTED, last: REDACTED, licence: null, country: 'SUI' })
+    assert.equal(e.player2.licence, '654321')
+  })
+
+  it('a register line reads a large table in blocks and locks only the rows it changes', async () => {
+    const { rows: [m] } = await owner.query(
+      "INSERT INTO public.matches (external_id, game_n, status, test) VALUES ('rp-big', $1, 'live', false) RETURNING id", [++gameN])
+    // well over one block of pages (SCAN_PAGES), the person in the last rows only
+    await owner.query(`INSERT INTO public.events (match_id, set_index, type, payload)
+      SELECT $1, 1, 'remark', json_build_object('text', repeat('x', 600), 'n', g) FROM generate_series(1, 2000) g`, [m.id])
+    await owner.query("INSERT INTO public.events (match_id, set_index, type, payload) VALUES ($1, 1, 'remark', $2::json)",
+      [m.id, JSON.stringify({ captain: { firstName: 'Ada', lastName: 'Sample', dob: '2010-10-10' } })])
+    const { rows: [{ pages }] } = await owner.query("SELECT pg_relation_size('public.events') / current_setting('block_size')::int AS pages")
+    assert.ok(Number(pages) > 64, `events spans ${pages} pages`)
+    const other = new pg.Client({ connectionString: tdb.url })
+    await other.connect()
+    try {
+      const line = { mode: 'erase', digest: personDigest({ first: 'Ada', last: 'Sample', dob: '2010-10-10' }), nameDigest: personDigest({ first: 'Ada', last: 'Sample' }), withDob: true }
+      await owner.query('BEGIN')
+      const r = await redactPerson(owner, { who: line, mode: 'erase' })
+      assert.equal(r.tables.events, 1)
+      // another session can still lock a row the tool only read
+      const { rows: free } = await other.query(
+        "SELECT id FROM public.events WHERE match_id = $1 AND payload->>'n' = '1' FOR UPDATE NOWAIT", [m.id])
+      assert.equal(free.length, 1)
+      await owner.query('COMMIT')
+      const { rows: [e] } = await owner.query("SELECT payload FROM public.events WHERE match_id = $1 AND payload->'captain' IS NOT NULL", [m.id])
+      assert.deepEqual(e.payload.captain, { firstName: REDACTED, lastName: REDACTED, dob: null })
+    } finally {
+      await owner.query('ROLLBACK').catch(() => {})
+      await other.end()
     }
   })
 })
