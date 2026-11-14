@@ -44,6 +44,14 @@ describe('saved teams console: beach', () => {
     api.savedTeamsApi.fetchBundle.mockImplementation(async () => ok(mixedSavedTeamsBundle()))
   })
 
+  // UI tour 14.11: the nav item "Saved teams" opened a page titled
+  // "Competitions"; the page is the saved teams, grouped by competition
+  it('the page is titled like its nav item', async () => {
+    render(<SavedTeamsPanel userId="u1" />)
+    expect(await screen.findByRole('heading', { level: 1, name: 'savedTeams.title' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 1, name: 'savedTeams.competitions' })).toBeNull()
+  })
+
   it('loads every sport, hands the mixed bundle to the cache unchanged, and the segment switches the lists', async () => {
     render(<SavedTeamsPanel userId="u1" />)
     expect(await screen.findByRole('button', { name: '2. Liga Damen' })).toBeInTheDocument()

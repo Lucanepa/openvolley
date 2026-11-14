@@ -210,10 +210,11 @@ export default function SavedTeamsPanel({ userId, sport: fixedSport, route = '',
     )
   }
 
-  // ── Competitions ──
+  // ── Competitions ── (the page of the "Saved teams" tab: titled like it, the
+  // teams grouped by competition)
   return (
     <section>
-      <PanelHead title={t('savedTeams.competitions')}>
+      <PanelHead title={t('savedTeams.title')}>
         <Button icon={Plus} onClick={() => setCompetitionForm({})} disabled={!online}>{t('savedTeams.newCompetition')}</Button>
       </PanelHead>
       <OfflineBanner online={online} />
