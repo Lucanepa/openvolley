@@ -912,6 +912,9 @@
       "show": "Show toolbar"
     },
     "confirmFailed": "That was not saved. Check the scoresheet and try again.",
+    "lineupsNeeded": "Enter both starting line-ups first, then tap “Start set”.",
+    "setEndNotSaved": "The set end was not saved. Check the score and confirm the set end again.",
+    "timeoutRallyInPlay": "A rally is in play: record the time-out once the rally has ended.",
     "storageFull": "Not saved: this device's storage is full. Free up space (delete old downloads or other files), then tap again. Everything recorded so far is kept.",
     "storageLow": "This device's storage is almost full: {{mb}} MB left for OpenVolley. Free up space now (delete old downloads or other files): once it is full, nothing more can be recorded.",
     "timeoutRequest": {

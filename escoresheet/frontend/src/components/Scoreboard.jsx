@@ -61,7 +61,7 @@ import { resolveSanction, deriveTeamSanctionFlags, deferredPenaltyPoints, penalt
 import { REQUEST_ISSUES, isReplayPending, substitutionRequestIssues, timeoutRequestIssues, requestBlockReason, entryWithoutCompletedRally, substitutionRequestThisInterruption, substitutionIllegalReason, classifyLiveSubstitution, lateRequestOutcome, decisionChangeTakeBack, decisionTakeBackTextKey } from '../domain/interruptionRequests'
 import RequestWarningDialog, { RequestOptionRow } from './scoreboard/RequestWarningDialog.jsx'
 import { classifyTimeoutRequest } from '../domain/timeouts'
-import { rallyStatusOf, currentSetOf } from '../domain/rally'
+import { rallyStatusOf, currentSetOf, isBookkeepingEvent, isFirstRallyOf, startingLineupsIn } from '../domain/rally'
 import { useConfirmAction } from '../hooks/useConfirmAction'
 import { useRallyTapGuard } from '../hooks/useRallyTapGuard'
 import RallyTapNotice, { RALLY_TAP_NOTICE_MS } from './scoreboard/RallyTapNotice'
@@ -3427,7 +3427,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     !!data?.set && isReplayPending(data?.events, data.set.index)
   ), [data?.events, data?.set])
 
-  // Check if the last event was a point (can replay rally)
+  // Check if the last event was a point (can replay rally). A remark or a
+  // bench injury recorded since does not count (domain/rally isBookkeepingEvent)
   const canReplayRally = useMemo(() => {
     if (!data?.events || !data?.set || data.events.length === 0) {
       return false
@@ -3435,7 +3436,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Get events for current set only and sort by sequence number (most recent first)
     const currentSetEvents = data.events
-      .filter(e => e.setIndex === data.set.index)
+      .filter(e => e.setIndex === data.set.index && !isBookkeepingEvent(e))
       .sort((a, b) => {
         const aSeq = a.seq || 0
         const bSeq = b.seq || 0
@@ -3485,12 +3486,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   ), [canReplayRally, data?.events, data?.set])
   const canChangeDecision = canReplayRally || !!decisionTakeBack
 
+  // "Start set" vs "Start rally": the set's first rally is not started yet
+  // (no set_start, no rally_start: domain/rally isFirstRallyOf). A penalty
+  // point before the first serve does not end it
   const isFirstRally = useMemo(() => {
     if (!data?.events || !data?.set) return true
-    // Check if there are any points in the current set
-    // This determines if we show "Start set" vs "Start rally"
-    const hasPoints = data.events.some(e => e.type === 'point' && e.setIndex === data.set.index)
-    return !hasPoints
+    return isFirstRallyOf(data.events, data.set.index)
   }, [data?.events, data?.set])
 
   // The coach and captain signatures still missing before the first serve of
@@ -5018,6 +5019,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     })
     console.log(`[PERF] After db.events.add: +${(performance.now() - _t0).toFixed(0)}ms`)
 
+    // Rows the event writes with it (a side-out point: the rotation and an
+    // automatic libero exit, handlePoint), before its snapshot and cloud job
+    // below are taken from the events: they describe the state after them
+    if (options.beforeSnapshot) await options.beforeSnapshot(nextSeq)
+
     // Lightweight events (rally_start, replay) skip snapshot and sync queue for speed
     const lightweightEvents = ['rally_start', 'replay']
     const isLightweight = lightweightEvents.includes(type)
@@ -5736,33 +5742,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       const scoringTeamHadServe = serveBeforePoint === teamKey
 
-      // Update score and log point FIRST (using fresh set ID)
-      await db.sets.update(freshCurrentSet.id, {
-        [field]: newPoints
-      })
-      // A penalty's point names its sanction: Undo takes the two back together
-      const pointPayload = { team: teamKey, score: { home: homePoints, away: awayPoints }, ...(penaltySeq != null ? { penaltySeq } : {}) }
-      const pointSeq = await logEvent('point', pointPayload, { setIndexOverride: setIndex })
+      // A side-out: the scoring team rotates (FIVB 7.6.1), and a libero who
+      // would go to the front row goes out. Written as the point's sub-events
+      // (N.x) right after its row and BEFORE its state snapshot and cloud job
+      // are taken (logEventTx beforeSnapshot): built after them, every
+      // side-out point was stored and synced with the line-up before the
+      // rotation and the old position I as server. Same transaction: the
+      // point never shows without its rotation
+      const writeSideOutRows = async (pointSeq) => {
+        if (scoringTeamHadServe) return
 
-      // Debug log: point awarded
-      debugLogger.log('POINT_AWARDED', {
-        team: teamKey,
-        side,
-        newScore: { home: homePoints, away: awayPoints },
-        serveBeforePoint,
-        scoringTeamHadServe,
-        setIndex: setIndex,
-        pointSeq
-      }, getStateSnapshot())
-
-      // Track when point was awarded (for accidental rally start check)
-      lastPointAwardedTimeRef.current = Date.now()
-      // Reset rally start time since rally ended
-      rallyStartTimeRef.current = null
-
-      // If scoring team didn't have serve, they rotate their lineup AFTER the point
-      // (same transaction: the point never shows without its rotation)
-      if (!scoringTeamHadServe) {
         // Query database directly for the most recent lineup (data.events might be stale)
         const allLineupEvents = await db.events
           .where('matchId')
@@ -6063,6 +6052,30 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
       }
 
+      // Update score and log point FIRST (using fresh set ID)
+      await db.sets.update(freshCurrentSet.id, {
+        [field]: newPoints
+      })
+      // A penalty's point names its sanction: Undo takes the two back together
+      const pointPayload = { team: teamKey, score: { home: homePoints, away: awayPoints }, ...(penaltySeq != null ? { penaltySeq } : {}) }
+      const pointSeq = await logEvent('point', pointPayload, { setIndexOverride: setIndex, beforeSnapshot: writeSideOutRows })
+
+      // Debug log: point awarded
+      debugLogger.log('POINT_AWARDED', {
+        team: teamKey,
+        side,
+        newScore: { home: homePoints, away: awayPoints },
+        serveBeforePoint,
+        scoringTeamHadServe,
+        setIndex: setIndex,
+        pointSeq
+      }, getStateSnapshot())
+
+      // Track when point was awarded (for accidental rally start check)
+      lastPointAwardedTimeRef.current = Date.now()
+      // Reset rally start time since rally ended
+      rallyStartTimeRef.current = null
+
       // After point is logged, the scoring team (teamKey) now has serve
       // So the OTHER team is receiving - check if they had a libero exit
       // Note: We use teamKey directly instead of getCurrentServe() because the event
@@ -6150,9 +6163,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // line-up dialog finds them, deferredPenaltyPoints): one action, each point
   // awarded as any point is (handlePoint): score, event with its snapshot,
   // cloud jobs and, when it gives the receiving team the service, its
-  // rotation (FIVB 7.6.1), as the immediate penalty point does.
-  const awardOwedPenaltyPoints = useCallback((teams) => runAction('penaltyPoints', async () => {
-    for (const team of teams) await handlePoint(mapTeamKeyToSide(team), true)
+  // rotation (FIVB 7.6.1), as the immediate penalty point does. Each point
+  // names its sanction (penaltySeq): Undo takes the two back together (it
+  // took the point only, and the penalty stayed without its point)
+  const awardOwedPenaltyPoints = useCallback((owed) => runAction('penaltyPoints', async () => {
+    for (const { team, penaltySeq } of owed) await handlePoint(mapTeamKeyToSide(team), true, { penaltySeq })
   }), [runAction, handlePoint, mapTeamKeyToSide])
 
   // Only the literal true skips the accidental rally start check (its own
@@ -6192,8 +6207,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
     }
 
-    // If this is the first rally, show set start time confirmation
-    if (isFirstRally) {
+    // If this is the first rally, show set start time confirmation. Read
+    // from the database, as the gates below: the screen can be behind
+    const eventsNow = await db.events.where('matchId').equals(matchId).toArray()
+    const setIndexNow = playedSet?.index ?? data?.set?.index
+    if (isFirstRallyOf(eventsNow, setIndexNow)) {
+      // Both starting line-ups first (an Easy match excepted). Start set is
+      // disabled without them, but Enter (keyboard scoring) came here
+      // directly and started the set with no line-up
+      if (data?.match?.easy !== true && !startingLineupsIn(eventsNow, setIndexNow)) {
+        deferUi(() => showAlert(t('scoreboard.lineupsNeeded'), 'warning'))
+        return
+      }
       // The match's first serve waits for the coach and captain signatures of
       // both teams (domain/preMatchSignatures). Read from the row: one signed
       // a moment ago is there before this screen's data has it.
@@ -6253,7 +6278,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       clearTimeout(recentSubFlashTimeoutRef.current)
     }
     deferUi(() => setRecentlySubstitutedPlayers([]))
-  }), [logEvent, isFirstRally, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, data?.match, matchId, getNextSubSeq, syncToReferee, checkAccidentalRallyStart, accidentalRallyStartDuration, runAction, deferUi, readRallyStatus])
+  }), [logEvent, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, data?.match, matchId, getNextSubSeq, syncToReferee, checkAccidentalRallyStart, accidentalRallyStartDuration, runAction, deferUi, readRallyStatus, showAlert, t])
 
   // A tap on the rally buttons (Start rally, Point A | Point B), on every
   // layout, with its click event: none that is the end of the tap before it
@@ -6360,8 +6385,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
     // After point: show confirmation modal to undo point
     if (rallyStatus === 'idle' && canReplayRally && data?.events) {
-      // Find the last event by sequence number (highest seq)
-      const allEvents = [...data.events].sort((a, b) => {
+      // Find the last event by sequence number (highest seq), past a remark
+      // or a bench injury recorded since (as canReplayRally)
+      const allEvents = data.events.filter(e => !isBookkeepingEvent(e)).sort((a, b) => {
         const aSeq = a.seq || 0
         const bSeq = b.seq || 0
         if (aSeq !== 0 || bSeq !== 0) {
@@ -6515,6 +6541,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // dialog closing appear together
   const confirmSetStartTime = useCallback((time) => runAction('setStart', async () => {
     if (!setStartTimeModal || !data?.set) return
+    // The same gate as Start set (handleStartRally), against the database:
+    // the set started already (a second set_start), or a line-up is missing
+    const eventsNow = await db.events.where('matchId').equals(matchId).toArray()
+    if (!isFirstRallyOf(eventsNow, data.set.index)) {
+      deferUi(() => setSetStartTimeModal(null))
+      return
+    }
+    if (data.match?.easy !== true && !startingLineupsIn(eventsNow, data.set.index)) {
+      deferUi(() => {
+        setSetStartTimeModal(null)
+        showAlert(t('scoreboard.lineupsNeeded'), 'warning')
+      })
+      return
+    }
 
     // Check if the confirmed time differs from the expected time
     // Compare only hours and minutes since the modal only shows time, not date
@@ -6607,7 +6647,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (timeDifferent && !fromSchedule) {
       deferUi(() => setShowRemarks(true))
     }
-  }), [setStartTimeModal, data?.set, data?.match?.scheduledAt, data?.match?.test, matchId, onTriggerEventBackup, syncToReferee, syncLiveStateToSupabase, runAction, deferUi, deferEffect])
+  }), [setStartTimeModal, data?.set, data?.match, matchId, onTriggerEventBackup, syncToReferee, syncLiveStateToSupabase, runAction, deferUi, deferEffect, showAlert, t])
 
   // Confirm set end time
   const confirmSetEndTime = useCallback(async (time) => {
@@ -6625,6 +6665,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
 
     const { setIndex, winner, homePoints, awayPoints } = setEndTimeModal
+    // Shown again when the set end could not be saved (catch below)
+    const modalAtConfirm = setEndTimeModal
     // A set lost by forfeit (team incomplete for the set) keeps that reason on
     // its set_end, so a reopen can find and reverse the forfeit
     const setEndReason = setEndTimeModal.reason ||
@@ -6699,9 +6741,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Get start time from current set
       const startTime = data.set.startTime
 
-      // STEP 3: Log set_end event to local DB
+      // STEP 3: Log set_end event to local DB. Once: a set end confirmed
+      // again after a failed write (catch below) can find it written already
       console.log('[SET_END_DEBUG] STEP 3: Logging set_end event...')
-      await logEvent('set_end', {
+      const setEndWritten = (await db.events.where('matchId').equals(matchId).toArray())
+        .some(e => e.type === 'set_end' && e.setIndex === setIndex)
+      if (!setEndWritten) await logEvent('set_end', {
         team: winner,
         teamLabel: winnerLabel,
         setIndex: setIndex,
@@ -7225,11 +7270,30 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       console.error('[SET_END] CRITICAL ERROR in confirmSetEndTime:', error)
       console.error('[SET_END] Error stack:', error.stack)
 
-      // Show user-friendly error message
-      showAlert(t('scoreboard.errors.setEndFailed', 'Set end failed. Data saved locally.'), 'error')
-
       // Ensure cleanup happens
       cleanup('uncaught exception: ' + error.message)
+
+      // The set row not finished: the set end was not saved. The set is no
+      // longer marked confirmed and its dialog comes back, so it can be
+      // confirmed again. Left marked, the set stayed won and open until a
+      // reload: points and rallies refused, the dialog ignored as "already
+      // confirmed", under "Data saved locally."
+      let setEnded = false
+      try {
+        const rows = (await db.sets.where('matchId').equals(matchId).toArray()).filter(s => s.index === setIndex)
+        setEnded = rows.length > 0 && rows.every(s => s.finished)
+      } catch (readError) {
+        console.error('[SET_END] Could not read the set after the failure:', readError)
+      }
+      if (!setEnded) {
+        confirmedSetEndRef.current.delete(setIndex)
+        setSetEndTimeModal(modalAtConfirm)
+        showAlert(t(isStorageFullError(error) ? 'scoreboard.storageFull' : 'scoreboard.setEndNotSaved'), 'error')
+        return
+      }
+
+      // Show user-friendly error message
+      showAlert(t('scoreboard.errors.setEndFailed', 'Set end failed. Data saved locally.'), 'error')
 
       // Don't re-throw - the match can continue from local data
     }
@@ -22689,7 +22753,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   await applyForfeitReversal(reopenIndex)
                   // Mark the set as not finished (and no longer ended)
                   await db.sets.update(reopenSetId, { finished: false, endTime: null })
-                  confirmedSetEndRef.current.delete(reopenIndex)
+                  // ... and every later set it deletes: one still marked as
+                  // confirmed here could never be ended again once recreated
+                  for (const index of [...confirmedSetEndRef.current]) {
+                    if (index >= reopenIndex) confirmedSetEndRef.current.delete(index)
+                  }
                   matchEndingRef.current = false
                   // Remove what ending the set wrote: its set_end (and a forfait) event
                   const allEventsForReopen = await db.events.where('matchId').equals(matchId).toArray()

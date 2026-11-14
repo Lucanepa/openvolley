@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { rallyStatusOf, currentSetOf } from '../rally'
+import { rallyStatusOf, currentSetOf, isFirstRallyOf, startingLineupsIn } from '../rally'
 
 const ev = (type, seq, setIndex = 1, ts = '2026-10-08T10:00:00.000Z') => ({ type, seq, setIndex, ts })
 
@@ -11,6 +11,16 @@ describe('rallyStatusOf', () => {
     expect(rallyStatusOf([ev('point', 3), ev('lineup', 3.1)], 1)).toBe('idle')
     expect(rallyStatusOf([ev('set_start', 1)], 1)).toBe('idle')
     expect(rallyStatusOf([], 1)).toBe('idle')
+  })
+
+  // a remark saved while the ball is in play (or a bench injury) is recorded
+  // beside the play: it ended the rally (Start set came back at a set's
+  // first rally, the Point buttons went away)
+  it('a remark or a bench injury does not end the rally in play', () => {
+    expect(rallyStatusOf([ev('set_start', 1), ev('rally_start', 2), ev('remark', 3)], 1)).toBe('in_play')
+    expect(rallyStatusOf([ev('rally_start', 2), ev('bench_injury', 3), ev('remark', 4)], 1)).toBe('in_play')
+    expect(rallyStatusOf([ev('rally_start', 2), ev('point', 3), ev('remark', 4)], 1)).toBe('idle')
+    expect(rallyStatusOf([ev('remark', 4)], 1)).toBe('idle')
   })
 
   it('goes by seq, not by the order of the rows', () => {
@@ -41,5 +51,33 @@ describe('currentSetOf', () => {
     expect(currentSetOf(sets).id).toBe(6)
     expect(currentSetOf([{ id: 1, index: 1, finished: true }]).id).toBe(1)
     expect(currentSetOf([])).toBe(null)
+  })
+})
+
+describe('isFirstRallyOf', () => {
+  const pt = (seq, payload = {}) => ({ type: 'point', seq, setIndex: 1, payload: { team: 'home', ...payload } })
+
+  it('until the set has a set_start or a rally_start', () => {
+    expect(isFirstRallyOf([], 1)).toBe(true)
+    expect(isFirstRallyOf([ev('lineup', 1), ev('lineup', 2)], 1)).toBe(true)
+    expect(isFirstRallyOf([ev('set_start', 3)], 1)).toBe(false)
+    expect(isFirstRallyOf([ev('rally_start', 3)], 1)).toBe(false)
+    // another set's start does not count
+    expect(isFirstRallyOf([ev('set_start', 3, 1)], 2)).toBe(true)
+  })
+
+  it('a penalty point before the first serve does not end it; a rally\'s point (older sets without set_start) does', () => {
+    expect(isFirstRallyOf([ev('sanction', 3), pt(4, { penaltySeq: 3 })], 1)).toBe(true)
+    expect(isFirstRallyOf([pt(4)], 1)).toBe(false)
+  })
+})
+
+describe('startingLineupsIn', () => {
+  const lineup = (team, setIndex = 1, isInitial = true) => ({ type: 'lineup', seq: 1, setIndex, payload: { team, lineup: {}, isInitial } })
+  it('both teams\' starting line-ups of the set', () => {
+    expect(startingLineupsIn([lineup('home')], 1)).toBe(false)
+    expect(startingLineupsIn([lineup('home'), lineup('away')], 1)).toBe(true)
+    expect(startingLineupsIn([lineup('home'), lineup('away', 2)], 1)).toBe(false)
+    expect(startingLineupsIn([lineup('home'), lineup('away', 1, false)], 1)).toBe(false)
   })
 })

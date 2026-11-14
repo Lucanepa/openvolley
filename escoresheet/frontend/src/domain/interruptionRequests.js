@@ -33,6 +33,7 @@ import { MAX_SUBSTITUTIONS_PER_SET, countRegularSubstitutions, classifySubstitut
 import { TIMEOUTS_PER_SET } from './timeouts'
 import { resolveSanction, teamSanctionCounts } from './sanctions'
 import { playerReplacedByLibero } from './liberos'
+import { isBookkeepingEvent } from './rally'
 
 const setOf = (e) => e?.setIndex ?? 1
 const seqOf = (e) => e?.seq || 0
@@ -451,7 +452,9 @@ const baseSeqOf = (e) => Math.floor(seqOf(e))
  * substitution (with its own line-up rows, N.x) or a time-out. A forced
  * substitution (an injured or sanctioned player must be replaced whatever
  * the decision), a libero replacement, a sanction, a started rally or
- * anything else after the point: null (Undo, as before).
+ * anything else after the point: null (Undo, as before). A remark or a bench
+ * injury recorded after the point is not in the way (domain/rally
+ * isBookkeepingEvent): it stays, and is not taken back.
  *
  * @param {Array} events all match events
  * @param {number} setIndex
@@ -464,7 +467,7 @@ export function decisionChangeTakeBack(events, setIndex) {
   if (lastPointSeq === -Infinity) return null
   const point = inSet.find(e => e.type === 'point' && seqOf(e) === lastPointSeq)
   if (!point) return null
-  const after = inSet.filter(e => baseSeqOf(e) > baseSeqOf(point))
+  const after = inSet.filter(e => baseSeqOf(e) > baseSeqOf(point) && !isBookkeepingEvent(e))
   if (after.length === 0) return null
   const heads = after.filter(e => seqOf(e) === baseSeqOf(e))
   const isRequest = (e) => e.type === 'timeout' || (e.type === 'substitution' && !isForcedSubstitution(e))

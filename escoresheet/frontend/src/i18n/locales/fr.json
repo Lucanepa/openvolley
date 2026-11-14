@@ -910,6 +910,9 @@
       "show": "Afficher la barre d'outils"
     },
     "confirmFailed": "Cela n'a pas été enregistré. Vérifiez la feuille de match et réessayez.",
+    "lineupsNeeded": "Saisissez d'abord les deux formations de départ, puis touchez « Démarrer le set ».",
+    "setEndNotSaved": "La fin du set n'a pas été enregistrée. Vérifiez le score et confirmez à nouveau la fin du set.",
+    "timeoutRallyInPlay": "Un échange est en cours : enregistrez le temps mort une fois l'échange terminé.",
     "storageFull": "Non enregistré : le stockage de cet appareil est plein. Libérez de l'espace (supprimez d'anciens téléchargements ou d'autres fichiers), puis touchez à nouveau. Tout ce qui a été enregistré jusqu'ici est conservé.",
     "storageLow": "Le stockage de cet appareil est presque plein : il reste {{mb}} Mo pour OpenVolley. Libérez de l'espace maintenant (supprimez d'anciens téléchargements ou d'autres fichiers) : une fois plein, plus rien ne pourra être enregistré.",
     "timeoutRequest": {
