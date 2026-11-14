@@ -1528,6 +1528,7 @@
     "support": "Support",
     "keybindings": "Tastenbelegung",
     "pressKey": "Taste drücken...",
+    "keyInUse": "«{{key}}» ist bereits die Taste für «{{action}}». Eine andere Taste drücken.",
     "resetDefaults": "Zurücksetzen",
     "nativeBench": "Bank",
     "nativeOpenView": "Dieses Tablet verwenden als",

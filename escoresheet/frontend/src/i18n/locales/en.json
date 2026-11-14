@@ -1537,6 +1537,7 @@
     "support": "Support",
     "keybindings": "Keybindings",
     "pressKey": "Press key...",
+    "keyInUse": "“{{key}}” is already the key for “{{action}}”. Press another key.",
     "resetDefaults": "Reset defaults",
     "keybindingLabels": {
       "pointLeft": "Point left",

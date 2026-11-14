@@ -1535,6 +1535,7 @@
     "support": "Support",
     "keybindings": "Tastebelegig",
     "pressKey": "Taste drücke...",
+    "keyInUse": "«{{key}}» isch scho d Taste für «{{action}}». E anderi Taste drücke.",
     "resetDefaults": "Zruggsetze",
     "keybindingLabels": {
       "pointLeft": "Punkt links",

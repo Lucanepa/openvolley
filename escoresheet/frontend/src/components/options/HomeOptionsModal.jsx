@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAlert } from '../../contexts/AlertContext'
 import Modal from '../Modal'
@@ -264,6 +264,10 @@ const keyBindingKeys = [
   'startRally'
 ]
 
+// Actions that may share one key: Enter confirms a dialog, and with none
+// open starts the rally (the defaults)
+const mayShareKey = (a, b) => (a === 'confirm' && b === 'startRally') || (a === 'startRally' && b === 'confirm')
+
 export default function HomeOptionsModal({
   open,
   onClose,
@@ -289,6 +293,8 @@ export default function HomeOptionsModal({
   const desktopUpdate = useDesktopUpdate()
   const [keybindingsModalOpen, setKeybindingsModalOpen] = useState(false)
   const [editingKey, setEditingKey] = useState(null)
+  // The key refused for the binding being edited (another action has it)
+  const [keyInUse, setKeyInUse] = useState(null)
   const [keyBindings, setKeyBindings] = useState(() => {
     const saved = localStorage.getItem('keyBindings')
     if (saved) {
@@ -300,6 +306,35 @@ export default function HomeOptionsModal({
     }
     return defaultKeyBindings
   })
+  // The key for the binding being edited ("Press key..."): captured only
+  // while it is edited and the dialog is open. The listener was added on the
+  // click and removed only by the next key: closing the dialog left it
+  // armed, and the next key pressed anywhere (during the match) was swallowed
+  // and became that binding, also another action's key. A key another action
+  // has is refused (two actions on one key: only one of them ever ran).
+  useEffect(() => {
+    setKeyInUse(null)
+    if (!editingKey || !keybindingsModalOpen) return undefined
+    const handleKeyCapture = (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.key === 'Escape') {
+        setEditingKey(null)
+        return
+      }
+      const other = keyBindingKeys.find(k => k !== editingKey && !mayShareKey(k, editingKey) && keyBindings[k] === e.key)
+      if (other) {
+        setKeyInUse({ key: e.key, action: other })
+        return
+      }
+      const newBindings = { ...keyBindings, [editingKey]: e.key }
+      setKeyBindings(newBindings)
+      localStorage.setItem('keyBindings', JSON.stringify(newBindings))
+      setEditingKey(null)
+    }
+    window.addEventListener('keydown', handleKeyCapture, true)
+    return () => window.removeEventListener('keydown', handleKeyCapture, true)
+  }, [editingKey, keybindingsModalOpen, keyBindings])
 
   // Handle copy with feedback
   const handleCopy = useCallback(async (text, label) => {
@@ -1173,27 +1208,7 @@ export default function HomeOptionsModal({
                 >
                   <span className="text-sm text-stone-800">{t(`options.keybindingLabels.${key}`)}</span>
                   <button
-                    onClick={() => {
-                      if (editingKey === key) {
-                        setEditingKey(null)
-                      } else {
-                        setEditingKey(key)
-                        const handleKeyCapture = (e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          if (e.key === 'Escape') {
-                            setEditingKey(null)
-                          } else {
-                            const newBindings = { ...keyBindings, [key]: e.key }
-                            setKeyBindings(newBindings)
-                            localStorage.setItem('keyBindings', JSON.stringify(newBindings))
-                            setEditingKey(null)
-                          }
-                          window.removeEventListener('keydown', handleKeyCapture, true)
-                        }
-                        window.addEventListener('keydown', handleKeyCapture, true)
-                      }
-                    }}
+                    onClick={() => setEditingKey(editingKey === key ? null : key)}
                     type="button"
                     aria-pressed={editingKey === key}
                     className={cn(
@@ -1217,6 +1232,15 @@ export default function HomeOptionsModal({
                 </div>
               ))}
             </div>
+
+            {keyInUse && editingKey && (
+              <p role="alert" className="mt-3 text-sm text-amber-700">
+                {t('options.keyInUse', {
+                  key: keyInUse.key === ' ' ? 'Space' : keyInUse.key,
+                  action: t(`options.keybindingLabels.${keyInUse.action}`)
+                })}
+              </p>
+            )}
 
             <div className="mt-5 flex justify-end gap-2">
               <button

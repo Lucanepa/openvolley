@@ -120,4 +120,25 @@ describe('Line-up dialog: the game-captain choice', () => {
     await confirmAndWait(matchId)
     expect(await db.events.where({ matchId, type: 'court_captain_designation' }).count()).toBe(0)
   })
+
+  // the designation is part of the line-up save: one that fails rolls the
+  // line-up back and the dialog says so (it was caught, and the line-up and
+  // the captain's match row were stored without the designation event)
+  it('a game captain that cannot be saved: nothing is stored and the dialog says so', async () => {
+    const matchId = await openLineupA()
+    await enter(['2', '3', '4', '5', '6', '7'])
+    fireEvent.click(picker().querySelector('[aria-label="Game captain: player 4"]'))
+    await sleep(30)
+    const add = db.events.add.bind(db.events)
+    vi.spyOn(db.events, 'add').mockImplementation((row, ...rest) => {
+      if (row?.type === 'court_captain_designation') return Promise.reject(new Error('write failed (test)'))
+      return add(row, ...rest)
+    })
+    fireEvent.click(confirmButton())
+    await waitFor(() => expect(dialog().textContent).toMatch(/Save failed/))
+    vi.mocked(db.events.add).mockRestore()
+    expect(await db.events.where({ matchId, type: 'lineup' }).count()).toBe(0)
+    expect(await db.events.where({ matchId, type: 'court_captain_designation' }).count()).toBe(0)
+    expect((await db.matches.get(matchId)).homeCourtCaptain ?? null).toBeNull()
+  })
 })

@@ -1534,6 +1534,7 @@
     "support": "Soutien",
     "keybindings": "Raccords de touches",
     "pressKey": "Appuyer sur la touche ...",
+    "keyInUse": "« {{key}} » est déjà la touche de « {{action}} ». Appuyez sur une autre touche.",
     "resetDefaults": "Réinitialisation des valeurs par défaut",
     "keybindingLabels": {
       "pointLeft": "Point gauche",

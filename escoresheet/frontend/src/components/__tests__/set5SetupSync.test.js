@@ -41,7 +41,7 @@ describe('scorer: set 5 setup pushes a live state', () => {
   const inline = slice(scoreboard, "data?.set?.index === 5 && !set5SetupConfirmed && !timeoutModal?.started) ? (", 7000)
 
   // The three buttons' handlers are shared with the phone layout (PhoneScoreboard)
-  const handlers = slice(scoreboard, 'const set5SwitchSides = async () => {', 1200)
+  const handlers = slice(scoreboard, "const set5SwitchSides = () => settleTap(runAction('set5Switch', async () => {", 1600)
 
   it('the inline setup (desktop and phone layout) uses the shared handlers', () => {
     expect(inline).toMatch(/onClick=\{set5SwitchSides\}/)
@@ -52,8 +52,12 @@ describe('scorer: set 5 setup pushes a live state', () => {
 
   it('Switch sides and Switch serve push after writing Dexie', () => {
     // (in the break, also after its time ran out, unless ended by hand)
-    expect(handlers).toMatch(/set5LeftTeam: newLeftTeam \}\)\s*\n\s*syncSet5Setup\(\{ duringInterval: !!betweenSetsCountdown \|\| !intervalEndedByHandRef\.current \}\)/)
-    expect(handlers).toMatch(/set5FirstServe: newFirstServe \}\)\s*\n\s*syncSet5Setup\(\{ duringInterval: !!betweenSetsCountdown \|\| !intervalEndedByHandRef\.current \}\)/)
+    expect(handlers).toMatch(/const duringInterval = !!betweenSetsCountdown \|\| !intervalEndedByHandRef\.current/)
+    // read from the match row inside the action, then pushed after its commit
+    expect(handlers).toMatch(/set5SetupLeftTeam\(await db\.matches\.get\(matchId\)\)/)
+    expect(handlers).toMatch(/set5LeftTeam: newLeftTeam \}\)\s*\n\s*deferEffect\(\{ run: \(\) => syncSet5Setup\(\{ duringInterval \}\) \}\)/)
+    expect(handlers).toMatch(/set5SetupFirstServe\(await db\.matches\.get\(matchId\)\)/)
+    expect(handlers).toMatch(/set5FirstServe: newFirstServe \}\)\s*\n\s*deferEffect\(\{ run: \(\) => syncSet5Setup\(\{ duringInterval \}\) \}\)/)
   })
 
   it('Confirm records the coin toss, then ends the interval on the tablets too', () => {

@@ -1536,6 +1536,7 @@
     "support": "Supporto",
     "keybindings": "Legami con i tasti",
     "pressKey": "Premere il tasto...",
+    "keyInUse": "«{{key}}» è già il tasto per «{{action}}». Premi un altro tasto.",
     "resetDefaults": "Ripristino delle impostazioni predefinite",
     "keybindingLabels": {
       "pointLeft": "Punto a sinistra",

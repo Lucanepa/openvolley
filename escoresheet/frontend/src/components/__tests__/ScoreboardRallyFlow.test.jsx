@@ -349,3 +349,104 @@ describe('Reopen set', () => {
     await waitFor(async () => expect((await ofType('set_end')).filter(e => e.setIndex === 2)).toHaveLength(1), { timeout: 10000 })
   }, 150000)
 })
+
+describe('the remarks box', () => {
+  async function liveMatch() {
+    const matchId = await testMatch()
+    const ts = new Date(Date.now() - 30 * 60 * 1000).toISOString()
+    await db.sets.add({ matchId, index: 1, homePoints: 0, awayPoints: 0, finished: false, startTime: ts })
+    await db.events.bulkAdd([
+      { matchId, setIndex: 1, type: 'coin_toss', payload: {}, seq: 1, ts },
+      { matchId, setIndex: 1, type: 'lineup', payload: { team: 'home', lineup: LINEUP, isInitial: true }, seq: 2, ts },
+      { matchId, setIndex: 1, type: 'lineup', payload: { team: 'away', lineup: LINEUP, isInitial: true }, seq: 3, ts },
+      { matchId, setIndex: 1, type: 'set_start', payload: {}, seq: 4, ts }
+    ])
+    return matchId
+  }
+  const openRemarks = async () => {
+    fireEvent.click([...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Match' || b.title === 'Match'))
+    const item = () => [...document.querySelectorAll('button,[role="menuitem"]')].find(b => b.textContent.trim() === 'Open remarks recording')
+    await waitFor(() => expect(item()).toBeTruthy(), { timeout: 5000 })
+    fireEvent.click(item())
+    await waitFor(() => expect(document.querySelector('textarea')).toBeTruthy(), { timeout: 5000 })
+  }
+  const closeButton = () => [...dialog(/Remarks recording/).querySelectorAll('button')].find(b => /close/i.test(b.getAttribute('aria-label') || b.title || b.textContent))
+
+  it('a failed save is shown, and the dialog stays open with the text typed', async () => {
+    const matchId = await liveMatch()
+    mount(matchId)
+    await waitFor(() => expect(button('Start rally')).toBeTruthy(), { timeout: 15000 })
+    await openRemarks()
+    const update = db.matches.update.bind(db.matches)
+    vi.spyOn(db.matches, 'update').mockImplementation((id, changes, ...rest) => {
+      if (changes && 'remarks' in changes) return Dexie.Promise.reject(new Error('write failed (test)'))
+      return update(id, changes, ...rest)
+    })
+    const box = document.querySelector('textarea')
+    fireEvent.change(box, { target: { value: 'Match stopped: the hall lights failed' } })
+    fireEvent.click(closeButton())
+    await waitFor(() => expect(document.body.textContent).toMatch(/That was not saved/), { timeout: 5000 })
+    await wait(300)
+    expect(dialog(/Remarks recording/)).toBeTruthy()
+    expect(document.querySelector('textarea').value).toBe('Match stopped: the hall lights failed')
+    expect((await db.matches.get(matchId)).remarks ?? '').toBe('')
+
+    // saved once the write works: remarks and their event, the dialog closes
+    vi.restoreAllMocks()
+    fireEvent.click(closeButton())
+    await waitFor(async () => expect((await db.matches.get(matchId)).remarks).toBe('Match stopped: the hall lights failed'), { timeout: 5000 })
+    await waitFor(() => expect(dialog(/Remarks recording/)).toBeFalsy(), { timeout: 5000 })
+    expect(await ofType('remark')).toHaveLength(1)
+  }, 60000)
+})
+
+describe('a bench player\'s injury', () => {
+  async function liveMatch() {
+    const matchId = await testMatch()
+    const ts = new Date(Date.now() - 30 * 60 * 1000).toISOString()
+    await db.sets.add({ matchId, index: 1, homePoints: 0, awayPoints: 0, finished: false, startTime: ts })
+    await db.events.bulkAdd([
+      { matchId, setIndex: 1, type: 'coin_toss', payload: {}, seq: 1, ts },
+      { matchId, setIndex: 1, type: 'lineup', payload: { team: 'home', lineup: LINEUP, isInitial: true }, seq: 2, ts },
+      { matchId, setIndex: 1, type: 'lineup', payload: { team: 'away', lineup: LINEUP, isInitial: true }, seq: 3, ts },
+      { matchId, setIndex: 1, type: 'set_start', payload: {}, seq: 4, ts }
+    ])
+    return matchId
+  }
+  const openInjury = async () => {
+    const bench = () => document.querySelector('[data-bench-player="7"][data-team="home"]')
+    await waitFor(() => expect(bench()).toBeTruthy(), { timeout: 15000 })
+    fireEvent.click(bench())
+    const item = () => [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Injury')
+    await waitFor(() => expect(item()).toBeTruthy(), { timeout: 5000 })
+    return item()
+  }
+
+  it('a double tap writes one remark line and one event', async () => {
+    const matchId = await liveMatch()
+    mount(matchId)
+    await waitFor(() => expect(button('Start rally')).toBeTruthy(), { timeout: 15000 })
+    const injury = await openInjury()
+    fireEvent.click(injury)
+    fireEvent.click(injury)
+    await waitFor(async () => expect(await ofType('bench_injury')).toHaveLength(1), { timeout: 5000 })
+    await wait(800)
+    expect(await ofType('bench_injury')).toHaveLength(1)
+    expect(((await db.matches.get(matchId)).remarks || '').split('\n').filter(l => /injured \(bench\)/.test(l))).toHaveLength(1)
+  }, 60000)
+
+  it('a failed write stores nothing and says so', async () => {
+    const matchId = await liveMatch()
+    mount(matchId)
+    await waitFor(() => expect(button('Start rally')).toBeTruthy(), { timeout: 15000 })
+    const injury = await openInjury()
+    const add = db.events.add.bind(db.events)
+    vi.spyOn(db.events, 'add').mockImplementation((row, ...rest) => {
+      if (row?.type === 'bench_injury') return Dexie.Promise.reject(new Error('write failed (test)'))
+      return add(row, ...rest)
+    })
+    fireEvent.click(injury)
+    await waitFor(() => expect(document.body.textContent).toMatch(/That was not saved/), { timeout: 5000 })
+    expect((await db.matches.get(matchId)).remarks || '').not.toMatch(/injured/)
+  }, 60000)
+})
