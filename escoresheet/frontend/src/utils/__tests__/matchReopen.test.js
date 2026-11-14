@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isContinuedElsewhere, isStaleClosedCopy, serverRowClosed } from '../matchReopen'
+import { isContinuedElsewhere, isStaleClosedCopy, serverRowClosed, wasClosedOnServer } from '../matchReopen'
 
 // The server's row of a match (Match End's reopen check, the self-check on
 // open): closed as the backend refuses writes (db/007, closed_at)
@@ -88,5 +88,18 @@ describe('isContinuedElsewhere', () => {
     expect(isContinuedElsewhere({ status: 'live', test: true, cloudBlock: closed })).toBe(false)
     expect(isContinuedElsewhere({ status: 'live', test: true, cloudBlock: moved })).toBe(false)
     expect(isContinuedElsewhere(null)).toBe(false)
+  })
+})
+
+describe('wasClosedOnServer (db/039: once closed, an official record)', () => {
+  it('a copy closed now, or one an admin reopened (everClosed, the server\'s first_closed_at)', () => {
+    expect(wasClosedOnServer({ status: 'live', closed_at: '2026-11-14T10:00:00Z' })).toBe(true)
+    expect(wasClosedOnServer({ status: 'ended', everClosed: true })).toBe(true)
+    expect(wasClosedOnServer({ status: 'live', first_closed_at: '2026-11-14T10:00:00Z' })).toBe(true)
+  })
+  it('never a test match, nor one the server never closed', () => {
+    expect(wasClosedOnServer({ status: 'ended', everClosed: true, test: true })).toBe(false)
+    expect(wasClosedOnServer({ status: 'ended' })).toBe(false)
+    expect(wasClosedOnServer(null)).toBe(false)
   })
 })

@@ -3483,7 +3483,33 @@
       "reopened": "Match rouvert.",
       "empty": "Aucun match trouvé.",
       "activity": "Activité",
-      "corrections": "Corrections"
+      "corrections": "Corrections",
+      "closures": {
+        "title": "Clôtures précédentes",
+        "description": "Chaque réouverture par un admin a gardé l'état clôturé ; la clôture suivante ajoute le nouvel état.",
+        "empty": "Ce match n'a jamais été rouvert.",
+        "reopened": "Rouvert le {{date}}",
+        "by": "par {{name}}",
+        "asClosed": "Tel que clôturé",
+        "closedAgain": "Tel que clôturé à nouveau",
+        "notClosedAgain": "Pas encore clôturé à nouveau",
+        "unchanged": "Rien n'a changé",
+        "fields": {
+          "status": "Statut",
+          "final_score": "Score final",
+          "winner": "Vainqueur",
+          "sets": "Sets",
+          "set_results": "Résultats des sets",
+          "results": "Résultats",
+          "sanctions": "Sanctions",
+          "remarks": "Remarques",
+          "approval": "Approbation",
+          "signatures": "Signatures",
+          "manual_changes": "Ajustements manuels",
+          "officials": "Officiels",
+          "coin_toss": "Tirage au sort"
+        }
+      }
     },
     "audit": {
       "noRole": "Aucun rôle",
@@ -3520,6 +3546,7 @@
         "match_editor_add": "Éditeur ajouté par un admin",
         "match_editor_remove": "Éditeur retiré",
         "match_restore_pin": "Match lu avec le PIN du match",
+        "match_restore": "Données du match remplacées par une restauration",
         "match_release_game": "Match libéré",
         "match_game_taken_over": "Match repris par le club à domicile",
         "match_scorer_device": "Appareil du marqueur changé",

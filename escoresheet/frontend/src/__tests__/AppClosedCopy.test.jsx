@@ -142,6 +142,22 @@ describe('App: a copy of a match the server has closed', () => {
     expect(button('Continue match')).toBeFalsy()
   })
 
+  // db/039: once closed on the server, only an admin deletes the match there,
+  // also after an admin reopened it; the app removes only its own copy
+  it('a match an admin reopened: Delete match removes only this copy, no server delete is queued', async () => {
+    const matchId = await seedMatch({ everClosed: true })
+    mountApp()
+    await waitFor(() => expect(screen.queryByTestId('home-delete-match')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('home-delete-match'))
+    await waitFor(() => expect(document.body.textContent).toContain(en.cloudBlock.removeLocalOnly))
+    expect(document.body.textContent).not.toContain('from the cloud database')
+    fireEvent.change(document.getElementById('delete-match-pin'), { target: { value: '482915' } })
+    fireEvent.click(button(en.deleteMatch.delete))
+    await waitFor(async () => expect(await db.matches.get(matchId)).toBeUndefined())
+    await sleep(300)
+    expect((await db.sync_queue.toArray()).filter(j => j.action === 'delete')).toEqual([])
+  })
+
   it('a backup refused as closed on the server says so', async () => {
     selectBackupFile.mockResolvedValue({ match: { seed_key: SEED, external_id: SEED, status: 'live', gameN: 406970 }, sets: [], events: [] })
     restoreMatchFromJson.mockRejectedValue(Object.assign(new Error('This match is closed on the server'), { code: 'OV_MATCH_CLOSED' }))

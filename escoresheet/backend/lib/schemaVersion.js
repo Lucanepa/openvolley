@@ -110,7 +110,9 @@ export const REQUIRED_TRIGGERS = [
   { table: 'public.club_managers', name: 'club_managers_roles', fn: 'public.ov_manager_rows_changed' }, // 030
   { table: 'public.team_managers', name: 'team_managers_roles', fn: 'public.ov_manager_rows_changed' }, // 030
   { table: 'public.matches', name: 'matches_external_id_lock', fn: 'public.ov_matches_external_id_lock' }, // 032
-  { table: 'public.matches', name: 'matches_derive_official_season', fn: 'public.ov_matches_derive_official_season' } // 034
+  { table: 'public.matches', name: 'matches_derive_official_season', fn: 'public.ov_matches_derive_official_season' }, // 034
+  { table: 'public.matches', name: 'matches_guard_record', fn: 'public.ov_matches_record_guard' }, // 039
+  { table: 'public.matches', name: 'matches_closure_record', fn: 'public.ov_matches_closure_record' } // 039
 ]
 
 // The unique indexes the numbered files create: each one is a rule (one
@@ -128,7 +130,8 @@ export const REQUIRED_INDEXES = [
   'public.club_teams_id_uidx', // 023
   'public.club_teams_id_club_uidx', // 025
   'public.account_requests_part_uidx', // 025
-  'public.notifications_once_uidx' // 028
+  'public.notifications_once_uidx', // 028
+  'public.sets_match_index_uidx' // 039
 ]
 
 /**

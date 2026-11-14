@@ -112,6 +112,9 @@ export const DEFAULT_CONFIG = Object.freeze({
   errorMap: {
     sqlstate: {
       OVC01: { status: 409, code: 'OV_MATCH_CLOSED', message: 'This match is closed. Only an admin can reopen it.' },
+      // db/039: a match that was closed once is an official record, also after a
+      // reopen. Not OV_MATCH_CLOSED: the app keeps syncing the match's other writes.
+      OVC02: { status: 409, code: 'OV_MATCH_RECORD', message: 'This match was closed once. Only an admin can delete it, make it a test match or move it to another game.' },
       // db/011: match_approvals rows are append-only (only a bug reaches it)
       OVA01: { status: 409, code: 'OV_APPROVAL_IMMUTABLE', message: 'An approval cannot be changed.' },
       // db/012: matches.sport_type is fixed after insert
@@ -124,7 +127,10 @@ export const DEFAULT_CONFIG = Object.freeze({
       OVL03: { status: 403, code: 'OV_GAME_NOT_IN_SCHEDULE', message: 'This game is not in the VolleyManager schedule, so its home team is unknown.' }
     },
     constraint: {
-      matches_official_game_uidx: { status: 409, code: 'OV_GAME_TAKEN', message: 'This official game is already scored by another account.' }
+      matches_official_game_uidx: { status: 409, code: 'OV_GAME_TAKEN', message: 'This official game is already scored by another account.' },
+      // db/039: one set row per set number. Before it a second local id of a
+      // set stored a duplicate row; now it is refused, and logged by its code.
+      sets_match_index_uidx: { status: 409, code: 'OV_SET_NUMBER_TAKEN', message: 'This match already has a set with this number.' }
     }
   },
   // The column that marks a test match (opts.matchOwner.testOnly).
@@ -1285,6 +1291,9 @@ export function createPgQuery (options = {}) {
     const run = async (client) => {
       // The acting account, for db/007's triggers (closed_by of a closing write)
       if (actorId) await client.query("SELECT set_config('ov.user_id', $1, true)", [actorId])
+      // An admin session, for db/039's guard: only an admin deletes a match
+      // that was closed, makes it a test match or moves its game
+      if (opts.matchOwner?.admin === true && (t.name === cfg.ownership?.parent)) await client.query("SELECT set_config('ov.admin', 'on', true)")
       if (testPre) await testPre(client)
       if (ctx.preCheck) await assertChildrenScoped(client, cat, t.name, ctx.preCheck)
       if (ownPre) await ownPre(client)

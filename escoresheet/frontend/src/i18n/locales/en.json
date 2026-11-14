@@ -3490,7 +3490,33 @@
       "reopened": "Match reopened.",
       "empty": "No matches found.",
       "activity": "Activity",
-      "corrections": "Corrections"
+      "corrections": "Corrections",
+      "closures": {
+        "title": "Earlier closes",
+        "description": "Each admin reopen kept the record as it was closed; the next close adds the record as it closed again.",
+        "empty": "This match was never reopened.",
+        "reopened": "Reopened {{date}}",
+        "by": "by {{name}}",
+        "asClosed": "As closed",
+        "closedAgain": "As closed again",
+        "notClosedAgain": "Not closed again yet",
+        "unchanged": "Nothing changed",
+        "fields": {
+          "status": "Status",
+          "final_score": "Final score",
+          "winner": "Winner",
+          "sets": "Sets",
+          "set_results": "Set results",
+          "results": "Results",
+          "sanctions": "Sanctions",
+          "remarks": "Remarks",
+          "approval": "Approval",
+          "signatures": "Signatures",
+          "manual_changes": "Manual adjustments",
+          "officials": "Officials",
+          "coin_toss": "Coin toss"
+        }
+      }
     },
     "audit": {
       "noRole": "No role",
@@ -3527,6 +3553,7 @@
         "match_editor_add": "Editor added by admin",
         "match_editor_remove": "Editor removed",
         "match_restore_pin": "Match read by game PIN",
+        "match_restore": "Match rows replaced by a restore",
         "match_release_game": "Game released",
         "match_game_taken_over": "Game taken over by the home club",
         "match_scorer_device": "Scoring device changed",

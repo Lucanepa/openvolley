@@ -33,7 +33,7 @@ import { isScorerMoved, takeBackScoring, relaySyncDevice, serverScoreForTakeBack
 import ScorerMovedModal from './components/ScorerMovedModal'
 import ClosedOnServerModal from './components/ClosedOnServerModal'
 import SelfCheckNotice from './components/SelfCheckNotice'
-import { isKnownClosedOnServer, isStaleClosedCopy } from './utils/matchReopen'
+import { isKnownClosedOnServer, isStaleClosedCopy, wasClosedOnServer } from './utils/matchReopen'
 import { BACKGROUND_HOME_MS, SERVER_CHECK_TIMEOUT_MS, checkCopiesOnServer, cleanUpDuplicateCopies, clearOpenMatch, findDuplicateCopies, copyState, duplicateCopyIds, hasOtherLocalCopy, isOpenOfficialCopy, lastActivityAt, matchToReopen, newestEventOf, noteOpenMatch, readServerMatchRows, runDeviceSelfCheck, trackBackground, unsentOfMatch, withinTimeout } from './utils/deviceSelfCheck'
 import SyncSignInBanner from './components/auth/SyncSignInBanner'
 import useAutoBackup from './hooks/useAutoBackup'
@@ -2585,8 +2585,9 @@ export default function App() {
       matchName,
       matchId: matchToDelete.id,
       gamePin: matchToDelete.gamePin || null,
-      // the server keeps its closed record: only this device's copy goes
-      closedOnServer: isKnownClosedOnServer(matchToDelete),
+      // the server keeps its closed record (also after an admin reopen,
+      // db/039): only this device's copy goes
+      closedOnServer: wasClosedOnServer(matchToDelete),
       // another device scores it: the server's match and its relay room are
       // that device's, only this device's copy goes
       moved: isScorerMoved(matchToDelete) && !isKnownClosedOnServer(matchToDelete),
@@ -2624,7 +2625,9 @@ export default function App() {
     // delete and no relay delete-match. The server keeps the closed record
     // (and refused every request of such a delete job); a match another
     // device scores is that device's, on the server and in its relay room.
-    const localOnly = !!matchToDelete && (isKnownClosedOnServer(matchToDelete) || isScorerMoved(matchToDelete))
+    // So is a match an admin reopened (db/039: once closed, only an admin
+    // deletes it on the server).
+    const localOnly = !!matchToDelete && (wasClosedOnServer(matchToDelete) || isScorerMoved(matchToDelete))
     const shouldDeleteFromSupabase = matchToDelete && matchToDelete.status !== 'final' && matchToDelete.seed_key && !localOnly && !otherCopy
     console.log('[Delete Match] 🗑️ Preparing to delete match:', {
       matchId: matchIdToDelete,
