@@ -21,8 +21,8 @@ const parsed = {
     { number: null, licence: '234567', firstName: 'Luca', lastName: 'Beispiel', dob: '02/07/1999' },
     { number: null, licence: '345678', firstName: 'Mia', lastName: 'Neu', dob: '01/02/2005' }
   ],
-  coach: { firstName: 'Anna', lastName: 'Rossi', dob: '', birthYear: '1997', licence: '52205' },
-  ac1: { firstName: 'Paolo', lastName: 'Bianchi', dob: '', birthYear: '1993', licence: '90382' }
+  coach: { firstName: 'Anna', lastName: 'Rossi', dob: '', birthYear: '1985', licence: '10001' },
+  ac1: { firstName: 'Paolo', lastName: 'Bianchi', dob: '', birthYear: '1988', licence: '10002' }
 }
 
 describe('an Einsatzliste on a game roster', () => {
@@ -39,12 +39,12 @@ describe('an Einsatzliste on a game roster', () => {
 
   it('gives the officials the roles of the list, one entry per person', () => {
     const picked = draft.staff.filter((s) => s.picked).map((s) => [s.role, s.last_name, s.license_number])
-    expect(picked).toEqual([['Coach', 'Rossi', '52205'], ['Assistant Coach 1', 'Bianchi', '90382']])
+    expect(picked).toEqual([['Coach', 'Rossi', '10001'], ['Assistant Coach 1', 'Bianchi', '10002']])
     expect(draft.staff).toHaveLength(2)
   })
 
   it('an official with the licence is found in the club', () => {
-    const people = [{ sv_number: '52205', first_name: 'Anna', last_name: 'Rossi', dob: '1997-05-04' }]
+    const people = [{ sv_number: '10001', first_name: 'Anna', last_name: 'Rossi', dob: '1985-05-04' }]
     expect(clubPersonOf(draft.staff[0], people)).toBe(people[0])
   })
 })
@@ -62,7 +62,7 @@ describe('an Einsatzliste on the saved team', () => {
       { role: 'Coach', first_name: 'Anna', last_name: 'Rossi' },
       { role: 'Physiotherapist', first_name: 'Sara', last_name: 'Verdi' }
     ]
-    const r = mergeImportedRoster([], staff, { players: [], staff: [{ role: 'Coach', first_name: 'Anna', last_name: 'Rossi', dob: null, license_number: '52205' }] })
-    expect(r.staff.map((s) => [s.role, s.last_name, s.license_number ?? null])).toEqual([['Coach', 'Rossi', '52205'], ['Physiotherapist', 'Verdi', null]])
+    const r = mergeImportedRoster([], staff, { players: [], staff: [{ role: 'Coach', first_name: 'Anna', last_name: 'Rossi', dob: null, license_number: '10001' }] })
+    expect(r.staff.map((s) => [s.role, s.last_name, s.license_number ?? null])).toEqual([['Coach', 'Rossi', '10001'], ['Physiotherapist', 'Verdi', null]])
   })
 })

@@ -57,8 +57,11 @@ function DetailsSection({ bundle, reload, onDeleted }) {
     if (!email) return
     const res = await tournamentApi.addManager(tour.id, email.trim())
     if (res.error) return toast.error(res.error.code === 'OV_NOT_FOUND' ? t('tournaments.errors.noManager') : errorText(res.error))
-    toast.success(t('tournaments.managerAdded'))
-    reload()
+    // the server answers the same for every address; the managers list says whether one was added
+    const fresh = await reload()
+    const wanted = email.trim().toLowerCase()
+    if ((fresh?.data?.managers || []).some(m => (m.email || '').toLowerCase() === wanted)) toast.success(t('tournaments.managerAdded'))
+    else toast.error(t('tournaments.errors.noManager'))
   }
   const removeManager = async (m) => {
     if (!(await askConfirm({ title: t('tournaments.removeManagerTitle', { name: m.name || m.email }), confirmLabel: t('tournaments.remove'), tone: 'danger' }))) return

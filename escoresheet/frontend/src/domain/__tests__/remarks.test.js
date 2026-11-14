@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { appendRemark, removeRemarkLine } from '../remarks'
+import { appendRemark, removeRemarkLine, injurySubstitutionText, liberoUnableText } from '../remarks'
+import { isForcedSubstitution } from '../interruptionRequests'
 
 describe('appendRemark', () => {
   it('starts the text or appends a line', () => {
@@ -51,5 +52,20 @@ describe('eventRemark (owner 2026-10-07: the sheet convention, local time)', () 
       if (deviceTz === undefined) delete process.env.TZ
       else process.env.TZ = deviceTz
     }
+  })
+})
+
+// Remarks are printed and mailed with the scoresheet: the automatic ones say
+// what the rules say, never the kind of health problem (privacy policy 7).
+describe('the automatic remarks of a player who cannot go on', () => {
+  it('use the rules\' words, without "injury"', () => {
+    expect(injurySubstitutionText(4)).toBe('#4 substituted, cannot continue playing')
+    expect(liberoUnableText(2, 'injury')).toBe('Libero #2 becomes unable to play')
+    expect(liberoUnableText(2, 'declared')).toBe('Libero #2 declared unable to play')
+    for (const t of [injurySubstitutionText(4), liberoUnableText(2, 'injury')]) expect(t).not.toMatch(/injur|ill/i)
+  })
+  it('the substitution stays forced by its flag; an older remark is still known', () => {
+    expect(isForcedSubstitution({ payload: { isInjury: true, autoRemark: injurySubstitutionText(4) } })).toBe(true)
+    expect(isForcedSubstitution({ payload: { autoRemark: 'Set 1, A 3:1, #4 substituted due to injury' } })).toBe(true)
   })
 })

@@ -4,16 +4,22 @@ The desktop app runs the scoretable **fully offline** and doubles as a **LAN
 server** so referee / bench / livescore tablets on the same Wi-Fi can connect —
 no internet, no cloud, no accounts required to score a match.
 
-There are two implementations of the same idea; **Tauri is the recommended one.**
+The desktop app is built with **Tauri (Rust)**:
 
-| | **Tauri (Rust)** — recommended | Electron |
-|---|---|---|
-| Installer size | ~3–10 MB | ~85–120 MB |
-| Runtime | native OS webview (WebView2 / WebKitGTK) | bundled Chromium + Node |
-| LAN relay | Rust `axum` (`src-tauri/src/relay.rs`) | Node in main process (`electron/relayServer.js`) |
-| Frontend | **identical** React `dist/` | identical React `dist/` |
+| | |
+|---|---|
+| Installer size | ~3–10 MB |
+| Runtime | native OS webview (WebView2 / WebKitGTK) |
+| LAN relay | Rust `axum` (`src-tauri/src/relay.rs`) |
+| Frontend | the same React `dist/` as the web app |
 
-## How it works (both)
+The old Electron shell (`electron/main.js`, `relayServer.js`) was removed in
+2026-11: no workflow built it and it had no update channel. The folder
+`electron/` keeps only the shared relay cores (`lanRelayCore.cjs`,
+`signSessionCore.cjs`) and their test fixtures, which `server.js`, the Vite
+dev plugin, the backend and the tests use.
+
+## How it works
 
 ```
    ┌──────────────────────────── Desktop app ────────────────────────────┐
@@ -28,8 +34,15 @@ There are two implementations of the same idea; **Tauri is the recommended one.*
 
 - The relay starts **in-process** when the app launches; the window then loads
   the app from `http://localhost:5173`. Serving over `http://localhost` (a
-  secure context) keeps the desktop's camera/QR working, and the app's normal
-  LAN client code resolves its backend/WebSocket URLs correctly.
+  secure context) lets the app's normal LAN client code resolve its
+  backend/WebSocket URLs correctly. The relay holds its ports on IPv4 and on
+  `[::1]` (where `localhost` goes first), so no other local program can
+  answer for `http://localhost:5173`; the app exits when either is taken. The
+  app's commands are granted to `http://localhost:<its port>` only (main.rs
+  `grant_own_origin`), its windows never load another address
+  (`popups.rs navigation_allowed`), they may download only the app's own file
+  types (pdf, zip, json, jsonl, ndjson, txt, csv, xlsx) and no page gets the
+  camera, the microphone or the screen.
 - Data lives locally in IndexedDB (Dexie). Cloud sync is optional and degrades
   gracefully when offline: the relay has no database, so cloud calls (/api/db,
   auth, storage, sync queue, restore, database realtime) go to
@@ -49,7 +62,7 @@ There are two implementations of the same idea; **Tauri is the recommended one.*
   status says "Cloud sync unavailable on port N"
   (`isCloudBlockedOnThisPort` in `src/utils/backendConfig.js`) and the app
   logs the same at start. The automatic backups do not depend on the port
-  (the `backup` capability allows the window on any loopback port).
+  (the `backup` capability is granted for the port the relay runs on).
 - Only the desktop window (loopback origin) talks to the cloud. Pages the
   relay serves to the venue tablets from the LAN address
   (`http://<LAN-IP>:5173/referee`, `/bench`, `/livescore`) keep cloud calls on
@@ -61,7 +74,7 @@ There are two implementations of the same idea; **Tauri is the recommended one.*
   and can reload freely; a second device hitting the root over the LAN still
   gets the "one scoretable" protection.
 
-## Build — Tauri (recommended)
+## Build — Tauri
 
 Prereqs: Rust (`rustup`), Node, and on Linux the WebView deps
 (`libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf`).
@@ -108,8 +121,9 @@ Windows installers are produced by CI (`.github/workflows/desktop.yml`, a
 A `macos-15` (arm64) runner builds one universal app (`--target
 universal-apple-darwin`, both slices), signed with the Developer ID of team
 T2Q99T2KH5 (hardened runtime, `Entitlements.plist`) and notarized by Apple,
-tickets stapled to the app and the .dmg (secrets `APPLE_*`; a manual run
-without them builds an ad-hoc signed app, a tag build fails), as
+tickets stapled to the app and the .dmg (the `sign-macos` job, tag pushes
+only, secrets `APPLE_*` of the environment `macos-signing`; a manual run
+builds an ad-hoc signed app), as
 `OpenVolley.eScoresheet_<v>_universal.dmg` and the updater's
 `openvolley-escoresheet_<v>_universal.app.tar.gz` (OpenBeach: `OpenBeach_…`,
 `openbeach-escoresheet_…`). The job checks the bundle and smoke-tests it (each
@@ -262,14 +276,6 @@ npx tauri build            # or use the debug binary
 
 Installed from the APT repository it is `openvolley-escoresheet --server-only`.
 
-## Build — Electron (alternative)
-
-```bash
-cd escoresheet/frontend
-npm run electron:build:win     # → dist-electron/  (NSIS installer + portable .exe)
-npm run electron:build:linux   # → dist-electron/  (AppImage, .deb, .rpm)
-```
-
 ## Connect tablets
 
 Header menu (☰) → **Connect tablets** (also Options → Connections on the home
@@ -333,8 +339,9 @@ Android 10+ → Settings › Wi-Fi › QR icon (or the camera); answer
 - **Linux** (`src-tauri/src/netshare/linux.rs`): NetworkManager over D-Bus
   (zbus, no shell). A WPA2 (RSN/CCMP, PMF off) 2.4 GHz access point,
   `ipv4.method shared` (laptop `10.42.0.1`, DHCP by dnsmasq), firewalld zone
-  `trusted` (the default `nm-shared` zone blocks ports 5173 / 8080; see
-  **Firewall exposure** below), owned by
+  `openvolley-tablets` (OpenBeach: `openbeach-tablets`; the default
+  `nm-shared` zone blocks ports 5173 / 8080; see **Firewall exposure**
+  below), owned by
   the desktop user (no admin password with the stock polkit rules), volatile
   and bound to the app's D-Bus connection: if the app crashes or quits,
   NetworkManager takes the network down and the laptop's normal Wi-Fi comes
@@ -370,14 +377,20 @@ Android 10+ → Settings › Wi-Fi › QR icon (or the camera); answer
   the travel-router way (a small router, no internet, everyone on it, then Hall
   Wi-Fi).
 
-**Firewall exposure (Linux).** The `trusted` zone opens *every* service of
-the laptop to anyone holding the tablets' Wi-Fi password (or paired over
-Bluetooth), not just 5173 / 8080: ssh, CUPS, a dev server. The password is
-shown in large type on the scorer's screen in a public hall, and the relay's
-WebSocket has no authentication of its own (PINs only). Accepted for v1; use
-**New password** after the match if it may have been seen. Follow-up: a
-custom firewalld zone (DHCP, DNS, 5173, 8080 only) shipped by the `.deb`
-postinst, with `trusted` as the fallback for the AppImage.
+**Firewall exposure (Linux).** The `.deb` ships its own firewalld zone,
+`/usr/lib/firewalld/zones/openvolley-tablets.xml` (`src-tauri/linux/`;
+OpenBeach `openbeach-tablets.xml`): from the tablets' network only DHCP, DNS,
+ping and the relay's two default ports reach the laptop, and nothing is
+forwarded to its other networks. firewalld reads it at its next start or
+reload. The app asks firewalld for its zones each time it starts a network
+(`nm_settings.rs firewall_zone`) and uses `trusted` only where its own zone is
+not there (the AppImage, a `.deb` before firewalld was reloaded) or the relay
+runs on other ports (`OPENVOLLEY_HTTP_PORT` / `OPENVOLLEY_WS_PORT`); the
+desktop log says so. `trusted` opens *every* service of the laptop to anyone
+holding the tablets' Wi-Fi password (or paired over Bluetooth): ssh, CUPS, a
+dev server. The password is shown in large type on the scorer's screen in a
+public hall: use **New password** after the match if it may have been seen.
+Without firewalld the zone is ignored (ufw and other firewalls do not use it).
 
 ### Server
 
@@ -505,13 +518,15 @@ from a backup file** (or Restore match → local file) restores any of them.
 ### Encrypted backup files
 
 A match with a game PIN or a referee PIN gets encrypted files (every event
-file and `latest.json`); a match with neither (test matches, some unofficial
-ones) is written plain as before, since nothing could open it
-(`src/utils/backupCrypto/`):
+file and `latest.json`, and every other backup file the app writes: the
+browser's folder and downloads, the set-end download, the cloud copy and the
+USB stick copy, all through `src/utils/backupFile.js`); a match with neither
+(test matches, some unofficial ones) is written plain as before, since no PIN
+could open it (`src/utils/backupCrypto/`):
 
 ```json
 {
-  "format": "openvolley-encrypted-backup", "formatVersion": 1,
+  "format": "openvolley-encrypted-backup", "formatVersion": 2,
   "about": "OpenVolley match backup, encrypted. …",
   "readable": { "gameN": 1042, "homeTeam": "…", "awayTeam": "…",
                 "scheduledAt": "…", "sets": [{ "index": 1, "home": 25, "away": 20 }],
@@ -521,7 +536,9 @@ ones) is written plain as before, since nothing could open it
     { "kind": "pin", "pin": "game",
       "kdf": { "alg": "argon2id", "memoryKiB": 32768, "iterations": 3, "parallelism": 1, "salt": "<base64>" },
       "iv": "<base64>", "wrappedKey": "<base64>" },
-    { "kind": "pin", "pin": "referee", … }
+    { "kind": "pin", "pin": "referee", … },
+    { "kind": "recovery", "key": "<key id>", "alg": "ECDH-P256+HKDF-SHA256+A256GCM",
+      "epk": "<base64>", "iv": "<base64>", "wrappedKey": "<base64>" }
   ],
   "ciphertext": "<base64 of the backup JSON>"
 }
@@ -539,12 +556,37 @@ ones) is written plain as before, since nothing could open it
   scores and the time of the file (public on the livescore anyway). They are
   bound to the ciphertext: an edited header no longer opens. Everything else
   (names, birth dates, officials, signatures, events) is encrypted, and the
-  PINs themselves are never in the file.
+  PINs themselves are never in the file. The one exception is the cloud
+  copy: inside its ciphertext it carries the referee, bench and upload PINs
+  (`"connectionPins"`, never the game PIN or session ids), so a restore on a
+  replacement device sends the server the PINs the referee and bench tablets
+  hold instead of new ones that would shut them out mid-match.
 - A 6-digit PIN is a **speed bump**, not a lock: Argon2id with 32 MiB and 3
   passes takes about 76 ms per guess on a desktop core (about 0.5 s on a
   mid-range tablet), so all 10^6 PINs of a copied file take a 16-core
-  desktop about 80 minutes. Later phases add a server recovery slot (a new
-  slot `kind`; readers skip kinds they do not know).
+  desktop about 80 minutes.
+- The **recovery slot** is the strong key: with a recovery public key in the
+  build (`VITE_BACKUP_RECOVERY_KEY`, else `BUILT_IN_RECOVERY_KEY` in
+  `backupCrypto/recovery.js`), every data key is also wrapped for it (ECDH
+  P-256 with a one-off key per match and session, HKDF-SHA-256, AES-GCM).
+  The league keeps the private half offline (paper and vault, never on a
+  scoring device or the server); `node scripts/backup-recovery.mjs keygen`
+  makes the pair, `node scripts/backup-recovery.mjs open --key <file>
+  <backup.json>` opens any file of such a build, also one whose PINs are
+  lost, into a plain backup the app restores (with new connection PINs; a
+  cloud copy keeps its own).
+  A build without the key writes PIN slots only.
+- **Authenticated slots** (version 2): each slot's wrap has the slot's own
+  fields (kind, label, KDF parameters and salt; key id and one-off key) as
+  its additional data, and the ciphertext's additional data is the format,
+  the readable header and every slot. A slot whose label or parameters were
+  edited opens with no PIN, so a restore never takes the game PIN for the
+  referee PIN; an added or removed slot makes the file damaged. Version 1
+  files (3.0.9 to 3.1.4) still open; an app before this version says "written
+  by a newer version" for a version 2 file (before 3.0.9: "not an OpenVolley
+  match backup"). The cloud copies are version 2 too: during the rollout a
+  replacement device must run this version to restore one, or take the match
+  over with Restore by game PIN (the server's copy).
 - The coalescing ("same state as the last file") compares the plain state.
   If a file cannot be encrypted, nothing is written in the clear: the backup
   fails (red **Backup** badge) and the next event tries again.
@@ -555,12 +597,14 @@ Backup → Restore from a backup file, then pick the file: the app asks for the
 game number, teams, date and set scores). A wrong PIN says so and asks again;
 Cancel goes back, also while a PIN is being tried. Then the usual preview.
 The restored match keeps the PIN that was typed (the other PINs come from the
-local copy it replaces, or are new); plain files of older versions restore as
+local copy it replaces, then from the file when it is a cloud copy, or are
+new); plain files of older versions restore as
 before, without a PIN. An app from before the encryption says "not an
 OpenVolley match backup" for an encrypted file. Against a damaged or crafted
 file: the readable header is shown as text and scores only (it is not
-authenticated before the file opens), at most 8 PIN slots are tried and a
-slot asking for more than 128 MiB (or 16 passes) is skipped.
+authenticated before the file opens), at most 4 PIN slots are tried and a
+slot asking for more than 64 MiB, 6 passes or twice the app's own cost
+(memory x passes) is skipped, never derived.
 
 When it writes: after a write of the match, once nothing more was written for
 150 ms (at most 1.5 s later), on an idle moment, so a point (event, its state
@@ -576,8 +620,9 @@ takes about 5 ms in Node (measured with
 its newest files within **64 MB** (and 500 files); a match nobody scored for
 **12 hours** is thinned to its newest **10** files; event files older than
 **30 days** are deleted; the newest event file of a match and `latest.json`
-are always kept. Older folders are rotated after the first backup of a
-session, in small chunks.
+are always kept. Older folders are rotated once per session, in small
+chunks: a few seconds after the app starts, or after the session's first
+backup if that comes first.
 
 Privacy: the files hold player names and birth dates, officials and signature
 images (no PINs), encrypted for every match with a PIN (above). Files of
@@ -672,8 +717,8 @@ trusted local CA certificate on each tablet and serve HTTPS, or use an mDNS
 ## Follow-ups (not in this change)
 
 - **Tablet HTTPS + camera** — only if QR scanning on tablets is needed.
-- **Auto-update** — wire `tauri-plugin-updater` (or `electron-updater`) once a
-  release channel is chosen.
+- **Auto-update** — wire `tauri-plugin-updater` once a release channel is
+  chosen.
 - **Android app joins by QR** — scan the Wi-Fi QR (connect through a
   `WifiNetworkSuggestion`) and the role QR (open the bundled view with
   `server` / `match` / `team`) inside the app. Needs a camera / scanner plugin

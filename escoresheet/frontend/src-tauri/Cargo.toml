@@ -48,6 +48,9 @@ rand = "0.9"
 # tree through rust-embed) and NFC for the context the phone page shows, the same
 # as String.prototype.normalize('NFC') in electron/signSessionCore.cjs.
 sha2 = "0.11"
+# The file name in an update signature's trusted comment (updater.rs
+# signed_file_name). 0.22 is in the tree through tauri-plugin-updater.
+base64 = "0.22"
 unicode-normalization = "0.1"
 
 # statvfs (free space and the read-only flag of a USB stick), fsync and

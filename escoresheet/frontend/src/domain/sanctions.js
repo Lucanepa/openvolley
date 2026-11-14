@@ -85,9 +85,9 @@ export function awardsPoint(type) {
  * two were written in one action: the point carries the sanction's seq
  * (payload.penaltySeq). Undo takes them back together; one Undo used to take
  * back only the point and leave the penalty on the scoresheet without it.
- * Null for a rally's point, for a penalty point awarded later with the
- * starting line-ups (deferredPenaltyPoints) and for points written before
- * the link (2026-10).
+ * A penalty point awarded later with the starting line-ups carries it too
+ * (deferredPenaltyPoints). Null for a rally's point and for points written
+ * before the link (2026-10; owed points until 2026-11).
  * @param {Array} events
  * @param {object} point
  * @returns {object|null} the sanction event
@@ -134,7 +134,9 @@ export function deriveTeamSanctionFlags(events) {
  * the set has no point yet (otherwise the points were already given).
  * @param {Array} events all events, INCLUDING the line-up just saved
  * @param {number} setIndex
- * @returns {Array<'home'|'away'>} the team to receive each point, in sanction order
+ * @returns {Array<{ team: 'home'|'away', penaltySeq: number }>} the team to
+ *   receive each point and the seq of its sanction (the point's penaltySeq:
+ *   Undo takes the two back together), in sanction order
  */
 export function deferredPenaltyPoints(events, setIndex) {
   const inSet = (events || []).filter(e => e && e.setIndex === setIndex)
@@ -144,7 +146,7 @@ export function deferredPenaltyPoints(events, setIndex) {
   return inSet
     .filter(e => e.type === 'sanction' && awardsPoint(e.payload?.type) && (e.payload?.team === 'home' || e.payload?.team === 'away'))
     .sort((a, b) => (a.seq || 0) - (b.seq || 0))
-    .map(e => (e.payload.team === 'home' ? 'away' : 'home'))
+    .map(e => ({ team: e.payload.team === 'home' ? 'away' : 'home', penaltySeq: e.seq }))
 }
 
 const hasNumber = (n) => n !== undefined && n !== null && n !== '' && n !== '?'

@@ -41,6 +41,7 @@ import { getFirstServeForSet, getSetResult, isDecidingSet } from './rules'
 import { rotateLineup } from './rotation'
 import { resolveSanction, isDelaySanction, validateMemberSanction } from './sanctions'
 import { MAX_SUBSTITUTIONS_PER_SET } from './substitutions'
+import { isSentOff } from './interruptionRequests'
 import { setsToWin } from '../utils/matchFormat'
 
 export const POSITIONS = ['I', 'II', 'III', 'IV', 'V', 'VI']
@@ -154,6 +155,8 @@ const ISSUE_DEFAULTS = {
   subInTwice: 'Set {{set}}, {{score}}: #{{n}} of {{team}} comes in a second time in this set.',
   subOutTwice: 'Set {{set}}, {{score}}: #{{n}} of {{team}} goes out a second time in this set.',
   subPairing: 'Set {{set}}, {{score}}: #{{out}} of {{team}} came on for #{{starter}}: only #{{starter}} may replace #{{out}}.',
+  subStarterReturn: 'Set {{set}}, {{score}}: #{{in}} of {{team}} went out for #{{sub}}: #{{in}} may come back only for #{{sub}}.',
+  subSentOff: 'Set {{set}}, {{score}}: substitution of {{team}}, #{{in}} for #{{out}}: #{{in}} was expelled, disqualified or replaced exceptionally before.',
   liberoEntryNotOnCourt: 'Set {{set}}, {{score}}: libero #{{libero}} in for #{{n}} ({{team}}): #{{n}} is not on court.',
   liberoAlreadyOnCourt: 'Set {{set}}, {{score}}: libero #{{libero}} in ({{team}}): libero #{{other}} is already on court.',
   liberoFrontRow: 'Set {{set}}, {{score}}: libero #{{libero}} replaces #{{n}} of {{team}} in the front row (position {{position}}).',
@@ -209,7 +212,7 @@ export function recomputeMatch(events, ctx = {}) {
     full.text = issueText(full, ctx.t)
     out.issues.push(full)
   }
-  for (const setIndex of sets) recomputeSet(all.filter(e => setOf(e) === setIndex), setIndex, ctx, out, issue, roster)
+  for (const setIndex of sets) recomputeSet(all.filter(e => setOf(e) === setIndex), setIndex, ctx, out, issue, roster, all)
   checkSanctions(all, ctx, issue)
   checkMatchResult(all, ctx, issue)
   return out
@@ -224,7 +227,7 @@ function rosterNumbers(players) {
   return { home: of(players?.home), away: of(players?.away) }
 }
 
-function recomputeSet(rows, setIndex, ctx, out, issue, roster) {
+function recomputeSet(rows, setIndex, ctx, out, issue, roster, all = rows) {
   const match = ctx.match || {}
   const set = displaySetNumber(setIndex, match)
   const label = (team) => teamLabel(team, ctx)?.name || '?'
@@ -339,7 +342,8 @@ function recomputeSet(rows, setIndex, ctx, out, issue, roster) {
         // or a correction after the first rally (replayed relative to the
         // line-up it corrected)
         const beforeFirstPoint = !firstPoint || compareBySeq(e, firstPoint) < 0
-        if (p.isInitial === true || beforeFirstPoint || !storedPrev[team] || !state[team].lineup) {
+        const asWritten = ctx.absoluteLineups?.has(e.id) === true
+        if (p.isInitial === true || beforeFirstPoint || asWritten || !storedPrev[team] || !state[team].lineup) {
           state[team] = { lineup: cleanLineup(p.lineup), ls: p.liberoSubstitution || null }
           if (p.isInitial === true || beforeFirstPoint) {
             const lu = p.lineup || {}
@@ -375,7 +379,7 @@ function recomputeSet(rows, setIndex, ctx, out, issue, roster) {
       if (isOwner(e)) {
         flush()
         owner = { e, expected: {}, lineups: [], exits: [] }
-        applyOwner(owner, { state, score, ctx, setIndex, set, label, scoreText, issue, out, roster, subs, checkRoster, checkDuplicates, getServer: () => server, setServer: (s) => { server = s }, noLineupFlag })
+        applyOwner(owner, { state, score, ctx, setIndex, set, label, scoreText, issue, out, roster, subs, all, checkRoster, checkDuplicates, getServer: () => server, setServer: (s) => { server = s }, noLineupFlag })
         if (e.type === 'point' && isTeam(team)) {
           if (wonAt) afterWin += 1
           const res = getSetResult(score.home, score.away, setIndex)
@@ -510,6 +514,11 @@ function applyOwner(owner, env) {
     }
     checkRoster(team, p.playerIn, e)
     checkRoster(team, p.playerOut, e)
+    // expelled this set, disqualified or replaced exceptionally before
+    // (FIVB 15.8, 6.x; as interruptionRequests substitutionIllegalReason)
+    if (isSentOff(env.all.filter(x => compareBySeq(x, e) < 0), team, p.playerIn, setIndex)) {
+      issue('subSentOff', { team: label(team), set, score: sc, in: p.playerIn, out: p.playerOut }, e, setIndex)
+    }
     // the substitution rules (FIVB 15.5-15.6), as validateManualSubstitution
     if (!exceptional) {
       const prior = subs[team].filter(s => !s.payload?.isExceptional)
@@ -520,6 +529,11 @@ function applyOwner(owner, env) {
       const cameOnAs = prior.find(s => same(s.payload?.playerIn, p.playerOut))
       if (cameOnAs && !same(cameOnAs.payload?.playerOut, p.playerIn)) {
         issue('subPairing', { team: label(team), set, score: sc, out: p.playerOut, starter: cameOnAs.payload?.playerOut }, e, setIndex)
+      }
+      // a starter who went out comes back only for his own substitute (15.6.1)
+      const wentOutFor = prior.filter(s => same(s.payload?.playerOut, p.playerIn)).pop()
+      if (wentOutFor && !same(wentOutFor.payload?.playerIn, p.playerOut)) {
+        issue('subStarterReturn', { team: label(team), set, score: sc, in: p.playerIn, out: p.playerOut, sub: wentOutFor.payload?.playerIn }, e, setIndex)
       }
     }
     subs[team].push(e)
@@ -700,6 +714,52 @@ export function matchIssues(events, ctx = {}) {
 }
 
 /**
+ * Keep the links stored as a seq right when a plan renumbers or removes the
+ * rows they point at (in place, on plan.update):
+ *  - a penalty point's payload.penaltySeq (domain/sanctions penaltyOfPoint)
+ *    follows its sanction's new seq, and is dropped when the sanction goes;
+ *  - the points a going back added (payload.addedPointSeqs of a head
+ *    written before payload.rectificationKey) follow their points.
+ * Insertions renumber every later row by +1 and moves give rows a new seq,
+ * so a link by seq alone pointed at another row afterwards.
+ */
+function relinkSeqReferences(events, plan) {
+  const removed = new Set(plan.remove || [])
+  const updates = new Map()
+  for (const u of plan.update || []) updates.set(u.id, { ...(updates.get(u.id) || {}), ...u.changes })
+  const newSeqOf = (e) => (updates.get(e.id)?.seq ?? e.seq)
+  const moved = (e) => updates.has(e.id) && updates.get(e.id).seq !== undefined && updates.get(e.id).seq !== e.seq
+  const sanctionBySeq = new Map()
+  for (const e of events || []) if (e?.type === 'sanction') sanctionBySeq.set(`${setOf(e)}:${e.seq}`, e)
+  const pointBySeq = new Map()
+  for (const e of events || []) if (e?.type === 'point' && e.payload?.rectification) pointBySeq.set(`${setOf(e)}:${e.seq}`, e)
+  const extra = []
+  const payloadNow = (e) => updates.get(e.id)?.payload || e.payload || {}
+  for (const e of events || []) {
+    if (!e || removed.has(e.id)) continue
+    const p = payloadNow(e)
+    if ((e.type === 'point' || e.type === 'cancelled_point') && p.penaltySeq !== undefined && p.penaltySeq !== null) {
+      const sanction = sanctionBySeq.get(`${setOf(e)}:${p.penaltySeq}`)
+      if (!sanction) continue
+      if (removed.has(sanction.id)) {
+        // eslint-disable-next-line no-unused-vars
+        const { penaltySeq, ...rest } = p
+        extra.push({ id: e.id, changes: { payload: rest } })
+      } else if (moved(sanction)) {
+        extra.push({ id: e.id, changes: { payload: { ...p, penaltySeq: newSeqOf(sanction) } } })
+      }
+    } else if (e.type === 'rectification' && !p.rectificationKey && Array.isArray(p.addedPointSeqs) && p.addedPointSeqs.length) {
+      const next = p.addedPointSeqs.map(s => {
+        const pt = pointBySeq.get(`${setOf(e)}:${s}`)
+        return pt && moved(pt) ? newSeqOf(pt) : s
+      })
+      if (next.some((s, i) => s !== p.addedPointSeqs[i])) extra.push({ id: e.id, changes: { payload: { ...p, addedPointSeqs: next } } })
+    }
+  }
+  if (extra.length) plan.update = [...(plan.update || []), ...extra]
+}
+
+/**
  * Complete a correction plan with everything that follows from it: the
  * rebuilt rows merged into the plan (a rebuilt row of a row the plan adds
  * is folded into that row), the sets whose score changed, and the issues
@@ -710,7 +770,11 @@ export function matchIssues(events, ctx = {}) {
 export function finalizePlan(events, plan, ctx = {}) {
   if (!plan || plan.error) return plan
   const match = { ...(ctx.match || {}), ...(plan.matchPatch || {}) }
-  const rctx = { ...ctx, match }
+  relinkSeqReferences(events, plan)
+  // the line-ups a going back writes are the ones the scorer chose, as
+  // they are (not replayed on rows the same plan still rebuilds)
+  const absoluteLineups = new Set((plan.add || []).filter(r => r.type === 'lineup' && r.payload?.fromRectification).map(r => r.tempKey))
+  const rctx = { ...ctx, match, absoluteLineups }
   const after = applyPlanToEvents(events, plan)
   const rc = recomputeMatch(after, rctx)
 

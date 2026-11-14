@@ -66,10 +66,10 @@ keywords = ["re_"]
 
 [[rules]]
 id = "openvolley-env-secret"
-description = "A secret env var this stack reads (SMTP, Resend, Supabase service role, PocketBase admin, DeepL, TLS key, Postgres, publish tokens) assigned a literal"
-regex = '''(?i)\b[A-Z0-9_]*(?:SMTP_PASS(?:WORD)?|RESEND_API_KEY|SERVICE_ROLE_KEY|POCKETBASE_ADMIN_PASSWORD|PB_ADMIN_PASSWORD|DEEPL(?:_API)?_KEY|SSL_KEY_BASE64|LIVE_PUBLISH_TOKEN|REOPEN_PASSWORD_HASH|POSTGRES_PASSWORD|PGPASSWORD|JWT_SECRET)\b["'\s]*[:=][ \t]*["']?([^\s"'`$<{]{8,})'''
+description = "A secret env var this stack reads (SMTP, Resend, Supabase service role, PocketBase admin, DeepL, TLS key, Postgres and its two role passwords, publish tokens) assigned a literal"
+regex = '''(?i)\b[A-Z0-9_]*(?:SMTP_PASS(?:WORD)?|RESEND_API_KEY|SERVICE_ROLE_KEY|POCKETBASE_ADMIN_PASSWORD|PB_ADMIN_PASSWORD|DEEPL(?:_API)?_KEY|SSL_KEY_BASE64|LIVE_PUBLISH_TOKEN|REOPEN_PASSWORD_HASH|POSTGRES_PASSWORD|PGPASSWORD|JWT_SECRET|OV_OWNER_PW|OV_APP_PW)\b["'\s]*[:=][ \t]*["']?([^\s"'`$<{]{8,})'''
 secretGroup = 1
-keywords = ["smtp_pass", "resend_api_key", "service_role_key", "admin_password", "deepl", "ssl_key_base64", "live_publish_token", "reopen_password_hash", "postgres_password", "pgpassword", "jwt_secret"]
+keywords = ["smtp_pass", "resend_api_key", "service_role_key", "admin_password", "deepl", "ssl_key_base64", "live_publish_token", "reopen_password_hash", "postgres_password", "pgpassword", "jwt_secret", "ov_owner_pw", "ov_app_pw"]
 allowlists = [
   # Values that are references, not literals: env.X, process.env.X, secrets.X, a ternary/expression.
   { regexes = ['''(?i)^(?:process\.|import\.meta|env\.|secrets\.|vars\.|os\.environ|getenv|req\.|config\.)'''] },
@@ -85,6 +85,9 @@ allowlists = [
   ] },
   # Well-known dev defaults in compose files (POSTGRES_PASSWORD: postgres).
   { regexes = ['''(?i)^(?:postgres|password|passwort|changeme)$'''] },
+  # A shell expansion read as "VAR:" + value (${OV_APP_PW:?}, ${X:-default})
+  # and a printf format (OV_OWNER_PW=%s): the value comes from elsewhere.
+  { regexes = ['''^[?+=-][^}\s]*\}''', '''^%[a-z]'''] },
 ]
 
 [[rules]]
@@ -180,6 +183,92 @@ allowlists = [
   # construction. Only this broad sweep skips them; every specific rule above
   # (service_role JWT, sb_secret_, Resend, psk, …) still scans test files.
   { paths = ['''(^|/)(?:tests?|__tests__|spec)/''', '''\.(?:test|spec)\.[cm]?[jt]sx?$'''] },
+]
+
+# Personal data from matches. App backups, logs, diagnostics and exports hold
+# players' and officials' names, dates of birth and signatures; a contact list
+# holds names, phone numbers and email addresses. Unlike a key, personal data
+# cannot be rotated once it is public, so it must never be committed.
+# .gitignore keeps these files out of `git add`; the rules below catch them
+# when added anyway (git add -f, another name, pasted into a data file). They
+# read data files only (JSON, JSONL, HAR, logs, CSV), as the apps and browsers
+# write them, and skip the test fixture folders (tests/fixtures,
+# __tests__/fixtures, __fixtures__): test data uses fictional people. Any other
+# folder named like "fixtures" (a league's match schedule) is scanned. Binary
+# files (xlsx, PDF) are left to .gitignore.
+[[rules]]
+id = "match-data-birth-date"
+description = "Personal data: a date of birth in JSON, as in app backups, logs, roster exports and API dumps"
+# Any key holding dob or birth (dob, referee_1_dob, referee1Dob, birthDate,
+# formattedAndTimezoneIndependentBirthday) with a date-shaped value, also a
+# timestamp (2008-02-01T00:00:00.000Z), with or without a name next to it.
+# Quotes may be escaped (JSON inside a log line). The date is the secret, so
+# --redact hides it.
+regex = '''(?i)\\?"[\w-]*(?:dob|birth)[\w-]*\\?"\s*:\s*\\?"(\d{1,2}[./-]\d{1,2}[./-](?:19|20)\d{2}|(?:19|20)\d{2}-\d{1,2}-\d{1,2})'''
+secretGroup = 1
+path = '''(?i)\.(?:json|jsonl|ndjson|har|txt|log|csv|tsv)$'''
+keywords = ["dob", "birth"]
+allowlists = [
+  { paths = ['''(?:^|/)(?:tests/fixtures|__tests__/fixtures|__fixtures__)/'''] },
+]
+
+[[rules]]
+id = "match-data-signature"
+description = "Personal data: a signature (or photo) as a base64 data:image value in JSON"
+# A tiny inline icon is not a signature: at least 200 base64 characters (~150 bytes).
+regex = '''(?i)\\?"[\w.-]{1,64}\\?"\s*:\s*\\?"(data:image/[a-z0-9.+-]{2,20};base64,[a-z0-9+/]{32})[a-z0-9+/]{168,}'''
+secretGroup = 1
+path = '''(?i)\.(?:json|jsonl|ndjson|har|txt|log|csv|tsv)$'''
+keywords = ["data:image"]
+allowlists = [
+  { paths = ['''(?:^|/)(?:tests/fixtures|__tests__/fixtures|__fixtures__)/'''] },
+]
+
+[[rules]]
+id = "match-data-contact"
+description = "Personal data: a person (name) with a phone number in JSON, as in contact lists"
+regex = '''(?i)\\?"(?:first_?name|last_?name|surname|full_?name|name)\\?"\s*:\s*\\?"[^"\\]{2,}\\?"[^{}]{0,300}?\\?"(?:[\w-]*(?:phone|mobile|natel|handy|telefon)[\w-]*|tel)\\?"\s*:\s*\\?"(\+?\d[\d ./()-]{6,}\d)|\\?"(?:[\w-]*(?:phone|mobile|natel|handy|telefon)[\w-]*|tel)\\?"\s*:\s*\\?"(\+?\d[\d ./()-]{6,}\d)\\?"[^{}]{0,300}?\\?"(?:first_?name|last_?name|surname|full_?name|name)\\?"\s*:\s*\\?"[^"\\]{2,}'''
+path = '''(?i)\.(?:json|jsonl|ndjson|har|txt|log|csv|tsv)$'''
+keywords = ["phone", "mobile", "natel", "handy", "tel"]
+allowlists = [
+  { paths = ['''(?:^|/)(?:tests/fixtures|__tests__/fixtures|__fixtures__)/'''] },
+]
+
+[[rules]]
+id = "match-data-email"
+description = "Personal data: a person (name) with an email address in JSON, as in contact lists"
+# Same shape as match-data-contact. The address is the secret; placeholder
+# domains (example.com/org/net, .test, .invalid, .local) are not a person's.
+regex = '''(?i)\\?"(?:first_?name|last_?name|surname|full_?name|name)\\?"\s*:\s*\\?"[^"\\]{2,}\\?"[^{}]{0,300}?\\?"[\w-]*e-?mail[\w-]*\\?"\s*:\s*\\?"([^"\\\s@]+@[\w-]+(?:\.[\w-]+)+)|\\?"[\w-]*e-?mail[\w-]*\\?"\s*:\s*\\?"([^"\\\s@]+@[\w-]+(?:\.[\w-]+)+)\\?"[^{}]{0,300}?\\?"(?:first_?name|last_?name|surname|full_?name|name)\\?"\s*:\s*\\?"[^"\\]{2,}'''
+path = '''(?i)\.(?:json|jsonl|ndjson|har|txt|log|csv|tsv)$'''
+keywords = ["mail"]
+allowlists = [
+  { regexes = ['''(?i)@(?:[\w-]+\.)*(?:example\.(?:com|org|net)|[\w-]+\.(?:test|invalid|local))$'''] },
+  { paths = ['''(?:^|/)(?:tests/fixtures|__tests__/fixtures|__fixtures__)/'''] },
+]
+
+# An encrypted match backup (backupCrypto/envelope.js) under any file name: it
+# holds the whole match, roster included. JSON files only: the format name
+# also appears in the code and docs.
+[[rules]]
+id = "match-data-encrypted-backup"
+description = "Personal data: an encrypted match backup (openvolley-encrypted-backup envelope)"
+regex = '''"format"\s*:\s*"openvolley-encrypted-backup"'''
+path = '''(?i)\.json$'''
+keywords = ["openvolley-encrypted-backup"]
+allowlists = [
+  { paths = ['''(?:^|/)(?:tests/fixtures|__tests__/fixtures|__fixtures__)/'''] },
+]
+
+# Path only: the names the apps give their backups, logs, diagnostics and
+# exports (the same list as .gitignore), including the native backup folders'
+# latest.json. Catches a backup whose content no other rule reads.
+[[rules]]
+id = "match-data-file"
+description = "Personal data: an app backup, log, diagnostics or match export file (by its name)"
+path = '''(?i)(?:^|/)(?:debug_logs/|backup_g\d+_set\d+[^/]*\.json$|backup_set\d+_[^/]*\.json$|\d{8}T\d{6}\.\d{3}Z-\d+\.json$|(?:test-)?(?:game\d+|match-)[^/]*/latest\.json$|[0-9a-f]{8}-latest\.json$|[^/]*-manual-\d{8}T\d{6}Z\.json$|logs_[^/]*\.txt$|diagnostic_log[^/]*\.(?:json|ndjson)$|openvolley-diagnostics(?:-[^/]*)?\.(?:txt|jsonl)$|openvolley-activity(?:-[^/]*)?\.(?:json|ndjson|csv)$|(?:activity|diagnostics)-\d{4}-\d{2}-\d{2}\.jsonl$|MatchData_[^/]*\.json$|match-data-[^/]*\.json$|match_stopped_[^/]*\.json$|database_export_[^/]*\.json$)'''
+allowlists = [
+  { paths = ['''(?:^|/)(?:tests/fixtures|__tests__/fixtures|__fixtures__)/'''] },
 ]
 
 # The anon key is meant to be public (see supabase-service-role-jwt above), so

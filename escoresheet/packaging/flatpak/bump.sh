@@ -4,7 +4,9 @@
 #   escoresheet/packaging/flatpak/bump.sh <openvolley|beach> VERSION
 #
 # Downloads the release .deb from GitHub (tag desktop-vVERSION or
-# beach-desktop-vVERSION), checks its package and version, writes its URL and
+# beach-desktop-vVERSION) with its signature (<deb>.sig from publish-pkgs.sh
+# --desktop, checked against the updater key: ../lib/release-asset.sh, fails
+# closed), checks its package and version, writes its URL and
 # SHA-256 into <app id>.json and adds <release VERSION> (date: the GitHub
 # release's, notes: the fastlane changelog when there is one) to
 # <app id>.metainfo.xml. Commit both; for Flathub, the same change goes to the
@@ -14,6 +16,8 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd -P)
 repo_root=$(cd "$here/../../.." && pwd -P)
 die() { echo "bump: $*" >&2; exit 1; }
+# shellcheck source=SCRIPTDIR/../lib/release-asset.sh
+. "$here/../lib/release-asset.sh"
 
 case ${1:-} in
   openvolley) id=com.openvolley.escoresheet cmd=openvolley-escoresheet tag_prefix=desktop-v name=OpenVolley
@@ -29,10 +33,10 @@ url="https://github.com/Lucanepa/openvolley/releases/download/$tag/${cmd}_${v}_a
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-curl -fsSL -o "$tmp/app.deb" "$url" || die "cannot download $url"
-[[ "$(dpkg-deb -f "$tmp/app.deb" Package)" == "$cmd" && "$(dpkg-deb -f "$tmp/app.deb" Version)" == "$v" ]] ||
+deb=$(release_asset_fetch "$1" "$v" "$url" "$tmp/deb")
+[[ "$(dpkg-deb -f "$deb" Package)" == "$cmd" && "$(dpkg-deb -f "$deb" Version)" == "$v" ]] ||
   die "$url is not $cmd $v"
-sha=$(sha256sum "$tmp/app.deb" | cut -d' ' -f1)
+sha=$(sha256sum "$deb" | cut -d' ' -f1)
 
 date=$(date -u +%F)
 if command -v gh >/dev/null; then

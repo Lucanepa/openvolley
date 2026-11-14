@@ -197,7 +197,43 @@ describe('readLicenceExport', () => {
     const r = await readLicenceExport(new Blob([bytes]))
     expect(r.people).toHaveLength(3)
   })
+
+  // A part was unpacked whole before its size was looked at: a 72 KB file
+  // built a string of 73 million characters first (fe-roster-import-9)
+  it('a part whose declared size is over the limit is refused before it is unpacked', async () => {
+    const bytes = withDeclaredSize(await xlsx(ITALIAN), 'xl/worksheets/sheet1.xml', 0x7fffffff)
+    await expect(readLicenceExport(bytes)).rejects.toMatchObject({ code: 'OV_LICENCE_TOO_BIG' })
+  })
+
+  it('a part never grows past the size it declares', async () => {
+    const zip = await JSZip.loadAsync(await xlsx(ITALIAN))
+    zip.file('xl/sharedStrings.xml', `<?xml version="1.0"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si><t>${'a'.repeat(4 * 1024 * 1024)}</t></si></sst>`)
+    const packed = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' })
+    // declares 100 bytes: what is unpacked stops there, a broken part
+    await expect(readLicenceExport(withDeclaredSize(packed, 'xl/sharedStrings.xml', 100))).rejects.toBeInstanceOf(LicenceExportError)
+  })
+
+  it('a workbook that unpacks to more than the limit is refused', async () => {
+    const zip = await JSZip.loadAsync(await xlsx(ITALIAN))
+    zip.file('xl/worksheets/sheet1.xml', 'a'.repeat(70 * 1024 * 1024))
+    const packed = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' })
+    await expect(readLicenceExport(packed)).rejects.toMatchObject({ code: 'OV_LICENCE_TOO_BIG' })
+  })
 })
+
+/** The zip with the uncompressed size of `name` set to `size` in its local and central headers. */
+function withDeclaredSize(bytes, name, size) {
+  const out = new Uint8Array(bytes)
+  const dv = new DataView(out.buffer, out.byteOffset, out.byteLength)
+  const nameBytes = new TextEncoder().encode(name)
+  const nameAt = (offset, len) => len === nameBytes.length && nameBytes.every((b, i) => out[offset + i] === b)
+  for (let i = 0; i + 46 < out.length; i++) {
+    const sig = dv.getUint32(i, true)
+    if (sig === 0x04034b50 && nameAt(i + 30, dv.getUint16(i + 26, true))) dv.setUint32(i + 22, size, true)
+    if (sig === 0x02014b50 && nameAt(i + 46, dv.getUint16(i + 28, true))) dv.setUint32(i + 24, size, true)
+  }
+  return out
+}
 
 describe('genderOf: any language, whichever the headers are in', () => {
   it('letters and words of the four languages', async () => {

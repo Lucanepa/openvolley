@@ -440,6 +440,14 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   // and events) and when it arrived: the live scoresheet draws from it. Kept
   // while the view falls back to a match_live_state row (no events there).
   const sheetBundleRef = useRef({ bundle: null, at: null })
+  // The tablet's access ended (the scorer changed the PIN or switched the
+  // connection off): back to the PIN page, the kept copy dropped
+  const onExitRef = useRef(onExit)
+  onExitRef.current = onExit
+  const accessLost = useCallback(() => {
+    sheetBundleRef.current = { bundle: null, at: null }
+    if (onExitRef.current) onExitRef.current('access_lost')
+  }, [])
   useEffect(() => {
     liveTrackerRef.current.reset()
     sheetBundleRef.current = { bundle: null, at: null }
@@ -460,6 +468,12 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           lastLiveStateTsRef.current = result.liveState.updated_at
         }
       } else {
+        // A summary after a full bundle: the relay no longer takes this
+        // tablet's PIN (changed, or the connection switched off)
+        if (incoming.access === 'summary' && sheetBundleRef.current.bundle && !isMasterMode) {
+          accessLost()
+          return
+        }
         if (bundleHasFullAccess(incoming)) sheetBundleRef.current = { bundle: incoming, at: Date.now() }
         result = liveTrackerRef.current.bundle(incoming)
         eventsAreCurrent = bundleHasFullAccess(incoming) && Array.isArray(incoming.events) &&
@@ -509,7 +523,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         }, DATA_UPDATE_DEBOUNCE_MS - timeSinceLastUpdate)
       }
     }
-  }, [])
+  }, [accessLost, isMasterMode])
 
   // Cleanup debounce timer on unmount
   useEffect(() => {
@@ -621,7 +635,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
   // Track consecutive fetch failures to detect deleted matches
   const fetchFailureCountRef = useRef(0)
-  const MAX_FETCH_FAILURES = 3 // After 3 consecutive failures, assume match is deleted
+  const MAX_FETCH_FAILURES = 3 // After 3 not-found answers in a row (relay and database), the match is deleted
 
   // Force fetch fresh data from server
   const fetchFreshData = useCallback(async () => {
@@ -656,22 +670,21 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           homePoints: result.sets?.find(s => !s.finished)?.homePoints,
           awayPoints: result.sets?.find(s => !s.finished)?.awayPoints
         })
-      } else {
-        // Match not found or fetch failed
+      } else if (result?.notFound) {
+        // The relay and the database both say the match is gone. A network
+        // or relay outage (no notFound) keeps the view, the PIN and the
+        // offline banner: only a positive answer counts.
         fetchFailureCountRef.current++
-        console.warn(`[Referee] Fetch failed (${fetchFailureCountRef.current}/${MAX_FETCH_FAILURES})`)
+        console.warn(`[Referee] Match not found (${fetchFailureCountRef.current}/${MAX_FETCH_FAILURES})`)
         if (fetchFailureCountRef.current >= MAX_FETCH_FAILURES) {
           console.log('[Referee] Match appears to be deleted, navigating to home')
           if (onExit) onExit()
         }
+      } else {
+        console.warn('[Referee] Fetch failed, keeping the match:', result?.error)
       }
     } catch (err) {
-      fetchFailureCountRef.current++
-      console.error(`[Referee] Error fetching fresh data (${fetchFailureCountRef.current}/${MAX_FETCH_FAILURES}):`, err)
-      if (fetchFailureCountRef.current >= MAX_FETCH_FAILURES) {
-        console.log('[Referee] Match appears to be deleted, navigating to home')
-        if (onExit) onExit()
-      }
+      console.error('[Referee] Error fetching fresh data, keeping the match:', err)
     }
   }, [matchId, updateMatchDataState, isMasterMode, onExit])
 
@@ -878,6 +891,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     onData: handleRealtimeData,
     onAction: handleRealtimeAction,
     onDeleted: handleMatchDeleted,
+    onAccessLost: accessLost,
     enabled: !isMasterMode && !!matchId,
     // This component runs its own match_live_state channel (below)
     watchDbChanges: false
@@ -1127,7 +1141,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           // change nothing.
           const intervalRowCurrent = isNewerLiveState(state, intervalRowTsRef.current, { allowEqual: true })
           if (intervalRowCurrent && state.updated_at) intervalRowTsRef.current = state.updated_at
-          if (intervalRowCurrent && state.set_interval_active === false && BREAK_END_EVENTS.has(state.last_event_type)) {
+          // An undo row with no break (the set end undone) closes it too.
+          if (intervalRowCurrent && state.set_interval_active === false && (BREAK_END_EVENTS.has(state.last_event_type) || state.last_event_type === 'undo')) {
             intervalDismissedRef.current = true
             setBetweenSetsCountdown(null)
             setShowIntervalModal(false)
@@ -1453,8 +1468,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       e => (e.setIndex || 1) === currentSetIndex
     )
 
-    const homeLineupEvents = currentSetEvents.filter(e => e.type === 'lineup' && e.payload?.team === 'home')
-    const awayLineupEvents = currentSetEvents.filter(e => e.type === 'lineup' && e.payload?.team === 'away')
+    // seq order, not the bundle's storage order: a correction at a past score
+    // adds rows with the highest ids but a mid-set seq
+    const homeLineupEvents = currentSetEvents.filter(e => e.type === 'lineup' && e.payload?.team === 'home').sort(compareBySeq)
+    const awayLineupEvents = currentSetEvents.filter(e => e.type === 'lineup' && e.payload?.team === 'away').sort(compareBySeq)
 
     const latestHomeLineup = homeLineupEvents[homeLineupEvents.length - 1]
     const latestAwayLineup = awayLineupEvents[awayLineupEvents.length - 1]
@@ -2058,9 +2075,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   // Format countdown
   // Detect if we're between sets (previous set finished but current set not started)
   const isBetweenSets = useMemo(() => {
-    if (!data?.sets || !data?.set) return false
+    if (!data?.sets || !data?.currentSet) return false
 
-    const currentSetIndex = data.set.index
+    const currentSetIndex = data.currentSet.index
     if (currentSetIndex <= 1) return false
 
     const previousSet = data.sets.find(s => s.index === currentSetIndex - 1)
@@ -2072,7 +2089,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     )
 
     return !hasSetStarted
-  }, [data?.sets, data?.set, data?.events])
+  }, [data?.sets, data?.currentSet, data?.events])
 
   // Check if match has ended (from liveState status or sets won)
   const refBestOf = data?.match?.bestOf ?? data?.liveState?.best_of ?? 5
@@ -2137,10 +2154,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
   // Check if this is the first rally of the set (no points scored yet)
   const isFirstRally = useMemo(() => {
-    if (!data?.events || !data?.set) return true
-    const hasPoints = data.events.some(e => e.type === 'point' && e.setIndex === data.set.index)
+    if (!data?.events || !data?.currentSet) return true
+    const hasPoints = data.events.some(e => e.type === 'point' && e.setIndex === data.currentSet.index)
     return !hasPoints
-  }, [data?.events, data?.set])
+  }, [data?.events, data?.currentSet])
   // The first line-up of a set stays hidden until the other is in
   // (domain/lineupPrivacy.js): the court's "Line-up set" cover, and its
   // server's number and setter position are not shown either

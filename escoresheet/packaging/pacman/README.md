@@ -36,8 +36,13 @@ a partial upgrade, which Arch does not support.
 `SigLevel = Required DatabaseRequired`: pacman refuses an unsigned or wrongly
 signed database or package from this repo (the default `DatabaseOptional`
 would accept an unsigned database). `--lsign-key` makes pacman trust the key
-for any repository, as with every third-party Arch repo; it signs nothing
-but packages of these two apps.
+for any repository, as with every third-party Arch repo (pacman has no
+per-repository keyring); it signs nothing but packages of these two apps, and
+the page says so. `SigLevel = Required TrustAll` in the `[openvolley]` section
+instead would avoid the global trust, but would then accept any key of the
+keyring for this repository, so the page keeps `--lsign-key`. To stop
+trusting the key: `sudo pacman-key --delete <FINGERPRINT>`. The fingerprint is
+also in the repository's README on GitHub (a second source).
 
 The in-app updater stays off (the marker file `/usr/lib/<package>/package-manager`
 and, for 2.4.0 / OpenBeach 2.0.0, the bundle-type reset; see `../aur/README.md`).
@@ -78,10 +83,19 @@ package is in the repo.
    `../aur/bump.sh` first). A version already in the repo is kept as it is;
    an older one than the repo's newest is refused.
 2. Builds it with `makepkg` as a non-root user (your uid) in an archlinux
-   container (local image `openvolley-pacman-build`: base-devel, rebuilt
-   from `archlinux:latest` once a week). The `.deb` comes from GitHub, or
-   from `--deb FILE` (what `publish-pkgs.sh --pacman` passes: the same bytes
-   it signed); `makepkg` checks its sha256 against the PKGBUILD either way.
+   container: `archlinux:base-devel` pinned by digest in `archlinux-image`
+   (`publish-pacman.sh --pin-image` writes it; review and commit, now and
+   then for newer build tools), so the build tools change only with a
+   commit. Without a committed `archlinux-image` there is no build:
+   `publish-pkgs.sh --pacman` and `aur/bump.sh` / `aur/publish.sh` stop, so
+   pin it before the first release with `--pacman`. The `.deb` comes from GitHub, or from `--deb FILE` (what
+   `publish-pkgs.sh --pacman` passes: the same bytes it signed); `makepkg`
+   checks its sha256 against the PKGBUILD either way. Then, on the host,
+   `check-package.py` compares the package with that `.deb`: each file must be
+   the `.deb`'s file at that path (the bundle-type stamp reset), the
+   PKGBUILD's pinned `LICENSE` or the updater marker; no other file, no
+   install scriptlet, no link, no setuid bit. Anything else is not signed
+   (`check-package.test.sh`).
 3. Signs each new package here, on the host (detached `.sig`): the private
    key never enters a container.
 4. Rebuilds the database from scratch with `repo-add` (in the container) from

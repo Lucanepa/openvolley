@@ -154,12 +154,17 @@ const MATCH_TYPE_LABELS = { championship: 'Championship', cup: 'Cup', tournament
 const GENDER_LABELS = { men: 'Men', women: 'Women' }
 
 function getSortOrder(map, key) {
-  return map[key] !== undefined ? map[key] : 999
+  return Object.hasOwn(map, key) && map[key] !== undefined ? map[key] : 999
 }
 
 // Build hierarchical tree: Level > Match Type > Gender > League > Matches
+// Grouped by the rows' own free-text values: no prototype, so a league named
+// 'constructor' or '__proto__' is a group like any other
+const group = () => Object.create(null)
+const labelOf = (labels, key) => (Object.hasOwn(labels, key) ? labels[key] : key)
+
 function buildArchiveTree(matches) {
-  const tree = {}
+  const tree = group()
 
   for (const match of matches) {
     const info = match.match_info || {}
@@ -168,7 +173,7 @@ function buildArchiveTree(matches) {
     const levelKey = info.match_type_3 || 'other'
     const levelLabel = levelKey === 'other' && info.match_type_3_other
       ? info.match_type_3_other
-      : (LEVEL_LABELS[levelKey] || levelKey)
+      : labelOf(LEVEL_LABELS, levelKey)
     // Use the label as grouping key for custom "other" values
     const levelGroupKey = levelKey === 'other' && info.match_type_3_other
       ? `other_${info.match_type_3_other}`
@@ -178,26 +183,26 @@ function buildArchiveTree(matches) {
     const mtKey = info.match_type_1 || 'other'
     const mtLabel = mtKey === 'other' && info.match_type_1_other
       ? info.match_type_1_other
-      : (MATCH_TYPE_LABELS[mtKey] || mtKey)
+      : labelOf(MATCH_TYPE_LABELS, mtKey)
     const mtGroupKey = mtKey === 'other' && info.match_type_1_other
       ? `other_${info.match_type_1_other}`
       : mtKey
 
     // Gender
     const genderKey = info.match_type_2 || 'other'
-    const genderLabel = GENDER_LABELS[genderKey] || genderKey
+    const genderLabel = labelOf(GENDER_LABELS, genderKey)
 
     // League
     const league = info.league || 'Other'
 
     // Build nested structure
-    if (!tree[levelGroupKey]) tree[levelGroupKey] = { label: levelLabel, sortKey: levelKey, children: {} }
+    if (!tree[levelGroupKey]) tree[levelGroupKey] = { label: levelLabel, sortKey: levelKey, children: group() }
     const levelNode = tree[levelGroupKey]
 
-    if (!levelNode.children[mtGroupKey]) levelNode.children[mtGroupKey] = { label: mtLabel, sortKey: mtKey, children: {} }
+    if (!levelNode.children[mtGroupKey]) levelNode.children[mtGroupKey] = { label: mtLabel, sortKey: mtKey, children: group() }
     const mtNode = levelNode.children[mtGroupKey]
 
-    if (!mtNode.children[genderKey]) mtNode.children[genderKey] = { label: genderLabel, sortKey: genderKey, children: {} }
+    if (!mtNode.children[genderKey]) mtNode.children[genderKey] = { label: genderLabel, sortKey: genderKey, children: group() }
     const genderNode = mtNode.children[genderKey]
 
     if (!genderNode.children[league]) genderNode.children[league] = []

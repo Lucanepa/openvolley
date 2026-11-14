@@ -1,6 +1,14 @@
 # Runbook: first deploy on hetzner (Option A, co-tenant on `lucanepa-prod`)
 
-> **Since 16.10.2026 production runs on lenovoserver, not on hetzner.** The Hetzner VPS
+> **Since 09.11.2026 production runs on the Infomaniak VPS `ov-vps` (`ssh ov-vps`, user
+> `debian` with sudo).** Every command from "Match-day rules" on is for `ov-vps` (prompt
+> `ov-vps$`); images ship with `build-image.sh --ship ov-vps` from the build machine
+> (`build$`, a clean checkout). lenovoserver's stack in `/opt/openvolley` is a stopped
+> fallback: its `.env` must hold no `TUNNEL_TOKEN` and no `COMPOSE_PROFILES` (ov-tunnel is in
+> the compose profile `tunnel`), so a plain `up -d` there starts no second connector.
+> The history below (16.10-09.11.2026 on lenovoserver) stays for the record.
+>
+> **From 16.10.2026 to 09.11.2026 production ran on lenovoserver, not on hetzner.** The Hetzner VPS
 > (`lucanepa-prod`, `ssh hetzner`) was transferred to another owner's
 > Hetzner account. OpenVolley is the owner's private project and must **never be deployed there
 > again**. The stack (compose project `openvolley`: `ov-postgres`, `ov-backend`, `ov-tunnel`,
@@ -152,6 +160,12 @@ hetzner# cd /opt/openvolley && install -m 600 env.example .env && editor .env
 
 - `OV_BACKEND_IMAGE` = the tag from step 3.
 - `OV_OWNER_PW`, `OV_APP_PW` = `openssl rand -hex 32` each (into Vaultwarden).
+- `OV_PIN_SECRET` = `openssl rand -base64 48` (into Vaultwarden next to `OV_OWNER_PW` and
+  `OV_APP_PW`; required, compose and the backend refuse to start without it). Never change or
+  lose it: the stored PINs are HMACs with it. On a database with plaintext PINs run
+  `docker exec ov-backend node scripts/hash-pins.mjs --apply` once after the first start. A restored
+  dump needs the secret it was written with (the nightly backup keeps an encrypted copy,
+  `secrets-<UTC>.env.gpg`).
 - `TUNNEL_TOKEN` from step 2.
 - `RESEND_*`, `CONTACT_EMAIL` from the old backend's settings. (No `REOPEN_PASSWORD_HASH`:
   it was replaced by the admin reopen of db/007.) `SMTP_*`, `MAIL_FROM`, `MANAGER_URL`: leave
@@ -221,7 +235,9 @@ hetzner# docker stats --no-stream $(docker compose ps -q)
 ```
 
 Expected: `/health` 200 with `"db":"ok"`, catalog ok, floor ok, `sentinel` true, `diskFreeMB > 0`;
-`ov-internal` holds only `ov-postgres` + `ov-backend`; `ov-edge` only `ov-backend` + `ov-tunnel`.
+`ov-internal` holds only `ov-postgres` + `ov-backend`; `ov-edge` only `ov-backend` + `ov-tunnel`
+(today's kit also has `ov-pkgs-edge` = `ov-pkgs` + `ov-tunnel` and `ov-helpdesk` = `freescout` +
+`ov-tunnel`; nothing but the tunnel reaches `ov-backend`).
 
 ## 10. External checks, then go live (lenovoserver)
 
@@ -257,9 +273,19 @@ it open), and restart `ov-postgres` during the hold: socket stays open, `/health
 
 ```bash
 hetzner# systemctl start openvolley-backup-files.service && journalctl -u openvolley-backup-files -n 20 --no-pager
-hetzner# ls -la /data/openvolley/backups && cat /var/lib/openvolley-status/last_backup
+hetzner# ls -la /data/openvolley/backups /data/openvolley/backups/wal && cat /var/lib/openvolley-status/last_backup /var/lib/openvolley-status/last_files_backup
 hetzner# systemctl enable --now openvolley-backup.timer openvolley-backup-files.timer && systemctl list-timers 'openvolley-*'
 ```
+
+Two Kuma push monitors, one per part (`backup.conf`): `OV_KUMA_PUSH_URL` for the hourly
+database run (dump + WAL segments; `last_backup`), `OV_KUMA_FILES_PUSH_URL` for the nightly
+files run (base backup, scoresheets with their owner records, snapshots; `last_files_backup`).
+`/health` shows both (`backup`, `filesBackup`); a stale one makes it 503, and the backend's
+30-day `backup/` sweep waits while the files run is stale. A count drop (more than
+`OV_COUNT_DROP_PCT` fewer matches, events or users) fails the database part but still writes
+the dump as `quarantine-db-<UTC>.dump.gpg` and runs the storage tars; after a legitimate
+delete `touch /data/openvolley/backups/counts.reset`. The dump runs in the compose service
+`ov-backup` (`OV_BACKUP_CPUS`, nice 10), not in `ov-postgres`.
 
 Restore test of that first dump (lenovoserver, private key). It boots the image recorded in
 `~/ov-ops/shipped-hetzner` by step 3 and needs `escoresheet/backend/db/roles.sql` (a missing
@@ -300,12 +326,50 @@ Check that the key really is read-only: from the NAS,
 
 ## 13. Monitoring
 
-- Uptime Kuma (on hetzner): HTTP keyword `"db":"ok"` on `https://backend.openvolley.app/health`, 60 s.
+Today's setup (production on `ov-vps`; the monitor runs on another host, never on `ov-vps`
+itself, so it still alerts when the VPS is down):
+
+- Uptime Kuma (on lenovoserver): HTTP status 200 on `https://backend.openvolley.app/health`,
+  60 s, 2 retries. `/health` is the readiness check: 503 when the db, catalog, storage sentinel,
+  disk floor or backup is not ok, or the schema is behind the image (a migration not run) or
+  broken. Alerts to ntfy.
+- Push monitor from `ov-vps` (root cron, every minute) with the internal body, which the
+  public one leaves out: restarts, OOM kills, memory, event-loop lag, pg pool waiting, refusals:
+
+  ```bash
+  ov-vps$ sudo install -m 700 /dev/stdin /usr/local/bin/ov-health-push <<'EOF'
+  #!/bin/sh
+  # Push to Uptime Kuma: down when /health is not 200, the backend restarted
+  # or was OOM-killed since the last run, or the event loop / pool look stuck.
+  set -u
+  C=$(docker compose --project-directory /opt/openvolley ps -q ov-backend) || exit 0
+  S=/var/lib/openvolley-status/ov-health-push.last
+  R=$(docker inspect -f '{{.RestartCount}} {{.State.OOMKilled}} {{.State.Health.Status}}' "$C")
+  B=$(docker exec "$C" node -e 'fetch("http://127.0.0.1:8080/health").then(async r=>{const b=await r.json();const p=b.process||{};console.log(r.status,p.rssMB,p.heapPct,(p.eventLoopLagMs||{}).max,(b.pool||{}).waiting,(b.admission||{}).refused,(b.transport||{}).frames,(b.schema||{}).state)}).catch(()=>console.log(0))')
+  set -- $R $B; LAST=$(cat "$S" 2>/dev/null || echo "$1"); echo "$1" > "$S"
+  MSG="restarts=$1 oom=$2 health=$3 http=$4 rssMB=${5:-} heap%=${6:-} lagMs=${7:-} poolWaiting=${8:-} busy=${9:-} frames=${10:-} schema=${11:-}"
+  ST=up; { [ "$4" = 200 ] && [ "$1" = "$LAST" ] && [ "$2" = false ] && [ "${7:-0}" -lt 2000 ] && [ "${8:-0}" -lt 5 ]; } || ST=down
+  curl -fsS -m 10 -G "$OV_KUMA_PUSH_URL" --data-urlencode "status=$ST" --data-urlencode "msg=$MSG" >/dev/null
+  EOF
+  ov-vps$ echo '* * * * * root OV_KUMA_PUSH_URL=<push url> /usr/local/bin/ov-health-push' | sudo tee /etc/cron.d/ov-health-push
+  ```
+
+  The Kuma push monitor (heartbeat 120 s) goes down when a push says `down` or none arrives.
+  A restart, an OOM kill (exit 137), event-loop lag above 2 s or a pg pool queue on a match day
+  is a page: read `docker compose logs --since 30m ov-backend` before anything restarts again.
+- The backend restarts itself when it hangs: the image's healthcheck kills the server after
+  `OV_WATCHDOG_FAILURES` (4) failed `/health/live` checks in a row (compose `init: true`), and
+  `restart: unless-stopped` starts it again; the push monitor reports that restart.
 - Push monitors: backup (2 h), NAS pull (26 h), restore test (8 days). Alerts to ntfy.
 - Beszel: alerts at 80% of the `ov-backend` and `ov-postgres` memory limits and at 80% use of
   `/data/openvolley/pg` and `/data/openvolley/storage`.
 - diun: notify-only for `postgres:17-alpine`, `node:22-slim`, `cloudflare/cloudflared`.
-- The synthetic probe on lenovoserver (migration plan §8) points at `backend.openvolley.app`.
+- Logs: json-file 10 x 20 MB per container (compose.yaml); the relay writes one summary line a
+  minute instead of a line per message, so a match day stays in the log. After an incident,
+  copy it off at once: `docker compose logs --since 24h ov-backend > /root/ov-incident-<UTC>.log`.
+- Before the first official Saturday, and after a change of `PG_POOL_MAX`, `OV_*_CPUS`,
+  `OV_NODE_HEAP_MB` or the host: run the peak harness (README.md "Capacity and limits for big events") against `ov-vps` on a
+  weekday and set the `.env` capacity values from its result (env.example, "Capacity").
 
 ---
 
@@ -319,26 +383,51 @@ history, `systemctl list-timers 'openvolley-*'` and the newest file in `/data/op
 
 ## Updating
 
-Backend release (Monday to Friday, before 17:00):
+Backend release (Monday to Friday, before 17:00): build and load the image, then `deploy.sh` on
+the production host does the rest ("Apply a new db migration" below):
 
 ```bash
-lenovo$ git pull && escoresheet/deploy/build-image.sh --ship local            # prints NEW tag
-lenovo$ sudo grep ^OV_BACKEND_IMAGE= /opt/openvolley/.env | sudo tee -a /opt/openvolley/DEPLOYED.log   # remember the current tag
-lenovo$ sudo systemctl start openvolley-backup.service                        # fresh dump before the change
-lenovo$ sudo sed -i 's|^OV_BACKEND_IMAGE=.*|OV_BACKEND_IMAGE=openvolley-backend:<NEW>|' /opt/openvolley/.env
-lenovo$ env | grep -E '^(OV_|TUNNEL_TOKEN)=' ; sudo docker compose --project-directory /opt/openvolley config --images | grep backend   # nothing exported; shows <NEW>
-lenovo$ sudo docker compose --project-directory /opt/openvolley up -d ov-backend && sudo docker compose --project-directory /opt/openvolley ps
-lenovo$ sudo docker compose --project-directory /opt/openvolley exec ov-backend node -e 'fetch("http://127.0.0.1:8080/health").then(async r=>console.log(r.status, await r.text()))'
-lenovo$ echo "$(date -u +%FT%TZ) deployed openvolley-backend:<NEW>" | sudo tee -a /opt/openvolley/DEPLOYED.log
+build$ git pull && escoresheet/deploy/build-image.sh --ship ov-vps           # prints NEW tag
+ov-vps$ sudo /opt/openvolley/deploy.sh openvolley-backend:<NEW>
 ```
+
+The image is built from the committed tree (`git archive HEAD`), never from files lying in the
+checkout; `--allow-dirty` test builds cannot be shipped.
+
+It takes a fresh dump, runs the migrations of the new image, applies its `roles.sql`, checks the
+schema, switches `OV_BACKEND_IMAGE` (previous tag in `DEPLOYED.log`), and checks `/health` and
+the schema again; when the new image fails, it puts the previous tag back. Never edit
+`OV_BACKEND_IMAGE` and run `up -d ov-backend` by hand for a release: that skips the migrations,
+and the new backend then logs `[DB] schema behind this image`.
 
 Kit changes (`compose.yaml`, `cloudflared/config.yml`, `pkgs/Caddyfile`, scripts): copy the kit
 (never `.env`), then `config -q` and `up -d` (recreates only what changed):
 
 ```bash
-lenovo$ sudo rsync -rlt --chmod=D750,F640 --exclude=.env escoresheet/deploy/ /opt/openvolley/
-lenovo$ sudo sh -c 'chmod 750 /opt/openvolley/*.sh && chmod 644 /opt/openvolley/cloudflared/config.yml /opt/openvolley/pkgs/Caddyfile'
-lenovo$ sudo docker compose --project-directory /opt/openvolley config -q && sudo docker compose --project-directory /opt/openvolley up -d
+build$ rsync -rlt --chmod=D750,F640 --exclude=.env --rsync-path='sudo rsync' escoresheet/deploy/ ov-vps:/opt/openvolley/
+ov-vps$ sudo sh -c 'chmod 750 /opt/openvolley/*.sh && chmod 644 /opt/openvolley/cloudflared/config.yml /opt/openvolley/pkgs/Caddyfile'
+ov-vps$ grep -c '^COMPOSE_PROFILES=tunnel$' /opt/openvolley/.env    # 1 on ov-vps only (ov-tunnel is in profile "tunnel")
+ov-vps$ sudo docker compose --project-directory /opt/openvolley config -q && sudo docker compose --project-directory /opt/openvolley up -d
+```
+
+Once, for the kit with one network per tunnel origin (`ov-pkgs-edge`, `ov-helpdesk`) and the
+`tunnel` profile: add `COMPOSE_PROFILES=tunnel` to `ov-vps`'s `.env` first (without it `up -d`
+leaves the running tunnel alone but a later recreate would not start it), then move the
+FreeScout stack from `openvolley_ov-edge` to the external network `openvolley_ov-helpdesk`
+(its compose file, service `freescout`), and check that `ov-edge` holds only `ov-backend` and
+`ov-tunnel` (step 9's `docker network inspect` line). On lenovoserver's stopped fallback,
+remove `TUNNEL_TOKEN` (and any `COMPOSE_PROFILES`) from `/opt/openvolley/.env`.
+
+Once, for the kit that gives `ov-edge` a fixed subnet (172.30.250.0/24, the tunnel at
+172.30.250.2, `TRUST_PROXY_FROM` set to it): an existing `ov-edge` keeps its old subnet and `up`
+fails or keeps it, so first check that no other network uses the range, then recreate the
+networks with `down` (no `-v`: the volumes and data stay) before the `up -d` above. A short
+outage: outside match days.
+
+```bash
+host$ sudo docker network inspect $(sudo docker network ls -q) -f '{{.Name}} {{range .IPAM.Config}}{{.Subnet}} {{end}}' | grep '172\.30\.250\.' || echo free
+host$ sudo docker compose --project-directory /opt/openvolley down     # never with -v
+host$ sudo docker compose --project-directory /opt/openvolley up -d
 ```
 
 Script changes also need `sudo /opt/openvolley/host-prep.sh` (reinstalls `backup-openvolley.sh`
@@ -383,18 +472,67 @@ then run the restore test.
 
 ## Apply a new db migration
 
-A new `escoresheet/backend/db/NNN_*.sql` (for example `006_matches_updated_at.sql`) reaches a
-running database only by hand; `restore.sh` runs them on a restore only. Each file is
-idempotent. Run the files the database does not have yet, in number order, as `ov_owner`, then
-`roles.sql`, before or together with the backend that expects them:
+Migrations (`escoresheet/backend/db/NNN_*.sql`) are never run by hand any more. The backend
+image carries them and its runner, `scripts/migrate.mjs`: it applies every file the database
+does not have yet, once, in number order, each in its own transaction together with its row in
+`ov_meta.schema_migrations` (version, file, SHA-256, time), as `ov_owner`, under an advisory
+lock. A recorded file whose content changed is refused (a migration is never edited once it
+ran; the change goes into a new file), and so is an older image's runner on a newer database.
+After the numbered files it applies `db/current_definitions.sql` on every run: the current body
+of every trigger function that more than one file defines, so a file that was run again by
+hand (007, 011, 015, 030) cannot leave its older guard behind.
+
+A backend release is one command, `deploy.sh` (in the kit, next to `compose.yaml`), on the
+production host; the image is loaded first with `build-image.sh --ship`:
 
 ```bash
-lenovo$  sudo docker compose --project-directory /opt/openvolley exec -T ov-postgres psql -U ov_owner -d openvolley -v ON_ERROR_STOP=1 \
-           < escoresheet/backend/db/006_matches_updated_at.sql
-lenovo$  sudo /opt/openvolley/apply-roles.sh < escoresheet/backend/db/roles.sql   # "ok: ov_app logs in and sees N matches"
+ov-vps$ sudo /opt/openvolley/deploy.sh openvolley-backend:<NEW>
 ```
 
-Do the same on the dev database.
+It refuses inside the match-day freeze and while the running backend has live relay rooms
+(`--any-time` overrides), then: a fresh dump (`openvolley-backup.service`; refused when the unit
+did not run, e.g. without `/etc/openvolley/backup.conf`), the migrations of the NEW image (the
+running backend keeps serving), `roles.sql` of the new image through `apply-roles.sh`,
+`scripts/check-schema.mjs` of the new image as `ov_owner`, the freeze and live-room check once
+more, the switch (`up -d --wait ov-backend`, previous tag in `DEPLOYED.log`), `/health` 200 and
+`scripts/check-schema.mjs` in the new container. A failure up to the switch changes no
+container (a failed migration changed nothing; the ones before it stay applied). When the switch
+or the checks after it fail, it puts the previous tag back and starts it (the database keeps the
+migrations: each is written for the older backend too; an older image does not compare the
+trigger functions of a newer database with its own).
+
+- **First run** (no record yet): when the objects of every file from 002 to 033 are there (one
+  catalog check per file), 000 to 033 are recorded without running them. Otherwise it stops,
+  names the files whose objects are missing and asks for the last file the database has, e.g.
+  `deploy.sh --baseline 031 openvolley-backend:<NEW>` (032, 033 and the later files then run;
+  each is idempotent). A `--baseline` above a file whose objects are missing is refused.
+- **A file that asks for a second run after the switch** (032: rows the old backend wrote in
+  between): `deploy.sh --rerun 032 openvolley-backend:<NEW>`, or later
+  `deploy.sh --migrate-only --rerun 032 openvolley-backend:<NEW>`.
+- **State**: `sudo docker compose --project-directory /opt/openvolley exec -T ov-backend node scripts/check-schema.mjs`
+  (each migration of the running image recorded, guard triggers enabled, unique indexes valid,
+  trigger functions current; exit 1 lists what is wrong) and `... node scripts/migrate.mjs --status`.
+  The backend logs the same at start and again when it changes (checked every 5 minutes,
+  `[DB] schema: ...`).
+- **After a restore** (`restore-db.sh` restores without privileges): `roles.sql`, which every
+  restore path applies (`apply-roles.sh`), gives the backend its read access to the record back.
+- **A file run again** (`--rerun NNN`, e.g. 007 to put dropped guard triggers back): it runs in
+  one transaction together with `db/current_definitions.sql`, so its older function bodies never
+  become live; the running backend picks the new state up within 5 minutes (`[DB] schema: ...`).
+- **Writing a migration**: the next free number, named `NNN_lowercase_words.sql` (digits, `a-z`
+  and `_`: any other `NNN...sql` name is refused, not skipped); idempotent; one transaction (its own `BEGIN;`
+  first and `COMMIT;` last are fine, nothing else that controls the transaction, no psql
+  meta-commands); safe while the previous backend serves; added to
+  `tests/helpers/pgTestDb.js` `MIGRATIONS_SQL`. A file that redefines a function or trigger of an
+  earlier file copies the new definition into `db/current_definitions.sql` and raises its
+  "current as of" line (the runner and `tests/migrate.pg.test.js` refuse otherwise). A new guard
+  trigger or unique index goes into `lib/schemaVersion.js` (`REQUIRED_TRIGGERS`,
+  `REQUIRED_INDEXES`).
+
+On the dev database the same runner, with its owner connection (the password from `~/.pgpass`
+or `PGPASSWORD` in the environment, never on a command line):
+`OV_MIGRATE_DATABASE_URL=postgres://<owner>@<host>:5432/<db> node escoresheet/backend/scripts/migrate.mjs`,
+then `roles.sql` there as before.
 
 ## Account emails (SMTP)
 
@@ -438,7 +576,7 @@ emails"). Without `SMTP_HOST`/`SMTP_PASS` the backend sends nothing: reset answe
    signed out and a "password was changed" notice arrives. A failed send is in
    `sudo docker compose --project-directory /opt/openvolley logs ov-backend | grep 'reset-password mail failed'` (addresses masked).
 7. **Watch** (any time): the mail counters are in the internal health body,
-   `lenovo$ sudo docker compose --project-directory /opt/openvolley exec -T ov-backend wget -qO- http://127.0.0.1:3000/health` (or the
+   `lenovo$ sudo docker compose --project-directory /opt/openvolley exec -T ov-backend wget -qO- http://127.0.0.1:8080/health` (or the
    status network), under `mail`: `budgets.account` (reset, password changed) and
    `budgets.confirm` (confirmation links), 50 each per hour, with `used`, `dropped` this hour
    and `droppedTotal`; `exhausted` names a budget that is used up; `inboxDropped` counts mails
@@ -450,12 +588,36 @@ To switch the mails off again: empty `SMTP_PASS=` in `/opt/openvolley/.env` (wit
 `sudo docker compose --project-directory /opt/openvolley up -d ov-backend`.
 To rotate the password: set it in Migadu, then run the script again (it replaces the lines).
 
+## Edge and mail domain (Cloudflare, DNS)
+
+Target values (owner, Cloudflare dashboard and DNS; nothing in this kit sets them). Check them
+with `escoresheet/deploy/check-edge.sh` (read-only) before go-live and after every change here;
+it exits 0 only when all of them hold.
+
+- SSL/TLS, Edge Certificates: **Always Use HTTPS** on (http:// answers a redirect, also for
+  `backend.` and `get.`); **Minimum TLS Version 1.2** (TLS 1.0/1.1 refused).
+- HSTS: `max-age=31536000; includeSubDomains`, no preload until every subdomain is HTTPS-only
+  (then `preload` and the hstspreload.org submission). The backend (cloud mode) and
+  `ov-pkgs` (pkgs/Caddyfile) send it themselves; Cloudflare's HSTS setting covers the Pages sites.
+- CAA on `openvolley.app`: `0 issue "pki.goog"`, `0 issue "letsencrypt.org"`,
+  `0 issue "ssl.com"`, the same three as `issuewild`, and `0 iodef "mailto:<security contact>"`.
+  Compare with the CAA records Cloudflare adds for its own certificates (Universal SSL): its CAs
+  must stay on the list, or certificate renewal fails.
+- DMARC (`_dmarc.openvolley.app` TXT), keeping `rua`: read the aggregate reports for both
+  senders (Migadu: `noreply@`, account mails; Resend: `escoresheet@`, match mails) until both
+  pass SPF or DKIM aligned, then `p=quarantine; pct=25`, `50`, `100` over a few weeks, then
+  `p=reject; pct=25`, then `100`. Each step only after a week of clean reports.
+
+```bash
+build$ escoresheet/deploy/check-edge.sh            # CAA, DMARC, TLS 1.0/1.1/1.2, http->https, HSTS
+```
+
 ## Rollback
 
 | Situation | Action |
 |---|---|
 | Before go-live (step 10) | `docker compose down`. Nothing public changed. |
-| Bad backend release | Put the previous tag (from `/opt/openvolley/DEPLOYED.log`) back into `OV_BACKEND_IMAGE` (with `sudo`), check `sudo docker compose --project-directory /opt/openvolley config --images` shows it (if not, the shell exports `OV_BACKEND_IMAGE`: see Shell hygiene), and `sudo docker compose --project-directory /opt/openvolley up -d ov-backend`. If the image was pruned: `sudo sh -c 'gunzip -c /opt/openvolley/images/openvolley-backend-<sha>.tar.gz \| docker load'` first. Same database and storage, so sessions survive and no data moves. If the release changed the schema, first restore the pre-deploy dump into a side container (as `restore-test.sh` does) and compare. |
+| Bad backend release | Put the previous tag (from `/opt/openvolley/DEPLOYED.log`) back into `OV_BACKEND_IMAGE` (with `sudo`), check `sudo docker compose --project-directory /opt/openvolley config --images` shows it (if not, the shell exports `OV_BACKEND_IMAGE`: see Shell hygiene), and `sudo docker compose --project-directory /opt/openvolley up -d ov-backend`. If the image was pruned: `sudo sh -c 'gunzip -c /opt/openvolley/images/openvolley-backend-<sha>.tar.gz \| docker load'` first. Same database and storage, so sessions survive and no data moves. If the release changed the schema, first restore the pre-deploy dump into a side container (as `restore-test.sh` does) and compare. Back on the newer image after a rollback to one from before `db/033`: `sudo docker compose --project-directory /opt/openvolley exec ov-backend node scripts/scoresheet-records.mjs --apply` (the PDFs the older image stored have no `match_scoresheets` record; backend README "Files stored before this change"). |
 | Data corruption | "Restore the database" below. |
 | lenovoserver lost | Same compose on another host (never the club's Hetzner VPS) with the **same `TUNNEL_TOKEN`** and the newest dump from lenovoserver's borg backup on the NAS (RUNBOOK-move-to-own-vm.md, steps 3-9, restoring that dump instead of reading from `old`; it needs the backup private key). No DNS change. Make sure the lenovoserver `ov-tunnel` is stopped, or Cloudflare splits traffic between both. |
 | Anything on a match day | LAN mode / Pi / desktop build from `pre-selfhost`. Scoring never depends on the cloud. |
@@ -484,6 +646,8 @@ lenovo$ sudo /opt/openvolley/restore-db.sh --counts /data/openvolley/pg/import/d
 lenovo$ sudo /opt/openvolley/apply-roles.sh < escoresheet/backend/db/roles.sql
 lenovo$ env | grep -E '^(OV_|TUNNEL_TOKEN)=' ; sudo docker compose --project-directory /opt/openvolley up -d && sudo docker compose --project-directory /opt/openvolley ps
 lenovo$ sudo docker compose --project-directory /opt/openvolley exec ov-backend node -e 'fetch("http://127.0.0.1:8080/health").then(async r=>console.log(r.status, await r.text()))'
+# 4b. scoresheet PDFs stored after the dump have lost their match_scoresheets record (db/033): record them again
+lenovo$ sudo docker compose --project-directory /opt/openvolley exec ov-backend node scripts/scoresheet-records.mjs --apply
 # 5. backups back on (restore-db.sh touched counts.reset: the first run takes the restored counts as baseline)
 lenovo$ sudo systemctl start openvolley-backup.service && journalctl -u openvolley-backup -n 5 --no-pager
 lenovo$ sudo systemctl enable --now openvolley-backup.timer openvolley-backup-files.timer
@@ -493,7 +657,11 @@ lenovo$ sudo docker compose --project-directory /opt/openvolley exec -T ov-postg
 ```
 
 If `/health` reports the floor below `OV_MIN_MATCHES` because the dump is older, lower it in
-`.env` and `sudo docker compose --project-directory /opt/openvolley up -d ov-backend`. Devices re-sync what they still have queued. If
+`.env` and `sudo docker compose --project-directory /opt/openvolley up -d ov-backend`. Apps
+from this release on send a match the server no longer has again from their own queue (an
+update answered `OV_MATCH_UNKNOWN`, or a set or event whose match is missing): only matches
+whose jobs the device still holds (sent jobs are kept 7 days; a closed match's local copy may
+be gone). Older apps do not: prefer the point-in-time restore below, which loses minutes. If
 the restore-test floor (`~/ov-ops/restore-floor` on lenovoserver) is above the restored counts,
 delete that file after the next good backup.
 
@@ -501,6 +669,63 @@ If `ov-postgres` itself refuses to start with "no PG_VERSION, but a cluster exis
 lost: stop it, move `/data/openvolley/pg/data` aside (`install -d -o 70 -g 70 -m 700` a new
 one), remove `/data/openvolley/pg/state/initialized`, start `ov-postgres` (fresh initdb), then
 follow the steps above.
+
+## Restore the database to a point in time
+
+The WAL segments (`backups/wal/*.gpg`, every finished segment, at least every 5 min while
+anything is written) replayed on the newest nightly base backup (`base-<UTC>.tar.gpg`) before
+the target bring the whole cluster back to that minute. It replaces the cluster (every
+database in it), so first try the dump restore above when an hour of loss is acceptable.
+Base backups and WAL are kept 7 days on the server, longer on the NAS (`nas-pull.sh`).
+
+```bash
+# 1. stop writes and the backup timers, then Postgres; keep the current cluster aside
+lenovo$ sudo systemctl stop openvolley-backup.timer openvolley-backup-files.timer
+lenovo$ sudo docker compose --project-directory /opt/openvolley stop ov-tunnel ov-backend ov-postgres
+lenovo$ sudo mv /data/openvolley/pg/data /data/openvolley/pg/data.pre_pitr_<UTC>
+lenovo$ sudo install -d -o 70 -g 70 -m 700 /data/openvolley/pg/data /data/openvolley/pg/restore_wal
+# 2. the newest base backup BEFORE the target time, and every WAL segment, decrypted (private key)
+lenovo$ set -o pipefail; B=base-<UTC>
+lenovo$ sudo cat /data/openvolley/backups/$B.tar.gpg | gpg -d | sudo tar -C /data/openvolley/pg/data -xf -
+lenovo$ for f in /data/openvolley/backups/wal/*.gpg; do sudo cat "$f" | gpg -d | sudo tee "/data/openvolley/pg/restore_wal/$(basename "$f" .gpg)" >/dev/null; done
+lenovo$ sudo chown -R 70:70 /data/openvolley/pg/data /data/openvolley/pg/restore_wal
+# 3. recovery settings: replay to the target (UTC), then promote
+lenovo$ printf "restore_command = 'cp /ovpg/restore_wal/%%f %%p'\nrecovery_target_time = '2026-11-08 15:42:00+00'\nrecovery_target_action = 'promote'\n" | sudo tee -a /data/openvolley/pg/data/postgresql.auto.conf
+lenovo$ sudo -u '#70' touch /data/openvolley/pg/data/recovery.signal
+lenovo$ sudo docker compose --project-directory /opt/openvolley up -d ov-postgres && sudo docker compose --project-directory /opt/openvolley logs -f ov-postgres   # wait for "database system is ready to accept connections"
+# 4. remove the recovery lines again (they stay in postgresql.auto.conf), check, then the backend
+lenovo$ sudo sed -i '/^restore_command\|^recovery_target/d' /data/openvolley/pg/data/postgresql.auto.conf
+lenovo$ sudo docker compose --project-directory /opt/openvolley exec -T ov-postgres psql -U ov_owner -d openvolley -c 'select max(updated_at) from matches'
+lenovo$ sudo docker compose --project-directory /opt/openvolley restart ov-postgres && sudo docker compose --project-directory /opt/openvolley up -d
+# 5. backups back on: the restored cluster starts a new timeline; take a base backup at once
+lenovo$ sudo touch /data/openvolley/backups/counts.reset && sudo systemctl start openvolley-backup-files.service
+lenovo$ sudo systemctl enable --now openvolley-backup.timer openvolley-backup-files.timer
+# 6. once satisfied
+lenovo$ sudo rm -rf /data/openvolley/pg/restore_wal /data/openvolley/pg/data.pre_pitr_<UTC>
+```
+
+Then step 4b of the dump restore (scoresheet records) and, if the storage was lost too, the
+storage restore below.
+
+## Restore the storage (scoresheets, owner records, match backups)
+
+`restore-storage.sh` unpacks the newest `scoresheets-<UTC>.tar.gpg` (the PDFs with their owner
+records `.owners`: without them the backend refuses each scoresheet to its own scorer) and then
+every `snapshots-<UTC>.tar.gpg` oldest first (each holds the `backup/` files of ~26 h). It needs
+the private key, so restore into a scratch directory where the key is and copy the result over:
+
+```bash
+lenovo$ escoresheet/deploy/restore-storage.sh --from <nas copy of the backups> --dry-run /dev/shm/ov-storage   # lists what it would unpack
+lenovo$ install -d -m 700 /dev/shm/ov-storage && escoresheet/deploy/restore-storage.sh --from <nas copy> [--at <UTC>] /dev/shm/ov-storage
+lenovo$ sudo docker compose --project-directory /opt/openvolley stop ov-tunnel ov-backend     # on the server
+lenovo$ rsync -a /dev/shm/ov-storage/ <server>:/data/openvolley/storage/ && rm -rf /dev/shm/ov-storage
+lenovo$ ssh <server> 'sudo chown -R 1000:1000 /data/openvolley/storage/{scoresheets,.owners,backup} && sudo docker compose --project-directory /opt/openvolley up -d'
+lenovo$ ssh <server> 'sudo docker compose --project-directory /opt/openvolley exec ov-backend node scripts/scoresheet-records.mjs --apply'
+```
+
+A tar from before the owner records were backed up restores no `.owners`; the script says so,
+and each scoresheet then needs its owners set again (`scripts/storage-owner.mjs`).
+`deploy/tests/backup.test.sh` runs a backup and this restore end to end with a throwaway key.
 
 ## Uninstall (removes every trace from the VM)
 

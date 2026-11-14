@@ -91,6 +91,42 @@ describe('generated remarks: default / incomplete team (field-spec 8, 11)', () =
     ])
   })
 
+  it('a default after sets were played (6.4.1): the score at the default, then 3:0 with 0:25 in every set', () => {
+    seq = 0
+    const events = [
+      ev('point', 1, { team: 'home' }),
+      ...Array.from({ length: 12 }, () => ev('point', 2, { team: 'away' })),
+      ...Array.from({ length: 10 }, () => ev('point', 2, { team: 'home' })),
+      ev('forfait', 2, { team: 'home', reason: 'forfeit', scope: 'match', inDefault: true, setIndex: 2 })
+    ]
+    const sets = [1, 2, 3].map(index => ({ index, homePoints: 0, awayPoints: 25, finished: true }))
+    expect(generatedRemarks({ sets, events, teamAKey: 'home', bestOf: 5 })).toEqual([
+      'Team A, Set 2, Result 10:12: declared in default. Match awarded to Team B, 3:0 (25:0, 25:0, 25:0).'
+    ])
+  })
+
+  it('a team incomplete for the match (6.4.3) is not "in default": it keeps its points and sets', () => {
+    for (const payload of [{ reason: 'injury' }, { reason: 'incomplete', inDefault: false }]) {
+      seq = 0
+      const events = [
+        ...Array.from({ length: 12 }, () => ev('point', 4, { team: 'away' })),
+        ...Array.from({ length: 10 }, () => ev('point', 4, { team: 'home' })),
+        ...Array.from({ length: 13 }, () => ev('point', 4, { team: 'away', forfeitAwarded: true })),
+        ev('forfait', 4, { team: 'home', scope: 'match', setIndex: 4, ...payload })
+      ]
+      const sets = [
+        { index: 1, homePoints: 25, awayPoints: 20, finished: true },
+        { index: 2, homePoints: 20, awayPoints: 25, finished: true },
+        { index: 3, homePoints: 20, awayPoints: 25, finished: true },
+        { index: 4, homePoints: 10, awayPoints: 25, finished: true }
+      ]
+      const why = payload.reason === 'injury' ? ' (injury)' : ''
+      expect(generatedRemarks({ sets, events, teamAKey: 'home', bestOf: 5 })).toEqual([
+        `Team A, Set 4, Result 10:12: incomplete team${why}. Match awarded to Team B, 3:1 (20:25, 25:20, 25:20, 25:10).`
+      ])
+    }
+  })
+
   it('an incomplete team for one set', () => {
     seq = 0
     const events = [

@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.12 · État au 10 novembre 2026
+**OpenVolley et OpenBeach** · Version 1.13 · État au 14 novembre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version anglaise fait foi.
@@ -8,7 +8,8 @@ version anglaise fait foi.
 ## En bref
 
 - OpenVolley est un projet open source privé et non commercial. Il n'y a ni
-  publicité, ni suivi (tracking), ni outil d'analyse, ni cookies.
+  publicité, ni suivi (tracking), ni outil d'analyse, ni cookies de ma part
+  (la section 3 nomme les scripts qu'ajoute Cloudflare).
 - Les applications fonctionnent hors ligne. Vos matchs sont enregistrés sur
   votre appareil, et dans la base de données du serveur seulement une fois que
   vous êtes connecté. Pour que les tablettes reçoivent un match en cours, les
@@ -35,6 +36,9 @@ version anglaise fait foi.
 - Le responsable d'une équipe peut envoyer à l'avance la liste d'un match.
   L'appareil du marqueur la garde pour la préparation du match ; dès que le
   marqueur l'accepte, le serveur la supprime (section 10).
+- Les procès-verbaux de match (feuilles de match, événements, fichiers des
+  feuilles de match) sont conservés pendant leur saison et les deux saisons
+  suivantes, puis effacés (section 16).
 - Vous pouvez demander à tout moment l'accès, la rectification ou
   l'effacement : **support@openvolley.app**.
 
@@ -84,15 +88,23 @@ Cette déclaration contient les informations exigées par les deux lois.
   profilage, ni décision individuelle automatisée. Je ne vends pas de données.
 - **Pas de contenus de tiers.** Les polices et le code des programmes
   viennent de nos propres sites, pas de serveurs tiers. Les exceptions sont
-  nommées expressément (section 12).
+  nommées expressément (section 12 et les scripts de Cloudflare ci-dessous).
+- **Scripts de Cloudflare.** Cloudflare, qui livre les sites (section 15),
+  ajoute aux pages deux petits scripts à lui : dans chaque page un contrôle
+  contre les accès automatisés (détection des robots) et, sur openvolley.app
+  et get.openvolley.app, un script qui affiche les adresses e-mail écrites sur
+  la page. Ils viennent de la même adresse que la page, ne vous suivent pas et
+  ne servent à aucune analyse. Le contrôle des robots peut enregistrer son
+  résultat dans un cookie de Cloudflare (`cf_clearance`) ; il est strictement
+  nécessaire à la protection du service.
 - **Hors ligne d'abord.** Ce que vous saisissez sans vous connecter n'est
   enregistré que sur votre appareil. Pour la transmission aux tablettes, voir
   la section 9.
 
 ## 4. Site web et page de téléchargement
 
-**openvolley.app** et **get.openvolley.app** sont des pages statiques sans
-scripts de tiers. Le seul formulaire est le formulaire de support sur
+**openvolley.app** et **get.openvolley.app** sont des pages statiques ; en
+dehors des scripts de Cloudflare (section 3), elles ne chargent aucun script. Le seul formulaire est le formulaire de support sur
 openvolley.app/support (section 13). Lors de l'affichage, Cloudflare traite
 les données techniquement nécessaires : adresse IP, adresse demandée, heure
 et identifiant du navigateur. Mon serveur ne tient pas de journal d'accès pour
@@ -124,7 +136,7 @@ sur le réseau local.
   sont effacées après 30 jours ;
 - des **journaux de l'application** (messages techniques ; ils peuvent
   contenir des noms et des numéros de match). Seul votre compte peut les
-  lire. Ils sont conservés jusqu'à la suppression de votre compte ;
+  lire. Ils sont effacés après 30 jours, et avec votre compte ;
 - les **feuilles de match** comme fichiers (PDF et données), voir section 7.
 
 **Journal d'activité (OpenVolley à partir de la version 2.4.0).** Pour la
@@ -153,8 +165,8 @@ l'enregistrer comme fichier (CSV ou JSON).
 **Où se trouve le journal d'activité :** sur votre appareil ; dans les
 applications de bureau et Android aussi sous forme de fichiers quotidiens
 dans le dossier `OpenVolley/logs` (bureau : dans votre dossier utilisateur à
-côté des fichiers de sauvegarde, Android : dans le dossier « Documents », voir
-ci-dessous). Si vous êtes connecté, l'application l'envoie à mon serveur, y
+côté des fichiers de sauvegarde, Android : dans le dossier propre à
+l'application, voir ci-dessous). Si vous êtes connecté, l'application l'envoie à mon serveur, y
 compris les entrées créées sur cet appareil sans connexion. Sur le serveur,
 les entrées d'un match peuvent être lues par le compte qui a saisi le match,
 les comptes qui ont saisi le NIP du match et les administrateurs ; les entrées
@@ -199,18 +211,32 @@ votre appareil, n'est jamais envoyé et ne contient ni NIP, ni jetons de
 connexion, ni mots de passe du point d'accès. Au plus cinq anciens fichiers
 de 5 Mo chacun sont conservés.
 
-**Application Android.** L'application Android dépose ses fichiers de
-sauvegarde et les fichiers quotidiens du journal d'activité dans le dossier
-public « Documents ». **Ces fichiers subsistent
-après la désinstallation de l'application et, sous Android 10 et versions
-antérieures, d'autres applications peuvent aussi les lire.** Supprimez-les
-vous-même si nécessaire. Si vous avez activé la sauvegarde Google de
+**Application Android.** L'application Android garde ses fichiers de
+sauvegarde (chiffrés avec les NIP du match ; un match de test n'en a pas), les feuilles de match en PDF et
+les fichiers quotidiens du journal d'activité dans son propre dossier, qu'aucune
+autre application ne peut lire et qui est supprimé à la désinstallation.
+C'est seulement si vous choisissez « Exporter vers Documents » qu'elle copie
+des fichiers dans le dossier public « Documents » (`Documents/OpenVolley`).
+**Ces copies subsistent après la désinstallation de l'application et, sous
+Android 10 et versions antérieures, d'autres applications peuvent aussi les
+lire.** Supprimez-les vous-même lorsque vous n'en avez plus besoin. Les
+versions jusqu'à 3.1.4 gardaient leurs fichiers dans « Documents » ; les
+versions plus récentes les déplacent dans le dossier de l'application au
+premier démarrage. Si vous avez activé la sauvegarde Google de
 l'appareil, Android peut aussi sauvegarder les données de l'application (avec
 les listes d'équipe) dans votre compte Google ; les conditions de Google
 s'appliquent.
 
 Sur un appareil partagé, déconnectez-vous après le match. La déconnexion
-efface votre jeton de connexion et les équipes mises en cache.
+efface de l'application votre jeton de connexion, votre profil et vos clubs,
+les matchs du jour, les équipes, listes et listes de licences des clubs mises en
+cache, ainsi que les adresses e-mail avec lesquelles des officiels ont
+confirmé sur cet appareil ; de même lorsque votre session expire ou qu'un
+autre compte se connecte. Sans connexion, la déconnexion met aussi fin à
+votre session sur le serveur dès que l'appareil est de nouveau en ligne. Les
+adresses des officiels sont conservées 7 jours au plus. Ne configurez pas de
+clé d'accès sur un appareil partagé (cochez "Appareil partagé" à la
+connexion).
 
 ## 6. Compte et e-mails
 
@@ -285,7 +311,24 @@ match officiel et la feuille de votre propre match de test comme décrit à la
 section 7.
 
 **Qui voit vos données de compte :** vous-même et les administrateurs
-d'OpenVolley (moi et les personnes que je désigne).
+d'OpenVolley (moi et les personnes que je désigne). En outre, dans la mesure
+où leur tâche l'exige :
+
+- les responsables d'un club pour lequel vous marquez ou dont vous gérez une
+  équipe : votre nom, votre adresse e-mail, vos rôles et depuis quand vous
+  appartenez au club ou gérez l'équipe ;
+- les responsables du club ou de l'équipe indiqués lors de votre inscription
+  (ceux qui valident) : votre nom, votre adresse e-mail, la date
+  d'inscription et si votre adresse est confirmée, jusqu'à la décision sur
+  votre demande ;
+- les autres gestionnaires d'un tournoi de beach-volley que vous gérez :
+  votre adresse e-mail ;
+- les marqueurs qui reçoivent une liste d'équipe que vous avez envoyée à
+  l'avance : votre nom comme expéditeur (section 10) ;
+- les autres marqueurs d'un match officiel que vous marquez déjà : votre nom,
+  pour qu'ils sachent que le match est pris ;
+- les gestionnaires de compétition de l'application : le nom du compte qui a
+  saisi chaque match, dans la liste des feuilles de match.
 
 **Supprimer votre compte :** vous pouvez supprimer votre compte vous-même dans
 l'application à tout moment. Sont alors effacés le compte, le profil, les
@@ -314,7 +357,25 @@ nom, date de naissance et indication libéro ou capitaine, encadrement
 ligne avec nom, pays, date de naissance ; arbitres avec une adresse e-mail
 facultative), **signatures** (images dessinées sur
 l'appareil ou sur un téléphone), tirage au sort, déroulement du match avec tous les événements,
-remplacements et sanctions, résultats et corrections ultérieures.
+remplacements et sanctions, résultats et corrections ultérieures, ainsi que
+les **remarques** (la case des remarques de la feuille de match : ce
+qu'écrit le marqueur et les lignes qu'ajoute l'application, par exemple pour
+un remplacement forcé ou un libéro qui ne peut plus jouer).
+
+**Données de santé dans un match :** un remplacement ou un changement de
+libéro parce qu'une joueuse ou un joueur est blessé ou malade, et une blessure
+que note le marqueur, sont des informations sur la santé (données
+personnelles sensibles selon la LPD, catégorie particulière selon le RGPD).
+L'application enregistre l'événement avec son motif, comme l'exigent les
+règles, et n'écrit dans les remarques que les termes des règles (par exemple
+« #4 substituted, cannot continue playing »), jamais un diagnostic. Les
+remarques écrites par le marqueur peuvent en dire plus : n'écrivez que ce dont
+le procès-verbal a besoin. Les remarques sont vues par ceux qui voient tout
+(tableau ci-dessous) et, pendant le match, par la tablette d'arbitre et les
+détenteurs du NIP du match, jamais par les tablettes de banc ni le public ;
+elles figurent sur la feuille de match et parviennent ainsi à ses
+destinataires (ci-dessous). Base juridique : section 20 ; conservées avec le
+match (section 16).
 
 **Qui saisit les données :** le marqueur dans l'application, les responsables
 d'équipe sur la page des listes d'équipe (`roster.openvolley.app`) et dans le site de gestion (section 10), les
@@ -330,12 +391,20 @@ qualification et de la catégorie d'âge, livescore.
 
 | Qui | Quoi |
 |---|---|
-| Le compte qui a saisi le match ; les comptes qui ont saisi le NIP du match ; les administrateurs | Tout |
-| Tablettes d'arbitre et de banc avec NIP | Équipes, listes d'équipe avec noms et numéros, score. **Pas** de dates de naissance, signatures, officiels ni validations |
+| Le compte qui a saisi ou clôturé le match ; les administrateurs | Tout |
+| Les comptes qui ont saisi le NIP du match (par exemple une tablette qui reprend le match) | Tout, jusqu'à la clôture du match |
+| Tablette d'arbitre avec le NIP d'arbitre | Équipes, les deux listes d'équipe avec noms et numéros, score, remarques. **Pas** de dates de naissance, signatures, officiels ni validations |
+| Tablette de banc avec le NIP de son équipe | La liste de sa propre équipe avec noms et numéros, les numéros de maillot de l'autre équipe, score. **Pas** de remarques, dates de naissance, signatures, officiels ni validations |
 | Tout le monde (public) | Voir section 8 |
 
 Une fois un match validé et clôturé, personne ne peut plus le modifier, pas
-même la personne qui l'a saisi. Seul un administrateur peut le rouvrir.
+même la personne qui l'a saisi. Seul un administrateur peut le rouvrir. Dès
+la clôture, le NIP du match n'ouvre plus le procès-verbal : il ne montre que
+ce qui est public (section 8), et les comptes qui l'ont rejoint avec lui ne
+peuvent plus lire le match. Chaque restauration d'un match avec le NIP du
+match est consignée dans le journal des modifications. La personne qui a créé
+le match et les administrateurs voient les comptes qui l'ont rejoint avec le
+NIP du match et peuvent les retirer.
 
 **Fichiers des feuilles de match :** à la fin du match, l'application
 téléverse la feuille de match en PDF et sous forme de fichier de données.
@@ -404,11 +473,12 @@ place, elle fait partie du match, avec la mention qu'elle a été faite sur un
 téléphone (voie et heure). Via le serveur, le marqueur doit être connecté
 avec un rôle de marqueur ou d'arbitre.
 
-**Envoi des infos du match par e-mail :** si vous envoyez les infos du match
-à une adresse e-mail depuis l'application, le numéro du match, le NIP du
-match, les équipes, la date et le lieu sont envoyés à l'adresse saisie.
-L'adresse du destinataire est consignée dans le journal du serveur. Le
-service Resend (États-Unis) peut être utilisé pour l'envoi (section 15).
+**Envoi des infos du match par e-mail :** un marqueur connecté peut se faire
+envoyer les infos d'un match qu'il a saisi ou qu'il modifie (numéro du match,
+équipes, date et lieu, sans NIP) à l'adresse e-mail confirmée de son propre
+compte ; l'application le fait à la création d'un match. Aucune autre adresse
+ne peut être saisie. Le service Resend (États-Unis) est utilisé pour l'envoi
+(section 15).
 
 ## 8. Affichages publics : livescore, panneaux LED, données publiques
 
@@ -439,9 +509,11 @@ sont visibles que pour qui connaît le NIP du match.
 ## 9. Tablettes et mode salle (LAN)
 
 **Les tablettes d'arbitre et de banc** (`referee.`, `bench.`,
-`referee-beach.openvolley.app`) se connectent au match avec un NIP. Elles
-reçoivent les équipes, les listes d'équipe avec noms et numéros et le score,
-mais ni dates de naissance, ni signatures, ni données sur les officiels. La
+`referee-beach.openvolley.app`) se connectent au match avec un NIP. La
+tablette d'arbitre reçoit les deux listes d'équipe avec noms et numéros, le
+score et les remarques ; une tablette de banc la liste de sa propre équipe et
+seulement les numéros de maillot de l'autre équipe. Aucune ne reçoit de dates
+de naissance, de signatures ni de données sur les officiels. La
 tablette d'arbitre enregistre le NIP et le numéro du match dans le
 navigateur ; effacez les données du navigateur si plusieurs personnes
 utilisent la tablette.
@@ -470,9 +542,14 @@ gestionnaires de compétition peuvent préparer des équipes et des tournois.
 **Équipes enregistrées :** nom de l'équipe, club, joueuses et joueurs avec
 numéro, prénom et nom, date de naissance, numéro de licence, libéro/capitaine
 et (beach) pays ; encadrement avec fonction, nom, date de naissance et numéro
-de licence. Visibles pour les comptes ayant le rôle de gestionnaire ou de
-marqueur du sport concerné. Les applications de marquage mettent ces équipes en
-cache et les effacent à la déconnexion.
+de licence. Visibles pour les gestionnaires de compétition et les
+administrateurs du sport concerné. Dans OpenVolley, un compte de marqueur ne
+voit que les équipes enregistrées de ses propres matchs de la saison en cours
+(les équipes de ses clubs et leurs adversaires, et les matchs qu'il a saisis
+ou modifie) ; un compte sans club seulement peu avant le match et pour
+quelques matchs par semaine, chacun consigné dans le journal des
+modifications. Les applications de marquage mettent ces équipes en cache et
+les effacent à la déconnexion.
 
 **Responsables d'équipe (OpenVolley) :** les responsables d'un club peuvent
 donner un lien à l'entraîneur ou au responsable d'une équipe de leur club ; la
@@ -504,15 +581,22 @@ entraîneurs du club depuis l'administration du club de VolleyManager. Le
 fichier est lu dans le navigateur : seuls le numéro de licence, le nom, le
 prénom, la date de naissance et le sexe de chaque personne sont conservés ;
 rien d'autre du fichier n'est envoyé au serveur. Les listes sont visibles pour
-les responsables du club et les administrateurs. Elles sont aussi visibles
-pour les responsables d'équipe du club pour leurs listes, et elles sont
-téléchargées sur les appareils des marqueurs du club afin que la préparation
-du match puisse ajouter des joueurs et des officiels d'équipe sans internet
-(un entraîneur peut être n'importe quelle personne des listes du club). Le
+les responsables du club et les administrateurs. Un responsable d'équipe du
+club voit les joueuses et joueurs du sexe et de la catégorie d'âge de son
+équipe, avec les dates de naissance seulement des personnes de sa propre
+équipe, et trouve les officiels d'équipe (un entraîneur peut être n'importe
+quelle personne des listes du club) par une recherche par nom qui montre
+quelques personnes à la fois. Les appareils des marqueurs du club
+téléchargent les listes sans dates de naissance, afin que la préparation du
+match puisse ajouter des joueurs et des officiels d'équipe sans internet ; la
+date de naissance d'une personne ajoutée à une liste d'équipe n'est obtenue
+que pour cette personne (au plus 80 par jour et par compte, chaque fois
+consigné dans le journal des modifications). Le
 sexe sert à ce qu'aucune joueuse ni aucun joueur ne soit inscrit dans une
 équipe de l'autre sexe ; il n'est pas vérifié pour les officiels d'équipe.
 Chaque chargement remplace les personnes du chargement précédent de cette
-liste ; les listes sont supprimées avec le club. Les listes peuvent aussi
+liste ; les listes sont supprimées avec le club, et celles des saisons passées
+sont supprimées chaque jour. Les listes peuvent aussi
 contenir des personnes qu'un responsable d'équipe ou un responsable du club a
 ajoutées à la main depuis l'effectif d'une équipe (numéro de licence, noms,
 date de naissance et sexe uniquement) ; un chargement les conserve, et elles
@@ -542,14 +626,17 @@ d'hier à 14 jours à l'avance : équipes, salle et adresse, ligue, 1er et
 2e arbitre avec nom et date de naissance, juges de ligne, convocations. Le
 serveur utilise pour cela un compte VolleyManager. But : charger les matchs
 officiels avec les bons officiels. Les noms sont publics (section 8) ; les
-dates de naissance ne sont visibles que pour les utilisateurs connectés.
+dates de naissance ne sont visibles que pour les administrateurs et les
+comptes qui marquent pour ce sport. Les convocations sont conservées comme les
+procès-verbaux de match (section 16).
 
 **Répertoire des arbitres :** un répertoire commun avec prénom et nom, pays,
 date de naissance et sport, afin que le marqueur n'ait pas à saisir les
-officiels à chaque fois. Les comptes connectés peuvent ajouter des entrées ;
-les administrateurs peuvent les modifier et les supprimer. Les noms et le
-pays sont publics ; les dates de naissance ne sont visibles que pour les
-utilisateurs connectés.
+officiels à chaque fois. Les comptes connectés peuvent ajouter des entrées
+(une date de naissance seulement un compte qui marque) ; les administrateurs
+peuvent les modifier et les supprimer. Les noms et le pays sont publics ; les
+dates de naissance ne sont visibles que pour les administrateurs et les
+comptes qui marquent.
 
 Si vous ne souhaitez pas figurer dans le répertoire, écrivez à
 support@openvolley.app.
@@ -645,11 +732,11 @@ précédentes ; plus tôt sur demande.
 
 - **Journaux du serveur :** le serveur journalise les requêtes sans contenu
   et **sans adresses IP** (statut, code d'erreur, identifiant de la requête).
-  Exceptions : les signalements du formulaire de support et l'adresse du
-  destinataire des infos du match (sections 7 et 13). Les requêtes lentes de
-  la base de données peuvent être journalisées avec leurs valeurs. Les
-  journaux sont écrasés selon leur taille, en général après quelques jours à
-  quelques semaines.
+  Exception : une demande de support est journalisée avec une forme abrégée
+  de votre adresse e-mail (section 13). Les requêtes lentes ou échouées de la
+  base de données sont journalisées sans leurs valeurs. Les journaux sont
+  écrasés selon leur taille (au plus 10 fichiers de 20 Mo par service), en
+  général après quelques jours à quelques semaines.
 - **Cloudflare** traite l'adresse IP, l'adresse demandée et l'identifiant du
   navigateur de chaque requête et les conserve selon ses propres règles.
 - **Adresses IP uniquement en mémoire vive :** pour se protéger des abus, le
@@ -677,6 +764,11 @@ précédentes ; plus tôt sur demande.
   rôles et les applications du compte, sa date de création, le nombre de
   matchs officiels qu'il laisse et un hachage pseudonymisé de son adresse
   e-mail, jamais l'adresse ni le nom.
+- **Conservation et caviardage :** le journal des modifications consigne
+  chaque effacement quotidien de procès-verbaux échus (seulement la date
+  limite et le nombre d'entrées effacées) et chaque rectification ou
+  effacement des données d'une personne sur demande (seulement le type, un
+  hachage pseudonymisé de la personne et le nombre par table, jamais le nom).
 - **Signer sur un téléphone :** le serveur ne journalise que les étapes
   (démarrée, ouverte, signée, terminée) avec la fonction et un identifiant
   court, jamais le lien, la signature, des noms ou des équipes.
@@ -722,21 +814,22 @@ prestataires. Vous pouvez me demander une copie de ces garanties.
 | Session | 30 jours après la dernière utilisation, 90 jours au plus |
 | Liens dans les e-mails | Valables 60 minutes ou 24 heures, effacés 7 jours plus tard |
 | NIP de validation | Jusqu'à ce que vous le supprimiez ou supprimiez votre compte |
-| Feuilles de match, événements, signatures, validations, fichiers des feuilles de match | Comme procès-verbal officiel, aussi longtemps que nécessaire (saison en cours et archives). Effacement sur demande dans la mesure où le procès-verbal n'a pas besoin des données (section 19) |
+| Feuilles de match, événements, historique des événements, signatures, validations, remarques (données de santé comprises), fichiers des feuilles de match | Comme procès-verbal officiel : la saison du match et les 2 saisons suivantes (une saison va du 1er juillet au 30 juin), puis effacés par un passage quotidien ; par exemple, les procès-verbaux de la saison 2024/25 partent le 1er juillet 2027. Plus tôt sur demande dans la mesure où le procès-verbal n'a pas besoin des données (section 19) |
 | Équipes enregistrées, tournois de beach-volley | Jusqu'à ce qu'un gestionnaire les supprime, ou sur demande |
-| Répertoire des arbitres, convocations | Aussi longtemps que nécessaire ; effacement sur demande |
+| Répertoire des arbitres | Jusqu'à ce qu'un administrateur supprime l'entrée ; effacement sur demande |
+| Convocations de Swiss Volley | Comme les procès-verbaux de match : la saison du match et les 2 saisons suivantes |
 | Journal des modifications | Aussi longtemps que nécessaire pour la traçabilité ; effacement examiné sur demande |
 | Adresse de contact d'un club | Jusqu'à sa modification ou sa suppression, ou la suppression du club |
 | Responsables de club | Jusqu'à ce que les administrateurs les retirent, que le club soit supprimé ou que vous supprimiez votre compte |
 | Responsables d'équipe | Jusqu'à ce qu'un responsable de club ou un administrateur les retire, que l'équipe ou le club soit supprimé ou que vous supprimiez votre compte |
 | Liste envoyée à l'avance (joueuses et joueurs, encadrement, signatures) | Jusqu'à ce qu'un marqueur l'accepte, au plus tard 14 jours après le match ; la mention de l'acceptation 14 jours après le match |
-| Listes de licences d'un club (numéro de licence, noms, date de naissance, sexe) | Jusqu'au prochain chargement de cette liste, sa suppression par un responsable du club ou la suppression du club ; personnes ajoutées à la main : jusqu'à la suppression de la liste ou du club ; sur un appareil de marquage jusqu'au prochain téléchargement ou à la déconnexion |
+| Listes de licences d'un club (numéro de licence, noms, date de naissance, sexe) | Jusqu'au prochain chargement de cette liste, sa suppression par un responsable du club ou la suppression du club, au plus tard jusqu'à la fin de la saison ; personnes ajoutées à la main : jusqu'à la suppression de la liste ou du club, au plus tard jusqu'à la fin de la saison ; sur un appareil de marquage jusqu'au prochain téléchargement ou à la déconnexion |
 | Adresse e-mail d'un arbitre pour un match | Avec le match, comme partie de la feuille de match |
 | Envoi de la feuille de match finale (moment, nombre de destinataires, sans adresses) | Avec le match |
 | Feuille d'un match de test par e-mail | Non conservée sur le serveur |
 | Copies de sauvegarde téléversées | 30 jours |
-| Journaux de l'application téléversés | Jusqu'à la suppression de votre compte |
-| Journal d'activité d'un match (serveur) | 24 mois, ou jusqu'à la suppression du match ; plus tôt sur demande |
+| Journaux de l'application téléversés | 30 jours ; effacés avec votre compte |
+| Journal d'activité d'un match (serveur) | 24 mois, au plus tard jusqu'à la suppression du match ; plus tôt sur demande |
 | Journal d'activité sans match (serveur) | 90 jours ; les entrées enregistrées sous votre compte sont effacées avec lui |
 | Historique des événements (événements annulés et corrigés) | Avec le match, comme partie du procès-verbal du match |
 | Journal d'activité sur l'appareil | Entrées envoyées 180 jours (au plus 100 000) ; entrées pas encore envoyées jusqu'à leur envoi (au plus 200 000) ; au plus 30 fichiers quotidiens et 50 Mo |
@@ -744,7 +837,7 @@ prestataires. Vous pouvez me demander une copie de ces garanties.
 | Fichier journal de l'application de bureau (uniquement sur l'appareil) | Au plus cinq anciens fichiers de 5 Mo chacun |
 | Signature sur un téléphone (serveur ou ordinateur portable) | Uniquement en mémoire vive ; lien valable 10 minutes, signature supprimée au plus tard 5 minutes après la signature |
 | Demandes de support (boîte aux lettres et système de tickets, avec les pièces jointes et les diagnostics) | 2 ans après le dernier message ; plus tôt sur demande |
-| Journaux du serveur | Écrasés selon leur taille (quelques jours à quelques semaines) |
+| Journaux du serveur | Écrasés selon leur taille, au plus 10 fichiers de 20 Mo par service (quelques jours à quelques semaines) |
 | Données en direct (serveur et mode salle) | Uniquement en mémoire vive ; sur le serveur supprimées 24 heures après la dernière activité |
 | Sauvegardes | Jusqu'à environ 6 mois (section 18) |
 | Données sur votre appareil | Jusqu'à ce que vous les supprimiez ; fichiers de sauvegarde des applications de bureau et Android 30 jours |
@@ -807,7 +900,17 @@ preuve de votre identité.
 clôturée est le procès-verbal officiel d'un match, auquel les clubs, la
 fédération et les officiels ont un intérêt. J'efface ou anonymise vos données
 qui s'y trouvent dans la mesure où le procès-verbal n'en a pas besoin, et je
-vous explique ce qui subsiste et pourquoi.
+vous explique ce qui subsiste et pourquoi. Une rectification (par exemple
+d'une date de naissance erronée) ou un effacement se fait dans toutes les
+copies sur le serveur à la fois : dans les procès-verbaux avec leur
+historique et leurs journaux, dans les listes des clubs et les équipes
+enregistrées, dans le répertoire des arbitres et dans les convocations. Le
+numéro de maillot et la fonction restent là où le procès-verbal en a besoin,
+et le PDF de la feuille de match est refait. Je ne peux pas atteindre les
+copies hors de mon serveur (sur des appareils, dans des e-mails déjà
+envoyés). Les sauvegardes chiffrées gardent les anciennes données jusqu'à
+environ 6 mois (section 18) ; si l'une d'elles devait être restaurée,
+j'appliquerais à nouveau votre demande.
 
 **Plainte :** vous pouvez vous adresser au Préposé fédéral à la protection des
 données et à la transparence (PFPDT, www.edoeb.admin.ch). Si vous résidez dans
@@ -823,13 +926,22 @@ Lorsque le RGPD s'applique, je me fonde sur :
 - **l'intérêt légitime** (art. 6, par. 1, let. f RGPD) : des procès-verbaux
   de match officiels corrects et vérifiables pour les clubs, la fédération et
   les officiels (listes d'équipe, dates de naissance pour le contrôle de la
-  qualification, signatures, validations, journal d'activité et historique
-  des événements), l'envoi de la feuille de match finale aux officiels et aux
+  qualification, signatures, validations, journal d'activité, historique
+  des événements et remarques), l'envoi de la feuille de match finale aux officiels et aux
   clubs, le livescore pour le public, l'organisation de tournois, le
   dépannage, la sécurité et la protection contre les abus, les sauvegardes ;
 - **le consentement** (art. 6, par. 1, let. a RGPD) : date de naissance
   facultative dans le compte, recherche de mises à jour de l'application
-  Android installée directement.
+  Android installée directement ;
+- **pour les données de santé** (une blessure ou une maladie consignée dans
+  un match, section 7) : les règles de jeu exigent l'enregistrement d'un tel
+  remplacement et d'un libéro qui ne peut plus jouer. Selon le RGPD, je me
+  fonde sur l'art. 9, par. 2, let. f (constatation, exercice ou défense de
+  droits en justice : les réclamations et recours d'une compétition sont
+  tranchés sur la base du procès-verbal), avec l'intérêt légitime ci-dessus ;
+  selon la LPD, sur l'intérêt prépondérant à un procès-verbal officiel
+  correct. L'application n'enregistre automatiquement que les termes des
+  règles.
 
 Selon la LPD suisse, je ne traite des données que pour les finalités
 indiquées et dans la mesure nécessaire.

@@ -10,7 +10,8 @@ export const NOTIFICATIONS_POLL_MS = 60 * 1000
 
 /**
  * The console header's bell (db/028, backend lib/signupNotices.js): the
- * account's own notices in this manager ("Nora Neu signed up"), newest
+ * account's own notices in this manager ("Nora Neu signed up"; db/036 "to
+ * confirm: Nora Neu, team manager", a team manager's proposal), newest
  * first, with the unread count on the button. A notice opens its page
  * (`onOpen(target)`: the account, My club or My teams) and is marked read;
  * "Mark all read" clears the count. Read every minute and when the window
@@ -123,7 +124,7 @@ export default function NotificationsBell({ app, onOpen }) {
                     <span aria-hidden className={cn('mt-1.5 h-2 w-2 shrink-0 rounded-full', n.read ? 'bg-transparent' : 'bg-red-600')} />
                     <span className="min-w-0 flex-1">
                       <span className={cn('block truncate text-sm', n.read ? 'text-stone-700' : 'font-semibold text-stone-900')}>
-                        {t('manage.notifications.signupTitle', { name: who })}
+                        {t(n.kind === 'team_manager_proposal' ? 'manage.notifications.proposalTitle' : 'manage.notifications.signupTitle', { name: who })}
                       </span>
                       {n.user?.name && n.user?.email && <span className="block truncate text-xs text-stone-500">{n.user.email}</span>}
                       <span className="mt-0.5 block text-xs text-stone-600">

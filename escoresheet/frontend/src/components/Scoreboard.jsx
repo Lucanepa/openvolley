@@ -4,7 +4,7 @@ import { useAlert } from '../contexts/AlertContext'
 import { useLiveQuery } from 'dexie-react-hooks'
 import Dexie from 'dexie'
 import { db } from '../db/db'
-import { queueMatchUpdate, toCloudPlayers } from '../db/matchRepository'
+import { queueMatchUpdate, toCloudPlayers, toCloudBench } from '../db/matchRepository'
 import { withActivityContext, currentActivityContext, maxVoidedSeq, rememberSeedKey } from '../db/eventHistory'
 import Modal from './Modal'
 import RostersPanel from './rosters/RostersPanel'
@@ -22,6 +22,7 @@ import NativeBackupAlert from './options/NativeBackupAlert'
 import ConnectTabletsModal from './connect/ConnectTabletsModal'
 import { useSyncQueue, isAuthBlocked, checkScorerMoved } from '../hooks/useSyncQueue'
 import { isScorerMoved, SCORER_MOVED, relaySyncDevice } from '../utils/matchHandover'
+import { checkUploadedRoster } from '../domain/uploadedRoster'
 import { useSequentialSync, setEndBackupPlan, setEndStillUndelivered, SET_END_DOWNLOAD_GRACE_MS } from '../hooks/useSequentialSync'
 import SyncProgressModal from './SyncProgressModal'
 import SignaturePad from './SignaturePad'
@@ -42,25 +43,26 @@ import { debugLogger, createStateSnapshot } from '../utils/debugLogger'
 import { TEAM_COLOUR_MARK, discPaint, effectiveTeamColour, matchDiscPaint, teamLiberoColour, markColourOn, teamBoxStyle, teamTextStyle, HEADER_SURFACE } from '../utils/teamColours'
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { apiFrom, writingDevice } from '../lib/apiClient'
-import { relayMatchKey, relayMatchPayload, liveStateNow } from '../utils/serverDataSync'
+import { relayMatchKey, relayMatchPayload, relayPeoplePayload, relayTeamPayload, liveStateNow } from '../utils/serverDataSync'
 import { isRelayErrorFor, liveStateTargets, mayPublishMatchData, publishLiveState, relayEvents, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
 import { useRelayTablets } from '../hooks/useRealtimeConnection'
-import { exportMatchData, getBackupSettings, saveBackupSettings } from '../utils/backupManager'
+import { downloadMatchBackup, exportMatchData, getBackupSettings, saveBackupSettings } from '../utils/backupManager'
 import { setExtId, eventExtId } from '../utils/syncIds'
 import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
+import { scoresheetErrorFromEvent } from '../utils/scoresheetErrorMessage'
 import { queueSetStartTimeSync } from '../utils/setStartTimeSync'
 import { ACCESS_CHANGED_EVENT } from '../lib/access'
-import { queueEventSync, queueSetScoreSync, queueSetReopenSync, buildSetEndMatchPayload, setLiveStateDirty, isLiveStateDirty, isLiveStateErrorWorthAlert, isLiveStateRefusal, isLiveStateRefused, markLiveStateRefused, clearLiveStateRefused } from '../utils/eventSync'
+import { queueEventSync, queueSetScoreSync, queueSetReopenSync, queueSetDeletes, setUpdateJob, buildSetEndMatchPayload, setLiveStateDirty, isLiveStateDirty, isLiveStateErrorWorthAlert, isLiveStateRefusal, isLiveStateRefused, markLiveStateRefused, clearLiveStateRefused } from '../utils/eventSync'
 import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from '../utils/logger'
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
 import { defaultSetStartTime, actualStartRemark, startsFromSchedule, startScheduleOf, typedStartNear } from '../utils/setStartTime'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
 import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet, getLeftTeamLabelForSet } from '../domain/rules'
-import { resolveSanction, deriveTeamSanctionFlags, deferredPenaltyPoints, penaltyOfPoint, teamSanctionCounts } from '../domain/sanctions'
-import { REQUEST_ISSUES, isReplayPending, substitutionRequestIssues, timeoutRequestIssues, requestBlockReason, entryWithoutCompletedRally, substitutionRequestThisInterruption, substituteInIllegalReason, lateRequestOutcome, decisionChangeTakeBack, decisionTakeBackTextKey } from '../domain/interruptionRequests'
+import { resolveSanction, deriveTeamSanctionFlags, deferredPenaltyPoints, penaltyOfPoint, teamSanctionCounts, validateMemberSanction } from '../domain/sanctions'
+import { REQUEST_ISSUES, isReplayPending, substitutionRequestIssues, timeoutRequestIssues, requestBlockReason, entryWithoutCompletedRally, substitutionRequestThisInterruption, substitutionIllegalReason, classifyLiveSubstitution, lateRequestOutcome, decisionChangeTakeBack, decisionTakeBackTextKey } from '../domain/interruptionRequests'
 import RequestWarningDialog, { RequestOptionRow } from './scoreboard/RequestWarningDialog.jsx'
 import { classifyTimeoutRequest } from '../domain/timeouts'
-import { rallyStatusOf, currentSetOf } from '../domain/rally'
+import { rallyStatusOf, currentSetOf, isBookkeepingEvent, isFirstRallyOf, startingLineupsIn } from '../domain/rally'
 import { useConfirmAction } from '../hooks/useConfirmAction'
 import { useRallyTapGuard } from '../hooks/useRallyTapGuard'
 import RallyTapNotice, { RALLY_TAP_NOTICE_MS } from './scoreboard/RallyTapNotice'
@@ -68,12 +70,12 @@ import { diag } from '../diagnostics/recorder'
 import { countdownAnchor, secondsLeft } from '../utils/countdownClock'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
 import { playerReplacedByLibero } from '../domain/liberos'
-import { planSubstitutionDeletion, countRegularSubstitutions, classifySubstitutionRequest, MAX_SUBSTITUTIONS_PER_SET } from '../domain/substitutions'
-import { decisionChangeUndoRecord, planDecisionChangeReversal, planPointRemoval, syncJobsForEvents, syncJobsForSets, scoreAfterUndo } from '../domain/corrections'
+import { planSubstitutionDeletion, countRegularSubstitutions, MAX_SUBSTITUTIONS_PER_SET, substitutionBarsForMatch } from '../domain/substitutions'
+import { decisionChangeUndoRecord, planDecisionChangeReversal, planPointRemoval, syncJobsForEvents, scoreAfterUndo } from '../domain/corrections'
 import { validateReopenedRoster, referencedPlayerNumbers, isShirtNumber } from '../domain/roster'
 import { planRenumberPlayers, errorText as correctionErrorText } from '../domain/manualCorrections'
 import { applyCorrectionPlan } from '../services/corrections/applyCorrectionPlan'
-import { appendRemark, removeRemarkLine, eventRemark, remarkClock, setActualStartRemark } from '../domain/remarks'
+import { appendRemark, removeRemarkLine, eventRemark, remarkClock, setActualStartRemark, injurySubstitutionText, liberoUnableText } from '../domain/remarks'
 import { LINEUP_POSITIONS, lineupEntryErrors, lineupCandidates, lineupCaptainStatus, teamCaptainNumber, gameCaptainOptions, initialGameCaptainChoice, lineupGameCaptainDecision } from '../domain/lineupEntry'
 import { easyLiberoNumbers, easyLiberoErrors, easyRosterChanges, liberoSlotEditable, MAX_LIBEROS, easyPlayerRow, newPlayerMayEnter, newPlayerError, NEW_PLAYER_ERRORS, easyReferencedNumbers, isEasyStray } from '../domain/easyMatch'
 import { describeEventText, compareBySeq } from '../domain/describe'
@@ -81,7 +83,7 @@ import CorrectionsPanel from './corrections/CorrectionsPanel.jsx'
 import RectifyPanel from './rectify/RectifyPanel.jsx'
 import { planRectificationReversal, rectifyErrorText } from '../domain/rectify'
 import { servingTeamFromLog } from '../domain/rules'
-import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon, forfeitScope, playersAvailableForNextSet, planForfeitReversal } from '../domain/matchEnd'
+import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon, forfeitScope, playersAvailableForNextSet, planForfeitReversal, restoredSetWrites, matchForfeitOf } from '../domain/matchEnd'
 import { signaturesPayload } from '../domain/signatureEdits'
 import { missingPreMatchSignatures, beforeFirstServe } from '../domain/preMatchSignatures'
 import PreMatchSignDialog, { SignaturesMissingModal, MissingSignatureButton } from './signature/PreMatchSignDialog.jsx'
@@ -95,9 +97,9 @@ import { isNativeApp } from '../utils/backendConfig'
 import PhoneScoreboard from './scoreboard/PhoneScoreboard.jsx'
 import { PHONE_RECENT_MAX_LINES, detectDisplayMode, dialogsCentred, isPhoneScreen, phoneHeldSideways, recentActions } from './scoreboard/phoneLayout'
 import BenchRequestCards from './scoreboard/BenchRequestCards.jsx'
-import { useBenchRequestBridge } from './scoreboard/useBenchRequestBridge'
+import { useBenchRequestBridge, lineupAcceptBlock } from './scoreboard/useBenchRequestBridge'
 import { latestLineup as benchLatestLineup, lineupNumber as benchLineupNumber } from '../domain/benchRequests'
-import { coveredLineupTeams, withoutCoveredTeamEvents } from '../domain/lineupPrivacy'
+import { coveredLineupTeams, coveredLineupTeamsOf, withCoveredLiveLineups, withoutCoveredTeamEvents } from '../domain/lineupPrivacy'
 import { captainRingStyle } from './scoreboard/captainRing'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
 import { WarningIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, RefreshIcon, VolleyballIcon, SwitchIcon, ChartIcon, NotebookIcon, WrenchIcon, ClipboardIcon, SpeechIcon } from './icons'
@@ -140,6 +142,46 @@ const settleTap = (promise) => {
   Promise.resolve(promise).catch((err) => {
     if (!isReportedActionError(err)) console.error('[action] tap failed', err)
   })
+}
+
+// The deciding set's inline setup: the left team it shows is its saved
+// choice, else (a match restored in the break without it, an older match)
+// the sides set 4 ended on, as the court draws them (getSideAForSet). 'A' in
+// its place moved the teams on "Switch sides" or on Confirm when A was on
+// the left in set 4.
+const set5SetupLeftTeam = (match) => getLeftTeamLabelForSet(5, { ...(match || {}), set5CourtSwitched: false })
+// Its first server: the saved choice, else the one the court shows (getFirstServeForSet)
+const set5SetupFirstServe = (match) => {
+  if (match?.set5FirstServe === 'A' || match?.set5FirstServe === 'B') return match.set5FirstServe
+  return getFirstServeForSet(5, match || {}) === (match?.coinTossTeamA || 'home') ? 'A' : 'B'
+}
+
+// A sub-event (N.x) the scoreboard writes itself, not through logEvent: the
+// line-up after a substitution, a libero replacement, a sanction exit or a
+// side-out rotation (and the decision change's libero exit). Written and
+// queued for the cloud in the caller's action transaction (utils/eventSync).
+// They used to stay on this device: the server had the starting line-ups
+// only, and a device that continued the match (game number + PIN, Take back
+// scoring) showed the set's starting six and served with the wrong player.
+async function addSyncedSubEvent(row) {
+  const id = await db.events.add(row)
+  await queueEventSync(db, id)
+  return id
+}
+
+// A team's roster to the cloud (players_home / players_away, the whole list:
+// it replaces the stored one), with `columns` in the same update, in the
+// caller's action transaction. What the scoreboard changes on the roster
+// rows (the libero marks of a re-designation and of its undo, an edited
+// roster) stayed on this device otherwise: a device that continued the match
+// had the old marks, no usable libero and offered the re-designation again,
+// and the tablets' cloud fallback showed them too.
+async function queueTeamRoster(matchId, teamKey, columns = {}) {
+  const m = await db.matches.get(matchId)
+  const teamId = teamKey === 'home' ? m?.homeTeamId : teamKey === 'away' ? m?.awayTeamId : null
+  if (teamId == null || !m?.seed_key) return null
+  const roster = await db.players.where('teamId').equals(teamId).sortBy('number')
+  return queueMatchUpdate(db, m.seed_key, { [teamKey === 'home' ? 'players_home' : 'players_away']: toCloudPlayers(roster), ...columns }, { test: m.test === true })
 }
 
 // ── volleyui chrome for the scoreboard (RESTYLE-SPEC P5) ──────────────────────
@@ -715,18 +757,25 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // just came in going out again or a request after a delay warning opens
   // the request warning instead. `acknowledged`: the warnings the scorer
   // already answered with "Continue anyway" (recorded nothing).
+  // The pair is checked here with the team's roster, for every substitution
+  // (substitutionIllegalReason: a libero, the player the libero replaced, a
+  // player sent off, the starter-substitute pairing, FIVB 15.6-15.8,
+  // 19.3.1.3): a pair the rules forbid opens "Illegal substitution"; an
+  // injured, expelled or disqualified player whom the pairing forbids to
+  // replace regularly is substituted exceptionally (classifyLiveSubstitution).
   const substitutionGuardRef = useRef(null)
   const setSubstitutionConfirm = useCallback((next, { acknowledged = [] } = {}) => {
     const guard = substitutionGuardRef.current
     if (next && guard) {
-      const issues = substitutionRequestIssues(guard.events, guard.setIndex, next.team, next)
+      const roster = { players: guard.players?.[next.team] || [] }
+      const issues = substitutionRequestIssues(guard.events, guard.setIndex, next.team, next, roster)
         .filter(i => !acknowledged.includes(i.reason))
       if (issues.length > 0) {
         setSubstitutionConfirmState(null)
         guard.onIssues(next, issues, acknowledged)
         return
       }
-      const verdict = classifySubstitutionRequest(guard.events, next.team, guard.setIndex, next)
+      const verdict = classifyLiveSubstitution(guard.events, guard.setIndex, next.team, next, roster)
       if (verdict === 'exceptional' && !next.isExceptional) next = { ...next, isExceptional: true }
     }
     setSubstitutionConfirmState(next)
@@ -735,6 +784,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [summaryTableZoom, setSummaryTableZoom] = useState(null) // { side: 'left'|'right', teamKey: 'home'|'away' } | null
 
   const [benchSubExpanded, setBenchSubExpanded] = useState(false) // Track if substitution list is expanded in bench player menu
+  const [benchIllegalExpanded, setBenchIllegalExpanded] = useState(false) // the "Not allowed" court players in the bench player menu
   const [courtSubExpanded, setCourtSubExpanded] = useState(false) // Track if substitution list is expanded in court player menu
   const [courtIllegalExpanded, setCourtIllegalExpanded] = useState(false) // the "Not allowed" candidates in the court player menu
   const [courtSanctionExpanded, setCourtSanctionExpanded] = useState(false) // Track if sanction list is expanded in court player menu
@@ -753,9 +803,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [replayRallyConfirm, setReplayRallyConfirm] = useState(null) // { event: Event, description: string, selectedOption: 'swap'|'replay' } | null
   const [replayConfirm, setReplayConfirm] = useState(false) // "Replay rally" during a rally waits for this confirmation
   const [stopMatchModal, setStopMatchModal] = useState(null) // 'select' | null - Stop the match modal selection
-  const [stopMatchTeamSelect, setStopMatchTeamSelect] = useState(null) // { pendingAction: 'forfeit' } | null - Team selection for forfeit
-  const [stopMatchConfirm, setStopMatchConfirm] = useState(null) // { type: 'forfeit'|'impossibility', team?: 'home'|'away' } | null - Confirmation modal
-  const [stopMatchRemarksStep, setStopMatchRemarksStep] = useState(null) // { type: 'forfeit'|'impossibility', team?: 'home'|'away' } | null - After remarks
+  // rule: 'default' (refused to play / did not appear, FIVB 6.4.1-2) or 'incomplete' (6.4.3)
+  const [stopMatchTeamSelect, setStopMatchTeamSelect] = useState(null) // { pendingAction: 'forfeit', rule } | null - Team selection for forfeit
+  const [stopMatchConfirm, setStopMatchConfirm] = useState(null) // { type: 'forfeit'|'impossibility', team?: 'home'|'away', rule? } | null - Confirmation modal
+  const [stopMatchRemarksStep, setStopMatchRemarksStep] = useState(null) // { type: 'forfeit'|'impossibility', team?: 'home'|'away', rule? } | null - After remarks
   const [recentlySubstitutedPlayers, setRecentlySubstitutedPlayers] = useState([]) // [{ team, playerNumber, timestamp }] - for flashing effect
   const recentSubFlashTimeoutRef = useRef(null) // Timeout ref for clearing flash
   const leftCourtPositionVRef = useRef(null) // Ref for position V on left court (for modal positioning)
@@ -1486,7 +1537,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             playerIn: e.payload?.playerIn,
             playerOut: e.payload?.playerOut,
             position: e.payload?.position,
-            exceptional: e.payload?.exceptional || false,
+            exceptional: e.payload?.isExceptional === true || e.payload?.exceptional === true,
             ts: e.ts
           })
         }
@@ -1880,6 +1931,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // scorerRelay): one socket owns the match, so the two never refuse each other.
     let ws = null
     let detachRelay = null
+    // A sync the relay could not check yet ('claim-unverified'): sent again soon
+    let claimRetry = null
 
     const connectWebSocket = () => {
       detachRelay = scorerRelay.attach(wsUrl, {
@@ -1913,6 +1966,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           } else if (message.type === 'game-number-request') {
             // Respond to game number request
             handleGameNumberRequest(message)
+          } else if (message.type === 'match-update-request') {
+            // A team's roster from the upload page (the relay checked its upload PIN)
+            handleMatchUpdateRequest(message)
           } else if (message.type === 'pong') {
             // Heartbeat response
           } else if (relayKeyRef.current && isRelayErrorFor(message, [relayKeyRef.current])) {
@@ -1922,12 +1978,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             if (message.code === 'pins-required') {
               // The relay lost the match while this socket left the PINs out
               if (syncFunctionRef.current) syncFunctionRef.current()
+            } else if (message.code === 'claim-unverified') {
+              // The cloud relay could not check the match with its database
+              // (refused, not allowed through): the same sync again shortly
+              clearTimeout(claimRetry)
+              claimRetry = setTimeout(() => syncFunctionRef.current?.(), 5000)
             } else if (['not-match-owner', 'rate-limited', 'too-many-matches', 'scorer-moved'].includes(message.code)) {
               // The relay refused our scoreboard role: referee/bench/livescore
               // get no updates from this device until it is resolved.
               // Refused again on every sync; the banner expires when that stops.
               // ('scorer-moved': a venue relay, another device continued the
               // match; the cloud relay says it with a scorer-moved message)
+              setRelayRejection({ code: message.code, message: message.message || '', at: Date.now() })
+            } else if (message.code === 'room-limit') {
+              // The relay has no room for another match: the tablets get
+              // nothing from this device until it has (it used to say nothing)
               setRelayRejection({ code: message.code, message: message.message || '', at: Date.now() })
             }
           }
@@ -1980,10 +2045,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           type: 'sync-match-data',
           matchId: relayKeyRef.current,
           match: relayMatch,
-          homeTeam: freshHomeTeam || null,
-          awayTeam: freshAwayTeam || null,
-          homePlayers: freshHomePlayers || [],
-          awayPlayers: freshAwayPlayers || [],
+          // names and colours; rosters without dates of birth (no relay
+          // hands those on)
+          homeTeam: relayTeamPayload(freshHomeTeam),
+          awayTeam: relayTeamPayload(freshAwayTeam),
+          homePlayers: relayPeoplePayload(freshHomePlayers),
+          awayPlayers: relayPeoplePayload(freshAwayPlayers),
           sets: freshSets || [],
           // without the undo snapshots (relayEvents)
           events: relayEvents(freshEvents || []),
@@ -2085,6 +2152,31 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
     }
 
+    // The bundle a relay keeps for the match (as sync-match-data sends it)
+    const readRelayBundle = async (freshMatch, syncMark) => {
+      const [freshHomeTeam, freshAwayTeam, freshSets, freshEvents, freshHomePlayers, freshAwayPlayers] = await Promise.all([
+        db.teams.get(freshMatch?.homeTeamId),
+        db.teams.get(freshMatch?.awayTeamId),
+        db.sets.where('matchId').equals(matchId).toArray(),
+        db.events.where('matchId').equals(matchId).toArray(),
+        freshMatch?.homeTeamId ? db.players.where('teamId').equals(freshMatch.homeTeamId).toArray() : [],
+        freshMatch?.awayTeamId ? db.players.where('teamId').equals(freshMatch.awayTeamId).toArray() : []
+      ])
+      return {
+        // Never game_pin / connection_pins (the relay needs only its PIN fields)
+        match: relayMatchPayload(freshMatch, null, { mark: syncMark }).match,
+        // as sync-match-data: names and colours, rosters without dates
+        // of birth, events without the undo snapshots (a LAN relay keeps
+        // the answer as the room's bundle and hands it on)
+        homeTeam: relayTeamPayload(freshHomeTeam),
+        awayTeam: relayTeamPayload(freshAwayTeam),
+        homePlayers: relayPeoplePayload(freshHomePlayers),
+        awayPlayers: relayPeoplePayload(freshAwayPlayers),
+        sets: freshSets || [],
+        events: relayEvents(freshEvents || [])
+      }
+    }
+
     const handleMatchDataRequest = async (request) => {
       if (!ws || ws.readyState !== WebSocket.OPEN) return
 
@@ -2123,30 +2215,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           return
         }
 
-        const [freshHomeTeam, freshAwayTeam, freshSets, freshEvents, freshHomePlayers, freshAwayPlayers] = await Promise.all([
-          db.teams.get(freshMatch?.homeTeamId),
-          db.teams.get(freshMatch?.awayTeamId),
-          db.sets.where('matchId').equals(matchId).toArray(),
-          db.events.where('matchId').equals(matchId).toArray(),
-          freshMatch?.homeTeamId ? db.players.where('teamId').equals(freshMatch.homeTeamId).toArray() : [],
-          freshMatch?.awayTeamId ? db.players.where('teamId').equals(freshMatch.awayTeamId).toArray() : []
-        ])
-
         ws.send(JSON.stringify({
           type: 'match-data-response',
           requestId,
           matchId: requestedMatchId,
           success: true,
-          data: {
-            // Never game_pin / connection_pins (the relay needs only its PIN fields)
-            match: relayMatchPayload(freshMatch, null, { mark: syncMark }).match,
-            homeTeam: freshHomeTeam || null,
-            awayTeam: freshAwayTeam || null,
-            homePlayers: freshHomePlayers || [],
-            awayPlayers: freshAwayPlayers || [],
-            sets: freshSets || [],
-            events: freshEvents || []
-          }
+          data: await readRelayBundle(freshMatch, syncMark)
         }))
       } catch (err) {
         console.error('[WebSocket] Error handling match data request:', err)
@@ -2159,6 +2233,37 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             error: 'Error fetching match data'
           }))
         }
+      }
+    }
+
+    // PATCH /api/match/:id on a LAN relay: the upload page's roster, stored
+    // as pending on this match like a cloud upload (Match Setup offers it).
+    // The answer carries the bundle; the relay takes it only from this match's
+    // scoreboard.
+    const handleMatchUpdateRequest = async (request) => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return
+      const { requestId, matchId: requestedMatchId, updates } = request
+      const answer = (body) => ws.send(JSON.stringify({ type: 'match-update-response', requestId, matchId: requestedMatchId, ...body }))
+      try {
+        const freshMatch = await db.matches.get(matchId)
+        const keyOfMatch = relayMatchKey(freshMatch)
+        const field = ['pendingHomeRoster', 'pendingAwayRoster'].find((f) => updates && Object.prototype.hasOwnProperty.call(updates, f))
+        const checked = field && Object.keys(updates).length === 1 ? checkUploadedRoster(updates[field]) : null
+        if (!keyOfMatch || String(requestedMatchId) !== keyOfMatch || !freshMatch || isScorerMoved(freshMatch)) {
+          answer({ success: false, error: 'Match ID mismatch' })
+          return
+        }
+        if (!checked?.ok || freshMatch.status === 'final') {
+          answer({ success: false, error: 'Roster not accepted' })
+          return
+        }
+        const syncMark = liveStateOrderRef.current.mark()
+        await db.matches.update(matchId, { [field]: checked.roster })
+        const stored = await db.matches.get(matchId)
+        answer({ success: true, data: await readRelayBundle(stored, syncMark) })
+      } catch (err) {
+        console.error('[WebSocket] Error handling match update request:', err)
+        if (ws && ws.readyState === WebSocket.OPEN) answer({ success: false, error: 'Error storing roster' })
       }
     }
 
@@ -2237,6 +2342,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // time blanks every connected referee/bench/livescore dashboard.
       if (detachRelay) detachRelay()
       detachRelay = null
+      clearTimeout(claimRetry)
       ws = null
       wsRef.current = null
     }
@@ -2584,8 +2690,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         : { matchId, type: eventType || null, team: eventTeam || null, data: pushedData, ts: new Date().toISOString() }
       if (eventType !== RECONNECT_PUSH) lastPushedEventRef.current = pushedEvent
 
+      // The first line-up of a set stays covered until the other team's is in
+      // (domain/lineupPrivacy.js, FIVB 7.3): it goes out as null, and its
+      // server's number with it. This row reaches every member of the relay
+      // room, the livescore and the database, none of them with a PIN. Only
+      // a set at 0:0 can have one: its events are read then.
+      const coveredTeams = (snapshot.pointsA || 0) + (snapshot.pointsB || 0) === 0 && (snapshot.lineupA || snapshot.lineupB)
+        ? coveredLineupTeamsOf(await db.events.where('[matchId+setIndex]').equals([matchId, snapshot.currentSetIndex]).toArray(), snapshot.currentSetIndex)
+        : []
+
       // Map directly from snapshot to Supabase table
-      const liveStateData = {
+      const liveStateData = withCoveredLiveLineups({
         match_id: supabaseMatchId,
         current_set: finalSetIndex,
         // Team A/B info (from snapshot)
@@ -2639,7 +2754,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // it orders the rows, it times no countdown)
         updated_at: new Date(liveStateNow(match)).toISOString(),
         sport_type: 'indoor'
-      }
+      }, coveredTeams, snapshot.teamAKey)
 
       if (eventType === 'set_end') intervalStartedAtRef.current = breakStartedAt
 
@@ -3281,6 +3396,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   substitutionGuardRef.current = {
     events: data?.events,
     setIndex: data?.set?.index,
+    players: { home: data?.homePlayers || [], away: data?.awayPlayers || [] },
     onIssues: (request, issues, acknowledged) => {
       if (rallyStatus === 'idle') openRequestWarning('substitution', request, issues, acknowledged)
     },
@@ -3324,7 +3440,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     !!data?.set && isReplayPending(data?.events, data.set.index)
   ), [data?.events, data?.set])
 
-  // Check if the last event was a point (can replay rally)
+  // Check if the last event was a point (can replay rally). A remark or a
+  // bench injury recorded since does not count (domain/rally isBookkeepingEvent)
   const canReplayRally = useMemo(() => {
     if (!data?.events || !data?.set || data.events.length === 0) {
       return false
@@ -3332,7 +3449,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Get events for current set only and sort by sequence number (most recent first)
     const currentSetEvents = data.events
-      .filter(e => e.setIndex === data.set.index)
+      .filter(e => e.setIndex === data.set.index && !isBookkeepingEvent(e))
       .sort((a, b) => {
         const aSeq = a.seq || 0
         const bSeq = b.seq || 0
@@ -3382,12 +3499,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   ), [canReplayRally, data?.events, data?.set])
   const canChangeDecision = canReplayRally || !!decisionTakeBack
 
+  // "Start set" vs "Start rally": the set's first rally is not started yet
+  // (no set_start, no rally_start: domain/rally isFirstRallyOf). A penalty
+  // point before the first serve does not end it
   const isFirstRally = useMemo(() => {
     if (!data?.events || !data?.set) return true
-    // Check if there are any points in the current set
-    // This determines if we show "Start set" vs "Start rally"
-    const hasPoints = data.events.some(e => e.type === 'point' && e.setIndex === data.set.index)
-    return !hasPoints
+    return isFirstRallyOf(data.events, data.set.index)
   }, [data?.events, data?.set])
 
   // The coach and captain signatures still missing before the first serve of
@@ -4126,9 +4243,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Validate lineup - check if any player in lineup has become a libero
   // If so, invalidate the lineup and reopen lineup modal (only once per issue)
+  // Only before the set's first rally: once it has started the starting
+  // line-up is history. A starter substituted out and re-designated libero
+  // mid-set opened an empty starting line-up dialog (again after every
+  // remount), and its confirmation reset the court with no substitution or
+  // rotation recorded.
   useEffect(() => {
     if (!data?.events || !data?.set || !data?.homePlayers || !data?.awayPlayers) return
     if (lineupModal) return // Don't interfere if modal already open
+    const setIndex = data.set.index
+    if (data.events.some(e => e.setIndex === setIndex && (e.type === 'set_start' || e.type === 'rally_start' || e.type === 'point'))) return
 
     const validateTeamLineup = (teamKey) => {
       const players = teamKey === 'home' ? data.homePlayers : data.awayPlayers
@@ -4634,7 +4758,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           if (String(oldVal) !== String(newVal)) {
             const desc = `Player #${orig.number} ${f.label}: ${oldVal || '(none)'} → ${newVal || '(none)'} (${teamLabel})`
             changes.push({ category: 'player', field: f.key, before: oldVal, after: newVal, description: desc })
-            remarkLines.push(`- ${desc}`)
+            remarkLines.push(`- ${f.key === 'dob' ? `Player #${orig.number} date of birth changed (${teamLabel})` : desc}`)
           }
         }
       }
@@ -4661,7 +4785,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           if (String(oldVal) !== String(newVal)) {
             const desc = `Bench official ${orig.role || edit.role} ${f}: ${oldVal || '(none)'} → ${newVal || '(none)'} (${teamLabel})`
             changes.push({ category: 'benchOfficial', field: f, before: oldVal, after: newVal, description: desc })
-            remarkLines.push(`- ${desc}`)
+            remarkLines.push(`- ${f === 'dob' ? `Bench official ${orig.role || edit.role} date of birth changed (${teamLabel})` : desc}`)
           }
         }
       }
@@ -4670,8 +4794,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return { changes, remarkLines }
   }, [])
 
-  // Save reopened roster: persist changes, log to manualChanges and remarks
-  const handleSaveReopenedRoster = useCallback(async (teamKey, editedPlayers, editedBench, snapshotPlayers, snapshotBench) => {
+  // Save reopened roster: persist changes, log to manualChanges and remarks.
+  // One keyed scorer action (one transaction: the manual changes, players,
+  // bench, remarks, renumbered record and their cloud jobs, or nothing), with
+  // Save disabled while it runs. It was a plain async function: a double tap
+  // repeated every write (the new player added twice, in the cloud roster
+  // too), and a failure part-way left the first writes behind.
+  const saveReopenedRoster = useCallback(async (teamKey, editedPlayers, editedBench, snapshotPlayers, snapshotBench) => {
     const teamLabel = teamKey === 'home'
       ? (data?.homeTeam?.name || 'Home')
       : (data?.awayTeam?.name || 'Away')
@@ -4683,15 +4812,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // below (domain/roster, tested). The editor stays open on an error.
     const { valid, errors, renumbers } = validateReopenedRoster(editedPlayers, snapshotPlayers, referencedPlayerNumbers(data?.events, teamKey))
     if (!valid) {
-      showAlert(errors.join('\n'), 'error')
+      deferUi(() => showAlert(errors.join('\n'), 'error'))
       return
     }
 
     const { changes, remarkLines } = diffRosters(snapshotPlayers, editedPlayers, snapshotBench, editedBench, teamLabel)
 
     if (changes.length === 0) {
-      showAlert(t('scoreboard.reopenRoster.noChanges', 'No changes were made.'), 'info')
-      setReopenRosterTeam(null)
+      deferUi(() => {
+        showAlert(t('scoreboard.reopenRoster.noChanges', 'No changes were made.'), 'info')
+        setReopenRosterTeam(null)
+      })
       return
     }
 
@@ -4788,26 +4919,48 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         t, match: matchNow, homeTeam: data?.homeTeam, awayTeam: data?.awayTeam, matchId, mode: 'live',
         players: { home: teamKey === 'home' ? snapshotPlayers : (data?.homePlayers || []), away: teamKey === 'away' ? snapshotPlayers : (data?.awayPlayers || []) }
       })
-      if (plan.error) showAlert(correctionErrorText(plan, t), 'error')
-      else await applyCorrectionPlan(plan, { matchId, db, mode: 'live' })
-    }
-    // The team's roster to the cloud (names, liberos, captain, numbers): the
-    // tablets' cloud fallback and a hand-over read it from there
-    {
-      const teamId = teamKey === 'home' ? data?.match?.homeTeamId : data?.match?.awayTeamId
-      const m = await db.matches.get(matchId)
-      if (teamId != null && m?.seed_key) {
-        const roster = await db.players.where('teamId').equals(teamId).sortBy('number')
-        await queueMatchUpdate(db, m.seed_key, { [teamKey === 'home' ? 'players_home' : 'players_away']: toCloudPlayers(roster) }, { test: m.test === true })
+      if (plan.error) {
+        // The whole save rolls back (the roster without its renumbered
+        // record was a player without history); the editor stays open
+        showAlert(correctionErrorText(plan, t), 'error')
+        throw markActionErrorReported(new Error(plan.error))
       }
+      await applyCorrectionPlan(plan, { matchId, db, mode: 'live' })
     }
+    // The team's roster and bench officials to the cloud (names, liberos,
+    // captain, numbers, the officials): the tablets' cloud fallback and a
+    // hand-over read them from there. The bench stayed on this device: the
+    // server kept the pre-match bench for good
+    await queueTeamRoster(matchId, teamKey, { [benchField]: toCloudBench(editedBench) })
     notifyScoresheetUpdate('roster_reopen')
     syncToReferee()
     syncLiveStateToSupabase('manual_roster', null, null)
 
-    showAlert(t('scoreboard.reopenRoster.savedSuccess', { count: changes.length }), 'success')
-    setReopenRosterTeam(null)
+    deferUi(() => {
+      showAlert(t('scoreboard.reopenRoster.savedSuccess', { count: changes.length }), 'success')
+      setReopenRosterTeam(null)
+    })
   }, [matchId, data?.homeTeam, data?.awayTeam, data?.set, data?.match?.homeTeamId, data?.match?.awayTeamId, data?.events, data?.homePlayers, data?.awayPlayers, diffRosters, showAlert, t, deferUi, notifyScoresheetUpdate, syncToReferee, syncLiveStateToSupabase])
+
+  // The editor's Save: one save at a time, a tap while one runs is dropped
+  // (and the action's key holds until its data is on screen)
+  const reopenRosterSavingRef = useRef(false)
+  const [reopenRosterSaving, setReopenRosterSaving] = useState(false)
+  const handleSaveReopenedRoster = useCallback(async (teamKey, editedPlayers, editedBench, snapshotPlayers, snapshotBench) => {
+    if (reopenRosterSavingRef.current) return
+    reopenRosterSavingRef.current = true
+    setReopenRosterSaving(true)
+    try {
+      await runAction('reopenRoster', () => saveReopenedRoster(teamKey, editedPlayers, editedBench, snapshotPlayers, snapshotBench), { reason: 'roster_reopen' })
+    } catch (err) {
+      // Nothing was saved and the scorer was told (onActionFailed); the
+      // editor stays open with the edits
+      if (!isReportedActionError(err)) console.error('[reopenRoster] save failed', err)
+    } finally {
+      reopenRosterSavingRef.current = false
+      setReopenRosterSaving(false)
+    }
+  }, [runAction, saveReopenedRoster])
 
   // Log one event: the event, its state snapshot and its cloud sync job are
   // written in one transaction (runAction). Called inside a scorer action it
@@ -4823,6 +4976,51 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // logEventTx (below) reads the same values as these deps
     [data?.set, runAction, matchId, getNextSeq, getNextSubSeq, captureFullStateSnapshot, syncToReferee, syncLiveStateToSupabase]
   )
+
+  // The remarks box's text, saved as one action: the match remarks (read
+  // inside it, not from the screen) and a 'remark' event with the lines
+  // added. Saved on blur and again on close, one after the other. A failure
+  // is shown and keeps the dialog open with the text typed: it was an
+  // unhandled rejection with no message, and closing cleared the text (the
+  // reason of a match stoppage was lost, and the match ended without it)
+  const remarksSaveRef = useRef(null)
+  const saveRemarks = useCallback((text) => {
+    const save = () => runAction(null, async () => {
+      const oldRemarks = (await db.matches.get(matchId))?.remarks || ''
+      const newRemarks = (text || '').trim()
+      if (newRemarks === oldRemarks) return
+      await db.matches.update(matchId, { remarks: newRemarks })
+      // Log remark insertion as an event if new text was added
+      if (!data?.set || !newRemarks) return
+      const oldLines = oldRemarks.split('\n')
+      // Find what was added (new lines that weren't in old)
+      const addedLines = newRemarks.split('\n').filter((line, idx) => {
+        // If old remarks is empty, all new lines are added
+        if (!oldRemarks) return line.trim()
+        // Check if this line is new (not in old remarks)
+        return idx >= oldLines.length || line !== oldLines[idx]
+      }).filter(line => line.trim())
+      if (addedLines.length > 0) {
+        await logEvent('remark', { text: addedLines.join('\n'), fullRemarks: newRemarks })
+      }
+    }).catch((err) => {
+      console.error('[remarks] not saved', err)
+      showAlert(t(isStorageFullError(err) ? 'scoreboard.storageFull' : 'scoreboard.confirmFailed'), 'error')
+      throw err
+    })
+    const run = (remarksSaveRef.current || Promise.resolve()).catch(() => {}).then(save)
+    remarksSaveRef.current = run
+    return run
+  }, [runAction, matchId, data?.set, logEvent, showAlert, t])
+  const closeRemarks = useCallback(async () => {
+    try {
+      await saveRemarks(remarksText)
+    } catch {
+      return
+    }
+    setShowRemarks(false)
+    setRemarksText('')
+  }, [saveRemarks, remarksText])
 
   // The database part of logEvent; inside a transaction only (Dexie awaits only)
   async function logEventTx(type, payload = {}, options = {}) {
@@ -4878,6 +5076,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       seq: nextSeq // Use sequence for ordering
     })
     console.log(`[PERF] After db.events.add: +${(performance.now() - _t0).toFixed(0)}ms`)
+
+    // Rows the event writes with it (a side-out point: the rotation and an
+    // automatic libero exit, handlePoint), before its snapshot and cloud job
+    // below are taken from the events: they describe the state after them
+    if (options.beforeSnapshot) await options.beforeSnapshot(nextSeq)
 
     // Lightweight events (rally_start, replay) skip snapshot and sync queue for speed
     const lightweightEvents = ['rally_start', 'replay']
@@ -5106,10 +5309,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       } else if (type === 'set_end') {
         // Note: logEvent('set_end', { team: winner, ... }) uses 'team' for the winner
         eventData = { setIndex: payload?.setIndex || data.set.index, winner: payload?.team }
-      } else if (type === 'libero_entry' || type === 'libero_exit') {
-        eventData = { liberoNumber: payload?.liberoNumber, playerNumber: payload?.playerNumber }
+      } else if (type === 'libero_entry') {
+        // The payload's own fields (liberoIn / playerOut); liberoNumber is the
+        // player a referee tablet flashes (liberoNumber || playerIn)
+        eventData = { liberoNumber: payload?.liberoIn, liberoIn: payload?.liberoIn, playerOut: payload?.playerOut }
+      } else if (type === 'libero_exit') {
+        eventData = { liberoOut: payload?.liberoOut, playerIn: payload?.playerIn }
       } else if (type === 'libero_exchange') {
-        eventData = { liberoIn: payload?.liberoIn, liberoOut: payload?.liberoOut }
+        eventData = { liberoNumber: payload?.liberoIn, liberoIn: payload?.liberoIn, liberoOut: payload?.liberoOut }
       } else if (type === 'court_captain_designation') {
         eventData = { playerNumber: payload?.playerNumber }
       } else if (type === 'sanction') {
@@ -5509,6 +5716,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     (side, skipConfirmation = false, { tap = false, penaltySeq = null } = {}) => runAction('point', async () => {
       cLogger.logHandler('handlePoint', { side, skipConfirmation, tap })
       if (!data?.set) return
+      // A match over in the database (stopped, forfeited; opened here from
+      // the cloud or a backup with its set unfinished) takes no point
+      if (isMatchOverStatus((await db.matches.get(matchId))?.status)) {
+        console.warn('[Scoreboard] Point on a match that is over: ignored')
+        return
+      }
       if (tap && await readRallyStatus() !== 'in_play') {
         console.warn('[Scoreboard] Point tap without a rally in play (the screen was behind): ignored')
         return
@@ -5591,33 +5804,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       const scoringTeamHadServe = serveBeforePoint === teamKey
 
-      // Update score and log point FIRST (using fresh set ID)
-      await db.sets.update(freshCurrentSet.id, {
-        [field]: newPoints
-      })
-      // A penalty's point names its sanction: Undo takes the two back together
-      const pointPayload = { team: teamKey, score: { home: homePoints, away: awayPoints }, ...(penaltySeq != null ? { penaltySeq } : {}) }
-      const pointSeq = await logEvent('point', pointPayload, { setIndexOverride: setIndex })
+      // A side-out: the scoring team rotates (FIVB 7.6.1), and a libero who
+      // would go to the front row goes out. Written as the point's sub-events
+      // (N.x) right after its row and BEFORE its state snapshot and cloud job
+      // are taken (logEventTx beforeSnapshot): built after them, every
+      // side-out point was stored and synced with the line-up before the
+      // rotation and the old position I as server. Same transaction: the
+      // point never shows without its rotation
+      const writeSideOutRows = async (pointSeq) => {
+        if (scoringTeamHadServe) return
 
-      // Debug log: point awarded
-      debugLogger.log('POINT_AWARDED', {
-        team: teamKey,
-        side,
-        newScore: { home: homePoints, away: awayPoints },
-        serveBeforePoint,
-        scoringTeamHadServe,
-        setIndex: setIndex,
-        pointSeq
-      }, getStateSnapshot())
-
-      // Track when point was awarded (for accidental rally start check)
-      lastPointAwardedTimeRef.current = Date.now()
-      // Reset rally start time since rally ended
-      rallyStartTimeRef.current = null
-
-      // If scoring team didn't have serve, they rotate their lineup AFTER the point
-      // (same transaction: the point never shows without its rotation)
-      if (!scoringTeamHadServe) {
         // Query database directly for the most recent lineup (data.events might be stale)
         const allLineupEvents = await db.events
           .where('matchId')
@@ -5887,7 +6083,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             // Use decimal ID based on the point's action ID (e.g., if point is 1, rotation is 1.1)
             const rotationSeq = await getNextSubSeq(pointSeq)
             const rotationStateBefore = getStateSnapshot()
-            const rotationEventId = await db.events.add({
+            await addSyncedSubEvent({
               matchId,
               setIndex: data.set.index,
               type: 'lineup',
@@ -5909,14 +6105,38 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               rotationSeq
             }, getStateSnapshot())
 
-            // Don't add to sync_queue for rotation lineups
-            // But sync to referee so they see the updated lineup after rotation
+            // Queued for the cloud with the point (addSyncedSubEvent); also
+            // sync to referee so they see the updated lineup after rotation
             syncToReferee()
             // Also sync to Supabase so live state has the rotated lineup
             syncLiveStateToSupabase('rotation', teamKey, { lineup: cleanedRotatedLineup })
           }
         }
       }
+
+      // Update score and log point FIRST (using fresh set ID)
+      await db.sets.update(freshCurrentSet.id, {
+        [field]: newPoints
+      })
+      // A penalty's point names its sanction: Undo takes the two back together
+      const pointPayload = { team: teamKey, score: { home: homePoints, away: awayPoints }, ...(penaltySeq != null ? { penaltySeq } : {}) }
+      const pointSeq = await logEvent('point', pointPayload, { setIndexOverride: setIndex, beforeSnapshot: writeSideOutRows })
+
+      // Debug log: point awarded
+      debugLogger.log('POINT_AWARDED', {
+        team: teamKey,
+        side,
+        newScore: { home: homePoints, away: awayPoints },
+        serveBeforePoint,
+        scoringTeamHadServe,
+        setIndex: setIndex,
+        pointSeq
+      }, getStateSnapshot())
+
+      // Track when point was awarded (for accidental rally start check)
+      lastPointAwardedTimeRef.current = Date.now()
+      // Reset rally start time since rally ended
+      rallyStartTimeRef.current = null
 
       // After point is logged, the scoring team (teamKey) now has serve
       // So the OTHER team is receiving - check if they had a libero exit
@@ -6005,9 +6225,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // line-up dialog finds them, deferredPenaltyPoints): one action, each point
   // awarded as any point is (handlePoint): score, event with its snapshot,
   // cloud jobs and, when it gives the receiving team the service, its
-  // rotation (FIVB 7.6.1), as the immediate penalty point does.
-  const awardOwedPenaltyPoints = useCallback((teams) => runAction('penaltyPoints', async () => {
-    for (const team of teams) await handlePoint(mapTeamKeyToSide(team), true)
+  // rotation (FIVB 7.6.1), as the immediate penalty point does. Each point
+  // names its sanction (penaltySeq): Undo takes the two back together (it
+  // took the point only, and the penalty stayed without its point)
+  const awardOwedPenaltyPoints = useCallback((owed) => runAction('penaltyPoints', async () => {
+    for (const { team, penaltySeq } of owed) await handlePoint(mapTeamKeyToSide(team), true, { penaltySeq })
   }), [runAction, handlePoint, mapTeamKeyToSide])
 
   // Only the literal true skips the accidental rally start check (its own
@@ -6018,6 +6240,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const handleStartRally = useCallback((skipConfirmation = false) => runAction('rally', async () => {
     const skipCheck = skipConfirmation === true
     cLogger.logHandler('handleStartRally', { skipConfirmation: skipCheck })
+    // Nor a match over in the database (see handlePoint)
+    if (isMatchOverStatus((await db.matches.get(matchId))?.status)) {
+      console.warn('[Scoreboard] Start rally on a match that is over: ignored')
+      return
+    }
     if (await readRallyStatus() === 'in_play') {
       console.warn('[Scoreboard] Start rally with a rally in play (the screen was behind): ignored')
       return
@@ -6027,6 +6254,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (playedSet && getSetResult(playedSet.homePoints, playedSet.awayPoints, playedSet.index).isSetWon) {
       console.warn('[Scoreboard] Start rally in a set its score has already won: ignored')
       return
+    }
+    // Nor with a player on court who is expelled in this set or disqualified
+    // (FIVB 21.3.2-21.3.3): his substitution is recorded first
+    if (data?.set && data?.events) {
+      for (const team of ['home', 'away']) {
+        const lineup = data.events
+          .filter(e => e.type === 'lineup' && e.payload?.team === team && e.setIndex === data.set.index)
+          .sort(compareBySeq)
+          .pop()?.payload?.lineup
+        const sentOff = Object.values(lineup || {}).map(v => (v && typeof v === 'object' ? v.number : v)).find(n => n != null && data.events.some(e =>
+          e.type === 'sanction' && e.payload?.team === team &&
+          String(e.payload?.playerNumber) === String(n) &&
+          (e.payload?.type === 'disqualification' || (e.payload?.type === 'expulsion' && (e.setIndex ?? 1) === data.set.index))))
+        if (sentOff != null) {
+          deferUi(() => showAlert(t('scoreboard.sentOffOnCourt', { number: sentOff }), 'warning'))
+          return
+        }
+      }
     }
     // Check for accidental rally start (if enabled and point was just awarded)
     if (checkAccidentalRallyStart && !skipCheck && lastPointAwardedTimeRef.current) {
@@ -6042,8 +6287,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
     }
 
-    // If this is the first rally, show set start time confirmation
-    if (isFirstRally) {
+    // If this is the first rally, show set start time confirmation. Read
+    // from the database, as the gates below: the screen can be behind
+    const eventsNow = await db.events.where('matchId').equals(matchId).toArray()
+    const setIndexNow = playedSet?.index ?? data?.set?.index
+    if (isFirstRallyOf(eventsNow, setIndexNow)) {
+      // Both starting line-ups first (an Easy match excepted). Start set is
+      // disabled without them, but Enter (keyboard scoring) came here
+      // directly and started the set with no line-up
+      if (data?.match?.easy !== true && !startingLineupsIn(eventsNow, setIndexNow)) {
+        deferUi(() => showAlert(t('scoreboard.lineupsNeeded'), 'warning'))
+        return
+      }
       // The match's first serve waits for the coach and captain signatures of
       // both teams (domain/preMatchSignatures). Read from the row: one signed
       // a moment ago is there before this screen's data has it.
@@ -6103,7 +6358,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       clearTimeout(recentSubFlashTimeoutRef.current)
     }
     deferUi(() => setRecentlySubstitutedPlayers([]))
-  }), [logEvent, isFirstRally, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, data?.match, matchId, getNextSubSeq, syncToReferee, checkAccidentalRallyStart, accidentalRallyStartDuration, runAction, deferUi, readRallyStatus])
+  }), [logEvent, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, data?.match, matchId, getNextSubSeq, syncToReferee, checkAccidentalRallyStart, accidentalRallyStartDuration, runAction, deferUi, readRallyStatus, showAlert, t])
 
   // A tap on the rally buttons (Start rally, Point A | Point B), on every
   // layout, with its click event: none that is the end of the tap before it
@@ -6210,8 +6465,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
     // After point: show confirmation modal to undo point
     if (rallyStatus === 'idle' && canReplayRally && data?.events) {
-      // Find the last event by sequence number (highest seq)
-      const allEvents = [...data.events].sort((a, b) => {
+      // Find the last event by sequence number (highest seq), past a remark
+      // or a bench injury recorded since (as canReplayRally)
+      const allEvents = data.events.filter(e => !isBookkeepingEvent(e)).sort((a, b) => {
         const aSeq = a.seq || 0
         const bSeq = b.seq || 0
         if (aSeq !== 0 || bSeq !== 0) {
@@ -6365,6 +6621,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // dialog closing appear together
   const confirmSetStartTime = useCallback((time) => runAction('setStart', async () => {
     if (!setStartTimeModal || !data?.set) return
+    // The same gate as Start set (handleStartRally), against the database:
+    // the set started already (a second set_start), or a line-up is missing
+    const eventsNow = await db.events.where('matchId').equals(matchId).toArray()
+    if (!isFirstRallyOf(eventsNow, data.set.index)) {
+      deferUi(() => setSetStartTimeModal(null))
+      return
+    }
+    if (data.match?.easy !== true && !startingLineupsIn(eventsNow, data.set.index)) {
+      deferUi(() => {
+        setSetStartTimeModal(null)
+        showAlert(t('scoreboard.lineupsNeeded'), 'warning')
+      })
+      return
+    }
 
     // Check if the confirmed time differs from the expected time
     // Compare only hours and minutes since the modal only shows time, not date
@@ -6457,7 +6727,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (timeDifferent && !fromSchedule) {
       deferUi(() => setShowRemarks(true))
     }
-  }), [setStartTimeModal, data?.set, data?.match?.scheduledAt, data?.match?.test, matchId, onTriggerEventBackup, syncToReferee, syncLiveStateToSupabase, runAction, deferUi, deferEffect])
+  }), [setStartTimeModal, data?.set, data?.match, matchId, onTriggerEventBackup, syncToReferee, syncLiveStateToSupabase, runAction, deferUi, deferEffect, showAlert, t])
 
   // Confirm set end time
   const confirmSetEndTime = useCallback(async (time) => {
@@ -6475,6 +6745,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
 
     const { setIndex, winner, homePoints, awayPoints } = setEndTimeModal
+    // Shown again when the set end could not be saved (catch below)
+    const modalAtConfirm = setEndTimeModal
     // A set lost by forfeit (team incomplete for the set) keeps that reason on
     // its set_end, so a reopen can find and reverse the forfeit
     const setEndReason = setEndTimeModal.reason ||
@@ -6549,9 +6821,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Get start time from current set
       const startTime = data.set.startTime
 
-      // STEP 3: Log set_end event to local DB
+      // STEP 3: Log set_end event to local DB. Once: a set end confirmed
+      // again after a failed write (catch below) can find it written already
       console.log('[SET_END_DEBUG] STEP 3: Logging set_end event...')
-      await logEvent('set_end', {
+      const setEndWritten = (await db.events.where('matchId').equals(matchId).toArray())
+        .some(e => e.type === 'set_end' && e.setIndex === setIndex)
+      if (!setEndWritten) await logEvent('set_end', {
         team: winner,
         teamLabel: winnerLabel,
         setIndex: setIndex,
@@ -6878,9 +7153,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             // (exportMatchData), unindented. It was every table of the device,
             // pretty-printed: on a laptop that kept a season's matches 89 to
             // 297 MB per set end, behind this overlay for 2 to 8 s, and a file
-            // the restore refused (stress test 2026-10-25).
-            const jsonString = JSON.stringify(await exportMatchData(matchId))
-            const blob = new Blob([jsonString], { type: 'application/json' })
+            // the restore refused (stress test 2026-10-25). The app backup
+            // file (utils/backupFile): the Downloads folder may be a shared
+            // laptop's, so no PINs inside and the rest encrypted.
+            const { backupFileText } = await import('../utils/backupFile')
+            const fileText = await backupFileText(matchId, await exportMatchData(matchId))
+            const blob = new Blob([fileText], { type: 'application/json' })
             const url = URL.createObjectURL(blob)
             const link = document.createElement('a')
             link.href = url
@@ -7072,11 +7350,30 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       console.error('[SET_END] CRITICAL ERROR in confirmSetEndTime:', error)
       console.error('[SET_END] Error stack:', error.stack)
 
-      // Show user-friendly error message
-      showAlert(t('scoreboard.errors.setEndFailed', 'Set end failed. Data saved locally.'), 'error')
-
       // Ensure cleanup happens
       cleanup('uncaught exception: ' + error.message)
+
+      // The set row not finished: the set end was not saved. The set is no
+      // longer marked confirmed and its dialog comes back, so it can be
+      // confirmed again. Left marked, the set stayed won and open until a
+      // reload: points and rallies refused, the dialog ignored as "already
+      // confirmed", under "Data saved locally."
+      let setEnded = false
+      try {
+        const rows = (await db.sets.where('matchId').equals(matchId).toArray()).filter(s => s.index === setIndex)
+        setEnded = rows.length > 0 && rows.every(s => s.finished)
+      } catch (readError) {
+        console.error('[SET_END] Could not read the set after the failure:', readError)
+      }
+      if (!setEnded) {
+        confirmedSetEndRef.current.delete(setIndex)
+        setSetEndTimeModal(modalAtConfirm)
+        showAlert(t(isStorageFullError(error) ? 'scoreboard.storageFull' : 'scoreboard.setEndNotSaved'), 'error')
+        return
+      }
+
+      // Show user-friendly error message
+      showAlert(t('scoreboard.errors.setEndFailed', 'Set end failed. Data saved locally.'), 'error')
 
       // Don't re-throw - the match can continue from local data
     }
@@ -7107,8 +7404,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       deferUi(() => setSet5SideServiceModal(null))
     }
 
-    const teamAKey = data.match.coinTossTeamA || 'home'
-    const teamBKey = data.match.coinTossTeamB || 'away'
+    // Inline: the choice is the match row's, read here (a Switch tapped just
+    // before is in it), not the screen's
+    const freshMatch = (await db.matches.get(matchId)) || data.match
+    if (inlineMode) {
+      leftTeam = set5SetupLeftTeam(freshMatch)
+      firstServe = set5SetupFirstServe(freshMatch)
+    }
+
+    const teamAKey = freshMatch.coinTossTeamA || 'home'
+    const teamBKey = freshMatch.coinTossTeamB || 'away'
 
     // Determine which team (home/away) is on the left
     const leftTeamKey = leftTeam === 'A' ? teamAKey : teamBKey
@@ -7120,7 +7425,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // (and write the confirmed choice when the match has none: restored in the
     // break without it, the court showed set 4's sides, now pinned)
     // For modal mode, update the database now
-    if (inlineMode && (data.match.set5LeftTeam !== leftTeam || data.match.set5FirstServe !== firstServe)) {
+    if (inlineMode && (freshMatch.set5LeftTeam !== leftTeam || freshMatch.set5FirstServe !== firstServe)) {
       await db.matches.update(matchId, { set5LeftTeam: leftTeam, set5FirstServe: firstServe })
     }
     if (!inlineMode) {
@@ -7445,18 +7750,32 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
     }
 
+    const rosterTeams = new Set()
     for (const e of removed) {
       if (e.type === 'court_captain_designation' && (e.payload?.team === 'home' || e.payload?.team === 'away')) {
         matchUpdate[e.payload.team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'] = e.payload.previousCourtCaptain ?? null
       }
       if (e.type === 'libero_redesignation' && e.payload?.previousLiberoFlags) {
+        const team = e.payload.team
         const { unableLibero, newLibero } = e.payload.previousLiberoFlags
-        if (unableLibero?.id != null) await db.players.update(unableLibero.id, { libero: unableLibero.libero })
-        if (newLibero?.id != null) await db.players.update(newLibero.id, { libero: newLibero.libero })
+        // The team's rows by shirt number: the ids are those of the device
+        // that re-designated, and a device that continued the match gave its
+        // players new ones (there an id names nobody, or someone else). The
+        // id only when the number finds nobody.
+        const teamId = team === 'home' ? match?.homeTeamId : team === 'away' ? match?.awayTeamId : null
+        const roster = teamId != null ? await db.players.where('teamId').equals(teamId).toArray() : []
+        const rowOf = (number, flag) => roster.find(p => String(p.number) === String(number)) || roster.find(p => p.id === flag.id)
+        const unableRow = unableLibero?.id != null ? rowOf(e.payload.unableLiberoNumber, unableLibero) : null
+        const newRow = newLibero?.id != null ? rowOf(e.payload.newLiberoNumber, newLibero) : null
+        if (unableRow) await db.players.update(unableRow.id, { libero: unableLibero.libero })
+        if (newRow) await db.players.update(newRow.id, { libero: newLibero.libero })
+        if (unableRow || newRow) rosterTeams.add(team)
       }
     }
 
     if (Object.keys(matchUpdate).length > 0) await db.matches.update(matchId, matchUpdate)
+    // The marks put back reach the cloud roster too
+    for (const team of rosterTeams) await queueTeamRoster(matchId, team)
     if (removed.some(e => e.type === 'sanction')) await resyncTeamSanctionFlags()
   }, [matchId, resyncTeamSanctionFlags])
 
@@ -7471,15 +7790,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const rows = (eventsToRemove || []).filter(e => e && e.id != null)
     if (rows.length === 0) return
     await withActivityContext({ reason: currentActivityContext()?.reason || reason }, () => db.events.bulkDelete(rows.map(e => e.id)))
+    // (by the whole external id: another match's unsent jobs can carry the same local ids)
+    const seedKey = rows[0].matchId != null ? (await db.matches.get(rows[0].matchId))?.seed_key : null
     const queued = await db.sync_queue.where('status').equals('queued').toArray()
-    const jobs = syncJobsForEvents(queued, rows.map(e => e.id))
+    const jobs = syncJobsForEvents(queued, rows.map(e => e.id), seedKey)
     if (jobs.length > 0) await db.sync_queue.bulkDelete(jobs.map(j => j.id))
     await reverseEventSideEffects(rows)
   }, [reverseEventSideEffects])
 
   // Reverse a forfeit (set or match) at or after `fromSetIndex`: drop the sets
   // it created, the points it awarded, its set_end and forfait events, and put
-  // the set it finished back to unfinished at its pre-forfeit score
+  // the set it finished back to unfinished at its pre-forfeit score, the
+  // played sets a default rewrote back to their score, still finished
   // (planForfeitReversal, tested). Used by undo of a forfait and by Reopen Set.
   const applyForfeitReversal = useCallback(async (fromSetIndex) => {
     const events = await db.events.where('matchId').equals(matchId).toArray()
@@ -7491,24 +7813,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     await discardEvents(events.filter(e => deleteIds.has(e.id)), 'forfeit_reversal')
     if (plan.deleteSetIds.length > 0) await db.sets.bulkDelete(plan.deleteSetIds)
     for (const r of plan.restoreSets) {
-      await db.sets.update(r.id, { homePoints: r.homePoints, awayPoints: r.awayPoints, finished: false, endTime: null })
-      confirmedSetEndRef.current.delete(r.index)
+      await db.sets.update(r.id, restoredSetWrites(r).local)
+      if (r.finished !== true) confirmedSetEndRef.current.delete(r.index)
     }
 
-    // Cloud: never send a created set that no longer exists; correct the reopened one
+    // Cloud: the sets it created go there too (a finished one counted in the
+    // result the approval checks); the reopened one is corrected
     const match = await db.matches.get(matchId)
-    const queued = await db.sync_queue.where('status').equals('queued').toArray()
-    const staleSetJobs = syncJobsForSets(queued, plan.deleteSetIds)
-    if (staleSetJobs.length > 0) await db.sync_queue.bulkDelete(staleSetJobs.map(j => j.id))
+    await queueSetDeletes(db, match, plan.deleteSetIds)
     if (match && !match.test && match.seed_key) {
       for (const r of plan.restoreSets) {
-        await db.sync_queue.add({
-          resource: 'set',
-          action: 'update',
-          payload: { external_id: setExtId(match.seed_key, r.id), home_points: r.homePoints, away_points: r.awayPoints, finished: false, end_time: null },
-          ts: new Date().toISOString(),
-          status: 'queued'
-        })
+        await db.sync_queue.add(setUpdateJob(match, r.id, restoredSetWrites(r).cloud))
       }
     }
     if (match?.forfeitTeam || match?.forfeitReason) {
@@ -7567,6 +7882,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // The undo's live state: the interval again when the set 5 setup's
     // confirmation (which ended it) is undone while it still runs
     let undoLiveData = null
+    let undidSetEnd = false // the referees' break countdown of that set end closes
 
     console.log('[handleUndo] Starting snapshot-based undo for event:', lastEvent.type, 'seq:', lastEventSeq)
 
@@ -7728,6 +8044,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // Handle special cases for set_end undo
       if (lastEvent.type === 'set_end') {
+        undidSetEnd = true
         // Delete the next set if it was created: the first set after the ended
         // one (best-of-3 jumps 2 -> 5, so it is not always index + 1)
         const endedSetIndex = lastEvent.payload?.setIndex ?? lastEvent.setIndex ?? data.set.index
@@ -7741,13 +8058,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           const nextSetEvents = await db.events.where('matchId').equals(matchId).and(e => e.setIndex === nextSet.index).toArray()
           await db.events.bulkDelete(nextSetEvents.map(e => e.id))
           await db.sets.delete(nextSet.id)
-          // Their cloud jobs not sent yet (set insert, set_start, lineups) go too
+          // Their cloud jobs not sent yet (set_start, lineups) go too; the
+          // set itself is deleted in the cloud, behind its insert
           const queued = await db.sync_queue.where('status').equals('queued').toArray()
-          const staleJobs = [
-            ...syncJobsForEvents(queued, nextSetEvents.map(e => e.id)),
-            ...syncJobsForSets(queued, [nextSet.id])
-          ]
+          const staleJobs = syncJobsForEvents(queued, nextSetEvents.map(e => e.id), data?.match?.seed_key)
           if (staleJobs.length > 0) await db.sync_queue.bulkDelete(staleJobs.map(j => j.id))
+          await queueSetDeletes(db, data?.match, [nextSet.id])
         }
         // The set 5 setup the set end proposed goes with it: when the set
         // before set 5 ends again (the teams may have changed courts since),
@@ -7825,6 +8141,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     } finally {
       // Sync to Referee and Supabase after undo (after the commit)
       syncToReferee()
+      if (undidSetEnd) sendActionToReferee('end_interval', {})
       syncLiveStateToSupabase('undo', null, undoLiveData)
       notifyScoresheetUpdate('undo')
     }
@@ -8007,6 +8324,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           [newField]: newTeamPoints + 1,
           finished: false
         })
+        // The cloud set row too (awaited: same transaction). Without it the
+        // server kept the score from before the swap until the next rally, and
+        // a device that continued the match in between scored on from it
+        await queueSetScoreSync(db, { matchId, setIndex: data.set.index })
 
         // Update the point event's team
         await db.events.update(lastEvent.id, {
@@ -8039,6 +8360,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           ts: new Date().toISOString(),
           seq: nextSeq
         })
+        // ...and its cloud copy, before the undo record below is written in
+        // (local ids, this device's bookkeeping: no edit job for it)
+        await queueEventSync(db, decisionEventId)
 
         // Handle rotation changes if serve changed
         // If old team was NOT serving (sideout happened), we need to undo their rotation
@@ -8146,7 +8470,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     // Log libero exit event (sub-event of the point, as handlePoint does)
                     const liberoPlayer = teamPlayers?.find(p => String(p.number) === String(liberoNumber))
                     const liberoExitSeq = await getNextSubSeq(lastEventSeq)
-                    const liberoExitId = await db.events.add({
+                    const liberoExitId = await addSyncedSubEvent({
                       matchId,
                       setIndex: data.set.index,
                       type: 'libero_exit',
@@ -8168,7 +8492,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 // Log the rotation lineup event for the new team as a sub-event of the
                 // point (N.x): the serve indicator, undo and replay find it there
                 const rotationSeq = await getNextSubSeq(lastEventSeq)
-                const rotationId = await db.events.add({
+                const rotationId = await addSyncedSubEvent({
                   matchId,
                   setIndex: data.set.index,
                   type: 'lineup',
@@ -8242,9 +8566,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
 
   const handleTimeout = useCallback(
-    (side, { acknowledged = [] } = {}) => {
+    async (side, { acknowledged = [] } = {}) => {
       cLogger.logHandler('handleTimeout', { side })
       if (!data?.set) return
+      // Not while a rally is in play, from any entry: the TO counters are
+      // gated on screen, but the corrections panel's live time-out and the
+      // phone layout came here directly and wrote a time-out after the
+      // rally_start (the rally ended on the scorer). Read from the database,
+      // as a point tap is: the screen can be behind
+      if (rallyStatus === 'in_play' || await readRallyStatus() === 'in_play') {
+        showAlert(t('scoreboard.timeoutRallyInPlay'), 'warning')
+        return
+      }
       const teamKey = mapSideToTeamKey(side)
       // Set interval, replay pending (blocked), a request after a delay
       // warning (15.2.4) and the 3rd time-out (15.11.1.4: the improper-request
@@ -8271,7 +8604,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         ...(prev?.started ? { running: prev } : prev?.running ? { running: prev.running } : {})
       }))
     },
-    [mapSideToTeamKey, data?.events, data?.set, rallyStatus, openRequestWarning, isBetweenSets, betweenSetsCountdown]
+    [mapSideToTeamKey, data?.events, data?.set, rallyStatus, readRallyStatus, showAlert, t, openRequestWarning, isBetweenSets, betweenSetsCountdown]
   )
 
   // The scorer's answer in the request warning. Cancel and the sanctions
@@ -8322,6 +8655,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const anchor = countdownAnchor(0)
     deferUi(() => setTimeoutModal({ ...request, started: true, startedAt: new Date(startTimestamp).toISOString(), anchor }))
 
+    // A rally started since the request dialog opened (another device's
+    // tap synced in, or a key): no time-out under it. Applied after the
+    // close above, in the same change
+    if (await readRallyStatus() === 'in_play') {
+      deferUi(() => {
+        // a running time-out the request would have replaced runs on
+        setTimeoutModal(timeoutModal.running || null)
+        showAlert(t('scoreboard.timeoutRallyInPlay'), 'warning')
+      })
+      return
+    }
+
     try {
       await logEvent('timeout', { team: request.team })
     } catch (err) {
@@ -8351,7 +8696,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Trigger event backup for Safari/Firefox (after the commit)
     deferEffect({ run: () => onTriggerEventBackup?.('timeout') })
-  })), [runTimeoutConfirm, timeoutModal, logEvent, sendActionToReferee, onTriggerEventBackup, showAlert, t, runAction, deferUi, deferEffect])
+  })), [runTimeoutConfirm, timeoutModal, logEvent, sendActionToReferee, onTriggerEventBackup, showAlert, t, runAction, deferUi, deferEffect, readRallyStatus])
 
   const cancelTimeout = useCallback(() => {
     // Only cancel if timeout hasn't started yet
@@ -8704,13 +9049,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     )
   }, [data?.events])
 
+  // Out for the match by an exceptional substitution: an injured player
+  // (FIVB 15.7). An expelled one replaced exceptionally is out for that set
+  // only (21.3.2), as wasSubstitutedDueToExpulsion handles.
   const wasExceptionallySubstituted = useCallback((teamKey, playerNumber) => {
     if (!data?.events) return false
     return data.events.some(e =>
       e.type === 'substitution' &&
       e.payload?.team === teamKey &&
       String(e.payload?.playerOut) === String(playerNumber) &&
-      e.payload?.isExceptional === true
+      e.payload?.isExceptional === true &&
+      substitutionBarsForMatch(e.payload)
     )
   }, [data?.events])
 
@@ -8729,14 +9078,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Check if player was substituted due to expulsion - cannot re-enter for rest of set
     if (wasSubstitutedDueToExpulsion(teamKey, playerNumber)) {
-      // Check if this is the same set where they were expelled
-      const expulsionSub = data.events.find(e =>
+      // Any expulsion substitution of this set (the player may have been
+      // expelled in an earlier set as well)
+      const expelledThisSet = data.events.some(e =>
         e.type === 'substitution' &&
         e.payload?.team === teamKey &&
         String(e.payload?.playerOut) === String(playerNumber) &&
-        e.payload?.isExpelled === true
+        e.payload?.isExpelled === true &&
+        (e.setIndex ?? 1) === currentSetIndex
       )
-      if (expulsionSub && expulsionSub.setIndex === currentSetIndex) {
+      if (expelledThisSet) {
         return false // Cannot re-enter in same set
       }
     }
@@ -8844,10 +9195,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // No legal substitute once the 6 regular substitutions are used: injury and
     // expulsion / disqualification then go to the exceptional substitution.
     if (!allowExceptional && data.set && countRegularSubstitutions(data.events, teamKey, data.set.index) >= MAX_SUBSTITUTIONS_PER_SET) return []
+    // Nor for a court player who may not be substituted now (the court menu's
+    // canPlayerBeSubstituted): a starter whose out-and-back cycle is complete
+    // (FIVB 15.6.2), a substitute with no rally since he came in. Injury and
+    // expulsion / disqualification go to the exceptional substitution then.
+    if (!allowExceptional && !canPlayerBeSubstituted(teamKey, playerOutNumber)) return []
 
     const benchPlayers = teamKey === 'home'
       ? (leftIsHome ? leftTeamBench.benchPlayers : rightTeamBench.benchPlayers)
       : (leftIsHome ? rightTeamBench.benchPlayers : leftTeamBench.benchPlayers)
+
+    // Whatever is offered passes the rule of every substitution, the guard's
+    // (domain/interruptionRequests substitutionIllegalReason): no libero in or
+    // out, not the player the libero replaced, nobody sent off, and for a
+    // regular substitution the starter-substitute pairing
+    const teamPlayers = teamKey === 'home' ? data.homePlayers : data.awayPlayers
+    const allowed = (list) => (data.set
+      ? list.filter(p => !substitutionIllegalReason(data.events, data.set.index, teamKey, { playerOut: playerOutNumber, playerIn: p.number, exceptional: allowExceptional }, { players: teamPlayers }))
+      : list)
 
     // Filter out liberos
     let available = benchPlayers.filter(p => !p.libero || p.libero === '')
@@ -8917,21 +9282,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           const originalPlayer = benchPlayers.find(p => String(p.number) === String(originalPlayerOut))
           // ...unless they left expelled, disqualified or exceptionally
           // replaced (FIVB 15.7, 21.3.2, 21.3.3)
-          if (originalPlayer && !originalPlayer.libero && canPlayerReEnter(teamKey, originalPlayer.number, data.set.index)) {
+          if (originalPlayer && !originalPlayer.libero && canPlayerReEnter(teamKey, originalPlayer.number, data.set.index) && allowed([originalPlayer]).length > 0) {
             return [originalPlayer] // Only this player is available
           }
         }
         // If already came back, check if exceptional substitution is allowed
         if (allowExceptional) {
           // For exceptional substitution, return all bench players (except liberos and those who cannot re-enter)
-          return available.filter(p => canPlayerReEnter(teamKey, p.number, data.set.index))
+          return allowed(available.filter(p => canPlayerReEnter(teamKey, p.number, data.set.index)))
         }
         return []
       } else {
         // No point change yet, check if exceptional substitution is allowed
         if (allowExceptional) {
           // For exceptional substitution, return all bench players (except liberos and those who cannot re-enter)
-          return available.filter(p => canPlayerReEnter(teamKey, p.number, data.set.index))
+          return allowed(available.filter(p => canPlayerReEnter(teamKey, p.number, data.set.index)))
         }
         return []
       }
@@ -9011,8 +9376,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       return true
     })
 
-    return available.sort((a, b) => (a.number || 0) - (b.number || 0))
-  }, [data, leftIsHome, leftTeamBench, rightTeamBench, getSubstitutionHistory, data?.events, canPlayerReEnter])
+    return allowed(available).sort((a, b) => (a.number || 0) - (b.number || 0))
+  }, [data, leftIsHome, leftTeamBench, rightTeamBench, getSubstitutionHistory, data?.events, canPlayerReEnter, canPlayerBeSubstituted])
 
   // Get available players for exceptional substitution
   // Excludes: liberos, expelled/disqualified players, and the player being replaced
@@ -9031,26 +9396,25 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // The bench players who may NOT come in for playerOutNumber in a regular
   // substitution, each with why (domain/interruptionRequests
-  // substituteInIllegalReason): offered greyed, a tap opens the request
-  // warning "Illegal substitution requested" (a delay, FIVB 16.1.3; CB 4.15)
+  // substitutionIllegalReason, the guard's rule): offered greyed, a tap opens
+  // the request warning "Illegal substitution requested" (a delay, FIVB
+  // 16.1.3; CB 4.15)
   const getIllegalSubstitutes = useCallback((teamKey, playerOutNumber) => {
     if (!data?.set) return []
     const benchPlayers = teamKey === 'home'
       ? (leftIsHome ? leftTeamBench.benchPlayers : rightTeamBench.benchPlayers)
       : (leftIsHome ? rightTeamBench.benchPlayers : leftTeamBench.benchPlayers)
+    const teamPlayers = teamKey === 'home' ? data.homePlayers : data.awayPlayers
     const legal = new Set(getAvailableSubstitutes(teamKey, playerOutNumber).map(p => String(p.number)))
     return (benchPlayers || [])
       .filter(p => p.number !== undefined && p.number !== null && p.number !== '' && !legal.has(String(p.number)))
       .map(p => ({
         number: p.number,
-        reason: substituteInIllegalReason(data.events, data.set.index, teamKey, playerOutNumber, p.number, {
-          isLibero: !!(p.libero && p.libero !== ''),
-          sentOff: !canPlayerReEnter(teamKey, p.number, data.set.index)
-        })
+        reason: substitutionIllegalReason(data.events, data.set.index, teamKey, { playerOut: playerOutNumber, playerIn: p.number }, { players: teamPlayers })
       }))
       .filter(p => p.reason)
       .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
-  }, [data?.set, data?.events, leftIsHome, leftTeamBench, rightTeamBench, getAvailableSubstitutes, canPlayerReEnter])
+  }, [data?.set, data?.events, data?.homePlayers, data?.awayPlayers, leftIsHome, leftTeamBench, rightTeamBench, getAvailableSubstitutes])
 
   // A tap on an illegal candidate: the request warning (reject + delay sanction)
   const openIllegalSubstitution = (teamKey, position, playerOut, candidate) => {
@@ -9064,7 +9428,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // the event is recorded (useBenchRequestBridge)
   const benchBridge = useBenchRequestBridge({ relayKey: data?.match ? relayMatchKey(data.match) : null, events: data?.events, setIndex: data?.set?.index })
   const benchActions = {
-    onAcceptLineup: (entry) => setLineupModal({ team: entry.team, mode: 'initial', lineup: entry.request.lineup, gameCaptain: entry.request.gameCaptain ?? null }),
+    onAcceptLineup: (entry) => {
+      // only the set being scored, and only while the team has no line-up in it
+      const block = lineupAcceptBlock(entry, data?.events, data?.set?.index)
+      if (block === 'has-lineup') {
+        benchBridge.respond(entry.team, entry.request.id, 'accepted')
+        return
+      }
+      if (block) {
+        showAlert(t('benchRequests.scorer.lineupOtherSet', { set: entry.request.setIndex, current: data?.set?.index, defaultValue: 'This line-up is for set {{set}}; set {{current}} is being scored.' }), 'info')
+        return
+      }
+      setLineupModal({ team: entry.team, mode: 'initial', lineup: entry.request.lineup, gameCaptain: entry.request.gameCaptain ?? null })
+    },
     onGrantTimeout: (entry) => handleTimeout(mapTeamKeyToSide(entry.team)),
     onAcceptPair: (entry, pair) => {
       if (!data?.set || rallyStatus !== 'idle') return
@@ -9075,6 +9451,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         return
       }
       const playerOut = benchLineupNumber(lineup[position])
+      // Who may go off is the court tap's too: a libero, a starter whose cycle
+      // is complete or a substitute with no rally since has no legal partner,
+      // the pair opens "Illegal substitution" (getIllegalSubstitutes)
       const legal = getAvailableSubstitutes(entry.team, playerOut).find(p => String(p.number) === String(pair.in))
       if (legal) {
         setSubstitutionConfirm({ team: entry.team, position, playerOut, playerIn: legal.number })
@@ -9111,6 +9490,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Exclude players who cannot re-enter (expelled/disqualified/exceptionally substituted)
       if (!canPlayerReEnter(teamKey, playerNum, data.set.index)) return false
 
+      // The rule of every substitution, an exceptional one too (the guard's,
+      // domain/interruptionRequests substitutionIllegalReason): not the player
+      // the libero on court replaced (FIVB 15.7), nobody sent off
+      if (data.set && substitutionIllegalReason(data.events, data.set.index, teamKey, { playerOut: playerOutNumber, playerIn: p.number, exceptional: true }, { players: teamPlayers })) return false
+
       return true
     })
 
@@ -9122,10 +9506,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (!data?.events || !data?.set) return false
 
     // Check if player is disqualified - disqualified players cannot re-enter
+    // (numbers as strings: a sanction from the court disc carries a string)
     const playerSanctions = data.events.filter(e =>
       e.type === 'sanction' &&
       e.payload?.team === teamKey &&
-      e.payload?.playerNumber === playerNumber &&
+      String(e.payload?.playerNumber) === String(playerNumber) &&
       e.payload?.type === 'disqualification'
     )
     if (playerSanctions.length > 0) return false // Disqualified, cannot re-enter
@@ -9147,7 +9532,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const expulsionSanctions = data.events.filter(e =>
       e.type === 'sanction' &&
       e.payload?.team === teamKey &&
-      e.payload?.playerNumber === playerNumber &&
+      String(e.payload?.playerNumber) === String(playerNumber) &&
       e.payload?.type === 'expulsion' &&
       (e.setIndex || 1) === data.set.index
     )
@@ -9203,28 +9588,36 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Check if a libero is unable to play (injured, expelled, disqualified, or declared unable)
   // MUST be defined before handlers that use it in dependency arrays
+  // Numbers are compared as strings (domain/liberos.js): a sanction given from
+  // the court disc carries the number as a string, the roster as a number.
+  // An expulsion bars the libero for its set only (FIVB 21.3.2); a
+  // disqualification, an injury and a declaration for the rest of the match.
   const isLiberoUnable = useCallback((teamKey, liberoNumber) => {
+    const same = (n) => n != null && String(n) === String(liberoNumber)
     // Check if player is marked as 'unable' in database (from libero redesignation)
     const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-    const player = teamPlayers?.find(p => Number(p.number) === Number(liberoNumber))
+    const player = teamPlayers?.find(p => same(p.number))
     if (player?.libero === 'unable') return true
 
     if (!data?.events) return false
+    const setIndex = data?.set?.index
+    const thisSet = (e) => setIndex == null || (e.setIndex ?? 1) === setIndex
 
-    // Check for expulsion or disqualification
+    // Check for expulsion (this set) or disqualification
     const sanctions = data.events.filter(e =>
       e.type === 'sanction' &&
       e.payload?.team === teamKey &&
-      e.payload?.playerNumber === liberoNumber &&
-      (e.payload?.type === 'expulsion' || e.payload?.type === 'disqualification')
+      same(e.payload?.playerNumber) &&
+      (e.payload?.type === 'disqualification' || (e.payload?.type === 'expulsion' && thisSet(e)))
     )
     if (sanctions.length > 0) return true
 
-    // Check for libero_unable event (declared by coach)
+    // Check for libero_unable event (declared by coach, injury, sanction)
     const unableEvents = data.events.filter(e =>
       e.type === 'libero_unable' &&
       e.payload?.team === teamKey &&
-      e.payload?.liberoNumber === liberoNumber
+      same(e.payload?.liberoNumber) &&
+      (e.payload?.reason !== 'expulsion' || thisSet(e))
     )
     if (unableEvents.length > 0) return true
 
@@ -9232,13 +9625,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const injurySubs = data.events.filter(e =>
       e.type === 'substitution' &&
       e.payload?.team === teamKey &&
-      e.payload?.playerOut === liberoNumber &&
+      same(e.payload?.playerOut) &&
       e.payload?.isInjury === true
     )
     if (injurySubs.length > 0) return true
 
     return false
-  }, [data?.events, data?.homePlayers, data?.awayPlayers])
+  }, [data?.events, data?.set?.index, data?.homePlayers, data?.awayPlayers])
 
   // Get libero currently on court for a team
   const getLiberoOnCourt = useCallback((teamKey) => {
@@ -9505,9 +9898,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     setDropTargetPosition(null)
   }, [])
 
-  // Handle drag over court player position
+  // Handle drag over court player position. The drop is accepted
+  // (preventDefault) only after the checks: a cancelled dragover lets the
+  // browser drop anything, also a bench player on the court libero
   const handleCourtDragOver = useCallback((e, teamKey, position) => {
-    e.preventDefault()
     if (!draggedPlayer) return
 
     // Prevent court-to-court drag - only bench players can be dropped on court
@@ -9574,6 +9968,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
     }
 
+    e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     setDropTargetPosition({ team: teamKey, position })
   }, [draggedPlayer, getCurrentServe, isLiberoUnable, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set?.index, substitutionsUsed, getAvailableSubstitutes])
@@ -9661,12 +10056,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Regular bench player being dropped on court
       // First check if this is a libero exit scenario (bench player -> court libero who replaced them)
       const liberoOnCourt = getLiberoOnCourt(teamKey)
+      const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
+      const courtPlayerInfo = teamPlayers?.find(p => String(p.number) === String(courtPlayerNumber))
+      const isCourtPlayerLibero = !!(courtPlayerInfo?.libero && courtPlayerInfo.libero !== '')
       if (liberoOnCourt && liberoOnCourt.position === position) {
         // There's a libero at this position
-        // Check if the court player number matches the libero
-        const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-        const courtPlayerInfo = teamPlayers?.find(p => String(p.number) === String(courtPlayerNumber))
-        const isCourtPlayerLibero = courtPlayerInfo?.libero && courtPlayerInfo.libero !== ''
 
         if (isCourtPlayerLibero && String(liberoOnCourt.playerNumber) === String(benchPlayerNumber)) {
           // This is the replaced player being dropped on the libero - libero exit
@@ -9688,6 +10082,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           return
         }
       }
+      // Only the player the libero replaced takes its place: a libero is
+      // never substituted (FIVB 19.3.1.3), as on touch and in Corrections
+      if (isCourtPlayerLibero || (liberoOnCourt && liberoOnCourt.position === position)) return
 
       // Regular substitution - show confirmation
       const teamSubstitutions = substitutionsUsed?.[teamKey] || 0
@@ -10479,6 +10876,54 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [rallyStatus, isRallyReplayed, replayPending, leftTeamLineupSet, rightTeamLineupSet, leftIsHome, playerActionMenu, substitutionsUsed, canPlayerBeSubstituted, getCurrentServe, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.homePlayers, data?.awayPlayers, data?.events, data?.set])
 
   // Show substitution confirmation
+  // The expulsion or disqualification of a player given in THIS set (the
+  // newest), or null. A sanction that forces a substitution is written before
+  // the substitute is chosen; only this set's one can be taken back from the
+  // substitution dialogs (an expulsion of an earlier set is over, FIVB 21.3.2).
+  const thisSetSanctionOf = useCallback((teamKey, playerNumber, events = data?.events) => {
+    if (!data?.set || playerNumber == null) return null
+    return (events || [])
+      .filter(e =>
+        e.type === 'sanction' &&
+        e.payload?.team === teamKey &&
+        String(e.payload?.playerNumber) === String(playerNumber) &&
+        (e.payload?.type === 'expulsion' || e.payload?.type === 'disqualification') &&
+        (e.setIndex ?? 1) === data.set.index)
+      .sort(compareBySeq)
+      .pop() || null
+  }, [data?.events, data?.set])
+
+  // Whether a substitution list is forced by a sanction: the flags the
+  // sanction flow set, else an expulsion of this set or a disqualification
+  const forcedSanctionOf = useCallback((dropdown) => {
+    if (!dropdown) return { isExpelled: false, isDisqualified: false }
+    const sanctioned = (type, thisSetOnly) => (data?.events || []).some(e =>
+      e.type === 'sanction' &&
+      e.payload?.team === dropdown.team &&
+      String(e.payload?.playerNumber) === String(dropdown.playerNumber) &&
+      e.payload?.type === type &&
+      (!thisSetOnly || (e.setIndex ?? 1) === data?.set?.index))
+    return {
+      isExpelled: dropdown.isExpelled === true || sanctioned('expulsion', true),
+      isDisqualified: dropdown.isDisqualified === true || sanctioned('disqualification', false)
+    }
+  }, [data?.events, data?.set?.index])
+
+  // "Cancel sanction": take back this set's expulsion or disqualification of
+  // the player, as one scorer action (its cloud job and side effects with it,
+  // discardEvents) and tell the tablets. Never a sanction of an earlier set.
+  const takeBackForcedSanction = useCallback((teamKey, playerNumber, type = null) => runAction('cancelSanction', async () => {
+    deferUi(() => {
+      setSubstitutionDropdown(null)
+      setSubstitutionConfirm(null)
+    })
+    const events = await db.events.where('matchId').equals(matchId).toArray()
+    const sanction = thisSetSanctionOf(teamKey, playerNumber, events)
+    if (!sanction || (type && sanction.payload?.type !== type)) return
+    await discardEvents([sanction])
+    syncToReferee()
+  }), [runAction, deferUi, matchId, thisSetSanctionOf, discardEvents, syncToReferee, setSubstitutionConfirm])
+
   const showSubstitutionConfirm = useCallback((substituteNumber, { newPlayer = false } = {}) => {
     if (!substitutionDropdown || !substituteNumber) return
 
@@ -10489,15 +10934,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const isExceptional = substitutionDropdown.isExceptional === true
     const isLegal = !isExceptional && isSubstitutionLegal(teamKey, playerOutNumber)
 
-    // Check if player is expelled or disqualified
-    const playerSanctions = data?.events?.filter(e =>
-      e.type === 'sanction' &&
-      e.payload?.team === teamKey &&
-      e.payload?.playerNumber === playerOutNumber &&
-      (e.payload?.type === 'expulsion' || e.payload?.type === 'disqualification')
-    ) || []
-    const isExpelled = playerSanctions.some(s => s.payload?.type === 'expulsion')
-    const isDisqualified = playerSanctions.some(s => s.payload?.type === 'disqualification')
+    // Check if player is expelled (in this set) or disqualified: the flags the
+    // sanction flow set, else the sanctions (an expulsion of an earlier set
+    // is over, FIVB 21.3.2)
+    const { isExpelled, isDisqualified } = forcedSanctionOf(substitutionDropdown)
 
     setSubstitutionConfirm({
       team: substitutionDropdown.team,
@@ -10509,11 +10949,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       isExpelled: isExpelled,
       isDisqualified: isDisqualified,
       // Easy match: a shirt number that is no player yet (added on Confirm)
-      newPlayer: newPlayer === true
+      newPlayer: newPlayer === true,
+      // A forced substitution: Cancel goes back to this list, not to a court
+      // with the sanctioned player still on it
+      returnTo: isExpelled || isDisqualified ? { ...substitutionDropdown } : null
     })
     setSubstitutionDropdown(null)
     setLiberoDropdown(null) // Close libero dropdown when selecting substitution
-  }, [substitutionDropdown, isSubstitutionLegal, data?.events])
+  }, [substitutionDropdown, isSubstitutionLegal, forcedSanctionOf])
 
   // Get available players for libero re-designation (not on court, not already libero, not re-designated)
   const getAvailablePlayersForRedesignation = useCallback((teamKey, unableLiberoNumber) => {
@@ -10596,22 +11039,25 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     })
   }, [data?.set, data?.events, data?.homePlayers, data?.awayPlayers, isLiberoUnable, getAvailablePlayersForRedesignation])
 
-  // Handle forfait (FIVB 6.4.3, 7.3.1, 15.8; domain/matchEnd, tested).
+  // Handle forfait (FIVB 6.4, 7.3.1, 15.8; domain/matchEnd, tested).
   //  scope 'set'   - the team is INCOMPLETE for the SET (injured / expelled
   //                  player, or a disqualified one while six can still play
   //                  next set, with no legal or exceptional substitute): the
   //                  opponent gets the points to win the set in progress, then
   //                  the normal set-end confirmation finishes the set and starts
   //                  the next one, or ends the match if that set decides it.
-  //  scope 'match' - default / incomplete for the MATCH (manual "Stop the
-  //                  match" forfeit, or fewer than six players for next set):
-  //                  the opponent gets the points and the sets needed, the
-  //                  match ends and Match End opens.
+  //  scope 'match' - incomplete for the MATCH (fewer than six players for
+  //                  next set, or the manual "A team is incomplete"): the
+  //                  opponent gets the points and the sets needed, the match
+  //                  ends and Match End opens. With inDefault (the manual
+  //                  "A team forfeits": refused to play, did not appear,
+  //                  6.4.1-2) every set of the result is 0:25, the played
+  //                  ones rewritten, and no points are awarded.
   // Everything written is tagged (forfeitAwarded points, forfeitCreated sets,
-  // set_end reason 'forfait', setsBefore on the forfait event) so a reopen or
-  // an undo can reverse it (planForfeitReversal).
-  const handleForfait = useCallback(async (teamKey, reason, { scope = 'match' } = {}) => {
-    cLogger.logHandler('handleForfait', { teamKey, reason, scope })
+  // set_end reason 'forfait', inDefault and setsBefore on the forfait event)
+  // so a reopen or an undo can reverse it (planForfeitReversal).
+  const handleForfait = useCallback(async (teamKey, reason, { scope = 'match', inDefault = false } = {}) => {
+    cLogger.logHandler('handleForfait', { teamKey, reason, scope, inDefault })
     if (!data?.set || !data?.match) return
     // Idempotent: a second call while one is running, or once the match is
     // over, must not log a second forfait or navigate twice
@@ -10632,13 +11078,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if (isMatchOverStatus(matchRecord?.status)) return
       const isTest = matchRecord?.test === true
       const allSets = await db.sets.where({ matchId }).sortBy('index')
-      const plan = planForfeit({ sets: allSets, forfeitingTeam: teamKey, currentSetIndex, bestOf: matchRecord?.bestOf, setOnly })
+      const plan = planForfeit({ sets: allSets, forfeitingTeam: teamKey, currentSetIndex, bestOf: matchRecord?.bestOf, setOnly, inDefault })
       // Score of the existing sets the forfeit touches, for a later reversal
+      // (a played set a default rewrites or sets aside: with its end)
       const setsBefore = plan.sets
         .filter(p => p.id != null)
         .map(p => allSets.find(x => x.id === p.id))
         .filter(Boolean)
-        .map(x => ({ id: x.id, index: x.index, homePoints: x.homePoints || 0, awayPoints: x.awayPoints || 0 }))
+        .map(x => ({
+          id: x.id, index: x.index, homePoints: x.homePoints || 0, awayPoints: x.awayPoints || 0,
+          ...(x.finished ? { finished: true, endTime: x.endTime ?? null } : {})
+        }))
 
       if (setOnly) {
         const planned = plan.sets[0]
@@ -10683,8 +11133,23 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       await db.matches.update(matchId, { status: 'ended', forfeitTeam: teamKey, forfeitReason: reason })
 
       const nowIso = roundToMinute(new Date().toISOString())
+      const queueSets = !isTest && !!matchRecord?.seed_key
       for (const planned of plan.sets) {
         const { index, homePoints, awayPoints } = planned
+        if (planned.voided) {
+          // Default at 2:1 or 2:2: a played set past the 0:3 no longer
+          // counts (its score and end are in setsBefore)
+          await db.sets.update(planned.id, { finished: false, endTime: null })
+          if (queueSets) await db.sync_queue.add(setUpdateJob(matchRecord, planned.id, { finished: false, end_time: null }))
+          continue
+        }
+        if (planned.wasFinished) {
+          // Default: a played set becomes 0:25; it keeps its end, its own
+          // set_end stays (setsBefore keeps the played score)
+          await db.sets.update(planned.id, { homePoints, awayPoints })
+          if (queueSets) await db.sync_queue.add(setUpdateJob(matchRecord, planned.id, { home_points: homePoints, away_points: awayPoints }))
+          continue
+        }
         if (planned.isCurrent) {
           // Award points until opponent wins (point events keep the running score)
           for (let i = 0; i < planned.awardedPoints; i++) {
@@ -10699,16 +11164,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           setId = await db.sets.add({ matchId, index, homePoints, awayPoints, finished: true, startTime: nowIso, endTime: nowIso, forfeitCreated: true })
         }
 
-        if (!isTest && matchRecord?.seed_key) {
-          await db.sync_queue.add({
-            resource: 'set',
-            action: planned.id != null ? 'update' : 'insert',
-            payload: planned.id != null
-              ? { external_id: String(setId), home_points: homePoints, away_points: awayPoints, finished: true, end_time: nowIso }
-              : { external_id: String(setId), match_id: matchRecord.seed_key, index, home_points: homePoints, away_points: awayPoints, finished: true, test: false, start_time: nowIso, end_time: nowIso },
-            ts: new Date().toISOString(),
-            status: 'queued'
-          })
+        if (queueSets) {
+          await db.sync_queue.add(planned.id != null
+            ? setUpdateJob(matchRecord, setId, { home_points: homePoints, away_points: awayPoints, finished: true, end_time: nowIso })
+            : {
+                resource: 'set',
+                action: 'insert',
+                payload: { external_id: setExtId(matchRecord.seed_key, setId), match_id: matchRecord.seed_key, index, home_points: homePoints, away_points: awayPoints, finished: true, test: false, start_time: nowIso, end_time: nowIso },
+                ts: new Date().toISOString(),
+                status: 'queued'
+              })
         }
 
         await logEvent('set_end', {
@@ -10725,6 +11190,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         team: teamKey,
         reason: reason,
         scope: 'match',
+        inDefault,
         setIndex: currentSetIndex,
         setsBefore
       }, { setIndexOverride: currentSetIndex })
@@ -10768,11 +11234,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     setExceptionalSubstitutionModal({ team, position, playerOut, reason })
   }, [])
 
-  // Handle manual forfeit from "Stop the match" menu
-  const handleManualForfeit = useCallback(async (teamKey) => {
+  // Handle manual forfeit from "Stop the match" menu: `rule` 'default' (the
+  // team refuses to play or did not appear, FIVB 6.4.1-2: 0:25 in every set)
+  // or 'incomplete' (6.4.3: it keeps its points and sets)
+  const handleManualForfeit = useCallback(async (teamKey, rule = 'default') => {
     if (!data?.set || !data?.match) return
     // handleForfait awards the sets, ends the match and navigates to Match End
-    await handleForfait(teamKey, 'forfeit', { scope: 'match' })
+    if (rule === 'incomplete') await handleForfait(teamKey, 'incomplete', { scope: 'match' })
+    else await handleForfait(teamKey, 'forfeit', { scope: 'match', inDefault: true })
   }, [data?.set, data?.match, handleForfait])
 
   // Go back (domain/rectify, components/rectify/RectifyPanel): the plan,
@@ -10797,81 +11266,64 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return true
   }, [data?.set, matchId, runAction, deferUi, afterPointScored, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate])
 
-  // Handle "Impossibility to resume" - end match as-is without a winner
+  // Handle "Impossibility to resume" - end match as-is without a winner.
+  // One action (runAction 'stopMatch'): the match_stopped event and the
+  // match row are written together. A failed write (storage full) is shown
+  // (onActionFailed) and the stop can be tried again; true once stopped.
+  // Nothing is downloaded: the encrypted backup of the match end
+  // (onTriggerEventBackup) keeps the match. (A plain file of every match on
+  // the device, PINs and signatures included, used to land in Downloads.)
   const handleImpossibilityToResume = useCallback(async () => {
-    if (!data?.set || !data?.match) return
+    if (!data?.set || !data?.match) return false
     // Once: the match ends here and navigates to Match End
-    if (matchEndingRef.current || forfaitInProgressRef.current) return
+    if (matchEndingRef.current || forfaitInProgressRef.current) return false
     matchEndingRef.current = true
 
-    // Log match stopped event
-    await logEvent('match_stopped', {
-      reason: 'impossibility_to_resume',
-      setIndex: data.set.index,
-      homePoints: data.set.homePoints,
-      awayPoints: data.set.awayPoints
-    })
-
-    // Update match status to 'ended' without declaring a winner
-    await db.matches.update(matchId, {
-      status: 'ended',
-      stoppedReason: 'impossibility_to_resume'
-    })
+    let stopped = false
+    try {
+      stopped = await runAction('stopMatch', async () => {
+        await logEvent('match_stopped', {
+          reason: 'impossibility_to_resume',
+          setIndex: data.set.index,
+          homePoints: data.set.homePoints,
+          awayPoints: data.set.awayPoints
+        })
+        // Update match status to 'ended' without declaring a winner
+        await db.matches.update(matchId, {
+          status: 'ended',
+          stoppedReason: 'impossibility_to_resume'
+        })
+        return true
+      }) === true
+    } catch (error) {
+      // Nothing was written; the action said so
+      console.error('[handleImpossibilityToResume] Error:', error)
+    }
+    if (!stopped) {
+      matchEndingRef.current = false
+      return false
+    }
     syncToReferee()
 
     // Trigger backup
     onTriggerEventBackup?.('match_end')
 
-    // Download game data (same logic as menu export)
-    try {
-      const allMatches = await db.matches.toArray()
-      const allTeams = await db.teams.toArray()
-      const allPlayers = await db.players.toArray()
-      const allSets = await db.sets.toArray()
-      const allEvents = await db.events.toArray()
-      const allReferees = await db.referees.toArray()
-      const allScorers = await db.scorers.toArray()
-
-      const exportData = {
-        exportDate: new Date().toISOString(),
-        matchId: matchId,
-        matches: allMatches,
-        teams: allTeams,
-        players: allPlayers,
-        sets: allSets,
-        events: allEvents,
-        referees: allReferees,
-        scorers: allScorers
-      }
-
-      const jsonString = JSON.stringify(exportData, null, 2)
-      const blob = new Blob([jsonString], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `match_stopped_${matchId}_${new Date().toISOString().split('T')[0]}.json`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      URL.revokeObjectURL(url)
-    } catch (error) {
-      console.error('Error exporting match data:', error)
-    }
-
     // Navigate to match end (App.finishSet sees status 'ended' and creates no set)
     if (onFinishSet) onFinishSet(data.set)
-  }, [data?.set, data?.match, matchId, logEvent, syncToReferee, onTriggerEventBackup, onFinishSet])
+    return true
+  }, [data?.set, data?.match, matchId, runAction, logEvent, syncToReferee, onTriggerEventBackup, onFinishSet])
 
   // Complete the stop match flow after remarks are recorded
   const completeStopMatchFlow = useCallback(async () => {
     if (!stopMatchRemarksStep) return
 
-    const { type, team } = stopMatchRemarksStep
+    const { type, team, rule } = stopMatchRemarksStep
 
     if (type === 'forfeit' && team) {
-      await handleManualForfeit(team)
+      await handleManualForfeit(team, rule)
     } else if (type === 'impossibility') {
-      await handleImpossibilityToResume()
+      // Not written (its failure is shown): the step stays, to try again
+      if (!await handleImpossibilityToResume()) return
     }
 
     // Clear all stop match states
@@ -10943,18 +11395,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // the expelled player played on, Start rally offered (stress test
       // 2026-10-25). An injury writes nothing before this dialog.
       if (reason === 'expulsion' || reason === 'disqualification') {
-        const sanction = (await db.events.where('matchId').equals(matchId).toArray())
-          .filter(e => e.type === 'sanction' && e.payload?.team === team &&
-            String(e.payload?.playerNumber) === String(playerOut) && e.payload?.type === reason)
-          .sort(compareBySeq)
-          .pop()
-        if (sanction) {
-          await db.events.delete(sanction.id)
-          syncToReferee()
-        }
+        await takeBackForcedSanction(team, playerOut, reason)
       }
     }
-  }, [exceptionalSubstitutionModal, getAvailableExceptionalSubstitutes, handleForfait, getForfaitScope, easyNewSubstituteOpen, matchId, syncToReferee])
+  }, [exceptionalSubstitutionModal, getAvailableExceptionalSubstitutes, handleForfait, getForfaitScope, easyNewSubstituteOpen, takeBackForcedSanction])
 
   // Confirm substitution
   const runSubstitutionConfirm = useConfirmAction(onConfirmFailed)
@@ -10972,8 +11416,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Final authority on the 6-per-set limit (FIVB 15.6), against the events
     // as they are now: a regular request beyond it is an improper request
-    // (15.11.1.4), an injury / expulsion / disqualification one is exceptional.
-    const verdict = classifySubstitutionRequest(data.events, team, data.set.index, substitutionConfirm)
+    // (15.11.1.4), an injury / expulsion / disqualification one is exceptional,
+    // as is one the pairing forbids to make regularly (15.7, 15.8).
+    const verdict = classifyLiveSubstitution(data.events, data.set.index, team, substitutionConfirm, { players: team === 'home' ? data.homePlayers : data.awayPlayers })
     if (verdict === 'improper_request') {
       deferUi(() => {
         setSubstitutionConfirmState(null)
@@ -11049,7 +11494,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const remarkOf = (text) => eventRemark({ set: displaySetNumber(setIndex, data?.match?.bestOf), team: teamLabel, teamScore, oppScore: opponentScore, text })
 
       if (isInjury) {
-        autoRemark = remarkOf(`#${playerOut} substituted due to injury`)
+        autoRemark = remarkOf(injurySubstitutionText(playerOut))
       } else if (isExceptional) {
         autoRemark = remarkOf(`#${playerOut} exceptionally substituted by #${playerIn}`)
       }
@@ -11065,6 +11510,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       isExceptional: isExceptional || false,
       isExpelled: isExpelled || false,
       isDisqualified: isDisqualified || false,
+      // A forced substitution (CB 4.9): neither a request of its own nor one
+      // a decision change takes back (domain/interruptionRequests)
+      ...(isInjury ? { isInjury: true } : {}),
       ...(autoRemark ? { autoRemark } : {})
     }, { skipMutex: true })
 
@@ -11076,7 +11524,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       lineupPayload.liberoSubstitution = existingLiberoSub
     }
     const lineupSubEventSeq = subSeq + 0.1
-    await db.events.add({
+    await addSyncedSubEvent({
       matchId,
       setIndex: data.set.index,
       type: 'lineup',
@@ -11164,7 +11612,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }, { skipMutex: true })
         const libTeamLabel = team === teamAKey ? 'A' : 'B'
         logManualChange('Libero', 'Unable', `#${playerOut} active`, `#${playerOut} unable`,
-          `Libero #${playerOut} becomes unable to play (injury) (Team ${libTeamLabel}, Set ${data.set.index})`)
+          `${liberoUnableText(playerOut, 'injury')} (Team ${libTeamLabel}, Set ${data.set.index})`)
         // Check if redesignation is needed and prompt user
         // Use isLiberoUnable to properly check events, not just database field
         const activeLiberos = teamPlayers?.filter(p =>
@@ -11327,9 +11775,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [])
 
   const cancelSubstitutionConfirm = useCallback(() => {
+    // A substitution forced by an expulsion or disqualification of this set
+    // cannot just be closed: the sanction is recorded and the player must
+    // leave the court. Back to the list, whose "Cancel sanction" takes the
+    // sanction back.
+    const returnTo = substitutionConfirm?.returnTo
     setSubstitutionConfirm(null)
     setLiberoDropdown(null) // Close libero dropdown when canceling substitution
-  }, [])
+    if (returnTo && thisSetSanctionOf(returnTo.team, returnTo.playerNumber)) {
+      setSubstitutionDropdown(returnTo)
+    }
+  }, [substitutionConfirm, thisSetSanctionOf])
 
   // Handle injury - same logic as expulsion/disqualification
   const handleInjury = useCallback(async () => {
@@ -11504,20 +11960,22 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     const { team, type, playerNumber, position, role, sanctionType } = sanctionConfirmModal
 
-    // Validate that we're not giving the same sanction type again
-    if (playerNumber) {
-      const hasThisSanction = playerHasSanctionType(team, playerNumber, sanctionType)
-      const teamWarning = teamHasFormalWarning(team)
+    // Validate that we're not giving the same sanction type again: a player
+    // or a team official (by role), the domain rule recompute and the manual
+    // corrections use too (validateMemberSanction)
+    if (playerNumber || role) {
+      const check = validateMemberSanction(data.events, { team, playerNumber, role, type: sanctionType })
 
       // Prevent giving the same sanction type again
-      if (hasThisSanction) {
-        deferUi(() => showAlert(`Player ${playerNumber} already has a ${sanctionType}. A player cannot receive the same sanction type twice.`, 'warning'))
+      if (check.reason === 'sameSanctionTwice') {
+        const who = playerNumber ? `Player ${playerNumber}` : role
+        deferUi(() => showAlert(`${who} already has a ${sanctionType}. A team member cannot receive the same sanction type twice.`, 'warning'))
         deferUi(() => setSanctionConfirmModal(null))
         return
       }
 
       // Special rule for warning: can only be given if team hasn't been warned (player can have other sanctions)
-      if (sanctionType === 'warning' && teamWarning) {
+      if (check.reason === 'teamAlreadyWarned') {
         deferUi(() => showAlert(`Warning cannot be given because the team has already been warned.`, 'warning'))
         deferUi(() => setSanctionConfirmModal(null))
         return
@@ -11553,16 +12011,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       if (isLiberoOnCourt) {
         // Libero on court expelled/disqualified - return replaced player to court
-        await logEvent('libero_unable', {
-          team,
-          liberoNumber: playerNumber,
-          liberoType: player.libero,
-          reason: sanctionType === 'expulsion' ? 'expulsion' : 'disqualification'
-        })
-        const libTeamLabel = team === teamAKey ? 'A' : 'B'
-        const sanctionReason = sanctionType === 'expulsion' ? 'expulsion' : 'disqualification'
-        logManualChange('Libero', 'Unable', `#${playerNumber} active`, `#${playerNumber} unable`,
-          `Libero #${playerNumber} unable due to ${sanctionReason} (Team ${libTeamLabel}, Set ${data.set.index})`)
 
         // Get current lineup and find the original player who was replaced by libero
         const lineupEvents = (data.events || [])
@@ -11594,7 +12042,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
             // Update lineup as a SUB-EVENT (decimal sequence) so undo deletes both together
             const lineupSubEventSeq = libExitSeq + 0.1
-            await db.events.add({
+            await addSyncedSubEvent({
               matchId,
               setIndex: data.set.index,
               type: 'lineup',
@@ -11609,6 +12057,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             })
           }
         }
+
+        // The libero is unable AFTER its exit: the other libero may then
+        // replace at once, without a completed rally (FIVB 19.3.2.2;
+        // hasPointSinceLastLiberoExchange allows it when the libero_unable is
+        // the newer event, as after an injury). skipMutex: this action holds it
+        await logEvent('libero_unable', {
+          team,
+          liberoNumber: playerNumber,
+          liberoType: player.libero,
+          reason: sanctionType === 'expulsion' ? 'expulsion' : 'disqualification'
+        }, { skipMutex: true })
+        const libTeamLabel = team === teamAKey ? 'A' : 'B'
+        const sanctionReason = sanctionType === 'expulsion' ? 'expulsion' : 'disqualification'
+        logManualChange('Libero', 'Unable', `#${playerNumber} active`, `#${playerNumber} unable`,
+          `Libero #${playerNumber} unable due to ${sanctionReason} (Team ${libTeamLabel}, Set ${data.set.index})`)
 
         // Check if redesignation is needed and prompt user
         // Use isLiberoUnable to properly check events, not just database field
@@ -11641,14 +12104,26 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Easy match: a new number may come in as well, so never auto-select
       const easyNewLegal = easyNewSubstituteOpen(team, playerNumber)
       if (legalSubstitutes.length === 1 && !easyNewLegal) {
-        // Only one legal substitute - auto-select and show confirmation modal
+        // Only one legal substitute - auto-select and show confirmation modal.
+        // The substitution is forced: its Cancel goes back to the list
+        // ("Cancel sanction" there), never leaves the player on court
         deferUi(() => setSubstitutionConfirm({
           team,
           position,
           playerOut: playerNumber,
           playerIn: legalSubstitutes[0].number,
           isExpelled: sanctionType === 'expulsion',
-          isDisqualified: sanctionType === 'disqualification'
+          isDisqualified: sanctionType === 'disqualification',
+          returnTo: {
+            team,
+            position,
+            playerNumber,
+            element: null,
+            x: window.innerWidth / 2,
+            y: window.innerHeight / 2,
+            isExpelled: sanctionType === 'expulsion',
+            isDisqualified: sanctionType === 'disqualification'
+          }
         }))
       } else if (legalSubstitutes.length > 1 || easyNewLegal) {
         // Multiple legal substitutes - show substitution dropdown
@@ -11877,12 +12352,30 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (!sanctionSubstitutionModal) return
 
     const { team, expelledPlayer, liberoOnCourt, reason, position } = sanctionSubstitutionModal
-    // Beyond the 6 regular substitutions this one is exceptional (FIVB 15.8)
-    const isExceptional = classifySubstitutionRequest(data?.events, team, data?.set?.index, {
-      isExceptional: sanctionSubstitutionModal.isExceptional, isExpelled: reason === 'expulsion', isDisqualified: reason === 'disqualification'
-    }) === 'exceptional'
+    // Beyond the 6 regular substitutions, or when the pairing forbids it
+    // regularly, this one is exceptional (FIVB 15.8)
+    const isExceptional = classifyLiveSubstitution(data?.events, data?.set?.index, team, {
+      isExceptional: sanctionSubstitutionModal.isExceptional, isExpelled: reason === 'expulsion', isDisqualified: reason === 'disqualification',
+      playerOut: expelledPlayer, playerIn: substituteNumber
+    }, { players: team === 'home' ? data?.homePlayers : data?.awayPlayers }) === 'exceptional'
     // Closed with the written substitution (deferUi, one render)
     deferUi(() => setSanctionSubstitutionModal(null))
+
+    // An exceptional substitution is written in the remarks (the sheet's
+    // substitution boxes leave it out), as confirmSubstitution does: built
+    // before logging, so the event records it (autoRemark) and undo removes it
+    let autoRemark = ''
+    if (isExceptional && data?.set) {
+      const teamScore = team === 'home' ? data.set.homePoints : data.set.awayPoints
+      const opponentScore = team === 'home' ? data.set.awayPoints : data.set.homePoints
+      autoRemark = eventRemark({
+        set: displaySetNumber(data.set.index, data?.match?.bestOf),
+        team: team === teamAKey ? 'A' : 'B',
+        teamScore,
+        oppScore: opponentScore,
+        text: `#${expelledPlayer} exceptionally substituted by #${substituteNumber}`
+      })
+    }
 
     // Log substitution event - this is recorded on scoresheet
     // The position is where the libero currently is (the expelled player's original position)
@@ -11894,7 +12387,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       isExpelled: reason === 'expulsion',
       isDisqualified: reason === 'disqualification',
       isExceptional,
-      isLiberoReplacementSub: true  // Flag to indicate this special case - libero stays on court
+      isLiberoReplacementSub: true,  // Flag to indicate this special case - libero stays on court
+      ...(autoRemark ? { autoRemark } : {})
     })
 
     // Update the lineup's liberoSubstitution to point to new replacement player
@@ -11926,93 +12420,86 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }, { parentSeq })
     }
 
-    // Add remarks if exceptional substitution
-    if (isExceptional) {
-      const remarkKey = `exceptionalSubstitution${team === 'home' ? 'Home' : 'Away'}`
-      const existingRemarks = data?.match?.[remarkKey] || ''
-      const newRemark = `Exp Sub: #${expelledPlayer}→#${substituteNumber} (${reason === 'expulsion' ? 'EXP' : 'DQ'}, libero on court)`
-      await db.matches.update(matchId, {
-        [remarkKey]: existingRemarks ? `${existingRemarks}; ${newRemark}` : newRemark
-      })
+    // The exceptional substitution's remark on the scoresheet
+    if (autoRemark) {
+      const freshMatch = await db.matches.get(matchId)
+      await db.matches.update(matchId, { remarks: appendRemark(freshMatch?.remarks || '', autoRemark) })
     }
-  })), [runAction, deferUi, runSanctionSubstitution, sanctionSubstitutionModal, data?.set, data?.events, data?.match, logEvent, matchId])
+  })), [runAction, deferUi, runSanctionSubstitution, sanctionSubstitutionModal, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, logEvent, matchId, teamAKey])
 
-  // Execute libero substitution directly (no confirmation modal needed)
-  const showLiberoConfirm = useCallback((liberoType) => runAction('libero', async () => {
-    if (!liberoDropdown || !liberoType || !data?.set) return
-
-    // (runAction holds the event mutex for the whole transaction)
-
-    const team = liberoDropdown.team
-    const position = liberoDropdown.position
-    const playerOut = liberoDropdown.playerNumber
+  // A libero replaces a back-row player (FIVB 19.3.2): the one libero-entry
+  // path of the libero list, the court player's menu, the bench libero's
+  // "Replace" and the libero dialog. Runs inside the caller's action, with
+  // everything it needs passed in (no dialog state read here, so a menu that
+  // closes on the way cannot lose the entry). Checks the libero may play
+  // (not unable, expelled or disqualified), that the player is at that
+  // back-row position and no libero; writes libero_entry with its line-up as
+  // a sub-event (N.1, undone together) and asks for a game captain when the
+  // captain leaves the court. Returns true when the entry is written.
+  const writeLiberoEntry = useCallback(async ({ team, position, playerOut, liberoType }) => {
+    if (!data?.set || !team || !liberoType) return false
 
     // Validate that liberos can only enter back-row positions (I, V, VI)
     const isBackRow = position === 'I' || position === 'V' || position === 'VI'
     if (!isBackRow) {
       deferUi(() => showAlert('Liberos can only enter back-row positions (I, V, VI)', 'warning'))
-      deferUi(() => setLiberoDropdown(null))
-      return
+      return false
     }
 
     // Get libero player number
     const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
     const liberoPlayer = teamPlayers?.find(p => p.libero === liberoType)
-    if (!liberoPlayer) {
-      deferUi(() => setLiberoDropdown(null))
-      return
-    }
+    if (!liberoPlayer) return false
 
     // Check if libero is unable to play
     if (isLiberoUnable(team, liberoPlayer.number)) {
       deferUi(() => showAlert('This libero is unable to play (injured, expelled, disqualified, or declared unable)', 'warning'))
-      deferUi(() => setLiberoDropdown(null))
-      return
+      return false
     }
 
-    // Get current lineup for this team in the current set
-    const lineupEvents = data.events?.filter(e =>
-      e.type === 'lineup' &&
-      e.payload?.team === team &&
-      e.setIndex === data.set.index
-    ) || []
-    const lineupEvent = lineupEvents.length > 0 ? lineupEvents[lineupEvents.length - 1] : null
+    // Get current lineup for this team in the current set (the newest by seq)
+    const lineupEvent = (data.events || [])
+      .filter(e => e.type === 'lineup' && e.payload?.team === team && e.setIndex === data.set.index)
+      .sort(compareBySeq)
+      .pop() || null
     const currentLineup = lineupEvent?.payload?.lineup || {}
 
-    // Create new lineup with libero entry
-    const validPositions = ['I', 'II', 'III', 'IV', 'V', 'VI']
-    const cleanedCurrentLineup = {}
-    for (const pos of validPositions) {
-      if (currentLineup[pos] !== undefined) {
-        cleanedCurrentLineup[pos] = currentLineup[pos]
-      }
+    // VALIDATION: Ensure playerOut is actually at the specified position
+    const playerAtPosition = currentLineup[position]
+    if (String(playerAtPosition) !== String(playerOut)) {
+      console.error('[Libero Entry] VALIDATION FAILED: playerOut', playerOut,
+        'is not at position', position, '- found', playerAtPosition, 'instead')
+      deferUi(() => showAlert(`Player #${playerOut} is not at position ${position}. Cannot proceed with libero entry.`, 'error'))
+      return false
     }
 
-    const newLineup = { ...cleanedCurrentLineup }
-    newLineup[position] = String(liberoPlayer.number)
+    // VALIDATION: Ensure playerOut is not already a libero
+    const playerOutInfo = teamPlayers?.find(p => String(p.number) === String(playerOut))
+    if (playerOutInfo?.libero && playerOutInfo.libero !== '') {
+      console.error('[Libero Entry] VALIDATION FAILED: playerOut', playerOut, 'is a libero')
+      deferUi(() => showAlert(`Player #${playerOut} is a libero. Liberos cannot be replaced by other liberos.`, 'warning'))
+      return false
+    }
 
+    // Create new lineup with libero entry (only the six positions)
+    const validPositions = ['I', 'II', 'III', 'IV', 'V', 'VI']
     const finalLineup = {}
     for (const pos of validPositions) {
-      if (newLineup[pos] !== undefined) {
-        finalLineup[pos] = newLineup[pos]
-      }
+      if (currentLineup[pos] !== undefined) finalLineup[pos] = currentLineup[pos]
     }
+    finalLineup[position] = String(liberoPlayer.number)
 
     // Log the libero entry event FIRST (main event) - skipMutex: we already hold it
-    await logEvent('libero_entry', {
+    const entrySeq = await logEvent('libero_entry', {
       team,
       position,
       playerOut,
       liberoIn: liberoPlayer.number,
-      liberoType: liberoType
+      liberoType
     }, { skipMutex: true })
 
     // Save the updated lineup as a SUB-EVENT (seq N.1) so it's deleted together with libero_entry on undo
-    const allEvents = await db.events.where({ matchId }).toArray()
-    const maxSeq = allEvents.length > 0 ? Math.max(...allEvents.map(e => e.seq || 0)) : 0
-    const subEventSeq = Math.floor(maxSeq) + 0.1 // Sub-event of the libero_entry
-
-    await db.events.add({
+    await addSyncedSubEvent({
       matchId,
       setIndex: data.set.index,
       type: 'lineup',
@@ -12023,16 +12510,25 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           position,
           liberoNumber: liberoPlayer.number,
           playerNumber: playerOut,
-          liberoType: liberoType
+          liberoType
         }
       },
       ts: new Date().toISOString(),
-      seq: subEventSeq
+      seq: Math.floor(entrySeq) + 0.1
     })
 
+    // Debug log: libero entry
+    debugLogger.log('LIBERO_ENTRY', {
+      team,
+      position,
+      playerOut,
+      liberoIn: liberoPlayer.number,
+      liberoType,
+      newLineup: finalLineup
+    }, getStateSnapshot())
+
     // Check if captain is on court after libero entry
-    const leavingPlayer = teamPlayers?.find(p => String(p.number) === String(playerOut))
-    const isLeavingCaptain = leavingPlayer && (leavingPlayer.isCaptain || leavingPlayer.captain)
+    const isLeavingCaptain = playerOutInfo && (playerOutInfo.isCaptain || playerOutInfo.captain)
     const captainOnCourtField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
     const currentCourtCaptain = data?.match?.[captainOnCourtField]
     const isLeavingCourtCaptain = String(currentCourtCaptain) === String(playerOut)
@@ -12042,10 +12538,33 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         checkAndRequestCaptainOnCourtRef.current?.(team)
       }, 300))
     }
+    return true
+  }, [deferUi, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, isLiberoUnable, getStateSnapshot, showAlert])
 
-    deferUi(() => setLiberoDropdown(null))
-    deferUi(() => setSubstitutionDropdown(null))
-  }), [runAction, deferUi, liberoDropdown, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, getNextSeq, isLiberoUnable])
+  // The libero entry as a scorer action of its own; the menus it came from
+  // close with it
+  const enterLibero = useCallback((entry) => runAction('libero', async () => {
+    deferUi(() => {
+      setLiberoDropdown(null)
+      setSubstitutionDropdown(null)
+      setPlayerActionMenu(null)
+      setCourtSubExpanded(false)
+      setCourtLiberoExpanded(false)
+      setCourtSanctionExpanded(false)
+    })
+    await writeLiberoEntry(entry)
+  }), [runAction, deferUi, writeLiberoEntry])
+
+  // Execute libero substitution directly (no confirmation modal needed)
+  const showLiberoConfirm = useCallback((liberoType) => {
+    if (!liberoDropdown || !liberoType) return
+    return enterLibero({
+      team: liberoDropdown.team,
+      position: liberoDropdown.position,
+      playerOut: liberoDropdown.playerNumber,
+      liberoType
+    })
+  }, [liberoDropdown, enterLibero])
 
   // Handle libero in player selection - directly execute substitution
   const handleLiberoInPlayerSelect = useCallback((position, playerNumber) => runAction('libero', async () => {
@@ -12114,7 +12633,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const maxSeqForLibero = allEventsForSeq.length > 0 ? Math.max(...allEventsForSeq.map(e => e.seq || 0)) : 0
     const subEventSeqLibero = Math.floor(maxSeqForLibero) + 0.1
 
-    await db.events.add({
+    await addSyncedSubEvent({
       matchId,
       setIndex: data.set.index,
       type: 'lineup',
@@ -12246,7 +12765,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const maxSeq = allEvents.length > 0 ? Math.max(...allEvents.map(e => e.seq || 0)) : 0
       const subEventSeq = Math.floor(maxSeq) + 0.1 // Sub-event of the libero_exit
 
-      await db.events.add({
+      await addSyncedSubEvent({
         matchId,
         setIndex: data.set.index,
         type: 'lineup',
@@ -12279,150 +12798,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       return
     }
 
-    // Handle libero ENTRY (original code below)
-    // Validate that liberos can only enter back-row positions (I, V, VI)
-    const isBackRow = position === 'I' || position === 'V' || position === 'VI'
-    if (!isBackRow) {
-      deferUi(() => showAlert('Liberos can only enter back-row positions (I, V, VI)', 'warning'))
-      return
-    }
-
-    // Get current lineup for this team in the current set
-    const lineupEvents = data.events?.filter(e =>
-      e.type === 'lineup' &&
-      e.payload?.team === team &&
-      e.setIndex === data.set.index
-    ) || []
-    const lineupEvent = lineupEvents.length > 0 ? lineupEvents[lineupEvents.length - 1] : null
-    const currentLineup = lineupEvent?.payload?.lineup || {}
-
-    // Get libero player number
-    const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
-    const liberoPlayer = teamPlayers?.find(p => p.libero === liberoIn)
-    if (!liberoPlayer) {
-      return
-    }
-
-    // Check if libero is unable to play
-    if (isLiberoUnable(team, liberoPlayer.number)) {
-      deferUi(() => showAlert('This libero is unable to play (injured, expelled, disqualified, or declared unable)', 'warning'))
-      return
-    }
-
-    // VALIDATION: Ensure playerOut is actually at the specified position
-    const playerAtPosition = currentLineup[position]
-    if (String(playerAtPosition) !== String(playerOut)) {
-      console.error('[Libero Entry] VALIDATION FAILED: playerOut', playerOut,
-        'is not at position', position, '- found', playerAtPosition, 'instead')
-      deferUi(() => showAlert(`Player #${playerOut} is not at position ${position}. Cannot proceed with libero entry.`, 'error'))
-      return
-    }
-
-    // VALIDATION: Ensure playerOut is not already a libero
-    const playerOutInfo = teamPlayers?.find(p => String(p.number) === String(playerOut))
-    if (playerOutInfo?.libero && playerOutInfo.libero !== '') {
-      console.error('[Libero Entry] VALIDATION FAILED: playerOut', playerOut, 'is a libero')
-      deferUi(() => showAlert(`Player #${playerOut} is a libero. Liberos cannot be replaced by other liberos.`, 'warning'))
-      return
-    }
-
-    // VALIDATION: Check if there's already a libero substitution for this team
-    // and if so, ensure we're not creating conflicting tracking
-    const existingLiberoSub = lineupEvent?.payload?.liberoSubstitution
-    if (existingLiberoSub) {
-      // There's already a libero on court - this libero entry should be a libero exchange
-      // or the existing libero should have exited first
-      console.warn('[Libero Entry] Another libero is already on court:',
-        existingLiberoSub, '- this may cause tracking issues')
-    }
-
-    console.log('[Libero Entry] Validation passed:', {
-      position,
-      playerOut,
-      liberoIn: liberoPlayer.number,
-      currentLineup,
-      existingLiberoSub
-    })
-
-    // Create new lineup with libero entry
-    // First, clean currentLineup to ensure only valid positions
-    const validPositions = ['I', 'II', 'III', 'IV', 'V', 'VI']
-    const cleanedCurrentLineup = {}
-    for (const pos of validPositions) {
-      if (currentLineup[pos] !== undefined) {
-        cleanedCurrentLineup[pos] = currentLineup[pos]
-      }
-    }
-
-    const newLineup = { ...cleanedCurrentLineup }
-    newLineup[position] = String(liberoPlayer.number)
-
-    // Ensure we only have exactly 6 positions (defensive check)
-    const finalLineup = {}
-    for (const pos of validPositions) {
-      if (newLineup[pos] !== undefined) {
-        finalLineup[pos] = newLineup[pos]
-      }
-    }
-
-    // Log the libero entry event FIRST (main event) - skipMutex: we already hold it
-    await logEvent('libero_entry', {
-      team,
-      position,
-      playerOut,
-      liberoIn: liberoPlayer.number,
-      liberoType: liberoIn
-    }, { skipMutex: true })
-
-    // Save the updated lineup as a SUB-EVENT (seq N.1) so it's deleted together with libero_entry on undo
-    const allEventsEntry = await db.events.where({ matchId }).toArray()
-    const maxSeqEntry = allEventsEntry.length > 0 ? Math.max(...allEventsEntry.map(e => e.seq || 0)) : 0
-    const subEventSeqEntry = Math.floor(maxSeqEntry) + 0.1
-
-    await db.events.add({
-      matchId,
-      setIndex: data.set.index,
-      type: 'lineup',
-      payload: {
-        team,
-        lineup: finalLineup,
-        liberoSubstitution: {
-          position,
-          liberoNumber: liberoPlayer.number,
-          playerNumber: playerOut,
-          liberoType: liberoIn
-        }
-      },
-      ts: new Date().toISOString(),
-      seq: subEventSeqEntry
-    })
-
-    // Debug log: libero entry
-    debugLogger.log('LIBERO_ENTRY', {
-      team,
-      position,
-      playerOut,
-      liberoIn: liberoPlayer.number,
-      liberoType: liberoIn,
-      newLineup: finalLineup
-    }, getStateSnapshot())
-
-    // Check if captain is on court after libero entry
-    // The playerOut is leaving, check if they're captain
-    // Reuse teamPlayers variable already declared above
-    const leavingPlayer = teamPlayers?.find(p => String(p.number) === String(playerOut))
-    const isLeavingCaptain = leavingPlayer && (leavingPlayer.isCaptain || leavingPlayer.captain)
-    const captainOnCourtField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
-    const currentCourtCaptain = data?.match?.[captainOnCourtField]
-    const isLeavingCourtCaptain = String(currentCourtCaptain) === String(playerOut)
-
-    if (isLeavingCaptain || isLeavingCourtCaptain) {
-      deferUi(() => setTimeout(() => {
-        checkAndRequestCaptainOnCourtRef.current?.(team)
-      }, 300))
-    }
+    // Handle libero ENTRY (the shared libero-entry path)
+    await writeLiberoEntry({ team, position, playerOut, liberoType: liberoIn })
     deferUi(() => setSubstitutionDropdown(null)) // Close substitution dropdown if open
-  })), [runAction, deferUi, runLiberoConfirm, liberoConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, logEvent, getNextSeq, isLiberoUnable, hasPointSinceLastLiberoExchange])
+  })), [runAction, deferUi, runLiberoConfirm, liberoConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, logEvent, getNextSeq, isLiberoUnable, hasPointSinceLastLiberoExchange, writeLiberoEntry])
 
   const cancelLibero = useCallback(() => {
     setLiberoDropdown(null)
@@ -12502,7 +12881,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const maxSeq = allEvents.length > 0 ? Math.max(...allEvents.map(e => e.seq || 0)) : 0
     const subEventSeq = Math.floor(maxSeq) + 0.1 // Sub-event of the libero_entry
 
-    await db.events.add({
+    await addSyncedSubEvent({
       matchId,
       setIndex: data.set.index,
       type: 'lineup',
@@ -12681,7 +13060,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const maxSeq = allEvents.length > 0 ? Math.max(...allEvents.map(e => e.seq || 0)) : 0
     const subEventSeq = Math.floor(maxSeq) + 0.1 // Sub-event of the libero_exit
 
-    await db.events.add({
+    await addSyncedSubEvent({
       matchId,
       setIndex: data.set.index,
       type: 'lineup',
@@ -12727,7 +13106,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const hasUnableEvent = data?.events?.some(e =>
       e.type === 'libero_unable' &&
       e.payload?.team === team &&
-      e.payload?.liberoNumber === unableLiberoNumber
+      String(e.payload?.liberoNumber) === String(unableLiberoNumber)
     )
 
     if (!hasUnableEvent) {
@@ -12783,6 +13162,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if (newLiberoPlayer?.id) {
         await db.players.update(newLiberoPlayer.id, { libero: 'redesignated' })
       }
+      // The new marks to the cloud roster (the event alone left them on this device)
+      await queueTeamRoster(matchId, team)
     }
 
     {
@@ -12832,7 +13213,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
               // Update lineup as a SUB-EVENT (decimal sequence) so undo deletes both together
               const lineupSubEventSeq = libExitSeq + 0.1
-              await db.events.add({
+              await addSyncedSubEvent({
                 matchId,
                 setIndex: data.set.index,
                 type: 'lineup',
@@ -12860,8 +13241,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const opponentScore = team === 'home' ? data.set.awayPoints : data.set.homePoints
       const scoreStr = `${teamScore}:${opponentScore}`
 
-      const reasonText = reason === 'injury' ? 'becomes unable to play (injury)' : 'declared unable to play'
-      const remark = eventRemark({ set: displaySetNumber(setIndex, data?.match?.bestOf), team: teamLabel, teamScore, oppScore: opponentScore, text: `Libero #${liberoNumber} ${reasonText}` })
+      const unableText = liberoUnableText(liberoNumber, reason === 'injury' ? 'injury' : 'declared')
+      const remark = eventRemark({ set: displaySetNumber(setIndex, data?.match?.bestOf), team: teamLabel, teamScore, oppScore: opponentScore, text: unableText })
 
       // Mark libero as unable (declared by coach or injury)
       await logEvent('libero_unable', {
@@ -12878,7 +13259,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         await db.matches.update(matchId, { remarks: appendRemark(freshMatch?.remarks || '', remark) })
 
         logManualChange('Libero', 'Unable', `#${liberoNumber} active`, `#${liberoNumber} unable`,
-          `Libero #${liberoNumber} ${reasonText} (Team ${teamLabel}, Set ${setIndex}, ${scoreStr})`)
+          `${unableText} (Team ${teamLabel}, Set ${setIndex}, ${scoreStr})`)
       }
 
       // Check if redesignation is needed - if so, show prompt in same modal
@@ -13021,7 +13402,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const maxSeq = allEvents.length > 0 ? Math.max(...allEvents.map(e => e.seq || 0)) : 0
     const subEventSeq = Math.floor(maxSeq) + 0.1 // Sub-event of the libero_exchange
 
-    await db.events.add({
+    await addSyncedSubEvent({
       matchId,
       setIndex: data.set.index,
       type: 'lineup',
@@ -13040,9 +13421,41 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     })
   }), [runAction, deferUi, rallyStatus, mapSideToTeamKey, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set, data?.homePlayers, data?.awayPlayers, matchId, logEvent, isLiberoUnable])
 
-  // Keyboard shortcuts handler
+  // The key for the binding being edited in the keyboard shortcuts dialog:
+  // captured only while it is edited and the dialog is open (as in Options,
+  // HomeOptionsModal). Added on the click and removed only by the next key,
+  // it outlived a closed dialog and swallowed the next key of the match,
+  // which became that binding, also another action's key: refused now
+  // (Enter confirms and starts the rally, the two may share it)
   useEffect(() => {
-    if (!keybindingsEnabled) return
+    if (!editingKey || !keybindingsModalOpen) return undefined
+    const handleKeyCapture = (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.key === 'Escape') {
+        setEditingKey(null)
+        return
+      }
+      const shared = (a, b) => (a === 'confirm' && b === 'startRally') || (a === 'startRally' && b === 'confirm')
+      const other = Object.keys(keyBindings).find(k => k !== editingKey && !shared(k, editingKey) && keyBindings[k] === e.key)
+      if (other) {
+        showAlert(t('options.keyInUse', { key: e.key === ' ' ? 'Space' : e.key, action: t(`options.keybindingLabels.${other}`, other) }), 'warning')
+        return
+      }
+      const newBindings = { ...keyBindings, [editingKey]: e.key }
+      setKeyBindings(newBindings)
+      localStorage.setItem('keyBindings', JSON.stringify(newBindings))
+      setEditingKey(null)
+    }
+    window.addEventListener('keydown', handleKeyCapture, true)
+    return () => window.removeEventListener('keydown', handleKeyCapture, true)
+  }, [editingKey, keybindingsModalOpen, keyBindings, showAlert, t])
+
+  // Keyboard shortcuts handler. None on the "Scoresheet already open"
+  // screen: the tab stays mounted under it, and Enter and A scored there
+  // while another tab was the scoring one
+  useEffect(() => {
+    if (!keybindingsEnabled || duplicateTabError) return
 
     const handleKeyDown = (e) => {
       // Don't handle if editing key bindings
@@ -13067,7 +13480,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         accidentalRallyConfirmModal || accidentalPointConfirmModal || undoConfirm || replayConfirm ||
         replayRallyConfirm || liberoRotationModal || liberoReentryModal || sanctionSubstitutionModal ||
         courtSwitchModal || setEndTimeModal || setStartTimeModal || liberoReminder || set5SideServiceModal ||
-        exceptionalSubstitutionModal || !!document.querySelector('[aria-modal="true"]')
+        exceptionalSubstitutionModal || substitutionDropdown || playerActionMenu || !!document.querySelector('[aria-modal="true"]')
 
       // Confirm key (Enter)
       if (key === keyBindings.confirm) {
@@ -13208,9 +13621,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [
-    keybindingsEnabled, keyBindings, editingKey, showOptionsInMenu, keybindingsModalOpen,
+    keybindingsEnabled, duplicateTabError, keyBindings, editingKey, showOptionsInMenu, keybindingsModalOpen,
     rallyStatus, handleStartRally, handlePoint, handleTimeout, handleExchangeLibero, handleUndo, canUndo, showUndoConfirm,
-    playerActionMenu, benchPlayerActionMenu, liberoDropdown, liberoInDropdown, sanctionDropdown,
+    playerActionMenu, benchPlayerActionMenu, liberoDropdown, liberoInDropdown, sanctionDropdown, substitutionDropdown,
     timeoutModal, lineupModal, menuModal,
     substitutionConfirm, liberoConfirm, sanctionConfirmModal, accidentalRallyConfirmModal,
     accidentalPointConfirmModal, undoConfirm, replayConfirm, replayRallyConfirm, liberoRotationModal, liberoReentryModal,
@@ -13523,29 +13936,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }
 
   // Export every table of the local database as one JSON file (Match menu)
+  // Match menu, Download game data: this match only, as the backup file
+  // Restore match reads (downloadMatchBackup, utils/backupFile: no PINs or
+  // session ids inside, the rest encrypted). It was every table of the
+  // device in plain JSON: every match's game, referee, bench and upload
+  // PINs, the signatures and dates of birth, in a Downloads folder that may
+  // be a shared laptop's.
   const downloadGameData = async () => {
     try {
-      const exportData = {
-        exportDate: new Date().toISOString(),
-        matchId: matchId,
-        matches: await db.matches.toArray(),
-        teams: await db.teams.toArray(),
-        players: await db.players.toArray(),
-        sets: await db.sets.toArray(),
-        events: await db.events.toArray(),
-        referees: await db.referees.toArray(),
-        scorers: await db.scorers.toArray()
-      }
-      const jsonString = JSON.stringify(exportData, null, 2)
-      const blob = new Blob([jsonString], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `database_export_${matchId}_${new Date().toISOString().split('T')[0]}.json`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      URL.revokeObjectURL(url)
+      await downloadMatchBackup(matchId)
       return true
     } catch (error) {
       console.error('Error exporting database:', error)
@@ -13554,32 +13953,30 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
   }
 
-  // The deciding set's inline setup (desktop centre column, phone layout)
-  // The left team the setup shows: its saved choice, else (a match restored
-  // in the break without it, an older match) the sides set 4 ended on, as the
-  // court draws them (getSideAForSet). 'A' in its place moved the teams on
-  // "Switch sides" or on Confirm when A was on the left in set 4.
-  const set5SetupLeftTeam = (match) => getLeftTeamLabelForSet(5, { ...(match || {}), set5CourtSwitched: false })
-  // Its first server: the saved choice, else the one the court shows (getFirstServeForSet)
-  const set5SetupFirstServe = (match) => {
-    if (match?.set5FirstServe === 'A' || match?.set5FirstServe === 'B') return match.set5FirstServe
-    return getFirstServeForSet(5, match || {}) === (match?.coinTossTeamA || 'home') ? 'A' : 'B'
-  }
-  const set5SwitchSides = async () => {
-    const newLeftTeam = set5SetupLeftTeam(data?.match) === 'A' ? 'B' : 'A'
+  // The deciding set's inline setup (desktop centre column, phone layout).
+  // Switch sides, Switch serve and Confirm are scorer actions that read the
+  // match row inside their transaction (set5SetupLeftTeam / FirstServe):
+  // computed from the screen's match, a Switch tapped just before Confirm on
+  // a slow tablet was lost, or the row and the synced set5_coin_toss event
+  // (the server's only record of set 5's first server) disagreed
+  const set5SwitchSides = () => settleTap(runAction('set5Switch', async () => {
+    const duringInterval = !!betweenSetsCountdown || !intervalEndedByHandRef.current
+    const newLeftTeam = set5SetupLeftTeam(await db.matches.get(matchId)) === 'A' ? 'B' : 'A'
     await db.matches.update(matchId, { set5LeftTeam: newLeftTeam })
-    syncSet5Setup({ duringInterval: !!betweenSetsCountdown || !intervalEndedByHandRef.current })
-  }
-  const set5SwitchServe = async () => {
-    const newFirstServe = set5SetupFirstServe(data?.match) === 'A' ? 'B' : 'A'
+    deferEffect({ run: () => syncSet5Setup({ duringInterval }) })
+  }))
+  const set5SwitchServe = () => settleTap(runAction('set5Switch', async () => {
+    const duringInterval = !!betweenSetsCountdown || !intervalEndedByHandRef.current
+    const newFirstServe = set5SetupFirstServe(await db.matches.get(matchId)) === 'A' ? 'B' : 'A'
     await db.matches.update(matchId, { set5FirstServe: newFirstServe })
-    syncSet5Setup({ duringInterval: !!betweenSetsCountdown || !intervalEndedByHandRef.current })
-  }
+    deferEffect({ run: () => syncSet5Setup({ duringInterval }) })
+  }))
   const set5ConfirmSetup = async () => {
     // Ends the interval here and on the tablets, with the confirmed sides /
     // serve: the action tells the tablets itself, after its commit
-    // (ScoreboardSet5SetupOneChange)
-    await confirmSet5SideService(set5SetupLeftTeam(data?.match), set5SetupFirstServe(data?.match), true)
+    // (ScoreboardSet5SetupOneChange). The sides and serve are read from the
+    // match row inside it (inline mode)
+    await confirmSet5SideService(null, null, true)
   }
 
   // Preview, print or save the scoresheet in its own window (the toolbar's
@@ -13615,12 +14012,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         return
       }
 
+      // only from the app's own origin and the scoresheet window just
+      // opened, as text (src/utils/scoresheetErrorMessage.js)
       const errorListener = (event) => {
-        if (event.data && event.data.type === 'SCORESHEET_ERROR') {
-          setScoresheetErrorModal({
-            error: event.data.error || 'Unknown error',
-            details: event.data.details || event.data.stack || ''
-          })
+        const reported = scoresheetErrorFromEvent(event, { source: opened.window })
+        if (reported) {
+          setScoresheetErrorModal(reported)
           window.removeEventListener('message', errorListener)
         }
       }
@@ -13942,7 +14339,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               ? t('scoreboard.relayRejected.tooMany', 'Referee/bench link: this device already drives too many matches on the server.')
               : relayRejection.code === 'scorer-moved'
                 ? t('scoreboard.relayRejected.scorerMoved', 'Referee/bench link: this match is now scored on another device. Referee, bench and livescore follow the other device, no longer this one.')
-                : t('scoreboard.relayRejected.rateLimited', 'Referee/bench link: the server refused this scoresheet for a minute (too many failed attempts).')}
+                : relayRejection.code === 'room-limit'
+                  ? t('scoreboard.relayRejected.roomLimit', 'Referee/bench link: the server has no room for this match right now. Referee, bench and livescore do not receive this device\'s updates.')
+                  : t('scoreboard.relayRejected.rateLimited', 'Referee/bench link: the server refused this scoresheet for a minute (too many failed attempts).')}
         </div>
       )}
       {/* Portrait mode warning overlay for devices that don't support orientation lock (iOS).
@@ -14489,6 +14888,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             players={reopenRosterTeam === 'home' ? (data?.homePlayers || []) : (data?.awayPlayers || [])}
             bench={reopenRosterTeam === 'home' ? (data?.match?.bench_home || []) : (data?.match?.bench_away || [])}
             onSave={handleSaveReopenedRoster}
+            saving={reopenRosterSaving}
             onClose={() => setReopenRosterTeam(null)}
             t={t}
             benchRoles={ROSTER_BENCH_ROLES}
@@ -14911,14 +15311,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         const hasExpulsionSanction = data.events?.some(e =>
                           e.type === 'sanction' &&
                           e.payload?.team === teamKey &&
-                          e.payload?.playerNumber === player.number &&
+                          String(e.payload?.playerNumber) === String(player.number) &&
                           e.payload?.type === 'expulsion' &&
                           e.setIndex === data.set.index
                         )
                         const hasDisqualificationSanction = data.events?.some(e =>
                           e.type === 'sanction' &&
                           e.payload?.team === teamKey &&
-                          e.payload?.playerNumber === player.number &&
+                          String(e.payload?.playerNumber) === String(player.number) &&
                           e.payload?.type === 'disqualification'
                         )
 
@@ -18215,14 +18615,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         const hasExpulsionSanction = data.events?.some(e =>
                           e.type === 'sanction' &&
                           e.payload?.team === teamKey &&
-                          e.payload?.playerNumber === player.number &&
+                          String(e.payload?.playerNumber) === String(player.number) &&
                           e.payload?.type === 'expulsion' &&
                           e.setIndex === data.set.index
                         )
                         const hasDisqualificationSanction = data.events?.some(e =>
                           e.type === 'sanction' &&
                           e.payload?.team === teamKey &&
-                          e.payload?.playerNumber === player.number &&
+                          String(e.payload?.playerNumber) === String(player.number) &&
                           e.payload?.type === 'disqualification'
                         )
 
@@ -18541,6 +18941,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
                         const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
 
+                        // Check if this libero is a valid drop target during touch drag
+                        // (touch drag works on both sides: the teams change sides every set)
+                        const isTouchDropTargetLibero = touchDragState.isDragging && validDropTargets.some(t =>
+                          t.type === 'bench' && t.team === teamKey && String(t.playerNumber) === String(player.number) && t.isLibero
+                        )
+
                         return (
                           <div
                             key={`${teamKey}-bench-libero-${player.id || player.number}`}
@@ -18551,14 +18957,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             }}
                           >
                             <div
+                              data-bench-player={player.number}
+                              data-team={teamKey}
+                              data-is-libero="true"
                               draggable={canDragLibero}
                               onDragStart={(e) => canDragLibero && handleBenchDragStart(e, teamKey, player.number, true)}
                               onDragEnd={handleBenchDragEnd}
                               onDragOver={(e) => canReceiveLiberoFromCourt && handleBenchDropOver(e, teamKey, player.number, true)}
                               onDragLeave={handleBenchDropLeave}
                               onDrop={(e) => canReceiveLiberoFromCourt && handleBenchDrop(e, teamKey, player.number, true)}
+                              onTouchStart={(e) => canDragLibero && handleTouchDragStart(e, { team: teamKey, playerNumber: player.number, type: 'bench', isLibero: true })}
+                              onTouchMove={handleTouchMove}
+                              onTouchEnd={handleTouchEnd}
+                              onTouchCancel={handleTouchCancel}
                               onClick={(e) => {
-                                if (rallyStatus === 'idle' && !isUnable) {
+                                if (rallyStatus === 'idle' && !isUnable && !touchDragState.isDragging) {
                                   // Open action menu for libero on bench
                                   const rect = e.currentTarget.getBoundingClientRect()
                                   setLiberoBenchActionMenu({
@@ -18574,7 +18987,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               }}
                               style={{
                                 padding: sbBenchChipPadding(player.isCaptain || player.captain), minHeight: '44px', minWidth: '44px', justifyContent: 'center',
-                                background: isLiberoDropTarget ? 'rgba(59, 130, 246, 0.5)' : isUnable ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)',
+                                touchAction: canDragLibero ? 'none' : undefined,
+                                background: isTouchDropTargetLibero
+                                  ? 'rgba(74, 222, 128, 0.4)'  // Green for valid touch drop target
+                                  : isLiberoDropTarget ? 'rgba(59, 130, 246, 0.5)' : isUnable ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)',
                                 borderRadius: '1.25cqw',
                                 fontSize: 'max(15px, 6.6cqw)',
                                 display: 'flex',
@@ -19720,7 +20136,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 canUndo,
                 undo: () => { setShowManualPanel(false); showUndoConfirm() },
                 wrongTeam: () => { setShowManualPanel(false); handleReplay() },
-                addPoint: (team) => handlePoint(mapTeamKeyToSide(team), true),
+                addPoint: (team, { penaltySeq = null } = {}) => handlePoint(mapTeamKeyToSide(team), true, { penaltySeq }),
                 openTimeout: (team) => { setShowManualPanel(false); handleTimeout(mapTeamKeyToSide(team)) },
                 openManualLineup: (team) => { setShowManualPanel(false); openManualLineup(team) },
                 reopenSet: (set) => { setShowManualPanel(false); setReopenSetConfirm({ setId: set.id, setIndex: set.index }) },
@@ -19766,10 +20182,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         <Modal
           title={t('scoreboard.modals.remarksRecording')}
           open={true}
-          onClose={() => {
-            setShowRemarks(false)
-            setRemarksText('')
-          }}
+          onClose={closeRemarks}
           width={600}
         >
           <div>
@@ -19782,38 +20195,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 onChange={e => {
                   setRemarksText(e.target.value)
                 }}
-                onBlur={async () => {
+                onBlur={() => {
                   // When user finishes editing, save and log as event
-                  const oldRemarks = data?.match?.remarks || ''
-                  const newRemarks = remarksText.trim()
-
-                  if (newRemarks !== oldRemarks) {
-                    // Save the new remarks
-                    await db.matches.update(matchId, { remarks: newRemarks })
-
-                    // Log remark insertion as an event if new text was added
-                    if (data?.set && newRemarks) {
-                      // Get the added text (what's new compared to old)
-                      const oldLines = oldRemarks.split('\n')
-                      const newLines = newRemarks.split('\n')
-
-                      // Find what was added (new lines that weren't in old)
-                      const addedLines = newLines.filter((line, idx) => {
-                        // If old remarks is empty, all new lines are added
-                        if (!oldRemarks) return line.trim()
-                        // Check if this line is new (not in old remarks)
-                        return idx >= oldLines.length || line !== oldLines[idx]
-                      }).filter(line => line.trim())
-
-                      if (addedLines.length > 0) {
-                        const addedText = addedLines.join('\n')
-                        await logEvent('remark', {
-                          text: addedText,
-                          fullRemarks: newRemarks
-                        })
-                      }
-                    }
-                  }
+                  // (a failure is shown by saveRemarks, the text stays)
+                  saveRemarks(remarksText).catch(() => {})
                 }}
                 className="w-full min-h-[300px] px-3 py-2 rounded-lg border border-stone-300 bg-white text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-slate-900/20 focus:border-slate-900/40 resize-y"
               />
@@ -19841,10 +20226,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               className="h-12 justify-start text-base"
               onClick={() => {
                 setStopMatchModal(null)
-                setStopMatchTeamSelect({ pendingAction: 'forfeit' })
+                setStopMatchTeamSelect({ pendingAction: 'forfeit', rule: 'default' })
               }}
             >
               {t('scoreboard.stopMatch.teamForfeits', 'A team forfeits')}
+            </SbButton>
+            <SbButton
+              block
+              className="h-12 justify-start text-base"
+              onClick={() => {
+                setStopMatchModal(null)
+                setStopMatchTeamSelect({ pendingAction: 'forfeit', rule: 'incomplete' })
+              }}
+            >
+              {t('scoreboard.stopMatch.teamIncomplete', 'A team is incomplete')}
             </SbButton>
             <SbButton
               block
@@ -19875,7 +20270,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             <button
               onClick={() => {
                 setStopMatchTeamSelect(null)
-                setStopMatchConfirm({ type: 'forfeit', team: 'home' })
+                setStopMatchConfirm({ type: 'forfeit', team: 'home', rule: stopMatchTeamSelect.rule })
               }}
               style={{
                 padding: '16px',
@@ -19891,7 +20286,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             <button
               onClick={() => {
                 setStopMatchTeamSelect(null)
-                setStopMatchConfirm({ type: 'forfeit', team: 'away' })
+                setStopMatchConfirm({ type: 'forfeit', team: 'away', rule: stopMatchTeamSelect.rule })
               }}
               style={{
                 padding: '16px',
@@ -19922,19 +20317,27 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             {stopMatchConfirm.type === 'forfeit' ? (
               <>
                 <div style={{ marginBottom: '16px', fontSize: '16px' }}>
-                  {t('scoreboard.stopMatch.confirmForfeitMessage',
-                    '{{team}} will forfeit. The opponent will be awarded all remaining points and sets to win the match.', {
-                    team: stopMatchConfirm.team === 'home'
-                      ? (data?.homeTeam?.name || t('common.home', 'Home'))
-                      : (data?.awayTeam?.name || t('common.away', 'Away'))
-                  })}
+                  {stopMatchConfirm.rule === 'incomplete'
+                    ? t('scoreboard.stopMatch.confirmIncompleteMessage',
+                      '{{team}} is incomplete and loses the match. The opponent is given the points and sets needed to win; {{team}} keeps its points and sets.', {
+                      team: stopMatchConfirm.team === 'home'
+                        ? (data?.homeTeam?.name || t('common.home', 'Home'))
+                        : (data?.awayTeam?.name || t('common.away', 'Away'))
+                    })
+                    : t('scoreboard.stopMatch.confirmForfeitMessage',
+                      '{{team}} is declared in default (refused to play or did not appear) and loses the match {{result}}, 0:25 in every set, including the sets already played.', {
+                      team: stopMatchConfirm.team === 'home'
+                        ? (data?.homeTeam?.name || t('common.home', 'Home'))
+                        : (data?.awayTeam?.name || t('common.away', 'Away')),
+                      result: data?.match?.bestOf === 3 ? '0:2' : '0:3'
+                    })}
                 </div>
               </>
             ) : (
               <>
                 <div style={{ marginBottom: '16px', fontSize: '16px' }}>
                   {t('scoreboard.stopMatch.confirmImpossibilityMessage',
-                    'The match will end with current scores. No winner will be declared. Match data will be downloaded.')}
+                    'The match will end with current scores. No winner will be declared.')}
                 </div>
               </>
             )}
@@ -19950,7 +20353,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   // Move to remarks step
                   setStopMatchRemarksStep({
                     type: stopMatchConfirm.type,
-                    team: stopMatchConfirm.team
+                    team: stopMatchConfirm.team,
+                    rule: stopMatchConfirm.rule
                   })
                   setStopMatchConfirm(null)
                   setShowRemarks(true) // Open the existing remarks modal
@@ -20112,17 +20516,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           // Optional game captain chosen in the modal (FIVB 5.2), written the
           // same way as the scoreboard's "Game captain" prompt
           // (domain/lineupEntry.js lineupGameCaptainDecision)
-          // One action: the remembered captain and the designation event
-          // commit together (a failure saves neither and says so)
+          // Part of the line-up action (runSave): the remembered captain and
+          // the designation event commit with the line-up. A failure is not
+          // caught here: the whole save rolls back and the dialog says so
+          // (saveFailed). Caught, the line-up and the captain's match row
+          // were stored without the designation event, and nothing was shown
           if (gameCaptain && matchId) {
-            try {
-              await runAction('gameCaptain', async () => {
-                if (Object.keys(gameCaptain.matchUpdate).length) await db.matches.update(matchId, gameCaptain.matchUpdate)
-                if (gameCaptain.event) await logEvent('court_captain_designation', gameCaptain.event)
-              })
-            } catch (err) {
-              console.error('[LineupModal] game captain not saved', err)
-            }
+            await runAction('gameCaptain', async () => {
+              if (Object.keys(gameCaptain.matchUpdate).length) await db.matches.update(matchId, gameCaptain.matchUpdate)
+              if (gameCaptain.event) await logEvent('court_captain_designation', gameCaptain.event)
+            })
           }
           // Check if captain is on court after lineup is saved
           // Use timeout to allow data to update from database (increased to 300ms for reliability)
@@ -20371,84 +20774,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       label: p.libero === 'libero1' ? 'L1' : p.libero === 'redesignated' ? 'LR' : 'L2'
                     }))
 
-                  // One action (runAction): the libero entry and its lineup are
+                  // One action (enterLibero): the libero entry and its lineup are
                   // one transaction, so the libero appears on court with its
                   // "Libero in" (it showed the entry over the old lineup first),
-                  // and the tablets and the livescore get the lineup with the libero
-                  const handleLiberoSelect = (libero) => runAction('libero', async () => {
-                    // The menu closes with the libero on court (deferUi)
-                    deferUi(() => {
-                      setPlayerActionMenu(null)
-                      setCourtSubExpanded(false)
-                      setCourtLiberoExpanded(false)
-                      setCourtSanctionExpanded(false)
-                    })
-
-                    // Directly execute libero substitution
-                    const liberoType = libero.type
-                    const liberoPlayer = teamPlayers?.find(p => p.libero === liberoType)
-                    if (!liberoPlayer || !data?.set) return
-
-                    // Get current lineup
-                    const lineupEvents = data.events?.filter(e =>
-                      e.type === 'lineup' &&
-                      e.payload?.team === team &&
-                      e.setIndex === data.set.index
-                    ) || []
-                    const lineupEvent = lineupEvents.length > 0 ? lineupEvents[lineupEvents.length - 1] : null
-                    const currentLineup = lineupEvent?.payload?.lineup || {}
-
-                    // Create new lineup with libero entry
-                    const validPositions = ['I', 'II', 'III', 'IV', 'V', 'VI']
-                    const cleanedCurrentLineup = {}
-                    for (const pos of validPositions) {
-                      if (currentLineup[pos] !== undefined) {
-                        cleanedCurrentLineup[pos] = currentLineup[pos]
-                      }
-                    }
-
-                    const newLineup = { ...cleanedCurrentLineup }
-                    newLineup[position] = String(liberoPlayer.number)
-
-                    const finalLineup = {}
-                    for (const pos of validPositions) {
-                      if (newLineup[pos] !== undefined) {
-                        finalLineup[pos] = newLineup[pos]
-                      }
-                    }
-
-                    // Log the libero entry event FIRST (main event)
-                    await logEvent('libero_entry', {
-                      team,
-                      position,
-                      playerOut: playerNumber,
-                      liberoIn: liberoPlayer.number,
-                      liberoType
-                    })
-
-                    // Save the updated lineup as a SUB-EVENT (seq N.1) so it's deleted together with libero_entry on undo
-                    const allEvents = await db.events.where({ matchId }).toArray()
-                    const maxSeq = allEvents.length > 0 ? Math.max(...allEvents.map(e => e.seq || 0)) : 0
-                    const subEventSeq = Math.floor(maxSeq) + 0.1 // Sub-event of the libero_entry
-
-                    await db.events.add({
-                      matchId,
-                      setIndex: data.set.index,
-                      type: 'lineup',
-                      payload: {
-                        team,
-                        lineup: finalLineup,
-                        liberoSubstitution: {
-                          position,
-                          liberoNumber: liberoPlayer.number,
-                          playerNumber,
-                          liberoType
-                        }
-                      },
-                      ts: new Date().toISOString(),
-                      seq: subEventSeq
-                    })
-                  })
+                  // and the tablets and the livescore get the lineup with the
+                  // libero. The shared path checks the libero again and asks
+                  // for a game captain when the captain leaves the court.
+                  const handleLiberoSelect = (libero) => enterLibero({ team, position, playerOut: playerNumber, liberoType: libero.type })
 
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -20622,19 +20954,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           ? getAvailableExceptionalSubstitutes(teamKey, substitutionDropdown.playerNumber)
           : getAvailableSubstitutes(teamKey, substitutionDropdown.playerNumber, !isLegal)
 
-        // Check if player is expelled or disqualified - use stored flags or query events
-        const isExpelled = substitutionDropdown.isExpelled || data?.events?.some(e =>
-          e.type === 'sanction' &&
-          e.payload?.team === teamKey &&
-          e.payload?.playerNumber === substitutionDropdown.playerNumber &&
-          e.payload?.type === 'expulsion'
-        )
-        const isDisqualified = substitutionDropdown.isDisqualified || data?.events?.some(e =>
-          e.type === 'sanction' &&
-          e.payload?.team === teamKey &&
-          e.payload?.playerNumber === substitutionDropdown.playerNumber &&
-          e.payload?.type === 'disqualification'
-        )
+        // Check if player is expelled (this set) or disqualified - use stored flags or query events
+        const { isExpelled, isDisqualified } = forcedSanctionOf(substitutionDropdown)
 
         // Get element position - use stored coordinates if available, otherwise try to find element
         // For left side teams, menu opens to the right (use left CSS)
@@ -20679,6 +21000,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
         // Block closing if player is expelled or disqualified - they MUST substitute
         const mustSubstitute = isExpelled || isDisqualified
+        // "Cancel sanction" only for a sanction of this set (not an older one)
+        const cancellableSanction = mustSubstitute ? thisSetSanctionOf(teamKey, substitutionDropdown.playerNumber) : null
 
         return (
           <>
@@ -20759,25 +21082,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     onPick={(number, newPlayer) => showSubstitutionConfirm(number, { newPlayer })}
                   />
                 )}
-                {/* Cancel Sanction button - only shown when player must substitute due to expulsion/disqualification */}
-                {mustSubstitute && (
+                {/* Cancel Sanction button - only shown when player must substitute due to expulsion/disqualification of this set */}
+                {cancellableSanction && (
                   <SbMenuItem
                     tone="danger"
                     className="mt-2"
-                    onClick={async () => {
-                      // Find and delete the most recent sanction event for this player
-                      const sanctionEvent = data?.events?.filter(e =>
-                        e.type === 'sanction' &&
-                        e.payload?.team === teamKey &&
-                        e.payload?.playerNumber === substitutionDropdown.playerNumber &&
-                        (e.payload?.type === 'expulsion' || e.payload?.type === 'disqualification')
-                      ).sort((a, b) => b.id - a.id)[0]
-
-                      if (sanctionEvent) {
-                        await db.events.delete(sanctionEvent.id)
-                      }
-                      setSubstitutionDropdown(null)
-                    }}
+                    onClick={() => takeBackForcedSanction(teamKey, substitutionDropdown.playerNumber)}
                   >
                     {t('scoreboard.playerMenu.cancelSanction')}
                   </SbMenuItem>
@@ -21085,11 +21395,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     const playerNumber = sanctionDropdown.playerNumber
                     const teamWarning = teamHasFormalWarning(teamKey)
 
-                    // Check if player has each specific sanction type (for back-sanctioning rules)
-                    const hasWarning = playerNumber ? playerHasSanctionType(teamKey, playerNumber, 'warning') : false
-                    const hasPenalty = playerNumber ? playerHasSanctionType(teamKey, playerNumber, 'penalty') : false
-                    const hasExpulsion = playerNumber ? playerHasSanctionType(teamKey, playerNumber, 'expulsion') : false
-                    const hasDisqualification = playerNumber ? playerHasSanctionType(teamKey, playerNumber, 'disqualification') : false
+                    // Check if the player, or the team official (by role), has
+                    // each specific sanction type (for back-sanctioning rules;
+                    // domain/sanctions validateMemberSanction)
+                    const hasType = (type) => (playerNumber || sanctionDropdown.role)
+                      ? validateMemberSanction(data?.events, { team: teamKey, playerNumber, role: sanctionDropdown.role, type }).reason === 'sameSanctionTwice'
+                      : false
+                    const hasWarning = hasType('warning')
+                    const hasPenalty = hasType('penalty')
+                    const hasExpulsion = hasType('expulsion')
+                    const hasDisqualification = hasType('disqualification')
 
                     // Determine which sanctions are available
                     // Rule: A player cannot get the same sanction type twice
@@ -21167,11 +21482,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
         // For "never played" bench players, get available court players to substitute
         // Filter out liberos - cannot substitute for a libero on court
+        // A court player who came in as a substitute may only be replaced by
+        // the starter he came in for (FIVB 15.6.2, the court player's menu's
+        // rule: domain/interruptionRequests substitutionIllegalReason): he is
+        // listed under "Not allowed" with why, a tap opens the request warning
+        // (not in an easy match, nor beyond the 6 substitutions: as there)
         const availableCourtPlayers = []
+        const illegalCourtPlayers = []
         if (neverPlayed && canSubstitute) {
           const currentLineup = getCurrentLineup(team)
           const liberoOnCourt = getLiberoOnCourt(team)
           const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
+          const showIllegal = data?.match?.easy !== true && (substitutionsUsed?.[team] || 0) < MAX_SUBSTITUTIONS_PER_SET
           if (currentLineup) {
             Object.entries(currentLineup).forEach(([pos, num]) => {
               if (num) {
@@ -21184,7 +21506,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 // Also check if current libero is on court at this position
                 const isLiberoOnCourt = liberoOnCourt && String(liberoOnCourt.liberoNumber) === String(num)
                 if (canBeSub && !isLibero && !isLiberoOnCourt) {
-                  availableCourtPlayers.push({ position: pos, number: num })
+                  const reason = data?.set ? substitutionIllegalReason(data.events, data.set.index, team, { playerOut: num, playerIn: playerNumber }, { players: teamPlayers }) : null
+                  if (!reason) availableCourtPlayers.push({ position: pos, number: num })
+                  else if (showIllegal) illegalCourtPlayers.push({ position: pos, number: num, reason })
                 }
               }
             })
@@ -21205,7 +21529,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 zIndex: 999,
                 background: 'transparent'
               }}
-              {...backdropDismiss(() => { setBenchPlayerActionMenu(null); setBenchSubExpanded(false); setBenchSanctionExpanded(false) })}
+              {...backdropDismiss(() => { setBenchPlayerActionMenu(null); setBenchSubExpanded(false); setBenchIllegalExpanded(false); setBenchSanctionExpanded(false) })}
             />
             {/* Action Menu */}
             <div style={menuStyle} className="modal-wrapper-roll-down">
@@ -21263,6 +21587,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             onClick={() => {
                               setBenchPlayerActionMenu(null)
                               setBenchSubExpanded(false)
+                              setBenchIllegalExpanded(false)
                               // Go directly to substitution confirmation modal
                               setSubstitutionConfirm({
                                 team,
@@ -21273,6 +21598,36 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             }}
                           >
                             {cp.number}
+                          </SbMenuItem>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {/* Court players this bench player may not replace, greyed
+                    with why: a tap opens "Illegal substitution requested" */}
+                {illegalCourtPlayers.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <SbMenuItem tone="neutral" className="text-stone-500" expanded={benchIllegalExpanded} onClick={() => setBenchIllegalExpanded(!benchIllegalExpanded)} data-testid="bench-menu-illegal-toggle">
+                      {t('scoreboard.requestWarning.notAllowed')}
+                    </SbMenuItem>
+                    {benchIllegalExpanded && (
+                      <div className={SB_MENU_SUB}>
+                        {illegalCourtPlayers.map(cp => (
+                          <SbMenuItem
+                            key={cp.position}
+                            tone="neutral"
+                            data-testid={`bench-menu-illegal-${cp.number}`}
+                            className="border-dashed bg-stone-50 text-stone-500 hover:bg-stone-100"
+                            onClick={() => {
+                              setBenchPlayerActionMenu(null)
+                              setBenchSubExpanded(false)
+                              setBenchIllegalExpanded(false)
+                              openIllegalSubstitution(team, cp.position, cp.number, { number: playerNumber, reason: cp.reason })
+                            }}
+                          >
+                            <span className="tabular-nums">{cp.number}</span>
+                            <span className="font-medium"> · {t(`scoreboard.requestWarning.illegalShort.${cp.reason}`)}</span>
                           </SbMenuItem>
                         ))}
                       </div>
@@ -21293,6 +21648,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   const showSanctionConfirmFromBenchMenu = (sanctionType) => {
                     setBenchPlayerActionMenu(null)
                     setBenchSubExpanded(false)
+                    setBenchIllegalExpanded(false)
                     setBenchSanctionExpanded(false)
                     setSanctionConfirmModal({
                       team,
@@ -21330,39 +21686,40 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <SbMenuItem
                   tone="danger"
                   icon={SB_INJURY_ICON}
-                  onClick={async () => {
-                    // For bench player injury, add a remark with time, set, score (team first), team, number
-                    try {
-                      const setIndex = data?.set?.index || 1
-                      const teamLabel = team === teamAKey ? 'A' : 'B'
-                      const teamScore = team === 'home' ? (data?.set?.homePoints || 0) : (data?.set?.awayPoints || 0)
-                      const opponentScore = team === 'home' ? (data?.set?.awayPoints || 0) : (data?.set?.homePoints || 0)
-                      // "Set 3, 14:28, B 15:5, #4 injured (bench)": the sheet's remark convention (owner 2026-10-07)
-                      const remark = eventRemark({ set: displaySetNumber(setIndex, data?.match?.bestOf), team: teamLabel, teamScore, oppScore: opponentScore, text: `#${playerNumber} injured (bench)` })
-                      const currentRemarks = data?.match?.remarks || ''
-                      const newRemarks = currentRemarks ? `${currentRemarks}\n${remark}` : remark
-                      await db.matches.update(matchId, { remarks: newRemarks })
+                  onClick={() => settleTap(runAction('benchInjury', async () => {
+                    // For bench player injury, add a remark with time, set, score (team first), team, number.
+                    // One keyed action: a double tap writes it once, and a
+                    // failed write is shown (onActionFailed) with nothing of
+                    // it stored (the remark line used to stay without its
+                    // event, silently). Read inside it, not from the screen.
+                    const set = currentSetOf(await db.sets.where('matchId').equals(matchId).toArray())
+                    if (!set) return
+                    const setIndex = set.index
+                    const teamLabel = team === teamAKey ? 'A' : 'B'
+                    const teamScore = team === 'home' ? (set.homePoints || 0) : (set.awayPoints || 0)
+                    const opponentScore = team === 'home' ? (set.awayPoints || 0) : (set.homePoints || 0)
+                    // "Set 3, 14:28, B 15:5, #4 injured (bench)": the sheet's remark convention (owner 2026-10-07)
+                    const remark = eventRemark({ set: displaySetNumber(setIndex, data?.match?.bestOf), team: teamLabel, teamScore, oppScore: opponentScore, text: `#${playerNumber} injured (bench)` })
+                    const currentRemarks = (await db.matches.get(matchId))?.remarks || ''
+                    const newRemarks = currentRemarks ? `${currentRemarks}\n${remark}` : remark
+                    await db.matches.update(matchId, { remarks: newRemarks })
 
-                      // Log as event so we can track and show red cross. It
-                      // carries its remark line (autoRemark), as every entry
-                      // that writes one: Undo takes the line out with it, a
-                      // correction or a renumbered player rewrites it
-                      if (logEventRef.current) {
-                        await logEventRef.current('bench_injury', {
-                          team,
-                          playerNumber,
-                          setIndex,
-                          autoRemark: remark
-                        })
-                      }
+                    // Log as event so we can track and show red cross. It
+                    // carries its remark line (autoRemark), as every entry
+                    // that writes one: Undo takes the line out with it, a
+                    // correction or a renumbered player rewrites it
+                    await logEventTx('bench_injury', {
+                      team,
+                      playerNumber,
+                      setIndex,
+                      autoRemark: remark
+                    }, { setIndexOverride: setIndex })
 
+                    deferUi(() => {
                       setBenchPlayerActionMenu(null)
                       showAlert(t('scoreboard.benchInjuryRecorded', { number: playerNumber }), 'success')
-                    } catch (err) {
-                      console.error('Failed to record bench injury:', err)
-                      setBenchPlayerActionMenu(null)
-                    }
-                  }}
+                    })
+                  }))}
                 >
                   {t('corrections.reasonLabel.injury')}
                 </SbMenuItem>
@@ -21601,28 +21958,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   <div style={{ fontSize: '11px', color: 'var(--muted)' }}>{t(descKey, description)}</div>
                 </div>
                 <button
-                  onClick={() => {
-                    if (editingKey === key) {
-                      setEditingKey(null)
-                    } else {
-                      setEditingKey(key)
-                      // Listen for next keypress
-                      const handleKeyCapture = (e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        if (e.key === 'Escape') {
-                          setEditingKey(null)
-                        } else {
-                          const newBindings = { ...keyBindings, [key]: e.key }
-                          setKeyBindings(newBindings)
-                          localStorage.setItem('keyBindings', JSON.stringify(newBindings))
-                          setEditingKey(null)
-                        }
-                        window.removeEventListener('keydown', handleKeyCapture, true)
-                      }
-                      window.addEventListener('keydown', handleKeyCapture, true)
-                    }
-                  }}
+                  onClick={() => setEditingKey(editingKey === key ? null : key)}
                   style={{
                     padding: '6px 12px',
                     fontSize: '12px',
@@ -22405,22 +22741,23 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   const matchRecord = await db.matches.get(matchId)
                   // A match forfeit is reversed as a whole: reopening any set it
                   // finished or created reopens the set the forfeit happened in
-                  if (matchRecord?.forfeitTeam) {
-                    const forfaitIndexes = (await db.events.where('matchId').equals(matchId).toArray())
-                      .filter(e => e.type === 'forfait' && e.payload?.scope !== 'set')
-                      .map(e => e.setIndex)
-                    const forfaitIndex = forfaitIndexes.length ? Math.min(...forfaitIndexes) : null
-                    if (forfaitIndex != null && forfaitIndex < reopenIndex) {
-                      const forfaitSet = await db.sets.where({ matchId }).and(x => x.index === forfaitIndex).first()
-                      if (forfaitSet) { reopenIndex = forfaitIndex; reopenSetId = forfaitSet.id }
-                    }
+                  // (from its forfait event: a copy continued from the cloud
+                  // has no forfeitTeam)
+                  const forfaitIndex = matchForfeitOf(await db.events.where('matchId').equals(matchId).toArray())?.setIndex ?? null
+                  if (forfaitIndex != null && forfaitIndex < reopenIndex) {
+                    const forfaitSet = await db.sets.where({ matchId }).and(x => x.index === forfaitIndex).first()
+                    if (forfaitSet) { reopenIndex = forfaitIndex; reopenSetId = forfaitSet.id }
                   }
                   // Reverse a forfeit in this set or later: awarded points, created
                   // sets, forfeit set_end / forfait events, pre-forfeit score
                   await applyForfeitReversal(reopenIndex)
                   // Mark the set as not finished (and no longer ended)
                   await db.sets.update(reopenSetId, { finished: false, endTime: null })
-                  confirmedSetEndRef.current.delete(reopenIndex)
+                  // ... and every later set it deletes: one still marked as
+                  // confirmed here could never be ended again once recreated
+                  for (const index of [...confirmedSetEndRef.current]) {
+                    if (index >= reopenIndex) confirmedSetEndRef.current.delete(index)
+                  }
                   matchEndingRef.current = false
                   // Remove what ending the set wrote: its set_end (and a forfait) event
                   const allEventsForReopen = await db.events.where('matchId').equals(matchId).toArray()
@@ -22436,6 +22773,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   for (const s of setsToDelete) {
                     await db.sets.delete(s.id)
                   }
+                  // ... in the cloud too: a later set finished there kept the
+                  // old result next to the replayed one
+                  await queueSetDeletes(db, matchRecord, setsToDelete.map(s => s.id))
                   // Set 5 is gone: its setup too (the next set end before it
                   // proposes the sides that set ends on, not these)
                   if (reopenIndex < 5 && setsToDelete.some(s => s.index === 5)) {
@@ -22457,13 +22797,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     })
                   }
                   if (matchRecord && !matchRecord.test && matchRecord.seed_key) {
-                    await db.sync_queue.add({
-                      resource: 'set',
-                      action: 'update',
-                      payload: { external_id: String(reopenSetId), finished: false, end_time: null },
-                      ts: new Date().toISOString(),
-                      status: 'queued'
-                    })
+                    await db.sync_queue.add(setUpdateJob(matchRecord, reopenSetId, { finished: false, end_time: null }))
                     if (isMatchOverStatus(matchRecord.status)) {
                       await db.sync_queue.add({
                         resource: 'match',
@@ -22582,19 +22916,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             key={position}
                             chip
                             onClick={() => {
-                              // Open libero confirmation with this position
-                              setLiberoDropdown({
-                                team: teamKey,
-                                position,
-                                playerNumber: number,
-                                element: liberoBenchActionMenu.element,
-                                x: liberoBenchActionMenu.x,
-                                y: liberoBenchActionMenu.y
-                              })
-                              // Auto-select this libero
-                              setTimeout(() => {
-                                showLiberoConfirm(liberoBenchActionMenu.liberoType)
-                              }, 50)
+                              // This libero in for the player at this position,
+                              // straight away (the shared libero-entry path)
+                              enterLibero({ team: teamKey, position, playerOut: number, liberoType: liberoBenchActionMenu.liberoType })
                               setLiberoBenchActionMenu(null)
                               setLiberoBenchReplaceExpanded(false)
                             }}
@@ -24197,8 +24521,8 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
   // either box of a duplicate clears both (domain/lineupEntry.js)
   const errors = useMemo(() => {
     if (saveFailed) return Object.fromEntries(LINEUP_POSITIONS.map((_, i) => [i, 'saveFailed']))
-    return lineupEntryErrors({ lineup, players, events, team, requireAll: confirmAttempted, allowUnknown: easy })
-  }, [saveFailed, lineup, players, events, team, confirmAttempted, easy])
+    return lineupEntryErrors({ lineup, players, events, team, setIndex, requireAll: confirmAttempted, allowUnknown: easy })
+  }, [saveFailed, lineup, players, events, team, setIndex, confirmAttempted, easy])
 
   const poolFor = useCallback((entries) => {
     const list = lineupCandidates({ players, lineup: entries, events, team, setIndex })
@@ -24246,6 +24570,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     invalidNumber: t('scoreboard.lineupModal.errors.invalidNumber', '1 to 99'),
     libero: t('scoreboard.lineupModal.errors.libero', 'Cannot be libero'),
     disqualified: t('scoreboard.lineupModal.errors.disqualified', 'Disqualified'),
+    expelled: t('scoreboard.lineupModal.errors.expelled', 'Expelled this set'),
     exceptionallySubstituted: t('scoreboard.lineupModal.errors.exceptionallySubstituted', 'Exceptionally substituted'),
     saveFailed: t('scoreboard.lineupModal.errors.saveFailed', 'Save failed')
   })[code] || ''
@@ -24379,7 +24704,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     const lineupNumbers = lineup.map(n => (n ? Number(n) : null))
 
     // Same checks the boxes show, with every empty box required now
-    if (Object.keys(lineupEntryErrors({ lineup, players, events, team, requireAll: true, allowUnknown: easy })).length > 0) {
+    if (Object.keys(lineupEntryErrors({ lineup, players, events, team, setIndex, requireAll: true, allowUnknown: easy })).length > 0) {
       return
     }
     if (showLiberos && Object.keys(easyLiberoErrors({ liberos, lineup, players, events: events || [], team })).length > 0) {
@@ -24449,7 +24774,11 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
           Math.floor(await maxVoidedSeq(db, matchId))
         )
 
-        const manualLineupSeq = maxSeq + 1
+        // A main entry (integer seq), as getNextSeq gives: after a libero
+        // entry (N, its line-up N.1) maxSeq is N.1, and N.1 + 1 made this
+        // line-up a sub-row without a parent, so Undo took back the libero
+        // entry instead
+        const manualLineupSeq = Math.floor(maxSeq) + 1
         const savedLineupEvent = {
           matchId,
           setIndex,

@@ -15,7 +15,7 @@
 #                   (packaging/pacman/publish-pacman.sh)
 #
 # TLS ends at Cloudflare; ov-tunnel reaches this on http://ov-pkgs:80 over the
-# compose network ov-edge. No admin API, no ACME, no state on disk.
+# compose network ov-pkgs-edge. No admin API, no ACME, no state on disk.
 {
 	admin off
 	auto_https off
@@ -90,6 +90,9 @@
 		X-Content-Type-Options nosniff
 		Referrer-Policy no-referrer
 		X-Frame-Options DENY
+		# HTTPS only (Cloudflare "Always Use HTTPS" redirects http://); no
+		# preload until every subdomain is HTTPS-only (RUNBOOK-hetzner.md, Edge)
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		-Server
 	}
 

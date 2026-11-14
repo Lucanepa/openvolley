@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- firewalld zone of the networks OpenVolley eScoresheet starts for the
+     tablets (its Wi-Fi hotspot and Bluetooth network, src/netshare/nm_settings.rs
+     TABLET_ZONE). The tablets get an address (DHCP), names (DNS) and the
+     app's built-in server (5173 pages, 8080 live updates); every other port
+     of this computer stays closed to them, and nothing is forwarded to its
+     other networks. Installed by the .deb to /usr/lib/firewalld/zones. -->
+<zone>
+  <short>OpenVolley tablets</short>
+  <description>Tablets on the network OpenVolley eScoresheet starts: DHCP, DNS and the app's built-in server only.</description>
+  <service name="dhcp"/>
+  <service name="dns"/>
+  <port protocol="tcp" port="5173"/>
+  <port protocol="tcp" port="8080"/>
+  <protocol value="icmp"/>
+</zone>

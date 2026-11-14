@@ -101,33 +101,37 @@ function fakeFilesystem({ refuse = [] } = {}) {
 }
 
 describe('createCapacitorStore', () => {
-  it('writes the event file and latest.json under Documents/OpenVolley/backups', async () => {
+  // Owner decision 2026-11: the app's own folder, never the public Documents
+  // folder (open to whoever holds the tablet, kept after an uninstall)
+  it('writes the event file and latest.json under the app\'s own folder (files/OpenVolley/backups), never Documents', async () => {
     const fs = fakeFilesystem()
     const store = createCapacitorStore(fs, { log: { warn: () => {} } })
     await store.write('game5-s', '20261006T100000.000Z-00001.json', '{"v":1}')
-    expect(fs.files.get(`DOCUMENTS:${BACKUP_SUBDIR}/game5-s/20261006T100000.000Z-00001.json`)).toBe('{"v":1}')
-    expect(fs.files.get(`DOCUMENTS:${BACKUP_SUBDIR}/game5-s/latest.json`)).toBe('{"v":1}')
+    expect(fs.files.get(`DATA:${BACKUP_SUBDIR}/game5-s/20261006T100000.000Z-00001.json`)).toBe('{"v":1}')
+    expect(fs.files.get(`DATA:${BACKUP_SUBDIR}/game5-s/latest.json`)).toBe('{"v":1}')
+    expect([...fs.files.keys()].some(k => k.startsWith('DOCUMENTS:'))).toBe(false)
+    expect(fs.Filesystem.mkdir.mock.calls.map(([o]) => o.directory)).not.toContain('DOCUMENTS')
     expect(fs.Filesystem.writeFile).toHaveBeenCalledWith(expect.objectContaining({ encoding: 'utf8', recursive: true }))
     // the match JSON crosses the bridge once: latest.json is a native copy
     expect(fs.Filesystem.writeFile).toHaveBeenCalledTimes(1)
     expect(fs.Filesystem.copy).toHaveBeenCalledWith({
       from: `${BACKUP_SUBDIR}/game5-s/20261006T100000.000Z-00001.json`,
       to: `${BACKUP_SUBDIR}/game5-s/latest.json`,
-      directory: 'DOCUMENTS',
-      toDirectory: 'DOCUMENTS'
+      directory: 'DATA',
+      toDirectory: 'DATA'
     })
-    expect(await store.info()).toEqual({ folder: `/storage/emulated/0/DOCUMENTS/${BACKUP_SUBDIR}` })
+    expect(await store.info()).toEqual({ folder: `/storage/emulated/0/DATA/${BACKUP_SUBDIR}` })
     expect(store.canOpenFolder).toBe(false)
   })
 
-  it('keeps the event file when latest.json cannot be overwritten (left by a previous install)', async () => {
+  it('keeps the event file when latest.json cannot be replaced', async () => {
     const fs = fakeFilesystem()
     const warn = vi.fn()
     const store = createCapacitorStore(fs, { log: { warn } })
     fs.Filesystem.copy.mockRejectedValue(new Error('EACCES'))
     const result = await store.write('game5-s', 'a.json', '{}')
     expect(result.warning).toMatch(/latest\.json.*EACCES/)
-    expect(fs.files.has(`DOCUMENTS:${BACKUP_SUBDIR}/game5-s/a.json`)).toBe(true)
+    expect(fs.files.has(`DATA:${BACKUP_SUBDIR}/game5-s/a.json`)).toBe(true)
   })
 
   it('writes latest.json itself when the plugin has no copy', async () => {
@@ -135,11 +139,11 @@ describe('createCapacitorStore', () => {
     delete fs.Filesystem.copy
     const store = createCapacitorStore(fs, { log: { warn: () => {} } })
     await store.write('game5-s', 'a.json', '{"v":2}')
-    expect(fs.files.get(`DOCUMENTS:${BACKUP_SUBDIR}/game5-s/latest.json`)).toBe('{"v":2}')
+    expect(fs.files.get(`DATA:${BACKUP_SUBDIR}/game5-s/latest.json`)).toBe('{"v":2}')
   })
 
-  it('falls back to the app folder when Documents is refused', async () => {
-    const fs = fakeFilesystem({ refuse: ['DOCUMENTS'] })
+  it('falls back to the app\'s external folder when its internal one is refused', async () => {
+    const fs = fakeFilesystem({ refuse: ['DATA'] })
     const store = createCapacitorStore(fs, { log: { warn: () => {} } })
     await store.write('game5-s', 'a.json', '{}', { latest: false })
     expect(fs.files.has(`EXTERNAL:${BACKUP_SUBDIR}/game5-s/a.json`)).toBe(true)
@@ -161,6 +165,6 @@ describe('createCapacitorStore', () => {
     fs.Filesystem.deleteFile.mockRejectedValueOnce(new Error('EACCES'))
     await store.remove('game1-a', ['x.json', 'latest.json'])
     expect(warn).toHaveBeenCalled()
-    expect(fs.files.has(`DOCUMENTS:${BACKUP_SUBDIR}/game1-a/latest.json`)).toBe(false)
+    expect(fs.files.has(`DATA:${BACKUP_SUBDIR}/game1-a/latest.json`)).toBe(false)
   })
 })

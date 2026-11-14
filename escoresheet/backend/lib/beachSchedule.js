@@ -120,13 +120,45 @@ export function scheduleMatches ({ matches, draws, courts, days, dayStart = '09:
     }
   }
 
-  const busy = new Map(courtList.map((c) => [c.id, []])) // court -> [[from, to]] sorted
+  // court -> its busy time: [[from, to]], sorted, disjoint (touching and
+  // overlapping slots merged), so a free gap is found by a binary search and
+  // a walk over the gaps only, never the whole list per step: a planner that
+  // re-sorted and scanned every slot took seconds for a big tournament, on
+  // the request path of the shared backend
+  const busy = new Map(courtList.map((c) => [c.id, []]))
+  const perDay = new Map(courtList.map((c) => [c.id, new Map()])) // court -> day -> matches
+  /** The first index of `list` whose interval ends after `t` (or at `t`, with `orAt`). */
+  const firstEndAfter = (list, t, orAt = false) => {
+    let lo = 0
+    let hi = list.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (list[mid][1] > t || (orAt && list[mid][1] === t)) hi = mid
+      else lo = mid + 1
+    }
+    return lo
+  }
   const occupy = (courtId, from, to) => {
     const list = busy.get(courtId)
     if (!list) return
-    list.push([from, to])
-    list.sort((a, b) => a[0] - b[0])
+    const d = Math.floor(from / DAY_MIN)
+    const counts = perDay.get(courtId)
+    counts.set(d, (counts.get(d) || 0) + 1)
+    // merge with every interval it overlaps or touches
+    const i = firstEndAfter(list, from, true)
+    let start = from
+    let stop = to
+    let j = i
+    while (j < list.length && list[j][0] <= stop) {
+      start = Math.min(start, list[j][0])
+      stop = Math.max(stop, list[j][1])
+      j++
+    }
+    list.splice(i, j - i, [start, stop])
   }
+  // court -> duration -> the earliest start from which nothing fits any more:
+  // busy time only grows, so an answer of "none" stays true for later starts
+  const full = new Map(courtList.map((c) => [c.id, new Map()]))
   const end = new Map() // code (per draw) -> end minute
   const key = (drawId, code) => `${drawId}|${code}`
 
@@ -149,18 +181,28 @@ export function scheduleMatches ({ matches, draws, courts, days, dayStart = '09:
   /** The earliest start >= t on `courtId` where `dur` minutes fit, inside the day hours; null when none. */
   const earliestOn = (courtId, t, dur) => {
     const list = busy.get(courtId)
+    const none = full.get(courtId)
+    if (t >= (none.get(dur) ?? Infinity)) return null
     let at = t
-    for (let guard = 0; guard < 10000; guard++) {
+    let i = firstEndAfter(list, at)
+    // each step returns, moves to the next day or passes one busy interval
+    for (;;) {
       const day = Math.floor(at / DAY_MIN)
-      if (day >= days.length) return null
+      if (day >= days.length) {
+        none.set(dur, Math.min(t, none.get(dur) ?? Infinity))
+        return null
+      }
       const minute = at - day * DAY_MIN
       if (minute < startMin) { at = day * DAY_MIN + startMin; continue }
       if (minute + dur > endMin) { at = (day + 1) * DAY_MIN + startMin; continue }
-      const clash = list.find(([f, e]) => f < at + dur && e > at)
-      if (!clash) return at
-      at = clash[1]
+      while (i < list.length && list[i][1] <= at) i++
+      if (i < list.length && list[i][0] < at + dur) {
+        at = list[i][1]
+        i++
+        continue
+      }
+      return at
     }
-    return null
   }
 
   for (const m of todo) {
@@ -188,12 +230,7 @@ export function scheduleMatches ({ matches, draws, courts, days, dayStart = '09:
 
   const warnings = []
   for (const c of courtList) {
-    const perDay = new Map()
-    for (const [from] of busy.get(c.id)) {
-      const d = Math.floor(from / DAY_MIN)
-      perDay.set(d, (perDay.get(d) || 0) + 1)
-    }
-    for (const [d, count] of perDay) {
+    for (const [d, count] of [...perDay.get(c.id)].sort((a, b) => a[0] - b[0])) {
       if (count > COURT_DAY_LIMIT && days[d]) warnings.push({ code: 'court_day_limit', court: c.number, day: days[d], matches: count })
     }
   }

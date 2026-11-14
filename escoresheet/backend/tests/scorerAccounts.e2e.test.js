@@ -15,6 +15,8 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import pg from 'pg'
 import { SKIP, bootServer, api, provisionDatabase, sleep, openSocket, subscribe } from './helpers/e2eServer.js'
 import { grantRoles } from './helpers/pgTestDb.js'
+import { seasonOf } from '../lib/officialGame.js'
+import { seasonLabel } from '../lib/teams.js'
 
 const GAME_PIN = '583920'
 
@@ -104,7 +106,8 @@ describe('scorer accounts end to end', { skip: SKIP }, () => {
     assert.equal((await dbCall(p, 'matches', 'update', { data: { status: 'final' }, filters: [eq('id', test.json.data.id)] })).status, 200, 'a test match may be finished')
     expectCode(await dbCall(p, 'matches', 'update', { data: { test: false }, filters: [eq('id', test.json.data.id)] }), 403, 'OV_SCORER_REQUIRED')
     expectCode(await upload(p, 'scoresheets', '2026-10-05/game1_final.json', '{}'), 403, 'OV_SCORER_REQUIRED')
-    assert.equal((await upload(p, 'backup', 'backups/backup_g1/b1.json', '{"x":1}')).status, 200)
+    // cloud backups need a role: a self-registered account cannot fill the volume
+    expectCode(await upload(p, 'backup', 'backups/backup_g1/b1.json', '{"x":1}'), 403, 'OV_STORAGE_FORBIDDEN')
     expectCode(await call(p, 'POST', '/api/match/official-check', { game_n: 5 }), 403, 'OV_SCORER_REQUIRED')
     expectCode(await call(p, 'GET', '/api/saved-teams'), 403, 'OV_FORBIDDEN')
 
@@ -116,6 +119,7 @@ describe('scorer accounts end to end', { skip: SKIP }, () => {
     assert.deepEqual(red.json.data, { roles: ['scorer'], role_granted: 'scorer', already_had: false })
     const ok = await dbCall(p, 'matches', 'insert', { data: official })
     assert.equal(ok.status, 200, ok.text)
+    assert.equal((await upload(p, 'backup', 'backups/backup_g1/b1.json', '{"x":1}')).status, 200, 'a scorer stores its backups')
     // single use: another pending account cannot use it
     const q = await account('pending2')
     expectCode(await call(q, 'POST', '/api/account/redeem-invite', { code: inv.json.data.code }), 409, 'OV_INVITE_USED_UP')
@@ -197,7 +201,11 @@ describe('scorer accounts end to end', { skip: SKIP }, () => {
       assert.equal(chk.json.data.taken, true)
       assert.equal(chk.json.data.claim.mine, false)
       assert.equal((await call(users.anna, 'POST', '/api/match/official-check', { game_n: n, scheduled_at: '2026-10-11T10:00:00Z', sport_type: 'indoor', external_id: 'other-device' })).json.data.claim.mine, true)
-      assert.deepEqual((await call(users.ben, 'POST', '/api/match/official-check', { game_n: n, scheduled_at: '2027-10-11T10:00:00Z', sport_type: 'indoor' })).json.data, { taken: false, club: { ok: true } }) // db/018: the club rule is off
+      // db/034: the season is the server's, so a kick-off in another season does not free the game
+      const later = (await call(users.ben, 'POST', '/api/match/official-check', { game_n: n, scheduled_at: '2027-10-11T10:00:00Z', sport_type: 'indoor' })).json.data
+      assert.equal(later.taken, true)
+      assert.deepEqual(later.club, { ok: true }) // db/018: the club rule is off
+      expectCode(await dbCall(users.ben, 'matches', 'insert', { data: { ...second, external_id: `match_${Date.now()}_bs`, scheduled_at: '2025-10-10T16:00:00Z' } }), 409, 'OV_GAME_TAKEN')
       // a test match for the same game is fine
       assert.equal((await dbCall(users.ben, 'matches', 'insert', { data: { ...second, external_id: `match_${Date.now()}_bt`, test: true } })).status, 200)
     })
@@ -336,7 +344,8 @@ describe('scorer accounts end to end', { skip: SKIP }, () => {
     assert.equal((await call(null, 'GET', '/api/saved-teams')).status, 401)
     expectCode(await call(pending, 'GET', '/api/saved-teams'), 403, 'OV_FORBIDDEN')
     expectCode(await call(users.anna, 'POST', '/api/saved-teams/competitions', { name: 'Liga', season: '2026/27' }), 403, 'OV_FORBIDDEN')
-    const c = await call(users.cm, 'POST', '/api/saved-teams/competitions', { name: '2. Liga', season: '2026/27', gender: 'women', vm_leagues: ['2L'] })
+    // the current season: a scorer reads no other (owner decision 1)
+    const c = await call(users.cm, 'POST', '/api/saved-teams/competitions', { name: '2. Liga', season: seasonLabel(seasonOf(new Date())), gender: 'women', vm_leagues: ['2L'] })
     assert.equal(c.status, 201, c.text)
     const t = await call(users.cm, 'POST', '/api/saved-teams/teams', { competition_id: c.json.data.competition.id, name: 'VBC Test', color: '#e2001a' })
     assert.equal(t.status, 201, t.text)
@@ -348,6 +357,14 @@ describe('scorer accounts end to end', { skip: SKIP }, () => {
     expectCode(await call(users.anna, 'DELETE', `/api/saved-teams/teams/${teamId}`), 403, 'OV_FORBIDDEN')
     assert.equal((await call(users.admin, 'PATCH', `/api/saved-teams/teams/${teamId}`, { short_name: 'VBC' })).status, 200)
 
+    // owner decision 1: a scorer reads the saved teams of its own matches this season only
+    const none = await call(users.anna, 'GET', '/api/saved-teams')
+    assert.equal(none.status, 200, none.text)
+    assert.equal(none.headers.get('cache-control'), 'no-store')
+    assert.equal(none.json.data.teams.find((x) => x.id === teamId), undefined)
+    const club = await call(users.admin, 'POST', '/api/admin/clubs', { name: 'VBC Test', teams: ['VBC Test'] })
+    assert.equal(club.status, 201, club.text)
+    assert.equal((await call(users.admin, 'PUT', `/api/admin/accounts/${users.anna.id}/clubs`, { club_ids: [club.json.data.club.id] })).status, 200)
     const bundle = await call(users.anna, 'GET', '/api/saved-teams')
     assert.equal(bundle.status, 200, bundle.text)
     assert.equal(bundle.headers.get('cache-control'), 'no-store')

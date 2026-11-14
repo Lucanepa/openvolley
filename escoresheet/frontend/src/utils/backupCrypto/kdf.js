@@ -16,18 +16,24 @@
  * A 6-digit PIN is a speed bump, not a lock: its 10^6 values cost about
  * 76 ms each, so a copied file falls to one 16-core desktop in about 80
  * minutes. It keeps a lost tablet's files from being read at a glance; the
- * recovery slot of a later phase (a server key) is the strong one.
+ * strong key is the recovery slot (recovery.js: a public key whose private
+ * half is kept offline), which no guessing opens.
  */
 
-import { argon2idOptions } from './argon2'
+import { argon2idOptions } from './argon2.js'
 
 export const KDF_PARAMS = Object.freeze({ alg: 'argon2id', memoryKiB: 32768, iterations: 3, parallelism: 1 })
 export const SALT_BYTES = 16
 
 // What a file may ask for: a damaged or crafted file must not make the app
-// allocate gigabytes or spin for minutes. 128 MiB at most (the app's own
-// files ask for 32 MiB): more can fail in a low-memory tablet's WebView.
-const LIMITS = { memoryKiB: [8192, 131072], iterations: [1, 16], parallelism: [1, 4] }
+// allocate a lot or spin for long. Near the app's own parameters (32 MiB, 3
+// passes): at most 64 MiB, 6 passes and twice the app's cost (memory x
+// passes), so a slot that asks for more is never derived. The slot's
+// parameters are checked by its key wrap only after the derivation
+// (envelope.js), so this cap is what bounds a crafted file.
+const LIMITS = { memoryKiB: [8192, 65536], iterations: [1, 6], parallelism: [1, 4] }
+const cost = (p) => p.memoryKiB * p.iterations
+export const MAX_KDF_COST = 2 * cost(KDF_PARAMS)
 
 /** The KDF parameters of a slot, checked; throws for anything else. */
 export function checkKdfParams(params) {
@@ -38,6 +44,7 @@ export function checkKdfParams(params) {
     if (!Number.isInteger(v) || v < min || v > max) throw new Error(`Key derivation ${name} out of range: ${v}`)
     out[name] = v
   }
+  if (cost(out) > MAX_KDF_COST) throw new Error(`Key derivation cost out of range: ${out.memoryKiB} KiB x ${out.iterations}`)
   return out
 }
 
@@ -82,8 +89,6 @@ function retireWorker(w, why) {
     job.retryHere()
   }
 }
-
-const cost = (p) => p.memoryKiB * p.iterations
 
 function kdfWorker() {
   if (worker !== undefined) return worker

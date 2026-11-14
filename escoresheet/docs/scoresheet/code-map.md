@@ -56,9 +56,8 @@ browser popup; desktop: `window.open`, turned into an app window labelled
   `/scoresheet_pdf/index_scoresheet.tsx`. Its `<title>` is `Openvolley Scoresheet`
   (misspelt; on desktop the window title follows the document title,
   `popups.rs:181-183`).
-- `scoresheet_pdf/index_scoresheet.html` is NOT a build input (dev leftover with an
-  `aistudiocdn.com` import map and `/index.css`); only `src/__tests__/brandAssets.test.js:27`
-  reads it.
+- The old dev page `scoresheet_pdf/index_scoresheet.html` (not a build input; it loaded
+  React through an `aistudiocdn.com` import map) was removed in 2026-11.
 - Styles: `scoresheet_pdf/scoresheet.css` (full Tailwind with preflight, compiled).
 
 ### 1.3 Data source priority (`index_scoresheet.tsx:878-971`)
@@ -266,10 +265,11 @@ name) and RESULT `3:1` only once a team has 3 (2 in best-of-3) sets.
 
 Home always on the left, away on the right; header = short name + A/B circle.
 Columns `DoB (44px) | No (20px) | Lic. (40px) | Name`: 14 player rows
-(captain number circled, `LFP` tag), LIBERO (first 2 liberos by number),
+(captain number circled, `LFP` tag), LIBERO (the registered liberos, also
+after a re-designation, then the re-designated ones marked `R`: `rosterLiberos`),
 BENCH OFFICIALS `C AC1 AC2 P M` (from `bench_home/away`), Captain and Coach
-signatures (pre-game; clicking an empty one opens `SignatureModal`, which only
-lives in this page's state and is lost on reload). DoB printed raw. The course
+signatures (pre-game, from the match record only; the boxes are read-only, a
+signature drawn on the sheet was never saved). DoB printed raw. The course
 (p. 9) shows the official roster as `DoB | No | Name` ("It says Licence n. but
 actually it is DoB"), names as "Last name, First initial." (`Meier, S.`); ours
 prints the full name in upper case and adds a licence column.

@@ -61,7 +61,9 @@ export function createPinHasher (secret) {
   function matches (kind, pin, stored) {
     const p = pinText(pin)
     const s = pinText(stored)
-    if (!p || !s) return false
+    // A typed value shaped like a stored hash is never a PIN: otherwise the
+    // stored value itself (from a dump or backup) would pass as the PIN.
+    if (!p || !s || isHashedPin(p)) return false
     if (isHashedPin(s)) return key ? safeEqual(hash(kind, p), s) : false
     return safeEqual(p, s)
   }
@@ -72,7 +74,7 @@ export function createPinHasher (secret) {
    * @returns {(stored: any) => boolean}
    */
   function matcher (kind, pin) {
-    const p = pinText(pin)
+    const p = isHashedPin(pinText(pin)) ? '' : pinText(pin)
     const hashed = p && key ? hash(kind, p) : null
     return (stored) => {
       const s = pinText(stored)
@@ -85,7 +87,7 @@ export function createPinHasher (secret) {
   /** Every stored form `pin` may have (for an exact-match SQL filter). */
   function candidates (kind, pin) {
     const p = pinText(pin)
-    if (!p) return []
+    if (!p || isHashedPin(p)) return []
     return key ? [p, hash(kind, p)] : [p]
   }
 

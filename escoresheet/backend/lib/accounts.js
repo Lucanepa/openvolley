@@ -38,6 +38,7 @@ import { createHash, randomInt } from 'node:crypto'
 import { ADMIN_ROLES, API_GRANTABLE_ROLES, INDOOR_ROLES, SPORTS, SPORT_ROLES, accessForSport, accessFromRoles, normalizeRoles, roleFor, sportOfRole } from './access.js'
 import { findClaim, officialRowsOf, publicClaim, seasonOf, sportOf } from './officialGame.js'
 import { EMAIL_CONFIRMATION_MARK } from './auth.js'
+import { connectClient } from './pgClient.js'
 
 export const INVITE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
 export const INVITE_ROLES = Object.freeze(['scorer', 'referee', 'competition_manager'])
@@ -49,12 +50,19 @@ export const AUDIT_ACTIONS = Object.freeze([
   'account.password_reset_requested', 'account.password_reset', 'account.email_confirmed',
   // written by lib/auth.js (passkeys, db/022)
   'account.passkey_added', 'account.passkey_removed',
+  // written by lib/auth.js (the account's own security)
+  'account.password_changed', 'account.signed_out_everywhere',
   'invite.create', 'invite.revoke', 'invite.redeem',
-  'match.claim_game', 'match.claim_pin', 'match.game_taken',
+  'match.claim_game', 'match.claim_pin', 'match.restore_pin', 'match.game_taken',
   'match.close',
-  'match.reopen', 'match.editor_add', 'match.release_game',
-  // lib/approvals.js (db/011); match.approval_void is written by the trigger
-  'approval_pin.set', 'approval_pin.remove', 'approval_pin.locked',
+  'match.reopen', 'match.editor_add', 'match.editor_remove', 'match.release_game',
+  // lib/matchRestore.js restoreMatch: a backup or hand-over replaced the match's rows (counts before and after)
+  'match.restore',
+  // db/018: a home-club scorer took over a game an account outside the club held (takeOverHeldGame)
+  'match.game_taken_over',
+  // lib/approvals.js (db/011); match.approval_void is written by the trigger;
+  // approval_pin.failed: one wrong approval PIN (the caller's count per official)
+  'approval_pin.set', 'approval_pin.remove', 'approval_pin.locked', 'approval_pin.failed',
   'match.approve', 'match.approval_revoke', 'match.approval_void',
   // db/012: an existing account joined another app (POST /api/account/join)
   'account.join',
@@ -65,6 +73,9 @@ export const AUDIT_ACTIONS = Object.freeze([
   'tournament.import',
   // db/016: activity log rows deleted on request (lib/activityLog.js)
   'activity.delete',
+  // an admin's read of a match's or an account's activity, and every export
+  // (lib/activityLog.js; the filters and the row count, never a row)
+  'activity.read', 'activity.export',
   // a stored scoresheet PDF opened past the uploader-only rule (lib/scoresheets.js)
   'scoresheet.read',
   // db/018: clubs and the clubs an account scores for (lib/clubs.js)
@@ -89,9 +100,29 @@ export const AUDIT_ACTIONS = Object.freeze([
   // db/026: people typed in by hand added to a club's lists (lib/licences.js
   // addPeople; the club, the team, the counts per list, never a name)
   'club.licences.manual',
+  // db/037: one row added by hand deleted by a club manager (lib/licences.js
+  // deleteRow; the club and the list, never a name), and a competition or a
+  // saved team deleted, or a saved team's roster replaced (lib/savedTeams.js;
+  // the ids, the name and the counts, never a person)
+  'club.licences.manual_delete',
+  // db/037: dates of birth a scorer looked up for a roster (lib/licences.js
+  // scorerDob; the club and the count, never a name; the day's cap reads it)
+  'club.licences.dob',
+  // db/037: the official games whose saved teams a scorer without a club was
+  // given (lib/savedTeams.js ownTeams; the game numbers, never a person)
+  'saved_teams.scope',
+  'saved_teams.competition_delete', 'saved_teams.team_delete', 'saved_teams.roster',
   // db/025: a part of a sign-up request approved or rejected (lib/accountRequests.js;
   // the kind, the club and team ids, who decided: admin, club or team)
-  'account.request_approve', 'account.request_reject'
+  'account.request_approve', 'account.request_reject',
+  // db/036: a team manager said yes to a team manager part: proposed, for the
+  // club's managers to confirm (the kind, the club and team ids)
+  'account.request_propose',
+  // db/042: the daily retention sweep removed expired records (lib/retention.js;
+  // the cutoff and the counts, never a match or a name), and an operator's
+  // redaction of one person (scripts/redact-person.mjs; the mode, a digest of
+  // the person and the counts per table, never a name)
+  'retention.sweep', 'person.redact'
 ])
 export const APPS = SPORTS
 // How a membership came about (auth.app_memberships.joined_via)
@@ -105,8 +136,9 @@ const GAME_TAKEN_DEDUP = '24 hours'
 
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 const withoutUndefined = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined))
-// The columns of the official-game key a matches update may change (created_at is server-only)
-const OFFICIAL_KEY_COLUMNS = ['game_n', 'scheduled_at', 'sport_type', 'test']
+// The columns of the official-game key a matches update may change (its season
+// is the server's, db/034: scheduled_at no longer moves a match to another key)
+const OFFICIAL_KEY_COLUMNS = ['game_n', 'sport_type', 'test']
 export const isUuid = (v) => typeof v === 'string' && UUID_RE.test(v)
 
 export function ok (data, status = 200) {
@@ -124,6 +156,20 @@ export function unavailable () {
 }
 
 /** Uppercase, no spaces/dashes, O->0 and I/L->1; null unless it is a well-formed code. */
+/**
+ * SQL: is the auth.users row `u` an account created with a confirmation link
+ * that was never confirmed? ($m1/$m2: EMAIL_CONFIRMATION_MARK key and value.)
+ * to_jsonb, so a users table without these columns reads as confirmed.
+ */
+export const unconfirmedSql = (u, m1, m2) =>
+  `((to_jsonb(${u}) ->> 'email_confirmed_at') IS NULL AND (to_jsonb(${u}) -> 'raw_app_meta_data' ->> ${m1}) = ${m2})`
+export const CONFIRMATION_PARAMS = [EMAIL_CONFIRMATION_MARK.key, EMAIL_CONFIRMATION_MARK.value]
+/** An admin grant (editor, club link) to an account whose address nobody confirmed yet. */
+export const ACCOUNT_UNCONFIRMED = () => fail(409, 'OV_EMAIL_UNCONFIRMED',
+  'This account has not confirmed its email address yet: it can be given access once its owner opened the confirmation link')
+/** sha256 of an address, for the audit log and support (never the address itself). */
+export const emailDigest = (email) => createHash('sha256').update('ov-account-email:' + String(email || '').trim().toLowerCase(), 'utf8').digest('hex')
+
 export function normalizeInviteCode (raw) {
   if (typeof raw !== 'string') return null
   const s = raw.toUpperCase().replace(/[\s-]+/g, '').replace(/O/g, '0').replace(/[IL]/g, '1')
@@ -218,7 +264,7 @@ function trimmedText (raw, { min = 0, max }) {
  *   account's own delete-account runs it too). Without it both answer 404
  *   and the accounts list says can_delete: false.
  */
-export function createAccounts ({ pool, db, restore, access, approvalsForMatches = null, clubs: clubsOf = () => null, teams: teamsOf = () => null, requests: requestsOf = () => null, eraseAccount = null, logger = console } = {}) {
+export function createAccounts ({ pool, db, restore, access, approvalsForMatches = null, clubs: clubsOf = () => null, teams: teamsOf = () => null, requests: requestsOf = () => null, eraseAccount = null, mailer = null, logger = console } = {}) {
   const log = logger
   /** lib/clubs.js (db/018), wired after this module (it audits through it); null before. */
   const clubs = () => (typeof clubsOf === 'function' ? clubsOf() : null)
@@ -230,7 +276,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
   const approvalsOf = async (ids) => (typeof approvalsForMatches === 'function' ? approvalsForMatches(ids) : new Map())
 
   async function withTx (fn) {
-    const client = await pool.connect()
+    const client = await connectClient(pool, log)
     try {
       await client.query('BEGIN')
       const out = await fn(client)
@@ -402,11 +448,28 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
   }
 
   // ------------------------------------------------------------------ invites
+  /**
+   * SQL: invite code `i` stands only while the account that made it may still
+   * make it (be-accounts-6): an admin, or for a club's scorer / referee code
+   * or team link a manager of that club. A code of a deleted account
+   * (created_by NULL), of an admin no more, or of a club manager taken off the
+   * club is dead, and listed as revoked. So is a code of an account an admin
+   * deactivated, while it stays deactivated.
+   */
+  const creatorMaySql = (i) => `(${i}.created_by IS NOT NULL
+    AND EXISTS (SELECT 1 FROM auth.users cu WHERE cu.id = ${i}.created_by
+                   AND (to_jsonb(cu) ->> 'deleted_at') IS NULL
+                   AND ((to_jsonb(cu) ->> 'banned_until') IS NULL OR (to_jsonb(cu) ->> 'banned_until')::timestamptz <= now()))
+    AND (
+      EXISTS (SELECT 1 FROM public.profiles cp WHERE cp.user_id = ${i}.created_by
+                 AND ${hasRoleSql('cp.roles', `ARRAY[${ADMIN_ROLES.map((r) => `'${r}'`).join(', ')}]`)})
+      OR (${i}.club_id IS NOT NULL AND ${i}.role IN ('scorer', 'referee', 'team_manager')
+          AND EXISTS (SELECT 1 FROM public.club_managers cm WHERE cm.club_id = ${i}.club_id AND cm.user_id = ${i}.created_by))))`
   const INVITE_SELECT = `
     SELECT i.id, i.code_hint, i.label, i.club, to_jsonb(i) ->> 'club_id' AS club_id, to_jsonb(i) ->> 'team_id' AS team_id,
            i.role, i.sport, i.max_uses, i.uses, i.expires_at, i.revoked_at, i.created_at,
            ${nameSql('p')} AS created_by_name,
-           CASE WHEN i.revoked_at IS NOT NULL THEN 'revoked'
+           CASE WHEN i.revoked_at IS NOT NULL OR NOT ${creatorMaySql('i')} THEN 'revoked'
                 WHEN i.expires_at IS NOT NULL AND i.expires_at <= now() THEN 'expired'
                 WHEN i.max_uses IS NOT NULL AND i.uses >= i.max_uses THEN 'used_up'
                 ELSE 'active' END AS state
@@ -445,65 +508,95 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     }
   }
 
-  async function redeemInvite ({ userId, code } = {}) {
+  const INVITE_INVALID = () => fail(404, 'OV_INVITE_INVALID', 'This invite code is not valid')
+  // be-accounts-4, be-clubs-teams-5: an account taken off the club or the team
+  // does not come back with the code or team link it used
+  const INVITE_REMOVED = () => fail(409, 'OV_INVITE_REMOVED',
+    'You were taken off this club or team. Ask its manager for a new code.')
+
+  /**
+   * POST /api/account/redeem-invite { code }. `preview` (POST
+   * /api/account/invite-preview, fe-auth-client-7): the same checks and the
+   * same answer with `preview: true`, and nothing kept (the transaction rolls
+   * back): the manager asks "Manage <team> with <account>?" before it redeems.
+   */
+  async function redeemInvite ({ userId, code, preview = false } = {}) {
     if (!isUuid(userId)) return fail(401, 'invalid_token', 'Not signed in')
     if (typeof code !== 'string' || code.length > 64) return invalid('code: required')
     const normalized = normalizeInviteCode(code)
-    if (!normalized) return fail(404, 'OV_INVITE_INVALID', 'This invite code is not valid')
-    return guarded('redeem-invite', () => withTx(async (client) => {
+    if (!normalized) return INVITE_INVALID()
+    const res = guarded(preview ? 'invite-preview' : 'redeem-invite', () => withTx(async (client) => {
       // Before the code is looked at: an unconfirmed account learns nothing
       // about the code and does not use it up.
       if ((await confirmationOf(client, userId))?.unconfirmed) throw abort(EMAIL_UNCONFIRMED())
       const { rows: [inv] } = await client.query(
-        `SELECT id, label, role, sport, max_uses, uses, revoked_at, to_jsonb(invite_codes) ->> 'club_id' AS club_id,
-                to_jsonb(invite_codes) ->> 'team_id' AS team_id,
-                (expires_at IS NOT NULL AND expires_at <= now()) AS expired
-           FROM public.invite_codes WHERE code_hash = $1 FOR UPDATE`, [hashInviteCode(normalized)])
-      if (!inv || inv.revoked_at) throw abort(fail(404, 'OV_INVITE_INVALID', 'This invite code is not valid'))
+        `SELECT i.id, i.label, i.role, i.sport, i.max_uses, i.uses, i.revoked_at, i.created_at, to_jsonb(i) ->> 'club_id' AS club_id,
+                to_jsonb(i) ->> 'team_id' AS team_id, to_jsonb(i) ->> 'invited_email' AS invited_email,
+                (i.expires_at IS NOT NULL AND i.expires_at <= now()) AS expired, ${creatorMaySql('i')} AS creator_may
+           FROM public.invite_codes i WHERE i.code_hash = $1 FOR UPDATE OF i`, [hashInviteCode(normalized)])
+      // be-accounts-6: a code of an account that may no longer make it is dead
+      if (!inv || inv.revoked_at || !inv.creator_may) throw abort(INVITE_INVALID())
       if (inv.expired) throw abort(fail(410, 'OV_INVITE_EXPIRED', 'This invite code has expired'))
-      // db/023: a team link makes the account a manager of that team, and
-      // nothing else (no role, no club membership: it scores nothing)
-      if (inv.role === 'team_manager') return redeemTeamLink(client, userId, inv)
-      // db/029: a club manager link makes the account a manager of that club, and nothing else
-      if (inv.role === 'club_manager') return redeemClubLink(client, userId, inv)
-      // The role in the code's sport: a beach code grants beach:<role> (db/012)
-      const sport = inv.sport === 'beach' ? 'beach' : 'indoor'
-      const role = roleFor(sport, inv.role)
-      if (!role) throw abort(fail(404, 'OV_INVITE_INVALID', 'This invite code is not valid'))
-      const beachOnly = sport === 'beach' ? { sport } : {}
-      const { rows: [prof] } = await client.query('SELECT roles FROM public.profiles WHERE user_id = $1 LIMIT 1 FOR UPDATE', [userId])
-      const before = normalizeRoles(prof?.roles)
-      const { rows: [again] } = await client.query('SELECT 1 FROM public.invite_redemptions WHERE invite_id = $1 AND user_id = $2', [inv.id, userId])
-      // Idempotent: a code redeemed before, or a role the account already has,
-      // is not counted (a single-use code is not wasted).
-      // db/018: an indoor code's club is joined too (also on a repeat: a second
-      // club's code adds that club)
-      const club = sport === 'indoor' && isUuid(inv.club_id) ? inv.club_id : null
-      const joinClub = async () => {
-        if (!club) return false
-        const { rowCount } = await client.query(
-          `INSERT INTO public.account_clubs (user_id, club_id, granted_by)
-           SELECT $1, $2, NULL WHERE EXISTS (SELECT 1 FROM public.clubs WHERE id = $2)
-           ON CONFLICT (user_id, club_id) DO NOTHING`, [userId, club])
-        return rowCount > 0
-      }
-      if (again || before.includes(role)) {
-        await addMembership(client, userId, sport, 'invite')
-        if (await joinClub()) {
-          await audit(client, { actorId: userId, action: 'account.clubs', targetUserId: userId, details: { invite_id: inv.id, joined: club } })
-        }
-        return ok({ roles: before, role_granted: role, already_had: true, ...beachOnly })
-      }
-      if (inv.max_uses != null && inv.uses >= inv.max_uses) throw abort(fail(409, 'OV_INVITE_USED_UP', 'This invite code has been used up'))
-      await client.query('INSERT INTO public.invite_redemptions (invite_id, user_id) VALUES ($1, $2)', [inv.id, userId])
-      await client.query('UPDATE public.invite_codes SET uses = uses + 1 WHERE id = $1', [inv.id])
-      const after = [...before, role]
-      await writeRoles(client, userId, after, !!prof)
+      const out = await redeemFound(client, userId, inv)
+      // a preview keeps nothing: the answer, then a rollback
+      if (preview) throw abort(ok({ ...out.body.data, preview: true }))
+      return out
+    }))
+    return preview ? res : res.finally(() => access?.invalidate(userId))
+  }
+
+  /** The rest of redeemInvite: the code row `inv` locked and valid. */
+  async function redeemFound (client, userId, inv) {
+    // db/023: a team link makes the account a manager of that team, and
+    // nothing else (no role, no club membership: it scores nothing; db/036)
+    if (inv.role === 'team_manager') return redeemTeamLink(client, userId, inv)
+    // db/029: a club manager link makes the account a manager of that club, and nothing else
+    if (inv.role === 'club_manager') return redeemClubLink(client, userId, inv)
+    // The role in the code's sport: a beach code grants beach:<role> (db/012)
+    const sport = inv.sport === 'beach' ? 'beach' : 'indoor'
+    const role = roleFor(sport, inv.role)
+    if (!role) throw abort(INVITE_INVALID())
+    const beachOnly = sport === 'beach' ? { sport } : {}
+    const { rows: [prof] } = await client.query('SELECT roles FROM public.profiles WHERE user_id = $1 LIMIT 1 FOR UPDATE', [userId])
+    const before = normalizeRoles(prof?.roles)
+    const hadRole = before.includes(role)
+    const { rows: [again] } = await client.query('SELECT 1 FROM public.invite_redemptions WHERE invite_id = $1 AND user_id = $2', [inv.id, userId])
+    // db/018: an indoor code's club is joined too (a second club's code adds that club)
+    const club = sport === 'indoor' && isUuid(inv.club_id) ? inv.club_id : null
+    const { rows: [member] } = club
+      ? await client.query('SELECT 1 FROM public.account_clubs WHERE user_id = $1 AND club_id = $2', [userId, club])
+      : { rows: [{}] }
+    // A code this account used before: nothing new. Its club only while the
+    // account is still a member: one taken off the club needs a new code.
+    if (again && !member) throw abort(INVITE_REMOVED())
+    // Idempotent: a code redeemed before, or nothing to give (the role held,
+    // the club joined) is not counted (a single-use code is not wasted)
+    if (again || (hadRole && member)) {
       await addMembership(client, userId, sport, 'invite')
-      const joined = await joinClub()
+      return ok({ roles: before, role_granted: role, already_had: true, ...beachOnly })
+    }
+    // A use: the role, or the club for an account that holds the role
+    // already (be-accounts-4: counted and recorded like any other use)
+    if (inv.max_uses != null && inv.uses >= inv.max_uses) throw abort(fail(409, 'OV_INVITE_USED_UP', 'This invite code has been used up'))
+    await client.query('INSERT INTO public.invite_redemptions (invite_id, user_id) VALUES ($1, $2)', [inv.id, userId])
+    await client.query('UPDATE public.invite_codes SET uses = uses + 1 WHERE id = $1', [inv.id])
+    const after = hadRole ? before : [...before, role]
+    if (!hadRole) await writeRoles(client, userId, after, !!prof)
+    await addMembership(client, userId, sport, 'invite')
+    let joined = false
+    if (club) {
+      const { rowCount } = await client.query(
+        `INSERT INTO public.account_clubs (user_id, club_id, granted_by)
+         SELECT $1, $2, NULL WHERE EXISTS (SELECT 1 FROM public.clubs WHERE id = $2)
+         ON CONFLICT (user_id, club_id) DO NOTHING`, [userId, club])
+      joined = rowCount > 0
+    }
+    if (hadRole) {
+      await audit(client, { actorId: userId, action: 'account.clubs', targetUserId: userId, details: { invite_id: inv.id, joined: club } })
+    } else {
       await audit(client, { actorId: userId, action: 'invite.redeem', targetUserId: userId, details: { invite_id: inv.id, label: inv.label, role, ...(joined ? { club_id: club } : {}), ...beachOnly }, app: sport })
-      return ok({ roles: after, role_granted: role, already_had: false, ...beachOnly })
-    })).finally(() => access?.invalidate(userId))
+    }
+    return ok({ roles: after, role_granted: role, already_had: hadRole, ...beachOnly })
   }
 
   /** The team link part of redeemInvite (inside its transaction, the code row locked). */
@@ -513,20 +606,31 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
         `SELECT ct.id, ct.team_name AS name, c.id AS club_id, c.name AS club_name
            FROM public.club_teams ct JOIN public.clubs c ON c.id = ct.club_id WHERE ct.id = $1`, [inv.team_id])
       : { rows: [] }
-    if (!team) throw abort(fail(404, 'OV_INVITE_INVALID', 'This invite code is not valid'))
+    if (!team) throw abort(INVITE_INVALID())
     const { rows: [prof] } = await client.query('SELECT roles FROM public.profiles WHERE user_id = $1 LIMIT 1', [userId])
     const roles = normalizeRoles(prof?.roles)
     const teamOut = { id: team.id, name: team.name, club_id: team.club_id, club_name: team.club_name }
     const { rows: [already] } = await client.query('SELECT 1 FROM public.team_managers WHERE team_id = $1 AND user_id = $2', [team.id, userId])
     // Idempotent: a team the account already manages does not use the code up
     if (already) return ok({ roles, role_granted: 'team_manager', already_had: true, team: teamOut })
+    // be-clubs-teams-5: redeemed before and no longer a manager of the team:
+    // taken off it (lib/teams.js removeManager); the same link does not bring it back
+    const { rows: [again] } = await client.query('SELECT 1 FROM public.invite_redemptions WHERE invite_id = $1 AND user_id = $2', [inv.id, userId])
+    if (again) throw abort(INVITE_REMOVED())
+    // nor does another link of the team made before it was taken off; a link
+    // made after that is the club asking it back
+    const { rows: [removed] } = await client.query(
+      `SELECT 1 FROM public.audit_log
+        WHERE action = 'team.managers' AND target_user_id = $1 AND details ->> 'team_id' = $2::text
+          AND details ->> 'removed' = 'true' AND at >= $3 LIMIT 1`, [userId, team.id, inv.created_at])
+    if (removed) throw abort(INVITE_REMOVED())
     if (inv.max_uses != null && inv.uses >= inv.max_uses) throw abort(fail(409, 'OV_INVITE_USED_UP', 'This invite code has been used up'))
-    await client.query('INSERT INTO public.invite_redemptions (invite_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [inv.id, userId])
+    await client.query('INSERT INTO public.invite_redemptions (invite_id, user_id) VALUES ($1, $2)', [inv.id, userId])
     await client.query('UPDATE public.invite_codes SET uses = uses + 1 WHERE id = $1', [inv.id])
     await client.query('INSERT INTO public.team_managers (team_id, user_id, added_by) VALUES ($1, $2, NULL) ON CONFLICT DO NOTHING', [team.id, userId])
     await addMembership(client, userId, 'indoor', 'invite')
     await audit(client, { actorId: userId, action: 'invite.redeem', targetUserId: userId, details: { invite_id: inv.id, label: inv.label, role: 'team_manager', team_id: team.id, club_id: team.club_id }, app: 'indoor' })
-    // db/030: the database added the manager role (and the club): the roles as they are now
+    // db/030: the database added the manager role: the roles as they are now
     const { rows: [now] } = await client.query('SELECT roles FROM public.profiles WHERE user_id = $1 LIMIT 1', [userId])
     return ok({ roles: normalizeRoles(now?.roles ?? roles), role_granted: 'team_manager', already_had: false, team: teamOut })
   }
@@ -536,13 +640,20 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     const { rows: [club] } = isUuid(inv.club_id)
       ? await client.query('SELECT id, name FROM public.clubs WHERE id = $1', [inv.club_id])
       : { rows: [] }
-    if (!club) throw abort(fail(404, 'OV_INVITE_INVALID', 'This invite code is not valid'))
+    if (!club) throw abort(INVITE_INVALID())
     const { rows: [prof] } = await client.query('SELECT roles FROM public.profiles WHERE user_id = $1 LIMIT 1', [userId])
     const roles = normalizeRoles(prof?.roles)
     const clubOut = { id: club.id, name: club.name }
     const { rows: [already] } = await client.query('SELECT 1 FROM public.club_managers WHERE club_id = $1 AND user_id = $2', [club.id, userId])
     // Idempotent: a club the account already manages does not use the code up
     if (already) return ok({ roles, role_granted: 'club_manager', already_had: true, club: clubOut })
+    // db/036 (delta-fe-manage-3): the link works for the address it was mailed to only
+    if (inv.invited_email) {
+      const { rows: [u] } = await client.query('SELECT lower(email) AS email FROM auth.users WHERE id = $1', [userId])
+      if (!u || u.email !== String(inv.invited_email).toLowerCase()) {
+        throw abort(fail(403, 'OV_INVITE_OTHER_ACCOUNT', 'This link was sent to another address. Sign in with the account of that address.'))
+      }
+    }
     if (inv.max_uses != null && inv.uses >= inv.max_uses) throw abort(fail(409, 'OV_INVITE_USED_UP', 'This invite code has been used up'))
     await client.query('INSERT INTO public.invite_redemptions (invite_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [inv.id, userId])
     await client.query('UPDATE public.invite_codes SET uses = uses + 1 WHERE id = $1', [inv.id])
@@ -592,6 +703,14 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     // db/029: a club manager link names its club (lib/clubs.js inviteManager)
     if (role === 'club_manager' && (!isUuid(body.club_id) || sport !== 'indoor')) return invalid('club_id: the club of a club_manager code (indoor)')
     if (!INVITE_ROLES.includes(role) && role !== 'team_manager' && role !== 'club_manager') return fail(400, 'OV_INVALID_ROLE', 'This role cannot be given by an invite code', 'role: scorer, referee or competition_manager')
+    // db/036: a club manager link names the address it is for (lib/clubs.js inviteManager)
+    let invitedEmail = null
+    if (body.invited_email != null && body.invited_email !== '') {
+      if (role !== 'club_manager') return invalid('invited_email: only for a club_manager code')
+      const e = typeof body.invited_email === 'string' ? body.invited_email.trim().toLowerCase() : ''
+      if (e.length < 3 || e.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return invalid('invited_email: an email address')
+      invitedEmail = e
+    }
     // db/018: the club whoever redeems the code joins (indoor codes only)
     let clubId = null
     if (body.club_id != null && body.club_id !== '') {
@@ -635,6 +754,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
             const vals = [hashInviteCode(normalized), normalized.slice(-4), label, club, role, maxUses, expiresAt, isUuid(actorId) ? actorId : null, sport]
             if (clubId) { cols.push('club_id'); vals.push(clubId) }
             if (teamId) { cols.push('team_id'); vals.push(teamId) }
+            if (invitedEmail) { cols.push('invited_email'); vals.push(invitedEmail) }
             const { rows: [row] } = await client.query(
               `INSERT INTO public.invite_codes (${cols.join(', ')}) VALUES (${vals.map((_, i) => `$${i + 1}`).join(', ')}) RETURNING id`, vals)
             await audit(client, { actorId, action: 'invite.create', details: { invite_id: row.id, label, role, ...(clubId ? { club_id: clubId } : {}), ...(teamId ? { team_id: teamId } : {}), ...(sport === 'beach' ? { sport } : {}) }, app: sport })
@@ -902,7 +1022,23 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
       if (changed.includes('email')) {
         const { rows: [other] } = await client.query('SELECT 1 FROM auth.users WHERE lower(email) = $1 AND id <> $2 LIMIT 1', [after.email, userId])
         if (other) throw abort(fail(409, 'OV_EMAIL_TAKEN', 'Another account already has this email address'))
-        await client.query('UPDATE auth.users SET email = $2 WHERE id = $1', [userId, after.email])
+        if (mailer?.enabled) {
+          // Nobody proved the new mailbox yet: unconfirmed until its owner opens
+          // a confirmation link (it may sign in and send one from its profile,
+          // the mark of an account created with a link; lib/auth.js)
+          await client.query(
+            `UPDATE auth.users SET email = $2, email_confirmed_at = NULL,
+                    raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) || jsonb_build_object($3::text, $4::text)
+              WHERE id = $1`, [userId, after.email, ...CONFIRMATION_PARAMS])
+        } else {
+          // No mail possible: like a sign-up then, the address counts as confirmed
+          await client.query('UPDATE auth.users SET email = $2 WHERE id = $1', [userId, after.email])
+        }
+        // Signed in somewhere, links sent to the old address: all ended
+        const { rows: [t] } = await client.query(
+          "SELECT to_regclass('auth.app_sessions') IS NOT NULL AS sessions, to_regclass('auth.app_tokens') IS NOT NULL AS tokens")
+        if (t?.sessions) await client.query('DELETE FROM auth.app_sessions WHERE user_id = $1', [userId])
+        if (t?.tokens) await client.query('UPDATE auth.app_tokens SET used_at = now() WHERE user_id = $1 AND used_at IS NULL', [userId])
       }
       if (changed.includes('first_name') || changed.includes('last_name')) {
         if (prof) {
@@ -915,12 +1051,21 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
         }
       }
       if (changed.length) {
-        const pick = (o) => Object.fromEntries(changed.map((k) => [k, o[k] ?? null]))
+        // the addresses as digests: the entry outlives the account (deleteAccount)
+        const pick = (o) => Object.fromEntries(changed.map((k) => k === 'email' ? ['email_sha256', o.email ? emailDigest(o.email) : null] : [k, o[k] ?? null]))
         await audit(client, { actorId: actor?.id, action: 'account.profile', targetUserId: userId, details: { changed, before: pick(before), after: pick(after) } })
       }
-      return ok({ id: userId, first_name: after.first_name, last_name: after.last_name, email: changed.includes('email') ? after.email : before.email, changed })
+      return ok({ id: userId, first_name: after.first_name, last_name: after.last_name, email: changed.includes('email') ? after.email : before.email, changed, ...(changed.includes('email') ? { old_email: before.email } : {}) })
     }))
     access?.invalidate(userId)
+    if (res?.body?.data?.old_email) {
+      const to = res.body.data.old_email
+      delete res.body.data.old_email
+      // the old mailbox learns of the move (best effort, after the commit)
+      if (mailer?.enabled && to.includes('@')) {
+        mailer.send('email_changed', { to }).catch((err) => log.warn?.(`[accounts] email-changed mail failed: ${err?.code || err?.message}`))
+      }
+    }
     return res
   }
 
@@ -990,10 +1135,16 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
         `SELECT user_id, roles FROM public.profiles
           WHERE user_id = ANY($1::uuid[]) OR ${hasRoleSql('roles', '$2')}
           ORDER BY user_id FOR UPDATE`, [[actorId, userId], superParam])
-      const { rows: [u] } = await client.query(
+      // Both accounts' rows, in id order: a deactivation of the caller that
+      // committed while this request waited for the locks is seen here (two
+      // admins deactivating each other at once: the second one is refused)
+      const { rows: users } = await client.query(
         `SELECT id, coalesce((to_jsonb(u) ->> 'banned_until')::timestamptz > now(), false) AS deactivated
-           FROM auth.users u WHERE id = $1 FOR UPDATE`, [userId])
+           FROM auth.users u WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE`, [[actorId, userId]])
+      const u = users.find((r) => r.id === userId)
       if (!u) throw abort(ACCOUNT_NOT_FOUND())
+      const me = users.find((r) => r.id === actorId)
+      if (!me || me.deactivated) throw abort(fail(401, 'invalid_token', 'Not signed in'))
       const actorAccess = accessFromRoles(rolesOf(locked, actorId))
       if (!actorAccess.isAdmin) throw abort(fail(403, 'OV_FORBIDDEN', 'You do not have access to this'))
       const targetRoles = rolesOf(locked, userId)
@@ -1027,8 +1178,6 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     const { rows: [r] } = await client.query(`SELECT ${sql} AS m`, [userId])
     return r?.m === true
   }
-  /** sha256 of the address, so support can confirm a deletion from an address it is given (never the address). */
-  const emailDigest = (email) => createHash('sha256').update('ov-account-email:' + String(email || '').trim().toLowerCase(), 'utf8').digest('hex')
 
   /**
    * POST /api/admin/accounts/:userId/delete { email } and .../reject { email }
@@ -1118,6 +1267,51 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     return res
   }
 
+  /**
+   * The account's own delete-account (lib/auth.js deleteAccount, its
+   * `selfDelete` hook), inside the deletion's transaction before anything
+   * goes: the admin path's locks (every super admin's profile rows, then the
+   * account's users row), never the last super admin that can still sign in
+   * (409 OV_LAST_SUPER_ADMIN, thrown as the answer), and the same
+   * `account.delete` audit entries with `self: true` (actor = the account,
+   * NULL once it is gone). Throws on a database error.
+   */
+  async function selfDeleteIn (client, userId) {
+    const superParam = ['super_admin']
+    const { rows: locked } = await client.query(
+      `SELECT user_id, roles FROM public.profiles
+        WHERE user_id = $1 OR ${hasRoleSql('roles', '$2')}
+        ORDER BY user_id FOR UPDATE`, [userId, superParam])
+    const { rows: [u] } = await client.query('SELECT id, email, created_at FROM auth.users WHERE id = $1 FOR UPDATE', [userId])
+    if (!u) throw abort(ACCOUNT_NOT_FOUND())
+    const targetRoles = [...new Set(locked.filter((r) => r.user_id === userId).flatMap((r) => normalizeRoles(r.roles)))]
+    const target = accessFromRoles(targetRoles)
+    if (target.isSuperAdmin) {
+      const { rows: [{ n }] } = await client.query(
+        `SELECT count(DISTINCT p.user_id)::int AS n
+           FROM public.profiles p JOIN auth.users u ON u.id = p.user_id
+          WHERE p.user_id <> $1 AND ${hasRoleSql('p.roles', '$2')} AND ${usableSql('u')}`, [userId, superParam])
+      if (n < 1) throw abort(fail(409, 'OV_LAST_SUPER_ADMIN', 'The last super admin cannot be deleted'))
+    }
+    const { rows: [{ n: matchesKept }] } = await client.query(
+      'SELECT count(*)::int AS n FROM public.matches WHERE created_by = $1 AND test IS NOT TRUE', [userId])
+    const member = await membershipsOf(client, userId, target)
+    const apps = APPS.filter((a) => member[a])
+    const details = {
+      account_id: userId,
+      email_sha256: emailDigest(u.email),
+      roles: targetRoles,
+      apps,
+      created_at: iso(u.created_at),
+      matches_kept: matchesKept,
+      self: true
+    }
+    for (const app of apps.length ? apps : ['indoor']) {
+      await audit(client, { actorId: userId, action: 'account.delete', details, app })
+    }
+    access?.invalidate(userId)
+  }
+
   // ------------------------------------------------------------------ official games
   async function listOfficialGames ({ from, to, q = '' } = {}) {
     const today = zurichDay()
@@ -1136,7 +1330,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
         search = ` AND (g.game_number ILIKE $3 OR g.team_home ILIKE $3 OR g.team_away ILIKE $3 OR g.league ILIKE $3 OR g.hall ILIKE $3 OR g.city ILIKE $3)`
       }
       const { rows: games } = await pool.query(
-        `SELECT g.game_number, g.datetime, g.date, g.time, g.league, g.gender, g.team_home, g.team_away, g.hall, g.city
+        `SELECT g.game_number, g.datetime, g.date, g.time, g.league, g.gender, g.team_home, g.team_away, g.hall, g.city, g.match_format
            FROM public.svrz_games g
           WHERE g.datetime >= $1 AND g.datetime < $2${search}
           ORDER BY g.datetime, g.game_number
@@ -1145,7 +1339,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
       const claims = new Map()
       if (numbers.length) {
         const { rows } = await pool.query(
-          `SELECT m.id, m.external_id, m.game_n, m.status, m.closed_at, m.updated_at, m.scheduled_at, m.created_at,
+          `SELECT m.id, m.external_id, m.game_n, m.status, m.closed_at, m.updated_at, m.scheduled_at, m.official_season,
                   ${nameSql('p')} AS scorer_name, u.email AS scorer_email, ${sheetScorerSql('m')} AS sheet_scorer_name,
                   (SELECT count(*)::int FROM public.match_editors e WHERE e.match_id = m.id) AS editors
              FROM public.matches m
@@ -1154,7 +1348,8 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
             WHERE m.test IS NOT TRUE AND NOT m.official_game_exempt AND m.game_n = ANY($1::int[])
               AND (m.sport_type IS NOT DISTINCT FROM 'beach') IS NOT TRUE`, [numbers])
         for (const m of rows) {
-          const key = `${m.game_n}|${seasonOf(m.scheduled_at || m.created_at)}`
+          // the key's season is the server's (db/034), not the match's scheduled_at
+          const key = `${m.game_n}|${m.official_season}`
           if (!claims.has(key)) claims.set(key, m)
         }
       }
@@ -1173,6 +1368,8 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
             team_away: g.team_away ?? null,
             hall: g.hall ?? null,
             city: g.city ?? null,
+            // 3 or 5; null when VolleyManager gave none (Match setup then asks)
+            match_format: g.match_format ?? null,
             claim: m
               ? {
                   match_id: m.id,
@@ -1262,11 +1459,13 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
    * (the only way past db/007's lock): the row is locked, `check` may refuse,
    * `data` is the update, `details` the audit entry.
    */
-  async function adminMatchUpdate ({ where, actorId, matchId, check, data, action, details }) {
+  async function adminMatchUpdate ({ where, actorId, matchId, check, data, action, details, settings = {} }) {
     const changes = []
     const res = await guarded(where, () => withTx(async (client) => {
       await client.query("SELECT set_config('ov.allow_closed', 'on', true)")
       if (isUuid(actorId)) await client.query("SELECT set_config('ov.user_id', $1, true)", [actorId])
+      // for the triggers, e.g. ov.reopen_reason (db/039 match_closures)
+      for (const [k, v] of Object.entries(settings)) await client.query('SELECT set_config($1, $2, true)', [k, v])
       const { rows: [m] } = await client.query(
         `SELECT id, external_id, game_n, status, closed_at, official_game_exempt, to_jsonb(matches) ->> 'sport_type' AS sport_type
            FROM public.matches WHERE id = $1 FOR UPDATE`, [matchId])
@@ -1309,6 +1508,8 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
         return m.closed_at ? null : fail(409, 'OV_NOT_CLOSED', 'This match is not closed')
       },
       data: () => ({ status: 'ended', approval: null, closed_at: null, closed_by: null }),
+      // db/039 keeps the closed record (match_closures) with the reason
+      settings: { 'ov.reopen_reason': reason },
       action: 'match.reopen',
       details: (m) => ({ reason, from_status: m.status, external_id: m.external_id, game_n: m.game_n })
     })
@@ -1317,20 +1518,49 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     return { ...ok({ match: { id: m.id, external_id: m.external_id, status: 'ended', closed_at: null } }), changes }
   }
 
+  /**
+   * GET /api/admin/matches/:id/closures: each reopen of the match (db/039
+   * match_closures), newest first: the record as it was closed, and as it
+   * closed again (null: still open). Who closed and who reopened by name.
+   */
+  async function listMatchClosures ({ matchId } = {}) {
+    if (!isUuid(matchId)) return notFound()
+    return guarded('closures', async () => {
+      const { rows } = await pool.query(
+        `SELECT c.id::text AS id, c.closed_at, c.reopened_at, c.reason, c.closed_record, c.reclosed_at, c.reclosed_record,
+                ${nameSql('cp')} AS closed_by_name, ${nameSql('rp')} AS reopened_by_name
+           FROM public.match_closures c
+           LEFT JOIN public.profiles cp ON cp.user_id = c.closed_by
+           LEFT JOIN public.profiles rp ON rp.user_id = c.reopened_by
+          WHERE c.match_id = $1
+          ORDER BY c.reopened_at DESC, c.id DESC
+          LIMIT 50`, [matchId])
+      return ok({ closures: rows })
+    })
+  }
+
+  /**
+   * POST /api/admin/matches/:id/release-game: the match no longer holds its
+   * official game (another match may take the number), and released_at
+   * (db/040) says since when: a released match is left out of the final
+   * scoresheet mail (lib/finalMail.js) and marked in the managers' Scoresheets
+   * list, until it moves to another game key (db/007 ends the exemption).
+   */
   async function releaseGame ({ actorId, matchId, body } = {}) {
     if (!isUuid(matchId)) return notFound()
     const reason = trimmedText(isPlainObject(body) ? body.reason : undefined, { min: 3, max: 500 })
     if (reason === undefined) return invalid('reason: 3 to 500 characters')
+    const releasedAt = new Date().toISOString()
     const { res, changes } = await adminMatchUpdate({
       where: 'release-game',
       actorId,
       matchId,
-      data: () => ({ official_game_exempt: true }),
+      data: () => ({ official_game_exempt: true, released_at: releasedAt }),
       action: 'match.release_game',
       details: (m) => ({ reason, game_n: m.game_n, external_id: m.external_id })
     })
     if (!res.match) return res
-    return { ...ok({ match: { id: res.match.id, official_game_exempt: true } }), changes }
+    return { ...ok({ match: { id: res.match.id, official_game_exempt: true, released_at: releasedAt } }), changes }
   }
 
   async function addMatchEditor ({ actorId, matchId, body } = {}) {
@@ -1340,12 +1570,53 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     return guarded('add-editor', async () => {
       const { rows: [m] } = await pool.query('SELECT id FROM public.matches WHERE id = $1', [matchId])
       if (!m) return notFound('match')
-      const { rows: [u] } = await pool.query('SELECT id FROM auth.users WHERE lower(email) = lower($1) LIMIT 1', [email])
+      const { rows: [u] } = await pool.query(
+        `SELECT u.id, ${unconfirmedSql('u', '$2', '$3')} AS unconfirmed FROM auth.users u WHERE lower(u.email) = lower($1) LIMIT 1`,
+        [email, ...CONFIRMATION_PARAMS])
       if (!u) return notFound('account')
+      // Whoever registered the address first is not yet its owner
+      if (u.unconfirmed === true) return ACCOUNT_UNCONFIRMED()
       const role = await restore.addEditor(matchId, u.id, 'admin')
       if (!role) return unavailable()
-      await audit(pool, { actorId, action: 'match.editor_add', targetUserId: u.id, matchId, details: { email } })
+      // already an editor by the game PIN: from now on by the admin's grant
+      // (a closed match's first PDF at any time, lib/scoresheets.js sheetWritersOf)
+      await pool.query("UPDATE public.match_editors SET granted_via = 'admin' WHERE match_id = $1 AND user_id = $2 AND granted_via <> 'admin'", [matchId, u.id])
+      await audit(pool, { actorId, action: 'match.editor_add', targetUserId: u.id, matchId, details: { email_sha256: emailDigest(email) } })
       return ok({ role })
+    })
+  }
+
+  /** May `actorId` manage the editors of `matchId` (its creator, or an admin)? The match row or a failure. */
+  async function editorsManagerOf (actorId, matchId, isAdmin) {
+    if (!isUuid(matchId)) return { res: notFound() }
+    const { rows: [m] } = await pool.query('SELECT id, created_by FROM public.matches WHERE id = $1', [matchId])
+    if (!m || (!isAdmin && m.created_by !== actorId)) return { res: notFound('match') }
+    return { m }
+  }
+
+  /** GET /api/match/:id/editors: the accounts that edit the match (its creator or an admin asks). */
+  async function listMatchEditors ({ actorId, matchId, isAdmin = false } = {}) {
+    return guarded('list-editors', async () => {
+      const { res } = await editorsManagerOf(actorId, matchId, isAdmin)
+      if (res) return res
+      const { rows } = await pool.query(
+        `SELECT e.user_id, e.granted_via, e.created_at, u.email
+           FROM public.match_editors e LEFT JOIN auth.users u ON u.id = e.user_id
+          WHERE e.match_id = $1 ORDER BY e.created_at, e.user_id`, [matchId])
+      return ok({ editors: rows.map((r) => ({ user_id: r.user_id, email: r.email ?? null, granted_via: r.granted_via, created_at: r.created_at })) })
+    })
+  }
+
+  /** DELETE /api/match/:id/editors/:userId: the match's creator or an admin removes an editor. */
+  async function removeMatchEditor ({ actorId, matchId, userId, isAdmin = false } = {}) {
+    if (!isUuid(userId)) return notFound()
+    return guarded('remove-editor', async () => {
+      const { res } = await editorsManagerOf(actorId, matchId, isAdmin)
+      if (res) return res
+      const { rowCount } = await pool.query('DELETE FROM public.match_editors WHERE match_id = $1 AND user_id = $2', [matchId, userId])
+      if (!rowCount) return notFound('editor')
+      await audit(pool, { actorId, action: 'match.editor_remove', targetUserId: userId, matchId })
+      return ok({ removed: true })
     })
   }
 
@@ -1414,6 +1685,9 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
    * The friendly pre-check of a match insert/upsert: the first row whose
    * official game another match already holds. Returns null or the full claim
    * (with match_id; send publicClaim() to the client). Throws on a DB error.
+   * The key's season is the server's (db/034): a stored match keeps its own
+   * while its game number and sport stay, any other row gets the season a
+   * match of its game gets now (findClaim) - never the payload's scheduled_at.
    */
   async function findTakenGame ({ userId, rows, sports }) {
     const list = (Array.isArray(rows) ? rows : [rows]).filter((r) => r && typeof r === 'object').slice(0, 50)
@@ -1423,7 +1697,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     const stored = new Map()
     if (exts.length) {
       const { rows: found } = await pool.query(
-        `SELECT external_id, game_n, scheduled_at, created_at, sport_type::text AS sport_type, test
+        `SELECT external_id, game_n, official_season, sport_type::text AS sport_type, test
            FROM public.matches WHERE external_id = ANY($1::text[])`, [exts])
       for (const r of found) stored.set(r.external_id, r)
     }
@@ -1433,51 +1707,84 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
       if (officialRowsOf([row]).length === 0) continue
       // Only the sports the caller can score in (the others are refused by pgQuery first)
       if (Array.isArray(sports) && !sports.includes(sportOf(row.sport_type))) continue
-      const ext = typeof row.external_id === 'string' ? row.external_id : null
-      // The season the index sees: scheduled_at, else created_at, else now
-      const declaredAt = row.scheduled_at ?? row.created_at ?? null
+      const keepsKey = !!old && Number(old.game_n) === Number(row.game_n) && sportOf(old.sport_type) === sportOf(row.sport_type)
+      // a row from before db/034 without a season: its key holds nothing in the index
+      if (keepsKey && old.official_season == null) continue
       const claim = await findClaim(pool, {
         gameN: row.game_n,
-        scheduledAt: declaredAt,
+        season: keepsKey ? Number(old.official_season) : null,
         sportType: row.sport_type,
-        excludeExternalId: ext,
+        excludeExternalId: typeof row.external_id === 'string' ? row.external_id : null,
         callerId: userId
       })
       if (claim) return claim
-      const real = await vmSeasonClaim({ userId, row, old, declaredAt, ext })
-      if (real) return real
     }
     return null
   }
 
   /**
-   * The client declares the season (scheduled_at; created_at is server-only on
-   * /api/db). For an indoor game VolleyManager knows (svrz_games), a match
-   * that takes a NEW key in another season than VolleyManager's kick-off is
-   * also checked against the game's real season, so shifting the date cannot
-   * open a second cloud match for a claimed game. A stored match whose key
-   * does not change (an old season's match re-synced after its number was
-   * reused) is left alone. A friendly check, not a database guarantee.
+   * The club rule's answer to a game another club holds (db/018, the rule on):
+   * a scorer of the club the game's home team plays for (VolleyManager's, as
+   * the rule reads it) takes over an official game that an account outside
+   * that club holds while its match is still in setup. That match is released
+   * as an admin's release-game does (official_game_exempt; it stays, it no
+   * longer holds the game) and the take-over audited (match.game_taken_over),
+   * so the home club's scorer can create the game's match. Nothing changes
+   * for a holder of the home club (creator or editor), an admin's match, a
+   * match that has started, or without clubs. `claim`: findTakenGame's.
+   * Returns { released, changes } (changes: the released row for realtime).
+   * Throws on a DB error.
    */
-  async function vmSeasonClaim ({ userId, row, old, declaredAt, ext }) {
-    if (sportOf(row.sport_type) !== 'indoor') return null
-    const n = Number(row.game_n)
-    const declaredSeason = seasonOf(declaredAt ?? new Date())
-    if (old && old.test !== true && Number(old.game_n) === n && sportOf(old.sport_type) === 'indoor' &&
-        seasonOf(old.scheduled_at ?? old.created_at ?? new Date()) === declaredSeason) return null
-    let vmAt
+  async function takeOverHeldGame ({ actorId, claim }) {
+    const none = { released: false, changes: [] }
+    if (!claim || claim.mine || claim.sport !== 'indoor' || !isUuid(claim.match_id) || !isUuid(actorId)) return none
+    const c = clubs()
+    if (!c || !(await c.ruleOn(pool))) return none
+    let out
     try {
-      const { rows: games } = await pool.query(
-        'SELECT datetime FROM public.svrz_games WHERE game_number = $1 AND datetime IS NOT NULL ORDER BY id DESC LIMIT 1', [String(n)])
-      vmAt = games[0]?.datetime
+      out = await takeOverTx(actorId, claim)
     } catch (err) {
-      // no VolleyManager table (a LAN or test database): the declared key only
-      if (err?.code === '42P01' || err?.code === '42703') return null
+      // no VolleyManager table (a LAN or test database): nobody's home club is known
+      if (err?.code === '42P01') return none
       throw err
     }
-    const vmSeason = seasonOf(vmAt)
-    if (vmSeason == null || vmSeason === declaredSeason) return null
-    return findClaim(pool, { gameN: n, scheduledAt: new Date(vmAt).toISOString(), sportType: 'indoor', excludeExternalId: ext, callerId: userId })
+    return out || none
+  }
+
+  async function takeOverTx (actorId, claim) {
+    return withTx(async (client) => {
+      await client.query("SELECT set_config('ov.user_id', $1, true)", [actorId])
+      const { rows: [m] } = await client.query(
+        `SELECT id, external_id, game_n, status, created_by, official_season FROM public.matches
+          WHERE id = $1 AND test IS NOT TRUE AND NOT official_game_exempt AND closed_at IS NULL
+            AND sport_type IS DISTINCT FROM 'beach' FOR UPDATE`, [claim.match_id])
+      if (!m || m.status !== 'setup') return null
+      const { rows: [home] } = await client.query(
+        `SELECT ct.club_id, g.team_home
+           FROM (SELECT sg.team_home FROM public.svrz_games sg WHERE sg.game_number = $1 AND sg.team_home IS NOT NULL
+                  ORDER BY sg.id DESC LIMIT 1) g
+           JOIN public.club_teams ct ON lower(btrim(ct.team_name)) = lower(btrim(g.team_home))`, [String(m.game_n)])
+      if (!home) return null
+      const { rows: [who] } = await client.query(
+        `SELECT EXISTS (SELECT 1 FROM public.account_clubs WHERE user_id = $1 AND club_id = $2) AS caller_home,
+                EXISTS (SELECT 1 FROM public.account_clubs ac WHERE ac.club_id = $2 AND (ac.user_id = $3
+                          OR ac.user_id IN (SELECT e.user_id FROM public.match_editors e WHERE e.match_id = $4))) AS holder_home,
+                EXISTS (SELECT 1 FROM public.profiles p WHERE p.user_id = $3
+                          AND p.roles && ARRAY['admin', 'super_admin']::text[]) AS holder_admin`,
+        [actorId, home.club_id, m.created_by, m.id])
+      if (!who.caller_home || who.holder_home || who.holder_admin) return null
+      const r = await db.runQuery({ table: 'matches', action: 'update', params: { data: { official_game_exempt: true }, filters: [{ type: 'eq', column: 'id', value: m.id }] } },
+        { internal: true, client, collectChanges: true })
+      if (r.body.error) throw Object.assign(new Error(`release failed: ${r.body.error.code}`), { code: r.body.error.code })
+      await audit(client, {
+        actorId,
+        action: 'match.game_taken_over',
+        targetUserId: m.created_by,
+        matchId: m.id,
+        details: { game_n: m.game_n, season: m.official_season, external_id: m.external_id, home_team: home.team_home, from_status: m.status }
+      })
+      return { released: true, changes: r.changes || [] }
+    })
   }
 
   /**
@@ -1503,10 +1810,9 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     if (!isPlainObject(body)) return invalid('body: must be an object')
     const gameN = intIn(body.game_n, 1, 2147483647, undefined)
     if (gameN === undefined) return invalid('game_n: a positive integer')
-    let scheduledAt = null
+    // scheduled_at: checked for its shape only (the apps send it); the season is the server's (db/034)
     if (body.scheduled_at != null && body.scheduled_at !== '') {
       if (typeof body.scheduled_at !== 'string' || Number.isNaN(new Date(body.scheduled_at).getTime())) return invalid('scheduled_at: an ISO date-time or null')
-      scheduledAt = body.scheduled_at
     }
     const sportType = body.sport_type == null ? 'indoor' : body.sport_type
     if (!['indoor', 'beach'].includes(sportType)) return invalid('sport_type: indoor or beach')
@@ -1516,7 +1822,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
       externalId = body.external_id
     }
     return guarded('official-check', async () => {
-      const claim = await findClaim(pool, { gameN, scheduledAt, sportType, excludeExternalId: externalId, callerId: userId })
+      const claim = await findClaim(pool, { gameN, sportType, excludeExternalId: externalId, callerId: userId })
       // db/018: may this account score this game at all (home games of its clubs)?
       const c = clubs()
       const club = c ? await c.verdict({ userId, access: callerAccess, gameN, sportType }) : { ok: true }
@@ -1545,7 +1851,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     for (const c of Array.isArray(changes) ? changes : []) {
       const row = c?.row
       if (c?.table !== 'matches' || c.eventType !== 'INSERT' || !row || row.test === true || !(Number(row.game_n) > 0)) continue
-      await auditQuietly({ actorId, action: 'match.claim_game', matchId: row.id, details: { external_id: row.external_id ?? null, game_n: row.game_n, season: seasonOf(row.scheduled_at || row.created_at), sport: sportOf(row.sport_type) } })
+      await auditQuietly({ actorId, action: 'match.claim_game', matchId: row.id, details: { external_id: row.external_id ?? null, game_n: row.game_n, season: row.official_season ?? seasonOf(row.scheduled_at || row.created_at), sport: sportOf(row.sport_type) } })
     }
   }
 
@@ -1554,9 +1860,15 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     await auditQuietly({ actorId, action: 'match.claim_pin', targetUserId: actorId, matchId, details: { via, ...(role ? { role } : {}) } })
   }
 
+  /** Audit match.restore_pin (a read of a match by game number and game PIN, with or without an account). Never throws. */
+  async function auditRestorePin ({ actorId = null, matchId, access }) {
+    await auditQuietly({ actorId, action: 'match.restore_pin', matchId, details: { access } })
+  }
+
   return {
     audit,
     auditQuietly,
+    auditRestorePin,
     addRolesIn,
     confirmationOf,
     joinApp,
@@ -1571,14 +1883,19 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     updateProfile,
     setActive,
     deleteAccount,
+    selfDeleteIn,
     listOfficialGames,
     listMatches,
     reopenMatch,
+    listMatchClosures,
     releaseGame,
     addMatchEditor,
+    listMatchEditors,
+    removeMatchEditor,
     listAudit,
     findTakenGame,
     findTakenGameForUpdate,
+    takeOverHeldGame,
     officialCheck,
     auditGameTaken,
     auditClaimedGames,

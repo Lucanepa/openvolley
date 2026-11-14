@@ -3,8 +3,10 @@
  * section 2): manager.openvolley.app/#team=<code>; a club manager link
  * (db/029) the same way, as #club=<code>. The code is taken out of
  * the URL at once and kept on this device for a week, through sign-up and
- * the email confirmation, until the signed-in account redeems it
- * (ManagerApp usePendingTeamLink).
+ * the email confirmation. It is redeemed only after the signed-in account
+ * said yes to "Manage <team> with <account>?" (ManagerApp TeamLinkQuestion,
+ * fe-auth-client-7), and it goes when a session ends here or another
+ * account signs in (AuthContext clearLocalAccountData).
  */
 import { linkKindFromHash, teamCodeFromHash } from './managerSite'
 
@@ -60,4 +62,11 @@ export function takeTeamLinkFromLocation(win = typeof window !== 'undefined' ? w
 }
 
 /** Errors after which the kept code is useless (the others are tried again). */
-export const FINAL_TEAM_LINK_ERRORS = new Set(['OV_INVITE_INVALID', 'OV_INVITE_EXPIRED', 'OV_INVITE_USED_UP'])
+export const FINAL_TEAM_LINK_ERRORS = new Set(['OV_INVITE_INVALID', 'OV_INVITE_EXPIRED', 'OV_INVITE_USED_UP', 'OV_INVITE_REMOVED'])
+
+/**
+ * Errors of the question's preview that another account may not get: the
+ * question stays, with "Use another account" (a club manager link mailed to
+ * another address, db/036).
+ */
+export const OTHER_ACCOUNT_TEAM_LINK_ERRORS = new Set(['OV_INVITE_OTHER_ACCOUNT'])

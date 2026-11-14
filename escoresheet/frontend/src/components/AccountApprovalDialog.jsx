@@ -4,9 +4,9 @@ import { Loader2, ShieldCheck } from 'lucide-react'
 import { db } from '../db/db'
 import { approvalsApi, errorKeyOf } from '../lib/accountApi'
 import {
-  ROLE_TO_SLOT, PIN_RE, resultTriples, officialFor, officialName, recallApprovalEmail, deviceId, pendingSyncJobsFor
+  ROLE_TO_SLOT, PIN_RE, resultTriples, officialFor, officialName, deviceId, pendingSyncJobsFor
 } from '../domain/accountApproval'
-import { PIN_INPUT_PROPS } from './auth/ApprovalPinSection'
+import { APPROVAL_EMAIL_PROPS, PIN_INPUT_PROPS } from './auth/ApprovalPinSection'
 import KitModal from './manage/KitModal'
 import { Button, Field, FormError, Input } from '../ui'
 
@@ -41,12 +41,17 @@ export async function waitForMatchSync(seedKey, {
   return false
 }
 
-/** The email the dialog starts with (spec 4.5): officials entry, own (scorer), remembered, empty. */
+/**
+ * The email the dialog starts with (spec 4.5): the officials entry's (a
+ * referee approves only with the address the match setup stored for them),
+ * the own one (scorer), else empty. No address remembered on the device is
+ * offered: the server takes none but the stored one.
+ */
 export function initialApprovalEmail({ match, role, userEmail }) {
   const official = officialFor(match, role)
   if (official?.email) return String(official.email)
   if (role === 'scorer' && userEmail) return userEmail
-  return recallApprovalEmail(officialName(official)) || ''
+  return ''
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -89,7 +94,10 @@ export default function AccountApprovalDialog({ open, onClose, match, role, role
   useEffect(() => { if (!open) setPin('') }, [open])
 
   const slot = ROLE_TO_SLOT[role]
-  const entered = officialName(officialFor(match, role))
+  const official = officialFor(match, role)
+  const entered = officialName(official)
+  // A referee approves only with the address the match setup stored for them
+  const noStoredEmail = slot !== 'scorer' && !official?.email
   const trimmedEmail = email.trim().toLowerCase()
   // A PIN of the wrong length is never sent (the server refuses it uncounted anyway)
   const valid = EMAIL_RE.test(trimmedEmail) && trimmedEmail.length <= 254 && PIN_RE.test(pin)
@@ -157,20 +165,16 @@ export default function AccountApprovalDialog({ open, onClose, match, role, role
         </Button>
       </>}
     >
-      <form onSubmit={submit} className="space-y-3" noValidate data-testid="account-approval-form">
+      <form onSubmit={submit} className="space-y-3" noValidate autoComplete="off" data-testid="account-approval-form">
         {entered && (
           <p className="m-0 pb-1 text-sm text-stone-600" data-testid="account-approval-entered">
             {t('approval.officialEntered', { name: entered })}
           </p>
         )}
-        <Field label={t('approval.email')}>
+        <Field label={t('approval.email')} hint={noStoredEmail ? t('approval.errors.officialEmailMissing') : undefined}>
           <Input
             size="lg"
-            type="email"
-            autoComplete="off"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
+            {...APPROVAL_EMAIL_PROPS}
             value={email}
             onChange={e => { setEmail(e.target.value); setError('') }}
             disabled={busy}

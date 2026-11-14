@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db } from './db/db'
+import { db, persistentStorage } from './db/db'
 import { wipeMatchEvents } from './db/eventHistory'
 import SavedBackupsList from './components/SavedBackupsList'
 import MatchSetup, { preloadMatchSetup } from './components/MatchSetup'
@@ -25,6 +25,7 @@ import TodayGamesModal from './components/TodayGamesModal'
 import { useAuth } from './contexts/AuthContext'
 import { EASY_TEAM_SEED_KEYS, easyMatchPrefill } from './domain/easyMatch'
 import { SIMPLE_BOARD_OPEN_KEY } from './domain/simpleScoreboard'
+import { takesUploadedRoster } from './domain/uploadedRoster'
 import HomeOptionsModal from './components/options/HomeOptionsModal'
 import ConnectTabletsModal from './components/connect/ConnectTabletsModal'
 import { useSyncQueue, useUserMatchLink, checkScorerMoved, askScoringDevice, matchEndUpdateNeeded, isClosedHere, hasStoredSessionToken, noteMatchClosedOnServer } from './hooks/useSyncQueue'
@@ -32,7 +33,7 @@ import { isScorerMoved, takeBackScoring, relaySyncDevice, serverScoreForTakeBack
 import ScorerMovedModal from './components/ScorerMovedModal'
 import ClosedOnServerModal from './components/ClosedOnServerModal'
 import SelfCheckNotice from './components/SelfCheckNotice'
-import { isKnownClosedOnServer, isStaleClosedCopy } from './utils/matchReopen'
+import { isKnownClosedOnServer, isStaleClosedCopy, wasClosedOnServer } from './utils/matchReopen'
 import { BACKGROUND_HOME_MS, SERVER_CHECK_TIMEOUT_MS, checkCopiesOnServer, cleanUpDuplicateCopies, clearOpenMatch, findDuplicateCopies, copyState, duplicateCopyIds, hasOtherLocalCopy, isOpenOfficialCopy, lastActivityAt, matchToReopen, newestEventOf, noteOpenMatch, readServerMatchRows, runDeviceSelfCheck, trackBackground, unsentOfMatch, withinTimeout } from './utils/deviceSelfCheck'
 import SyncSignInBanner from './components/auth/SyncSignInBanner'
 import useAutoBackup from './hooks/useAutoBackup'
@@ -78,17 +79,17 @@ import {
 } from './constants/testSeeds'
 import { apiFrom, apiMatchRestoreByPin, writingDevice } from './lib/apiClient'
 import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
-import { fetchMatchByPin, fetchMatchToContinue, importMatchFromSupabase, cloudBestOf, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, listPocketBaseBackups, fetchPocketBaseMatch, matchBackupFromFile, restoreErrorText } from './utils/backupManager'
+import { fetchMatchByPin, fetchMatchToContinue, importMatchFromSupabase, cloudBestOf, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, matchBackupFromFile, restoreErrorText, localLossOnReplace, restoreLossText, RESTORE_LOSES_LOCAL, continueWithLocalCopy } from './utils/backupManager'
 import UpdateBanner from './components/UpdateBanner'
 import DesktopUpdateNotice from './components/DesktopUpdateNotice'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from './utils/matchFormat'
-import { getMatchWinner } from './domain/matchEnd'
+import { getMatchWinner, opensAtMatchEnd } from './domain/matchEnd'
 import { jobMatchKey, setExtId } from './utils/syncIds'
 import { deviceMatchRows, jobsOfMatch, matchGameNumber, resumeStage, setScore } from './utils/deviceMatches'
 import { PhoneIcon } from './components/icons'
 import { Maximize } from 'lucide-react'
 import { Button, cn, FormError, Input, ScreenLoading } from './ui'
-import { getBackendOverride, getCloudApiUrl, getLocalServerStatusUrl, isCloudBlockedOnThisPort, isStaticHost } from './utils/backendConfig'
+import { getBackendOverride, getCloudApiUrl, getLocalServerStatusUrl, isCloudBlockedOnThisPort, isNativeApp, isStaticHost } from './utils/backendConfig'
 import { isViewportTooSmall } from './utils/formLayout'
 import { onPointHubBoard } from './utils/pointHubBoard'
 import { installAppLifecycle, liveOf, setLiveMatch } from './utils/appLifecycle'
@@ -99,10 +100,12 @@ import ManageConsole from './components/manage/ManageConsole'
 import ManagerSiteLink from './components/ManagerSiteLink'
 import { OPEN_MANAGE_EVENT, OPEN_RESTORE_EVENT, openRestore, restorePrefill } from './utils/manageNav'
 import { relayMatchKey, relayMatchPayload, liveStateNow } from './utils/serverDataSync'
-import { needsEventCheck, pickCurrentMatch, newOfficialMatchStep } from './utils/currentMatch'
-import { isRelayErrorFor, mayPublishMatchData, relayConnectionStatus, relayEvents, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
+import { needsEventCheck, pickCurrentMatch, newOfficialMatchStep, OFFICIAL_MATCH_KEPT_STEPS } from './utils/currentMatch'
+import { isRelayErrorFor, relayConnectionStatus, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
+import { relayMatchBundle, relaySyncTrigger } from './utils/relayMatchSync'
 import { PHONE_MAX_WIDTH, isPhoneScreen, phoneLayoutKept } from './components/scoreboard/phoneLayout'
 import { useSystemBarsHidden } from './utils/nativeSystemBars'
+import { generateSecurePin } from './utils/stringUtils'
 
 function readStoredDisplayMode() {
   try {
@@ -118,15 +121,6 @@ function parseDateTime(dateTime) {
   const [hours, minutes] = timePart.split(':').map(Number)
   const date = new Date(Date.UTC(year, month - 1, day, hours, minutes))
   return date.toISOString()
-}
-
-function generateRefereePin() {
-  const chars = '0123456789'
-  let pin = ''
-  for (let i = 0; i < 6; i++) {
-    pin += chars.charAt(Math.floor(Math.random() * chars.length))
-  }
-  return pin
 }
 
 // sessionStorage: survives the tab's own reloads, not a new start of the app
@@ -733,6 +727,18 @@ export default function App() {
     }
   }, [onHome], null)
 
+  // The browser refused durable storage (db persistentStorage): it may clear
+  // this device's database, and with it writes of a match not sent yet.
+  // Apps keep their data; a browser says so on Home while writes wait
+  const [storageRefused, setStorageRefused] = useState(false)
+  useEffect(() => {
+    if (isNativeApp()) return
+    let live = true
+    Promise.resolve(persistentStorage).then(v => { if (live) setStorageRefused(v === false) }, () => {})
+    return () => { live = false }
+  }, [])
+  const unsentAtRisk = storageRefused && !!unsentByKey && [...unsentByKey.values()].some(u => u.changes > 0)
+
   // Every local match id -> whether it is a copy the server has closed, for
   // the self-check's notice (below) while there is one
   const selfCheckShown = selfCheck != null
@@ -827,6 +833,13 @@ export default function App() {
       updateStatus('supabase', 'connected', {
         status: 'connected',
         message: 'Cloud backend is reachable. Sign in to sync this device\'s matches.'
+      })
+    } else if (syncStatus === 'update_required') {
+      // Reachable, but it refuses this version's writes (426): they wait on
+      // the device; the indicator says "Update needed"
+      updateStatus('supabase', 'connected', {
+        status: 'connected',
+        message: 'Cloud backend is reachable. This app version is too old to write: update the app.'
       })
     } else if (syncStatus === 'online_no_supabase' && isCloudBlockedOnThisPort()) {
       const port = window.location.port
@@ -1401,9 +1414,12 @@ export default function App() {
   // A roster waiting for the open match (uploaded by a team, or restored from
   // the cloud with it): its Match Setup. Only for the match on the screen: on
   // Home it opened the match by itself, at start too, against the start rule
-  // (the app opens on Home; utils/deviceSelfCheck). As OpenBeach #14.
+  // (the app opens on Home; utils/deviceSelfCheck). As OpenBeach #14. Only
+  // before the coin toss: a running match takes no uploaded roster (Match
+  // Setup offers only Reject then), and "Return to match" came straight back.
   useEffect(() => {
     if (!currentMatch || matchId == null || currentMatch.id !== matchId) return
+    if (!takesUploadedRoster(currentMatch)) return
 
     // Check if there are pending rosters
     const hasPendingHomeRoster = currentMatch.pendingHomeRoster !== null && currentMatch.pendingHomeRoster !== undefined
@@ -1440,45 +1456,43 @@ export default function App() {
   // no longer refuse each other. Refs keep the socket from being rebuilt.
   const syncIntervalRef = useRef(null)
   const currentMatchIdRef = useRef(null)
-  const currentMatchRef = useRef(null)
   // The relay key this device last published its current match under
   const publishedRelayKeyRef = useRef(null)
   // The effect's sync, to publish at once when the match gets its seed key
   const relaySyncRef = useRef(null)
 
-  // Update currentMatch ref whenever it changes
+  // Tell the relay at once, not after the 30 s backup sync, when the match it
+  // gets has a change the tablets wait for: a blank match is not published
+  // (no seed key, see relayMatchKey) until Create Match gives it one; a role
+  // let in or out (Connect tablets, Match setup) or a new PIN: the relay
+  // checks the PINs itself, so until then a tablet just let in was told its
+  // right PIN is wrong (and each retry counted toward the per-minute PIN
+  // limit), and one just switched off could still get in. An open Scoreboard
+  // syncs on these changes itself; a second sync of the same data is
+  // harmless. The match is the one the effect below publishes: the open one,
+  // on Home the newest unfinished one (with an older match open next to a
+  // newer one, the newer one's changes synced the open one and the open
+  // one's waited). A string (relaySyncTrigger): no re-render on other writes.
+  const openMatchRelayTrigger = useLiveQuery(async () => {
+    if (!matchId) return null
+    try {
+      return relaySyncTrigger(await db.matches.get(matchId))
+    } catch {
+      return null
+    }
+  }, [matchId])
+  const relayTrigger = matchId ? openMatchRelayTrigger : relaySyncTrigger(currentMatch)
   useEffect(() => {
-    currentMatchRef.current = currentMatch
-  }, [currentMatch])
-
-  // A blank match is not published (no seed key, see relayMatchKey): publish
-  // it as soon as Create Match gives it one, not after the 30 s backup sync.
-  const currentRelayKey = relayMatchKey(currentMatch)
-  useEffect(() => {
-    if (currentRelayKey && relaySyncRef.current) relaySyncRef.current()
-  }, [currentRelayKey])
-
-  // A role let in or out (Connect tablets, Match setup) or a new PIN: tell
-  // the relay at once, not after the 30 s backup sync. The relay checks the
-  // PINs itself, so until then a tablet just let in was told its right PIN
-  // is wrong (and each retry counted toward the per-minute PIN limit), and
-  // one just switched off could still get in. An open Scoreboard syncs on
-  // these changes itself; a second sync of the same data is harmless.
-  const relayAccessSignature = currentMatch
-    ? [
-        currentMatch.refereeConnectionEnabled, currentMatch.homeTeamConnectionEnabled, currentMatch.awayTeamConnectionEnabled,
-        currentMatch.refereePin, currentMatch.homeTeamPin, currentMatch.awayTeamPin
-      ].map(v => String(v ?? '')).join('|')
-    : null
-  useEffect(() => {
-    if (relayAccessSignature != null && relaySyncRef.current) relaySyncRef.current()
-  }, [relayAccessSignature])
+    if (relayTrigger != null && relaySyncRef.current) relaySyncRef.current()
+  }, [relayTrigger])
 
   useEffect(() => {
-    // Keep the match on the relay even on the home screen (for dashboards).
-    // Use matchId or fall back to currentMatch?.id for background sync
+    // Keep the match on the relay even on the home screen (for dashboards):
+    // the open match, on Home the newest unfinished one. Everything the relay
+    // gets comes from that ONE match (relayMatchBundle): with two unfinished
+    // matches on the device, one match's room got the other's sets and events.
     const activeMatchId = matchId || currentMatch?.id
-    if (!activeMatchId || !currentMatch) {
+    if (!activeMatchId) {
       currentMatchIdRef.current = null
       return
     }
@@ -1488,8 +1502,10 @@ export default function App() {
     const wsUrl = scorerRelayUrl({ wsPort: serverStatus?.wsPort })
     if (!wsUrl) return // page opened from disk: no relay
 
-    // Relay room key of the current match (its seed key; null before it has one)
-    const relayKeyOfCurrent = () => relayMatchKey(currentMatchRef.current)
+    // The relay room key this device published the match under (null before)
+    const relayKeyOfCurrent = () => publishedRelayKeyRef.current
+    // The stored row of the match on the relay (PIN and game-number checks)
+    const relayMatchRow = async () => (currentMatchIdRef.current === activeMatchId ? db.matches.get(activeMatchId) : null)
 
     // The match for the relay: never game_pin / connection_pins. `mark`: the
     // live-state order marked before the IndexedDB reads (applyNewerLiveState)
@@ -1511,41 +1527,25 @@ export default function App() {
     })
 
     const syncMatchData = async () => {
-      // Use current values from refs
       const ws = scorerRelay.socket
-      const currentActiveMatchId = currentMatchIdRef.current
-      const currentMatchData = currentMatchRef.current // Use ref to get latest value
-
-      if (!ws || ws.readyState !== WebSocket.OPEN || !currentMatchData || currentActiveMatchId !== activeMatchId) {
+      if (!ws || ws.readyState !== WebSocket.OPEN || currentMatchIdRef.current !== activeMatchId) {
         return
       }
-      // No seed key yet (blank match before Create Match): nothing a tablet
-      // could join, and a Dexie id is no room key (see relayMatchKey)
-      const relayKey = relayMatchKey(currentMatchData)
-      if (!relayKey) return
-      // A test match: to a local relay only (mayPublishMatchData)
-      if (!mayPublishMatchData(currentMatchData, scorerRelay.url)) return
-      // Another device scores this match now: its tablets follow that one,
-      // this device's older copy must not overwrite the room (db/019). Nor
-      // does a copy of a match the server has closed (2026-10-23).
-      if (isScorerMoved(currentMatchData) || isStaleClosedCopy(currentMatchData)) return
 
       try {
         // Before the reads: a live state numbered after this mark is newer
         // than what this sync carries (applyNewerLiveState on the tablets)
         const syncMark = scorerLiveOrder.mark()
-        // Load full match data
-        const [homeTeam, awayTeam, sets, events, homePlayers, awayPlayers, device] = await Promise.all([
-          currentMatchData.homeTeamId ? db.teams.get(currentMatchData.homeTeamId) : null,
-          currentMatchData.awayTeamId ? db.teams.get(currentMatchData.awayTeamId) : null,
-          db.sets.where('matchId').equals(currentActiveMatchId).sortBy('index'),
-          db.events.where('matchId').equals(currentActiveMatchId).toArray(),
-          currentMatchData.homeTeamId ? db.players.where('teamId').equals(currentMatchData.homeTeamId).sortBy('number') : [],
-          currentMatchData.awayTeamId ? db.players.where('teamId').equals(currentMatchData.awayTeamId).sortBy('number') : [],
-          relaySyncDevice(db, currentActiveMatchId, writingDevice())
+        // The match, whole, or none: no seed key yet (a blank match before
+        // Create Match: a Dexie id is no room key), a test match on the cloud
+        // relay, a match another device scores now (its tablets follow that
+        // one, db/019) or a copy the server has closed (2026-10-23)
+        const [bundle, device] = await Promise.all([
+          relayMatchBundle(db, activeMatchId, { relayUrl: scorerRelay.url }),
+          relaySyncDevice(db, activeMatchId, writingDevice())
         ])
-
-        if (scorerRelay.socket !== ws || relayMatchKey(currentMatchRef.current) !== relayKey) return
+        if (!bundle || scorerRelay.socket !== ws || currentMatchIdRef.current !== activeMatchId) return
+        const { relayKey } = bundle
 
         // Another match than the one published before (the scorer switched
         // matches): take that one off the relay, this socket owns it
@@ -1557,21 +1557,22 @@ export default function App() {
         // Full match object - scoreboard is source of truth, always overwrite.
         // PINs only on this connection's first sync of the key and when one
         // changed; never game_pin / connection_pins (see relayMatchPayload).
-        const { match: fullMatch, commit: commitPins } = scorerRelay.pins.payloadFor(ws, currentMatchData, relayKey, syncMark)
+        const { match: fullMatch, commit: commitPins } = scorerRelay.pins.payloadFor(ws, bundle.match, relayKey, syncMark)
 
         // Sync full match data to server - this ALWAYS overwrites existing data (scoreboard is source of truth)
         // The relay keys the room by the seed_key (what the tablets know).
+        // Teams and rosters without dates of birth, events without the undo
+        // snapshots (relayMatchBundle)
         const syncPayload = {
           type: 'sync-match-data',
           matchId: relayKey,
           match: fullMatch,
-          homeTeam,
-          awayTeam,
-          homePlayers,
-          awayPlayers,
-          sets,
-          // without the undo snapshots (relayEvents)
-          events: relayEvents(events),
+          homeTeam: bundle.homeTeam,
+          awayTeam: bundle.awayTeam,
+          homePlayers: bundle.homePlayers,
+          awayPlayers: bundle.awayPlayers,
+          sets: bundle.sets,
+          events: bundle.events,
           // This installation (db/019): the cloud relay refuses the copy of a
           // device the match has moved away from ('scorer-moved'), which
           // re-syncs at once when it comes back online; a venue relay, the
@@ -1591,12 +1592,11 @@ export default function App() {
 
     const handlePinValidationRequest = async (request) => {
       const ws = scorerRelay.socket
-      const currentActiveMatchId = currentMatchIdRef.current
-      const currentMatchData = currentMatchRef.current // Use ref to get latest value
-
-      if (!ws || ws.readyState !== WebSocket.OPEN || !currentMatchData) return
+      if (!ws || ws.readyState !== WebSocket.OPEN) return
 
       try {
+        const currentMatchData = await relayMatchRow()
+        if (!currentMatchData || scorerRelay.socket !== ws) return
         const { pin, pinType, requestId } = request
         const pinStr = String(pin).trim()
 
@@ -1638,17 +1638,18 @@ export default function App() {
 
     const handleMatchDataRequest = async (request) => {
       const ws = scorerRelay.socket
-      const currentActiveMatchId = currentMatchIdRef.current
-      const currentMatchData = currentMatchRef.current // Use ref to get latest value
-
-      if (!ws || ws.readyState !== WebSocket.OPEN || !currentMatchData) return
+      if (!ws || ws.readyState !== WebSocket.OPEN || currentMatchIdRef.current !== activeMatchId) return
 
       try {
         const { requestId, matchId: requestedMatchId } = request
 
         // Only by the relay room key (seed_key): a Dexie id is not unique
-        // across scorers, answering it would open a second, frozen room.
-        const relayKey = relayMatchKey(currentMatchData)
+        // across scorers, answering it would open a second, frozen room. The
+        // same one match, under the same rules, as sync-match-data.
+        const syncMark = scorerLiveOrder.mark()
+        const bundle = await relayMatchBundle(db, activeMatchId, { relayUrl: scorerRelay.url })
+        if (scorerRelay.socket !== ws) return
+        const relayKey = bundle?.relayKey ?? null
         if (!relayKey || String(requestedMatchId) !== relayKey) {
           ws.send(JSON.stringify({
             type: 'match-data-response',
@@ -1660,29 +1661,20 @@ export default function App() {
           return
         }
 
-        const syncMark = scorerLiveOrder.mark()
-        const [homeTeam, awayTeam, sets, events, homePlayers, awayPlayers] = await Promise.all([
-          currentMatchData.homeTeamId ? db.teams.get(currentMatchData.homeTeamId) : null,
-          currentMatchData.awayTeamId ? db.teams.get(currentMatchData.awayTeamId) : null,
-          db.sets.where('matchId').equals(currentActiveMatchId).sortBy('index'),
-          db.events.where('matchId').equals(currentActiveMatchId).toArray(),
-          currentMatchData.homeTeamId ? db.players.where('teamId').equals(currentMatchData.homeTeamId).sortBy('number') : [],
-          currentMatchData.awayTeamId ? db.players.where('teamId').equals(currentMatchData.awayTeamId).sortBy('number') : []
-        ])
-
         ws.send(JSON.stringify({
           type: 'match-data-response',
           requestId,
           matchId: relayKey,
           success: true,
           matchData: {
-            match: relayMatchOf(currentMatchData, syncMark),
-            homeTeam,
-            awayTeam,
-            homePlayers,
-            awayPlayers,
-            sets,
-            events
+            match: relayMatchOf(bundle.match, syncMark),
+            homeTeam: bundle.homeTeam,
+            awayTeam: bundle.awayTeam,
+            homePlayers: bundle.homePlayers,
+            awayPlayers: bundle.awayPlayers,
+            sets: bundle.sets,
+            // without the undo snapshots (relayEvents)
+            events: bundle.events
           }
         }))
       } catch (err) {
@@ -1692,11 +1684,11 @@ export default function App() {
 
     const handleGameNumberRequest = async (request) => {
       const ws = scorerRelay.socket
-      const currentMatchData = currentMatchRef.current // Use ref to get latest value
-
-      if (!ws || ws.readyState !== WebSocket.OPEN || !currentMatchData) return
+      if (!ws || ws.readyState !== WebSocket.OPEN) return
 
       try {
+        const currentMatchData = await relayMatchRow()
+        if (!currentMatchData || scorerRelay.socket !== ws) return
         const { requestId, gameNumber } = request
         const gameNumStr = String(gameNumber).trim()
         const matchGameNumber = String(currentMatchData.gameNumber || '')
@@ -1919,10 +1911,10 @@ export default function App() {
     const finishedSets = (cloudData.sets || []).filter(s => s.finished)
     const homeSetsWon = finishedSets.filter(s => (s.homePoints ?? s.home_points ?? 0) > (s.awayPoints ?? s.away_points ?? 0)).length
     const awaySetsWon = finishedSets.filter(s => (s.awayPoints ?? s.away_points ?? 0) > (s.homePoints ?? s.home_points ?? 0)).length
-    const isMatchFinished = isMatchFinishedUtil(homeSetsWon, awaySetsWon, cloudBestOf(cloudData.match))
-    // An approved or final match is closed even when its sets do not count
-    // as finished (a forfeit): its Match End, never the scoring screen
-    if (isMatchFinished || ['approved', 'final'].includes(matchStatus)) {
+    // A match over is over on every device: its sets decide it, or it is
+    // ended (also stopped for impossibility to resume, its set unfinished),
+    // approved or final: its Match End, never the scoring screen
+    if (opensAtMatchEnd({ status: matchStatus, homeSetsWon, awaySetsWon, bestOf: cloudBestOf(cloudData.match) })) {
       setShowMatchSetup(false)
       setShowMatchEnd(true)
     } else if ((matchStatus === 'live' || hasEvents || hasSets) && (hasEvents || hasSets)) {
@@ -1949,13 +1941,77 @@ export default function App() {
     setShowMatchEnd(false)
   }
 
+  // Home > Restore match, Confirm: the previewed backup or server copy
+  // replaces this device's copy of the match. replaceNewer: the scorer
+  // confirmed losing what this device's copy holds beyond it
+  const runHomeRestore = async (replaceNewer = false) => {
+    setRestoreLoading(true)
+    setRestoreError('')
+    try {
+      let cloudData = restorePreviewData.data
+      let newMatchId
+
+      if (restorePreviewData.source === 'database') {
+        // Compared before the claim, which stops the other device: the
+        // server's copy over a copy here with more events or unsent writes
+        // only on a second confirmation (audit var-local-delete-1)
+        const loss = replaceNewer ? null : await localLossOnReplace(cloudData?.match?.external_id, cloudData?.events)
+        if (loss) throw Object.assign(new Error('This device holds newer data of the match'), { code: RESTORE_LOSES_LOCAL, loss })
+        // Read again with the claim: this device scores the
+        // match from here on (backupManager.fetchMatchToContinue)
+        cloudData = await fetchMatchToContinue(cloudData)
+        newMatchId = await importMatchFromSupabase(cloudData, { replaceNewer: true })
+      } else {
+        newMatchId = await restoreMatchFromJson(cloudData, { replaceNewer })
+      }
+
+      // Close modals
+      setRestorePreviewData(null)
+      setRestoreMatchModal(false)
+      setRestoreMatchIdInput('')
+      setRestorePin('')
+      setCloudBackups([])
+      setCloudBackupPin('')
+      setCloudBackupGameN('')
+      setCloudBackupError('')
+      openRestoredMatch(newMatchId, cloudData)
+    } catch (err) {
+      // backupManager refuses a backup of a match the server
+      // has closed, before it writes anything: a restored
+      // closed copy left a sync error nothing could clear
+      // (2026-10-23). Said here; back to the backup list.
+      if (err?.code === RESTORE_LOSES_LOCAL) {
+        // asked a second time, naming what this device's copy loses
+        setConfirmModal({
+          message: restoreLossText(err.loss, t),
+          onConfirm: () => { setConfirmModal(null); runHomeRestore(true) },
+          onCancel: () => setConfirmModal(null)
+        })
+      } else if (err?.code === 'OV_MATCH_CLOSED') {
+        setRestorePreviewData(null)
+        setAlertModal(t('cloudBlock.restoreRefused'))
+      } else {
+        setRestoreError(restoreErrorText(err, t))
+      }
+    } finally {
+      setRestoreLoading(false)
+    }
+  }
+
   // The server's copy of a match in place of this device's (take back
   // scoring, Load the official version): fetched with the game PIN this
-  // device kept, imported over the local copy (its jobs set aside), then the
-  // screen the loaded match needs
-  const loadOfficialVersion = async (id) => {
+  // device kept, imported over the local copy (its jobs set aside; the
+  // take-back's own confirmation compared the scores), then the screen the
+  // loaded match needs. keepLocal: this device's own score, its unsent points
+  // included, goes to the server instead
+  const loadOfficialVersion = async (id, { keepLocal = false } = {}) => {
     const online = typeof navigator === 'undefined' || navigator.onLine !== false
-    const r = await takeBackScoring(db, id, { fetchCloud: fetchMatchByPin, importCloud: importMatchFromSupabase, online })
+    const r = await takeBackScoring(db, id, {
+      fetchCloud: fetchMatchByPin,
+      importCloud: (cloud) => importMatchFromSupabase(cloud, { replaceNewer: true }),
+      keepLocal: keepLocal ? continueWithLocalCopy : null,
+      online
+    })
     if (!r.ok) return { error: r.reason }
     openRestoredMatch(r.matchId, r.cloud)
     try { window.dispatchEvent(new Event('sync-queue-write')) } catch { /* no window */ }
@@ -1978,7 +2034,12 @@ export default function App() {
   const previewTakeBack = async (id) => {
     const online = typeof navigator === 'undefined' || navigator.onLine !== false
     const r = await serverScoreForTakeBack(db, id, { lookup: (gameN, pin) => apiMatchRestoreByPin(gameN, pin), online })
-    return r.ok ? { score: r.score } : { error: r.reason }
+    if (!r.ok) return { error: r.reason }
+    // this device's points the server never got (set aside on the move):
+    // the confirmation offers to keep them
+    const local = await db.matches.get(id)
+    const unsent = unsentOfMatch(await db.sync_queue.toArray(), local?.seed_key).events
+    return { score: r.score, unsent }
   }
 
   // Home's Clean up (SelfCheckNotice), after one question: the copies of a
@@ -2347,7 +2408,7 @@ export default function App() {
       league: matchInfo.league || matchData.league || TEST_MATCH_DEFAULTS.league,
       gameNumber: matchData.game_number || TEST_MATCH_DEFAULTS.gameNumber,
       // Connection PINs: prefer JSONB, fallback to legacy
-      refereePin: connectionPins.referee || matchData.referee_pin || generateRefereePin(),
+      refereePin: connectionPins.referee || matchData.referee_pin || generateSecurePin(),
       homeTeamPin: connectionPins.bench_home || matchData.bench_home_pin || null,
       awayTeamPin: connectionPins.bench_away || matchData.bench_away_pin || null,
       homeTeamUploadPin: connectionPins.upload_home || matchData.home_team_upload_pin || null,
@@ -2524,8 +2585,9 @@ export default function App() {
       matchName,
       matchId: matchToDelete.id,
       gamePin: matchToDelete.gamePin || null,
-      // the server keeps its closed record: only this device's copy goes
-      closedOnServer: isKnownClosedOnServer(matchToDelete),
+      // the server keeps its closed record (also after an admin reopen,
+      // db/039): only this device's copy goes
+      closedOnServer: wasClosedOnServer(matchToDelete),
       // another device scores it: the server's match and its relay room are
       // that device's, only this device's copy goes
       moved: isScorerMoved(matchToDelete) && !isKnownClosedOnServer(matchToDelete),
@@ -2563,7 +2625,9 @@ export default function App() {
     // delete and no relay delete-match. The server keeps the closed record
     // (and refused every request of such a delete job); a match another
     // device scores is that device's, on the server and in its relay room.
-    const localOnly = !!matchToDelete && (isKnownClosedOnServer(matchToDelete) || isScorerMoved(matchToDelete))
+    // So is a match an admin reopened (db/039: once closed, only an admin
+    // deletes it on the server).
+    const localOnly = !!matchToDelete && (wasClosedOnServer(matchToDelete) || isScorerMoved(matchToDelete))
     const shouldDeleteFromSupabase = matchToDelete && matchToDelete.status !== 'final' && matchToDelete.seed_key && !localOnly && !otherCopy
     console.log('[Delete Match] 🗑️ Preparing to delete match:', {
       matchId: matchIdToDelete,
@@ -2676,21 +2740,44 @@ export default function App() {
     setDeletePinError('')
   }
 
+  // utils/currentMatch newOfficialMatchStep for `match`, with its writes the
+  // server does not have yet (deviceSelfCheck unsentOfMatch) among `jobs`
+  function officialMatchStep(match, jobs) {
+    const unsent = match && match.test !== true ? unsentOfMatch(jobs, match.seed_key) : { changes: 0, events: 0 }
+    const step = newOfficialMatchStep(match, matchStatus?.status, {
+      closedCopy: isStaleClosedCopy(match) || isKnownClosedOnServer(match),
+      movedCopy: isScorerMoved(match),
+      unsent: unsent.changes
+    })
+    return { step, unsent }
+  }
+
+  // Why the official match stays, what to do first, and how many of its
+  // changes have not reached the server (Delete match names them too)
+  function officialMatchKeptMessage(step, unsent) {
+    const why = step === 'ended'
+      ? t('home.modals.officialMatchNotClosed', 'The official match on this device has ended and is not closed. Continue it and close it with "Close match" on its match end, or delete it with "Delete match", before creating a new official match.')
+      : step === 'unsent'
+        ? t('home.modals.officialMatchUnsent', 'The official match on this device has changes the server does not have yet. Go online so they can be sent, or delete it with "Delete match", before creating a new official match.')
+        : t('home.modals.officialMatchStillRecording', 'An official match is still recording on this device. Continue it, or delete it with "Delete match", before creating a new official match.')
+    return unsent?.changes > 0 ? `${why} ${t('home.modals.officialMatchUnsentCount', { count: unsent.changes })}` : why
+  }
+
   async function createNewOfficialMatch() {
     // utils/currentMatch newOfficialMatchStep. An official match being
-    // recorded is not replaced; a test or easy match is, after the question
-    // (this button did nothing at all while one was being recorded). A copy
-    // closed on the server or scored on another device never blocks it and
-    // is never deleted on the way: it stays, read-only, on the home screen's
-    // list (the owner, 2026-10-27). Unconfirmed matches (user started but
-    // didn't click "Create Match") are silently deleted.
-    const step = newOfficialMatchStep(currentMatch, matchStatus?.status, {
-      closedCopy: isStaleClosedCopy(currentMatch) || isKnownClosedOnServer(currentMatch),
-      movedCopy: isScorerMoved(currentMatch)
-    })
-    if (step === 'recording') {
+    // recorded, one that ended or was approved here and is not closed, and
+    // one with writes the server does not have yet are not replaced: the
+    // scorer is told to close or delete it first (Delete match asks for the
+    // game PIN and names what it loses). A test or easy match is replaced,
+    // after the question (this button did nothing at all while one was being
+    // recorded). A copy closed on the server or scored on another device
+    // never blocks it and is never deleted on the way: it stays, read-only,
+    // on the home screen's list (the owner, 2026-10-27). Unconfirmed matches
+    // (user started but didn't click "Create Match") are silently deleted.
+    const { step, unsent } = officialMatchStep(currentMatch, currentMatch ? await db.sync_queue.toArray() : [])
+    if (OFFICIAL_MATCH_KEPT_STEPS.includes(step)) {
       setPendingOfficialGame(null)
-      setAlertModal(t('home.modals.officialMatchStillRecording', 'An official match is still recording on this device. Continue it, or delete it with "Delete match", before creating a new official match.'))
+      setAlertModal(officialMatchKeptMessage(step, unsent))
       return
     }
     if (step === 'replace') {
@@ -2715,7 +2802,7 @@ export default function App() {
     // Create new blank match
     const newMatchId = await db.matches.add({
       status: 'scheduled',
-      refereePin: generateRefereePin(),
+      refereePin: generateSecurePin(),
       coinTossConfirmed: false,
       createdAt: new Date().toISOString()
     })
@@ -2730,7 +2817,17 @@ export default function App() {
 
     // Delete current match first
     if (currentMatch) {
-      await db.transaction('rw', db.matches, db.sets, db.events, db.event_history, db.players, db.teams, db.sync_queue, db.match_setup, async () => {
+      const kept = await db.transaction('rw', db.matches, db.sets, db.events, db.event_history, db.players, db.teams, db.sync_queue, db.match_setup, async () => {
+        // Asked again at Yes, in the deletion's own transaction: since the
+        // question the match may have started, ended or queued a write the
+        // server does not have. Then it stays with its jobs, and the scorer
+        // is told why (createNewOfficialMatch); a copy since found closed on
+        // the server or scored on another device stays too.
+        const jobs = await db.sync_queue.toArray()
+        const { step, unsent } = officialMatchStep(await db.matches.get(currentMatch.id), jobs)
+        if (OFFICIAL_MATCH_KEPT_STEPS.includes(step)) return { step, unsent }
+        if (step !== 'replace' && step !== 'discard') return null
+
         console.log('[New Match] Deleting existing match:', currentMatch.id)
 
         // Delete sets
@@ -2739,24 +2836,31 @@ export default function App() {
         // Delete events - use direct delete for reliability
         await wipeMatchEvents(db, currentMatch.id, { dropHistory: true })
 
+        // A team row another local match still uses stays with its players
+        // (as Delete match keeps it: confirmDeleteMatch sharedTeam)
+        const sharedTeam = async (teamId) => (await db.matches.filter(m => m.id !== currentMatch.id && (m.homeTeamId === teamId || m.awayTeamId === teamId)).count()) > 0
+        const keepHomeTeam = currentMatch.homeTeamId ? await sharedTeam(currentMatch.homeTeamId) : false
+        const keepAwayTeam = currentMatch.awayTeamId ? await sharedTeam(currentMatch.awayTeamId) : false
+
         // Delete players
-        if (currentMatch.homeTeamId) {
+        if (currentMatch.homeTeamId && !keepHomeTeam) {
           await db.players.where('teamId').equals(currentMatch.homeTeamId).delete()
         }
-        if (currentMatch.awayTeamId) {
+        if (currentMatch.awayTeamId && !keepAwayTeam) {
           await db.players.where('teamId').equals(currentMatch.awayTeamId).delete()
         }
 
         // Delete teams
-        if (currentMatch.homeTeamId) {
+        if (currentMatch.homeTeamId && !keepHomeTeam) {
           await db.teams.delete(currentMatch.homeTeamId)
         }
-        if (currentMatch.awayTeamId) {
+        if (currentMatch.awayTeamId && !keepAwayTeam) {
           await db.teams.delete(currentMatch.awayTeamId)
         }
 
-        // This match's unsent jobs; the other matches on the device keep theirs
-        const matchJobs = jobsOfMatch(await db.sync_queue.toArray(), currentMatch.seed_key)
+        // This match's jobs, none of them left to send (an unsent one keeps
+        // the match, above); the other matches on the device keep theirs
+        const matchJobs = jobsOfMatch(jobs, currentMatch.seed_key)
         if (matchJobs.length > 0) await db.sync_queue.bulkDelete(matchJobs.map(j => j.id))
 
         // Delete match setup draft
@@ -2765,7 +2869,14 @@ export default function App() {
         // Delete match
         await db.matches.delete(currentMatch.id)
         console.log('[New Match] Existing match deleted')
+        return null
       })
+      if (kept) {
+        setNewMatchModal(null)
+        setPendingOfficialGame(null)
+        setAlertModal(officialMatchKeptMessage(kept.step, kept.unsent))
+        return
+      }
     }
 
     setNewMatchModal(null)
@@ -2774,7 +2885,7 @@ export default function App() {
       // Create new blank match
       const newMatchId = await db.matches.add({
         status: 'scheduled',
-        refereePin: generateRefereePin(),
+        refereePin: generateSecurePin(),
         coinTossConfirmed: false,
         createdAt: new Date().toISOString()
       })
@@ -3079,7 +3190,7 @@ export default function App() {
         league: TEST_MATCH_DEFAULTS.league,
         gameNumber: TEST_MATCH_DEFAULTS.gameNumber,
         scheduledAt,
-        refereePin: generateRefereePin(),
+        refereePin: generateSecurePin(),
         bench_home: TEST_HOME_BENCH,
         bench_away: TEST_AWAY_BENCH,
         officials,
@@ -3359,7 +3470,7 @@ export default function App() {
     try {
       const previous = (await db.matches.filter(m => isTestMatchSeedKey(m.seedKey)).first()) || null
       const seedKey = testMatchSeedKeyFor(previous?.seedKey)
-      const refereePin = previous?.refereePin || generateRefereePin()
+      const refereePin = previous?.refereePin || generateSecurePin()
       await clearLocalTestData()
       await db.match_setup.clear()
 
@@ -3943,6 +4054,10 @@ export default function App() {
                   onTriggerEventBackup={backup.triggerEventBackup}
                 />
               )}
+              {/* The match screens: the update banner only while this build
+                  cannot do its work (the server refuses its writes, its files
+                  are gone: "Update needed", utils/appUpdate) */}
+              {matchId && <UpdateBanner whenUpdateNeeded />}
             </div>
 
             {/* Another device scores this match now (db/019): this one stops
@@ -3953,6 +4068,8 @@ export default function App() {
                 closed={openMatchBlock?.closed === true}
                 // The other device's score from the cloud first, then the claim
                 onTakeBack={() => loadOfficialVersion(matchId)}
+                // ... or this device's own score, its unsent points included
+                onKeepLocal={() => loadOfficialVersion(matchId, { keepLocal: true })}
                 // the server's score to compare, before the take-back
                 onPreview={() => previewTakeBack(matchId)}
                 onScoresheet={() => openCopyScoresheet(matchId)}
@@ -4166,13 +4283,12 @@ export default function App() {
                           setCloudBackupError('')
                           try {
                             const gameN = parseInt(cloudBackupGameN) || 1
-                            // Fetch the cloud backups, PocketBase and the cloud match itself in parallel.
+                            // Fetch the cloud backups and the cloud match itself in parallel.
                             // Backups are per account: a replacement tablet signed in with another
                             // account lists none, but game number + game PIN still find the match
                             // (restore-by-pin; signed in, it also makes this account an editor).
-                            const [cloudResults, pbResults, dbMatch] = await Promise.all([
+                            const [cloudResults, dbMatch] = await Promise.all([
                               listCloudBackups(cloudBackupPin, gameN).catch(() => []),
-                              listPocketBaseBackups(gameN).catch(() => []),
                               fetchMatchByPin(cloudBackupPin, gameN).catch(() => null)
                             ])
                             // Tag cloud results with source
@@ -4186,7 +4302,7 @@ export default function App() {
                               cloudData: dbMatch
                             }] : []
                             // Merge and sort by most recent first
-                            const merged = [...dbEntries, ...taggedCloud, ...pbResults].sort((a, b) => {
+                            const merged = [...dbEntries, ...taggedCloud].sort((a, b) => {
                               const dateA = a.created || a.updated_at || ''
                               const dateB = b.created || b.updated_at || ''
                               return dateB.localeCompare(dateA)
@@ -4214,6 +4330,7 @@ export default function App() {
                         <div className="mt-2 min-h-[7.5rem] overflow-y-auto rounded-lg border border-stone-200" data-testid="restore-backup-list">
                           <BackupTable
                             backups={cloudBackups}
+                            unlockPins={[cloudBackupPin]}
                             onBackupSelect={async (backup) => {
                               setRestoreLoading(true)
                               setRestoreError('')
@@ -4222,17 +4339,16 @@ export default function App() {
                                   setRestorePreviewData({ data: backup.cloudData, source: 'database' })
                                   return
                                 }
-                                let cloudData
-                                if (backup.source === 'pocketbase') {
-                                  cloudData = await fetchPocketBaseMatch(backup.match_id, cloudBackupPin)
-                                } else {
-                                  cloudData = await fetchCloudBackup(backup.path)
-                                }
-                                if (!cloudData) {
+                                // An encrypted cloud copy opens with the game PIN typed above,
+                                // else the PIN dialog asks (cancelled: back to the list)
+                                const fetched = await fetchCloudBackup(backup.path, { pins: [cloudBackupPin] })
+                                if (!fetched) {
                                   setRestoreError(t('options.alerts.failedToLoadBackupData'))
                                   setRestoreLoading(false)
                                   return
                                 }
+                                const cloudData = await unlockBackup(fetched)
+                                if (!cloudData) return
                                 setRestorePreviewData({ data: cloudData, source: backup.source || 'cloud', backupName: backup.name })
                               } catch (err) {
                                 setRestoreError(restoreErrorText(err, t))
@@ -4358,47 +4474,7 @@ export default function App() {
                     {t('settings.backup.preview.selectAnother')}
                   </button>
                   <button
-                    onClick={async () => {
-                      setRestoreLoading(true)
-                      setRestoreError('')
-                      try {
-                        let cloudData = restorePreviewData.data
-                        let newMatchId
-
-                        if (restorePreviewData.source === 'database') {
-                          // Read again with the claim: this device scores the
-                          // match from here on (backupManager.fetchMatchToContinue)
-                          cloudData = await fetchMatchToContinue(cloudData)
-                          newMatchId = await importMatchFromSupabase(cloudData)
-                        } else {
-                          newMatchId = await restoreMatchFromJson(cloudData)
-                        }
-
-                        // Close modals
-                        setRestorePreviewData(null)
-                        setRestoreMatchModal(false)
-                        setRestoreMatchIdInput('')
-                        setRestorePin('')
-                        setCloudBackups([])
-                        setCloudBackupPin('')
-                        setCloudBackupGameN('')
-                        setCloudBackupError('')
-                        openRestoredMatch(newMatchId, cloudData)
-                      } catch (err) {
-                        // backupManager refuses a backup of a match the server
-                        // has closed, before it writes anything: a restored
-                        // closed copy left a sync error nothing could clear
-                        // (2026-10-23). Said here; back to the backup list.
-                        if (err?.code === 'OV_MATCH_CLOSED') {
-                          setRestorePreviewData(null)
-                          setAlertModal(t('cloudBlock.restoreRefused'))
-                        } else {
-                          setRestoreError(restoreErrorText(err, t))
-                        }
-                      } finally {
-                        setRestoreLoading(false)
-                      }
-                    }}
+                    onClick={() => runHomeRestore()}
                     disabled={restoreLoading}
                     aria-busy={restoreLoading || undefined}
                     className="col-span-2 inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
@@ -4585,6 +4661,13 @@ export default function App() {
 
             {/* Not signed in while the cloud needs an account: non-blocking */}
             {!offlineMode && <SyncSignInBanner syncStatus={syncStatus} compact={currentPage === 'scoreboard'} />}
+
+            {/* The browser may clear this device's data, unsent writes included */}
+            {onHome && unsentAtRisk && (
+              <div role="alert" data-testid="storage-warning" className="mx-auto mt-3 max-w-xl rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                {t('home.storageWarning')}
+              </div>
+            )}
 
           </div>
         </>

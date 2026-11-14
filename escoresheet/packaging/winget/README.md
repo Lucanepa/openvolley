@@ -91,9 +91,13 @@ escoresheet/packaging/winget/update-manifests.sh openbeach 2.0.1
 escoresheet/packaging/winget/validate.sh --urls
 ```
 
-`update-manifests.sh` downloads the installer for its SHA-256 and reads the
-release date from the release (`--file PATH`, `--sha256 HEX`, `--date` to
-override). It replaces the version folder; commit it.
+`update-manifests.sh` downloads the installer and its `.sig` for its SHA-256
+and reads the release date from the release (`--file PATH` with `PATH.sig`
+next to it, `--date` to override). The hash is written only when the
+signature verifies against the updater key the app trusts (bound to the
+version and the file name, `../lib/release-asset.sh`; it stops otherwise), so
+run it after `publish-pkgs.sh --desktop`. It replaces the version folder;
+commit it.
 
 `validate.sh` checks every file against the official JSON schemas of
 microsoft/winget-cli (`schemas/JSON/manifests/v1.28.0`, downloaded once to

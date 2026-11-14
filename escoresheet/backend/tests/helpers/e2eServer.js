@@ -13,7 +13,7 @@ import { dirname, join, resolve } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import pg from 'pg'
 import WebSocket from 'ws'
-import { createDatabase, testSchemaSql } from './pgTestDb.js'
+import { createDatabase, testSchemaSql, applyRolesSql, dropRoles } from './pgTestDb.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const BACKEND_DIR = resolve(HERE, '..', '..')
@@ -57,8 +57,11 @@ export async function waitUntil(fn, { timeoutMs = 15000, intervalMs = 100, what 
 export async function bootServer(env, args = []) {
   const port = await freePort()
   const inherited = { ...process.env }
-  for (const k of ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'POCKETBASE_URL', 'IS_CLOUD', 'TRUST_PROXY', 'TRUST_PROXY_FROM', 'BACKUP_MAX_AGE_HOURS', 'PG_TEST_URL', 'TEST_DATABASE_URL', 'DATABASE_URL']) delete inherited[k]
+  // VolleyManager credentials too: a test server never syncs the real schedule
+  for (const k of ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'IS_CLOUD', 'TRUST_PROXY', 'TRUST_PROXY_FROM', 'BACKUP_MAX_AGE_HOURS', 'PG_TEST_URL', 'TEST_DATABASE_URL', 'DATABASE_URL', 'VM_USERNAME', 'VM_PASSWORD']) delete inherited[k]
   const childEnv = { ...inherited, ...env, PORT: String(port) }
+  // the database mode needs a PIN secret (server.js); a test that names none gets one
+  if (childEnv.DATABASE_URL && childEnv.OV_PIN_SECRET === undefined) childEnv.OV_PIN_SECRET = 'e2e-test-pin-secret-'.padEnd(40, 'x')
   const child = spawn(process.execPath, ['server.js', ...args], { cwd: BACKEND_DIR, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] })
   const output = []
   child.stdout.on('data', (d) => output.push(d.toString()))
@@ -80,6 +83,7 @@ export async function bootServer(env, args = []) {
     base,
     wsUrl: `ws://127.0.0.1:${port}`,
     output,
+    pid: child.pid,
     async stop() {
       if (exited !== null) return
       const done = new Promise((r) => child.once('exit', r))
@@ -171,8 +175,12 @@ export async function provisionDatabase() {
     await admin.end().catch(() => {})
     throw err
   }
+  const roles = []
   cleanup.unshift(async () => {
-    try { await admin.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`) } finally { await admin.end().catch(() => {}) }
+    try {
+      await admin.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`)
+      await dropRoles(admin, roles)
+    } finally { await admin.end().catch(() => {}) }
   })
   const url = new URL(adminUrl)
   url.pathname = '/' + name
@@ -182,8 +190,21 @@ export async function provisionDatabase() {
     await c.query(testSchemaSql({ useTemplate: !USE_DOCKER }))
     await c.query(SESSIONS_SQL)
   } finally { await c.end() }
+  let appUrl = null
   return {
     url: url.toString(),
+    /**
+     * The connection string of a role with exactly the grants of db/roles.sql
+     * (production's ov_app), for the server's DATABASE_URL; `url` stays the
+     * superuser for the test's own setup. Created on first call.
+     */
+    appUrl() {
+      if (!appUrl) {
+        roles.push(`${name}_app`, `${name}_owner`)
+        appUrl = applyRolesSql(url.toString(), { appRole: `${name}_app`, ownerRole: `${name}_owner` })
+      }
+      return appUrl
+    },
     async drop() {
       for (const fn of cleanup) {
         try { await fn() } catch { /* best effort */ }

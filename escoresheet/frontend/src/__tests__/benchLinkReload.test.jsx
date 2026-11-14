@@ -72,6 +72,22 @@ describe('bench opened through its match link', () => {
     expect(sync.getMatchData).not.toHaveBeenCalled()
   })
 
+  // fe-connect-devices-1: a link naming another server than the page's waits
+  // for the connection screen's question; the stored session is checked
+  // against no server before it is answered
+  it('a link naming another server asks first: no PIN check, the session stays', async () => {
+    storeSession()
+    window.history.replaceState({}, '', `/bench/?match=${SEED}&team=home&server=${encodeURIComponent('http://192.168.1.66:8080')}`)
+    render(<BenchApp />)
+    await screen.findByText('server screen')
+    await new Promise(r => setTimeout(r, 50))
+    expect(sync.validatePinSupabase).not.toHaveBeenCalled()
+    expect(sync.validatePin).not.toHaveBeenCalled()
+    expect(sync.getMatchData).not.toHaveBeenCalled()
+    expect(JSON.parse(localStorage.getItem('bench_session'))).toMatchObject({ matchId: SEED, team: 'home', pin: PIN })
+    expect(localStorage.getItem('openvolley_backend_override')).toBeNull()
+  })
+
   it('a session of another match or team leaves the link\'s PIN step', async () => {
     storeSession({ matchId: 'match_other' })
     render(<BenchApp />)

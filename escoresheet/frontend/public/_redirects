@@ -16,5 +16,13 @@
 # API routes should not be rewritten
 /api/*          /api/:splat              200
 
+# Files of the build (/assets/*) are never answered with a page: a missing
+# one (an older version's lazy chunk, after a newer release replaced it)
+# gets a 404 from assets/404.html (public/assets/), the nearest 404.html
+# Pages finds for it. No line here can do that: Pages takes the codes 200
+# and 30x only, and it skips a "/x/*  /x/index.html" line like the ones
+# above and below as a loop, so a missing file otherwise fell back to
+# /index.html as a 200, which the service worker kept as the script.
+
 # Default: all other routes go to the main app
 /*              /index.html              200

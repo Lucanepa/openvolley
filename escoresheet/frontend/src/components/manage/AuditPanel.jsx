@@ -8,8 +8,12 @@ import { RowList, Row, DateRail, EmptyInset, SkeletonRows, Notice, Button, dayLa
 const PAGE = 50
 
 const APPROVAL_ACTIONS = new Set(['match.approve', 'match.approval_revoke', 'match.approval_void'])
+// The activity log (db/016): rows deleted on request, an admin's read of a match or an account, an export
+const ACTIVITY_ACTIONS = new Set(['activity.delete', 'activity.read', 'activity.export'])
 // The entries about one club (db/018, db/020): the club's name leads their line
-const CLUB_ACTIONS = new Set(['club.create', 'club.update', 'club.delete', 'club.managers', 'club.contact', 'club.member_remove', 'club.licences', 'club.licences.manual'])
+const CLUB_ACTIONS = new Set(['club.create', 'club.update', 'club.delete', 'club.managers', 'club.contact', 'club.member_remove', 'club.licences', 'club.licences.manual', 'club.licences.manual_delete'])
+// db/037: a competition or saved team deleted, a saved team's roster replaced (the name and the counts)
+const SAVED_TEAM_ACTIONS = new Set(['saved_teams.competition_delete', 'saved_teams.team_delete', 'saved_teams.roster'])
 
 /** "club_rule.set" -> "Club rule set": an action this build has no label for yet reads as words, never as a code. */
 export function readableAction(action) {
@@ -59,7 +63,7 @@ export function auditDetailsLine(entry, opts = {}) {
     if (typeof d.account_id === 'string') parts.push(`ID ${d.account_id.slice(0, 8)}`)
     return parts.join(' · ')
   }
-  if (entry?.action === 'approval_pin.locked') {
+  if (entry?.action === 'approval_pin.locked' || entry?.action === 'approval_pin.failed') {
     if (Number.isFinite(d.failures)) parts.push(tr('manage.approvals.wrongPins', `${d.failures} wrong PINs`, { failures: d.failures }))
     if (d.disabled) parts.push(tr('manage.approvals.blocked', 'blocked'))
     return parts.join(' · ')
@@ -67,7 +71,8 @@ export function auditDetailsLine(entry, opts = {}) {
   const club = entry?.club_name ? String(entry.club_name) : null
   // db/025: a part of a sign-up request approved or rejected: the kind, the
   // club (by its name today), whether the approver changed it, who decided
-  if (entry?.action === 'account.request_approve' || entry?.action === 'account.request_reject') {
+  // (db/036: account.request_propose, a team manager's yes for the club to confirm)
+  if (entry?.action === 'account.request_approve' || entry?.action === 'account.request_reject' || entry?.action === 'account.request_propose') {
     if (d.kind) parts.push(tr(`access.requests.kinds.${d.kind}`, String(d.kind)))
     if (club) parts.push(club)
     if (d.changed) parts.push(tr('manage.requests.changed', 'changed'))
@@ -85,12 +90,22 @@ export function auditDetailsLine(entry, opts = {}) {
       if (d.list) parts.push(tr(`manage.licences.lists.${d.list}`, String(d.list)))
       if (Number.isFinite(d.count)) parts.push(tr('manage.licences.people', `${d.count} people`, { count: d.count }))
     }
+    // db/037: one row by hand removed (its list, never a name)
+    if (entry.action === 'club.licences.manual_delete' && d.list) parts.push(tr(`manage.licences.lists.${d.list}`, String(d.list)))
     // db/026: people typed into a squad by hand, kept in the club's lists (counts per list, never a name)
     if (entry.action === 'club.licences.manual' && d.lists && typeof d.lists === 'object') {
       for (const [list, n] of Object.entries(d.lists)) {
         if (Number.isFinite(n) && n > 0) parts.push(`${tr(`manage.licences.lists.${list}`, String(list))}: ${n}`)
       }
     }
+    return parts.join(' · ')
+  }
+  if (SAVED_TEAM_ACTIONS.has(entry?.action)) {
+    if (d.name) parts.push(String(d.name))
+    if (d.season) parts.push(String(d.season))
+    if (Number.isFinite(d.teams)) parts.push(tr('manage.audit.teamsCount', `${d.teams} teams`, { count: d.teams }))
+    if (Number.isFinite(d.players)) parts.push(tr('manage.audit.playersCount', `${d.players} players`, { count: d.players }))
+    if (Number.isFinite(d.staff)) parts.push(tr('manage.audit.staffCount', `${d.staff} officials`, { count: d.staff }))
     return parts.join(' · ')
   }
   if (entry?.action === 'account.clubs') {
@@ -113,10 +128,12 @@ export function auditDetailsLine(entry, opts = {}) {
     if (d.corrected) parts.push(tr('manage.audit.corrected', 'corrected'))
     return parts.join(' · ')
   }
-  if (entry?.action === 'activity.delete') {
-    // the match id or the account (the entry's target) whose rows went
+  if (ACTIVITY_ACTIONS.has(entry?.action)) {
+    // the match id or the account (the entry's target) whose rows went, were
+    // read or exported; an export's format
     if (d.match) parts.push(String(d.match))
     if (Number.isFinite(d.rows)) parts.push(tr('manage.audit.rows', `${d.rows} entries`, { count: d.rows }))
+    if (entry.action === 'activity.export' && d.format) parts.push(String(d.format).toUpperCase())
     return parts.join(' · ')
   }
   if (Array.isArray(d.added) && d.added.length) parts.push(`+ ${d.added.map(role).join(', ')}`)

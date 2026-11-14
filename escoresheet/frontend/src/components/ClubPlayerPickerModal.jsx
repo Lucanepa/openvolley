@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { UserPlus } from 'lucide-react'
 import KitModal from './manage/KitModal'
@@ -7,6 +7,9 @@ import { Button, Checkbox, Chip, EmptyInset, Field, SearchInput, Select, cn, day
 
 const fold = (v) => normalizeName(v).normalize('NFD').replace(/\p{Diacritic}/gu, '')
 const LISTS = ['players', 'scorers', 'coaches']
+// The server's name search (`search`): from this many characters, after a short pause
+export const SEARCH_MIN_LENGTH = 3
+const SEARCH_DELAY_MS = 300
 const matches = (p, needle) => !needle || fold(`${p.last_name} ${p.first_name || ''} ${p.first_name || ''} ${p.last_name} ${p.sv_number}`).includes(needle)
 
 /**
@@ -30,6 +33,14 @@ const matches = (p, needle) => !needle || fold(`${p.last_name} ${p.first_name ||
  * one person of `players` for one row, the search starting at `initialQuery`
  * (empty when that finds nobody: a typo). onPick([person]).
  *
+ * `search(q)` (owner decision 2: a team manager never gets the club's whole
+ * lists): the server's name search ({ people, more }, or the API answer with
+ * them in data), asked from SEARCH_MIN_LENGTH characters on; its people are
+ * offered after those of `players` that match.
+ * `resolve(people)`: what the chosen people become before onPick (Match
+ * Setup: the dates of birth the tablet's copy leaves out, asked for the
+ * chosen ones only); the people as they are when it fails.
+ *
  * A person is { sv_number, last_name, first_name, dob, gender, lists? }.
  */
 export default function ClubPlayerPickerModal({ open, ...rest }) {
@@ -37,21 +48,49 @@ export default function ClubPlayerPickerModal({ open, ...rest }) {
   return <PickerBody {...rest} />
 }
 
-function PickerBody({ onClose, onPick, players = [], title, isTaken = () => false, zIndex, mode = 'players', roles = [], initialRole = null, rolesOf = () => [], holderOf = () => null, initialQuery = '' }) {
+function PickerBody({ onClose, onPick, players = [], title, isTaken = () => false, zIndex, mode = 'players', roles = [], initialRole = null, rolesOf = () => [], holderOf = () => null, initialQuery = '', search = null, resolve = null }) {
   const { t } = useTranslation()
   const officials = mode === 'officials'
   const link = mode === 'link'
   // officials and link: one person
   const single = officials || link
   // the row's name as typed; a typo that finds nobody starts with everyone
-  const [q, setQ] = useState(() => (initialQuery && players.some((p) => matches(p, fold(initialQuery))) ? initialQuery : ''))
+  // (with the server's search, the name is looked up there too)
+  const [q, setQ] = useState(() => (initialQuery && (search || players.some((p) => matches(p, fold(initialQuery)))) ? initialQuery : ''))
   const [chosen, setChosen] = useState(() => new Set())
   const [role, setRole] = useState(() => (roles.some((r) => r.value === initialRole) ? initialRole : roles[0]?.value ?? null))
+  const [found, setFound] = useState({ q: '', people: [], more: false, loading: false })
+  const [busy, setBusy] = useState(false)
+  const seen = useRef(new Map())
   const roleLabel = (v) => roles.find((r) => r.value === v)?.label || v || ''
+  const needle = fold(q)
+  const searching = !!search && needle.length >= SEARCH_MIN_LENGTH
+  useEffect(() => {
+    if (!searching) return undefined
+    let live = true
+    setFound((f) => ({ ...f, loading: true }))
+    const timer = setTimeout(async () => {
+      let people = []
+      let more = false
+      try {
+        const r = await search(q.trim())
+        const d = r?.data ?? r
+        people = Array.isArray(d?.people) ? d.people.filter((p) => p && p.sv_number != null) : []
+        more = d?.more === true
+      } catch { /* offline: the local ones only */ }
+      if (!live) return
+      // the ones found stay pickable when the search goes on
+      for (const p of people) seen.current.set(p.sv_number, p)
+      setFound({ q: needle, people, more, loading: false })
+    }, SEARCH_DELAY_MS)
+    return () => { live = false; clearTimeout(timer) }
+  }, [searching, needle]) // eslint-disable-line react-hooks/exhaustive-deps
   const list = useMemo(() => {
-    const needle = fold(q)
-    return players.filter((p) => matches(p, needle))
-  }, [players, q])
+    const local = players.filter((p) => matches(p, needle))
+    if (!searching || found.q !== needle) return local
+    const have = new Set(local.map((p) => String(p.sv_number)))
+    return [...local, ...found.people.filter((p) => !have.has(String(p.sv_number)))]
+  }, [players, needle, searching, found])
   // players: several at once; officials: one person for the role
   const toggle = (sv, on) => setChosen((cur) => {
     const next = new Set(single ? [] : cur)
@@ -59,9 +98,18 @@ function PickerBody({ onClose, onPick, players = [], title, isTaken = () => fals
     else next.delete(sv)
     return next
   })
-  const pick = () => {
-    const out = players.filter((p) => chosen.has(p.sv_number))
-    if (!out.length) return
+  const pick = async () => {
+    // in the order offered: those of `players`, then those the search found
+    const local = new Set(players.map((p) => p.sv_number))
+    let out = [...players.filter((p) => chosen.has(p.sv_number)), ...[...chosen].filter((sv) => !local.has(sv)).map((sv) => seen.current.get(sv)).filter(Boolean)]
+    if (!out.length || busy) return
+    if (resolve) {
+      setBusy(true)
+      try {
+        out = (await resolve(out)) || out
+      } catch { /* the people as they are */ }
+      setBusy(false)
+    }
     if (officials) onPick(out.slice(0, 1), role)
     else if (link) onPick(out.slice(0, 1))
     else onPick(out)
@@ -83,7 +131,7 @@ function PickerBody({ onClose, onPick, players = [], title, isTaken = () => fals
       closeLabel={t('common.close', 'Close')}
       footer={<>
         <Button variant="secondary" size="lg" onClick={onClose}>{t('common.cancel', 'Cancel')}</Button>
-        <Button variant="positive" size="lg" disabled={chosen.size === 0 || (officials && !role)} onClick={pick} data-testid="club-picker-add">
+        <Button variant="positive" size="lg" disabled={chosen.size === 0 || (officials && !role)} loading={busy} onClick={pick} data-testid="club-picker-add">
           {officials ? t('clubPlayers.addAs', { role: roleLabel(role) }) : link ? t('clubPlayers.link') : t('clubPlayers.addCount', { count: chosen.size })}
         </Button>
       </>}
@@ -96,13 +144,17 @@ function PickerBody({ onClose, onPick, players = [], title, isTaken = () => fals
             </Select>
           </Field>
         )}
-        {players.length === 0 ? (
+        {players.length === 0 && !search ? (
           <EmptyInset>{t(single ? 'clubPlayers.nonePeople' : 'clubPlayers.none')}</EmptyInset>
         ) : (
           <>
             <SearchInput size="md" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('clubPlayers.search')} aria-label={t('clubPlayers.search')} data-testid="club-picker-search" />
+            {search && !searching && <p className="m-0 text-xs text-stone-500" data-testid="club-picker-search-hint">{t('clubPlayers.searchHint', { count: SEARCH_MIN_LENGTH })}</p>}
+            {searching && found.q === needle && found.more && <p className="m-0 text-xs text-stone-500" data-testid="club-picker-search-more">{t('clubPlayers.searchMore')}</p>}
             {list.length === 0 ? (
-              <EmptyInset>{t(single ? 'clubPlayers.noMatchPeople' : 'clubPlayers.noMatch')}</EmptyInset>
+              searching && (found.loading || found.q !== needle)
+                ? <EmptyInset>{t('clubPlayers.searching')}</EmptyInset>
+                : <EmptyInset>{t(single ? 'clubPlayers.noMatchPeople' : 'clubPlayers.noMatch')}</EmptyInset>
             ) : (
               <ul
                 className="divide-y divide-stone-200/70 overflow-hidden rounded-xl border border-stone-200/70 bg-white"

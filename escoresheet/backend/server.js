@@ -12,43 +12,48 @@
  */
 
 import { createServer } from 'http'
+import { monitorEventLoopDelay, PerformanceObserver, constants as perfConstants } from 'perf_hooks'
 import { gzip } from 'zlib'
 import { WebSocketServer } from 'ws'
-import nodemailer from 'nodemailer'
 import ical from 'node-ical'
 import { randomBytes, timingSafeEqual, createHash } from 'crypto'
-import { existsSync, readFileSync, statSync } from 'fs'
+import { existsSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { readFile } from 'fs/promises'
 import { isIP, BlockList } from 'net'
 import { join, extname } from 'path'
 import { fileURLToPath } from 'url'
 import os from 'os'
+import { getHeapStatistics } from 'v8'
 import QRCode from 'qrcode'
-import PocketBase from 'pocketbase'
 import { SECRET_COLUMNS, redactSecrets } from './lib/secrets.js'
 // realtimeHub only needs `ws` and node core, so the LAN/SEA bundle can import it
 // statically. It is only *instantiated* in DATABASE_URL mode.
 import { createRealtimeHub, createLiveStateRelay, createHeartbeat, isLiveRequest, matchKeyFromSyncedMatch, jsonTooDeep } from './lib/realtimeHub.js'
 // What anonymous readers (live sockets, /api/db without a session) may see.
-import { projectLiveRow, hasAnonPolicy, anonSelectCheck, publicRelayMatch, publicPeople, relaySummaryBundle, relayMatchListRow, cloudListsMatch, projectAnonDbRows, projectNonOwnerRows } from './lib/publicColumns.js'
+import { projectLiveRow, projectLiveSummaryRow, hasAnonPolicy, anonSelectCheck, relayBundleView, relayMatchView, relayLiveStateView, publicLiveState, coveredLiveLineupTeam, relayViewOf, relaySummaryBundle, relayMatchListRow, cloudListsMatch, projectAnonDbRows, projectNonOwnerRows, projectRows, ANON_DB_COLUMNS } from './lib/publicColumns.js'
 // PIN-proved access to a relayed match (full bundle) and its capability tokens.
-import { createMatchTokens, pinGrantsAccess, matchTokenSecretFromEnv, isTokenRole, connectionPinType, findMatchByConnectionPin, pinRoleOf, tokenRoleOf } from './lib/matchAccess.js'
+import { createMatchTokens, pinGrantsAccess, pinTypeOf, relayPinsByType, matchTokenSecretFromEnv, isTokenRole, connectionPinType, findMatchByConnectionPin, isConnectionPinMatch, pinRoleOf, tokenRoleOf } from './lib/matchAccess.js'
 // Bench requests (line-up, time-out, substitution) from a bench tablet to the scorer
 import { normalizeBenchRequest, normalizeBenchResponse, createBenchRequestStore, createWindowLimiter, currentSetOfBundle, benchView, refereeInfo } from './lib/benchRequests.js'
 // Pure helpers only (no pg, no I/O at import): safe in the LAN / SEA build.
 import { ipBucketKey, createConcurrencyGate, bearerFromHeaders } from './lib/auth.js'
-import { createAttemptLimiter, createPinFailureBudget } from './lib/matchRestore.js'
+import { createAttemptLimiter, createPinFailureBudget, pinScope, PIN_MATCH_FAILURE_MAX, PIN_SEARCH_FAILURE_MAX } from './lib/matchRestore.js'
+import { accessForSport } from './lib/access.js'
 import { newRequestId, formatDbRejection, createLogLimiter, createConnectionSummary } from './lib/opsLog.js'
-import { renderLandingPage, INDOOR_ROLES, BEACH_ROLES } from './lib/landingPage.js'
+import { renderLandingPage, landingMatchRow, INDOOR_ROLES, BEACH_ROLES } from './lib/landingPage.js'
 import { createOriginPolicy, parsePublicOrigins } from './lib/cors.js'
 import { LIVESCORE_JS } from './lib/publicEmbed.js'
 import { createLiveStreams, listParams, MATCH_ID_RE as PUBLIC_MATCH_ID_RE } from './lib/publicApi.js'
-import { createSignSessions, signEndpointOf, signBodyLimit, signError, isSignPagePath, SIGN_API_HEADERS, SIGN_PAGE_HEADERS } from './lib/signSessions.js'
+import { createSignSessions, signEndpointOf, signBodyLimit, signError, isSignPagePath, SIGN_API_HEADERS, SIGN_PAGE_HEADERS, SLOTS as SIGN_SLOTS } from './lib/signSessions.js'
 import { signPageFile } from './lib/signPage.js'
 // The scoring-device handover's pure helpers (the pg part runs in DATABASE_URL mode only)
 import { SCORER_TABLES, deviceOf, matchRefsOfWrite, scorerMovedBody } from './lib/scorerDevice.js'
 // The support form (POST /api/contact): its body, checks and the one mail to CONTACT_EMAIL
-import { BUSY_BODY, contactMailerFromEnv, createContactSlots, handleContact, MAX_CONTACT_BODY_BYTES } from './lib/contact.js'
+import { BUSY_BODY, contactMailerFromEnv, createContactSlots, handleContact, LIVE_MATCH_SQL, matchMailDateTime, MAX_CONTACT_BODY_BYTES } from './lib/contact.js'
+// What the relay keeps of an anonymous socket's bundles and live states
+import { admissionHeapPressure, approxHeapBytes, createFrameBudget, frameTooLarge, relayBundleProblem, relayEvents, relayMemoryBudget, MAX_RELAY_BUNDLE_BYTES, MAX_LIVE_STATE_BYTES, RELAY_ANON_SHARE } from './lib/relayLimits.js'
+// A team's uploaded roster: the app's rules, the signatures it may fill in, its end at the coin toss
+import { checkUploadedRoster, signaturesAfterUpload, uploadedRosterProblemText, withPendingRostersCleared } from './lib/uploadedRoster.js'
 
 const PORT = process.env.PORT || 8080
 
@@ -87,6 +92,12 @@ if (TRUST_PROXY_FROM && TRUST_PROXY !== 'cloudflare') {
 if (DB_MODE && !TRUST_PROXY) {
   console.warn('⚠️  [Config] DATABASE_URL is set but TRUST_PROXY is not: every per-IP limit keys on the socket peer. ' +
     'Behind cloudflared/Traefik that is the proxy, so all clients share ONE bucket. Set TRUST_PROXY=cloudflare (and TRUST_PROXY_FROM).')
+} else if (TRUST_PROXY && !TRUST_PROXY_FROM && process.env.IS_CLOUD && DB_MODE) {
+  // The cloud deployment (IS_CLOUD=1 with DATABASE_URL, deploy/compose.yaml) shares its proxy
+  // network with other containers: trusting cf-connecting-ip from every peer
+  // there lets any of them pick its own client address for every limit.
+  console.error('[Config] IS_CLOUD with TRUST_PROXY=cloudflare needs TRUST_PROXY_FROM (the tunnel\'s address, deploy/compose.yaml)')
+  process.exit(1)
 } else if (TRUST_PROXY && !TRUST_PROXY_FROM) {
   console.warn('⚠️  [Config] TRUST_PROXY=cloudflare without TRUST_PROXY_FROM: cf-connecting-ip is trusted from ANY peer. ' +
     'The origin port must be reachable only through the tunnel/proxy.')
@@ -96,7 +107,8 @@ const PUBLIC_ORIGINS = parsePublicOrigins(process.env.PUBLIC_ORIGINS)
 // Object storage root (bind mount with a .ovdata sentinel). STORAGE_DIR is the
 // older name used by lib/storage.js and its README; STORAGE_ROOT wins.
 const STORAGE_ROOT = process.env.STORAGE_ROOT || process.env.STORAGE_DIR || '/data/storage'
-// Read-only directory holding `last_backup` (UTC timestamp written by the host's backup job).
+// Read-only directory holding `last_backup` and `last_files_backup` (UTC
+// timestamps the host's database run and files run write on success).
 const STATUS_DIR = process.env.STATUS_DIR || '/var/lib/openvolley-status'
 // A host backup older than this (or missing) makes /health 503 (backup:
 // stale|unknown) and pauses the 30-day backup/ sweep, so rotation never deletes
@@ -113,6 +125,12 @@ const CONTACT_EMAIL = process.env.CONTACT_EMAIL || 'support@openvolley.app'
 // by the relay, GET /api/match/:id and anonymous /api/db reads. A too short
 // OV_MATCH_TOKEN_SECRET stops the start (like OV_PIN_SECRET); unset, the
 // secret is derived from OV_PIN_SECRET, else random per process.
+// PINs at rest (lib/pinHash.js): with a database the secret is required. An
+// empty one used to start fine and store every PIN in plaintext.
+if (DB_MODE && !process.env.OV_PIN_SECRET) {
+  console.error('[Config] OV_PIN_SECRET is required with DATABASE_URL (at least 32 characters; README "PINs at rest")')
+  process.exit(1)
+}
 let matchTokens
 try {
   matchTokens = createMatchTokens({ secret: matchTokenSecretFromEnv(process.env) })
@@ -123,73 +141,6 @@ try {
 // X-OV-Proto this server requires for writes (pgQuery minWriteProto).
 const MIN_WRITE_PROTO = 2
 
-// --- PocketBase backup client (server-side only, parallel to Supabase) ---
-const POCKETBASE_URL = process.env.POCKETBASE_URL
-const POCKETBASE_ADMIN_EMAIL = process.env.POCKETBASE_ADMIN_EMAIL
-const POCKETBASE_ADMIN_PASSWORD = process.env.POCKETBASE_ADMIN_PASSWORD
-
-let pbClient = null
-let pbReady = false
-
-async function ensurePocketBaseCollection() {
-  if (!pbReady || !pbClient) return
-  try {
-    await pbClient.collections.getOne('matches')
-  } catch (err) {
-    if (err.status === 404) {
-      console.log('[PocketBase] Creating "matches" collection...')
-      await pbClient.collections.create({
-        name: 'matches',
-        type: 'base',
-        fields: [
-          { name: 'match_id', type: 'text', required: true },
-          { name: 'external_id', type: 'text' },
-          { name: 'status', type: 'text' },
-          { name: 'sport_type', type: 'text' },
-          { name: 'game_number', type: 'number' },
-          { name: 'match_data', type: 'json' },
-          { name: 'home_team', type: 'json' },
-          { name: 'away_team', type: 'json' },
-          { name: 'home_players', type: 'json' },
-          { name: 'away_players', type: 'json' },
-          { name: 'sets', type: 'json' },
-          { name: 'events', type: 'json' },
-          { name: 'updated_at', type: 'text' }
-        ],
-        indexes: [
-          'CREATE UNIQUE INDEX idx_match_id ON matches (match_id)'
-        ]
-      })
-      console.log('[PocketBase] "matches" collection created successfully')
-    } else {
-      throw err
-    }
-  }
-}
-
-async function initPocketBase() {
-  if (!POCKETBASE_URL || !POCKETBASE_ADMIN_EMAIL || !POCKETBASE_ADMIN_PASSWORD) return
-  try {
-    pbClient = new PocketBase(POCKETBASE_URL)
-    pbClient.autoCancellation(false)
-    await pbClient.collection('_superusers').authWithPassword(POCKETBASE_ADMIN_EMAIL, POCKETBASE_ADMIN_PASSWORD)
-    pbReady = true
-    console.log('[PocketBase] Admin client: CONFIGURED and AUTHENTICATED')
-    await ensurePocketBaseCollection()
-    await loadMatchesFromPocketBase()
-  } catch (err) {
-    if (pbReady) {
-      console.error('[PocketBase] Post-auth initialization error:', err.message)
-    } else {
-      pbClient = null
-      console.warn('[PocketBase] Admin client: FAILED to authenticate -', err.message)
-    }
-  }
-}
-
-// Initialize asynchronously (non-blocking — server starts regardless)
-if (POCKETBASE_URL) initPocketBase()
-
 // Tables /api/db may touch ('teams' was dropped: the table no longer exists;
 // beach_competition_matches is not read or written by any client and stays
 // server-side). Columns are checked against the live catalog by
@@ -199,9 +150,10 @@ const ALLOWED_TABLES = ['matches', 'sets', 'events', 'match_live_state', 'profil
 // Reference data a client may read but not change: the official game schedule
 // (written by the server's own vm-sync job). Admins only.
 const READ_ONLY_TABLES = new Set(['svrz_games'])
-// The shared referee directory: any account may add a referee (Match Setup),
-// and add a sport to one (sport_type of a single row, by id); changing or
-// deleting anything else is for admins.
+// The shared referee directory: an account that scores (or an admin) may add
+// a referee (Match Setup), and add a sport to one (sport_type of a single row,
+// by id, keeping every sport it had); removing a sport (which hides the
+// referee from a picker), changing or deleting anything else is for admins.
 const REFEREE_DIRECTORY = 'referee_database'
 const REFEREE_DIRECTORY_UPDATABLE = new Set(['sport_type'])
 // Relay reads (/api/match/list, /api/match/:id, /api/server/connections, ...)
@@ -210,13 +162,36 @@ const REFEREE_DIRECTORY_UPDATABLE = new Set(['sport_type'])
 // every 10 s, referee and bench fetches). 200 ran out at about 12 matches in
 // the national peak load test (2026-10-26, literal halls).
 const DB_RATE_LIMIT_MAX = 1000
-const AUTH_RATE_LIMIT_MAX = 10 // PocketBase PIN proof
 const EMAIL_RATE_LIMIT_MAX = 3
 const ICAL_RATE_LIMIT_MAX = 10
 // Venue-NAT sized buckets (plan §4 Phase 2/3, §9): one address may carry a whole hall.
 const DB_READ_RATE_LIMIT_MAX = 600   // /api/db reads per IP and minute
 const DB_WRITE_RATE_LIMIT_MAX = 600  // /api/db writes per user id and minute
 const DB_WRITE_IP_RATE_LIMIT_MAX = 1200 // /api/db writes per IP, checked before the token lookup
+// /api/db reads answered without a checked session (no token, or a read that
+// needs none, so it was not looked up), and those of an account without any
+// role (anyone may sign up for one: a session alone proves nothing). They
+// share the database pool with sign-in and every scorer's writes (5
+// connections by default), and ten such reads with count:true or an
+// unindexed order held all of it for the 10 s statement timeout. Each counts
+// at most ANON_DB_COUNT_CAP rows, ends after ANON_DB_STATEMENT_TIMEOUT_MS, at
+// most ANON_DB_CONCURRENCY run at once (two connections stay free) with at
+// most ANON_DB_QUEUE waiting, each at most ANON_DB_QUEUE_WAIT_MS (then a
+// retryable 503, well within the apps' 20 s request timeout; one whose caller
+// left meanwhile is not run), and one of the big child tables (events, sets)
+// without a filter on one match or row returns at most ANON_DB_SCAN_ROWS
+// rows. The apps' anonymous reads fit in these: the livescore and picker
+// lists, the archive (500 rows), the referee and schedule directories (pages
+// of 1000), one match by its id.
+const ANON_DB_COUNT_CAP = 1000
+const ANON_DB_STATEMENT_TIMEOUT_MS = 3000
+const ANON_DB_SCAN_ROWS = 100
+const ANON_DB_SCAN_TABLES = new Set(['events', 'sets'])
+const ANON_DB_KEY_COLUMNS = new Set(['id', 'external_id', 'match_id'])
+const ANON_DB_CONCURRENCY = Math.max(1, (Number(process.env.PG_POOL_MAX) > 0 ? Math.floor(Number(process.env.PG_POOL_MAX)) : 5) - 2)
+const ANON_DB_QUEUE = 40
+const ANON_DB_QUEUE_WAIT_MS = 5000
+const anonDbGate = createConcurrencyGate({ maxConcurrent: ANON_DB_CONCURRENCY, maxQueue: ANON_DB_QUEUE, maxWaitMs: ANON_DB_QUEUE_WAIT_MS })
 const STORAGE_IP_RATE_LIMIT_MAX = 600 // /api/storage/* per IP (per-user write quota lives in lib/storage.js)
 const PIN_RATE_LIMIT_MAX = 20        // validate-connection-pin per IP (/64) + PIN type
 const PIN_IP_RATE_LIMIT_MAX = 60     // validate-connection-pin per IP (/64), coarse total
@@ -225,16 +200,26 @@ const PIN_IP_RATE_LIMIT_MAX = 60     // validate-connection-pin per IP (/64), co
 // (pinScope: what the check compares against), 60 per IP across scopes. A
 // success is refunded, so a venue NAT pairing many devices is not affected,
 // and one tablet's typos lock only what it was guessing, not the whole hall.
-const PIN_FAILURES = { max: 20, ipMax: 60, windowMs: 10 * 60 * 1000 }
-const pinFailureLimiter = createPinFailureBudget(PIN_FAILURES)
-const pinScope = {
-  // A PIN looked up among every live match (validate-connection-pin without a
-  // match, the relay's validate-pin): that PIN type of the sport
-  search: (sport, type) => `any:${sport}:${String(type).slice(0, 20)}`,
-  // The PINs of one match: 'all' (any of its PINs, pinGrantsAccess), 'game',
-  // or one connection PIN type (validate-connection-pin's types)
-  match: (matchKey, kind = 'all') => `m:${kind}:${String(matchKey).slice(0, 200)}`
+// Across callers, every address together: 30 wrong PINs per match and PIN
+// type (OV_PIN_MATCH_FAILURES; restore-by-pin: per game number) refuse that
+// PIN type of that match for 10 minutes (the right PIN too; one [PIN] log
+// line), and 100 wrong PINs per
+// PIN-only search (OV_PIN_SEARCH_FAILURES) refuse only the lookups that name
+// no match. Guesses spread over many addresses (an IPv6 /48 is 65,536 /64
+// buckets) passed every per-address limit. pinScope (lib/matchRestore.js)
+// names what a check compares against.
+const pinFailureCount = (name, fallback) => {
+  const n = Number(process.env[name])
+  return Number.isInteger(n) && n > 0 ? n : fallback
 }
+const PIN_FAILURES = {
+  max: 20,
+  ipMax: 60,
+  windowMs: 10 * 60 * 1000,
+  matchMax: pinFailureCount('OV_PIN_MATCH_FAILURES', PIN_MATCH_FAILURE_MAX),
+  searchMax: pinFailureCount('OV_PIN_SEARCH_FAILURES', PIN_SEARCH_FAILURE_MAX)
+}
+const pinFailureLimiter = createPinFailureBudget(PIN_FAILURES)
 // The relay's validate-pin types under validate-connection-pin's names: one
 // typed PIN is checked by both (the apps' backend check, then the relay's),
 // in one scope, and the repeat is not counted again (pinFailureLimiter.repeated)
@@ -269,7 +254,7 @@ const approvalPinFailLimiter = createAttemptLimiter(APPROVAL_PIN_FAILURES)
 function manageFamilyOf(pathname) {
   if (pathname === '/api/me') return 'me'
   if (pathname === '/api/account/join') return 'join'
-  if (pathname === '/api/account/redeem-invite') return 'account'
+  if (pathname === '/api/account/redeem-invite' || pathname === '/api/account/invite-preview') return 'account'
   if (pathname === '/api/match/official-check') return 'officialCheck'
   if (pathname.startsWith('/api/admin/')) return 'admin'
   if (pathname === '/api/saved-teams' || pathname.startsWith('/api/saved-teams/')) return 'savedTeams'
@@ -281,9 +266,10 @@ function manageFamilyOf(pathname) {
   if (pathname === '/api/games/today') return 'games'
   if (pathname.startsWith('/api/team/')) return 'team'
   if (pathname === '/api/game-rosters' || pathname.startsWith('/api/game-rosters/')) return 'gameRosters'
-  if (pathname === '/api/club-licences') return 'clubLicences'
+  if (pathname === '/api/club-licences' || pathname.startsWith('/api/club-licences/')) return 'clubLicences'
   if (pathname === '/api/settings') return 'settings'
   if (pathname === '/api/notifications' || pathname === '/api/notifications/read') return 'notifications'
+  if (pathname.startsWith('/api/match-editors/')) return 'matchEditors'
   return null
 }
 // GET /api/public/clubs (lib/accountRequests.js publicClubs, db/025): the sign-up
@@ -337,8 +323,9 @@ function getDataLayer() {
     import('./lib/licences.js'),
     import('./lib/accountRequests.js'),
     import('./lib/signupNotices.js'),
-    import('./lib/publicApi.js')
-  ]).then(([pgq, mr, au, st, ph, ac, acc, svt, mg, og, ml, apv, bt, evr, act, ss, cl, sd, fm, tms, lic, arq, sn, pub]) => {
+    import('./lib/publicApi.js'),
+    import('./lib/retention.js')
+  ]).then(([pgq, mr, au, st, ph, ac, acc, svt, mg, og, ml, apv, bt, evr, act, ss, cl, sd, fm, tms, lic, arq, sn, pub, ret]) => {
     const poolMax = Number(process.env.PG_POOL_MAX) > 0 ? Math.floor(Number(process.env.PG_POOL_MAX)) : undefined
     const db = pgq.createPgQuery({
       connectionString: DATABASE_URL,
@@ -348,11 +335,10 @@ function getDataLayer() {
       ...(poolMax ? { poolMax } : {})
     })
     // PINs at rest: HMAC with OV_PIN_SECRET (lib/pinHash.js); unset = plaintext as before.
+    // (required in DB mode: the start stops without it, see above)
     const pins = ph.pinHasherFromEnv(process.env)
-    if (!pins.enabled) {
-      console.warn('⚠️  [Config] OV_PIN_SECRET is not set: game and connection PINs are stored in plaintext in the database (README "PINs at rest").')
-    }
-    const restore = mr.createMatchRestore(db, { pinHasher: pins })
+    // restore-by-pin and claim count in the budget of every other PIN check
+    const restore = mr.createMatchRestore(db, { pinHasher: pins, pinBudget: pinFailureLimiter })
     const storage = st.createStorage({
       ...st.storageOptionsFromEnv({ ...process.env, STORAGE_DIR: STORAGE_ROOT }),
       checkQuota: st.createWriteQuota()
@@ -360,7 +346,8 @@ function getDataLayer() {
     // One pg Pool for everything (auth shares pgQuery's pool). delete-account
     // removes the account's files too (README "Deleting an account").
     // Account emails (reset / confirmation links; lib/mailer.js). Without
-    // SMTP_HOST or SMTP_PASS: reset answers 503, sign-up confirms at once.
+    // SMTP_HOST and SMTP_PASS: reset answers 503, sign-up confirms at once.
+    // With either set, an unusable mail setting stops the startup (throws).
     const mailer = ml.mailerFromEnv(process.env)
     if (mailer.enabled) {
       console.log(`[Mail] account emails on: SMTP ${process.env.SMTP_HOST}:${process.env.SMTP_PORT || 465} as ${process.env.SMTP_USER}, from ${mailer.from}, links to ${mailer.managerUrl}; OpenBeach from ${mailer.fromFor('beach')}, links to ${mailer.managerUrlFor('beach')}`)
@@ -377,6 +364,10 @@ function getDataLayer() {
       contactEmail: CONTACT_EMAIL,
       // db/025: what a new account asks for at sign-up (nothing is granted then)
       signUpRequests: { parse: arq.parseSignUpRequests, store: (client, userId, rows) => arq.storeSignUpRequests(client, userId, rows) },
+      // The account's own delete-account: the admin path's last-super-admin
+      // refusal and audit entry, in the deletion's transaction (accounts is
+      // made below; this runs only on a request)
+      selfDelete: (client, userId) => accounts.selfDeleteIn(client, userId),
       onAccountDeleted: async (userId) => {
         const r = await storage.deleteUserData(userId)
         if (r.objectsRemoved || r.ownerRecordsUpdated || r.ownerRecordsRemoved) {
@@ -401,10 +392,11 @@ function getDataLayer() {
     let teams = null
     // Sign-up requests and who approves them (db/025, lib/accountRequests.js), the same way
     let requests = null
-    const accounts = acc.createAccounts({ pool: db.pool, db, restore, access, approvalsForMatches: approvals.approvalsForMatches, clubs: () => clubs, teams: () => teams, requests: () => requests, eraseAccount: auth.eraseAccount })
+    const accounts = acc.createAccounts({ pool: db.pool, db, restore, access, approvalsForMatches: approvals.approvalsForMatches, clubs: () => clubs, teams: () => teams, requests: () => requests, eraseAccount: auth.eraseAccount, mailer })
     // db/029: a club manager link for someone not linked to the club, mailed
     clubs = cl.createClubs({ pool: db.pool, audit: accounts.audit, access, createInvite: accounts.createInvite, mailer })
-    const savedTeams = svt.createSavedTeams({ pool: db.pool })
+    // Saved teams; deletes and roster replacements are audited
+    const savedTeams = svt.createSavedTeams({ pool: db.pool, audit: accounts.audit })
     // A club's licence lists (db/024, lib/licences.js): My club, "Add from club", the gender check
     const licences = lic.createLicences({ pool: db.pool, audit: accounts.audit, clubs })
     teams = tms.createTeams({ pool: db.pool, audit: accounts.audit, savedTeams, clubs, licences })
@@ -414,15 +406,18 @@ function getDataLayer() {
     const revisions = evr.createEventRevisions(db)
     // The match activity log (db/016)
     const activity = act.createActivityLog({ pool: db.pool, accounts })
-    // The manager's Scoresheets tab: stored PDFs for admins and competition managers (audited)
-    const scoresheets = ss.createScoresheets({ pool: db.pool, storage, accounts })
+    // The manager's Scoresheets tab: stored PDFs for admins and competition managers (audited);
+    // a PDF is stored only for a match its uploader may write (db/033)
+    const scoresheets = ss.createScoresheets({ pool: db.pool, db, storage, accounts })
     // The final scoresheet by email (db/021): its switch and the minute sweep below
     const finalMail = fm.createFinalMail({ pool: db.pool, mailer, scoresheets, audit: accounts.audit, ...(process.env.FINAL_MAIL_LANG ? { lang: process.env.FINAL_MAIL_LANG } : {}) })
     const manage = mg.createManageApi({ accounts, savedTeams, beach, approvals, revisions, activity, scoresheets, clubs, finalMail, teams, licences, requests, notices })
     // The active scoring device of each match (db/019, the scoring-device handover)
     const scorer = sd.createScorerDevices({ pool: db.pool, db, audit: accounts.audit })
     const publicApi = pub.createPublicApi({ pool: db.pool })
-    dataLayer = { publicApi, db, restore, auth, storage, pins, access, accounts, savedTeams, beach, approvals, manage, requests, revisions, activity, scoresheets, scorer, finalMail, activityCsvLine: act.csvLine, activityCsvColumns: act.CSV_COLUMNS, publicClaim: og.publicClaim, sendAuthResult: au.sendAuthResult, AUTH_ACTIONS: au.AUTH_ACTIONS, ipKey: au.ipBucketKey }
+    // The end of the match records (db/042, lib/retention.js): the daily sweep below
+    const retention = ret.createRetention({ pool: db.pool, storage, audit: accounts.audit })
+    dataLayer = { publicApi, retention, db, restore, auth, storage, pins, access, accounts, savedTeams, licences, teams, beach, approvals, manage, requests, revisions, activity, scoresheets, scorer, finalMail, isScoresheetPdf: ss.isScoresheetPdf, isMatchScoresheetFile: ss.isMatchScoresheetFile, isScoresheetUploadPath: ss.isScoresheetUploadPath, activityCsvLine: act.csvLine, activityCsvColumns: act.CSV_COLUMNS, publicClaim: og.publicClaim, sendAuthResult: au.sendAuthResult, AUTH_ACTIONS: au.AUTH_ACTIONS, ipKey: au.ipBucketKey }
     return dataLayer
   })
   return dataLayerPromise
@@ -437,7 +432,14 @@ function getDataLayer() {
 // the public columns (no rosters, dates of birth, signatures, officials,
 // connection data, event payloads), see lib/publicColumns.js.
 const realtimeHub = DB_MODE
-  ? createRealtimeHub({ redact: redactSecrets, project: projectLiveRow, getClientIp: (req) => getClientIp(req) })
+  ? createRealtimeHub({
+    redact: redactSecrets,
+    project: projectLiveRow,
+    summaryProject: projectLiveSummaryRow,
+    // one subscriber holds a whole IPv6 /64, as for the role sockets
+    bucketOf: (ip) => ipBucketKey(ip),
+    getClientIp: (req) => getClientIp(req)
+  })
   : null
 let publicStreams = null // lib/publicApi.js createLiveStreams, on first stream
 let liveStateRelay = null // created below, once activeMatches exists
@@ -475,14 +477,15 @@ const OWNER_SCOPED_TABLES = new Set(['profiles', 'user_matches'])
 
 // Columns a client may never write (privilege / identity fields).
 // matches.created_by is set by pgQuery's ownership guard (the session's user);
-// closed_at / closed_by by db/007's trigger; official_game_exempt by an admin;
-// created_at by the database default (it is part of the official-game key when
-// scheduled_at is empty, so a client must not pick the season through it).
+// closed_at / closed_by by db/007's trigger; official_game_exempt and
+// released_at (db/040) by an admin's release-game; created_at by the database
+// default (it is part of the official-game key when scheduled_at is empty, so
+// a client must not pick the season through it).
 const WRITE_DENYLIST = {
   profiles: ['roles', 'user_id', 'id'],
   user_matches: ['user_id', 'id'],
   // tournament_match_id (db/014): the link to a beach tournament match is the server's
-  matches: ['created_by', 'closed_at', 'closed_by', 'official_game_exempt', 'created_at', 'tournament_match_id'],
+  matches: ['created_by', 'closed_at', 'closed_by', 'first_closed_at', 'official_game_exempt', 'released_at', 'created_at', 'tournament_match_id'],
   // db/015: an event is voided / edited only through POST /api/match/event-revisions
   // (which keeps the revision); /api/db can never void or unvoid one
   events: ['voided_at', 'voided_by', 'void_reason', 'rev']
@@ -505,6 +508,40 @@ async function isAdminUser(layer, userId) {
   }
 }
 
+// Referees' dates of birth (referee_database.dob, svrz_games.referee_1_dob /
+// referee_2_dob): only the accounts that fill a scoresheet's officials need
+// them (Match setup's referee picker, the official-match loader), i.e. admins
+// and the accounts that can score in one of the table's sports. svrz_games is
+// the indoor (VolleyManager) schedule; the directory serves OpenBeach too. Any
+// other session reads these tables like an anonymous caller (ANON_DB_COLUMNS).
+const REFEREE_DOB_SPORTS = { referee_database: ['indoor', 'beach'], svrz_games: ['indoor'] }
+
+/**
+ * May this account read the full rows of `table` (REFEREE_DOB_SPORTS)?
+ * THROWS when the roles cannot be read (callers answer 503, never "no").
+ */
+async function readsRefereeDob(layer, userId, table) {
+  const a = await layer.access.get(userId)
+  if (a.isAdmin) return true
+  // the rule of GET /api/games/today's dates of birth too (lib/manageApi.js)
+  return REFEREE_DOB_SPORTS[table].some((sport) => accessForSport(a, sport).canScore === true)
+}
+
+/**
+ * Does this account's /api/db read get the limits of an anonymous one
+ * (anonReadOptions, anonDbGate)? An account without any role: anyone may
+ * sign up for one. When the roles cannot be read, yes: the limits only bound
+ * the read.
+ */
+async function readsLikeAnonymous(layer, userId) {
+  try {
+    return (await layer.access.get(userId)).roles.length === 0
+  } catch (err) {
+    console.warn('[DB] access check failed (read limited like an anonymous one):', err?.message)
+    return true
+  }
+}
+
 /**
  * The only /api/db writes of the referee directory a non-admin may make:
  * inserts, and an update of sport_type alone on one row by id.
@@ -519,6 +556,26 @@ function refereeDirectoryWriteAllowed(table, action, params) {
     Object.keys(data).every((k) => REFEREE_DIRECTORY_UPDATABLE.has(k)) &&
     Array.isArray(filters) && filters.length === 1 && filters[0]?.type === 'eq' && filters[0]?.column === 'id' &&
     (typeof filters[0].value === 'string' || typeof filters[0].value === 'number')
+}
+
+/**
+ * Does a non-admin's sport_type update of one referee (refereeDirectoryWriteAllowed)
+ * keep every sport the row has? Adding is open, removing is for admins. A
+ * database error or an unknown row counts as "no" (an admin can still do it).
+ */
+async function refereeSportsKept(layer, params) {
+  const next = params?.data?.sport_type
+  if (!Array.isArray(next)) return false
+  try {
+    const { rows: [r] } = await layer.db.pool.query(
+      'SELECT sport_type FROM public.referee_database WHERE id::text = $1', [String(params.filters[0].value)])
+    if (!r) return false
+    const have = Array.isArray(r.sport_type) ? r.sport_type : []
+    return have.every((s) => next.includes(s))
+  } catch (err) {
+    console.warn('[DB] referee directory check failed:', err?.message)
+    return false
+  }
 }
 
 /**
@@ -570,6 +627,95 @@ async function claimByUpsertPin(layer, userId, data, clientIp) {
   } catch (err) {
     console.warn('[match/claim] inline take-over failed:', err?.message)
     return false
+  }
+}
+
+// connection_pins keys under the PIN types pinFailureLimiter counts them by
+// (lib/matchAccess.js CONNECTION_PIN_TYPES: older beach spellings)
+const PIN_TYPE_OF_KEY = { team1_data: 'bench_team1', team2_data: 'bench_team2' }
+
+/**
+ * A matches write that carries PINs (game_pin, connection_pins): each PIN it
+ * changes starts its count across callers again (pinFailureLimiter
+ * pinChanged). The scorer who sets a new PIN for a match under attack lifts
+ * that PIN's lock; old wrong guesses say nothing about the new PIN, and a
+ * write of the same PIN (the sync queue sends them whole) lifts nothing. The
+ * stored PINs of the matches the write names are read before it only while
+ * the budget counts anything, and again by done() after it succeeded.
+ * Returns { done } or null; never throws (a failed read lifts nothing).
+ */
+async function watchPinWrites(layer, action, params, actorId = null) {
+  if (action !== 'insert' && action !== 'upsert' && action !== 'update') return null
+  const rows = params?.data == null ? [] : (Array.isArray(params.data) ? params.data : [params.data])
+  // A game PIN change also ends the editors added by the old PIN, so it is watched always
+  const writesGamePin = rows.some((r) => r && typeof r === 'object' && 'game_pin' in r)
+  if (!writesGamePin && !pinFailureLimiter.tracksAny()) return null
+  if (!rows.some((r) => r && typeof r === 'object' && ('game_pin' in r || 'connection_pins' in r))) return null
+  const refs = matchRefsOfWrite('matches', action, params)
+  const read = async ({ externalIds, ids }) => {
+    const out = new Map()
+    for (const [column, values] of [['external_id', externalIds], ['id', ids]]) {
+      if (!values.length) continue
+      const r = await layer.db.runQuery({
+        table: 'matches',
+        action: 'select',
+        params: { columns: 'id, external_id, game_pin, connection_pins', filters: [{ type: 'in', column, value: values }] }
+      }, { internal: true })
+      if (r.body.error) throw new Error(r.body.error.code || 'lookup failed')
+      for (const row of r.body.data || []) if (row.external_id) out.set(row.external_id, row)
+    }
+    return out
+  }
+  const pinsOf = (row) => ({ game_pin: row?.game_pin ?? null, ...(row?.connection_pins && typeof row.connection_pins === 'object' ? row.connection_pins : {}) })
+  let before
+  try {
+    before = await read(refs)
+  } catch (err) {
+    console.warn('[DB] stored PINs not read before a match write:', err?.message)
+    return null
+  }
+  if (before.size === 0) return null
+  return {
+    async done() {
+      try {
+        const after = await read({ externalIds: [...before.keys()], ids: [] })
+        for (const [ext, row] of after) {
+          const was = pinsOf(before.get(ext))
+          const now = pinsOf(row)
+          const changed = [...new Set([...Object.keys(was), ...Object.keys(now)])]
+            .filter((k) => JSON.stringify(was[k] ?? null) !== JSON.stringify(now[k] ?? null))
+            .map((k) => (k === 'game_pin' ? 'game' : PIN_TYPE_OF_KEY[k] || k))
+          if (changed.length) pinFailureLimiter.pinChanged(ext, changed)
+          if (changed.includes('game') && !sameGamePin(layer, was.game_pin, now.game_pin)) await dropPinEditors(layer, row.id, actorId)
+        }
+      } catch (err) {
+        console.warn('[DB] stored PINs not read after a match write:', err?.message)
+      }
+    }
+  }
+}
+
+/** The same game PIN, also when one side is its legacy plaintext and the other its hash. */
+function sameGamePin(layer, was, now) {
+  const a = was == null ? '' : String(was).trim()
+  const b = now == null ? '' : String(now).trim()
+  // matches() never takes a hash for the typed side: only plaintext -> its hash
+  return a === b || (a !== '' && b !== '' && layer.pins.matches('game', a, b))
+}
+
+/**
+ * The game PIN of a match changed: the accounts that became editors by the
+ * old PIN are editors no more, except the account that changed it (a
+ * take-over tablet that sets a new PIN keeps scoring).
+ */
+async function dropPinEditors(layer, matchUuid, actorId = null) {
+  if (!matchUuid || !layer.db?.pool) return
+  try {
+    await layer.db.pool.query(
+      "DELETE FROM public.match_editors WHERE match_id = $1 AND granted_via <> 'admin' AND ($2::uuid IS NULL OR user_id <> $2::uuid)",
+      [matchUuid, actorId || null])
+  } catch (err) {
+    console.warn('[DB] editors by the old game PIN not removed:', err?.code || err?.message)
   }
 }
 
@@ -633,6 +779,24 @@ async function enrichGameTaken(layer, userId, result, rows, matchOwner) {
 }
 
 /**
+ * The scoring-device check of a write that runs its own transaction (the
+ * event history, a backup restore): (client, externalId) => null or the 409
+ * answer, inside that transaction (lib/scorerDevice.js lockedHolder: the
+ * scorer row locked, so a take-over waits for the write or the write sees
+ * it). `ageMs`: a backup restore made that long ago (movedSince). null
+ * without a device: an app from before the handover is not checked.
+ */
+function scorerCheckOf(layer, device, matchOwner, { ageMs } = {}) {
+  if (!device || !layer?.scorer) return null
+  return async (client, externalId) => {
+    const holder = ageMs !== undefined
+      ? await layer.scorer.movedSince(client, { device, externalId, ageMs, matchOwner })
+      : await layer.scorer.lockedHolder(client, { device, refs: { externalIds: [externalId], ids: [] }, matchOwner })
+    return holder ? { status: 409, body: scorerMovedBody(holder) } : null
+  }
+}
+
+/**
  * A take-over by `device` that came with another request (the backup
  * restore): the device scores the match from now on (db/019). Never throws,
  * never changes the request's answer.
@@ -684,13 +848,17 @@ function scorerMoved(r, deviceId) {
  * `deviceId`: the new scorer. A socket that synced the room naming another
  * device no longer speaks for it: its next sync is checked again
  * (verifyRelayClaim) and refused, so its copy cannot replace the room before
- * its app has heard of the move.
+ * its app has heard of the move. A claim of such a socket whose database
+ * check is still running (clientInfo.claimCheck) is refused when the check
+ * ends ('scorer-moved'): it was checked before the move.
  */
 function notifyScorerMoved(externalId, deviceId = null) {
   const key = normalizeMatchId(externalId)
   if (key && deviceId) {
     for (const c of connections.values()) {
-      if (c.scorerDevice && c.scorerDevice !== deviceId) c.ownedMatches.delete(key)
+      if (!c.scorerDevice || c.scorerDevice === deviceId) continue
+      c.ownedMatches.delete(key)
+      if (c.claimCheck?.matchId === key) c.claimCheck.moved = true
     }
   }
   const room = key ? rooms.get(key) : null
@@ -703,7 +871,7 @@ function notifyScorerMoved(externalId, deviceId = null) {
       try { clientInfo.ws.send(data); sent++ } catch { /* closing */ }
     }
   })
-  if (sent) console.log(`🔁 Scorer moved: told ${sent} scoreboard(s) in room ${key}`)
+  if (sent) console.log(`🔁 Scorer moved: told ${sent} scoreboard(s) in room ${logValue(key)}`)
 }
 
 // Secret fields on an in-memory match object that must never reach a client.
@@ -712,6 +880,18 @@ function notifyScorerMoved(externalId, deviceId = null) {
 // protects the match on the scorer's device.
 const MATCH_SECRET_FIELDS = ['refereePin', 'homeTeamPin', 'awayTeamPin', 'homeTeamUploadPin', 'awayTeamUploadPin', 'connection_pins', 'connectionPins', 'game_pin', 'gamePin',
   'team1Pin', 'team2Pin', 'team1TeamPin', 'team2TeamPin', 'team1UploadPin', 'team2UploadPin', 'team1TeamUploadPin', 'team2TeamUploadPin', 'matchPin']
+// The PINs among them that the relay compares or hands to a PIN check: text of
+// at most 64 characters or a number in a sync (relayBundleProblem). The
+// connection_pins objects are the database's, never compared by the relay.
+// matchPin is openbeach's device lock, never compared by the relay and typed
+// with no maximum length, so only its type is checked, not its length
+// (MATCH_PIN_TYPE_ONLY_FIELDS): a long one must not stop a sync silently.
+// Those the relay only keeps and carries over (MATCH_CARRIED_PIN_FIELDS) are
+// bounded in size instead, far above what an app holds
+// (MAX_RELAY_CARRIED_PIN_BYTES each).
+const MATCH_PIN_TYPE_ONLY_FIELDS = ['matchPin']
+const MATCH_PIN_FIELDS = MATCH_SECRET_FIELDS.filter((k) => k !== 'connection_pins' && k !== 'connectionPins' && !MATCH_PIN_TYPE_ONLY_FIELDS.includes(k))
+const MATCH_CARRIED_PIN_FIELDS = MATCH_SECRET_FIELDS.filter((k) => !MATCH_PIN_FIELDS.includes(k))
 function stripMatchSecrets(match) {
   if (!match || typeof match !== 'object') return match
   const clean = { ...match }
@@ -721,11 +901,14 @@ function stripMatchSecrets(match) {
 
 // Room / activeMatches key: always String(matchId). The scoreboard sends the
 // numeric Dexie id, subscribers send a string; without this they ended up in
-// different rooms (Map treats 5 and "5" as different keys).
+// different rooms (Map treats 5 and "5" as different keys). At most 128
+// characters and no control characters: a key is looked up in the database
+// (verifyRelayClaim), where a NUL made the query fail.
+const MATCH_KEY_CONTROL_RE = /[\u0000-\u001f\u007f]/
 function normalizeMatchId(id) {
   if (id === undefined || id === null) return null
   const s = String(id).trim()
-  return s && s.length <= 128 ? s : null
+  return s && s.length <= 128 && !MATCH_KEY_CONTROL_RE.test(s) ? s : null
 }
 
 // Room key of a synced match: its seed_key when it carries one, else the id the
@@ -737,6 +920,15 @@ function normalizeMatchId(id) {
 function relayKeyOf(rawId, match) {
   const seed = match && typeof match === 'object' ? (match.seed_key ?? match.seedKey) : null
   return (typeof seed === 'string' && normalizeMatchId(seed)) || normalizeMatchId(rawId)
+}
+// A seed key the relay cannot take as the room key (over 128 characters,
+// control characters): such a sync is refused before anything looks it up.
+// It used to fall back to the id the socket sent, any match's public
+// external id, while the seed key went to the database check, where a NUL
+// failed the query.
+function badSeedKey(match) {
+  const seed = match && typeof match === 'object' ? (match.seed_key ?? match.seedKey) : null
+  return typeof seed === 'string' && seed.trim() !== '' && normalizeMatchId(seed) === null
 }
 const MAX_ALIASES = 16
 function resolveMatchKey(clientInfo, rawId) {
@@ -773,11 +965,12 @@ function rememberKey(set, key, max) {
 // need the PIN.
 const DEVICE_LABELS = ['referee', 'bench', 'livescore']
 
-// The match's game PIN as a comparable string, or null (test matches have none).
+// The match's game PIN as a comparable string, or null (test matches have
+// none). Text or a number only, like the other PINs (lib/matchAccess.js).
 function gamePinOf(match) {
   if (!match || typeof match !== 'object') return null
   const v = match.gamePin != null && match.gamePin !== '' ? match.gamePin : match.game_pin
-  if (v === undefined || v === null) return null
+  if (typeof v !== 'string' && !(typeof v === 'number' && Number.isFinite(v))) return null
   const s = String(v).trim()
   return s || null
 }
@@ -788,80 +981,47 @@ function safeEqualStr(a, b) {
   return x.length === y.length && timingSafeEqual(x, y)
 }
 
-// A match object as the relay hands it out: no PINs, no personal data (see
-// publicRelayMatch). Joining a room needs no PIN and its key is public.
-function publicMatch(match) {
-  return publicRelayMatch(stripMatchSecrets(match))
-}
-
-// The scorer's undo snapshots on its events: stateSnapshot on every point,
-// stateBefore on rally starts, rotations and substitutions. Its own undo and
-// corrections use them; no relay subscriber reads them (referee, bench,
-// livescore, the LedBox bridge). They were about 90% of a bundle (2.5 KB per
-// point, 2.4 MB at the end of a 5-set match), kept parsed per match in
-// activeMatches and sent to every tablet twice per rally: at a national peak
-// that alone filled the backend's 256 MiB. Dropped when a sync is stored;
-// scorers since 2026-10-26 leave them out themselves (frontend relayEvents).
-const RELAY_EVENT_OMIT = ['stateSnapshot', 'stateBefore']
-function relayEvents(events) {
-  if (!Array.isArray(events)) return events
-  return events.map((e) => {
-    if (!e || typeof e !== 'object' || !RELAY_EVENT_OMIT.some((k) => k in e)) return e
-    const out = {}
-    for (const k of Object.keys(e)) if (!RELAY_EVENT_OMIT.includes(k)) out[k] = e[k]
-    return out
-  })
-}
-
 // The PIN-free, personal-data-free bundle every match-full-data /
-// match-data-update and GET /api/match/:id carries — the same flat shape the
-// LAN relays send (frontend/electron/lanRelayCore.cjs). Only the scorer, who
-// sent it, has the full bundle.
-function wireBundle(entry) {
-  const out = {
-    match: publicMatch(entry.match),
-    homeTeam: entry.homeTeam ?? null,
-    awayTeam: entry.awayTeam ?? null,
-    homePlayers: publicPeople(entry.homePlayers || []),
-    awayPlayers: publicPeople(entry.awayPlayers || []),
-    sets: entry.sets || [],
-    events: entry.events || []
-  }
-  if (entry.liveState !== undefined) out.liveState = entry.liveState
-  return out
+// match-data-update and GET /api/match/:id carries after the PIN step, by
+// what the PIN proved (`view`: 'scorer', 'referee', 'home', 'away';
+// lib/publicColumns.js relayBundleView) — the same flat shape the LAN relays
+// send (frontend/electron/lanRelayCore.cjs). Only the scorer, who sent it,
+// has the whole bundle. The stored entry goes in as it is: relayBundleView
+// does its costly parts once per stored bundle.
+function wireBundle(entry, view) {
+  const bundle = relayBundleView(entry, view)
+  return { ...bundle, match: stripMatchSecrets(bundle.match) }
+}
+
+// The match in validate-pin's answer: the match row of the bundle the PIN
+// opens (relayMatchView), so a bench PIN learns no more of the other team
+// here than from its bundle. `found` is the stored match under its room key.
+function validatePinMatch(found, type, sport) {
+  const entry = activeMatches.get(String(found.id))
+  const match = { ...stripMatchSecrets(relayMatchView(entry?.match ? entry : { match: found }, relayViewOf(type))), id: found.id }
+  return sport === 'beach' ? { ...match, sportType: 'beach' } : match
 }
 
 // match-full-data / match-data-update. A stored liveState is mirrored under
 // `data` (and nothing else is) for the LedBox bridge, which reads
-// msg.data.liveState — same as the LAN relays. `access` 'summary' (no PIN
-// proved): teams, status, set scores and live state only (relaySummaryBundle).
-function matchDataMessage(type, matchId, entry, scoreboardTs, access = 'full') {
+// msg.data.liveState — same as the LAN relays. `view` null (no PIN proved):
+// teams, status, set scores and live state only (relaySummaryBundle), else
+// the bundle of that view, `access` 'full'.
+function matchDataMessage(type, matchId, entry, scoreboardTs, view = null) {
   const now = Date.now()
-  const bundle = access === 'full' ? { access: 'full', ...wireBundle(entry) } : relaySummaryBundle(entry)
+  const bundle = view ? { access: 'full', ...wireBundle(entry, view) } : relaySummaryBundle(entry)
   const msg = { type, matchId, ...bundle, _timestamp: now, _scoreboardTimestamp: scoreboardTs || now }
-  if (entry.liveState !== undefined) msg.data = { liveState: entry.liveState }
+  if (entry.liveState !== undefined) msg.data = { liveState: bundle.liveState }
   return msg
 }
 
 
-// Option 1: Resend API (recommended - uses HTTPS, never blocked)
-// RESEND_API_KEY
-// Option 2: SMTP (may be blocked by some cloud providers)
-// SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, CONTACT_EMAIL
-// The SMTP settings are the account-email mailbox (lib/mailer.js). The legacy
-// route /api/match/send-info mails an address that an anonymous request
-// supplies, so it uses it only with SMTP_LEGACY_ROUTES=1: otherwise
-// configuring password-reset mail would turn it into an open relay of the
-// noreply mailbox. /api/contact mails only CONTACT_EMAIL (lib/contact.js) and
-// uses the mailbox without that switch.
-const LEGACY_SMTP = !!process.env.SMTP_HOST && process.env.SMTP_LEGACY_ROUTES === '1'
-if (process.env.RESEND_API_KEY || LEGACY_SMTP) {
-  console.log('[Email Config] RESEND_API_KEY:', process.env.RESEND_API_KEY ? 'SET' : 'NOT SET')
-  console.log('[Email Config] SMTP_HOST:', process.env.SMTP_HOST ? 'SET' : 'NOT SET')
-  console.log('[Email Config] SMTP_PORT:', process.env.SMTP_PORT || 'NOT SET')
-  console.log('[Email Config] SMTP_USER:', process.env.SMTP_USER ? 'SET' : 'NOT SET')
-  console.log('[Email Config] SMTP_PASS:', process.env.SMTP_PASS ? 'SET' : 'NOT SET')
-}
+// POST /api/match/send-info mails through the Resend API (RESEND_API_KEY)
+// only, to the signed-in scorer's own address. The SMTP settings are the
+// account-email mailbox (lib/mailer.js); /api/contact mails only CONTACT_EMAIL
+// (lib/contact.js). The old SMTP transport of send-info (SMTP_LEGACY_ROUTES=1)
+// is gone.
+if (process.env.RESEND_API_KEY) console.log('[Email Config] RESEND_API_KEY: SET')
 
 // Resend email helper (uses HTTPS - works on all cloud platforms)
 async function sendViaResend(to, subject, text) {
@@ -891,18 +1051,6 @@ async function sendViaResend(to, subject, text) {
     clearTimeout(timeout)
   }
 }
-const emailTransporter = LEGACY_SMTP ? nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: parseInt(process.env.SMTP_PORT || '587'),
-  secure: process.env.SMTP_PORT === '465',
-  connectionTimeout: 10000, // 10 seconds max to connect
-  greetingTimeout: 10000,
-  socketTimeout: 15000,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS
-  }
-}) : null
 // The support form's mail (lib/contact.js): From MAIL_FROM, To CONTACT_EMAIL,
 // Reply-To the user, so FreeScout makes the user the ticket's customer.
 const contactMailer = contactMailerFromEnv(process.env)
@@ -986,6 +1134,9 @@ function getLocalIPs() {
 const activeMatches = new Map()
 const connections = new Map()
 const rooms = new Map() // Match rooms for isolated communication
+// The claim of a room that emptied (its PINs and scoring device), kept for
+// the take-over grace (holdRoom)
+const heldRooms = new Map()
 
 // relay live-state-update -> match_live_state db-change for live subscribers
 // (livescore, the referee's scorer alarm) even while the scorer's HTTP sync is down.
@@ -1005,7 +1156,7 @@ if (realtimeHub) {
       const r = await layer.db.runQuery({
         table: 'matches',
         action: 'select',
-        params: { columns: 'id, sport_type, game_pin, closed_at', filters: [{ type: 'eq', column: key.column, value: key.value }], limit: 1 }
+        params: { columns: 'id, external_id, sport_type, game_pin, closed_at', filters: [{ type: 'eq', column: key.column, value: key.value }], limit: 1 }
       }, { internal: true })
       if (r.body.error) throw new Error(r.body.error.code || 'lookup failed')
       return r.body.data?.[0] || null
@@ -1015,21 +1166,53 @@ if (realtimeHub) {
     // synced game PIN must be the row's, else nothing is published. A row
     // without a game PIN cannot be bound and gets nothing either (the
     // scorer's HTTP sync still updates it).
+    // A row the room's game PIN was not proved for yet (verifyRelayClaim, or
+    // here before) is one counted comparison (relayPinAttempt, under that
+    // match's game PIN in pinFailureLimiter), refused while that PIN is
+    // locked: a room re-pointed at another match's row (an owner's re-sync is
+    // not checked again) showed a public live subscriber whether its PIN was
+    // that row's, outside every limit. Once proved, the room is bound to the
+    // row (bindRoomRows) and its live states are never counted.
     // A closed match (db/007) is frozen for livescore too: nothing is published.
     // This relay is gated by the game PIN, not by an account: a socket carries
     // no session, so the approved-scorer rule (docs/scorer-accounts-spec.md
     // decision 1) does not apply to it. Nothing it relays is stored.
-    verifyMatch: (row, synced) => {
+    verifyMatch: (row, synced, client) => {
       if (row?.closed_at != null) return false
       const pin = gamePinOf(synced?.match)
-      return !!(pin && dataLayer?.pins && dataLayer.pins.matches('game', pin, row?.game_pin))
+      if (!pin || !dataLayer?.pins || row?.game_pin == null || String(row.game_pin).trim() === '') return false
+      const same = () => dataLayer.pins.matches('game', pin, row.game_pin)
+      if (isBoundRow(synced, pin, row.id)) return same()
+      if (!client) return false
+      const r = relayPinAttempt(client, pinScope.match(dbPinKey(row), 'game'), same, { pin })
+      if (r !== 'ok') return false
+      bindRoomRows(synced, pin, [row.id])
+      return true
     }
   })
 }
 
 // --- Capacity limits ---
 const MAX_ROOMS = 500
-const MAX_CONNECTIONS = 2000
+const MAX_CONNECTIONS = Number(process.env.OV_MAX_CONNECTIONS) > 0 ? Math.floor(Number(process.env.OV_MAX_CONNECTIONS)) : 2000
+// Admission: above this share of V8's heap limit a new socket is told "relay
+// busy" (1013, the apps retry) instead of the process running into the heap
+// limit or the container's memory limit and dropping every match it holds.
+const ADMIT_HEAP_PCT = Number(process.env.OV_ADMIT_HEAP_PCT) > 0 ? Math.min(100, Number(process.env.OV_ADMIT_HEAP_PCT)) : 85
+let admissionRefused = 0
+// Heap left after the last major GC (the live data); the boot heap until the
+// first one. admissionHeapPressure counts the lower of this and the heap now.
+let heapAfterMajorGc = getHeapStatistics().used_heap_size
+const gcObserver = new PerformanceObserver(list => {
+  if (list.getEntries().some(e => e.detail?.kind === perfConstants.NODE_PERFORMANCE_GC_MAJOR)) {
+    heapAfterMajorGc = getHeapStatistics().used_heap_size
+  }
+})
+gcObserver.observe({ entryTypes: ['gc'] })
+function heapPressure() {
+  const h = getHeapStatistics()
+  return admissionHeapPressure({ usedNow: h.used_heap_size, usedAfterMajorGc: heapAfterMajorGc, limit: h.heap_size_limit })
+}
 // Role sockets (scoreboard/referee/bench/livescore relay) per IP. A cloud relay
 // sits behind venue NATs (plan §4 Phase 3: 200); the LAN relay keeps 50.
 // `?purpose=live` sockets are counted separately by the realtime hub (500/IP, 3000 total).
@@ -1059,145 +1242,40 @@ const CLAIM_FAILURE_LIMIT = 5
 // once.
 const MAX_OWNED_PER_IP = 64
 const NEW_CLAIM_LIMIT = 64
+// Rooms the syncs of one address keep (entry.relayAddress), as many as it may
+// own: an address whose sockets close and reconnect cannot fill MAX_ROOMS
+// with rooms a subscriber keeps open after it ('room-limit'). On the cloud
+// the rooms the database did not prove count as many per /56 (entry.relayNet):
+// one IPv6 customer holds 256 /64s or more. The same share bounds one
+// address's held claims (heldRooms).
+const MAX_ROOMS_PER_ADDRESS = MAX_OWNED_PER_IP
+// Cloud (DATABASE_URL): the rooms the database did not prove (no game PIN of
+// an official match) may take this many of MAX_ROOMS together, as their
+// bundles may take RELAY_ANON_SHARE of the relay memory: the rest is kept for
+// official matches.
+const MAX_ANON_ROOMS = Math.floor(MAX_ROOMS * RELAY_ANON_SHARE)
+// Rooms one socket is in or waits for (subscribe-match): the relay livescore
+// follows up to 32 matches on one socket (frontend utils/relayLivescore.js).
+// A 33rd leaves the oldest. Joining a match the relay does not hold creates
+// no room: the socket waits for its first sync (admitWaiting).
+const MAX_SOCKET_ROOMS = 32
+// Emptied rooms whose claim is held for the take-over grace (heldRooms), at
+// most; over it the oldest claim of the address holding the most is released
+// (makeHeldRoom)
+const MAX_HELD_ROOMS = 2000
 const FINISHED_STATUSES = new Set(['final', 'ended', 'completed', 'finished'])
-
-// --- PocketBase sync (5s trailing-edge debounce) ---
-const PB_SYNC_DEBOUNCE_MS = 5000
-const pbPendingSync = new Map() // matchId → { data, timer }
-const pbSyncedMatches = new Set() // track which matches have been synced at least once
-
-function syncToPocketBase(matchId, matchData) {
-  if (!pbReady || !pbClient) return
-  const existing = pbPendingSync.get(matchId)
-  if (existing) {
-    existing.data = matchData // overwrite with latest snapshot
-    return // timer already running
-  }
-  const entry = { data: matchData, timer: null }
-  entry.timer = setTimeout(() => {
-    pbPendingSync.delete(matchId)
-    executePocketBaseSync(matchId, entry.data)
-  }, PB_SYNC_DEBOUNCE_MS)
-  pbPendingSync.set(matchId, entry)
+// Memory the stored bundles and live states may take (approxHeapBytes,
+// lib/relayLimits.js), in total and per address: the IPv6 /64 on the cloud,
+// the address on a venue relay (as MAX_CONNECTIONS_PER_IP); the relay host
+// itself counts in the total only, as it is exempt from MAX_OWNED_PER_IP.
+let RELAY_MEMORY
+try {
+  RELAY_MEMORY = relayMemoryBudget({ heapLimitBytes: getHeapStatistics().heap_size_limit, maxMb: process.env.OV_RELAY_MAX_MB })
+} catch (err) {
+  console.error(`[Config] ${err.message}`)
+  process.exit(1)
 }
-
-async function executePocketBaseSync(matchId, matchData) {
-  if (!pbReady || !pbClient) return
-  try {
-    const payload = {
-      match_id: String(matchId),
-      external_id: matchData.match?.external_id || matchData.match?.seed_key || '',
-      status: matchData.match?.status || 'unknown',
-      sport_type: matchData.sportType || matchData.match?.sport_type || 'indoor',
-      game_number: matchData.match?.gameN || matchData.match?.gameNumber || matchData.match?.game_n || 0,
-      match_data: matchData.match || {},
-      home_team: matchData.homeTeam || {},
-      away_team: matchData.awayTeam || {},
-      home_players: matchData.homePlayers || [],
-      away_players: matchData.awayPlayers || [],
-      sets: matchData.sets || [],
-      events: matchData.events || [],
-      updated_at: new Date().toISOString()
-    }
-    try {
-      const existing = await pbClient.collection('matches').getFirstListItem(
-        pbClient.filter('match_id = {:id}', { id: String(matchId) })
-      )
-      await pbClient.collection('matches').update(existing.id, payload)
-    } catch (findErr) {
-      if (findErr.status === 404) {
-        await pbClient.collection('matches').create(payload)
-      } else {
-        throw findErr
-      }
-    }
-    // Only log first sync per match to keep logs clean
-    if (!pbSyncedMatches.has(matchId)) {
-      pbSyncedMatches.add(matchId)
-      console.log(`[PocketBase] First sync for match ${matchId}`)
-    }
-  } catch (err) {
-    if (err.status === 401) {
-      console.warn('[PocketBase] Auth expired, re-authenticating...')
-      pbReady = false
-      try {
-        await pbClient.collection('_superusers').authWithPassword(POCKETBASE_ADMIN_EMAIL, POCKETBASE_ADMIN_PASSWORD)
-        pbReady = true
-        executePocketBaseSync(matchId, matchData)
-      } catch (reAuthErr) {
-        console.error('[PocketBase] Re-authentication failed:', reAuthErr.message)
-      }
-      return
-    }
-    console.error(`[PocketBase] Sync failed for match ${matchId}:`, err.message)
-  }
-}
-
-// Relay room cleanup must not destroy the backup: mark the record retired
-// (skipped by startup recovery) instead of deleting it.
-async function retirePocketBaseMatch(matchId) {
-  // Cancel any pending debounced sync
-  const pending = pbPendingSync.get(matchId)
-  if (pending) { clearTimeout(pending.timer); pbPendingSync.delete(matchId) }
-  pbSyncedMatches.delete(matchId)
-  if (!pbReady || !pbClient) return
-  try {
-    const existing = await pbClient.collection('matches').getFirstListItem(
-      pbClient.filter('match_id = {:id}', { id: String(matchId) })
-    )
-    try {
-      await pbClient.collection('matches').update(existing.id, { status: 'deleted', updated_at: new Date().toISOString() })
-    } catch (err) {
-      // executePocketBaseSync stores any match status ('unknown' included), so
-      // `status` is free text in practice; a deployment whose schema made it a
-      // select field would reject 'deleted'. 'final' is skipped by recovery too.
-      if (err.status !== 400) throw err
-      await pbClient.collection('matches').update(existing.id, { status: 'final', updated_at: new Date().toISOString() })
-    }
-    // Retired records stay in the restore list (with their status): retiring
-    // exists precisely so a cleared relay match can still be restored.
-    console.log(`[PocketBase] Retired match ${matchId}`)
-  } catch (err) {
-    if (err.status !== 404) console.error(`[PocketBase] Retire failed for match ${matchId}:`, err.message)
-  }
-}
-
-async function loadMatchesFromPocketBase() {
-  if (!pbReady || !pbClient) return
-  try {
-    const records = await pbClient.collection('matches').getFullList({ sort: '-updated_at' })
-    let loaded = 0
-    for (const record of records) {
-      const matchId = record.match_id
-      if (!matchId || record.status === 'final' || record.status === 'deleted' || activeMatches.has(matchId)) continue
-      activeMatches.set(matchId, {
-        matchId,
-        match: record.match_data || {},
-        homeTeam: record.home_team || {},
-        awayTeam: record.away_team || {},
-        homePlayers: record.home_players || [],
-        awayPlayers: record.away_players || [],
-        sets: record.sets || [],
-        events: record.events || [],
-        gameNumber: record.game_number || record.match_data?.gameN,
-        sportType: record.sport_type === 'beach' ? 'beach' : 'indoor',
-        updatedAt: record.updated_at || record.updated,
-        updatedBy: 'pocketbase-recovery',
-        orphanedAt: Date.now() // no scoreboard connected yet
-      })
-      rooms.set(matchId, {
-        matchId,
-        clients: new Set(),
-        createdAt: new Date().toISOString(),
-        lastActivity: Date.now()
-      })
-      loaded++
-    }
-    if (loaded > 0) console.log(`[PocketBase] Recovered ${loaded} active match(es) from backup`)
-  } catch (err) {
-    console.error('[PocketBase] Failed to load matches on startup:', err.message)
-  }
-}
+console.log(`[Relay] memory for match data: ${Math.round(RELAY_MEMORY.total / 1048576)} MB, ${Math.round(RELAY_MEMORY.perAddress / 1048576)} MB per address`)
 
 // --- Input validation constants ---
 const VALID_ROLES = ['scoreboard', 'referee', 'bench', 'subscriber', 'livescore']
@@ -1209,7 +1287,10 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 }
 
+// Six digits, as text or a number. An object or array is none: String() of
+// { toString: 1 } throws, and the route answered 500.
 function isValidPin(pin) {
+  if (typeof pin !== 'string' && typeof pin !== 'number') return false
   return /^\d{6}$/.test(String(pin).trim())
 }
 
@@ -1270,16 +1351,17 @@ function isInternalCaller(req) {
 const RATE_LIMIT_WINDOW_MS = 60 * 1000
 const RATE_LIMIT_MAX_REQUESTS = 10
 const CONTACT_RATE_LIMIT_MAX = 3
-// One Map per category so counters don't interfere across endpoint types
+const TEST_MAIL_RATE_LIMIT_MAX = 10      // /api/scoresheet/test-mail per user and minute
+// One Map per category so counters don't interfere across endpoint types.
+// "per IP" is per address bucket (addressKey): on the cloud an IPv6 /64.
 const rateLimitMaps = {
-  default: new Map(),   // validate-pin, etc.
-  relay: new Map(),     // relay reads: /api/match/list|:id, /api/server/connections, /api/pocketbase/*
-  contact: new Map(),   // /api/contact
+  default: new Map(),   // validate-pin, per IP (/64)
+  relay: new Map(),     // relay reads: /api/match/list|:id, /api/server/connections, per IP
+  contact: new Map(),   // /api/contact, per IP
   publicApi: new Map(), // /api/public/v1/*
   publicApiStream: new Map(), // /api/public/v1/matches/:id/stream (new streams)
-  email: new Map(),     // /api/match/send-info
-  auth: new Map(),      // PocketBase PIN proof (lib/auth.js has its own buckets)
-  ical: new Map(),      // /api/official-matches
+  email: new Map(),     // /api/match/send-info, per IP
+  ical: new Map(),      // /api/official-matches, per IP
   db: new Map(),        // /api/db reads, per IP
   dbWrite: new Map(),   // /api/db writes, per user id
   dbWriteIp: new Map(), // /api/db writes, per IP (before the token lookup)
@@ -1291,19 +1373,71 @@ const rateLimitMaps = {
   restorePin: new Map(), // /api/match/restore-by-pin, per IP
   manage: new Map(),    // /api/admin/*, /api/saved-teams*, per user id
   officialCheck: new Map(), // /api/match/official-check, per user id
+  approvalPin: new Map(), // /api/account/approval-pin*, per user id
+  approvals: new Map(), // /api/approvals*, per user id
+  testMail: new Map(),  // /api/scoresheet/test-mail, per user id
   publicBeach: new Map(), // /api/public/beach/t/:slug, per IP
   publicClubs: new Map(), // /api/public/clubs, per IP
   scoresheetView: new Map(), // /api/scoresheet-view/*, per IP
   activity: new Map()   // POST /api/activity, per user id
 }
+// Keys per category: a flood of new keys (every address of a routed IPv6
+// prefix, a botnet) evicts the oldest windows (Map insertion order), never the
+// whole map, and never grows the heap without bound (the backend runs with
+// 256 MB; a key with its window takes about 170 bytes).
+const RATE_LIMIT_MAX_KEYS = 10000
 
-function isRateLimited(ip, maxRequests = RATE_LIMIT_MAX_REQUESTS, category = 'default') {
-  const map = rateLimitMaps[category] || rateLimitMaps.default
+/**
+ * The rate-limit key of a request's address. On the cloud the address bucket
+ * of lib/auth.js ipBucketKey: IPv4 as is, IPv6 by /64, since one subscriber
+ * holds a whole /64 and a per-address key would be no limit at all. A venue
+ * relay counts per address, like its socket cap: every tablet of a hall LAN
+ * shares one IPv6 /64.
+ */
+/**
+ * The support form's sender (lib/contact.js handleContact): signed in (a valid
+ * session in the Authorization header) and scoring a live match (the scoring
+ * device of a match that has not ended, claimed by this account in the last
+ * 12 hours). Never throws: anything unclear is { signedIn: false }.
+ */
+async function contactSender(req) {
+  const token = DB_MODE ? bearerFromHeaders(req.headers) : null
+  if (!token) return { signedIn: false, liveMatch: false }
+  try {
+    const layer = await getDataLayer()
+    const user = (await layer.auth.verifyAccessToken(token))?.user
+    if (!user) return { signedIn: false, liveMatch: false }
+    let liveMatch = false
+    try {
+      const { rows } = await layer.db.pool.query(
+        LIVE_MATCH_SQL, [user.id])
+      liveMatch = rows.length > 0
+    } catch { /* no db/019: no live match known */ }
+    return { signedIn: true, liveMatch }
+  } catch {
+    return { signedIn: false, liveMatch: false }
+  }
+}
+
+function addressKey(req) {
+  const ip = getClientIp(req)
+  return IS_CLOUD ? ipBucketKey(ip) : ip
+}
+
+function isRateLimited(key, maxRequests = RATE_LIMIT_MAX_REQUESTS, category = 'default') {
+  // A category without a map of its own gets one: categories never share a
+  // counter (approvals, the approval PIN and the test mail once all counted in
+  // 'default', in one counter per user)
+  if (!Object.hasOwn(rateLimitMaps, category)) rateLimitMaps[category] = new Map()
+  const map = rateLimitMaps[category]
   const now = Date.now()
-  const entry = map.get(ip)
+  const entry = map.get(key)
 
   if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
-    map.set(ip, { count: 1, windowStart: now })
+    // A new window goes to the end of the insertion order
+    if (entry) map.delete(key)
+    else while (map.size >= RATE_LIMIT_MAX_KEYS) map.delete(map.keys().next().value)
+    map.set(key, { count: 1, windowStart: now })
     return false
   }
 
@@ -1325,9 +1459,38 @@ setInterval(() => {
 }, 5 * 60 * 1000)
 
 /**
+ * The pgQuery options of an /api/db read without a checked session or by an
+ * account without a role (see ANON_DB_COUNT_CAP): a bounded count, a short
+ * statement timeout, and on events / sets without an eq or in filter on id,
+ * external_id or match_id the small row cap.
+ */
+function anonReadOptions(table, params) {
+  const keyed = Array.isArray(params?.filters) && params.filters.some((f) =>
+    f && typeof f === 'object' && (f.type === 'eq' || f.type === 'in') && ANON_DB_KEY_COLUMNS.has(f.column))
+  return {
+    countCap: ANON_DB_COUNT_CAP,
+    statementTimeoutMs: ANON_DB_STATEMENT_TIMEOUT_MS,
+    ...(ANON_DB_SCAN_TABLES.has(table) && !keyed ? { maxRows: ANON_DB_SCAN_ROWS } : {})
+  }
+}
+
+/**
  * The external_id of an /api/db filter list that is exactly ONE eq on
  * external_id (the app's delete of one event), else null.
  */
+/**
+ * Whether a match with this external_id is stored (any owner), was deleted
+ * (db/043 deleted_matches) or was never seen: 'stored' | 'deleted' | 'unknown'.
+ */
+async function matchState(layer, externalId) {
+  const { rows } = await layer.db.pool.query(
+    `SELECT EXISTS (SELECT 1 FROM public.matches WHERE external_id = $1) AS stored,
+            EXISTS (SELECT 1 FROM public.deleted_matches WHERE external_id = $1) AS deleted`, [externalId])
+  return rows[0]?.stored ? 'stored' : rows[0]?.deleted ? 'deleted' : 'unknown'
+}
+const MATCH_DELETED_BODY = { data: null, error: { message: 'This match was deleted', code: 'OV_MATCH_DELETED' } }
+const MATCH_UNKNOWN_BODY = { data: null, error: { message: 'This match is not on the server', code: 'OV_MATCH_UNKNOWN' } }
+
 function singleExternalIdFilter(filters) {
   if (!Array.isArray(filters) || filters.length !== 1) return null
   const f = filters[0]
@@ -1498,7 +1661,9 @@ function sendJsonText(req, res, status, text) {
 // (OV_UNSCOPED_EXTERNAL_ID, OV_CLIENT_TOO_OLD). Dropped lines are reported per
 // code once a minute. Socket churn (connectivity checks open and close a socket every few
 // seconds) and /api/match/list polls: one summary line a minute.
-// OV_LOG_CONNECTIONS=1 restores the per-socket lines for debugging.
+// Per-message relay lines (room joins and leaves, bundle syncs, broadcasts,
+// match fetches) are counted there too, so a match day fits the log rotation.
+// OV_LOG_CONNECTIONS=1 restores the per-socket and per-message lines for debugging.
 const LOG_EACH_CONNECTION = process.env.OV_LOG_CONNECTIONS === '1'
 const logDbRejection = createLogLimiter({ max: 30, windowMs: 60_000 })
 const relaySummary = createConnectionSummary({ label: '[WS]', intervalMs: 60_000 })
@@ -1508,9 +1673,15 @@ setInterval(() => { relaySummary.flush(); logDbRejection.flush() }, 60_000).unre
 // POST /api/sign/start|open|submit|wait|close and the phone page at /sign.
 // Sessions live in memory only (D4), created on the first request. Cloud
 // (DATABASE_URL): start needs a session of a scorer, referee (indoor or beach)
-// or admin account (D2). LAN / SEA (--local): the relay host itself, or the
-// game PIN of a match this relay holds in X-OV-Match-Pin (D3, wrong PINs
-// counted in pinFailureLimiter). OV_SIGN_DISABLED=1: 503 OV_SIGN_UNAVAILABLE.
+// or admin account (D2), and names a stored match that account may write
+// (its creator, an editor or an admin); the phone page shows that match's
+// teams and game number, not the request's. LAN / SEA (--local): the relay
+// host itself, or the game PIN of a match this relay holds in X-OV-Match-Pin
+// (D3, wrong PINs counted in pinFailureLimiter) from the scoring device that
+// holds it: a scoreboard socket at the caller's address owns the room right
+// now. Such a start's caps (live sessions, starts) are the caller's address
+// bucket's, and the relay host keeps a share of the total for itself
+// (LAN_CAPS.localReserve). OV_SIGN_DISABLED=1: 503 OV_SIGN_UNAVAILABLE.
 const SIGN_DISABLED = process.env.OV_SIGN_DISABLED === '1'
 const SIGN_STARTER_ROLES = ['scorer', 'referee', 'beach:scorer', 'beach:referee']
 let signSessions = null
@@ -1532,30 +1703,50 @@ function mayStartPhoneSign(access) {
 }
 
 /**
- * The app of a cloud signing session, for the phone page's name and mark
- * (open answers app: 'beach'): the sport of the match the scoring device names
- * (matchKey = matches.external_id, OpenBeach's seed_key); a match the server
- * does not have yet: 'beach' for an account with beach roles only. Branding
- * only: it never decides who may start, open or submit.
+ * A cloud start's match (matchKey = matches.external_id, OpenBeach's
+ * seed_key): stored, and written by this account (its creator, an editor of
+ * it, or an admin). { body, app } with the body's context taking the stored
+ * teams and game number (a beach match's team1 / team2), and the app of the
+ * phone page's name and mark (open answers app: 'beach'); { error } otherwise
+ * (403 OV_SIGN_MATCH, 503 when the database does not answer). A test match
+ * never reaches the server, a new one only once its insert synced: the app
+ * takes the hall network then, or says so (PhoneSignPanel startFailureKey).
  */
-async function signAppOf(layer, matchKey, access) {
-  if (typeof matchKey === 'string' && matchKey.trim() && matchKey.length <= 128) {
-    try {
-      const { rows: [m] } = await layer.db.pool.query(
-        'SELECT sport_type::text AS sport FROM public.matches WHERE external_id = $1 LIMIT 1', [matchKey.trim()])
-      if (m) return m.sport === 'beach' ? 'beach' : null
-    } catch (err) {
-      console.warn('[Sign] match sport lookup failed:', err?.message)
-    }
+async function signMatchOf(layer, body, userId, access) {
+  const key = typeof body?.matchKey === 'string' ? body.matchKey.trim() : ''
+  if (!key || key.length > 128) return { error: signError(403, 'OV_SIGN_MATCH') }
+  let m
+  try {
+    ({ rows: [m] } = await layer.db.pool.query(
+      `SELECT m.created_by, m.game_n, m.sport_type::text AS sport,
+              CASE WHEN m.sport_type IS NOT DISTINCT FROM 'beach' THEN m.team1_data->>'name' ELSE m.home_team->>'name' END AS home,
+              CASE WHEN m.sport_type IS NOT DISTINCT FROM 'beach' THEN m.team2_data->>'name' ELSE m.away_team->>'name' END AS away,
+              EXISTS (SELECT 1 FROM public.match_editors e WHERE e.match_id = m.id AND e.user_id = $2) AS editor
+         FROM public.matches m WHERE m.external_id = $1 LIMIT 1`, [key, userId]))
+  } catch (err) {
+    console.warn('[Sign] match lookup failed:', err?.message)
+    return { error: signError(503, 'OV_SIGN_UNAVAILABLE', { 'Retry-After': '5' }) }
   }
-  const roles = Array.isArray(access?.roles) ? access.roles : []
-  const beachOnly = roles.some((r) => String(r).startsWith('beach:')) && !roles.some((r) => r === 'scorer' || r === 'referee')
-  return beachOnly && access?.isAdmin !== true ? 'beach' : null
+  if (!m || !(access?.isAdmin === true || m.created_by === userId || m.editor === true)) return { error: signError(403, 'OV_SIGN_MATCH') }
+  const text = (v) => (typeof v === 'string' && v.trim() ? v : null)
+  const ctx = body.context
+  const context = ctx && typeof ctx === 'object' && !Array.isArray(ctx)
+    ? {
+        ...ctx,
+        home: text(m.home) ?? ctx.home,
+        away: text(m.away) ?? ctx.away,
+        ...(m.game_n != null ? { matchNo: String(m.game_n) } : {})
+      }
+    : ctx
+  return { body: { ...body, context }, app: m.sport === 'beach' ? 'beach' : null }
 }
 
-/** The request comes from this machine itself: loopback or one of its own addresses. */
-function isLocalCaller(req) {
-  const addr = String(req.socket?.remoteAddress || '').replace(/^::ffff:/, '')
+/** --local: a scoreboard socket at this address bucket owns the room of `matchKey` right now. */
+const roomHeldFrom = (matchKey, ipKey) => ownersOf(matchKey).some((c) => c.ipKey === ipKey)
+
+/** Loopback or one of this machine's own addresses. */
+function isOwnAddress(value) {
+  const addr = String(value || '').replace(/^::ffff:/, '')
   if (!addr) return false
   if (addr === '::1' || addr.startsWith('127.')) return true
   try {
@@ -1564,6 +1755,18 @@ function isLocalCaller(req) {
     }
   } catch { /* remote */ }
   return false
+}
+
+/**
+ * The request comes from this machine itself: the socket's peer is one of its
+ * own addresses, and so is the client address behind a trusted proxy
+ * (TRUST_PROXY, getClientIp). The forwarded address can only take that away
+ * (a proxy on the same machine does not make every caller the relay host),
+ * never grant it: with TRUST_PROXY and no TRUST_PROXY_FROM any peer's
+ * cf-connecting-ip is believed.
+ */
+function isLocalCaller(req) {
+  return isOwnAddress(req.socket?.remoteAddress) && isOwnAddress(getClientIp(req))
 }
 
 async function handleSignRequest(req, res, endpoint) {
@@ -1579,6 +1782,7 @@ async function handleSignRequest(req, res, endpoint) {
   let owner = null
   let layer = null
   let access = null
+  let userId = null
   if (endpoint === 'start' && DB_MODE) {
     // The account first, before the body is read
     const token = bearerFromHeaders(req.headers)
@@ -1595,6 +1799,7 @@ async function handleSignRequest(req, res, endpoint) {
     }
     if (!user) return refuse(signError(401, 'OV_AUTH_REQUIRED'))
     if (!mayStartPhoneSign(access)) return refuse(signError(403, 'OV_SIGN_FORBIDDEN'))
+    userId = user.id
     owner = `u:${user.id}`
   }
   let body
@@ -1610,7 +1815,10 @@ async function handleSignRequest(req, res, endpoint) {
       const pin = String(req.headers['x-ov-match-pin'] || '').trim().slice(0, 32)
       if (!pin) return send(signError(403, 'OV_SIGN_FORBIDDEN'))
       const matchKey = typeof body?.matchKey === 'string' ? normalizeMatchId(body.matchKey) : null
-      const stored = matchKey ? gamePinOf(activeMatches.get(matchKey)?.match) : null
+      // Only the scoring device that holds the room (before any PIN is
+      // compared): a device that only knows the game PIN, or a room whose
+      // scoreboard is gone, starts nothing
+      const stored = matchKey && roomHeldFrom(matchKey, ipKey) ? gamePinOf(activeMatches.get(matchKey)?.match) : null
       if (!stored) return send(signError(403, 'OV_SIGN_FORBIDDEN'))
       // The brute-force budget of every PIN check (this match's game PIN):
       // counted now, refunded on success
@@ -1618,13 +1826,22 @@ async function handleSignRequest(req, res, endpoint) {
       if (pinFailureLimiter.isLimited(ipKey, scope)) return send(signError(429, 'OV_SIGN_RATE_LIMITED', { 'Retry-After': '600' }))
       if (!safeEqualStr(stored, pin)) return send(signError(403, 'OV_SIGN_PIN_INVALID'))
       pinFailureLimiter.refund(ipKey, scope)
-      owner = `pin:${matchKey}`
+      // the caps of the caller's address, however many rooms it holds
+      owner = `pin:${ipKey}`
     }
   }
   const sessions = getSignSessions()
   if (endpoint === 'start') {
-    // the app of the phone page (cloud): only after the account check, never from the body
-    const app = DB_MODE && layer && body && typeof body === 'object' ? await signAppOf(layer, body.matchKey, access) : null
+    // cloud: the match the account writes, its stored teams and its app
+    // (the phone page's name and mark); only after the account check, and
+    // after the request's own shape (a bad body or slot is the core's 400)
+    let app = null
+    if (DB_MODE && body && typeof body === 'object' && !Array.isArray(body) && SIGN_SLOTS.includes(body.slot)) {
+      const bound = await signMatchOf(layer, body, userId, access)
+      if (bound.error) return send(bound.error)
+      body = bound.body
+      app = bound.app
+    }
     return send(sessions.start(body, { owner, app }))
   }
   if (endpoint === 'open') return send(sessions.open(body, { ipKey }))
@@ -1640,39 +1857,95 @@ async function handleSignRequest(req, res, endpoint) {
 }
 
 // --- Log sanitizer (prevent log injection via newlines/control chars) ---
-function sanitizeLog(str) {
-  if (typeof str !== 'string') return String(str)
-  return str.replace(/[\r\n\t]/g, ' ').substring(0, 200)
+// Control characters (C0, DEL, C1, the Unicode line and paragraph
+// separators) become a space, so a value can neither start a line that looks
+// like the server's own nor drive the operator's terminal, and the text is cut
+// at maxLength characters: one client frame wrote 9 MB to the log, and the
+// container keeps 5 x 10 MB of it.
+const LOG_CONTROL_RE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g
+function sanitizeLog(str, maxLength = 200) {
+  const s = typeof str === 'string' ? str : String(str)
+  return (s.length > maxLength ? `${s.slice(0, maxLength)}…` : s).replace(LOG_CONTROL_RE, ' ')
+}
+
+/** A value a client sent (a room id, a message type, an action), as a log line prints it: 64 characters at most. */
+function logValue(v) {
+  if (typeof v === 'string') return sanitizeLog(v, 64)
+  if (v !== null && typeof v === 'object') return Array.isArray(v) ? '[array]' : '[object]'
+  return String(v)
 }
 
 // --- WebSocket per-client rate limiting ---
 const WS_RATE_LIMIT_MAX = 120 // messages per window
 const WS_RATE_LIMIT_WINDOW_MS = 60 * 1000
 const wsRateLimitMap = new Map()
+// A scorer answers every bench request it receives (bench-response 'seen'
+// and the outcome) on its one socket: those answers count on their own
+// budget, so bench traffic cannot push the scorer over WS_RATE_LIMIT_MAX
+const WS_BENCH_RESPONSE_MAX = 600 // bench-response messages per window
+const WS_BENCH_RESPONSE_MAX_BYTES = 1024
+// ... and bytes: the frame budget of lib/relayLimits.js (large frames of a
+// socket without a proved claim, bytes per socket and address)
+const frameBudget = createFrameBudget({ windowMs: WS_RATE_LIMIT_WINDOW_MS })
 
-function isWsRateLimited(clientId) {
+/**
+ * What a socket owns, for the frame budget (createFrameBudget): 'none' (no
+ * room), 'relay' (on the cloud, only rooms whose game PIN no database row
+ * proved: anyone may sync a made-up room id and own it) or 'proved' (a room
+ * the database proved, relayOfficial; any room of a venue relay, which has no
+ * database and no internet callers).
+ */
+function frameProofOf(clientInfo) {
+  if (clientInfo.ownedMatches.size === 0) return 'none'
+  if (!IS_CLOUD) return 'proved'
+  if (DB_MODE) {
+    for (const matchId of clientInfo.ownedMatches) {
+      if (activeMatches.get(matchId)?.relayOfficial === true) return 'proved'
+    }
+  }
+  return 'relay'
+}
+
+function isWsRateLimited(clientId, key = clientId, max = WS_RATE_LIMIT_MAX) {
   const now = Date.now()
-  const entry = wsRateLimitMap.get(clientId)
+  const entry = wsRateLimitMap.get(key)
 
   if (!entry || now - entry.windowStart > WS_RATE_LIMIT_WINDOW_MS) {
-    wsRateLimitMap.set(clientId, { count: 1, windowStart: now })
+    wsRateLimitMap.set(key, { count: 1, windowStart: now })
     return false
   }
 
   entry.count++
-  return entry.count > WS_RATE_LIMIT_MAX
+  return entry.count > max
+}
+
+const benchBudgetKey = (clientId) => `${clientId}:bench-response`
+
+// A small frame whose type is bench-response (parsed again later; only small
+// frames are looked at, so the check costs nothing on a match sync)
+function isBenchResponseFrame(data) {
+  if (!data || data.length > WS_BENCH_RESPONSE_MAX_BYTES) return false
+  try {
+    return JSON.parse(data.toString())?.type === 'bench-response'
+  } catch {
+    return false
+  }
 }
 
 // --- TTL cleanup for stale rooms, matches, and WS rate limit entries ---
 setInterval(() => {
   const now = Date.now()
 
-  // Clean up rooms inactive for >24h
-  for (const [matchId, room] of rooms.entries()) {
-    if (room.clients.size === 0 && now - (room.lastActivity || 0) > ROOM_TTL_MS) {
-      rooms.delete(matchId)
-      activeMatches.delete(matchId)
-      console.log(`🧹 TTL cleanup: removed stale room ${matchId}`)
+  // Clean up rooms no connected socket owns and no scorer synced for >24h,
+  // watchers or not: the stored match, its PINs, owners and bench requests
+  // together (dropRoom). A room empties at once (holdRoom), so the empty
+  // rooms this looked for never existed, and watchers kept any room for good.
+  const owned = new Set()
+  for (const c of connections.values()) for (const id of c.ownedMatches) owned.add(id)
+  for (const [matchId, entry] of [...activeMatches.entries()]) {
+    if (!owned.has(matchId) && now - (Date.parse(entry.updatedAt) || 0) > ROOM_TTL_MS) {
+      dropRoom(matchId)
+      console.log(`🧹 TTL cleanup: removed stale room ${logValue(matchId)}`)
     }
   }
 
@@ -1682,6 +1955,7 @@ setInterval(() => {
       wsRateLimitMap.delete(id)
     }
   }
+  frameBudget.sweep()
 }, 15 * 60 * 1000) // Every 15 minutes
 
 const MAX_BODY_SIZE = 1024 * 1024 // 1MB
@@ -1839,6 +2113,8 @@ async function fetchAndParseIcal(feedUrl, federation, leagueCode, leagueConfig) 
         type2: leagueConfig.gender,
         type3: isU23 ? 'U23' : 'senior',
         championshipType: isNational ? 'national' : 'regional',
+        // the feed has no number of win sets: unknown, Match setup asks (never a silent best of 5)
+        bestOf: null,
         result: parsedDesc.result || '-'
       })
     }
@@ -1860,8 +2136,46 @@ async function fetchAndParseIcal(feedUrl, federation, leagueCode, leagueConfig) 
   }
 }
 
-// CORS: the trusted origins (lib/cors.js; manager.openvolley.app included)
-const { getCorsOrigin } = createOriginPolicy({ isCloud: IS_CLOUD, publicOrigins: PUBLIC_ORIGINS })
+// The origin rule (lib/cors.js): the CORS answers, the writes and the
+// WebSocket upgrade below
+const { getCorsOrigin, isTrustedOrigin } = createOriginPolicy({ isCloud: IS_CLOUD, publicOrigins: PUBLIC_ORIGINS })
+
+// What the transport refused, for /health (relayStats): writes from a page of
+// a foreign origin or with a body that is not JSON, WebSocket upgrades from a
+// foreign origin, and role-socket frames over their size or byte budget
+const transportRefusals = { origin: 0, mediaType: 0, upgradeOrigin: 0, frames: 0, socketsClosed: 0 }
+
+// --- Writes: Origin and body type ---------------------------------------------
+// Any web page can make its visitor's browser send a cross-site POST of a
+// "simple" body type (text/plain, form-encoded, multipart) without a CORS
+// preflight. The page cannot read the answer, but every such request spent the
+// visitor's address budgets (a hall's PIN checks, sign-ins, /api/db), which all
+// tablets behind the hall's address share. So a write to the API is refused
+// before any route or rate bucket sees it:
+// - from a page of an origin the origin rule does not trust (403). A request
+//   without an Origin (a native app, a script, the board bridge) is no page;
+// - with a body type other than JSON (415): a browser then asks first
+//   (preflight), and the CORS answer refuses a foreign page. The support form
+//   (/api/contact) also takes multipart/form-data; the phone-sign API checks
+//   its own body type (handleSignRequest).
+const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+const JSON_TYPE_RE = /^\s*application\/json\s*(;|$)/i
+const MULTIPART_TYPE_RE = /^\s*multipart\/form-data\s*;/i
+
+/** The refusal of an API write by its Origin or body type, or null. */
+function apiWriteRefusal(req, pathname) {
+  if (!WRITE_METHODS.has(req.method) || !pathname.startsWith('/api/')) return null
+  const origin = req.headers.origin
+  if (origin !== undefined && !isTrustedOrigin(origin, { host: req.headers.host })) {
+    transportRefusals.origin++
+    return { status: 403, code: 'OV_ORIGIN_REFUSED', message: 'This site may not call the OpenVolley server' }
+  }
+  if (signEndpointOf(pathname)) return null
+  const type = String(req.headers['content-type'] || '')
+  if (JSON_TYPE_RE.test(type) || (pathname === '/api/contact' && MULTIPART_TYPE_RE.test(type))) return null
+  transportRefusals.mediaType++
+  return { status: 415, code: 'OV_UNSUPPORTED_MEDIA_TYPE', message: 'The request body must be application/json' }
+}
 
 // connect-src for pages this server serves itself (same-origin bundle).
 // No *.supabase.co any more: realtime runs over this server's own socket.
@@ -1877,8 +2191,11 @@ const CLOUD_CONNECT_SRC = [
 // /health/live: process is up (Docker healthcheck). Never touches the database.
 // /health:      monitors. DATABASE_URL mode: db ping, catalog, storage sentinel,
 //               free space (floor), last backup age, socket pools, account-email
-//               counters (mail). 503 when the
-//               db, catalog, floor, sentinel or backup is not ok. Cached for 2 s.
+//               counters (mail), the VolleyManager sync (vmSync, informational),
+//               the schema state, pg pool (waiting), process memory, heap and
+//               event-loop lag, refused frames and sockets. A readiness check:
+//               503 when the db, catalog, floor, sentinel or backup is not ok or
+//               the schema is behind this image or broken. Cached for 2 s.
 //               Full body for internal callers only (isInternalCaller).
 const HEALTH_CACHE_MS = 2000
 const HEALTH_DB_TIMEOUT_MS = 3000
@@ -1893,15 +2210,28 @@ function withTimeout(promise, ms, label) {
   ]).finally(() => clearTimeout(timer))
 }
 
-async function readLastBackup() {
+// { at, ageMin } of a status file the host's backup job writes on success
+async function readStatusStamp(name) {
   try {
-    const text = (await readFile(join(STATUS_DIR, 'last_backup'), 'utf8')).trim().split(/\s+/)[0]
+    const text = (await readFile(join(STATUS_DIR, name), 'utf8')).trim().split(/\s+/)[0]
     const at = Date.parse(text)
-    if (!Number.isFinite(at)) return { lastBackupAt: null, lastBackupAgeMin: null }
-    return { lastBackupAt: new Date(at).toISOString(), lastBackupAgeMin: Math.max(0, Math.floor((Date.now() - at) / 60000)) }
+    if (!Number.isFinite(at)) return { at: null, ageMin: null }
+    return { at: new Date(at).toISOString(), ageMin: Math.max(0, Math.floor((Date.now() - at) / 60000)) }
   } catch {
-    return { lastBackupAt: null, lastBackupAgeMin: null }
+    return { at: null, ageMin: null }
   }
+}
+
+/** The hourly database run (last_backup). */
+async function readLastBackup() {
+  const { at, ageMin } = await readStatusStamp('last_backup')
+  return { lastBackupAt: at, lastBackupAgeMin: ageMin }
+}
+
+/** The nightly files run (last_files_backup: scoresheets, owner records, snapshots, base backup). */
+async function readLastFilesBackup() {
+  const { at, ageMin } = await readStatusStamp('last_files_backup')
+  return { lastFilesBackupAt: at, lastFilesBackupAgeMin: ageMin }
 }
 
 /** 'ok' | 'stale' | 'unknown' (no readable last_backup), or 'unchecked' when BACKUP_MAX_AGE_HOURS=0. */
@@ -1914,7 +2244,70 @@ function backupState(lastBackupAgeMin) {
 function relayStats() {
   return {
     connections: { role: connections.size, live: realtimeHub ? realtimeHub.stats().sockets : 0 },
-    activeRooms: rooms.size
+    activeRooms: rooms.size,
+    // what the transport refused since the start (transportRefusals)
+    transport: { ...transportRefusals },
+    // new sockets told "relay busy" (heap above OV_ADMIT_HEAP_PCT) since the start
+    admission: { refused: admissionRefused, heapPct: ADMIT_HEAP_PCT, maxConnections: MAX_CONNECTIONS }
+  }
+}
+
+// Event-loop delay since the last /health read (a stalled loop delays every
+// match on this process); reset on each read so it covers the recent past.
+const loopDelay = monitorEventLoopDelay({ resolution: 20 })
+loopDelay.enable()
+
+/** Memory, event loop and start of this process, for /health and the monitoring. */
+function processStats() {
+  const mem = process.memoryUsage()
+  const heap = getHeapStatistics()
+  const mb = (n) => Math.round(n / 1048576)
+  const ms = (ns) => Math.round(ns / 1e6)
+  const stats = {
+    startedAt: new Date(Date.now() - process.uptime() * 1000).toISOString(),
+    revision: process.env.OV_REVISION || null,
+    rssMB: mb(mem.rss),
+    heapUsedMB: mb(heap.used_heap_size),
+    heapLimitMB: mb(heap.heap_size_limit),
+    heapPct: Math.round(heap.used_heap_size / heap.heap_size_limit * 100),
+    eventLoopLagMs: { p99: ms(loopDelay.percentile(99)), max: ms(loopDelay.max) }
+  }
+  loopDelay.reset()
+  return stats
+}
+
+/** The schema of this image (lib/schemaVersion.js) for /health: ok, behind, problems or unknown. */
+async function schemaHealth() {
+  let st = null
+  try {
+    st = await (await import('./lib/schemaVersion.js')).refreshSchemaStatus()
+  } catch { /* unknown */ }
+  if (!st || st.error || st.record === 'missing' || st.record === 'unreadable') return { state: 'unknown' }
+  const state = st.pending?.length ? 'behind' : (st.changed?.length || st.problems?.length) ? 'problems' : st.ready ? 'ok' : 'unknown'
+  return { state, applied: st.applied ?? null, expected: st.expected ?? null, pending: st.pending?.length ?? 0, problems: (st.problems?.length ?? 0) + (st.changed?.length ?? 0) }
+}
+
+// The VolleyManager schedule sync, once started (the start block at the end)
+let vmSync = null // { lib, schedule }
+/**
+ * The schedule sync for /health (lib/vmSync.js syncHealth): 'ok' or
+ * 'degraded' with the reasons, the last success and its games, the next run
+ * and retry; 'off' with the reason when this backend does not run it.
+ * Informational: scoring does not need it, so it never makes the backend
+ * unhealthy; the monitoring alerts on state 'degraded'.
+ */
+async function vmSyncStatus(layer) {
+  if (!vmSync) {
+    const reason = IS_LOCAL ? 'local' : process.env.VM_SYNC === 'off' ? 'disabled'
+      : (!process.env.VM_USERNAME || !process.env.VM_PASSWORD) ? 'not_configured' : 'not_started'
+    return { state: 'off', reason }
+  }
+  const { nextRunAt, nextRetryAt, running } = vmSync.schedule.status()
+  try {
+    const record = await withTimeout(vmSync.lib.readSyncRecord(layer.db.pool), HEALTH_DB_TIMEOUT_MS, 'sync record')
+    return { ...vmSync.lib.syncHealth(record), nextRunAt, nextRetryAt, running }
+  } catch {
+    return { state: 'unknown', nextRunAt, nextRetryAt, running }
   }
 }
 
@@ -1939,22 +2332,39 @@ async function computeCloudHealth() {
     }
     const cat = layer.db.catalogStatus()
     body.catalog = { ok: !!cat.ok, tables: cat.tables ?? 0, loadedAt: cat.loadedAt ?? null }
+    // Write columns the database lacks, dropped with a warning (pgQuery): a
+    // web release out before its migration
+    if (layer.db.droppedColumns) body.droppedColumns = layer.db.droppedColumns()
+    // pg pool: a waiting count above zero means requests queue for a connection (PG_POOL_MAX)
+    const pool = layer.db.pool
+    if (pool) body.pool = { total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount, max: pool.options?.max ?? null }
+    if (body.db === 'ok') body.schema = await schemaHealth()
     const st = await layer.storage.health()
     body.sentinel = st.sentinel ? 'ok' : 'missing'
     body.storageWritable = !!st.storageWritable
     body.diskFreeMB = st.diskFreeMB
     body.floor = st.lowSpace === true ? 'low' : (st.lowSpace === false ? 'ok' : 'unknown')
   }
-  Object.assign(body, await readLastBackup(), relayStats())
+  Object.assign(body, await readLastBackup(), await readLastFilesBackup(), relayStats())
+  body.process = processStats()
   body.backup = backupState(body.lastBackupAgeMin)
+  // The nightly files run apart: a failing one no longer hides behind the
+  // hourly database run. Stale degrades; unknown (no files run written yet,
+  // a host from before the split) is shown but does not.
+  body.filesBackup = backupState(body.lastFilesBackupAgeMin)
   // Account emails (lib/mailer.js): budgets used / dropped this hour, failed
   // sends. Informational: a used-up budget does not make the server unhealthy.
   if (layer?.auth?.mailer?.stats) {
     try { body.mail = layer.auth.mailer.stats() } catch { body.mail = { enabled: null } }
   }
   if (realtimeHub) body.realtime = realtimeHub.stats()
+  // the official schedule's sync: informational, not part of `healthy`
+  body.vmSync = layer && body.db === 'ok' ? await vmSyncStatus(layer) : { state: vmSync ? 'unknown' : 'off' }
+  // Readiness: a schema behind this image (a migration not run) or with a
+  // changed migration or a missing guard is not ready either
   const healthy = body.db === 'ok' && body.catalog.ok && body.sentinel === 'ok' && body.floor === 'ok' &&
-    (body.backup === 'ok' || body.backup === 'unchecked')
+    (body.backup === 'ok' || body.backup === 'unchecked') && body.filesBackup !== 'stale' &&
+    body.schema?.state !== 'behind' && body.schema?.state !== 'problems'
   if (!healthy) body.status = 'degraded'
   return { status: healthy ? 200 : 503, body }
 }
@@ -1968,8 +2378,21 @@ function cloudHealth() {
   return healthInFlight
 }
 
-// Create HTTP server
+// Create HTTP server. A route that throws answers 500 and is logged with its
+// stack; it never ends the process, which holds every relay room, PIN budget
+// and sign session (an anonymous GET did that). Async route bodies catch
+// their own errors.
 const server = createServer((req, res) => {
+  try {
+    handleHttpRequest(req, res)
+  } catch (err) {
+    console.error(`❌ ${req.method} ${sanitizeLog(String(req.url || '').split('?')[0])} failed:`, err)
+    if (res.headersSent) res.destroy()
+    else sendJson(res, 500, { success: false, error: 'Internal server error' })
+  }
+})
+
+function handleHttpRequest(req, res) {
   // Enable CORS with proper origin handling
   const cors = getCorsOrigin(req)
   res.setHeader('Access-Control-Allow-Origin', cors.origin)
@@ -2032,6 +2455,14 @@ const server = createServer((req, res) => {
     return
   }
 
+  // Before any route and any rate bucket (see apiWriteRefusal)
+  const writeRefusal = apiWriteRefusal(req, url.pathname)
+  if (writeRefusal) {
+    req.resume()
+    sendJson(res, writeRefusal.status, { success: false, data: null, error: { message: writeRefusal.message, code: writeRefusal.code } })
+    return
+  }
+
   // Liveness (Docker healthcheck): no database, no disk, always cheap.
   if (url.pathname === '/health/live') {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
@@ -2067,18 +2498,17 @@ const server = createServer((req, res) => {
     return
   }
 
-  // Server status
+  // Server status. The cloud leaves out how many sockets, matches and rooms
+  // it holds (as its landing page does; the internal /health has them): the
+  // apps read status, mode and wsPort.
   if (url.pathname === '/api/server/status') {
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({
       status: 'online',
       mode: IS_CLOUD ? 'cloud' : 'local',
       wsPort: PORT,
-      connections: connections.size,
-      matches: activeMatches.size,
-      rooms: rooms.size,
-      uptime: process.uptime(),
-      pocketbase: pbReady ? 'connected' : (POCKETBASE_URL ? 'configured' : 'not_configured')
+      ...(IS_CLOUD ? {} : { connections: connections.size, matches: activeMatches.size, rooms: rooms.size }),
+      uptime: process.uptime()
     }))
     return
   }
@@ -2097,127 +2527,6 @@ const server = createServer((req, res) => {
       console.error('[Sign] request failed:', err?.message)
       sendJson(res, 503, signError(503, 'OV_SIGN_UNAVAILABLE').body, SIGN_API_HEADERS)
     })
-    return
-  }
-
-  // PocketBase matches list (for restore UI)
-  if (url.pathname === '/api/pocketbase/matches' && req.method === 'GET') {
-    const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, DB_RATE_LIMIT_MAX, 'relay')) {
-      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
-      res.end(JSON.stringify({ data: [], error: 'Rate limited' }))
-      return
-    }
-    if (!pbReady || !pbClient) {
-      res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ data: [], error: 'pocketbase_not_available' }))
-      return
-    }
-    ;(async () => {
-      try {
-        const gameNumber = url.searchParams.get('game_number')
-        const sportType = url.searchParams.get('sport_type')
-        const filterParams = {}
-        const filterParts = []
-        if (gameNumber) {
-          filterParts.push('game_number = {:gn}')
-          filterParams.gn = parseInt(gameNumber)
-        }
-        if (sportType && /^(indoor|beach)$/.test(sportType)) {
-          filterParts.push('sport_type = {:st}')
-          filterParams.st = sportType
-        }
-        const filter = filterParts.length
-          ? pbClient.filter(filterParts.join(' && '), filterParams)
-          : undefined
-        const records = await pbClient.collection('matches').getFullList({
-          sort: '-updated_at',
-          filter,
-          fields: 'id,match_id,external_id,status,sport_type,game_number,updated_at,home_team,away_team,sets'
-        })
-        res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ data: records }))
-      } catch (err) {
-        res.writeHead(500, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ data: [], error: err.message }))
-      }
-    })()
-    return
-  }
-
-  // PocketBase single match (full snapshot for restore)
-  if (url.pathname.startsWith('/api/pocketbase/matches/') && req.method === 'GET') {
-    const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, DB_RATE_LIMIT_MAX, 'relay')) {
-      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
-      res.end(JSON.stringify({ data: null, error: 'Rate limited' }))
-      return
-    }
-    if (!pbReady || !pbClient) {
-      res.writeHead(503, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ data: null, error: 'pocketbase_not_available' }))
-      return
-    }
-    const matchId = decodeURIComponent(url.pathname.split('/api/pocketbase/matches/')[1])
-    if (!matchId) {
-      res.writeHead(400, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ data: null, error: 'match_id required' }))
-      return
-    }
-    // The backup's match_data holds every connection PIN. Anonymous callers get
-    // it stripped; a restore that presents the match's game PIN gets it whole.
-    const proofPin = url.searchParams.get('gamePin')
-    const pinIpKey = ipBucketKey(clientIp)
-    if (proofPin && isRateLimited(pinIpKey, AUTH_RATE_LIMIT_MAX, 'auth')) {
-      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
-      res.end(JSON.stringify({ data: null, error: 'Rate limited' }))
-      return
-    }
-    // A game PIN offered here is a guess like any other PIN check: counted in
-    // the brute-force budget, in this match's game-PIN scope (refunded when it
-    // proves the backup).
-    const pinScopeKey = pinScope.match(matchId, 'game')
-    if (proofPin && pinFailureLimiter.isLimited(pinIpKey, pinScopeKey)) {
-      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '600' })
-      res.end(JSON.stringify({ data: null, error: 'Too many failed attempts. Please wait 10 minutes before trying again.' }))
-      return
-    }
-    ;(async () => {
-      try {
-        const record = await pbClient.collection('matches').getFirstListItem(
-          pbClient.filter('match_id = {:id}', { id: String(matchId) })
-        )
-        const storedPin = gamePinOf(record.match_data)
-        const proven = !!(proofPin && storedPin && safeEqualStr(String(proofPin).trim(), storedPin))
-        if (proofPin && (proven || !storedPin)) pinFailureLimiter.refund(pinIpKey, pinScopeKey)
-        if (proofPin && storedPin && !proven) {
-          // A restore with the wrong game PIN gets a clear refusal, not a
-          // silently PIN-less match.
-          res.writeHead(403, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ data: null, error: 'Game PIN does not match this backup' }))
-          return
-        }
-        // Without the game PIN: no PINs and no personal data (rosters' dates
-        // of birth, officials, signatures), like the relay.
-        const data = proven ? record : {
-          ...record,
-          match_data: publicMatch(record.match_data),
-          home_players: publicPeople(record.home_players),
-          away_players: publicPeople(record.away_players)
-        }
-        res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ data }))
-      } catch (err) {
-        if (proofPin) pinFailureLimiter.refund(pinIpKey, pinScopeKey) // no PIN was compared
-        if (err.status === 404) {
-          res.writeHead(404, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ data: null, error: 'Match not found' }))
-        } else {
-          res.writeHead(500, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ data: null, error: err.message }))
-        }
-      }
-    })()
     return
   }
 
@@ -2249,7 +2558,7 @@ const server = createServer((req, res) => {
           return
         }
 
-        const { pin, type = 'referee', sport = 'indoor' } = JSON.parse(body)
+        const { pin, type = 'referee', sport = 'indoor', matchId: namedMatch = null, gameNumber = null } = JSON.parse(body)
 
         // The sport of the asking app (openbeach: 'beach'); a PIN never finds
         // a room of the other sport. Without it: indoor, as before.
@@ -2265,67 +2574,113 @@ const server = createServer((req, res) => {
           return
         }
 
+        // Another type never matches a PIN, and each of its spellings was a
+        // counter of its own in the bounded table of the lookups across
+        // callers (same answer as the LAN relays)
+        if (typeof type !== 'string' || !Object.hasOwn(RELAY_PIN_TYPE[sport], type)) {
+          sendJson(res, 400, { success: false, error: 'Invalid PIN type' })
+          return
+        }
+
+        // The match the tablet picked (its link, the game in the list): its
+        // room key, else its game number. The PIN is compared with that match
+        // only. The first live match with the PIN used to answer, so of two
+        // matches that share a referee PIN the second's referee got the
+        // first's. Without either (older apps) every live match is searched,
+        // and a PIN two of them share is refused with a request for the game.
+        const isKeyValue = (v) => typeof v === 'string' || (typeof v === 'number' && Number.isFinite(v))
+        const named = namedMatch !== null && namedMatch !== undefined && namedMatch !== ''
+        const matchKey = named && isKeyValue(namedMatch) ? normalizeMatchId(namedMatch) : null
+        const gameKey = !named && gameNumber !== null && gameNumber !== undefined && isKeyValue(gameNumber) ? String(gameNumber).trim().slice(0, 32) : ''
+        if ((named && !matchKey) || (gameNumber !== null && gameNumber !== undefined && gameNumber !== '' && !isKeyValue(gameNumber))) {
+          sendJson(res, 400, { success: false, error: 'Invalid request' })
+          return
+        }
+
         const pinStr = String(pin).trim()
 
         // The brute-force budget of every PIN check (failed guesses per
-        // address bucket), in the scope validate-connection-pin uses for this
-        // PIN type; a success is refunded below.
-        const scope = pinScope.search(sport, Object.hasOwn(RELAY_PIN_TYPE[sport], type) ? RELAY_PIN_TYPE[sport][type] : type)
+        // address bucket, and of every PIN-only lookup across callers), in
+        // the scope validate-connection-pin uses for this PIN type (of the
+        // named match, or of every match); a success is refunded below.
+        const pinType = RELAY_PIN_TYPE[sport][type]
+        const scope = matchKey ? pinScope.match(matchKey, pinType) : pinScope.search(sport, pinType)
         if (pinFailureLimiter.isLimited(ipKey, scope)) {
           sendJson(res, 429, { success: false, error: 'Too many failed attempts. Please wait 10 minutes before trying again.' }, { 'Retry-After': '600' })
           return
         }
 
-        // Search active matches for matching PIN
-        let matchFound = null
-        for (const [matchId, matchData] of activeMatches.entries()) {
-          const match = matchData.match || matchData
-          if (!match) continue
-          if ((matchData.sportType || 'indoor') !== sport) continue
+        // Search active matches for matching PIN. Per entry: one crafted room
+        // must never make the right PIN of another match answer 400 for
+        // everyone (a sync stores only validated PINs; this is a second guard).
+        const candidates = matchKey ? (activeMatches.has(matchKey) ? [[matchKey, activeMatches.get(matchKey)]] : []) : activeMatches.entries()
+        const found = []
+        let comparable = false
+        for (const [matchId, matchData] of candidates) {
+          try {
+            const match = matchData.match || matchData
+            if (!match) continue
+            if ((matchData.sportType || 'indoor') !== sport) continue
+            if (gameKey && String(matchData.gameNumber ?? '').trim() !== gameKey) continue
+            // A match whose PIN type is locked across callers proves nothing
+            if (pinFailureLimiter.locked(matchId, pinType)) continue
 
-          let matchPin = null
-          if (type === 'referee') {
-            matchPin = match.refereePin
-          } else if (type === 'homeTeam') {
-            matchPin = match.homeTeamPin
-          } else if (type === 'awayTeam') {
-            matchPin = match.awayTeamPin
-          }
-
-          if (matchPin && safeEqualStr(String(matchPin).trim(), pinStr)) {
-            let connectionEnabled = true
+            let matchPin = null
             if (type === 'referee') {
-              connectionEnabled = match.refereeConnectionEnabled === true
+              matchPin = match.refereePin
             } else if (type === 'homeTeam') {
-              connectionEnabled = match.homeTeamConnectionEnabled === true
+              matchPin = match.homeTeamPin
             } else if (type === 'awayTeam') {
-              connectionEnabled = match.awayTeamConnectionEnabled === true
+              matchPin = match.awayTeamPin
             }
+            if (matchPin) comparable = true
 
-            if (connectionEnabled && match.status !== 'final') {
-              matchFound = { ...match, id: matchId }
-              break
+            if (matchPin && safeEqualStr(String(matchPin).trim(), pinStr)) {
+              let connectionEnabled = true
+              if (type === 'referee') {
+                connectionEnabled = match.refereeConnectionEnabled === true
+              } else if (type === 'homeTeam') {
+                connectionEnabled = match.homeTeamConnectionEnabled === true
+              } else if (type === 'awayTeam') {
+                connectionEnabled = match.awayTeamConnectionEnabled === true
+              }
+
+              if (connectionEnabled && match.status !== 'final') {
+                found.push({ ...match, id: matchId })
+              }
             }
+          } catch (err) {
+            console.error('[API] validate-pin skipped a room:', err?.message)
           }
         }
 
-        if (matchFound) {
+        if (found.length > 1) {
+          // The PIN is right, for more than one match: nothing is issued, the
+          // tablet is asked for the game (its number or the pick in the list)
           pinFailureLimiter.refund(ipKey, scope)
-          console.log(`[API] PIN validated for ${type}: match ${matchFound.id}`)
+          console.log(`[API] PIN for ${type} matches ${found.length} matches: game number required`)
+          sendJson(res, 409, { success: false, code: 'game-number-required', error: 'More than one match has this PIN. Pick your game first (its game number).' })
+        } else if (found.length === 1) {
+          const matchFound = found[0]
+          pinFailureLimiter.refund(ipKey, scope)
+          console.log(`[API] PIN validated for ${type}: match ${logValue(matchFound.id)}`)
           res.writeHead(200, { 'Content-Type': 'application/json' })
           // Strip all PINs from the response — knowing one PIN must not disclose the others.
           res.end(JSON.stringify({
             success: true,
             // A beach answer names its sport (the indoor answer is unchanged)
-            match: sport === 'beach' ? { ...publicMatch(matchFound), sportType: 'beach' } : publicMatch(matchFound),
+            match: validatePinMatch(matchFound, type, sport),
             // Capability for this match's full bundle (relay, GET /api/match/:id)
             token: isTokenRole(type) ? matchTokens.issue({ matchKey: String(matchFound.id), role: type, pin: pinStr }) : null
           }))
         } else {
           console.log(`[API] PIN validation failed for ${type}`)
           // The apps check a typed PIN here after the backend's check of the
-          // same PIN: one typo counts once
-          pinFailureLimiter.repeated(ipKey, scope, pinStr)
+          // same PIN: one typo counts once. A named match the relay holds no
+          // PIN of this type for counts nowhere across callers (nothing to guess).
+          if (!pinFailureLimiter.repeated(ipKey, scope, pinStr) && matchKey && !comparable) {
+            pinFailureLimiter.matchRefund([[matchKey, pinType]])
+          }
           res.writeHead(404, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({
             success: false,
@@ -2352,7 +2707,7 @@ const server = createServer((req, res) => {
   // ?finished=1 lists finished matches too: the livescore served by a venue
   // relay (frontend utils/relayLivescore), which then subscribes without a PIN.
   if (url.pathname === '/api/match/list') {
-    if (isRateLimited(getClientIp(req), DB_RATE_LIMIT_MAX, 'relay')) {
+    if (isRateLimited(addressKey(req), DB_RATE_LIMIT_MAX, 'relay')) {
       res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
       res.end(JSON.stringify({ success: false, error: 'Rate limited', matches: [] }))
       return
@@ -2377,19 +2732,26 @@ const server = createServer((req, res) => {
       }
       const matches = []
       for (const entry of activeMatches.values()) {
-        if (IS_CLOUD && entry.match?.test === true) continue
-        const owners = ownersByMatch.get(entry.matchId) || []
-        if (entry.orphanedAt && now - entry.orphanedAt >= STALE_TAKEOVER_MS && owners.length === 0) continue
-        // The cloud: a match without the referee connection only to its own
-        // venue (same public address as its scoreboard), see cloudListsMatch
-        if (IS_CLOUD && !cloudListsMatch({
-          refereeConnectionEnabled: entry.match?.refereeConnectionEnabled === true,
-          requesterIp,
-          requesterIpKey,
-          ownerIpKeys: owners.map(c => c.ipKey)
-        })) continue
-        const row = relayMatchListRow(entry, { includeFinished })
-        if (row) matches.push(row)
+        // Per entry: one crafted room must never turn the whole list into 500
+        // for everyone (a sync stores only validated fields; this is a second
+        // guard on the read).
+        try {
+          if (IS_CLOUD && entry.match?.test === true) continue
+          const owners = ownersByMatch.get(entry.matchId) || []
+          if (entry.orphanedAt && now - entry.orphanedAt >= STALE_TAKEOVER_MS && owners.length === 0) continue
+          // The cloud: a match without the referee connection only to its own
+          // venue (same public address as its scoreboard), see cloudListsMatch
+          if (IS_CLOUD && !cloudListsMatch({
+            refereeConnectionEnabled: entry.match?.refereeConnectionEnabled === true,
+            requesterIp,
+            requesterIpKey,
+            ownerIpKeys: owners.map(c => c.ipKey)
+          })) continue
+          const row = relayMatchListRow(entry, { includeFinished })
+          if (row) matches.push(row)
+        } catch (err) {
+          console.error(`[API] /api/match/list skipped a room:`, err?.message)
+        }
       }
       const at = (m) => (m.scheduledAt ? new Date(m.scheduledAt).getTime() || 0 : 0)
       matches.sort((a, b) => at(b) - at(a))
@@ -2420,7 +2782,7 @@ const server = createServer((req, res) => {
       url.pathname !== '/api/match/by-game-number' &&
       url.pathname !== '/api/match/official-check' &&
       req.method === 'GET') {
-    if (isRateLimited(getClientIp(req), DB_RATE_LIMIT_MAX, 'relay')) {
+    if (isRateLimited(addressKey(req), DB_RATE_LIMIT_MAX, 'relay')) {
       res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
       res.end(JSON.stringify({ success: false, error: 'Rate limited' }))
       return
@@ -2438,21 +2800,23 @@ const server = createServer((req, res) => {
     const matchData = activeMatches.get(matchId)
 
     if (matchData) {
-      console.log(`[API] /api/match/${matchId} - Found match`)
+      if (LOG_EACH_CONNECTION) console.log(`[API] /api/match/${logValue(matchId)} - Found match`)
+      else relaySummary.count('match fetches')
       // The bundle (rosters, events) only after the PIN step: a match token
-      // from the PIN check, or one of the match's PINs. Else the summary.
-      let full = tokenGrantsRelay(req.headers['x-ov-match-token'], matchId, matchData.match)
+      // from the PIN check, or one of the match's PINs, each its role's view
+      // (relayBundleView). Else the summary.
+      const offeredToken = req.headers['x-ov-match-token']
+      let view = tokenGrantsRelay(offeredToken, matchId, matchData.match) ? relayViewOf(matchTokens.verify(offeredToken)?.r) : null
       const offeredPin = req.headers['x-ov-match-pin']
-      if (!full && typeof offeredPin === 'string' && offeredPin.trim()) {
-        const ipKey = ipBucketKey(getClientIp(req))
-        if (pinFailureLimiter.isLimited(ipKey, pinScope.match(matchId))) {
+      if (!view && typeof offeredPin === 'string' && offeredPin.trim()) {
+        const checked = relayPinCheck(ipBucketKey(getClientIp(req)), matchId, matchData, offeredPin)
+        if (checked === 'rate-limited') {
           sendJson(res, 429, { success: false, error: 'Too many failed attempts. Please wait 10 minutes before trying again.' }, { 'Retry-After': '600' })
           return
         }
-        full = pinGrantsAccess(matchData.match, offeredPin)
-        if (full) pinFailureLimiter.refund(ipKey, pinScope.match(matchId))
+        if (checked === 'ok') view = relayViewOf(pinTypeOf(matchData.match, offeredPin, { sport: matchData.sportType }))
       }
-      const bundle = full ? { access: 'full', ...wireBundle(matchData) } : relaySummaryBundle(matchData)
+      const bundle = view ? { access: 'full', ...wireBundle(matchData, view) } : relaySummaryBundle(matchData)
       // Ensure team objects have the correct format
       const homeTeam = typeof bundle.homeTeam === 'object' && bundle.homeTeam ? bundle.homeTeam : { name: matchData.homeTeam || 'Home' }
       const awayTeam = typeof bundle.awayTeam === 'object' && bundle.awayTeam ? bundle.awayTeam : { name: matchData.awayTeam || 'Away' }
@@ -2465,7 +2829,8 @@ const server = createServer((req, res) => {
         awayTeam
       }))
     } else {
-      console.log(`[API] /api/match/${sanitizeLog(matchId)} - Match not found (${activeMatches.size} active)`)
+      if (LOG_EACH_CONNECTION) console.log(`[API] /api/match/${logValue(matchId)} - Match not found (${activeMatches.size} active)`)
+      else relaySummary.count('match fetches (not found)')
       res.writeHead(404, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({
         success: false,
@@ -2478,12 +2843,14 @@ const server = createServer((req, res) => {
   // Who watches a match (tablet status on the scorer, LAN server dashboard).
   // LAN: the full list (ids, IPs, rooms), as before. Cloud: an anonymous
   // caller gets counts only: without matchId the totals, with matchId one
-  // entry per watching tablet of THAT match carrying just its role and team
-  // (no id, no IP, no connect time, no list of rooms). The detail (ids,
+  // entry per watching tablet of THAT match carrying just its role, team and
+  // `proved` (no id, no IP, no connect time, no list of rooms). A tablet is a
+  // referee or bench only once it proved that role (`proved`, provedRoleOf),
+  // every other watcher a subscriber or livescore. The detail (ids,
   // connect times) of one match needs that match's PIN or match token
   // (X-OV-Match-Pin / X-OV-Match-Token, as GET /api/match/:id).
   if (url.pathname === '/api/server/connections') {
-    if (isRateLimited(getClientIp(req), DB_RATE_LIMIT_MAX, 'relay')) {
+    if (isRateLimited(addressKey(req), DB_RATE_LIMIT_MAX, 'relay')) {
       res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
       res.end(JSON.stringify({ error: 'Rate limited' }))
       return
@@ -2498,51 +2865,60 @@ const server = createServer((req, res) => {
       detail = tokenGrantsRelay(req.headers['x-ov-match-token'], matchId, entry?.match)
       const offeredPin = req.headers['x-ov-match-pin']
       if (!detail && entry && typeof offeredPin === 'string' && offeredPin.trim()) {
-        const ipKey = ipBucketKey(getClientIp(req))
-        if (pinFailureLimiter.isLimited(ipKey, pinScope.match(matchId))) {
+        const checked = relayPinCheck(ipBucketKey(getClientIp(req)), matchId, entry, offeredPin)
+        if (checked === 'rate-limited') {
           sendJson(res, 429, { error: 'Too many failed attempts. Please wait 10 minutes before trying again.' }, { 'Retry-After': '600' })
           return
         }
-        detail = pinGrantsAccess(entry.match, offeredPin)
-        if (detail) pinFailureLimiter.refund(ipKey, pinScope.match(matchId))
+        detail = checked === 'ok'
       }
     }
 
-    // Dashboard clients (referee, bench, livescore...) - not the scoreboard
+    // Dashboard clients (referee, bench, livescore...) - not the scoreboard:
+    // one per socket and match it watches (or waits for)
     const watchers = []
     connections.forEach((client) => {
       if (!client.role || client.role === 'scoreboard') return
-      if (matchId && String(client.matchId) !== String(matchId)) return
-      watchers.push(client)
+      for (const id of client.rooms) {
+        if (matchId && id !== matchId) continue
+        const proved = provedRoleOf(client, id)
+        // Referee or bench only with that role's PIN or match token
+        // (proved): the role a socket names (join_match role, subscribe-match
+        // device) proves nothing, and the scorer's tablet status showed a
+        // referee connected for a socket that only said so.
+        const role = proved ? proved.role : (client.device === 'livescore' || client.role === 'livescore' ? 'livescore' : 'subscriber')
+        watchers.push({ client, matchId: id, role, team: proved?.team ?? null, proved: !!proved })
+      }
     })
-    // A PIN-verified role wins over the subscribe-match label
-    const roleOf = (client) => client.role === 'subscriber' && client.device ? client.device : client.role
-    const refereesCount = watchers.filter(c => roleOf(c) === 'referee').length
-    const benchCount = watchers.filter(c => roleOf(c) === 'bench').length
+    const refereesCount = watchers.filter(w => w.role === 'referee').length
+    const benchCount = watchers.filter(w => w.role === 'bench').length
 
     let clients
     if (detail) {
-      clients = watchers.map((client) => ({
+      clients = watchers.map(({ client, matchId: id, role, team, proved }) => ({
         id: client.id,
         // LAN scorers see which tablet is which; a public cloud relay must
         // not hand every client's IP to anonymous callers.
         ip: IS_CLOUD ? null : client.ip,
-        role: roleOf(client),
-        team: client.team || client.deviceTeam,
-        matchId: client.matchId,
+        role,
+        team,
+        proved,
+        matchId: id,
         connectedAt: client.connectedAt
       }))
     } else if (matchId) {
       // Counts, in the shape the scorer's tablet status reads (role, team)
-      clients = watchers.map((client) => ({ role: roleOf(client), team: client.team || client.deviceTeam || null, matchId: client.matchId }))
+      clients = watchers.map(({ matchId: id, role, team, proved }) => ({ role, team, proved, matchId: id }))
     } else {
       clients = []
     }
 
     const body = {
       access: detail ? 'detail' : 'counts',
-      totalClients: connections.size,
-      dashboardClients: watchers.length,
+      // every socket of the server: the cloud does not say (/api/server/status)
+      totalClients: IS_CLOUD ? null : connections.size,
+      // sockets, each once (one hall livescore follows every court)
+      dashboardClients: new Set(watchers.map((w) => w.client.id)).size,
       referees: refereesCount,
       benches: benchCount,
       clients
@@ -2564,8 +2940,8 @@ const server = createServer((req, res) => {
   // Support form (lib/contact.js): multipart with up to 5 attachments, one
   // mail to CONTACT_EMAIL with Reply-To the user (FreeScout's customer)
   if (url.pathname === '/api/contact' && req.method === 'POST') {
-    const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, CONTACT_RATE_LIMIT_MAX, 'contact')) {
+    // one /64 is one client here, also off the cloud
+    if (isRateLimited(ipBucketKey(getClientIp(req)), CONTACT_RATE_LIMIT_MAX, 'contact')) {
       res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
       res.end(JSON.stringify({ success: false, error: 'Too many requests. Please wait before submitting again.' }))
       return
@@ -2585,7 +2961,7 @@ const server = createServer((req, res) => {
         })
         return
       }
-      const r = await handleContact({ body, contentType: req.headers['content-type'], mailer: contactMailer })
+      const r = await handleContact({ body, contentType: req.headers['content-type'], mailer: contactMailer, sender: await contactSender(req) })
       sendJson(res, r.status, r.body)
     })
     if (!job) {
@@ -2605,117 +2981,106 @@ const server = createServer((req, res) => {
     return
   }
 
-  // Send match info email
+  // POST /api/match/send-info { externalId }: the match's information (no
+  // PIN) to the signed-in scorer's own confirmed address, built from the
+  // stored match the account created or edits. It used to mail any typed
+  // address a text from the request, the game PIN included.
   if (url.pathname === '/api/match/send-info' && req.method === 'POST') {
-    const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, EMAIL_RATE_LIMIT_MAX, 'email')) {
-      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
-      res.end(JSON.stringify({ error: 'Too many requests' }))
+    if (isRateLimited(addressKey(req), EMAIL_RATE_LIMIT_MAX, 'email')) {
+      sendJson(res, 429, { success: false, error: 'Too many requests' }, { 'Retry-After': '60' })
       return
     }
-    let body = ''
-    req.on('data', chunk => {
-      body += chunk
-      if (body.length > MAX_MATCH_BODY_SIZE) {
-        req.destroy()
-        return
-      }
-    })
-    req.on('end', async () => {
+    ;(async () => {
       try {
-        const matchData = JSON.parse(body)
-
-        if (!isValidEmail(matchData.email)) {
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ success: false, error: 'Invalid email address' }))
+        if (!DB_MODE) {
+          req.resume()
+          sendJson(res, 503, { success: false, error: 'Email not configured on server' })
           return
         }
-
-        console.log('[Match Email] Sending match info to:', sanitizeLog(matchData.email))
-
-        // Check if any email method is configured
-        const hasResend = !!process.env.RESEND_API_KEY
-        const hasSmtp = !!emailTransporter
-
-        if (!hasResend && !hasSmtp) {
-          console.log('[Match Email] ERROR: No email method configured (need RESEND_API_KEY or SMTP)')
-          res.writeHead(500, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({
-            success: false,
-            error: 'Email not configured on server'
-          }))
+        const layer = await getDataLayer()
+        const user = await layer.auth.requireUser(req, res)
+        if (!user) return
+        if (!process.env.RESEND_API_KEY) {
+          req.resume()
+          sendJson(res, 503, { success: false, error: 'Email not configured on server' })
           return
         }
-
-        // Format date and time
-        const formatDate = (dateStr) => {
-          if (!dateStr) return 'TBD'
-          const [year, month, day] = dateStr.split('-')
-          return `${day}.${month}.${year}`
+        if (isRateLimited(user.id, EMAIL_RATE_LIMIT_MAX, 'email')) {
+          req.resume()
+          sendJson(res, 429, { success: false, error: 'Too many requests' }, { 'Retry-After': '60' })
+          return
         }
-
-        const formatTime = (timeStr) => {
-          if (!timeStr) return 'TBD'
-          return timeStr.substring(0, 5) // HH:MM
+        let body
+        try {
+          body = await readJsonBody(req)
+        } catch {
+          sendJson(res, 400, { success: false, error: 'Invalid request' })
+          return
         }
-
-        // Build email content
-        const subject = `Game ${matchData.gameN || 'N/A'} eScoresheet`
-
+        const ext = typeof body?.externalId === 'string' ? body.externalId.trim() : ''
+        if (!ext || ext.length > 200) {
+          sendJson(res, 400, { success: false, error: 'Invalid request: externalId is required' })
+          return
+        }
+        const a = await layer.access.get(user.id)
+        if (!MATCH_SPORTS.some((sport) => accessForSport(a, sport).canScore === true)) {
+          sendJson(res, 403, { success: false, error: 'Only scorers can send match information' })
+          return
+        }
+        const { rows: [m] } = await layer.db.pool.query(
+          `SELECT m.game_n, m.home_team, m.away_team, m.scheduled_at,
+                  m.match_info->>'hall' AS hall, m.match_info->>'city' AS city, m.match_info->>'league' AS league
+             FROM public.matches m
+            WHERE m.external_id = $1
+              AND (m.created_by = $2::uuid OR EXISTS (SELECT 1 FROM public.match_editors e WHERE e.match_id = m.id AND e.user_id = $2::uuid))
+            LIMIT 1`, [ext, user.id])
+        if (!m) {
+          sendJson(res, 404, { success: false, error: 'Match not found' })
+          return
+        }
+        const { rows: [u] } = await layer.db.pool.query('SELECT email FROM auth.users WHERE id = $1', [user.id])
+        const confirmed = await layer.accounts.confirmationOf(layer.db.pool, user.id)
+        if (!u?.email || !isValidEmail(u.email) || !confirmed || confirmed.unconfirmed) {
+          sendJson(res, 409, { success: false, code: 'OV_EMAIL_UNCONFIRMED', error: 'Confirm your email address first' })
+          return
+        }
+        const text = (v, max = 120) => (typeof v === 'string' && v.trim() ? v.trim().replace(/[\r\n]+/g, ' ').slice(0, max) : 'N/A')
+        const team = (t) => {
+          const name = text(t?.name)
+          const short = t?.short_name || t?.shortName
+          return typeof short === 'string' && short.trim() ? `${name} (${text(short, 20)})` : name
+        }
+        const { date, time } = matchMailDateTime(m.scheduled_at)
+        const gameN = m.game_n ?? 'N/A'
         const emailBody = `
 Match Information
 =================
 
-Game Number: ${matchData.gameN || 'N/A'}
-Game PIN: ${matchData.gamePin}
+Game Number: ${gameN}
 
 Teams
 -----
-Home: ${matchData.home || 'N/A'}${matchData.homeShortName ? ` (${matchData.homeShortName})` : ''}
-Away: ${matchData.away || 'N/A'}${matchData.awayShortName ? ` (${matchData.awayShortName})` : ''}
+Home: ${team(m.home_team)}
+Away: ${team(m.away_team)}
 
 Match Details
 -------------
-Date: ${formatDate(matchData.date)}
-Time: ${formatTime(matchData.time)}
-Venue: ${matchData.hall || 'N/A'}
-City: ${matchData.city || 'N/A'}
-League: ${matchData.league || 'N/A'}
+Date: ${date}
+Time: ${time}
+Venue: ${text(m.hall)}
+City: ${text(m.city)}
+League: ${text(m.league)}
 
 ---
 Generated by eScoresheet
 `.trim()
-
-        // Send email - try Resend first (HTTPS), then SMTP as fallback
-        if (hasResend) {
-          console.log('[Match Email] Using Resend API...')
-          await sendViaResend(matchData.email, subject, emailBody)
-        } else {
-          console.log('[Match Email] Using SMTP...')
-          await emailTransporter.sendMail({
-            from: process.env.SMTP_USER,
-            to: matchData.email,
-            subject: subject,
-            text: emailBody
-          })
-        }
-
-        console.log('[Match Email] Sent successfully to:', matchData.email)
-
-        res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({
-          success: true,
-          message: 'Match info sent to email'
-        }))
+        await sendViaResend(u.email, `Game ${gameN} eScoresheet`, emailBody)
+        sendJson(res, 200, { success: true, message: 'Match info sent to your account email' })
       } catch (err) {
-        console.error('[Match Email] Error:', err)
-        res.writeHead(500, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({
-          success: false,
-          error: 'Failed to send email'
-        }))
+        console.error('[Match Email] Error:', err?.message)
+        if (!res.headersSent) sendJson(res, 500, { success: false, error: 'Failed to send email' })
       }
-    })
+    })()
     return
   }
 
@@ -2724,8 +3089,7 @@ Generated by eScoresheet
 
   // Get official matches from iCal feeds
   if (url.pathname === '/api/official-matches' && req.method === 'GET') {
-    const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, ICAL_RATE_LIMIT_MAX, 'ical')) {
+    if (isRateLimited(addressKey(req), ICAL_RATE_LIMIT_MAX, 'ical')) {
       res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
       res.end(JSON.stringify({ error: 'Too many requests' }))
       return
@@ -2733,8 +3097,10 @@ Generated by eScoresheet
     const federation = url.searchParams.get('federation')
     const league = url.searchParams.get('league')
 
-    // Validate federation
-    if (!federation || !ICAL_FEEDS[federation]) {
+    // Validate federation. Own keys only: an inherited name (constructor,
+    // __proto__, toString) passed a plain lookup, and reading its .leagues
+    // threw in this handler, which ended the backend.
+    if (!federation || !Object.hasOwn(ICAL_FEEDS, federation)) {
       res.writeHead(400, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({
         success: false,
@@ -2743,9 +3109,9 @@ Generated by eScoresheet
       return
     }
 
-    // Validate league
-    const leagueConfig = ICAL_FEEDS[federation].leagues[league]
-    if (!league || !leagueConfig) {
+    // Validate league (own keys only, as the federation)
+    const leagueConfig = league && Object.hasOwn(ICAL_FEEDS[federation].leagues, league) ? ICAL_FEEDS[federation].leagues[league] : null
+    if (!leagueConfig) {
       res.writeHead(400, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({
         success: false,
@@ -2780,8 +3146,7 @@ Generated by eScoresheet
 
   // Get available leagues for official matches (flat list)
   if (url.pathname === '/api/official-matches/leagues' && req.method === 'GET') {
-    const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, ICAL_RATE_LIMIT_MAX, 'ical')) {
+    if (isRateLimited(addressKey(req), ICAL_RATE_LIMIT_MAX, 'ical')) {
       res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
       res.end(JSON.stringify({ error: 'Too many requests' }))
       return
@@ -2856,7 +3221,7 @@ Generated by eScoresheet
         // Own bucket per IP + PIN type, so a venue NAT validating several
         // device kinds is not starved by one bucket. (A client-sent match id is
         // not part of the key: it would only hand an attacker fresh buckets.)
-        if (isRateLimited(`${ipKey}|${String(type).slice(0, 20)}`, PIN_RATE_LIMIT_MAX, 'pin')) {
+        if (isRateLimited(`${ipKey}|${typeof type === 'string' ? type.slice(0, 20) : ''}`, PIN_RATE_LIMIT_MAX, 'pin')) {
           sendTooMany(tooMany)
           return
         }
@@ -2874,10 +3239,19 @@ Generated by eScoresheet
           sendJson(res, 400, { success: false, error: 'Invalid request' })
           return
         }
+        // The upload PINs (no enable flag: every match from Create match to
+        // the coin toss) are checked against the named match only, never
+        // looked up among all of them. The Upload Roster app names it since
+        // 2026-10-05.
+        if (!cfg.enabledKey && matchFilter === null) {
+          sendJson(res, 400, { success: false, error: 'Invalid request: matchExternalId is required for this PIN type' })
+          return
+        }
         // The brute-force budget: failed guesses per IP (/64) and scope (this
         // PIN type of every live match, or of the one match asked for: a
         // reloading tablet re-checks its stored PIN for its match, untouched
-        // by other tablets' typos). isLimited counts this attempt up front
+        // by other tablets' typos), and across callers: per match and PIN
+        // type, or per PIN-only lookup. isLimited counts this attempt up front
         // (parallel guesses cannot all slip through); a success or a server
         // error is refunded below.
         const scope = matchFilter !== null ? pinScope.match(matchFilter, type) : pinScope.search(sport, type)
@@ -2891,7 +3265,15 @@ Generated by eScoresheet
         const pinStr = String(pin).trim()
         const layer = await getDataLayer()
         const found = await findMatchByConnectionPin({
-          runQuery: layer.db.runQuery, pins: layer.pins, sport: isBeach ? 'beach' : 'indoor', cfg, pin: pinStr, matchExternalId: matchFilter, maxRows: PIN_SCAN_MAX_ROWS
+          runQuery: layer.db.runQuery,
+          pins: layer.pins,
+          sport: isBeach ? 'beach' : 'indoor',
+          cfg,
+          pin: pinStr,
+          matchExternalId: matchFilter,
+          maxRows: PIN_SCAN_MAX_ROWS,
+          // the PIN-only lookup: a match whose PIN type is locked across callers proves nothing
+          skip: matchFilter === null ? (row) => pinFailureLimiter.locked(row.external_id, type) : null
         })
         if (!found.ok) {
           sendJson(res, 500, { success: false, error: 'Validation failed' })
@@ -2900,8 +3282,12 @@ Generated by eScoresheet
         const matchRow = found.row
         if (!matchRow) {
           // The same wrong PIN again (the relay's check of the same typed PIN,
-          // an app retry) is no new guess
-          pinFailureLimiter.repeated(ipKey, scope, pinStr)
+          // an app retry) is no new guess. A named match with no PIN to
+          // compare (none, closed, another sport) counts nowhere across callers.
+          if (!pinFailureLimiter.repeated(ipKey, scope, pinStr) && matchFilter !== null &&
+              await isConnectionPinMatch({ runQuery: layer.db.runQuery, sport: isBeach ? 'beach' : 'indoor', matchExternalId: matchFilter }) === false) {
+            pinFailureLimiter.matchRefund([[matchFilter, type]])
+          }
           sendJson(res, 404, { success: false, error: 'Invalid PIN code' })
           return
         }
@@ -2909,7 +3295,12 @@ Generated by eScoresheet
         // Capability for this match (relay bundle, GET /api/match/:id, its
         // rosters on anonymous /api/db reads), see lib/matchAccess.js
         // (none for the upload PINs: the Upload Roster app reads nothing with it)
-        const token = matchRow.external_id && isTokenRole(type) ? matchTokens.issue({ matchKey: matchRow.external_id, role: type, matchUuid: matchRow.id, pin: pinStr }) : null
+        // storedPin: the stored form the PIN matched, so a PIN change ends the token on /api/db too
+        const storedPins = matchRow.connection_pins || {}
+        const storedKey = cfg.pinKeys.find((k) => layer.pins.matches(k, pinStr, storedPins[k]))
+        const token = matchRow.external_id && isTokenRole(type)
+          ? matchTokens.issue({ matchKey: matchRow.external_id, role: type, matchUuid: matchRow.id, pin: pinStr, storedPin: storedKey ? storedPins[storedKey] : null })
+          : null
         if (isBeach) {
           // openbeach's names: teams are team1 / team2 (matches.team1_data / team2_data)
           sendJson(res, 200, {
@@ -3162,8 +3553,10 @@ Generated by eScoresheet
     return
   }
 
-  // GET /api/admin/activity/export?...&format=csv|ndjson — the admin's
-  // activity export, streamed page by page (at most 50,000 rows).
+  // GET /api/admin/activity/export?...&format=csv|ndjson[&emails=1] — the
+  // admin's activity export, streamed page by page (at most 50,000 rows),
+  // on record (audited) before the first row goes; the accounts' email
+  // addresses only with emails=1.
   if (url.pathname === '/api/admin/activity/export' && req.method === 'GET') {
     if (!DB_MODE) {
       sendNoDb()
@@ -3183,7 +3576,14 @@ Generated by eScoresheet
           return
         }
         const format = url.searchParams.get('format') === 'csv' ? 'csv' : 'ndjson'
-        const pages = layer.activity.exportPages(url.searchParams)
+        const emails = url.searchParams.get('emails') === '1'
+        const refused = await layer.activity.auditExport({ actorId: user.id, query: url.searchParams, format, emails })
+        if (refused) {
+          sendJson(res, refused.status, refused.body, { 'Cache-Control': 'no-store', ...(refused.status >= 500 ? { 'Retry-After': '5' } : {}) })
+          return
+        }
+        const pages = layer.activity.exportPages(url.searchParams, { emails })
+        const columns = layer.activity.exportColumns({ emails })
         let first
         try {
           first = await pages.next()
@@ -3200,9 +3600,9 @@ Generated by eScoresheet
           'Content-Disposition': `attachment; filename="openvolley-activity-${stamp}.${format}"`,
           'Cache-Control': 'no-store'
         })
-        if (format === 'csv') res.write(layer.activityCsvColumns.join(',') + '\n')
+        if (format === 'csv') res.write(columns.join(',') + '\n')
         const writeRows = (rows) => {
-          const text = rows.map((r) => (format === 'csv' ? layer.activityCsvLine(r) : JSON.stringify(r))).join('\n') + '\n'
+          const text = rows.map((r) => (format === 'csv' ? layer.activityCsvLine(r, columns) : JSON.stringify(r))).join('\n') + '\n'
           return res.write(text)
         }
         try {
@@ -3247,7 +3647,7 @@ Generated by eScoresheet
             ? isRateLimited(user.id, APPROVAL_PIN_RATE_LIMIT_MAX, 'approvalPin')
             : manageFamily === 'approvals'
               ? isRateLimited(user.id, APPROVALS_RATE_LIMIT_MAX, 'approvals')
-              : (manageFamily === 'admin' || manageFamily === 'savedTeams' || manageFamily === 'me' || manageFamily === 'join' || manageFamily === 'beach' || manageFamily === 'scoresheets' || manageFamily === 'club' || manageFamily === 'games' || manageFamily === 'settings' || manageFamily === 'team' || manageFamily === 'gameRosters' || manageFamily === 'clubLicences' || manageFamily === 'notifications') &&
+              : (manageFamily === 'admin' || manageFamily === 'savedTeams' || manageFamily === 'me' || manageFamily === 'join' || manageFamily === 'beach' || manageFamily === 'scoresheets' || manageFamily === 'club' || manageFamily === 'games' || manageFamily === 'settings' || manageFamily === 'team' || manageFamily === 'gameRosters' || manageFamily === 'clubLicences' || manageFamily === 'notifications' || manageFamily === 'matchEditors') &&
                 isRateLimited(user.id, MANAGE_RATE_LIMIT_MAX, 'manage')
         if (limited) {
           req.resume()
@@ -3388,8 +3788,8 @@ Generated by eScoresheet
         const isWrite = action !== 'select'
         const ownerScoped = OWNER_SCOPED_TABLES.has(table)
         if (isWrite
-          ? isRateLimited(clientIp, DB_WRITE_IP_RATE_LIMIT_MAX, 'dbWriteIp')
-          : isRateLimited(clientIp, DB_READ_RATE_LIMIT_MAX, 'db')) {
+          ? isRateLimited(addressKey(req), DB_WRITE_IP_RATE_LIMIT_MAX, 'dbWriteIp')
+          : isRateLimited(addressKey(req), DB_READ_RATE_LIMIT_MAX, 'db')) {
           logRejected(429, 'OV_RATE_LIMITED')
           sendTooMany()
           return
@@ -3416,29 +3816,61 @@ Generated by eScoresheet
           return
         }
 
-        // Reference tables: admins write, everyone else reads.
-        if (isWrite && (READ_ONLY_TABLES.has(table) || table === REFEREE_DIRECTORY) &&
-            !refereeDirectoryWriteAllowed(table, action, params) && !(await isAdminUser(layer, authUser.id))) {
-          logRejected(403, 'OV_READ_ONLY_TABLE')
-          sendJson(res, 403, { data: null, error: { message: 'This table is read-only for your account', code: 'OV_READ_ONLY_TABLE' } })
-          return
+        // Reference tables: admins write, everyone else reads; the referee
+        // directory's additions are open to the accounts that fill officials.
+        if (isWrite && (READ_ONLY_TABLES.has(table) || table === REFEREE_DIRECTORY)) {
+          let allowed = false
+          if (refereeDirectoryWriteAllowed(table, action, params)) {
+            let scorer
+            try {
+              scorer = await readsRefereeDob(layer, authUser.id, table)
+            } catch (err) {
+              console.warn('[DB] access check failed:', err?.message)
+              logRejected(503, 'OV_DB_UNAVAILABLE')
+              sendJson(res, 503, DB_UNAVAILABLE_BODY, { 'Retry-After': '5' })
+              return
+            }
+            allowed = scorer && (action === 'insert' || (await refereeSportsKept(layer, params)))
+          }
+          if (!allowed && !(await isAdminUser(layer, authUser.id))) {
+            logRejected(403, 'OV_READ_ONLY_TABLE')
+            sendJson(res, 403, { data: null, error: { message: 'This table is read-only for your account', code: 'OV_READ_ONLY_TABLE' } })
+            return
+          }
         }
 
         // Anonymous reads of tables with personal data (matches: rosters with
         // dates of birth, signatures, officials; referee_database and
         // svrz_games: referees' dates of birth) get the public columns only
         // (lib/publicColumns.js ANON_DB_COLUMNS), and may filter/order on
-        // plain columns only. A signed-in caller reads full referee rows, and
-        // full matches / events rows only of the matches it created or edits
-        // (an admin: all); other matches' rows get the anonymous projection,
-        // and a filter on a non-public column then only matches its own rows
-        // (no probing of hidden data). The token is only checked when the
-        // request asks for more than the public view, so the scorer's frequent
-        // id lookups cost nothing.
+        // plain columns only. Full referee rows need a role that fills the
+        // sheet's officials (REFEREE_DOB_SPORTS); any other session reads them
+        // like an anonymous caller. A signed-in caller reads full matches /
+        // events rows only of the matches it created or edits (an admin: all);
+        // other matches' rows get the anonymous projection, and a filter on a
+        // non-public column then only matches its own rows (no probing of
+        // hidden data). The token is only checked when the request asks for
+        // more than the public view, so the scorer's frequent id lookups cost
+        // nothing.
         let anonView = false
         let readOwner = null
+        // The account of a read whose token was checked (below), if any
+        let sessionReader = null
         // events: who may ask for voided rows too (params.include_voided, lib/pgQuery.js)
         let includeVoided = null
+        // May `userId` see referees' dates of birth in `table`? null: the
+        // roles could not be read, already answered 503 (never a silent "no",
+        // which would hand a scorer the cut-down row).
+        const refereeDobFor = async (userId) => {
+          try {
+            return await readsRefereeDob(layer, userId, table)
+          } catch (err) {
+            console.warn('[DB] access check failed:', err?.message)
+            logRejected(503, 'OV_DB_UNAVAILABLE')
+            sendJson(res, 503, DB_UNAVAILABLE_BODY, { 'Retry-After': '5' })
+            return null
+          }
+        }
         if (!isWrite && hasAnonPolicy(table)) {
           const check = anonSelectCheck(table, params)
           // Voided events are never public: asking for them needs the session
@@ -3459,10 +3891,27 @@ Generated by eScoresheet
                 return
               }
             }
-            if (!reader) {
+            // A token that no longer verifies (signed out, expired): 401 like a
+            // write, never the public view of a row the client may merge and
+            // write back (the sync queue handles invalid_token). No token at
+            // all keeps the public view.
+            if (!reader && bearerFromHeaders(req.headers)) {
+              logRejected(401, 'invalid_token')
+              sendJson(res, 401, { data: null, error: { message: 'Invalid or expired session. Please sign in again.', code: 'invalid_token' } })
+              return
+            }
+            sessionReader = reader
+            // The referee tables: a session alone is not enough
+            let fullReader = reader
+            if (reader && Object.hasOwn(REFEREE_DOB_SPORTS, table)) {
+              const full = await refereeDobFor(reader.id)
+              if (full === null) return
+              if (!full) fullReader = null
+            }
+            if (!fullReader) {
               if (check.badFilter) {
                 logRejected(400, 'OV_SECRET_FILTER')
-                sendJson(res, 400, { data: null, error: { message: 'This column cannot be used as a filter without a session', code: 'OV_SECRET_FILTER' } })
+                sendJson(res, 400, { data: null, error: { message: reader ? 'This column cannot be used as a filter by your account' : 'This column cannot be used as a filter without a session', code: 'OV_SECRET_FILTER' } })
                 return
               }
               anonView = true
@@ -3473,6 +3922,21 @@ Generated by eScoresheet
               includeVoided = 'all'
             }
           }
+        }
+        // Referee directory writes of an account that may not read the dates
+        // of birth (none since only scorers and admins write it; kept as a
+        // floor for the rules above): the rows
+        // they return (params.returning) get the same projection, and a new
+        // referee is stored with the public columns only. Its own date of
+        // birth would otherwise be checked against the stored ones by a
+        // unique key that includes it ("already there" or not).
+        let dobBlindWriter = false
+        if (isWrite && Object.hasOwn(REFEREE_DOB_SPORTS, table) &&
+            (action === 'insert' || (params.returning != null && params.returning !== false))) {
+          const full = await refereeDobFor(authUser.id)
+          if (full === null) return
+          anonView = !full
+          dobBlindWriter = !full
         }
 
         // Strip columns a client may never write; owner-scoped rows get the
@@ -3490,6 +3954,9 @@ Generated by eScoresheet
         }
         const p = { ...params }
         if (p.data !== undefined) p.data = sanitizeWriteData(p.data)
+        // A match whose status leaves 'setup' drops the teams' uploaded rosters (lib/uploadedRoster.js)
+        if (table === 'matches' && action === 'update') p.data = withPendingRostersCleared(p.data)
+        if (dobBlindWriter && p.data !== undefined) p.data = projectRows(ANON_DB_COLUMNS, table, p.data)
         // PINs at rest (lib/pinHash.js): game_pin / connection_pins values are
         // stored hashed when OV_PIN_SECRET is set.
         if (p.data !== undefined && layer.pins.enabled) {
@@ -3523,15 +3990,26 @@ Generated by eScoresheet
         // it never sees a scorer's name.
         // An update that moves a match onto another game or season gets the
         // same check (the stored rows with the update over them).
+        // With the club rule on, a scorer of the home club takes over a game
+        // an account outside the club holds while its match is still in
+        // setup (lib/accounts.js takeOverHeldGame, audited), then writes.
         const officialWrite = (action === 'insert' || action === 'upsert') ? p.data !== undefined : action === 'update'
         if (table === 'matches' && officialWrite && matchOwner && !matchOwner.testOnly) {
           let claim
           try {
             // only the sports the caller can score in: the others get pgQuery's 403 first
             const sports = scoringSportsOf(matchOwner)
-            claim = action === 'update'
-              ? await layer.accounts.findTakenGameForUpdate({ userId: authUser.id, filters: p.filters, data: p.data, sports })
-              : await layer.accounts.findTakenGame({ userId: authUser.id, rows: p.data, sports })
+            const findClaim = () => action === 'update'
+              ? layer.accounts.findTakenGameForUpdate({ userId: authUser.id, filters: p.filters, data: p.data, sports })
+              : layer.accounts.findTakenGame({ userId: authUser.id, rows: p.data, sports })
+            claim = await findClaim()
+            if (claim && !claim.mine && !matchOwner.admin) {
+              const t = await layer.accounts.takeOverHeldGame({ actorId: authUser.id, claim })
+              if (t.released) {
+                if (t.changes.length) publishChanges(t.changes)
+                claim = await findClaim()
+              }
+            }
           } catch (err) {
             console.warn('[DB] official-game check failed:', err?.message)
             logRejected(503, 'OV_DB_UNAVAILABLE')
@@ -3548,25 +4026,13 @@ Generated by eScoresheet
 
         // db/019: the match is scored on another device now. Only writes that
         // name their device (request.device, apps from the handover on): the
-        // older apps are neither checked nor recorded. A failing check never
-        // stops the write (a match day must not get stuck on bookkeeping).
+        // older apps are neither checked nor recorded. The check is part of
+        // the write (lib/scorerDevice.js guardedWrite: one transaction, the
+        // scorer row locked against a take-over), and a failing check fails
+        // the write (5xx, the app sends it again): a write let through
+        // unchecked is the one the device that took over never gets.
         const scoringDevice = isWrite && SCORER_TABLES.includes(table) && layer.scorer ? deviceOf(request.device) : null
-        let scorerRefs = null
-        let adoptScorer = false
-        if (scoringDevice) {
-          scorerRefs = matchRefsOfWrite(table, action, p)
-          try {
-            const v = await layer.scorer.check({ device: scoringDevice, refs: scorerRefs })
-            if (v.moved) {
-              logRejected(409, 'OV_SCORER_MOVED')
-              sendJson(res, 409, scorerMovedBody(v.moved))
-              return
-            }
-            adoptScorer = v.unclaimed
-          } catch (err) {
-            console.warn('[DB] scorer-device check failed (write let through):', err?.message)
-          }
-        }
+        const scorerRefs = scoringDevice ? matchRefsOfWrite(table, action, p) : null
 
         // db/015: a delete of ONE event by its external_id (a correction of an
         // app from before the event history) voids the event, never deletes
@@ -3574,7 +4040,7 @@ Generated by eScoresheet
         // (filter on match_id) are unchanged.
         const singleEventExt = table === 'events' && action === 'delete' ? singleExternalIdFilter(p.filters) : null
         if (singleEventExt && layer.revisions?.voidByExternalId) {
-          const v = await layer.revisions.voidByExternalId({ eventExt: singleEventExt, user: authUser, matchOwner })
+          const v = await layer.revisions.voidByExternalId({ eventExt: singleEventExt, user: authUser, matchOwner, scorerCheck: scorerCheckOf(layer, scoringDevice, matchOwner) })
           if (v) {
             if (v.status === 200 && v.changes?.length) publishChanges(v.changes)
             if (v.status >= 400) logRejected(v.status, v.body?.error?.code)
@@ -3583,6 +4049,9 @@ Generated by eScoresheet
           }
         }
 
+        // A read without a checked session, or by an account without a role:
+        // anonReadOptions, and a slot of anonDbGate
+        const anonymousRead = !isWrite && !authUser && (!sessionReader || await readsLikeAnonymous(layer, sessionReader.id))
         const runOpts = {
           proto: req.headers['x-ov-proto'],
           scope: ownerScoped ? { column: 'user_id', value: authUser.id } : undefined,
@@ -3590,9 +4059,45 @@ Generated by eScoresheet
           // the acting account for db/007's triggers (closed_by)
           ...(isWrite ? { actorId: authUser.id } : {}),
           ...(readOwner ? { readOwner } : {}),
-          ...(includeVoided ? { includeVoided } : {})
+          ...(includeVoided ? { includeVoided } : {}),
+          ...(anonymousRead ? anonReadOptions(table, p) : {})
         }
-        let r = await layer.db.runQuery({ table, action, params: p }, runOpts)
+        // A PIN this write changes starts its count across callers again
+        const pinWrites = table === 'matches' && isWrite ? await watchPinWrites(layer, action, p, authUser?.id || null) : null
+        // The scoring device's writes: checked, run and adopted in one transaction
+        const runRequest = async () => {
+          if (!scoringDevice) return layer.db.runQuery({ table, action, params: p }, runOpts)
+          const g = await layer.scorer.guardedWrite({
+            device: scoringDevice,
+            refs: scorerRefs,
+            table,
+            action,
+            matchOwner,
+            userId: authUser.id,
+            write: (client) => layer.db.runQuery({ table, action, params: p }, { ...runOpts, client })
+          })
+          return g.moved ? { status: 409, body: scorerMovedBody(g.moved) } : g.result
+        }
+        let r
+        if (anonymousRead) {
+          // A caller that gives up while queued: its read is not run
+          let gone = false
+          const onGone = () => { if (!res.writableEnded) gone = true }
+          res.on('close', onGone)
+          try {
+            r = await anonDbGate.run(runRequest, { abandoned: () => gone })
+          } catch (err) {
+            if (err?.code === 'GATE_ABANDONED') return
+            if (err?.code !== 'AUTH_BUSY') throw err
+            logRejected(503, 'OV_DB_BUSY')
+            sendJson(res, 503, { data: null, error: { message: 'Server busy, please retry', code: 'OV_DB_BUSY', retryable: true } }, { 'Retry-After': '2' })
+            return
+          } finally {
+            res.off('close', onGone)
+          }
+        } else {
+          r = await runRequest()
+        }
         // Take-over inline: a scorer's match insert/upsert refused only for
         // ownership (a match set up before ownership existed, or created by
         // another account) that carries the match's own game PIN proves it,
@@ -3602,16 +4107,26 @@ Generated by eScoresheet
         if (r.status === 403 && r.body?.error?.code === 'OV_NOT_MATCH_OWNER' && table === 'matches' &&
             (action === 'insert' || action === 'upsert') && matchOwner && !matchOwner.admin) {
           if (await claimByUpsertPin(layer, authUser.id, params.data, clientIp)) {
-            r = await layer.db.runQuery({ table, action, params: p }, runOpts)
+            r = await runRequest()
           }
         }
         if (table === 'matches' && isWrite) r = await enrichGameTaken(layer, authUser.id, r, p.data, matchOwner)
-        // The first device that writes a match scores it (db/019)
-        if (r.status === 200 && adoptScorer && action !== 'delete') await layer.scorer.adopt({ device: scoringDevice, refs: scorerRefs, userId: authUser.id })
+        // An update of ONE match (by its external_id) that matched no row,
+        // because the server lacks the match (a database restored to an
+        // earlier time): 404 OV_MATCH_UNKNOWN, so the app sends the match
+        // again from its own data instead of counting the update as sent. A
+        // stored match the caller may not write is refused above (403). A
+        // match deleted on purpose is 404 OV_MATCH_DELETED: not sent again.
+        if (r.status === 200 && table === 'matches' && action === 'update' && Array.isArray(r.changes) && r.changes.length === 0) {
+          const ext = singleExternalIdFilter(p.filters)
+          const state = ext ? await matchState(layer, ext) : 'stored'
+          if (state !== 'stored') r = { status: 404, body: state === 'deleted' ? MATCH_DELETED_BODY : MATCH_UNKNOWN_BODY }
+        }
         if (r.status === 200 && r.changes?.length) {
           publishChanges(r.changes)
           if (table === 'matches') await layer.accounts.auditClaimedGames({ actorId: authUser.id, changes: r.changes })
         }
+        if (r.status === 200 && pinWrites) await pinWrites.done()
         // 4xx/5xx from pgQuery (OV_UNSCOPED_EXTERNAL_ID, OV_CLIENT_TOO_OLD,
         // OV_UNSCOPED_WRITE, constraint errors, ...): code only, no details
         // (they can quote row values).
@@ -3621,8 +4136,12 @@ Generated by eScoresheet
         // Anonymous: public columns; a match's rosters only with the match
         // token of its PIN check (referee/bench fallback, lib/matchAccess.js).
         // The token is bound to its role: the role's connection must still be on.
-        const granted = anonView || readOwner ? matchTokens.verify(req.headers['x-ov-match-token']) : null
-        const grantOpts = { grantedExternalId: granted?.m || null, grantRow: (row) => matchTokens.stillGrantsRow(granted, row) }
+        // Only a token from the database's PIN check (it names matches.id) unlocks
+        // database rows; a relay room's token grants the relay copy only.
+        const verified = anonView || readOwner ? matchTokens.verify(req.headers['x-ov-match-token']) : null
+        const granted = verified?.u ? verified : null
+        const grantedPins = granted?.s ? await connectionPinsOf(layer, granted.u) : null
+        const grantOpts = { grantedExternalId: granted?.m || null, grantedMatchUuid: granted?.u || null, grantRow: (row) => matchTokens.stillGrantsRow(granted, row, grantedPins) }
         const data = anonView ? projectAnonDbRows(table, redacted, grantOpts)
           : readOwner ? projectNonOwnerRows(table, redacted, grantOpts)
             : redacted
@@ -3696,22 +4215,14 @@ Generated by eScoresheet
           }
           // db/019: a restore made before another device took the match over
           // (queued on a device the scorer left, sent late; age_ms: how long
-          // ago, by the app's clock) must not replace that device's score
-          const restoreDevice = layer.scorer ? deviceOf(body?.device) : null
-          if (restoreDevice && typeof body?.match?.external_id === 'string') {
-            try {
-              const holder = await layer.scorer.movedSince({ device: restoreDevice, externalId: body.match.external_id, ageMs: body?.age_ms })
-              if (holder) {
-                sendJson(res, 409, scorerMovedBody(holder))
-                return
-              }
-            } catch (err) {
-              console.warn('[match/restore] scorer-device check failed (let through):', err?.message)
-            }
-          }
-          let r = await layer.restore.restoreMatch(body, { proto: req.headers['x-ov-proto'], matchOwner, actorId: user.id })
+          // ago, by the app's clock) must not replace that device's score.
+          // Checked inside the restore's transaction (a take-over waits for it).
+          const scorerCheck = scorerCheckOf(layer, deviceOf(body?.device), matchOwner, { ageMs: body?.age_ms ?? null })
+          const pinWrites = body?.match && typeof body.match === 'object' ? await watchPinWrites(layer, 'upsert', { data: body.match }, user.id) : null
+          let r = await layer.restore.restoreMatch(body, { proto: req.headers['x-ov-proto'], matchOwner, actorId: user.id, scorerCheck })
           r = await enrichGameTaken(layer, user.id, r, body?.match ? [body.match] : [], matchOwner)
           if (r.status === 200) {
+            if (pinWrites) await pinWrites.done()
             publishChanges(r.changes)
             await layer.accounts.auditClaimedGames({ actorId: user.id, changes: r.changes })
             // A backup restored onto a device is that device's take-over (db/019):
@@ -3768,20 +4279,10 @@ Generated by eScoresheet
         }
         // db/019: the device sending the revisions (body.device; a revision's
         // own device_id is the one that made it, which may be the same
-        // installation under an older id). Apps that name none are not checked.
-        const revDevice = deviceOf(body?.device)
-        if (revDevice && layer.scorer && typeof body?.match_external_id === 'string') {
-          try {
-            const v = await layer.scorer.check({ device: revDevice, refs: { externalIds: [body.match_external_id], ids: [] } })
-            if (v.moved) {
-              sendJson(res, 409, scorerMovedBody(v.moved))
-              return
-            }
-          } catch (err) {
-            console.warn('[match/event-revisions] scorer-device check failed (let through):', err?.message)
-          }
-        }
-        const r = await layer.revisions.apply({ body, user, matchOwner })
+        // installation under an older id). Apps that name none are not
+        // checked. Checked inside the revisions' transaction.
+        const scorerCheck = scorerCheckOf(layer, deviceOf(body?.device), matchOwner)
+        const r = await layer.revisions.apply({ body, user, matchOwner, scorerCheck })
         if (r.status === 200) publishChanges(r.changes)
         sendJson(res, r.status, r.body, r.status >= 500 ? { 'Retry-After': '5' } : {})
       } catch (err) {
@@ -3841,9 +4342,48 @@ Generated by eScoresheet
     return
   }
 
+  // POST /api/match/known {external_id} — the sync queue asks before it sends
+  // a match again whose sets or events found no match on the server: 200
+  // {state: 'stored'|'deleted'|'unknown'}. Only 'unknown' (lost to a restore)
+  // is sent again; a deleted match stays deleted. Signed-in callers only.
+  if (url.pathname === '/api/match/known' && req.method === 'POST') {
+    if (!DB_MODE) {
+      sendNoDb()
+      return
+    }
+    ;(async () => {
+      try {
+        const layer = await getDataLayer()
+        const user = await layer.auth.requireUser(req, res)
+        if (!user) return
+        if (isRateLimited(user.id, DB_WRITE_RATE_LIMIT_MAX, 'dbWrite')) {
+          req.resume()
+          sendTooMany()
+          return
+        }
+        let body
+        try {
+          body = await readJsonBody(req)
+        } catch (err) {
+          sendBodyError(res, err)
+          return
+        }
+        const ext = body?.external_id
+        if (typeof ext !== 'string' || ext === '' || ext.length > 200) {
+          sendJson(res, 400, { data: null, error: { message: 'Invalid request', code: 'OV_INVALID_REQUEST' } })
+          return
+        }
+        sendJson(res, 200, { data: { state: await matchState(layer, ext) }, error: null })
+      } catch (err) {
+        sendLayerError('match/known', err)
+      }
+    })()
+    return
+  }
+
   if (url.pathname === '/api/match/claim' && req.method === 'POST') {
     const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, RESTORE_PIN_IP_RATE_LIMIT_MAX, 'restorePin')) {
+    if (isRateLimited(addressKey(req), RESTORE_PIN_IP_RATE_LIMIT_MAX, 'restorePin')) {
       sendTooMany()
       return
     }
@@ -3879,8 +4419,11 @@ Generated by eScoresheet
   // coachSignature?, captainSignature?} — the Upload Roster app's cloud write.
   // Authorised by the team's upload PIN of THAT match (no account: coaches are
   // not the match's scorer, and the ownership guard would refuse them). Writes
-  // only connections.pending_{home|away}_roster and the team's coach/captain
-  // signatures; the scorer accepts the pending roster in Match Setup.
+  // only connections.pending_{home|away}_roster, checked by the app's own
+  // rules (lib/uploadedRoster.js), and the team's coach/captain signatures
+  // where the match has none yet (an upload never replaces a stored one);
+  // the scorer accepts the pending roster in Match Setup. The status is
+  // tested again in the write: an upload never lands after the coin toss.
   if (url.pathname === '/api/match/upload-roster' && req.method === 'POST') {
     const ipKey = ipBucketKey(getClientIp(req))
     if (isRateLimited(ipKey, PIN_IP_RATE_LIMIT_MAX, 'pinIp')) {
@@ -3903,14 +4446,20 @@ Generated by eScoresheet
         const { matchExternalId, team, pin, roster, coachSignature, captainSignature } = body || {}
         if (typeof matchExternalId !== 'string' || !matchExternalId || matchExternalId.length > 128 ||
             (team !== 'home' && team !== 'away') || !isValidPin(pin) ||
-            !roster || typeof roster !== 'object' || Array.isArray(roster) ||
-            [coachSignature, captainSignature].some((s) => s != null && typeof s !== 'string')) {
+            !roster || typeof roster !== 'object' || Array.isArray(roster)) {
           sendJson(res, 400, { success: false, error: 'Invalid request' })
+          return
+        }
+        // The signatures of the body are the roster's (as the app sends them)
+        const checked = checkUploadedRoster({ ...roster, coachSignature: coachSignature ?? null, captainSignature: captainSignature ?? null })
+        if (!checked.ok) {
+          sendJson(res, 400, { success: false, error: `Invalid roster (${uploadedRosterProblemText(checked.problems)})` })
           return
         }
         const pinKey = team === 'home' ? 'upload_home' : 'upload_away'
         // This team's upload PIN of this match: the scope validate-connection-pin
-        // uses for it, apart from the referee and bench connects
+        // uses for it, apart from the referee and bench connects (per address,
+        // and per match across callers)
         const scope = pinScope.match(matchExternalId, pinKey)
         if (pinFailureLimiter.isLimited(ipKey, scope)) {
           sendTooMany({ success: false, error: 'Too many failed attempts. Please wait 10 minutes before trying again.' }, '600')
@@ -3923,7 +4472,7 @@ Generated by eScoresheet
           table: 'matches',
           action: 'select',
           params: {
-            columns: 'id, status, connection_pins, signatures',
+            columns: 'id, status, connection_pins',
             filters: [{ type: 'eq', column: 'external_id', value: matchExternalId }],
             limit: 1
           }
@@ -3933,38 +4482,45 @@ Generated by eScoresheet
           return
         }
         const row = found.body.data?.[0]
+        // No such match: no PIN to guess, nothing counted across callers
+        if (!row) pinFailureLimiter.matchRefund([[matchExternalId, pinKey]])
         if (!row || !layer.pins.matches(pinKey, String(pin).trim(), row.connection_pins?.[pinKey])) {
           sendJson(res, 403, { success: false, error: 'Invalid upload PIN' })
           return
         }
+        const locked = () => sendJson(res, 409, { success: false, error: 'The roster of this match is locked (coin toss done)' })
         if (row.status !== 'setup') {
-          sendJson(res, 409, { success: false, error: 'The roster of this match is locked (coin toss done)' })
+          locked()
           return
         }
         const pendingKey = team === 'home' ? 'pending_home_roster' : 'pending_away_roster'
-        const pending = { ...roster, coachSignature: coachSignature || null, captainSignature: captainSignature || null }
-        const data = { connections: { [pendingKey]: pending } } // merged into the stored object (pgQuery mergeJsonColumns)
-        const sig = {}
-        if (coachSignature) sig[team === 'home' ? 'home_coach' : 'away_coach'] = coachSignature
-        if (captainSignature) sig[team === 'home' ? 'home_captain' : 'away_captain'] = captainSignature
-        if (Object.keys(sig).length) {
-          const stored = row.signatures && typeof row.signatures === 'object' && !Array.isArray(row.signatures) ? row.signatures : {}
-          data.signatures = { ...stored, ...sig }
-        }
-        const r = await layer.db.runQuery({
-          table: 'matches',
-          action: 'update',
-          params: { data, filters: [{ type: 'eq', column: 'id', value: row.id }] }
-        }, { internal: true })
-        if (r.status !== 200) {
-          sendJson(res, r.status >= 500 ? 503 : 500, { success: false, error: 'Upload failed' })
+        const pending = checked.roster
+        // The row locked from its status and signatures to the write: a coin
+        // toss in between refuses the upload, and the other team's upload at
+        // the same moment waits for this one instead of dropping its signatures
+        const out = await layer.db.withTransaction(async (client) => {
+          const { rows: [now] } = await client.query('SELECT status, signatures FROM public.matches WHERE id = $1 FOR UPDATE', [row.id])
+          if (!now || now.status !== 'setup') return { locked: true }
+          const data = { connections: { [pendingKey]: pending } } // merged into the stored object (pgQuery mergeJsonColumns)
+          const signatures = signaturesAfterUpload(now.signatures, team, pending)
+          if (signatures) data.signatures = signatures
+          const r = await layer.db.runQuery({
+            table: 'matches',
+            action: 'update',
+            params: { data, filters: [{ type: 'eq', column: 'id', value: row.id }] }
+          }, { internal: true, client })
+          if (r.status !== 200) throw Object.assign(new Error(`upload write ${r.status} ${r.body?.error?.code || ''}`), { status: r.status })
+          return { changes: r.changes }
+        })
+        if (out.locked) {
+          locked()
           return
         }
-        publishChanges(r.changes)
+        publishChanges(out.changes)
         sendJson(res, 200, { success: true })
       } catch (err) {
         console.error('[upload-roster] Error:', err.message)
-        sendJson(res, 500, { success: false, error: 'Upload failed' })
+        sendJson(res, err?.status >= 500 ? 503 : 500, { success: false, error: 'Upload failed' })
       }
     })()
     return
@@ -3980,7 +4536,7 @@ Generated by eScoresheet
   // no claim: looking a match up never takes it over.
   if (url.pathname === '/api/match/restore-by-pin' && req.method === 'POST') {
     const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, RESTORE_PIN_IP_RATE_LIMIT_MAX, 'restorePin')) {
+    if (isRateLimited(addressKey(req), RESTORE_PIN_IP_RATE_LIMIT_MAX, 'restorePin')) {
       sendTooMany()
       return
     }
@@ -4010,6 +4566,9 @@ Generated by eScoresheet
         const r = await layer.restore.restoreByPin(body, { limitKey: layer.ipKey(clientIp), editorUserId, takeOver })
         if (r.status === 200 && editorUserId && r.body.data?.access === 'editor') {
           await layer.accounts.auditClaimPin({ actorId: editorUserId, matchId: r.body.data.match?.id, via: 'restore-by-pin' })
+        } else if (r.status === 200) {
+          // every other read by game PIN too, anonymous ones included
+          await layer.accounts.auditRestorePin({ actorId: editorUserId, matchId: r.body.data?.match?.id, access: r.body.data?.access || 'full' })
         }
         sendJson(res, r.status, r.body, r.status === 429 ? { 'Retry-After': '600' } : {})
       } catch (err) {
@@ -4023,12 +4582,16 @@ Generated by eScoresheet
   // signed-url answers 404 (removed). Every call needs a session. Scoresheets
   // (player names, dates of birth, signatures) are read, replaced and listed
   // only by the account that created them (STORAGE_UPLOADER_READ_BUCKETS,
-  // default 'scoresheets'; README "Who can read a scoresheet"); a download of
-  // a missing object answers 200 with
+  // default 'scoresheets'; README "Who can read a scoresheet") and uploaded
+  // only at the paths the scorer apps write; a scoresheet PDF (and an
+  // OpenBeach JSON of a match) is stored only for a match the caller may
+  // write (lib/scoresheets.js storeFile, db/033); a download of a missing
+  // object answers 200 with
   // OV_STORAGE_NOT_FOUND (no log/backup yet is normal, not a browser error).
   // POST /api/scoresheet/test-mail { pdf (base64), teams, result }: a test
   // match's scoresheet to the signed-in scorer's own address (lib/finalMail.js;
-  // never stored). The body holds the PDF: the storage's body cap.
+  // never stored): an account that scores (either sport) with a confirmed
+  // address only. The body holds the PDF: the storage's body cap.
   if (url.pathname === '/api/scoresheet/test-mail' && req.method === 'POST') {
     if (!DB_MODE) {
       sendNoDb()
@@ -4039,9 +4602,24 @@ Generated by eScoresheet
         const layer = await getDataLayer()
         const user = await layer.auth.requireUser(req, res)
         if (!user) return
-        if (isRateLimited(user.id, 10, 'testMail')) {
+        if (isRateLimited(user.id, TEST_MAIL_RATE_LIMIT_MAX, 'testMail')) {
           req.resume()
           sendJson(res, 429, TOO_MANY, { 'Retry-After': '60' })
+          return
+        }
+        let canScore
+        try {
+          const a = await layer.access.get(user.id)
+          canScore = a.apps ? Object.values(a.apps).some((s) => s?.canScore === true) : a.canScore === true
+        } catch (err) {
+          console.warn('[Test mail] access check failed:', err?.message)
+          req.resume()
+          sendJson(res, 503, DB_UNAVAILABLE_BODY, { 'Retry-After': '5' })
+          return
+        }
+        if (!canScore) {
+          req.resume()
+          sendJson(res, 403, { data: null, error: { message: 'Your account is not approved as a scorer yet', code: 'OV_SCORER_REQUIRED' } })
           return
         }
         let body
@@ -4061,8 +4639,7 @@ Generated by eScoresheet
   }
 
   if (url.pathname.startsWith('/api/storage/') && req.method === 'POST') {
-    const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, STORAGE_IP_RATE_LIMIT_MAX, 'storage')) {
+    if (isRateLimited(addressKey(req), STORAGE_IP_RATE_LIMIT_MAX, 'storage')) {
       sendTooMany()
       return
     }
@@ -4083,8 +4660,27 @@ Generated by eScoresheet
           sendBodyError(res, err, { tooLargeBody: layer.storage.bodyTooLarge().body })
           return
         }
-        // Scoresheets of official matches: approved scorers only (backups stay
-        // open), of the sport of the path (beach/... needs beach scoring rights)
+        // Match backups and app logs (bucket backup, {userId}/...): accounts
+        // with a role only (scorer, referee, manager or admin, either sport).
+        // Any self-registered account could otherwise fill the volume to the
+        // free-space floor every account's backups share; each account also
+        // has a total of its own (lib/storage.js maxOwnerBytes).
+        if (action === 'upload' && body && body.bucket === 'backup') {
+          let hasRole
+          try {
+            hasRole = (await layer.access.get(user.id)).roles.length > 0
+          } catch (err) {
+            console.warn('[Storage] access check failed:', err?.message)
+            sendJson(res, 503, DB_UNAVAILABLE_BODY, { 'Retry-After': '5' })
+            return
+          }
+          if (!hasRole) {
+            sendJson(res, 403, { data: null, error: { message: 'Cloud backups need an account with a role', code: 'OV_STORAGE_FORBIDDEN' } })
+            return
+          }
+        }
+        // Scoresheets of official matches: approved scorers only, of the sport
+        // of the path (beach/... needs beach scoring rights)
         if (action === 'upload' && body && body.bucket === 'scoresheets') {
           let canScore
           try {
@@ -4100,6 +4696,35 @@ Generated by eScoresheet
             sendJson(res, 403, { data: null, error: { message: 'Your account is not approved for official matches yet', code: 'OV_SCORER_REQUIRED' } })
             return
           }
+          // Only the paths the scorer apps write ({day}/game….pdf|json,
+          // beach/{day}/game….pdf|json): a file at a day folder's name, or one
+          // below a scoresheet's name, would turn every later upload of that
+          // day or match into a conflict (lib/scoresheets.js isScoresheetUploadPath)
+          if (!layer.isScoresheetUploadPath(body.path)) {
+            sendJson(res, 400, { data: null, error: { message: 'Not a scoresheet path', code: 'OV_STORAGE_INVALID_PATH' } })
+            return
+          }
+        }
+        // A scoresheet PDF is stored only for a match the caller may write,
+        // and a closed match's PDF stays; an OpenBeach JSON of a match is
+        // written only by an account that may write it (lib/scoresheets.js, db/033)
+        const sheetFile = body && body.bucket === 'scoresheets' &&
+          ((action === 'upload' && layer.isMatchScoresheetFile(body.path)) ||
+            (action === 'remove' && Array.isArray(body.paths) && body.paths.some(layer.isScoresheetPdf)))
+        if (sheetFile) {
+          let matchOwner
+          try {
+            matchOwner = await matchOwnerFor(layer, user)
+          } catch (err) {
+            console.warn('[Storage] access check failed:', err?.message)
+            sendJson(res, 503, DB_UNAVAILABLE_BODY, { 'Retry-After': '5' })
+            return
+          }
+          const r = action === 'upload'
+            ? await layer.scoresheets.storeFile({ userId: user.id, matchOwner, body })
+            : await layer.scoresheets.removeFiles({ userId: user.id, admin: matchOwner.admin === true, body })
+          sendJson(res, r.status, r.body, r.status >= 500 ? { 'Retry-After': '5' } : {})
+          return
         }
         const { status, body: out } = await layer.storage.handle(action, body, { userId: user.id })
         sendJson(res, status, out)
@@ -4165,28 +4790,26 @@ Generated by eScoresheet
           generateQRCodes(BEACH_ROLES)
         ])
 
-        // Active matches info
+        // Active matches info: a venue relay's own page, for the hall. The
+        // cloud's root is public to the whole internet: no team names of the
+        // matches being scored, no counts (the internal /health has those).
         const matchList = []
-        for (const [matchId, matchData] of activeMatches.entries()) {
-          // Synced matches store { homeTeam, awayTeam, ... }; the legacy path
-          // stored { data: {...} }. Read both so names actually render.
-          const d = matchData.data || {}
-          const homeName = (typeof matchData.homeTeam === 'object' ? matchData.homeTeam?.name : matchData.homeTeam)
-            || d.homeTeamName || d.home_team_name || 'Home'
-          const awayName = (typeof matchData.awayTeam === 'object' ? matchData.awayTeam?.name : matchData.awayTeam)
-            || d.awayTeamName || d.away_team_name || 'Away'
-          matchList.push({
-            id: matchId,
-            home: homeName,
-            away: awayName,
-            updatedAt: matchData.updatedAt
-          })
+        if (!IS_CLOUD) for (const [matchId, matchData] of activeMatches.entries()) {
+          // Per entry: one crafted room must never turn the landing page into
+          // 500 for everyone. A sync stores only validated team names; a room
+          // recovered from storage is not validated, so landingMatchRow keeps
+          // only names (and a time) the page can print.
+          try {
+            matchList.push(landingMatchRow(matchId, matchData))
+          } catch (err) {
+            console.error('[Landing] skipped a room:', err?.message)
+          }
         }
 
         const html = renderLandingPage({
           baseUrl,
-          clientCount: connections.size,
-          matchCount: activeMatches.size,
+          clientCount: IS_CLOUD ? null : connections.size,
+          matchCount: IS_CLOUD ? null : activeMatches.size,
           indoor: indoorQR,
           beach: beachQR,
           matches: matchList
@@ -4246,7 +4869,7 @@ Generated by eScoresheet
 
   res.writeHead(404)
   res.end('Not Found')
-})
+}
 
 // Create WebSocket server. HTTP and WebSocket share one port (PORT): upgrades
 // are routed here. `?purpose=live` sockets (DATABASE_URL mode) go to the
@@ -4288,6 +4911,19 @@ wss.on('error', (err) => {
 
 server.on('upgrade', (req, socket, head) => {
   socket.on('error', () => { /* client went away mid-handshake */ })
+  // Browsers apply no same-origin rule to WebSockets: without this any web
+  // page opened on a device made it a relay client (joined rooms, tried PINs
+  // from its visitors' addresses, held a hall's connection slots). A page of
+  // an origin the origin rule (lib/cors.js) does not trust is refused, role
+  // and live sockets alike; a socket without an Origin (the native apps' and
+  // the board bridge's) is no page and connects as before.
+  const origin = req.headers.origin
+  if (origin !== undefined && !isTrustedOrigin(origin, { host: req.headers.host })) {
+    transportRefusals.upgradeOrigin++
+    socket.once('finish', () => socket.destroy())
+    socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n')
+    return
+  }
   if (realtimeHub && isLiveRequest(req)) {
     relaySummary.count('live upgrades')
     realtimeHub.handleUpgrade(req, socket, head, { ip: getClientIp(req) })
@@ -4309,6 +4945,12 @@ wss.on('connection', (ws, req) => {
   // Enforce global connection cap
   if (connections.size >= MAX_CONNECTIONS) {
     ws.close(1013, 'Server connection limit reached')
+    return
+  }
+  if (heapPressure() * 100 >= ADMIT_HEAP_PCT) {
+    admissionRefused++
+    relaySummary.count('refused (relay busy)')
+    ws.close(1013, 'Relay busy, retry shortly')
     return
   }
 
@@ -4335,7 +4977,11 @@ wss.on('connection', (ws, req) => {
     id: clientId,
     ip,
     ipKey,
+    // The room this socket joined or synced last (of `rooms`)
     matchId: null,
+    // Room keys this socket is in, or waits for (a match the relay does not
+    // hold yet, admitWaiting), oldest first: at most MAX_SOCKET_ROOMS
+    rooms: new Set(),
     role: null, // 'scoreboard', 'referee', 'bench'
     team: null, // 'home' or 'away' for bench clients
     // Matches this socket proved the scoreboard role for (game PIN in sync-match-data)
@@ -4354,6 +5000,10 @@ wss.on('connection', (ws, req) => {
     // The installation a scoreboard names in sync-match-data (db/019, the
     // scoring device): its claims are checked against match_scorer_devices
     scorerDevice: null,
+    // This socket's window of the frame budget (frameBudget)
+    frames: {},
+    // { matchId, moved } while a claim's database check runs (verifyRelayClaim)
+    claimCheck: null,
     connectedAt: new Date().toISOString()
   }
 
@@ -4373,10 +5023,33 @@ wss.on('connection', (ws, req) => {
   }))
 
   ws.on('message', (data) => {
-    // Per-client WebSocket rate limiting
-    if (isWsRateLimited(clientId)) {
+    // Per-client WebSocket rate limiting; a scoreboard's bench answers (a
+    // socket that owns a match) on their own budget, dropped (not closed)
+    // when over it; any other socket keeps the normal limit
+    if (clientInfo.ownedMatches.size > 0 && isBenchResponseFrame(data)) {
+      if (isWsRateLimited(clientId, benchBudgetKey(clientId), WS_BENCH_RESPONSE_MAX)) {
+        relaySummary.count('refused (bench-response budget)')
+        return
+      }
+    } else if (isWsRateLimited(clientId)) {
       ws.send(JSON.stringify({ type: 'error', message: 'Rate limit exceeded' }))
       ws.close(1008, 'Rate limit exceeded')
+      return
+    }
+    // The frame's bytes, before anything parses it: a socket that owns no
+    // room sends only a few large frames (its claim), one that owns only
+    // rooms no database proved a budget per socket and address, see
+    // createFrameBudget and frameProofOf
+    const frame = frameBudget.check(clientInfo.frames, relayAddressOf(clientInfo), data.length, frameProofOf(clientInfo))
+    if (frame !== 'ok') {
+      transportRefusals.frames++
+      relaySummary.count('refused (frame budget)')
+      if (frame === 'close') {
+        transportRefusals.socketsClosed++
+        ws.close(1009, 'Message too big')
+        return
+      }
+      ws.send(JSON.stringify({ type: 'error', code: 'too-large', message: 'Message too large for the relay' }))
       return
     }
     // While a sync-match-data waits for its database check (cloud claims, see
@@ -4429,6 +5102,13 @@ function runSocketMessage(clientInfo, data) {
 function handleSocketMessage(clientInfo, data) {
   const ws = clientInfo.ws
   try {
+    // Refused before it is parsed: more JSON values than any bundle has. Up
+    // to the 10 MB frame limit, tiny values parse to over 200 MB of heap.
+    if (frameTooLarge(data)) {
+      relaySummary.count('refused (too-large)')
+      ws.send(JSON.stringify({ type: 'error', code: 'too-large', message: 'Message too large for the relay' }))
+      return undefined
+    }
     const message = JSON.parse(data.toString())
     // Refused before anything keeps or sends it on: the relay stores what a
     // socket syncs (activeMatches, liveState) and stringifies it for every
@@ -4448,8 +5128,8 @@ function handleSocketMessage(clientInfo, data) {
         break
 
       case 'leave_match':
-        // Client leaves match room
-        handleLeaveMatch(clientInfo)
+        // Client leaves match room (the one named, else every one)
+        handleLeaveMatch(clientInfo, message.matchId ?? null)
         break
 
       case 'match_update':
@@ -4472,12 +5152,15 @@ function handleSocketMessage(clientInfo, data) {
         break
 
       case 'live-state-update':
-        // Scoreboard's computed live-state (same message as the LAN relays)
-        handleLiveStateUpdate(clientInfo, message)
+        // Scoreboard's computed live-state (same message as the LAN relays).
         // DATABASE_URL mode: also a match_live_state db-change for live
-        // subscribers (livescore, scorer alarm), even when HTTP sync is down.
-        if (liveStateRelay) {
-          liveStateRelay.handle(clientInfo, { ...message, matchId: resolveMatchKey(clientInfo, message.matchId) }).then((r) => {
+        // subscribers (livescore, scorer alarm), even when HTTP sync is down;
+        // not one the relay refused (too large, relay memory full).
+        if (handleLiveStateUpdate(clientInfo, message) && liveStateRelay) {
+          // the live subscribers prove no PIN: no covered line-up (relayLiveStateView)
+          const liveKey = resolveMatchKey(clientInfo, message.matchId)
+          const liveState = relayLiveStateView(message.liveState, null, activeMatches.get(liveKey)?.match)
+          liveStateRelay.handle(clientInfo, { ...message, matchId: liveKey, liveState }).then((r) => {
             // pin_mismatch: the synced game PIN is not the row's (or the row has
             // none); expected for a forged room, so not logged per update
             if (!r.ok && !['forbidden', 'not_synced', 'no_match_key', 'unknown_match', 'pin_mismatch'].includes(r.reason)) {
@@ -4515,6 +5198,14 @@ function handleSocketMessage(clientInfo, data) {
         sendBenchRequestsOnJoin(clientInfo, normalizeMatchId(message.matchId))
         break
 
+      case 'unsubscribe-match': {
+        // One room left, the socket's others kept (the relay livescore
+        // follows several matches on one socket), as on the LAN relays
+        const key = normalizeMatchId(message.matchId)
+        if (key) handleLeaveMatch(clientInfo, key)
+        break
+      }
+
       case 'bench-request':
         handleBenchRequest(clientInfo, message)
         break
@@ -4524,10 +5215,11 @@ function handleSocketMessage(clientInfo, data) {
         break
 
       default:
-        console.log(`❓ Unknown message type: ${message.type}`)
+        console.log(`❓ Unknown message type: ${logValue(message.type)}`)
     }
   } catch (err) {
-    console.error('❌ Error parsing message:', err)
+    // A parse error quotes the frame: its message only, printable
+    console.error('❌ Error parsing message:', err instanceof SyntaxError ? sanitizeLog(err.message) : err)
     ws.send(JSON.stringify({
       type: 'error',
       message: 'Invalid message format'
@@ -4558,68 +5250,108 @@ function handleJoinMatch(clientInfo, message) {
   const validatedRole = (requestedRole && VALID_ROLES.includes(requestedRole)) ? requestedRole : 'unknown'
   const validatedTeam = (team && VALID_TEAMS.includes(team)) ? team : null
 
-  // Leave previous room if any
-  if (clientInfo.matchId) {
-    handleLeaveMatch(clientInfo)
-  }
-
-  // Enforce room cap
-  if (!rooms.has(matchId) && rooms.size >= MAX_ROOMS) {
-    clientInfo.ws.send(JSON.stringify({
-      type: 'error',
-      message: 'Server room limit reached'
-    }))
-    return
-  }
-
-  // Update client info
-  clientInfo.matchId = matchId
+  // Update client info (a socket may watch several rooms: the last join names it)
   clientInfo.role = validatedRole
   clientInfo.team = validatedTeam
 
-  // Create room if doesn't exist
-  if (!rooms.has(matchId)) {
-    rooms.set(matchId, {
-      matchId,
-      clients: new Set(),
-      createdAt: new Date().toISOString(),
-      lastActivity: Date.now()
-    })
-  }
+  // The PIN / token this socket offers for the match (subscribe-match),
+  // compared now when the relay holds the match
+  registerRelayAccess(clientInfo, matchId, message)
+  // A referee or bench role is answered only once its PIN or token was
+  // accepted; any other socket is a subscriber (it gets the summary)
+  const joinedRole = (validatedRole === 'referee' || validatedRole === 'bench') && !provedRoleOf(clientInfo, matchId) ? 'subscriber' : validatedRole
 
-  // Add client to room
+  // A match the relay does not hold creates no room: the socket waits for
+  // it (in its rooms, capped) and is let in by the match's first accepted
+  // sync (admitWaiting). Any id used to create a room, so idle sockets
+  // filled MAX_ROOMS and no new match got the relay.
   const room = rooms.get(matchId)
-  room.clients.add(clientInfo.id)
-  room.lastActivity = Date.now()
+  if (!room) {
+    rememberRoom(clientInfo, matchId)
+    clientInfo.matchId = matchId
+    clientInfo.ws.send(JSON.stringify({ type: 'joined_match', matchId, role: joinedRole, roomSize: 0, waiting: true }))
+    return
+  }
+  enterRoom(clientInfo, matchId)
 
-  console.log(`🎯 ${clientInfo.id} (${validatedRole}) joined match ${matchId} (Room size: ${room.clients.size})`)
+  if (LOG_EACH_CONNECTION) console.log(`🎯 ${clientInfo.id} (${validatedRole}) joined match ${logValue(matchId)} (Room size: ${room.clients.size})`)
+  else relaySummary.count('room joins')
 
   // Notify client
   clientInfo.ws.send(JSON.stringify({
     type: 'joined_match',
     matchId,
-    role: validatedRole,
+    role: joinedRole,
     roomSize: room.clients.size
   }))
-
-  // The PIN / token this socket offers for the match (subscribe-match).
-  registerRelayAccess(clientInfo, matchId, message)
 
   // Initial snapshot, like the LAN relays: late subscribers don't wait for the
   // scoreboard's next sync. PIN-free; the summary unless a PIN was proved.
   const stored = activeMatches.get(matchId)
   if (stored?.match) {
-    const access = hasRelayAccess(clientInfo, matchId, stored) ? 'full' : 'summary'
-    clientInfo.ws.send(JSON.stringify(matchDataMessage('match-full-data', matchId, stored, undefined, access)))
+    clientInfo.ws.send(JSON.stringify(matchDataMessage('match-full-data', matchId, stored, undefined, relayViewOfClient(clientInfo, matchId, stored))))
   }
 
   // Notify other clients in room
   broadcastToRoom(matchId, {
     type: 'client_joined',
     clientId: clientInfo.id,
-    role: validatedRole,
+    role: joinedRole,
     roomSize: room.clients.size
   }, clientInfo.id) // Exclude sender
+}
+
+/** Remember `matchId` among the socket's rooms (newest last); over MAX_SOCKET_ROOMS the oldest is left. */
+function rememberRoom(clientInfo, matchId) {
+  clientInfo.rooms.delete(matchId)
+  while (clientInfo.rooms.size >= MAX_SOCKET_ROOMS) leaveRoom(clientInfo, clientInfo.rooms.values().next().value)
+  clientInfo.rooms.add(matchId)
+}
+
+/** Put the socket in the room of `matchId` (created when the relay has none). */
+function enterRoom(clientInfo, matchId) {
+  let room = rooms.get(matchId)
+  if (!room) {
+    room = { matchId, clients: new Set(), createdAt: new Date().toISOString(), lastActivity: Date.now() }
+    rooms.set(matchId, room)
+  }
+  room.clients.add(clientInfo.id)
+  room.lastActivity = Date.now()
+  rememberRoom(clientInfo, matchId)
+  clientInfo.matchId = matchId
+  return room
+}
+
+/**
+ * The first accepted sync of a match created its room: the sockets that
+ * subscribed to it before (waiting in their rooms) are let in, each with the
+ * snapshot a join gets (the bundle only with an accepted PIN or token).
+ */
+function admitWaiting(matchId) {
+  const room = rooms.get(matchId)
+  const entry = activeMatches.get(matchId)
+  if (!room || !entry?.match) return
+  for (const c of connections.values()) {
+    if (!c.rooms.has(matchId) || room.clients.has(c.id) || c.ws.readyState !== 1) continue
+    room.clients.add(c.id)
+    const access = hasRelayAccess(c, matchId, entry) ? 'full' : 'summary'
+    sendToClient(c, matchDataMessage('match-full-data', matchId, entry, undefined, access))
+    sendBenchRequestsOnJoin(c, matchId)
+  }
+}
+
+/**
+ * The role a socket proved for the match with that role's PIN or match token,
+ * for the scorer's tablet status: { role: 'referee' | 'bench', team }, else
+ * null. The roles the bench requests take (relayRoleOf), comparing nothing
+ * new: a PIN not checked yet (offered before the match reached the relay)
+ * counts as none. A socket's own label (join_match role, subscribe-match
+ * device) proves nothing, nor does the game PIN (the scorer's own devices).
+ */
+function provedRoleOf(clientInfo, matchId, entry = activeMatches.get(matchId)) {
+  const role = relayRoleOf(clientInfo, matchId, entry, { compare: false })
+  if (role === 'referee') return { role: 'referee', team: null }
+  return role === 'home' || role === 'away' ? { role: 'bench', team: role } : null
 }
 
 // --- PIN-proved relay access (lib/matchAccess.js) ---------------------------
@@ -4628,18 +5360,62 @@ function handleJoinMatch(clientInfo, message) {
 // minute) and in the brute-force budget of the HTTP PIN checks
 // (pinFailureLimiter: 20 wrong PINs per 10 minutes per address bucket, IPv6 by
 // /64, and scope: that match's PINs, or its game PIN for a claim; 60 per
-// address bucket in all). Over either limit nothing is compared (no guessing
-// oracle).
+// address bucket in all; per match and PIN type across all callers). Over
+// either limit nothing is compared (no guessing oracle).
 const RELAY_PIN_FAILURE_LIMIT = 5
 const MAX_ACCESS_KEYS = 16
+
+/**
+ * The PIN types pinGrantsAccess compares for a relayed match, and those of
+ * them not locked across callers (pinFailureLimiter): a locked type is left
+ * out of the comparison, the right PIN of another type still opens the match,
+ * and a wrong PIN counts against each type it was compared with.
+ * @returns {{ any: boolean, open: string[] }} any: the match has a PIN at all
+ */
+function relayPinTypes(matchId, entry) {
+  const types = [...new Set(relayPinsByType(entry?.match, { sport: entry?.sportType }).map(([type]) => type))]
+  return { any: types.length > 0, open: pinFailureLimiter.openKinds(matchId, types) }
+}
+
+/**
+ * A PIN offered for a relayed match on an HTTP read (GET /api/match/:id,
+ * /api/server/connections), counted in pinFailureLimiter: 'ok', 'wrong', or
+ * 'rate-limited' (nothing compared: the address's budget, or every PIN type
+ * of the match locked across callers).
+ */
+function relayPinCheck(ipKey, matchId, entry, pin) {
+  const { any, open } = relayPinTypes(matchId, entry)
+  const scope = pinScope.match(matchId)
+  if ((any && open.length === 0) || pinFailureLimiter.isLimited(ipKey, scope, { kinds: open })) return 'rate-limited'
+  if (pinTypeOf(entry?.match, pin, { sport: entry?.sportType, types: open }) === null) {
+    // A tablet polling with a PIN the scorer has changed since: the same
+    // wrong PIN again is no new guess
+    pinFailureLimiter.repeated(ipKey, scope, String(pin).trim(), { kinds: open })
+    return 'wrong'
+  }
+  pinFailureLimiter.refund(ipKey, scope, { kinds: open })
+  return 'ok'
+}
+
+/** relayPinAttempt of a PIN offered for a relayed match's access (subscribe-match), by its PIN types. */
+function relayAccessAttempt(clientInfo, matchId, entry, pin) {
+  const { any, open } = relayPinTypes(matchId, entry)
+  if (any && open.length === 0) return 'rate-limited'
+  return relayPinAttempt(clientInfo, pinScope.match(matchId), () => pinTypeOf(entry.match, pin, { sport: entry.sportType, types: open }) !== null, { kinds: open, pin })
+}
 
 /**
  * One counted PIN comparison for this socket.
  * @param {string} scope pinScope of what compare() compares against
  * @param {() => boolean} compare
- * @param {{ scopeOnly?: boolean }} [budget] scopeOnly: the address's ceiling
- *   is left out (pinFailureLimiter; the match's own scorer device, see
- *   verifyRelayClaim)
+ * @param {{ scopeOnly?: boolean, kinds?: string[], across?: string[][], pin?: string }} [budget]
+ *   scopeOnly: the address's ceiling and the counts across callers are left
+ *   out (pinFailureLimiter; the match's own scorer device, see
+ *   verifyRelayClaim); kinds: the PIN types compare() compares, for a scope
+ *   of all the match's PINs; across: the [match, PIN type] pairs compare()
+ *   compares, counted across callers in place of the scope's (database rows,
+ *   verifyRelayClaim); pin: the PIN compared (the same wrong PIN again from
+ *   the address is no new guess for the budget, pinFailureLimiter.repeated)
  * @returns {'ok'|'wrong'|'rate-limited'}
  */
 function relayPinAttempt(clientInfo, scope, compare, budget = {}) {
@@ -4651,6 +5427,7 @@ function relayPinAttempt(clientInfo, scope, compare, budget = {}) {
     pinFailureLimiter.refund(clientInfo.ipKey, scope, budget)
     return 'ok'
   }
+  if (budget.pin != null) pinFailureLimiter.repeated(clientInfo.ipKey, scope, String(budget.pin).trim(), budget)
   bumpWindow(claimFailures, wsKey)
   return 'wrong'
 }
@@ -4662,6 +5439,21 @@ function relayPinAttempt(clientInfo, scope, compare, budget = {}) {
  * that PIN must still be the match's (a device the scorer disconnected, or
  * whose PIN was regenerated, loses access at once, not when the token expires).
  */
+/** matches.connection_pins of one match (stored form), for a token's PIN check; null when unreadable. */
+async function connectionPinsOf(layer, matchUuid) {
+  try {
+    const { status, body } = await layer.db.runQuery({
+      table: 'matches',
+      action: 'select',
+      params: { columns: 'connection_pins', filters: [{ type: 'eq', column: 'id', value: matchUuid }] }
+    }, { internal: true, maxRows: 1 })
+    const row = status === 200 && Array.isArray(body?.data) ? body.data[0] : null
+    return row?.connection_pins && typeof row.connection_pins === 'object' ? row.connection_pins : null
+  } catch {
+    return null
+  }
+}
+
 function tokenGrantsRelay(token, matchId, match) {
   const p = matchTokens.verify(token)
   if (!p || matchId == null || p.m !== String(matchId)) return false
@@ -4696,7 +5488,7 @@ function registerRelayAccess(clientInfo, matchId, message) {
     return
   }
   if (entry?.match) {
-    const r = relayPinAttempt(clientInfo, pinScope.match(matchId), () => pinGrantsAccess(entry.match, pin))
+    const r = relayAccessAttempt(clientInfo, matchId, entry, pin)
     if (r === 'rate-limited') {
       clientInfo.ws.send(JSON.stringify({ type: 'error', code: 'rate-limited', message: 'Too many wrong PINs. Wait a few minutes.', matchId }))
       return
@@ -4727,7 +5519,7 @@ function hasRelayAccess(clientInfo, matchId, entry) {
     }
     // A PIN not compared yet (offered before the match reached the relay, or
     // next to a token that no longer grants): one counted comparison
-    const r = relayPinAttempt(clientInfo, pinScope.match(matchId), () => pinGrantsAccess(entry.match, a.pin))
+    const r = relayAccessAttempt(clientInfo, matchId, entry, a.pin)
     if (r === 'ok') {
       a.verified = true
       a.token = null
@@ -4739,6 +5531,20 @@ function hasRelayAccess(clientInfo, matchId, entry) {
     }
   }
   return false
+}
+
+/**
+ * The bundle this socket gets (lib/publicColumns.js relayBundleView): 'scorer'
+ * (it owns the room, or proved the game PIN: the scorer's own devices),
+ * 'referee', 'home' / 'away' (that bench), or null: the summary (no PIN proved).
+ */
+function relayViewOfClient(clientInfo, matchId, entry) {
+  if (!hasRelayAccess(clientInfo, matchId, entry)) return null
+  if (clientInfo.ownedMatches.has(matchId)) return 'scorer'
+  const a = clientInfo.matchAccess.get(matchId)
+  if (a?.token && tokenGrantsRelay(a.token, matchId, entry?.match)) return relayViewOf(matchTokens.verify(a.token)?.r)
+  if (a?.pin) return relayViewOf(pinTypeOf(entry?.match, a.pin, { sport: entry?.sportType }))
+  return null
 }
 
 // A room member whose unsent data is above this when a bundle or action is to
@@ -4761,26 +5567,26 @@ function sendToRoomMember(clientInfo, data) {
   return true
 }
 
-/** match-full-data / match-data-update to a room: full or summary per socket. */
+/** match-full-data / match-data-update to a room: each socket its view or the summary. */
 function broadcastMatchData(matchId, type, entry, scoreboardTs, excludeClientId = null, extra = {}) {
   const room = rooms.get(normalizeMatchId(matchId))
   if (!room || !entry) return
-  let full = null
-  let summary = null
+  // one serialisation per view ('' is the summary)
+  const byView = new Map()
   let sent = 0
   room.clients.forEach((clientId) => {
     if (clientId === excludeClientId) return
     const clientInfo = connections.get(clientId)
     if (!clientInfo || clientInfo.ws.readyState !== 1) return
-    if (hasRelayAccess(clientInfo, matchId, entry)) {
-      full ??= JSON.stringify({ ...matchDataMessage(type, matchId, entry, scoreboardTs, 'full'), ...extra })
-      if (sendToRoomMember(clientInfo, full)) sent++
-    } else {
-      summary ??= JSON.stringify({ ...matchDataMessage(type, matchId, entry, scoreboardTs, 'summary'), ...extra })
-      if (sendToRoomMember(clientInfo, summary)) sent++
+    const view = relayViewOfClient(clientInfo, matchId, entry) || ''
+    let data = byView.get(view)
+    if (data === undefined) {
+      data = JSON.stringify({ ...matchDataMessage(type, matchId, entry, scoreboardTs, view || null), ...extra })
+      byView.set(view, data)
     }
+    if (sendToRoomMember(clientInfo, data)) sent++
   })
-  if (LOG_EACH_CONNECTION) console.log(`📡 Match data to ${sent} clients in room ${matchId}`)
+  if (LOG_EACH_CONNECTION) console.log(`📡 Match data to ${sent} clients in room ${logValue(matchId)}`)
 }
 
 // 'scoreboard' is never accepted from a join message
@@ -4788,34 +5594,177 @@ function joinRole(requested) {
   return requested === 'scoreboard' ? 'subscriber' : requested
 }
 
-// Handle client leaving match room
-function handleLeaveMatch(clientInfo) {
-  if (!clientInfo.matchId) return
+// Handle client leaving match room: the one named (unsubscribe-match,
+// leave_match { matchId }), else every room the socket is in or waits for
+function handleLeaveMatch(clientInfo, rawId = null) {
+  const key = rawId === null ? null : resolveMatchKey(clientInfo, rawId)
+  if (rawId !== null && !key) return
+  for (const id of key ? [key] : [...clientInfo.rooms]) leaveRoom(clientInfo, id)
+  if (clientInfo.rooms.size === 0) {
+    clientInfo.matchId = null
+    clientInfo.role = null
+  }
+}
 
-  const room = rooms.get(clientInfo.matchId)
+/** Take the socket out of one room; the room's last socket out holds its claim (holdRoom). */
+function leaveRoom(clientInfo, matchId) {
+  forgetRoom(clientInfo, matchId)
+  const room = rooms.get(matchId)
+  if (!room || !room.clients.delete(clientInfo.id)) return
+
+  if (LOG_EACH_CONNECTION) console.log(`👋 ${clientInfo.id} left match ${logValue(matchId)} (Room size: ${room.clients.size})`)
+  else relaySummary.count('room leaves')
+
+  // Notify other clients
+  broadcastToRoom(matchId, {
+    type: 'client_left',
+    clientId: clientInfo.id,
+    role: clientInfo.role,
+    roomSize: room.clients.size
+  }, clientInfo.id)
+
+  // Clean up empty room
+  if (room.clients.size === 0) {
+    holdRoom(matchId)
+    if (LOG_EACH_CONNECTION) console.log(`🗑️  Empty room deleted: ${logValue(matchId)} (its claim is held for the take-over grace)`)
+    else relaySummary.count('empty rooms deleted')
+  }
+}
+
+/** The socket's own record of a room it is no longer in or waiting for. */
+function forgetRoom(clientInfo, matchId) {
+  clientInfo.rooms.delete(matchId)
+  if (clientInfo.matchId === matchId) clientInfo.matchId = [...clientInfo.rooms].pop() ?? null
+}
+
+/**
+ * A room emptied (its last socket left): its stored match goes, but the
+ * claim on its key (the PINs, the scoring device and its take-overs, the
+ * owners, its open bench requests) is held for the take-over grace
+ * (heldRoomOf): a first sync of the key must carry the stored game PIN as a
+ * sync of the held room had to. The relay used to drop both at once, so the
+ * next sync without any PIN owned the key, and the scorer coming back with
+ * the right PIN was refused. After the grace (counted from when the room's
+ * last scoreboard went, else from now) everything goes together
+ * (releaseRoomClaim). The bundle itself is not kept: its memory is given back
+ * at once.
+ */
+function holdRoom(matchId) {
+  const entry = activeMatches.get(matchId)
+  rooms.delete(matchId)
+  activeMatches.delete(matchId)
+  heldRooms.delete(matchId)
+  if (!entry?.match) {
+    releaseRoomClaim(matchId)
+    return
+  }
+  makeHeldRoom(entry.relayNet ?? null)
+  const match = { status: entry.match.status }
+  for (const k of MATCH_SECRET_FIELDS) if (entry.match[k] !== undefined) match[k] = entry.match[k]
+  heldRooms.set(matchId, {
+    matchId,
+    since: entry.orphanedAt ?? Date.now(),
+    match,
+    sportType: entry.sportType,
+    scorerDevice: entry.scorerDevice,
+    scorerClaim: entry.scorerClaim,
+    movedClaims: entry.movedClaims,
+    supersededClaims: entry.supersededClaims,
+    dbRows: entry.dbRows,
+    relayAddress: entry.relayAddress,
+    relayNet: entry.relayNet ?? null,
+    relayOfficial: entry.relayOfficial
+  })
+}
+
+/**
+ * Room in heldRooms for one more claim of `net` (relayNetOf): one address
+ * keeps at most MAX_ROOMS_PER_ADDRESS held claims (over it, its own oldest
+ * goes, a lapsed one first), the relay MAX_HELD_ROOMS (over it, the oldest
+ * of the address holding the most). The oldest of all used to go, so the
+ * rooms other addresses synced and left pushed a scorer's claim out within
+ * its grace, and a sync without its game PIN owned the key.
+ */
+function makeHeldRoom(net) {
+  const byNet = new Map()
+  for (const h of heldRooms.values()) {
+    const list = byNet.get(h.relayNet) ?? []
+    list.push(h)
+    byNet.set(h.relayNet, list)
+  }
+  const oldest = (list) => list.find((h) => h.lapsed) ?? list[0]
+  const own = net !== null ? byNet.get(net) : null
+  if (own && own.length >= MAX_ROOMS_PER_ADDRESS) {
+    releaseHeld(oldest(own))
+  } else if (heldRooms.size >= MAX_HELD_ROOMS) {
+    let most = null
+    for (const list of byNet.values()) if (!most || list.length > most.length) most = list
+    releaseHeld(oldest(most))
+  }
+}
+
+/** Release one held claim: a lapsed one is only forgotten (its claim went with its grace). */
+function releaseHeld(held) {
+  if (held.lapsed) heldRooms.delete(held.matchId)
+  else releaseRoomClaim(held.matchId)
+}
+
+/**
+ * The held claim of an emptied room (holdRoom) while its grace runs, else
+ * null. Once the grace is over the claim goes (releaseRoomClaim): the key is
+ * new to the next sync. Of a match still in play with a game PIN the scorer
+ * was gone too long for, that PIN is kept (a lapsed entry, for ROOM_TTL_MS):
+ * the next claim takes the key, but the scorer may reclaim it once with its
+ * own PIN (handleSyncMatchData moves it to displacedPins), as after a stale
+ * take-over of a room a tablet kept open. The next sync without any PIN used
+ * to own the key for good, the scorer back with the right PIN refused.
+ */
+function heldRoomOf(matchId) {
+  const held = heldRooms.get(matchId)
+  if (!held || held.lapsed) return null
+  const finished = isFinishedMatch(held.match)
+  if (Date.now() - held.since < (finished ? ORPHAN_TAKEOVER_MS : STALE_TAKEOVER_MS)) return held
+  const pin = finished ? null : gamePinOf(held.match)
+  releaseRoomClaim(matchId)
+  if (pin !== null) heldRooms.set(matchId, { matchId, lapsed: true, pin, since: Date.now(), relayNet: held.relayNet })
+  return null
+}
+
+/** The held claims whose grace is over go (heldRoomOf), lapsed ones after ROOM_TTL_MS. */
+function sweepHeldRooms() {
+  const now = Date.now()
+  for (const held of [...heldRooms.values()]) {
+    if (!held.lapsed) heldRoomOf(held.matchId)
+    else if (now - held.since >= ROOM_TTL_MS) heldRooms.delete(held.matchId)
+  }
+}
+
+/**
+ * The end of a room key's claim, whatever ended it (the grace of an emptied
+ * room, delete-match, the TTL sweep): no socket owns the key any more, its
+ * bench requests and displaced PIN go. Ownership used to outlive the room, so
+ * an earlier owner kept speaking for the key next to the scorer who created
+ * the room again, and the next owner was sent the benches' open requests.
+ */
+function releaseRoomClaim(matchId) {
+  heldRooms.delete(matchId)
+  displacedPins.delete(matchId)
+  benchRequests.drop(matchId)
+  for (const c of connections.values()) c.ownedMatches.delete(matchId)
+}
+
+/** Drop a room with its stored match and its claim at once (delete-match, the TTL sweep). */
+function dropRoom(matchId) {
+  const room = rooms.get(matchId)
   if (room) {
-    room.clients.delete(clientInfo.id)
-
-    console.log(`👋 ${clientInfo.id} left match ${clientInfo.matchId} (Room size: ${room.clients.size})`)
-
-    // Notify other clients
-    broadcastToRoom(clientInfo.matchId, {
-      type: 'client_left',
-      clientId: clientInfo.id,
-      role: clientInfo.role,
-      roomSize: room.clients.size
-    }, clientInfo.id)
-
-    // Clean up empty room
-    if (room.clients.size === 0) {
-      rooms.delete(clientInfo.matchId)
-      activeMatches.delete(clientInfo.matchId)
-      console.log(`🗑️  Empty room deleted: ${clientInfo.matchId}`)
+    for (const id of room.clients) {
+      const member = connections.get(id)
+      if (member) forgetRoom(member, matchId)
     }
   }
-
-  clientInfo.matchId = null
-  clientInfo.role = null
+  rooms.delete(matchId)
+  activeMatches.delete(matchId)
+  releaseRoomClaim(matchId)
 }
 
 // Only the socket that proved the match's game PIN (see claimMatch) may
@@ -4855,7 +5804,8 @@ function handleMatchUpdate(clientInfo, message) {
     timestamp: new Date().toISOString()
   }, clientInfo.id, true) // Exclude sender to avoid echo
 
-  console.log(`📤 Match update broadcasted to room ${matchId}`)
+  if (LOG_EACH_CONNECTION) console.log(`📤 Match update broadcasted to room ${logValue(matchId)}`)
+  else relaySummary.count('match updates broadcast')
 }
 
 // Handle action (timeout, substitution, etc.) — legacy format
@@ -4881,7 +5831,8 @@ function handleAction(clientInfo, message) {
     from: clientInfo.id
   }, clientInfo.id, true) // Exclude sender; access only
 
-  console.log(`⚡ Action broadcasted to room ${matchId}: ${action.type}`)
+  if (LOG_EACH_CONNECTION) console.log(`⚡ Action broadcasted to room ${logValue(matchId)}: ${logValue(action.type)}`)
+  else relaySummary.count('actions broadcast')
 }
 
 // Handle client disconnect
@@ -4895,6 +5846,7 @@ function handleClientDisconnect(clientInfo) {
   handleLeaveMatch(clientInfo)
   connections.delete(clientInfo.id)
   wsRateLimitMap.delete(clientInfo.id)
+  wsRateLimitMap.delete(benchBudgetKey(clientInfo.id))
   benchRequestLimiter.forget(clientInfo.id)
   claimFailures.delete(`ws:${clientInfo.id}`)
   claimFailures.delete(`pin-ws:${clientInfo.id}`)
@@ -4951,7 +5903,8 @@ function newClaimDenied(clientInfo, matchId) {
 /**
  * SECURITY: the scoreboard role is proved with the match's own game PIN, not
  * self-declared. Returns { ok:true, kind } or { ok:false, code }.
- * - a match new to the relay is claimed by its first scoreboard;
+ * - a match new to the relay is claimed by its first scoreboard (a room that
+ *   emptied within the take-over grace is not new: heldRoomOf);
  * - a stored match with a game PIN requires the same PIN;
  * - a stored match without one (test match) may be written by anyone, but only
  *   an existing owner may attach a game PIN to it;
@@ -4971,10 +5924,14 @@ function newClaimDenied(clientInfo, matchId) {
  * row (cloud, see verifyRelayClaim): the database is the authority, so a relay
  * copy held under another PIN (a squatter) is reclaimed. opts.knownScorer:
  * and by the device the database names as the match's scorer: its claim is
- * counted in the match's scope only, not in the address's ceiling.
+ * counted in the match's scope only, not in the address's ceiling nor across
+ * callers; the same for the room's own scoring device (opts.device,
+ * isRoomScorer).
  */
 function claimMatch(clientInfo, matchId, incomingMatch, opts = {}) {
-  const existing = activeMatches.get(matchId)
+  // The stored match, else the held claim of a room that emptied (holdRoom):
+  // the same rules, PINs and scoring device
+  const existing = activeMatches.get(matchId) || heldRoomOf(matchId)
   const wasOwner = clientInfo.ownedMatches.has(matchId)
   const incomingPin = gamePinOf(incomingMatch)
   const grant = (kind) => ({ ok: true, kind })
@@ -4982,7 +5939,14 @@ function claimMatch(clientInfo, matchId, incomingMatch, opts = {}) {
 
   if (!existing || !existing.match) {
     const denied = denyNew()
-    return denied ? { ok: false, code: denied } : grant(wasOwner ? 'owner' : 'new')
+    if (denied) return { ok: false, code: denied }
+    // The database proved this claim: no earlier socket speaks for the key
+    // next to it, as on a reclaim
+    if (opts.dbProved && incomingPin !== null) {
+      displacedPins.delete(matchId)
+      for (const c of connections.values()) if (c !== clientInfo) c.ownedMatches.delete(matchId)
+    }
+    return grant(wasOwner ? 'owner' : 'new')
   }
   const storedPin = gamePinOf(existing.match)
   if (storedPin === null && (incomingPin === null || wasOwner)) {
@@ -5001,7 +5965,7 @@ function claimMatch(clientInfo, matchId, incomingMatch, opts = {}) {
   // counted up front, refunded unless it ends as a wrong PIN.
   const counted = incomingPin !== null
   const scope = pinScope.match(matchId, 'game')
-  const budget = { scopeOnly: opts.knownScorer === true }
+  const budget = { scopeOnly: opts.knownScorer === true || isRoomScorer(existing, opts.device) }
   if (counted && pinFailureLimiter.isLimited(clientInfo.ipKey, scope, budget)) return { ok: false, code: 'rate-limited' }
   const refund = () => { if (counted) pinFailureLimiter.refund(clientInfo.ipKey, scope, budget) }
   const granted = (kind) => { refund(); return grant(kind) }
@@ -5038,11 +6002,14 @@ function claimMatch(clientInfo, matchId, incomingMatch, opts = {}) {
  * cannot tell (a room key new to it is claimed by its first scoreboard, e.g.
  * after a relay restart), but the database can: when the match is stored
  * there with a game PIN (looked up by the room key = external_id, and by the
- * key the live-state relay would publish to, matchKeyFromSyncedMatch), the
- * synced game PIN must be that one. A wrong PIN is a counted guess
+ * match uuid the live-state relay would publish to, matchKeyFromSyncedMatch),
+ * the synced game PIN must be that one. A wrong PIN is a counted guess
  * (relayPinAttempt). A match not in the database, or stored without a game
- * PIN, is left to the relay's own rules; a database error fails open (the
- * live-state relay checks the PIN again before publishing anything).
+ * PIN, is left to the relay's own rules. A database error refuses the claim
+ * ('claim-unverified', the app syncs again): it used to let it through, and a
+ * sync could make the lookup fail on purpose (a NUL in its seed key) and take
+ * a match's room without its game PIN. The seed key is never looked up: it is
+ * the room key (relayKeyOf; one the relay cannot take is refused, badSeedKey).
  *
  * `device` (db/019): the installation the sync names. The game PIN is known
  * to every device the match was ever scored on, so it cannot tell the scorer
@@ -5060,12 +6027,17 @@ function claimMatch(clientInfo, matchId, incomingMatch, opts = {}) {
  * scoreboard's re-claim was then refused for 10 minutes (its referee and
  * benches froze). A guesser does not know the scorer's device id (it is never
  * broadcast) and still has the scope's limit.
- * @returns {Promise<{ ok: true, dbProved: boolean, knownScorer: boolean } | { ok: false, code: string }>}
+ * The comparison is counted under the matches whose game PIN it compares (the
+ * rows found, dbPinKey), never under the room key: the caller picks that
+ * (seed_key), and a fresh one each time passed the per-match lock and added
+ * a key of its own to the budget's table. The room is then bound to the rows
+ * (`dbRows`, bindRoomRows).
+ * @returns {Promise<{ ok: true, dbProved: boolean, knownScorer: boolean, dbRows: string[] } | { ok: false, code: string }>}
  */
 async function verifyRelayClaim(clientInfo, matchId, match, device = null) {
   const keys = [{ column: 'external_id', value: matchId }]
   const synced = matchKeyFromSyncedMatch(match)
-  if (synced && !(synced.column === 'external_id' && synced.value === matchId)) keys.push(synced)
+  if (synced?.column === 'id') keys.push(synced)
   let layer
   let rows
   try {
@@ -5074,14 +6046,14 @@ async function verifyRelayClaim(clientInfo, matchId, match, device = null) {
       const r = await layer.db.runQuery({
         table: 'matches',
         action: 'select',
-        params: { columns: 'id, game_pin', filters: [{ type: 'eq', column: key.column, value: key.value }], limit: 1 }
+        params: { columns: 'id, external_id, game_pin', filters: [{ type: 'eq', column: key.column, value: key.value }], limit: 1 }
       }, { internal: true })
       if (r.body.error) throw new Error(r.body.error.code || 'lookup failed')
       return r.body.data?.[0] || null
     }))
   } catch (err) {
-    console.warn('[relay] database check of a scoreboard claim failed (allowed):', err?.message)
-    return { ok: true, dbProved: false, knownScorer: false }
+    console.warn('[relay] database check of a scoreboard claim failed (refused, the scoreboard syncs again):', err?.message)
+    return { ok: false, code: 'claim-unverified' }
   }
   // Who scores the match, read before the PIN is compared (the answer waits
   // for the PIN all the same)
@@ -5096,16 +6068,63 @@ async function verifyRelayClaim(clientInfo, matchId, match, device = null) {
     }
   }
   const knownScorer = scorer?.mine === true
-  const stored = rows.filter((r) => r && r.game_pin != null && String(r.game_pin).trim() !== '')
+  // The two keys may name the same row
+  const stored = [...new Map(rows
+    .filter((r) => r && r.id != null && r.game_pin != null && String(r.game_pin).trim() !== '')
+    .map((r) => [String(r.id), r])).values()]
   if (stored.length > 0) {
     const pin = gamePinOf(match)
     if (pin === null) return { ok: false, code: 'pins-required' }
-    const r = relayPinAttempt(clientInfo, pinScope.match(matchId, 'game'), () => stored.every((row) => layer.pins.matches('game', pin, row.game_pin)), { scopeOnly: knownScorer })
+    const across = stored.map((row) => [dbPinKey(row), 'game'])
+    const r = relayPinAttempt(clientInfo, pinScope.match(dbPinKey(stored[0]), 'game'), () => stored.every((row) => layer.pins.matches('game', pin, row.game_pin)), { scopeOnly: knownScorer, across })
     if (r === 'rate-limited') return { ok: false, code: 'rate-limited' }
     if (r === 'wrong') return { ok: false, code: 'not-match-owner' }
   }
   if (scorer?.moved) return { ok: false, code: 'scorer-moved' }
-  return { ok: true, dbProved: stored.length > 0, knownScorer: knownScorer && stored.length > 0 }
+  return { ok: true, dbProved: stored.length > 0, knownScorer: knownScorer && stored.length > 0, dbRows: stored.map((row) => String(row.id)) }
+}
+
+// The key pinFailureLimiter counts a database match under: its external_id,
+// as every other PIN check of it (claim, validate-connection-pin), else its id
+function dbPinKey(row) {
+  return row?.external_id != null && String(row.external_id) !== '' ? String(row.external_id) : String(row?.id)
+}
+
+// A relay room whose game PIN a counted check proved against database rows
+// (verifyRelayClaim, the live-state relay's verifyMatch) is bound to them:
+// entry.dbRows { pin, ids }. Its live states go to those rows without being
+// counted again. Kept with the PIN it was proved with: a room whose game PIN
+// changed since (a take-over, a reclaim) is bound to nothing.
+const MAX_BOUND_ROWS = 8
+function boundRowsAfter(bound, pin, ids) {
+  if (pin === null) return null
+  const all = new Set(bound && bound.pin === pin ? bound.ids : [])
+  for (const id of ids) {
+    all.delete(String(id)) // re-added as the newest
+    all.add(String(id))
+  }
+  while (all.size > MAX_BOUND_ROWS) all.delete(all.values().next().value)
+  return all.size > 0 ? { pin, ids: all } : null
+}
+function bindRoomRows(entry, pin, ids) {
+  if (entry) entry.dbRows = boundRowsAfter(entry.dbRows, pin, ids)
+}
+function isBoundRow(entry, pin, id) {
+  return !!entry?.dbRows && entry.dbRows.pin === pin && entry.dbRows.ids.has(String(id))
+}
+
+/**
+ * Is this sync from the room's own scoring device (a reconnect: Wi-Fi drop,
+ * tablet sleep)? The installation the room's last granted sync named
+ * (entry.scorerDevice; never broadcast). Its claim of the room's game PIN is
+ * counted per address and scope only, not across callers (pinFailureLimiter
+ * scopeOnly): other callers' wrong claims locked the game PIN of a match the
+ * database does not hold (a relay-only match, the venue relay), and its own
+ * scoreboard's reconnect was then refused for 10 minutes, its referee and
+ * benches without data. A sync that names no device (older apps) is not it.
+ */
+function isRoomScorer(entry, device) {
+  return !!device && !!entry?.scorerDevice && entry.scorerDevice === device.id
 }
 
 // Venue relay (--local, no database): the scoring device of a room comes
@@ -5147,7 +6166,8 @@ function venueDeviceClaim(raw) {
 }
 
 function isMovedVenueClaim(matchId, device) {
-  const entry = activeMatches.get(matchId)
+  // a room that emptied keeps its take-overs for the grace (holdRoom)
+  const entry = activeMatches.get(matchId) || heldRoomOf(matchId)
   const scorer = entry?.scorerClaim
   if (!scorer || scorer.id === device.id) return false
   if (entry.movedClaims?.get(device.id) !== device.claim && !entry.supersededClaims?.has(device.claim)) return false
@@ -5191,8 +6211,117 @@ const CLAIM_ERRORS = {
   'rate-limited': 'Too many failed scoreboard claims. Wait a few minutes.',
   'too-many-matches': 'This address already drives the maximum number of matches',
   'pins-required': 'Send this match again with its PINs (the relay lost it, or this connection has not proved it yet)',
+  'claim-unverified': 'The server could not check this match right now. It is tried again with the next sync.',
   'room-limit': 'Server room limit reached',
-  'scorer-moved': 'This match is now scored on another device'
+  'scorer-moved': 'This match is now scored on another device',
+  'too-large': 'Match data too large for the relay',
+  'relay-full': 'The relay cannot keep more match data right now. Try again in a few minutes.'
+}
+
+// The address a socket's stored match data counts against (relayMemoryRefusal);
+// null for the relay host itself
+const relayAddressOf = (clientInfo) => (isLoopbackIp(clientInfo.ip) ? null : (IS_CLOUD ? clientInfo.ipKey : clientInfo.ip))
+// The wider network of that address (MAX_ROOMS_PER_ADDRESS for the rooms the
+// database did not prove, held claims): the /56 of an IPv6 /64 bucket on the
+// cloud (ipBucketKey "2001:db8:0:1::/64"), else the address itself
+function relayNetOf(clientInfo) {
+  const address = relayAddressOf(clientInfo)
+  const v6 = IS_CLOUD && address !== null ? /^([0-9a-f]{1,4}):([0-9a-f]{1,4}):([0-9a-f]{1,4}):([0-9a-f]{1,4})::\/64$/.exec(address) : null
+  return v6 ? `${v6[1]}:${v6[2]}:${v6[3]}:${(parseInt(v6[4], 16) & 0xff00).toString(16)}::/56` : address
+}
+// A room the database proved (cloud): its scorer synced the game PIN of the
+// match's database row (relayOfficial). None on a venue relay.
+const isDbProvedRoom = (entry) => DB_MODE && entry?.relayOfficial === true
+
+/**
+ * 'room-limit' when a new room of this socket (`dbProved`: the database proved
+ * its game PIN) would take the relay past one of its room caps, else null:
+ * MAX_ROOMS_PER_ADDRESS for the address (the rooms its syncs keep, whoever
+ * keeps them open), as many per /56 for rooms the database did not prove
+ * (cloud), MAX_ANON_ROOMS for all of those (DATABASE_URL), MAX_ROOMS in all.
+ * At a cap the room no connected socket owns whose scorer left first is ended
+ * to make room (endIdleRoom), an address's own rooms first. A room kept open
+ * by watchers alone used to keep its slot for good: idle sockets of a few
+ * /64s filled the relay and no new match got a room.
+ */
+function roomLimitRefusal(clientInfo, dbProved) {
+  const address = relayAddressOf(clientInfo)
+  const net = relayNetOf(clientInfo)
+  const unproved = (e) => !isDbProvedRoom(e)
+  const caps = []
+  if (address !== null) caps.push([MAX_ROOMS_PER_ADDRESS, (e) => e.relayAddress === address])
+  if (IS_CLOUD && !dbProved && net !== null && net !== address) caps.push([MAX_ROOMS_PER_ADDRESS, (e) => e.relayNet === net && unproved(e)])
+  if (DB_MODE && !dbProved) caps.push([MAX_ANON_ROOMS, unproved])
+  caps.push([MAX_ROOMS, () => true])
+  for (const [max, inCap] of caps) {
+    let n = 0
+    for (const entry of activeMatches.values()) if (inCap(entry)) n++
+    if (n >= max && !endIdleRoom(inCap)) return 'room-limit'
+  }
+  return null
+}
+
+/**
+ * End one room among those `inCap` takes that no connected socket owns: the
+ * one whose scorer left first, rooms the database did not prove first. Its
+ * bundle goes and its claim is held for what is left of its take-over grace
+ * (holdRoom), as when its last socket leaves: its watchers wait for the match
+ * again (admitWaiting lets them back in with its next first sync), its scorer
+ * coming back with the game PIN continues it. Nothing reaches such a room
+ * meanwhile anyway: no socket may sync it. Returns whether one was ended.
+ */
+function endIdleRoom(inCap) {
+  const owned = new Set()
+  for (const c of connections.values()) for (const id of c.ownedMatches) owned.add(id)
+  let pick = null
+  for (const [id, entry] of activeMatches) {
+    if (owned.has(id) || !inCap(entry)) continue
+    const rank = [isDbProvedRoom(entry) ? 1 : 0, entry.orphanedAt ?? 0]
+    if (!pick || rank[0] < pick.rank[0] || (rank[0] === pick.rank[0] && rank[1] < pick.rank[1])) pick = { id, rank }
+  }
+  if (!pick) return false
+  holdRoom(pick.id)
+  relaySummary.count('rooms ended for a new one')
+  console.log(`🗑️  Room ${pick.id} ended for a new room (no socket owns it; its claim is held for the take-over grace)`)
+  return true
+}
+
+/**
+ * 'relay-full' when `bytes` (approxHeapBytes) for room `matchId` would take
+ * the relay past its memory budget; else null. The room's own bundle and live
+ * state are left out: they are the ones replaced, so replacing a stored room's
+ * bundle never adds a room. At most MAX_ROOMS entries to add up.
+ *
+ * A room the relay does not hold yet (`newRoom`) is refused at the lower
+ * new-room marks, so the headroom above is kept for the rooms already in play
+ * (they grow with every rally and must not freeze when the relay fills). A room
+ * the database does not know as an official match (`official` false, cloud
+ * only) may not take the slice reserved for official matches; official matches
+ * and venue rooms use the whole budget.
+ */
+function relayMemoryRefusal(clientInfo, matchId, bytes, { newRoom = false, official = true } = {}) {
+  const address = relayAddressOf(clientInfo)
+  let total = bytes
+  let fromAddress = bytes
+  let anon = official ? 0 : bytes
+  for (const [id, entry] of activeMatches) {
+    if (id === matchId) continue
+    const held = (entry.bundleBytes || 0) + (entry.liveStateBytes || 0)
+    total += held
+    if (address !== null && entry.relayAddress === address) fromAddress += held
+    if (!entry.relayOfficial) anon += held
+  }
+  if (total > RELAY_MEMORY.total) return 'relay-full'
+  if (address !== null && fromAddress > RELAY_MEMORY.perAddress) return 'relay-full'
+  if (newRoom && total > RELAY_MEMORY.newRoomTotal) return 'relay-full'
+  if (newRoom && address !== null && fromAddress > RELAY_MEMORY.newRoomPerAddress) return 'relay-full'
+  if (!official && anon > RELAY_MEMORY.anonTotal) return 'relay-full'
+  return null
+}
+
+function sendRelayRefusal(clientInfo, code, matchId, message = CLAIM_ERRORS[code]) {
+  relaySummary.count(`refused (${code})`)
+  clientInfo.ws.send(JSON.stringify({ type: 'error', code, message, matchId }))
 }
 
 // Handle sync-match-data from frontend scoreboard
@@ -5203,6 +6332,17 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
       type: 'error',
       message: 'Only scoreboard can sync match data'
     }))
+    return
+  }
+
+  // Refused before anything reads it (lib/relayLimits.js): a PIN that is not
+  // text or a number (String() of {"toString":1} throws, and the PIN check of
+  // GET /api/match/:id ended the backend with it), a PIN field the relay only
+  // carries over that is larger than any app's, a list that is no array or
+  // longer than any match has
+  const problem = relayBundleProblem(message, MATCH_PIN_FIELDS, MATCH_PIN_TYPE_ONLY_FIELDS, MATCH_CARRIED_PIN_FIELDS)
+  if (problem) {
+    sendRelayRefusal(clientInfo, problem.code, relayKeyOf(normalizeMatchId(message.matchId), message.match), problem.message)
     return
   }
 
@@ -5229,6 +6369,10 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     }))
     return
   }
+  if (badSeedKey(match)) {
+    sendRelayRefusal(clientInfo, 'bad-request', matchId, 'Invalid match key (seed_key: at most 128 characters, no control characters)')
+    return
+  }
 
   // A scoreboard leaves its PINs out once the relay holds them. If the relay
   // lost the match meanwhile, a PIN-less sync would recreate it without PINs
@@ -5245,14 +6389,56 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     return
   }
 
+  // What the relay would keep (without the undo snapshots) and whether its
+  // memory has room for it; the room's last bundle is replaced, not added.
+  // A cloud claim comes back here after its database check and checks the
+  // memory again with what the relay holds then.
+  // A room the relay does not hold yet is new (shed first when the relay is
+  // nearly full); replacing a stored room's bundle keeps a match in play going.
+  // Official (the database proved its game PIN, or the venue relay with no
+  // database, or a first pass whose database check runs next and re-decides)
+  // reserves memory an anonymous room cannot take; a room continued by its
+  // owner keeps the status its last sync earned.
+  const stored = activeMatches.get(matchId)
+  const newRoom = !stored
+  const official = !DB_MODE || opts.dbProved === true ||
+    (!opts.dbChecked && !clientInfo.ownedMatches.has(matchId)) ||
+    (clientInfo.ownedMatches.has(matchId) && (stored || heldRoomOf(matchId))?.relayOfficial === true)
+  // Counted first as the sync sends it, before its claim is made: what any
+  // claim keeps at least. It depends on the message alone, so a cloud claim's
+  // second pass reuses it. A sync that continues the room also keeps the stored
+  // PINs it leaves out and the room's live state; they are counted once the
+  // claim says so (below). A take-over or reclaim keeps neither, so what the
+  // room's last holder stored never counts against it.
+  const storedEvents = opts.storedEvents ?? relayEvents(events)
+  const countBundle = (m) => approxHeapBytes([m, homeTeam, awayTeam, homePlayers, awayPlayers, sets, storedEvents])
+  const memoryRefusalOf = (bytes, liveStateBytes = 0) => (bytes > MAX_RELAY_BUNDLE_BYTES
+    ? 'too-large'
+    : relayMemoryRefusal(clientInfo, matchId, bytes + liveStateBytes, { newRoom, official }))
+  let bundleBytes = opts.bundleBytes ?? countBundle(match)
+  const memoryRefusal = memoryRefusalOf(bundleBytes)
+  if (memoryRefusal) {
+    sendRelayRefusal(clientInfo, memoryRefusal, matchId)
+    return
+  }
+
   // Cloud: a claim of a room this socket does not own yet is checked against
   // the database first (verifyRelayClaim), then made. Returns the promise, so
   // the socket's next messages wait for it.
   const device = deviceOf(message.device)
   if (DB_MODE && !opts.dbChecked && !clientInfo.ownedMatches.has(matchId)) {
+    // The device this sync names, before the check: a take-over committed
+    // while it runs (notifyScorerMoved) marks this claim moved, and it is
+    // refused when the check ends. It used to make the socket the owner,
+    // with the copy of the device the match had just left.
+    if (device) clientInfo.scorerDevice = device.id
+    const check = { matchId, moved: false }
+    clientInfo.claimCheck = check
+    const done = () => { if (clientInfo.claimCheck === check) clientInfo.claimCheck = null }
     return verifyRelayClaim(clientInfo, matchId, match, device).then((v) => {
+      done()
       if (clientInfo.ws.readyState !== 1 || !connections.has(clientInfo.id)) return
-      if (v.code === 'scorer-moved') {
+      if (v.code === 'scorer-moved' || (v.ok && check.moved)) {
         // The app asks POST /api/match/scorer whether it still scores the
         // match (ScorerMovedModal), as when it is told in the room
         clientInfo.ws.send(JSON.stringify({ type: 'scorer-moved', matchId, timestamp: Date.now() }))
@@ -5262,7 +6448,10 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
         clientInfo.ws.send(JSON.stringify({ type: 'error', code: v.code, message: CLAIM_ERRORS[v.code] || 'Refused', matchId }))
         return
       }
-      handleSyncMatchData(clientInfo, message, { dbChecked: true, dbProved: v.dbProved, knownScorer: v.knownScorer })
+      handleSyncMatchData(clientInfo, message, { dbChecked: true, dbProved: v.dbProved, knownScorer: v.knownScorer, dbRows: v.dbRows, storedEvents, bundleBytes })
+    }, (err) => {
+      done()
+      throw err
     })
   }
 
@@ -5275,7 +6464,7 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     return
   }
 
-  const claimed = claimMatch(clientInfo, matchId, match, { dbProved: opts.dbProved === true, knownScorer: opts.knownScorer === true })
+  const claimed = claimMatch(clientInfo, matchId, match, { dbProved: opts.dbProved === true, knownScorer: opts.knownScorer === true, device })
   if (!claimed.ok) {
     clientInfo.ws.send(JSON.stringify({
       type: 'error',
@@ -5286,15 +6475,49 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     return
   }
 
-  // Enforce room cap before storing anything
-  if (!rooms.has(matchId) && rooms.size >= MAX_ROOMS) {
-    clientInfo.ws.send(JSON.stringify({ type: 'error', code: 'room-limit', message: CLAIM_ERRORS['room-limit'], matchId }))
-    return
+  // A sync that continues the room (its owner, or a proof of the stored game
+  // PIN) keeps the stored PINs it leaves out (PINs are sent only when they
+  // change), and the room's last live state while the same game PIN keeps the
+  // match: never across a takeover, reclaim or PIN change (it would describe
+  // another match: sides, sets won, 'ended', ...). Counted here, with the
+  // memory checked again, before anything is stored. Refusing here leaves
+  // nothing to undo: claimMatch changes nothing for such a claim but refund a
+  // correct PIN. A room that emptied within the grace is continued from its
+  // held claim (holdRoom): its PINs and scoring device, no bundle.
+  const previous = activeMatches.get(matchId) || heldRoomOf(matchId)
+  const continues = claimed.kind === 'owner' || claimed.kind === 'proved'
+  const carried = continues && previous?.match ? carryMatchSecrets(previous.match, match) : match
+  const carryLiveState = continues && gamePinOf(previous?.match) === gamePinOf(carried)
+  const carriedLiveStateBytes = carryLiveState ? (previous?.liveStateBytes || 0) : 0
+  if (carried !== match || carriedLiveStateBytes > 0) {
+    if (carried !== match) bundleBytes = countBundle(carried)
+    const refusal = memoryRefusalOf(bundleBytes, carriedLiveStateBytes)
+    if (refusal) {
+      sendRelayRefusal(clientInfo, refusal, matchId)
+      return
+    }
+    match = carried
+  }
+
+  // Whether the database knows this as an official match (cloud), for the
+  // memory budget and the room caps: proved now, or carried by its owner's
+  // later syncs (which do not re-check the database). Venue rooms (no
+  // database) are all official.
+  const relayOfficial = !DB_MODE || opts.dbProved === true ||
+    ((claimed.kind === 'owner' || claimed.kind === 'proved' || claimed.kind === 'reclaim') && previous?.relayOfficial === true)
+
+  // Enforce the room caps before storing anything (roomLimitRefusal)
+  if (!rooms.has(matchId)) {
+    const refusal = roomLimitRefusal(clientInfo, DB_MODE && relayOfficial)
+    if (refusal) {
+      sendRelayRefusal(clientInfo, refusal, matchId)
+      return
+    }
   }
 
   // A scoreboard switching matches leaves its previous room first
   if (clientInfo.matchId && clientInfo.matchId !== matchId) {
-    handleLeaveMatch(clientInfo)
+    leaveRoom(clientInfo, clientInfo.matchId)
   }
 
   if (rawMatchId && rawMatchId !== matchId) {
@@ -5303,16 +6526,8 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     clientInfo.aliases.set(rawMatchId, matchId)
   }
 
-  // Store/update match in activeMatches with all the data. A sync carries no
-  // live-state: keep the last one pushed only while the same scoreboard / game
-  // PIN keeps the match — never across a takeover, reclaim or PIN change (it
-  // would describe another match: sides, sets won, 'ended', ...).
-  const previous = activeMatches.get(matchId)
-  if (previous?.match && (claimed.kind === 'owner' || claimed.kind === 'proved')) {
-    match = carryMatchSecrets(previous.match, match)
-  }
-  const carryLiveState = (claimed.kind === 'owner' || claimed.kind === 'proved') &&
-    gamePinOf(previous?.match) === gamePinOf(match)
+  // Store/update match in activeMatches with all the data (a sync carries no
+  // live state: the room's last one is kept as decided above).
   // The sport of the room: openbeach syncs team1/team2 (or names its sport);
   // a sync without teams keeps the sport the same scorer set before.
   const beachSync = !!(message.team1Team || message.team2Team || message.team1Players || message.team2Players) ||
@@ -5321,11 +6536,25 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     ? 'beach'
     : ((claimed.kind === 'owner' || claimed.kind === 'proved') && previous?.sportType) || 'indoor'
   if (device) clientInfo.scorerDevice = device.id
+  // A PIN the scorer changed (regenerated) starts its count across callers
+  // again: the wrong guesses of the old one say nothing about it
+  if (previous?.match && (claimed.kind === 'owner' || claimed.kind === 'proved' || claimed.kind === 'reclaim')) {
+    const was = new Map(relayPinsByType(previous.match, { sport: previous.sportType, open: false }))
+    const now = new Map(relayPinsByType(match, { sport: sportType, open: false }))
+    const changed = [...new Set([...was.keys(), ...now.keys()])].filter((type) => was.get(type) !== now.get(type))
+    if (changed.length) pinFailureLimiter.pinChanged(matchId, changed)
+  }
   const venueScorer = venueDevice
     ? venueScorerAfter(clientInfo, matchId, previous, venueDevice, claimed.kind)
     : (claimed.kind === 'takeover' || claimed.kind === 'new' ? {} : { scorerClaim: previous?.scorerClaim, movedClaims: previous?.movedClaims, supersededClaims: previous?.supersededClaims })
+  // The room's scoring device (isRoomScorer) and the database rows its game
+  // PIN was proved for (bindRoomRows), until the room is taken over
+  const fresh = claimed.kind === 'takeover' || claimed.kind === 'new'
+  match = stampRelayOrder(match)
   activeMatches.set(matchId, {
     ...venueScorer,
+    scorerDevice: device ? device.id : (fresh ? null : previous?.scorerDevice ?? null),
+    dbRows: boundRowsAfter(fresh ? null : previous?.dbRows, gamePinOf(match), opts.dbRows || []),
     matchId,
     sportType,
     match,
@@ -5334,45 +6563,51 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     homePlayers,
     awayPlayers,
     sets,
-    events: relayEvents(events),
+    events: storedEvents,
     liveState: carryLiveState ? previous?.liveState : undefined,
+    // the relay memory it takes (relayMemoryRefusal), whose it is and whether
+    // the database knows it as an official match
+    bundleBytes,
+    liveStateBytes: carryLiveState ? previous?.liveStateBytes : undefined,
+    relayAddress: relayAddressOf(clientInfo),
+    relayNet: relayNetOf(clientInfo),
+    relayOfficial,
     gameNumber: match?.gameN || match?.gameNumber || match?.game_n,
     updatedAt: new Date().toISOString(),
     updatedBy: clientInfo.id
   })
+  // A key whose held claim lapsed (heldRoomOf: its scorer gone past the grace
+  // of a match in play) is new, but that claim's game PIN may reclaim it once
+  // from this one, as after a stale take-over
+  const lapsed = heldRooms.get(matchId)?.lapsed ? heldRooms.get(matchId) : null
+  heldRooms.delete(matchId)
+  if (lapsed && opts.dbProved !== true && (gamePinOf(match) === null || !safeEqualStr(gamePinOf(match), lapsed.pin))) {
+    displacedPins.set(matchId, lapsed.pin)
+  }
   const newlyOwned = !clientInfo.ownedMatches.has(matchId)
   clientInfo.ownedMatches.add(matchId)
   // Bench requests of a set that is over are dropped; a scorer that has just
-  // (re)proved the match gets the open ones again
+  // (re)proved the match gets the open ones again. A take-over or a new claim
+  // proved no PIN the benches asked under: their open requests (line-ups
+  // too) go, they were replayed to whoever took a room a tablet kept open.
+  if (fresh) benchRequests.drop(matchId)
   benchRequests.prune(matchId, currentSetOfBundle(activeMatches.get(matchId)))
-  if (newlyOwned) replayBenchRequests(clientInfo, matchId)
+  if (newlyOwned && !fresh) replayBenchRequests(clientInfo, matchId)
 
-  // Ensure room exists
-  if (!rooms.has(matchId)) {
-    rooms.set(matchId, {
-      matchId,
-      clients: new Set(),
-      createdAt: new Date().toISOString(),
-      lastActivity: Date.now()
-    })
-  }
-
-  // Add client to room if not already there
-  const room = rooms.get(matchId)
-  room.lastActivity = Date.now()
-  room.clients.add(clientInfo.id)
-  clientInfo.matchId = matchId
+  // The room (created by the match's first accepted sync), with this socket in it
+  const created = !rooms.has(matchId)
+  enterRoom(clientInfo, matchId)
   clientInfo.role = 'scoreboard'
 
   // Broadcast to other clients in the room. Subscribers (referee/bench/livescore)
   // must never receive the connection PINs — wireBundle strips them — and get
   // the bundle only after the PIN step (the summary otherwise).
   broadcastMatchData(matchId, 'match-data-update', activeMatches.get(matchId), message._timestamp, clientInfo.id, { timestamp: new Date().toISOString() })
+  // The tablets that subscribed before the room existed
+  if (created) admitWaiting(matchId)
 
-  console.log(`📤 Match data synced for ${matchId} (Game #${match?.gameN || 'unknown'})`)
-
-  // Queue PocketBase backup sync (fire-and-forget, debounced)
-  syncToPocketBase(matchId, { match, sportType, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events })
+  if (LOG_EACH_CONNECTION) console.log(`📤 Match data synced for ${logValue(matchId)} (Game #${logValue(match?.gameN || 'unknown')})`)
+  else relaySummary.count('match bundles synced')
 }
 
 // Handle match-action from frontend
@@ -5399,43 +6634,108 @@ function handleMatchAction(clientInfo, message) {
     from: clientInfo.id
   }, clientInfo.id, true) // access only: actions carry players and sanctions
 
-  console.log(`⚡ Match action broadcasted to room ${matchId}: ${action}`)
+  if (LOG_EACH_CONNECTION) console.log(`⚡ Match action broadcasted to room ${logValue(matchId)}: ${logValue(action)}`)
+  else relaySummary.count('match actions broadcast')
 }
 
-// Handle live-state-update (scoreboard's computed live state)
+// A live state no more than this many bytes bigger than the room's last one is
+// a routine replacement (score, rotation): it adds almost nothing to the heap,
+// so the relay's memory never refuses it and a match in play keeps publishing.
+const LIVE_STATE_GROWTH_SLACK = 8 * 1024
+
+// Handle live-state-update (scoreboard's computed live state). False: refused
+// because it is too large (over the live hub's own limit), so the database
+// live-state path is skipped too. True otherwise, including when the relay's
+// memory is full: the relay then does not store or broadcast it, but the
+// database path (livescore, scorer alarm) still publishes it — that path has
+// its own limit and must not depend on the relay's memory.
 function handleLiveStateUpdate(clientInfo, message) {
   const matchId = resolveMatchKey(clientInfo, message.matchId)
-  if (!requireMatchOwner(clientInfo, matchId, 'live-state-update')) return
-  if (!message.liveState || typeof message.liveState !== 'object') return
+  if (!requireMatchOwner(clientInfo, matchId, 'live-state-update')) return true
+  if (!message.liveState || typeof message.liveState !== 'object') return true
   const stored = activeMatches.get(matchId)
   // A test (rehearsal) match publishes its live state to the venue's relay
   // only (the scorer never sends it here): the cloud drops it.
-  if (IS_CLOUD && stored?.match?.test === true) return
-  if (stored) stored.liveState = message.liveState
-  broadcastToRoom(matchId, { type: 'live-state-update', matchId, liveState: message.liveState }, clientInfo.id)
+  if (IS_CLOUD && stored?.match?.test === true) return true
+  // The live hub's size limit (a real one is a few KB)
+  if (JSON.stringify(message.liveState).length > MAX_LIVE_STATE_BYTES) {
+    sendRelayRefusal(clientInfo, 'too-large', matchId, 'Live state too large for the relay')
+    return false
+  }
+  // The relay's memory, only when the live state grows materially past the
+  // room's last one (a routine replacement adds almost nothing): the room is
+  // already stored, so this never refuses a match in play for its own updates.
+  const liveStateBytes = approxHeapBytes(message.liveState)
+  const grew = liveStateBytes > (stored?.liveStateBytes || 0) + LIVE_STATE_GROWTH_SLACK
+  const memoryRefusal = stored && grew
+    ? relayMemoryRefusal(clientInfo, matchId, (stored.bundleBytes || 0) + liveStateBytes, { official: stored.relayOfficial !== false })
+    : null
+  if (memoryRefusal) {
+    // Not stored or broadcast here, but the database live-state path still runs
+    sendRelayRefusal(clientInfo, memoryRefusal, matchId)
+    return true
+  }
+  message.liveState = stampRelayOrder(message.liveState)
+  if (stored) {
+    stored.liveState = message.liveState
+    // The accounted size only moves when the memory check ran (grew): a sync of
+    // sub-slack updates would otherwise creep the baseline up step by step and
+    // never re-trigger the check, so the room's live state could reach the hub's
+    // 256 KB cap while the budget still saw near-zero. Now it lags real by at
+    // most the slack, which the budget's headroom absorbs.
+    if (grew) stored.liveStateBytes = liveStateBytes
+  }
+  broadcastLiveState(matchId, message.liveState, stored, clientInfo.id)
+  return true
+}
+
+// The order the relay received a room's live states and bundles in: the
+// viewers order the states of two scorer devices by it (frontend
+// serverDataSync newerLiveState), not by the devices' clocks, which differ
+// after a hand-over in a hall without internet time. One counter for every
+// room (only its order matters); the epoch tells a restarted relay's counter
+// apart, whose numbers start again.
+const RELAY_ORDER_EPOCH = randomBytes(6).toString('base64url')
+let relayOrderSeq = 0
+function stampRelayOrder(obj) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return obj
+  return { ...obj, _relayEpoch: RELAY_ORDER_EPOCH, _relaySeq: ++relayOrderSeq }
+}
+
+// live-state-update to a room, each socket by its view: a socket without a
+// PIN gets the public live state (publicLiveState: no line-ups, substitutions,
+// sanctions), a PIN-proved one the state as it came, unless it carries a
+// covered line-up (an older scorer app; lib/publicColumns.js
+// relayLiveStateView): then the referee and the covered team's bench as it
+// came, every other socket without that line-up.
+function broadcastLiveState(matchId, liveState, entry, excludeClientId) {
+  const room = rooms.get(normalizeMatchId(matchId))
+  if (!room) return
+  // one serialisation per view ('' is no PIN)
+  const byView = new Map()
+  room.clients.forEach((clientId) => {
+    if (clientId === excludeClientId) return
+    const clientInfo = connections.get(clientId)
+    if (!clientInfo || clientInfo.ws.readyState !== 1) return
+    const view = relayViewOfClient(clientInfo, matchId, entry) || ''
+    let data = byView.get(view)
+    if (data === undefined) {
+      const shown = view ? relayLiveStateView(liveState, view, entry?.match) : publicLiveState(relayLiveStateView(liveState, null, entry?.match))
+      data = JSON.stringify({ type: 'live-state-update', matchId, liveState: shown })
+      byView.set(view, data)
+    }
+    sendToRoomMember(clientInfo, data)
+  })
 }
 
 // Remove a match from the relay: tell its room first, then drop room + state.
-// The PocketBase backup is retired, not deleted.
 function removeMatch(matchId) {
   if (liveStateRelay) {
     const key = matchKeyFromSyncedMatch(activeMatches.get(matchId)?.match)
     if (key) liveStateRelay.invalidate(key.value)
   }
   broadcastToRoom(matchId, { type: 'match-deleted', matchId })
-  const room = rooms.get(matchId)
-  if (room) {
-    for (const id of room.clients) {
-      const member = connections.get(id)
-      if (member && member.matchId === matchId) member.matchId = null
-    }
-  }
-  rooms.delete(matchId)
-  activeMatches.delete(matchId)
-  displacedPins.delete(matchId)
-  benchRequests.drop(matchId)
-  for (const c of connections.values()) c.ownedMatches.delete(matchId)
-  retirePocketBaseMatch(matchId)
+  dropRoom(matchId)
 }
 
 // Handle clear-all-matches: only ever the sender's OWN (proven) matches —
@@ -5458,7 +6758,7 @@ function handleClearMatches(clientInfo, message) {
     removeMatch(matchId)
     cleared++
   }
-  console.log(`🗑️  Cleared ${cleared} match(es) owned by ${clientInfo.id}${keepMatchId ? ` (kept ${keepMatchId})` : ''}`)
+  console.log(`🗑️  Cleared ${cleared} match(es) owned by ${clientInfo.id}${keepMatchId ? ` (kept ${logValue(keepMatchId)})` : ''}`)
 }
 
 // Handle delete-match
@@ -5468,7 +6768,7 @@ function handleDeleteMatch(clientInfo, message) {
   if (!requireMatchOwner(clientInfo, matchId, 'delete-match')) return
 
   removeMatch(matchId)
-  console.log(`🗑️  Deleted match ${matchId}`)
+  console.log(`🗑️  Deleted match ${logValue(matchId)}`)
 }
 
 // --- Bench requests (lib/benchRequests.js) ------------------------------------
@@ -5483,14 +6783,16 @@ const benchRequestLimiter = createWindowLimiter()
 /**
  * The role this socket proved for the match: 'home' / 'away' (that bench's
  * PIN or token while its connection is on), 'referee', else null. The game
- * PIN (the scorer's own devices) is none of them.
+ * PIN (the scorer's own devices) is none of them. `compare: false` takes a
+ * PIN already proved only (the tablet status, provedRoleOf); else a PIN not
+ * compared yet is compared now, counted (hasRelayAccess).
  */
-function relayRoleOf(clientInfo, matchId, entry = activeMatches.get(matchId)) {
+function relayRoleOf(clientInfo, matchId, entry = activeMatches.get(matchId), { compare = true } = {}) {
   if (!clientInfo || !matchId || !entry?.match) return null
   const a = clientInfo.matchAccess.get(matchId)
   if (!a) return null
   if (a.token && tokenGrantsRelay(a.token, matchId, entry.match)) return tokenRoleOf(matchTokens.verify(a.token))
-  if (a.pin && hasRelayAccess(clientInfo, matchId, entry)) return pinRoleOf(entry.match, a.pin)
+  if (a.pin && (compare ? hasRelayAccess(clientInfo, matchId, entry) : a.verified)) return pinRoleOf(entry.match, a.pin)
   return null
 }
 
@@ -5607,16 +6909,19 @@ function broadcastToRoom(matchId, message, excludeClientId = null, accessOnly = 
     }
   })
 
-  console.log(`📡 Broadcasted to ${sent} clients in room ${matchId}`)
+  if (LOG_EACH_CONNECTION) console.log(`📡 Broadcasted to ${sent} clients in room ${logValue(matchId)}`)
+  else relaySummary.count('room broadcasts')
 }
 
-// Periodic cleanup of stale connections
+// Periodic cleanup of stale connections, and of the held claims of emptied
+// rooms whose grace is over (heldRoomOf releases them)
 setInterval(() => {
   connections.forEach((clientInfo, clientId) => {
     if (clientInfo.ws.readyState === 3) { // WebSocket.CLOSED
       handleClientDisconnect(clientInfo)
     }
   })
+  sweepHeldRooms()
 }, 30000) // Every 30 seconds
 
 server.on('error', (err) => {
@@ -5641,12 +6946,21 @@ if (DB_MODE) {
       (cat) => console.log(`[DB] catalog loaded: ${cat.allowed.length} tables`),
       (err) => console.warn('[DB] catalog not loaded yet (retrying on demand):', err.message)
     )
+    // Schema (lib/schemaVersion.js): a db/ migration of this image not applied
+    // yet (scripts/migrate.mjs), or a guard trigger, unique index or trigger
+    // function missing, disabled or old. Logged, checked again every few
+    // minutes (a change is logged); for /health: refreshSchemaStatus().
+    import('./lib/schemaVersion.js').then((sv) => sv.checkSchemaAtStart(layer.db.pool))
+      .catch((err) => console.warn('[DB] schema check not run:', err.message))
     // Activity log retention (db/016): 10 min after start, then daily
     const purgeActivity = () => layer.activity.purge()
       .then((r) => { if (r.unlinked || r.linked) console.log('[Activity] purge', JSON.stringify(r)) })
       .catch((err) => console.warn('[Activity] purge failed:', err.message))
     setTimeout(purgeActivity, 10 * 60 * 1000).unref()
     setInterval(purgeActivity, 24 * 60 * 60 * 1000).unref()
+    // Rosters sent ahead (db/023, db/035): deleted at expires_at, hourly,
+    // also while no team or scorer calls a roster route
+    layer.teams?.startSweeps?.()
     // Expired sessions, hourly
     setInterval(() => {
       layer.auth.sweepExpiredSessions().catch((err) => console.warn('[Auth] session sweep failed:', err.message))
@@ -5658,12 +6972,13 @@ if (DB_MODE) {
     // maxAgeMs Infinity deletes no file but still clears stale temp files.
     const runSweep = async () => {
       try {
-        const { lastBackupAgeMin } = await readLastBackup()
-        const state = backupState(lastBackupAgeMin)
+        // the nightly files run copies backup/: without a fresh one, keep every file
+        const { lastFilesBackupAgeMin } = await readLastFilesBackup()
+        const state = backupState(lastFilesBackupAgeMin)
         const paused = state === 'stale' || state === 'unknown'
         if (paused) {
-          console.error(`❌ [Storage] backup/ sweep PAUSED: host backup is ${state} ` +
-            `(last_backup age ${lastBackupAgeMin ?? 'n/a'} min, limit ${BACKUP_MAX_AGE_HOURS} h, STATUS_DIR ${STATUS_DIR}). ` +
+          console.error(`❌ [Storage] backup/ sweep PAUSED: the host's files backup is ${state} ` +
+            `(last_files_backup age ${lastFilesBackupAgeMin ?? 'n/a'} min, limit ${BACKUP_MAX_AGE_HOURS} h, STATUS_DIR ${STATUS_DIR}). ` +
             'No backup file is deleted until the backup job runs again.')
         }
         const r = await layer.storage.sweep(paused ? { maxAgeMs: Infinity } : undefined)
@@ -5671,9 +6986,38 @@ if (DB_MODE) {
       } catch (err) {
         console.error('[Storage] sweep failed:', err.message)
       }
+      // The app logs (backup/<account>/logs/**, utils/logger.js uploads):
+      // 30 days, also while the backup sweep waits (they are no match record)
+      try {
+        const r = await layer.storage.sweepAppLogs()
+        if (r.deletedFiles || r.removedDirs) console.log('[Storage] app log sweep', JSON.stringify({ deletedFiles: r.deletedFiles, deletedBytes: r.deletedBytes, removedDirs: r.removedDirs }))
+      } catch (err) {
+        console.error('[Storage] app log sweep failed:', err.message)
+      }
     }
     setTimeout(runSweep, 5 * 60 * 1000).unref()
     setInterval(runSweep, 24 * 60 * 60 * 1000).unref()
+    // Personal data kept for a time only: the club licence lists of past
+    // seasons (db/037, lib/licences.js) and the sent game rosters 14 days
+    // after their game (lib/teams.js, also run by its routes): 15 min after
+    // start, then daily, also without any request
+    const sweepClubData = () => Promise.all([
+      layer.licences.sweep(),
+      layer.teams.sweep({ force: true })
+    ]).catch((err) => console.warn('[Club data] sweep failed:', err.message))
+    setTimeout(sweepClubData, 15 * 60 * 1000).unref()
+    setInterval(sweepClubData, 24 * 60 * 60 * 1000).unref()
+    // Match records past their season and app_settings.retention_years
+    // (db/042, lib/retention.js; privacy policy section 16): matches with
+    // their rows, scoresheet files, svrz_games. 20 min after start, then
+    // daily; RETENTION_SWEEP=off (a dev copy) leaves everything.
+    if (String(process.env.RETENTION_SWEEP || '').toLowerCase() !== 'off') {
+      const sweepRetention = () => layer.retention.sweep()
+        .then((r) => { if (r.matches || r.scoresheetFiles || r.scoresheetRecords || r.svrzGames || r.svrzRemoved || r.skipped) console.log('[Retention] sweep', JSON.stringify(r)) })
+        .catch((err) => console.warn('[Retention] sweep failed:', err.message))
+      setTimeout(sweepRetention, 20 * 60 * 1000).unref()
+      setInterval(sweepRetention, 24 * 60 * 60 * 1000).unref()
+    }
     // The final scoresheet by email (db/021, lib/finalMail.js): every minute
     // (FINAL_MAIL_SWEEP_MS), cloud only (a venue relay has no mailer). It
     // sends nothing while the Settings switch is off.
@@ -5694,25 +7038,38 @@ if (DB_MODE) {
     // can never make one of them read under the wrong role. Listed in svrz_rc's
     // infrastructure.md and wiedisync's INFRA.md ("The shared VolleyManager
     // account"); move it only together with those tables.
+    // A run that is no success (failed, partial, no game written) is tried
+    // again after 15, 30 and 60 minutes, and a backend that starts with the
+    // last success more than 26 h old catches up: both only inside that
+    // referee-role window (VM_SYNC_WINDOW_UTC, default 22:00-01:00; 'any' once
+    // OpenVolley has a VolleyManager account of its own). /health shows the
+    // last success and the next try (vmSyncStatus).
     if (!IS_LOCAL && process.env.VM_USERNAME && process.env.VM_PASSWORD && process.env.VM_SYNC !== 'off') {
-      import('./lib/vmSync.js').then(({ runVmSync, scheduleVmSync, windowFromEnv }) => {
-        const vmWindow = windowFromEnv() // throws on a bad VM_SYNC_DAYS_* value
-        const schedule = scheduleVmSync({
+      import('./lib/vmSync.js').then((vm) => {
+        const vmWindow = vm.windowFromEnv() // throws on a bad VM_SYNC_DAYS_* value
+        const allowedWindow = vm.runWindowFromEnv() // throws on a bad VM_SYNC_WINDOW_UTC
+        const schedule = vm.scheduleVmSync({
           hourLocal: 22,
           minuteLocal: 30,
           tz: 'UTC',
-          run: () => runVmSync({
+          run: () => vm.runVmSync({
             pool: layer.db.pool,
             window: vmWindow,
             credentials: { username: process.env.VM_USERNAME, password: process.env.VM_PASSWORD },
             // the shared account's referee-delegate role (lib/vmSync.js VM_ROLE_FOR_GAMES)
             ...(process.env.VM_ROLE_ATTRIBUTE_GAMES ? { roleAttribute: process.env.VM_ROLE_ATTRIBUTE_GAMES } : {})
-          }).catch((err) => console.error('[VM sync] run failed:', err.message))
+          }),
+          retryDelaysMs: vm.VM_SYNC_RETRY_DELAYS_MS,
+          allowedWindow,
+          catchUp: () => vm.readSyncRecord(layer.db.pool)
         })
+        vmSync = { lib: vm, schedule }
         console.log('[VM sync] scheduled, next run ' + (schedule.nextRunAt()?.toISOString() ?? 'n/a'))
       }).catch((err) => {
         console.error('❌ [VM sync] not started:', err.message)
       })
+    } else if (!IS_LOCAL) {
+      console.warn(`[VM sync] off (${process.env.VM_SYNC === 'off' ? 'VM_SYNC=off' : 'VM_USERNAME / VM_PASSWORD not set'}): the official schedule is not refreshed`)
     }
   }, (err) => {
     console.error('❌ [DB] could not initialise the data layer:', err.message)
@@ -5740,6 +7097,10 @@ process.on('SIGTERM', () => shutdown('SIGTERM'))
 process.on('SIGINT', () => shutdown('SIGINT'))
 
 server.listen(PORT, () => {
+  // The image's healthcheck watchdog kills this pid when /health/live stops answering
+  if (process.env.OV_PID_FILE) {
+    try { writeFileSync(process.env.OV_PID_FILE, String(process.pid)) } catch (err) { console.warn('[Server] pid file not written:', err.message) }
+  }
   const ips = getLocalIPs()
   const primaryIP = ips[0]?.address || 'localhost'
   const mode = DB_MODE ? 'CLOUD (DATABASE_URL)' : IS_CLOUD ? 'CLOUD RELAY' : 'LOCAL'
@@ -5752,7 +7113,6 @@ server.listen(PORT, () => {
 ║
 ║  Port: ${PORT}   Status: READY
 ║  Static files: ${HAS_STATIC ? 'YES' : 'NO'}
-║  PocketBase: ${pbReady ? 'CONNECTED' : POCKETBASE_URL ? 'CONNECTING...' : 'NOT CONFIGURED'}
 ║
 ${ipLines || `  📡 http://localhost:${PORT}`}
 ║

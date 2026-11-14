@@ -2,10 +2,10 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
 import { Check, Fingerprint, X } from 'lucide-react'
-import { Button, cn, Field, FOCUS_RING, IconButton, Input } from '../../ui'
+import { Button, Checkbox, cn, Field, FOCUS_RING, IconButton, Input } from '../../ui'
 import {
-  anyPasskeyHere, deviceCanHoldPasskey, isPasskeyCancel, markPasskeyHere,
-  passkeyHere, passkeyOfferDismissed, passkeysPossible
+  anyPasskeyHere, deviceCanHoldPasskey, isPasskeyCancel, isSharedDevice, markPasskeyHere,
+  markSharedDevice, passkeyHere, passkeyOfferDismissed, passkeysPossible
 } from '../../lib/passkeys'
 import { passkeyErrorText } from './passkeyErrors'
 import { showPasskeyOffer } from './passkeyOffer'
@@ -67,6 +67,9 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp, initialFor
   // Passkeys (lib/passkeys.js): web only, decided once per open modal.
   const [canPasskey] = useState(() => passkeysPossible())
   const [passkeyBusy, setPasskeyBusy] = useState(false)
+  // "Shared device" (club laptop, hall tablet): no passkey offer in this
+  // browser; the last choice stays ticked
+  const [sharedDevice, setSharedDevice] = useState(() => isSharedDevice())
 
   if (!open) return null
   // Somebody set one up in this browser: the passkey button leads.
@@ -85,11 +88,13 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp, initialFor
       return
     }
     const userId = data?.user?.id
+    if (canPasskey) markSharedDevice(sharedDevice)
     // Offered once per account and browser, and only where the device can
-    // keep the key itself; everyone else goes straight in, as before.
+    // keep the key itself and is not a shared one; everyone else goes
+    // straight in, as before.
     // The offer is shown by PasskeyOfferHost: this dialog may be gone the
     // moment the account counts as signed in.
-    if (canPasskey && userId && !passkeyHere(userId) && !passkeyOfferDismissed(userId) && await deviceCanHoldPasskey() && !(await accountHasPasskey(userId))) {
+    if (canPasskey && !sharedDevice && userId && !passkeyHere(userId) && !passkeyOfferDismissed(userId) && await deviceCanHoldPasskey() && !(await accountHasPasskey(userId))) {
       showPasskeyOffer({ userId, password })
     }
     setPassword('')
@@ -258,6 +263,16 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp, initialFor
                     required
                   />
                 </Field>
+                {/* only where a passkey could be offered (web) */}
+                {canPasskey && (
+                  <Checkbox
+                    label={t('passkeys.sharedDevice')}
+                    hint={t('passkeys.sharedDeviceHint')}
+                    checked={sharedDevice}
+                    onChange={e => setSharedDevice(e.target.checked)}
+                    data-testid="shared-device"
+                  />
+                )}
                 <Button variant="hero" block type="submit" disabled={loading || passkeyBusy} loading={loading}>
                   {loading ? t('common.signingIn', 'Signing in...') : t('auth.signIn', 'Sign in')}
                 </Button>

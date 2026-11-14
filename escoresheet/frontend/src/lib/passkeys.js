@@ -79,3 +79,18 @@ export const passkeyHere = (userId) => Boolean(readHints()[userId]?.on)
 export const passkeyOfferDismissed = (userId) => Boolean(readHints()[userId]?.dismissed)
 export const markPasskeyHere = (userId, on) => writeHint(userId, { on })
 export const dismissPasskeyOffer = (userId) => writeHint(userId, { dismissed: true })
+
+// "Shared device" ticked at sign-in (a club laptop, a hall tablet): this
+// browser never offers a passkey. A key there is bound to the device's own
+// unlock, which every volunteer may know, and stays after sign-out: anyone
+// could then sign in as that person. Kept for the browser, not per account.
+const SHARED_DEVICE_KEY = 'ov_shared_device'
+export function isSharedDevice() {
+  try { return localStorage.getItem(SHARED_DEVICE_KEY) === '1' } catch { return false }
+}
+export function markSharedDevice(shared) {
+  try {
+    if (shared) localStorage.setItem(SHARED_DEVICE_KEY, '1')
+    else localStorage.removeItem(SHARED_DEVICE_KEY)
+  } catch { /* private mode: asked again next time */ }
+}

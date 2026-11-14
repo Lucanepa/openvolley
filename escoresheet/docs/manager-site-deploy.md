@@ -30,7 +30,7 @@ apps). On the web the console header also links the manager site.
 |---|---|
 | Frontend build | `node scripts/build-subdomains.js manager` -> `escoresheet/frontend/dist-manager` (page: `manager.html`, entry `src/manager-main.jsx`). No service worker and no manifest (an admin console must never run a stale cached build). `robots.txt`, a `<meta name="robots" content="noindex, nofollow">` and a `_headers` file (`X-Robots-Tag: noindex, nofollow`, `X-Frame-Options: DENY`, `Referrer-Policy`) keep it out of search engines and frames. |
 | Backend | `https://manager.openvolley.app` is in `lib/cors.js` `ALLOWED_ORIGINS`. The running backend **already trusts it** (any `https://<name>.openvolley.app`), so the site works before the next backend image ships. |
-| Env vars | Backend: optional, see "Preview" below. Pages: `VITE_BACKEND_URL` as on the other projects. |
+| Env vars | Backend: none for production; the preview needs the test backend, see "Preview" below. Pages: `VITE_BACKEND_URL` (Production) and `VITE_DEV_BACKEND_URL` (Preview), as on the other projects. |
 | Database | Nothing. |
 
 ## Cloudflare Pages project
@@ -49,7 +49,8 @@ Connect to Git -> the `openvolley` repository.
 | Build command | `npm ci && node scripts/build-subdomains.js manager` |
 | Build output directory | `dist-manager` |
 | Node version | from `escoresheet/frontend/.node-version` (22); nothing to set |
-| Environment variables (Production **and** Preview) | `VITE_BACKEND_URL` = `https://backend.openvolley.app` |
+| Environment variables (Production) | `VITE_BACKEND_URL` = `https://backend.openvolley.app` |
+| Environment variables (Preview) | `VITE_DEV_BACKEND_URL` = the test backend (e.g. `https://dev-backend.openvolley.app`); a preview build ignores `VITE_BACKEND_URL` ("Dev builds and the test backend" below) |
 | Custom domain | `manager.openvolley.app` (Custom domains -> Set up; Cloudflare adds the proxied CNAME `manager` -> `openvolley-manager.pages.dev` in the openvolley.app zone) |
 
 Optional: Settings -> Builds -> Build watch paths, include `escoresheet/frontend/*`
@@ -60,18 +61,20 @@ the variable only matters for the other sites.
 
 ## Preview (dev branch)
 
-The dev build is served at `https://dev.openvolley-manager.pages.dev`. The
-backend trusts Pages previews only through `PUBLIC_ORIGINS`, so add that
-origin on the VM next to the other `dev.openvolley-<app>.pages.dev` entries:
+The dev build is served at `https://dev.openvolley-manager.pages.dev`. It
+talks to the test backend only, never to production ("Dev builds and the
+test backend" below). That backend trusts Pages previews only through its
+`PUBLIC_ORIGINS`, so add the origin there, next to the other
+`dev.openvolley-<app>.pages.dev` entries, never to production's `.env`:
 
 ```bash
-hetzner# cd /opt/openvolley
-hetzner# grep ^PUBLIC_ORIGINS= .env                     # the current list
+test-backend# grep ^PUBLIC_ORIGINS= .env                 # the current list
 # append ,https://dev.openvolley-manager.pages.dev to that line, then:
-hetzner# docker compose up -d ov-backend                # re-reads .env
+test-backend# docker compose up -d ov-backend            # re-reads .env
 ```
 
-Without it the preview loads but sign-in fails with a CORS error. Production
+Without it the preview loads but sign-in fails with a CORS error. Without a
+test backend at all the preview says "No test backend configured". Production
 (`manager.openvolley.app`) needs no backend change.
 
 ## Check after the first deploy
@@ -145,7 +148,8 @@ account "Join OpenBeach" first. An indoor role gives nothing here.
 | Root directory (advanced) | `escoresheet/frontend` |
 | Build command | `npm ci && node scripts/build-subdomains.js manager-beach` |
 | Build output directory | `dist-manager-beach` |
-| Environment variables (Production **and** Preview) | `VITE_BACKEND_URL` = `https://backend.openvolley.app` |
+| Environment variables (Production) | `VITE_BACKEND_URL` = `https://backend.openvolley.app` |
+| Environment variables (Preview) | `VITE_DEV_BACKEND_URL` = the test backend ("Dev builds and the test backend" below) |
 | Custom domain | `manager-beach.openvolley.app` |
 
 ## DNS (owner)
@@ -161,9 +165,9 @@ It follows the naming rule of plan 2.1 (`<function>-beach.openvolley.app`).
 
 ## Preview (dev branch)
 
-`https://dev.openbeach-manager.pages.dev` needs that origin in the backend's
-`PUBLIC_ORIGINS`, as for the indoor manager preview above. Production needs
-no backend change.
+`https://dev.openbeach-manager.pages.dev` needs that origin in the test
+backend's `PUBLIC_ORIGINS`, as for the indoor manager preview above, never in
+production's. Production needs no backend change.
 
 ## Check after the first deploy
 
@@ -191,3 +195,118 @@ no backend change.
 
 `npm run dev`, then `http://localhost:5173/manager-beach.html` (the icons are
 OpenVolley's in dev; the build swaps them).
+
+# Web releases: match days and migrations (every Pages project)
+
+Every Pages project built from this repository (`openvolley-app`, `-referee`,
+`-bench`, `-livescore`, `-roster`, `-scoresheet`, `openvolley-manager`,
+`openbeach-manager` and the OpenBeach sites) builds `main` on each merge and
+puts it live within minutes; an open app takes the new build at its next start
+or update. A merge to `main` is a web release, so it follows the backend's
+rules:
+
+- **Match-day freeze.** From Friday 17:00 to Sunday 23:59 nothing is merged to
+  `main` (the window of `deploy/RUNBOOK-hetzner.md`, "Match-day rules"). Work
+  goes to `dev`, whose builds talk to the test backend only, and is merged on
+  Monday. A fix that cannot wait is the owner's call; check `/health` before
+  and after it.
+- **The migration first.** A change whose web app writes a new column or table
+  (a new `backend/db/NNN_*.sql` with it) is released in two steps: first the
+  backend, with `deploy.sh` (it runs the migrations), and a check that the
+  database has it:
+
+  ```bash
+  ov-vps$ sudo docker compose --project-directory /opt/openvolley exec -T ov-backend node scripts/check-schema.mjs
+  ov-vps$ sudo docker compose --project-directory /opt/openvolley exec -T ov-backend node scripts/migrate.mjs --status
+  ```
+
+  (the first exits 0, the second lists `NNN`); only then the web part is
+  merged to `main`. While the migration is not released, keep the web part in
+  its own pull request.
+- **If the web app is out first anyway.** The backend writes the rows without
+  the columns it does not know and logs
+  `[pgQuery] unknown column dropped from a write on <table>: <column>` (once a
+  minute per column; counted per column by the data layer's `droppedColumns()`,
+  for `/health`). The matches still reach the cloud, but the values of those
+  columns are lost until the migration. A write the backend cannot take at all
+  (a table it does not have yet) is refused: the app keeps it, its sync
+  indicator says "Server update pending", and it sends it again every hour.
+- **Raising the minimum write protocol** (`MIN_WRITE_PROTO` in
+  `backend/server.js` against the apps' `OV_PROTO` in
+  `frontend/src/lib/apiClient.js`): only once the apps that speak the new
+  protocol have been out for a while (the web app reloaded on every hall
+  tablet, the Android and desktop apps updated), and never on a match day. An
+  older app then keeps its writes on the device and says "Update needed:
+  reload the app after this rally" (the web app) or asks for the app's update
+  (Android, desktop); nothing is lost, but nothing reaches the cloud until it
+  is updated.
+
+Owner, optional: as a lock on the freeze, pause the production branch's
+automatic deployments of each Pages project for the weekend (Settings ->
+Builds) and turn them on again on Monday.
+
+# Dev builds and the test backend (owner decision 5)
+
+Builds of the `dev` branch, and of any other branch but `main`, are Cloudflare
+Pages previews: `dev.openvolley-<app>.pages.dev` and the `dev-*.openvolley.app`
+sites (`dev-app`, `dev-referee`, `dev-bench`, `dev-livescore`, `dev-roster`,
+`dev-scoresheet`, `dev-beach` and the `dev-*-beach` ones). They run unreleased
+code, so they must never write into the production database. `build-channel.js`
+(in `vite.config.js` and `scripts/build-subdomains.js`) makes every such build:
+
+- use the test backend named by `VITE_DEV_BACKEND_URL` (an https address, not
+  `backend.openvolley.app`) and ignore `VITE_BACKEND_URL`;
+- without `VITE_DEV_BACKEND_URL`, use no backend at all: the apps never fall
+  back to `backend.openvolley.app`; the badge and the server screen say "No
+  test backend configured", sign-in and sync answer "Backend not available";
+- refuse `backend.openvolley.app` as a server (server screen, `?server=` links);
+- stay out of search engines: a robots meta, `X-Robots-Tag: noindex, nofollow`
+  in `_headers`, a `robots.txt` that disallows everything, and a small "Test
+  build" badge bottom left that names its backend (it lets every tap through
+  and is not printed).
+
+Which builds: Pages sets `CF_PAGES=1` and `CF_PAGES_BRANCH`; every branch but
+`main` is a dev build. `OV_BUILD_CHANNEL=dev` or `OV_BUILD_CHANNEL=production`
+overrides that, e.g. a local check:
+`OV_BUILD_CHANNEL=dev VITE_DEV_BACKEND_URL=https://dev-backend.openvolley.app node scripts/build-subdomains.js referee`.
+The desktop, Android and release builds are production builds.
+
+## Owner steps (nothing here does them)
+
+1. **A test backend with its own database.** A second backend stack, for
+   example `dev-backend.openvolley.app` on lenovoserver or ov-vps: its own
+   compose project, Postgres database, storage folder and secrets (`.env` from
+   `deploy/env.example`), never a copy of production data with real people in
+   it. Its `PUBLIC_ORIGINS` lists the dev sites and the previews
+   (`https://dev-app.openvolley.app,...,https://dev.openvolley-app.pages.dev,...`).
+   Mail off (no SMTP) or a test sender, and `MANAGER_URL` =
+   `https://dev.openvolley-manager.pages.dev`, so its mails never link to
+   production.
+2. **DNS and tunnel route.** The proxied hostname `dev-backend.openvolley.app`,
+   routed through a Cloudflare Tunnel to that stack (a public-hostname route on
+   the existing tunnel or a tunnel of its own).
+3. **Pages variables.** On every Pages project (`openvolley-app`, `-referee`,
+   `-bench`, `-livescore`, `-roster`, `-scoresheet`, `openvolley-manager`,
+   `openbeach-manager` and the OpenBeach sites built from this repository):
+   Settings -> Variables and Secrets -> **Preview**: `VITE_DEV_BACKEND_URL` =
+   `https://dev-backend.openvolley.app`. **Production** keeps
+   `VITE_BACKEND_URL` = `https://backend.openvolley.app`; the Preview
+   `VITE_BACKEND_URL` can go (a preview build ignores it). Then retry the latest
+   dev deployment of each project so it picks the variable up.
+4. **Production `.env`.** Remove every `https://dev-*.openvolley.app` and
+   `https://*.pages.dev` origin from `PUBLIC_ORIGINS` on the production host
+   and restart the backend (`docker compose up -d ov-backend` re-reads `.env`);
+   the `content-security-policy` header of `https://backend.openvolley.app`
+   then no longer names them. The production backend still trusts
+   `https://dev-*.openvolley.app` through its `*.openvolley.app` rule
+   (`backend/lib/cors.js`): closing that is a backend change, not an `.env` one.
+
+## Check after the change
+
+1. `curl -sI https://dev-app.openvolley.app | grep -i x-robots-tag` prints
+   `noindex, nofollow`; `https://dev-app.openvolley.app/robots.txt` disallows `/`.
+2. `https://dev-app.openvolley.app` shows "Test build · dev-backend.openvolley.app"
+   bottom left (before step 3: "Test build · No test backend configured").
+3. In the browser's network panel, a sign-in on `dev-app` goes to
+   `dev-backend.openvolley.app`, never to `backend.openvolley.app`.
+4. `https://app.openvolley.app` has no badge and no `X-Robots-Tag`.

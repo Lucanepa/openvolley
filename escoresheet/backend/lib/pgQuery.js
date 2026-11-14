@@ -20,9 +20,12 @@
  * - Output is built with json_agg, which is how PostgREST serialises rows.
  * - `update` on the configured JSON columns of `matches` merges objects on the
  *   server, atomically: col = col || $value.
- * - sets/events: every external_id must start with its match's external_id
- *   followed by a separator, and update/delete must be scoped to one match.
- *   An upsert never overwrites or moves a conflicting row of another match.
+ * - sets/events: every external_id must name its own match (childMatchKey:
+ *   `<match external_id>:...`, never a match whose external_id is only a
+ *   prefix of it), and update/delete must be scoped to one match. An upsert
+ *   never overwrites or moves a conflicting row of another match. db/032
+ *   keeps the external_id of a match with children fixed (SQLSTATE OVI01 ->
+ *   409 OV_MATCH_ID_LOCKED), so their ids keep naming it.
  * - Writes need X-OV-Proto >= 2 (426 otherwise).
  * - opts.matchOwner.testOnly (accounts that are not approved scorers): only
  *   test matches and their children may be written (403 OV_SCORER_REQUIRED).
@@ -46,6 +49,7 @@
  */
 
 import pg from 'pg'
+import { connectClient } from './pgClient.js'
 
 // ---------------------------------------------------------------------------
 // Defaults (mirror server.js / frontend matchRepository.js as of 2026-10)
@@ -67,15 +71,12 @@ export const DEFAULT_CONFIG = Object.freeze({
   mergeJsonColumns: {
     matches: ['connections', 'connection_pins', 'team_a', 'team_b', 'officials', 'coin_toss', 'set_results', 'sanctions']
   },
-  // Child tables whose external_id must be prefixed with the parent's external_id.
+  // Child tables whose external_id must name the parent's external_id (childMatchKey).
   scopedChildren: {
     sets: { fk: 'match_id', ext: 'external_id' },
     events: { fk: 'match_id', ext: 'external_id' }
   },
   scopeParent: { table: 'matches', key: 'id', ext: 'external_id' },
-  // Characters allowed right after the match external_id in a child id
-  // (`${seed}:s:${n}` from syncIds.js, `${externalId}_set_${n}` from backupManager).
-  scopeSeparators: [':', '_'],
   // The only embedded selects that are understood. Matched after removing whitespace.
   embeds: {
     match_live_state: [{
@@ -111,17 +112,25 @@ export const DEFAULT_CONFIG = Object.freeze({
   errorMap: {
     sqlstate: {
       OVC01: { status: 409, code: 'OV_MATCH_CLOSED', message: 'This match is closed. Only an admin can reopen it.' },
+      // db/039: a match that was closed once is an official record, also after a
+      // reopen. Not OV_MATCH_CLOSED: the app keeps syncing the match's other writes.
+      OVC02: { status: 409, code: 'OV_MATCH_RECORD', message: 'This match was closed once. Only an admin can delete it, make it a test match or move it to another game.' },
       // db/011: match_approvals rows are append-only (only a bug reaches it)
       OVA01: { status: 409, code: 'OV_APPROVAL_IMMUTABLE', message: 'An approval cannot be changed.' },
       // db/012: matches.sport_type is fixed after insert
       OVS01: { status: 409, code: 'OV_SPORT_LOCKED', message: 'The sport of a match cannot be changed.' },
+      // db/032: matches.external_id is fixed once the match has sets, events or revisions
+      OVI01: { status: 409, code: 'OV_MATCH_ID_LOCKED', message: 'The id of a match with sets or events cannot be changed.' },
       // db/018: a scorer scores the home games of its own club(s) (lib/clubs.js)
       OVL01: { status: 403, code: 'OV_CLUB_REQUIRED', message: 'Your account has no club yet. An admin adds it before you can score official games.' },
       OVL02: { status: 403, code: 'OV_NOT_YOUR_CLUB', message: 'You can score the home games of your club only.' },
       OVL03: { status: 403, code: 'OV_GAME_NOT_IN_SCHEDULE', message: 'This game is not in the VolleyManager schedule, so its home team is unknown.' }
     },
     constraint: {
-      matches_official_game_uidx: { status: 409, code: 'OV_GAME_TAKEN', message: 'This official game is already scored by another account.' }
+      matches_official_game_uidx: { status: 409, code: 'OV_GAME_TAKEN', message: 'This official game is already scored by another account.' },
+      // db/039: one set row per set number. Before it a second local id of a
+      // set stored a duplicate row; now it is refused, and logged by its code.
+      sets_match_index_uidx: { status: 409, code: 'OV_SET_NUMBER_TAKEN', message: 'This match already has a set with this number.' }
     }
   },
   // The column that marks a test match (opts.matchOwner.testOnly).
@@ -148,6 +157,27 @@ const SCORER_REQUIRED_MESSAGE = 'Your account is not approved for official match
 const DB_ERROR_INVALIDATES_CATALOG = new Set(['42P01', '42703'])
 const SPORTS = ['indoor', 'beach']
 const sportOfValue = (v) => (v === 'beach' ? 'beach' : 'indoor')
+// The backup form of older apps' set / event ids (no ':' in them)
+const LEGACY_CHILD_ID_RE = /^(.+)_(?:set|event)_[^_]+$/s
+
+/**
+ * The match external_id a set / event id names, or null. The text before its
+ * first ':' (`${seed}:s:${n}` / `${seed}:e:${n}` from syncIds.js; a seed key
+ * never holds ':'), and for an id without ':' the backup form of older apps,
+ * `${externalId}_set_${n}` / `${externalId}_event_${n}` (OpenBeach's
+ * backupManager still sends it). Every id names one match at most: a match
+ * whose external_id is merely a prefix of another's ids ('match',
+ * 'match_<ms>', '<id>:e') owns none of them, and a match whose external_id
+ * holds ':' owns no set or event.
+ * db/032_match_id_scoping.sql has the same rule in SQL.
+ */
+export function childMatchKey (ext) {
+  if (typeof ext !== 'string' || ext === '') return null
+  const i = ext.indexOf(':')
+  if (i >= 0) return i > 0 && i < ext.length - 1 ? ext.slice(0, i) : null
+  const m = LEGACY_CHILD_ID_RE.exec(ext)
+  return m ? m[1] : null
+}
 
 /**
  * The sports in which opts.matchOwner may write test matches only:
@@ -395,6 +425,59 @@ export function createPgQuery (options = {}) {
     }
   }
 
+  /**
+   * The table as the catalog has it after a refresh (scheduleCatalogRefresh:
+   * at most once per catalogRefreshMinMs), for a write that names a column
+   * the loaded catalog lacks: a migration applied while the backend runs.
+   * Never throws; the table as it was when no newer catalog is there.
+   */
+  async function freshTableDef (t) {
+    scheduleCatalogRefresh()
+    if (refreshPromise) await refreshPromise
+    return catalog?.tables.get(t.name) || t
+  }
+
+  // ---------------------------------------------------- dropped write columns
+  // A write naming a column this database does not have (an app newer than
+  // the schema: its migration not applied yet, the web app deployed first)
+  // is written without that column. Refusing the row (PGRST204) held a match
+  // insert back, and with it every later write of the match, until the
+  // migration ran. Counted per table.column (droppedColumns(), for /health)
+  // and logged at most once a minute per column. Filters, selects, order,
+  // returning and onConflict still refuse an unknown column, and so does a
+  // row with no column of the table left.
+  const DROPPED_LOG_MS = 60000
+  const DROPPED_KEYS_MAX = 50
+  let droppedTotal = 0
+  const droppedByColumn = new Map() // 'table.column' -> { count, loggedAt }
+  const droppedOverflow = { count: 0, loggedAt: 0 } // the columns past DROPPED_KEYS_MAX
+  function noteDroppedColumns (table, names) {
+    const now = Date.now()
+    for (const name of names) {
+      droppedTotal += 1
+      const key = `${table}.${name}`
+      let entry = droppedByColumn.get(key)
+      if (!entry && droppedByColumn.size < DROPPED_KEYS_MAX) {
+        entry = { count: 0, loggedAt: 0 }
+        droppedByColumn.set(key, entry)
+      }
+      entry ??= droppedOverflow
+      entry.count += 1
+      if (now - entry.loggedAt >= DROPPED_LOG_MS || now < entry.loggedAt) {
+        entry.loggedAt = now
+        log.warn?.(`[pgQuery] unknown column dropped from a write on ${table}: ${safeText(name)} (${entry.count} so far; a migration not applied?)`)
+      }
+    }
+  }
+
+  /** Columns dropped from writes since start: { total, columns: { 'table.column': n } }. */
+  function droppedColumns () {
+    const columns = {}
+    for (const [key, entry] of droppedByColumn) columns[key] = entry.count
+    if (droppedOverflow.count) columns['(other)'] = droppedOverflow.count
+    return { total: droppedTotal, columns }
+  }
+
   // ------------------------------------------------------------ SQL helpers
   const qTable = (name) => `${quoteIdent(cfg.schema)}.${quoteIdent(name)}`
 
@@ -602,9 +685,21 @@ export function createPgQuery (options = {}) {
     const dataSql = wantData
       ? `(SELECT coalesce(json_agg(q), '[]'::json) FROM (${inner}) q)`
       : `(SELECT NULL::json FROM (${inner}) q LIMIT 0)`
-    const sql = `SELECT ${dataSql} AS data, ` +
-      `${wantCount ? `(SELECT count(*) FROM ${qTable(t.name)} AS t${where.sql})` : 'NULL::bigint'} AS count`
-    const res = await (opts.client || pool).query(sql, ctx.values)
+    // opts.countCap (server code only): at most that many rows are counted,
+    // so a caller without a session cannot make one request scan a whole
+    // table (count is then the smaller of the true count and the cap)
+    const countCap = Number.isInteger(opts.countCap) && opts.countCap > 0 ? opts.countCap : null
+    const countSql = !wantCount
+      ? 'NULL::bigint'
+      : countCap
+        ? `(SELECT count(*) FROM (SELECT 1 FROM ${qTable(t.name)} AS t${where.sql} LIMIT ${countCap}) AS c)`
+        : `(SELECT count(*) FROM ${qTable(t.name)} AS t${where.sql})`
+    const sql = `SELECT ${dataSql} AS data, ${countSql} AS count`
+    // opts.statementTimeoutMs (server code only): a shorter timeout for this
+    // select, in a transaction of its own (SET LOCAL)
+    const res = opts.statementTimeoutMs && !opts.client
+      ? await withTransaction((client) => client.query(sql, ctx.values), { statementTimeoutMs: opts.statementTimeoutMs })
+      : await (opts.client || pool).query(sql, ctx.values)
     const rows = res.rows[0].data
     const count = wantCount ? Number(res.rows[0].count) : undefined
     let data = wantData ? rows : null
@@ -619,12 +714,36 @@ export function createPgQuery (options = {}) {
   }
 
   // ------------------------------------------------------------------ writes
+  /** Does the write data name a column the table (as loaded) does not have? */
+  function namesUnknownColumn (t, data) {
+    const rows = Array.isArray(data) ? data : [data]
+    return rows.some(r => isPlainObject(r) && Object.keys(r).some(k => !t.columns.has(k)))
+  }
+
+  /**
+   * The rows to write and their columns. A column the table does not have is
+   * left out of every row (noteDroppedColumns); a key that cannot be a column
+   * name, or a row none of whose keys is a column, is refused (PGRST204).
+   */
   function writeRows (t, params, scope) {
     const data = params.data
     const rows = Array.isArray(data) ? data : [data]
     if (rows.length === 0) fail('OV_INVALID_DATA', 'no rows')
     if (!rows.every(isPlainObject)) fail('OV_INVALID_DATA', 'rows must be objects')
-    const out = rows.map(r => (scope ? { ...r, [scope.column]: scope.value } : r))
+    const unknown = []
+    for (const r of rows) {
+      const keys = Object.keys(r)
+      for (const k of keys) {
+        if (t.columns.has(k)) continue
+        if (!IDENT_RE.test(k)) requireColumn(t, k)
+        if (!unknown.includes(k)) unknown.push(k)
+      }
+      // nothing of the row would be written (the scope column is the server's)
+      if (keys.length && !keys.some(k => t.columns.has(k))) requireColumn(t, keys[0])
+    }
+    if (unknown.length) noteDroppedColumns(t.name, unknown)
+    const known = (r) => (unknown.length ? Object.fromEntries(Object.entries(r).filter(([k]) => t.columns.has(k))) : r)
+    const out = rows.map(r => (scope ? { ...known(r), [scope.column]: scope.value } : known(r)))
     const cols = []
     for (const r of out) {
       for (const k of Object.keys(r)) {
@@ -634,7 +753,7 @@ export function createPgQuery (options = {}) {
     return { rows: out, cols }
   }
 
-  /** Reject child ids that do not start with their match's external_id (+ separator). */
+  /** Reject child ids that do not name their own match (childMatchKey). */
   async function assertChildrenScoped (client, cat, table, pairs) {
     const spec = cfg.scopedChildren[table]
     if (!spec || pairs.length === 0) return
@@ -646,15 +765,14 @@ export function createPgQuery (options = {}) {
         fail('OV_UNSCOPED_EXTERNAL_ID', `${table} rows need ${spec.ext} and ${spec.fk}`)
       }
     }
+    // The match the id names must BE the row's match (equal, not a prefix)
     const sql = `SELECT count(*)::int AS bad
-      FROM unnest($1::text[], $2::text[]) AS r(ext, mid)
+      FROM unnest($1::text[], $2::text[]) AS r(key, mid)
       LEFT JOIN ${qTable(parent.name)} AS m ON m.${quoteIdent(pkey.name)} = r.mid::${pkey.typeSql}
      WHERE m.${quoteIdent(pkey.name)} IS NULL
-        OR m.${quoteIdent(pext.name)} IS NULL OR m.${quoteIdent(pext.name)} = ''
-        OR length(r.ext) <= length(m.${quoteIdent(pext.name)})
-        OR NOT starts_with(r.ext, m.${quoteIdent(pext.name)})
-        OR NOT (substr(r.ext, length(m.${quoteIdent(pext.name)}) + 1, 1) = ANY($3::text[]))`
-    const res = await client.query(sql, [pairs.map(p => p.ext), pairs.map(p => String(p.mid)), cfg.scopeSeparators])
+        OR r.key IS NULL
+        OR m.${quoteIdent(pext.name)} IS DISTINCT FROM r.key`
+    const res = await client.query(sql, [pairs.map(p => childMatchKey(p.ext)), pairs.map(p => String(p.mid))])
     if (res.rows[0].bad > 0) fail('OV_UNSCOPED_EXTERNAL_ID', `${res.rows[0].bad} ${table} row(s) not scoped to their match`)
   }
 
@@ -748,22 +866,38 @@ export function createPgQuery (options = {}) {
       editors.columns.has(own.editors.matchColumn) && editors.columns.has(own.editors.userColumn) &&
       (isParent || t.columns.has(fk))
     if (!ready || typeof ro.userId !== 'string' || !UUID_RE.test(ro.userId)) return 'false'
-    return isParent ? ownedSql('t', ctx, ro.userId) : childOwnedSql('t', fk, ctx, ro.userId)
+    return isParent ? ownedSql('t', ctx, ro.userId, { read: true }) : childOwnedSql('t', fk, ctx, ro.userId, { read: true })
   }
 
-  /** SQL: the match row `alias` is owned by the user (creator or editor). */
-  function ownedSql (alias, ctx, userId) {
+  /**
+   * SQL: the match row `alias` is owned by the user (creator or editor). For
+   * reads (`read`), an editor added by game PIN (granted_via other than
+   * 'admin') counts until the match closes, unless that editor closed it: the
+   * PIN is retired at the close. Writes keep every editor (a closed match
+   * refuses them anyway, with OV_MATCH_CLOSED, which the apps expect).
+   */
+  function ownedSql (alias, ctx, userId, { read = false } = {}) {
     const own = cfg.ownership
     const u = ctx.p(userId)
+    const parentCols = catalog?.tables.get(own.parent)?.columns
+    const editorCols = catalog?.tables.get(own.editors.table)?.columns
+    const pinEnds = read && parentCols?.has('closed_at') && parentCols.has('closed_by') && editorCols?.has('granted_via')
+      ? ` AND (oe.granted_via = 'admin' OR ${alias}.closed_at IS NULL OR ${alias}.closed_by = oe.${quoteIdent(own.editors.userColumn)})`
+      : ''
     // coalesce: a row without an owner (NULL) is owned by nobody, also under NOT
     return `(coalesce(${alias}.${quoteIdent(own.ownerColumn)} = ${u}::uuid, false) OR EXISTS (SELECT 1 FROM ${qTable(own.editors.table)} AS oe ` +
-      `WHERE oe.${quoteIdent(own.editors.matchColumn)} = ${alias}.${quoteIdent(own.key)} AND oe.${quoteIdent(own.editors.userColumn)} = ${u}::uuid))`
+      `WHERE oe.${quoteIdent(own.editors.matchColumn)} = ${alias}.${quoteIdent(own.key)} AND oe.${quoteIdent(own.editors.userColumn)} = ${u}::uuid${pinEnds}))`
   }
 
   /** SQL: the child row `alias` belongs to a match the user owns. */
-  function childOwnedSql (alias, fk, ctx, userId) {
+  function childOwnedSql (alias, fk, ctx, userId, opts) {
     const own = cfg.ownership
-    return `EXISTS (SELECT 1 FROM ${qTable(own.parent)} AS om WHERE om.${quoteIdent(own.key)} = ${alias}.${quoteIdent(fk)} AND ${ownedSql('om', ctx, userId)})`
+    return `EXISTS (SELECT 1 FROM ${qTable(own.parent)} AS om WHERE om.${quoteIdent(own.key)} = ${alias}.${quoteIdent(fk)} AND ${ownedSql('om', ctx, userId, opts)})`
+  }
+
+  /** SQL: the row `alias` of the guarded table is (of) a match the user owns. */
+  function rowOwnedSql (guard, alias, ctx) {
+    return guard.isParent ? ownedSql(alias, ctx, guard.userId) : childOwnedSql(alias, guard.fk, ctx, guard.userId)
   }
 
   const notOwner = (details) => fail('OV_NOT_MATCH_OWNER', details, 403)
@@ -789,7 +923,7 @@ export function createPgQuery (options = {}) {
   async function assertFilteredRowsOwned (client, t, params, secrets, guard) {
     const c = freshCtx()
     const where = buildWhere(t, params, secrets, c, null)
-    const owned = guard.isParent ? ownedSql('t', c, guard.userId) : childOwnedSql('t', guard.fk, c, guard.userId)
+    const owned = rowOwnedSql(guard, 't', c)
     const sql = `SELECT count(*)::int AS bad FROM ${qTable(t.name)} AS t${where.sql ? where.sql + ' AND' : ' WHERE'} NOT ${owned}`
     const res = await client.query(sql, c.values)
     if (res.rows[0].bad > 0) notOwner(`${res.rows[0].bad} ${t.name} row(s) of a match you do not own`)
@@ -837,21 +971,29 @@ export function createPgQuery (options = {}) {
     const list = [...new Set(ids.filter(v => v != null && v !== '').map(String))]
     if (list.length === 0) return
     const c = freshCtx()
-    // Compared as text: a malformed id is left to the ownership check, not a cast error here
+    const pkey = requireColumn(guard.parent, own.key)
+    // Compared as the key's type, like the ownership check and the statement:
+    // every spelling of an id that Postgres reads (upper case, braces, no
+    // hyphens) is that match. A malformed id fails the cast here, as it would there.
     const sql = `SELECT count(*)::int AS bad FROM ${qTable(own.parent)} AS m
-      WHERE m.${quoteIdent(own.key)}::text = ANY(${c.p(list)}::text[]) AND ${nonTestSql(guard, 'm')}`
+      WHERE m.${quoteIdent(own.key)} = ANY(${c.p(list)}::${pkey.typeSql}[]) AND ${nonTestSql(guard, 'm')}`
     const res = await client.query(sql, c.values)
     if (res.rows[0].bad > 0) scorerRequired(`${res.rows[0].bad} match(es) are not test matches`)
   }
 
+  /** SQL: the row `alias` of the guarded table is, or belongs to, a non-test match. */
+  function rowNonTestSql (guard, alias) {
+    const own = cfg.ownership
+    return guard.isParent
+      ? nonTestSql(guard, alias)
+      : `EXISTS (SELECT 1 FROM ${qTable(own.parent)} AS tm WHERE tm.${quoteIdent(own.key)} = ${alias}.${quoteIdent(guard.fk)} AND ${nonTestSql(guard, 'tm')})`
+  }
+
   /** No row matched by `params` (update/delete) is, or belongs to, a non-test match. */
   async function assertFilteredRowsTest (client, t, params, secrets, guard) {
-    const own = cfg.ownership
     const c = freshCtx()
     const where = buildWhere(t, params, secrets, c, null)
-    const cond = guard.isParent
-      ? nonTestSql(guard, 't')
-      : `EXISTS (SELECT 1 FROM ${qTable(own.parent)} AS tm WHERE tm.${quoteIdent(own.key)} = t.${quoteIdent(guard.fk)} AND ${nonTestSql(guard, 'tm')})`
+    const cond = rowNonTestSql(guard, 't')
     const sql = `SELECT count(*)::int AS bad FROM ${qTable(t.name)} AS t${where.sql ? where.sql + ' AND' : ' WHERE'} ${cond}`
     const res = await client.query(sql, c.values)
     if (res.rows[0].bad > 0) scorerRequired(`${res.rows[0].bad} ${t.name} row(s) of a non-test match`)
@@ -875,13 +1017,7 @@ export function createPgQuery (options = {}) {
     const c = freshCtx()
     const on = target.map(col => `t.${quoteIdent(col)} = r.${quoteIdent(col)}`).join(' AND ')
     let cond = `(t.ctid IS NOT NULL AND ${nonTestSql(guard, 't')})`
-    if (!guard.allSports) {
-      const tc = cfg.testColumn
-      const sc = cfg.sportColumn
-      const notTest = tc && guard.parent.columns.has(tc) ? `${cols.includes(tc) ? 'r' : 't'}.${quoteIdent(tc)} IS NOT TRUE` : 'true'
-      const sport = sportIsSql(guard, sc && cols.includes(sc) ? 'r' : 't', guard.testSports[0])
-      cond += ` OR (${notTest} AND ${sport})`
-    }
+    if (!guard.allSports) cond += ` OR ${mergedNonTestSql(guard, cols, 'r')}`
     const sql = `SELECT count(*)::int AS bad
       FROM json_populate_recordset(NULL::${qTable(t.name)}, ${c.p(JSON.stringify(rows))}::json) AS r
       LEFT JOIN ${qTable(t.name)} AS t ON ${on}
@@ -890,7 +1026,34 @@ export function createPgQuery (options = {}) {
     if (res.rows[0].bad > 0) scorerRequired(`${res.rows[0].bad} match row(s) are not test matches`)
   }
 
+  /**
+   * SQL, one sport only: the merged row of a matches upsert is a non-test
+   * match of that sport. `payload` (its alias) for the columns the payload
+   * sets (cols), else the stored match t.
+   */
+  function mergedNonTestSql (guard, cols, payload) {
+    const tc = cfg.testColumn
+    const sc = cfg.sportColumn
+    const notTest = tc && guard.parent.columns.has(tc) ? `${cols.includes(tc) ? payload : 't'}.${quoteIdent(tc)} IS NOT TRUE` : 'true'
+    const sport = sportIsSql(guard, sc && cols.includes(sc) ? payload : 't', guard.testSports[0])
+    return `(${notTest} AND ${sport})`
+  }
+
+  /**
+   * SQL for the DO UPDATE of a matches upsert: the conflicting match t, or
+   * the row it would become (EXCLUDED, what the SET writes), breaks the rule
+   * of assertUpsertTargetsTest.
+   */
+  function upsertNonTestSql (guard, cols) {
+    return guard.allSports
+      ? nonTestSql(guard, 't')
+      : `(${nonTestSql(guard, 't')} OR ${mergedNonTestSql(guard, cols, 'EXCLUDED')})`
+  }
+
   async function runWrite (cat, t, action, params, opts, ctx) {
+    // A column the loaded catalog lacks may have come with a migration since:
+    // the catalog is read again first; what it still lacks is dropped (writeRows)
+    if (action !== 'delete' && namesUnknownColumn(t, params.data)) t = await freshTableDef(t)
     const internal = !!opts.internal
     const secrets = secretsFor(t.name, internal)
     const scope = opts.scope || null
@@ -917,6 +1080,29 @@ export function createPgQuery (options = {}) {
 
     let dml
     let postCheck = false
+    // update / delete: the checks run before the statement, and Postgres is
+    // READ COMMITTED, so the statement also sees rows committed after them
+    // (an event synced in between, a match created in between). Their rules
+    // are therefore part of the UPDATE / DELETE too: a row that breaks one is
+    // never written, and the rows the filter matches that break one are
+    // counted in the same statement (its snapshot), which is then refused
+    // as a whole, with the code the check gives. In the checks' order.
+    const rowRules = []
+    let rowRulesWhere = ''
+    const rowRulesSql = (where, untests) => {
+      // bad: the row breaks the rule; ok: it does not
+      const rule = (bad, refuse, ok = `NOT (${bad})`) => rowRules.push({ bad, ok, refuse })
+      if (testOnly) {
+        if (untests) rule(sportIsSql(testOnly, 't', testOnly.testSports[0]), () => scorerRequired('a match cannot stop being a test match'))
+        rule(rowNonTestSql(testOnly, 't'), (n) => scorerRequired(`${n} ${t.name} row(s) of a non-test match`))
+      }
+      if (enforce) {
+        const owned = rowOwnedSql(enforce, 't', ctx)
+        rule(`NOT ${owned}`, (n) => notOwner(`${n} ${t.name} row(s) of a match you do not own`), owned)
+      }
+      rowRulesWhere = where.sql
+      return rowRules.map(r => ` AND ${r.ok}`).join('')
+    }
     if (action === 'insert' || action === 'upsert') {
       if (guard?.isParent) {
         // The creator is the caller, whatever the client sent.
@@ -989,12 +1175,21 @@ export function createPgQuery (options = {}) {
         else if (moveGuard) guards.push(`t.${quoteIdent(guard.fk)} IS NOT DISTINCT FROM EXCLUDED.${quoteIdent(guard.fk)}`)
         // A conflicting row of a match the caller does not own is never changed.
         if (enforce) guards.push(enforce.isParent ? ownedSql('t', ctx, enforce.userId) : childOwnedSql('t', enforce.fk, ctx, enforce.userId))
+        // Nor a conflicting match the test-only rule refuses: testPre judges
+        // the matches committed before it, this also one committed after it
+        // (ON CONFLICT meets rows the statement's snapshot does not see).
+        // A match deleted after it leaves an INSERT instead: judgeWritten.
+        const testGuard = testOnly && testOnly.isParent
+        if (testGuard) guards.push(`NOT (${upsertNonTestSql(testOnly, cols)})`)
         if (guards.length) dml += ` WHERE ${guards.join(' AND ')}`
         if (childSpec || enforce || moveGuard) {
           ctx.expectRows = rows.length
           // children: the new rows' match is owned (checked first), so a
           // skipped row is one of another match; otherwise it is not owned.
           ctx.expectRowsCode = (childSpec || (moveGuard && !enforce)) ? 'OV_UNSCOPED_WRITE' : 'OV_NOT_MATCH_OWNER'
+          // A match skipped by the test-only rule: testPre once more, which
+          // now sees it, answers first (OV_SCORER_REQUIRED, as before the statement)
+          if (testGuard) ctx.expectRowsRecheck = testPre
         }
       }
       if (childSpec) ctx.preCheck = rows.map(r => ({ ext: r[childSpec.ext], mid: r[childSpec.fk] }))
@@ -1004,10 +1199,10 @@ export function createPgQuery (options = {}) {
       const where = buildWhere(t, params, secrets, ctx, scope)
       if (where.filters.length === 0) fail('OV_UNFILTERED_WRITE', 'update needs a filter')
       if (guard?.isParent && cols.includes(ownerCol)) fail('OV_INVALID_DATA', `${ownerCol} is set by the server`)
+      // Making matches non-test: refused at once in every sport, else for
+      // the matched rows of the test-only sport (checked in the transaction)
+      const untests = !!testOnly && testOnly.isParent && cols.includes(cfg.testColumn) && row[cfg.testColumn] !== true
       if (testOnly) {
-        // Making matches non-test: refused at once in every sport, else for
-        // the matched rows of the test-only sport (checked in the transaction)
-        const untests = testOnly.isParent && cols.includes(cfg.testColumn) && row[cfg.testColumn] !== true
         if (untests && testOnly.allSports) scorerRequired('a match cannot stop being a test match')
         const movedTo = !testOnly.isParent && cols.includes(testOnly.fk) ? [row[testOnly.fk]] : null
         const p1 = params
@@ -1030,8 +1225,14 @@ export function createPgQuery (options = {}) {
         postCheck = cols.includes(childSpec.ext) || cols.includes(childSpec.fk)
       }
       if (cols.length === 0) {
-        // Nothing to set: behave like an update that touched no column.
-        return { status: 200, body: { data: wantReturning ? (params.single ? singleOf([], true) : []) : null, error: null, count: params.count ? 0 : undefined } }
+        // Nothing to set: nothing is written, but the rows the filters match
+        // are checked like those of any update (an empty update of another
+        // account's match is refused, not answered 200), and none is changed.
+        const checkOnly = opts.client || pool
+        if (testPre) await testPre(checkOnly)
+        if (ownPre) await ownPre(checkOnly)
+        const out = { status: 200, body: { data: wantReturning ? (params.single ? singleOf([], true) : []) : null, error: null, count: params.count ? 0 : undefined } }
+        return collectChanges ? { ...out, changes: [] } : out
       }
       const merge = new Set(cfg.mergeJsonColumns[t.name] || [])
       const sets = cols.map(c => {
@@ -1039,7 +1240,7 @@ export function createPgQuery (options = {}) {
         return merge.has(c) && col.isJson ? `${quoteIdent(c)} = ${mergeExpr(t, col, 'r')}` : `${quoteIdent(c)} = r.${quoteIdent(c)}`
       })
       if (stampCol && !cols.includes(stampCol)) sets.push(`${quoteIdent(stampCol)} = now()`)
-      dml = `UPDATE ${qt} AS t SET ${sets.join(', ')} FROM json_populate_record(NULL::${qt}, ${ctx.p(JSON.stringify(row))}::json) AS r${where.sql}`
+      dml = `UPDATE ${qt} AS t SET ${sets.join(', ')} FROM json_populate_record(NULL::${qt}, ${ctx.p(JSON.stringify(row))}::json) AS r${where.sql}${rowRulesSql(where, untests)}`
     } else {
       const where = buildWhere(t, params, secrets, ctx, scope)
       if (where.filters.length === 0) fail('OV_UNFILTERED_WRITE', 'delete needs a filter')
@@ -1052,7 +1253,7 @@ export function createPgQuery (options = {}) {
         const p0 = params
         ownPre = (client) => assertFilteredRowsOwned(client, t, p0, secrets, enforce)
       }
-      dml = `DELETE FROM ${qt} AS t${where.sql}`
+      dml = `DELETE FROM ${qt} AS t${where.sql}${rowRulesSql(where, false)}`
     }
 
     // RETURNING: all visible columns when anything needs rows, else just a count.
@@ -1069,22 +1270,51 @@ export function createPgQuery (options = {}) {
     let returning = needRows ? retCols.map(c => `t.${quoteIdent(c)}`).join(', ') : '1 AS one'
     if (needRows && action === 'upsert') returning += (returning ? ', ' : '') + '(t.xmax = 0) AS "__inserted"'
     if (needRows && !returning) returning = '1 AS one'
+    // A test-only account: the rows it wrote are judged by the rule too
+    // (RETURNING sees the final row; no trigger rewrites test, sport_type or
+    // match_id). An upsert of matches: testPre judges the payload merged with
+    // the match stored when it ran; if that match is deleted before the
+    // statement, the statement inserts the payload with the column defaults
+    // (test false, indoor), a row nothing else judges. A child insert, upsert
+    // or update: the match the row points to as stored (the typed match_id),
+    // in the statement's snapshot, so also a match that stopped being a test
+    // match after testPre.
+    const judgeWritten = !!testOnly && (testOnly.isParent ? action === 'upsert' : action !== 'delete')
+    if (judgeWritten) returning += `, (${rowNonTestSql(testOnly, 't')}) AS "__nontest"`
+    const nonTestCount = judgeWritten ? ', count(*) FILTER (WHERE w."__nontest")::int AS nontest' : ''
+    // The matched rows that break each rule (rowRules), in the statement's snapshot
+    const badSql = rowRules.map((r, i) => `, (SELECT count(*) FROM ${qt} AS t${rowRulesWhere} AND ${r.bad})::int AS bad${i}`).join('')
     const sql = needRows
-      ? `WITH w AS (${dml} RETURNING ${returning}) SELECT coalesce(json_agg(w), '[]'::json) AS rows, count(*) AS n FROM w`
-      : `WITH w AS (${dml} RETURNING ${returning}) SELECT NULL::json AS rows, count(*) AS n FROM w`
+      ? `WITH w AS (${dml} RETURNING ${returning}) SELECT coalesce(json_agg(w), '[]'::json) AS rows, count(*) AS n${nonTestCount}${badSql} FROM w`
+      : `WITH w AS (${dml} RETURNING ${returning}) SELECT NULL::json AS rows, count(*) AS n${nonTestCount}${badSql} FROM w`
 
     const run = async (client) => {
       // The acting account, for db/007's triggers (closed_by of a closing write)
       if (actorId) await client.query("SELECT set_config('ov.user_id', $1, true)", [actorId])
+      // An admin session, for db/039's guard: only an admin deletes a match
+      // that was closed, makes it a test match or moves its game
+      if (opts.matchOwner?.admin === true && (t.name === cfg.ownership?.parent)) await client.query("SELECT set_config('ov.admin', 'on', true)")
       if (testPre) await testPre(client)
       if (ctx.preCheck) await assertChildrenScoped(client, cat, t.name, ctx.preCheck)
       if (ownPre) await ownPre(client)
       const res = await client.query(sql, ctx.values)
+      // A row committed after the checks that breaks a rule: the write is refused (rolled back)
+      rowRules.forEach((rule, i) => {
+        const bad = Number(res.rows[0][`bad${i}`])
+        if (bad > 0) rule.refuse(bad)
+      })
+      // A written row the test-only rule refuses: the write is refused (rolled back)
+      if (judgeWritten && res.rows[0].nontest > 0) {
+        const bad = res.rows[0].nontest
+        scorerRequired(testOnly.isParent ? `${bad} match row(s) are not test matches` : `${bad} ${t.name} row(s) of a non-test match`)
+      }
       const rows = res.rows[0].rows || []
       const n = Number(res.rows[0].n)
       // Upsert rows skipped by a guard: the conflicting row belongs to another
-      // match, or to a match the caller does not own.
+      // match, or to a match the caller does not own, or is a match the
+      // test-only rule refuses (the recheck answers that one).
       if (ctx.expectRows != null && n < ctx.expectRows) {
+        if (ctx.expectRowsRecheck) await ctx.expectRowsRecheck(client)
         if (ctx.expectRowsCode === 'OV_NOT_MATCH_OWNER') notOwner(`${ctx.expectRows - n} ${t.name} row(s) of a match you do not own`)
         fail('OV_UNSCOPED_WRITE', `${ctx.expectRows - n} ${t.name} row(s) conflict with a row of another match`)
       }
@@ -1104,7 +1334,7 @@ export function createPgQuery (options = {}) {
       result.changes = out.rows.map(r => {
         const row = {}
         for (const [k, v] of Object.entries(r)) {
-          if (k !== '__inserted' && !secretAll.has(k.toLowerCase())) row[k] = v
+          if (k !== '__inserted' && k !== '__nontest' && !secretAll.has(k.toLowerCase())) row[k] = v
         }
         const eventType = action === 'delete' ? 'DELETE'
           : action === 'update' ? 'UPDATE'
@@ -1168,7 +1398,7 @@ export function createPgQuery (options = {}) {
 
   // ------------------------------------------------------------ public API
   async function withTransaction (fn, { statementTimeoutMs } = {}) {
-    const client = await pool.connect()
+    const client = await connectClient(pool, log)
     try {
       await client.query('BEGIN')
       if (statementTimeoutMs) await client.query(`SET LOCAL statement_timeout = ${Number(statementTimeoutMs) | 0}`)
@@ -1224,9 +1454,12 @@ export function createPgQuery (options = {}) {
    * @param {{userId:string, restrict?:boolean}} [opts.readOwner] selects of matches and its children:
    *        each row gets `__owned` (the user created or edits its match); restrict: only owned rows match
    * @param {number} [opts.maxRows]        raise/lower the select row cap (server code only)
+   * @param {number} [opts.countCap]       selects: count at most this many rows (server code only)
+   * @param {number} [opts.statementTimeoutMs] selects: a statement timeout of their own (server code only)
    * @param {string[]} [opts.mergeOnUpsert] JSON columns an upsert merges into the stored object (server code only)
    * @param {string[]} [opts.changeColumns] narrow the `changes` rows to these columns (server code only)
-   * @param {pg.PoolClient} [opts.client]  run inside the caller's transaction
+   * @param {pg.PoolClient} [opts.client]  run inside the caller's transaction. A non-200 result
+   *        may come after the statement ran (a refused write): the caller must then roll back.
    * @returns {Promise<{status:number, body:{data:any, error:null|{message,code,details?}, count?:number}, changes?:Array}>}
    */
   async function runQuery (request, opts = {}) {
@@ -1295,6 +1528,7 @@ export function createPgQuery (options = {}) {
     ensureCatalog,
     invalidateCatalog,
     catalogStatus,
+    droppedColumns,
     ping,
     close,
     pool,

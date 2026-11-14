@@ -95,7 +95,7 @@ is missing or unreadable. `backup` is `ok` (younger than `BACKUP_MAX_AGE_HOURS`,
 36 h), `stale`, `unknown` (no readable `last_backup`) or `unchecked`
 (`BACKUP_MAX_AGE_HOURS=0`); `stale` and `unknown` make `/health` 503. While the
 backup is `stale` or `unknown` the daily storage sweep also **keeps every file
-under `backup/backups/`** (it logs `backup/ sweep PAUSED`), so the 30-day
+under `backup/`** (it logs `backup/ sweep PAUSED`), so the 30-day
 rotation never deletes the only copies while the nightly snapshot is failing.
 LAN `/health` keeps the old shape (`status: healthy`, `mode: local`, always 200).
 
@@ -145,7 +145,7 @@ Deploy to Render for cloud backup, also run locally when available. The frontend
 | `DATABASE_URL` | Postgres connection string. Set: self-hosted cloud mode. Unset (or `--local` on the command line): LAN relay mode, no database. | - |
 | `STORAGE_ROOT` | Object storage root (`{root}/{bucket}/{path}`), must contain the `.ovdata` sentinel or every write gets 503. `STORAGE_DIR` is accepted as the older name. | `/data/storage` |
 | `STATUS_DIR` | Read-only directory with `last_backup` (a UTC timestamp, e.g. `date -u +%FT%TZ`) reported by `/health`. | `/var/lib/openvolley-status` |
-| `PUBLIC_ORIGINS` | Extra trusted browser origins, comma separated (CORS with credentials, CSP connect-src), on top of `https://*.openvolley.app` and the built-in list. | - |
+| `PUBLIC_ORIGINS` | Extra trusted browser origins, comma separated (CORS with credentials, writes, WebSocket upgrades, CSP connect-src), on top of the exact list in `lib/cors.js` (see "Origin rule"). A dev or preview site under `openvolley.app` must be listed here. | - |
 | `TRUST_PROXY` | `cloudflare`: the client IP is `cf-connecting-ip` (only valid when the origin is reachable through Cloudflare only). Unset: the socket peer address. Any other value stops the server. **Required behind cloudflared/Traefik**: without it every per-IP limit (socket caps, PIN and restore buckets, `/api/db`, auth) keys on the proxy's address, i.e. one bucket for all clients (the server warns at startup). | - |
 | `TRUST_PROXY_FROM` | Comma list of CIDRs (e.g. the tunnel/Traefik network `172.30.0.0/24`). With it, `cf-connecting-ip` is honored only when the socket peer is inside one of them, so a caller that reaches the origin port directly cannot forge its address. Needs `TRUST_PROXY=cloudflare`; a bad entry stops the server. Without it the origin port must be reachable through the proxy only (no published host port, own Docker network). | - |
 | `BACKUP_MAX_AGE_HOURS` | Max age of `$STATUS_DIR/last_backup` before `/health` says `backup: stale` (503) and the `backup/` sweep pauses. `0` disables both (dev only). | `36` |
@@ -154,7 +154,8 @@ Deploy to Render for cloud backup, also run locally when available. The frontend
 | `CONTACT_EMAIL` | The support mailbox (FreeScout reads it): the only recipient of `/api/contact`; also named in the "password reset unavailable" message | `support@openvolley.app` |
 | `OV_PIN_SECRET` | Secret (at least 32 characters) for the PINs at rest: `game_pin` and every `connection_pins` value are stored as an HMAC with it (`lib/pinHash.js`). Unset: stored in plaintext as before (the server warns at startup). Also keys the approval PINs: unset turns approval with an account off ("Approval PINs"). **Never change or lose it** while matches stored with it are in use (see "Security model"). | - |
 | `OV_MATCH_TOKEN_SECRET` | Secret (at least 32 characters; a shorter one stops the start) for the match access tokens the PIN checks answer with (`lib/matchAccess.js`). Unset: derived from `OV_PIN_SECRET`; both unset: a random one per process (tokens end with a restart; the apps re-check their stored PIN on reload). | derived / random |
-| `STORAGE_BACKUP_MIN_FREE_MB`, `STORAGE_SCORESHEETS_MIN_FREE_MB`, `STORAGE_MAX_FILE_MB`, `STORAGE_OWNER_SCOPE`, `STORAGE_OWNER_SCOPE_BUCKETS` | See "Self-hosted storage" below | |
+| `STORAGE_BACKUP_MIN_FREE_MB`, `STORAGE_SCORESHEETS_MIN_FREE_MB`, `STORAGE_MAX_FILE_MB`, `STORAGE_BACKUP_ACCOUNT_MAX_MB`, `STORAGE_OWNER_SCOPE`, `STORAGE_OWNER_SCOPE_BUCKETS` | See "Self-hosted storage" below | |
+| `OV_RELAY_MAX_MB` | Memory the relay's stored match bundles and live states may take in all (half of it per address); syncs beyond it are refused with `relay-full`. A bad value stops the server. | 35% of V8's heap limit (about 106 MB with `--max-old-space-size=256`) |
 | `RENDER` | Auto-set by Render (legacy) | - |
 | `RESEND_API_KEY` | Resend API key for email (recommended) | - |
 | `RESEND_FROM` | Sender address for Resend | `eScoresheet <escoresheet@openvolley.app>` |
@@ -166,41 +167,172 @@ Deploy to Render for cloud backup, also run locally when available. The frontend
 | `MANAGER_URL` | Base of the links in the account emails (`#reset?token=`, `#confirm?token=`); https only | `https://manager.openvolley.app` |
 | `MAIL_FROM_BEACH` | Sender of the OpenBeach account emails (requests with `app: 'beach'`); the same mailbox. Set but without an address: the mails are off | `OpenBeach <address of MAIL_FROM>` |
 | `MANAGER_URL_BEACH` | Base of the links in the OpenBeach account emails; https only (set but unusable: the mails are off) | `https://manager-beach.openvolley.app` |
-| `SMTP_LEGACY_ROUTES` | `1`: `/api/match/send-info` may also send through the SMTP account. Off by default: it mails an address an anonymous request supplies. (`/api/contact` uses the SMTP account without it: it mails only `CONTACT_EMAIL`) | - |
-| `POCKETBASE_URL`, `POCKETBASE_ADMIN_EMAIL`, `POCKETBASE_ADMIN_PASSWORD` | Optional relay snapshot backup (unchanged) | - |
 
-`SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` are no longer read.
+`SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` are no longer read, nor are the
+`POCKETBASE_*` variables (the PocketBase relay snapshot backup was removed).
 
-Rate limits in cloud mode (per minute unless noted; sized for a venue NAT):
+Rate limits in cloud mode (per minute unless noted; sized for a venue NAT).
+"Per IP" is per address bucket on the cloud: IPv4 as is, **IPv6 by /64** (one
+subscriber holds a whole /64; a venue relay counts per address, as its socket
+cap does). Each category has its own counters, at most 10,000 keys each (a
+flood of new addresses evicts the oldest windows). `/api/approvals*` 60,
+`/api/account/approval-pin*` 30 and `/api/scoresheet/test-mail` 10 per user.
 `/api/db` 1200 per IP before the body is read, then reads 600 per IP, writes
 600 per user (and 1200 per IP before the token lookup); `/api/storage/*` 600 per
 IP plus the per-user write quota of `lib/storage.js`; `validate-connection-pin`
 60 per IP and 20 per IP + PIN type, plus at most **20 failed guesses per IP in
 10 minutes** (a success is refunded; 429 with `Retry-After: 600`);
 `/api/match/restore` 30 per user, at most 2 bodies parsed at once per process
-(4 queued, then 503 `OV_BUSY`); the PIN and `/api/db` buckets key IPv6 by /64; `/api/match/restore-by-pin` 60 per IP plus the
+(4 queued, then 503 `OV_BUSY`); `/api/match/restore-by-pin` 60 per IP plus the
 attempt limiter (20 failed per caller / 5 per caller and game in 10 min); auth
 buckets live in `lib/auth.js`; `/api/match/claim` shares the restore-by-pin
 buckets; `/api/match/upload-roster` shares the validate-connection-pin per-IP
 and failed-guess buckets; a wrong `X-OV-Match-Pin` on `GET /api/match/:id`
 counts as a failed guess too, and a wrong `subscribe-match` PIN 5 per socket /
-20 per IP and minute. Role sockets: 200 per IP in cloud mode (50 on
+20 per IP and minute. `/api/db` reads without a checked session (no token,
+or a read that needs none) and those of an account without any role (anyone
+may sign up for one): `count` counts at most 1000 rows, the select ends after
+3 s, at most `PG_POOL_MAX` - 2 run at once (40 queued, each at most 5 s, then
+503 `OV_DB_BUSY`; a read whose caller left while queued is not run), so two
+pool connections stay for sign-in and the scorers' writes, and `events` /
+`sets` without an `eq` / `in` filter on `id`, `external_id` or `match_id`
+return at most 100 rows. Role sockets: 200 per IP in cloud mode (50 on
 the LAN), 2000 in total; `?purpose=live` sockets: 500 per IP, 3000 in total.
+Role-socket frames (`lib/relayLimits.js` `createFrameBudget`, before a frame
+is parsed): 120 a minute per socket; a socket that owns no room (no proved
+scoreboard claim) may send 4 frames over 64 KB a minute (its claim), together
+at most 32 MB per IP; on the cloud, a socket whose rooms no database row
+proved (anyone may sync a made-up room id; a signed-out scorer's room is one
+too) sends at most 32 MB of frames over 64 KB a minute, and all such sockets
+of an IP together, claims included, 64 MB; a socket that owns a room whose
+game PIN the database proved, or any room of a venue relay, has no limit of
+its own for large frames; any socket at most 128 MB a minute. A refused
+frame answers `too-large`; the third in a minute closes the socket (1009).
+What the relay keeps of a socket's syncs (`lib/relayLimits.js`, both modes):
+the PINs it compares must be text (at most 64 characters) or numbers (else
+`bad-request`; `matchPin`, which it never compares, only has to be text or a
+number); the PIN fields it only keeps and carries over into later syncs that
+leave them out (`connection_pins`, `connectionPins`, `matchPin`) at most 16 KB
+each as counted below (else `too-large`; an app's are a few hundred bytes);
+the status, the scheduled time and the team names (which the match
+list, landing page and PIN check turn into a string or a date) must be text, a
+number or missing (else `bad-request`, so one crafted room cannot make those
+answer 500 or refuse correct PINs for everyone); at most 20000 events, 20 sets
+and 200 players per list, 8 MB per room (counted as an upper bound on the heap
+V8 can keep for it: every number boxed, every object and array at its largest
+layout, the hidden classes V8 may build and rebuild for each key order, and the
+stored PINs a sync that continues the room carries over, so no layout can hide a
+bundle's real size; a take-over or reclaim carries nothing over, nor the room's
+live state, so what the room's last holder stored never counts against it;
+`tests/relayLimits.test.js` measures it along the relay's
+own path) and 300,000 JSON values per frame (else `too-large`); a live state at most
+256 KB as JSON (`too-large`); all rooms together `OV_RELAY_MAX_MB`, one address
+half of it (`relay-full`). When the relay fills, a room it does not hold yet is
+refused first (at 80% of the total / of an address's share), so the matches in
+play keep the headroom they grow into; on the cloud the rooms the database does
+not know as official matches (anything an anonymous socket syncs) hold at most
+60% of the total together, so a flood cannot take the memory an official match
+needs. A long five-set match with all its signatures counts 0.7-1.8 MB.
+Rooms: at most 500 in all and 64 per address (its /64 on the cloud); on the
+cloud the rooms the database does not know as official matches at most 64 per
+/56 and 300 together (`room-limit`). At a cap the room no connected socket owns
+whose scorer left first is ended for the new one: its watchers wait for its
+next sync, and its claim (game PIN, scoring device) is held for the rest of its
+take-over grace.
 `/api/admin/*` and `/api/saved-teams*` 300 per user; `/api/match/official-check`
 120 per user; `/api/account/redeem-invite` at most **10 failed attempts per
 account and per IP (/64) in 10 minutes** (a success is refunded; 429
 `OV_TOO_MANY_ATTEMPTS` with `Retry-After: 600`).
+Across callers (every address together, `lib/matchRestore.js`
+`createPinFailureBudget`): **30 wrong PINs per match and PIN type in 10
+minutes** (game, referee, a bench, an upload PIN; every PIN check above
+counts, claim included; a relay check of all the match's PINs counts against
+each type it compared) refuse that PIN type of that match for 10 minutes, the
+right PIN too, with one `[PIN] match …` log line per lock. A scoreboard's
+claim on the relay counts for the database match whose game PIN it compares
+(the rows its room key and synced match name), whatever room key it names;
+a relay room re-pointed at a database match it never proved makes one
+counted comparison before its live state is published there. The match's
+other PIN types, other matches, match tokens already issued, a relay room
+already bound to its match, and the room's own scoring device re-proving it
+on the relay (the device the database names as the match's scorer, or the
+device of the room's last sync for a match the database does not hold, the
+venue relay included) are not affected; a scoreboard that names no device
+(older apps) is. A new PIN written by the scorer (`/api/db`,
+`/api/match/restore`, the relay sync) starts that PIN's count again.
+restore-by-pin compares one PIN with every match of the game number, so its
+wrong PINs count once for the **game number** (30 in 10 minutes refuse
+restore-by-pin of that game number only, one `[PIN] game number …` line),
+never against each match's game PIN; a match whose game PIN is locked is
+never proved by it (answered as a wrong PIN). The lookups that name no match
+(`validate-connection-pin` without `matchExternalId`, the relay's
+`validate-pin`) have a limit of their own: **100 wrong PINs per sport and PIN
+type in 10 minutes** refuse only those lookups for 10 minutes (one `[PIN] …
+lookups without a match` line); a lookup that names its match is never
+refused by it, and a locked match is never found by one (404, as a wrong
+PIN). OpenBeach referee and bench tablets (up to 3.0.2 at least) look up
+their PIN without naming the match, so they sit under that limit and see a
+match locked by others as a wrong PIN. `OV_PIN_MATCH_FAILURES` /
+`OV_PIN_SEARCH_FAILURES` override the two numbers. In memory, per process (a
+restart forgets them).
 Writes (`/api/db` insert/update/upsert/delete and `/api/match/restore`) need
 the request header `X-OV-Proto: 2` (426 `OV_CLIENT_TOO_OLD` otherwise); CORS
 allows that header.
 
-CORS in cloud mode trusts `https://*.openvolley.app` (the sites, the manager
-`https://manager.openvolley.app` included), `PUBLIC_ORIGINS`, and the
-native shells: Capacitor (`https://localhost`, `capacitor://localhost`) and
-Tauri (`tauri://localhost`, `http(s)://tauri.localhost`). The list lives in
-`lib/cors.js` (tests: `tests/cors.test.js`, no database needed). Cloudflare
-Pages previews (`https://dev.openvolley-<app>.pages.dev`) are trusted only
-when listed in `PUBLIC_ORIGINS`.
+### Origin rule
+
+One rule for every OpenVolley server and relay (`lib/cors.js`; tests:
+`tests/cors.test.js`, no database needed). The backend applies it; the LAN
+relays (`frontend/server.js`, `frontend/electron/lanRelayCore.cjs`, the desktop
+app's `src-tauri/src/relay.rs`) are to apply the same rule (the LAN relay and
+Tauri relay work of the rollout fixes) and do not yet. A browser origin is
+trusted when it is
+
+1. in the exact list of `ALLOWED_ORIGINS`: the sites (`openvolley.app`,
+   `www.openvolley.app`, `app`, `referee`, `bench`, `livescore`, `roster`,
+   `scoresheet`, `manager`, `manager-beach`, OpenBeach's `beach`,
+   `beach-referee`, `beach-livescore`, `beach-scoresheet`, `beach-roster` and
+   their `<function>-beach` names, all `https://…openvolley.app`), the native
+   shells (Capacitor `https://localhost`, `capacitor://localhost`; Tauri
+   `tauri://localhost`, `http(s)://tauri.localhost`; the desktop windows on
+   `http://localhost:5173` / `5174`) and local development; or in
+   `PUBLIC_ORIGINS`. **No wildcard**: any other host under `openvolley.app`
+   (the support desk, the download host, a dev build, a forgotten DNS record)
+   is a stranger. Cloudflare Pages previews and dev sites are trusted only
+   when listed in `PUBLIC_ORIGINS`;
+2. the server's own pages: the origin's host is the request's `Host`, by a
+   name no outside party can point at the server: an address, `localhost`, a
+   `.local` or single-label name (`scoretable`), or one of the server's
+   public names (`backend.openvolley.app` and the hosts of `PUBLIC_ORIGINS`).
+   The sign page, a venue server reached by its address or its `.local` or
+   bare name. A DNS-rebinding page (an outside name such as
+   `rebind.example` re-pointed at a venue server's address, which the browser
+   sends as the `Host`) is not the server's own page;
+3. on a venue server (not cloud) only: an `http(s)` page of the hall's
+   network, the host **parsed as an address**: `localhost`, loopback
+   (127/8, `::1`), private (10/8, 172.16/12, 192.168/16, fc00::/7) and
+   link-local (169.254/16, fe80::/10) addresses, and `.local` names. A name
+   such as `10.example.test` or `192.168.example.test` is not an address.
+
+What follows from it: the CORS answer names a trusted origin (with
+credentials) or else `https://openvolley.app` (an untrusted origin is never
+reflected, on the cloud or on a venue server); an API write (POST, PUT, PATCH,
+DELETE under `/api/`) from an untrusted origin is refused with 403
+`OV_ORIGIN_REFUSED`, and one whose body is not `application/json` with 415
+`OV_UNSUPPORTED_MEDIA_TYPE` (the support form `/api/contact` also takes
+`multipart/form-data`; the phone-sign API answers its own 400), both before
+any rate bucket is charged, so a web page cannot spend a hall's PIN, sign-in
+or `/api/db` budgets from its visitors' browsers; a WebSocket upgrade (role and
+`?purpose=live` sockets) from an untrusted origin is refused with 403. A
+request without an `Origin` (the native apps' sockets, scripts, the board
+bridge) is no browser page and is not refused for it. The counts are in the
+internal `/health` body (`transport`). DNS rebinding: rule 2 trusts no
+outside name, so a rebinding page's writes and sockets are refused like any
+other foreign page's (a browser sends the page's `Origin` with both). Its GET
+reads are same-origin for the browser and are answered: what any device on
+the hall network reads without a PIN. A venue server reached by a dotted name
+of the hall's router (`scorer-pc.fritz.box`) is no own page either: open it
+by its address or `.local` name.
 
 ## Security model (Phase 7 security release)
 
@@ -208,7 +340,8 @@ What protects what, in cloud mode (`DATABASE_URL`) and on the LAN. Tests:
 `tests/security.e2e.test.js` (the matrix below against a real Postgres and a
 LAN relay), `tests/pgQuery.ownership.test.js`, `tests/matchAccess.test.js`,
 `tests/hashPins.test.js`, the frontend's `lanRelayProtocol.test.js` (every relay
-runtime; the Tauri one with `OV_TAURI_RELAY_BIN`).
+runtime; the Tauri one with `OV_TAURI_RELAY_BIN`, built and run on every relay
+change by `.github/workflows/relay-contract.yml`).
 
 ### Who may write a match (cloud)
 
@@ -235,8 +368,12 @@ payloads; the rosters of one match with its match token, see below), and a
 filter or order on a non-public column only matches the caller's own rows, so
 hidden values cannot be probed (`pgQuery` `opts.readOwner`). A referee or coach
 whose My Matches lists someone else's match therefore sees that match like the
-public scoresheet archive. Referee rows (`referee_database`) keep their full
-read for accounts.
+public scoresheet archive. Referees' dates of birth need a role that fills the
+sheet's officials (`server.js` `REFEREE_DOB_SPORTS`): full `referee_database`
+rows go to admins and accounts that can score indoor or beach, full
+`svrz_games` rows to admins and indoor scorers. Every other account reads these
+two tables like an anonymous caller (public columns, no dates of birth), and a
+filter or order on a date of birth is refused with 400 `OV_SECRET_FILTER`.
 
 **Rows that existed before `005` have no owner** (`created_by` NULL): nobody
 can tell who scored them, so they are **read-only for everyone except admins**
@@ -256,7 +393,11 @@ account").
 server's vm-sync job) is read-only for every account but admins (403
 `OV_READ_ONLY_TABLE`). In `referee_database` an account may add referees and
 change `sport_type` of one row by id (Match Setup's referee history); any other
-update, an upsert or a delete is for admins. `beach_competition_matches` is not
+update, an upsert or a delete is for admins. For an account that may not read
+the dates of birth, the rows such a write returns (`returning`) are the public
+columns, and a referee it adds is stored with the public columns only (no date
+of birth), so the answer to an insert never depends on a stored date of birth.
+`beach_competition_matches` is not
 on the `/api/db` allowlist (no client uses it).
 
 The **officials' devices** keep working: referee and bench tablets only read
@@ -264,9 +405,9 @@ The **officials' devices** keep working: referee and bench tablets only read
 writes `matches` with a session but goes through
 `POST /api/match/upload-roster {matchExternalId, team, pin, roster, coachSignature?, captainSignature?}`,
 authorised by that team's upload PIN of that match, which writes only
-`connections.pending_{home|away}_roster` and the team's coach/captain signatures,
-and only while the match is in `setup` (409 after the coin toss). A second
-scorer takes over with the game PIN as above.
+`connections.pending_{home|away}_roster` and the team's coach/captain signatures
+where the match has none yet, and only while the match is in `setup` (409 after
+the coin toss). A second scorer takes over with the game PIN as above.
 
 ### Approved scorers, official games and closed matches (`db/007`)
 
@@ -355,6 +496,35 @@ no match actions). The bundle (`access: "full"`, still without PINs and personal
 data) needs one of the match's PINs: the referee PIN while the referee
 connection is on, a bench PIN while that bench is on, or the game PIN.
 
+What the bundle holds depends on the PIN (or match token) that opened it
+(`lib/publicColumns.js` `relayBundleView`; this server only, the LAN relays do
+not apply it yet). The match in the `validate-pin` answer is that bundle's
+match row (`relayMatchView`):
+
+- referee PIN and game PIN (the scorer's own devices): both rosters by name and
+  the remarks (the referee's live scoresheet prints them), with the dates of a
+  date-of-birth correction taken out (`redactRemarkDobs`, on the remark text
+  of the events too);
+- a bench PIN: its own roster by name, the other team's shirt numbers only (its
+  officials by role only), no remarks and no remark text on the events; while
+  the other team's first line-up of a set is covered (only that line-up is in
+  and no point has been scored, FIVB 7.3), none of that team's events of the
+  set and not its game captain on the match row;
+- every PIN: team rows as name, short name and colours; never a date of birth,
+  nationality or contact data, the officials, a signature, the account
+  approvals, the manual-change log or a pending roster.
+
+The scorer sends none of those private fields in the first place
+(`frontend/src/utils/serverDataSync.js` `relayMatchPayload`,
+`relayTeamPayload`, `relayPeoplePayload`) and its live state carries a covered
+line-up as null (`frontend/src/domain/lineupPrivacy.js`). For an older scorer
+app the projection here does it: the bundles as above, and its live state
+(`live-state-update`, the summary, the live hub's `match_live_state` change)
+without a covered line-up (the set at 0:0 and only one team's line-up in) for
+every socket but the referee, the game PIN and that team's bench
+(`relayLiveStateView`). The `match_live_state` row an older scorer app writes
+to the database itself still carries it, until that app is updated.
+
 - Relay: `subscribe-match { matchId, pin }` (or `join_match` with a pin), or
   `{ token }` on this server. The `role` / `device` / `team` fields only label
   the socket; a role grants nothing. A PIN offered before the scorer synced the
@@ -362,8 +532,8 @@ connection is on, a bench PIN while that bench is on, or the game PIN.
   per socket and minute, or over the brute-force budget every PIN check of this
   server shares (`validate-connection-pin`, `validate-pin`, `GET /api/match/:id`
   with a PIN, the relay's subscribe PINs and scoreboard game-PIN claims, the
-  PocketBase snapshot, the inline take-over: **20 wrong PINs per 10 minutes per
-  address**, IPv6 by /64; right PINs are refunded), nothing is compared
+  inline take-over: **20 wrong PINs per 10 minutes per address**, IPv6 by /64;
+  right PINs are refunded), nothing is compared
   (`rate-limited`). The LAN relays keep their own per-socket/per-IP limits.
   `match-action` goes only to sockets with access; `live-state-update` to every
   subscriber (it is what Livescore shows anyway), and the summary keeps
@@ -420,9 +590,8 @@ for a known key it is an identifier, not a capability.
   database credentials.
 - **What stays plaintext, and why:** the relay's in-memory copy of the
   scorer's match (it must compare typed PINs, on the LAN with no database at
-  all); the scorer's own IndexedDB (it shows the PINs to hand them out); the
-  optional PocketBase relay snapshot (`match_data`, legacy); and the database
-  values until `OV_PIN_SECRET` is set and `hash-pins.mjs` ran.
+  all); the scorer's own IndexedDB (it shows the PINs to hand them out); and
+  the database values until `OV_PIN_SECRET` is set and `hash-pins.mjs` ran.
 - **Never returned or logged:** PIN columns are redacted from every `/api/db`
   answer, `db-change` and relay message and can never be filtered on; the PIN
   checks answer the match, never a PIN; the server logs no PIN (asserted by the
@@ -486,14 +655,26 @@ replacement tablet signed in with another account still restores the match
 (and, signed in, becomes its editor). Restore in place from the scoreboard's
 options lists the current account's backups only. Files
 stored before this change (`backup/backups/…`, no user folder) are no longer
-reachable through the API; the 30-day sweep still removes them (and sweeps
-every account's `{user id}/backups`).
+reachable through the API; the 30-day sweep still removes them. The sweep
+covers all of `backup/`: every account's backups, logs and any other file in
+its folder older than 30 days. Writes need an account with a role (scorer,
+referee, manager or admin, either sport; 403 `OV_STORAGE_FORBIDDEN`
+otherwise: a pending account, which scores test matches only, keeps its
+backups on the device and in the desktop / Android backup folder, and its
+log lines are not uploaded), and one account holds at most
+`STORAGE_BACKUP_ACCOUNT_MAX_MB` (507 `OV_STORAGE_ACCOUNT_FULL` above it), so
+no account can fill the volume to the free-space floor every account's
+backups share.
 
 ### Deleting an account
 
 `POST /api/auth/delete-account` (Profile > Delete account) removes the
 account's personal data on the server and keeps the match records, which
-belong to the clubs and the federation, not to the scorer's account.
+belong to the clubs and the federation, not to the scorer's account. It needs
+the password or a passkey besides the session (`reauth`), refuses the last
+super admin (409 `OV_LAST_SUPER_ADMIN`) and writes an `account.delete` audit
+entry, as an admin's delete does. Both run the refusal rules under their row
+locks before any file is removed (lib/auth.js `eraseAccount`).
 
 | Deleted | Where |
 |---|---|
@@ -510,7 +691,7 @@ belong to the clubs and the federation, not to the scorer's account.
 |---|---|
 | the matches it created (`matches`, `sets`, `events`, `match_live_state`), with `created_by` set NULL | official match records (results, rosters, officials, signatures) that the clubs and the league rely on; a match is not the scorer's personal data. Without an owner they are read-only except for admins and editors, like the rows that predate `005` (see "Who may write a match"). |
 | the officials list of those matches, including the scorer's own name and date of birth | it is part of the match record, exactly as on the paper scoresheet |
-| the scoresheet files it uploaded (`scoresheets/…`) | the approved scoresheet is the match's official record. With no owner left nobody can read it through the API; an operator can grant it to the club or federation account (`scripts/storage-owner.mjs grant`). |
+| the scoresheet files it uploaded (`scoresheets/…`) | the approved scoresheet is the match's official record. With no owner left nobody can read it through the API; an operator can grant it to the club or federation account (`scripts/storage-owner.mjs grant`). A PDF recorded for its match (`match_scoresheets`, `stored_by` set NULL) stays in the manager's Scoresheets tab. |
 | beach competition matches it created or claimed, with `created_by`/`claimed_by` NULL | competition records, same reasoning |
 | the account approvals it gave or sent (`match_approvals`), with `user_id`/`requested_by`/`revoked_by` NULL and the name snapshot kept | the approval of a result is part of the match record, like a drawn signature; also on closed matches |
 | anything on the user's devices (IndexedDB matches, cached profile) | not the server's to delete; the app clears the stored session and cached profile |
@@ -595,6 +776,34 @@ accounts); client `roles` in the metadata are dropped and `profiles.roles` is
 never writable by a client. A new account has no role: it is pending until an
 admin approves it or it redeems an invite code (see "Approved scorers").
 
+### Retention of match records and requests about one person (`db/042`)
+
+A match is kept for its season (July to June; `official_season`, else the
+season of `coalesce(scheduled_at, created_at)`) and
+`public.app_settings.retention_years` seasons after it (default 2, 1 to 30;
+privacy policy section 16 names the number). `lib/retention.js` sweeps 20
+minutes after start and then daily, as `ov_app` with `ov.allow_closed`: the
+expired matches with everything that cascades from them and their activity log
+(db/043 keeps their external_id, so an app that still holds one gets
+`OV_MATCH_DELETED`), the `scoresheets/` day folders before the cutoff day with
+their `match_scoresheets` rows, and `svrz_games` / `svrz_games_removed` rows of
+games before it. At most 2,000 matches a run, 100 per transaction; a run that
+removed anything is audited as `retention.sweep` (counts only).
+`RETENTION_SWEEP=off` skips it (a dev copy of production data). Change the
+number with `UPDATE public.app_settings SET retention_years = <n> WHERE id;`
+(read on every run). Tests: `tests/retention.pg.test.js`.
+
+A data subject's correction or erasure (privacy section 19) goes through
+`scripts/redact-person.mjs`, on the host as the owner role
+(`OV_MIGRATE_DATABASE_URL`, as for `scripts/migrate.mjs`), dry run first:
+`--first --last [--dob] [--match <external_id>]...`, `--set-dob` for a
+correction, `--drop-files` to remove the touched matches' scoresheet files
+(made again from the corrected record), `--actor <admin uuid>` for the audit
+entry, `--register FILE` (kept outside the database, next to the backups'
+keys) and, after a restore from a backup older than a request,
+`--reapply FILE`. See the script's header for what it reaches and what not.
+Tests: `tests/redactPerson.pg.test.js`.
+
 ### Still open (accepted, with impact)
 
 - **A relay room that is not in the database** (LAN, or a cloud match the
@@ -628,7 +837,7 @@ answers at the same backend URL. Optional, to decouple the two: first ship a
 backend-only change to the current production backend that adds `X-OV-Proto`
 to `Access-Control-Allow-Headers`.
 
-Match-info email (`/api/match/send-info`) requires `RESEND_API_KEY`, or the SMTP settings with `SMTP_LEGACY_ROUTES=1`. The support form (`/api/contact`) needs the SMTP settings of the account emails ("Account emails" above), nothing else.
+Match-info email (`/api/match/send-info`) requires `RESEND_API_KEY`. The support form (`/api/contact`) needs the SMTP settings of the account emails ("Account emails" above), nothing else.
 
 ## Self-hosted storage (`lib/storage.js`)
 
@@ -640,11 +849,12 @@ Replaces Supabase Storage behind `POST /api/storage/upload`, `/download`, `/list
 | `STORAGE_BACKUP_MIN_FREE_MB` | `backup/` writes are refused (507) when free space would drop below this, so the space above the scoresheets floor stays for scoresheets. | `2048` |
 | `STORAGE_SCORESHEETS_MIN_FREE_MB` | Smaller floor for `scoresheets/` writes, so the volume never reaches ENOSPC. | `256` |
 | `STORAGE_MAX_FILE_MB` | Per-object size cap (413 above it). server.js must read the body with `storage.maxBodyBytes` (base64 + 64 KiB) for this to hold. | `5` |
+| `STORAGE_BACKUP_ACCOUNT_MAX_MB` | What one account may hold in `backup/` (its `{user id}/` folder, counted on disk; 507 `OV_STORAGE_ACCOUNT_FULL` above it). `0` turns it off. Sized from the backups themselves: the scorer uploads the whole match once a minute, about 50 MB for a three-set match and 100-250 MB for a long five-set one, kept 30 days; set it from the largest `backup/{user id}/` folders measured on the server. An account past 80% of it, and a bucket that grows by more than 2 GB (`backup/`) or 1 GB (`scoresheets/`) in an hour, write a `❌ [Storage] ALERT` line (and `storage.health().alerts`). | `6144` |
 | `STORAGE_OWNER_SCOPE` | `off`, `require` (first path segment must be the caller's user id) or `prefix` (user id prepended transparently), on the buckets of `STORAGE_OWNER_SCOPE_BUCKETS`. Any other value stops the server at startup. | `prefix` |
 | `STORAGE_OWNER_SCOPE_BUCKETS` | Buckets the owner scope applies to: a comma list or `all`. With the default every account sees only its own `backup/` objects (see "Security model"). | `backup` |
 | `STORAGE_UPLOADER_READ_BUCKETS` | Buckets whose objects only the account that created them may read, replace or list (see "Who can read a scoresheet" below); `none` turns it off. Any bucket other than `scoresheets`/`backup` stops the server at startup. | `scoresheets` |
 
-Guarantees: paths are NFC-normalised and validated (no `..`, no absolute paths, no backslashes, no C0/C1 control, bidi, zero-width or line-separator characters, no dot-names, no look-alikes that NFKC-normalise to `.` or `/`, no slash look-alikes such as U+2215; and, so the same data works on the Windows desktop app, no `:` `<` `>` `"` `|` `?` `*`, no trailing dot or space, no device names such as `CON` or `nul.json`); every directory on the way is checked with `lstat`, so symlinks are never followed; writes go to `{STORAGE_DIR}/.tmp` and are renamed into place (`upsert:false` uses `link()` so it is atomic too); only `application/json`, `text/plain` and `application/pdf` are accepted. A per-user write quota hook (`checkQuota`, with a ready-made `createWriteQuota()`) and `sweep()` for the 30-day `backup/backups/` retention are included. The quota is charged only for writes that would otherwise succeed; approved scoresheets (`{YYYY-MM-DD}/game{n}_final.json` in `scoresheets/`) skip the write count but still count against a byte budget. An `ownerScope` function returns `true` (allow as is), a path string (use that path), or anything else (403).
+Guarantees: paths are NFC-normalised and validated (no `..`, no absolute paths, no backslashes, no C0/C1 control, bidi, zero-width or line-separator characters, no dot-names, no look-alikes that NFKC-normalise to `.` or `/`, no slash look-alikes such as U+2215; and, so the same data works on the Windows desktop app, no `:` `<` `>` `"` `|` `?` `*`, no trailing dot or space, no device names such as `CON` or `nul.json`); every directory on the way is checked with `lstat`, so symlinks are never followed; writes go to `{STORAGE_DIR}/.tmp` and are renamed into place (`upsert:false` uses `link()` so it is atomic too); only `application/json`, `text/plain` and `application/pdf` are accepted. A per-user write quota hook (`checkQuota`, with a ready-made `createWriteQuota()`), a total per account and owner-scoped bucket (`maxOwnerBytes`) and `sweep()` for the 30-day `backup/` retention are included (`sweepAppLogs()`: the app's uploaded console logs, `backup/<account>/logs/`, also after 30 days; server.js runs both daily). The quota is charged only for writes that would otherwise succeed; approved scoresheets (`{YYYY-MM-DD}/game{n}_final.json` in `scoresheets/`) skip the write count but still count against a byte budget. An `ownerScope` function returns `true` (allow as is), a path string (use that path), or anything else (403).
 
 A download of a missing object answers **200** `{ data: null, error: { code: 'OV_STORAGE_NOT_FOUND' } }` rather than 404: the scorer reads its log file / backups before the first write, and a 404 made every browser log a console error. `apiStorage` returns it as `{ data: null, error }` exactly as before.
 
@@ -652,7 +862,7 @@ A download of a missing object answers **200** `{ data: null, error: { code: 'OV
 
 Scoresheets (`scoresheets/{YYYY-MM-DD}/game{n}_{key}[_final].{json,pdf}`) carry players' and officials' names, dates of birth and signature images. **Only the signed-in account that created a file can read, replace or list it through `/api/storage`.** Everyone else gets 401 (no session) or 403 `OV_STORAGE_FORBIDDEN`. The bucket is never public. The one kind of link is the manager's 10-minute view link below (owner decision 2026-10-13); there are no lasting share links.
 
-- **The manager's Scoresheets tab** (`lib/scoresheets.js`, the one exception): admins and the competition managers of a sport (`competition_manager` for indoor, `beach:competition_manager` for beach) list that sport's matches with `GET /api/scoresheets?app=indoor|beach&state=closed|open|all&q=` and open a match's stored **PDF** with `GET /api/scoresheets/:id/pdf[?download=1]` (the role of the MATCH's sport is checked). The server finds the file itself (the scheduled UTC day's folder, `beach/` for beach; for indoor `game{game_n or external_id}_k…pdf`, for beach `game{n}_{external_id}.pdf`; the newest when there are several) and reads it past the owner check. Every opening is written to the audit log first (`scoresheet.read`, with the match, `download` and the file's time, never the file name); without that entry no file is sent. The JSON files and the listing of folders stay uploader-only.
+- **The manager's Scoresheets tab** (`lib/scoresheets.js`, the one exception): admins and the competition managers of a sport (`competition_manager` for indoor, `beach:competition_manager` for beach) list that sport's matches with `GET /api/scoresheets?app=indoor|beach&state=closed|open|all&q=` and open a match's stored **PDF** with `GET /api/scoresheets/:id/pdf[?download=1]` (the role of the MATCH's sport is checked). The server takes the newest PDF stored for the match (`public.match_scoresheets`, next bullet) and reads it past the owner check. A match without one (files stored before `db/033`) is found by the name as before (the scheduled UTC day's folder, `beach/` for beach; for indoor `game{game_n or external_id}_k…pdf`, for beach `game{n}_{external_id}.pdf`; the newest when there are several), but only a file without any record, and whose owner record names the match's creator, the account that closed it, an editor it had at the close or an editor an admin added (`POST /api/admin/matches/:id/editors`, `match_editors.granted_via = 'admin'`: a deliberate grant). A record stays when its match is deleted (`match_id` NULL; the app's sync queue deletes open and test matches), so a file stored for one match never becomes another's by its name. An account that proves the game PIN after the close becomes an editor (a shared tablet's next account sends the approval's PDF so), but its files of the name without a record are never the closed match's served sheet for that. A file such an account stored within 6 hours of the close, after it became an editor (`LATE_EDITOR_WINDOW_MS`: a shared tablet before `db/033`), keeps other files out of a match that has no file of its own accounts (no other PDF is stored for it, admins excepted, until an operator records one); its files of any other time hold nothing. The names also find a PDF stored since `db/033` whose record is gone (a database restored from an older dump) or was never written (an older backend put back). The deploy step below records these files, so the names are left for a closed match the step cannot record (a file the names give to two closed matches); the server logs each such match once (`[scoresheets] closed match <id> has no recorded PDF: served by its file name`). Every opening is written to the audit log first (`scoresheet.read`, with the match, `download` and the file's time, never the file name); without that entry no file is sent. The JSON files and the listing of folders stay uploader-only.
 - **The manager's view link** (owner decision 2026-10-13): **View** in that tab opens the PDF in the browser's own viewer, which shows and saves it under its name (`game402397_1L-D_2026-10-10.pdf`). A `blob:` URL saved it as `<uuid>`, and a new tab cannot send the session's `Authorization` header. So `POST /api/scoresheets/:id/view` reads the PDF exactly as `GET …/pdf` (same role check, same `scoresheet.read` audit entry, written before the link exists) and answers `{ path, filename, expires_at }`, with `path` = `/api/scoresheet-view/<token>/<file name>`. `GET` of that path serves the PDF inline (`Content-Disposition: inline; filename=…`, `Cache-Control: no-store, private`, `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex`) without a session; anything else under `/api/scoresheet-view/` is 404 (rate-limited per IP). The token is 32 random bytes and is the capability. Its limits:
   - it lasts 10 minutes (`VIEW_LINK_TTL_MS`);
   - it is kept in the server process only, so a restart ends every link;
@@ -660,10 +870,11 @@ Scoresheets (`scoresheets/{YYYY-MM-DD}/game{n}_{key}[_final].{json,pdf}`) carry 
   - it answers only with its own file name;
   - whoever holds it within those 10 minutes can open that one PDF, which is the trade-off the owner accepted for the viewer's name.
 
-- **Ownership comes from creating the file, not from uploading to its path.** The first upload of a path records its account as the owner in `{STORAGE_DIR}/.owners/{bucket}/{sha256(path)}.json` (`{"key":"<path>","owners":["<user uuid>"]}`, written atomically). An upload to an existing file by anyone else is refused with 403 and changes nothing: there is no way to add yourself to someone else's file. Owner check, record and commit of one path run under one lock in the server process, so a download never sees a file under an older record. (One server process per `STORAGE_DIR`.)
-- **The path cannot be claimed in advance.** Game numbers and dates are public (`/api/db` reads), so a key-less name could be squatted by anyone who uploads first. The scorer app therefore names the files with `{key}` = `k` + 128 random bits that it keeps on the scoring device (localStorage, never on the match record, which is synced and backed up). `n` is the game number, or the external id of a match without one (no shared `unknown` name).
+- **A match's PDF is the one stored for it** (`db/033_match_scoresheets.sql`, `lib/scoresheets.js` `storePdf`). Game numbers, external ids and days are public, so the name alone proves nothing: any approved scorer could add a newer `game{n}_k…pdf` to the match's day, and that file was what the managers opened and the final mail sent. A `.pdf` upload to `scoresheets/` is therefore stored only for a match the caller may write (the creator, an editor, an admin: `assertMatchWritable`), and recorded for it in `public.match_scoresheets` (path, match, account, SHA-256, time). The match is the one the app names (`match_external_id` in the upload body, OpenVolley since this change) or else the one its path names (older apps, OpenBeach); the name must fit that match. A beach name `game{n}_{seed}.pdf` is one match's: the seed is everything after the first `_` (OpenBeach's `n` never has one) and must be that match's external id, path-safe, so a match made with a tail of a real seed (`match_<time>_<random>`) does not fit. An indoor name can fit several matches (game numbers repeat), but each upload has its own random path and is recorded for the match found: the caller's own matches first (creator or editor), then those of the path's day, so matches others add under the name cannot push the caller's out; then a closed match still without its approval's PDF (none recorded since its last reopen, none on disk by its name; an older app sends the PDF of the approval that closed it, which can come after the game was entered again in a new match); then a match an admin has not released as a duplicate (`release-game`: the game was entered again), the newer first. Answers: 403 `OV_NOT_MATCH_OWNER` / `OV_SCORER_REQUIRED`; `OV_MATCH_NOT_FOUND` while the match is not in the cloud yet: 404 for the match the app names (the app retries), 503 with `Retry-After` and `retryable: true` for a path no match fits (older apps and OpenBeach park a 4xx for an hour; the final mail would go out without the PDF in the meantime); 400 for a path or match that do not fit; 415 `OV_STORAGE_CONTENT_TYPE` for bytes that do not start with `%PDF-`. After the close a match's PDF is stored once per approval: the approval's PDF (queued with the approval, whose write closes the match, so it arrives just before or after the close), unless a PDF was already stored since the match's last reopen (`match.reopen` in the audit log): one recorded, or, for a match closed before `db/033` without a record, the file the Scoresheets tab serves by its name. It may come from the match's creator, the closing account, an editor it had at the close or an editor an admin added (the admin console's **Add editor**, `POST /api/admin/matches/:id/editors`; also for an account that was already an editor by the game PIN, which is then one by the admin's grant) at any time, and from an account that became an editor by the game PIN after the close only for 6 hours after the close (`LATE_EDITOR_WINDOW_MS`, owner decision): a club tablet may send it under the next account signed in there, which takes the match over with the game PIN. Within those 6 hours whoever proves the game PIN can therefore store the first PDF of a closed match that has none yet (the trade-off for the shared tablet); later such an account gets 409 `OV_MATCH_CLOSED`. An admin who adds that account as an editor lets its later uploads through (an older app or OpenBeach retries a refused one hourly; the new app drops it), or stores the PDF itself. The window bounds only that first store: a file stored within it is replaced as any uploader's (below), also past its end. That file stays the closed match's also when an upload is for another match of the same name the same scorer writes (a test match, a later match that day, a released duplicate; also for an old match row without an external id): 409 `OV_MATCH_CLOSED` at its path, and a new file of that other match is that one's, never served for the closed match, also once that match is deleted (its record stays, without the match). With `db/033` deployed, `scripts/scoresheet-records.mjs` records each such file for its match ("Files stored before this change" below). The same bytes again (a resent job) answer 200 and change nothing. That same file may be replaced by its uploader or the closing account for 10 minutes after the close, or after its first store when that came later (`CLOSED_REPLACE_GRACE_MS`; a replacement does not extend it): the queue sends every approval file in turn, and after a reopen and a new approval an older app or OpenBeach sends the first approval's PDF just before the corrected one (the new app drops the older unsent files when it queues the new approval's, and when the match is reopened). Any other file, and that file later, is 409 `OV_MATCH_CLOSED` until an admin reopens the match (then the next close takes the corrected PDF); the new app drops an upload refused so. Indoor JSON files are not tied to a match (nobody but their uploader reads them); an OpenBeach JSON is ("The path cannot be claimed in advance" below).
+- **Ownership comes from creating the file, not from uploading to its path.** The first upload of a path records its account as the owner in `{STORAGE_DIR}/.owners/{bucket}/{sha256(path)}.json` (`{"key":"<path>","owners":["<user uuid>"]}`, written atomically). An upload to an existing file by anyone else is refused with 403 and changes nothing: there is no way to add yourself to someone else's file. The one exception is the server's own (`lib/scoresheets.js`, never a request field): a match's own name (an OpenBeach seed, an indoor random part) is written by an account that may write the match also when another account created that file first; the match's creator, editors and closing account stay owners, every other owner loses the file. A file without any owner record stays as it is. Owner check, record and commit of one path run under one lock in the server process, so a download never sees a file under an older record. (One server process per `STORAGE_DIR`.)
+- **The path cannot be claimed in advance.** Game numbers and dates are public (`/api/db` reads), so a key-less name could be squatted by anyone who uploads first. The scorer app therefore names the files with `{key}` = `k` + 128 random bits that it keeps on the scoring device (localStorage, never on the match record, which is synced and backed up). `n` is the game number, or the external id of a match without one (no shared `unknown` name). OpenBeach's names have no random part (`beach/{day}/game{n}_{seed}[_final].{pdf,json}`, the seed = the match's external id, public too), so the server ties them to the match instead: a beach PDF as every PDF (above), and a JSON of a seed whose match is in the cloud is written only by an account that may write that match (403 `OV_NOT_MATCH_OWNER`; `lib/scoresheets.js` `storeBeachJson`). Before the match's insert (OpenBeach's coin toss copy can come first) it is stored as before: the seed is not public until then. A file another account created at such a path, also before this rule, goes to the match's scorer with the next upload (previous bullet). Uploads to `scoresheets/` go only to the apps' paths, of every version: `{day}/game….{pdf,json}` and `beach/{day}/game….{pdf,json}`, `{day}` = `YYYY-MM-DD` (`lib/scoresheets.js` `isScoresheetUploadPath`; any other path 400 `OV_STORAGE_INVALID_PATH`). `lib/storage.js` never replaces a folder with a file or the other way round, so a file at a day folder's name (`2026-11-15`, `beach/2026-11-15`), or one below a scoresheet's name (`…/game7_<seed>.pdf/x.json`), turned every later upload of that day or match into 409 `OV_STORAGE_CONFLICT`. Such entries stored before this rule are removed by `scripts/scoresheet-paths.mjs` (below).
 - **Finding your own file.** `list` in an uploader-only bucket shows the caller only its own files (folders are always shown), so the random part never leaks. The viewer (`/scoresheet/?date=…&game=…`, opened from **My Matches**) lists the date folder and opens the caller's newest approved file of that game. The session lives in the browser per origin, so the standalone archive site (scoresheet subdomain, `frontend/src/ScoresheetApp.jsx`) has its own email/password sign-in: its View links ask for it and then open the scoresheet for its uploader; nobody else can open it there either.
-- **Deleting.** `POST /api/storage/remove {bucket, paths:[…]}` (1-100 paths) deletes the caller's own objects only: in `scoresheets/` an owner of the object, in `backup/` the caller's own folder; any other bucket is 403. The object's owner record (`.owners/{bucket}/{sha256}.json`) is deleted with it, under the same lock. Answer `{data:[{name}]}` with the paths removed (missing ones are skipped). So the uploader of a scoresheet may withdraw it, just as it may already replace it with a new upload: "kept as the official record" (see "Deleting an account") means the server never deletes it on the uploader's behalf, not that the uploader cannot. No app screen calls `remove` today.
+- **Deleting.** `POST /api/storage/remove {bucket, paths:[…]}` (1-100 paths) deletes the caller's own objects only: in `scoresheets/` an owner of the object, in `backup/` the caller's own folder; any other bucket is 403. The object's owner record (`.owners/{bucket}/{sha256}.json`) is deleted with it, under the same lock. Answer `{data:[{name}]}` with the paths removed (missing ones are skipped). So the uploader of a scoresheet may withdraw it while the match is open, just as it may replace it with a new upload: "kept as the official record" (see "Deleting an account") means the server never deletes it on the uploader's behalf, not that the uploader cannot. The PDF of a closed match (recorded for it, or, for a closed match without a record, the file its name gives it, see above) is not removed: 409 `OV_MATCH_CLOSED` for the whole request, admins excepted; a removed PDF's `match_scoresheets` row goes with it. No app screen calls `remove` today.
 - **Clean-up.** `sweep()` (5 min after start, then daily, with the backup sweep) removes owner records whose file is gone (after a few minutes' grace, under the same lock), in every bucket's `.owners` folder, so a stale record can never hand rights to a file written later at the same path. That is also what clears records left by objects deleted outside the API (a test clean-up with `rm`): the server log line `[Storage] sweep {…"ownerRecordsRemoved":N}` counts them. Uploads only ever record one owner; the list is capped at 16 for operator grants.
 
 Why not a share link: a link is a bearer secret that keeps working for whoever it is forwarded to and ends up in browser history, chat logs and referrers. (The manager's view link is one too, which is why it lives 10 minutes, is made only after the audited role check, and is never sent as a referrer.) Why not "the match's owner": rows written before `db/005_match_ownership.sql` have no server-verified owner, and any account can write a `user_matches` row for any match, so they cannot prove who scored a match.
@@ -679,7 +890,28 @@ node scripts/storage-owner.mjs show  2026-05-12/game4711_final.json
 node scripts/storage-owner.mjs set   2026-05-12/game4711_final.json            # nobody again
 ```
 
-The script uses `STORAGE_ROOT` / `STORAGE_DIR` like the server and can run while it does. The viewer finds a granted legacy file too (its name parses without the key).
+The script uses `STORAGE_ROOT` / `STORAGE_DIR` like the server and can run while it does. The viewer finds a granted legacy file too (its name parses without the key). The manager's Scoresheets tab shows a PDF without an owner record (or with one that names nobody who created, edits or closed the match) no longer (`db/033`, see above). Granted to the match's creator, an editor it had at the close (or one an admin added) or the account that closed it, it is found again. Once that account is deleted (the match's `created_by` / `closed_by` set NULL, its owner records gone), record the file for its match instead, which no account deletion undoes:
+
+```sh
+sha256sum /data/storage/scoresheets/2026-05-12/game4711_k….pdf; stat -c '%s %Y' /data/storage/scoresheets/2026-05-12/game4711_k….pdf   # bytes, file time
+psql "$DATABASE_URL" -c "INSERT INTO public.match_scoresheets (path, match_id, sha256, size, stored_at, first_stored_at) VALUES ('2026-05-12/game4711_k….pdf', '<match uuid>', '<sha256>', <bytes>, to_timestamp(<file time>), to_timestamp(<file time>))"
+```
+
+Write the file's own time as `stored_at` and `first_stored_at`, as the deploy step below does: with the default (now) its uploader or the closing account could replace the file with other bytes for 10 minutes after the `INSERT` (`CLOSED_REPLACE_GRACE_MS` counts from `first_stored_at`).
+
+**After `db/033` and the backend that reads it** (deploy steps, not optional; `db/033` and `apply-roles.sh` go before or with the backend, as every migration: a backend without the table answers PDF uploads with 503 and the apps send them again, and a PDF the previous backend stores after `db/033` ran is found by its name and recorded by the step). First remove what an upload of another path left where an app's folder or file belongs (`scripts/scoresheet-paths.mjs`: a file at a day folder's name, a folder at a scoresheet's name; it lists them, `--apply` removes each with everything below it and their owner records, nothing else; idempotent, safe while the server runs):
+
+```sh
+node scripts/scoresheet-paths.mjs              # dry run: the entries
+node scripts/scoresheet-paths.mjs --apply      # remove them
+```
+
+Then record the PDF of every match closed before `db/033`, the one the Scoresheets tab finds by its name today (`lib/scoresheets.js` `recordOldPdfs`): its time is kept as `stored_at` / `first_stored_at`, and from then on the record holds it like every later match's PDF (the closed-match rules, no other match's name reaches it, an account deletion no longer hides it). A file that the names give to two closed matches is left to the names (`shared`; served and held as above, logged), and so is a match whose PDF the tab does not show (no owner record of its accounts: the manual steps above). A match whose only file of its name is from an editor added after the close by the game PIN, stored after it became an editor and within 6 hours of the close (a shared tablet before `db/033`), is counted (`only with a file of an editor added after the close`) and left: that file is not served, and it keeps other files out; once the club confirms who scored the match, record it with the manual `INSERT` above. Such an editor's file of any other time counts as none (`without a PDF`). Idempotent; it prints counts only and can run while the server does. Run it again after a database restore from an older dump, or after an older backend image served for a while: it records the PDFs stored since that have no record (until then they are found by their names, and logged):
+
+```sh
+node scripts/scoresheet-records.mjs            # dry run: counts
+node scripts/scoresheet-records.mjs --apply    # record
+```
 
 Wired in server.js (cloud mode): one `/api/storage/*` block, session required,
 the body read with `storage.maxBodyBytes`, an oversized body answered with
@@ -738,14 +970,21 @@ Connected dashboard clients (referee, bench, livescore), for the scorer's
 tablet status and the LAN server dashboard.
 
 - **LAN relay:** the full list as before: `clients[]` with `id`, `ip`, `role`,
-  `team`, `matchId`, `connectedAt`, and `matchSubscriptions` (watchers per
-  room). Optional `matchId` filter.
+  `team`, `proved`, `matchId`, `connectedAt` (one entry per socket and match it
+  watches or waits for), and `matchSubscriptions` (watchers per room).
+  Optional `matchId` filter.
+- Both modes: `role` is `referee` or `bench` (with `team`) only for a socket
+  that proved that role's PIN or match token (`proved: true`, also in
+  `referees` / `benches`); a socket that only named the role
+  (`subscribe-match { device }`, `join_match { role }`) is `subscriber` (or
+  `livescore`), `proved: false`.
 - **Cloud** (`DATABASE_URL` or `IS_CLOUD`), anonymous: counts only.
   Without `matchId`: `{access:"counts", totalClients, dashboardClients,
-  referees, benches, clients: []}`, no list of rooms. With `matchId`: the same
+  referees, benches, clients: []}`, no list of rooms (`dashboardClients`:
+  the watching sockets, each once however many matches it follows). With `matchId`: the same
   counts for that match and one entry per watching tablet carrying only
-  `{role, team, matchId}` (what the scorer's tablet status reads; no id, IP or
-  connect time).
+  `{role, team, proved, matchId}` (what the scorer's tablet status reads; no
+  id, IP or connect time).
 - **Cloud with proof:** `X-OV-Match-Pin` (a PIN of that match, as for
   `GET /api/match/:id`; a wrong one counts as a failed guess) or
   `X-OV-Match-Token` with `matchId`: `access:"detail"`, the entries of that
@@ -792,14 +1031,21 @@ Validate a 6-digit PIN for referee/bench access against the relay's copy. The
 answer carries the match (no PINs) and `token`, the match access token.
 
 ```json
-{ "pin": "123456", "type": "referee|homeTeam|awayTeam", "sport": "indoor|beach" }
+{ "pin": "123456", "type": "referee|homeTeam|awayTeam", "sport": "indoor|beach", "matchId": "match_…", "gameNumber": "12" }
 ```
+
+`matchId` (the room key, the match's seed key) or else `gameNumber` names the
+match the tablet picked: the PIN is compared with that match only (404
+otherwise). Without either (older apps) every live match of the sport is
+searched; a PIN two of them share is refused with 409
+`{ code: "game-number-required" }` and no token, the tablet asks for the game.
 
 `sport` (default `indoor`) limits the search to rooms of that sport: a room is
 `beach` when its scoreboard syncs `team1Team`/`team2Team`/`team1Players`/
 `team2Players` (openbeach) or names `sportType`/`sport_type` `beach`. A beach
 answer carries `match.sportType: "beach"`; the indoor answer is unchanged. Any
-other `sport` is 400.
+other `sport` is 400, any other `type` 400 `Invalid PIN type` (as on the LAN
+relays).
 
 ### `POST /api/match/claim` (cloud, session)
 
@@ -809,7 +1055,32 @@ other `sport` is 400.
 ### `POST /api/match/upload-roster` (cloud, upload PIN)
 
 `{ matchExternalId, team: "home"|"away", pin, roster, coachSignature?, captainSignature? }` ->
-200 `{ success: true }`; 403 wrong PIN or match; 409 match no longer in setup.
+200 `{ success: true }`; 400 `Invalid roster (<field>: <problem>, …)`; 403 wrong PIN or match;
+409 match no longer in setup.
+
+The roster passes the scorer app's own rules first (`lib/uploadedRoster.js`, a
+copy of `frontend/src/domain/uploadedRoster.js`; `tests/uploadedRoster.test.js`
+compares the two): `players` and `bench` are lists of plain objects (at most 30
+players, one official per bench role), names are text of at most 80 characters,
+dates of birth are dates, shirt numbers 1 to 99 or empty and never twice (7 and
+"7" are one number), one captain at most, each libero slot once, and the coach's
+and captain's signatures are the signature pad's PNG data URLs (`lib/teams.js`
+`SIGNATURE_RE`). It is stored in that shape (other keys dropped). The status is
+read again with the row locked in the write: a coin toss between the PIN check
+and the write answers 409, and two teams uploading at the same moment both
+keep their signatures. An upload fills only signature keys the match does not
+have (empty or absent): it never replaces the scorer's or an earlier upload's.
+A match update through `/api/db` whose `status` leaves `setup` for `live` (the
+coin toss) or `ended` also sets both `connections.pending_*_roster` to null, so
+a device that restores the running match finds no roster to accept. A closing
+write (`approved`, `final`) is passed on as sent: `db/007` lets a closed match
+take nothing but approved -> final or a no-op rewrite.
+
+Upload Roster apps older than these rules (installed or cached) can build
+rosters the rules refuse (two captains, a libero slot twice, two officials left
+on the role Coach, a number above 99 from the old PDF reader) and show the 400
+as "the scoresheet could not be reached": the coach updates the app or hands
+the roster to the scorer.
 
 The upload PINs reach the server with the match: Match Setup's Create match
 sends the full `connection_pins` (referee, benches, both upload PINs) with the
@@ -844,34 +1115,34 @@ Errors: 401 no session, 403 `OV_FORBIDDEN` (role), 400 `OV_INVALID_REQUEST`
 | `GET /api/admin/official-games?from=&to=&q=` | admin | `svrz_games` rows (default Zurich today -1 .. +14, at most 120 days) with the claiming match, if any |
 | `GET /api/admin/matches?state=closed\|open\|all&q=&limit=` | admin | non-test matches with scorer, editors, `closed_at`, `closed_by_name` |
 | `POST /api/admin/matches/:id/reopen {reason}` | admin | `{ match: { id, external_id, status: 'ended', closed_at: null } }`; 409 `OV_NOT_CLOSED` |
-| `POST /api/admin/matches/:id/editors {email}` | admin | `{ role: 'editor'\|'creator' }` |
+| `POST /api/admin/matches/:id/editors {email}` | admin | `{ role: 'editor'\|'creator' }`; the editor is one by the admin's grant (`granted_via = 'admin'`, also when it was one by the game PIN before): it may store a closed match's first PDF at any time ("A match's PDF is the one stored for it") |
 | `POST /api/admin/matches/:id/release-game {reason}` | admin | `{ match: { id, official_game_exempt: true } }` (closed matches too) |
 | `GET /api/admin/audit?limit=&before=&action=` | admin | `{ entries, next_before }`, newest first |
 | `GET /api/admin/approvals?q=&include_revoked=0\|1&limit=` | admin | account approvals by short id, game number or `external_id`, with email, hash prefixes and the match. `GET /api/admin/matches` and `official-games` (`claim`) carry the active `approvals` |
 | `GET /api/account/approval-pin`, `POST /api/account/approval-pin {password, pin}`, `POST /api/account/approval-pin/remove {password}` | any account (set: referee or scorer, confirmed address) | approval PIN status / set / remove ("Approval PINs"); 403 `OV_PASSWORD_INVALID`, 400 `OV_APPROVAL_PIN_FORMAT`/`_WEAK` |
 | `POST /api/approvals {external_id, slot, email, pin, result, device_id?}`, `GET /api/approvals?external_id=`, `DELETE /api/approvals/:id` | owner, editors, admins (GET and undo: also the approver) | approve, list, undo; error codes in `../docs/account-approval-spec.md` 3.4 |
-| `GET /api/saved-teams?sport=indoor\|beach\|all` | scorer, competition manager, admin | `{ version, fetched_at, sport, competitions, teams: [{ …, sport, players, staff }] }` (archived competitions included). No `sport` (or `''`) = **indoor only**, so a 2.1.0 client never sees a beach row; any other value is 400. `version` is the newest `updated_at` of the filtered rows (`'0'` when none). Every competition and team carries `sport`, every player `country` (`null` for indoor). |
-| `POST /api/saved-teams/competitions`, `PATCH`/`DELETE …/competitions/:id` | competition manager, admin | `{ competition }` (201 on create) / `{ deleted: true }` (cascades). Create takes `sport: 'indoor'\|'beach'` (absent/`null` = indoor); it is fixed: any `sport` in a PATCH is 400 `sport: cannot be changed`. Season: indoor `'2026/27'` (consecutive years), beach `'2026'` (2000-2100). `vm_leagues` (VolleyManager) is indoor only: a non-empty list on beach is 400. |
-| `POST /api/saved-teams/teams`, `PATCH`/`DELETE …/teams/:id` | competition manager, admin | `{ team }` (201; 409 `OV_DUPLICATE` for a name already in the competition) / `{ deleted: true }` |
+| `GET /api/saved-teams?sport=indoor\|beach\|all` | scorer, competition manager, admin | `{ version, fetched_at, sport, competitions, teams: [{ …, sport, players, staff }] }` (archived competitions included). Owner decision 1: an account without the indoor competition manager right (a scorer) gets of indoor only the teams of its own matches in the current season, of competitions that are not archived: its clubs' teams, the teams they meet at home (`svrz_games`), the teams of the official games of the matches it created or edits (`lib/savedTeams.js` `getBundle` `scope`). No `sport` (or `''`) = **indoor only**, so a 2.1.0 client never sees a beach row; any other value is 400. `version` is the newest `updated_at` of the filtered rows (`'0'` when none). Every competition and team carries `sport`, every player `country` (`null` for indoor). |
+| `POST /api/saved-teams/competitions`, `PATCH`/`DELETE …/competitions/:id[?confirm=<name>]` | competition manager, admin | `{ competition }` (201 on create) / `{ deleted: true }` (cascades; a competition with teams only with its name as `confirm`, else 400 `OV_CONFIRM_NAME`; audited `saved_teams.competition_delete` with the name and the counts). Create takes `sport: 'indoor'\|'beach'` (absent/`null` = indoor); it is fixed: any `sport` in a PATCH is 400 `sport: cannot be changed`. Season: indoor `'2026/27'` (consecutive years), beach `'2026'` (2000-2100). `vm_leagues` (VolleyManager) is indoor only: a non-empty list on beach is 400. |
+| `POST /api/saved-teams/teams`, `PATCH`/`DELETE …/teams/:id[?confirm=<name>]` | competition manager, admin | `{ team }` (201; 409 `OV_DUPLICATE` for a name already in the competition) / `{ deleted: true }` (a team with players or officials only with its name as `confirm`; audited `saved_teams.team_delete`) |
 | `GET /api/club/:id/teams`, `POST /api/club/:id/teams/:teamId/invites {max_uses?, expires_at?}`, `DELETE /api/club/:id/teams/:teamId/managers/:userId` | club manager of the club, admin | db/023. `{ teams: [{ id, name, managers, open_links }] }` / `{ invite, code }` (a team link: at most 10 uses and 90 days, default 3 and 30; the code is shown once) / `{ removed }` (the team link only) |
 | `GET /api/team/:id`, `GET`/`PUT /api/team/:id/squad`, `GET /api/team/:id/games`, `GET`/`PUT`/`DELETE /api/team/:id/roster?game=<n>` | team manager of the team, club manager of its club, admin | db/023. The squad is the team's saved team of the current season (`PUT {players, staff}`, saved-team rules; the first save creates it in the season's competition of the team's league, made when there is none). Games: the team's `svrz_games` from today, each with `side`, `locked` (kick-off passed) and a roster summary. A game roster `{players, staff, coach_signature?, captain_signature?}`: at most 14 players, each with a number, one captain, at most 2 liberos, at most 5 officials with each role once; signatures PNG data URLs (≤ 200,000 characters; the coach's needs a Coach, the captain's a captain); no lock (any time); 404 `OV_GAME_NOT_YOURS` for a game the team does not play. The content is deleted when a scorer accepts it; rows go 14 days after the game. Admins see every team (`/api/me` `managedTeams`). |
 | `GET /api/game-rosters[?games=<n>,<n>]` | indoor `canReadTeams` (scorer, competition manager, admin) | db/023. `{ fetched_at, games: [{ game_number, season }], rosters: [{ game_number, season, side, team_name, kickoff, players, staff, updated_at, updated_by_name }] }`: without `games` the home games of the caller's clubs from today to +7 days, with `games` those (at most 50). `games` lists every game covered, so the scoring tablet drops a roster the team deleted or a scorer accepted. Accepted rosters are left out. |
 | `POST /api/game-rosters/used {game_number, side, season?, updated_at}` | indoor `canReadTeams` | db/023. Accepted in Match Setup: players, officials and signatures are deleted at once (`used_at`, `used_by` stay). `{ used: true }`, or `{ used: false, reason: 'changed' }` when the team sent a newer version (left alone), `'gone'` when there is none. Audited `team.roster` `used: true`. |
-| `PUT /api/club/:id/licences/:list {people}` (`list`: `players`, `scorers`, `coaches`), `GET /api/club/:id/licences` | club manager of the club, admin | db/024 (`docs/club-licences-spec.md`). A licence list from VolleyManager's club administration, read in the browser: `people` = `[{ sv_number (4-7 digits), last_name, first_name, dob, gender ('m' \| 'f' \| null) }]`, at most 2000, any other field refused; replaces the uploaded rows of that list in one transaction and keeps those added by hand (db/026; one the upload has becomes uploaded); `[]` deletes the whole list. `{ list, count, manual, imported_at }`. `GET`: `{ season, lists: {<list>: { count, manual, imported_at, imported_by_name }}, people: [{ ..., manual, lists, teams: [{ id, name }] }] }` (`count` every row, `manual` those by hand, `imported_at`/`imported_by_name` the last upload's; teams: the club's teams whose saved team of the season has that licence). Audited `club.licences` (list and count only). |
-| `POST /api/club/:id/licences/people {people}`, `POST /api/team/:id/club-people {people}` | club manager of the club, admin / team manager of the team, club manager of its club, admin | db/026 (`docs/club-licences-spec.md` section 8). People typed in by hand added to the club's lists (the team's club): `people` = `[{ list ('players' \| 'scorers' \| 'coaches'), sv_number, last_name, first_name, dob, gender }]`, 1 to 30, any other field in the body or a person refused (400). New rows only (`source = 'manual'`), a licence number the list has is left as it is. `{ club_id, added, already }`; 404 for an unknown club or team. Audited `club.licences.manual` (club and team ids, counts per list only). |
-| `GET /api/team/:id/club-players` | team manager of the team, club manager of its club, admin | db/024. `{ team, gender: 'm' \| 'f' \| null, players, people }`: for "Add from club", `players` is the club's players list (player rows) and `people` every person of its three lists once with `lists` (team officials: anyone of the club, either gender); each person has `manual` (db/026: only by hand, in no upload); the team's gender from its `svrz_games`. `PUT /api/team/:id/squad` and `/roster` answer 400 `OV_WRONG_GENDER` (`index`) for a player of the players list with the other gender; officials are never checked. |
+| `PUT /api/club/:id/licences/:list {people}` (`list`: `players`, `scorers`, `coaches`), `GET /api/club/:id/licences` | club manager of the club, admin | db/024 (`docs/club-licences-spec.md`). A licence list from VolleyManager's club administration, read in the browser: `people` = `[{ sv_number (4-7 digits), last_name, first_name, dob, gender ('m' \| 'f' \| null) }]`, at most 2000, any other field refused; replaces the uploaded rows of that list in one transaction and keeps those added by hand (db/026; one the upload has becomes uploaded); `[]` deletes the whole list. `{ list, count, manual, imported_at }`. db/037: the rows have the upload's season; only the current season is served, the club's past seasons go with its next upload and every day (server.js). `GET`: `{ season, lists: {<list>: { count, manual, imported_at, imported_by_name }}, people: [{ id (the person page's key, db/037), ..., manual, lists, teams: [{ id, name }], hand_rows: [{ id, list }] }] }` (`count` every row, `manual` those by hand, `imported_at`/`imported_by_name` the last upload's; teams: the club's teams whose saved team of the season has that licence). Audited `club.licences` (list and count only). |
+| `POST /api/club/:id/licences/people {people}`, `POST /api/team/:id/club-people {people}` | club manager of the club, admin / team manager of the team, club manager of its club, admin | db/026 (`docs/club-licences-spec.md` section 8). People typed in by hand added to the club's lists (the team's club): `people` = `[{ list ('players' \| 'scorers' \| 'coaches'), sv_number, last_name, first_name, dob, gender }]`, 1 to 30, any other field in the body or a person refused (400). New rows only (`source = 'manual'`), a licence number any list of the club has is left as it is (db/037); at most 300 rows by hand per club and 100 per account a day (409 `OV_MANUAL_LIMIT`). `{ club_id, added, already }`; 404 for an unknown club or team. Audited `club.licences.manual` (club and team ids, counts per list only). `DELETE /api/club/:id/licences/rows/:rowId` (club manager, admin): one row by hand (409 `OV_NOT_HAND_ADDED` for an uploaded one), audited `club.licences.manual_delete`. |
+| `GET /api/team/:id/club-players`, `GET /api/team/:id/club-people?q=` | team manager of the team, club manager of its club, admin | db/024, owner decision 2. `{ team, gender: 'm' \| 'f' \| null, age_class, players, people }`: for "Add from club", `players` is the club's players list of the team's gender and age class (filtered here) and `people` the people of the team's saved team and those players, with `lists`; dates of birth only of the people of the saved team (saving a squad or a game roster fills in the club's date of birth of a row without one, `fillDob`). An official (anyone of the club, either gender): `club-people?q=` (at least 3 characters) answers `{ people, more }`, at most 10. Each person has `manual` (db/026: only by hand, in no upload); the team's gender from its `svrz_games`. `PUT /api/team/:id/squad` and `/roster` answer 400 `OV_WRONG_GENDER` (`index`) for a player of the players list with the other gender; officials are never checked. |
 | `GET /api/public/clubs` | anyone (no session; 30 per minute per IP, cached 60 s) | db/025. `{ clubs: [{ id, name, teams: [{ id, name }] }] }`: the sign-up form's clubs and their teams, ids and names only (no person, no count). |
 | `POST /api/auth/sign-up {…, requests?}` | anyone | db/025. `requests: [{ kind: 'scorer'\|'referee'\|'team_manager'\|'club_manager', club_id?, team_id? }]` (at most 20; scorer and club manager a club, team manager a team, referee neither; OpenBeach's sign-up none): stored in the sign-up's transaction, nothing granted; 422 `validation_failed` for a bad part or a club / team that is gone. `GET /api/me` adds the account's own open `requests`. |
 | `POST /api/admin/accounts/:id/requests {approve: [{id, club_id?, team_id?}], reject: [id]}` | admin | db/025 (`docs/account-approval-spec.md` section 8). Approves (scorer: the role and the club; referee: the role; team manager: the team; club manager: the club) and rejects parts of the account's sign-up request, a part's club or team changed first if need be. `{ approved, rejected, requests }`; 409 `OV_REQUEST_GONE` (decided meanwhile), 409 `OV_EMAIL_UNCONFIRMED` (approving). `GET /api/admin/accounts` gives each account its `requests`, `managed_clubs`, `managed_teams`; Pending also lists accounts with an open part, and an account that manages a club or team is no longer pending (and is deleted, not rejected). Audited `account.request_approve` / `account.request_reject`. |
 | `GET /api/club/:id/requests`, `POST /api/club/:id/requests/:userId {approve: [{id, team_id?}], reject}` | club manager of the club, admin | db/025. `{ requests: [{ user: { id, email, name, created_at, email_confirmed }, parts }] }`: the club's parts (scorer, team manager of its teams, club manager); a team part may move to another team of the club. Referee parts are admins' only. |
 | `GET /api/team/:id/requests`, `POST /api/team/:id/requests/:userId {approve: [{id}], reject}` | team manager of the team, club manager of its club, admin | db/025. The team's team manager parts, approved as asked. |
 | `GET /api/saved-teams/vm-teams?q=` | indoor competition manager, admin | `{ teams: [{ name, club_id, club_name }] }`: the schedule's team names (`svrz_games` home and away, at most 1000), for the saved team editor's VolleyManager name. |
-| `GET /api/club-licences` | indoor `canReadTeams` | db/024. `{ fetched_at, clubs: [{ club_id, club_name, team_names, team_genders, players, people }] }`: per club of the caller its players list (`players`, all that release 3.0.15 reads) and every person of its three lists once (`people`, with `lists`, for the bench officials), kept on the scoring tablet for Match Setup (offline first). |
+| `GET /api/club-licences` | indoor `canReadTeams` | db/024. `{ fetched_at, clubs: [{ club_id, club_name, team_names, team_genders, players, people }] }`: per club of the caller its players list (`players`, all that release 3.0.15 reads) and every person of its three lists once (`people`, with `lists`, for the bench officials), kept on the scoring tablet for Match Setup (offline first), without dates of birth (owner decision 2). `GET /api/club-licences/dob?club=<id>&sv=<n>,…`: those of at most 30 people of one of the caller's clubs, `{ club_id, people: [{ sv_number, dob }] }`, asked for the people a scorer adds. |
 | `PUT /api/saved-teams/teams/:id/roster {players, staff}` | competition manager, admin | `{ team }`. At most 40 players and 10 officials; `last_name` required; numbers 0-99 unique among active players; one active captain; `dob` `YYYY-MM-DD`; staff roles `Coach`, `Assistant Coach 1/2`, `Physiotherapist`, `Medic`; `country` must be empty. Rows keep their `id`; an id of another team is 400. **Beach team** (its competition's sport): a pair, at most 2 players numbered 1 and 2 (unique), no `is_libero`/`is_captain` `true` and no `active: false` (stored `false`/`false`/`true`), optional `country` of 3 letters (stored upper-case, `'CHE'`), staff at most one `Coach`. Every rule violation is 400 `OV_INVALID_REQUEST` with a `details` string. |
 
 ### `POST /api/match/send-info`
 
-Send match info email to a specified address. Requires email configuration.
+A signed-in scorer's `{ externalId }`: the game number, teams, date and venue of a match the account created or edits (built from the stored match, no PIN) to the account's own confirmed address. Needs `RESEND_API_KEY` (503 without it); 409 `OV_EMAIL_UNCONFIRMED` for an unconfirmed address, 404 for a match the account does not edit.
 
 ### `POST /api/contact`
 
@@ -887,7 +1158,7 @@ The support form of the app (Support & feedback) and of openvolley.app/support (
 | `matchRunning` | `1`: a match is being scored right now (the app ticks "A match is running right now" itself when this device scores one in progress; the user can untick it). Anything else, or none: not running |
 | `source`, `language`, `appVersion`, `platform`, `url`, `userAgent`, `timestamp` | context (`source`: `app` \| `website`, default `app`); a value that does not fit its pattern is left out. `url` loses its query and fragment (tablet links carry `?pin=`) |
 | `diagnostics` | JSON text, at most 32 KB: the short diagnostics of the app versions before the report (still read and put in the mail's text); the app sends it only when the user ticks "Include diagnostics" (since the report, only when the report could not be made) |
-| `diagnosticsFile` | the app's diagnostics report (`frontend/src/utils/diagnosticsReport.js`), sent only when "Include diagnostics" is ticked (pre-ticked for support, unticked for feedback and requests; the dialog shows exactly the text that is sent): one part, with a filename or without, of UTF-8 text without NUL, at most **3 MB** (413 `diagnostics_too_large`; anything else 415 `diagnostics_type`). It is **not** one of the 5 files and not part of their 10 MB. Attached to the mail as `.txt` (`openvolley-diagnostics-<YYYYMMDD-HHMM>[-g<game>].txt`), with the body row `Diagnostics: attached (N lines, X KB): <name>`. Its content (summary, the open match, the timeline of the last two hours from the activity and interaction logs, errors with stacks) is redacted by the app (no PINs, tokens, emails, phone numbers, typed text) |
+| `diagnosticsFile` | the app's diagnostics report (`frontend/src/utils/diagnosticsReport.js`), sent only when the user ticks "Include diagnostics" (unticked at first for every kind of message; the dialog shows exactly the text that is sent): one part, with a filename or without, of UTF-8 text without NUL, at most **3 MB** (413 `diagnostics_too_large`; anything else 415 `diagnostics_type`). It is **not** one of the 5 files and not part of their 10 MB. Attached to the mail as `.txt` (`openvolley-diagnostics-<YYYYMMDD-HHMM>[-g<game>].txt`), with the body row `Diagnostics: attached (N lines, X KB): <name>`. Its content (summary, the open match, the timeline of the last two hours from the activity and interaction logs, errors with stacks) is redacted by the app (no PINs, tokens, emails, phone numbers, typed text) |
 | `website` | honeypot: filled in, the answer is 200 and nothing is sent |
 | `files` | 0-5 attachments, 10 MB together (body at most 14 MB: the files, the 3 MB diagnostics report and 1 MB of fields): PNG, JPEG, GIF, WebP, HEIC/HEIF, AVIF, PDF (by their first bytes), and UTF-8 text without NUL named `.txt`, `.log`, `.csv`, `.json` or `.ndjson` (JSON starting with `{` or `[`). The type comes from the bytes, never from the name or the client's Content-Type; a PNG named `x.txt` goes out as `x.txt.png` |
 
@@ -921,9 +1192,13 @@ Replaces Supabase GoTrue behind `/api/auth/*` once the backend runs against its 
 | `sign-up` `{email, password, metadata}` | Creates `auth.users` + `profiles` in one transaction (the `handle_new_user` mapping; client `roles` are dropped and the account gets **no role**: pending, see "Approved scorers"). 200 `{user}`, no session; 422 on duplicates or bad input |
 | `get-user` `{access_token}` | 200 `{user, session:{expires_at, expires_in}}`; **401 `invalid_token`** when unknown, expired or revoked |
 | `sign-out` `{access_token}` | Deletes the session; always 200 |
-| `delete-account` `{access_token}` | Deletes the account's personal data (user, sessions, profile, user_matches, match_editors, backups, scoresheet owner entries) and keeps its matches with `created_by` NULL; see "Deleting an account". 503 and nothing deleted when the files cannot be removed |
+| `delete-account` `{access_token, password \| passkey}` | Needs the session **and a confirmation** (see `reauth`). Deletes the account's personal data (user, sessions, profile, user_matches, match_editors, backups, scoresheet owner entries) and keeps its matches with `created_by` NULL; see "Deleting an account". The admin path's rules in the same transaction (lib/accounts.js `selfDeleteIn`): 409 `OV_LAST_SUPER_ADMIN`, an `account.delete` audit entry with `self: true`. 503 and nothing deleted when the files cannot be removed |
 | `profile` `{access_token}` | Read-only; `updates` is ignored |
-| `update-user` | 501 (email change returns in Phase 7) |
+| `update-user` | 501: the address is changed by an admin (PATCH /api/admin/accounts/:id); the profile shows it read-only |
+| `reauth` `{access_token, password \| passkey}` | Confirms it is the account's owner: the password (`verifyPassword`, counted in the sign-in lockout) or `passkey` `{challengeId, response}` (an answer to `passkey/login-options` with a key **of this account**). The session counts as confirmed for 5 minutes (`REAUTH_FRESH_MS`, in this process). `delete-account`, `passkey/delete` and `sign-out-everywhere` with `remove_passkeys` take the same fields inline, or use that window; without either: 403 `reauth_required`; 401 `invalid_password`, 429 `account_locked`, 401 `passkey_unknown`/`passkey_invalid`. 200 `{fresh_until}` |
+| `change-password` `{access_token, password, new_password}` | The current password, then the new one as a reset sets it: **every** session and passkey of the account go; this device gets a new session (200 like `sign-in`). 400 `password_required`, 401 `invalid_password`, 422 `weak_password`, 429 `account_locked`; audit `account.password_changed` |
+| `session/list` `{access_token}` | Where the account is signed in: `{sessions:[{id, created_at, last_seen_at, expires_at, current}]}` (`id`: a short digest, no device is recorded) |
+| `sign-out-everywhere` `{access_token, remove_passkeys?, password \| passkey}` | Every other session ends (this one stays); with `remove_passkeys: true` (confirmed, see `reauth`) every passkey goes too, so a lost or shared device that holds one cannot sign straight back in. 200 `{revoked_sessions, removed_passkeys}`; audit `account.signed_out_everywhere` |
 | `reset-password` `{email, lang}` | With account emails: always 200 `{requested: true}` for a valid address, known or not (no enumeration; the lookup and the mail happen after the answer); 422 `email_address_invalid`; 429 per client / per address. Without: 503 `reset_unavailable` "temporarily unavailable. Contact CONTACT_EMAIL" |
 | `reset-password/confirm` `{token, password, lang}` | Sets the password (policy as at sign-up), marks the address confirmed, revokes **all** sessions, spends the link and every other open reset link, mails a "password changed" notice. 200 `{password_updated: true}`; 400 `invalid_link` (unknown, used, superseded or expired); 422 `weak_password` (the link stays valid) |
 | `confirm-email` `{token}` | 200 `{confirmed: true, already_confirmed}` (a spent link of an address confirmed by now is not an error); 400 `invalid_link` |
@@ -933,7 +1208,7 @@ Replaces Supabase GoTrue behind `/api/auth/*` once the backend runs against its 
 | `passkey/register-options` `{access_token, password}` | Setting one up needs the session **and the password** (`verifyPassword`, counted in the sign-in lockout), so a stolen session cannot add its own key. `{challengeId, options}`; 400 `password_required`, 401 `invalid_password`, 429 `account_locked`, 400 `passkey_limit` (10 per account) |
 | `passkey/register` `{access_token, challengeId, response, lang, app}` | Files the public key (`auth.passkeys`, db/022), mails the account "a passkey was added" (`passkey_added`, links nothing). 200 `{passkey:{id, label, created_at, last_used_at}}`; 409 `passkey_duplicate`; 5 set-ups per account per hour |
 | `passkey/list` `{access_token}` | The account's keys: `{passkeys:[{id, label, created_at, last_used_at, credential_id}]}` |
-| `passkey/delete` `{access_token, id}` | Removes one of the account's own keys; 404 otherwise |
+| `passkey/delete` `{access_token, id, password \| passkey}` | Removes one of the account's own keys (confirmed, see `reauth`) and ends every **other** session of the account: a session records no key, so the removed device's session goes with the rest. 200 `{removed: true, revoked_sessions}`; 404 otherwise |
 
 Sessions last 30 days, slide forward when fewer than 15 days remain, and never live past `created_at + 90 days`. A database failure is a **503** `auth_unavailable`, never a 401, so clients keep their session.
 
@@ -950,19 +1225,20 @@ Sessions last 30 days, slide forward when fewer than 15 days remain, and never l
 Password-reset links, confirmation links for new accounts and the "your password was changed" notice, over SMTP with nodemailer (pooled, 10 s connect / 20 s socket timeouts, TLS 1.2+, certificates verified; port 465 implicit TLS, otherwise STARTTLS is required). Plain text plus a minimal HTML part in en/de/fr/it (the request's `lang`, else `Accept-Language`, else English; `de-CH` -> `de`); no tracking, no remote images, one link. The server logs once at start whether they are on (`[Mail] account emails on: ...` / `off (<reason>)`); recipients are logged masked (`an***@example.ch`), links never, and a failed send as its error code, SMTP reply code and message with every address in it masked (an SMTP rejection quotes the recipient).
 
 - **Volume** (per process, one-hour windows): two budgets of 50 mails each, `account` (reset, password changed) and `confirm` (confirmation links), so a burst of sign-ups can delay confirmations but never stops password reset; and at most 5 reset + confirmation mails per delivered inbox (`inboxKey`: plus-tags removed, Gmail dots ignored, `googlemail.com` = `gmail.com`), so one inbox cannot be flooded through spellings of its address. A mail over a limit is dropped and logged (`[mail] hourly ... budget ... used up` / `... mails per hour to one inbox reached`); the answer does not change. The counters (`used`, `dropped`, `exhausted`, `inboxDropped`, `failed`, no addresses) are in the internal `/health` body under `mail`; a used-up budget does not make the server unhealthy.
+- **Scoresheet mails** (`lib/finalMail.js`, db/021 + db/040): the final scoresheets have their own budget (`scoresheet`, 300 an hour, `MAIL_BUDGET_FINAL`) and so have the test scoresheets scorers send themselves (`scoresheet_test`, 50, `MAIL_BUDGET_TEST`, and 5 per inbox), so test mails cannot use up the real ones; the sizes come from the environment (`budgetsFromEnv`; a value that is not a whole number above 0 keeps the default and logs a warning at start). A final scoresheet the budget holds back is not dropped: its close is deferred and the sweep sends it later to the addresses it missed (`match_final_mails.outcome` `deferred`, never `sent`); failed sends are tried again for about 3 hours and then recorded as `failed` / `partial`. The notices of a missing PDF and of an admin reopen go on the `notify` budget. A test mail goes only to an account that may score, at its confirmed address (403 `OV_SCORER_REQUIRED`, 409 `OV_EMAIL_UNCONFIRMED`), with a fixed subject (the caller's text in the body only).
 
 - **Brands**: `sign-up`, `reset-password`, `reset-password/confirm` and `resend-confirmation` take an optional `app` (`'beach'` = OpenBeach; anything else or nothing = OpenVolley, as before). It chooses the sender (`MAIL_FROM` / `MAIL_FROM_BEACH`), the name in the texts and the link host (`MANAGER_URL` / `MANAGER_URL_BEACH`), never a URL from the client (`redirectTo` stays ignored). The OpenBeach reset and password-changed mails add "This changes the password of your account for OpenVolley and OpenBeach" (one login). On `sign-up`, a given `app` also records the account's first membership (`auth.app_memberships`, `joined_via = 'signup'`); without one no row is written and the account counts as indoor (docs/app-separation-spec.md). `app` grants no role. Budgets and inbox caps are shared by both brands. The tokens work on either manager (one backend).
 - **Links**: `MANAGER_URL/#reset?token=<43 chars>&lang=de` and `#confirm?token=...` (the token sits in the fragment, so it reaches no server log; the manager page removes it from the address bar at once). 32 random bytes; only `SHA-256(token)` is stored in `auth.app_tokens` (`purpose` reset|confirm, `user_id`, `expires_at`, `used_at`). Reset: 60 minutes, single use; a new request and every password change (also `set-password.mjs`) spend all open reset links of the account. Confirm: 24 hours, single use, a new one replaces the older ones. Rows go with the account (FK cascade) and are swept hourly a week after they were used or expired.
-- **No enumeration by reset**: `reset-password` answers a valid address with the same status, headers and body whether or not an account exists, is not blocked, or the mail fails; the work runs after the answer. Sign-up still answers 422 `user_already_exists` for a registered address (accepted, as before): a new account may sign in before it confirms, so sign-up followed by sign-in would tell anyway; the sign-up limits below bound the probing.
+- **No enumeration by reset**: `reset-password` answers a valid address with the same status, headers and body whether or not an account exists, is not blocked, or the mail fails; the work runs after the answer. With mail on, sign-up of a registered address answers as for a new one and mails the owner a reset link instead (without mail: 422 `user_already_exists`). A new account may still sign in before it confirms, so sign-up followed by sign-in can tell; the sign-up limits below bound that probing. `confirm-email` takes the sign-up `password`: without it the confirmation keeps no password, session or passkey of whoever signed up and answers `set_password_token` (a reset token) for the clicker.
 - **Unconfirmed accounts get no role**: an account created with a confirmation link may sign in at once (test matches, profile), but `redeem-invite` and an admin's role grant answer 409 `OV_EMAIL_UNCONFIRMED` until the address is confirmed (by the confirmation link, or by a reset link, which proves the mailbox too). So nobody becomes a scorer, referee or competition manager under an address they never proved. Removing roles stays possible. If the mails are switched off while such accounts are still unconfirmed, `scripts/set-password.mjs <email> --confirm-email` confirms one by hand (with a new password, which the owner then hands over; it also signs the account out everywhere).
 - **Limits**: reset 10/hour per IP (/64), 3/hour per delivered inbox (`inboxKey`), counted for unknown addresses too; redeeming links (`reset-password/confirm`, `confirm-email`) 30 per 15 min per IP; `resend-confirmation` 3/hour per account and 10/hour per IP.
 - **Audit log** (when `public.audit_log` exists): `account.password_reset_requested` (existing accounts only; never visible in an API answer), `account.password_reset`, `account.email_confirmed`.
 - **Turned off** (no `SMTP_HOST`/`SMTP_PASS`, or `auth.app_tokens` missing): reset answers 503 `reset_unavailable` as before, sign-up confirms at once, `resend-confirmation` answers 503 `confirm_unavailable`. Links already sent stay redeemable while the table exists.
-- **Legacy route**: `/api/match/send-info` does **not** use these SMTP settings unless `SMTP_LEGACY_ROUTES=1` (it sends to an address an anonymous request supplies). The support form (`/api/contact`) does, without that switch: its only recipient is `CONTACT_EMAIL`.
+- `/api/match/send-info` does not use these SMTP settings (Resend only). The support form (`/api/contact`) does, without that switch: its only recipient is `CONTACT_EMAIL`.
 - **Tests**: `tests/mailer.test.js` (templates, settings, real SMTP sessions over implicit TLS and STARTTLS against `tests/helpers/fakeSmtp.js`, an `smtp-server` sink with a throwaway certificate), `tests/emailAuth.pg.test.js` (the flows against Postgres), `tests/emailAuth.e2e.test.js` (server.js end to end, links followed out of the captured mails). Never against a real mailbox.
 - **Operations**: deploy/RUNBOOK-hetzner.md, "Account emails (SMTP)".
 
-**Passkeys** (lib/passkeys.js, db/022, since 2026-11-02): sign-in with the device's fingerprint, face or PIN, as an extra way into an account that has a password. One relying party, `openvolley.app` (`WEBAUTHN_RP_ID`), so a key set up on any OpenVolley or OpenBeach site works on all of them; a page may run a ceremony when it is served over https from that host or a subdomain (`WEBAUTHN_ORIGINS` replaces the rule for a local test). The installed apps (Capacitor `https://localhost`, Tauri, Electron) cannot hold a web passkey and keep the password; the frontend hides every passkey control there. A new password (`setPassword`: the reset link, the owner CLI) deletes the account's keys with its sessions; account deletion cascades. Challenges live in the process (single use, 3 min, at most 5000). Without `auth.passkeys` every passkey action answers 503 and nothing else changes.
+**Passkeys** (lib/passkeys.js, db/022, since 2026-11-02): sign-in with the device's fingerprint, face or PIN, as an extra way into an account that has a password. One relying party, `openvolley.app` (`WEBAUTHN_RP_ID`), so a key set up on any OpenVolley or OpenBeach site works on all of them; a page may run a ceremony only from the app's own sites: the exact https origins of lib/cors.js `ALLOWED_ORIGINS` under the RP ID, never any other host under openvolley.app (support desk, downloads, dev builds, other apps); `WEBAUTHN_ORIGINS` (comma list, deploy/compose.yaml passes it) replaces the list, e.g. for a local test. The installed apps (Capacitor `https://localhost`, Tauri, Electron) cannot hold a web passkey and keep the password; the frontend hides every passkey control there. A new password (`setPassword`: the reset link, the owner CLI) deletes the account's keys with its sessions; account deletion cascades. Challenges live in the process (single use, 3 min, at most 5000). Without `auth.passkeys` every passkey action answers 503 and nothing else changes.
 
 **Contact address** in the reset-password message: `contactEmail` option, else `CONTACT_EMAIL`, else the same fallback as server.js.
 
@@ -971,7 +1247,8 @@ Password-reset links, confirmation links for new accounts and the "your password
 ```bash
 DATABASE_URL=postgres://ov_owner@.../openvolley node scripts/set-password.mjs someone@example.com
 node scripts/set-password.mjs someone@example.com --generate     # prints a random password once
-node scripts/set-password.mjs someone@example.com --revoke-only  # sign out everywhere
+node scripts/set-password.mjs someone@example.com --revoke-only  # sign out everywhere: sessions and passkeys
+node scripts/set-password.mjs someone@example.com --revoke-only --keep-passkeys  # sessions only
 node scripts/set-password.mjs someone@example.com --confirm-email  # also mark the email confirmed
 ```
 
@@ -1297,8 +1574,13 @@ Deployed on Infomaniak at `https://backend.openvolley.app`.
 ### CORS errors
 
 - Check browser DevTools for the blocked origin
-- Local mode allows all origins
-- Cloud mode allows `*.openvolley.app` and localhost
+- Both modes follow the "Origin rule": the exact sites and native shells of
+  `lib/cors.js`, `PUBLIC_ORIGINS`, the server's own pages, and (venue relay
+  only) pages of the hall's network. A new site (or a dev build) goes into
+  `PUBLIC_ORIGINS` or the list
+- An API write answering 403 `OV_ORIGIN_REFUSED` or 415
+  `OV_UNSUPPORTED_MEDIA_TYPE`: the page's origin is not trusted, or the body
+  is not sent as `application/json`
 
 ### Deployment fails
 
@@ -1326,15 +1608,16 @@ Error codes in `body.error.code`:
 |---|---|---|
 | `OV_CLIENT_TOO_OLD` | 426 | write without `X-OV-Proto: 2` |
 | `OV_SECRET_FILTER` | 400 | filter, order or onConflict on a secret column (also through an alias, cast or JSON path) |
-| `OV_UNSCOPED_EXTERNAL_ID` | 400 | set/event `external_id` does not start with its match's `external_id` plus `:` or `_` |
+| `OV_UNSCOPED_EXTERNAL_ID` | 400 | set/event `external_id` does not name its own match: `<match external_id>:…` (the text before the first `:`), or without `:` the older apps' backup form `<match>_set_<n>` / `<match>_event_<n>`. A match whose `external_id` is only a prefix of the id owns nothing (`lib/pgQuery.js` `childMatchKey`, db/032) |
 | `OV_UNSCOPED_WRITE` | 400 | set/event update/delete without `eq` on `match_id` or on a non-numeric `external_id`; set/event upsert whose conflicting row belongs to another match (nothing is written) |
+| `OV_MATCH_ID_LOCKED` | 409 | update/upsert that changes the `external_id` of a match that has sets, events or event revisions (db/032 trigger, SQLSTATE `OVI01`; also for an admin) |
 | `OV_UNFILTERED_WRITE` | 400 | update/delete without a filter |
 | `OV_NOT_MATCH_OWNER` | 403 | write to a match (or its sets/events/live state) the caller neither created nor edits; nothing written |
 | `OV_OWNERSHIP_UNAVAILABLE` | 503 | `db/005_match_ownership.sql` has not run (`retryable: true`) |
 | `OV_TABLE_NOT_ALLOWED`, `OV_INVALID_*` | 400 | request outside the contract |
 | `PGRST204` | 400 | unknown column |
 | `PGRST116` | 406 | `single`/`maybeSingle` row-count mismatch (writes are rolled back) |
-| `OV_TOO_MANY_ATTEMPTS` | 429 | restore-by-pin: more than 20 failed attempts per caller in 10 min, or 5 per caller and game |
+| `OV_TOO_MANY_ATTEMPTS` | 429 | restore-by-pin: more than 20 failed attempts per caller in 10 min, or 5 per caller and game; or the game number is locked across callers (30 wrong in 10 min). claim: the same per caller, or the match's game PIN is locked across callers (30 wrong in 10 min) |
 | `OV_DB_UNAVAILABLE` | 503 | database down or catalog not loaded yet (`retryable: true`) |
 | `40001`, `40P01`, `55P03`, `57P0x`, `53300`, `08xxx` | 503 | serialization failure, deadlock, lock timeout, shutdown, connection trouble (`retryable: true`) |
 | `57014` | 504 | statement timeout (`retryable: true`) |
@@ -1364,7 +1647,9 @@ before the new rows.
   `team1_data` / `team2_data` keys accepted), `upload_team1` / `upload_team2`;
   the answer names the teams `team1Team` / `team2Team` and carries
   `sportType: 'beach'`. A PIN never finds a match of the other sport
-  (`lib/matchAccess.js` `CONNECTION_PIN_TYPES`).
+  (`lib/matchAccess.js` `CONNECTION_PIN_TYPES`). The upload PIN types need
+  `matchExternalId` (400 without it): they are checked against that match
+  only, never looked up among all matches.
 - Successful writes publish their `changes` to `?purpose=live` subscribers.
 - `/api/db` writes on matches/sets/events/match_live_state and
   `/api/match/restore` pass `matchOwner: { userId }` (omitted for admins):

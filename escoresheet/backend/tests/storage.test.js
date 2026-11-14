@@ -17,7 +17,8 @@ import {
   maxBodyBytesFor,
   StorageError,
   SENTINEL_NAME,
-  TMP_DIR_NAME
+  TMP_DIR_NAME,
+  DEFAULTS
 } from '../lib/storage.js'
 
 const GiB = 1024 ** 3
@@ -435,7 +436,7 @@ describe('sentinel and free-space guards', () => {
     await rejectsWith(s.upload({ bucket: 'backup', path: 'x.json', fileBase64: b64('{}') }), 503)
     await rejectsWith(s.download({ bucket: 'backup', path: 'x.json' }), 503)
     await rejectsWith(s.list({ bucket: 'backup' }), 503)
-    assert.deepEqual(await s.health(), { sentinel: false, storageWritable: false, diskFreeMB: null, lowSpace: null })
+    assert.deepEqual(await s.health(), { sentinel: false, storageWritable: false, diskFreeMB: null, lowSpace: null, alerts: { growthMB: {}, grewFast: [], accountsNearQuota: 0 } })
   })
 
   it('reads keep working without the sentinel', async () => {
@@ -870,6 +871,40 @@ describe('uploader-only buckets (final scoresheets)', () => {
     assert.deepEqual((await s.list({ bucket: 'scoresheets', path: '2026-10-05', userId: 'u1' })).map((e) => e.name), [path.basename(sheet)])
   })
 
+  // lib/scoresheets.js: an account that may write the match the path is of
+  // (an OpenBeach name has no secret part, so another scorer could create it first)
+  it('adopt (trusted callers only): the caller replaces an object it did not create, and the owners it keeps stay', async () => {
+    const s = make({ uploaderReadBuckets: ['scoresheets'] })
+    const beach = 'beach/2026-10-05/game7_match_1_abc.pdf'
+    await up(s, 'mallory', '{"squatted":true}', beach)
+    await up(s, 'alice', '{"real":true}', beach, { adopt: (owners) => owners.filter((o) => o === 'carol') })
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: beach }), ['alice'])
+    assert.equal(await down(s, 'alice', beach), '{"real":true}')
+    await rejectsWith(s.download({ bucket: 'scoresheets', path: beach, userId: 'mallory' }), 403, 'OV_STORAGE_FORBIDDEN')
+    await rejectsWith(up(s, 'mallory', '{"again":true}', beach), 403, 'OV_STORAGE_FORBIDDEN')
+    // an owner the caller keeps (another account of the same match) still reads it
+    await up(s, 'carol', '{"by":"carol"}', beach, { adopt: (owners) => owners.filter((o) => o === 'alice') })
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: beach }), ['carol', 'alice'])
+    assert.equal(await down(s, 'alice', beach), '{"by":"carol"}')
+    // an owner's own replace leaves the record as it is; upsert:false still refuses an existing object
+    await up(s, 'alice', '{"v":3}', beach, { adopt: () => [] })
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: beach }), ['carol', 'alice'])
+    await rejectsWith(up(s, 'dave', '{}', beach, { upsert: false, adopt: () => [] }), 409, 'OV_STORAGE_EXISTS')
+    // never from the HTTP body: handle() takes it from the server's context only
+    const viaBody = await s.handle('upload', { bucket: 'scoresheets', path: beach, fileBase64: b64('{}'), contentType: 'application/json', adopt: true }, { userId: 'mallory' })
+    assert.equal(viaBody.status, 403)
+    const viaCtx = await s.handle('upload', { bucket: 'scoresheets', path: beach, fileBase64: b64('{"ctx":1}'), contentType: 'application/json' }, { userId: 'erin', adopt: () => ['alice'] })
+    assert.equal(viaCtx.status, 200)
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: beach }), ['erin', 'alice'])
+    // an object without owners (stored before owner records, or its uploader's account deleted) stays as it is
+    const legacy = '2026-10-05/game991405_k0123456789abcdef0123456789abcdef.pdf'
+    await fs.mkdir(path.join(root, 'scoresheets', '2026-10-05'), { recursive: true })
+    await fs.writeFile(path.join(root, 'scoresheets', legacy), '%PDF-1.4 approved')
+    await rejectsWith(up(s, 'alice', '%PDF-1.4 changed', legacy, { adopt: (owners) => owners }), 403, 'OV_STORAGE_FORBIDDEN')
+    assert.equal(await fs.readFile(path.join(root, 'scoresheets', legacy), 'utf8'), '%PDF-1.4 approved')
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: legacy }), [])
+  })
+
   it('handle: the HTTP adapter answers 403 to a non-owner and 200 + not-found for a missing object', async () => {
     const s = make({ uploaderReadBuckets: ['scoresheets'] })
     await s.handle('upload', { bucket: 'scoresheets', path: sheet, fileBase64: b64('{}'), contentType: 'application/json' }, { userId: 'alice' })
@@ -888,7 +923,7 @@ describe('sweep', () => {
   beforeEach(async () => makeRoot())
   afterEach(async () => fs.rm(base, { recursive: true, force: true }))
 
-  it('deletes old backups, keeps new ones and other prefixes, never follows symlinks', async () => {
+  it('deletes old files anywhere in backup/ (backups, logs, stray objects), keeps new ones, never follows symlinks', async () => {
     const now = Date.UTC(2026, 9, 5)
     const s = make({ now: () => now })
     const old = new Date(now - 31 * 24 * 3600 * 1000)
@@ -896,7 +931,9 @@ describe('sweep', () => {
     await s.upload({ bucket: 'backup', path: 'backups/backup_g1/new.json', fileBase64: b64('{}') })
     await s.upload({ bucket: 'backup', path: 'backups/backup_g2/old.json', fileBase64: b64('{}') })
     await s.upload({ bucket: 'backup', path: 'logs/game_1/logs.txt', fileBase64: b64('x') })
-    for (const p of ['backups/backup_g1/old.json', 'backups/backup_g2/old.json', 'logs/game_1/logs.txt']) {
+    await s.upload({ bucket: 'backup', path: 'stray.json', fileBase64: b64('{"a":1}') })
+    await s.upload({ bucket: 'backup', path: 'stray-new.json', fileBase64: b64('{}') })
+    for (const p of ['backups/backup_g1/old.json', 'backups/backup_g2/old.json', 'logs/game_1/logs.txt', 'stray.json']) {
       await fs.utimes(path.join(root, 'backup', p), old, old)
     }
     await fs.utimes(path.join(outside, 'secret.json'), old, old)
@@ -907,12 +944,25 @@ describe('sweep', () => {
     for (const d of ['backups/backup_g1', 'backups/backup_g2']) await fs.utimes(path.join(root, 'backup', d), old, old)
 
     const r = await s.sweep()
-    assert.deepEqual(r, { deletedFiles: 2, deletedBytes: 4, removedDirs: 1, tmpRemoved: 1, ownerRecordsRemoved: 0 })
+    assert.deepEqual(r, { deletedFiles: 4, deletedBytes: 12, removedDirs: 1, tmpRemoved: 1, ownerRecordsRemoved: 0 })
     assert.equal(await exists(path.join(root, 'backup/backups/backup_g1/new.json')), true)
     assert.equal(await exists(path.join(root, 'backup/backups/backup_g2')), false)
-    assert.equal(await exists(path.join(root, 'backup/logs/game_1/logs.txt')), true)
+    assert.equal(await exists(path.join(root, 'backup/logs/game_1/logs.txt')), false)
+    assert.equal(await exists(path.join(root, 'backup/stray.json')), false)
+    assert.equal(await exists(path.join(root, 'backup/stray-new.json')), true)
     assert.equal(await exists(path.join(outside, 'secret.json')), true)
     assert.equal(await exists(path.join(root, 'backup/backups')), true)
+  })
+
+  it('a prefix narrows the sweep to it', async () => {
+    const now = Date.UTC(2026, 9, 5)
+    const s = make({ now: () => now })
+    const old = new Date(now - 31 * 24 * 3600 * 1000)
+    await s.upload({ bucket: 'backup', path: 'backups/backup_g1/old.json', fileBase64: b64('{}') })
+    await s.upload({ bucket: 'backup', path: 'logs/game_1/logs.txt', fileBase64: b64('x') })
+    for (const p of ['backups/backup_g1/old.json', 'logs/game_1/logs.txt']) await fs.utimes(path.join(root, 'backup', p), old, old)
+    assert.equal((await s.sweep({ prefix: 'backups' })).deletedFiles, 1)
+    assert.equal(await exists(path.join(root, 'backup/logs/game_1/logs.txt')), true)
   })
 
   it('maxAgeMs Infinity (server.js while the host backup is stale) deletes no file but still clears temp files', async () => {
@@ -979,11 +1029,11 @@ describe('sweep', () => {
       await fs.utimes(path.join(root, 'backup', p), old, old)
     }
     const r = await s.sweep()
-    assert.equal(r.deletedFiles, 3)
+    assert.equal(r.deletedFiles, 4)
     assert.equal(await exists(path.join(root, `backup/${u1}/backups/backup_g1/new.json`)), true)
     assert.equal(await exists(path.join(root, `backup/${u1}/backups/backup_g1/old.json`)), false)
     assert.equal(await exists(path.join(root, `backup/${u2}/backups/backup_g2/old.json`)), false)
-    assert.equal(await exists(path.join(root, `backup/${u2}/logs/game_1/logs.txt`)), true)
+    assert.equal(await exists(path.join(root, `backup/${u2}/logs/game_1/logs.txt`)), false)
     assert.equal(await exists(path.join(root, 'backup/backups/legacy/old.json')), false)
     // the owner still lists and downloads (restore); another account sees nothing
     assert.deepEqual((await s.list({ bucket: 'backup', path: 'backups/backup_g1', userId: u1 })).map((e) => e.name), ['new.json'])
@@ -994,6 +1044,100 @@ describe('sweep', () => {
   it('missing prefix is a no-op', async () => {
     const s = make()
     assert.deepEqual(await s.sweep(), { deletedFiles: 0, deletedBytes: 0, removedDirs: 0, tmpRemoved: 0, ownerRecordsRemoved: 0 })
+  })
+
+  // fe-diagnostics-privacy-1: the uploaded app logs were kept until the account went
+  it("the app logs: every account's logs older than 30 days go, the backups stay to their own sweep", async () => {
+    const now = Date.UTC(2026, 10, 13)
+    const s = make({ now: () => now, ownerScope: 'prefix', ownerScopeBuckets: ['backup'] })
+    const old = new Date(now - 31 * 24 * 3600 * 1000)
+    const recent = new Date(now - 29 * 24 * 3600 * 1000)
+    const u1 = '11111111-2222-4333-8444-555555555555'
+    const u2 = '66666666-2222-4333-8444-555555555555'
+    await s.upload({ bucket: 'backup', path: 'logs/game_1/logs_a.txt', fileBase64: b64('x'), userId: u1 })
+    await s.upload({ bucket: 'backup', path: 'logs/game_1/logs_b.txt', fileBase64: b64('y'), userId: u1 })
+    await s.upload({ bucket: 'backup', path: 'logs/general/logs_c.txt', fileBase64: b64('z'), userId: u2 })
+    await s.upload({ bucket: 'backup', path: 'backups/backup_g1/old.json', fileBase64: b64('{}'), userId: u2 })
+    await fs.mkdir(path.join(root, 'backup/logs/game_2'), { recursive: true })
+    await fs.writeFile(path.join(root, 'backup/logs/game_2/legacy.txt'), 'w')
+    for (const p of [`${u1}/logs/game_1/logs_a.txt`, `${u2}/logs/general/logs_c.txt`, `${u2}/backups/backup_g1/old.json`, 'logs/game_2/legacy.txt']) {
+      await fs.utimes(path.join(root, 'backup', p), old, old)
+    }
+    await fs.utimes(path.join(root, 'backup', `${u1}/logs/game_1/logs_b.txt`), recent, recent)
+    const r = await s.sweepAppLogs()
+    assert.equal(r.deletedFiles, 3)
+    assert.equal(await exists(path.join(root, `backup/${u1}/logs/game_1/logs_a.txt`)), false)
+    assert.equal(await exists(path.join(root, `backup/${u1}/logs/game_1/logs_b.txt`)), true)
+    assert.equal(await exists(path.join(root, `backup/${u2}/logs/general/logs_c.txt`)), false)
+    assert.equal(await exists(path.join(root, 'backup/logs/game_2/legacy.txt')), false)
+    assert.equal(await exists(path.join(root, `backup/${u2}/backups/backup_g1/old.json`)), true)
+  })
+})
+
+describe('per-account totals and growth alerts', () => {
+  beforeEach(async () => makeRoot())
+  afterEach(async () => fs.rm(base, { recursive: true, force: true }))
+  const U1 = '11111111-2222-4333-8444-555555555555'
+  const U2 = '66666666-2222-4333-8444-555555555555'
+  const scoped = (opts = {}) => make({ ownerScope: 'prefix', ownerScopeBuckets: ['backup'], ...opts })
+
+  it('one account holds at most maxOwnerBytes of backup/, counted on disk; others are not affected', async () => {
+    // a file the account stored before (or before a restart) counts too
+    await fs.mkdir(path.join(root, 'backup', U1, 'logs'), { recursive: true })
+    await fs.writeFile(path.join(root, 'backup', U1, 'logs', 'early.txt'), 'xxxx')
+    const s = scoped({ maxOwnerBytes: { backup: 12 } })
+    await s.upload({ bucket: 'backup', path: 'backups/g1/a.json', fileBase64: b64('123456'), userId: U1 })
+    await rejectsWith(s.upload({ bucket: 'backup', path: 'backups/g1/b.json', fileBase64: b64('123'), userId: U1 }), 507, 'OV_STORAGE_ACCOUNT_FULL')
+    // replacing an object counts the difference only
+    await s.upload({ bucket: 'backup', path: 'backups/g1/a.json', fileBase64: b64('12345678'), userId: U1 })
+    await rejectsWith(s.upload({ bucket: 'backup', path: 'backups/g1/a.json', fileBase64: b64('123456789'), userId: U1 }), 507, 'OV_STORAGE_ACCOUNT_FULL')
+    // another account has its own total
+    await s.upload({ bucket: 'backup', path: 'backups/g1/a.json', fileBase64: b64('123456789012'), userId: U2 })
+    // removing frees it
+    await s.remove({ bucket: 'backup', paths: ['backups/g1/a.json'], userId: U1 })
+    await s.upload({ bucket: 'backup', path: 'backups/g1/b.json', fileBase64: b64('12345678'), userId: U1 })
+    // the HTTP answer
+    const r = await s.handle('upload', { bucket: 'backup', path: 'backups/g1/c.json', fileBase64: b64('1234') }, { userId: U1 })
+    assert.equal(r.status, 507)
+    assert.equal(r.body.error.code, 'OV_STORAGE_ACCOUNT_FULL')
+  })
+
+  it('a sweep frees the total; 0 turns it off; unscoped buckets have none', async () => {
+    const now = Date.UTC(2026, 9, 5)
+    const s = scoped({ now: () => now, maxOwnerBytes: { backup: 8 } })
+    await s.upload({ bucket: 'backup', path: 'backups/g1/a.json', fileBase64: b64('12345678'), userId: U1 })
+    await rejectsWith(s.upload({ bucket: 'backup', path: 'backups/g1/b.json', fileBase64: b64('1'), userId: U1 }), 507)
+    const old = new Date(now - 31 * 24 * 3600 * 1000)
+    await fs.utimes(path.join(root, 'backup', U1, 'backups/g1/a.json'), old, old)
+    assert.equal((await s.sweep()).deletedFiles, 1)
+    await s.upload({ bucket: 'backup', path: 'backups/g1/b.json', fileBase64: b64('1'), userId: U1 })
+    const off = scoped({ maxOwnerBytes: { backup: 0 } })
+    await off.upload({ bucket: 'backup', path: 'backups/g2/big.json', fileBase64: b64('x'.repeat(64)), userId: U1 })
+    const unscoped = make({ maxOwnerBytes: { backup: 1 } })
+    await unscoped.upload({ bucket: 'backup', path: 'backups/g3/big.json', fileBase64: b64('x'.repeat(64)) })
+  })
+
+  it('the default total holds 30 days of a club account that scores every weekend; STORAGE_BACKUP_ACCOUNT_MAX_MB sets it', () => {
+    // a backup a minute, each the whole match: up to 250 MB for a long
+    // five-set match; three matches on each of 8 weekend days
+    assert.equal(DEFAULTS.maxOwnerBytes.backup, 6 * GiB)
+    assert.ok(DEFAULTS.maxOwnerBytes.backup >= 24 * 250 * 1024 * 1024)
+    assert.deepEqual(storageOptionsFromEnv({ STORAGE_BACKUP_ACCOUNT_MAX_MB: '8192' }).maxOwnerBytes, { backup: 8 * GiB })
+    assert.deepEqual(storageOptionsFromEnv({ STORAGE_BACKUP_ACCOUNT_MAX_MB: '0' }).maxOwnerBytes, { backup: 0 })
+    assert.equal(storageOptionsFromEnv({}).maxOwnerBytes, undefined)
+  })
+
+  it('the operator is alerted when a bucket grows fast or an account nears its total', async () => {
+    const errors = []
+    const s = scoped({ logger: { ...silent, error: (...a) => errors.push(a.join(' ')) }, growthAlertBytes: { backup: 10 }, maxOwnerBytes: { backup: 20 } })
+    await s.upload({ bucket: 'backup', path: 'backups/g1/a.json', fileBase64: b64('123456'), userId: U1 })
+    assert.equal(errors.length, 0)
+    await s.upload({ bucket: 'backup', path: 'backups/g1/b.json', fileBase64: b64('1234567890'), userId: U1 })
+    await s.upload({ bucket: 'backup', path: 'backups/g1/c.json', fileBase64: b64('12'), userId: U1 })
+    assert.equal(errors.filter((e) => /ALERT backup\/ grew/.test(e)).length, 1, 'once an hour')
+    assert.equal(errors.filter((e) => /ALERT account/.test(e)).length, 1, 'once per account')
+    const h = await s.health()
+    assert.deepEqual(h.alerts, { growthMB: { backup: 0 }, grewFast: ['backup'], accountsNearQuota: 1 })
   })
 })
 
@@ -1107,6 +1251,28 @@ describe('remove and delete-account clean-up', () => {
     await fs.symlink(path.join(outside, 'secret.json'), path.join(root, 'backup', U1, 'link.json'))
     await rejectsWith(s.remove({ bucket: 'backup', paths: ['link.json'], userId: U1 }), 403)
     assert.equal(await exists(path.join(outside, 'secret.json')), true)
+  })
+
+  it('removeTrusted (operator tool): an object, or a folder with all in it, whoever owns them; the owner records go too', async () => {
+    const s = make(opts)
+    await upSheet(s, U1, '2026-10-06')
+    await upSheet(s, U1, `${pdf}/x.json`)
+    await upSheet(s, U2, `${pdf}/a/b.json`)
+    await upSheet(s, U2, sheet)
+    assert.equal((await ownerRecords()).length, 4)
+    await fs.symlink(path.join(outside, 'secret.json'), path.join(root, 'scoresheets', pdf, 'a', 'link.json'))
+    assert.deepEqual(await s.removeTrusted({ bucket: 'scoresheets', path: '2026-10-06' }), { objectsRemoved: 1, bytesRemoved: 11, foldersRemoved: 0 })
+    // the symlink stays (never followed): its folder with it
+    assert.deepEqual(await s.removeTrusted({ bucket: 'scoresheets', path: pdf }), { objectsRemoved: 2, bytesRemoved: 22, foldersRemoved: 0 })
+    assert.equal(await exists(path.join(outside, 'secret.json')), true)
+    await fs.unlink(path.join(root, 'scoresheets', pdf, 'a', 'link.json'))
+    assert.deepEqual(await s.removeTrusted({ bucket: 'scoresheets', path: pdf }), { objectsRemoved: 0, bytesRemoved: 0, foldersRemoved: 2 })
+    assert.equal(await exists(path.join(root, 'scoresheets', pdf)), false)
+    assert.equal(await exists(path.join(root, 'scoresheets', '2026-10-06')), false)
+    assert.equal((await ownerRecords()).length, 1, 'only the record of the object left')
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: sheet }), [U2])
+    assert.deepEqual(await s.removeTrusted({ bucket: 'scoresheets', path: '2026-10-07' }), { objectsRemoved: 0, bytesRemoved: 0, foldersRemoved: 0 })
+    await rejectsWith(s.removeTrusted({ bucket: 'scoresheets', path: '../x' }), 400)
   })
 
   it('deleteUserData: the account\'s backups and owner entries go; scoresheets stay as unowned records', async () => {

@@ -100,6 +100,30 @@ describe('TodayGamesModal', () => {
     expect(await screen.findByText('home.todayGames.noClub')).toBeInTheDocument()
   })
 
+  // gap-fe-unread-dialogs-3: the copy on the device keeps what the list and a
+  // pick need, never the referees' dates of birth (minors among them)
+  it('the day\'s copy keeps no referee dates of birth; a pick from it still names the referees', async () => {
+    api.fetchTodayGames.mockResolvedValue(answer({ day: TODAY, clubs: ['VBC Musterdorf'], games: [{ ...GAME, referee_1_dob: '2009-04-05', referee_2_first_name: 'Rolf', referee_2_last_name: 'Zweit', referee_2_dob: '1980-01-02' }] }))
+    const onPick = vi.fn()
+    const first = render(<TodayGamesModal open userId="u1" onPick={onPick} onManual={noop} onClose={noop} />)
+    fireEvent.click((await screen.findAllByTestId('today-game'))[0])
+    // online: the fresh answer, dates included (the scorer fills the sheet's officials)
+    expect(onPick).toHaveBeenLastCalledWith(expect.objectContaining({ referee1Dob: '2009-04-05', referee2Dob: '1980-01-02' }))
+    const stored = localStorage.getItem('ov:todayGames')
+    expect(stored).not.toContain('2009-04-05')
+    expect(stored).not.toContain('1980-01-02')
+    expect(stored).not.toMatch(/dob/)
+    first.unmount()
+
+    api.fetchTodayGames.mockResolvedValue({ data: null, error: { network: true, status: 0 }, status: 0 })
+    render(<TodayGamesModal open userId="u1" onPick={onPick} onManual={noop} onClose={noop} />)
+    await waitFor(() => expect(screen.getByText('home.todayGames.offline')).toBeInTheDocument())
+    fireEvent.click(screen.getAllByTestId('today-game')[0])
+    expect(onPick).toHaveBeenLastCalledWith(expect.objectContaining({ home: 'VBC Musterdorf H1', referee1First: 'Rita', referee2First: 'Rolf', referee2Last: 'Zweit' }))
+    expect(onPick.mock.lastCall[0].referee1Dob).toBeFalsy()
+    expect(onPick.mock.lastCall[0].referee2Dob).toBeFalsy()
+  })
+
   it('offline: the day\'s last list of this account, else only the manual way', async () => {
     api.fetchTodayGames.mockResolvedValue(answer({ day: TODAY, clubs: ['VBC Musterdorf'], games: [GAME] }))
     const first = render(<TodayGamesModal open userId="u1" onPick={noop} onManual={noop} onClose={noop} />)

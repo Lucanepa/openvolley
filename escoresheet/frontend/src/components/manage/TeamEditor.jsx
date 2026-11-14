@@ -4,7 +4,7 @@ import { ArrowLeft, FileUp, Plus, Trash2, UserPlus, X } from 'lucide-react'
 import { savedTeamsApi, errorKeyOf, fetchPublicClubs } from '../../lib/accountApi'
 import { apiFrom } from '../../lib/apiClient'
 import { selectAll } from '../../lib/selectAll'
-import { STAFF_ROLES, validateSavedRoster, MAX_PLAYERS, MAX_STAFF, sportOf } from '../../domain/savedTeams'
+import { STAFF_ROLES, validateSavedRoster, MAX_PLAYERS, MAX_STAFF, sameTypedName, sportOf } from '../../domain/savedTeams'
 import { shirtNumberDigits } from '../../domain/roster'
 import { addClubPlayersToSquad, clubFillOf, clubPersonOf, clubPersonToPlayer, clubPlayersForGender, handTypedForClub, linkRowToClubPerson, mergeImportedRoster, officialOfRole, officialRolesOf, parsedPdfToRoster, playerFinder, setSquadOfficial, wrongGenderIndexes } from '../../domain/teamRosters'
 import ClubPlayerPickerModal from '../ClubPlayerPickerModal'
@@ -191,23 +191,28 @@ export function vmNameOptions({ clubs, clubName, scheduleNames, all = false }) {
 }
 
 // The people Save offered for the club's lists and the user left unticked:
-// not asked again for this team on this device (a convenience only)
-const declinedKey = (teamId) => `ov_club_offer_declined:${teamId}`
+// not asked again for this team while the page is open (a convenience only).
+// In memory, never on the device: the keys hold licence numbers, which a
+// shared laptop must not keep after sign-out (delta-fe-manage-6).
+const declinedByTeam = new Map()
 function readDeclined(teamId) {
-  try {
-    const v = JSON.parse(localStorage.getItem(declinedKey(teamId)) || '[]')
-    return new Set(Array.isArray(v) ? v : [])
-  } catch {
-    return new Set()
-  }
+  return declinedByTeam.get(teamId) || new Set()
 }
 function addDeclined(teamId, keys) {
   if (!keys.length) return
+  const all = new Set(readDeclined(teamId))
+  for (const k of keys) all.add(k)
+  declinedByTeam.set(teamId, all)
+}
+// What an older version kept on the device (ov_club_offer_declined:<team id>): removed
+const DECLINED_STORED = 'ov_club_offer_declined:'
+export function dropStoredDeclined(storage = globalThis.localStorage) {
   try {
-    const all = readDeclined(teamId)
-    for (const k of keys) all.add(k)
-    localStorage.setItem(declinedKey(teamId), JSON.stringify([...all].slice(-200)))
-  } catch { /* private mode: asked again next time */ }
+    for (let i = storage.length - 1; i >= 0; i--) {
+      const k = storage.key(i)
+      if (k && k.startsWith(DECLINED_STORED)) storage.removeItem(k)
+    }
+  } catch { /* no storage: nothing kept */ }
 }
 
 // Small labels: shown above each input on phones (one input per row), and
@@ -234,9 +239,10 @@ const STAFF_COLS_SM = { plain: 'sm:grid-cols-[11rem_1fr_1fr_9.5rem_8rem_2.25rem]
  * team's fields and Delete (its name, club and VolleyManager name are the
  * club's), `pdfImport` adds Import Einsatzliste to the players.
  * `clubPlayers` (db/024, GET /api/team/:id/club-players: { players, gender,
- * people }) adds "Add from club": players of the club's players list of the
- * team's gender to the players, anyone of the club's lists (either gender)
- * to an official's role. Save refuses a player of the players list with the
+ * people, search? }) adds "Add from club": players of the club's players list
+ * of the team's gender to the players, anyone of the club's lists (either
+ * gender) to an official's role (`search(q)`: the server's name search, owner
+ * decision 2). Save refuses a player of the players list with the
  * other gender than the team's (the server too: OV_WRONG_GENDER); officials
  * are never checked. With the club's lists each row has a shield (ClubShield):
  * green in a list uploaded from VolleyManager, gray typed by hand (also when
@@ -246,6 +252,7 @@ const STAFF_COLS_SM = { plain: 'sm:grid-cols-[11rem_1fr_1fr_9.5rem_8rem_2.25rem]
  */
 export default function TeamEditor({ team, competition, online, onBack, onChanged, onDeleted, saveRoster: saveRosterWith = null, fixedFields = false, pdfImport = false, clubPlayers = null, onAddToClub = null, clubName = '' }) {
   const { t } = useTranslation()
+  useEffect(() => { dropStoredDeclined() }, [])
   const pdfInput = useRef(null)
   const [importing, setImporting] = useState(false)
   const [clubPicker, setClubPicker] = useState(false)
@@ -503,16 +510,25 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
     }
   }
 
+  // fe-manage-2: a team with players or officials goes only with its name
+  // typed; the server checks it too and audits the delete
   const deleteTeam = async () => {
-    const ok = await confirmDialog({
+    const withPeople = (team.players || []).length + (team.staff || []).length > 0
+    const answer = await confirmDialog({
       title: t('savedTeams.deleteTeamConfirmTitle', { name: team.name }),
       message: t('savedTeams.deleteTeamConfirmBody'),
       confirmLabel: t('savedTeams.deleteTeam'),
       cancelLabel: t('common.cancel', 'Cancel'),
-      tone: 'danger'
+      tone: 'danger',
+      ...(withPeople ? { input: { label: t('savedTeams.typeNameToDelete', { name: team.name }), placeholder: team.name } } : {})
     })
-    if (!ok) return
-    const res = await savedTeamsApi.deleteTeam(team.id)
+    if (answer === false) return
+    if (withPeople && !sameTypedName(answer, team.name)) {
+      setFieldsError(t('savedTeams.confirmNameMismatch'))
+      return
+    }
+    setFieldsError('')
+    const res = await savedTeamsApi.deleteTeam(team.id, { confirm: withPeople ? answer : undefined })
     if (res.error) {
       setFieldsError(t(errorKeyOf(res.error)))
       return
@@ -550,6 +566,14 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
   // The gray shield: the row typed by hand takes the names, date of birth and
   // licence number of someone uploaded from VolleyManager (green then)
   const shieldOf = (row) => (clubPlayers ? clubPersonOf(row, people) : null)
+  // an official's row links to anyone uploaded of the club's lists: the server's search
+  const searchUploaded = clubPlayers?.search
+    ? async (q) => {
+      const r = await clubPlayers.search(q)
+      const d = r?.data ?? r
+      return { people: (Array.isArray(d?.people) ? d.people : []).filter((c) => !c.manual), more: d?.more === true }
+    }
+    : null
   const cols = clubPlayers ? 'club' : 'plain'
   const linkRow = ([c]) => {
     const target = linking
@@ -839,6 +863,7 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
         onClose={() => setOfficialPicker(false)}
         onPick={officialFromClub}
         players={people}
+        search={clubPlayers?.search || null}
         roles={staffRoles}
         initialRole={STAFF_ROLES.find((r) => !officialOfRole(staff, r)) || STAFF_ROLES[0]}
         rolesOf={(c) => officialRolesOf(staff, c)}
@@ -850,6 +875,7 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
         onClose={() => setLinking(null)}
         onPick={linkRow}
         players={(linking?.list === 'players' ? offered : people).filter((c) => !c.manual)}
+        search={linking?.list === 'players' ? null : searchUploaded}
         initialQuery={linking?.query || ''}
       />
       <ClubOfferModal

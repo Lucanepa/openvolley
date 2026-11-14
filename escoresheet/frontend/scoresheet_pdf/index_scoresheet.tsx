@@ -12,6 +12,7 @@ import { db } from '../src/db/db';
 import { ClipboardIcon } from '../src/components/icons';
 import { closeAppWindow, deliverPdfToOpener, getOpenerWindow, isInAppView } from '../src/utils/appWindowGuest';
 import { openAppWindow } from '../src/utils/openAppWindow';
+import { postScoresheetError } from '../src/utils/scoresheetErrorMessage';
 import { installPopupDiagnostics } from '../src/diagnostics';
 
 // Diagnostics mode, in the desktop app's pop-up window only (opened from the
@@ -32,15 +33,9 @@ const backToTheApp = () => {
 const sendErrorToParent = (error: Error | string, details?: string) => {
   try {
     // the opener (popup / desktop app window) or the app under the Android in-app view
+    // (the app's own origin only: src/utils/scoresheetErrorMessage.js)
     const opener = getOpenerWindow();
-    if (opener) {
-      opener.postMessage({
-        type: 'SCORESHEET_ERROR',
-        error: typeof error === 'string' ? error : error.message,
-        details: details || (error instanceof Error ? error.stack : ''),
-        stack: error instanceof Error ? error.stack : undefined
-      }, '*');
-    }
+    if (opener) postScoresheetError(opener, error, details);
   } catch (e) {
     console.error('Failed to send error to parent:', e);
   }

@@ -234,6 +234,121 @@ describe('Phase 7: ownership, PIN-gated data, backups, PINs at rest', { skip: SK
     assert.equal(ev.text.includes('Muster'), false, 'an event payload reached an anonymous reader')
   })
 
+  it('anonymous /api/db: a relay room token or a token of a changed PIN unlocks no roster', async () => {
+    const select = (headers = {}) => api(srv.base, '/api/db', { proto: null, headers, body: { table: 'matches', action: 'select', params: { columns: '*', filters: [{ type: 'eq', column: 'external_id', value: ext }], maybeSingle: true } } })
+    // a relay room with the database match's key but its own PINs
+    const scoreboard = await openSocket(srv.wsUrl)
+    try {
+      scoreboard.send({ type: 'sync-match-data', matchId: 7, match: { id: 7, seed_key: ext, status: 'live', gamePin: GAME_PIN, refereePin: '615243', refereeConnectionEnabled: true }, homePlayers: [], sets: [], events: [] })
+      scoreboard.send({ type: 'ping' })
+      await scoreboard.waitFor((m) => m.type === 'pong')
+      const v = await api(srv.base, '/api/match/validate-pin', { proto: null, body: { pin: '615243', type: 'referee' } })
+      assert.equal(v.status, 200, v.text)
+      const relayGrant = await select({ 'X-OV-Match-Token': v.json.token })
+      assert.equal(relayGrant.status, 200, relayGrant.text)
+      assert.equal('players_home' in relayGrant.json.data, false, 'a relay room token unlocked the database rosters')
+    } finally {
+      scoreboard.ws.close()
+    }
+    // a bench token ends on /api/db when the bench PIN changes
+    const pin = await api(srv.base, '/api/match/validate-connection-pin', { proto: null, body: { pin: PINS.bench_home, type: 'bench_home' } })
+    assert.deepEqual((await select({ 'X-OV-Match-Token': pin.json.token })).json.data.players_home, [{ number: 4, last_name: 'Muster' }])
+    const { rows: [before] } = await sql.query('SELECT connection_pins FROM matches WHERE id = $1', [matchUuid])
+    try {
+      await sql.query("UPDATE matches SET connection_pins = connection_pins || jsonb_build_object('bench_home', '000111') WHERE id = $1", [matchUuid])
+      assert.equal('players_home' in (await select({ 'X-OV-Match-Token': pin.json.token })).json.data, false, 'the old PIN\'s token still unlocks the roster')
+    } finally {
+      await sql.query('UPDATE matches SET connection_pins = $2 WHERE id = $1', [matchUuid, before.connection_pins])
+    }
+  })
+
+  it('the game PIN: editors end with a PIN change, the creator removes them, the close retires the PIN', async () => {
+    const ext2 = `${ext}-close`
+    const PIN2 = '573918'
+    const PIN3 = '690412'
+    const made = await dbCall(users.alice, 'matches', 'upsert', {
+      data: { external_id: ext2, game_n: 9402, game_pin: PIN2, status: 'live', sport_type: 'indoor', home_team: { name: 'Home VC' }, away_team: { name: 'Away VC' }, players_home: [{ number: 4, last_name: 'Muster', dob: '2002-03-04' }] },
+      onConflict: 'external_id', returning: 'id', single: true
+    })
+    assert.equal(made.status, 200, made.text)
+    const id2 = made.json.data.id
+    const claim = (u, pin) => api(srv.base, '/api/match/claim', { token: u.token, headers: { 'cf-connecting-ip': nextIp() }, body: { externalId: ext2, pin } })
+    const editors = (u) => api(srv.base, `/api/match-editors/${id2}`, { method: 'GET', token: u.token, proto: null })
+    assert.equal((await claim(users.bob, PIN2)).json.data.role, 'editor')
+    const listed = await editors(users.alice)
+    assert.equal(listed.status, 200, listed.text)
+    assert.deepEqual(listed.json.data.editors.map((e) => e.user_id), [users.bob.id])
+    assert.equal((await editors(users.bob)).status, 404, 'an editor does not manage the editors')
+    // a new game PIN ends the editors of the old one
+    assert.equal((await dbCall(users.alice, 'matches', 'update', { data: { game_pin: PIN3 }, filters: [{ type: 'eq', column: 'id', value: id2 }] })).status, 200)
+    assert.deepEqual((await editors(users.alice)).json.data.editors, [])
+    // the same PIN written again keeps them
+    assert.equal((await claim(users.bob, PIN3)).json.data.role, 'editor')
+    assert.equal((await dbCall(users.alice, 'matches', 'update', { data: { game_pin: PIN3 }, filters: [{ type: 'eq', column: 'id', value: id2 }] })).status, 200)
+    assert.equal((await editors(users.alice)).json.data.editors.length, 1)
+    // the creator removes an editor
+    const del = await api(srv.base, `/api/match-editors/${id2}/${users.bob.id}`, { method: 'DELETE', token: users.alice.token, proto: null })
+    assert.equal(del.status, 200, del.text)
+    assert.deepEqual((await editors(users.alice)).json.data.editors, [])
+    assert.equal((await claim(users.bob, PIN3)).json.data.role, 'editor')
+    // an editor by PIN that sets a new game PIN stays an editor and keeps writing
+    const PIN4 = '814275'
+    assert.equal((await dbCall(users.bob, 'matches', 'update', { data: { game_pin: PIN4 }, filters: [{ type: 'eq', column: 'id', value: id2 }] })).status, 200)
+    assert.deepEqual((await editors(users.alice)).json.data.editors.map((e) => e.user_id), [users.bob.id])
+    const bobWrites = await dbCall(users.bob, 'matches', 'update', { data: { match_info: { league: 'League B' } }, filters: [{ type: 'eq', column: 'id', value: id2 }] })
+    assert.equal(bobWrites.status, 200, bobWrites.text)
+    assert.equal((await sql.query("SELECT match_info->>'league' AS l FROM matches WHERE id = $1", [id2])).rows[0].l, 'League B')
+
+    // the close retires the game PIN
+    const closed = await dbCall(users.alice, 'matches', 'update', { data: { status: 'final' }, filters: [{ type: 'eq', column: 'id', value: id2 }] })
+    assert.equal(closed.status, 200, closed.text)
+    const { rows: [c] } = await sql.query('SELECT closed_at FROM matches WHERE id = $1', [id2])
+    assert.ok(c.closed_at, 'the match is closed')
+    const audits = async () => (await sql.query("SELECT count(*)::int AS n FROM audit_log WHERE action = 'match.restore_pin' AND match_id = $1", [id2])).rows[0].n
+    const auditedBefore = await audits()
+    const anon = await api(srv.base, '/api/match/restore-by-pin', { proto: null, body: { gameN: 9402, pin: PIN4 } })
+    assert.equal(anon.status, 200, anon.text)
+    assert.equal(anon.json.data.access, 'public')
+    assert.equal(anon.text.includes('2002-03-04'), false, 'a date of birth by game PIN after the close')
+    assert.equal(await audits(), auditedBefore + 1, 'an anonymous restore is audited')
+    const asEditor = await api(srv.base, '/api/match/restore-by-pin', { token: users.bob.token, proto: null, body: { gameN: 9402, pin: PIN4 } })
+    assert.equal(asEditor.json.data.access, 'public', 'an editor by PIN gets the public view after the close')
+    const read = await dbCall(users.bob, 'matches', 'select', { columns: '*', filters: [{ type: 'eq', column: 'id', value: id2 }], maybeSingle: true })
+    assert.equal(read.text.includes('2002-03-04'), false, 'an editor by PIN reads the closed match whole')
+    const asCreator = await api(srv.base, '/api/match/restore-by-pin', { token: users.alice.token, proto: null, body: { gameN: 9402, pin: PIN4 } })
+    assert.equal(asCreator.json.data.match.players_home[0].dob, '2002-03-04', 'the creator keeps the whole record')
+    // match info mail: a session only, and never the request's address or text
+    assert.equal((await api(srv.base, '/api/match/send-info', { proto: null, body: { email: 'someone@example.ch', gameN: 1, gamePin: PIN3 } })).status, 401)
+    assert.equal((await api(srv.base, '/api/match/send-info', { token: users.alice.token, proto: null, body: { externalId: ext2 } })).status, 503, 'no mailer configured here')
+    // within the close's window a claim still adds an editor (a shared tablet's next account sends the PDF); past it, none
+    await sql.query('SET session_replication_role = replica')
+    try {
+      await sql.query("UPDATE matches SET closed_at = now() - interval '7 hours' WHERE id = $1", [id2])
+    } finally {
+      await sql.query('SET session_replication_role = origin')
+    }
+    const late = await claim(users.dave, PIN4)
+    assert.equal(late.status, 409, late.text)
+    assert.equal(late.json.error.code, 'OV_MATCH_CLOSED')
+  })
+
+  it('send-info reads the stored match: another account\'s match is 404, never a server error', async () => {
+    // a mailer key but no mail: every request below stops before the send
+    const mail = await bootServer({ DATABASE_URL: db.url, STORAGE_ROOT: storageRoot, STATUS_DIR: statusDir, OV_PIN_SECRET: PIN_SECRET, RESEND_API_KEY: 'unused' })
+    try {
+      const ext3 = `${ext}-mail`
+      const made = await dbCall(users.alice, 'matches', 'upsert', {
+        data: { external_id: ext3, game_n: 9403, status: 'setup', sport_type: 'indoor', match_info: { hall: 'Hall A', city: 'Town', league: 'League A' } },
+        onConflict: 'external_id', returning: 'id', single: true
+      })
+      assert.equal(made.status, 200, made.text)
+      const r = await api(mail.base, '/api/match/send-info', { token: users.bob.token, proto: null, body: { externalId: ext3 } })
+      assert.equal(r.status, 404, r.text)
+    } finally {
+      await mail.stop()
+    }
+  })
+
   it('relay and GET /api/match/:id: the summary before the PIN step, the bundle after it', async () => {
     const scoreboard = await openSocket(srv.wsUrl)
     const viewer = await openSocket(srv.wsUrl)
@@ -308,7 +423,7 @@ describe('Phase 7: ownership, PIN-gated data, backups, PINs at rest', { skip: SK
     const ok = await api(srv.base, '/api/match/upload-roster', { proto: null, body })
     assert.equal(ok.status, 200, ok.text)
     const { rows: [row] } = await sql.query('SELECT connections, signatures, status FROM matches WHERE id = $1', [matchUuid])
-    assert.deepEqual(row.connections.pending_home_roster.players, [{ number: 12, lastName: 'Neu' }])
+    assert.deepEqual(row.connections.pending_home_roster.players, [{ number: 12, firstName: '', lastName: 'Neu', dob: '', libero: '', isCaptain: false, isLfp: false }])
     assert.equal(row.connections.referee_enabled, true, 'the other connection keys stay')
     assert.equal(row.signatures.home_coach, 'data:image/png;base64,COACH')
     await sql.query("UPDATE matches SET status = 'live' WHERE id = $1", [matchUuid])

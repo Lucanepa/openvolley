@@ -4,8 +4,14 @@
 //
 //   desktop-updater.mjs pubkey   --tauri-conf FILE
 //       Print the updater public key the app trusts (plugins.updater.pubkey).
-//   desktop-updater.mjs verify   (--tauri-conf FILE | --pubkey B64) --version V FILE...
+//   desktop-updater.mjs verify   (--tauri-conf FILE | --pubkey B64) --version V [--allow-unbound] [--check-name] FILE...
 //       Check FILE.sig for each FILE, the way the app's updater does.
+//       --check-name: the signature must also name the file as FILE is
+//       named (its trusted "file:" field), so one signed installer cannot
+//       stand in for another of the same version (both apps share the key).
+//       --allow-unbound also takes a signature that names no version (one
+//       the Tauri bundler made in another project's release build, svrz-rc);
+//       one that names a version must still name V.
 //   desktop-updater.mjs manifest (--tauri-conf FILE | --pubkey B64) --version V --out FILE
 //                                --nsis FILE URL --appimage FILE URL --deb FILE URL
 //                                [--app FILE URL] [--notes-file FILE] [--pub-date RFC3339]
@@ -147,7 +153,7 @@ function sameVersion(signed, announced) {
 }
 
 // Checks what the signature says without the file: key id and signed version.
-export function checkSignatureMeta(sigB64, pub, version, what) {
+export function checkSignatureMeta(sigB64, pub, version, what, { allowUnbound = false } = {}) {
   const s = parseSignature(sigB64)
   if (!s.keyId.equals(pub.keyId)) {
     fail(`${what}: signed by key ${Buffer.from(s.keyId).reverse().toString('hex').toUpperCase()}, the app trusts ${pub.keyIdHex}`)
@@ -155,14 +161,17 @@ export function checkSignatureMeta(sigB64, pub, version, what) {
   if (!edVerify(null, Buffer.concat([s.sig, Buffer.from(s.trustedComment, 'utf8')]), pub.key, s.global)) {
     fail(`${what}: trusted comment does not verify`)
   }
-  if (s.fields.version === undefined) fail(`${what}: no version in the signature (tauri CLI older than 2.12, or signed without --app-version)`)
+  if (s.fields.version === undefined) {
+    if (allowUnbound) return s
+    fail(`${what}: no version in the signature (tauri CLI older than 2.12, or signed without --app-version)`)
+  }
   if (!sameVersion(s.fields.version, version)) fail(`${what}: signed for version ${s.fields.version}, announced ${version}`)
   return s
 }
 
-export async function verifyFile(file, sigB64, pub, version) {
+export async function verifyFile(file, sigB64, pub, version, opts) {
   const what = basename(file)
-  const s = checkSignatureMeta(sigB64, pub, version, what)
+  const s = checkSignatureMeta(sigB64, pub, version, what, opts)
   if (!edVerify(null, await blake2b512(file), pub.key, s.sig)) fail(`${what}: signature does not match the file`)
   return s
 }
@@ -259,12 +268,13 @@ async function main(argv) {
       return
     }
     case 'verify': {
-      const o = parseArgs(rest, { 'tauri-conf': 1, pubkey: 1, version: 1 })
+      const o = parseArgs(rest, { 'tauri-conf': 1, pubkey: 1, version: 1, 'allow-unbound': 0, 'check-name': 0 })
       const pub = pubFrom(o)
       if (!o.version) fail('--version is required')
       if (!o._.length) fail('no files')
       for (const f of o._) {
-        const s = await verifyFile(f, readSig(f), pub, o.version)
+        const s = await verifyFile(f, readSig(f), pub, o.version, { allowUnbound: !!o['allow-unbound'] })
+        if (o['check-name'] && s.fields.file !== basename(f)) fail(`${basename(f)}: the signature is for the file ${JSON.stringify(s.fields.file ?? '')}`)
         console.log(`verified ${basename(f)} (key ${pub.keyIdHex}, ${s.trustedComment.replace(/\t/g, ' ')})`)
       }
       return

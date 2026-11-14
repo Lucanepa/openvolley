@@ -70,11 +70,26 @@ export function pickCurrentMatch(matches, { now = Date.now(), hasEvents = () => 
   return candidates.length ? candidates[0].m : null
 }
 
+// Local statuses of an official match that ended and is not closed yet: only
+// its Match End's Close match takes it further ('final')
+const NOT_CLOSED_STATUSES = ['ended', 'approved']
+
 /**
  * What "New match → Official match" does with the current match
  * (App.jsx createNewOfficialMatch), from its home-screen status:
- * - 'recording': an official match is being recorded. It is not replaced;
- *   the scorer is told to continue or delete it first.
+ * - 'recording': an official match is being recorded (live: past its coin
+ *   toss, whatever the home screen says; the coin toss no longer waits for
+ *   the signatures). It is not replaced; the scorer is told to continue or
+ *   delete it first.
+ * - 'ended': an official match that ended, or was approved here, and was not
+ *   closed. It stays the current match until Close match, and it is not
+ *   replaced either: the scorer is told to close or delete it first. It was
+ *   replaced after the generic question, and its writes the server did not
+ *   have yet went with it: offline, the approval, the last set and the
+ *   scoresheet upload (review 2026-11-10).
+ * - 'unsent': any other official match with writes the server does not have
+ *   yet (opts.unsent, utils/deviceSelfCheck unsentOfMatch). Not replaced:
+ *   only Delete match removes them, after naming them.
  * - 'replace': a confirmed match is deleted after a question, a test or easy
  *   match also while it is being recorded.
  *   The button used to do nothing at all then, no dialog, no message, while
@@ -89,12 +104,21 @@ export function pickCurrentMatch(matches, { now = Date.now(), hasEvents = () => 
  *   after a question (closed), or to block as "still recording" (moved).
  * @param {object|null} match the current match
  * @param {string|undefined} status its home-screen status ('Match recording', ...)
- * @param {{ closedCopy?: boolean, movedCopy?: boolean }} [opts] closedCopy:
- *   closed on the server; movedCopy: scored on another device
- * @returns {'recording'|'replace'|'discard'|'new'}
+ * @param {{ closedCopy?: boolean, movedCopy?: boolean, unsent?: number }} [opts]
+ *   closedCopy: closed on the server; movedCopy: scored on another device;
+ *   unsent: its writes the server does not have yet
+ * @returns {'recording'|'ended'|'unsent'|'replace'|'discard'|'new'}
  */
-export function newOfficialMatchStep(match, status, { closedCopy = false, movedCopy = false } = {}) {
+export function newOfficialMatchStep(match, status, { closedCopy = false, movedCopy = false, unsent = 0 } = {}) {
   if (!match || closedCopy || movedCopy) return 'new'
-  if (status === 'Match recording') return match.test === true ? 'replace' : 'recording'
+  if (match.test !== true) {
+    if (match.approved === true || NOT_CLOSED_STATUSES.includes(match.status) || status === 'Match ended') return 'ended'
+    if (match.status === 'live' || status === 'Match recording') return 'recording'
+    if (unsent > 0) return 'unsent'
+  }
+  if (status === 'Match recording') return 'replace'
   return match.matchInfoConfirmedAt ? 'replace' : 'discard'
 }
+
+/** The steps that keep the official match: the scorer is told why (App). */
+export const OFFICIAL_MATCH_KEPT_STEPS = ['recording', 'ended', 'unsent']

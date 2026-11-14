@@ -31,7 +31,7 @@ The output is deterministic: commit the SVG change and the renders together.
 | `icon-tile.svg` | White rounded tile with a stone-200 hairline, the ball inside the adaptive-icon safe zone | PWA `any` icons, the store icon (fastlane, F-Droid) |
 | `adaptive-foreground.svg` | Android adaptive foreground: the ball on the 108 dp canvas (radius 120 of 512, about 70 % of the 72 dp launcher circle like the system icons; safe circle 156.4) | `mipmap-*/ic_launcher_foreground.png`, Android 12+ splash |
 | `adaptive-monochrome.svg` | The same in black, a little smaller (radius 108), as themed glyphs are | `mipmap-*/ic_launcher_monochrome.png`, the Android 13+ themed icon |
-| `icon-desktop.svg` | Inset tile, bigger ball | Windows / Linux app icon (Tauri `src-tauri/icons`, Electron), 48 px and up |
+| `icon-desktop.svg` | Inset tile, bigger ball | Windows / Linux app icon (Tauri `src-tauri/icons`), 48 px and up |
 | `icon-desktop-small.svg` | Fuller tile, 4-seam ball | The same at 16, 24 and 32 px |
 | `lockup.svg` | Ball + "OpenVolley" in one line, ink | Manager and console headers, the scoresheet / PDF header top left (`src/assets/brand/openvolley_lockup.png` = `BRAND.lockupPng`), `public/openvolley_logo.png` |
 | `lockup-dark.svg` | The same for dark backgrounds | |

@@ -44,6 +44,8 @@ trap cleanup EXIT INT TERM
 export OV_PKGS_HOME="$T/home" OV_PACMAN_PKGBUILDS="$T/pkgbuilds"
 unset OV_PACMAN_GNUPG OV_PACMAN_PASSPHRASE
 PUBLISH="$HERE/publish-pacman.sh"
+# The pinned build image (archlinux-image) when there is one, else the moving tag.
+[[ -f "$HERE/archlinux-image" ]] || export OV_PACMAN_IMAGE=${OV_PACMAN_IMAGE:-archlinux:base-devel}
 RX="$T/home/public/arch/x86_64"
 OV=openvolley-escoresheet-bin
 OB=openbeach-escoresheet-bin

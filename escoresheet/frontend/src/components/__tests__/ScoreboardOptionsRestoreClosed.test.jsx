@@ -20,7 +20,9 @@ vi.mock('../../utils/backupManager', () => ({
   fetchCloudBackup: vi.fn(),
   selectBackupFile: vi.fn(),
   getBackupSettings: () => ({ autoBackupEnabled: true }),
-  matchBackupFromFile: (data) => data
+  matchBackupFromFile: (data) => data,
+  RESTORE_LOSES_LOCAL: 'OV_RESTORE_LOSES_LOCAL',
+  restoreLossText: () => 'loss'
 }))
 vi.mock('../../diagnostics/reload', () => ({ reloadWithReason: vi.fn() }))
 vi.mock('../../db/db', () => ({ db: { matches: { get: vi.fn(async () => ({ id: 7, seed_key: 'match_1792518507614_u2sbmb' })) } } }))

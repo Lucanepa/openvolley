@@ -13,7 +13,7 @@ renders, commit them with the SVG. It writes:
   (BRAND.lockupPng: the scoresheet header)
 - android/app/src/main/res: launcher icons (square, round, adaptive
   foreground, themed-icon monochrome) for every density, pre-Android-12 splash
-- src-tauri/icons and electron/: desktop app icons (png, ico, icns)
+- src-tauri/icons: desktop app icons (png, ico, icns)
 - fastlane/metadata/android/en-US/images/icon.png (repo root): store icon
 - ../backend/lib/brandMark.js: the mark as inline SVG for the server's page
 - ../deploy/pkgs/index.html: the install page's favicon and header icon, inline
@@ -176,7 +176,7 @@ for folder, (w, h) in SPLASH.items():
     canvas.alpha_composite(art, ((w - art.width) // 2, (h - art.height) // 2))
     save_png(canvas, RES / folder / 'splash.png', rgb=True)
 
-# ---- desktop (Tauri, Electron) ------------------------------------------
+# ---- desktop (Tauri) ------------------------------------------------------
 # 16-32 px: the fuller 4-seam tile; 48 px and up: the inset tile
 SMALL, LARGE = 'icon-desktop-small.svg', 'icon-desktop.svg'
 ICONS = ROOT / 'src-tauri/icons'
@@ -187,10 +187,8 @@ save_png(render(LARGE, 256), ICONS / '128x128@2x.png')
 save_png(render(LARGE, 512), ICONS / 'icon.png')
 ICO = {16: SMALL, 24: SMALL, 32: SMALL, 48: LARGE, 64: LARGE, 256: LARGE}
 ICNS = {16: SMALL, 32: SMALL, 64: LARGE, 128: LARGE, 256: LARGE, 512: LARGE, 1024: LARGE}
-for folder in (ICONS, ROOT / 'electron'):
-    save_ico(folder / 'icon.ico', ICO)
-    save_icns(folder / 'icon.icns', ICNS)
-save_png(render(LARGE, 1024), ROOT / 'electron/icon.png')
+save_ico(ICONS / 'icon.ico', ICO)
+save_icns(ICONS / 'icon.icns', ICNS)
 
 # ---- store listing (F-Droid / fastlane) ----------------------------------
 save_png(render('icon-tile.svg', 512), REPO / 'fastlane/metadata/android/en-US/images/icon.png')

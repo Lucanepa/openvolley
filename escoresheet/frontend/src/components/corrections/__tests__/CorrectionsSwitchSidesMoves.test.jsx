@@ -11,7 +11,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, cleanup } from '@testing-library/react'
 
 vi.mock('../../../ui/uiStore.js', async (importOriginal) => ({ ...(await importOriginal()), confirmDialog: async () => true }))
-vi.mock('../../../services/corrections/applyCorrectionPlan', () => ({
+vi.mock('../../../services/corrections/applyCorrectionPlan', async (orig) => ({
+  ...(await orig()),
   applyCorrectionPlan: async () => ({ addedIds: [], signaturesCleared: false })
 }))
 

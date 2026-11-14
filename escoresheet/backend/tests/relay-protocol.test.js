@@ -1,7 +1,7 @@
 /**
  * Contract test for the backend WebSocket relay: same client-facing protocol as
  * the LAN relays (frontend/electron/lanRelayCore.cjs). Boots server.js in local
- * mode (no Supabase, no PocketBase) on a random port.
+ * mode (no Supabase) on a random port.
  */
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -12,6 +12,10 @@ import { dirname, resolve } from 'node:path'
 import WebSocket from 'ws'
 import { get as httpGet } from 'node:http'
 import { gunzipSync } from 'node:zlib'
+import { randomBytes } from 'node:crypto'
+
+// The cloud relay stamps the order it received each live state in (server.js stampRelayOrder)
+const unstamped = (o) => { if (!o || typeof o !== 'object') return o; const { _relayEpoch, _relaySeq, ...rest } = o; return rest }
 
 const BACKEND_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -100,7 +104,7 @@ describe('backend WebSocket relay protocol', () => {
   before(async () => {
     port = await freePort()
     const env = { ...process.env, PORT: String(port) }
-    for (const k of ['DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'POCKETBASE_URL', 'IS_CLOUD', 'TRUST_PROXY']) delete env[k]
+    for (const k of ['DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'IS_CLOUD', 'TRUST_PROXY']) delete env[k]
     child = spawn(process.execPath, ['server.js', '--local'], { cwd: BACKEND_DIR, env, stdio: 'ignore' })
     const start = Date.now()
     for (;;) {
@@ -146,7 +150,7 @@ describe('backend WebSocket relay protocol', () => {
 
     scoreboard.send({ type: 'live-state-update', matchId: 7, liveState: { points_a: 5 } })
     const live = await referee.waitFor((m) => m.type === 'live-state-update')
-    assert.deepEqual(live.liveState, { points_a: 5 })
+    assert.deepEqual(unstamped(live.liveState), { points_a: 5 })
 
     // A socket cannot self-grant the scoreboard role
     attacker.send({ type: 'join_match', matchId: '7', role: 'scoreboard' })
@@ -186,12 +190,12 @@ describe('backend WebSocket relay protocol', () => {
     // the LedBox bridge) and reaches a subscriber that joins mid-match
     scoreboard.send(syncMessage(makeMatch(), { events: [{ id: 1 }, { id: 2 }] }))
     const withLive = await referee.waitFor((m) => m.type === 'match-data-update' && m.events.length === 2)
-    assert.deepEqual(withLive.liveState, { points_a: 5 })
-    assert.deepEqual(withLive.data, { liveState: { points_a: 5 } })
+    assert.deepEqual(unstamped(withLive.liveState), { points_a: 5 })
+    assert.deepEqual(unstamped(withLive.data.liveState), { points_a: 5 })
     const bridge = await openClient(wsUrl)
     bridge.send({ type: 'subscribe-match', matchId: '7' })
     const bridgeFull = await bridge.waitFor((m) => m.type === 'match-full-data')
-    assert.deepEqual(bridgeFull.data, { liveState: { points_a: 5 } })
+    assert.deepEqual(unstamped(bridgeFull.data.liveState), { points_a: 5 })
     assert.equal(containsPin(bridge.raw.join('')), false)
 
     // The real scoreboard can delete; the room is told before it goes away
@@ -481,7 +485,10 @@ describe('backend WebSocket relay protocol', () => {
     const wsUrl = `ws://127.0.0.1:${port}`
     const seed = 'match_1791215210060_stalls'
     const match = makeMatch({ id: 45, seed_key: seed, gamePin: '454545' })
-    const big = 'b'.repeat(1024 * 1024)
+    // Text that does not compress: the venue relay (--local) deflates frames,
+    // and 1 MB of one letter left a few KB, so whether the queue passed the
+    // limit depended on a deflate still running when the next bundle came.
+    const big = () => randomBytes(768 * 1024).toString('base64')
     const scoreboard = await openClient(wsUrl)
     const referee = await openClient(wsUrl)
     scoreboard.send(syncMessage(match))
@@ -493,12 +500,16 @@ describe('backend WebSocket relay protocol', () => {
     // the tablet stops reading; the scorer goes on (30 bundles of 1 MB)
     referee.ws._socket.pause()
     for (let i = 0; i < 30; i++) {
-      scoreboard.send(syncMessage(match, { events: [{ id: i + 1, seq: i + 1, setIndex: 1, type: 'remark', payload: { text: big }, ts: '2026-11-29T10:00:00.000Z' }] }))
+      scoreboard.send(syncMessage(match, { events: [{ id: i + 1, seq: i + 1, setIndex: 1, type: 'remark', payload: { text: big() }, ts: '2026-11-29T10:00:00.000Z' }] }))
       scoreboard.send({ type: 'ping' })
       await scoreboard.waitFor((m) => m.type === 'pong' && !m.seen && (m.seen = true))
     }
     referee.ws._socket.resume()
-    const outcome = await Promise.race([closed, new Promise((resolve) => setTimeout(() => resolve(false), 5000))])
+    // 30 MB cannot all sit in the loopback's socket buffers, so the drop
+    // happened at one of the sends above; the wait only guards against a hang
+    let guard
+    const outcome = await Promise.race([closed, new Promise((resolve) => { guard = setTimeout(() => resolve(false), 30000) })])
+    clearTimeout(guard)
     assert.equal(outcome, true, 'the stalled tablet was dropped (it reconnects and gets the latest bundle)')
     assert.ok(referee.messages.filter((m) => m.type === 'match-data-update').length < 30)
     scoreboard.send({ type: 'delete-match', matchId: 45 })
@@ -573,7 +584,7 @@ describe('backend WebSocket relay protocol', () => {
     assert.deepEqual(first.homePlayers, [])
     courtA.send({ type: 'live-state-update', matchId: 'list-court-a', liveState: { points_a: 4, points_b: 2, serving_team: 'right', timeouts_b: 1 } })
     const live = await viewer.waitFor((m) => m.type === 'live-state-update')
-    assert.deepEqual(live.liveState, { points_a: 4, points_b: 2, serving_team: 'right', timeouts_b: 1 })
+    assert.deepEqual(unstamped(live.liveState), { points_a: 4, points_b: 2, serving_team: 'right', timeouts_b: 1 })
     const seen = JSON.stringify(viewer.messages)
     assert.equal(containsPin(seen), false)
     assert.ok(!/dob|lastName|officials|ignature/.test(seen))
@@ -800,7 +811,7 @@ describe('backend relay in cloud mode (IS_CLOUD)', () => {
   before(async () => {
     port = await freePort()
     const env = { ...process.env, PORT: String(port), IS_CLOUD: '1' }
-    for (const k of ['DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'POCKETBASE_URL', 'TRUST_PROXY']) delete env[k]
+    for (const k of ['DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'TRUST_PROXY']) delete env[k]
     child = spawn(process.execPath, ['server.js', '--local'], { cwd: BACKEND_DIR, env, stdio: 'ignore' })
     const start = Date.now()
     for (;;) {
@@ -858,6 +869,19 @@ describe('backend relay in cloud mode (IS_CLOUD)', () => {
     const { wire, bytes } = await bundleOnTheWire(`ws://127.0.0.1:${port}`, { id: 44, seed: 'match_1791215210060_cdefla', gamePin: '444444' })
     assert.ok(wire >= bytes, 'the bundle arrived as a plain frame')
   })
+
+  // The PocketBase snapshot backup is gone (it was never deployed): no
+  // anonymous backup list, no snapshot read with the game PIN in the URL.
+  it('the PocketBase backup routes are gone', async () => {
+    for (const path of ['/api/pocketbase/matches', '/api/pocketbase/matches?game_number=1', '/api/pocketbase/matches/7?gamePin=987654']) {
+      const res = await fetch(`http://127.0.0.1:${port}${path}`)
+      assert.equal(res.status, 404, path)
+      await res.arrayBuffer()
+    }
+    const status = await (await fetch(`http://127.0.0.1:${port}/api/server/status`)).json()
+    assert.equal(status.status, 'online')
+    assert.equal('pocketbase' in status, false)
+  })
 })
 
 describe('backend relay in cloud mode behind Cloudflare: a hall behind one address', () => {
@@ -868,7 +892,7 @@ describe('backend relay in cloud mode behind Cloudflare: a hall behind one addre
   before(async () => {
     port = await freePort()
     const env = { ...process.env, PORT: String(port), IS_CLOUD: '1', TRUST_PROXY: 'cloudflare' }
-    for (const k of ['DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'POCKETBASE_URL', 'TRUST_PROXY_FROM']) delete env[k]
+    for (const k of ['DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'TRUST_PROXY_FROM']) delete env[k]
     child = spawn(process.execPath, ['server.js', '--local'], { cwd: BACKEND_DIR, env, stdio: 'ignore' })
     const start = Date.now()
     for (;;) {

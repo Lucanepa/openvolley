@@ -3,7 +3,6 @@
   "version": "3.1.4",
   "private": true,
   "type": "module",
-  "main": "electron/main.js",
   "description": "Open Source Volleyball eScoresheet",
   "author": "Luca Canepa <luca.canepa@gmail.com>",
   "homepage": "https://github.com/lucacanepa/openvolley",
@@ -30,13 +29,6 @@
     "start:https": "cross-env HTTPS=true node server.js",
     "start:prod:https": "npm run build && cross-env HTTPS=true node server.js",
     "generate-certs": "node generate-certs.js",
-    "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron electron/main.js\"",
-    "electron:clean": "node -e \"const fs=require('fs'); try{fs.rmSync('dist-electron',{recursive:true,force:true})}catch(e){console.log('Clean failed, continuing...')}\"",
-    "electron:build": "npm run electron:clean && cross-env ELECTRON=true npm run build && electron-builder",
-    "electron:build:win": "npm run electron:clean && cross-env ELECTRON=true npm run build && electron-builder --win",
-    "electron:build:win:pwsh": "npm run electron:clean && $env:ELECTRON='true'; npm run build; electron-builder --win",
-    "electron:build:mac": "npm run electron:clean && cross-env ELECTRON=true npm run build && electron-builder --mac",
-    "electron:build:linux": "npm run electron:clean && cross-env ELECTRON=true npm run build && electron-builder --linux",
     "cap:sync": "cap sync",
     "cap:open:android": "cap open android",
     "cap:open:ios": "cap open ios",
@@ -68,7 +60,6 @@
     "fflate": "^0.8.3",
     "hash-wasm": "^4.12.0",
     "html-to-image": "^1.11.13",
-    "html5-qrcode": "^2.3.8",
     "i18next": "^26.4.3",
     "jspdf": "^4.1.0",
     "jszip": "^3.10.1",
@@ -78,7 +69,6 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-i18next": "^17.0.16",
-    "serve": "^14.2.5",
     "tailwind-merge": "^3.7.0",
     "ws": "^8.21.0"
   },
@@ -92,7 +82,6 @@
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
     "@vitejs/plugin-react": "^6.1.2",
-    "concurrently": "^10.0.6",
     "cross-env": "^10.1.0",
     "dotenv": "^18.0.7",
     "fake-indexeddb": "^6.2.5",
@@ -101,99 +90,6 @@
     "tailwindcss": "^4.3.2",
     "vite": "^8.3.4",
     "vite-plugin-pwa": "^2.0.0",
-    "vitest": "^5.0.3",
-    "wait-on": "^9.0.4"
-  },
-  "optionalDependencies": {
-    "electron": "^44.7.0",
-    "electron-builder": "^26.8.1"
-  },
-  "build": {
-    "appId": "com.openvolley.escoresheet",
-    "productName": "Openvolley eScoresheet",
-    "directories": {
-      "output": "dist-electron"
-    },
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "lucacanepa",
-        "repo": "openvolley"
-      }
-    ],
-    "npmRebuild": false,
-    "files": [
-      "dist/**/*",
-      "electron/**/*",
-      "!electron/README.md",
-      "package.json"
-    ],
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "portable",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "icon": "electron/icon.ico"
-    },
-    "mac": {
-      "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        },
-        {
-          "target": "zip",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        }
-      ],
-      "icon": "electron/icon.icns",
-      "category": "public.app-category.sports"
-    },
-    "linux": {
-      "target": [
-        {
-          "target": "AppImage",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "deb",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "rpm",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "icon": "electron/icon.png",
-      "category": "Utility"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
-    }
+    "vitest": "^5.0.3"
   }
 }

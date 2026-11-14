@@ -9,7 +9,7 @@
  */
 
 import { db } from '../db/db'
-import { redactScreenText } from './screenText'
+import { redactScreenText, isTypingField, TYPED_KEY } from './screenText'
 
 // Configuration
 const CONFIG = {
@@ -104,7 +104,8 @@ export function initComprehensiveLogger(gameN = null, mId = null) {
  */
 export function setGameContext(gameN, mId = null) {
   const nextGame = gameN ?? null
-  const nextMatch = mId ?? matchId
+  // no match open (both null): no match id either; a game number alone keeps it
+  const nextMatch = nextGame === null && mId == null ? null : (mId ?? matchId)
   if (nextGame === gameNumber && nextMatch === matchId) return
   gameNumber = nextGame
   matchId = nextMatch
@@ -382,12 +383,36 @@ const SECRET_LABEL = /password|passwort|secret|token|pin|credential/i
 // Visible text of a clicked element without PIN-like digit runs (utils/screenText)
 export { redactScreenText }
 
-// Entries stored before the click text was redacted: scrubbed on export
+const TYPING_EVENTS = new Set(['keydown', 'keyup', 'input', 'change'])
+
+// Entries stored before eventCapture stopped keeping typed text: a key typed
+// into a text field becomes the placeholder character, a value its length
+function withoutTypedText(entry, t) {
+  if (entry.category !== 'ui' || !TYPING_EVENTS.has(entry.type) || !isTypingField(t.tagName, t.type)) return entry.payload
+  const p = entry.payload
+  if (!p || typeof p !== 'object') return p
+  const out = { ...p }
+  if (typeof out.key === 'string' && out.key.length === 1 && !out.ctrlKey && !out.metaKey && !out.altKey) {
+    out.key = TYPED_KEY
+    out.code = null
+  }
+  if ('value' in out) {
+    if (typeof out.value === 'string' && out.value !== '[REDACTED]' && !Number.isFinite(out.valueLength)) out.valueLength = out.value.length
+    if (out.value !== '[REDACTED]') delete out.value
+  }
+  return out
+}
+
+// Entries stored before the click text was redacted, or with typed text: scrubbed on export
 function scrubExportEntry(entry) {
   const t = entry?.target
   if (!t || typeof t !== 'object') return entry
   const href = typeof t.href === 'string' ? t.href.split(/[?#]/)[0] : t.href
-  return { ...entry, target: { ...t, textContent: redactScreenText(t.textContent ?? null), ariaLabel: redactScreenText(t.ariaLabel ?? null), href } }
+  return {
+    ...entry,
+    payload: withoutTypedText(entry, t),
+    target: { ...t, textContent: redactScreenText(t.textContent ?? null), ariaLabel: redactScreenText(t.ariaLabel ?? null), href }
+  }
 }
 
 export function isSecretEntry(entry) {

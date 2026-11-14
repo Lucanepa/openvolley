@@ -10,10 +10,13 @@
 # keeps every version, this repo keeps only the one to submit.
 #
 # The installer's SHA-256 and the release date come from the GitHub release
-# (the Windows installer is downloaded once, ~7 MB). Overrides, e.g. before
-# the release is published:
-#   --file PATH        hash a local copy of the setup .exe instead
-#   --sha256 HEX       use this hash, download nothing
+# (the Windows installer is downloaded once, ~7 MB, with its .sig). The hash
+# is written only when the installer's signature (the updater key, made by
+# publish-pkgs.sh --desktop, bound to the version and the file name)
+# verifies: ../lib/release-asset.sh, fails closed. So run it after
+# publish-pkgs.sh --desktop VERSION. Overrides:
+#   --file PATH        hash a local copy of the setup .exe instead (PATH.sig
+#                      next to it, checked the same way)
 #   --date YYYY-MM-DD  release date (default: the release's publish date,
 #                      or today when it cannot be read)
 #
@@ -25,15 +28,16 @@ MANIFEST_VERSION=1.28.0
 HERE=$(cd "$(dirname "$0")" && pwd)
 
 die() { echo "update-manifests: $*" >&2; exit 1; }
+# shellcheck source=SCRIPTDIR/../lib/release-asset.sh
+. "$HERE/../lib/release-asset.sh"
 
-[ $# -ge 2 ] || die "usage: $0 openvolley|openbeach VERSION [--file PATH | --sha256 HEX] [--date YYYY-MM-DD]"
+[ $# -ge 2 ] || die "usage: $0 openvolley|openbeach VERSION [--file PATH] [--date YYYY-MM-DD]"
 app=$1 version=$2
 shift 2
-file='' sha='' date=''
+file='' date=''
 while [ $# -gt 0 ]; do
   case $1 in
     --file) file=${2:?}; shift 2 ;;
-    --sha256) sha=${2:?}; shift 2 ;;
     --date) date=${2:?}; shift 2 ;;
     *) die "unknown option $1" ;;
   esac
@@ -82,17 +86,16 @@ url=https://github.com/$REPO/releases/download/$tag/$asset
 release_notes_url=https://github.com/$REPO/releases/tag/$tag
 
 # --- SHA-256 of the installer ------------------------------------------------
-if [ -z "$sha" ]; then
-  if [ -z "$file" ]; then
-    tmp=$(mktemp -d)
-    trap 'rm -rf "$tmp"' EXIT
-    echo "downloading $url" >&2
-    curl -fsSL --retry 3 -o "$tmp/$asset" "$url" || die "could not download $url (is the release published? or pass --file / --sha256)"
-    file=$tmp/$asset
-  fi
+if [ -z "$file" ]; then
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' EXIT
+  file=$(release_asset_fetch "$app" "$version" "$url" "$tmp")
+else
   [ -f "$file" ] || die "no such file: $file"
-  sha=$(sha256sum "$file" | cut -d' ' -f1)
+  [ "$(basename "$file")" = "$asset" ] || die "--file $file: expected the release's $asset"
+  release_asset_verify "$app" "$version" "$file"
 fi
+sha=$(sha256sum "$file" | cut -d' ' -f1)
 [[ $sha =~ ^[0-9a-fA-F]{64}$ ]] || die "not a SHA-256: $sha"
 sha=$(printf '%s' "$sha" | tr 'a-f' 'A-F')
 

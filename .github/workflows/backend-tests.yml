@@ -7,10 +7,24 @@ on:
     branches: [main]
     paths:
       - 'escoresheet/backend/**'
+      # frontend files the backend tests compare the server's copy with: the
+      # activity-log sanitizer, the match roster rules, the phone-signing
+      # vectors and HTTP scenario, the help sections and the brand mark
+      - 'escoresheet/frontend/src/domain/activitySummary.js'
+      - 'escoresheet/frontend/src/domain/uploadedRoster.js'
+      - 'escoresheet/frontend/electron/__fixtures__/**'
+      - 'escoresheet/frontend/src/components/help/helpSections.js'
+      - 'escoresheet/frontend/brand/**'
       - '.github/workflows/backend-tests.yml'
   pull_request:
     paths:
       - 'escoresheet/backend/**'
+      # (the same paths as for push)
+      - 'escoresheet/frontend/src/domain/activitySummary.js'
+      - 'escoresheet/frontend/src/domain/uploadedRoster.js'
+      - 'escoresheet/frontend/electron/__fixtures__/**'
+      - 'escoresheet/frontend/src/components/help/helpSections.js'
+      - 'escoresheet/frontend/brand/**'
       - '.github/workflows/backend-tests.yml'
   workflow_dispatch:
 
@@ -36,9 +50,11 @@ jobs:
     env:
       PG_TEST_URL: postgres://postgres:test@127.0.0.1:5432/postgres
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: 'npm'

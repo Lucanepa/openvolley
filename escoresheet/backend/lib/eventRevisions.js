@@ -12,19 +12,28 @@
  *      restore: the void is lifted (and the columns rewritten when given),
  *      each counting events.rev up.
  * A revision of an event that is not on the server is kept with applied=false;
- * db/015's insert trigger makes the event born voided when it arrives later.
+ * db/015's insert trigger makes the event born voided when it arrives later
+ * in this match (db/032: a revision of another match never counts).
  *
  * Body: { match_external_id, revisions: [{ rev_uid, op, event_external_id,
  *         reason, seq, set_index, type, client_ts, device_id, app_version, after? }] }
  * Answers 200 { data: { applied, pending } }, 400 OV_INVALID_REQUEST,
  * 403 OV_NOT_MATCH_OWNER / OV_SCORER_REQUIRED, 404 OV_MATCH_NOT_FOUND,
- * 409 OV_MATCH_CLOSED (db/007's guard).
+ * 409 OV_MATCH_CLOSED (db/007's guard), 409 OV_REVISION_CONFLICT (a rev_uid
+ * stored for another match, event or op: nothing of the request is stored).
+ *
+ * The revisions of a match take one transaction lock of the match
+ * (REVISION_LOCK), which db/039's insert trigger of events takes too: an
+ * event inserted while its undo is stored sees the undo. A resend of a
+ * revision stored before its event (applied = false) applies it, unless a
+ * later revision of that event came since.
  *
  * The caller (server.js) authenticates, rate-limits, reads the body (at most
  * MAX_BODY_BYTES) and resolves matchOwner. Never throws.
  */
 
 import { createHash } from 'node:crypto'
+import { childMatchKey, PgQueryError } from './pgQuery.js'
 
 export const MAX_REVISIONS = 200
 export const MAX_BODY_BYTES = 256 * 1024
@@ -34,7 +43,6 @@ export const REVISION_REASONS = Object.freeze([
   'undo', 'delete', 'decision_change', 'manual_adjustment',
   'forfeit_reversal', 'reopen_set', 'roster_reopen', 'correction', 'other'
 ])
-const SCOPE_SEPARATORS = [':', '_']
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const EDIT_KEYS = ['type', 'set_index', 'seq', 'payload', 'score_a', 'score_b']
 
@@ -48,11 +56,13 @@ const optText = (v, max) => (v == null ? null : typeof v === 'string' && v.lengt
 const optInt = (v) => (v == null ? null : Number.isInteger(Number(v)) && Math.abs(Number(v)) < 1e6 ? Number(v) : undefined)
 const optNum = (v) => (v == null ? null : Number.isFinite(Number(v)) && Math.abs(Number(v)) < 1e9 ? Number(v) : undefined)
 
-/** Is the event id scoped to its match (`<match external_id><':' | '_'>...`)? */
+/**
+ * Is the event id one of the match's own (`<match external_id>:...`, lib/pgQuery.js
+ * childMatchKey)? Never for a match whose external_id is only a prefix of it.
+ */
 export function isScopedToMatch(eventExt, matchExt) {
-  if (typeof eventExt !== 'string' || typeof matchExt !== 'string' || !matchExt) return false
-  if (eventExt.length <= matchExt.length || !eventExt.startsWith(matchExt)) return false
-  return SCOPE_SEPARATORS.includes(eventExt[matchExt.length])
+  if (typeof matchExt !== 'string' || !matchExt) return false
+  return childMatchKey(eventExt) === matchExt
 }
 
 /** The columns an edit / restore writes, or undefined when `after` is malformed. */
@@ -151,16 +161,22 @@ export function parseRevisionsBody(body) {
   return { matchExt, revisions }
 }
 
+// pg_advisory_xact_lock(REVISION_LOCK, hashtext(<match id>)): the same key as
+// db/039's ov_events_apply_void()
+export const REVISION_LOCK = 15015
+
 const EVENT_COLUMNS = 'id, external_id, match_id, type, set_index, seq, payload, score_a, score_b, voided_at, voided_by, void_reason, rev'
 // The realtime row of a changed event (the same columns /api/db writes publish)
 const CHANGE_COLUMNS = 'id, external_id, match_id, set_index, type, seq, score_a, score_b, voided_at, void_reason, rev'
 
 /**
  * The rev_uid of the void an /api/db delete of one event becomes: one per
- * event, so a retried delete is the same revision (idempotent by rev_uid).
+ * event of its match (the match's id, which another match's writer does not
+ * know), so a retried delete is the same revision (idempotent by rev_uid).
+ * Without `matchId`: the form of the backend before db/039.
  */
-export function deleteRevUid(eventExt) {
-  const h = createHash('sha256').update(`ov-event-delete:${eventExt}`).digest('hex')
+export function deleteRevUid(eventExt, matchId = null) {
+  const h = createHash('sha256').update(matchId ? `ov-event-delete:${matchId}:${eventExt}` : `ov-event-delete:${eventExt}`).digest('hex')
   // UUID layout, version 5 / RFC 4122 variant bits
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${((parseInt(h[16], 16) & 0x3) | 0x8).toString(16)}${h.slice(17, 20)}-${h.slice(20, 32)}`
 }
@@ -170,17 +186,24 @@ export function deleteRevUid(eventExt) {
  */
 export function createEventRevisions(db, { log = console } = {}) {
   /**
-   * @param {{ body: object, user: {id:string}, matchOwner: object }} args
+   * @param {{ body: object, user: {id:string}, matchOwner: object,
+   *   scorerCheck?: (client, matchExt: string) => Promise<null|{status:number, body:object}> }} args
+   *   scorerCheck: the scoring device's check (db/019, server.js scorerCheckOf),
+   *   run first in the transaction; an answer refuses the revisions
    * @returns {Promise<{status:number, body:object, changes?:Array}>}
    */
-  async function apply({ body, user, matchOwner }) {
+  async function apply({ body, user, matchOwner, scorerCheck = null }) {
     const parsed = parseRevisionsBody(body)
     if (parsed.error) return parsed.error
     const { matchExt, revisions } = parsed
     try {
       const out = await db.withTransaction(async (client) => {
         await client.query("SELECT set_config('ov.user_id', $1, true)", [user.id])
+        // Before the match is locked: a take-over locks the scorer row first too
+        const refused = scorerCheck ? await scorerCheck(client, matchExt) : null
+        if (refused) return { refused }
         const match = await db.assertMatchWritable(client, matchExt, matchOwner)
+        await client.query('SELECT pg_advisory_xact_lock($1, hashtext($2::text))', [REVISION_LOCK, match.id])
         let applied = 0
         let pending = 0
         const changes = []
@@ -191,6 +214,7 @@ export function createEventRevisions(db, { log = console } = {}) {
           const before = ev
             ? { type: ev.type, set_index: ev.set_index, seq: ev.seq == null ? null : Number(ev.seq), payload: ev.payload, score_a: ev.score_a, score_b: ev.score_b, voided: ev.voided_at != null }
             : null
+          let resent = null
           const ins = await client.query(
             `INSERT INTO public.event_revisions
                (rev_uid, match_id, event_external_id, op, reason, event_seq, set_index, event_type,
@@ -201,8 +225,23 @@ export function createEventRevisions(db, { log = console } = {}) {
             [r.revUid, match.id, r.eventExt, r.op, r.reason, r.seq, r.setIndex, r.type,
               before ? JSON.stringify(before) : null, r.after ? JSON.stringify(r.after) : null,
               !!ev, user.id, r.deviceId, r.appVersion, r.clientTs])
-          if (ins.rowCount === 0) continue // sent before (a retry): already handled
-          if (!ev) {
+          if (ins.rowCount === 0) {
+            // Sent before (a retry), or a rev_uid another match / event holds
+            const { rows: [stored] } = await client.query(
+              `SELECT r.id, r.match_id::text AS match_id, r.event_external_id, r.op, r.applied,
+                      EXISTS (SELECT 1 FROM public.event_revisions l
+                               WHERE l.match_id = r.match_id AND l.event_external_id = r.event_external_id AND l.id > r.id) AS superseded
+                 FROM public.event_revisions r WHERE r.rev_uid = $1`, [r.revUid])
+            if (!stored || stored.match_id !== match.id || stored.event_external_id !== r.eventExt || stored.op !== r.op) {
+              throw new PgQueryError(409, 'OV_REVISION_CONFLICT', `revision ${r.revUid} is stored for another event`, 'This revision id is already used')
+            }
+            // Handled; or stored before its event and overtaken by a later
+            // revision of it: nothing to do. Stored before its event, which is
+            // live now (its insert did not see the revision): applied as on
+            // the first send.
+            if (stored.applied || !ev || stored.superseded) continue
+            resent = stored.id
+          } else if (!ev) {
             pending++
             continue
           }
@@ -231,9 +270,16 @@ export function createEventRevisions(db, { log = console } = {}) {
             applied++
             changes.push({ table: 'events', eventType: 'UPDATE', row: upd.rows[0] })
           }
+          // A resent revision applied now is marked so: the next resend skips
+          // it (an edit would bump rev again) and the history shows it applied
+          // (db/039 grants ov_app UPDATE of this one column).
+          if (resent != null) {
+            await client.query('UPDATE public.event_revisions SET applied = true WHERE id = $1 AND NOT applied', [resent])
+          }
         }
         return { applied, pending, changes }
       })
+      if (out.refused) return out.refused
       return { status: 200, body: { data: { applied: out.applied, pending: out.pending }, error: null }, changes: out.changes }
     } catch (err) {
       const r = db.toErrorResult(err, { action: 'event-revisions', table: 'events' })
@@ -268,17 +314,19 @@ export function createEventRevisions(db, { log = console } = {}) {
    * event is voided like a revision with the reason 'correction', never
    * deleted. Same owner / editor rule as the revision route. No event with
    * that id: nothing to do, like a delete that matched nothing.
-   * @param {{ eventExt: string, user: {id:string}, matchOwner: object, clientTs?: string }} args
+   * @param {{ eventExt: string, user: {id:string}, matchOwner: object, clientTs?: string,
+   *   scorerCheck?: Function }} args  scorerCheck: as for apply()
    * @returns {Promise<null|{status:number, body:object, changes?:Array}>} null: not handled
    */
-  async function voidByExternalId({ eventExt, user, matchOwner, clientTs = new Date().toISOString() }) {
+  async function voidByExternalId({ eventExt, user, matchOwner, clientTs = new Date().toISOString(), scorerCheck = null }) {
     if (typeof eventExt !== 'string' || !eventExt || eventExt.length > 200) return invalid('external_id')
-    let matchExt
+    let matchExt, matchId
     try {
       const { rows: [row] } = await db.pool.query(
-        `SELECT m.external_id FROM public.events e JOIN public.matches m ON m.id = e.match_id
+        `SELECT m.external_id, m.id::text AS id FROM public.events e JOIN public.matches m ON m.id = e.match_id
           WHERE e.external_id = $1`, [eventExt])
       matchExt = row?.external_id
+      matchId = row?.id
     } catch (err) {
       const r = db.toErrorResult(err, { action: 'select', table: 'events' })
       return { status: r.status, body: r.body }
@@ -289,10 +337,11 @@ export function createEventRevisions(db, { log = console } = {}) {
     const r = await apply({
       body: {
         match_external_id: matchExt,
-        revisions: [{ rev_uid: deleteRevUid(eventExt), op: 'void', event_external_id: eventExt, reason: 'correction', client_ts: clientTs }]
+        revisions: [{ rev_uid: deleteRevUid(eventExt, matchId), op: 'void', event_external_id: eventExt, reason: 'correction', client_ts: clientTs }]
       },
       user,
-      matchOwner
+      matchOwner,
+      scorerCheck
     })
     return r.status === 200 ? { status: 200, body: { data: null, error: null }, changes: r.changes } : r
   }

@@ -21,6 +21,10 @@ describe('bench request validation', () => {
     assert.equal(normalizeBenchRequest(null).reason, 'bad-request')
     assert.equal(normalizeBenchRequest({ id: 'x'.repeat(65), kind: 'timeout', setIndex: 1 }).reason, 'bad-id')
     assert.equal(normalizeBenchRequest({ id: 'a b', kind: 'timeout', setIndex: 1 }).reason, 'bad-id')
+    for (const id of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+      assert.equal(normalizeBenchRequest({ id, kind: 'timeout', setIndex: 1 }).reason, 'bad-id', id)
+      assert.equal(normalizeBenchRequest({ id: 'a', kind: 'cancel', cancelId: id, setIndex: 1 }).reason, 'bad-cancel', id)
+    }
     assert.equal(normalizeBenchRequest({ id: 'a', kind: 'challenge', setIndex: 1 }).reason, 'bad-kind')
     assert.equal(normalizeBenchRequest({ id: 'a', kind: 'timeout', setIndex: 6 }).reason, 'bad-set')
     assert.equal(normalizeBenchRequest({ id: 'a', kind: 'timeout', setIndex: '1' }).reason, 'bad-set')

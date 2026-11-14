@@ -19,13 +19,11 @@ Output goes to `dist/`. Deploy this folder to any static hosting provider.
    - **Build command**: `cd escoresheet/frontend && npm install && npm run build`
    - **Build output directory**: `escoresheet/frontend/dist`
    - **Root directory**: `/` (leave empty)
-3. Add environment variables in Pages settings:
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
-   - `VITE_BACKEND_URL` (optional)
+3. Add environment variables in Pages settings (optional):
+   - `VITE_BACKEND_URL`
 4. Deploy
 
-Dependencies like animejs and bootstrap-icons are loaded from CDN, so `node_modules` is not included in the build output.
+Everything the pages load (scripts, fonts, icons) is bundled into `dist/`; no page loads code from a CDN.
 
 ### Other Static Hosts
 
@@ -91,41 +89,9 @@ roster.openvolley.app     CNAME   your-roster-service.example.com
 
 The backend must allow all subdomain origins. This is already configured in `server.js` to accept any `*.openvolley.app` subdomain plus localhost for development.
 
-## Desktop Deployment (Electron)
+## Desktop Deployment (Tauri)
 
-### Windows
-
-```bash
-npm run electron:build:win
-```
-
-Output in `dist-electron/`:
-
-- NSIS installer (x64 + ia32)
-- Portable executable (x64)
-
-### macOS
-
-```bash
-npm run electron:build:mac
-```
-
-Output in `dist-electron/`:
-
-- DMG (x64 + arm64)
-- ZIP (x64 + arm64)
-
-### Linux
-
-```bash
-npm run electron:build:linux
-```
-
-Output in `dist-electron/`:
-
-- AppImage (x64)
-- DEB (x64)
-- RPM (x64)
+The desktop app (offline scoretable and LAN relay for the tablets) is built with Tauri. Build steps, the OpenBeach flavour, signing and the Windows installer are in [OFFLINE_DESKTOP.md](../frontend/OFFLINE_DESKTOP.md). Releases are built by CI (see "Automated Releases" below).
 
 ## Mobile Deployment (Capacitor)
 
@@ -149,44 +115,9 @@ Then build from Xcode. Requires a Mac with Xcode installed.
 
 ## Automated Releases (GitHub Actions)
 
-The project uses GitHub Actions to automatically build and publish desktop releases.
+Desktop releases are built by `.github/workflows/desktop.yml` (repository root) when a tag like `desktop-v<version>` is pushed: Windows, Linux and macOS, one GitHub release with every file. The version in `escoresheet/frontend/package.json` must match the tag. Publishing to the download page and the package channels is a separate step, see the release procedure in [deploy/README.md](../deploy/README.md).
 
-### How It Works
-
-1. Workflow file: `.github/workflows/release.yml`
-2. Builds Electron apps in parallel: Windows, macOS, Linux
-3. Creates a GitHub Release with all artifacts
-4. Automatically deletes releases older than the last 3
-
-### Triggering a Release
-
-#### Tag Push
-
-```bash
-git tag v1.3.0
-git push origin v1.3.0
-```
-
-#### Manual Dispatch
-
-Go to Actions > "Build and Release Desktop Apps" > Run workflow > Enter version (e.g., `v1.3.0`).
-
-### Required GitHub Secrets
-
-| Secret | Description |
-| --- | --- |
-| `VITE_SUPABASE_URL` | Supabase project URL |
-| `VITE_SUPABASE_ANON_KEY` | Supabase anonymous key |
-
-`GITHUB_TOKEN` is provided automatically by GitHub Actions.
-
-### Build Output
-
-Each release includes:
-
-- **Windows**: Installer (`.exe`) + Portable (`.exe`)
-- **macOS**: DMG (`.dmg`) + ZIP (`.zip`) for both x64 and arm64
-- **Linux**: AppImage (`.AppImage`) + DEB (`.deb`) + RPM (`.rpm`)
+`GITHUB_TOKEN` is provided automatically by GitHub Actions. The macOS signing secrets are listed in the workflow file.
 
 ## Backend Deployment
 

@@ -199,6 +199,19 @@ describe('PhoneSignPanel', () => {
     expect(screen.getByTestId('phone-sign-new-link')).toBeInTheDocument()
   })
 
+  it('a match the server does not hold (a test match, one not synced yet): the hall network, else says why (OV_SIGN_MATCH)', async () => {
+    const notOnServer = { ok: false, status: 403, code: 'OV_SIGN_MATCH' }
+    let api = fakeApi({ startFails: { cloud: notOnServer } })
+    render(<PhoneSignPanel {...props(api)} />)
+    await waitFor(() => expect(screen.getByTestId('phone-sign-link')).toHaveTextContent('http://192.168.1.10:5173/sign#k=T1'))
+    expect(api.startPhoneSign.mock.calls.map((c) => c[0].transport)).toEqual(['cloud', 'lan'])
+    cleanup()
+    api = fakeApi({ startFails: { cloud: notOnServer } })
+    render(<PhoneSignPanel {...props(api, { transports: { cloud: CLOUD, lan: { ok: false, reason: 'noRelay' }, default: 'cloud' } })} />)
+    expect(await screen.findByTestId('phone-sign-status')).toHaveTextContent(en.phoneSign.notOnServer)
+    expect(api.startPhoneSign).toHaveBeenCalledTimes(1)
+  })
+
   it('both ways: the switch makes a new link on the other one and is remembered', async () => {
     const api = fakeApi()
     render(<PhoneSignPanel {...props(api)} />)

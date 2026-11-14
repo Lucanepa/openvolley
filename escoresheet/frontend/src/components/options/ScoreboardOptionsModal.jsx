@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useAlert } from '../../contexts/AlertContext'
 import Modal from '../Modal'
 import { db } from '../../db/db'
-import { restoreMatchInPlace, listCloudBackups, fetchCloudBackup, selectBackupFile, getBackupSettings, matchBackupFromFile } from '../../utils/backupManager'
+import { restoreMatchInPlace, listCloudBackups, fetchCloudBackup, selectBackupFile, getBackupSettings, matchBackupFromFile, RESTORE_LOSES_LOCAL, restoreLossText } from '../../utils/backupManager'
 import {
   detectBackupPlatform,
   isNativeBackupPlatform,
@@ -14,6 +14,7 @@ import {
 import BackupTable from '../BackupTable'
 import SavedBackupsList from '../SavedBackupsList'
 import { useBackupUnlock } from '../../hooks/useBackupUnlock'
+import { backupPins } from '../../utils/backupCrypto/sealer'
 import { clearCachesAndReload } from '../../hooks/useServiceWorker'
 import { ChevronDown, Info, Tablet, X } from 'lucide-react'
 import { cn, IconButton, Select, SegmentedControl, StatusPill, Switch, toast } from '../../ui'
@@ -259,6 +260,8 @@ export default function ScoreboardOptionsModal({
   const [fontSelectorOpen, setFontSelectorOpen] = useState(false)
   const [showCloudBackups, setShowCloudBackups] = useState(false)
   const [cloudBackups, setCloudBackups] = useState([])
+  // The open match's game PIN and referee PIN: they open its encrypted cloud copies
+  const [cloudBackupPins, setCloudBackupPins] = useState([])
   const [backupsLoading, setBackupsLoading] = useState(false)
   const [restoreConfirm, setRestoreConfirm] = useState(null) // backup to confirm restore
   // An encrypted backup file asks for the game PIN or the referee PIN first
@@ -303,6 +306,7 @@ export default function ScoreboardOptionsModal({
       const match = await db.matches.get(matchId)
       const gameN = match?.gameN || match?.game_n || match?.gameNumber || 1
       const backups = await listCloudBackups(null, gameN)
+      setCloudBackupPins(backupPins(match).map(p => p.value))
       setCloudBackups(backups)
       setShowCloudBackups(true)
     } catch (err) {
@@ -315,11 +319,23 @@ export default function ScoreboardOptionsModal({
 
   // Restore from a cloud backup
   const handleRestore = async (backup) => {
+    let backupData = null
     try {
-      // a local file was read already (handleRestoreFromFile); cloud: download it
-      const backupData = backup.fileData || await fetchCloudBackup(backup.path)
-      await restoreBackupData(backupData)
+      // a local file was read already (handleRestoreFromFile); cloud: download
+      // it, opened with the match's PINs (else the PIN dialog asks; cancelled:
+      // nothing restored)
+      const fetched = backup.fileData ? null : await fetchCloudBackup(backup.path, { pins: cloudBackupPins })
+      backupData = backup.fileData || (fetched && await unlockBackup(fetched))
+      if (fetched && !backupData) return // cancelled at the PIN dialog
+      // a second confirmation that named the loss replaces the newer copy
+      await restoreBackupData(backupData, { replaceNewer: !!backup.loss })
     } catch (err) {
+      // The open match holds more than the backup: asked again, naming what
+      // goes (backupManager localLossOnReplace)
+      if (err?.code === RESTORE_LOSES_LOCAL && backupData) {
+        setRestoreConfirm({ ...backup, fileData: backupData, loss: err.loss })
+        return
+      }
       console.error('Failed to restore backup:', err)
       // backupManager refuses a backup of a match the server has closed
       // before it writes anything: say so plainly (a restored closed copy
@@ -353,7 +369,7 @@ export default function ScoreboardOptionsModal({
     }
   }
 
-  const restoreBackupData = async (backupData) => {
+  const restoreBackupData = async (backupData, { replaceNewer = false } = {}) => {
     if (!backupData) {
       showAlert(t('options.alerts.failedToLoadBackupData'), 'error')
       return
@@ -363,15 +379,16 @@ export default function ScoreboardOptionsModal({
     const current = await db.matches.get(matchId)
     const currentKey = current?.seed_key || current?.externalId
     const backupKey = backupData.match?.seed_key || backupData.match?.seedKey || backupData.match?.external_id
-    if (currentKey && backupKey && currentKey !== backupKey) {
+    // A backup without a key over a keyed match is another game's too
+    if (currentKey && currentKey !== backupKey) {
       showAlert(t('options.alerts.failedToRestoreBackup', { error: 'This backup belongs to a different match' }), 'error')
       return
     }
     // Use the callback or in-place restore
     if (onRestoreBackup) {
-      await onRestoreBackup(backupData)
+      await onRestoreBackup(backupData, { replaceNewer })
     } else {
-      await restoreMatchInPlace(matchId, backupData)
+      await restoreMatchInPlace(matchId, backupData, { replaceNewer })
     }
     setShowCloudBackups(false)
     setRestoreConfirm(null)
@@ -1068,6 +1085,7 @@ export default function ScoreboardOptionsModal({
                 <div className="mb-4 flex-1 overflow-y-auto rounded-lg border border-stone-200">
                   <BackupTable
                     backups={cloudBackups}
+                    unlockPins={cloudBackupPins}
                     onBackupSelect={(backup) => setRestoreConfirm(backup)}
                     showRestoreButton={true}
                     mode="row"
@@ -1120,8 +1138,8 @@ export default function ScoreboardOptionsModal({
                   {restoreConfirm.timestamp || restoreConfirm.created_at}
                 </div>
               </div>
-              <p className="text-xs font-medium text-red-700">
-                {t('options.warningStateReplaced')}
+              <p className="text-xs font-medium text-red-700" data-testid="restore-loss">
+                {restoreConfirm.loss ? restoreLossText(restoreConfirm.loss, t) : t('options.warningStateReplaced')}
               </p>
               <div className="mt-6 flex justify-end gap-2">
                 <button

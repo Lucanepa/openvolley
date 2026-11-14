@@ -13,8 +13,13 @@
  * parsed back into its parts.
  *
  * The backend refuses (400 OV_UNSCOPED_EXTERNAL_ID) any set/event whose
- * external_id does not start with its match's external_id followed by ':' or
- * '_'. Every call site must therefore build ids with the helpers below.
+ * external_id does not name its own match: the text before the first ':' must
+ * BE the match's external_id (a match whose external_id is only a prefix of it
+ * owns nothing). An id without ':' is taken only in the backup form of older
+ * apps, `${externalId}_set_${n}` / `${externalId}_event_${n}`; any other
+ * `${seedKey}_...` id is refused for good. The rule is childMatchKey in
+ * backend/lib/pgQuery.js. Every call site must therefore build ids with the
+ * helpers below.
  */
 
 export const setExtId = (seedKey, setId) => `${seedKey}:s:${setId}`
@@ -123,7 +128,7 @@ export function jobMatchKey(job) {
     if (typeof p.match_id === 'string' && p.match_id && !UUID.test(p.match_id)) return p.match_id
     return parseExtId(p.external_id)?.seedKey || null
   }
-  if (job?.resource === USER_MATCH_RESOURCE || job?.resource === SCORESHEET_UPLOAD_RESOURCE) return p.match_external_id || null
+  if (job?.resource === USER_MATCH_RESOURCE || job?.resource === SCORESHEET_UPLOAD_RESOURCE || job?.resource === APPROVAL_RESOURCE) return p.match_external_id || null
   return null
 }
 
@@ -132,6 +137,13 @@ export function jobMatchKey(job) {
  * utils/scoresheetUploader scoresheetUploadJob.
  */
 export const SCORESHEET_UPLOAD_RESOURCE = 'scoresheet'
+
+/**
+ * sync_queue resource of an account approval undone on the server (action
+ * 'undo', payload { id, match_external_id }): domain/accountApproval
+ * approvalUndoJobs, when the sheet changes after it was approved.
+ */
+export const APPROVAL_RESOURCE = 'approval'
 
 // ---------------------------------------------------------------------------
 // user_matches ("My Matches"): which account scored / officiated which match

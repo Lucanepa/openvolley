@@ -206,7 +206,7 @@ export default function ClubLicencesSection({ club, onOpenPerson = null }) {
                 <Row
                   key={p.sv_number}
                   stripe={false}
-                  onOpen={onOpenPerson ? () => onOpenPerson(p.sv_number) : undefined}
+                  onOpen={onOpenPerson && p.id ? () => onOpenPerson(p.id) : undefined}
                   label={`${p.last_name} ${p.first_name || ''}`.trim()}
                   data-testid="licence-person"
                   title={`${p.last_name} ${p.first_name || ''}`.trim()}

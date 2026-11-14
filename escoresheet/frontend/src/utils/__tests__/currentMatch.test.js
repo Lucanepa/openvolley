@@ -100,4 +100,43 @@ describe('New match → Official match with the current match', () => {
     expect(newOfficialMatchStep({ id: 1, ...confirmed }, 'Match ended', { closedCopy: true })).toBe('new')
     expect(newOfficialMatchStep({ id: 1, ...confirmed }, 'Match recording', { movedCopy: true })).toBe('new')
   })
+
+  // An official match that ended, or was approved here, stays the current
+  // match until its Match End's Close match. New match → Official match
+  // replaced it after the generic question and deleted every write of it the
+  // server did not have yet: the approval, the last set, the scoresheet
+  // upload (review 2026-11-10). It, a live one and one with unsent writes
+  // stay; the scorer is told to close or delete it first.
+  it('an official match that ended or was approved here, not closed: never replaced', () => {
+    expect(newOfficialMatchStep({ id: 1, status: 'ended', ...confirmed }, 'Match ended')).toBe('ended')
+    expect(newOfficialMatchStep({ id: 1, status: 'ended', approved: true, ...confirmed }, 'Match ended')).toBe('ended')
+    expect(newOfficialMatchStep({ id: 1, status: 'approved', ...confirmed }, 'Match ended')).toBe('ended')
+    // every set finished, the match end not written yet
+    expect(newOfficialMatchStep({ id: 1, status: 'live', ...confirmed }, 'Match ended')).toBe('ended')
+    expect(newOfficialMatchStep({ id: 1, status: 'ended', ...confirmed }, 'Match ended', { unsent: 4 })).toBe('ended')
+  })
+
+  it('a live official match is being recorded, whatever the home screen says (the coin toss no longer waits for the signatures)', () => {
+    expect(newOfficialMatchStep({ id: 1, status: 'live', ...confirmed }, 'Coin toss')).toBe('recording')
+    expect(newOfficialMatchStep({ id: 1, status: 'live', ...confirmed }, 'Setup')).toBe('recording')
+    // never discarded without a word either
+    expect(newOfficialMatchStep({ id: 1, status: 'live' }, 'No data')).toBe('recording')
+  })
+
+  it('an official match with writes the server does not have: never replaced', () => {
+    expect(newOfficialMatchStep({ id: 1, status: 'scheduled', ...confirmed }, 'Setup', { unsent: 3 })).toBe('unsent')
+    expect(newOfficialMatchStep({ id: 1, status: 'scheduled' }, 'Setup', { unsent: 1 })).toBe('unsent')
+    // all sent: asked about as before
+    expect(newOfficialMatchStep({ id: 1, status: 'scheduled', ...confirmed }, 'Setup', { unsent: 0 })).toBe('replace')
+  })
+
+  it('a test or easy match is still replaced after the question, ended or not', () => {
+    expect(newOfficialMatchStep({ id: 1, test: true, status: 'ended', ...confirmed }, 'Match ended')).toBe('replace')
+    expect(newOfficialMatchStep({ id: 1, test: true, easy: true, status: 'live', ...confirmed }, 'Coin toss')).toBe('replace')
+  })
+
+  it('a copy closed on the server or scored on another device stays without blocking, ended or with unsent writes', () => {
+    expect(newOfficialMatchStep({ id: 1, status: 'ended', approved: true, ...confirmed }, 'Match ended', { closedCopy: true, unsent: 2 })).toBe('new')
+    expect(newOfficialMatchStep({ id: 1, status: 'live', ...confirmed }, 'Match recording', { movedCopy: true, unsent: 2 })).toBe('new')
+  })
 })

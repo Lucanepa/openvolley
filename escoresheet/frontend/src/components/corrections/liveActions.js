@@ -1,20 +1,19 @@
 /**
- * The two match-row corrections of the live "Score and serve" card, moved
- * out of the Scoreboard's old Manual changes modal:
- *  - switch sides: the teams change courts. Sets 1-4: this set's side and
- *    the sides of the sets after it (they still alternate from it) are
- *    pinned the other way round (setLeftTeamOverrides); the sets played
- *    before keep theirs. Set 5 flips its coin toss side (set5LeftTeam). It
- *    never re-labels the teams: that is "Swap A/B" (domain/coinToss), which
- *    moves nothing (owner's decision, 2026-10-09). Sets 1-4 used to do it by
- *    swapping A and B, so a coin toss correction and a change of courts were
- *    the same thing;
- *  - change who serves first: sets 1-4 the match's first serve (with the A/B
- *    serve flags), set 5 its own coin toss result.
- * Both queue the cloud match update where the cloud has the field (the sides
- * of sets 1-4 reach it with the live state the caller pushes). They return
- * the before/after for the correction log; the caller records it and pushes
- * the live state.
+ * The match-row correction of the live "Score and serve" card, moved out of
+ * the Scoreboard's old Manual changes modal: switch sides, the teams change
+ * courts. Sets 1-4: this set's side and the sides of the sets after it (they
+ * still alternate from it) are pinned the other way round
+ * (setLeftTeamOverrides); the sets played before keep theirs. Set 5 flips its
+ * coin toss side (set5LeftTeam). It never re-labels the teams: that is "Swap
+ * A/B" (domain/coinToss), which moves nothing (owner's decision, 2026-10-09).
+ * Sets 1-4 used to do it by swapping A and B, so a coin toss correction and a
+ * change of courts were the same thing.
+ * The matches table has no column for the sides of any set: they reach the
+ * cloud with the live state the caller pushes (and its snapshots), set 5's
+ * too. Set 5 queued a set5LeftTeam column the server refuses: the job stayed
+ * failed and the device showed a sync error for a day. Returns the
+ * before/after for the correction log; the caller records it and pushes the
+ * live state.
  */
 import { getSideAForSet, getLeftTeamLabelForSet } from '../../domain/rules'
 import { regularSetIndexes } from '../../domain/coinToss'
@@ -49,13 +48,6 @@ export async function switchSides({ db, matchId, match, setIndex }) {
     const currentLeft = match.set5LeftTeam || getLeftTeamLabelForSet(5, { ...match, set5CourtSwitched: false })
     const newLeft = currentLeft === 'A' ? 'B' : 'A'
     await db.matches.update(matchId, { set5LeftTeam: newLeft })
-    if (match?.seed_key && !match.test) {
-      await db.sync_queue.add({
-        resource: 'match', action: 'update',
-        payload: { id: match.seed_key, set5LeftTeam: newLeft },
-        ts: new Date().toISOString(), status: 'queued'
-      })
-    }
     return { before: `${currentLeft} left`, after: `${newLeft} left` }
   }
   const before = getLeftTeamLabelForSet(setIndex, match || {})
@@ -70,37 +62,4 @@ export function firstServerOf(match, setIndex) {
     return match.set5FirstServe === 'A' ? a : (a === 'home' ? 'away' : 'home')
   }
   return match?.firstServe || 'home'
-}
-
-export async function switchFirstServe({ db, matchId, match, setIndex }) {
-  if (setIndex === 5) {
-    const current = match.set5FirstServe || 'A'
-    const next = current === 'A' ? 'B' : 'A'
-    await db.matches.update(matchId, { set5FirstServe: next })
-    if (match?.seed_key && !match.test) {
-      await db.sync_queue.add({
-        resource: 'match', action: 'update',
-        payload: { id: match.seed_key, set5FirstServe: next },
-        ts: new Date().toISOString(), status: 'queued'
-      })
-    }
-    return { before: current, after: next }
-  }
-  const old = match.firstServe || 'home'
-  const newServe = old === 'home' ? 'away' : 'home'
-  const teamA = match.coinTossTeamA || 'home'
-  const teamB = teamA === 'home' ? 'away' : 'home'
-  const coinTossServeA = newServe === teamA
-  await db.matches.update(matchId, { firstServe: newServe, coinTossServeA, coinTossServeB: !coinTossServeA })
-  if (match?.seed_key && !match.test) {
-    await db.sync_queue.add({
-      resource: 'match', action: 'update',
-      payload: {
-        id: match.seed_key,
-        coin_toss: { team_a: teamA, team_b: teamB, serve_a: coinTossServeA, confirmed: true, first_serve: newServe }
-      },
-      ts: new Date().toISOString(), status: 'queued'
-    })
-  }
-  return { before: old, after: newServe }
 }

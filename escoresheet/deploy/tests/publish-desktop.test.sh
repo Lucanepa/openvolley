@@ -75,13 +75,14 @@ node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({ productNa
   plugins: { updater: { pubkey: require("fs").readFileSync(process.argv[2], "utf8").trim() } } }, null, 2))' \
   "$OV_BEACH_TAURI_CONF" "$T/keys/updater.key.pub"
 
-# make_deb OUT VERSION [PACKAGE]
+# make_deb OUT VERSION [PACKAGE]; DEB_NOTE=x makes the bytes differ from another build (dpkg-deb is
+# byte-identical for the same input within one second).
 make_deb() {
   local out=$1 ver=$2 pkg=${3:-openvolley-escoresheet} root="$T/debroot"
   rm -rf "$root"
   mkdir -p "$root/DEBIAN" "$root/usr/bin"
-  printf 'Package: %s\nVersion: %s\nArchitecture: amd64\nMaintainer: test <test@example.invalid>\nDescription: test package\n' \
-    "$pkg" "$ver" > "$root/DEBIAN/control"
+  printf 'Package: %s\nVersion: %s\nArchitecture: amd64\nMaintainer: test <test@example.invalid>\nDescription: test package%s\n' \
+    "$pkg" "$ver" "${DEB_NOTE:+ ($DEB_NOTE)}" > "$root/DEBIAN/control"
   printf '#!/bin/sh\necho %s\n' "$ver" > "$root/usr/bin/$pkg"
   chmod 755 "$root/usr/bin/$pkg"
   dpkg-deb --root-owner-group -b "$root" "$out" >/dev/null
@@ -163,6 +164,57 @@ expect_fail "the first entry is not a <Name>.app folder" fetch_from macflat
 OV_DESKTOP_RELEASE_DIR="$T/release"; DESKTOP_RELEASE_DIR="$T/release"
 desktop_fetch "$V" "$T/work" >/dev/null
 
+# --- provenance: only files the tag's CI run built get signed -------------------
+# The run's artifacts as `gh run download` lays them out (one folder each).
+mkdir -p "$T/run/escoresheet-desktop-windows/nsis" "$T/run/escoresheet-desktop-linux/deb" "$T/run/escoresheet-desktop-macos"
+cp "$T/release/"*-setup.exe "$T/run/escoresheet-desktop-windows/nsis/"
+cp "$T/release/"*.AppImage "$T/release/"*.deb "$T/run/escoresheet-desktop-linux/deb/"
+cp "$T/release/$MAC_NAME" "$T/run/escoresheet-desktop-macos/"
+desktop_provenance "$V" "$T/work" | grep -q "test input, provenance not checked" || bad "provenance: test input without a run dir"
+DESKTOP_RUN_DIR="$T/run"
+desktop_provenance "$V" "$T/work" | grep -q "the 4 files are the ones CI built" || bad "provenance: the CI-built files"
+[[ ! -e "$T/work/.ci-run" ]] || bad "provenance: left its artifact copy in the work dir"
+ok "provenance: the fetched files are the run's artifacts"
+cp "$DESKTOP_EXE" "$T/exe.bak"
+{ printf 'MZ'; head -c 1000 /dev/urandom; } > "$DESKTOP_EXE"
+expect_fail "Openvolley.eScoresheet_${V}_x64-setup.exe of desktop-v$V is not a file the tag's desktop.yml run built" desktop_provenance "$V" "$T/work"
+cp "$T/exe.bak" "$DESKTOP_EXE"
+# The GitHub side: gh stub answering the tag's commit, the comparison with
+# main, the tag's push runs and `gh run download`.
+TAG_SHA=0123456789abcdef0123456789abcdef01234567
+gh() {
+  echo "gh $*" >> "$T/gh-prov.log"
+  case "$1 $2" in
+    "api repos/Lucanepa/openvolley/commits/desktop-v$V") echo "$TAG_SHA" ;;
+    "api repos/Lucanepa/openvolley/compare/$TAG_SHA...main") echo "$GH_STATUS" ;;
+    "api repos/Lucanepa/openvolley/actions/workflows/desktop.yml/runs?event=push&head_sha=$TAG_SHA&per_page=100")
+      [[ "$4" == *'.head_branch == "desktop-v'"$V"'"'* ]] || return 1
+      printf '%s' "$GH_RUNS" ;;
+    "run download") [[ "$6" == -D ]] && cp -r "$GH_ARTIFACTS" "$7" ;;
+    *) return 1 ;;
+  esac
+}
+prov_gh() { DESKTOP_RELEASE_DIR='' desktop_provenance "$V" "$T/work"; }
+GH_STATUS=ahead GH_RUNS=$'4711\n' GH_ARTIFACTS="$T/run"
+prov_gh | grep -q "the 4 files are the ones CI built from $TAG_SHA (on main)" || bad "provenance: GitHub, a tag on main"
+grep -q "^gh run download 4711 --repo Lucanepa/openvolley -D " "$T/gh-prov.log" || bad "provenance: the run's artifacts not downloaded"
+GH_STATUS=identical
+prov_gh >/dev/null || bad "provenance: the tag at main's head"
+ok "provenance: a tag on main whose push run built these files"
+GH_STATUS=diverged
+expect_fail "desktop-v$V ($TAG_SHA) is not on main (diverged)" prov_gh
+GH_STATUS=behind
+expect_fail "is not on main (behind)" prov_gh
+GH_STATUS=ahead GH_RUNS=''
+expect_fail "desktop-v$V: no desktop.yml push run on $TAG_SHA" prov_gh
+GH_RUNS=4711 GH_ARTIFACTS="$T/run-other"
+cp -r "$T/run" "$T/run-other"; DEB_NOTE=other-build make_deb "$T/run-other/escoresheet-desktop-linux/deb/openvolley-escoresheet_${V}_amd64.deb" "$V"
+expect_fail "openvolley-escoresheet_${V}_amd64.deb of desktop-v$V is not a file the tag's desktop.yml run built" prov_gh
+GH_ARTIFACTS="$T/nothing"
+expect_fail "is not a file the tag's desktop.yml run built" prov_gh
+unset -f gh
+DESKTOP_RUN_DIR=''
+
 # --- sign and verify ---------------------------------------------------------
 out=$(desktop_sign "$V" "$DESKTOP_EXE" "$DESKTOP_APPIMAGE" "$DESKTOP_DEB" "$DESKTOP_MAC" 2>&1)
 [[ "$out" != *"$PASSWORD"* ]] || bad "signing printed the password"
@@ -192,6 +244,17 @@ cp "$DESKTOP_DEB" "$T/neg/noversion.deb"
 TAURI_SIGNING_PRIVATE_KEY_PATH="$T/keys/updater.key" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$PASSWORD" \
   "$TAURI_CLI" signer sign "$T/neg/noversion.deb" </dev/null >/dev/null 2>&1
 expect_fail "no version in the signature" desktop_verify "$V" "$T/neg/noversion.deb"
+# --allow-unbound (another project's bundler signatures, svrz-rc): a signature
+# without a version passes, one with another version still fails.
+updater_js verify --tauri-conf "$OV_DESKTOP_TAURI_CONF" --version "$V" --allow-unbound "$T/neg/noversion.deb" >/dev/null ||
+  bad "verify --allow-unbound: a signature without a version"
+expect_fail "signed for version 2.2.0, announced 2.2.1" updater_js verify --tauri-conf "$OV_DESKTOP_TAURI_CONF" --version 2.2.1 --allow-unbound "$DESKTOP_DEB"
+ok "verify --allow-unbound: takes an unbound signature, never a wrong version"
+# --check-name: the signature names the file it is checked as
+cp "$DESKTOP_DEB" "$T/neg/renamed.deb"; cp "$DESKTOP_DEB.sig" "$T/neg/renamed.deb.sig"
+updater_js verify --tauri-conf "$OV_DESKTOP_TAURI_CONF" --version "$V" --check-name "$DESKTOP_DEB" >/dev/null || bad "verify --check-name"
+expect_fail "renamed.deb: the signature is for the file \"openvolley-escoresheet_${V}_amd64.deb\"" \
+  updater_js verify --tauri-conf "$OV_DESKTOP_TAURI_CONF" --version "$V" --check-name "$T/neg/renamed.deb"
 
 # --- notes and latest.json ---------------------------------------------------
 desktop_notes "$V" "$T/notes.txt"
@@ -375,16 +438,34 @@ if command -v fdroid >/dev/null && command -v apt-ftparchive >/dev/null && comma
   [[ -z "$(ls "$OV_PKGS_HOME/public/apt/pool/main/" 2>/dev/null)" ]] || bad "a refused .deb reached the pool"
   # svrz-rc has no latest.json: its hand-given .deb is never refused or held
   # back, also while desktop/latest.json holds OpenVolley back. (The run then
-  # stops at the fake signing key, after the pool step.)
+  # stops at the fake signing key, after the pool step.) It needs the
+  # signature its own release build made (a throwaway svrz-rc key here,
+  # bundler style: no version in it).
   make_deb "$T/svrz-rc_1.4.10_amd64.deb" 1.4.10 svrz-rc
-  expect_fail "added $OV_PKGS_HOME/public/apt/pool/main/svrz-rc_1.4.10_amd64.deb" \
+  expect_fail "svrz-rc_1.4.10_amd64.deb.sig next to it" \
     "$KIT_DIR/publish-pkgs.sh" --no-sync "$T/svrz-rc_1.4.10_amd64.deb"
+  TAURI_SIGNING_PRIVATE_KEY_PATH="$T/other/updater.key" TAURI_SIGNING_PRIVATE_KEY_PASSWORD=other \
+    "$TAURI_CLI" signer sign "$T/svrz-rc_1.4.10_amd64.deb" </dev/null >/dev/null 2>&1
+  expect_fail "its .sig does not verify against the svrz-rc updater key" \
+    "$KIT_DIR/publish-pkgs.sh" --no-sync "$T/svrz-rc_1.4.10_amd64.deb"
+  [[ -z "$(ls "$OV_PKGS_HOME/public/apt/pool/main/" 2>/dev/null)" ]] || bad "an svrz-rc .deb without its own signature reached the pool"
+  ok "svrz-rc: a .deb without a valid signature of its own release key stays out of the pool"
+  expect_fail "added $OV_PKGS_HOME/public/apt/pool/main/svrz-rc_1.4.10_amd64.deb" \
+    env OV_SVRZ_RC_PUBKEY="$(tr -d '\n' < "$T/other/updater.key.pub")" "$KIT_DIR/publish-pkgs.sh" --no-sync "$T/svrz-rc_1.4.10_amd64.deb"
+  grep -q 'svrz-rc 1.4.10: signature by the svrz-rc release key verifies' "$T/expect.out" || bad "svrz-rc: no signature check reported"
   if grep -q 'not announced\|held back' "$T/expect.out"; then bad "svrz-rc was held back: $(cat "$T/expect.out")"; fi
   ok "a hand-given svrz-rc .deb goes into the pool (no hold-back, no latest.json)"
 else
   echo "skip publish-pkgs.sh hand-given .deb refusal (fdroid, apt-ftparchive or rsync not installed)"
 fi
 rm -rf "$OV_PKGS_HOME"
+
+# --- install.sh: its SHA-256 on the second channel (the GitHub README) ---------
+install_sh_ok "$KIT_DIR/pkgs/install.sh" "$KIT_DIR/../../README.md" && ok "install.sh: README.md gives its SHA-256"
+printf 'install.sh SHA-256: `%s`\n' "$(printf '0%.0s' {1..64})" > "$T/README-old.md"
+expect_fail "put the new hash in $T/README-old.md" install_sh_ok "$KIT_DIR/pkgs/install.sh" "$T/README-old.md"
+echo 'no hash here' > "$T/README-none.md"
+expect_fail 'gives no "install.sh SHA-256: <hex>" line' install_sh_ok "$KIT_DIR/pkgs/install.sh" "$T/README-none.md"
 
 # --- desktop_upload: GitHub's "Latest" follows desktop/latest.json --------------
 # gh stub: logs each call; `gh api .../releases/latest` answers $GH_LATEST.
@@ -619,7 +700,23 @@ if [[ "$(id -u)" != 0 ]] && command -v apt-get >/dev/null && [[ "$(dpkg --print-
   ok "install.sh: the root hint repeats the package name only when it is not the default"
 fi
 
+# github_asset_sha256: the SHA-256 GitHub keeps for a release asset ("digest"),
+# nothing when it has none or something else.
+curl() { cat "$T/release.json"; }
+hex=$(printf 'a%.0s' {1..64})
+printf '{"assets":[{"name":"A_1_x64-setup.exe","digest":"sha256:%s"},{"name":"A_1_universal.dmg"}]}' "$hex" > "$T/release.json"
+[[ "$(github_asset_sha256 desktop-v1 -setup.exe)" == "$hex" ]] || bad "github_asset_sha256: the installer's digest"
+[[ -z "$(github_asset_sha256 desktop-v1 _universal.dmg)" ]] || bad "github_asset_sha256: an asset without a digest"
+[[ -z "$(github_asset_sha256 desktop-v1 .deb)" ]] || bad "github_asset_sha256: no such asset"
+printf '{"assets":[{"name":"A_1_x64-setup.exe","digest":"sha256:%s<b>"}]}' "$hex" > "$T/release.json"
+[[ -z "$(github_asset_sha256 desktop-v1 -setup.exe)" ]] || bad "github_asset_sha256: a digest that is not 64 hex digits"
+unset -f curl
+ok "github_asset_sha256: GitHub's digest of the asset, or nothing"
+
 # The landing page: OpenVolley's sections always, OpenBeach's once published.
+# the releases listed in $SHA_TAGS have digests: e... for the .exe, d... for the .dmg
+SHA_TAGS=''
+github_asset_sha256() { if [[ " $SHA_TAGS " == *" $1 "* ]]; then if [[ "$2" == *.dmg ]]; then printf 'd%.0s' {1..64}; else printf 'e%.0s' {1..64}; fi; echo; fi; }
 github_setup_exe_url() { echo "https://github.com/Lucanepa/openvolley/releases/download/$1/Setup_x64-setup.exe"; }
 # the releases listed in $MAC_TAGS have a .dmg
 MAC_TAGS=''
@@ -665,7 +762,16 @@ ok "page: OpenBeach's desktop part once its .deb is published; each app its own 
 page "$T/bPackages" "$T/index-both.json"
 if grep -q '@[A-Z_]*@' "$T/index.html"; then bad "page: placeholders left"; fi
 if grep -q 'lucanepa/tap/openbeach' "$T/index.html"; then bad "page: OpenBeach macOS part without its .dmg"; fi
+if grep -q 'this SHA-256' "$T/index.html"; then bad "page: a SHA-256 line without GitHub's digest"; fi
 ok "page: both apps, every placeholder filled"
+SHA_TAGS="desktop-v2.2.1 beach-desktop-v2.0.1" MAC_TAGS="desktop-v2.2.1 beach-desktop-v2.0.1"
+page "$T/bPackages" "$T/index-both.json"
+e64=$(printf 'e%.0s' {1..64}) d64=$(printf 'd%.0s' {1..64})
+[[ "$(grep -c "SHA-256: <code>$e64</code>" "$T/index.html")" == 2 && "$(grep -c "SHA-256: <code>$d64</code>" "$T/index.html")" == 2 ]] ||
+  bad "page: the SHA-256 of each Windows installer and disk image"
+if grep -q '@[A-Z_]*@' "$T/index.html"; then bad "page: placeholders left with digests"; fi
+SHA_TAGS='' MAC_TAGS="desktop-v2.2.1"
+ok "page: the SHA-256 next to each Windows and macOS download"
 if grep -qE 'flatpak install|href="/flatpak/"' "$T/index.html"; then bad "page: Flatpak parts without a published Flatpak"; fi
 mkdir -p "$T/flatpak"
 touch "$T/flatpak/com.openvolley.escoresheet.flatpakref"
@@ -808,6 +914,8 @@ rm -rf "$T/arch"
 
 # The build, sign and repo steps (Docker: makepkg, repo-add, a pacman client).
 if command -v docker >/dev/null && docker info >/dev/null 2>&1; then
+  # (the moving tag: a test needs no pinned archlinux-image)
+  export OV_PACMAN_IMAGE=${OV_PACMAN_IMAGE:-archlinux:base-devel}
   AR="$PMH/public/arch"
   RX="$AR/x86_64"
   # in_db FILE: "name version" of each package in a pacman database

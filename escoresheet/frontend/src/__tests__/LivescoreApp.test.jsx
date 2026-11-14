@@ -16,6 +16,7 @@ vi.mock('../utils/backendConfig', () => ({
   getRelayWebSocketUrl: ({ wsPort } = {}) => `ws://192.168.1.20:${wsPort || 8080}`,
   setBackendOverride: vi.fn(),
   applyServerParam: vi.fn(),
+  serverParamNeedsConfirm: () => false,
   getBackendUrl: () => 'https://backend.openvolley.app',
   clearBackendOverride: vi.fn()
 }))

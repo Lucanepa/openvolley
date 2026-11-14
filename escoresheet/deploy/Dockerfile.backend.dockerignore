@@ -1,16 +1,28 @@
 # BuildKit reads <Dockerfile>.dockerignore next to the Dockerfile, so this
 # list applies to the escoresheet/backend build context without adding a
 # .dockerignore inside escoresheet/backend.
+#
+# An allowlist: only what the server runs from gets into the image. The
+# context is the committed tree (build-image.sh, git archive), so an ignored
+# file cannot be in it anyway; this list also keeps tests, docs and build
+# scripts out, and keeps a dirty test build (--allow-dirty) clean.
+*
+!server.js
+!package.json
+!package-lock.json
+!lib/
+!db/
+!scripts/
+# never, even inside an allowed directory
 **/node_modules
-dist
-tests
-public
-*.log
-.env
-.env.*
+**/.env
+**/.env.*
+**/.dev.vars
 **/*.pem
 **/*.key
+**/*.crt
+**/*.p12
+**/*.pfx
 **/*.dump
 **/*.sql.gz
-build-server.js
-sea-config*.json
+**/*.log

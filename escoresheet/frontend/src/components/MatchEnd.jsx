@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useLayoutEffect, useRef, useCallback } fr
 import { useTranslation } from 'react-i18next'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
+import { clearSetupDraft } from '../db/setupDrafts'
 import { remarksSnapshotJob } from '../db/remarksSync'
 import { withActivityContext, wipeMatchEvents } from '../db/eventHistory'
 import { useAlert } from '../contexts/AlertContext'
@@ -19,12 +20,12 @@ import { requeueClosedJobs } from '../utils/matchHandover'
 import KitModal from './manage/KitModal'
 import CloudBlockNotice from './CloudBlockNotice'
 import { Textarea } from '../ui/Textarea.jsx'
-import { scoresheetUploadPath, scoresheetUploadJob, scoresheetJsonBlob, uploadQueuedScoresheet } from '../utils/scoresheetUploader'
+import { scoresheetUploadPath, scoresheetUploadJob, scoresheetJsonBlob, uploadQueuedScoresheet, supersedeUnsentScoresheetUploads, supersedeUnsentScoresheetUploadsOf } from '../utils/scoresheetUploader'
 import { matchEndExportData } from '../utils/backupManager'
 import { publishMatchEndLiveState } from '../utils/matchEndLiveState'
 import { isoOf, matchTimes, setDurationMinutes } from '../../scoresheet_pdf/utils/matchTimes'
-import { displaySetNumber, getScoreBeforeEvent, isDefaultSet } from '../../scoresheet_pdf/utils/scoresheetModel'
-import { generatedRemarks } from '../../scoresheet_pdf/utils/sheetRemarks'
+import { displaySetNumber, getScoreBeforeEvent, isDefaultSet, consistencyWarnings } from '../../scoresheet_pdf/utils/scoresheetModel'
+import { generatedRemarks, correctionRemarks } from '../../scoresheet_pdf/utils/sheetRemarks'
 import { SANCTION_ROWS } from '../../scoresheet_pdf/components/FooterSection'
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { exportLogsAsNDJSON } from '../utils/comprehensiveLogger'
@@ -40,11 +41,15 @@ import { sanitizeForFilename } from '../utils/stringUtils'
 import { formatTimeLocal } from '../utils/timeUtils'
 import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
 import { waitForScoresheetPdf, PDF_FAIL, PDF_REQUEST_PARAM } from '../utils/scoresheetPdfRequest'
-import { getMatchWinner, clearedPostMatchSignatures, planForfeitReversal } from '../domain/matchEnd'
+import { getMatchWinner, clearedPostMatchSignatures, planForfeitReversal, matchForfeitOf, restoredSetWrites, resultIssues } from '../domain/matchEnd'
 import {
   ROLE_TO_SLOT, approvalFor, isApprovalValid, slotComplete, approvalLine, approvalsBySlot, approvalSummary,
-  resultKey, rememberApprovalEmail, namesDiffer, approvalsCompletingSlots, approvalsStillValid, pinApprovalState
+  resultKey, namesDiffer, approvalsCompletingSlots, approvalsStillValid, pinApprovalState,
+  optionalSignatureSlots, approvalIdsBeingUndone
 } from '../domain/accountApproval'
+import { issueText } from '../domain/recompute'
+import { signedAfterMatch, writeSignedSheetChange } from '../services/corrections/applyCorrectionPlan'
+import { APPROVAL_RESOURCE } from '../utils/syncIds'
 import { signatureEditLocked, signaturesPayload, signaturesSyncJob } from '../domain/signatureEdits'
 import { MAX_REMARKS_SIGNATURES, REMARKS_NAME_MAX, REMARKS_ROLE_MAX, remarksSignatureCaption, remarksSignaturesOf, withRemarksSignature, withoutRemarksSignature } from '../domain/remarksSignatures'
 import { saveMatchSignature } from '../utils/saveSignature'
@@ -53,7 +58,8 @@ import { Input } from '../ui/Input.jsx'
 import AccountApprovalDialog from './AccountApprovalDialog'
 import { askConfirm } from '../utils/askConfirm.js'
 import { getCloudApiUrl } from '../utils/backendConfig'
-import { syncJobsForEvents, syncJobsForSets } from '../domain/corrections'
+import { syncJobsForEvents } from '../domain/corrections'
+import { queueSetDeletes, setUpdateJob } from '../utils/eventSync'
 import { FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, ChartIcon } from './icons'
 import { X, Check, AlertTriangle, ShieldCheck, PenLine, Eraser, Info, Smartphone } from 'lucide-react'
 import { approvalSignatureSources, phoneSignContext, signatureUpdate, signedOnPhone, SLOT_OF_ROLE } from '../domain/phoneSignature'
@@ -90,14 +96,15 @@ const formatDurationHHMM = (durationStr) => {
   return durationStr
 }
 
-// Standard Results component for MatchEnd page
-const ResultsTable = ({ teamAName, teamBName, setResults, matchStart, matchEnd, matchDuration }) => {
+// Standard Results component for MatchEnd page. `winnerLabel` ('A' | 'B' |
+// null) is the match winner (getMatchWinner): a match stopped without the
+// sets needed has none, and no result, as the winner card and the PDF
+const ResultsTable = ({ teamAName, teamBName, setResults, matchStart, matchEnd, matchDuration, winnerLabel = null }) => {
   const { t } = useTranslation()
 
-  // Calculate winner
   const teamAWins = setResults?.reduce((sum, r) => sum + (r.teamAWon ?? 0), 0) || 0
   const teamBWins = setResults?.reduce((sum, r) => sum + (r.teamBWon ?? 0), 0) || 0
-  const winnerName = teamAWins > teamBWins ? teamAName : teamBWins > teamAWins ? teamBName : null
+  const winnerName = winnerLabel === 'A' ? teamAName : winnerLabel === 'B' ? teamBName : null
 
   return (
     <div style={{ padding: '12px', fontSize: '12px', background: '#fff', color: '#000', height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -195,7 +202,7 @@ const ResultsTable = ({ teamAName, teamBName, setResults, matchStart, matchEnd, 
         </div>
         <div style={{ textAlign: 'right' }}>
           <span style={{ fontSize: '9px', color: '#666', textTransform: 'uppercase' }}>{t('matchEnd.result', 'Result')}</span>
-          <div style={{ fontWeight: 700, fontSize: '14px', color: '#000' }}>{Math.max(teamAWins, teamBWins)}:{Math.min(teamAWins, teamBWins)}</div>
+          <div style={{ fontWeight: 700, fontSize: '14px', color: '#000' }}>{winnerName ? `${Math.max(teamAWins, teamBWins)}:${Math.min(teamAWins, teamBWins)}` : '-'}</div>
         </div>
       </div>
 
@@ -432,9 +439,13 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   const pdfChoiceRef = useRef(null)
   const [pdfFailure, setPdfFailure] = useState(null) // { reason }
   const [isClosing, setIsClosing] = useState(false)
-  const askPdfFailure = (err) => new Promise((resolve) => {
+  // The missing PDF of an approved match being made again (pdfMissing)
+  const [creatingPdf, setCreatingPdf] = useState(false)
+  // canSkip: "Approve without PDF" is offered (the approval; not when the
+  // missing PDF of an approved match is made again)
+  const askPdfFailure = (err, { canSkip = true } = {}) => new Promise((resolve) => {
     pdfChoiceRef.current = resolve
-    setPdfFailure({ reason: err?.reason || PDF_FAIL.FAILED })
+    setPdfFailure({ reason: err?.reason || PDF_FAIL.FAILED, canSkip })
   })
   const choosePdfFailure = (choice) => {
     const resolve = pdfChoiceRef.current
@@ -476,7 +487,13 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     }
     setApprovalFeature('available')
     if (res.data?.match?.closed_at) setServerClosed(true)
-    const bySlot = approvalsBySlot(res.data?.approvals)
+    // An approval this device undoes (the sheet changed after it, the undo
+    // still queued) is not taken back: it would complete its slot again
+    let undoing = new Set()
+    try {
+      undoing = approvalIdsBeingUndone(await db.sync_queue.where('resource').equals(APPROVAL_RESOURCE).toArray())
+    } catch { /* no queue: nothing is being undone */ }
+    const bySlot = approvalsBySlot((res.data?.approvals || []).filter(r => !undoing.has(r?.id)))
     try {
       await db.matches.update(matchId, { accountApprovals: Object.keys(bySlot).length ? bySlot : null })
     } catch (err) {
@@ -736,6 +753,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     : winnerKey === 'away'
       ? (awayTeam?.name || t('common.away'))
       : t('matchEnd.noWinner', 'No winner (match stopped)')
+  const winnerLabel = winnerKey === 'home' ? homeLabel : winnerKey === 'away' ? (homeLabel === 'A' ? 'B' : 'A') : null
 
   // Match start = set 1's actual start (its first rally), end = the last set's
   // end, duration = end - start: the PDF's values (scoresheet_pdf/utils/matchTimes),
@@ -754,18 +772,24 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   // Split sanctions: the PDF's 9 rows, the rest in REMARKS
   const sanctionsInBox = processedSanctions.slice(0, SANCTION_ROWS)
   const overflowSanctions = processedSanctions.slice(SANCTION_ROWS)
-  const autoRemarks = generatedRemarks({ sets, events, teamAKey, bestOf: match?.bestOf })
+  // ... with every change made after the match, as the PDF prints them
+  const autoRemarks = [...generatedRemarks({ sets, events, teamAKey, bestOf: match?.bestOf }), ...correctionRemarks(match?.manualChanges)]
 
-  // Check if optional fields exist
-  // Check if officials array has these roles
-  const hasAsstScorer = match.asstScorerSignature !== undefined ||
-    (Array.isArray(match.officials) && match.officials.some(o =>
-      o.role?.toLowerCase() === 'assistant scorer' || o.role?.toLowerCase() === 'assistant_scorer'
-    ))
-  const hasRef2 = match.ref2Signature !== undefined || !!approvalFor(match, 'ref2') ||
-    (Array.isArray(match.officials) && match.officials.some(o =>
-      o.role?.toLowerCase() === '2nd referee' || o.role?.toLowerCase() === '2nd_referee'
-    ))
+  // A result no set or match ends with (a correction can leave a finished set
+  // at 24:19): an official match is not approved with it. The sheet's own
+  // consistency checks (the PDF window's warnings): the approval asks first.
+  const resultProblems = resultIssues({ sets, events, match })
+  const resultBlocked = !match.test && resultProblems.length > 0
+  const sheetWarnings = consistencyWarnings({ sets, events, teamAKey, homePlayers, awayPlayers, bestOf: match?.bestOf })
+  // Approved here without the official PDF on its way to the server
+  // ("Approve without PDF", or the queue refused the file): made again from
+  // the approved view, and Close match warns while it is missing
+  const pdfMissing = !match.test && !!match.seed_key && match.approved === true && match.scoresheetPdfMissing === true
+
+  // The assistant scorer and the 2nd referee sign only when the match has
+  // them: a named official, or a slot already signed (or approved). A null
+  // field after Reopen last set, a correction or a cloud import is no official.
+  const { asstScorer: hasAsstScorer, ref2: hasRef2 } = optionalSignatureSlots(match)
 
   // Signature status checks - use POST-GAME captain signatures (not pre-match)
   const captainASigned = homeLabel === 'A' ? !!match.homePostGameCaptainSignature : !!match.awayPostGameCaptainSignature
@@ -1122,14 +1146,14 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     await db.matches.update(matchId, { accountApprovals: Object.keys(current).length ? current : null })
   }
 
-  // After a 200 from POST /api/approvals: keep the record on the match row
-  const handleAccountApproved = async (record, { email, entered }) => {
+  // After a 200 from POST /api/approvals: keep the record on the match row.
+  // The official's address is not kept on this shared device: a referee
+  // approves only with the one the match setup stored (spec R11).
+  const handleAccountApproved = async (record, { entered }) => {
     const row = await db.matches.get(matchId)
     const current = { ...(row?.accountApprovals || {}) }
     current[record.slot] = record
     await db.matches.update(matchId, { accountApprovals: current })
-    // A convenience for the next match on this device (never in match.officials)
-    if (record.slot !== 'scorer' && entered) rememberApprovalEmail(entered, email)
     setApprovalRole(null)
     toast.success(t('approval.approved'))
     if (entered && namesDiffer(record.name, entered)) {
@@ -1145,6 +1169,63 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     if (!records.length || current?.closed_at) return
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return
     await Promise.allSettled(records.map(r => approvalsApi.undo(r.id)))
+  }
+
+  // A change of what the officials signed (the remarks, a remarks signature
+  // removed) after the first post-match signature or account approval: asked
+  // first, then written together with the cleared signatures and approvals,
+  // here and on the server, and logged as a change after the match (as a
+  // correction in Corrections does). Resolves to false when declined.
+  const confirmSignedSheetChange = async (message) => await askConfirm({
+    title: t('matchEnd.signedSheetChange.title'),
+    message,
+    confirmLabel: t('matchEnd.signedSheetChange.confirm'),
+    tone: 'danger'
+  })
+
+  const handleSaveRemarks = async () => {
+    const current = await db.matches.get(matchId)
+    const before = current?.remarks || ''
+    const next = remarksText.trim()
+    if (next !== before.trim()) {
+      if (signedAfterMatch(current)) {
+        if (!(await confirmSignedSheetChange(t('matchEnd.signedSheetChange.remarks')))) return
+        try {
+          await writeSignedSheetChange(db, matchId, { remarks: next }, {
+            action: 'editRemarks', before, after: next, text: t('matchEnd.signedSheetChange.logRemarks')
+          })
+        } catch (err) {
+          console.error('[MatchEnd] Could not save the remarks:', err?.message)
+          toast.error(t('matchEnd.signedSheetChange.saveFailed'))
+          return
+        }
+      } else {
+        await db.matches.update(matchId, { remarks: next })
+      }
+    }
+    setShowRemarksModal(false)
+    setRemarksText('')
+  }
+
+  const handleRemoveRemarksSignature = async (index) => {
+    if (signaturesLocked) return
+    const current = await db.matches.get(matchId)
+    const next = withoutRemarksSignature(current?.remarksSignatures, index)
+    if (!signedAfterMatch(current)) {
+      await saveMatchSignature(db, matchId, 'remarksSignatures', next)
+      return
+    }
+    if (!(await confirmSignedSheetChange(t('matchEnd.signedSheetChange.remarksSignature')))) return
+    const removed = remarksSignaturesOf(current?.remarksSignatures)[index]
+    const caption = removed ? remarksSignatureCaption(removed) : ''
+    try {
+      await writeSignedSheetChange(db, matchId, { remarksSignatures: next }, {
+        action: 'removeRemarksSignature', before: caption, after: null, text: t('matchEnd.signedSheetChange.logRemarksSignature', { caption })
+      })
+    } catch (err) {
+      console.error('[MatchEnd] Could not remove the remarks signature:', err?.message)
+      toast.error(t('matchEnd.signedSheetChange.saveFailed'))
+    }
   }
 
   const handleShowScoresheet = (action = 'preview') => {
@@ -1179,8 +1260,10 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   }
 
   // The approval's PDF and final JSON for the 'scoresheets' bucket, queued
-  // as sync jobs that carry the files (see handleApprove)
-  const queueApprovalFiles = async ({ pdfResult, sets: allSets, events: allEvents }) => {
+  // as sync jobs that carry the files (see handleApprove). json: false, the
+  // PDF alone (the approval went without it: handleCreateMissingPdf).
+  // Resolves to true when a PDF job was queued.
+  const queueApprovalFiles = async ({ pdfResult, sets: allSets, events: allEvents, match: approvedMatch = match, json = true }) => {
     const jobs = []
     // Same name scheme as the JSON (random part: only this scorer
     // account can read it, nobody can claim the name first)
@@ -1188,10 +1271,10 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     // (only if generation succeeded)
     if (pdfResult && pdfStoragePath) jobs.push(scoresheetUploadJob(match, pdfStoragePath, pdfResult.blob, 'application/pdf'))
     // The final JSON (with _final suffix for approved matches)
-    const jsonStoragePath = scoresheetUploadPath(match, { final: true })
+    const jsonStoragePath = json ? scoresheetUploadPath(match, { final: true }) : null
     if (jsonStoragePath) {
       jobs.push(scoresheetUploadJob(match, jsonStoragePath, scoresheetJsonBlob({
-        match,
+        match: approvedMatch,
         homeTeam,
         awayTeam,
         homePlayers,
@@ -1200,20 +1283,92 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         events: allEvents
       }), 'application/json'))
     }
-    if (!jobs.length) return
+    if (!jobs.length) return false
+    const isPdf = (job) => job.payload?.contentType === 'application/pdf'
+    // an earlier approval's files still unsent (a reopen and a new
+    // approval): only this approval's go. The PDF alone replaces an unsent
+    // file of its own name only (the approval's JSON stays queued).
+    const supersede = () => supersedeUnsentScoresheetUploads(db.sync_queue, json ? jobs : jobs.map(j => ({ payload: { path: j.payload.path } })))
     try {
       await db.transaction('rw', db.sync_queue, async () => {
+        await supersede()
         for (const job of jobs) await db.sync_queue.add(job)
       })
+      return jobs.some(isPdf)
     } catch (queueErr) {
       // IndexedDB refused the files (storage full): one try now, in the
-      // background, as before the queue took them
+      // background, as before the queue took them. The PDF stays missing
+      // (pdfMissing) until that try has stored it.
       console.warn('[MatchEnd] Could not queue the scoresheet uploads, uploading them once now:', queueErr?.message)
+      await supersede().catch(() => {})
       for (const job of jobs) {
         uploadQueuedScoresheet(job.payload)
-          .then(({ error }) => { if (error) console.warn('Failed to upload scoresheet to cloud:', error) })
+          .then(({ error }) => {
+            if (error) console.warn('Failed to upload scoresheet to cloud:', error)
+            else if (isPdf(job)) db.matches.update(matchId, { scoresheetPdfMissing: false }).catch(() => {})
+          })
           .catch(uploadErr => console.warn('Error uploading scoresheet:', uploadErr))
       }
+      return false
+    }
+  }
+
+  // The scoresheet window's PDF (scoresheetPdfRequest.js). The wait ends at
+  // once when that window is closed, stops answering, says the capture
+  // failed or the scorer presses Cancel; the scorer then chooses: Retry,
+  // Approve without PDF (canSkip: the approval only) or Cancel.
+  // OpenBeach video 2026-10-08: closing the window hung the approval.
+  // Resolves to { pdfResult, choice: 'pdf' | 'skip' | 'cancel' }.
+  const requestPdf = async ({ canSkip = true } = {}) => {
+    for (;;) {
+      const abort = new AbortController()
+      exportAbortRef.current = abort
+      try {
+        const pdfResult = await waitForScoresheetPdf(
+          // pdfReq: the page's answers name this attempt (a window of an
+          // earlier one, closed by Cancel or a stall, is ignored)
+          (req) => openAppWindow(`/scoresheet/?matchId=${matchId}&action=getBlob&${PDF_REQUEST_PARAM}=${encodeURIComponent(req)}`, { features: 'width=1600,height=1200', title: t('header.scoresheet') }),
+          { signal: abort.signal }
+        )
+        setDownloadProgress(prev => (prev ? { ...prev, pdf: true } : prev))
+        return { pdfResult, choice: 'pdf' }
+      } catch (pdfError) {
+        console.warn('[MatchEnd] No PDF:', pdfError)
+        // Cancel during the wait: stop here
+        const choice = pdfError?.reason === PDF_FAIL.CANCELLED ? 'cancel' : await askPdfFailure(pdfError, { canSkip })
+        if (choice === 'retry') continue
+        return { pdfResult: null, choice: canSkip && choice === 'skip' ? 'skip' : 'cancel' }
+      } finally {
+        exportAbortRef.current = null
+      }
+    }
+  }
+
+  // The approval went without its PDF ("Approve without PDF", or the queue
+  // refused the file): made again here and queued as the approval's would
+  // have been. The server takes the first PDF of an approval from the
+  // match's scorer, also after the close (backend lib/scoresheets.js).
+  const handleCreateMissingPdf = async () => {
+    if (creatingPdf || isClosing) return
+    cLogger.logHandler('handleCreateMissingPdf', { matchId })
+    setCreatingPdf(true)
+    try {
+      const current = (await db.matches.get(matchId)) || match
+      const allSets = await db.sets.where('matchId').equals(matchId).sortBy('index')
+      const allEvents = await db.events.where('matchId').equals(matchId).sortBy('seq')
+      sessionStorage.setItem('scoresheetData', JSON.stringify({ match: current, homeTeam, awayTeam, homePlayers, awayPlayers, sets: allSets, events: allEvents }))
+      setDownloadProgress({ pdfOnly: true, json: true, pdf: false })
+      const { pdfResult } = await requestPdf({ canSkip: false })
+      setDownloadProgress(null)
+      if (pdfResult && await queueApprovalFiles({ pdfResult, json: false })) {
+        await db.matches.update(matchId, { scoresheetPdfMissing: false })
+        toast.success(t('matchEnd.pdfMissing.queued'))
+      }
+    } catch (err) {
+      console.error('[MatchEnd] Could not make the missing PDF:', err?.message)
+      setDownloadProgress(null)
+    } finally {
+      setCreatingPdf(false)
     }
   }
 
@@ -1243,21 +1398,64 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         return
       }
 
+      // A result no set or match ends with is never approved: corrected first
+      const currentSets = await db.sets.where('matchId').equals(matchId).toArray()
+      const currentEvents = await db.events.where('matchId').equals(matchId).sortBy('seq')
+      if (!match.test && resultIssues({ sets: currentSets, events: currentEvents, match }).length > 0) {
+        showAlert(t('matchEnd.resultIssues.blocked'), 'warning')
+        setIsSaving(false)
+        return
+      }
+
+      // The sheet's consistency checks (the scoresheet window lists them, the
+      // PDF does not): the approval goes ahead only once the scorer saw them
+      const warnings = consistencyWarnings({ sets: currentSets, events: currentEvents, teamAKey, homePlayers, awayPlayers, bestOf: match?.bestOf })
+      if (warnings.length > 0) {
+        const go = await askConfirm({
+          title: t('matchEnd.sheetWarnings.confirmTitle'),
+          message: warnings.join('\n'),
+          confirmLabel: t('matchEnd.sheetWarnings.confirm')
+        })
+        if (!go) {
+          setIsSaving(false)
+          return
+        }
+      }
+
       // The account approvals that complete a slot (no drawn signature there)
       // are re-checked with the server before the result is approved (one may
-      // have been voided, or the sets changed). A stale record in a slot that
-      // was signed by hand never blocks: the drawn signature is the fallback.
-      // Offline the local copy is trusted: the approvals were made online.
-      const currentSets = await db.sets.where('matchId').equals(matchId).toArray()
+      // have been voided or undone, or the sets changed). A stale record in a
+      // slot that was signed by hand never blocks: the drawn signature is the
+      // fallback. When the server cannot be asked (offline, an error), the
+      // approvals are not confirmed: only once the scorer agrees, and those
+      // slots then print as pending (no "Approved electronically") and the
+      // approval's summary leaves them out; the server's records come back
+      // with the next refresh.
       const completing = approvalsCompletingSlots(match, currentSets, { hasRef2 })
-      if (completing.length && online && match.seed_key) {
-        const fresh = await refreshAccountApprovals()
-        if (fresh) {
-          if (!approvalsStillValid(completing, fresh.bySlot, resultKey(currentSets))) {
-            showAlert(t('approval.revalidateFailed'), 'warning')
+      if (completing.length) {
+        const fresh = online && match.seed_key ? await refreshAccountApprovals() : null
+        if (fresh && !approvalsStillValid(completing, fresh.bySlot, resultKey(currentSets))) {
+          showAlert(t('approval.revalidateFailed'), 'warning')
+          setIsSaving(false)
+          return
+        }
+        if (!fresh) {
+          const go = await askConfirm({
+            title: t('approval.unconfirmedTitle'),
+            // signed out: the session is missing, not the connection
+            message: t(online && match.seed_key && !signedIn ? 'approval.unconfirmedBodySignedOut' : 'approval.unconfirmedBody', {
+              roles: completing.map(c => getSignatureLabel(c.role)).join(', ')
+            }),
+            confirmLabel: t('approval.unconfirmedApprove')
+          })
+          if (!go) {
             setIsSaving(false)
             return
           }
+          const row = await db.matches.get(matchId)
+          const kept = { ...(row?.accountApprovals || {}) }
+          for (const c of completing) delete kept[c.slot]
+          await db.matches.update(matchId, { accountApprovals: Object.keys(kept).length ? kept : null })
         }
       }
 
@@ -1267,13 +1465,17 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       // Prepare export data
       const allSets = await db.sets.where('matchId').equals(matchId).sortBy('index')
       const allEvents = await db.events.where('matchId').equals(matchId).sortBy('seq')
+      // The account approvals as checked above (refreshed from the server, or
+      // without those left unconfirmed), not as this render read them: the
+      // ZIP's JSON, the PDF and the uploaded final JSON print what was approved
+      const approvedMatch = { ...match, accountApprovals: (await db.matches.get(matchId))?.accountApprovals ?? null }
 
       // In the backup file format: Restore match takes the ZIP's JSON back.
       // It had the teams inside the match and no version, and the restore
       // refused it (backupManager.matchBackupFromMatchEndExport still reads
       // those files).
       const exportData = matchEndExportData({
-        match,
+        match: approvedMatch,
         homeTeam,
         awayTeam,
         homePlayers,
@@ -1294,7 +1496,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
       // Generate PDF via scoresheet window with postMessage
       const scoresheetData = {
-        match,
+        match: approvedMatch,
         homeTeam,
         awayTeam,
         homePlayers,
@@ -1305,37 +1507,14 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
 
       // Open the scoresheet with the getBlob action and wait for its PDF
-      // (scoresheetPdfRequest.js). The wait ends at once when that window is
-      // closed, stops answering, says the capture failed or the scorer
-      // presses Cancel; the scorer then chooses: Retry, Approve without PDF
-      // (the JSON, the approval and the ZIP go ahead, the PDF is saved from
-      // the scoresheet later) or Cancel (nothing is approved).
-      // OpenBeach video 2026-10-08: closing the window hung the approval.
-      let pdfResult = null
-      for (;;) {
-        const abort = new AbortController()
-        exportAbortRef.current = abort
-        try {
-          pdfResult = await waitForScoresheetPdf(
-            // pdfReq: the page's answers name this attempt (a window of an
-            // earlier one, closed by Cancel or a stall, is ignored)
-            (req) => openAppWindow(`/scoresheet/?matchId=${matchId}&action=getBlob&${PDF_REQUEST_PARAM}=${encodeURIComponent(req)}`, { features: 'width=1600,height=1200', title: t('header.scoresheet') }),
-            { signal: abort.signal }
-          )
-          setDownloadProgress(prev => ({ ...prev, pdf: true }))
-          break
-        } catch (pdfError) {
-          console.warn('[MatchEnd] No PDF:', pdfError)
-          // Cancel during the wait: stop here, nothing approved
-          const choice = pdfError?.reason === PDF_FAIL.CANCELLED ? 'cancel' : await askPdfFailure(pdfError)
-          if (choice === 'retry') continue
-          if (choice === 'skip') break
-          setDownloadProgress(null)
-          setIsSaving(false)
-          return
-        } finally {
-          exportAbortRef.current = null
-        }
+      // (requestPdf). Approve without PDF: the JSON, the approval and the ZIP
+      // go ahead, and the approved view makes the PDF again (pdfMissing).
+      // Cancel: nothing is approved.
+      const { pdfResult, choice: pdfChoice } = await requestPdf()
+      if (pdfChoice === 'cancel') {
+        setDownloadProgress(null)
+        setIsSaving(false)
+        return
       }
 
       // Create ZIP with both files (PDF is optional)
@@ -1392,8 +1571,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             },
             // Signed on a phone or on this device (docs/qr-signing-spec.md 5.6)
             signatureSources: approvalSignatureSources(match),
-            // Approved with an account: names and short IDs only (no user ids, no emails)
-            accounts: approvalSummary(match, allSets)
+            // Approved with an account: names and short IDs only (no user ids,
+            // no emails), from the stored row (without approvals left unconfirmed)
+            accounts: approvalSummary((await db.matches.get(matchId)) || match, allSets)
           }
 
           // The remarks as approved, just before the approval (db/017)
@@ -1417,7 +1597,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         await db.matches.update(matchId, {
           approved: true,
           approvedAt: new Date().toISOString(),
-          current_set: null
+          current_set: null,
+          // the official PDF counts as missing until its upload is queued
+          ...(!match.test && match?.seed_key ? { scoresheetPdfMissing: true } : {})
         })
       })
 
@@ -1432,12 +1614,15 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       // connection that passed no data held "Confirm and approve" (no Cancel
       // at that step), and with it the approval and the ZIP, for minutes
       // (stress test 2026-10-25).
-      if (!match?.test) await queueApprovalFiles({ pdfResult, sets: allSets, events: allEvents })
-      else if (pdfResult) mailTestScoresheet(pdfResult)
+      if (!match?.test) {
+        const pdfQueued = await queueApprovalFiles({ pdfResult, sets: allSets, events: allEvents, match: approvedMatch })
+        if (pdfQueued && match?.seed_key) await db.matches.update(matchId, { scoresheetPdfMissing: false })
+      } else if (pdfResult) mailTestScoresheet(pdfResult)
 
-      // Warn if PDF was not generated (approval still succeeded)
+      // Warn if PDF was not generated (approval still succeeded): an official
+      // match's is made again from the approved view (pdfMissing)
       if (!pdfResult) {
-        showAlert(t('matchEnd.pdfGenerationFailed', 'Match approved, but PDF generation failed. You can generate the PDF manually from the scoresheet button.'), 'warning')
+        showAlert(t(match?.test ? 'matchEnd.pdfGenerationFailedTest' : 'matchEnd.pdfGenerationFailed'), 'warning')
       }
     } catch (error) {
       console.error('Error approving match:', error)
@@ -1452,6 +1637,22 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     cLogger.logHandler('handleCloseMatch', { matchId })
     if (isClosing) return
     setIsClosing(true)
+
+    // No official PDF of this approval on its way to the server: once the
+    // match is closed here, this device cannot make it any more
+    const current = await db.matches.get(matchId).catch(() => null)
+    if (current && !current.test && current.seed_key && current.approved === true && current.scoresheetPdfMissing === true) {
+      const go = await askConfirm({
+        title: t('matchEnd.pdfMissing.closeTitle'),
+        message: t('matchEnd.pdfMissing.closeBody'),
+        confirmLabel: t('matchEnd.pdfMissing.closeAnyway'),
+        tone: 'danger'
+      })
+      if (!go) {
+        setIsClosing(false)
+        return
+      }
+    }
 
     try {
       // Update match to final status in Supabase first (before deleting local data)
@@ -1493,6 +1694,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         // Delete the match itself
         await db.matches.delete(matchId)
       })
+      // and its Match setup draft (names and dates of birth of unsaved edits)
+      await clearSetupDraft(matchId).catch(() => {})
 
       // Navigate home (the match is gone: App leaves it out at once)
       if (onGoHome) onGoHome({ closed: true })
@@ -1532,7 +1735,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         }
         return handleReopenMatch({ queue: false })
       case 'serverOpen':
-        return handleReopenMatch({ queue: false, requeueSetAside: true })
+        return handleReopenMatch({ queue: false, requeueSetAside: true, everClosed: isKnownClosedOnServer(current) })
       case 'needsConnection':
         showAlert(t('matchEnd.reopenNeedsConnection'), 'error')
         return
@@ -1566,7 +1769,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     }
     setReopenDialog(null)
     // The admin reopen voided the account approvals on the server (db/011)
-    await handleReopenMatch({ queue: false, voidApprovals: true, requeueSetAside: true })
+    await handleReopenMatch({ queue: false, voidApprovals: true, requeueSetAside: true, everClosed: true })
   }
 
   // Handle reopening match after approval - allows re-approval or adjustments
@@ -1578,7 +1781,10 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   // them. voidApprovals: the admin reopen, which voided them on the server.
   // requeueSetAside: the server is known to have the match open, so the
   // writes it refused as closed and this device set aside go out again.
-  const handleReopenMatch = async ({ queue = true, voidApprovals = false, requeueSetAside = false } = {}) => {
+  // everClosed: the server had closed it (an admin reopened it): the copy
+  // remembers it, so Delete match removes only this copy (utils/matchReopen
+  // wasClosedOnServer; the server refuses the delete, db/039).
+  const handleReopenMatch = async ({ queue = true, voidApprovals = false, requeueSetAside = false, everClosed = false } = {}) => {
     cLogger.logHandler('handleReopenMatch', { matchId, queue, voidApprovals, requeueSetAside })
 
     try {
@@ -1588,10 +1794,20 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         approved: false,
         approvedAt: null,
         status: 'ended', // Match is finished but not final
+        // the next approval queues its own PDF
+        scoresheetPdfMissing: null,
         ...(match?.cloudBlock?.code === 'OV_MATCH_CLOSED' ? { cloudBlock: null } : {}),
-        ...(voidApprovals ? { accountApprovals: null } : {})
+        ...(voidApprovals ? { accountApprovals: null } : {}),
+        ...(everClosed && !match?.test ? { everClosed: true } : {})
       })
       setServerClosed(false)
+
+      // The approval's scoresheet files still unsent are the old approval's:
+      // the new approval queues new ones (utils/scoresheetUploader)
+      if (!match?.test && match?.seed_key) {
+        const n = await supersedeUnsentScoresheetUploadsOf(db.sync_queue, match.seed_key)
+        if (n) console.log(`[MatchEnd] Reopened: ${n} scoresheet upload(s) of the earlier approval dropped`)
+      }
 
       // The writes set aside when the server refused them as closed go out
       // again (utils/matchHandover requeueClosedJobs), except a closing one
@@ -1648,14 +1864,14 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       // A forfeit is REVERSED, not reopened as it stands: the last set is often
       // one the forfeit created (0-25) and the forfeit set holds awarded points.
       // Remove the created sets, the awarded points, the forfeit set_end and
-      // forfait events, and reopen the forfeit set at its pre-forfeit score
-      // (planForfeitReversal, tested).
+      // forfait events, reopen the forfeit set at its pre-forfeit score and
+      // give the played sets a default rewrote their score back
+      // (planForfeitReversal, tested). The match forfeit is read from its
+      // forfait event: a copy continued from the cloud has no forfeitTeam.
       const allEvents = await db.events.where('matchId').equals(matchId).toArray()
-      const forfaitIndexes = allEvents
-        .filter(e => e.type === 'forfait' && (match?.forfeitTeam ? e.payload?.scope !== 'set' : true))
-        .map(e => e.setIndex)
-      const fromSetIndex = forfaitIndexes.length && match?.forfeitTeam
-        ? Math.min(lastSet.index, ...forfaitIndexes)
+      const matchForfeit = matchForfeitOf(allEvents)
+      const fromSetIndex = matchForfeit?.setIndex != null
+        ? Math.min(lastSet.index, matchForfeit.setIndex)
         : lastSet.index
       const forfeitPlan = planForfeitReversal({ events: allEvents, sets: allSets, fromSetIndex })
       if (forfeitPlan.hasForfeit) {
@@ -1664,25 +1880,18 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         await withActivityContext({ reason: 'forfeit_reversal' }, () => db.events.bulkDelete(forfeitPlan.deleteEventIds))
         if (forfeitPlan.deleteSetIds.length > 0) await db.sets.bulkDelete(forfeitPlan.deleteSetIds)
         for (const r of forfeitPlan.restoreSets) {
-          await db.sets.update(r.id, { homePoints: r.homePoints, awayPoints: r.awayPoints, finished: false, endTime: null })
+          await db.sets.update(r.id, restoredSetWrites(r).local)
         }
-        // Never send the removed rows to the cloud
+        // Never send the removed rows to the cloud; the created sets already
+        // there are deleted (a finished one counted in the approved result)
         const deletedSetIds = new Set(forfeitPlan.deleteSetIds.map(String))
         const queued = await db.sync_queue.where('status').equals('queued').toArray()
-        const staleJobs = [
-          ...syncJobsForEvents(queued, deleteIds),
-          ...syncJobsForSets(queued, forfeitPlan.deleteSetIds)
-        ]
+        const staleJobs = syncJobsForEvents(queued, deleteIds, match?.seed_key)
         if (staleJobs.length > 0) await db.sync_queue.bulkDelete(staleJobs.map(j => j.id))
+        await queueSetDeletes(db, match, forfeitPlan.deleteSetIds)
         if (!match?.test && match?.seed_key) {
           for (const r of forfeitPlan.restoreSets) {
-            await db.sync_queue.add({
-              resource: 'set',
-              action: 'update',
-              payload: { external_id: String(r.id), home_points: r.homePoints, away_points: r.awayPoints, finished: false, end_time: null },
-              ts: new Date().toISOString(),
-              status: 'queued'
-            })
+            await db.sync_queue.add(setUpdateJob(match, r.id, restoredSetWrites(r).cloud))
           }
         }
         // The set to reopen is the forfeit set, or else the last remaining set
@@ -1729,19 +1938,22 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         await withActivityContext({ reason: 'reopen_set' }, () => db.events.delete(setEndEvent.id))
       }
 
+      // The set is played on: the match was not stopped there (Impossibility
+      // to resume), as the Scoreboard's Reopen set; through the event history
+      // too, and its insert never sent goes with it
+      const stoppedIds = (await db.events.where('matchId').equals(matchId).toArray())
+        .filter(e => e.type === 'match_stopped' && e.setIndex === lastSet.index)
+        .map(e => e.id)
+      if (stoppedIds.length > 0) {
+        await withActivityContext({ reason: 'reopen_set' }, () => db.events.bulkDelete(stoppedIds))
+        const queuedJobs = await db.sync_queue.where('status').equals('queued').toArray()
+        const stoppedJobs = syncJobsForEvents(queuedJobs, new Set(stoppedIds), match?.seed_key)
+        if (stoppedJobs.length > 0) await db.sync_queue.bulkDelete(stoppedJobs.map(j => j.id))
+      }
+
       // Queue sync to Supabase for the set update
       if (match?.seed_key) {
-        await db.sync_queue.add({
-          resource: 'set',
-          action: 'update',
-          payload: {
-            external_id: String(lastSet.id),
-            finished: false,
-            end_time: null
-          },
-          ts: new Date().toISOString(),
-          status: 'queued'
-        })
+        await db.sync_queue.add(setUpdateJob(match, lastSet.id, { finished: false, end_time: null }))
 
         // Queue sync for match status update
         await db.sync_queue.add({
@@ -1838,6 +2050,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               matchStart={matchStart}
               matchEnd={matchEndTime}
               matchDuration={matchDuration}
+              winnerLabel={winnerLabel}
             />
           </div>
         </div>
@@ -1900,7 +2113,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
                     <img src={sig.image} alt={remarksSignatureCaption(sig)} className="ov-ink" style={{ height: '40px', maxWidth: '120px', objectFit: 'contain' }} />
                     <span className="text-sm text-stone-700">{remarksSignatureCaption(sig)}</span>
                     {!signaturesLocked && (
-                      <Button variant="danger-outline" size="sm" onClick={() => saveMatchSignature(db, matchId, 'remarksSignatures', withoutRemarksSignature(match?.remarksSignatures, i))}>
+                      <Button variant="danger-outline" size="sm" onClick={() => handleRemoveRemarksSignature(i)}>
                         {t('common.remove', 'Remove')}
                       </Button>
                     )}
@@ -1973,6 +2186,34 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           {t('matchEnd.closedOnServer')}
         </p>
       )}
+      {/* A result no set or match ends with: corrected before the approval */}
+      {!finalActions && resultProblems.length > 0 && (
+        <div className={NOTICE.error} role="alert" data-testid="matchend-result-issues" style={{ margin: '0 0 12px 0' }}>
+          <p className="font-semibold" style={{ margin: 0 }}>{t('matchEnd.resultIssues.title')}</p>
+          <ul className="list-disc pl-5" style={{ margin: '4px 0' }}>
+            {resultProblems.map((issue, i) => <li key={i}>{issueText(issue, t)}</li>)}
+          </ul>
+          <p style={{ margin: 0 }}>{t('matchEnd.resultIssues.hint')}</p>
+        </div>
+      )}
+      {/* The scoresheet's consistency checks (never printed): seen before the approval */}
+      {!finalActions && sheetWarnings.length > 0 && (
+        <div className={NOTICE.warning} data-testid="matchend-sheet-warnings" style={{ margin: '0 0 12px 0' }}>
+          <p className="font-semibold" style={{ margin: 0 }}>{t('matchEnd.sheetWarnings.title')}</p>
+          <ul className="list-disc pl-5" style={{ margin: '4px 0 0' }}>
+            {sheetWarnings.map((w, i) => <li key={i}>{w}</li>)}
+          </ul>
+        </div>
+      )}
+      {/* Approved without the official PDF on its way to the server */}
+      {finalActions && pdfMissing && (
+        <div className={`ov-kit ${NOTICE.warning}`} data-testid="matchend-pdf-missing" style={{ margin: '0 0 12px 0', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          <span style={{ flex: '1 1 240px' }}>{t('matchEnd.pdfMissing.notice')}</span>
+          <Button variant="secondary" size="md" onClick={handleCreateMissingPdf} loading={creatingPdf} disabled={creatingPdf || isClosing}>
+            {t('matchEnd.pdfMissing.create')}
+          </Button>
+        </div>
+      )}
       <div className="ov-kit" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
         {finalActions ? (
           // Post-approval buttons: Close Match and Reopen Match
@@ -1981,7 +2222,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               variant="positive"
               size="xl"
               onClick={handleCloseMatch}
-              disabled={isClosing}
+              disabled={isClosing || creatingPdf}
               loading={isClosing}
               style={{ flex: 1, minWidth: '150px' }}
             >
@@ -2004,7 +2245,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               variant="positive"
               size="xl"
               onClick={handleApprove}
-              disabled={isSaving || (!match.test && !allSignaturesDone)}
+              disabled={isSaving || (!match.test && !allSignaturesDone) || resultBlocked}
               loading={isSaving}
               data-help-id="matchend-export-json"
               // at least h-11, taller when Android's larger text wraps it
@@ -2081,10 +2322,12 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               <p className="text-sm text-stone-700" style={{ margin: '0 0 4px 0' }}>
                 {t(`matchEnd.export.reason.${['closed', 'stalled', 'timeout', 'blocked'].includes(pdfFailure.reason) ? pdfFailure.reason : 'failed'}`)}
               </p>
-              <p className="text-xs text-stone-500" style={{ margin: '0 0 20px 0' }}>{t('matchEnd.export.cancelKeepsUnapproved')}</p>
+              <p className="text-xs text-stone-500" style={{ margin: '0 0 20px 0' }}>{t(pdfFailure.canSkip ? 'matchEnd.export.cancelKeepsUnapproved' : 'matchEnd.pdfMissing.cancelKeepsMissing')}</p>
               <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: '8px' }}>
                 <Button variant="secondary" size="md" onClick={() => choosePdfFailure('cancel')}>{t('matchEnd.export.cancel')}</Button>
-                <Button variant="secondary" size="md" onClick={() => choosePdfFailure('skip')}>{t('matchEnd.export.approveWithoutPdf')}</Button>
+                {pdfFailure.canSkip && (
+                  <Button variant="secondary" size="md" onClick={() => choosePdfFailure('skip')}>{t('matchEnd.export.approveWithoutPdf')}</Button>
+                )}
                 <Button variant="positive" size="md" onClick={() => choosePdfFailure('retry')} autoFocus>{t('matchEnd.export.retry')}</Button>
               </div>
             </div>
@@ -2097,10 +2340,12 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             }}>
               <h3 className={DIALOG_TITLE} style={{ margin: '0 0 16px 0' }}>{t('matchEnd.preparingExport', 'Preparing match export...')}</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '16px' }}>
-                <div className="text-sm" style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center' }}>
-                  <span className={downloadProgress.json ? 'text-emerald-600' : 'text-stone-400'} style={{ fontSize: '20px' }}>{downloadProgress.json ? '✓' : '⏳'}</span>
-                  <span className={downloadProgress.json ? 'font-medium text-emerald-700' : 'text-stone-500'}>Match Data (JSON)</span>
-                </div>
+                {!downloadProgress.pdfOnly && (
+                  <div className="text-sm" style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center' }}>
+                    <span className={downloadProgress.json ? 'text-emerald-600' : 'text-stone-400'} style={{ fontSize: '20px' }}>{downloadProgress.json ? '✓' : '⏳'}</span>
+                    <span className={downloadProgress.json ? 'font-medium text-emerald-700' : 'text-stone-500'}>Match Data (JSON)</span>
+                  </div>
+                )}
                 <div className="text-sm" style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center' }}>
                   <span className={downloadProgress.pdf ? 'text-emerald-600' : 'text-stone-400'} style={{ fontSize: '20px' }}>{downloadProgress.pdf ? '✓' : '⏳'}</span>
                   <span className={downloadProgress.pdf ? 'font-medium text-emerald-700' : 'text-stone-500'}>{t('matchEnd.generatingPdf', 'Generating scoresheet (PDF)')}</span>
@@ -2209,6 +2454,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
                 matchStart={matchStart}
                 matchEnd={matchEndTime}
                 matchDuration={matchDuration}
+                winnerLabel={winnerLabel}
               />
             )}
             {zoomedSection === 'sanctions' && (
@@ -2349,11 +2595,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               <Button
                 variant="positive"
                 size="xl"
-                onClick={async () => {
-                  await db.matches.update(matchId, { remarks: remarksText.trim() })
-                  setShowRemarksModal(false)
-                  setRemarksText('')
-                }}
+                onClick={handleSaveRemarks}
               >
                 {t('common.save', 'Save')}
               </Button>

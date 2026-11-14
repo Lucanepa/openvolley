@@ -32,6 +32,14 @@ describe('switchSides in set 5', () => {
     expect(r).toEqual({ before: 'A left', after: 'B left' })
   })
 
+  it('an official match queues no set5LeftTeam column: the server has none and refused the job for a day; the sides travel with the live state', async () => {
+    const db = fakeDb()
+    const r = await switchSides({ db, matchId: 1, match: { test: false, seed_key: 'match_1799999999999_sides', coinTossTeamA: 'home', set5LeftTeam: 'A' }, setIndex: 5 })
+    expect(db.matches.update).toHaveBeenCalledWith(1, { set5LeftTeam: 'B' })
+    expect(db.sync_queue.add).not.toHaveBeenCalled()
+    expect(r).toEqual({ before: 'A left', after: 'B left' })
+  })
+
   it('without a coin toss side: B is on the left (A right, as set 4 ended), so A moves left', async () => {
     for (const coinTossTeamA of ['home', 'away']) {
       const db = fakeDb()

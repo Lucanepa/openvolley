@@ -24,7 +24,7 @@ const HEAD_LINKS = [
 ]
 
 const PAGES = ['index.html', 'manager.html', 'referee/index.html', 'bench/index.html', 'livescore/index.html',
-  'scoresheet/index.html', 'upload_roster/index.html', 'scoresheet_pdf/index_scoresheet.html']
+  'scoresheet/index.html', 'upload_roster/index.html']
 
 describe('brand assets', () => {
   it('every page head links the favicon (ico + svg) and the apple-touch icon', () => {

@@ -2,8 +2,8 @@
 /**
  * Contract tests for the LAN relay wire protocol (electron/lanRelayCore.cjs),
  * exercised through every Node relay runtime that uses it — the standalone
- * server (server.js), the Electron in-process relay and the Vite dev plugin —
- * and checked against what the client (serverDataSync.readRelayBundle) reads.
+ * server (server.js) and the Vite dev plugin — and checked against what the
+ * client (serverDataSync.readRelayBundle) reads.
  * Each runtime (and the Tauri relay with OV_TAURI_RELAY_BIN) also runs the
  * venue contract shared with the backend's --local relay: several beach
  * courts on one relay (backend/tests/helpers/beachVenueContract.js).
@@ -14,7 +14,6 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createServer as createNetServer } from 'node:net'
 import { createServer as createHttpServer } from 'node:http'
-import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import WebSocket from 'ws'
@@ -23,10 +22,10 @@ import { vitePluginApiRoutes } from '../../../vite-plugin-api-routes.js'
 import { readRelayBundle } from '../serverDataSync'
 import { runBeachVenueContract } from '../../../../backend/tests/helpers/beachVenueContract.js'
 import { runBenchRequestContract } from '../../../../backend/tests/helpers/benchRequestContract.js'
+import { TAURI_RELAY_BIN, startTauriRelay } from './tauriRelay.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const FRONTEND_DIR = resolve(here, '../../..')
-const require = createRequire(import.meta.url)
 
 const PINS = {
   refereePin: '314159',
@@ -1153,7 +1152,9 @@ async function hostileFrameScenario({ httpBase, wsUrl }) {
   const accomplice = await openClient(wsUrl)
   scoreboard.send(syncMessage(makeMatch({ seed_key: 'seed-hostile' })))
   referee.send({ type: 'subscribe-match', matchId: 'seed-hostile', pin: PINS.refereePin })
-  await referee.waitFor((m) => m.type === 'match-full-data')
+  // Two sockets: the subscribe can arrive before the sync (the Tauri relay
+  // stores a seed room's claim first), then the match comes as an update
+  await referee.waitFor((m) => (m.type === 'match-full-data' || m.type === 'match-data-update') && m.matchId === 'seed-hostile')
   accomplice.send({ type: 'subscribe-match', matchId: 'x1' })
   accomplice.send({ type: 'ping' })
   await accomplice.waitFor((m) => m.type === 'pong')
@@ -1520,43 +1521,24 @@ describe('relay runtimes speak the shared protocol', () => {
     }
   })
 
-  it('Electron in-process relay', async () => {
-    const relayServer = require('../../../electron/relayServer.js')
-    const [port, wsPort] = [await freePort(), await freePort()]
-    await relayServer.start({ port, wsPort })
+  // The desktop app's relay (src-tauri/src/relay.rs), a built binary; CI
+  // builds it (relay-contract.yml). It speaks the same protocol, but its
+  // WebSocket server (axum) offers no permessage-deflate, so deflateScenario
+  // is server.js's only.
+  it.skipIf(!TAURI_RELAY_BIN)('Tauri Rust relay (OV_TAURI_RELAY_BIN)', async () => {
+    const relay = await startTauriRelay()
+    const { base: httpBase, wsUrl } = relay
     try {
-      await relayScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
-      await runBeachVenueContract({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'electron' })
-      await runBenchRequestContract({ wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'electron' })
-      await hostileFrameScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
-      await hallCrowdScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
-      await deflateScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
-      await pinCheckBudgetScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
-    } finally {
-      await relayServer.stop()
-    }
-  })
-
-  // The Rust port can't run in plain CI without building Tauri; point this at a
-  // built binary to check it too:
-  //   OV_TAURI_RELAY_BIN=src-tauri/target/debug/openvolley-escoresheet npx vitest run lanRelayProtocol
-  it.skipIf(!process.env.OV_TAURI_RELAY_BIN)('Tauri Rust relay (OV_TAURI_RELAY_BIN)', async () => {
-    const [port, wsPort] = [await freePort(), await freePort()]
-    const child = spawn(process.env.OV_TAURI_RELAY_BIN, ['--server-only'], {
-      env: { ...process.env, OPENVOLLEY_HTTP_PORT: String(port), OPENVOLLEY_WS_PORT: String(wsPort) },
-      stdio: 'ignore'
-    })
-    try {
-      await waitForHttp(`http://127.0.0.1:${port}/api/health`)
-      await relayScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
-      await runBeachVenueContract({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'tauri' })
-      await runBenchRequestContract({ wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'tauri' })
-      await hostileFrameScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
-      await hallCrowdScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
-      const unknown = await fetch(`http://127.0.0.1:${port}/api/nope`)
+      await relayScenario({ httpBase, wsUrl })
+      await runBeachVenueContract({ httpBase, wsUrl, openClient, tag: 'tauri' })
+      await runBenchRequestContract({ wsUrl, openClient, tag: 'tauri' })
+      await hostileFrameScenario({ httpBase, wsUrl })
+      await hallCrowdScenario({ wsUrl })
+      await pinCheckBudgetScenario({ httpBase, wsUrl })
+      const unknown = await fetch(`${httpBase}/api/nope`)
       expect(unknown.status).toBe(404)
     } finally {
-      child.kill('SIGKILL')
+      await relay.stop()
     }
   })
 

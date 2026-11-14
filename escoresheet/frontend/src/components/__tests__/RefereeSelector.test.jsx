@@ -100,6 +100,31 @@ describe('RefereeSelector', () => {
     expectFixedBox()
   })
 
+  it('two directory rows with one name are told apart (country, year of birth) and keyed by their id', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const onSelect = vi.fn()
+    render(<RefereeSelector open onClose={() => {}} onSelect={onSelect} />)
+    await resolvePage(0, { data: [
+      { id: 's1', first_name: 'Sam', last_name: 'Sample', country: 'CHE', dob: '01.01.1980' },
+      { id: 's2', first_name: 'Sam', last_name: 'Sample', country: 'CHE', dob: '06.06.2007' },
+      { id: 's3', first_name: 'Sam', last_name: 'Sample', country: 'CHE', dob: '07.07.2007' },
+      ...rows
+    ], error: null })
+    const same = screen.getAllByRole('button', { name: /Sample, Sam/ })
+    expect(same).toHaveLength(3)
+    expect(same[0]).toHaveTextContent('1980')
+    // the same year twice: the whole date
+    expect(same[1]).toHaveTextContent('06.06.2007')
+    expect(same[2]).toHaveTextContent('07.07.2007')
+    expect(new Set(same.map(b => b.textContent)).size).toBe(3)
+    // a name of its own shows no detail
+    expect(screen.getByRole('button', { name: /Müller, Anna/ }).textContent).toBe('Müller, Anna')
+    fireEvent.click(same[1])
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ dob: '06.06.2007' }))
+    expect(errors.mock.calls.some(([m]) => /same key/i.test(String(m)))).toBe(false)
+    errors.mockRestore()
+  })
+
   it('focuses the search, filters by name, and picks a referee', async () => {
     const onSelect = vi.fn()
     const onClose = vi.fn()

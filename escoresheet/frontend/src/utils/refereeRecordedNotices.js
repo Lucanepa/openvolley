@@ -27,11 +27,12 @@ const toMs = (ts) => {
 // An event's identity across reloads of the same list. No set index: the
 // events built from a live-state row all carry the current set, and that
 // row's sanctions are the whole match's (a set change would re-announce them).
+// No seq either: a correction at a past score renumbers every later event,
+// which must not announce them again.
 function contentKey(e) {
   const p = e.payload || {}
-  const seq = Number(e.seq)
   return [
-    e.type, p.team ?? '', Number.isFinite(seq) ? seq : '', toMs(e.ts),
+    e.type, p.team ?? '', toMs(e.ts),
     p.playerIn ?? '', p.playerOut ?? '',
     p.type ?? p.sanctionType ?? '', p.playerNumber ?? '', p.playerType ?? '', p.role ?? ''
   ].join('|')

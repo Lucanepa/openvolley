@@ -10,8 +10,13 @@ export function needsEmailConfirmation(signUpData) {
   if (!user) return false
   // A confirmation link went out but the account may sign in already
   // (backend lib/auth.js: new accounts are not blocked while unconfirmed).
-  if (signUpData?.email_confirmation === 'sent') return false
+  if (signUpData?.email_confirmation === 'sent' || signUpData?.email_confirmation === 'queued') return false
   return !user.email_confirmed_at && !user.confirmed_at
+}
+
+/** True when the server holds the confirmation link back (its hourly mail budget): it goes out within the hour. */
+export function confirmationLinkQueued(signUpData) {
+  return signUpData?.email_confirmation === 'queued'
 }
 
 /** True when the server mailed a confirmation link for the new account. */

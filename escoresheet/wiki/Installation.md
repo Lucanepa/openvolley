@@ -47,15 +47,13 @@ If you don't have certificates, generate them first:
 npm run generate-certs
 ```
 
-### Electron Development (Desktop)
-
-Starts Vite and Electron concurrently:
+### Desktop App Development (Tauri)
 
 ```bash
-npm run electron:dev
+npm run tauri dev
 ```
 
-This waits for the dev server on port 5173, then launches the Electron window.
+Needs Rust and, on Linux, the WebView packages; see [OFFLINE_DESKTOP.md](../frontend/OFFLINE_DESKTOP.md).
 
 ## Environment Variables
 
@@ -63,8 +61,6 @@ Create a `.env` file in `escoresheet/frontend/` if you need cloud features. All 
 
 | Variable | Description |
 | --- | --- |
-| `VITE_SUPABASE_URL` | Supabase project URL for cloud sync |
-| `VITE_SUPABASE_ANON_KEY` | Supabase anonymous key |
 | `VITE_BACKEND_URL` | WebSocket backend URL (e.g., `https://backend.openvolley.app`) |
 | `VITE_HTTPS` | Set to `true` to enable HTTPS in dev |
 | `VITE_BASE_PATH` | Base path for non-root deployments (e.g., `/openvolley/`) |
@@ -97,16 +93,12 @@ Create a `.env` file in `escoresheet/frontend/` if you need cloud features. All 
 | `build:livescore` | Build livescore subdomain only |
 | `build:roster` | Build roster subdomain only |
 
-### Desktop (Electron)
+### Desktop (Tauri)
 
 | Script | Description |
 | --- | --- |
-| `electron:dev` | Start Electron dev environment |
-| `electron:build` | Build desktop app (current platform) |
-| `electron:build:win` | Build Windows installer + portable |
-| `electron:build:mac` | Build macOS DMG + ZIP |
-| `electron:build:linux` | Build Linux AppImage + DEB + RPM |
-| `electron:clean` | Clean `dist-electron/` directory |
+| `tauri dev` | Start the desktop app against the dev server |
+| `tauri build` | Build the desktop app for the current platform |
 
 ### Mobile (Capacitor)
 

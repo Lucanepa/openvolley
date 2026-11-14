@@ -11,16 +11,40 @@ import { Button, EmptyInset, Field, FormError, Input, Notice, Row, RowList, Skel
 
 /**
  * Attributes of every approval-PIN field: masked, numeric keypad, never
- * autofilled or remembered by the browser.
+ * autofilled or remembered by the browser. Not a password field: browsers
+ * ignore autocomplete="off" there and offer to save the PIN with the e-mail
+ * beside it on the shared scoring device. A text field marked one-time-code
+ * (as EntryKit and InviteCodeForm) and kept away from password managers,
+ * masked by the WebKit / Blink text security.
  */
 export const PIN_INPUT_PROPS = Object.freeze({
-  type: 'password',
+  type: 'text',
   inputMode: 'numeric',
   pattern: '[0-9]*',
   maxLength: 6,
-  autoComplete: 'off',
+  autoComplete: 'one-time-code',
   autoCorrect: 'off',
-  spellCheck: false
+  autoCapitalize: 'none',
+  spellCheck: false,
+  style: Object.freeze({ WebkitTextSecurity: 'disc' }),
+  'data-1p-ignore': true,
+  'data-lpignore': 'true',
+  'data-bwignore': true,
+  'data-form-type': 'other'
+})
+
+/** The e-mail beside an approval PIN: no saved address offered, nothing for a password manager. */
+export const APPROVAL_EMAIL_PROPS = Object.freeze({
+  type: 'email',
+  inputMode: 'email',
+  autoComplete: 'off',
+  autoCapitalize: 'none',
+  autoCorrect: 'off',
+  spellCheck: false,
+  'data-1p-ignore': true,
+  'data-lpignore': 'true',
+  'data-bwignore': true,
+  'data-form-type': 'other'
 })
 
 const STATUS_CACHE_KEY = 'ov.approvalPinStatus'
@@ -98,7 +122,9 @@ export default function ApprovalPinSection({ className = '' }) {
   } else if (status.disabled) {
     line = <span className="font-medium text-red-700">{t('approval.pin.disabled')}</span>
   } else if (lockedUntil) {
-    line = <span className="font-medium text-amber-700">{t('approval.pin.lockedUntil', { time: formatApprovalTime(lockedUntil) })}</span>
+    // locked_scope 'caller': paused only for the account that typed the wrong PINs
+    const key = status.locked_scope === 'caller' ? 'approval.pin.lockedForCallerUntil' : 'approval.pin.lockedUntil'
+    line = <span className="font-medium text-amber-700">{t(key, { time: formatApprovalTime(lockedUntil) })}</span>
   } else if (status.set) {
     line = <span className="text-emerald-700">{t('approval.pin.setOn', { date: formatApprovalTime(status.set_at) })}</span>
   } else {
@@ -140,7 +166,7 @@ export default function ApprovalPinSection({ className = '' }) {
         onDone={(next) => {
           setDialog(null)
           if (next) {
-            const merged = { ...status, ...next, locked_until: null, disabled: false }
+            const merged = { ...status, ...next, locked_until: null, locked_scope: null, disabled: false }
             setStatus(merged)
             writeCachedStatus(userId, merged)
           }

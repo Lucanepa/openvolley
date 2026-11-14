@@ -67,17 +67,21 @@
  * never an authorisation: it grants no role. confirm-email accepts it and
  * ignores it (no mail, no membership).
  *
- * Sign-up still answers 422 user_already_exists for a registered address (as
- * before): an unconfirmed account may sign in at once, so a uniform sign-up
- * answer would not hide whether an address is registered (sign up, then sign
- * in). reset-password alone gives nothing away.
+ * Sign-up of a registered address: with mail on, the same answer a new
+ * account gets, and the owner is mailed a reset link instead; without mail,
+ * 422 user_already_exists (as before). The confirmation of an account created
+ * with a link keeps the password, sessions and passkeys of whoever signed up
+ * only when the clicker gives that password (confirmEmailLink).
  *
  * CPU guard: bcryptjs is pure JS and runs on the main event loop, which also
  * serves the live-scoring relay. Every bcrypt call goes through a small
  * concurrency gate (bcryptMaxConcurrent, bcryptMaxQueue); when the queue is
  * full the request gets 503 "auth_busy" at once instead of queueing. Sign-in
- * also has a global bucket (limits.signInGlobal) next to the per-IP one, and
- * per-IP buckets key IPv6 clients on their /64 (ipBucketKey).
+ * also has a global bucket (limits.signInGlobal) next to the per-IP one,
+ * charged only to sources that failed lately, and per-IP buckets key IPv6
+ * clients on their /64 (ipBucketKey). The lockout is per account and source
+ * (DEFAULTS.lockout), with an account-wide ceiling that a source which signed
+ * in before passes (DEFAULTS.accountLockout).
  */
 
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
@@ -85,6 +89,8 @@ import { isIPv4, isIPv6 } from 'node:net'
 import bcryptjs from 'bcryptjs'
 import { authLink, describeMailError, disabledMailer, inboxKey, mailApp, maskEmail, MAIL_BRANDS, pickLang } from './mailer.js'
 import { cleanTransports, createPasskeyCeremonies, passkeyConfig, passkeyDeviceLabel, PasskeyError, PASSKEYS_PER_USER_MAX } from './passkeys.js'
+import { connectClient } from './pgClient.js'
+import { EMAIL_RE } from './emailAddress.js'
 
 // ---------------------------------------------------------------------------
 // Constants and small helpers
@@ -98,8 +104,15 @@ export const AUTH_ACTIONS = Object.freeze([
   'confirm-email', 'resend-confirmation',
   // passkeys (lib/passkeys.js): sign-in with the device's fingerprint or face
   'passkey/login-options', 'passkey/login', 'passkey/register-options',
-  'passkey/register', 'passkey/list', 'passkey/delete'
+  'passkey/register', 'passkey/list', 'passkey/delete',
+  // the account's own security: confirm it is you (password or passkey) for
+  // the sensitive actions, a new password, the sessions, sign out everywhere
+  'reauth', 'change-password', 'session/list', 'sign-out-everywhere'
 ])
+
+// A confirmation (password or passkey) holds this long for the session that
+// gave it: deleting the account, removing passkeys (reauth, below).
+export const REAUTH_FRESH_MS = 5 * 60 * 1000
 
 // raw_app_meta_data marker of accounts created unconfirmed with a link.
 export const EMAIL_CONFIRMATION_MARK = Object.freeze({ key: 'ov_email_confirmation', value: 'link' })
@@ -165,6 +178,12 @@ const DEFAULTS = Object.freeze({
   // deletes no row, so the user can retry) and once more after the commit
   // (an upload that was in flight). null: no files to remove.
   onAccountDeleted: null,
+  // async (client, userId) => void: the account's own delete-account runs it
+  // first in the deletion's transaction (server.js: lib/accounts.js
+  // selfDeleteIn, the locks, the last-super-admin refusal and the audit
+  // entry of the admin path). A thrown error with `__result` ({ status, body })
+  // is the answer and nothing is deleted. null: no checks.
+  selfDelete: null,
   // db/025 (lib/accountRequests.js): what a new account asks for at sign-up
   // (the body's `requests`: scorer, referee, team or club manager, with the
   // club and team), stored in the sign-up's transaction; nothing is granted.
@@ -191,7 +210,11 @@ const DEFAULTS = Object.freeze({
   absoluteTtlSec: 90 * DAY,
   touchIntervalSec: 5 * 60, // write last_seen_at at most this often per session
 
-  minPasswordLength: 6,
+  // New passwords (sign-up, reset, scripts): at least this long; an account
+  // with the admin role needs adminMinPasswordLength. Existing passwords keep
+  // working.
+  minPasswordLength: 10,
+  adminMinPasswordLength: 14,
   bcryptCost: 10,
   maxBcryptCost: 15, // stored hashes above this are treated as invalid (DoS guard)
   // At most this many bcrypt operations run (interleaved) at once; up to
@@ -213,9 +236,14 @@ const DEFAULTS = Object.freeze({
 
   limits: {
     signInIp: { max: 60, windowMs: 60 * 1000 },
+    // Per account and source (address bucket): a stranger's attempts on an
+    // address never use up its owner's.
     signInEmail: { max: 10, windowMs: 15 * 60 * 1000 },
-    // All sign-ins together, whatever their source. A cost-10 compare is
-    // ~60-150 ms of main-thread CPU; 5/s keeps bcrypt well under one core.
+    // All sign-ins together from sources that failed a sign-in in the last
+    // 15 minutes. A cost-10 compare is ~60-150 ms of main-thread CPU; 5/s
+    // keeps bcrypt well under one core. A source without a recent failure is
+    // not charged (the bcrypt gate still bounds the CPU), so made-up sign-ins
+    // from many addresses cannot turn every real sign-in away.
     signInGlobal: { max: 5, windowMs: 1000 },
     signUpIp: { max: 5, windowMs: 60 * 60 * 1000 },
     // Per delivered inbox (inboxKey: plus-tags removed, Gmail dots ignored,
@@ -245,13 +273,22 @@ const DEFAULTS = Object.freeze({
     passkeyUser: { max: 20, windowMs: 15 * 60 * 1000 },
     passkeyAddedUser: { max: 5, windowMs: 60 * 60 * 1000 }
   },
-  lockout: { maxFailures: 10, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000 }
+  // Per account and source: 10 failures lock that source out of that
+  // account. accountLockout is the account-wide ceiling: past it, a source
+  // that signed in to the account before still gets in, and any other source
+  // gets newSourceTries tries per window (so the owner on a new network, or
+  // after a restart, can still type the password).
+  lockout: { maxFailures: 10, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000 },
+  accountLockout: { maxFailures: 100, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000, newSourceTries: 3 }
 })
+const FAILED_SOURCE_MS = 15 * 60 * 1000
+const KNOWN_SOURCE_MS = 60 * DAY * 1000
+const KNOWN_SOURCES_MAX = 50_000
 
 const TOKEN_BYTES = 32
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/ // base64url of 32 bytes, no padding
 const BCRYPT_RE = /^\$2[aby]\$(\d{2})\$[./A-Za-z0-9]{53}$/
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+// one strict address (lib/emailAddress.js)
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 /** 32 random bytes, base64url (43 chars). Returned to the client once, never stored. */
@@ -378,6 +415,7 @@ export function createRateLimiter({ max, windowMs, now = Date.now } = {}) {
       if (e && e.count > 0) e.count--
     },
     reset(key) { entries.delete(key) },
+    resetPrefix(prefix) { for (const k of [...entries.keys()]) if (k.startsWith(prefix)) entries.delete(k) },
     clear() { entries.clear() },
     sweep() {
       const t = now()
@@ -390,30 +428,54 @@ export function createRateLimiter({ max, windowMs, now = Date.now } = {}) {
 /**
  * Limits how many async jobs run at once. run(fn) starts fn when a slot is
  * free, waits in a FIFO queue of at most maxQueue otherwise, and rejects at
- * once with err.code === 'AUTH_BUSY' when the queue is full.
+ * once with err.code === 'AUTH_BUSY' when the queue is full. With maxWaitMs a
+ * job that waited that long in the queue rejects with 'AUTH_BUSY' too. A job
+ * run with { abandoned } whose abandoned() is true once its slot comes (its
+ * caller left while it waited) is not run: it rejects with 'GATE_ABANDONED'
+ * and the slot goes on.
  */
-export function createConcurrencyGate({ maxConcurrent, maxQueue = 0 } = {}) {
+export function createConcurrencyGate({ maxConcurrent, maxQueue = 0, maxWaitMs = 0 } = {}) {
   if (!(maxConcurrent > 0) || !(maxQueue >= 0)) {
     throw new Error('createConcurrencyGate: maxConcurrent (> 0) and maxQueue (>= 0) are required')
   }
   let active = 0
   let peak = 0
-  const waiting = []
+  const waiting = [] // { resolve, timer }
   const release = () => {
     const next = waiting.shift()
-    if (next) next() // the slot passes straight to the next job
-    else active--
+    if (next) {
+      // the slot passes straight to the next job
+      clearTimeout(next.timer)
+      next.resolve()
+    } else active--
   }
+  const busy = () => Object.assign(new Error('auth: bcrypt queue is full'), { code: 'AUTH_BUSY' })
   return {
     maxConcurrent,
     maxQueue,
-    async run(fn) {
+    async run(fn, { abandoned } = {}) {
       if (active < maxConcurrent) {
         active++
       } else if (waiting.length < maxQueue) {
-        await new Promise(resolve => waiting.push(resolve))
+        await new Promise((resolve, reject) => {
+          const entry = { resolve, timer: null }
+          if (maxWaitMs > 0) {
+            entry.timer = setTimeout(() => {
+              const i = waiting.indexOf(entry)
+              if (i === -1) return
+              waiting.splice(i, 1)
+              reject(busy())
+            }, maxWaitMs)
+            entry.timer.unref?.()
+          }
+          waiting.push(entry)
+        })
       } else {
-        throw Object.assign(new Error('auth: bcrypt queue is full'), { code: 'AUTH_BUSY' })
+        throw busy()
+      }
+      if (typeof abandoned === 'function' && abandoned()) {
+        release()
+        throw Object.assign(new Error('gate: the caller left while queued'), { code: 'GATE_ABANDONED' })
       }
       if (active > peak) peak = active
       try {
@@ -493,6 +555,8 @@ export function createLockout({ maxFailures, windowMs, lockMs, now = Date.now } 
     },
     succeed(key) { entries.delete(key) },
     reset(key) { entries.delete(key) },
+    /** Forgets every key that starts with `prefix` (all sources of one account). */
+    resetPrefix(prefix) { for (const k of [...entries.keys()]) if (k.startsWith(prefix)) entries.delete(k) },
     clear() { entries.clear() },
     sweep() {
       const t = now()
@@ -610,6 +674,38 @@ export function createAuth(options = {}) {
     passkeyAddedUser: resolveLimiter(cfg.limits.passkeyAddedUser)
   }
   const lockout = typeof cfg.lockout.check === 'function' ? cfg.lockout : createLockout(cfg.lockout)
+  const accountLockout = cfg.accountLockout ? createLockout(cfg.accountLockout) : null
+  // Tries a new source still gets while the ceiling is reached (per account+source)
+  const newSourceLockout = cfg.accountLockout
+    ? createLockout({ ...cfg.accountLockout, maxFailures: cfg.accountLockout.newSourceTries ?? 3 })
+    : null
+  // Sources (address buckets) whose last sign-in failed, for the global budget
+  const failedSources = new Map() // bucket -> time of the last failure
+  // email -> Map(bucket -> time of the last success): who gets past the ceiling
+  const knownSources = new Map()
+  const lockKey = (email, bucket) => `${email}|${bucket}`
+  /** Forgets the failures of every source of one account (a new password). */
+  function clearLocks(email) {
+    if (!email) return
+    lockout.reset?.(email) // verifyPassword's key
+    lockout.resetPrefix?.(`${email}|`)
+    accountLockout?.reset(email)
+    newSourceLockout?.resetPrefix(`${email}|`)
+    limits.signInEmail?.resetPrefix?.(`${email}|`)
+  }
+  function rememberSource(email, bucket) {
+    let m = knownSources.get(email)
+    if (m) knownSources.delete(email) // re-inserted: most recent last
+    else m = new Map()
+    m.set(bucket, Date.now())
+    if (m.size > 20) m.delete(m.keys().next().value)
+    knownSources.set(email, m)
+    while (knownSources.size > KNOWN_SOURCES_MAX) knownSources.delete(knownSources.keys().next().value)
+  }
+  function knownSource(email, bucket) {
+    const t = knownSources.get(email)?.get(bucket)
+    return t != null && Date.now() - t < KNOWN_SOURCE_MS
+  }
 
   // --- catalog (lazy, cached only once a table is found) --------------------
   const catalog = new Map()
@@ -681,12 +777,25 @@ export function createAuth(options = {}) {
     return !!real && match === true
   }
 
-  function validateNewPassword(password) {
-    if (typeof password !== 'string' || password.length < cfg.minPasswordLength) {
-      return `Password should be at least ${cfg.minPasswordLength} characters.`
+  function validateNewPassword(password, min = cfg.minPasswordLength) {
+    if (typeof password !== 'string' || password.length < min) {
+      return `Password should be at least ${min} characters.`
     }
     if (utf8Length(password) > 72) return 'Password cannot be longer than 72 bytes.'
     return null
+  }
+
+  /** The shortest new password one account may set: longer for an admin. */
+  async function minPasswordFor(userId, client = pool) {
+    if (!T.profiles || !userId) return cfg.minPasswordLength
+    try {
+      const { rows } = await client.query(
+        `SELECT 1 FROM ${T.profiles} p WHERE p.${quoteIdent(cfg.profileUserIdColumn)} = $1 AND 'admin' = ANY (p.roles)`, [userId])
+      return rows.length ? Math.max(cfg.minPasswordLength, cfg.adminMinPasswordLength || 0) : cfg.minPasswordLength
+    } catch (err) {
+      if (err.code === '42P01' || err.code === '42703') return cfg.minPasswordLength // no profiles table / roles column
+      throw err
+    }
   }
 
   function hashPassword(password) {
@@ -878,7 +987,7 @@ export function createAuth(options = {}) {
   }
 
   async function withTransaction(fn) {
-    const client = await pool.connect()
+    const client = await connectClient(pool, log)
     try {
       await client.query('BEGIN')
       const out = await fn(client)
@@ -914,10 +1023,13 @@ export function createAuth(options = {}) {
     if (!skipPolicy) {
       const problem = validateNewPassword(newPassword)
       if (problem) throw new Error(problem)
+      const { id } = await findUserId(emailOrId)
+      const adminProblem = validateNewPassword(newPassword, await minPasswordFor(id))
+      if (adminProblem) throw new Error(adminProblem)
     }
     const hash = await hashPassword(newPassword)
     const out = await withTransaction((client) => setPasswordIn(client, emailOrId, hash, { confirmEmail }))
-    lockout.reset(out.email)
+    clearLocks(out.email)
     return out
   }
 
@@ -1136,36 +1248,50 @@ export function createAuth(options = {}) {
     }
     if (email.length > 254 || password.length > 1024) return INVALID_CREDENTIALS()
 
-    // Counts this attempt as in flight before any await, so parallel requests
-    // cannot all slip past the lockout before the first failure is recorded.
-    const attempt = typeof lockout.begin === 'function' ? lockout.begin(email) : lockout.check(email)
-    if (attempt.locked) {
-      const mins = Math.max(1, Math.ceil(attempt.retryAfterSec / 60))
-      return rateLimited(attempt.retryAfterSec, 'account_locked',
+    // Locks are per account AND source (address bucket): wrong passwords from
+    // elsewhere do not lock the owner out. Counts this attempt as in flight
+    // before any await, so parallel requests cannot all slip past the lockout
+    // before the first failure is recorded.
+    const source = ipKey(ctx.ip)
+    const key = lockKey(email, source)
+    const locked = (retryAfterSec) => {
+      const mins = Math.max(1, Math.ceil(retryAfterSec / 60))
+      return rateLimited(retryAfterSec, 'account_locked',
         `Too many failed sign-in attempts. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`)
     }
+    const ceiling = accountLockout?.check(email)
+    const pastCeiling = ceiling?.locked && !knownSource(email, source)
+    const newSourceTry = pastCeiling ? newSourceLockout.begin(key) : null
+    if (newSourceTry?.locked) return locked(ceiling.retryAfterSec)
+    const attempt = typeof lockout.begin === 'function' ? lockout.begin(key) : lockout.check(key)
+    if (attempt.locked) { newSourceTry?.release?.(); return locked(attempt.retryAfterSec) }
+    const failed = () => {
+      lockout.fail(key)
+      if (newSourceTry) newSourceLockout.fail(key)
+      accountLockout?.fail(email)
+      failedSources.set(source, Date.now())
+      return INVALID_CREDENTIALS()
+    }
     try {
-      const blockedEmail = limit('signInEmail', email)
+      const blockedEmail = limit('signInEmail', key)
       if (blockedEmail) return blockedEmail
-      // Last, so requests refused above never use up the global budget.
-      if (limits.signInGlobal?.hit('*').limited) return BUSY()
+      // Last, so requests refused above never use up the global budget; and
+      // only for sources that failed lately (see DEFAULTS.limits.signInGlobal).
+      const lastFail = failedSources.get(source)
+      if (lastFail != null && Date.now() - lastFail < FAILED_SOURCE_MS && limits.signInGlobal?.hit('*').limited) return BUSY()
 
       const cols = await usersColumns()
       const user = await findUserByEmail(email)
       const passwordOk = await checkPassword(password, user?.encrypted_password)
-      if (!passwordOk || isUserBlocked(user) || isUnconfirmed(user, cols)) {
-        lockout.fail(email)
-        return INVALID_CREDENTIALS()
-      }
+      if (!passwordOk || isUserBlocked(user) || isUnconfirmed(user, cols)) return failed()
       const session = await createSession(user.id, user.encrypted_password)
-      if (!session) { // password changed or account deleted while we were checking
-        lockout.fail(email)
-        return INVALID_CREDENTIALS()
-      }
-      lockout.succeed(email)
+      if (!session) return failed() // password changed or account deleted while we were checking
+      lockout.succeed(key)
+      rememberSource(email, source)
       return await finishSignIn(user, cols, session)
     } finally {
       attempt.release?.()
+      newSourceTry?.release?.()
     }
   }
 
@@ -1279,8 +1405,10 @@ export function createAuth(options = {}) {
             const text = (v) => (v == null ? null : (typeof v === 'object' ? JSON.stringify(v) : String(v)))
             const prof = { [cfg.profileUserIdColumn]: id }
             const put = (col, v) => { if (writable(pcols, col)) prof[col] = v }
-            put('first_name', text(meta.first_name))
-            put('last_name', text(meta.last_name))
+            // names: one line, at most 80 characters (they reach other people's mails)
+            const name = (v) => { const t = text(v); return t == null ? null : t.replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) }
+            put('first_name', name(meta.first_name))
+            put('last_name', name(meta.last_name))
             put('country', text(meta.country) ?? cfg.defaultCountry)
             put('dob', meta.dob ?? null)
             put('roles', [...cfg.defaultRoles])
@@ -1310,17 +1438,22 @@ export function createAuth(options = {}) {
         if (byLink) confirmToken = await issueToken(client, id, 'confirm')
         return ins.rows[0].u
       })
-      if (!user) {
-        return fail(422, 'A user with this email address has already been registered', 'user_already_exists')
-      }
+      if (!user) return alreadyRegistered(email, body, ctx, { linkPossible, meta })
       if (confirmToken) {
         const lang = mailLang(body, ctx)
         const link = authLink(managerUrlFor(app), 'confirm', confirmToken, lang)
+        // email_confirmation: 'sent' tells the app it may sign in right away;
+        // 'queued' that it may too, but the hourly budget holds the mail back
+        // until its window ends (older apps read it as "check your email").
+        if (confirmBudgetFull()) {
+          queueConfirmation({ to: user.email, lang, link, app })
+          return ok({ user: publicUser(user), email_confirmation: 'queued' })
+        }
         background('sign-up confirmation mail', async () => {
           const r = await mailer.send('confirm', { to: user.email, lang, link, app })
           if (r?.sent) log.log?.(`[auth] confirmation link sent to ${maskEmail(user.email)}`)
+          else if (r?.skipped === 'budget') queueConfirmation({ to: user.email, lang, link, app })
         })
-        // email_confirmation: 'sent' tells the app it may sign in right away.
         return ok({ user: publicUser(user), email_confirmation: 'sent' })
       }
       // Confirmed at once (no mailer or no db/010): the approvers hear of it now
@@ -1329,15 +1462,75 @@ export function createAuth(options = {}) {
     } catch (err) {
       // db/025: a club or team asked for is gone (the form was loaded before)
       if (err?.signUpRequests) return fail(422, err.message, 'validation_failed')
-      if (err.code === '23505') {
-        return fail(422, 'A user with this email address has already been registered', 'user_already_exists')
-      }
+      if (err.code === '23505') return alreadyRegistered(email, body, ctx, { linkPossible, meta })
       // invalid_text_representation / datetime / invalid enum label etc. in metadata
       if (err.code === '22007' || err.code === '22008' || err.code === '22P02' || err.code === '22023') {
         return fail(422, 'Invalid profile data', 'validation_failed')
       }
       throw err
     }
+  }
+
+  /**
+   * Sign-up of an address that has an account. With mail on, the answer is
+   * the one a new account gets (no address oracle) and the owner is mailed a
+   * reset link instead (per inbox limit resetEmail); without mail, 422
+   * user_already_exists as before (the account would be confirmed at once,
+   * so a uniform answer would hide nothing).
+   */
+  function alreadyRegistered(email, body, ctx, { linkPossible, meta }) {
+    if (!linkPossible) return fail(422, 'A user with this email address has already been registered', 'user_already_exists')
+    const app = requestApp(body)
+    const lang = mailLang(body, ctx)
+    if (!limits.resetEmail || !limits.resetEmail.hit(mailboxKey(email)).limited) {
+      background('sign-up of a known address: reset mail', async () => {
+        const user = await findUserByEmail(email)
+        if (!user || isUserBlocked(user)) return
+        const token = await withTransaction((client) => issueToken(client, user.id, 'reset'))
+        await audit('account.password_reset_requested', user.id, { via: 'sign-up' }, app)
+        await mailer.send('reset', { to: user.email, lang, app, link: authLink(managerUrlFor(app), 'reset', token, lang) })
+      })
+    }
+    const nowIso = new Date().toISOString()
+    const shadow = { id: randomUUID(), email, created_at: nowIso, updated_at: nowIso, raw_user_meta_data: meta, raw_app_meta_data: { provider: 'email', providers: ['email'] } }
+    return ok({ user: publicUser(shadow), email_confirmation: confirmBudgetFull() ? 'queued' : 'sent' })
+  }
+
+  // Confirmation mails the hourly budget held back: sent when the window
+  // ends (the links stay valid 24 h). In memory: after a restart the account
+  // asks for a new one (resend-confirmation).
+  const CONFIRM_QUEUE_MAX = 2000
+  const confirmQueue = []
+  let confirmTimer = null
+  function confirmBudgetFull() {
+    const b = mailer.budgets?.confirm
+    return !!b && b.used >= b.max
+  }
+  function queueConfirmation(mail) {
+    if (confirmQueue.length >= CONFIRM_QUEUE_MAX) {
+      const lost = confirmQueue.shift()
+      log.error(`[auth] confirmation queue full; the held-back mail to ${maskEmail(lost.to)} is dropped (it can be sent again from the profile)`)
+    }
+    confirmQueue.push(mail)
+    scheduleConfirmations()
+  }
+  function scheduleConfirmations() {
+    if (confirmTimer || !confirmQueue.length) return
+    const wait = Math.min(60 * 60 * 1000, (mailer.budgets?.confirm?.resetsInMs ?? 60_000) + 1000)
+    confirmTimer = setTimeout(() => { confirmTimer = null; flushConfirmations() }, wait)
+    confirmTimer.unref?.()
+  }
+  function flushConfirmations() {
+    background('held-back confirmation mails', async () => {
+      while (confirmQueue.length) {
+        const mail = confirmQueue[0]
+        const r = await mailer.send('confirm', mail)
+        if (r?.skipped === 'budget') break
+        confirmQueue.shift()
+        if (r?.sent) log.log?.(`[auth] held-back confirmation link sent to ${maskEmail(mail.to)}`)
+      }
+      scheduleConfirmations()
+    })
   }
 
   async function signOut(body, ctx) {
@@ -1366,12 +1559,28 @@ export function createAuth(options = {}) {
     return ok({ user: v.user, session: v.session })
   }
 
+  /**
+   * POST delete-account { access_token, password | passkey }: the session
+   * alone is not enough (reauth). The admin path's rules apply in the
+   * deletion's transaction (cfg.selfDelete): never the last super admin (409
+   * OV_LAST_SUPER_ADMIN), an account.delete audit entry.
+   */
   async function deleteAccount(body, ctx) {
     const blocked = limit('sessionIp', ipKey(ctx.ip))
     if (blocked) return blocked
     const v = await sessionFromBody(body, ctx)
     if (v.error) return v.error
-    await eraseAccount(v.user.id)
+    const token = bearerOf(body, ctx)
+    const denied = await confirmIdentity(body, token, v.user.id)
+    if (denied) return denied
+    const userId = v.user.id
+    try {
+      await eraseAccount(userId, { inTransaction: typeof cfg.selfDelete === 'function' ? (client) => cfg.selfDelete(client, userId) : null })
+    } catch (err) {
+      if (err?.__result) return result(err.__result.status, err.__result.body)
+      throw err
+    }
+    forgetFresh(token)
     return ok(null)
   }
 
@@ -1381,19 +1590,21 @@ export function createAuth(options = {}) {
    * account's own delete-account and an admin's delete or reject in the
    * manager (lib/accounts.js deleteAccount, POST /api/admin/accounts/:id/delete|reject).
    *
-   * Files first: when they cannot be removed nothing is deleted (throws, 503),
-   * so the account is never gone while its backups stay behind. Then one
-   * transaction: `inTransaction(client)` first (the admin's locks, checks
-   * and audit entry; whatever it throws rolls everything back and is thrown
-   * on), the sessions, the owned rows, the detached columns, the users row.
+   * One transaction: `inTransaction(client)` first (the caller's locks,
+   * refusal rules and audit entry; whatever it throws rolls everything back
+   * and is thrown on), so a refusal (403, 409) leaves the account with all it
+   * had, its files included. Then the files, while those locks are held: when
+   * they cannot be removed nothing is deleted (throws, 503), so the account is
+   * never gone while its backups stay behind. Then the sessions, the owned
+   * rows, the detached columns, the users row.
    * Throws on a database error. Returns { deleted: false } when there was no
    * such users row (nothing was deleted but the files), else { deleted: true }.
    */
   async function eraseAccount(userId, { inTransaction = null } = {}) {
     if (typeof userId !== 'string' || !userId) throw new Error('eraseAccount: a user id is required')
-    if (typeof cfg.onAccountDeleted === 'function') await cfg.onAccountDeleted(userId)
     const email = await withTransaction(async (client) => {
       if (typeof inTransaction === 'function') await inTransaction(client)
+      if (typeof cfg.onAccountDeleted === 'function') await cfg.onAccountDeleted(userId)
       await revokeUserSessions(userId, client)
       for (const { table, column } of cfg.ownedTables) {
         const cols = await columnsOf(table, client)
@@ -1413,7 +1624,7 @@ export function createAuth(options = {}) {
       const { rows } = await client.query(`DELETE FROM ${T.users} WHERE id = $1 RETURNING email`, [userId])
       return rows.length ? (rows[0].email ?? '') : null
     })
-    if (email) lockout.reset(normalizeEmail(email))
+    if (email) clearLocks(normalizeEmail(email))
     // Second pass: an upload that passed its session check before the
     // sessions were revoked may have landed in between. Best effort.
     if (typeof cfg.onAccountDeleted === 'function') {
@@ -1507,10 +1718,12 @@ export function createAuth(options = {}) {
     if (!(await tokensAvailable())) return RESET_UNAVAILABLE()
     // Cheap check first, so junk tokens cost no bcrypt.
     const pre = await pool.query(
-      `SELECT 1 FROM ${T.tokens} WHERE hash = $1 AND purpose = 'reset' AND used_at IS NULL AND expires_at > now()`,
+      `SELECT user_id FROM ${T.tokens} WHERE hash = $1 AND purpose = 'reset' AND used_at IS NULL AND expires_at > now()`,
       [hashToken(token)]
     )
     if (!pre.rows.length) return INVALID_LINK()
+    const adminProblem = validateNewPassword(body.password, await minPasswordFor(pre.rows[0].user_id))
+    if (adminProblem) return fail(422, adminProblem, 'weak_password')
     const hash = await hashPassword(body.password)
     const out = await withTransaction(async (client) => {
       const t = await consumeToken(client, token, 'reset')
@@ -1518,7 +1731,7 @@ export function createAuth(options = {}) {
       return setPasswordIn(client, t.userId, hash, { confirmEmail: true })
     })
     if (!out) return INVALID_LINK()
-    lockout.reset(out.email)
+    clearLocks(out.email)
     await audit('account.password_reset', out.userId, { sessions_revoked: out.revokedSessions }, requestApp(body))
     if (mailer.enabled) {
       const lang = mailLang(body, ctx)
@@ -1528,13 +1741,30 @@ export function createAuth(options = {}) {
     return ok({ password_updated: true })
   }
 
-  /** POST confirm-email { token } (an `app` is ignored): marks the address confirmed. */
+  /**
+   * POST confirm-email { token, password? } (an `app` is ignored): marks the
+   * address confirmed. An account created with a link may have been made by
+   * someone else with this address: unless the clicker gives the account's
+   * password, the confirmation keeps nothing of whoever signed up (password,
+   * sessions and passkeys go) and answers set_password_token, a reset link
+   * token for the clicker to choose a password (the click proved the inbox,
+   * as a reset link does).
+   */
   async function confirmEmailLink(body, ctx) {
     const blocked = limit('tokenIp', ipKey(ctx.ip))
     if (blocked) return blocked
     const token = body.token
     if (!isWellFormedToken(token)) return INVALID_LINK()
     if (!(await tokensAvailable())) return CONFIRM_UNAVAILABLE()
+    // The password check runs before the transaction (bcrypt holds no lock)
+    let passwordOk = false
+    if (typeof body.password === 'string' && body.password && body.password.length <= 1024) {
+      const { rows } = await pool.query(
+        `SELECT u.encrypted_password FROM ${T.tokens} t JOIN ${T.users} u ON u.id = t.user_id
+          WHERE t.hash = $1 AND t.purpose = 'confirm' AND t.used_at IS NULL AND t.expires_at > now()`, [hashToken(token)])
+      if (rows[0]) passwordOk = await checkPassword(body.password, rows[0].encrypted_password)
+    }
+    let setPasswordToken = null
     const out = await withTransaction(async (client) => {
       const cols = await usersColumns(client)
       const t = await consumeToken(client, token, 'confirm')
@@ -1545,6 +1775,13 @@ export function createAuth(options = {}) {
         // tell its holder so, instead of "invalid".
         const { rows } = await client.query(`SELECT email_confirmed_at IS NOT NULL AS confirmed FROM ${T.users} WHERE id = $1`, [t.userId])
         return rows[0]?.confirmed ? { userId: t.userId, already: true } : null
+      }
+      const { rows: urows } = await client.query(`SELECT to_jsonb(u) AS u FROM ${T.users} u WHERE u.id = $1 FOR UPDATE`, [t.userId])
+      if (confirmsByLink(urows[0]?.u) && urows[0].u.email_confirmed_at == null && !passwordOk) {
+        // Not shown to be the one who signed up: nothing of theirs stays
+        await setPasswordIn(client, t.userId, `!unset:${generateToken()}`, { confirmEmail: true })
+        setPasswordToken = await issueToken(client, t.userId, 'reset')
+        return { userId: t.userId, already: false, reset: true }
       }
       let set = 'email_confirmed_at = coalesce(email_confirmed_at, now())'
       if (writable(cols, 'updated_at')) set += ', updated_at = now()'
@@ -1557,10 +1794,11 @@ export function createAuth(options = {}) {
     })
     if (!out) return INVALID_LINK()
     if (!out.already) {
-      await audit('account.email_confirmed', out.userId, {})
+      await audit('account.email_confirmed', out.userId, out.reset ? { password_cleared: true } : {})
       accountConfirmed(out.userId)
     }
-    return ok({ confirmed: true, already_confirmed: out.already })
+    if (setPasswordToken) clearLocks(normalizeEmail((await findUserId(out.userId)).email))
+    return ok({ confirmed: true, already_confirmed: out.already, ...(setPasswordToken ? { set_password_token: setPasswordToken } : {}) })
   }
 
   /** POST resend-confirmation { access_token, lang, app }: a fresh link for the signed-in, unconfirmed account. */
@@ -1642,7 +1880,7 @@ export function createAuth(options = {}) {
     const blocked = limit('passkeyIp', ipKey(ctx.ip))
     if (blocked) return blocked
     if (!(await passkeysAvailable())) return PASSKEYS_UNAVAILABLE()
-    return ok(await ceremonies.authenticationOptions())
+    return ok(await ceremonies.authenticationOptions({ bucket: ipKey(ctx.ip) }))
   }
 
   async function passkeyLogin(body, ctx) {
@@ -1787,11 +2025,211 @@ export function createAuth(options = {}) {
     if (v.error) return v.error
     const id = typeof body.id === 'string' ? body.id : ''
     if (!UUID_RE.test(id)) return fail(400, 'Invalid passkey id', 'validation_failed')
-    // The account filter is the ownership check.
-    const { rows } = await pool.query(`DELETE FROM ${T.passkeys} WHERE id = $1 AND user_id = $2 RETURNING label`, [id, v.user.id])
-    if (!rows[0]) return fail(404, 'No such passkey', 'not_found')
-    await audit('account.passkey_removed', v.user.id, { label: rows[0].label }, requestApp(body))
-    return ok({ removed: true })
+    const token = bearerOf(body, ctx)
+    const denied = await confirmIdentity(body, token, v.user.id)
+    if (denied) return denied
+    const out = await withTransaction(async (client) => {
+      // The account filter is the ownership check.
+      const { rows } = await client.query(`DELETE FROM ${T.passkeys} WHERE id = $1 AND user_id = $2 RETURNING label`, [id, v.user.id])
+      if (!rows[0]) return null
+      // A session does not record the key it was made with: every other
+      // session of the account ends (the removed device's among them), this
+      // one stays. The removed device then signs in with the password.
+      const revoked = await client.query(`DELETE FROM ${T.sessions} WHERE user_id = $1 AND token_hash <> $2`, [v.user.id, hashToken(token)])
+      return { label: rows[0].label, revokedSessions: revoked.rowCount }
+    })
+    if (!out) return fail(404, 'No such passkey', 'not_found')
+    await audit('account.passkey_removed', v.user.id, { label: out.label, sessions_revoked: out.revokedSessions }, requestApp(body))
+    return ok({ removed: true, revoked_sessions: out.revokedSessions })
+  }
+
+  // --- the account's own security --------------------------------------------
+  // Deleting the account, removing a passkey and removing every passkey with
+  // "sign out everywhere" need more than the session (a tablet left signed
+  // in, a copied token): the request carries the account's password or a
+  // passkey answer, or the session gave one within REAUTH_FRESH_MS (the
+  // reauth action, or an earlier such request), so a person removing two
+  // keys confirms once. In this process only: a restart asks once more.
+  const freshSessions = new Map() // token hash (hex) -> until (ms)
+  const FRESH_SESSIONS_MAX = 10_000
+  const freshKey = (token) => hashToken(token).toString('hex')
+  function markFresh(token) {
+    const key = freshKey(token)
+    freshSessions.delete(key)
+    freshSessions.set(key, Date.now() + REAUTH_FRESH_MS)
+    while (freshSessions.size > FRESH_SESSIONS_MAX) freshSessions.delete(freshSessions.keys().next().value)
+  }
+  function isFresh(token) {
+    const until = freshSessions.get(freshKey(token))
+    return until != null && until > Date.now()
+  }
+  function forgetFresh(token) { freshSessions.delete(freshKey(token)) }
+
+  const REAUTH_REQUIRED = () => fail(403, 'Confirm it is you: enter your password or use your passkey.', 'reauth_required')
+
+  /**
+   * The confirmation of a sensitive action by the account `userId` whose
+   * session is `token`: `body.password`, or `body.passkey` ({ challengeId,
+   * response }: the answer to passkey/login-options with a key of this
+   * account), or a recent one of this session. A success marks the session
+   * fresh. Returns null when confirmed, else the answer (403 reauth_required,
+   * 401 invalid_password, 429 account_locked, 401 passkey_*).
+   */
+  async function confirmIdentity(body, token, userId) {
+    const password = typeof body.password === 'string' ? body.password : ''
+    if (isPlainObject(body.passkey)) {
+      if (!(await passkeysAvailable())) return PASSKEYS_UNAVAILABLE()
+      let verified
+      try {
+        verified = await ceremonies.finishAuthentication({
+          challengeId: typeof body.passkey.challengeId === 'string' ? body.passkey.challengeId : '',
+          response: isPlainObject(body.passkey.response) ? body.passkey.response : {},
+          lookup: async (credentialId) => {
+            const { rows } = await pool.query(`SELECT * FROM ${T.passkeys} WHERE credential_id = $1 AND user_id = $2`, [credentialId, userId])
+            return rows[0] ? passkeyRow(rows[0]) : null
+          }
+        })
+      } catch (err) {
+        if (!(err instanceof PasskeyError)) throw err
+        if (err.code === 'challenge') return PASSKEY_EXPIRED()
+        if (err.code === 'unknown') return PASSKEY_UNKNOWN()
+        log.warn?.(`[auth] passkey confirmation refused: ${err.code}`)
+        return PASSKEY_INVALID()
+      }
+      await pool.query(`UPDATE ${T.passkeys} SET counter = $2, last_used_at = now() WHERE id = $1`, [verified.passkey.id, verified.newCounter])
+    } else if (password) {
+      if (password.length > 1024) return fail(401, 'Wrong password.', 'invalid_password')
+      const check = await verifyPassword(userId, password)
+      if (check.locked) {
+        const mins = Math.max(1, Math.ceil(check.retryAfterSec / 60))
+        return rateLimited(check.retryAfterSec, 'account_locked', `Too many failed attempts. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`)
+      }
+      if (!check.ok) return fail(401, 'Wrong password.', 'invalid_password')
+    } else if (isFresh(token)) {
+      return null
+    } else {
+      return REAUTH_REQUIRED()
+    }
+    markFresh(token)
+    return null
+  }
+
+  /** POST reauth { access_token, password | passkey } -> { fresh_until } (ms). */
+  async function reauth(body, ctx) {
+    const blocked = limit('sessionIp', ipKey(ctx.ip))
+    if (blocked) return blocked
+    const v = await sessionFromBody(body, ctx)
+    if (v.error) return v.error
+    if (!isPlainObject(body.passkey) && !(typeof body.password === 'string' && body.password)) return REAUTH_REQUIRED()
+    const token = bearerOf(body, ctx)
+    const denied = await confirmIdentity(body, token, v.user.id)
+    if (denied) return denied
+    return ok({ fresh_until: freshSessions.get(freshKey(token)) })
+  }
+
+  /**
+   * POST change-password { access_token, password, new_password }: the
+   * current password, then the new one as a reset sets it (lib setPasswordIn:
+   * every session and every passkey of the account go). This device gets a
+   * new session, returned like a sign-in's.
+   */
+  async function changePassword(body, ctx) {
+    const blocked = limit('sessionIp', ipKey(ctx.ip))
+    if (blocked) return blocked
+    const v = await sessionFromBody(body, ctx)
+    if (v.error) return v.error
+    const userId = v.user.id
+    const current = typeof body.password === 'string' ? body.password : ''
+    if (!current || current.length > 1024) return fail(400, 'Your current password is needed.', 'password_required')
+    const next = typeof body.new_password === 'string' ? body.new_password : ''
+    const pwProblem = validateNewPassword(next) || validateNewPassword(next, await minPasswordFor(userId))
+    if (pwProblem) return fail(422, pwProblem, 'weak_password')
+    const check = await verifyPassword(userId, current)
+    if (check.locked) {
+      const mins = Math.max(1, Math.ceil(check.retryAfterSec / 60))
+      return rateLimited(check.retryAfterSec, 'account_locked', `Too many failed attempts. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`)
+    }
+    if (!check.ok) return fail(401, 'Wrong password.', 'invalid_password')
+    const hash = await hashPassword(next)
+    const out = await withTransaction(async (client) => {
+      const r = await setPasswordIn(client, userId, hash)
+      const session = await createSession(userId, hash, client)
+      const { rows } = await client.query(`SELECT to_jsonb(u) AS u FROM ${T.users} u WHERE u.id = $1`, [userId])
+      return { ...r, session, user: rows[0]?.u }
+    })
+    clearLocks(out.email)
+    if (!out.session || !out.user) return INVALID_TOKEN()
+    await audit('account.password_changed', userId, { sessions_revoked: out.revokedSessions }, requestApp(body))
+    return await finishSignIn(out.user, await usersColumns(), out.session)
+  }
+
+  /**
+   * POST session/list { access_token } -> { sessions: [{ id, created_at,
+   * last_seen_at, expires_at, current }] }: where the account is signed in
+   * (a session records no device). `id` is a short digest, nothing to sign
+   * in with.
+   */
+  async function sessionList(body, ctx) {
+    const blocked = limit('sessionIp', ipKey(ctx.ip))
+    if (blocked) return blocked
+    const v = await sessionFromBody(body, ctx)
+    if (v.error) return v.error
+    const { rows } = await pool.query(
+      `SELECT encode(substring(token_hash from 1 for 8), 'hex') AS id, created_at, last_seen_at, expires_at,
+              token_hash = $2 AS current
+         FROM ${T.sessions}
+        WHERE user_id = $1 AND expires_at > now() AND created_at + make_interval(secs => $3) > now()
+        ORDER BY coalesce(last_seen_at, created_at) DESC
+        LIMIT 100`,
+      [v.user.id, hashToken(bearerOf(body, ctx)), cfg.absoluteTtlSec]
+    )
+    return ok({ sessions: rows.map((r) => ({ id: r.id, created_at: r.created_at, last_seen_at: r.last_seen_at, expires_at: r.expires_at, current: r.current === true })) })
+  }
+
+  /**
+   * POST sign-out-everywhere { access_token, remove_passkeys?, password |
+   * passkey }: every other session of the account ends; with
+   * `remove_passkeys` (confirmed, reauth) every passkey goes too, so a lost
+   * or shared device that holds one cannot sign straight back in. This device
+   * stays signed in.
+   */
+  async function signOutEverywhere(body, ctx) {
+    const blocked = limit('sessionIp', ipKey(ctx.ip))
+    if (blocked) return blocked
+    const v = await sessionFromBody(body, ctx)
+    if (v.error) return v.error
+    const token = bearerOf(body, ctx)
+    const removePasskeys = body.remove_passkeys === true
+    if (removePasskeys) {
+      const denied = await confirmIdentity(body, token, v.user.id)
+      if (denied) return denied
+    }
+    const out = await withTransaction(async (client) => {
+      const s = await client.query(`DELETE FROM ${T.sessions} WHERE user_id = $1 AND token_hash <> $2`, [v.user.id, hashToken(token)])
+      let removed = 0
+      if (removePasskeys && await passkeysAvailable(client)) {
+        removed = (await client.query(`DELETE FROM ${T.passkeys} WHERE user_id = $1`, [v.user.id])).rowCount
+      }
+      return { revokedSessions: s.rowCount, removedPasskeys: removed }
+    })
+    await audit('account.signed_out_everywhere', v.user.id, { sessions_revoked: out.revokedSessions, passkeys_removed: out.removedPasskeys }, requestApp(body))
+    return ok({ revoked_sessions: out.revokedSessions, removed_passkeys: out.removedPasskeys })
+  }
+
+  /**
+   * Signs an account out everywhere (scripts/set-password.mjs --revoke-only):
+   * every session and, unless `keepPasskeys`, every passkey, in one
+   * transaction. -> { revokedSessions, removedPasskeys }.
+   */
+  async function revokeUserAccess(userId, { keepPasskeys = false } = {}) {
+    return withTransaction(async (client) => {
+      const revokedSessions = await revokeUserSessions(userId, client)
+      let removedPasskeys = 0
+      if (!keepPasskeys && await passkeysAvailable(client)) {
+        removedPasskeys = (await client.query(`DELETE FROM ${T.passkeys} WHERE user_id = $1`, [userId])).rowCount
+      }
+      return { revokedSessions, removedPasskeys }
+    })
   }
 
   async function handleAuthRequest(action, body, ctx = {}) {
@@ -1817,6 +2255,10 @@ export function createAuth(options = {}) {
         case 'passkey/register': return await passkeyRegister(b, c)
         case 'passkey/list': return await passkeyList(b, c)
         case 'passkey/delete': return await passkeyDelete(b, c)
+        case 'reauth': return await reauth(b, c)
+        case 'change-password': return await changePassword(b, c)
+        case 'session/list': return await sessionList(b, c)
+        case 'sign-out-everywhere': return await signOutEverywhere(b, c)
         default:
           return fail(404, 'Invalid request', 'not_found')
       }
@@ -1830,7 +2272,11 @@ export function createAuth(options = {}) {
   function sweep() {
     for (const l of Object.values(limits)) l?.sweep?.()
     lockout.sweep?.()
+    accountLockout?.sweep()
+    const t = Date.now()
+    for (const [k, at] of failedSources) if (t - at >= FAILED_SOURCE_MS) failedSources.delete(k)
     ceremonies.sweep()
+    for (const [k, until] of freshSessions) if (until <= t) freshSessions.delete(k)
   }
 
   return {
@@ -1843,6 +2289,7 @@ export function createAuth(options = {}) {
     findUserId,
     revokeSession,
     revokeUserSessions,
+    revokeUserAccess,
     eraseAccount,
     sweepExpiredSessions,
     sweepExpiredTokens,
@@ -1851,9 +2298,10 @@ export function createAuth(options = {}) {
     sweep,
     limits,
     lockout,
+    accountLockout,
     bcryptGate,
     config: Object.freeze(Object.fromEntries(Object.entries(cfg).filter(
-      ([k]) => !['pool', 'bcrypt', 'logger', 'limits', 'lockout', 'ipKey', 'onAccountDeleted', 'mailer'].includes(k)))),
+      ([k]) => !['pool', 'bcrypt', 'logger', 'limits', 'lockout', 'ipKey', 'onAccountDeleted', 'selfDelete', 'mailer'].includes(k)))),
     /** Drops the cached column lists (after a restore or migration). */
     refreshCatalog() { catalog.clear() },
     // exposed for tests and scripts

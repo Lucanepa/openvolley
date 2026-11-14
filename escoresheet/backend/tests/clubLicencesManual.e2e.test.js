@@ -8,7 +8,8 @@
  * Both routes (the team's and the club's), who may, the body rules, the
  * `manual` flag and counts of the reads, an upload that keeps the hand-added
  * rows and takes over those it contains, Delete list, and the audit (counts
- * only, never a name or a licence number).
+ * only, never a name or a licence number). A licence number of any list of
+ * the club is never added by hand again (db/037 rules: tests/clubDataScope.e2e.test.js).
  *
  * Needs PG_TEST_URL (see tests/helpers/pgTestDb.js) or OV_E2E_DOCKER=1.
  */
@@ -25,7 +26,8 @@ const LEA = { sv_number: '100002', last_name: 'Muster', first_name: 'Lea', dob: 
 const MARCO = { sv_number: '100003', last_name: 'Probe', first_name: 'Marco', dob: '2001-11-02', gender: 'm' }
 const NOAH = { sv_number: '100004', last_name: 'Testmann', first_name: 'Noah', dob: null, gender: null }
 const COACH = { sv_number: '200001', last_name: 'Trainer', first_name: 'Tina', dob: '1980-03-04', gender: 'f' }
-const NAMES = ['Beispiel', 'Muster', 'Probe', 'Testmann', 'Trainer', 'Anders', 'Handmann', '100001', '100002', '100003', '100004', '200001', '100009']
+const KIM = { sv_number: '100005', last_name: 'Zahler', first_name: 'Kim', dob: '1999-09-09', gender: null }
+const NAMES = ['Beispiel', 'Muster', 'Probe', 'Testmann', 'Trainer', 'Anders', 'Handmann', 'Zahler', '100001', '100002', '100003', '100004', '100005', '200001', '100009']
 const ZERO = '00000000-0000-4000-8000-000000000000'
 
 describe('club licence lists: people added by hand', { skip: SKIP }, () => {
@@ -119,10 +121,11 @@ describe('club licence lists: people added by hand', { skip: SKIP }, () => {
     assert.equal((await rowsOf(musterdorf.id)).find((x) => x.sv_number === '100003').first_name, 'Marco')
   })
 
-  it('the club\'s managers and admins add by hand too, to any of the three lists', async () => {
-    const r = await addForClub(users.clubmgr, musterdorf.id, [{ list: 'scorers', ...NOAH }, { list: 'coaches', ...LEA }])
+  it('the club\'s managers and admins add by hand too, to any of the three lists; never a licence number another list has', async () => {
+    // Noah (coaches by hand) and Lea (players, uploaded) are in the club's lists already
+    const r = await addForClub(users.clubmgr, musterdorf.id, [{ list: 'scorers', ...KIM }, { list: 'scorers', ...NOAH }, { list: 'coaches', ...LEA }])
     assert.equal(r.status, 200, r.text)
-    assert.deepEqual(r.json.data, { club_id: musterdorf.id, added: 2, already: 0 })
+    assert.deepEqual(r.json.data, { club_id: musterdorf.id, added: 1, already: 2 })
     const a = await addForClub(users.admin, musterdorf.id, [{ list: 'players', sv_number: '100009', last_name: 'Handmann', first_name: null, dob: null, gender: null }])
     assert.deepEqual(a.json.data, { club_id: musterdorf.id, added: 1, already: 0 })
     // the club's manager acts for each of its teams
@@ -134,17 +137,17 @@ describe('club licence lists: people added by hand', { skip: SKIP }, () => {
     const r = await call(users.coach, 'GET', `/api/team/${h1.id}/club-players`)
     assert.equal(r.status, 200, r.text)
     assert.deepEqual(r.json.data.players.map((p) => [p.sv_number, p.manual]), [['100001', false], ['100009', true], ['100002', false], ['100003', true]])
-    assert.deepEqual(r.json.data.players.find((p) => p.sv_number === '100003'), { ...MARCO, manual: true })
-    // a person of an uploaded list is not manual, whatever else was added by hand (Lea: players uploaded, coaches by hand)
+    // not in the team's saved team: no date of birth (owner decision 2)
+    assert.deepEqual(r.json.data.players.find((p) => p.sv_number === '100003'), { ...MARCO, dob: null, manual: true })
+    // people: those players (the team's saved team is empty)
     assert.deepEqual(r.json.data.people.map((p) => [p.sv_number, p.lists, p.manual]), [
-      ['100001', ['players'], false], ['100009', ['players'], true], ['100002', ['players', 'coaches'], false],
-      ['100003', ['players'], true], ['100004', ['scorers', 'coaches'], true], ['200001', ['coaches'], false]
+      ['100001', ['players'], false], ['100009', ['players'], true], ['100002', ['players'], false], ['100003', ['players'], true]
     ])
     const c = await call(users.clubmgr, 'GET', `/api/club/${musterdorf.id}/licences`)
     assert.equal(c.status, 200, c.text)
     const { lists } = c.json.data
     assert.deepEqual([lists.players.count, lists.players.manual], [4, 2])
-    assert.deepEqual([lists.coaches.count, lists.coaches.manual], [3, 2])
+    assert.deepEqual([lists.coaches.count, lists.coaches.manual], [2, 1])
     // a list with nothing uploaded: no upload time, no uploader
     assert.deepEqual(lists.scorers, { count: 1, manual: 1, imported_at: null, imported_by_name: null })
     // the upload's time and uploader, not the hand-added rows'
@@ -158,7 +161,7 @@ describe('club licence lists: people added by hand', { skip: SKIP }, () => {
     assert.equal(s.status, 200, s.text)
     const club = s.json.data.clubs[0]
     assert.deepEqual(club.players.filter((p) => p.manual).map((p) => p.sv_number), ['100009', '100003'])
-    assert.deepEqual(club.people.filter((p) => p.manual).map((p) => p.sv_number), ['100009', '100003', '100004'])
+    assert.deepEqual(club.people.filter((p) => p.manual).map((p) => p.sv_number), ['100009', '100003', '100004', '100005'])
   })
 
   it('who may: whoever may manage the team, the club\'s managers and admins; nobody else', async () => {
@@ -184,8 +187,8 @@ describe('club licence lists: people added by hand', { skip: SKIP }, () => {
     assert.equal(o.json.data.club_id, other.id)
     assert.equal(await countOf(musterdorf.id), before)
     assert.equal(await countOf(other.id), 1)
-    // GET is not a route here
-    assert.equal((await call(users.coach, 'GET', `/api/team/${h1.id}/club-people`)).status, 405)
+    // GET is the name search (tests/clubDataScope.e2e.test.js): a few characters at least
+    assert.equal((await call(users.coach, 'GET', `/api/team/${h1.id}/club-people`)).status, 400)
   })
 
   it('refuses a bad body: the list and the five fields only, 1 to 30 people', async () => {
@@ -242,15 +245,17 @@ describe('club licence lists: people added by hand', { skip: SKIP }, () => {
     ])
     // Marco is linked now: the upload's fields, uploaded by the club manager
     assert.equal(rows.find((x) => x.list === 'players' && x.sv_number === '100003').imported_by, users.clubmgr.id)
-    // the other lists are untouched (Lea and Noah by hand in coaches, Tina uploaded)
-    assert.deepEqual(rows.filter((x) => x.list === 'coaches').map((x) => `${x.sv_number}:${x.source}`), ['100002:manual', '100004:manual', '200001:import'])
+    // the other lists are untouched (Noah by hand in coaches, Tina uploaded)
+    assert.deepEqual(rows.filter((x) => x.list === 'coaches').map((x) => `${x.sv_number}:${x.source}`), ['100004:manual', '200001:import'])
     const read = await call(users.coach, 'GET', `/api/team/${h1.id}/club-players`)
     assert.deepEqual(read.json.data.players.map((p) => [p.sv_number, p.last_name, p.manual]), [
       ['100001', 'Beispiel', false], ['100009', 'Handmann', true], ['100003', 'Probe-VM', false]
     ])
-    // Lea now only by hand (coaches): manual
-    assert.deepEqual(read.json.data.people.find((p) => p.sv_number === '100002'), { ...LEA, manual: true, lists: ['coaches'] })
     const c = (await call(users.clubmgr, 'GET', `/api/club/${musterdorf.id}/licences`)).json.data
+    // Lea left the list; Noah is only by hand (coaches): manual
+    assert.equal(c.people.find((p) => p.sv_number === '100002'), undefined)
+    assert.deepEqual(c.people.find((p) => p.sv_number === '100004').lists, ['coaches'])
+    assert.equal(c.people.find((p) => p.sv_number === '100004').manual, true)
     assert.deepEqual([c.lists.players.count, c.lists.players.manual], [3, 1])
     // a hand-added row is never taken back to manual by adding it again
     const again = await addForTeam(users.coach, h1.id, [{ list: 'players', ...MARCO }])
@@ -275,9 +280,9 @@ describe('club licence lists: people added by hand', { skip: SKIP }, () => {
     }
     assert.deepEqual(rows[0].details, { club_id: musterdorf.id, team_id: h1.id, added: 2, lists: { players: 1, coaches: 1 } })
     assert.equal(rows[0].actor_id, users.coach.id)
-    assert.deepEqual(rows[1].details, { club_id: musterdorf.id, team_id: null, added: 2, lists: { scorers: 1, coaches: 1 } })
+    assert.deepEqual(rows[1].details, { club_id: musterdorf.id, team_id: null, added: 1, lists: { scorers: 1 } })
     assert.equal(rows[1].actor_id, users.clubmgr.id)
-    assert.deepEqual(rows.map((r) => r.details.added), [2, 2, 1, 1, 30, 2])
+    assert.deepEqual(rows.map((r) => r.details.added), [2, 1, 1, 1, 30, 2])
     const list = await call(users.admin, 'GET', '/api/admin/audit?action=club.licences.manual')
     assert.equal(list.status, 200, list.text)
     assert.equal(list.json.data.entries.length, 6)

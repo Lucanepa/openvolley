@@ -25,6 +25,8 @@
  *   <- { type:'subscribe-db-ack', id } | { type:'subscribe-db-error', id, code, message }
  *   -> { type:'unsubscribe-db', id }
  *   <- { type:'db-change', id, ids?, schema, table, eventType, new, old, commit_timestamp }
+ *   <- { type:'db-changes', id, changes:[{ schema, table, eventType, new, old, commit_timestamp }] }
+ *      (a channel opened with { summary: true }: the newest rows, once a second)
  *        (ids: every channel of this socket the row is for; the server sends a
  *        row once per socket)
  *   -> { type:'ping' }  <- { type:'pong' }
@@ -84,11 +86,16 @@ export function parseFilter(filter) {
   return { column, value }
 }
 
-/** Append `purpose=live` to the relay WebSocket base URL. */
-export function toLiveUrl(base) {
+/**
+ * Append `purpose=live` to the relay WebSocket base URL; `client=viewer` for a
+ * livescore viewer (the relay keeps the rest of its live slots for the
+ * referee and bench tablets).
+ */
+export function toLiveUrl(base, { viewer = false } = {}) {
   const url = new URL(base)
   if (!url.pathname) url.pathname = '/'
   url.searchParams.set('purpose', 'live')
+  if (viewer) url.searchParams.set('client', 'viewer')
   return url.toString()
 }
 
@@ -166,6 +173,13 @@ class RelayChannel {
     }
   }
 
+  /** The subscribe-db message of this channel. */
+  _subscribeMessage() {
+    const msg = { type: 'subscribe-db', id: this._wireId, subs: this._subsForWire() }
+    if (this.params.summary === true) msg.summary = true
+    return msg
+  }
+
   _subsForWire() {
     return this.bindings.map(b => (b.column
       ? { table: b.table, schema: 'public', event: b.event, column: b.column, value: b.value }
@@ -236,10 +250,16 @@ export function createRelayRealtime(options = {}) {
   let pongTimer = null
   let idleTimer = null
   let listening = false
+  let viewer = false
 
   const client = {
     channel(name, params) {
       return new RelayChannel(client, name, params)
+    },
+
+    /** This page is a livescore viewer: its sockets open with client=viewer. */
+    asViewer() {
+      viewer = true
     },
 
     removeChannel(channel) {
@@ -331,7 +351,7 @@ export function createRelayRealtime(options = {}) {
   }
 
   function sendSubscribe(channel) {
-    sendRaw({ type: 'subscribe-db', id: channel._wireId, subs: channel._subsForWire() })
+    sendRaw(channel._subscribeMessage())
   }
 
   function ensureConnected() {
@@ -361,7 +381,7 @@ export function createRelayRealtime(options = {}) {
 
     let socket
     try {
-      socket = new Impl(toLiveUrl(base))
+      socket = new Impl(toLiveUrl(base, { viewer }))
     } catch (err) {
       failChannels(err instanceof Error ? err : new Error(String(err)))
       scheduleReconnect()
@@ -435,6 +455,14 @@ export function createRelayRealtime(options = {}) {
         for (const id of ids) {
           const ch = channels.get(id)
           if (ch && ch.state === 'joined') ch._dispatch(msg)
+        }
+        return
+      }
+      case 'db-changes': {
+        const ch = channels.get(msg.id)
+        if (!ch || ch.state !== 'joined' || !Array.isArray(msg.changes)) return
+        for (const change of msg.changes) {
+          if (change && typeof change === 'object') ch._dispatch(change)
         }
         return
       }

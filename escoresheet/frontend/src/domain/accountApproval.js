@@ -13,7 +13,8 @@
  * finished sets change, the approval is stale: it no longer completes the slot
  * and never prints on the PDF.
  */
-import { OFFICIAL_ROLES } from './officials.js'
+import { OFFICIAL_ROLES, hasOfficial } from './officials.js'
+import { APPROVAL_RESOURCE } from '../utils/syncIds.js'
 
 /** MatchEnd role -> server slot. */
 export const ROLE_TO_SLOT = Object.freeze({ ref1: 'referee1', ref2: 'referee2', scorer: 'scorer' })
@@ -178,6 +179,22 @@ export function slotComplete(match, role, sets) {
   return isApprovalValid(approvalFor(match, role), sets)
 }
 
+/**
+ * The optional signing slots, the assistant scorer and the 2nd referee: shown
+ * and required only when the match has that official. A slot exists for an
+ * official named in match.officials, or when it already holds a drawn
+ * signature (the 2nd referee: or an account approval), so it can be seen and
+ * cleared. An empty or null field is no official: Reopen last set, a
+ * correction and a cloud import write null into every post-match field.
+ * @returns {{ asstScorer: boolean, ref2: boolean }}
+ */
+export function optionalSignatureSlots(match) {
+  return {
+    asstScorer: !!match?.asstScorerSignature || hasOfficial(match?.officials, 'asstScorer'),
+    ref2: !!match?.ref2Signature || !!approvalFor(match, 'ref2') || hasOfficial(match?.officials, 'ref2')
+  }
+}
+
 const pad = (n) => String(n).padStart(2, '0')
 
 /** "dd.mm.yyyy hh:mm" (24 h) on the given clock; '' for an invalid value. */
@@ -324,43 +341,58 @@ export function namesDiffer(accountName, enteredName) {
 
 const EMAILS_KEY = 'ov.approvalEmails'
 export const APPROVAL_EMAILS_MAX = 50
+// An official's address is kept this long after the approval: a re-approval
+// after a correction, the next match days. The officials' private sign-in
+// addresses must not pile up on a shared scorer device over a season.
+export const APPROVAL_EMAILS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 
 // The device id moved to utils/deviceId (the activity log uses it too)
 export { deviceId } from '../utils/deviceId'
 
 const memoryKey = (officialNameText) => String(officialNameText || '').trim().replace(/\s+/g, ' ').toLowerCase()
 
-function readEmails(storage) {
+// The entries not older than APPROVAL_EMAILS_MAX_AGE_MS (`t`: when remembered;
+// an entry without one is from an older version and counts as old)
+function readEmails(storage, now) {
   const raw = storage.getItem(EMAILS_KEY)
   const list = raw ? JSON.parse(raw) : []
-  return Array.isArray(list) ? list.filter(e => e && typeof e.k === 'string' && typeof e.e === 'string') : []
+  return Array.isArray(list)
+    ? list.filter(e => e && typeof e.k === 'string' && typeof e.e === 'string' && Number(e.t) > now - APPROVAL_EMAILS_MAX_AGE_MS)
+    : []
 }
 
 /**
  * Remember which email an official approved with on this device, keyed by
  * the lower-cased "last first" name. At most 50 entries, least recently used
- * dropped first. A convenience only: failures are ignored.
+ * dropped first, none older than APPROVAL_EMAILS_MAX_AGE_MS; all of them go
+ * when a session ends on the device (AuthContext clearLocalAccountData). A
+ * convenience only: failures are ignored.
  */
-export function rememberApprovalEmail(officialNameText, email, storage = globalThis.localStorage) {
+export function rememberApprovalEmail(officialNameText, email, storage = globalThis.localStorage, now = Date.now()) {
   const k = memoryKey(officialNameText)
   const e = String(email || '').trim().toLowerCase()
   if (!k || !e) return
   try {
-    const list = readEmails(storage).filter(x => x.k !== k)
-    list.push({ k, e })
+    const list = readEmails(storage, now).filter(x => x.k !== k)
+    list.push({ k, e, t: now })
     storage.setItem(EMAILS_KEY, JSON.stringify(list.slice(-APPROVAL_EMAILS_MAX)))
   } catch { /* storage full or blocked */ }
 }
 
 /** The email remembered for an official's name on this device, or ''. */
-export function recallApprovalEmail(officialNameText, storage = globalThis.localStorage) {
+export function recallApprovalEmail(officialNameText, storage = globalThis.localStorage, now = Date.now()) {
   const k = memoryKey(officialNameText)
   if (!k) return ''
   try {
-    return readEmails(storage).find(x => x.k === k)?.e || ''
+    return readEmails(storage, now).find(x => x.k === k)?.e || ''
   } catch {
     return ''
   }
+}
+
+/** Forget every remembered address (sign-out, another account, deletion). */
+export function forgetApprovalEmails(storage = globalThis.localStorage) {
+  try { storage.removeItem(EMAILS_KEY) } catch { /* storage blocked */ }
 }
 
 // ── Sync queue ──
@@ -388,6 +420,40 @@ export function syncJobTouchesMatch(job, seedKey) {
 /** The jobs of this match that the server has not received yet. */
 export function pendingSyncJobsFor(jobs, seedKey) {
   return (Array.isArray(jobs) ? jobs : []).filter(j => PENDING_SYNC_STATUSES.includes(j?.status) && syncJobTouchesMatch(j, seedKey))
+}
+
+/**
+ * The sync jobs that undo the match's account approvals on the server (DELETE
+ * /api/approvals/:id, useSyncQueue): the sheet changed after they were given
+ * (a correction, a remarks change at the match end). Queued, so an undo made
+ * offline still reaches the server; the server's rows otherwise came back
+ * with the next refresh and completed their slots again (the result key
+ * covers the set scores only). None for a test match, a match without a
+ * seed_key or one the server has closed (its approvals are frozen there).
+ */
+export function approvalUndoJobs(match, now = new Date()) {
+  if (!match?.seed_key || match.test === true || match.closed_at) return []
+  return Object.values(match.accountApprovals || {})
+    .filter(r => r?.id)
+    .map(r => ({
+      resource: APPROVAL_RESOURCE,
+      action: 'undo',
+      payload: { id: r.id, match_external_id: match.seed_key },
+      ts: now.toISOString(),
+      status: 'queued'
+    }))
+}
+
+/**
+ * The ids of the approvals whose undo has not gone through yet (queued, on
+ * its way, waiting out a backoff or refused): a refresh from the server must
+ * not bring them back.
+ */
+export function approvalIdsBeingUndone(jobs) {
+  return new Set((Array.isArray(jobs) ? jobs : [])
+    .filter(j => j?.resource === APPROVAL_RESOURCE && j.action === 'undo' && ['queued', 'sending', 'error', 'failed'].includes(j.status))
+    .map(j => j.payload?.id)
+    .filter(Boolean))
 }
 
 /**

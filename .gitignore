@@ -30,9 +30,13 @@ pb_data/
 .claude/plans/
 nul
 CLAUDE.md
+# tracked on purpose (git ls-files -i -c --exclude-standard stays empty)
+!/CLAUDE.md
 # Dependencies
 node_modules/
 package-lock.json
+!/escoresheet/backend/package-lock.json
+!/escoresheet/frontend/package-lock.json
 
 # Build output
 dist/
@@ -41,3 +45,90 @@ dist/
 # (src-tauri/tauri.beach.conf.json; CI checks it out here, locally a clone or
 # a symlink)
 /openbeach
+
+# Match data: the files the apps and tools write hold players' and officials'
+# names, dates of birth, licence numbers and signatures, i.e. personal data,
+# which must never land in this public repo, wherever the file was saved.
+# Test data (fictional people only) goes into a fixtures folder.
+# Checked by .githooks/test-gitignore.sh; .gitleaks.toml (match-data-*) also
+# catches them when added anyway.
+# App backups (backupManager, logger, Scoreboard downloads)
+backup_g*_set*.json
+backup_set*_*.json
+# Native auto-backups: one folder per match (game<N>-…, match-…, test-…, see
+# nativeBackup/rotation.js) with <yyyymmdd>T<hhmmss>.<ms>Z-<seq>.json event
+# files and latest.json; USB stick copies (<devtag>-latest.json, -manual-)
+[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9].[0-9][0-9][0-9]Z-*.json
+**/game[0-9]*/latest.json
+**/match-*/latest.json
+**/test-game[0-9]*/latest.json
+**/test-match-*/latest.json
+[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-latest.json
+*-manual-[0-9]*T[0-9]*Z.json
+# Logs, diagnostics and activity exports; browser network exports (HAR) of
+# the API traffic
+debug_logs/
+logs_*.txt
+diagnostic_log*.json
+*.ndjson
+*.jsonl
+openvolley-diagnostics*.txt
+openvolley-diagnostics*.jsonl
+openvolley-activity*.json
+openvolley-activity*.ndjson
+openvolley-activity*.csv
+*.har
+# Match exports
+MatchData_*.json
+Match_*_vs_*.zip
+match-data-*.json
+match_stopped_*.json
+database_export_*.json
+# Roster, licence, participant and ranking lists; scoresheets as PDF
+*.xlsx
+*.xls
+*.ods
+*.csv
+*.tsv
+*.pdf
+!/escoresheet/docs/**/*.pdf
+# Test fixtures stay trackable: tests/fixtures, __tests__/fixtures and
+# __fixtures__ only (any other folder named like "fixtures", e.g. a league's
+# match schedule, is not a test tree). Negated by extension, so the key and
+# .env rules above still apply there.
+!**/tests/fixtures/**/*.json
+!**/tests/fixtures/**/*.jsonl
+!**/tests/fixtures/**/*.ndjson
+!**/tests/fixtures/**/*.har
+!**/tests/fixtures/**/*.txt
+!**/tests/fixtures/**/*.zip
+!**/tests/fixtures/**/*.xlsx
+!**/tests/fixtures/**/*.xls
+!**/tests/fixtures/**/*.ods
+!**/tests/fixtures/**/*.csv
+!**/tests/fixtures/**/*.tsv
+!**/tests/fixtures/**/*.pdf
+!**/__tests__/fixtures/**/*.json
+!**/__tests__/fixtures/**/*.jsonl
+!**/__tests__/fixtures/**/*.ndjson
+!**/__tests__/fixtures/**/*.har
+!**/__tests__/fixtures/**/*.txt
+!**/__tests__/fixtures/**/*.zip
+!**/__tests__/fixtures/**/*.xlsx
+!**/__tests__/fixtures/**/*.xls
+!**/__tests__/fixtures/**/*.ods
+!**/__tests__/fixtures/**/*.csv
+!**/__tests__/fixtures/**/*.tsv
+!**/__tests__/fixtures/**/*.pdf
+!**/__fixtures__/**/*.json
+!**/__fixtures__/**/*.jsonl
+!**/__fixtures__/**/*.ndjson
+!**/__fixtures__/**/*.har
+!**/__fixtures__/**/*.txt
+!**/__fixtures__/**/*.zip
+!**/__fixtures__/**/*.xlsx
+!**/__fixtures__/**/*.xls
+!**/__fixtures__/**/*.ods
+!**/__fixtures__/**/*.csv
+!**/__fixtures__/**/*.tsv
+!**/__fixtures__/**/*.pdf

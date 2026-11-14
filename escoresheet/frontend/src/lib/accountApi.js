@@ -32,6 +32,17 @@ export function redeemInvite(code) {
 }
 
 /**
+ * POST /api/account/invite-preview → what redeeming the code would do for the
+ * signed-in account, nothing kept: { role_granted, already_had, team?, club?,
+ * preview: true } and the redeem's own refusals (the manager asks "Manage
+ * <team> with <account>?" before it redeems a team or club manager link). An
+ * older server answers 404 without an OV_INVITE_* code.
+ */
+export function previewInvite(code) {
+  return apiRequest('POST', '/api/account/invite-preview', { code: String(code || '').trim() }, { fallbackError: 'Invite code not accepted' })
+}
+
+/**
  * GET /api/me -> { roles, ...indoor flags, apps: { indoor: {member, ...}, beach: {member, ...} } }
  * (the OpenBeach manager reads apps.beach.member).
  */
@@ -224,6 +235,10 @@ export const clubApi = {
   putLicences(clubId, list, people) {
     const only = (people || []).map(({ sv_number, last_name, first_name, dob, gender }) => ({ sv_number, last_name, first_name, dob, gender }))
     return apiRequest('PUT', `/api/club/${enc(clubId)}/licences/${enc(list)}`, { people: only }, { timeoutMs: 30000 })
+  },
+  /** db/037: one row added by hand (a person's hand_rows[].id) -> { deleted, list } */
+  deleteLicenceRow(clubId, rowId) {
+    return apiRequest('DELETE', `/api/club/${enc(clubId)}/licences/rows/${enc(rowId)}`)
   }
 }
 
@@ -259,11 +274,20 @@ export const teamApi = {
   },
   /**
    * db/024: the team's club for "Add from club" -> { team, gender: 'm' | 'f' |
-   * null, players (the players list), people (everyone of the club's lists
-   * once, with `lists`; missing from a server before it) }
+   * null, age_class: 'U16' | null, players (the players list of the team's
+   * gender and age class), people (the people of the team's saved team and
+   * those players, with `lists`) }; dates of birth only of the people of the
+   * saved team (owner decision 2)
    */
   clubPlayers(teamId) {
     return apiRequest('GET', `/api/team/${enc(teamId)}/club-players`)
+  },
+  /**
+   * A few people of the club's lists by name or licence number (an official
+   * may be anyone of the club; at least 3 characters) -> { people, more }
+   */
+  searchClubPeople(teamId, q) {
+    return apiRequest('GET', `/api/team/${enc(teamId)}/club-people${query({ q })}`)
   },
   /**
    * db/026: people typed by hand into the squad, kept in the club's lists
@@ -293,6 +317,15 @@ export function fetchClubLicences({ timeoutMs } = {}) {
 }
 
 /**
+ * GET /api/club-licences/dob: the dates of birth of the people a scorer adds
+ * to a roster (the download has none; owner decision 2), of one of its clubs,
+ * at most 30 licence numbers -> { club_id, people: [{ sv_number, dob }] }
+ */
+export function fetchClubDob({ clubId, svNumbers, timeoutMs } = {}) {
+  return apiRequest('GET', `/api/club-licences/dob${query({ club: clubId, sv: (svNumbers || []).join(',') })}`, undefined, timeoutMs ? { timeoutMs } : undefined)
+}
+
+/**
  * GET /api/game-rosters[?games=1,2]: the rosters teams sent for upcoming
  * games, which the scoring tablet keeps (db/gameRosters.js).
  * -> { fetched_at, games: [{ game_number, season }], rosters: [...] }
@@ -315,14 +348,14 @@ export const admin = {
   listActivity({ match, account, kind, level, from, to, app, before, limit } = {}) {
     return apiRequest('GET', `/api/admin/activity${query({ match, account, kind, level, from, to, app, before, limit })}`)
   },
-  /** CSV / NDJSON of the same filters (at most 50,000 rows). */
-  exportActivity({ format = 'csv', ...filters } = {}) {
+  /** CSV / NDJSON of the same filters (at most 50,000 rows; audited). The accounts' email addresses only with `emails`. */
+  exportActivity({ format = 'csv', emails = false, ...filters } = {}) {
     const { match, account, kind, level, from, to, app } = filters
-    return apiDownload(`/api/admin/activity/export${query({ match, account, kind, level, from, to, app, format })}`)
+    return apiDownload(`/api/admin/activity/export${query({ match, account, kind, level, from, to, app, format, emails: emails ? '1' : undefined })}`)
   },
-  /** Delete on request: every entry of a match or an account (audited). */
-  deleteActivity({ match, account } = {}) {
-    return apiRequest('DELETE', `/api/admin/activity${query({ match, account, confirm: 'yes' })}`)
+  /** Delete on request: the entries the list shows for the same filters (a match or an account; audited). */
+  deleteActivity({ match, account, kind, level, from, to, app } = {}) {
+    return apiRequest('DELETE', `/api/admin/activity${query({ match, account, kind, level, from, to, app, confirm: 'yes' })}`)
   },
   /** Undone / deleted / edited events of a match (db/015). */
   listRevisions(matchId) {
@@ -399,6 +432,10 @@ export const admin = {
   reopenMatch(matchId, { reason }) {
     return apiRequest('POST', `/api/admin/matches/${enc(matchId)}/reopen`, { reason })
   },
+  /** The record of each reopened close of a match, and of its next close (db/039). */
+  listMatchClosures(matchId) {
+    return apiRequest('GET', `/api/admin/matches/${enc(matchId)}/closures`)
+  },
   addMatchEditor(matchId, { email }) {
     return apiRequest('POST', `/api/admin/matches/${enc(matchId)}/editors`, { email })
   },
@@ -463,6 +500,8 @@ const APPROVAL_ERROR_KEYS = {
   OV_APPROVAL_ROLE_REQUIRED: 'roleRequired',
   OV_APPROVAL_NOT_MATCH_SCORER: 'notMatchScorer',
   OV_APPROVAL_SCORER_NOT_REFEREE: 'scorerNotReferee',
+  OV_APPROVAL_NOT_MATCH_OFFICIAL: 'notMatchOfficial',
+  OV_APPROVAL_OFFICIAL_EMAIL_MISSING: 'officialEmailMissing',
   OV_APPROVAL_CALLER_ROLE: 'callerRole',
   OV_APPROVAL_NAME_REQUIRED: 'nameRequired',
   OV_APPROVAL_ONE_SLOT: 'oneSlot',
@@ -517,8 +556,9 @@ export const savedTeamsApi = {
   updateCompetition(id, body) {
     return apiRequest('PATCH', `/api/saved-teams/competitions/${enc(id)}`, body)
   },
-  deleteCompetition(id) {
-    return apiRequest('DELETE', `/api/saved-teams/competitions/${enc(id)}`)
+  /** `confirm`: the competition's name as typed (one with teams is deleted only with it) */
+  deleteCompetition(id, { confirm } = {}) {
+    return apiRequest('DELETE', `/api/saved-teams/competitions/${enc(id)}${query({ confirm })}`)
   },
   createTeam(body) {
     return apiRequest('POST', '/api/saved-teams/teams', body)
@@ -526,8 +566,9 @@ export const savedTeamsApi = {
   updateTeam(id, body) {
     return apiRequest('PATCH', `/api/saved-teams/teams/${enc(id)}`, body)
   },
-  deleteTeam(id) {
-    return apiRequest('DELETE', `/api/saved-teams/teams/${enc(id)}`)
+  /** `confirm`: the team's name as typed (one with players or officials is deleted only with it) */
+  deleteTeam(id, { confirm } = {}) {
+    return apiRequest('DELETE', `/api/saved-teams/teams/${enc(id)}${query({ confirm })}`)
   },
   putRoster(id, { players, staff }) {
     return apiRequest('PUT', `/api/saved-teams/teams/${enc(id)}/roster`, { players, staff })
@@ -556,6 +597,9 @@ export function errorKeyOf(error, { context } = {}) {
     case 'OV_INVITE_INVALID': return 'access.errors.inviteInvalid'
     case 'OV_INVITE_EXPIRED': return 'access.errors.inviteExpired'
     case 'OV_INVITE_USED_UP': return 'access.errors.inviteUsedUp'
+    // db/036: taken off the club or team the code was for; a club manager link of another address
+    case 'OV_INVITE_REMOVED': return 'access.errors.inviteRemoved'
+    case 'OV_INVITE_OTHER_ACCOUNT': return 'access.errors.inviteOtherAccount'
     case 'OV_TOO_MANY_ATTEMPTS': return 'access.errors.tooManyAttempts'
     case 'OV_SELF_DEMOTE': return 'manage.accounts.selfDemote'
     // deleting an account (admin.deleteAccount / rejectAccount)
@@ -572,6 +616,11 @@ export function errorKeyOf(error, { context } = {}) {
     case 'OV_GAME_NOT_YOURS': return 'manage.myTeams.notYourGame'
     // db/024: a player of the club's list with the other gender than the team's
     case 'OV_WRONG_GENDER': return 'manage.licences.wrongGender'
+    // db/037: people added by hand, bounded per club and per account a day; one row removed
+    case 'OV_MANUAL_LIMIT': return 'clubPlayers.offer.limit'
+    case 'OV_NOT_HAND_ADDED': return 'manage.licences.notHandAdded'
+    // a competition or team with content: deleted only with its name typed
+    case 'OV_CONFIRM_NAME': return 'savedTeams.confirmNameMismatch'
     // db/025: a sign-up request decided meanwhile (or not this approver's)
     case 'OV_REQUEST_GONE': return 'manage.requests.gone'
     default:

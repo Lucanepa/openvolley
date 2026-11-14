@@ -53,6 +53,19 @@ export function isKnownClosedOnServer(match) {
 }
 
 /**
+ * Was the match closed on the server at some time, also when an admin has
+ * reopened it since? Known closed now (isKnownClosedOnServer), the server's
+ * first_closed_at (db/039: kept by the reopen), or reopened here after an
+ * admin reopen (MatchEnd: everClosed). The server keeps such a match as an
+ * official record (only an admin deletes it), so Delete match removes only
+ * this device's copy. Never a test match.
+ */
+export function wasClosedOnServer(match) {
+  if (!match || match.test === true) return false
+  return isKnownClosedOnServer(match) || match.everClosed === true || !!match.first_closed_at
+}
+
+/**
  * A copy this device was still scoring (not ended / approved / final here)
  * whose match the server has closed: it can no longer be scored or synced,
  * so it is never resumed on its own; the user loads the official version or

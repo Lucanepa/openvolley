@@ -49,6 +49,7 @@ const CODES = {
   OV_DRAW_STARTED: 'tournaments.errors.drawStarted',
   OV_DRAW_DRAWN: 'tournaments.errors.drawDrawn',
   OV_DRAW_EXISTS: 'tournaments.errors.drawExists',
+  OV_TOURNAMENT_FULL: 'tournaments.errors.tournamentFull',
   OV_SLUG_TAKEN: 'tournaments.errors.slugTaken',
   OV_DRAW_SIZE: 'tournaments.errors.drawSize',
   OV_ENTRY_EXISTS: 'tournaments.errors.entryExists',

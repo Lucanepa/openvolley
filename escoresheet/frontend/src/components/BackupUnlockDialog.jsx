@@ -14,6 +14,11 @@ import { BACKUP_DAMAGED, BACKUP_NEWER, BACKUP_NO_CRYPTO, BACKUP_WRONG_PIN, openE
 
 // That header is not authenticated until the file opens: a damaged or crafted
 // file can hold anything there. Only short text, numbers and scores are shown.
+//
+// The PIN is a secret for the interaction log (utils/eventCapture
+// isSensitiveTarget: the field's name, and data-sensitive on the form): not a
+// key, its value or its length is kept, so "Download logs" and the match-end
+// ZIP never carry it.
 const MAX_TEXT = 80
 const MAX_SETS = 5
 
@@ -105,7 +110,7 @@ export default function BackupUnlockDialog({ envelope, onOpened, onCancel, zInde
 
   return (
     <Modal title={t('settings.backup.unlock.title')} open={true} onClose={cancel} width={440} zIndex={zIndex} helpScreen="restore">
-      <form className="ov-kit" onSubmit={submit} data-testid="backup-unlock-dialog">
+      <form className="ov-kit" onSubmit={submit} data-testid="backup-unlock-dialog" data-sensitive="">
         <p className="m-0 text-sm text-stone-600">{t('settings.backup.unlock.intro')}</p>
         {(teams || gameLine || sets) && (
           <div className="mt-3 rounded-xl border border-stone-200/70 bg-stone-50/60 px-3 py-2.5 text-center">
@@ -121,6 +126,7 @@ export default function BackupUnlockDialog({ envelope, onOpened, onCancel, zInde
         <Input
           ref={inputRef}
           id={inputId}
+          name="backup-pin"
           size="lg"
           type="text"
           inputMode="numeric"

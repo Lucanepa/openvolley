@@ -229,27 +229,32 @@ describe('capacitorPageUrl', () => {
 
 describe('writePdfNative (Save PDF in the Android app)', () => {
   const pdf = new TextEncoder().encode('%PDF-1.4 test').buffer
-  const Directory = { Documents: 'DOCUMENTS', External: 'EXTERNAL' }
+  const Directory = { Documents: 'DOCUMENTS', External: 'EXTERNAL', Data: 'DATA' }
 
-  it('writes the PDF as base64 to Documents/OpenVolley/scoresheets', async () => {
-    const writeFile = vi.fn(async () => ({ uri: 'file:///storage/emulated/0/Documents/OpenVolley/scoresheets/x.pdf' }))
+  // Owner decision 2026-11: the public Documents folder kept every PDF open to
+  // whoever held the tablet and after an uninstall; Export to Documents copies one out
+  it('writes the PDF as base64 to the app\'s own folder, never to Documents', async () => {
+    const writeFile = vi.fn(async () => ({ uri: 'file:///data/user/0/com.openvolley.escoresheet/files/OpenVolley/scoresheets/x.pdf' }))
     const res = await writePdfNative({ Filesystem: { writeFile }, Directory }, pdf, '7_HOME_AWAY_20261006.pdf')
     expect(writeFile).toHaveBeenCalledWith({
       path: 'OpenVolley/scoresheets/7_HOME_AWAY_20261006.pdf',
       data: btoa('%PDF-1.4 test'),
-      directory: 'DOCUMENTS',
+      directory: 'DATA',
       recursive: true,
     })
-    expect(res.path).toBe('Documents/OpenVolley/scoresheets/7_HOME_AWAY_20261006.pdf')
+    expect(writeFile).toHaveBeenCalledTimes(1)
+    expect(res.name).toBe('7_HOME_AWAY_20261006.pdf')
+    expect(res.fullPath).toBe('/data/user/0/com.openvolley.escoresheet/files/OpenVolley/scoresheets/x.pdf')
   })
 
-  it('falls back to the app folder, and keeps the file name safe', async () => {
+  it('falls back to the app\'s external folder, and keeps the file name safe', async () => {
     const writeFile = vi.fn()
       .mockRejectedValueOnce(new Error('denied'))
       .mockResolvedValueOnce({ uri: 'file:///x' })
     const res = await writePdfNative({ Filesystem: { writeFile }, Directory }, pdf, '../a/b:c.pdf')
     expect(writeFile).toHaveBeenLastCalledWith(expect.objectContaining({ directory: 'EXTERNAL', path: 'OpenVolley/scoresheets/.._a_b_c.pdf' }))
-    expect(res.path).toContain('Android/data/')
+    expect(writeFile.mock.calls.map(([o]) => o.directory)).not.toContain('DOCUMENTS')
+    expect(res.name).toBe('.._a_b_c.pdf')
   })
 
   it('throws when nothing is writable', async () => {
@@ -260,11 +265,11 @@ describe('writePdfNative (Save PDF in the Android app)', () => {
   it('tells the absolute path, and never overwrites an earlier PDF (" (1)", " (2)")', async () => {
     const existing = new Set(['OpenVolley/scoresheets/20261007_382208_MUST_vs_Spada.pdf', 'OpenVolley/scoresheets/20261007_382208_MUST_vs_Spada (1).pdf'])
     const stat = vi.fn(async ({ path }) => { if (!existing.has(path)) throw new Error('File does not exist') ; return { type: 'file' } })
-    const writeFile = vi.fn(async ({ path }) => ({ uri: `file:///storage/emulated/0/Documents/${encodeURI(path)}` }))
+    const writeFile = vi.fn(async ({ path }) => ({ uri: `file:///data/user/0/com.openvolley.escoresheet/files/${encodeURI(path)}` }))
     const res = await writePdfNative({ Filesystem: { writeFile, stat }, Directory }, pdf, '20261007_382208_MUST_vs_Spada.pdf')
     expect(writeFile).toHaveBeenCalledWith(expect.objectContaining({ path: 'OpenVolley/scoresheets/20261007_382208_MUST_vs_Spada (2).pdf' }))
-    expect(res.fullPath).toBe('/storage/emulated/0/Documents/OpenVolley/scoresheets/20261007_382208_MUST_vs_Spada (2).pdf')
-    expect(res.uri).toMatch(/^file:\/\/\/storage/)
+    expect(res.fullPath).toBe('/data/user/0/com.openvolley.escoresheet/files/OpenVolley/scoresheets/20261007_382208_MUST_vs_Spada (2).pdf')
+    expect(res.uri).toMatch(/^file:\/\/\/data/)
   })
 })
 

@@ -27,6 +27,7 @@ import {
 } from '@simplewebauthn/server'
 import { isoBase64URL, isoUint8Array } from '@simplewebauthn/server/helpers'
 import { randomBytes } from 'node:crypto'
+import { ALLOWED_ORIGINS } from './cors.js'
 
 /** How long the device's sheet may stay open. */
 export const PASSKEY_CEREMONY_MS = 2 * 60 * 1000
@@ -36,6 +37,11 @@ export const PASSKEY_CHALLENGE_TTL_MS = PASSKEY_CEREMONY_MS + 60 * 1000
  *  the map has a ceiling that does not depend on the rate limits; the oldest
  *  go first. */
 export const PASSKEY_CHALLENGES_MAX = 5000
+/** Outstanding challenges per bucket (a client address for the sign-in
+ *  options, an account for a set-up): a full bucket loses its own oldest,
+ *  and a full map loses the oldest of its largest bucket, so a flood from
+ *  many addresses never evicts somebody else's pending ceremony. */
+export const PASSKEY_CHALLENGES_PER_BUCKET = 20
 /** Passkeys one account may have: phones, tablets, laptops and their
  *  replacements fit; a script making thousands does not. */
 export const PASSKEYS_PER_USER_MAX = 10
@@ -45,28 +51,36 @@ const CREDENTIAL_ID_RE = /^[A-Za-z0-9_-]{1,1024}$/
 
 /**
  * The relying party and who may ask. `WEBAUTHN_RP_ID` defaults to
- * openvolley.app; a page may run a ceremony when it is served over https from
- * that host or one of its subdomains (every OpenVolley and OpenBeach site), or
- * from `WEBAUTHN_ORIGINS` when set (a local test: RP `localhost`, origin
- * http://localhost:5173). The apps' own schemes (capacitor, tauri, a local
- * relay) never match: their pages cannot hold a passkey for a web host.
+ * openvolley.app; a page may run a ceremony when its origin is one of the
+ * app's own https sites under that host, the exact list of lib/cors.js
+ * (ALLOWED_ORIGINS: the apps, the manage consoles, OpenBeach's sites), or one
+ * of `WEBAUTHN_ORIGINS` when set (replaces the list; a local test: RP
+ * `localhost`, origin http://localhost:5173). No wildcard: another page under
+ * openvolley.app (the support desk, the download host, a dev build, another
+ * app) may hold a script that turns one passkey prompt into a session, so it
+ * never asks. The apps' own schemes (capacitor, tauri, a local relay) never
+ * match: their pages cannot hold a passkey for a web host.
  */
 export function passkeyConfig(env = process.env) {
   const rpId = String(env.WEBAUTHN_RP_ID || 'openvolley.app').trim().toLowerCase()
-  const explicit = String(env.WEBAUTHN_ORIGINS || '').split(',').map((o) => o.trim()).filter(Boolean)
-  return { rpId, rpName: 'OpenVolley', explicitOrigins: explicit }
+  const explicit = String(env.WEBAUTHN_ORIGINS || '').split(',').map((o) => o.trim().replace(/\/+$/, '')).filter(Boolean)
+  return { rpId, rpName: 'OpenVolley', explicitOrigins: explicit, origins: explicit.length ? explicit : appOrigins(rpId) }
 }
 
-/** May a page at `origin` run a ceremony for this relying party? */
+/** The https sites of ALLOWED_ORIGINS on `rpId` or under it. */
+export function appOrigins(rpId) {
+  return ALLOWED_ORIGINS.filter((o) => {
+    let url
+    try { url = new URL(o) } catch { return false }
+    return url.protocol === 'https:' && (url.hostname === rpId || url.hostname.endsWith(`.${rpId}`))
+  })
+}
+
+/** May a page at `origin` run a ceremony for this relying party? Exact match only. */
 export function originAllowed(origin, config) {
   if (typeof origin !== 'string' || !origin) return false
-  if (config.explicitOrigins.length) return config.explicitOrigins.includes(origin)
-  let url
-  try { url = new URL(origin) } catch { return false }
-  if (url.origin !== origin) return false // no paths, no trailing slash games
-  const host = url.hostname
-  if (host !== config.rpId && !host.endsWith(`.${config.rpId}`)) return false
-  return url.protocol === 'https:' || (url.protocol === 'http:' && host === 'localhost')
+  const list = config.origins || (config.explicitOrigins?.length ? config.explicitOrigins : appOrigins(config.rpId))
+  return list.includes(origin)
 }
 
 /** The origin a browser wrote into the answer (clientDataJSON), or ''. */
@@ -126,27 +140,43 @@ export class PasskeyError extends Error {
  */
 export function createPasskeyCeremonies(config, now = Date.now) {
   const challenges = new Map()
+  const buckets = new Map() // bucket -> Set of challenge ids, oldest first
+
+  function drop(id) {
+    const entry = challenges.get(id)
+    if (!entry) return
+    challenges.delete(id)
+    const ids = buckets.get(entry.bucket)
+    ids?.delete(id)
+    if (ids && !ids.size) buckets.delete(entry.bucket)
+  }
 
   function sweep() {
     const t = now()
-    for (const [id, entry] of challenges) if (entry.expiresAt < t) challenges.delete(id)
+    for (const [id, entry] of challenges) if (entry.expiresAt < t) drop(id)
   }
 
-  function issue(entry) {
+  function issue(entry, bucket = '') {
     sweep()
+    const key = String(bucket)
+    const own = buckets.get(key)
+    while (own && own.size >= PASSKEY_CHALLENGES_PER_BUCKET) drop(own.values().next().value)
     while (challenges.size >= PASSKEY_CHALLENGES_MAX) {
-      const oldest = challenges.keys().next().value
-      if (oldest === undefined) break
-      challenges.delete(oldest)
+      let largest = null
+      for (const ids of buckets.values()) if (!largest || ids.size > largest.size) largest = ids
+      if (!largest) break
+      drop(largest.values().next().value)
     }
     const id = randomBytes(18).toString('base64url')
-    challenges.set(id, { ...entry, expiresAt: now() + PASSKEY_CHALLENGE_TTL_MS })
+    challenges.set(id, { ...entry, bucket: key, expiresAt: now() + PASSKEY_CHALLENGE_TTL_MS })
+    if (!buckets.has(key)) buckets.set(key, new Set())
+    buckets.get(key).add(id)
     return id
   }
 
   function take(id, purpose) {
     const entry = typeof id === 'string' ? challenges.get(id) : undefined
-    if (entry) challenges.delete(id)
+    if (entry) drop(id)
     if (!entry || entry.purpose !== purpose || entry.expiresAt < now()) {
       throw new PasskeyError('challenge', 'challenge unknown, used or expired')
     }
@@ -185,7 +215,7 @@ export function createPasskeyCeremonies(config, now = Date.now) {
         authenticatorSelection: { residentKey: 'required', requireResidentKey: true, userVerification: 'required' },
         preferredAuthenticatorType: 'localDevice'
       })
-      const challengeId = issue({ challenge: options.challenge, purpose: 'register', userId: String(userId) })
+      const challengeId = issue({ challenge: options.challenge, purpose: 'register', userId: String(userId) }, `user:${userId}`)
       return { challengeId, options }
     },
 
@@ -218,13 +248,13 @@ export function createPasskeyCeremonies(config, now = Date.now) {
 
     /** Options for signing in: no list of keys — the device offers what it
      *  has for openvolley.app, and the answer says whose it was. */
-    async authenticationOptions() {
+    async authenticationOptions({ bucket = '' } = {}) {
       const options = await generateAuthenticationOptions({
         rpID: config.rpId,
         timeout: PASSKEY_CEREMONY_MS,
         userVerification: 'required'
       })
-      const challengeId = issue({ challenge: options.challenge, purpose: 'login', userId: '' })
+      const challengeId = issue({ challenge: options.challenge, purpose: 'login', userId: '' }, `ip:${bucket}`)
       return { challengeId, options }
     },
 

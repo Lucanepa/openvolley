@@ -47,7 +47,7 @@ export function parsedPdfToRoster(parsed) {
   for (const [k, role] of PDF_OFFICIAL_ROLES) {
     const s = parsed?.[k]
     if (!s || !(clean(s.lastName) || clean(s.firstName))) continue
-    // the officials' SV number (#52205) is their licence; a year alone is no date of birth
+    // the officials' SV number (#10001) is their licence; a year alone is no date of birth
     staff.push({
       role,
       first_name: clean(s.firstName),

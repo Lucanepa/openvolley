@@ -11,7 +11,9 @@
 <!-- Template: publish-pkgs.sh (lib/publish-lib.sh landing_page) fills in the placeholders
      DESKTOP_VERSION, DEB_PACKAGE, WINDOWS_URL, MAC_URL, APK_VERSION, APK_FILE and, for OpenBeach,
      BEACH_DESKTOP_VERSION, BEACH_WINDOWS_URL, BEACH_MAC_URL, BEACH_APK_VERSION and BEACH_APK_FILE (each
-     between @ signs) from the packages it publishes. The beach block is left out until an OpenBeach
+     between @ signs) from the packages it publishes. WINDOWS_SHA256, MAC_SHA256, BEACH_WINDOWS_SHA256 and
+     BEACH_MAC_SHA256 come from GitHub's digest of that release file; a line with one is left out when
+     GitHub gives none. The beach block is left out until an OpenBeach
      package is published, its beach-desktop / beach-android parts until that one is.
      The flatpak / beach-flatpak parts appear once flatpak/<app id>.flatpakref is
      published (packaging/flatpak/publish-flatpak.sh); the pacman parts once arch/x86_64/openvolley.db
@@ -213,14 +215,15 @@
         <a class="btn btn-primary" href="@WINDOWS_URL@">Download for Windows</a>
         <a class="btn btn-ghost" href="https://github.com/Lucanepa/openvolley/releases/tag/desktop-v@DESKTOP_VERSION@">All downloads</a>
       </div>
+      <p class="meta">Check the download before you run it: PowerShell <code>Get-FileHash</code> on the file must show this SHA-256: <code>@WINDOWS_SHA256@</code></p>
       <details class="more">
-        <summary>With a package manager: Scoop, winget</summary>
+        <summary>With a package manager: winget, Scoop</summary>
+        <h4>winget (recommended)</h4>
+        <div class="cmd"><pre><code>winget install Lucanepa.OpenVolley</code></pre><button class="copy" type="button">Copy</button></div>
+        <p class="meta">Every version is reviewed in the winget repository before it reaches you. It runs the installer above, so the app keeps updating itself as well. Run <code>winget upgrade</code> only between matches: it closes the app.</p>
         <h4>Scoop</h4>
         <div class="cmd"><pre><code>scoop install https://raw.githubusercontent.com/Lucanepa/openvolley/main/escoresheet/packaging/scoop/openvolley.json</code></pre><button class="copy" type="button">Copy</button></div>
-        <p class="meta">Runs the installer above (it asks once for an administrator). Run <code>scoop update</code> only between matches: it closes the app.</p>
-        <h4>winget <span class="soon">coming soon</span></h4>
-        <div class="cmd"><pre><code>winget install Lucanepa.OpenVolley</code></pre><button class="copy" type="button">Copy</button></div>
-        <p class="meta">Waiting for review in the winget repository. It runs the installer above, so the app keeps updating itself as well. Run <code>winget upgrade</code> only between matches: it closes the app.</p>
+        <p class="meta">Runs the installer above (it asks once for an administrator). The manifest comes straight from this project's repository, with no review in between: prefer winget. Run <code>scoop update</code> only between matches: it closes the app.</p>
       </details>
       <p class="meta">Updates: the app updates itself and installs the update when you quit it, never during a match. <a href="#updates">How updates work</a></p>
     </div>
@@ -236,6 +239,7 @@
         <a class="btn btn-primary" href="@MAC_URL@">Download for macOS</a>
         <a class="btn btn-ghost" href="https://github.com/Lucanepa/openvolley/releases/tag/desktop-v@DESKTOP_VERSION@">All downloads</a>
       </div>
+      <p class="meta"><code>shasum -a 256</code> on the disk image shows this SHA-256: <code>@MAC_SHA256@</code></p>
       <p>Signed and notarized by Apple: it opens like any other app, also without internet.</p>
       <p class="meta">Start it from Applications: from there it updates itself. The tablet Wi-Fi of the Windows and Linux app is not available on macOS: connect the tablets through the venue's Wi-Fi, a travel router or macOS Internet Sharing.</p>
     </div>
@@ -246,7 +250,10 @@
       <p class="pv">Version @DESKTOP_VERSION@ · amd64</p>
       <p><b>Debian, Ubuntu, Mint:</b> one command adds the signed APT repository (it checks the key fingerprint first) and installs the app. Running it again is harmless.</p>
       <div class="cmd"><pre><code>curl -fsSL https://get.openvolley.app/install.sh | sudo sh</code></pre><button class="copy" type="button">Copy</button></div>
-      <p class="meta">Read it first if you like: <a href="/install.sh">install.sh</a></p>
+      <p class="meta">Read it first if you like: <a href="/install.sh">install.sh</a>. Or check it before it runs as root, against a second source: download it, compare its SHA-256 with the one in the <a href="https://github.com/Lucanepa/openvolley#check-the-downloads">README on GitHub</a>, then run it:</p>
+      <div class="cmd"><pre><code>curl -fsSLO https://get.openvolley.app/install.sh
+sha256sum install.sh
+sudo sh install.sh</code></pre><button class="copy" type="button">Copy</button></div>
       <p>Start it from the app menu (<b>OpenVolley eScoresheet</b>) or with <code>@DEB_PACKAGE@</code>. Headless relay for the tablets only: <code>@DEB_PACKAGE@ --server-only</code>. It updates itself; <code>sudo apt update &amp;&amp; sudo apt upgrade</code> works too.</p>
       <details class="more">
         <summary>Set up APT by hand, check the key</summary>
@@ -254,7 +261,7 @@
 echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/openvolley.gpg] https://get.openvolley.app/apt stable main' | sudo tee /etc/apt/sources.list.d/openvolley.list
 sudo apt update &amp;&amp; sudo apt install @DEB_PACKAGE@</code></pre><button class="copy" type="button">Copy</button></div>
         <p class="meta">Check the key before trusting it: <code>gpg --show-keys /usr/share/keyrings/openvolley.gpg</code> must show the fingerprint below. Installed the <code>.deb</code> from GitHub before (package <code>openvolley-e-scoresheet</code>)? <code>sudo apt install @DEB_PACKAGE@</code> replaces it.</p>
-        <p class="meta">Signing key: OpenVolley packages &lt;packages@openvolley.app&gt;, ed25519 (<a href="/apt/openvolley.asc">openvolley.asc</a>)</p>
+        <p class="meta">Signing key: OpenVolley packages &lt;packages@openvolley.app&gt;, ed25519 (<a href="/apt/openvolley.asc">openvolley.asc</a>). The same fingerprint is in the <a href="https://github.com/Lucanepa/openvolley#check-the-downloads">README on GitHub</a>.</p>
         <p class="fp">AB46 9DA8 DC3E C90F 8057 320D 285B 18D7 6C16 B82C</p>
       </details>
       <!--flatpak-->
@@ -273,7 +280,7 @@ sudo apt update &amp;&amp; sudo apt install @DEB_PACKAGE@</code></pre><button cl
         <div class="cmd"><pre><code>curl -fsSLO https://get.openvolley.app/arch/openvolley.gpg
 sudo pacman-key --add openvolley.gpg
 sudo pacman-key --lsign-key @PACMAN_FPR@</code></pre><button class="copy" type="button">Copy</button></div>
-        <p class="meta">Check the key before trusting it: <code>gpg --show-keys openvolley.gpg</code> must show the fingerprint below.</p>
+        <p class="meta">Check the key before trusting it: <code>gpg --show-keys openvolley.gpg</code> must show the fingerprint below (also in the <a href="https://github.com/Lucanepa/openvolley#check-the-downloads">README on GitHub</a>). <code>--lsign-key</code> makes pacman trust this key for packages of any repository, as every extra Arch repository does; it signs only OpenVolley and OpenBeach. To stop trusting it: <code>sudo pacman-key --delete @PACMAN_FPR@</code>.</p>
         <h4>2. Add the repository</h4>
         <p>At the end of <code>/etc/pacman.conf</code> (for example with <code>sudo nano /etc/pacman.conf</code>):</p>
         <div class="cmd"><pre><code>[openvolley]
@@ -346,14 +353,15 @@ sudo snap connect openvolley-escoresheet:bluez</code></pre><button class="copy" 
         <a class="btn btn-primary" href="@BEACH_WINDOWS_URL@">Download OpenBeach for Windows</a>
         <a class="btn btn-ghost" href="https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v@BEACH_DESKTOP_VERSION@">All downloads</a>
       </div>
+      <p class="meta">Check the download before you run it: PowerShell <code>Get-FileHash</code> on the file must show this SHA-256: <code>@BEACH_WINDOWS_SHA256@</code></p>
       <details class="more">
-        <summary>With a package manager: Scoop, winget</summary>
-        <h4>Scoop</h4>
-        <div class="cmd"><pre><code>scoop install https://raw.githubusercontent.com/Lucanepa/openvolley/main/escoresheet/packaging/scoop/openbeach.json</code></pre><button class="copy" type="button">Copy</button></div>
-        <p class="meta">Runs the installer above. Run <code>scoop update</code> only between matches: it closes the app.</p>
+        <summary>With a package manager: winget, Scoop</summary>
         <h4>winget <span class="soon">coming soon</span></h4>
         <div class="cmd"><pre><code>winget install Lucanepa.OpenBeach</code></pre><button class="copy" type="button">Copy</button></div>
-        <p class="meta">Waiting for review in the winget repository.</p>
+        <p class="meta">Waiting for review in the winget repository; once there, prefer it (every version is reviewed there).</p>
+        <h4>Scoop</h4>
+        <div class="cmd"><pre><code>scoop install https://raw.githubusercontent.com/Lucanepa/openvolley/main/escoresheet/packaging/scoop/openbeach.json</code></pre><button class="copy" type="button">Copy</button></div>
+        <p class="meta">Runs the installer above. The manifest comes straight from this project's repository, with no review in between. Run <code>scoop update</code> only between matches: it closes the app.</p>
       </details>
       <p class="meta">Updates: like OpenVolley's, in the background, installed when you quit it, never during a match.</p>
     </div>
@@ -366,6 +374,7 @@ sudo snap connect openvolley-escoresheet:bluez</code></pre><button class="copy" 
       <div class="actions">
         <a class="btn btn-primary" href="@BEACH_MAC_URL@">Download OpenBeach for macOS</a>
       </div>
+      <p class="meta"><code>shasum -a 256</code> on the disk image shows this SHA-256: <code>@BEACH_MAC_SHA256@</code></p>
       <p class="meta">Updates: like OpenVolley's, in the background, installed when you quit it, never during a match.</p>
     </div>
     <!--/beach-mac-->
@@ -374,6 +383,7 @@ sudo snap connect openvolley-escoresheet:bluez</code></pre><button class="copy" 
       <p class="pv">Version @BEACH_DESKTOP_VERSION@ · amd64</p>
       <p><b>Debian, Ubuntu, Mint:</b> the same signed APT repository; this installs the package <code>openbeach-escoresheet</code>.</p>
       <div class="cmd"><pre><code>curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s openbeach-escoresheet</code></pre><button class="copy" type="button">Copy</button></div>
+      <p class="meta">Or check the script first, as for <a href="#linux">OpenVolley</a>, then <code>sudo sh install.sh openbeach-escoresheet</code>.</p>
       <p>Repository already added? <code>sudo apt install openbeach-escoresheet</code>. Start it from the app menu (<b>OpenBeach</b>) or with <code>openbeach-escoresheet</code>; tablet server only: <code>openbeach-escoresheet --server-only</code>. It updates itself like OpenVolley's.</p>
       <!--beach-flatpak-->
       <details class="more" id="openbeach-flatpak">
@@ -396,7 +406,7 @@ SigLevel = Required DatabaseRequired
 Server = https://get.openvolley.app/arch/$arch</code></pre><button class="copy" type="button">Copy</button></div>
         <p>Then install; updates come with <code>sudo pacman -Syu</code>:</p>
         <div class="cmd"><pre><code>sudo pacman -Syu openbeach-escoresheet-bin</code></pre><button class="copy" type="button">Copy</button></div>
-        <p class="meta">Key fingerprint: <span class="fp">@PACMAN_FPR_GROUPED@</span>. More: <a href="#arch">OpenVolley › Linux › pacman</a>.</p>
+        <p class="meta">Key fingerprint: <span class="fp">@PACMAN_FPR_GROUPED@</span> (also in the <a href="https://github.com/Lucanepa/openvolley#check-the-downloads">README on GitHub</a>); <code>--lsign-key</code> trusts it for any repository, it signs only OpenVolley and OpenBeach. More: <a href="#arch">OpenVolley › Linux › pacman</a>.</p>
       </details>
       <!--/beach-pacman-->
       <!--/pacman-->

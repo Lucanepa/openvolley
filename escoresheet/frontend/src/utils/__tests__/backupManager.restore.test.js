@@ -46,8 +46,16 @@ vi.mock('../../db/db', () => ({ db: fakeDb }))
 vi.mock('../backendConfig', () => ({ getApiUrl: (p) => `http://backend.test${p}`, getCloudApiUrl: (p) => `http://backend.test${p}` }))
 vi.mock('../../lib/apiClient', () => ({ apiFrom: vi.fn(), apiStorage: { from: vi.fn() } }))
 
-import { restoreMatchFromJson, restoreMatchInPlace, importMatchFromSupabase, serverClosedState, matchBackupFromDatabaseExport, matchBackupFromMatchEndExport, matchBackupFromFile, matchEndExportData, restoreErrorText, BACKUP_FORMAT_ERROR, BACKUP_UNREADABLE_ERROR, BACKUP_LOCKED_ERROR } from '../backupManager'
+import { restoreMatchFromJson as restoreFromJson, restoreMatchInPlace as restoreInPlace, importMatchFromSupabase as importFromCloud, serverClosedState, matchBackupFromDatabaseExport, matchBackupFromMatchEndExport, matchBackupFromFile, matchEndExportData, restoreErrorText, BACKUP_FORMAT_ERROR, BACKUP_UNREADABLE_ERROR, BACKUP_LOCKED_ERROR } from '../backupManager'
+
+// The fixture's match has unsent jobs and events of its own: every restore
+// here replaces it on the second confirmation (replaceNewer), the question
+// itself is backupManager.restoreSafety.dexie.test.js's
+const restoreMatchFromJson = (data, opts = {}) => restoreFromJson(data, { replaceNewer: true, ...opts })
+const restoreMatchInPlace = (id, data, opts = {}) => restoreInPlace(id, data, { replaceNewer: true, ...opts })
+const importMatchFromSupabase = (data, opts = {}) => importFromCloud(data, { replaceNewer: true, ...opts })
 import { createBackupSealer } from '../backupCrypto/sealer'
+import { backupFileText, openWithKnownPins } from '../backupFile'
 import { openEnvelope } from '../backupCrypto/envelope'
 import { apiFrom } from '../../lib/apiClient'
 import { isStaleClosedCopy } from '../matchReopen'
@@ -91,7 +99,10 @@ beforeEach(() => {
     { id: 3, resource: 'set', action: 'update', status: 'queued', payload: { external_id: `${SEED}:s:2`, home_points: 4 } },
     { id: 4, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: `${SEED}:e:2`, match_id: SEED } },
     { id: 5, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: `${OTHER}:e:1`, match_id: OTHER } },
-    { id: 6, resource: 'match', action: 'update', status: 'sent', payload: { id: OTHER, status: 'final' } }
+    { id: 6, resource: 'match', action: 'update', status: 'sent', payload: { id: OTHER, status: 'final' } },
+    // jobs of no match: the activity log upload, a set job of an older app
+    { id: 7, resource: 'activity', action: 'flush', status: 'queued', payload: {} },
+    { id: 8, resource: 'set', action: 'update', status: 'queued', payload: { external_id: '1', home_points: 3 } }
   ])
   fakeDb.transaction = async (...args) => args[args.length - 1]()
 })
@@ -116,8 +127,10 @@ describe('restoreMatchFromJson', () => {
     // the cloud unknown (offline) or behind this clock: none, whatever the file says
     const offline = await restoreMatchFromJson(backup({ liveClockOffsetMs: 3000000 }), { checkServer: async () => null, cloudLiveState: async () => null })
     expect(fakeDb.matches.map.get(offline).liveClockOffsetMs).toBe(0)
-    // a test match never syncs: not asked
+    // a test match never syncs: not asked (on a device without a copy of
+    // it: over a local copy, the copy's own test flag decides, fe-backup-6)
     asked.length = 0
+    for (const [id, m] of fakeDb.matches.map) if (m.seed_key === SEED) fakeDb.matches.map.delete(id)
     const t = await restoreMatchFromJson(backup({ test: true, liveClockOffsetMs: 5000 }), { cloudLiveState })
     expect(asked).toEqual([])
     expect(fakeDb.matches.map.get(t).liveClockOffsetMs).toBe(0)
@@ -158,6 +171,9 @@ describe('restoreMatchFromJson', () => {
     expect(fakeDb.events.map.get(1)).toMatchObject({ matchId: 1 })
     expect(fakeDb.sync_queue.map.get(5)).toBeDefined()
     expect(fakeDb.sync_queue.map.get(6)).toBeDefined()
+    // and so do the jobs of no match (fe-sync-4: deleted with every restore)
+    expect(fakeDb.sync_queue.map.get(7)).toBeDefined()
+    expect(fakeDb.sync_queue.map.get(8)).toBeDefined()
 
     // the old copy of this match is gone, the restored one has a new id
     expect(fakeDb.matches.map.get(2)).toBeUndefined()
@@ -167,8 +183,11 @@ describe('restoreMatchFromJson', () => {
     expect(restoredSets).toHaveLength(2)
     expect([...fakeDb.sets.map.values()].some(s => s.matchId === 2)).toBe(false)
 
-    // this match's old jobs are replaced by one restore job
-    for (const id of [1, 2, 3, 4]) expect(fakeDb.sync_queue.map.get(id)).toBeUndefined()
+    // this match's old set and event jobs are replaced by one restore job;
+    // its unsent match insert and update jobs stay, for the columns the
+    // restore does not send (fe-backup-3, as restoreMatchInPlace)
+    for (const id of [3, 4]) expect(fakeDb.sync_queue.map.get(id)).toBeUndefined()
+    for (const id of [1, 2]) expect(fakeDb.sync_queue.map.get(id)).toBeDefined()
     const restore = [...fakeDb.sync_queue.map.values()].find(j => j.action === 'restore')
     expect(restore.payload.match.external_id).toBe(SEED)
     expect(restore.payload.match.connection_pins).toEqual({ referee: '111111', bench_home: '222222' })
@@ -212,6 +231,7 @@ describe('restoreMatchFromJson', () => {
   })
 
   it('never queues a restore for a test match', async () => {
+    fakeDb.matches.map.delete(2) // no local copy: the file's test flag decides
     await restoreMatchFromJson(backup({ test: true }))
     expect([...fakeDb.sync_queue.map.values()].some(j => j.action === 'restore')).toBe(false)
   })
@@ -279,6 +299,63 @@ describe('an encrypted app backup file, opened with a PIN', () => {
     await expect(restoreMatchInPlace(2, envelope)).rejects.toMatchObject({ code: BACKUP_LOCKED_ERROR })
     expect([...fakeDb.matches.map.values()]).toEqual(before)
     expect(restoreErrorText({ code: BACKUP_LOCKED_ERROR }, (k) => k)).toBe('settings.backup.unlock.locked')
+  })
+})
+
+// The cloud copy is what a replacement device restores when the scoring
+// device fails mid-match. It carries the referee, bench and upload PINs inside
+// its encryption (backupFile keepConnectionPins): the restore sends the server
+// those, not new ones that would lock the referee and bench tablets out.
+describe('a cloud copy restored on another device', () => {
+  const ORIGINAL = { referee: '654321', bench_home: '222222', bench_away: '333333', upload_home: '444444', upload_away: '555555' }
+  const source = () => backup({
+    seed_key: 'match_300_ccc', gamePin: '123456', refereePin: '654321', homeTeamPin: '222222', awayTeamPin: '333333',
+    homeTeamUploadPin: '444444', awayTeamUploadPin: '555555', sessionId: 'sess-1'
+  })
+  const cloudCopy = async (pin) => openWithKnownPins(JSON.parse(await backupFileText(3, source(), new Date(), { keepConnectionPins: true })), [pin])
+  const restoreJob = () => [...fakeDb.sync_queue.map.values()].find(j => j.action === 'restore')
+
+  it('keeps the connection PINs the tablets hold, opened with the game PIN or the referee PIN', async () => {
+    const file = await cloudCopy('123456')
+    expect(file.connectionPins).toEqual(ORIGINAL)
+    expect(file.match.refereePin).toBeUndefined()
+    const newId = await restoreMatchFromJson(file, { checkServer: async () => false, cloudLiveState: async () => null })
+    expect(fakeDb.matches.map.get(newId)).toMatchObject({
+      gamePin: '123456', refereePin: '654321', homeTeamPin: '222222', awayTeamPin: '333333', homeTeamUploadPin: '444444', awayTeamUploadPin: '555555'
+    })
+    expect(restoreJob().payload.match).toMatchObject({ game_pin: '123456', connection_pins: ORIGINAL })
+    expect('connectionPins' in fakeDb.matches.map.get(newId)).toBe(false)
+
+    fakeDb.sync_queue.map.clear()
+    fakeDb.matches.map.clear()
+    const byReferee = await cloudCopy('654321')
+    await restoreMatchFromJson(byReferee, { checkServer: async () => false, cloudLiveState: async () => null })
+    // the game PIN is not in the file: a new one, kept off the server
+    expect(restoreJob().payload.match.game_pin).toBeUndefined()
+    expect(restoreJob().payload.match.connection_pins).toEqual(ORIGINAL)
+  }, 60000)
+
+  it('the local copy it replaces keeps its own PINs, the file fills the ones it lacks', async () => {
+    fakeDb.matches.map.set(2, { id: 2, seed_key: 'match_300_ccc', status: 'live', gamePin: '900001', refereePin: '900002' })
+    const file = await cloudCopy('123456')
+    const newId = await restoreMatchFromJson(file, { checkServer: async () => false, cloudLiveState: async () => null })
+    expect(fakeDb.matches.map.get(newId)).toMatchObject({ gamePin: '900001', refereePin: '900002', homeTeamPin: '222222', awayTeamUploadPin: '555555' })
+  }, 60000)
+
+  it('restoreMatchInPlace: the open match keeps its PINs, the file fills the ones it lacks', async () => {
+    fakeDb.matches.map.set(2, { id: 2, seed_key: 'match_300_ccc', status: 'live', gamePin: '900001', refereePin: '900002' })
+    await restoreMatchInPlace(2, await cloudCopy('123456'), { checkServer: async () => false })
+    expect(fakeDb.matches.map.get(2)).toMatchObject({ gamePin: '900001', refereePin: '900002', homeTeamPin: '222222', awayTeamPin: '333333' })
+    expect(restoreJob().payload.match.connection_pins).toMatchObject({ referee: '900002', bench_home: '222222' })
+  }, 60000)
+
+  it('a plain file never carries them (a match with no game PIN and no referee PIN)', async () => {
+    const data = source()
+    delete data.match.gamePin
+    delete data.match.refereePin
+    const text = await backupFileText(4, data, new Date(), { keepConnectionPins: true })
+    expect(JSON.parse(text).connectionPins).toBeUndefined()
+    for (const pin of ['222222', '333333', '444444', '555555', 'sess-1']) expect(text).not.toContain(pin)
   })
 })
 
@@ -638,8 +715,12 @@ describe('a Match End file (the MatchData JSON of the approval ZIP)', () => {
   })
 
   it('the file Match End writes now is a backup file: written, read back, it restores as it is', async () => {
-    const data = matchEndExportData(ended(), new Date('2026-10-29T19:00:00.000Z'))
-    expect(data).toMatchObject({ version: 1, lastUpdated: '2026-10-29T19:00:00.000Z', exportedAt: '2026-10-29T19:00:00.000Z', homeTeam: { name: 'Home' } })
+    const source = ended()
+    source.match = { ...source.match, gamePin: '135790', refereePin: '246802', homeTeamUploadPin: '112233', sessionId: 'sess-1' }
+    const data = matchEndExportData(source, new Date('2026-10-29T19:00:00.000Z'))
+    expect(data).toMatchObject({ version: 1, lastUpdated: '2026-10-29T19:00:00.000Z', exportedAt: '2026-10-29T19:00:00.000Z', homeTeam: { name: 'Home' }, secretsRemoved: true })
+    // the ZIP is kept and passed on: no PIN or session id in it
+    expect(JSON.stringify(data)).not.toMatch(/135790|246802|112233|sess-1/)
     const file = JSON.parse(JSON.stringify(data, null, 2)) // the ZIP's text
     expect(matchBackupFromFile(file)).toBe(file) // nothing to convert
     const id = await restoreMatchFromJson(file, { checkServer: async () => false, cloudLiveState: async () => null })
@@ -804,6 +885,7 @@ describe('restoring a match closed on the server', () => {
 
   it('a test backup never asks the server', async () => {
     const checkServer = vi.fn(async () => true)
+    fakeDb.matches.map.delete(2) // no local copy: the file's test flag decides
     await restoreMatchFromJson(backup({ test: true, status: 'approved' }), { checkServer })
     await restoreMatchInPlace([...fakeDb.matches.map.values()].find(m => m.seed_key === SEED).id, backup({ test: true }), { checkServer })
     expect(checkServer).not.toHaveBeenCalled()

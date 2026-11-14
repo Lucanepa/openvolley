@@ -30,7 +30,10 @@
  */
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 
-const pinText = (v) => (v === undefined || v === null ? '' : String(v).trim())
+// A PIN is text or a number (older scorers stored numbers); anything else is
+// no PIN. A relayed match is any socket's JSON: String() of {"toString":1}
+// throws, and in a request handler that throw ended the backend.
+const pinText = (v) => (typeof v === 'string' ? v.trim() : typeof v === 'number' && Number.isFinite(v) ? String(v) : '')
 
 export const MATCH_TOKEN_TTL_MS = 6 * 60 * 60 * 1000
 export const MIN_TOKEN_SECRET_LENGTH = 32
@@ -49,15 +52,15 @@ export const MIN_TOKEN_SECRET_LENGTH = 32
  * a beach scorer that sends the home/away wire names instead is covered by the
  * home/away fallbacks.
  */
-const role = (enabled, pin, dbEnabled) => Object.freeze({ enabled: Object.freeze(enabled), pin: Object.freeze(pin), dbEnabled })
+const role = (enabled, pin, dbEnabled, dbPins = []) => Object.freeze({ enabled: Object.freeze(enabled), pin: Object.freeze(pin), dbEnabled, dbPins: Object.freeze(dbPins) })
 const TOKEN_ROLES = Object.freeze({
-  referee: role(['refereeConnectionEnabled'], ['refereePin'], 'referee_enabled'),
-  bench_home: role(['homeTeamConnectionEnabled'], ['homeTeamPin'], 'home_bench_enabled'),
-  bench_away: role(['awayTeamConnectionEnabled'], ['awayTeamPin'], 'away_bench_enabled'),
+  referee: role(['refereeConnectionEnabled'], ['refereePin'], 'referee_enabled', ['referee']),
+  bench_home: role(['homeTeamConnectionEnabled'], ['homeTeamPin'], 'home_bench_enabled', ['bench_home']),
+  bench_away: role(['awayTeamConnectionEnabled'], ['awayTeamPin'], 'away_bench_enabled', ['bench_away']),
   homeTeam: role(['homeTeamConnectionEnabled'], ['homeTeamPin'], 'home_bench_enabled'),
   awayTeam: role(['awayTeamConnectionEnabled'], ['awayTeamPin'], 'away_bench_enabled'),
-  bench_team1: role(['team1TeamConnectionEnabled', 'homeTeamConnectionEnabled'], ['team1Pin', 'team1TeamPin', 'homeTeamPin'], 'team1_bench_enabled'),
-  bench_team2: role(['team2TeamConnectionEnabled', 'awayTeamConnectionEnabled'], ['team2Pin', 'team2TeamPin', 'awayTeamPin'], 'team2_bench_enabled')
+  bench_team1: role(['team1TeamConnectionEnabled', 'homeTeamConnectionEnabled'], ['team1Pin', 'team1TeamPin', 'homeTeamPin'], 'team1_bench_enabled', ['bench_team1', 'team1_data']),
+  bench_team2: role(['team2TeamConnectionEnabled', 'awayTeamConnectionEnabled'], ['team2Pin', 'team2TeamPin', 'awayTeamPin'], 'team2_bench_enabled', ['bench_team2', 'team2_data'])
 })
 
 const has = (obj, k) => Object.prototype.hasOwnProperty.call(obj, k)
@@ -125,9 +128,11 @@ export function connectionPinType (sport, type) {
  * check, and a few concurrent referee / bench joins OOM-killed Postgres and
  * the backend. A wrong PIN now reads no row at all. The rows found are
  * still checked here, in constant time, as before.
+ * `skip(row)`: a match left out (a PIN-only search skips a match whose PIN
+ * type is locked by the PIN failure budget: it proves nothing then).
  * @returns {Promise<{ ok: boolean, row?: object|null }>} ok false: the database failed
  */
-export async function findMatchByConnectionPin ({ runQuery, pins, sport, cfg, pin, matchExternalId = null, maxRows }) {
+export async function findMatchByConnectionPin ({ runQuery, pins, sport, cfg, pin, matchExternalId = null, maxRows, skip = null }) {
   const isBeach = sport === 'beach'
   const pinStr = pinText(pin)
   const found = new Map()
@@ -169,9 +174,38 @@ export async function findMatchByConnectionPin ({ runQuery, pins, sport, cfg, pi
     const stored = m.connection_pins || {}
     const conns = m.connections || {}
     if (cfg.enabledKey && !conns[cfg.enabledKey]) return false
+    if (skip && skip(m)) return false
     return pinMatchers.some(([k, matches]) => matches(stored[k]))
   })
   return { ok: true, row: row || null }
+}
+
+/**
+ * Is `matchExternalId` a match validate-connection-pin compares PINs with (a
+ * setup / live match of `sport`)? After a wrong PIN for a named match: one
+ * that is not has no PIN to guess. Never throws.
+ * @returns {Promise<boolean|null>} null: the database failed
+ */
+export async function isConnectionPinMatch ({ runQuery, sport, matchExternalId }) {
+  try {
+    const { status, body } = await runQuery({
+      table: 'matches',
+      action: 'select',
+      params: {
+        columns: 'id',
+        filters: [
+          { type: 'eq', column: 'external_id', value: matchExternalId },
+          { type: 'in', column: 'status', value: ['setup', 'live'] },
+          { type: 'eq', column: 'sport_type', value: sport === 'beach' ? 'beach' : 'indoor' }
+        ],
+        limit: 1
+      }
+    }, { internal: true })
+    if (status !== 200) return null
+    return (body.data || []).length > 0
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -209,16 +243,24 @@ export function createMatchTokens ({ secret = null, ttlMs = MATCH_TOKEN_TTL_MS, 
   const key = secret ? String(secret) : randomBytes(32).toString('base64url')
   const sign = (body) => createHmac('sha256', key).update(`ov-match-access:${body}`, 'utf8').digest('base64url')
   const fingerprint = (pin) => createHmac('sha256', key).update(`ov-match-pin-fp:${pinText(pin)}`, 'utf8').digest('base64url').slice(0, 22)
+  // of the PIN's stored form (matches.connection_pins, maybe hashed): what /api/db can compare
+  const storedFingerprint = (stored) => createHmac('sha256', key).update(`ov-match-pin-stored:${pinText(stored)}`, 'utf8').digest('base64url').slice(0, 22)
 
   /**
    * A token for one match key (room key = external_id), bound to `role`; with
-   * `pin` (the PIN just proved) it carries that PIN's fingerprint.
+   * `pin` (the PIN just proved) it carries that PIN's fingerprint, with
+   * `storedPin` (its matches.connection_pins value) that one's as well.
+   * `matchUuid` (matches.id) is the database audience: only a token checked
+   * against the database row (validate-connection-pin) carries it, and only
+   * such a token unlocks that row on /api/db (stillGrantsRow). A token from a
+   * relay room's own PINs (the relay's validate-pin) grants the relay copy only.
    */
-  function issue ({ matchKey, role = 'viewer', matchUuid = null, pin = null }) {
+  function issue ({ matchKey, role = 'viewer', matchUuid = null, pin = null, storedPin = null }) {
     if (typeof matchKey !== 'string' || !matchKey) return null
     const payload = { m: matchKey, r: String(role).slice(0, 20), exp: now() + ttlMs }
     if (typeof matchUuid === 'string' && matchUuid) payload.u = matchUuid
     if (pinText(pin)) payload.f = fingerprint(pin)
+    if (pinText(storedPin)) payload.s = storedFingerprint(storedPin)
     const body = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url')
     return `v1.${body}.${sign(body)}`
   }
@@ -238,11 +280,24 @@ export function createMatchTokens ({ secret = null, ttlMs = MATCH_TOKEN_TTL_MS, 
     return true
   }
 
-  /** The same for a matches row (its connections flags; the PINs there may be hashed). */
-  function stillGrantsRow (payload, row) {
+  /**
+   * The same for a matches row on /api/db: the token must come from the
+   * database's PIN check of this row (payload.u, matches.id), its role's
+   * connections flag must be on, and when it carries the stored PIN's
+   * fingerprint, `storedPins` (the row's current connection_pins) must still
+   * hold that PIN (a changed PIN ends the token). Without `storedPins` such a
+   * token grants nothing. Tokens issued before the fingerprint was added
+   * (no payload.s) keep the flag check until they expire.
+   */
+  function stillGrantsRow (payload, row, storedPins = null) {
     const role = payload && isTokenRole(payload.r) ? TOKEN_ROLES[payload.r] : null
-    const conns = row?.connections
-    return !!role && !!conns && typeof conns === 'object' && conns[role.dbEnabled] === true
+    if (!role || typeof payload.u !== 'string' || !payload.u || !row || typeof row !== 'object') return false
+    if (has(row, 'id') && row.id !== payload.u) return false
+    const conns = row.connections
+    if (!conns || typeof conns !== 'object' || conns[role.dbEnabled] !== true) return false
+    if (!payload.s) return true
+    if (!storedPins || typeof storedPins !== 'object') return false
+    return role.dbPins.some((k) => pinText(storedPins[k]) !== '' && safeEqual(storedFingerprint(storedPins[k]), payload.s))
   }
 
   /** The payload of a valid, unexpired token, else null. Never throws. */
@@ -270,6 +325,48 @@ export function createMatchTokens ({ secret = null, ttlMs = MATCH_TOKEN_TTL_MS, 
 }
 
 /**
+ * The PINs of a relayed match (the scorer's Dexie match object) by PIN type,
+ * as [type, pin] pairs, under the names the PIN failure budget counts them
+ * by (validate-connection-pin's types, 'game' for the game PIN; on a beach
+ * match the home / away wire fields are its team1 / team2 benches). With
+ * `open` (default) only those pinGrantsAccess accepts: the referee PIN while
+ * the referee connection is on, a team's bench PIN while that bench
+ * connection is on, and the game PIN; else every PIN the match carries.
+ */
+export function relayPinsByType (match, { sport = 'indoor', open = true } = {}) {
+  if (!match || typeof match !== 'object') return []
+  const beach = sport === 'beach'
+  const out = []
+  const add = (type, on, pin) => {
+    const s = pinText(pin)
+    if (s && (on || !open)) out.push([type, s])
+  }
+  add('referee', match.refereeConnectionEnabled === true, match.refereePin)
+  add(beach ? 'bench_team1' : 'bench_home', match.homeTeamConnectionEnabled === true, match.homeTeamPin)
+  add(beach ? 'bench_team2' : 'bench_away', match.awayTeamConnectionEnabled === true, match.awayTeamPin)
+  add('bench_team1', match.team1TeamConnectionEnabled === true, firstPin(match, ['team1Pin', 'team1TeamPin']))
+  add('bench_team2', match.team2TeamConnectionEnabled === true, firstPin(match, ['team2Pin', 'team2TeamPin']))
+  add('game', true, match.gamePin != null && match.gamePin !== '' ? match.gamePin : match.game_pin)
+  return out
+}
+
+/**
+ * The PIN type `pin` proves for a relayed match (pinGrantsAccess's rules),
+ * among `types` only when given (the PIN failure budget leaves locked types
+ * out), else null. Constant-time compares, every candidate compared.
+ */
+export function pinTypeOf (match, pin, { sport = 'indoor', types = null } = {}) {
+  const p = pinText(pin)
+  if (!p) return null
+  let hit = null
+  for (const [type, stored] of relayPinsByType(match, { sport })) {
+    if (types && !types.includes(type)) continue
+    if (safeEqual(stored, p) && hit === null) hit = type
+  }
+  return hit
+}
+
+/**
  * Does `pin` prove access to a relayed match (the scorer's Dexie match object)?
  * Accepted: the referee PIN while the referee connection is on, a team's bench
  * PIN while that bench connection is on, and the game PIN (the scorer's own
@@ -278,21 +375,7 @@ export function createMatchTokens ({ secret = null, ttlMs = MATCH_TOKEN_TTL_MS, 
  * (there is no PIN step to have passed).
  */
 export function pinGrantsAccess (match, pin) {
-  const p = pinText(pin)
-  if (!p || !match || typeof match !== 'object') return false
-  const candidates = []
-  if (match.refereeConnectionEnabled === true) candidates.push(match.refereePin)
-  if (match.homeTeamConnectionEnabled === true) candidates.push(match.homeTeamPin)
-  if (match.awayTeamConnectionEnabled === true) candidates.push(match.awayTeamPin)
-  if (match.team1TeamConnectionEnabled === true) candidates.push(firstPin(match, ['team1Pin', 'team1TeamPin']))
-  if (match.team2TeamConnectionEnabled === true) candidates.push(firstPin(match, ['team2Pin', 'team2TeamPin']))
-  candidates.push(match.gamePin != null && match.gamePin !== '' ? match.gamePin : match.game_pin)
-  let ok = false
-  for (const c of candidates) {
-    const s = pinText(c)
-    if (s && safeEqual(s, p)) ok = true
-  }
-  return ok
+  return pinTypeOf(match, pin) !== null
 }
 
 /**

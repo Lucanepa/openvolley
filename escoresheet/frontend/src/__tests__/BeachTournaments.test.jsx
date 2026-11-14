@@ -41,6 +41,7 @@ vi.mock('../utils/askText', () => ({ askText: ask.askText, default: ask.askText 
 
 import TournamentsPanel from '../components/manage/tournaments/TournamentsPanel'
 import { accessFromRoles } from '../lib/access'
+import { toast } from '../ui'
 
 const TOUR = {
   id: 't1', slug: 'zuri-open-2026', title: 'Züri Open', venue: 'Mythenquai', city: 'Zürich', starts_on: '2026-07-11', ends_on: '2026-07-12',
@@ -321,6 +322,27 @@ describe('Tournaments tab', () => {
     await waitFor(() => expect(ask.askConfirm).toHaveBeenCalled())
     expect(api.updateMatch).toHaveBeenCalledTimes(1)
     expect(screen.getByRole('button', { name: 'tournaments.save' })).toBeInTheDocument()
+  })
+
+  it('a co-manager: the server answers the same for every address, the reloaded list says whether one was added', async () => {
+    api.addManager = vi.fn(async () => ok({ requested: true }))
+    const success = vi.spyOn(toast, 'success')
+    const failure = vi.spyOn(toast, 'error')
+    ask.askText.mockResolvedValueOnce(' Max@Club.ch ')
+    const max = { id: 'u-2', email: 'max@club.ch', name: 'Max', creator: false }
+    await openTournament()
+    fireEvent.click(screen.getByRole('radio', { name: 'tournaments.sections.details' }))
+    api.get.mockResolvedValueOnce(ok(bundle({ managers: [...bundle().managers, max] })))
+    fireEvent.click(await screen.findByRole('button', { name: 'tournaments.addManager' }))
+    await waitFor(() => expect(success).toHaveBeenCalledWith('tournaments.managerAdded'))
+    expect(api.addManager).toHaveBeenCalledWith('t1', 'Max@Club.ch')
+    // an address without a beach competition manager: the list stays as it was
+    ask.askText.mockResolvedValueOnce('nobody@club.ch')
+    fireEvent.click(await screen.findByRole('button', { name: 'tournaments.addManager' }))
+    await waitFor(() => expect(failure).toHaveBeenCalledWith('tournaments.errors.noManager'))
+    expect(success).toHaveBeenCalledTimes(1)
+    success.mockRestore()
+    failure.mockRestore()
   })
 
   it('the ranking: a table and the CSV for MyBeach', async () => {

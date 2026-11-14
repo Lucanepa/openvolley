@@ -6,18 +6,28 @@
  * game_n > 0 and NOT official_game_exempt. VolleyManager game numbers are
  * unique within a season only, so game_n alone would block a later season.
  *
- *   season = Europe/Zurich year of coalesce(scheduled_at, created_at)
- *            minus 1 before July        (2026-08 .. 2027-06 is season 2026)
+ *   season = matches.official_season (db/034), set by the server: the season
+ *            of VolleyManager's kick-off of the game number (svrz_games),
+ *            else of the server's clock, when the match is created or its
+ *            game number changes; never the client's scheduled_at, which
+ *            would let a second match of the game take another season's key.
+ *            Rows stored before db/034 keep their key: the season of
+ *            coalesce(scheduled_at, created_at) (db/007's expression).
+ *   a season = the Europe/Zurich year minus 1 before July
+ *            (2026-08 .. 2027-06 is season 2026)
  *
- * The expression must stay identical in three places: db/007 (index and
- * duplicate scan), SEASON_SQL below, and frontend/src/domain/season.js.
- * seasonOf() is the JS twin, tested against SEASON_SQL on Postgres.
+ * SEASON_SQL below is db/007's expression (and frontend/src/domain/season.js
+ * the app's); seasonOf() is the JS twin, tested against it on Postgres.
+ * officialSeasonOf() is the season a new match of a game gets (the JS twin of
+ * db/034's trigger, tested against it).
  *
  * Beach (db/013): beach matches are no longer in the index. Beach game
  * numbers restart with every tournament; a beach match is "official" when it
  * is linked to a tournament match (db/014, one scored match per tournament
  * match). findClaim() therefore answers null for beach.
  */
+
+import { parseVmDateTime } from './vmSync.js'
 
 export const OFFICIAL_INDEX = 'matches_official_game_uidx'
 export const SEASON_TZ = 'Europe/Zurich'
@@ -71,25 +81,46 @@ export function publicClaim (claim) {
 }
 
 /**
+ * The season a new match of game `gameN` gets (db/034's trigger
+ * ov_matches_derive_official_season): VolleyManager's kick-off of the game
+ * (the newest svrz_games row; lib/vmSync.js reads a time without a zone as
+ * Europe/Zurich), else the clock. Throws on a DB error.
+ * @param {{query: Function}} db  a pg Pool or client
+ */
+export async function officialSeasonOf (db, { gameN, sportType = 'indoor', now = new Date() } = {}) {
+  const n = Number(gameN)
+  if (Number.isInteger(n) && n > 0 && n <= 2147483647 && sportOf(sportType) === 'indoor') {
+    try {
+      const { rows: [g] } = await db.query(
+        'SELECT g.datetime::text AS datetime FROM public.svrz_games g WHERE g.game_number = $1 AND g.datetime IS NOT NULL ORDER BY g.id DESC LIMIT 1',
+        [String(n)])
+      const at = g ? parseVmDateTime(g.datetime) : null
+      if (at) return seasonOf(at)
+    } catch (err) {
+      // no VolleyManager table (a LAN or test database): the clock, as the trigger
+      if (err?.code !== '42P01') throw err
+    }
+  }
+  return seasonOf(now)
+}
+
+/**
  * The match that already holds this official game, or null.
+ * `season`: the key's season (a stored match keeps its own, official_season);
+ * null: the season a new match of this game gets (officialSeasonOf).
  * @param {{query: Function}} db  a pg Pool or client
  * @returns {Promise<null|{match_id, game_n, season, sport, status, scorer_name, mine, scheduled_at}>}
  */
-export async function findClaim (db, { gameN, scheduledAt = null, sportType = 'indoor', excludeExternalId = null, callerId = null } = {}) {
+export async function findClaim (db, { gameN, season = null, sportType = 'indoor', excludeExternalId = null, callerId = null } = {}) {
   const n = Number(gameN)
   if (!Number.isInteger(n) || n <= 0 || n > 2147483647) return null
   // db/013: beach is not season-official (the index skips it)
   if (sportOf(sportType) === 'beach') return null
-  let scheduled = null
-  if (scheduledAt != null && scheduledAt !== '') {
-    const d = new Date(scheduledAt)
-    if (!Number.isNaN(d.getTime())) scheduled = d.toISOString()
-  }
+  const s = Number.isInteger(season) ? season : await officialSeasonOf(db, { gameN: n, sportType })
   const caller = typeof callerId === 'string' && UUID_RE.test(callerId) ? callerId : null
   const exclude = typeof excludeExternalId === 'string' && excludeExternalId ? excludeExternalId : null
   const { rows } = await db.query(
-    `SELECT m.id AS match_id, m.external_id, m.game_n, m.status, m.scheduled_at,
-            ${SEASON_SQL('coalesce(m.scheduled_at, m.created_at)')} AS season,
+    `SELECT m.id AS match_id, m.external_id, m.game_n, m.status, m.scheduled_at, m.official_season AS season,
             CASE WHEN m.sport_type IS NOT DISTINCT FROM 'beach' THEN 'beach' ELSE 'indoor' END AS sport,
             nullif(trim(coalesce(p.first_name, '') || ' ' || coalesce(p.last_name, '')), '') AS scorer_name,
             ($5::uuid IS NOT NULL AND (m.created_by = $5::uuid OR EXISTS (
@@ -98,11 +129,11 @@ export async function findClaim (db, { gameN, scheduledAt = null, sportType = 'i
        LEFT JOIN public.profiles p ON p.user_id = m.created_by
       WHERE m.test IS NOT TRUE AND NOT m.official_game_exempt AND m.game_n = $1
         AND (m.sport_type IS NOT DISTINCT FROM 'beach') = ($2::text = 'beach')
-        AND ${SEASON_SQL('coalesce(m.scheduled_at, m.created_at)')} = ${SEASON_SQL('coalesce($3::timestamptz, now())')}
+        AND m.official_season = $3::int
         AND m.external_id IS DISTINCT FROM $4::text
       ORDER BY m.created_at NULLS LAST, m.id
       LIMIT 1`,
-    [n, sportOf(sportType), scheduled, exclude, caller])
+    [n, sportOf(sportType), s, exclude, caller])
   const r = rows[0]
   if (!r) return null
   return {

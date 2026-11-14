@@ -1,7 +1,0 @@
-{
-  "name": "escoresheet-electron",
-  "version": "1.0.0",
-  "description": "Openvolley eScoresheet Desktop Application",
-  "main": "main.js",
-  "private": true
-}

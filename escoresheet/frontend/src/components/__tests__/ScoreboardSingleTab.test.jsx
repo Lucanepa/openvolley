@@ -387,3 +387,27 @@ describe('Scoreboard: one scoring tab per match', () => {
     expect(dialog()).toBeFalsy()
   }, 60000)
 })
+
+describe('Scoreboard: the "already open" screen', () => {
+  // the blocked tab stays mounted under its screen: its keyboard shortcuts
+  // scored there while another tab was the scoring one
+  it('takes no scoring key (Enter, A)', async () => {
+    setViewport(1280, 800)
+    localStorage.setItem('keybindingsEnabled', 'true')
+    const locks = webkitLockManager()
+    locks.refusing = true
+    Object.defineProperty(navigator, 'locks', { value: locks, configurable: true })
+    const matchId = await setUpMatch()
+    const a = mount(matchId)
+    await waitFor(() => expect(blocked(a)).toBe(true), { timeout: 10000 })
+    await settle()
+    const before = (await ofType('rally_start')).length
+    fireEvent.keyDown(window, { key: 'Enter' })
+    await wait(800)
+    fireEvent.keyDown(window, { key: 'a' })
+    await wait(800)
+    expect((await ofType('rally_start')).length).toBe(before)
+    expect(await ofType('point')).toHaveLength(2)
+    a.unmount()
+  }, 60000)
+})

@@ -28,14 +28,17 @@
 #      empty, no matches.updated_at, svrz_sync_log.started_at,
 #      svrz_games.synced_at or auth.users.last_sign_in_at after the mark) is
 #      dropped and loaded again. With --force the old database is RENAMED to
-#      <db>_pre_restore_<UTC> (drop it by hand once the new one is good),
-#      never dropped. Refuses while client sessions are connected (stop
+#      <db>_pre_restore_<UTC>, never dropped before the new one is verified:
+#      --drop-previous drops it after step 10, else the run ends with the
+#      exact DROP DATABASE command (it holds every account and roster of that
+#      day, also those deleted since). Refuses while client sessions are connected (stop
 #      ov-backend first). Then creates the database fresh (template0).
 #   3. db/000_prelude.sql (auth schema, auth.users, staging table)
 #   4. auth_users.csv -> auth.users_import (streamed on stdin, HEADER MATCH)
 #   5. pg_restore --single-transaction --exit-on-error -L <restore list>
 #   6. db/001_post_restore.sql (RLS remnants, users, ownership, auth FKs)
-#      [--scrub-except: rehearsal scrub of every other account]
+#      [--scrub-except: rehearsal scrub of every other account and of every
+#      column with personal data, see the option]
 #   7. db/002_app_sessions.sql, then every db/NNN_*.sql with NNN >= 003, in order
 #   8. db/roles.sql (with the ov_app password when one was given)
 #   9. ANALYZE and verification: per-table row counts (compared with
@@ -44,10 +47,16 @@
 #      ahead of their columns, ov_app grants (incl. DML on svrz_sync_log for the
 #      in-backend vm-sync), and an ov_app login over TCP when the password is
 #      known
+#  10. the schema object check of scripts/check-schema.mjs (--print-sql, run
+#      here with psql: guard triggers, unique indexes, current trigger
+#      functions); needs node next to the repository's backend, else the
+#      command to run it from the new backend is printed
 #
 # Options:
 #   --force                 replace a database whose tables hold data; the old
 #                           one is renamed to <db>_pre_restore_<UTC>, not dropped
+#   --drop-previous         with --force: drop that renamed copy once the new
+#                           database passed every check (step 10)
 #   --expect-counts FILE    per-table row counts the restore must reproduce
 #                           (plan §6: the counts from introspect.txt). One table
 #                           per line, "<table> <count>" or psql's aligned
@@ -72,7 +81,15 @@
 #   --scrub-except EMAIL    rehearsal copies only: every other account gets
 #                           email user-<n>@rehearsal.invalid, the bcrypt hash of
 #                           OV_REHEARSAL_PW (env, required), empty metadata and
-#                           a neutral profile name. Match data is NOT scrubbed.
+#                           a neutral profile name; every other column with
+#                           personal data in public and auth (names, e-mails,
+#                           birth dates, licences, rosters, benches, officials,
+#                           signatures, remarks, sanctions, addresses, IPs,
+#                           user agents, credentials, PIN and token hashes,
+#                           audit details) is emptied or replaced, for every
+#                           row (the kept account's profile excepted). Row
+#                           counts stay; only then is the database marked
+#                           "(rehearsal, scrubbed)".
 #   --print-toc             print the filtered restore list and exit (no changes)
 #
 # Passwords never appear on a command line: they reach psql on stdin (\set),
@@ -89,6 +106,7 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 DB_NAME=${OV_DB_NAME:-openvolley}
 DB_USER=${OV_DB_USER:-ov_owner}
 FORCE=0
+DROP_PREVIOUS=0
 ALLOW_MISSING_DATA=0
 EXPECT_COUNTS=""
 PRINT_TOC=0
@@ -107,6 +125,7 @@ POS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --force) FORCE=1; shift ;;
+    --drop-previous) DROP_PREVIOUS=1; shift ;;
     --allow-missing-data) ALLOW_MISSING_DATA=1; shift ;;
     --expect-counts) EXPECT_COUNTS=${2:?--expect-counts needs a file}; shift 2 ;;
     --print-toc) PRINT_TOC=1; shift ;;
@@ -391,6 +410,63 @@ BEGIN
   END IF;
   RAISE NOTICE 'scrubbed % account(s); kept %', n, keep;
 END $$;
+-- Every other column with personal data, in every table of public and auth
+-- (auth.users above; the kept account's profile stays): by name, emptied
+-- (NULL where allowed) or replaced with a random value of its type (unique
+-- columns stay unique). Triggers off (session_replication_role): the closed-
+-- match guards would refuse it.
+SET LOCAL session_replication_role = replica;
+DO $$
+DECLARE
+  keep uuid := current_setting('ov.keep_id')::uuid;
+  c record;
+  tbl text := '';
+  sets text[] := '{}';
+  done_cols int := 0;
+  expr text;
+  pii constant text := '^(name|first_?name|last_?name|sur_?name|full_?name|display_?name|.*_name|email|.*_e?mail|e?mail_.*'
+    '|phone|.*_phone|mobile|address|.*_address|street|.*_street|zip|postcode|dob|.*_dob|birth.*|.*_birth.*|.*birthdate'
+    '|referee.*|linesm[ae]n.*|scorer|.*_scorer|captain.*|coach.*'
+    '|licen[cs]e.*|.*_licen[cs]e.*|signature.*|.*_signature.*|players.*|.*_players|bench.*|officials|.*_officials'
+    '|remarks|roster.*|.*_roster|sanctions|ip|.*_ip|user_agent|.*_ua|actor_text|details|meta|metadata|.*_meta_data'
+    '|credential.*|public_key|.*pin_hash.*|.*token.*|.*_hash|transports)$';
+  keep_cols constant text := '^(.*external_id|.*_id|id|sport_type|status|type|kind|role|roles|.*_at)$';
+BEGIN
+  FOR c IN
+    SELECT format('%I.%I', col.table_schema, col.table_name) AS t, col.column_name AS name, col.is_nullable = 'YES' AS nullable,
+           col.data_type, col.udt_name, col.character_maximum_length AS maxlen
+      FROM information_schema.columns col
+      JOIN information_schema.tables tb ON tb.table_schema = col.table_schema AND tb.table_name = col.table_name AND tb.table_type = 'BASE TABLE'
+     WHERE col.table_schema IN ('public', 'auth')
+       AND NOT (col.table_schema = 'auth' AND col.table_name IN ('users', 'users_import'))
+       AND col.is_generated = 'NEVER'
+       AND col.column_name ~* pii AND col.column_name !~* keep_cols
+     ORDER BY 1, 2
+  LOOP
+    expr := CASE
+      WHEN c.nullable THEN 'NULL'
+      WHEN c.udt_name IN ('json', 'jsonb') THEN format('CASE %1$s_typeof(%2$I) WHEN ''array'' THEN ''[]'' ELSE ''{}'' END::%1$s', c.udt_name, c.name)
+      WHEN c.data_type IN ('text', 'character varying', 'character') OR c.udt_name = 'citext'
+        THEN format('left(''scrubbed-'' || md5(random()::text || %I::text), %s)', c.name, coalesce(c.maxlen, 64))
+      WHEN c.data_type = 'bytea' THEN 'decode(md5(random()::text), ''hex'')'
+      WHEN c.data_type = 'inet' THEN '''0.0.0.0''::inet'
+      WHEN c.data_type = 'ARRAY' THEN '''{}'''
+      ELSE NULL
+    END;
+    CONTINUE WHEN expr IS NULL;  -- a NOT NULL date, number or flag: no personal data left alone in it
+    IF c.t <> tbl AND cardinality(sets) > 0 THEN
+      EXECUTE format('UPDATE %s SET %s%s', tbl, array_to_string(sets, ', '), CASE WHEN tbl = 'public.profiles' THEN format(' WHERE user_id <> %L', keep) ELSE '' END);
+      sets := '{}';
+    END IF;
+    tbl := c.t;
+    sets := sets || format('%I = %s', c.name, expr);
+    done_cols := done_cols + 1;
+  END LOOP;
+  IF cardinality(sets) > 0 THEN
+    EXECUTE format('UPDATE %s SET %s%s', tbl, array_to_string(sets, ', '), CASE WHEN tbl = 'public.profiles' THEN format(' WHERE user_id <> %L', keep) ELSE '' END);
+  END IF;
+  RAISE NOTICE 'scrubbed % column(s) with personal data', done_cols;
+END $$;
 COMMIT;
 SQL
   { printf "\\\\set keep_email '%s'\n\\\\set scrub_pw '%s'\n" "$SCRUB_EMAIL" "$SCRUB_PW"; cat "$WORK/scrub.sql"; } \
@@ -520,11 +596,36 @@ if (( ${#problems[@]} )); then
   die "${#problems[@]} verification check(s) failed; the database stays marked '${MARK_RUNNING}'"
 fi
 
+# --- 10. schema objects (scripts/check-schema.mjs --print-sql) -----------------------------------------
+CHECK_SCHEMA=""
+for cand in "$SCRIPT_DIR/../check-schema.mjs" "$SQL_DIR/../scripts/check-schema.mjs"; do
+  [[ -f "$cand" ]] && { CHECK_SCHEMA=$cand; break; }
+done
+if [[ -n "$CHECK_SCHEMA" ]] && command -v node >/dev/null; then
+  node "$CHECK_SCHEMA" --print-sql --db-dir "$SQL_DIR" >"$WORK/check-schema.sql" || die "check-schema.mjs --print-sql"
+  schema_problems=$(psql_db -At <"$WORK/check-schema.sql") || die "the schema check query failed"
+  if [[ -n "$schema_problems" ]]; then
+    while IFS= read -r p; do printf '[restore] SCHEMA CHECK FAILED: %s\n' "$p" >&2; done <<<"$schema_problems"
+    die "the schema objects are not what this release expects; the database stays marked '${MARK_RUNNING}'"
+  fi
+  log "check-schema.mjs: schema objects in place"
+else
+  log "WARNING: check-schema.mjs not run here (no node or no scripts/ next to the SQL). Before the backend serves:"
+  log "    docker compose exec -T ov-backend node scripts/check-schema.mjs --objects-only"
+fi
+
 # "(rehearsal, scrubbed)" is what tests/helpers/pgTestDb.js looks for before it
 # copies a database for PG_TEST_TEMPLATE.
 query_admin "comment on database \"${DB_NAME}\" is '${MARK_DONE} $(date -u +%FT%TZ) from $(basename "$DUMP") sha256:$(sha256sum <"$DUMP" | cut -c1-16)${SCRUB_EMAIL:+ (rehearsal, scrubbed)}'" >/dev/null
 matches=$(query_db "select count(*) from public.matches")
 log "OK: ${DB_NAME} restored and verified (matches=${matches}, users=${users})."
 log "    /health floor: OV_MIN_MATCHES=$(( matches * 9 / 10 ))"
-[[ -z "$OLD_DB" ]] || log "    The previous database is kept as \"${OLD_DB}\": DROP DATABASE it once this one is in service."
+if [[ -n "$OLD_DB" ]] && (( DROP_PREVIOUS )); then
+  query_admin "drop database \"${OLD_DB}\"" >/dev/null || die "drop database ${OLD_DB} (the new ${DB_NAME} is in place and verified)"
+  log "    The previous database \"${OLD_DB}\" is dropped (--drop-previous)."
+elif [[ -n "$OLD_DB" ]]; then
+  log "    The previous database is kept as \"${OLD_DB}\", with all personal data of that day. Once this one is in service:"
+  log "      docker exec -i ${C} psql -X -U ${DB_USER} -d postgres -c 'DROP DATABASE \"${OLD_DB}\"'"
+  log "    (or run restore.sh with --force --drop-previous next time)"
+fi
 [[ -n "$APP_PW" ]] || log "    Next: deploy/apply-roles.sh < roles.sql (sets the ov_app password), then start the backend."

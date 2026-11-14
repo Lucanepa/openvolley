@@ -7,21 +7,24 @@ import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   pickLang, authLink, renderMail, maskEmail, mailerFromEnv, createMailer, transportOptions,
-  inboxKey, describeMailError, disabledMailer, mailApp, mailBrandOf, brandFrom, beachManagerBase, privacyLine,
-  MAIL_LANGS, MAIL_KINDS, MAIL_APPS, MAIL_BRANDS, DEFAULT_MANAGER_URL, DEFAULT_MANAGER_URL_BEACH, DEFAULT_BUDGETS, DEFAULT_MAX_PER_INBOX
+  inboxKey, describeMailError, disabledMailer, mailApp, mailBrandOf, brandFrom, beachManagerBase, privacyLine, budgetsFromEnv,
+  MAIL_LANGS, MAIL_KINDS, MAIL_APPS, MAIL_BRANDS, DEFAULT_MANAGER_URL, DEFAULT_MANAGER_URL_BEACH, DEFAULT_BUDGETS, DEFAULT_MAX_PER_INBOX,
+  MAIL_BUDGET_OF, BUDGET_ENV
 } from '../lib/mailer.js'
 import { startFakeSmtp, makeTestCert, linkToken, SMTP_USER, SMTP_PASS } from './helpers/fakeSmtp.js'
 
 // The account mails come in both brands; the approval notices and the
-// scoresheet mails (db/021, a PDF attached, no link) are OpenVolley's only
+// scoresheet mails (db/021, a PDF attached, no link; and the final mail's
+// notices, db/040) are OpenVolley's only
 const APPROVAL_KINDS = ['approval', 'approval_pin_locked']
-const SCORESHEET_KINDS = ['scoresheet', 'scoresheet_test']
+const SCORESHEET_KINDS = ['scoresheet', 'scoresheet_test', 'scoresheet_no_pdf', 'scoresheet_reopened']
 // The sign-up notice (lib/signupNotices.js) goes to the admins and approvers, not the account: tested on its own
-const NOTICE_TO_APPROVERS = ['signup', 'club_manager_invite']
+// (and so are the club manager link and the team manager proposal, db/036)
+const NOTICE_TO_APPROVERS = ['signup', 'club_manager_invite', 'team_manager_proposal']
 const ACCOUNT_KINDS = MAIL_KINDS.filter((k) => !APPROVAL_KINDS.includes(k) && !SCORESHEET_KINDS.includes(k) && !NOTICE_TO_APPROVERS.includes(k))
 // Notices that link nothing: the way out is in the app, and a genuine mail
 // can be told by that (password changed, passkey added).
-const NOTICE_KINDS = ['password_changed', 'passkey_added']
+const NOTICE_KINDS = ['password_changed', 'passkey_added', 'email_changed']
 const SCORESHEET_VARS = { teams: 'VBC Musterdorf H1 – VBC Other H1', game: '930001', date: '29.10.2026', result: '3:1', corrected: false }
 
 const TOKEN = 'A'.repeat(20) + '_-' + 'b'.repeat(21)
@@ -98,6 +101,28 @@ describe('mailer: links and templates', () => {
     assert.ok(!renderMail('approval', 'en', { link: DEFAULT_MANAGER_URL, vars: { ...vars, sender: '' } }).text.includes('Sent by'))
   })
 
+  it('the final scoresheet mail: without the PDF it says so, the late PDF says what it is; the test mail\'s subject is fixed; its notices', () => {
+    for (const lang of MAIL_LANGS) {
+      const full = renderMail('scoresheet', lang, { vars: SCORESHEET_VARS })
+      const without = renderMail('scoresheet', lang, { vars: { ...SCORESHEET_VARS, pdf: false } })
+      const late = renderMail('scoresheet', lang, { vars: { ...SCORESHEET_VARS, pdf: true, late: true } })
+      assert.equal(without.subject, full.subject, lang)
+      assert.notEqual(without.text, full.text, lang)
+      assert.notEqual(late.text, full.text, lang)
+      for (const m of [without, late]) assert.ok(m.text.includes('930001') && m.text.includes('3:1'), lang)
+      const test = renderMail('scoresheet_test', lang, { vars: { teams: 'URGENT: your licence is suspended', result: '3:1' } })
+      assert.doesNotMatch(test.subject, /URGENT/, `${lang}: the caller's text stays out of the subject`)
+      assert.match(test.text, /URGENT: your licence is suspended/)
+      const scorer = renderMail('scoresheet_no_pdf', lang, { vars: { ...SCORESHEET_VARS, admin: false } })
+      const admin = renderMail('scoresheet_no_pdf', lang, { vars: { ...SCORESHEET_VARS, admin: true } })
+      assert.notEqual(scorer.text, admin.text, lang)
+      const reopened = renderMail('scoresheet_reopened', lang, { vars: { ...SCORESHEET_VARS, reason: 'Wrong set 3 <b>' } })
+      assert.ok(reopened.text.includes('Wrong set 3 <b>') && reopened.html.includes('Wrong set 3 &lt;b&gt;'), lang)
+    }
+    assert.match(renderMail('scoresheet', 'en', { vars: { ...SCORESHEET_VARS, pdf: false } }).text, /has not reached the server yet/)
+    assert.match(renderMail('scoresheet', 'en', { vars: { ...SCORESHEET_VARS, late: true } }).text, /missing from the result mail/)
+  })
+
   it('escapes the link in HTML', () => {
     const m = renderMail('confirm', 'en', { link: 'https://x.test/#confirm?token=a&lang=en"><b>' })
     assert.ok(m.html.includes('token=a&amp;lang=en&quot;&gt;&lt;b&gt;'))
@@ -114,27 +139,28 @@ describe('mailer: links and templates', () => {
 describe('mailer: configuration from the environment', () => {
   const base = { SMTP_HOST: 'smtp.example.test', SMTP_PASS: 'secret', SMTP_USER: 'noreply@openvolley.app' }
 
-  it('is disabled without SMTP_HOST or SMTP_PASS (the server then behaves as before)', async () => {
-    for (const env of [{}, { SMTP_HOST: 'smtp.example.test' }, { SMTP_PASS: 'x' }, { ...base, SMTP_HOST: '  ' }]) {
+  it('is disabled without SMTP_HOST and SMTP_PASS (the server then behaves as before)', async () => {
+    for (const env of [{}, { SMTP_HOST: '  ' }]) {
       const m = mailerFromEnv(env)
       assert.equal(m.enabled, false)
-      assert.match(m.reason, /SMTP_(HOST|PASS) not set/)
+      assert.match(m.reason, /SMTP_HOST not set/)
       assert.deepEqual(await m.send('reset', { to: 'a@b.ch', link: 'x' }), { sent: false, skipped: 'disabled' })
     }
   })
 
-  it('refuses incomplete or unsafe settings without throwing, and never echoes the password', () => {
-    const reasons = [
+  it('stops the startup when mail is half set up or a setting is unusable, and never echoes the password', () => {
+    for (const env of [
+      { SMTP_HOST: 'smtp.example.test' }, { SMTP_PASS: 'secret' }, { ...base, SMTP_HOST: '  ' },
+      { ...base, SMTP_USER: '' },
       { ...base, SMTP_USER: '' },
       { ...base, SMTP_PORT: 'abc' },
       { ...base, SMTP_PORT: '70000' },
       { ...base, SMTP_USER: 'noreply', MAIL_FROM: '' },
       { ...base, MANAGER_URL: 'http://manager.openvolley.app' },
-      { ...base, MANAGER_URL: 'not a url' }
-    ].map((env) => mailerFromEnv(env))
-    for (const m of reasons) {
-      assert.equal(m.enabled, false)
-      assert.doesNotMatch(m.reason, /secret/)
+      { ...base, MANAGER_URL: 'not a url' },
+      { ...base, MANAGER_URL_BEACH: 'http://manager-beach.openvolley.app' }
+    ]) {
+      assert.throws(() => mailerFromEnv(env), (err) => /mail settings unusable/.test(err.message) && !/secret/.test(err.message))
     }
   })
 
@@ -279,13 +305,19 @@ describe('mailer: budgets and the per-inbox cap (stub transport)', () => {
   }
   const link = 'https://x.test/#t?token=t'
 
-  it('defaults: 50 + 50 per hour (100 in total, as before), 100 approval notices, 5 per inbox', () => {
-    assert.deepEqual({ ...DEFAULT_BUDGETS }, { account: 50, confirm: 50, notify: 100, scoresheet: 300 })
+  it('defaults: 50 account and 150 confirmation mails per hour, 100 notices, 100 sign-up notices, 50 security notices of their own, 300 final and 50 test scoresheets, 5 per inbox', () => {
+    assert.deepEqual({ ...DEFAULT_BUDGETS }, { account: 50, confirm: 150, notify: 100, signup: 100, security: 50, scoresheet: 300, scoresheet_test: 50 })
+    // nothing but the approval notices draws from the security budget
+    assert.deepEqual(MAIL_KINDS.filter((k) => MAIL_BUDGET_OF[k] === 'security'), ['approval', 'approval_pin_locked'])
+    assert.equal(MAIL_BUDGET_OF.signup, 'signup')
+    assert.equal(MAIL_BUDGET_OF.scoresheet, 'scoresheet')
+    assert.equal(MAIL_BUDGET_OF.scoresheet_test, 'scoresheet_test', 'test mails do not use the final scoresheets\' budget')
+    for (const kind of MAIL_KINDS) assert.ok(DEFAULT_BUDGETS[MAIL_BUDGET_OF[kind]] > 0, `${kind} has a budget`)
     assert.equal(DEFAULT_MAX_PER_INBOX, 5)
     const m = createMailer({ ...stub(), from: 'x <x@example.test>', logger: silent })
     const st = m.stats()
     assert.equal(st.budgets.account.max, 50)
-    assert.equal(st.budgets.confirm.max, 50)
+    assert.equal(st.budgets.confirm.max, 150)
     assert.deepEqual(disabledMailer('SMTP_HOST not set').stats(), { enabled: false, reason: 'SMTP_HOST not set' })
   })
 
@@ -345,6 +377,47 @@ describe('mailer: budgets and the per-inbox cap (stub transport)', () => {
     assert.equal((await m.send('confirm', { to: 'someone.else@gmail.com', link })).sent, true, 'other inboxes are not affected')
     t = 60 * 60 * 1000
     assert.equal((await m.send('confirm', { to: 'victimname@gmail.com', link })).sent, true, 'a new hour')
+  })
+
+  it('test scoresheets cannot use up the final scoresheets\' budget', async () => {
+    const { sent, transport } = stub()
+    const m = createMailer({ transport, from: 'x <x@example.test>', budgets: { scoresheet: 2, scoresheet_test: 1 }, logger: silent })
+    const pdf = [{ filename: 'Match_1.pdf', content: Buffer.from('%PDF-1.4') }]
+    assert.deepEqual(await m.send('scoresheet_test', { to: 'a@example.ch', vars: SCORESHEET_VARS, attachments: pdf }), { sent: true })
+    assert.deepEqual(await m.send('scoresheet_test', { to: 'b@example.ch', vars: SCORESHEET_VARS, attachments: pdf }), { sent: false, skipped: 'budget' })
+    assert.deepEqual(await m.send('scoresheet', { to: 'club@example.ch', vars: SCORESHEET_VARS, attachments: pdf }), { sent: true })
+    assert.deepEqual(await m.send('scoresheet', { to: 'club@example.ch', vars: SCORESHEET_VARS, attachments: pdf }), { sent: true })
+    assert.deepEqual(await m.send('scoresheet', { to: 'club@example.ch', vars: SCORESHEET_VARS, attachments: pdf }), { sent: false, skipped: 'budget' })
+    assert.equal(sent.length, 3)
+    assert.deepEqual(m.stats().exhausted.sort(), ['scoresheet', 'scoresheet_test'])
+  })
+
+  it('sign-up notices cannot use up the approval notices, and a dropped mail alerts the operator once per window', async () => {
+    const errors = []
+    const m = createMailer({ ...stub(), from: 'x <x@example.test>', budgets: { signup: 2, security: 2 }, logger: { ...silent, error: (l) => errors.push(l) } })
+    for (let i = 0; i < 5; i++) await m.send('signup', { to: `a${i}@example.ch`, link: 'https://x.test', vars: { email: 'n@example.ch' } })
+    assert.equal(errors.length, 1)
+    assert.match(errors[0], /ALERT.*signup.*MAIL_BUDGET_SIGNUP/)
+    assert.doesNotMatch(errors[0], /@/)
+    assert.deepEqual(await m.send('approval', { to: 'ref@example.ch', link: 'https://x.test', vars: {} }), { sent: true })
+  })
+
+  it('budgetsFromEnv: the operator sizes the final and the test scoresheet budgets; a bad value keeps the default, with a warning', () => {
+    assert.deepEqual({ ...BUDGET_ENV }, { account: 'MAIL_BUDGET_ACCOUNT', confirm: 'MAIL_BUDGET_CONFIRM', notify: 'MAIL_BUDGET_NOTIFY', signup: 'MAIL_BUDGET_SIGNUP', security: 'MAIL_BUDGET_SECURITY', scoresheet: 'MAIL_BUDGET_FINAL', scoresheet_test: 'MAIL_BUDGET_TEST' })
+    assert.deepEqual(budgetsFromEnv({ MAIL_BUDGET_CONFIRM: '400', MAIL_BUDGET_SECURITY: '80' }).budgets, { confirm: 400, security: 80 })
+    assert.deepEqual(budgetsFromEnv({}), { budgets: {}, warnings: [] })
+    assert.deepEqual(budgetsFromEnv({ MAIL_BUDGET_FINAL: ' 600 ', MAIL_BUDGET_TEST: '20' }).budgets, { scoresheet: 600, scoresheet_test: 20 })
+    for (const bad of ['0', '-5', '1.5', 'lots', '99999999']) {
+      const r = budgetsFromEnv({ MAIL_BUDGET_TEST: bad })
+      assert.deepEqual(r.budgets, {}, bad)
+      assert.match(r.warnings[0], /MAIL_BUDGET_TEST .*50 per hour/)
+    }
+    const env = { SMTP_HOST: 'smtp.example.test', SMTP_PASS: 'secret', SMTP_USER: 'noreply@openvolley.app' }
+    const m = mailerFromEnv({ ...env, MAIL_BUDGET_FINAL: '600', MAIL_BUDGET_TEST: 'x' }, { logger: silent })
+    assert.equal(m.stats().budgets.scoresheet.max, 600)
+    assert.equal(m.stats().budgets.scoresheet_test.max, 50)
+    assert.ok(m.warnings.some((w) => /MAIL_BUDGET_TEST/.test(w)))
+    m.close()
   })
 
   it('maxPerHour sets every budget at once (tests)', () => {
@@ -436,7 +509,8 @@ describe('mailer: brands (OpenVolley / OpenBeach)', () => {
     const page = 'https://manager.example.test/#accounts/0b6b1a52-6f1e-4a43-9d6c-1d8c0f7d2a11'
     for (const lang of MAIL_LANGS) {
       const m = renderMail('signup', lang, { link: page, vars })
-      assert.match(m.subject, /OpenVolley.*Nora Neu/)
+      assert.match(m.subject, /OpenVolley/)
+      assert.doesNotMatch(m.subject, /Nora|nora@/, 'the self-chosen name is not in the subject')
       assert.ok(m.text.includes('Nora Neu (nora@example.ch)'), lang)
       assert.ok(m.text.includes('VBC Musterdorf H1 (VBC Musterdorf)'), lang)
       assert.ok(m.text.includes(page))
@@ -450,7 +524,7 @@ describe('mailer: brands (OpenVolley / OpenBeach)', () => {
     assert.equal(mailBrandOf('signup', 'beach'), 'beach')
     // no name: the address; no part: "asks for no role"; a club manager's own wording
     const plain = renderMail('signup', 'en', { link: page, vars: { name: '', email: 'x@example.ch', admin: false, parts: [] } })
-    assert.equal(plain.subject, 'New OpenVolley sign-up: x@example.ch')
+    assert.equal(plain.subject, 'New OpenVolley sign-up')
     assert.match(plain.text, /asks for no role yet/)
     assert.match(plain.text, /you approve these requests for your club or team/)
     // a name cannot break the header or add lines
@@ -471,6 +545,21 @@ describe('mailer: brands (OpenVolley / OpenBeach)', () => {
     }
     assert.match(renderMail('club_manager_invite', 'en', { link: page, vars: { club: 'X', inviter: '', days: '14' } }).text, /An OpenVolley admin invites you/)
     assert.equal(mailBrandOf('club_manager_invite', 'beach'), 'indoor')
+  })
+
+  it('the team manager proposal (db/036): who, the team, who proposed, one link, every language; OpenVolley only', () => {
+    const page = 'https://manager.example.test/#myclub/0b6b1a52-6f1e-4a43-9d6c-1d8c0f7d2a11'
+    const vars = { name: 'Nora Neu', email: 'nora@example.ch', team: 'VBC Musterdorf H1', club: 'VBC Musterdorf', proposer: 'Tom Team', admin: false }
+    for (const lang of MAIL_LANGS) {
+      const m = renderMail('team_manager_proposal', lang, { link: page, vars })
+      assert.doesNotMatch(m.subject, /Nora Neu/)
+      for (const bit of ['Nora Neu (nora@example.ch)', 'VBC Musterdorf H1 (VBC Musterdorf)', 'Tom Team', page]) assert.ok(m.text.includes(bit), `${lang}: ${bit}`)
+      assert.doesNotMatch(m.text + m.subject, /ß/, 'Swiss spelling')
+      assert.doesNotMatch(m.html, /<img|<script|<link|url\(|@import/i)
+      assert.notEqual(renderMail('team_manager_proposal', lang, { link: page, vars: { ...vars, admin: true } }).text, m.text)
+    }
+    assert.match(renderMail('team_manager_proposal', 'en', { link: page, vars: { ...vars, proposer: '' } }).text, /A team manager proposes/)
+    assert.equal(mailBrandOf('team_manager_proposal', 'beach'), 'indoor')
   })
 
   it('the approval notices are OpenVolley\'s only: app beach changes nothing', () => {
@@ -537,10 +626,7 @@ describe('mailer: brands (OpenVolley / OpenBeach)', () => {
       [{ MANAGER_URL_BEACH: 'not a url' }, /MANAGER_URL_BEACH is not a URL/],
       [{ MAIL_FROM_BEACH: 'OpenBeach' }, /MAIL_FROM_BEACH/]
     ]) {
-      const m = mailerFromEnv({ ...base, ...env })
-      assert.equal(m.enabled, false)
-      assert.match(m.reason, reason)
-      assert.doesNotMatch(m.reason, /secret/)
+      assert.throws(() => mailerFromEnv({ ...base, ...env }), (err) => reason.test(err.message) && !/secret/.test(err.message))
     }
   })
 

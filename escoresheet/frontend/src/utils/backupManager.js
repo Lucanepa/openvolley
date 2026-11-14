@@ -9,7 +9,6 @@ import { db } from '../db/db'
 import { wipeMatchEvents, withoutEventHistory } from '../db/eventHistory'
 import { apiFrom, apiStorage, apiMatchRestoreByPin } from '../lib/apiClient'
 import { sanitizeSimple } from './stringUtils'
-import { getCloudApiUrl } from './backendConfig'
 import { filterMatchPayload, localFromMatchInfo, matchInfoFromLocal, remarksForServer, toCloudPlayers } from '../db/matchRepository'
 import { getSideAForSet, getLeftTeamLabelForSet } from '../domain/rules'
 import { swappedSides, liveRowTeamA } from '../domain/coinToss'
@@ -18,12 +17,19 @@ import { buildConnectionPins } from './connectionPins'
 import { missingConnectionPins } from './remoteRoster'
 import { generateSecurePin } from './stringUtils'
 import { isScorerEntry } from './appEntry'
-import { queueScorerClaim, retireSupersededMatches, supersededClaimsOf } from './matchHandover'
-import { isKnownClosedOnServer, CLOSING_STATUSES } from './matchReopen'
+import { queueScorerClaim, retireSupersededMatches, supersededClaimsOf, SCORER_MOVED_BY } from './matchHandover'
+import { isKnownClosedOnServer, CLOSING_STATUSES, serverRowClosed } from './matchReopen'
+import { supersedeUnsentScoresheetUploadsOf } from './scoresheetUploader'
 import { postMatchSignaturesFromServer } from '../domain/signatureEdits'
 import { signatureSourcesFromApproval } from '../domain/phoneSignature'
 import { liveClockOffset, liveClockOffsetAfter, liveStateNow } from './serverDataSync'
 import { isEncryptedBackup, BACKUP_DAMAGED } from './backupCrypto/envelope'
+import { backupFileText, CARRIED_PINS, openWithKnownPins } from './backupFile'
+import { redactMatch, SECRETS_REMOVED } from './nativeBackup/redact'
+import { recomputeMatch } from '../domain/recompute'
+import { queueEventSync } from './eventSync'
+import { officialsToArray } from '../domain/officials'
+import { unsentOfMatch } from './deviceSelfCheck'
 
 // IndexedDB key for storing file system directory handle
 const BACKUP_DB_NAME = 'escoresheet_backup'
@@ -187,27 +193,11 @@ export async function selectBackupDirectory() {
   return handle
 }
 
-let browserSealer = null
-
-/**
- * The text of a browser backup file (folder or download): the same file the
- * apps write (utils/nativeBackup: no PINs inside, encrypted so the game PIN or
- * the referee PIN opens it; a match with neither, a test match, stays plain).
- * Such a file may end up on a USB stick or in a shared Downloads folder, so
- * the PINs and player data are not left in the clear. Throws when a match with
- * PINs cannot be encrypted: it is never written in the clear.
- */
-export async function backupFileText(matchId, data) {
-  const [{ serializeBackup }, { createBackupSealer }] = await Promise.all([
-    import('./nativeBackup/engine'),
-    import('./backupCrypto/sealer')
-  ])
-  if (!browserSealer) browserSealer = createBackupSealer()
-  const iso = new Date().toISOString()
-  const { build } = serializeBackup(data)
-  const { text } = await browserSealer.seal(matchId, data, build(iso), iso)
-  return text
-}
+// The text of a browser backup file (folder or download), the set-end
+// download and the cloud copy: the app backup file (utils/backupFile: no
+// PINs inside, encrypted for the game PIN, the referee PIN and the league's
+// recovery key; a match with no PIN, a test match, stays plain).
+export { backupFileText }
 
 /**
  * Export a single match with all related data
@@ -330,13 +320,36 @@ function unlockedPin(jsonData) {
   return u && (u.field === 'gamePin' || u.field === 'refereePin') && hasValue(u.value) ? u : null
 }
 
+// The connection PINs an encrypted cloud copy carries beside its match row
+// (utils/backupFile keepConnectionPins), as local match fields
+const CARRIED_PIN_FIELDS = {
+  referee: 'refereePin',
+  bench_home: 'homeTeamPin',
+  bench_away: 'awayTeamPin',
+  upload_home: 'homeTeamUploadPin',
+  upload_away: 'awayTeamUploadPin'
+}
+function carriedPins(jsonData) {
+  const block = jsonData?.[CARRIED_PINS]
+  const out = {}
+  if (!block || typeof block !== 'object') return out
+  for (const [key, field] of Object.entries(CARRIED_PIN_FIELDS)) {
+    if (hasValue(block[key])) out[field] = String(block[key]).trim()
+  }
+  return out
+}
+
 /**
- * The PINs of a match restored from an app backup file, which carries none
- * (utils/nativeBackup/redact): those of the local copy it replaces, then the
- * PIN that opened the file when it was encrypted, else new ones (a new game
- * PIN only for an official match). {} for other backups.
- * The replaced copy's PINs come before the typed one: they are the ones the
- * cloud and the tablets know, and the file may be older than a PIN change.
+ * The PINs of a match restored from an app backup file, whose match row
+ * carries none (utils/nativeBackup/redact): those of the local copy it
+ * replaces, then the connection PINs the file carries (the cloud copy,
+ * inside its encryption), then the PIN that opened the file when it was
+ * encrypted, else new ones (a new game PIN only for an official match). {}
+ * for other backups.
+ * The replaced copy's PINs come first: they are the ones the cloud and the
+ * tablets know, and the file may be older than a PIN change. On a
+ * replacement device (no local copy) the cloud copy's own PINs keep the
+ * referee and bench tablets connected: new ones would replace the server's.
  * @param {object} jsonData the backup
  * @param {object|null} previous the local copy being replaced
  */
@@ -346,6 +359,9 @@ export function pinsForRestore(jsonData, previous) {
   const pins = {}
   for (const f of LOCAL_PIN_FIELDS) {
     if (!hasValue(match[f]) && hasValue(previous?.[f])) pins[f] = previous[f]
+  }
+  for (const [f, value] of Object.entries(carriedPins(jsonData))) {
+    if (!hasValue(match[f]) && !hasValue(pins[f])) pins[f] = value
   }
   // The match's own PIN, not a new one the cloud would then be sent
   const typed = unlockedPin(jsonData)
@@ -362,11 +378,18 @@ export function pinsForRestore(jsonData, previous) {
   return pins
 }
 
-// restoreMatchInPlace: the typed PIN (unlockedPin) where the open match lacks it
+// restoreMatchInPlace: the PINs the file carries and the typed PIN
+// (unlockedPin), each only where the open match lacks it
 function typedPinFor(jsonData, current) {
+  const out = {}
+  if (jsonData?.secretsRemoved) {
+    for (const [f, value] of Object.entries(carriedPins(jsonData))) {
+      if (!hasValue(current?.[f]) && !hasValue(jsonData.match?.[f])) out[f] = value
+    }
+  }
   const typed = unlockedPin(jsonData)
-  if (!typed || hasValue(current?.[typed.field]) || hasValue(jsonData.match?.[typed.field])) return {}
-  return { [typed.field]: String(typed.value).trim() }
+  if (!typed || hasValue(current?.[typed.field]) || hasValue(jsonData.match?.[typed.field]) || hasValue(out[typed.field])) return out
+  return { ...out, [typed.field]: String(typed.value).trim() }
 }
 
 // Full connection_pins for the restore upsert, or nothing when the backup has no
@@ -497,6 +520,96 @@ function refuseLocked(jsonData) {
   }
 }
 
+const isRecordValue = (v) => !!v && typeof v === 'object' && !Array.isArray(v)
+
+/**
+ * A match backup's shape, checked before any write: the match row and the
+ * teams are objects, the sets, events and rosters lists of objects. A file
+ * with `version` and `match` alone was accepted (a string as the match made a
+ * match row; a list that is not one threw halfway, audit fe-backup-8).
+ * Throws BACKUP_FORMAT_ERROR.
+ * @param {object} jsonData a backup in exportMatchData's shape
+ */
+export function checkBackupShape(jsonData) {
+  const listOk = (v) => v == null || (Array.isArray(v) && v.every(isRecordValue))
+  const ok = isRecordValue(jsonData) && !!jsonData.version && isRecordValue(jsonData.match) &&
+    ['homeTeam', 'awayTeam'].every(k => jsonData[k] == null || isRecordValue(jsonData[k])) &&
+    ['sets', 'events', 'homePlayers', 'awayPlayers'].every(k => listOk(jsonData[k]))
+  if (!ok) throw Object.assign(new Error('Invalid backup file format'), { code: BACKUP_FORMAT_ERROR })
+}
+
+// A restore or a load of the server's copy that would replace a local copy
+// holding more than the incoming one (more events, a later event, writes not
+// sent yet): refused until the scorer confirms it a second time (err.loss)
+export const RESTORE_LOSES_LOCAL = 'OV_RESTORE_LOSES_LOCAL'
+
+/**
+ * What replacing this device's copy of `externalId` with `incomingEvents`
+ * loses: null when nothing (no local copy, or the incoming copy has every
+ * event and nothing is unsent). Restore and take-over replaced newer local
+ * data without comparing it (audit fe-backup-4, var-local-delete-1).
+ * @param {string|null} externalId the match key
+ * @param {object[]} incomingEvents the file's or the server's events
+ * @returns {Promise<null|{ localEvents: number, incomingEvents: number, missingEvents: number, unsentChanges: number, unsentEvents: number }>}
+ */
+export async function localLossOnReplace(externalId, incomingEvents) {
+  if (!externalId) return null
+  const copies = await db.matches.filter(m => localMatchKey(m) === externalId).toArray()
+  if (!copies.length) return null
+  const incoming = Array.isArray(incomingEvents) ? incomingEvents.filter(isRecordValue) : []
+  const maxSeq = (rows) => rows.reduce((n, e) => Math.max(n, Number(e.seq) || 0), 0)
+  let localEvents = 0
+  let localMaxSeq = 0
+  for (const m of copies) {
+    const rows = await db.events.where('matchId').equals(m.id).toArray()
+    localEvents = Math.max(localEvents, rows.length)
+    localMaxSeq = Math.max(localMaxSeq, maxSeq(rows))
+  }
+  const unsent = unsentOfMatch(await db.sync_queue.toArray(), externalId)
+  if (!unsent.changes && localEvents <= incoming.length && localMaxSeq <= maxSeq(incoming)) return null
+  return {
+    localEvents,
+    incomingEvents: incoming.length,
+    missingEvents: Math.max(0, localEvents - incoming.length),
+    unsentChanges: unsent.changes,
+    unsentEvents: unsent.events
+  }
+}
+
+async function refuseIfLosesLocal(externalId, events, replaceNewer) {
+  if (replaceNewer) return
+  const loss = await localLossOnReplace(externalId, events)
+  if (loss) throw Object.assign(new Error('This device holds newer data of the match'), { code: RESTORE_LOSES_LOCAL, loss })
+}
+
+/**
+ * The second question before a replace (audit fe-backup-4): what this
+ * device's copy loses, in the scorer's words.
+ * @param {object} loss localLossOnReplace's answer
+ * @param {(key: string, opts?: object) => string} t
+ */
+export function restoreLossText(loss, t) {
+  return t('settings.backup.restoreLoss.body', {
+    local: loss?.localEvents ?? 0,
+    incoming: loss?.incomingEvents ?? 0,
+    unsent: loss?.unsentChanges ?? 0
+  })
+}
+
+// A restore over a local copy of the same match: the copy's own PINs,
+// session ids and test flag, never the file's. A file's test:true skipped the
+// closed check and its PINs replaced the match's (audit fe-backup-6).
+function withLocalSecrets(match, local) {
+  if (!local) return match
+  const out = { ...match }
+  const plain = redactMatch(local)
+  for (const [key, value] of Object.entries(local)) {
+    if (!(key in plain) && value != null && value !== '') out[key] = value
+  }
+  out.test = local.test === true
+  return out
+}
+
 /**
  * The match backup inside a whole-database export: "match stopped" and the
  * Match menu's export (Scoreboard), and the set-end download of the app
@@ -575,7 +688,9 @@ export function matchBackupFromFile(jsonData) {
 /**
  * The MatchData_*.json of the match-end ZIP (MatchEnd, Approve): the backup
  * file format (exportMatchData), so Restore match takes it back as it is,
- * with the time it was written as exportedAt too.
+ * with the time it was written as exportedAt too. Without the match's PINs
+ * and session ids, like every backup file (nativeBackup/redact): the ZIP is
+ * kept and passed on, the PINs are access secrets.
  * @param {{ match: object, homeTeam?: object, awayTeam?: object, homePlayers?: object[], awayPlayers?: object[], sets?: object[], events?: object[] }} data
  * @param {Date} [now]
  */
@@ -584,7 +699,8 @@ export function matchEndExportData({ match, homeTeam, awayTeam, homePlayers, awa
   return {
     version: 1,
     lastUpdated: at,
-    match,
+    [SECRETS_REMOVED]: true,
+    match: redactMatch(match),
     homeTeam: homeTeam || null,
     awayTeam: awayTeam || null,
     homePlayers: homePlayers || [],
@@ -618,15 +734,12 @@ export function restoreErrorText(err, t) {
  * @param {object} jsonData the backup
  * @param {{checkServer?: (externalId: string) => Promise<boolean|null>}} [options]
  */
-export async function restoreMatchFromJson(jsonData, { checkServer = serverClosedState, cloudLiveState = serverLiveState } = {}) {
+export async function restoreMatchFromJson(jsonData, { checkServer = serverClosedState, cloudLiveState = serverLiveState, replaceNewer = false } = {}) {
   // A whole-database export holds the match it was written for, a Match End
   // file the match in its own shape
   jsonData = matchBackupFromFile(jsonData)
   refuseLocked(jsonData)
-  // Validate schema
-  if (!jsonData?.version || !jsonData.match) {
-    throw Object.assign(new Error('Invalid backup file format'), { code: BACKUP_FORMAT_ERROR })
-  }
+  checkBackupShape(jsonData)
 
   const { homeTeam, awayTeam, homePlayers, awayPlayers, sets, events } = jsonData
   let match = jsonData.match
@@ -637,15 +750,21 @@ export async function restoreMatchFromJson(jsonData, { checkServer = serverClose
     console.warn('[Restore] No external_id found - Supabase sync will be skipped')
   }
 
+  // The local copy it replaces keeps its own PINs, sessions and test flag
+  const localCopies = externalId ? await db.matches.filter(m => localMatchKey(m) === externalId).toArray() : []
+  if (localCopies.length) match = withLocalSecrets(match, localCopies[0])
+
   // Before anything is deleted, added or queued (test matches never sync)
   const guarded = !!externalId && !match.test
   // The cloud's last live state, read alongside: this device stamps its own
   // after it (the previous device's clock may be ahead of this one's)
   const cloudLive = guarded ? cloudLiveState(externalId).catch(() => null) : Promise.resolve(null)
   if (guarded) {
-    const localCopies = await db.matches.filter(m => localMatchKey(m) === externalId).toArray()
     await refuseIfClosedOnServer(externalId, match, localCopies, checkServer)
   }
+  // A file older than this device's copy, or this device's unsent writes:
+  // only on a second confirmation (replaceNewer)
+  await refuseIfLosesLocal(externalId, events, replaceNewer)
   const liveClockOffsetMs = liveClockOffsetAfter(await cloudLive)
 
   let restoredMatchId = null
@@ -680,11 +799,19 @@ export async function restoreMatchFromJson(jsonData, { checkServer = serverClose
       if (previous.length) console.log(`[Restore] Replaced ${previous.length} local copy/copies of match ${externalId}`)
     }
     // Keep other matches' jobs (unsynced writes and the sent history their
-    // retries are trimmed against); drop this match's jobs (the local match they
-    // describe is gone and the restore job below replaces them) and anything
-    // that cannot be attributed to a match.
+    // retries are trimmed against) and the jobs of no match (the activity log
+    // uploads; a set job of an older app that only a pass attributes); drop
+    // this match's jobs (the local match they describe is gone and the
+    // restore job below replaces them). Its unsent match insert and update
+    // jobs are KEPT, as restoreMatchInPlace keeps them: they carry the columns
+    // the restore payload does not (officials, bench, signatures, schedule,
+    // approval), and run before the restore job (audit fe-backup-3).
     const queuedJobs = await db.sync_queue.toArray()
-    const keepJob = (j) => !!jobMatchKey(j) && jobMatchKey(j) !== externalId
+    const keepJob = (j) => {
+      const key = jobMatchKey(j)
+      if (!key || key !== externalId) return true
+      return j.resource === 'match' && (j.action === 'insert' || j.action === 'update') && ['queued', 'error', 'failed'].includes(j.status)
+    }
     await db.sync_queue.bulkDelete(queuedJobs.filter(j => !keepJob(j)).map(j => j.id))
 
     // STEP B: the restored match's own team rows, always new. A team found
@@ -891,17 +1018,41 @@ export async function restoreMatchFromJson(jsonData, { checkServer = serverClose
 }
 
 /**
+ * "Take back scoring here" keeping this device's score (utils/matchHandover
+ * takeBackScoring keepLocal), after the claim: the local copy, its points
+ * not sent before the other device took over included, goes to the server
+ * in place of the other device's copy (a restore of itself), and its match
+ * writes set aside on the move go again. The block over the scoring screens
+ * is lifted.
+ * @returns {Promise<object>} the copy, in exportMatchData's shape
+ */
+export async function continueWithLocalCopy(matchId, { checkServer = serverClosedState } = {}) {
+  const data = await exportMatchData(matchId)
+  const key = localMatchKey(data.match)
+  data.match = { ...data.match, cloudBlock: null }
+  // The restore first: it refuses a match closed on the server, and then the
+  // block stays and nothing set aside goes again. It lifts the block itself.
+  await restoreMatchInPlace(matchId, data, { replaceNewer: true, checkServer })
+  const setAside = (await db.sync_queue.where('status').equals('superseded').toArray())
+    .filter(j => j.superseded_by === SCORER_MOVED_BY && jobMatchKey(j) === key)
+  const isMatchWrite = (j) => j.resource === 'match' && (j.action === 'insert' || j.action === 'update')
+  for (const j of setAside.filter(isMatchWrite)) await db.sync_queue.update(j.id, { status: 'queued', retry_count: 0, superseded_by: null })
+  // The set and event writes set aside are in the restore's payload now: no
+  // longer unsent (deviceSelfCheck unsentOfMatch)
+  await db.sync_queue.bulkDelete(setAside.filter(j => j.resource === 'set' || j.resource === 'event').map(j => j.id))
+  return data
+}
+
+/**
  * Restore match in place - overwrite existing match with backup data
  * Used for cloud backup restore during active match
  * IMPORTANT: Queues sync job to update match_live_state in Supabase
  * Refused like restoreMatchFromJson for a match closed on the server.
  */
-export async function restoreMatchInPlace(matchId, jsonData, { checkServer = serverClosedState } = {}) {
+export async function restoreMatchInPlace(matchId, jsonData, { checkServer = serverClosedState, replaceNewer = false } = {}) {
   jsonData = matchBackupFromFile(jsonData)
   refuseLocked(jsonData)
-  if (!jsonData.version || !jsonData.match) {
-    throw new Error('Invalid backup file format')
-  }
+  checkBackupShape(jsonData)
 
   const { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events } = jsonData
 
@@ -916,7 +1067,9 @@ export async function restoreMatchInPlace(matchId, jsonData, { checkServer = ser
   // other matches that share it.
   const currentMatch = await db.matches.get(matchId)
   const currentKey = currentMatch?.seed_key || currentMatch?.seedKey || currentMatch?.externalId
-  if (currentKey && externalId && currentKey !== externalId) {
+  // A file without a key over an open keyed match is another game's too: it
+  // passed, and left the match without its key (audit fe-backup-5)
+  if (currentKey && currentKey !== externalId) {
     throw new Error('This backup belongs to a different match')
   }
 
@@ -925,6 +1078,7 @@ export async function restoreMatchInPlace(matchId, jsonData, { checkServer = ser
   if (guarded) {
     await refuseIfClosedOnServer(externalId, match, currentMatch ? [currentMatch] : [], checkServer)
   }
+  await refuseIfLosesLocal(externalId, events, replaceNewer)
 
   await db.transaction('rw', db.matches, db.sets, db.events, db.sync_queue, async () => {
     // Update match data (keep same ID). The backup is merged over the current
@@ -932,8 +1086,9 @@ export async function restoreMatchInPlace(matchId, jsonData, { checkServer = ser
     await db.matches.update(matchId, {
       ...match,
       ...(guarded ? withoutClosedEvidence(match, currentMatch) : {}),
-      // The PIN that opened an encrypted file, where the open match has none
-      // (its own PINs stay: the backup has none, the update keeps them)
+      // The PINs the file carries and the one that opened it, where the open
+      // match has none (its own PINs stay: the backup's match row has none,
+      // the update keeps them)
       ...typedPinFor(jsonData, currentMatch),
       id: matchId,
       // The backup's team ids are local ids of the device that wrote it
@@ -947,7 +1102,7 @@ export async function restoreMatchInPlace(matchId, jsonData, { checkServer = ser
       // are older copies from now on (supersededClaimsOf)
       scorerClaim: null,
       supersededClaims: supersededClaimsOf(match),
-      seed_key: externalId, // Ensure seed_key is set for sync
+      seed_key: externalId || currentKey, // Ensure seed_key is set for sync
       restoredAt: new Date().toISOString()
     })
 
@@ -1640,9 +1795,88 @@ export function cloudBestOf(match) {
   return b === 3 ? 3 : 5
 }
 
-export async function importMatchFromSupabase(cloudData) {
+// An ISO date of birth (as Create match sends the officials') in the app's
+// DD.MM.YYYY; anything else as it is
+const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
+const appDob = (dob) => {
+  const m = typeof dob === 'string' ? dob.match(ISO_DATE) : null
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : dob
+}
+
+// A person of the cloud's lists in the app's shape: firstName / lastName
+// (the cloud has first_name / last_name from some writers, the app's names
+// from others). Rows without a name of either kind (the line judges' `name`)
+// stay as they are.
+function personFromCloud(row, { isoDob = false } = {}) {
+  if (!row || typeof row !== 'object') return row
+  const { first_name: first, last_name: last, ...rest } = row
+  if (first === undefined && last === undefined && !('firstName' in row) && !('lastName' in row)) return row
+  const out = { ...rest, firstName: row.firstName ?? first ?? '', lastName: row.lastName ?? last ?? '' }
+  if (isoDob && 'dob' in out) out.dob = appDob(out.dob)
+  return out
+}
+
+/**
+ * The match officials of a cloud row in the app's shape (firstName,
+ * lastName, DD.MM.YYYY): Create match sends first_name / last_name and an
+ * ISO date. Copied as they were, Match setup read them as empty (1st and 2nd
+ * referee "Not set") and its auto-save wiped them, e-mails included, from a
+ * match continued on another device.
+ * @param {unknown} officials the cloud's officials column (older rows: a role-keyed object)
+ * @returns {Array}
+ */
+export function officialsFromCloud(officials) {
+  return officialsToArray(officials).map(o => personFromCloud(o, { isoDob: true }))
+}
+
+/**
+ * Bench officials of a cloud row in the app's shape (firstName, lastName):
+ * the coin toss and an edited roster send first_name / last_name. The
+ * scoreboard's bench list, its sanction menu and the sheet read the app's
+ * names: a continued match showed its bench officials without names.
+ * @param {unknown} bench bench_home / bench_away
+ * @returns {Array}
+ */
+export function benchFromCloud(bench) {
+  return Array.isArray(bench) ? bench.map(b => personFromCloud(b)) : []
+}
+
+const LIBERO_MARKS = new Set(['libero1', 'libero2', 'redesignated'])
+
+/**
+ * A cloud roster (players_home / players_away) with the team's libero
+ * re-designations of the log applied, oldest first: the unable libero
+ * 'unable', the new one 'redesignated', as the scoring device marked them.
+ * Older apps never sent the roster after a re-designation, so the continuing
+ * device had no usable libero and offered the re-designation again. A roster
+ * sent after it (its unable libero is no libero any more) is left as it is,
+ * also when it was edited since.
+ * @param {Array} players cloud roster rows ({ number, libero, ... })
+ * @param {Array} events the match's cloud event rows
+ * @param {'home'|'away'} team
+ * @returns {Array} a copy, rows changed where a re-designation applies
+ */
+export function rosterWithRedesignations(players, events, team) {
+  const rows = (players || []).map(p => ({ ...p }))
+  const redesignations = (events || [])
+    .filter(e => e?.type === 'libero_redesignation' && e.payload?.team === team)
+    .sort((a, b) => (Number(a.seq) || 0) - (Number(b.seq) || 0))
+  for (const e of redesignations) {
+    const unable = rows.find(p => String(p.number) === String(e.payload.unableLiberoNumber))
+    if (!unable || !LIBERO_MARKS.has(unable.libero)) continue
+    unable.libero = 'unable'
+    const next = rows.find(p => String(p.number) === String(e.payload.newLiberoNumber))
+    if (next) next.libero = 'redesignated'
+  }
+  return rows
+}
+
+export async function importMatchFromSupabase(cloudData, { replaceNewer = false } = {}) {
   const { match, sets, events } = cloudData
   const courtSides = cloudData.courtSides || {}
+  // This device's own copy with more events or unsent writes: only on a
+  // second confirmation (audit var-local-delete-1)
+  await refuseIfLosesLocal(match?.external_id, events, replaceNewer)
 
   let importedMatchId = null
 
@@ -1654,12 +1888,17 @@ export async function importMatchFromSupabase(cloudData) {
     // and events go (replaced, not undone: nothing is voided on the server),
     // its unsent jobs are superseded; other local matches are kept.
     await replaceLocalCopies(match.external_id)
+    // An open cloud copy (reopened since this device approved it, or never
+    // closed): this device's approval files of the match still unsent are an
+    // older approval's (utils/scoresheetUploader). A closed one keeps them.
+    if (!serverRowClosed(match)) await supersedeUnsentScoresheetUploadsOf(db.sync_queue, match.external_id)
 
     // Extract team data from JSONB columns
     const homeTeamData = match.home_team || {}
     const awayTeamData = match.away_team || {}
-    const playersHome = match.players_home || []
-    const playersAway = match.players_away || []
+    // (the libero marks of the log's re-designations included)
+    const playersHome = rosterWithRedesignations(match.players_home, events, 'home')
+    const playersAway = rosterWithRedesignations(match.players_away, events, 'away')
 
     // Create local teams (always create new teams for imported matches to avoid duplicates)
     let homeTeamId = null
@@ -1691,9 +1930,17 @@ export async function importMatchFromSupabase(cloudData) {
     const approval = match.approval || {}
     const connections = match.connections || {}
     const connectionPins = match.connection_pins || {}
+    // Team A's serve; the cloud keeps no B flag (B serves when A does not):
+    // without it the sheet of a continued match had no S/R for Team B
+    const coinTossServeA = coinToss.serve_a !== undefined ? coinToss.serve_a : match.coin_toss_serve_a
+    // A roster uploaded for the match waits for the scorer's Accept in Match
+    // setup only. The server may still hold it once the match has started
+    // (nothing cleared it): copied then, it sent the continued match back
+    // to Match setup at every return
+    const inSetup = match.status == null || match.status === 'setup'
 
     // Create match with all JSONB data (prefer JSONB, fallback to legacy)
-    const localMatchId = await db.matches.add({
+    const localMatchRow = {
       homeTeamId,
       awayTeamId,
       status: match.status,
@@ -1717,9 +1964,9 @@ export async function importMatchFromSupabase(cloudData) {
       homeShortName: homeTeamData.short_name || null,
       awayShortName: awayTeamData.short_name || null,
       // JSONB data stored locally
-      officials: match.officials || [],
-      bench_home: match.bench_home || [],
-      bench_away: match.bench_away || [],
+      officials: officialsFromCloud(match.officials),
+      bench_home: benchFromCloud(match.bench_home),
+      bench_away: benchFromCloud(match.bench_away),
       // Signatures: prefer JSONB, fallback to legacy
       homeCoachSignature: signatures.home_coach || match.home_coach_signature,
       homeCaptainSignature: signatures.home_captain || match.home_captain_signature,
@@ -1736,7 +1983,8 @@ export async function importMatchFromSupabase(cloudData) {
       coinTossConfirmed: coinToss.confirmed !== undefined ? coinToss.confirmed : match.coin_toss_confirmed,
       coinTossTeamA: coinToss.team_a || match.coin_toss_team_a,
       coinTossTeamB: coinToss.team_b || match.coin_toss_team_b,
-      coinTossServeA: coinToss.serve_a !== undefined ? coinToss.serve_a : match.coin_toss_serve_a,
+      coinTossServeA,
+      coinTossServeB: typeof coinTossServeA === 'boolean' ? !coinTossServeA : undefined,
       firstServe: coinToss.first_serve || match.first_serve,
       // Court sides (domain/rules getSideAForSet): without them the court
       // showed the set number's sides whatever the court was
@@ -1766,16 +2014,17 @@ export async function importMatchFromSupabase(cloudData) {
       refereePin: connectionPins.referee || match.referee_pin,
       homeTeamUploadPin: connectionPins.upload_home || match.home_team_upload_pin,
       awayTeamUploadPin: connectionPins.upload_away || match.away_team_upload_pin,
-      // Pending rosters: prefer JSONB, fallback to legacy
-      pendingHomeRoster: connections.pending_home_roster || match.pending_home_roster,
-      pendingAwayRoster: connections.pending_away_roster || match.pending_away_roster,
+      // Pending rosters: prefer JSONB, fallback to legacy (Match setup only)
+      pendingHomeRoster: inSetup ? (connections.pending_home_roster || match.pending_home_roster) : null,
+      pendingAwayRoster: inSetup ? (connections.pending_away_roster || match.pending_away_roster) : null,
       // Import metadata
       importedFrom: 'supabase',
       importedAt: new Date().toISOString(),
       createdAt: match.created_at || new Date().toISOString(),
       // Mark match info as confirmed since we're restoring an existing match
       matchInfoConfirmedAt: match.created_at || new Date().toISOString()
-    })
+    }
+    const localMatchId = await db.matches.add(localMatchRow)
 
     importedMatchId = localMatchId
 
@@ -1919,6 +2168,25 @@ export async function importMatchFromSupabase(cloudData) {
           status: 'queued'
         })
       }
+
+      // The line-up after each substitution, libero replacement and side-out
+      // rotation is a sub-row (N.x) of its entry. Earlier versions kept those
+      // rows on the scoring device: their log has the starting line-ups only,
+      // and the set went on here from the starting six. The rows follow from
+      // the entries (domain/recompute, as a correction rebuilds them): the
+      // missing ones are added where the scoring device had them and sent
+      // like the scoreboard sends them now, so the next device reads them
+      // too (not for a match closed on the server: it refuses them). A log
+      // that has them gets none. Over the cloud rows only: the line-ups
+      // fetchMatchByPin makes up (latest rally, live state) are the current
+      // ones already, not a starting line-up to replay the rallies on.
+      const rebuilt = recomputeMatch(cloudEvents.map(eventRow), { match: localMatchRow, matchId: localMatchId })
+        .add.filter(row => row.type === 'lineup')
+      for (const row of rebuilt) {
+        const id = await db.events.add({ matchId: localMatchId, setIndex: row.setIndex, type: 'lineup', payload: row.payload, ts: row.ts, seq: row.seq })
+        if (!isKnownClosedOnServer(localMatchRow)) await queueEventSync(db, id)
+      }
+      if (rebuilt.length) console.log(`[Import] ${seedKey}: ${rebuilt.length} line-up row(s) rebuilt from the entries (a log without its line-up sub-rows)`)
     })
   })
 
@@ -2043,6 +2311,19 @@ export function parseBackupText(text) {
   }
 }
 
+// The largest backup file a restore reads, as the desktop app's own picker
+// (src-tauri backup.rs): a bigger file is not one of ours
+export const MAX_BACKUP_FILE_BYTES = 64 * 1024 * 1024
+
+// A picked file's text; a file over the limit is refused before it is read
+// into memory (audit fe-backup-8)
+export async function readBackupFile(file) {
+  if (Number(file?.size) > MAX_BACKUP_FILE_BYTES) {
+    throw Object.assign(new Error('Backup file too large'), { code: BACKUP_FORMAT_ERROR })
+  }
+  return parseBackupText(await file.text())
+}
+
 /**
  * Select a backup file using file picker
  * Returns parsed JSON data or null if cancelled
@@ -2058,9 +2339,7 @@ export async function selectBackupFile() {
         }],
         multiple: false
       })
-      const file = await fileHandle.getFile()
-      const text = await file.text()
-      return parseBackupText(text)
+      return await readBackupFile(await fileHandle.getFile())
     } catch (error) {
       if (error.name === 'AbortError') {
         return null // User cancelled
@@ -2083,8 +2362,7 @@ export async function selectBackupFile() {
       }
 
       try {
-        const text = await file.text()
-        resolve(parseBackupText(text))
+        resolve(await readBackupFile(file))
       } catch (error) {
         reject(error)
       }
@@ -2174,11 +2452,16 @@ export async function listCloudBackups(gamePin, gameN = 1) {
 }
 
 /**
- * Fetch a cloud backup file content
+ * Fetch a cloud backup file content. The cloud copies are encrypted backup
+ * files (utils/backupFile): one is opened with the first of `pins` that opens
+ * it (the game PIN typed to list them, the open match's PINs) and comes back
+ * as the backup inside; else as the envelope, for the PIN dialog
+ * (hooks/useBackupUnlock). Older cloud copies are plain.
  * @param {string} path - Full path to the backup file
+ * @param {{ pins?: Array<string|null|undefined> }} [options]
  * @returns {Object} Parsed JSON backup data
  */
-export async function fetchCloudBackup(path) {
+export async function fetchCloudBackup(path, { pins = [] } = {}) {
   const { data, error } = await apiStorage
     .from('backup')
     .download(path)
@@ -2186,7 +2469,7 @@ export async function fetchCloudBackup(path) {
   if (error) throw error
 
   const text = await data.text()
-  return JSON.parse(text)
+  return openWithKnownPins(parseBackupText(text), pins)
 }
 
 /**
@@ -2218,66 +2501,5 @@ export function saveBackupSettings(settings, { native = false } = {}) {
   }
   if (settings.autoDownloadAtSetEnd !== undefined) {
     localStorage.setItem('autoDownloadAtSetEnd', String(settings.autoDownloadAtSetEnd))
-  }
-}
-
-/**
- * List matches stored in PocketBase (server-side backup)
- * @param {number} gameN - Game number to filter by (optional)
- * @returns {Array} Array of backup entries compatible with BackupTable
- */
-export async function listPocketBaseBackups(gameN) {
-  const params = new URLSearchParams()
-  if (gameN) params.set('game_number', String(gameN))
-  const url = getCloudApiUrl(`/api/pocketbase/matches?${params.toString()}`)
-  if (!url) return []
-  try {
-    const res = await fetch(url)
-    if (!res.ok) return []
-    const { data } = await res.json()
-    return (data || []).map(record => {
-      const lastSet = record.sets?.at?.(-1)
-      return {
-        source: 'pocketbase',
-        match_id: record.match_id,
-        name: `Game #${record.game_number || '?'} — ${record.home_team?.name || 'Home'} vs ${record.away_team?.name || 'Away'}`,
-        gameN: record.game_number,
-        status: record.status,
-        updated_at: record.updated_at,
-        created: record.updated_at,
-        setIndex: record.sets?.length || 0,
-        leftScore: lastSet?.homePoints ?? lastSet?.home_points ?? 0,
-        rightScore: lastSet?.awayPoints ?? lastSet?.away_points ?? 0,
-      }
-    })
-  } catch {
-    return []
-  }
-}
-
-/**
- * Fetch full match snapshot from PocketBase for restoration
- * @param {string} matchId - The PocketBase match_id
- * @param {string} [gamePin] - The match's game PIN; the backend returns the
- *   connection PINs (referee / bench) only to a caller that presents it.
- * @returns {Object} Match data in standard restore format
- */
-export async function fetchPocketBaseMatch(matchId, gamePin) {
-  const query = gamePin ? `?gamePin=${encodeURIComponent(String(gamePin).trim())}` : ''
-  const url = getCloudApiUrl(`/api/pocketbase/matches/${encodeURIComponent(matchId)}${query}`)
-  if (!url) throw new Error('Backend not available')
-  const res = await fetch(url)
-  if (res.status === 403) throw new Error('The game PIN does not match this backup')
-  if (!res.ok) throw new Error('PocketBase match not found')
-  const { data } = await res.json()
-  return {
-    version: 1,
-    match: data.match_data,
-    homeTeam: data.home_team,
-    awayTeam: data.away_team,
-    homePlayers: data.home_players,
-    awayPlayers: data.away_players,
-    sets: data.sets,
-    events: data.events,
   }
 }

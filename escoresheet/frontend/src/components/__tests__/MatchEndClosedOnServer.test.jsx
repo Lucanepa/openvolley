@@ -337,3 +337,60 @@ describe('Reopen match and the writes set aside as closed', () => {
     expect(alerts.showAlert).not.toHaveBeenCalled()
   })
 })
+
+// The approval's PDF and final JSON still unsent when the match is reopened:
+// sent while it is open, the old PDF would be stored as the next approval's,
+// and after the next close the corrected one is taken only for minutes
+// (backend db/033). A reopened match always gets a new approval with new files.
+describe('Reopen match and the approval\'s scoresheet files still unsent', () => {
+  const sheet = (id, status, ext, path) => [id, { id, resource: 'scoresheet', action: 'upload', status, ts: '2026-10-21T10:00:00.000Z', payload: { path, file: new Blob(['first approval']), contentType: path.endsWith('.pdf') ? 'application/pdf' : 'application/json', match_external_id: ext } }]
+  const sheetRows = () => {
+    store.tables.sync_queue = new Map([
+      sheet(1, 'queued', SEED, '2026-10-21/game4711_kaaa.pdf'),
+      sheet(2, 'error', SEED, '2026-10-21/game4711_kaaa_final.json'),
+      sheet(3, 'failed', SEED, '2026-10-21/game4711_kaaa.pdf'),
+      sheet(4, 'queued', 'match_9_other', '2026-10-21/game9_kbbb.pdf'),
+      // in flight: left to its sender
+      sheet(5, 'sending', SEED, '2026-10-21/game4711_kaaa.pdf')
+    ])
+  }
+  const sheetStatuses = () => Object.fromEntries([...store.tables.sync_queue.values()].filter(j => j.resource === 'scoresheet').map(j => [j.id, j.status]))
+  const expectDropped = () => {
+    expect(sheetStatuses()).toEqual({ 1: 'superseded', 2: 'superseded', 3: 'superseded', 4: 'queued', 5: 'sending' })
+    for (const id of [1, 2, 3]) expect(store.tables.sync_queue.get(id).payload.file).toBeNull()
+    expect(store.tables.sync_queue.get(4).payload.file).toBeInstanceOf(Blob)
+  }
+
+  it('the server has it open again (an admin reopened it elsewhere)', async () => {
+    seed({ approved: true })
+    sheetRows()
+    server.row = { id: 'uuid-1', status: 'ended', closed_at: null }
+    render(<MatchEnd matchId={1} />)
+    fireEvent.click(await findButton(en.matchEnd.reopenMatch))
+    await waitFor(() => expect(store.tables.matches.get(1)).toMatchObject({ approved: false, status: 'ended' }))
+    await waitFor(expectDropped)
+  })
+
+  it('an admin reopen here', async () => {
+    seed({ approved: true })
+    sheetRows()
+    server.row = { id: 'uuid-1', status: 'approved', closed_at: '2026-10-20T21:09:00Z' }
+    auth.value = { ...auth.value, access: { roles: ['scorer'], isAdmin: true } }
+    render(<MatchEnd matchId={1} />)
+    fireEvent.click(await findButton(en.matchEnd.reopenMatch))
+    fireEvent.change(await screen.findByLabelText(en.matchEnd.reopenReason), { target: { value: 'Wrong result entered' } })
+    fireEvent.click(await screen.findByTestId('admin-reopen-confirm'))
+    await waitFor(() => expect(api.reopen).toHaveBeenCalledWith('uuid-1', { reason: 'Wrong result entered' }))
+    await waitFor(expectDropped)
+  })
+
+  it('an approval that never reached the server', async () => {
+    seed({ approved: true })
+    sheetRows()
+    store.tables.sync_queue.set(6, { id: 6, resource: 'match', action: 'update', status: 'queued', ts: '2026-10-21T11:00:00.000Z', payload: { id: SEED, status: 'approved' } })
+    render(<MatchEnd matchId={1} />)
+    fireEvent.click(await findButton(en.matchEnd.reopenMatch))
+    await waitFor(() => expect(store.tables.matches.get(1)).toMatchObject({ approved: false, status: 'ended' }))
+    await waitFor(expectDropped)
+  })
+})
