@@ -4112,6 +4112,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               onOpenDatabase={handleOpenDatabase}
               collapsible={true}
               defaultCollapsed={true}
+              forceExpanded={!!(asstFirst || asstLast)}
               t={t}
             />
             <LineJudgesCard
@@ -7104,7 +7105,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               { label: t('matchSetup.referee1'), value: <span className={TRUNC} title={formatOfficial(ref1Last, ref1First)}>{formatOfficial(ref1Last, ref1First)}</span> },
               { label: t('matchSetup.referee2'), value: <span className={TRUNC} title={formatOfficial(ref2Last, ref2First)}>{formatOfficial(ref2Last, ref2First)}</span> },
               { label: t('matchSetup.scorer'), value: <span className={TRUNC} title={formatOfficial(scorerLast, scorerFirst)}>{formatOfficial(scorerLast, scorerFirst)}</span> },
-              { label: t('matchSetup.assistantScorer'), value: <span className={TRUNC} title={formatOfficial(asstLast, asstFirst)}>{formatOfficial(asstLast, asstFirst)}</span> },
+              // optional, as the line judges: listed only when there is one
+              ...((asstFirst || asstLast) ? [{ label: t('matchSetup.assistantScorer'), value: <span className={TRUNC} title={formatOfficial(asstLast, asstFirst)}>{formatOfficial(asstLast, asstFirst)}</span> }] : []),
               ...((lineJudge1 || lineJudge2 || lineJudge3 || lineJudge4) ? [{
                 label: t('matchSetup.lineJudges'),
                 value: (
