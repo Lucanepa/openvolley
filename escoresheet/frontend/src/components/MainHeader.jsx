@@ -128,6 +128,18 @@ function keepPopoverOnScreen(el) {
   if (shift) el.style.left = `calc(50% + ${Math.round(shift)}px)`
 }
 
+// The match chip popover's first line names the header's connection state
+// (the pill's word), not a fixed "Not synced". Its own component, mounted only
+// while the popover is open: useConnectionSummary keeps a live sync-queue
+// query, and in MainHeader it re-rendered the whole header on every queue
+// change, about twice a point on the scorer tablet (review 5a).
+function MatchInfoConnectionLine({ offlineMode, connectionStatuses, queueStats, t }) {
+  const connection = useConnectionSummary({ connectionStatuses, queueStats })
+  return (
+    <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">{offlineMode ? t('header.offline') : connection.pillText}</div>
+  )
+}
+
 export default function MainHeader({
   connectionStatuses,
   connectionDebugInfo,
@@ -349,10 +361,6 @@ export default function MainHeader({
     return () => document.removeEventListener('pointerdown', handlePointerDown, true)
   }, [matchInfoMenuOpen, setMatchInfoMenuOpen])
 
-  // The popover names the header's connection state (the pill's word), not a
-  // fixed "Not synced"
-  const connection = useConnectionSummary({ connectionStatuses, queueStats })
-
   // Close dashboard menu when clicking outside
   useEffect(() => {
     if (!dashboardMenuOpen) return
@@ -455,7 +463,7 @@ export default function MainHeader({
         style={{ zIndex: 1000 }}
       >
         {/* Match Number */}
-        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">{offlineMode ? t('header.offline') : connection.pillText}</div>
+        <MatchInfoConnectionLine offlineMode={offlineMode} connectionStatuses={connectionStatuses} queueStats={queueStats} t={t} />
         <div className="text-sm font-bold text-stone-900 tabular-nums">
           {t('header.match')} {(matchData.match.gameNumber || matchData.match.game_n) ? (matchData.match.gameNumber || matchData.match.game_n) : t('header.notSet')}
         </div>
