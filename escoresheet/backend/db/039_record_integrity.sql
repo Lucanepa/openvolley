@@ -49,6 +49,8 @@
 -- match_closures (the triggers do).
 BEGIN;
 SET LOCAL lock_timeout = '5s';
+-- 2 sets first_closed_at on matches that are already closed (db/007's guard)
+SELECT set_config('ov.allow_closed', 'on', true);
 
 -- 5a. The check before the constraints ---------------------------------------------
 DO $$
