@@ -874,10 +874,56 @@ export const apiAuth = {
     return authRequest('passkey/list', { access_token })
   },
 
-  async removePasskey(id) {
+  /** Removes one of the account's passkeys; the server ends the account's
+   *  other sessions with it. `password`: the confirmation, unless `reauth`
+   *  ran in the last minutes (403 reauth_required). */
+  async removePasskey(id, { password } = {}) {
     const access_token = getStoredToken()?.access_token
     if (!access_token) return { data: null, error: { message: 'Not authenticated', status: 401 } }
-    return authRequest('passkey/delete', { access_token, id })
+    return authRequest('passkey/delete', { access_token, id, ...(password ? { password } : {}) })
+  },
+
+  /**
+   * Confirms it is the account's owner, with the password or, given
+   * `runCeremony`, a passkey of the account (the device's sheet, as at
+   * sign-in): for 5 minutes the server then accepts this session's sensitive
+   * actions (delete the account, remove passkeys) without another one.
+   */
+  async reauth({ password } = {}, runCeremony) {
+    const access_token = getStoredToken()?.access_token
+    if (!access_token) return { data: null, error: { message: 'Not authenticated', status: 401 } }
+    if (typeof runCeremony === 'function') {
+      const start = await authRequest('passkey/login-options', {})
+      if (start.error) return start
+      const response = await runCeremony(start.data.options)
+      return authRequest('reauth', { access_token, passkey: { challengeId: start.data.challengeId, response } })
+    }
+    return authRequest('reauth', { access_token, password })
+  },
+
+  /** A new password with the current one: the server signs every device out
+   *  and removes the passkeys; this device keeps the new session it returns. */
+  async changePassword({ password, newPassword }) {
+    const access_token = getStoredToken()?.access_token
+    if (!access_token) return { data: null, error: { message: 'Not authenticated', status: 401 } }
+    const result = await authRequest('change-password', { access_token, password, new_password: newPassword })
+    if (!result.error && result.data?.session) storeToken(result.data.session)
+    return result
+  },
+
+  /** Where the account is signed in: { sessions: [{ id, created_at, last_seen_at, expires_at, current }] }. */
+  async listSessions() {
+    const access_token = getStoredToken()?.access_token
+    if (!access_token) return { data: null, error: { message: 'Not authenticated', status: 401 } }
+    return authRequest('session/list', { access_token })
+  },
+
+  /** Signs every other device out; `removePasskeys` (confirmed: `password`
+   *  or a recent reauth) removes every passkey too. This device stays. */
+  async signOutEverywhere({ removePasskeys = false, password } = {}) {
+    const access_token = getStoredToken()?.access_token
+    if (!access_token) return { data: null, error: { message: 'Not authenticated', status: 401 } }
+    return authRequest('sign-out-everywhere', { access_token, remove_passkeys: removePasskeys === true, ...(password ? { password } : {}) })
   },
 
   async signInWithPassword({ email, password }) {
@@ -990,9 +1036,11 @@ export const apiAuth = {
     return authRequest('update-user', { access_token: token, email })
   },
 
-  async deleteUser() {
+  // password: the confirmation the server asks for, unless reauth ran in the
+  // last minutes (403 reauth_required)
+  async deleteUser({ password } = {}) {
     const token = getStoredToken()?.access_token
-    const result = await authRequest('delete-account', { access_token: token })
+    const result = await authRequest('delete-account', { access_token: token, ...(password ? { password } : {}) })
     if (!result.error) storeToken(null)
     return result
   },

@@ -480,13 +480,14 @@ export function AuthProvider({ children, app = null }) {
   }, [userId])
 
   // Delete account
-  const deleteAccount = useCallback(async () => {
+  // { password }: the server's confirmation (or a reauth just before)
+  const deleteAccount = useCallback(async ({ password } = {}) => {
     if (!hasBackend() || !user) {
       return { error: { message: 'Not authenticated' } }
     }
 
     try {
-      const { error } = await apiAuth.deleteUser()
+      const { error } = await apiAuth.deleteUser({ password })
 
       if (error) {
         console.error('Delete user error:', error)

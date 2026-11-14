@@ -6,8 +6,9 @@ import { apiAuth } from '../../lib/apiClient'
 import {
   isPasskeyAlreadyHere, isPasskeyCancel, markPasskeyHere, passkeysPossible, runPasskeySetUp
 } from '../../lib/passkeys'
-import { Button, confirmDialog, Field, FieldNote, IconButton, Input, toast } from '../../ui'
+import { Button, Field, FieldNote, IconButton, Input, toast } from '../../ui'
 import { passkeyErrorText } from './passkeyErrors'
+import { confirmErrorText, withConfirmation } from './confirmIdentity'
 
 function shortDate(value, lang) {
   const t = Date.parse(value)
@@ -18,7 +19,9 @@ function shortDate(value, lang) {
 /**
  * Profile → Passkeys: the account's passkeys (one per device), adding one on
  * this device — with the password, which the server checks first — and
- * removing any. Removing is also the answer to the mail that says one was
+ * removing any, confirmed with the password or a passkey (the server then
+ * signs the account's other devices out: a session does not say which key
+ * made it). Removing is also the answer to the mail that says one was
  * added. Hidden where a passkey cannot work (the installed apps).
  */
 export default function PasskeySection({ className }) {
@@ -31,6 +34,9 @@ export default function PasskeySection({ className }) {
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [removing, setRemoving] = useState(null) // the entry asked about
+  const [removePassword, setRemovePassword] = useState('')
+  const [removeError, setRemoveError] = useState('')
 
   const load = async () => {
     setLoadError('')
@@ -73,22 +79,32 @@ export default function PasskeySection({ className }) {
     }
   }
 
-  const remove = async (entry) => {
-    const ok = await confirmDialog({
-      title: t('passkeys.remove'),
-      message: t('passkeys.removeConfirm', { label: entry.label }),
-      confirmLabel: t('passkeys.remove'),
-      cancelLabel: t('common.cancel', 'Cancel'),
-      tone: 'danger'
-    })
-    if (!ok) return
-    const { error: removeError } = await apiAuth.removePasskey(entry.id)
-    if (removeError) {
-      toast.error(passkeyErrorText(t, removeError))
-      return
+  const cancelRemove = () => {
+    setRemoving(null)
+    setRemovePassword('')
+    setRemoveError('')
+  }
+
+  const remove = async (usePasskey) => {
+    const entry = removing
+    if (!entry || busy) return
+    setRemoveError('')
+    setBusy(true)
+    try {
+      const { error: removeErr } = await withConfirmation({ password: removePassword, usePasskey },
+        ({ password: pw }) => apiAuth.removePasskey(entry.id, { password: pw }))
+      if (removeErr) {
+        setRemoveError(confirmErrorText(t, removeErr))
+        return
+      }
+      setEntries((list) => (list || []).filter((p) => p.id !== entry.id))
+      cancelRemove()
+      toast.success(t('passkeys.removed'))
+    } catch (err) {
+      if (!isPasskeyCancel(err)) setRemoveError(confirmErrorText(t, err))
+    } finally {
+      setBusy(false)
     }
-    setEntries((list) => (list || []).filter((p) => p.id !== entry.id))
-    toast.success(t('passkeys.removed'))
   }
 
   return (
@@ -114,10 +130,30 @@ export default function PasskeySection({ className }) {
                     ].filter(Boolean).join(' · ')}
                   </p>
                 </div>
-                <IconButton icon={Trash2} label={`${t('passkeys.remove')}: ${entry.label}`} onClick={() => remove(entry)} />
+                <IconButton icon={Trash2} label={`${t('passkeys.remove')}: ${entry.label}`} onClick={() => { cancelRemove(); setRemoving(entry) }} />
               </li>
             ))}
           </ul>
+        )}
+        {removing && (
+          <form onSubmit={(e) => { e.preventDefault(); void remove(false) }} className="mt-3 space-y-2" data-testid="passkey-remove-form">
+            <p className="m-0 text-sm text-stone-700">{t('passkeys.removeConfirm', { label: removing.label })}</p>
+            <Field label={t('accountSecurity.confirmPassword')}>
+              <Input size="lg" type="password" autoComplete="current-password" value={removePassword} onChange={(e) => setRemovePassword(e.target.value)} />
+            </Field>
+            {removeError && <p role="alert" className="m-0 text-xs text-red-700">{removeError}</p>}
+            <div className="flex flex-wrap gap-2">
+              <Button variant="danger" size="xl" type="submit" className="rounded-lg font-medium" disabled={busy || !removePassword} loading={busy}>
+                {t('passkeys.remove')}
+              </Button>
+              <Button variant="secondary" size="xl" type="button" className="rounded-lg font-medium" disabled={busy} onClick={() => void remove(true)}>
+                {t('accountSecurity.usePasskey')}
+              </Button>
+              <Button variant="secondary" size="xl" type="button" className="rounded-lg font-medium" onClick={cancelRemove}>
+                {t('common.cancel', 'Cancel')}
+              </Button>
+            </div>
+          </form>
         )}
         {adding ? (
           <form onSubmit={add} className="mt-3 space-y-2">
