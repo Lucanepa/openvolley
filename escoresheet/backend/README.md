@@ -775,6 +775,34 @@ accounts); client `roles` in the metadata are dropped and `profiles.roles` is
 never writable by a client. A new account has no role: it is pending until an
 admin approves it or it redeems an invite code (see "Approved scorers").
 
+### Retention of match records and requests about one person (`db/042`)
+
+A match is kept for its season (July to June; `official_season`, else the
+season of `coalesce(scheduled_at, created_at)`) and
+`public.app_settings.retention_years` seasons after it (default 2, 1 to 30;
+privacy policy section 16 names the number). `lib/retention.js` sweeps 20
+minutes after start and then daily, as `ov_app` with `ov.allow_closed`: the
+expired matches with everything that cascades from them and their activity log
+(db/043 keeps their external_id, so an app that still holds one gets
+`OV_MATCH_DELETED`), the `scoresheets/` day folders before the cutoff day with
+their `match_scoresheets` rows, and `svrz_games` / `svrz_games_removed` rows of
+games before it. At most 2,000 matches a run, 100 per transaction; a run that
+removed anything is audited as `retention.sweep` (counts only).
+`RETENTION_SWEEP=off` skips it (a dev copy of production data). Change the
+number with `UPDATE public.app_settings SET retention_years = <n> WHERE id;`
+(read on every run). Tests: `tests/retention.pg.test.js`.
+
+A data subject's correction or erasure (privacy section 19) goes through
+`scripts/redact-person.mjs`, on the host as the owner role
+(`OV_MIGRATE_DATABASE_URL`, as for `scripts/migrate.mjs`), dry run first:
+`--first --last [--dob] [--match <external_id>]...`, `--set-dob` for a
+correction, `--drop-files` to remove the touched matches' scoresheet files
+(made again from the corrected record), `--actor <admin uuid>` for the audit
+entry, `--register FILE` (kept outside the database, next to the backups'
+keys) and, after a restore from a backup older than a request,
+`--reapply FILE`. See the script's header for what it reaches and what not.
+Tests: `tests/redactPerson.pg.test.js`.
+
 ### Still open (accepted, with impact)
 
 - **A relay room that is not in the database** (LAN, or a cloud match the
