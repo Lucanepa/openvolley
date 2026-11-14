@@ -44,7 +44,7 @@ describe('Options > Backup', () => {
     expect(screen.queryByText('options.limitedBrowserSupport')).toBeNull()
     expect(screen.getByText('options.nativeBackupOn')).toBeInTheDocument()
     expect(screen.getByTestId('native-backup-folder')).toHaveTextContent('/home/scorer/.local/share/OpenVolley/backups')
-    expect(screen.getByTestId('native-backup-privacy')).toHaveTextContent(/^options\.nativeBackupPrivacy$/)
+    expect(screen.getByTestId('native-backup-privacy')).toHaveTextContent(/^options\.nativeBackupPrivacy( options\.nativeBackupRecoveryNote)?$/)
 
     fireEvent.click(screen.getByRole('button', { name: 'options.openBackupFolder' }))
     expect(backup.openBackupFolder).toHaveBeenCalled()
@@ -58,7 +58,7 @@ describe('Options > Backup', () => {
     expect(screen.getByTestId('native-backup-folder')).toHaveTextContent('/data/user/0/com.openvolley.escoresheet/files/OpenVolley/backups')
     expect(screen.getByText('options.nativeBackupCopyHint')).toBeInTheDocument()
     // inside the app, removed with it; an exported copy is the user's
-    expect(screen.getByTestId('native-backup-privacy')).toHaveTextContent(/^options\.nativeBackupPrivacyAndroid$/)
+    expect(screen.getByTestId('native-backup-privacy')).toHaveTextContent(/^options\.nativeBackupPrivacyAndroid( options\.nativeBackupRecoveryNote)?$/)
     expect(screen.queryByRole('button', { name: 'options.openBackupFolder' })).toBeNull()
     expect(screen.getByRole('button', { name: 'options.exportToDocuments' })).toBeInTheDocument()
   })
