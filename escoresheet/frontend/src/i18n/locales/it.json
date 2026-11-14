@@ -3609,6 +3609,8 @@
         "club_licences_manual_delete": "Rimosso a mano dalle liste della società",
         "club_licences_dob": "Date di nascita consultate per una rosa",
         "saved_teams_scope": "Squadre salvate di partite ufficiali date a un segnapunti",
+        "retention_sweep": "Dati di partita scaduti eliminati (conservazione)",
+        "person_redact": "Dati di una persona oscurati su richiesta",
         "saved_teams_competition_delete": "Competizione eliminata",
         "saved_teams_team_delete": "Squadra salvata eliminata",
         "saved_teams_roster": "Rosa di una squadra salvata sostituita",

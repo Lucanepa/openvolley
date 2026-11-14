@@ -117,7 +117,12 @@ export const AUDIT_ACTIONS = Object.freeze([
   'account.request_approve', 'account.request_reject',
   // db/036: a team manager said yes to a team manager part: proposed, for the
   // club's managers to confirm (the kind, the club and team ids)
-  'account.request_propose'
+  'account.request_propose',
+  // db/042: the daily retention sweep removed expired records (lib/retention.js;
+  // the cutoff and the counts, never a match or a name), and an operator's
+  // redaction of one person (scripts/redact-person.mjs; the mode, a digest of
+  // the person and the counts per table, never a name)
+  'retention.sweep', 'person.redact'
 ])
 export const APPS = SPORTS
 // How a membership came about (auth.app_memberships.joined_via)

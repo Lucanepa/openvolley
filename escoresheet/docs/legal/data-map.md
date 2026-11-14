@@ -137,7 +137,7 @@ user asked for. **(f)** = legitimate interest. **(a)** = consent.
 | **Purpose** | A verifiable sign-off of the result next to the drawn signatures; detecting misuse |
 | **Basis** | (f) integrity of official results; (b) for the account holder |
 | **Who sees it** | The official (own approvals), the match's scorer, admins (`/api/admin/approvals`, shows `ip_hash8` / `device_hash8`) |
-| **Retention as built** | PIN: until removed or the account is deleted. Approvals: **indefinitely**, as part of the match record. Append-only, and they survive account deletion with the name snapshot (user ids set NULL) |
+| **Retention as built** | PIN: until removed or the account is deleted. Approvals: as part of the match record, deleted with it (the retention sweep of 4.7, db/042). Append-only, and they survive account deletion with the name snapshot (user ids set NULL) |
 
 ### 4.5 Invite codes
 
@@ -196,9 +196,9 @@ the account (4.5a).
 | **Purpose** | Owner decision 2026-11-09: the club sees its people with their teams; team managers and scorers add the club's players to a roster without typing them, and a team official (coach, assistant coach, physiotherapist, medic) from anyone of the club's lists ("coaches can literally be any player/member of the club"); a player cannot be put in a team of the other gender (never checked for officials) (`docs/club-licences-spec.md`). Owner 2026-11-10: someone typed in by hand can be kept in the club's lists when the squad is saved (a gray shield until an upload contains them, then green) |
 | **Basis** | (b)/(f) keeping the official scoresheet and checking eligibility; the same people and fields the scoresheet carries, plus the gender the league already implies |
 | **Stored** | VM; backups. **On scorer devices**: IndexedDB `club_players` (4.11), all three lists of the account's clubs (since privacy 1.11; 1.10: the players list only) |
-| **Who sees it** | The club's managers and admins: all three lists with each person's teams (`GET /api/club/:id/licences`); the club's team managers (and its managers, admins): all three lists without the teams, for their own teams (`GET /api/team/:id/club-players`: `players` the players list for the player rows, `people` everyone for the officials); indoor accounts with the saved-teams read right of the club (`account_clubs`): the same for their own clubs (`GET /api/club-licences`). Never public, never anonymous, never on `/api/db` |
+| **Who sees it** | The club's managers and admins: all three lists with each person's teams (`GET /api/club/:id/licences`). The club's team managers (db/037, owner decision 2): the players of the team's gender and age class, filtered on the server, dates of birth only of the people of the team's saved team; officials through a name search of at most ten rows (`GET /api/team/:id/club-players`). Scorers of the club (`account_clubs`): the lists **without dates of birth** (`GET /api/club-licences`); the date of birth of a person added to a roster on request (`GET /api/club-licences/dob`, own clubs, at most 80 a day per account, audited `club.licences.dob`). Only the current season's rows are served. Never public, never anonymous, never on `/api/db` |
 | **Flows** | Club manager's browser → backend (`PUT /api/club/:id/licences/:list`, five fields); team or club manager's browser → backend (`POST /api/team/:id/club-people`, `POST /api/club/:id/licences/people`: the list and the five fields, at most 30 people, new rows only); backend → team manager's browser (My teams "Add from club"); backend → scoring tablet (downloaded with the sent rosters while online, kept for Match Setup offline). A person added to a roster from the list then follows the roster's flows (4.5c, 4.7) |
-| **Retention as built** | **Each upload replaces the imported rows of that list** (one transaction); the hand-added rows stay until the list is deleted, and one an upload contains becomes an imported row (the upload's fields); a club manager can delete a list (an empty upload: every row of it, the hand-added ones too); all rows go with the club (`ON DELETE CASCADE`); `imported_by` is set NULL when that account is deleted. Device copies: replaced by each download, cleared at sign-out, account deletion and account switch |
+| **Retention as built** | **Each upload replaces the imported rows of that list** (one transaction); the hand-added rows stay until the list is deleted, and one an upload contains becomes an imported row (the upload's fields); a club manager can delete a list (an empty upload: every row of it, the hand-added ones too) or one hand-added row; rows of past seasons are deleted daily (db/037, `lib/licences.js` sweep); all rows go with the club (`ON DELETE CASCADE`); `imported_by` is set NULL when that account is deleted. Device copies: replaced by each download, cleared at sign-out, account deletion and account switch |
 | **Audit** | `club.licences` (club id, list, count: never a name or a licence number); `club.licences.manual` (club id, team id or null, the number added and per list: never a name or a licence number) (4.6) |
 
 ### 4.5e Sign-up requests (db/025, OpenVolley)
@@ -222,7 +222,7 @@ the account (4.5a).
 | **Purpose** | Accountability for role changes, approvals, closing/reopening matches, account deletions by an admin |
 | **Basis** | (f) |
 | **Who sees it** | Admins (`/api/admin/audit`) |
-| **Retention as built** | **Indefinitely. No sweep.** Actor and target ids are set NULL when an account goes, but **email addresses and names in `details` stay** (F5) |
+| **Retention as built** | **Indefinitely. No sweep** (insert-only for `ov_app`, roles.sql; a retention would run as `ov_owner`). Actor and target ids are set NULL when an account goes; since db/038 the editor and profile entries keep an address digest instead of the address; **beach pair names in `details` stay** (F5). The retention sweep writes `retention.sweep` (the cutoff and the counts) and `scripts/redact-person.mjs` writes `person.redact` (mode, a SHA-256 digest of the person, counts per table): never a name. `redact-person` also redacts the person in `details` |
 
 ### 4.7 Match records in the cloud (indoor and beach)
 
@@ -233,9 +233,10 @@ the account (4.5a).
 | **Purpose** | Electronic scoresheet of an official match: live scoring, the official record, livescore |
 | **Basis** | (f) of the clubs, the association and the officials in a correct official record (and the scorer's (b)); DOB: (f) eligibility and age-category checks on the official scoresheet. Signatures: (f) the record's integrity |
 | **Stored** | VM (DE); backups (DE, CH); the scorer's device (4.11) |
-| **Who sees it** | Full rows: the creating account, accounts that proved the game PIN (`match_editors`), admins. Referee/bench tablets after a PIN: rosters with names and numbers, **without DOB, country, signatures, officials, approvals or pending rosters** (`lib/publicColumns.js` `publicRelayMatch`). Public (no session): see 4.8 |
-| **Retention as built** | **Indefinitely.** Once a match is approved/final it is **closed and read-only**, even for its creator (`db/007` `ov_matches_guard`). Only an admin can reopen it. Account deletion keeps the matches (creator set NULL) |
-| **Delete path** | Open matches: the owner can delete over `/api/db`. Closed matches: **no endpoint deletes or anonymises personal data**. It takes a manual SQL session with `ov.allow_closed = 'on'`, and the copies in `events.state_snapshot`, `backup/` files, scoresheet files and the backups (F2) |
+| **Who sees it** | Full rows: the creating account, the closing account, admins; accounts that proved the game PIN (`match_editors`) until the close (the game PIN retires at the close: restore-by-pin of a closed match gives the public projection, audited `match.restore_pin`; the creator or an admin lists and removes editors). The cloud relay hands each PIN its own view (`lib/publicColumns.js` `relayBundleView`): the referee and the game PIN both rosters by name and the remarks (dates of a DOB correction taken out); a bench its own roster, the other team's shirt numbers and roles, no remarks; none gets DOB, country, signatures, officials, approvals or pending rosters. Public (no session): see 4.8 |
+| **Health data** | Remarks and events can carry **health data** (nDSG Art. 5 lit. c, GDPR Art. 9): an injury substitution (`payload.isInjury`), a libero unable to play (`libero_unable`, `reason: 'injury'`), a bench injury, and the automatic remark lines. Since 2026-11 the automatic lines use the rules' words only ("#4 substituted, cannot continue playing", "Libero #2 becomes unable to play", `frontend/src/domain/remarks.js`); older matches carry "... due to injury". Recipients: full readers above, the referee view and the game PIN on the relay, the final scoresheet PDF and its mail (4.7a). Basis in the policy: GDPR Art. 9(2)(f) with (f), FADP overriding interest. **Lawyer to confirm** |
+| **Retention as built** | **The season of the match and `app_settings.retention_years` seasons after it** (db/042, default 2; the season is `official_season`, else that of `coalesce(scheduled_at, created_at)`, July to June). `lib/retention.js` sweeps daily (20 min after start, then every 24 h; `RETENTION_SWEEP=off` skips it): the matches as an admin delete (`ov.allow_closed`, closed ones included) with their sets, events, live state, approvals, event revisions, closures, final-mail rows, editors and scoring device (cascade) and their activity log (db/016 trigger); db/043 keeps the external_id in `deleted_matches`. At most 2,000 matches a run, 100 per transaction. Once a match is approved/final it is **closed and read-only**, even for its creator (`db/007` `ov_matches_guard`). Only an admin can reopen it. Account deletion keeps the matches (creator set NULL) |
+| **Delete path** | Open matches: the owner can delete over `/api/db`. Closed matches and requests: **`scripts/redact-person.mjs`** as `ov_owner`, one transaction, dry run unless `--apply`: erase (names to `[redacted]`, DOB, licence, email, phone to NULL; the full name in free text) or `--set-dob` in matches, closures, events, revisions, activity and audit logs, game rosters, beach rows, `svrz_games`; the person's rows of `club_licences`, `competition_players` / `competition_staff`, `referee_database` deleted; `--match` limits it; scoresheet files listed or removed (`--drop-files`); audited `person.redact`; `--register FILE` keeps a digest line so `--reapply` runs it again after a restore from an older backup (structured fields; free text needs the name again). Not reached: the account itself (account deletion), devices, sent mails, per-account `backup/` files (30 days), the encrypted backups (up to ~6 months, F8) |
 
 ### 4.7a Final scoresheet by email (db/021, db/040)
 
@@ -272,7 +273,7 @@ the account (4.5a).
 | **Whose** | Players, staff, referees (third parties); the manager |
 | **Purpose** | Re-using rosters; running beach tournaments; matching imports by licence number |
 | **Basis** | (f) of the club or organiser |
-| **Who sees it** | Accounts with the manager or scorer role of that sport (`lib/manageApi.js`); the public page for public tournaments (4.8). Scorers' devices cache saved teams with DOB and licence (`frontend/src/db/savedTeams.js`), cleared on sign-out or account switch |
+| **Who sees it** | Competition managers and admins of that sport (`lib/manageApi.js`). Indoor scorers (db/037, owner decision 1): only the teams of their own matches of the current season (their clubs' teams, the home opponents in the schedule, the games of the matches they created or edit; a scorer without a club only while the official game is near, at most six games a week, audited `saved_teams.scope`), never an archived competition (`lib/savedTeams.js`). The public page for public tournaments (4.8). Scorers' devices cache saved teams with DOB and licence (`frontend/src/db/savedTeams.js`), cleared on sign-out or account switch |
 | **Retention as built** | Until a manager deletes them (delete endpoints exist for teams, players, entries, draws and tournaments). **Account deletion keeps them** with `created_by` NULL (F21). Archived competitions are kept |
 
 ### 4.10 Reference data: referee directory and the VolleyManager sync
@@ -283,7 +284,7 @@ the account (4.5a).
 | **`svrz_games`** | Every official game in the window (today −1 to +14 days, `VM_SYNC_DAYS_*`), from VolleyManager: teams, hall and address, league, **1st/2nd referee name and DOB, line judges, convocations**, supervision flags. Read-only for clients. Names are public; DOBs go only to admins and indoor scorers (`/api/db` and `GET /api/games/today`; F1, fixed 2026-11-12). `svrz_sync_log` logs each run (counts, redacted errors) |
 | **Purpose** | Suggesting officials; loading an official match with its officials |
 | **Basis** | (f). Source: Swiss Volley (check the terms of the VolleyManager account used: F6) |
-| **Retention as built** | Directory: until an admin deletes a row. `svrz_games`: **indefinitely**; a row is overwritten only when its game number comes back in a later season (`db/007` comment). No sweep. Sync log: indefinitely (no personal data) |
+| **Retention as built** | Directory: until an admin deletes a row (or `redact-person`). `svrz_games` and `svrz_games_removed`: rows of games before the retention cutoff day (1 July after the last expired season, 4.7) are deleted by the daily retention sweep (`datetime`, else `created_at`); a row is overwritten when its game number comes back. Sync log: indefinitely (no personal data) |
 
 ### 4.11 On the user's device (web, desktop, Android)
 
@@ -304,7 +305,7 @@ the account (4.5a).
 |---|---|---|---|
 | `backup/{userId}/backups/backup_g{n}/...json` | Full match backup from the scorer's device: rosters with DOB, signatures, events (`utils/logger.js:553`) | The uploading account | **30 days**, daily sweep of all of `backup/` (`server.js` `storage.sweep`), paused while the host backup is stale. Deleted with the account. Only an account with a role (scorer, referee, manager or admin, either sport) may upload; at most `STORAGE_BACKUP_ACCOUNT_MAX_MB` per account |
 | `backup/{userId}/logs/game_{n}/logs_*.txt` | The scorer app's console lines (may contain names, game numbers, errors) (`utils/logger.js:474`) | The uploading account | **30 days**, the same daily sweep (paused while the host backup is stale; F4, fixed 2026-11-13). Deleted with the account. Uploads need an account with a role, as above |
-| `scoresheets/{date}/game{n}_{key}[_final].json/.pdf` | The finished scoresheet (rosters with DOB, signatures, officials, events) (`utils/scoresheetUploader.js`) | The uploading account (owner records under `.owners/`); the PDF also admins and the sport's competition managers in the manager's Scoresheets tab, each opening audited as `scoresheet.read` (`lib/scoresheets.js`) | **No expiry.** On account deletion the file **stays**; only the admins and competition managers can still open the PDF (F3) |
+| `scoresheets/{date}/game{n}_{key}[_final].json/.pdf` | The finished scoresheet (rosters with DOB, signatures, officials, events) (`utils/scoresheetUploader.js`) | The uploading account (owner records under `.owners/`); the PDF also admins and the sport's competition managers in the manager's Scoresheets tab, each opening audited as `scoresheet.read` (`lib/scoresheets.js`) | **Like the match record (4.7):** the daily retention sweep removes the day folders (`{date}/`, `beach/{date}/`) before the cutoff day with their `match_scoresheets` rows. On account deletion the file stays until then; only the admins and competition managers can still open the PDF |
 
 ### 4.13 Support and the legacy mail routes
 
@@ -319,8 +320,8 @@ the account (4.5a).
 
 | Log | Content | Retention |
 |---|---|---|
-| Backend stdout (Docker `json-file`) | Value-free request logs (status, error code, table, request id; `lib/opsLog.js`), connection counts, sweep and sync results, the contact/send-info lines above, masked mail recipients | Size-based rotation: 5 × 10 MB per container (`deploy/compose.yaml`). Time span depends on traffic (days to weeks) |
-| Postgres log | Statements slower than 500 ms (`log_min_duration_statement=500`) **with their bind parameters** (Postgres default `log_parameter_max_length=-1`), which can contain names, emails or rosters (F11) | Same 5 × 10 MB rotation |
+| Backend stdout (Docker `json-file`) | Value-free request logs (status, error code, table, request id; `lib/opsLog.js`), connection counts, sweep and sync results (the retention sweep: counts only), the contact line above (masked address), masked mail recipients; per-message relay lines folded into a per-minute summary | Size-based rotation: 10 × 20 MB per container (`deploy/compose.yaml`). Time span depends on traffic (days to weeks) |
+| Postgres log | Statements slower than 500 ms and failed ones, **without their bind parameters** (`log_parameter_max_length=0`, `log_parameter_max_length_on_error=0`; F11, fixed 2026-11) | Same 10 × 20 MB rotation |
 | cloudflared, Caddy | Tunnel status; Caddy has no access log | Same rotation |
 | Cloudflare (edge) | IPs, URLs, user agents of every request | Cloudflare's own retention (processor terms) |
 
@@ -373,15 +374,15 @@ file tar). The policy must say so (F8).
 | Tailscale | Network for the backup pull; sees no content (WireGuard end-to-end, files are GPG-encrypted) | US | No personal data | No mention needed |
 | Uptime Kuma pushes | Status only | Operator's own | No personal data | — |
 
-Not in use (code present but not configured in `deploy/compose.yaml`):
-Supabase (left in 2026-10). No code talks to it any more; in 2026-11 the
-copy of its old vm-sync Edge Function (`backend/legacy/`), the
-`VITE_SUPABASE_*` lines of the release workflow and the Supabase MCP config
-were removed from the repository. Its anon key stays readable in the public
-git history, so **record here when the project was deleted** (Supabase
-dashboard; if it still exists, delete it or at least rotate its JWT secret).
-The PocketBase relay backup (never configured) was removed from the code in
-2026-11.
+Not in use: Supabase (left in 2026-10) and PocketBase. No code talks to
+Supabase any more; in 2026-11 the copy of its old vm-sync Edge Function
+(`backend/legacy/`), the `VITE_SUPABASE_*` lines of the release workflow, the
+Supabase MCP config and the Supabase-era database helpers (db/043) were
+removed. The old Supabase project is to be deleted (owner step, Supabase
+dashboard); its anon key stays readable in the public git history: **record
+here the day the project was deleted**. The PocketBase relay backup
+(never configured) was removed from the code in 2026-11 (server, app restore
+source). Neither is a recipient.
 
 ## 6. Retention as built: summary
 
@@ -392,22 +393,23 @@ The PocketBase relay backup (never configured) was removed from the code in
 | Reset / confirmation links | 60 min / 24 h, rows gone 7 days later |
 | Rate-limit / lockout counters | Memory only |
 | Approval PIN | Until removed or account deleted |
-| Approvals (with IP/device hash, name snapshot) | Indefinitely, with the match |
-| Audit log | Indefinitely |
+| Approvals (with IP/device hash, name snapshot) | With the match (retention below) |
+| Audit log | Indefinitely (no personal data in the retention and redaction entries) |
 | Event history (undone / corrected events) | With the match (part of the record) |
 | Activity log (server) | Match entries 24 months or with the match; others 90 days; delete on request |
 | Activity log (device) | Uploaded rows 180 days / 100,000 rows; daily files 30 days / 50 MB |
 | Interaction (click) log (device only) | 30 days / 50,000 rows |
-| Match records (cloud) | Indefinitely; closed matches read-only |
+| Match records (cloud), with events, revisions, approvals, closures, remarks | The season + `retention_years` seasons (db/042, default 2), then the daily sweep (`lib/retention.js`); closed matches read-only; redaction on request: `scripts/redact-person.mjs` |
 | Saved teams, beach tournaments | Until deleted by a manager (kept after the creator's account is deleted) |
 | Rosters sent ahead (`game_rosters`) | Content: until accepted by a scorer; row: 14 days after the game |
 | Club licence lists (`club_licences`) | Imported rows: until the next upload of that list, the list's deletion or the club's deletion; rows added by hand: until the list's deletion or the club's deletion (an upload containing them makes them imported rows) |
 | Referee directory | Until an admin deletes a row |
-| `svrz_games` | Indefinitely (overwritten per game number) |
+| `svrz_games` | Like the match records (rows of games before the cutoff day) |
 | `backup/…/backups/` files | 30 days |
 | `backup/…/logs/` files | 30 days |
-| Scoresheet files | Indefinitely (kept unreadable after account deletion) |
-| Container logs | 5 × 10 MB per container (size-based) |
+| Scoresheet files | Like the match records (day folders before the cutoff day) |
+| Club licence lists | Past seasons deleted daily (db/037) |
+| Container logs | 10 × 20 MB per container (size-based); Postgres without bind parameters |
 | Backups | 48 h / 7 days on the VM; 30 / 90 days on the NAS + snapshots up to ~6 months |
 | Device: IndexedDB matches | Until the user deletes them |
 | Device: desktop/Android backup files | 30 days, ≤ 500 files and 64 MB per match |
@@ -418,16 +420,16 @@ The PocketBase relay backup (never configured) was removed from the code in
 | # | Severity | Finding | Where | Suggested fix |
 |---|---|---|---|---|
 | F1 | High | **Referees' dates of birth go to any signed-in account.** Sign-up is open to anyone and gives no role, yet a session is enough to read full `referee_database` and `svrz_games` rows with DOBs | `backend/server.js:2815-2825`, `lib/publicColumns.js` (comments "dates of birth only with a session") | Require a scorer/admin role for the DOB columns (or drop DOBs from `svrz_games` if unused). **Fixed 2026-11-12**: `server.js` `REFEREE_DOB_SPORTS` (admins and scorers; others get `ANON_DB_COLUMNS`, no DOB filter), also for the rows a directory write returns and `GET /api/games/today`; a referee such an account adds is stored without a DOB (an insert's answer could otherwise test a DOB guess against a unique key) |
-| F2 | High | **No delete or anonymise path for personal data in closed matches.** "Delete on request" today needs manual SQL with `ov.allow_closed`, plus the copies in `events.state_snapshot`, `storage/backup`, `storage/scoresheets` and the backups | `db/007` `ov_matches_guard`; no admin endpoint | Admin endpoint or script "redact person X in match Y" (rosters, snapshots, files) with an audit entry; a runbook for requests; state the backup lag |
-| F3 | Medium | Scoresheet files are kept forever. After the uploader's account is deleted they stay on disk; only admins and the sport's competition managers can still open the PDF (manager, audited) | `lib/storage.js:710` `deleteUserData`, no sweep of `scoresheets/` | Delete files left without an owner, or set a season-based retention (e.g. season + N years) and document it |
+| F2 | High | **No delete or anonymise path for personal data in closed matches.** "Delete on request" today needs manual SQL with `ov.allow_closed`, plus the copies in `events.state_snapshot`, `storage/backup`, `storage/scoresheets` and the backups | `db/007` `ov_matches_guard`; no admin endpoint | Admin endpoint or script "redact person X in match Y" (rosters, snapshots, files) with an audit entry; a runbook for requests; state the backup lag. **Fixed 2026-11-14**: `scripts/redact-person.mjs` (4.7 Delete path), audited, with a register for restores; privacy 19 states the backup lag |
+| F3 | Medium | Scoresheet files are kept forever. After the uploader's account is deleted they stay on disk; only admins and the sport's competition managers can still open the PDF (manager, audited) | `lib/storage.js:710` `deleteUserData`, no sweep of `scoresheets/` | Delete files left without an owner, or set a season-based retention (e.g. season + N years) and document it. **Fixed 2026-11-14**: season + `retention_years` (db/042, `lib/retention.js`) for matches, files and `svrz_games`; privacy 16 |
 | F4 | Medium | Uploaded console logs (`backup/{user}/logs/`) are never swept | `server.js:4501` sweeps `backup/backups` only; `utils/logger.js:474` | Sweep `logs/` too (e.g. 30–90 days). **Fixed 2026-11-13**: the daily sweep covers all of `backup/` (every account's backups, logs and other files older than 30 days, `lib/storage.js` `sweep`), paused while the host backup is stale; uploads to `backup/` need an account with a role |
 | F5 | Medium | The audit log keeps email addresses (`match.editor_add`) and beach pair names in `details`, forever and past account deletion | `lib/accounts.js:801`, `lib/beachTournaments.js:702,744` | Store user ids instead of emails; retention of e.g. 2 years; scrub `details` on account deletion |
-| F6 | Medium | `svrz_games` holds referee/line-judge names, DOBs and convocations from a **login-protected** VolleyManager search. Kept forever, names public without a session | `lib/vmSync.js`, `lib/publicColumns.js` `SVRZ_GAMES_COLUMNS` | Check the VolleyManager account's terms; drop names from the anonymous projection unless needed; delete rows of past seasons |
+| F6 | Medium | `svrz_games` holds referee/line-judge names, DOBs and convocations from a **login-protected** VolleyManager search. Kept forever, names public without a session | `lib/vmSync.js`, `lib/publicColumns.js` `SVRZ_GAMES_COLUMNS` | Check the VolleyManager account's terms; drop names from the anonymous projection unless needed; delete rows of past seasons. **Partly fixed**: DOBs for scorers and admins only (F1); rows of past seasons go with the match retention (db/042) |
 | F7 | Medium | Referee directory: any account can add third parties (names, country; a DOB only admins and scorers, since 2026-11-12). Names and country are public; only admins can delete | `server.js:191-195` | Make DOB optional and not public, add a removal path, mention it in the policy |
 | F8 | Medium | Deleted data stays up to ~6 months in NAS snapshots (beyond the 30/90-day file retention) | `deploy/nas-pull.sh:10,25-26` | Say so in the policy, or shorten the snapshot plan |
 | F9 | Medium | Android: backup files with names and DOBs in the public Documents folder, kept after uninstall, readable by other apps on Android ≤ 10; `allowBackup="true"` lets Google backup copy app data. Same in OpenBeach | `frontend/src/utils/nativeBackup/platform.js:89`, `android/app/src/main/AndroidManifest.xml` (both repos) | Prefer the app's own folder, or tell the user clearly; `allowBackup="false"` or data-extraction rules |
 | F10 | Low | Dormant and never-confirmed accounts are never removed | `lib/auth.js` | E.g. delete unconfirmed accounts after 30 days, warn and delete after N years of inactivity |
-| F11 | Low | Postgres logs slow statements with full bind parameters | `deploy/compose.yaml` (`log_min_duration_statement=500`) | Add `-c log_parameter_max_length=0` |
+| F11 | Low | Postgres logs slow statements with full bind parameters | `deploy/compose.yaml` (`log_min_duration_statement=500`) | Add `-c log_parameter_max_length=0`. **Fixed 2026-11** (deploy-health-and-edge: no bind parameters, also on error) |
 | F12 | Medium | The support form says "Feedback received" but, with `SMTP_LEGACY_ROUTES` unset (the default), the message is only logged (email + first 100 characters) and never delivered. `send-info` logs full recipient addresses | `server.js:2060-2228`, `server.js:2324` | Deliver to support@ (a fixed recipient is not an open relay), or say "not sent"; mask addresses in logs. **`/api/contact` fixed 2026-10-29** (`lib/contact.js`); `send-info` unchanged |
 | F13 | Low | Resend (US) is still wired up for `send-info` | `server.js:675`, `deploy/env.example:51` | Check `.env`; remove it if unused, otherwise list it as a processor |
 | F14 | Low | The `app.openvolley.app` home page sends visitors' IPs to GitHub (`api.github.com`) | `frontend/src/components/pages/HomePage.jsx:13,60` | Serve the release info from `get.openvolley.app/desktop/latest.json`, or name GitHub in the policy |
@@ -440,6 +442,8 @@ The PocketBase relay backup (never configured) was removed from the code in
 | F21 | Low | Saved teams and beach tournaments made by a deleted account stay (third parties' DOBs and licence numbers) with no owner | `lib/auth.js` `detachedColumns`; `db/007`, `db/014` | Decide: hand them over to the club or admin, or delete orphaned ones |
 | F22 | Info | Many players are minors; the apps hold their DOBs | rosters, saved teams | Address minors in the policy (who supplies the data: the club/scorer; how parents can ask for deletion) |
 | F23 | Medium | **The browser and Android scorer apps publish every created match to the cloud relay without a sign-in** (`sync-match-data` with teams, `homePlayers`/`awayPlayers` straight from IndexedDB, sets, events). The relay accepts unauthenticated scoreboards and keeps the room in memory until 24 h after the last activity; tablets get the PIN-gated projection. The desktop app uses its LAN relay instead. The first draft said "data stays on your device until you sign in": corrected in privacy (In short, 3, 5, 9) | `frontend/src/App.jsx:1056-1145`, `utils/backendConfig.js` `getRelayWebSocketUrl` (static deployment -> `backend.openvolley.app`), `backend/server.js` `handleSyncMatchData` | Decide whether the scorer should send DOBs to the relay at all (strip `dob` in `relayMatchPayload`, the tablets never get it), or publish only when a tablet connection is on |
+| F25 | Low | **Health data in remarks and events** (injury substitutions, libero unable, bench injuries) were not named in the policy, and the automatic remark said "due to injury" | `frontend/src/components/Scoreboard.jsx`, `domain/remarks.js` | **Fixed 2026-11-14**: privacy 7, 16, 20 (basis GDPR Art. 9(2)(f), lawyer to confirm); automatic lines in the rules' words; the relay sends remarks to the referee and the game PIN only (relay-bundle-privacy) |
+| F26 | Low | **Cloudflare injects scripts at the edge**: the bot-detection loader `/cdn-cgi/challenge-platform/scripts/jsd/main.js` (Bot Fight Mode / JavaScript detections; may set `cf_clearance`) in every HTML answer, and `email-decode.min.js` (Email Address Obfuscation) on openvolley.app and get.openvolley.app | Cloudflare zone settings | Privacy 3 and 4 name them (1.13). **Owner step**: turn off JavaScript detections and Email Address Obfuscation for the app, manager and get hosts (Configuration Rules), check a page body for `/cdn-cgi/`, then drop the "Cloudflare's scripts" paragraph in all four languages |
 | F24 | Info | IP addresses: the backend keeps client IPs in memory for rate limits, connection caps and the relay's same-venue check (`cloudListsMatch`); never logged or stored, except the HMAC'd `ip_hash` of an approval. Now stated in privacy 14 | `backend/server.js` `getClientIp`, `ipBucketKey` | — |
 
 ## 8. What the policy can truthfully say (checklist for the texts)
@@ -486,8 +490,10 @@ request" and "we answer your message".
 3. Where does Migadu store mail? Which Migadu plan?
 4. Whose VolleyManager account does the sync use, and do its terms allow
    storing and showing referee data?
-5. Retention for the support@ mailbox and for finished match records
-   (e.g. "season + 10 years"?).
+5. Retention for the support@ mailbox (2 years, privacy 13) and for finished
+   match records: **season + 2 seasons** as built (db/042 default,
+   `UPDATE public.app_settings SET retention_years = <n> WHERE id`); owner to
+   confirm N, and the policy's section 16 example follows it.
 6. Is Cloudflare Web Analytics on anywhere?
 7. ~~Where is lenovoserver~~: it no longer runs the service since 09.11.2026 (it keeps the restore test and the NAS copy job).
 8. Controller question in section 1 (clubs vs operator) for the lawyer.

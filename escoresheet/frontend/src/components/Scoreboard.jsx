@@ -75,7 +75,7 @@ import { decisionChangeUndoRecord, planDecisionChangeReversal, planPointRemoval,
 import { validateReopenedRoster, referencedPlayerNumbers, isShirtNumber } from '../domain/roster'
 import { planRenumberPlayers, errorText as correctionErrorText } from '../domain/manualCorrections'
 import { applyCorrectionPlan } from '../services/corrections/applyCorrectionPlan'
-import { appendRemark, removeRemarkLine, eventRemark, remarkClock, setActualStartRemark } from '../domain/remarks'
+import { appendRemark, removeRemarkLine, eventRemark, remarkClock, setActualStartRemark, injurySubstitutionText, liberoUnableText } from '../domain/remarks'
 import { LINEUP_POSITIONS, lineupEntryErrors, lineupCandidates, lineupCaptainStatus, teamCaptainNumber, gameCaptainOptions, initialGameCaptainChoice, lineupGameCaptainDecision } from '../domain/lineupEntry'
 import { easyLiberoNumbers, easyLiberoErrors, easyRosterChanges, liberoSlotEditable, MAX_LIBEROS, easyPlayerRow, newPlayerMayEnter, newPlayerError, NEW_PLAYER_ERRORS, easyReferencedNumbers, isEasyStray } from '../domain/easyMatch'
 import { describeEventText, compareBySeq } from '../domain/describe'
@@ -11494,7 +11494,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const remarkOf = (text) => eventRemark({ set: displaySetNumber(setIndex, data?.match?.bestOf), team: teamLabel, teamScore, oppScore: opponentScore, text })
 
       if (isInjury) {
-        autoRemark = remarkOf(`#${playerOut} substituted due to injury`)
+        autoRemark = remarkOf(injurySubstitutionText(playerOut))
       } else if (isExceptional) {
         autoRemark = remarkOf(`#${playerOut} exceptionally substituted by #${playerIn}`)
       }
@@ -11612,7 +11612,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }, { skipMutex: true })
         const libTeamLabel = team === teamAKey ? 'A' : 'B'
         logManualChange('Libero', 'Unable', `#${playerOut} active`, `#${playerOut} unable`,
-          `Libero #${playerOut} becomes unable to play (injury) (Team ${libTeamLabel}, Set ${data.set.index})`)
+          `${liberoUnableText(playerOut, 'injury')} (Team ${libTeamLabel}, Set ${data.set.index})`)
         // Check if redesignation is needed and prompt user
         // Use isLiberoUnable to properly check events, not just database field
         const activeLiberos = teamPlayers?.filter(p =>
@@ -13241,8 +13241,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const opponentScore = team === 'home' ? data.set.awayPoints : data.set.homePoints
       const scoreStr = `${teamScore}:${opponentScore}`
 
-      const reasonText = reason === 'injury' ? 'becomes unable to play (injury)' : 'declared unable to play'
-      const remark = eventRemark({ set: displaySetNumber(setIndex, data?.match?.bestOf), team: teamLabel, teamScore, oppScore: opponentScore, text: `Libero #${liberoNumber} ${reasonText}` })
+      const unableText = liberoUnableText(liberoNumber, reason === 'injury' ? 'injury' : 'declared')
+      const remark = eventRemark({ set: displaySetNumber(setIndex, data?.match?.bestOf), team: teamLabel, teamScore, oppScore: opponentScore, text: unableText })
 
       // Mark libero as unable (declared by coach or injury)
       await logEvent('libero_unable', {
@@ -13259,7 +13259,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         await db.matches.update(matchId, { remarks: appendRemark(freshMatch?.remarks || '', remark) })
 
         logManualChange('Libero', 'Unable', `#${liberoNumber} active`, `#${liberoNumber} unable`,
-          `Libero #${liberoNumber} ${reasonText} (Team ${teamLabel}, Set ${setIndex}, ${scoreStr})`)
+          `${unableText} (Team ${teamLabel}, Set ${setIndex}, ${scoreStr})`)
       }
 
       // Check if redesignation is needed - if so, show prompt in same modal
