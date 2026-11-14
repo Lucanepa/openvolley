@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-**OpenVolley und OpenBeach** · Version 1.12 · Stand: 10. November 2026
+**OpenVolley und OpenBeach** · Version 1.13 · Stand: 14. November 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
 Massgebend ist die englische Fassung.
@@ -13,6 +13,10 @@ Massgebend ist die englische Fassung.
   gespeichert, in der Datenbank des Servers erst, wenn Sie sich anmelden.
   Damit Tablets ein laufendes Spiel erhalten, geht es in der Browser- und der
   Android-App auch ohne Anmeldung über meinen Server, nur im Arbeitsspeicher.
+- Das Global-Werkzeug von OpenVolley braucht kein Konto. Seine Spiele bleiben
+  auf Ihrem Gerät. Nur eine Sicherung des Spiels und am Ende der Spielbericht
+  als PDF liegen auf dem Server, unter einem zufälligen Sicherungscode und ohne
+  Konto, und werden 180 Tage nach der letzten Änderung gelöscht (Abschnitt 7).
 - Ein elektronischer Spielbericht enthält Daten von Spielerinnen und Spielern,
   Betreuungspersonen und Offiziellen: Namen, Rückennummern, Geburtsdaten und
   Unterschriften. Öffentlich sind nur Teamnamen, Spielstand und Rückennummern,
@@ -357,6 +361,28 @@ Spiel und ist nie öffentlich; sie sieht nur, wer das ganze Spiel lesen darf
 angemeldet das Resultat frei, sendet die App den Spielbericht als PDF an die
 E-Mail-Adresse Ihres Kontos, an keine andere. Der Server speichert ihn nicht;
 auf Ihrem Gerät wird das Testspiel beim Abschliessen gelöscht.
+
+**Global-Werkzeug (ohne Konto):** Im Global-Werkzeug von OpenVolley (beim
+Start der App gewählt, in den Optionen änderbar, solange kein Spiel auf dem
+Gerät ist) erfassen Sie die Spiele eines beliebigen Turniers ohne Konto. Die
+Kader, Offiziellen und Spiele, die Sie eintippen oder aus einer Excel- oder
+CSV-Datei laden, bleiben auf Ihrem Gerät; die App liest die Datei auf dem Gerät
+und lädt sie nicht hoch. Ein Global-Spiel wird nicht mit der Datenbank
+synchronisiert: Es steht in keinem Spiel-, Team- oder Spielerdatensatz und
+weder im Manager noch in den öffentlichen Anzeigen. Zwei Dateien pro Spiel
+liegen ohne Konto auf dem Server: die Sicherung des Spiels (der Inhalt einer
+Sicherungsdatei: Teams, Kader mit Namen, Rückennummern und Geburtsdaten,
+Offizielle, Unterschriften, Spielverlauf) und, sobald das Spiel freigegeben
+ist, der Spielbericht als PDF. Sie liegen unter einem zufälligen Sicherungscode
+(128 Bit), den die App für das Spiel erzeugt und im Match-Setup anzeigt. Der
+Code ist der einzige Weg zu den Dateien: Es gibt keine Liste und keine Suche.
+Wer ihn kennt, kann das Spiel wiederherstellen; bewahren Sie ihn daher wie ein
+Passwort auf. Eine neue Sicherung ersetzt die vorherige. Die Dateien werden
+180 Tage nach der letzten Änderung gelöscht; die Serversicherungen
+(Abschnitt 18) behalten noch eine Weile eine Kopie. Die Turnierveranstalterin
+oder der Turnierveranstalter ist dafür verantwortlich, dass die Daten erfasst
+werden dürfen und dass die Spielerinnen und Spieler und ihre Eltern informiert
+sind (Abschnitt 17).
 
 **Freigabe mit PIN:** Offizielle können das Resultat zusätzlich zur
 Unterschrift mit einem persönlichen Freigabe-PIN bestätigen. Gespeichert
@@ -706,6 +732,7 @@ Anfrage erhalten Sie eine Kopie dieser Garantien.
 | E-Mail-Adresse einer Schiedsrichterin oder eines Schiedsrichters beim Spiel | Mit dem Spiel, als Teil des Spielberichts |
 | Versand des fertigen Spielberichts (Zeitpunkt, Anzahl Empfänger, ohne Adressen) | Mit dem Spiel |
 | Spielbericht eines Testspiels per E-Mail | Auf dem Server nicht gespeichert |
+| Global-Werkzeug: Sicherung und Spielbericht-PDF eines Spiels (unter dem Sicherungscode) | 180 Tage nach der letzten Änderung |
 | Hochgeladene Sicherungskopien | 30 Tage |
 | Hochgeladene App-Protokolle | Bis Sie Ihr Konto löschen |
 | Aktivitätsprotokoll eines Spiels (Server) | 24 Monate oder bis das Spiel gelöscht wird; auf Anfrage früher |
@@ -730,6 +757,11 @@ verantwortlich, dass sie die Daten erfassen dürfen und die Spielerinnen und
 Spieler und deren Eltern darüber informieren. Das Geburtsdatum dient der
 Kontrolle der Spielberechtigung und Alterskategorie auf dem offiziellen
 Spielbericht und ist nie öffentlich.
+
+Im Global-Werkzeug ist die Turnierveranstalterin oder der Turnierveranstalter
+bzw. die Person, die die Daten erfasst, in gleicher Weise verantwortlich. Eltern
+können verlangen, dass die Sicherung eines Spiels gelöscht wird; dafür brauche
+ich den Sicherungscode oder die Angaben zum Spiel (Abschnitt 19).
 
 Eltern oder andere gesetzliche Vertreter können die Rechte nach Abschnitt 19
 für ihr Kind ausüben.
@@ -790,7 +822,8 @@ in der EU oder im EWR wohnen, auch bei der Datenschutzbehörde Ihres Landes.
 Soweit die DSGVO gilt, stütze ich mich auf:
 
 - **Vertrag** (Art. 6 Abs. 1 lit. b DSGVO): Konto, Synchronisierung,
-  E-Mails zum Konto, Support, die Funktionen, die Sie nutzen.
+  E-Mails zum Konto, Support, die Funktionen, die Sie nutzen, die
+  Online-Sicherung des Global-Werkzeugs.
 - **Berechtigtes Interesse** (Art. 6 Abs. 1 lit. f DSGVO): korrekte und
   überprüfbare offizielle Spielaufzeichnungen für Vereine, Verband und
   Offizielle (Kaderlisten, Geburtsdaten zur Kontrolle der Spielberechtigung,

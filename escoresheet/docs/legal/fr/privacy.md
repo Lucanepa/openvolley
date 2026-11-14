@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.12 · État au 10 novembre 2026
+**OpenVolley et OpenBeach** · Version 1.13 · État au 14 novembre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version anglaise fait foi.
@@ -14,6 +14,11 @@ version anglaise fait foi.
   vous êtes connecté. Pour que les tablettes reçoivent un match en cours, les
   applications navigateur et Android le font passer par mon serveur même sans
   connexion, uniquement en mémoire vive.
+- L'outil Global d'OpenVolley n'a pas besoin de compte. Ses matchs restent sur
+  votre appareil. Seules une sauvegarde du match et, à la fin, la feuille de
+  match en PDF sont conservées sur le serveur, sous un code de sauvegarde
+  aléatoire et sans compte, et supprimées 180 jours après la dernière
+  modification (section 7).
 - Une feuille de match électronique contient des données sur les joueuses et
   joueurs, l'encadrement et les officiels : noms, numéros de maillot, dates de
   naissance et signatures. Seuls les noms des équipes, le score et les numéros
@@ -375,6 +380,29 @@ l'adresse e-mail de votre compte, et à aucune autre. Le serveur ne la
 conserve pas ; sur votre appareil, le match de test est supprimé lorsque vous
 le clôturez.
 
+**Outil Global (sans compte) :** dans l'outil Global d'OpenVolley (choisi au
+démarrage de l'application, modifiable dans les Options tant qu'aucun match
+n'est sur l'appareil), vous saisissez les matchs d'un tournoi quelconque sans
+compte. Les effectifs, les officiels et les matchs que vous saisissez ou que
+vous chargez depuis un fichier Excel ou CSV restent sur votre appareil ;
+l'application lit le fichier sur l'appareil et ne le téléverse pas. Un match
+Global n'est pas synchronisé avec la base de données : il ne figure dans aucun
+enregistrement de match, d'équipe ou de joueur, ni dans le manager ni dans les
+affichages publics. Deux fichiers par match sont conservés sur le serveur, sans
+compte : la sauvegarde du match (le contenu d'un fichier de sauvegarde :
+équipes, effectifs avec noms, numéros de maillot et dates de naissance,
+officiels, signatures, déroulement du match) et, une fois le match validé, la
+feuille de match en PDF. Ils sont rangés sous un code de sauvegarde aléatoire
+(128 bits) que l'application crée pour le match et affiche dans la
+préparation du match. Le code est le seul accès aux fichiers : il n'y a ni
+liste ni recherche. Qui le connaît peut restaurer le match ; conservez-le donc
+comme un mot de passe. Une nouvelle sauvegarde remplace la précédente. Les
+fichiers sont supprimés 180 jours après la dernière modification ; les
+sauvegardes du serveur (section 18) en gardent encore une copie quelque temps.
+L'organisatrice ou l'organisateur du tournoi est responsable d'avoir le droit
+d'enregistrer les données et d'informer les joueuses et joueurs et leurs
+parents (section 17).
+
 **Validation avec NIP :** les officiels peuvent confirmer le résultat, en plus
 de leur signature, avec un NIP de validation personnel. Sont enregistrés : le
 NIP sous forme de hachage cryptographique (jamais en clair), les tentatives
@@ -734,6 +762,7 @@ prestataires. Vous pouvez me demander une copie de ces garanties.
 | Adresse e-mail d'un arbitre pour un match | Avec le match, comme partie de la feuille de match |
 | Envoi de la feuille de match finale (moment, nombre de destinataires, sans adresses) | Avec le match |
 | Feuille d'un match de test par e-mail | Non conservée sur le serveur |
+| Outil Global : sauvegarde et feuille de match PDF d'un match (sous le code de sauvegarde) | 180 jours après la dernière modification |
 | Copies de sauvegarde téléversées | 30 jours |
 | Journaux de l'application téléversés | Jusqu'à la suppression de votre compte |
 | Journal d'activité d'un match (serveur) | 24 mois, ou jusqu'à la suppression du match ; plus tôt sur demande |
@@ -757,6 +786,11 @@ responsables d'équipe, les marqueurs ou les organisateurs. Ceux-ci doivent
 être autorisés à saisir les données et en informer les joueuses et joueurs et
 leurs parents. La date de naissance sert au contrôle de la qualification et de
 la catégorie d'âge sur la feuille de match officielle et n'est jamais publique.
+
+Dans l'outil Global, l'organisatrice ou l'organisateur du tournoi, ou la
+personne qui saisit les données, est responsable de la même manière. Les
+parents peuvent demander la suppression de la sauvegarde d'un match ; il me
+faut alors le code de sauvegarde ou les indications du match (section 19).
 
 Les parents ou autres représentants légaux peuvent exercer les droits de la
 section 19 pour leur enfant.
@@ -819,7 +853,7 @@ pays.
 Lorsque le RGPD s'applique, je me fonde sur :
 
 - **le contrat** (art. 6, par. 1, let. b RGPD) : compte, synchronisation,
-  e-mails liés au compte, support, fonctions que vous utilisez ;
+  e-mails liés au compte, support, fonctions que vous utilisez, la sauvegarde en ligne de l'outil Global ;
 - **l'intérêt légitime** (art. 6, par. 1, let. f RGPD) : des procès-verbaux
   de match officiels corrects et vérifiables pour les clubs, la fédération et
   les officiels (listes d'équipe, dates de naissance pour le contrôle de la

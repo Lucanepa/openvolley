@@ -234,6 +234,8 @@
     "noRefereeHistory": "No kei Schiri-Historie. Gib d Schiris manuell ii, dänn werded si für zuekünftigi Spiil gspeicheret."
   },
   "matchSetup": {
+    "pointsPerSet": "Punkte pro Satz",
+    "pointsDeciding": "Entscheidungssatz",
     "loadingScheduleGame": "Spiel wird geladen…",
     "scorerDobForCoinToss": "Geburtsdatum vom Schriiber: für d Usloosig nötig",
     "dobRequiredForCoinToss": "Für d Usloosig nötig",

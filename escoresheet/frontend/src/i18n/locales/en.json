@@ -235,6 +235,8 @@
     "noRefereeHistory": "No referee history yet. Enter referees manually and they will be saved for future matches."
   },
   "matchSetup": {
+    "pointsPerSet": "Points per set",
+    "pointsDeciding": "Deciding set",
     "loadingScheduleGame": "Loading the game…",
     "scorerDobForCoinToss": "Scorer date of birth: needed for the coin toss",
     "dobRequiredForCoinToss": "Required for the coin toss",

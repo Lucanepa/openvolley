@@ -12,6 +12,7 @@ import Modal from './Modal'
 import RefereeSelector from './RefereeSelector'
 import LoadOfficialMatchModal from './LoadOfficialMatchModal'
 import GlobalImportModal from './GlobalImportModal'
+import { setTargetsOf } from '../domain/rules'
 import ballFallback from '../ball_fallback.png'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 
@@ -236,7 +237,7 @@ function isEqual(a, b) {
 function hasMatchInfoChanged(original, current) {
   if (!original) return true // No original, consider it changed
   const keys = ['date', 'time', 'hall', 'city', 'type1', 'type1Other', 'championshipType', 'championshipTypeOther',
-    'type2', 'type3', 'type3Other', 'bestOf', 'gameN', 'league', 'home', 'away', 'homeColor', 'awayColor', 'homeShortName', 'awayShortName']
+    'type2', 'type3', 'type3Other', 'bestOf', 'pointsRegular', 'pointsDeciding', 'gameN', 'league', 'home', 'away', 'homeColor', 'awayColor', 'homeShortName', 'awayShortName']
   for (const key of keys) {
     if (!isEqual(original[key], current[key])) return true
   }
@@ -558,6 +559,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [type3, setType3] = useState('senior') // senior | U23 | U19 | other
   const [type3Other, setType3Other] = useState('') // For "other" level
   const [bestOf, setBestOf] = useState(5) // 3 or 5
+  // Points a set is played to (Global may play shorter sets; domain/rules setTargetsOf)
+  const [pointsRegular, setPointsRegular] = useState(25)
+  const [pointsDeciding, setPointsDeciding] = useState(15)
   const [gameN, setGameN] = useState('')
   const [league, setLeague] = useState('')
   const [homeColor, setHomeColor] = useState(DEFAULT_HOME_COLOUR)
@@ -1159,7 +1163,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (currentView === 'info') {
       originalMatchInfoRef.current = {
         date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther,
-        type2, type3, type3Other, bestOf, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName
+        type2, type3, type3Other, bestOf, pointsRegular, pointsDeciding, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName
       }
       originalOfficialsRef.current = {
         ref1First, ref1Last, ref1Country, ref1Dob, ref1Email,
@@ -1431,7 +1435,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (!o) return
     setDate(o.date); setTime(o.time); setHall(o.hall); setCity(o.city)
     setType1(o.type1); setType1Other(o.type1Other); setChampionshipType(o.championshipType); setChampionshipTypeOther(o.championshipTypeOther)
-    setType2(o.type2); setType3(o.type3); setType3Other(o.type3Other); setBestOf(o.bestOf ?? 5); setGameN(o.gameN); setLeague(o.league)
+    setType2(o.type2); setType3(o.type3); setType3Other(o.type3Other); setBestOf(o.bestOf ?? 5); setPointsRegular(o.pointsRegular ?? 25); setPointsDeciding(o.pointsDeciding ?? 15); setGameN(o.gameN); setLeague(o.league)
     setHome(o.home); setAway(o.away); setHomeColor(o.homeColor); setAwayColor(o.awayColor)
     setHomeShortName(o.homeShortName); setAwayShortName(o.awayShortName)
   }
@@ -1554,6 +1558,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         if (match.match_type_3) setType3(match.match_type_3)
         if (match.match_type_3_other) setType3Other(match.match_type_3_other)
         if (match.bestOf) setBestOf(match.bestOf)
+        if (match.setTargets) { setPointsRegular(setTargetsOf(match).regular); setPointsDeciding(setTargetsOf(match).deciding) }
         // The placeholder will show a suggestion, but won't auto-fill a value
         if (match.homeShortName && match.homeShortName.trim()) {
           setHomeShortName(match.homeShortName)
@@ -1891,6 +1896,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           if (draft.type3 !== undefined) setType3(draft.type3)
           if (draft.type3Other !== undefined) setType3Other(draft.type3Other)
           if (draft.bestOf !== undefined) setBestOf(draft.bestOf)
+          if (draft.pointsRegular !== undefined) setPointsRegular(draft.pointsRegular)
+          if (draft.pointsDeciding !== undefined) setPointsDeciding(draft.pointsDeciding)
           if (draft.homeShortName !== undefined) setHomeShortName(draft.homeShortName)
           if (draft.awayShortName !== undefined) setAwayShortName(draft.awayShortName)
           if (draft.gameN !== undefined) setGameN(draft.gameN)
@@ -1955,6 +1962,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         type3,
         type3Other,
         bestOf,
+        pointsRegular,
+        pointsDeciding,
         gameN,
         league,
         homeColor,
@@ -2299,7 +2308,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     // Check if any changes were made (skip sync if no changes)
     const currentMatchInfo = {
       date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther,
-      type2, type3, type3Other, bestOf, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName
+      type2, type3, type3Other, bestOf, pointsRegular, pointsDeciding, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName
     }
     const currentOfficials = {
       ref1First, ref1Last, ref1Country, ref1Dob, ref1Email,
@@ -2434,6 +2443,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         match_type_3: type3 || null,
         match_type_3_other: type3Other || null,
         bestOf,
+        // a Global match's own points per set (domain/rules setTargetsOf)
+        ...(match?.global === true ? { setTargets: { regular: pointsRegular, deciding: pointsDeciding } } : {}),
         sport_type: 'indoor',
         game_n: gameN ? parseInt(gameN, 10) : null,
         seed_key: matchSeedKey, // Ensure seed_key is set
@@ -3868,6 +3879,20 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   <option value={3}>{t('matchSetup.bestOf3')}</option>
                 </Select>
               </Field>
+              {match?.global === true && (
+                <div className="grid grid-cols-2 gap-2" data-testid="global-set-rules">
+                  <Field tone="compact" className={FIELD} label={t('matchSetup.pointsPerSet', 'Points per set')}>
+                    <Select aria-label={t('matchSetup.pointsPerSet', 'Points per set')} block value={pointsRegular} onChange={e => setPointsRegular(Number(e.target.value))}>
+                      {[25, 21, 15].map(n => <option key={n} value={n}>{n}</option>)}
+                    </Select>
+                  </Field>
+                  <Field tone="compact" className={FIELD} label={t('matchSetup.pointsDeciding', 'Deciding set')}>
+                    <Select aria-label={t('matchSetup.pointsDeciding', 'Deciding set')} block value={pointsDeciding} onChange={e => setPointsDeciding(Number(e.target.value))}>
+                      {[15, 11, 10].map(n => <option key={n} value={n}>{n}</option>)}
+                    </Select>
+                  </Field>
+                </div>
+              )}
             </div>
           </div>
 
@@ -3886,7 +3911,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               setDob={setRef1Dob}
               email={ref1Email}
               setEmail={setRef1Email}
-              hasDatabase={true}
+              hasDatabase={match?.global !== true}
               selectorKey="ref1"
               onOpenDatabase={handleOpenDatabase}
               t={t}
@@ -3904,7 +3929,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               setDob={setRef2Dob}
               email={ref2Email}
               setEmail={setRef2Email}
-              hasDatabase={true}
+              hasDatabase={match?.global !== true}
               selectorKey="ref2"
               onOpenDatabase={handleOpenDatabase}
               collapsible={true}
@@ -4330,9 +4355,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 >
                   {t('roster.deleteRoster')}
                 </Button>
-                <Button variant="dark" size="xl" onClick={() => setTestRosterConfirm('home')}>
+                {match?.global !== true && (
+                  <Button variant="dark" size="xl" onClick={() => setTestRosterConfirm('home')}>
                   {t('roster.loadTestRoster')}
                 </Button>
+                )}
                 {access?.canReadTeams && (
                   <Button variant="secondary" size="xl" icon={<Users size={16} aria-hidden />} onClick={() => setSavedPicker('home')} data-testid="load-saved-team-home">
                     {t('savedTeams.load')}
@@ -5512,9 +5539,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 >
                   {t('roster.deleteRoster')}
                 </Button>
-                <Button variant="dark" size="xl" onClick={() => setTestRosterConfirm('away')}>
+                {match?.global !== true && (
+                  <Button variant="dark" size="xl" onClick={() => setTestRosterConfirm('away')}>
                   {t('roster.loadTestRoster')}
                 </Button>
+                )}
                 {access?.canReadTeams && (
                   <Button variant="secondary" size="xl" icon={<Users size={16} aria-hidden />} onClick={() => setSavedPicker('away')} data-testid="load-saved-team-away">
                     {t('savedTeams.load')}
@@ -7156,7 +7185,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               { label: t('matchSetup.homeTeam'), value: <span className={cn(TRUNC, 'font-semibold text-stone-900')} title={home}>{home || t('common.notSet')}</span> },
               { label: t('matchSetup.awayTeam'), value: <span className={cn(TRUNC, 'font-semibold text-stone-900')} title={away}>{away || t('common.notSet')}</span> },
               { label: t('matchSetup.league'), value: <span className={TRUNC}>{league || t('common.notSet')}</span> },
-              { label: t('matchSetup.matchFormat'), value: <span>{bestOf === 5 ? t('matchSetup.bestOf5') : t('matchSetup.bestOf3')}</span> }
+              { label: t('matchSetup.matchFormat'), value: <span>{bestOf === 5 ? t('matchSetup.bestOf5') : t('matchSetup.bestOf3')}{match?.global === true ? ` · ${pointsRegular}/${pointsDeciding}` : ''}</span> }
             ]} />
           </div>
 

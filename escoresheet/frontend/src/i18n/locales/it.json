@@ -234,6 +234,8 @@
     "noRefereeHistory": "Nessuno storico arbitri. Inserisci gli arbitri manualmente e verranno salvati per le prossime partite."
   },
   "matchSetup": {
+    "pointsPerSet": "Punti per set",
+    "pointsDeciding": "Set decisivo",
     "loadingScheduleGame": "Caricamento della partita…",
     "scorerDobForCoinToss": "Data di nascita del segnapunti: necessaria per il sorteggio",
     "dobRequiredForCoinToss": "Richiesta per il sorteggio",

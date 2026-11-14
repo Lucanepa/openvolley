@@ -227,6 +227,8 @@
     "noRefereeHistory": "Noch keine Schiedsrichter-Historie. Geben Sie Schiedsrichter manuell ein und sie werden für zukünftige Spiele gespeichert."
   },
   "matchSetup": {
+    "pointsPerSet": "Punkte pro Satz",
+    "pointsDeciding": "Entscheidungssatz",
     "loadingScheduleGame": "Spiel wird geladen…",
     "scorerDobForCoinToss": "Geburtsdatum des Schreibers: für die Auslosung nötig",
     "dobRequiredForCoinToss": "Für die Auslosung erforderlich",

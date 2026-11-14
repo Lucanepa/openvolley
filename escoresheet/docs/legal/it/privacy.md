@@ -1,6 +1,6 @@
 # Informativa sulla protezione dei dati
 
-**OpenVolley e OpenBeach** · Versione 1.12 · Aggiornata al 10 novembre 2026
+**OpenVolley e OpenBeach** · Versione 1.13 · Aggiornata al 14 novembre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
 la versione inglese.
@@ -13,6 +13,11 @@ la versione inglese.
   e nella banca dati del server solo dopo l'accesso. Affinché i tablet
   ricevano una partita in corso, le app browser e Android la fanno passare dal
   mio server anche senza accesso, solo nella memoria di lavoro.
+- Lo strumento Global di OpenVolley non richiede un account. Le sue partite
+  restano sul suo dispositivo. Sul server si trovano solo un backup della
+  partita e, alla fine, il referto in PDF, sotto un codice di backup casuale e
+  senza account; vengono cancellati 180 giorni dopo l'ultima modifica
+  (sezione 7).
 - Un referto elettronico contiene dati di giocatrici e giocatori, staff e
   ufficiali di gara: nomi, numeri di maglia, date di nascita e firme. Sono
   pubblici solo i nomi delle squadre, il punteggio e i numeri di maglia; nel
@@ -350,6 +355,27 @@ partita (tabella sopra). L'invio avviene tramite Migadu (sezione 15).
 approva il risultato da connesso, l'app invia il referto in PDF all'indirizzo
 e-mail del suo account, e a nessun altro. Il server non lo conserva; sul suo
 dispositivo la partita di prova viene cancellata alla chiusura.
+
+**Strumento Global (senza account):** nello strumento Global di OpenVolley
+(scelto all'avvio dell'app, modificabile nelle Opzioni finché non c'è una
+partita sul dispositivo) registra le partite di un torneo qualsiasi senza
+account. Le rose, gli ufficiali di gara e le partite che digita o carica da un
+file Excel o CSV restano sul suo dispositivo; l'app legge il file sul
+dispositivo e non lo carica. Una partita Global non viene sincronizzata con il
+database: non compare in alcun record di partita, squadra o giocatore, né nel
+manager né nelle visualizzazioni pubbliche. Per ogni partita sul server si
+trovano due file, senza account: il backup della partita (il contenuto di un
+file di backup: squadre, rose con nomi, numeri di maglia e date di nascita,
+ufficiali di gara, firme, andamento della partita) e, una volta approvata la
+partita, il referto in PDF. Si trovano sotto un codice di backup casuale
+(128 bit) che l'app crea per la partita e mostra nella preparazione della
+partita. Il codice è l'unico accesso ai file: non esistono né un elenco né una
+ricerca. Chi lo conosce può ripristinare la partita; lo conservi quindi come
+una password. Un nuovo backup sostituisce il precedente. I file vengono
+cancellati 180 giorni dopo l'ultima modifica; i backup del server (sezione 18)
+ne conservano ancora una copia per un certo tempo. L'organizzatrice o
+l'organizzatore del torneo è responsabile di poter registrare i dati e di
+informare le giocatrici, i giocatori e i loro genitori (sezione 17).
 
 **Approvazione con PIN:** gli ufficiali di gara possono confermare il
 risultato, oltre che con la firma, con un PIN di approvazione personale.
@@ -699,6 +725,7 @@ riceve una copia di queste garanzie.
 | Indirizzo e-mail di un arbitro per una partita | Con la partita, come parte del referto |
 | Invio del referto finale (momento, numero di destinatari, senza indirizzi) | Con la partita |
 | Referto di una partita di prova per e-mail | Non conservato sul server |
+| Strumento Global: backup e referto PDF di una partita (sotto il codice di backup) | 180 giorni dopo l'ultima modifica |
 | Copie di sicurezza caricate | 30 giorni |
 | Registri dell'app caricati | Fino alla cancellazione del suo account |
 | Registro attività di una partita (server) | 24 mesi, o fino alla cancellazione della partita; prima su richiesta |
@@ -723,6 +750,11 @@ autorizzati a registrare i dati e devono informarne le giocatrici, i
 giocatori e i loro genitori. La data di nascita serve al controllo
 dell'idoneità e della categoria d'età nel referto ufficiale e non è mai
 pubblica.
+
+Nello strumento Global è responsabile allo stesso modo l'organizzatrice o
+l'organizzatore del torneo, ovvero la persona che registra i dati. I genitori
+possono chiedere la cancellazione del backup di una partita; mi servono allora
+il codice di backup o i dati della partita (sezione 19).
 
 I genitori o altri rappresentanti legali possono esercitare i diritti della
 sezione 19 per il proprio figlio.
@@ -780,7 +812,7 @@ SEE, anche all'autorità di protezione dei dati del suo paese.
 Se si applica il RGPD, mi baso su:
 
 - **contratto** (art. 6 par. 1 lett. b RGPD): account, sincronizzazione,
-  e-mail legate all'account, supporto, funzioni che utilizza;
+  e-mail legate all'account, supporto, funzioni che utilizza, il backup online dello strumento Global;
 - **interesse legittimo** (art. 6 par. 1 lett. f RGPD): verbali ufficiali
   delle partite corretti e verificabili per società, federazione e ufficiali
   di gara (liste squadra, date di nascita per il controllo dell'idoneità,
