@@ -243,6 +243,12 @@ export function consistencyWarnings({ sets, events, teamAKey, homePlayers, awayP
     const pts = { home: 0, away: 0 }
     for (const e of setEvents) if (e.type === 'point' && (e.payload?.team === 'home' || e.payload?.team === 'away')) pts[e.payload.team as TeamKey]++
     const hasPoints = pts.home + pts.away > 0
+    // A best-of-3 match has sets 1, 2 and the decider (slot 5): a set 3 or 4 means
+    // its format was changed during the match (the sheet still prints it)
+    if (Number(bestOf) === 3 && (set.index === 3 || set.index === 4) &&
+      (hasPoints || (set.homePoints || 0) + (set.awayPoints || 0) > 0 || set.finished === true || !!set.startTime)) {
+      out.push(`Set ${set.index} recorded in a best-of-3 match.`)
+    }
     if (hasPoints && (pts.home !== (set.homePoints || 0) || pts.away !== (set.awayPoints || 0))) {
       out.push(`Set ${n}: the points recorded (${pts.home}:${pts.away}, home:away) do not match the set score (${set.homePoints || 0}:${set.awayPoints || 0}).`)
     }

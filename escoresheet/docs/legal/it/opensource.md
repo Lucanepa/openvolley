@@ -31,7 +31,8 @@ server. Sono sotto la **SIL Open Font License 1.1**
 (https://openfontlicense.org):
 
 Inter, IBM Plex Mono, JetBrains Mono, Orbitron, Roboto Mono, Space Mono
-(inclusi tramite i pacchetti Fontsource).
+(inclusi tramite i pacchetti Fontsource), e Liberation Sans (inclusa tramite
+PDF.js, per il testo del PDF del referto).
 
 ## Librerie delle app
 

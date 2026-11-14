@@ -34,7 +34,7 @@ const SURFACE = {
   border: '1px solid var(--ov-hairline-soft)',
   boxShadow: 'var(--ov-shadow-card)'
 }
-import { setsToWin, displaySetNumber } from '../utils/matchFormat'
+import { setsToWin, displaySetNumber, resolveBestOf } from '../utils/matchFormat'
 import { getSideAForSet, getFirstServeForSet } from '../domain/rules'
 import { countRegularSubstitutions } from '../domain/substitutions'
 import { sanctionTarget, compareBySeq } from '../domain/describe'
@@ -323,7 +323,8 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
   }, [data?.allSets, team])
 
   // Check if match is finished
-  const matchBestOf = data?.match?.bestOf ?? 5
+  // the matches row (match_info) or the live state when the relay has no bundle
+  const matchBestOf = resolveBestOf(data?.match, data?.liveState)
   const isMatchFinished = useMemo(() => {
     const needed = setsToWin(matchBestOf)
     return setsWon.team >= needed || setsWon.opponent >= needed

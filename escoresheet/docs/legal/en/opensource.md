@@ -30,7 +30,8 @@ All fonts ship with the apps and are not loaded from other servers. They are
 under the **SIL Open Font License 1.1** (https://openfontlicense.org):
 
 Inter, IBM Plex Mono, JetBrains Mono, Orbitron, Roboto Mono, Space Mono
-(included through the Fontsource packages).
+(included through the Fontsource packages), and Liberation Sans (included
+through PDF.js, for the text of the scoresheet PDF).
 
 ## Libraries in the apps
 

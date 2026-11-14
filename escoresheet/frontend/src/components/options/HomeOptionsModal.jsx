@@ -1083,7 +1083,7 @@ export default function HomeOptionsModal({
               {' · '}{t('options.icons', 'Icons')}{' '}
               <a href="https://lucide.dev/license" target="_blank" rel="noopener noreferrer" className="underline decoration-stone-300 hover:text-stone-700">Lucide</a> (ISC)
               {', '}<a href="https://github.com/phosphor-icons/react/blob/master/LICENSE" target="_blank" rel="noopener noreferrer" className="underline decoration-stone-300 hover:text-stone-700">Phosphor</a> (MIT)
-              {' · '}{t('options.fonts', 'Fonts')} Inter, IBM Plex Mono, JetBrains Mono, Orbitron, Roboto Mono, Space Mono (SIL OFL 1.1)
+              {' · '}{t('options.fonts', 'Fonts')} Inter, IBM Plex Mono, JetBrains Mono, Orbitron, Roboto Mono, Space Mono, Liberation Sans (SIL OFL 1.1)
             </p>
           </Row>
           {/* Privacy policy, terms, legal notice and the full open-source

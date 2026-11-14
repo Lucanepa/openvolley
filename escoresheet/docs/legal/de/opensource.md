@@ -32,7 +32,8 @@ geladen. Sie stehen unter der **SIL Open Font License 1.1**
 (https://openfontlicense.org):
 
 Inter, IBM Plex Mono, JetBrains Mono, Orbitron, Roboto Mono, Space Mono
-(eingebunden über die Pakete von Fontsource).
+(eingebunden über die Pakete von Fontsource) sowie Liberation Sans
+(eingebunden über PDF.js, für den Text im PDF des Spielberichts).
 
 ## Bibliotheken der Apps
 

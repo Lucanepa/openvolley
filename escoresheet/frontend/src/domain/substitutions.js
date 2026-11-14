@@ -27,7 +27,17 @@ export function getSetSubstitutions(events, teamKey, setIndex) {
   )
 }
 
-/** Max regular substitutions per team per set (FIVB 15.6, Swiss Volley senior 6-6). */
+/**
+ * Max regular substitutions per team per set (FIVB 15.6, Swiss Volley senior 6-6).
+ *
+ * League-wide by decision (owner, rollout audit 2026-11): the same rule limits
+ * hold for every category and league, youth included. No rule reads the
+ * category or the league: 6 regular substitutions and 2 time-outs per set,
+ * sets to 25 and the decider to 15 with a 2-point lead, court change at 8 in
+ * the decider. The only per-match setting is the format, best of 3 or 5
+ * (matchFormat.js), and best of 3 is supported end to end. A category with
+ * other limits needs a per-match rule profile first.
+ */
 export const MAX_SUBSTITUTIONS_PER_SET = 6
 
 /**
