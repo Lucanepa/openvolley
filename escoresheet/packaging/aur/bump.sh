@@ -8,10 +8,24 @@
 #   escoresheet/packaging/aur/bump.sh openvolley 2.4.0 2   # pkgrel 2, same release
 #
 # .SRCINFO comes from `makepkg --printsrcinfo`: the local makepkg on Arch,
-# otherwise an archlinux Docker container (non-root). Needs curl, sha256sum, sed.
+# otherwise the pinned archlinux Docker image (non-root). Needs curl, sha256sum,
+# sed and node: the .deb's hash is pinned only when its signature (<deb>.sig,
+# the updater key, made by publish-pkgs.sh --desktop) verifies
+# (../lib/release-asset.sh).
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source=SCRIPTDIR/../lib/release-asset.sh
+. "$here/../lib/release-asset.sh"
+# arch_image: the pinned build image (../pacman/archlinux-image, written by
+# publish-pacman.sh --pin-image).
+arch_image() {
+  local ref
+  ref=$(grep -v '^#' "$here/../pacman/archlinux-image" 2>/dev/null | head -n1) || true
+  [[ "$ref" =~ ^archlinux:base-devel@sha256:[0-9a-f]{64}$ ]] ||
+    { echo "no pinned image in ../pacman/archlinux-image: run ../pacman/publish-pacman.sh --pin-image and commit it" >&2; exit 1; }
+  echo "$ref"
+}
 
 usage() { echo "usage: $0 <openvolley|openbeach> <version> [pkgrel]" >&2; exit 2; }
 [[ $# -ge 2 && $# -le 3 ]] || usage
@@ -31,10 +45,9 @@ lic_url=https://raw.githubusercontent.com/Lucanepa/openvolley/$tag/escoresheet/L
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-echo "downloading $deb_url"
-curl -fsSL --retry 3 -o "$tmp/pkg.deb" "$deb_url"
+deb=$(release_asset_fetch "$app" "$ver" "$deb_url" "$tmp/deb")
 curl -fsSL --retry 3 -o "$tmp/LICENSE" "$lic_url"
-deb_sum=$(sha256sum "$tmp/pkg.deb" | cut -d' ' -f1)
+deb_sum=$(sha256sum "$deb" | cut -d' ' -f1)
 lic_sum=$(sha256sum "$tmp/LICENSE" | cut -d' ' -f1)
 
 sed -i \
@@ -48,7 +61,7 @@ if command -v makepkg >/dev/null 2>&1; then
   (cd "$dir" && makepkg --printsrcinfo) > "$tmp/SRCINFO"
 else
   command -v docker >/dev/null 2>&1 || { echo "need makepkg or docker for .SRCINFO" >&2; exit 1; }
-  docker run --rm -v "$dir/PKGBUILD:/in/PKGBUILD:ro" archlinux:latest bash -c '
+  docker run --rm -v "$dir/PKGBUILD:/in/PKGBUILD:ro" "$(arch_image)" bash -c '
     set -e
     mkdir /p && cp /in/PKGBUILD /p/ && chown -R nobody /p && cd /p
     runuser -u nobody -- makepkg --printsrcinfo' > "$tmp/SRCINFO"

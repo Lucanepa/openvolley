@@ -394,7 +394,9 @@ jobs:
             escoresheet/frontend/src-tauri/target/release/bundle/**/*.deb
             escoresheet/frontend/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
             escoresheet/frontend/src-tauri/target/universal-apple-darwin/release/bundle/macos/*_universal.app.tar.gz
-          retention-days: 14
+          # publish-pkgs.sh --desktop compares the release assets with these
+          # artifacts before it signs them (desktop_provenance): publish within 90 days.
+          retention-days: 90
           if-no-files-found: warn
 
   # macOS release files, from the ad-hoc .app the build job made: Developer
@@ -582,7 +584,9 @@ jobs:
           path: |
             ${{ runner.temp }}/mac/out/dmg/*.dmg
             ${{ runner.temp }}/mac/out/macos/*_universal.app.tar.gz
-          retention-days: 14
+          # publish-pkgs.sh --desktop compares the release assets with these
+          # artifacts before it signs them (desktop_provenance): publish within 90 days.
+          retention-days: 90
           if-no-files-found: error
 
       - name: Remove the macOS signing keychain
@@ -665,6 +669,9 @@ jobs:
           - **Linux (Debian/Ubuntu)**: `curl -fsSL https://get.openvolley.app/install.sh | sudo sh`
             (signed APT repository, package `openvolley-escoresheet`; `sudo apt upgrade` keeps it current),
             or download the `.deb` and `sudo apt install ./openvolley-escoresheet_*_amd64.deb`.
+            To check install.sh before it runs as root, compare its SHA-256 with the one in the
+            [README](https://github.com/Lucanepa/openvolley#check-the-downloads), which also lists
+            the fingerprints of every package signing key.
           - **macOS 11 or newer** (Apple silicon and Intel): download `OpenVolley.eScoresheet_…_universal.dmg`,
             open it and drag the app to Applications, or `brew install --cask lucanepa/tap/openvolley`.
             Signed and notarized by Apple: it opens like any other app, offline too.
@@ -791,6 +798,9 @@ jobs:
           - **Linux (Debian/Ubuntu)**: `curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s openbeach-escoresheet`
             (signed APT repository, package `openbeach-escoresheet`; `sudo apt upgrade` keeps it current),
             or download the `.deb` and `sudo apt install ./openbeach-escoresheet_*_amd64.deb`.
+            To check install.sh before it runs as root, compare its SHA-256 with the one in the
+            [README](https://github.com/Lucanepa/openvolley#check-the-downloads), which also lists
+            the fingerprints of every package signing key.
           - **macOS 11 or newer** (Apple silicon and Intel): download `OpenBeach_…_universal.dmg`,
             open it and drag the app to Applications, or `brew install --cask lucanepa/tap/openbeach`.
             Signed and notarized by Apple: it opens like any other app, offline too.

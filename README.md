@@ -77,9 +77,33 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 
 Install page: [get.openvolley.app](https://get.openvolley.app). Downloads are on [GitHub Releases](https://github.com/Lucanepa/openvolley/releases):
 
-- **Windows** -- installer (`…_x64-setup.exe`)
+- **Windows** -- installer (`…_x64-setup.exe`), or `winget install Lucanepa.OpenVolley`
 - **macOS** -- universal disk image (`…_universal.dmg`, Apple silicon and Intel, macOS 11+; signed and notarized by Apple) or `brew install --cask lucanepa/tap/openvolley`
-- **Linux** -- AppImage, or the signed APT repository (`curl -fsSL https://get.openvolley.app/install.sh | sudo sh`)
+- **Linux** -- AppImage, or the signed APT repository (`curl -fsSL https://get.openvolley.app/install.sh | sudo sh`, or the two steps below)
+
+### Check the downloads
+
+The install page and the package repositories are served from one host. The
+values here come from GitHub instead, so a first install can be checked
+against a second source before anything runs as root.
+
+install.sh SHA-256: `4714c20c314aa2e96793c231efed17038c08b98060bd6b960740cee936bdc3d8`
+
+```sh
+curl -fsSLO https://get.openvolley.app/install.sh
+sha256sum install.sh        # must print the SHA-256 above
+sudo sh install.sh          # or: sudo sh install.sh openbeach-escoresheet
+```
+
+| Key | Fingerprint |
+|---|---|
+| APT repository (`apt/openvolley.gpg`, checked by install.sh) | `AB46 9DA8 DC3E C90F 8057 320D 285B 18D7 6C16 B82C` |
+| pacman repository (`arch/openvolley.gpg`) | `BE15 C309 C340 D0BC 214C 82E6 E6E4 A27E 6680 A88B` |
+| Flatpak repository (`flatpak/openvolley-flatpak.gpg`, in the `.flatpakref`) | `BC22 2902 84D8 80AA 4151 453F 335B 7570 B684 CF6D` |
+| F-Droid repository (`fdroid/repo`) | `61C70F8949441E04E2E21ACC8E6E5C6CC502ADD52A157FB9A8DD8588DACE0720` |
+| Desktop updater (minisign, in `tauri.conf.json`) | key id `10D20EE2D20973C5` |
+
+Each GitHub release lists the SHA-256 of its installers in its notes.
 
 ## Contributing
 

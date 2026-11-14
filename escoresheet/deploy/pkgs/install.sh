@@ -6,6 +6,13 @@
 #   curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s openbeach-escoresheet
 #   curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s svrz-rc
 #
+# Or in two steps, checking the script first against the SHA-256 the
+# repository's README on GitHub gives (github.com/Lucanepa/openvolley, a
+# channel apart from get.openvolley.app):
+#   curl -fsSLO https://get.openvolley.app/install.sh
+#   sha256sum install.sh
+#   sudo sh install.sh [openbeach-escoresheet | svrz-rc]
+#
 # Adds the signed OpenVolley APT repository and installs one package:
 # openvolley-escoresheet (the default), openbeach-escoresheet (OpenBeach, the
 # beach volleyball app) or svrz-rc (SVRZ Referee Coaching); from then on

@@ -5,6 +5,7 @@
 #   escoresheet/packaging/pacman/publish-pacman.sh [--app openvolley|beach] [--deb FILE] [--keep N] [VERSION]
 #   escoresheet/packaging/pacman/publish-pacman.sh --app both [--keep N]
 #   escoresheet/packaging/pacman/publish-pacman.sh --init-key
+#   escoresheet/packaging/pacman/publish-pacman.sh --pin-image
 #
 # Runs on lenovoserver, like publish-pkgs.sh (the repo key lives only there).
 # It never syncs: publish-pkgs.sh copies public/ to the server (it calls this
@@ -20,13 +21,17 @@
 #      (<package>-bin-<pkgver>-<pkgrel>-x86_64.pkg.tar.zst) is in the repo
 #      already is kept as it is (published files never change: bump pkgrel
 #      for a packaging fix); one older than the repo's newest is refused.
-#   2. Builds it in an archlinux container (local image $IMAGE, base-devel,
-#      rebuilt from archlinux:latest when a week old) with makepkg as a
-#      non-root user that has your uid. The PKGBUILD downloads the release
-#      .deb, or takes --deb FILE (publish-pkgs.sh passes the .deb it signed);
-#      makepkg checks it against the PKGBUILD's sha256sums either way.
-#      Each package must contain /usr/bin/<package> and the updater marker
-#      /usr/lib/<package>/package-manager.
+#   2. Builds it in an archlinux container (the image archlinux-image names:
+#      archlinux:base-devel pinned by its digest, so the build tools change
+#      only with a reviewed commit of that file; --pin-image writes it) with
+#      makepkg as a non-root user that has your uid. The PKGBUILD downloads
+#      the release .deb, or takes --deb FILE (publish-pkgs.sh passes the .deb
+#      it signed); makepkg checks it against the PKGBUILD's sha256sums either
+#      way. Each package must contain /usr/bin/<package> and the updater
+#      marker /usr/lib/<package>/package-manager. Then, here and not in the
+#      container, check-package.py compares the package with that .deb:
+#      every file must be the .deb's (the bundle-type stamp reset), the
+#      PKGBUILD's LICENSE or the marker; anything else is not signed.
 #   3. Signs each new package (detached, <file>.sig) with the pacman repo key,
 #      here, not in the container (the private key never leaves this
 #      machine's GNUPGHOME), and adds it to public/arch/x86_64/. Of each
@@ -55,6 +60,10 @@
 #
 # --init-key makes the key (once): ed25519, no expiry, a random passphrase,
 # then prints how to put both into Vaultwarden with rbw (stdin, no tty).
+#
+# --pin-image pulls archlinux:base-devel and writes its digest to
+# archlinux-image (also used by ../aur/bump.sh and ../aur/publish.sh). Check
+# the diff and commit it; repeat now and then to take Arch's newer build tools.
 set -euo pipefail
 umask 022
 
@@ -67,7 +76,8 @@ PM_GNUPG=${OV_PACMAN_GNUPG:-$PKGS/pacman-gpg}
 PM_PASS=${OV_PACMAN_PASSPHRASE:-$PKGS/pacman-gpg-passphrase}
 PKGBUILDS=${OV_PACMAN_PKGBUILDS:-$HERE/../aur}
 CACHE=${OV_PACMAN_CACHE:-$HOME/.cache/openvolley-pacman}
-IMAGE=${OV_PACMAN_IMAGE:-openvolley-pacman-build}
+IMAGE=${OV_PACMAN_IMAGE:-}
+IMAGE_FILE="$HERE/archlinux-image"
 DB=openvolley
 KEY_UID="OpenVolley pacman repository <packages@openvolley.app>"
 # every package this repo may hold
@@ -82,18 +92,37 @@ DEB=
 VERSION=
 KEEP=3
 INIT_KEY=0
+PIN_IMAGE=0
 while (( $# )); do
   case "$1" in
     --app) (( $# > 1 )) || die "--app needs openvolley, beach or both"; APP=$2; shift ;;
     --deb) (( $# > 1 )) || die "--deb needs a file"; DEB=$2; shift ;;
     --keep) (( $# > 1 )) || die "--keep needs a number"; KEEP=$2; shift ;;
     --init-key) INIT_KEY=1 ;;
+    --pin-image) PIN_IMAGE=1 ;;
     -h|--help) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; exit 0 ;;
     -*) die "unknown option $1" ;;
     *) [[ -z "$VERSION" ]] || die "one VERSION only"; VERSION=${1#v} ;;
   esac
   shift
 done
+
+# --- --pin-image ------------------------------------------------------------
+if (( PIN_IMAGE )); then
+  [[ -z "$VERSION$APP$DEB" ]] && (( ! INIT_KEY )) || die "--pin-image takes no other argument"
+  command -v docker >/dev/null || die "docker not found"
+  docker pull -q archlinux:base-devel >/dev/null || die "cannot pull archlinux:base-devel"
+  ref=$(docker image inspect -f '{{range .RepoDigests}}{{println .}}{{end}}' archlinux:base-devel | grep -m1 '^archlinux@sha256:') ||
+    die "archlinux:base-devel has no registry digest"
+  ref=archlinux:base-devel@${ref#archlinux@}
+  printf '# The build image of publish-pacman.sh and ../aur (archlinux:base-devel
+# pinned by digest). Written by publish-pacman.sh --pin-image on %s; review and commit.
+%s
+' \
+    "$(date -u +%F)" "$ref" > "$IMAGE_FILE"
+  echo "$IMAGE_FILE: $ref (commit it)"
+  exit 0
+fi
 
 # --- --init-key -------------------------------------------------------------
 if (( INIT_KEY )); then
@@ -139,7 +168,7 @@ case "$APP" in
 esac
 [[ -z "$VERSION" || "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "$VERSION: not a version like 2.4.0"
 [[ "$KEEP" =~ ^[1-9][0-9]*$ ]] || die "--keep $KEEP: expected a number from 1"
-for t in docker gpg gpgv gpgconf python3 sha256sum; do
+for t in docker gpg gpgv gpgconf python3 sha256sum zstd dpkg-deb; do
   command -v "$t" >/dev/null || die "$t not found"
 done
 (( $(id -u) != 0 )) || die "run it as your own user, not root (makepkg builds as your uid)"
@@ -232,17 +261,14 @@ for app in "${APPS[@]}"; do
 done
 
 # --- 2. build in the container ----------------------------------------------------
+# The build image: pinned by digest in archlinux-image (OV_PACMAN_IMAGE: tests).
 ensure_image() {
-  local created age=999999999
-  created=$(docker image inspect -f '{{.Created}}' "$IMAGE" 2>/dev/null || true)
-  [[ -z "$created" ]] || age=$(( $(date +%s) - $(date -d "$created" +%s) ))
-  if (( age > 7 * 86400 )); then
-    echo "building the container image $IMAGE (archlinux:latest + base-devel)"
-    docker build --pull -q -t "$IMAGE" - >/dev/null <<'DOCKERFILE'
-FROM archlinux:latest
-RUN pacman -Syu --noconfirm --needed base-devel && pacman -Scc --noconfirm
-DOCKERFILE
+  if [[ -z "$IMAGE" ]]; then
+    [[ -f "$IMAGE_FILE" ]] || die "no $IMAGE_FILE: run publish-pacman.sh --pin-image, check it and commit it"
+    IMAGE=$(grep -v '^#' "$IMAGE_FILE" | head -n1)
+    [[ "$IMAGE" =~ ^archlinux:base-devel@sha256:[0-9a-f]{64}$ ]] || die "$IMAGE_FILE: not archlinux:base-devel@sha256:<digest>: $IMAGE"
   fi
+  docker image inspect "$IMAGE" >/dev/null 2>&1 || docker pull -q "$IMAGE" >/dev/null || die "cannot pull $IMAGE"
 }
 ensure_image
 
@@ -278,6 +304,16 @@ EOF
   for app in "${BUILD[@]}"; do
     f="$WORK/out/${PKGFILE[$app]}"
     [[ -f "$f" ]] || die "the build made no ${PKGFILE[$app]} (made: $(ls "$WORK/out"))"
+    # Outside the container: the package holds only what the PKGBUILD takes
+    # from the .deb it pins (check-package.py), before the key signs it.
+    base=$(app_pkg "$app") pb="$PKGBUILDS/$base-bin/PKGBUILD"
+    if grep -q '^sha256sums_x86_64=' "$pb"; then
+      src=${DEB:-$CACHE/src/$base-${PKGVER[$app]}-amd64.deb}
+      [[ -f "$src" ]] || die "no $src to compare ${PKGFILE[$app]} with"
+      python3 -I "$HERE/check-package.py" "$f" "$src" "$pb" || die "${PKGFILE[$app]} is not the .deb repacked: not signed"
+    else
+      echo "${PKGFILE[$app]}: its PKGBUILD pins no .deb, nothing to compare with"
+    fi
   done
 fi
 
