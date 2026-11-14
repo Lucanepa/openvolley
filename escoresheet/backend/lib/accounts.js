@@ -89,6 +89,8 @@ export const AUDIT_ACTIONS = Object.freeze([
   // db/026: people typed in by hand added to a club's lists (lib/licences.js
   // addPeople; the club, the team, the counts per list, never a name)
   'club.licences.manual',
+  // db/032: a club API token made or revoked, and a write made with one (lib/clubApi.js; ids and scopes only)
+  'club_api.token', 'club_api.call',
   // db/025: a part of a sign-up request approved or rejected (lib/accountRequests.js;
   // the kind, the club and team ids, who decided: admin, club or team)
   'account.request_approve', 'account.request_reject'

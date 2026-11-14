@@ -3577,6 +3577,45 @@
       "notAMember": "Verantwortliche müssen ein Konto des Vereins sein. Senden Sie stattdessen einen Link."
     },
     "myClub": {
+      "api": {
+        "title": "API",
+        "new": "Neues API-Token",
+        "intro": "Lasse deine eigene Website oder Software die Spiele und Live-Resultate deines Clubs lesen und Rosters senden. Ein Token gilt nur für diesen Club. Für Live-Resultate auf einer Website brauchst du kein Token: nimm das öffentliche Widget.",
+        "empty": "Noch keine API-Tokens.",
+        "revoke": "Widerrufen",
+        "revokeTitle": "Dieses Token widerrufen?",
+        "revokeBody": "Software, die es nutzt, funktioniert sofort nicht mehr. Das lässt sich nicht rückgängig machen.",
+        "state": {
+          "active": "Aktiv",
+          "expired": "Abgelaufen",
+          "revoked": "Widerrufen"
+        },
+        "lastUsed": "Zuletzt benutzt {{date}}",
+        "neverUsed": "Nie benutzt",
+        "expires": "Läuft ab",
+        "createdTitle": "API-Token erstellt",
+        "createdOnce": "Kopiere es jetzt – es wird nur einmal angezeigt.",
+        "copy": "Kopieren",
+        "copied": "Kopiert.",
+        "example": "Probiere es aus:",
+        "create": "Token erstellen",
+        "label": "Bezeichnung",
+        "labelHint": "Zum Beispiel Website oder Roster-Sync",
+        "scopes": "Was es darf",
+        "scope": {
+          "read": "Club, Teams, Spiele, Lizenzlisten und Matches lesen",
+          "rosters:write": "Roster eines Spiels senden und löschen",
+          "teams:write": "Den Kader eines Teams ersetzen",
+          "licences:write": "Eine Lizenzliste ersetzen"
+        },
+        "team": "Team",
+        "teamHint": "Das Token auf ein Team beschränken, oder leer lassen für den ganzen Club",
+        "wholeClub": "Ganzer Club",
+        "days": "Gültig für (Tage)",
+        "daysHint": "1 bis 730, oder leer für unbegrenzt",
+        "password": "Dein Passwort",
+        "passwordHint": "Ein Token, das schreiben darf, braucht dein Passwort."
+      },
       "none": "Du verwaltest keinen Verein.",
       "pick": "Verein",
       "save": "Speichern",

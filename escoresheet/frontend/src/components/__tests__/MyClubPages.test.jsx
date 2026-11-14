@@ -10,7 +10,7 @@ const tr = vi.hoisted(() => vi.fn((key, opts) => (typeof opts === 'string' ? opt
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: tr, i18n: { language: 'en' } }) }))
 const okRes = (data, status = 200) => ({ data, error: null, status })
 const api = vi.hoisted(() => ({
-  club: { get: vi.fn(), setContact: vi.fn(), members: vi.fn(), removeMember: vi.fn(), listInvites: vi.fn(), createInvite: vi.fn(), revokeInvite: vi.fn(), teams: vi.fn(), createTeamLink: vi.fn(), removeTeamManager: vi.fn(), licences: vi.fn(), putLicences: vi.fn(), requests: vi.fn(), decideRequests: vi.fn() }
+  club: { get: vi.fn(), setContact: vi.fn(), members: vi.fn(), removeMember: vi.fn(), listInvites: vi.fn(), createInvite: vi.fn(), revokeInvite: vi.fn(), teams: vi.fn(), createTeamLink: vi.fn(), removeTeamManager: vi.fn(), licences: vi.fn(), putLicences: vi.fn(), requests: vi.fn(), decideRequests: vi.fn(), apiTokens: vi.fn(), createApiToken: vi.fn(), revokeApiToken: vi.fn() }
 }))
 vi.mock('../../lib/accountApi', async (orig) => ({ ...(await orig()), clubApi: api.club }))
 
@@ -23,6 +23,7 @@ const HANS = { sv_number: '400001', last_name: 'Hand', first_name: 'Hans', dob: 
 
 beforeEach(() => {
   vi.clearAllMocks()
+  api.club.apiTokens.mockResolvedValue({ data: { tokens: [] }, error: null, status: 200 })
   api.club.get.mockResolvedValue(okRes({ club: { ...VBCM, teams: ['VBC Musterdorf H1'], contact_email: null, managers: [] } }))
   api.club.members.mockResolvedValue(okRes({ members: [] }))
   api.club.teams.mockResolvedValue(okRes({ teams: [{ id: 't-h1', name: 'VBC Musterdorf H1', open_links: 0, managers: [] }] }))

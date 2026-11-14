@@ -1,0 +1,92 @@
+openapi: 3.0.3
+info:
+  title: OpenVolley public and club API
+  version: "1.0"
+  description: >
+    Public, anonymous, no names (shirt numbers and roles): /api/public/v1.
+    Club tokens (read and write the club's own teams, rosters, licence lists): /api/club/v1.
+    See public-api.md and club-api.md.
+servers:
+  - url: https://backend.openvolley.app
+components:
+  securitySchemes:
+    clubToken:
+      type: http
+      scheme: bearer
+      description: A club token (ovk_...) from the manager, My club, API.
+  parameters:
+    matchId: { name: id, in: path, required: true, schema: { type: string, pattern: '^[A-Za-z0-9_.:-]{1,200}$' } }
+    teamId: { name: team, in: path, required: true, schema: { type: string, format: uuid } }
+    game: { name: game, in: path, required: true, schema: { type: string, pattern: '^[0-9]{1,12}$' } }
+    from: { name: from, in: query, schema: { type: string, format: date-time } }
+    to: { name: to, in: query, schema: { type: string, format: date-time } }
+    status: { name: status, in: query, description: "scheduled,live,finished", schema: { type: string } }
+    limit: { name: limit, in: query, schema: { type: integer, maximum: 200 } }
+  schemas:
+    Error: { type: object, properties: { error: { type: object, properties: { code: { type: string }, message: { type: string } } } } }
+    Roster:
+      type: object
+      required: [players, staff]
+      properties:
+        players: { type: array, items: { type: object, required: [last_name], properties: { number: { type: integer, minimum: 0, maximum: 99 }, first_name: { type: string }, last_name: { type: string }, dob: { type: string, format: date, nullable: true }, is_libero: { type: boolean }, is_captain: { type: boolean }, active: { type: boolean } } } }
+        staff: { type: array, items: { type: object } }
+        coach_signature: { type: string, nullable: true, description: PNG data URL }
+        captain_signature: { type: string, nullable: true }
+    People:
+      type: object
+      required: [people]
+      properties:
+        people: { type: array, items: { type: object, properties: { sv_number: { type: string, description: 4 to 7 digits }, last_name: { type: string }, first_name: { type: string }, dob: { type: string, format: date }, gender: { type: string } } } }
+paths:
+  /api/public/v1/matches:
+    get:
+      summary: Matches in a window (no names)
+      parameters:
+        - $ref: '#/components/parameters/from'
+        - $ref: '#/components/parameters/to'
+        - $ref: '#/components/parameters/status'
+        - $ref: '#/components/parameters/limit'
+        - { name: club, in: query, description: Club id, schema: { type: string, format: uuid } }
+      responses: { '200': { description: "{ matches: [...] }" } }
+  /api/public/v1/matches/{id}:
+    get: { summary: Match info with officials as roles, parameters: [{ $ref: '#/components/parameters/matchId' }], responses: { '200': { description: Match }, '404': { description: Not found } } }
+  /api/public/v1/matches/{id}/live:
+    get: { summary: Livescore snapshot, parameters: [{ $ref: '#/components/parameters/matchId' }], responses: { '200': { description: Snapshot } } }
+  /api/public/v1/matches/{id}/stream:
+    get: { summary: The snapshot as Server-Sent Events (event live), parameters: [{ $ref: '#/components/parameters/matchId' }], responses: { '200': { description: text/event-stream } } }
+  /api/public/v1/matches/{id}/stats:
+    get: { summary: End-of-match statistics, parameters: [{ $ref: '#/components/parameters/matchId' }], responses: { '200': { description: Statistics }, '409': { description: Match not finished } } }
+  /embed/livescore.js:
+    get: { summary: The ov-livescore widget (match or club attribute), responses: { '200': { description: text/javascript } } }
+  /embed/match/{id}:
+    get: { summary: The widget on a framable page, parameters: [{ $ref: '#/components/parameters/matchId' }], responses: { '200': { description: text/html } } }
+  /api/club/v1/club:
+    get: { summary: The club, security: [{ clubToken: [] }], responses: { '200': { description: Club } } }
+  /api/club/v1/teams:
+    get: { summary: The club's teams, security: [{ clubToken: [] }], responses: { '200': { description: "{ data: { teams: [{ id, name }] } }" } } }
+  /api/club/v1/games:
+    get: { summary: The club's games from today (read-only), security: [{ clubToken: [] }], responses: { '200': { description: Games } } }
+  /api/club/v1/teams/{team}/games:
+    get: { summary: One team's games, security: [{ clubToken: [] }], parameters: [{ $ref: '#/components/parameters/teamId' }], responses: { '200': { description: Games } } }
+  /api/club/v1/teams/{team}/games/{game}/roster:
+    parameters: [{ $ref: '#/components/parameters/teamId' }, { $ref: '#/components/parameters/game' }]
+    get: { summary: The roster sent for a game, security: [{ clubToken: [] }], responses: { '200': { description: Roster or null } } }
+    put: { summary: Send or replace the roster (scope rosters:write), security: [{ clubToken: [] }], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Roster' } } } }, responses: { '200': { description: Saved }, '400': { description: Invalid }, '403': { description: Scope or team }, '404': { description: Not the team's game } } }
+    delete: { summary: Remove it (scope rosters:write), security: [{ clubToken: [] }], responses: { '200': { description: Deleted } } }
+  /api/club/v1/teams/{team}/squad:
+    parameters: [{ $ref: '#/components/parameters/teamId' }]
+    get: { summary: The team's saved team, security: [{ clubToken: [] }], responses: { '200': { description: Squad } } }
+    put: { summary: Replace the saved team (scope teams:write), security: [{ clubToken: [] }], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Roster' } } } }, responses: { '200': { description: Saved } } }
+  /api/club/v1/licences:
+    get: { summary: The club's licence lists, security: [{ clubToken: [] }], responses: { '200': { description: Lists and people } } }
+  /api/club/v1/licences/{list}:
+    put:
+      summary: Replace one licence list (scope licences:write)
+      security: [{ clubToken: [] }]
+      parameters: [{ name: list, in: path, required: true, schema: { type: string, enum: [players, scorers, coaches] } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/People' } } } }
+      responses: { '200': { description: Replaced }, '400': { description: Invalid } }
+  /api/club/v1/matches:
+    get: { summary: The club's matches (home or away), security: [{ clubToken: [] }], parameters: [{ $ref: '#/components/parameters/from' }, { $ref: '#/components/parameters/to' }, { $ref: '#/components/parameters/status' }], responses: { '200': { description: Matches } } }
+  /api/club/v1/matches/{id}:
+    get: { summary: One of the club's matches (also /live and /stats), security: [{ clubToken: [] }], parameters: [{ $ref: '#/components/parameters/matchId' }], responses: { '200': { description: Match }, '404': { description: Not the club's } } }

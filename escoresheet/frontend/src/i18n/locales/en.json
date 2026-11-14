@@ -3599,6 +3599,45 @@
       "notAMember": "A manager must be one of the club's accounts. Send a club manager link instead."
     },
     "myClub": {
+      "api": {
+        "title": "API",
+        "new": "New API token",
+        "intro": "Let your own website or software read your club's games and live scores, and send rosters. A token acts for this club only. For live scores on a website you do not need a token: use the public widget.",
+        "empty": "No API tokens yet.",
+        "revoke": "Revoke",
+        "revokeTitle": "Revoke this token?",
+        "revokeBody": "Software that uses it stops working at once. This cannot be undone.",
+        "state": {
+          "active": "Active",
+          "expired": "Expired",
+          "revoked": "Revoked"
+        },
+        "lastUsed": "Last used {{date}}",
+        "neverUsed": "Never used",
+        "expires": "Expires",
+        "createdTitle": "API token created",
+        "createdOnce": "Copy it now – it is shown only once.",
+        "copy": "Copy",
+        "copied": "Copied.",
+        "example": "Try it:",
+        "create": "Create token",
+        "label": "Label",
+        "labelHint": "For example website or roster sync",
+        "scopes": "What it may do",
+        "scope": {
+          "read": "Read the club, teams, games, licence lists and matches",
+          "rosters:write": "Send and delete the roster of a game",
+          "teams:write": "Replace a team's squad",
+          "licences:write": "Replace a licence list"
+        },
+        "team": "Team",
+        "teamHint": "Limit the token to one team, or leave it for the whole club",
+        "wholeClub": "Whole club",
+        "days": "Valid for (days)",
+        "daysHint": "1 to 730, or empty for no end",
+        "password": "Your password",
+        "passwordHint": "A token that can write needs your password."
+      },
       "none": "You don't manage a club.",
       "pick": "Club",
       "save": "Save",
