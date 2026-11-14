@@ -2,12 +2,16 @@
 # restore-storage.sh [options] TARGET
 #
 # Restores the object storage (scoresheets, their owner records, match
-# backups) from the nightly tars of backup-openvolley.sh --with-files:
+# backups, the Global tool's store) from the nightly tars of
+# backup-openvolley.sh --with-files:
 #
 #   1. the newest scoresheets-<UTC>.tar.gpg at or before --at: every file
 #      under scoresheets/ plus the owner records .owners/ (without them the
 #      backend refuses each restored scoresheet to its own scorer);
-#   2. every snapshots-<UTC>.tar.gpg at or before --at, oldest first: each is
+#   2. the newest global-<UTC>.tar.gpg at or before --at: every file under
+#      global/ (the Global tool's backups and scoresheets, lib/globalStore.js;
+#      the server keeps no other copy);
+#   3. every snapshots-<UTC>.tar.gpg at or before --at, oldest first: each is
 #      the backup/ files changed in ~26 h, so a later one overwrites what an
 #      earlier one had. Only as far back as the tars kept (7 days on the
 #      server, longer on the NAS).
@@ -39,7 +43,7 @@ FORCE=0
 DRY=0
 TARGET=
 
-usage() { sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '2,34p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 die() { printf 'restore-storage: %s\n' "$*" >&2; exit 1; }
 log() { printf 'restore-storage: %s\n' "$*"; }
 
@@ -63,7 +67,7 @@ done
 if [[ ! -f "$TARGET/.ovdata" ]] && [[ -n "$(ls -A "$TARGET")" ]] && (( ! FORCE )); then
   die "$TARGET is neither the storage mount (.ovdata) nor empty; --force to unpack into it anyway"
 fi
-if (( ! FORCE )) && [[ -n "$(find "$TARGET" -mindepth 1 -maxdepth 1 \( -name scoresheets -o -name .owners -o -name backup \) -print -quit)" ]]; then
+if (( ! FORCE )) && [[ -n "$(find "$TARGET" -mindepth 1 -maxdepth 1 \( -name scoresheets -o -name .owners -o -name backup -o -name global \) -print -quit)" ]]; then
   die "$TARGET already holds storage files; --force overwrites them"
 fi
 
@@ -87,8 +91,9 @@ unpack() {  # file
 }
 
 mapfile -t sheets < <(pick scoresheets)
+mapfile -t globals < <(pick global)
 mapfile -t snaps < <(pick snapshots)
-(( ${#sheets[@]} + ${#snaps[@]} > 0 )) || die "no scoresheets-*/snapshots-* tar in $FROM${AT:+ at or before $AT}"
+(( ${#sheets[@]} + ${#globals[@]} + ${#snaps[@]} > 0 )) || die "no scoresheets-*/global-*/snapshots-* tar in $FROM${AT:+ at or before $AT}"
 
 if (( ${#sheets[@]} )); then
   newest=${sheets[-1]}
@@ -100,13 +105,18 @@ if (( ${#sheets[@]} )); then
 else
   log "no scoresheets tar${AT:+ at or before $AT}: scoresheets not restored"
 fi
+if (( ${#globals[@]} )); then
+  unpack "${globals[-1]}"
+else
+  log "no global tar${AT:+ at or before $AT}: the Global store not restored"
+fi
 for f in "${snaps[@]}"; do unpack "$f"; done
 
 (( DRY )) && { log "dry run: nothing changed"; exit 0; }
 if [[ -n "$CHOWN" ]]; then
-  for d in scoresheets .owners backup; do
+  for d in scoresheets .owners backup global; do
     [[ ! -e "$TARGET/$d" ]] || chown -R "$CHOWN" "$TARGET/$d"
   done
 fi
 count() { [[ -d "$TARGET/$1" ]] && find "$TARGET/$1" -type f | wc -l || echo 0; }
-log "done: scoresheets $(count scoresheets) file(s), owner records $(count .owners), match backups $(count backup) (${#snaps[@]} snapshot tar(s))"
+log "done: scoresheets $(count scoresheets) file(s), owner records $(count .owners), Global store $(count global), match backups $(count backup) (${#snaps[@]} snapshot tar(s))"

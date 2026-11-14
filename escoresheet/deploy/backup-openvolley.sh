@@ -322,7 +322,7 @@ if (( WITH_FILES )); then
   else
     log "no OV_PIN_SECRET in ${OV_ENV_FILE}, secrets skipped"
   fi
-  find "$OUT" -maxdepth 1 -type f \( -name 'scoresheets-*.tar.gpg' -o -name 'snapshots-*.tar.gpg' -o -name 'secrets-*.env.gpg' -o -name 'base-*.tar.gpg' \) \
+  find "$OUT" -maxdepth 1 -type f \( -name 'scoresheets-*.tar.gpg' -o -name 'global-*.tar.gpg' -o -name 'snapshots-*.tar.gpg' -o -name 'secrets-*.env.gpg' -o -name 'base-*.tar.gpg' \) \
     -mtime "+${OV_FILES_KEEP_DAYS}" -delete
   # WAL older than the oldest kept base backup cannot be replayed on anything
   [[ ! -d "$OUT/wal" ]] || find "$OUT/wal" -maxdepth 1 -type f -name '*.gpg' -mtime "+$((OV_FILES_KEEP_DAYS + 1))" -delete

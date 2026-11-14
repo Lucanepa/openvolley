@@ -14,13 +14,14 @@ PASS=0
 ok() { PASS=$((PASS + 1)); echo "ok   $*"; }
 bad() { echo "FAIL $*" >&2; [[ -f "$T/log" ]] && sed 's/^/     /' "$T/log" >&2; exit 1; }
 
-mkdir -p "$T/bin" "$T/pg/walarchive" "$T/storage/scoresheets/k1" "$T/storage/.owners/scoresheets" \
+mkdir -p "$T/bin" "$T/pg/walarchive" "$T/storage/scoresheets/k1" "$T/storage/.owners/scoresheets" "$T/storage/global/ab/abKey" \
   "$T/storage/backup/a1" "$T/out" "$T/status" "$T/gh" "$T/key" "$T/restore"
 chmod 0700 "$T/key" "$T/gh"
 touch "$T/pg/.ovdata" "$T/storage/.ovdata"
 echo pdf1 >"$T/storage/scoresheets/k1/game1.pdf"
 echo '{"key":"k1/game1.pdf","owners":["u1"]}' >"$T/storage/.owners/scoresheets/abc.json"
 echo snap1 >"$T/storage/backup/a1/m1.json"
+echo '{"g":1}' >"$T/storage/global/ab/abKey/backup.json"
 printf 'w1' >"$T/pg/walarchive/000000010000000000000001"
 
 gpg --homedir "$T/key" --batch --passphrase '' --quick-gen-key 'backup test <backup@example.invalid>' ed25519 cert never 2>/dev/null
@@ -84,9 +85,11 @@ sheets=$(ls "$T/out"/scoresheets-*.tar.gpg)
 gpg --homedir "$T/key" --batch --quiet --decrypt "$sheets" | tar -tf - >"$T/list"
 grep -q '^\.owners/scoresheets/abc.json$' "$T/list" && grep -q '^scoresheets/k1/game1.pdf$' "$T/list" || bad "scoresheets tar lacks .owners: $(cat "$T/list")"
 ls "$T/out"/base-*.tar.gpg >/dev/null 2>&1 || bad "no base backup"
+globaltar=$(ls "$T/out"/global-*.tar.gpg)
+gpg --homedir "$T/key" --batch --quiet --decrypt "$globaltar" | tar -tf - | grep -q '^global/ab/abKey/backup.json$' || bad "global tar lacks the Global store"
 [[ -f "$T/status/last_backup" && -f "$T/status/last_files_backup" ]] || bad "nightly status files"
 grep 'kuma.invalid/files' "$CALLS" | grep -q 'status=up' || bad "files push"
-ok "nightly run: base backup, owner records in the scoresheets tar, both status files"
+ok "nightly run: base backup, owner records in the scoresheets tar, the Global store tar, both status files"
 
 # 3. a failing files part leaves last_backup fresh but not last_files_backup, pushes files down
 rm -f "$T/status"/last_*
@@ -118,7 +121,8 @@ run --with-files || { bad "second nightly run failed"; }
 [[ "$(cat "$T/restore/scoresheets/k1/game1.pdf")" == pdf1 ]] || bad "scoresheet not restored"
 [[ -f "$T/restore/.owners/scoresheets/abc.json" ]] || bad "owner records not restored"
 [[ "$(cat "$T/restore/backup/a1/m1.json")" == snap2 ]] || bad "snapshots not applied oldest first"
+[[ "$(cat "$T/restore/global/ab/abKey/backup.json")" == '{"g":1}' ]] || bad "the Global store not restored"
 if "$KIT_SRC/restore-storage.sh" --from "$T/out" --gpg-home "$T/key" "$T/restore" >"$T/log" 2>&1; then bad "overwrote without --force"; fi
-ok "restore-storage: scoresheets with owners, snapshots in order, refuses to overwrite"
+ok "restore-storage: scoresheets with owners, the Global store, snapshots in order, refuses to overwrite"
 
 echo "all ${PASS} passed"

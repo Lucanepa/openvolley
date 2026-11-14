@@ -707,10 +707,11 @@ lenovo$ sudo rm -rf /data/openvolley/pg/restore_wal /data/openvolley/pg/data.pre
 Then step 4b of the dump restore (scoresheet records) and, if the storage was lost too, the
 storage restore below.
 
-## Restore the storage (scoresheets, owner records, match backups)
+## Restore the storage (scoresheets, owner records, match backups, the Global store)
 
 `restore-storage.sh` unpacks the newest `scoresheets-<UTC>.tar.gpg` (the PDFs with their owner
-records `.owners`: without them the backend refuses each scoresheet to its own scorer) and then
+records `.owners`: without them the backend refuses each scoresheet to its own scorer), the newest
+`global-<UTC>.tar.gpg` (the Global tool's store `global/`, its only copy) and then
 every `snapshots-<UTC>.tar.gpg` oldest first (each holds the `backup/` files of ~26 h). It needs
 the private key, so restore into a scratch directory where the key is and copy the result over:
 
@@ -719,7 +720,7 @@ lenovo$ escoresheet/deploy/restore-storage.sh --from <nas copy of the backups> -
 lenovo$ install -d -m 700 /dev/shm/ov-storage && escoresheet/deploy/restore-storage.sh --from <nas copy> [--at <UTC>] /dev/shm/ov-storage
 lenovo$ sudo docker compose --project-directory /opt/openvolley stop ov-tunnel ov-backend     # on the server
 lenovo$ rsync -a /dev/shm/ov-storage/ <server>:/data/openvolley/storage/ && rm -rf /dev/shm/ov-storage
-lenovo$ ssh <server> 'sudo chown -R 1000:1000 /data/openvolley/storage/{scoresheets,.owners,backup} && sudo docker compose --project-directory /opt/openvolley up -d'
+lenovo$ ssh <server> 'sudo find /data/openvolley/storage -mindepth 1 -maxdepth 1 \( -name scoresheets -o -name .owners -o -name backup -o -name global \) -exec chown -R 1000:1000 {} + && sudo docker compose --project-directory /opt/openvolley up -d'
 lenovo$ ssh <server> 'sudo docker compose --project-directory /opt/openvolley exec ov-backend node scripts/scoresheet-records.mjs --apply'
 ```
 
