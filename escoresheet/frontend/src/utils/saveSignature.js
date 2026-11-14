@@ -1,4 +1,5 @@
 import { signaturesSyncJob } from '../domain/signatureEdits'
+import { appendRemark } from '../domain/remarks'
 
 /**
  * Save one signature to the match row the moment its pad is confirmed, then
@@ -15,11 +16,48 @@ import { signaturesSyncJob } from '../domain/signatureEdits'
  * @param {object} [extra]  more fields written in the same update, e.g. the
  *   phone-signing source record (`signatureSources.<field>`, from main's
  *   domain/phoneSignature signatureUpdate) so it never lags the image
+ * @param {{ remark?: string }} [opts]  a line appended to the remarks in the
+ *   same update (a Re-sign: domain/rosterSignatures signatureReplacedRemark);
+ *   the remarks hook (db/remarksSync) queues it for the cloud
  */
-export async function saveMatchSignature(db, matchId, field, image, extra = null) {
+export async function saveMatchSignature(db, matchId, field, image, extra = null, { remark = '' } = {}) {
   if (matchId === null || matchId === undefined || !field) return false
+  return writeSignatures(db, matchId, { ...(extra || {}), [field]: image ?? null }, remark)
+}
+
+/**
+ * Clear pre-match signatures that no longer fit the roster (a change after
+ * signing, domain/rosterSignatures): the images and their phone-signing
+ * records go in one update with the remark, then the full `signatures` object
+ * is queued. Returns true when it was written.
+ *
+ * @param {import('dexie').Dexie & { matches: any, sync_queue: any }} db
+ * @param {number|string|null|undefined} matchId
+ * @param {string[]} fields  match-row signature fields
+ * @param {string} [remark]
+ */
+export async function clearMatchSignatures(db, matchId, fields, remark = '') {
+  if (matchId === null || matchId === undefined || !fields?.length) return false
+  const update = {}
+  for (const f of fields) {
+    update[f] = null
+    update[`signatureSources.${f}`] = null
+  }
+  return writeSignatures(db, matchId, update, remark)
+}
+
+async function writeSignatures(db, matchId, update, remark) {
   try {
-    await db.matches.update(matchId, { ...(extra || {}), [field]: image ?? null })
+    if (remark) {
+      // read and write the remarks in one transaction, so a remark written
+      // elsewhere in between is not lost
+      await db.transaction('rw', db.matches, async () => {
+        const row = await db.matches.get(matchId)
+        await db.matches.update(matchId, { ...update, remarks: appendRemark(row?.remarks || '', remark) })
+      })
+    } else {
+      await db.matches.update(matchId, update)
+    }
     const job = signaturesSyncJob(await db.matches.get(matchId))
     if (job) {
       await db.sync_queue.add(job)

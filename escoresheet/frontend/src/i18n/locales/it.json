@@ -154,6 +154,7 @@
     "dateOfBirth": "Data di nascita",
     "enterNames": "Inserisci cognome e nome",
     "deleteRoster": "Elimina rosa",
+    "signaturesCleared": "La rosa è stata modificata dopo la firma: le firme sono state rimosse, l'allenatore e il capitano la firmano di nuovo.",
     "loadTestRoster": "Carica rosa TEST",
     "confirmLoadTestRoster": "Caricare rosa test?",
     "confirmLoadTestRosterMessage": "Questo sostituirà la rosa attuale con i dati di test ({{team}}).",
@@ -210,7 +211,8 @@
     "clear": "Cancella",
     "save": "Salva",
     "cancel": "Annulla",
-    "close": "Chiudere"
+    "close": "Chiudere",
+    "resign": "Firma di nuovo"
   },
   "modal": {
     "deletePlayer": "Elimina giocatore",
@@ -415,6 +417,7 @@
       "noCoach": "Nessun allenatore immesso",
       "duplicateNumbers": "Numeri maglia duplicati: {{numbers}}",
       "invalidNumbers": "Numeri maglia non validi (deve essere tra 1 e 99): {{numbers}}",
+      "missingNumbers": "Questi giocatori non hanno un numero di maglia: {{names}}. Assegna un numero a ciascuno o rimuovi il giocatore.",
       "playersWithoutNumbers": "{{count}} giocatore(i) senza numero",
       "fixIssues": "Correggere i seguenti problemi:\n\n• {{issues}}",
       "completeBeforeCoinToss": "Correggere i seguenti problemi prima di procedere al sorteggio:\n\n• {{issues}}",
