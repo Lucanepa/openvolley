@@ -3628,6 +3628,8 @@
         "saved_teams_competition_delete": "Wettbewerb gelöscht",
         "saved_teams_team_delete": "Gespeichertes Team gelöscht",
         "saved_teams_roster": "Kader eines gespeicherten Teams ersetzt",
+        "club_api_token": "Vereins-API-Token erstellt oder widerrufen",
+        "club_api_call": "Änderung mit einem Vereins-API-Token",
         "account_request_approve": "Registrierungsanfrage freigegeben",
         "account_request_reject": "Registrierungsanfrage abgelehnt",
         "account_request_propose": "Registrierungsanfrage von Teamverantwortlichen vorgeschlagen"

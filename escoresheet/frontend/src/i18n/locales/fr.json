@@ -3627,6 +3627,8 @@
         "saved_teams_competition_delete": "Compétition supprimée",
         "saved_teams_team_delete": "Équipe enregistrée supprimée",
         "saved_teams_roster": "Effectif d’une équipe enregistrée remplacé",
+        "club_api_token": "Jeton d’API du club créé ou révoqué",
+        "club_api_call": "Modification faite avec un jeton d’API du club",
         "account_request_approve": "Demande d’inscription validée",
         "account_request_reject": "Demande d’inscription refusée",
         "account_request_propose": "Demande d’inscription proposée par un responsable d’équipe"

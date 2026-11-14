@@ -3634,6 +3634,8 @@
         "saved_teams_competition_delete": "Competition deleted",
         "saved_teams_team_delete": "Saved team deleted",
         "saved_teams_roster": "Saved team's roster replaced",
+        "club_api_token": "Club API token made or revoked",
+        "club_api_call": "Change made with a club API token",
         "account_request_approve": "Sign-up request approved",
         "account_request_reject": "Sign-up request rejected",
         "account_request_propose": "Sign-up request proposed by a team manager"

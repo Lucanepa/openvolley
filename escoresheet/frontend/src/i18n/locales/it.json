@@ -3633,6 +3633,8 @@
         "saved_teams_competition_delete": "Competizione eliminata",
         "saved_teams_team_delete": "Squadra salvata eliminata",
         "saved_teams_roster": "Rosa di una squadra salvata sostituita",
+        "club_api_token": "Token API della società creato o revocato",
+        "club_api_call": "Modifica fatta con un token API della società",
         "account_request_approve": "Richiesta di registrazione approvata",
         "account_request_reject": "Richiesta di registrazione rifiutata",
         "account_request_propose": "Richiesta di registrazione proposta da un responsabile della squadra"
