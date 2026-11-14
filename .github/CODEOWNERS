@@ -5,6 +5,12 @@
 #     they name, with administrator rights, straight from main;
 #   - the workflows and their scripts: they build every installer and release;
 #   - the publish and channel scripts and the keys they trust.
+#
+# GitHub never counts the author's own approval. A PR opened from the owner's
+# account (as the agent PRs are) therefore needs a second account that is a
+# code owner here, or a bypass; with this file's single owner, the review is
+# real only for PRs from other accounts. Add that account to these lines (or
+# move the Scoop bucket to its own repository) for the review to mean anything.
 
 /escoresheet/packaging/scoop/ @Lucanepa
 /escoresheet/packaging/ @Lucanepa

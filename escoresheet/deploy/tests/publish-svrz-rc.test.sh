@@ -10,7 +10,11 @@
 #      written to desktop/, install.sh offers svrz-rc;
 #   3. refused: the .deb without its .sig or with another key's, a different
 #      .deb under a published version, a .deb without /usr/bin/svrz-rc; a
-#      second run with the same .deb changes nothing.
+#      second run with the same .deb changes nothing;
+#   4. --resign (the weekly timer): signs the same index again with a new
+#      Valid-Until and syncs apt/dists/ only; refuses with a dirty checkout,
+#      a HEAD not on the reviewed ref, a pool that would change the index,
+#      or anything to publish; pushes up / down to a (stubbed) Kuma URL.
 #
 #   escoresheet/deploy/tests/publish-svrz-rc.test.sh
 #
@@ -205,5 +209,62 @@ cp "$P" "$T/Packages-before"
 pp "$SV_DEB" > "$T/run2.log" 2>&1 || { cat "$T/run2.log"; bad "run 2 (the same .deb again)"; }
 cmp -s "$T/Packages-before" "$P" || bad "a second run with the same .deb changed the index"
 ok "the same .deb again changes nothing"
+
+# --- 4. --resign ---------------------------------------------------------------------
+command -v git >/dev/null || { skip "--resign: git not installed"; echo "all $PASS checks passed"; exit 0; }
+G=(git -C "$T/kit" -c user.name=test -c user.email=test@example.invalid -c commit.gpgsign=false)
+"${G[@]}" init -q -b main
+"${G[@]}" add -A && "${G[@]}" commit -qm kit
+export OV_PKGS_RESIGN_REF=main
+# A stand-in curl that only notes the Kuma pushes (no request leaves here).
+mkdir -p "$T/stub"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\n' "$T/kuma.log" > "$T/stub/curl"; chmod 755 "$T/stub/curl"
+rs() { PATH="$T/stub:$PATH" OV_PKGS_KUMA_PUSH_URL=https://kuma.example.invalid/api/push/test "$KIT/publish-pkgs.sh" --resign "$@"; }
+D=$PUB/apt/dists/stable
+cp "$D/InRelease" "$T/InRelease-before"; cp "$P" "$T/Packages-before"
+cp "$PUB/install.sh" "$T/install-before.sh"
+echo '# changed' >> "$KIT/pkgs/install.sh"; "${G[@]}" commit -qam 'install.sh changed'
+sleep 1
+rm -rf "$T/dest"; mkdir -p "$T/dest"; echo old > "$T/dest/index.html"
+rs > "$T/resign.log" 2>&1 || { cat "$T/resign.log"; bad "--resign"; }
+cmp -s "$T/Packages-before" "$P" || bad "--resign changed the Packages index"
+! cmp -s "$T/InRelease-before" "$D/InRelease" || bad "--resign did not sign InRelease again"
+gpgv --keyring "$PUB/apt/openvolley.gpg" "$D/InRelease" 2>/dev/null &&
+  gpgv --keyring "$PUB/apt/openvolley.gpg" "$D/Release.gpg" "$D/Release" 2>/dev/null || bad "--resign: signatures"
+grep -q '^Valid-Until: ' "$D/Release" || bad "--resign: no Valid-Until"
+cmp -s "$T/install-before.sh" "$PUB/install.sh" || bad "--resign published install.sh"
+grep -q 'APT index signed again, valid until ' "$T/resign.log" || bad "--resign: no summary"
+ok "--resign: same Packages, InRelease and Release.gpg signed anew, install.sh not touched"
+[[ -f "$T/dest/apt/dists/stable/InRelease" ]] && cmp -s "$D/InRelease" "$T/dest/apt/dists/stable/InRelease" || bad "--resign: dists not synced"
+left=$(find "$T/dest" -type f ! -path "$T/dest/apt/dists/*" ! -path "$T/dest/index.html" | head -3)
+[[ -z "$left" ]] || bad "--resign synced more than apt/dists/: $left"
+[[ "$(cat "$T/dest/index.html")" == old ]] || bad "--resign touched the rest of the served tree"
+grep -q 'status=up' "$T/kuma.log" || bad "--resign: no Kuma up push"
+ok "--resign: syncs apt/dists/ only, pushes up"
+: > "$T/kuma.log"
+expect_fail "--resign goes only with --no-sync" rs --no-sync "$SV_DEB"
+expect_fail "--resign goes only with --no-sync" rs --no-sync --desktop 2.2.0
+grep -q 'status=down' "$T/kuma.log" || bad "a refusal did not push down"
+ok "a refusal pushes down"
+touch "$KIT/stray.sh"
+expect_fail "has local changes" rs --no-sync
+rm "$KIT/stray.sh"
+echo '# local edit' >> "$KIT/lib/publish-lib.sh"
+expect_fail "has local changes" rs --no-sync
+"${G[@]}" checkout -q -- escoresheet/deploy/lib/publish-lib.sh
+"${G[@]}" checkout -qb side
+echo '# unreviewed' >> "$KIT/publish-pkgs.sh"; "${G[@]}" commit -qam unreviewed
+expect_fail "is not on main" rs --no-sync
+"${G[@]}" checkout -q main
+"${G[@]}" checkout -q --detach HEAD~1   # an earlier commit of main is fine
+rs --no-sync > "$T/resign2.log" 2>&1 || { cat "$T/resign2.log"; bad "--resign from an earlier commit of main"; }
+"${G[@]}" checkout -q main
+ok "--resign runs from main (or an earlier commit of it) only"
+make_ov_deb "$POOL/openvolley-escoresheet_2.1.0_amd64.deb" 2.1.0
+cp "$D/InRelease" "$T/InRelease-before"
+expect_fail "no longer gives the published index" rs --no-sync
+cmp -s "$T/Packages-before" "$P" && cmp -s "$T/InRelease-before" "$D/InRelease" || bad "a refused --resign changed the index"
+rm "$POOL/openvolley-escoresheet_2.1.0_amd64.deb"
+ok "--resign leaves the index as it was when the pool changed"
 
 echo "all $PASS checks passed"

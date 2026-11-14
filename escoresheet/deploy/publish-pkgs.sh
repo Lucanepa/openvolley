@@ -3,6 +3,7 @@
 #
 #   escoresheet/deploy/publish-pkgs.sh [--no-sync] [FILE.deb | FILE.apk ...]
 #   escoresheet/deploy/publish-pkgs.sh --desktop VERSION [--app beach] [--staging] [--flatpak] [--pacman] [--no-sync] [FILE.apk ...]
+#   escoresheet/deploy/publish-pkgs.sh --resign [--no-sync]
 #
 # Runs on lenovoserver (never on the VM: the signing keys live only here).
 #
@@ -78,8 +79,8 @@
 #      The Release file is valid for 30 days (Valid-Until), so a host that
 #      keeps serving an old signed index cannot hold clients on an old
 #      version for longer: apt refuses an expired one. Every run signs it
-#      anew; systemd/openvolley-pkgs-resign.timer runs this script (no
-#      arguments) every week so that it never expires between releases.
+#      anew; systemd/openvolley-pkgs-resign.timer runs --resign (below)
+#      every week so that it never expires between releases.
 #      The index never lists a desktop version newer than its app's latest.json
 #      (desktop/ or desktop/beach/; lib/publish-lib.sh, APT hold-back): the in-app .deb updater installs
 #      APT's newest, so a staging .deb, or one the kill switch withdrew from
@@ -111,6 +112,20 @@
 #      Infomaniak VPS serves get.openvolley.app since 09.11.2026, the folder
 #      belongs to its ssh user; a local path also works, written with sudo when
 #      it is not ours, as on lenovoserver 16.10.-09.11.2026), unless --no-sync.
+#
+# --resign (the weekly timer, unattended): only step 2 and its sync. Signs
+# the APT index of the pool already published again, with a new Valid-Until,
+# and syncs apt/dists/ alone; no package is added, no page, install.sh,
+# F-Droid, Flatpak or pacman step runs. It refuses when the index it builds
+# lists anything other than the one it replaces (a re-sign changes dates and
+# signatures only: publish changes by hand), and unless this checkout is clean
+# and its HEAD is on ${OV_PKGS_RESIGN_REF} (default origin/main): it signs
+# with the APT key unattended, so it runs reviewed code only.
+#
+# OV_PKGS_KUMA_PUSH_URL (optional, an Uptime Kuma push monitor): every run that
+# signed the index pushes up, a refusal pushes down. With a heartbeat interval
+# of about 8 days the monitor also alerts when the timer is missing or never
+# runs, well before the 30-day Valid-Until runs out.
 #
 # Layout under ${OV_PKGS_HOME} (default ~/.config/openvolley-pkgs, mode 700):
 #   gnupg/            APT signing key (GNUPGHOME). Vaultwarden: "OpenVolley APT signing key"
@@ -150,7 +165,12 @@ DIST="$APT/dists/stable"
 FD="$PKGS/fdroid"
 export GNUPGHOME="$PKGS/gnupg"
 
-die() { echo "publish-pkgs: $*" >&2; exit 1; }
+KUMA_URL=${OV_PKGS_KUMA_PUSH_URL:-}
+kuma() {  # status msg
+  [[ -n "$KUMA_URL" ]] || return 0
+  curl -fsS -m 10 -G --data-urlencode "status=$1" --data-urlencode "msg=$2" "$KUMA_URL" >/dev/null || true
+}
+die() { echo "publish-pkgs: $*" >&2; kuma down "$*"; exit 1; }
 # shellcheck source=SCRIPTDIR/lib/publish-lib.sh
 . "$KIT_DIR/lib/publish-lib.sh"
 # app id -> SHA-256 of its signing certificate, for the APKs given below.
@@ -163,6 +183,7 @@ STAGING=0
 APP=
 FLATPAK=0
 PACMAN=0
+RESIGN=0
 while (( $# )); do
   case "$1" in
     --no-sync) SYNC=0 ;;
@@ -181,12 +202,18 @@ while (( $# )); do
     --staging) STAGING=1 ;;
     --flatpak) FLATPAK=1 ;;
     --pacman) PACMAN=1 ;;
+    --resign) RESIGN=1 ;;
     -h|--help) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; exit 0 ;;
     -*) die "unknown option $1" ;;
     *) FILES+=("$1") ;;
   esac
   shift
 done
+if (( RESIGN )); then
+  [[ -z "$DESKTOP_V$APP" ]] && (( ! STAGING && ! FLATPAK && ! PACMAN && ${#FILES[@]} == 0 )) ||
+    die "--resign goes only with --no-sync: it publishes nothing new"
+  resign_checkout_ok "$KIT_DIR" "${OV_PKGS_RESIGN_REF:-origin/main}"
+fi
 (( ! STAGING )) || [[ -n "$DESKTOP_V" ]] || die "--staging needs --desktop VERSION"
 [[ -z "$APP" ]] || [[ -n "$DESKTOP_V" ]] || die "--app needs --desktop VERSION"
 (( ! FLATPAK )) || [[ -n "$DESKTOP_V" ]] || die "--flatpak needs --desktop VERSION (or run ../packaging/flatpak/publish-flatpak.sh VERSION, then this script)"
@@ -207,11 +234,14 @@ if (( PACMAN )); then
 fi
 [[ -z "$DESKTOP_RELEASE_DIR" ]] || (( ! SYNC )) || die "OV_DESKTOP_RELEASE_DIR is for tests: use it with --no-sync"
 
-for t in dpkg-deb dpkg-scanpackages apt-ftparchive gpg gpgv fdroid rsync curl python3 node sha256sum; do
+if (( RESIGN )); then tools=(dpkg-deb dpkg-scanpackages apt-ftparchive gpg gpgv rsync python3)
+else tools=(dpkg-deb dpkg-scanpackages apt-ftparchive gpg gpgv fdroid rsync curl python3 node sha256sum); fi
+for t in "${tools[@]}"; do
   command -v "$t" >/dev/null || die "$t not found"
 done
 [[ -d "$GNUPGHOME" && -f "$PKGS/gpg-passphrase" ]] || die "no signing key in $PKGS (restore it from Vaultwarden)"
-[[ -f "$FD/config.yml" && -f "$FD/keystore.p12" ]] || die "no F-Droid repo in $FD (restore it from Vaultwarden)"
+(( RESIGN )) || [[ -f "$FD/config.yml" && -f "$FD/keystore.p12" ]] || die "no F-Droid repo in $FD (restore it from Vaultwarden)"
+(( ! RESIGN )) || [[ -f "$DIST/main/binary-amd64/Packages" ]] || die "--resign: no APT index in $DIST to sign again (publish once without --resign)"
 [[ -z "$DESKTOP_V" ]] || desktop_check_setup
 if (( FLATPAK )); then
   [[ -x "$FLATPAK_PUBLISH" ]] || die "$FLATPAK_PUBLISH not found"
@@ -364,10 +394,12 @@ for f in "${FILES[@]}"; do
 done
 # Old-name packages still in the pool: repack them (unless that version is
 # already there as $OV_APT_NAME, which then wins), then drop the original.
+# Never with --resign: the pool on the server must stay as it is.
 for f in "$APT/pool/main"/*.deb; do
   [[ -e "$f" ]] || continue
   pkg=$(dpkg-deb -f "$f" Package)
   ! apt_name_ok "$pkg" || continue
+  (( ! RESIGN )) || die "--resign: $f ($pkg) would be repacked; run publish-pkgs.sh without --resign"
   legacy_name "$pkg" || die "$f: package $pkg in the pool is not published here (${APT_NAMES[*]}); remove it"
   ver=$(dpkg-deb -f "$f" Version)
   if [[ ! -e "$APT/pool/main/${OV_APT_NAME}_${ver}_amd64.deb" ]]; then
@@ -389,9 +421,14 @@ gpg_sign() {
   cd "$APT"
   # Paths in Packages are relative to the repo root (apt/). --multiversion keeps
   # every version installable (rollback: apt install <pkg>=<old version>).
-  dpkg-scanpackages --multiversion --arch amd64 pool/main > "$DIST/main/binary-amd64/Packages"
+  dpkg-scanpackages --multiversion --arch amd64 pool/main > "$WORK/Packages"
 )
-apt_hold_packages "$DIST/main/binary-amd64/Packages"
+apt_hold_packages "$WORK/Packages"
+if (( RESIGN )) && ! cmp -s "$WORK/Packages" "$DIST/main/binary-amd64/Packages"; then
+  diff "$DIST/main/binary-amd64/Packages" "$WORK/Packages" | grep -E '^[<>] (Package|Version):' >&2 || true
+  die "--resign: the pool or desktop/latest.json no longer gives the published index; publish the change without --resign"
+fi
+mv "$WORK/Packages" "$DIST/main/binary-amd64/Packages"
 gzip -9nkf "$DIST/main/binary-amd64/Packages"
 
 conf="$WORK/apt-ftparchive.conf"
@@ -417,6 +454,26 @@ gpg --batch --yes --armor --export "$APT_SIGNER_FPR" > "$APT/openvolley.asc"
 gpgv --keyring "$APT/openvolley.gpg" "$DIST/InRelease" 2>/dev/null || die "InRelease does not verify"
 gpgv --keyring "$APT/openvolley.gpg" "$DIST/Release.gpg" "$DIST/Release" 2>/dev/null || die "Release.gpg does not verify"
 grep -q '^Valid-Until: ' "$DIST/Release" || die "the Release file has no Valid-Until"
+
+if (( RESIGN )); then
+  refuse_key_material "$PUB/apt"
+  chmod -R u=rwX,go=rX "$DIST"
+  vu=$(sed -n 's/^Valid-Until: //p' "$DIST/Release")
+  echo "APT index signed again, valid until $vu"
+  if (( SYNC )); then
+    # apt/dists/ only (the filter leaves the rest of DEST alone), put in
+    # place together at the end (as in step 5).
+    SUDO=()
+    [[ "$DEST" != /* || ! -d "$DEST" || -w "$DEST" ]] || SUDO=(sudo)
+    "${SUDO[@]}" rsync -rlt --delete-after --delay-updates --chmod=D755,F644 \
+      --include='/dists/***' --exclude='*' "$APT/" "${DEST%/}/apt/"
+    echo "synced $APT/dists/ to ${DEST%/}/apt/dists/"
+    kuma up "APT index valid until $vu"
+  else
+    echo "not synced (--no-sync); tree: $PUB"
+  fi
+  exit 0
+fi
 
 # --- 3. F-Droid -------------------------------------------------------------
 (cd "$FD" && fdroid update -q)
@@ -501,6 +558,7 @@ if (( SYNC )); then
   echo "synced to $DEST"
   # Only now: latest.json on GitHub must not point at a .deb not yet in the pool.
   [[ -z "$DESKTOP_V" ]] || desktop_upload "$DESKTOP_V" "$STAGING" "$WORK/desktop"
+  kuma up "published; APT index valid until $(sed -n 's/^Valid-Until: //p' "$DIST/Release")"
 else
   echo "not synced (--no-sync); tree: $PUB"
   if [[ -n "$DESKTOP_V" ]]; then

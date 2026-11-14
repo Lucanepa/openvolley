@@ -178,6 +178,19 @@ install_sh_ok() {
     die "$readme gives install.sh SHA-256 $want, $f is $got: put the new hash in $readme (and commit it) before publishing"
 }
 
+# resign_checkout_ok DIR REF: DIR is in a git checkout with no change and no
+# untracked file, and its HEAD is REF or an earlier commit of REF (so merged,
+# reviewed code). For publish-pkgs.sh --resign, which signs unattended.
+resign_checkout_ok() {
+  local dir=$1 ref=$2 head tip dirty
+  head=$(git -C "$dir" rev-parse --verify -q HEAD) || die "--resign: $dir is not in a git checkout"
+  tip=$(git -C "$dir" rev-parse --verify -q "$ref^{commit}") || die "--resign: no $ref in the checkout of $dir"
+  dirty=$(git -C "$dir" status --porcelain) || die "--resign: cannot read the state of $dir"
+  [[ -z "$dirty" ]] || die "--resign: the checkout of $dir has local changes; run it from a clean checkout of $ref"
+  git -C "$dir" merge-base --is-ancestor "$head" "$tip" ||
+    die "--resign: HEAD ${head:0:12} of $dir is not on $ref; run it from a checkout of $ref"
+}
+
 updater() { node "$UPDATER_JS" "$@"; }
 
 # svrz_rc_verify FILE VERSION: FILE.sig (the svrz-rc release's <deb>.sig, next

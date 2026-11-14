@@ -86,7 +86,9 @@ package is in the repo.
    container: `archlinux:base-devel` pinned by digest in `archlinux-image`
    (`publish-pacman.sh --pin-image` writes it; review and commit, now and
    then for newer build tools), so the build tools change only with a
-   commit. The `.deb` comes from GitHub, or from `--deb FILE` (what
+   commit. Without a committed `archlinux-image` there is no build:
+   `publish-pkgs.sh --pacman` and `aur/bump.sh` / `aur/publish.sh` stop, so
+   pin it before the first release with `--pacman`. The `.deb` comes from GitHub, or from `--deb FILE` (what
    `publish-pkgs.sh --pacman` passes: the same bytes it signed); `makepkg`
    checks its sha256 against the PKGBUILD either way. Then, on the host,
    `check-package.py` compares the package with that `.deb`: each file must be
