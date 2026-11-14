@@ -648,11 +648,13 @@ plus le club. Avec lui, le logiciel du club lit et, si le jeton le permet,
 écrit les équipes du club, les listes envoyées à l'avance pour ses matchs, ses
 équipes enregistrées et ses listes de licences, avec les données décrites
 ci-dessus (noms, dates de naissance, numéros de licence), ainsi que les matchs
-du club tels que les montre l'interface publique (section 8). Un jeton qui
-peut écrire exige le mot de passe de la personne responsable. Le serveur ne
+du club tels que les montre l'interface publique (section 8). Seul un jeton
+qui peut aussi les écrire lit les noms, dates de naissance et numéros de
+licence, et un tel jeton exige le mot de passe de la personne responsable. Le serveur ne
 conserve du jeton qu'une empreinte, son nom, ses droits, l'équipe,
 l'expiration et la dernière utilisation ; le journal des modifications
-indique qui l'a créé ou révoqué et chaque modification faite avec lui. Ce que
+indique qui l'a créé ou révoqué, chaque modification faite avec lui et
+chaque lecture de ces données personnelles. Ce que
 le logiciel du club fait des données lues relève de la responsabilité du
 club.
 

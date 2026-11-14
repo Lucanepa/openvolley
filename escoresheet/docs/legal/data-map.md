@@ -210,10 +210,10 @@ the account (4.5a).
 | **Purpose** | The club's own software (member administration, website) reads and writes the club's teams, rosters sent ahead, saved teams and licence lists without the manager console (`lib/clubApi.js`, `docs/club-api.md`) |
 | **Basis** | (f) the club's administration of its own teams; the same data the club's managers already see |
 | **Stored** | VM; backups |
-| **Who sees it** | The club's managers and admins (the manager's API tab: never the secret). A token holder sees exactly what the manager who made it sees through the same functions (`lib/teams.js`, `lib/licences.js`, `lib/clubs.js`), limited to the club (and the token's team), and the club's matches as the public interface shows them (4.8). The token stops when revoked, expired or its maker no longer manages the club. Never public, never on `/api/db` |
+| **Who sees it** | The club's managers and admins (the manager's API tab: never the secret). A token holder sees what the manager who made it sees through the same functions (`lib/teams.js`, `lib/licences.js`, `lib/clubs.js`), limited to the club (and the token's team) and to its scopes: `read` reaches no personal data (the club without its managers' accounts, teams, games, and the club's matches as the public interface shows them, 4.8); rosters, squads and licence lists only with that data's write scope (made with the manager's password). The token stops when revoked, expired, its maker no longer manages the club or while the maker's account is deactivated. Never public, never on `/api/db` |
 | **Flows** | Club's software ↔ backend (`/api/club/v1/*`, bearer token, 240 requests a minute per token, failed tokens limited per IP). What the club's software does with the data is the club's own processing |
 | **Retention as built** | Kept with the club: deleted with the club, the team or the account that made it (`ON DELETE CASCADE`); a revoked token stays listed (no secret) |
-| **Audit** | `club_api.token` (made or revoked: club, token id, scopes, team); `club_api.call` (every write: token id, club, method, route, status; never a body) (4.6) |
+| **Audit** | `club_api.token` (made or revoked: club, token id, scopes, team); `club_api.call` (every write: token id, club, method, route, status; never a body); `club_api.read` (a read of a roster, squad or licence lists: token id, club, route, team, game; once per token and route every 10 minutes) (4.6) |
 
 ### 4.5e Sign-up requests (db/025, OpenVolley)
 

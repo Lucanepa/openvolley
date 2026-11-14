@@ -13,11 +13,14 @@ A club manager makes tokens in the manager: **My club → API**. A token
 - is shown **once** (only a SHA-256 is stored); the list shows its first characters;
 - acts **as the manager who made it**: it can do nothing that manager could not (same functions, same
   rules: the team must be the club's, the game the team's, the gender rule, limits). It stops when the
-  manager no longer manages the club, or when the account is deleted;
+  manager no longer manages the club, while the account is deactivated, or when it is deleted;
 - needs the manager's **password** to be made when it has a write scope;
 - can be revoked at any time (software using it stops at once). At most 20 active tokens per club.
 
 Scopes: `read` · `rosters:write` · `teams:write` · `licences:write` (a write scope brings `read`).
+`read` reaches **no personal data**: the club, its teams, their games and the matches. Rosters, squads
+and licence lists (names, dates of birth, licence numbers, signatures) are read with the write scope of
+that data, which needs the manager's password to make. Expired tokens do not count against the 20.
 
 Keep write tokens on a server. A token in a web page is visible to every visitor; the widget and the
 public API need none.
@@ -31,15 +34,15 @@ revoked or expired) that address gets 429 for the rest of the minute, whatever t
 
 | Request | Scope | What |
 |---|---|---|
-| `GET /club` | read | The club: teams, contact address |
+| `GET /club` | read | The club: id, name, teams, contact address (not its managers) |
 | `GET /teams` | read | `{ id, name }` of the club's teams |
 | `GET /games` | read | The club's games from today, all teams (from the VolleyManager schedule) |
 | `GET /teams/:team/games` | read | One team's games, each with its roster summary |
-| `GET /teams/:team/games/:game/roster` | read | The roster sent for a game, or `null` |
+| `GET /teams/:team/games/:game/roster` | rosters:write | The roster sent for a game, or `null` |
 | `PUT /teams/:team/games/:game/roster` | rosters:write | `{ players, staff, coach_signature?, captain_signature? }` |
 | `DELETE /teams/:team/games/:game/roster` | rosters:write | Remove it |
-| `GET` / `PUT /teams/:team/squad` | read / teams:write | The team's saved team (`{ players, staff }`) |
-| `GET /licences` | read | The club's licence lists and people |
+| `GET` / `PUT /teams/:team/squad` | teams:write | The team's saved team (`{ players, staff }`) |
+| `GET /licences` | licences:write | The club's licence lists and people |
 | `PUT /licences/players` `scorers` `coaches` | licences:write | `{ people: [{ sv_number, last_name, first_name, dob, gender }] }` replaces that list |
 | `GET /matches?from&to&status&limit` | read | The club's matches (home or away), as the public API shows them |
 | `GET /matches/:id`, `/live`, `/stats` | read | One of the club's matches |
@@ -53,8 +56,10 @@ The public API never shows names.
 
 ## Audit
 
-Every token made or revoked, and every write with a token, is in the audit log (`club_api.token`,
-`club_api.call` with the token id, the route and the status; never a name).
+Every token made or revoked, every write with a token, and every read of personal data (roster,
+squad, licence lists; once per token and route every 10 minutes) is in the audit log (`club_api.token`,
+`club_api.call` with the token id, the route and the status, `club_api.read` with the token id, the
+route, team and game; never a name).
 
 ## Example
 

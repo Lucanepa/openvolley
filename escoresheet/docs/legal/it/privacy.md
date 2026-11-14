@@ -613,11 +613,12 @@ società. Con esso il software della società legge e, se il token lo consente,
 scrive le squadre della società, gli elenchi inviati in anticipo per le sue
 partite, le sue squadre salvate e le sue liste delle licenze, con i dati
 descritti sopra (nomi, date di nascita, numeri di licenza), e le partite della
-società come le mostra l'interfaccia pubblica (sezione 8). Un token che può
-scrivere richiede la password della persona responsabile. Il server conserva
+società come le mostra l'interfaccia pubblica (sezione 8). Nomi, date di
+nascita e numeri di licenza li legge solo un token che può anche scriverli, e
+un tale token richiede la password della persona responsabile. Il server conserva
 del token solo un'impronta, il nome, i diritti, la squadra, la scadenza e
 l'ultimo uso; il registro delle modifiche indica chi l'ha creato o revocato e
-ogni modifica fatta con esso. Di ciò che il software della società fa con i
+ogni modifica fatta con esso e ogni lettura di questi dati personali. Di ciò che il software della società fa con i
 dati letti risponde la società.
 
 **Tornei di beach volley:** titolo, luogo, date, squadre con nomi, cognomi,

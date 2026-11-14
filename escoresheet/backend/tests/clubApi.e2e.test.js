@@ -105,7 +105,8 @@ describe('club API end to end', { skip: SKIP }, () => {
     assert.equal(teams.status, 200, teams.text)
     assert.deepEqual(teams.json.data.teams, [{ id: teamH1, name: 'VBC Musterdorf H1' }])
     assert.equal((await club(readTok, 'GET', `/teams/${teamOther}/games`)).status, 404)
-    assert.equal((await club(readTok, 'GET', `/teams/${teamOther}/squad`)).status, 404)
+    assert.equal((await club(writeTok, 'GET', `/teams/${teamOther}/squad`)).status, 404)
+    assert.equal((await club(writeTok, 'GET', `/teams/${teamOther}/games/920002/roster`)).status, 404)
   })
 
   it('reads the club\'s games; a read token cannot write', async () => {
@@ -124,13 +125,13 @@ describe('club API end to end', { skip: SKIP }, () => {
     assert.equal(bad.status, 400)
     const put = await club(writeTok, 'PUT', path, { players, staff: [] })
     assert.equal(put.status, 200, put.text)
-    const get = await club(readTok, 'GET', path)
+    const get = await club(writeTok, 'GET', path)
     assert.equal(get.json.data.roster.players.length, 6)
     // another club's game number is not this team's game
     assert.equal((await club(writeTok, 'PUT', `/teams/${teamH1}/games/920002/roster`, { players, staff: [] })).status, 404)
     const del = await club(writeTok, 'DELETE', path)
     assert.equal(del.status, 200, del.text)
-    assert.equal((await club(readTok, 'GET', path)).json.data?.roster ?? null, null)
+    assert.equal((await club(writeTok, 'GET', path)).json.data?.roster ?? null, null)
   })
 
   it('a squad and a licence list can be replaced; the audit names the token', async () => {
@@ -145,7 +146,7 @@ describe('club API end to end', { skip: SKIP }, () => {
   })
 
   it('a token limited to one team cannot reach club-wide data', async () => {
-    const t = (await session(users.boss, 'POST', `/api/club/${muster.id}/api-tokens`, { label: 'H1 only', scopes: ['read'], team_id: teamH1 })).json.data.token
+    const t = (await session(users.boss, 'POST', `/api/club/${muster.id}/api-tokens`, { label: 'H1 only', scopes: ['licences:write'], team_id: teamH1, password: PASSWORD })).json.data.token
     assert.equal((await club(t, 'GET', '/teams')).json.data.teams.length, 1)
     assert.equal((await club(t, 'GET', '/licences')).json.error.code, 'OV_TOKEN_TEAM_ONLY')
   })
@@ -162,6 +163,79 @@ describe('club API end to end', { skip: SKIP }, () => {
     assert.equal(gone.status, 403)
     assert.equal(gone.json.error.code, 'OV_TOKEN_OWNER')
     await sql.query('INSERT INTO public.club_managers (club_id, user_id) VALUES ($1, $2)', [muster.id, users.boss.id])
+  })
+
+  it('a read token reaches no personal data: rosters, squads and licence lists need their write scope', async () => {
+    const path = `/teams/${teamH1}/games/920001/roster`
+    const players = Array.from({ length: 6 }, (_, i) => ({ number: i + 1, first_name: 'P' + i, last_name: 'Test', dob: '2012-03-0' + (i + 1), active: true }))
+    assert.equal((await club(writeTok, 'PUT', path, { players, staff: [] })).status, 200)
+    for (const p of [path, `/teams/${teamH1}/squad`, '/licences']) {
+      const r = await club(readTok, 'GET', p)
+      assert.equal(r.status, 403, `${p}: ${r.text}`)
+      assert.equal(r.json.error.code, 'OV_SCOPE_REQUIRED')
+      assert.ok(!r.text.includes('2012-03-0'), 'no date of birth')
+      assert.equal((await club(writeTok, 'GET', p)).status, 200, p)
+    }
+    const games = await club(readTok, 'GET', `/teams/${teamH1}/games`)
+    assert.equal(games.status, 200, games.text)
+    assert.ok(!games.text.includes('2012-03-0'))
+    // each reading token is in the audit (at most every few minutes per token and route), never a name
+    const reads = await auditOf('club_api.read')
+    assert.ok(reads.length >= 3, JSON.stringify(reads))
+    assert.ok(reads.every((r) => r.details.token_id && r.details.club_id === muster.id && r.actor_id === users.boss.id))
+    assert.ok(!JSON.stringify(reads).includes('Test'))
+    const before = reads.length
+    await club(writeTok, 'GET', '/licences')
+    assert.equal((await auditOf('club_api.read')).length, before, 'throttled')
+    await club(writeTok, 'DELETE', path)
+  })
+
+  it('GET /club: the club, its teams and contact address, not its managers\' accounts', async () => {
+    const r = await club(readTok, 'GET', '/club')
+    assert.equal(r.status, 200, r.text)
+    assert.equal(r.json.data.club.id, muster.id)
+    assert.deepEqual(r.json.data.club.teams, ['VBC Musterdorf H1'])
+    assert.ok(!('managers' in r.json.data.club))
+    assert.ok(!r.text.includes(users.boss.email))
+    assert.ok(!r.text.includes(users.boss.id))
+  })
+
+  it('a token of a deactivated manager stops working, and works again on reactivation', async () => {
+    const t = (await session(users.boss, 'POST', `/api/club/${muster.id}/api-tokens`, { label: 'deact', scopes: ['read'] })).json.data.token
+    assert.equal((await club(t, 'GET', '/teams')).status, 200)
+    assert.equal((await session(users.admin, 'POST', `/api/admin/accounts/${users.boss.id}/deactivate`, {})).status, 200)
+    const gone = await club(t, 'GET', '/teams')
+    assert.equal(gone.status, 403, gone.text)
+    assert.equal(gone.json.error.code, 'OV_TOKEN_OWNER')
+    assert.equal((await session(users.admin, 'POST', `/api/admin/accounts/${users.boss.id}/reactivate`, {})).status, 200)
+    // the session ended with the deactivation: sign in again
+    const inn = await api(srv.base, '/api/auth/sign-in', { headers: { 'cf-connecting-ip': nextIp() }, body: { email: users.boss.email, password: PASSWORD } })
+    assert.equal(inn.status, 200, inn.text)
+    users.boss.token = inn.json.data.session.access_token
+    assert.equal((await club(t, 'GET', '/teams')).status, 200)
+  })
+
+  it('a super admin\'s token works for a club it does not manage', async () => {
+    const sa = await account('superadmin')
+    await sql.query(`UPDATE public.profiles SET roles = ARRAY['super_admin'] WHERE user_id = $1`, [sa.id])
+    const r = await session(sa, 'POST', `/api/club/${other.id}/api-tokens`, { label: 'sa', scopes: ['read'] })
+    assert.equal(r.status, 201, r.text)
+    const teams = await club(r.json.data.token, 'GET', '/teams')
+    assert.equal(teams.status, 200, teams.text)
+    assert.deepEqual(teams.json.data.teams, [{ id: teamOther, name: 'VBC Other H1' }])
+    await sql.query(`UPDATE public.profiles SET roles = '{}' WHERE user_id = $1`, [sa.id])
+    assert.equal((await club(r.json.data.token, 'GET', '/teams')).status, 403)
+  })
+
+  it('expired tokens do not count against the 20 active tokens of a club', async () => {
+    const mk = () => session(users.boss, 'POST', `/api/club/${muster.id}/api-tokens`, { label: 'n', scopes: ['read'] })
+    const { rows: [{ n }] } = await sql.query('SELECT count(*)::int AS n FROM public.club_api_tokens WHERE club_id = $1 AND revoked_at IS NULL', [muster.id])
+    for (let i = n; i < 20; i++) assert.equal((await mk()).status, 201)
+    assert.equal((await mk()).json.error.code, 'OV_TOKEN_LIMIT')
+    await sql.query(`UPDATE public.club_api_tokens SET expires_at = now() - interval '1 day' WHERE id = (SELECT id FROM public.club_api_tokens WHERE club_id = $1 AND revoked_at IS NULL AND label = 'n' LIMIT 1)`, [muster.id])
+    const again = await mk()
+    assert.equal(again.status, 201, again.text)
+    await sql.query(`UPDATE public.club_api_tokens SET revoked_at = now() WHERE club_id = $1 AND label = 'n'`, [muster.id])
   })
 
   it('the public list filters by club', async () => {

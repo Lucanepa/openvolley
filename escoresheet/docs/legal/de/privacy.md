@@ -626,11 +626,13 @@ es erlaubt, schreibt sie die Teams des Vereins, die im Voraus geschickten
 Kader seiner Spiele, seine gespeicherten Teams und seine Lizenzlisten mit den
 oben beschriebenen Daten (Namen, Geburtsdaten, Lizenznummern), dazu die
 Spiele des Vereins so, wie sie die öffentliche Schnittstelle zeigt
-(Abschnitt 8). Ein Token, das schreiben darf, braucht das Passwort der
+(Abschnitt 8). Namen, Geburtsdaten und Lizenznummern liest nur ein Token,
+das sie auch schreiben darf, und ein solches Token braucht das Passwort der
 verantwortlichen Person. Der Server speichert vom Token nur einen
 Fingerabdruck, seinen Namen, seine Rechte, das Team, den Ablauf und die
 letzte Verwendung; im Änderungsprotokoll steht, wer es erstellt oder
-widerrufen hat, und jede Änderung, die damit gemacht wurde. Was die Software
+widerrufen hat, jede Änderung, die damit gemacht wurde, und jedes Lesen
+dieser Personendaten. Was die Software
 des Vereins mit den gelesenen Daten macht, verantwortet der Verein.
 
 **Beachturniere:** Titel, Ort, Daten, Teams mit Vor- und Nachname,

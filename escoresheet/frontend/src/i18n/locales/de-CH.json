@@ -3630,6 +3630,7 @@
         "saved_teams_roster": "Kader eines gespeicherten Teams ersetzt",
         "club_api_token": "Vereins-API-Token erstellt oder widerrufen",
         "club_api_call": "Änderung mit einem Vereins-API-Token",
+        "club_api_read": "Personendaten mit einem Vereins-API-Token gelesen",
         "account_request_approve": "Registrierungsanfrage freigegeben",
         "account_request_reject": "Registrierungsanfrage abgelehnt",
         "account_request_propose": "Registrierungsanfrage von Teamverantwortlichen vorgeschlagen"
@@ -3831,10 +3832,10 @@
         "labelHint": "Zum Beispiel Website oder Roster-Sync",
         "scopes": "Was es darf",
         "scope": {
-          "read": "Club, Teams, Spiele, Lizenzlisten und Matches lesen",
-          "rosters:write": "Roster eines Spiels senden und löschen",
-          "teams:write": "Den Kader eines Teams ersetzen",
-          "licences:write": "Eine Lizenzliste ersetzen"
+          "read": "Club, Teams, Spiele und Matches lesen (keine Namen oder Geburtsdaten)",
+          "rosters:write": "Roster eines Spiels lesen, senden und löschen",
+          "teams:write": "Den Kader eines Teams lesen und ersetzen",
+          "licences:write": "Die Lizenzlisten lesen und ersetzen"
         },
         "team": "Team",
         "teamHint": "Das Token auf ein Team beschränken, oder leer lassen für den ganzen Club",

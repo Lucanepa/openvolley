@@ -3629,6 +3629,7 @@
         "saved_teams_roster": "Effectif d’une équipe enregistrée remplacé",
         "club_api_token": "Jeton d’API du club créé ou révoqué",
         "club_api_call": "Modification faite avec un jeton d’API du club",
+        "club_api_read": "Données personnelles lues avec un jeton d’API du club",
         "account_request_approve": "Demande d’inscription validée",
         "account_request_reject": "Demande d’inscription refusée",
         "account_request_propose": "Demande d’inscription proposée par un responsable d’équipe"
@@ -3830,10 +3831,10 @@
         "labelHint": "Par exemple site web ou synchronisation des rosters",
         "scopes": "Ce qu'il peut faire",
         "scope": {
-          "read": "Lire le club, les équipes, les matchs, les listes de licences et les rencontres",
-          "rosters:write": "Envoyer et supprimer le roster d'un match",
-          "teams:write": "Remplacer l'effectif d'une équipe",
-          "licences:write": "Remplacer une liste de licences"
+          "read": "Lire le club, les équipes, les matchs et les rencontres (sans noms ni dates de naissance)",
+          "rosters:write": "Lire, envoyer et supprimer le roster d'un match",
+          "teams:write": "Lire et remplacer l'effectif d'une équipe",
+          "licences:write": "Lire et remplacer les listes de licences"
         },
         "team": "Équipe",
         "teamHint": "Limiter le jeton à une équipe, ou laisser vide pour tout le club",

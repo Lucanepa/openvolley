@@ -3635,6 +3635,7 @@
         "saved_teams_roster": "Rosa di una squadra salvata sostituita",
         "club_api_token": "Token API della società creato o revocato",
         "club_api_call": "Modifica fatta con un token API della società",
+        "club_api_read": "Dati personali letti con un token API della società",
         "account_request_approve": "Richiesta di registrazione approvata",
         "account_request_reject": "Richiesta di registrazione rifiutata",
         "account_request_propose": "Richiesta di registrazione proposta da un responsabile della squadra"
@@ -3836,10 +3837,10 @@
         "labelHint": "Per esempio sito web o sincronizzazione dei roster",
         "scopes": "Cosa può fare",
         "scope": {
-          "read": "Leggere club, squadre, partite, elenchi di licenze e incontri",
-          "rosters:write": "Inviare ed eliminare il roster di una partita",
-          "teams:write": "Sostituire la rosa di una squadra",
-          "licences:write": "Sostituire un elenco di licenze"
+          "read": "Leggere club, squadre, partite e incontri (senza nomi né date di nascita)",
+          "rosters:write": "Leggere, inviare ed eliminare il roster di una partita",
+          "teams:write": "Leggere e sostituire la rosa di una squadra",
+          "licences:write": "Leggere e sostituire gli elenchi di licenze"
         },
         "team": "Squadra",
         "teamHint": "Limita il token a una squadra, o lascia vuoto per tutto il club",

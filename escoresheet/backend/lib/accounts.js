@@ -113,7 +113,7 @@ export const AUDIT_ACTIONS = Object.freeze([
   'saved_teams.scope',
   'saved_teams.competition_delete', 'saved_teams.team_delete', 'saved_teams.roster',
   // db/044: a club API token made or revoked, and a write made with one (lib/clubApi.js; ids and scopes only)
-  'club_api.token', 'club_api.call',
+  'club_api.token', 'club_api.call', 'club_api.read',
   // db/025: a part of a sign-up request approved or rejected (lib/accountRequests.js;
   // the kind, the club and team ids, who decided: admin, club or team)
   'account.request_approve', 'account.request_reject',

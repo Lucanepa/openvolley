@@ -3636,6 +3636,7 @@
         "saved_teams_roster": "Saved team's roster replaced",
         "club_api_token": "Club API token made or revoked",
         "club_api_call": "Change made with a club API token",
+        "club_api_read": "Personal data read with a club API token",
         "account_request_approve": "Sign-up request approved",
         "account_request_reject": "Sign-up request rejected",
         "account_request_propose": "Sign-up request proposed by a team manager"
@@ -3837,10 +3838,10 @@
         "labelHint": "For example website or roster sync",
         "scopes": "What it may do",
         "scope": {
-          "read": "Read the club, teams, games, licence lists and matches",
-          "rosters:write": "Send and delete the roster of a game",
-          "teams:write": "Replace a team's squad",
-          "licences:write": "Replace a licence list"
+          "read": "Read the club, teams, games and matches (no names or dates of birth)",
+          "rosters:write": "Read, send and delete the roster of a game",
+          "teams:write": "Read and replace a team's squad",
+          "licences:write": "Read and replace the licence lists"
         },
         "team": "Team",
         "teamHint": "Limit the token to one team, or leave it for the whole club",

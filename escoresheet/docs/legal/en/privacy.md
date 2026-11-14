@@ -559,11 +559,13 @@ person no longer manages the club. With it the club's software reads and,
 if the token allows it, writes the club's teams, the rosters sent ahead of
 its games, its saved teams and its licence lists, with the data described
 above (names, dates of birth, licence numbers), and the club's matches as the
-public interface shows them (section 8). A token that can write needs the
-manager's password. The server stores only a fingerprint of the token, its
-name, rights, team, expiry and last use, and records who made or revoked it
-and each change made with it in the change log. Whatever the club's software
-does with the data it reads is the club's responsibility.
+public interface shows them (section 8). Names, dates of birth and licence
+numbers are read only by a token that may also write them, and such a token
+needs the manager's password. The server stores only a fingerprint of the
+token, its name, rights, team, expiry and last use, and records who made or
+revoked it, each change made with it and each time it read those personal
+data in the change log. Whatever the club's software does with the data it
+reads is the club's responsibility.
 
 **Beach tournaments:** title, venue, dates, teams with the players' first and
 last names, licence numbers and countries, schedule, results, names of

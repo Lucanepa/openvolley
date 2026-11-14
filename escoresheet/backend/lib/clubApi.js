@@ -3,10 +3,13 @@
  * makes in the manager console, and /api/club/v1/* that those tokens call.
  *
  * A token belongs to one club (optionally one team) and carries scopes:
- *   read             the club, its teams, their games, licence lists, the club's matches
- *   rosters:write    PUT / DELETE the roster of a game
- *   teams:write      PUT a team's squad (its saved team)
- *   licences:write   PUT a licence list (players, scorers, coaches)
+ *   read             the club, its teams, their games, the club's matches (no personal data)
+ *   rosters:write    GET / PUT / DELETE the roster of a game
+ *   teams:write      GET / PUT a team's squad (its saved team)
+ *   licences:write   GET / PUT the licence lists (players, scorers, coaches)
+ * Names, dates of birth, licence numbers and signatures are read only with
+ * the write scope of that data, which needs the manager's password to make:
+ * a read token (a website's) reaches none of them.
  * It acts as the manager who made it: every route calls the same functions the
  * manager console uses (lib/teams.js, lib/licences.js, lib/clubs.js), which
  * hold all the rules (the team must be the club's, the game the team's, the
@@ -19,21 +22,26 @@
  *                                         a token with a write scope needs the manager's password
  *   revoke({ actorId, clubId, id })
  * API (a token; server.js):
- *   authenticate(raw)                     the principal, or { error } (401 / 403)
+ *   authenticate(raw)                     the principal, or { error } (401 / 403: its maker no
+ *                                         longer manages the club or is deactivated)
  *   handle({ principal, method, pathname, query, body })   { status, body }
  *
  * Answers are { status, body } like lib/accounts.js; nothing throws. Personal
- * data (rosters, licence lists) flows only to a token of that club.
+ * data (rosters, squads, licence lists) flows only to a token of that club with
+ * the scope of that data; each such read is audited (club_api.read, at most
+ * once per token and route in READ_AUDIT_MS), every write too (club_api.call).
  */
 import { createHash, randomBytes } from 'node:crypto'
 import { fail, invalid, isUuid, notFound, ok, unavailable } from './accounts.js'
 import { LICENCE_LISTS } from './licences.js'
+import { accessFromRoles } from './access.js'
 
 export const SCOPES = Object.freeze(['read', 'rosters:write', 'teams:write', 'licences:write'])
 export const WRITE_SCOPES = Object.freeze(['rosters:write', 'teams:write', 'licences:write'])
 export const TOKEN_PREFIX = 'ovk_'
 export const MAX_TOKENS_PER_CLUB = 20
 export const MAX_EXPIRY_DAYS = 730
+export const READ_AUDIT_MS = 10 * 60 * 1000
 const TOKEN_RE = /^ovk_[A-Za-z0-9_-]{43}$/
 const MISSING = new Set(['42P01', '42703'])
 const DAY_MS = 86400000
@@ -126,7 +134,8 @@ export function createClubApi ({ pool, audit, clubs, teams, licences = null, pub
     return guarded('create', async () => {
       if (teamId && !(await teams.teamOfClub(clubId, teamId))) return notFound()
       const { rows: [n] } = await pool.query(
-        'SELECT count(*)::int AS n FROM public.club_api_tokens WHERE club_id = $1 AND revoked_at IS NULL', [clubId])
+        `SELECT count(*)::int AS n FROM public.club_api_tokens
+          WHERE club_id = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())`, [clubId])
       if (n.n >= MAX_TOKENS_PER_CLUB) return fail(409, 'OV_TOKEN_LIMIT', `At most ${MAX_TOKENS_PER_CLUB} active tokens per club: revoke one first`)
       const raw = TOKEN_PREFIX + randomBytes(32).toString('base64url')
       const row = await withTx(async (client) => {
@@ -164,11 +173,18 @@ export function createClubApi ({ pool, audit, clubs, teams, licences = null, pub
     if (typeof raw !== 'string' || !TOKEN_RE.test(raw)) return { error: UNAUTH() }
     try {
       const { rows: [t] } = await pool.query(
-        `SELECT id, club_id, created_by, team_id, scopes FROM public.club_api_tokens
-          WHERE token_hash = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())`, [hashToken(raw)])
+        `SELECT t.id, t.club_id, t.created_by, t.team_id, t.scopes, p.roles,
+                coalesce((to_jsonb(u) ->> 'banned_until')::timestamptz > now(), false) AS deactivated
+           FROM public.club_api_tokens t
+           JOIN auth.users u ON u.id = t.created_by
+           LEFT JOIN public.profiles p ON p.user_id = t.created_by
+          WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND (t.expires_at IS NULL OR t.expires_at > now())`, [hashToken(raw)])
       if (!t) return { error: UNAUTH() }
-      // acts as its manager: gone when they no longer manage the club (an admin made it: admins always may)
-      const stillManager = await clubs.isManager(t.created_by, t.club_id) || await isAdmin(t.created_by)
+      // acts as its manager: gone while their account is deactivated (they cannot
+      // sign in either) or when they no longer manage the club (an admin or super
+      // admin made it: admins always may, as in the manager console)
+      if (t.deactivated === true) return { error: MANAGER_GONE() }
+      const stillManager = accessFromRoles(t.roles || []).isAdmin || await clubs.isManager(t.created_by, t.club_id)
       if (!stillManager) return { error: MANAGER_GONE() }
       const now = Date.now()
       if (now - (lastTouch.get(t.id) || 0) > 60000) {
@@ -182,10 +198,6 @@ export function createClubApi ({ pool, audit, clubs, teams, licences = null, pub
       logger.error?.('[club-api] authenticate failed:', err?.message)
       return { error: unavailable() }
     }
-  }
-  async function isAdmin (userId) {
-    const { rows } = await pool.query(`SELECT 1 FROM public.profiles WHERE user_id = $1 AND 'admin' = ANY(roles)`, [userId])
-    return rows.length > 0
   }
 
   // ------------------------------------------------------------ the API
@@ -201,7 +213,8 @@ export function createClubApi ({ pool, audit, clubs, teams, licences = null, pub
     return rows.map((r) => r.team_name)
   }
 
-  // [method, regex, scope, handler(match, ctx)]; ctx = { p: principal, query, body }
+  // [method, regex, scope, handler(match, ctx), personal?]; ctx = { p: principal, query, body }
+  // personal: the answer has names / dates of birth (read with that data's write scope, audited)
   // team routes check the team is the club's (and the token's team); the module does the rest
   const ownTeam = (fn) => async (m, c) => {
     if (c.p.teamId && c.p.teamId !== m[1]) return OWN_TEAM_ONLY()
@@ -210,7 +223,13 @@ export function createClubApi ({ pool, audit, clubs, teams, licences = null, pub
   }
   const clubWide = (fn) => (m, c) => (c.p.teamId ? OWN_TEAM_ONLY() : fn(m, c))
   const routes = [
-    ['GET', /^\/club$/, 'read', clubWide((m, c) => clubs.clubDetail({ id: c.p.clubId }))],
+    ['GET', /^\/club$/, 'read', clubWide(async (m, c) => {
+      const r = await clubs.clubDetail({ id: c.p.clubId })
+      if (r.status !== 200) return r
+      // the club, its teams and contact address: not its managers' accounts (e-mail, name, id)
+      const { id, name, teams: names, contact_email: contact } = r.body.data.club
+      return ok({ club: { id, name, teams: names, contact_email: contact ?? null } })
+    })],
     ['GET', /^\/teams$/, 'read', async (m, c) => {
       const r = await teams.clubTeams({ clubId: c.p.clubId })
       if (r.status !== 200) return r
@@ -218,12 +237,12 @@ export function createClubApi ({ pool, audit, clubs, teams, licences = null, pub
       return ok({ teams: r.body.data.teams.filter((t) => !c.p.teamId || t.id === c.p.teamId).map((t) => ({ id: t.id, name: t.name })) })
     }],
     ['GET', new RegExp(`^/teams/${ID}/games$`), 'read', ownTeam((m) => teams.games({ teamId: m[1] }))],
-    ['GET', new RegExp(`^/teams/${ID}/games/${GAME}/roster$`), 'read', ownTeam((m) => teams.getRoster({ teamId: m[1], game: m[2] }))],
+    ['GET', new RegExp(`^/teams/${ID}/games/${GAME}/roster$`), 'rosters:write', ownTeam((m) => teams.getRoster({ teamId: m[1], game: m[2] })), true],
     ['PUT', new RegExp(`^/teams/${ID}/games/${GAME}/roster$`), 'rosters:write', ownTeam((m, c) => teams.putRoster({ actorId: c.p.userId, teamId: m[1], game: m[2], body: c.body }))],
     ['DELETE', new RegExp(`^/teams/${ID}/games/${GAME}/roster$`), 'rosters:write', ownTeam((m, c) => teams.deleteRoster({ actorId: c.p.userId, teamId: m[1], game: m[2] }))],
-    ['GET', new RegExp(`^/teams/${ID}/squad$`), 'read', ownTeam((m) => teams.squad({ teamId: m[1] }))],
+    ['GET', new RegExp(`^/teams/${ID}/squad$`), 'teams:write', ownTeam((m) => teams.squad({ teamId: m[1] })), true],
     ['PUT', new RegExp(`^/teams/${ID}/squad$`), 'teams:write', ownTeam((m, c) => teams.putSquad({ actorId: c.p.userId, teamId: m[1], body: c.body }))],
-    ['GET', /^\/licences$/, 'read', clubWide((m, c) => (licences ? licences.clubList({ clubId: c.p.clubId }) : notFound()))],
+    ['GET', /^\/licences$/, 'licences:write', clubWide((m, c) => (licences ? licences.clubList({ clubId: c.p.clubId }) : notFound())), true],
     ...LICENCE_LISTS.map((list) => ['PUT', new RegExp(`^/licences/${list}$`), 'licences:write',
       clubWide((m, c) => (licences ? licences.putList({ clubId: c.p.clubId, list, people: isObj(c.body) ? c.body.people : undefined, userId: c.p.userId }) : notFound()))]),
     // the club's games from today, all teams (a list of the per-team schedules)
@@ -251,7 +270,21 @@ export function createClubApi ({ pool, audit, clubs, teams, licences = null, pub
     }]
   ]
 
-  /** { status, body } for one call of a token; writes are audited with the token id. */
+  // a read of personal data: one audit row per token and route (team, game) every READ_AUDIT_MS
+  const lastRead = new Map() // `${token}|${path}` -> ms
+  async function auditRead (principal, hit) {
+    const key = `${principal.tokenId}|${hit.m[0]}`
+    const now = Date.now()
+    if (now - (lastRead.get(key) || 0) < READ_AUDIT_MS) return
+    if (lastRead.size > 5000) lastRead.clear()
+    lastRead.set(key, now)
+    const details = { token_id: principal.tokenId, club_id: principal.clubId, route: hit.r[1].source.slice(0, 80) }
+    if (hit.m[1] && /^[0-9a-f-]{36}$/.test(hit.m[1])) details.team_id = hit.m[1]
+    if (hit.m[2]) details.game_number = hit.m[2]
+    await audit(pool, { actorId: principal.userId, action: 'club_api.read', details }).catch(() => {})
+  }
+
+  /** { status, body } for one call of a token; writes are audited with the token id, reads of personal data too. */
   async function handle ({ principal, method, pathname, query, body } = {}) {
     const sub = String(pathname || '').replace(/^\/api\/club\/v1/, '') || '/'
     let hit = null
@@ -273,6 +306,7 @@ export function createClubApi ({ pool, audit, clubs, teams, licences = null, pub
       logger.error?.('[club-api] handler failed:', err?.message)
       out = unavailable()
     }
+    if (hit.r[4] && method === 'GET' && out.status === 200) await auditRead(principal, hit)
     if (method !== 'GET') {
       audit(pool, { actorId: principal.userId, action: 'club_api.call', details: { token_id: principal.tokenId, club_id: principal.clubId, method, route: hit.r[1].source.slice(0, 80), status: out.status } }).catch(() => {})
     }
