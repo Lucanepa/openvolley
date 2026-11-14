@@ -265,7 +265,11 @@ export const Results: React.FC<ResultsProps> = ({
     // The rows of sets never played stay blank, not struck off (owner 2026-10-20)
     // For best-of-3: show 3 rows (sets 1, 2, and the deciding set which is stored at index 5)
     // For best-of-5: show 5 rows (sets 1-5)
-    const isBestOf3 = bestOf === 3;
+    // A set 3 or 4 played in a match stored as best of 3 (its format changed
+    // during the match) is printed too: all five rows, numbered by index, as
+    // the totals and the result count it (the sheet warns about it).
+    const playedExtraSet = bestOf === 3 && setResults.some(r => (r.setNumber === 3 || r.setNumber === 4) && r.teamATimeouts !== null);
+    const isBestOf3 = bestOf === 3 && !playedExtraSet;
     const displaySets = isBestOf3 ? [1, 2, 5] : [1, 2, 3, 4, 5];
     return (
         <div className={`border border-black bg-white flex flex-col h-full ${flush ? '' : 'mr-1'}`}>

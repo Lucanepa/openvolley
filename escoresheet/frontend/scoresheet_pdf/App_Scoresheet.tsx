@@ -27,6 +27,7 @@ import {
 } from './utils/scoresheetModel';
 import { trackServiceRounds, courtChangeIndex, splitSet5Rounds, type ServiceRound } from './utils/serviceRounds';
 import { awardsPoint as sanctionAwardsPoint } from '../src/domain/sanctions.js';
+import { isMatchOverStatus } from '../src/domain/matchEnd.js';
 import { generatedRemarks, correctionRemarks } from './utils/sheetRemarks';
 import { isoOf, setDurationMinutes, setEndMs, setStartMs } from './utils/matchTimes';
 import { BRAND } from '../src/brand.js';
@@ -127,7 +128,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   const teamBKey: 'home' | 'away' = teamAKey === 'home' ? 'away' : 'home';
 
   // Calculate if coin toss is confirmed (all coin toss fields are set)
-  // Also treat as confirmed if match is live/ended/final (coin toss must have been completed to reach these states)
+  // Also treat as confirmed if match is live/ended/approved/final (coin toss must have been completed to reach these states)
   const coinTossFieldsSet = match?.coinTossTeamA !== null &&
     match?.coinTossTeamA !== undefined &&
     match?.coinTossTeamB !== null &&
@@ -136,8 +137,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     match?.coinTossServeA !== undefined &&
     match?.coinTossServeB !== null &&
     match?.coinTossServeB !== undefined;
+  // A closed match loaded from the cloud keeps status 'approved' and may lack
+  // coinTossServeB: its confirmed flag or the status says the toss was done
   const coinTossConfirmed = coinTossFieldsSet ||
-    match?.status === 'live' || match?.status === 'ended' || match?.status === 'final';
+    match?.coinTossConfirmed === true || match?.coin_toss_confirmed === true ||
+    match?.status === 'live' || isMatchOverStatus(match?.status);
 
   const teamAPlayers = formatPlayers(teamAKey === 'home' ? homePlayers : awayPlayers);
   const teamBPlayers = formatPlayers(teamBKey === 'home' ? homePlayers : awayPlayers);
@@ -888,13 +892,14 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     return !!info && (info.homePoints > 0 || info.awayPoints > 0 || !!info.startTime || info.finished === true);
   };
   // Drawn empty: a set awarded by default, and once the result is known the grids
-  // that were never played (best-of-3: sets 3 and 4 always) (field-spec 6, 11).
+  // that were never played (best-of-3: sets 3 and 4 unless they were played,
+  // i.e. the format was changed during the match) (field-spec 6, 11).
   // Nothing is struck off: a set awarded by default keeps its RESULT row (the
   // awarded points), the unplayed grids and their RESULT rows are left blank
   // (owner 2026-10-20, 2026-10-21).
   const isEmptyGrid = (setIndex: number): boolean => {
     if (isDefaultSet(setIndex)) return true;
-    if (bestOf === 3 && (setIndex === 3 || setIndex === 4)) return true;
+    if (bestOf === 3 && (setIndex === 3 || setIndex === 4)) return !wasPlayed(setIndex);
     return isMatchFinished && !wasPlayed(setIndex);
   };
 
@@ -908,12 +913,15 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   // Set 1: shows when coin toss is confirmed
   // Set 2: shows when Set 1 is finished
   // Set 3: shows when Set 2 is finished
-  // For best-of-3: Sets 3 and 4 are never played (deciding set uses Set 5 tiebreak format),
-  // so they should always remain blank — no team labels, S/R, or X
+  // For best-of-3: Sets 3 and 4 are not played (deciding set uses Set 5 tiebreak format),
+  // so they remain blank — no team labels, S/R, or X. A set 3 or 4 that was played
+  // all the same (format changed during the match) is printed, never dropped, and
+  // the sheet warns about it (consistencyWarnings); the sets keep their own numbers.
   const isBestOf3 = bestOf === 3;
+  const bestOf3ExtraSets = isBestOf3 && (wasPlayed(3) || wasPlayed(4));
   const shouldShowSet1 = coinTossConfirmed;
   const shouldShowSet2 = isSetFinished(1);
-  const shouldShowSet3 = isBestOf3 ? false : isSetFinished(2);
+  const shouldShowSet3 = isBestOf3 ? wasPlayed(3) : isSetFinished(2);
 
   // Calculate set wins to determine if Set 4 should be displayed
   // Set 4 should only be filled if both teams have won at least one set
@@ -932,7 +940,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
 
   // Set 4 should only be displayed if both teams have won at least one set
   // For best-of-3: Set 4 is never played, always blank
-  const shouldShowSet4 = isBestOf3 ? false : (teamASetsWonForSet4Check >= 1 && teamBSetsWonForSet4Check >= 1);
+  const shouldShowSet4 = isBestOf3 ? wasPlayed(4) : (teamASetsWonForSet4Check >= 1 && teamBSetsWonForSet4Check >= 1);
 
   // For set 5, determine which team is on left based on set5LeftTeam
   // set5LeftTeam 'A'/'B' from the deciding-set toss
@@ -2053,7 +2061,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                       <span>E</span>
                       <span>T</span>
                     </div>
-                    <div className="font-black text-sm mt-1">{isBestOf3 ? '' : '3'}</div>
+                    <div className="font-black text-sm mt-1">{isBestOf3 && !bestOf3ExtraSets ? '' : '3'}</div>
                   </div>
                   <div className="flex-1">
                     <StandardSet
@@ -2072,7 +2080,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                       <span>E</span>
                       <span>T</span>
                     </div>
-                    <div className="font-black text-sm mt-1">{isBestOf3 ? '' : '4'}</div>
+                    <div className="font-black text-sm mt-1">{isBestOf3 && !bestOf3ExtraSets ? '' : '4'}</div>
                   </div>
                   <div className="flex-1">
                     <StandardSet
@@ -2138,7 +2146,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                       <span>E</span>
                       <span>T</span>
                     </div>
-                    <div className="font-black text-sm mt-1">{isBestOf3 ? '3' : '5'}</div>
+                    <div className="font-black text-sm mt-1">{isBestOf3 && !bestOf3ExtraSets ? '3' : '5'}</div>
                   </div>
                   <div className="flex-1">
                     <SetFive
