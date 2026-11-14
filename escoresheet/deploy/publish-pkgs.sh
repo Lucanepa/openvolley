@@ -21,8 +21,10 @@
 # .deb install of it has no in-app updater, so APT is how it stays current,
 # and --desktop, --staging, latest.json and the APT hold-back never touch it.
 # Its .deb is published like a plain file, given by hand, and APT lists it at
-# once:
-#   gh release download native-vV -R Lucanepa/svrz-referee-coaching -p '*.deb'
+# once, but only with the signature its own release build made next to it
+# (<deb>.sig, the svrz-rc updater key committed in lib/publish-lib.sh): the
+# OpenVolley APT key vouches only for what that project's CI signed.
+#   gh release download native-vV -R Lucanepa/svrz-referee-coaching -p '*.deb' -p '*.deb.sig'
 #   escoresheet/deploy/publish-pkgs.sh "SVRZ.RC_V_amd64.deb"
 # Its APK goes to its own F-Droid repo (svrz_rc), not this one.
 #
@@ -32,6 +34,11 @@
 #      (and the macOS updater archive *_universal.app.tar.gz when the release
 #      has one: latest.json then announces darwin-aarch64 and darwin-x86_64;
 #      without it, no macOS update);
+#      checks where they come from (lib/publish-lib.sh desktop_provenance):
+#      the tag's commit is on main and each file is byte for byte one the
+#      tag's desktop.yml push run built (its workflow artifacts, kept 90 days:
+#      publish within that time), so a release asset replaced after CI is
+#      never signed;
 #      signs each with the updater key (tauri signer, signature bound to
 #      VERSION); verifies each signature against the key the app trusts
 #      (plugins.updater.pubkey in tauri.conf.json, also with minisign when it is
@@ -68,6 +75,11 @@
 #      --desktop VERSION); svrz-rc has no latest.json and is never refused.
 #   2. Rebuilds the APT index (Packages, Release, InRelease, Release.gpg) and
 #      exports the public key as apt/openvolley.gpg and apt/openvolley.asc.
+#      The Release file is valid for 30 days (Valid-Until), so a host that
+#      keeps serving an old signed index cannot hold clients on an old
+#      version for longer: apt refuses an expired one. Every run signs it
+#      anew; systemd/openvolley-pkgs-resign.timer runs this script (no
+#      arguments) every week so that it never expires between releases.
 #      The index never lists a desktop version newer than its app's latest.json
 #      (desktop/ or desktop/beach/; lib/publish-lib.sh, APT hold-back): the in-app .deb updater installs
 #      APT's newest, so a staging .deb, or one the kill switch withdrew from
@@ -88,6 +100,8 @@
 #      key in pacman-gpg/). Without --pacman public/arch/ is left as it is (and
 #      still synced): run publish-pacman.sh by hand, then this script.
 #   4. Copies the landing page and the installer (pkgs/index.html, pkgs/install.sh).
+#      The repository's README.md must give install.sh's SHA-256 (the
+#      second channel a first install checks it against).
 #      The page's OpenBeach section appears once an OpenBeach .deb or APK is
 #      published, the Flatpak and Arch (pacman) cards once those repos are;
 #      install.sh takes the package name (default openvolley-escoresheet;
@@ -193,7 +207,7 @@ if (( PACMAN )); then
 fi
 [[ -z "$DESKTOP_RELEASE_DIR" ]] || (( ! SYNC )) || die "OV_DESKTOP_RELEASE_DIR is for tests: use it with --no-sync"
 
-for t in dpkg-deb dpkg-scanpackages apt-ftparchive gpg gpgv fdroid rsync curl python3; do
+for t in dpkg-deb dpkg-scanpackages apt-ftparchive gpg gpgv fdroid rsync curl python3 node sha256sum; do
   command -v "$t" >/dev/null || die "$t not found"
 done
 [[ -d "$GNUPGHOME" && -f "$PKGS/gpg-passphrase" ]] || die "no signing key in $PKGS (restore it from Vaultwarden)"
@@ -228,6 +242,7 @@ trap 'rm -rf "$WORK"' EXIT
 # --- 0. desktop release: fetch, sign, verify, latest.json -------------------
 if [[ -n "$DESKTOP_V" ]]; then
   desktop_fetch "$DESKTOP_V" "$WORK/desktop"
+  desktop_provenance "$DESKTOP_V" "$WORK/desktop"
   # (+ the macOS .app.tar.gz, when the release has one)
   desktop_sign "$DESKTOP_V" "$DESKTOP_EXE" "$DESKTOP_APPIMAGE" "$DESKTOP_DEB" ${DESKTOP_MAC:+"$DESKTOP_MAC"}
   desktop_verify "$DESKTOP_V" "$DESKTOP_EXE" "$DESKTOP_APPIMAGE" "$DESKTOP_DEB" ${DESKTOP_MAC:+"$DESKTOP_MAC"}
@@ -317,6 +332,8 @@ for f in "${FILES[@]}"; do
       ver=$(dpkg-deb -f "$f" Version) || die "$f: not a .deb"
       pkg=$(dpkg-deb -f "$f" Package)
       if legacy_name "$pkg"; then pkg=$OV_APT_NAME; fi
+      # another project's build: only with its own release signature
+      if [[ "$pkg" == svrz-rc ]]; then svrz_rc_verify "$f" "$ver"; fi
       # (never true for svrz-rc: no latest.json holds it back)
       if [[ "$f" != "$DESKTOP_DEB" ]] && apt_held "$ver" "$pkg"; then
         app=openvolley; [[ "$pkg" != openbeach-escoresheet ]] || app=beach
@@ -386,6 +403,7 @@ APT::FTPArchive::Release::Codename "stable";
 APT::FTPArchive::Release::Architectures "amd64";
 APT::FTPArchive::Release::Components "main";
 APT::FTPArchive::Release::Description "OpenVolley eScoresheet and OpenBeach desktop apps (https://get.openvolley.app)";
+APT::FTPArchive::Release::ValidTime "2592000";
 CONF
 apt-ftparchive -c "$conf" release "$DIST" > "$DIST/Release.tmp"
 mv "$DIST/Release.tmp" "$DIST/Release"
@@ -398,6 +416,7 @@ gpg --batch --yes --armor --export "$APT_SIGNER_FPR" > "$APT/openvolley.asc"
 # Check the signatures against exactly the keyring users download.
 gpgv --keyring "$APT/openvolley.gpg" "$DIST/InRelease" 2>/dev/null || die "InRelease does not verify"
 gpgv --keyring "$APT/openvolley.gpg" "$DIST/Release.gpg" "$DIST/Release" 2>/dev/null || die "Release.gpg does not verify"
+grep -q '^Valid-Until: ' "$DIST/Release" || die "the Release file has no Valid-Until"
 
 # --- 3. F-Droid -------------------------------------------------------------
 (cd "$FD" && fdroid update -q)
@@ -423,6 +442,7 @@ fi
 landing_page "$KIT_DIR/pkgs/index.html" "$DIST/main/binary-amd64/Packages" "$FD/repo/index-v2.json" "$PUB/index.html"
 # curl -fsSL https://get.openvolley.app/install.sh | sudo sh [-s openbeach-escoresheet]
 check_install_sh "$KIT_DIR/pkgs/install.sh" "$APT_SIGNER_FPR"
+install_sh_ok "$KIT_DIR/pkgs/install.sh" "$KIT_DIR/../../README.md"
 install -m 644 "$KIT_DIR/pkgs/install.sh" "$PUB/install.sh"
 
 # The deb the updater announces is the pool file: same bytes as the signed one.
@@ -436,7 +456,7 @@ fi
 refuse_key_material "$PUB"
 chmod -R u=rwX,go=rX "$PUB"
 
-echo "published:"
+echo "published (APT index $(sed -n 's/^Valid-Until: /valid until /p' "$DIST/Release")):"
 grep -E '^(Package|Version):' "$DIST/main/binary-amd64/Packages" | paste - - | sed 's/^/  apt     /'
 python3 - "$FD/repo/index-v2.json" <<'EOF'
 import json, sys

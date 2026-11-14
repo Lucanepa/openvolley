@@ -82,6 +82,7 @@ network, and carries `traefik.enable=false`.
 | `host-prep.sh` | VM, as root | Idempotent host setup: loop filesystems, sentinels, `chattr +i`, fstab (`nofail`), dirs, `ovbackup` user, backup units. `--check` is read-only |
 | `backup-openvolley.sh` + `systemd/openvolley-backup*.{service,timer}` | VM, root | Hourly `pg_dump -Fc` + nightly storage tars, GPG to the public key, count-drop guard, rotation, `last_backup` |
 | `nas-pull.sh` | NAS (DSM Task Scheduler) | Pulls the encrypted files over Tailscale with a restricted read-only key, NAS-side retention, freshness check. Not set up (never was): lenovoserver's borg backup covers `/data/openvolley/backups` |
+| `publish-pkgs.sh` + `systemd/openvolley-pkgs-resign.{service,timer}` | lenovoserver, weekly | Signs the APT index of get.openvolley.app anew (its `Release` is valid 30 days, `Valid-Until`), so a host that replays an old index cannot keep clients on an old version for longer, and the index never expires between releases |
 | `restore-test.sh` + `systemd/openvolley-restore-test.{service,timer}` | lenovoserver, weekly | Decrypts the newest dump (default: `/data/openvolley/backups`, read through group `ovbackup`), restores into a throwaway Postgres, boots the backend image against it (default: the tag `build-image.sh --ship local` recorded), checks `/health` and row-count floors, tears down |
 
 ## Runtime contract (backend <-> kit)
@@ -336,9 +337,14 @@ updater only covers its AppImage. Its installers are the GitHub releases `native
 and the install page has no section for it.
 
 ```bash
-gh release download native-v1.4.3 -R Lucanepa/svrz-referee-coaching -p '*.deb' -D /tmp/svrz
+gh release download native-v1.4.3 -R Lucanepa/svrz-referee-coaching -p '*.deb' -p '*.deb.sig' -D /tmp/svrz
 escoresheet/deploy/publish-pkgs.sh /tmp/svrz/SVRZ.RC_1.4.3_amd64.deb
 ```
+
+The `.deb` goes in only when its `.sig` (made by that project's release build with its updater
+key, `SVRZ_RC_UPDATER_PUBKEY` in `lib/publish-lib.sh`, the `plugins.updater.pubkey` of svrz_rc's
+`tauri.conf.json`) verifies: the OpenVolley APT key then vouches only for what svrz-rc's own CI
+signed. A new svrz-rc updater key means changing that line.
 
 It has no `latest.json` here: the APT hold-back never applies and APT lists a new version at
 once (a hand-given `svrz-rc` `.deb` is never refused for being newer than a manifest). Linux: `curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s svrz-rc`.
@@ -399,7 +405,10 @@ when the scorer quits the app, and it should not be the first thing a venue sees
      /srv/fdroid/desktop-calendar/repo/com.openvolley.escoresheet_<code>.apk
    ```
    `--desktop` downloads the release's `-setup.exe`, AppImage and `.deb` with `gh`, checks each
-   is that version (and the `.deb` is `openvolley-escoresheet`), signs each with the updater key
+   is that version (and the `.deb` is `openvolley-escoresheet`), checks that the tag's commit is
+   on `main` and that each file is byte for byte one the tag's `desktop.yml` push run built (its
+   workflow artifacts, kept 90 days: publish within that time; `desktop_provenance`), so an asset
+   replaced on the release after CI is never signed, signs each with the updater key
    (`tauri signer sign --app-version`, the password goes through the environment only), verifies
    each signature against `tauri.conf.json` (with `lib/desktop-updater.mjs`, and also with
    `minisign` when it is installed), writes `latest.json` (notes: the fastlane changelog of the

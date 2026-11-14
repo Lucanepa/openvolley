@@ -1,0 +1,22 @@
+# lenovoserver only (holds the APT signing key). Signs the APT index of
+# get.openvolley.app anew, so its Valid-Until (30 days, publish-pkgs.sh step 2)
+# never runs out between releases: publish-pkgs.sh with no arguments rebuilds
+# and re-signs the index from the pool as it is and syncs it. Install:
+#   sudo install -m 644 openvolley-pkgs-resign.service openvolley-pkgs-resign.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now openvolley-pkgs-resign.timer
+# Adjust User= and the paths below if the ops checkout lives elsewhere. The
+# sync needs the publish user's ssh key for ov-vps without a prompt.
+[Unit]
+Description=OpenVolley package index re-sign (APT Valid-Until), weekly
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=lucanepa
+# Optional overrides (OV_PKGS_HOME, OV_PKGS_DEST, ANDROID_HOME, ...).
+EnvironmentFile=-/home/lucanepa/.config/openvolley-pkgs/resign.env
+ExecStart=/home/lucanepa/ov-ops/deploy/publish-pkgs.sh
+TimeoutStartSec=30min
+Nice=10
+NoNewPrivileges=yes

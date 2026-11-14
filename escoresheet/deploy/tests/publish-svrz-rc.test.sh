@@ -3,12 +3,14 @@
 # THROWAWAY keys, into a scratch OV_PKGS_HOME, --no-sync, never GitHub:
 #   1. a production-like state: OpenVolley 2.2.0 announced by desktop/latest.json,
 #      2.2.1 in the pool on staging (held back), the OpenVolley APK published;
-#   2. publish-pkgs.sh SVRZ.RC_V_amd64.deb (as the release names it): svrz-rc
+#   2. publish-pkgs.sh SVRZ.RC_V_amd64.deb (as the release names it, with the
+#      .sig its release build made; a throwaway svrz-rc key here): svrz-rc
 #      is listed by APT at once (no hold-back, no latest.json), OpenVolley's hold
-#      stays, the index is signed, nothing is written to desktop/, install.sh
-#      offers svrz-rc;
-#   3. refused: a different .deb under a published version, a .deb without
-#      /usr/bin/svrz-rc; a second run with the same .deb changes nothing.
+#      stays, the index is signed and expires (Valid-Until), nothing is
+#      written to desktop/, install.sh offers svrz-rc;
+#   3. refused: the .deb without its .sig or with another key's, a different
+#      .deb under a published version, a .deb without /usr/bin/svrz-rc; a
+#      second run with the same .deb changes nothing.
 #
 #   escoresheet/deploy/tests/publish-svrz-rc.test.sh
 #
@@ -16,8 +18,10 @@
 #   OV_TEST_OV_APK    an OpenVolley APK (the page needs one); default: the newest
 #                     from get.openvolley.app (downloaded once)
 #   OV_TEST_SVRZ_DEB  a real svrz-rc .deb (default: a small fake one)
-# Needs dpkg-dev, apt-utils, gpg, fdroidserver, rsync and the Android
-# build-tools (ANDROID_HOME, default ~/Android/Sdk). Scratch files go to $TMPDIR.
+# Needs dpkg-dev, apt-utils, gpg, fdroidserver, rsync, node, tauri-cli
+# (OV_TAURI_CLI, default escoresheet/frontend/node_modules/.bin/tauri) and the
+# Android build-tools (ANDROID_HOME, default ~/Android/Sdk). Scratch files go
+# to $TMPDIR.
 set -euo pipefail
 umask 022
 
@@ -59,9 +63,11 @@ expect_fail() {
   grep -qF -- "$want" "$T/expect.out" || bad "expected \"$want\" from $*, got: $(tail -5 "$T/expect.out")"
   ok "refuses: $want"
 }
-for t in dpkg-deb dpkg-scanpackages apt-ftparchive gpg gpgv fdroid rsync python3 curl; do
+for t in dpkg-deb dpkg-scanpackages apt-ftparchive gpg gpgv fdroid rsync python3 curl node; do
   command -v "$t" >/dev/null || { echo "skip: $t not installed" >&2; exit 0; }
 done
+TAURI=${OV_TAURI_CLI:-$REPO_KIT/../frontend/node_modules/.bin/tauri}
+[[ -x "$TAURI" ]] || { echo "skip: no tauri CLI at $TAURI" >&2; exit 0; }
 
 # --- inputs -------------------------------------------------------------------------
 mkdir -p "$T/in" "$T/release"
@@ -90,6 +96,17 @@ else
   dpkg-deb --root-owner-group -b "$r" "$T/release/SVRZ.RC_${SV_V}_amd64.deb" >/dev/null
 fi
 SV_DEB="$T/release/SVRZ.RC_${SV_V}_amd64.deb"
+# The svrz-rc release build signs its .deb with that project's updater key
+# (the Tauri bundler: no version in the signature). A throwaway one here.
+"$TAURI" signer generate --ci -p sv -w "$T/svrz.key" </dev/null >/dev/null 2>&1
+"$TAURI" signer generate --ci -p ot -w "$T/other.key" </dev/null >/dev/null 2>&1
+export OV_SVRZ_RC_PUBKEY
+OV_SVRZ_RC_PUBKEY=$(tr -d '\n' < "$T/svrz.key.pub")
+# svrz_sign FILE [KEY PASSWORD]
+svrz_sign() {
+  TAURI_SIGNING_PRIVATE_KEY_PATH="${2:-$T/svrz.key}" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${3:-sv}" \
+    "$TAURI" signer sign "$1" </dev/null >/dev/null 2>&1
+}
 # make_ov_deb OUT VERSION: a stand-in OpenVolley .deb (only its index entry matters here)
 make_ov_deb() {
   local r="$T/ovroot"
@@ -115,9 +132,12 @@ mkdir -p "$FD/metadata"
 printf 'Categories:\n  - Sports & Health\nLicense: GPL-3.0-or-later\nName: OpenVolley eScoresheet\nSummary: test\n' > "$FD/metadata/com.openvolley.escoresheet.yml"
 mkdir -p "$T/kit/escoresheet"
 cp -r "$REPO_KIT" "$T/kit/escoresheet/deploy"
+cp "$REPO_KIT/../../README.md" "$T/kit/README.md"
 KIT="$T/kit/escoresheet/deploy"
 sed -i "s/^APT_SIGNER_FPR=.*/APT_SIGNER_FPR=$FPR/" "$KIT/publish-pkgs.sh"
 sed -i "s/^FPR=.*/FPR=$FPR/" "$KIT/pkgs/install.sh"
+# (its README line follows the changed script)
+sed -i "s/^install\.sh SHA-256: .*/install.sh SHA-256: \`$(sha256sum "$KIT/pkgs/install.sh" | cut -d' ' -f1)\`/" "$T/kit/README.md"
 grep -q "^APT_SIGNER_FPR=$FPR$" "$KIT/publish-pkgs.sh" && grep -q "^FPR=$FPR$" "$KIT/pkgs/install.sh" || bad "kit copy: key fingerprint not set"
 cmp -s "$KIT/lib/publish-lib.sh" "$REPO_KIT/lib/publish-lib.sh" || bad "kit copy: the library must be the committed one"
 ok "throwaway APT key $FPR and F-Droid repo key; kit copy differs only in that fingerprint"
@@ -134,6 +154,12 @@ ok "run 0: OpenVolley 2.2.0 + APK published, 2.2.1 waiting on staging"
 
 # --- 2. publish svrz-rc, its .deb given by hand ---------------------------------------
 cp -a "$PUB/desktop" "$T/desktop-before-svrz"
+expect_fail "no SVRZ.RC_${SV_V}_amd64.deb.sig next to it" pp "$SV_DEB"
+svrz_sign "$SV_DEB" "$T/other.key" ot
+expect_fail "its .sig does not verify against the svrz-rc updater key" pp "$SV_DEB"
+[[ ! -e "$POOL/svrz-rc_${SV_V}_amd64.deb" ]] || bad "an svrz-rc .deb without its own release signature reached the pool"
+svrz_sign "$SV_DEB"
+cp "$SV_DEB.sig" "$T/sv.sig"
 pp "$SV_DEB" > "$T/run1.log" 2>&1 || { cat "$T/run1.log"; bad "run 1 (svrz-rc $SV_V by hand)"; }
 P=$PUB/apt/dists/stable/main/binary-amd64/Packages
 listed() { awk -v want="$1" '/^Package:/ { p = $2 } /^Version:/ && p == want { print $2 }' "$P" | sort -V | xargs; }
@@ -146,10 +172,17 @@ gpgv --keyring "$PUB/apt/openvolley.gpg" "$PUB/apt/dists/stable/InRelease" 2>/de
   gpgv --keyring "$PUB/apt/openvolley.gpg" "$PUB/apt/dists/stable/Release.gpg" "$PUB/apt/dists/stable/Release" 2>/dev/null ||
   bad "APT index signatures"
 grep -q "  apt     Package: svrz-rc	Version: $SV_V" "$T/run1.log" || bad "summary: no svrz-rc line"
+grep -q 'svrz-rc '"$SV_V"': signature by the svrz-rc release key verifies' "$T/run1.log" || bad "the run did not check svrz-rc's signature"
 ok "APT: svrz-rc $SV_V listed at once (no hold-back), OpenVolley 2.2.1 still held, index signed, pool file = the given .deb"
+vu=$(sed -n 's/^Valid-Until: //p' "$PUB/apt/dists/stable/Release")
+left=$(( $(date -d "$vu" +%s) - $(date +%s) ))
+(( left > 29 * 86400 && left <= 30 * 86400 )) || bad "Release Valid-Until: $vu"
+grep -q "^Valid-Until: $vu$" "$PUB/apt/dists/stable/InRelease" || bad "InRelease has no Valid-Until"
+ok "APT: the signed Release expires in 30 days ($vu)"
 diff -r "$T/desktop-before-svrz" "$PUB/desktop" >/dev/null || bad "desktop/ changed: an svrz-rc run must write no updater manifest"
-[[ ! -e "$SV_DEB.sig" ]] || bad "the svrz-rc .deb was signed"
-ok "no updater manifest and no .sig for svrz-rc (desktop/ untouched)"
+cmp -s "$SV_DEB.sig" "$T/sv.sig" || bad "the svrz-rc .deb was signed here"
+if find "$PUB" -name '*svrz*.sig' | grep -q .; then bad "an svrz-rc .sig in the public tree"; fi
+ok "no updater manifest and no .sig of ours for svrz-rc (desktop/ untouched)"
 grep -q '^PACKAGES=".* svrz-rc"$' "$PUB/install.sh" || bad "install.sh: svrz-rc is not one of its packages"
 ok "install.sh offers svrz-rc"
 
@@ -159,12 +192,14 @@ mkdir -p "$r/DEBIAN" "$r/usr/bin"
 printf 'Package: svrz-rc\nVersion: %s\nArchitecture: amd64\nMaintainer: test <test@example.invalid>\nDescription: another build\n' "$SV_V" > "$r/DEBIAN/control"
 printf '#!/bin/sh\necho other\n' > "$r/usr/bin/svrz-rc"; chmod 755 "$r/usr/bin/svrz-rc"
 dpkg-deb --root-owner-group -b "$r" "$T/in/svrz-rc-other.deb" >/dev/null
+svrz_sign "$T/in/svrz-rc-other.deb"
 expect_fail "exists with different content; bump the version instead" pp "$T/in/svrz-rc-other.deb"
 r="$T/svroot-nobin"
 mkdir -p "$r/DEBIAN" "$r/opt/svrz"
 printf 'Package: svrz-rc\nVersion: 9.9.9\nArchitecture: amd64\nMaintainer: test <test@example.invalid>\nDescription: no command\n' > "$r/DEBIAN/control"
 printf 'x\n' > "$r/opt/svrz/x"
 dpkg-deb --root-owner-group -b "$r" "$T/in/svrz-rc-nobin.deb" >/dev/null
+svrz_sign "$T/in/svrz-rc-nobin.deb"
 expect_fail "no /usr/bin/svrz-rc in the package" pp "$T/in/svrz-rc-nobin.deb"
 cp "$P" "$T/Packages-before"
 pp "$SV_DEB" > "$T/run2.log" 2>&1 || { cat "$T/run2.log"; bad "run 2 (the same .deb again)"; }

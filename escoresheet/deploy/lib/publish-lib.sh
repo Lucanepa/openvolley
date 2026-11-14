@@ -16,16 +16,22 @@
 #   landing_page TEMPLATE PACKAGES INDEXV2 OUT   pkgs/index.html filled in
 #   pacman_repo_fpr ARCHDIR     the published pacman repo key's fingerprint (checked)
 #
+#   install_sh_ok FILE README   README (the GitHub page) names FILE's SHA-256
+#
 # svrz-rc (the SVRZ Referee Coaching app) goes through APT only. It is not
 # the Tauri shell and has no in-app updater here: no latest.json, no updater
-# signature, so none of the desktop_* steps and none of the APT hold-back ever
-# apply to it. Its .deb is given by hand (publish-pkgs.sh FILE.deb) and goes
-# into the pool as it is.
+# signature made here, so none of the desktop_* steps and none of the APT
+# hold-back ever apply to it. Its .deb is given by hand (publish-pkgs.sh
+# FILE.deb), next to the FILE.deb.sig its own release build made, and goes
+# into the pool as it is once that signature verifies:
+#   svrz_rc_verify FILE VERSION FILE.sig against the svrz-rc updater key
 #
 # Desktop updater release (publish-pkgs.sh --desktop VERSION [--staging] [--app APP]):
 #   desktop_check_setup         tools, key files, tauri CLI >= 2.12, trusted pubkey
 #   desktop_fetch V DIR         the three installers of desktop-vV into DIR, and
 #                               the macOS .app.tar.gz when the release has one
+#   desktop_provenance V DIR    the tag's commit is on main and every fetched
+#                               file is one the tag's desktop.yml run built
 #   desktop_sign V FILE...      FILE.sig, bound to version V (tauri signer)
 #   desktop_verify V FILE...    each FILE.sig against the key the app trusts
 #   desktop_notes V OUT         What's new text (fastlane changelog) into OUT
@@ -51,6 +57,11 @@ OPENBEACH_TAURI_CONF=${OV_BEACH_TAURI_CONF:-$KIT_DIR/../frontend/src-tauri/tauri
 TAURI_CLI=${OV_TAURI_CLI:-$KIT_DIR/../frontend/node_modules/.bin/tauri}
 # Test input instead of `gh release download` (publish-pkgs.sh allows it with --no-sync only).
 DESKTOP_RELEASE_DIR=${OV_DESKTOP_RELEASE_DIR:-}
+# With DESKTOP_RELEASE_DIR: the workflow artifacts desktop_provenance compares
+# with, instead of `gh run download` (tests; unset, nothing is compared).
+DESKTOP_RUN_DIR=${OV_DESKTOP_RUN_DIR:-}
+# The branch a release tag's commit must be on.
+OV_MAIN_BRANCH=main
 UPDATER_JS="$KIT_DIR/lib/desktop-updater.mjs"
 # What's new: the Android changelogs (fastlane) of each app. OpenBeach's come
 # from the openbeach checkout next to this repo's root (as for the desktop build).
@@ -62,6 +73,12 @@ BEACH_CHANGELOGS=${OV_BEACH_CHANGELOGS:-$KIT_DIR/../../openbeach/fastlane/metada
 # are the releases native-vV of Lucanepa/svrz-referee-coaching): its .deb is
 # given by hand, and APT is how a .deb install of it stays current.
 APT_NAMES=(openvolley-escoresheet openbeach-escoresheet svrz-rc)
+# The updater public key of svrz-rc (plugins.updater.pubkey in the svrz_rc
+# repository's src-tauri/tauri.conf.json, key id 65FB7AE3AC744199). Its
+# release build signs every installer with it, the .deb too (<deb>.sig): the
+# .deb given here is published only when that signature verifies. A new
+# svrz-rc key means a reviewed change of this line.
+SVRZ_RC_UPDATER_PUBKEY=${OV_SVRZ_RC_PUBKEY:-dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY1RkI3QUUzQUM3NDQxOTkKUldTWlFYU3M0M3I3WmV5S0U0aDBJQ2hqRVQwdjhXK3RGMWxMa2MrY1Q5YlZRekFQMXlPckFHNmoK}
 # Every updater app's package, for the APT hold-back: app -> package, app ->
 # manifest dir. svrz-rc is not in here on purpose: it has no latest.json here,
 # so nothing holds its versions back (apt_held is never true for svrz-rc).
@@ -148,7 +165,32 @@ check_install_sh() {
   grep -qxF "PACKAGES=\"${APT_NAMES[*]}\"" "$f" || die "$f does not allow exactly the packages ${APT_NAMES[*]}"
 }
 
+# install_sh_ok FILE README: README (the repository's front page on GitHub,
+# a channel apart from get.openvolley.app) gives FILE's SHA-256 on a line
+# "install.sh SHA-256: <hex>", so a first install can check the script
+# before running it as root. Run after every install.sh change.
+install_sh_ok() {
+  local f=$1 readme=$2 want got
+  want=$(sed -n 's/.*install\.sh SHA-256: `\{0,1\}\([0-9a-f]\{64\}\)`\{0,1\}.*/\1/p' "$readme" | head -n1)
+  got=$(sha256sum "$f" | cut -d' ' -f1)
+  [[ -n "$want" ]] || die "$readme gives no \"install.sh SHA-256: <hex>\" line"
+  [[ "$want" == "$got" ]] ||
+    die "$readme gives install.sh SHA-256 $want, $f is $got: put the new hash in $readme (and commit it) before publishing"
+}
+
 updater() { node "$UPDATER_JS" "$@"; }
+
+# svrz_rc_verify FILE VERSION: FILE.sig (the svrz-rc release's <deb>.sig, next
+# to FILE) verifies against SVRZ_RC_UPDATER_PUBKEY. Its bundler signatures
+# may name no version; the control file inside the signed bytes does.
+svrz_rc_verify() {
+  local f=$1 v=$2
+  [[ -f "$f.sig" ]] ||
+    die "$f: no $(basename "$f").sig next to it; download both: gh release download native-v$v -R Lucanepa/svrz-referee-coaching -p '*.deb' -p '*.deb.sig'"
+  updater verify --pubkey "$SVRZ_RC_UPDATER_PUBKEY" --version "$v" --allow-unbound "$f" >/dev/null ||
+    die "$f: its .sig does not verify against the svrz-rc updater key: not published"
+  echo "svrz-rc $v: signature by the svrz-rc release key verifies"
+}
 
 desktop_version_ok() {
   [[ "$1" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]]
@@ -382,6 +424,53 @@ desktop_fetch() {
     desktop_check_mac "$v" "${found[0]}"
     DESKTOP_MAC=${found[0]}
   fi
+}
+
+# desktop_provenance V DIR: before anything is signed, the files desktop_fetch
+# put in DIR must be what CI built from main, not merely what the release
+# holds today (its assets can be replaced by anyone with release write access):
+#   - the tag's commit is on main (an ancestor of, or equal to, its head);
+#   - the tag has a push run of desktop.yml on that commit;
+#   - each fetched file is byte for byte (SHA-256) one of that run's workflow
+#     artifacts (those cannot be changed after the run; kept 90 days).
+# Any mismatch stops the publish. With DESKTOP_RELEASE_DIR (tests) the files
+# are compared with DESKTOP_RUN_DIR, and nothing is asked of GitHub.
+desktop_provenance() {
+  local v=$1 dir=$2 tag sha= status runs id f sum sums rundir n=0
+  rundir="$dir/.ci-run"
+  tag=$(desktop_tag "$v")
+  rm -rf "$rundir"
+  mkdir -p "$rundir"
+  if [[ -n "$DESKTOP_RELEASE_DIR" ]]; then
+    [[ -n "$DESKTOP_RUN_DIR" ]] || { echo "$tag: test input, provenance not checked"; return 0; }
+    cp -r "$DESKTOP_RUN_DIR" "$rundir/test"
+  else
+    sha=$(gh api "repos/$OV_GH_REPO/commits/$tag" -q .sha) || die "cannot resolve the commit of $tag"
+    [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || die "$tag: not a commit: $sha"
+    # compare BASE...HEAD: "ahead" or "identical" when BASE is in HEAD's history.
+    status=$(gh api "repos/$OV_GH_REPO/compare/$sha...$OV_MAIN_BRANCH" -q .status) ||
+      die "cannot compare $tag with $OV_MAIN_BRANCH"
+    [[ "$status" == ahead || "$status" == identical ]] ||
+      die "$tag ($sha) is not on $OV_MAIN_BRANCH ($status): only commits of $OV_MAIN_BRANCH are published"
+    runs=$(gh api "repos/$OV_GH_REPO/actions/workflows/desktop.yml/runs?event=push&head_sha=$sha&per_page=100" \
+      -q ".workflow_runs[] | select(.head_branch == \"$tag\" and .head_sha == \"$sha\") | .id") ||
+      die "cannot list the desktop.yml runs of $tag"
+    [[ -n "$runs" ]] || die "$tag: no desktop.yml push run on $sha: the release was not built by CI"
+    for id in $runs; do
+      [[ "$id" =~ ^[0-9]+$ ]] || die "$tag: unexpected run id $id"
+      gh run download "$id" --repo "$OV_GH_REPO" -D "$rundir/$id" >/dev/null 2>&1 ||
+        echo "run $id of $tag: no workflow artifacts to download (expired after 90 days?)"
+    done
+  fi
+  sums=$(find "$rundir" -type f -exec sha256sum {} + | cut -d' ' -f1 | sort -u)
+  for f in "$DESKTOP_EXE" "$DESKTOP_APPIMAGE" "$DESKTOP_DEB" ${DESKTOP_MAC:+"$DESKTOP_MAC"}; do
+    sum=$(sha256sum "$f" | cut -d' ' -f1)
+    grep -qxF "$sum" <<<"$sums" ||
+      die "$(basename "$f") of $tag is not a file the tag's desktop.yml run built (SHA-256 $sum): not signed. Was the release asset replaced?"
+    n=$((n + 1))
+  done
+  rm -rf "$rundir"
+  echo "$tag: the $n files are the ones CI built from ${sha:-the test commit}${sha:+ (on $OV_MAIN_BRANCH)}"
 }
 
 # desktop_check_mac V FILE: the updater archive the macOS job made
