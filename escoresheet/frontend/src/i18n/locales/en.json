@@ -1190,6 +1190,7 @@
     "backToScorer": "Back to scorer",
     "scorer": "Scorer"
   },
+  "globalImport": {"gamesTitle": "Import games", "rostersTitle": "Import rosters", "gamesHint": "An Excel or CSV file with one row per game: game, date, time, hall, city, league, home, away, best of, referees. Nothing is stored: the file is read on this device.", "rostersHint": "An Excel or CSV file with one row per person: team, number, first name, last name, role (player, libero, captain, coach...), date of birth. Nothing is stored: the file is read on this device.", "choose": "Choose file", "template": "Template", "errFile": "The file could not be read.", "errEmpty": "The file has no rows.", "errColumns": "The columns were not found. Use the template.", "noTeamName": "(no team name)", "counts": "{{players}} players, {{staff}} staff", "warnings": "{{count}} rows were not clean: {{list}}", "applied": "{{count}} players added", "gamesButton": "Import games (Excel)", "rostersButton": "Import rosters (Excel)"},
   "home": {
     "tool": {"label": "Tool", "swiss": "Swiss", "global": "Global", "globalNote": "Any tournament: no sign-in, no game list. Teams and players stay on this device."},
     "match": "Match",

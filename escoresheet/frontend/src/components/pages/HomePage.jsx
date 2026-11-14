@@ -274,7 +274,7 @@ export default function HomePage({
               </Button>
             )}
           </div>
-          {testOnly && (
+          {testOnly && !globalMode && (
             <div className="rounded-xl bg-stone-50 px-3 py-3 text-center" data-testid="home-sign-in-note">
               <p className="text-sm text-stone-600">{t('home.signInForOfficial')}</p>
               <Button variant="secondary" size="xl" icon={LogIn} onClick={() => setLoginOpen(true)} className="mt-2" data-testid="home-sign-in">

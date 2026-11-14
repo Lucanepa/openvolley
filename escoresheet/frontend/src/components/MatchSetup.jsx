@@ -11,6 +11,7 @@ import { phoneSignContext, signatureSource, signatureUpdate, SLOT_OF_ROLE, PRE_M
 import Modal from './Modal'
 import RefereeSelector from './RefereeSelector'
 import LoadOfficialMatchModal from './LoadOfficialMatchModal'
+import GlobalImportModal from './GlobalImportModal'
 import ballFallback from '../ball_fallback.png'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 
@@ -838,6 +839,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
   // Load Official Match modal state
   const [loadOfficialMatchModal, setLoadOfficialMatchModal] = useState(false)
+  // Global tool: the Excel uploads of games and rosters ('games' | 'rosters' | null)
+  const [globalImportKind, setGlobalImportKind] = useState(null)
 
   // Upload mode toggle state (local or remote)
   const [homeUploadMode, setHomeUploadMode] = useState('local') // 'local' | 'remote'
@@ -3292,6 +3295,36 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       setOfficialClaim(claim && !claim.mine ? claim : null)
     } catch { /* the check is a courtesy: the server enforces the rule */ }
     if (current()) setClubBlock(currentClubBlock(matchData.home))
+  }
+
+  // Global tool: a game of an uploaded sheet fills the match info; the file is
+  // read on this device only, so no club check, no schedule checks, no claim
+  const applyGlobalGame = (g) => {
+    setDate(g.date || ''); setTime(g.time || '')
+    setCity(g.city || ''); setHall(g.hall || '')
+    if (g.bestOf) setBestOf(g.bestOf)
+    setGameN(g.gameN || ''); setLeague(g.league || '')
+    setHome(g.home || ''); setAway(g.away || '')
+    setHomeShortName(''); setAwayShortName('')
+    const ref = (n) => ({ first: g[`referee${n}First`] || '', last: g[`referee${n}Last`] || '' })
+    setRef1First(ref(1).first); setRef1Last(ref(1).last); setRef1Dob(''); setRef1Email('')
+    setRef2First(ref(2).first); setRef2Last(ref(2).last); setRef2Dob(''); setRef2Email('')
+  }
+  // ...and a team of an uploaded roster sheet fills one side (after the usual
+  // question when the side has players already)
+  const applyGlobalTeam = async (side, team) => {
+    const ok = await confirmReplaceRoster({
+      roster: side === 'home' ? homeRoster : awayRoster,
+      bench: side === 'home' ? benchHome : benchAway,
+      teamLabel: team.name || (side === 'home' ? home : away) || '',
+      t
+    })
+    if (!ok) return
+    const roster = [...team.players].sort((a, b) => (a.number ?? 999) - (b.number ?? 999))
+    const bench = team.bench.length ? team.bench : [{ role: 'Coach', firstName: '', lastName: '', dob: '' }]
+    if (side === 'home') { setHomeRoster(roster); setBenchHome(bench); if (team.name && !home) setHome(team.name) }
+    else { setAwayRoster(roster); setBenchAway(bench); if (team.name && !away) setAway(team.name) }
+    toast.success(t('globalImport.applied', { count: roster.length, defaultValue: '{{count}} players added' }))
   }
 
   const handleOfficialMatchSelect = (matchData) => {
@@ -7133,9 +7166,20 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           <div className="mt-4 flex flex-wrap justify-end gap-2">
             {/* opens the info page with the schedule on top: the snapshot for
                 Back is taken before a game is picked, so Back still discards it */}
-            <Button variant="secondary" size="xl" className="whitespace-nowrap max-sm:flex-auto max-sm:h-auto max-sm:min-h-11 max-sm:py-2 max-sm:whitespace-normal max-sm:text-center" onClick={() => { setCurrentView('info'); setLoadOfficialMatchModal(true) }}>
-              {t('loadOfficialMatch.button')}
-            </Button>
+            {match?.global === true ? (
+              <>
+                <Button variant="secondary" size="xl" data-testid="global-import-games-button" className="whitespace-nowrap max-sm:flex-auto max-sm:h-auto max-sm:min-h-11 max-sm:py-2 max-sm:whitespace-normal max-sm:text-center" onClick={() => setGlobalImportKind('games')}>
+                  {t('globalImport.gamesButton', 'Import games (Excel)')}
+                </Button>
+                <Button variant="secondary" size="xl" data-testid="global-import-rosters-button" className="whitespace-nowrap max-sm:flex-auto max-sm:h-auto max-sm:min-h-11 max-sm:py-2 max-sm:whitespace-normal max-sm:text-center" onClick={() => setGlobalImportKind('rosters')}>
+                  {t('globalImport.rostersButton', 'Import rosters (Excel)')}
+                </Button>
+              </>
+            ) : (
+              <Button variant="secondary" size="xl" className="whitespace-nowrap max-sm:flex-auto max-sm:h-auto max-sm:min-h-11 max-sm:py-2 max-sm:whitespace-normal max-sm:text-center" onClick={() => { setCurrentView('info'); setLoadOfficialMatchModal(true) }}>
+                {t('loadOfficialMatch.button')}
+              </Button>
+            )}
             {matchInfoConfirmed ? (
               <Button variant="secondary" size="xl" className="whitespace-nowrap max-sm:flex-auto max-sm:h-auto max-sm:min-h-11 max-sm:py-2 max-sm:whitespace-normal max-sm:text-center" onClick={() => setCurrentView('info')}>{t('common.edit')}</Button>
             ) : (
@@ -8094,6 +8138,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           openSignature === 'home-captain' ? 'Home captain signature' :
             openSignature === 'away-coach' ? 'Away coach signature' :
               openSignature === 'away-captain' ? 'Away captain signature' : 'Sign'}
+      />
+      <GlobalImportModal
+        open={globalImportKind !== null}
+        kind={globalImportKind}
+        onClose={() => setGlobalImportKind(null)}
+        onPickGame={applyGlobalGame}
+        onApplyTeam={applyGlobalTeam}
+        homeName={home}
+        awayName={away}
       />
     </MatchSetupMainView>
   )
