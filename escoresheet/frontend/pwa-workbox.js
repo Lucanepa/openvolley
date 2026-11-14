@@ -13,7 +13,8 @@ export const PAGE_ENTRIES = ['referee', 'scoresheet', 'bench', 'livescore', 'upl
 
 // Precache everything the pages need for a cold offline start: code (incl. .mjs
 // workers), styles, fonts and images (the bundled, content-hashed ball and logo too).
-export const PRECACHE_GLOB_PATTERNS = ['**/*.{js,mjs,css,html,ico,png,jpg,jpeg,svg,webp,woff,woff2}']
+// ttf: the Unicode font the scoresheet embeds in its PDF text (scoresheet_pdf/utils/pdfFont).
+export const PRECACHE_GLOB_PATTERNS = ['**/*.{js,mjs,css,html,ico,png,jpg,jpeg,svg,webp,woff,woff2,ttf}']
 
 // The phone signing page (public/sign/, docs/qr-signing-spec.md 4.7) is opened
 // by OTHER phones from a QR code, never by the app: not precached, and a

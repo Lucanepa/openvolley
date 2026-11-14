@@ -31,7 +31,8 @@ depuis d'autres serveurs. Elles sont sous **SIL Open Font License 1.1**
 (https://openfontlicense.org) :
 
 Inter, IBM Plex Mono, JetBrains Mono, Orbitron, Roboto Mono, Space Mono
-(intégrées via les paquets Fontsource).
+(intégrées via les paquets Fontsource), et Liberation Sans (intégrée via
+PDF.js, pour le texte du PDF de la feuille de match).
 
 ## Bibliothèques des applications
 

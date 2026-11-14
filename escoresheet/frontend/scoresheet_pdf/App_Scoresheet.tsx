@@ -10,7 +10,7 @@ import { LiberoControlSheet } from './components/LiberoControlSheet';
 import { Player, SanctionRecord } from './types_scoresheet';
 import { asArray, buildScoresheetFilename, buildScoresheetTitle, displayShortName, findOfficial, formatDob, formatHoursMinutes, formatClockHoursMinutes, formatPersonName, normalizeOfficials } from './utils/sheetFormat';
 import { formatTimeLocal } from '../src/utils/timeUtils';
-import { extractLiberoData } from './utils/extractLiberoData';
+import { extractLiberoData, rosterLiberos } from './utils/extractLiberoData';
 import { allStyleProperties, drawableImages, drawImagesOnto, hideImages, isWebKitEngine, styleListFor, usedStyleProperties, wellFormedSheet } from './utils/pdfCapture';
 import {
   getStartingLineup,
@@ -36,6 +36,7 @@ import { detectAppPlatform } from '../src/utils/openAppWindow';
 import { onPointHubBoard } from '../src/utils/pointHubBoard';
 import { assertCanvas, assertJpegDataUrl, assertValidPdf, assertVisibleSheet, downloadBlob, PdfCheckError, SHEET_MM, SHEET_OFFSET_MM, A3_LANDSCAPE_MM, type SaveOutcome } from './utils/pdfOutput';
 import { usePinchZoom } from './usePinchZoom';
+import { applyTextFont } from './utils/pdfFont';
 
 interface AppScoresheetProps {
   matchData: {
@@ -1563,14 +1564,19 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         keywords: 'OpenVolley, eScoresheet, volleyball, scoresheet'
       });
       pdf.addImage(imgData, 'JPEG', SHEET_OFFSET_MM.x, SHEET_OFFSET_MM.y, SHEET_MM.width, SHEET_MM.height, undefined, 'FAST');
-      // A searchable line (title, result) under the picture, not drawn
+      // A searchable line (title, result) under the picture, not drawn. jsPDF writes
+      // this text itself: names or remarks beyond Latin-1 get an embedded Unicode
+      // font (utils/pdfFont), Helvetica garbled them.
       try {
+        const searchLine = `${title}${result ? ` - ${result.replace('-', ':')}` : ''}`;
+        await applyTextFont(pdf, searchLine);
         pdf.setFontSize(6);
-        pdf.text(`${title}${result ? ` - ${result.replace('-', ':')}` : ''}`, SHEET_OFFSET_MM.x, 3, { renderingMode: 'invisible' } as any);
+        pdf.text(searchLine, SHEET_OFFSET_MM.x, 3, { renderingMode: 'invisible' } as any);
       } catch { /* text layer is optional */ }
       if (remarksClipped) {
         const all = remarksText({ overflowSanctions, remarks: typeof match?.remarks === 'string' ? match.remarks : '', generated: autoRemarks });
         pdf.addPage('a3', 'landscape');
+        await applyTextFont(pdf, `${title}\n${all}`);
         pdf.setFontSize(14);
         pdf.text('REMARKS (continued from the scoresheet)', 15, 20);
         pdf.setFontSize(10);
@@ -2257,6 +2263,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                     team={homeShortName}
                     side={teamAKey === 'home' ? 'A' : 'B'}
                     players={formatPlayers(homePlayers)}
+                    liberos={rosterLiberos(formatPlayers(homePlayers), events, 'home')}
                     benchStaff={asArray(match?.bench_home)}
                     preGameCaptainSignature={match?.homeCaptainSignature}
                     preGameCoachSignature={match?.homeCoachSignature}
@@ -2270,6 +2277,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                     team={awayShortName}
                     side={teamAKey === 'away' ? 'A' : 'B'}
                     players={formatPlayers(awayPlayers)}
+                    liberos={rosterLiberos(formatPlayers(awayPlayers), events, 'away')}
                     benchStaff={asArray(match?.bench_away)}
                     preGameCaptainSignature={match?.awayCaptainSignature}
                     preGameCoachSignature={match?.awayCoachSignature}

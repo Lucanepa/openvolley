@@ -24,6 +24,10 @@ vi.mock('jspdf', () => ({
     setProperties (p: any) { pdfCalls.push(['setProperties', p]) }
     addImage (...a: any[]) { pdfCalls.push(['addImage', ...a.slice(1, 6)]) }
     setFontSize () {}
+    setFont (...a: any[]) { pdfCalls.push(['setFont', ...a]) }
+    getFontList () { return {} }
+    addFileToVFS () {}
+    addFont () {}
     text (t: string | string[]) { pdfCalls.push(['text', t]) }
     addPage (...a: any[]) { pdfCalls.push(['addPage', ...a]) }
     splitTextToSize (t: string) { return t.split('\n') }

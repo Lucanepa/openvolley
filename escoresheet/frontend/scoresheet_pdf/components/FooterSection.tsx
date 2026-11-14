@@ -1,6 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { SanctionRecord, Player } from '../types_scoresheet';
-import { SignatureModal } from './SignatureModal';
 import { isApprovalValid, formatApprovalStamp } from '../../src/domain/accountApproval.js';
 import { FitText } from './FitText';
 import { findOfficial, formatDob, formatPersonName, type SheetOfficial } from '../utils/sheetFormat';
@@ -720,52 +719,29 @@ interface RosterProps {
   isHome?: boolean;
   /** No left rule of its own: the roster beside it draws that line. */
   noLeftRule?: boolean;
-  /** A view only (the referee's live scoresheet): the empty signature boxes do not open the pad. */
+  /**
+   * Kept for the callers; the signature boxes are read-only on every sheet now
+   * (a signature drawn here was never saved to the match).
+   */
   readOnly?: boolean;
+  /**
+   * The LIBERO box (utils/extractLiberoData rosterLiberos): the registered
+   * liberos, then the re-designated ones. Without it, the players flagged libero.
+   */
+  liberos?: Array<Player & { redesignated?: boolean }>;
 }
 
-export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchStaff = [], preGameCaptainSignature, preGameCoachSignature, coinTossConfirmed, isHome = true, noLeftRule = false, readOnly = false }) => {
-    const [openSignature, setOpenSignature] = useState<string | null>(null);
+export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchStaff = [], preGameCaptainSignature, preGameCoachSignature, coinTossConfirmed, isHome = true, noLeftRule = false, liberos: liberoList }) => {
     // bench_home / bench_away may be null or an object in older rows
     const staff: any[] = Array.isArray(benchStaff) ? benchStaff : [];
 
-    // Create unique signature keys based on side
-    const captainSignatureKey = `roster-${side.toLowerCase()}-captain`;
-    const coachSignatureKey = `roster-${side.toLowerCase()}-coach`;
-
-    // Signatures drawn on this sheet itself (only where the match record has none).
-    // The match record's signatures (coin toss, also signed on a phone) always win
-    // and show the moment they are saved: read from the props on every render
-    // (owner 2026-10-07), never copied into state that could go stale.
-    const [signatures, setSignatures] = useState<Record<string, string>>({});
-    const captainSignature = preGameCaptainSignature || signatures[captainSignatureKey] || '';
-    const coachSignature = preGameCoachSignature || signatures[coachSignatureKey] || '';
-
-    const handleSignatureClick = (signatureType: string) => {
-        if (readOnly) return;
-        // Don't allow editing pre-game signatures
-        if (signatureType === captainSignatureKey && preGameCaptainSignature) {
-            return;
-        }
-        if (signatureType === coachSignatureKey && preGameCoachSignature) {
-            return;
-        }
-        setOpenSignature(signatureType);
-    };
-
-    const handleSignatureSave = (signatureType: string, signatureDataUrl: string) => {
-        // Don't allow overwriting pre-game signatures
-        if (signatureType === captainSignatureKey && preGameCaptainSignature) {
-            setOpenSignature(null);
-            return;
-        }
-        if (signatureType === coachSignatureKey && preGameCoachSignature) {
-            setOpenSignature(null);
-            return;
-        }
-        setSignatures(prev => ({ ...prev, [signatureType]: signatureDataUrl }));
-        setOpenSignature(null);
-    };
+    // The signatures come from the match record only (coin toss, also signed on a
+    // phone), read from the props on every render so they show the moment they are
+    // saved (owner 2026-10-07). The boxes are read-only: a signature drawn on the
+    // sheet stayed in this window, was never saved and was missing from the
+    // approval PDF (made in a window of its own) and the cloud record.
+    const captainSignature = preGameCaptainSignature || '';
+    const coachSignature = preGameCoachSignature || '';
 
     // DoB | No | Name, as the Matchblatt roster (field-spec 3): its "Lizenz-Nr." column
     // holds the date of birth (SC p.10), so there is no separate licence column.
@@ -782,11 +758,14 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
     // without a trace.
     const regularPlayers = players.slice(0, 14);
     const extraPlayers = players.slice(14);
-    // Get liberos separately for the libero section, sorted by jersey number
-    const liberos = players
+    // The libero section: the registered liberos (re-designations recovered, see
+    // rosterLiberos), else the players flagged libero by jersey number. Two rows;
+    // any further one is named in the last row, never dropped without a trace.
+    const allLiberos: Array<Player & { redesignated?: boolean }> = liberoList ?? players
         .filter(p => p.libero)
-        .sort((a, b) => parseInt(String(a.number || '0')) - parseInt(String(b.number || '0')))
-        .slice(0, 2);
+        .sort((a, b) => parseInt(String(a.number || '0')) - parseInt(String(b.number || '0')));
+    const liberos = allLiberos.slice(0, 2);
+    const extraLiberos = allLiberos.slice(2);
 
     return (
         <div className={`border border-r-0 border-black bg-white w-full h-full flex flex-col min-w-0 ${noLeftRule ? 'border-l-0' : ''}`} data-testid={`roster-${isHome ? 'home' : 'away'}`}>
@@ -844,7 +823,11 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                             <div className="border-r border-black font-bold bg-white text-center flex items-center justify-center">{libero?.number || ''}</div>
                             <div className="text-left px-1 font-medium flex items-center justify-between min-w-0">
                                 <FitText max={9} min={5} className="flex-1">{liberoName}</FitText>
+                                {libero?.redesignated && <span className="text-[7px] font-bold ml-1 shrink-0" title="Re-designated libero">R</span>}
                                 {libero?.isLfp && <span className="text-[7px] font-bold ml-1 shrink-0">LFP</span>}
+                                {i === 1 && extraLiberos.length > 0 && (
+                                    <span className="text-[6px] ml-1 shrink-0" data-testid="roster-libero-extra">+{extraLiberos.map(p => `${p.number}${p.redesignated ? ' R' : ''}`).join(', ')}</span>
+                                )}
                             </div>
                         </div>
                     );
@@ -885,15 +868,7 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                     {/* Captain Signature */}
                     <div className="flex items-center gap-1">
                         <span className="text-[6px] uppercase text-center font-bold w-12 shrink-0">Captain</span>
-                        <div
-                            className={`flex-1 relative min-h-[20px] ${
-                                preGameCaptainSignature || readOnly
-                                    ? 'cursor-default'
-                                    : 'cursor-pointer hover:bg-gray-50 print:cursor-default print:hover:bg-white'
-                            }`}
-                            onClick={preGameCaptainSignature || readOnly ? undefined : () => handleSignatureClick(captainSignatureKey)}
-                            title={readOnly ? undefined : preGameCaptainSignature ? 'Pre-game signature (read-only)' : 'Click to sign'}
-                        >
+                        <div className="flex-1 relative min-h-[20px] cursor-default">
                             {captainSignature ? (
                                 <img
                                     src={captainSignature}
@@ -910,15 +885,7 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                     {/* Coach Signature */}
                     <div className="flex items-center gap-1">
                         <span className="text-[6px] uppercase text-center font-bold w-12 shrink-0">Coach</span>
-                        <div
-                            className={`flex-1 relative min-h-[20px] ${
-                                preGameCoachSignature || readOnly
-                                    ? 'cursor-default'
-                                    : 'cursor-pointer hover:bg-gray-50 print:cursor-default print:hover:bg-white'
-                            }`}
-                            onClick={preGameCoachSignature || readOnly ? undefined : () => handleSignatureClick(coachSignatureKey)}
-                            title={readOnly ? undefined : preGameCoachSignature ? 'Pre-game signature (read-only)' : 'Click to sign'}
-                        >
+                        <div className="flex-1 relative min-h-[20px] cursor-default">
                             {coachSignature ? (
                                 <img
                                     src={coachSignature}
@@ -934,18 +901,6 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                     </div>
                  </div>
 
-                 {/* Signature Modal - only show if signature is not pre-filled */}
-                 {openSignature && !readOnly && (
-                     (openSignature === captainSignatureKey && !preGameCaptainSignature) ||
-                     (openSignature === coachSignatureKey && !preGameCoachSignature)
-                 ) && (
-                     <SignatureModal
-                         open={true}
-                         onClose={() => setOpenSignature(null)}
-                         onSave={(signatureDataUrl) => handleSignatureSave(openSignature, signatureDataUrl)}
-                         title={`${team} ${openSignature.includes('captain') ? 'Captain' : 'Coach'} Signature`}
-                     />
-                 )}
              </div>
         </div>
     );

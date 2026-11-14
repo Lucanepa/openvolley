@@ -265,10 +265,11 @@ name) and RESULT `3:1` only once a team has 3 (2 in best-of-3) sets.
 
 Home always on the left, away on the right; header = short name + A/B circle.
 Columns `DoB (44px) | No (20px) | Lic. (40px) | Name`: 14 player rows
-(captain number circled, `LFP` tag), LIBERO (first 2 liberos by number),
+(captain number circled, `LFP` tag), LIBERO (the registered liberos, also
+after a re-designation, then the re-designated ones marked `R`: `rosterLiberos`),
 BENCH OFFICIALS `C AC1 AC2 P M` (from `bench_home/away`), Captain and Coach
-signatures (pre-game; clicking an empty one opens `SignatureModal`, which only
-lives in this page's state and is lost on reload). DoB printed raw. The course
+signatures (pre-game, from the match record only; the boxes are read-only, a
+signature drawn on the sheet was never saved). DoB printed raw. The course
 (p. 9) shows the official roster as `DoB | No | Name` ("It says Licence n. but
 actually it is DoB"), names as "Last name, First initial." (`Meier, S.`); ours
 prints the full name in upper case and adds a licence column.
