@@ -18,7 +18,7 @@ describe('public API on Postgres', { skip: SKIP_PG }, () => {
       `INSERT INTO public.matches (external_id, status, test, game_n, scheduled_at, home_team, away_team, officials, players_home, final_score, winner)
        VALUES ($1,$2,$3,${++gn}, now(), '{"name":"VBC Home"}', '{"name":"VBC Away"}',
          '[{"role":"1st referee","firstName":"Anna","lastName":"Muster"}]', '[{"number":7,"first_name":"Anna","dob":"1990-01-01"}]', '3:0', 'home') RETURNING id`, [ext, status, test])
-    mid = (await ins('pub_fin', 'finished')).rows[0].id
+    mid = (await ins('pub_fin', 'live')).rows[0].id  // a final match is closed (db/039): events first
     await ins('pub_live', 'live')
     await ins('pub_test', 'live', true)
     const ev = (type, set, seq, payload, voided = false) => admin.query(
@@ -30,6 +30,7 @@ describe('public API on Postgres', { skip: SKIP_PG }, () => {
     await ev('set_end', 1, 4, { team: 'home' })
     await admin.query(`INSERT INTO public.match_live_state (match_id, current_set, points_a, points_b, sets_won_a, sets_won_b, team_a_name, team_b_name, match_status)
       SELECT id, 1, 12, 9, 0, 0, 'VBC Home', 'VBC Away', 'live' FROM public.matches WHERE external_id = 'pub_live'`)
+    await admin.query("UPDATE public.matches SET status = 'final' WHERE id = $1", [mid])
     await admin.end()
   })
   after(async () => { await pool?.end(); await tdb?.drop() })
@@ -38,6 +39,7 @@ describe('public API on Postgres', { skip: SKIP_PG }, () => {
     const r = await api.list({ from: new Date(Date.now() - 3600e3).toISOString() })
     assert.equal(r.status, 200)
     assert.deepEqual(r.body.matches.map((m) => m.id).sort(), ['pub_fin', 'pub_live'])
+    assert.deepEqual((await api.list({ status: 'finished', from: new Date(Date.now() - 3600e3).toISOString() })).body.matches.map((m) => m.id), ['pub_fin'], 'finished finds a final match')
     assert.deepEqual((await api.list({ status: 'live', from: new Date(Date.now() - 3600e3).toISOString() })).body.matches.map((m) => m.id), ['pub_live'])
   })
   it('info: roles only', async () => {
