@@ -2,6 +2,8 @@ import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import SupportFeedbackModal from '../SupportFeedbackModal'
 import LoginModal from '../auth/LoginModal'
+import { useToolMode } from '../../utils/toolMode'
+import { downloadGlobalTemplate } from '../../utils/globalTemplates'
 import PendingApprovalBanner from '../auth/PendingApprovalBanner'
 import CloudBlockNotice from '../CloudBlockNotice'
 import { Download, LifeBuoy, Loader2, LogIn, Presentation, Settings, Trash2 } from 'lucide-react'
@@ -80,15 +82,8 @@ export default function HomePage({
   const [loginOpen, setLoginOpen] = useState(false)
   // Signed out where an account could sign in: no official game here
   const testOnly = signInAvailable && !signedIn
-  // Swiss (club games, Einsatzliste, cloud) or Global (any tournament, nothing
-  // but the backup and the scoresheet leaves the device); remembered per device
-  const [toolMode, setToolModeState] = useState(() => {
-    try { return localStorage.getItem('ov-tool-mode') === 'global' ? 'global' : 'swiss' } catch { return 'swiss' }
-  })
-  const setToolMode = (mode) => {
-    setToolModeState(mode)
-    try { localStorage.setItem('ov-tool-mode', mode) } catch { /* private window */ }
-  }
+  // Swiss or Global: chosen at first open, changed in Options (utils/toolMode)
+  const toolMode = useToolMode()
   const globalMode = toolMode === 'global' && !!onGlobalMatch
   const desktopOS = useMemo(() => detectDesktopOS(), [])
   const inDesktopApp = useMemo(() => isInsideDesktopApp(), [])
@@ -112,7 +107,7 @@ export default function HomePage({
         </div>
 
         <div className="home-wide:col-start-2 home-wide:row-span-4 home-wide:row-start-1 home-wide:self-center">
-        <PendingApprovalBanner className="mb-4" />
+        {!globalMode && <PendingApprovalBanner className="mb-4" />}
         {selfCheckNotice}
 
         <Card className="w-full space-y-3">
@@ -186,25 +181,13 @@ export default function HomePage({
               Test and Easy below it (signed out: those two only), then the
               Scoreboard, which is no match. One block for the help's "Show
               me" (createMatch), signed in or out */}
-          {onGlobalMatch && (
-            <div role="group" aria-label={t('home.tool.label', 'Tool')} className="grid grid-cols-2 gap-1 rounded-xl bg-stone-100 p-1" data-testid="home-tool-switch">
-              {['swiss', 'global'].map(mode => (
-                <button
-                  key={mode}
-                  type="button"
-                  aria-pressed={toolMode === mode}
-                  data-testid={`home-tool-${mode}`}
-                  onClick={() => setToolMode(mode)}
-                  className={cn('h-10 rounded-lg text-sm font-semibold transition-colors', toolMode === mode ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500 hover:text-stone-800')}
-                >
-                  {t(`home.tool.${mode}`, mode === 'swiss' ? 'Swiss' : 'Global')}
-                </button>
-              ))}
-            </div>
-          )}
           {globalMode && (
             <p className="px-1 text-xs text-stone-500" data-testid="home-global-note">
               {t('home.tool.globalNote', 'Any tournament: no sign-in, no game list. Teams and players stay on this device.')}
+              {' '}
+              <button type="button" className="underline" data-testid="home-template-games" onClick={() => downloadGlobalTemplate('games')}>{t('globalImport.templateGames', 'Games template (Excel)')}</button>
+              {' · '}
+              <button type="button" className="underline" data-testid="home-template-rosters" onClick={() => downloadGlobalTemplate('rosters')}>{t('globalImport.templateRosters', 'Rosters template (Excel)')}</button>
             </p>
           )}
           <div className="space-y-3" data-help-id="home-new-match-button">

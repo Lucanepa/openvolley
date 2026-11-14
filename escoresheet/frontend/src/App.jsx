@@ -87,6 +87,8 @@ import { jobMatchKey, setExtId } from './utils/syncIds'
 import { deviceMatchRows, jobsOfMatch, matchGameNumber, resumeStage, setScore } from './utils/deviceMatches'
 import { PhoneIcon } from './components/icons'
 import { Maximize } from 'lucide-react'
+import ToolModeChooser from './components/ToolModeChooser'
+import { useToolMode, getToolMode, setToolMode, toolModeLocked, impliedToolMode } from './utils/toolMode'
 import { Button, cn, FormError, Input, ScreenLoading } from './ui'
 import { getBackendOverride, getCloudApiUrl, getLocalServerStatusUrl, isCloudBlockedOnThisPort, isStaticHost } from './utils/backendConfig'
 import { isViewportTooSmall } from './utils/formLayout'
@@ -195,7 +197,7 @@ export default function App() {
   // match in progress.
   useEffect(() => {
     const onManage = (e) => {
-      if (matchId) return
+      if (matchId || getToolMode() === 'global') return
       setManageTab(e?.detail?.tab || 'accounts')
     }
     const onRestore = (e) => {
@@ -1001,6 +1003,19 @@ export default function App() {
       return null
     }
   }, [])
+
+  // Swiss or Global (utils/toolMode): asked at the first open, changed in
+  // Options while no match is on the device. A device that never chose but
+  // holds a match takes that match's tool.
+  const toolMode = useToolMode()
+  const globalTool = toolMode === 'global'
+  const matchesLoaded = currentOfficialMatch !== undefined && currentTestMatch !== undefined
+  const toolLocked = toolModeLocked(currentOfficialMatch, currentTestMatch)
+  useEffect(() => {
+    if (toolMode || !matchesLoaded) return
+    const implied = impliedToolMode(currentOfficialMatch) || impliedToolMode(currentTestMatch)
+    if (implied) setToolMode(implied)
+  }, [toolMode, matchesLoaded, currentOfficialMatch, currentTestMatch])
 
   // Get match status and details
   const matchStatus = useLiveQuery(async () => {
@@ -3732,6 +3747,7 @@ export default function App() {
             isFullscreen={isFullscreen}
             toggleFullscreen={toggleFullscreen}
             offlineMode={offlineMode}
+            hideAccount={globalTool}
             setOfflineMode={(val) => {
               setOfflineMode(val)
               localStorage.setItem('offlineMode', val.toString())
@@ -4522,7 +4538,9 @@ export default function App() {
             )}
 
             {/* Home Options Modal */}
+            <ToolModeChooser open={toolMode === null && matchesLoaded && !matchId && !homeOptionsModal} />
             <HomeOptionsModal
+              toolMode={{ mode: toolMode, locked: toolLocked, onChange: setToolMode }}
               open={homeOptionsModal}
               onClose={() => setHomeOptionsModal(false)}
               onOpenConnectionSetup={() => setConnectionSetupModal(true)}
@@ -4625,7 +4643,7 @@ export default function App() {
             />
 
             {/* Not signed in while the cloud needs an account: non-blocking */}
-            {!offlineMode && <SyncSignInBanner syncStatus={syncStatus} compact={currentPage === 'scoreboard'} />}
+            {!offlineMode && !globalTool && <SyncSignInBanner syncStatus={syncStatus} compact={currentPage === 'scoreboard'} />}
 
           </div>
         </>

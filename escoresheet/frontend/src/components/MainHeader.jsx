@@ -141,6 +141,7 @@ export default function MainHeader({
   isFullscreen,
   toggleFullscreen,
   offlineMode,
+  hideAccount = false,
   setOfflineMode,
   onOpenSetup,
   onRetryErrors,
@@ -1191,7 +1192,7 @@ export default function MainHeader({
 
                     {/* Login / account rows - hidden in offline mode. Inline, not a
                         nested dropdown: the panel's scroll box clipped it. */}
-                    {!offlineMode && (
+                    {!offlineMode && !hideAccount && (
                       <UserButton inline inMatch={!!matchId} onAction={() => setActionsMenuOpen(false)} />
                     )}
 

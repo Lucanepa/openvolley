@@ -1188,7 +1188,8 @@
     "backToScorer": "Retour au marqueur",
     "scorer": "Marqueur"
   },
-  "globalImport": {"gamesTitle": "Importer les matchs", "rostersTitle": "Importer les effectifs", "gamesHint": "Un fichier Excel ou CSV avec une ligne par match : match, date, heure, salle, ville, ligue, domicile, visiteur, best of, arbitres. Rien n’est enregistré : le fichier est lu sur cet appareil.", "rostersHint": "Un fichier Excel ou CSV avec une ligne par personne : équipe, numéro, prénom, nom, rôle (joueur, libero, capitaine, entraîneur...), date de naissance. Rien n’est enregistré : le fichier est lu sur cet appareil.", "choose": "Choisir un fichier", "template": "Modèle", "errFile": "Le fichier n’a pas pu être lu.", "errEmpty": "Le fichier est vide.", "errColumns": "Les colonnes sont introuvables. Utilisez le modèle.", "noTeamName": "(sans nom d’équipe)", "counts": "{{players}} joueurs, {{staff}} encadrants", "warnings": "{{count}} lignes incorrectes : {{list}}", "applied": "{{count}} joueurs ajoutés", "gamesButton": "Importer les matchs (Excel)", "rostersButton": "Importer les effectifs (Excel)"},
+  "toolChooser": {"title": "Comment utilisez-vous OpenVolley ?", "swissBody": "Matchs de ligue suisses : connexion, liste des matchs, Einsatzliste, effectifs de club et cloud.", "globalBody": "Tout tournoi ou match amical : sans connexion, effectifs et matchs depuis Excel. Les équipes et les joueurs restent sur cet appareil.", "later": "Vous pourrez changer plus tard dans Options, tant qu’aucun match n’est sur cet appareil."},
+  "globalImport": {"templateGames": "Modèle des matchs (Excel)", "templateRosters": "Modèle des effectifs (Excel)", "gamesTitle": "Importer les matchs", "rostersTitle": "Importer les effectifs", "gamesHint": "Un fichier Excel ou CSV avec une ligne par match : match, date, heure, salle, ville, ligue, domicile, visiteur, best of, arbitres. Rien n’est enregistré : le fichier est lu sur cet appareil.", "rostersHint": "Un fichier Excel ou CSV avec une ligne par personne : équipe, numéro, prénom, nom, rôle (joueur, libero, capitaine, entraîneur...), date de naissance. Rien n’est enregistré : le fichier est lu sur cet appareil.", "choose": "Choisir un fichier", "template": "Modèle", "errFile": "Le fichier n’a pas pu être lu.", "errEmpty": "Le fichier est vide.", "errColumns": "Les colonnes sont introuvables. Utilisez le modèle.", "noTeamName": "(sans nom d’équipe)", "counts": "{{players}} joueurs, {{staff}} encadrants", "warnings": "{{count}} lignes incorrectes : {{list}}", "applied": "{{count}} joueurs ajoutés", "gamesButton": "Importer les matchs (Excel)", "rostersButton": "Importer les effectifs (Excel)"},
   "home": {
     "tool": {"label": "Outil", "swiss": "Suisse", "global": "Global", "globalNote": "Tout tournoi : sans connexion, sans liste de matchs. Les équipes et les joueurs restent sur cet appareil."},
     "match": "Match",
@@ -1334,6 +1335,7 @@
     "err_io": "Cette sauvegarde n’a pas pu être lue."
   },
   "options": {
+    "tool": {"title": "Outil", "locked": "Un match est sur cet appareil. Supprimez-le pour changer d’outil.", "swissNote": "Matchs de ligue suisses : connexion, liste des matchs, Einsatzliste, effectifs de club et cloud."},
     "title": "Options",
     "close": "Fermer",
     "checkAccidentalRallyStart": "Vérifier démarrage accidentel",

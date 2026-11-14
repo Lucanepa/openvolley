@@ -1189,7 +1189,8 @@
     "backToScorer": "Torna al segnapunti",
     "scorer": "Segnapunti"
   },
-  "globalImport": {"gamesTitle": "Importa partite", "rostersTitle": "Importa rose", "gamesHint": "Un file Excel o CSV con una riga per partita: partita, data, ora, palestra, città, lega, casa, ospite, best of, arbitri. Nulla viene salvato: il file è letto su questo dispositivo.", "rostersHint": "Un file Excel o CSV con una riga per persona: squadra, numero, nome, cognome, ruolo (giocatore, libero, capitano, allenatore...), data di nascita. Nulla viene salvato: il file è letto su questo dispositivo.", "choose": "Scegli file", "template": "Modello", "errFile": "Impossibile leggere il file.", "errEmpty": "Il file è vuoto.", "errColumns": "Colonne non trovate. Usa il modello.", "noTeamName": "(senza nome squadra)", "counts": "{{players}} giocatori, {{staff}} staff", "warnings": "{{count}} righe non pulite: {{list}}", "applied": "{{count}} giocatori aggiunti", "gamesButton": "Importa partite (Excel)", "rostersButton": "Importa rose (Excel)"},
+  "toolChooser": {"title": "Come usi OpenVolley?", "swissBody": "Partite di lega svizzere: accesso, elenco partite, Einsatzliste, rose di club e cloud.", "globalBody": "Qualsiasi torneo o amichevole: senza accesso, rose e partite da Excel. Squadre e giocatori restano su questo dispositivo.", "later": "Puoi cambiarlo più tardi in Opzioni, finché non c’è una partita su questo dispositivo."},
+  "globalImport": {"templateGames": "Modello partite (Excel)", "templateRosters": "Modello rose (Excel)", "gamesTitle": "Importa partite", "rostersTitle": "Importa rose", "gamesHint": "Un file Excel o CSV con una riga per partita: partita, data, ora, palestra, città, lega, casa, ospite, best of, arbitri. Nulla viene salvato: il file è letto su questo dispositivo.", "rostersHint": "Un file Excel o CSV con una riga per persona: squadra, numero, nome, cognome, ruolo (giocatore, libero, capitano, allenatore...), data di nascita. Nulla viene salvato: il file è letto su questo dispositivo.", "choose": "Scegli file", "template": "Modello", "errFile": "Impossibile leggere il file.", "errEmpty": "Il file è vuoto.", "errColumns": "Colonne non trovate. Usa il modello.", "noTeamName": "(senza nome squadra)", "counts": "{{players}} giocatori, {{staff}} staff", "warnings": "{{count}} righe non pulite: {{list}}", "applied": "{{count}} giocatori aggiunti", "gamesButton": "Importa partite (Excel)", "rostersButton": "Importa rose (Excel)"},
   "home": {
     "tool": {"label": "Strumento", "swiss": "Svizzera", "global": "Globale", "globalNote": "Qualsiasi torneo: senza accesso, senza elenco partite. Squadre e giocatori restano su questo dispositivo."},
     "match": "Partita",
@@ -1335,6 +1336,7 @@
     "err_io": "Impossibile leggere questo backup."
   },
   "options": {
+    "tool": {"title": "Strumento", "locked": "C’è una partita su questo dispositivo. Eliminala per cambiare strumento.", "swissNote": "Partite di lega svizzere: accesso, elenco partite, Einsatzliste, rose di club e cloud."},
     "title": "Opzioni",
     "close": "Chiudere",
     "checkAccidentalRallyStart": "Controllo avvio accidentale",

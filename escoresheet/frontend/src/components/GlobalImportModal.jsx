@@ -3,8 +3,9 @@ import { useTranslation } from 'react-i18next'
 import { Download, Upload } from 'lucide-react'
 import Modal from './Modal'
 import { Button } from '../ui'
-import { parseGames, parseRosters, gamesTemplate, rosterTemplate } from '../domain/globalImport'
+import { parseGames, parseRosters } from '../domain/globalImport'
 import { fold } from '../domain/globalImport'
+import { downloadGlobalTemplate } from '../utils/globalTemplates'
 
 /**
  * Global tool: upload an Excel/CSV of games or of rosters (domain/globalImport).
@@ -47,17 +48,7 @@ export default function GlobalImportModal({ open, kind, onClose, onPickGame, onA
     }
   }
 
-  const download = async () => {
-    const codec = await import('../lib/xlsxCodec')
-    const sheet = kind === 'games' ? gamesTemplate() : rosterTemplate()
-    const bytes = codec.writeWorkbook([sheet])
-    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
-    const a = document.createElement('a')
-    a.href = url
-    a.download = kind === 'games' ? 'openvolley-games.xlsx' : 'openvolley-rosters.xlsx'
-    document.body.appendChild(a); a.click(); a.remove()
-    setTimeout(() => URL.revokeObjectURL(url), 1000)
-  }
+  const download = () => downloadGlobalTemplate(kind)
 
   const sideOf = (name) => (name && fold(name) === fold(homeName) ? 'home' : name && fold(name) === fold(awayName) ? 'away' : null)
 
