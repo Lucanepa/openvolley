@@ -5,6 +5,8 @@
  * already derived (the current lineup per team from getTeamLineupState).
  */
 
+import { substitutionBarsForMatch } from './substitutions'
+
 export const COURT_POSITIONS = ['I', 'II', 'III', 'IV', 'V', 'VI']
 
 /** Sanctions given to one person (player or bench official). */
@@ -112,7 +114,9 @@ const isInjurySub = e =>
  * injured during the match (the Rosters dialog marks both).
  *  - 'disqualified': disqualification (any set) - out for the match
  *  - 'expelled'    : expulsion in the current set - out for this set
- *  - 'exceptional' : exceptionally substituted - out for the match
+ *  - 'exceptional' : exceptionally substituted (injury) - out for the match;
+ *                    an expelled player substituted exceptionally is
+ *                    'expelled' in that set only (FIVB 21.3.2)
  *  - 'unable'      : libero declared unable / re-designated away
  * @returns {{ out: null|'disqualified'|'expelled'|'exceptional'|'unable', injured: boolean }}
  */
@@ -132,7 +136,7 @@ export function playerPlayStatus(events, teamKey, player, currentSetIndex) {
     subsOut.some(e => e.payload?.isExpelled === true && (e.setIndex || 1) === currentSetIndex)
   ) {
     status.out = 'expelled'
-  } else if (subsOut.some(e => e.payload?.isExceptional === true)) {
+  } else if (subsOut.some(e => e.payload?.isExceptional === true && substitutionBarsForMatch(e.payload))) {
     status.out = 'exceptional'
   } else if (
     player?.libero === 'unable' ||

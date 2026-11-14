@@ -28,7 +28,7 @@
  * for delays"): old events with payload.reason load and read as before.
  */
 
-import { MAX_SUBSTITUTIONS_PER_SET, countRegularSubstitutions, classifySubstitutionRequest } from './substitutions'
+import { MAX_SUBSTITUTIONS_PER_SET, countRegularSubstitutions, classifySubstitutionRequest, substitutionBarsForMatch } from './substitutions'
 import { TIMEOUTS_PER_SET } from './timeouts'
 import { resolveSanction, teamSanctionCounts } from './sanctions'
 import { playerReplacedByLibero } from './liberos'
@@ -42,10 +42,15 @@ export function setEventsInOrder(events, setIndex) {
   return (events || []).filter(e => e && setOf(e) === setIndex).sort((a, b) => seqOf(a) - seqOf(b))
 }
 
-/** True for a forced substitution: injury, expulsion, disqualification, exceptional. */
+/**
+ * True for a forced substitution: injury, expulsion, disqualification,
+ * exceptional. An injury substitution recorded before isInjury was stored
+ * is known by its automatic remark (as rosterLive does).
+ */
 export function isForcedSubstitution(request) {
   const p = request?.payload ?? request
-  return !!(p?.isInjury || p?.isExpelled || p?.isDisqualified || p?.isExceptional)
+  return !!(p?.isInjury || p?.isExpelled || p?.isDisqualified || p?.isExceptional ||
+    /due to injury/i.test(p?.autoRemark || ''))
 }
 
 /** The seq of the set's latest completed rally (a point, penalty points too), or -Infinity. */
@@ -299,8 +304,9 @@ export function substituteInIllegalReason(events, setIndex, team, playerOut, pla
 }
 
 /**
- * Sent off for good or for this set: expelled this set, disqualified, or
- * substituted exceptionally / because of an expulsion or disqualification.
+ * Sent off for good or for this set: expelled this set (also when replaced
+ * exceptionally, FIVB 21.3.2), disqualified, or substituted exceptionally
+ * because of an injury (15.7).
  */
 export function isSentOff(events, team, number, setIndex) {
   const n = str(number)
@@ -310,7 +316,7 @@ export function isSentOff(events, team, number, setIndex) {
       return e.payload?.type === 'disqualification' || (e.payload?.type === 'expulsion' && (e.setIndex ?? 1) === setIndex)
     }
     if (e.type === 'substitution' && str(e.payload?.playerOut) === n) {
-      return e.payload?.isExceptional === true || e.payload?.isDisqualified === true || (e.payload?.isExpelled === true && (e.setIndex ?? 1) === setIndex)
+      return substitutionBarsForMatch(e.payload) || (e.payload?.isExpelled === true && (e.setIndex ?? 1) === setIndex)
     }
     return false
   })
