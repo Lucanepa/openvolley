@@ -57,3 +57,24 @@ describe('Header category boxes', () => {
     expect(xd(container)).toHaveLength(2)
   })
 })
+
+describe('Header: Mixed gender and school levels', () => {
+  afterEach(() => cleanup())
+  const xd = (c: HTMLElement) => [...c.querySelectorAll('header span')]
+    .filter(sp => sp.textContent === 'X')
+    .map(sp => sp.parentElement?.nextElementSibling?.textContent || (sp.parentElement?.nextElementSibling?.querySelector('input') as HTMLInputElement | null)?.value)
+
+  it('ticks both Men and Women for a mixed match', () => {
+    const { container } = render(<Header match={{ match_type_2: 'mixed' }} />)
+    expect(xd(container)).toEqual(expect.arrayContaining(['Men', 'Women']))
+  })
+  it('men alone ticks only Men; a school level goes in the Other box with its text', () => {
+    const a = render(<Header match={{ match_type_2: 'men' }} />)
+    expect(xd(a.container)).toContain('Men')
+    expect(xd(a.container)).not.toContain('Women')
+    a.unmount()
+    const b = render(<Header match={{ match_type_2: 'mixed', match_type_3: 'U15' }} />)
+    expect(xd(b.container)).toContain('Other:')
+    expect((b.container.querySelector('input[aria-label="Other age category"]') as HTMLInputElement).value).toBe('U15')
+  })
+})

@@ -241,6 +241,8 @@
   },
   "matchSetup": {
     "roleName": "Nome del ruolo",
+    "mixed": "Misto",
+    "school": "Scuola",
     "pointsPerSet": "Punti per set",
     "pointsDeciding": "Set decisivo",
     "loadingScheduleGame": "Caricamento della partita…",

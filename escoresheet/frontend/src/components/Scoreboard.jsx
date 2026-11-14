@@ -57,6 +57,7 @@ import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from 
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
 import { defaultSetStartTime, actualStartRemark, startsFromSchedule, startScheduleOf, typedStartNear } from '../utils/setStartTime'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
+import { getToolMode } from '../utils/toolMode'
 import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet, getLeftTeamLabelForSet, setTargetsOf, pointsToWinFor, courtSwitchPointOf } from '../domain/rules'
 import { resolveSanction, deriveTeamSanctionFlags, deferredPenaltyPoints, penaltyOfPoint, teamSanctionCounts, validateMemberSanction } from '../domain/sanctions'
 import { REQUEST_ISSUES, isReplayPending, substitutionRequestIssues, timeoutRequestIssues, requestBlockReason, entryWithoutCompletedRally, substitutionRequestThisInterruption, substitutionIllegalReason, classifyLiveSubstitution, lateRequestOutcome, decisionChangeTakeBack, decisionTakeBackTextKey } from '../domain/interruptionRequests'
@@ -568,7 +569,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return saved !== 'false' // default true
   })
   const [lfpTrackingEnabled, setLfpTrackingEnabled] = useState(() => {
-    return localStorage.getItem('lfpTrackingEnabled') === 'true' // default false
+    // (a Swiss league rule: never in a Global match tool)
+    return localStorage.getItem('lfpTrackingEnabled') === 'true' && getToolMode() !== 'global' // default false
   })
   const [lfpMinimumOnCourt, setLfpMinimumOnCourt] = useState(() => {
     const saved = localStorage.getItem('lfpMinimumOnCourt')

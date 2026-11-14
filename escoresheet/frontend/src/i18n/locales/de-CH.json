@@ -241,6 +241,8 @@
   },
   "matchSetup": {
     "roleName": "Name der Funktion",
+    "mixed": "Gmischt",
+    "school": "Schuel",
     "pointsPerSet": "Punkte pro Satz",
     "pointsDeciding": "Entscheidungssatz",
     "loadingScheduleGame": "Spiel wird geladen…",
