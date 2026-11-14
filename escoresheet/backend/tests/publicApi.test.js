@@ -49,6 +49,8 @@ describe('public match info: roles and numbers only', () => {
 describe('real status words', () => {
   it('a final / ended match is finished in the API, and A / B know which team is home', () => {
     assert.equal(publicMatchInfo({ ...row, status: 'final' }).status, 'finished')
+    // approved and not yet closed (db/007: approved -> final) is over too
+    assert.equal(publicMatchInfo({ ...row, status: 'approved' }).status, 'finished')
     const l = publicLive({ external_id: 'm', match_status: 'ended', home_team: { name: 'VBC Home' }, team_a_name: 'VBC Away', team_b_name: 'VBC Home' })
     assert.equal(l.status, 'finished')
     assert.equal(l.homeIs, 'B')
@@ -321,9 +323,8 @@ describe('the <ov-livescore> widget reads the API\'s statuses', () => {
     }
     new Function('customElements', 'document', 'HTMLElement', 'window', LIVESCORE_JS)(g.customElements, g.document, g.HTMLElement, g.window)
     return (status) => {
-      const box = make('div')
-      Live.prototype._draw.call({ _box: box }, { status, currentSet: 2, serving: 'A', teams: { A: { name: 'A' }, B: { name: 'B' } }, score: { setsA: 1, setsB: 0, pointsA: 3, pointsB: 2 }, setResults: [] })
-      return box.children[0].children[0].textContent
+      const card = Live.prototype._card.call({}, { status, currentSet: 2, serving: 'A', teams: { A: { name: 'A' }, B: { name: 'B' } }, score: { setsA: 1, setsB: 0, pointsA: 3, pointsB: 2 }, setResults: [] })
+      return card.children[0].children[0].textContent
     }
   }
   it('a match in play is LIVE', () => {

@@ -106,8 +106,9 @@ export function publicBench(raw) {
   return out
 }
 
-// What the database calls a finished match: matches.status 'final' (older rows 'ended'), live row 'ended'
-const FINISHED_DB = ['final', 'ended', 'finished']
+// What the database calls a finished match: matches.status 'final' (older rows 'ended';
+// 'approved' between the approval and Close match, db/007), live row 'ended'
+const FINISHED_DB = ['final', 'approved', 'ended', 'finished']
 const isFinished = (v) => FINISHED_DB.includes(v)
 // The API's own words: setup, scheduled, live, finished
 const STATUS = new Set(['setup', 'scheduled', 'live', 'finished'])
