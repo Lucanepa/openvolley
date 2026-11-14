@@ -7,8 +7,14 @@
          (@capacitor/screen-orientation, src/utils/nativeOrientation.js), since
          Android's WebView ignores screen.orientation.lock(). The referee view
          is the other way round: locked to portrait while it is open. -->
+    <!-- No Auto Backup and no device-to-device transfer of the app data
+         (session, PINs, matches with rosters): allowBackup="false" up to
+         Android 11, the extraction rules from Android 12
+         (res/xml/data_extraction_rules.xml). The app has its own backups. -->
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"

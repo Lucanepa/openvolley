@@ -1,8 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- What the app's FileProvider may hand to another app: only the folders
+     the app uses, never the whole shared storage or cache, so a path that
+     reaches getUriForFile by mistake cannot share a backup, a log or any
+     other file. -->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- The scoresheet PDFs saved in the app's own folder (Open / Share,
-         ScoresheetFilesPlugin) -->
+    <!-- The scoresheet PDFs (Open / Share, ScoresheetFilesPlugin): the app's
+         own folder, its external folder, and the public Documents folder
+         older versions used, until the first start moves them in -->
     <files-path name="scoresheets" path="OpenVolley/scoresheets/" />
-    <external-path name="my_images" path="." />
-    <cache-path name="my_cache_images" path="." />
+    <external-files-path name="scoresheets_external" path="OpenVolley/scoresheets/" />
+    <external-path name="scoresheets_documents" path="Documents/OpenVolley/scoresheets/" />
+    <!-- A photo taken from a file field (Capacitor's BridgeWebChromeClient
+         puts it in the app's external Pictures folder) -->
+    <external-files-path name="captures" path="Pictures/" />
 </paths>
