@@ -19,7 +19,7 @@ describe('public match API (server.js)', { skip: SKIP }, () => {
     writeFileSync(join(storageRoot, '.ovdata'), '')
     statusDir = mkdtempSync(join(tmpdir(), 'ov-pub-status-'))
     writeFileSync(join(statusDir, 'last_backup'), new Date().toISOString().replace(/\.\d{3}Z$/, 'Z') + '\n')
-    srv = await bootServer({ DATABASE_URL: db.url, STORAGE_ROOT: storageRoot, STATUS_DIR: statusDir, STORAGE_BACKUP_MIN_FREE_MB: '1', STORAGE_SCORESHEETS_MIN_FREE_MB: '1' })
+    srv = await bootServer({ DATABASE_URL: db.url, STORAGE_ROOT: storageRoot, STATUS_DIR: statusDir, STORAGE_BACKUP_MIN_FREE_MB: '1', STORAGE_SCORESHEETS_MIN_FREE_MB: '1', PUBLIC_STREAMS_PER_ADDRESS: '20' })
     await sql.query(`INSERT INTO public.matches (external_id, status, game_n, scheduled_at, home_team, away_team, officials)
       VALUES ('pub_e2e','live',1, now(), '{"name":"VBC Home"}', '{"name":"VBC Away"}', '[{"role":"1st referee","firstName":"Anna","lastName":"Muster"}]')`)
     await sql.query(`INSERT INTO public.match_live_state (match_id, current_set, points_a, points_b, sets_won_a, sets_won_b, team_a_name, team_b_name, match_status)
@@ -79,7 +79,7 @@ describe('public match API (server.js)', { skip: SKIP }, () => {
     assert.ok(!('onCourt' in b) && !('sanctions' in b), JSON.stringify(b))
     assert.ok(!JSON.stringify(b).includes('expulsion'))
   })
-  it('one address gets at most 20 streams; the next is refused with 503, not a 200 that ends', async () => {
+  it('one address gets at most PUBLIC_STREAMS_PER_ADDRESS (here 20) streams; the next is refused with 503, not a 200 that ends', async () => {
     const acs = []
     try {
       for (let i = 0; i < 20; i++) {
