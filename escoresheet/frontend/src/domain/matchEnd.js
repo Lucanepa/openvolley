@@ -29,7 +29,7 @@
  */
 import { setsToWin, getNextSetIndex, isMatchFinished, displaySetNumber } from '../utils/matchFormat'
 import { substitutionBarsForMatch } from './substitutions'
-import { isDecidingSet, scoreFromPointEvents } from './rules'
+import { pointsToWinFor, DEFAULT_SET_TARGETS, setTargetsOf, scoreFromPointEvents } from './rules'
 
 /** Match statuses that mean "no more rallies will be played". */
 export const MATCH_OVER_STATUSES = Object.freeze(['ended', 'approved', 'final'])
@@ -113,9 +113,12 @@ export function getMatchWinner(sets, bestOf = 5, { forfeitTeam = null } = {}) {
   return null
 }
 
-/** A possible final score of a set: 25 (15 in the deciding set) with a 2-point lead, or more by exactly 2. */
-export function isFinalSetScore(winnerPoints, loserPoints, setIndex) {
-  const toWin = isDecidingSet(setIndex) ? 15 : 25
+/**
+ * A possible final score of a set: 25 (15 in the deciding set; a Global
+ * match's own targets, rules.setTargetsOf) with a 2-point lead, or more by exactly 2.
+ */
+export function isFinalSetScore(winnerPoints, loserPoints, setIndex, targets = DEFAULT_SET_TARGETS) {
+  const toWin = pointsToWinFor(setIndex, targets)
   return (winnerPoints === toWin && loserPoints <= toWin - 2) || (winnerPoints > toWin && winnerPoints - loserPoints === 2)
 }
 
@@ -138,6 +141,7 @@ export function resultIssues({ sets = [], events = [], match = {} } = {}) {
   const bestOf = Number(match?.bestOf) === 3 ? 3 : 5
   const teamA = match?.coinTossTeamA === 'away' ? 'away' : 'home'
   const teamB = otherTeam(teamA)
+  const targets = setTargetsOf(match)
   const forfeitSets = new Set((events || [])
     .filter(e => e?.type === 'set_end' && e.payload?.reason === 'forfait')
     .map(e => e.setIndex))
@@ -151,7 +155,7 @@ export function resultIssues({ sets = [], events = [], match = {} } = {}) {
       if (leader) won[leader]++
       continue
     }
-    if (!leader || !isFinalSetScore(pts[leader], pts[otherTeam(leader)], s.index)) {
+    if (!leader || !isFinalSetScore(pts[leader], pts[otherTeam(leader)], s.index, targets)) {
       issues.push({ key: 'setScoreInvalid', params: { set: displaySetNumber(s.index, bestOf), score: `${pts[teamA]}:${pts[teamB]}` } })
       continue
     }
@@ -183,8 +187,8 @@ export function findPreviousSet(sets, currentIndex) {
  * target (25, or 15 in the deciding set) with a 2-point lead over the
  * forfeiting team, never fewer than it already has.
  */
-export function forfeitSetPoints(forfeitingTeamPoints, opponentPoints, setIndex) {
-  const target = isDecidingSet(setIndex) ? 15 : 25
+export function forfeitSetPoints(forfeitingTeamPoints, opponentPoints, setIndex, targets = DEFAULT_SET_TARGETS) {
+  const target = pointsToWinFor(setIndex, targets)
   return Math.max(target, (forfeitingTeamPoints || 0) + 2, opponentPoints || 0)
 }
 
@@ -195,6 +199,7 @@ export function forfeitSetPoints(forfeitingTeamPoints, opponentPoints, setIndex)
  * @param {'home'|'away'} args.forfeitingTeam
  * @param {number} args.currentSetIndex index of the set in progress
  * @param {number} [args.bestOf=5]
+ * @param {{regular:number,deciding:number}} [args.targets] points to win (rules.setTargetsOf)
  * @param {boolean} [args.setOnly=false] incomplete for the set only: award the
  *   set in progress and nothing else
  * @param {boolean} [args.inDefault=false] the team is in default (6.4.1-2):
@@ -209,8 +214,8 @@ export function forfeitSetPoints(forfeitingTeamPoints, opponentPoints, setIndex)
  *   its end), `voided` a played set past the result (a default at 2:1 or
  *   2:2) that goes back to unfinished, its score kept, so it no longer counts.
  */
-export function planForfeit({ sets, forfeitingTeam, currentSetIndex, bestOf = 5, setOnly = false, inDefault = false }) {
-  if (inDefault && !setOnly) return planDefault({ sets, forfeitingTeam, currentSetIndex, bestOf })
+export function planForfeit({ sets, forfeitingTeam, currentSetIndex, bestOf = 5, setOnly = false, inDefault = false, targets = DEFAULT_SET_TARGETS }) {
+  if (inDefault && !setOnly) return planDefault({ sets, forfeitingTeam, currentSetIndex, bestOf, targets })
   const opponent = otherTeam(forfeitingTeam)
   const needed = setsToWin(bestOf)
   const byIndex = new Map((sets || []).map(s => [s.index, s]))
@@ -220,7 +225,7 @@ export function planForfeit({ sets, forfeitingTeam, currentSetIndex, bestOf = 5,
   const award = (index, existing, isCurrent) => {
     const teamPts = existing ? (existing[pointsKey(forfeitingTeam)] || 0) : 0
     const oppBefore = existing ? (existing[pointsKey(opponent)] || 0) : 0
-    const oppPts = forfeitSetPoints(teamPts, oppBefore, index)
+    const oppPts = forfeitSetPoints(teamPts, oppBefore, index, targets)
     planned.push({
       index,
       id: existing?.id ?? null,
@@ -262,8 +267,9 @@ export function planForfeit({ sets, forfeitingTeam, currentSetIndex, bestOf = 5,
 
 // Default (6.4.1-2): the opponent wins sets 1, 2 (and 3) 25:0, whatever was
 // played. The sets of a straight win never include the deciding set, so 25
-// in each. A set already played past them no longer counts (see planForfeit).
-function planDefault({ sets, forfeitingTeam, currentSetIndex, bestOf }) {
+// in each (a Global match's regular target, rules.setTargetsOf). A set
+// already played past them no longer counts (see planForfeit).
+function planDefault({ sets, forfeitingTeam, currentSetIndex, bestOf, targets = DEFAULT_SET_TARGETS }) {
   const opponent = otherTeam(forfeitingTeam)
   const needed = setsToWin(bestOf)
   const byIndex = new Map((sets || []).map(s => [s.index, s]))
@@ -278,7 +284,7 @@ function planDefault({ sets, forfeitingTeam, currentSetIndex, bestOf }) {
       index,
       id: existing?.id ?? null,
       [pointsKey(forfeitingTeam)]: 0,
-      [pointsKey(opponent)]: 25,
+      [pointsKey(opponent)]: targets.regular,
       awardedPoints: 0,
       isCurrent: !!existing && !existing.finished && index === currentSetIndex,
       wasFinished: existing?.finished === true

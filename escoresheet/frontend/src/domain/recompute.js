@@ -37,7 +37,7 @@
  * "Check these entries" list, each pointing at the entry to fix.
  */
 import { compareBySeq, formatScore, teamLabel, displaySetNumber, tr, sanctionLabel, isTeamSanctionType, otherTeam } from './describe'
-import { getFirstServeForSet, getSetResult, isDecidingSet } from './rules'
+import { getFirstServeForSet, getSetResult, isDecidingSet, setTargetsOf, pointsToWinFor } from './rules'
 import { rotateLineup } from './rotation'
 import { resolveSanction, isDelaySanction, validateMemberSanction } from './sanctions'
 import { MAX_SUBSTITUTIONS_PER_SET } from './substitutions'
@@ -180,8 +180,8 @@ export function issueText(issue, t) {
   return tr(t, `corrections.issue.${k}`, ISSUE_DEFAULTS[k] || k, issue?.params || {})
 }
 
-function isValidFinalScore(winnerPts, loserPts, setIndex) {
-  const toWin = isDecidingSet(setIndex) ? 15 : 25
+function isValidFinalScore(winnerPts, loserPts, setIndex, targets) {
+  const toWin = pointsToWinFor(setIndex, targets)
   return (winnerPts === toWin && loserPts <= toWin - 2) || (winnerPts > toWin && winnerPts - loserPts === 2)
 }
 
@@ -382,7 +382,7 @@ function recomputeSet(rows, setIndex, ctx, out, issue, roster, all = rows) {
         applyOwner(owner, { state, score, ctx, setIndex, set, label, scoreText, issue, out, roster, subs, all, checkRoster, checkDuplicates, getServer: () => server, setServer: (s) => { server = s }, noLineupFlag })
         if (e.type === 'point' && isTeam(team)) {
           if (wonAt) afterWin += 1
-          const res = getSetResult(score.home, score.away, setIndex)
+          const res = getSetResult(score.home, score.away, setIndex, { targets: setTargetsOf(ctx.match) })
           if (res.winner && !wonAt) wonAt = { ...score, e }
         }
         continue
@@ -600,14 +600,14 @@ function applyOwner(owner, env) {
 function checkSetEnd(e, { score, setIndex, set, ctx, issue, out, label }) {
   const p = e.payload || {}
   if (p.reason === 'forfait') return
-  const res = getSetResult(score.home, score.away, setIndex)
+  const res = getSetResult(score.home, score.away, setIndex, { targets: setTargetsOf(ctx.match) })
   const final = formatScore(score, null, ctx)
   if (!res.winner) {
     issue('setScoreInvalid', { set, score: final }, e, setIndex)
     return
   }
   const loser = otherTeam(res.winner)
-  if (!isValidFinalScore(score[res.winner], score[loser], setIndex)) issue('setScoreInvalid', { set, score: final }, e, setIndex)
+  if (!isValidFinalScore(score[res.winner], score[loser], setIndex, setTargetsOf(ctx.match))) issue('setScoreInvalid', { set, score: final }, e, setIndex)
   if (isTeam(p.team) && p.team !== res.winner) {
     const letter = teamLabel(res.winner, ctx)?.letter
     out.update.push({ id: e.id, changes: { payload: { ...p, team: res.winner, ...(p.teamLabel !== undefined || letter ? { teamLabel: letter } : {}) } } })
@@ -677,7 +677,7 @@ function checkMatchResult(all, ctx, issue) {
       continue
     }
     const s = scoreOf(setIndex)
-    const w = e.payload?.reason === 'forfait' && isTeam(e.payload?.team) ? e.payload.team : getSetResult(s.home, s.away, setIndex).winner
+    const w = e.payload?.reason === 'forfait' && isTeam(e.payload?.team) ? e.payload.team : getSetResult(s.home, s.away, setIndex, { targets: setTargetsOf(match) }).winner
     if (w) won[w] += 1
     if (won.home >= need || won.away >= need) decided = true
   }

@@ -39,7 +39,7 @@
  * After the transaction the caller's hooks run (scoresheet refresh, and in
  * the match the referee / livescore push).
  */
-import { scoreFromPointEvents } from '../../domain/rules'
+import { scoreFromPointEvents, setTargetsOf, courtSwitchPointOf } from '../../domain/rules'
 import { deriveTeamSanctionFlags } from '../../domain/sanctions'
 import { appendRemark, removeRemarkLine } from '../../domain/remarks'
 import { syncJobsForEvents } from '../../domain/corrections'
@@ -212,7 +212,7 @@ async function writePlan(plan, { matchId, db, mode = 'live', hooks = {}, now = n
       changedSets.set(row.id, { ...row, ...score })
       // The deciding set's court switch (at 8 points) is undone when a removed
       // point takes the set being played back below 8, as Undo does
-      if (setIndex === 5 && !row.finished && match.set5CourtSwitched && Math.max(score.homePoints, score.awayPoints) < 8) set5Back = true
+      if (setIndex === 5 && !row.finished && match.set5CourtSwitched && Math.max(score.homePoints, score.awayPoints) < courtSwitchPointOf(setTargetsOf(match))) set5Back = true
       const end = events.find(e => e.type === 'set_end' && (e.setIndex ?? 1) === setIndex)
       if (end) {
         const payload = { ...end.payload, homePoints: score.homePoints, awayPoints: score.awayPoints }

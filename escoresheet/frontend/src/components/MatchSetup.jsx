@@ -12,6 +12,8 @@ import { phoneSignContext, signatureUpdate, SLOT_OF_ROLE, PRE_MATCH_SIGNATURE_FI
 import Modal from './Modal'
 import RefereeSelector from './RefereeSelector'
 import LoadOfficialMatchModal, { knownMatchFormat } from './LoadOfficialMatchModal'
+import GlobalImportModal from './GlobalImportModal'
+import { setTargetsOf } from '../domain/rules'
 import ballFallback from '../ball_fallback.png'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 
@@ -286,7 +288,7 @@ const sameTeamName = (a, b) => String(a || '').trim().toLowerCase() === String(b
 function hasMatchInfoChanged(original, current) {
   if (!original) return true // No original, consider it changed
   const keys = ['date', 'time', 'hall', 'city', 'type1', 'type1Other', 'championshipType', 'championshipTypeOther',
-    'type2', 'type3', 'type3Other', 'bestOf', 'gameN', 'league', 'home', 'away', 'homeColor', 'awayColor', 'homeShortName', 'awayShortName']
+    'type2', 'type3', 'type3Other', 'bestOf', 'pointsRegular', 'pointsDeciding', 'gameN', 'league', 'home', 'away', 'homeColor', 'awayColor', 'homeShortName', 'awayShortName']
   for (const key of keys) {
     if (!isEqual(original[key], current[key])) return true
   }
@@ -608,6 +610,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // 3 or 5; null until chosen or known from the schedule (a guessed best of
   // 5 played a best-of-3 decider to 25 points): Create match waits for it
   const [bestOf, setBestOf] = useState(null)
+  // Points a set is played to (Global may play shorter sets; domain/rules setTargetsOf)
+  const [pointsRegular, setPointsRegular] = useState(25)
+  const [pointsDeciding, setPointsDeciding] = useState(15)
   const [gameN, setGameN] = useState('')
   const [league, setLeague] = useState('')
   const [homeColor, setHomeColor] = useState(DEFAULT_HOME_COLOUR)
@@ -891,6 +896,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
   // Load Official Match modal state
   const [loadOfficialMatchModal, setLoadOfficialMatchModal] = useState(false)
+  // Global tool: the Excel uploads of games and rosters ('games' | 'rosters' | null)
+  const [globalImportKind, setGlobalImportKind] = useState(null)
 
   // Upload mode toggle state (local or remote)
   const [homeUploadMode, setHomeUploadMode] = useState('local') // 'local' | 'remote'
@@ -1209,7 +1216,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (currentView === 'info') {
       originalMatchInfoRef.current = {
         date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther,
-        type2, type3, type3Other, bestOf, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName
+        type2, type3, type3Other, bestOf, pointsRegular, pointsDeciding, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName
       }
       originalOfficialsRef.current = {
         ref1First, ref1Last, ref1Country, ref1Dob, ref1Email,
@@ -1487,7 +1494,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (!o) return
     setDate(o.date); setTime(o.time); setHall(o.hall); setCity(o.city)
     setType1(o.type1); setType1Other(o.type1Other); setChampionshipType(o.championshipType); setChampionshipTypeOther(o.championshipTypeOther)
-    setType2(o.type2); setType3(o.type3); setType3Other(o.type3Other); setBestOf(o.bestOf ?? null); setGameN(o.gameN); setLeague(o.league)
+    setType2(o.type2); setType3(o.type3); setType3Other(o.type3Other); setBestOf(o.bestOf ?? null); setPointsRegular(o.pointsRegular ?? 25); setPointsDeciding(o.pointsDeciding ?? 15); setGameN(o.gameN); setLeague(o.league)
     setHome(o.home); setAway(o.away); setHomeColor(o.homeColor); setAwayColor(o.awayColor)
     setHomeShortName(o.homeShortName); setAwayShortName(o.awayShortName)
   }
@@ -1613,6 +1620,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         // matches, test matches): shown as such; a new one starts unset
         if (match.bestOf === 3 || match.bestOf === 5) setBestOf(match.bestOf)
         else if (match.matchInfoConfirmedAt) setBestOf(5)
+        if (match.setTargets) { setPointsRegular(setTargetsOf(match).regular); setPointsDeciding(setTargetsOf(match).deciding) }
         // The placeholder will show a suggestion, but won't auto-fill a value
         if (match.homeShortName && match.homeShortName.trim()) {
           setHomeShortName(match.homeShortName)
@@ -2282,7 +2290,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     // Check if any changes were made (skip sync if no changes)
     const currentMatchInfo = {
       date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther,
-      type2, type3, type3Other, bestOf, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName
+      type2, type3, type3Other, bestOf, pointsRegular, pointsDeciding, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName
     }
     const currentOfficials = {
       ref1First, ref1Last, ref1Country, ref1Dob, ref1Email,
@@ -2421,6 +2429,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         match_type_3: type3 || null,
         match_type_3_other: type3Other || null,
         bestOf,
+        // a Global match's own points per set (domain/rules setTargetsOf)
+        ...(match?.global === true ? { setTargets: { regular: pointsRegular, deciding: pointsDeciding } } : {}),
         sport_type: 'indoor',
         game_n: gameN ? parseInt(gameN, 10) : null,
         seed_key: matchSeedKey, // Ensure seed_key is set
@@ -3150,6 +3160,38 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     setHomeCoachSignature(awayCoachSignature); setAwayCoachSignature(homeCoachSignature)
     setHomeCaptainSignature(awayCaptainSignature); setAwayCaptainSignature(homeCaptainSignature)
     setSavedSignatures(p => ({ homeCoach: p.awayCoach, homeCaptain: p.awayCaptain, awayCoach: p.homeCoach, awayCaptain: p.homeCaptain }))
+  }
+
+  // Global tool: a game of an uploaded sheet fills the match info; the file is
+  // read on this device only, so no club check, no schedule checks, no claim
+  const applyGlobalGame = (g) => {
+    if (setupLocked) return
+    setDate(g.date || ''); setTime(g.time || '')
+    setCity(g.city || ''); setHall(g.hall || '')
+    if (g.bestOf) setBestOf(g.bestOf)
+    setGameN(g.gameN || ''); setLeague(g.league || '')
+    setHome(g.home || ''); setAway(g.away || '')
+    setHomeShortName(''); setAwayShortName('')
+    const ref = (n) => ({ first: g[`referee${n}First`] || '', last: g[`referee${n}Last`] || '' })
+    setRef1First(ref(1).first); setRef1Last(ref(1).last); setRef1Dob(''); setRef1Email('')
+    setRef2First(ref(2).first); setRef2Last(ref(2).last); setRef2Dob(''); setRef2Email('')
+  }
+  // ...and a team of an uploaded roster sheet fills one side (after the usual
+  // question when the side has players already)
+  const applyGlobalTeam = async (side, team) => {
+    if (setupLocked) return
+    const ok = await confirmReplaceRoster({
+      roster: side === 'home' ? homeRoster : awayRoster,
+      bench: side === 'home' ? benchHome : benchAway,
+      teamLabel: team.name || (side === 'home' ? home : away) || '',
+      t
+    })
+    if (!ok) return
+    const roster = [...team.players].sort((a, b) => (a.number ?? 999) - (b.number ?? 999))
+    const bench = team.bench.length ? team.bench : [{ role: 'Coach', firstName: '', lastName: '', dob: '' }]
+    if (side === 'home') { setHomeRoster(roster); setBenchHome(bench); if (team.name && !home) setHome(team.name) }
+    else { setAwayRoster(roster); setBenchAway(bench); if (team.name && !away) setAway(team.name) }
+    toast.success(t('globalImport.applied', { count: roster.length, defaultValue: '{{count}} players added' }))
   }
 
   const handleOfficialMatchSelect = async (matchData) => {
@@ -3981,6 +4023,20 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   <option value={3}>{t('matchSetup.bestOf3')}</option>
                 </Select>
               </Field>
+              {match?.global === true && (
+                <div className="grid grid-cols-2 gap-2" data-testid="global-set-rules">
+                  <Field tone="compact" className={FIELD} label={t('matchSetup.pointsPerSet', 'Points per set')}>
+                    <Select aria-label={t('matchSetup.pointsPerSet', 'Points per set')} block value={pointsRegular} onChange={e => setPointsRegular(Number(e.target.value))}>
+                      {[25, 21, 15].map(n => <option key={n} value={n}>{n}</option>)}
+                    </Select>
+                  </Field>
+                  <Field tone="compact" className={FIELD} label={t('matchSetup.pointsDeciding', 'Deciding set')}>
+                    <Select aria-label={t('matchSetup.pointsDeciding', 'Deciding set')} block value={pointsDeciding} onChange={e => setPointsDeciding(Number(e.target.value))}>
+                      {[15, 11, 10].map(n => <option key={n} value={n}>{n}</option>)}
+                    </Select>
+                  </Field>
+                </div>
+              )}
             </div>
           </div>
 
@@ -3999,7 +4055,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               setDob={setRef1Dob}
               email={ref1Email}
               setEmail={setRef1Email}
-              hasDatabase={true}
+              hasDatabase={match?.global !== true}
               selectorKey="ref1"
               onOpenDatabase={handleOpenDatabase}
               t={t}
@@ -4017,7 +4073,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               setDob={setRef2Dob}
               email={ref2Email}
               setEmail={setRef2Email}
-              hasDatabase={true}
+              hasDatabase={match?.global !== true}
               selectorKey="ref2"
               onOpenDatabase={handleOpenDatabase}
               collapsible={true}
@@ -4429,9 +4485,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 >
                   {t('roster.deleteRoster')}
                 </Button>
-                <Button variant="dark" size="xl" onClick={() => setTestRosterConfirm('home')}>
+                {match?.global !== true && (
+                  <Button variant="dark" size="xl" onClick={() => setTestRosterConfirm('home')}>
                   {t('roster.loadTestRoster')}
                 </Button>
+                )}
                 {access?.canReadTeams && (
                   <Button variant="secondary" size="xl" icon={<Users size={16} aria-hidden />} onClick={() => setSavedPicker('home')} data-testid="load-saved-team-home">
                     {t('savedTeams.load')}
@@ -5512,9 +5570,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 >
                   {t('roster.deleteRoster')}
                 </Button>
-                <Button variant="dark" size="xl" onClick={() => setTestRosterConfirm('away')}>
+                {match?.global !== true && (
+                  <Button variant="dark" size="xl" onClick={() => setTestRosterConfirm('away')}>
                   {t('roster.loadTestRoster')}
                 </Button>
+                )}
                 {access?.canReadTeams && (
                   <Button variant="secondary" size="xl" icon={<Users size={16} aria-hidden />} onClick={() => setSavedPicker('away')} data-testid="load-saved-team-away">
                     {t('savedTeams.load')}
@@ -6950,7 +7010,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       </div>
       <div className="setup-section">
         {/* Cloud / this device / removable drive: where this match is backed up */}
-        {backup && <div className="ov-kit mb-3"><BackupTargetsPanel backup={backup} test={match?.test === true} /></div>}
+        {backup && <div className="ov-kit mb-3"><BackupTargetsPanel backup={backup} test={match?.test === true} globalKey={match?.global === true ? (match.globalKey || null) : null} /></div>}
         {/* Why this match does not sync, if the server refused it for good */}
         {match?.cloudBlock && <CloudBlockNotice match={match} className="mb-3" />}
 
@@ -7060,7 +7120,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               { label: t('matchSetup.homeTeam'), value: <span className={cn(TRUNC, 'font-semibold text-stone-900')} title={home}>{home || t('common.notSet')}</span> },
               { label: t('matchSetup.awayTeam'), value: <span className={cn(TRUNC, 'font-semibold text-stone-900')} title={away}>{away || t('common.notSet')}</span> },
               { label: t('matchSetup.league'), value: <span className={TRUNC}>{league || t('common.notSet')}</span> },
-              { label: t('matchSetup.matchFormat'), value: <span>{bestOf === 5 ? t('matchSetup.bestOf5') : bestOf === 3 ? t('matchSetup.bestOf3') : t('common.notSet')}</span> }
+              { label: t('matchSetup.matchFormat'), value: <span>{bestOf === 5 ? t('matchSetup.bestOf5') : bestOf === 3 ? t('matchSetup.bestOf3') : t('common.notSet')}{match?.global === true ? ` · ${pointsRegular}/${pointsDeciding}` : ''}</span> }
             ]} />
           </div>
 
@@ -7075,9 +7135,20 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           <div className="mt-4 flex flex-wrap justify-end gap-2">
             {/* opens the info page with the schedule on top: the snapshot for
                 Back is taken before a game is picked, so Back still discards it */}
-            <Button variant="secondary" size="xl" className="whitespace-nowrap max-sm:flex-auto max-sm:h-auto max-sm:min-h-11 max-sm:py-2 max-sm:whitespace-normal max-sm:text-center" onClick={() => { setCurrentView('info'); setLoadOfficialMatchModal(true) }}>
-              {t('loadOfficialMatch.button')}
-            </Button>
+            {match?.global === true ? (
+              <>
+                <Button variant="secondary" size="xl" data-testid="global-import-games-button" className="whitespace-nowrap max-sm:flex-auto max-sm:h-auto max-sm:min-h-11 max-sm:py-2 max-sm:whitespace-normal max-sm:text-center" onClick={() => setGlobalImportKind('games')}>
+                  {t('globalImport.gamesButton', 'Import games (Excel)')}
+                </Button>
+                <Button variant="secondary" size="xl" data-testid="global-import-rosters-button" className="whitespace-nowrap max-sm:flex-auto max-sm:h-auto max-sm:min-h-11 max-sm:py-2 max-sm:whitespace-normal max-sm:text-center" onClick={() => setGlobalImportKind('rosters')}>
+                  {t('globalImport.rostersButton', 'Import rosters (Excel)')}
+                </Button>
+              </>
+            ) : (
+              <Button variant="secondary" size="xl" className="whitespace-nowrap max-sm:flex-auto max-sm:h-auto max-sm:min-h-11 max-sm:py-2 max-sm:whitespace-normal max-sm:text-center" onClick={() => { setCurrentView('info'); setLoadOfficialMatchModal(true) }}>
+                {t('loadOfficialMatch.button')}
+              </Button>
+            )}
             {matchInfoConfirmed ? (
               <Button variant="secondary" size="xl" className="whitespace-nowrap max-sm:flex-auto max-sm:h-auto max-sm:min-h-11 max-sm:py-2 max-sm:whitespace-normal max-sm:text-center" onClick={() => setCurrentView('info')}>{t('common.edit')}</Button>
             ) : (
@@ -7962,6 +8033,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           openSignature === 'home-captain' ? 'Home captain signature' :
             openSignature === 'away-coach' ? 'Away coach signature' :
               openSignature === 'away-captain' ? 'Away captain signature' : 'Sign'}
+      />
+      <GlobalImportModal
+        open={globalImportKind !== null}
+        kind={globalImportKind}
+        onClose={() => setGlobalImportKind(null)}
+        onPickGame={applyGlobalGame}
+        onApplyTeam={applyGlobalTeam}
+        homeName={home}
+        awayName={away}
       />
     </MatchSetupMainView>
   )

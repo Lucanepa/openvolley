@@ -2,6 +2,8 @@ import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import SupportFeedbackModal from '../SupportFeedbackModal'
 import LoginModal from '../auth/LoginModal'
+import { useToolMode } from '../../utils/toolMode'
+import { downloadGlobalTemplate } from '../../utils/globalTemplates'
 import PendingApprovalBanner from '../auth/PendingApprovalBanner'
 import CloudBlockNotice from '../CloudBlockNotice'
 import { Download, LifeBuoy, Loader2, LogIn, Presentation, Settings, Trash2 } from 'lucide-react'
@@ -57,6 +59,8 @@ export default function HomePage({
   testMatchLoading,
   createEasyMatch,
   easyMatchLoading = false,
+  // Global tool: a full match kept on this device, no sign-in (App createGlobalMatch)
+  onGlobalMatch = null,
   // Scoreboard: points and sets only, no match (SimpleScoreboard)
   onOpenScoreboard = null,
   currentOfficialMatch,
@@ -78,6 +82,9 @@ export default function HomePage({
   const [loginOpen, setLoginOpen] = useState(false)
   // Signed out where an account could sign in: no official game here
   const testOnly = signInAvailable && !signedIn
+  // Swiss or Global: chosen at first open, changed in Options (utils/toolMode)
+  const toolMode = useToolMode()
+  const globalMode = toolMode === 'global' && !!onGlobalMatch
   const desktopOS = useMemo(() => detectDesktopOS(), [])
   const inDesktopApp = useMemo(() => isInsideDesktopApp(), [])
 
@@ -100,7 +107,7 @@ export default function HomePage({
         </div>
 
         <div className="home-wide:col-start-2 home-wide:row-span-4 home-wide:row-start-1 home-wide:self-center">
-        <PendingApprovalBanner className="mb-4" />
+        {!globalMode && <PendingApprovalBanner className="mb-4" />}
         {selfCheckNotice}
 
         <Card className="w-full space-y-3">
@@ -174,8 +181,29 @@ export default function HomePage({
               Test and Easy below it (signed out: those two only), then the
               Scoreboard, which is no match. One block for the help's "Show
               me" (createMatch), signed in or out */}
+          {globalMode && (
+            <p className="px-1 text-xs text-stone-500" data-testid="home-global-note">
+              {t('home.tool.globalNote', 'Any tournament: no sign-in, no game list. Teams and players stay on this device.')}
+              {' '}
+              <button type="button" className="underline" data-testid="home-template-games" onClick={() => downloadGlobalTemplate('games')}>{t('globalImport.templateGames', 'Games template (Excel)')}</button>
+              {' · '}
+              <button type="button" className="underline" data-testid="home-template-rosters" onClick={() => downloadGlobalTemplate('rosters')}>{t('globalImport.templateRosters', 'Rosters template (Excel)')}</button>
+            </p>
+          )}
           <div className="space-y-3" data-help-id="home-new-match-button">
-            {!testOnly && (
+            {globalMode && (
+              <Button
+                variant="primary"
+                block
+                data-help-id="home-global-match-button"
+                data-testid="home-global-match"
+                onClick={onGlobalMatch}
+                className="h-14 rounded-xl text-base font-semibold"
+              >
+                {t('home.match', 'Match')}
+              </Button>
+            )}
+            {!testOnly && !globalMode && (
               <Button
                 variant="primary"
                 block
@@ -186,9 +214,9 @@ export default function HomePage({
                 {t('home.officialMatch')}
               </Button>
             )}
-            <div className={cn('grid gap-2', createEasyMatch && 'grid-cols-2')}>
+            <div className={cn('grid gap-2', createEasyMatch && !globalMode && 'grid-cols-2')}>
               <Button
-                variant={testOnly ? 'primary' : 'secondary'}
+                variant={testOnly && !globalMode ? 'primary' : 'secondary'}
                 block
                 data-help-id="home-test-button"
                 onClick={createNewTestMatch}
@@ -199,7 +227,7 @@ export default function HomePage({
                 {testMatchLoading && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
                 {testMatchLoading ? t('home.preparing') : t('home.testMatch')}
               </Button>
-              {createEasyMatch && (
+              {createEasyMatch && !globalMode && (
                 <Button
                   variant="secondary"
                   block
@@ -229,7 +257,7 @@ export default function HomePage({
               </Button>
             )}
           </div>
-          {testOnly && (
+          {testOnly && !globalMode && (
             <div className="rounded-xl bg-stone-50 px-3 py-3 text-center" data-testid="home-sign-in-note">
               <p className="text-sm text-stone-600">{t('home.signInForOfficial')}</p>
               <Button variant="secondary" size="xl" icon={LogIn} onClick={() => setLoginOpen(true)} className="mt-2" data-testid="home-sign-in">

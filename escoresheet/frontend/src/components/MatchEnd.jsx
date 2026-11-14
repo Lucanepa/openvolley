@@ -21,7 +21,8 @@ import KitModal from './manage/KitModal'
 import CloudBlockNotice from './CloudBlockNotice'
 import { Textarea } from '../ui/Textarea.jsx'
 import { scoresheetUploadPath, scoresheetUploadJob, scoresheetJsonBlob, uploadQueuedScoresheet, supersedeUnsentScoresheetUploads, supersedeUnsentScoresheetUploadsOf } from '../utils/scoresheetUploader'
-import { matchEndExportData } from '../utils/backupManager'
+import { matchEndExportData, exportMatchData } from '../utils/backupManager'
+import { uploadGlobalFinal } from '../utils/globalCloud'
 import { publishMatchEndLiveState } from '../utils/matchEndLiveState'
 import { isoOf, matchTimes, setDurationMinutes } from '../../scoresheet_pdf/utils/matchTimes'
 import { displaySetNumber, getScoreBeforeEvent, isDefaultSet, consistencyWarnings } from '../../scoresheet_pdf/utils/scoresheetModel'
@@ -779,7 +780,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   // at 24:19): an official match is not approved with it. The sheet's own
   // consistency checks (the PDF window's warnings): the approval asks first.
   const resultProblems = resultIssues({ sets, events, match })
-  const resultBlocked = !match.test && resultProblems.length > 0
+  // a Global match (test: true, global: true) makes a real scoresheet too:
+  // its result is checked like an official one's, against its own set targets
+  const resultBlocked = (!match.test || match.global === true) && resultProblems.length > 0
   const sheetWarnings = consistencyWarnings({ sets, events, teamAKey, homePlayers, awayPlayers, bestOf: match?.bestOf })
   // Approved here without the official PDF on its way to the server
   // ("Approve without PDF", or the queue refused the file): made again from
@@ -1392,7 +1395,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     setIsSaving(true)
     try {
       // Only check signatures for official matches
-      if (!match.test && !allSignaturesDone) {
+      // (a Global match is a real scoresheet: its signatures count too)
+      if ((!match.test || match.global === true) && !allSignaturesDone) {
         showAlert(t('matchEnd.pleaseCompleteSignatures', 'Please complete all signatures before approving.'), 'warning')
         setIsSaving(false)
         return
@@ -1401,7 +1405,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       // A result no set or match ends with is never approved: corrected first
       const currentSets = await db.sets.where('matchId').equals(matchId).toArray()
       const currentEvents = await db.events.where('matchId').equals(matchId).sortBy('seq')
-      if (!match.test && resultIssues({ sets: currentSets, events: currentEvents, match }).length > 0) {
+      if ((!match.test || match.global === true) && resultIssues({ sets: currentSets, events: currentEvents, match }).length > 0) {
         showAlert(t('matchEnd.resultIssues.blocked'), 'warning')
         setIsSaving(false)
         return
@@ -1617,6 +1621,13 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       if (!match?.test) {
         const pdfQueued = await queueApprovalFiles({ pdfResult, sets: allSets, events: allEvents, match: approvedMatch })
         if (pdfQueued && match?.seed_key) await db.matches.update(matchId, { scoresheetPdfMissing: false })
+      } else if (match.global === true) {
+        // Global: the PDF and the final backup go to the Global store, by the
+        // match's own key (utils/globalCloud); it stays on the device if that fails
+        // (not awaited: its retries must not hold the approval)
+        exportMatchData(matchId).catch(() => null)
+          .then((backupData) => uploadGlobalFinal({ match, pdfBlob: pdfResult?.blob || null, backupData }))
+          .then((sent) => { if (!sent.ok) showAlert(t('matchEnd.globalNotStored', 'The scoresheet could not be saved online. It stays on this device: download the PDF now.'), 'warning') })
       } else if (pdfResult) mailTestScoresheet(pdfResult)
 
       // Warn if PDF was not generated (approval still succeeded): an official
@@ -2245,7 +2256,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               variant="positive"
               size="xl"
               onClick={handleApprove}
-              disabled={isSaving || (!match.test && !allSignaturesDone) || resultBlocked}
+              disabled={isSaving || ((!match.test || match.global === true) && !allSignaturesDone) || resultBlocked}
               loading={isSaving}
               data-help-id="matchend-export-json"
               // at least h-11, taller when Android's larger text wraps it

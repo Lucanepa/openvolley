@@ -43,7 +43,7 @@ import {
   displaySetNumber, describeEvent, remarkText, tr, sanctionLabel, otherTeam,
   isTeamSanctionType, teamLabel
 } from './describe'
-import { getSetResult, scoreFromPointEvents, getFirstServeForSet, isDecidingSet } from './rules'
+import { getSetResult, scoreFromPointEvents, getFirstServeForSet, setTargetsOf, pointsToWinFor } from './rules'
 import { rotateLineup, pointSubEventsForTeam } from './rotation'
 import { swapTeamDesignation as swapTeamDesignationPatch } from './coinToss'
 import { actualStartLines, remarkClock } from './remarks'
@@ -1131,8 +1131,8 @@ function removalSideEffects(events, removed, ctx) {
 
 // ──────────────────────── final score (review) ───────────────────────
 
-function isValidFinalScore(winnerPts, loserPts, setIndex) {
-  const toWin = isDecidingSet(setIndex) ? 15 : 25
+function isValidFinalScore(winnerPts, loserPts, setIndex, targets) {
+  const toWin = pointsToWinFor(setIndex, targets)
   return (winnerPts === toWin && loserPts <= toWin - 2) || (winnerPts > toWin && winnerPts - loserPts === 2)
 }
 
@@ -1152,15 +1152,15 @@ export function planAdjustFinalScore(events, sets, { setIndex, team, delta } = {
   if (team !== 'home' && team !== 'away') return fail('chooseTarget')
   if (delta !== 1 && delta !== -1) return fail('noScoreChange')
   const cur = scoreFromPointEvents(events, setIndex)
-  const curWinner = getSetResult(cur.homePoints, cur.awayPoints, setIndex).winner ||
+  const curWinner = getSetResult(cur.homePoints, cur.awayPoints, setIndex, { targets: setTargetsOf(ctx.match) }).winner ||
     (row ? (row.homePoints > row.awayPoints ? 'home' : row.awayPoints > row.homePoints ? 'away' : null) : null)
   const next = { home: cur.homePoints, away: cur.awayPoints }
   next[team] += delta
   if (next[team] < 0) return fail('noScoreChange')
-  const res = getSetResult(next.home, next.away, setIndex)
+  const res = getSetResult(next.home, next.away, setIndex, { targets: setTargetsOf(ctx.match) })
   if (!res.winner || res.winner !== curWinner) return fail('winnerWouldChange', { set })
   const w = res.winner
-  if (!isValidFinalScore(next[w], next[otherTeam(w)], setIndex)) {
+  if (!isValidFinalScore(next[w], next[otherTeam(w)], setIndex, setTargetsOf(ctx.match))) {
     return fail('invalidFinalScore', { set, score: formatScore(next, null, ctx) })
   }
 
@@ -1512,10 +1512,10 @@ export function planRemoveEntry(events, id, ctx = {}) {
       const next = { home: cur.homePoints, away: cur.awayPoints }
       const team = ev.payload?.team
       if (team === 'home' || team === 'away') next[team] -= 1
-      const before = getSetResult(cur.homePoints, cur.awayPoints, setIndex).winner
-      const res = getSetResult(next.home, next.away, setIndex)
+      const before = getSetResult(cur.homePoints, cur.awayPoints, setIndex, { targets: setTargetsOf(ctx.match) }).winner
+      const res = getSetResult(next.home, next.away, setIndex, { targets: setTargetsOf(ctx.match) })
       if (!res.winner || res.winner !== before) plan.notes.push(note('winnerWouldChange', { set: setNumber(setIndex, ctx) }, ctx.t))
-      else if (!isValidFinalScore(next[res.winner], next[otherTeam(res.winner)], setIndex)) {
+      else if (!isValidFinalScore(next[res.winner], next[otherTeam(res.winner)], setIndex, setTargetsOf(ctx.match))) {
         plan.notes.push(note('invalidFinalScore', { set: setNumber(setIndex, ctx), score: formatScore(next, null, ctx) }, ctx.t))
       }
     }

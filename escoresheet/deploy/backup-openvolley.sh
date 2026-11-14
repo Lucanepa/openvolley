@@ -16,6 +16,7 @@
 #   scoresheets-<UTC>.tar.gpg  every file under storage/scoresheets plus the
 #                              owner records storage/.owners (who may read or
 #                              replace each one)
+#   global-<UTC>.tar.gpg       every file under storage/global (the Global tool's only copy)
 #   snapshots-<UTC>.tar.gpg    storage/backup files changed in the last ~26 h
 #                              (increments: restore-storage.sh unpacks them
 #                              in order)
@@ -291,6 +292,15 @@ if (( WITH_FILES )); then
     log "scoresheets ok (${parts[*]})"
   else
     log "no scoresheets/ yet, skipped"
+  fi
+  if [[ -d "${OV_STORAGE_MOUNT}/global" ]]; then
+    room_for global "$(du -sm "${OV_STORAGE_MOUNT}/global" | awk '{print $1 + 1}')"
+    begin_out "$OUT/global-${TS}.tar.gpg"
+    tar -C "$OV_STORAGE_MOUNT" -cf - global | "${GPG[@]}" -o "$PART" || fail "tar-global"
+    end_out "$OUT/global-${TS}.tar.gpg"
+    log "global ok"
+  else
+    log "no global/ yet, skipped"
   fi
   if [[ -d "${OV_STORAGE_MOUNT}/backup" ]]; then
     room_for snapshots "$(cd "$OV_STORAGE_MOUNT" && find backup -type f -mmin "-${OV_SNAPSHOT_WINDOW_MIN}" -printf '%s\n' \
