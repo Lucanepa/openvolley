@@ -1276,7 +1276,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
         search = ` AND (g.game_number ILIKE $3 OR g.team_home ILIKE $3 OR g.team_away ILIKE $3 OR g.league ILIKE $3 OR g.hall ILIKE $3 OR g.city ILIKE $3)`
       }
       const { rows: games } = await pool.query(
-        `SELECT g.game_number, g.datetime, g.date, g.time, g.league, g.gender, g.team_home, g.team_away, g.hall, g.city
+        `SELECT g.game_number, g.datetime, g.date, g.time, g.league, g.gender, g.team_home, g.team_away, g.hall, g.city, g.match_format
            FROM public.svrz_games g
           WHERE g.datetime >= $1 AND g.datetime < $2${search}
           ORDER BY g.datetime, g.game_number
@@ -1314,6 +1314,8 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
             team_away: g.team_away ?? null,
             hall: g.hall ?? null,
             city: g.city ?? null,
+            // 3 or 5; null when VolleyManager gave none (Match setup then asks)
+            match_format: g.match_format ?? null,
             claim: m
               ? {
                   match_id: m.id,
