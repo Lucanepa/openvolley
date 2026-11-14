@@ -60,6 +60,29 @@ Needs JDK 21 and the Android SDK in `~/Android/Sdk` (the script sets
 `ANDROID_HOME`). Gradle caches go to `~/.gradle` unless `GRADLE_USER_HOME`
 is set.
 
+The build is pinned: `gradle-wrapper.properties` carries the
+`distributionSha256Sum` of the Gradle zip (from
+https://gradle.org/release-checksums/), and
+`android/gradle/verification-metadata.xml` the sha256 of every plugin and
+library (Gradle refuses an artifact whose checksum differs or is missing;
+F-Droid's build reads the same file). After a Gradle, AGP, Capacitor or
+plugin bump, update both:
+
+```bash
+# new Gradle: set distributionUrl and distributionSha256Sum together
+npx cap sync android && cd android
+./gradlew --write-verification-metadata sha256 help assembleDebug assembleRelease testDebugUnitTest
+git diff gradle/verification-metadata.xml   # review: only the bumped artifacts should change
+# then check it with an empty cache:
+GRADLE_USER_HOME=$(mktemp -d) ./gradlew clean assembleRelease
+```
+
+Gradle sometimes misses a parent POM or a `.module` file of the buildscript
+classpath (`guava-parent`, `junit-bom` the first time); the empty-cache run
+names it, add it by hand from the repository (check its published `.sha1`).
+aapt2 is per OS: the file lists the Linux, macOS and Windows jars; a new AGP
+needs all three again.
+
 ## Version rule
 
 - `versionName` = `version` in `package.json` (e.g. `2.0.0`).
