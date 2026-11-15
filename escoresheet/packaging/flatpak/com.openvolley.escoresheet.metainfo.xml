@@ -71,6 +71,15 @@
   </screenshots>
 
   <releases>
+    <release version="3.2.10" date="2026-11-15">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.2.10</url>
+      <description>
+        <ul>
+          <li>Set start times: set 1 is proposed as the actual start, later sets as the last set end + 3 min; the time you confirm is what the scoresheet and result show.</li>
+          <li>Restore from cloud backup: the match shows its set and score.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.2.9" date="2026-11-15">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.2.9</url>
       <description>
