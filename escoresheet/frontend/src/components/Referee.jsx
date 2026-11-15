@@ -33,6 +33,7 @@ import ScoreServeRow from './referee/ScoreServeRow.jsx'
 import RecordedNoticePopup from './referee/RecordedNoticePopup.jsx'
 import BenchRequestIndicator from './referee/BenchRequestIndicator.jsx'
 import { lineupHiddenUntilBoth } from '../domain/lineupPrivacy'
+import { isFirstRallyOf } from '../domain/rally'
 import CountdownFlight from './referee/CountdownFlight.jsx'
 import TimeoutCountdown from './referee/TimeoutCountdown.jsx'
 import RefereeScoresheet from './referee/RefereeScoresheet.jsx'
@@ -1489,7 +1490,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     const previousSetIndex = currentSetIndex - 1
     if (previousSetIndex >= 1) {
       const previousSet = data.sets?.find(s => s.index === previousSetIndex)
-      const currentSetHasPoints = data.events?.some(e => e.type === 'point' && (e.setIndex || 1) === currentSetIndex)
+      // a penalty point before the first serve does not start the set (domain/rally isFirstRallyOf)
+      const currentSetHasPoints = !isFirstRallyOf(data.events, currentSetIndex)
 
       // If previous set is finished and current set has no points yet (between sets)
       // Only show lineups if we have lineup events specifically for the new set
@@ -2083,12 +2085,12 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     const previousSet = data.sets.find(s => s.index === currentSetIndex - 1)
     if (!previousSet || !previousSet.finished) return false
 
-    // Check if current set has started (has points or set_start event)
-    const hasSetStarted = data.events?.some(e =>
-      (e.type === 'point' || e.type === 'set_start') && e.setIndex === currentSetIndex
-    )
-
-    return !hasSetStarted
+    // Has the current set started? A set_start, a rally start or a rally
+    // point; a penalty point awarded before the first serve (a sanction at
+    // the end of the set before) does not start it (domain/rally
+    // isFirstRallyOf, as the scorer): it ended the interval and showed an
+    // empty court (owner 15.11, start of set 2 at 0:1)
+    return isFirstRallyOf(data.events, currentSetIndex)
   }, [data?.sets, data?.currentSet, data?.events])
 
   // Check if match has ended (from liveState status or sets won)
@@ -2155,8 +2157,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   // Check if this is the first rally of the set (no points scored yet)
   const isFirstRally = useMemo(() => {
     if (!data?.events || !data?.currentSet) return true
-    const hasPoints = data.events.some(e => e.type === 'point' && e.setIndex === data.currentSet.index)
-    return !hasPoints
+    // a penalty point before the first serve does not end it (domain/rally)
+    return isFirstRallyOf(data.events, data.currentSet.index)
   }, [data?.events, data?.currentSet])
   // The first line-up of a set stays hidden until the other is in
   // (domain/lineupPrivacy.js): the court's "Line-up set" cover, and its
@@ -3507,8 +3509,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    background: 'rgba(15, 23, 42, 0.5)',
-                    backdropFilter: 'blur(8px)',
+                    // owner 15.11: more blurred (the numbers were still readable)
+                    background: 'rgba(15, 23, 42, 0.6)',
+                    backdropFilter: 'blur(16px)',
+                    WebkitBackdropFilter: 'blur(16px)',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
@@ -3650,8 +3654,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    background: 'rgba(15, 23, 42, 0.5)',
-                    backdropFilter: 'blur(8px)',
+                    // owner 15.11: more blurred (the numbers were still readable)
+                    background: 'rgba(15, 23, 42, 0.6)',
+                    backdropFilter: 'blur(16px)',
+                    WebkitBackdropFilter: 'blur(16px)',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
