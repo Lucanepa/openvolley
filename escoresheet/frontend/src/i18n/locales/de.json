@@ -512,7 +512,9 @@
     "notYourClub": "{{home}} ist das Heimteam. Du führst nur die Heimspiele von {{clubs}}.",
     "gameNotInSchedule": "Spiel {{game}} steht nicht im VolleyManager-Spielplan, das Heimteam ist darum unbekannt. Prüfe die Spielnummer.",
     "refereeEmail": "E-Mail (freiwillig)",
-    "refereeEmailHint": "Für das fertige Matchblatt. Nur die Schreiber dieses Spiels sehen sie."
+    "refereeEmailHint": "Für das fertige Matchblatt. Nur die Schreiber dieses Spiels sehen sie.",
+    "teamContactEmail": "E-Mail Teamkontakt (freiwillig)",
+    "teamContactEmailHint": "Erhält das fertige Matchblatt per E-Mail. Nur die Schreiber dieses Spiels sehen sie."
   },
   "scoreboard": {
     "serveLabel": "Aufschlag",
@@ -3054,6 +3056,7 @@
     "scheduledDateTime": "Geplantes Datum/Uhrzeit",
     "fixedAfterMatch": "Nach dem Spiel fix: Das offizielle PDF wird unter der Spielnummer und dem Datum des Match-Setups abgelegt.",
     "matchOfficials": "Schiedsrichter",
+    "teamContacts": "Teamkontakte",
     "firstReferee": "1. Schiedsrichter",
     "secondReferee": "2. Schiedsrichter",
     "scorer": "Schreiber",

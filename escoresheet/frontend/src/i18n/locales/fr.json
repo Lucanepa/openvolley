@@ -518,7 +518,9 @@
     "notYourClub": "{{home}} reçoit. Tu tiens uniquement les matchs à domicile de {{clubs}}.",
     "gameNotInSchedule": "Le match {{game}} n'est pas dans le calendrier VolleyManager, son équipe qui reçoit est donc inconnue. Vérifie le numéro du match.",
     "refereeEmail": "E-mail (facultatif)",
-    "refereeEmailHint": "Pour la feuille de match finale. Seuls les marqueurs de ce match la voient."
+    "refereeEmailHint": "Pour la feuille de match finale. Seuls les marqueurs de ce match la voient.",
+    "teamContactEmail": "E-mail du contact de l'équipe (facultatif)",
+    "teamContactEmailHint": "Reçoit la feuille de match finale par e-mail. Seuls les marqueurs de ce match la voient."
   },
   "scoreboard": {
     "serveLabel": "Service",
@@ -3240,6 +3242,7 @@
     "scheduledDateTime": "Date/heure prévue",
     "fixedAfterMatch": "Fixé après le match : le PDF officiel est classé sous le numéro et la date du match de la configuration.",
     "matchOfficials": "Officiels du match",
+    "teamContacts": "Contacts des équipes",
     "firstReferee": "1er arbitre",
     "secondReferee": "2ème arbitre",
     "scorer": "Marqueur",

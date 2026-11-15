@@ -519,7 +519,9 @@
     "notYourClub": "{{home}} gioca in casa. Referti solo le partite in casa di {{clubs}}.",
     "gameNotInSchedule": "La partita {{game}} non è nel calendario VolleyManager, quindi la squadra di casa è sconosciuta. Controlla il numero della partita.",
     "refereeEmail": "E-mail (facoltativa)",
-    "refereeEmailHint": "Per il referto finale. La vedono solo i segnapunti di questa partita."
+    "refereeEmailHint": "Per il referto finale. La vedono solo i segnapunti di questa partita.",
+    "teamContactEmail": "E-mail del contatto della squadra (facoltativa)",
+    "teamContactEmailHint": "Riceve il referto finale per e-mail. La vedono solo i segnapunti di questa partita."
   },
   "scoreboard": {
     "serveLabel": "Servizio",
@@ -3246,6 +3248,7 @@
     "scheduledDateTime": "Data/ora programmata",
     "fixedAfterMatch": "Fisso dopo la partita: il PDF ufficiale è archiviato con il numero e la data della partita dell’impostazione.",
     "matchOfficials": "Ufficiali di gara",
+    "teamContacts": "Contatti delle squadre",
     "firstReferee": "1° arbitro",
     "secondReferee": "2° arbitro",
     "scorer": "Segnapunti",

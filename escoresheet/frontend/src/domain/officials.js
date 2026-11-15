@@ -111,3 +111,47 @@ export function officialsFromSchedule(game = {}) {
     lineJudge2: game.linesman2 || ''
   }
 }
+
+/**
+ * A team's contact address for the final scoresheet (owner, 15.11: "the email
+ * of a contact for each team to whom the scoresheet goes at the end, like
+ * with the referees"). Kept in match.officials as { role: 'team contact',
+ * team: 'home'|'away', email }: officials are never public and never relayed
+ * to the tablets (backend publicColumns / serverDataSync NEVER_RELAYED), the
+ * public listing names roles with a person only, and the scoresheet file
+ * drops their contact data (scoresheetUploader). No name: never on the sheet.
+ */
+export const TEAM_CONTACT_ROLE = 'team contact'
+
+/** Is this officials entry a team's contact address (not an official)? */
+export const isTeamContact = (o) => String(o?.role || '').toLowerCase() === TEAM_CONTACT_ROLE
+
+/** The contact address of `team` ('home' / 'away') in match.officials, '' without one. */
+export function teamContactEmail(officials, team) {
+  const entry = officialsToArray(officials).find(o => isTeamContact(o) && o.team === team)
+  return typeof entry?.email === 'string' ? entry.email : ''
+}
+
+/**
+ * match.officials with the two teams' contact addresses set (a blank one
+ * removed). `clean` normalises an address and returns null for one that does
+ * not look like an address (MatchSetup cleanEmail).
+ * @param {Array|object|null} officials
+ * @param {{ home?: string, away?: string }} contacts
+ * @param {(raw: string) => string|null} clean
+ * @returns {Array}
+ */
+export function withTeamContacts(officials, contacts = {}, clean = (s) => String(s || '').trim() || null) {
+  const list = officialsToArray(officials).filter(o => !isTeamContact(o))
+  for (const team of ['home', 'away']) {
+    const email = clean(contacts[team])
+    if (email) list.push({ role: TEAM_CONTACT_ROLE, team, email })
+  }
+  return list
+}
+
+/** A contact address as stored: trimmed, lower-case, null unless it looks like one (as MatchSetup cleanEmail). */
+export function cleanContactEmail(raw) {
+  const s = String(raw || '').trim().toLowerCase()
+  return s.length <= 254 && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s) ? s : null
+}
