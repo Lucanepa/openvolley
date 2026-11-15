@@ -66,6 +66,16 @@ export function injurySubstitutionText(playerOut) {
   return `#${playerOut} substituted, cannot continue playing`
 }
 
+/**
+ * An exceptional substitution (FIVB 15.7, 15.8). An expulsion or a
+ * disqualification is named: it is a sanction, already on the sheet. An
+ * injury is not (no diagnosis, see above).
+ */
+export function exceptionalSubstitutionText(playerOut, playerIn, reason) {
+  const why = reason === 'expulsion' || reason === 'disqualification' ? ` (${reason})` : ''
+  return `#${playerOut} exceptionally substituted by #${playerIn}${why}`
+}
+
 /** `reason` 'injury' (becomes unable) or 'declared' (the coach or the game captain declared it). */
 export function liberoUnableText(liberoNumber, reason) {
   return reason === 'injury'

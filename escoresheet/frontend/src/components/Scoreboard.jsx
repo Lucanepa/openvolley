@@ -76,7 +76,7 @@ import { decisionChangeUndoRecord, planDecisionChangeReversal, planPointRemoval,
 import { validateReopenedRoster, referencedPlayerNumbers, isShirtNumber } from '../domain/roster'
 import { planRenumberPlayers, errorText as correctionErrorText } from '../domain/manualCorrections'
 import { applyCorrectionPlan } from '../services/corrections/applyCorrectionPlan'
-import { appendRemark, removeRemarkLine, eventRemark, remarkClock, setActualStartRemark, injurySubstitutionText, liberoUnableText } from '../domain/remarks'
+import { appendRemark, removeRemarkLine, eventRemark, remarkClock, setActualStartRemark, injurySubstitutionText, exceptionalSubstitutionText, liberoUnableText } from '../domain/remarks'
 import { LINEUP_POSITIONS, lineupEntryErrors, lineupCandidates, lineupCaptainStatus, teamCaptainNumber, gameCaptainOptions, initialGameCaptainChoice, lineupGameCaptainDecision } from '../domain/lineupEntry'
 import { easyLiberoNumbers, easyLiberoErrors, easyRosterChanges, liberoSlotEditable, MAX_LIBEROS, easyPlayerRow, newPlayerMayEnter, newPlayerError, NEW_PLAYER_ERRORS, easyReferencedNumbers, isEasyStray } from '../domain/easyMatch'
 import { describeEventText, compareBySeq } from '../domain/describe'
@@ -220,6 +220,13 @@ function SbButton({ variant = 'secondary', className, ...rest }) {
       <Button variant={variant} size="lg" className={cn('h-11 min-w-[88px]', className)} {...rest} />
     </span>
   )
+}
+
+/** A libero's short tag in the libero lists. A libero re-designated away keeps
+ *  libero 'unable' (its L1/L2 is not kept): shown as ×, like a player out,
+ *  not as L2 (Diktat run 15.11.2026: LUZERN's #1 read "L2"). */
+function liberoTag(libero) {
+  return libero === 'libero1' ? 'L1' : libero === 'libero2' ? 'L2' : libero === 'redesignated' ? 'LR' : libero === 'unable' ? '×' : 'L'
 }
 
 /** Kit SectionHeader inside a legacy dialog: the .ov-kit box keeps the legacy
@@ -11558,7 +11565,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if (isInjury) {
         autoRemark = remarkOf(injurySubstitutionText(playerOut))
       } else if (isExceptional) {
-        autoRemark = remarkOf(`#${playerOut} exceptionally substituted by #${playerIn}`)
+        autoRemark = remarkOf(exceptionalSubstitutionText(playerOut, playerIn, isExpelled ? 'expulsion' : isDisqualified ? 'disqualification' : null))
       }
     }
 
@@ -12435,7 +12442,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         team: team === teamAKey ? 'A' : 'B',
         teamScore,
         oppScore: opponentScore,
-        text: `#${expelledPlayer} exceptionally substituted by #${substituteNumber}`
+        text: exceptionalSubstitutionText(expelledPlayer, substituteNumber, reason)
       })
     }
 
@@ -15793,8 +15800,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 ringColour={isUnable ? '#b91c1c' : '#1d4ed8'}
                                 label={t('scoreboard.phone.markCaptain', 'captain')}
                               />
-                              <span style={{ color: isUnable ? '#b91c1c' : '#1d4ed8', fontSize: 'max(12px, 5.6cqw)', fontWeight: 700 }}>
-                                {player.libero === 'libero1' ? 'L1' : player.libero === 'redesignated' ? 'LR' : 'L2'}
+                              <span style={{ color: isUnable ? '#b91c1c' : '#1d4ed8', fontSize: 'max(12px, 5.6cqw)', fontWeight: 700 }}
+                                title={player.libero === 'unable' ? t('scoreboard.reopenRoster.liberoUnable') : undefined}>
+                                {liberoTag(player.libero)}
                               </span>
                               {sanctions.length > 0 && (
                                 <span style={{ display: 'flex', gap: '0.3cqw', alignItems: 'center' }}>
@@ -19165,8 +19173,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 ringColour={isUnable ? '#b91c1c' : '#1d4ed8'}
                                 label={t('scoreboard.phone.markCaptain', 'captain')}
                               />
-                              <span style={{ color: isUnable ? '#b91c1c' : '#1d4ed8', fontSize: 'max(12px, 5.6cqw)', fontWeight: 700 }}>
-                                {player.libero === 'libero1' ? 'L1' : player.libero === 'redesignated' ? 'LR' : 'L2'}
+                              <span style={{ color: isUnable ? '#b91c1c' : '#1d4ed8', fontSize: 'max(12px, 5.6cqw)', fontWeight: 700 }}
+                                title={player.libero === 'unable' ? t('scoreboard.reopenRoster.liberoUnable') : undefined}>
+                                {liberoTag(player.libero)}
                               </span>
                               {sanctions.length > 0 && (
                                 <span style={{ display: 'flex', gap: '0.3cqw', alignItems: 'center' }}>
@@ -23747,7 +23756,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         {t('scoreboard.modals.substituteWithEligible')} {t('scoreboard.dialogs.exceptionalSubDetail', { defaultValue: '(excluding liberos, expelled/disqualified players, and player #{{number}}). Player #{{number}} cannot take part in the game anymore.', number: playerOut })}
                       </div>
                     </button>
+                    {/* Title + explanation: the kit button's fixed h-11 and nowrap would
+                        let the text spill out of it, so this one grows and wraps */}
                     <SbButton variant="danger-soft"
+                      className="h-auto min-h-11 py-3 flex-col items-start text-left whitespace-normal"
                       onClick={() => handleExceptionalSubstitutionChoice('forfait')}
                     >
                       <div style={{ fontWeight: 700, marginBottom: '4px' }}>
