@@ -24,6 +24,7 @@ const REPORT = Object.freeze({
   fileName: 'openvolley-diagnostics-20261029-2201-g4711.txt'
 })
 
+import { SECTION_IDS } from '../help/helpSections'
 import SupportFeedbackModal from '../SupportFeedbackModal'
 import { setActiveMatch } from '../../utils/activity/activeMatch'
 import { setLiveMatch } from '../../utils/appLifecycle'
@@ -71,8 +72,7 @@ describe('SupportFeedbackModal', () => {
     selectByLabel('supportFeedback.contactTypeLabel', 'feedback')
     const areas = screen.getByLabelText('supportFeedback.areaLabel')
     expect(areas.value).toBe('home')
-    expect([...areas.options].map((o) => o.value)).toEqual(['', 'home', 'setup', 'coin-toss', 'scoring', 'subs-timeouts', 'sanctions',
-      'set-end', 'match-end', 'corrections', 'connections', 'referee', 'bench', 'livescore', 'handover', 'sync-offline', 'install-updates', 'other'])
+    expect([...areas.options].map((o) => o.value)).toEqual(['', ...SECTION_IDS, 'other'])
   })
 
   it('sends the message with its attachments for real, then says where the answer goes', async () => {

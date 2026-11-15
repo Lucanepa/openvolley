@@ -229,7 +229,7 @@ describe('contact: fields', () => {
   it('maps the section ids, the older area names, and anything else to other', () => {
     for (const id of SECTION_IDS) assert.equal(areaOf(id), id)
     assert.equal(CONTACT_AREAS.at(-1), 'other')
-    assert.equal(SECTION_IDS.length, 16)
+    assert.equal(SECTION_IDS.length, 25)
     assert.equal(areaOf('mainPage'), 'home')
     assert.equal(areaOf('scoreboard'), 'scoring')
     assert.equal(areaOf('manualAdjustments'), 'corrections')
