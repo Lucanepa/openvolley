@@ -71,6 +71,16 @@
   </screenshots>
 
   <releases>
+    <release version="3.2.7" date="2026-11-15">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.2.7</url>
+      <description>
+        <ul>
+          <li>Referee: the new set's line-ups show during the set interval.</li>
+          <li>Coin toss: your choices are kept when you go back.</li>
+          <li>Birthdays on 1 January are noted in the roster, not at the coin toss.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.2.6" date="2026-11-15">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.2.6</url>
       <description>
