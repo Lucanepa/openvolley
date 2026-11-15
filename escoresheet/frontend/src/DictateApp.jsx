@@ -7,21 +7,21 @@
 // bucket openvolley-media/dictate/): Pages takes no file over 25 MiB. The step
 // lists (public/dictate/*.json) are built from the same cards as the videos
 // (~/ov-ops/diktat-video/gen_page_data.py). The script itself is Swiss Volley's:
-// linked, not copied.
+// neither copied nor linked (owner 15.11.2026). The videos are silent; the
+// printable step lists (our own wording) are on R2 too (dictate/print/).
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ExternalLink, FileText, Play } from 'lucide-react'
+import { FileText, Play, Printer } from 'lucide-react'
 import { ReadingPage } from './ui/ReadingPage.jsx'
 import { ReadingHeader } from './ui/PageHeader.jsx'
 import { Card, CardHeading } from './ui/Card.jsx'
 import { SegmentedControl } from './ui/SegmentedControl.jsx'
 import { SectionHeader } from './ui/SectionHeader.jsx'
 import { cn } from './ui/cn.js'
+import { HOWTO } from './dictateHowto.js'
 
 const LOGO = '/openvolley_logo.png'
 const MEDIA = 'https://openvolley-media.openvolley.app/dictate'
-const SWISS_VOLLEY_PDF = 'https://www.volleyball.ch/_Resources/Persistent/d/7/9/2/d792c82c4b1dab3b32915185823cd3c24c4d543c/eScoresheet-Diktat-%231_2021-09-13_v5.0.pdf'
-const SWISS_VOLLEY_PAGE = 'https://www.volleyball.ch/de/ausbildung/schiedsrichter-innen/schreiber-in-werden'
 
 const TEAM = { ZUR: 'ZÜRICH', LUZ: 'LUZERN' }
 const TEAM_COLOUR = { ZUR: '#3b82f6', LUZ: '#dc2626' } // the test match's team colours (testSeeds.js)
@@ -56,10 +56,12 @@ const TEXT = {
     resultSheet: 'OpenVolley scoresheet (PDF)',
     resultNote: 'The scoresheet OpenVolley wrote when this version was played through the app, step by step.',
     resultExc: 'On top of the original: the three exceptional substitutions are in the remarks, the expulsion of ZÜRICH #1 and the disqualification of LUZERN #4 under sanctions; exceptional substitutions do not count toward the 6.',
-    source: 'Script: Swiss Volley, eScoresheet Diktat #1 (v5.0, 13.09.2021)',
-    sourcePdf: 'Official Diktat (PDF)',
-    sourcePage: 'Swiss Volley: becoming a scorer',
-    voice: 'The voice is computer-generated.'
+    source: 'Based on Swiss Volley\'s eScoresheet Diktat #1 (v5.0, 13.09.2021). The video is silent: read the cards.',
+    print: 'Printable step list (PDF)',
+    howTitle2: 'How to enter the special steps',
+    howLead: 'The steps that need more than a tap on Point, as OpenVolley shows them (screenshots of the English app). Tap a step number to jump there in the video.',
+    excOnly: 'Version with exceptional substitutions',
+    stepsAt: 'In the dictation'
   },
   de: {
     kicker: 'OpenVolley · Testspiel',
@@ -88,10 +90,12 @@ const TEXT = {
     resultSheet: 'OpenVolley-Matchblatt (PDF)',
     resultNote: 'Das Matchblatt, das OpenVolley geschrieben hat, als diese Version Schritt für Schritt in der App gespielt wurde.',
     resultExc: 'Zusätzlich zum Original: die drei ausserordentlichen Auswechslungen stehen in den Bemerkungen, der Ausschluss von ZÜRICH #1 und die Disqualifikation von LUZERN #4 bei den Sanktionen; ausserordentliche Auswechslungen zählen nicht zu den 6.',
-    source: 'Diktat: Swiss Volley, eScoresheet-Diktat #1 (v5.0, 13.09.2021)',
-    sourcePdf: 'Offizielles Diktat (PDF)',
-    sourcePage: 'Swiss Volley: Schreiber:in werden',
-    voice: 'Die Stimme ist computergeneriert.'
+    source: 'Nach dem eScoresheet-Diktat #1 von Swiss Volley (v5.0, 13.09.2021). Das Video ist stumm: lies die Karten.',
+    print: 'Schrittliste zum Drucken (PDF)',
+    howTitle2: 'So erfasst du die speziellen Schritte',
+    howLead: 'Die Schritte, die mehr als einen Tipp auf Punkt brauchen, so wie OpenVolley sie zeigt (Screenshots der englischen App). Tippe auf eine Schrittnummer, um im Video dorthin zu springen.',
+    excOnly: 'Version mit ausserordentlichen Auswechslungen',
+    stepsAt: 'Im Diktat'
   }
 }
 
@@ -154,7 +158,9 @@ export default function DictateApp() {
     v.play?.().catch(() => {})
   }
 
-  const videoSrc = `${MEDIA}/diktat-1${version === 'exc' ? '_exceptional' : ''}_${lang}.mp4`
+  const videoSrc = `${MEDIA}/diktat-1${version === 'exc' ? '_exceptional' : ''}_${lang}_silent.mp4`
+  const printPdf = `${MEDIA}/print/diktat-1_${version}_${lang}.pdf`
+  const rowOf = (step) => data?.rows?.find(r => r[1] === step)
   const resultBase = `${MEDIA}/result_${version}`
 
   // .ov-kit: the kit's own preflight, so the legacy element rules (green
@@ -230,6 +236,14 @@ export default function DictateApp() {
             >
               {T.openApp}
             </a>
+            <a
+              href={printPdf}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-4 ml-2 inline-flex h-11 items-center gap-2 rounded-xl border border-stone-300 bg-white px-4 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60"
+            >
+              <Printer size={16} aria-hidden="true" /> {T.print}
+            </a>
           </Card>
         </div>
 
@@ -237,7 +251,7 @@ export default function DictateApp() {
           <div className="px-4 pt-4 sm:px-5">
             <SectionHeader title={T.steps} count={data?.rows?.length || undefined} />
           </div>
-          <div ref={listRef} className="relative max-h-[70vh] overflow-y-auto px-2 pb-2 sm:px-3">
+          <div ref={listRef} className="relative max-h-[55vh] overflow-y-auto overscroll-contain px-2 pb-2 sm:px-3 lg:max-h-[70vh]">
             {!data && <p className="p-3 text-sm text-stone-500">…</p>}
             {data?.rows?.map((r, i) => {
               const [t, step, set, team, kind, title, hint, zur, luz] = r
@@ -278,6 +292,49 @@ export default function DictateApp() {
           </div>
         </Card>
       </div>
+
+      <section className="mt-6" aria-labelledby="dictate-howto">
+        <h2 id="dictate-howto" className="text-lg font-bold text-stone-900">{T.howTitle2}</h2>
+        <p className="mt-1 mb-4 max-w-3xl text-sm text-stone-600">{T.howLead}</p>
+        {HOWTO.filter(h => version === 'exc' || !h.exc).map(h => {
+          const tx = h[lang]
+          return (
+            <Card key={h.id}>
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <h3 className="text-base font-bold text-stone-900">{tx.title}</h3>
+                {h.exc && <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700">{T.excOnly}</span>}
+              </div>
+              <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-stone-700">
+                {tx.do.map(line => <li key={line}>{line}</li>)}
+              </ol>
+              <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-400">{T.stepsAt}</span>
+                {h.steps.map(st => {
+                  const r = rowOf(st)
+                  return (
+                    <button
+                      key={st}
+                      type="button"
+                      disabled={!r}
+                      onClick={() => { if (r) { seek(r[0]); videoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }) } }}
+                      className="inline-flex h-7 items-center gap-1 rounded-lg border border-stone-200 px-2 text-xs tabular-nums text-stone-600 transition-colors hover:bg-stone-100 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60"
+                    >
+                      <Play size={10} aria-hidden="true" /> {st}
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {h.shots.map(id => (
+                  <a key={id} href={`${MEDIA}/howto/${id}.jpg`} target="_blank" rel="noopener noreferrer" className="block">
+                    <img src={`${MEDIA}/howto/${id}.jpg`} alt={tx.title} loading="lazy" className="w-full rounded-lg border border-stone-200" />
+                  </a>
+                ))}
+              </div>
+            </Card>
+          )
+        })}
+      </section>
 
       <Card className="mt-4">
         <CardHeading title={T.resultTitle} strong />
@@ -326,16 +383,8 @@ export default function DictateApp() {
         </a>
       </Card>
 
-      <footer className="mt-6 space-y-1 text-xs text-stone-500">
-        <p>{T.source} · {T.voice}</p>
-        <p className="flex flex-wrap gap-x-4 gap-y-1">
-          <a href={SWISS_VOLLEY_PDF} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 underline underline-offset-2 hover:text-stone-700">
-            {T.sourcePdf} <ExternalLink size={11} aria-hidden="true" />
-          </a>
-          <a href={SWISS_VOLLEY_PAGE} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 underline underline-offset-2 hover:text-stone-700">
-            {T.sourcePage} <ExternalLink size={11} aria-hidden="true" />
-          </a>
-        </p>
+      <footer className="mt-6 text-xs text-stone-500">
+        <p>{T.source}</p>
       </footer>
     </ReadingPage>
     </div>
