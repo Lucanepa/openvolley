@@ -3809,6 +3809,14 @@
       "notAMember": "Un responsable doit être un compte du club. Envoyez plutôt un lien de responsable."
     },
     "myClub": {
+      "nav": {
+        "requests": "Demandes",
+        "members": "Membres",
+        "teams": "Équipes",
+        "licences": "Licences",
+        "invites": "Codes d'invitation",
+        "api": "API"
+      },
       "api": {
         "title": "API",
         "new": "Nouveau jeton d'API",

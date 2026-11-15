@@ -3794,6 +3794,14 @@
       "notAMember": "Verantwortliche müssen ein Konto des Vereins sein. Senden Sie stattdessen einen Link."
     },
     "myClub": {
+      "nav": {
+        "requests": "Anfragen",
+        "members": "Mitglieder",
+        "teams": "Teams",
+        "licences": "Lizenzen",
+        "invites": "Einladungscodes",
+        "api": "API"
+      },
       "api": {
         "title": "API",
         "new": "Neues API-Token",

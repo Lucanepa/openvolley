@@ -3345,18 +3345,18 @@
     "menuInviteCode": "Enter invite code",
     "tabs": {
       "accounts": "Accounts",
-      "invites": "Invite codes",
-      "games": "Official games",
-      "matches": "Closed matches",
-      "audit": "Audit log",
-      "teams": "Saved teams",
+      "invites": "Invite Codes",
+      "games": "Official Games",
+      "matches": "Closed Matches",
+      "audit": "Audit Log",
+      "teams": "Saved Teams",
       "tournaments": "Tournaments",
       "activity": "Activity",
       "scoresheets": "Scoresheets",
       "clubs": "Clubs",
-      "myclub": "My club",
+      "myclub": "My Club",
       "settings": "Settings",
-      "myteams": "My teams"
+      "myteams": "My Teams"
     },
     "status": {
       "setup": "Set-up",
@@ -3816,6 +3816,14 @@
       "notAMember": "A manager must be one of the club's accounts. Send a club manager link instead."
     },
     "myClub": {
+      "nav": {
+        "requests": "Requests",
+        "members": "Members",
+        "teams": "Teams",
+        "licences": "Licences",
+        "invites": "Invite Codes",
+        "api": "API"
+      },
       "api": {
         "title": "API",
         "new": "New API token",

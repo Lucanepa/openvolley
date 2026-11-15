@@ -3815,6 +3815,14 @@
       "notAMember": "Un responsabile deve essere un account della società. Invii invece un link da responsabile."
     },
     "myClub": {
+      "nav": {
+        "requests": "Richieste",
+        "members": "Membri",
+        "teams": "Squadre",
+        "licences": "Licenze",
+        "invites": "Codici d'invito",
+        "api": "API"
+      },
       "api": {
         "title": "API",
         "new": "Nuovo token API",

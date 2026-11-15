@@ -83,6 +83,8 @@ describe('sentence case labels (en)', () => {
       // labels: up to 8 words and no full sentence inside. Help prose
       // (contextHelp) names on-screen labels ("Tap Undo") and is left out.
       .filter(([k]) => !k.startsWith('contextHelp.'))
+      // the manager console's menu is Title Case (owner 2026-11-15: "and stuff capitalized")
+      .filter(([k]) => !k.startsWith('manage.tabs.') && !k.startsWith('manage.myClub.nav.'))
       .filter(([, v]) => v.split(/\s+/).length <= 8 && !/[.!?]\s+\S/.test(v))
       .map(([k, v]) => [k, v, titleCaseWords(v)])
       .filter(([, , bad]) => bad.length > 0)

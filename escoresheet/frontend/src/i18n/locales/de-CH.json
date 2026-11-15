@@ -3810,6 +3810,14 @@
       "notAMember": "Verantwortlichi müend es Konto vom Verein sii. Schicked Si stattdesse en Link."
     },
     "myClub": {
+      "nav": {
+        "requests": "Anfragen",
+        "members": "Mitglieder",
+        "teams": "Teams",
+        "licences": "Lizenzen",
+        "invites": "Einladungscodes",
+        "api": "API"
+      },
       "api": {
         "title": "API",
         "new": "Neues API-Token",

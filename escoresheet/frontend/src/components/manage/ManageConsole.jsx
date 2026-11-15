@@ -66,6 +66,15 @@ const TABS = [
  * one (or OpenVolley's), exactly as before. A tab with `apps` (tournaments)
  * only in the console of those apps.
  */
+// My club is a tree (owner 2026-11-15): its own page (the contact address) and
+// one page per part, #myclub/<club id>/<part>; a person of the licence lists
+// is a page of Licences (#myclub/<club id>/person/<id>)
+export const MYCLUB_PARTS = ['requests', 'members', 'teams', 'licences', 'invites', 'api']
+const partOf = (route) => {
+  const kind = String(route || '').split('/')[1] || ''
+  return kind === 'person' ? 'licences' : MYCLUB_PARTS.includes(kind) ? kind : ''
+}
+
 export function manageTabsFor(access, brand = null) {
   if (!access) return []
   const own = accessForApp(access, brand?.app)
@@ -111,7 +120,18 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
   const onRouteOf = (id) => (sub, opts) => onTab?.(sub ? `${id}/${sub}` : id, opts)
   const selectTab = (id) => {
     const last = lastRoutes.current[id]
+    // the open tab's own button is its own page: My club's first page, not the part it was on
+    if (id === 'myclub' && id === current) {
+      const club = subRoute.split('/')[0]
+      onTab?.(club ? `myclub/${club}` : 'myclub')
+      return
+    }
     onTab?.(last && id !== current ? `${id}/${last}` : id)
+  }
+  const myClubId = () => subRoute.split('/')[0] || access.managedClubs?.[0]?.id || ''
+  const selectChild = (id, child) => {
+    if (id !== 'myclub') return
+    onTab?.(`myclub/${encodeURIComponent(myClubId())}/${child}`)
   }
   // a page of another tab (a team of My club in My teams, say); null when this account has no such tab
   const navigate = (path, opts = { push: true }) => {
@@ -120,6 +140,8 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
     onTab?.(path, opts)
     return true
   }
+  // a notice about a club (a sign-up waits for a yes) opens that club's Requests
+  const openTarget = (target) => navigate(/^myclub\/[^/]+$/.test(String(target || '')) ? `${target}/requests` : target, { push: true })
   const canOpen = (id) => allowed.includes(id)
   const pageProps = (id) => ({ route: routeOf(id), onRoute: onRouteOf(id), navigate, canOpen })
   // Panels mount on first visit and then stay mounted (ConsolePanel); kept
@@ -148,7 +170,8 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
   const tabs = TABS.filter(x => allowed.includes(x.id)).map(x => ({
     id: x.id,
     label: t(`manage.tabs.${x.id}`),
-    icon: <x.icon size={15} aria-hidden />
+    icon: <x.icon size={15} aria-hidden />,
+    ...(x.id === 'myclub' ? { children: MYCLUB_PARTS.map((part) => ({ id: part, label: t(`manage.myClub.nav.${part}`) })) } : {})
   }))
 
   // Above the scorer app's header (MainHeader, z 1000): at 900 it covered the
@@ -168,7 +191,7 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
         eyebrow={t('manage.title')}
         actions={<>
           {/* db/028: who signed up (admins, and the approvers of its requests) */}
-          <NotificationsBell app={brand.app} onOpen={(target) => navigate(target, { push: true })} />
+          <NotificationsBell app={brand.app} onOpen={openTarget} />
           {headerActions}
           {onClose && (
             <button type="button" className={consoleHeaderBtn} onClick={onClose} aria-label={t('manage.backToApp')} data-modal-close>
@@ -180,6 +203,8 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
         tabs={tabs}
         current={current}
         onSelect={selectTab}
+        currentChild={current === 'myclub' ? partOf(subRoute) : ''}
+        onSelectChild={selectChild}
         navLabel={t('manage.nav')}
         footer={<LegalLinks className="text-[11px] text-stone-400" />}
       >
