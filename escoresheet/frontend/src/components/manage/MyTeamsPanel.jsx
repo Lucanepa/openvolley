@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, FileUp, PenLine, Plus, Trash2, UserPlus } from 'lucide-react'
+import { ArrowLeft, ChevronDown, FileUp, PenLine, Plus, Trash2, UserPlus } from 'lucide-react'
 import { teamApi } from '../../lib/accountApi'
 import { addClubPlayersToGameDraft, applyEinsatzlisteToGameDraft, clubPersonOf, clubPersonToPlayer, gameRosterBody, gameRosterDraft, officialOfRole, officialRolesOf, parsedPdfToRoster, playerFinder, roleForNewOfficial, setGameDraftOfficial, setGameDraftStaffRole, wrongGenderIndexes, GAME_ROSTER_MAX_LIBEROS, GAME_ROSTER_MAX_PLAYERS, GAME_ROSTER_MAX_STAFF } from '../../domain/teamRosters'
 import { STAFF_ROLES } from '../../domain/savedTeams'
@@ -12,7 +12,7 @@ import ClubPlayerPickerModal from '../ClubPlayerPickerModal'
 import ClubShield from './ClubShield'
 import SignaturePad from '../SignaturePad'
 import { usePanelData, usePanelRoute, useOnline, OfflineBanner, PageLoadGate, PageMissing, PageSpinner, PanelHead, InlineError, useErrorText } from './common'
-import { Button, Checkbox, Chip, DateField, EmptyInset, Field, Input, KeyValue, Notice, Row, RowList, RowTool, Select, SectionHeader, SkeletonRows, confirmDialog, dayLabel, timeLabel, toast, cn } from '../../ui'
+import { Button, Checkbox, Chip, DateField, EmptyInset, Field, Input, KeyValue, Notice, Row, RowList, RowTool, Select, SectionHeader, SkeletonRows, confirmDialog, dayLabel, timeLabel, toast, cn, FOCUS_RING } from '../../ui'
 
 const STAFF_ROLE_KEYS = {
   Coach: 'benchRoles.coach',
@@ -22,6 +22,14 @@ const STAFF_ROLE_KEYS = {
   Medic: 'benchRoles.medic'
 }
 const when = (v) => [dayLabel(v, { year: true }), timeLabel(v)].filter(Boolean).join(' ')
+
+/**
+ * Has the game started? The server's `started` (lib/teams.js kickoffPassed, on
+ * the Zürich clock). Owner 2026-11-15: a started game's roster can't be sent,
+ * changed or deleted; a page left open past kick-off gets the server's 409
+ * OV_GAME_STARTED, said as manage.myTeams.started.
+ */
+export const gameStarted = (game) => game?.started === true
 
 // a team without a game this season (owner 2026-11-11: "KSCW DU23-2 is not
 // playing this season") is left out of the pickers; an older server sends no `active`
@@ -166,6 +174,14 @@ function TeamSections({ team, gameNumber = null, onOpenGame, onCloseGame }) {
     // a game picked in the list: its page whole once its roster is read,
     // not the heading first and the roster a moment later (owner 2026-11-11:
     // "after selecting a game -> loads then loads the content")
+    // started: what was sent, read-only (owner 2026-11-15)
+    if (gameStarted(game)) {
+      return (
+        <PageLoadGate key={game.game_number} fallback={<PageSpinner />}>
+          <StartedRosterPage team={team} game={game} onBack={onCloseGame} />
+        </PageLoadGate>
+      )
+    }
     return (
       <PageLoadGate key={game.game_number} fallback={<PageSpinner />}>
         <GameRosterPage
@@ -216,6 +232,51 @@ function TeamGames({ games: list, onOpen }) {
   const errorText = useErrorText()
   const { data, error, loading } = list
   const games = data?.games || []
+  // Started games go under "Earlier games", closed, read-only (owner
+  // 2026-11-15: a roster went to the finished 09:00 game, first in the list,
+  // instead of the 15:15 one): the first game shown is the next one
+  const [earlierOpen, setEarlierOpen] = useState(false)
+  const upcoming = games.filter((g) => !gameStarted(g))
+  const earlier = games.filter(gameStarted)
+  const gameRow = (g, started) => {
+    const opponent = g.side === 'home' ? g.team_away : g.team_home
+    return (
+      <Row
+        key={g.game_number}
+        stripe={false}
+        toolsIndent="sm:pl-2"
+        actionIndent="pl-1.5"
+        title={`${g.side === 'home' ? t('manage.myTeams.vs') : t('manage.myTeams.at')} ${opponent || '–'}`}
+        meta={<>
+          <span>{when(g.datetime)}</span>
+          {g.league && <span>{g.league}</span>}
+          {g.hall && <span>{g.hall}</span>}
+          <span>#{g.game_number}</span>
+        </>}
+        chips={<>
+          <Chip tone={g.side === 'home' ? 'indigo' : 'stone'}>{g.side === 'home' ? t('manage.myTeams.home') : t('manage.myTeams.away')}</Chip>
+          {g.roster?.used_at
+            ? <Chip tone="emerald">{t('manage.myTeams.accepted', { when: when(g.roster.used_at) })}</Chip>
+            : g.roster
+              ? <Chip tone="sky">{t('manage.myTeams.sent', { count: g.roster.players, when: when(g.roster.updated_at) })}</Chip>
+              : <Chip tone={started ? 'stone' : 'amber'}>{t('manage.myTeams.notSent')}</Chip>}
+          {g.roster && !g.roster.used_at && g.roster.signed?.coach && g.roster.signed?.captain && <Chip>{t('manage.myTeams.signedChip')}</Chip>}
+        </>}
+        tools={started
+          // read-only: a sent roster can be viewed, none can be started
+          ? (g.roster ? (
+              <RowTool disabled={!online} onClick={() => onOpen(g.game_number)} data-testid="my-team-game-view">
+                {t('manage.myTeams.view')}
+              </RowTool>
+            ) : null)
+          : (
+              <RowTool disabled={!online} onClick={() => onOpen(g.game_number)} data-testid="my-team-game-roster">
+                {g.roster && !g.roster.used_at ? t('manage.myTeams.edit') : t('manage.myTeams.prepare')}
+              </RowTool>
+            )}
+      />
+    )
+  }
   return (
     <section>
       <PanelHead title={t('manage.myTeams.games')} level={2} />
@@ -226,40 +287,41 @@ function TeamGames({ games: list, onOpen }) {
       ) : games.length === 0 ? (
         <EmptyInset>{t('manage.myTeams.noGames')}</EmptyInset>
       ) : (
-        <RowList data-testid="my-team-games">
-          {games.map((g) => {
-            const opponent = g.side === 'home' ? g.team_away : g.team_home
-            return (
-              <Row
-                key={g.game_number}
-                stripe={false}
-                toolsIndent="sm:pl-2"
-                actionIndent="pl-1.5"
-                title={`${g.side === 'home' ? t('manage.myTeams.vs') : t('manage.myTeams.at')} ${opponent || '–'}`}
-                meta={<>
-                  <span>{when(g.datetime)}</span>
-                  {g.league && <span>{g.league}</span>}
-                  {g.hall && <span>{g.hall}</span>}
-                  <span>#{g.game_number}</span>
-                </>}
-                chips={<>
-                  <Chip tone={g.side === 'home' ? 'indigo' : 'stone'}>{g.side === 'home' ? t('manage.myTeams.home') : t('manage.myTeams.away')}</Chip>
-                  {g.roster?.used_at
-                    ? <Chip tone="emerald">{t('manage.myTeams.accepted', { when: when(g.roster.used_at) })}</Chip>
-                    : g.roster
-                      ? <Chip tone="sky">{t('manage.myTeams.sent', { count: g.roster.players, when: when(g.roster.updated_at) })}</Chip>
-                      : <Chip tone="amber">{t('manage.myTeams.notSent')}</Chip>}
-                  {g.roster && !g.roster.used_at && g.roster.signed?.coach && g.roster.signed?.captain && <Chip>{t('manage.myTeams.signedChip')}</Chip>}
-                </>}
-                tools={
-                  <RowTool disabled={!online} onClick={() => onOpen(g.game_number)} data-testid="my-team-game-roster">
-                    {g.roster && !g.roster.used_at ? t('manage.myTeams.edit') : t('manage.myTeams.prepare')}
-                  </RowTool>
-                }
-              />
-            )
-          })}
-        </RowList>
+        <>
+          {upcoming.length === 0 ? (
+            <EmptyInset>{t('manage.myTeams.noUpcoming')}</EmptyInset>
+          ) : (
+            <RowList data-testid="my-team-games">
+              {upcoming.map((g) => gameRow(g, false))}
+            </RowList>
+          )}
+          {earlier.length > 0 && (
+            <div className="mt-3" data-testid="my-team-earlier">
+              <button
+                type="button"
+                onClick={() => setEarlierOpen((v) => !v)}
+                aria-expanded={earlierOpen}
+                aria-controls="my-team-earlier-games"
+                data-testid="my-team-earlier-toggle"
+                className={cn('flex min-h-11 w-full items-center justify-between gap-2 rounded-lg px-2 py-2.5 text-left text-sm font-semibold text-stone-700 transition-colors hover:bg-stone-100', earlierOpen && 'bg-stone-50', FOCUS_RING)}
+              >
+                <span className="min-w-0">
+                  {t('manage.myTeams.earlierGames')}{' '}
+                  <span className="tabular-nums font-medium text-stone-500">({earlier.length})</span>
+                </span>
+                <ChevronDown size={16} aria-hidden="true" className={cn('shrink-0 text-stone-400 transition-transform', earlierOpen && 'rotate-180')} />
+              </button>
+              {earlierOpen && (
+                <div id="my-team-earlier-games" className="mt-2 space-y-2">
+                  <p className="text-xs text-stone-500">{t('manage.myTeams.started')}</p>
+                  <RowList data-testid="my-team-earlier-games">
+                    {earlier.map((g) => gameRow(g, true))}
+                  </RowList>
+                </div>
+              )}
+            </div>
+          )}
+        </>
       )}
     </section>
   )
@@ -267,8 +329,9 @@ function TeamGames({ games: list, onOpen }) {
 
 /**
  * One game's roster, a page of its own: tick up to 14 players of the saved
- * team (or of an Einsatzliste), numbers, captain, liberos, officials. No lock
- * (owner 2026-11-08): it can be changed at any time. The coach and the
+ * team (or of an Einsatzliste), numbers, captain, liberos, officials, until
+ * the game starts (owner 2026-11-15, replacing "no lock"); a started game's
+ * page only shows what was sent (StartedRoster). The coach and the
  * captain may sign ahead; a signature belongs to the roster it was made on,
  * so a change after signing asks for it again. A roster the scorer accepted
  * is gone from the server: a new one can be sent. Each official's role can
@@ -660,6 +723,72 @@ function GameRosterPage({ team, game, squad, squadLoading = false, clubPlayers, 
           : t('manage.myTeams.sig.padCaptain', { name: captain ? `${captain.first_name} ${captain.last_name}`.trim() : '' })}
       />, document.body)}
     </>
+  )
+}
+
+/**
+ * A started game's page (owner 2026-11-15: "how can I prepare a roster for a
+ * game already started"): its facts and the roster sent before kick-off, if
+ * any, read-only. No send, edit, sign or delete: the server refuses them
+ * (409 OV_GAME_STARTED).
+ */
+function StartedRosterPage({ team, game, onBack }) {
+  const { t } = useTranslation()
+  const online = useOnline()
+  const errorText = useErrorText()
+  const { data, error, loading } = usePanelData(() => teamApi.roster(team.id, game.game_number), [team.id, game.game_number], { enabled: online })
+  const roster = data?.roster || null
+  const opponent = game.side === 'home' ? game.team_away : game.team_home
+  const players = roster?.players || []
+  const staff = roster?.staff || []
+  return (
+    <section data-testid="game-roster-page">
+      <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={onBack} className="mb-3" data-testid="game-roster-back">{team.name}</Button>
+      <PanelHead title={`${game.side === 'home' ? t('manage.myTeams.vs') : t('manage.myTeams.at')} ${opponent || '–'}`}>
+        <Chip tone={game.side === 'home' ? 'indigo' : 'stone'}>{game.side === 'home' ? t('manage.myTeams.home') : t('manage.myTeams.away')}</Chip>
+      </PanelHead>
+      <GameFacts game={game} />
+      <OfflineBanner online={online} />
+      <div className="space-y-4" data-testid="game-roster-started">
+        <Notice tone="info">{t('manage.myTeams.started')}</Notice>
+        {error && <Notice>{errorText(error)}</Notice>}
+        {roster?.used_at ? (
+          <p className="text-xs text-stone-500">{t('manage.myTeams.accepted', { when: when(roster.used_at) })}{roster.used_by_name ? ` (${roster.used_by_name})` : ''}</p>
+        ) : roster && (
+          <p className="text-xs text-stone-500">{t('manage.myTeams.sentBy', { when: when(roster.updated_at), name: roster.updated_by_name || '–' })}</p>
+        )}
+        {loading && !data ? <SkeletonRows rows={4} pill={false} /> : !roster ? (
+          <EmptyInset>{t('manage.myTeams.notSent')}</EmptyInset>
+        ) : (
+          <>
+            <SectionHeader title={t('manage.myTeams.players')} count={players.length} />
+            {players.length === 0 ? <EmptyInset>{t('manage.myTeams.noPlayers')}</EmptyInset> : (
+              <ul className="divide-y divide-stone-200/70 overflow-hidden rounded-xl border border-stone-200/70 bg-white" data-testid="started-players">
+                {players.map((p, i) => (
+                  <li key={`${p.number}-${p.last_name}-${i}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
+                    <span className="w-8 shrink-0 text-right font-semibold tabular-nums text-stone-900">{p.number ?? ''}</span>
+                    <span className="min-w-0 flex-1"><PersonLine person={p} /></span>
+                    {p.is_captain && <Chip>{t('manage.myTeams.captainShort')}</Chip>}
+                    {p.is_libero && <Chip>{t('manage.myTeams.liberoShort')}</Chip>}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <SectionHeader title={t('manage.myTeams.officials')} count={staff.length} />
+            {staff.length === 0 ? <EmptyInset>{t('manage.myTeams.noOfficials')}</EmptyInset> : (
+              <ul className="divide-y divide-stone-200/70 overflow-hidden rounded-xl border border-stone-200/70 bg-white">
+                {staff.map((s, i) => (
+                  <li key={`${s.role}-${s.last_name}-${i}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
+                    <span className="min-w-0 flex-1"><PersonLine person={s} /></span>
+                    <span className="text-xs text-stone-500">{STAFF_ROLE_KEYS[s.role] ? t(STAFF_ROLE_KEYS[s.role], s.role) : (s.role || '')}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+      </div>
+    </section>
   )
 }
 

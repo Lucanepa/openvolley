@@ -175,3 +175,77 @@ describe('the page\'s facts and rows (owner 2026-11-10: "all on one line" and "a
     expect((await screen.findByTestId('game-facts')).textContent).toContain('manage.myTeams.facts.noReferees')
   })
 })
+
+// Owner 2026-11-15: a roster went to the finished 09:00 game (first in the
+// list) instead of the 15:15 one; "make sure I can prepare rosters for games
+// upcoming, not past"
+describe('started games: under "Earlier games", read-only', () => {
+  const STARTED = { ...GAME, game_number: '950000', datetime: '2026-11-15T09:00:00', team_away: 'VBC Early H1', started: true, roster: null }
+  const STARTED_SENT = {
+    ...GAME, game_number: '949999', datetime: '2026-11-15T08:00:00', team_away: 'VBC Earlier H1', started: true,
+    roster: { players: 1, updated_at: '2026-11-14T10:00:00Z', used_at: null, signed: { coach: false, captain: false } }
+  }
+  const NEXT = { ...GAME, game_number: '950002', datetime: '2026-11-15T15:15:00', team_away: 'VBC Next H1', started: false }
+
+  it('lists the next game first; the started ones in a closed section with a count, without Prepare or Edit', async () => {
+    api.team.games.mockResolvedValue(okRes({ games: [STARTED_SENT, STARTED, NEXT] }))
+    render(<Routed />)
+    const list = await screen.findByTestId('my-team-games')
+    expect(within(list).getAllByTestId('my-team-game-roster')).toHaveLength(1)
+    expect(list).toHaveTextContent('VBC Next H1')
+    expect(list).not.toHaveTextContent('VBC Early H1')
+    expect(screen.queryByTestId('my-team-earlier-games')).toBeNull()
+
+    const toggle = screen.getByTestId('my-team-earlier-toggle')
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle).toHaveTextContent('manage.myTeams.earlierGames (2)')
+    fireEvent.click(toggle)
+    const earlier = screen.getByTestId('my-team-earlier-games')
+    expect(earlier).toHaveTextContent('VBC Earlier H1')
+    expect(earlier).toHaveTextContent('VBC Early H1')
+    expect(screen.getByTestId('my-team-earlier')).toHaveTextContent('manage.myTeams.started')
+    // no new roster, no edit: only the sent one can be viewed
+    expect(within(earlier).queryByTestId('my-team-game-roster')).toBeNull()
+    expect(within(earlier).getAllByTestId('my-team-game-view')).toHaveLength(1)
+  })
+
+  it('a started game\'s page shows the sent roster read-only: no send, sign, delete or add', async () => {
+    api.team.games.mockResolvedValue(okRes({ games: [STARTED_SENT, NEXT] }))
+    api.team.roster.mockResolvedValue(okRes({
+      started: true,
+      roster: {
+        players: [{ number: 4, first_name: 'Noah', last_name: 'Testmann', is_captain: true }],
+        staff: [{ role: 'Coach', first_name: 'Tina', last_name: 'Trainer' }],
+        updated_at: '2026-11-14T10:00:00Z', updated_by_name: 'Tina Trainer', used_at: null
+      }
+    }))
+    render(<Routed initial="t-h1/949999" />)
+    const page = await screen.findByTestId('game-roster-started')
+    expect(page).toHaveTextContent('manage.myTeams.started')
+    await waitFor(() => expect(screen.getByTestId('started-players')).toHaveTextContent('Testmann'))
+    expect(page).toHaveTextContent('Trainer')
+    expect(screen.queryByTestId('game-roster-save')).toBeNull()
+    expect(screen.queryByTestId('game-sign-coach')).toBeNull()
+    expect(screen.queryByTestId('game-official-add')).toBeNull()
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    expect(screen.queryByText('manage.myTeams.delete')).toBeNull()
+    expect(api.team.putRoster).not.toHaveBeenCalled()
+  })
+
+  it('a started game opened by its URL without a roster: says so, offers nothing to send', async () => {
+    api.team.games.mockResolvedValue(okRes({ games: [STARTED, NEXT] }))
+    api.team.roster.mockResolvedValue(okRes({ started: true, roster: null }))
+    render(<Routed initial="t-h1/950000" />)
+    const page = await screen.findByTestId('game-roster-started')
+    await waitFor(() => expect(page).toHaveTextContent('manage.myTeams.notSent'))
+    expect(screen.queryByTestId('game-roster-save')).toBeNull()
+  })
+
+  it('every game started: the list says no upcoming games, the section below it', async () => {
+    api.team.games.mockResolvedValue(okRes({ games: [STARTED] }))
+    render(<Routed />)
+    await screen.findByTestId('my-team-earlier-toggle')
+    expect(screen.queryByTestId('my-team-games')).toBeNull()
+    expect(tr).toHaveBeenCalledWith('manage.myTeams.noUpcoming')
+  })
+})
