@@ -359,13 +359,35 @@ describe('MatchEnd: the approval PDF', () => {
       await findButton(en.matchEnd.closeMatch)
       const call = zipFile.mock.calls.find(([name]) => /^MatchData_.*\.json$/.test(name))
       expect(call[0]).toMatch(/^MatchData_Home_V_vs_Away_V_/)
-      const data = JSON.parse(call[1])
+      // sealed when the match has a PIN (the 3.2.5 review): opened as Restore match does
+      const stored = store.tables.matches.get(1)
+      const { openWithKnownPins } = await import('../../utils/backupFile')
+      const data = await openWithKnownPins(JSON.parse(call[1]), [stored.gamePin, stored.refereePin, stored.connection_pins?.referee])
       expect(data).toMatchObject({ version: 1, match: { id: 1, seed_key: 'match_1_pdf', status: 'ended' }, homeTeam: { name: 'Home V' }, awayTeam: { name: 'Away V' } })
       expect('homeTeam' in data.match).toBe(false)
       expect(data.sets.map(s => s.index)).toEqual([1, 2, 3])
       expect(typeof data.lastUpdated).toBe('string')
       expect(data.exportedAt).toBe(data.lastUpdated)
       expect(matchBackupFromFile(data)).toBe(data) // nothing to convert
+    } finally {
+      zipFile.mockRestore()
+    }
+  })
+
+  // 3.2.5 review: the ZIP left the rosters and dates of birth in plain JSON
+  // in Downloads, while every other backup file is sealed
+  it('the ZIP\'s match data of a match with PINs is sealed like a backup file', async () => {
+    seed({ gamePin: '482913', refereePin: '730561' })
+    const zipFile = vi.spyOn(JSZip.prototype, 'file')
+    try {
+      render(<MatchEnd matchId={1} />)
+      await approve()
+      await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf' })
+      await findButton(en.matchEnd.closeMatch)
+      const call = zipFile.mock.calls.find(([name]) => /^MatchData_.*\.json$/.test(name))
+      const { isEncryptedBackup } = await import('../../utils/backupCrypto/envelope')
+      expect(isEncryptedBackup(JSON.parse(call[1]))).toBe(true)
+      expect(call[1]).not.toContain('homePlayers') // the rosters only inside the envelope (its header names the teams)
     } finally {
       zipFile.mockRestore()
     }

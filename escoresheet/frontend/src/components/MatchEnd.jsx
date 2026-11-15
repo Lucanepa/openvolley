@@ -1536,7 +1536,19 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         events: allEvents
       })
 
-      const dataStr = JSON.stringify(exportData, null, 2)
+      // Like every backup file (06ee9d6fc): sealed for the game PIN, the
+      // referee PIN and the league's recovery key, so the ZIP left in
+      // Downloads holds no plain rosters or dates of birth; Restore match opens
+      // it with either PIN. A match without PINs (test) stays plain; a seal
+      // that fails never blocks the approval.
+      let dataStr
+      try {
+        const { backupFileText } = await import('../utils/backupFile')
+        dataStr = await backupFileText(matchId, exportData, new Date(exportData.lastUpdated), { pinSource: approvedMatch })
+      } catch (err) {
+        console.warn('[MatchEnd] ZIP match data not sealed:', err?.message)
+        dataStr = JSON.stringify(exportData, null, 2)
+      }
       const matchDate = match.scheduledAt
         // the LOCAL match day (the UTC day is the day before for a match after midnight)
         ? new Date(match.scheduledAt).toLocaleDateString('en-GB').replace(/\//g, '-')
