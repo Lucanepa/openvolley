@@ -1,0 +1,8 @@
+OpenVolley 3.2.5
+- Dialogs and alerts in your language (DE, FR, IT, Swiss German).
+- A contact email per team gets the final scoresheet.
+- Libero replacement also after Start rally.
+- Referee phone: bigger score and serve, badges off the numbers, TO SUB | SUB TO, sanctions only when given.
+- Referee: a penalty point no longer ends the set interval.
+- Coin toss fixed before set 1 moves the teams.
+- Player menus open once.
