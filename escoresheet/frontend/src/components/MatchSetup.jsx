@@ -41,7 +41,9 @@ import { coloursTooClose, DEFAULT_AWAY_COLOUR, DEFAULT_HOME_COLOUR, isCustomColo
 import { missingConnectionPins, connectionPinsSyncJob, fetchPendingRoster, clearPendingRosterJob, isKnownDob } from '../utils/remoteRoster'
 import { FileTextIcon, ClipboardIcon } from './icons'
 import { AlertTriangle, Loader2 } from 'lucide-react'
-import { Button, DateField, Field, Input, Select, TimeField, SegmentedControl, SectionHeader, KeyValue, CountBadge, Switch, ScreenLoading, cn, confirmDialog, toast } from '../ui'
+import { Button, Checkbox, DateField, Field, Input, Select, TimeField, SegmentedControl, SectionHeader, KeyValue, CountBadge, Switch, ScreenLoading, cn, confirmDialog, toast } from '../ui'
+import { sponsorsOf, sponsorsToMatchInfo } from '../domain/sponsors'
+import { useSponsorsOption } from '../hooks/useSponsorsOption'
 import SavedTeamPickerModal, { confirmReplaceRoster } from './SavedTeamPickerModal'
 import SaveRosterToTeamModal from './SaveRosterToTeamModal'
 import { focusLeaves, sortedByNumber } from '../utils/rosterOrder'
@@ -256,7 +258,8 @@ const INFO_DRAFT_KEYS = ['date', 'time', 'hall', 'city', 'type1', 'type1Other', 
   'type2', 'type3', 'type3Other', 'bestOf', 'pointsRegular', 'pointsDeciding', 'gameN', 'league', 'home', 'away', 'homeColor', 'awayColor', 'homeShortName', 'awayShortName',
   'ref1First', 'ref1Last', 'ref1Country', 'ref1Dob', 'ref1Email', 'ref2First', 'ref2Last', 'ref2Country', 'ref2Dob', 'ref2Email',
   'scorerFirst', 'scorerLast', 'scorerCountry', 'scorerDob', 'asstFirst', 'asstLast', 'asstCountry', 'asstDob',
-  'lineJudge1', 'lineJudge2', 'lineJudge3', 'lineJudge4', 'homeContactEmail', 'awayContactEmail']
+  'lineJudge1', 'lineJudge2', 'lineJudge3', 'lineJudge4', 'homeContactEmail', 'awayContactEmail',
+  'homeSponsors', 'awaySponsors', 'sponsorsMarked']
 
 /**
  * The side-bound fields of a stored match with home and away swapped (a
@@ -291,7 +294,8 @@ const sameTeamName = (a, b) => String(a || '').trim().toLowerCase() === String(b
 function hasMatchInfoChanged(original, current) {
   if (!original) return true // No original, consider it changed
   const keys = ['date', 'time', 'hall', 'city', 'type1', 'type1Other', 'championshipType', 'championshipTypeOther',
-    'type2', 'type3', 'type3Other', 'bestOf', 'pointsRegular', 'pointsDeciding', 'gameN', 'league', 'home', 'away', 'homeColor', 'awayColor', 'homeShortName', 'awayShortName']
+    'type2', 'type3', 'type3Other', 'bestOf', 'pointsRegular', 'pointsDeciding', 'gameN', 'league', 'home', 'away', 'homeColor', 'awayColor', 'homeShortName', 'awayShortName',
+    'homeSponsors', 'awaySponsors', 'sponsorsMarked']
   for (const key of keys) {
     if (!isEqual(original[key], current[key])) return true
   }
@@ -678,6 +682,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [awayColor, setAwayColor] = useState(DEFAULT_AWAY_COLOUR)
   const [homeShortName, setHomeShortName] = useState('')
   const [awayShortName, setAwayShortName] = useState('')
+  // Sponsors on clothing (domain/sponsors.js): one box per team while the
+  // option is on (or the match is already marked); the first tick marks the match
+  const [homeSponsors, setHomeSponsors] = useState(false)
+  const [awaySponsors, setAwaySponsors] = useState(false)
+  const [sponsorsMarked, setSponsorsMarked] = useState(false)
+  const [sponsorsOption] = useSponsorsOption()
+  const showSponsors = sponsorsOption || sponsorsMarked
+  const tickSponsors = (team, ticked) => {
+    if (team === 'home') setHomeSponsors(ticked)
+    else setAwaySponsors(ticked)
+    if (ticked) setSponsorsMarked(true)
+  }
   const [notificationEmail, setNotificationEmail] = useState('')
   const [sendingEmail, setSendingEmail] = useState(false)
 
@@ -1287,7 +1303,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (currentView === 'info') {
       originalMatchInfoRef.current = {
         date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther,
-        type2, type3, type3Other, bestOf, pointsRegular, pointsDeciding, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName
+        type2, type3, type3Other, bestOf, pointsRegular, pointsDeciding, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName,
+        homeSponsors, awaySponsors, sponsorsMarked
       }
       originalOfficialsRef.current = {
         ref1First, ref1Last, ref1Country, ref1Dob, ref1Email, homeContactEmail, awayContactEmail,
@@ -1511,7 +1528,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 match_type_2: match.match_type_2 || '',
                 match_type_3: match.match_type_3 || '',
                 match_type_3_other: match.match_type_3_other || '',
-                best_of: match.bestOf || 5
+                best_of: match.bestOf || 5,
+                ...sponsorsToMatchInfo(match)
               },
               home_team: {
                 name: homeTeam?.name || home || t('common.home'),
@@ -1568,6 +1586,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     setType2(o.type2); setType3(o.type3); setType3Other(o.type3Other); setBestOf(o.bestOf ?? null); setPointsRegular(o.pointsRegular ?? 25); setPointsDeciding(o.pointsDeciding ?? 15); setGameN(o.gameN); setLeague(o.league)
     setHome(o.home); setAway(o.away); setHomeColor(o.homeColor); setAwayColor(o.awayColor)
     setHomeShortName(o.homeShortName); setAwayShortName(o.awayShortName)
+    setHomeSponsors(!!o.homeSponsors); setAwaySponsors(!!o.awaySponsors); setSponsorsMarked(!!o.sponsorsMarked)
   }
 
   const restoreOfficials = () => {
@@ -1705,6 +1724,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         }
         if (match.awayShortName && match.awayShortName.trim()) {
           setAwayShortName(match.awayShortName)
+        }
+        {
+          const s = sponsorsOf(match)
+          setHomeSponsors(s.home); setAwaySponsors(s.away); setSponsorsMarked(s.marked)
         }
         if (match.game_n) setGameN(String(match.game_n))
         else if (match.gameNumber) setGameN(String(match.gameNumber))
@@ -2051,6 +2074,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           city,
           homeShortName: homeShortName || home.substring(0, 8).toUpperCase(),
           awayShortName: awayShortName || away.substring(0, 8).toUpperCase(),
+          homeSponsors, awaySponsors, sponsorsMarked,
           game_n: gameN ? Number(gameN) : null,
           gameNumber: gameN ? gameN : null,
           league,
@@ -2159,7 +2183,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         pointsRegular, pointsDeciding, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName,
         ref1First, ref1Last, ref1Country, ref1Dob, ref1Email, homeContactEmail, awayContactEmail, ref2First, ref2Last, ref2Country, ref2Dob, ref2Email,
         scorerFirst, scorerLast, scorerCountry, scorerDob, asstFirst, asstLast, asstCountry, asstDob,
-        lineJudge1, lineJudge2, lineJudge3, lineJudge4
+        lineJudge1, lineJudge2, lineJudge3, lineJudge4, homeSponsors, awaySponsors, sponsorsMarked
       }
       return { ...values, swapRosters: rosterSwapRef.current }
     }
@@ -2184,7 +2208,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
     return () => clearTimeout(timeoutId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther, type2, type3, type3Other, bestOf, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName, homeRoster, awayRoster, benchHome, benchAway, ref1First, ref1Last, ref1Country, ref1Dob, ref1Email, ref2First, ref2Last, ref2Country, ref2Dob, ref2Email, scorerFirst, scorerLast, scorerCountry, scorerDob, asstFirst, asstLast, asstCountry, asstDob, lineJudge1, lineJudge2, lineJudge3, lineJudge4, homeContactEmail, awayContactEmail, homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature, currentView, setupLocked, draftReadyFor])
+  }, [date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther, type2, type3, type3Other, bestOf, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName, homeRoster, awayRoster, benchHome, benchAway, ref1First, ref1Last, ref1Country, ref1Dob, ref1Email, ref2First, ref2Last, ref2Country, ref2Dob, ref2Email, scorerFirst, scorerLast, scorerCountry, scorerDob, asstFirst, asstLast, asstCountry, asstDob, lineJudge1, lineJudge2, lineJudge3, lineJudge4, homeContactEmail, awayContactEmail, homeSponsors, awaySponsors, sponsorsMarked, homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature, currentView, setupLocked, draftReadyFor])
 
   // Back on the main view (Save, Back, a roster confirmed): no draft left
   useEffect(() => {
@@ -2372,7 +2396,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     // Check if any changes were made (skip sync if no changes)
     const currentMatchInfo = {
       date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther,
-      type2, type3, type3Other, bestOf, pointsRegular, pointsDeciding, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName
+      type2, type3, type3Other, bestOf, pointsRegular, pointsDeciding, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName,
+      homeSponsors, awaySponsors, sponsorsMarked
     }
     const currentOfficials = {
       ref1First, ref1Last, ref1Country, ref1Dob, ref1Email, homeContactEmail, awayContactEmail,
@@ -2497,6 +2522,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         awayName: away.trim(),
         homeShortName: homeShortName || generateShortName(home.trim()),
         awayShortName: awayShortName || generateShortName(away.trim()),
+        homeSponsors, awaySponsors, sponsorsMarked,
         homeColor,
         awayColor,
         scheduledAt,
@@ -2558,7 +2584,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           match_type_2: type2 || '',
           match_type_3: type3 || '',
           match_type_3_other: type3Other || '',
-          best_of: bestOf
+          best_of: bestOf,
+          ...sponsorsToMatchInfo({ homeSponsors, awaySponsors, sponsorsMarked })
         },
         home_team: { name: home.trim(), short_name: homeShortName || generateShortName(home.trim()), color: homeColor },
         away_team: { name: away.trim(), short_name: awayShortName || generateShortName(away.trim()), color: awayColor },
@@ -3315,6 +3342,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     }
     if (swap) {
       swapSidesInForm()
+      // the sponsors on clothing are the team's, like its roster (info fields:
+      // the info draft keeps them swapped, Back restores them)
+      setHomeSponsors(awaySponsors); setAwaySponsors(homeSponsors)
       setHomeColor(awayColor)
       setAwayColor(homeColor)
       rosterSwapRef.current = !rosterSwapRef.current
@@ -3441,6 +3471,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         homeColor: setHomeColor, awayColor: setAwayColor, homeShortName: setHomeShortName, awayShortName: setAwayShortName,
         ref1First: setRef1First, ref1Last: setRef1Last, ref1Country: setRef1Country, ref1Dob: setRef1Dob, ref1Email: setRef1Email,
         homeContactEmail: setHomeContactEmail, awayContactEmail: setAwayContactEmail,
+        homeSponsors: setHomeSponsors, awaySponsors: setAwaySponsors, sponsorsMarked: setSponsorsMarked,
         ref2First: setRef2First, ref2Last: setRef2Last, ref2Country: setRef2Country, ref2Dob: setRef2Dob, ref2Email: setRef2Email,
         scorerFirst: setScorerFirst, scorerLast: setScorerLast, scorerCountry: setScorerCountry, scorerDob: setScorerDob,
         asstFirst: setAsstFirst, asstLast: setAsstLast, asstCountry: setAsstCountry, asstDob: setAsstDob,
@@ -4314,6 +4345,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <Field tone="compact" className={cn(FIELD, 'mt-3')} label={t('matchSetup.teamContactEmail', 'Team contact email (optional)')} hint={t('matchSetup.teamContactEmailHint', 'Gets the final scoresheet by email. Only this match\'s scorers see it.')}>
                   <Input aria-label={`${t('common.home')} ${t('matchSetup.teamContactEmail', 'Team contact email (optional)')}`} type="email" inputMode="email" autoComplete="off" value={homeContactEmail} onChange={e => setHomeContactEmail(e.target.value)} maxLength={254} />
                 </Field>
+                {/* Sponsors on clothing (domain/sponsors.js): while the option is on, or the match is marked */}
+                {showSponsors && (
+                  <Checkbox
+                    className="mt-3"
+                    data-testid="sponsors-home"
+                    aria-label={`${t('common.home')} ${t('options.sponsorsOnClothing')}`}
+                    label={t('options.sponsorsOnClothing')}
+                    hint={t('options.sponsorsOnClothingInfo')}
+                    checked={homeSponsors}
+                    onChange={e => tickSponsors('home', e.target.checked)}
+                  />
+                )}
               </div>
 
               {/* VS Divider */}
@@ -4388,6 +4431,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <Field tone="compact" className={cn(FIELD, 'mt-3')} label={t('matchSetup.teamContactEmail', 'Team contact email (optional)')} hint={t('matchSetup.teamContactEmailHint', 'Gets the final scoresheet by email. Only this match\'s scorers see it.')}>
                   <Input aria-label={`${t('common.away')} ${t('matchSetup.teamContactEmail', 'Team contact email (optional)')}`} type="email" inputMode="email" autoComplete="off" value={awayContactEmail} onChange={e => setAwayContactEmail(e.target.value)} maxLength={254} />
                 </Field>
+                {/* Sponsors on clothing (domain/sponsors.js): while the option is on, or the match is marked */}
+                {showSponsors && (
+                  <Checkbox
+                    className="mt-3"
+                    data-testid="sponsors-away"
+                    aria-label={`${t('common.away')} ${t('options.sponsorsOnClothing')}`}
+                    label={t('options.sponsorsOnClothing')}
+                    hint={t('options.sponsorsOnClothingInfo')}
+                    checked={awaySponsors}
+                    onChange={e => tickSponsors('away', e.target.checked)}
+                  />
+                )}
 
               </div>
 
@@ -7589,6 +7644,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     match_type_3_other: type3 === 'other' ? type3Other : null,
                     homeShortName: homeShortName || home.substring(0, 10).toUpperCase(),
                     awayShortName: awayShortName || away.substring(0, 10).toUpperCase(),
+                    homeSponsors, awaySponsors, sponsorsMarked,
                     game_n: gameN ? Number(gameN) : null,
                     gameNumber: gameN ? gameN : null,
                     league,
