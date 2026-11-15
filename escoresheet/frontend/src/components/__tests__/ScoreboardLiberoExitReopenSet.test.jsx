@@ -207,7 +207,7 @@ describe('Reopen set (Corrections)', () => {
     }, { timeout: 5000 })
     await settle()
     fireEvent.click(reopenButton)
-    await waitFor(() => expect(screen.getByText('Reopen Set 1? This will delete all subsequent sets and their events.')).toBeTruthy(), { timeout: 3000 })
+    await waitFor(() => expect(screen.getByText('Reopen set 1? This will delete all subsequent sets and their events.')).toBeTruthy(), { timeout: 3000 })
     await settle()
     fireEvent.click(button('Yes, reopen'))
   }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useTranslation } from 'react-i18next'
+import { useTranslation, Trans } from 'react-i18next'
 import { useAlert } from '../contexts/AlertContext'
 import { useLiveQuery } from 'dexie-react-hooks'
 import Dexie from 'dexie'
@@ -4230,7 +4230,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const teamKey = leftIsHome ? 'home' : 'away'
     const isTeamA = teamKey === teamAKey
     return {
-      name: team?.name || (leftIsHome ? 'Home' : 'Away'),
+      name: team?.name || (leftIsHome ? t('common.home') : t('common.away')),
       color: effectiveTeamColour(teamKey, team, data.match),
       playersOnCourt: buildOnCourt(players, true, teamKey),
       isTeamA
@@ -4244,7 +4244,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const teamKey = leftIsHome ? 'away' : 'home'
     const isTeamA = teamKey === teamAKey
     return {
-      name: team?.name || (leftIsHome ? 'Away' : 'Home'),
+      name: team?.name || (leftIsHome ? t('common.away') : t('common.home')),
       color: effectiveTeamColour(teamKey, team, data.match),
       playersOnCourt: buildOnCourt(players, false, teamKey),
       isTeamA
@@ -14568,7 +14568,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap'
               }}>
-                {leftTeam.name || (leftIsHome ? 'Home' : 'Away')}
+                {leftTeam.name || (leftIsHome ? t('common.home') : t('common.away'))}
               </span>
               <div style={{
                 padding: '0.17cqw 0.51cqw',
@@ -14763,7 +14763,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap'
               }}>
-                {rightTeam.name || (leftIsHome ? 'Away' : 'Home')}
+                {rightTeam.name || (leftIsHome ? t('common.away') : t('common.home'))}
               </span>
             </div>
           )}
@@ -22322,7 +22322,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const teamData = substitutionConfirm.team === 'home' ? data?.homeTeam : data?.awayTeam
         const teamColor = teamData?.color || (substitutionConfirm.team === 'home' ? '#ef4444' : '#3b82f6')
         const teamLabel = substitutionConfirm.team === teamAKey ? 'A' : 'B'
-        const teamName = teamData?.name || (substitutionConfirm.team === 'home' ? 'Home' : 'Away')
+        const teamName = teamData?.name || (substitutionConfirm.team === 'home' ? t('common.home') : t('common.away'))
 
         return (
           <Modal
@@ -22429,7 +22429,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const teamData = liberoConfirm.team === 'home' ? data?.homeTeam : data?.awayTeam
         const teamColor = teamData?.color || (liberoConfirm.team === 'home' ? '#ef4444' : '#3b82f6')
         const teamLabel = liberoConfirm.team === teamAKey ? 'A' : 'B'
-        const teamName = teamData?.name || (liberoConfirm.team === 'home' ? 'Home' : 'Away')
+        const teamName = teamData?.name || (liberoConfirm.team === 'home' ? t('common.home') : t('common.away'))
 
         // Get libero number from players list
         const teamPlayers = liberoConfirm.team === 'home' ? data?.homePlayers : data?.awayPlayers
@@ -22504,7 +22504,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         textTransform: 'uppercase',
                         letterSpacing: '0.5px'
                       }}>
-                        Libero OUT
+                        {t('scoreboard.modals.liberoOut')}
                       </div>
                       <div style={{
                         fontSize: '26px',
@@ -22532,7 +22532,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         textTransform: 'uppercase',
                         letterSpacing: '0.5px'
                       }}>
-                        Returns
+                        {t('scoreboard.dialogs.returns', 'Returns')}
                       </div>
                       <div style={{
                         fontSize: '26px',
@@ -22562,7 +22562,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         textTransform: 'uppercase',
                         letterSpacing: '0.5px'
                       }}>
-                        Libero IN
+                        {t('scoreboard.modals.liberoIn')}
                       </div>
                       <div style={{
                         fontSize: '26px',
@@ -22599,7 +22599,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         textTransform: 'uppercase',
                         letterSpacing: '0.5px'
                       }}>
-                        Replaced
+                        {t('scoreboard.dialogs.replaced', 'Replaced')}
                       </div>
                       <div style={{
                         fontSize: '26px',
@@ -22618,12 +22618,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <SbButton variant="positive"
                   onClick={confirmLibero}
                 >
-                  Confirm
+                  {t('common.confirm')}
                 </SbButton>
                 <SbButton variant="secondary"
                   onClick={cancelLiberoConfirm}
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </SbButton>
               </div>
             </div>
@@ -22635,7 +22635,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const teamData = liberoReentryModal.team === 'home' ? data?.homeTeam : data?.awayTeam
         const teamColor = teamData?.color || (liberoReentryModal.team === 'home' ? '#ef4444' : '#3b82f6')
         const teamLabel = liberoReentryModal.team === teamAKey ? 'A' : 'B'
-        const teamName = teamData?.name || (liberoReentryModal.team === 'home' ? 'Home' : 'Away')
+        const teamName = teamData?.name || (liberoReentryModal.team === 'home' ? t('common.home') : t('common.away'))
 
         // Get the selected libero info
         const selectedLibero = liberoReentryModal.availableLiberos?.[liberoReentryModal.selectedLiberoIndex || 0]
@@ -22713,7 +22713,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 textAlign: 'center',
                 marginBottom: '16px'
               }}>
-                Sub libero in position I?
+                {t('scoreboard.dialogs.liberoInPositionI', 'Sub libero in position I?')}
               </div>
 
               {/* Player OUT and Libero IN - side by side */}
@@ -22735,7 +22735,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     textTransform: 'uppercase',
                     letterSpacing: '0.5px'
                   }}>
-                    Player OUT
+                    {t('scoreboard.dialogs.playerOutCaps', 'Player OUT')}
                   </div>
                   <div style={{
                     fontSize: '26px',
@@ -22763,7 +22763,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     textTransform: 'uppercase',
                     letterSpacing: '0.5px'
                   }}>
-                    Libero IN
+                    {t('scoreboard.modals.liberoIn')}
                   </div>
                   <div style={{
                     fontSize: '26px',
@@ -22788,7 +22788,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {liberoReentryModal.availableLiberos && liberoReentryModal.availableLiberos.length > 1 && (
                 <div style={{ marginBottom: '16px' }}>
                   <div style={{ fontSize: '12px', color: '#6b7280', textAlign: 'center', marginBottom: '8px' }}>
-                    Select libero:
+                    {t('scoreboard.dialogs.selectLibero', 'Select libero:')}
                   </div>
                   <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
                     {liberoReentryModal.availableLiberos.map((libero, index) => (
@@ -22831,12 +22831,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <SbButton variant="positive"
                   onClick={confirmLiberoReentry}
                 >
-                  Confirm
+                  {t('common.confirm')}
                 </SbButton>
                 <SbButton variant="secondary"
                   onClick={cancelLiberoReentry}
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </SbButton>
               </div>
             </div>
@@ -22866,11 +22866,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           >
             <div style={{ padding: '4px 0' }}>
               <p className="mb-4 text-sm text-stone-600">
-                Select a player to re-designate as Libero:
+                {t('scoreboard.dialogs.selectRedesignation', 'Select a player to re-designate as libero:')}
               </p>
               {availablePlayers.length === 0 ? (
                 <p className="mb-4 text-center text-sm text-stone-500">
-                  No available players for re-designation
+                  {t('scoreboard.errors.noPlayersForRedesignation')}
                 </p>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px', maxHeight: '360px', overflowY: 'auto' }}>
@@ -22888,7 +22888,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <SbButton variant="secondary"
                   onClick={() => setLiberoRedesignationModal(null)}
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </SbButton>
               </div>
             </div>
@@ -22906,7 +22906,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         >
           <div style={{ padding: '4px 0', textAlign: 'center' }}>
             <p style={{ marginBottom: '24px', fontSize: '16px' }}>
-              Reopen Set {reopenSetConfirm.setIndex}? This will delete all subsequent sets and their events.
+              {t('scoreboard.dialogs.reopenSetBody', { defaultValue: 'Reopen set {{set}}? This will delete all subsequent sets and their events.', set: reopenSetConfirm.setIndex })}
             </p>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
               <SbButton variant="positive"
@@ -22998,12 +22998,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   notifyScoresheetUpdate('reopen_set')
                 })}
               >
-                Yes, reopen
+                {t('scoreboard.dialogs.yesReopen', 'Yes, reopen')}
               </SbButton>
               <SbButton variant="secondary"
                 onClick={() => setReopenSetConfirm(null)}
               >
-                Cancel
+                {t('common.cancel')}
               </SbButton>
             </div>
           </div>
@@ -23084,7 +23084,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 {canPutIn && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <SbMenuItem tone="libero" expanded={liberoBenchReplaceExpanded} onClick={() => setLiberoBenchReplaceExpanded(!liberoBenchReplaceExpanded)}>
-                      Replace
+                      {t('scoreboard.dialogs.replace', 'Replace')}
                     </SbMenuItem>
                     {liberoBenchReplaceExpanded && (
                       <div className={SB_MENU_CHIPS}>
@@ -23111,7 +23111,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 {/* Unable to play - expandable */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <SbMenuItem tone="danger" expanded={liberoBenchUnableExpanded} onClick={() => setLiberoBenchUnableExpanded(!liberoBenchUnableExpanded)}>
-                    Unable to play
+                    {t('scoreboard.playerMenu.unableToPlay')}
                   </SbMenuItem>
                   {liberoBenchUnableExpanded && (
                     <div className={SB_MENU_SUB}>
@@ -23130,7 +23130,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           setLiberoBenchUnableExpanded(false)
                         }}
                       >
-                        Declared unable
+                        {t('scoreboard.playerMenu.declaredUnable')}
                       </SbMenuItem>
                       <SbMenuItem
                         tone="danger"
@@ -23147,7 +23147,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           setLiberoBenchUnableExpanded(false)
                         }}
                       >
-                        Injury / illness
+                        {t('scoreboard.playerMenu.injuryIllness')}
                       </SbMenuItem>
                     </div>
                   )}
@@ -23169,7 +23169,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     setLiberoBenchActionMenu(null)
                   }}
                 >
-                  Sanction
+                  {t('scoreboard.sanction')}
                 </SbMenuItem>
               </div>
             </div>
@@ -23181,7 +23181,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const teamData = liberoUnableModal.team === 'home' ? data?.homeTeam : data?.awayTeam
         const teamColor = teamData?.color || (liberoUnableModal.team === 'home' ? '#ef4444' : '#3b82f6')
         const teamLabel = liberoUnableModal.team === teamAKey ? 'A' : 'B'
-        const teamName = teamData?.name || (liberoUnableModal.team === 'home' ? 'Home' : 'Away')
+        const teamName = teamData?.name || (liberoUnableModal.team === 'home' ? t('common.home') : t('common.away'))
         const liberoLabel = liberoUnableModal.liberoType === 'libero1' ? 'L1' : liberoUnableModal.liberoType === 'redesignated' ? 'LR' : 'L2'
 
         // If reason is already selected, show confirmation
@@ -23244,7 +23244,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 border: '2px solid #ef4444'
               }}>
                 <div style={{ fontSize: '12px', color: '#991b1b', fontWeight: 600, marginBottom: '6px', textTransform: 'uppercase' }}>
-                  Libero unable to play
+                  {t('scoreboard.dialogs.liberoUnableTitle', 'Libero unable to play')}
                 </div>
                 <div style={{ fontSize: '28px', fontWeight: 700, color: '#991b1b' }}>
                   #{liberoUnableModal.liberoNumber}
@@ -23264,7 +23264,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <>
                   {/* Redesignation Prompt */}
                   <div style={{ fontSize: '14px', color: '#6b7280', textAlign: 'center', marginBottom: '20px' }}>
-                    The libero is now unable to play. Do you want to redesignate a new libero now?
+                    {t('scoreboard.dialogs.redesignateNowQuestion', 'The libero is now unable to play. Do you want to redesignate a new libero now?')}
                   </div>
                   <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
                     <SbButton variant="dark"
@@ -23273,12 +23273,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         setLiberoUnableModal(null)
                       }}
                     >
-                      Yes, redesignate
+                      {t('scoreboard.dialogs.yesRedesignate', 'Yes, redesignate')}
                     </SbButton>
                     <SbButton variant="secondary"
                       onClick={() => setLiberoUnableModal(null)}
                     >
-                      No, later
+                      {t('scoreboard.dialogs.noLater', 'No, later')}
                     </SbButton>
                   </div>
                 </>
@@ -23286,7 +23286,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <>
                   {/* Select reason */}
                   <div style={{ fontSize: '14px', color: '#6b7280', textAlign: 'center', marginBottom: '16px' }}>
-                    Select reason:
+                    {t('scoreboard.dialogs.selectReason', 'Select reason:')}
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
                     <button
@@ -23311,7 +23311,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       <div>
                         <div style={{ fontWeight: 700 }}>Declared unable</div>
                         <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '4px' }}>
-                          Declares libero unable to continue
+                          {t('scoreboard.dialogs.declaresUnable', 'Declares libero unable to continue')}
                         </div>
                       </div>
                       <SpeechIcon size={18} />
@@ -23338,7 +23338,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       <div>
                         <div style={{ fontWeight: 700 }}>Injury / illness</div>
                         <div style={{ fontSize: '12px', color: '#991b1b', marginTop: '4px' }}>
-                          Libero is injured or ill
+                          {t('scoreboard.dialogs.liberoInjured', 'Libero is injured or ill')}
                         </div>
                       </div>
                       <span style={{ fontSize: '18px' }}>✚</span>
@@ -23348,7 +23348,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     <SbButton variant="secondary"
                       onClick={() => setLiberoUnableModal(null)}
                     >
-                      Cancel
+                      {t('common.cancel')}
                     </SbButton>
                   </div>
                 </>
@@ -23357,16 +23357,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   {/* Confirmation */}
                   <div style={{ fontSize: '14px', color: '#6b7280', textAlign: 'center', marginBottom: '16px' }}>
                     {(() => {
-                      const courtText = liberoUnableModal.isOnCourt ? ' The replaced player will return to court.' : ''
+                      const courtText = liberoUnableModal.isOnCourt ? ' ' + t('scoreboard.dialogs.replacedReturns', 'The replaced player will return to court.') : ''
                       switch (liberoUnableModal.reason) {
                         case 'injury':
-                          return `The libero will be marked as injured. They may return to play later unless a redesignation occurs.${courtText}`
+                          return t('scoreboard.dialogs.liberoUnableInjury', 'The libero will be marked as injured. They may return to play later unless a redesignation occurs.') + courtText
                         case 'expulsion':
-                          return `The libero is expelled and cannot play for the remainder of this set. They may return in the next set.${courtText}`
+                          return t('scoreboard.dialogs.liberoUnableExpulsion', 'The libero is expelled and cannot play for the remainder of this set. They may return in the next set.') + courtText
                         case 'disqualification':
-                          return `The libero is disqualified and cannot play for the remainder of the match.${courtText}`
+                          return t('scoreboard.dialogs.liberoUnableDisqualification', 'The libero is disqualified and cannot play for the remainder of the match.') + courtText
                         default: // 'declared'
-                          return `The libero will be declared unable to play.${courtText}`
+                          return t('scoreboard.dialogs.liberoUnableDeclared', 'The libero will be declared unable to play.') + courtText
                       }
                     })()}
                   </div>
@@ -23374,12 +23374,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     <SbButton variant="danger-soft"
                       onClick={confirmLiberoUnable}
                     >
-                      Confirm
+                      {t('common.confirm')}
                     </SbButton>
                     <SbButton variant="secondary"
                       onClick={() => setLiberoUnableModal(null)}
                     >
-                      Cancel
+                      {t('common.cancel')}
                     </SbButton>
                   </div>
                 </>
@@ -23694,7 +23694,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       {exceptionalSubstitutionModal && (() => {
         const { team, position, playerOut, reason } = exceptionalSubstitutionModal
         const teamLabel = team === teamAKey ? 'A' : 'B'
-        const reasonText = reason === 'expulsion' ? 'expelled' : reason === 'disqualification' ? 'disqualified' : 'injured'
+        const reasonText = reason === 'expulsion' ? t('scoreboard.dialogs.reasonExpelled', 'expelled') : reason === 'disqualification' ? t('scoreboard.dialogs.reasonDisqualified', 'disqualified') : t('scoreboard.dialogs.reasonInjured', 'injured')
         const exceptionalSubstitutes = getAvailableExceptionalSubstitutes(team, playerOut)
         // Easy match: a new number can always come in exceptionally
         const exceptionalPossible = exceptionalSubstitutes.length > 0 || easyNewSubstituteOpen(team, playerOut, true)
@@ -23702,8 +23702,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // field six players next set (then the MATCH)
         const forfaitScopeNow = getForfaitScope(team, reason, playerOut)
         const forfaitText = forfaitScopeNow === 'match'
-          ? `Team ${teamLabel} cannot field six players for the next set: it is declared incomplete for the MATCH. The opponent wins this set and all remaining sets, and the match ends.`
-          : `Team ${teamLabel} is declared incomplete for this SET: the opponent gets the points needed to win it (Team ${teamLabel} keeps its points), then the next set is played.`
+          ? t('scoreboard.dialogs.forfaitMatchText', { defaultValue: 'Team {{team}} cannot field six players for the next set: it is declared incomplete for the MATCH. The opponent wins this set and all remaining sets, and the match ends.', team: teamLabel })
+          : t('scoreboard.dialogs.forfaitSetText', { defaultValue: 'Team {{team}} is declared incomplete for this SET: the opponent gets the points needed to win it (Team {{team}} keeps its points), then the next set is played.', team: teamLabel })
 
         return (
           <Modal
@@ -23715,15 +23715,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           >
             <div style={{ padding: '4px 0', textAlign: 'center' }}>
               <p style={{ marginBottom: '16px', fontSize: '18px', fontWeight: 700, color: 'var(--accent)' }}>
-                Player #{playerOut} ({reasonText})
+                {t('scoreboard.dialogs.playerWithReason', { defaultValue: 'Player #{{number}} ({{reason}})', number: playerOut, reason: reasonText })}
               </p>
               <p style={{ marginBottom: '16px', fontSize: '16px' }}>
-                No legal substitution is possible for this player.
+                {t('scoreboard.dialogs.noLegalSubForPlayer', 'No legal substitution is possible for this player.')}
               </p>
               {exceptionalPossible ? (
                 <>
                   <p style={{ marginBottom: '24px', fontSize: '14px', color: 'var(--muted)' }}>
-                    Choose an option:
+                    {t('scoreboard.dialogs.chooseOption', 'Choose an option:')}
                   </p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <button
@@ -23744,14 +23744,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         {t('scoreboard.modals.exceptionalSubstitution')}
                       </div>
                       <div style={{ fontSize: '13px', opacity: 0.8 }}>
-                        {t('scoreboard.modals.substituteWithEligible')} (excluding liberos, expelled/disqualified players, and player #{playerOut}). Player #{playerOut} cannot take part in the game anymore.
+                        {t('scoreboard.modals.substituteWithEligible')} {t('scoreboard.dialogs.exceptionalSubDetail', { defaultValue: '(excluding liberos, expelled/disqualified players, and player #{{number}}). Player #{{number}} cannot take part in the game anymore.', number: playerOut })}
                       </div>
                     </button>
                     <SbButton variant="danger-soft"
                       onClick={() => handleExceptionalSubstitutionChoice('forfait')}
                     >
                       <div style={{ fontWeight: 700, marginBottom: '4px' }}>
-                        {forfaitScopeNow === 'match' ? 'Forfait (match)' : 'Forfait (set)'}
+                        {forfaitScopeNow === 'match' ? t('scoreboard.dialogs.forfaitMatch', 'Forfait (match)') : t('scoreboard.dialogs.forfaitSet', 'Forfait (set)')}
                       </div>
                       <div style={{ fontSize: '13px', opacity: 0.9 }}>
                         {forfaitText}
@@ -23762,15 +23762,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               ) : (
                 <div style={{ marginTop: '24px', padding: '16px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '8px' }}>
                   <p style={{ marginBottom: '16px', fontSize: '16px', fontWeight: 600, color: '#ef4444' }}>
-                    No exceptional substitution possible
+                    {t('scoreboard.dialogs.noExceptionalSub', 'No exceptional substitution possible')}
                   </p>
                   <p style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--muted)' }}>
-                    No eligible players available for exceptional substitution. {forfaitText}
+                    {t('scoreboard.dialogs.noExceptionalSubPlayers', 'No eligible players available for exceptional substitution.')} {forfaitText}
                   </p>
                   <SbButton variant="danger-soft"
                     onClick={() => handleExceptionalSubstitutionChoice('forfait')}
                   >
-                    {forfaitScopeNow === 'match' ? 'Confirm forfait (match)' : 'Confirm forfait (set)'}
+                    {forfaitScopeNow === 'match' ? t('scoreboard.dialogs.confirmForfaitMatch', 'Confirm forfait (match)') : t('scoreboard.dialogs.confirmForfaitSet', 'Confirm forfait (set)')}
                   </SbButton>
                 </div>
               )}
@@ -23778,7 +23778,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 onClick={() => handleExceptionalSubstitutionChoice('cancel')}
                 style={{ marginTop: '16px' }}
               >
-                Cancel (correct the sanction or injury first)
+                {t('scoreboard.dialogs.cancelCorrectFirst', 'Cancel (correct the sanction or injury first)')}
               </SbButton>
             </div>
           </Modal>
@@ -23791,7 +23791,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const teamLabel = team === teamAKey ? 'A' : 'B'
         const teamData = team === 'home' ? data?.homeTeam : data?.awayTeam
         const teamColor = teamData?.color || (team === 'home' ? '#ef4444' : '#3b82f6')
-        const reasonText = reason === 'expulsion' ? 'expelled' : 'disqualified'
+        const reasonText = reason === 'expulsion' ? t('scoreboard.dialogs.reasonExpelled', 'expelled') : t('scoreboard.dialogs.reasonDisqualified', 'disqualified')
 
         return (
           <Modal
@@ -23815,11 +23815,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 fontSize: '14px',
                 marginBottom: '16px'
               }}>
-                Team {teamLabel}
+                {t('scoreboard.dialogs.teamLabel', { defaultValue: 'Team {{team}}', team: teamLabel })}
               </div>
 
               <p style={{ marginBottom: '16px', fontSize: '16px' }}>
-                Player <strong>#{expelledPlayer}</strong> has been <strong style={{ color: '#ef4444' }}>{reasonText}</strong>.
+                <Trans i18nKey="scoreboard.dialogs.playerSentOff" defaults="Player <b>#{{number}}</b> has been <r>{{reason}}</r>." values={{ number: expelledPlayer, reason: reasonText }} components={{ b: <strong />, r: <strong style={{ color: '#ef4444' }} /> }} />
               </p>
 
               {liberoOnCourt && (
@@ -23831,7 +23831,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   borderRadius: '8px',
                   fontSize: '14px'
                 }}>
-                  Libero <strong>#{liberoOnCourt.liberoNumber}</strong> remains on court at position <strong>{liberoOnCourt.position}</strong>.
+                  <Trans i18nKey="scoreboard.dialogs.liberoRemainsOnCourt" defaults="Libero <b>#{{number}}</b> remains on court at position <b>{{position}}</b>." values={{ number: liberoOnCourt.liberoNumber, position: liberoOnCourt.position }} components={{ b: <strong /> }} />
                 </p>
               )}
 
@@ -23845,12 +23845,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   fontSize: '13px',
                   color: '#f59e0b'
                 }}>
-                  No legal substitutes available - exceptional substitution required.
+                  {t('scoreboard.dialogs.noLegalSubsExceptional', 'No legal substitutes available - exceptional substitution required.')}
                 </p>
               )}
 
               <p style={{ marginBottom: '16px', fontWeight: 600, fontSize: '15px' }}>
-                Select replacement player:
+                {t('scoreboard.dialogs.selectReplacement', 'Select replacement player:')}
               </p>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -23883,7 +23883,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     cursor: 'pointer'
                   }}
                 >
-                  Declare forfeit instead
+                  {t('scoreboard.dialogs.declareForfaitInstead', 'Declare forfeit instead')}
                 </button>
               </div>
             </div>
@@ -23900,8 +23900,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const rightTeamKey = set5SelectedLeftTeam === 'A' ? teamBKey : teamAKey
         const leftTeamData = leftTeamKey === 'home' ? data?.homeTeam : data?.awayTeam
         const rightTeamData = rightTeamKey === 'home' ? data?.homeTeam : data?.awayTeam
-        const leftTeamName = leftTeamData?.name || `Team ${set5SelectedLeftTeam}`
-        const rightTeamName = rightTeamData?.name || `Team ${set5SelectedLeftTeam === 'A' ? 'B' : 'A'}`
+        const leftTeamName = leftTeamData?.name || t('scoreboard.dialogs.teamLabel', { defaultValue: 'Team {{team}}', team: set5SelectedLeftTeam })
+        const rightTeamName = rightTeamData?.name || t('scoreboard.dialogs.teamLabel', { defaultValue: 'Team {{team}}', team: set5SelectedLeftTeam === 'A' ? 'B' : 'A' })
         const leftTeamColor = leftTeamData?.color || (leftTeamKey === 'home' ? '#ef4444' : '#3b82f6')
         const rightTeamColor = rightTeamData?.color || (rightTeamKey === 'home' ? '#ef4444' : '#3b82f6')
 
@@ -23922,7 +23922,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           >
             <div style={{ padding: '4px 0' }}>
               <p style={{ marginBottom: '24px', fontSize: '16px', textAlign: 'center' }}>
-                Configure teams and service for set {displaySetNumber(5, data?.match?.bestOf)}.
+                {t('scoreboard.dialogs.set5Configure', { defaultValue: 'Configure teams and service for set {{number}}.', number: displaySetNumber(5, data?.match?.bestOf) })}
               </p>
 
               {/* Teams on Sides */}
@@ -23947,7 +23947,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     position: 'relative'
                   }}>
                     <div style={{ fontSize: '18px', fontWeight: 700, marginBottom: '4px' }}>
-                      Team {leftTeamLabel}
+                      {t('scoreboard.dialogs.teamLabel', { defaultValue: 'Team {{team}}', team: leftTeamLabel })}
                     </div>
                     <div style={{ fontSize: '14px', opacity: 0.9, marginBottom: '8px' }}>
                       {leftTeamName}
@@ -23979,7 +23979,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     position: 'relative'
                   }}>
                     <div style={{ fontSize: '18px', fontWeight: 700, marginBottom: '4px' }}>
-                      Team {rightTeamLabel}
+                      {t('scoreboard.dialogs.teamLabel', { defaultValue: 'Team {{team}}', team: rightTeamLabel })}
                     </div>
                     <div style={{ fontSize: '14px', opacity: 0.9, marginBottom: '8px' }}>
                       {rightTeamName}
@@ -24009,7 +24009,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     }}
                     style={{ whiteSpace: 'nowrap' }}
                   >
-                    Switch teams
+                    {t('scoreboard.dialogs.switchTeams', 'Switch teams')}
                   </SbButton>
                 </div>
 
@@ -24021,7 +24021,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     }}
                     style={{ whiteSpace: 'nowrap' }}
                   >
-                    Switch serve
+                    {t('scoreboard.buttons.switchServe')}
                   </SbButton>
                 </div>
               </div>
@@ -24030,7 +24030,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <SbButton variant="positive"
                   onClick={() => confirmSet5SideService(set5SelectedLeftTeam, set5SelectedFirstServe)}
                 >
-                  Confirm
+                  {t('common.confirm')}
                 </SbButton>
               </div>
             </div>
@@ -24042,7 +24042,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const teamData = liberoRotationModal.team === 'home' ? data?.homeTeam : data?.awayTeam
         const teamColor = teamData?.color || (liberoRotationModal.team === 'home' ? '#ef4444' : '#3b82f6')
         const teamLabel = liberoRotationModal.team === teamAKey ? 'A' : 'B'
-        const teamName = teamData?.name || (liberoRotationModal.team === 'home' ? 'Home' : 'Away')
+        const teamName = teamData?.name || (liberoRotationModal.team === 'home' ? t('common.home') : t('common.away'))
         const liberoLabel = liberoRotationModal.liberoType === 'libero1' ? 'L1' : liberoRotationModal.liberoType === 'redesignated' ? 'LR' : 'L2'
 
         // Determine if this team is on the left or right side
@@ -24116,7 +24116,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 textAlign: 'center',
                 marginBottom: '16px'
               }}>
-                Libero rotated to position IV
+                {t('scoreboard.dialogs.liberoRotatedIV', 'Libero rotated to position IV')}
               </div>
 
               {/* Player IN and Libero OUT - side by side */}
@@ -24138,7 +24138,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     textTransform: 'uppercase',
                     letterSpacing: '0.5px'
                   }}>
-                    Player IN
+                    {t('scoreboard.dialogs.playerInCaps', 'Player IN')}
                   </div>
                   <div style={{
                     fontSize: '26px',
@@ -24166,7 +24166,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     textTransform: 'uppercase',
                     letterSpacing: '0.5px'
                   }}>
-                    Libero OUT
+                    {t('scoreboard.modals.liberoOut')}
                   </div>
                   <div style={{
                     fontSize: '26px',
@@ -24187,7 +24187,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 </div>
               </div>
 
-              {/* OK Button */}
+              {/* {t('common.ok')} Button */}
               <div style={{ display: 'flex', justifyContent: 'center' }}>
                 <SbButton variant="positive"
                   onClick={() => setLiberoRotationModal(null)}
@@ -24355,7 +24355,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           >
             <div style={{ padding: '4px 0' }}>
               <p style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--muted)', textAlign: 'center' }}>
-                Last point was assigned to <strong><span style={{ ...teamBoxStyle(oldTeamColor), padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, marginRight: '4px' }}>{oldTeamLabel}</span>{oldTeamName}</strong>
+                {t('scoreboard.dialogs.lastPointTo', 'Last point was assigned to')} <strong><span style={{ ...teamBoxStyle(oldTeamColor), padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, marginRight: '4px' }}>{oldTeamLabel}</span>{oldTeamName}</strong>
               </p>
 
               {/* Row 19: what came after the point is taken back first, in
@@ -24429,7 +24429,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     background: selectedOption === 'swap' ? '#eab308' : 'transparent',
                     flexShrink: 0
                   }} />
-                  <span style={{ fontSize: '13px', fontWeight: 600 }}>Assign to other team</span>
+                  <span style={{ fontSize: '13px', fontWeight: 600 }}>{t('scoreboard.dialogs.assignToOtherTeam', 'Assign to other team')}</span>
                 </div>
 
                 {/* Option 2: Replay */}
@@ -24457,7 +24457,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     background: selectedOption === 'replay' ? '#eab308' : 'transparent',
                     flexShrink: 0
                   }} />
-                  <span style={{ fontSize: '13px', fontWeight: 600 }}>Replay the rally</span>
+                  <span style={{ fontSize: '13px', fontWeight: 600 }}>{t('scoreboard.dialogs.replayTheRally', 'Replay the rally')}</span>
                 </div>
               </div>
 
@@ -24471,7 +24471,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               }}>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', fontSize: '13px', color: 'var(--muted)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ width: '55px', textAlign: 'right' }}>Current:</span>
+                    <span style={{ minWidth: '55px', textAlign: 'right' }}>{t('scoreboard.dialogs.current', 'Current:')}</span>
                     <div style={{ background: 'var(--panel)', padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <span style={{ ...teamBoxStyle(homeColor), padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>{homeLabel}</span>
                       <strong>{homeTeamName} {currentHomePoints} : {currentAwayPoints} {awayTeamName}</strong>
@@ -24479,7 +24479,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ width: '55px', textAlign: 'right' }}>New:</span>
+                    <span style={{ minWidth: '55px', textAlign: 'right' }}>{t('scoreboard.dialogs.new', 'New:')}</span>
                     <div style={{ background: 'rgba(34, 197, 94, 0.15)', padding: '6px 12px', borderRadius: '6px', border: '1px solid rgba(34, 197, 94, 0.4)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <span style={{ ...teamBoxStyle(homeColor), padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>{homeLabel}</span>
                       <strong style={{ color: '#22c55e' }}>
@@ -24489,7 +24489,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ width: '55px', textAlign: 'right' }}>Serve:</span>
+                    <span style={{ minWidth: '55px', textAlign: 'right' }}>{t('scoreboard.dialogs.serve', 'Serve:')}</span>
                     <VolleyballIcon size={16} />
                     <span style={{ ...teamBoxStyle((selectedOption === 'swap' ? swapServeTeam : replayServeTeam) === 'home' ? homeColor : awayColor), padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>
                       {(selectedOption === 'swap' ? swapServeTeam : replayServeTeam) === 'home' ? homeLabel : awayLabel}
@@ -24505,12 +24505,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   className="border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
                   onClick={handleDecisionChange}
                 >
-                  Confirm
+                  {t('common.confirm')}
                 </SbButton>
                 <SbButton variant="secondary"
                   onClick={cancelReplayRally}
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </SbButton>
               </div>
             </div>
@@ -25115,7 +25115,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     <Modal
       title={
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span>{teamData?.name || (team === 'home' ? 'Home' : 'Away')}</span>
+          <span>{teamData?.name || (team === 'home' ? t('common.home') : t('common.away'))}</span>
           <span
             style={{
               padding: '4px 12px',
@@ -25262,7 +25262,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                 padding: '6px 12px', borderRadius: '6px',
                 textAlign: 'center'
               }}>
-                LFP on court: {lfpInLineup} / {lfpMinimumOnCourt} required
+                {t('scoreboard.dialogs.lfpOnCourt', { defaultValue: 'LFP on court: {{n}} / {{min}} required', n: lfpInLineup, min: lfpMinimumOnCourt })}
               </div>
             )}
 
@@ -25341,7 +25341,7 @@ function SetStartTimeModal({ setIndex, defaultTime, fromSchedule = false, onConf
 
   return (
     <Modal
-      title={`Set ${setIndex} start time`}
+      title={t('scoreboard.dialogs.setStartTime', { defaultValue: 'Set {{set}} start time', set: setIndex })}
       open={true}
       onClose={onCancel}
       width={400}
@@ -25371,10 +25371,10 @@ function SetStartTimeModal({ setIndex, defaultTime, fromSchedule = false, onConf
         )}
         <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
           <SbButton variant="positive" onClick={handleConfirm}>
-            Confirm
+            {t('common.confirm')}
           </SbButton>
           <SbButton onClick={onCancel}>
-            Cancel
+            {t('common.cancel')}
           </SbButton>
         </div>
       </div>
@@ -25383,9 +25383,10 @@ function SetStartTimeModal({ setIndex, defaultTime, fromSchedule = false, onConf
 }
 
 function ToSubDetailsModal({ type, side, timeoutDetails, substitutionDetails, teamName, onClose }) {
+  const { t } = useTranslation()
   return (
     <Modal
-      title={type === 'timeout' ? `Timeouts - ${teamName}   ` : `Substitutions - ${teamName}  `}
+      title={type === 'timeout' ? t('scoreboard.dialogs.timeoutsTitle', { defaultValue: 'Timeouts - {{team}}', team: teamName }) : t('scoreboard.dialogs.substitutionsTitle', { defaultValue: 'Substitutions - {{team}}', team: teamName })}
       open={true}
       onClose={onClose}
       width={400}
@@ -25407,7 +25408,7 @@ function ToSubDetailsModal({ type, side, timeoutDetails, substitutionDetails, te
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div style={{ fontSize: '16px', fontWeight: 600 }}>
-                        Timeout {detail.index}
+                        {t('scoreboard.dialogs.timeoutN', { defaultValue: 'Timeout {{n}}', n: detail.index })}
                       </div>
                       <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--accent)' }}>
                         {detail.score}
@@ -25418,7 +25419,7 @@ function ToSubDetailsModal({ type, side, timeoutDetails, substitutionDetails, te
               </div>
             ) : (
               <div style={{ textAlign: 'center', color: 'var(--muted)', padding: '20px' }}>
-                No timeouts taken yet
+                {t('scoreboard.dialogs.noTimeoutsYet', 'No timeouts taken yet')}
               </div>
             )}
           </div>
@@ -25438,7 +25439,7 @@ function ToSubDetailsModal({ type, side, timeoutDetails, substitutionDetails, te
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                       <div style={{ fontSize: '16px', fontWeight: 600 }}>
-                        Substitution {detail.index}
+                        {t('scoreboard.dialogs.substitutionN', { defaultValue: 'Substitution {{n}}', n: detail.index })}
                       </div>
                       <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--accent)' }}>
                         {detail.score}
@@ -25446,13 +25447,13 @@ function ToSubDetailsModal({ type, side, timeoutDetails, substitutionDetails, te
                     </div>
                     <div style={{ display: 'flex', gap: '16px', fontSize: '14px', color: 'var(--muted)' }}>
                       <div>
-                        <span style={{ fontWeight: 600 }}>Position:</span> {detail.position}
+                        <span style={{ fontWeight: 600 }}>{t('scoreboard.dialogs.positionLabel', 'Position:')}</span> {detail.position}
                       </div>
                       <div>
-                        <span style={{ fontWeight: 600 }}>Out:</span> {detail.playerOut}
+                        <span style={{ fontWeight: 600 }}>{t('scoreboard.dialogs.outLabel', 'Out:')}</span> {detail.playerOut}
                       </div>
                       <div>
-                        <span style={{ fontWeight: 600 }}>In:</span> {detail.playerIn}
+                        <span style={{ fontWeight: 600 }}>{t('scoreboard.dialogs.inLabel', 'In:')}</span> {detail.playerIn}
                       </div>
                     </div>
                   </div>
@@ -25460,7 +25461,7 @@ function ToSubDetailsModal({ type, side, timeoutDetails, substitutionDetails, te
               </div>
             ) : (
               <div style={{ textAlign: 'center', color: 'var(--muted)', padding: '20px' }}>
-                No substitutions taken yet
+                {t('scoreboard.dialogs.noSubstitutionsYet', 'No substitutions taken yet')}
               </div>
             )}
           </div>
@@ -25471,6 +25472,7 @@ function ToSubDetailsModal({ type, side, timeoutDetails, substitutionDetails, te
 }
 
 function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime, teamAKey, leftIsHome, isMatchEnd, homeTeamName, awayTeamName, homeColor, awayColor, onConfirm, onDecisionChange }) {
+  const { t } = useTranslation()
   const [time, setTime] = useState(() => {
     // Extract local time from UTC ISO string
     const { time: localTime } = splitLocalDateTime(defaultTime)
@@ -25506,7 +25508,7 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
 
   return (
     <Modal
-      title={isMatchEnd ? 'Match end' : `Set ${setIndex} end`}
+      title={isMatchEnd ? t('scoreboard.dialogs.matchEndTitle', 'Match end') : t('scoreboard.dialogs.setEndTitle', { defaultValue: 'Set {{set}} end', set: setIndex })}
       open={true}
       onClose={onDecisionChange}
       width={400}
@@ -25529,10 +25531,10 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
           borderRadius: '8px',
           display: 'inline-block'
         }}>
-          {winnerTeamName} ({winnerLabel}) {isMatchEnd ? 'won the match' : 'won the set'}
+          {isMatchEnd ? t('scoreboard.dialogs.wonMatch', { defaultValue: '{{team}} ({{label}}) won the match', team: winnerTeamName, label: winnerLabel }) : t('scoreboard.dialogs.wonSet', { defaultValue: '{{team}} ({{label}}) won the set', team: winnerTeamName, label: winnerLabel })}
         </p>
         <p className="text-sm text-stone-600" style={{ marginBottom: '12px' }}>
-          Confirm the end time:
+          {t('scoreboard.dialogs.confirmEndTime', 'Confirm the end time:')}
         </p>
         <div
           style={{
@@ -25547,7 +25549,7 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
         </div>
         <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
           <SbButton variant="positive" onClick={handleConfirm} disabled={isConfirming}>
-            {isConfirming ? 'Confirming...' : 'Confirm'}
+            {isConfirming ? t('scoreboard.dialogs.confirming', 'Confirming...') : t('common.confirm')}
           </SbButton>
           {/* Amber = a decision is pending (kit semantic hue); same yellow family
               as the frozen Decision Change rally button, never brand red. */}
@@ -25556,7 +25558,7 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
             disabled={isConfirming}
             className="border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
           >
-            Decision change
+            {t('scoreboard.buttons.decisionChange')}
           </SbButton>
         </div>
       </div>
