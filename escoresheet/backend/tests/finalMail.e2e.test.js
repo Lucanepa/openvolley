@@ -37,7 +37,7 @@ import { SKIP_PG, createTestDatabase, grantRoles, quietLogger } from './helpers/
 import { startFakeSmtp } from './helpers/fakeSmtp.js'
 import * as finalMail from '../lib/finalMail.js'
 
-const { createFinalMail, recipientList, refereeAddresses, zurichDate } = finalMail
+const { createFinalMail, recipientList, refereeAddresses, teamContactAddresses, zurichDate } = finalMail
 const PDF = Buffer.from('%PDF-1.4\n% final scoresheet\n1 0 obj << >> endobj\ntrailer << >>\n%%EOF\n')
 const PDF_V2 = Buffer.from('%PDF-1.4\n% corrected scoresheet, the second approval\n1 0 obj << >> endobj\ntrailer << >>\n%%EOF\n')
 
@@ -54,6 +54,14 @@ describe('final mail (unit)', () => {
       { role: '1st referee', email: 'r1@x.ch' }, { role: '1st referee', email: 'other@x.ch' }, { role: '2nd referee', email: 'r2@x.ch' }, { role: '2nd referee', email: 'more@x.ch' }
     ]), ['r1@x.ch', 'r2@x.ch'])
     assert.deepEqual(refereeAddresses(null), [])
+  })
+  it('the teams\' contact addresses (role team contact), one per team, never an official\'s', () => {
+    assert.deepEqual(teamContactAddresses([
+      { role: '1st referee', email: 'r1@x.ch' }, { role: 'team contact', team: 'away', email: 'away@x.ch' },
+      { role: 'team contact', team: 'home', email: 'home@x.ch' }, { role: 'team contact', team: 'home', email: 'second@x.ch' }
+    ]), ['home@x.ch', 'away@x.ch'])
+    assert.deepEqual(teamContactAddresses([{ role: 'team contact', team: 'home', email: ' ' }]), [])
+    assert.deepEqual(teamContactAddresses(null), [])
   })
   it('the date in Zurich', () => {
     assert.equal(zurichDate('2026-10-29T23:30:00Z'), '30.10.2026')
@@ -346,6 +354,15 @@ describe('final mail sweep: one state machine per close (database, fake mailer a
     assert.deepEqual(of(950008).map((m) => m.to).sort(), ['contact@alpha.example.ch', 'contact@beta.example.ch', people.scorer.email, 'r1@example.ch', 'r2@example.ch'].sort())
     assert.ok(of(950008).every((m) => m.vars.teams === 'Alpha H1 – Beta H1'), 'the schedule\'s names')
     assert.deepEqual(of(950009).map((m) => m.to), [people.scorer.email], 'not in the schedule: the match\'s own accounts only')
+  })
+
+  it('the teams\' contact addresses: every official match, also one not in the schedule (owner 2026-11-15)', async () => {
+    const id = await closed({ gameN: 950020, home: 'Delta H1', away: 'Epsilon H1',
+      officials: [{ role: '1st referee', email: 'typed@example.org' }, { role: 'team contact', team: 'home', email: 'home@delta.example.ch' }, { role: 'team contact', team: 'away', email: 'away@epsilon.example.ch' }] })
+    storePdf(id)
+    await fm.sweep()
+    assert.deepEqual(of(950020).map((m) => m.to).sort(), [people.scorer.email, 'home@delta.example.ch', 'away@epsilon.example.ch'].sort(),
+      'the team contacts, not the typed referee address of a game outside the schedule')
   })
 
   it('stored bytes that are not a PDF are never attached', async () => {

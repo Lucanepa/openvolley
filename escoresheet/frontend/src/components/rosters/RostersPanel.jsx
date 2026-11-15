@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { isTeamContact } from '../../domain/officials'
 import { useTranslation } from 'react-i18next'
 import { usePhoneWidth } from '../../hooks/usePhoneWidth'
 import { SectionHeader } from '../../ui/SectionHeader.jsx'
@@ -351,7 +352,8 @@ export default function RostersPanel({ data, lineups, servingTeam, team: onlyTea
   const maxPlayers = Math.max(...shown.map(team => team.players.length))
   const maxLiberos = Math.max(...shown.map(team => team.liberos.length))
   const maxBench = Math.max(...shown.map(team => team.bench.length))
-  const officials = onlyTeam ? [] : (data?.match?.officials || [])
+  // the match officials (a team's contact address is no official: domain/officials isTeamContact)
+  const officials = onlyTeam ? [] : (Array.isArray(data?.match?.officials) ? data.match.officials : []).filter(o => !isTeamContact(o))
 
   return (
     <div className="roster-panel">

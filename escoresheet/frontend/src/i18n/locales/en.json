@@ -520,7 +520,9 @@
     "notYourClub": "{{home}} is the home team. You score the home games of {{clubs}} only.",
     "gameNotInSchedule": "Game {{game}} is not in the VolleyManager schedule, so its home team is unknown. Check the game number.",
     "refereeEmail": "Email (optional)",
-    "refereeEmailHint": "For the final scoresheet. Only this match's scorers see it."
+    "refereeEmailHint": "For the final scoresheet. Only this match's scorers see it.",
+    "teamContactEmail": "Team contact email (optional)",
+    "teamContactEmailHint": "Gets the final scoresheet by email. Only this match's scorers see it."
   },
   "scoreboard": {
     "serveLabel": "Serve",
@@ -3247,6 +3249,7 @@
     "scheduledDateTime": "Scheduled date/time",
     "fixedAfterMatch": "Fixed after the match: the official PDF is filed under the game number and date of the match setup.",
     "matchOfficials": "Match officials",
+    "teamContacts": "Team contacts",
     "firstReferee": "1st referee",
     "secondReferee": "2nd referee",
     "scorer": "Scorer",

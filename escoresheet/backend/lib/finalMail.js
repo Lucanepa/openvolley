@@ -18,7 +18,10 @@
  *     first 2nd referee) and the coaches: the contact address of the club of
  *     each of the schedule's two teams (db/018 club_teams -> the club ->
  *     db/020 clubs.contact_email). Never a club the match's typed team names
- *     name; the mail then carries the schedule's team names.
+ *     name; the mail then carries the schedule's team names;
+ *   - every official match: each team's contact address typed in the match
+ *     setup or Edit match info (officials[] { role: 'team contact', team,
+ *     email }; owner 2026-11-15, "like with the referees").
  * A match an admin released (release-game: official_game_exempt with
  * released_at, db/040) is not mailed. One mail per address (nobody sees the
  * others), at most MAX_RECIPIENTS. An account's mail is in the language picked
@@ -115,6 +118,14 @@ export function recipientList (list) {
     if (out.length >= MAX_RECIPIENTS) break
   }
   return out
+}
+
+/** The teams' contact addresses typed in the match setup or Edit match info (officials JSON: role 'team contact'). */
+export function teamContactAddresses (officials) {
+  const list = Array.isArray(officials) ? officials : []
+  return ['home', 'away']
+    .map((team) => list.find((o) => o && String(o.role || '').toLowerCase() === 'team contact' && o.team === team)?.email)
+    .filter((e) => typeof e === 'string' && e.trim())
 }
 
 /** The referees' addresses typed in the match setup (officials JSON): the first 1st and the first 2nd referee. */
@@ -230,6 +241,8 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
           ORDER BY c.id`, [[game.home, game.away].map((n) => n.toLowerCase())])
       others = [...refereeAddresses(m.officials), ...clubs.map((r) => r.email)]
     }
+    // the teams' own contacts: every official match (not only schedule games)
+    others = [...others, ...teamContactAddresses(m.officials)]
     return withLangs(accounts, others)
   }
 

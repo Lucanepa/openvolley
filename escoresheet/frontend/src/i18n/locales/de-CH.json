@@ -519,7 +519,9 @@
     "notYourClub": "{{home}} isch s Heimteam. Du füehrsch nur d Heimspiil vo {{clubs}}.",
     "gameNotInSchedule": "Spiil {{game}} isch nöd im VolleyManager-Spiilplan, drum isch s Heimteam unbekannt. Prüef d Spiilnummere.",
     "refereeEmail": "E-Mail (freiwillig)",
-    "refereeEmailHint": "Für s fertige Matchblatt. Nur d Schriiber vo däm Spiil gsehnd si."
+    "refereeEmailHint": "Für s fertige Matchblatt. Nur d Schriiber vo däm Spiil gsehnd si.",
+    "teamContactEmail": "E-Mail Teamkontakt (freiwillig)",
+    "teamContactEmailHint": "Überchunnt s fertige Matchblatt per E-Mail. Nur d Schriiber vo däm Spiil gsehnd si."
   },
   "scoreboard": {
     "serveLabel": "Ufschlag",
@@ -3241,6 +3243,7 @@
     "scheduledDateTime": "Gplants Datum/Ziit",
     "fixedAfterMatch": "Nach em Spiil fix: S offizielle PDF wird under de Spiilnummere und em Datum vom Match-Setup abglegt.",
     "matchOfficials": "Spiiloffizielli",
+    "teamContacts": "Teamkontäkt",
     "firstReferee": "1. Schiri",
     "secondReferee": "2. Schiri",
     "scorer": "Schriiber",

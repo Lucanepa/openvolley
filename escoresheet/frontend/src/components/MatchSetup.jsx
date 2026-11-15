@@ -49,7 +49,7 @@ import { isShirtNumber, shirtNumberDigits, recordNumbersMissingFrom } from '../d
 import { checkUploadedRoster, takesUploadedRoster, uploadedSignaturesKept, uploadedSignaturesToTake } from '../domain/uploadedRoster'
 import PlayerPoolModal from './PlayerPoolModal'
 import { buildPlayerPool, poolToRoster, ROSTER_MAX } from '../domain/playerPool'
-import { officialsFromSchedule } from '../domain/officials'
+import { officialsFromSchedule, teamContactEmail, withTeamContacts } from '../domain/officials'
 import { rememberedRosters } from '../db/rememberedPlayers'
 import CloudBlockNotice from './CloudBlockNotice'
 import { savedTeamToRoster, findSavedTeamSuggestions } from '../domain/savedTeams'
@@ -139,8 +139,10 @@ export function cleanEmail(raw) {
   return s.length <= 254 && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s) ? s : null
 }
 
-// Helper to build officials array, filtering out entries with no name
-function buildOfficialsArray(ref1, ref2, scorer, asst, lineJudges = {}, useSnakeCase = false) {
+// Helper to build officials array, filtering out entries with no name.
+// teamContacts: the teams' contact addresses for the final scoresheet
+// (domain/officials withTeamContacts: { role: 'team contact', team, email })
+function buildOfficialsArray(ref1, ref2, scorer, asst, lineJudges = {}, useSnakeCase = false, teamContacts = {}) {
   const officials = []
   const fnKey = useSnakeCase ? 'first_name' : 'firstName'
   const lnKey = useSnakeCase ? 'last_name' : 'lastName'
@@ -165,7 +167,7 @@ function buildOfficialsArray(ref1, ref2, scorer, asst, lineJudges = {}, useSnake
   if (lineJudges.lj3) officials.push({ role: 'line judge 3', name: lineJudges.lj3 })
   if (lineJudges.lj4) officials.push({ role: 'line judge 4', name: lineJudges.lj4 })
 
-  return officials
+  return withTeamContacts(officials, teamContacts, cleanEmail)
 }
 
 // Helper to validate and create a UTC ISO string from local date and time inputs
@@ -254,7 +256,7 @@ const INFO_DRAFT_KEYS = ['date', 'time', 'hall', 'city', 'type1', 'type1Other', 
   'type2', 'type3', 'type3Other', 'bestOf', 'pointsRegular', 'pointsDeciding', 'gameN', 'league', 'home', 'away', 'homeColor', 'awayColor', 'homeShortName', 'awayShortName',
   'ref1First', 'ref1Last', 'ref1Country', 'ref1Dob', 'ref1Email', 'ref2First', 'ref2Last', 'ref2Country', 'ref2Dob', 'ref2Email',
   'scorerFirst', 'scorerLast', 'scorerCountry', 'scorerDob', 'asstFirst', 'asstLast', 'asstCountry', 'asstDob',
-  'lineJudge1', 'lineJudge2', 'lineJudge3', 'lineJudge4']
+  'lineJudge1', 'lineJudge2', 'lineJudge3', 'lineJudge4', 'homeContactEmail', 'awayContactEmail']
 
 /**
  * The side-bound fields of a stored match with home and away swapped (a
@@ -303,7 +305,7 @@ function hasOfficialsChanged(original, current) {
     'ref2First', 'ref2Last', 'ref2Country', 'ref2Dob', 'ref2Email',
     'scorerFirst', 'scorerLast', 'scorerCountry', 'scorerDob',
     'asstFirst', 'asstLast', 'asstCountry', 'asstDob',
-    'lineJudge1', 'lineJudge2', 'lineJudge3', 'lineJudge4']
+    'lineJudge1', 'lineJudge2', 'lineJudge3', 'lineJudge4', 'homeContactEmail', 'awayContactEmail']
   for (const key of keys) {
     if (!isEqual(original[key], current[key])) return true
   }
@@ -824,6 +826,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [ref1Country, setRef1Country] = useState('CHE')
   const [ref1Dob, setRef1Dob] = useState('01.01.1900')
   const [ref1Email, setRef1Email] = useState('')
+  // each team's contact address for the final scoresheet (domain/officials)
+  const [homeContactEmail, setHomeContactEmail] = useState('')
+  const [awayContactEmail, setAwayContactEmail] = useState('')
   const [ref2Email, setRef2Email] = useState('')
 
   const [ref2First, setRef2First] = useState('')
@@ -1285,7 +1290,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         type2, type3, type3Other, bestOf, pointsRegular, pointsDeciding, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName
       }
       originalOfficialsRef.current = {
-        ref1First, ref1Last, ref1Country, ref1Dob, ref1Email,
+        ref1First, ref1Last, ref1Country, ref1Dob, ref1Email, homeContactEmail, awayContactEmail,
         ref2First, ref2Last, ref2Country, ref2Dob, ref2Email,
         scorerFirst, scorerLast, scorerCountry, scorerDob,
         asstFirst, asstLast, asstCountry, asstDob,
@@ -1573,6 +1578,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     setScorerFirst(o.scorerFirst); setScorerLast(o.scorerLast); setScorerCountry(o.scorerCountry); setScorerDob(o.scorerDob)
     setAsstFirst(o.asstFirst); setAsstLast(o.asstLast); setAsstCountry(o.asstCountry); setAsstDob(o.asstDob)
     setLineJudge1(o.lineJudge1); setLineJudge2(o.lineJudge2); setLineJudge3(o.lineJudge3); setLineJudge4(o.lineJudge4)
+    setHomeContactEmail(o.homeContactEmail || ''); setAwayContactEmail(o.awayContactEmail || '')
   }
 
   const restoreHomeTeam = () => {
@@ -1735,6 +1741,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         // Load match officials, in the app's shape or the cloud's (first_name,
         // ISO date: Create match sends those, a restored copy keeps them)
         const officials = officialsFromCloud(match.officials)
+        setHomeContactEmail(teamContactEmail(officials, 'home'))
+        setAwayContactEmail(teamContactEmail(officials, 'away'))
         if (officials.length > 0) {
           const ref1 = officials.find(o => o.role === '1st referee')
           if (ref1) {
@@ -2053,7 +2061,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             { firstName: ref2First, lastName: ref2Last, country: ref2Country, email: ref2Email, dob: ref2Dob },
             { firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
             { firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
-            { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 }
+            { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 },
+            false,
+            { home: homeContactEmail, away: awayContactEmail }
           ),
           bench_home: benchHome,
           bench_away: benchAway
@@ -2147,7 +2157,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       const values = {
         date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther, type2, type3, type3Other, bestOf,
         pointsRegular, pointsDeciding, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName,
-        ref1First, ref1Last, ref1Country, ref1Dob, ref1Email, ref2First, ref2Last, ref2Country, ref2Dob, ref2Email,
+        ref1First, ref1Last, ref1Country, ref1Dob, ref1Email, homeContactEmail, awayContactEmail, ref2First, ref2Last, ref2Country, ref2Dob, ref2Email,
         scorerFirst, scorerLast, scorerCountry, scorerDob, asstFirst, asstLast, asstCountry, asstDob,
         lineJudge1, lineJudge2, lineJudge3, lineJudge4
       }
@@ -2174,7 +2184,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
     return () => clearTimeout(timeoutId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther, type2, type3, type3Other, bestOf, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName, homeRoster, awayRoster, benchHome, benchAway, ref1First, ref1Last, ref1Country, ref1Dob, ref1Email, ref2First, ref2Last, ref2Country, ref2Dob, ref2Email, scorerFirst, scorerLast, scorerCountry, scorerDob, asstFirst, asstLast, asstCountry, asstDob, lineJudge1, lineJudge2, lineJudge3, lineJudge4, homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature, currentView, setupLocked, draftReadyFor])
+  }, [date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther, type2, type3, type3Other, bestOf, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName, homeRoster, awayRoster, benchHome, benchAway, ref1First, ref1Last, ref1Country, ref1Dob, ref1Email, ref2First, ref2Last, ref2Country, ref2Dob, ref2Email, scorerFirst, scorerLast, scorerCountry, scorerDob, asstFirst, asstLast, asstCountry, asstDob, lineJudge1, lineJudge2, lineJudge3, lineJudge4, homeContactEmail, awayContactEmail, homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature, currentView, setupLocked, draftReadyFor])
 
   // Back on the main view (Save, Back, a roster confirmed): no draft left
   useEffect(() => {
@@ -2365,7 +2375,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       type2, type3, type3Other, bestOf, pointsRegular, pointsDeciding, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName
     }
     const currentOfficials = {
-      ref1First, ref1Last, ref1Country, ref1Dob, ref1Email,
+      ref1First, ref1Last, ref1Country, ref1Dob, ref1Email, homeContactEmail, awayContactEmail,
       ref2First, ref2Last, ref2Country, ref2Dob, ref2Email,
       scorerFirst, scorerLast, scorerCountry, scorerDob,
       asstFirst, asstLast, asstCountry, asstDob,
@@ -2514,7 +2524,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           { firstName: ref2First, lastName: ref2Last, country: ref2Country, email: ref2Email, dob: ref2Dob },
           { firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
           { firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
-          { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 }
+          { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 },
+            false,
+            { home: homeContactEmail, away: awayContactEmail }
         ),
         ...swapUpdates,
         matchInfoConfirmedAt: new Date().toISOString(),
@@ -2558,7 +2570,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           { firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: formatDobForSync(scorerDob) },
           { firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: formatDobForSync(asstDob) },
           { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 },
-          true // useSnakeCase for Supabase
+          true, // useSnakeCase for Supabase
+          { home: homeContactEmail, away: awayContactEmail }
         )
       }
 
@@ -3427,6 +3440,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         type3Other: setType3Other, bestOf: setBestOf, pointsRegular: setPointsRegular, pointsDeciding: setPointsDeciding, gameN: setGameN, league: setLeague, home: setHome, away: setAway,
         homeColor: setHomeColor, awayColor: setAwayColor, homeShortName: setHomeShortName, awayShortName: setAwayShortName,
         ref1First: setRef1First, ref1Last: setRef1Last, ref1Country: setRef1Country, ref1Dob: setRef1Dob, ref1Email: setRef1Email,
+        homeContactEmail: setHomeContactEmail, awayContactEmail: setAwayContactEmail,
         ref2First: setRef2First, ref2Last: setRef2Last, ref2Country: setRef2Country, ref2Dob: setRef2Dob, ref2Email: setRef2Email,
         scorerFirst: setScorerFirst, scorerLast: setScorerLast, scorerCountry: setScorerCountry, scorerDob: setScorerDob,
         asstFirst: setAsstFirst, asstLast: setAsstLast, asstCountry: setAsstCountry, asstDob: setAsstDob,
@@ -4296,6 +4310,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     />
                   </Field>
                 </div>
+                {/* the team's contact: gets the final scoresheet by email, as a typed referee address (domain/officials team contact) */}
+                <Field tone="compact" className={cn(FIELD, 'mt-3')} label={t('matchSetup.teamContactEmail', 'Team contact email (optional)')} hint={t('matchSetup.teamContactEmailHint', 'Gets the final scoresheet by email. Only this match\'s scorers see it.')}>
+                  <Input aria-label={`${t('common.home')} ${t('matchSetup.teamContactEmail', 'Team contact email (optional)')}`} type="email" inputMode="email" autoComplete="off" value={homeContactEmail} onChange={e => setHomeContactEmail(e.target.value)} maxLength={254} />
+                </Field>
               </div>
 
               {/* VS Divider */}
@@ -4366,6 +4384,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     />
                   </Field>
                 </div>
+                {/* the team's contact: gets the final scoresheet by email, as a typed referee address (domain/officials team contact) */}
+                <Field tone="compact" className={cn(FIELD, 'mt-3')} label={t('matchSetup.teamContactEmail', 'Team contact email (optional)')} hint={t('matchSetup.teamContactEmailHint', 'Gets the final scoresheet by email. Only this match\'s scorers see it.')}>
+                  <Input aria-label={`${t('common.away')} ${t('matchSetup.teamContactEmail', 'Team contact email (optional)')}`} type="email" inputMode="email" autoComplete="off" value={awayContactEmail} onChange={e => setAwayContactEmail(e.target.value)} maxLength={254} />
+                </Field>
 
               </div>
 
@@ -7576,7 +7598,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       { firstName: ref2First, lastName: ref2Last, country: ref2Country, email: ref2Email, dob: ref2Dob },
                       { firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
                       { firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
-                      { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 }
+                      { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 },
+            false,
+            { home: homeContactEmail, away: awayContactEmail }
                     ),
                     bench_home: benchHome,
                     bench_away: benchAway

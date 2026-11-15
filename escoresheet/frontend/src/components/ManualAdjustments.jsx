@@ -6,7 +6,7 @@ import { withActivityContext } from '../db/eventHistory'
 import { randomUuid } from '../utils/deviceId'
 import { useAlert } from '../contexts/AlertContext'
 import { swapTeamDesignation as swapTeamDesignationPatch } from '../domain/coinToss'
-import { mergeOfficialsEdits } from '../domain/officials'
+import { mergeOfficialsEdits, teamContactEmail, withTeamContacts, cleanContactEmail } from '../domain/officials'
 import { approvalUndoJobs } from '../domain/accountApproval'
 import { clearedPostMatchSignatures, isMatchOverStatus } from '../domain/matchEnd'
 import { signaturesPayload } from '../domain/signatureEdits'
@@ -128,6 +128,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
   const [editedAwayPlayers, setEditedAwayPlayers] = useState([])
 
   // Editable state - Officials (with DOB)
+  // each team's contact address for the final scoresheet (domain/officials team contact)
+  const [editedTeamContacts, setEditedTeamContacts] = useState({ home: '', away: '' })
   const [editedOfficials, setEditedOfficials] = useState({
     ref1: { firstName: '', lastName: '', country: '', dob: '' },
     ref2: { firstName: '', lastName: '', country: '', dob: '' },
@@ -203,6 +205,10 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
         ref2: { firstName: ref2.firstName || ref2.first_name || '', lastName: ref2.lastName || ref2.last_name || '', country: ref2.country || '', dob: ref2.dob || '' },
         scorer: { firstName: scorer.firstName || scorer.first_name || '', lastName: scorer.lastName || scorer.last_name || '', dob: scorer.dob || '' },
         asstScorer: { firstName: asstScorer.firstName || asstScorer.first_name || '', lastName: asstScorer.lastName || asstScorer.last_name || '', dob: asstScorer.dob || '' }
+      })
+      setEditedTeamContacts({
+        home: teamContactEmail(data.match.officials, 'home'),
+        away: teamContactEmail(data.match.officials, 'away')
       })
     }
   }, [data])
@@ -380,6 +386,13 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
     })
   }, [recordFieldChange])
 
+  const updateTeamContact = useCallback((team, value) => {
+    setEditedTeamContacts(prev => {
+      if (prev[team] !== value) recordFieldChange('official', `teamContact.${team}`, prev[team], value, `${team} team contact email`)
+      return { ...prev, [team]: value }
+    })
+  }, [recordFieldChange])
+
   // ==================== SAVE FUNCTION ====================
   // Every event deleted or edited by the save is recorded as a manual
   // adjustment in the event history (db/eventHistory)
@@ -459,7 +472,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
           ...designationPatch,
           // officials is an array of { role, ... } everywhere else: merge the
           // edits into it (keeps line judges) instead of storing the editor object
-          officials: mergeOfficialsEdits(data?.match?.officials, editedOfficials),
+          officials: withTeamContacts(mergeOfficialsEdits(data?.match?.officials, editedOfficials), editedTeamContacts, cleanContactEmail),
           bench_home: editedHomeBench,
           bench_away: editedAwayBench,
           manualChanges: [...existingChanges, ...logged]
@@ -576,7 +589,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
         players_away: playersAway,
         home_team: homeTeamData,
         away_team: awayTeamData,
-        officials: mergeOfficialsEdits(data?.match?.officials, editedOfficials, { snakeCase: true }),
+        officials: withTeamContacts(mergeOfficialsEdits(data?.match?.officials, editedOfficials, { snakeCase: true }), editedTeamContacts, cleanContactEmail),
         ...(designation ? {
           coin_toss: {
             team_a: designation.coinTossTeamA,
@@ -1051,6 +1064,34 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
                     style={{ ...inputStyle, width: '100%' }}
                   />
                 </div>
+              </div>
+            </div>
+
+            {/* Team contacts: they get the final scoresheet by email (owner 15.11) */}
+            <div style={cardStyle}>
+              <h2 style={cardTitleStyle}>
+                {t('manualAdjustmentsEditor.teamContacts', 'Team contacts')}
+              </h2>
+              <p style={{ margin: '0 0 12px', fontSize: '13px', color: 'var(--ov-text-muted)' }}>
+                {t('matchSetup.teamContactEmailHint', "Gets the final scoresheet by email. Only this match's scorers see it.")}
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: pairCols, gap: '12px' }}>
+                {['home', 'away'].map(team => (
+                  <div key={team}>
+                    <label style={labelStyle}>{(team === 'home' ? data?.homeTeam?.name : data?.awayTeam?.name) || t(team === 'home' ? 'common.home' : 'common.away')}</label>
+                    <input
+                      type="email"
+                      inputMode="email"
+                      autoComplete="off"
+                      maxLength={254}
+                      aria-label={`${(team === 'home' ? data?.homeTeam?.name : data?.awayTeam?.name) || t(team === 'home' ? 'common.home' : 'common.away')} ${t('matchSetup.teamContactEmail', 'Team contact email (optional)')}`}
+                      value={editedTeamContacts[team]}
+                      onChange={(e) => updateTeamContact(team, e.target.value)}
+                      disabled={closed}
+                      style={inputStyle}
+                    />
+                  </div>
+                ))}
               </div>
             </div>
 
