@@ -8,6 +8,7 @@ import { Button, SegmentedControl, SearchInput, RowList, Row, RowTool, Chip, Emp
 import { ApprovalChips, ApprovalLookup } from './ApprovalBits'
 import RevisionsList from './RevisionsList'
 import ClosuresList from './ClosuresList'
+import MatchPinBox from './MatchPinBox'
 
 /**
  * The read behind a match's page that is not in the list (opened from a link,
@@ -163,8 +164,9 @@ export default function ClosedMatchesPanel({ onShowActivity = null, route = '', 
 /**
  * A match's page: what its row says (game, when, league, scorer, editors,
  * closed when and by whom, its approvals), Reopen (a closed one) and
- * Activity, its earlier closes (ClosuresList: before and after each admin
- * reopen) and its corrections (RevisionsList).
+ * Activity, its game PIN (MatchPinBox, hidden until asked), its earlier
+ * closes (ClosuresList: before and after each admin reopen) and its
+ * corrections (RevisionsList).
  */
 function MatchPage({ match: m, online, onBack, onReopen, onShowActivity }) {
   const { t } = useTranslation()
@@ -203,6 +205,8 @@ function MatchPage({ match: m, online, onBack, onReopen, onShowActivity }) {
             {activity && <Button variant="secondary" disabled={!online} onClick={() => onShowActivity(m.external_id)} data-testid="match-activity">{t('manage.matches.activity')}</Button>}
           </div>
         )}
+        {/* the game PIN a scorer device asks for (admins, each read audited) */}
+        <MatchPinBox match={m} online={online} />
       </div>
       <SectionHeader title={t('manage.matches.closures.title')} />
       <SectionNote className="mb-2">{t('manage.matches.closures.description')}</SectionNote>

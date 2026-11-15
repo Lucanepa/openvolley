@@ -19,7 +19,7 @@ const api = vi.hoisted(() => ({
   admin: {
     listAccounts: vi.fn(), setRoles: vi.fn(), setAccountClubs: vi.fn(), deleteAccount: vi.fn(), rejectAccount: vi.fn(), decideRequests: vi.fn(),
     listMatches: vi.fn(), listRevisions: vi.fn(), listMatchClosures: vi.fn(), reopenMatch: vi.fn(), listApprovals: vi.fn(),
-    listOfficialGames: vi.fn(), addMatchEditor: vi.fn(), releaseGame: vi.fn()
+    listOfficialGames: vi.fn(), addMatchEditor: vi.fn(), releaseGame: vi.fn(), readMatchPin: vi.fn(), resetMatchPin: vi.fn()
   },
   clubs: { list: vi.fn() },
   fetchPublicClubs: vi.fn()
@@ -308,6 +308,72 @@ describe('a match is a page (#matches/<match id>)', () => {
     expect(screen.queryByTestId('match-activity')).toBeNull()
     await waitFor(() => expect(api.admin.listRevisions).toHaveBeenCalledWith('m-2'))
     expect(await within(page).findByText('manage.matches.closures.empty')).toBeInTheDocument()
+  })
+
+  // Owner 2026-11-15: "can i get the match pin here? ... otherwise how can i
+  // reopen the game from thin air?" Hidden until asked, each read its own
+  // (audited) request; a PIN the server keeps only hashed: a new one.
+  describe('its game PIN', () => {
+    let writeText
+    beforeEach(() => {
+      // the test setup's navigator.clipboard (not redefinable)
+      writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined)
+    })
+
+    it('is hidden until Show PIN, then shown with a copy button and hidden again', async () => {
+      api.admin.readMatchPin.mockResolvedValue(ok({ pin: '135790', stored: 'plain', game_n: 4711 }))
+      routed(ClosedMatchesPanel, {}, 'm-1')
+      const box = await screen.findByTestId('match-pin')
+      expect(screen.queryByTestId('match-pin-value')).toBeNull()
+      expect(box).not.toHaveTextContent('135790')
+      expect(api.admin.readMatchPin).not.toHaveBeenCalled()
+      // the list never carried it
+      expect(JSON.stringify(api.admin.listMatches.mock.results)).not.toContain('135790')
+      fireEvent.click(within(box).getByTestId('match-pin-show'))
+      expect(await within(box).findByTestId('match-pin-value')).toHaveTextContent('135790')
+      expect(api.admin.readMatchPin).toHaveBeenCalledWith('m-1')
+      expect(box).toHaveTextContent('manage.matches.pin.howTo')
+      fireEvent.click(within(box).getByTestId('match-pin-copy'))
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith('135790'))
+      expect(ui.toasts).toContainEqual(['ok', 'manage.matches.pin.copied'])
+      fireEvent.click(within(box).getByTestId('match-pin-hide'))
+      expect(within(box).queryByTestId('match-pin-value')).toBeNull()
+      expect(within(box).getByTestId('match-pin-show')).toBeInTheDocument()
+      // shown again: read (and audited) again
+      fireEvent.click(within(box).getByTestId('match-pin-show'))
+      await within(box).findByTestId('match-pin-value')
+      expect(api.admin.readMatchPin).toHaveBeenCalledTimes(2)
+    })
+
+    it('a hashed PIN cannot be shown: Set new PIN, after a confirmation, shows the new one', async () => {
+      api.admin.readMatchPin.mockResolvedValue(ok({ pin: null, stored: 'hashed', game_n: 4711 }))
+      api.admin.resetMatchPin.mockResolvedValue(ok({ pin: '482913', stored: 'hashed', game_n: 4711 }))
+      routed(ClosedMatchesPanel, {}, 'm-1')
+      const box = await screen.findByTestId('match-pin')
+      fireEvent.click(within(box).getByTestId('match-pin-show'))
+      expect(await within(box).findByText('manage.matches.pin.hashed')).toBeInTheDocument()
+      expect(within(box).queryByTestId('match-pin-value')).toBeNull()
+      // declined: nothing changes
+      ui.confirm.mockResolvedValueOnce(false)
+      fireEvent.click(within(box).getByTestId('match-pin-reset'))
+      await waitFor(() => expect(ui.confirm).toHaveBeenCalledTimes(1))
+      expect(api.admin.resetMatchPin).not.toHaveBeenCalled()
+      fireEvent.click(within(box).getByTestId('match-pin-reset'))
+      expect(await within(box).findByTestId('match-pin-value')).toHaveTextContent('482913')
+      expect(api.admin.resetMatchPin).toHaveBeenCalledWith('m-1')
+      expect(ui.toasts).toContainEqual(['ok', 'manage.matches.pin.resetDone'])
+      fireEvent.click(within(box).getByTestId('match-pin-copy'))
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith('482913'))
+    })
+
+    it('a refused read shows the error and no PIN', async () => {
+      api.admin.readMatchPin.mockResolvedValue({ data: null, error: { code: 'OV_FORBIDDEN', status: 403 }, status: 403 })
+      routed(ClosedMatchesPanel, {}, 'm-1')
+      const box = await screen.findByTestId('match-pin')
+      fireEvent.click(within(box).getByTestId('match-pin-show'))
+      await waitFor(() => expect(within(box).getByRole('alert')).toBeInTheDocument())
+      expect(within(box).queryByTestId('match-pin-value')).toBeNull()
+    })
   })
 
   it('a match that is not there: not found, with the way back', async () => {
