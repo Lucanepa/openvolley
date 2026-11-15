@@ -119,7 +119,9 @@ describe('familyOf', () => {
     [{ installer: null }, 'sideload'],
     [{ installer: 'com.google.android.packageinstaller' }, 'sideload'],
     [{ installer: 'com.android.packageinstaller' }, 'sideload'],
-    [{ installer: 'com.android.vending' }, 'other'],
+    [{ installer: 'com.android.vending' }, 'play'],
+    [{ installer: 'com.google.android.packageinstaller', updateOwner: 'com.android.vending' }, 'play'],
+    [{ installer: 'com.example.store' }, 'other'],
   ])('%o → %s', (src, family) => {
     expect(familyOf(src)).toBe(family)
   })

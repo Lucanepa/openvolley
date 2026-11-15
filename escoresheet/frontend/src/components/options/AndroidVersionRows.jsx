@@ -11,6 +11,8 @@ const ROW = 'flex min-h-12 shrink-0 py-3'
 /**
  * Options → App version in the Android app (the web's version.json check
  * would always answer "latest" here: the APK bundles that file).
+ * - installed by Google Play: "Updates come from Google Play." and nothing
+ *   else (Play policy: no update check, no other source)
  * - installed by F-Droid: "Updates come from F-Droid." + Open in F-Droid
  * - otherwise: "Notify me about new versions" (the opt-in, default off)
  * - both: Check for updates (asked by the user, so allowed for every install)
@@ -19,6 +21,7 @@ export default function AndroidVersionRows() {
   const { t } = useTranslation()
   const update = useAndroidUpdate()
   const fromFdroid = update.family === 'fdroid'
+  const fromPlay = update.family === 'play'
   const mayNotify = update.family === 'sideload' || update.family === 'other'
   const checking = update.status === 'checking'
 
@@ -29,12 +32,18 @@ export default function AndroidVersionRows() {
           <div className="text-sm font-semibold text-stone-900">{t('options.currentVersion')}</div>
           <div className="mt-0.5 text-xs tabular-nums text-stone-500">v{currentVersion}</div>
         </div>
-        <Button variant="secondary" size="xl" onClick={() => update.checkNow()} loading={checking} disabled={checking}>
-          {checking ? t('options.checking') : t('options.checkForUpdates')}
-        </Button>
+        {!fromPlay && (
+          <Button variant="secondary" size="xl" onClick={() => update.checkNow()} loading={checking} disabled={checking}>
+            {checking ? t('options.checking') : t('options.checkForUpdates')}
+          </Button>
+        )}
       </div>
 
-      {fromFdroid ? (
+      {fromPlay ? (
+        <div className={`${ROW} items-center`}>
+          <p className="text-sm text-stone-700">{t('androidUpdate.fromPlay')}</p>
+        </div>
+      ) : fromFdroid ? (
         <div className={`${ROW} items-center justify-between gap-3`}>
           <p className="text-sm text-stone-700">{t('androidUpdate.fromFdroid')}</p>
           <Button variant="secondary" size="xl" onClick={() => update.openInFdroid()}>

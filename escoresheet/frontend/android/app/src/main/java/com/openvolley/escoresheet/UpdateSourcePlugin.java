@@ -49,16 +49,20 @@ public class UpdateSourcePlugin extends Plugin {
         "com.android.shell"
     ));
 
+    // Google Play updates its own installs (Play policy: no other update path)
+    static final String PLAY = "com.android.vending";
+
     static String familyOf(String installer, String updateOwner) {
         if ((updateOwner != null && FDROID.contains(updateOwner)) || (installer != null && FDROID.contains(installer))) {
             return "fdroid";
         }
+        if (PLAY.equals(updateOwner) || PLAY.equals(installer)) return "play";
         if (installer == null || SIDELOAD.contains(installer)) return "sideload";
         return "other";
     }
 
     /**
-     * {installer, updateOwner, family: 'fdroid' | 'sideload' | 'other',
+     * {installer, updateOwner, family: 'fdroid' | 'sideload' | 'play' | 'other',
      * versionCode}. versionCode is the installed one, build digit included, so
      * the page also sees an Android-only rebuild of the same versionName
      * (absent when it cannot be read).
