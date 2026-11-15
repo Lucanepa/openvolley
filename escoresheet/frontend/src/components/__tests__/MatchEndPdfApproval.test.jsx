@@ -201,18 +201,19 @@ afterEach(() => {
 })
 
 describe('MatchEnd: the approval PDF', () => {
-  it('a closed scoresheet window stops the wait at once; Cancel leaves the match unapproved and usable', async () => {
+  // (soon: its PDF may still arrive for PDF_CLOSED_GRACE_MS, see scoresheetPdfRequest)
+  it('a closed scoresheet window stops the wait soon; Cancel leaves the match unapproved and usable', async () => {
     render(<MatchEnd matchId={1} />)
     await approve()
     opened[0].closed = true // the scorer closes the window (X)
-    const dialog = await screen.findByTestId('export-pdf-failed', {}, { timeout: 2000 })
+    const dialog = await screen.findByTestId('export-pdf-failed', {}, { timeout: 4000 })
     expect(dialog).toHaveTextContent(en.matchEnd.export.reason.closed)
     fireEvent.click(getButton(en.matchEnd.export.cancel, dialog))
     await waitFor(() => expect(screen.queryByTestId('export-pdf-failed')).toBeNull())
     await waitFor(() => expect(approveButton()).toBeEnabled())
     expect(store.tables.matches.get(1).approved).toBeFalsy()
     expect(approvedJobs()).toHaveLength(0)
-  })
+  }, 10000)
 
   it('Retry opens the scoresheet again and its PDF approves the match', async () => {
     render(<MatchEnd matchId={1} />)
