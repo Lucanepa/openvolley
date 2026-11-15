@@ -49,6 +49,13 @@
 //!     the game PIN. Everyone else gets the public summary (`access: "summary"`:
 //!     teams, status, set scores, live state). Wrong PINs are limited per
 //!     connection / IP.
+//!   - `scorer-presence` { matchId, present, timestamp }: whether an open socket
+//!     holds the room's scoreboard claim (an accepted sync, match-data /
+//!     match-update answer); last in the answer to subscribe-match (false for
+//!     a room not on the relay yet), and to the room's subscribers, not its
+//!     scoreboards, when it flips (after the match-data-update of the sync that
+//!     proved it; the last claiming socket closed or lost the claim). Takeovers
+//!     keep it true, no repeats; a deleted room says match-deleted only.
 //!   - Sign on phone (`sign.rs`, docs/qr-signing-spec.md 4): POST /api/sign/start|
 //!     open|submit|wait|close and the phone page at /sign with its strict CSP.
 //!     `start` from the relay host itself, or with X-OV-Match-Pin = the game PIN of
@@ -359,6 +366,9 @@ pub struct AppState {
     pending: Mutex<HashMap<String, Pending>>,
     /// match id -> its open and recently answered bench requests, oldest first
     bench: Mutex<HashMap<String, Vec<crate::bench_requests::BenchEntry>>>,
+    /// room key -> whether its subscribers were last told a scorer is in it
+    /// ('scorer-presence'; no entry: not present)
+    presence: Mutex<HashMap<String, bool>>,
     next_id: AtomicU64,
     /// open sockets per address (taken before the upgrade, see `SocketSlot`)
     sockets: std::sync::Mutex<HashMap<IpAddr, usize>>,
@@ -392,6 +402,7 @@ pub fn new_state(http_port: u16, ws_port: u16) -> Arc<AppState> {
         superseded_claims: Mutex::new(HashMap::new()),
         pending: Mutex::new(HashMap::new()),
         bench: Mutex::new(HashMap::new()),
+        presence: Mutex::new(HashMap::new()),
         next_id: AtomicU64::new(1),
         sockets: std::sync::Mutex::new(HashMap::new()),
         rooms: Mutex::new(HashMap::new()),
@@ -2323,23 +2334,30 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, ip: IpAddr) {
         }
     }
 
+    forget_connection(&state, conn_id).await;
+    send_task.abort();
+}
+
+/// A connection that closed (or was ended): its state goes, the rooms it
+/// scored lose their scorer (subscribers told when that was the last one).
+async fn forget_connection(state: &Arc<AppState>, conn_id: u64) {
     state.clients.lock().await.remove(&conn_id);
     state.conn_meta.lock().await.remove(&conn_id);
     state.limits.lock().await.remove(&format!("fail:ws:{conn_id}"));
     state.limits.lock().await.remove(&format!("bench:{conn_id}"));
     state.limits.lock().await.remove(&format!("msg:{conn_id}"));
-    {
+    let left: Vec<String> = {
         let mut owners = state.owners.lock().await;
-        if let Some(owned) = owners.remove(&conn_id) {
-            let now = std::time::Instant::now();
-            let mut orphaned = state.orphaned_since.lock().await;
-            for id in owned {
-                if !owners.values().any(|o| o.contains(&id)) {
-                    orphaned.insert(id, now);
-                }
+        let owned = owners.remove(&conn_id).unwrap_or_default();
+        let now = std::time::Instant::now();
+        let mut orphaned = state.orphaned_since.lock().await;
+        for id in &owned {
+            if !owners.values().any(|o| o.contains(id)) {
+                orphaned.insert(id.clone(), now);
             }
         }
-    }
+        owned.into_iter().collect()
+    };
     {
         let mut subs = state.subs.lock().await;
         subs.retain(|_, set| {
@@ -2355,7 +2373,9 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, ip: IpAddr) {
             !p.targets.is_empty()
         });
     }
-    send_task.abort();
+    for id in left {
+        update_presence(state, &id, None).await;
+    }
 }
 
 async fn is_owner(state: &Arc<AppState>, conn_id: u64, match_id: &str) -> bool {
@@ -2771,6 +2791,7 @@ async fn drop_room(state: &Arc<AppState>, match_id: &str) {
     state.moved_claims.lock().await.remove(match_id);
     state.superseded_claims.lock().await.remove(match_id);
     state.bench.lock().await.remove(match_id);
+    state.presence.lock().await.remove(match_id);
 }
 
 /// May this sync (of `bytes`) be stored (lanRelayCore `roomBudgetDenied`)?
@@ -2842,6 +2863,8 @@ async fn delete_match(state: &Arc<AppState>, match_id: &str) {
     for owned in state.owners.lock().await.values_mut() {
         owned.remove(match_id);
     }
+    // (its subscribers were told 'match-deleted' and are gone: nobody to tell)
+    state.presence.lock().await.remove(match_id);
 }
 
 async fn handle_ws_message(state: &Arc<AppState>, conn_id: u64, tx: &Tx, text: &str) {
@@ -2900,6 +2923,7 @@ async fn handle_ws_message(state: &Arc<AppState>, conn_id: u64, tx: &Tx, text: &
                         owned.remove(&match_id);
                     }
                     send_error(tx, "scorer-moved", claim_error_message("scorer-moved"), Some(&match_id));
+                    update_presence(state, &match_id, None).await;
                     return;
                 }
             }
@@ -2936,6 +2960,9 @@ async fn handle_ws_message(state: &Arc<AppState>, conn_id: u64, tx: &Tx, text: &
             }
             let stored = store_bundle(state, &match_id, bundle, kind).await;
             notify_match_data(state, &match_id, "match-data-update", &stored, data.get("_timestamp").cloned(), Some(conn_id)).await;
+            // After the update: a tablet has the match before it hears its scorer
+            // is there. A takeover (note_scorer) is complete here: it flips nothing.
+            update_presence(state, &match_id, None).await;
             // Bench requests of a set that is over go; a connection that has
             // just (re)proved the match gets the open ones again
             let replay = {
@@ -3019,6 +3046,9 @@ async fn handle_ws_message(state: &Arc<AppState>, conn_id: u64, tx: &Tx, text: &
                     _ => {}
                 }
             }
+            // Last, once the subscription is answered: is the scorer there now
+            // (false for a room not on the relay yet)
+            update_presence(state, &match_id, Some((conn_id, tx))).await;
         }
         "bench-request" => on_bench_request(state, conn_id, tx, &data).await,
         "bench-response" => on_bench_response(state, conn_id, tx, &data).await,
@@ -3103,6 +3133,8 @@ async fn handle_ws_message(state: &Arc<AppState>, conn_id: u64, tx: &Tx, text: &
                     if let Some(o) = owners.get_mut(&conn_id) {
                         o.remove(&id);
                     }
+                    drop(owners);
+                    update_presence(state, &id, None).await;
                 } else {
                     drop(owners);
                     delete_match(state, &id).await;
@@ -3158,6 +3190,8 @@ async fn on_response(state: &Arc<AppState>, conn_id: u64, msg_type: &str, data: 
                         } else {
                             result = Some(stored);
                         }
+                        // The answer proved the match: a claim like a sync's
+                        update_presence(state, id, None).await;
                     }
                 }
                 _ => {}
@@ -3354,6 +3388,47 @@ async fn notify_access_only(state: &Arc<AppState>, match_id: &str, msg: &Value, 
         return;
     }
     let text = msg.to_string();
+    let clients = state.clients.lock().await;
+    for id in ids {
+        if let Some(tx) = clients.get(&id) {
+            let _ = tx.send(Message::Text(text.clone().into()));
+        }
+    }
+}
+
+/// 'scorer-presence' { matchId, present, timestamp }: whether an open socket
+/// holds the scoreboard role for the room (proved it with an accepted sync).
+/// The room's subscribers, not its scorer sockets, are told when that flips,
+/// once per flip (no repeat on every sync, no timer); `joined` (a connection
+/// that just subscribed, with its queue) is told the state either way. Call
+/// after anything that changes the room's owners, once the change is complete
+/// (a takeover, new owner in before the old one out, flips nothing). Lock
+/// order: presence -> owners -> subs -> clients (one presence lock around
+/// compare, record and send: flips go out in order).
+async fn update_presence(state: &Arc<AppState>, match_id: &str, joined: Option<(u64, &Tx)>) {
+    let mut presence = state.presence.lock().await;
+    let scorers: HashSet<u64> = state.owners.lock().await.iter().filter(|(_, o)| o.contains(match_id)).map(|(id, _)| *id).collect();
+    let present = !scorers.is_empty();
+    let flipped = presence.get(match_id).copied().unwrap_or(false) != present;
+    if flipped {
+        if present {
+            presence.insert(match_id.to_string(), true);
+        } else {
+            presence.remove(match_id);
+        }
+    }
+    let ids: Vec<u64> = if flipped {
+        subscriber_ids(state, match_id, joined.map(|(id, _)| id)).await.into_iter().filter(|id| !scorers.contains(id)).collect()
+    } else {
+        Vec::new()
+    };
+    if ids.is_empty() && joined.is_none() {
+        return;
+    }
+    let text = json!({ "type": "scorer-presence", "matchId": match_id, "present": present, "timestamp": now_ms() }).to_string();
+    if let Some((_, tx)) = joined {
+        let _ = tx.send(Message::Text(text.clone().into()));
+    }
     let clients = state.clients.lock().await;
     for id in ids {
         if let Some(tx) = clients.get(&id) {
@@ -4021,6 +4096,122 @@ mod tests {
         }
     }
 
+    // 2026-11-15: a referee or bench tablet only saw a frozen score when the
+    // scorer's laptop was closed; the relay now says whether the room has its
+    // scorer ('scorer-presence', same as lanRelayCore and the cloud relay)
+    #[tokio::test]
+    async fn subscribers_are_told_when_the_scorer_comes_and_goes() {
+        const LAPTOP: &str = "0a0a0a0a-1111-4111-8111-000000000001";
+        const PHONE: &str = "0b0b0b0b-2222-4222-8222-000000000002";
+        let state = new_state(0, 0);
+        let mut rxs = HashMap::new();
+        let mut txs = HashMap::new();
+        for (id, ip) in [(1u64, "192.168.1.10"), (2, "192.168.1.11"), (3, "192.168.1.20"), (4, "192.168.1.21"), (5, "192.168.1.11")] {
+            connect(&state, id, ip).await;
+            let (tx, rx) = tx_pair();
+            state.clients.lock().await.insert(id, tx.clone());
+            txs.insert(id, tx);
+            rxs.insert(id, rx);
+        }
+        // the scorer-presence messages a connection got, as present flags
+        let told = |rx: &mut mpsc::UnboundedReceiver<Message>| -> Vec<bool> {
+            let mut out = Vec::new();
+            while let Ok(Message::Text(t)) = rx.try_recv() {
+                let m: Value = serde_json::from_str(&t).unwrap();
+                if m["type"] == json!("scorer-presence") {
+                    // nothing else in it: no PINs, devices or addresses
+                    assert_eq!(m.as_object().unwrap().len(), 4, "{m}");
+                    assert_eq!(m["matchId"], json!("1"));
+                    assert!(m["timestamp"].as_u64().unwrap() > 0);
+                    out.push(m["present"].as_bool().unwrap());
+                }
+            }
+            out
+        };
+        let sync = |device: Value, home: u32| json!({
+            "type": "sync-match-data", "matchId": "1", "match": bundle(1, "111111", "live")["match"].clone(),
+            "sets": [{ "index": 1, "homePoints": home, "awayPoints": 0 }], "device": device
+        }).to_string();
+        let subscribe = |pin: Option<&str>| match pin {
+            Some(pin) => json!({ "type": "subscribe-match", "matchId": "1", "device": "referee", "pin": pin }).to_string(),
+            None => json!({ "type": "subscribe-match", "matchId": "1", "device": "livescore" }).to_string(),
+        };
+
+        // the referee subscribes before the scorer (no room yet): not present
+        handle_ws_message(&state, 3, &txs[&3], &subscribe(Some("314159"))).await;
+        assert_eq!(told(rxs.get_mut(&3).unwrap()), vec![false]);
+
+        // the scorer syncs: present, to the referee after the update, not to the scorer itself
+        handle_ws_message(&state, 1, &txs[&1], &sync(json!({ "id": LAPTOP, "claim": "laptop-1" }), 1)).await;
+        let mut types = Vec::new();
+        while let Ok(Message::Text(t)) = rxs.get_mut(&3).unwrap().try_recv() {
+            let m: Value = serde_json::from_str(&t).unwrap();
+            types.push(m["type"].as_str().unwrap().to_string());
+            if m["type"] == json!("scorer-presence") {
+                assert_eq!(m["present"], json!(true));
+            }
+        }
+        assert_eq!(types, vec!["match-data-update", "scorer-presence"]);
+        assert!(told(rxs.get_mut(&1).unwrap()).is_empty());
+
+        // further syncs: no repeat
+        for home in 2..5 {
+            handle_ws_message(&state, 1, &txs[&1], &sync(json!({ "id": LAPTOP, "claim": "laptop-1" }), home)).await;
+        }
+        assert!(told(rxs.get_mut(&3).unwrap()).is_empty());
+
+        // a later subscriber (no PIN: the summary) gets the state at once
+        handle_ws_message(&state, 4, &txs[&4], &subscribe(None)).await;
+        assert_eq!(told(rxs.get_mut(&4).unwrap()), vec![true]);
+
+        // another device takes the room over: present throughout, no false between
+        handle_ws_message(&state, 2, &txs[&2], &sync(json!({ "id": PHONE, "claim": "phone-1" }), 5)).await;
+        assert!(!is_owner(&state, 1, "1").await);
+        assert!(told(rxs.get_mut(&3).unwrap()).is_empty());
+        assert!(told(rxs.get_mut(&4).unwrap()).is_empty());
+        // the old scorer's socket goes: the room still has its scorer
+        forget_connection(&state, 1).await;
+        assert!(told(rxs.get_mut(&3).unwrap()).is_empty());
+
+        // the scorer's socket gone (closed laptop, crashed app, lost Wi-Fi): not present, once
+        forget_connection(&state, 2).await;
+        assert_eq!(told(rxs.get_mut(&3).unwrap()), vec![false]);
+        assert_eq!(told(rxs.get_mut(&4).unwrap()), vec![false]);
+
+        // the scorer back on a new connection: present again; a socket that
+        // unsubscribed is no longer told
+        handle_ws_message(&state, 4, &txs[&4], &json!({ "type": "unsubscribe-match", "matchId": "1" }).to_string()).await;
+        handle_ws_message(&state, 5, &txs[&5], &sync(json!({ "id": PHONE, "claim": "phone-1" }), 6)).await;
+        assert_eq!(told(rxs.get_mut(&3).unwrap()), vec![true]);
+        assert!(told(rxs.get_mut(&5).unwrap()).is_empty());
+        forget_connection(&state, 5).await;
+        assert_eq!(told(rxs.get_mut(&3).unwrap()), vec![false]);
+        assert!(told(rxs.get_mut(&4).unwrap()).is_empty());
+        assert!(state.presence.lock().await.is_empty(), "nothing kept for a room without a scorer");
+
+        // a scoreboard's answer to a match-data request proves the match too
+        connect(&state, 6, "192.168.1.11").await;
+        let (tx6, mut rx6) = tx_pair();
+        state.clients.lock().await.insert(6, tx6);
+        let (ptx, _prx) = oneshot::channel::<Value>();
+        let p = Pending { tx: ptx, response_type: "match-data-response".into(), match_id: Some("1".into()), targets: HashSet::from([6u64]) };
+        state.pending.lock().await.insert("r1".into(), p);
+        on_response(&state, 6, "match-data-response",
+            &json!({ "requestId": "r1", "matchId": "1", "success": true, "data": bundle(1, "111111", "live") })).await;
+        assert!(is_owner(&state, 6, "1").await);
+        assert_eq!(told(rxs.get_mut(&3).unwrap()), vec![true]);
+        assert!(told(&mut rx6).is_empty());
+
+        // deleted: match-deleted only, no presence message
+        handle_ws_message(&state, 6, &txs[&1], &json!({ "type": "delete-match", "matchId": "1" }).to_string()).await;
+        let mut gone = Vec::new();
+        while let Ok(Message::Text(t)) = rxs.get_mut(&3).unwrap().try_recv() {
+            gone.push(serde_json::from_str::<Value>(&t).unwrap()["type"].clone());
+        }
+        assert_eq!(gone, vec![json!("match-deleted")]);
+        assert!(state.presence.lock().await.is_empty());
+    }
+
     #[tokio::test]
     async fn the_bundle_only_after_a_pin_of_the_match() {
         let state = new_state(0, 0);
@@ -4047,12 +4238,19 @@ mod tests {
         assert_eq!(s["access"], json!("summary"));
         assert_eq!(s["homePlayers"], json!([]));
         assert_eq!(s["match"]["status"], json!("live"));
+        let presence = json!({ "type": "scorer-presence", "matchId": "7", "present": true });
+        let without_time = |mut m: Value| {
+            m.as_object_mut().unwrap().remove("timestamp");
+            m
+        };
+        assert_eq!(without_time(next(&mut rx2)), presence, "last, after the snapshot");
         // The referee PIN: the bundle
         handle_ws_message(&state, 3, &tx3, &json!({ "type": "subscribe-match", "matchId": "7", "pin": "314159" }).to_string()).await;
         let f = next(&mut rx3);
         assert_eq!(f["access"], json!("full"));
         assert_eq!(f["homePlayers"][0]["number"], json!(7));
         assert!(!f.to_string().contains("314159"));
+        assert_eq!(without_time(next(&mut rx3)), presence);
         // Actions reach only the referee
         handle_ws_message(&state, 1, &tx1, &json!({ "type": "match-action", "matchId": "7", "action": "timeout", "data": { "team": "home" } }).to_string()).await;
         assert_eq!(next(&mut rx3)["type"], json!("match-action"));
@@ -4064,10 +4262,12 @@ mod tests {
             handle_ws_message(&state, 4, &tx4, &json!({ "type": "subscribe-match", "matchId": "7", "pin": "000000" }).to_string()).await;
             assert_eq!(next(&mut rx4)["code"], json!("pin-invalid"));
             assert_eq!(next(&mut rx4)["access"], json!("summary"));
+            assert_eq!(without_time(next(&mut rx4)), presence);
         }
         handle_ws_message(&state, 4, &tx4, &json!({ "type": "subscribe-match", "matchId": "7", "pin": "314159" }).to_string()).await;
         assert_eq!(next(&mut rx4)["code"], json!("rate-limited"));
         assert_eq!(next(&mut rx4)["access"], json!("summary"));
+        assert_eq!(without_time(next(&mut rx4)), presence);
         // With the referee connection off the referee PIN grants nothing; the game PIN still does
         let mut off = m.clone();
         off["refereeConnectionEnabled"] = json!(false);
@@ -4102,6 +4302,8 @@ mod tests {
         assert_eq!(s["access"], json!("summary"));
         assert_eq!(s["sets"], json!([{ "index": 1, "homePoints": 25, "awayPoints": 20, "finished": true }]));
         assert_eq!(s["homeTeam"], json!({ "name": "Home VC", "color": "#e2001a" }));
+        let p = next(&mut rx2);
+        assert_eq!((p["type"].clone(), p["matchId"].clone(), p["present"].clone()), (json!("scorer-presence"), json!("seed-1"), json!(true)));
         let live = json!({ "points_a": 3, "points_b": 1, "serving_team": "left", "timeouts_a": 1, "match_status": "live" });
         handle_ws_message(&state, 1, &tx1, &json!({ "type": "live-state-update", "matchId": 1, "liveState": live }).to_string()).await;
         let l = next(&mut rx2);

@@ -84,6 +84,9 @@ export function useRealtimeConnection({
   const [status, setStatus] = useState(CONNECTION_STATUS.DISCONNECTED)
   const [error, setError] = useState(null)
   const [lastUpdate, setLastUpdate] = useState(null)
+  // The relay's word on the scorer device: true / false, null while unknown
+  // (no relay socket, or a relay that does not send scorer-presence)
+  const [scorerPresent, setScorerPresent] = useState(null)
 
   const supabaseChannelRef = useRef(null)
   const wsUnsubscribeRef = useRef(null)
@@ -244,6 +247,8 @@ export function useRealtimeConnection({
         console.warn('[RealtimeConnection] Error unsubscribing WebSocket:', e)
       }
       wsUnsubscribeRef.current = null
+      // no relay socket: its word on the scorer no longer holds
+      if (isMountedRef.current) setScorerPresent(null)
     }
 
     setActiveConnection(null)
@@ -403,8 +408,13 @@ export function useRealtimeConnection({
       setStatus(CONNECTION_STATUS.CONNECTING)
       console.log('[RealtimeConnection] Connecting to WebSocket for match:', matchId)
 
+      setScorerPresent(null)
       const unsubscribe = subscribeToMatchData(matchId, (data) => {
         if (!isMountedRef.current) return
+        if (data && typeof data._scorerPresence === 'boolean') {
+          setScorerPresent(data._scorerPresence)
+          return
+        }
         setLastUpdate(Date.now())
 
         // Check if this is an action
@@ -579,6 +589,7 @@ export function useRealtimeConnection({
     status,
     error,
     lastUpdate,
+    scorerPresent,
 
     // Computed
     isConnected: status === CONNECTION_STATUS.CONNECTED || status === CONNECTION_STATUS.FALLBACK,

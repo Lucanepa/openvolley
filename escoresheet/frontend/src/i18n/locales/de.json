@@ -1961,6 +1961,7 @@
     "back": "Zu echten Spielen wechseln"
   },
   "benchDashboard": {
+    "scorerAway": "Das Gerät des Schreibers ist nicht verbunden: Der Spielstand ist vielleicht nicht aktuell, Anfragen warten. Sag es dem Schreiber.",
     "title": "Team-Dashboard",
     "selectGame": "Spiel auswählen",
     "loadingGames": "Lade Spiele...",
@@ -1988,6 +1989,7 @@
     "loadGames": "Spiele laden"
   },
   "refereeDashboard": {
+    "scorerAway": "Das Gerät des Schreibers ist nicht verbunden: Der Spielstand ist vielleicht nicht aktuell. Prüfe, ob es an und online ist.",
     "recorded": {
       "title": "Vom Schreiber erfasst",
       "closesIn": "Schliesst in {{s}} s",
@@ -2998,7 +3000,7 @@
       "q_recorded": "Was ist das Fenster «Vom Schreiber erfasst»?",
       "a_recorded": "Erfasst der Schreiber ein Timeout, einen Wechsel oder eine Sanktion, zeigt jedes Schiedsrichter-Tablet sie in einem Fenster an, mit Mannschaft, Satz und Spielstand. Auf «OK» tippen, oder es schliesst sich nach 10 Sekunden von selbst. Was erfasst wird, während es offen ist, kommt dazu. Während eines Timeouts zeigt es den Countdown, der beim Schliessen aufs Spielfeld wandert.",
       "q_offline": "Es steht «Offline: keine Verbindung zum Matchblatt»?",
-      "a_offline": "Dieses Tablet hat seine Verbindung (WLAN oder Server) für einige Sekunden verloren, der Spielstand kann also veraltet sein. Es verbindet sich von selbst wieder, sobald das Netz zurück ist; falls nicht, tippe im Menü auf «Aktualisieren». Ändert sich der Spielstand ohne diese Warnung nicht mehr, prüfe, ob das Gerät des Schreibers an und online ist.",
+      "a_offline": "Dieses Tablet hat seine Verbindung (WLAN oder Server) für einige Sekunden verloren, der Spielstand kann also veraltet sein. Es verbindet sich von selbst wieder, sobald das Netz zurück ist; falls nicht, tippe im Menü auf «Aktualisieren». Ein gelbes «Das Gerät des Schreibers ist nicht verbunden» heisst: Dieses Tablet ist in Ordnung, aber das Gerät des Schreibers ist aus, im Ruhezustand oder offline. Sag es dem Schreiber.",
       "q_screen": "Wie bleibt der Bildschirm an?",
       "a_screen": "Öffne das Menü und schalte «Bildschirm an lassen» ein. Die Vollbild-Schaltfläche blendet die Leisten des Browsers aus.",
       "q_bell": "Was ist der Glocken-Alarm?",
@@ -3030,7 +3032,9 @@
       "q_lineup": "Wie schickt der Coach die Startaufstellung?",
       "a_lineup": "Tippe nach der Auslosung auf «Aufstellung», tippe auf eine Position und dann auf einen Spieler, bis alle sechs gesetzt sind, und tippe auf «Aufstellung senden». Bis der Satz beginnt, sieht sie nur der Schreiber. Der Schreiber prüft und bestätigt sie; die Schaltfläche zeigt dann «Vom Schreiber erfasst».",
       "q_status": "Was bedeuten «Der Schreiber hat sie», «Gewährt» und «Abgelehnt»?",
-      "a_status": "«Gesendet – wartet auf den Schreiber»: unterwegs. «Der Schreiber hat sie»: Der Schreiber sieht sie. «Gewährt» oder «Angenommen»: erfasst. «Abgelehnt: …»: Der Schreiber hat Nein gesagt, mit dem Grund. «Nicht gesendet – keine Verbindung»: Versuche es nochmals, wenn das Tablet online ist."
+      "a_status": "«Gesendet – wartet auf den Schreiber»: unterwegs. «Der Schreiber hat sie»: Der Schreiber sieht sie. «Gewährt» oder «Angenommen»: erfasst. «Abgelehnt: …»: Der Schreiber hat Nein gesagt, mit dem Grund. «Nicht gesendet – keine Verbindung»: Versuche es nochmals, wenn das Tablet online ist.",
+      "q_scorerAway": "Es steht «Das Gerät des Schreibers ist nicht verbunden»?",
+      "a_scorerAway": "Laptop oder Tablet des Schreibers ist aus, im Ruhezustand oder hat die Verbindung verloren: Der Spielstand ist vielleicht nicht aktuell, und deine Anfragen warten. Sag es dem Schreiber; der Hinweis verschwindet, sobald sein Gerät zurück ist."
     },
     "livescore": {
       "q_open": "Wie verfolge ich ein Spiel live?",

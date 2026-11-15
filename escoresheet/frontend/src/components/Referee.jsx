@@ -4,6 +4,7 @@ import { useAlert } from '../contexts/AlertContext'
 import i18n from '../i18n'
 import { getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus, forceReconnect, buildLiveStateMatchData, isNewerLiveState, createLiveStateTracker, isLiveStateNewerThanBundle } from '../utils/serverDataSync'
 import { useRealtimeConnection, CONNECTION_TYPES, CONNECTION_STATUS } from '../hooks/useRealtimeConnection'
+import { useScorerAway } from '../hooks/useScorerAway'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 import { setsToWin, isMatchFinished as isMatchFinishedUtil, displaySetNumber } from '../utils/matchFormat'
 import ConnectionStatus from './ConnectionStatus'
@@ -895,6 +896,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     activeConnection: realtimeConnection,
     error: realtimeError,
     lastUpdate: realtimeLastUpdate,
+    scorerPresent,
     forceReconnect: realtimeReconnect
   } = useRealtimeConnection({
     matchId,
@@ -915,6 +917,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   // socket: in AUTO mode the database fallback still brings the updates while
   // the relay is down.
   const [linkDown, setLinkDown] = useState(false)
+  // The relay reports the scorer device gone for a while (its laptop closed,
+  // the app crashed): the score stops changing, which looked like a quiet match
+  const scorerAway = useScorerAway(scorerPresent, { enabled: !isMasterMode && !!matchId })
   const realtimeLinkRef = useRef({ status: realtimeStatus, connection: realtimeConnection })
   realtimeLinkRef.current = { status: realtimeStatus, connection: realtimeConnection }
   // This component's own match_live_state channel (below) is subscribed
@@ -2931,6 +2936,21 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           fontSize: 13
         }}>
           {t('refereeDashboard.linkDown', 'Offline: no connection to the scoresheet. Score and server may be out of date.')}
+        </div>
+      )}
+      {!linkDown && scorerAway && (
+        <div role="alert" data-testid="scorer-away" className="rounded-xl border border-amber-200 bg-amber-50 text-amber-900 font-medium leading-snug shadow-lg" style={{
+          position: 'fixed',
+          top: 48,
+          pointerEvents: 'none',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 9999,
+          maxWidth: 'min(560px, calc(100vw - 32px))',
+          padding: '8px 14px',
+          fontSize: 13
+        }}>
+          {t('refereeDashboard.scorerAway', "The scorer's device is not connected: the score may be out of date. Check that it is on and online.")}
         </div>
       )}
       {/* Narrow screen blocking overlay (a phone or tablet is upright only:

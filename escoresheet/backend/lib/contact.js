@@ -88,14 +88,16 @@ export const SOURCES = Object.freeze(['app', 'website'])
 
 // The sections of the help (the "?" panel of each screen, openvolley.app/support).
 export const SECTION_IDS = Object.freeze([
-  'home', 'setup', 'coin-toss', 'scoring', 'subs-timeouts', 'sanctions', 'set-end', 'match-end',
-  'corrections', 'connections', 'referee', 'bench', 'livescore', 'handover', 'sync-offline', 'install-updates'
+  'home', 'setup', 'rosters', 'coin-toss', 'scoring', 'subs-timeouts', 'sanctions', 'set-end', 'match-end',
+  'corrections', 'connections', 'referee', 'bench', 'livescore', 'handover', 'sync-offline', 'install-updates',
+  'global', 'club-manager', 'team-links', 'requests', 'team-manager', 'club-licences', 'club-api', 'manager-accounts'
 ])
 export const CONTACT_AREAS = Object.freeze([...SECTION_IDS, 'other'])
 // The names in the mail body (the subject keeps the id)
 export const SECTION_NAMES = Object.freeze({
   home: 'Home',
   setup: 'Match setup',
+  rosters: 'Rosters',
   'coin-toss': 'Coin toss',
   scoring: 'Scoring',
   'subs-timeouts': 'Substitutions, time-outs, libero',
@@ -110,6 +112,14 @@ export const SECTION_NAMES = Object.freeze({
   handover: 'Continuing on another device',
   'sync-offline': 'Online, offline, sync',
   'install-updates': 'Installing, updates',
+  global: 'Global tool',
+  'club-manager': 'My club (club managers)',
+  'team-links': 'Team links',
+  requests: 'Sign-up requests and approvals',
+  'team-manager': 'My teams: squad and game rosters',
+  'club-licences': 'Club licence lists',
+  'club-api': 'Club API',
+  'manager-accounts': 'Manager accounts and roles',
   other: 'Other'
 })
 // Area names of app versions before the sections, and the pages of the

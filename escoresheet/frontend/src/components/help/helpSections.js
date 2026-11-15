@@ -194,6 +194,7 @@ export const HELP_SECTIONS = [
     q('bench', 'grey'),
     q('bench', 'invalidPin'),
     q('bench', 'outage'),
+    q('bench', 'scorerAway'),
     q('bench', 'roster')
   ]),
   section('livescore', [

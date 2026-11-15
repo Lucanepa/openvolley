@@ -2150,6 +2150,7 @@
     "back": "Zu echten Spielen wechseln"
   },
   "benchDashboard": {
+    "scorerAway": "S Grät vom Schriiber isch nöd verbunde: De Spielstand isch vilicht nöd aktuell, Aafrage warted. Säg s em Schriiber.",
     "title": "Team-Dashboard",
     "selectGame": "Spiil uswähle",
     "loadingGames": "Spiil werded glade...",
@@ -2177,6 +2178,7 @@
     "loadGames": "Spiil lade"
   },
   "refereeDashboard": {
+    "scorerAway": "S Grät vom Schriiber isch nöd verbunde: De Spielstand isch vilicht nöd aktuell. Prüef, öb s aa und online isch.",
     "recorded": {
       "title": "Vom Schriiber erfasst",
       "closesIn": "Gaht in {{s}} s zue",
@@ -3187,7 +3189,7 @@
       "q_recorded": "Was isch s Fänschter «Vom Schriiber erfasst»?",
       "a_recorded": "Wänn de Schriiber es Timeout, en Wächsel oder e Sanktion erfasst, zeigt jedes Schiri-Tablet das imene Fänschter aa, mit Team, Satz und Spielstand. Tipp uf «OK», oder s gaht nach 10 Sekunde sälber zue. Was erfasst wird, wärend s offe isch, chunnt dezue. Wärend emene Timeout zeigt s de Countdown, und dä wandert bim Zuemache ufs Fäld.",
       "q_offline": "Es staht «Offline: kei Verbindig zum Matchblatt»?",
-      "a_offline": "Das Tablet hät sini Verbindig (WLAN oder Server) für es paar Sekunde verloore, drum cha de Spielstand veraltet sii. Es verbindet sich sälber wieder, sobald s Netz zrugg isch. Wänn nöd, tipp im Menü uf «Aktualisiere». Ändert de Spielstand ohni die Warnig nüme, prüef, öb s Grät vom Schriiber aa und online isch.",
+      "a_offline": "Das Tablet hät sini Verbindig (WLAN oder Server) für es paar Sekunde verloore, drum cha de Spielstand veraltet sii. Es verbindet sich sälber wieder, sobald s Netz zrugg isch. Wänn nöd, tipp im Menü uf «Aktualisiere». Es gälbs «S Grät vom Schriiber isch nöd verbunde» heisst: Das Tablet isch in Ornig, aber s Grät vom Schriiber isch us, schlaft oder isch offline. Säg s em Schriiber.",
       "q_screen": "Wie bliibt de Bildschirm aa?",
       "a_screen": "Mach s Menü uf und schalt «Bildschirm aa lah» ii. De Vollbild-Chnopf blendet d Leiste vom Browser uus.",
       "q_bell": "Was isch de Glogge-Alarm?",
@@ -3219,7 +3221,9 @@
       "q_lineup": "Wie schickt de Trainer d Startufstellig?",
       "a_lineup": "Tipp nach de Usloosig uf «Ufstellig», tipp e Position und dänn en Spieler, bis alli sechs platziert sind, und tipp uf «Ufstellig schicke». Bis de Satz aafangt, gseht si nur de Schriiber. De Schriiber prüeft und bestätigt si; de Chnopf seit dänn «Vom Schriiber erfasst».",
       "q_status": "Was bedüüted «De Schriiber hätt sie», «Gwährt» und «Abglehnt»?",
-      "a_status": "«Gschickt – wartet uf de Schriiber»: underwägs. «De Schriiber hätt sie»: De Schriiber gseht si. «Gwährt» oder «Aagnoh»: erfasst. «Abglehnt: …»: De Schriiber hät Nei gseit, mit em Grund. «Nöd gschickt – kei Verbindig»: Probier s nomal, wänn s Tablet online isch."
+      "a_status": "«Gschickt – wartet uf de Schriiber»: underwägs. «De Schriiber hätt sie»: De Schriiber gseht si. «Gwährt» oder «Aagnoh»: erfasst. «Abglehnt: …»: De Schriiber hät Nei gseit, mit em Grund. «Nöd gschickt – kei Verbindig»: Probier s nomal, wänn s Tablet online isch.",
+      "q_scorerAway": "Es staht «S Grät vom Schriiber isch nöd verbunde»?",
+      "a_scorerAway": "De Laptop oder s Tablet vom Schriiber isch us, schlaft oder hät d Verbindig verloore: De Spielstand isch vilicht nöd aktuell, und dini Aafrage warted. Säg s em Schriiber; de Hiiwiis gaht weg, sobald sis Grät zrugg isch."
     },
     "livescore": {
       "q_open": "Wie verfolg ich es Spiil live?",

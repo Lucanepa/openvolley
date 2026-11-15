@@ -99,6 +99,19 @@
  *                     (only to sockets with access)
  *   live-state-update { type, matchId, liveState }   (every subscriber: public, like Livescore)
  *   match-deleted     { type, matchId }
+ *   scorer-presence   { type, matchId, present, timestamp }  present: an OPEN socket holds the
+ *                     room's scoreboard claim (it proved the match with an accepted sync or a
+ *                     match-data / match-update answer); referee, bench and livescore sockets
+ *                     never count. timestamp: the relay's clock (ms), as pong. Sent to a socket
+ *                     right after the answer to its subscribe-match (also for a room not on the
+ *                     relay yet: false), and to the room's subscribers (not its scoreboards)
+ *                     only when it flips: the first claim of a room without one (true), the last
+ *                     claiming socket closing or losing the claim (scorer-moved) (false). A
+ *                     take-over keeps it true: the new socket holds the claim before the old
+ *                     ones lose it. A deleted match sends match-deleted instead. No timer, no
+ *                     repeat per sync, no PIN, device id or address. Unsubscribing ends no
+ *                     claim here (ownership comes from the sync, not the subscription). The referee and bench warn when the scorer's
+ *                     device is gone (lid closed, app crashed, Wi-Fi lost).
  *   connected, pong, error { type:'error', code, message, matchId? }
  *   match-data-request | game-number-request | match-update-request  (proven scoreboards only)
  *
@@ -1490,6 +1503,7 @@ function createLanRelay(options = {}) {
   const scorers = new Map() // matchId -> { id, claim }: the device whose claim scores the room
   const movedClaims = new Map() // matchId -> Map<device id, claim> another device's claim took over
   const supersededClaims = new Map() // matchId -> Set<claim> the scorers' copies were continued from
+  const presentRooms = new Set() // room keys whose subscribers were last told present:true (scorer-presence)
   const benchRequests = createBenchRequestStore() // open + recently answered bench requests per match
   const benchLimiter = createWindowLimiter() // bench-request per socket and minute
   const messageLimiter = createWindowLimiter({ max: options.messagesPerMinute ?? MESSAGES_PER_MINUTE })
@@ -1699,6 +1713,7 @@ function createLanRelay(options = {}) {
     messageLimiter.forget(meta.id)
     for (const matchId of meta.owned) {
       if (ownersOf(matchId).length === 0) orphanedSince.set(matchId, Date.now())
+      notePresence(matchId)
     }
     // A scoreboard that disconnects can no longer answer pending requests.
     for (const [requestId, p] of pending) {
@@ -1723,6 +1738,36 @@ function createLanRelay(options = {}) {
     const out = []
     for (const [ws, meta] of clients) if (meta.owned.size > 0 && ws.readyState === 1) out.push(ws)
     return out
+  }
+
+  // --- Scorer presence (scorer-presence) -----------------------------------
+
+  /** Does an open socket hold the room's scoreboard claim (proved it)? */
+  function isScorerPresent(matchId) {
+    for (const [ws, meta] of clients) if (meta.owned.has(matchId) && ws.readyState === 1) return true
+    return false
+  }
+
+  function presenceMessage(matchId, present) {
+    return { type: 'scorer-presence', matchId, present, timestamp: Date.now() }
+  }
+
+  /**
+   * After a socket gained or lost the room's claim: tells the room's
+   * subscribers (not its scoreboards) when the scorer's presence flipped,
+   * once per flip. Called where `owned` changes (a granted claim, removeClient,
+   * scorer-moved, clear-all-matches), each time after the change is complete,
+   * so a take-over (the new socket in before the old one out) sends nothing.
+   */
+  function notePresence(matchId) {
+    const present = isScorerPresent(matchId)
+    if (present === presentRooms.has(matchId)) return
+    if (present) presentRooms.add(matchId)
+    else presentRooms.delete(matchId)
+    const subs = subscriptions.get(matchId)
+    if (!subs) return
+    const out = presenceMessage(matchId, present)
+    for (const c of [...subs]) if (!clients.get(c)?.owned.has(matchId)) send(c, out)
   }
 
   /**
@@ -1788,6 +1833,7 @@ function createLanRelay(options = {}) {
     supersededClaims.delete(matchId)
     benchRequests.drop(matchId)
     provenAddrs.delete(matchId)
+    presentRooms.delete(matchId)
   }
 
   /**
@@ -2035,6 +2081,8 @@ function createLanRelay(options = {}) {
     supersededClaims.delete(matchId)
     benchRequests.drop(matchId)
     provenAddrs.delete(matchId)
+    // Its subscribers were told match-deleted and dropped: no presence message
+    presentRooms.delete(matchId)
     for (const meta of clients.values()) meta.owned.delete(matchId)
   }
 
@@ -2085,6 +2133,7 @@ function createLanRelay(options = {}) {
         return
       }
       settle(msg.requestId, storeBundle(id, bundle, claimed.kind))
+      notePresence(id)
     } else if (msg.type === 'game-number-response') {
       const id = normalizeMatchId(msg.matchId)
       if (!msg.success || !msg.match || !id || !isOwner(ws, id)) {
@@ -2108,6 +2157,7 @@ function createLanRelay(options = {}) {
       }
       const stored = storeBundle(id, bundle, claimed.kind)
       sendMatchData(id, 'match-data-update', stored, undefined, ws)
+      notePresence(id)
       settle(msg.requestId, { data: stored })
     }
   }
@@ -2149,6 +2199,7 @@ function createLanRelay(options = {}) {
     if (device && isMovedClaim(matchId, device)) {
       if (meta) meta.owned.delete(matchId)
       sendError(ws, 'scorer-moved', CLAIM_ERRORS['scorer-moved'], matchId)
+      notePresence(matchId)
       return
     }
     const bytes = frameBytes
@@ -2177,6 +2228,9 @@ function createLanRelay(options = {}) {
       if (pin !== null) claimStore.remember(matchId, pin)
     }
     sendMatchData(matchId, 'match-data-update', stored, msg._timestamp, ws)
+    // After the update: a tablet has the match before it hears its scorer is
+    // there. A take-over (noteScorer) is complete here, so it flips nothing.
+    notePresence(matchId)
     // Bench requests of a set that is over go; a socket that has just
     // (re)proved the match gets the open ones again
     benchRequests.prune(matchId, currentSetOfBundle(stored))
@@ -2218,6 +2272,9 @@ function createLanRelay(options = {}) {
         for (const e of benchRequests.open(matchId)) if (e.request.kind !== 'lineup') send(ws, refereeInfo(matchId, e))
       }
     }
+    // Last, once the subscription is answered: is the scorer there now (false
+    // for a room not on the relay yet)
+    send(ws, presenceMessage(matchId, isScorerPresent(matchId)))
   }
 
   // --- Bench requests (see the block above createLanRelay) ------------------
@@ -2405,6 +2462,7 @@ function createLanRelay(options = {}) {
       } else {
         deleteMatch(matchId)
       }
+      notePresence(matchId)
     }
   }
 
