@@ -507,7 +507,8 @@ jobs:
           ent="$GITHUB_WORKSPACE/escoresheet/frontend/src-tauri/Entitlements.plist"
           plutil -lint "$ent"
           src=$(find adhoc -type f -name "${pkg}_*_universal.app.tar.gz")
-          [ -n "$src" ] && [ "$(wc -l <<<"$src")" = 1 ] || { find adhoc -type f; echo "::error::expected one ${pkg}_*_universal.app.tar.gz from the build"; exit 1; }
+          # BSD wc pads its count with spaces ("       1"): count the lines with grep
+          [ -n "$src" ] && [ "$(grep -c '' <<<"$src")" = 1 ] || { find adhoc -type f; echo "::error::expected one ${pkg}_*_universal.app.tar.gz from the build"; exit 1; }
           w="$RUNNER_TEMP/mac"; rm -rf "$w"; mkdir -p "$w/app" "$w/out/macos" "$w/out/dmg" "$w/dmg-root"
           tar -tzf "$src" | awk -v top="$name.app/" 'index($0, top) != 1 { bad = 1; print "outside " top ": " $0 } END { exit bad }'
           tar -xzf "$src" -C "$w/app"
