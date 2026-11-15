@@ -876,7 +876,9 @@
     "noEventsRecorded": "No events recorded yet.",
     "captainOnCourt": {
       "designate": "Game captain",
-      "selectTitle": "Game captain"
+      "selectTitle": "Game captain",
+      "last": "Last game captain",
+      "lastShort": "Last"
     },
     "duplicateTabTitle": "Scoresheet already open",
     "duplicateTabMessage": "This match scoresheet is already open in another tab or browser window. Score it in one tab only, to avoid data conflicts: close this tab, or press “Score in this tab” to move scoring here (the other tab then stops scoring).",

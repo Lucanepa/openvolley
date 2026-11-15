@@ -874,7 +874,9 @@
     "noEventsRecorded": "Aucun événement enregistré.",
     "captainOnCourt": {
       "designate": "Capitaine de jeu",
-      "selectTitle": "Capitaine de jeu"
+      "selectTitle": "Capitaine de jeu",
+      "last": "Dernier capitaine en jeu",
+      "lastShort": "Dernier"
     },
     "duplicateTabTitle": "Feuille de match déjà ouverte",
     "duplicateTabMessage": "La feuille de match est déjà ouverte dans un autre onglet ou navigateur. Pour éviter les conflits de données, tiens-la dans un seul onglet : ferme celui-ci, ou appuie sur « Continuer dans cet onglet » pour la reprendre ici (l’autre onglet cesse alors de la tenir).",

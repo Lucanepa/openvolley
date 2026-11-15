@@ -868,7 +868,9 @@
     "noEventsRecorded": "Noch keine Ereignisse erfasst.",
     "captainOnCourt": {
       "designate": "Spielkapitän",
-      "selectTitle": "Spielführer"
+      "selectTitle": "Spielführer",
+      "last": "Letzter Spielkapitän",
+      "lastShort": "Zuletzt"
     },
     "duplicateTabTitle": "Matchblatt bereits geöffnet",
     "duplicateTabMessage": "Das Matchblatt ist bereits in einem anderen Tab oder Browserfenster geöffnet. Führe es nur in einem Tab, um Datenkonflikte zu vermeiden: Schliesse diesen Tab, oder hol es mit «In diesem Tab weiterführen» hierher (der andere Tab führt es dann nicht mehr).",

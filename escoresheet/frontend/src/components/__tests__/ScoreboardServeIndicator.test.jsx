@@ -83,10 +83,11 @@ describe('Scoreboard: the SERVE indicator', () => {
     expect(leftIndicator.textContent).toBe('SERVE1')
     expect(leftIndicator.querySelector('[style*="container-type"]')).toBeTruthy()
     // owner, 3.0.16 ("auto width is fine"): the label and the box are as wide
-    // as their content, on the score's side, not the whole side; the number
-    // two digits wide whatever it is (#1 -> #12 moves nothing)
+    // as their content, not the whole side; the number two digits wide
+    // whatever it is (#1 -> #12 moves nothing). Owner, 15.11: in the outer
+    // corner of the side, not next to the score
     const area = leftIndicator.querySelector('[data-serve-area="left"]')
-    expect(area.style.justifyContent).toBe('flex-end')
+    expect(area.style.justifyContent).toBe('flex-start')
     const column = area.querySelector('[data-serve-indicator="left"]')
     expect(column.style.width).toBe('')
     expect(column.style.maxWidth).toBe('100%')
@@ -105,6 +106,67 @@ describe('Scoreboard: the SERVE indicator', () => {
     expect(chip.textContent).toBe('Game captain')
     fireEvent.click(chip)
     await waitFor(() => expect([...document.querySelectorAll('[role=dialog]')].some(d => d.textContent.includes('Game captain'))).toBe(true))
+    cleanup()
+  })
+})
+
+// FIVB 5.1.2: a game captain keeps the role until replaced, the team captain
+// returns or the set ends. Once one is acting, the Game captain button goes
+// away; when a new one is needed, the dialog proposes the last one.
+describe('Scoreboard: the Game captain button', () => {
+  async function seedMatch(matchFields) {
+    const home = await db.teams.add({ name: 'Home GC' })
+    const away = await db.teams.add({ name: 'Away GC' })
+    // the away captain (#7) is not in the line-up
+    await db.players.bulkAdd([1, 2, 3, 4, 5, 6, 7].flatMap(n => [
+      { teamId: home, number: n, firstName: 'H', lastName: `Home${n}`, isCaptain: n === 1 },
+      { teamId: away, number: n, firstName: 'A', lastName: `Away${n}`, isCaptain: n === 7 }
+    ]))
+    const t = new Date(Date.now() - 300000).toISOString()
+    const matchId = await db.matches.add({
+      homeTeamId: home, awayTeamId: away, status: 'live', test: true,
+      firstServe: 'home', coinTossTeamA: 'home', coinTossTeamB: 'away',
+      officials: [{ role: '1st referee', firstName: 'Claudia', lastName: 'Moser' }],
+      ...matchFields
+    })
+    await db.sets.add({ matchId, index: 1, homePoints: 0, awayPoints: 0, finished: false, startTime: t })
+    const lineup = { I: '1', II: '2', III: '3', IV: '4', V: '5', VI: '6' }
+    await db.events.bulkAdd([
+      { matchId, setIndex: 1, type: 'coin_toss', payload: {}, seq: 1, ts: t },
+      { matchId, setIndex: 1, type: 'lineup', payload: { team: 'home', lineup, isInitial: true }, seq: 2, ts: t },
+      { matchId, setIndex: 1, type: 'lineup', payload: { team: 'away', lineup, isInitial: true }, seq: 3, ts: t },
+      { matchId, setIndex: 1, type: 'set_start', payload: {}, seq: 4, ts: t }
+    ])
+    render(<ScaleProvider><AlertProvider><LoggingProvider><Scoreboard matchId={matchId} /></LoggingProvider></AlertProvider></ScaleProvider>)
+    await waitFor(() => expect(document.querySelectorAll('.serve-side')).toHaveLength(2))
+  }
+
+  it('is gone once a game captain on court is acting', async () => {
+    await seedMatch({ awayCourtCaptain: 3, awayRememberedCourtCaptain: 3 })
+    // the score shows, the line-ups are read: still no button
+    await waitFor(() => expect(document.querySelector('.serve-side__indicator')?.textContent).toBe('SERVE1'))
+    await new Promise(r => setTimeout(r, 300))
+    expect(document.querySelector('.serve-side__chip')).toBeNull()
+    cleanup()
+  })
+
+  it('proposes the last game captain when a new one is needed', async () => {
+    // #4 was game captain before the team captain came back (and left again)
+    await seedMatch({ awayCourtCaptain: null, awayRememberedCourtCaptain: 4 })
+    const chip = await waitFor(() => {
+      const c = document.querySelector('.serve-side__chip')
+      expect(c).toBeTruthy()
+      return c
+    })
+    fireEvent.click(chip)
+    const dialog = await waitFor(() => {
+      const d = [...document.querySelectorAll('[role=dialog]')].find(x => x.textContent.includes('Game captain'))
+      expect(d).toBeTruthy()
+      return d
+    })
+    const buttons = [...dialog.querySelectorAll('button')].map(b => b.textContent)
+    expect(buttons).toContain('4Last')
+    expect(buttons.filter(b => b.endsWith('Last'))).toHaveLength(1)
     cleanup()
   })
 })
