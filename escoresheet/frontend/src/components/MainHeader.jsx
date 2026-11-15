@@ -586,13 +586,15 @@ export default function MainHeader({
   }
 
   // One look for every row of the header menus (desktop and compact).
+  // Global is for any country: no Swiss German (the German one, 'de', stays)
+  const shownLanguages = hideAccount ? languages.filter(l => l.code !== 'de-CH') : languages
   const currentLanguage = languages.find(l => l.code === i18n.language)
   const CurrentFlag = currentLanguage ? currentLanguage.Flag : FlagGB
   const isCurrentScale = (scale) => userScaleOverride === scale || (userScaleOverride === null && scale === 1.0)
 
   const languageOptions = (
     <div className={MENU_NEST}>
-      {languages.map((lang) => (
+      {shownLanguages.map((lang) => (
         <button
           type="button"
           key={lang.code}
