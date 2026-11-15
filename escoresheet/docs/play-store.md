@@ -12,7 +12,17 @@ Personal developer account (the first one was closed for inactivity on
 production release. Keep the account active afterwards (publish or sign in
 now and then), or Google closes it again.
 
-## Signing: decide once, it is permanent
+## Signing: decided 15.11 = B (hand Play the OpenVolley app key)
+
+Enrolment: Play Console → the app → Test and release → Setup → App signing →
+"Export and upload a key from a Java keystore". The console shows a `pepk.jar`
+command with Google's encryption key; run it on lenovoserver against
+`~/.config/openvolley-android/release.p12` (alias `release`), then upload the
+`.zip` it writes. The same key stays the upload key:
+`~/.config/openvolley-android/play-upload.properties` is a copy of
+`signing.properties`. Irreversible: Google keeps a copy of the key.
+
+The comparison that led to B:
 
 | | A. Dedicated upload key (default) | B. Hand Play the OpenVolley app key |
 |---|---|---|
