@@ -88,6 +88,8 @@ export const AUDIT_ACTIONS = Object.freeze([
   'club.managers', 'club.contact', 'club.member_remove',
   // db/021: the final scoresheet mail of a match, and its switch (lib/finalMail.js)
   'match.final_mail', 'settings.final_email',
+  // an admin's "Send the final mail now" of one close (lib/finalMail.js sendNow; counts, never an address)
+  'match.final_mail_manual',
   // db/019: a match moved to another scoring device (lib/scorerDevice.js claim)
   'match.scorer_device',
   // an admin deleted an account, or rejected a sign-up (deleteAccount below)
