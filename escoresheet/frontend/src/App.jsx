@@ -3337,7 +3337,7 @@ export default function App() {
     try {
       const previous = (await db.matches.filter(m => isTestMatchSeedKey(m.seedKey)).first()) || null
       const seedKey = testMatchSeedKeyFor(previous?.seedKey)
-      const refereePin = previous?.refereePin || generateRefereePin()
+      const refereePin = previous?.refereePin || generateSecurePin()
       await clearLocalTestData()
       await db.match_setup.clear()
       const timestamp = new Date().toISOString()
