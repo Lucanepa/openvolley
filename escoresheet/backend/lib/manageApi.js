@@ -30,6 +30,8 @@
  *                                                    handlers check match ownership and the
  *                                                    official's role in the match's sport
  *   GET    /api/admin/approvals[?app=indoor|beach]   isAdmin
+ *   *      /api/admin/data/*                         isSuperAdmin: the Data tab, every table of the
+ *                                                    public schema one row at a time (lib/dataAdmin.js)
  *   GET    /api/admin/matches/:id/revisions          isAdmin: undone / edited events (db/015)
  *   GET    /api/admin/matches/:id/closures           isAdmin: the closed record of each reopen, and the re-close (db/039)
  *   GET    /api/admin/matches/:id/pin                isAdmin: the match's game PIN (audited match.pin_viewed);
@@ -147,6 +149,9 @@ const METHOD_NOT_ALLOWED = () => fail(405, 'OV_METHOD_NOT_ALLOWED', 'Method not 
 // 2026-10-21): reopening a closed beach match. accounts.reopenMatch checks the
 // match's own sport under its row lock; an indoor match stays admin-only.
 const REOPEN_RE = /^\/api\/admin\/matches\/[^/]+\/reopen$/
+// The Data tab (lib/dataAdmin.js): /api/admin/data/tables[/<table>[/rows|/row|/row/delete]]
+const DATA_RE = /^\/api\/admin\/data(\/|$)/
+const DATA_PATH_RE = /^\/api\/admin\/data\/tables(?:\/([a-z_][a-z0-9_]{0,62})(\/rows|\/row|\/row\/delete)?)?$/
 const beachManager = (access) => accessForSport(access, 'beach').canManageTeams === true
 const ID = '([0-9a-fA-F-]{36})'
 
@@ -173,7 +178,7 @@ export function manageFamilyOf (pathname) {
   return null
 }
 
-export function createManageApi ({ accounts, savedTeams, beach = null, approvals = null, revisions = null, activity = null, scoresheets = null, clubs = null, finalMail = null, teams = null, licences = null, requests = null, notices = null, clubApi = null }) {
+export function createManageApi ({ accounts, savedTeams, beach = null, approvals = null, revisions = null, activity = null, scoresheets = null, clubs = null, finalMail = null, teams = null, licences = null, requests = null, notices = null, clubApi = null, dataAdmin = null }) {
   // approvals?.x, or 503 when the module is not there
   const ap = (name) => (args) => (approvals && typeof approvals[name] === 'function' ? approvals[name](args) : APPROVALS_OFF())
   const q = (query, k) => {
@@ -417,6 +422,28 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['POST', new RegExp(`^/api/scoresheets/${ID}/view$`), manageTeamsOf((m) => (scoresheets ? scoresheets.sportOf(m[1]) : { sport: null })), (m, c) => sheets((s) => s.createViewLink({ actorId: c.user.id, matchId: m[1] }))]
   ]
 
+  // The Data tab (lib/dataAdmin.js): super admins only. A generic editor can
+  // change any role (profiles.roles), so an admin who is not a super admin
+  // could make itself one. Table names are not ids: matched here, not in routes.
+  async function dataRoute ({ method, pathname, query, body, user, access }) {
+    if (!access?.isSuperAdmin) return FORBIDDEN()
+    if (!dataAdmin) return notFound()
+    const m = DATA_PATH_RE.exec(pathname)
+    if (!m) return notFound()
+    const [, table, tail = ''] = m
+    const actorId = user.id
+    if (!table) return method === 'GET' ? dataAdmin.listTables() : METHOD_NOT_ALLOWED()
+    if (tail === '') return method === 'GET' ? dataAdmin.listRows({ table, query }) : METHOD_NOT_ALLOWED()
+    if (tail === '/rows') return method === 'POST' ? dataAdmin.insertRow({ actorId, table, body }) : METHOD_NOT_ALLOWED()
+    if (tail === '/row') {
+      if (method === 'GET') return dataAdmin.getRow({ table, key: q(query, 'key') })
+      if (method === 'PATCH') return dataAdmin.updateRow({ actorId, table, body })
+      return METHOD_NOT_ALLOWED()
+    }
+    if (tail === '/row/delete') return method === 'POST' ? dataAdmin.deleteRow({ actorId, table, body }) : METHOD_NOT_ALLOWED()
+    return notFound()
+  }
+
   /** The role check of a route: null when allowed, else the 403 answer. */
   function refuse (need, access) {
     switch (need) {
@@ -449,6 +476,7 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     const early = familyRefusal(family, method, access, pathname)
     if (early) return early
     if (family === 'beach') return beach ? beach.route({ method, pathname, query, body, user, access }) : notFound()
+    if (DATA_RE.test(pathname)) return dataRoute({ method, pathname, query, body, user, access })
     let pathKnown = false
     for (const [m, re, need, handler] of routes) {
       const match = re.exec(pathname)

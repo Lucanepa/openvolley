@@ -3697,6 +3697,72 @@
     "menuAdmin": "Admin",
     "menuSavedTeams": "Équipes enregistrées",
     "menuInviteCode": "Saisir un code d’invitation",
+    "data": {
+      "intro": "Chaque table de la base de données, ligne par ligne. Les PIN, les hachages de jetons et les données de connexion ne sont jamais affichés. Les journaux et les enregistrements des matchs clôturés sont en lecture seule, et chaque modification est inscrite au journal.",
+      "findTable": "Trouver une table",
+      "noTables": "Aucune table trouvée.",
+      "allTables": "Toutes les tables",
+      "rowsAbout_one": "Environ {{count}} ligne",
+      "rowsAbout_other": "Environ {{count}} lignes",
+      "columns_one": "{{count}} colonne",
+      "columns_other": "{{count}} colonnes",
+      "readOnly": {
+        "log": "Lecture seule (journal)",
+        "no_key": "Lecture seule (sans clé)",
+        "secret_key": "Lecture seule"
+      },
+      "readOnlyLong": {
+        "log": "Cette table est un journal ou un enregistrement : seule l’app y écrit.",
+        "no_key": "Cette table n’a pas de clé primaire, tu ne peux donc pas modifier ses lignes ici.",
+        "secret_key": "La clé de cette table est secrète, tu ne peux donc pas modifier ses lignes ici."
+      },
+      "addRow": "Ajouter une ligne",
+      "secretHidden": "Non affiché : {{columns}}",
+      "search": "Rechercher dans toutes les colonnes",
+      "filterColumn": "Colonne",
+      "filterOp": "Condition",
+      "filterValue": "Valeur",
+      "ops": {
+        "like": "Contient",
+        "null": "Est vide",
+        "notnull": "N’est pas vide",
+        "eq": "=",
+        "ne": "≠",
+        "gt": ">",
+        "gte": "≥",
+        "lt": "<",
+        "lte": "≤"
+      },
+      "apply": "Filtrer",
+      "clearFilter": "Effacer le filtre",
+      "noRows": "Aucune ligne.",
+      "sortBy": "Trier par {{column}}",
+      "key": "Clé",
+      "range": "{{from}}–{{to}} sur {{total}}",
+      "previous": "Précédent",
+      "next": "Suivant",
+      "generated": "Généré",
+      "invalid": {
+        "json": "Ce n’est pas du JSON valide.",
+        "array": "Il faut un tableau JSON."
+      },
+      "null": "Vide (NULL)",
+      "useDefault": "Valeur par défaut",
+      "added": "Ligne ajoutée",
+      "saved": "Enregistré",
+      "deleted": "Ligne supprimée",
+      "deleteTitle": "Supprimer cette ligne ?",
+      "deleteBody": "La ligne est supprimée définitivement de {{table}}, avec tout ce que la base de données supprime en même temps. Le journal garde trace de la suppression.",
+      "delete": "Supprimer",
+      "newRow": "Nouvelle ligne",
+      "changedMeanwhile": "Quelqu’un a modifié {{columns}} depuis que tu as ouvert cette ligne. Recharge-la et vérifie avant d’enregistrer à nouveau.",
+      "reload": "Recharger",
+      "add": "Ajouter",
+      "save": "Enregistrer",
+      "discard": "Annuler les modifications",
+      "changedColumns": "Modifié : {{columns}}",
+      "audited": "Chaque modification est inscrite au journal, sans valeurs personnelles."
+    },
     "tabs": {
       "accounts": "Comptes",
       "invites": "Codes d’invitation",
@@ -3710,7 +3776,8 @@
       "clubs": "Clubs",
       "myclub": "Mon club",
       "settings": "Réglages",
-      "myteams": "Mes équipes"
+      "myteams": "Mes équipes",
+      "data": "Données"
     },
     "status": {
       "setup": "Préparation",
@@ -3982,6 +4049,9 @@
       "rows_one": "{{count}} entrée",
       "rows_other": "{{count}} entrées",
       "actions": {
+        "data_insert": "Données : ligne ajoutée",
+        "data_update": "Données : ligne modifiée",
+        "data_delete": "Données : ligne supprimée",
         "account_delete": "Compte supprimé",
         "account_reject": "Inscription refusée",
         "account_roles": "Rôles modifiés",

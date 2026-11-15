@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Activity, ArrowLeft, CircleHelp, ClipboardList, FileText, House, KeyRound, Medal, ScrollText, Settings, ShieldCheck, Shirt, Trophy, Users } from 'lucide-react'
+import { Activity, ArrowLeft, CircleHelp, ClipboardList, Database, FileText, House, KeyRound, Medal, ScrollText, Settings, ShieldCheck, Shirt, Trophy, Users } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { ConsoleShell, ConsolePanel, RowListCards, cn, consoleHeaderBtn } from '../../ui'
 import { PageLoadGate, PageSpinner } from './common'
@@ -15,6 +15,7 @@ import ClosedMatchesPanel from './ClosedMatchesPanel'
 import ScoresheetsPanel from './ScoresheetsPanel'
 import AuditPanel from './AuditPanel'
 import ActivityPanel from './ActivityPanel'
+import DataPanel from './DataPanel'
 import SavedTeamsPanel from './SavedTeamsPanel'
 import TournamentsPanel from './tournaments/TournamentsPanel'
 import NotificationsBell from './NotificationsBell'
@@ -56,11 +57,15 @@ const TABS = [
   { id: 'tournaments', icon: Medal, admin: false, apps: ['beach'] },
   // db/021: OpenVolley's switches (send the final scoresheet), admins and
   // competition managers (the OpenBeach brand's tab list leaves it out)
-  { id: 'settings', icon: Settings, admin: false, apps: ['indoor'] }
+  { id: 'settings', icon: Settings, admin: false, apps: ['indoor'] },
+  // every table of the database, one row at a time (lib/dataAdmin.js): super
+  // admins only (a generic editor can change any role); the OpenBeach brand's
+  // tab list leaves it out
+  { id: 'data', icon: Database, superAdmin: true }
 ]
 
 /**
- * The tabs an account sees: admins all of them, competition managers the
+ * The tabs an account sees: admins all of them (Data: super admins only), competition managers the
  * scoresheets and saved teams, club managers (access.managedClubs) My club,
  * team managers and club managers (access.managedTeams) My teams.
  * With a brand (src/managerBrand.js) only that brand's tabs, and the saved
@@ -83,7 +88,9 @@ export function manageTabsFor(access, brand = null) {
   return TABS
     .filter(tab => !brand?.tabs || brand.tabs.includes(tab.id))
     .filter(tab => !tab.apps || tab.apps.includes(brand?.app))
-    .filter(tab => (tab.clubManager
+    .filter(tab => (tab.superAdmin
+      ? !!access.isSuperAdmin
+      : tab.clubManager
       ? (access.managedClubs?.length > 0)
       : tab.teamManager
         ? (access.managedTeams?.length > 0)
@@ -241,6 +248,7 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
         {visited.has('audit') && <ConsolePanel id="audit" current={current}><PanelGate><AuditPanel app={scope} /></PanelGate></ConsolePanel>}
         {visited.has('activity') && <ConsolePanel id="activity" current={current}><PanelGate><ActivityPanel app={scope} initialMatch={(() => { try { return decodeURIComponent(routeOf('activity')) } catch { return routeOf('activity') } })()} /></PanelGate></ConsolePanel>}
         {visited.has('teams') && <ConsolePanel id="teams" current={current}><PanelGate><SavedTeamsPanel userId={user.id} sport={scope} {...pageProps('teams')} /></PanelGate></ConsolePanel>}
+        {visited.has('data') && <ConsolePanel id="data" current={current}><PanelGate><DataPanel {...pageProps('data')} /></PanelGate></ConsolePanel>}
         {visited.has('tournaments') && <ConsolePanel id="tournaments" current={current}><PanelGate><TournamentsPanel {...pageProps('tournaments')} /></PanelGate></ConsolePanel>}
         </RowListCards.Provider>
       </ConsoleShell>

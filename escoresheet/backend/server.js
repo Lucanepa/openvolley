@@ -393,8 +393,9 @@ function getDataLayer() {
     import('./lib/signupNotices.js'),
     import('./lib/publicApi.js'),
     import('./lib/retention.js'),
-    import('./lib/clubApi.js')
-  ]).then(([pgq, mr, au, st, ph, ac, acc, svt, mg, og, ml, apv, bt, evr, act, ss, cl, sd, fm, tms, lic, arq, sn, pub, ret, cla]) => {
+    import('./lib/clubApi.js'),
+    import('./lib/dataAdmin.js')
+  ]).then(([pgq, mr, au, st, ph, ac, acc, svt, mg, og, ml, apv, bt, evr, act, ss, cl, sd, fm, tms, lic, arq, sn, pub, ret, cla, dta]) => {
     const poolMax = Number(process.env.PG_POOL_MAX) > 0 ? Math.floor(Number(process.env.PG_POOL_MAX)) : undefined
     const db = pgq.createPgQuery({
       connectionString: DATABASE_URL,
@@ -485,7 +486,9 @@ function getDataLayer() {
     const publicApi = pub.createPublicApi({ pool: db.pool })
     // Club API tokens (db/044, lib/clubApi.js): the manager's API tab, and /api/club/v1/*
     const clubApi = cla.createClubApi({ pool: db.pool, audit: accounts.audit, clubs, teams, licences, publicApi, auth })
-    const manage = mg.createManageApi({ accounts, savedTeams, beach, approvals, revisions, activity, scoresheets, clubs, finalMail, teams, licences, requests, notices, clubApi })
+    // The manager's Data tab (lib/dataAdmin.js): super admins, one row at a time, audited
+    const dataAdmin = dta.createDataAdmin({ pool: db.pool, audit: accounts.audit })
+    const manage = mg.createManageApi({ accounts, savedTeams, beach, approvals, revisions, activity, scoresheets, clubs, finalMail, teams, licences, requests, notices, clubApi, dataAdmin })
     // The active scoring device of each match (db/019, the scoring-device handover)
     const scorer = sd.createScorerDevices({ pool: db.pool, db, audit: accounts.audit })
     // The end of the match records (db/042, lib/retention.js): the daily sweep below

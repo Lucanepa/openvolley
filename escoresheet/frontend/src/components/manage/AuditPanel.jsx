@@ -14,6 +14,8 @@ const ACTIVITY_ACTIONS = new Set(['activity.delete', 'activity.read', 'activity.
 const CLUB_ACTIONS = new Set(['club.create', 'club.update', 'club.delete', 'club.managers', 'club.contact', 'club.member_remove', 'club.licences', 'club.licences.manual', 'club.licences.manual_delete'])
 // db/037: a competition or saved team deleted, a saved team's roster replaced (the name and the counts)
 const SAVED_TEAM_ACTIONS = new Set(['saved_teams.competition_delete', 'saved_teams.team_delete', 'saved_teams.roster'])
+// The Data tab (lib/dataAdmin.js): one row added, changed or deleted
+const DATA_ACTIONS = new Set(['data.insert', 'data.update', 'data.delete'])
 
 /** "club_rule.set" -> "Club rule set": an action this build has no label for yet reads as words, never as a code. */
 export function readableAction(action) {
@@ -97,6 +99,18 @@ export function auditDetailsLine(entry, opts = {}) {
       for (const [list, n] of Object.entries(d.lists)) {
         if (Number.isFinite(n) && n > 0) parts.push(`${tr(`manage.licences.lists.${list}`, String(list))}: ${n}`)
       }
+    }
+    return parts.join(' · ')
+  }
+  // the table, the row's key and the columns (a change: before → after, personal values as "[personal]")
+  if (DATA_ACTIONS.has(entry?.action)) {
+    if (d.table) parts.push(String(d.table))
+    if (d.key && typeof d.key === 'object') parts.push(Object.values(d.key).map(String).join(' · '))
+    if (entry.action === 'data.update' && d.after && typeof d.after === 'object') {
+      const show = (v) => (v !== null && typeof v === 'object' ? JSON.stringify(v) : String(v))
+      parts.push(Object.keys(d.after).map((k) => `${k}: ${show(d.before?.[k] ?? null)} → ${show(d.after[k])}`).join(', '))
+    } else if (d.values && typeof d.values === 'object') {
+      parts.push(Object.keys(d.values).join(', '))
     }
     return parts.join(' · ')
   }

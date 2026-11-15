@@ -469,6 +469,28 @@ export const admin = {
   sendFinalMail(matchId) {
     return apiRequest('POST', `/api/admin/matches/${enc(matchId)}/final-mail`, {})
   },
+  /** The Data tab (super admins, lib/dataAdmin.js): the tables of public, their columns and keys. */
+  dataTables() {
+    return apiRequest('GET', '/api/admin/data/tables')
+  },
+  /** A page of a table's rows: q (search), col / op / val (one filter), sort / dir, limit, offset. */
+  dataRows(table, { q, col, op, val, sort, dir, limit, offset } = {}) {
+    return apiRequest('GET', `/api/admin/data/tables/${enc(table)}${query({ q, col, op, val, sort, dir, limit, offset })}`)
+  },
+  /** One row whole, by its key ({ column: value } of the primary key). */
+  dataRow(table, key) {
+    return apiRequest('GET', `/api/admin/data/tables/${enc(table)}/row${query({ key: JSON.stringify(key) })}`)
+  },
+  dataInsert(table, values) {
+    return apiRequest('POST', `/api/admin/data/tables/${enc(table)}/rows`, { values })
+  },
+  /** `before`: the values the change was made from (409 OV_DATA_CHANGED when they moved). */
+  dataUpdate(table, { key, before, set }) {
+    return apiRequest('PATCH', `/api/admin/data/tables/${enc(table)}/row`, { key, before, set })
+  },
+  dataDelete(table, key) {
+    return apiRequest('POST', `/api/admin/data/tables/${enc(table)}/row/delete`, { key, confirm: true })
+  },
   listAudit({ limit, before, action, app } = {}) {
     return apiRequest('GET', `/api/admin/audit${query({ limit, before, action, app })}`)
   },

@@ -3704,6 +3704,72 @@
     "menuAdmin": "Admin",
     "menuSavedTeams": "Saved teams",
     "menuInviteCode": "Enter invite code",
+    "data": {
+      "intro": "Every table of the database, one row at a time. PINs, token hashes and sign-in data are never shown. Logs and the records of closed matches are read-only, and every change goes into the audit log.",
+      "findTable": "Find a table",
+      "noTables": "No tables found.",
+      "allTables": "All tables",
+      "rowsAbout_one": "About {{count}} row",
+      "rowsAbout_other": "About {{count}} rows",
+      "columns_one": "{{count}} column",
+      "columns_other": "{{count}} columns",
+      "readOnly": {
+        "log": "Read-only (log)",
+        "no_key": "Read-only (no key)",
+        "secret_key": "Read-only"
+      },
+      "readOnlyLong": {
+        "log": "This table is a log or a record: only the app writes it.",
+        "no_key": "This table has no primary key, so its rows cannot be changed here.",
+        "secret_key": "The key of this table is secret, so its rows cannot be changed here."
+      },
+      "addRow": "Add row",
+      "secretHidden": "Not shown: {{columns}}",
+      "search": "Search all columns",
+      "filterColumn": "Column",
+      "filterOp": "Condition",
+      "filterValue": "Value",
+      "ops": {
+        "like": "Contains",
+        "eq": "=",
+        "ne": "≠",
+        "gt": ">",
+        "gte": "≥",
+        "lt": "<",
+        "lte": "≤",
+        "null": "Is empty",
+        "notnull": "Is not empty"
+      },
+      "apply": "Filter",
+      "clearFilter": "Clear filter",
+      "noRows": "No rows.",
+      "sortBy": "Sort by {{column}}",
+      "key": "Key",
+      "range": "{{from}}–{{to}} of {{total}}",
+      "previous": "Previous",
+      "next": "Next",
+      "generated": "Generated",
+      "invalid": {
+        "json": "This is not valid JSON.",
+        "array": "This must be a JSON array."
+      },
+      "null": "Empty (NULL)",
+      "useDefault": "Default",
+      "added": "Row added",
+      "saved": "Saved",
+      "deleted": "Row deleted",
+      "deleteTitle": "Delete this row?",
+      "deleteBody": "The row is deleted from {{table}} for good, together with whatever the database deletes with it. The audit log records the deletion.",
+      "delete": "Delete",
+      "newRow": "New row",
+      "changedMeanwhile": "Someone changed {{columns}} since you opened this row. Reload it and check before you save again.",
+      "reload": "Reload",
+      "add": "Add",
+      "save": "Save",
+      "discard": "Discard changes",
+      "changedColumns": "Changed: {{columns}}",
+      "audited": "Every change goes into the audit log, without personal values."
+    },
     "tabs": {
       "accounts": "Accounts",
       "invites": "Invite Codes",
@@ -3717,7 +3783,8 @@
       "clubs": "Clubs",
       "myclub": "My Club",
       "settings": "Settings",
-      "myteams": "My Teams"
+      "myteams": "My Teams",
+      "data": "Data"
     },
     "status": {
       "setup": "Set-up",
@@ -3989,6 +4056,9 @@
       "rows_one": "{{count}} entry",
       "rows_other": "{{count}} entries",
       "actions": {
+        "data_insert": "Data: row added",
+        "data_update": "Data: row changed",
+        "data_delete": "Data: row deleted",
         "account_delete": "Account deleted",
         "account_reject": "Sign-up rejected",
         "account_roles": "Roles changed",

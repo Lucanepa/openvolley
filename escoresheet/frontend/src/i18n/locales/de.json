@@ -3682,6 +3682,72 @@
     "menuAdmin": "Admin",
     "menuSavedTeams": "Gespeicherte Teams",
     "menuInviteCode": "Einladungscode eingeben",
+    "data": {
+      "intro": "Jede Tabelle der Datenbank, Zeile für Zeile. PINs, Token-Hashes und Anmeldedaten werden nie angezeigt. Protokolle und die Aufzeichnungen abgeschlossener Spiele sind schreibgeschützt, und jede Änderung landet im Protokoll.",
+      "findTable": "Tabelle suchen",
+      "noTables": "Keine Tabellen gefunden.",
+      "allTables": "Alle Tabellen",
+      "rowsAbout_one": "Etwa {{count}} Zeile",
+      "rowsAbout_other": "Etwa {{count}} Zeilen",
+      "columns_one": "{{count}} Spalte",
+      "columns_other": "{{count}} Spalten",
+      "readOnly": {
+        "log": "Schreibgeschützt (Protokoll)",
+        "no_key": "Schreibgeschützt (kein Schlüssel)",
+        "secret_key": "Schreibgeschützt"
+      },
+      "readOnlyLong": {
+        "log": "Diese Tabelle ist ein Protokoll oder eine Aufzeichnung: Nur die App schreibt hinein.",
+        "no_key": "Diese Tabelle hat keinen Primärschlüssel, deshalb kannst du ihre Zeilen hier nicht ändern.",
+        "secret_key": "Der Schlüssel dieser Tabelle ist geheim, deshalb kannst du ihre Zeilen hier nicht ändern."
+      },
+      "addRow": "Zeile hinzufügen",
+      "secretHidden": "Nicht angezeigt: {{columns}}",
+      "search": "Alle Spalten durchsuchen",
+      "filterColumn": "Spalte",
+      "filterOp": "Bedingung",
+      "filterValue": "Wert",
+      "ops": {
+        "like": "Enthält",
+        "null": "Ist leer",
+        "notnull": "Ist nicht leer",
+        "eq": "=",
+        "ne": "≠",
+        "gt": ">",
+        "gte": "≥",
+        "lt": "<",
+        "lte": "≤"
+      },
+      "apply": "Filtern",
+      "clearFilter": "Filter entfernen",
+      "noRows": "Keine Zeilen.",
+      "sortBy": "Nach {{column}} sortieren",
+      "key": "Schlüssel",
+      "range": "{{from}}–{{to}} von {{total}}",
+      "previous": "Zurück",
+      "next": "Weiter",
+      "generated": "Generiert",
+      "invalid": {
+        "json": "Das ist kein gültiges JSON.",
+        "array": "Das muss ein JSON-Array sein."
+      },
+      "null": "Leer (NULL)",
+      "useDefault": "Standardwert",
+      "added": "Zeile hinzugefügt",
+      "saved": "Gespeichert",
+      "deleted": "Zeile gelöscht",
+      "deleteTitle": "Diese Zeile löschen?",
+      "deleteBody": "Die Zeile wird endgültig aus {{table}} gelöscht, zusammen mit allem, was die Datenbank mit ihr löscht. Das Protokoll hält die Löschung fest.",
+      "delete": "Löschen",
+      "newRow": "Neue Zeile",
+      "changedMeanwhile": "Jemand hat {{columns}} geändert, seit du diese Zeile geöffnet hast. Lade sie neu und prüfe sie, bevor du nochmals speicherst.",
+      "reload": "Neu laden",
+      "add": "Hinzufügen",
+      "save": "Speichern",
+      "discard": "Änderungen verwerfen",
+      "changedColumns": "Geändert: {{columns}}",
+      "audited": "Jede Änderung landet im Protokoll, ohne persönliche Werte."
+    },
     "tabs": {
       "accounts": "Konten",
       "invites": "Einladungscodes",
@@ -3695,7 +3761,8 @@
       "clubs": "Vereine",
       "myclub": "Mein Verein",
       "settings": "Einstellungen",
-      "myteams": "Meine Teams"
+      "myteams": "Meine Teams",
+      "data": "Daten"
     },
     "status": {
       "setup": "Vorbereitung",
@@ -3967,6 +4034,9 @@
       "rows_one": "{{count}} Eintrag",
       "rows_other": "{{count}} Einträge",
       "actions": {
+        "data_insert": "Daten: Zeile hinzugefügt",
+        "data_update": "Daten: Zeile geändert",
+        "data_delete": "Daten: Zeile gelöscht",
         "account_delete": "Konto gelöscht",
         "account_reject": "Registrierung abgelehnt",
         "account_roles": "Rollen geändert",
