@@ -94,16 +94,29 @@ describe('match_info both ways', () => {
     expect(matchInfoFromLocal(local)).toEqual({
       hall: 'Halle G', city: 'Zürich', league: '2L', championship_type: 'regional', championship_type_other: '',
       match_type_1: 'championship', match_type_1_other: '', match_type_2: 'women',
-      match_type_3: 'U23', match_type_3_other: '', best_of: 3
+      match_type_3: 'U23', match_type_3_other: '', best_of: 3,
+      sponsors_home: false, sponsors_away: false, sponsors_marked: false
     })
-    expect(Object.keys(matchInfoFromLocal())).toHaveLength(11)
+    expect(Object.keys(matchInfoFromLocal())).toHaveLength(14)
   })
 
   it('localFromMatchInfo is its reverse, without empty keys', () => {
     expect(localFromMatchInfo(matchInfoFromLocal(local))).toEqual({
       hall: 'Halle G', city: 'Zürich', league: '2L', championshipType: 'regional',
-      match_type_1: 'championship', match_type_2: 'women', match_type_3: 'U23'
+      match_type_1: 'championship', match_type_2: 'women', match_type_3: 'U23',
+      homeSponsors: false, awaySponsors: false, sponsorsMarked: false
     })
+  })
+
+  // Sponsors on clothing (owner 2026-11-15): every writer sends the three keys
+  it('sponsors on clothing: both ways, a false kept, a row without the keys adds none', () => {
+    const marked = { ...local, homeSponsors: true, awaySponsors: false, sponsorsMarked: true }
+    const info = matchInfoFromLocal(marked)
+    expect(info).toMatchObject({ sponsors_home: true, sponsors_away: false, sponsors_marked: true })
+    expect(localFromMatchInfo(info)).toMatchObject({ homeSponsors: true, awaySponsors: false, sponsorsMarked: true })
+    expect(localFromMatchInfo({ hall: 'H' })).toEqual({ hall: 'H' })
+    // a server row read back (match_info only, no local fields) keeps its marks
+    expect(matchInfoFromLocal({ match_info: info })).toMatchObject({ sponsors_home: true, sponsors_marked: true })
   })
 
   it('older rows: the legacy columns when match_info lacks them', () => {

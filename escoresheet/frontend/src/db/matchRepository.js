@@ -9,6 +9,8 @@
  * a single-file change.
  */
 
+import { sponsorsFromMatchInfo, sponsorsToMatchInfo } from '../domain/sponsors'
+
 // Valid columns on the Supabase `matches` table. Payloads are filtered to these
 // so stale/legacy backup formats don't send columns that don't exist.
 export const VALID_MATCH_COLUMNS = [
@@ -92,7 +94,9 @@ export function matchInfoFromLocal(m = {}) {
     match_type_2: m.match_type_2 || '',
     match_type_3: m.match_type_3 || '',
     match_type_3_other: m.match_type_3_other || '',
-    best_of: Number(m.bestOf) === 3 ? 3 : 5
+    best_of: Number(m.bestOf) === 3 ? 3 : 5,
+    // Sponsors on clothing (domain/sponsors.js): booleans, false when not set
+    ...sponsorsToMatchInfo(m)
   }
 }
 
@@ -117,7 +121,9 @@ export function localFromMatchInfo(matchInfo, legacyRow) {
     match_type_1_other: pick(info.match_type_1_other),
     match_type_2: pick(info.match_type_2),
     match_type_3: pick(info.match_type_3),
-    match_type_3_other: pick(info.match_type_3_other)
+    match_type_3_other: pick(info.match_type_3_other),
+    // only the sponsor keys the row has (a false is a value, kept)
+    ...sponsorsFromMatchInfo(info)
   }
   return Object.fromEntries(Object.entries(out).filter(([, v]) => v !== undefined))
 }
