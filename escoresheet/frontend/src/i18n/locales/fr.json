@@ -377,7 +377,7 @@
     "local": "Local",
     "remote": "Distant",
     "importing": "Importation...",
-    "importPdf": "Importer PDF",
+    "importPdf": "Importer le PDF Einsatzliste",
     "regenerate": "Régénérer",
     "generatePin": "Générer PIN",
     "refereePinLabel": "Arbitre",
