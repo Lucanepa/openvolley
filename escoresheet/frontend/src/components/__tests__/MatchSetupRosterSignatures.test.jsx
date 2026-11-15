@@ -228,6 +228,28 @@ describe('Match Setup roster editor: libero select', () => {
   })
 })
 
+// Owner 2026-11-15: "the warning for bday 1.1.xxxx should be in the roster
+// only, not at coin toss" (JanuaryDobNotice; the coin toss: CoinTossDraftAndDob)
+describe('Match Setup roster editor: dates of birth on 1 January', () => {
+  const notice = () => document.querySelector('[data-testid="january-dob-notice"]')
+  it('a note in the editor of the team that has one, not on the main page or the other team', async () => {
+    storeMatch()
+    store.tables.players.set(202, { ...store.tables.players.get(202), dob: '01.01.1900' })
+    render(<Setup matchId={1} />)
+    await screen.findAllByRole('button', { name: 'matchSetup.editRoster' })
+    expect(notice()).toBeNull()
+    await openEditor(0, 5)
+    expect(notice()).not.toBeNull()
+    // the date edited: the note goes
+    const bravo = [...document.querySelectorAll('.roster-grid:not(.roster-add) .roster-grid-row')].find(r => r.querySelector('input.cell-last')?.value === 'Bravo')
+    fireEvent.change(bravo.querySelector('.cell-dob input'), { target: { value: '12.03.2004' } })
+    await waitFor(() => expect(notice()).toBeNull())
+    back()
+    await openEditor(1, 2)
+    expect(notice()).toBeNull()
+  })
+})
+
 describe('Match Setup roster editor: Confirm', () => {
   it('refuses a named player without a shirt number', async () => {
     storeMatch()

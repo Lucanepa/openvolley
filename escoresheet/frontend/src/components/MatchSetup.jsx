@@ -61,6 +61,7 @@ import SentRosterCard from './SentRosterCard'
 import BackupTargetsPanel from './BackupTargetsPanel'
 import ClubPlayerPickerModal from './ClubPlayerPickerModal'
 import ClubGenderNotice from './ClubGenderNotice'
+import JanuaryDobNotice from './JanuaryDobNotice'
 import { clubOfTeam, withClubDob } from '../db/clubPlayers'
 import { addClubPlayersToRoster, applyClubFill, benchOfficialOfRole, benchRolesOf, clubFillOfRow, clubGenderWarnings, clubPersonOfRow, linkRowToClub, matchGenderOf, offeredClubPlayers, rosterHasPerson, setBenchOfficial } from '../domain/clubPlayers'
 import ClubShield from './manage/ClubShield'
@@ -4692,6 +4693,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         <SentRosterCard row={sentRosters.home} side="home" onUse={() => applySentRoster('home')} onDismiss={() => dismissSentRoster('home')} />
         {/* db/024: a player the club's list has with the other gender */}
         <ClubGenderNotice warnings={clubWarnings.home} gender={clubGender} />
+        {/* born on 1 January: a placeholder or a bad import? A note here, never at the coin toss (owner 2026-11-15) */}
+        <JanuaryDobNotice roster={homeRoster} bench={benchHome} idMode={idMode} />
         {/* Upload Methods for Home Team + Player Stats */}
         <div className="flex gap-3 stack:flex-col">
           {/* Left: Upload section */}
@@ -5786,6 +5789,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         <SentRosterCard row={sentRosters.away} side="away" onUse={() => applySentRoster('away')} onDismiss={() => dismissSentRoster('away')} />
         {/* db/024: a player the club's list has with the other gender */}
         <ClubGenderNotice warnings={clubWarnings.away} gender={clubGender} />
+        {/* born on 1 January: a placeholder or a bad import? A note here, never at the coin toss (owner 2026-11-15) */}
+        <JanuaryDobNotice roster={awayRoster} bench={benchAway} idMode={idMode} />
         {/* Upload Methods for Away Team + Player Stats */}
         <div className="flex gap-3 stack:flex-col">
           {/* Left: Upload section */}

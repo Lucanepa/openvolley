@@ -32,7 +32,7 @@ describe('coinTossConfirmIssues', () => {
     ])
   })
 
-  it('the rosters: too few, too many, numbers, coach, captain, duplicates, dates', () => {
+  it('the rosters: too few, too many, numbers, coach, captain, duplicates', () => {
     const big = roster(15)
     const away = [...roster(4), player(6, { libero: 'libero1' }), player(7, { number: '' }), player(3, { lastName: 'P1' }), player(120, { libero: 'libero2' })]
     const issues = coinTossConfirmIssues({
@@ -49,9 +49,17 @@ describe('coinTossConfirmIssues', () => {
       { key: 'validation.captainNotSet', params: { team: 'away' } },
       { key: 'validation.duplicateNumbers', params: { team: 'away', numbers: '3' } },
       { key: 'validation.duplicatePlayers', params: { team: 'away', names: 'p1 x' } },
-      { key: 'validation.invalidBirthdate' },
       { key: 'validation.invalidJerseyNumbers', params: { team: 'away', numbers: '120' } }
     ])
+  })
+
+  // Owner 2026-11-15: "the warning for bday 1.1.xxxx should be in the roster
+  // only, not at coin toss" (the roster editor notes them: JanuaryDobNotice)
+  it('a date of birth on 1 January, the 01.01.1900 placeholder too, does not hold the coin toss', () => {
+    const born = (dob) => roster().map((p, i) => (i === 1 ? { ...p, dob } : p))
+    for (const dob of ['01.01.1900', '01/01/1900', '01.01.2004']) {
+      expect(coinTossConfirmIssues({ ...ok(), homeRoster: born(dob), benchAway: [{ ...coach[0], dob }] }), dob).toEqual([])
+    }
   })
 
   // An uploaded roster with three liberos, "Libero 1" twice and two captains
@@ -71,7 +79,7 @@ describe('coinTossConfirmIssues', () => {
   it.each([['en', en], ['de', de], ['de-CH', deCH], ['fr', fr], ['it', it_]])('every key is in %s', (_, locale) => {
     const all = ['homeTeamNotSet', 'awayTeamNotSet', 'refereeNotSet', 'scorerNotSet', 'hallNotSet', 'cityNotSet', 'leagueNotSet', 'dateNotSet',
       'needMorePlayers', 'tooManyPlayers', 'playersWithoutNumbers', 'coachNotSet', 'captainNotSet', 'duplicateNumbers', 'duplicatePlayers',
-      'invalidBirthdate', 'invalidJerseyNumbers', 'tooManyLiberos', 'liberoSlotTwice', 'tooManyCaptains']
+      'invalidJerseyNumbers', 'tooManyLiberos', 'liberoSlotTwice', 'tooManyCaptains']
     for (const k of all) expect(typeof locale.validation[k], k).toBe('string')
   })
 })

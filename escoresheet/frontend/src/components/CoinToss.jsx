@@ -286,7 +286,6 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
   const [initModal, setInitModal] = useState(null) // { status: 'syncing' | 'verifying' | 'success' | 'error', message: string }
   const [starting, setStarting] = useState(false) // the confirmed coin toss is starting the match
   const [openSignature, setOpenSignature] = useState(null)
-  const [birthdateConfirmModal, setBirthdateConfirmModal] = useState(null) // { suspiciousDates: [], onConfirm: fn }
   const [rosterModalSignature, setRosterModalSignature] = useState(null) // 'coach' | 'captain' | null - for signing within roster modal
 
   // Track original roster/bench data when modal opens for change detection
@@ -1270,8 +1269,6 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
       const teamWord = { home: t('common.home'), away: t('common.away') }
       const validationErrors = coinTossConfirmIssues({ match, home, away, homeRoster, awayRoster, benchHome, benchAway })
         .map(({ key, params }) => t(key, params?.team ? { ...params, team: teamWord[params.team] } : params))
-      const allRosterPlayers = [...homeRoster, ...awayRoster]
-      const allBenchOfficials = [...benchHome, ...benchAway]
 
       // Show validation errors if any
       if (validationErrors.length > 0) {
@@ -1281,30 +1278,10 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
       }
       console.log('[CoinToss] All validations passed')
 
-      // 12. Check for dates that might be import errors (01.01.yyyy for any year) - ask for confirmation
-      const suspiciousDates = []
-      allRosterPlayers.forEach(p => {
-        if (p.dob && (p.dob.startsWith('01.01.') || p.dob.startsWith('01/01/'))) {
-          suspiciousDates.push(`${p.lastName || ''} ${p.firstName || ''}: ${p.dob}`)
-        }
-      })
-      allBenchOfficials.forEach(b => {
-        if (b.dob && (b.dob.startsWith('01.01.') || b.dob.startsWith('01/01/'))) {
-          suspiciousDates.push(`${b.lastName || ''} ${b.firstName || ''} (${b.role}): ${b.dob}`)
-        }
-      })
-      if (suspiciousDates.length > 0) {
-        // Show modal and wait for user confirmation
-        setBirthdateConfirmModal({
-          suspiciousDates,
-          onConfirm: () => {
-            setBirthdateConfirmModal(null)
-            // Continue with coin toss after confirmation
-            proceedWithStartButton()
-          }
-        })
-        return
-      }
+      // Dates of birth on 1 January (01.01.yyyy) no longer ask here: the
+      // roster editor of Match setup notes them, where they are edited
+      // (owner 2026-11-15: "in the roster only, not at coin toss";
+      // domain/januaryFirstDob)
 
       // The coach and captain signatures no longer hold the coin toss (owner
       // 2026-10-31): the teams may sign during the warm-up, on the scoring
@@ -2622,46 +2599,6 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           100% { transform: rotate(360deg); }
         }
       `}</style>
-
-      {/* Birthdate Confirmation Modal */}
-      {birthdateConfirmModal && (
-        <Modal
-          title={t('coinToss.confirmBirthdates')}
-          open={true}
-          onClose={() => setBirthdateConfirmModal(null)}
-          width={500}
-          hideCloseButton={true}
-        >
-          <div style={{ padding: '24px' }}>
-            <p className="text-sm font-medium text-amber-800" style={{ margin: '0 0 12px' }}>
-              The following people have birthdates on January 1st, which may indicate import errors:
-            </p>
-            <div className="rounded-lg border border-amber-200 bg-amber-50 divide-y divide-amber-100" style={{
-              padding: '4px 12px',
-              marginBottom: '20px',
-              maxHeight: '200px',
-              overflowY: 'auto'
-            }}>
-              {birthdateConfirmModal.suspiciousDates.map((date, idx) => (
-                <div key={idx} className="text-stone-800 tabular-nums" style={{ fontSize: '13px', padding: '6px 0' }}>
-                  {date}
-                </div>
-              ))}
-            </div>
-            <p className="text-sm text-stone-700" style={{ margin: '0 0 20px' }}>
-              Are these dates correct?
-            </p>
-            <div className="ov-kit" style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <Button variant="secondary" size="xl" className="font-medium" onClick={() => setBirthdateConfirmModal(null)}>
-                No, go back
-              </Button>
-              <Button variant="positive" size="xl" onClick={birthdateConfirmModal.onConfirm}>
-                Yes, continue
-              </Button>
-            </div>
-          </div>
-        </Modal>
-      )}
 
       {/* Signature Pad */}
       <SignaturePad

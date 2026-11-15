@@ -76,9 +76,10 @@ export function coinTossConfirmIssues({ match = {}, home = '', away = '', homeRo
     if (dupNames.length > 0) add('validation.duplicatePlayers', { team, names: dupNames.join(', ') })
   }
 
-  // 9. No date of birth 01.01.1900 (a placeholder / import error)
-  const badDate = (x) => x.dob === '01.01.1900' || x.dob === '01/01/1900'
-  if ([...homeRoster, ...awayRoster].some(badDate) || [...benchHome, ...benchAway].some(badDate)) add('validation.invalidBirthdate')
+  // 9. (gone) A date of birth 01.01.1900, the placeholder of an unknown date,
+  // no longer holds the coin toss: the roster editor notes the 1 January
+  // dates (owner 2026-11-15: "in the roster only, not at coin toss";
+  // domain/januaryFirstDob)
 
   for (const [team, roster] of teams) {
     // 10. Shirt numbers: whole numbers 1-99
