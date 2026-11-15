@@ -34,6 +34,7 @@ import { TIMEOUTS_PER_SET } from './timeouts'
 import { resolveSanction, teamSanctionCounts } from './sanctions'
 import { playerReplacedByLibero } from './liberos'
 import { isBookkeepingEvent } from './rally'
+import { getFirstServeForSet } from './rules'
 
 const setOf = (e) => e?.setIndex ?? 1
 const seqOf = (e) => e?.seq || 0
@@ -442,32 +443,51 @@ export function lateRequestOutcome(events, team) {
   return { sanction, replay: sanction !== 'delay_penalty' }
 }
 
-// ───────────── decision change after a substitution or time-out (row 19) ─────────────
+// ───────────── decision change after a substitution, time-out or libero replacement (row 19) ─────────────
 
 const baseSeqOf = (e) => Math.floor(seqOf(e))
+const LIBERO_ACTIONS = new Set(['libero_entry', 'libero_exit', 'libero_exchange'])
+const otherTeamOf = (team) => (team === 'home' ? 'away' : 'home')
 
 /**
  * The requests to take back before a decision change on the set's last point,
- * when time-outs or substitutions were recorded after it: the referee
- * reverses his decision after a team asked for a time-out or substitution
- * because of it. The substitution is reversed and not counted (FIVB casebook
- * 8.5, Q5, Q169); a time-out taken because of the reversed decision is
- * cancelled (SSK News 26-1). The scorer then no longer has to Undo them first.
+ * when time-outs, substitutions or libero replacements were recorded after
+ * it: the referee reverses his decision after a team asked for a time-out or
+ * substitution because of it. The substitution is reversed and not counted
+ * (FIVB casebook 8.5, Q5, Q169); a time-out taken because of the reversed
+ * decision is cancelled (SSK News 26-1). The scorer then no longer has to
+ * Undo them first.
+ *
+ * A libero replacement after the point (owner, 15.11) stays when it still
+ * fits the decision, and is taken back when it does not:
+ *  - 'rotation': the decision changes that team's rotation (its line-up row
+ *    was written on the old one);
+ *  - 'serve': the player it replaced (or the libero's position) is now the
+ *    server, and a libero does not serve;
+ *  - 'rally': a replayed rally leaves no completed rally since the team's
+ *    previous libero replacement (19.3.2.1).
+ * Whatever was recorded after an entry that is taken back goes with it
+ * ('after'), newest first, as Undo takes them: a line-up row written after
+ * it carries what it changed.
  *
  * Offered only when everything recorded after the point is a regular
- * substitution (with its own line-up rows, N.x) or a time-out. A forced
+ * substitution (with its own line-up rows, N.x), a time-out or a libero
+ * replacement made by the scorer (with its line-up row). A forced
  * substitution (an injured or sanctioned player must be replaced whatever
- * the decision), a libero replacement, a sanction, a started rally or
- * anything else after the point: null (Undo, as before). A remark or a bench
- * injury recorded after the point is not in the way (domain/rally
- * isBookkeepingEvent): it stays, and is not taken back.
+ * the decision), a sanction, a started rally or anything else after the
+ * point: null (Undo, as before). A remark or a bench injury recorded after
+ * the point is not in the way (domain/rally isBookkeepingEvent): it stays,
+ * and is not taken back.
  *
  * @param {Array} events all match events
  * @param {number} setIndex
- * @returns {null | { point: object, requests: Array }} requests: the time-out and
- *   substitution events to take back, newest first (the order Undo takes them)
+ * @param {object} [match] the match (first serve of the set)
+ * @returns {null | { point: object, requests: Array,
+ *   byOption: { swap: { requests: Array, reasons: object }, replay: { requests: Array, reasons: object } } }}
+ *   requests (= byOption.swap.requests): the events to take back, newest
+ *   first (the order Undo takes them); reasons: libero event id -> reason
  */
-export function decisionChangeTakeBack(events, setIndex) {
+export function decisionChangeTakeBack(events, setIndex, match = null) {
   const inSet = setEventsInOrder(events, setIndex)
   const lastPointSeq = lastCompletedRallySeq(events, setIndex)
   if (lastPointSeq === -Infinity) return null
@@ -477,15 +497,71 @@ export function decisionChangeTakeBack(events, setIndex) {
   if (after.length === 0) return null
   const heads = after.filter(e => seqOf(e) === baseSeqOf(e))
   const isRequest = (e) => e.type === 'timeout' || (e.type === 'substitution' && !isForcedSubstitution(e))
-  if (heads.length === 0 || !heads.every(isRequest)) return null
-  // the rows written with a request: a substitution's own line-up (N.x)
+  const isLiberoAction = (e) => LIBERO_ACTIONS.has(e.type) && (e.payload?.team === 'home' || e.payload?.team === 'away')
+  if (heads.length === 0 || !heads.every(h => isRequest(h) || isLiberoAction(h))) return null
+  // the rows written with a request: a substitution's or libero
+  // replacement's own line-up (N.x)
   const headOf = new Map(heads.map(h => [baseSeqOf(h), h]))
   const ownRow = (e) => {
     const head = headOf.get(baseSeqOf(e))
-    return !!head && e.type === 'lineup' && head.type === 'substitution' && e.payload?.team === head.payload?.team
+    return !!head && e.type === 'lineup' && head.type !== 'timeout' && e.payload?.team === head.payload?.team
   }
   if (!after.every(e => headOf.get(baseSeqOf(e)) === e || ownRow(e))) return null
-  return { point, requests: [...heads].sort((a, b) => seqOf(b) - seqOf(a)) }
+
+  // who served before the point, and which team the point rotated
+  const pointsBefore = inSet.filter(e => e.type === 'point' && seqOf(e) < seqOf(point))
+  const serveBefore = pointsBefore.length
+    ? pointsBefore[pointsBefore.length - 1].payload?.team
+    : getFirstServeForSet(setIndex, match || {})
+  const winner = point.payload?.team
+  const rotatedNow = { home: false, away: false }
+  if (winner === 'home' || winner === 'away') rotatedNow[winner] = serveBefore !== winner
+  const lineupBefore = (team, e) => inSet
+    .filter(x => x.type === 'lineup' && x.payload?.team === team && seqOf(x) < seqOf(e))
+    .pop()?.payload || null
+  const positionIn = (lineup, n) => Object.keys(lineup || {}).find(pos => str(lineup[pos]) !== '' && str(lineup[pos]) === str(n)) || null
+
+  const planFor = (option) => {
+    const rotatedThen = { home: false, away: false }
+    let server = serveBefore
+    if (option === 'swap' && (winner === 'home' || winner === 'away')) {
+      const newWinner = otherTeamOf(winner)
+      rotatedThen[newWinner] = serveBefore !== newWinner
+      server = newWinner
+    }
+    const reasonFor = (h) => {
+      if (!isLiberoAction(h)) return null
+      const team = h.payload.team
+      if (rotatedNow[team] !== rotatedThen[team]) return 'rotation'
+      const before = lineupBefore(team, h)
+      if (h.type === 'libero_entry' || h.type === 'libero_exchange') {
+        const pos = h.type === 'libero_entry'
+          ? positionIn(before?.lineup, h.payload.playerOut) || h.payload.position
+          : before?.liberoSubstitution?.position || positionIn(before?.lineup, h.payload.liberoOut)
+        if (pos === 'I' && server === team) return 'serve'
+      }
+      if (option === 'replay') {
+        // the team's previous libero replacement (an automatic exit of the
+        // replayed point goes with it)
+        const previous = inSet.filter(x => LIBERO_ACTIONS.has(x.type) && x.payload?.team === team &&
+          seqOf(x) < seqOf(h) && baseSeqOf(x) !== baseSeqOf(point)).pop()
+        if (previous) {
+          const rallies = inSet.filter(x => x.type === 'point' && x !== point && seqOf(x) > seqOf(previous) && seqOf(x) < seqOf(h))
+          if (rallies.length === 0) return 'rally'
+        }
+      }
+      return null
+    }
+    const first = heads.findIndex(h => isRequest(h) || reasonFor(h) !== null)
+    if (first < 0) return { requests: [], reasons: {} }
+    const taken = heads.slice(first)
+    const reasons = {}
+    for (const h of taken) if (isLiberoAction(h)) reasons[h.id ?? h.seq] = reasonFor(h) || 'after'
+    return { requests: [...taken].sort((a, b) => seqOf(b) - seqOf(a)), reasons }
+  }
+
+  const byOption = { swap: planFor('swap'), replay: planFor('replay') }
+  return { point, requests: byOption.swap.requests, byOption }
 }
 
 /**

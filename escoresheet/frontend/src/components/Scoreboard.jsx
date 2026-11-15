@@ -488,7 +488,7 @@ export const preloadScoreboard = (matchId) => preload(scoreboardKey(matchId), ()
 // side-out rotations followed those (stress test 2026-10-25)
 const newestFirst = (a, b) => compareBySeq(b, a)
 
-export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onFinishSet, onOpenSetup, onOpenMatchSetup, onOpenCoinToss, onTriggerEventBackup }) {
+export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onFinishSet, onOpenSetup, onOpenMatchSetup, onOpenCoinToss, onOpenMatchInfo, onTriggerEventBackup }) {
   // diagnostics mode: React commits per user action (nothing while it is off)
   useDiagCommits('scoreboard')
   const { t, i18n } = useTranslation()
@@ -3306,7 +3306,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // the acting game captain is still among the six (rule 5.1.2: the
         // role lasts until that player leaves, the team captain returns or
         // the set ends)
-        courtCaptainOnCourt: !!currentCourtCaptain && playersOnCourt.includes(String(currentCourtCaptain))
+        courtCaptainOnCourt: !!currentCourtCaptain && playersOnCourt.includes(String(currentCourtCaptain)),
+        lineupSet: playersOnCourt.length > 0
       }
 
       return result
@@ -3505,8 +3506,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // 26-1). null when the last event is the point (canReplayRally) or
   // something else came after it (Undo, as before).
   const decisionTakeBack = useMemo(() => (
-    !canReplayRally && data?.set ? decisionChangeTakeBack(data.events, data.set.index) : null
-  ), [canReplayRally, data?.events, data?.set])
+    !canReplayRally && data?.set ? decisionChangeTakeBack(data.events, data.set.index, data?.match) : null
+  ), [canReplayRally, data?.events, data?.set, data?.match])
   const canChangeDecision = canReplayRally || !!decisionTakeBack
 
   // "Start set" vs "Start rally": the set's first rally is not started yet
@@ -4005,6 +4006,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     console.log(`[CaptainOnCourt] Asking for a game captain for ${teamKey} - playersOnCourt:`, playersOnCourt, `captain #${captainNumberStr}`, `last #${rememberedCourtCaptain ?? '-'}`)
     setCaptainOnCourtModal({ team: teamKey })
   }, [localManageCaptainOnCourt, data, matchId, getTeamLineupState, syncLiveStateToSupabase, syncToReferee])
+
+  // A game captain who left the court without a live action (a line-up
+  // correction replaced him, owner 15.11): the team captain is off court too,
+  // so a new game captain is asked for, as after a substitution. Once per
+  // player and set: Cancel leaves the Game captain button.
+  const gameCaptainAskedRef = useRef({ home: null, away: null })
+  useEffect(() => {
+    if (!localManageCaptainOnCourt || !data?.match || !data?.set || captainOnCourtModal) return
+    for (const team of ['home', 'away']) {
+      const st = captainOnCourtStatus[team]
+      if (!st?.lineupSet || st.captainOnCourt || !st.hasCourtCaptain || st.courtCaptainOnCourt) continue
+      const key = `${data.set.index}:${st.courtCaptainNumber}`
+      if (gameCaptainAskedRef.current[team] === key) continue
+      gameCaptainAskedRef.current[team] = key
+      checkAndRequestCaptainOnCourt(team)
+      break
+    }
+  }, [localManageCaptainOnCourt, data?.match, data?.set, captainOnCourtModal, captainOnCourtStatus, checkAndRequestCaptainOnCourt])
 
   // Keep ref updated with latest function to avoid stale closures in setTimeout
   useEffect(() => {
@@ -6507,7 +6526,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const teamName = pointEvent.payload?.team === 'home'
         ? (data?.homeTeam?.name || t('common.home'))
         : (data?.awayTeam?.name || t('common.away'))
-      setReplayRallyConfirm({ event: pointEvent, description: `Point for ${teamName}`, selectedOption: 'swap', takeBack: decisionTakeBack.requests })
+      setReplayRallyConfirm({ event: pointEvent, description: `Point for ${teamName}`, selectedOption: 'swap', takeBack: decisionTakeBack.requests, takeBackByOption: decisionTakeBack.byOption })
     }
   }, [rallyStatus, canReplayRally, decisionTakeBack, data?.events, data?.homeTeam?.name, data?.awayTeam?.name])
 
@@ -8294,7 +8313,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // counted (FIVB casebook 8.5), the time-out cancelled (SSK News 26-1).
     // The swap below then reads the events as they are after it, not the
     // screen's (a substitution's line-up would be rotated).
-    const takeBack = replayRallyConfirm.takeBack || []
+    // A libero replacement after the point is taken back only when it no
+    // longer fits the chosen decision (domain/interruptionRequests), so what
+    // goes depends on the option
+    const takeBack = replayRallyConfirm.takeBackByOption?.[selectedOption]?.requests ?? replayRallyConfirm.takeBack ?? []
     if (takeBack.length > 0) deferUi(() => setReplayRallyConfirm(null))
     for (const request of takeBack) await undoEventTx(request)
     const events = takeBack.length > 0 ? await db.events.where('matchId').equals(matchId).toArray() : data.events
@@ -14032,6 +14054,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     showActionLog: () => setShowLogs(true),
     openRemarks: () => setShowRemarks(true),
     openMatchSetup: onOpenMatchSetup && data?.match?.easy !== true ? () => onOpenMatchSetup() : undefined,
+    // match details (hall, date, officials ...) can be edited at any time (owner 15.11)
+    editMatchInfo: onOpenMatchInfo && data?.match?.easy !== true ? () => onOpenMatchInfo() : undefined,
     manualChanges: () => setShowManualPanel(true),
     goBack: () => setShowRectify(true),
     editRosterHome: () => setReopenRosterConfirm('home'),
@@ -24237,26 +24261,47 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
               {/* Row 19: what came after the point is taken back first, in
                   the order it was recorded (handleDecisionChange) */}
-              {replayRallyConfirm.takeBack?.length > 0 && (
-                <div className="ov-kit" data-testid="decision-take-back" style={{ marginBottom: '16px', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--panel-2)', textAlign: 'left' }}>
-                  <p className="m-0 text-sm font-semibold text-stone-900">{t('scoreboard.decisionTakeBack.title')}</p>
-                  <ul className="m-0 mt-1 list-disc pl-5 text-sm text-stone-800">
-                    {[...replayRallyConfirm.takeBack].reverse().map(e => {
-                      const letter = e.payload?.team === 'home' ? homeLabel : awayLabel
-                      return (
-                        <li key={e.id ?? e.seq}>
-                          {e.type === 'timeout'
-                            ? t('scoreboard.decisionTakeBack.timeout', { team: letter })
-                            : t('scoreboard.decisionTakeBack.substitution', { team: letter, in: e.payload?.playerIn, out: e.payload?.playerOut })}
-                        </li>
-                      )
-                    })}
-                  </ul>
-                  {/* only the sentence that applies (substitution, time-out, both) */}
-                  <p className="m-0 mt-1.5 text-xs text-stone-500">{t(`scoreboard.decisionTakeBack.${decisionTakeBackTextKey(replayRallyConfirm.takeBack)}`)}</p>
-                  <p className="m-0 mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">{t('scoreboard.decisionTakeBack.rule')}</p>
-                </div>
-              )}
+              {(() => {
+                const option = replayRallyConfirm.selectedOption || 'swap'
+                const chosen = replayRallyConfirm.takeBackByOption?.[option]
+                const list = chosen?.requests ?? replayRallyConfirm.takeBack ?? []
+                if (list.length === 0) return null
+                const reasons = chosen?.reasons || {}
+                const requestKey = decisionTakeBackTextKey(list)
+                const hasLibero = list.some(e => e.type?.startsWith('libero_'))
+                return (
+                  <div className="ov-kit" data-testid="decision-take-back" style={{ marginBottom: '16px', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--panel-2)', textAlign: 'left' }}>
+                    <p className="m-0 text-sm font-semibold text-stone-900">{t('scoreboard.decisionTakeBack.title')}</p>
+                    <ul className="m-0 mt-1 list-disc pl-5 text-sm text-stone-800">
+                      {[...list].reverse().map(e => {
+                        const letter = e.payload?.team === 'home' ? homeLabel : awayLabel
+                        const p = e.payload || {}
+                        let text
+                        if (e.type === 'timeout') text = t('scoreboard.decisionTakeBack.timeout', { team: letter })
+                        else if (e.type === 'substitution') text = t('scoreboard.decisionTakeBack.substitution', { team: letter, in: p.playerIn, out: p.playerOut })
+                        else if (e.type === 'libero_entry') text = t('scoreboard.decisionTakeBack.liberoIn', { team: letter, libero: p.liberoIn, out: p.playerOut })
+                        else if (e.type === 'libero_exit') text = t('scoreboard.decisionTakeBack.liberoOut', { team: letter, libero: p.liberoOut, in: p.playerIn })
+                        else text = t('scoreboard.decisionTakeBack.liberoExchange', { team: letter, in: p.liberoIn, out: p.liberoOut })
+                        const reason = reasons[e.id ?? e.seq]
+                        return (
+                          <li key={e.id ?? e.seq}>
+                            {text}
+                            {reason && (
+                              <span className="text-stone-500"> · {t(`scoreboard.decisionTakeBack.reason.${reason}`, { n: p.playerOut ?? p.liberoOut ?? '' })}</span>
+                            )}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                    {/* only the sentences that apply (substitution, time-out, libero) */}
+                    {requestKey && <p className="m-0 mt-1.5 text-xs text-stone-500">{t(`scoreboard.decisionTakeBack.${requestKey}`)}</p>}
+                    {hasLibero && <p className="m-0 mt-1.5 text-xs text-stone-500">{t('scoreboard.decisionTakeBack.textLibero')}</p>}
+                    <p className="m-0 mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">
+                      {[requestKey && t('scoreboard.decisionTakeBack.rule'), hasLibero && t('scoreboard.decisionTakeBack.ruleLibero')].filter(Boolean).join(' · ')}
+                    </p>
+                  </div>
+                )
+              })()}
 
               {/* Horizontal radio buttons */}
               <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
