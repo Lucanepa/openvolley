@@ -4422,10 +4422,16 @@ export default function App() {
                             ])
                             // Tag cloud results with source
                             const taggedCloud = cloudResults.map(b => ({ ...b, source: b.source || 'cloud' }))
+                            // Set + score of the latest set, so the row is not N/A
+                            const dbSets = [...(dbMatch?.sets || [])].sort((a, b) => (a.index || 0) - (b.index || 0))
+                            const dbLastSet = dbSets[dbSets.length - 1]
                             const dbEntries = dbMatch?.match ? [{
                               name: `database_g${gameN}`,
                               source: 'database',
                               gameN,
+                              setIndex: dbLastSet?.index || dbSets.length || undefined,
+                              leftScore: dbLastSet ? (dbLastSet.homePoints ?? dbLastSet.home_points ?? 0) : undefined,
+                              rightScore: dbLastSet ? (dbLastSet.awayPoints ?? dbLastSet.away_points ?? 0) : undefined,
                               status: dbMatch.match.status,
                               updated_at: dbMatch.match.updated_at || dbMatch.match.created_at,
                               cloudData: dbMatch

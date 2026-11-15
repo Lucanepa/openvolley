@@ -5,30 +5,27 @@ import { setDurationMinutes, matchTimes } from '../../../scoresheet_pdf/utils/ma
 
 const at = (iso) => new Date(iso)
 
-describe('defaultSetStartTime', () => {
-  it('set 1 without a scheduled time (test / quick match) starts now', () => {
-    // scheduled 18:00, first rally at 18:06:40
+describe('defaultSetStartTime (owner 2026-11-15)', () => {
+  it('set 1 is proposed as the match\'s actual start: now, to the minute', () => {
     expect(defaultSetStartTime({ setIndex: 1, sets: [{ index: 1 }], now: at('2026-10-05T18:06:40Z') }))
       .toBe('2026-10-05T18:06:00.000Z')
   })
 
-  it('a later set starts now even when the interval was ended early (never after its own end)', () => {
-    const sets = [{ index: 1, endTime: '2026-10-05T18:06:00Z' }, { index: 2 }]
-    // interval ended after 1 minute: previous end + 3 min would be 18:09, after the set 2 rallies
-    expect(defaultSetStartTime({ setIndex: 2, sets, now: at('2026-10-05T18:07:10Z') }))
-      .toBe('2026-10-05T18:07:00.000Z')
+  it('set 2 is the end of set 1 + 3 minutes, whatever the clock says now', () => {
+    const sets = [{ index: 1, endTime: '2026-10-05T18:34:50Z' }, { index: 2 }]
+    expect(defaultSetStartTime({ setIndex: 2, sets, now: at('2026-10-05T18:36:00Z') }))
+      .toBe('2026-10-05T18:37:00.000Z')
+    expect(defaultSetStartTime({ setIndex: 2, sets, now: at('2026-10-05T18:41:30Z') }))
+      .toBe('2026-10-05T18:37:00.000Z')
   })
 
-  it('is never before the end of the last set played (device clock behind)', () => {
+  it('the deciding set (index 5) follows the last set played + 3', () => {
     const sets = [{ index: 1, endTime: '2026-10-05T18:20:00Z' }, { index: 2, endTime: '2026-10-05T18:45:30Z' }, { index: 5 }]
-    // best-of-3 deciding set (internal index 5) follows set 2, not a missing set 4
     expect(defaultSetStartTime({ setIndex: 5, sets, now: at('2026-10-05T18:44:00Z') }))
-      .toBe('2026-10-05T18:45:00.000Z')
-    expect(defaultSetStartTime({ setIndex: 5, sets, now: at('2026-10-05T18:49:59Z') }))
-      .toBe('2026-10-05T18:49:00.000Z')
+      .toBe('2026-10-05T18:48:00.000Z')
   })
 
-  it('ignores later sets and unparseable end times', () => {
+  it('ignores later sets and unparseable end times (falls back to now)', () => {
     const sets = [{ index: 1, endTime: 'garbage' }, { index: 3, endTime: '2026-10-05T23:00:00Z' }]
     expect(defaultSetStartTime({ setIndex: 2, sets, now: at('2026-10-05T18:30:00Z') }))
       .toBe('2026-10-05T18:30:00.000Z')
@@ -44,10 +41,10 @@ describe('set 1 start from the schedule (owner 2026-10-08)', () => {
   const scheduledAt = iso(2025, 3, 12, 12, 30)
   const today = local(2026, 10, 8, 12, 41, 37)
 
-  it('proposes the scheduled HH:MM on the day played', () => {
+  it('no longer proposes the scheduled time: set 1 is the actual start (now)', () => {
     const proposed = new Date(defaultSetStartTime({ setIndex: 1, sets: [{ index: 1 }], now: today, scheduledAt }))
     expect([proposed.getFullYear(), proposed.getMonth() + 1, proposed.getDate()]).toEqual([2026, 10, 8])
-    expect([proposed.getHours(), proposed.getMinutes(), proposed.getSeconds()]).toEqual([12, 30, 0])
+    expect([proposed.getHours(), proposed.getMinutes(), proposed.getSeconds()]).toEqual([12, 41, 0])
   })
 
   it('never carries the scheduled date (a past schedule does not leak into the start)', () => {
@@ -66,7 +63,7 @@ describe('set 1 start from the schedule (owner 2026-10-08)', () => {
     expect(defaultSetStartTime({ setIndex: 1, now: today, scheduledAt: null })).toBe(iso(2026, 10, 8, 12, 41))
     expect(defaultSetStartTime({ setIndex: 1, now: today, scheduledAt: 'garbage' })).toBe(iso(2026, 10, 8, 12, 41))
     expect(startsFromSchedule({ setIndex: 1, scheduledAt: null })).toBe(false)
-    expect(startsFromSchedule({ setIndex: 1, scheduledAt })).toBe(true)
+    expect(startsFromSchedule({ setIndex: 1, scheduledAt })).toBe(false)
   })
 
   it('a date without a time (bare date, or the local 00:00 MatchSetup stores) is no scheduled time: now, no remark', () => {
@@ -89,12 +86,12 @@ describe('set 1 start from the schedule (owner 2026-10-08)', () => {
   })
 
   it('a test match with a real time near now (a real game scored as a test) proposes it (owner 2026-11-15)', () => {
-    // scheduled 14:00, first rally 14:06:30: 14:00, not 14:06
+    // scheduled 14:00, first rally 14:06:30: the actual start 14:06
     const testMatch = { test: true, scheduledAt: iso(2026, 11, 15, 14, 0) }
     const now = local(2026, 11, 15, 14, 6, 30)
     const scheduled = startScheduleOf(testMatch, now)
     expect(scheduled).toBe(testMatch.scheduledAt)
-    expect(defaultSetStartTime({ setIndex: 1, now, scheduledAt: scheduled })).toBe(iso(2026, 11, 15, 14, 0))
+    expect(defaultSetStartTime({ setIndex: 1, now, scheduledAt: scheduled })).toBe(iso(2026, 11, 15, 14, 6))
     expect(actualStartRemark({ setIndex: 1, scheduledAt: scheduled, startTime: iso(2026, 11, 15, 14, 0) })).toBeNull()
     // 30 minutes either side; further away the made-up kickoff rule holds
     expect(startScheduleOf(testMatch, local(2026, 11, 15, 13, 30))).toBe(testMatch.scheduledAt)
@@ -112,9 +109,9 @@ describe('set 1 start from the schedule (owner 2026-10-08)', () => {
     expect(defaultSetStartTime({ setIndex: 1, now, scheduledAt: startScheduleOf(easy, now) })).toBe(iso(2026, 11, 15, 13, 50))
   })
 
-  it('later sets keep "now, never before the previous end", without a remark', () => {
+  it('later sets are proposed as previous end + 3 min', () => {
     const sets = [{ index: 1, endTime: iso(2026, 10, 8, 13, 5) }, { index: 2 }]
-    expect(defaultSetStartTime({ setIndex: 2, sets, now: local(2026, 10, 8, 13, 8, 20), scheduledAt })).toBe(iso(2026, 10, 8, 13, 8))
+    expect(defaultSetStartTime({ setIndex: 2, sets, now: local(2026, 10, 8, 13, 9, 20), scheduledAt })).toBe(iso(2026, 10, 8, 13, 8))
     expect(startsFromSchedule({ setIndex: 2, scheduledAt })).toBe(false)
     expect(actualStartRemark({ setIndex: 2, scheduledAt, startTime: iso(2026, 10, 8, 13, 20) })).toBeNull()
     expect(actualStartRemark({ setIndex: 5, scheduledAt, startTime: iso(2026, 10, 8, 14, 0) })).toBeNull()
@@ -151,13 +148,26 @@ describe('set 1 start from the schedule (owner 2026-10-08)', () => {
     const m = matchTimes([set1], events)
     expect(m.durationMinutes).toBe(24)
     // a set start without a rally (older record) still gives a duration of minutes, not years
-    expect(setDurationMinutes(set1, [])).toBe(25)
+    expect(setDurationMinutes(set1, [])).toBe(24)
+  })
+})
+
+describe('the confirmed start wins on the sheet (owner 2026-11-15)', () => {
+  it('dialog time 15:15 with a first rally at 15:14 prints 15:15 and the set duration from it', () => {
+    const confirmed = '2026-11-15T14:15:00.000Z'
+    const set1 = { index: 1, startTime: confirmed, endTime: '2026-11-15T14:34:00.000Z', finished: true }
+    const events = [
+      { type: 'set_start', setIndex: 1, seq: 1, ts: confirmed, payload: { startTime: confirmed, firstRallyAt: '2026-11-15T14:14:40.000Z' } },
+      { type: 'rally_start', setIndex: 1, seq: 2, ts: '2026-11-15T14:14:40.000Z' }
+    ]
+    expect(setDurationMinutes(set1, events)).toBe(19)
+    expect(matchTimes([set1], events).startMs).toBe(Date.parse(confirmed))
   })
 })
 
 describe('the typed start time is on the day nearest to the proposal (typedStartNear)', () => {
   it('a 23:30 match confirmed at 00:10: kept 23:30 is the evening before, a typed 00:12 is today', () => {
-    const proposed = defaultSetStartTime({ setIndex: 1, now: local(2026, 10, 9, 0, 10), scheduledAt: iso(2026, 10, 1, 23, 30) })
+    const proposed = scheduledStartOnDay(iso(2026, 10, 1, 23, 30), local(2026, 10, 9, 0, 10))
     expect(proposed).toBe(iso(2026, 10, 8, 23, 30))
     expect(typedStartNear(proposed, '23:30')).toBe(iso(2026, 10, 8, 23, 30))
     // the proposal's date would give 08.10 00:12, a set 1 of over 24 hours
@@ -165,7 +175,7 @@ describe('the typed start time is on the day nearest to the proposal (typedStart
   })
 
   it('a 20:00 match played the next morning: a typed 07:05 is the morning, not the day before', () => {
-    const proposed = defaultSetStartTime({ setIndex: 1, now: local(2026, 10, 9, 7, 3), scheduledAt: iso(2026, 10, 8, 20, 0) })
+    const proposed = scheduledStartOnDay(iso(2026, 10, 8, 20, 0), local(2026, 10, 9, 7, 3))
     expect(typedStartNear(proposed, '07:05')).toBe(iso(2026, 10, 9, 7, 5))
   })
 
