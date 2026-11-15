@@ -329,7 +329,7 @@ function recomputeSet(rows, setIndex, ctx, out, issue, roster, all = rows) {
         const claimable = owner && owner.e.payload.team === team && isSubRow(e) && p.isInitial !== true && p.mode !== 'manual' && !owner.expected.keep
         if (claimable) {
           owner.lineups.push(e)
-          storedPrev[team] = p
+          storedPrev[team] = storedAsWritten(ctx, e)
           continue
         }
         // a rotation the point once wrote for the other team (its team was
@@ -367,7 +367,7 @@ function recomputeSet(rows, setIndex, ctx, out, issue, roster, all = rows) {
           }
           state[team] = { lineup: mapped.lineup, ls: mapped.ls }
         }
-        storedPrev[team] = p
+        storedPrev[team] = storedAsWritten(ctx, e)
         checkDuplicates(team, state[team].lineup, e)
         continue
       }
@@ -410,6 +410,17 @@ function recomputeSet(rows, setIndex, ctx, out, issue, roster, all = rows) {
   if (wonAt && afterWin > 0) {
     issue('pointsAfterWin', { set, score: formatScore(wonAt, null, ctx), n: afterWin }, wonAt.e, setIndex)
   }
+}
+
+/**
+ * A line-up row as it was written, before the plan being finalised changed
+ * it (ctx.storedAsWritten, finalizePlan). A line-up entered later in the set
+ * was written against that row, so it is replayed relative to it: against
+ * the corrected row, a player the correction took out (#12 replaced by #16
+ * in the starting line-up) was found nowhere and stayed on court.
+ */
+function storedAsWritten(ctx, e) {
+  return ctx.storedAsWritten?.get(e.id) ?? e.payload ?? {}
 }
 
 /** A line-up corrected after the first rally, replayed on the new state. */
@@ -774,7 +785,9 @@ export function finalizePlan(events, plan, ctx = {}) {
   // the line-ups a going back writes are the ones the scorer chose, as
   // they are (not replayed on rows the same plan still rebuilds)
   const absoluteLineups = new Set((plan.add || []).filter(r => r.type === 'lineup' && r.payload?.fromRectification).map(r => r.tempKey))
-  const rctx = { ...ctx, match, absoluteLineups }
+  // each line-up row as written before this plan (see storedAsWritten)
+  const storedAsWritten = new Map(events.filter(e => e?.type === 'lineup' && e.id != null).map(e => [e.id, e.payload || {}]))
+  const rctx = { ...ctx, match, absoluteLineups, storedAsWritten }
   const after = applyPlanToEvents(events, plan)
   const rc = recomputeMatch(after, rctx)
 

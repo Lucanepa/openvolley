@@ -382,4 +382,41 @@ describe('a correction in the live match, then live scoring goes on', () => {
     const rc = recomputeMatch(live.events, { ...CTX, match })
     expect({ add: rc.add, update: rc.update, remove: rc.remove }).toEqual({ add: [], update: [], remove: [] })
   })
+  // Owner, 15.11 (set 2, #12 replaced by #16 in the starting line-up): a
+  // line-up entered by hand before the team's first rotation was replayed
+  // against the already corrected starting row, where the replaced player is
+  // found nowhere, so he stayed on court in that row and every rotation after.
+  const handLineup = (s, team, extra = {}) => {
+    const cur = s.events.filter(e => e.type === 'lineup' && e.payload.team === team).sort(compareBySeq).pop()
+    const seq = Math.floor(Math.max(...s.events.map(e => e.seq))) + 1
+    const id = Math.max(...s.events.map(e => e.id)) + 1
+    s.events.push({ id, matchId: 1, setIndex: cur.setIndex, type: 'lineup', seq, ts: new Date(Date.parse(cur.ts) + 1000).toISOString(), payload: { team, lineup: { ...cur.payload.lineup }, isInitial: false, ...extra } })
+  }
+  const lastLineupOf = (s, team) => s.events.filter(e => e.type === 'lineup' && e.payload.team === team).sort(compareBySeq).pop()
+
+  it('the starting line-up corrected after a line-up entered by hand before the first rotation: the new player is on court', () => {
+    const s = liveScorer()
+    s.startSet(1, { home: HOME_LU, away: AWAY_LU })
+    play(s, 'A') // side-out: home has not rotated yet
+    handLineup(s, 'home') // the scoreboard's "Change current line-up", nothing changed
+    play(s, 'HAHAHAH')
+    applyTo(s, planSetLineup(s.events, { setIndex: 1, team: 'home', lineup: { ...HOME_LU, III: 8 } }, CTX))
+    const court = Object.values(lastLineupOf(s, 'home').payload.lineup).map(String)
+    expect(court).toContain('8')
+    expect(court).not.toContain('3')
+    expectNoOp(s.events, CTX)
+  })
+
+  it('the same with "Forward" rows (mode manual) and a libero on court for that team', () => {
+    const s = liveScorer()
+    s.startSet(1, { home: HOME_LU, away: AWAY_LU })
+    s.liberoIn('home', 5, 9)
+    play(s, 'A')
+    handLineup(s, 'home', { mode: 'manual' })
+    play(s, 'HAHAH')
+    applyTo(s, planSetLineup(s.events, { setIndex: 1, team: 'home', lineup: { ...HOME_LU, IV: 8 } }, CTX))
+    const court = Object.values(lastLineupOf(s, 'home').payload.lineup).map(String)
+    expect(court).toContain('8')
+    expect(court).not.toContain('4')
+  })
 })
