@@ -2121,9 +2121,16 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     ? (data?.liveState?.current_set || data?.currentSet?.index || 1)
     : null
 
-  // During set interval or match ended, show cleared values
-  const leftLineup = (isInSetInterval || isMatchEnded) ? null : (leftTeam === 'home' ? lineup.home : lineup.away)
-  const rightLineup = (isInSetInterval || isMatchEnded) ? null : (rightTeam === 'home' ? lineup.home : lineup.away)
+  // Match ended: cleared. In the set interval the NEW set's line-ups show
+  // as soon as the scorer enters them (the referees check them before the
+  // set; the "Line-up set" cover hides the first until the other is in):
+  // they were cleared for the whole interval, so the court stayed empty at
+  // 15:37 with both line-ups of set 2 entered (owner 15.11, match 424849).
+  // Still cleared while the current set is the finished one (an interval
+  // before the scorer has created the next set).
+  const intervalClearsLineups = isInSetInterval && (data?.currentSet?.finished === true || lineup.isBetweenSets === true)
+  const leftLineup = (isMatchEnded || intervalClearsLineups) ? null : (leftTeam === 'home' ? lineup.home : lineup.away)
+  const rightLineup = (isMatchEnded || intervalClearsLineups) ? null : (rightTeam === 'home' ? lineup.home : lineup.away)
   const leftStats = (isInSetInterval || isMatchEnded)
     ? { timeouts: 0, substitutions: 0 }
     : (leftTeam === 'home' ? stats.home : stats.away)
