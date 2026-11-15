@@ -121,6 +121,11 @@ The bus (`bus.js`, no database import) carries the rest:
 - `app.error`: global errors and error boundaries; message ≤ 300 characters,
   top 5 `file:line` frames; the same message at most 5 times per 10 minutes.
 - `backup.error`.
+- `scoresheet.pdf` (`utils/scoresheetPdfLog.js`): the match-end PDF, with
+  `step` `requested`, `received` (bytes, ms), `cancelled`, `failed` (warn,
+  `reason` from `PDF_FAIL`), `not_queued` (warn: the queue refused the file)
+  and `approved_without_pdf` (error). `purpose` is `approval` or `missing`
+  (the approved view makes it again). No personal data.
 - `auth.sign_in/out`.
 
 The activity uploads themselves are never logged.

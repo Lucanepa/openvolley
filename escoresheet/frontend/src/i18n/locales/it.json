@@ -5689,6 +5689,7 @@
       "app_quit": "App chiusa",
       "app_error": "Errore dell’app",
       "backup_error": "Backup non riuscito",
+      "scoresheet_pdf": "PDF dell’eScoresheet",
       "auth_sign_in": "Accesso effettuato",
       "auth_sign_out": "Disconnesso",
       "activity_overflow": "Voci vecchie scartate"

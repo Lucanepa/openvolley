@@ -6,11 +6,34 @@ import { SkeletonRows, EmptyInset, Notice, StatusPill, dayTimeLabel } from '../.
 
 const OP_TONE = { void: 'brand', edit: 'todo', restore: 'planned' }
 
-/** "point · home" style summary of a revision's before / after row. */
-function rowSummary(r) {
+const has = (v) => v != null && v !== ''
+
+/** "16→20", or the one side that is there ("16", "L 20"), or null. */
+function pair(out, into, outPrefix = '', inPrefix = '') {
+  const a = has(out) ? `${outPrefix}${out}` : null
+  const b = has(into) ? `${inPrefix}${into}` : null
+  return a && b ? `${a}→${b}` : (a || b)
+}
+
+/** Who left and who came in, per event type: player→player, player→L libero, L libero→player, L libero→L libero. */
+function exchangeBit(type, p) {
+  switch (type) {
+    case 'libero_entry': return pair(p.playerOut, p.liberoIn, '', 'L ')
+    case 'libero_exit': return pair(p.liberoOut, p.playerIn, 'L ', '')
+    case 'libero_exchange': return pair(p.liberoOut, p.liberoIn, 'L ', 'L ')
+    default: return pair(p.playerOut, p.playerIn)
+  }
+}
+
+const LIBERO_SWAPS = new Set(['libero_entry', 'libero_exit', 'libero_exchange'])
+
+/** "point · home" style summary of a revision's before / after row. Missing fields are left out, never "undefined". */
+export function rowSummary(r) {
   if (!r || typeof r !== 'object') return '–'
   const p = r.payload && typeof r.payload === 'object' ? r.payload : {}
-  const bits = [r.type, p.team, p.playerNumber != null ? `#${p.playerNumber}` : null, p.playerOut != null ? `${p.playerOut}→${p.playerIn}` : null,
+  const bits = [r.type, p.team,
+    !LIBERO_SWAPS.has(r.type) && has(p.playerNumber) ? `#${p.playerNumber}` : null,
+    exchangeBit(r.type, p),
     r.score_a != null && r.score_b != null ? `${r.score_a}:${r.score_b}` : null].filter(Boolean)
   return bits.join(' · ') || '–'
 }
