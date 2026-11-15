@@ -1916,9 +1916,13 @@ export function summarizeRelayTablets(connections, matchKey, match = null) {
 export function applyRelayTablets(summary, relay) {
   if (!summary || !relay) return summary
   const seen = { referee: relay.referee > 0, bench_home: relay.benchHome > 0, bench_away: relay.benchAway > 0 }
-  const roles = summary.roles.map((r) => (
-    seen[r.role] && r.status !== 'connected' ? { ...r, status: 'connected', color: '#22c55e', ageMs: null } : r
-  ))
+  // how many tablets the relay has for each role (1R and 2R are one role:
+  // the chip counts roles, the list shows "Referee ×2")
+  const devices = { referee: relay.referee || 0, bench_home: relay.benchHome || 0, bench_away: relay.benchAway || 0 }
+  const roles = summary.roles.map((r) => {
+    const withCount = { ...r, devices: devices[r.role] ?? 0 }
+    return seen[r.role] && r.status !== 'connected' ? { ...withCount, status: 'connected', color: '#22c55e', ageMs: null } : withCount
+  })
   const connectedCount = roles.filter((r) => r.status === 'connected').length
   const issues = roles.some((r) => r.status !== 'connected')
   return {

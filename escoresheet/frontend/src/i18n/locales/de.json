@@ -3159,6 +3159,7 @@
     "title": "Tablet-Status",
     "allConnected": "Alle Geräte verbunden",
     "issuesDetected": "{{count}} Gerät(e) mit Problemen",
+    "notConnected": "Nicht verbunden: {{roles}}",
     "role": {
       "referee": "Schiedsrichter",
       "bench_home": "Heimbank",
@@ -5172,7 +5173,8 @@
       "winnerWouldChange": "Das ändert den Sieger von Satz {{set}}.",
       "invalidFinalScore": "{{score}} ist kein möglicher Endstand von Satz {{set}}.",
       "liberoInLineup": "#{{n}} ist Libero: ein Libero steht nicht in der Startaufstellung.",
-      "recalculated": "Alles danach wird neu berechnet: Rotationen, Aufschlag, Libero-Wechsel und Spielstand."
+      "recalculated": "Alles danach wird neu berechnet: Rotationen, Aufschlag, Libero-Wechsel und Spielstand.",
+      "coinTossRedone": "Satz 1 hat noch nicht begonnen: Die Auslosung gilt neu, Team A beginnt links."
     },
     "title": "Korrekturen",
     "pageTitle": "Korrekturen",
@@ -5384,7 +5386,8 @@
       "liberoEdit": "Bearbeite oder entferne einen Libero-Wechsel: die Aufstellungen danach werden neu berechnet.",
       "numbers": "Eine hier geänderte Nummer gilt für das ganze Spiel: jeder Eintrag davor und danach zeigt die neue Nummer, auf dem Matchblatt und auf den Tablets.",
       "advancedAll": "Jeder Eintrag des Spielprotokolls. Bearbeite oder entferne jeden Eintrag: was dazugehört, geht mit, und alles danach wird neu berechnet. Einträge fügst du in den Karten oben hinzu.",
-      "coinToss": "Team A ändert nur die Buchstaben auf dem Matchblatt; auf dem Feld bewegt sich nichts. Wer in Satz 1 zuerst aufschlägt, schlägt auch in Satz 3 zuerst auf und nimmt in den Sätzen 2 und 4 zuerst an."
+      "coinToss": "Team A ändert nur die Buchstaben auf dem Matchblatt; auf dem Feld bewegt sich nichts. Wer in Satz 1 zuerst aufschlägt, schlägt auch in Satz 3 zuerst auf und nimmt in den Sätzen 2 und 4 zuerst an.",
+      "coinTossBeforeStart": "Satz 1 hat noch nicht begonnen: Team A beginnt Satz 1 links vom Schreiber, wie nach der Auslosung. Wer in Satz 1 zuerst aufschlägt, schlägt auch in Satz 3 zuerst auf und nimmt in den Sätzen 2 und 4 zuerst an."
     },
     "confirm": {
       "removeTitle": "Diesen Eintrag entfernen?",

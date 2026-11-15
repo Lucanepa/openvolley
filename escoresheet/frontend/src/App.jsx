@@ -103,7 +103,7 @@ import ManageConsole from './components/manage/ManageConsole'
 import ManagerSiteLink from './components/ManagerSiteLink'
 import { OPEN_MANAGE_EVENT, OPEN_RESTORE_EVENT, openRestore, restorePrefill } from './utils/manageNav'
 import { relayMatchKey, relayMatchPayload, liveStateNow } from './utils/serverDataSync'
-import { needsEventCheck, pickCurrentMatch, newOfficialMatchStep, OFFICIAL_MATCH_KEPT_STEPS } from './utils/currentMatch'
+import { needsEventCheck, pickCurrentMatch, newOfficialMatchStep, OFFICIAL_MATCH_KEPT_STEPS, relayPublishedMatch } from './utils/currentMatch'
 import { isRelayErrorFor, relayConnectionStatus, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
 import { relayMatchBundle, relaySyncTrigger } from './utils/relayMatchSync'
 import { PHONE_MAX_WIDTH, isPhoneScreen, phoneLayoutKept } from './components/scoreboard/phoneLayout'
@@ -1507,6 +1507,13 @@ export default function App() {
     }
   }, [matchId])
   const relayTrigger = matchId ? openMatchRelayTrigger : relaySyncTrigger(currentMatch)
+  // The match the relay publishes (the open one, on Home the newest
+  // unfinished one): the header's tablet chip and Connect tablets follow it
+  const openMatchRow = useLiveQuery(async () => {
+    if (!matchId) return null
+    try { return (await db.matches.get(matchId)) || null } catch { return null }
+  }, [matchId])
+  const relayMatch = relayPublishedMatch(matchId, openMatchRow, currentMatch)
   useEffect(() => {
     if (relayTrigger != null && relaySyncRef.current) relaySyncRef.current()
   }, [relayTrigger])
@@ -3861,6 +3868,7 @@ export default function App() {
             showMatchSetup={showMatchSetup}
             matchId={matchId}
             currentMatch={shownCurrentMatch}
+            tabletMatch={notClosed(relayMatch)}
             matchInfoMenuOpen={matchInfoMenuOpen}
             setMatchInfoMenuOpen={setMatchInfoMenuOpen}
             matchInfoData={headerMatchInfoData}
@@ -4769,7 +4777,7 @@ export default function App() {
               <ConnectTabletsModal
                 open
                 onClose={() => setConnectionSetupModal(false)}
-                match={currentMatch || null}
+                match={relayMatch}
               />
             )}
 

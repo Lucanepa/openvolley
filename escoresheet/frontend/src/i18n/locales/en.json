@@ -3181,6 +3181,7 @@
     "title": "Tablet status",
     "allConnected": "All devices connected",
     "issuesDetected": "{{count}} device(s) with issues",
+    "notConnected": "Not connected: {{roles}}",
     "role": {
       "referee": "Referee",
       "bench_home": "Home bench",
@@ -5190,7 +5191,8 @@
       "winnerWouldChange": "This changes who won set {{set}}.",
       "invalidFinalScore": "{{score}} is not a possible final score of set {{set}}.",
       "liberoInLineup": "#{{n}} is a libero: a libero is not in the starting line-up.",
-      "recalculated": "Everything after it is recalculated: rotations, serve, libero replacements and the score."
+      "recalculated": "Everything after it is recalculated: rotations, serve, libero replacements and the score.",
+      "coinTossRedone": "Set 1 has not started: the coin toss is done again, team A starts on the left."
     },
     "title": "Corrections",
     "pageTitle": "Corrections",
@@ -5402,7 +5404,8 @@
       "liberoEdit": "Edit or remove a libero replacement: the line-ups after it are recalculated.",
       "numbers": "A number changed here is changed for the whole match: every entry before and after shows the new number, on the scoresheet and on the tablets.",
       "advancedAll": "Every entry of the match log. Edit or remove any entry: what belongs to it goes with it and everything after it is recalculated. Use the cards above to add entries.",
-      "coinToss": "Team A only changes the letters on the sheet; nothing moves on the court. The team that serves first in set 1 also serves first in set 3 and receives first in sets 2 and 4."
+      "coinToss": "Team A only changes the letters on the sheet; nothing moves on the court. The team that serves first in set 1 also serves first in set 3 and receives first in sets 2 and 4.",
+      "coinTossBeforeStart": "Set 1 has not started: team A starts on the left of the scorer in set 1, as after the coin toss. The team that serves first in set 1 also serves first in set 3 and receives first in sets 2 and 4."
     },
     "confirm": {
       "removeTitle": "Remove this entry?",
