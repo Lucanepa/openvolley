@@ -12,6 +12,8 @@
 /livescore      /livescore/index.html    200
 /upload_roster/* /upload_roster/index.html 200
 /upload_roster  /upload_roster/index.html 200
+/dictate/*      /dictate/index.html      200
+/dictate        /dictate/index.html      200
 
 # API routes should not be rewritten
 /api/*          /api/:splat              200

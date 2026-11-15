@@ -25,7 +25,9 @@ const validPages = [
   '/livescore',
   '/livescore/',
   '/upload_roster',
-  '/upload_roster/'
+  '/upload_roster/',
+  '/dictate',
+  '/dictate/'
 ]
 
 const __filename = fileURLToPath(import.meta.url)
@@ -110,7 +112,7 @@ export default defineConfig({
           const url = req.url?.split('?')[0] || '/'
 
           // Rewrite folder routes to their index.html
-          const folderRoutes = ['referee', 'scoresheet', 'bench', 'livescore', 'upload_roster']
+          const folderRoutes = ['referee', 'scoresheet', 'bench', 'livescore', 'upload_roster', 'dictate']
           for (const route of folderRoutes) {
             if (url === `/${route}` || url === `/${route}/`) {
               req.url = `/${route}/index.html`
@@ -301,7 +303,8 @@ export default defineConfig({
         scoresheet: './scoresheet/index.html',
         bench: './bench/index.html',
         livescore: './livescore/index.html',
-        upload_roster: './upload_roster/index.html'
+        upload_roster: './upload_roster/index.html',
+        dictate: './dictate/index.html'
       },
       output: {
         format: 'es',
