@@ -5,7 +5,9 @@ import {
   fetchPendingRoster,
   clearPendingRosterJob,
   rosterGoesToRelay,
-  isKnownDob
+  isKnownDob,
+  scorerIdentified,
+  cleanLicence
 } from '../remoteRoster'
 
 // A query builder that records the chain, like apiClient's QueryBuilder (no .not())
@@ -92,5 +94,20 @@ describe('isKnownDob', () => {
   it('rejects empty values and the 1900 placeholder in every format', () => {
     for (const v of [undefined, null, '', '  ', '01.01.1900', '01/01/1900', '1900-01-01']) expect(isKnownDob(v)).toBe(false)
     expect(isKnownDob('04.05.1990')).toBe(true)
+  })
+})
+
+describe('scorerIdentified', () => {
+  it('a real date of birth or a licence number (owner 2026-11-15)', () => {
+    expect(scorerIdentified('01.01.1900', '')).toBe(false)
+    expect(scorerIdentified('', '   ')).toBe(false)
+    expect(scorerIdentified(null, null)).toBe(false)
+    expect(scorerIdentified('04.05.1990', '')).toBe(true)
+    expect(scorerIdentified('01.01.1900', 'SV 12345')).toBe(true)
+  })
+  it('cleanLicence trims and caps at 30 characters', () => {
+    expect(cleanLicence('  12 34 ')).toBe('12 34')
+    expect(cleanLicence('')).toBeNull()
+    expect(cleanLicence('x'.repeat(40))).toHaveLength(30)
   })
 })

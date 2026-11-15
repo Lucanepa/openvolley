@@ -120,6 +120,18 @@ describe('the generated sheet', () => {
     expect(text).toContain('Marie Claire de la Fontaine')
   })
 
+  it('APPROVAL: a scorer without a date of birth shows the licence number in its place (owner 2026-11-15)', () => {
+    const base = fixture()
+    const officials = base.match.officials.map((o: any) => (o.role === 'scorer' ? { ...o, licence: 'SV 12345' } : o))
+    const { getByTestId, unmount } = render(<App matchData={{ ...base, match: { ...base.match, officials } }} autoAction="preview" />)
+    expect(getByTestId('approval-dob-2').textContent).toBe('SV 12345')
+    unmount()
+    // a real date of birth stays first
+    const withDob = base.match.officials.map((o: any) => (o.role === 'scorer' ? { ...o, dob: '03.03.1990', licence: 'SV 12345' } : o))
+    const again = render(<App matchData={{ ...base, match: { ...base.match, officials: withDob } }} autoAction="preview" />)
+    expect(again.getByTestId('approval-dob-2').textContent).toBe('03.03.1990')
+  })
+
   it('never crashes on older shapes: role-keyed officials, snake_case names, bench null, no players', () => {
     const data = fixture({
       match: {

@@ -596,7 +596,8 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
                         </div>
 
                         <div className={`${APPROVAL_COL.dob} flex items-center justify-center text-[9px] leading-none`} data-testid={`approval-dob-${idx}`}>
-                            {fullName ? formatDob(official?.dob) : ''}
+                            {/* no date of birth: the licence number, as the paper's "Lizenz-Nr." */}
+                            {fullName ? (formatDob(official?.dob) || official?.licence || '') : ''}
                         </div>
                         <div className="flex-1 relative flex items-center justify-center min-h-0 min-w-0">
                             {/* Signature space - read-only in PDF. A drawn signature wins;

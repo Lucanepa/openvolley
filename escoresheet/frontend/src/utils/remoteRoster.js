@@ -119,3 +119,17 @@ export function isKnownDob(dob) {
   const s = String(dob).trim()
   return s !== '01.01.1900' && s !== '01/01/1900' && s !== '1900-01-01'
 }
+
+/** A scorer licence number as stored: trimmed, at most 30 characters, else null. */
+export function cleanLicence(raw) {
+  const s = String(raw ?? '').trim().slice(0, 30)
+  return s || null
+}
+
+/**
+ * The scorer is identified for the coin toss: a real date of birth or a
+ * licence number (owner 2026-11-15: "block, or have write a licence number").
+ */
+export function scorerIdentified(dob, licence) {
+  return isKnownDob(dob) || cleanLicence(licence) !== null
+}
