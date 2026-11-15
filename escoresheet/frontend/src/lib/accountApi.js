@@ -453,6 +453,14 @@ export const admin = {
   releaseGame(matchId, { reason }) {
     return apiRequest('POST', `/api/admin/matches/${enc(matchId)}/release-game`, { reason })
   },
+  /** The match's game PIN (audited): { pin, stored: 'plain'|'hashed'|'none' }; a hashed one comes back null. */
+  readMatchPin(matchId) {
+    return apiRequest('GET', `/api/admin/matches/${enc(matchId)}/pin`)
+  },
+  /** A new game PIN for the match, answered once (audited): { pin }. */
+  resetMatchPin(matchId) {
+    return apiRequest('POST', `/api/admin/matches/${enc(matchId)}/pin`, {})
+  },
   listAudit({ limit, before, action, app } = {}) {
     return apiRequest('GET', `/api/admin/audit${query({ limit, before, action, app })}`)
   },
