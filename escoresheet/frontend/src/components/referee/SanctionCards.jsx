@@ -109,6 +109,13 @@ export function CardGlyph({ kind, height, title }) {
  * @param {string} [props.cardHeight] CSS length of a card (default 22px)
  * @param {'row'|'column'} [props.flow] wrap the items along a row (portrait strip) or stack them (side panel)
  */
+/** Does a team have any sanction to show (the referee hides its Sanctions block otherwise)? */
+export function hasTeamSanctions(sanctions) {
+  const s = sanctions || {}
+  return ['warnings', 'penalties', 'expulsions', 'disqualifications'].some(k => (s[k] || []).length > 0) ||
+    !!s.delayWarning || !!s.delayPenalty
+}
+
 export function TeamSanctionList({ sanctions, t, cardHeight = '22px', flow = 'row' }) {
   const s = sanctions || {}
   const items = [

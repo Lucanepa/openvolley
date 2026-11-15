@@ -38,7 +38,7 @@ import CountdownFlight from './referee/CountdownFlight.jsx'
 import TimeoutCountdown from './referee/TimeoutCountdown.jsx'
 import RefereeScoresheet from './referee/RefereeScoresheet.jsx'
 import RefereeRosters from './referee/RefereeRosters.jsx'
-import { TeamSanctionList } from './referee/SanctionCards.jsx'
+import { TeamSanctionList, hasTeamSanctions } from './referee/SanctionCards.jsx'
 import { bundleHasFullAccess } from './referee/scoresheetInput.js'
 import { createRecordedNoticeTracker, describeNotice, NOTICE_AUTO_DISMISS_MS } from '../utils/refereeRecordedNotices.js'
 import { matchDiscPaint, teamLiberoColour, teamBoxStyle, effectiveTeamColour } from '../utils/teamColours.js'
@@ -3722,7 +3722,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               }}>{value}</span>
             </div>
           )
-          const counters = (stats, area, row) => (
+          // TO SUB | SUB TO upright: the right team's counters mirror the
+          // left's, time-outs at the outer edges (owner 15.11)
+          const counters = (stats, area, row, mirrored = false) => (
             <div data-team-counters={area} style={{
               ...(wide ? { gridArea: area, ...sideCell, justifyContent: 'flex-start', padding: '10px 6px 6px' } : {}),
               display: 'flex',
@@ -3733,12 +3735,17 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               fontSize: row ? 'clamp(18px, 3.6vw, 34px)' : vmin(4),
               fontWeight: 700
             }}>
+              {mirrored && counter('SUB', stats.substitutions, stats.substitutions >= 6 ? 'max' : stats.substitutions >= 5 ? 'near' : null)}
               {counter('TO', stats.timeouts, stats.timeouts >= 2 ? 'max' : null)}
-              {counter('SUB', stats.substitutions, stats.substitutions >= 6 ? 'max' : stats.substitutions >= 5 ? 'near' : null)}
+              {!mirrored && counter('SUB', stats.substitutions, stats.substitutions >= 6 ? 'max' : stats.substitutions >= 5 ? 'near' : null)}
             </div>
           )
           const sanctionsTitle = t('refereeDashboard.sanctions.title', 'Sanctions')
-          const sanctions = (teamSanctions, area) => (
+          // only when the team has a sanction (owner 15.11: "sanctions hidden
+          // unless there are any"); landscape keeps its grid cell, empty
+          const sanctions = (teamSanctions, area) => !hasTeamSanctions(teamSanctions)
+            ? (wide ? <div data-team-sanctions-panel={area} style={{ gridArea: area }} /> : null)
+            : (
             <div data-team-sanctions-panel={area} style={{
               ...(wide ? { gridArea: area, ...sideCell, overflowY: 'auto', boxSizing: 'border-box', margin: '0 6px 6px', padding: '6px' } : { minWidth: 0, overflowY: 'auto', minHeight: 0 }),
               display: 'flex',
@@ -3787,6 +3794,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             <div data-team-panel={side} style={{
               display: 'flex',
               flexDirection: 'column',
+              // without sanctions the counters alone, centred in the panel
+              justifyContent: hasTeamSanctions(teamSanctions) ? 'flex-start' : 'center',
               gap: '10px',
               minWidth: 0,
               minHeight: 0,
@@ -3796,9 +3805,13 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               borderRadius: '10px',
               overflow: 'hidden'
             }}>
-              {counters(stats, side, true)}
-              <div style={{ borderTop: '1px solid var(--border)' }} />
-              {sanctions(teamSanctions, side)}
+              {counters(stats, side, true, side === 'right')}
+              {hasTeamSanctions(teamSanctions) && (
+                <>
+                  <div style={{ borderTop: '1px solid var(--border)' }} />
+                  {sanctions(teamSanctions, side)}
+                </>
+              )}
             </div>
           )
           return (
