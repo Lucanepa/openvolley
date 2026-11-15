@@ -1,0 +1,3 @@
+OpenVolley 3.2.10
+- Set start times: set 1 is proposed as the actual start, later sets as the last set end + 3 min; the time you confirm is what the scoresheet and result show.
+- Restore from cloud backup: the match shows its set and score.
