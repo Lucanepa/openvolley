@@ -62,7 +62,7 @@ export const subdomains = {
     htmlFile: 'dictate/index.html',
     host: 'app.openvolley.app/dictate',
     pwa: false,
-    themeColor: '#e2001a'
+    themeColor: '#ffffff'
   },
   referee: {
     name: 'Referee Dashboard',

@@ -85,8 +85,8 @@ describe('volleyui kit wiring (P0)', () => {
   it('build-subdomains.js writes light-only heads and manifests', () => {
     const src = read('scripts/build-subdomains.js')
     const colors = [...src.matchAll(/themeColor: '([^']+)'/g)].map((m) => m[1])
-    // seven OpenVolley builds and OpenBeach's manager (manager-beach)
-    expect(colors).toHaveLength(8)
+    // seven OpenVolley builds, /dictate and OpenBeach's manager (manager-beach)
+    expect(colors).toHaveLength(9)
     expect(new Set(colors)).toEqual(new Set(['#ffffff']))
     // the manager builds from its own page, with the same light head
     for (const page of ['manager.html', 'manager-beach.html']) {
