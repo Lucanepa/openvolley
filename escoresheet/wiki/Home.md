@@ -5,7 +5,7 @@
 ## Key Features
 
 - **Offline-first**: Works without internet using local IndexedDB storage. Syncs to the cloud when connected.
-- **Cross-platform**: Web (PWA), Desktop (Windows, macOS, Linux), Mobile (Android, iOS).
+- **Cross-platform**: Web (PWA), Desktop (Windows, macOS, Linux), Android.
 - **Multi-role**: Dedicated interfaces for Scoreboard, Referee, Bench, Livescore, Roster Upload, and Scoresheet Database.
 - **Official scoresheets**: Generates PDF scoresheets compliant with volleyball regulations.
 - **Real-time sync**: Optional WebSocket backend for live multi-device communication.
@@ -16,13 +16,13 @@
 - **[Installation & Development](Installation.md)** -- Set up the project and start developing.
 - **[Architecture](Architecture.md)** -- Tech stack, project structure, and design decisions.
 - **[Deployment](Deployment.md)** -- Build and deploy for web, desktop, and mobile.
-- **[User Guide](User-Guide.md)** -- How to score a match step by step.
+- **[User Guide](User-Guide.md)** -- How to score a match step by step (the in-app help and [openvolley.app/support](https://openvolley.app/support) have more).
 - **[Troubleshooting](Troubleshooting.md)** -- Solutions to common issues.
 
 ## Additional Resources
 
 - [Backend WebSocket Server](../backend/README.md) -- Optional relay server for multi-device sync.
-- [GitHub Releases](https://github.com/lucacanepa/openvolley/releases) -- Desktop app downloads.
+- [Downloads](https://get.openvolley.app) -- Desktop and Android apps.
 - [Live App](https://app.openvolley.app) -- Try the web version.
 
 ## Contributing

@@ -132,7 +132,8 @@ const TAKE_BACK_ERRORS = ['offline', 'noPin', 'notFound', 'otherMatch', 'failed'
 export function formatTakeOver(at, lang, now = new Date()) {
   const d = at ? new Date(at) : null
   if (!d || Number.isNaN(d.getTime())) return null
-  const time = d.toLocaleTimeString(lang || undefined, { hour: '2-digit', minute: '2-digit' })
+  // 24-hour like the rest of the app (en gave "05:09 PM", 3.2.5 review)
+  const time = d.toLocaleTimeString(lang || undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
   if (d.toDateString() === now.toDateString()) return time
   return `${d.toLocaleDateString(lang || undefined, { day: '2-digit', month: '2-digit' })} ${time}`
 }

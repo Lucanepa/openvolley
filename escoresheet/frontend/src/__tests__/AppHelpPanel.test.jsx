@@ -6,7 +6,7 @@ import { waitFor, fireEvent, cleanup } from '@testing-library/react'
 vi.mock('../utils/parseRosterPdf', () => ({ parseRosterPdf: vi.fn() })) // pdf.js worker import
 import { db } from '../db/db'
 import en from '../i18n/locales/en.json'
-import { HELP_SCREENS } from '../components/help/helpSections'
+import { sectionsForScreen } from '../components/help/helpSections'
 import { offline, online, mountApp, button } from './appMount'
 
 beforeAll(offline)
@@ -29,7 +29,8 @@ describe('App: the help panel', () => {
 
     fireEvent.click(helpButton())
     await waitFor(() => expect(panelOpen()).toBe(true))
-    expect(panelSections()).toEqual(HELP_SCREENS.home.sections)
+    // no tool chosen in the test: the Global tool's section is left out
+    expect(panelSections()).toEqual(sectionsForScreen('home', { toolMode: null }).map(x => x.id))
     expect(helpPanel().textContent).toContain(en.contextHelp.sections.home)
     expect(helpPanel().textContent).toContain(en.contextHelp.home.q_backgroundHome)
     // the page's questions point at the page ("Show me")
@@ -42,7 +43,7 @@ describe('App: the help panel', () => {
     await waitFor(() => expect(document.querySelector('[data-testid="dialog-help"]')).toBeTruthy())
     fireEvent.click(document.querySelector('[data-testid="dialog-help"]'))
     await waitFor(() => expect(panelOpen()).toBe(true))
-    expect(panelSections()).toEqual(HELP_SCREENS.restore.sections)
+    expect(panelSections()).toEqual(sectionsForScreen('restore', { toolMode: null }).map(x => x.id))
     expect(helpPanel().textContent).toContain(en.contextHelp.pageNames.restore)
     expect(helpPanel().textContent).toContain(en.contextHelp.handover.q_continueOther)
 
@@ -51,6 +52,7 @@ describe('App: the help panel', () => {
     await waitFor(() => expect(panelOpen()).toBe(false))
     fireEvent.click(helpButton())
     await waitFor(() => expect(panelOpen()).toBe(true))
-    expect(panelSections()).toEqual(HELP_SCREENS.home.sections)
+    // no tool chosen in the test: the Global tool's section is left out
+    expect(panelSections()).toEqual(sectionsForScreen('home', { toolMode: null }).map(x => x.id))
   })
 })

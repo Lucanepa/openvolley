@@ -7,6 +7,13 @@ import KitModal from './KitModal'
 import { usePanelData, useOnline, OfflineBanner, PanelHead, InlineError, useErrorText } from './common'
 import { Button, DateField, Field, Input, Select, RowList, Row, RowTool, Chip, StatusPill, EmptyInset, SkeletonRows, Notice, ModalStrip, dayLabel, confirmDialog, toast } from '../../ui'
 
+// A team link's invite is stored with the label "Team link" (backend
+// manageApi teamInvite): shown in the console's language (3.2.5 review)
+export function inviteLabel(inv, t) {
+  if (!inv) return ''
+  return inv.role === 'team_manager' && inv.label === 'Team link' ? t('manage.invites.teamLinkLabel') : inv.label
+}
+
 const STATE_TONE = { active: 'done', expired: 'neutral', used_up: 'neutral', revoked: 'brand' }
 const INVITE_ROLES = ['scorer', 'referee', 'competition_manager']
 // db/023: an admin's team link for any club's team (owner 2026-11-11: "as admin
@@ -85,7 +92,7 @@ export default function InvitesPanel({ app, club = null, title }) {
               stripe={false}
               toolsIndent="sm:pl-2"
               actionIndent="pl-1.5"
-              title={inv.label}
+              title={inviteLabel(inv, t)}
               status={<StatusPill tone={STATE_TONE[inv.state] || 'neutral'}>{t(`manage.invites.state.${inv.state}`, inv.state)}</StatusPill>}
               meta={<>
                 <span className="font-mono tabular-nums">…{inv.code_hint}</span>
@@ -148,7 +155,7 @@ export default function InvitesPanel({ app, club = null, title }) {
             {t('manage.invites.copy')}
           </Button>
         </div>
-        <p className="text-xs text-stone-500">{created?.invite?.label}{created?.invite?.club ? ` · ${created.invite.club}` : ''} · {t(`access.roles.${created?.invite?.role || 'scorer'}`)}</p>
+        <p className="text-xs text-stone-500">{inviteLabel(created?.invite, t)}{created?.invite?.club ? ` · ${created.invite.club}` : ''} · {t(`access.roles.${created?.invite?.role || 'scorer'}`)}</p>
       </KitModal>
     </section>
   )

@@ -7,6 +7,16 @@ import { Button, FOCUS_RING } from '../../ui/Button.jsx'
 // One question in the help sheet: a flat row (no card), the question in
 // stone-800, the answer in stone-600 under it, and "Show me" as a kit ghost
 // button. Rendered inside the panel's `.ov-kit` box.
+/**
+ * Whether the page has the "Show me" target now (SpotlightOverlay rings the
+ * first one): no button that could only say "not visible" (the roster
+ * editor's targets on Match setup's main page, Corrections' on the match end).
+ */
+export function helpTargetShown(helpId) {
+  if (typeof document === 'undefined') return false
+  return !!document.querySelector(`[data-help-id="${helpId}"]`)
+}
+
 export default function FAQItem({ questionKey, answerKey, helpId, tooltipKey, onShowMe }) {
   const { t } = useTranslation()
   const [isOpen, setIsOpen] = useState(false)
@@ -28,7 +38,7 @@ export default function FAQItem({ questionKey, answerKey, helpId, tooltipKey, on
           <span className="font-semibold text-emerald-700">A: </span>
           {t(answerKey)}
 
-          {helpId && onShowMe && (
+          {helpId && onShowMe && helpTargetShown(helpId) && (
             <div className="mt-2.5">
               <Button
                 variant="ghost"

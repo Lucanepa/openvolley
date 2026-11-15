@@ -28,7 +28,7 @@ vi.mock('../../SupportFeedbackModal', async () => {
 vi.mock('../../../utils/openAppWindow', () => ({ openAppWindow: vi.fn(() => ({ ok: true })) }))
 
 import ContextualHelpPanel from '../ContextualHelpPanel'
-import { HELP_SCREENS, helpSection } from '../helpSections'
+import { HELP_SCREENS, helpSection, sectionsForScreen } from '../helpSections'
 import { HELP_VIDEOS } from '../helpVideos'
 import { openAppWindow } from '../../../utils/openAppWindow'
 
@@ -49,7 +49,8 @@ afterEach(() => {
 describe('ContextualHelpPanel: the screen\'s sections', () => {
   it.each(Object.keys(HELP_SCREENS))('%s shows its sections, the main one open', (id) => {
     panel({ screen: id })
-    const sections = HELP_SCREENS[id].sections
+    // no tool chosen on this device: the Global tool's section is left out
+    const sections = sectionsForScreen(id, { toolMode: null }).map(s => s.id)
     expect(sectionIds()).toEqual(sections)
     sections.forEach((s, i) => expect(header(s).getAttribute('aria-expanded'), s).toBe(i === 0 ? 'true' : 'false'))
     // the main section's questions (the mocked t shows the key)
@@ -94,11 +95,32 @@ describe('ContextualHelpPanel: the screen\'s sections', () => {
   })
 
   it('"Show me" hands the target and its tip to the page', () => {
+    const target = document.createElement('div')
+    target.setAttribute('data-help-id', 'home-new-match-button')
+    document.body.appendChild(target)
     const onShowMe = vi.fn()
     panel({ screen: 'home', onShowMe })
     fireEvent.click(screen.getByText('contextHelp.home.q_createMatch'))
     fireEvent.click(screen.getByText('Show me'))
     expect(onShowMe).toHaveBeenCalledWith('home-new-match-button', 'contextHelp.home.tip_createMatch')
+    target.remove()
+  })
+
+  it('no "Show me" when the page lacks its target', () => {
+    panel({ screen: 'home', onShowMe: vi.fn() })
+    fireEvent.click(screen.getByText('contextHelp.home.q_createMatch'))
+    expect(screen.queryByText('Show me')).toBeNull()
+  })
+
+  it('the Global tool: its section first on Home', () => {
+    localStorage.setItem('ov-tool-mode', 'global')
+    try {
+      panel({ screen: 'home' })
+      expect(sectionIds()[0]).toBe('global')
+      expect(header('global').getAttribute('aria-expanded')).toBe('true')
+    } finally {
+      localStorage.removeItem('ov-tool-mode')
+    }
   })
 })
 
@@ -116,9 +138,9 @@ describe('ContextualHelpPanel: the video', () => {
     expect(tracks.map(t => [t.getAttribute('srclang'), t.getAttribute('src')])).toEqual(['en', 'de', 'fr', 'it'].map(l => [l, `https://openvolley.app/support/videos/coin-toss.${l}.vtt`]))
     // the app speaks German (mocked i18n): its subtitles are on
     expect(tracks.filter(t => t.hasAttribute('default')).map(t => t.getAttribute('srclang'))).toEqual(['de'])
-    // its title in the app's language and its length (70.1 s), from the recording
+    // its title in the app's language and its length (67.9 s), from the recording
     expect(video.getAttribute('aria-label')).toBe('contextHelp.videoLabel:Auslosung und Aufstellung')
-    expect(screen.getByTestId('help-video-caption').textContent).toBe('contextHelp.videoLabel:Auslosung und Aufstellung1:10')
+    expect(screen.getByTestId('help-video-caption').textContent).toBe('contextHelp.videoLabel:Auslosung und Aufstellung1:07')
     // the box has the video's shape
     const { width, height } = HELP_VIDEOS['coin-toss']
     expect(video.style.aspectRatio).toBe(`${width} / ${height}`)

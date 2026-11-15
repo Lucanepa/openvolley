@@ -50,8 +50,8 @@ Or Vite will automatically try the next available port.
 ### WebSocket connection not working
 
 - **Local**: Make sure the backend server is running and the device can reach it on the network
-- **Cloud**: Verify `VITE_BACKEND_URL` is set to the correct Render URL
-- **Protocol**: Use `ws://` for HTTP connections and `wss://` for HTTPS. Render requires `wss://`
+- **Cloud**: Verify `VITE_BACKEND_URL` points at the backend (production: `https://backend.openvolley.app`)
+- **Protocol**: Use `ws://` for HTTP connections and `wss://` for HTTPS. The production backend requires `wss://`
 - **CORS**: The backend must include your origin in the allowed list. Cloud mode accepts `*.openvolley.app` and localhost. Local mode accepts all origins
 
 ### PDF generation fails
@@ -80,7 +80,8 @@ Or Vite will automatically try the next available port.
 ### Match data lost after clearing browser data
 
 - IndexedDB data is stored in your browser. Clearing site data or browser data will delete it
-- If the match was synced to Supabase before clearing, it can be recovered from the cloud
+- If the match reached the server before clearing, Home › **Restore match** brings it back (game number and game PIN)
+- A backup file (desktop and Android apps, a backup folder in Chrome or Edge, or a USB stick) restores it too: Restore match › Restore from local file
 - To prevent data loss, make sure cloud sync is working before clearing browser data
 
 ## Deployment Issues

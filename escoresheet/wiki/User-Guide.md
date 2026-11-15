@@ -1,161 +1,92 @@
 # User Guide
 
-## Introduction
+How to score a volleyball match with OpenVolley, step by step (version 3.2.5).
 
-Openvolley eScoresheet lets you digitally score volleyball matches on any device. It tracks points, rotations, substitutions, timeouts, and sanctions, then generates an official PDF scoresheet at the end.
+Every screen has a **?** in its header: it shows the help for that screen, with a short video and "Show me". The same help, in German, English, French and Italian, is on [openvolley.app/support](https://openvolley.app/support).
 
-The app works completely offline -- no internet connection required during a match. If you have internet, your data syncs automatically to the cloud for backup and live viewing.
+## The apps
 
-## Accessing the App
+| App | For | Where |
+|---|---|---|
+| eScoresheet (scorer) | The scorer's table: match setup, coin toss, every rally, signatures | [app.openvolley.app](https://app.openvolley.app), or the desktop and Android apps |
+| Referee tablet | 1st and 2nd referee: score, line-ups with the rotation, time-outs, substitutions, sanctions | [referee.openvolley.app](https://referee.openvolley.app) |
+| Bench tablet | A team's bench: its match live, and requests to the scorer (line-up, time-out, substitution) | [bench.openvolley.app](https://bench.openvolley.app) |
+| Livescore | Fans and big screens. No PIN needed | [livescore.openvolley.app](https://livescore.openvolley.app) |
+| Roster upload | Coaches: send the roster PDF to the scorer before the match | [roster.openvolley.app](https://roster.openvolley.app) |
+| Manager | Clubs, team managers and admins: club, teams, team links, game rosters sent ahead, licence lists | [manager.openvolley.app](https://manager.openvolley.app) |
 
-- **Web**: Visit [app.openvolley.app](https://app.openvolley.app). You can install it as a PWA (your browser will prompt you) for offline use.
-- **Desktop**: Download from [GitHub Releases](https://github.com/lucacanepa/openvolley/releases) (Windows, macOS, Linux).
-- **Mobile**: Install the PWA from your browser, or build native apps via Capacitor.
+The desktop app (Windows, macOS, Linux) and the Android app are on [get.openvolley.app](https://get.openvolley.app). The desktop app scores without internet and serves the tablets in the hall over its own network.
 
-## Roles
+## Swiss or Global
 
-The app provides separate interfaces for different roles during a match:
+At the first open the app asks **How do you use OpenVolley?**
 
-### Scoreboard (Main App)
+- **Swiss**: Swiss league games, with sign-in, the game list, the Einsatzliste, club rosters and the cloud.
+- **Global**: any tournament or friendly. No sign-in and no game list; games and rosters come from Excel or CSV, teams and players stay on the device. The match's backup is kept online under a backup code.
 
-The primary scoring interface. This is where the scorer records every rally, substitution, timeout, and sanction. It controls the match flow and broadcasts updates to other connected devices.
+You can change this later in **Options › Tool**, as long as no match is on the device.
 
-Access: [app.openvolley.app](https://app.openvolley.app)
+## Scoring a match
 
-### Referee Dashboard
+### 1. Start on Home
 
-A read-only view for the referee to follow the match in real time. Shows current score, rotations, and recent events.
+- **Official match** (signed in): pick today's home game of your club, or enter the game yourself. It is saved on the server for the referee, the livescore and the backups.
+- **Test match**: invented teams, for practice. Never saved on the server; referee and bench tablets can still follow it ("Switch to test matches").
+- **Easy match**: unofficial, no rosters and no signatures.
+- **Scoreboard**: points and sets only, no match.
+- In the Global tool: **Match** starts a full match without signing in.
 
-Access: [referee.openvolley.app](https://referee.openvolley.app)
+Home always opens first. **Continue match** goes back to the match on this device; the card shows its score and its state ("Scoring here", "Unsent changes", "Not checked"…).
 
-### Bench Dashboard
+### 2. Match setup
 
-Team-specific view for coaches. Shows their team's rotation, substitution history, and timeout status.
+- **Match info**: "Load match from schedule" (gender, league, game) fills in the game number, teams, date, hall and referees. Add the short names and the team colours. Each team can have a contact e-mail for the final scoresheet.
+- **Officials**: 1st referee and scorer are needed; 2nd referee, assistant scorer and line judges are optional.
+- **Rosters**: "Edit roster" for each team. Add players by hand, import the roster PDF or the Einsatzliste ("Upload PDF"), or let the coach upload it on roster.openvolley.app. A team manager can also send it ahead from manager.openvolley.app: the team's card shows "Roster sent by …" with **Accept**. Mark the captain and up to two liberos, and add the bench officials.
+- **Backups**: where this match is saved (cloud, this device, a USB stick with the desktop app).
+- **PINs**: keep the game PIN (also on Home). You need it to delete, restore or continue the match on another device.
 
-Access: [bench.openvolley.app](https://bench.openvolley.app)
+### 3. Coin toss
 
-### Livescore Display
+Record who won the toss, the sides and the first serve, then **Confirm coin toss result**. The captain and the coach of each team sign on the screen or on their phone ("Sign on phone"). They can also sign later during the warm-up: the scoring screen shows "Missing signature", and set 1 starts only once all four have signed.
 
-A spectator-facing scoreboard designed for large screens or projectors. Shows the score in a clean, minimal layout.
+### 4. Line-ups
 
-Access: [livescore.openvolley.app](https://livescore.openvolley.app)
+Tap **Lineup** on each team's side and enter positions I to VI. The first line-up stays covered ("Line-up set") until the other team's is in. A coach can send the line-up from the bench tablet: the scorer checks it with **Review and accept**.
 
-### Roster Upload
+### 5. Rallies
 
-Upload team roster PDFs before the match. The app parses player names and numbers from the PDF automatically.
+Tap **Start rally** before each serve, then the point button of the team that won the rally. The **SERVE** box shows the server's number; the app rotates a team when it wins the service back. **Undo** takes back the last point; **Decision change** gives the rally to the other team or replays it.
 
-Access: [roster.openvolley.app](https://roster.openvolley.app)
+### 6. During play
 
-### Scoresheet Database
+- **Time-outs**: tap the team's TO box, then **Confirm time-out** (30 seconds).
+- **Substitutions**: tap the player on court, then **Substitution** and the player who comes in.
+- **Liberos**: tap a back-row player, then **Libero**.
+- **Sanctions**: tap the player (or the team's Improper request / Delay warning), then the sanction.
+- **Bench requests**: a card shows when a bench tablet asks for a time-out or a substitution; grant it or decline it.
+- **Mistakes**: Match › **Go back** when the referees take back part of the set; Match › **Corrections** for anything else; Match › **Edit match info** for the hall, date or officials.
 
-Browse and view completed match scoresheets.
+The app checks the rules as you go (third time-out, seventh substitution, a player who may not come in) and asks before recording anything unusual.
 
-Access: [scoresheet.openvolley.app](https://scoresheet.openvolley.app)
+### 7. Set end and deciding set
 
-## Scoring a Match
+At 25 points with a two-point lead the app ends the set and starts the interval. Before the deciding set it asks for a new coin toss; at 8 points the teams change courts.
 
-### 1. Create a Match
+### 8. Match end
 
-On the home screen, tap "New Match". Fill in the match details:
+Check the results, collect the signatures (captains, then officials; "Sign on phone" or "Approve with PIN" work too), then **Confirm and approve**. The app downloads a ZIP with the match data and the scoresheet PDF and closes the match on the server. Where the league sends final scoresheets, the PDF is mailed to the scorer, the referees and the team contacts.
 
-- Teams (home and away)
-- Date, time, and location
-- Competition / league
-- Game number
-- Officials (referees, scorer)
+## Tablets in the hall
 
-You can also import match details from official league feeds if your federation is configured.
+The header menu (☰) › **Connect tablets** (also in Options): choose the way (internet, hall Wi-Fi with the desktop app, or the desktop app's own network), turn each tablet on, and let it scan its code. The referee and bench tablets need their PIN; the livescore needs none. The header chip (for example 2/3) shows how many tablets are connected.
 
-### 2. Enter Rosters
+## Offline, backups and another device
 
-Add players for both teams:
+- Scoring never needs the internet: every change is saved on the device first and sent when the connection is back. The header pill shows the state ("Connected", "Offline (3 waiting)", "Local only"…).
+- Backups: the desktop and Android apps save a file at every action; in Chrome or Edge you can pick a backup folder; signed in, a cloud backup is kept during the match. Backup files of an official match are encrypted with its game PIN and referee PIN.
+- Another device: on the new device, Home › **Restore match**, enter the game number and the game PIN, and continue there. The old device stops and can take scoring back.
 
-- Enter player number, name, and position manually
-- Or import rosters from uploaded PDFs
-- Designate liberos (up to 2) and the team captain
+## Language
 
-### 3. Coin Toss
-
-Record the coin toss result:
-
-- Which team won the toss
-- Their choice (serve or receive, and court side)
-
-### 4. Set Starting Lineups
-
-Place players into the 6 rotation positions for each team. The app validates that lineups are legal before you can proceed.
-
-### 5. Score Rallies
-
-Tap the side of the team that won the rally. The app handles:
-
-- Point scoring
-- Rotation tracking on side-out
-- Service order validation
-
-### 6. Record Events During Play
-
-- **Substitutions**: Tap the substitution button, select the player going in and out. The app tracks substitution limits per set.
-- **Timeouts**: Tap the timeout button. The app tracks timeouts per set per team.
-- **Sanctions**: Access the sanctions menu to issue yellow cards, red cards, or expulsion/disqualification.
-- **Corrections**: If you make a mistake, use the undo function to step back.
-
-### 7. End of Set
-
-When a set ends, the app will:
-
-- Confirm the final set score
-- Switch court sides automatically
-- Prompt you to enter lineups for the next set
-
-### 8. Finish the Match
-
-When a team wins the required number of sets (3 out of 5, or 2 out of 3):
-
-- The match is marked as final
-- Capture digital signatures from captains, coaches, and referees
-- Generate and download the official PDF scoresheet
-
-## Working Offline
-
-The app is designed to work without any internet connection:
-
-- All match data is stored locally in your browser's IndexedDB database
-- The connection status indicator in the app shows your current state
-- When you regain internet, data syncs automatically to the cloud
-- You can score an entire match offline and sync later
-
-Your data persists across browser sessions -- closing the browser or the tab does not lose your match.
-
-## Multi-Device Setup
-
-To connect multiple devices (e.g., Scoreboard + Referee + Bench):
-
-1. The scorer's device runs the main Scoreboard app
-2. A WebSocket backend must be running (either locally on the same network or in the cloud)
-3. The scorer enables connections and sets a match PIN in the match settings
-4. Referee and Bench devices enter the PIN to connect
-
-For setup details, see the [Backend README](../backend/README.md).
-
-**Local network (no internet)**: All devices connect to the same WiFi. The backend runs on a laptop on the network.
-
-**Cloud relay**: The backend runs on Render or similar. All devices need internet.
-
-## Language Settings
-
-The app supports multiple languages:
-
-- English
-- French (Francais)
-- Italian (Italiano)
-- German (Deutsch)
-- Swiss German (Schweizerdeutsch)
-
-The app auto-detects your browser language. You can change the language manually in the app settings.
-
-## Data Backup & Export
-
-- **PDF scoresheet**: Generated at the end of each match. Can be downloaded or shared.
-- **Local storage**: All data persists in your browser's IndexedDB. Clearing browser data will delete match data.
-- **Cloud sync**: When connected to Supabase, match data is automatically backed up. If you lose local data, matches that were synced can be recovered.
+The language is in the header menu: English, German, Swiss German, French and Italian.

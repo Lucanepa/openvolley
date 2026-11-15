@@ -55,9 +55,12 @@ function connectionPinsOf(match, buildConnectionPins) {
  * @param {string|number} matchId the match (local id): its keys are kept per match
  * @param {object} data
  * @param {Date} [at] the time the file is written (its lastUpdated)
- * @param {{ keepConnectionPins?: boolean }} [options]
+ * @param {{ keepConnectionPins?: boolean, pinSource?: object }} [options]
+ *   pinSource: the match whose game and referee PIN seal the file when `data`
+ *   carries none (MatchEnd's ZIP: its export has them removed); they only make
+ *   the keys, the file's text stays as `data` has it
  */
-export async function backupFileText(matchId, data, at = new Date(), { keepConnectionPins = false } = {}) {
+export async function backupFileText(matchId, data, at = new Date(), { keepConnectionPins = false, pinSource = null } = {}) {
   const [{ serializeBackup }, { backupPins }, { buildConnectionPins }, sealer] = await Promise.all([
     import('./nativeBackup/engine'),
     import('./backupCrypto/sealer'),
@@ -65,15 +68,28 @@ export async function backupFileText(matchId, data, at = new Date(), { keepConne
     sessionSealer()
   ])
   const iso = at.toISOString()
+  // The sealer reads the PINs from data.match: from pinSource when data has none
+  const sealWith = pinSource && !backupPins(data?.match).length
+    ? { ...data, match: { ...(data?.match || {}), ...pinFieldsOf(pinSource) } }
+    : data
   // Only where a PIN encrypts the file (backupPins: the sealer's own rule)
   const carried = keepConnectionPins && backupPins(data?.match).length ? connectionPinsOf(data.match, buildConnectionPins) : {}
   const withPins = Object.keys(carried).length ? { ...data, [CARRIED_PINS]: carried } : null
-  const { text, encrypted } = await sealer.seal(matchId, data, serializeBackup(withPins || data).build(iso), iso)
+  const { text, encrypted } = await sealer.seal(matchId, sealWith, serializeBackup(withPins || data).build(iso), iso)
   if (withPins && !encrypted) {
     // never: the same rule chose both. A plain file never carries the PINs
-    return (await sealer.seal(matchId, data, serializeBackup(data).build(iso), iso)).text
+    return (await sealer.seal(matchId, sealWith, serializeBackup(data).build(iso), iso)).text
   }
   return text
+}
+
+/** The game and referee PIN fields of a match (backupPins reads these), nothing else. */
+function pinFieldsOf(match) {
+  const out = {}
+  for (const k of ['gamePin', 'game_pin', 'refereePin', 'referee_pin', 'connection_pins', 'connectionPins']) {
+    if (match?.[k] != null && match[k] !== '') out[k] = match[k]
+  }
+  return out
 }
 
 // The PIN keys a list of backups shares (one session's files have one salt):

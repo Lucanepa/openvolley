@@ -882,7 +882,8 @@ export default function ScoreboardOptionsModal({
                   value: mode,
                   // "Auto (Desktop)" wrapped in its segment (UI tour 14.11): the
                   // segment says Auto, the line below what it picked
-                  label: mode === 'auto' ? t('options.auto', 'Auto') : mode,
+                  // each segment in the app's language (it showed the raw mode word, 3.2.5 review)
+                  label: t(`options.${mode === 'phone' ? 'smartphone' : mode}`, mode),
                   title: modeDescriptions[mode]
                 }))}
                 onChange={(mode) => {
