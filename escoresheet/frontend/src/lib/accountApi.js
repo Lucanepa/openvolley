@@ -488,6 +488,14 @@ export const admin = {
   dataUpdate(table, { key, before, set }) {
     return apiRequest('PATCH', `/api/admin/data/tables/${enc(table)}/row`, { key, before, set })
   },
+  /** The SQL tab (super admins, lib/sqlWorkspace.js): the tables read mode sees, keys, value hints. */
+  sqlSchema({ refresh = false } = {}) {
+    return apiRequest('GET', `/api/admin/sql/schema${refresh ? '?refresh=1' : ''}`)
+  },
+  /** Run SQL. Write mode without `commit` is a preview (rolled back). Up to 15 s on the server. */
+  sqlRun({ sql, writeMode = false, commit = false }) {
+    return apiRequest('POST', '/api/admin/sql', { sql, write_mode: !!writeMode, commit: !!(writeMode && commit) }, { timeoutMs: 30000 })
+  },
   dataDelete(table, key) {
     return apiRequest('POST', `/api/admin/data/tables/${enc(table)}/row/delete`, { key, confirm: true })
   },

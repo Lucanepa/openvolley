@@ -1,6 +1,6 @@
-import { useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Activity, ArrowLeft, CircleHelp, ClipboardList, Database, FileText, House, KeyRound, Medal, ScrollText, Settings, ShieldCheck, Shirt, Trophy, Users } from 'lucide-react'
+import { Activity, ArrowLeft, CircleHelp, ClipboardList, Database, FileText, SquareTerminal, House, KeyRound, Medal, ScrollText, Settings, ShieldCheck, Shirt, Trophy, Users } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { ConsoleShell, ConsolePanel, RowListCards, cn, consoleHeaderBtn } from '../../ui'
 import { PageLoadGate, PageSpinner } from './common'
@@ -16,6 +16,8 @@ import ScoresheetsPanel from './ScoresheetsPanel'
 import AuditPanel from './AuditPanel'
 import ActivityPanel from './ActivityPanel'
 import DataPanel from './DataPanel'
+// the SQL tab brings the code editor (CodeMirror): loaded when the tab first opens
+const SqlPanel = lazy(() => import('./sql/SqlPanel'))
 import SavedTeamsPanel from './SavedTeamsPanel'
 import TournamentsPanel from './tournaments/TournamentsPanel'
 import NotificationsBell from './NotificationsBell'
@@ -61,7 +63,9 @@ const TABS = [
   // every table of the database, one row at a time (lib/dataAdmin.js): super
   // admins only (a generic editor can change any role); the OpenBeach brand's
   // tab list leaves it out
-  { id: 'data', icon: Database, superAdmin: true }
+  { id: 'data', icon: Database, superAdmin: true },
+  // a Postgres console (lib/sqlWorkspace.js): super admins only, like Data
+  { id: 'sql', icon: SquareTerminal, superAdmin: true }
 ]
 
 /**
@@ -249,6 +253,7 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
         {visited.has('activity') && <ConsolePanel id="activity" current={current}><PanelGate><ActivityPanel app={scope} initialMatch={(() => { try { return decodeURIComponent(routeOf('activity')) } catch { return routeOf('activity') } })()} /></PanelGate></ConsolePanel>}
         {visited.has('teams') && <ConsolePanel id="teams" current={current}><PanelGate><SavedTeamsPanel userId={user.id} sport={scope} {...pageProps('teams')} /></PanelGate></ConsolePanel>}
         {visited.has('data') && <ConsolePanel id="data" current={current}><PanelGate><DataPanel {...pageProps('data')} /></PanelGate></ConsolePanel>}
+        {visited.has('sql') && <ConsolePanel id="sql" current={current}><Suspense fallback={<PageSpinner />}><SqlPanel /></Suspense></ConsolePanel>}
         {visited.has('tournaments') && <ConsolePanel id="tournaments" current={current}><PanelGate><TournamentsPanel {...pageProps('tournaments')} /></PanelGate></ConsolePanel>}
         </RowListCards.Provider>
       </ConsoleShell>

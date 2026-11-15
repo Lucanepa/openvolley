@@ -16,6 +16,8 @@ const CLUB_ACTIONS = new Set(['club.create', 'club.update', 'club.delete', 'club
 const SAVED_TEAM_ACTIONS = new Set(['saved_teams.competition_delete', 'saved_teams.team_delete', 'saved_teams.roster'])
 // The Data tab (lib/dataAdmin.js): one row added, changed or deleted
 const DATA_ACTIONS = new Set(['data.insert', 'data.update', 'data.delete'])
+// The SQL tab (lib/sqlWorkspace.js): a query, a write preview or commit
+const SQL_ACTIONS = new Set(['sql.read', 'sql.write'])
 
 /** "club_rule.set" -> "Club rule set": an action this build has no label for yet reads as words, never as a code. */
 export function readableAction(action) {
@@ -112,6 +114,14 @@ export function auditDetailsLine(entry, opts = {}) {
     } else if (d.values && typeof d.values === 'object') {
       parts.push(Object.keys(d.values).join(', '))
     }
+    return parts.join(' · ')
+  }
+  // whether a write was saved, the counts, then the SQL itself (its literals masked as '?')
+  if (SQL_ACTIONS.has(entry?.action)) {
+    if (entry.action === 'sql.write') parts.push(d.committed ? tr('manage.sql.saved', 'Saved') : tr('manage.sql.preview', 'Preview'))
+    if (Number.isFinite(d.affected)) parts.push(`${d.affected}`)
+    else if (Number.isFinite(d.rows)) parts.push(tr('manage.sql.rows', `${d.rows} rows`, { count: d.rows }))
+    if (d.sql) parts.push(String(d.sql).replace(/\s+/g, ' ').slice(0, 200))
     return parts.join(' · ')
   }
   if (SAVED_TEAM_ACTIONS.has(entry?.action)) {

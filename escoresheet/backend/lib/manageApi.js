@@ -32,6 +32,7 @@
  *   GET    /api/admin/approvals[?app=indoor|beach]   isAdmin
  *   *      /api/admin/data/*                         isSuperAdmin: the Data tab, every table of the
  *                                                    public schema one row at a time (lib/dataAdmin.js)
+ *   GET    /api/admin/sql/schema, POST /api/admin/sql isSuperAdmin: the SQL tab (lib/sqlWorkspace.js)
  *   GET    /api/admin/matches/:id/revisions          isAdmin: undone / edited events (db/015)
  *   GET    /api/admin/matches/:id/closures           isAdmin: the closed record of each reopen, and the re-close (db/039)
  *   GET    /api/admin/matches/:id/pin                isAdmin: the match's game PIN (audited match.pin_viewed);
@@ -151,6 +152,8 @@ const METHOD_NOT_ALLOWED = () => fail(405, 'OV_METHOD_NOT_ALLOWED', 'Method not 
 const REOPEN_RE = /^\/api\/admin\/matches\/[^/]+\/reopen$/
 // The Data tab (lib/dataAdmin.js): /api/admin/data/tables[/<table>[/rows|/row|/row/delete]]
 const DATA_RE = /^\/api\/admin\/data(\/|$)/
+// The SQL tab (lib/sqlWorkspace.js): /api/admin/sql, /api/admin/sql/schema
+const SQL_RE = /^\/api\/admin\/sql(\/|$)/
 const DATA_PATH_RE = /^\/api\/admin\/data\/tables(?:\/([a-z_][a-z0-9_]{0,62})(\/rows|\/row|\/row\/delete)?)?$/
 const beachManager = (access) => accessForSport(access, 'beach').canManageTeams === true
 const ID = '([0-9a-fA-F-]{36})'
@@ -178,7 +181,7 @@ export function manageFamilyOf (pathname) {
   return null
 }
 
-export function createManageApi ({ accounts, savedTeams, beach = null, approvals = null, revisions = null, activity = null, scoresheets = null, clubs = null, finalMail = null, teams = null, licences = null, requests = null, notices = null, clubApi = null, dataAdmin = null }) {
+export function createManageApi ({ accounts, savedTeams, beach = null, approvals = null, revisions = null, activity = null, scoresheets = null, clubs = null, finalMail = null, teams = null, licences = null, requests = null, notices = null, clubApi = null, dataAdmin = null, sqlWorkspace = null }) {
   // approvals?.x, or 503 when the module is not there
   const ap = (name) => (args) => (approvals && typeof approvals[name] === 'function' ? approvals[name](args) : APPROVALS_OFF())
   const q = (query, k) => {
@@ -444,6 +447,17 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     return notFound()
   }
 
+  // The SQL tab (lib/sqlWorkspace.js): super admins only, as the Data tab
+  async function sqlRoute ({ method, pathname, query, body, user, access }) {
+    if (!access?.isSuperAdmin) return FORBIDDEN()
+    if (!sqlWorkspace) return notFound()
+    if (pathname === '/api/admin/sql/schema') {
+      return method === 'GET' ? sqlWorkspace.schema({ force: q(query, 'refresh') === '1' }) : METHOD_NOT_ALLOWED()
+    }
+    if (pathname === '/api/admin/sql') return method === 'POST' ? sqlWorkspace.run({ actorId: user.id, body }) : METHOD_NOT_ALLOWED()
+    return notFound()
+  }
+
   /** The role check of a route: null when allowed, else the 403 answer. */
   function refuse (need, access) {
     switch (need) {
@@ -477,6 +491,7 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     if (early) return early
     if (family === 'beach') return beach ? beach.route({ method, pathname, query, body, user, access }) : notFound()
     if (DATA_RE.test(pathname)) return dataRoute({ method, pathname, query, body, user, access })
+    if (SQL_RE.test(pathname)) return sqlRoute({ method, pathname, query, body, user, access })
     let pathKnown = false
     for (const [m, re, need, handler] of routes) {
       const match = re.exec(pathname)
