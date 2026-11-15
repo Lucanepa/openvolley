@@ -273,9 +273,9 @@ const cleanVar = (v) => (typeof v === 'boolean'
 // The sign-up notice: who signed up, and what it asks for, in the mail's language
 const SIGNUP_KINDS = Object.freeze({
   en: { scorer: 'Scorer', referee: 'Referee', team_manager: 'Team manager / coach', club_manager: 'Club manager', asks: 'Asks for:', none: 'It asks for no role yet: give it one, or delete the account, under Accounts.' },
-  de: { scorer: 'Schreiber', referee: 'Schiedsrichter', team_manager: 'Teamverantwortliche/r / Trainer', club_manager: 'Vereinsverantwortliche/r', asks: 'Anfrage:', none: 'Das Konto fragt noch nach keiner Rolle: geben Sie ihm unter Konten eine, oder löschen Sie es.' },
-  fr: { scorer: 'Marqueur', referee: 'Arbitre', team_manager: 'Responsable d’équipe / entraîneur', club_manager: 'Responsable du club', asks: 'Demande :', none: 'Le compte ne demande encore aucun rôle : donnez-lui-en un, ou supprimez-le, sous Comptes.' },
-  it: { scorer: 'Segnapunti', referee: 'Arbitro', team_manager: 'Responsabile della squadra / allenatore', club_manager: 'Responsabile della società', asks: 'Richiesta:', none: 'L’account non chiede ancora nessun ruolo: gliene dia uno, o lo elimini, in Account.' }
+  de: { scorer: 'Schreiber', referee: 'Schiedsrichter', team_manager: 'Teamverantwortliche/r / Trainer', club_manager: 'Vereinsverantwortliche/r', asks: 'Anfrage:', none: 'Das Konto fragt noch nach keiner Rolle: gib ihm unter Konten eine, oder lösche es.' },
+  fr: { scorer: 'Marqueur', referee: 'Arbitre', team_manager: 'Responsable d’équipe / entraîneur', club_manager: 'Responsable du club', asks: 'Demande :', none: 'Le compte ne demande encore aucun rôle : donne-lui-en un, ou supprime-le, sous Comptes.' },
+  it: { scorer: 'Segnapunti', referee: 'Arbitro', team_manager: 'Responsabile della squadra / allenatore', club_manager: 'Responsabile della società', asks: 'Richiesta:', none: 'L’account non chiede ancora nessun ruolo: dagliene uno, o eliminalo, in Account.' }
 })
 const signupWho = (v) => (v.name ? `${v.name} (${v.email})` : v.email)
 function signupParts(v, lang) {
@@ -299,21 +299,21 @@ const T = {
     },
     de: {
       subject: 'OpenVolley-Passwort zurücksetzen',
-      before: ['Hallo', 'Jemand möchte das Passwort Ihres OpenVolley-Kontos zurücksetzen. Wenn Sie das waren, legen Sie hier ein neues Passwort fest. Der Link funktioniert einmal und läuft nach 60 Minuten ab.'],
+      before: ['Hallo', 'Jemand möchte das Passwort deines OpenVolley-Kontos zurücksetzen. Wenn du das warst, lege hier ein neues Passwort fest. Der Link funktioniert einmal und läuft nach 60 Minuten ab.'],
       button: 'Neues Passwort festlegen',
-      after: ['Wenn Sie das nicht waren, ignorieren Sie diese E-Mail: Ihr Passwort bleibt unverändert.']
+      after: ['Wenn du das nicht warst, ignoriere diese E-Mail: Dein Passwort bleibt unverändert.']
     },
     fr: {
-      subject: 'Réinitialiser votre mot de passe OpenVolley',
-      before: ['Bonjour,', 'quelqu’un a demandé à réinitialiser le mot de passe de votre compte OpenVolley. Si c’était vous, choisissez un nouveau mot de passe ici. Le lien fonctionne une seule fois et expire dans 60 minutes.'],
+      subject: 'Réinitialiser ton mot de passe OpenVolley',
+      before: ['Bonjour,', 'quelqu’un a demandé à réinitialiser le mot de passe de ton compte OpenVolley. Si c’était toi, choisis un nouveau mot de passe ici. Le lien fonctionne une seule fois et expire dans 60 minutes.'],
       button: 'Choisir un nouveau mot de passe',
-      after: ['Si vous n’avez rien demandé, ignorez cet e-mail : votre mot de passe reste inchangé.']
+      after: ['Si tu n’as rien demandé, ignore cet e-mail : ton mot de passe reste inchangé.']
     },
     it: {
       subject: 'Reimposta la password di OpenVolley',
-      before: ['Buongiorno,', 'qualcuno ha chiesto di reimpostare la password del suo account OpenVolley. Se è stato lei, scelga qui una nuova password. Il link funziona una sola volta e scade tra 60 minuti.'],
+      before: ['Buongiorno,', 'qualcuno ha chiesto di reimpostare la password del tuo account OpenVolley. Se sei stato tu, scegli qui una nuova password. Il link funziona una sola volta e scade tra 60 minuti.'],
       button: 'Scegliere una nuova password',
-      after: ['Se non ha chiesto nulla, ignori questa e-mail: la sua password resta invariata.']
+      after: ['Se non hai chiesto nulla, ignora questa e-mail: la tua password resta invariata.']
     }
   },
   confirm: {
@@ -325,21 +325,21 @@ const T = {
     },
     de: {
       subject: 'E-Mail-Adresse für OpenVolley bestätigen',
-      before: ['Hallo', 'Danke, dass Sie ein OpenVolley-Konto erstellt haben. Bitte bestätigen Sie, dass diese E-Mail-Adresse Ihnen gehört. Der Link funktioniert einmal und läuft nach 24 Stunden ab.'],
+      before: ['Hallo', 'Danke, dass du ein OpenVolley-Konto erstellt hast. Bitte bestätige, dass diese E-Mail-Adresse dir gehört. Der Link funktioniert einmal und läuft nach 24 Stunden ab.'],
       button: 'E-Mail-Adresse bestätigen',
-      after: ['Wenn Sie kein Konto erstellt haben, ignorieren Sie diese E-Mail.']
+      after: ['Wenn du kein Konto erstellt hast, ignoriere diese E-Mail.']
     },
     fr: {
-      subject: 'Confirmez votre adresse e-mail pour OpenVolley',
-      before: ['Bonjour,', 'merci d’avoir créé un compte OpenVolley. Veuillez confirmer que cette adresse e-mail est bien la vôtre. Le lien fonctionne une seule fois et expire dans 24 heures.'],
+      subject: 'Confirme ton adresse e-mail pour OpenVolley',
+      before: ['Bonjour,', 'merci d’avoir créé un compte OpenVolley. Confirme que cette adresse e-mail est bien la tienne. Le lien fonctionne une seule fois et expire dans 24 heures.'],
       button: 'Confirmer mon adresse e-mail',
-      after: ['Si vous n’avez pas créé de compte, ignorez cet e-mail.']
+      after: ['Si tu n’as pas créé de compte, ignore cet e-mail.']
     },
     it: {
-      subject: 'Confermi il suo indirizzo e-mail per OpenVolley',
-      before: ['Buongiorno,', 'grazie per aver creato un account OpenVolley. Confermi che questo indirizzo e-mail è suo. Il link funziona una sola volta e scade tra 24 ore.'],
+      subject: 'Conferma il tuo indirizzo e-mail per OpenVolley',
+      before: ['Buongiorno,', 'grazie per aver creato un account OpenVolley. Conferma che questo indirizzo e-mail è tuo. Il link funziona una sola volta e scade tra 24 ore.'],
       button: 'Confermare l’indirizzo e-mail',
-      after: ['Se non ha creato un account, ignori questa e-mail.']
+      after: ['Se non hai creato un account, ignora questa e-mail.']
     }
   },
   password_changed: {
@@ -350,22 +350,22 @@ const T = {
       after: ['If that was not you, reset your password again right away and tell your club admin.']
     },
     de: {
-      subject: 'Ihr OpenVolley-Passwort wurde geändert',
-      before: ['Hallo', 'Das Passwort Ihres OpenVolley-Kontos wurde soeben über einen Zurücksetz-Link geändert, und alle Geräte wurden abgemeldet.'],
+      subject: 'Dein OpenVolley-Passwort wurde geändert',
+      before: ['Hallo', 'Das Passwort deines OpenVolley-Kontos wurde soeben über einen Zurücksetz-Link geändert, und alle Geräte wurden abgemeldet.'],
       button: null,
-      after: ['Wenn Sie das nicht waren, setzen Sie Ihr Passwort sofort erneut zurück und informieren Sie den Admin Ihres Vereins.']
+      after: ['Wenn du das nicht warst, setze dein Passwort sofort erneut zurück und informiere den Admin deines Vereins.']
     },
     fr: {
-      subject: 'Votre mot de passe OpenVolley a été modifié',
-      before: ['Bonjour,', 'le mot de passe de votre compte OpenVolley vient d’être modifié avec un lien de réinitialisation, et tous les appareils ont été déconnectés.'],
+      subject: 'Ton mot de passe OpenVolley a été modifié',
+      before: ['Bonjour,', 'le mot de passe de ton compte OpenVolley vient d’être modifié avec un lien de réinitialisation, et tous les appareils ont été déconnectés.'],
       button: null,
-      after: ['Si ce n’était pas vous, réinitialisez immédiatement votre mot de passe et prévenez l’admin de votre club.']
+      after: ['Si ce n’était pas toi, réinitialise immédiatement ton mot de passe et préviens l’admin de ton club.']
     },
     it: {
-      subject: 'La sua password di OpenVolley è stata modificata',
-      before: ['Buongiorno,', 'la password del suo account OpenVolley è appena stata modificata con un link di reimpostazione e tutti i dispositivi sono stati disconnessi.'],
+      subject: 'La tua password di OpenVolley è stata modificata',
+      before: ['Buongiorno,', 'la password del tuo account OpenVolley è appena stata modificata con un link di reimpostazione e tutti i dispositivi sono stati disconnessi.'],
       button: null,
-      after: ['Se non è stato lei, reimposti subito la password e avvisi l’admin del suo club.']
+      after: ['Se non sei stato tu, reimposta subito la password e avvisa l’admin del tuo club.']
     }
   },
   // An admin moved the account to another address (lib/accounts.js
@@ -378,22 +378,22 @@ const T = {
       after: ['If you did not ask for this, tell your club admin right away.']
     },
     de: {
-      subject: 'Die E-Mail-Adresse Ihres OpenVolley-Kontos wurde geändert',
-      before: ['Hallo', 'Ein Admin hat soeben die E-Mail-Adresse Ihres OpenVolley-Kontos geändert. Es ist nicht mehr diese Adresse, und alle Geräte wurden abgemeldet.'],
+      subject: 'Die E-Mail-Adresse deines OpenVolley-Kontos wurde geändert',
+      before: ['Hallo', 'Ein Admin hat soeben die E-Mail-Adresse deines OpenVolley-Kontos geändert. Es ist nicht mehr diese Adresse, und alle Geräte wurden abgemeldet.'],
       button: null,
-      after: ['Wenn Sie das nicht verlangt haben, informieren Sie sofort den Admin Ihres Vereins.']
+      after: ['Wenn du das nicht verlangt hast, informiere sofort den Admin deines Vereins.']
     },
     fr: {
-      subject: 'L’adresse e-mail de votre compte OpenVolley a été modifiée',
-      before: ['Bonjour,', 'un admin vient de modifier l’adresse e-mail de votre compte OpenVolley. Ce n’est plus cette adresse, et tous les appareils ont été déconnectés.'],
+      subject: 'L’adresse e-mail de ton compte OpenVolley a été modifiée',
+      before: ['Bonjour,', 'un admin vient de modifier l’adresse e-mail de ton compte OpenVolley. Ce n’est plus cette adresse, et tous les appareils ont été déconnectés.'],
       button: null,
-      after: ['Si vous ne l’avez pas demandé, prévenez immédiatement l’admin de votre club.']
+      after: ['Si tu ne l’as pas demandé, préviens immédiatement l’admin de ton club.']
     },
     it: {
-      subject: 'L’indirizzo e-mail del suo account OpenVolley è stato modificato',
-      before: ['Buongiorno,', 'un admin ha appena modificato l’indirizzo e-mail del suo account OpenVolley. Non è più questo indirizzo e tutti i dispositivi sono stati disconnessi.'],
+      subject: 'L’indirizzo e-mail del tuo account OpenVolley è stato modificato',
+      before: ['Buongiorno,', 'un admin ha appena modificato l’indirizzo e-mail del tuo account OpenVolley. Non è più questo indirizzo e tutti i dispositivi sono stati disconnessi.'],
       button: null,
-      after: ['Se non l’ha chiesto lei, avvisi subito l’admin del suo club.']
+      after: ['Se non l’hai chiesto tu, avvisa subito l’admin del tuo club.']
     }
   },
   // A passkey was added (lib/auth.js passkeyRegister). vars: device ("iPhone ·
@@ -407,22 +407,22 @@ const T = {
       after: ['If that was not you, remove it under Profile → Passkeys, reset your password right away (that removes every passkey) and tell your club admin.']
     }),
     de: (v) => ({
-      subject: 'Ihrem OpenVolley-Konto wurde ein Passkey hinzugefügt',
-      before: ['Hallo', `Ihrem OpenVolley-Konto wurde soeben ein Passkey (Anmeldung mit Fingerabdruck, Gesicht oder Geräte-PIN) hinzugefügt, auf: ${v.device}.`],
+      subject: 'Deinem OpenVolley-Konto wurde ein Passkey hinzugefügt',
+      before: ['Hallo', `Deinem OpenVolley-Konto wurde soeben ein Passkey (Anmeldung mit Fingerabdruck, Gesicht oder Geräte-PIN) hinzugefügt, auf: ${v.device}.`],
       button: null,
-      after: ['Wenn Sie das nicht waren, entfernen Sie ihn unter Profil → Passkeys, setzen Sie Ihr Passwort sofort zurück (das entfernt alle Passkeys) und informieren Sie den Admin Ihres Vereins.']
+      after: ['Wenn du das nicht warst, entferne ihn unter Profil → Passkeys, setze dein Passwort sofort zurück (das entfernt alle Passkeys) und informiere den Admin deines Vereins.']
     }),
     fr: (v) => ({
-      subject: 'Une clé d’accès a été ajoutée à votre compte OpenVolley',
-      before: ['Bonjour,', `une clé d’accès (connexion par empreinte digitale, visage ou code de l’appareil) vient d’être ajoutée à votre compte OpenVolley, sur : ${v.device}.`],
+      subject: 'Une clé d’accès a été ajoutée à ton compte OpenVolley',
+      before: ['Bonjour,', `une clé d’accès (connexion par empreinte digitale, visage ou code de l’appareil) vient d’être ajoutée à ton compte OpenVolley, sur : ${v.device}.`],
       button: null,
-      after: ['Si ce n’était pas vous, supprimez-la sous Profil → Clés d’accès, réinitialisez immédiatement votre mot de passe (cela supprime toutes les clés d’accès) et prévenez l’admin de votre club.']
+      after: ['Si ce n’était pas toi, supprime-la sous Profil → Clés d’accès, réinitialise immédiatement ton mot de passe (cela supprime toutes les clés d’accès) et préviens l’admin de ton club.']
     }),
     it: (v) => ({
-      subject: 'Al suo account OpenVolley è stata aggiunta una passkey',
-      before: ['Buongiorno,', `al suo account OpenVolley è appena stata aggiunta una passkey (accesso con impronta, volto o PIN del dispositivo), su: ${v.device}.`],
+      subject: 'Al tuo account OpenVolley è stata aggiunta una passkey',
+      before: ['Buongiorno,', `al tuo account OpenVolley è appena stata aggiunta una passkey (accesso con impronta, volto o PIN del dispositivo), su: ${v.device}.`],
       button: null,
-      after: ['Se non è stato lei, la rimuova in Profilo → Passkey, reimposti subito la password (così vengono rimosse tutte le passkey) e avvisi l’admin del suo club.']
+      after: ['Se non sei stato tu, rimuovila in Profilo → Passkey, reimposta subito la password (così vengono rimosse tutte le passkey) e avvisa l’admin del tuo club.']
     })
   },
   // Approval notices (lib/approvals.js). vars: slot, game, result, id, time,
@@ -449,8 +449,8 @@ const T = {
         ...signupParts(v, 'de')],
       button: 'Im Manager öffnen',
       after: [v.admin
-        ? 'Sie erhalten diese E-Mail als Admin von OpenVolley. Erst eine Freigabe gibt dem Konto Rechte.'
-        : 'Sie erhalten diese E-Mail, weil Sie diese Anfragen für Ihren Verein oder Ihr Team freigeben. Erst eine Freigabe gibt dem Konto Rechte.']
+        ? 'Du erhältst diese E-Mail als Admin von OpenVolley. Erst eine Freigabe gibt dem Konto Rechte.'
+        : 'Du erhältst diese E-Mail, weil du diese Anfragen für deinen Verein oder dein Team freigibst. Erst eine Freigabe gibt dem Konto Rechte.']
     }),
     fr: (v) => ({
       subject: `Nouvelle inscription OpenVolley`,
@@ -458,8 +458,8 @@ const T = {
         ...signupParts(v, 'fr')],
       button: 'Ouvrir dans le manager',
       after: [v.admin
-        ? 'Vous recevez cet e-mail en tant qu’admin d’OpenVolley. Rien n’est accordé avant une approbation.'
-        : 'Vous recevez cet e-mail parce que vous approuvez ces demandes pour votre club ou votre équipe. Rien n’est accordé avant une approbation.']
+        ? 'Tu reçois cet e-mail en tant qu’admin d’OpenVolley. Rien n’est accordé avant une approbation.'
+        : 'Tu reçois cet e-mail parce que tu approuves ces demandes pour ton club ou ton équipe. Rien n’est accordé avant une approbation.']
     }),
     it: (v) => ({
       subject: `Nuova registrazione OpenVolley`,
@@ -467,8 +467,8 @@ const T = {
         ...signupParts(v, 'it')],
       button: 'Aprire nel manager',
       after: [v.admin
-        ? 'Riceve questa e-mail come admin di OpenVolley. Nulla viene concesso prima di un’approvazione.'
-        : 'Riceve questa e-mail perché approva queste richieste per la sua società o squadra. Nulla viene concesso prima di un’approvazione.']
+        ? 'Ricevi questa e-mail come admin di OpenVolley. Nulla viene concesso prima di un’approvazione.'
+        : 'Ricevi questa e-mail perché approvi queste richieste per la tua società o squadra. Nulla viene concesso prima di un’approvazione.']
     })
   },
   // A team manager proposed someone as team manager of its team (db/036,
@@ -491,8 +491,8 @@ const T = {
         'Das Konto bekommt das Team erst, wenn eine vereinsverantwortliche Person oder ein Admin die Anfrage freigibt.'],
       button: 'Im Manager öffnen',
       after: [v.admin
-        ? 'Sie erhalten diese E-Mail als Admin von OpenVolley: Der Verein hat keine Vereinsverantwortlichen.'
-        : 'Sie erhalten diese E-Mail als Vereinsverantwortliche/r. Erst eine Freigabe gibt dem Konto Rechte.']
+        ? 'Du erhältst diese E-Mail als Admin von OpenVolley: Der Verein hat keine Vereinsverantwortlichen.'
+        : 'Du erhältst diese E-Mail als Vereinsverantwortliche/r. Erst eine Freigabe gibt dem Konto Rechte.']
     }),
     fr: (v) => ({
       subject: `Confirmer un responsable d’équipe`,
@@ -500,8 +500,8 @@ const T = {
         'Le compte ne reçoit l’équipe qu’après l’approbation de la demande par un responsable du club ou un admin.'],
       button: 'Ouvrir dans le manager',
       after: [v.admin
-        ? 'Vous recevez cet e-mail en tant qu’admin d’OpenVolley : le club n’a pas de responsable.'
-        : 'Vous recevez cet e-mail en tant que responsable du club. Rien n’est accordé avant une approbation.']
+        ? 'Tu reçois cet e-mail en tant qu’admin d’OpenVolley : le club n’a pas de responsable.'
+        : 'Tu reçois cet e-mail en tant que responsable du club. Rien n’est accordé avant une approbation.']
     }),
     it: (v) => ({
       subject: `Confermare un responsabile della squadra`,
@@ -509,8 +509,8 @@ const T = {
         'L’account riceve la squadra solo dopo che un responsabile della società o un admin ha approvato la richiesta.'],
       button: 'Aprire nel manager',
       after: [v.admin
-        ? 'Riceve questa e-mail come admin di OpenVolley: la società non ha responsabili.'
-        : 'Riceve questa e-mail come responsabile della società. Nulla viene concesso prima di un’approvazione.']
+        ? 'Ricevi questa e-mail come admin di OpenVolley: la società non ha responsabili.'
+        : 'Ricevi questa e-mail come responsabile della società. Nulla viene concesso prima di un’approvazione.']
     })
   },
   // A club manager link (lib/clubs.js inviteManager, db/029), to someone an
@@ -526,24 +526,24 @@ const T = {
     }),
     de: (v) => ({
       subject: `Einladung: ${v.club} auf OpenVolley verwalten`,
-      before: ['Hallo', `${v.inviter || 'Ein OpenVolley-Admin'} lädt Sie ein, ${v.club} auf OpenVolley als Vereinsverantwortliche/r zu verwalten: Sie erstellen die Einladungscodes des Vereins, geben seine Registrierungen frei und betreuen seine Mitglieder und Teams.`,
-        `Öffnen Sie den Link und melden Sie sich an oder erstellen Sie ein Konto. Der Link funktioniert einmal und läuft nach ${v.days} Tagen ab.`],
+      before: ['Hallo', `${v.inviter || 'Ein OpenVolley-Admin'} lädt dich ein, ${v.club} auf OpenVolley als Vereinsverantwortliche/r zu verwalten: Du erstellst die Einladungscodes des Vereins, gibst seine Registrierungen frei und betreust seine Mitglieder und Teams.`,
+        `Öffne den Link und melde dich an oder erstelle ein Konto. Der Link funktioniert einmal und läuft nach ${v.days} Tagen ab.`],
       button: 'Vereinsverantwortliche/r werden',
-      after: ['Wenn Sie das nicht erwartet haben, ignorieren Sie diese E-Mail: Es ändert sich nichts.']
+      after: ['Wenn du das nicht erwartet hast, ignoriere diese E-Mail: Es ändert sich nichts.']
     }),
     fr: (v) => ({
       subject: `Invitation à gérer ${v.club} sur OpenVolley`,
-      before: ['Bonjour,', `${v.inviter || 'Un admin d’OpenVolley'} vous invite à devenir responsable du club ${v.club} sur OpenVolley : vous créez les codes d’invitation du club, approuvez ses inscriptions et suivez ses membres et ses équipes.`,
-        `Ouvrez le lien, puis connectez-vous ou créez un compte. Le lien fonctionne une seule fois et expire dans ${v.days} jours.`],
+      before: ['Bonjour,', `${v.inviter || 'Un admin d’OpenVolley'} t’invite à devenir responsable du club ${v.club} sur OpenVolley : tu crées les codes d’invitation du club, approuves ses inscriptions et suis ses membres et ses équipes.`,
+        `Ouvre le lien, puis connecte-toi ou crée un compte. Le lien fonctionne une seule fois et expire dans ${v.days} jours.`],
       button: 'Devenir responsable du club',
-      after: ['Si vous ne vous y attendiez pas, ignorez cet e-mail : rien ne change.']
+      after: ['Si tu ne t’y attendais pas, ignore cet e-mail : rien ne change.']
     }),
     it: (v) => ({
       subject: `Invito a gestire ${v.club} su OpenVolley`,
-      before: ['Buongiorno,', `${v.inviter || 'Un admin di OpenVolley'} la invita a diventare responsabile della società ${v.club} su OpenVolley: crea i codici d’invito della società, approva le sue registrazioni e segue i suoi membri e le sue squadre.`,
-        `Apra il link, poi acceda o crei un account. Il link funziona una sola volta e scade tra ${v.days} giorni.`],
+      before: ['Buongiorno,', `${v.inviter || 'Un admin di OpenVolley'} ti invita a diventare responsabile della società ${v.club} su OpenVolley: crei i codici d’invito della società, approvi le sue registrazioni e segui i suoi membri e le sue squadre.`,
+        `Apri il link, poi accedi o crea un account. Il link funziona una sola volta e scade tra ${v.days} giorni.`],
       button: 'Diventare responsabile della società',
-      after: ['Se non se lo aspettava, ignori questa e-mail: non cambia nulla.']
+      after: ['Se non te lo aspettavi, ignora questa e-mail: non cambia nulla.']
     })
   },
   approval: {
@@ -555,25 +555,25 @@ const T = {
       after: ['If that was not you: in OpenVolley, open your profile, Approval PIN, and undo the approval while the match is open. Then change your PIN and tell your club admin.']
     }),
     de: (v) => ({
-      subject: `Ihre Genehmigungs-PIN wurde verwendet: ${v.game}`,
-      before: ['Hallo', `Mit Ihrer OpenVolley-Genehmigungs-PIN wurde soeben ein Spielresultat als ${SLOT_LABELS.de[v.slot] || v.slot} genehmigt.`,
+      subject: `Deine Genehmigungs-PIN wurde verwendet: ${v.game}`,
+      before: ['Hallo', `Mit deiner OpenVolley-Genehmigungs-PIN wurde soeben ein Spielresultat als ${SLOT_LABELS.de[v.slot] || v.slot} genehmigt.`,
         `Spiel: ${v.game}`, `Resultat: ${v.result}`, `Genehmigt: ${v.time} · ID ${v.id}`, ...(v.sender ? [`Gesendet vom Konto von ${v.sender}.`] : [])],
       button: 'OpenVolley öffnen',
-      after: ['Wenn Sie das nicht waren: Öffnen Sie in OpenVolley Ihr Profil, Genehmigungs-PIN, und machen Sie die Genehmigung rückgängig, solange das Spiel offen ist. Ändern Sie danach Ihre PIN und informieren Sie den Admin Ihres Vereins.']
+      after: ['Wenn du das nicht warst: Öffne in OpenVolley dein Profil, Genehmigungs-PIN, und mache die Genehmigung rückgängig, solange das Spiel offen ist. Ändere danach deine PIN und informiere den Admin deines Vereins.']
     }),
     fr: (v) => ({
-      subject: `Votre PIN d’approbation a été utilisé : ${v.game}`,
-      before: ['Bonjour,', `votre PIN d’approbation OpenVolley vient d’être utilisé pour approuver un résultat en tant que ${SLOT_LABELS.fr[v.slot] || v.slot}.`,
+      subject: `Ton PIN d’approbation a été utilisé : ${v.game}`,
+      before: ['Bonjour,', `ton PIN d’approbation OpenVolley vient d’être utilisé pour approuver un résultat en tant que ${SLOT_LABELS.fr[v.slot] || v.slot}.`,
         `Match : ${v.game}`, `Résultat : ${v.result}`, `Approuvé : ${v.time} · ID ${v.id}`, ...(v.sender ? [`Envoyé depuis le compte de ${v.sender}.`] : [])],
       button: 'Ouvrir OpenVolley',
-      after: ['Si ce n’était pas vous : dans OpenVolley, ouvrez votre profil, PIN d’approbation, et annulez l’approbation tant que le match est ouvert. Changez ensuite votre PIN et prévenez l’admin de votre club.']
+      after: ['Si ce n’était pas toi : dans OpenVolley, ouvre ton profil, PIN d’approbation, et annule l’approbation tant que le match est ouvert. Change ensuite ton PIN et préviens l’admin de ton club.']
     }),
     it: (v) => ({
-      subject: `Il suo PIN di approvazione è stato usato: ${v.game}`,
-      before: ['Buongiorno,', `il suo PIN di approvazione OpenVolley è appena stato usato per approvare un risultato come ${SLOT_LABELS.it[v.slot] || v.slot}.`,
+      subject: `Il tuo PIN di approvazione è stato usato: ${v.game}`,
+      before: ['Buongiorno,', `il tuo PIN di approvazione OpenVolley è appena stato usato per approvare un risultato come ${SLOT_LABELS.it[v.slot] || v.slot}.`,
         `Partita: ${v.game}`, `Risultato: ${v.result}`, `Approvato: ${v.time} · ID ${v.id}`, ...(v.sender ? [`Inviato dall’account di ${v.sender}.`] : [])],
       button: 'Aprire OpenVolley',
-      after: ['Se non è stato lei: in OpenVolley apra il suo profilo, PIN di approvazione, e annulli l’approvazione finché la partita è aperta. Poi cambi il PIN e avvisi l’admin del suo club.']
+      after: ['Se non sei stato tu: in OpenVolley apri il tuo profilo, PIN di approvazione, e annulla l’approvazione finché la partita è aperta. Poi cambia il PIN e avvisa l’admin del tuo club.']
     })
   },
   // The final scoresheet (lib/finalMail.js), the PDF attached. vars: teams,
@@ -594,28 +594,28 @@ const T = {
       subject: `${v.corrected ? 'Korrigiertes Matchblatt' : 'Matchblatt'}: ${v.teams}`,
       before: ['Hallo', v.pdf === false
         ? `Dieses Spiel ist beendet, sein ${v.corrected ? 'korrigiertes ' : ''}Resultat ist definitiv. Das PDF des Matchblatts ist noch nicht auf dem Server angekommen: Es folgt in einer weiteren E-Mail, sobald es da ist.`
-        : `Im Anhang finden Sie das ${v.corrected ? 'korrigierte ' : ''}fertige Matchblatt dieses Spiels${v.late ? ': Es fehlte in der E-Mail mit dem Resultat' : ''}.`,
+        : `Im Anhang findest du das ${v.corrected ? 'korrigierte ' : ''}fertige Matchblatt dieses Spiels${v.late ? ': Es fehlte in der E-Mail mit dem Resultat' : ''}.`,
         `Spiel: ${v.teams}`, ...(v.game ? [`Spielnummer: ${v.game}`] : []), `Datum: ${v.date}`, ...(v.result ? [`Resultat: ${v.result}`] : [])],
       button: null,
-      after: ['Sie erhalten diese E-Mail als Offizielle/r des Spiels oder als Kontakt eines der beiden Vereine. Fragen zum Spiel richten Sie an den Veranstalter der Meisterschaft.']
+      after: ['Du erhältst diese E-Mail als Offizielle/r des Spiels oder als Kontakt eines der beiden Vereine. Fragen zum Spiel richtest du an den Veranstalter der Meisterschaft.']
     }),
     fr: (v) => ({
       subject: `${v.corrected ? 'Feuille de match corrigée' : 'Feuille de match'} : ${v.teams}`,
       before: ['Bonjour,', v.pdf === false
         ? `ce match est terminé et son résultat ${v.corrected ? 'corrigé ' : ''}est définitif. Le PDF de sa feuille de match n’est pas encore arrivé sur le serveur : il suivra dans un autre e-mail dès qu’il sera là.`
-        : `vous trouverez en pièce jointe la feuille de match ${v.corrected ? 'corrigée ' : ''}finale de ce match${v.late ? ' : elle manquait dans l’e-mail du résultat' : ''}.`,
+        : `tu trouveras en pièce jointe la feuille de match ${v.corrected ? 'corrigée ' : ''}finale de ce match${v.late ? ' : elle manquait dans l’e-mail du résultat' : ''}.`,
         `Match : ${v.teams}`, ...(v.game ? [`Numéro : ${v.game}`] : []), `Date : ${v.date}`, ...(v.result ? [`Résultat : ${v.result}`] : [])],
       button: null,
-      after: ['Vous recevez cet e-mail en tant qu’officiel du match ou contact de l’un de ses clubs. Les questions sur le match vont à l’organisateur du championnat.']
+      after: ['Tu reçois cet e-mail en tant qu’officiel du match ou contact de l’un de ses clubs. Les questions sur le match vont à l’organisateur du championnat.']
     }),
     it: (v) => ({
       subject: `${v.corrected ? 'Referto corretto' : 'Referto'}: ${v.teams}`,
       before: ['Buongiorno,', v.pdf === false
         ? `questa partita è terminata e il suo risultato ${v.corrected ? 'corretto ' : ''}è definitivo. Il PDF del referto non è ancora arrivato sul server: seguirà in un’altra e-mail appena ci sarà.`
-        : `in allegato trova il referto ${v.corrected ? 'corretto ' : ''}finale di questa partita${v.late ? ': mancava nell’e-mail del risultato' : ''}.`,
+        : `in allegato trovi il referto ${v.corrected ? 'corretto ' : ''}finale di questa partita${v.late ? ': mancava nell’e-mail del risultato' : ''}.`,
         `Partita: ${v.teams}`, ...(v.game ? [`Numero: ${v.game}`] : []), `Data: ${v.date}`, ...(v.result ? [`Risultato: ${v.result}`] : [])],
       button: null,
-      after: ['Riceve questa e-mail come ufficiale della partita o come contatto di una delle due società. Le domande sulla partita vanno all’organizzatore del campionato.']
+      after: ['Ricevi questa e-mail come ufficiale della partita o come contatto di una delle due società. Le domande sulla partita vanno all’organizzatore del campionato.']
     })
   },
   // A test match's scoresheet to its scorer (never stored). vars: teams,
@@ -630,21 +630,21 @@ const T = {
     }),
     de: (v) => ({
       subject: 'Test-Matchblatt',
-      before: ['Hallo', 'Im Anhang finden Sie das Matchblatt Ihres Testspiels. Testspiele werden weder auf dem Server noch auf Ihrem Gerät aufbewahrt: Diese E-Mail ist die einzige Kopie.',
+      before: ['Hallo', 'Im Anhang findest du das Matchblatt deines Testspiels. Testspiele werden weder auf dem Server noch auf deinem Gerät aufbewahrt: Diese E-Mail ist die einzige Kopie.',
         `Spiel: ${v.teams}`, ...(v.result ? [`Resultat: ${v.result}`] : [])],
       button: null,
       after: []
     }),
     fr: (v) => ({
       subject: 'Feuille de match de test',
-      before: ['Bonjour,', 'vous trouverez en pièce jointe la feuille de votre match de test. Les matchs de test ne sont gardés ni sur le serveur ni sur votre appareil : cet e-mail en est la seule copie.',
+      before: ['Bonjour,', 'tu trouveras en pièce jointe la feuille de ton match de test. Les matchs de test ne sont gardés ni sur le serveur ni sur ton appareil : cet e-mail en est la seule copie.',
         `Match : ${v.teams}`, ...(v.result ? [`Résultat : ${v.result}`] : [])],
       button: null,
       after: []
     }),
     it: (v) => ({
       subject: 'Referto di prova',
-      before: ['Buongiorno,', 'in allegato trova il referto della sua partita di prova. Le partite di prova non vengono conservate né sul server né sul suo dispositivo: questa e-mail è l’unica copia.',
+      before: ['Buongiorno,', 'in allegato trovi il referto della tua partita di prova. Le partite di prova non vengono conservate né sul server né sul tuo dispositivo: questa e-mail è l’unica copia.',
         `Partita: ${v.teams}`, ...(v.result ? [`Risultato: ${v.result}`] : [])],
       button: null,
       after: []
@@ -669,7 +669,7 @@ const T = {
       button: null,
       after: [v.admin
         ? 'Der Schreiber wurde gebeten, OpenVolley auf dem Gerät, das das Spiel abgeschlossen hat, mit Internetverbindung zu öffnen, damit es das PDF sendet; es wird dann von selbst verschickt. Das Spiel steht im Manager unter Abgeschlossene Spiele.'
-        : 'Öffnen Sie OpenVolley mit Internetverbindung auf dem Gerät, das das Spiel abgeschlossen hat: Es sendet dann das PDF, das von selbst verschickt wird. Ist das Gerät nicht mehr verfügbar, informieren Sie einen Admin.']
+        : 'Öffne OpenVolley mit Internetverbindung auf dem Gerät, das das Spiel abgeschlossen hat: Es sendet dann das PDF, das von selbst verschickt wird. Ist das Gerät nicht mehr verfügbar, informiere einen Admin.']
     }),
     fr: (v) => ({
       subject: `PDF de la feuille de match manquant : ${v.teams}`,
@@ -678,7 +678,7 @@ const T = {
       button: null,
       after: [v.admin
         ? 'Le marqueur a été invité à ouvrir OpenVolley, connecté à Internet, sur l’appareil qui a clôturé le match, afin qu’il envoie le PDF ; celui-ci est ensuite envoyé automatiquement. Le match figure dans le manager sous Matchs clôturés.'
-        : 'Ouvrez OpenVolley, connecté à Internet, sur l’appareil qui a clôturé le match : il envoie alors le PDF, qui est ensuite envoyé automatiquement. Si cet appareil n’est plus disponible, prévenez un admin.']
+        : 'Ouvre OpenVolley, connecté à Internet, sur l’appareil qui a clôturé le match : il envoie alors le PDF, qui est ensuite envoyé automatiquement. Si cet appareil n’est plus disponible, préviens un admin.']
     }),
     it: (v) => ({
       subject: `PDF del referto mancante: ${v.teams}`,
@@ -687,7 +687,7 @@ const T = {
       button: null,
       after: [v.admin
         ? 'Il segnapunti è stato invitato ad aprire OpenVolley, con connessione a Internet, sul dispositivo che ha chiuso la partita, affinché invii il PDF; verrà poi inviato automaticamente. La partita è elencata nel manager sotto Partite chiuse.'
-        : 'Apra OpenVolley, con connessione a Internet, sul dispositivo che ha chiuso la partita: invierà il PDF, che verrà poi inviato automaticamente. Se il dispositivo non è più disponibile, avvisi un admin.']
+        : 'Apri OpenVolley, con connessione a Internet, sul dispositivo che ha chiuso la partita: invierà il PDF, che verrà poi inviato automaticamente. Se il dispositivo non è più disponibile, avvisa un admin.']
     })
   },
   // An admin reopened a mailed match (lib/finalMail.js), to the officials
@@ -702,24 +702,24 @@ const T = {
     }),
     de: (v) => ({
       subject: `Spiel wieder geöffnet: ${v.teams}`,
-      before: ['Hallo', 'Ein Administrator hat dieses Spiel nach dem Abschluss wieder geöffnet. Ihre Genehmigung des Resultats gilt damit nicht mehr.',
+      before: ['Hallo', 'Ein Administrator hat dieses Spiel nach dem Abschluss wieder geöffnet. Deine Genehmigung des Resultats gilt damit nicht mehr.',
         `Spiel: ${v.teams}`, ...(v.game ? [`Spielnummer: ${v.game}`] : []), `Datum: ${v.date}`, ...(v.reason ? [`Grund: ${v.reason}`] : [])],
       button: null,
-      after: ['Sobald das Spiel wieder abgeschlossen ist, erhalten Sie das korrigierte Matchblatt. Fragen zum Spiel richten Sie an den Veranstalter der Meisterschaft.']
+      after: ['Sobald das Spiel wieder abgeschlossen ist, erhältst du das korrigierte Matchblatt. Fragen zum Spiel richtest du an den Veranstalter der Meisterschaft.']
     }),
     fr: (v) => ({
       subject: `Match rouvert : ${v.teams}`,
-      before: ['Bonjour,', 'un administrateur a rouvert ce match après sa clôture : votre approbation de son résultat ne compte donc plus.',
+      before: ['Bonjour,', 'un administrateur a rouvert ce match après sa clôture : ton approbation de son résultat ne compte donc plus.',
         `Match : ${v.teams}`, ...(v.game ? [`Numéro : ${v.game}`] : []), `Date : ${v.date}`, ...(v.reason ? [`Motif : ${v.reason}`] : [])],
       button: null,
-      after: ['Dès que le match sera de nouveau clôturé, vous recevrez la feuille de match corrigée. Les questions sur le match vont à l’organisateur du championnat.']
+      after: ['Dès que le match sera de nouveau clôturé, tu recevras la feuille de match corrigée. Les questions sur le match vont à l’organisateur du championnat.']
     }),
     it: (v) => ({
       subject: `Partita riaperta: ${v.teams}`,
-      before: ['Buongiorno,', 'un amministratore ha riaperto questa partita dopo la chiusura: la sua approvazione del risultato non vale quindi più.',
+      before: ['Buongiorno,', 'un amministratore ha riaperto questa partita dopo la chiusura: la tua approvazione del risultato non vale quindi più.',
         `Partita: ${v.teams}`, ...(v.game ? [`Numero: ${v.game}`] : []), `Data: ${v.date}`, ...(v.reason ? [`Motivo: ${v.reason}`] : [])],
       button: null,
-      after: ['Quando la partita sarà di nuovo chiusa riceverà il referto corretto. Le domande sulla partita vanno all’organizzatore del campionato.']
+      after: ['Quando la partita sarà di nuovo chiusa riceverai il referto corretto. Le domande sulla partita vanno all’organizzatore del campionato.']
     })
   },
   // vars: game, until ('' when disabled), disabled
@@ -732,25 +732,25 @@ const T = {
       after: ['If that was not you, set a new PIN in your profile and tell your club admin. Until then, sign by hand.']
     }),
     de: (v) => ({
-      subject: v.disabled ? 'Ihre OpenVolley-Genehmigungs-PIN wurde blockiert' : 'Ihre OpenVolley-Genehmigungs-PIN wurde gesperrt',
-      before: ['Hallo', `Ihre Genehmigungs-PIN wurde beim Genehmigen von ${v.game} mehrmals falsch eingegeben.`,
-        v.disabled ? 'Sie ist jetzt blockiert: Legen Sie in Ihrem Profil mit Ihrem Passwort eine neue PIN fest.' : `Sie ist bis ${v.until} gesperrt.`],
+      subject: v.disabled ? 'Deine OpenVolley-Genehmigungs-PIN wurde blockiert' : 'Deine OpenVolley-Genehmigungs-PIN wurde gesperrt',
+      before: ['Hallo', `Deine Genehmigungs-PIN wurde beim Genehmigen von ${v.game} mehrmals falsch eingegeben.`,
+        v.disabled ? 'Sie ist jetzt blockiert: Lege in deinem Profil mit deinem Passwort eine neue PIN fest.' : `Sie ist bis ${v.until} gesperrt.`],
       button: 'OpenVolley öffnen',
-      after: ['Wenn Sie das nicht waren, legen Sie in Ihrem Profil eine neue PIN fest und informieren Sie den Admin Ihres Vereins. Bis dahin unterschreiben Sie von Hand.']
+      after: ['Wenn du das nicht warst, lege in deinem Profil eine neue PIN fest und informiere den Admin deines Vereins. Bis dahin unterschreibst du von Hand.']
     }),
     fr: (v) => ({
-      subject: v.disabled ? 'Votre PIN d’approbation OpenVolley a été bloqué' : 'Votre PIN d’approbation OpenVolley a été verrouillé',
-      before: ['Bonjour,', `votre PIN d’approbation a été saisi faux plusieurs fois lors de l’approbation de ${v.game}.`,
-        v.disabled ? 'Il est maintenant bloqué : choisissez un nouveau PIN dans votre profil avec votre mot de passe.' : `Il est verrouillé jusqu’au ${v.until}.`],
+      subject: v.disabled ? 'Ton PIN d’approbation OpenVolley a été bloqué' : 'Ton PIN d’approbation OpenVolley a été verrouillé',
+      before: ['Bonjour,', `ton PIN d’approbation a été saisi faux plusieurs fois lors de l’approbation de ${v.game}.`,
+        v.disabled ? 'Il est maintenant bloqué : choisis un nouveau PIN dans ton profil avec ton mot de passe.' : `Il est verrouillé jusqu’au ${v.until}.`],
       button: 'Ouvrir OpenVolley',
-      after: ['Si ce n’était pas vous, choisissez un nouveau PIN dans votre profil et prévenez l’admin de votre club. D’ici là, signez à la main.']
+      after: ['Si ce n’était pas toi, choisis un nouveau PIN dans ton profil et préviens l’admin de ton club. D’ici là, signe à la main.']
     }),
     it: (v) => ({
-      subject: v.disabled ? 'Il suo PIN di approvazione OpenVolley è stato bloccato' : 'Il suo PIN di approvazione OpenVolley è stato sospeso',
-      before: ['Buongiorno,', `il suo PIN di approvazione è stato digitato male più volte durante l’approvazione di ${v.game}.`,
-        v.disabled ? 'Ora è bloccato: scelga un nuovo PIN nel suo profilo con la sua password.' : `È sospeso fino al ${v.until}.`],
+      subject: v.disabled ? 'Il tuo PIN di approvazione OpenVolley è stato bloccato' : 'Il tuo PIN di approvazione OpenVolley è stato sospeso',
+      before: ['Buongiorno,', `il tuo PIN di approvazione è stato digitato male più volte durante l’approvazione di ${v.game}.`,
+        v.disabled ? 'Ora è bloccato: scegli un nuovo PIN nel tuo profilo con la tua password.' : `È sospeso fino al ${v.until}.`],
       button: 'Aprire OpenVolley',
-      after: ['Se non è stato lei, scelga un nuovo PIN nel suo profilo e avvisi l’admin del suo club. Fino ad allora firmi a mano.']
+      after: ['Se non sei stato tu, scegli un nuovo PIN nel tuo profilo e avvisa l’admin del tuo club. Fino ad allora firma a mano.']
     })
   }
 }
@@ -760,27 +760,27 @@ const T = {
 const SHARED_PASSWORD_NOTE = {
   reset: {
     en: 'This changes the password of your account for OpenVolley and OpenBeach.',
-    de: 'Damit ändern Sie das Passwort Ihres Kontos für OpenVolley und OpenBeach.',
-    fr: 'Cela modifie le mot de passe de votre compte pour OpenVolley et OpenBeach.',
-    it: 'Così modifica la password del suo account per OpenVolley e OpenBeach.'
+    de: 'Damit änderst du das Passwort deines Kontos für OpenVolley und OpenBeach.',
+    fr: 'Cela modifie le mot de passe de ton compte pour OpenVolley et OpenBeach.',
+    it: 'Così modifichi la password del tuo account per OpenVolley e OpenBeach.'
   },
   passkey_added: {
     en: 'Your account works for OpenVolley and OpenBeach: the passkey signs in to both apps.',
-    de: 'Ihr Konto gilt für OpenVolley und OpenBeach: Der Passkey meldet Sie in beiden Apps an.',
-    fr: 'Votre compte est valable pour OpenVolley et OpenBeach : la clé d’accès vous connecte aux deux applications.',
-    it: 'Il suo account vale per OpenVolley e OpenBeach: la passkey dà accesso a entrambe le app.'
+    de: 'Dein Konto gilt für OpenVolley und OpenBeach: Der Passkey meldet dich in beiden Apps an.',
+    fr: 'Ton compte est valable pour OpenVolley et OpenBeach : la clé d’accès te connecte aux deux applications.',
+    it: 'Il tuo account vale per OpenVolley e OpenBeach: la passkey dà accesso a entrambe le app.'
   },
   password_changed: {
     en: 'Your account works for OpenVolley and OpenBeach: the new password is the one of both apps.',
-    de: 'Ihr Konto gilt für OpenVolley und OpenBeach: Das neue Passwort gilt für beide Apps.',
-    fr: 'Votre compte est valable pour OpenVolley et OpenBeach : le nouveau mot de passe vaut pour les deux applications.',
-    it: 'Il suo account vale per OpenVolley e OpenBeach: la nuova password vale per entrambe le app.'
+    de: 'Dein Konto gilt für OpenVolley und OpenBeach: Das neue Passwort gilt für beide Apps.',
+    fr: 'Ton compte est valable pour OpenVolley et OpenBeach : le nouveau mot de passe vaut pour les deux applications.',
+    it: 'Il tuo account vale per OpenVolley e OpenBeach: la nuova password vale per entrambe le app.'
   },
   email_changed: {
     en: 'Your account works for OpenVolley and OpenBeach: the change applies to both apps.',
-    de: 'Ihr Konto gilt für OpenVolley und OpenBeach: Die Änderung gilt für beide Apps.',
-    fr: 'Votre compte est valable pour OpenVolley et OpenBeach : la modification vaut pour les deux applications.',
-    it: 'Il suo account vale per OpenVolley e OpenBeach: la modifica vale per entrambe le app.'
+    de: 'Dein Konto gilt für OpenVolley und OpenBeach: Die Änderung gilt für beide Apps.',
+    fr: 'Ton compte est valable pour OpenVolley et OpenBeach : la modification vaut pour les deux applications.',
+    it: 'Il tuo account vale per OpenVolley e OpenBeach: la modifica vale per entrambe le app.'
   }
 }
 

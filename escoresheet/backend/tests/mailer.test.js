@@ -219,7 +219,7 @@ describe('mailer: SMTP sessions against a local sink', () => {
         assert.deepEqual(await mailer.send('reset', { to: 'anna@example.ch', lang: 'fr', link }), { sent: true })
         const mail = await smtp.waitForMail((x) => x.to.includes('anna@example.ch'))
         assert.equal(mail.secure, true, 'the session was encrypted')
-        assert.equal(mail.subject, 'Réinitialiser votre mot de passe OpenVolley')
+        assert.equal(mail.subject, 'Réinitialiser ton mot de passe OpenVolley')
         assert.match(mail.from, /noreply@example\.test/)
         assert.equal(mail.headers['auto-submitted'], 'auto-generated')
         assert.deepEqual(linkToken(mail), { url: link, page: 'reset', token: TOKEN, lang: 'fr' })
@@ -589,7 +589,7 @@ describe('mailer: brands (OpenVolley / OpenBeach)', () => {
     assert.deepEqual(s.sent.map((x) => [x.from, x.subject]), [
       ['OpenBeach <noreply@openvolley.app>', 'OpenBeach-Passwort zurücksetzen'],
       ['OpenVolley <noreply@openvolley.app>', 'OpenVolley-Passwort zurücksetzen'],
-      ['OpenVolley <noreply@openvolley.app>', 'Confermi il suo indirizzo e-mail per OpenVolley']
+      ['OpenVolley <noreply@openvolley.app>', 'Conferma il tuo indirizzo e-mail per OpenVolley']
     ])
     m.close()
     const custom = createMailer({ ...stub(), from: 'x@example.test', fromBeach: 'Beach Team <beach@example.test>', managerUrlBeach: 'https://mb.example.test/', logger: silent })

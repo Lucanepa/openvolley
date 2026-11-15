@@ -33,7 +33,7 @@
       title: 'Unterschreiben als {role}', captainOf: 'Captain von {team}', coachOf: 'Coach von {team}', scorer: 'Schreiber/in',
       asstScorer: 'Hilfsschreiber/in', ref1: '1. Schiedsrichter/in', ref2: '2. Schiedsrichter/in', team: 'Team {l}', match: 'Spiel #{n}',
       hint: 'Hier unterschreiben', clear: 'Löschen', done: 'Fertig', pad: 'Unterschriftsfeld', loading: 'Wird geöffnet…', sending: 'Wird gesendet…',
-      sent: 'Unterschrift gesendet. Du kannst diese Seite schließen.', sendFailed: 'Senden fehlgeschlagen. Verbindung prüfen und nochmals auf Fertig tippen.',
+      sent: 'Unterschrift gesendet. Du kannst diese Seite schliessen.', sendFailed: 'Senden fehlgeschlagen. Verbindung prüfen und nochmals auf Fertig tippen.',
       openFailed: 'Das Gerät des Schreibers ist nicht erreichbar. Verbindung prüfen; neuer Versuch…',
       expired: 'Dieser Link ist abgelaufen. Nach einem neuen QR-Code fragen.', used: 'Dieser Link wurde schon verwendet.',
       cancelled: 'Das Unterschreiben wurde am Schreibergerät abgebrochen.', invalid: 'Dieser Link ist ungültig.', full: 'Das Feld ist voll. Auf Fertig tippen oder Löschen, um neu zu beginnen.'
@@ -51,10 +51,10 @@
       title: 'Signer comme {role}', captainOf: 'capitaine de {team}', coachOf: 'entraîneur de {team}', scorer: 'marqueur',
       asstScorer: 'marqueur assistant', ref1: '1er arbitre', ref2: '2e arbitre', team: 'l’équipe {l}', match: 'Match n° {n}',
       hint: 'Signer ici', clear: 'Effacer', done: 'Terminé', pad: 'Zone de signature', loading: 'Ouverture…', sending: 'Envoi…',
-      sent: 'Signature envoyée. Vous pouvez fermer cette page.', sendFailed: 'Échec de l’envoi. Vérifiez la connexion et touchez Terminé à nouveau.',
-      openFailed: 'Appareil du marqueur injoignable. Vérifiez la connexion ; nouvel essai…',
-      expired: 'Ce lien a expiré. Demandez un nouveau code QR.', used: 'Ce lien a déjà été utilisé.',
-      cancelled: 'La signature a été annulée sur l’appareil du marqueur.', invalid: 'Ce lien n’est pas valide.', full: 'La zone est pleine. Touchez Terminé, ou Effacer pour recommencer.'
+      sent: 'Signature envoyée. Tu peux fermer cette page.', sendFailed: 'Échec de l’envoi. Vérifie la connexion et touche Terminé à nouveau.',
+      openFailed: 'Appareil du marqueur injoignable. Vérifie la connexion ; nouvel essai…',
+      expired: 'Ce lien a expiré. Demande un nouveau code QR.', used: 'Ce lien a déjà été utilisé.',
+      cancelled: 'La signature a été annulée sur l’appareil du marqueur.', invalid: 'Ce lien n’est pas valide.', full: 'La zone est pleine. Touche Terminé, ou Effacer pour recommencer.'
     },
     it: {
       title: 'Firma come {role}', captainOf: 'capitano di {team}', coachOf: 'allenatore di {team}', scorer: 'segnapunti',
