@@ -19,6 +19,7 @@ import { clearCachesAndReload } from '../../hooks/useServiceWorker'
 import { ChevronDown, Info, Tablet, X } from 'lucide-react'
 import { cn, IconButton, Select, SegmentedControl, StatusPill, Switch, toast } from '../../ui'
 import { useStickBackup, copyMatchToSticks, STICK_FULL_BYTES } from '../../utils/stickBackup'
+import { useSponsorsOption } from '../../hooks/useSponsorsOption'
 import { toastLang } from '../chromeClasses'
 import { allowLeaving } from '../../utils/leaveGuard'
 import { backdropDismiss } from '../../ui/backdropDismiss.js'
@@ -258,6 +259,7 @@ export default function ScoreboardOptionsModal({
 }) {
   const globalTool = useToolMode() === 'global'
   const { t } = useTranslation()
+  const [sponsorsOption, setSponsorsOption] = useSponsorsOption()
   const { showAlert } = useAlert()
   const [clearCacheModal, setClearCacheModal] = useState(null) // { type: 'cache' | 'all' }
   const [fontSelectorOpen, setFontSelectorOpen] = useState(false)
@@ -847,6 +849,18 @@ export default function ScoreboardOptionsModal({
             />
           </Row>
           )}
+          {/* Sponsors on clothing (domain/sponsors.js): one box per team in Match
+              setup, the match end and Edit match info; per device, off by default */}
+          <Row style={{ marginTop: '12px' }}>
+            <div className="flex items-center gap-1.5">
+              <div className="text-sm font-semibold text-stone-900">{t('options.sponsorsOnClothing')}</div>
+              <InfoDot title={t('options.sponsorsOnClothingInfo')} />
+            </div>
+            <ToggleSwitch
+              value={sponsorsOption}
+              onToggle={() => setSponsorsOption(!sponsorsOption)}
+            />
+          </Row>
         </Section>
 
         <Section title={t('options.displayMode')}>

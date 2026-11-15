@@ -1751,6 +1751,8 @@
     "autoDetectedMode": "Auto usa {{mode}} su questo schermo.",
     "enableLfpTracking": "Abilita tracciamento GFL",
     "lfpTrackingInfo": "Monitora i giocatori formati localmente (GFL) in campo. Quando attivato, mostra lo stato GFL sui cerchi dei giocatori e avvisa se il numero minimo non è raggiunto.",
+    "sponsorsOnClothing": "Sponsor sulle divise",
+    "sponsorsOnClothingInfo": "Per ogni squadra: sponsor sulle divise, segnati con (+) o (-) dopo il suo nome sul referto.",
     "minimumLfpsOnCourt": "Minimo GFL in campo:",
     "clearCacheConfirm": "Svuotare la cache e ricaricare?",
     "alerts": {
@@ -1898,6 +1900,8 @@
       "editor": "Il referto è già stato firmato o approvato. Salvare queste modifiche cancella tutte le firme e le approvazioni di fine partita: raccoglile di nuovo dopo.",
       "logRemarks": "Osservazioni modificate dopo la firma del referto",
       "logRemarksSignature": "Firma rimossa dalle osservazioni: {{caption}}",
+      "sponsors": "Il referto è già stato firmato o approvato. Modificare gli sponsor sulle divise cancella tutte le firme e le approvazioni di fine partita: raccoglile di nuovo dopo.",
+      "logSponsors": "Sponsor sulle divise modificati dopo la firma del referto: {{team}} {{mark}}",
       "saveFailed": "Non è stato possibile salvare la modifica."
     },
     "reopenMatch": "Riapri partita",

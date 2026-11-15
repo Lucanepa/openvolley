@@ -1709,6 +1709,8 @@
     "copyUrl": "URL kopieren",
     "enableLfpTracking": "LAS-Tracking aktivieren",
     "lfpTrackingInfo": "Lokal ausgebildete Spielende (LAS/LFP/JFL/GFL) auf dem Feld verfolgen. Wenn aktiviert, wird der LAS-Status auf den Spielerkreisen angezeigt und gewarnt, wenn die Mindestanzahl nicht erreicht ist.",
+    "sponsorsOnClothing": "Sponsoren auf der Kleidung",
+    "sponsorsOnClothingInfo": "Für jedes Team: Sponsoren auf der Kleidung, auf dem Matchblatt mit (+) oder (-) hinter seinem Namen markiert.",
     "minimumLfpsOnCourt": "Minimum LAS auf dem Feld:",
     "autoWithMode": "Auto ({{mode}})",
     "unitMin": "Min.",
@@ -3138,6 +3140,8 @@
       "editor": "Das Matchblatt ist schon unterschrieben oder genehmigt. Das Speichern dieser Änderungen löscht alle Unterschriften und Genehmigungen des Spielendes: Hol sie danach neu ein.",
       "logRemarks": "Bemerkungen nach dem Unterschreiben geändert",
       "logRemarksSignature": "Unterschrift aus den Bemerkungen entfernt: {{caption}}",
+      "sponsors": "Das Matchblatt ist schon unterschrieben oder genehmigt. Eine Änderung der Sponsoren auf der Kleidung löscht alle Unterschriften und Genehmigungen des Spielendes: Hol sie danach neu ein.",
+      "logSponsors": "Sponsoren auf der Kleidung nach dem Unterschreiben geändert: {{team}} {{mark}}",
       "saveFailed": "Die Änderung konnte nicht gespeichert werden."
     },
     "reopenMatch": "Spiel wieder öffnen",

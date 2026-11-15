@@ -22,6 +22,7 @@ import { exportNativeFilesToDocuments } from '../../utils/nativeBackup'
 import { configuredRecoveryKey } from '../../utils/backupCrypto/recovery'
 import { useToolMode } from '../../utils/toolMode'
 import { downloadGlobalTemplate } from '../../utils/globalTemplates'
+import { useSponsorsOption } from '../../hooks/useSponsorsOption'
 
 // Kit field recipes for the small inline number/select controls (h-9, svrz md).
 const SMALL_FIELD = 'h-9 rounded-lg border border-stone-300 bg-white px-2 text-center text-sm tabular-nums text-stone-800 focus:outline-none focus:ring-2 focus:ring-red-500'
@@ -288,6 +289,7 @@ export default function HomeOptionsModal({
 }) {
   const globalTool = useToolMode() === 'global'
   const { t } = useTranslation()
+  const [sponsorsOption, setSponsorsOption] = useSponsorsOption()
   const { showAlert } = useAlert()
   const matchToBackUp = backup?.activeMatchId ?? backupMatchId ?? null
   const androidApp = isAndroidApp()
@@ -701,6 +703,18 @@ export default function HomeOptionsModal({
             />
           </Row>
           )}
+          {/* Sponsors on clothing (domain/sponsors.js): one box per team in Match
+              setup, the match end and Edit match info; per device, off by default */}
+          <Row style={{ marginTop: '12px' }}>
+            <div className="flex items-center gap-1.5">
+              <div className="text-sm font-semibold text-stone-900">{t('options.sponsorsOnClothing')}</div>
+              <InfoDot title={t('options.sponsorsOnClothingInfo')} />
+            </div>
+            <ToggleSwitch
+              value={sponsorsOption}
+              onToggle={() => setSponsorsOption(!sponsorsOption)}
+            />
+          </Row>
         </Section>
 
         {/* Android app only: cloud or venue LAN relay, other bundled views */}

@@ -1749,6 +1749,8 @@
     "autoDetectedMode": "Auto utilise {{mode}} sur cet écran.",
     "enableLfpTracking": "Activer le suivi JFL",
     "lfpTrackingInfo": "Suivi des joueurs formés localement (JFL) sur le terrain. Lorsque activé, affiche le statut JFL sur les cercles des joueurs et avertit si le nombre minimum n'est pas atteint.",
+    "sponsorsOnClothing": "Sponsors sur les maillots",
+    "sponsorsOnClothingInfo": "Pour chaque équipe : sponsors sur les maillots, marqués (+) ou (-) après son nom sur la feuille de match.",
     "minimumLfpsOnCourt": "Minimum JFL sur le terrain :",
     "clearCacheConfirm": "Vider le cache et recharger ?",
     "alerts": {
@@ -1897,6 +1899,8 @@
       "editor": "La feuille a déjà été signée ou approuvée. Enregistrer ces modifications efface toutes les signatures et approbations de la fin du match : recueille-les à nouveau ensuite.",
       "logRemarks": "Remarques modifiées après la signature de la feuille",
       "logRemarksSignature": "Signature retirée des remarques : {{caption}}",
+      "sponsors": "La feuille a déjà été signée ou approuvée. Modifier les sponsors sur les maillots efface toutes les signatures et approbations de la fin du match : recueille-les à nouveau ensuite.",
+      "logSponsors": "Sponsors sur les maillots modifiés après la signature de la feuille : {{team}} {{mark}}",
       "saveFailed": "La modification n’a pas pu être enregistrée."
     },
     "reopenMatch": "Rouvrir le match",
