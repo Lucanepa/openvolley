@@ -293,7 +293,7 @@ const RemarksBox = ({ overflowSanctions = [], remarks = '', generated = [] }) =>
             ? t('matchEnd.sanctionTypes.disqualification', 'Disqualification')
             : ''
     const playerInfo = !isDelay && sanction.playerNr ? `, #${sanction.playerNr}` : ''
-    return `${t('coinToss.teamA', 'Team')} ${sanction.team}, ${t('matchEnd.set', 'Set')} ${sanction.set}, ${sanction.score}, ${typeLabel}${playerInfo}`
+    return `${t('scoreboard.sanctionsResults.team', 'Team')} ${sanction.team}, ${t('matchEnd.set', 'Set')} ${sanction.set}, ${sanction.score}, ${typeLabel}${playerInfo}`
   }
 
   const generatedLines = generated.filter(line => line.trim())
