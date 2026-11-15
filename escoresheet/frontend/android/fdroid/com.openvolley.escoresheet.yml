@@ -16,7 +16,7 @@ Binaries:
 Builds:
   - versionName: 3.2.2
     versionCode: 30020020
-    commit: 2db16b128fca904364c6a683530719d54608e7dc
+    commit: 5dec9bf309b0a71297a30ec3bda620ce27cf1a09
     subdir: escoresheet/frontend/android/app
     sudo:
       - echo "deb https://deb.debian.org/debian forky main" > /etc/apt/sources.list.d/forky.list
