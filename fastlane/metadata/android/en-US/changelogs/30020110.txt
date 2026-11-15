@@ -1,0 +1,4 @@
+OpenVolley 3.2.11
+- Exceptional substitution after an expulsion or a disqualification: the remark now says so.
+- Match end: the overflow sanction lines read "Team A/B" again (not "Team A B").
+- No legal substitution dialog: the Forfait text fits its button; a libero re-designated away shows × in the libero list.
