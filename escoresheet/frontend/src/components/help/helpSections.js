@@ -67,7 +67,6 @@ export const HELP_SECTIONS = [
     q('coinToss', 'sides', 'cointoss-side-selector'),
     q('coinToss', 'serve', 'cointoss-serve-selector'),
     q('coinToss', 'signatures'),
-    q('coinToss', 'birthdates'),
     q('coinToss', 'start', 'cointoss-confirm-button'),
     q('coinToss', 'lineups'),
     q('coinToss', 'gameCaptain')
