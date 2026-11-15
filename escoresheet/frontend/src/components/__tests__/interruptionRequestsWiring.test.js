@@ -103,7 +103,7 @@ describe('row 11: the improper request asks no reason', () => {
 describe('row 19: decision change after a substitution or time-out', () => {
   it('is offered when the last point is followed only by time-outs / substitutions (tablet and phone)', () => {
     const memo = between('const decisionTakeBack = useMemo(', 'const isFirstRally')
-    expect(memo).toContain('!canReplayRally && data?.set ? decisionChangeTakeBack(data.events, data.set.index) : null')
+    expect(memo).toContain('!canReplayRally && data?.set ? decisionChangeTakeBack(data.events, data.set.index, data?.match) : null')
     expect(memo).toContain('const canChangeDecision = canReplayRally || !!decisionTakeBack')
     expect(sb).toContain("{rallyStatus === 'idle' && canChangeDecision && (")
     expect(sb).toContain("{rallyStatus === 'idle' && !canChangeDecision && <span aria-hidden=\"true\" />}")
@@ -113,13 +113,21 @@ describe('row 19: decision change after a substitution or time-out', () => {
 
   it('the dialog is the decision change\'s, with what it takes back', () => {
     const open = handler('handleReplay')
-    expect(open).toContain("setReplayRallyConfirm({ event: pointEvent, description: `Point for ${teamName}`, selectedOption: 'swap', takeBack: decisionTakeBack.requests })")
+    // what goes depends on the option (a libero replacement that still fits stays)
+    expect(open).toContain("setReplayRallyConfirm({ event: pointEvent, description: `Point for ${teamName}`, selectedOption: 'swap', takeBack: decisionTakeBack.requests, takeBackByOption: decisionTakeBack.byOption })")
     const dialog = between('{replayRallyConfirm && (() => {', '</Modal>')
     expect(dialog).toContain('data-testid="decision-take-back"')
     expect(dialog).toContain("t('scoreboard.decisionTakeBack.substitution'")
     expect(dialog).toContain("t('scoreboard.decisionTakeBack.timeout'")
     // only the sentence that applies (it always named both, 3.0.16 test match)
-    expect(dialog).toContain('t(`scoreboard.decisionTakeBack.${decisionTakeBackTextKey(replayRallyConfirm.takeBack)}`)')
+    expect(dialog).toContain('const requestKey = decisionTakeBackTextKey(list)')
+    expect(dialog).toContain('{requestKey && <p')
+    // libero replacements: their lines, the reason and their own sentence
+    expect(dialog).toContain("t('scoreboard.decisionTakeBack.liberoIn'")
+    expect(dialog).toContain('t(`scoreboard.decisionTakeBack.reason.${reason}`')
+    expect(dialog).toContain("t('scoreboard.decisionTakeBack.textLibero')")
+    // the confirm takes back what the chosen option lists
+    expect(handler('handleDecisionChange')).toContain('replayRallyConfirm.takeBackByOption?.[selectedOption]?.requests ?? replayRallyConfirm.takeBack ?? []')
   })
 
   it('takes them back through Undo\'s own writes, then changes the decision on the events as they are then', () => {

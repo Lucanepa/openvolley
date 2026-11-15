@@ -149,6 +149,8 @@ export default function App() {
   const [showCoinToss, setShowCoinToss] = useState(false)
   const [showMatchEnd, setShowMatchEnd] = useState(false)
   const [showManualAdjustments, setShowManualAdjustments] = useState(false)
+  // opened from the scoreboard (Edit match info) or the match end: where Close goes back to
+  const [manualAdjustmentsFrom, setManualAdjustmentsFrom] = useState('matchEnd')
   // The match just closed from Match End (deleted): left out of the home
   // screen and the header at once, while the live queries still see it for
   // a moment (laptop run 2026-10-08, OV-17: one frame of its 'Continue match
@@ -4030,13 +4032,17 @@ export default function App() {
               ) : showManualAdjustments && matchId ? (
                 <ManualAdjustments
                   matchId={matchId}
+                  // from the scoreboard during the match: the match info alone
+                  {...(manualAdjustmentsFrom === 'scoreboard' ? { initialTab: 'info', tabIds: ['info'] } : {})}
                   onClose={() => {
                     setShowManualAdjustments(false)
-                    setShowMatchEnd(true)
+                    if (manualAdjustmentsFrom !== 'scoreboard') setShowMatchEnd(true)
+                    setManualAdjustmentsFrom('matchEnd')
                   }}
                   onSave={() => {
                     setShowManualAdjustments(false)
-                    setShowMatchEnd(true)
+                    if (manualAdjustmentsFrom !== 'scoreboard') setShowMatchEnd(true)
+                    setManualAdjustmentsFrom('matchEnd')
                   }}
                 />
               ) : showMatchEnd && matchId ? (
@@ -4117,6 +4123,7 @@ export default function App() {
                   onFinishSet={finishSet}
                   onOpenSetup={openMatchSetup}
                   onOpenMatchSetup={openMatchSetupView}
+                  onOpenMatchInfo={() => { setManualAdjustmentsFrom('scoreboard'); setShowManualAdjustments(true) }}
                   onOpenCoinToss={openCoinTossView}
                   onTriggerEventBackup={backup.triggerEventBackup}
                 />

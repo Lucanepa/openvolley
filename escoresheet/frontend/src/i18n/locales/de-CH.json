@@ -331,7 +331,7 @@
     "matchFormat": "Spiilformat",
     "chooseMatchFormat": "Uswähle…",
     "matchFormatRequired": "Zerscht s Spiilformat wähle (Best of 3 oder Best of 5).",
-    "lockedAfterCoinToss": "D Usloosig isch gmacht: d Spiiliirichtig cha nüm gänderet werde. En Kader im Spiilmenü ändere (Heimkader bearbeite, Gastkader bearbeite), s Spiilformat, d Spiilnummere und anderi Spiilaagabe über Korrekture.",
+    "lockedAfterCoinToss": "D Usloosig isch gmacht: d Spiiliirichtig cha nüm gänderet werde. En Kader im Spiilmenü ändere (Heimkader bearbeite, Gastkader bearbeite), Halle, Spiilnummere, Schiris und anderi Spiilaagabe mit Spiilinfo bearbeite.",
     "scheduleSwapTitle": "Heim und Gascht vertuscht",
     "scheduleSwapBody": "Im Spiilplan spiilt {{home}} dihei und {{away}} uswärts, umgkehrt als i dem Spiil. D Teams mit ihrne Kader, Bankoffizielle und Underschrifte tuusche?",
     "scheduleSwapConfirm": "Teams tuusche",
@@ -522,6 +522,7 @@
     "refereeEmailHint": "Für s fertige Matchblatt. Nur d Schriiber vo däm Spiil gsehnd si."
   },
   "scoreboard": {
+    "serveLabel": "Ufschlag",
     "set": "Satz",
     "timeout": "Timeout",
     "substitution": "Wächsel",
@@ -757,6 +758,7 @@
       "stopMatch": "Spiil abbräche",
       "showPins": "PINs aazeige",
       "showMatchSetup": "Spiiliirichtig aazeige",
+      "editMatchInfo": "Spiilinfo bearbeite",
       "downloadGameData": "Spiildate abelade (JSON)",
       "options": "Optione",
       "gamePins": "Spiil-PINs",
@@ -875,7 +877,9 @@
     "noEventsRecorded": "No kei Ereignis erfasst.",
     "captainOnCourt": {
       "designate": "Spiilcaptain",
-      "selectTitle": "Spiilcaptain"
+      "selectTitle": "Spiilcaptain",
+      "last": "Letschte Spiilcaptain",
+      "lastShort": "Zletscht"
     },
     "duplicateTabTitle": "Matchblatt scho offe",
     "duplicateTabMessage": "S Matchblatt vo däm Spiil isch scho i emne andere Tab oder Browserfänschter offe. Füehr s nur i eim Tab, zum Datekonflikt vermeide: Schliess dä Tab, oder drück «I däm Tab wiiterfüehre», zum s Matchblatt da wiiterfüehre (de ander Tab füehrt s dänn nüme).",
@@ -1036,7 +1040,18 @@
       "textSubstitution": "Nachem Punkt beaatreit: de Wächsel wird rückgängig gmacht und nöd zellt.",
       "textTimeout": "Nachem Punkt beaatreit: s Timeout wird gstriche.",
       "textBoth": "Nachem Punkt beaatreit: de Wächsel wird rückgängig gmacht und nöd zellt, s Timeout gstriche.",
-      "rule": "FIVB Casebook 8.5 · SSK 26-1"
+      "rule": "FIVB Casebook 8.5 · SSK 26-1",
+      "liberoIn": "Libero {{team}}: #{{libero}} für #{{out}}",
+      "liberoOut": "Libero {{team}}: #{{libero}} use, #{{in}} wider ine",
+      "liberoExchange": "Libero {{team}}: #{{in}} für Libero #{{out}}",
+      "textLibero": "En Libero-Wächsel, wo nüm zum neue Entscheid passt, wird zruggnoh: Träg en neu ii, wänn er no gilt.",
+      "ruleLibero": "FIVB 19.3",
+      "reason": {
+        "rotation": "d Rotation änderet sich",
+        "serve": "#{{n}} serviert jetzt",
+        "rally": "kein fertige Spiilzug sit em letschte Libero-Wächsel",
+        "after": "nach emne zruggnohne Wächsel iitreit"
+      }
     },
     "teamSanctionConfirm": {
       "thirdTimeout": "{{team}} hät beidi Timeouts vo däm Satz gnoh. Es dritts Gsuech isch e unzulässigi Aafraag.",

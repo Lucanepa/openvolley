@@ -668,9 +668,8 @@ describe('decision change after a substitution or time-out (row 19)', () => {
     expect(decisionChangeTakeBack(events, 1)).toBeNull()
   })
 
-  it('a libero replacement, a sanction, a started rally or a replay after the point: not offered (Undo)', () => {
+  it('a sanction, a started rally or a replay after the point: not offered (Undo)', () => {
     for (const other of [
-      () => ev('libero_entry', { team: 'home', liberoIn: 9, playerOut: 5 }),
       () => sanction('home', 'improper_request'),
       () => ev('rally_start'),
       () => ev('replay')
@@ -713,6 +712,97 @@ describe('decision change after a substitution or time-out (row 19)', () => {
     const after = events.filter(e => !gone.has(Math.floor(e.seq)))
     expect(after).toEqual([p])
     expect(substitutionRequestIssues(after, 1, 'home')).toEqual([])
+  })
+})
+
+// Owner, 15.11: the decision change stays after a libero replacement; the
+// replacement is taken back when it no longer fits the decision.
+describe('decision change after a libero replacement', () => {
+  const MATCH_HOME_SERVES = { firstServe: 'home' }
+  const H = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6 }
+  const A = { I: 21, II: 22, III: 23, IV: 24, V: 25, VI: 26 }
+  const rotate = (lu) => ({ I: lu.II, II: lu.III, III: lu.IV, IV: lu.V, V: lu.VI, VI: lu.I })
+  const start = () => {
+    seq = 0
+    return [ev('lineup', { team: 'home', lineup: { ...H }, isInitial: true }), ev('lineup', { team: 'away', lineup: { ...A }, isInitial: true })]
+  }
+  const entry = (team, lineup, playerOut, libero) => {
+    const pos = Object.keys(lineup).find(k => String(lineup[k]) === String(playerOut))
+    const head = ev('libero_entry', { team, position: pos, playerOut, liberoIn: libero })
+    const row = sub('lineup', { team, lineup: { ...lineup, [pos]: libero }, liberoSubstitution: { position: pos, liberoNumber: libero, playerNumber: playerOut } })
+    return [head, row]
+  }
+  // home served and won 1:0; away wins the next rally (side-out, away rotates)
+  const sideOut = () => {
+    const events = start()
+    events.push(point('home'))
+    const p = point('away')
+    events.push(p, sub('lineup', { team: 'away', lineup: rotate(A), fromRotation: true }))
+    return { events, p }
+  }
+
+  it('the screenshot case: libero in for the player in I, the point goes to the serving team: taken back (a libero does not serve)', () => {
+    const { events, p } = sideOut()
+    const [e1, r1] = entry('home', H, 1, 9)
+    const take = decisionChangeTakeBack([...events, e1, r1], 1, MATCH_HOME_SERVES)
+    expect(take.point).toBe(p)
+    expect(take.byOption.swap.requests).toEqual([e1])
+    expect(take.byOption.swap.reasons[e1.seq]).toBe('serve')
+    // replayed: home serves again, the same
+    expect(take.byOption.replay.reasons[e1.seq]).toBe('serve')
+  })
+
+  it('libero in for a back-row player who does not serve: it stays (nothing taken back)', () => {
+    const { events } = sideOut()
+    const [e1, r1] = entry('home', H, 5, 9)
+    const take = decisionChangeTakeBack([...events, e1, r1], 1, MATCH_HOME_SERVES)
+    expect(take).not.toBeNull()
+    expect(take.byOption.swap.requests).toEqual([])
+    expect(take.byOption.replay.requests).toEqual([])
+  })
+
+  it('a libero replacement of the team whose rotation the decision changes: taken back', () => {
+    const { events } = sideOut()
+    const [e1, r1] = entry('away', rotate(A), 23, 29) // away's V after its rotation
+    const take = decisionChangeTakeBack([...events, e1, r1], 1, MATCH_HOME_SERVES)
+    expect(take.byOption.swap.reasons[e1.seq]).toBe('rotation')
+    expect(take.byOption.replay.reasons[e1.seq]).toBe('rotation')
+  })
+
+  it('a replayed rally that was the only one between two libero replacements: the second is taken back (19.3.2.1)', () => {
+    const events = start()
+    events.push(point('home'))
+    const [e0, r0] = entry('home', H, 5, 9)
+    events.push(e0, r0)
+    events.push(point('home')) // home serves and wins: no rotation
+    const out = ev('libero_exit', { team: 'home', position: 'V', liberoOut: 9, playerIn: 5 })
+    const outRow = sub('lineup', { team: 'home', lineup: { ...H }, liberoSubstitution: null, fromSubstitution: true })
+    const take = decisionChangeTakeBack([...events, out, outRow], 1, MATCH_HOME_SERVES)
+    expect(take.byOption.replay.reasons[out.seq]).toBe('rally')
+    // given to away instead: a completed rally all the same, home's line-up unchanged
+    expect(take.byOption.swap.requests).toEqual([])
+  })
+
+  it('what follows an entry taken back goes with it; a time-out after a libero replacement that stays goes alone', () => {
+    const { events } = sideOut()
+    const t1 = timeout('away')
+    const [e1, r1] = entry('home', H, 5, 9)
+    const take = decisionChangeTakeBack([...events, t1, e1, r1], 1, MATCH_HOME_SERVES)
+    expect(take.byOption.swap.requests).toEqual([e1, t1])
+    expect(take.byOption.swap.reasons[e1.seq]).toBe('after')
+
+    const { events: ev2 } = sideOut()
+    const [e2, r2] = entry('home', H, 5, 9)
+    const t2 = timeout('away')
+    const take2 = decisionChangeTakeBack([...ev2, e2, r2, t2], 1, MATCH_HOME_SERVES)
+    expect(take2.byOption.swap.requests).toEqual([t2])
+  })
+
+  it('a libero line-up row of the other team under a libero entry is not its own: not offered', () => {
+    const { events } = sideOut()
+    const [e1] = entry('home', H, 5, 9)
+    const foreign = sub('lineup', { team: 'away', lineup: rotate(A) })
+    expect(decisionChangeTakeBack([...events, e1, foreign], 1, MATCH_HOME_SERVES)).toBeNull()
   })
 })
 

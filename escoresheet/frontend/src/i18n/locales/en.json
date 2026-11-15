@@ -331,7 +331,7 @@
     "matchFormat": "Match format",
     "chooseMatchFormat": "Choose…",
     "matchFormatRequired": "Choose the match format (best of 3 or best of 5) first.",
-    "lockedAfterCoinToss": "The coin toss is done: the match setup is read-only. Change a roster from the match menu (Edit home roster, Edit away roster), and the match format, game number or other match details through Corrections.",
+    "lockedAfterCoinToss": "The coin toss is done: the match setup is read-only. Change a roster from the match menu (Edit home roster, Edit away roster), and the hall, game number, officials and other match details with Edit match info.",
     "scheduleSwapTitle": "Home and away the other way round",
     "scheduleSwapBody": "In the schedule {{home}} plays at home and {{away}} away, the other way round from this match. Swap the teams with their rosters, bench officials and signatures?",
     "scheduleSwapConfirm": "Swap teams",
@@ -523,6 +523,7 @@
     "refereeEmailHint": "For the final scoresheet. Only this match's scorers see it."
   },
   "scoreboard": {
+    "serveLabel": "Serve",
     "set": "Set",
     "timeout": "Timeout",
     "substitution": "Substitution",
@@ -758,6 +759,7 @@
       "stopMatch": "Stop the match",
       "showPins": "Show PINs",
       "showMatchSetup": "Show match setup",
+      "editMatchInfo": "Edit match info",
       "downloadGameData": "Download game data (JSON)",
       "options": "Options",
       "gamePins": "Game PINs",
@@ -876,7 +878,9 @@
     "noEventsRecorded": "No events recorded yet.",
     "captainOnCourt": {
       "designate": "Game captain",
-      "selectTitle": "Game captain"
+      "selectTitle": "Game captain",
+      "last": "Last game captain",
+      "lastShort": "Last"
     },
     "duplicateTabTitle": "Scoresheet already open",
     "duplicateTabMessage": "This match scoresheet is already open in another tab or browser window. Score it in one tab only, to avoid data conflicts: close this tab, or press “Score in this tab” to move scoring here (the other tab then stops scoring).",
@@ -1037,7 +1041,18 @@
       "textSubstitution": "Requested after the point: the substitution is reversed and not counted.",
       "textTimeout": "Requested after the point: the time-out is cancelled.",
       "textBoth": "Requested after the point: the substitution is reversed and not counted, the time-out is cancelled.",
-      "rule": "FIVB casebook 8.5 · SSK 26-1"
+      "rule": "FIVB casebook 8.5 · SSK 26-1",
+      "liberoIn": "Libero {{team}}: #{{libero}} in for #{{out}}",
+      "liberoOut": "Libero {{team}}: #{{libero}} out, #{{in}} back",
+      "liberoExchange": "Libero {{team}}: #{{in}} for libero #{{out}}",
+      "textLibero": "A libero replacement that no longer fits the new decision is taken back: enter it again if it still applies.",
+      "ruleLibero": "FIVB 19.3",
+      "reason": {
+        "rotation": "the rotation changes",
+        "serve": "#{{n}} now serves",
+        "rally": "no completed rally since the last libero replacement",
+        "after": "recorded after an entry taken back"
+      }
     },
     "teamSanctionConfirm": {
       "thirdTimeout": "{{team}} has used both time-outs of this set. A third request is an improper request.",

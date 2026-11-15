@@ -324,7 +324,7 @@
     "matchFormat": "Spielformat",
     "chooseMatchFormat": "Auswählen…",
     "matchFormatRequired": "Zuerst das Spielformat wählen (Best of 3 oder Best of 5).",
-    "lockedAfterCoinToss": "Die Auslosung ist erfolgt: Die Spieleinrichtung ist schreibgeschützt. Einen Kader im Spielmenü ändern (Heim-Aufstellung bearbeiten, Gast-Aufstellung bearbeiten), das Spielformat, die Spielnummer und andere Spielangaben über Korrekturen.",
+    "lockedAfterCoinToss": "Die Auslosung ist erfolgt: Die Spieleinrichtung ist schreibgeschützt. Einen Kader im Spielmenü ändern (Heim-Aufstellung bearbeiten, Gast-Aufstellung bearbeiten), Halle, Spielnummer, Schiedsrichter und andere Spielangaben mit Spielinfo bearbeiten.",
     "scheduleSwapTitle": "Heim und Gast vertauscht",
     "scheduleSwapBody": "Im Spielplan spielt {{home}} zu Hause und {{away}} auswärts, umgekehrt als in diesem Spiel. Die Teams mit ihren Kadern, Bankoffiziellen und Unterschriften tauschen?",
     "scheduleSwapConfirm": "Teams tauschen",
@@ -515,6 +515,7 @@
     "refereeEmailHint": "Für das fertige Matchblatt. Nur die Schreiber dieses Spiels sehen sie."
   },
   "scoreboard": {
+    "serveLabel": "Aufschlag",
     "set": "Satz",
     "timeout": "Timeout",
     "substitution": "Auswechslung",
@@ -750,6 +751,7 @@
       "stopMatch": "Spiel abbrechen",
       "showPins": "PINs anzeigen",
       "showMatchSetup": "Spieleinrichtung anzeigen",
+      "editMatchInfo": "Spielinfo bearbeiten",
       "downloadGameData": "Spieldaten herunterladen (JSON)",
       "options": "Optionen",
       "gamePins": "Spiel-PINs",
@@ -868,7 +870,9 @@
     "noEventsRecorded": "Noch keine Ereignisse erfasst.",
     "captainOnCourt": {
       "designate": "Spielkapitän",
-      "selectTitle": "Spielführer"
+      "selectTitle": "Spielführer",
+      "last": "Letzter Spielkapitän",
+      "lastShort": "Zuletzt"
     },
     "duplicateTabTitle": "Matchblatt bereits geöffnet",
     "duplicateTabMessage": "Das Matchblatt ist bereits in einem anderen Tab oder Browserfenster geöffnet. Führe es nur in einem Tab, um Datenkonflikte zu vermeiden: Schliesse diesen Tab, oder hol es mit «In diesem Tab weiterführen» hierher (der andere Tab führt es dann nicht mehr).",
@@ -1029,7 +1033,18 @@
       "textSubstitution": "Nach dem Punkt beantragt: die Auswechslung wird rückgängig gemacht und nicht gezählt.",
       "textTimeout": "Nach dem Punkt beantragt: das Timeout wird gestrichen.",
       "textBoth": "Nach dem Punkt beantragt: die Auswechslung wird rückgängig gemacht und nicht gezählt, das Timeout gestrichen.",
-      "rule": "FIVB Casebook 8.5 · SSK 26-1"
+      "rule": "FIVB Casebook 8.5 · SSK 26-1",
+      "liberoIn": "Libero {{team}}: #{{libero}} für #{{out}}",
+      "liberoOut": "Libero {{team}}: #{{libero}} raus, #{{in}} zurück",
+      "liberoExchange": "Libero {{team}}: #{{in}} für Libero #{{out}}",
+      "textLibero": "Ein Libero-Austausch, der nicht mehr zum neuen Entscheid passt, wird zurückgenommen: Erfasse ihn neu, falls er noch gilt.",
+      "ruleLibero": "FIVB 19.3",
+      "reason": {
+        "rotation": "die Rotation ändert sich",
+        "serve": "#{{n}} serviert jetzt",
+        "rally": "kein abgeschlossener Spielzug seit dem letzten Libero-Austausch",
+        "after": "nach einem zurückgenommenen Austausch erfasst"
+      }
     },
     "teamSanctionConfirm": {
       "thirdTimeout": "{{team}} hat beide Timeouts dieses Satzes genommen. Ein drittes Gesuch ist eine unzulässige Anfrage.",

@@ -97,7 +97,7 @@ function toISODate(dateStr) {
  * Allows editing of all match data: scores, teams, players, bench officials,
  * sanctions, timeouts, substitutions, and match officials.
  */
-export default function ManualAdjustments({ matchId, onClose, onSave }) {
+export default function ManualAdjustments({ matchId, onClose, onSave, initialTab = 'corrections', tabIds = null }) {
   const { t } = useTranslation()
   // A phone: the two teams and the two match-info cards one above the other,
   // an official's name on one line and country / date of birth on the next
@@ -110,7 +110,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
   // Track all changes for audit log
   const [changes, setChanges] = useState([])
   const [saving, setSaving] = useState(false)
-  const [activeTab, setActiveTab] = useState('corrections')
+  const [activeTab, setActiveTab] = useState(initialTab)
 
   // Editable state - Match
   const [editedMatch, setEditedMatch] = useState(null)
@@ -615,6 +615,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
     { id: 'teams', label: t('manualAdjustmentsEditor.tabTeams', 'Teams'), helpId: 'manual-teams-tab' },
     { id: 'info', label: t('manualAdjustmentsEditor.tabInfo', 'Match info') }
   ]
+    .filter(tab => !tabIds || tabIds.includes(tab.id))
   // An approved / final match is read-only here: reopen it at the match end first
   const closed = ['approved', 'final'].includes(data.match?.status)
   // The game number and the date are fixed after the match: the official
@@ -728,7 +729,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
         style={{ borderBottom: '1px solid var(--ov-hairline-soft)', background: 'var(--ov-card)' }}
       >
         <h1 className="text-xl font-bold tracking-tight text-stone-900" style={{ margin: 0 }}>
-          {t('corrections.pageTitle', 'Corrections')}
+          {tabs.length === 1 ? tabs[0].label : t('corrections.pageTitle', 'Corrections')}
         </h1>
         <div className="ov-kit" style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           {/* this page covers the header and its ?: the help panel from here */}
@@ -756,6 +757,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
       {/* Tabs */}
       {/* Section switch: the kit track segmented control (white raised
           segment on a stone track; selection is never red or blue). */}
+      {tabs.length > 1 && (
       <div
         className="px-4 sm:px-6 py-3"
         style={{ borderBottom: '1px solid var(--ov-hairline-soft)', background: 'var(--ov-card)' }}
@@ -775,6 +777,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
         ))}
       </div>
       </div>
+      )}
 
       {/* Content */}
       <div className="p-4 sm:p-6" style={{ maxWidth: activeTab === 'corrections' ? '960px' : '1400px', margin: '0 auto' }}>

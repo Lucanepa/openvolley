@@ -112,7 +112,7 @@ import { DateTimeField } from '../ui/DateField.jsx'
 import { askConfirm } from '../utils/askConfirm.js'
 import { freeStorageBytes, isStorageFullError, LOW_STORAGE_BYTES } from '../utils/storageSpace'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
-import { ArrowUpDown, ChevronDown, Cross } from 'lucide-react'
+import { ArrowUpDown, ChevronDown, Cross, Pointer } from 'lucide-react'
 import { useDiagCommits } from '../diagnostics/commits'
 import { preload, usePreloaded } from '../utils/preload'
 
@@ -488,7 +488,7 @@ export const preloadScoreboard = (matchId) => preload(scoreboardKey(matchId), ()
 // side-out rotations followed those (stress test 2026-10-25)
 const newestFirst = (a, b) => compareBySeq(b, a)
 
-export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onFinishSet, onOpenSetup, onOpenMatchSetup, onOpenCoinToss, onTriggerEventBackup }) {
+export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onFinishSet, onOpenSetup, onOpenMatchSetup, onOpenCoinToss, onOpenMatchInfo, onTriggerEventBackup }) {
   // diagnostics mode: React commits per user action (nothing while it is off)
   useDiagCommits('scoreboard')
   const { t, i18n } = useTranslation()
@@ -3302,7 +3302,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const result = {
         captainOnCourt,
         hasCourtCaptain: !!currentCourtCaptain,
-        courtCaptainNumber: currentCourtCaptain
+        courtCaptainNumber: currentCourtCaptain,
+        // the acting game captain is still among the six (rule 5.1.2: the
+        // role lasts until that player leaves, the team captain returns or
+        // the set ends)
+        courtCaptainOnCourt: !!currentCourtCaptain && playersOnCourt.includes(String(currentCourtCaptain)),
+        lineupSet: playersOnCourt.length > 0
       }
 
       return result
@@ -3501,8 +3506,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // 26-1). null when the last event is the point (canReplayRally) or
   // something else came after it (Undo, as before).
   const decisionTakeBack = useMemo(() => (
-    !canReplayRally && data?.set ? decisionChangeTakeBack(data.events, data.set.index) : null
-  ), [canReplayRally, data?.events, data?.set])
+    !canReplayRally && data?.set ? decisionChangeTakeBack(data.events, data.set.index, data?.match) : null
+  ), [canReplayRally, data?.events, data?.set, data?.match])
   const canChangeDecision = canReplayRally || !!decisionTakeBack
 
   // "Start set" vs "Start rally": the set's first rally is not started yet
@@ -3994,33 +3999,31 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
     }
 
-    // No valid court captain - check if remembered captain is on court for auto-designation
-    if (rememberedCourtCaptain) {
-      const rememberedStr = String(rememberedCourtCaptain)
-      const rememberedOnCourt = playersOnCourt.some(n => String(n) === rememberedStr)
-      console.log(`[CaptainOnCourt DEBUG] rememberedCourtCaptain #${rememberedStr} on court?`, rememberedOnCourt)
-      if (rememberedOnCourt) {
-        // Auto-designate remembered captain
-        console.log(`[CaptainOnCourt DEBUG] --> AUTO-DESIGNATING remembered captain #${rememberedCourtCaptain}`)
-        await db.matches.update(matchId, { [courtCaptainField]: rememberedCourtCaptain })
-        // Log the event using ref to avoid circular dependency
-        if (logEventRef.current) {
-          await logEventRef.current('court_captain_designation', {
-            team: teamKey,
-            playerNumber: rememberedCourtCaptain,
-            previousCourtCaptain: currentCourtCaptain || null,
-            auto: true  // Mark as automatic
-          })
-        }
-        return
-      }
-    }
-
-    // No remembered captain on court - show modal to select new captain
-    console.log(`[CaptainOnCourt DEBUG] --> No valid captain, SHOWING MODAL`)
-    console.log(`[CaptainOnCourt] Showing modal for ${teamKey} - playersOnCourt:`, playersOnCourt, `captain #${captainNumberStr}`)
+    // No acting game captain on court (never designated, substituted or
+    // replaced, or the team captain came back and left again): a new one is
+    // designated (FIVB 5.1.2). The dialog proposes the last game captain when
+    // that player is on court (one tap); any player on court can be chosen.
+    console.log(`[CaptainOnCourt] Asking for a game captain for ${teamKey} - playersOnCourt:`, playersOnCourt, `captain #${captainNumberStr}`, `last #${rememberedCourtCaptain ?? '-'}`)
     setCaptainOnCourtModal({ team: teamKey })
   }, [localManageCaptainOnCourt, data, matchId, getTeamLineupState, syncLiveStateToSupabase, syncToReferee])
+
+  // A game captain who left the court without a live action (a line-up
+  // correction replaced him, owner 15.11): the team captain is off court too,
+  // so a new game captain is asked for, as after a substitution. Once per
+  // player and set: Cancel leaves the Game captain button.
+  const gameCaptainAskedRef = useRef({ home: null, away: null })
+  useEffect(() => {
+    if (!localManageCaptainOnCourt || !data?.match || !data?.set || captainOnCourtModal) return
+    for (const team of ['home', 'away']) {
+      const st = captainOnCourtStatus[team]
+      if (!st?.lineupSet || st.captainOnCourt || !st.hasCourtCaptain || st.courtCaptainOnCourt) continue
+      const key = `${data.set.index}:${st.courtCaptainNumber}`
+      if (gameCaptainAskedRef.current[team] === key) continue
+      gameCaptainAskedRef.current[team] = key
+      checkAndRequestCaptainOnCourt(team)
+      break
+    }
+  }, [localManageCaptainOnCourt, data?.match, data?.set, captainOnCourtModal, captainOnCourtStatus, checkAndRequestCaptainOnCourt])
 
   // Keep ref updated with latest function to avoid stale closures in setTimeout
   useEffect(() => {
@@ -5513,9 +5516,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // The row above the court (score, then 1R and the Game captain buttons)
   // shows the 1R row except during the set 5 setup
   const showRefereeRow = !(data?.set?.index === 5 && !set5SetupConfirmed)
+  // The Game captain button shows only while a game captain is needed: the
+  // team captain is off court and no acting game captain is among the six.
+  // Once designated the role cannot be changed (FIVB 5.1.2: it lasts until
+  // that player leaves the court, the team captain returns or the set ends).
+  const needsGameCaptain = (status) => !status.captainOnCourt && !status.courtCaptainOnCourt
   const gameCaptainChip = {
-    left: leftTeamLineupSet && !captainOnCourtStatus[leftIsHome ? 'home' : 'away'].captainOnCourt,
-    right: rightTeamLineupSet && !captainOnCourtStatus[leftIsHome ? 'away' : 'home'].captainOnCourt
+    left: leftTeamLineupSet && needsGameCaptain(captainOnCourtStatus[leftIsHome ? 'home' : 'away']),
+    right: rightTeamLineupSet && needsGameCaptain(captainOnCourtStatus[leftIsHome ? 'away' : 'home'])
   }
 
   // One side of the row above the court: the SERVE indicator (its label and
@@ -5542,9 +5550,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         alignSelf: 'stretch'
       }}>
         <div className={`serve-side__grid${chip ? ' serve-side__grid--chip' : ''}`} data-side={side}>
-          {/* kept off the score digits by vmin(2) */}
+          {/* kept off the score digits by vmin(2). Hidden during the
+              deciding set's setup: the serve shows beside its buttons there */}
           <div className="serve-side__indicator" style={{
-            visibility: serving ? 'visible' : 'hidden',
+            visibility: serving && showRefereeRow ? 'visible' : 'hidden',
             [side === 'left' ? 'paddingRight' : 'paddingLeft']: vmin(2)
           }}>
             {!servingPlayer || !servingPlayer.number ? (
@@ -5563,7 +5572,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 minHeight: 0,
                 containerType: 'size',
                 display: 'flex',
-                justifyContent: side === 'left' ? 'flex-end' : 'flex-start'
+                // in the outer corner of its side (owner, 15.11: "much more on
+                // the corner"; it stood next to the score since 08.11)
+                justifyContent: side === 'left' ? 'flex-start' : 'flex-end'
               }}>
                 <div data-serve-indicator={side} style={{
                   display: 'flex',
@@ -6516,7 +6527,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const teamName = pointEvent.payload?.team === 'home'
         ? (data?.homeTeam?.name || t('common.home'))
         : (data?.awayTeam?.name || t('common.away'))
-      setReplayRallyConfirm({ event: pointEvent, description: `Point for ${teamName}`, selectedOption: 'swap', takeBack: decisionTakeBack.requests })
+      setReplayRallyConfirm({ event: pointEvent, description: `Point for ${teamName}`, selectedOption: 'swap', takeBack: decisionTakeBack.requests, takeBackByOption: decisionTakeBack.byOption })
     }
   }, [rallyStatus, canReplayRally, decisionTakeBack, data?.events, data?.homeTeam?.name, data?.awayTeam?.name])
 
@@ -8303,7 +8314,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // counted (FIVB casebook 8.5), the time-out cancelled (SSK News 26-1).
     // The swap below then reads the events as they are after it, not the
     // screen's (a substitution's line-up would be rotated).
-    const takeBack = replayRallyConfirm.takeBack || []
+    // A libero replacement after the point is taken back only when it no
+    // longer fits the chosen decision (domain/interruptionRequests), so what
+    // goes depends on the option
+    const takeBack = replayRallyConfirm.takeBackByOption?.[selectedOption]?.requests ?? replayRallyConfirm.takeBack ?? []
     if (takeBack.length > 0) deferUi(() => setReplayRallyConfirm(null))
     for (const request of takeBack) await undoEventTx(request)
     const events = takeBack.length > 0 ? await db.events.where('matchId').equals(matchId).toArray() : data.events
@@ -14041,6 +14055,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     showActionLog: () => setShowLogs(true),
     openRemarks: () => setShowRemarks(true),
     openMatchSetup: onOpenMatchSetup && data?.match?.easy !== true ? () => onOpenMatchSetup() : undefined,
+    // match details (hall, date, officials ...) can be edited at any time (owner 15.11)
+    editMatchInfo: onOpenMatchInfo && data?.match?.easy !== true ? () => onOpenMatchInfo() : undefined,
     manualChanges: () => setShowManualPanel(true),
     goBack: () => setShowRectify(true),
     editRosterHome: () => setReopenRosterConfirm('home'),
@@ -15027,9 +15043,28 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     : (rallyStatus === 'in_play' || timeoutBlocked('left')
                       ? '1px solid var(--border)'
                       : '1px solid rgba(34, 197, 94, 0.4)'),
-                  cursor: rallyStatus === 'in_play' || timeoutBlocked('left') ? 'not-allowed' : 'pointer'
+                  cursor: rallyStatus === 'in_play' || timeoutBlocked('left') ? 'not-allowed' : 'pointer',
+                  position: 'relative'
                 }}
               >
+                {/* A tap hint while a time-out can be called (the green state;
+                    owner 15.11: make clear it is a button) */}
+                {getTimeoutsUsed('left') < 2 && rallyStatus !== 'in_play' && !timeoutBlocked('left') && (
+                  <Pointer
+                    aria-hidden="true"
+                    data-testid="timeout-tap-hint-left"
+                    style={{
+                      position: 'absolute',
+                      top: (isCompactMode || isShortHeight) ? '1cqw' : '2.5cqw',
+                      right: (isCompactMode || isShortHeight) ? '1cqw' : '2.5cqw',
+                      width: (isCompactMode || isShortHeight) ? '4.5cqw' : 'max(14px, 7cqw)',
+                      height: (isCompactMode || isShortHeight) ? '4.5cqw' : 'max(14px, 7cqw)',
+                      color: '#16a34a',
+                      opacity: 0.85,
+                      pointerEvents: 'none'
+                    }}
+                  />
+                )}
                 <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '3.75cqw' : 'max(11px, 5.1cqw)', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.to')}</div>
                 <div className="to-sub-value" style={{
                   fontSize: (isCompactMode || isShortHeight) ? '6.6cqw' : '11.25cqw',
@@ -16058,27 +16093,30 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               <div style={{
                 gridColumn: 2,
                 gridRow: 1,
-                display: 'flex',
+                // each number centred in its own column, the colon in the
+                // middle whatever the digits (owner, 15.11: 11 : 5 looked off)
+                display: 'grid',
+                gridTemplateColumns: '1.3em auto 1.3em',
                 alignItems: 'center',
-                justifyContent: 'center',
+                justifyItems: 'center',
+                justifySelf: 'center',
+                fontSize: 'min(8vw, calc(8vh + var(--tall-extra, 0px) * 0.9))',
                 pointerEvents: 'none'
               }}>
                 {/* Left Score */}
                 <span style={{
                   fontFamily: getScoreFont(),
                   fontVariantNumeric: 'tabular-nums',
-                  fontSize: 'min(8vw, 8vh)',
+                  fontSize: 'min(8vw, calc(8vh + var(--tall-extra, 0px) * 0.9))',
                   fontWeight: 500,
                   lineHeight: 1,
-                  minWidth: '1.2em',
-                  textAlign: 'right',
-                  display: 'inline-block'
+                  textAlign: 'center'
                 }}>{pointsBySide.left}</span>
 
                 {/* Colon */}
                 <span style={{
                   fontFamily: getScoreFont(),
-                  fontSize: 'min(8vw, 8vh)',
+                  fontSize: 'min(8vw, calc(8vh + var(--tall-extra, 0px) * 0.9))',
                   fontWeight: 700,
                   lineHeight: 1,
                   color: '#22c55e',
@@ -16090,12 +16128,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <span style={{
                   fontFamily: getScoreFont(),
                   fontVariantNumeric: 'tabular-nums',
-                  fontSize: 'min(8vw, 8vh)',
+                  fontSize: 'min(8vw, calc(8vh + var(--tall-extra, 0px) * 0.9))',
                   fontWeight: 500,
                   lineHeight: 1,
-                  minWidth: '1.2em',
-                  textAlign: 'left',
-                  display: 'inline-block'
+                  textAlign: 'center'
                 }}>{pointsBySide.right}</span>
               </div>
 
@@ -17532,6 +17568,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               alignItems: (data?.set?.index === 5 && !set5SetupConfirmed) ? 'center' : 'stretch',
               gap: isCompactMode ? 'calc(8px * var(--scale-factor))' : 'calc(16px * var(--scale-factor))',
               width: '100%',
+              // never squeezed by the court box (it shrinks first)
+              flexShrink: 0,
               minHeight: isCompactMode ? 'calc(100px * var(--scale-factor))' : 'calc(172px * var(--scale-factor))'
             }}>
               {/* Set Results Table - Left Team (hidden in compact mode and set 5 setup - shown below instead) */}
@@ -17640,17 +17678,64 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     is drawn over the rally buttons (rally-stack) */}
                 {(data?.set?.index === 5 && !set5SetupConfirmed && !timeoutModal?.started) ? (
                   <>
-                    {/* Set 5 inline setup UI - buttons first, countdown beneath */}
+                    {/* Set 5 inline setup UI - buttons first, countdown beneath.
+                        The serving team's ball stands beside the buttons, on
+                        its side of the court (owner, 15.11: the small ball in
+                        the top corner was easy to miss); Switch serve moves
+                        it across. */}
                     <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'minmax(0, 1fr) minmax(0, calc(380px * var(--scale-factor))) minmax(0, 1fr)',
+                      alignItems: 'center',
+                      columnGap: 'calc(16px * var(--scale-factor))',
+                      width: '100%',
+                      marginTop: vmin(10)
+                    }}>
+                    {['left', 'right'].map(side => {
+                      const serving = side === 'left' ? leftServing : rightServing
+                      const team = side === 'left' ? leftTeam : rightTeam
+                      const label = side === 'left' ? teamALabel : teamBLabel
+                      const name = side === 'left' ? teamAShortName : teamBShortName
+                      return (
+                        <div
+                          key={side}
+                          data-testid={serving ? 'set5-serve-hint' : undefined}
+                          aria-hidden={!serving}
+                          style={{
+                            gridColumn: side === 'left' ? 1 : 3,
+                            gridRow: 1,
+                            justifySelf: side === 'left' ? 'end' : 'start',
+                            visibility: serving ? 'visible' : 'hidden',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            gap: 'calc(6px * var(--scale-factor))',
+                            minWidth: 0
+                          }}
+                        >
+                          <span style={{ fontSize: vmin(2.25), lineHeight: 1.2, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '2px' }}>
+                            {t('scoreboard.serveLabel', 'Serve')}
+                          </span>
+                          <img
+                            src={ballImage} onError={(e) => e.target.src = ballFallback}
+                            alt={t('common.servingTeam')}
+                            style={{ ...serveBallBaseStyle, width: vmin(11), height: vmin(11) }}
+                          />
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', maxWidth: '100%', fontSize: 'calc(15px * var(--scale-factor))', fontWeight: 600, color: 'var(--ov-text, #1c1917)' }}>
+                            <span style={{ ...teamBoxStyle(team.color), padding: '2px 7px', borderRadius: '4px', fontSize: '0.8em', fontWeight: 700 }}>{label}</span>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                          </span>
+                        </div>
+                      )
+                    })}
+                    <div style={{
+                      gridColumn: 2,
+                      gridRow: 1,
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'stretch',
                       gap: 'calc(10px * var(--scale-factor))',
-                      width: '100%',
-                      // Not the full column width: a button row, not a banner
-                      maxWidth: 'calc(380px * var(--scale-factor))',
-                      alignSelf: 'center',
-                      marginTop: vmin(10)
+                      width: '100%'
                     }}>
                       <button
                         onClick={set5SwitchSides}
@@ -17717,6 +17802,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       >
                         {t('scoreboard.buttons.confirmSet5Setup', { number: displaySetNumber(5, data?.match?.bestOf) })}
                       </button>
+                    </div>
                     </div>
 
                     {/* Countdown beneath buttons - only shown if active */}
@@ -18331,9 +18417,28 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     : (rallyStatus === 'in_play' || timeoutBlocked('right')
                       ? '1px solid var(--border)'
                       : '1px solid rgba(34, 197, 94, 0.4)'),
-                  cursor: rallyStatus === 'in_play' || timeoutBlocked('right') ? 'not-allowed' : 'pointer'
+                  cursor: rallyStatus === 'in_play' || timeoutBlocked('right') ? 'not-allowed' : 'pointer',
+                  position: 'relative'
                 }}
               >
+                {/* A tap hint while a time-out can be called (the green state;
+                    owner 15.11: make clear it is a button) */}
+                {getTimeoutsUsed('right') < 2 && rallyStatus !== 'in_play' && !timeoutBlocked('right') && (
+                  <Pointer
+                    aria-hidden="true"
+                    data-testid="timeout-tap-hint-right"
+                    style={{
+                      position: 'absolute',
+                      top: (isCompactMode || isShortHeight) ? '1cqw' : '2.5cqw',
+                      right: (isCompactMode || isShortHeight) ? '1cqw' : '2.5cqw',
+                      width: (isCompactMode || isShortHeight) ? '4.5cqw' : 'max(14px, 7cqw)',
+                      height: (isCompactMode || isShortHeight) ? '4.5cqw' : 'max(14px, 7cqw)',
+                      color: '#16a34a',
+                      opacity: 0.85,
+                      pointerEvents: 'none'
+                    }}
+                  />
+                )}
                 <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '3.75cqw' : 'max(11px, 5.1cqw)', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.to')}</div>
                 <div className="to-sub-value" style={{
                   fontSize: (isCompactMode || isShortHeight) ? '6.6cqw' : '11.25cqw',
@@ -19475,25 +19580,42 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 // Court position order: IV III II (front row), V VI I (back row)
                 const positionOrder = ['IV', 'III', 'II', 'V', 'VI', 'I']
 
+                // The last game captain, proposed when on court
+                const remembered = data?.match?.[team === 'home' ? 'homeRememberedCourtCaptain' : 'awayRememberedCourtCaptain']
+                const proposed = remembered != null && remembered !== '' && Object.values(currentLineup).some(n => String(n) === String(remembered))
+                  ? String(remembered)
+                  : null
+
                 return positionOrder.map((pos) => {
                   const playerNumber = currentLineup[pos]
                   if (!playerNumber) return <div key={pos} />
+                  const isProposed = proposed != null && String(playerNumber) === proposed
                   return (
                     <button
                       key={pos}
                       onClick={() => handleSelectCaptainOnCourt(playerNumber)}
+                      aria-label={isProposed ? `${playerNumber} (${t('scoreboard.captainOnCourt.last', 'Last game captain')})` : undefined}
                       style={{
                         padding: '12px 8px',
-                        background: 'rgba(234, 179, 8, 0.15)',
-                        border: '2px solid rgba(234, 179, 8, 0.5)',
+                        background: isProposed ? '#eab308' : 'rgba(234, 179, 8, 0.15)',
+                        border: `2px solid ${isProposed ? '#ca8a04' : 'rgba(234, 179, 8, 0.5)'}`,
                         borderRadius: '8px',
                         cursor: 'pointer',
                         fontSize: '24px',
                         fontWeight: 700,
-                        color: '#eab308'
+                        color: isProposed ? '#1c1917' : '#eab308',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        lineHeight: 1.1
                       }}
                     >
                       {playerNumber}
+                      {isProposed && (
+                        <span style={{ fontSize: '11px', fontWeight: 600, marginTop: '2px' }}>
+                          {t('scoreboard.captainOnCourt.lastShort', 'Last')}
+                        </span>
+                      )}
                     </button>
                   )
                 })
@@ -24188,26 +24310,47 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
               {/* Row 19: what came after the point is taken back first, in
                   the order it was recorded (handleDecisionChange) */}
-              {replayRallyConfirm.takeBack?.length > 0 && (
-                <div className="ov-kit" data-testid="decision-take-back" style={{ marginBottom: '16px', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--panel-2)', textAlign: 'left' }}>
-                  <p className="m-0 text-sm font-semibold text-stone-900">{t('scoreboard.decisionTakeBack.title')}</p>
-                  <ul className="m-0 mt-1 list-disc pl-5 text-sm text-stone-800">
-                    {[...replayRallyConfirm.takeBack].reverse().map(e => {
-                      const letter = e.payload?.team === 'home' ? homeLabel : awayLabel
-                      return (
-                        <li key={e.id ?? e.seq}>
-                          {e.type === 'timeout'
-                            ? t('scoreboard.decisionTakeBack.timeout', { team: letter })
-                            : t('scoreboard.decisionTakeBack.substitution', { team: letter, in: e.payload?.playerIn, out: e.payload?.playerOut })}
-                        </li>
-                      )
-                    })}
-                  </ul>
-                  {/* only the sentence that applies (substitution, time-out, both) */}
-                  <p className="m-0 mt-1.5 text-xs text-stone-500">{t(`scoreboard.decisionTakeBack.${decisionTakeBackTextKey(replayRallyConfirm.takeBack)}`)}</p>
-                  <p className="m-0 mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">{t('scoreboard.decisionTakeBack.rule')}</p>
-                </div>
-              )}
+              {(() => {
+                const option = replayRallyConfirm.selectedOption || 'swap'
+                const chosen = replayRallyConfirm.takeBackByOption?.[option]
+                const list = chosen?.requests ?? replayRallyConfirm.takeBack ?? []
+                if (list.length === 0) return null
+                const reasons = chosen?.reasons || {}
+                const requestKey = decisionTakeBackTextKey(list)
+                const hasLibero = list.some(e => e.type?.startsWith('libero_'))
+                return (
+                  <div className="ov-kit" data-testid="decision-take-back" style={{ marginBottom: '16px', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--panel-2)', textAlign: 'left' }}>
+                    <p className="m-0 text-sm font-semibold text-stone-900">{t('scoreboard.decisionTakeBack.title')}</p>
+                    <ul className="m-0 mt-1 list-disc pl-5 text-sm text-stone-800">
+                      {[...list].reverse().map(e => {
+                        const letter = e.payload?.team === 'home' ? homeLabel : awayLabel
+                        const p = e.payload || {}
+                        let text
+                        if (e.type === 'timeout') text = t('scoreboard.decisionTakeBack.timeout', { team: letter })
+                        else if (e.type === 'substitution') text = t('scoreboard.decisionTakeBack.substitution', { team: letter, in: p.playerIn, out: p.playerOut })
+                        else if (e.type === 'libero_entry') text = t('scoreboard.decisionTakeBack.liberoIn', { team: letter, libero: p.liberoIn, out: p.playerOut })
+                        else if (e.type === 'libero_exit') text = t('scoreboard.decisionTakeBack.liberoOut', { team: letter, libero: p.liberoOut, in: p.playerIn })
+                        else text = t('scoreboard.decisionTakeBack.liberoExchange', { team: letter, in: p.liberoIn, out: p.liberoOut })
+                        const reason = reasons[e.id ?? e.seq]
+                        return (
+                          <li key={e.id ?? e.seq}>
+                            {text}
+                            {reason && (
+                              <span className="text-stone-500"> · {t(`scoreboard.decisionTakeBack.reason.${reason}`, { n: p.playerOut ?? p.liberoOut ?? '' })}</span>
+                            )}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                    {/* only the sentences that apply (substitution, time-out, libero) */}
+                    {requestKey && <p className="m-0 mt-1.5 text-xs text-stone-500">{t(`scoreboard.decisionTakeBack.${requestKey}`)}</p>}
+                    {hasLibero && <p className="m-0 mt-1.5 text-xs text-stone-500">{t('scoreboard.decisionTakeBack.textLibero')}</p>}
+                    <p className="m-0 mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">
+                      {[requestKey && t('scoreboard.decisionTakeBack.rule'), hasLibero && t('scoreboard.decisionTakeBack.ruleLibero')].filter(Boolean).join(' · ')}
+                    </p>
+                  </div>
+                )
+              })()}
 
               {/* Horizontal radio buttons */}
               <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>

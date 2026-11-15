@@ -330,7 +330,7 @@
     "matchFormat": "Format du match",
     "chooseMatchFormat": "Choisir…",
     "matchFormatRequired": "Choisis d’abord le format du match (best of 3 ou best of 5).",
-    "lockedAfterCoinToss": "Le tirage au sort est fait : la configuration du match est en lecture seule. Modifie un effectif depuis le menu du match (Modifier la composition domicile ou visiteur), le format, le numéro du match ou d’autres données via Corrections.",
+    "lockedAfterCoinToss": "Le tirage au sort est fait : la configuration du match est en lecture seule. Modifie un effectif depuis le menu du match (Modifier la composition domicile ou visiteur), et la salle, le numéro du match, les arbitres et d’autres données avec Modifier les infos du match.",
     "scheduleSwapTitle": "Domicile et extérieur inversés",
     "scheduleSwapBody": "Dans le calendrier, {{home}} joue à domicile et {{away}} à l’extérieur, à l’inverse de ce match. Échanger les équipes avec leurs effectifs, officiels de banc et signatures ?",
     "scheduleSwapConfirm": "Échanger les équipes",
@@ -521,6 +521,7 @@
     "refereeEmailHint": "Pour la feuille de match finale. Seuls les marqueurs de ce match la voient."
   },
   "scoreboard": {
+    "serveLabel": "Service",
     "set": "Set",
     "timeout": "Temps mort",
     "substitution": "Changement",
@@ -756,6 +757,7 @@
       "stopMatch": "Arrêter le match",
       "showPins": "Afficher les codes PIN",
       "showMatchSetup": "Configuration du match",
+      "editMatchInfo": "Modifier les infos du match",
       "downloadGameData": "Télécharger les données du match (JSON)",
       "options": "Options",
       "gamePins": "PINs du match",
@@ -874,7 +876,9 @@
     "noEventsRecorded": "Aucun événement enregistré.",
     "captainOnCourt": {
       "designate": "Capitaine de jeu",
-      "selectTitle": "Capitaine de jeu"
+      "selectTitle": "Capitaine de jeu",
+      "last": "Dernier capitaine en jeu",
+      "lastShort": "Dernier"
     },
     "duplicateTabTitle": "Feuille de match déjà ouverte",
     "duplicateTabMessage": "La feuille de match est déjà ouverte dans un autre onglet ou navigateur. Pour éviter les conflits de données, tiens-la dans un seul onglet : ferme celui-ci, ou appuie sur « Continuer dans cet onglet » pour la reprendre ici (l’autre onglet cesse alors de la tenir).",
@@ -1035,7 +1039,18 @@
       "textSubstitution": "Demandé après le point : le remplacement est annulé et ne compte pas.",
       "textTimeout": "Demandé après le point : le temps mort est annulé.",
       "textBoth": "Demandé après le point : le remplacement est annulé et ne compte pas, le temps mort est annulé.",
-      "rule": "FIVB casebook 8.5 · SSK 26-1"
+      "rule": "FIVB casebook 8.5 · SSK 26-1",
+      "liberoIn": "Libéro {{team}} : #{{libero}} entre pour #{{out}}",
+      "liberoOut": "Libéro {{team}} : #{{libero}} sort, #{{in}} revient",
+      "liberoExchange": "Libéro {{team}} : #{{in}} pour le libéro #{{out}}",
+      "textLibero": "Un remplacement de libéro qui ne correspond plus à la nouvelle décision est annulé : saisis-le à nouveau s'il s'applique encore.",
+      "ruleLibero": "FIVB 19.3",
+      "reason": {
+        "rotation": "la rotation change",
+        "serve": "#{{n}} sert maintenant",
+        "rally": "aucun échange terminé depuis le dernier remplacement de libéro",
+        "after": "saisi après un remplacement annulé"
+      }
     },
     "teamSanctionConfirm": {
       "thirdTimeout": "{{team}} a utilisé ses deux temps morts de ce set. Une troisième demande est une demande irrégulière.",

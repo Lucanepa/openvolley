@@ -331,7 +331,7 @@
     "matchFormat": "Formato della partita",
     "chooseMatchFormat": "Scegli…",
     "matchFormatRequired": "Scegli prima il formato della partita (best of 3 o best of 5).",
-    "lockedAfterCoinToss": "Il coin toss è fatto: l’impostazione della partita è in sola lettura. Modifica una rosa dal menu della partita (Modifica rosa squadra casa o ospite), il formato, il numero di gara o altri dati tramite Correzioni.",
+    "lockedAfterCoinToss": "Il coin toss è fatto: l’impostazione della partita è in sola lettura. Modifica una rosa dal menu della partita (Modifica rosa squadra casa o ospite), e la palestra, il numero di gara, gli arbitri e altri dati con Modifica info partita.",
     "scheduleSwapTitle": "Casa e ospite invertiti",
     "scheduleSwapBody": "Nel calendario {{home}} gioca in casa e {{away}} in trasferta, al contrario di questa partita. Scambiare le squadre con le loro rose, gli ufficiali di panchina e le firme?",
     "scheduleSwapConfirm": "Scambia squadre",
@@ -522,6 +522,7 @@
     "refereeEmailHint": "Per il referto finale. La vedono solo i segnapunti di questa partita."
   },
   "scoreboard": {
+    "serveLabel": "Servizio",
     "set": "Set",
     "timeout": "Timeout",
     "substitution": "Sostituzione",
@@ -757,6 +758,7 @@
       "stopMatch": "Interrompi partita",
       "showPins": "Mostra PIN",
       "showMatchSetup": "Mostra impostazione partita",
+      "editMatchInfo": "Modifica info partita",
       "downloadGameData": "Scarica i dati della partita (JSON)",
       "options": "Opzioni",
       "gamePins": "PIN partita",
@@ -875,7 +877,9 @@
     "noEventsRecorded": "Nessun evento registrato.",
     "captainOnCourt": {
       "designate": "Capitano in gioco",
-      "selectTitle": "Capitano del gioco"
+      "selectTitle": "Capitano del gioco",
+      "last": "Ultimo capitano in gioco",
+      "lastShort": "Ultimo"
     },
     "duplicateTabTitle": "Foglio segnapunti già aperto",
     "duplicateTabMessage": "Il foglio segnapunti è già aperto in un'altra scheda o finestra del browser. Per evitare conflitti di dati, tienilo in una sola scheda: chiudi questa, oppure premi «Continua in questa scheda» per riprenderlo qui (l'altra scheda smette allora di tenerlo).",
@@ -1036,7 +1040,18 @@
       "textSubstitution": "Richiesto dopo il punto: la sostituzione viene annullata e non conta.",
       "textTimeout": "Richiesto dopo il punto: il timeout viene annullato.",
       "textBoth": "Richiesto dopo il punto: la sostituzione viene annullata e non conta, il timeout viene annullato.",
-      "rule": "FIVB casebook 8.5 · SSK 26-1"
+      "rule": "FIVB casebook 8.5 · SSK 26-1",
+      "liberoIn": "Libero {{team}}: #{{libero}} entra per #{{out}}",
+      "liberoOut": "Libero {{team}}: #{{libero}} esce, rientra #{{in}}",
+      "liberoExchange": "Libero {{team}}: #{{in}} per il libero #{{out}}",
+      "textLibero": "Una sostituzione del libero che non corrisponde più alla nuova decisione viene annullata: inseriscila di nuovo se vale ancora.",
+      "ruleLibero": "FIVB 19.3",
+      "reason": {
+        "rotation": "la rotazione cambia",
+        "serve": "#{{n}} ora serve",
+        "rally": "nessuno scambio completato dall'ultima sostituzione del libero",
+        "after": "inserita dopo una sostituzione annullata"
+      }
     },
     "teamSanctionConfirm": {
       "thirdTimeout": "{{team}} ha usato entrambi i timeout di questo set. Una terza richiesta è una richiesta impropria.",
