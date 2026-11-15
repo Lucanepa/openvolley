@@ -71,6 +71,15 @@
   </screenshots>
 
   <releases>
+    <release version="3.2.14" date="2026-11-15">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.2.14</url>
+      <description>
+        <ul>
+          <li>Time-outs: with both time-outs of a set used, no third one can be asked for; record an improper request with the team's Improper request button.</li>
+          <li>Manager: SQL tab for super admins.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.2.13" date="2026-11-15">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.2.13</url>
       <description>
