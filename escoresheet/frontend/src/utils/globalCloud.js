@@ -10,6 +10,12 @@ import { db } from '../db/db'
  * offline is normal, the match stays on the device.
  */
 
+/**
+ * Whether a match's backups go to the cloud: every match but a test match,
+ * and a Global match (stored as a test match, with its own store by its key).
+ */
+export const sendsCloudBackup = (match) => !!match && (match.test !== true || match.global === true)
+
 /** 22 base64url characters = 128 random bits. */
 export function newGlobalKey() {
   const bytes = new Uint8Array(16)

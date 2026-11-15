@@ -104,3 +104,14 @@ describe('globalRestoreData (restore by backup code)', () => {
     }
   })
 })
+
+describe('sendsCloudBackup', () => {
+  it('sends an official match, a Global match, never a test match', async () => {
+    const { sendsCloudBackup } = await import('../globalCloud')
+    expect(sendsCloudBackup({ test: false })).toBe(true)
+    expect(sendsCloudBackup({})).toBe(true)
+    expect(sendsCloudBackup({ test: true, global: true })).toBe(true)
+    expect(sendsCloudBackup({ test: true })).toBe(false)
+    expect(sendsCloudBackup(null)).toBe(false)
+  })
+})
