@@ -71,6 +71,20 @@
   </screenshots>
 
   <releases>
+    <release version="3.2.6" date="2026-11-15">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.2.6</url>
+      <description>
+        <ul>
+          <li>Sponsors on clothing (Options): (+) or (-) after each team on the scoresheet.</li>
+          <li>The scoresheet PDF is kept when its window closes fast (Linux, macOS).</li>
+          <li>Earlier matches folded away in Load match from schedule.</li>
+          <li>Team rosters only for games not yet started.</li>
+          <li>Test matches propose the scheduled start time.</li>
+          <li>Referee: a libero switch flashes once.</li>
+          <li>"Import Einsatzliste PDF".</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.2.5" date="2026-11-15">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.2.5</url>
       <description>
