@@ -21,6 +21,9 @@ import CorrectionsPanel from './corrections/CorrectionsPanel.jsx'
 import { DialogHelpButton } from './help/HelpButton.jsx'
 import { usePhoneWidth } from '../hooks/usePhoneWidth'
 import { TEAM_COLOUR_MARK, discRing, HEADER_SURFACE, isCustomColour } from '../utils/teamColours'
+import { Checkbox } from '../ui/Checkbox.jsx'
+import { showsSponsorBoxes, sponsorsOf, sponsorsPatch, SPONSOR_MARK_NO, SPONSOR_MARK_YES } from '../domain/sponsors'
+import { useSponsorsOption } from '../hooks/useSponsorsOption'
 
 // Standard volleyball team colors - keys for translation
 const TEAM_COLORS = [
@@ -106,6 +109,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
   const officialCols = phone ? '1fr 1fr' : '1fr 1fr 80px 100px'
   const scorerCols = phone ? '1fr 1fr' : '1fr 1fr 100px'
   const { showAlert } = useAlert()
+  // Sponsors on clothing (domain/sponsors.js): this device's option shows the boxes
+  const [sponsorsOption] = useSponsorsOption()
 
   // Track all changes for audit log
   const [changes, setChanges] = useState([])
@@ -393,6 +398,19 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
     })
   }, [recordFieldChange])
 
+  // A team's Sponsors on clothing box: the first tick marks the match; logged
+  // as (-) / (+), the way the sheet prints it
+  const updateSponsors = useCallback((team, ticked) => {
+    const teamName = (team === 'home' ? editedHomeTeam?.name : editedAwayTeam?.name) || t(team === 'home' ? 'common.home' : 'common.away')
+    setEditedMatch(prev => {
+      if (!prev) return prev
+      const before = sponsorsOf(prev)[team] ? SPONSOR_MARK_YES : SPONSOR_MARK_NO
+      const after = ticked ? SPONSOR_MARK_YES : SPONSOR_MARK_NO
+      recordFieldChange('match', `${team}Sponsors`, before, after, `${t('options.sponsorsOnClothing')}, ${teamName}`)
+      return { ...prev, ...sponsorsPatch(prev, team, ticked) }
+    })
+  }, [recordFieldChange, t, editedHomeTeam?.name, editedAwayTeam?.name])
+
   // ==================== SAVE FUNCTION ====================
   // Every event deleted or edited by the save is recorded as a manual
   // adjustment in the event history (db/eventHistory)
@@ -466,6 +484,10 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
           match_type_1: editedMatch.match_type_1,
           match_type_2: editedMatch.match_type_2,
           match_type_3: editedMatch.match_type_3,
+          // Sponsors on clothing (domain/sponsors.js)
+          homeSponsors: sponsorsOf(editedMatch).home,
+          awaySponsors: sponsorsOf(editedMatch).away,
+          sponsorsMarked: sponsorsOf(editedMatch).marked,
           // Swap A/B: the designation and every A/B-labelled field with it,
           // from the match as stored now (a correction made on this page
           // since it opened, e.g. a set reopened, is kept)
@@ -1094,6 +1116,36 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
                 ))}
               </div>
             </div>
+
+            {/* Sponsors on clothing (domain/sponsors.js): while the option is on
+                or the match is marked; the match prints (+) / (-) after the names */}
+            {showsSponsorBoxes(sponsorsOption, editedMatch) && (
+              <div style={cardStyle} data-testid="edit-sponsors">
+                <h2 style={cardTitleStyle}>
+                  {t('options.sponsorsOnClothing')}
+                </h2>
+                <p style={{ margin: '0 0 12px', fontSize: '13px', color: 'var(--ov-text-muted)' }}>
+                  {t('options.sponsorsOnClothingInfo')}
+                </p>
+                <div className="ov-kit" style={{ display: 'grid', gridTemplateColumns: pairCols, gap: '12px' }}>
+                  {['home', 'away'].map(team => {
+                    const name = (team === 'home' ? data?.homeTeam?.name : data?.awayTeam?.name) || t(team === 'home' ? 'common.home' : 'common.away')
+                    return (
+                      <Checkbox
+                        key={team}
+                        variant="card"
+                        data-testid={`edit-sponsors-${team}`}
+                        aria-label={`${name} ${t('options.sponsorsOnClothing')}`}
+                        label={name}
+                        checked={sponsorsOf(editedMatch)[team]}
+                        disabled={closed}
+                        onChange={(e) => updateSponsors(team, e.target.checked)}
+                      />
+                    )
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Match Officials */}
             <div style={cardStyle}>
