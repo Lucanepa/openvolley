@@ -111,7 +111,7 @@
     "gameCaptainShort": "SC",
     "setScore": "Satz {{set}}, {{score}}",
     "delayShort": "V",
-    "improperRequestShort": "UA",
+    "improperRequestShort": "NOA",
     "out": {
       "disqualified": "Disqualifiziert: darf für de Rescht vom Spiil nüme spiele",
       "expelled": "Usgschlosse: darf i däm Satz nüme spiele",
@@ -665,7 +665,7 @@
       "decisionChange": "Entscheidsänderig",
       "exceptionalSubstitution": "Usserordentliche Wächsel",
       "exceptionalSubPlayerCantPlay": "Usserordentliche Wächsel - Spieler cha nüme teilnäh",
-      "substitutionLimitImproperRequest": "S Team hät sini 6 Wächsel i däm Satz bruucht: en wiitere Wächselaatrag isch e unzulässigi Aafraag.",
+      "substitutionLimitImproperRequest": "S Team hät sini 6 Wächsel i däm Satz bruucht: en wiitere Wächselaatrag isch en nicht ordnungsgemässe Antrag.",
       "substituteWithEligible": "Mit emne spielberechtigte Spieler vo de Bank ersetze",
       "liberoRedesignation": "Libero-Neubezeichnig",
       "courtSwitchRequired": "Siitewächsel erforderlich",
@@ -689,11 +689,11 @@
     },
     "sanctions": {
       "teamSanctions": "Teamsanktione",
-      "irAndDelays": "UA & Verzög.",
-      "improperRequest": "Unzulässigi Aafraag",
+      "irAndDelays": "NOA & Verzög.",
+      "improperRequest": "Nicht ordnungs\u00adgemässe Anträge",
       "delayWarning": "Verzögerigs-\nwarnig",
       "delayPenalty": "Verzögerigsstraaf",
-      "sanctionedImproperRequest": "Sanktioniert mit ere unzulässige Aafraag",
+      "sanctionedImproperRequest": "Sanktioniert mit emne nicht ordnungsgemässe Antrag",
       "sanctionedDelayWarning": "Sanktioniert mit ere Verzögerigswarnig",
       "sanctionedFormalWarning": "Sanktioniert (formelli Warnig)",
       "warning": "Warnig",
@@ -985,17 +985,17 @@
         "replay": "en wiederholte Ballwächsel"
       },
       "options": {
-        "improper": "Als unzulässigi Aafraag erfasse",
+        "improper": "Als nicht ordnungsgemässe Antrag erfasse",
         "delay": "Spiel verzögeret: Verzögerigssanktion",
         "timeoutStarted": "Timeout lauft scho: Verzögerigssanktion",
         "illegal": "Unerlaubte Wächsel beaatreit: ablehne + Verzögerigssanktion",
         "continue": "Trotzdem wiiter"
       },
       "records": {
-        "improper": "Erfasst: unzulässigi Aafraag, susch nüt.",
+        "improper": "Erfasst: nicht ordnungsgemässe Antrag, susch nüt.",
         "delayWarning": "Erfasst: Verzögerigswarnig.",
         "delayPenalty": "Erfasst: Verzögerigsstraaf – Punkt und Ufschlag für {{opponent}}.",
-        "repeatedImproper": "(S Team hät scho e unzulässigi Aafraag: die isch e Verzögerig.)",
+        "repeatedImproper": "(S Team hät scho en nicht ordnungsgemässe Antrag: dä isch e Verzögerig.)",
         "nothing": "D Schiri händ s erlaubt. Es wird nüt erfasst."
       },
       "illegal": {
@@ -1019,12 +1019,12 @@
       },
       "substitution_limit": {
         "title": "Kei Wächsel meh",
-        "text": "{{team}} hät sini 6 Wächsel i däm Satz bruucht. En wiitere Aatrag isch e unzulässigi Aafraag.",
+        "text": "{{team}} hät sini 6 Wächsel i däm Satz bruucht. En wiitere Aatrag isch en nicht ordnungsgemässe Antrag.",
         "rule": "FIVB 15.1 · 15.11.1.4"
       },
       "third_timeout": {
         "title": "Dritts Timeout",
-        "text": "{{team}} hät beidi Timeouts vo däm Satz gnoh. Es dritts Gsuech isch e unzulässigi Aafraag; lauft s Timeout scho, isch s Spiel verzögeret worde.",
+        "text": "{{team}} hät beidi Timeouts vo däm Satz gnoh. Es dritts Gsuech isch en nicht ordnungsgemässe Antrag; lauft s Timeout scho, isch s Spiel verzögeret worde.",
         "rule": "FIVB 15.1 · 15.11.1.4 · FIVB casebook 4.29"
       },
       "after_delay_warning": {
@@ -1067,11 +1067,11 @@
       }
     },
     "teamSanctionConfirm": {
-      "thirdTimeout": "{{team}} hät beidi Timeouts vo däm Satz gnoh. Es dritts Gsuech isch e unzulässigi Aafraag.",
-      "applyImproperRequest": "Unzulässigi Aafraag für {{team}} erfasse?",
+      "thirdTimeout": "{{team}} hät beidi Timeouts vo däm Satz gnoh. Es dritts Gsuech isch en nicht ordnungsgemässe Antrag.",
+      "applyImproperRequest": "Nicht ordnungsgemässe Antrag für {{team}} erfasse?",
       "applyDelayWarning": "Verzögerigswarnig für {{team}} erfasse?",
       "applyDelayPenalty": "Verzögerigsstraaf für {{team}} erfasse?",
-      "repeatedImproperRequest": "S Team hät scho e unzulässigi Aafraag, die zellt drum als Verzögerig.",
+      "repeatedImproperRequest": "S Team hät scho en nicht ordnungsgemässe Antrag, dä zellt drum als Verzögerig.",
       "repeatedDelay": "S Team hät scho e Verzögerigswarnig, die Verzögerig isch drum e Straaf.",
       "pointToOpponent": "Punkt und Ufschlag für {{opponent}}."
     },
@@ -1847,7 +1847,7 @@
     "result": "Resultat",
     "logsDownloaded": "Interaktions-Logs erfolgriich abeglade",
     "logsDownloadFailed": "D Logs händ nöd chönne abeglade werde",
-    "improperRequest": "Unzulässigi Aafraag",
+    "improperRequest": "Nicht ordnungsgemässe Anträge",
     "set": "Satz",
     "time": "Ziit",
     "tot": "Tot",
@@ -2970,7 +2970,7 @@
       "a_awardPoint": "Wänn de Ballwächsel fertig isch, tipp uf de Punkt-Chnopf vom Team, wo ne gwunne hät. D App zellt de Punkt, git de Ufschlag wiiter und laat s Team rotiere, wo de Ufschlag zruggwinnt.",
       "tip_awardPoint": "Tipp uf de Punkt-Chnopf vom Team, wänn de Ballwächsel fertig isch.",
       "q_timeout": "Wie nimm ich es Timeout?",
-      "a_timeout": "Tipp zwüsche zwei Ballwächsel ufs «TO»-Fäld vom Team. Prüef de Dialog und tipp uf «Timeout bestätige»: En Countdown vo 30 Sekunde startet. «Timeout beände» beändet ihn früener. Jedes Team hät 2 Timeouts pro Satz; bi emne dritte gaht e Warnig uf, wo s als unzulässigi Aafraag erfasst (oder als Verzögerig, wänn s Timeout scho aagfange hät). I de Pause zwüsche de Sätz git s kei Timeout.",
+      "a_timeout": "Tipp zwüsche zwei Ballwächsel ufs «TO»-Fäld vom Team. Prüef de Dialog und tipp uf «Timeout bestätige»: En Countdown vo 30 Sekunde startet. «Timeout beände» beändet ihn früener. Jedes Team hät 2 Timeouts pro Satz; bi emne dritte gaht e Warnig uf, wo s als nicht ordnungsgemässe Antrag erfasst (oder als Verzögerig, wänn s Timeout scho aagfange hät). I de Pause zwüsche de Sätz git s kei Timeout.",
       "tip_timeout": "Tipp da zwüsche zwei Ballwächsel, zum es Timeout für das Team näh.",
       "q_substitution": "Wie mach ich en Wächsel?",
       "a_substitution": "Tipp zwüsche zwei Ballwächsel uf de Spieler uf em Fäld, wähl «Wächsel» und dänn de Spieler, wo ine chunnt. Oder zieh en Bankspieler uf de Fäldspieler (uf emne Tablet lang drücke). Dänn bestätige. Spieler, wo nöd ine dörfed, sind grau, mit em Grund.",
@@ -3105,7 +3105,7 @@
     },
     "subsTimeouts": {
       "q_subLimit": "Wievill Wächsel hät es Team?",
-      "a_subLimit": "Sächs pro Satz. S «US»-Fäld zellt si und wird bi 5 gääl. En Startspieler chan eimal use und eimal zrugg, nur für de Spieler, wo ihn ersetzt hät. Nach em sächste isch e wiiteri Aafraag e unzulässigi Aafraag.",
+      "a_subLimit": "Sächs pro Satz. S «US»-Fäld zellt si und wird bi 5 gääl. En Startspieler chan eimal use und eimal zrugg, nur für de Spieler, wo ihn ersetzt hät. Nach em sächste isch e wiiteri Aafraag en nicht ordnungsgemässe Antrag.",
       "q_injury": "En Spieler isch verletzt: Was mach ich?",
       "a_injury": "Tipp uf de Spieler uf em Fäld, wähl «Verletzig» und dänn en Ersatz. Isch kein reguläre Wächsel möglich, büütet d App en Usnahmewächsel aa. Nach emne Usnahmewächsel darf dä Spieler i däm Spiil nüme spiile.",
       "q_liberoOut": "Wie verlaat de Libero s Fäld?",
@@ -3117,15 +3117,15 @@
       "q_benchRequests": "E Charte seit «Time-out-Aafrog» oder «Ufstellig für Satz 2»?",
       "a_benchRequests": "S Bank-Tablet vom Team hät e Aafrog gschickt. D Charte stönd i de obere rächte Egge und chönd zämeklappt werde. «Time-out gwähre» macht de Timeout-Dialog uf, «Wächsle» de Wächsel vo däm Paar, «Prüefe und aanäh» de Ufstelligsdialog, wo d Bank uusgfüllt hät: Prüef en und tipp uf «Bestätige». S Gwähre wartet, solang en Ballwächsel lauft. «Ablehne» fröget nach emne Grund (freiwillig), wo d Bank gseht. Du chasch s au wie gwohnt vo Hand erfasse: D Charte gaht zue, sobald s erfasst isch.",
       "q_requestWarning": "Werum gaht e Warnig uf, wänn ich es Timeout oder en Wächsel erfass?",
-      "a_requestWarning": "D App prüeft d Regle für Aafroge: es dritts Timeout, en sibete Wächsel, e zweiti Wächselaafrog vom gliiche Team i einere Underbrächig, en Spieler, wo nöd ine darf, oder e Aafrog nach de Verzögerigswarnig vom Team. D Warnig seit werum und biitet aa, was erfasst werde söll, zum Biispiel «Als unzulässigi Aafraag erfasse» oder e Verzögerigssanktion. «Trotzdem wiiter» erfasst nüüt meh, wänn de Schiri s erlaubt hät (nöd aabote bi emne dritte Timeout oder emne sibete Wächsel).",
+      "a_requestWarning": "D App prüeft d Regle für Aafroge: es dritts Timeout, en sibete Wächsel, e zweiti Wächselaafrog vom gliiche Team i einere Underbrächig, en Spieler, wo nöd ine darf, oder e Aafrog nach de Verzögerigswarnig vom Team. D Warnig seit werum und biitet aa, was erfasst werde söll, zum Biispiel «Als nicht ordnungsgemässe Antrag erfasse» oder e Verzögerigssanktion. «Trotzdem wiiter» erfasst nüüt meh, wänn de Schiri s erlaubt hät (nöd aabote bi emne dritte Timeout oder emne sibete Wächsel).",
       "q_gameCaptain": "De Teamcaptain isch vom Fäld: Wer isch Spiilcaptain?",
       "a_gameCaptain": "D App fröget «Spiilcaptain»: Tipp uf de Spieler uf em Fäld, wo als Captain amtet (de letscht Spiilcaptain wird zersch aabote, markiert mit «Zletscht»). Bis eine gwählt isch, staht uf de Siite vo däm Team en Chnopf «Spiilcaptain». De Spiilcaptain bliibt, bis er s Fäld verlaat, de Teamcaptain zrugg chunnt oder de Satz fertig isch. Das bruucht «Captain uf em Fäld verwalte» i de Optione (standardmässig aa)."
     },
     "sanctions": {
-      "q_teamSanctions": "Wie erfass ich e unzulässigi Aafraag oder e Verzögerig?",
-      "a_teamSanctions": "Under de Fälder «TO» und «US» vo jedem Team stönd «Unzulässigi Aafraag» und «Verzögerigswarnig» (uf emne chliine Bildschirm under «UA & Verzög.»). Es Team hät ei unzulässigi Aafraag: Dänn verschwindt de Chnopf, und «Sanktioniert mit ere unzulässige Aafraag» staht da. Nach de Verzögerigswarnig wird de Chnopf zu «Verzögerigsstraaf»: Punkt und Ufschlag für de Gegner. D App treit si is Matchblatt ii.",
+      "q_teamSanctions": "Wie erfass ich en nicht ordnungsgemässe Antrag oder e Verzögerig?",
+      "a_teamSanctions": "Under de Fälder «TO» und «US» vo jedem Team stönd «Nicht ordnungsgemässe Anträge» und «Verzögerigswarnig» (uf emne chliine Bildschirm under «NOA & Verzög.»). Es Team hät ein nicht ordnungsgemässe Antrag: Dänn verschwindt de Chnopf, und «Sanktioniert mit emne nicht ordnungsgemässe Antrag» staht da. Nach de Verzögerigswarnig wird de Chnopf zu «Verzögerigsstraaf»: Punkt und Ufschlag für de Gegner. D App treit si is Matchblatt ii.",
       "q_ladder": "Werum isch mini Verzögerigswarnig e Straaf worde?",
-      "a_ladder": "D Sanktione folged de Regle. E zweiti unzulässigi Aafraag zellt als Verzögerig. E Verzögerig nach ere Verzögerigswarnig isch e Verzögerigsstraaf. De Dialog seit dir das, bevor du bestätigsch.",
+      "a_ladder": "D Sanktione folged de Regle. En zweite nicht ordnungsgemässe Antrag zellt als Verzögerig. E Verzögerig nach ere Verzögerigswarnig isch e Verzögerigsstraaf. De Dialog seit dir das, bevor du bestätigsch.",
       "q_penaltyPoint": "Wer überchunnt nach ere Straaf de Punkt?",
       "a_penaltyPoint": "De Gegner überchunnt Punkt und Ufschlag. D App treit beides ii und laat s Team wänn nötig rotiere. E Verzögerigsstraaf vor de Ufstellige wird vergäh, sobald beidi Ufstellige iitreit sind.",
       "q_expulsion": "Was passiert nach emne Usschluss oder ere Disqualifikation?",
@@ -5393,7 +5393,7 @@
     "score": "{{first}} {{a}}:{{b}} {{second}}",
     "setTimesValue": "{{start}}–{{end}} ({{minutes}} Min.)",
     "sanction": {
-      "improper_request": "Unzulässigi Aafraag",
+      "improper_request": "Nicht ordnungsgemässe Antrag",
       "delay_warning": "Verzögerigswarnig",
       "delay_penalty": "Verzögerigsstraaf",
       "warning": "Warnig",
@@ -5534,7 +5534,7 @@
       "pointNow": "De Punkt für {{team}} chunnt nach de Sanktion dezue.",
       "pointStays": "De Punkt blibt als normale Punkt (nüme iikreist).",
       "penaltyNotNext": "De Ballwächsel nach {{score}} hät {{team}} gwunne, nöd de Gegner: Prüef, öb d Sanktion bi däm Spielstand usgsproche worde isch.",
-      "irBox": "De Buechstabe vo Team {{letter}} wird im Fäld «Unzulässigi Aafraag» duregstriche (X); es wird kei Spielstand gschribe.",
+      "irBox": "De Buechstabe vo Team {{letter}} wird im Fäld «Nicht ordnungsgemässe Anträge» duregstriche (X); es wird kei Spielstand gschribe.",
       "expulsionReplacement": "Erfass de Ersatz mit «+ Wächsel hinzuefüege» (usserordentlich, wänn kein reguläre Wächsel möglich gsi isch).",
       "laterRotations": "Späteri Rotatione vo däm Satz werded nöd neu berächnet.",
       "afterMatch": "Nach em Spiil erfasst.",

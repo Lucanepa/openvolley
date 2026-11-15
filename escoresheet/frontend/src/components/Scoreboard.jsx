@@ -13708,6 +13708,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       fontSize: 'max(12px, 4.65cqw)',
       lineHeight: 1.15,
       whiteSpace: 'normal',
+      // two lines for a long label ("Nicht ordnungsgemässe Anträge", owner
+      // 2026-11-15): its soft hyphen first, else inside a word, never past the edge
+      overflowWrap: 'anywhere',
+      hyphens: 'manual',
       padding: 'max(4px, 1.25cqw) max(6px, 1.25cqw)',
       fontWeight: 600
     }

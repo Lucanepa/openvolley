@@ -108,7 +108,7 @@
     "gameCaptainShort": "SK",
     "setScore": "Satz {{set}}, {{score}}",
     "delayShort": "V",
-    "improperRequestShort": "UA",
+    "improperRequestShort": "NOA",
     "out": {
       "disqualified": "Disqualifiziert: darf für den Rest des Spiels nicht mehr spielen",
       "expelled": "Ausgeschlossen: darf in diesem Satz nicht mehr spielen",
@@ -658,7 +658,7 @@
       "decisionChange": "Entscheidungs\u00adänderung",
       "exceptionalSubstitution": "Ausserordentliche Auswechslung",
       "exceptionalSubPlayerCantPlay": "Ausserordentliche Auswechslung - Spieler kann nicht mehr teilnehmen",
-      "substitutionLimitImproperRequest": "Das Team hat seine 6 Auswechslungen in diesem Satz gebraucht: ein weiterer Wechselantrag ist eine unzulässige Anfrage.",
+      "substitutionLimitImproperRequest": "Das Team hat seine 6 Auswechslungen in diesem Satz gebraucht: ein weiterer Wechselantrag ist ein nicht ordnungsgemässer Antrag.",
       "substituteWithEligible": "Mit einem spielberechtigten Spieler von der Bank ersetzen",
       "liberoRedesignation": "Libero-Neubezeichnung",
       "courtSwitchRequired": "Seitenwechsel erforderlich",
@@ -682,11 +682,11 @@
     },
     "sanctions": {
       "teamSanctions": "Mannschaftssanktionen",
-      "irAndDelays": "UA & Verzög.",
-      "improperRequest": "Unzulässige Anfrage",
+      "irAndDelays": "NOA & Verzög.",
+      "improperRequest": "Nicht ordnungs\u00adgemässe Anträge",
       "delayWarning": "Verzögerungs-\nwarnung",
       "delayPenalty": "Verzögerungsstrafe",
-      "sanctionedImproperRequest": "Sanktioniert wegen unzulässiger Anfrage",
+      "sanctionedImproperRequest": "Sanktioniert wegen nicht ordnungsgemässen Antrags",
       "sanctionedDelayWarning": "Sanktioniert wegen Verzögerung (Warnung)",
       "sanctionedFormalWarning": "Sanktioniert (formelle Warnung)",
       "warning": "Warnung",
@@ -978,17 +978,17 @@
         "replay": "ein wiederholter Ballwechsel"
       },
       "options": {
-        "improper": "Als unzulässige Anfrage erfassen",
+        "improper": "Als nicht ordnungsgemässen Antrag erfassen",
         "delay": "Spiel verzögert: Verzögerungssanktion",
         "timeoutStarted": "Timeout hat schon begonnen: Verzögerungssanktion",
         "illegal": "Unerlaubte Auswechslung beantragt: ablehnen + Verzögerungssanktion",
         "continue": "Trotzdem weiter"
       },
       "records": {
-        "improper": "Erfasst: unzulässige Anfrage, ohne weitere Folgen.",
+        "improper": "Erfasst: nicht ordnungsgemässer Antrag, ohne weitere Folgen.",
         "delayWarning": "Erfasst: Verzögerungswarnung.",
         "delayPenalty": "Erfasst: Verzögerungsstrafe – Punkt und Aufschlag für {{opponent}}.",
-        "repeatedImproper": "(Die Mannschaft hat bereits eine unzulässige Anfrage: diese ist eine Verzögerung.)",
+        "repeatedImproper": "(Die Mannschaft hat bereits einen nicht ordnungsgemässen Antrag: dieser ist eine Verzögerung.)",
         "nothing": "Die Schiedsrichter haben es erlaubt. Es wird nichts erfasst."
       },
       "illegal": {
@@ -1012,12 +1012,12 @@
       },
       "substitution_limit": {
         "title": "Keine Auswechslung mehr",
-        "text": "{{team}} hat die 6 Auswechslungen dieses Satzes gebraucht. Ein weiteres Gesuch ist eine unzulässige Anfrage.",
+        "text": "{{team}} hat die 6 Auswechslungen dieses Satzes gebraucht. Ein weiteres Gesuch ist ein nicht ordnungsgemässer Antrag.",
         "rule": "FIVB 15.1 · 15.11.1.4"
       },
       "third_timeout": {
         "title": "Drittes Timeout",
-        "text": "{{team}} hat beide Timeouts dieses Satzes genommen. Ein drittes Gesuch ist eine unzulässige Anfrage; hat das Timeout schon begonnen, wurde das Spiel verzögert.",
+        "text": "{{team}} hat beide Timeouts dieses Satzes genommen. Ein drittes Gesuch ist ein nicht ordnungsgemässer Antrag; hat das Timeout schon begonnen, wurde das Spiel verzögert.",
         "rule": "FIVB 15.1 · 15.11.1.4 · FIVB casebook 4.29"
       },
       "after_delay_warning": {
@@ -1060,11 +1060,11 @@
       }
     },
     "teamSanctionConfirm": {
-      "thirdTimeout": "{{team}} hat beide Timeouts dieses Satzes genommen. Ein drittes Gesuch ist eine unzulässige Anfrage.",
-      "applyImproperRequest": "Unzulässige Anfrage für {{team}} erfassen?",
+      "thirdTimeout": "{{team}} hat beide Timeouts dieses Satzes genommen. Ein drittes Gesuch ist ein nicht ordnungsgemässer Antrag.",
+      "applyImproperRequest": "Nicht ordnungsgemässen Antrag für {{team}} erfassen?",
       "applyDelayWarning": "Verzögerungswarnung für {{team}} erfassen?",
       "applyDelayPenalty": "Verzögerungsstrafe für {{team}} erfassen?",
-      "repeatedImproperRequest": "Die Mannschaft hat bereits eine unzulässige Anfrage, diese zählt deshalb als Verzögerung.",
+      "repeatedImproperRequest": "Die Mannschaft hat bereits einen nicht ordnungsgemässen Antrag, dieser zählt deshalb als Verzögerung.",
       "repeatedDelay": "Die Mannschaft hat bereits eine Verzögerungswarnung, diese Verzögerung ist deshalb eine Strafe.",
       "pointToOpponent": "Punkt und Aufschlag für {{opponent}}."
     },
@@ -2781,7 +2781,7 @@
       "a_awardPoint": "Wenn der Ballwechsel vorbei ist, tippe auf die Punkt-Schaltfläche des Teams, das ihn gewonnen hat. Die App zählt den Punkt, gibt den Aufschlag weiter und lässt das Team rotieren, das den Aufschlag zurückgewinnt.",
       "tip_awardPoint": "Tippe auf die Punkt-Schaltfläche des Teams, wenn der Ballwechsel vorbei ist.",
       "q_timeout": "Wie rufe ich eine Auszeit?",
-      "a_timeout": "Tippe zwischen zwei Ballwechseln auf das «TO»-Feld des Teams. Prüfe den Dialog und tippe auf «Timeout bestätigen»: Ein Countdown von 30 Sekunden startet. «Timeout beenden» beendet ihn früher. Jedes Team hat 2 Timeouts pro Satz; bei einem dritten öffnet die App eine Warnung, die es als unzulässige Anfrage erfasst (oder als Verzögerung, wenn das Timeout schon begonnen hat). Kein Timeout in der Pause zwischen den Sätzen.",
+      "a_timeout": "Tippe zwischen zwei Ballwechseln auf das «TO»-Feld des Teams. Prüfe den Dialog und tippe auf «Timeout bestätigen»: Ein Countdown von 30 Sekunden startet. «Timeout beenden» beendet ihn früher. Jedes Team hat 2 Timeouts pro Satz; bei einem dritten öffnet die App eine Warnung, die es als nicht ordnungsgemässen Antrag erfasst (oder als Verzögerung, wenn das Timeout schon begonnen hat). Kein Timeout in der Pause zwischen den Sätzen.",
       "tip_timeout": "Tippe hier zwischen zwei Ballwechseln, um ein Timeout für dieses Team zu nehmen.",
       "q_substitution": "Wie mache ich eine Auswechslung?",
       "a_substitution": "Tippe zwischen zwei Ballwechseln auf den Spieler auf dem Feld, wähle «Auswechslung» und dann den Spieler, der hineinkommt. Oder ziehe einen Bankspieler auf den Feldspieler (auf einem Tablet lange drücken). Dann bestätigen. Spieler, die nicht hineinkommen dürfen, sind ausgegraut, mit dem Grund.",
@@ -2916,7 +2916,7 @@
     },
     "subsTimeouts": {
       "q_subLimit": "Wie viele Wechsel hat ein Team?",
-      "a_subLimit": "Sechs pro Satz. Das «AUS»-Feld zählt sie und wird bei 5 gelb. Ein Startspieler kann einmal hinaus und einmal zurück, nur für den Spieler, der ihn ersetzt hat. Nach dem sechsten ist eine weitere Anfrage eine unzulässige Anfrage.",
+      "a_subLimit": "Sechs pro Satz. Das «AUS»-Feld zählt sie und wird bei 5 gelb. Ein Startspieler kann einmal hinaus und einmal zurück, nur für den Spieler, der ihn ersetzt hat. Nach dem sechsten ist eine weitere Anfrage ein nicht ordnungsgemässer Antrag.",
       "q_injury": "Ein Spieler ist verletzt: Was tun?",
       "a_injury": "Tippe auf den Spieler auf dem Feld, wähle die Verletzung und dann einen Ersatz. Ist kein regulärer Wechsel möglich, bietet die App einen Ausnahmewechsel an. Nach einem Ausnahmewechsel darf dieser Spieler im Spiel nicht mehr spielen.",
       "q_liberoOut": "Wie verlässt der Libero das Feld?",
@@ -2928,15 +2928,15 @@
       "q_benchRequests": "Eine Karte zeigt «Time-out-Anfrage» oder «Aufstellung für Satz 2»?",
       "a_benchRequests": "Das Bank-Tablet des Teams hat eine Anfrage geschickt. Die Karten stehen oben rechts und lassen sich zuklappen. «Time-out gewähren» öffnet den Timeout-Dialog, «Wechseln» den Wechsel dieses Paars, «Prüfen und annehmen» den Aufstellungsdialog, von der Bank ausgefüllt: Prüfe ihn und tippe auf «Bestätigen». Das Gewähren wartet, solange ein Ballwechsel läuft. «Ablehnen» fragt nach einem Grund (freiwillig), den die Bank sieht. Du kannst es auch wie gewohnt von Hand erfassen: Die Karte schliesst sich, sobald es erfasst ist.",
       "q_requestWarning": "Warum öffnet sich eine Warnung, wenn ich ein Timeout oder einen Wechsel erfasse?",
-      "a_requestWarning": "Die App prüft die Regeln für Anfragen: ein drittes Timeout, ein siebter Wechsel, eine zweite Wechselanfrage desselben Teams in derselben Unterbrechung, ein Spieler, der nicht hineinkommen darf, oder eine Anfrage nach der Verzögerungswarnung des Teams. Die Warnung sagt, warum, und bietet an, was erfasst werden soll, etwa «Als unzulässige Anfrage erfassen» oder eine Verzögerungssanktion. «Trotzdem weiter» erfasst nichts weiter, wenn der Schiedsrichter es erlaubt hat (nicht angeboten bei einem dritten Timeout oder einem siebten Wechsel).",
+      "a_requestWarning": "Die App prüft die Regeln für Anfragen: ein drittes Timeout, ein siebter Wechsel, eine zweite Wechselanfrage desselben Teams in derselben Unterbrechung, ein Spieler, der nicht hineinkommen darf, oder eine Anfrage nach der Verzögerungswarnung des Teams. Die Warnung sagt, warum, und bietet an, was erfasst werden soll, etwa «Als nicht ordnungsgemässen Antrag erfassen» oder eine Verzögerungssanktion. «Trotzdem weiter» erfasst nichts weiter, wenn der Schiedsrichter es erlaubt hat (nicht angeboten bei einem dritten Timeout oder einem siebten Wechsel).",
       "q_gameCaptain": "Der Teamcaptain ist vom Feld gegangen: Wer ist Spielkapitän?",
       "a_gameCaptain": "Die App fragt «Spielkapitän»: Tippe auf den Spieler auf dem Feld, der als Captain amtet (der letzte Spielkapitän wird zuerst angeboten, mit «Zuletzt» markiert). Bis einer gewählt ist, zeigt die Seite dieses Teams eine Schaltfläche «Spielkapitän». Der Spielkapitän bleibt, bis er das Feld verlässt, der Teamcaptain zurückkommt oder der Satz endet. Dafür braucht es «Kapitän auf dem Feld verwalten» in den Optionen (standardmässig an)."
     },
     "sanctions": {
-      "q_teamSanctions": "Wie erfasse ich eine unzulässige Anfrage oder eine Verzögerung?",
-      "a_teamSanctions": "Unter den Feldern «TO» und «AUS» jedes Teams stehen «Unzulässige Anfrage» und «Verzögerungswarnung» (auf einem kleinen Bildschirm unter «UA & Verzög.»). Ein Team hat eine unzulässige Anfrage: Danach verschwindet die Schaltfläche, und «Sanktioniert wegen unzulässiger Anfrage» erscheint. Nach der Verzögerungswarnung wird die Schaltfläche zu «Verzögerungsstrafe»: Punkt und Aufschlag für den Gegner. Die App trägt sie ins Matchblatt ein.",
+      "q_teamSanctions": "Wie erfasse ich einen nicht ordnungsgemässen Antrag oder eine Verzögerung?",
+      "a_teamSanctions": "Unter den Feldern «TO» und «AUS» jedes Teams stehen «Nicht ordnungsgemässe Anträge» und «Verzögerungswarnung» (auf einem kleinen Bildschirm unter «NOA & Verzög.»). Ein Team hat einen nicht ordnungsgemässen Antrag: Danach verschwindet die Schaltfläche, und «Sanktioniert wegen nicht ordnungsgemässen Antrags» erscheint. Nach der Verzögerungswarnung wird die Schaltfläche zu «Verzögerungsstrafe»: Punkt und Aufschlag für den Gegner. Die App trägt sie ins Matchblatt ein.",
       "q_ladder": "Warum wurde meine Verzögerungswarnung zur Strafe?",
-      "a_ladder": "Die Sanktionen folgen den Regeln. Eine zweite unzulässige Anfrage zählt als Verzögerung. Eine Verzögerung nach einer Verzögerungswarnung ist eine Verzögerungsstrafe. Der Dialog sagt es dir, bevor du bestätigst.",
+      "a_ladder": "Die Sanktionen folgen den Regeln. Ein zweiter nicht ordnungsgemässer Antrag zählt als Verzögerung. Eine Verzögerung nach einer Verzögerungswarnung ist eine Verzögerungsstrafe. Der Dialog sagt es dir, bevor du bestätigst.",
       "q_penaltyPoint": "Wer bekommt nach einer Strafe den Punkt?",
       "a_penaltyPoint": "Der Gegner bekommt Punkt und Aufschlag. Die App trägt beides ein und lässt das Team wenn nötig rotieren. Eine Verzögerungsstrafe vor den Aufstellungen wird vergeben, sobald beide Aufstellungen eingetragen sind.",
       "q_expulsion": "Was passiert nach einem Ausschluss oder einer Disqualifikation?",
@@ -3374,7 +3374,7 @@
     "start": "Beginn",
     "end": "Ende",
     "duration": "Dauer",
-    "improperRequest": "Unzulässiger Antrag",
+    "improperRequest": "Nicht ordnungsgemässe Anträge",
     "noSanctions": "Keine Sanktionen",
     "sanctionTypes": {
       "delayWarning": "Verzögerungswarnung",
@@ -5522,7 +5522,7 @@
       "pointNow": "Der Punkt für {{team}} wird nach der Sanktion hinzugefügt.",
       "pointStays": "Der Punkt bleibt als normaler Punkt (nicht mehr eingekreist).",
       "penaltyNotNext": "Den Ballwechsel nach {{score}} hat {{team}} gewonnen, nicht der Gegner: Prüfe, ob die Sanktion bei diesem Spielstand ausgesprochen wurde.",
-      "irBox": "Der Buchstabe von Team {{letter}} wird im Feld «Nicht ordnungsgemässer Antrag» durchgestrichen (X); kein Spielstand.",
+      "irBox": "Der Buchstabe von Team {{letter}} wird im Feld «Nicht ordnungsgemässe Anträge» durchgestrichen (X); kein Spielstand.",
       "expulsionReplacement": "Erfasse den Ersatz mit «+ Spielerwechsel hinzufügen» (ausserordentlich, wenn kein regulärer Wechsel möglich war).",
       "laterRotations": "Spätere Rotationen dieses Satzes werden nicht neu berechnet.",
       "afterMatch": "Nach dem Spiel erfasst.",
