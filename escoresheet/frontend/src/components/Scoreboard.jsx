@@ -5550,9 +5550,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         alignSelf: 'stretch'
       }}>
         <div className={`serve-side__grid${chip ? ' serve-side__grid--chip' : ''}`} data-side={side}>
-          {/* kept off the score digits by vmin(2) */}
+          {/* kept off the score digits by vmin(2). Hidden during the
+              deciding set's setup: the serve shows beside its buttons there */}
           <div className="serve-side__indicator" style={{
-            visibility: serving ? 'visible' : 'hidden',
+            visibility: serving && showRefereeRow ? 'visible' : 'hidden',
             [side === 'left' ? 'paddingRight' : 'paddingLeft']: vmin(2)
           }}>
             {!servingPlayer || !servingPlayer.number ? (
@@ -17677,17 +17678,64 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     is drawn over the rally buttons (rally-stack) */}
                 {(data?.set?.index === 5 && !set5SetupConfirmed && !timeoutModal?.started) ? (
                   <>
-                    {/* Set 5 inline setup UI - buttons first, countdown beneath */}
+                    {/* Set 5 inline setup UI - buttons first, countdown beneath.
+                        The serving team's ball stands beside the buttons, on
+                        its side of the court (owner, 15.11: the small ball in
+                        the top corner was easy to miss); Switch serve moves
+                        it across. */}
                     <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'minmax(0, 1fr) minmax(0, calc(380px * var(--scale-factor))) minmax(0, 1fr)',
+                      alignItems: 'center',
+                      columnGap: 'calc(16px * var(--scale-factor))',
+                      width: '100%',
+                      marginTop: vmin(10)
+                    }}>
+                    {['left', 'right'].map(side => {
+                      const serving = side === 'left' ? leftServing : rightServing
+                      const team = side === 'left' ? leftTeam : rightTeam
+                      const label = side === 'left' ? teamALabel : teamBLabel
+                      const name = side === 'left' ? teamAShortName : teamBShortName
+                      return (
+                        <div
+                          key={side}
+                          data-testid={serving ? 'set5-serve-hint' : undefined}
+                          aria-hidden={!serving}
+                          style={{
+                            gridColumn: side === 'left' ? 1 : 3,
+                            gridRow: 1,
+                            justifySelf: side === 'left' ? 'end' : 'start',
+                            visibility: serving ? 'visible' : 'hidden',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            gap: 'calc(6px * var(--scale-factor))',
+                            minWidth: 0
+                          }}
+                        >
+                          <span style={{ fontSize: vmin(2.25), lineHeight: 1.2, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '2px' }}>
+                            {t('scoreboard.serveLabel', 'Serve')}
+                          </span>
+                          <img
+                            src={ballImage} onError={(e) => e.target.src = ballFallback}
+                            alt={t('common.servingTeam')}
+                            style={{ ...serveBallBaseStyle, width: vmin(11), height: vmin(11) }}
+                          />
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', maxWidth: '100%', fontSize: 'calc(15px * var(--scale-factor))', fontWeight: 600, color: 'var(--ov-text, #1c1917)' }}>
+                            <span style={{ ...teamBoxStyle(team.color), padding: '2px 7px', borderRadius: '4px', fontSize: '0.8em', fontWeight: 700 }}>{label}</span>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                          </span>
+                        </div>
+                      )
+                    })}
+                    <div style={{
+                      gridColumn: 2,
+                      gridRow: 1,
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'stretch',
                       gap: 'calc(10px * var(--scale-factor))',
-                      width: '100%',
-                      // Not the full column width: a button row, not a banner
-                      maxWidth: 'calc(380px * var(--scale-factor))',
-                      alignSelf: 'center',
-                      marginTop: vmin(10)
+                      width: '100%'
                     }}>
                       <button
                         onClick={set5SwitchSides}
@@ -17754,6 +17802,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       >
                         {t('scoreboard.buttons.confirmSet5Setup', { number: displaySetNumber(5, data?.match?.bestOf) })}
                       </button>
+                    </div>
                     </div>
 
                     {/* Countdown beneath buttons - only shown if active */}

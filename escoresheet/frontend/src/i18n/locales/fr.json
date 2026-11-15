@@ -521,6 +521,7 @@
     "refereeEmailHint": "Pour la feuille de match finale. Seuls les marqueurs de ce match la voient."
   },
   "scoreboard": {
+    "serveLabel": "Service",
     "set": "Set",
     "timeout": "Temps mort",
     "substitution": "Changement",

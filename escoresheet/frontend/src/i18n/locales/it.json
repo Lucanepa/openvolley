@@ -522,6 +522,7 @@
     "refereeEmailHint": "Per il referto finale. La vedono solo i segnapunti di questa partita."
   },
   "scoreboard": {
+    "serveLabel": "Servizio",
     "set": "Set",
     "timeout": "Timeout",
     "substitution": "Sostituzione",

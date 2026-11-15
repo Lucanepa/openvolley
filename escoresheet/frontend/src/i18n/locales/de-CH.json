@@ -522,6 +522,7 @@
     "refereeEmailHint": "Für s fertige Matchblatt. Nur d Schriiber vo däm Spiil gsehnd si."
   },
   "scoreboard": {
+    "serveLabel": "Ufschlag",
     "set": "Satz",
     "timeout": "Timeout",
     "substitution": "Wächsel",

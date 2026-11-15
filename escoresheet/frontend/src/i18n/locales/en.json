@@ -523,6 +523,7 @@
     "refereeEmailHint": "For the final scoresheet. Only this match's scorers see it."
   },
   "scoreboard": {
+    "serveLabel": "Serve",
     "set": "Set",
     "timeout": "Timeout",
     "substitution": "Substitution",
