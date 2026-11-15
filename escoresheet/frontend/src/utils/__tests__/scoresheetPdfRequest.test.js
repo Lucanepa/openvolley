@@ -4,7 +4,7 @@
 // wait must end at once on a closed window, a lost heartbeat or Cancel, and
 // say why.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { waitForScoresheetPdf, openedWindowClosed, PDF_FAIL } from '../scoresheetPdfRequest'
+import { waitForScoresheetPdf, openedWindowClosed, PDF_FAIL, PDF_CLOSED_GRACE_MS } from '../scoresheetPdfRequest'
 import {
   MSG_PDF_BLOB, MSG_PDF_BLOB_FAILED, MSG_PDF_PROGRESS,
   reportPdfProgress, watchPdfWindowClose, deliverPdfToOpener
@@ -26,13 +26,30 @@ describe('waitForScoresheetPdf', () => {
     expect(r.blob.type).toBe('application/pdf')
   })
 
-  it('fails at once (no 30 s wait) when the window is closed', async () => {
+  it('fails soon (no 30 s wait) when the window is closed', async () => {
     const w = { closed: false }
-    const caught = waitForScoresheetPdf(() => ({ ok: true, window: w })).catch(e => e)
+    let e = null
+    waitForScoresheetPdf(() => ({ ok: true, window: w })).catch(x => { e = x })
     w.closed = true
     await vi.advanceTimersByTimeAsync(600)
-    const e = await caught
-    expect(e.reason).toBe(PDF_FAIL.CLOSED)
+    // its answer may still be on the way (PDF_CLOSED_GRACE_MS)
+    expect(e).toBe(null)
+    await vi.advanceTimersByTimeAsync(PDF_CLOSED_GRACE_MS)
+    expect(e?.reason).toBe(PDF_FAIL.CLOSED)
+  })
+
+  // WebKit (desktop apps, Safari, iPad): the page posts its PDF and closes
+  // itself at once, and the window can read as closed before the message is
+  // delivered. The approval said the window was closed and dropped the PDF
+  // (Playwright WebKit 2026-11-15, after a live match lost its PDF).
+  it('takes the PDF that arrives just after its window reads as closed', async () => {
+    const w = { closed: false }
+    const p = waitForScoresheetPdf(() => ({ ok: true, window: w }))
+    post({ type: MSG_PDF_PROGRESS, step: 'capture' })
+    w.closed = true
+    await vi.advanceTimersByTimeAsync(600) // the closed-window check has seen it
+    post({ type: MSG_PDF_BLOB, arrayBuffer: new ArrayBuffer(4), filename: 'late.pdf' })
+    expect((await p).filename).toBe('late.pdf')
   })
 
   it('fails at once when the page says it was closed (pagehide)', async () => {

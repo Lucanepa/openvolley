@@ -10,8 +10,9 @@
  *
  * Closing the scoresheet window while it made the PDF left the scorer
  * waiting up to 30 s with nothing to press (OpenBeach video 2026-10-08, the
- * same code here). Now the wait ends at once when the window is gone
- * (polled, and the page says so on pagehide), when the page stops sending
+ * same code here). Now the wait ends at once when the page says on pagehide
+ * that it was closed, soon when the window is seen gone (polled; its PDF may
+ * still be on the way: PDF_CLOSED_GRACE_MS), when the page stops sending
  * its heartbeat, on the scorer's Cancel (an AbortSignal) or after a hard
  * timeout, and the error says which (`error.reason`, one of PDF_FAIL).
  *
@@ -41,6 +42,17 @@ export const PDF_TIMEOUT_MS = 90000
 export const PDF_STALL_MS = 20000
 /** How often the opened window is checked for being closed. */
 export const PDF_CLOSED_POLL_MS = 500
+/**
+ * Seen closed by that check: how long its answer may still come. The page
+ * posts its PDF and closes itself at once (deliverPdfToOpener), and WebKit
+ * (the Linux and macOS desktop apps, Safari, iPad) can show the window as
+ * closed before the PDF message, a large ArrayBuffer, is delivered: failed
+ * at once, the approval said "The scoresheet window was closed before the
+ * PDF was ready" and dropped the PDF that came a moment later (reproduced in
+ * Playwright WebKit, 2026-11-15). A window the scorer closes while the PDF
+ * is made still fails at once: its page says so on pagehide.
+ */
+export const PDF_CLOSED_GRACE_MS = 2000
 
 /** Why no PDF came. */
 export const PDF_FAIL = Object.freeze({
@@ -83,13 +95,14 @@ function closeOpened(opened) {
  * closed, so none is left behind.
  * @param {(requestId: string) => ({ ok?: boolean, window?: Window|null, close?: () => void, isClosed?: () => boolean } | undefined)} open
  *   opens the page with `pdfReq=<requestId>` in its URL
- * @param {{ win?: Window, timeoutMs?: number, stallMs?: number, pollMs?: number, signal?: AbortSignal, onProgress?: (p: { step: string|null }) => void, requestId?: string }} [opts]
+ * @param {{ win?: Window, timeoutMs?: number, stallMs?: number, pollMs?: number, closedGraceMs?: number, signal?: AbortSignal, onProgress?: (p: { step: string|null }) => void, requestId?: string }} [opts]
  */
 export function waitForScoresheetPdf(open, {
   win = window,
   timeoutMs = PDF_TIMEOUT_MS,
   stallMs = PDF_STALL_MS,
   pollMs = PDF_CLOSED_POLL_MS,
+  closedGraceMs = PDF_CLOSED_GRACE_MS,
   signal,
   onProgress,
   requestId = newRequestId()
@@ -99,6 +112,7 @@ export function waitForScoresheetPdf(open, {
   let timer = null
   let stallTimer = null
   let pollTimer = null
+  let closedTimer = null
   let onAbort = null
 
   return new Promise((resolve, reject) => {
@@ -107,6 +121,7 @@ export function waitForScoresheetPdf(open, {
       clearTimeout(timer)
       clearTimeout(stallTimer)
       clearInterval(pollTimer)
+      clearTimeout(closedTimer)
       win.removeEventListener('message', handler)
       if (onAbort) signal?.removeEventListener?.('abort', onAbort)
     }
@@ -169,7 +184,11 @@ export function waitForScoresheetPdf(open, {
       return
     }
     pollTimer = setInterval(() => {
-      if (openedWindowClosed(opened)) fail(PDF_FAIL.CLOSED, 'The scoresheet window was closed before the PDF was ready', { close: false })
+      if (!openedWindowClosed(opened)) return
+      // Its PDF may still be on the way (PDF_CLOSED_GRACE_MS): the listener
+      // stays, and the wait fails only if nothing comes
+      clearInterval(pollTimer)
+      closedTimer = setTimeout(() => fail(PDF_FAIL.CLOSED, 'The scoresheet window was closed before the PDF was ready', { close: false }), closedGraceMs)
     }, pollMs)
   })
 }
