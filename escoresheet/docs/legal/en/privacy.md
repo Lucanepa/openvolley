@@ -1,6 +1,6 @@
 # Privacy policy
 
-**OpenVolley and OpenBeach** · Version 1.15 · As of 14 November 2026
+**OpenVolley and OpenBeach** · Version 1.16 · As of 15 November 2026
 
 This policy is available in German, English, French and Italian. The English
 version is binding.
@@ -30,9 +30,9 @@ version is binding.
 - The server is in Switzerland: I rent it from Infomaniak in Geneva and run it
   myself. Cloudflare (USA) delivers the websites and forwards the traffic to the
   server.
-- When sending is switched on, the scorer, the referees and the clubs of both
-  teams receive the final scoresheet of an official match by email
-  (section 7).
+- When sending is switched on, the scorer, the referees, the clubs of both
+  teams and the contact address entered for each team receive the final
+  scoresheet of an official match by email (section 7).
 - A team's manager can send the roster of a game ahead. The scorer's device
   keeps it for the match setup; once the scorer accepts it, the server deletes
   it (section 10).
@@ -309,7 +309,8 @@ you delete it yourself.
 short name, colour), rosters with shirt number, first and last name, date of
 birth and libero or captain flag, team staff (role, name, date of birth),
 officials (referees, scorer, line judges with name, country, date of birth; referees optionally with an
-email address),
+email address; the scorer optionally with a licence number instead of the date
+of birth), an optional contact email address per team,
 **signatures** (as images drawn on the device or on a phone), coin toss, the course of the
 match with all events, substitutions and sanctions, results and later
 corrections, and the **remarks** (the scoresheet's remarks box: what the
@@ -374,13 +375,15 @@ to:
 - the referees who approved the result with their account or whose email
   address was entered for the match;
 - the contact address of each team's club (section 6), so the club can pass
-  the scoresheet on to the coaches.
+  the scoresheet on to the coaches;
+- the contact address typed in for each team in the match setup or in "Edit
+  match info", like the referees' addresses.
 
 Each address gets its own email and does not see the others. If a match is
 reopened and closed again, the corrected scoresheet goes to the recipients
 once more. Only when and to how many addresses the scoresheet was sent is
 stored, not which ones. Matches closed before the feature was switched on are
-not sent. A referee's email address is optional, belongs to the match and is
+not sent. A referee's or a team's email address is optional, belongs to the match and is
 never public; only those who may read the whole match see it (table above).
 Emails are sent through Migadu (section 15).
 
@@ -766,7 +769,7 @@ copy of these safeguards.
 | Team managers | Until a club manager or an administrator removes them, the team or the club is deleted, or you delete your account |
 | A roster sent ahead (players, staff, signatures) | Until a scorer accepts it, at the latest 14 days after the game; the note that it was accepted 14 days after the game |
 | A club's licence lists (licence number, names, date of birth, gender) | Until the next upload of that list, its deletion by a club manager or the deletion of the club, at the latest until the end of the season; people added by hand: until the list or the club is deleted, at the latest until the end of the season; on a scoring device until the next download or sign-out |
-| A referee's email address for a match | With the match, as part of the scoresheet |
+| A referee's or a team's email address for a match | With the match, as part of the scoresheet |
 | Sending of the final scoresheet (time, number of recipients, no addresses) | With the match |
 | Scoresheet of a test match by email | Not stored on the server |
 | Global tool: backup and scoresheet PDF of a match (under the backup code) | 180 days after the last change |
