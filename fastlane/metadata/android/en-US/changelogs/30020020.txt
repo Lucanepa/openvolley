@@ -1,0 +1,3 @@
+OpenVolley 3.2.2
+- Global mode: the clock is the device's own (tournaments in any country).
+- Global mode: a new match starts neutral (friendly, mixed, no country), Mixed gender and school levels, no LFP option.
