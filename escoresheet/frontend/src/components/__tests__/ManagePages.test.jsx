@@ -19,7 +19,8 @@ const api = vi.hoisted(() => ({
   admin: {
     listAccounts: vi.fn(), setRoles: vi.fn(), setAccountClubs: vi.fn(), deleteAccount: vi.fn(), rejectAccount: vi.fn(), decideRequests: vi.fn(),
     listMatches: vi.fn(), listRevisions: vi.fn(), listMatchClosures: vi.fn(), reopenMatch: vi.fn(), listApprovals: vi.fn(),
-    listOfficialGames: vi.fn(), addMatchEditor: vi.fn(), releaseGame: vi.fn(), readMatchPin: vi.fn(), resetMatchPin: vi.fn()
+    listOfficialGames: vi.fn(), addMatchEditor: vi.fn(), releaseGame: vi.fn(), readMatchPin: vi.fn(), resetMatchPin: vi.fn(),
+    finalMailStatus: vi.fn(), sendFinalMail: vi.fn()
   },
   clubs: { list: vi.fn() },
   fetchPublicClubs: vi.fn()
@@ -259,6 +260,7 @@ describe('a match is a page (#matches/<match id>)', () => {
     api.admin.listRevisions.mockResolvedValue(ok([REVISION]))
     api.admin.listMatchClosures.mockImplementation(async (id) => ok({ closures: id === 'm-1' ? [CLOSURE] : [] }))
     api.admin.reopenMatch.mockResolvedValue(ok({ reopened: true }))
+    api.admin.finalMailStatus.mockResolvedValue(ok({ mail: true, switch_on: true, sendable: true, reason: null, recipients: 3, pdf: true, resend: false, state: { outcome: null, recipients: 0, sent_at: null } }))
   })
 
   it('opens from its row with its facts, its corrections, Reopen and Activity', async () => {
@@ -373,6 +375,85 @@ describe('a match is a page (#matches/<match id>)', () => {
       fireEvent.click(within(box).getByTestId('match-pin-show'))
       await waitFor(() => expect(within(box).getByRole('alert')).toBeInTheDocument())
       expect(within(box).queryByTestId('match-pin-value')).toBeNull()
+    })
+  })
+
+  // Owner 2026-11-15: the switch mails only the matches closed after it was
+  // turned on; an admin sends the final mail of one closed before (or again).
+  describe('its final mail', () => {
+    const status = (over = {}) => ok({ mail: true, switch_on: false, sendable: true, reason: null, recipients: 4, pdf: true, resend: false, state: { outcome: null, recipients: 0, sent_at: null }, ...over })
+
+    it('shows the state, asks with the count and the PDF, sends, and shows the new state', async () => {
+      api.admin.finalMailStatus.mockResolvedValueOnce(status()).mockResolvedValueOnce(status())
+        .mockResolvedValue(status({ resend: true, state: { outcome: 'sent', recipients: 4, sent_at: '2026-11-15T18:00:00Z' } }))
+      api.admin.sendFinalMail.mockResolvedValue(ok({ outcome: 'sent', recipients: 4, reached: 4, pdf: true, resend: false }))
+      routed(ClosedMatchesPanel, {}, 'm-1')
+      const box = await screen.findByTestId('final-mail')
+      expect(await within(box).findByTestId('final-mail-state')).toHaveTextContent('manage.matches.finalMail.states.none')
+      expect(box).toHaveTextContent('manage.matches.finalMail.hintOff')
+      expect(api.admin.finalMailStatus).toHaveBeenCalledWith('m-1')
+      const button = within(box).getByTestId('final-mail-send')
+      expect(button).toHaveTextContent('manage.matches.finalMail.send')
+      fireEvent.click(button)
+      await waitFor(() => expect(ui.confirm).toHaveBeenCalledTimes(1))
+      const asked = ui.confirm.mock.calls[0][0]
+      expect(asked.title).toBe('manage.matches.finalMail.confirmTitle')
+      expect(asked.message).toContain('manage.matches.finalMail.confirmRecipients')
+      expect(asked.message).toContain('manage.matches.finalMail.confirmPdf')
+      expect(asked.message).not.toContain('manage.matches.finalMail.confirmResend')
+      // the count and the PDF read again right before asking
+      expect(api.admin.finalMailStatus.mock.invocationCallOrder[1]).toBeLessThan(ui.confirm.mock.invocationCallOrder[0])
+      await waitFor(() => expect(api.admin.sendFinalMail).toHaveBeenCalledWith('m-1'))
+      await waitFor(() => expect(ui.toasts).toContainEqual(['ok', 'manage.matches.finalMail.sent']))
+      expect(await within(box).findByText('manage.matches.finalMail.states.sent')).toBeInTheDocument()
+      expect(within(box).getByTestId('final-mail-send')).toHaveTextContent('manage.matches.finalMail.sendAgain')
+    })
+
+    it('declined: nothing is sent', async () => {
+      ui.confirm.mockResolvedValueOnce(false)
+      routed(ClosedMatchesPanel, {}, 'm-1')
+      const box = await screen.findByTestId('final-mail')
+      fireEvent.click(await within(box).findByTestId('final-mail-send'))
+      await waitFor(() => expect(ui.confirm).toHaveBeenCalledTimes(1))
+      expect(api.admin.sendFinalMail).not.toHaveBeenCalled()
+    })
+
+    it('without a PDF and mailed before: the dialog says so, and the toast too', async () => {
+      api.admin.finalMailStatus.mockResolvedValue(status({ pdf: false, resend: true, switch_on: true, state: { outcome: 'sent_no_pdf', recipients: 2, sent_at: '2026-11-15T18:00:00Z' } }))
+      api.admin.sendFinalMail.mockResolvedValue(ok({ outcome: 'sent_no_pdf', recipients: 2, reached: 2, pdf: false, resend: true }))
+      routed(ClosedMatchesPanel, {}, 'm-1')
+      const box = await screen.findByTestId('final-mail')
+      expect(await within(box).findByText('manage.matches.finalMail.states.sent_no_pdf')).toBeInTheDocument()
+      fireEvent.click(within(box).getByTestId('final-mail-send'))
+      await waitFor(() => expect(ui.confirm).toHaveBeenCalledTimes(1))
+      const asked = ui.confirm.mock.calls[0][0]
+      expect(asked.title).toBe('manage.matches.finalMail.confirmTitleAgain')
+      expect(asked.message).toContain('manage.matches.finalMail.confirmNoPdf')
+      expect(asked.message).toContain('manage.matches.finalMail.confirmResend')
+      await waitFor(() => expect(ui.toasts).toContainEqual(['ok', 'manage.matches.finalMail.sentNoPdf']))
+    })
+
+    it('a failed send: an error toast', async () => {
+      api.admin.sendFinalMail.mockResolvedValue({ data: null, error: { code: 'OV_FINAL_MAIL_BUSY', status: 409 }, status: 409 })
+      routed(ClosedMatchesPanel, {}, 'm-1')
+      const box = await screen.findByTestId('final-mail')
+      fireEvent.click(await within(box).findByTestId('final-mail-send'))
+      await waitFor(() => expect(ui.toasts).toContainEqual(['error', 'manage.matches.finalMail.busy']))
+    })
+
+    it('a match the mail is not for (a released game): why, and no button', async () => {
+      api.admin.finalMailStatus.mockResolvedValue(status({ sendable: false, reason: 'released', recipients: 0, pdf: false }))
+      routed(ClosedMatchesPanel, {}, 'm-1')
+      const box = await screen.findByTestId('final-mail')
+      expect(await within(box).findByText('manage.matches.finalMail.refused.released')).toBeInTheDocument()
+      expect(within(box).queryByTestId('final-mail-send')).toBeNull()
+    })
+
+    it('an open match: no final mail box', async () => {
+      routed(ClosedMatchesPanel, {}, 'm-2')
+      await screen.findByTestId('match-page')
+      expect(screen.queryByTestId('final-mail')).toBeNull()
+      expect(api.admin.finalMailStatus).not.toHaveBeenCalled()
     })
   })
 

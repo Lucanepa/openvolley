@@ -122,9 +122,13 @@ export function auditDetailsLine(entry, opts = {}) {
       ? tr('manage.settings.finalEmailIsOn', 'Final scoresheets are now sent by email')
       : tr('manage.settings.finalEmailIsOff', 'Final scoresheets are no longer sent')
   }
-  if (entry?.action === 'match.final_mail') {
+  if (entry?.action === 'match.final_mail' || entry?.action === 'match.final_mail_manual') {
     if (d.game_n) parts.push(`#${d.game_n}`)
-    if (Number.isFinite(d.recipients)) parts.push(tr('manage.audit.recipients', `${d.recipients} recipients`, { count: d.recipients }))
+    // an admin's send (lib/finalMail.js sendNow): how many it reached, of how many
+    const n = entry.action === 'match.final_mail_manual' && Number.isFinite(d.reached) ? d.reached : d.recipients
+    if (Number.isFinite(n)) parts.push(tr('manage.audit.recipients', `${n} recipients`, { count: n }))
+    if (entry.action === 'match.final_mail_manual' && d.pdf === false) parts.push(tr('manage.audit.noPdf', 'without the PDF'))
+    if (d.resend) parts.push(tr('manage.audit.resend', 'resend'))
     if (d.corrected) parts.push(tr('manage.audit.corrected', 'corrected'))
     return parts.join(' · ')
   }

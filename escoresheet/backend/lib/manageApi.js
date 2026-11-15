@@ -35,6 +35,10 @@
  *   GET    /api/admin/matches/:id/pin                isAdmin: the match's game PIN (audited match.pin_viewed);
  *                                                    { pin, stored: plain|hashed|none }: a hashed one cannot be read back
  *   POST   /api/admin/matches/:id/pin                isAdmin: a new game PIN, answered once (audited match.pin_reset)
+ *   GET    /api/admin/matches/:id/final-mail         isAdmin: the final mail of the match's latest close: its
+ *                                                    state, how many addresses (a count) and whether the PDF is there
+ *   POST   /api/admin/matches/:id/final-mail         isAdmin: that mail now, whatever the switch and whenever the
+ *                                                    match closed (again: a resend); audited match.final_mail_manual
  *   GET    /api/admin/activity?match=&account=&...   isAdmin: the activity log (db/016; a read of a match or an account audited)
  *   GET    /api/admin/clubs                          isAdmin: clubs, their teams, the rule (db/018, lib/clubs.js)
  *   POST   /api/admin/clubs, PATCH/DELETE /api/admin/clubs/:id   isAdmin
@@ -370,6 +374,9 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     // the game PIN the scorer app's restore asks for (read audited; a hashed one cannot be read: a new one)
     ['GET', new RegExp(`^/api/admin/matches/${ID}/pin$`), 'admin', (m, c) => accounts.readGamePin({ actorId: c.user.id, matchId: m[1] })],
     ['POST', new RegExp(`^/api/admin/matches/${ID}/pin$`), 'admin', (m, c) => accounts.resetGamePin({ actorId: c.user.id, matchId: m[1] })],
+    // The final scoresheet mail of one close now (lib/finalMail.js; owner 2026-11-15: the matches closed before the switch)
+    ['GET', new RegExp(`^/api/admin/matches/${ID}/final-mail$`), 'admin', (m) => (finalMail ? finalMail.status({ matchId: m[1] }) : notFound())],
+    ['POST', new RegExp(`^/api/admin/matches/${ID}/final-mail$`), 'admin', (m, c) => (finalMail ? finalMail.sendNow({ actorId: c.user.id, matchId: m[1] }) : notFound())],
     // The activity log (db/016, lib/activityLog.js); the export is streamed by server.js
     ['GET', /^\/api\/admin\/activity$/, 'admin', (m, c) => (activity ? activity.adminList({ actorId: c.user.id, query: c.query }) : notFound())],
     ['DELETE', /^\/api\/admin\/activity$/, 'admin', (m, c) => (activity ? activity.adminDelete({ actorId: c.user.id, query: c.query }) : notFound())],

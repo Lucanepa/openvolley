@@ -6,6 +6,9 @@
  *   setSettings({ actorId, body })       { send_final_email } (admins and competition managers;
  *                                        lib/manageApi.js checks), audited
  *   sweep()                              mails the closes that are due (server.js, every minute)
+ *   status({ matchId })                  an admin's look at one close: its mail state, how many
+ *                                        addresses (a count, never one) and whether the PDF is there
+ *   sendNow({ actorId, matchId })        an admin's "Send the final mail now" of one close
  *   testMail({ userId, body, lang })     a test match's PDF to its scorer only, never stored
  *
  * Official matches: once an indoor, non-test match with a game number is
@@ -52,13 +55,27 @@
  * looks at every due close (the longest due first, at most MAX_PER_SWEEP),
  * so one still waiting for its PDF holds back none behind it.
  *
+ * An admin can send the mail of a closed official match now (sendNow, owner
+ * 2026-11-15: the switch mails only closes after it was turned on, so the
+ * matches closed before it never got theirs). It is mailOne without the wait
+ * for the PDF: the same recipients, the approval's PDF if it is there, else
+ * the mail without it (saying that it follows), whatever the switch and
+ * whenever the match closed. A close already mailed is mailed again to
+ * everyone (a resend, so marked in the audit); one whose round is still open
+ * (pending, deferred) is finished. Test, beach, numberless and released
+ * matches are refused as the sweep leaves them out. The row in
+ * match_final_mails is the sweep's, so the sweep does not mail it again; what
+ * the manual send leaves to do (the PDF that follows, a deferred round) the
+ * sweep finishes while the switch is on, also for a close before the switch
+ * (the audit entry match.final_mail_manual marks it, up to LATE_PDF_DAYS).
+ *
  * Addresses are never logged or stored (match_final_mails counts them;
  * `delivered` holds hashes of round, match, close and address while a round
  * is open); the audit entry (match.final_mail) names how many went out.
  */
 
 import { createHash } from 'node:crypto'
-import { fail, invalid, isUuid, ok, unavailable } from './accounts.js'
+import { fail, invalid, isUuid, notFound, ok, unavailable } from './accounts.js'
 import { ADMIN_ROLES } from './access.js'
 import { MAIL_BUDGET_OF, pickLang } from './mailer.js'
 import { connectClient } from './pgClient.js'
@@ -96,6 +113,24 @@ const DEFAULT_LANG = 'en'
 const UNCONFIRMED_SQL = `((to_jsonb(u) ? 'email_confirmed_at') AND (to_jsonb(u) ->> 'email_confirmed_at') IS NULL)`
 // A deactivated account (db/027 banned_until) is told nothing (as lib/signupNotices.js)
 const ACTIVE_SQL = `coalesce((to_jsonb(u) ->> 'banned_until')::timestamptz <= now(), true)`
+
+// One close of a match as the mail reads it (dueCloses, closeOf): the match,
+// its row in match_final_mails, whether an earlier close was mailed
+// (corrected) and the last admin reopen before it
+const CLOSE_COLUMNS = `m.id, m.external_id, m.game_n, m.closed_at, m.closed_at::text AS closed_at_exact, m.closed_by, m.scheduled_at, m.updated_at, m.created_at,
+              m.home_team->>'name' AS home_name, m.away_team->>'name' AS away_name, m.match_info->>'league' AS league,
+              m.officials, to_jsonb(m) ->> 'final_score' AS final_score,
+              f.outcome, coalesce(f.attempts, 0) AS attempts, coalesce(f.delivered, '{}') AS delivered, f.recipients AS mailed,
+              EXISTS (SELECT 1 FROM public.match_final_mails p WHERE p.match_id = m.id AND p.closed_at < m.closed_at AND p.recipients > 0) AS corrected,
+              (SELECT max(a.at) FROM public.audit_log a WHERE a.action = 'match.reopen' AND a.match_id = m.id AND a.at <= m.closed_at) AS reopened_at`
+const CLOSE_FROM = `FROM public.matches m
+         LEFT JOIN public.match_final_mails f ON f.match_id = m.id AND f.closed_at = m.closed_at`
+// An official match the mail is for: indoor, not a test, a game number, not released
+const OFFICIAL_SQL = `m.test IS NOT TRUE AND (m.sport_type IS NOT DISTINCT FROM 'beach') IS NOT TRUE
+          AND m.game_n > 0
+          AND NOT (m.official_game_exempt AND m.released_at IS NOT NULL)`
+// The outcomes of a round still open: a manual send finishes it (no resend)
+const OPEN_ROUND = ['pending', 'deferred']
 
 const iso = (v) => (v instanceof Date ? v.toISOString() : typeof v === 'number' ? new Date(v).toISOString() : v ?? null)
 const cleanAddress = (raw) => {
@@ -328,17 +363,25 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
     }
   }
 
-  /** One due close: mailed (with or without the PDF), recorded, or left for a later sweep. */
-  async function mailOne (m, ctx) {
+  /**
+   * One due close: mailed (with or without the PDF), recorded, or left for a
+   * later sweep. `manual` (sendNow): no wait for the PDF, and no audit entry
+   * of its own (sendNow writes match.final_mail_manual); `info` gets what went
+   * out ({ recipients, reached, pdf }, counts only).
+   */
+  async function mailOne (m, ctx, { manual = false, info = {} } = {}) {
     const t = now()
     const late = m.outcome === 'sent_no_pdf' // mailed without the PDF: the PDF is what is still to go
     const pdf = await approvalPdf(m)
-    if (!pdf && (late || t - new Date(m.closed_at).getTime() < PDF_GRACE_MS)) {
+    info.pdf = !!pdf
+    if (!pdf && (late || (!manual && t - new Date(m.closed_at).getTime() < PDF_GRACE_MS))) {
       await save(m, { outcome: m.outcome || 'pending', attempts: m.attempts, delivered: m.delivered, nextTryAt: t + (late ? LATE_RECHECK_MS : RECHECK_MS) })
       return 'later'
     }
     const game = await scheduleOf(m.game_n)
     const to = await recipientsOf(m, game)
+    info.recipients = to.length
+    info.reached = 0
     if (!to.length) {
       await save(m, { outcome: 'no_recipients', recipients: 0 })
       return 'no_recipients'
@@ -362,8 +405,9 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
         : { key: reachedKey('nopdf', m, x.address), vars }
     }, done, ctx)
     const reached = to.filter((x) => has('pdf', x) || has('nopdf', x)).length
+    info.reached = reached
     const recipients = late ? Math.max(m.mailed ?? 0, reached) : reached
-    const auditMail = (details) => audit(pool, { actorId: null, action: 'match.final_mail', matchId: m.id, details: { ...details, corrected: m.corrected === true, game_n: m.game_n ?? null } })
+    const auditMail = (details) => manual ? null : audit(pool, { actorId: null, action: 'match.final_mail', matchId: m.id, details: { ...details, corrected: m.corrected === true, game_n: m.game_n ?? null } })
     if (!to.every((x) => has('pdf', x) || (!pdf && has('nopdf', x)))) {
       const attempts = m.attempts + (r.failed ? 1 : 0)
       if (r.failed && attempts >= MAX_TRIES && !pdf && !late && reached) {
@@ -399,20 +443,15 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
   async function dueCloses (changedAt, seen) {
     const t = now()
     const { rows } = await pool.query(
-      `SELECT m.id, m.external_id, m.game_n, m.closed_at, m.closed_at::text AS closed_at_exact, m.closed_by, m.scheduled_at, m.updated_at, m.created_at,
-              m.home_team->>'name' AS home_name, m.away_team->>'name' AS away_name, m.match_info->>'league' AS league,
-              m.officials, to_jsonb(m) ->> 'final_score' AS final_score,
-              f.outcome, coalesce(f.attempts, 0) AS attempts, coalesce(f.delivered, '{}') AS delivered, f.recipients AS mailed,
-              EXISTS (SELECT 1 FROM public.match_final_mails p WHERE p.match_id = m.id AND p.closed_at < m.closed_at AND p.recipients > 0) AS corrected,
-              (SELECT max(a.at) FROM public.audit_log a WHERE a.action = 'match.reopen' AND a.match_id = m.id AND a.at <= m.closed_at) AS reopened_at
-         FROM public.matches m
-         LEFT JOIN public.match_final_mails f ON f.match_id = m.id AND f.closed_at = m.closed_at
+      `SELECT ${CLOSE_COLUMNS}
+         ${CLOSE_FROM}
         WHERE m.closed_at IS NOT NULL
-          AND m.closed_at >= greatest($1::timestamptz, $2::timestamptz)
           AND m.closed_at <= $3::timestamptz
-          AND m.test IS NOT TRUE AND (m.sport_type IS NOT DISTINCT FROM 'beach') IS NOT TRUE
-          AND m.game_n > 0
-          AND NOT (m.official_game_exempt AND m.released_at IS NOT NULL)
+          AND (m.closed_at >= greatest($1::timestamptz, $2::timestamptz)
+               -- a close an admin mailed by hand (sendNow): finished whenever it closed
+               OR (f.match_id IS NOT NULL AND EXISTS (SELECT 1 FROM public.audit_log a
+                    WHERE a.action = 'match.final_mail_manual' AND a.match_id = m.id AND a.at >= m.closed_at AND a.at >= $2::timestamptz)))
+          AND ${OFFICIAL_SQL}
           AND ((f.match_id IS NULL AND m.closed_at >= $4::timestamptz)
                OR (f.outcome IN ('pending', 'deferred', 'sent_no_pdf') AND f.next_try_at <= $5::timestamptz))
           AND m.id <> ALL($6::uuid[])
@@ -420,6 +459,20 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
         LIMIT ${BATCH}`,
       [changedAt, iso(t - LATE_PDF_DAYS * DAY_MS), iso(t - DELAY_MS), iso(t - LOOKBACK_MS), iso(t), seen])
     return rows
+  }
+
+  /** One match's current close as dueCloses reads it, with why the mail would leave it out; null: no such match. */
+  async function closeOf (matchId) {
+    const { rows: [m] } = await pool.query(
+      `SELECT ${CLOSE_COLUMNS}, f.at AS mail_at, m.test IS TRUE AS is_test,
+              (m.sport_type IS NOT DISTINCT FROM 'beach') AS is_beach,
+              coalesce(m.official_game_exempt AND m.released_at IS NOT NULL, false) AS is_released,
+              (SELECT max(a.at) FROM public.audit_log a
+                WHERE a.match_id = m.id AND a.at >= m.closed_at
+                  AND (a.action = 'match.final_mail' OR (a.action = 'match.final_mail_manual' AND a.details->>'outcome' IN ('sent', 'sent_no_pdf')))) AS sent_at
+         ${CLOSE_FROM}
+        WHERE m.id = $1`, [matchId])
+    return m || null
   }
 
   /**
@@ -522,6 +575,82 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
     }
   }
 
+  /** Why the mail leaves a close out (the sweep's rule, OFFICIAL_SQL), or null. */
+  function refusalOf (m) {
+    if (!m.closed_at) return fail(409, 'OV_NOT_CLOSED', 'This match is not closed')
+    const reason = m.is_test ? 'test' : m.is_beach ? 'beach' : !(Number(m.game_n) > 0) ? 'no_game_number' : m.is_released ? 'released' : null
+    return reason ? fail(409, 'OV_FINAL_MAIL_REFUSED', 'The final mail is only for official matches', { reason }) : null
+  }
+
+  /** What the console shows of a close's mail (match_final_mails; counts only). */
+  const stateOf = (m) => ({
+    outcome: m.outcome ?? null,
+    recipients: m.mailed ?? 0,
+    sent_at: iso(m.sent_at),
+    updated_at: iso(m.mail_at)
+  })
+
+  /**
+   * GET /api/admin/matches/:id/final-mail (admins): the mail of the match's
+   * latest close: its state, and what "Send now" would send: how many
+   * addresses (never one) and whether the approval's PDF is there.
+   */
+  async function status ({ matchId } = {}) {
+    if (!isUuid(matchId)) return notFound()
+    try {
+      const m = await closeOf(matchId)
+      if (!m) return notFound()
+      const settings = await readSettings()
+      const base = { mail: mailer?.enabled === true, switch_on: settings.send_final_email, closed_at: iso(m.closed_at), state: stateOf(m) }
+      const refused = refusalOf(m)
+      if (refused) return ok({ ...base, sendable: false, reason: refused.body.error.details?.reason || 'not_closed', recipients: 0, pdf: false })
+      const to = await recipientsOf(m, await scheduleOf(m.game_n))
+      const pdf = await approvalPdf(m)
+      return ok({ ...base, sendable: true, reason: null, recipients: to.length, pdf: !!pdf, resend: (m.mailed ?? 0) > 0 && !OPEN_ROUND.includes(m.outcome) })
+    } catch (err) {
+      log.error?.(`[final-mail] status failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 200)}`)
+      return unavailable()
+    }
+  }
+
+  /**
+   * POST /api/admin/matches/:id/final-mail (admins): the mail of the match's
+   * latest close now (see the header): mailOne without the wait for the PDF,
+   * whatever the switch. Audited match.final_mail_manual (counts, never an
+   * address). { outcome, recipients, reached, pdf, resend }
+   */
+  async function sendNow ({ actorId, matchId } = {}) {
+    if (!isUuid(matchId)) return notFound()
+    if (!mailer?.enabled) return fail(503, 'OV_MAIL_UNAVAILABLE', 'Email is not available on this server')
+    // one at a time with the sweep: nobody mailed twice by two rounds at once
+    if (running) return fail(409, 'OV_FINAL_MAIL_BUSY', 'The mails are being sent, try again in a moment')
+    running = true
+    try {
+      const m = await closeOf(matchId)
+      if (!m) return notFound()
+      const refused = refusalOf(m)
+      if (refused) return refused
+      // a round still open is finished; any other (a close already mailed, given up, or never) starts again for everyone
+      const resend = (m.mailed ?? 0) > 0 && !OPEN_ROUND.includes(m.outcome)
+      const close = OPEN_ROUND.includes(m.outcome) ? m : { ...m, outcome: null, attempts: 0, delivered: [] }
+      const info = {}
+      const outcome = await mailOne(close, { held: new Set() }, { manual: true, info })
+      await audit(pool, {
+        actorId,
+        action: 'match.final_mail_manual',
+        matchId: m.id,
+        details: { outcome, recipients: info.recipients ?? 0, reached: info.reached ?? 0, pdf: info.pdf === true, resend, corrected: m.corrected === true, game_n: m.game_n ?? null }
+      })
+      const after = await closeOf(matchId)
+      return ok({ outcome, recipients: info.recipients ?? 0, reached: info.reached ?? 0, pdf: info.pdf === true, resend, state: stateOf(after || m) })
+    } catch (err) {
+      log.error?.(`[final-mail] manual send failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 200)}`)
+      return unavailable()
+    } finally {
+      running = false
+    }
+  }
+
   /**
    * POST /api/scoresheet/test-mail { pdf (base64), teams, result }: a test
    * match's PDF to the caller's own address, whatever the switch (a test is
@@ -560,5 +689,5 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
     }
   }
 
-  return { enabled: mailer?.enabled === true, getSettings, setSettings, sweep, testMail }
+  return { enabled: mailer?.enabled === true, getSettings, setSettings, sweep, testMail, status, sendNow }
 }
