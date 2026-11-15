@@ -71,6 +71,16 @@
   </screenshots>
 
   <releases>
+    <release version="3.2.11" date="2026-11-15">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.2.11</url>
+      <description>
+        <ul>
+          <li>Exceptional substitution after an expulsion or a disqualification: the remark now says so.</li>
+          <li>Match end: the overflow sanction lines read "Team A/B" again (not "Team A B").</li>
+          <li>No legal substitution dialog: the Forfait text fits its button; a libero re-designated away shows × in the libero list.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.2.10" date="2026-11-15">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.2.10</url>
       <description>
