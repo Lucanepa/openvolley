@@ -379,6 +379,47 @@ describe('set 5, defaults and sanctions on the sheet', () => {
     for (const n of [4, 5]) expect(resultRow(container, n)).toMatchObject({ a: '', b: '' })
   })
 
+  // owner 2026-11-15: the centre's rows (Set, Duration) sat lower and were shorter
+  // than the teams' where the text's line height differs (the referee view): each
+  // block had rows of its own. Now one grid: a row's A, centre and B cells are
+  // items of the same grid row, so their lines meet at one height in any view.
+  it.each([3, 5])('RESULT is one grid: headings, the five set rows and Total share their rows across A, centre and B (best of %i)', (bestOf) => {
+    const base = fixture({ match: { status: 'ended', bestOf, set5LeftTeam: 'A', set5FirstServe: 'home' } })
+    const sets = [
+      { index: 1, homePoints: 25, awayPoints: 20, finished: true, startTime: local(2026, 10, 7, 20, 0), endTime: local(2026, 10, 7, 20, 25) },
+      { index: 2, homePoints: 18, awayPoints: 25, finished: true, startTime: local(2026, 10, 7, 20, 30), endTime: local(2026, 10, 7, 20, 55) }
+    ]
+    const { getByTestId } = render(<App matchData={{ ...base, sets }} autoAction="preview" />)
+    const table = getByTestId('result-table')
+    // fixed heading rows, five equal set rows, Total 0.7 cm
+    expect(table.style.gridTemplateRows).toBe('20px 13px repeat(5, minmax(16px, 1fr)) 0.7cm')
+    expect(table.style.gridTemplateColumns).toBe('1fr 80px 1fr')
+    // every cell a direct item of the grid, three per row in order A, centre, B
+    const items = [...table.children].map(el => {
+      const id = el.getAttribute('data-testid')
+      const block = el.getAttribute('data-block') ?? el.getAttribute('data-team') ?? 'C'
+      return `${id}:${block}:${el.getAttribute('data-row') ?? ''}`
+    })
+    expect(items).toEqual([
+      'result-head:A:', 'result-head:C:', 'result-head:B:',
+      'result-subhead:A:', 'result-subhead:C:', 'result-subhead:B:',
+      ...[1, 2, 3, 4, 5].flatMap(r => [`result-team-row:A:${r}`, `result-row:C:${r}`, `result-team-row:B:${r}`]),
+      'result-total:A:', 'result-total:C:', 'result-total:B:'
+    ])
+    // no row of its own sizes a block: no flex-1 / min height on the rows
+    for (const el of table.querySelectorAll('[data-testid="result-team-row"], [data-testid="result-row"]')) {
+      expect(el.className).not.toMatch(/flex-1|min-h-\[/)
+    }
+  })
+
+  it('SANCTIONS headings read W P E D: "D" for disqualification, not "DQ" (owner 2026-11-15)', () => {
+    const { getByTestId, container } = render(<App matchData={fixture()} autoAction="preview" />)
+    expect(getByTestId('sanctions-head-disqualification').textContent).toBe('D')
+    const head = getByTestId('sanctions-head-disqualification').parentElement as HTMLElement
+    expect([...head.children].slice(0, 4).map(c => c.textContent)).toEqual(['W', 'P', 'E', 'D'])
+    expect(sheetText(container)).not.toMatch(/\bDQ\b/)
+  })
+
   it('a match still running keeps the grey numbers of the sets that may still be played', () => {
     const base = fixture()
     const sets = [{ index: 1, homePoints: 25, awayPoints: 20, finished: true, startTime: local(2026, 10, 7, 20, 0), endTime: local(2026, 10, 7, 20, 25) }]
