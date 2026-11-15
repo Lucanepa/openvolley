@@ -2203,6 +2203,7 @@
     "searchPlaceholder": "Suchen...",
     "today": "Heute",
     "tomorrow": "Morgen",
+    "earlierMatches": "Frühere Spiele",
     "clearFilter": "Filter löschen",
     "noMatchesForFilter": "Keine Spiele für diesen Filter gefunden",
     "noClubGames": "Keine Heimspiele deines Vereins in dieser Liga.",

@@ -2397,6 +2397,7 @@
     "searchPlaceholder": "Cerca...",
     "today": "Oggi",
     "tomorrow": "Domani",
+    "earlierMatches": "Partite precedenti",
     "clearFilter": "Cancella filtro",
     "noMatchesForFilter": "Nessuna partita trovata per questo filtro",
     "noClubGames": "Nessuna partita in casa della tua società in questa lega.",

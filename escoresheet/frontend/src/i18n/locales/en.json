@@ -2398,6 +2398,7 @@
     "searchPlaceholder": "Search...",
     "today": "Today",
     "tomorrow": "Tomorrow",
+    "earlierMatches": "Earlier matches",
     "clearFilter": "Clear filter",
     "noMatchesForFilter": "No matches found for this filter",
     "noClubGames": "No home games of your club in this league.",

@@ -6,10 +6,11 @@ import { useAlert } from '../contexts/AlertContext'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 import { apiFrom } from '../lib/apiClient'
 import { selectAll } from '../lib/selectAll'
-import { AlertTriangle, Loader2, Search, X } from 'lucide-react'
+import { AlertTriangle, ChevronDown, Loader2, Search, X } from 'lucide-react'
 import { cn, FOCUS_RING, IconButton, Select } from '../ui'
 import { dayKey, dayLabel, shiftDayKey, timeLabel, todayKey } from '../ui/format'
 import { clubVerdict } from '../lib/access'
+import { splitEarlierGames } from '../utils/scheduleEarlier'
 
 // Kit recipes: native select at h-11 (tablet), compact label, filter pills
 // (slate when on), sticky table head.
@@ -238,6 +239,9 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch, a
   const [searchQuery, setSearchQuery] = useState('')
   const [dateFilter, setDateFilter] = useState('') // '' | 'today' | 'tomorrow'
 
+  // "Earlier matches": games that already started, closed until tapped
+  const [earlierOpen, setEarlierOpen] = useState(false)
+
   // Data state
   const [matches, setMatches] = useState([])
   const [loading, setLoading] = useState(false)
@@ -357,6 +361,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch, a
 
   // Fetch matches when league is selected
   useEffect(() => {
+    setEarlierOpen(false)
     if (!league) return
     fetchMatches()
   }, [league])
@@ -446,6 +451,14 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch, a
     return result
   }, [matches, searchQuery, dateFilter, access])
 
+  // Games that already started go under "Earlier matches", after the upcoming
+  // ones (owner 2026-11-15); a search or a date filter keeps the same groups
+  const { upcoming: upcomingMatches, earlier: earlierMatches } = useMemo(
+    () => splitEarlierGames(filteredMatches, Date.now()),
+    [filteredMatches]
+  )
+  const filterActive = !!(searchQuery.trim() || dateFilter)
+
   const clubLimited = !!(access?.clubRule && !access.isAdmin)
 
   const handleSelectMatch = (match) => {
@@ -470,11 +483,56 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch, a
       setError(null)
       setSearchQuery('')
       setDateFilter('')
+      setEarlierOpen(false)
       setDataSource(null)
     }
   }, [open])
 
   const gridColumns = `${Math.round(80 * scaleFactor)}px ${Math.round(90 * scaleFactor)}px ${Math.round(55 * scaleFactor)}px 1fr`
+
+  const tableHead = (
+    <div
+      className="sg-head sticky top-0 z-10 grid items-center gap-2 border-b border-stone-200 bg-stone-50 px-2.5 py-2 text-[11px] font-bold uppercase tracking-wide text-stone-500"
+      style={{ gridTemplateColumns: gridColumns }}
+    >
+      <span className="text-center">{t('loadOfficialMatch.gameN', 'Game #')}</span>
+      <span className="text-center">{t('loadOfficialMatch.date', 'Date')}</span>
+      <span className="text-center">{t('loadOfficialMatch.time', 'Time')}</span>
+      <span>{t('loadOfficialMatch.homeVsAway', 'Home vs away')}</span>
+    </div>
+  )
+
+  const renderGameRow = (match) => (
+    <div
+      key={match.gameN}
+      onClick={() => handleSelectMatch(match)}
+      className="sg-row grid min-h-11 cursor-pointer items-center gap-2 px-2.5 py-2 text-xs tabular-nums text-stone-800 transition-colors hover:bg-stone-50"
+      style={{ gridTemplateColumns: gridColumns }}
+    >
+      <span className="sg-num text-center font-semibold">
+        {match.gameN}
+      </span>
+      <span className="sg-when text-center">
+        {formatDisplayDate(match.dtstart)}
+      </span>
+      <span className="sg-when text-center">
+        {formatDisplayTime(match.dtstart)}
+      </span>
+      {/* One line where it fits; on a phone each game is a card
+          (tailwind.css, "Load match from schedule"): game #, date
+          and time over the home team over "vs" the away team */}
+      <span className="sg-teams flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+        {/* real spaces between the words: copied text, screen
+            readers and the phone card read "home vs away" (the gap
+            and margin alone gave "vsVolley Luzern") */}
+        <span className="max-w-full truncate font-semibold text-stone-900">{match.home}</span>{' '}
+        <span className="max-w-full truncate">
+          <span className="text-stone-400">{t('common.vs', 'vs')}</span>{' '}
+          <span className="font-semibold text-stone-900">{match.away}</span>
+        </span>
+      </span>
+    </div>
+  )
 
   return (
     <Modal
@@ -673,51 +731,49 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch, a
           </div>
         )}
 
-        {!loading && !error && filteredMatches.length > 0 && (
-          <div className="schedule-rows divide-y divide-stone-100">
-            {/* Table Header */}
-            <div
-              className="sg-head sticky top-0 z-10 grid items-center gap-2 border-b border-stone-200 bg-stone-50 px-2.5 py-2 text-[11px] font-bold uppercase tracking-wide text-stone-500"
-              style={{ gridTemplateColumns: gridColumns }}
-            >
-              <span className="text-center">{t('loadOfficialMatch.gameN', 'Game #')}</span>
-              <span className="text-center">{t('loadOfficialMatch.date', 'Date')}</span>
-              <span className="text-center">{t('loadOfficialMatch.time', 'Time')}</span>
-              <span>{t('loadOfficialMatch.homeVsAway', 'Home vs away')}</span>
-            </div>
+        {/* Every game shown already started: the list's empty state, with
+            "Earlier matches" below it */}
+        {!loading && !error && upcomingMatches.length === 0 && earlierMatches.length > 0 && (
+          <div className="px-4 py-10 text-center text-sm font-medium text-stone-500" data-testid="schedule-empty-upcoming">
+            {filterActive
+              ? t('loadOfficialMatch.noMatchesForFilter', 'No matches found for this filter')
+              : t('loadOfficialMatch.noUpcomingMatches', 'No upcoming matches found')}
+          </div>
+        )}
 
-            {/* Table Rows */}
-            {filteredMatches.map((match) => (
-              <div
-                key={match.gameN}
-                onClick={() => handleSelectMatch(match)}
-                className="sg-row grid min-h-11 cursor-pointer items-center gap-2 px-2.5 py-2 text-xs tabular-nums text-stone-800 transition-colors hover:bg-stone-50"
-                style={{ gridTemplateColumns: gridColumns }}
-              >
-                <span className="sg-num text-center font-semibold">
-                  {match.gameN}
-                </span>
-                <span className="sg-when text-center">
-                  {formatDisplayDate(match.dtstart)}
-                </span>
-                <span className="sg-when text-center">
-                  {formatDisplayTime(match.dtstart)}
-                </span>
-                {/* One line where it fits; on a phone each game is a card
-                    (tailwind.css, "Load match from schedule"): game #, date
-                    and time over the home team over "vs" the away team */}
-                <span className="sg-teams flex min-w-0 flex-wrap items-baseline gap-x-1.5">
-                  {/* real spaces between the words: copied text, screen
-                      readers and the phone card read "home vs away" (the gap
-                      and margin alone gave "vsVolley Luzern") */}
-                  <span className="max-w-full truncate font-semibold text-stone-900">{match.home}</span>{' '}
-                  <span className="max-w-full truncate">
-                    <span className="text-stone-400">{t('common.vs', 'vs')}</span>{' '}
-                    <span className="font-semibold text-stone-900">{match.away}</span>
-                  </span>
-                </span>
-              </div>
-            ))}
+        {!loading && !error && upcomingMatches.length > 0 && (
+          <div className="schedule-rows divide-y divide-stone-100">
+            {tableHead}
+            {upcomingMatches.map(renderGameRow)}
+          </div>
+        )}
+
+        {!loading && !error && earlierMatches.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setEarlierOpen(v => !v)}
+            aria-expanded={earlierOpen}
+            aria-controls="schedule-earlier-games"
+            data-testid="schedule-earlier-toggle"
+            className={cn(
+              'flex min-h-11 w-full items-center justify-between gap-2 border-t border-stone-200 bg-stone-50 px-2.5 py-2 text-left text-sm font-semibold text-stone-700 transition-colors hover:bg-stone-100',
+              FOCUS_RING
+            )}
+          >
+            <span className="min-w-0">
+              {t('loadOfficialMatch.earlierMatches', 'Earlier matches')}{' '}
+              <span className="tabular-nums font-medium text-stone-500">({earlierMatches.length})</span>
+            </span>
+            <ChevronDown size={16} aria-hidden="true" className={cn('shrink-0 text-stone-400 transition-transform', earlierOpen && 'rotate-180')} />
+          </button>
+        )}
+
+        {/* A direct child of .schedule-games, like the upcoming rows: the
+            phone card layout (tailwind.css) applies to these rows too */}
+        {!loading && !error && earlierOpen && earlierMatches.length > 0 && (
+          <div id="schedule-earlier-games" className="schedule-rows divide-y divide-stone-100 border-t border-stone-100" data-testid="schedule-earlier-games">
+            {upcomingMatches.length === 0 && tableHead}
+            {earlierMatches.map(renderGameRow)}
           </div>
         )}
       </div>
