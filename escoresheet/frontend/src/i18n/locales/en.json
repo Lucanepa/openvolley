@@ -917,7 +917,17 @@
       "deleteEvent": "Delete this {{type}} event?",
       "deleteLineupEvent": "Delete this lineup event?",
       "setStart": "Set start",
-      "setEnd": "Set end"
+      "setEnd": "Set end",
+      "excSubstitution": "Exc. substitution",
+      "excSub": "Exc. sub",
+      "delaySanction": "Delay sanction",
+      "rally": "Rally",
+      "decision": "Decision",
+      "pointCancelled": "Point cancelled",
+      "lineupChanged": "Lineup chg",
+      "liberoExchShort": "Libero exch",
+      "liberoRedesShort": "Libero redes",
+      "disqualifShort": "Disqualif."
     },
     "deviceDisconnected": "{{device}} disconnected",
     "pins": {
@@ -1210,7 +1220,17 @@
       "wonMatch": "{{team}} ({{label}}) won the match",
       "wonSet": "{{team}} ({{label}}) won the set",
       "confirmEndTime": "Confirm the end time:",
-      "confirming": "Confirming..."
+      "confirming": "Confirming...",
+      "rallyLabel": "Rally: {{status}}",
+      "tabletModeSuggestion": "Small screen detected! Enable tablet mode for a better experience?",
+      "enableTabletMode": "Enable tablet mode",
+      "notNow": "Not now",
+      "exchShort": "Exch.",
+      "titleDisqualified": "Disqualified - cannot play rest of match",
+      "titleExceptional": "Exceptionally substituted - cannot play rest of match",
+      "titleExpelled": "Expelled - cannot play this set",
+      "titleCannotReenter": "Cannot re-enter",
+      "noEventsFound": "No events found"
     }
   },
   "settings": {

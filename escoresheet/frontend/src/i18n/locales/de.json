@@ -909,7 +909,17 @@
       "deleteEvent": "Dieses {{type}}-Ereignis löschen?",
       "deleteLineupEvent": "Dieses Aufstellungsereignis löschen?",
       "setStart": "Satzanfang",
-      "setEnd": "Satzende"
+      "setEnd": "Satzende",
+      "excSubstitution": "Ausserord. Auswechslung",
+      "excSub": "Ausserord. Ausw.",
+      "delaySanction": "Verzögerungssanktion",
+      "rally": "Ballwechsel",
+      "decision": "Entscheid",
+      "pointCancelled": "Punkt annulliert",
+      "lineupChanged": "Aufst. geändert",
+      "liberoExchShort": "Libero-Tausch",
+      "liberoRedesShort": "Libero neu",
+      "disqualifShort": "Disqualif."
     },
     "deviceDisconnected": "{{device}} getrennt",
     "pins": {
@@ -1202,7 +1212,17 @@
       "wonMatch": "{{team}} ({{label}}) hat das Spiel gewonnen",
       "wonSet": "{{team}} ({{label}}) hat den Satz gewonnen",
       "confirmEndTime": "Bestätige die Endzeit:",
-      "confirming": "Wird bestätigt..."
+      "confirming": "Wird bestätigt...",
+      "rallyLabel": "Ballwechsel: {{status}}",
+      "tabletModeSuggestion": "Kleiner Bildschirm erkannt! Tablet-Modus für eine bessere Ansicht einschalten?",
+      "enableTabletMode": "Tablet-Modus einschalten",
+      "notNow": "Nicht jetzt",
+      "exchShort": "Tausch",
+      "titleDisqualified": "Disqualifiziert – darf im Rest des Spiels nicht spielen",
+      "titleExceptional": "Ausserordentlich ausgewechselt – darf im Rest des Spiels nicht spielen",
+      "titleExpelled": "Ausgeschlossen – darf in diesem Satz nicht spielen",
+      "titleCannotReenter": "Kann nicht wieder eintreten",
+      "noEventsFound": "Keine Ereignisse gefunden"
     }
   },
   "settings": {

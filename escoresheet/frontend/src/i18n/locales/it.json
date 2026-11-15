@@ -916,7 +916,17 @@
       "deleteEvent": "Eliminare questo evento {{type}}?",
       "deleteLineupEvent": "Eliminare questo evento formazione?",
       "setStart": "Inizio set",
-      "setEnd": "Fine set"
+      "setEnd": "Fine set",
+      "excSubstitution": "Sost. eccezionale",
+      "excSub": "Sost. ecc.",
+      "delaySanction": "Sanzione per ritardo",
+      "rally": "Scambio",
+      "decision": "Decisione",
+      "pointCancelled": "Punto annullato",
+      "lineupChanged": "Form. modificata",
+      "liberoExchShort": "Scambio lib.",
+      "liberoRedesShort": "Rides. libero",
+      "disqualifShort": "Squalif."
     },
     "deviceDisconnected": "{{device}} disconnesso",
     "pins": {
@@ -1209,7 +1219,17 @@
       "wonMatch": "{{team}} ({{label}}) ha vinto la partita",
       "wonSet": "{{team}} ({{label}}) ha vinto il set",
       "confirmEndTime": "Conferma l'ora di fine:",
-      "confirming": "Conferma in corso..."
+      "confirming": "Conferma in corso...",
+      "rallyLabel": "Scambio: {{status}}",
+      "tabletModeSuggestion": "Schermo piccolo rilevato! Attivare la modalità tablet per una visualizzazione migliore?",
+      "enableTabletMode": "Attiva modalità tablet",
+      "notNow": "Non ora",
+      "exchShort": "Scamb.",
+      "titleDisqualified": "Squalificato — non può giocare il resto della partita",
+      "titleExceptional": "Sostituito in modo eccezionale — non può giocare il resto della partita",
+      "titleExpelled": "Espulso — non può giocare questo set",
+      "titleCannotReenter": "Non può rientrare",
+      "noEventsFound": "Nessun evento trovato"
     }
   },
   "settings": {

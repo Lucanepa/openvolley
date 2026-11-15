@@ -916,7 +916,17 @@
       "deleteEvent": "Das {{type}}-Ereignis lösche?",
       "deleteLineupEvent": "Das Ufstelligs-Ereignis lösche?",
       "setStart": "Satzstart",
-      "setEnd": "Satzend"
+      "setEnd": "Satzend",
+      "excSubstitution": "Usserord. Wächsel",
+      "excSub": "Usserord. Wächsel",
+      "delaySanction": "Verzögerigssanktion",
+      "rally": "Ballwächsel",
+      "decision": "Entscheid",
+      "pointCancelled": "Punkt annulliert",
+      "lineupChanged": "Ufstellig gänderet",
+      "liberoExchShort": "Libero-Tuusch",
+      "liberoRedesShort": "Libero neu",
+      "disqualifShort": "Disqualif."
     },
     "deviceDisconnected": "{{device}} trennt",
     "pins": {
@@ -1209,7 +1219,17 @@
       "wonMatch": "{{team}} ({{label}}) hät s Spiil gwunne",
       "wonSet": "{{team}} ({{label}}) hät de Satz gwunne",
       "confirmEndTime": "Bestätig d Endziit:",
-      "confirming": "Wird bestätigt..."
+      "confirming": "Wird bestätigt...",
+      "rallyLabel": "Ballwächsel: {{status}}",
+      "tabletModeSuggestion": "Chliine Bildschirm erkannt! Tablet-Modus für e besseri Aasicht iischalte?",
+      "enableTabletMode": "Tablet-Modus iischalte",
+      "notNow": "Jetzt nöd",
+      "exchShort": "Tuusch",
+      "titleDisqualified": "Disqualifiziert – darf im Rest vom Spiil nöd spiile",
+      "titleExceptional": "Usserordentlich gwächslet – darf im Rest vom Spiil nöd spiile",
+      "titleExpelled": "Usgschlosse – darf i däm Satz nöd spiile",
+      "titleCannotReenter": "Cha nöd wieder ine",
+      "noEventsFound": "Kei Ereignis gfunde"
     }
   },
   "settings": {

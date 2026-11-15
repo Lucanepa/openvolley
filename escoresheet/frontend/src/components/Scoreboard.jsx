@@ -5630,7 +5630,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     letterSpacing: '2px',
                     textAlign: 'center'
                   }}>
-                    SERVE
+                    {t('scoreboard.serveLabel', 'Serve')}
                   </div>
                   <div data-serve-number-box={side} style={{
                     flex: '1 1 0',
@@ -14550,7 +14550,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 fontWeight: 600
               }}
             >
-              Rally: {rallyStatus === 'in_play' ? 'In play' : 'Not in play'}
+              {t('scoreboard.dialogs.rallyLabel', { defaultValue: 'Rally: {{status}}', status: rallyStatus === 'in_play' ? t('scoreboard.labels.inPlay') : t('scoreboard.labels.notInPlay') })}
             </div>
           ) : (
             <div style={{
@@ -14666,35 +14666,35 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             const fullDescription = getActionDescription(lastEvent)
             const getSimpleActionType = (event) => {
               switch (event.type) {
-                case 'point': return 'Point'
-                case 'timeout': return 'Timeout'
-                case 'substitution': return event.payload?.isExceptional ? 'Exc. substitution' : 'Substitution'
-                case 'libero_entry': return 'Libero entry'
-                case 'libero_exit': return 'Libero exit'
-                case 'libero_exchange': return 'Libero exchange'
-                case 'libero_unable': return 'Libero unable'
-                case 'libero_redesignation': return 'Libero redesignation'
-                case 'decision_change': return 'Decision change'
+                case 'point': return t('backupTable.eventTypes.point')
+                case 'timeout': return t('backupTable.eventTypes.timeout')
+                case 'substitution': return event.payload?.isExceptional ? t('scoreboard.actionLog.excSubstitution', 'Exc. substitution') : t('backupTable.eventTypes.substitution')
+                case 'libero_entry': return t('backupTable.eventTypes.liberoEntry')
+                case 'libero_exit': return t('backupTable.eventTypes.liberoExit')
+                case 'libero_exchange': return t('backupTable.eventTypes.liberoExchange')
+                case 'libero_unable': return t('backupTable.eventTypes.liberoUnable')
+                case 'libero_redesignation': return t('backupTable.eventTypes.liberoRedesignation')
+                case 'decision_change': return t('backupTable.eventTypes.decisionChange')
                 case 'sanction': {
                   const sanctionType = event.payload?.sanctionType
-                  if (sanctionType === 'warning') return 'Warning'
-                  if (sanctionType === 'penalty') return 'Penalty'
-                  if (sanctionType === 'expulsion') return 'Expulsion'
-                  if (sanctionType === 'disqualification') return 'Disqualification'
-                  return 'Sanction'
+                  if (sanctionType === 'warning') return t('scoreboard.sanctions.warning')
+                  if (sanctionType === 'penalty') return t('scoreboard.sanctions.penalty')
+                  if (sanctionType === 'expulsion') return t('scoreboard.sanctions.expulsion')
+                  if (sanctionType === 'disqualification') return t('scoreboard.sanctions.disqualification')
+                  return t('backupTable.eventTypes.sanction')
                 }
                 case 'delay_sanction': {
                   const delayType = event.payload?.sanctionType
-                  if (delayType === 'warning') return 'Delay warning'
-                  if (delayType === 'penalty') return 'Delay penalty'
-                  return 'Delay sanction'
+                  if (delayType === 'warning') return t('scoreboard.sanctions.delayWarning')
+                  if (delayType === 'penalty') return t('scoreboard.sanctions.delayPenalty')
+                  return t('scoreboard.actionLog.delaySanction', 'Delay sanction')
                 }
-                case 'coin_toss': return 'Coin toss'
-                case 'set_start': return 'Set start'
-                case 'set_end': return 'Set end'
-                case 'lineup': return 'Line-up'
-                case 'forfait': return 'Forfait'
-                case 'injury': return 'Injury'
+                case 'coin_toss': return t('backupTable.eventTypes.coinToss')
+                case 'set_start': return t('backupTable.eventTypes.setStart')
+                case 'set_end': return t('backupTable.eventTypes.setEnd')
+                case 'lineup': return t('scoreboard.lineup')
+                case 'forfait': return t('scoreboard.modals.forfait')
+                case 'injury': return t('corrections.reasonLabel.injury')
                 default: return event.type
               }
             }
@@ -14841,7 +14841,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               <SbButton variant="dark"
                 onClick={() => setScoresheetErrorModal(null)}
               >
-                Close
+                {t('common.close')}
               </SbButton>
             </div>
           </div>
@@ -14978,10 +14978,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             {displayModeSuggestion === 'tablet' ? <TabletIcon size={20} /> : <PhoneIcon size={20} />}
           </span>
           <span className="text-sm font-semibold">
-            Small screen detected! Enable {displayModeSuggestion} mode for a better experience?
+            {t('scoreboard.dialogs.tabletModeSuggestion', 'Small screen detected! Enable tablet mode for a better experience?')}
           </span>
           <SbButton variant="dark" onClick={() => enterDisplayMode(displayModeSuggestion)}>
-            Enable {displayModeSuggestion} mode
+            {t('scoreboard.dialogs.enableTabletMode', 'Enable tablet mode')}
           </SbButton>
           <SbButton
             onClick={() => {
@@ -14989,7 +14989,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               sessionStorage.setItem('displayModeSuggestionDismissed', 'true')
             }}
           >
-            Not now
+            {t('scoreboard.dialogs.notNow', 'Not now')}
           </SbButton>
         </div>
       )}
@@ -15199,7 +15199,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         color: '#991b1b'
                       }}
                     >
-                      Redesignate libero
+                      {t('scoreboard.actions.redesignateLibero')}
                     </button>
                   </div>
                 )
@@ -15568,12 +15568,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 }}
                                 title={
                                   isDisqualifiedSub || hasDisqualificationSanction
-                                    ? 'Disqualified - cannot play rest of match'
+                                    ? t('scoreboard.dialogs.titleDisqualified', 'Disqualified - cannot play rest of match')
                                     : isExceptionallySub
-                                      ? 'Exceptionally substituted - cannot play rest of match'
+                                      ? t('scoreboard.dialogs.titleExceptional', 'Exceptionally substituted - cannot play rest of match')
                                       : isExpelledInSet || hasExpulsionSanction
-                                        ? 'Expelled - cannot play this set'
-                                        : 'Cannot re-enter'
+                                        ? t('scoreboard.dialogs.titleExpelled', 'Expelled - cannot play this set')
+                                        : t('scoreboard.dialogs.titleCannotReenter', 'Cannot re-enter')
                                 }
                               >
                                 ✕
@@ -15860,7 +15860,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   title={t('scoreboard.exchangeLiberos')}
                                 >
                                   <span style={{ fontSize: '5.6cqw' }}>⇄</span>
-                                  Exch.
+                                  {t('scoreboard.dialogs.exchShort', 'Exch.')}
                                 </button>
                               )}
                           </div>
@@ -17945,7 +17945,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       overflow: 'hidden',
                       textOverflow: 'ellipsis'
                     }}>
-                      Time-out — {timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))}
+                      {t('scoreboard.phone.timeoutRunning', { team: timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away')) })}
                     </div>
                     <div style={{
                       fontSize: '48px',
@@ -18573,7 +18573,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         color: '#991b1b'
                       }}
                     >
-                      Redesignate libero
+                      {t('scoreboard.actions.redesignateLibero')}
                     </button>
                   </div>
                 )
@@ -18942,12 +18942,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 }}
                                 title={
                                   isDisqualifiedSub || hasDisqualificationSanction
-                                    ? 'Disqualified - cannot play rest of match'
+                                    ? t('scoreboard.dialogs.titleDisqualified', 'Disqualified - cannot play rest of match')
                                     : isExceptionallySub
-                                      ? 'Exceptionally substituted - cannot play rest of match'
+                                      ? t('scoreboard.dialogs.titleExceptional', 'Exceptionally substituted - cannot play rest of match')
                                       : isExpelledInSet || hasExpulsionSanction
-                                        ? 'Expelled - cannot play this set'
-                                        : 'Cannot re-enter'
+                                        ? t('scoreboard.dialogs.titleExpelled', 'Expelled - cannot play this set')
+                                        : t('scoreboard.dialogs.titleCannotReenter', 'Cannot re-enter')
                                 }
                               >
                                 ✕
@@ -19232,7 +19232,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   title={t('scoreboard.exchangeLiberos')}
                                 >
                                   <span style={{ fontSize: '5.6cqw' }}>⇄</span>
-                                  Exch.
+                                  {t('scoreboard.dialogs.exchShort', 'Exch.')}
                                 </button>
                               )}
                           </div>
@@ -19842,7 +19842,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             </div>
             {(() => {
               if (!data?.events || data.events.length === 0) {
-                return <p>No events recorded yet.</p>
+                return <p>{t('scoreboard.noEventsRecorded')}</p>
               }
 
               // Helper function to get set number (before set 1 is set 1, between sets is the next set)
@@ -19874,33 +19874,33 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               // Helper function to get event type for Type column
               const getEventType = (event) => {
                 switch (event.type) {
-                  case 'point': return 'Point'
-                  case 'timeout': return 'Timeout'
-                  case 'substitution': return event.payload?.isExceptional ? 'Exc. sub' : 'Substitution'
+                  case 'point': return t('backupTable.eventTypes.point')
+                  case 'timeout': return t('backupTable.eventTypes.timeout')
+                  case 'substitution': return event.payload?.isExceptional ? t('scoreboard.actionLog.excSub', 'Exc. sub') : t('backupTable.eventTypes.substitution')
                   case 'set_start': return t('scoreboard.actionLog.setStart')
                   case 'set_end': return t('scoreboard.actionLog.setEnd')
-                  case 'rally_start': return 'Rally'
-                  case 'replay': return 'Replay'
-                  case 'decision_change': return 'Decision'
-                  case 'rectification': return 'Game taken back'
-                  case 'cancelled_point': return 'Point cancelled'
-                  case 'coin_toss': return 'Coin toss'
-                  case 'lineup': return event.payload?.isInitial ? 'Lineup' : 'Lineup chg'
-                  case 'libero_entry': return 'Libero in'
-                  case 'libero_exit': return 'Libero out'
-                  case 'libero_exchange': return 'Libero exch'
-                  case 'libero_unable': return 'Libero unable'
-                  case 'libero_redesignation': return 'Libero redes'
+                  case 'rally_start': return t('scoreboard.actionLog.rally', 'Rally')
+                  case 'replay': return t('scoreboard.phone.replay')
+                  case 'decision_change': return t('scoreboard.actionLog.decision', 'Decision')
+                  case 'rectification': return t('rectify.describe.title')
+                  case 'cancelled_point': return t('scoreboard.actionLog.pointCancelled', 'Point cancelled')
+                  case 'coin_toss': return t('backupTable.eventTypes.coinToss')
+                  case 'lineup': return event.payload?.isInitial ? t('scoreboard.lineup') : t('scoreboard.actionLog.lineupChanged', 'Lineup chg')
+                  case 'libero_entry': return t('scoreboard.playerMenu.liberoIn')
+                  case 'libero_exit': return t('scoreboard.playerMenu.liberoOut')
+                  case 'libero_exchange': return t('scoreboard.actionLog.liberoExchShort', 'Libero exch')
+                  case 'libero_unable': return t('backupTable.eventTypes.liberoUnable')
+                  case 'libero_redesignation': return t('scoreboard.actionLog.liberoRedesShort', 'Libero redes')
                   case 'sanction': {
                     const sanctionType = event.payload?.sanctionType
-                    if (sanctionType === 'warning') return 'Warning'
-                    if (sanctionType === 'penalty') return 'Penalty'
-                    if (sanctionType === 'expulsion') return 'Expulsion'
-                    if (sanctionType === 'disqualification') return 'Disqualif.'
-                    return 'Sanction'
+                    if (sanctionType === 'warning') return t('scoreboard.sanctions.warning')
+                    if (sanctionType === 'penalty') return t('scoreboard.sanctions.penalty')
+                    if (sanctionType === 'expulsion') return t('scoreboard.sanctions.expulsion')
+                    if (sanctionType === 'disqualification') return t('scoreboard.actionLog.disqualifShort', 'Disqualif.')
+                    return t('backupTable.eventTypes.sanction')
                   }
-                  case 'remark': return 'Remark'
-                  default: return event.type || 'Unknown'
+                  case 'remark': return t('corrections.term.remark')
+                  default: return event.type || t('common.unknown')
                 }
               }
 
@@ -20201,7 +20201,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       {filteredEvents.length === 0 ? (
                         <tr>
                           <td colSpan="8" style={{ padding: '20px', textAlign: 'center', color: 'var(--muted)' }}>
-                            No events found
+                            {t('scoreboard.dialogs.noEventsFound', 'No events found')}
                           </td>
                         </tr>
                       ) : (

@@ -915,7 +915,17 @@
       "deleteEvent": "Supprimer cet événement {{type}} ?",
       "deleteLineupEvent": "Supprimer cet événement de composition ?",
       "setStart": "Début de set",
-      "setEnd": "Fin de set"
+      "setEnd": "Fin de set",
+      "excSubstitution": "Rempl. exceptionnel",
+      "excSub": "Rempl. except.",
+      "delaySanction": "Sanction de retard",
+      "rally": "Échange",
+      "decision": "Décision",
+      "pointCancelled": "Point annulé",
+      "lineupChanged": "Pos. modifiée",
+      "liberoExchShort": "Échange lib.",
+      "liberoRedesShort": "Redés. libéro",
+      "disqualifShort": "Disqualif."
     },
     "deviceDisconnected": "{{device}} déconnecté",
     "pins": {
@@ -1208,7 +1218,17 @@
       "wonMatch": "{{team}} ({{label}}) a gagné le match",
       "wonSet": "{{team}} ({{label}}) a gagné le set",
       "confirmEndTime": "Confirme l'heure de fin :",
-      "confirming": "Confirmation..."
+      "confirming": "Confirmation...",
+      "rallyLabel": "Échange : {{status}}",
+      "tabletModeSuggestion": "Petit écran détecté ! Activer le mode tablette pour un meilleur affichage ?",
+      "enableTabletMode": "Activer le mode tablette",
+      "notNow": "Pas maintenant",
+      "exchShort": "Éch.",
+      "titleDisqualified": "Disqualifié — ne peut plus jouer de tout le match",
+      "titleExceptional": "Remplacé exceptionnellement — ne peut plus jouer de tout le match",
+      "titleExpelled": "Expulsé — ne peut pas jouer ce set",
+      "titleCannotReenter": "Ne peut pas revenir",
+      "noEventsFound": "Aucun événement trouvé"
     }
   },
   "settings": {
