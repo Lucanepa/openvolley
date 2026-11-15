@@ -4,7 +4,7 @@
         "It runs the official installer silently (the same one winget and the download page use), so the app lands in Program Files with its Start menu entry and the firewall rule for the tablets.",
         "Regenerate for a new version: escoresheet/packaging/scoop/update-manifests.sh. README.md next to this file says more."
     ],
-    "version": "3.2.2",
+    "version": "3.2.3",
     "description": "Open Source Volleyball eScoresheet: an offline scoretable with a built-in LAN server for the referee, bench and livescore tablets.",
     "homepage": "https://openvolley.app",
     "license": {
@@ -17,8 +17,8 @@
     ],
     "architecture": {
         "64bit": {
-            "url": "https://github.com/Lucanepa/openvolley/releases/download/desktop-v3.2.2/Openvolley.eScoresheet_3.2.2_x64-setup.exe#/setup.exe",
-            "hash": "a37b633ec817f2c8071d9f441c9cfe5b459bf8206b2eb3cbf712fe4271d0d588"
+            "url": "https://github.com/Lucanepa/openvolley/releases/download/desktop-v3.2.3/Openvolley.eScoresheet_3.2.3_x64-setup.exe#/setup.exe",
+            "hash": "0e1ebf4cb7a1b8c262e118d251ba1bb1f5eae96ff88e31702b7f6b34b6fe8881"
         }
     },
     "installer": {
