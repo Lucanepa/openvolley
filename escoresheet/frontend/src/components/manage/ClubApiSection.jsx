@@ -181,7 +181,7 @@ function CreateTokenModal({ club, open, onClose, onCreated }) {
         <Field label={t('manage.myClub.api.scopes')}>
           <div className="space-y-2">
             {API_SCOPES.map((s) => (
-              <Checkbox key={s} label={s} hint={t(`manage.myClub.api.scope.${s}`)} checked={scopes.includes(s)} onChange={() => toggle(s)} disabled={s === 'read' && writes} />
+              <Checkbox key={s} label={s} hint={t(`manage.myClub.api.scope.${s}`, { nsSeparator: false })} checked={scopes.includes(s)} onChange={() => toggle(s)} disabled={s === 'read' && writes} />
             ))}
           </div>
         </Field>
