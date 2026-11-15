@@ -2228,12 +2228,12 @@
     },
     "connection": {
       "title": "Connection",
-      "auto": "Auto",
-      "autoDesc": "DB → Direct fallback",
-      "dbOnly": "DB only",
-      "dbDesc": "Supabase realtime",
-      "directOnly": "Direct only",
-      "directDesc": "WebSocket direct"
+      "auto": "Automatic (recommended)",
+      "autoDesc": "Live from the scorer, the server as a backup",
+      "dbOnly": "Server only",
+      "dbDesc": "Changes saved on the server",
+      "directOnly": "Live link only",
+      "directDesc": "Straight from the scorer's relay"
     },
     "awaitingCoinToss": "Awaiting coin toss",
     "awaitingCoinTossDesc": "The match will begin once the coin toss has been confirmed on the scoresheet.",
@@ -3797,6 +3797,7 @@
       "selfDeactivate": "You cannot deactivate your own account."
     },
     "invites": {
+      "teamLinkLabel": "Team link",
       "new": "New invite code",
       "label": "Label",
       "labelHint": "For example club and season",

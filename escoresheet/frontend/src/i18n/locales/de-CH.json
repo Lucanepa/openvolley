@@ -1486,7 +1486,7 @@
     "cloudOffline": "Offline: wartet und holt nach, sobald die Verbindung wieder da ist.",
     "cloudTest": "Testspiel: wird nie an die Cloud gesendet.",
     "cloudHint": "Die Cloud-Sicherung lässt sich nicht ausschalten.",
-    "device": "Dieses Gerät",
+    "device": "Das Grät",
     "off": "Aus",
     "preparing": "Ordner wird vorbereitet…",
     "folderIs": "Ordner: {{name}}",
@@ -1505,7 +1505,7 @@
     "driveFailed": "Das Kopieren auf den USB-Stick ist fehlgeschlagen."
   },
   "savedBackups": {
-    "title": "Auf diesem Gerät oder einem Laufwerk gesichert",
+    "title": "Uf däm Grät oder emne Laufwerk gsicheret",
     "device": "Auf diesem Gerät",
     "drive": "USB-Stick",
     "folder": "Browser-Ordner",
@@ -2227,12 +2227,12 @@
     },
     "connection": {
       "title": "Verbindig",
-      "auto": "Auto",
-      "autoDesc": "DB → Direkte Fallback",
-      "dbOnly": "Nur DB",
-      "dbDesc": "Supabase Echtziit",
-      "directOnly": "Nur direkt",
-      "directDesc": "WebSocket direkt"
+      "auto": "Automatisch (empfohle)",
+      "autoDesc": "Live vom Schriiber, de Server als Reserve",
+      "dbOnly": "Nur Server",
+      "dbDesc": "Änderige uf em Server",
+      "directOnly": "Nur Live-Verbindig",
+      "directDesc": "Direkt vom Relay vom Schriiber"
     },
     "awaitingCoinToss": "Warte uf Usloosig",
     "awaitingCoinTossDesc": "S Spiil fangt aa, sobald d Usloosig uf em Matchblatt bestätigt worde isch.",
@@ -2874,7 +2874,7 @@
       "a_deleteMatch": "Tipp uf «Spiil lösche» oder i de Lischte «Uf däm Grät» uf «Lösche». Es offiziells Spiil fröget nach de Spiil-PIN. Das löscht s Spiil uf däm Grät und uf em Server. E Kopie, wo uf em Server abgschlosse isch oder uf emne andere Grät gfüehrt wird, wird nur vo däm Grät entfernt. De Dialog warnt dich, wänn d Kopie Änderige hät, wo de Server nöd hät.",
       "tip_deleteMatch": "Tipp da, zum s aktuelle Spiil lösche.",
       "q_restoreMatch": "Wie stell ich es Spiil us emne Backup wieder her?",
-      "a_restoreMatch": "Tipp uf «Spiil widerherstelle». Wähl «Vo Cloud-Backup widerherstelle» (Spiilnummere und Spiil-PIN, dänn «Cloud-Backups sueche»), es Backup under «Auf diesem Gerät oder einem Laufwerk gesichert» oder «Vo lokaler Datei widerherstelle» («Backup-Datei uswähle»). Prüef d «Widerherstelligs-Vorschau» und tipp uf «Widerherstelle». Im Global-Tool fröget «Aus der Online-Sicherung wiederherstellen» nach em Backup-Code und dänn nach de Schiri-PIN.",
+      "a_restoreMatch": "Tipp uf «Spiil widerherstelle». Wähl «Vo Cloud-Backup widerherstelle» (Spiilnummere und Spiil-PIN, dänn «Cloud-Backups sueche»), es Backup under «Uf däm Grät oder emne Laufwerk gsicheret» oder «Vo lokaler Datei widerherstelle» («Backup-Datei uswähle»). Prüef d «Widerherstelligs-Vorschau» und tipp uf «Widerherstelle». Im Global-Tool fröget «Aus der Online-Sicherung wiederherstellen» nach em Backup-Code und dänn nach de Schiri-PIN.",
       "tip_restoreMatch": "Tipp da, zum es Spiil us emne Cloud- oder lokale Backup widerherstelle.",
       "q_settings": "Wie änder ich d Sprach oder d Iistellige?",
       "a_settings": "D Sprach findsch im Menü (☰) i de Chopfziile. Di andere Iistellige sind i de «Optione»: uf de Startsiite, i de Spiiliirichtig oder uf em Erfassigsbildschirm under Spiil › Optione. Uf de Startsiite wächslet «Optione» › «Werkzeug» zwüsche Schweiz und Global.",
@@ -2925,7 +2925,7 @@
       "q_pins": "Wo sind d PINs für d Tablets?",
       "a_pins": "D Spiil-PIN staht uf de Siite vo de Spiilinfo («Spiil erstelle» oder «Bearbeite»), wo «PIN per E-Mail schicke» si dir schickt, und uf de Startsiite. Bhalt si guet: Du bruuchsch si, zum s Spiil lösche oder widerherstelle. D PINs vom Schiri und vo de Bänk sind i «Tablets verbinde». Während em Spiil zeigt Spiil › PINs aazeige alli.",
       "q_backups": "Was isch d Leischte «Sicherungen»?",
-      "a_backups": "Tipp obe i de Spiiliirichtig uf «Sicherungen». «Cloud» isch immer aa, solang du aagmäldet erfassisch (es Testspiil wird nie gschickt). «Dieses Gerät»: D Desktop- und d Android-App bhalted sälber e Datei vom Spiil; i Chrome oder Edge bhaltet «Sicherigsordner uswähle» eini i emne Ordner, wo du wählsch; anderi Browser ladet am Satzend und am Spiilend e Datei abe. «Wechseldatenträger»: D Desktop-App kopiert jedes Backup uf jede iigsteckte USB-Stick; i Chrome oder Edge wählsch en Ordner uf em Stick.",
+      "a_backups": "Tipp obe i de Spiiliirichtig uf «Sicherungen». «Cloud» isch immer aa, solang du aagmäldet erfassisch (es Testspiil wird nie gschickt). «Das Grät»: D Desktop- und d Android-App bhalted sälber e Datei vom Spiil; i Chrome oder Edge bhaltet «Sicherigsordner uswähle» eini i emne Ordner, wo du wählsch; anderi Browser ladet am Satzend und am Spiilend e Datei abe. «Wechseldatenträger»: D Desktop-App kopiert jedes Backup uf jede iigsteckte USB-Stick; i Chrome oder Edge wählsch en Ordner uf em Stick.",
       "q_teamContact": "Chönd d Teams s fertig Matchblatt per E-Mail übercho?",
       "a_teamContact": "Ja. Jedes Team cha uf de Siite vo de Spiilinfo e «E-Mail Teamkontakt (freiwillig)» ha, und jede Schiri e «E-Mail (freiwillig)». Nur d Schriiber vo däm Spiil gsehnd die Adresse. Während em Spiil änderisch si i Spiil › «Spiilinfo bearbeite» › «Teamkontäkt».",
       "q_afterCoinToss": "Chan ich d Iirichtig nach de Usloosig no ändere?",
@@ -3242,11 +3242,11 @@
       "q_oldDevice": "Was passiert uf em alte Grät?",
       "a_oldDevice": "Es zeigt «Uf emne andere Grät gfüehrt» und hört uf erfasse. S Spiil gaht det nur zum Läse uf; sis Matchblatt chasch wiiter aaluege. Nöd gschickti Änderige werded uf d Siite gleit, nie über de neu Spielstand gschickt. Hät s ander Grät s Spiil underdesse abgschlosse, seit s das und biitet «Schlussresultat lade» aa.",
       "q_takeBack": "Wie übernimm ich s Spiil wieder?",
-      "a_takeBack": "Tipp uf em alte Grät uf «Da wieder übernäh». Das bruucht e Verbindig. D App zeigt zersch de Spielstand uf em Server: Verglich ihn mit de Aazeig und tipp uf «Ja, da wieder übernäh». S ander Grät erfahrt s und hört uf. Hät das Grät Pünkt, wo de Server nie übercho hät, seit s das: «Stand dieses Geräts behalten» schickt stattdesse de Spielstand vo däm Grät.",
+      "a_takeBack": "Tipp uf em alte Grät uf «Da wieder übernäh». Das bruucht e Verbindig. D App zeigt zersch de Spielstand uf em Server: Verglich ihn mit de Aazeig und tipp uf «Ja, da wieder übernäh». S ander Grät erfahrt s und hört uf. Hät das Grät Pünkt, wo de Server nie übercho hät, seit s das: «Stand vo däm Grät bhalte» schickt stattdesse de Spielstand vo däm Grät.",
       "q_backups": "Wo sind d Backups?",
       "a_backups": "Spiiliirichtig › «Sicherungen» zeigt, wo das Spiil gspeicheret isch. D Desktop- und d Android-App speichered bi jedem Punkt und jedere Aktion e Backup-Datei (Desktop: Optione › Sicherig › «Backup-Ordner öffne»; Android: «Nach Dokumente exportiere» kopiert si use). I Chrome oder Edge wählsch eimal en Backup-Ordner; anderi Browser ladet am Satzend und am Spiilend e Datei abe. D Desktop-App kopiert au jedes Backup uf jede iigsteckte USB-Stick. Backup-Dateie vo emne offizielle Spiil sind mit sinere Spiil-PIN und Schiri-PIN verschlüsselt. Bisch aagmäldet, bhaltet d App während em Spiil au es Cloud-Backup.",
       "q_restoreFile": "Wie stell ich es Spiil us ere Backup-Datei wieder her?",
-      "a_restoreFile": "Uf de Startsiite: «Spiil widerherstelle». Backups, wo d App uf däm Grät oder uf emne USB-Stick findet, stönd under «Auf diesem Gerät oder einem Laufwerk gesichert»: Tipp uf «Wiederherstellen». E anderi Datei: «Vo lokaler Datei widerherstelle» › «Backup-Datei uswähle». Prüef d «Widerherstelligs-Vorschau» und tipp uf «Widerherstelle». Es Backup vo emne offizielle Spiil isch verschlüsselt: Gib sini Spiil-PIN oder Schiri-PIN ii, wänn d App dänach fröget. Testspiil gönd ohni PIN uf.",
+      "a_restoreFile": "Uf de Startsiite: «Spiil widerherstelle». Backups, wo d App uf däm Grät oder uf emne USB-Stick findet, stönd under «Uf däm Grät oder emne Laufwerk gsicheret»: Tipp uf «Wiederherstellen». E anderi Datei: «Vo lokaler Datei widerherstelle» › «Backup-Datei uswähle». Prüef d «Widerherstelligs-Vorschau» und tipp uf «Widerherstelle». Es Backup vo emne offizielle Spiil isch verschlüsselt: Gib sini Spiil-PIN oder Schiri-PIN ii, wänn d App dänach fröget. Testspiil gönd ohni PIN uf.",
       "q_restoreRefused": "Werum chan ich das Backup nöd widerherstelle?",
       "a_restoreRefused": "S Spiil isch uf em Server abgschlosse, drum laat sich kei Backup devo widerherstelle. Lad stattdesse di offiziell Version mit Spiilnummere und Spiil-PIN.",
       "q_lostPins": "Niemer hät d PINs vo ere Backup-Datei meh?",
@@ -3791,6 +3791,7 @@
       "selfDeactivate": "Du kannst dein eigenes Konto nicht deaktivieren."
     },
     "invites": {
+      "teamLinkLabel": "Teamlink",
       "new": "Neuer Einladungscode",
       "label": "Bezeichnung",
       "labelHint": "Zum Beispiel Verein und Saison",
@@ -5995,7 +5996,7 @@
     "compareHint": "Vergliich ihn mit de Aazeig uf däm Grät. Bim Übernäh wird dä Spielstand da glade, und s ander Grät hört uf.",
     "confirmTakeBack": "Ja, da wieder übernäh",
     "unsentHere": "Dieses Gerät hat {{count}} Punkt(e), die der Server nie erhalten hat. Zurückholen lädt den Stand des Servers, und sie gehen verloren. «Stand dieses Geräts behalten» sendet stattdessen den Stand dieses Geräts an den Server.",
-    "keepLocal": "Stand dieses Geräts behalten"
+    "keepLocal": "Stand vo däm Grät bhalte"
   },
   "preMatchSignatures": {
     "missingButton_one": "Underschrift fehlt",
