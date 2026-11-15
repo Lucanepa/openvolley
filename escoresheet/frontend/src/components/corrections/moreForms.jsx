@@ -9,7 +9,7 @@ import { cn } from '../../ui/cn.js'
 import { Select } from '../../ui/Select.jsx'
 import { Input } from '../../ui/Input.jsx'
 import {
-  planSetLineup, planSetPointTeam, planEditEntry, planCoinToss, planSet5CoinToss, planRenumberPlayer, planGameCaptain,
+  planSetLineup, planSetPointTeam, planEditEntry, planCoinToss, setOnePlayed, planSet5CoinToss, planRenumberPlayer, planGameCaptain,
   startingLineupEvent, courtAt, entryGroupIds, ENTRY_FIELDS, scoreTimeline
 } from '../../domain/manualCorrections'
 import { tr, formatScore, scoreBeforeEvent, describeEvent, teamNameWithLetter } from '../../domain/describe'
@@ -241,7 +241,10 @@ export function CoinTossForm({ ctx, events, deciding = false, busy, onCancel, on
         ctx={ctx}
         label={deciding ? tr(t, 'corrections.field.firstServeSet5', 'Serves first in the deciding set') : tr(t, 'corrections.field.firstServe', 'Serves first in set 1')}
       />
-      {!deciding && <p className="text-xs text-stone-500">{tr(t, 'corrections.hint.coinToss', 'Team A only changes the letters on the sheet; nothing moves on the court. The team that serves first in set 1 also serves first in set 3 and receives first in sets 2 and 4.')}</p>}
+      {/* before set 1's first rally a new Team A redoes the coin toss (A on the left in set 1); after it only the letters change (planCoinToss) */}
+      {!deciding && (setOnePlayed(events)
+        ? <p className="text-xs text-stone-500">{tr(t, 'corrections.hint.coinToss', 'Team A only changes the letters on the sheet; nothing moves on the court. The team that serves first in set 1 also serves first in set 3 and receives first in sets 2 and 4.')}</p>
+        : <p className="text-xs text-stone-500">{tr(t, 'corrections.hint.coinTossBeforeStart', 'Set 1 has not started: team A starts on the left of the scorer in set 1, as after the coin toss. The team that serves first in set 1 also serves first in set 3 and receives first in sets 2 and 4.')}</p>)}
     </CorrectionForm>
   )
 }

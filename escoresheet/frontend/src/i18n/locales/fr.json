@@ -5183,7 +5183,8 @@
       "winnerWouldChange": "Cela change le vainqueur du set {{set}}.",
       "invalidFinalScore": "{{score}} n'est pas un score final possible du set {{set}}.",
       "liberoInLineup": "#{{n}} est libéro : un libéro ne figure pas dans la formation de départ.",
-      "recalculated": "Tout ce qui suit est recalculé : rotations, service, remplacements de libéro et score."
+      "recalculated": "Tout ce qui suit est recalculé : rotations, service, remplacements de libéro et score.",
+      "coinTossRedone": "Le set 1 n’a pas commencé : le tirage au sort est refait, l’équipe A commence à gauche."
     },
     "title": "Corrections",
     "pageTitle": "Corrections",
@@ -5395,7 +5396,8 @@
       "liberoEdit": "Modifie ou supprime un remplacement de libéro : les formations qui suivent sont recalculées.",
       "numbers": "Un numéro changé ici l’est pour tout le match : chaque entrée, avant comme après, affiche le nouveau numéro, sur la feuille de match et sur les tablettes.",
       "advancedAll": "Chaque entrée du journal du match. Modifie ou supprime n’importe quelle entrée : ce qui en fait partie suit, et tout ce qui vient après est recalculé. Ajoute des entrées avec les cartes ci-dessus.",
-      "coinToss": "L’équipe A ne change que les lettres sur la feuille ; rien ne bouge sur le terrain. L’équipe qui sert en premier au set 1 sert aussi en premier au set 3 et reçoit en premier aux sets 2 et 4."
+      "coinToss": "L’équipe A ne change que les lettres sur la feuille ; rien ne bouge sur le terrain. L’équipe qui sert en premier au set 1 sert aussi en premier au set 3 et reçoit en premier aux sets 2 et 4.",
+      "coinTossBeforeStart": "Le set 1 n’a pas commencé : l’équipe A commence le set 1 à gauche du marqueur, comme après le tirage au sort. L’équipe qui sert en premier au set 1 sert aussi en premier au set 3 et reçoit en premier aux sets 2 et 4."
     },
     "confirm": {
       "removeTitle": "Supprimer cette entrée ?",

@@ -5189,7 +5189,8 @@
       "winnerWouldChange": "Questo cambia il vincitore del set {{set}}.",
       "invalidFinalScore": "{{score}} non è un punteggio finale possibile del set {{set}}.",
       "liberoInLineup": "#{{n}} è libero: un libero non è nella formazione iniziale.",
-      "recalculated": "Tutto ciò che segue viene ricalcolato: rotazioni, servizio, cambi del libero e punteggio."
+      "recalculated": "Tutto ciò che segue viene ricalcolato: rotazioni, servizio, cambi del libero e punteggio.",
+      "coinTossRedone": "Il set 1 non è ancora iniziato: il sorteggio vale di nuovo, la squadra A inizia a sinistra."
     },
     "title": "Correzioni",
     "pageTitle": "Correzioni",
@@ -5401,7 +5402,8 @@
       "liberoEdit": "Modifica o rimuovi un cambio del libero: le formazioni successive vengono ricalcolate.",
       "numbers": "Un numero cambiato qui vale per tutta la partita: ogni voce, prima e dopo, mostra il nuovo numero, sul referto e sui tablet.",
       "advancedAll": "Ogni voce del registro della partita. Modifica o rimuovi qualsiasi voce: ciò che ne fa parte la segue e tutto ciò che viene dopo viene ricalcolato. Aggiungi voci con le schede qui sopra.",
-      "coinToss": "La squadra A cambia solo le lettere sul referto; in campo non si muove nulla. Chi serve per primo nel set 1 serve per primo anche nel set 3 e riceve per primo nei set 2 e 4."
+      "coinToss": "La squadra A cambia solo le lettere sul referto; in campo non si muove nulla. Chi serve per primo nel set 1 serve per primo anche nel set 3 e riceve per primo nei set 2 e 4.",
+      "coinTossBeforeStart": "Il set 1 non è ancora iniziato: la squadra A inizia il set 1 a sinistra del segnapunti, come dopo il sorteggio. Chi serve per primo nel set 1 serve per primo anche nel set 3 e riceve per primo nei set 2 e 4."
     },
     "confirm": {
       "removeTitle": "Rimuovere questa voce?",

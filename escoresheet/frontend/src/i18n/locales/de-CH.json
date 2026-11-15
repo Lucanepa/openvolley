@@ -5184,7 +5184,8 @@
       "winnerWouldChange": "Das änderet de Gwünner vo Satz {{set}}.",
       "invalidFinalScore": "{{score}} isch kein mögliche Endstand vo Satz {{set}}.",
       "liberoInLineup": "#{{n}} isch Libero: en Libero staht nöd i de Startufstellig.",
-      "recalculated": "Alles dänach wird neu berächnet: Rotatione, Ufschlag, Libero-Wächsel und Spielstand."
+      "recalculated": "Alles dänach wird neu berächnet: Rotatione, Ufschlag, Libero-Wächsel und Spielstand.",
+      "coinTossRedone": "Satz 1 het no nöd aagfange: d Usloosig gilt neu, Team A fangt links aa."
     },
     "title": "Korrekture",
     "pageTitle": "Korrekture",
@@ -5396,7 +5397,8 @@
       "liberoEdit": "Bearbeit oder entfern en Libero-Wächsel: d Ufstellige dänach werded neu berächnet.",
       "numbers": "E Nummere, wo du da änderisch, gilt fürs ganz Spiil: jede Iitrag vorher und nachher zeigt di neu Nummere, uf em Matchblatt und uf de Tablets.",
       "advancedAll": "Jede Iitrag vom Spiilprotokoll. Bearbeit oder entfern jede Iitrag: was dezueghört, gaht mit, und alles dänach wird neu berächnet. Iiträg füegsch i de Charte obe hinzue.",
-      "coinToss": "Team A änderet nur d Buechstabe uf em Matchblatt; uf em Fäld bewegt sich nüüt. Wer in Satz 1 zersch ufschlaht, schlaht au in Satz 3 zersch uf und nimmt i de Sätz 2 und 4 zersch aa."
+      "coinToss": "Team A änderet nur d Buechstabe uf em Matchblatt; uf em Fäld bewegt sich nüüt. Wer in Satz 1 zersch ufschlaht, schlaht au in Satz 3 zersch uf und nimmt i de Sätz 2 und 4 zersch aa.",
+      "coinTossBeforeStart": "Satz 1 het no nöd aagfange: Team A fangt Satz 1 links vom Schriiber aa, wie nach de Usloosig. Wer in Satz 1 zersch ufschlaht, schlaht au in Satz 3 zersch uf und nimmt i de Sätz 2 und 4 zersch aa."
     },
     "confirm": {
       "removeTitle": "Dä Iitrag entferne?",

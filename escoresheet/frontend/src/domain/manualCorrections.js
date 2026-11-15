@@ -45,7 +45,7 @@ import {
 } from './describe'
 import { getSetResult, scoreFromPointEvents, getFirstServeForSet, setTargetsOf, pointsToWinFor } from './rules'
 import { rotateLineup, pointSubEventsForTeam } from './rotation'
-import { swapTeamDesignation as swapTeamDesignationPatch } from './coinToss'
+import { swapTeamDesignation as swapTeamDesignationPatch, regularSetIndexes } from './coinToss'
 import { actualStartLines, remarkClock } from './remarks'
 import { actualStartRemark, scheduledStartOnDay } from '../utils/setStartTime'
 import { validateManualTimeout, validateManualSubstitution, classifySubstitutionRequest } from './substitutions'
@@ -136,7 +136,8 @@ export const NOTE_DEFAULTS = {
   winnerWouldChange: 'This changes who won set {{set}}.',
   invalidFinalScore: '{{score}} is not a possible final score of set {{set}}.',
   liberoInLineup: '#{{n}} is a libero: a libero is not in the starting line-up.',
-  recalculated: 'Everything after it is recalculated: rotations, serve, libero replacements and the score.'
+  recalculated: 'Everything after it is recalculated: rotations, serve, libero replacements and the score.',
+  coinTossRedone: 'Set 1 has not started: the coin toss is done again, team A starts on the left.'
 }
 
 /** A planner failure. `text` is the English sentence (UI translates `error`). */
@@ -989,17 +990,42 @@ function nameWithLetter(team, ctx) {
 }
 
 /**
- * Correct the coin toss: which team is A (the labels only, nothing moves:
- * domain/coinToss swapTeamDesignation) and which team serves first in set 1
+ * True once set 1 has had a rally (started or won): from then on a new Team A
+ * only changes the letters (domain/coinToss swapTeamDesignation).
+ */
+export function setOnePlayed(events) {
+  return (events || []).some(e => setOf(e) === 1 && (e.type === 'point' || e.type === 'rally_start'))
+}
+
+/**
+ * Correct the coin toss: which team is A and which team serves first in set 1
  * (and so in sets 2-4). The rotations of every set are rebuilt for the new
  * serve order (finalizePlan reads the match after plan.matchPatch).
+ *
+ * Once set 1 has had a rally, a new Team A changes the labels only, nothing
+ * moves (domain/coinToss swapTeamDesignation, owner 2026-10-09). Before it,
+ * the coin toss is done again (owner, 15.11: Wädi corrected to B stayed on
+ * the left in set 1): the teams take the places the coin toss gives them,
+ * team A on the left in set 1, as the coin toss screen does (its "Switch
+ * teams" swaps the letters and the sides together). "Switch sides" still
+ * moves them afterwards.
  */
 export function planCoinToss(events, { teamA, firstServe } = {}, ctx = {}) {
   const match = ctx.match || {}
   let patch = {}
+  let redone = false
   const curA = match.coinTossTeamA === 'away' ? 'away' : 'home'
   if ((teamA === 'home' || teamA === 'away') && teamA !== curA) {
     patch = swapTeamDesignationPatch(match, { currentSetIndex: ctx.liveSetIndex ?? lastSetOf(events) })
+    if (!setOnePlayed(events)) {
+      // sets 1-4 follow the set number again (A left in odd sets); a saved
+      // side of another set (an older match's set 5) stays as the swap wrote it
+      const regular = new Set(regularSetIndexes(match).concat([1, 2, 3, 4]).map(String))
+      const kept = {}
+      for (const [set, v] of Object.entries(patch.setLeftTeamOverrides || {})) if (!regular.has(String(set))) kept[set] = v
+      patch.setLeftTeamOverrides = kept
+      redone = true
+    }
   }
   const m2 = { ...match, ...patch }
   const curServe = m2.firstServe || 'home'
@@ -1036,6 +1062,7 @@ export function planCoinToss(events, { teamA, firstServe } = {}, ctx = {}) {
     text
   }
   if (patch.firstServe && (events || []).some(e => e.type === 'point')) plan.notes.push(note('recalculated', {}, ctx.t))
+  if (redone) plan.notes.push(note('coinTossRedone', {}, ctx.t))
   return done(events, plan, ctx)
 }
 
