@@ -246,6 +246,8 @@ export interface SheetOfficial {
   country: string
   dob: string
   name: string
+  /** The scorer's licence number (Match setup takes it instead of a date of birth). */
+  licence?: string
 }
 
 /**
@@ -268,7 +270,8 @@ export function normalizeOfficials(raw: unknown): SheetOfficial[] {
       lastName: String(o.lastName ?? o.last_name ?? '').trim(),
       country: String(o.country ?? '').trim(),
       dob: o.dob ?? o.date_of_birth ?? '',
-      name: String(o.name ?? '').trim()
+      name: String(o.name ?? '').trim(),
+      licence: String(o.licence ?? '').trim()
     }))
 }
 

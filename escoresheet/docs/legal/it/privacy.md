@@ -1,6 +1,6 @@
 # Informativa sulla protezione dei dati
 
-**OpenVolley e OpenBeach** · Versione 1.15 · Aggiornata al 14 novembre 2026
+**OpenVolley e OpenBeach** · Versione 1.16 · Aggiornata al 15 novembre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
 la versione inglese.
@@ -33,9 +33,9 @@ la versione inglese.
 - Il server si trova in Svizzera: lo noleggio da Infomaniak a Ginevra e lo
   gestisco io stesso. Cloudflare (USA) distribuisce i siti web e inoltra il
   traffico al server.
-- Se l'invio è attivato, dopo una partita ufficiale il segnapunti, gli arbitri
-  e le società delle due squadre ricevono il referto finale per e-mail
-  (sezione 7).
+- Se l'invio è attivato, dopo una partita ufficiale il segnapunti, gli arbitri,
+  le società delle due squadre e l'indirizzo di contatto inserito per ogni
+  squadra ricevono il referto finale per e-mail (sezione 7).
 - Il responsabile di una squadra può inviare in anticipo l'elenco di una
   partita. Il dispositivo del segnapunti lo conserva per la preparazione della
   partita; appena il segnapunti lo accetta, il server lo cancella (sezione
@@ -338,7 +338,8 @@ squadre (nome, nome breve, colore), liste squadra con numero di maglia, nome e
 cognome, data di nascita e indicazione libero o capitano, staff (funzione,
 nome, data di nascita), ufficiali di gara (arbitri, segnapunti, giudici di
 linea con nome, paese, data di nascita; arbitri con indirizzo e-mail
-facoltativo), **firme** (immagini disegnate sul
+facoltativo; il segnapunti con un numero di licenza facoltativo al posto della
+data di nascita), un indirizzo e-mail di contatto facoltativo per squadra, **firme** (immagini disegnate sul
 dispositivo o su un telefono), sorteggio, svolgimento della partita con tutti gli eventi,
 sostituzioni e sanzioni, risultati e correzioni successive, nonché le
 **osservazioni** (il riquadro delle osservazioni del referto: ciò che scrive
@@ -407,14 +408,16 @@ ufficiale indoor chiusa, in PDF, a:
 - gli arbitri che hanno approvato il risultato con il loro account o il cui
   indirizzo e-mail è stato inserito per la partita;
 - l'indirizzo di contatto della società di ogni squadra (sezione 6), affinché
-  la società possa inoltrare il referto agli allenatori.
+  la società possa inoltrare il referto agli allenatori;
+- l'indirizzo di contatto inserito per ogni squadra nella configurazione della
+  partita o in «Modifica info partita», come gli indirizzi degli arbitri.
 
 Ogni indirizzo riceve una propria e-mail e non vede gli altri. Se una partita
 viene riaperta e chiusa di nuovo, il referto corretto viene inviato ancora una
 volta ai destinatari. Vengono salvati solo il momento dell'invio e il numero
 di indirizzi, non gli indirizzi. Le partite chiuse prima dell'accensione non
-vengono inviate. L'indirizzo e-mail di un arbitro è facoltativo, fa parte
-della partita e non è mai pubblico; lo vede solo chi può leggere tutta la
+vengono inviate. L'indirizzo e-mail di un arbitro o di una squadra è
+facoltativo, fa parte della partita e non è mai pubblico; lo vede solo chi può leggere tutta la
 partita (tabella sopra). L'invio avviene tramite Migadu (sezione 15).
 
 **Referto di una partita di prova:** se alla fine di una partita di prova
@@ -832,7 +835,7 @@ ricevi una copia di queste garanzie.
 | Responsabili di squadra | Finché un responsabile di società o un amministratore non li rimuove, la squadra o la società viene cancellata o tu cancelli il tuo account |
 | Elenco inviato in anticipo (giocatrici e giocatori, staff, firme) | Finché un segnapunti non lo accetta, al più tardi 14 giorni dopo la partita; la nota dell'accettazione 14 giorni dopo la partita |
 | Elenchi delle licenze di una società (numero di licenza, nomi, data di nascita, sesso) | Fino al prossimo caricamento di quell'elenco, alla sua cancellazione da parte di un responsabile della società o alla cancellazione della società, al più tardi fino alla fine della stagione; persone aggiunte a mano: fino alla cancellazione dell'elenco o della società, al più tardi fino alla fine della stagione; su un dispositivo fino al prossimo download o all'uscita dall'account |
-| Indirizzo e-mail di un arbitro per una partita | Con la partita, come parte del referto |
+| Indirizzo e-mail di un arbitro o di una squadra per una partita | Con la partita, come parte del referto |
 | Invio del referto finale (momento, numero di destinatari, senza indirizzi) | Con la partita |
 | Referto di una partita di prova per e-mail | Non conservato sul server |
 | Strumento Global: backup e referto PDF di una partita (sotto il codice di backup) | 180 giorni dopo l'ultima modifica |

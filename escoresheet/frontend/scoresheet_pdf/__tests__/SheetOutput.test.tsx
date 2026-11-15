@@ -120,6 +120,18 @@ describe('the generated sheet', () => {
     expect(text).toContain('Marie Claire de la Fontaine')
   })
 
+  it('APPROVAL: a scorer without a date of birth shows the licence number in its place (owner 2026-11-15)', () => {
+    const base = fixture()
+    const officials = base.match.officials.map((o: any) => (o.role === 'scorer' ? { ...o, licence: 'SV 12345' } : o))
+    const { getByTestId, unmount } = render(<App matchData={{ ...base, match: { ...base.match, officials } }} autoAction="preview" />)
+    expect(getByTestId('approval-dob-2').textContent).toBe('SV 12345')
+    unmount()
+    // a real date of birth stays first
+    const withDob = base.match.officials.map((o: any) => (o.role === 'scorer' ? { ...o, dob: '03.03.1990', licence: 'SV 12345' } : o))
+    const again = render(<App matchData={{ ...base, match: { ...base.match, officials: withDob } }} autoAction="preview" />)
+    expect(again.getByTestId('approval-dob-2').textContent).toBe('03.03.1990')
+  })
+
   it('never crashes on older shapes: role-keyed officials, snake_case names, bench null, no players', () => {
     const data = fixture({
       match: {
@@ -319,13 +331,14 @@ describe('set 5, defaults and sanctions on the sheet', () => {
   // owner 2026-11-15: a set never played prints no numbers in its points
   // columns, not even grey; RESULT always has the five rows, a set in its own row
   const numbersOf = (g: Element) => [...g.querySelectorAll('[data-point]')].filter(e => (e.textContent || '').trim() !== '').length
-  const resultRow = (c: HTMLElement, set: number) => ({
-    label: c.querySelector(`[data-testid="result-row"][data-set="${set}"] [data-testid="result-row-label"]`)?.textContent,
-    a: c.querySelector(`[data-testid="result-team-row"][data-team="A"][data-set="${set}"]`)?.textContent,
-    b: c.querySelector(`[data-testid="result-team-row"][data-team="B"][data-set="${set}"]`)?.textContent
+  // by printed row (1 = top), not by stored set index
+  const resultRow = (c: HTMLElement, row: number) => ({
+    label: c.querySelector(`[data-testid="result-row"][data-row="${row}"] [data-testid="result-row-label"]`)?.textContent,
+    a: c.querySelector(`[data-testid="result-team-row"][data-team="A"][data-row="${row}"]`)?.textContent,
+    b: c.querySelector(`[data-testid="result-team-row"][data-team="B"][data-row="${row}"]`)?.textContent
   })
 
-  it('best of 3 won 2:1: sets 3 and 4 print no numbers; RESULT fills rows 1, 2 and 5, rows 3 and 4 stay empty (owner 2026-11-15)', () => {
+  it('best of 3 won 2:1: sets 3 and 4 print no numbers; RESULT fills rows 1, 2 and 3, rows 4 and 5 stay empty (owner 2026-11-15)', () => {
     const base = fixture({ match: { status: 'ended', bestOf: 3, set5LeftTeam: 'A', set5FirstServe: 'home' } })
     const sets = [
       { index: 1, homePoints: 25, awayPoints: 20, finished: true, startTime: local(2026, 10, 7, 20, 0), endTime: local(2026, 10, 7, 20, 25) },
@@ -340,14 +353,18 @@ describe('set 5, defaults and sanctions on the sheet', () => {
     expect([4, 5, 6, 7].map(i => numbersOf(grids[i]))).toEqual([0, 0, 0, 0])
     // the decider keeps its numbers up to the scores
     expect(grids.slice(-3).map(numbersOf).reduce((x, y) => x + y, 0)).toBeGreaterThan(0)
-    // RESULT: five rows; the decider in row 5, numbered 3 as its set box; 3 and 4 empty
-    expect(container.querySelectorAll('[data-testid="result-row"]')).toHaveLength(5)
-    expect([1, 2, 3, 4, 5].map(n => resultRow(container, n).label)).toEqual(['1', '2', '', '', '3'])
-    for (const n of [3, 4]) expect(resultRow(container, n)).toMatchObject({ a: '', b: '' })
+    // RESULT: five rows; the decider (stored as set 5) in row 3, numbered 3 as
+    // its set box; rows 4 and 5 empty and unnumbered
+    const rows = [...container.querySelectorAll('[data-testid="result-row"]')]
+    expect(rows).toHaveLength(5)
+    expect(rows.map(r => r.querySelector('[data-testid="result-row-label"]')?.textContent)).toEqual(['1', '2', '3', '', ''])
+    expect([1, 2, 3, 4, 5].map(n => resultRow(container, n).label)).toEqual(['1', '2', '3', '', ''])
+    expect(rows[2].getAttribute('data-set')).toBe('5')
+    for (const n of [4, 5]) expect(resultRow(container, n)).toMatchObject({ a: '', b: '' })
     expect(resultRow(container, 1).a).toContain('25')
     expect(resultRow(container, 2).b).toContain('25')
-    expect(resultRow(container, 5).a).toContain('15')
-    expect(resultRow(container, 5).b).toContain('12')
+    expect(resultRow(container, 3).a).toContain('15')
+    expect(resultRow(container, 3).b).toContain('12')
   })
 
   it('best of 5 won 3:0: sets 4 and 5 print no numbers; RESULT has rows 1-5, 4 and 5 empty', () => {

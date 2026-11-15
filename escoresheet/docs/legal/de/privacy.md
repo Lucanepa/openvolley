@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-**OpenVolley und OpenBeach** · Version 1.15 · Stand: 14. November 2026
+**OpenVolley und OpenBeach** · Version 1.16 · Stand: 15. November 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
 Massgebend ist die englische Fassung.
@@ -33,9 +33,9 @@ Massgebend ist die englische Fassung.
   betreibe ihn selbst. Cloudflare (USA) liefert die Websites aus und leitet den
   Verkehr zum Server weiter.
 - Ist der Versand eingeschaltet, erhalten nach einem offiziellen Spiel die
-  Schreiberin oder der Schreiber, die Schiedsrichterinnen und Schiedsrichter
-  und die Vereine der beiden Teams den fertigen Spielbericht per E-Mail
-  (Abschnitt 7).
+  Schreiberin oder der Schreiber, die Schiedsrichterinnen und Schiedsrichter,
+  die Vereine der beiden Teams und die für jedes Team erfasste Kontaktadresse
+  den fertigen Spielbericht per E-Mail (Abschnitt 7).
 - Teamverantwortliche können den Kader eines Spiels im Voraus schicken. Das
   Gerät der Schreiberin oder des Schreibers hält ihn für die Spielvorbereitung
   bereit; sobald sie oder er ihn übernimmt, löscht der Server ihn (Abschnitt
@@ -343,7 +343,9 @@ Kurzname, Farbe), Kaderlisten mit Rückennummer, Vor- und Nachname,
 Geburtsdatum und Kennzeichnung als Libero oder Captain, Betreuungspersonen
 (Funktion, Name, Geburtsdatum), Offizielle (Schiedsrichter, Schreiber,
 Linienrichter mit Name, Land, Geburtsdatum; Schiedsrichterinnen und Schiedsrichter
-freiwillig mit E-Mail-Adresse), **Unterschriften** (als Bild,
+freiwillig mit E-Mail-Adresse; die Schreiberin oder der Schreiber freiwillig mit
+Lizenznummer statt Geburtsdatum), pro Team freiwillig eine
+Kontakt-E-Mail-Adresse, **Unterschriften** (als Bild,
 auf dem Gerät oder auf einem Telefon gezeichnet), Platzwahl, Spielverlauf mit allen Ereignissen,
 Wechseln und Sanktionen, Resultate und nachträgliche Korrekturen sowie die
 **Bemerkungen** (das Bemerkungsfeld des Spielberichts: was die Schreiberin
@@ -416,15 +418,18 @@ Spielbericht eines abgeschlossenen offiziellen Hallenspiels als PDF an:
 - die Schiedsrichterinnen und Schiedsrichter, die das Resultat mit ihrem
   Konto freigegeben haben oder deren E-Mail-Adresse beim Spiel erfasst wurde;
 - die Kontaktadresse des Vereins jedes Teams (Abschnitt 6), damit der Verein
-  den Spielbericht an Trainerinnen und Trainer weitergeben kann.
+  den Spielbericht an Trainerinnen und Trainer weitergeben kann;
+- die Kontaktadresse, die für jedes Team in der Spieleinrichtung oder unter
+  «Spielinfo bearbeiten» eingetippt wurde, wie die Adressen der
+  Schiedsrichterinnen und Schiedsrichter.
 
 Jede Adresse erhält eine eigene E-Mail und sieht die anderen nicht. Wird ein
 Spiel wieder geöffnet und erneut abgeschlossen, geht der korrigierte
 Spielbericht noch einmal an die Empfänger. Gespeichert wird nur, wann und an
 wie viele Adressen der Spielbericht ging, nicht an welche. Spiele, die vor dem
 Einschalten abgeschlossen wurden, werden nicht versendet. Die E-Mail-Adresse
-einer Schiedsrichterin oder eines Schiedsrichters ist freiwillig, gehört zum
-Spiel und ist nie öffentlich; sie sieht nur, wer das ganze Spiel lesen darf
+einer Schiedsrichterin, eines Schiedsrichters oder eines Teams ist freiwillig,
+gehört zum Spiel und ist nie öffentlich; sie sieht nur, wer das ganze Spiel lesen darf
 (Tabelle oben). Der Versand läuft über Migadu (Abschnitt 15).
 
 **Spielbericht eines Testspiels:** Gibst du am Ende eines Testspiels
@@ -848,7 +853,7 @@ Anfrage erhältst du eine Kopie dieser Garantien.
 | Teamverantwortliche | Bis Vereinsverantwortliche oder die Administration sie entfernen, das Team oder der Verein gelöscht wird oder du dein Konto löschst |
 | Im Voraus geschickter Kader (Spielerinnen und Spieler, Betreuungspersonen, Unterschriften) | Bis eine Schreiberin oder ein Schreiber ihn übernimmt, spätestens 14 Tage nach dem Spiel; der Vermerk der Übernahme 14 Tage nach dem Spiel |
 | Lizenzlisten eines Vereins (Lizenznummer, Namen, Geburtsdatum, Geschlecht) | Bis zum nächsten Upload dieser Liste, ihrer Löschung durch Vereinsverantwortliche oder der Löschung des Vereins, spätestens bis zum Ende der Saison; von Hand hinzugefügte Personen: bis zur Löschung der Liste oder des Vereins, spätestens bis zum Ende der Saison; auf einem Gerät bis zum nächsten Download oder Abmelden |
-| E-Mail-Adresse einer Schiedsrichterin oder eines Schiedsrichters beim Spiel | Mit dem Spiel, als Teil des Spielberichts |
+| E-Mail-Adresse einer Schiedsrichterin, eines Schiedsrichters oder eines Teams beim Spiel | Mit dem Spiel, als Teil des Spielberichts |
 | Versand des fertigen Spielberichts (Zeitpunkt, Anzahl Empfänger, ohne Adressen) | Mit dem Spiel |
 | Spielbericht eines Testspiels per E-Mail | Auf dem Server nicht gespeichert |
 | Global-Werkzeug: Sicherung und Spielbericht-PDF eines Spiels (unter dem Sicherungscode) | 180 Tage nach der letzten Änderung |

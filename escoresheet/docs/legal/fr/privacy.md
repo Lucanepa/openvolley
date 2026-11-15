@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.15 · État au 14 novembre 2026
+**OpenVolley et OpenBeach** · Version 1.16 · État au 15 novembre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version anglaise fait foi.
@@ -35,9 +35,9 @@ version anglaise fait foi.
 - Le serveur se trouve en Suisse : je le loue chez Infomaniak à Genève et
   l'exploite moi-même. Cloudflare (États-Unis) diffuse les sites web et
   transmet le trafic au serveur.
-- Lorsque l'envoi est activé, le marqueur, les arbitres et les clubs des deux
-  équipes reçoivent par e-mail la feuille de match finale d'un match officiel
-  (section 7).
+- Lorsque l'envoi est activé, le marqueur, les arbitres, les clubs des deux
+  équipes et l'adresse de contact saisie pour chaque équipe reçoivent par
+  e-mail la feuille de match finale d'un match officiel (section 7).
 - Le responsable d'une équipe peut envoyer à l'avance la liste d'un match.
   L'appareil du marqueur la garde pour la préparation du match ; dès que le
   marqueur l'accepte, le serveur la supprime (section 10).
@@ -360,7 +360,8 @@ les mêmes subsistent que lorsque tu le supprimes toi-même.
 nom, date de naissance et indication libéro ou capitaine, encadrement
 (fonction, nom, date de naissance), officiels (arbitres, marqueur, juges de
 ligne avec nom, pays, date de naissance ; arbitres avec une adresse e-mail
-facultative), **signatures** (images dessinées sur
+facultative ; le marqueur avec un numéro de licence facultatif à la place de
+la date de naissance), une adresse e-mail de contact facultative par équipe, **signatures** (images dessinées sur
 l'appareil ou sur un téléphone), tirage au sort, déroulement du match avec tous les événements,
 remplacements et sanctions, résultats et corrections ultérieures, ainsi que
 les **remarques** (la case des remarques de la feuille de match : ce
@@ -432,14 +433,17 @@ feuille de match d'un match officiel en salle clôturé, en PDF, à :
 - les arbitres qui ont validé le résultat avec leur compte ou dont l'adresse
   e-mail a été saisie pour le match ;
 - l'adresse de contact du club de chaque équipe (section 6), afin que le club
-  puisse transmettre la feuille aux entraîneurs.
+  puisse transmettre la feuille aux entraîneurs ;
+- l'adresse de contact saisie pour chaque équipe dans la configuration du
+  match ou sous « Modifier les infos du match », comme les adresses des
+  arbitres.
 
 Chaque adresse reçoit son propre e-mail et ne voit pas les autres. Si un
 match est rouvert puis clôturé à nouveau, la feuille corrigée est envoyée une
 nouvelle fois aux destinataires. Seuls le moment de l'envoi et le nombre
 d'adresses sont enregistrés, pas les adresses. Les matchs clôturés avant
-l'activation ne sont pas envoyés. L'adresse e-mail d'un arbitre est
-facultative, fait partie du match et n'est jamais publique ; seuls ceux qui
+l'activation ne sont pas envoyés. L'adresse e-mail d'un arbitre ou d'une
+équipe est facultative, fait partie du match et n'est jamais publique ; seuls ceux qui
 peuvent lire tout le match la voient (tableau ci-dessus). L'envoi passe par
 Migadu (section 15).
 
@@ -878,7 +882,7 @@ prestataires. Tu peux me demander une copie de ces garanties.
 | Responsables d'équipe | Jusqu'à ce qu'un responsable de club ou un administrateur les retire, que l'équipe ou le club soit supprimé ou que tu supprimes ton compte |
 | Liste envoyée à l'avance (joueuses et joueurs, encadrement, signatures) | Jusqu'à ce qu'un marqueur l'accepte, au plus tard 14 jours après le match ; la mention de l'acceptation 14 jours après le match |
 | Listes de licences d'un club (numéro de licence, noms, date de naissance, sexe) | Jusqu'au prochain chargement de cette liste, sa suppression par un responsable du club ou la suppression du club, au plus tard jusqu'à la fin de la saison ; personnes ajoutées à la main : jusqu'à la suppression de la liste ou du club, au plus tard jusqu'à la fin de la saison ; sur un appareil de marquage jusqu'au prochain téléchargement ou à la déconnexion |
-| Adresse e-mail d'un arbitre pour un match | Avec le match, comme partie de la feuille de match |
+| Adresse e-mail d'un arbitre ou d'une équipe pour un match | Avec le match, comme partie de la feuille de match |
 | Envoi de la feuille de match finale (moment, nombre de destinataires, sans adresses) | Avec le match |
 | Feuille d'un match de test par e-mail | Non conservée sur le serveur |
 | Outil Global : sauvegarde et feuille de match PDF d'un match (sous le code de sauvegarde) | 180 jours après la dernière modification |

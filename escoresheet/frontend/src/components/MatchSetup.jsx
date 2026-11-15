@@ -39,7 +39,7 @@ import { generateSecurePin } from '../utils/stringUtils'
 import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
 import { buildConnectionPins } from '../utils/connectionPins'
 import { coloursTooClose, DEFAULT_AWAY_COLOUR, DEFAULT_HOME_COLOUR, isCustomColour, isDefaultTeamColour, readableTextOn, teamBoxStyle } from '../utils/teamColours'
-import { missingConnectionPins, connectionPinsSyncJob, fetchPendingRoster, clearPendingRosterJob, isKnownDob } from '../utils/remoteRoster'
+import { missingConnectionPins, connectionPinsSyncJob, fetchPendingRoster, clearPendingRosterJob, isKnownDob, cleanLicence, scorerIdentified } from '../utils/remoteRoster'
 import { FileTextIcon, ClipboardIcon } from './icons'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 import { Button, Checkbox, DateField, Field, Input, Select, TimeField, SegmentedControl, SectionHeader, KeyValue, CountBadge, Switch, ScreenLoading, cn, confirmDialog, toast } from '../ui'
@@ -159,7 +159,8 @@ function buildOfficialsArray(ref1, ref2, scorer, asst, lineJudges = {}, useSnake
     officials.push({ role: '2nd referee', [fnKey]: ref2.firstName || ref2.first_name || '', [lnKey]: ref2.lastName || ref2.last_name || '', country: ref2.country || null, dob: ref2.dob || null, email: cleanEmail(ref2.email) })
   }
   if (scorer?.firstName || scorer?.lastName || scorer?.first_name || scorer?.last_name) {
-    officials.push({ role: 'scorer', [fnKey]: scorer.firstName || scorer.first_name || '', [lnKey]: scorer.lastName || scorer.last_name || '', country: scorer.country || null, dob: scorer.dob || null })
+    // licence: the scorer's licence number, accepted for the coin toss instead of a date of birth
+    officials.push({ role: 'scorer', [fnKey]: scorer.firstName || scorer.first_name || '', [lnKey]: scorer.lastName || scorer.last_name || '', country: scorer.country || null, dob: scorer.dob || null, licence: cleanLicence(scorer.licence) })
   }
   if (asst?.firstName || asst?.lastName || asst?.first_name || asst?.last_name) {
     officials.push({ role: 'assistant scorer', [fnKey]: asst.firstName || asst.first_name || '', [lnKey]: asst.lastName || asst.last_name || '', country: asst.country || null, dob: asst.dob || null })
@@ -259,7 +260,7 @@ export function isSetupLocked(match) {
 const INFO_DRAFT_KEYS = ['date', 'time', 'hall', 'city', 'type1', 'type1Other', 'championshipType', 'championshipTypeOther',
   'type2', 'type3', 'type3Other', 'bestOf', 'pointsRegular', 'pointsDeciding', 'gameN', 'league', 'home', 'away', 'homeColor', 'awayColor', 'homeShortName', 'awayShortName',
   'ref1First', 'ref1Last', 'ref1Country', 'ref1Dob', 'ref1Email', 'ref2First', 'ref2Last', 'ref2Country', 'ref2Dob', 'ref2Email',
-  'scorerFirst', 'scorerLast', 'scorerCountry', 'scorerDob', 'asstFirst', 'asstLast', 'asstCountry', 'asstDob',
+  'scorerFirst', 'scorerLast', 'scorerCountry', 'scorerDob', 'scorerLicence', 'asstFirst', 'asstLast', 'asstCountry', 'asstDob',
   'lineJudge1', 'lineJudge2', 'lineJudge3', 'lineJudge4', 'homeContactEmail', 'awayContactEmail',
   'homeSponsors', 'awaySponsors', 'sponsorsMarked']
 
@@ -309,7 +310,7 @@ function hasOfficialsChanged(original, current) {
   if (!original) return true
   const keys = ['ref1First', 'ref1Last', 'ref1Country', 'ref1Dob', 'ref1Email',
     'ref2First', 'ref2Last', 'ref2Country', 'ref2Dob', 'ref2Email',
-    'scorerFirst', 'scorerLast', 'scorerCountry', 'scorerDob',
+    'scorerFirst', 'scorerLast', 'scorerCountry', 'scorerDob', 'scorerLicence',
     'asstFirst', 'asstLast', 'asstCountry', 'asstDob',
     'lineJudge1', 'lineJudge2', 'lineJudge3', 'lineJudge4', 'homeContactEmail', 'awayContactEmail']
   for (const key of keys) {
@@ -436,6 +437,10 @@ const OfficialCard = memo(function OfficialCard({
   // a referee's optional address for the final scoresheet (setEmail: shown)
   email = '',
   setEmail = null,
+  // the scorer's licence number, taken for the coin toss instead of a date of
+  // birth (setLicence: shown)
+  licence = '',
+  setLicence = null,
   t
 }) {
   // null: the switch was not touched, the card follows defaultCollapsed and
@@ -443,10 +448,10 @@ const OfficialCard = memo(function OfficialCard({
   // the switch did nothing)
   const [collapsed, setCollapsed] = useState(null)
   const isCollapsed = collapsible && (collapsed ?? (defaultCollapsed && !filled))
-  // The coin toss needs this date of birth (scorer): flag it while it is
-  // missing or still the 01.01.1900 placeholder, which is shown as empty.
-  const dobMissing = dobRequired && idMode === 'dob' && !isKnownDob(dob)
-  const dobValue = dob && !(dobRequired && dobMissing) ? formatDateToISO(dob) : ''
+  // The coin toss needs this date of birth or a licence number (scorer): flag
+  // it while both are missing; the 01.01.1900 placeholder is shown as empty.
+  const dobMissing = dobRequired && idMode === 'dob' && !scorerIdentified(dob, setLicence ? licence : '')
+  const dobValue = dob && !(dobRequired && !isKnownDob(dob)) ? formatDateToISO(dob) : ''
   const dobNoteId = `${officialKey || 'official'}-dob-required`
   return (
     <div className={isCollapsed ? OFFICIAL_BOX_COLLAPSED : OFFICIAL_BOX}>
@@ -478,7 +483,7 @@ const OfficialCard = memo(function OfficialCard({
             <Field tone="compact" className={FIELD} label={t('matchSetup.firstName')}><Input aria-label={t('matchSetup.firstName')} className="capitalize" value={firstName} onChange={e => setFirstName(e.target.value)} /></Field>
             <Field tone="compact" className={FIELD} label={t('matchSetup.country')}><Input aria-label={t('matchSetup.country')} value={country} onChange={e => setCountry(e.target.value)} /></Field>
             <div className="min-w-0">
-              <Field tone="compact" className={FIELD} required={dobRequired || undefined} label={dobRequired && idMode === 'dob' ? `${idLabel || t('matchSetup.dateOfBirth')} *` : (idLabel || t('matchSetup.dateOfBirth'))}>
+              <Field tone="compact" className={FIELD} required={dobMissing || undefined} label={dobMissing ? `${idLabel || t('matchSetup.dateOfBirth')} *` : (idLabel || t('matchSetup.dateOfBirth'))}>
                 <IdField
                   idMode={idMode}
                   rawValue={dob}
@@ -497,6 +502,11 @@ const OfficialCard = memo(function OfficialCard({
                 </p>
               )}
             </div>
+            {setLicence && (
+              <Field tone="compact" className={FIELD} label={t('matchSetup.licenceNumber')}>
+                <Input aria-label={`${title} ${t('matchSetup.licenceNumber')}`} aria-describedby={dobMissing ? dobNoteId : undefined} className={cn(dobMissing && 'border-amber-400')} value={licence} onChange={e => setLicence(e.target.value)} maxLength={30} autoComplete="off" data-testid={`${officialKey || 'official'}-licence`} />
+              </Field>
+            )}
           </div>
           {setEmail && (
             <Field tone="compact" className={cn(FIELD, 'mt-2')} label={t('matchSetup.refereeEmail')} hint={t('matchSetup.refereeEmailHint')}>
@@ -858,6 +868,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [scorerLast, setScorerLast] = useState('')
   const [scorerCountry, setScorerCountry] = useState('CHE')
   const [scorerDob, setScorerDob] = useState('')
+  // the scorer's licence number: the coin toss takes it instead of a date of birth
+  const [scorerLicence, setScorerLicence] = useState('')
   // Not needed to create the match, but the coin toss waits for it: shown
   // next to Create match so it is filled in with the rest of the form.
 
@@ -1171,8 +1183,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   }, [user?.id])
   const clubTeams = useMemo(() => ({ home: clubOfTeam(clubRows, home, user?.id), away: clubOfTeam(clubRows, away, user?.id) }), [clubRows, home, away, user?.id])
   const clubGender = matchGenderOf({ test: match?.test === true, type2 })
-  // The scorer's date of birth is a Swiss coin-toss rule: not asked in a Global match
-  const scorerDobMissing = match?.global !== true && !isKnownDob(scorerDob)
+  // The scorer's date of birth is a Swiss coin-toss rule: not asked in a Global
+  // match; a licence number does instead (owner 2026-11-15)
+  const scorerDobMissing = match?.global !== true && !scorerIdentified(scorerDob, scorerLicence)
   // What the sheet carries beside a name (Global: birthdate, number or text), kept on the match
   useEffect(() => { if (match) setIdModeState(idModeOf(match)) }, [match?.idMode]) // eslint-disable-line react-hooks/exhaustive-deps
   const setIdMode = (mode) => {
@@ -1311,7 +1324,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       originalOfficialsRef.current = {
         ref1First, ref1Last, ref1Country, ref1Dob, ref1Email, homeContactEmail, awayContactEmail,
         ref2First, ref2Last, ref2Country, ref2Dob, ref2Email,
-        scorerFirst, scorerLast, scorerCountry, scorerDob,
+        scorerFirst, scorerLast, scorerCountry, scorerDob, scorerLicence,
         asstFirst, asstLast, asstCountry, asstDob,
         lineJudge1, lineJudge2, lineJudge3, lineJudge4
       }
@@ -1596,7 +1609,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (!o) return
     setRef1First(o.ref1First); setRef1Last(o.ref1Last); setRef1Country(o.ref1Country); setRef1Dob(o.ref1Dob); setRef1Email(o.ref1Email || '')
     setRef2First(o.ref2First); setRef2Last(o.ref2Last); setRef2Country(o.ref2Country); setRef2Dob(o.ref2Dob); setRef2Email(o.ref2Email || '')
-    setScorerFirst(o.scorerFirst); setScorerLast(o.scorerLast); setScorerCountry(o.scorerCountry); setScorerDob(o.scorerDob)
+    setScorerFirst(o.scorerFirst); setScorerLast(o.scorerLast); setScorerCountry(o.scorerCountry); setScorerDob(o.scorerDob); setScorerLicence(o.scorerLicence || '')
     setAsstFirst(o.asstFirst); setAsstLast(o.asstLast); setAsstCountry(o.asstCountry); setAsstDob(o.asstDob)
     setLineJudge1(o.lineJudge1); setLineJudge2(o.lineJudge2); setLineJudge3(o.lineJudge3); setLineJudge4(o.lineJudge4)
     setHomeContactEmail(o.homeContactEmail || ''); setAwayContactEmail(o.awayContactEmail || '')
@@ -1791,6 +1804,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             setScorerLast(scorer.lastName || '')
             setScorerCountry(scorer.country || (match.global === true ? '' : 'CHE'))
             setScorerDob(scorer.dob || '')
+            setScorerLicence(scorer.licence || '')
           }
           const asst = officials.find(o => o.role === 'assistant scorer')
           if (asst) {
@@ -2085,7 +2099,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           officials: buildOfficialsArray(
             { firstName: ref1First, lastName: ref1Last, country: ref1Country, email: ref1Email, dob: ref1Dob },
             { firstName: ref2First, lastName: ref2Last, country: ref2Country, email: ref2Email, dob: ref2Dob },
-            { firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
+            { firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob, licence: scorerLicence },
             { firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
             { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 },
             false,
@@ -2184,7 +2198,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther, type2, type3, type3Other, bestOf,
         pointsRegular, pointsDeciding, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName,
         ref1First, ref1Last, ref1Country, ref1Dob, ref1Email, homeContactEmail, awayContactEmail, ref2First, ref2Last, ref2Country, ref2Dob, ref2Email,
-        scorerFirst, scorerLast, scorerCountry, scorerDob, asstFirst, asstLast, asstCountry, asstDob,
+        scorerFirst, scorerLast, scorerCountry, scorerDob, scorerLicence, asstFirst, asstLast, asstCountry, asstDob,
         lineJudge1, lineJudge2, lineJudge3, lineJudge4, homeSponsors, awaySponsors, sponsorsMarked
       }
       return { ...values, swapRosters: rosterSwapRef.current }
@@ -2210,7 +2224,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
     return () => clearTimeout(timeoutId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther, type2, type3, type3Other, bestOf, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName, homeRoster, awayRoster, benchHome, benchAway, ref1First, ref1Last, ref1Country, ref1Dob, ref1Email, ref2First, ref2Last, ref2Country, ref2Dob, ref2Email, scorerFirst, scorerLast, scorerCountry, scorerDob, asstFirst, asstLast, asstCountry, asstDob, lineJudge1, lineJudge2, lineJudge3, lineJudge4, homeContactEmail, awayContactEmail, homeSponsors, awaySponsors, sponsorsMarked, homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature, currentView, setupLocked, draftReadyFor])
+  }, [date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther, type2, type3, type3Other, bestOf, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName, homeRoster, awayRoster, benchHome, benchAway, ref1First, ref1Last, ref1Country, ref1Dob, ref1Email, ref2First, ref2Last, ref2Country, ref2Dob, ref2Email, scorerFirst, scorerLast, scorerCountry, scorerDob, scorerLicence, asstFirst, asstLast, asstCountry, asstDob, lineJudge1, lineJudge2, lineJudge3, lineJudge4, homeContactEmail, awayContactEmail, homeSponsors, awaySponsors, sponsorsMarked, homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature, currentView, setupLocked, draftReadyFor])
 
   // Back on the main view (Save, Back, a roster confirmed): no draft left
   useEffect(() => {
@@ -2404,7 +2418,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     const currentOfficials = {
       ref1First, ref1Last, ref1Country, ref1Dob, ref1Email, homeContactEmail, awayContactEmail,
       ref2First, ref2Last, ref2Country, ref2Dob, ref2Email,
-      scorerFirst, scorerLast, scorerCountry, scorerDob,
+      scorerFirst, scorerLast, scorerCountry, scorerDob, scorerLicence,
       asstFirst, asstLast, asstCountry, asstDob,
       lineJudge1, lineJudge2, lineJudge3, lineJudge4
     }
@@ -2556,7 +2570,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         officials: buildOfficialsArray(
           { firstName: ref1First, lastName: ref1Last, country: ref1Country, email: ref1Email, dob: ref1Dob },
           { firstName: ref2First, lastName: ref2Last, country: ref2Country, email: ref2Email, dob: ref2Dob },
-          { firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
+          { firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob, licence: scorerLicence },
           { firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
           { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 },
             false,
@@ -2602,7 +2616,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         officials: buildOfficialsArray(
           { firstName: ref1First, lastName: ref1Last, country: ref1Country, email: ref1Email, dob: formatDobForSync(ref1Dob) },
           { firstName: ref2First, lastName: ref2Last, country: ref2Country, email: ref2Email, dob: formatDobForSync(ref2Dob) },
-          { firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: formatDobForSync(scorerDob) },
+          { firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: formatDobForSync(scorerDob), licence: scorerLicence },
           { firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: formatDobForSync(asstDob) },
           { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 },
           true, // useSnakeCase for Supabase
@@ -3481,7 +3495,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         homeContactEmail: setHomeContactEmail, awayContactEmail: setAwayContactEmail,
         homeSponsors: setHomeSponsors, awaySponsors: setAwaySponsors, sponsorsMarked: setSponsorsMarked,
         ref2First: setRef2First, ref2Last: setRef2Last, ref2Country: setRef2Country, ref2Dob: setRef2Dob, ref2Email: setRef2Email,
-        scorerFirst: setScorerFirst, scorerLast: setScorerLast, scorerCountry: setScorerCountry, scorerDob: setScorerDob,
+        scorerFirst: setScorerFirst, scorerLast: setScorerLast, scorerCountry: setScorerCountry, scorerDob: setScorerDob, scorerLicence: setScorerLicence,
         asstFirst: setAsstFirst, asstLast: setAsstLast, asstCountry: setAsstCountry, asstDob: setAsstDob,
         lineJudge1: setLineJudge1, lineJudge2: setLineJudge2, lineJudge3: setLineJudge3, lineJudge4: setLineJudge4
       }
@@ -4242,6 +4256,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               setCountry={setScorerCountry}
               setDob={setScorerDob}
               dobRequired={match?.global !== true}
+              licence={scorerLicence}
+              setLicence={match?.global !== true ? setScorerLicence : null}
               idMode={idMode}
               idLabel={idLabel}
               hasDatabase={false}
@@ -4554,6 +4570,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               setScorerLast(referee.lastName || '')
               setScorerCountry(referee.country || 'CHE')
               setScorerDob(referee.dob || '')
+              setScorerLicence(referee.licence || '')
             }
           }}
         />
@@ -6904,7 +6921,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // Officials are complete if at least 1st referee and scorer are filled
   // 2nd referee and assistant scorer are optional
   const officialsConfigured =
-    !!(ref1Last && ref1First && scorerLast && scorerFirst && (match?.global === true || isKnownDob(scorerDob)))
+    !!(ref1Last && ref1First && scorerLast && scorerFirst && !scorerDobMissing)
   const matchInfoConfigured = !!(date || time || hall || city || league)
   // Basic roster configured (enough for saving)
   const homeRosterExists = !!(home && homeRoster.length >= 6 && homeCounts.liberos >= 0)
@@ -6926,7 +6943,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (!officialsConfigured) {
       if (!ref1Last || !ref1First) missing.push(t('warnings.firstRefereeMissing'))
       if (!scorerLast || !scorerFirst) missing.push(t('warnings.scorerNameMissing'))
-      if (match?.global !== true && !isKnownDob(scorerDob)) missing.push(t('warnings.scorerDobMissing'))
+      if (scorerDobMissing) missing.push(t('warnings.scorerDobMissing'))
     }
     if (!homeConfigured) {
       if (!home || homeRoster.length < 6) missing.push(t('warnings.homeRosterIncomplete', { count: homeRoster.length }))
@@ -7664,7 +7681,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     officials: buildOfficialsArray(
                       { firstName: ref1First, lastName: ref1Last, country: ref1Country, email: ref1Email, dob: ref1Dob },
                       { firstName: ref2First, lastName: ref2Last, country: ref2Country, email: ref2Email, dob: ref2Dob },
-                      { firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
+                      { firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob, licence: scorerLicence },
                       { firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
                       { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 },
             false,
