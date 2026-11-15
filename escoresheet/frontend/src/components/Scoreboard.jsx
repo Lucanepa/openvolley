@@ -1848,13 +1848,50 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // the commit. See useScorerActions. Inside an action body only Dexie may be
   // awaited; screen changes go through deferUi, network through deferEffect
   // (syncToReferee, sendActionToReferee, syncLiveStateToSupabase do it themselves).
-  const { runAction, deferUi, deferEffect, trackWrite } = useScorerActions({
+  const { runAction: runScorerAction, deferUi, deferEffect, trackWrite } = useScorerActions({
     db,
     commits: liveCommits,
     mutexRef: eventInProgressRef,
     captureFinalSnapshot: async () => (await captureFullStateSnapshot())?.snapshot ?? null,
     onError: onActionFailed
   })
+
+  // A libero replacement after "Start rally" (owner, 15.11: the scorer
+  // started the rally before writing the replacement made before the
+  // whistle). The replacement belongs before the service: inside the same
+  // action the rally start is taken back, the libero action runs, and the
+  // rally starts again (its own start time kept), so the rally stays in play
+  // and the record reads replacement, then rally start. Every libero write
+  // goes through runAction('libero', ...); the helpers it needs are defined
+  // further down (refs).
+  const liberoRallyHelpersRef = useRef({})
+  const runAction = useCallback((key, body, opts) => {
+    if (key !== 'libero') return runScorerAction(key, body, opts)
+    return runScorerAction(key, async () => {
+      const h = liberoRallyHelpersRef.current
+      let taken = null
+      if (matchId != null && h.discardEvents && h.getNextSeq) {
+        const events = await db.events.where('matchId').equals(matchId).toArray()
+        const setIndex = currentSetOf(await db.sets.where('matchId').equals(matchId).toArray())?.index
+        if (setIndex != null && rallyStatusOf(events, setIndex) === 'in_play') {
+          taken = events
+            .filter(e => e.setIndex === setIndex && e.type === 'rally_start')
+            .sort((a, b) => (b.seq || 0) - (a.seq || 0))[0] || null
+          if (taken) await h.discardEvents([taken])
+        }
+      }
+      try {
+        return await body()
+      } finally {
+        if (taken) {
+          // eslint-disable-next-line no-unused-vars
+          const { id, ...row } = taken
+          await db.events.add({ ...row, seq: await h.getNextSeq() })
+          deferEffect(() => h.syncToReferee?.())
+        }
+      }
+    }, opts)
+  }, [runScorerAction, matchId, deferEffect])
 
   // The event history (db/eventHistory) queues the void / edit job of an
   // undone or changed event INSIDE the action's transaction only when it knows
@@ -7812,6 +7849,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (jobs.length > 0) await db.sync_queue.bulkDelete(jobs.map(j => j.id))
     await reverseEventSideEffects(rows)
   }, [reverseEventSideEffects])
+  // the libero-after-Start-rally wrapper (runAction above) reads these
+  liberoRallyHelpersRef.current = { discardEvents, getNextSeq, syncToReferee }
 
   // Reverse a forfeit (set or match) at or after `fromSetIndex`: drop the sets
   // it created, the points it awarded, its set_end and forfait events, and put
@@ -10800,8 +10839,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Handle player click for substitution/libero/sanction/injury (only when rally is not in play and lineup is set)
   const handlePlayerClick = useCallback((teamKey, position, playerNumber, event) => {
-    // Only allow when rally is not in play and lineup is set
-    if (rallyStatus !== 'idle') return
+    // While the rally is in play the menu opens for the libero only (its
+    // replacement goes before the rally start: runAction('libero'))
+    const rallyInPlay = rallyStatus === 'in_play'
+    if (rallyStatus !== 'idle' && !rallyInPlay) return
     // A replay pending closes the regular substitution only: the menu opens
     // for the forced ones (injury; expulsion / disqualification through the
     // sanctions), which stay possible (GL R15 §8, Q194)
@@ -10834,13 +10875,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Check substitution limit (6 per set)
     const teamSubstitutions = substitutionsUsed?.[teamKey] || 0
-    const canSubstitute = !isLibero && !replayPending && teamSubstitutions < MAX_SUBSTITUTIONS_PER_SET && canPlayerBeSubstituted(teamKey, playerNumber)
+    const canSubstitute = !rallyInPlay && !isLibero && !replayPending && teamSubstitutions < MAX_SUBSTITUTIONS_PER_SET && canPlayerBeSubstituted(teamKey, playerNumber)
     // Not a legal substitution now, but a tap on "Substitution" still opens
     // the request warning: the 7th substitution (15.11.1.4) or the player who
     // came in with no completed rally since (15.2.3). Closed while a replay is
     // pending (the menu shows why).
     let substitutionNote = null
-    if (!isLibero && !canSubstitute) {
+    if (!isLibero && !canSubstitute && !rallyInPlay) {
       if (replayPending) substitutionNote = 'replay_pending'
       else if (teamSubstitutions >= MAX_SUBSTITUTIONS_PER_SET) substitutionNote = 'substitution_limit'
       else if (data?.set && entryWithoutCompletedRally(data.events, data.set.index, teamKey, playerNumber)) substitutionNote = 'no_rally_since_entry'
@@ -10889,7 +10930,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       canEnterLibero: isBackRow && !isServing && canEnterLibero && hasPointSinceLibero && !isRallyReplayed,
       liberoLocked: isRallyReplayed,
       isLiberoOnCourt,
-      liberoOnCourt: isLiberoOnCourt ? liberoOnCourt : null
+      liberoOnCourt: isLiberoOnCourt ? liberoOnCourt : null,
+      // in play: libero actions only (the menu leaves the rest out)
+      liberoOnly: rallyInPlay
     })
   }, [rallyStatus, isRallyReplayed, replayPending, leftTeamLineupSet, rightTeamLineupSet, leftIsHome, playerActionMenu, substitutionsUsed, canPlayerBeSubstituted, getCurrentServe, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.homePlayers, data?.awayPlayers, data?.events, data?.set])
 
@@ -12975,7 +13018,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // closeMenu: the court player menu it was chosen in closes with the result (deferUi)
   const handleLiberoOut = useCallback((side, closeMenu = null) => runAction('libero', async () => {
     if (closeMenu) deferUi(closeMenu)
-    if (rallyStatus !== 'idle') return
+    // also after Start rally: runAction('libero') puts it before the rally start
+    if (rallyStatus !== 'idle' && rallyStatus !== 'in_play') return
 
     // (runAction holds the event mutex for the whole transaction)
 
@@ -13307,7 +13351,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Handle libero in button click
   const handleLiberoIn = useCallback((side, event) => {
-    if (rallyStatus !== 'idle') return
+    // also after Start rally: runAction('libero') puts it before the rally start
+    if (rallyStatus !== 'idle' && rallyStatus !== 'in_play') return
 
     const teamKey = mapSideToTeamKey(side)
     const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
@@ -13348,7 +13393,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // closeMenu: the court player menu it was chosen in closes with the result (deferUi)
   const handleExchangeLibero = useCallback((side, closeMenu = null) => runAction('libero', async () => {
     if (closeMenu) deferUi(closeMenu)
-    if (rallyStatus !== 'idle') return
+    // also after Start rally: runAction('libero') puts it before the rally start
+    if (rallyStatus !== 'idle' && rallyStatus !== 'in_play') return
 
     // (runAction holds the event mutex for the whole transaction)
 
@@ -14255,7 +14301,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             handlePlayerClick(teamKey, libero.position, libero.number, e)
             return
           }
-          if (rallyStatus !== 'idle' || libero.unable) return
+          if ((rallyStatus !== 'idle' && rallyStatus !== 'in_play') || libero.unable) return
           setLiberoBenchActionMenu({ team: teamKey, liberoNumber: libero.number, liberoType: libero.libero, side: mapTeamKeyToSide(teamKey), ...anchorOf(e) })
         },
         redesignateLibero: (teamKey) => {
@@ -20978,7 +21024,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           {t('scoreboard.playerMenu.exchangeLibero')}
                         </SbMenuItem>
                       )}
-                      {/* Unable to play - expandable */}
+                      {/* Unable to play - expandable (not while the rally is in play) */}
+                      {!playerActionMenu.liberoOnly && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <SbMenuItem tone="danger" expanded={courtLiberoUnableExpanded} onClick={() => setCourtLiberoUnableExpanded(!courtLiberoUnableExpanded)}>
                           {t('scoreboard.playerMenu.unableToPlay')}
@@ -21028,10 +21075,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           </div>
                         )}
                       </div>
+                      )}
                     </div>
                   )
                 })()}
-                {/* Sanction - expandable */}
+                {/* Sanction - expandable (not while the rally is in play: libero only) */}
+                {!playerActionMenu.liberoOnly && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <SbMenuItem expanded={courtSanctionExpanded} onClick={() => setCourtSanctionExpanded(!courtSanctionExpanded)}>
                     {t('scoreboard.sanction')}
@@ -21053,8 +21102,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     </div>
                   )}
                 </div>
+                )}
                 {/* Injury - direct button (NOT shown for liberos on court - they have "Unable to play" menu) */}
-                {!playerActionMenu.isLiberoOnCourt && (
+                {!playerActionMenu.isLiberoOnCourt && !playerActionMenu.liberoOnly && (
                   <SbMenuItem tone="danger" icon={SB_INJURY_ICON} onClick={openInjuryFromMenu}>
                     {t('corrections.reasonLabel.injury')}
                   </SbMenuItem>
