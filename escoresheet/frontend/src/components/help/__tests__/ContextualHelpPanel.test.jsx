@@ -138,9 +138,9 @@ describe('ContextualHelpPanel: the video', () => {
     expect(tracks.map(t => [t.getAttribute('srclang'), t.getAttribute('src')])).toEqual(['en', 'de', 'fr', 'it'].map(l => [l, `https://openvolley.app/support/videos/coin-toss.${l}.vtt`]))
     // the app speaks German (mocked i18n): its subtitles are on
     expect(tracks.filter(t => t.hasAttribute('default')).map(t => t.getAttribute('srclang'))).toEqual(['de'])
-    // its title in the app's language and its length (70.1 s), from the recording
+    // its title in the app's language and its length (67.9 s), from the recording
     expect(video.getAttribute('aria-label')).toBe('contextHelp.videoLabel:Auslosung und Aufstellung')
-    expect(screen.getByTestId('help-video-caption').textContent).toBe('contextHelp.videoLabel:Auslosung und Aufstellung1:10')
+    expect(screen.getByTestId('help-video-caption').textContent).toBe('contextHelp.videoLabel:Auslosung und Aufstellung1:07')
     // the box has the video's shape
     const { width, height } = HELP_VIDEOS['coin-toss']
     expect(video.style.aspectRatio).toBe(`${width} / ${height}`)
