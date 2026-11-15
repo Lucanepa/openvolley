@@ -4,7 +4,7 @@
 
 ## OpenVolley e OpenBeach
 
-OpenVolley e OpenBeach sono software libero. Può usarli, distribuirli e
+OpenVolley e OpenBeach sono software libero. Puoi usarli, distribuirli e
 modificarli alle condizioni della **GNU General Public License, versione 3 o
 successiva (GPL-3.0-or-later)**. Il software è fornito **senza alcuna
 garanzia**; i dettagli sono nella licenza.
@@ -84,5 +84,5 @@ ws (MIT), Caddy (Apache-2.0), cloudflared (Apache-2.0).
 
 L'elenco completo di tutti i pacchetti con le versioni si trova nei file
 `package-lock.json` e `Cargo.lock` del codice sorgente. Ogni pacchetto è
-accompagnato dal proprio testo di licenza. Se manca un'indicazione, scriva a
+accompagnato dal proprio testo di licenza. Se manca un'indicazione, scrivi a
 support@openvolley.app.

@@ -17,8 +17,8 @@ Konten («die Dienste»). Wer die Dienste nutzt, akzeptiert diese Bedingungen.
 
 Die Software ist freie Software unter der GNU General Public License,
 Version 3 oder später (GPL-3.0-or-later). Für die Software selbst, ihren
-Quellcode und Ihre Rechte daran gilt allein diese Lizenz; diese Bedingungen
-schränken sie nicht ein. Den Quellcode finden Sie unter
+Quellcode und deine Rechte daran gilt allein diese Lizenz; diese Bedingungen
+schränken sie nicht ein. Den Quellcode findest du unter
 https://github.com/Lucanepa/openvolley und https://github.com/Lucanepa/openbeach.
 
 Die Dienste sind kostenlos. Es besteht kein Anspruch auf ihre Nutzung.
@@ -26,12 +26,12 @@ Die Dienste sind kostenlos. Es besteht kein Anspruch auf ihre Nutzung.
 ## 3. Konto
 
 - Für die Synchronisierung, die Verwaltung von Teams und Turnieren und die
-  Freigabe von Resultaten brauchen Sie ein Konto. Ohne Konto können Sie die
+  Freigabe von Resultaten brauchst du ein Konto. Ohne Konto kannst du die
   Apps offline nutzen.
-- Machen Sie wahre Angaben. Ein Konto gehört einer Person und darf nicht
+- Mach wahre Angaben. Ein Konto gehört einer Person und darf nicht
   geteilt werden.
-- Halten Sie Ihr Passwort und Ihren Freigabe-PIN geheim. Eine Freigabe mit
-  Ihrem PIN gilt als Ihre Bestätigung des Resultats. Melden Sie Missbrauch
+- Halte dein Passwort und deinen Freigabe-PIN geheim. Eine Freigabe mit
+  deinem PIN gilt als deine Bestätigung des Resultats. Melde Missbrauch
   sofort an support@openvolley.app.
 - Neue Konten haben zunächst keine Rolle. Rollen (zum Beispiel
   Schreiber/in, Schiedsrichter/in, Wettbewerbsmanager/in) vergibt die
@@ -40,7 +40,7 @@ Die Dienste sind kostenlos. Es besteht kein Anspruch auf ihre Nutzung.
   weitergegeben werden.
 - Wer jünger als 16 Jahre ist, braucht für ein Konto die Zustimmung eines
   Elternteils oder einer anderen gesetzlichen Vertretung.
-- Sie können Ihr Konto jederzeit in der App löschen. Was danach bestehen
+- Du kannst dein Konto jederzeit in der App löschen. Was danach bestehen
   bleibt, steht in der [Datenschutzerklärung](privacy.md).
 - Ich kann Rollen entziehen und Konten sperren oder löschen, wenn sie gegen
   diese Bedingungen verstossen oder die Sicherheit der Dienste gefährden.
@@ -51,23 +51,23 @@ Die Dienste sind kostenlos. Es besteht kein Anspruch auf ihre Nutzung.
   Spielberichts verantwortlich, wie bei einem Spielbericht auf Papier.
 - Ob OpenVolley für ein offizielles Spiel verwendet werden darf und wie der
   Spielbericht einzureichen ist, bestimmen der Verband oder der Veranstalter
-  des Wettbewerbs. Klären Sie das vor dem Spiel.
-- Halten Sie für offizielle Spiele eine Ausweichlösung bereit (zum Beispiel
+  des Wettbewerbs. Kläre das vor dem Spiel.
+- Halte für offizielle Spiele eine Ausweichlösung bereit (zum Beispiel
   einen Spielbericht auf Papier), falls ein Gerät ausfällt.
 - Die Apps unterstützen die Spielregeln, ersetzen aber nicht die
   Entscheidungen der Schiedsrichterinnen und Schiedsrichter. Massgebend sind
   die offiziellen Regeln und Reglemente.
 
-## 5. Daten, die Sie eingeben
+## 5. Daten, die du eingibst
 
 - Wer Daten anderer Personen eingibt (Kaderlisten, Betreuungspersonen,
   Offizielle, Turnierteams), muss dazu berechtigt sein. Vereine, Veranstalter
   und Teamverantwortliche sind dafür verantwortlich, die betroffenen Personen
   und bei Minderjährigen deren Eltern darüber zu informieren, dass ihre Daten
   im Spielbericht erfasst werden.
-- Geben Sie nur Daten ein, die für den Spielbericht oder das Turnier nötig
+- Gib nur Daten ein, die für den Spielbericht oder das Turnier nötig
   sind.
-- Sie behalten Ihre Rechte an Ihren Inhalten. Sie erlauben mir, die Daten so
+- Du behältst deine Rechte an deinen Inhalten. Du erlaubst mir, die Daten so
   zu speichern, zu bearbeiten, zu sichern und anzuzeigen, wie es für die
   Dienste nötig ist und in der Datenschutzerklärung beschrieben ist, zum
   Beispiel Teamnamen und Spielstand im öffentlichen Livescore oder Namen auf
@@ -87,15 +87,15 @@ Nicht erlaubt ist insbesondere:
   automatisiert abzurufen;
 - Daten anderer Personen ohne Berechtigung einzugeben oder zu verbreiten.
 
-Wenn Sie eine Sicherheitslücke finden, melden Sie sie bitte vertraulich an
-support@openvolley.app, bevor Sie sie veröffentlichen.
+Wenn du eine Sicherheitslücke findest, melde sie bitte vertraulich an
+support@openvolley.app, bevor du sie veröffentlichst.
 
 ## 7. Verfügbarkeit
 
 Ich betreibe die Dienste nach bestem Wissen, aber ohne Zusage einer
 bestimmten Verfügbarkeit. Wartung, Störungen oder Änderungen können die
 Dienste unterbrechen. Ich kann Dienste ändern oder einstellen. Die Apps
-arbeiten offline weiter; sichern Sie wichtige Spielberichte selbst (die Apps
+arbeiten offline weiter; sichere wichtige Spielberichte selbst (die Apps
 bieten dafür den Download von Sicherungskopien und Spielberichten).
 
 ## 8. Gewährleistung und Haftung
@@ -110,8 +110,8 @@ zwingendem Recht nicht ausgeschlossen werden kann.
 ## 9. Änderungen
 
 Ich kann diese Bedingungen anpassen. Die neue Fassung gilt ab ihrer
-Veröffentlichung auf dieser Seite. Wenn Sie die Dienste danach weiter nutzen,
-gilt das als Zustimmung. Wenn Sie nicht einverstanden sind, können Sie Ihr
+Veröffentlichung auf dieser Seite. Wenn du die Dienste danach weiter nutzt,
+gilt das als Zustimmung. Wenn du nicht einverstanden bist, kannst du dein
 Konto löschen.
 
 ## 10. Anwendbares Recht und Gerichtsstand
