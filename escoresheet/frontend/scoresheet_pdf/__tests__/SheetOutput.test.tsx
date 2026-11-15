@@ -316,6 +316,61 @@ describe('set 5, defaults and sanctions on the sheet', () => {
     expect(container.querySelectorAll('.scoresheet-container svg polyline')).toHaveLength(0)
   })
 
+  // owner 2026-11-15: a set never played prints no numbers in its points
+  // columns, not even grey; RESULT always has the five rows, a set in its own row
+  const numbersOf = (g: Element) => [...g.querySelectorAll('[data-point]')].filter(e => (e.textContent || '').trim() !== '').length
+  const resultRow = (c: HTMLElement, set: number) => ({
+    label: c.querySelector(`[data-testid="result-row"][data-set="${set}"] [data-testid="result-row-label"]`)?.textContent,
+    a: c.querySelector(`[data-testid="result-team-row"][data-team="A"][data-set="${set}"]`)?.textContent,
+    b: c.querySelector(`[data-testid="result-team-row"][data-team="B"][data-set="${set}"]`)?.textContent
+  })
+
+  it('best of 3 won 2:1: sets 3 and 4 print no numbers; RESULT fills rows 1, 2 and 5, rows 3 and 4 stay empty (owner 2026-11-15)', () => {
+    const base = fixture({ match: { status: 'ended', bestOf: 3, set5LeftTeam: 'A', set5FirstServe: 'home' } })
+    const sets = [
+      { index: 1, homePoints: 25, awayPoints: 20, finished: true, startTime: local(2026, 10, 7, 20, 0), endTime: local(2026, 10, 7, 20, 25) },
+      { index: 2, homePoints: 18, awayPoints: 25, finished: true, startTime: local(2026, 10, 7, 20, 30), endTime: local(2026, 10, 7, 20, 55) },
+      { index: 5, homePoints: 15, awayPoints: 12, finished: true, startTime: local(2026, 10, 7, 21, 0), endTime: local(2026, 10, 7, 21, 20) }
+    ]
+    const { container } = render(<App matchData={{ ...base, sets }} autoAction="preview" />)
+    const grids = [...container.querySelectorAll('[data-testid="points-grid"]')]
+    expect(grids).toHaveLength(11)
+    // sets 1 and 2: their scores; sets 3 and 4 (grids 4-7): nothing at all
+    expect([0, 1, 2, 3].map(i => numbersOf(grids[i])).sort((x, y) => x - y)).toEqual([18, 20, 25, 25])
+    expect([4, 5, 6, 7].map(i => numbersOf(grids[i]))).toEqual([0, 0, 0, 0])
+    // the decider keeps its numbers up to the scores
+    expect(grids.slice(-3).map(numbersOf).reduce((x, y) => x + y, 0)).toBeGreaterThan(0)
+    // RESULT: five rows; the decider in row 5, numbered 3 as its set box; 3 and 4 empty
+    expect(container.querySelectorAll('[data-testid="result-row"]')).toHaveLength(5)
+    expect([1, 2, 3, 4, 5].map(n => resultRow(container, n).label)).toEqual(['1', '2', '', '', '3'])
+    for (const n of [3, 4]) expect(resultRow(container, n)).toMatchObject({ a: '', b: '' })
+    expect(resultRow(container, 1).a).toContain('25')
+    expect(resultRow(container, 2).b).toContain('25')
+    expect(resultRow(container, 5).a).toContain('15')
+    expect(resultRow(container, 5).b).toContain('12')
+  })
+
+  it('best of 5 won 3:0: sets 4 and 5 print no numbers; RESULT has rows 1-5, 4 and 5 empty', () => {
+    const base = fixture({ match: { status: 'ended' } })
+    const threeNil = [0, 30, 60].map((m, i) => ({ index: i + 1, homePoints: 25, awayPoints: 20, finished: true, startTime: local(2026, 10, 7, 20, m), endTime: local(2026, 10, 7, 20, m + 25) }))
+    const { container } = render(<App matchData={{ ...base, sets: threeNil }} autoAction="preview" />)
+    const grids = [...container.querySelectorAll('[data-testid="points-grid"]')]
+    expect(grids.slice(0, 6).map(numbersOf)).toEqual([25, 20, 20, 25, 25, 20])
+    expect(grids.slice(6).map(numbersOf)).toEqual([0, 0, 0, 0, 0])
+    expect([1, 2, 3, 4, 5].map(n => resultRow(container, n).label)).toEqual(['1', '2', '3', '4', '5'])
+    expect(resultRow(container, 3).a).toContain('25')
+    for (const n of [4, 5]) expect(resultRow(container, n)).toMatchObject({ a: '', b: '' })
+  })
+
+  it('a match still running keeps the grey numbers of the sets that may still be played', () => {
+    const base = fixture()
+    const sets = [{ index: 1, homePoints: 25, awayPoints: 20, finished: true, startTime: local(2026, 10, 7, 20, 0), endTime: local(2026, 10, 7, 20, 25) }]
+    const { container } = render(<App matchData={{ ...base, sets }} autoAction="preview" />)
+    const grids = [...container.querySelectorAll('[data-testid="points-grid"]')]
+    expect(grids.slice(2, 8).map(numbersOf)).toEqual([48, 48, 48, 48, 48, 48])
+    expect(grids.slice(-3).map(numbersOf)).toEqual([8, 30, 30])
+  })
+
   it('a default before the start: the grids left blank, not struck off (owner 2026-10-21), the result and the remark written', () => {
     seq = 0
     const base = fixture({ match: { status: 'ended', forfeitTeam: 'away', forfeitReason: 'forfeit' } })

@@ -2017,6 +2017,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                       firstServeTeamA={shouldShowSet1 && !isEmptyGrid(1) ? set1ServeIsA : undefined}
                       positionBoxRef={positionBoxSet1Ref}
                       {...(isEmptyGrid(1) ? emptySetData : set1Data)}
+                      unused={isEmptyGrid(1)}
                     />
                   </div>
                 </div>
@@ -2037,6 +2038,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                       teamNameRight={shouldShowSet2 && !isEmptyGrid(2) ? teamAShortName : ''}
                       firstServeTeamA={shouldShowSet2 && !isEmptyGrid(2) ? set1ServeIsA : undefined}
                       {...(isEmptyGrid(2) ? emptySetData : set2Data)}
+                      unused={isEmptyGrid(2)}
                     />
                   </div>
                 </div>
@@ -2087,6 +2089,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                       teamNameRight={shouldShowSet3 && !isEmptyGrid(3) ? teamBShortName : ''}
                       firstServeTeamA={shouldShowSet3 && !isEmptyGrid(3) ? set1ServeIsA : undefined}
                       {...(isEmptyGrid(3) ? emptySetData : set3Data)}
+                      unused={isEmptyGrid(3)}
                     />
                   </div>
                 </div>
@@ -2107,6 +2110,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                       teamNameRight={shouldShowSet4 && !isEmptyGrid(4) ? teamAShortName : ''}
                       firstServeTeamA={shouldShowSet4 && !isEmptyGrid(4) ? set1ServeIsA : undefined}
                       {...(shouldShowSet4 && !isEmptyGrid(4) ? set4Data : emptySetData)}
+                      unused={isEmptyGrid(4)}
                     />
                   </div>
                 </div>
@@ -2178,6 +2182,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                       startTime={set5Shown ? set5Data.startTime : ''}
                       endTime={set5Shown ? set5Data.endTime : ''}
                       setFinished={set5Shown ? set5Data.setFinished : false}
+                      unused={isEmptyGrid(5)}
                       lineupA={set5Shown ? set5Data.leftLineup : ['', '', '', '', '', '']}
                       subsA={set5Shown ? set5Data.leftSubs : [[], [], [], [], [], []]}
                       timeoutsA={set5Shown ? set5Data.leftTimeouts : ['', '']}
