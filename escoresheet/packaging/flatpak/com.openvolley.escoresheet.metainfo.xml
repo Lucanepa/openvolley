@@ -71,6 +71,20 @@
   </screenshots>
 
   <releases>
+    <release version="3.2.5" date="2026-11-15">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.2.5</url>
+      <description>
+        <ul>
+          <li>Dialogs and alerts in your language (DE, FR, IT, Swiss German).</li>
+          <li>A contact email per team gets the final scoresheet.</li>
+          <li>Libero replacement also after Start rally.</li>
+          <li>Referee phone: bigger score and serve, badges off the numbers, TO SUB | SUB TO, sanctions only when given.</li>
+          <li>Referee: a penalty point no longer ends the set interval.</li>
+          <li>Coin toss fixed before set 1 moves the teams.</li>
+          <li>Player menus open once.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.2.4" date="2026-11-15">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.2.4</url>
       <description>
