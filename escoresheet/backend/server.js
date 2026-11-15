@@ -394,8 +394,9 @@ function getDataLayer() {
     import('./lib/publicApi.js'),
     import('./lib/retention.js'),
     import('./lib/clubApi.js'),
-    import('./lib/dataAdmin.js')
-  ]).then(([pgq, mr, au, st, ph, ac, acc, svt, mg, og, ml, apv, bt, evr, act, ss, cl, sd, fm, tms, lic, arq, sn, pub, ret, cla, dta]) => {
+    import('./lib/dataAdmin.js'),
+    import('./lib/sqlWorkspace.js')
+  ]).then(([pgq, mr, au, st, ph, ac, acc, svt, mg, og, ml, apv, bt, evr, act, ss, cl, sd, fm, tms, lic, arq, sn, pub, ret, cla, dta, sqw]) => {
     const poolMax = Number(process.env.PG_POOL_MAX) > 0 ? Math.floor(Number(process.env.PG_POOL_MAX)) : undefined
     const db = pgq.createPgQuery({
       connectionString: DATABASE_URL,
@@ -488,7 +489,9 @@ function getDataLayer() {
     const clubApi = cla.createClubApi({ pool: db.pool, audit: accounts.audit, clubs, teams, licences, publicApi, auth })
     // The manager's Data tab (lib/dataAdmin.js): super admins, one row at a time, audited
     const dataAdmin = dta.createDataAdmin({ pool: db.pool, audit: accounts.audit })
-    const manage = mg.createManageApi({ accounts, savedTeams, beach, approvals, revisions, activity, scoresheets, clubs, finalMail, teams, licences, requests, notices, clubApi, dataAdmin })
+    // The manager's SQL tab (lib/sqlWorkspace.js): super admins; read mode as ov_readonly (roles.sql)
+    const sqlWorkspace = sqw.createSqlWorkspace({ pool: db.pool, audit: accounts.audit, ...(process.env.OV_SQL_READER_ROLE ? { readerRole: process.env.OV_SQL_READER_ROLE } : {}) })
+    const manage = mg.createManageApi({ accounts, savedTeams, beach, approvals, revisions, activity, scoresheets, clubs, finalMail, teams, licences, requests, notices, clubApi, dataAdmin, sqlWorkspace })
     // The active scoring device of each match (db/019, the scoring-device handover)
     const scorer = sd.createScorerDevices({ pool: db.pool, db, audit: accounts.audit })
     // The end of the match records (db/042, lib/retention.js): the daily sweep below

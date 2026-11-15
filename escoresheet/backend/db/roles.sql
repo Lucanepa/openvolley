@@ -55,7 +55,9 @@
 --             secret columns), read-only transactions, 3 connections, 15 s
 --             per statement; password :ov_readonly_pw
 --             (OV_READONLY_PW in .env, optional: without it only the
---             container's local socket logs in). See the end of this file.
+--             container's local socket logs in). ov_app may SET ROLE to it
+--             (no inherited rights): the SQL workspace's read mode. See the
+--             end of this file.
 
 \set ON_ERROR_STOP on
 BEGIN;
@@ -82,9 +84,10 @@ ALTER ROLE ov_app WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION N
 DO $$
 DECLARE r record;
 BEGIN
-  -- ov_app inherits nothing: drop any role membership it was given.
+  -- ov_app inherits nothing: drop any role membership it was given (but
+  -- ov_readonly, granted below with INHERIT FALSE: the SQL workspace's read mode).
   FOR r IN SELECT g.rolname FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid
-            WHERE m.member = 'ov_app'::regrole LOOP
+            WHERE m.member = 'ov_app'::regrole AND g.rolname <> 'ov_readonly' LOOP
     EXECUTE format('REVOKE %I FROM ov_app', r.rolname);
     RAISE NOTICE 'revoked membership of ov_app in %', r.rolname;
   END LOOP;
@@ -355,6 +358,17 @@ RESET client_min_messages;
 CREATE SCHEMA ov_read AUTHORIZATION ov_owner;
 REVOKE ALL ON SCHEMA ov_read FROM PUBLIC;
 GRANT USAGE ON SCHEMA ov_read TO ov_readonly;
+-- The SQL workspace (lib/sqlWorkspace.js) reads as ov_readonly: ov_app may
+-- SET ROLE to it inside a read-only transaction, and inherits none of its
+-- rights (PostgreSQL 16+ grant options). Revoked first so the options are
+-- exactly these whatever was granted by hand.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.roleid = 'ov_readonly'::regrole AND m.member = 'ov_app'::regrole) THEN
+    REVOKE ov_readonly FROM ov_app;
+  END IF;
+END $$;
+GRANT ov_readonly TO ov_app WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
 DO $$
 DECLARE
   r record;

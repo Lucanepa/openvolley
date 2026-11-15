@@ -134,7 +134,11 @@ export const AUDIT_ACTIONS = Object.freeze([
   // the manager's Data tab (lib/dataAdmin.js, super admins): one row added,
   // changed or deleted (the table, the key, the columns; personal values
   // read "[personal]", json "[json]")
-  'data.insert', 'data.update', 'data.delete'
+  'data.insert', 'data.update', 'data.delete',
+  // the manager's SQL tab (lib/sqlWorkspace.js, super admins): a run in read
+  // mode, a write-mode preview or commit (the SQL with its literals masked,
+  // its digest, the counts)
+  'sql.read', 'sql.write'
 ])
 export const APPS = SPORTS
 // How a membership came about (auth.app_memberships.joined_via)
