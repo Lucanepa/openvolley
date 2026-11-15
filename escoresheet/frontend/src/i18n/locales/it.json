@@ -2292,7 +2292,14 @@
     "sanctions": {
       "title": "Sanzioni",
       "formalWarning": "Avvertimento formale"
-    }
+    },
+    "iosFullscreenTip": "Suggerimento: per il vero schermo intero su iOS, tocca Condividi → Aggiungi alla schermata Home, poi apri l'app da lì.",
+    "selectSetter": "Scegli il palleggiatore",
+    "noLineup": "Nessuna formazione disponibile",
+    "exitAdvanced": "Esci da avanzato",
+    "advanced": "Avanzato",
+    "scorerAttention": "Il segnapunti ha bisogno di te",
+    "acknowledge": "Ricevuto"
   },
   "connection": {
     "changeServer": "Cambia server",

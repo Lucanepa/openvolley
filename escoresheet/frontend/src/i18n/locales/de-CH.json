@@ -2292,7 +2292,14 @@
     "sanctions": {
       "title": "Sanktione",
       "formalWarning": "Formelli Warnig"
-    }
+    },
+    "iosFullscreenTip": "Tipp: Für richtigs Vollbild uf iOS tipp uf Teile → Zum Home-Bildschirm und tue d App vo dört uf.",
+    "selectSetter": "Zuespieler wähle",
+    "noLineup": "Kei Ufstellig verfüegbar",
+    "exitAdvanced": "Erwiiteret beände",
+    "advanced": "Erwiiteret",
+    "scorerAttention": "De Schriiber bruucht di",
+    "acknowledge": "Verstande"
   },
   "connection": {
     "changeServer": "Server wächsle",

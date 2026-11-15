@@ -2293,7 +2293,14 @@
     "sanctions": {
       "title": "Sanctions",
       "formalWarning": "Formal warning"
-    }
+    },
+    "iosFullscreenTip": "Tip: For true fullscreen on iOS, tap Share → Add to Home Screen, then open from there.",
+    "selectSetter": "Select setter",
+    "noLineup": "No lineup available",
+    "exitAdvanced": "Exit advanced",
+    "advanced": "Advanced",
+    "scorerAttention": "Scorer needs attention",
+    "acknowledge": "Acknowledge"
   },
   "connection": {
     "changeServer": "Change server",

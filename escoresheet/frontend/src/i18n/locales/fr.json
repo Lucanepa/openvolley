@@ -2291,7 +2291,14 @@
     "sanctions": {
       "title": "Sanctions",
       "formalWarning": "Avertissement formel"
-    }
+    },
+    "iosFullscreenTip": "Astuce : pour un vrai plein écran sur iOS, touche Partager → Sur l'écran d'accueil, puis ouvre l'app depuis là.",
+    "selectSetter": "Choisis le passeur",
+    "noLineup": "Aucune position de base disponible",
+    "exitAdvanced": "Quitter le mode avancé",
+    "advanced": "Avancé",
+    "scorerAttention": "Le marqueur a besoin de toi",
+    "acknowledge": "Compris"
   },
   "connection": {
     "changeServer": "Changer de serveur",
