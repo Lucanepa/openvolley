@@ -2014,6 +2014,10 @@
       "other": "The roster cannot be sent ({{problem}})."
     }
   },
+  "testMatches": {
+    "show": "Switch to test matches",
+    "back": "Switch to real games"
+  },
   "benchDashboard": {
     "title": "Team dashboard",
     "selectGame": "Select game",

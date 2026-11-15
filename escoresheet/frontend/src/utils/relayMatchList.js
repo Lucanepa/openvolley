@@ -13,15 +13,17 @@ import { isStalePickerMatch } from './pickerMatches'
 
 const rowsOf = (rows) => (Array.isArray(rows) ? rows.filter((m) => m && typeof m === 'object') : [])
 
+/** A rehearsal (test) match: the pickers list those apart, on "Switch to test matches". */
+export const isTestRow = (m) => m?.test === true
+
 /**
  * Rows a referee can join: the scorer switched the referee connection on (a
- * rehearsal match included: the scorer switched it on to rehearse with one),
- * and not stale.
+ * and not stale), the real matches or, with `test`, only the rehearsal ones.
  * @param {Array<object>} rows
  * @param {number} [now]
  */
-export function refereeJoinableMatches(rows, now = Date.now()) {
-  return rowsOf(rows).filter((m) => m.refereeConnectionEnabled === true && !isStalePickerMatch(m, now))
+export function refereeJoinableMatches(rows, now = Date.now(), { test = false } = {}) {
+  return rowsOf(rows).filter((m) => m.refereeConnectionEnabled === true && isTestRow(m) === test && !isStalePickerMatch(m, now))
 }
 
 /**
@@ -30,7 +32,7 @@ export function refereeJoinableMatches(rows, now = Date.now()) {
  * @param {Array<object>} rows
  * @param {number} [now]
  */
-export function benchJoinableMatches(rows, now = Date.now()) {
+export function benchJoinableMatches(rows, now = Date.now(), { test = false } = {}) {
   return rowsOf(rows).filter((m) => (m.homeTeamConnectionEnabled === true || m.awayTeamConnectionEnabled === true) &&
-    !isStalePickerMatch(m, now))
+    isTestRow(m) === test && !isStalePickerMatch(m, now))
 }

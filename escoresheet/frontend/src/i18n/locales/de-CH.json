@@ -2013,6 +2013,10 @@
       "other": "Dä Kader cha nöd gschickt werde ({{problem}})."
     }
   },
+  "testMatches": {
+    "show": "Zu Testspielen wechseln",
+    "back": "Zu echten Spielen wechseln"
+  },
   "benchDashboard": {
     "title": "Team-Dashboard",
     "selectGame": "Spiil uswähle",

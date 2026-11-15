@@ -827,7 +827,7 @@ describe('backend relay in cloud mode (IS_CLOUD)', () => {
     child?.kill('SIGKILL')
   })
 
-  it('a test (rehearsal) match is neither listed nor fanned out live: it belongs to the venue relay', async () => {
+  it('a test (rehearsal) match is listed only on ?test=1, and its live state reaches its own subscribers', async () => {
     const wsUrl = `ws://127.0.0.1:${port}`
     const rehearsal = await openClient(wsUrl)
     const official = await openClient(wsUrl)
@@ -843,6 +843,8 @@ describe('backend relay in cloud mode (IS_CLOUD)', () => {
     }
     const list = await (await fetch(`http://127.0.0.1:${port}/api/match/list`)).json()
     assert.deepEqual(list.matches.map((m) => m.id), ['cloud-real'])
+    const testList = await (await fetch(`http://127.0.0.1:${port}/api/match/list?test=1`)).json()
+    assert.deepEqual(testList.matches.map((m) => m.id), ['cloud-test'])
     hidden.ws.close()
 
     const display = await openClient(wsUrl)
@@ -851,11 +853,8 @@ describe('backend relay in cloud mode (IS_CLOUD)', () => {
     await display.waitFor((m) => m.type === 'match-full-data' && m.matchId === 'cloud-real')
     rehearsal.send({ type: 'live-state-update', matchId: 'cloud-test', liveState: { points_a: 1 } })
     official.send({ type: 'live-state-update', matchId: 'cloud-real', liveState: { points_a: 2 } })
-    const live = await display.waitFor((m) => m.type === 'live-state-update')
-    assert.equal(live.matchId, 'cloud-real')
-    display.send({ type: 'ping' })
-    await display.waitFor((m) => m.type === 'pong')
-    assert.equal(display.messages.some((m) => m.type === 'live-state-update' && m.matchId === 'cloud-test'), false)
+    await display.waitFor((m) => m.type === 'live-state-update' && m.matchId === 'cloud-real')
+    await display.waitFor((m) => m.type === 'live-state-update' && m.matchId === 'cloud-test')
 
     for (const c of [rehearsal, official, display]) c.ws.close()
   })

@@ -2013,6 +2013,10 @@
       "other": "La rosa non può essere inviata ({{problem}})."
     }
   },
+  "testMatches": {
+    "show": "Passa alle partite di prova",
+    "back": "Passa alle partite reali"
+  },
   "benchDashboard": {
     "title": "Dashboard squadra",
     "selectGame": "Seleziona partita",

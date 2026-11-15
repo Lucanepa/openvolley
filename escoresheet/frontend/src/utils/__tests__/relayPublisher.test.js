@@ -343,16 +343,16 @@ describe('test (rehearsal) matches: live state to a local relay only', () => {
     expect(liveStateTargets({ isTest: false, relayKey: 'match_1', relayUrl: 'wss://backend.openvolley.app' })).toEqual({ relay: true, cloud: true })
     expect(liveStateTargets({ isTest: false, relayKey: null, relayUrl: 'ws://127.0.0.1:8080' })).toEqual({ relay: false, cloud: true })
     expect(liveStateTargets({ isTest: true, relayKey: 'test_match', relayUrl: 'ws://192.168.1.20:8080' })).toEqual({ relay: true, cloud: false })
-    expect(liveStateTargets({ isTest: true, relayKey: 'test_match', relayUrl: 'wss://backend.openvolley.app' })).toEqual({ relay: false, cloud: false })
-    expect(liveStateTargets({ isTest: true, relayKey: 'test_match', relayUrl: null })).toEqual({ relay: false, cloud: false })
+    expect(liveStateTargets({ isTest: true, relayKey: 'test_match', relayUrl: 'wss://backend.openvolley.app' })).toEqual({ relay: true, cloud: false })
+    expect(liveStateTargets({ isTest: true, relayKey: 'test_match', relayUrl: null })).toEqual({ relay: true, cloud: false })
   })
 
   // 2026-10-19: a test match's full data reached the cloud relay on every sync
   it("a test match's full data goes to a local relay only, an official match's anywhere", () => {
     expect(mayPublishMatchData({ id: 1 }, 'wss://backend.openvolley.app')).toBe(true)
     expect(mayPublishMatchData({ id: 1, test: true }, 'ws://192.168.1.20:8080')).toBe(true)
-    expect(mayPublishMatchData({ id: 1, test: true }, 'wss://backend.openvolley.app')).toBe(false)
-    expect(mayPublishMatchData({ id: 1, test: true }, null)).toBe(false)
+    expect(mayPublishMatchData({ id: 1, test: true }, 'wss://backend.openvolley.app')).toBe(true)
+    expect(mayPublishMatchData({ id: 1, test: true }, null)).toBe(true)
     expect(mayPublishMatchData(null, 'ws://127.0.0.1:8080')).toBe(false)
   })
 
@@ -371,8 +371,8 @@ describe('test (rehearsal) matches: live state to a local relay only', () => {
     // A rehearsal on the venue relay: the LedBox gets it, the cloud never
     const rehearsal = liveStateTargets({ isTest: true, relayKey: 'test-match-default', relayUrl: 'ws://192.168.1.20:8080' })
     expect(await run(rehearsal)).toEqual({ calls: ['relay'], out: undefined })
-    // A rehearsal with only the cloud relay: nothing at all
-    expect(await run(liveStateTargets({ isTest: true, relayKey: 'test-match-default', relayUrl: 'wss://backend.openvolley.app' }))).toEqual({ calls: [], out: undefined })
+    // A rehearsal on the cloud relay: the relay only (the tablets list it on "Switch to test matches"), never the database
+    expect(await run(liveStateTargets({ isTest: true, relayKey: 'test-match-default', relayUrl: 'wss://backend.openvolley.app' }))).toEqual({ calls: ['relay'], out: undefined })
     // No room key yet: the cloud still gets an official match
     expect(await run(liveStateTargets({ isTest: false, relayKey: null }))).toEqual({ calls: ['cloud'], out: 'written' })
     expect(await run(undefined)).toEqual({ calls: [], out: undefined })

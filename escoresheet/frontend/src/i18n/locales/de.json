@@ -1826,6 +1826,10 @@
       "other": "Der Kader kann nicht gesendet werden ({{problem}})."
     }
   },
+  "testMatches": {
+    "show": "Zu Testspielen wechseln",
+    "back": "Zu echten Spielen wechseln"
+  },
   "benchDashboard": {
     "title": "Team-Dashboard",
     "selectGame": "Spiel auswählen",
