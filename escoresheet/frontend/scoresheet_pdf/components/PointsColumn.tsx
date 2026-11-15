@@ -8,6 +8,7 @@ import { MARK_STROKE } from './Marks';
 // Owner 2026-10-07 (field-spec 4.4, 4.7): no "T" through the unused numbers at
 // set end. Owner 2026-10-13: once the set is over the numbers above the team's
 // final score are left blank (`blank`), and set-5 panel 3 has the reverse T.
+// Owner 2026-11-15: a set never played (`unused`) prints no numbers at all.
 export const PointBox: React.FC<{
     num: number;
     filledState?: 0 | 1;
@@ -174,11 +175,13 @@ export const PointsColumn: React.FC<{
     maxScore?: number;
     setFinished?: boolean;
     finalScore?: number;
-}> = ({ isLast, timeouts = ["", ""], markedPoints = [], circledPoints = [], maxScore = 0, setFinished = false, finalScore = 0 }) => {
+    /** a set never played (owner 2026-11-15): no numbers, not even grey */
+    unused?: boolean;
+}> = ({ isLast, timeouts = ["", ""], markedPoints = [], circledPoints = [], maxScore = 0, setFinished = false, finalScore = 0, unused = false }) => {
     const rows = calculateRowsPerColumn(maxScore, 4, 12);
     return (
         <div className={`flex flex-col h-full shrink-0 border-t border-l border-black ${isLast ? '' : 'border-r'}`} style={{ width: '15mm' }}>
-            <PointsGrid columns={4} rows={rows} gridMm={30} markedPoints={markedPoints} circledPoints={circledPoints} shownUpTo={setFinished ? finalScore : null} />
+            <PointsGrid columns={4} rows={rows} gridMm={30} markedPoints={markedPoints} circledPoints={circledPoints} shownUpTo={unused ? 0 : setFinished ? finalScore : null} />
             <TimeoutBlock timeouts={timeouts} />
         </div>
     );
@@ -197,11 +200,13 @@ export const PointsColumn5: React.FC<{
     pointsAtChange?: number | null;
     /** a rule on the right (set-5 panel 1: the line between panels 1 and 2) */
     ruleRight?: boolean;
-}> = ({ timeouts = ["", ""], markedPoints = [], circledPoints = [], setFinished = false, finalScore = 0, pointsAtChange = null, ruleRight = false }) => {
+    /** a set never played (owner 2026-11-15): no numbers, not even grey */
+    unused?: boolean;
+}> = ({ timeouts = ["", ""], markedPoints = [], circledPoints = [], setFinished = false, finalScore = 0, pointsAtChange = null, ruleRight = false, unused = false }) => {
     const fontPx = fontForRows(25, 8);
     // after the change of courts the panel ends at the points then; a set over
     // without a change (a default) at the final score
-    const shownUpTo = pointsAtChange !== null && pointsAtChange !== undefined ? pointsAtChange : setFinished ? finalScore : null;
+    const shownUpTo = unused ? 0 : pointsAtChange !== null && pointsAtChange !== undefined ? pointsAtChange : setFinished ? finalScore : null;
     return (
         <div className={`flex flex-col shrink-0 border-t border-l border-black ${ruleRight ? 'border-r' : ''}`} style={{ width: '15mm', height: '40mm' }}>
             <div className="grid grid-cols-3 bg-white shrink-0 border-b border-black" style={{ height: 'calc(25mm - 1px)' }} data-testid="points-grid">
@@ -233,7 +238,9 @@ export const PointsColumn30: React.FC<{
     maxScore?: number;
     setFinished?: boolean;
     finalScore?: number;
-}> = ({ isPanel3 = false, ruleRight = false, timeouts = ["", ""], markedPoints = [], circledPoints = [], preChangePoints = null, maxScore = 0, setFinished = false, finalScore = 0 }) => {
+    /** a set never played (owner 2026-11-15): no numbers, not even grey */
+    unused?: boolean;
+}> = ({ unused = false, isPanel3 = false, ruleRight = false, timeouts = ["", ""], markedPoints = [], circledPoints = [], preChangePoints = null, maxScore = 0, setFinished = false, finalScore = 0 }) => {
     const rows = calculateRowsPerColumn(maxScore, 3, 10);
     return (
         <div className={`flex flex-col shrink-0 border-t border-l border-black ${ruleRight ? 'border-r' : ''}`} style={{ width: '15mm', height: '40mm' }}>
@@ -243,7 +250,7 @@ export const PointsColumn30: React.FC<{
                 gridMm={25}
                 markedPoints={markedPoints}
                 circledPoints={circledPoints}
-                shownUpTo={setFinished ? finalScore : null}
+                shownUpTo={unused ? 0 : setFinished ? finalScore : null}
                 // panel 3: the left team's points before the change, under the reverse T
                 reverseT={isPanel3 && preChangePoints ? preChangePoints : null}
             />
