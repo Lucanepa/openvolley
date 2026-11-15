@@ -55,13 +55,14 @@ export const Sanctions: React.FC<SanctionsProps> = ({ items = [], improperReques
                 </div>
             </div>
 
-            {/* W(arning) P(enalty) E(xpulsion) DQ (disqualification): "DQ", not "D",
-                which the W / P columns use for a delay */}
+            {/* W(arning) P(enalty) E(xpulsion) D(isqualification), as the paper
+                sheet (owner 2026-11-15: "D", not "DQ"). A "D" in the W / P cells
+                is a delay sanction; the header's D is the column's name. */}
             <div className="grid grid-cols-7 text-[9px] font-bold text-center border-b border-black bg-white shrink-0" style={{ height: '0.7cm' }}>
                 <div className="border-r border-black flex items-center justify-center" title="Warning">W</div>
                 <div className="border-r border-black flex items-center justify-center" title="Penalty">P</div>
                 <div className="border-r border-black flex items-center justify-center" title="Expulsion">E</div>
-                <div className="border-r border-black flex items-center justify-center" title="Disqualification">DQ</div>
+                <div className="border-r border-black flex items-center justify-center" title="Disqualification" data-testid="sanctions-head-disqualification">D</div>
                 <div className="border-r border-black flex items-center justify-center h-full">
                     {/* The letters half a pixel up (a transform: a padding moved
                         nothing, the text snaps to whole pixels), so they look
@@ -280,138 +281,105 @@ export const Results: React.FC<ResultsProps> = ({
     return (
         <div className={`border border-black bg-white flex flex-col h-full ${flush ? '' : 'mr-1'}`}>
             <div className="bg-gray-200 border-b border-black text-center font-bold text-[10px] py-0.5 shrink-0">RESULT</div>
-            <div className="grid grid-cols-[1fr_80px_1fr] gap-px bg-black flex-1 min-h-0">
-                {/* Team A Stats */}
-                <div className="bg-white flex flex-col">
-                    <div className="flex items-center gap-1 px-1 border-b border-black h-5 bg-gray-50">
-                         <div className="w-4 h-4 rounded-full border border-black flex items-center justify-center bg-white text-black text-[9px] font-bold shrink-0">A</div>
-                         <FitText max={9} min={5} className="font-bold text-center uppercase w-full bg-transparent">{coinTossConfirmed ? teamAShortName : ''}</FitText>
-                    </div>
-                    <div className="grid grid-cols-4 text-[8px] text-center font-bold bg-white border-b border-black">
-                        <div className="border-r border-black">T</div><div className="border-r border-black">S</div><div className="border-r border-black">W</div><div >P</div>
-                    </div>
-                    <div className="flex-1 flex flex-col">
-                        {displaySets.map((set, idx) => {
-                            const setData = setResults.find(r => r.setNumber === set);
-                            const isFinished = setData && setData.teamATimeouts !== null;
-                            return (
-                             <div key={set} className={`grid grid-cols-4 flex-1 ${idx < displaySets.length - 1 ? 'border-b ss-rule' : ''} text-xs relative`} data-testid="result-team-row" data-team="A" data-set={set} data-row={idx + 1}>
-                                <div className="border-r ss-rule flex items-center justify-center text-[9px] font-bold">
-                                    {isFinished ? (setData.teamATimeouts ?? 0) : ''}
-                                </div>
-                                <div className="border-r ss-rule flex items-center justify-center text-[9px] font-bold">
-                                    {isFinished ? (setData.teamASubstitutions ?? 0) : ''}
-                                </div>
-                                <div className="border-r ss-rule flex items-center justify-center text-[9px] font-bold">
-                                    {isFinished ? (setData.teamAWon ?? 0) : ''}
-                                </div>
-                                <div className="flex items-center justify-center text-[9px] font-bold">
-                                    {isFinished ? (setData.teamAPoints ?? 0) : ''}
-                                </div>
-                             </div>
-                            );
-                        })}
-                        {/* Total Row */}
-                        <div className="border-t border-black grid grid-cols-4 bg-gray-50" style={{ height: '0.7cm' }}>
-                            <div className="border-r ss-rule text-center font-bold flex items-center justify-center text-[9px]">
-                                {setResults.reduce((sum, r) => sum + (r.teamATimeouts !== null ? (r.teamATimeouts || 0) : 0), 0) || 0}
-                            </div>
-                            <div className="border-r ss-rule text-center font-bold flex items-center justify-center text-[9px]">
-                                {setResults.reduce((sum, r) => sum + (r.teamASubstitutions !== null ? (r.teamASubstitutions || 0) : 0), 0) || 0}
-                            </div>
-                            <div className="border-r ss-rule text-center font-bold flex items-center justify-center text-[9px]">
-                                {setResults.reduce((sum, r) => sum + (r.teamAWon !== null ? (r.teamAWon || 0) : 0), 0) || 0}
-                            </div>
-                            <div className="text-center font-bold flex items-center justify-center text-[9px]">
-                                {setResults.reduce((sum, r) => sum + (r.teamAPoints !== null ? (r.teamAPoints || 0) : 0), 0) || 0}
-                            </div>
-                        </div>
-                    </div>
+            {/* One grid for the whole table: team A, the centre (Set, Duration) and
+                team B share the same row tracks, so every row's top and bottom line
+                is at the same height across the three blocks (owner 2026-11-15: the
+                centre's rows sat lower and were shorter than the teams' in the
+                referee view, where the text's line height differs; each block had
+                rows of its own). The header rows have fixed heights, the five set
+                rows share the rest equally (about square cells), Total 0.7 cm. The
+                1 px column gaps show the black background: the blocks' rules. */}
+            <div className="grid bg-black flex-1 min-h-0" style={{ gridTemplateColumns: '1fr 80px 1fr', gridTemplateRows: `20px 13px repeat(${displaySets.length}, minmax(16px, 1fr)) 0.7cm`, columnGap: '1px' }} data-testid="result-table">
+                {/* Team names */}
+                <div className="flex items-center gap-1 px-1 border-b border-black bg-gray-50 min-w-0 overflow-hidden" data-testid="result-head" data-block="A">
+                    <div className="w-4 h-4 rounded-full border border-black flex items-center justify-center bg-white text-black text-[9px] font-bold shrink-0">A</div>
+                    <FitText max={9} min={5} className="font-bold text-center uppercase w-full bg-transparent">{coinTossConfirmed ? teamAShortName : ''}</FitText>
+                </div>
+                <div className="border-b border-black bg-gray-200" data-testid="result-head" data-block="C"></div>
+                <div className="flex items-center gap-1 px-1 border-b border-black bg-gray-50 flex-row-reverse min-w-0 overflow-hidden" data-testid="result-head" data-block="B">
+                    <div className="w-4 h-4 rounded-full border border-black flex items-center justify-center bg-white text-black text-[9px] font-bold shrink-0">B</div>
+                    <FitText max={9} min={5} className="font-bold text-center uppercase w-full bg-transparent">{coinTossConfirmed ? teamBShortName : ''}</FitText>
                 </div>
 
-                {/* Center Duration & Set */}
-                <div className="bg-white flex flex-col">
-                     <div className="h-5 border-b border-black bg-gray-200"></div>
-                     <div className="bg-white text-[8px] font-bold text-center border-b border-black h-[13px] grid" style={{ gridTemplateColumns: '1fr 2fr' }}>
-                         <span className="border-r border-black flex-1">Set</span>
-                         <span className="flex-1">(Duration)</span>
-                     </div>
-                     <div className="flex-1 flex flex-col">
-                        {displaySets.map((set, idx) => {
-                            const setData = setResults.find(r => r.setNumber === set);
-                            return (
-                            <div key={set} className={`flex-1 ${idx < displaySets.length - 1 ? 'border-b ss-rule' : ''} grid font-bold text-xs bg-white relative`} style={{ gridTemplateColumns: '1fr 2fr' }} data-testid="result-row" data-set={set} data-row={idx + 1}>
-                                <div className="flex items-center justify-center border-r border-black text-[9px]" data-testid="result-row-label">{rowLabel(set)}</div>
-                                <div className="flex items-center justify-center text-[9px]">
+                {/* Column headings */}
+                <div className="grid grid-cols-4 text-[8px] leading-none text-center font-bold bg-white border-b border-black" data-testid="result-subhead" data-block="A">
+                    <div className="border-r border-black flex items-center justify-center">T</div>
+                    <div className="border-r border-black flex items-center justify-center">S</div>
+                    <div className="border-r border-black flex items-center justify-center">W</div>
+                    <div className="flex items-center justify-center">P</div>
+                </div>
+                <div className="grid text-[8px] leading-none text-center font-bold bg-white border-b border-black" style={{ gridTemplateColumns: '1fr 2fr' }} data-testid="result-subhead" data-block="C">
+                    <span className="border-r border-black flex items-center justify-center">Set</span>
+                    <span className="flex items-center justify-center">(Duration)</span>
+                </div>
+                <div className="grid grid-cols-4 text-[8px] leading-none text-center font-bold bg-white border-b border-black" data-testid="result-subhead" data-block="B">
+                    <div className="border-r border-black flex items-center justify-center">P</div>
+                    <div className="border-r border-black flex items-center justify-center">W</div>
+                    <div className="border-r border-black flex items-center justify-center">S</div>
+                    <div className="flex items-center justify-center">T</div>
+                </div>
+
+                {/* The set rows: A, centre and B of a row in the same grid row */}
+                {displaySets.map((set, idx) => {
+                    const setData = setResults.find(r => r.setNumber === set);
+                    const finishedA = setData && setData.teamATimeouts !== null;
+                    const finishedB = setData && setData.teamBTimeouts !== null;
+                    const rule = idx < displaySets.length - 1 ? 'border-b ss-rule' : '';
+                    const num = 'flex items-center justify-center text-[9px] font-bold leading-none min-w-0';
+                    return (
+                        <React.Fragment key={set}>
+                            <div className={`grid grid-cols-4 bg-white min-h-0 ${rule}`} data-testid="result-team-row" data-team="A" data-set={set} data-row={idx + 1}>
+                                <div className={`border-r ss-rule ${num}`}>{finishedA ? (setData.teamATimeouts ?? 0) : ''}</div>
+                                <div className={`border-r ss-rule ${num}`}>{finishedA ? (setData.teamASubstitutions ?? 0) : ''}</div>
+                                <div className={`border-r ss-rule ${num}`}>{finishedA ? (setData.teamAWon ?? 0) : ''}</div>
+                                <div className={num}>{finishedA ? (setData.teamAPoints ?? 0) : ''}</div>
+                            </div>
+                            <div className={`grid bg-white min-h-0 ${rule}`} style={{ gridTemplateColumns: '1fr 2fr' }} data-testid="result-row" data-set={set} data-row={idx + 1}>
+                                <div className={`border-r border-black ${num}`} data-testid="result-row-label">{rowLabel(set)}</div>
+                                <div className={num}>
                                     <SetIntervalCountdown endTime={setData?.endTime} duration={setData?.duration} />
                                 </div>
                             </div>
-                            );
-                        })}
-                        <div className="border-t border-black grid bg-white" style={{ gridTemplateColumns: '1fr 2fr', height: '0.7cm' }}>
-                            <div className="flex items-center justify-center font-bold text-[9px] border-r border-black">Total</div>
-                            <div className="text-center font-bold flex items-center justify-center text-[9px]">
-                                {(() => {
-                                    // Total is the sum of all set durations (in minutes)
-                                    const totalMinutes = setResults.reduce((sum, r) => {
-                                        if (!r.duration) return sum;
-                                        // Parse duration string like "25'" to get minutes
-                                        const match = r.duration.match(/(\d+)'/);
-                                        return sum + (match ? parseInt(match[1], 10) : 0);
-                                    }, 0);
-                                    return totalMinutes > 0 ? `${totalMinutes}'` : '';
-                                })()}
+                            <div className={`grid grid-cols-4 bg-white min-h-0 ${rule}`} data-testid="result-team-row" data-team="B" data-set={set} data-row={idx + 1}>
+                                <div className={`border-r ss-rule ${num}`}>{finishedB ? (setData.teamBPoints ?? 0) : ''}</div>
+                                <div className={`border-r ss-rule ${num}`}>{finishedB ? (setData.teamBWon ?? 0) : ''}</div>
+                                <div className={`border-r ss-rule ${num}`}>{finishedB ? (setData.teamBSubstitutions ?? 0) : ''}</div>
+                                <div className={num}>{finishedB ? (setData.teamBTimeouts ?? 0) : ''}</div>
                             </div>
-                        </div>
-                     </div>
-                </div>
+                        </React.Fragment>
+                    );
+                })}
 
-                {/* Team B Stats */}
-                 <div className="bg-white flex flex-col">
-                    <div className="flex items-center gap-1 px-1 border-b border-black h-5 bg-gray-50 flex-row-reverse">
-                         <div className="w-4 h-4 rounded-full border border-black flex items-center justify-center bg-white text-black text-[9px] font-bold shrink-0">B</div>
-                         <FitText max={9} min={5} className="font-bold text-center uppercase w-full bg-transparent">{coinTossConfirmed ? teamBShortName : ''}</FitText>
-                    </div>
-                    <div className="grid grid-cols-4 text-[8px] text-center font-bold bg-white border-b border-black">
-                        <div className="border-r border-black">P</div><div className="border-r border-black">W</div><div className="border-r border-black">S</div><div>T</div>
-                    </div>
-                    <div className="flex-1 flex flex-col">
-                        {displaySets.map((set, idx) => {
-                            const setData = setResults.find(r => r.setNumber === set);
-                            const isFinished = setData && setData.teamBTimeouts !== null;
-                            return (
-                             <div key={set} className={`grid grid-cols-4 flex-1 ${idx < displaySets.length - 1 ? 'border-b ss-rule' : ''} text-xs min-h-[16px] relative`} data-testid="result-team-row" data-team="B" data-set={set} data-row={idx + 1}>
-                                <div className="border-r ss-rule flex items-center justify-center text-[9px] font-bold">
-                                    {isFinished ? (setData.teamBPoints ?? 0) : ''}
-                                </div>
-                                <div className="border-r ss-rule flex items-center justify-center text-[9px] font-bold">
-                                    {isFinished ? (setData.teamBWon ?? 0) : ''}
-                                </div>
-                                <div className="border-r ss-rule flex items-center justify-center text-[9px] font-bold">
-                                    {isFinished ? (setData.teamBSubstitutions ?? 0) : ''}
-                                </div>
-                                <div className="flex items-center justify-center text-[9px] font-bold">
-                                    {isFinished ? (setData.teamBTimeouts ?? 0) : ''}
-                                </div>
-                             </div>
-                            );
-                        })}
-                        <div className="border-t border-black grid grid-cols-4 bg-gray-50" style={{ height: '0.7cm' }}>
-                            <div className="border-r ss-rule text-center font-bold flex items-center justify-center text-[9px]">
-                                {setResults.reduce((sum, r) => sum + (r.teamBPoints !== null ? (r.teamBPoints || 0) : 0), 0) || 0}
+                {/* Total row */}
+                {(() => {
+                    const sum = (key: keyof SetResult) => setResults.reduce((acc, r) => acc + (r[key] !== null ? ((r[key] as number) || 0) : 0), 0) || 0;
+                    // Total is the sum of all set durations (in minutes), from strings like "25'"
+                    const totalMinutes = setResults.reduce((acc, r) => {
+                        const match = r.duration ? r.duration.match(/(\d+)'/) : null;
+                        return acc + (match ? parseInt(match[1], 10) : 0);
+                    }, 0);
+                    const cell = 'flex items-center justify-center text-center font-bold text-[9px] leading-none min-w-0';
+                    return (
+                        <>
+                            <div className="grid grid-cols-4 bg-gray-50 border-t border-black min-h-0" data-testid="result-total" data-block="A">
+                                <div className={`border-r ss-rule ${cell}`}>{sum('teamATimeouts')}</div>
+                                <div className={`border-r ss-rule ${cell}`}>{sum('teamASubstitutions')}</div>
+                                <div className={`border-r ss-rule ${cell}`}>{sum('teamAWon')}</div>
+                                <div className={cell}>{sum('teamAPoints')}</div>
                             </div>
-                            <div className="border-r ss-rule text-center font-bold flex items-center justify-center text-[9px]">
-                                {setResults.reduce((sum, r) => sum + (r.teamBWon !== null ? (r.teamBWon || 0) : 0), 0) || 0}
+                            <div className="grid bg-white border-t border-black min-h-0" style={{ gridTemplateColumns: '1fr 2fr' }} data-testid="result-total" data-block="C">
+                                <div className={`border-r border-black ${cell}`}>Total</div>
+                                <div className={cell}>{totalMinutes > 0 ? `${totalMinutes}'` : ''}</div>
                             </div>
-                            <div className="border-r ss-rule text-center font-bold flex items-center justify-center text-[9px]">
-                                {setResults.reduce((sum, r) => sum + (r.teamBSubstitutions !== null ? (r.teamBSubstitutions || 0) : 0), 0) || 0}
+                            <div className="grid grid-cols-4 bg-gray-50 border-t border-black min-h-0" data-testid="result-total" data-block="B">
+                                <div className={`border-r ss-rule ${cell}`}>{sum('teamBPoints')}</div>
+                                <div className={`border-r ss-rule ${cell}`}>{sum('teamBWon')}</div>
+                                <div className={`border-r ss-rule ${cell}`}>{sum('teamBSubstitutions')}</div>
+                                <div className={cell}>{sum('teamBTimeouts')}</div>
                             </div>
-                            <div className="text-center font-bold flex items-center justify-center text-[9px]">
-                                {setResults.reduce((sum, r) => sum + (r.teamBTimeouts !== null ? (r.teamBTimeouts || 0) : 0), 0) || 0}
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                        </>
+                    );
+                })()}
             </div>
 
             {/* Match start / end / duration: "HH h MM min" / "H h MM min" (field-spec 9),
