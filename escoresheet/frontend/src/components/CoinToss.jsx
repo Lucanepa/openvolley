@@ -10,6 +10,7 @@ import { saveMatchSignature, clearMatchSignatures } from '../utils/saveSignature
 import { rosterSignatureKey, staleSignatureFields, signaturesClearedRemark, signatureReplacedRemark } from '../domain/rosterSignatures'
 import { phoneSignContext, signatureSource, signatureUpdate, SLOT_OF_ROLE, PRE_MATCH_SIGNATURE_FIELD as SIGNATURE_FIELD_OF_ROLE } from '../domain/phoneSignature'
 import { coinTossConfirmIssues } from '../domain/coinTossChecks'
+import { coinTossChoiceOf, coinTossDraftOf } from '../domain/coinTossDraft'
 import Modal from './Modal'
 import MenuList from './MenuList'
 import ballFallback from '../ball_fallback.png'
@@ -571,13 +572,13 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           })))
         }
 
-        // Load coin toss data if previously saved
-        if (match.coinTossTeamA !== undefined && match.coinTossTeamB !== undefined) {
-          setTeamA(match.coinTossTeamA)
-          setTeamB(match.coinTossTeamB)
-          setServeA(match.coinTossServeA !== undefined ? match.coinTossServeA : true)
-          setServeB(match.coinTossServeB !== undefined ? match.coinTossServeB : false)
-        }
+        // The toss as left (its draft, after Back) or as confirmed
+        // (domain/coinTossDraft)
+        const choice = coinTossChoiceOf(match)
+        setTeamA(choice.teamA)
+        setTeamB(choice.teamB)
+        setServeA(choice.serveA)
+        setServeB(choice.serveB)
 
         // Load signatures
         if (match.homeCoachSignature) {
@@ -616,17 +617,27 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
   // A confirmed toss changes only through Corrections (planCoinToss updates
   // the row, the coin_toss event and the cloud together): changed here it
   // stayed on this device, and a restored match served the other way round
+  // A choice not yet confirmed is kept on the match at once, as a draft: Back
+  // to Match setup and returning shows it again (domain/coinTossDraft)
+  function saveCoinTossDraft(nextTeamA, nextServeA) {
+    if (!matchId) return
+    db.matches.update(matchId, { coinTossDraft: coinTossDraftOf(nextTeamA, nextServeA) })
+      .catch(err => console.warn('[CoinToss] Saving the coin toss draft failed:', err?.message))
+  }
+
   function switchTeams() {
     if (isCoinTossConfirmed) return
     const temp = teamA
     setTeamA(teamB)
     setTeamB(temp)
+    saveCoinTossDraft(teamB, serveA)
   }
 
   function switchServe() {
     if (isCoinTossConfirmed) return
     setServeA(!serveA)
     setServeB(!serveB)
+    saveCoinTossDraft(teamA, !serveA)
   }
 
   // Sign on phone for a pre-match signature (SignaturePad `phone`)
@@ -730,7 +741,8 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
         coinTossTeamB: teamB,
         coinTossServeA: serveA,
         coinTossServeB: serveB,
-        coinTossConfirmed: true  // Mark coin toss as confirmed
+        coinTossConfirmed: true,  // Mark coin toss as confirmed
+        coinTossDraft: null // confirmed: the draft has served (domain/coinTossDraft)
       }
 
       // Save signatures - use actual signatures for official matches, placeholder for test
