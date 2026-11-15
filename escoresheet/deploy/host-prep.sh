@@ -312,8 +312,11 @@ apply() {
 
   install -d -m 0755 -o root -g root "$OV_STATUS_DIR"
   # get.openvolley.app tree (ov-pkgs, read-only bind), filled by publish-pkgs.sh.
-  # Small (packages only), so plain root fs, no loop image.
-  install -d -m 0755 -o root -g root "${OV_BASE}/pkgs"
+  # Small (packages only), so plain root fs, no loop image. Created only when it
+  # is missing: publish-pkgs.sh rsyncs into it as the ssh user (debian on ov-vps,
+  # RUNBOOK), so a later host-prep run must not give an existing tree back to
+  # root (it did on 14.11.2026 and the 3.2.0 publish stopped with rsync exit 23).
+  [ -d "${OV_BASE}/pkgs" ] || install -d -m 0755 -o root -g root "${OV_BASE}/pkgs"
 
   if ! id ovbackup >/dev/null 2>&1; then
     log "creating system user ovbackup"
