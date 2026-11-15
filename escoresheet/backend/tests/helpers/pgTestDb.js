@@ -168,15 +168,18 @@ export async function createTestDatabase (label, { schemaSql = SCHEMA_SQL } = {}
 /**
  * Applies db/roles.sql itself (with psql, like apply-roles.sh) to the
  * database at `dbUrl`, with `appRole` / `ownerRole` in place of ov_app /
- * ov_owner: roles are cluster-wide and the test server is shared, so every
- * test database gets its own pair. Returns the app role's connection string:
+ * ov_owner (and `readonlyRole`, default <appRole>_ro, for ov_readonly): roles
+ * are cluster-wide and the test server is shared, so every test database gets
+ * its own set. Returns the app role's connection string:
  * the backend then runs with exactly the production grants. The caller drops
  * both roles after the database (dropRoles).
  */
-export function applyRolesSql (dbUrl, { appRole, ownerRole }) {
+export function applyRolesSql (dbUrl, { appRole, ownerRole, readonlyRole = readonlyRoleOf(appRole) }) {
   const sql = readFileSync(join(here, '..', '..', 'db', 'roles.sql'), 'utf8')
     .replace(/\bov_app\b/g, appRole)
     .replace(/\bov_owner\b/g, ownerRole)
+    // ov_readonly (db-browse.sh) too: parallel files would ALTER one shared role
+    .replace(/\bov_readonly\b/g, readonlyRole)
   const password = 'app-' + Math.random().toString(36).slice(2).padEnd(16, '0')
   // ov_owner is the cluster superuser in production (roles.sql header): the
   // foreign-key checks run as the owner of the referenced table
@@ -187,6 +190,9 @@ export function applyRolesSql (dbUrl, { appRole, ownerRole }) {
   u.password = password
   return u.toString()
 }
+
+/** The ov_readonly stand-in of applyRolesSql for an app role. */
+export const readonlyRoleOf = (appRole) => `${appRole}_ro`.slice(0, 63)
 
 /** Drops the roles of applyRolesSql once their database is gone. */
 export async function dropRoles (admin, roles) {

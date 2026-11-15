@@ -50,6 +50,12 @@
 --               ov_meta USAGE, and SELECT on schema_migrations (the
 --                       migration record of scripts/migrate.mjs, read by
 --                       lib/schemaVersion.js; skipped when absent)
+--   ov_readonly the operator's SQL browser (deploy/db-browse.sh): reads the
+--             views of schema ov_read (each table of public without its
+--             secret columns), read-only transactions, 3 connections, 15 s
+--             per statement; password :ov_readonly_pw
+--             (OV_READONLY_PW in .env, optional: without it only the
+--             container's local socket logs in). See the end of this file.
 
 \set ON_ERROR_STOP on
 BEGIN;
@@ -276,5 +282,94 @@ SELECT format('REVOKE ALL ON %s FROM PUBLIC, ov_app', t)
   FROM unnest(ARRAY['ov_meta.schema_migrations']) AS t WHERE to_regclass(t) IS NOT NULL \gexec
 SELECT format('GRANT SELECT ON %s TO ov_app', t)
   FROM unnest(ARRAY['ov_meta.schema_migrations']) AS t WHERE to_regclass(t) IS NOT NULL \gexec
+
+-- ov_readonly: the operator's SQL browser (deploy/db-browse.sh: psql or pgweb
+-- through an SSH tunnel). It reads schema ov_read only: one view per table of
+-- public with every column but the secret ones (the same pattern as
+-- lib/dataAdmin.js SECRET_COLUMN_RE: game PINs, token and code hashes, ...),
+-- so `select * from matches` works and never shows a PIN. Nothing of public,
+-- auth or ov_meta directly. Read-only transactions, 15 s per statement, 3
+-- connections. ov_read is dropped and rebuilt on every run: after a
+-- migration it follows the new columns (this file runs after every
+-- migration that adds a table). The views belong to ov_owner and nothing
+-- depends on them. LOGIN: the container's local socket (docker exec psql)
+-- needs no password; TCP (pgweb) needs :ov_readonly_pw (OV_READONLY_PW in .env).
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ov_readonly') THEN
+    CREATE ROLE ov_readonly LOGIN;
+  END IF;
+END $$;
+ALTER ROLE ov_readonly WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT CONNECTION LIMIT 3;
+ALTER ROLE ov_readonly SET default_transaction_read_only = on;
+ALTER ROLE ov_readonly SET statement_timeout = '15s';
+ALTER ROLE ov_readonly SET idle_in_transaction_session_timeout = '60s';
+ALTER ROLE ov_readonly SET search_path = ov_read;
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN SELECT g.rolname FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid
+            WHERE m.member = 'ov_readonly'::regrole LOOP
+    EXECUTE format('REVOKE %I FROM ov_readonly', r.rolname);
+  END LOOP;
+END $$;
+\if :{?ov_readonly_pw}
+SET LOCAL log_statement = 'none';
+SET LOCAL log_min_duration_statement = -1;
+SET LOCAL log_min_error_statement = panic;
+SELECT length(:'ov_readonly_pw') >= 16 AS ov_ro_pw_ok \gset
+\if :ov_ro_pw_ok
+ALTER ROLE ov_readonly PASSWORD :'ov_readonly_pw';
+\else
+DO $$ BEGIN RAISE EXCEPTION 'ov_readonly_pw is shorter than 16 characters (generate it with: openssl rand -hex 32)'; END $$;
+\endif
+RESET log_statement;
+RESET log_min_duration_statement;
+RESET log_min_error_statement;
+\endif
+SELECT format('REVOKE ALL ON DATABASE %I FROM ov_readonly', current_database()) \gexec
+SELECT format('GRANT CONNECT ON DATABASE %I TO ov_readonly', current_database()) \gexec
+-- Nothing outside ov_read (a grant given by hand, column grants included)
+REVOKE ALL ON SCHEMA public, auth FROM ov_readonly;
+DO $$
+BEGIN
+  IF to_regnamespace('ov_meta') IS NOT NULL THEN EXECUTE 'REVOKE ALL ON SCHEMA ov_meta FROM ov_readonly'; END IF;
+END $$;
+DO $$
+DECLARE r record; cols text;
+BEGIN
+  FOR r IN SELECT c.oid, c.relkind FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname IN ('public', 'auth') AND c.relkind IN ('r', 'p', 'v', 'm', 'S') LOOP
+    EXECUTE format('REVOKE ALL ON %s FROM ov_readonly', r.oid::regclass);
+    CONTINUE WHEN r.relkind = 'S';
+    SELECT string_agg(quote_ident(attname), ', ') INTO cols
+      FROM pg_attribute WHERE attrelid = r.oid AND attnum > 0 AND NOT attisdropped;
+    IF cols IS NOT NULL THEN
+      EXECUTE format('REVOKE ALL (%s) ON %s FROM ov_readonly', cols, r.oid::regclass);
+    END IF;
+  END LOOP;
+END $$;
+SET LOCAL client_min_messages = warning;
+DROP SCHEMA IF EXISTS ov_read CASCADE;
+RESET client_min_messages;
+CREATE SCHEMA ov_read AUTHORIZATION ov_owner;
+REVOKE ALL ON SCHEMA ov_read FROM PUBLIC;
+GRANT USAGE ON SCHEMA ov_read TO ov_readonly;
+DO $$
+DECLARE
+  r record;
+  secret_re constant text := '(^|_)(pin|pins|password|secret|token|salt|mac)(_|$)|(^|_)hash$';
+  visible text;
+BEGIN
+  FOR r IN SELECT c.oid, c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') ORDER BY c.relname LOOP
+    SELECT string_agg(quote_ident(attname), ', ' ORDER BY attnum) INTO visible
+      FROM pg_attribute WHERE attrelid = r.oid AND attnum > 0 AND NOT attisdropped AND attname !~ secret_re;
+    CONTINUE WHEN visible IS NULL;
+    EXECUTE format('CREATE VIEW ov_read.%I AS SELECT %s FROM %s', r.relname, visible, r.oid::regclass);
+    EXECUTE format('REVOKE ALL ON ov_read.%I FROM PUBLIC', r.relname);
+    EXECUTE format('GRANT SELECT ON ov_read.%I TO ov_readonly', r.relname);
+  END LOOP;
+END $$;
 
 COMMIT;

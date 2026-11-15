@@ -2,7 +2,8 @@
 # apply-roles.sh < escoresheet/backend/db/roles.sql
 #
 # Runs roles.sql in ov-postgres as ov_owner, with :ov_app_pw set to OV_APP_PW
-# from /opt/openvolley/.env, then checks that ov_app can log in over TCP (the
+# from /opt/openvolley/.env (and :ov_readonly_pw to OV_READONLY_PW when it is
+# set, for db-browse.sh), then checks that ov_app can log in over TCP (the
 # backend's path) and read public.matches.
 #
 # Why a script: the alternative, `set -a; . .env` in the operator's shell, is
@@ -41,7 +42,14 @@ mapfile -t ids < <(docker ps -q \
 (( ${#ids[@]} == 1 )) || die "expected one running ov-postgres of project ${OV_PROJECT}, found ${#ids[@]}"
 PG=${ids[0]}
 
-{ printf "\\\\set ov_app_pw '%s'\n" "$pw"; cat; } \
+# Optional: the password of ov_readonly (db-browse.sh pgweb); without it the
+# role logs in through the container's local socket only (db-browse.sh psql).
+ro=$(sed -n 's/^OV_READONLY_PW=//p' "$OV_ENV_FILE" | tail -n1)
+ro=${ro%$'\r'}
+if [[ ${#ro} -ge 2 && ( ( "$ro" == \'*\' ) || ( "$ro" == \"*\" ) ) ]]; then ro=${ro:1:${#ro}-2}; fi
+[[ -z "$ro" || "$ro" =~ ^[A-Za-z0-9._~-]+$ ]] || die "OV_READONLY_PW must be URL-safe (generate with: openssl rand -hex 32)"
+
+{ printf "\\\\set ov_app_pw '%s'\n" "$pw"; [[ -n "$ro" ]] && printf "\\\\set ov_readonly_pw '%s'\n" "$ro"; cat; } \
   | docker exec -i "$PG" psql -X -q -U ov_owner -d "$OV_DB_NAME" -v ON_ERROR_STOP=1 >/dev/null \
   || die "roles.sql failed (nothing after the failing statement ran)"
 
