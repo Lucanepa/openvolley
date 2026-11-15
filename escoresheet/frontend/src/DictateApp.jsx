@@ -1,4 +1,4 @@
-// app.openvolley.app/dictate — Swiss Volley's eScoresheet Diktat #1 as a
+// app.openvolley.app/dictate — based on Swiss Volley's eScoresheet dictation, a
 // dictation for the OpenVolley test match: the video (EN/DE, original or with
 // three exceptional substitutions), every step in sync with it, and the end
 // result as OpenVolley writes it.
@@ -21,6 +21,8 @@ import { cn } from './ui/cn.js'
 import { HOWTO } from './dictateHowto.js'
 
 const LOGO = '/openvolley_logo.png'
+// A changed media file gets a new name: the same name would be served
+// from Cloudflare's edge cache (max-age 1 day)
 const MEDIA = 'https://openvolley-media.openvolley.app/dictate'
 
 const TEAM = { ZUR: 'ZÜRICH', LUZ: 'LUZERN' }
@@ -31,8 +33,8 @@ const SETS = [[13, 25], [27, 25], [25, 13], [23, 25], [18, 16]]
 const TEXT = {
   en: {
     kicker: 'OpenVolley · test match',
-    title: 'Diktat #1 to score along',
-    lead: "Swiss Volley's eScoresheet Diktat #1 as a dictation for the OpenVolley test match: play the video, score every step in OpenVolley, compare the score after each step and the end result.",
+    title: 'Dictation to score along',
+    lead: "A dictation for the OpenVolley test match, based on Swiss Volley's eScoresheet dictation: play the video, score every step in OpenVolley, compare the score after each step and the end result.",
     language: 'Language',
     version: 'Version',
     original: 'Original',
@@ -56,7 +58,7 @@ const TEXT = {
     resultSheet: 'OpenVolley scoresheet (PDF)',
     resultNote: 'The scoresheet OpenVolley wrote when this version was played through the app, step by step.',
     resultExc: 'On top of the original: the three exceptional substitutions are in the remarks, the expulsion of ZÜRICH #1 and the disqualification of LUZERN #4 under sanctions; exceptional substitutions do not count toward the 6.',
-    source: 'Based on Swiss Volley\'s eScoresheet Diktat #1 (v5.0, 13.09.2021). The video is silent: read the cards.',
+    source: 'Based on Swiss Volley\'s eScoresheet dictation (v5.0, 13.09.2021). The video is silent: read the cards.',
     print: 'Printable step list (PDF)',
     howTitle2: 'How to enter the special steps',
     howLead: 'The steps that need more than a tap on Point, as OpenVolley shows them (screenshots of the English app). Tap a step number to jump there in the video.',
@@ -65,8 +67,8 @@ const TEXT = {
   },
   de: {
     kicker: 'OpenVolley · Testspiel',
-    title: 'Diktat #1 zum Mitschreiben',
-    lead: 'Das eScoresheet-Diktat #1 von Swiss Volley als Diktat für das OpenVolley-Testspiel: Video abspielen, jeden Schritt in OpenVolley erfassen, den Spielstand nach jedem Schritt und das Endresultat vergleichen.',
+    title: 'Diktat zum Mitschreiben',
+    lead: 'Ein Diktat für das OpenVolley-Testspiel, nach dem eScoresheet-Diktat von Swiss Volley: Video abspielen, jeden Schritt in OpenVolley erfassen, den Spielstand nach jedem Schritt und das Endresultat vergleichen.',
     language: 'Sprache',
     version: 'Version',
     original: 'Original',
@@ -90,7 +92,7 @@ const TEXT = {
     resultSheet: 'OpenVolley-Matchblatt (PDF)',
     resultNote: 'Das Matchblatt, das OpenVolley geschrieben hat, als diese Version Schritt für Schritt in der App gespielt wurde.',
     resultExc: 'Zusätzlich zum Original: die drei ausserordentlichen Auswechslungen stehen in den Bemerkungen, der Ausschluss von ZÜRICH #1 und die Disqualifikation von LUZERN #4 bei den Sanktionen; ausserordentliche Auswechslungen zählen nicht zu den 6.',
-    source: 'Nach dem eScoresheet-Diktat #1 von Swiss Volley (v5.0, 13.09.2021). Das Video ist stumm: lies die Karten.',
+    source: 'Nach dem eScoresheet-Diktat von Swiss Volley (v5.0, 13.09.2021). Das Video ist stumm: lies die Karten.',
     print: 'Schrittliste zum Drucken (PDF)',
     howTitle2: 'So erfasst du die speziellen Schritte',
     howLead: 'Die Schritte, die mehr als einen Tipp auf Punkt brauchen, so wie OpenVolley sie zeigt (Screenshots der englischen App). Tippe auf eine Schrittnummer, um im Video dorthin zu springen.',
@@ -158,8 +160,8 @@ export default function DictateApp() {
     v.play?.().catch(() => {})
   }
 
-  const videoSrc = `${MEDIA}/diktat-1${version === 'exc' ? '_exceptional' : ''}_${lang}_silent.mp4`
-  const printPdf = `${MEDIA}/print/diktat-1_${version}_${lang}.pdf`
+  const videoSrc = `${MEDIA}/diktat${version === 'exc' ? '_exceptional' : ''}_${lang}_silent.mp4`
+  const printPdf = `${MEDIA}/print/diktat_${version}_${lang}.pdf`
   const rowOf = (step) => data?.rows?.find(r => r[1] === step)
   const resultBase = `${MEDIA}/result_${version}`
 

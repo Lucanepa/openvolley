@@ -8650,6 +8650,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // request warning first (domain/interruptionRequests.js)
       const issues = timeoutRequestIssues(data.events, data.set.index, teamKey, { intervalRunning: isBetweenSets && betweenSetsCountdown !== null })
         .filter(i => !acknowledged.includes(i.reason))
+      // Both time-outs used: no third one can be asked for at all (owner
+      // 15.11.2026), from any entry. An improper request is recorded with the
+      // team's own "Improper request" button.
+      if (issues.some(i => i.reason === 'third_timeout')) return
       if (issues.length > 0) {
         if (rallyStatus === 'idle') openRequestWarning('timeout', { team: teamKey }, issues, acknowledged)
         return
@@ -15078,9 +15082,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               <div
                 data-help-id="scoreboard-timeout-left"
                 onClick={() => {
-                  // Clicking calls a time-out; with both used, handleTimeout turns
-                  // the request into an improper request (FIVB 15.11.1.4)
-                  const canCallTimeout = rallyStatus !== 'in_play' && !timeoutBlocked('left')
+                  // Clicking calls a time-out; with both used it does nothing
+                  // (owner 15.11.2026: no third time-out can be asked for)
+                  const canCallTimeout = rallyStatus !== 'in_play' && !timeoutBlocked('left') && getTimeoutsUsed('left') < 2
                   if (canCallTimeout) {
                     handleTimeout('left')
                   }
@@ -15101,7 +15105,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     : (rallyStatus === 'in_play' || timeoutBlocked('left')
                       ? '1px solid var(--border)'
                       : '1px solid rgba(34, 197, 94, 0.4)'),
-                  cursor: rallyStatus === 'in_play' || timeoutBlocked('left') ? 'not-allowed' : 'pointer',
+                  cursor: rallyStatus === 'in_play' || timeoutBlocked('left') || getTimeoutsUsed('left') >= 2 ? 'not-allowed' : 'pointer',
                   position: 'relative'
                 }}
               >
@@ -18453,9 +18457,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               <div
                 data-help-id="scoreboard-timeout-right"
                 onClick={() => {
-                  // Clicking calls a time-out; with both used, handleTimeout turns
-                  // the request into an improper request (FIVB 15.11.1.4)
-                  const canCallTimeout = rallyStatus !== 'in_play' && !timeoutBlocked('right')
+                  // Clicking calls a time-out; with both used it does nothing
+                  // (owner 15.11.2026: no third time-out can be asked for)
+                  const canCallTimeout = rallyStatus !== 'in_play' && !timeoutBlocked('right') && getTimeoutsUsed('right') < 2
                   if (canCallTimeout) {
                     handleTimeout('right')
                   }
@@ -18476,7 +18480,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     : (rallyStatus === 'in_play' || timeoutBlocked('right')
                       ? '1px solid var(--border)'
                       : '1px solid rgba(34, 197, 94, 0.4)'),
-                  cursor: rallyStatus === 'in_play' || timeoutBlocked('right') ? 'not-allowed' : 'pointer',
+                  cursor: rallyStatus === 'in_play' || timeoutBlocked('right') || getTimeoutsUsed('right') >= 2 ? 'not-allowed' : 'pointer',
                   position: 'relative'
                 }}
               >

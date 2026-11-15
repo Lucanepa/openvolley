@@ -50,14 +50,14 @@ export const subdomains = {
     mainEntry: 'main',
     themeColor: '#ffffff'
   },
-  // app.openvolley.app/dictate: Swiss Volley's Diktat #1 for the test match
+  // app.openvolley.app/dictate: a dictation for the test match (after Swiss Volley's)
   // (dictate/index.html). Built with base /dictate/ into dist-app/dictate/
   // when the app is built, like the scoresheet; no service worker of its own.
   dictate: {
-    name: 'Diktat #1 – OpenVolley test match',
+    name: 'Dictation – OpenVolley test match',
     shortName: 'Diktat',
-    description: "Swiss Volley's eScoresheet Diktat #1 for the OpenVolley test match",
-    title: 'Diktat #1 – OpenVolley test match',
+    description: 'A dictation for the OpenVolley test match',
+    title: 'Dictation – OpenVolley test match',
     mainEntry: 'dictate-main',
     htmlFile: 'dictate/index.html',
     host: 'app.openvolley.app/dictate',

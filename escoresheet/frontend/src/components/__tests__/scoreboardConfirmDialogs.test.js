@@ -104,13 +104,19 @@ describe('time-out request (owner report: "this set?" and the 1st/2nd flash)', (
     expect(sb).not.toContain('timeoutAlreadyTaken')
   })
 
-  it('a third request opens the request warning (improper request / already started: delay), also from the TO counter', () => {
+  it('no third time-out can be asked for: neither the TO counter nor any other entry opens anything (owner 15.11.2026)', () => {
     const open = between('const handleTimeout = useCallback(', 'const runTimeoutConfirm')
     // domain/interruptionRequests timeoutRequestIssues: third_timeout, set
     // interval, replay pending, after a delay warning
     expect(open).toContain('timeoutRequestIssues(data.events, data.set.index, teamKey')
-    expect(open).toContain("openRequestWarning('timeout', { team: teamKey }, issues, acknowledged)")
-    expect(sb).not.toMatch(/canCallTimeout = getTimeoutsUsed\(/)
+    // the third time-out stops here, before any request warning
+    const stop = open.indexOf("if (issues.some(i => i.reason === 'third_timeout')) return")
+    expect(stop).toBeGreaterThan(-1)
+    expect(stop).toBeLessThan(open.indexOf("openRequestWarning('timeout', { team: teamKey }, issues, acknowledged)"))
+    // the TO counters do not react with both used
+    for (const side of ['left', 'right']) {
+      expect(sb).toContain(`const canCallTimeout = rallyStatus !== 'in_play' && !timeoutBlocked('${side}') && getTimeoutsUsed('${side}') < 2`)
+    }
   })
 
   it('the sanction dialog shows and records the resolved sanction', () => {

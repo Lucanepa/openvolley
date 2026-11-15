@@ -8,14 +8,14 @@ export const HOWTO = [
   {
     id: 'improper',
     steps: ['148', '149', '502', '503'],
-    shots: ['improper-1', 'improper-2'],
+    shots: ['improper-2'],
     en: {
-      title: 'Third time-out → improper request',
-      do: ['Tap the team\'s TO box as usual.', 'The team has used both time-outs: OpenVolley shows "Third time-out".', 'Choose "Record as improper request". The team\'s improper request is crossed on the sheet.']
+      title: 'Third time-out request → improper request',
+      do: ['The team has used both time-outs of the set: its TO box no longer reacts, a third time-out cannot be entered.', 'Tap the team\'s "Improper request" button (under its TO and SUB boxes) and confirm.', 'The team\'s improper request is crossed on the sheet; a second one in the match would be a delay.']
     },
     de: {
-      title: 'Drittes Timeout → unzulässige Anfrage',
-      do: ['Tippe wie immer auf das TO-Feld des Teams.', 'Das Team hat beide Timeouts gebraucht: OpenVolley zeigt «Third time-out».', 'Wähle «Record as improper request». Die unzulässige Anfrage des Teams wird auf dem Matchblatt angekreuzt.']
+      title: 'Dritte Timeout-Anfrage → unzulässige Anfrage',
+      do: ['Das Team hat beide Timeouts des Satzes gebraucht: sein TO-Feld reagiert nicht mehr, ein drittes Timeout kann nicht erfasst werden.', 'Tippe auf den Knopf «Improper request» des Teams (unter seinen TO- und SUB-Feldern) und bestätige.', 'Die unzulässige Anfrage des Teams wird auf dem Matchblatt angekreuzt; eine zweite im Spiel wäre eine Verzögerung.']
     }
   },
   {
