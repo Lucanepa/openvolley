@@ -1,8 +1,8 @@
-import { useMemo, useRef } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Activity, ArrowLeft, ClipboardList, FileText, House, KeyRound, Medal, ScrollText, Settings, ShieldCheck, Shirt, Trophy, Users } from 'lucide-react'
+import { Activity, ArrowLeft, CircleHelp, ClipboardList, FileText, House, KeyRound, Medal, ScrollText, Settings, ShieldCheck, Shirt, Trophy, Users } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
-import { ConsoleShell, ConsolePanel, RowListCards, consoleHeaderBtn } from '../../ui'
+import { ConsoleShell, ConsolePanel, RowListCards, cn, consoleHeaderBtn } from '../../ui'
 import { PageLoadGate, PageSpinner } from './common'
 import AccountsPanel from './AccountsPanel'
 import InvitesPanel from './InvitesPanel'
@@ -21,6 +21,8 @@ import NotificationsBell from './NotificationsBell'
 import { accessForApp } from '../../lib/access'
 import { useManagerBrand } from '../../managerBrand'
 import LegalLinks from '../../legal/LegalLinks'
+import ContextualHelpPanel from '../help/ContextualHelpPanel'
+import { manageHelpScreen } from '../help/helpSections'
 
 // Each panel appears whole (owner 2026-11-11: "no race -> wait to load"):
 // its first reads (usePanelData) behind the branded spinner (PageSpinner);
@@ -105,6 +107,9 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
   // (OpenVolley: ?app=indoor, OpenBeach: ?app=beach; saved teams only narrow for beach)
   const scope = brand.scope || undefined
   const allowed = useMemo(() => manageTabsFor(access, brand), [access, brand])
+  // The "?" (OpenVolley's console only: the help is the indoor app's)
+  const [helpOpen, setHelpOpen] = useState(false)
+  const hasHelp = brand.app === 'indoor'
   // A tab's own page after a slash (My teams: '<team id>/<game number>', a
   // game's roster; owner 2026-11-10: "new page with url with the game id")
   // and every tab's pages the same way (usePanelRoute: competitions, teams,
@@ -192,6 +197,19 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
         actions={<>
           {/* db/028: who signed up (admins, and the approvers of its requests) */}
           <NotificationsBell app={brand.app} onOpen={openTarget} />
+          {hasHelp && (
+            <button
+              type="button"
+              className={cn(consoleHeaderBtn, 'shrink-0 px-2')}
+              onClick={() => setHelpOpen(open => !open)}
+              aria-pressed={helpOpen}
+              aria-label={t('contextHelp.helpButton', 'Help')}
+              title={t('contextHelp.helpButton', 'Help')}
+              data-testid="manage-help"
+            >
+              <CircleHelp size={16} aria-hidden />
+            </button>
+          )}
           {headerActions}
           {onClose && (
             <button type="button" className={consoleHeaderBtn} onClick={onClose} aria-label={t('manage.backToApp')} data-modal-close>
@@ -226,6 +244,13 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
         {visited.has('tournaments') && <ConsolePanel id="tournaments" current={current}><PanelGate><TournamentsPanel {...pageProps('tournaments')} /></PanelGate></ConsolePanel>}
         </RowListCards.Provider>
       </ConsoleShell>
+      {hasHelp && (
+        <ContextualHelpPanel
+          open={helpOpen}
+          onClose={() => setHelpOpen(false)}
+          screen={manageHelpScreen(current, current === 'myclub' ? partOf(subRoute) : '')}
+        />
+      )}
     </div>
   )
 }
