@@ -1750,6 +1750,8 @@
     "autoDetectedMode": "Auto bruucht uf däm Bildschirm {{mode}}.",
     "enableLfpTracking": "LAS-Tracking aktiviere",
     "lfpTrackingInfo": "Lokal usbildeti Spieler (LFP/LAS/JFL/GFL) uf em Fäld verfolge. Wänn aktiviert, zeigt s de LAS-Status uf de Spielerkreis aa und warnt, wänn d Mindestaazahl nöd erreicht isch.",
+    "sponsorsOnClothing": "Sponsore uf de Kleider",
+    "sponsorsOnClothingInfo": "Für jedes Team: Sponsore uf de Kleider, uf em Matchblatt mit (+) oder (-) hinder sim Name markiert.",
     "minimumLfpsOnCourt": "Minimum LAS uf em Fäld:",
     "clearCacheConfirm": "Cache leere und neu lade?",
     "alerts": {
@@ -1898,6 +1900,8 @@
       "editor": "S Matchblatt isch scho underschribe oder genehmigt. Wänn du die Änderige speicherisch, werded alli Underschrifte und Genehmigunge vom Spiilend glöscht: Hol si nachher neu ii.",
       "logRemarks": "Bemerkige nach em Underschribe gänderet",
       "logRemarksSignature": "Underschrift us de Bemerkige entfernt: {{caption}}",
+      "sponsors": "S Matchblatt isch scho underschribe oder genehmigt. Wänn du d Sponsore uf de Kleider änderisch, werded alli Underschrifte und Genehmigunge vom Spiilend glöscht: Hol si nachher neu ii.",
+      "logSponsors": "Sponsore uf de Kleider nach em Underschribe gänderet: {{team}} {{mark}}",
       "saveFailed": "D Änderig hät nöd chönne gspeicheret werde."
     },
     "reopenMatch": "Spiil wieder ufmache",

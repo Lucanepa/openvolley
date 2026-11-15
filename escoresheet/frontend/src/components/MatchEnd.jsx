@@ -69,6 +69,10 @@ import { RowTool } from '../ui/Row.jsx'
 import { toast } from '../ui/uiStore.js'
 import { NOTICE } from '../ui/tones.js'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
+import { Checkbox } from '../ui/Checkbox.jsx'
+import { showsSponsorBoxes, sponsorsOf, sponsorsPatch, withSponsorMark, SPONSOR_MARK_NO, SPONSOR_MARK_YES } from '../domain/sponsors'
+import { useSponsorsOption } from '../hooks/useSponsorsOption'
+import { matchInfoFromLocal, queueMatchUpdate } from '../db/matchRepository'
 
 // volleyui recipes for this page (RESTYLE-SPEC P3b). The paper-sheet blocks
 // (ResultsTable, SanctionsTable, RemarksBox and their black frames), the
@@ -385,6 +389,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   const preloaded = usePreloaded(matchId != null ? matchEndKey(matchId) : null)
   const data = useLiveQuery(() => readMatchEnd(matchId), [matchId], preloaded)
   const { t, i18n } = useTranslation()
+  // Sponsors on clothing (domain/sponsors.js): this device's option shows the boxes
+  const [sponsorsOption] = useSponsorsOption()
 
   const { showAlert } = useAlert()
   const [openSignature, setOpenSignature] = useState(null)
@@ -746,13 +752,23 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   const teamAKey = match.coinTossTeamA || 'home'
   const homeLabel = teamAKey === 'home' ? 'A' : 'B'
 
+  // Sponsors on clothing: a marked match shows " (+)" / " (-)" after the team
+  // names here, as the PDF prints them (the match decides, not the option)
+  const sponsors = sponsorsOf(match)
+  const markedName = (team, name) => withSponsorMark(name, team === 'away' ? sponsors.away : sponsors.home, sponsors.marked)
+  const homeName = markedName('home', homeTeam?.name || t('common.home'))
+  const awayName = markedName('away', awayTeam?.name || t('common.away'))
+  const resultsTeamAName = homeLabel === 'A' ? markedName('home', homeTeam?.name || 'Team A') : markedName('away', awayTeam?.name || 'Team A')
+  const resultsTeamBName = homeLabel === 'B' ? markedName('home', homeTeam?.name || 'Team B') : markedName('away', awayTeam?.name || 'Team B')
+  const showSponsorBoxes = match?.easy !== true && showsSponsorBoxes(sponsorsOption, match)
+
   // Winner info: forfeit gives the match to the opponent; a stopped match with
   // level sets has no winner
   const winnerKey = getMatchWinner(sets, match?.bestOf, { forfeitTeam: match?.forfeitTeam })
   const winner = winnerKey === 'home'
-    ? (homeTeam?.name || t('common.home'))
+    ? homeName
     : winnerKey === 'away'
-      ? (awayTeam?.name || t('common.away'))
+      ? awayName
       : t('matchEnd.noWinner', 'No winner (match stopped)')
   const winnerLabel = winnerKey === 'home' ? homeLabel : winnerKey === 'away' ? (homeLabel === 'A' ? 'B' : 'A') : null
 
@@ -1227,6 +1243,38 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       })
     } catch (err) {
       console.error('[MatchEnd] Could not remove the remarks signature:', err?.message)
+      toast.error(t('matchEnd.signedSheetChange.saveFailed'))
+    }
+  }
+
+  // A team's Sponsors on clothing box (domain/sponsors.js): the first tick marks
+  // the match. After a post-match signature or account approval it is a change
+  // of the sheet: asked first, then written with the cleared signatures and
+  // logged (as an edit of the remarks). The server gets the whole match_info.
+  const handleSponsorsChange = async (team, ticked) => {
+    if (finalActions) return
+    const current = await db.matches.get(matchId)
+    if (!current) return
+    const patch = sponsorsPatch(current, team, ticked)
+    try {
+      if (signedAfterMatch(current)) {
+        if (!(await confirmSignedSheetChange(t('matchEnd.signedSheetChange.sponsors')))) return
+        const before = sponsorsOf(current)[team] ? SPONSOR_MARK_YES : SPONSOR_MARK_NO
+        const after = ticked ? SPONSOR_MARK_YES : SPONSOR_MARK_NO
+        const teamName = (team === 'home' ? homeTeam?.name : awayTeam?.name) || t(team === 'home' ? 'common.home' : 'common.away')
+        await writeSignedSheetChange(db, matchId, patch, {
+          action: 'editSponsors', before, after, text: t('matchEnd.signedSheetChange.logSponsors', { team: teamName, mark: after })
+        })
+      } else {
+        await db.matches.update(matchId, patch)
+      }
+      const updated = await db.matches.get(matchId)
+      if (updated?.seed_key) {
+        await queueMatchUpdate(db, updated.seed_key, { match_info: matchInfoFromLocal(updated) }, { test: updated.test === true })
+        try { window.dispatchEvent(new Event('sync-queue-write')) } catch { /* no window */ }
+      }
+    } catch (err) {
+      console.error('[MatchEnd] Could not save the sponsors on clothing:', err?.message)
       toast.error(t('matchEnd.signedSheetChange.saveFailed'))
     }
   }
@@ -2055,8 +2103,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           <div className={SECTION_HEAD}><h3 className={SECTION_TITLE}>{t('matchEnd.results', 'Results')}</h3></div>
           <div className="ov-legacy-results" style={{ background: '#fff', borderRadius: '6px', overflow: 'hidden', border: '2px solid #333', flex: 1 }}>
             <ResultsTable
-              teamAName={homeLabel === 'A' ? (homeTeam?.name || 'Team A') : (awayTeam?.name || 'Team A')}
-              teamBName={homeLabel === 'B' ? (homeTeam?.name || 'Team B') : (awayTeam?.name || 'Team B')}
+              teamAName={resultsTeamAName}
+              teamBName={resultsTeamBName}
               setResults={calculateSetResults}
               matchStart={matchStart}
               matchEnd={matchEndTime}
@@ -2081,6 +2129,33 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           </div>
         </div>
       </div>
+
+      {/* Sponsors on clothing (domain/sponsors.js): each team's box, Team A first,
+          while the option is on or the match is marked; fixed once approved */}
+      {showSponsorBoxes && (
+        <div className="card" data-testid="matchend-sponsors" style={{ marginBottom: '16px' }}>
+          <div className={SECTION_HEAD}><h3 className={SECTION_TITLE}>{t('options.sponsorsOnClothing')}</h3></div>
+          <div className="ov-kit stack:flex-col" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            {(homeLabel === 'A' ? ['home', 'away'] : ['away', 'home']).map(team => {
+              const name = (team === 'home' ? homeTeam?.name : awayTeam?.name) || t(team === 'home' ? 'common.home' : 'common.away')
+              return (
+                <Checkbox
+                  key={team}
+                  variant="card"
+                  className="min-w-[220px] flex-1"
+                  data-testid={`matchend-sponsors-${team}`}
+                  aria-label={`${name} ${t('options.sponsorsOnClothing')}`}
+                  label={name}
+                  hint={t('options.sponsorsOnClothing')}
+                  checked={team === 'home' ? sponsors.home : sponsors.away}
+                  disabled={finalActions}
+                  onChange={e => handleSponsorsChange(team, e.target.checked)}
+                />
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Captain Signatures (none in an easy match: domain/easyMatch.js) */}
       {!isApproved && match?.easy !== true && (
@@ -2459,8 +2534,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           >
             {zoomedSection === 'results' && (
               <ResultsTable
-                teamAName={homeLabel === 'A' ? (homeTeam?.name || 'Team A') : (awayTeam?.name || 'Team A')}
-                teamBName={homeLabel === 'B' ? (homeTeam?.name || 'Team B') : (awayTeam?.name || 'Team B')}
+                teamAName={resultsTeamAName}
+                teamBName={resultsTeamBName}
                 setResults={calculateSetResults}
                 matchStart={matchStart}
                 matchEnd={matchEndTime}

@@ -551,3 +551,19 @@ describe('importMatchFromSupabase: best of 3 from match_info', () => {
     expect(cloudBestOf({ match_info: { best_of: '3' } })).toBe(3)
   })
 })
+
+// Sponsors on clothing (owner 2026-11-15): a match taken over or restored from
+// the server keeps its marks (match_info), so it prints them on this device too
+describe('importMatchFromSupabase: sponsors on clothing from match_info', () => {
+  it('the three fields come back; a row without them adds none', async () => {
+    const cloud = await restoreWith({ match: { match_info: { hall: 'Halle', sponsors_home: true, sponsors_away: false, sponsors_marked: true } } })
+    await importMatchFromSupabase(cloud)
+    expect(store.matches[0]).toMatchObject({ homeSponsors: true, awaySponsors: false, sponsorsMarked: true })
+  })
+
+  it('an older row (no sponsor keys): the fields stay unset', async () => {
+    const cloud = await restoreWith({ match: { match_info: { hall: 'Halle' } } })
+    await importMatchFromSupabase(cloud)
+    expect(store.matches[0].sponsorsMarked).toBeUndefined()
+  })
+})

@@ -466,7 +466,8 @@ describe('the match type, gender and level', () => {
     expect(restoreJob().payload.match.match_info).toEqual({
       hall: 'H', city: '', league: '2L', championship_type: 'regional', championship_type_other: '',
       match_type_1: 'championship', match_type_1_other: '', match_type_2: 'women',
-      match_type_3: 'senior', match_type_3_other: '', best_of: 5
+      match_type_3: 'senior', match_type_3_other: '', best_of: 5,
+      sponsors_home: false, sponsors_away: false, sponsors_marked: false
     })
   })
 })

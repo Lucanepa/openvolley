@@ -38,7 +38,10 @@ const TEAM_KEYS = Object.freeze(['name', 'short_name', 'shortName', 'color'])
 const MATCH_INFO_KEYS = Object.freeze([
   'hall', 'city', 'league', 'championship_type', 'championship_type_other',
   'match_type_1', 'match_type_1_other', 'match_type_2', 'match_type_3', 'match_type_3_other',
-  'best_of'
+  'best_of',
+  // Sponsors on clothing (owner 2026-11-15): the (+)/(-) printed after each
+  // team's name on the sheet; nothing personal
+  'sponsors_home', 'sponsors_away', 'sponsors_marked'
 ])
 const COIN_TOSS_KEYS = Object.freeze(['team_a', 'team_b', 'confirmed', 'first_serve', 'serve_a'])
 // Roster entries as the referee/bench render them. No dob, no country.

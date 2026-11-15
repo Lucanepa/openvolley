@@ -51,7 +51,7 @@ function fullMatchRow() {
     winner: null,
     home_team: { name: 'Home VC', short_name: 'HVC', color: '#ff0000', coach_email: 'coach@example.ch' },
     away_team: { name: 'Away VC', short_name: 'AVC', color: '#0000ff' },
-    match_info: { hall: 'Halle', city: 'Zürich', league: '3L', championship_type: 'league', best_of: 3, scorer_phone: '079' },
+    match_info: { hall: 'Halle', city: 'Zürich', league: '3L', championship_type: 'league', best_of: 3, scorer_phone: '079', sponsors_home: true, sponsors_away: false, sponsors_marked: true },
     coin_toss: { team_a: 'home', team_b: 'away', confirmed: true, first_serve: 'home', serve_a: true },
     connections: { referee_enabled: true, home_bench_enabled: true, away_bench_enabled: false, pending_home_roster: { players: [{ number: 1, dob: DOB }] } },
     players_home: [{ number: 1, first_name: 'Ana', last_name: 'Muster', dob: DOB, libero: '', is_captain: true, is_lfp: false }],
@@ -86,7 +86,8 @@ describe('publicColumns: live projection', () => {
     assert.equal(live.sport_type, 'indoor', 'filter columns survive the projection')
     assert.deepEqual(live.set_results, [{ set: 1, home: 25, away: 2 }])
     assert.deepEqual(live.home_team, { name: 'Home VC', short_name: 'HVC', color: '#ff0000' })
-    assert.deepEqual(live.match_info, { hall: 'Halle', city: 'Zürich', league: '3L', championship_type: 'league', best_of: 3 })
+    // the sponsors-on-clothing marks are printed on the sheet: public (owner 2026-11-15)
+    assert.deepEqual(live.match_info, { hall: 'Halle', city: 'Zürich', league: '3L', championship_type: 'league', best_of: 3, sponsors_home: true, sponsors_away: false, sponsors_marked: true })
     assert.equal(live.coin_toss.team_a, 'home')
   })
 

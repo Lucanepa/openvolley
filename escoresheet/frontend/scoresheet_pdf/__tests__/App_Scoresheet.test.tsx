@@ -332,3 +332,56 @@ describe('App_Scoresheet: Global id mode and role name', () => {
     expect(rows[1]).toContain('TEA') // the short label of the row
   })
 })
+
+// Sponsors on clothing (owner 2026-11-15): a marked match prints (+) / (-)
+// after every team name on the sheet; the match decides, not the device option
+describe('App_Scoresheet sponsors on clothing', () => {
+  beforeAll(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+  afterAll(() => {
+    vi.restoreAllMocks()
+    localStorage.removeItem('sponsorsOnClothing')
+  })
+
+  const sheetText = (data: any) => {
+    const { container, unmount } = render(<App matchData={data} autoAction="preview" />)
+    const text = container.querySelector('.scoresheet-container')?.textContent || ''
+    const header = {
+      home: container.querySelector('[data-testid="header-home"]')?.textContent || '',
+      away: container.querySelector('[data-testid="header-away"]')?.textContent || ''
+    }
+    unmount()
+    return { text, header }
+  }
+
+  it('a marked match: the header, the set boxes and the rosters carry the mark, even with the option off here', () => {
+    localStorage.setItem('sponsorsOnClothing', 'false')
+    const data = buildMatch()
+    data.match = { ...data.match, homeSponsors: true, awaySponsors: false, sponsorsMarked: true } as any
+    const { text, header } = sheetText(data)
+    expect(header.home).toBe('Home Team (+)')
+    expect(header.away).toBe('Away Team (-)')
+    expect(text).toContain('HOM (+)')
+    expect(text).toContain('AWY (-)')
+  })
+
+  it('a match read from the server (match_info only) prints its marks too', () => {
+    const data = buildMatch()
+    data.match = { ...data.match, match_info: { sponsors_home: false, sponsors_away: true, sponsors_marked: true } } as any
+    const { header } = sheetText(data)
+    expect(header.home).toBe('Home Team (-)')
+    expect(header.away).toBe('Away Team (+)')
+  })
+
+  it('an unmarked match prints the names alone, even with the option on here', () => {
+    localStorage.setItem('sponsorsOnClothing', 'true')
+    const data = buildMatch()
+    data.match = { ...data.match, homeSponsors: false, awaySponsors: false } as any
+    const { text, header } = sheetText(data)
+    expect(header.home).toBe('Home Team')
+    expect(text).not.toContain('(+)')
+    expect(text).not.toContain('(-)')
+  })
+})

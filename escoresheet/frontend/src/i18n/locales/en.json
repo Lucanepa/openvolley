@@ -1752,6 +1752,8 @@
     "autoDetectedMode": "Auto uses {{mode}} on this screen.",
     "enableLfpTracking": "Enable LFP tracking",
     "lfpTrackingInfo": "Track locally-formed players (LFP/LAS/JFL/GFL) on court. When enabled, shows LFP status on player circles and warns if minimum count is not met.",
+    "sponsorsOnClothing": "Sponsors on clothing",
+    "sponsorsOnClothingInfo": "Each team: sponsors on clothing, marked (+) or (-) after its name on the scoresheet.",
     "minimumLfpsOnCourt": "Minimum LFPs on court:",
     "clearCacheConfirm": "Clear cache and reload?",
     "alerts": {
@@ -1899,6 +1901,8 @@
       "editor": "The sheet was already signed or approved. Saving these changes clears every signature and account approval of the match end: collect them again afterwards.",
       "logRemarks": "Remarks changed after the sheet was signed",
       "logRemarksSignature": "Signature removed from the remarks: {{caption}}",
+      "sponsors": "The sheet was already signed or approved. Changing a team's sponsors on clothing clears every signature and account approval of the match end: collect them again afterwards.",
+      "logSponsors": "Sponsors on clothing changed after the sheet was signed: {{team}} {{mark}}",
       "saveFailed": "The change could not be saved."
     },
     "reopenMatch": "Reopen match",

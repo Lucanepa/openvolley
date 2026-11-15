@@ -28,6 +28,7 @@ import {
 import { trackServiceRounds, courtChangeIndex, splitSet5Rounds, type ServiceRound } from './utils/serviceRounds';
 import { awardsPoint as sanctionAwardsPoint } from '../src/domain/sanctions.js';
 import { isMatchOverStatus } from '../src/domain/matchEnd.js';
+import { sponsorsOf, withSponsorMark } from '../src/domain/sponsors.js';
 import { generatedRemarks, correctionRemarks } from './utils/sheetRemarks';
 import { isoOf, setDurationMinutes, setEndMs, setStartMs } from './utils/matchTimes';
 import { BRAND } from '../src/brand.js';
@@ -147,14 +148,24 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   const teamAPlayers = formatPlayers(teamAKey === 'home' ? homePlayers : awayPlayers);
   const teamBPlayers = formatPlayers(teamBKey === 'home' ? homePlayers : awayPlayers);
 
+  // Sponsors on clothing (src/domain/sponsors.js): a marked match prints
+  // " (+)" / " (-)" after every team name on the sheet, whatever this device's
+  // option says (the match decides). One place: every name below goes through it.
+  const sponsors = sponsorsOf(match);
+  const markOf = (team: 'home' | 'away', name: unknown): string =>
+    withSponsorMark(name, team === 'home' ? sponsors.home : sponsors.away, sponsors.marked);
+  // The header's (and the Libero sheet's) team rows with the marked names
+  const sheetHomeTeam: any = homeTeam && sponsors.marked ? { ...homeTeam, name: markOf('home', homeTeam.name) } : homeTeam;
+  const sheetAwayTeam: any = awayTeam && sponsors.marked ? { ...awayTeam, name: markOf('away', awayTeam.name) } : awayTeam;
+
   // Use full team names
-  const teamAName = (teamAKey === 'home' ? homeTeam?.name : awayTeam?.name) || '';
-  const teamBName = (teamBKey === 'home' ? homeTeam?.name : awayTeam?.name) || '';
+  const teamAName = markOf(teamAKey, (teamAKey === 'home' ? homeTeam?.name : awayTeam?.name) || '');
+  const teamBName = markOf(teamBKey, (teamBKey === 'home' ? homeTeam?.name : awayTeam?.name) || '');
 
   // Short names for the set boxes, the rosters and the result table: the stored
   // short name, else (empty or a HOME / AWAY placeholder) the team's full name
-  const homeShortName = displayShortName(match?.homeShortName, homeTeam?.name ?? match?.homeTeamName);
-  const awayShortName = displayShortName(match?.awayShortName, awayTeam?.name ?? match?.awayTeamName);
+  const homeShortName = markOf('home', displayShortName(match?.homeShortName, homeTeam?.name ?? match?.homeTeamName));
+  const awayShortName = markOf('away', displayShortName(match?.awayShortName, awayTeam?.name ?? match?.awayTeamName));
   const teamAShortName = teamAKey === 'home' ? homeShortName : awayShortName;
   const teamBShortName = teamBKey === 'home' ? homeShortName : awayShortName;
 
@@ -1931,8 +1942,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
           >
             <LiberoControlSheet
               match={match}
-              homeTeam={homeTeam}
-              awayTeam={awayTeam}
+              homeTeam={sheetHomeTeam}
+              awayTeam={sheetAwayTeam}
               teamAName={teamAName}
               teamBName={teamBName}
               teamAKey={teamAKey as 'home' | 'away'}
@@ -1972,8 +1983,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
             <div ref={headerRef}>
               <Header
                 match={match}
-                homeTeam={homeTeam}
-                awayTeam={awayTeam}
+                homeTeam={sheetHomeTeam}
+                awayTeam={sheetAwayTeam}
                 teamAName={teamAName}
                 teamBName={teamBName}
                 coinTossConfirmed={coinTossConfirmed}
