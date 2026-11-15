@@ -37,7 +37,7 @@ beforeEach(() => {
 describe('My club pages', () => {
   it('a person of the lists opens their page (the row id in the URL, not the licence); back returns to the club', async () => {
     const onRoute = vi.fn()
-    const { rerender } = render(<MyClubPanel clubs={[VBCM]} route="" onRoute={onRoute} />)
+    const { rerender } = render(<MyClubPanel clubs={[VBCM]} route="c1/licences" onRoute={onRoute} />)
     const rows = await screen.findAllByTestId('licence-person')
     fireEvent.click(within(rows.find((r) => r.textContent.includes('Probe Marco'))).getByRole('button'))
     expect(onRoute).toHaveBeenLastCalledWith('c1/person/r-marco', { push: true })
@@ -48,7 +48,7 @@ describe('My club pages', () => {
     expect(page.textContent).toContain('100003')
     expect(page.textContent).toContain('manage.licences.lists.coaches')
     fireEvent.click(screen.getByTestId('club-person-back'))
-    expect(onRoute).toHaveBeenLastCalledWith('c1', { push: true })
+    expect(onRoute).toHaveBeenLastCalledWith('c1/licences', { push: true })
   })
 
   it('a person added by hand is tagged; one not in the lists (or a licence number) is a missing page', async () => {
@@ -75,12 +75,12 @@ describe('My club pages', () => {
     fireEvent.click(await screen.findByTestId('confirm-accept'))
     await waitFor(() => expect(api.club.deleteLicenceRow).toHaveBeenCalledWith('c1', 'r-hans'))
     // the person was only that row: back to the club
-    await waitFor(() => expect(onRoute).toHaveBeenLastCalledWith('c1', { push: true }))
+    await waitFor(() => expect(onRoute).toHaveBeenLastCalledWith('c1/licences', { push: true }))
   })
 
   it('a team of the club and of a person opens in My teams when the account has that tab', async () => {
     const navigate = vi.fn(() => true)
-    const { rerender, unmount } = render(<MyClubPanel clubs={[VBCM]} route="" onRoute={vi.fn()} navigate={navigate} canOpen={(id) => id === 'myteams'} />)
+    const { rerender, unmount } = render(<MyClubPanel clubs={[VBCM]} route="c1/teams" onRoute={vi.fn()} navigate={navigate} canOpen={(id) => id === 'myteams'} />)
     fireEvent.click(await screen.findByTestId('club-team-open'))
     expect(navigate).toHaveBeenLastCalledWith('myteams/t-h1')
     rerender(<MyClubPanel clubs={[VBCM]} route="c1/person/r-marco" onRoute={vi.fn()} navigate={navigate} canOpen={(id) => id === 'myteams'} />)
@@ -88,7 +88,7 @@ describe('My club pages', () => {
     expect(navigate).toHaveBeenCalledTimes(2)
     unmount()
     // without My teams: no link
-    render(<MyClubPanel clubs={[VBCM]} route="" onRoute={vi.fn()} navigate={navigate} canOpen={() => false} />)
+    render(<MyClubPanel clubs={[VBCM]} route="c1/teams" onRoute={vi.fn()} navigate={navigate} canOpen={() => false} />)
     await screen.findByTestId('club-teams')
     expect(screen.queryByTestId('club-team-open')).toBeNull()
   })

@@ -33,43 +33,38 @@ export default function MyClubPanel({ clubs = [], route = '', onRoute = null, na
   if (!club) return <EmptyInset>{t('manage.myClub.none')}</EmptyInset>
   const openTeam = navigate && canOpen('myteams') ? (teamId) => navigate(`myteams/${encodeURIComponent(teamId)}`) : null
   if (kind === 'person' && key) {
-    return <ClubPersonPage key={`${club.id}/${key}`} club={club} personId={key} onBack={() => go([club.id])} onOpenTeam={openTeam} />
+    return <ClubPersonPage key={`${club.id}/${key}`} club={club} personId={key} onBack={() => go([club.id, 'licences'])} onOpenTeam={openTeam} />
   }
   return (
     <div className="space-y-8" data-testid="manage-my-club">
       {clubs.length > 1 && (
         <Field label={t('manage.myClub.pick')}>
-          <Select value={club.id} onChange={(e) => go([e.target.value])} data-testid="my-club-pick">
+          <Select value={club.id} onChange={(e) => go([e.target.value, kind && kind !== 'person' ? kind : ''])} data-testid="my-club-pick">
             {clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </Select>
         </Field>
       )}
       {/* keyed: another club starts its sections afresh, and appears whole
           (contact, requests, members, teams, licences, codes) */}
-      <PageLoadGate key={club.id} className="space-y-8" fallback={<PageSpinner />}>
-        <ClubSections club={club} onOpenPerson={(id) => go([club.id, 'person', id])} onOpenTeam={openTeam} />
+      <PageLoadGate key={`${club.id}/${kind || ''}`} className="space-y-8" fallback={<PageSpinner />}>
+        <ClubSections part={kind || ''} club={club} onOpenPerson={(id) => go([club.id, 'person', id])} onOpenTeam={openTeam} />
       </PageLoadGate>
     </div>
   )
 }
 
-function ClubSections({ club, onOpenPerson, onOpenTeam }) {
+// One page per part (the menu's tree under My club); the club's own page is the contact address
+function ClubSections({ part, club, onOpenPerson, onOpenTeam }) {
   const { t } = useTranslation()
-  return (
-    <>
-      <ClubContact clubId={club.id} />
-      {/* db/025: who signed up for this club and waits for a yes */}
-      <RequestsSection club={club} />
-      <ClubMembers club={club} />
-      {/* db/023: the club's teams and their team links */}
-      <ClubTeamsSection club={club} onOpenTeam={onOpenTeam} />
-      {/* db/024: the club's licence lists from VolleyManager */}
-      <ClubLicencesSection club={club} onOpenPerson={onOpenPerson} />
-      <InvitesPanel club={club} title={t('manage.myClub.invites')} />
-      {/* db/044: the club's API tokens */}
-      <ClubApiSection club={club} />
-    </>
-  )
+  switch (part) {
+    case 'requests': return <RequestsSection club={club} /> // db/025: who signed up for this club and waits for a yes
+    case 'members': return <ClubMembers club={club} />
+    case 'teams': return <ClubTeamsSection club={club} onOpenTeam={onOpenTeam} /> // db/023: the club's teams and their team links
+    case 'licences': return <ClubLicencesSection club={club} onOpenPerson={onOpenPerson} /> // db/024: the licence lists from VolleyManager
+    case 'invites': return <InvitesPanel club={club} title={t('manage.myClub.invites')} />
+    case 'api': return <ClubApiSection club={club} /> // db/044: the club's API tokens
+    default: return <ClubContact clubId={club.id} />
+  }
 }
 
 function ClubContact({ clubId }) {

@@ -29,13 +29,19 @@ const BAR_ITEM =
  * @param {React.ReactNode} [props.actions]   right-aligned header buttons
  *   (consoleHeaderBtn / consoleHeaderBtnPrimary), in the order: back to app,
  *   language, log out.
- * @param {{id:string,label:string,icon:React.ReactNode}[]} props.tabs icons at 15px.
+ * @param {{id:string,label:string,icon:React.ReactNode,children?:{id:string,label:string}[]}[]} props.tabs icons at 15px.
+ *   A tab with `children` is a tree: its children show under it while it is the
+ *   current tab (a line down the left, indented), and in a second row above the
+ *   bottom bar below lg.
  * @param {string}   props.current
  * @param {Function} props.onSelect (id) => void
+ * @param {string}   [props.currentChild] the open child of the current tab ('' = the tab's own page)
+ * @param {Function} [props.onSelectChild] (tabId, childId) => void
  * @param {string}   props.navLabel aria-label for both navs.
  * @param {React.ReactNode} [props.footer] e.g. the build stamp text.
  */
-export function ConsoleShell({ logo, eyebrow, badge, actions, tabs, current, onSelect, navLabel, footer, children }) {
+export function ConsoleShell({ logo, eyebrow, badge, actions, tabs, current, onSelect, currentChild = '', onSelectChild, navLabel, footer, children }) {
+  const open = tabs.find((tb) => tb.id === current && tb.children?.length) || null
   return (
     <div className="min-h-screen bg-gradient-to-b from-stone-50 to-stone-100 pb-24 lg:pb-16">
       <header className="bg-white border-b border-stone-200/70 sticky top-0 z-20 no-print">
@@ -52,16 +58,33 @@ export function ConsoleShell({ logo, eyebrow, badge, actions, tabs, current, onS
       <div className="px-4 flex gap-6">
         <nav aria-label={navLabel} className="hidden lg:block w-56 shrink-0 sticky top-[68px] self-start pt-5 pb-8 space-y-1 no-print">
           {tabs.map((tb) => (
-            <button
-              key={tb.id}
-              type="button"
-              onClick={() => onSelect(tb.id)}
-              aria-current={current === tb.id ? 'page' : undefined}
-              className={cn(RAIL_ITEM, current === tb.id ? 'bg-slate-900 text-white' : 'text-stone-600 hover:bg-stone-200/70')}
-            >
-              <span className="shrink-0">{tb.icon}</span>
-              <span className="truncate">{tb.label}</span>
-            </button>
+            <div key={tb.id}>
+              <button
+                type="button"
+                onClick={() => onSelect(tb.id)}
+                aria-current={current === tb.id && !currentChild ? 'page' : undefined}
+                aria-expanded={tb.children?.length ? current === tb.id : undefined}
+                className={cn(RAIL_ITEM, current === tb.id && !currentChild ? 'bg-slate-900 text-white' : current === tb.id && tb.children?.length ? 'text-stone-900 bg-stone-200/60' : 'text-stone-600 hover:bg-stone-200/70')}
+              >
+                <span className="shrink-0">{tb.icon}</span>
+                <span className="truncate">{tb.label}</span>
+              </button>
+              {open === tb && (
+                <div role="group" aria-label={tb.label} className="ml-[21px] mt-1 mb-1 space-y-0.5 border-l border-stone-300 pl-2">
+                  {tb.children.map((ch) => (
+                    <button
+                      key={ch.id}
+                      type="button"
+                      onClick={() => onSelectChild?.(tb.id, ch.id)}
+                      aria-current={currentChild === ch.id ? 'page' : undefined}
+                      className={cn('w-full h-9 px-3 inline-flex items-center text-sm font-medium rounded-lg transition-colors text-left', FOCUS_RING, currentChild === ch.id ? 'bg-slate-900 text-white' : 'text-stone-600 hover:bg-stone-200/70')}
+                    >
+                      <span className="truncate">{ch.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           ))}
         </nav>
 
@@ -78,6 +101,22 @@ export function ConsoleShell({ logo, eyebrow, badge, actions, tabs, current, onS
         className="lg:hidden fixed bottom-0 inset-x-0 z-20 bg-white/95 backdrop-blur border-t border-stone-200 overflow-x-auto no-print"
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       >
+        {open && (
+          <div role="group" aria-label={open.label} className="flex gap-1 px-2 pt-1.5 w-max min-w-full border-b border-stone-100">
+            {open.children.map((ch) => (
+              <button
+                key={ch.id}
+                type="button"
+                ref={ch.id === currentChild ? (el) => { if (el && el.scrollIntoView) el.scrollIntoView({ inline: 'center', block: 'nearest' }); } : undefined}
+                onClick={() => onSelectChild?.(open.id, ch.id)}
+                aria-current={currentChild === ch.id ? 'page' : undefined}
+                className={cn('shrink-0 px-3 h-8 inline-flex items-center rounded-lg text-xs font-medium whitespace-nowrap transition-colors', FOCUS_RING, currentChild === ch.id ? 'bg-slate-900 text-white' : 'text-stone-600 bg-stone-100 hover:bg-stone-200')}
+              >
+                {ch.label}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex gap-1 px-2 py-1.5 w-max min-w-full">
           {tabs.map((tb) => (
             <button
@@ -86,7 +125,7 @@ export function ConsoleShell({ logo, eyebrow, badge, actions, tabs, current, onS
               // A deep link can land on a tab parked off-screen; bring it in.
               ref={tb.id === current ? (el) => { if (el && el.scrollIntoView) el.scrollIntoView({ inline: 'center', block: 'nearest' }); } : undefined}
               onClick={() => onSelect(tb.id)}
-              aria-current={current === tb.id ? 'page' : undefined}
+              aria-current={current === tb.id && !currentChild ? 'page' : undefined}
               className={cn(BAR_ITEM, current === tb.id ? 'bg-slate-900 text-white' : 'text-stone-500 hover:bg-stone-100')}
             >
               <span className="shrink-0">{tb.icon}</span>

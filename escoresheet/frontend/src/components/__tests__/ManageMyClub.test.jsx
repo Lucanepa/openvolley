@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 
@@ -63,6 +64,12 @@ describe('the My club tab', () => {
   })
 })
 
+// the console owns the route (a page per part under My club); a test opens the part it is about
+function Routed({ start = '', ...props }) {
+  const [route, setRoute] = useState(start)
+  return <MyClubPanel {...props} route={route} onRoute={(path) => setRoute(path)} />
+}
+
 describe('MyClubPanel', () => {
   it('saves the contact address', async () => {
     api.club.setContact.mockResolvedValue(okRes({ club: {} }))
@@ -77,7 +84,7 @@ describe('MyClubPanel', () => {
 
   it('lists the members; removing one asks first and takes the club link only', async () => {
     api.club.removeMember.mockResolvedValue(okRes({ removed: 'u1' }))
-    render(<MyClubPanel clubs={[VBCM]} />)
+    render(<Routed start="c1/members" clubs={[VBCM]} />)
     const list = await screen.findByTestId('my-club-members')
     expect(within(list).getByText('Ada Scorer')).toBeInTheDocument()
     expect(within(list).getByText('manage.myClub.pending')).toBeInTheDocument() // no role yet
@@ -95,7 +102,7 @@ describe('MyClubPanel', () => {
 
   it('a new code is the club\'s: the club fixed, scorer or referee only, sent to the club endpoint', async () => {
     api.club.createInvite.mockResolvedValue(okRes({ code: 'ABCD-EFGH-JKMN', invite: { label: 'H1', club: 'VBC Musterdorf', role: 'referee' } }, 201))
-    render(<MyClubPanel clubs={[VBCM]} />)
+    render(<Routed start="c1/invites" clubs={[VBCM]} />)
     await waitFor(() => expect(api.club.listInvites).toHaveBeenCalledWith('c1'))
     expect(api.admin.listInvites).not.toHaveBeenCalled()
     fireEvent.click(await screen.findByRole('button', { name: /manage\.invites\.new/ }))
@@ -121,7 +128,7 @@ describe('MyClubPanel', () => {
     const share = vi.fn(async () => {})
     Object.defineProperty(navigator, 'share', { value: share, configurable: true })
     try {
-      render(<MyClubPanel clubs={[VBCM]} />)
+      render(<Routed start="c1/teams" clubs={[VBCM]} />)
       fireEvent.click(await screen.findByTestId('club-team-link'))
       await waitFor(() => expect(api.club.createTeamLink).toHaveBeenCalledWith('c1', 'team-h1'))
       const box = await screen.findByTestId('team-link-message')
@@ -148,7 +155,7 @@ describe('MyClubPanel', () => {
 
   it('an account that manages several clubs picks one', async () => {
     const other = { id: 'c2', name: 'VBC Other' }
-    render(<MyClubPanel clubs={[VBCM, other]} />)
+    render(<Routed start="c1/members" clubs={[VBCM, other]} />)
     await waitFor(() => expect(api.club.members).toHaveBeenCalledWith('c1'))
     fireEvent.change(screen.getByTestId('my-club-pick'), { target: { value: 'c2' } })
     await waitFor(() => expect(api.club.members).toHaveBeenCalledWith('c2'))
