@@ -27,7 +27,7 @@ public API need none.
 
 ## Requests
 
-`Authorization: Bearer ovk_…` on `https://backend.openvolley.app/api/club/v1`. 240 requests a minute per
+`Authorization: Bearer ovk_…` on `https://backend.openvolley.app/api/club/v1`. Every write (`PUT`, `POST`, `DELETE`) must send `Content-Type: application/json`, a `DELETE` without a body too, or the server answers 415 (a protection against cross-site form posts). 240 requests a minute per
 token; from one address 1200 a minute, and after 60 refused tokens in a minute (missing, unknown,
 revoked or expired) that address gets 429 for the rest of the minute, whatever token it sends. Answers are `{ "data": …, "error": null }` or `{ "data": null, "error": { "code", "message" } }`
 (the matches routes answer the public API's bodies, see `public-api.md`).
