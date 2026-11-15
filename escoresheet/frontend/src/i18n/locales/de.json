@@ -5672,6 +5672,7 @@
       "app_quit": "App beendet",
       "app_error": "App-Fehler",
       "backup_error": "Sicherung fehlgeschlagen",
+      "scoresheet_pdf": "eScoresheet-PDF",
       "auth_sign_in": "Angemeldet",
       "auth_sign_out": "Abgemeldet",
       "activity_overflow": "Alte Einträge verworfen"

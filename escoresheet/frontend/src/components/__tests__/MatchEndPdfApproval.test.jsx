@@ -38,6 +38,13 @@ vi.mock('../../contexts/AuthContext', () => ({ useAuth: () => null }))
 vi.mock('../../hooks/useScaledLayout', () => ({ useScaledLayout: () => ({ vmin: (n) => `${n}vmin` }), default: () => ({ vmin: (n) => `${n}vmin` }) }))
 vi.mock('../../utils/comprehensiveLogger', () => ({ exportLogsAsNDJSON: async () => '', downloadLogs: async () => {} }))
 vi.mock('../../utils/backendConfig', async (orig) => ({ ...(await orig()), getCloudApiUrl: () => null }))
+// The activity log's bus: what MatchEnd reports about the PDF (scoresheet.pdf)
+const activity = vi.hoisted(() => ({ calls: [] }))
+vi.mock('../../utils/activity/bus', async (orig) => ({
+  ...(await orig()),
+  emitActivity: (kind, data, opts) => { activity.calls.push({ kind, data, level: opts?.level, matchId: opts?.matchId }) }
+}))
+const pdfLog = () => activity.calls.filter(c => c.kind === 'scoresheet.pdf').map(({ data, level, matchId }) => ({ ...data, level, matchId }))
 // Storage uploads: answered at once, or never (uploads.hang)
 const uploads = vi.hoisted(() => ({ hang: false, paths: [] }))
 vi.mock('../../lib/apiClient', () => {
@@ -191,6 +198,7 @@ beforeEach(() => {
   liveEnd.done = false
   liveEnd.calls.length = 0
   alerts.showAlert = vi.fn()
+  activity.calls.length = 0
   URL.createObjectURL = vi.fn(() => 'blob:x')
   HTMLAnchorElement.prototype.click = () => {}
   Object.defineProperty(window.navigator, 'onLine', { configurable: true, get: () => true })
@@ -393,6 +401,56 @@ describe('MatchEnd: the approval PDF', () => {
     fireEvent.click(await screen.findByRole('menuitem', { name: new RegExp(en.matchEnd.preview) }))
     await waitFor(() => expect(opened).toHaveLength(1))
     expect(opened[0].url).toBe('/scoresheet/?matchId=1')
+  })
+})
+
+// 3.2.6: a PDF lost at the approval (its window closed before the PDF came)
+// left no trace in the activity log
+describe('MatchEnd: the approval PDF in the activity log', () => {
+  // answers name their window's request: a wait an earlier test left open ignores them
+  const reqOf = (w) => new URL(w.url, 'http://x').searchParams.get('pdfReq')
+  it('a failed attempt, the retry and the PDF that came', async () => {
+    render(<MatchEnd matchId={1} />)
+    await approve()
+    await postFromSheet({ type: 'pdfBlobFailed', reason: 'closed', req: reqOf(opened[0]) })
+    fireEvent.click(await findButton(en.matchEnd.export.retry))
+    await waitFor(() => expect(opened).toHaveLength(2))
+    await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf', req: reqOf(opened[1]) })
+    await findButton(en.matchEnd.closeMatch)
+    const log = pdfLog()
+    expect(log.map(e => [e.step, e.level, e.attempt, e.reason])).toEqual([
+      ['requested', 'info', 1, undefined],
+      ['failed', 'warn', 1, 'closed'],
+      ['requested', 'info', 2, undefined],
+      ['received', 'info', 2, undefined]
+    ])
+    expect(log.every(e => e.purpose === 'approval' && e.matchId === 1)).toBe(true)
+    expect(log[3].bytes).toBe(8)
+    expect(typeof log[3].ms).toBe('number')
+  })
+
+  it('Approve without PDF is an error entry with the reason', async () => {
+    render(<MatchEnd matchId={1} />)
+    await approve()
+    await postFromSheet({ type: 'pdfBlobFailed', req: reqOf(opened[0]) })
+    fireEvent.click(await findButton(en.matchEnd.export.approveWithoutPdf))
+    await findButton(en.matchEnd.closeMatch)
+    expect(pdfLog().map(e => [e.step, e.level, e.reason])).toEqual([
+      ['requested', 'info', undefined],
+      ['failed', 'warn', 'failed'],
+      ['approved_without_pdf', 'error', 'failed']
+    ])
+  })
+
+  it('Cancel while the PDF is made is logged as cancelled, nothing approved', async () => {
+    render(<MatchEnd matchId={1} />)
+    await approve()
+    fireEvent.click(await screen.findByTestId('export-cancel'))
+    await waitFor(() => expect(approveButton()).toBeEnabled())
+    expect(pdfLog().map(e => [e.step, e.level, e.reason])).toEqual([
+      ['requested', 'info', undefined],
+      ['cancelled', 'info', 'cancelled']
+    ])
   })
 })
 

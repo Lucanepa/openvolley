@@ -42,6 +42,7 @@ import { sanitizeForFilename } from '../utils/stringUtils'
 import { formatTimeLocal } from '../utils/timeUtils'
 import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
 import { waitForScoresheetPdf, PDF_FAIL, PDF_REQUEST_PARAM } from '../utils/scoresheetPdfRequest'
+import { logScoresheetPdf } from '../utils/scoresheetPdfLog'
 import { getMatchWinner, clearedPostMatchSignatures, planForfeitReversal, matchForfeitOf, restoredSetWrites, resultIssues } from '../domain/matchEnd'
 import {
   ROLE_TO_SLOT, approvalFor, isApprovalValid, slotComplete, approvalLine, approvalsBySlot, approvalSummary,
@@ -1369,11 +1370,14 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   // failed or the scorer presses Cancel; the scorer then chooses: Retry,
   // Approve without PDF (canSkip: the approval only) or Cancel.
   // OpenBeach video 2026-10-08: closing the window hung the approval.
-  // Resolves to { pdfResult, choice: 'pdf' | 'skip' | 'cancel' }.
-  const requestPdf = async ({ canSkip = true } = {}) => {
-    for (;;) {
+  // Resolves to { pdfResult, choice: 'pdf' | 'skip' | 'cancel', reason }.
+  // Each attempt and its outcome go to the activity log (scoresheet.pdf).
+  const requestPdf = async ({ canSkip = true, purpose = 'approval' } = {}) => {
+    for (let attempt = 1; ; attempt += 1) {
       const abort = new AbortController()
       exportAbortRef.current = abort
+      const startedAt = Date.now()
+      logScoresheetPdf('requested', { purpose, attempt }, { matchId })
       try {
         const pdfResult = await waitForScoresheetPdf(
           // pdfReq: the page's answers name this attempt (a window of an
@@ -1381,14 +1385,18 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           (req) => openAppWindow(`/scoresheet/?matchId=${matchId}&action=getBlob&${PDF_REQUEST_PARAM}=${encodeURIComponent(req)}`, { features: 'width=1600,height=1200', title: t('header.scoresheet') }),
           { signal: abort.signal }
         )
+        logScoresheetPdf('received', { purpose, attempt, bytes: pdfResult?.blob?.size, ms: Date.now() - startedAt }, { matchId })
         setDownloadProgress(prev => (prev ? { ...prev, pdf: true } : prev))
-        return { pdfResult, choice: 'pdf' }
+        return { pdfResult, choice: 'pdf', reason: null }
       } catch (pdfError) {
         console.warn('[MatchEnd] No PDF:', pdfError)
+        const reason = pdfError?.reason || PDF_FAIL.FAILED
+        const cancelled = reason === PDF_FAIL.CANCELLED
+        logScoresheetPdf(cancelled ? 'cancelled' : 'failed', { purpose, attempt, reason, ms: Date.now() - startedAt }, { matchId })
         // Cancel during the wait: stop here
-        const choice = pdfError?.reason === PDF_FAIL.CANCELLED ? 'cancel' : await askPdfFailure(pdfError, { canSkip })
+        const choice = cancelled ? 'cancel' : await askPdfFailure(pdfError, { canSkip })
         if (choice === 'retry') continue
-        return { pdfResult: null, choice: canSkip && choice === 'skip' ? 'skip' : 'cancel' }
+        return { pdfResult: null, choice: canSkip && choice === 'skip' ? 'skip' : 'cancel', reason }
       } finally {
         exportAbortRef.current = null
       }
@@ -1409,11 +1417,13 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       const allEvents = await db.events.where('matchId').equals(matchId).sortBy('seq')
       sessionStorage.setItem('scoresheetData', JSON.stringify({ match: current, homeTeam, awayTeam, homePlayers, awayPlayers, sets: allSets, events: allEvents }))
       setDownloadProgress({ pdfOnly: true, json: true, pdf: false })
-      const { pdfResult } = await requestPdf({ canSkip: false })
+      const { pdfResult } = await requestPdf({ canSkip: false, purpose: 'missing' })
       setDownloadProgress(null)
       if (pdfResult && await queueApprovalFiles({ pdfResult, json: false })) {
         await db.matches.update(matchId, { scoresheetPdfMissing: false })
         toast.success(t('matchEnd.pdfMissing.queued'))
+      } else if (pdfResult && scoresheetUploadPath(match, { ext: 'pdf' })) {
+        logScoresheetPdf('not_queued', { purpose: 'missing' }, { matchId })
       }
     } catch (err) {
       console.error('[MatchEnd] Could not make the missing PDF:', err?.message)
@@ -1562,7 +1572,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       // (requestPdf). Approve without PDF: the JSON, the approval and the ZIP
       // go ahead, and the approved view makes the PDF again (pdfMissing).
       // Cancel: nothing is approved.
-      const { pdfResult, choice: pdfChoice } = await requestPdf()
+      const { pdfResult, choice: pdfChoice, reason: pdfFailReason } = await requestPdf()
       if (pdfChoice === 'cancel') {
         setDownloadProgress(null)
         setIsSaving(false)
@@ -1669,6 +1679,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       if (!match?.test) {
         const pdfQueued = await queueApprovalFiles({ pdfResult, sets: allSets, events: allEvents, match: approvedMatch })
         if (pdfQueued && match?.seed_key) await db.matches.update(matchId, { scoresheetPdfMissing: false })
+        // (a match without a game number has no cloud copy: nothing to queue)
+        if (pdfResult && !pdfQueued && match?.seed_key && scoresheetUploadPath(match, { ext: 'pdf' })) logScoresheetPdf('not_queued', { purpose: 'approval' }, { matchId })
       } else if (match.global === true) {
         // Global: the PDF and the final backup go to the Global store, by the
         // match's own key (utils/globalCloud); it stays on the device if that fails
@@ -1681,6 +1693,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       // Warn if PDF was not generated (approval still succeeded): an official
       // match's is made again from the approved view (pdfMissing)
       if (!pdfResult) {
+        logScoresheetPdf('approved_without_pdf', { purpose: 'approval', reason: pdfFailReason }, { matchId })
         showAlert(t(match?.test ? 'matchEnd.pdfGenerationFailedTest' : 'matchEnd.pdfGenerationFailed'), 'warning')
       }
     } catch (error) {

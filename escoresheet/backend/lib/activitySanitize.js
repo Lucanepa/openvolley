@@ -51,6 +51,8 @@ export const ACTIVITY_KINDS = Object.freeze({
   'app.quit': { cat: 'app', keys: [] },
   'app.error': { cat: 'error', keys: ['message', 'frames', 'source', 'repeats'] },
   'backup.error': { cat: 'error', keys: ['message'] },
+  // the match-end scoresheet PDF: asked for, received, failed, approved without it (utils/scoresheetPdfLog)
+  'scoresheet.pdf': { cat: 'match', keys: ['step', 'purpose', 'attempt', 'reason', 'bytes', 'ms'] },
   'auth.sign_in': { cat: 'app', keys: [] },
   'auth.sign_out': { cat: 'app', keys: [] },
   'activity.overflow': { cat: 'app', keys: ['dropped'] }
