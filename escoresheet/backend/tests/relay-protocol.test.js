@@ -797,7 +797,8 @@ async function bundleOnTheWire(wsUrl, { id, seed, gamePin }) {
   const full = await referee.waitFor((m) => m.type === 'match-full-data')
   assert.equal(full.events.length, 200)
   const wire = referee.ws._socket.bytesRead - before
-  const bytes = Buffer.byteLength(referee.raw[referee.raw.length - 1])
+  // the snapshot's own frame (scorer-presence follows it)
+  const bytes = Buffer.byteLength(referee.raw[referee.messages.indexOf(full)])
   scoreboard.send({ type: 'delete-match', matchId: id })
   await referee.waitFor((m) => m.type === 'match-deleted')
   for (const c of [scoreboard, referee]) c.ws.close()

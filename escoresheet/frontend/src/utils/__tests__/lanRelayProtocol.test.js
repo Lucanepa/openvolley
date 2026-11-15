@@ -1019,6 +1019,145 @@ describe('lanRelayCore protocol', () => {
     }
   })
 
+  // 2026-11-15: the referee and bench tablets only saw a frozen score when the
+  // scorer's laptop was closed or lost the Wi-Fi. The relay tells them
+  // whether a socket holds the room's scoreboard claim, once per flip.
+  describe('scorer-presence', () => {
+    const KEY = 'seed-presence-1'
+    const presence = (ws) => ws.sent.filter((m) => m.type === 'scorer-presence')
+    const sync = (device, home = 0) => syncMessage(makeMatch({ id: 1, seed_key: KEY }), {
+      sets: [{ id: 1, matchId: 1, index: 1, homePoints: home, awayPoints: 0 }], ...(device ? { device } : {})
+    })
+    const close = (relay, ws) => {
+      ws.readyState = 3
+      relay.removeClient(ws)
+    }
+
+    it('a subscriber before the scorer gets false, then true once the scorer syncs, then false when its socket closes', () => {
+      const relay = createLanRelay()
+      const referee = connect(relay, '192.168.1.20')
+      msg(relay, referee, { type: 'subscribe-match', matchId: KEY, pin: PINS.refereePin })
+      expect(presence(referee)).toHaveLength(1)
+      const first = presence(referee)[0]
+      expect(first).toMatchObject({ type: 'scorer-presence', matchId: KEY, present: false })
+      expect(Object.keys(first).sort()).toEqual(['matchId', 'present', 'timestamp', 'type'])
+      expect(Math.abs(first.timestamp - Date.now())).toBeLessThan(5000)
+
+      const scorer = connect(relay, '192.168.1.10')
+      msg(relay, scorer, sync(null, 1)) // the scorer syncs by its Dexie id: the room is the seed key
+      expect(presence(referee).map((m) => [m.matchId, m.present])).toEqual([[KEY, false], [KEY, true]])
+      // after the update: the tablet has the match before it hears the scorer is there
+      const types = referee.sent.map((m) => m.type)
+      expect(types.lastIndexOf('match-data-update')).toBeLessThan(types.lastIndexOf('scorer-presence'))
+      expect(presence(scorer)).toHaveLength(0) // not to the scorer itself
+      expect(containsPin(referee.raw.join(''))).toBe(false)
+
+      // a tablet going away changes nothing
+      const viewer = connect(relay, '192.168.1.30')
+      msg(relay, viewer, { type: 'subscribe-match', matchId: KEY })
+      close(relay, viewer)
+      expect(presence(referee)).toHaveLength(2)
+
+      close(relay, scorer)
+      expect(presence(referee).map((m) => m.present)).toEqual([false, true, false])
+      // the scorer back on a new socket
+      const back = connect(relay, '192.168.1.10')
+      msg(relay, back, sync(null, 2))
+      expect(presence(referee).map((m) => m.present)).toEqual([false, true, false, true])
+    })
+
+    it('sends no repeat on further syncs and gives a second subscriber the current state', () => {
+      const relay = createLanRelay()
+      const scorer = connect(relay, '192.168.1.10')
+      const referee = connect(relay, '192.168.1.20')
+      msg(relay, referee, { type: 'subscribe-match', matchId: KEY, pin: PINS.refereePin })
+      msg(relay, scorer, sync(null, 1))
+      for (let i = 2; i < 6; i++) msg(relay, scorer, sync(null, i))
+      msg(relay, scorer, { type: 'live-state-update', matchId: 1, liveState: { points_a: 5 } })
+      msg(relay, scorer, { type: 'match-action', matchId: 1, action: 'timeout', data: {} })
+      expect(presence(referee).map((m) => m.present)).toEqual([false, true])
+
+      // joining while the scorer is there: true, after the snapshot
+      const bench = connect(relay, '192.168.1.21')
+      msg(relay, bench, { type: 'subscribe-match', matchId: KEY, device: 'bench', team: 'home', pin: PINS.homeTeamPin })
+      expect(presence(bench).map((m) => [m.matchId, m.present])).toEqual([[KEY, true]])
+      const types = bench.sent.map((m) => m.type)
+      expect(types.indexOf('match-full-data')).toBeLessThan(types.indexOf('scorer-presence'))
+      expect(presence(referee)).toHaveLength(2) // the others are not told again
+      // a livescore viewer without a PIN gets it too (public, like the summary)
+      const viewer = connect(relay, '192.168.1.30')
+      msg(relay, viewer, { type: 'subscribe-match', matchId: KEY })
+      expect(presence(viewer).map((m) => m.present)).toEqual([true])
+      // a room nobody scores: false
+      msg(relay, viewer, { type: 'subscribe-match', matchId: 'seed-nobody' })
+      expect(viewer.last('scorer-presence')).toMatchObject({ matchId: 'seed-nobody', present: false })
+    })
+
+    it('a take-over keeps it true: no false in between, and the old device leaving changes nothing', () => {
+      const LAPTOP = '0a0a0a0a-1111-4111-8111-000000000001'
+      const PHONE = '0b0b0b0b-2222-4222-8222-000000000002'
+      const relay = createLanRelay()
+      const referee = connect(relay, '192.168.1.20')
+      msg(relay, referee, { type: 'subscribe-match', matchId: KEY, pin: PINS.refereePin })
+      const laptop = connect(relay, '192.168.1.10')
+      const phone = connect(relay, '192.168.1.11')
+      msg(relay, laptop, sync({ id: LAPTOP, platform: 'web', claim: 'laptop-1' }, 3))
+      msg(relay, phone, sync({ id: PHONE, platform: 'android', claim: 'phone-1' }, 5))
+      expect(laptop.last('scorer-moved')).toMatchObject({ matchId: KEY })
+      expect(referee.last('match-data-update').sets[0].homePoints).toBe(5)
+      // the laptop's older copy is refused; it closes: the phone still scores
+      msg(relay, laptop, sync({ id: LAPTOP, platform: 'web', claim: 'laptop-1' }, 3))
+      expect(laptop.last('error')).toMatchObject({ code: 'scorer-moved' })
+      close(relay, laptop)
+      expect(presence(referee).map((m) => m.present)).toEqual([false, true])
+      // the laptop takes the match back (a new claim) while the phone is up
+      const laptopAgain = connect(relay, '192.168.1.10')
+      msg(relay, laptopAgain, sync({ id: LAPTOP, platform: 'web', claim: 'laptop-2' }, 6))
+      expect(phone.last('scorer-moved')).toMatchObject({ matchId: KEY })
+      expect(presence(referee).map((m) => m.present)).toEqual([false, true])
+      // the phone, no longer the scorer, goes: nothing; the laptop goes: false
+      close(relay, phone)
+      expect(presence(referee).map((m) => m.present)).toEqual([false, true])
+      close(relay, laptopAgain)
+      expect(presence(referee).map((m) => m.present)).toEqual([false, true, false])
+    })
+
+    it('a scorer with two sockets is present until the last one closes; a test match the same', () => {
+      const relay = createLanRelay()
+      const referee = connect(relay, '192.168.1.20')
+      msg(relay, referee, { type: 'subscribe-match', matchId: 'seed-test-1' })
+      const testMatch = () => syncMessage(makeMatch({ id: 2, seed_key: 'seed-test-1', test: true, gamePin: null, refereePin: null, homeTeamPin: null, awayTeamPin: null }))
+      const a = connect(relay, '127.0.0.1')
+      const b = connect(relay, '127.0.0.1')
+      msg(relay, a, testMatch())
+      msg(relay, b, testMatch())
+      expect(b.last('error')).toBeUndefined()
+      close(relay, a)
+      expect(presence(referee).map((m) => m.present)).toEqual([false, true])
+      close(relay, b)
+      expect(presence(referee).map((m) => m.present)).toEqual([false, true, false])
+    })
+
+    it('a deleted match tells match-deleted, not scorer-presence; clear-all keeping another live socket keeps it true', () => {
+      const relay = createLanRelay()
+      const referee = connect(relay, '192.168.1.20')
+      msg(relay, referee, { type: 'subscribe-match', matchId: KEY, pin: PINS.refereePin })
+      const scorer = connect(relay, '127.0.0.1')
+      const other = connect(relay, '127.0.0.1')
+      msg(relay, scorer, sync(null, 1))
+      msg(relay, other, sync(null, 1))
+      msg(relay, scorer, { type: 'clear-all-matches' })
+      expect(presence(referee).map((m) => m.present)).toEqual([false, true])
+      msg(relay, other, { type: 'delete-match', matchId: KEY })
+      expect(referee.last('match-deleted')).toMatchObject({ matchId: KEY })
+      expect(presence(referee).map((m) => m.present)).toEqual([false, true])
+      // the room again from scratch: a new subscriber hears false, then true
+      msg(relay, referee, { type: 'subscribe-match', matchId: KEY, pin: PINS.refereePin })
+      msg(relay, other, sync(null, 2))
+      expect(presence(referee).map((m) => m.present)).toEqual([false, true, false, true])
+    })
+  })
+
   it('accepts the legacy nested `data` shape in the client reader', () => {
     const legacy = { type: 'match-data-update', matchId: '7', data: { match: { id: 7 }, sets: [{ id: 1 }] } }
     expect(readRelayBundle(legacy).sets).toHaveLength(1)
@@ -1206,7 +1345,8 @@ async function deflateScenario({ wsUrl }) {
     const full = await referee.waitFor((m) => m.type === 'match-full-data')
     expect(readRelayBundle(full).events).toHaveLength(200)
     const wire = referee.ws._socket.bytesRead - before
-    expect(wire).toBeLessThan(Buffer.byteLength(referee.raw.at(-1)) / 4)
+    // the snapshot's own frame (scorer-presence follows it)
+    expect(wire).toBeLessThan(Buffer.byteLength(referee.raw[referee.messages.indexOf(full)]) / 4)
   } finally {
     for (const c of [scoreboard, referee]) c.ws.close()
   }
@@ -1259,6 +1399,42 @@ async function pinCheckBudgetScenario({ httpBase, wsUrl }) {
   // no PIN is compared beyond the limit, the right one neither
   expect((await validate('424242')).status).toBe(429)
   board.ws.close()
+}
+
+/**
+ * scorer-presence on a real relay: a referee that subscribes before the
+ * scorer hears false, true once the scorer synced, nothing more on the next
+ * sync, a bench joining hears true, and both hear false when the scorer's
+ * socket closes.
+ */
+async function scorerPresenceScenario({ wsUrl }) {
+  const KEY = 'seed-presence-rt'
+  const sync = (home) => syncMessage(makeMatch({ id: 9, seed_key: KEY }), { sets: [{ id: 1, matchId: 9, index: 1, homePoints: home, awayPoints: 0 }] })
+  const isPresence = (present) => (m) => m.type === 'scorer-presence' && m.matchId === KEY && m.present === present
+  const referee = await openClient(wsUrl)
+  const scoreboard = await openClient(wsUrl)
+  const clients = [referee, scoreboard]
+  try {
+    referee.send({ type: 'subscribe-match', matchId: KEY, pin: PINS.refereePin })
+    const absent = await referee.waitFor(isPresence(false))
+    expect(typeof absent.timestamp).toBe('number')
+    scoreboard.send(sync(1))
+    await referee.waitFor(isPresence(true))
+    scoreboard.send(sync(2))
+    await referee.waitFor((m) => m.type === 'match-data-update' && m.sets?.[0]?.homePoints === 2)
+    const bench = await openClient(wsUrl)
+    clients.push(bench)
+    bench.send({ type: 'subscribe-match', matchId: KEY, device: 'bench', team: 'home', pin: PINS.homeTeamPin })
+    await bench.waitFor(isPresence(true))
+    scoreboard.ws.close()
+    await referee.waitFor((m) => isPresence(false)(m) && m !== absent)
+    await bench.waitFor(isPresence(false))
+    expect(referee.messages.filter((m) => m.type === 'scorer-presence').map((m) => m.present)).toEqual([false, true, false])
+    expect(scoreboard.messages.some((m) => m.type === 'scorer-presence')).toBe(false)
+    expect(containsPin(referee.raw.join('') + bench.raw.join(''))).toBe(false)
+  } finally {
+    for (const c of clients) c.ws.close()
+  }
 }
 
 async function relayScenario({ httpBase, wsUrl }) {
@@ -1432,6 +1608,7 @@ describe('relay runtimes speak the shared protocol', () => {
       await hallCrowdScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
       await deflateScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
       await pinCheckBudgetScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
+      await scorerPresenceScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
       const unknown = await fetch(`http://127.0.0.1:${port}/api/nope`)
       expect(unknown.status).toBe(404)
       expect(unknown.headers.get('content-type')).toMatch(/json/)
@@ -1535,6 +1712,7 @@ describe('relay runtimes speak the shared protocol', () => {
       await hostileFrameScenario({ httpBase, wsUrl })
       await hallCrowdScenario({ wsUrl })
       await pinCheckBudgetScenario({ httpBase, wsUrl })
+      await scorerPresenceScenario({ wsUrl })
       const unknown = await fetch(`${httpBase}/api/nope`)
       expect(unknown.status).toBe(404)
     } finally {
@@ -1587,6 +1765,7 @@ describe('relay runtimes speak the shared protocol', () => {
       await hostileFrameScenario({ httpBase, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await hallCrowdScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
       await pinCheckBudgetScenario({ httpBase, wsUrl: `ws://127.0.0.1:${wsPort}` })
+      await scorerPresenceScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
     })
   })
 })

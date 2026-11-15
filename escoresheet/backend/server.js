@@ -938,6 +938,9 @@ function notifyScorerMoved(externalId, deviceId = null) {
   }
   const room = key ? rooms.get(key) : null
   if (!room) return
+  // Its sockets lost the claim: gone until the new scorer's socket syncs,
+  // unless that one is in the room already (scorer-presence)
+  updateScorerPresence(key)
   const data = JSON.stringify({ type: 'scorer-moved', matchId: key, timestamp: Date.now() })
   let sent = 0
   room.clients.forEach((clientId) => {
@@ -5325,6 +5328,7 @@ function handleSocketMessage(clientInfo, data) {
       case 'join_match':
         // Client joins a match room
         handleJoinMatch(clientInfo, message)
+        sendScorerPresence(clientInfo, normalizeMatchId(message.matchId))
         break
 
       case 'leave_match':
@@ -5398,6 +5402,7 @@ function handleSocketMessage(clientInfo, data) {
         clientInfo.device = DEVICE_LABELS.includes(message.device) ? message.device : clientInfo.device
         clientInfo.deviceTeam = VALID_TEAMS.includes(message.team) ? message.team : clientInfo.deviceTeam
         sendBenchRequestsOnJoin(clientInfo, normalizeMatchId(message.matchId))
+        sendScorerPresence(clientInfo, normalizeMatchId(message.matchId))
         break
 
       case 'unsubscribe-match': {
@@ -5539,6 +5544,54 @@ function admitWaiting(matchId) {
     const access = hasRelayAccess(c, matchId, entry) ? 'full' : 'summary'
     sendToClient(c, matchDataMessage('match-full-data', matchId, entry, undefined, access))
     sendBenchRequestsOnJoin(c, matchId)
+  }
+}
+
+// --- Scorer presence (scorer-presence) ---------------------------------------
+// The referee and bench tablets warn when the scorer's device is gone (closed
+// laptop, crashed app, lost Wi-Fi): before, they only saw a frozen score.
+// Present: an OPEN socket in the room holds the match's claim (proved it with
+// an accepted sync, ownedMatches). Told to a socket as the last answer to its
+// join (its room waiting: false), and to the room's other sockets when it
+// flips (after the sync's match-data-update): the room keeps what they were
+// told last (room.scorerPresent), so a sync that changes nothing sends
+// nothing. Checked after each change of a room's sockets or claims, never in
+// between: a take-over within one sync never reads as gone. A deleted match
+// is match-deleted only. No PIN, device or address in it. Same message as the LAN relays
+// (lanRelayCore.cjs, src-tauri/src/relay.rs).
+const scorerPresenceMessage = (matchId, present) => ({ type: 'scorer-presence', matchId, present, timestamp: Date.now() })
+
+/** Whether an open socket in the room of `matchId` holds its claim. */
+function scorerPresentIn(matchId, room = rooms.get(matchId)) {
+  if (!room) return false
+  for (const id of room.clients) {
+    const c = connections.get(id)
+    if (c && c.ws.readyState === 1 && c.ownedMatches.has(matchId)) return true
+  }
+  return false
+}
+
+/**
+ * A socket that has just joined `matchId` (join_match, subscribe-match): the
+ * last answer to the join, after the snapshot and the bench requests. A room
+ * the relay does not hold yet has no scorer (the tablet counts from now).
+ */
+function sendScorerPresence(clientInfo, matchId) {
+  if (!matchId || !clientInfo.rooms.has(matchId) || clientInfo.ws.readyState !== 1) return
+  sendToClient(clientInfo, scorerPresenceMessage(matchId, scorerPresentIn(matchId)))
+}
+
+/** Tell the room's sockets that do not hold its claim when its scorer came or went; nothing when it did not change. */
+function updateScorerPresence(matchId) {
+  const room = matchId ? rooms.get(matchId) : null
+  if (!room) return
+  const present = scorerPresentIn(matchId, room)
+  if (present === (room.scorerPresent === true)) return
+  room.scorerPresent = present
+  const data = JSON.stringify(scorerPresenceMessage(matchId, present))
+  for (const id of room.clients) {
+    const c = connections.get(id)
+    if (c && c.ws.readyState === 1 && !c.ownedMatches.has(matchId)) sendToRoomMember(c, data)
   }
 }
 
@@ -5824,6 +5877,9 @@ function leaveRoom(clientInfo, matchId) {
     role: clientInfo.role,
     roomSize: room.clients.size
   }, clientInfo.id)
+
+  // The scorer's last socket out: its tablets are told (scorer-presence)
+  if (room.clients.size > 0) updateScorerPresence(matchId)
 
   // Clean up empty room
   if (room.clients.size === 0) {
@@ -6662,6 +6718,7 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
   const venueDevice = DB_MODE ? null : venueDeviceClaim(message.device)
   if (venueDevice && isMovedVenueClaim(matchId, venueDevice)) {
     clientInfo.ownedMatches.delete(matchId)
+    updateScorerPresence(matchId)
     clientInfo.ws.send(JSON.stringify({ type: 'error', code: 'scorer-moved', message: CLAIM_ERRORS['scorer-moved'], matchId }))
     return
   }
@@ -6807,6 +6864,9 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
   broadcastMatchData(matchId, 'match-data-update', activeMatches.get(matchId), message._timestamp, clientInfo.id, { timestamp: new Date().toISOString() })
   // The tablets that subscribed before the room existed
   if (created) admitWaiting(matchId)
+  // Once the claim is made: a take-over within this sync (claimMatch,
+  // venueScorerAfter) never reads as the scorer gone
+  updateScorerPresence(matchId)
 
   if (LOG_EACH_CONNECTION) console.log(`📤 Match data synced for ${logValue(matchId)} (Game #${logValue(match?.gameN || 'unknown')})`)
   else relaySummary.count('match bundles synced')
@@ -6952,6 +7012,7 @@ function handleClearMatches(clientInfo, message) {
     const coOwned = [...connections.values()].some(c => c !== clientInfo && c.ws.readyState === 1 && c.ownedMatches.has(matchId))
     if (coOwned) {
       clientInfo.ownedMatches.delete(matchId)
+      updateScorerPresence(matchId)
       continue
     }
     removeMatch(matchId)
