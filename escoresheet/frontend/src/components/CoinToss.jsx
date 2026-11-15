@@ -20,6 +20,7 @@ import ballFallback from '../ball_fallback.png'
 const ballImage = ballFallback
 import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
+import { sendsCloudBackup } from '../utils/globalCloud'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { getBackendUrl } from '../utils/backendConfig'
 import { runConnectionChecks, checksOutcome, readOfflineMode } from '../utils/preMatchChecks'
@@ -1090,7 +1091,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
     }
 
     // Cloud backup at coin toss (non-blocking)
-    if (!match?.test) {
+    if (sendsCloudBackup(match)) {
       const gameNum = match?.gameN || match?.game_n || null
       exportMatchData(matchId).then(backupData => {
         uploadBackupToCloud(matchId, backupData)

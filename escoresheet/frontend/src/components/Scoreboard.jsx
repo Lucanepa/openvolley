@@ -54,6 +54,7 @@ import { queueSetStartTimeSync } from '../utils/setStartTimeSync'
 import { ACCESS_CHANGED_EVENT } from '../lib/access'
 import { queueEventSync, queueSetScoreSync, queueSetReopenSync, queueSetDeletes, setUpdateJob, buildSetEndMatchPayload, setLiveStateDirty, isLiveStateDirty, isLiveStateErrorWorthAlert, isLiveStateRefusal, isLiveStateRefused, markLiveStateRefused, clearLiveStateRefused } from '../utils/eventSync'
 import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from '../utils/logger'
+import { sendsCloudBackup } from '../utils/globalCloud'
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
 import { defaultSetStartTime, actualStartRemark, startsFromSchedule, startScheduleOf, typedStartNear } from '../utils/setStartTime'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
@@ -5383,7 +5384,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Continuous cloud backup after every event (non-blocking, throttled),
     // once the action has committed
-    if (!isTest) {
+    if (sendsCloudBackup(match)) {
       const gameNum = data?.match?.gameNumber || data?.match?.game_n || null
       deferEffect({ once: 'backup', run: () => triggerContinuousBackup(matchId, () => exportMatchData(matchId), gameNum) })
     }
@@ -7137,7 +7138,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         onTriggerEventBackup?.('match_end')
 
         // Cloud backup at match end (non-blocking)
-        if (matchRecord?.test !== true) {
+        if (sendsCloudBackup(matchRecord)) {
           const gameNum = matchRecord?.gameNumber || matchRecord?.game_n || null
           exportMatchData(matchId).then(backupData => {
             uploadBackupToCloud(matchId, backupData)
@@ -7181,7 +7182,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         onTriggerEventBackup?.('set_end')
 
         // Cloud backup at set end (non-blocking)
-        if (matchRecord?.test !== true) {
+        if (sendsCloudBackup(matchRecord)) {
           setSetTransitionLoading({ step: 'Uploading backup...' })
           const gameNum = matchRecord?.gameNumber || matchRecord?.game_n || null
           exportMatchData(matchId).then(backupData => {

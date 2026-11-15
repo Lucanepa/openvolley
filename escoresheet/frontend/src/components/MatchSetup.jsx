@@ -28,6 +28,7 @@ import { sendMatchInfoMail } from '../utils/matchInfoMail'
 import { exportMatchData, officialsFromCloud } from '../utils/backupManager'
 import { clearSetupDraft, dropStaleSetupDrafts, readSetupDraft, writeSetupDraft } from '../db/setupDrafts'
 import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
+import { sendsCloudBackup } from '../utils/globalCloud'
 import { toastQueuedSync } from '../utils/syncToast'
 import { hasStoredSessionToken, isAuthError } from '../hooks/useSyncQueue'
 import { apiFrom, authorizationHeader } from '../lib/apiClient'
@@ -2667,7 +2668,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           .catch(err => console.warn('[MatchSetup] Match info email failed:', err))
       }
 
-      if (isTestMatch) return
+      if (!sendsCloudBackup(match)) return
 
       // Cloud backup at match setup (non-blocking)
       exportMatchData(matchId).then(backupData => {
