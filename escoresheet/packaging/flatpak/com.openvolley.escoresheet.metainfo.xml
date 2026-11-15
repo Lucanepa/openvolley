@@ -71,6 +71,20 @@
   </screenshots>
 
   <releases>
+    <release version="3.2.4" date="2026-11-15">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.2.4</url>
+      <description>
+        <ul>
+          <li>Decision change also after a libero replacement; one that no longer fits is taken back.</li>
+          <li>Game captain: fixed once named (FIVB 5.1.2); the last one is proposed when a new one is needed.</li>
+          <li>Fixing a starting line-up after rallies puts the new player on court.</li>
+          <li>Edit match info at any time (Match menu).</li>
+          <li>Deciding set: the serve shows beside the setup buttons.</li>
+          <li>Bigger score and buttons on tall screens; SERVE box in the corner.</li>
+          <li>Informal address in all languages.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.2.3" date="2026-11-15">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.2.3</url>
       <description>
