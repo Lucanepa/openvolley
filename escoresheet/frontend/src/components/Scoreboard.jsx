@@ -16075,14 +16075,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 alignItems: 'center',
                 justifyItems: 'center',
                 justifySelf: 'center',
-                fontSize: 'min(8vw, 8vh)',
+                fontSize: 'min(8vw, calc(8vh + var(--tall-extra, 0px) * 0.9))',
                 pointerEvents: 'none'
               }}>
                 {/* Left Score */}
                 <span style={{
                   fontFamily: getScoreFont(),
                   fontVariantNumeric: 'tabular-nums',
-                  fontSize: 'min(8vw, 8vh)',
+                  fontSize: 'min(8vw, calc(8vh + var(--tall-extra, 0px) * 0.9))',
                   fontWeight: 500,
                   lineHeight: 1,
                   textAlign: 'center'
@@ -16091,7 +16091,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 {/* Colon */}
                 <span style={{
                   fontFamily: getScoreFont(),
-                  fontSize: 'min(8vw, 8vh)',
+                  fontSize: 'min(8vw, calc(8vh + var(--tall-extra, 0px) * 0.9))',
                   fontWeight: 700,
                   lineHeight: 1,
                   color: '#22c55e',
@@ -16103,7 +16103,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <span style={{
                   fontFamily: getScoreFont(),
                   fontVariantNumeric: 'tabular-nums',
-                  fontSize: 'min(8vw, 8vh)',
+                  fontSize: 'min(8vw, calc(8vh + var(--tall-extra, 0px) * 0.9))',
                   fontWeight: 500,
                   lineHeight: 1,
                   textAlign: 'center'
@@ -17543,6 +17543,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               alignItems: (data?.set?.index === 5 && !set5SetupConfirmed) ? 'center' : 'stretch',
               gap: isCompactMode ? 'calc(8px * var(--scale-factor))' : 'calc(16px * var(--scale-factor))',
               width: '100%',
+              // never squeezed by the court box (it shrinks first)
+              flexShrink: 0,
               minHeight: isCompactMode ? 'calc(100px * var(--scale-factor))' : 'calc(172px * var(--scale-factor))'
             }}>
               {/* Set Results Table - Left Team (hidden in compact mode and set 5 setup - shown below instead) */}
