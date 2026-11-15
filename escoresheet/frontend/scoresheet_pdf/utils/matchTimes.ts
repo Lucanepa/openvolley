@@ -60,6 +60,10 @@ export function setStartMs(set: TimedSet | null | undefined, events?: TimedEvent
     .map(e => ms(e.payload?.startTime ?? e.ts))
     .find((n): n is number => n !== null) ?? null
   if (confirmed !== null && dialog !== null && toMinute(confirmed) !== toMinute(dialog)) return toMinute(confirmed)
+  // Owner 2026-11-15: the time the scorer confirmed (the dialog proposes the
+  // actual start, or last set end + 3 min) is the set's start, not the clock
+  // of its first rally.
+  if (dialog !== null) return toMinute(dialog)
   // The rally starts stay on the scoring device: there they tell the start.
   // set_start's firstRallyAt is for a copy from the server, which has none;
   // on the device it can be older than every rally start left (the set's

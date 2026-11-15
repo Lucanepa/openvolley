@@ -68,41 +68,38 @@ export function startScheduleOf(match, now = new Date()) {
   return Math.abs(new Date(onDay).getTime() - now.getTime()) <= TEST_SCHEDULE_WINDOW_MS ? scheduledAt : null
 }
 
-/** True when the set's start is proposed from the schedule: set 1 of a match with a scheduled time. */
-export function startsFromSchedule({ setIndex, scheduledAt }) {
-  return setIndex === 1 && scheduledStartOnDay(scheduledAt) !== null
+/**
+ * Set 1's start is no longer proposed from the schedule (owner 2026-11-15:
+ * the match's actual start), so nothing is "from the schedule" any more.
+ * Kept for the callers that pass the flag along.
+ */
+export function startsFromSchedule() {
+  return false
 }
 
+/** Minutes between a set's end and the next set's proposed start (the interval). */
+export const INTERVAL_MINUTES = 3
+
 /**
- * Default time offered by the "Set N start time" dialog.
+ * Default time offered by the "Set N start time" dialog (owner 2026-11-15).
  *
- * Set 1 of a match with a scheduled time: the scheduled time of day, on the
- * day played (owner 2026-10-08: "the proposed should be the scheduled time";
- * a different time the scorer confirms goes to the remarks, actualStartRemark).
+ * Set 1: the match's actual start, now (to the minute, rounded down).
+ * Set 2..5: the end of the last set already played + 3 minutes.
+ * The scorer's confirmed time is the set's start on the sheet and the result
+ * card (utils matchTimes), whatever the first rally's clock said.
  *
- * Any other set (and set 1 without a schedule, e.g. a test match): the dialog
- * opens when the set's first rally starts, so the set starts now (to the
- * minute, rounded down so it is never after the set's own rallies).
- * "Previous set end + 3 min" put a set's start after its own end whenever the
- * interval was ended early. The default is never before the end of the last
- * set already played (a device clock behind the stored end time); for the
- * best-of-3 deciding set (internal index 5) that is set 2.
- *
- * @param {{ setIndex: number, sets?: Array<{index: number, endTime?: string}>, now?: Date, scheduledAt?: string|null }} args
+ * @param {{ setIndex: number, sets?: Array<{index: number, endTime?: string}>, now?: Date }} args
  * @returns {string} ISO timestamp with zeroed seconds
  */
-export function defaultSetStartTime({ setIndex, sets = [], now = new Date(), scheduledAt = null }) {
-  if (setIndex === 1) {
-    const scheduled = scheduledStartOnDay(scheduledAt, now)
-    if (scheduled) return scheduled
-  }
-  let start = now.getTime()
+export function defaultSetStartTime({ setIndex, sets = [], now = new Date() }) {
+  let lastEnd = null
   for (const s of sets) {
     if (!s || !(s.index < setIndex) || !s.endTime) continue
     const end = new Date(s.endTime).getTime()
-    if (Number.isFinite(end) && end > start) start = end
+    if (Number.isFinite(end) && (lastEnd === null || end > lastEnd)) lastEnd = end
   }
-  return roundToMinute(new Date(start).toISOString())
+  if (setIndex === 1 || lastEnd === null) return roundToMinute(now.toISOString())
+  return roundToMinute(new Date(lastEnd + INTERVAL_MINUTES * 60000).toISOString())
 }
 
 /**
