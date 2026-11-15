@@ -394,9 +394,11 @@ Not in use: Supabase (left in 2026-10) and PocketBase. No code talks to
 Supabase any more; in 2026-11 the copy of its old vm-sync Edge Function
 (`backend/legacy/`), the `VITE_SUPABASE_*` lines of the release workflow, the
 Supabase MCP config and the Supabase-era database helpers (db/043) were
-removed. The old Supabase project is to be deleted (owner step, Supabase
-dashboard); its anon key stays readable in the public git history: **record
-here the day the project was deleted**. The PocketBase relay backup
+removed. The old Supabase project no longer exists: its host name stopped
+resolving (checked 15.11.2026, NXDOMAIN on public resolvers), and the
+`VITE_SUPABASE_*` GitHub secrets and Cloudflare Pages variables were removed
+the same day. Its anon key stays readable in the public git history but opens
+nothing. The PocketBase relay backup
 (never configured) was removed from the code in 2026-11 (server, app restore
 source). Neither is a recipient.
 
