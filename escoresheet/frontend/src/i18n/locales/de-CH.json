@@ -1120,6 +1120,26 @@
       "label": "Neui Nummere",
       "placeholder": "# neu",
       "ok": "Ine"
+    },
+    "dialogs": {
+      "setStartedUseSubstitution": "De Satz hät aagfange – wächsle Spieler mit emne Wächsel, nöd i de Ufstellig (FIVB 7.3.4).",
+      "decisionChangeNoUndo": "Die Entscheidsänderig cha nöd automatisch rückgängig gmacht werde. Mach e zweiti Entscheidsänderig, zum de Punkt zruggzgäh.",
+      "mustAwardPointBeforeLiberoEnters": "En Punkt muess vergäh werde, bevor de Libero ine cha",
+      "requiresExceptionalCaseDetail": "Dä Wächsel erfordert en Usnahmefall (Verletzig, Usschluss usw.)",
+      "noPlayersForRedesignationDetail": "Kei Spieler für d Libero-Neubezeichnig verfüegbar. Alli Spieler sind uf em Fäld oder scho Liberos.",
+      "substitutionCycleDone": "Dä Spieler cha nöd uusgwächslet werde (Wächselzyklus scho abgschlosse)",
+      "playerNumber": "Spieler {{number}}",
+      "sameSanctionTwice": "{{who}} hät die Sanktion scho ({{sanction}}). Es Teammitglied cha di glich Sanktion nöd zwöimal übercho.",
+      "teamAlreadyWarned": "Kei Warnig möglich: S Team hät scho e Warnig übercho.",
+      "penaltyRecordedPointLater": "Straaf erfasst. Punkt wird nach de Ufstellig vo beide Teams vergäh.",
+      "liberoUnableDetail": "Dä Libero isch spiilunfähig (verletzt, usgschlosse, disqualifiziert oder spiilunfähig erklärt)",
+      "playerNotAtPositionEntry": "Spieler #{{number}} isch nöd uf Position {{position}}. De Libero cha nöd ine.",
+      "playerIsLibero": "Spieler #{{number}} isch en Libero. Liberos chönd nöd dur anderi Liberos ersetzt werde.",
+      "liberoNotAtPositionExit": "Libero #{{number}} isch nöd uf Position {{position}}. De Libero cha nöd use.",
+      "originalPlayerNotFoundManual": "Ursprüngliche Spieler für dä Libero nöd gfunde. Bitte pass d Ufstellig vo Hand aa.",
+      "liberoOnCourtUnableDetail": "De Libero uf em Fäld isch spiilunfähig (verletzt, usgschlosse, disqualifiziert oder spiilunfähig erklärt)",
+      "otherLiberoUnableDetail": "De ander Libero isch spiilunfähig (verletzt, usgschlosse, disqualifiziert oder spiilunfähig erklärt)",
+      "noMatchData": "Kei Spiildate verfüegbar"
     }
   },
   "settings": {

@@ -1113,6 +1113,26 @@
       "label": "Neue Nummer",
       "placeholder": "# neu",
       "ok": "Rein"
+    },
+    "dialogs": {
+      "setStartedUseSubstitution": "Der Satz hat begonnen – wechsle Spieler mit einer Auswechslung, nicht in der Aufstellung (FIVB 7.3.4).",
+      "decisionChangeNoUndo": "Diese Entscheidungsänderung kann nicht automatisch rückgängig gemacht werden. Mache eine zweite Entscheidungsänderung, um den Punkt zurückzugeben.",
+      "mustAwardPointBeforeLiberoEnters": "Ein Punkt muss vergeben werden, bevor der Libero eintreten kann",
+      "requiresExceptionalCaseDetail": "Diese Auswechslung erfordert einen Ausnahmefall (Verletzung, Ausschluss usw.)",
+      "noPlayersForRedesignationDetail": "Keine Spieler für die Libero-Neubezeichnung verfügbar. Alle Spieler sind auf dem Feld oder bereits Liberos.",
+      "substitutionCycleDone": "Dieser Spieler kann nicht ausgewechselt werden (Wechselzyklus bereits abgeschlossen)",
+      "playerNumber": "Spieler {{number}}",
+      "sameSanctionTwice": "{{who}} hat diese Sanktion bereits ({{sanction}}). Ein Teammitglied kann dieselbe Sanktion nicht zweimal erhalten.",
+      "teamAlreadyWarned": "Keine Warnung möglich: Das Team hat bereits eine Warnung erhalten.",
+      "penaltyRecordedPointLater": "Strafe erfasst. Punkt wird nach Aufstellung beider Teams vergeben.",
+      "liberoUnableDetail": "Dieser Libero ist spielunfähig (verletzt, ausgeschlossen, disqualifiziert oder für spielunfähig erklärt)",
+      "playerNotAtPositionEntry": "Spieler #{{number}} ist nicht auf Position {{position}}. Der Libero kann nicht eintreten.",
+      "playerIsLibero": "Spieler #{{number}} ist ein Libero. Liberos können nicht durch andere Liberos ersetzt werden.",
+      "liberoNotAtPositionExit": "Libero #{{number}} ist nicht auf Position {{position}}. Der Libero kann nicht austreten.",
+      "originalPlayerNotFoundManual": "Ursprünglicher Spieler für diesen Libero nicht gefunden. Bitte passe die Aufstellung von Hand an.",
+      "liberoOnCourtUnableDetail": "Der Libero auf dem Feld ist spielunfähig (verletzt, ausgeschlossen, disqualifiziert oder für spielunfähig erklärt)",
+      "otherLiberoUnableDetail": "Der andere Libero ist spielunfähig (verletzt, ausgeschlossen, disqualifiziert oder für spielunfähig erklärt)",
+      "noMatchData": "Keine Spieldaten verfügbar"
     }
   },
   "settings": {

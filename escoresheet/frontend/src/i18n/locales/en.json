@@ -1121,6 +1121,26 @@
       "label": "New number",
       "placeholder": "# new",
       "ok": "In"
+    },
+    "dialogs": {
+      "setStartedUseSubstitution": "The set has started — change players with a substitution, not a line-up edit (FIVB 7.3.4).",
+      "decisionChangeNoUndo": "This decision change cannot be undone automatically. Apply a second decision change to give the point back.",
+      "mustAwardPointBeforeLiberoEnters": "A point must be awarded before the libero can enter",
+      "requiresExceptionalCaseDetail": "This substitution requires an exceptional case (injury, expulsion, etc.)",
+      "noPlayersForRedesignationDetail": "No available players for libero re-designation. All players are either on court or already liberos.",
+      "substitutionCycleDone": "This player cannot be substituted (already completed a substitution cycle)",
+      "playerNumber": "Player {{number}}",
+      "sameSanctionTwice": "{{who}} already has this sanction ({{sanction}}). A team member cannot receive the same sanction type twice.",
+      "teamAlreadyWarned": "Warning cannot be given because the team has already been warned.",
+      "penaltyRecordedPointLater": "Penalty recorded. Point will be awarded after both teams set their lineups.",
+      "liberoUnableDetail": "This libero is unable to play (injured, expelled, disqualified, or declared unable)",
+      "playerNotAtPositionEntry": "Player #{{number}} is not at position {{position}}. Cannot proceed with libero entry.",
+      "playerIsLibero": "Player #{{number}} is a libero. Liberos cannot be replaced by other liberos.",
+      "liberoNotAtPositionExit": "Libero #{{number}} is not at position {{position}}. Cannot proceed with libero exit.",
+      "originalPlayerNotFoundManual": "Original player not found for this libero. Please update lineup manually.",
+      "liberoOnCourtUnableDetail": "The libero currently on court is unable to play (injured, expelled, disqualified, or declared unable)",
+      "otherLiberoUnableDetail": "The other libero is unable to play (injured, expelled, disqualified, or declared unable)",
+      "noMatchData": "No match data available"
     }
   },
   "settings": {
