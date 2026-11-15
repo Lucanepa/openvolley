@@ -122,3 +122,22 @@ export function newOfficialMatchStep(match, status, { closedCopy = false, movedC
 
 /** The steps that keep the official match: the scorer is told why (App). */
 export const OFFICIAL_MATCH_KEPT_STEPS = ['recording', 'ended', 'unsent']
+
+/**
+ * The match the relay publishes, so the one whose tablets count (the header's
+ * tablet chip) and whose PINs Connect tablets shows: the open match, on Home
+ * the newest unfinished one (App's relay effect: matchId || currentMatch.id).
+ * The chip and the dialog took the newest unfinished match also while an
+ * older one was open (owner 15.11: a newer test match next to the official
+ * one, "0/1" while the referee was in the official match's room).
+ * @param {number|string|null|undefined} matchId the open match's id
+ * @param {object|null|undefined} openMatch that match's row (undefined while loading)
+ * @param {object|null|undefined} currentMatch pickCurrentMatch(...)
+ * @returns {object|null}
+ */
+export function relayPublishedMatch(matchId, openMatch, currentMatch) {
+  if (matchId !== null && matchId !== undefined) {
+    return openMatch && String(openMatch.id) === String(matchId) ? openMatch : null
+  }
+  return currentMatch || null
+}

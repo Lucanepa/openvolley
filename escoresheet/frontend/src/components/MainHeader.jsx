@@ -146,6 +146,9 @@ export default function MainHeader({
   showMatchSetup,
   matchId,
   currentMatch,
+  // the match whose tablets the chip counts: the one the relay publishes
+  // (App relayPublishedMatch); currentMatch when not given
+  tabletMatch,
   matchInfoMenuOpen,
   setMatchInfoMenuOpen,
   matchInfoData,
@@ -946,7 +949,7 @@ export default function MainHeader({
           )}
 
           {/* Tablet Status Indicator */}
-          {currentMatch && <TabletStatusIndicator match={currentMatch} compact={isCompactBar} />}
+          {(tabletMatch !== undefined ? tabletMatch : currentMatch) && <TabletStatusIndicator match={tabletMatch !== undefined ? tabletMatch : currentMatch} compact={isCompactBar} />}
         </div>
 
         {/* Center: Collapsible Match Info Menu, between the two equal groups */}
