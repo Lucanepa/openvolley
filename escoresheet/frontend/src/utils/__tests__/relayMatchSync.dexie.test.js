@@ -44,8 +44,8 @@ describe('relayMatchBundle: the relay gets one whole match', () => {
     expect(open.events[0]).not.toHaveProperty('stateSnapshot')
     expect(JSON.stringify(open)).not.toMatch(/1980|2011/)
 
-    // On the cloud relay the test match is not published at all
-    expect(await relayMatchBundle(db, older, { relayUrl: CLOUD })).toBeNull()
+    // On the cloud relay the test match is published too (the tablets list it on "Switch to test matches")
+    expect((await relayMatchBundle(db, older, { relayUrl: CLOUD })).relayKey).toBe(REHEARSAL)
     const official = await relayMatchBundle(db, newer, { relayUrl: CLOUD })
     expect(official.relayKey).toBe(OFFICIAL)
     expect(official.sets.map(s => s.homePoints)).toEqual([11])

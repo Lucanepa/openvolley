@@ -416,8 +416,9 @@ export { isLocalRelayUrl }
  * Where a live-state snapshot of the scorer goes. The relay gets it under the
  * match's room key (the referee, the livescore and the LedBox bridge follow
  * it); the database (match_live_state) only for an official match. A test
- * (rehearsal) match stays out of the cloud: its live state goes to a local
- * relay only (isLocalRelayUrl), so the LedBox can be rehearsed in the hall.
+ * (rehearsal) match stays out of the database: its live state goes to the
+ * relay only (a venue's or the cloud's, where the tablets list it on
+ * "Switch to test matches").
  * @param {{ isTest?: boolean, relayKey?: string|null, relayUrl?: string|null }} args
  * @returns {{ relay: boolean, cloud: boolean }}
  */
@@ -430,7 +431,7 @@ export { isLocalRelayUrl }
  * @param {string|null} relayUrl
  */
 export function mayPublishMatchData(match, relayUrl) {
-  return !!match && (match.test !== true || isLocalRelayUrl(relayUrl))
+  return !!match
 }
 
 // Kept on the device only: the undo snapshots (stateSnapshot on every point,
@@ -482,7 +483,7 @@ export function relayEvents(events) {
 
 export function liveStateTargets({ isTest = false, relayKey = null, relayUrl = null } = {}) {
   return {
-    relay: !!relayKey && (!isTest || isLocalRelayUrl(relayUrl)),
+    relay: !!relayKey,
     cloud: !isTest
   }
 }

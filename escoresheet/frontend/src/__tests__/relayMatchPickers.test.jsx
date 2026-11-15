@@ -61,8 +61,9 @@ import RefereeApp from '../RefereeApp'
 import BenchApp from '../BenchApp'
 
 describe('relay match list: what people can join', () => {
-  it('the referee gets the matches with the referee connection on (a rehearsal the scorer opened for one too)', () => {
-    expect(refereeJoinableMatches(RELAY_LIST).map((m) => m.id)).toEqual(['ref-on', 'rehearsal-ref'])
+  it('the referee gets the matches with the referee connection on (a rehearsal only on the test switch)', () => {
+    expect(refereeJoinableMatches(RELAY_LIST).map((m) => m.id)).toEqual(['ref-on'])
+    expect(refereeJoinableMatches(RELAY_LIST, Date.now(), { test: true }).map((m) => m.id)).toEqual(['rehearsal-ref'])
   })
 
   it('the bench gets the matches with a bench connection on', () => {
@@ -108,8 +109,7 @@ describe('the pickers offer only joinable relay matches', () => {
     await waitFor(() => expect(sync.listAvailableMatches).toHaveBeenCalled())
     fireEvent.click(await screen.findByRole('button', { name: 'refereeDashboard.selectGame' }))
     await screen.findByText('ref-on home')
-    expect(screen.getByText('rehearsal-ref home')).toBeTruthy()
-    for (const id of ['all-off', 'bench-away', 'rehearsal-off']) expect(screen.queryByText(`${id} home`)).toBeNull()
+    for (const id of ['all-off', 'bench-away', 'rehearsal-off', 'rehearsal-ref']) expect(screen.queryByText(`${id} home`)).toBeNull()
   })
 
   it('bench: no match without a bench connection, and the relay\'s team names', async () => {
@@ -117,5 +117,15 @@ describe('the pickers offer only joinable relay matches', () => {
     await screen.findByText('bench-away home')
     expect(screen.getByText('bench-away away')).toBeTruthy()
     for (const id of ['ref-on', 'all-off', 'rehearsal-off', 'rehearsal-ref']) expect(screen.queryByText(`${id} home`)).toBeNull()
+  })
+
+  it('referee: the switch lists the rehearsal matches, and asks the relay for them', async () => {
+    render(<RefereeApp />)
+    await waitFor(() => expect(sync.listAvailableMatches).toHaveBeenCalled())
+    fireEvent.click(await screen.findByTestId('test-matches-switch'))
+    await waitFor(() => expect(sync.listAvailableMatches).toHaveBeenCalledWith({ test: true }))
+    fireEvent.click(await screen.findByRole('button', { name: 'refereeDashboard.selectGame' }))
+    await screen.findByText('rehearsal-ref home')
+    expect(screen.queryByText('ref-on home')).toBeNull()
   })
 })

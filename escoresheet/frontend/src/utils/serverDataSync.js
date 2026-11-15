@@ -1564,9 +1564,9 @@ export async function updateMatchData(matchId, updates, { pin = null } = {}) {
 /**
  * List available matches from server (for game number dropdown)
  */
-export async function listAvailableMatches() {
+export async function listAvailableMatches({ test = false } = {}) {
   const serverUrl = getServerUrl()
-  const url = `${serverUrl}/api/match/list`
+  const url = `${serverUrl}/api/match/list${test ? '?test=1' : ''}`
 
   try {
     const response = await fetch(url, {

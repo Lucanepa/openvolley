@@ -2777,7 +2777,7 @@ function handleHttpRequest(req, res) {
   // devices (the point-hub LedBox bridge) pick their match from it. Public
   // fields only (relayMatchListRow). Not listed: a match whose scoreboard has
   // been gone longer than the relay holds it for (STALE_TAKEOVER_MS), and on
-  // the cloud a test (rehearsal) match: those belong to the venue's relay.
+  // the cloud a test (rehearsal) match, unless ?test=1 asks for those.
   // The cloud shows a match with the referee connection off only to its own
   // venue's address (cloudListsMatch), never to anonymous callers worldwide.
   // ?finished=1 lists finished matches too: the livescore served by a venue
@@ -2794,6 +2794,9 @@ function handleHttpRequest(req, res) {
       const requesterIpKey = ipBucketKey(requesterIp)
       // ?finished=1: finished matches too (the livescore on a venue relay)
       const includeFinished = url.searchParams.get('finished') === '1'
+      // ?test=1: only the test (rehearsal) matches, which every other list
+      // leaves out on the cloud (the tablets' "Switch to test matches")
+      const onlyTest = url.searchParams.get('test') === '1'
       // Every match's owners in one pass over the sockets: ownersOf per match
       // went through every socket once per match (about 4 ms per call with
       // 404 matches and 1,100 role sockets, older referee apps call this on
@@ -2812,7 +2815,7 @@ function handleHttpRequest(req, res) {
         // for everyone (a sync stores only validated fields; this is a second
         // guard on the read).
         try {
-          if (IS_CLOUD && entry.match?.test === true) continue
+          if (IS_CLOUD && (entry.match?.test === true) !== onlyTest) continue
           const owners = ownersByMatch.get(entry.matchId) || []
           if (entry.orphanedAt && now - entry.orphanedAt >= STALE_TAKEOVER_MS && owners.length === 0) continue
           // The cloud: a match without the referee connection only to its own
@@ -5351,7 +5354,9 @@ function handleSocketMessage(clientInfo, data) {
         // DATABASE_URL mode: also a match_live_state db-change for live
         // subscribers (livescore, scorer alarm), even when HTTP sync is down;
         // not one the relay refused (too large, relay memory full).
-        if (handleLiveStateUpdate(clientInfo, message) && liveStateRelay) {
+        // A test (rehearsal) match stays in the relay's memory: never in the database
+        const isTestRoom = activeMatches.get(resolveMatchKey(clientInfo, message.matchId))?.match?.test === true
+        if (handleLiveStateUpdate(clientInfo, message) && liveStateRelay && !isTestRoom) {
           // the live subscribers prove no PIN: no covered line-up (relayLiveStateView)
           const liveKey = resolveMatchKey(clientInfo, message.matchId)
           const liveState = relayLiveStateView(message.liveState, null, activeMatches.get(liveKey)?.match)
@@ -6849,9 +6854,6 @@ function handleLiveStateUpdate(clientInfo, message) {
   if (!requireMatchOwner(clientInfo, matchId, 'live-state-update')) return true
   if (!message.liveState || typeof message.liveState !== 'object') return true
   const stored = activeMatches.get(matchId)
-  // A test (rehearsal) match publishes its live state to the venue's relay
-  // only (the scorer never sends it here): the cloud drops it.
-  if (IS_CLOUD && stored?.match?.test === true) return true
   // The live hub's size limit (a real one is a few KB)
   if (JSON.stringify(message.liveState).length > MAX_LIVE_STATE_BYTES) {
     sendRelayRefusal(clientInfo, 'too-large', matchId, 'Live state too large for the relay')

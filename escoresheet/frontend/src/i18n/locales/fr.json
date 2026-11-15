@@ -2012,6 +2012,10 @@
       "other": "L'effectif ne peut pas être envoyé ({{problem}})."
     }
   },
+  "testMatches": {
+    "show": "Passer aux matchs de test",
+    "back": "Passer aux vrais matchs"
+  },
   "benchDashboard": {
     "title": "Espace équipe",
     "selectGame": "Sélectionner le match",

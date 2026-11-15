@@ -17,6 +17,7 @@ import { db } from './db/db'
 import { Check, ChevronRight, CalendarX2, Loader2, RefreshCw } from 'lucide-react'
 import { Button } from './ui/Button.jsx'
 import { IconButton } from './ui/IconButton.jsx'
+import TestMatchesSwitch from './components/TestMatchesSwitch.jsx'
 import { Field, FormError } from './ui/Field.jsx'
 import { EmptyState, EmptyInset } from './ui/EmptyState.jsx'
 import { RowList } from './ui/Row.jsx'
@@ -159,6 +160,7 @@ export default function RefereeApp() {
   // spinner, not the PIN form whose game list popped in a moment later
   // (owner 2026-11-11: "loads something, stops, loads it again")
   const [loadingMatches, setLoadingMatches] = useState(true)
+  const [showTest, setShowTest] = useState(false) // "Switch to test matches"
   const [matchesLoadedOnce, setMatchesLoadedOnce] = useState(false)
   const [showGameModal, setShowGameModal] = useState(false)
   // A match the PIN found while no game was picked (no list, no link): shown
@@ -315,11 +317,12 @@ export default function RefereeApp() {
     try {
       const { result, source } = await loadMatchList({
         listCloud: listAvailableMatchesSupabase,
+        useCloud: !showTest, // rehearsal matches live in the relay only
         // The relay lists every published match (display devices pick theirs
         // there): offer only those with the referee connection on.
         listRelay: async () => {
-          const r = await listAvailableMatches()
-          return r?.success ? { ...r, matches: refereeJoinableMatches(r.matches) } : r
+          const r = await listAvailableMatches({ test: showTest })
+          return r?.success ? { ...r, matches: refereeJoinableMatches(r.matches, Date.now(), { test: showTest }) } : r
         },
         relayFirst: isServedFromLocalServer()
       })
@@ -341,7 +344,7 @@ export default function RefereeApp() {
       setLoadingMatches(false)
       setMatchesLoadedOnce(true)
     }
-  }, [])
+  }, [showTest])
 
   // Load matches on mount only (no auto-polling - use manual refresh button)
   useEffect(() => {
@@ -720,6 +723,7 @@ export default function RefereeApp() {
           art={<Whistle size={96} strokeWidth={1.5} className="text-stone-900" />}
           title={t('refereeDashboard.dashboardTitle')}
         >
+          <TestMatchesSwitch showTest={showTest} onChange={setShowTest} />
           {/* Show "no active game" when server is connected but no games available */}
           {!matchesLoadedOnce && !linkedMatch ? (
             <ListLoading first className="py-8" label={t('refereeDashboard.loadingGames')} />

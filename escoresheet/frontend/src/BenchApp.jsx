@@ -22,6 +22,7 @@ import { apiFrom } from './lib/apiClient'
 import { CalendarX2, ChevronRight, Loader2, RefreshCw } from 'lucide-react'
 import { Button } from './ui/Button.jsx'
 import { IconButton } from './ui/IconButton.jsx'
+import TestMatchesSwitch from './components/TestMatchesSwitch.jsx'
 import { FormError } from './ui/Field.jsx'
 import { EmptyState } from './ui/EmptyState.jsx'
 import { RowList } from './ui/Row.jsx'
@@ -174,6 +175,7 @@ export default function BenchApp() {
   const [autoConnectTeam, setAutoConnectTeam] = useState(null)
   const [restoringSession, setRestoringSession] = useState(false)
   const [availableMatches, setAvailableMatches] = useState([])
+  const [showTest, setShowTest] = useState(false) // "Switch to test matches"
   // true from the start: the list is read on mount, and a first paint of
   // "No active games" turned into the list a moment later (owner 2026-11-11:
   // "loads something, stops, loads it again")
@@ -533,11 +535,11 @@ export default function BenchApp() {
         // The relay lists every published match (display devices pick theirs
         // there): offer only those with a bench connection on.
         listRelay: async () => {
-          const r = await listAvailableMatches()
-          return r?.success ? { ...r, matches: benchJoinableMatches(r.matches) } : r
+          const r = await listAvailableMatches({ test: showTest })
+          return r?.success ? { ...r, matches: benchJoinableMatches(r.matches, Date.now(), { test: showTest }) } : r
         },
         relayFirst: isServedFromLocalServer(),
-        useCloud: useSupabase
+        useCloud: useSupabase && !showTest // rehearsal matches live in the relay only
       })
       if (cloud) {
         // the cloud is connected even if it has no matches
@@ -553,7 +555,7 @@ export default function BenchApp() {
       setLoadingMatches(false)
       setMatchesLoadedOnce(true)
     }
-  }, [connectionMode])
+  }, [connectionMode, showTest])
 
   // Load available matches on mount only (no auto-polling — use manual refresh button)
   useEffect(() => {
@@ -1068,6 +1070,7 @@ export default function BenchApp() {
           art={<img src={ballImage} onError={(e) => e.target.src = ballFallback} alt="Volleyball" className="h-20 w-20" />}
           title={t('benchDashboard.title')}
         >
+        <TestMatchesSwitch showTest={showTest} onChange={setShowTest} />
         {loadingMatches ? (
           <div role="status" className="text-left">
             {matchesLoadedOnce
