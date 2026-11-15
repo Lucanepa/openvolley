@@ -80,7 +80,7 @@ describe('Scoreboard: the SERVE indicator', () => {
     // the side (the side's area is the container)
     const leftIndicator = left.querySelector('.serve-side__indicator')
     expect(leftIndicator.style.visibility).toBe('visible')
-    expect(leftIndicator.textContent).toBe('SERVE1')
+    expect(leftIndicator.textContent).toBe('Serve1')
     expect(leftIndicator.querySelector('[style*="container-type"]')).toBeTruthy()
     // owner, 3.0.16 ("auto width is fine"): the label and the box are as wide
     // as their content, not the whole side; the number two digits wide
@@ -144,7 +144,7 @@ describe('Scoreboard: the Game captain button', () => {
   it('is gone once a game captain on court is acting', async () => {
     await seedMatch({ awayCourtCaptain: 3, awayRememberedCourtCaptain: 3 })
     // the score shows, the line-ups are read: still no button
-    await waitFor(() => expect(document.querySelector('.serve-side__indicator')?.textContent).toBe('SERVE1'))
+    await waitFor(() => expect(document.querySelector('.serve-side__indicator')?.textContent).toBe('Serve1'))
     await new Promise(r => setTimeout(r, 300))
     expect(document.querySelector('.serve-side__chip')).toBeNull()
     cleanup()
