@@ -388,14 +388,14 @@ export default function RostersPanel({ data, lineups, servingTeam, team: onlyTea
 
       {officials.length > 0 && (
         <div className="officials-section" style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid var(--border)' }}>
-          <Section title="Match officials" />
+          <Section title={t('matchSetup.matchOfficials')} />
           <table className="roster-table">
             <thead>
               <tr>
-                <th>Role</th>
-                <th>Name</th>
-                <th>Country</th>
-                <th>DOB</th>
+                <th>{t('matchSetup.role')}</th>
+                <th>{t('matchSetup.name')}</th>
+                <th>{t('matchSetup.country')}</th>
+                <th>{t('roster.dob')}</th>
               </tr>
             </thead>
             <tbody>
