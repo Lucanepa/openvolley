@@ -79,7 +79,7 @@ Check the results, collect the signatures (captains, then officials; "Sign on ph
 
 ## Tablets in the hall
 
-Match › **Connect tablets**: choose the way (internet, hall Wi-Fi with the desktop app, or the desktop app's own network), turn each tablet on, and let it scan its code. The referee and bench tablets need their PIN; the livescore needs none. The header chip (for example 2/3) shows how many tablets are connected.
+The header menu (☰) › **Connect tablets** (also in Options): choose the way (internet, hall Wi-Fi with the desktop app, or the desktop app's own network), turn each tablet on, and let it scan its code. The referee and bench tablets need their PIN; the livescore needs none. The header chip (for example 2/3) shows how many tablets are connected.
 
 ## Offline, backups and another device
 
