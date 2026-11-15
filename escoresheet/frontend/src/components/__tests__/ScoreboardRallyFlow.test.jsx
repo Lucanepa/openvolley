@@ -311,7 +311,7 @@ describe('Reopen set', () => {
     fireEvent.click(item())
     await waitFor(() => expect(findButton(/^Reopen set$/)).toBeTruthy(), { timeout: 5000 })
     fireEvent.click([...document.querySelectorAll('button')].filter(b => b.textContent.trim() === 'Reopen set' && !b.disabled)[0])
-    await waitFor(() => expect(dialog(/Reopen Set 1\?/)).toBeTruthy(), { timeout: 5000 })
+    await waitFor(() => expect(dialog(/Reopen set 1\?/)).toBeTruthy(), { timeout: 5000 })
     await settle()
     fireEvent.click(findButton(/^Yes, reopen$/))
     await waitFor(async () => expect(await setsOf(matchId)).toEqual(['1:25-0']), { timeout: 8000 })

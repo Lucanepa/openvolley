@@ -2020,7 +2020,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         setIsFullscreen(true)
         reEnableWakeLock()
         // Show a helpful tip
-        showAlert('Tip: For true fullscreen on iOS, tap Share → Add to Home Screen, then open from there.', 'info')
+        showAlert(t('refereeDashboard.iosFullscreenTip', 'Tip: For true fullscreen on iOS, tap Share → Add to Home Screen, then open from there.'), 'info')
       } else {
         document.body.classList.remove('ios-fullscreen')
         setIsFullscreen(false)
@@ -2823,7 +2823,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             {/* The finished sheet, before the referee signs it on the scorer's device */}
             {scoresheetButton('mt-6')}
             <Button variant="secondary" size="xl" block className={canShowScoresheet ? 'mt-2' : 'mt-6'} onClick={onExit}>
-              Exit
+              {t('refereeDashboard.exit')}
             </Button>
           </Card>
         </div>
@@ -2941,7 +2941,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             style={{ minWidth: 'min(320px, 90vw)' }}
           >
             <h2 id="setter-modal-title" className="flex items-center justify-center gap-2 text-lg font-bold text-stone-900">
-              <VolleyballIcon size={18} /> Select setter
+              <VolleyballIcon size={18} /> {t('refereeDashboard.selectSetter', 'Select setter')}
             </h2>
             <p className="mt-1 mb-5 text-sm text-stone-500">
               {setterSelectionModal === 'left' ? leftTeamData?.name : rightTeamData?.name}
@@ -2950,7 +2950,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               {(() => {
                 const teamLineup = setterSelectionModal === 'left' ? leftLineup : rightLineup
                 const currentSetter = setterSelectionModal === 'left' ? setterNumber.left : setterNumber.right
-                if (!teamLineup) return <div className="col-span-full text-sm text-stone-500">No lineup available</div>
+                if (!teamLineup) return <div className="col-span-full text-sm text-stone-500">{t('refereeDashboard.noLineup', 'No lineup available')}</div>
 
                 return Object.entries(teamLineup).map(([position, posData]) => {
                   // Handle both rich format (posData is object with number) and legacy format (posData is number)
@@ -2984,7 +2984,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             </div>
             <div className="flex gap-2">
               <Button variant="secondary" size="xl" className="flex-1 font-medium" onClick={() => setSetterSelectionModal(null)}>
-                Cancel
+                {t('common.cancel')}
               </Button>
               <Button
                 variant="danger-outline"
@@ -2997,7 +2997,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   setSetterSelectionModal(null)
                 }}
               >
-                Exit advanced
+                {t('refereeDashboard.exitAdvanced', 'Exit advanced')}
               </Button>
             </div>
           </div>
@@ -3292,7 +3292,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                       <span>#{setterNumber.left}</span>
                     </>
                   ) : (
-                    <><SettingsIcon size={11} />Advanced</>
+                    <><SettingsIcon size={11} />{t('refereeDashboard.advanced', 'Advanced')}</>
                   )}
                 </button>
               )}
@@ -3326,7 +3326,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                       <span>#{setterNumber.right}</span>
                     </>
                   ) : (
-                    <><SettingsIcon size={11} />Advanced</>
+                    <><SettingsIcon size={11} />{t('refereeDashboard.advanced', 'Advanced')}</>
                   )}
                 </button>
               )}
@@ -3945,10 +3945,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             <div className="ov-kit p-2 text-center sm:p-4">
               <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-50 text-red-600"><BellIcon size={36} /></div>
               <p role="alert" className="mb-5 font-bold text-red-700" style={{ fontSize: vmin(3) }}>
-                Scorer needs attention
+                {t('refereeDashboard.scorerAttention', 'Scorer needs attention')}
               </p>
               <Button variant="dark" size="xl" block className="h-14 text-base" onClick={() => setAttentionModalOpen(false)}>
-                Acknowledge
+                {t('refereeDashboard.acknowledge', 'Acknowledge')}
               </Button>
             </div>
           </Modal>

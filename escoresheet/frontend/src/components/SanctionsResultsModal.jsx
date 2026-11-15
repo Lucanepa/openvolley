@@ -261,7 +261,7 @@ export default function SanctionsResultsModal({ open, onClose, data, teamAKey, l
     // No winner for a match stopped with level sets
     const winnerKey = getMatchWinner(allSets, data?.match?.bestOf, { forfeitTeam: data?.match?.forfeitTeam })
     const winnerName = winnerKey
-      ? (teamData(winnerKey)?.name || (winnerKey === 'home' ? 'Home' : 'Away'))
+      ? (teamData(winnerKey)?.name || (winnerKey === 'home' ? t('common.home') : t('common.away')))
       : t('matchEnd.noWinner', 'No winner (match stopped)')
 
     const captains = [

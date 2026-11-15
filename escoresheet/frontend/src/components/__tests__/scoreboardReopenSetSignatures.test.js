@@ -11,9 +11,9 @@ const src = readFileSync(resolve(__dirname, '../Scoreboard.jsx'), 'utf8')
 
 describe('Reopen set on a finished match', () => {
   it('sends the cleared post-match signatures with its status job', () => {
-    const start = src.indexOf('Reopen Set {reopenSetConfirm.setIndex}?')
+    const start = src.indexOf("t('scoreboard.dialogs.reopenSetBody'")
     expect(start).toBeGreaterThan(-1)
-    const body = src.slice(start, src.indexOf('Yes, reopen', start))
+    const body = src.slice(start, src.indexOf("t('scoreboard.dialogs.yesReopen'", start))
     const clear = body.indexOf('...clearedPostMatchSignatures()')
     const job = body.indexOf("status: 'live',\n", clear)
     expect(clear).toBeGreaterThan(-1)
