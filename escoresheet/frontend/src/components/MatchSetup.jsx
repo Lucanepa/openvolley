@@ -2513,6 +2513,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       // upload's PIN check works from Create match on (stored hashed there).
       const localMatch = await db.matches.get(matchId)
       const pinUpdates = missingConnectionPins(localMatch)
+      // The game PIN, made here when the match has none yet: since the info
+      // page saves only on Save (c3902a422) the auto-save no longer gave it one
+      // before Create match, and the insert below sent game_pin null, so the
+      // server never had it (restore by game PIN found nothing; 3.2.x)
+      const gamePin = isTestMatch ? null : (localMatch?.gamePin || match?.gamePin || generateSecurePin([]))
       const swapUpdates = swapSides ? swappedSideFields(localMatch) : {}
 
       // Update match with team IDs and match info
@@ -2544,6 +2549,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         sport_type: 'indoor',
         game_n: gameN ? parseInt(gameN, 10) : null,
         seed_key: matchSeedKey, // Ensure seed_key is set
+        ...(gamePin ? { gamePin } : {}),
         ...pinUpdates,
         bench_home: benchHome,
         bench_away: benchAway,
@@ -2570,7 +2576,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         external_id: matchSeedKey,
         scheduled_at: scheduledAt || null,
         game_n: gameN ? parseInt(gameN, 10) : null,
-        game_pin: match?.gamePin || null,
+        game_pin: gamePin,
         connection_pins: buildConnectionPins({ ...localMatch, ...pinUpdates }),
         sport_type: 'indoor',
         test: false,
