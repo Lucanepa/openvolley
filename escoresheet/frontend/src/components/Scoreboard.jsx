@@ -16078,7 +16078,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             {visibleSets.map(set => {
                               const leftPoints = currentLeftTeamKey === 'home' ? set.homePoints : set.awayPoints
                               const rightPoints = currentLeftTeamKey === 'home' ? set.awayPoints : set.homePoints
-                              const won = leftPoints > rightPoints ? 1 : 0
+                              const won = set.finished && leftPoints > rightPoints ? 1 : 0
                               const substitutions = (data?.events || []).filter(e =>
                                 e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
                               ).length
@@ -17682,7 +17682,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             {visibleSets.map(set => {
                               const leftPoints = currentLeftTeamKey === 'home' ? set.homePoints : set.awayPoints
                               const rightPoints = currentLeftTeamKey === 'home' ? set.awayPoints : set.homePoints
-                              const won = leftPoints > rightPoints ? 1 : 0
+                              const won = set.finished && leftPoints > rightPoints ? 1 : 0
                               const substitutions = (data?.events || []).filter(e =>
                                 e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
                               ).length
@@ -18196,7 +18196,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             {visibleSets.map(set => {
                               const rightPoints = currentRightTeamKey === 'home' ? set.homePoints : set.awayPoints
                               const leftPoints = currentRightTeamKey === 'home' ? set.awayPoints : set.homePoints
-                              const won = rightPoints > leftPoints ? 1 : 0
+                              const won = set.finished && rightPoints > leftPoints ? 1 : 0
                               const substitutions = (data?.events || []).filter(e =>
                                 e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
                               ).length
@@ -18287,7 +18287,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             {visibleSets.map(set => {
                               const leftPoints = currentLeftTeamKey === 'home' ? set.homePoints : set.awayPoints
                               const rightPoints = currentLeftTeamKey === 'home' ? set.awayPoints : set.homePoints
-                              const won = leftPoints > rightPoints ? 1 : 0
+                              const won = set.finished && leftPoints > rightPoints ? 1 : 0
                               const substitutions = (data?.events || []).filter(e =>
                                 e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
                               ).length
@@ -18359,7 +18359,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             {visibleSets.map(set => {
                               const rightPoints = currentRightTeamKey === 'home' ? set.homePoints : set.awayPoints
                               const leftPoints = currentRightTeamKey === 'home' ? set.awayPoints : set.homePoints
-                              const won = rightPoints > leftPoints ? 1 : 0
+                              const won = set.finished && rightPoints > leftPoints ? 1 : 0
                               const substitutions = (data?.events || []).filter(e =>
                                 e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
                               ).length
@@ -19450,7 +19450,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             {visibleSets.map(set => {
                               const rightPoints = currentRightTeamKey === 'home' ? set.homePoints : set.awayPoints
                               const leftPoints = currentRightTeamKey === 'home' ? set.awayPoints : set.homePoints
-                              const won = rightPoints > leftPoints ? 1 : 0
+                              const won = set.finished && rightPoints > leftPoints ? 1 : 0
                               const substitutions = (data?.events || []).filter(e =>
                                 e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
                               ).length
@@ -22061,7 +22061,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     {visibleSets.map(set => {
                       const teamPoints = teamKey === 'home' ? set.homePoints : set.awayPoints
                       const oppPoints = teamKey === 'home' ? set.awayPoints : set.homePoints
-                      const won = teamPoints > oppPoints ? 1 : 0
+                      const won = set.finished && teamPoints > oppPoints ? 1 : 0
                       const substitutions = (data?.events || []).filter(e =>
                         e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === teamKey
                       ).length
