@@ -71,6 +71,15 @@
   </screenshots>
 
   <releases>
+    <release version="3.2.2" date="2026-11-15">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.2.2</url>
+      <description>
+        <ul>
+          <li>Global mode: the clock is the device's own (tournaments in any country).</li>
+          <li>Global mode: a new match starts neutral (friendly, mixed, no country), Mixed gender and school levels, no LFP option.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.2.1" date="2026-11-15">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.2.1</url>
       <description>
