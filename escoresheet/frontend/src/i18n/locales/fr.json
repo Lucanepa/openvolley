@@ -240,6 +240,8 @@
   },
   "matchSetup": {
     "roleName": "Nom de la fonction",
+    "mixed": "Mixte",
+    "school": "École",
     "pointsPerSet": "Points par set",
     "pointsDeciding": "Set décisif",
     "loadingScheduleGame": "Chargement du match…",

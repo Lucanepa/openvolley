@@ -1686,6 +1686,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         // matches, test matches): shown as such; a new one starts unset
         if (match.bestOf === 3 || match.bestOf === 5) setBestOf(match.bestOf)
         else if (match.matchInfoConfirmedAt) setBestOf(5)
+        // A new Global match starts neutral, not as a Swiss league game: a friendly,
+        // mixed, and no country prefilled (the Swiss ones are CHE, men, senior, regional)
+        if (match.global === true && !match.matchInfoConfirmedAt && !match.match_type_1) {
+          setType1('friendly'); setType2('mixed')
+          setRef1Country(''); setRef2Country(''); setScorerCountry(''); setAsstCountry('')
+        }
         if (match.setTargets) { setPointsRegular(setTargetsOf(match).regular); setPointsDeciding(setTargetsOf(match).deciding) }
         // The placeholder will show a suggestion, but won't auto-fill a value
         if (match.homeShortName && match.homeShortName.trim()) {
@@ -1734,7 +1740,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           if (ref1) {
             setRef1First(ref1.firstName || '')
             setRef1Last(ref1.lastName || '')
-            setRef1Country(ref1.country || 'CHE')
+            setRef1Country(ref1.country || (match.global === true ? '' : 'CHE'))
             setRef1Dob(ref1.dob || '01.01.1900')
             setRef1Email(ref1.email || '')
           }
@@ -1742,7 +1748,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           if (ref2) {
             setRef2First(ref2.firstName || '')
             setRef2Last(ref2.lastName || '')
-            setRef2Country(ref2.country || 'CHE')
+            setRef2Country(ref2.country || (match.global === true ? '' : 'CHE'))
             setRef2Dob(ref2.dob || '01.01.1900')
             setRef2Email(ref2.email || '')
           }
@@ -1750,14 +1756,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           if (scorer) {
             setScorerFirst(scorer.firstName || '')
             setScorerLast(scorer.lastName || '')
-            setScorerCountry(scorer.country || 'CHE')
+            setScorerCountry(scorer.country || (match.global === true ? '' : 'CHE'))
             setScorerDob(scorer.dob || '')
           }
           const asst = officials.find(o => o.role === 'assistant scorer')
           if (asst) {
             setAsstFirst(asst.firstName || '')
             setAsstLast(asst.lastName || '')
-            setAsstCountry(asst.country || 'CHE')
+            setAsstCountry(asst.country || (match.global === true ? '' : 'CHE'))
             setAsstDob(asst.dob || '01.01.1900')
           }
           // Load line judges
@@ -4053,6 +4059,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <Select aria-label={t('matchSetup.gender')} block value={type2} onChange={e => setType2(e.target.value)}>
                   <option value="men">{t('matchSetup.men')}</option>
                   <option value="women">{t('matchSetup.women')}</option>
+                  {match?.global === true && <option value="mixed">{t('matchSetup.mixed', 'Mixed')}</option>}
                 </Select>
               </Field>
               <Field tone="compact" className={FIELD} label={t('matchSetup.matchLevel')}>
@@ -4062,6 +4069,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   <option value="U21">U21</option>
                   <option value="U19">U19</option>
                   <option value="U17">U17</option>
+                  {match?.global === true && (
+                    <>
+                      <option value="U16">U16</option>
+                      <option value="U15">U15</option>
+                      <option value="U14">U14</option>
+                      <option value="School">{t('matchSetup.school', 'School')}</option>
+                    </>
+                  )}
                   <option value="other">{t('matchSetup.other')}</option>
                 </Select>
               </Field>

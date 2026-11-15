@@ -28,6 +28,7 @@ import { diagnosticLogQuery } from '../../utils/activity/logQuery'
 import { reloadWithReason } from '../../diagnostics/reload'
 import DiagnosticsSection from '../../diagnostics/DiagnosticsSection'
 import ThemeOption from './ThemeOption'
+import { useToolMode } from '../../utils/toolMode'
 
 // Opened over the scoreboard: no brand-red fills here (RESTYLE-SPEC R4).
 // Selection and "on" are slate-900, the non-destructive confirm emerald.
@@ -255,6 +256,7 @@ export default function ScoreboardOptionsModal({
   matchId,
   onRestoreBackup
 }) {
+  const globalTool = useToolMode() === 'global'
   const { t } = useTranslation()
   const { showAlert } = useAlert()
   const [clearCacheModal, setClearCacheModal] = useState(null) // { type: 'cache' | 'all' }
@@ -807,6 +809,8 @@ export default function ScoreboardOptionsModal({
             />
           </Row>
 
+          {/* LFP (locally formed players) is a Swiss league rule: not in a Global match tool */}
+          {!globalTool && (
           <Row style={{ alignItems: 'flex-start' }}>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
@@ -842,6 +846,7 @@ export default function ScoreboardOptionsModal({
               }}
             />
           </Row>
+          )}
         </Section>
 
         <Section title={t('options.displayMode')}>

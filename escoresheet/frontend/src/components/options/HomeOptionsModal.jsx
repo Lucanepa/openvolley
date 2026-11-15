@@ -20,6 +20,7 @@ import DiagnosticsSection from '../../diagnostics/DiagnosticsSection'
 import ThemeOption from './ThemeOption'
 import { exportNativeFilesToDocuments } from '../../utils/nativeBackup'
 import { configuredRecoveryKey } from '../../utils/backupCrypto/recovery'
+import { useToolMode } from '../../utils/toolMode'
 import { downloadGlobalTemplate } from '../../utils/globalTemplates'
 
 // Kit field recipes for the small inline number/select controls (h-9, svrz md).
@@ -285,6 +286,7 @@ export default function HomeOptionsModal({
   dashboardServer = null, // Optional dashboard server props from useDashboardServer
   toolMode = null // { mode, locked, onChange }: Swiss / Global (utils/toolMode)
 }) {
+  const globalTool = useToolMode() === 'global'
   const { t } = useTranslation()
   const { showAlert } = useAlert()
   const matchToBackUp = backup?.activeMatchId ?? backupMatchId ?? null
@@ -661,6 +663,8 @@ export default function HomeOptionsModal({
             </div>
           </Row>
 
+          {/* LFP (locally formed players) is a Swiss league rule: not in a Global match tool */}
+          {!globalTool && (
           <Row style={{ alignItems: 'flex-start' }}>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
@@ -696,6 +700,7 @@ export default function HomeOptionsModal({
               }}
             />
           </Row>
+          )}
         </Section>
 
         {/* Android app only: cloud or venue LAN relay, other bundled views */}

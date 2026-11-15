@@ -4008,7 +4008,7 @@ export default function App() {
                     setShowCoinToss(false)
                     setShowMatchSetup(true)
                   }}
-                  lfpTrackingEnabled={lfpTrackingEnabled}
+                  lfpTrackingEnabled={lfpTrackingEnabled && !globalTool}
                 />
               ) : showMatchSetup && matchId ? (
                 <MatchSetup
@@ -4022,7 +4022,7 @@ export default function App() {
                   }}
                   offlineMode={offlineMode}
                   backup={backup}
-                  lfpTrackingEnabled={lfpTrackingEnabled}
+                  lfpTrackingEnabled={lfpTrackingEnabled && !globalTool}
                   initialOfficialGame={pendingOfficialGame}
                   onInitialOfficialGameUsed={() => setPendingOfficialGame(null)}
                   onReady={() => setOpeningMatch(null)}

@@ -140,10 +140,10 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, coinT
           {/* Gender / age */}
           <div className="border-r border-black p-1 min-w-0 overflow-hidden">
             <div className="grid grid-cols-3 gap-x-0.5 gap-y-0.5">
-              <CategoryBox checked={gender === 'men'} label="Men" />
+              <CategoryBox checked={gender === 'men' || gender === 'mixed'} label="Men" />
               <CategoryBox checked={level === 'U23'} label="U23" />
               <CategoryBox checked={level === 'U17'} label="U17" />
-              <CategoryBox checked={gender === 'women'} label="Women" />
+              <CategoryBox checked={gender === 'women' || gender === 'mixed'} label="Women" />
               <CategoryBox checked={level === 'U19'} label="U19" />
               <CategoryBox
                 checked={isOtherLevel}
