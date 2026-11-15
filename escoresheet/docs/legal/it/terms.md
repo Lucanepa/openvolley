@@ -17,7 +17,7 @@ servizi»). Chi usa i servizi accetta queste condizioni.
 
 Il software è software libero sotto la GNU General Public License, versione 3
 o successiva (GPL-3.0-or-later). Il software stesso, il suo codice sorgente e
-i suoi diritti su di esso sono regolati unicamente da questa licenza; queste
+i tuoi diritti su di esso sono regolati unicamente da questa licenza; queste
 condizioni non la limitano. Il codice sorgente si trova su
 https://github.com/Lucanepa/openvolley e https://github.com/Lucanepa/openbeach.
 
@@ -25,13 +25,13 @@ I servizi sono gratuiti. Non esiste alcun diritto al loro uso.
 
 ## 3. Account
 
-- Le serve un account per sincronizzare, gestire squadre e tornei e approvare
-  risultati. Senza account può usare le app offline.
-- Fornisca dati veritieri. Un account appartiene a una sola persona e non può
+- Ti serve un account per sincronizzare, gestire squadre e tornei e approvare
+  risultati. Senza account puoi usare le app offline.
+- Fornisci dati veritieri. Un account appartiene a una sola persona e non può
   essere condiviso.
-- Mantenga segreti la sua password e il suo PIN di approvazione.
-  Un'approvazione con il suo PIN vale come sua conferma del risultato.
-  Segnali subito qualsiasi abuso a support@openvolley.app.
+- Mantieni segreti la tua password e il tuo PIN di approvazione.
+  Un'approvazione con il tuo PIN vale come tua conferma del risultato.
+  Segnala subito qualsiasi abuso a support@openvolley.app.
 - I nuovi account non hanno inizialmente alcun ruolo. I ruoli (per esempio
   segnapunti, arbitro, gestore di competizione) sono attribuiti da un
   amministratore o tramite un codice d'invito. I codici d'invito sono
@@ -39,7 +39,7 @@ I servizi sono gratuiti. Non esiste alcun diritto al loro uso.
   possono essere ceduti.
 - Chi ha meno di 16 anni necessita per un account del consenso di un
   genitore o di un altro rappresentante legale.
-- Può cancellare il suo account nell'app in qualsiasi momento. Ciò che resta
+- Puoi cancellare il tuo account nell'app in qualsiasi momento. Ciò che resta
   in seguito è descritto nell'[informativa sulla protezione dei dati](privacy.md).
 - Posso revocare ruoli e bloccare o cancellare account che violano queste
   condizioni o mettono in pericolo la sicurezza dei servizi.
@@ -50,21 +50,21 @@ I servizi sono gratuiti. Non esiste alcun diritto al loro uso.
   referto cartaceo.
 - Se OpenVolley possa essere usato per una partita ufficiale e come il
   referto debba essere consegnato lo decide la federazione o l'organizzatore
-  della competizione. Lo chiarisca prima della partita.
-- Per le partite ufficiali tenga pronta una soluzione di riserva (per esempio
+  della competizione. Chiariscilo prima della partita.
+- Per le partite ufficiali tieni pronta una soluzione di riserva (per esempio
   un referto cartaceo) nel caso un dispositivo si guasti.
 - Le app supportano le regole di gioco, ma non sostituiscono le decisioni
   degli arbitri. Fanno fede le regole e i regolamenti ufficiali.
 
-## 5. Dati che inserisce
+## 5. Dati che inserisci
 
 - Chi inserisce dati di altre persone (liste squadra, staff, ufficiali di
   gara, squadre di un torneo) deve esserne autorizzato. Società,
   organizzatori e responsabili di squadra devono informare le persone
   interessate e, per i minorenni, i loro genitori che i loro dati sono
   registrati nel referto.
-- Inserisca solo i dati necessari al referto o al torneo.
-- Lei conserva i suoi diritti sui suoi contenuti. Mi autorizza a salvare,
+- Inserisci solo i dati necessari al referto o al torneo.
+- Tu conservi i tuoi diritti sui tuoi contenuti. Mi autorizzi a salvare,
   trattare, copiare a fini di sicurezza e visualizzare i dati come i servizi
   richiedono e come descritto nell'informativa sulla protezione dei dati, per
   esempio nomi delle squadre e punteggio nel livescore pubblico o nomi sulle
@@ -82,7 +82,7 @@ In particolare non è consentito:
   su larga scala;
 - inserire o diffondere dati di altre persone senza esserne autorizzati.
 
-Se trova una falla di sicurezza, la segnali in modo confidenziale a
+Se trovi una falla di sicurezza, segnalala in modo confidenziale a
 support@openvolley.app prima di renderla pubblica.
 
 ## 7. Disponibilità
@@ -90,7 +90,7 @@ support@openvolley.app prima di renderla pubblica.
 Gestisco i servizi al meglio delle mie possibilità, ma senza garantire una
 determinata disponibilità. Manutenzione, guasti o modifiche possono
 interrompere i servizi. Posso modificare o cessare servizi. Le app continuano
-a funzionare offline; salvi lei stesso i referti importanti (le app
+a funzionare offline; salva tu stesso i referti importanti (le app
 permettono di scaricare copie di sicurezza e referti).
 
 ## 8. Garanzia e responsabilità
@@ -104,8 +104,8 @@ responsabilità che non può essere esclusa secondo il diritto imperativo.
 ## 9. Modifiche
 
 Posso adeguare queste condizioni. La nuova versione vale dalla sua
-pubblicazione su questa pagina. Se continua a usare i servizi in seguito,
-ciò vale come accettazione. Se non è d'accordo, può cancellare il suo
+pubblicazione su questa pagina. Se continui a usare i servizi in seguito,
+ciò vale come accettazione. Se non sei d'accordo, puoi cancellare il tuo
 account.
 
 ## 10. Diritto applicabile e foro competente

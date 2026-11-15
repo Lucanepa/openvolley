@@ -10,12 +10,12 @@ la versione inglese.
 - OpenVolley è un progetto open source privato e non commerciale. Non ci sono
   pubblicità, tracciamento, strumenti di analisi né cookie miei (la
   sezione 3 indica gli script che aggiunge Cloudflare).
-- Le app funzionano offline. Le sue partite sono salvate sul suo dispositivo,
+- Le app funzionano offline. Le tue partite sono salvate sul tuo dispositivo,
   e nella banca dati del server solo dopo l'accesso. Affinché i tablet
   ricevano una partita in corso, le app browser e Android la fanno passare dal
   mio server anche senza accesso, solo nella memoria di lavoro.
 - Lo strumento Global di OpenVolley non richiede un account. Le sue partite
-  restano sul suo dispositivo. Sul server si trovano solo un backup della
+  restano sul tuo dispositivo. Sul server si trovano solo un backup della
   partita e, alla fine, il referto in PDF, sotto un codice di backup casuale e
   senza account; vengono cancellati 180 giorni dopo l'ultima modifica
   (sezione 7).
@@ -26,9 +26,9 @@ la versione inglese.
   degli arbitri delle partite ufficiali. **Date di nascita, numeri di licenza
   e firme non sono mai pubblici.**
 - L'app OpenVolley tiene un registro attività di ogni partita, senza PIN né
-  password. Se ha effettuato l'accesso, viene caricato sul server. Ciò che
-  clicca o digita resta sul suo dispositivo, salvo un riassunto senza il
-  testo digitato se include la diagnostica in una richiesta di supporto
+  password. Se hai effettuato l'accesso, viene caricato sul server. Ciò che
+  clicchi o digiti resta sul tuo dispositivo, salvo un riassunto senza il
+  testo digitato se includi la diagnostica in una richiesta di supporto
   (sezioni 5 e 13).
 - Il server si trova in Svizzera: lo noleggio da Infomaniak a Ginevra e lo
   gestisco io stesso. Cloudflare (USA) distribuisce i siti web e inoltra il
@@ -43,7 +43,7 @@ la versione inglese.
 - I verbali delle partite (referti, eventi delle partite, file dei referti)
   sono conservati per la loro stagione e le due stagioni successive, poi
   cancellati (sezione 16).
-- Può chiedere in ogni momento informazioni, rettifica o cancellazione:
+- Puoi chiedere in ogni momento informazioni, rettifica o cancellazione:
   **support@openvolley.app**.
 
 ## 1. Chi è responsabile
@@ -56,7 +56,7 @@ E-mail: support@openvolley.app
 
 Gestisco OpenVolley come persona privata. Non ho nominato un consulente per la
 protezione dei dati; non vi sono tenuto. Per tutte le domande sulla
-protezione dei dati scriva a support@openvolley.app.
+protezione dei dati scrivi a support@openvolley.app.
 
 Questa informativa vale per:
 
@@ -79,9 +79,9 @@ entrambe le leggi.
 ## 3. Principi
 
 - **Nessun cookie.** Le app non impostano cookie. Salvano solo ciò che serve
-  per funzionare nella memoria del suo browser o dispositivo (localStorage e
-  IndexedDB): i dati delle partite per l'uso offline, le sue impostazioni e,
-  se ha effettuato l'accesso, un token di accesso.
+  per funzionare nella memoria del tuo browser o dispositivo (localStorage e
+  IndexedDB): i dati delle partite per l'uso offline, le tue impostazioni e,
+  se hai effettuato l'accesso, un token di accesso.
 - **Nessun tracciamento, nessuna pubblicità, nessuna analisi.** Non ci sono
   strumenti di analisi, invii di segnalazioni di errore a terzi, pubblicità,
   profilazione né decisioni individuali automatizzate. Non vendo dati.
@@ -93,17 +93,17 @@ entrambe le leggi.
   un controllo contro gli accessi automatizzati (rilevamento dei bot) e, su
   openvolley.app e get.openvolley.app, uno script che mostra gli indirizzi
   e-mail scritti nella pagina. Provengono dallo stesso indirizzo della pagina,
-  non la tracciano e non servono ad alcuna analisi. Il controllo dei bot può
+  non ti tracciano e non servono ad alcuna analisi. Il controllo dei bot può
   salvare il suo risultato in un cookie di Cloudflare (`cf_clearance`); è
   strettamente necessario per proteggere il servizio.
-- **Prima offline.** Ciò che registra senza accedere è salvato solo sul suo
-  dispositivo. Per la trasmissione ai tablet, veda la sezione 9.
+- **Prima offline.** Ciò che registri senza accedere è salvato solo sul tuo
+  dispositivo. Per la trasmissione ai tablet, vedi la sezione 9.
 
 ## 4. Sito web e pagina di download
 
 **openvolley.app** e **get.openvolley.app** sono pagine statiche; a parte gli
 script di Cloudflare (sezione 3) non caricano alcuno script. L'unico modulo è il modulo di supporto su
-openvolley.app/support (sezione 13). Quando le apre, Cloudflare tratta i dati
+openvolley.app/support (sezione 13). Quando le apri, Cloudflare tratta i dati
 tecnicamente necessari: indirizzo IP, indirizzo richiesto, ora e
 identificativo del browser. Il mio server non tiene un registro degli accessi
 per get.openvolley.app.
@@ -113,10 +113,10 @@ del loro trattamento dei dati.
 
 ## 5. Le app di refertazione (browser, desktop, Android)
 
-**Senza accesso**, l'app salva tutto solo sul suo dispositivo: partite,
+**Senza accesso**, l'app salva tutto solo sul tuo dispositivo: partite,
 squadre, liste squadra con date di nascita, set, eventi della partita, elenchi
 di ufficiali di gara, impostazioni e i registri dell'app (vedi sotto). Le
-partite restano salvate finché non le cancella o non cancella i dati dell'app.
+partite restano salvate finché non le cancelli o non cancelli i dati dell'app.
 
 **Trasmissione in diretta, anche senza accesso.** Appena una partita è
 creata, le app browser e Android la inviano (squadre, liste squadra,
@@ -124,15 +124,15 @@ punteggio, eventi) al relay in diretta del mio server, affinché i tablet
 dell'arbitro e della panchina la ricevano (sezione 9). Lì è tenuta solo nella
 memoria di lavoro. L'app desktop usa invece il proprio relay nella rete locale.
 
-**Con accesso**, l'app sincronizza le sue partite con il server (sezione 7).
+**Con accesso**, l'app sincronizza le tue partite con il server (sezione 7).
 Inoltre carica:
 
 - **copie di sicurezza** di una partita (complete, con liste squadra, date di
-  nascita e firme). Solo il suo account può leggerle. Vengono cancellate dopo
+  nascita e firme). Solo il tuo account può leggerle. Vengono cancellate dopo
   30 giorni;
 - **registri dell'app** (messaggi tecnici dell'app; possono contenere nomi e
-  numeri di partita). Solo il suo account può leggerli. Vengono cancellati
-  dopo 30 giorni, e con il suo account;
+  numeri di partita). Solo il tuo account può leggerli. Vengono cancellati
+  dopo 30 giorni, e con il tuo account;
 - i **referti** come file (PDF e dati), vedi sezione 7.
 
 **Registro attività (OpenVolley dalla versione 2.4.0).** Per la
@@ -145,7 +145,7 @@ squadra (solo il numero di maglia), esiti degli invii al server, errori
 dell'app (messaggio e punto del programma), avvio, aggiornamento e chiusura
 dell'app, nonché accesso e uscita. Ogni voce contiene un identificativo
 casuale del dispositivo (creato dall'app, non legato all'hardware), la
-versione dell'app, la piattaforma e, se ha effettuato l'accesso, il suo
+versione dell'app, la piattaforma e, se hai effettuato l'accesso, il tuo
 account. **Non vengono mai registrati** PIN, password, token di accesso,
 immagini delle firme, date di nascita, indirizzi e-mail, numeri di telefono e
 di licenza; se qualcuno modifica a mano un tale campo, il registro indica solo
@@ -153,13 +153,13 @@ che è stato modificato. Nel testo libero (messaggi di errore, valori delle
 modifiche) le sequenze di sei o più cifre e i numeri accanto a parole come
 «PIN», «codice» o «password» vengono oscurati. Il registro non contiene quindi
 più dati personali del referto stesso (numeri di maglia, nomi degli ufficiali
-di gara in una correzione). Può consultarlo nell'app e salvarlo come file
+di gara in una correzione). Puoi consultarlo nell'app e salvarlo come file
 (CSV o JSON).
 
-**Dove si trova il registro attività:** sul suo dispositivo; nelle app
+**Dove si trova il registro attività:** sul tuo dispositivo; nelle app
 desktop e Android anche come file giornalieri nella cartella
-`OpenVolley/logs` (desktop: nella sua cartella utente accanto alle copie di
-sicurezza, Android: nella cartella propria dell'app, vedi sotto). Se ha effettuato
+`OpenVolley/logs` (desktop: nella tua cartella utente accanto alle copie di
+sicurezza, Android: nella cartella propria dell'app, vedi sotto). Se hai effettuato
 l'accesso, l'app lo carica sul mio server, comprese le voci create su questo
 dispositivo senza accesso. Sul server le voci di una partita possono essere
 lette dall'account che ha registrato la partita, dagli account che hanno
@@ -178,56 +178,56 @@ conserva la modifica, così lo svolgimento della partita resta tracciabile. La
 cronologia degli eventi fa parte della partita e viene cancellata con essa.
 Sul server la vedono solo gli amministratori.
 
-**Registro d'uso: ciò che clicca o digita resta sul suo dispositivo.** Per la
-diagnosi dei problemi l'app registra sul dispositivo ciò che clicca e digita
+**Registro d'uso: ciò che clicchi o digiti resta sul tuo dispositivo.** Per la
+diagnosi dei problemi l'app registra sul dispositivo ciò che clicchi e digiti
 (anche il testo nei campi di inserimento, per esempio nomi). Questo registro
-non viene caricato da solo. Solo se include la diagnostica in una richiesta di
+non viene caricato da solo. Solo se includi la diagnostica in una richiesta di
 supporto, la accompagna un riassunto delle ultime due ore circa, senza il
-testo digitato (sezione 13). Può scaricarlo lei stesso (nelle impostazioni o a
+testo digitato (sezione 13). Puoi scaricarlo tu stesso (nelle impostazioni o a
 fine partita nel file ZIP) e inviarlo per esempio al supporto. In OpenVolley
 dalla versione 2.4.0 non registra alcun inserimento nei campi password e PIN
 né i PIN mostrati sullo schermo, e viene cancellato dopo 30 giorni od oltre
 50 000 voci.
 
 **App desktop.** L'app desktop salva inoltre copie di sicurezza automatiche
-delle partite nella sua cartella utente (Linux:
+delle partite nella tua cartella utente (Linux:
 `~/.local/share/OpenVolley/backups`, Windows: `%APPDATA%\OpenVolley\backups`).
 Contengono nomi e date di nascita, ma nessun PIN, e vengono cancellate dopo
 30 giorni. Dalla versione 2.4.0 l'app desktop di OpenVolley scrive inoltre un
 file di registro tecnico (`desktop.log`) nella cartella `OpenVolley/logs`:
 avvio e chiusura, verifiche e download degli aggiornamenti, link e download
 aperti (indirizzo senza parametri, posizione di salvataggio), numero di
-tablet collegati ed errori. Resta sul suo dispositivo, non viene mai caricato
+tablet collegati ed errori. Resta sul tuo dispositivo, non viene mai caricato
 e non contiene PIN, token di accesso né password dell'hotspot. Si conservano
 al massimo cinque file precedenti da 5 MB ciascuno.
 
 **App Android.** L'app Android conserva le sue copie di sicurezza (cifrate
 con i PIN della partita; una partita di prova non ha PIN), i referti in PDF e i file giornalieri del registro
 attività nella propria cartella dell'app, che nessun'altra app può leggere e
-che viene cancellata con la disinstallazione. Solo se sceglie «Esporta in
+che viene cancellata con la disinstallazione. Solo se scegli «Esporta in
 Documenti» copia dei file nella cartella pubblica «Documenti»
 (`Documents/OpenVolley`). **Queste copie restano dopo la disinstallazione
 dell'app e, su Android 10 e versioni precedenti, possono essere lette anche da
-altre app.** Le cancelli lei stesso quando non le servono più. Le versioni
+altre app.** Cancellale tu stesso quando non ti servono più. Le versioni
 fino alla 3.1.4 salvavano i file in «Documenti»; le versioni più recenti li
-spostano nella cartella dell'app al primo avvio. Se ha attivato il backup Google
+spostano nella cartella dell'app al primo avvio. Se hai attivato il backup Google
 del dispositivo, Android può salvare anche i dati dell'app (con le liste
-squadra) nel suo account Google; valgono le condizioni di Google.
+squadra) nel tuo account Google; valgono le condizioni di Google.
 
-Su un dispositivo condiviso, esca dall'account dopo la partita. L'uscita
-cancella dall'app il token di accesso, il suo profilo e le sue società, le
+Su un dispositivo condiviso, esci dall'account dopo la partita. L'uscita
+cancella dall'app il token di accesso, il tuo profilo e le tue società, le
 partite del giorno, le squadre, gli elenchi e le liste delle licenze delle
 società memorizzati temporaneamente, e gli indirizzi e-mail con cui gli
 ufficiali hanno confermato su questo dispositivo; lo stesso avviene quando la
 sessione scade o accede un altro account. Senza connessione, l'uscita chiude
 anche la sessione sul server appena il dispositivo torna online. Gli
-indirizzi degli ufficiali sono conservati al massimo 7 giorni. Non configuri
-una passkey su un dispositivo condiviso (all'accesso spunti "Dispositivo
+indirizzi degli ufficiali sono conservati al massimo 7 giorni. Non configurare
+una passkey su un dispositivo condiviso (all'accesso spunta "Dispositivo
 condiviso").
 
 ## 6. Account ed e-mail
 
-Le serve un account per sincronizzare partite, gestire squadre e tornei o
+Ti serve un account per sincronizzare partite, gestire squadre e tornei o
 approvare risultati come ufficiale di gara. Gli account si aprono su
 `manager.openvolley.app` e `manager-beach.openvolley.app`.
 
@@ -239,31 +239,31 @@ segnapunti, arbitro, gestore di competizione), le app per cui vale l'account
 dati inseriti alla registrazione sono conservati anche come copia presso
 l'account.
 
-**Scopo:** accesso, attivazione delle funzioni del suo ruolo e
-precompilazione dei suoi dati nel referto (nome, paese, data di nascita).
+**Scopo:** accesso, attivazione delle funzioni del tuo ruolo e
+precompilazione dei tuoi dati nel referto (nome, paese, data di nascita).
 
 **I nuovi account** non hanno inizialmente alcun ruolo. Un amministratore li
-abilita, oppure lei utilizza un codice d'invito. Il sistema registra chi ha
+abilita, oppure tu utilizzi un codice d'invito. Il sistema registra chi ha
 utilizzato quale codice e quando.
 
-**Che cosa fa (registrazione a OpenVolley, facoltativa):** alla registrazione
-può indicare che cosa fa (segnapunti, arbitro, responsabile della squadra o
+**Che cosa fai (registrazione a OpenVolley, facoltativa):** alla registrazione
+puoi indicare che cosa fai (segnapunti, arbitro, responsabile della squadra o
 allenatore, responsabile della società) e per quale società e squadra. Questa
 richiesta è conservata solo finché non è approvata o rifiutata, ed è visibile,
-con il suo nome e il suo indirizzo e-mail, agli amministratori e ai
+con il tuo nome e il tuo indirizzo e-mail, agli amministratori e ai
 responsabili di quella società o squadra. Se è
-approvata, il suo account riceve esattamente quel ruolo, quella società o
+approvata, il tuo account riceve esattamente quel ruolo, quella società o
 quella squadra (da un amministratore, o dai responsabili della società o della
 squadra per la propria società o squadra); il sistema registra chi ha deciso e
-quando, ma in questa voce non il suo nome né il suo indirizzo.
+quando, ma in questa voce non il tuo nome né il tuo indirizzo.
 
 **Società (OpenVolley):** un amministratore, o un codice d'invito, può
-assegnare il suo account a una o più società. Lei referta allora le partite
+assegnare il tuo account a una o più società. Tu referti allora le partite
 ufficiali in casa di queste società. Il sistema registra a quali società
-appartiene il suo account, chi l'ha assegnato e quando, finché la società o
-l'assegnazione viene rimossa o lei elimina l'account. L'app di refertazione
-conserva una copia delle sue società sul suo dispositivo, per poter verificare
-una partita anche offline; la copia viene eliminata quando lei si disconnette.
+appartiene il tuo account, chi l'ha assegnato e quando, finché la società o
+l'assegnazione viene rimossa o tu elimini l'account. L'app di refertazione
+conserva una copia delle tue società sul tuo dispositivo, per poter verificare
+una partita anche offline; la copia viene eliminata quando ti disconnetti.
 
 **Responsabili di società (OpenVolley):** un amministratore può nominare
 account responsabili di una società. Degli account che refertano per la loro
@@ -278,7 +278,7 @@ I responsabili di società possono anche dare un link all'allenatore o al
 responsabile di una squadra della società, che poi gestisce quella squadra
 (sezione 10).
 
-**Accesso:** dopo l'accesso il suo browser salva un token di accesso. Sul
+**Accesso:** dopo l'accesso il tuo browser salva un token di accesso. Sul
 server si trova solo un hash di esso. Una sessione dura 30 giorni dall'ultimo
 utilizzo, al massimo 90 giorni, e termina con l'uscita, il cambio della
 password e la cancellazione dell'account. Per proteggersi dagli attacchi, il
@@ -287,49 +287,49 @@ nella memoria di lavoro.
 
 **E-mail:** invio solo e-mail legate all'account: conferma dell'indirizzo
 e-mail, link per reimpostare la password, avviso di cambio password, avviso
-che un risultato è stato approvato con il suo PIN di approvazione e avviso
-che il suo PIN è stato bloccato. Non contengono pixel di tracciamento né
+che un risultato è stato approvato con il tuo PIN di approvazione e avviso
+che il tuo PIN è stato bloccato. Non contengono pixel di tracciamento né
 immagini caricate da remoto. Un link di conferma vale 24 ore, un link di
 reimpostazione 60 minuti.
 
 **Referti per e-mail:** invio il referto finale di una partita ufficiale e
-il referto della sua partita di prova come descritto nella sezione 7.
+il referto della tua partita di prova come descritto nella sezione 7.
 
-**Chi vede i dati del suo account:** lei stesso e gli amministratori di
+**Chi vede i dati del tuo account:** tu stesso e gli amministratori di
 OpenVolley (io e le persone da me designate). Inoltre, nella misura in cui il
 loro compito lo richiede:
 
-- i responsabili di una società per cui fa il segnapunti o di cui gestisce
-  una squadra: il suo nome, indirizzo e-mail, ruoli e da quando appartiene
-  alla società o gestisce la squadra;
+- i responsabili di una società per cui fai il segnapunti o di cui gestisci
+  una squadra: il tuo nome, indirizzo e-mail, ruoli e da quando appartieni
+  alla società o gestisci la squadra;
 - i responsabili della società o della squadra indicate alla registrazione
-  (chi approva): il suo nome, indirizzo e-mail, la data di registrazione e se
-  il suo indirizzo è confermato, finché la sua richiesta non è decisa;
-- gli altri gestori di un torneo di beach volley che gestisce: il suo
+  (chi approva): il tuo nome, indirizzo e-mail, la data di registrazione e se
+  il tuo indirizzo è confermato, finché la tua richiesta non è decisa;
+- gli altri gestori di un torneo di beach volley che gestisci: il tuo
   indirizzo e-mail;
-- i segnapunti che ricevono una lista squadra inviata da lei in anticipo: il
-  suo nome come mittente (sezione 10);
-- gli altri segnapunti di una partita ufficiale che lei referta già: il suo
+- i segnapunti che ricevono una lista squadra inviata da te in anticipo: il
+  tuo nome come mittente (sezione 10);
+- gli altri segnapunti di una partita ufficiale che tu referti già: il tuo
   nome, affinché sappiano che la partita è assegnata;
 - i gestori di competizione dell'app: il nome dell'account che ha registrato
   ogni partita, nell'elenco dei referti.
 
-**Cancellare l'account:** può cancellare il suo account in qualsiasi momento
+**Cancellare l'account:** puoi cancellare il tuo account in qualsiasi momento
 nell'app. Vengono cancellati account, profilo, sessioni, PIN di approvazione,
-codici d'invito utilizzati, le sue copie di sicurezza e i registri caricati e
-le sue voci del registro attività senza partita. **Restano** i documenti
-ufficiali a cui altri hanno un interesse: i referti che ha registrato, le
-approvazioni che ha dato (con il suo nome come figura nel referto), le
+codici d'invito utilizzati, le tue copie di sicurezza e i registri caricati e
+le tue voci del registro attività senza partita. **Restano** i documenti
+ufficiali a cui altri hanno un interesse: i referti che hai registrato, le
+approvazioni che hai dato (con il tuo nome come figura nel referto), le
 squadre e i tornei salvati, le voci del registro delle modifiche
 (sezione 14), nonché il registro attività e la cronologia degli eventi delle
-partite (sezione 5). Il suo account viene separato da queste voci. Può far
+partite (sezione 5). Il tuo account viene separato da queste voci. Puoi far
 cancellare ciò che resta secondo la sezione 19, nella misura in cui il
 referto non ne ha bisogno.
 
 **Cancellazione da parte di un amministratore:** anche un amministratore può
-cancellare il suo account, quando lei lo chiede (sezione 19) o quando un
+cancellare il tuo account, quando lo chiedi (sezione 19) o quando un
 nuovo account non viene abilitato (rifiutato). Vengono cancellati gli stessi
-dati e restano gli stessi come quando lo cancella lei.
+dati e restano gli stessi come quando lo cancelli tu.
 
 ## 7. Dati delle partite e referti
 
@@ -352,7 +352,7 @@ degni di particolare protezione secondo la LPD, categoria particolare secondo
 il RGPD). L'app registra l'evento con il suo motivo, come richiedono le
 regole, e scrive nelle osservazioni solo le parole delle regole (per esempio
 «#4 substituted, cannot continue playing»), mai una diagnosi. Le
-osservazioni scritte dal segnapunti possono dire di più: scriva solo ciò che
+osservazioni scritte dal segnapunti possono dire di più: scrivi solo ciò che
 serve al verbale. Le osservazioni le vedono coloro che vedono tutto (tabella
 qui sotto) e, durante la partita, il tablet dell'arbitro e chi ha il PIN
 della partita, mai i tablet della panchina né il pubblico; figurano sul
@@ -418,15 +418,15 @@ della partita e non è mai pubblico; lo vede solo chi può leggere tutta la
 partita (tabella sopra). L'invio avviene tramite Migadu (sezione 15).
 
 **Referto di una partita di prova:** se alla fine di una partita di prova
-approva il risultato da connesso, l'app invia il referto in PDF all'indirizzo
-e-mail del suo account, e a nessun altro. Il server non lo conserva; sul suo
+approvi il risultato da connesso, l'app invia il referto in PDF all'indirizzo
+e-mail del tuo account, e a nessun altro. Il server non lo conserva; sul tuo
 dispositivo la partita di prova viene cancellata alla chiusura.
 
 **Strumento Global (senza account):** nello strumento Global di OpenVolley
 (scelto all'avvio dell'app, modificabile nelle Opzioni finché non c'è una
-partita sul dispositivo) registra le partite di un torneo qualsiasi senza
-account. Le rose, gli ufficiali di gara e le partite che digita o carica da un
-file Excel o CSV restano sul suo dispositivo; l'app legge il file sul
+partita sul dispositivo) registri le partite di un torneo qualsiasi senza
+account. Le rose, gli ufficiali di gara e le partite che digiti o carichi da un
+file Excel o CSV restano sul tuo dispositivo; l'app legge il file sul
 dispositivo e non lo carica. Una partita Global non viene sincronizzata con il
 database: non compare in alcun record di partita, squadra o giocatore, né nel
 manager né nelle visualizzazioni pubbliche. Per ogni partita sul server si
@@ -439,7 +439,7 @@ partita. Il codice è l'unico accesso ai file: non esistono né un elenco né un
 ricerca. Il backup è cifrato come ogni file di backup dell'app (senza i PIN):
 si apre solo con il PIN arbitro della partita o con la chiave di recupero
 della federazione, che questa conserva offline. Chi conosce il codice e questo
-PIN può ripristinare la partita; li conservi quindi come una password. Un
+PIN può ripristinare la partita; conservali quindi come una password. Un
 nuovo backup sostituisce il precedente. I file vengono
 cancellati 180 giorni dopo l'ultima modifica; i backup del server (sezione 18)
 ne conservano ancora una copia per un certo tempo. L'organizzatrice o
@@ -450,10 +450,10 @@ informare le giocatrici, i giocatori e i loro genitori (sezione 17).
 risultato, oltre che con la firma, con un PIN di approvazione personale.
 Vengono salvati: il PIN come hash crittografico (mai in chiaro), i tentativi
 falliti e i blocchi; per ogni approvazione la partita, la funzione (1° o
-2° arbitro, segnapunti), il suo account, il suo nome al momento
+2° arbitro, segnapunti), il tuo account, il tuo nome al momento
 dell'approvazione, l'ora, il risultato approvato e un hash pseudonimizzato
 dell'indirizzo IP e del dispositivo (per riconoscere abusi). Le approvazioni
-fanno parte del verbale della partita. Lei vede le sue approvazioni; anche il
+fanno parte del verbale della partita. Tu vedi le tue approvazioni; anche il
 segnapunti della partita e gli amministratori le vedono.
 
 **Firmare sul telefono (OpenVolley dalla versione 2.4.0):** invece che sul
@@ -518,7 +518,7 @@ Il tablet dell'arbitro riceve entrambe le liste squadra con nomi e numeri, il
 punteggio e le osservazioni; un tablet della panchina la lista della propria
 squadra e solo i numeri di maglia dell'altra. Nessuno riceve date di nascita,
 firme o dati sugli ufficiali di gara. Il tablet dell'arbitro
-salva il PIN e il numero della partita nel browser; cancelli i dati del
+salva il PIN e il numero della partita nel browser; cancella i dati del
 browser se il tablet è usato da più persone.
 
 **Tramite il server (relay cloud):** i dati in diretta passano dal mio server.
@@ -528,7 +528,7 @@ attività. Ciò vale anche senza accesso.
 **Modalità palestra (LAN):** l'app desktop può servire i tablet direttamente
 nella rete locale della palestra, anche tramite un hotspot Wi-Fi proprio del
 portatile. I dati restano allora nella rete locale e solo nella memoria di
-lavoro. Nome e password dell'hotspot sono generati a caso sul suo dispositivo
+lavoro. Nome e password dell'hotspot sono generati a caso sul tuo dispositivo
 a ogni avvio. Solo la sincronizzazione con il server lascia la rete locale, e
 solo se il segnapunti ha effettuato l'accesso.
 
@@ -654,7 +654,7 @@ di nascita solo un account che referta); gli amministratori possono
 modificarle e cancellarle. Nomi e paese sono pubblici; le date di nascita
 sono visibili solo agli amministratori e agli account che refertano.
 
-Se non desidera figurare nell'elenco, scriva a support@openvolley.app.
+Se non desideri figurare nell'elenco, scrivi a support@openvolley.app.
 
 ## 12. Download e aggiornamenti
 
@@ -664,31 +664,31 @@ Se non desidera figurare nell'elenco, scriva a support@openvolley.app.
   trasmessa solo la richiesta usuale (indirizzo IP, identificativo del
   programma).
 - **App Android da F-Droid:** l'app non cerca aggiornamenti da sola; lo fa la
-  sua app F-Droid.
+  tua app F-Droid.
 - **App Android installata direttamente:** l'app chiede una volta se deve
-  cercare aggiornamenti (predefinito: no). Solo se acconsente interroga
-  `get.openvolley.app`, circa una volta al giorno. Può disattivarlo nelle
+  cercare aggiornamenti (predefinito: no). Solo se acconsenti interroga
+  `get.openvolley.app`, circa una volta al giorno. Puoi disattivarlo nelle
   impostazioni.
-- **Pagina iniziale di app.openvolley.app:** se la apre nel browser di un
-  computer, il suo browser ottiene da GitHub (`api.github.com`, USA) l'elenco
+- **Pagina iniziale di app.openvolley.app:** se la apri nel browser di un
+  computer, il tuo browser ottiene da GitHub (`api.github.com`, USA) l'elenco
   delle versioni più recenti per proporre il download adatto. GitHub riceve il
-  suo indirizzo IP.
-- **GitHub e F-Droid:** se scarica da loro, valgono le loro informative sulla
+  tuo indirizzo IP.
+- **GitHub e F-Droid:** se scarichi da loro, valgono le loro informative sulla
   protezione dei dati.
 
 ## 13. Supporto e contatto
 
 **Modulo di supporto (nelle app e su openvolley.app/support):** trasmette al
-mio server il suo indirizzo e-mail, tipo e ambito della richiesta, il suo
-messaggio e, se li aggiunge, fino a cinque allegati (per esempio screenshot o
+mio server il tuo indirizzo e-mail, tipo e ambito della richiesta, il tuo
+messaggio e, se li aggiungi, fino a cinque allegati (per esempio screenshot o
 file di backup), insieme alla lingua, all'indirizzo della pagina senza
 parametri, all'identificativo del browser, all'ora, alla piattaforma («web»
 dal sito) e, nelle app, alla versione dell'app.
 
 **I dati diagnostici** vengono inviati solo se «Includi la diagnostica» è
 spuntato. Per una richiesta di supporto (segnalazione di errore o domanda) la
-casella è già spuntata, per feedback e suggerimenti no; può togliere la spunta
-prima dell'invio. «Mostra cosa viene inviato» le mostra prima esattamente il
+casella è già spuntata, per feedback e suggerimenti no; puoi togliere la spunta
+prima dell'invio. «Mostra cosa viene inviato» ti mostra prima esattamente il
 testo che viene inviato. L'app lo allega alla richiesta come file di testo (al
 massimo 2 MB). Contiene:
 
@@ -696,16 +696,16 @@ massimo 2 MB). Contiene:
   identificativo del browser, dimensioni dello schermo e della finestra,
   lingua, ora e fuso orario, stato online e della connessione, dati non
   ancora trasmessi e gli ultimi errori di trasmissione, memoria occupata,
-  l'identificativo casuale del dispositivo e, se ha effettuato l'accesso,
-  l'identificativo del suo account;
+  l'identificativo casuale del dispositivo e, se hai effettuato l'accesso,
+  l'identificativo del tuo account;
 - lo stato della partita aperta (o dell'ultima aperta): numero della
   partita, squadre, stato, set e punteggio, formazioni (numeri di maglia),
   time-out e sostituzioni, gli ultimi 30 eventi della partita e se il server
   ha chiuso la partita o l'ha affidata a un altro dispositivo;
 - la cronologia delle ultime due ore circa (almeno dall'ultimo avvio
   dell'app) dal registro attività e dal registro d'uso (sezione 5): ciò che
-  ha toccato (con la sua etichetta, che può contenere nomi di squadre o di
-  persone), i tasti, le schermate aperte, in quale campo ha digitato quanti
+  hai toccato (con la sua etichetta, che può contenere nomi di squadre o di
+  persone), i tasti, le schermate aperte, in quale campo hai digitato quanti
   caratteri (non il testo), i punti e gli altri eventi della partita, le
   correzioni, le trasmissioni e l'avvio, la chiusura e il passaggio in
   background dell'app;
@@ -716,18 +716,18 @@ e-mail, numeri di telefono e il testo digitato nei campi: l'app toglie questi
 dati da tutto il testo prima dell'invio. Nelle viste di arbitro, panchina e
 livescore il file contiene solo i dati tecnici, lo stato della connessione e
 i messaggi d'errore. Se l'invio non riesce, «Scarica la diagnostica» salva il
-file, così può allegarlo lei stesso alla sua e-mail. Le versioni meno recenti
+file, così puoi allegarlo tu stesso alla tua e-mail. Le versioni meno recenti
 dell'app inviano solo i dati tecnici, il numero della partita e gli ultimi
 messaggi d'errore. Il sito web non invia dati diagnostici.
 
 Il server inoltra la richiesta come un'unica e-mail a support@openvolley.app,
-con il suo indirizzo come indirizzo di risposta. Non ne conserva nulla, salvo
-una riga di registro con tipo, ambito e una forma abbreviata del suo
+con il tuo indirizzo come indirizzo di risposta. Non ne conserva nulla, salvo
+una riga di registro con tipo, ambito e una forma abbreviata del tuo
 indirizzo e-mail (sezione 14). La casella postale è presso Migadu
 (sezione 15). Il mio sistema di ticket (support.openvolley.app), che gestisco
-io stesso sul mio server presso Infomaniak in Svizzera, la legge, così posso risponderle e
-seguire la sua richiesta. Uso il suo indirizzo solo per risponderle. **Per
-richieste sui suoi dati scriva direttamente a support@openvolley.app.**
+io stesso sul mio server presso Infomaniak in Svizzera, la legge, così posso risponderti e
+seguire la tua richiesta. Uso il tuo indirizzo solo per risponderti. **Per
+richieste sui tuoi dati scrivi direttamente a support@openvolley.app.**
 
 **E-mail a support@openvolley.app:** viene trattata allo stesso modo, nella
 casella postale e nel sistema di ticket.
@@ -742,7 +742,7 @@ richiesta.
 - **Registri del server:** il server registra le richieste senza contenuti e
   **senza indirizzi IP** (stato, codice d'errore, identificativo della
   richiesta). Eccezione: una richiesta di supporto viene registrata con una
-  forma abbreviata del suo indirizzo e-mail (sezione 13). Le query lente o
+  forma abbreviata del tuo indirizzo e-mail (sezione 13). Le query lente o
   non riuscite della banca dati vengono registrate senza i loro valori. I
   registri vengono sovrascritti in base alla dimensione (al massimo 10 file
   da 20 MB per servizio), di regola dopo alcuni giorni o poche settimane.
@@ -793,7 +793,7 @@ l'esercizio. Essi trattano i dati per mio conto.
 | Migadu | Invio di e-mail (noreply@) e casella postale (support@) | Svizzera / Europa |
 | Resend, Inc. | Invio delle info della partita per e-mail (solo questa funzione, se attivata) | USA |
 
-**Importante riguardo a Cloudflare:** la connessione cifrata del suo
+**Importante riguardo a Cloudflare:** la connessione cifrata del tuo
 dispositivo termina presso Cloudflare; da lì prosegue cifrata fino al mio
 server. Cloudflare può quindi tecnicamente vedere il contenuto delle
 richieste, comprese liste squadra e date di nascita. Cloudflare può usare i
@@ -812,24 +812,24 @@ Vengono cifrate prima di lasciare il server; nessun altro può leggerle
 dell'UE e del SEE offrono una protezione adeguata dei dati. Per gli USA mi baso sullo
 Swiss-U.S. Data Privacy Framework se il fornitore è certificato, altrimenti
 sulle clausole contrattuali tipo nei contratti dei fornitori. Su richiesta
-riceve una copia di queste garanzie.
+ricevi una copia di queste garanzie.
 
 ## 16. Per quanto tempo conservo i dati
 
 | Dati | Conservazione |
 |---|---|
-| Account e profilo | Finché lei non cancella l'account o un amministratore lo cancella (su richiesta, o un nuovo account rifiutato) |
+| Account e profilo | Finché tu non cancelli l'account o un amministratore lo cancella (su richiesta, o un nuovo account rifiutato) |
 | Sessione | 30 giorni dall'ultimo utilizzo, al massimo 90 giorni |
 | Link nelle e-mail | Validi 60 minuti o 24 ore, cancellati 7 giorni dopo |
-| PIN di approvazione | Finché non lo rimuove o non cancella il suo account |
+| PIN di approvazione | Finché non lo rimuovi o non cancelli il tuo account |
 | Referti, eventi delle partite, cronologia degli eventi, firme, approvazioni, osservazioni (compresi i dati sulla salute), file dei referti | Come verbale ufficiale della partita: la stagione della partita e le 2 stagioni successive (una stagione va dal 1° luglio al 30 giugno), poi cancellati da un passaggio giornaliero; per esempio i verbali della stagione 2024/25 vengono cancellati il 1° luglio 2027. Prima su richiesta nella misura in cui il verbale non necessita dei dati (sezione 19) |
 | Squadre salvate, tornei di beach volley | Finché un gestore non li cancella, o su richiesta |
 | Elenco degli arbitri | Finché un amministratore non cancella la voce; cancellazione su richiesta |
 | Designazioni di Swiss Volley | Come i verbali delle partite: la stagione della partita e le 2 stagioni successive |
 | Registro delle modifiche | Per il tempo necessario alla tracciabilità; la cancellazione su richiesta viene esaminata |
 | Indirizzo di contatto di una società | Finché non viene modificato o rimosso, o la società viene cancellata |
-| Responsabili di società | Finché gli amministratori non li rimuovono, la società viene cancellata o lei cancella il suo account |
-| Responsabili di squadra | Finché un responsabile di società o un amministratore non li rimuove, la squadra o la società viene cancellata o lei cancella il suo account |
+| Responsabili di società | Finché gli amministratori non li rimuovono, la società viene cancellata o tu cancelli il tuo account |
+| Responsabili di squadra | Finché un responsabile di società o un amministratore non li rimuove, la squadra o la società viene cancellata o tu cancelli il tuo account |
 | Elenco inviato in anticipo (giocatrici e giocatori, staff, firme) | Finché un segnapunti non lo accetta, al più tardi 14 giorni dopo la partita; la nota dell'accettazione 14 giorni dopo la partita |
 | Elenchi delle licenze di una società (numero di licenza, nomi, data di nascita, sesso) | Fino al prossimo caricamento di quell'elenco, alla sua cancellazione da parte di un responsabile della società o alla cancellazione della società, al più tardi fino alla fine della stagione; persone aggiunte a mano: fino alla cancellazione dell'elenco o della società, al più tardi fino alla fine della stagione; su un dispositivo fino al prossimo download o all'uscita dall'account |
 | Indirizzo e-mail di un arbitro per una partita | Con la partita, come parte del referto |
@@ -837,9 +837,9 @@ riceve una copia di queste garanzie.
 | Referto di una partita di prova per e-mail | Non conservato sul server |
 | Strumento Global: backup e referto PDF di una partita (sotto il codice di backup) | 180 giorni dopo l'ultima modifica |
 | Copie di sicurezza caricate | 30 giorni |
-| Registri dell'app caricati | 30 giorni; cancellati con il suo account |
+| Registri dell'app caricati | 30 giorni; cancellati con il tuo account |
 | Registro attività di una partita (server) | 24 mesi, al più tardi fino alla cancellazione della partita; prima su richiesta |
-| Registro attività senza partita (server) | 90 giorni; le voci registrate con il suo account vengono cancellate con esso |
+| Registro attività senza partita (server) | 90 giorni; le voci registrate con il tuo account vengono cancellate con esso |
 | Cronologia degli eventi (eventi annullati e corretti) | Con la partita, come parte del verbale della partita |
 | Registro attività sul dispositivo | Voci caricate 180 giorni (al massimo 100 000); voci non ancora caricate fino al caricamento (al massimo 200 000); al massimo 30 file giornalieri e 50 MB |
 | Registro d'uso (solo sul dispositivo) | OpenVolley dalla 2.4.0: 30 giorni, al massimo 50 000 voci |
@@ -849,7 +849,7 @@ riceve una copia di queste garanzie.
 | Registri del server | Sovrascritti in base alla dimensione, al massimo 10 file da 20 MB per servizio (alcuni giorni o poche settimane) |
 | Dati in diretta (server e modalità palestra) | Solo nella memoria di lavoro; sul server eliminati 24 ore dopo l'ultima attività |
 | Copie di sicurezza del server | Fino a circa 6 mesi (sezione 18) |
-| Dati sul suo dispositivo | Finché non li cancella; copie di sicurezza delle app desktop e Android 30 giorni |
+| Dati sul tuo dispositivo | Finché non li cancelli; copie di sicurezza delle app desktop e Android 30 giorni |
 
 ## 17. Minorenni
 
@@ -883,35 +883,35 @@ sezione 19 per il proprio figlio.
   quindi restare fino a circa 6 mesi in queste copie cifrate; servono solo per
   un ripristino.
 - Le copie di sicurezza e i file di registro dell'app desktop sono leggibili
-  solo dal suo account utente e non contengono PIN.
+  solo dal tuo account utente e non contengono PIN.
 
-Nessun sistema è perfettamente sicuro. Se trova una falla di sicurezza, la
-segnali a support@openvolley.app.
+Nessun sistema è perfettamente sicuro. Se trovi una falla di sicurezza,
+segnalala a support@openvolley.app.
 
-## 19. I suoi diritti
+## 19. I tuoi diritti
 
-Ha il diritto di:
+Hai il diritto di:
 
-- ottenere **informazioni** sui dati che tratto su di lei;
+- ottenere **informazioni** sui dati che tratto su di te;
 - far **rettificare** dati inesatti;
 - far **cancellare** o rendere anonimi i dati;
-- **opporsi** al trattamento;
+- **opporti** al trattamento;
 - far **limitare** il trattamento, per esempio mentre si verifica una
   rettifica;
-- **ricevere** i suoi dati in un formato comune o farli trasmettere (le app
+- **ricevere** i tuoi dati in un formato comune o farli trasmettere (le app
   permettono anche di scaricare copie di sicurezza, referti e il registro
   attività);
 - **revocare un consenso** in ogni momento (per esempio per la ricerca di
   aggiornamenti su Android).
 
-Scriva a **support@openvolley.app**. Rispondo entro 30 giorni. Per non
-comunicare dati alla persona sbagliata, posso chiedere una prova della sua
+Scrivi a **support@openvolley.app**. Rispondo entro 30 giorni. Per non
+comunicare dati alla persona sbagliata, posso chiedere una prova della tua
 identità.
 
 **Cancellazione nei referti ufficiali:** un referto chiuso è il verbale
 ufficiale di una partita, a cui società, federazione e ufficiali di gara hanno
-un interesse. Cancello o rendo anonimi i suoi dati in esso nella misura in cui
-il verbale non ne ha bisogno, e le spiego cosa resta e perché. Una rettifica
+un interesse. Cancello o rendo anonimi i tuoi dati in esso nella misura in cui
+il verbale non ne ha bisogno, e ti spiego cosa resta e perché. Una rettifica
 (per esempio di una data di nascita errata) o una cancellazione avviene in
 tutte le copie sul server allo stesso tempo: nei verbali con la loro
 cronologia e i loro registri, negli elenchi delle società e nelle squadre
@@ -920,18 +920,18 @@ e la funzione restano dove il verbale ne ha bisogno, e il PDF del referto
 viene rifatto. Non posso raggiungere le copie al di fuori del mio server (sui
 dispositivi, nelle e-mail già inviate). Le copie di sicurezza cifrate
 conservano i vecchi dati fino a circa 6 mesi (sezione 18); se una di esse
-dovesse essere ripristinata, applicherei di nuovo la sua richiesta.
+dovesse essere ripristinata, applicherei di nuovo la tua richiesta.
 
-**Reclamo:** può rivolgersi all'Incaricato federale della protezione dei dati
-e della trasparenza (IFPDT, www.edoeb.admin.ch). Se risiede nell'UE o nello
-SEE, anche all'autorità di protezione dei dati del suo paese.
+**Reclamo:** puoi rivolgerti all'Incaricato federale della protezione dei dati
+e della trasparenza (IFPDT, www.edoeb.admin.ch). Se risiedi nell'UE o nello
+SEE, anche all'autorità di protezione dei dati del tuo paese.
 
 ## 20. Basi giuridiche (RGPD)
 
 Se si applica il RGPD, mi baso su:
 
 - **contratto** (art. 6 par. 1 lett. b RGPD): account, sincronizzazione,
-  e-mail legate all'account, supporto, funzioni che utilizza, il backup online dello strumento Global;
+  e-mail legate all'account, supporto, funzioni che utilizzi, il backup online dello strumento Global;
 - **interesse legittimo** (art. 6 par. 1 lett. f RGPD): verbali ufficiali
   delle partite corretti e verificabili per società, federazione e ufficiali
   di gara (liste squadra, date di nascita per il controllo dell'idoneità,
@@ -955,7 +955,7 @@ Se si applica il RGPD, mi baso su:
 Secondo la LPD svizzera tratto i dati solo per gli scopi indicati e nella
 misura necessaria.
 
-**Nessun obbligo di fornire dati:** non è obbligato né per legge né per
+**Nessun obbligo di fornire dati:** non sei obbligato né per legge né per
 contratto a fornirmi dati. Senza indirizzo e-mail e password non posso però
 aprire un account, e senza liste squadra non c'è referto.
 
