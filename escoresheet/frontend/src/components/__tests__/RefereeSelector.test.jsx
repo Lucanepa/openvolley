@@ -207,7 +207,10 @@ describe('legacy roll-in animation (styles.css)', () => {
       const m = css.match(new RegExp(`@keyframes ${name}\\s*\\{([\\s\\S]*?\\n)\\}`))
       expect(m).not.toBeNull()
       expect(m[1]).not.toMatch(/scale/)
-      expect(m[1]).toMatch(/to\s*\{[^}]*transform:\s*none/)
+      // it animates translate, so a menu's own transform (scale(1.5)) holds
+      // while it runs (owner 15.11: the menu "reopened a little bigger")
+      expect(m[1]).not.toMatch(/transform:/)
+      expect(m[1]).toMatch(/to\s*\{[^}]*translate:\s*none/)
     })
   }
 })

@@ -3467,27 +3467,32 @@ button.start-rally-button {
    A fade and a short slide only, ending at `transform: none`: no scale. These
    used to run scale(1.2) -> scale(1.5) and then drop back to the real size (1)
    when the animation ended, so every menu opened, grew and then shrank. */
+/* The roll animates `translate`, not `transform`: the menus it opens are
+   scaled with an inline transform (scale(1.5)), which an animated transform
+   replaced while it ran, so a menu rolled in at its small size and then
+   jumped to 1.5x ("it opens the menu then it reopens it a little bigger",
+   owner 15.11). `translate` adds to the element's own transform. */
 @keyframes rollDown {
   from {
     opacity: 0;
-    transform: translateY(-6px);
+    translate: 0 -6px;
   }
 
   to {
     opacity: 1;
-    transform: none;
+    translate: none;
   }
 }
 
 @keyframes rollUp {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    translate: 0 6px;
   }
 
   to {
     opacity: 1;
-    transform: none;
+    translate: none;
   }
 }
 
