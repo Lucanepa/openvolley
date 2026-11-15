@@ -1,6 +1,6 @@
 import {
   Users, RectangleVertical, ScrollText, NotebookPen, ClipboardList,
-  Wrench, UserPen, KeyRound, Download, Settings, OctagonX, History
+  Wrench, UserPen, KeyRound, Download, Settings, OctagonX, History, FilePen
 } from 'lucide-react'
 
 /**
@@ -8,7 +8,8 @@ import {
  * legacy phone layout), grouped instead of one flat list. Most used first,
  * the destructive "Stop the match" alone at the end:
  *
- *   Match info      rosters, sanctions and results, action log, remarks, match setup
+ *   Match info      rosters, sanctions and results, action log, remarks, match setup,
+ *                   edit match info (hall, date, officials ... at any time)
  *   Corrections     go back (the rules' going back to a score: points
  *                   cancelled, point and service, then everything editable),
  *                   manual changes, edit home / away roster
@@ -38,7 +39,8 @@ export function matchMenuSections(t, actions) {
         ...row('sanctions', RectangleVertical, t('scoreboard.menu.showSanctionsResults', 'Show sanctions and results'), actions.showSanctions),
         ...row('action-log', ScrollText, t('scoreboard.menu.showActionLog', 'Show action log'), actions.showActionLog),
         ...row('remarks', NotebookPen, t('scoreboard.menu.openRemarksRecording', 'Open remarks recording'), actions.openRemarks),
-        ...row('match-setup', ClipboardList, t('scoreboard.menu.showMatchSetup', 'Show match setup'), actions.openMatchSetup)
+        ...row('match-setup', ClipboardList, t('scoreboard.menu.showMatchSetup', 'Show match setup'), actions.openMatchSetup),
+        ...row('edit-match-info', FilePen, t('scoreboard.menu.editMatchInfo', 'Edit match info'), actions.editMatchInfo)
       ]
     },
     {
